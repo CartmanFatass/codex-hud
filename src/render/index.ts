@@ -3,10 +3,11 @@
  * Phase 3: Updated to use new LayoutConfig system
  */
 
+import { execFileSync } from 'node:child_process';
 import type { HudData, RenderOptions, LayoutConfig, LayoutMode } from '../types.js';
 import { DEFAULT_LAYOUT } from '../types.js';
 import { renderHud } from './header.js';
-import { colors, padEnd, visualLength, truncateAnsi } from './colors.js';
+import { colors, visualLength, truncateAnsi } from './colors.js';
 
 // ANSI escape codes for cursor/screen control
 const CURSOR_HOME = '\x1b[H';
@@ -17,35 +18,53 @@ const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
 
 let lastStdoutFrame: string | null = null;
-const STATUS_HINT = 'Ctrl+T: Toggle • Drag: Resize';
+const STATUS_HINT = 'Prefix+t: Tree';
 
-function applyStatusHint(lines: string[], width: number): string[] {
-  if (lines.length === 0 || width <= 0) {
+function applyStatusHint(lines: string[], width: number, maxLines: number): string[] {
+  if (lines.length === 0 || width <= 0 || lines.length >= maxLines) {
     return lines;
   }
 
   const status = colors.dim(STATUS_HINT);
-  const statusLen = visualLength(status);
-  if (statusLen + 1 > width) {
+  if (visualLength(status) > width) {
     return lines;
   }
 
-  const firstLine = lines[0] ?? '';
-  const firstLen = visualLength(firstLine);
-  if (firstLen + 1 + statusLen > width) {
-    return lines;
+  return [...lines, status];
+}
+
+function readTmuxPaneSize(): { width?: number; height?: number } {
+  const pane = process.env.TMUX_PANE;
+  if (!pane) {
+    return {};
   }
 
-  const padded = padEnd(firstLine, width - statusLen - 1);
-  const nextLines = [...lines];
-  nextLines[0] = `${padded} ${status}`;
-  return nextLines;
+  try {
+    const out = execFileSync(
+      'tmux',
+      ['display-message', '-p', '-t', pane, '#{pane_width} #{pane_height}'],
+      { encoding: 'utf8', timeout: 300 }
+    ).trim();
+    const [rawWidth, rawHeight] = out.split(/\s+/);
+    const width = Number(rawWidth);
+    const height = Number(rawHeight);
+    return {
+      width: Number.isFinite(width) && width > 0 ? width : undefined,
+      height: Number.isFinite(height) && height > 0 ? height : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 /**
  * Get terminal width
  */
 export function getTerminalWidth(): number {
+  const tmuxWidth = readTmuxPaneSize().width;
+  if (tmuxWidth) {
+    return tmuxWidth;
+  }
   const stdoutColumns = process.stdout.columns;
   if (Number.isFinite(stdoutColumns) && stdoutColumns > 0) {
     return stdoutColumns;
@@ -61,6 +80,10 @@ export function getTerminalWidth(): number {
  * Get terminal height
  */
 export function getTerminalHeight(): number {
+  const tmuxHeight = readTmuxPaneSize().height;
+  if (tmuxHeight) {
+    return tmuxHeight;
+  }
   const stdoutRows = process.stdout.rows;
   if (Number.isFinite(stdoutRows) && stdoutRows > 0) {
     return stdoutRows;
@@ -106,14 +129,16 @@ function truncateLines(lines: string[], width: number): string[] {
  * Create default layout config based on terminal size
  */
 function createDefaultLayout(width: number, height: number): LayoutConfig {
-  const mode: LayoutMode = height <= 1 ? 'compact' : 'expanded';
+  // Compact is only for an explicit 1-line status bar, not a short HUD pane.
+  const mode: LayoutMode = height <= 0 ? 'compact' : 'expanded';
   
   return {
     mode,
-    showSeparators: false,
+    showSeparators: mode === 'expanded',
     showDuration: true,
-    showContextBreakdown: mode === 'expanded',
-    barWidth: Math.min(12, Math.floor(width / 10)),
+    showContextBar: false,
+    showContextBreakdown: false,
+    barWidth: Math.min(10, Math.max(6, Math.floor(width / 12))),
   };
 }
 
@@ -141,7 +166,7 @@ export function render(data: HudData): void {
   
   const maxLines = Math.max(1, height);
   const lines = truncateLines(
-    applyStatusHint(limitLines(renderHud(data, options), maxLines), width),
+    applyStatusHint(limitLines(renderHud(data, options), maxLines), width, maxLines),
     width
   );
   
@@ -210,10 +235,9 @@ export function renderSingleLine(data: HudData): string {
  * Output HUD to stdout without screen control
  * Used when running in a tmux pane
  */
-export function renderToStdout(data: HudData): void {
+export function renderToStdout(data: HudData, heightOverride?: number): void {
   const width = getTerminalWidth();
-  const height = getTerminalHeight();
-  const layout = createDefaultLayout(width, height);
+  const layout = createDefaultLayout(width, 2);
   const clearScrollback = process.env.CODEX_HUD_CLEAR_SCROLLBACK === '1';
   
   const options: RenderOptions = {
@@ -221,14 +245,12 @@ export function renderToStdout(data: HudData): void {
     showDetails: true,
     layout,
   };
-  
-  const maxLines = Math.max(1, height);
-  const lines = truncateLines(
-    applyStatusHint(limitLines(renderHud(data, options), maxLines), width),
-    width
-  );
 
-  const frame = `${width}x${height}\n${lines.join('\n')}`;
+  const rendered = truncateLines(renderHud(data, options), width);
+  const maxLines = Math.max(1, heightOverride ?? rendered.length);
+  const lines = applyStatusHint(limitLines(rendered, maxLines), width, maxLines);
+
+  const frame = `${width}x${maxLines}\n${lines.join('\n')}`;
   if (frame === lastStdoutFrame) {
     return;
   }

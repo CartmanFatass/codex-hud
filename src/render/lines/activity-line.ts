@@ -95,7 +95,7 @@ export function renderToolsLine(toolActivity: ToolActivity | undefined): string 
     return null;
   }
   
-  return parts.join(` ${colors.dim(icons.pipe)} `);
+  return parts.join(` ${colors.dim(icons.bar)} `);
 }
 
 /**
@@ -135,13 +135,13 @@ export function renderTodosLine(planProgress: PlanProgress | undefined): string 
     return null;
   }
   
-  return parts.join(` ${colors.dim(icons.pipe)} `);
+  return parts.join(` ${colors.dim(icons.bar)} `);
 }
 
 /**
  * Collect all activity lines (tools + todos)
  */
-function formatTokenCount(value: number): string {
+export function formatTokenCount(value: number): string {
   if (value >= 1000000) {
     return `${(value / 1000000).toFixed(1)}M`;
   }
@@ -187,70 +187,67 @@ function formatSessionId(sessionId: string): string {
   return `${sessionId.slice(0, 8)}…${sessionId.slice(-4)}`;
 }
 
-export function renderTokenLine(data: HudData): string | null {
-  const usage = data.tokenUsage?.last_token_usage ?? data.tokenUsage?.total_token_usage;
-  // Always show token line if we have any token or context data
-  if (!usage && !data.contextUsage) {
+function formatWindowLabel(minutes?: number): string {
+  if (!minutes || minutes <= 0) {
+    return '';
+  }
+  if (minutes % 1440 === 0) {
+    return `${minutes / 1440}d`;
+  }
+  if (minutes % 60 === 0) {
+    return `${minutes / 60}h`;
+  }
+  return `${minutes}m`;
+}
+
+function renderRateWindow(usedPercent: number, windowMinutes?: number, barWidth: number = 8): string {
+  const percent = Math.max(0, Math.min(100, Math.round(usedPercent)));
+  const bar = renderContextProgressBar(percent, barWidth);
+  const percentDisplay = percent >= 85
+    ? theme.error(`${percent}%`)
+    : percent >= 70
+      ? theme.warning(`${percent}%`)
+      : theme.success(`${percent}%`);
+  const windowLabel = formatWindowLabel(windowMinutes);
+  return windowLabel
+    ? `${bar} ${percentDisplay} ${colors.dim(windowLabel)}`
+    : `${bar} ${percentDisplay}`;
+}
+
+export function renderPlanQuota(data: HudData): string | null {
+  const limits = data.rateLimits;
+  if (!limits) {
     return null;
   }
 
-  const parts: string[] = [];
-  
-  // Token counts section
-  if (usage) {
-    const cachedInput = usage.cached_input_tokens ?? 0;
-    const nonCachedInput = Math.max(0, (usage.input_tokens ?? 0) - cachedInput);
+  const windows = [limits.primary, limits.secondary].filter(
+    (window): window is NonNullable<typeof window> =>
+      Boolean(window && typeof window.used_percent === 'number')
+  );
 
-    parts.push(theme.tokenCount(`Tokens: ${formatTokenCount(usage.total_tokens ?? 0)}`));
-
-    const breakdown: string[] = [];
-    if (nonCachedInput > 0) {
-      breakdown.push(`in: ${formatTokenCount(nonCachedInput)}`);
-    }
-    if (cachedInput > 0) {
-      breakdown.push(`cache: ${formatTokenCount(cachedInput)}`);
-    }
-    if (usage.output_tokens && usage.output_tokens > 0) {
-      breakdown.push(`out: ${formatTokenCount(usage.output_tokens)}`);
-    }
-
-    if (breakdown.length > 0) {
-      parts.push(colors.dim(`(${breakdown.join(', ')})`));
-    }
+  if (windows.length === 0) {
+    return null;
   }
 
-  // Context usage section with progress bar
-  const ctx = data.contextUsage;
-  if (ctx) {
-    const bar = renderContextProgressBar(ctx.percent, 12);
-    const percentDisplay = ctx.percent >= 85 
-      ? theme.error(`${ctx.percent}%`)
-      : ctx.percent >= 70 
-        ? theme.warning(`${ctx.percent}%`) 
-        : theme.success(`${ctx.percent}%`);
-    parts.push(
-      `Ctx: ${bar} ${percentDisplay} (${formatTokenCount(ctx.used)}/${formatTokenCount(ctx.total)})`
-    );
-    // Show compact count if any compactions occurred
-    if (ctx.compactCount > 0) {
-      parts.push(colors.dim(`${icons.refresh}${ctx.compactCount}`));
-    }
-  } else if (data.tokenUsage?.model_context_window && usage) {
-    const total = data.tokenUsage.model_context_window;
-    const totalTokens = usage.total_tokens ?? 0;
-    const percent = total > 0 ? Math.round((totalTokens / total) * 100) : 0;
-    const bar = renderContextProgressBar(percent, 12);
-    const percentDisplay = percent >= 85 
-      ? theme.error(`${percent}%`)
-      : percent >= 70 
-        ? theme.warning(`${percent}%`) 
-        : theme.success(`${percent}%`);
-    parts.push(
-      `Ctx: ${bar} ${percentDisplay} (${formatTokenCount(totalTokens)}/${formatTokenCount(total)})`
-    );
+  const rendered = windows.map((window) =>
+    renderRateWindow(window.used_percent ?? 0, window.window_minutes, windows.length > 1 ? 6 : 8)
+  );
+  return colors.dim('Plan: ') + rendered.join(` ${colors.dim('·')} `);
+}
+
+export function renderTokenLine(data: HudData): string | null {
+  const usage = data.tokenUsage?.total_token_usage ?? data.tokenUsage?.last_token_usage;
+  if (!usage) {
+    return null;
   }
 
-  return parts.length > 0 ? parts.join(' | ') : null;
+  const input = usage.input_tokens ?? 0;
+  const cached = usage.cached_input_tokens ?? 0;
+  const cacheRate = input > 0 ? Math.round((cached / input) * 100) : null;
+  const totalLabel = theme.tokenCount(`Tokens: ${formatTokenCount(usage.total_tokens ?? 0)}`);
+  return cacheRate === null
+    ? totalLabel
+    : `${totalLabel} ${colors.dim(`(cache ${cacheRate}%)`)}`;
 }
 
 export function renderSessionDetailLine(data: HudData): string | null {
@@ -277,18 +274,12 @@ export function renderSessionDetailLine(data: HudData): string | null {
   if (session?.id) {
     parts.push(colors.dim('Session: ') + theme.info(formatSessionId(session.id)));
   }
-  
-  // Show CLI version if available
-  if (session?.cliVersion) {
-    parts.push(colors.dim('CLI: ') + theme.value(session.cliVersion));
-  }
-  
-  // Show model provider if available
-  if (session?.modelProvider) {
+
+  if (session?.modelProvider && session.modelProvider !== 'openai') {
     parts.push(colors.dim('Provider: ') + theme.value(session.modelProvider));
   }
 
-  return parts.length > 0 ? parts.join(` ${colors.dim(icons.pipe)} `) : null;
+  return parts.length > 0 ? parts.join(` ${colors.dim(icons.bar)} `) : null;
 }
 
 export function collectActivityLines(data: HudData): string[] {

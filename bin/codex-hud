@@ -455,6 +455,9 @@ set_fixed_hud_height() {
     tmux set-option -t "$session_name" -q @codex_hud_base_height "$height"
     tmux set-option -t "$session_name" -q @codex_hud_height "$height"
     tmux set-option -t "$session_name" -q @codex_hud_focus_main "$focus_main_setting"
+    if [[ -z "$(tmux show-option -t "$session_name" -qv @codex_hud_mode)" ]]; then
+        tmux set-option -t "$session_name" -q @codex_hud_mode "single"
+    fi
     if [[ -n "$main_pane_id" ]]; then
         tmux set-option -t "$session_name" -q @codex_hud_main_pane "$main_pane_id"
     fi
@@ -518,7 +521,7 @@ cleanup() {
 resolve_hud_height() {
     local term_height="$1"
     local requested="$HUD_HEIGHT"
-    local min_height=5
+    local min_height=1
     local max_height=$((term_height - 1))
     if [[ "$max_height" -lt 1 ]]; then
         max_height=1
@@ -540,7 +543,7 @@ resolve_hud_height() {
         return 0
     fi
     
-    local desired=$((term_height / 6))
+    local desired=2
     if [[ "$desired" -lt "$min_height" ]]; then
         desired="$min_height"
     fi
@@ -756,8 +759,16 @@ EOF
         tmux set-hook -at "$SESSION_NAME" client-attached "refresh-client"
     fi
 
-    # Bind toggle key (Prefix + H) to switch HUD modes for this session
-    tmux bind-key -T prefix H run-shell "tmux if-shell -F '#{@codex_hud_pane}' 'tmux send-keys -t #{@codex_hud_pane} C-t' ''"
+    # HUD stays 2 lines. Prefix+H / Prefix+t opens a popup with the full tree.
+    # Do not bind root Ctrl+T — that belongs to Codex's transcript overlay.
+    local tree_cmd
+    local tree_cwd_escaped
+    tree_cmd="$SCRIPT_DIR/codex-hud-tree"
+    chmod +x "$tree_cmd" 2>/dev/null || true
+    tree_cwd_escaped=$(printf '%q' "$cwd")
+    tmux set-option -t "$SESSION_NAME" -q @codex_hud_cwd "$cwd"
+    tmux bind-key -T prefix H display-popup -E -w 90% -h 80% -T "Subagent tree" "CODEX_HUD_CWD=$tree_cwd_escaped node '$HUD_DIR/dist/tree-page.js'"
+    tmux bind-key -T prefix t display-popup -E -w 90% -h 80% -T "Subagent tree" "CODEX_HUD_CWD=$tree_cwd_escaped node '$HUD_DIR/dist/tree-page.js'"
 
     SESSION_CREATED="true"
 }

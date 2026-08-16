@@ -16,7 +16,97 @@ import type {
   PlanProgress,
   SessionInfo,
   TokenUsageInfo,
+  RateLimitSnapshot,
+  SubagentInfo,
+  SubagentStatus,
+  CollabAgentItem,
 } from '../types.js';
+
+function hasUsableRateWindow(snapshot: RateLimitSnapshot | null | undefined): boolean {
+  return Boolean(snapshot?.primary || snapshot?.secondary);
+}
+
+function inferSubagentStatus(state: unknown, tool?: string): SubagentStatus {
+  if (tool === 'close_agent') {
+    return 'completed';
+  }
+  if (state && typeof state === 'object') {
+    const record = state as Record<string, unknown>;
+    if (record.error || record.failed) {
+      return 'error';
+    }
+    if (record.completed) {
+      return 'completed';
+    }
+    if (record.running) {
+      return 'running';
+    }
+  }
+  if (state === 'pending_init') {
+    return 'starting';
+  }
+  if (tool === 'wait' || tool === 'spawn_agent') {
+    return 'running';
+  }
+  return 'running';
+}
+
+function applyCollabAgentItem(
+  subagents: Map<string, SubagentInfo>,
+  item: CollabAgentItem,
+  timestamp: Date
+): void {
+  const agents = item.receiver_agents ?? [];
+  const ids = agents.length > 0
+    ? agents.map((agent) => agent.thread_id).filter((id): id is string => Boolean(id))
+    : (item.receiver_thread_ids ?? []).filter(Boolean);
+
+  for (const id of ids) {
+    const listed = agents.find((agent) => agent.thread_id === id);
+    const previous = subagents.get(id);
+    const state = item.agents_states?.[id];
+    subagents.set(id, {
+      id,
+      name: listed?.agent_nickname || previous?.name || id.slice(0, 8),
+      status: inferSubagentStatus(state, item.tool),
+      startedAt: previous?.startedAt ?? timestamp,
+      model: item.model ?? previous?.model,
+    });
+  }
+}
+
+function mergeSubagents(previous: SubagentInfo[] | undefined, next: SubagentInfo[]): SubagentInfo[] {
+  const merged = new Map<string, SubagentInfo>();
+  for (const agent of previous ?? []) {
+    merged.set(agent.id, agent);
+  }
+  for (const agent of next) {
+    const existing = merged.get(agent.id);
+    merged.set(agent.id, existing ? { ...existing, ...agent, startedAt: existing.startedAt ?? agent.startedAt } : agent);
+  }
+  return [...merged.values()];
+}
+
+function mergeRateLimits(
+  previous: RateLimitSnapshot | null,
+  next: RateLimitSnapshot | null
+): RateLimitSnapshot | null {
+  if (!next) {
+    return previous;
+  }
+  if (!previous) {
+    return next;
+  }
+  if (!hasUsableRateWindow(next) && hasUsableRateWindow(previous)) {
+    return {
+      ...previous,
+      ...next,
+      primary: previous.primary,
+      secondary: previous.secondary ?? next.secondary,
+    };
+  }
+  return next;
+}
 
 function cloneSessionInfo(session: SessionInfo | null | undefined): SessionInfo | null {
   if (!session) {
@@ -38,6 +128,8 @@ export interface RolloutParseResult {
   toolActivity: ToolActivity;
   planProgress: PlanProgress | null;
   tokenUsage: TokenUsageInfo | null;
+  rateLimits: RateLimitSnapshot | null;
+  subagents: SubagentInfo[];
   // Compact event tracking
   compactCount: number;
   lastCompactTime: Date | null;
@@ -121,6 +213,8 @@ export async function parseRolloutFile(
   let sessionCollaborationMode: string | undefined;
   let planProgress: PlanProgress | null = null;
   let tokenUsage: TokenUsageInfo | null = null;
+  let rateLimits: RateLimitSnapshot | null = null;
+  const subagents = new Map<string, SubagentInfo>();
   let compactCount = 0;
   let lastCompactTime: Date | null = null;
   let lastToolActivityTime: Date | null = null;
@@ -135,6 +229,8 @@ export async function parseRolloutFile(
         toolActivity,
         planProgress,
         tokenUsage,
+        rateLimits,
+        subagents: [...subagents.values()],
         compactCount,
         lastCompactTime,
         lastToolActivityTime,
@@ -180,6 +276,8 @@ export async function parseRolloutFile(
           toolActivity,
           planProgress,
           tokenUsage,
+          rateLimits,
+          subagents: [...subagents.values()],
           compactCount,
           lastCompactTime,
           lastToolActivityTime,
@@ -216,6 +314,8 @@ export async function parseRolloutFile(
             sandboxMode: sessionSandboxMode ?? existingSession?.sandboxMode,
             collaborationMode: sessionCollaborationMode ?? existingSession?.collaborationMode,
             modelProvider: meta.model_provider,
+            parentThreadId: meta.parent_thread_id,
+            threadSource: typeof meta.thread_source === 'string' ? meta.thread_source : undefined,
             git: meta.git
               ? {
                   branch: meta.git.branch,
@@ -330,8 +430,17 @@ export async function parseRolloutFile(
               totalTodos: 0,
               lastUpdate: timestamp,
             };
-          } else if (payload.type === 'token_count' && payload.info) {
-            tokenUsage = payload.info;
+          } else if (payload.type === 'token_count') {
+            if (payload.info) {
+              tokenUsage = payload.info;
+            }
+            if (payload.rate_limits) {
+              rateLimits = mergeRateLimits(rateLimits, payload.rate_limits);
+            }
+          } else if (payload.type === 'rate_limit' && payload.rate_limits) {
+            rateLimits = mergeRateLimits(rateLimits, payload.rate_limits);
+          } else if (payload.type === 'item_completed' && payload.item?.type === 'CollabAgentToolCall') {
+            applyCollabAgentItem(subagents, payload.item, timestamp);
           } else if (payload.type === 'context_compacted') {
             // /compact command was executed - track it
             compactCount++;
@@ -479,6 +588,9 @@ export class RolloutParser {
       if (!result.tokenUsage && this.cachedResult.tokenUsage) {
         result.tokenUsage = this.cachedResult.tokenUsage;
       }
+
+      result.rateLimits = mergeRateLimits(this.cachedResult.rateLimits, result.rateLimits);
+      result.subagents = mergeSubagents(this.cachedResult.subagents, result.subagents);
     }
 
     this.cachedResult = result;

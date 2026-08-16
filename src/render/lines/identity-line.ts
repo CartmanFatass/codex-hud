@@ -4,43 +4,9 @@
  * Model name with context usage bar
  */
 
-import type { HudData, ContextUsage, LayoutConfig } from '../../types.js';
-import { theme, colors, coloredBar, coloredPercent, icons, truncate, truncateAnsi, visualLength } from '../colors.js';
+import type { HudData, LayoutConfig } from '../../types.js';
+import { theme, coloredBar, coloredPercent, truncate, truncateAnsi, visualLength } from '../colors.js';
 import { getModelDisplayName } from '../../collectors/codex-config.js';
-
-/**
- * Format token count for display (e.g., 12500 -> "12.5K")
- */
-function formatTokenCount(count: number): string {
-  if (count >= 1000000) {
-    return `${(count / 1000000).toFixed(1)}M`;
-  }
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`;
-  }
-  return count.toString();
-}
-
-/**
- * Render context breakdown (shown when usage >= 85%)
- * Format: (in: 135K, cache: 2K, ↻2)
- */
-function renderContextBreakdown(context: ContextUsage): string {
-  const parts: string[] = [];
-  
-  if (context.inputTokens > 0) {
-    parts.push(`in: ${formatTokenCount(context.inputTokens)}`);
-  }
-  if (context.cachedTokens > 0) {
-    parts.push(`cache: ${formatTokenCount(context.cachedTokens)}`);
-  }
-  // Show compact count if any compactions occurred
-  if (context.compactCount && context.compactCount > 0) {
-    parts.push(`${icons.refresh}${context.compactCount}`);
-  }
-  
-  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
-}
 
 /**
  * Render the identity line
@@ -59,34 +25,19 @@ export function renderIdentityLine(
   const showReasoningEffort = Boolean((data.session?.model ?? data.config.model) && reasoningEffort);
   const identityName = showReasoningEffort ? `${modelName} ${reasoningEffort}` : modelName;
   let contextDisplay = '';
+  const showContextBar = layout.showContextBar !== false;
 
   // Context usage bar (if available)
-  if (data.contextUsage) {
+  if (showContextBar && data.contextUsage) {
     const ctx = data.contextUsage;
-    const bar = coloredBar(ctx.percent, layout.barWidth);
-    const percentStr = coloredPercent(ctx.percent);
-    
-    contextDisplay = `${bar} ${percentStr}`;
-    
-    // Add breakdown when usage is high
-    if (layout.showContextBreakdown && ctx.percent >= 85) {
-      contextDisplay += colors.dim(renderContextBreakdown(ctx));
-    }
-    
-  } else if (data.tokenUsage?.total_token_usage) {
-    // Fallback to old token usage format
+    contextDisplay = `${coloredBar(ctx.percent, layout.barWidth)} ${coloredPercent(ctx.percent)}`;
+  } else if (showContextBar && data.tokenUsage?.total_token_usage) {
     const usage = data.tokenUsage.total_token_usage;
     const total = usage.total_tokens ?? 0;
     const contextWindow = data.tokenUsage.model_context_window;
-    
     if (contextWindow && contextWindow > 0) {
       const percent = Math.round((total / contextWindow) * 100);
-      const bar = coloredBar(percent, layout.barWidth);
-      const percentStr = coloredPercent(percent);
-      contextDisplay = `${bar} ${percentStr}`;
-    } else {
-      // Just show token count without bar
-      contextDisplay = colors.dim(`Tokens: ${formatTokenCount(total)}`);
+      contextDisplay = `${coloredBar(percent, layout.barWidth)} ${coloredPercent(percent)}`;
     }
   }
 

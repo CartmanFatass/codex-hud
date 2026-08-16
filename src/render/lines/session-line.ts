@@ -53,7 +53,7 @@ function renderCompactEnvironment(data: HudData): string {
  * Format: [Model] █████░░░░░ 45% | project git:(branch) | 1 AGENTS.md | ⏱️ 10m
  */
 export function renderSessionLine(data: HudData, layout: LayoutConfig): string {
-  const sep = ` ${colors.dim(icons.pipe)} `;
+  const sep = ` ${colors.dim(icons.bar)} `;
   const parts: string[] = [];
   
   // Identity (model + context bar)

@@ -162,6 +162,35 @@ export function padEnd(text: string, width: number): string {
 }
 
 /**
+ * Spread segments across the full width (first left, last right).
+ */
+export function spreadAcross(parts: Array<string | null | undefined>, width: number): string {
+  const items = parts.filter((part): part is string => Boolean(part && visualLength(part) > 0));
+  if (items.length === 0 || width <= 0) {
+    return '';
+  }
+  if (items.length === 1) {
+    return items[0];
+  }
+
+  const contentWidth = items.reduce((sum, item) => sum + visualLength(item), 0);
+  const gaps = items.length - 1;
+  const leftover = width - contentWidth;
+
+  if (leftover < gaps) {
+    return truncateAnsi(items.join(' '), width);
+  }
+
+  const base = Math.floor(leftover / gaps);
+  const extra = leftover % gaps;
+  let out = items[0];
+  for (let i = 1; i < items.length; i++) {
+    out += ' '.repeat(base + (i <= extra ? 1 : 0)) + items[i];
+  }
+  return out;
+}
+
+/**
  * Truncate text to specified width (accounting for ANSI codes)
  */
 export function truncate(text: string, maxWidth: number, ellipsis = '…'): string {

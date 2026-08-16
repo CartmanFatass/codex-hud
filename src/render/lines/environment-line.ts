@@ -38,7 +38,7 @@ function renderCollaborationMode(mode: string): string {
 
 function renderEffectiveMode(data: HudData): string {
   const collaborationMode = data.runtimeSession?.collaborationMode ?? data.session?.collaborationMode;
-  if (collaborationMode) {
+  if (collaborationMode && collaborationMode !== 'default') {
     return renderCollaborationMode(collaborationMode);
   }
 
@@ -115,5 +115,30 @@ export function renderEnvironmentLine(data: HudData): string | null {
     return null;
   }
   
-  return parts.join(` ${colors.dim(icons.pipe)} `);
+  return parts.join(` ${colors.dim(icons.bar)} `);
+}
+
+/**
+ * Compact labeled chips for the two-row HUD:
+ * "mode: dev · Approval: on-req · Sandbox: ws-write"
+ */
+export function renderEnvironmentCompact(data: HudData): string {
+  const parts: string[] = [];
+  parts.push(colors.dim('mode: ') + renderEffectiveMode(data));
+
+  const approvalPolicy = getApprovalPolicyDisplayValue(
+    data.runtimeSession?.approvalPolicy ?? data.session?.approvalPolicy ?? data.config.approval_policy
+  );
+  parts.push(colors.dim('Approval: ') + theme.value(approvalPolicy));
+
+  const sandboxMode = data.runtimeSession?.sandboxMode ?? data.session?.sandboxMode ?? data.config.sandbox_mode;
+  if (sandboxMode) {
+    parts.push(colors.dim('Sandbox: ') + renderSandboxMode(sandboxMode));
+  }
+
+  if (data.project.extensionsCount > 0) {
+    parts.push(colors.dim('MCP: ') + theme.info(String(data.project.extensionsCount)));
+  }
+
+  return parts.join(` ${colors.dim('·')} `);
 }

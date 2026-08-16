@@ -162,7 +162,7 @@ function findRolloutsInDir(dirPath: string): SessionFile[] {
 /**
  * Find all rollout files within the last N days
  */
-function findRolloutsInDays(maxDaysBack: number = DEFAULT_LOOKBACK_DAYS): SessionFile[] {
+export function findRolloutsInDays(maxDaysBack: number = DEFAULT_LOOKBACK_DAYS): SessionFile[] {
   const sessionsDir = getSessionsDir();
   const now = new Date();
   const rollouts: SessionFile[] = [];
@@ -475,13 +475,63 @@ export class SessionFinder {
   private checkInterval: NodeJS.Timeout | null = null;
   private targetCwd: string | null = null;
   private currentThreadId: string | null = null;
+  private targetStartTime: Date | null = null;
 
   constructor(
     targetCwd?: string,
     private onSessionChange?: (session: SessionFile | null) => void,
-    _targetStartTime?: Date | null
+    targetStartTime?: Date | null
   ) {
     this.targetCwd = targetCwd || null;
+    this.targetStartTime = targetStartTime ?? null;
+  }
+
+  private clearSession(): null {
+    if (this.currentSession || this.currentThreadId) {
+      this.currentSession = null;
+      this.currentThreadId = null;
+      this.onSessionChange?.(null);
+    }
+    return null;
+  }
+
+  private adoptSession(next: SessionFile, threadId: string): SessionFile {
+    this.currentThreadId = threadId;
+    if (!this.currentSession || this.currentSession.path !== next.path) {
+      this.currentSession = next;
+      this.onSessionChange?.(next);
+      return next;
+    }
+    this.currentSession = next;
+    return this.currentSession;
+  }
+
+  /**
+   * Codex CLI 0.147+ on WSL often writes shell snapshots without TMUX_PANE,
+   * or skips snapshots until a shell tool runs. Fall back to the newest cwd
+   * rollout created/touched around HUD start so token usage can still appear.
+   */
+  private findFallbackSession(): SessionFile | null {
+    const cwd = this.targetCwd ?? undefined;
+    const recent = findMostRecentRollout(DEFAULT_LOOKBACK_DAYS, cwd);
+    if (!recent) {
+      return null;
+    }
+
+    if (this.targetStartTime) {
+      const startMs = this.targetStartTime.getTime() - 15_000;
+      if (recent.timestamp.getTime() < startMs && recent.modifiedAt.getTime() < startMs) {
+        return null;
+      }
+      return recent;
+    }
+
+    // Standalone HUD (no pane binding) can follow the newest matching rollout.
+    if (!process.env.CODEX_HUD_MAIN_PANE) {
+      return recent;
+    }
+
+    return null;
   }
 
   /**
@@ -507,60 +557,38 @@ export class SessionFinder {
    */
   check(): SessionFile | null {
     const mainPaneId = process.env.CODEX_HUD_MAIN_PANE;
-    if (!mainPaneId) {
-      if (this.currentSession || this.currentThreadId) {
-        this.currentSession = null;
-        this.currentThreadId = null;
-        this.onSessionChange?.(null);
+    if (mainPaneId) {
+      const threadId = findThreadIdForPane(mainPaneId);
+      if (threadId) {
+        if (
+          this.currentSession &&
+          this.currentSession.sessionId === threadId &&
+          fs.existsSync(this.currentSession.path)
+        ) {
+          try {
+            const stats = fs.statSync(this.currentSession.path);
+            this.currentSession.modifiedAt = stats.mtime;
+            this.currentSession.size = stats.size;
+          } catch {
+            // ignore stat errors
+          }
+          this.currentThreadId = threadId;
+          return this.currentSession;
+        }
+
+        const next = findSessionByThreadId(threadId);
+        if (next) {
+          return this.adoptSession(next, threadId);
+        }
       }
-      return null;
     }
 
-    const threadId = findThreadIdForPane(mainPaneId);
-    if (!threadId) {
-      if (this.currentSession || this.currentThreadId) {
-        this.currentSession = null;
-        this.currentThreadId = null;
-        this.onSessionChange?.(null);
-      }
-      return null;
+    const fallback = this.findFallbackSession();
+    if (!fallback) {
+      return this.clearSession();
     }
 
-    if (
-      this.currentSession &&
-      this.currentSession.sessionId === threadId &&
-      fs.existsSync(this.currentSession.path)
-    ) {
-      try {
-        const stats = fs.statSync(this.currentSession.path);
-        this.currentSession.modifiedAt = stats.mtime;
-        this.currentSession.size = stats.size;
-      } catch {
-        // ignore stat errors
-      }
-      this.currentThreadId = threadId;
-      return this.currentSession;
-    }
-
-    this.currentThreadId = threadId;
-    const next = findSessionByThreadId(threadId);
-
-    if (!next) {
-      if (this.currentSession) {
-        this.currentSession = null;
-        this.onSessionChange?.(null);
-      }
-      return null;
-    }
-
-    if (!this.currentSession || this.currentSession.path !== next.path) {
-      this.currentSession = next;
-      this.onSessionChange?.(next);
-      return next;
-    }
-
-    this.currentSession = next;
-    return this.currentSession;
+    return this.adoptSession(fallback, fallback.sessionId);
   }
 
   /**

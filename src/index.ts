@@ -8,8 +8,9 @@ import * as fs from 'fs';
 import { collectGitStatus } from './collectors/git.js';
 import { collectProjectInfo } from './collectors/project.js';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
-import { SessionFinder, findActiveRollouts } from './collectors/session-finder.js';
-import { RolloutParser, parseRolloutFile } from './collectors/rollout.js';
+import { SessionFinder } from './collectors/session-finder.js';
+import { RolloutParser } from './collectors/rollout.js';
+import { buildSubagentTree } from './collectors/subagent-tree.js';
 import { createParseQueue } from './utils/parse-queue.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer } from './render/index.js';
@@ -19,8 +20,6 @@ import type {
   TokenUsage,
   ContextUsage,
   HudDisplayMode,
-  SessionOverview,
-  SessionOverviewItem,
   TokenUsageInfo,
 } from './types.js';
 
@@ -52,11 +51,7 @@ const HUD_SESSION_START = (() => {
 // Track if we're running
 let isRunning = true;
 
-// Display mode (single vs overview)
-let displayMode: HudDisplayMode =
-  process.env.CODEX_HUD_MODE === 'overview' ? 'overview' : 'single';
-
-const TOGGLE_KEYS = ['\u0014', 't', 'T']; // Ctrl+T or t/T
+const displayMode: HudDisplayMode = 'single';
 
 function getNonCachedInputTokens(usage: TokenUsage | undefined): number {
   if (!usage) {
@@ -148,7 +143,7 @@ const parseRolloutSafely = createParseQueue(() => rolloutParser.parse());
 /**
  * Collect all HUD data (synchronous parts)
  */
-function collectSyncData(): Omit<HudData, 'toolActivity' | 'planProgress' | 'tokenUsage' | 'session' | 'contextUsage'> {
+function collectSyncData(): Omit<HudData, 'toolActivity' | 'planProgress' | 'tokenUsage' | 'session' | 'contextUsage' | 'rateLimits' | 'subagents' | 'subagentTree'> {
   const cwd = HUD_CWD;
   const config = readCodexConfig();
 
@@ -160,60 +155,11 @@ function collectSyncData(): Omit<HudData, 'toolActivity' | 'planProgress' | 'tok
   };
 }
 
-async function collectOverviewData(): Promise<SessionOverview> {
-  const activeSessions = findActiveRollouts(60, undefined, 7);
-  const now = Date.now();
-  const activityWindowMs = 60 * 1000;
-  const sessions: SessionOverviewItem[] = [];
-
-  for (const sessionFile of activeSessions) {
-    const { result } = await parseRolloutFile(sessionFile.path, 0, 3);
-
-    const hasRecentTool =
-      result.lastToolActivityTime &&
-      now - result.lastToolActivityTime.getTime() <= activityWindowMs;
-    const hasRecentAssistant =
-      result.lastAssistantMessageTime &&
-      now - result.lastAssistantMessageTime.getTime() <= activityWindowMs;
-
-    if (!hasRecentTool && !hasRecentAssistant) {
-      continue;
-    }
-
-    const contextUsage = buildContextUsage(
-      result.tokenUsage ?? undefined,
-      result.compactCount,
-      result.lastCompactTime
-    );
-
-    sessions.push({
-      id: result.session?.id ?? sessionFile.sessionId,
-      contextUsage,
-    });
-  }
-
-  return {
-    sessions,
-    updatedAt: new Date(),
-  };
-}
-
 /**
  * Collect all HUD data including async rollout parsing
  */
 async function collectData(): Promise<HudData> {
   const syncData = collectSyncData();
-
-  if (displayMode === 'overview') {
-    const overview = await collectOverviewData();
-    const hudData: HudData = {
-      ...syncData,
-      displayMode,
-      overview,
-    };
-    cachedHudData = hudData;
-    return hudData;
-  }
 
   // Check for active session
   const session = sessionFinder.check();
@@ -237,6 +183,11 @@ async function collectData(): Promise<HudData> {
     rolloutData?.lastCompactTime
   );
 
+  const rootId = rolloutData?.session?.id ?? session?.sessionId ?? '';
+  const subagentTree = rootId
+    ? buildSubagentTree(rootId, rolloutData?.subagents ?? [])
+    : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
+
   const hudData: HudData = {
     ...syncData,
     session: rolloutData?.session ?? undefined,
@@ -245,6 +196,9 @@ async function collectData(): Promise<HudData> {
     planProgress: rolloutData?.planProgress ?? undefined,
     tokenUsage: rolloutData?.tokenUsage ?? undefined,
     contextUsage,
+    rateLimits: rolloutData?.rateLimits ?? undefined,
+    subagents: rolloutData?.subagents ?? [],
+    subagentTree,
     displayMode,
   };
 
@@ -291,14 +245,7 @@ function setupKeyListener(): void {
   if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== 'function') {
     return;
   }
-
   process.stdin.setRawMode(true);
-  process.stdin.on('data', (data: Buffer) => {
-    const input = data.toString('utf8');
-    if (TOGGLE_KEYS.some((key) => input.includes(key))) {
-      displayMode = displayMode === 'single' ? 'overview' : 'single';
-    }
-  });
 }
 
 /**

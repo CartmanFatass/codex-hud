@@ -173,6 +173,26 @@ try {
     assert.ok(resultTwo, 'expected pane two to resolve');
     assert.equal(resultTwo.path, paneTwoRollout, 'pane two should stay on its own thread');
   }
+
+  {
+    const home = makeTempCodexHome();
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-hud-cwd-'));
+    process.env.CODEX_HOME = home;
+    delete process.env.CODEX_SESSIONS_PATH;
+    process.env.CODEX_HUD_MAIN_PANE = '%70';
+
+    const sessionId = '01a00bab-efc9-7743-8345-bd546f862e10';
+    const rollout = writeRollout(home, {
+      sessionId,
+      cwd,
+      modifiedAt: new Date(),
+    });
+
+    const finder = new SessionFinder(cwd, undefined, new Date());
+    const resolved = finder.check();
+    assert.ok(resolved, 'expected cwd fallback when snapshots have no TMUX_PANE');
+    assert.equal(resolved.path, rollout, 'fallback should follow the newest cwd rollout after HUD start');
+  }
 } finally {
   if (originalCodexHome === undefined) {
     delete process.env.CODEX_HOME;

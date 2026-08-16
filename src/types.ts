@@ -89,7 +89,7 @@ export interface ContextUsage {
 // Display Mode (Single vs Overview)
 // ============================================================================
 
-export type HudDisplayMode = 'single' | 'overview';
+export type HudDisplayMode = 'single' | 'tree' | 'overview';
 
 export interface SessionOverviewItem {
   id: string;
@@ -144,7 +144,10 @@ export interface SessionMetaPayload {
   originator: string;
   cli_version: string;
   instructions?: string;
-  source?: string;
+  source?: string | Record<string, unknown>;
+  thread_source?: string;
+  parent_thread_id?: string;
+  agent_nickname?: string;
   model_provider?: string;
   git?: {
     commit_hash?: string;
@@ -183,11 +186,13 @@ export interface EventMsgPayload {
     | 'context_compacted'
     | 'turn_started'
     | 'task_started'
+    | 'item_completed'
     | 'other';
   explanation?: string;
   plan?: PlanStep[];
   info?: TokenUsageInfo;
   rate_limits?: RateLimitSnapshot;
+  item?: CollabAgentItem;
   // For context_compacted events
   compacted_items?: CompactedItem[];
   summary?: string;
@@ -239,7 +244,41 @@ export interface TokenUsage {
   total_tokens?: number;
 }
 
+export interface CollabAgentItem {
+  type?: string;
+  tool?: string;
+  status?: string;
+  model?: string;
+  prompt?: string;
+  receiver_thread_ids?: string[];
+  receiver_agents?: Array<{
+    thread_id?: string;
+    agent_nickname?: string;
+  }>;
+  agents_states?: Record<string, unknown>;
+}
+
+export interface RateLimitWindow {
+  used_percent?: number;
+  window_minutes?: number;
+  resets_at?: number;
+}
+
+export interface RateLimitCredits {
+  has_credits?: boolean;
+  unlimited?: boolean;
+  balance?: string;
+}
+
 export interface RateLimitSnapshot {
+  limit_id?: string;
+  limit_name?: string | null;
+  primary?: RateLimitWindow | null;
+  secondary?: RateLimitWindow | null;
+  credits?: RateLimitCredits | null;
+  plan_type?: string | null;
+  rate_limit_reached_type?: string | null;
+  // Legacy fields kept for older rollouts
   requests_remaining?: number;
   tokens_remaining?: number;
   reset_time?: string;
@@ -289,6 +328,32 @@ export interface AgentActivity {
   lastUpdateTime: Date;
 }
 
+export type SubagentStatus = 'starting' | 'running' | 'completed' | 'error';
+
+export interface SubagentInfo {
+  id: string;
+  name: string;
+  status: SubagentStatus;
+  startedAt?: Date;
+  model?: string;
+}
+
+export interface SubagentTreeNode {
+  id: string;
+  name: string;
+  status: SubagentStatus;
+  startedAt?: Date;
+  depth: number;
+  children: SubagentTreeNode[];
+}
+
+export interface SubagentTree {
+  rootId: string;
+  nodes: SubagentTreeNode[];
+  totalCount: number;
+  updatedAt: Date;
+}
+
 // ============================================================================
 // Todo/Plan Progress
 // ============================================================================
@@ -329,6 +394,8 @@ export interface SessionInfo {
   sandboxMode?: string;
   collaborationMode?: string;
   modelProvider?: string;
+  parentThreadId?: string;
+  threadSource?: string;
   git?: {
     branch?: string;
     commitHash?: string;
@@ -353,6 +420,8 @@ export interface HudData {
   // Context/token usage
   contextUsage?: ContextUsage;
   tokenUsage?: TokenUsageInfo;
+  rateLimits?: RateLimitSnapshot;
+  subagents?: SubagentInfo[];
   
   // Activity tracking
   toolActivity?: ToolActivity;
@@ -362,6 +431,7 @@ export interface HudData {
   // Display mode and overview data
   displayMode?: HudDisplayMode;
   overview?: SessionOverview;
+  subagentTree?: SubagentTree;
 }
 
 // ============================================================================
@@ -376,8 +446,9 @@ export interface RenderOptions {
 
 export const DEFAULT_LAYOUT: LayoutConfig = {
   mode: 'expanded',
-  showSeparators: false,
+  showSeparators: true,
   showDuration: true,
-  showContextBreakdown: true,
+  showContextBar: false,
+  showContextBreakdown: false,
   barWidth: 10,
 };
