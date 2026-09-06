@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { buildSubagentTree, resetSubagentLinkCache } from '../../dist/collectors/subagent-tree.js';
 import { RolloutParser } from '../../dist/collectors/rollout.js';
+import { visualLength } from '../../dist/render/colors.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { renderHud } from '../../dist/render/header.js';
 import { renderSubagentTreePage } from '../../dist/render/subagent-tree-view.js';
@@ -324,15 +325,23 @@ try {
   assert.ok(scoutLine, 'grandchild line exists');
   assert.match(scoutLine, /│\s+└─ .*Scout/, 'nested agents are indented under their parent');
 
-  // Side-panel mode: every line clamps to the pane width.
+  // Side-panel mode: every line clamps to the pane width, measured in
+  // terminal columns so CJK nicknames cannot overflow.
   const narrowWidth = 32;
   const narrow = renderSubagentTreePage(withSiblings, narrowWidth).map(stripAnsi);
   assert.ok(narrow.length > 0, 'panel render produces lines');
   for (const line of narrow) {
     assert.ok(
-      line.length <= narrowWidth,
-      `panel line must fit the pane width (${line.length} > ${narrowWidth}): ${line}`
+      visualLength(line) <= narrowWidth,
+      `panel line must fit the pane width (${visualLength(line)} > ${narrowWidth}): ${line}`
     );
+  }
+  const cjkTree = buildSubagentTree(root, [
+    { id: child, name: '中文测试昵称', status: 'running' },
+  ], 3, Date.now());
+  const cjkPanel = renderSubagentTreePage(cjkTree, 20).map((line) => line).map(visualLength);
+  for (const width of cjkPanel) {
+    assert.ok(width <= 20, `CJK panel line must fit 20 columns, got ${width}`);
   }
 
   // Link cache: appending bytes must not invalidate the parsed first line,
@@ -416,6 +425,33 @@ try {
   assert.ok(
     sameTree.nodes.some((node) => node.name === 'AlpHa'),
     'same-size rewrite with an advanced mtime must re-peek'
+  );
+  resetSubagentLinkCache();
+
+  // Truly same-signature rewrites (size, mtime, inode all identical) are
+  // invisible to stat; the scheduled revalidation must catch them once the
+  // entry verification ages past the interval.
+  const home3 = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-hud-stealth-'));
+  process.env.CODEX_HOME = home3;
+  const stealthRoot = '03a00bd0-0000-4000-8000-000000000001';
+  const stealthId = '03a00bd0-0000-4000-8000-000000000002';
+  writeRollout(home3, { id: stealthRoot, parentId: null, nickname: null });
+  const stealthPath = writeRollout(home3, { id: stealthId, parentId: stealthRoot, nickname: 'GhostA' });
+  buildSubagentTree(stealthRoot, [], 3, Date.now()); // verifies content now
+  const beforeStats = fs.statSync(stealthPath);
+  writeRollout(home3, { id: stealthId, parentId: stealthRoot, nickname: 'GhostB' }); // equal byte length
+  assert.equal(fs.statSync(stealthPath).size, beforeStats.size, 'stealth rewrite keeps the size');
+  fs.utimesSync(stealthPath, beforeStats.atime, beforeStats.mtime); // restore the mtime too
+  const immediate = buildSubagentTree(stealthRoot, [], 3, Date.now());
+  assert.ok(
+    immediate.nodes.some((node) => node.name === 'GhostA'),
+    'an unchanged signature keeps the cached link before revalidation comes due'
+  );
+  const revalidated = buildSubagentTree(stealthRoot, [], 3, Date.now() + 31_000);
+  process.env.CODEX_HOME = home;
+  assert.ok(
+    revalidated.nodes.some((node) => node.name === 'GhostB'),
+    'scheduled revalidation catches same-signature rewrites'
   );
   resetSubagentLinkCache();
 

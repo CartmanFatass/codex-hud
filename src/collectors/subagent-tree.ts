@@ -16,9 +16,19 @@ interface CachedLink {
   size: number;
   mtimeMs: number;
   ino?: number;
+  // Last time the first line was actually read for this entry. Stat signatures
+  // cannot detect same-signature rewrites, so entries older than
+  // REVALIDATE_INTERVAL_MS get re-peeked (bounded per tick) to bound how long
+  // a stale link can survive.
+  verifiedAt: number;
 }
 
 const linkCache = new Map<string, CachedLink>();
+
+// Bound the staleness window of stat-only caching: re-peek at most this many
+// known files per build call, oldest verification first.
+const REPEEK_BUDGET_PER_TICK = 2;
+const REVALIDATE_INTERVAL_MS = 30_000;
 
 export function resetSubagentLinkCache(): void {
   linkCache.clear();
@@ -289,6 +299,25 @@ export function buildSubagentTree(
 
   const files = findRolloutsInDays(maxDaysBack);
   const seen = new Set<string>();
+  // Same-signature rewrites are invisible to stat; force a re-read of entries
+  // whose content has not been verified recently, oldest verification first,
+  // bounded per tick.
+  const revalidatePaths = new Set<string>();
+  {
+    const staleCandidates: Array<{ path: string; verifiedAt: number }> = [];
+    for (const [entryPath, entry] of linkCache) {
+      if (nowMs - entry.verifiedAt > REVALIDATE_INTERVAL_MS) {
+        staleCandidates.push({ path: entryPath, verifiedAt: entry.verifiedAt });
+      }
+    }
+    staleCandidates.sort((a, b) => a.verifiedAt - b.verifiedAt);
+    for (const candidate of staleCandidates) {
+      if (revalidatePaths.size >= REPEEK_BUDGET_PER_TICK) {
+        break;
+      }
+      revalidatePaths.add(candidate.path);
+    }
+  }
   for (const file of files) {
     seen.add(file.path);
     const modifiedMs = file.modifiedAt.getTime();
@@ -304,9 +333,6 @@ export function buildSubagentTree(
     // Append-only growth keeps the first line intact, so the cached metadata
     // stays valid. Anything else (shrink, same-size rewrite with a newer
     // mtime, inode replacement, or a previously failed peek) re-peeks.
-    // Known limits: a truncate-and-regrow that lands at or above the last
-    // observed size still looks like an append, and a same-signature rewrite
-    // is undetectable from stat alone.
     const appended = Boolean(
       cached &&
         cached.link &&
@@ -314,8 +340,9 @@ export function buildSubagentTree(
         cached.mtimeMs <= modifiedMs &&
         (cached.ino === undefined || file.ino === undefined || cached.ino === file.ino)
     );
+    const revalidate = revalidatePaths.has(file.path);
 
-    if (cached && cached.link && (unchanged || appended)) {
+    if (cached && cached.link && (unchanged || appended) && !revalidate) {
       link = cached.link;
       link.modifiedAt = file.modifiedAt;
       // Track the latest observation so later shrinks are detected against
@@ -323,15 +350,21 @@ export function buildSubagentTree(
       cached.size = file.size;
       cached.mtimeMs = modifiedMs;
       cached.ino = file.ino ?? cached.ino;
-    } else if (cached && !cached.link && unchanged) {
+    } else if (cached && !cached.link && unchanged && !revalidate) {
       // Negative cache: the file has not changed since the last failed peek,
       // so there is nothing new to read yet.
       link = null;
     } else {
-      // First sight, previously failed peek with new bytes, shrink, or
-      // same-size rewrite: read the first line again.
+      // First sight, previously failed peek with new bytes, shrink, same-size
+      // rewrite, or a scheduled revalidation: read the first line again.
       link = peekSessionLink(file.path, file.modifiedAt);
-      linkCache.set(file.path, { link, size: file.size, mtimeMs: modifiedMs, ino: file.ino });
+      linkCache.set(file.path, {
+        link,
+        size: file.size,
+        mtimeMs: modifiedMs,
+        ino: file.ino,
+        verifiedAt: nowMs,
+      });
     }
     if (!link) {
       continue;

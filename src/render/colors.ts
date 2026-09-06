@@ -145,11 +145,83 @@ export function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
+// Terminal display width per code point (wcwidth-style, pragmatic subset of
+// Unicode East Asian Width): wide CJK blocks, Hangul, and emoji pictographs
+// occupy 2 columns; combining marks and zero-width code points occupy 0;
+// everything else 1. "Ambiguous"-width characters count as 1 column.
+const ZERO_WIDTH_RANGES: Array<[number, number]> = [
+  [0x0300, 0x036f], // Combining Diacritical Marks
+  [0x200b, 0x200f], // Zero-width space/joiners and directional marks
+  [0x20d0, 0x20f0], // Combining Marks for Symbols
+  [0xfe00, 0xfe0f], // Variation Selectors
+  [0xfeff, 0xfeff], // BOM
+];
+
+const WIDE_RANGES: Array<[number, number]> = [
+  [0x1100, 0x115f], // Hangul Jamo
+  [0x2e80, 0x303e], // CJK Radicals .. CJK Symbols and Punctuation
+  [0x3041, 0x33ff], // Hiragana .. CJK Compatibility
+  [0x3400, 0x4dbf], // CJK Extension A
+  [0x4e00, 0x9fff], // CJK Unified Ideographs
+  [0xa000, 0xa4cf], // Yi Syllables
+  [0xa960, 0xa97f], // Hangul Jamo Extended-A
+  [0xac00, 0xd7a3], // Hangul Syllables
+  [0xf900, 0xfaff], // CJK Compatibility Ideographs
+  [0xfe10, 0xfe19], // Vertical Forms
+  [0xfe30, 0xfe6f], // CJK Compatibility Forms
+  [0xff00, 0xff60], // Fullwidth Forms
+  [0xffe0, 0xffe6], // Fullwidth Signs
+  [0x1f300, 0x1f64f], // Emoji Pictographs
+  [0x1f900, 0x1f9ff], // Supplemental Symbols and Pictographs
+  [0x20000, 0x2fffd], // CJK Extension B
+  [0x30000, 0x3fffd], // CJK Extension G
+];
+
+function codePointWidth(codePoint: number): number {
+  for (const [lo, hi] of ZERO_WIDTH_RANGES) {
+    if (codePoint >= lo && codePoint <= hi) {
+      return 0;
+    }
+  }
+  for (const [lo, hi] of WIDE_RANGES) {
+    if (codePoint >= lo && codePoint <= hi) {
+      return 2;
+    }
+  }
+  return 1;
+}
+
 /**
- * Get visual length of text (excluding ANSI codes)
+ * Get the display width of text in terminal columns, excluding ANSI SGR
+ * sequences. East Asian wide characters and emoji count as 2 columns and
+ * combining marks as 0, so CJK nicknames no longer overflow padded or
+ * truncated panel lines.
+ */
+export function visualWidth(text: string): number {
+  let width = 0;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === '\x1b' && text[i + 1] === '[') {
+      const end = text.indexOf('m', i + 2);
+      if (end === -1) {
+        break;
+      }
+      i = end + 1;
+      continue;
+    }
+    const codePoint = text.codePointAt(i) ?? 0;
+    width += codePointWidth(codePoint);
+    i += codePoint > 0xffff ? 2 : 1;
+  }
+  return width;
+}
+
+/**
+ * Get visual length of text in terminal columns (excluding ANSI codes).
  */
 export function visualLength(text: string): number {
-  return stripAnsi(text).length;
+  return visualWidth(text);
 }
 
 /**
@@ -200,13 +272,16 @@ export function truncate(text: string, maxWidth: number, ellipsis = '…'): stri
 }
 
 /**
- * Truncate text to a visual width while preserving ANSI sequences.
+ * Truncate text to a visual column width while preserving ANSI sequences.
+ * Never splits a wide character: the result is at most maxWidth columns
+ * including the ellipsis.
  */
 export function truncateAnsi(text: string, maxWidth: number, ellipsis = '…'): string {
   if (maxWidth <= 0) return '';
-  if (visualLength(text) <= maxWidth) return text;
+  if (visualWidth(text) <= maxWidth) return text;
 
-  const limit = Math.max(0, maxWidth - ellipsis.length);
+  const ellipsisWidth = codePointWidth(ellipsis.codePointAt(0) ?? 0);
+  const limit = Math.max(0, maxWidth - ellipsisWidth);
   let out = '';
   let visible = 0;
   let i = 0;
@@ -224,9 +299,15 @@ export function truncateAnsi(text: string, maxWidth: number, ellipsis = '…'): 
       i = end + 1;
       continue;
     }
-    out += ch;
-    visible += 1;
-    i += 1;
+    const codePoint = text.codePointAt(i) ?? 0;
+    const charWidth = codePointWidth(codePoint);
+    if (visible + charWidth > limit) {
+      break;
+    }
+    const size = codePoint > 0xffff ? 2 : 1;
+    out += text.slice(i, i + size);
+    visible += charWidth;
+    i += size;
   }
 
   const truncated = out + ellipsis;
