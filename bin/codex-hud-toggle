@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-# Toggle HUD collapsed (2 lines) vs expanded tree (7 lines).
-# Invoked from tmux keybinds so Codex-pane focus still works.
+# Toggle the HUD layout between the bottom rows HUD (single) and the fixed
+# right-side subagent tree panel (tree). Invoked from tmux keybinds so
+# Codex-pane focus still works.
+#
+# The two forms are mutually exclusive: entering tree mode kills the bottom
+# HUD pane; leaving tree mode kills the side panel and recreates the bottom
+# HUD pane with the same pane binding environment.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HUD_DIR="$(dirname "$SCRIPT_DIR")"
 
 session_name="${1:-}"
 if [[ -z "$session_name" ]]; then
@@ -12,21 +20,44 @@ if [[ -z "$session_name" ]]; then
   exit 0
 fi
 
-pane=$(tmux show-option -t "$session_name" -qv @codex_hud_pane)
-if [[ -z "$pane" ]]; then
-  exit 0
-fi
+get_opt() {
+  tmux show-option -t "$session_name" -qv "$1" 2>/dev/null || true
+}
 
-mode=$(tmux show-option -t "$session_name" -qv @codex_hud_mode)
+mode=$(get_opt @codex_hud_mode)
+mode=${mode:-single}
+cwd=$(get_opt @codex_hud_cwd)
+main_pane=$(get_opt @codex_hud_main_pane)
+hud_pane=$(get_opt @codex_hud_pane)
+tree_pane=$(get_opt @codex_hud_tree_pane)
+hud_height=$(get_opt @codex_hud_height)
+hud_height=${hud_height:-2}
+cwd_q=$(printf '%q' "$cwd")
+
 if [[ "$mode" == "tree" ]]; then
-  next_mode="single"
-  next_height=2
+  # tree -> single: drop the side panel, bring back the bottom HUD rows.
+  if [[ -n "$tree_pane" ]]; then
+    tmux kill-pane -t "$tree_pane" 2>/dev/null || true
+  fi
+  if [[ -n "$main_pane" ]]; then
+    new_hud=$(tmux split-window -v -l "$hud_height" -t "$main_pane" -d -P -F '#{pane_id}' \
+      "env CODEX_HUD_CWD=$cwd_q CODEX_HUD_MAIN_PANE='$main_pane' node '$HUD_DIR/dist/index.js'")
+    tmux set-option -t "$session_name" @codex_hud_pane "$new_hud"
+    tmux select-pane -t "$main_pane" 2>/dev/null || true
+  fi
+  tmux set-option -t "$session_name" @codex_hud_mode "single"
+  tmux set-option -t "$session_name" @codex_hud_tree_pane ""
 else
-  next_mode="tree"
-  next_height=7
+  # single -> tree: open the fixed right-side panel, then remove the bottom HUD.
+  if [[ -z "$main_pane" ]]; then
+    exit 0
+  fi
+  new_tree=$(tmux split-window -h -p 30 -t "$main_pane" -d -P -F '#{pane_id}' \
+    "env CODEX_HUD_CWD=$cwd_q node '$HUD_DIR/dist/tree-page.js'") || exit 0
+  tmux set-option -t "$session_name" @codex_hud_tree_pane "$new_tree"
+  tmux set-option -t "$session_name" -q @codex_hud_mode "tree"
+  if [[ -n "$hud_pane" ]]; then
+    tmux kill-pane -t "$hud_pane" 2>/dev/null || true
+  fi
+  tmux select-pane -t "$main_pane" 2>/dev/null || true
 fi
-
-tmux set-option -t "$session_name" -q @codex_hud_mode "$next_mode"
-tmux set-option -t "$session_name" -q @codex_hud_height "$next_height"
-tmux set-option -t "$session_name" -q @codex_hud_base_height "$next_height"
-tmux resize-pane -t "$pane" -y "$next_height" 2>/dev/null || true

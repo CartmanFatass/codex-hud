@@ -9,6 +9,9 @@ import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 
+// Minimum gap between expensive fallback session scans (30-day dir walk).
+const FALLBACK_RESCAN_MS = 2000;
+
 export interface SessionFile {
   path: string;
   sessionId: string;
@@ -476,6 +479,9 @@ export class SessionFinder {
   private targetCwd: string | null = null;
   private currentThreadId: string | null = null;
   private targetStartTime: Date | null = null;
+  // The fallback scan walks up to 30 days of session dirs; throttle it so a
+  // standalone HUD (no pane binding) does not repeat the walk every tick.
+  private lastFallbackScanMs = 0;
 
   constructor(
     targetCwd?: string,
@@ -583,7 +589,25 @@ export class SessionFinder {
       }
     }
 
+    const fallbackScanFresh = Date.now() - this.lastFallbackScanMs < FALLBACK_RESCAN_MS;
+    if (fallbackScanFresh) {
+      if (
+        this.currentSession &&
+        fs.existsSync(this.currentSession.path)
+      ) {
+        try {
+          const stats = fs.statSync(this.currentSession.path);
+          this.currentSession.modifiedAt = stats.mtime;
+          this.currentSession.size = stats.size;
+        } catch {
+          // ignore stat errors
+        }
+      }
+      return this.currentSession;
+    }
+
     const fallback = this.findFallbackSession();
+    this.lastFallbackScanMs = Date.now();
     if (!fallback) {
       return this.clearSession();
     }

@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { buildSubagentTree } from '../../dist/collectors/subagent-tree.js';
+import { buildSubagentTree, resetSubagentLinkCache } from '../../dist/collectors/subagent-tree.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { renderHud } from '../../dist/render/header.js';
 import { renderSubagentTreePage } from '../../dist/render/subagent-tree-view.js';
+import { commFrame, renderSubagentChip } from '../../dist/render/subagent-chip.js';
 
 function todayParts() {
   const now = new Date();
@@ -18,22 +19,21 @@ function todayParts() {
   };
 }
 
-function writeRollout(home, { id, parentId, nickname }) {
+function writeRollout(home, { id, parentId, nickname, model, effort }) {
   const { year, month, day, stamp } = todayParts();
   const dir = path.join(home, 'sessions', year, month, day);
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `rollout-${stamp}-${id}.jsonl`);
-  const source = parentId
+  const spawn = parentId
     ? {
-        subagent: {
-          thread_spawn: {
-            parent_thread_id: parentId,
-            depth: parentId ? 1 : 0,
-            agent_nickname: nickname,
-          },
-        },
+        parent_thread_id: parentId,
+        depth: 1,
+        agent_nickname: nickname,
+        model,
+        effort,
       }
-    : 'cli';
+    : undefined;
+  const source = spawn ? { subagent: { thread_spawn: spawn } } : 'cli';
   fs.writeFileSync(
     filePath,
     `${JSON.stringify({
@@ -67,7 +67,7 @@ try {
   const child = '01a00bd0-0000-4000-8000-000000000002';
   const grand = '01a00bd0-0000-4000-8000-000000000003';
   writeRollout(home, { id: root, parentId: null, nickname: null });
-  writeRollout(home, { id: child, parentId: root, nickname: 'Gauss' });
+  const childPath = writeRollout(home, { id: child, parentId: root, nickname: 'Gauss' });
   writeRollout(home, { id: grand, parentId: child, nickname: 'Scout' });
 
   const tree = buildSubagentTree(root, [], 3, Date.now());
@@ -81,6 +81,15 @@ try {
   writeRollout(home, { id: sibling, parentId: root, nickname: 'Singer' });
   const withSiblings = buildSubagentTree(root, [], 3, Date.now());
   assert.equal(withSiblings.nodes.length, 2, 'two first-level children should share depth 1');
+
+  // Chips surface each agent's model and reasoning effort from session_meta.
+  const modeled = '01a00bd0-0000-4000-8000-000000000005';
+  writeRollout(home, { id: modeled, parentId: root, nickname: 'Oracle', model: 'gpt-5.3', effort: 'xhigh' });
+  const withModel = buildSubagentTree(root, [], 3, Date.now());
+  const oracleNode = withModel.nodes.find((node) => node.name === 'Oracle');
+  assert.ok(oracleNode, 'newly spawned agent should appear in the tree');
+  assert.equal(oracleNode.model, 'gpt-5.3', 'node should carry the spawned model');
+  assert.equal(oracleNode.effort, 'xhigh', 'node should carry the spawned effort');
 
   const lines = renderHud(
     {
@@ -127,7 +136,7 @@ try {
     { width: 160, showDetails: true }
   ).map(stripAnsi);
 
-  assert.equal(lines.length, 2, 'collapsed mode shows header plus first-level row only');
+  assert.equal(lines.length, 3, 'header plus one row per active level');
   assert.match(lines[0], /Ctx/);
   assert.match(lines[0], /\(50\.2K\/128\.0K\)/);
   assert.match(lines[0], /↻2/);
@@ -140,22 +149,178 @@ try {
   assert.doesNotMatch(lines[0], /~/);
   assert.match(lines[1], /Gauss/);
   assert.match(lines[1], /Singer/);
-  assert.match(lines[1], /▾/, 'collapsed first-level parents hint that a tree exists');
-  assert.doesNotMatch(lines.join('\n'), /Scout/, 'collapsed mode hides nested subagents');
+  assert.doesNotMatch(lines[1], /Scout/, 'depth-2 agents move to their own row');
   const gaussAt = lines[1].indexOf('Gauss');
   const singerAt = lines[1].indexOf('Singer');
   assert.ok(singerAt > gaussAt, 'Singer should sit to the right of Gauss');
   assert.ok(
     singerAt - gaussAt < 40,
-    `two trees should use 6-slot columns, not stretch across the row (gap=${singerAt - gaussAt})`
+    `two lineages should sit compactly side by side, not stretch across the row (gap=${singerAt - gaussAt})`
   );
+  assert.match(lines[2], /└─ .*Scout/, 'depth-2 row carries the tree connector');
+  assert.ok(
+    lines[2].indexOf('Scout') < singerAt,
+    'the child region aligns under its own depth-1 ancestor'
+  );
+
+  const hudDataFor = (tree) => ({
+    config: {},
+    git: {
+      branch: null,
+      isDirty: false,
+      isGitRepo: false,
+      ahead: 0,
+      behind: 0,
+      modified: 0,
+      added: 0,
+      deleted: 0,
+      untracked: 0,
+    },
+    project: {
+      cwd: '/tmp',
+      projectName: 'tmp',
+      agentsMdCount: 0,
+      hasCodexDir: false,
+      instructionsMdCount: 0,
+      rulesCount: 0,
+      mcpCount: 0,
+      configsCount: 0,
+      extensionsCount: 0,
+      workMode: 'development',
+    },
+    sessionStart: new Date(),
+    displayMode: 'single',
+    subagentTree: tree,
+  });
+
+  // A lone agent must not reserve phantom column slots; the row ends at its chip.
+  const home2 = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-hud-tree-lone-'));
+  process.env.CODEX_HOME = home2;
+  const loneRoot = '02a00bd0-0000-4000-8000-000000000001';
+  const loneChild = '02a00bd0-0000-4000-8000-000000000002';
+  writeRollout(home2, { id: loneRoot, parentId: null, nickname: null });
+  writeRollout(home2, { id: loneChild, parentId: loneRoot, nickname: 'Solo' });
+  const loneRow = renderHud(
+    hudDataFor(buildSubagentTree(loneRoot, [], 3, Date.now())),
+    { width: 160, showDetails: true }
+  ).map(stripAnsi);
+  process.env.CODEX_HOME = home;
+  const soloLine = loneRow[1] ?? '';
+  assert.match(soloLine, /Solo/);
+  assert.ok(
+    soloLine.length < 40,
+    `lone agent row should end at its chip, got ${soloLine.length} chars`
+  );
+
+  // Model/effort chips: render a tree whose nodes carry model info.
+  const modelRow = renderHud(hudDataFor(withModel), { width: 160, showDetails: true }).map(stripAnsi);
+  assert.match(modelRow[1] ?? '', /gpt-5\.3·xhigh/, 'chip should show model and effort');
+
+  // Fresh main<->agent traffic pulses the chip with the animated ⇄/⇆ marker.
+  const commTree = buildSubagentTree(root, [
+    { id: child, name: 'Gauss', status: 'running', lastActivityAt: new Date() },
+  ], 3, Date.now());
+  const commRow = renderHud(hudDataFor(commTree), { width: 160, showDetails: true }).map(stripAnsi);
+  const commLine = commRow[1] ?? '';
+  const marker = commLine.match(/[⇄⇆]/)?.[0];
+  assert.ok(marker !== undefined, 'recent traffic should render the ⇄/⇆ marker');
+  assert.ok(commLine.slice(commLine.indexOf(marker)).includes('Gauss'), 'the marker should sit on the active agent');
+
+  // Only the traffic marker animates: the traffic glyph flips on a fixed
+  // cadence, while a running chip is byte-identical at any point in time.
+  assert.equal(commFrame(0), '⇄');
+  assert.equal(commFrame(250), '⇆');
+  assert.equal(commFrame(500), '⇄', 'traffic marker cycles every 2 frames');
+  const runningNode = { id: child, name: 'Gauss', status: 'running', depth: 1, children: [] };
+  assert.equal(
+    renderSubagentChip(runningNode, { nowMs: 1000 }),
+    renderSubagentChip(runningNode, { nowMs: 999_137_250 }),
+    'running chips must be static (icon + color only, no animation)'
+  );
+
+  // Active-level rows: depth cap at 3, inactive branches hidden, completed
+  // ancestors kept as lineage anchors, same depth always on the same row.
+  const mk = (id, name, status, children = []) => ({ id, name, status, depth: 0, children });
+  const synthetic = {
+    rootId: 'root',
+    nodes: [
+      mk('a1', 'Gauss', 'running', [
+        mk('d2', 'Scout', 'running', [mk('d3', 'Tracker', 'running', [mk('d4', 'Deep4', 'running')])]),
+        mk('x2', 'Idle', 'completed'),
+        mk('d2b', 'Digger', 'running'),
+      ]),
+      mk('a2', 'Singer', 'completed', [mk('c2', 'Echo', 'running')]),
+      mk('a3', 'Hibern', 'completed', [mk('c3', 'AlsoIdle', 'completed')]),
+    ],
+    totalCount: 8,
+    updatedAt: new Date(),
+  };
+  const capLines = renderHud(hudDataFor(synthetic), { width: 160, showDetails: true }).map(stripAnsi);
+  assert.equal(capLines.length, 4, 'header plus three active levels');
+  assert.match(capLines[1], /Gauss/);
+  assert.match(capLines[1], /Singer/, 'completed root stays as lineage anchor for its active child');
+  assert.doesNotMatch(capLines[1], /Hibern/, 'fully inactive roots are hidden');
+  assert.doesNotMatch(capLines.join('\n'), /Deep4/, 'display depth is capped at 3 levels');
+  assert.match(capLines[2], /Scout/);
+  assert.match(capLines[2], /Digger/);
+  assert.match(capLines[2], /Echo/, 'same-level agents share one row');
+  assert.doesNotMatch(capLines[2], /Idle/, 'inactive children are hidden');
+  assert.match(capLines[3], /Tracker/);
+  assert.match(capLines[3], /│\s+└─ .*Tracker/, 'deeper rows keep tree connectors');
+  const scoutAt = capLines[2].indexOf('Scout');
+  const diggerAt = capLines[2].indexOf('Digger');
+  const echoAt = capLines[2].indexOf('Echo');
+  assert.ok(scoutAt < diggerAt && diggerAt < echoAt, 'entries order by lineage on the shared row');
 
   const page = renderSubagentTreePage(withSiblings).map(stripAnsi).join('\n');
   assert.match(page, /Subagent tree/);
+  assert.match(page, /● main session · 01a00bd0/, 'popup should anchor the tree at the main session');
   assert.match(page, /Gauss/);
   assert.match(page, /Singer/);
   assert.match(page, /Scout/);
   assert.match(page, /└─|├─/);
+  assert.match(page, /⇄\/⇆ main<->agent traffic/, 'popup should explain the traffic marker');
+  const scoutLine = page.split('\n').find((line) => line.includes('Scout'));
+  assert.ok(scoutLine, 'grandchild line exists');
+  assert.match(scoutLine, /│\s+└─ .*Scout/, 'nested agents are indented under their parent');
+
+  // Side-panel mode: every line clamps to the pane width.
+  const narrowWidth = 32;
+  const narrow = renderSubagentTreePage(withSiblings, narrowWidth).map(stripAnsi);
+  assert.ok(narrow.length > 0, 'panel render produces lines');
+  for (const line of narrow) {
+    assert.ok(
+      line.length <= narrowWidth,
+      `panel line must fit the pane width (${line.length} > ${narrowWidth}): ${line}`
+    );
+  }
+
+  // Link cache: appending bytes must not invalidate the parsed first line,
+  // while a shrink (truncation/rotation rewrite) must re-peek it.
+  resetSubagentLinkCache();
+  buildSubagentTree(root, [], 3, Date.now()); // warm the cache
+  fs.appendFileSync(childPath, `${JSON.stringify({ type: 'event_msg' })}\n`);
+  const afterAppend = buildSubagentTree(root, [], 3, Date.now());
+  assert.equal(afterAppend.nodes[0].name, 'Gauss', 'append keeps the cached session_meta');
+  const renamed = {
+    timestamp: new Date().toISOString(),
+    type: 'session_meta',
+    payload: {
+      id: child,
+      parent_thread_id: root,
+      agent_nickname: 'Renamed',
+      timestamp: new Date().toISOString(),
+      source: 'cli',
+    },
+  };
+  fs.writeFileSync(childPath, `${JSON.stringify(renamed)}\n`);
+  const afterTruncate = buildSubagentTree(root, [], 3, Date.now());
+  assert.equal(
+    afterTruncate.nodes[0].name,
+    'Renamed',
+    'a shrunk rollout file must be re-peeked'
+  );
+  resetSubagentLinkCache();
 
   const headerOnly = renderHud(
     {

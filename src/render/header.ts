@@ -1,15 +1,18 @@
 /**
  * Header line renderer
  * Phase 3: Redesigned to match claude-hud layout
- * 
+ *
  * Layout:
  * Row 1: Tokens | Ctx bar | Plan bar | timer | project | mode/approval/sandbox | session
- * Later rows: first-level subagents by default; Ctrl+T expands parallel trees
+ * Rows 2+: active subagents by depth — one row per level, up to 3 levels,
+ * directory-tree prefixes showing which lineage each agent belongs to.
  */
 
-import type { HudData, RenderOptions, LayoutConfig, SubagentTreeNode } from '../types.js';
+import type { HudData, RenderOptions, LayoutConfig, SubagentTree, SubagentTreeNode } from '../types.js';
 import { DEFAULT_LAYOUT } from '../types.js';
-import { colors, theme, icons, coloredBar, coloredPercent, visualLength, truncateAnsi, padEnd, getSpinnerFrame } from './colors.js';
+import { colors, theme, coloredBar, coloredPercent, visualLength, truncateAnsi, padEnd } from './colors.js';
+import { renderSubagentChip } from './subagent-chip.js';
+import { collectActiveTreeLevels, type SubagentTreeEntry } from '../collectors/subagent-tree.js';
 import {
   renderIdentityLine,
   renderProjectLine,
@@ -77,18 +80,6 @@ function renderSessionCompact(data: HudData): string {
   return colors.dim('Session: ') + theme.info(shortId);
 }
 
-function formatElapsed(startTime: Date): string {
-  const diffSec = Math.max(0, Math.floor((Date.now() - startTime.getTime()) / 1000));
-  if (diffSec < 60) {
-    return `${diffSec}s`;
-  }
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) {
-    return `${diffMin}m${String(diffSec % 60).padStart(2, '0')}s`;
-  }
-  return `${Math.floor(diffMin / 60)}h${String(diffMin % 60).padStart(2, '0')}m`;
-}
-
 function renderAlignedMeter(label: string, percent?: number, extra?: string): string {
   const bar = typeof percent === 'number' ? coloredBar(percent, 10) : colors.dim('░'.repeat(10));
   const percentText = typeof percent === 'number' ? coloredPercent(percent) : colors.dim('--%');
@@ -144,90 +135,67 @@ function planWindows(data: HudData): Array<{ percent: number; label: string }> {
     });
 }
 
-const MAX_PARALLEL_TREES = 6;
-const MAX_TREE_ROWS = 6;
-const TREE_COLUMN_GAP = 2;
+const MAX_HUD_TREE_LEVELS = 3;
+const TREE_ROOT_GAP = 4;
+const TREE_ENTRY_GAP = 2;
 
-function renderSubagentChip(node: SubagentTreeNode): string {
-  const icon = node.status === 'completed'
-    ? icons.check
-    : node.status === 'error'
-      ? icons.cross
-      : node.status === 'starting'
-        ? '○'
-        : getSpinnerFrame();
-  const color = node.status === 'completed'
-    ? theme.success
-    : node.status === 'error'
-      ? theme.error
-      : theme.info;
-  const elapsed = node.startedAt ? ` ${colors.dim(formatElapsed(node.startedAt))}` : '';
-  return `${color(`${icon} ${node.name}`)}${elapsed}`;
+function renderTreeEntry(entry: SubagentTreeEntry): string {
+  return `${colors.dim(entry.prefix)}${renderSubagentChip(entry.node)}`;
 }
 
-function renderColumnTree(root: SubagentTreeNode): string[] {
-  const lines: string[] = [renderSubagentChip(root)];
-
-  const walk = (nodes: SubagentTreeNode[], prefix: string) => {
-    nodes.forEach((node, index) => {
-      const isLast = index === nodes.length - 1;
-      const branch = isLast ? '└─ ' : '├─ ';
-      lines.push(`${colors.dim(prefix + branch)}${renderSubagentChip(node)}`);
-      if (node.children.length > 0) {
-        walk(node.children, prefix + (isLast ? '   ' : '│  '));
-      }
-    });
-  };
-
-  walk(root.children, '');
-  return lines;
-}
-
-function renderParallelTrees(
-  roots: SubagentTreeNode[],
-  width: number,
-  collapsed: boolean
-): string[] {
-  if (roots.length === 0 || width <= 0) {
+/**
+ * One row per active subagent level (up to MAX_HUD_TREE_LEVELS), with agents
+ * of the same depth sharing the row. Entries are grouped into regions by
+ * their depth-1 ancestor so a lineage keeps its own column across rows; the
+ * directory-tree prefixes carry ownership within and across regions. When the
+ * regions do not fit, the row falls back to a flowing layout and truncates.
+ */
+function renderActiveTreeRows(tree: SubagentTree | undefined, width: number): string[] {
+  const levels = collectActiveTreeLevels(tree, MAX_HUD_TREE_LEVELS);
+  if (levels.length === 0 || width <= 0) {
     return [];
   }
 
-  const extra = Math.max(0, roots.length - MAX_PARALLEL_TREES);
-  const visible = roots.slice(0, MAX_PARALLEL_TREES);
-  // Always reserve 6 slots so 2 trees stay adjacent instead of stretching
-  // across the full HUD width.
-  const colWidth = Math.max(
-    12,
-    Math.floor((width - TREE_COLUMN_GAP * (MAX_PARALLEL_TREES - 1)) / MAX_PARALLEL_TREES)
-  );
-  const columns = visible.map((root, index) => {
-    const lines = collapsed
-      ? [renderSubagentChip(root) + (root.children.length > 0 ? colors.dim(' ▾') : '')]
-      : renderColumnTree(root);
-    if (extra > 0 && index === visible.length - 1) {
-      lines[0] = `${lines[0]}${colors.dim(` +${extra}`)}`;
+  const rootOrder: string[] = [];
+  const perRoot = new Map<string, SubagentTreeEntry[][]>();
+  levels.forEach((entries, levelIdx) => {
+    for (const entry of entries) {
+      let bucket = perRoot.get(entry.rootId);
+      if (!bucket) {
+        bucket = Array.from({ length: levels.length }, () => [] as SubagentTreeEntry[]);
+        perRoot.set(entry.rootId, bucket);
+        rootOrder.push(entry.rootId);
+      }
+      bucket[levelIdx].push(entry);
     }
-    return lines;
   });
 
-  const fullHeight = Math.max(...columns.map((column) => column.length));
-  const rowCount = Math.min(MAX_TREE_ROWS, fullHeight);
-  const hidden = columns.reduce((sum, column) => sum + Math.max(0, column.length - rowCount), 0);
-  const lines: string[] = [];
+  const regionRows = rootOrder.map((rootId) =>
+    perRoot.get(rootId)!.map((entries) =>
+      entries.map(renderTreeEntry).join(' '.repeat(TREE_ENTRY_GAP))
+    )
+  );
+  const regionWidths = rootOrder.map((_, index) =>
+    Math.max(1, ...regionRows[index].map((row) => visualLength(row)))
+  );
+  const gapTotal = TREE_ROOT_GAP * (rootOrder.length - 1);
+  const natural = regionWidths.reduce((sum, w) => sum + w, 0) + gapTotal;
 
-  for (let row = 0; row < rowCount; row++) {
-    let line = '';
-    columns.forEach((column, index) => {
-      const cell = padEnd(column[row] ?? '', colWidth);
-      line += index === columns.length - 1 ? cell : cell + ' '.repeat(TREE_COLUMN_GAP);
-    });
-    if (row === rowCount - 1 && hidden > 0) {
-      line = `${truncateAnsi(line, Math.max(0, width - 6))} ${colors.dim(`…+${hidden}`)}`;
-    }
-    lines.push(truncateAnsi(line, width));
+  if (natural <= width) {
+    return regionRows[0].map((_, levelIdx) =>
+      rootOrder
+        .map((_, index) => padEnd(regionRows[index][levelIdx] ?? '', regionWidths[index]))
+        .join(' '.repeat(TREE_ROOT_GAP))
+        .replace(/\s+$/, '')
+    );
   }
 
-  return lines;
+  return levels.map((entries) =>
+    truncateAnsi(
+      entries.map(renderTreeEntry).join(' '.repeat(TREE_ENTRY_GAP)),
+      width
+    )
+  );
 }
 
 /**
@@ -253,7 +221,7 @@ function renderExpandedLayout(data: HudData, layout: LayoutConfig, width: number
     width
   );
 
-  return [header, ...renderParallelTrees(data.subagentTree?.nodes ?? [], width, true)];
+  return [header, ...renderActiveTreeRows(data.subagentTree, width)];
 }
 
 function renderDirectoryTree(nodes: SubagentTreeNode[], prefix = ''): string[] {

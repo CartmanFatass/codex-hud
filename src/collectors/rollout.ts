@@ -51,6 +51,15 @@ function inferSubagentStatus(state: unknown, tool?: string): SubagentStatus {
   return 'running';
 }
 
+function effortFromState(state: unknown): string | undefined {
+  if (!state || typeof state !== 'object') {
+    return undefined;
+  }
+  const record = state as Record<string, unknown>;
+  const effort = record.effort ?? record.reasoning_effort;
+  return typeof effort === 'string' && effort.length > 0 ? effort : undefined;
+}
+
 function applyCollabAgentItem(
   subagents: Map<string, SubagentInfo>,
   item: CollabAgentItem,
@@ -65,12 +74,15 @@ function applyCollabAgentItem(
     const listed = agents.find((agent) => agent.thread_id === id);
     const previous = subagents.get(id);
     const state = item.agents_states?.[id];
+    const effort = item.effort ?? item.reasoning_effort ?? effortFromState(state);
     subagents.set(id, {
       id,
       name: listed?.agent_nickname || previous?.name || id.slice(0, 8),
       status: inferSubagentStatus(state, item.tool),
       startedAt: previous?.startedAt ?? timestamp,
       model: item.model ?? previous?.model,
+      effort: effort ?? previous?.effort,
+      lastActivityAt: timestamp,
     });
   }
 }

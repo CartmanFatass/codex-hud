@@ -1,33 +1,10 @@
-import { colors, theme, icons, stripAnsi } from './colors.js';
+import { colors, theme, stripAnsi, truncateAnsi } from './colors.js';
+import { renderSubagentChip } from './subagent-chip.js';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
 
-function formatElapsed(startTime: Date): string {
-  const diffSec = Math.max(0, Math.floor((Date.now() - startTime.getTime()) / 1000));
-  if (diffSec < 60) {
-    return `${diffSec}s`;
-  }
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) {
-    return `${diffMin}m${String(diffSec % 60).padStart(2, '0')}s`;
-  }
-  return `${Math.floor(diffMin / 60)}h${String(diffMin % 60).padStart(2, '0')}m`;
-}
-
-function renderChip(node: SubagentTreeNode): string {
-  const icon = node.status === 'completed'
-    ? icons.check
-    : node.status === 'error'
-      ? icons.cross
-      : node.status === 'starting'
-        ? '○'
-        : icons.running;
-  const color = node.status === 'completed'
-    ? theme.success
-    : node.status === 'error'
-      ? theme.error
-      : theme.info;
-  const elapsed = node.startedAt ? ` ${colors.dim(formatElapsed(node.startedAt))}` : '';
-  return `${color(`${icon} ${node.name}`)} ${colors.dim(node.status)}${elapsed}`;
+function renderRootChip(tree: SubagentTree): string {
+  const shortId = tree.rootId.length > 8 ? tree.rootId.slice(0, 8) : tree.rootId;
+  return `${theme.info('● main session')} ${colors.dim(`· ${shortId}`)}`;
 }
 
 export function renderDirectoryTree(nodes: SubagentTreeNode[], prefix = ''): string[] {
@@ -35,7 +12,7 @@ export function renderDirectoryTree(nodes: SubagentTreeNode[], prefix = ''): str
   nodes.forEach((node, index) => {
     const isLast = index === nodes.length - 1;
     const branch = isLast ? '└─ ' : '├─ ';
-    lines.push(`${colors.dim(prefix + branch)}${renderChip(node)}`);
+    lines.push(`${colors.dim(prefix + branch)}${renderSubagentChip(node, { showStatusText: true })}`);
     if (node.children.length > 0) {
       lines.push(...renderDirectoryTree(node.children, prefix + (isLast ? '   ' : '│  ')));
     }
@@ -43,7 +20,7 @@ export function renderDirectoryTree(nodes: SubagentTreeNode[], prefix = ''): str
   return lines;
 }
 
-export function renderSubagentTreePage(tree: SubagentTree): string[] {
+export function renderSubagentTreePage(tree: SubagentTree, maxWidth?: number): string[] {
   const lines = [
     theme.info('Subagent tree'),
     colors.dim('live · q / Esc / Ctrl+C  close'),
@@ -52,10 +29,16 @@ export function renderSubagentTreePage(tree: SubagentTree): string[] {
   if (tree.nodes.length === 0) {
     lines.push(colors.dim('No subagents in this session.'));
   } else {
+    lines.push(renderRootChip(tree));
     lines.push(...renderDirectoryTree(tree.nodes));
+    lines.push('');
+    lines.push(colors.dim('⇄/⇆ main<->agent traffic in the last 4s · ◐ colored = running'));
   }
   lines.push('');
   lines.push(colors.dim(`${tree.totalCount} node(s)`));
+  if (maxWidth && maxWidth > 0) {
+    return lines.map((line) => truncateAnsi(line, maxWidth));
+  }
   return lines;
 }
 

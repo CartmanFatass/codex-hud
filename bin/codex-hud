@@ -5,7 +5,9 @@
 #
 # Environment variables:
 #   CODEX_HUD_POSITION - HUD pane position: bottom (default), top
-#   CODEX_HUD_HEIGHT   - HUD pane height in lines (default: 1/6 of terminal height, min 5)
+#   CODEX_HUD_HEIGHT   - HUD pane height in lines (default: 2; the HUD process
+#                        auto-grows the pane up to 4 lines while active
+#                        subagent tree rows are shown)
 #   CODEX_HUD_HEIGHT_AUTO - Auto-adjust HUD height based on pane width (default: 0)
 #   CODEX_HUD_HEIGHT_MIN - Minimum HUD height when auto-adjusting (default: CODEX_HUD_HEIGHT)
 #   CODEX_HUD_HEIGHT_MAX - Maximum HUD height when auto-adjusting (default: 12)
@@ -759,16 +761,17 @@ EOF
         tmux set-hook -at "$SESSION_NAME" client-attached "refresh-client"
     fi
 
-    # HUD stays 2 lines. Prefix+H / Prefix+t opens a popup with the full tree.
+    # HUD shows 1 header line plus up to 3 active subagent tree rows; the HUD
+    # process auto-resizes its own pane between 2 and 4 lines. Prefix+H /
+    # Prefix+t toggle the second HUD form: a fixed right-side subagent tree
+    # panel that replaces the bottom HUD rows entirely.
     # Do not bind root Ctrl+T — that belongs to Codex's transcript overlay.
-    local tree_cmd
-    local tree_cwd_escaped
-    tree_cmd="$SCRIPT_DIR/codex-hud-tree"
-    chmod +x "$tree_cmd" 2>/dev/null || true
-    tree_cwd_escaped=$(printf '%q' "$cwd")
+    local toggle_cmd
+    toggle_cmd="$SCRIPT_DIR/codex-hud-toggle"
+    chmod +x "$toggle_cmd" 2>/dev/null || true
     tmux set-option -t "$SESSION_NAME" -q @codex_hud_cwd "$cwd"
-    tmux bind-key -T prefix H display-popup -E -w 90% -h 80% -T "Subagent tree" "CODEX_HUD_CWD=$tree_cwd_escaped node '$HUD_DIR/dist/tree-page.js'"
-    tmux bind-key -T prefix t display-popup -E -w 90% -h 80% -T "Subagent tree" "CODEX_HUD_CWD=$tree_cwd_escaped node '$HUD_DIR/dist/tree-page.js'"
+    tmux bind-key -T prefix H run-shell -b "bash '$toggle_cmd' '$SESSION_NAME'"
+    tmux bind-key -T prefix t run-shell -b "bash '$toggle_cmd' '$SESSION_NAME'"
 
     SESSION_CREATED="true"
 }

@@ -249,6 +249,8 @@ export interface CollabAgentItem {
   tool?: string;
   status?: string;
   model?: string;
+  effort?: string;
+  reasoning_effort?: string;
   prompt?: string;
   receiver_thread_ids?: string[];
   receiver_agents?: Array<{
@@ -336,6 +338,9 @@ export interface SubagentInfo {
   status: SubagentStatus;
   startedAt?: Date;
   model?: string;
+  effort?: string;
+  // Last time the main session exchanged a CollabAgent event with this agent.
+  lastActivityAt?: Date;
 }
 
 export interface SubagentTreeNode {
@@ -343,6 +348,9 @@ export interface SubagentTreeNode {
   name: string;
   status: SubagentStatus;
   startedAt?: Date;
+  model?: string;
+  effort?: string;
+  lastActivityAt?: Date;
   depth: number;
   children: SubagentTreeNode[];
 }

@@ -5,12 +5,13 @@
 
 import { readCodexConfig } from './collectors/codex-config.js';
 import * as fs from 'fs';
+import { spawn } from 'child_process';
 import { collectGitStatus } from './collectors/git.js';
 import { collectProjectInfo } from './collectors/project.js';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser } from './collectors/rollout.js';
-import { buildSubagentTree } from './collectors/subagent-tree.js';
+import { buildSubagentTree, collectActiveTreeLevels } from './collectors/subagent-tree.js';
 import { createParseQueue } from './utils/parse-queue.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer } from './render/index.js';
@@ -21,6 +22,7 @@ import type {
   ContextUsage,
   HudDisplayMode,
   TokenUsageInfo,
+  CodexConfig,
 } from './types.js';
 
 // Session start time
@@ -140,17 +142,38 @@ let cachedHudData: HudData | null = null;
 let configNeedsRefresh = false;
 const parseRolloutSafely = createParseQueue(() => rolloutParser.parse());
 
+// Cached sync data. The 1s render tick stays (timers and elapsed displays
+// need it), but the expensive collectors behind it are invalidated by
+// signature instead of rerun unconditionally:
+//   - config re-reads only when the file watcher fires (or on first run)
+//   - git subprocess + project scans run on a slower 3s cadence
+let cachedConfig: CodexConfig | null = null;
+let cachedSyncData: Pick<HudData, 'git' | 'project'> | null = null;
+const SYNC_REFRESH_MS = 3000;
+let lastSyncAt = 0;
+
 /**
  * Collect all HUD data (synchronous parts)
  */
 function collectSyncData(): Omit<HudData, 'toolActivity' | 'planProgress' | 'tokenUsage' | 'session' | 'contextUsage' | 'rateLimits' | 'subagents' | 'subagentTree'> {
-  const cwd = HUD_CWD;
-  const config = readCodexConfig();
+  if (cachedConfig === null || configNeedsRefresh) {
+    cachedConfig = readCodexConfig();
+    configNeedsRefresh = false;
+  }
+
+  const now = Date.now();
+  if (!cachedSyncData || now - lastSyncAt >= SYNC_REFRESH_MS) {
+    cachedSyncData = {
+      git: collectGitStatus(HUD_CWD),
+      project: collectProjectInfo(HUD_CWD, cachedConfig),
+    };
+    lastSyncAt = now;
+  }
 
   return {
-    config,
-    git: collectGitStatus(cwd),
-    project: collectProjectInfo(cwd, config),
+    config: cachedConfig,
+    git: cachedSyncData.git,
+    project: cachedSyncData.project,
     sessionStart: SESSION_START,
   };
 }
@@ -170,7 +193,6 @@ async function collectData(): Promise<HudData> {
   let rolloutData = rolloutParser.getCached();
   if (session) {
     rolloutData = await parseRolloutSafely();
-    configNeedsRefresh = false;
   }
 
   const runtimeSession = paneRuntimeStateCollector?.collect() ?? undefined;
@@ -206,6 +228,35 @@ async function collectData(): Promise<HudData> {
   return hudData;
 }
 
+// The HUD pane holds the header line plus up to 3 active subagent tree rows.
+// The pane grows/shrinks to match so codex keeps the rest of the terminal.
+const HUD_PANE_MIN_HEIGHT = 2;
+const HUD_PANE_MAX_HEIGHT = 4;
+let lastPaneHeight = HUD_PANE_MIN_HEIGHT;
+let lastPaneResizeAt = 0;
+
+function maybeResizeHudPane(desiredHeight: number): void {
+  if (!process.env.TMUX || !process.env.TMUX_PANE) {
+    return;
+  }
+  const now = Date.now();
+  // Client-attached hooks reset the pane to the wrapper's fixed height, so
+  // re-assert taller panes periodically.
+  const needsReassert = desiredHeight > HUD_PANE_MIN_HEIGHT && now - lastPaneResizeAt > 10_000;
+  if (desiredHeight === lastPaneHeight && !needsReassert) {
+    return;
+  }
+  lastPaneHeight = desiredHeight;
+  lastPaneResizeAt = now;
+  try {
+    spawn('tmux', ['resize-pane', '-t', process.env.TMUX_PANE, '-y', String(desiredHeight)], {
+      stdio: 'ignore',
+    }).unref();
+  } catch {
+    // pane resizing is best-effort
+  }
+}
+
 /**
  * Main render loop
  */
@@ -217,6 +268,10 @@ async function mainLoop(): Promise<void> {
   try {
     const data = await collectData();
     renderToStdout(data);
+    const activeLevels = collectActiveTreeLevels(data.subagentTree).length;
+    maybeResizeHudPane(
+      Math.max(HUD_PANE_MIN_HEIGHT, Math.min(HUD_PANE_MAX_HEIGHT, 1 + activeLevels))
+    );
   } catch (error) {
     console.error('Render error:', error);
   }
