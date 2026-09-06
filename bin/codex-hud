@@ -712,7 +712,14 @@ EOF
         chmod +x "$hud_runner"
         hud_cmd="bash $(printf "%q" "$hud_runner")"
     fi
-    
+
+    # Persist the exact launch command so toggle-back (codex-hud-toggle) can
+    # recreate the HUD with identical context — session start, main pane,
+    # native capture file, CODEX_HOME — instead of maintaining a second,
+    # drifting copy of the environment there.
+    tmux set-option -t "$SESSION_NAME" @codex_hud_hud_cmd "$hud_cmd"
+    tmux set-option -t "$SESSION_NAME" @codex_hud_session_start "$session_start"
+
     if [[ "$HUD_POSITION" == "top" ]]; then
         # Split at top, then swap panes
         local hud_pane_id
@@ -770,8 +777,12 @@ EOF
     toggle_cmd="$SCRIPT_DIR/codex-hud-toggle"
     chmod +x "$toggle_cmd" 2>/dev/null || true
     tmux set-option -t "$SESSION_NAME" -q @codex_hud_cwd "$cwd"
-    tmux bind-key -T prefix H run-shell -b "bash '$toggle_cmd' '$SESSION_NAME'"
-    tmux bind-key -T prefix t run-shell -b "bash '$toggle_cmd' '$SESSION_NAME'"
+    # Key tables are server-global, so the binding must resolve the session at
+    # keypress time (run-shell expands #{session_id} then) instead of
+    # capturing $SESSION_NAME here, or a second Codex session would hijack
+    # the first session's toggle.
+    tmux bind-key -T prefix H run-shell -b "bash '$toggle_cmd' '#{session_id}'"
+    tmux bind-key -T prefix t run-shell -b "bash '$toggle_cmd' '#{session_id}'"
 
     SESSION_CREATED="true"
 }

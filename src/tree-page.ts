@@ -4,19 +4,26 @@
  */
 
 import { findMostRecentRollout } from './collectors/session-finder.js';
+import type { SessionFile } from './collectors/session-finder.js';
 import { RolloutParser } from './collectors/rollout.js';
 import { buildSubagentTree } from './collectors/subagent-tree.js';
 import { renderSubagentTreePage } from './render/subagent-tree-view.js';
+import * as fs from 'fs';
 import type { SubagentTree } from './types.js';
 
 // Rollout parsing is the expensive step; the ⇄ marker only needs re-rendering.
 const DATA_REFRESH_MS = 1000;
 const RENDER_MS = 250;
+// Re-scanning the sessions tree for the most recent rollout is a directory
+// walk; throttle it the same way SessionFinder does.
+const RECENT_SCAN_TTL_MS = 2000;
 
 // Persistent incremental parser: each data tick reads only new bytes instead
 // of re-parsing the whole rollout from offset 0.
 const rolloutParser = new RolloutParser(10);
 let parserPath: string | null = null;
+let recentScan: { cwd: string; at: number; recent: SessionFile | null } | null = null;
+let lastParseSig: { path: string; size: number; mtimeMs: number } | null = null;
 const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
 const CURSOR_HOME = '\x1b[H';
@@ -47,7 +54,11 @@ function paint(text: string): void {
 }
 
 async function collectTree(cwd: string): Promise<SubagentTree | null> {
-  const recent = findMostRecentRollout(30, cwd);
+  const now = Date.now();
+  if (!recentScan || recentScan.cwd !== cwd || now - recentScan.at >= RECENT_SCAN_TTL_MS) {
+    recentScan = { cwd, at: now, recent: findMostRecentRollout(30, cwd) };
+  }
+  const recent = recentScan.recent;
   if (!recent) {
     return null;
   }
@@ -55,8 +66,30 @@ async function collectTree(cwd: string): Promise<SubagentTree | null> {
   if (parserPath !== recent.path) {
     rolloutParser.setRolloutPath(recent.path);
     parserPath = recent.path;
+    lastParseSig = null;
   }
-  const result = await rolloutParser.parse();
+
+  // The incremental parser still opens and walks state with zero new bytes;
+  // skip it entirely while the file signature is unchanged.
+  let sig: { path: string; size: number; mtimeMs: number } | null = null;
+  try {
+    const stats = fs.statSync(recent.path);
+    sig = { path: recent.path, size: stats.size, mtimeMs: stats.mtimeMs };
+  } catch {
+    sig = null;
+  }
+  const unchanged =
+    sig !== null &&
+    lastParseSig !== null &&
+    lastParseSig.path === sig.path &&
+    lastParseSig.size === sig.size &&
+    lastParseSig.mtimeMs === sig.mtimeMs;
+
+  let result: Awaited<ReturnType<typeof rolloutParser.parse>> = rolloutParser.getCached();
+  if (!unchanged || !result) {
+    result = await rolloutParser.parse();
+    lastParseSig = sig;
+  }
   const rootId = result?.session?.id ?? recent.sessionId;
   return buildSubagentTree(rootId, result?.subagents ?? []);
 }

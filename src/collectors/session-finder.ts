@@ -18,6 +18,10 @@ export interface SessionFile {
   timestamp: Date;
   size: number;
   modifiedAt: Date;
+  // File identity: changes when the file is replaced via rename-over, which
+  // size/mtime alone cannot distinguish from an append. Optional because some
+  // filesystems report 0.
+  ino?: number;
 }
 
 export { getCodexHome, getSessionsDir };
@@ -452,6 +456,7 @@ function buildSessionFile(filePath: string): SessionFile | null {
       timestamp: parsed.timestamp,
       size: stats.size,
       modifiedAt: stats.mtime,
+      ino: stats.ino > 0 ? stats.ino : undefined,
     };
   } catch {
     return null;

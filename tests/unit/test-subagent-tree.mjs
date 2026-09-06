@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { buildSubagentTree, resetSubagentLinkCache } from '../../dist/collectors/subagent-tree.js';
+import { RolloutParser } from '../../dist/collectors/rollout.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { renderHud } from '../../dist/render/header.js';
 import { renderSubagentTreePage } from '../../dist/render/subagent-tree-view.js';
@@ -272,6 +273,45 @@ try {
   const echoAt = capLines[2].indexOf('Echo');
   assert.ok(scoutAt < diggerAt && diggerAt < echoAt, 'entries order by lineage on the shared row');
 
+  // Ownership ambiguity: A→[B→X, C, D] and A→[B, C→X, D] must not render
+  // identically — the grandchild aligns inside its immediate parent's slice.
+  const structA = {
+    rootId: 'r',
+    nodes: [mk('a1', 'A', 'running', [
+      mk('b', 'B', 'running', [mk('x', 'X', 'running')]),
+      mk('c', 'C', 'running'),
+      mk('d', 'D', 'running'),
+    ])],
+    totalCount: 5,
+    updatedAt: new Date(),
+  };
+  const structB = {
+    rootId: 'r',
+    nodes: [mk('a1', 'A', 'running', [
+      mk('b', 'B', 'running'),
+      mk('c', 'C', 'running', [mk('x', 'X', 'running')]),
+      mk('d', 'D', 'running'),
+    ])],
+    totalCount: 5,
+    updatedAt: new Date(),
+  };
+  const rowsA = renderHud(hudDataFor(structA), { width: 160, showDetails: true }).map(stripAnsi);
+  const rowsB = renderHud(hudDataFor(structB), { width: 160, showDetails: true }).map(stripAnsi);
+  assert.notDeepEqual(rowsA, rowsB, 'different parent structures must render differently');
+  const xRowA = rowsA.find((line) => line.includes('X'));
+  const xRowB = rowsB.find((line) => line.includes('X'));
+  assert.ok(xRowA && xRowB, 'both structures show X');
+  const parentBAt = rowsA[2].indexOf('B');
+  const parentCAt = rowsB[2].indexOf('C');
+  assert.ok(
+    Math.abs(xRowA.indexOf('X') - parentBAt) <= 4,
+    "X sits inside B's slice in structure A"
+  );
+  assert.ok(
+    Math.abs(xRowB.indexOf('X') - parentCAt) <= 4,
+    "X sits inside C's slice in structure B"
+  );
+
   const page = renderSubagentTreePage(withSiblings).map(stripAnsi).join('\n');
   assert.match(page, /Subagent tree/);
   assert.match(page, /● main session · 01a00bd0/, 'popup should anchor the tree at the main session');
@@ -321,6 +361,99 @@ try {
     'a shrunk rollout file must be re-peeked'
   );
   resetSubagentLinkCache();
+
+  // Negative cache: a first peek that fails (empty or incomplete first line)
+  // must recover as soon as the file gains bytes; it may only survive while
+  // the stat signature is untouched.
+  const negId = '01a00bd0-0000-4000-8000-000000000010';
+  const negPath = writeRollout(home, { id: negId, parentId: root, nickname: 'LateBorn' });
+  fs.writeFileSync(negPath, '');
+  buildSubagentTree(root, [], 3, Date.now()); // warm with a failed peek
+  fs.writeFileSync(
+    negPath,
+    `${JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type: 'session_meta',
+      payload: {
+        id: negId,
+        parent_thread_id: root,
+        agent_nickname: 'LateBorn',
+        timestamp: new Date().toISOString(),
+        source: 'cli',
+      },
+    })}\n`
+  );
+  const negTree = buildSubagentTree(root, [], 3, Date.now());
+  assert.ok(
+    negTree.nodes.some((node) => node.name === 'LateBorn'),
+    'negative cache must recover when the file gains its first line'
+  );
+  resetSubagentLinkCache();
+
+  // Shrink detection must compare against the latest observed size, not the
+  // size at first cache time: grow, then truncate-and-rewrite.
+  const shrinkId = '01a00bd0-0000-4000-8000-000000000011';
+  const shrinkPath = writeRollout(home, { id: shrinkId, parentId: root, nickname: 'Grower' });
+  buildSubagentTree(root, [], 3, Date.now());
+  fs.appendFileSync(shrinkPath, 'x'.repeat(2000) + '\n');
+  buildSubagentTree(root, [], 3, Date.now()); // baseline moves to the grown size
+  writeRollout(home, { id: shrinkId, parentId: root, nickname: 'Reborn' }); // much smaller
+  const shrinkTree = buildSubagentTree(root, [], 3, Date.now());
+  assert.ok(
+    shrinkTree.nodes.some((node) => node.name === 'Reborn'),
+    'a shrink after appends must still re-peek'
+  );
+  resetSubagentLinkCache();
+
+  // Same-size rewrite with a newer mtime must not be mistaken for a no-op.
+  const sameSizeId = '01a00bd0-0000-4000-8000-000000000012';
+  const samePath = writeRollout(home, { id: sameSizeId, parentId: root, nickname: 'Alpha' });
+  buildSubagentTree(root, [], 3, Date.now());
+  writeRollout(home, { id: sameSizeId, parentId: root, nickname: 'AlpHa' }); // equal byte length
+  const laterTime = new Date(Date.now() + 5000);
+  fs.utimesSync(samePath, laterTime, laterTime);
+  const sameTree = buildSubagentTree(root, [], 3, Date.now());
+  assert.ok(
+    sameTree.nodes.some((node) => node.name === 'AlpHa'),
+    'same-size rewrite with an advanced mtime must re-peek'
+  );
+  resetSubagentLinkCache();
+
+  // Metadata merged from an earlier incremental batch survives later batches
+  // whose events do not carry model/effort again.
+  const mergeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-hud-merge-'));
+  const mergePath = path.join(mergeDir, 'rollout-2026-09-05T00-00-00-merge.jsonl');
+  const collabEvent = (tool, extra = {}) =>
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        item: {
+          type: 'CollabAgentToolCall',
+          tool,
+          receiver_agents: [{ thread_id: 'ag-1', agent_nickname: 'Gauss' }],
+          ...extra,
+        },
+      },
+    });
+  fs.writeFileSync(mergePath, `${collabEvent('spawn_agent', { model: 'gpt-5.3', effort: 'xhigh' })}\n`);
+  const parser = new RolloutParser(10);
+  parser.setRolloutPath(mergePath);
+  const firstBatch = await parser.parse();
+  assert.equal(firstBatch?.subagents[0]?.model, 'gpt-5.3', 'spawn batch carries model');
+  fs.appendFileSync(mergePath, `${collabEvent('wait')}\n`);
+  const secondBatch = await parser.parse();
+  assert.equal(
+    secondBatch?.subagents[0]?.model,
+    'gpt-5.3',
+    'model must survive incremental batches'
+  );
+  assert.equal(
+    secondBatch?.subagents[0]?.effort,
+    'xhigh',
+    'effort must survive incremental batches'
+  );
 
   const headerOnly = renderHud(
     {

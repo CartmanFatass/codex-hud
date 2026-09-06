@@ -15,6 +15,7 @@ interface CachedLink {
   link: SessionLink | null;
   size: number;
   mtimeMs: number;
+  ino?: number;
 }
 
 const linkCache = new Map<string, CachedLink>();
@@ -170,10 +171,24 @@ export function collectNodesByDepth(nodes: SubagentTreeNode[]): SubagentTreeNode
 export interface SubagentTreeEntry {
   node: SubagentTreeNode;
   // Directory-tree connector fragment (├─ / └─ with │ continuation) locating
-  // the node under its ancestors.
+  // the node under its ancestors. Depth-1 entries render bare: they all hang
+  // directly off the main session.
   prefix: string;
   // id of the depth-1 ancestor owning this entry, for row grouping.
   rootId: string;
+}
+
+// One depth-2 agent and the depth-3 agents it spawned. Keeping them together
+// lets the renderer align grandchildren under their immediate parent, so the
+// same depth can share a row without losing parent identity.
+export interface SubagentTreeSlice {
+  entry: SubagentTreeEntry;
+  children: SubagentTreeEntry[];
+}
+
+export interface SubagentTreeLineage {
+  root: SubagentTreeEntry;
+  slices: SubagentTreeSlice[];
 }
 
 function nodeIsActive(node: SubagentTreeNode): boolean {
@@ -187,60 +202,80 @@ function subtreeHasActive(node: SubagentTreeNode): boolean {
   return node.children.some(subtreeHasActive);
 }
 
+function lastDisplayedIndex(nodes: SubagentTreeNode[]): number {
+  let last = -1;
+  nodes.forEach((node, index) => {
+    if (subtreeHasActive(node)) {
+      last = index;
+    }
+  });
+  return last;
+}
+
 /**
- * Slice the tree into per-depth rows of active agents (running/starting),
- * up to maxLevels deep. Completed agents stay only when they anchor an active
- * descendant, so the connector prefixes keep showing ownership. Deeper levels
- * are dropped entirely.
+ * Collect ACTIVE agents (running/starting) grouped by lineage. Completed
+ * agents stay only when they anchor an active descendant, so connector
+ * prefixes keep showing ownership. Depth is capped at 3 levels (root lineage
+ * entry + one slice level + one grandchild level); deeper agents are dropped.
  */
-export function collectActiveTreeLevels(
+export function collectActiveTreeLineages(
   tree: SubagentTree | null | undefined,
   maxLevels: number = 3
-): SubagentTreeEntry[][] {
-  const levels: SubagentTreeEntry[][] = [];
-
-  const walk = (
-    nodes: SubagentTreeNode[],
-    depth: number,
-    ancestorPrefix: string,
-    rootId: string
-  ): void => {
-    if (depth > maxLevels) {
-      return;
-    }
-    let lastDisplayed = -1;
-    nodes.forEach((node, index) => {
-      if (subtreeHasActive(node)) {
-        lastDisplayed = index;
-      }
-    });
-    nodes.forEach((node, index) => {
-      if (!subtreeHasActive(node)) {
-        return;
-      }
-      const isLast = index === lastDisplayed;
-      // Level-1 agents all hang directly off the main session, so they render
-      // as bare chips; connector prefixes start at level 2.
-      const prefix = depth === 1 ? '' : ancestorPrefix + (isLast ? '└─ ' : '├─ ');
-      if (!levels[depth - 1]) {
-        levels[depth - 1] = [];
-      }
-      levels[depth - 1].push({ node, prefix, rootId });
-      walk(
-        node.children,
-        depth + 1,
-        depth === 1 ? '' : ancestorPrefix + (isLast ? '   ' : '│  '),
-        rootId
-      );
-    });
-  };
-
+): SubagentTreeLineage[] {
+  const lineages: SubagentTreeLineage[] = [];
   for (const root of tree?.nodes ?? []) {
-    if (subtreeHasActive(root)) {
-      walk([root], 1, '', root.id);
+    if (!subtreeHasActive(root)) {
+      continue;
     }
+    const lineage: SubagentTreeLineage = {
+      root: { node: root, prefix: '', rootId: root.id },
+      slices: [],
+    };
+    if (maxLevels >= 2) {
+      const rootLast = lastDisplayedIndex(root.children);
+      root.children.forEach((kid, index) => {
+        if (!subtreeHasActive(kid)) {
+          return;
+        }
+        const kidLast = index === rootLast;
+        const slice: SubagentTreeSlice = {
+          entry: { node: kid, prefix: kidLast ? '└─ ' : '├─ ', rootId: root.id },
+          children: [],
+        };
+        if (maxLevels >= 3) {
+          const kidCont = kidLast ? '   ' : '│  ';
+          const kidChildLast = lastDisplayedIndex(kid.children);
+          kid.children.forEach((grand, gIndex) => {
+            if (!subtreeHasActive(grand)) {
+              return;
+            }
+            slice.children.push({
+              node: grand,
+              prefix: kidCont + (gIndex === kidChildLast ? '└─ ' : '├─ '),
+              rootId: root.id,
+            });
+          });
+        }
+        lineage.slices.push(slice);
+      });
+    }
+    lineages.push(lineage);
   }
-  return levels;
+  return lineages;
+}
+
+/** Deepest level actually present (0 when there is nothing to show). */
+export function countActiveTreeLevels(lineages: SubagentTreeLineage[]): number {
+  if (lineages.length === 0) {
+    return 0;
+  }
+  if (lineages.some((lineage) => lineage.slices.some((slice) => slice.children.length > 0))) {
+    return 3;
+  }
+  if (lineages.some((lineage) => lineage.slices.length > 0)) {
+    return 2;
+  }
+  return 1;
 }
 
 export function buildSubagentTree(
@@ -259,14 +294,44 @@ export function buildSubagentTree(
     const modifiedMs = file.modifiedAt.getTime();
     const cached = linkCache.get(file.path);
     let link: SessionLink | null;
-    if (cached && cached.size <= file.size && cached.mtimeMs <= modifiedMs) {
+
+    const unchanged = Boolean(
+      cached &&
+        cached.size === file.size &&
+        cached.mtimeMs === modifiedMs &&
+        (cached.ino === undefined || file.ino === undefined || cached.ino === file.ino)
+    );
+    // Append-only growth keeps the first line intact, so the cached metadata
+    // stays valid. Anything else (shrink, same-size rewrite with a newer
+    // mtime, inode replacement, or a previously failed peek) re-peeks.
+    // Known limits: a truncate-and-regrow that lands at or above the last
+    // observed size still looks like an append, and a same-signature rewrite
+    // is undetectable from stat alone.
+    const appended = Boolean(
+      cached &&
+        cached.link &&
+        cached.size < file.size &&
+        cached.mtimeMs <= modifiedMs &&
+        (cached.ino === undefined || file.ino === undefined || cached.ino === file.ino)
+    );
+
+    if (cached && cached.link && (unchanged || appended)) {
       link = cached.link;
-      if (link) {
-        link.modifiedAt = file.modifiedAt;
-      }
+      link.modifiedAt = file.modifiedAt;
+      // Track the latest observation so later shrinks are detected against
+      // the most recent size, not the size at first cache time.
+      cached.size = file.size;
+      cached.mtimeMs = modifiedMs;
+      cached.ino = file.ino ?? cached.ino;
+    } else if (cached && !cached.link && unchanged) {
+      // Negative cache: the file has not changed since the last failed peek,
+      // so there is nothing new to read yet.
+      link = null;
     } else {
+      // First sight, previously failed peek with new bytes, shrink, or
+      // same-size rewrite: read the first line again.
       link = peekSessionLink(file.path, file.modifiedAt);
-      linkCache.set(file.path, { link, size: file.size, mtimeMs: modifiedMs });
+      linkCache.set(file.path, { link, size: file.size, mtimeMs: modifiedMs, ino: file.ino });
     }
     if (!link) {
       continue;

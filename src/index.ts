@@ -11,7 +11,7 @@ import { collectProjectInfo } from './collectors/project.js';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser } from './collectors/rollout.js';
-import { buildSubagentTree, collectActiveTreeLevels } from './collectors/subagent-tree.js';
+import { buildSubagentTree, collectActiveTreeLineages, countActiveTreeLevels } from './collectors/subagent-tree.js';
 import { createParseQueue } from './utils/parse-queue.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer } from './render/index.js';
@@ -232,11 +232,21 @@ async function collectData(): Promise<HudData> {
 // The pane grows/shrinks to match so codex keeps the rest of the terminal.
 const HUD_PANE_MIN_HEIGHT = 2;
 const HUD_PANE_MAX_HEIGHT = 4;
+const HUD_FAST_RENDER_MS = 250;
 let lastPaneHeight = HUD_PANE_MIN_HEIGHT;
 let lastPaneResizeAt = 0;
+let paneResizeCooldownUntil = 0;
+
+function targetHudPaneHeight(data: HudData): number {
+  const levels = countActiveTreeLevels(collectActiveTreeLineages(data.subagentTree));
+  return Math.max(HUD_PANE_MIN_HEIGHT, Math.min(HUD_PANE_MAX_HEIGHT, 1 + levels));
+}
 
 function maybeResizeHudPane(desiredHeight: number): void {
   if (!process.env.TMUX || !process.env.TMUX_PANE) {
+    return;
+  }
+  if (Date.now() < paneResizeCooldownUntil) {
     return;
   }
   const now = Date.now();
@@ -246,19 +256,31 @@ function maybeResizeHudPane(desiredHeight: number): void {
   if (desiredHeight === lastPaneHeight && !needsReassert) {
     return;
   }
+  const previousHeight = lastPaneHeight;
   lastPaneHeight = desiredHeight;
   lastPaneResizeAt = now;
   try {
-    spawn('tmux', ['resize-pane', '-t', process.env.TMUX_PANE, '-y', String(desiredHeight)], {
+    const child = spawn('tmux', ['resize-pane', '-t', process.env.TMUX_PANE, '-y', String(desiredHeight)], {
       stdio: 'ignore',
-    }).unref();
+    });
+    // Spawn failures surface asynchronously; without this handler they would
+    // crash the HUD instead of being a best-effort resize.
+    child.on('error', () => {
+      lastPaneHeight = previousHeight;
+      // Back off instead of hot-looping a failing spawn every tick.
+      paneResizeCooldownUntil = Date.now() + 30_000;
+    });
+    child.unref();
   } catch {
     // pane resizing is best-effort
   }
 }
 
 /**
- * Main render loop
+ * Main render loop. Data collection runs every second; a faster render pass
+ * repaints the cached snapshot so the traffic marker animates between
+ * collections. The renderer always receives the target pane height so rows
+ * that disappear leave no stale output behind.
  */
 async function mainLoop(): Promise<void> {
   if (!isRunning) {
@@ -267,17 +289,28 @@ async function mainLoop(): Promise<void> {
 
   try {
     const data = await collectData();
-    renderToStdout(data);
-    const activeLevels = collectActiveTreeLevels(data.subagentTree).length;
-    maybeResizeHudPane(
-      Math.max(HUD_PANE_MIN_HEIGHT, Math.min(HUD_PANE_MAX_HEIGHT, 1 + activeLevels))
-    );
+    const targetHeight = targetHudPaneHeight(data);
+    renderToStdout(data, targetHeight);
+    maybeResizeHudPane(targetHeight);
   } catch (error) {
     console.error('Render error:', error);
   }
 
   // Schedule next render
   setTimeout(mainLoop, REFRESH_INTERVAL);
+}
+
+function startFastRenderLoop(): void {
+  setInterval(() => {
+    if (!isRunning || !cachedHudData) {
+      return;
+    }
+    try {
+      renderToStdout(cachedHudData, targetHudPaneHeight(cachedHudData));
+    } catch {
+      // between-collection repaints are best-effort
+    }
+  }, HUD_FAST_RENDER_MS);
 }
 
 /**
@@ -331,6 +364,7 @@ async function main(): Promise<void> {
 
   hudFileWatcher.start();
   sessionFinder.start(5000); // Check for session changes every 5 seconds
+  startFastRenderLoop();
 
   // Start the render loop
   console.log('Codex HUD starting...');

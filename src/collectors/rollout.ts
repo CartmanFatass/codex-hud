@@ -94,7 +94,27 @@ function mergeSubagents(previous: SubagentInfo[] | undefined, next: SubagentInfo
   }
   for (const agent of next) {
     const existing = merged.get(agent.id);
-    merged.set(agent.id, existing ? { ...existing, ...agent, startedAt: existing.startedAt ?? agent.startedAt } : agent);
+    if (!existing) {
+      merged.set(agent.id, agent);
+      continue;
+    }
+    // Each incremental batch rebuilds SubagentInfo from a single event, so
+    // fields that event does not carry arrive as explicit undefined. Skip
+    // them, or they would clobber metadata merged from earlier batches
+    // (model/effort from the spawn event lost on a later wait event).
+    const patch: Partial<SubagentInfo> = {};
+    for (const [key, value] of Object.entries(agent)) {
+      if (value !== undefined) {
+        (patch as Record<string, unknown>)[key] = value;
+      }
+    }
+    merged.set(agent.id, {
+      ...existing,
+      ...patch,
+      startedAt: existing.startedAt ?? agent.startedAt,
+      // Fresh activity timestamps are the point of the merge.
+      lastActivityAt: agent.lastActivityAt ?? existing.lastActivityAt,
+    });
   }
   return [...merged.values()];
 }

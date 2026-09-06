@@ -5,7 +5,12 @@
 #
 # The two forms are mutually exclusive: entering tree mode kills the bottom
 # HUD pane; leaving tree mode kills the side panel and recreates the bottom
-# HUD pane with the same pane binding environment.
+# HUD pane from the exact launch command persisted at session creation.
+#
+# Concurrency: rapid double-presses run this script twice concurrently, so
+# every state read and pane mutation happens under a session-scoped wait-for
+# lock. Failure ordering keeps the current HUD alive: the replacement form is
+# created and verified before the old form is destroyed.
 
 set -euo pipefail
 
@@ -14,11 +19,16 @@ HUD_DIR="$(dirname "$SCRIPT_DIR")"
 
 session_name="${1:-}"
 if [[ -z "$session_name" ]]; then
-  session_name=$(tmux display-message -p '#{session_name}' 2>/dev/null || true)
+  session_name=$(tmux display-message -p '#{session_id}' 2>/dev/null || true)
 fi
 if [[ -z "$session_name" ]]; then
   exit 0
 fi
+
+# Serialize concurrent invocations for this session before reading any state.
+lock_channel="codex-hud-toggle-${session_name}"
+tmux wait-for -L "$lock_channel"
+trap 'tmux wait-for -U "$lock_channel" 2>/dev/null || true' EXIT
 
 get_opt() {
   tmux show-option -t "$session_name" -qv "$1" 2>/dev/null || true
@@ -32,32 +42,63 @@ hud_pane=$(get_opt @codex_hud_pane)
 tree_pane=$(get_opt @codex_hud_tree_pane)
 hud_height=$(get_opt @codex_hud_height)
 hud_height=${hud_height:-2}
+hud_cmd=$(get_opt @codex_hud_hud_cmd)
+session_start=$(get_opt @codex_hud_session_start)
 cwd_q=$(printf '%q' "$cwd")
 
+# A stale pane reference is not an error; the pane may already be gone.
+pane_alive() {
+  [[ -n "$1" ]] && tmux display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1
+}
+
 if [[ "$mode" == "tree" ]]; then
-  # tree -> single: drop the side panel, bring back the bottom HUD rows.
-  if [[ -n "$tree_pane" ]]; then
-    tmux kill-pane -t "$tree_pane" 2>/dev/null || true
-  fi
-  if [[ -n "$main_pane" ]]; then
-    new_hud=$(tmux split-window -v -l "$hud_height" -t "$main_pane" -d -P -F '#{pane_id}' \
-      "env CODEX_HUD_CWD=$cwd_q CODEX_HUD_MAIN_PANE='$main_pane' node '$HUD_DIR/dist/index.js'")
-    tmux set-option -t "$session_name" @codex_hud_pane "$new_hud"
-    tmux select-pane -t "$main_pane" 2>/dev/null || true
-  fi
-  tmux set-option -t "$session_name" @codex_hud_mode "single"
-  tmux set-option -t "$session_name" @codex_hud_tree_pane ""
-else
-  # single -> tree: open the fixed right-side panel, then remove the bottom HUD.
-  if [[ -z "$main_pane" ]]; then
+  # tree -> single: recreate the bottom HUD FIRST (from the persisted launch
+  # command, so session start / capture-file / CODEX_HOME context survive),
+  # and only kill the side panel after the replacement is confirmed alive.
+  if ! pane_alive "$main_pane"; then
     exit 0
   fi
-  new_tree=$(tmux split-window -h -p 30 -t "$main_pane" -d -P -F '#{pane_id}' \
-    "env CODEX_HUD_CWD=$cwd_q node '$HUD_DIR/dist/tree-page.js'") || exit 0
+
+  if [[ -z "$hud_cmd" ]]; then
+    # Sessions created before @codex_hud_hud_cmd existed: fall back to the
+    # minimal environment (no stored launch context available).
+    hud_cmd="cd ${cwd_q} && CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' node '$HUD_DIR/dist/index.js'"
+  fi
+
+  if ! new_hud=$(tmux split-window -v -l "$hud_height" -t "$main_pane" -d -P -F '#{pane_id}' "$hud_cmd"); then
+    # Keep the tree panel: the session still has a working HUD form.
+    tmux display-message -t "$session_name" "codex-hud: failed to recreate the bottom HUD"
+    exit 1
+  fi
+  if ! pane_alive "$new_hud"; then
+    tmux display-message -t "$session_name" "codex-hud: recreated bottom HUD died immediately"
+    exit 1
+  fi
+
+  tmux set-option -t "$session_name" @codex_hud_pane "$new_hud"
+  tmux set-option -t "$session_name" @codex_hud_mode "single"
+  tmux set-option -t "$session_name" @codex_hud_tree_pane ""
+  if pane_alive "$tree_pane"; then
+    tmux kill-pane -t "$tree_pane"
+  fi
+  tmux select-pane -t "$main_pane" 2>/dev/null || true
+else
+  # single -> tree: open the fixed right-side panel first; on failure keep
+  # the bottom HUD untouched. Only after the panel exists kill the bottom HUD.
+  if ! pane_alive "$main_pane"; then
+    exit 0
+  fi
+
+  if ! new_tree=$(tmux split-window -h -p 30 -t "$main_pane" -d -P -F '#{pane_id}' \
+    "env CODEX_HUD_CWD=$cwd_q node '$HUD_DIR/dist/tree-page.js'"); then
+    tmux display-message -t "$session_name" "codex-hud: failed to open the tree panel"
+    exit 1
+  fi
+
   tmux set-option -t "$session_name" @codex_hud_tree_pane "$new_tree"
   tmux set-option -t "$session_name" -q @codex_hud_mode "tree"
-  if [[ -n "$hud_pane" ]]; then
-    tmux kill-pane -t "$hud_pane" 2>/dev/null || true
+  if pane_alive "$hud_pane"; then
+    tmux kill-pane -t "$hud_pane"
   fi
   tmux select-pane -t "$main_pane" 2>/dev/null || true
 fi

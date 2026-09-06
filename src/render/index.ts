@@ -19,6 +19,8 @@ const SHOW_CURSOR = '\x1b[?25h';
 
 let lastStdoutFrame: string | null = null;
 const STATUS_HINT = 'Prefix+t: Tree';
+const PANE_SIZE_TTL_MS = 2000;
+let cachedPaneSize: { width?: number; height?: number; at: number } | null = null;
 
 function applyStatusHint(lines: string[], width: number, maxLines: number): string[] {
   if (lines.length === 0 || width <= 0 || lines.length >= maxLines) {
@@ -39,6 +41,13 @@ function readTmuxPaneSize(): { width?: number; height?: number } {
     return {};
   }
 
+  // Spawning tmux per frame is too costly for the fast render pass; cache the
+  // answer briefly. Pane resizes emit stdout 'resize' events, which bust the
+  // cache in initRenderer().
+  if (cachedPaneSize && Date.now() - cachedPaneSize.at < PANE_SIZE_TTL_MS) {
+    return { width: cachedPaneSize.width, height: cachedPaneSize.height };
+  }
+
   try {
     const out = execFileSync(
       'tmux',
@@ -48,11 +57,14 @@ function readTmuxPaneSize(): { width?: number; height?: number } {
     const [rawWidth, rawHeight] = out.split(/\s+/);
     const width = Number(rawWidth);
     const height = Number(rawHeight);
-    return {
+    const size = {
       width: Number.isFinite(width) && width > 0 ? width : undefined,
       height: Number.isFinite(height) && height > 0 ? height : undefined,
     };
+    cachedPaneSize = { ...size, at: Date.now() };
+    return size;
   } catch {
+    cachedPaneSize = { at: Date.now() };
     return {};
   }
 }
@@ -197,6 +209,8 @@ export function initRenderer(): void {
   
   // Handle resize
   process.stdout.on('resize', () => {
+    cachedPaneSize = null;
+    lastStdoutFrame = null;
     process.stdout.write(CLEAR_SCREEN + CURSOR_HOME);
   });
 }

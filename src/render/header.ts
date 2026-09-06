@@ -12,7 +12,10 @@ import type { HudData, RenderOptions, LayoutConfig, SubagentTree, SubagentTreeNo
 import { DEFAULT_LAYOUT } from '../types.js';
 import { colors, theme, coloredBar, coloredPercent, visualLength, truncateAnsi, padEnd } from './colors.js';
 import { renderSubagentChip } from './subagent-chip.js';
-import { collectActiveTreeLevels, type SubagentTreeEntry } from '../collectors/subagent-tree.js';
+import {
+  collectActiveTreeLineages,
+  type SubagentTreeEntry,
+} from '../collectors/subagent-tree.js';
 import {
   renderIdentityLine,
   renderProjectLine,
@@ -145,56 +148,82 @@ function renderTreeEntry(entry: SubagentTreeEntry): string {
 
 /**
  * One row per active subagent level (up to MAX_HUD_TREE_LEVELS), with agents
- * of the same depth sharing the row. Entries are grouped into regions by
- * their depth-1 ancestor so a lineage keeps its own column across rows; the
- * directory-tree prefixes carry ownership within and across regions. When the
- * regions do not fit, the row falls back to a flowing layout and truncates.
+ * of the same depth sharing the row. Each lineage gets a region; inside a
+ * region every depth-2 agent owns a slice that also holds its depth-3 agents,
+ * aligned across rows — so a grandchild always sits in its immediate parent's
+ * slice and different parent structures cannot render identically. When the
+ * regions do not fit, the layout falls back to flowing rows and truncates.
  */
 function renderActiveTreeRows(tree: SubagentTree | undefined, width: number): string[] {
-  const levels = collectActiveTreeLevels(tree, MAX_HUD_TREE_LEVELS);
-  if (levels.length === 0 || width <= 0) {
+  const lineages = collectActiveTreeLineages(tree, MAX_HUD_TREE_LEVELS);
+  if (lineages.length === 0 || width <= 0) {
     return [];
   }
 
-  const rootOrder: string[] = [];
-  const perRoot = new Map<string, SubagentTreeEntry[][]>();
-  levels.forEach((entries, levelIdx) => {
-    for (const entry of entries) {
-      let bucket = perRoot.get(entry.rootId);
-      if (!bucket) {
-        bucket = Array.from({ length: levels.length }, () => [] as SubagentTreeEntry[]);
-        perRoot.set(entry.rootId, bucket);
-        rootOrder.push(entry.rootId);
-      }
-      bucket[levelIdx].push(entry);
-    }
-  });
-
-  const regionRows = rootOrder.map((rootId) =>
-    perRoot.get(rootId)!.map((entries) =>
-      entries.map(renderTreeEntry).join(' '.repeat(TREE_ENTRY_GAP))
-    )
-  );
-  const regionWidths = rootOrder.map((_, index) =>
-    Math.max(1, ...regionRows[index].map((row) => visualLength(row)))
-  );
-  const gapTotal = TREE_ROOT_GAP * (rootOrder.length - 1);
-  const natural = regionWidths.reduce((sum, w) => sum + w, 0) + gapTotal;
-
-  if (natural <= width) {
-    return regionRows[0].map((_, levelIdx) =>
-      rootOrder
-        .map((_, index) => padEnd(regionRows[index][levelIdx] ?? '', regionWidths[index]))
-        .join(' '.repeat(TREE_ROOT_GAP))
-        .replace(/\s+$/, '')
-    );
+  interface Region {
+    rows: string[];
+    width: number;
   }
 
-  return levels.map((entries) =>
-    truncateAnsi(
-      entries.map(renderTreeEntry).join(' '.repeat(TREE_ENTRY_GAP)),
-      width
-    )
+  const regions: Region[] = lineages.map((lineage) => {
+    const rootLine = renderTreeEntry(lineage.root);
+    if (lineage.slices.length === 0) {
+      return { rows: [rootLine], width: Math.max(1, visualLength(rootLine)) };
+    }
+
+    const sliceGap = ' '.repeat(TREE_ENTRY_GAP);
+    const cells = lineage.slices.map((slice) => {
+      const entryLine = renderTreeEntry(slice.entry);
+      const childRow = slice.children.map(renderTreeEntry).join(sliceGap);
+      const cellWidth = Math.max(1, visualLength(entryLine), visualLength(childRow));
+      return { entryLine, childRow, hasChildren: slice.children.length > 0, cellWidth };
+    });
+
+    const rows: string[] = [rootLine];
+    rows.push(
+      cells.map((cell) => padEnd(cell.entryLine, cell.cellWidth)).join(sliceGap).replace(/\s+$/, '')
+    );
+    if (cells.some((cell) => cell.hasChildren)) {
+      rows.push(
+        cells.map((cell) => padEnd(cell.childRow, cell.cellWidth)).join(sliceGap).replace(/\s+$/, '')
+      );
+    }
+    return { rows, width: Math.max(1, ...rows.map(visualLength)) };
+  });
+
+  const gapTotal = TREE_ROOT_GAP * (regions.length - 1);
+  const natural = regions.reduce((sum, region) => sum + region.width, 0) + gapTotal;
+
+  if (natural <= width) {
+    const maxRows = Math.max(...regions.map((region) => region.rows.length));
+    const rows: string[] = [];
+    for (let row = 0; row < maxRows; row++) {
+      rows.push(
+        regions
+          .map((region) => padEnd(region.rows[row] ?? '', region.width))
+          .join(' '.repeat(TREE_ROOT_GAP))
+          .replace(/\s+$/, '')
+      );
+    }
+    return rows;
+  }
+
+  // Overflow: flow every level flat and hard-truncate to the pane width.
+  const levelLines: string[][] = [
+    lineages.map((lineage) => renderTreeEntry(lineage.root)),
+  ];
+  const level2 = lineages.flatMap((lineage) => lineage.slices.map((slice) => renderTreeEntry(slice.entry)));
+  if (level2.length > 0) {
+    levelLines.push(level2);
+  }
+  const level3 = lineages.flatMap((lineage) =>
+    lineage.slices.flatMap((slice) => slice.children.map((child) => renderTreeEntry(child)))
+  );
+  if (level3.length > 0) {
+    levelLines.push(level3);
+  }
+  return levelLines.map((entries) =>
+    truncateAnsi(entries.join(' '.repeat(TREE_ENTRY_GAP)), width)
   );
 }
 
