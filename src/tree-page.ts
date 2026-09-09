@@ -1,45 +1,40 @@
 /**
- * Live popup page for the subagent directory tree.
- * Does not change the 2-line HUD pane.
+ * Live side panel for the subagent directory tree.
+ * Replaces the 2-line HUD pane while tree mode is active.
  */
 
-import { findMostRecentRollout } from './collectors/session-finder.js';
-import type { SessionFile } from './collectors/session-finder.js';
+import { spawn } from 'child_process';
+import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser } from './collectors/rollout.js';
 import { buildSubagentTree } from './collectors/subagent-tree.js';
-import { renderSubagentTreePage } from './render/subagent-tree-view.js';
+import { renderSubagentTreePage, renderTreeUnboundPage } from './render/subagent-tree-view.js';
+import { parseTreeKey } from './utils/tree-keys.js';
 import * as fs from 'fs';
 import type { SubagentTree } from './types.js';
 
-// Rollout parsing is the expensive step; the ⇄ marker only needs re-rendering.
 const DATA_REFRESH_MS = 1000;
 const RENDER_MS = 250;
-// Re-scanning the sessions tree for the most recent rollout is a directory
-// walk; throttle it the same way SessionFinder does.
-const RECENT_SCAN_TTL_MS = 2000;
-
-// Persistent incremental parser: each data tick reads only new bytes instead
-// of re-parsing the whole rollout from offset 0.
-const rolloutParser = new RolloutParser(10);
-let parserPath: string | null = null;
-let recentScan: { cwd: string; at: number; recent: SessionFile | null } | null = null;
-let lastParseSig: { path: string; size: number; mtimeMs: number } | null = null;
 const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
 const CURSOR_HOME = '\x1b[H';
 const CLEAR_SCREEN = '\x1b[2J';
 
-function shouldClose(chunk: Buffer): boolean {
-  if (chunk.length === 0) {
-    return false;
+const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
+const HUD_CWD_REAL = (() => {
+  try {
+    return fs.realpathSync(HUD_CWD);
+  } catch {
+    return HUD_CWD;
   }
-  const first = chunk[0];
-  if (first === 0x03 || first === 0x04 || first === 0x1b || first === 0x14 || first === 0x0d || first === 0x0a) {
-    return true;
-  }
-  const text = chunk.toString('utf8');
-  return /q/i.test(text);
-}
+})();
+
+const HUD_SESSION_START = (() => {
+  const raw = process.env.CODEX_HUD_SESSION_START;
+  if (!raw) return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed > 1_000_000_000_000 ? new Date(parsed) : new Date(parsed * 1000);
+})();
 
 function restoreStdin(): void {
   if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
@@ -48,33 +43,48 @@ function restoreStdin(): void {
   process.stdin.pause();
 }
 
-function paint(text: string): void {
-  const body = text.endsWith('\n') ? text : `${text}\n`;
-  process.stdout.write(`${HIDE_CURSOR}${CURSOR_HOME}${CLEAR_SCREEN}${body}`);
+function paint(lines: string[]): void {
+  process.stdout.write(`${HIDE_CURSOR}${CURSOR_HOME}${CLEAR_SCREEN}${lines.join('\n')}`);
 }
 
-async function collectTree(cwd: string): Promise<SubagentTree | null> {
-  const now = Date.now();
-  if (!recentScan || recentScan.cwd !== cwd || now - recentScan.at >= RECENT_SCAN_TTL_MS) {
-    recentScan = { cwd, at: now, recent: findMostRecentRollout(30, cwd) };
+function windowPage(lines: string[], height: number, scroll: number): { lines: string[]; scroll: number } {
+  if (height <= 0 || lines.length <= height) {
+    return { lines, scroll: 0 };
   }
-  const recent = recentScan.recent;
-  if (!recent) {
-    return null;
+  const headerCount = Math.min(3, lines.length);
+  const header = lines.slice(0, headerCount);
+  const footer = lines[lines.length - 1];
+  const body = lines.slice(headerCount, Math.max(headerCount, lines.length - 1));
+  const visible = Math.max(1, height - headerCount - 1);
+  const maxScroll = Math.max(0, body.length - visible);
+  const off = Math.min(Math.max(0, scroll), maxScroll);
+  return {
+    lines: [...header, ...body.slice(off, off + visible), footer],
+    scroll: off,
+  };
+}
+
+const sessionFinder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
+const rolloutParser = new RolloutParser(10);
+let parserPath: string | null = null;
+let lastParseSig: { path: string; size: number; mtimeMs: number } | null = null;
+
+async function collectTree(): Promise<{ tree: SubagentTree | null; bound: boolean }> {
+  const session = sessionFinder.check();
+  if (!session) {
+    return { tree: null, bound: false };
   }
 
-  if (parserPath !== recent.path) {
-    rolloutParser.setRolloutPath(recent.path);
-    parserPath = recent.path;
+  if (parserPath !== session.path) {
+    rolloutParser.setRolloutPath(session.path);
+    parserPath = session.path;
     lastParseSig = null;
   }
 
-  // The incremental parser still opens and walks state with zero new bytes;
-  // skip it entirely while the file signature is unchanged.
   let sig: { path: string; size: number; mtimeMs: number } | null = null;
   try {
-    const stats = fs.statSync(recent.path);
-    sig = { path: recent.path, size: stats.size, mtimeMs: stats.mtimeMs };
+    const stats = fs.statSync(session.path);
+    sig = { path: session.path, size: stats.size, mtimeMs: stats.mtimeMs };
   } catch {
     sig = null;
   }
@@ -90,41 +100,69 @@ async function collectTree(cwd: string): Promise<SubagentTree | null> {
     result = await rolloutParser.parse();
     lastParseSig = sig;
   }
-  const rootId = result?.session?.id ?? recent.sessionId;
-  return buildSubagentTree(rootId, result?.subagents ?? []);
+  const rootId = result?.session?.id ?? session.sessionId;
+  return { tree: buildSubagentTree(rootId, result?.subagents ?? []), bound: true };
+}
+
+function requestEnsureSingle(): void {
+  const toggle = process.env.CODEX_HUD_TOGGLE_CMD;
+  const session = process.env.CODEX_HUD_TMUX_SESSION;
+  if (!toggle || !session) {
+    return;
+  }
+  try {
+    const child = spawn('bash', [toggle, session, '--ensure-single'], {
+      stdio: 'ignore',
+      detached: true,
+    });
+    child.unref();
+  } catch {
+    // restore is best-effort; the pane is exiting anyway
+  }
 }
 
 async function runLivePage(): Promise<void> {
-  const cwd = process.env.CODEX_HUD_CWD || process.cwd();
   let closed = false;
   let collecting = false;
   let tree: SubagentTree | null = null;
+  let bound = false;
   let collectError: string | null = null;
-  let noSession = false;
   let lastPaint = '';
+  let scroll = 0;
   let dataTimer: ReturnType<typeof setInterval> | null = null;
   let renderTimer: ReturnType<typeof setInterval> | null = null;
+  let closedByUser = false;
 
   const render = () => {
     if (closed) {
       return;
     }
-    let page: string;
+    const columns = Number(process.stdout.columns);
+    const rows = Number(process.stdout.rows);
+    const maxWidth = Number.isFinite(columns) && columns > 0 ? columns : 24;
+    const maxHeight = Number.isFinite(rows) && rows > 0 ? rows : 24;
+    let page: string[];
     if (collectError) {
-      page = `Failed to refresh tree.\n${collectError}\n\nPress q to close.`;
-    } else if (noSession || !tree) {
-      page = 'No Codex session found.\nPress q to close.';
+      page = [
+        'Failed to refresh tree.',
+        collectError,
+        'q/Esc back',
+      ];
+    } else if (!bound) {
+      page = renderTreeUnboundPage(maxWidth);
+    } else if (!tree) {
+      page = renderTreeUnboundPage(maxWidth);
     } else {
-      // In side-panel mode the pane is narrow: clamp every line to its width.
-      const columns = Number(process.stdout.columns);
-      const maxWidth = Number.isFinite(columns) && columns > 0 ? columns : undefined;
-      page = renderSubagentTreePage(tree, maxWidth).join('\n');
+      page = renderSubagentTreePage(tree, maxWidth);
     }
-    if (page === lastPaint) {
+    const windowed = windowPage(page, maxHeight, scroll);
+    scroll = windowed.scroll;
+    const painted = windowed.lines.join('\n');
+    if (painted === lastPaint) {
       return;
     }
-    lastPaint = page;
-    paint(page);
+    lastPaint = painted;
+    paint(windowed.lines);
   };
 
   const finish = () => {
@@ -147,7 +185,22 @@ async function runLivePage(): Promise<void> {
   };
 
   const onData = (chunk: Buffer) => {
-    if (shouldClose(chunk)) {
+    const key = parseTreeKey(chunk);
+    if (key === 'up') {
+      scroll = Math.max(0, scroll - 1);
+      lastPaint = '';
+      render();
+      return;
+    }
+    if (key === 'down') {
+      scroll += 1;
+      lastPaint = '';
+      render();
+      return;
+    }
+    if (key === 'close') {
+      closedByUser = true;
+      requestEnsureSingle();
       finish();
     }
   };
@@ -158,9 +211,9 @@ async function runLivePage(): Promise<void> {
     }
     collecting = true;
     try {
-      const collected = await collectTree(cwd);
-      tree = collected;
-      noSession = collected === null;
+      const collected = await collectTree();
+      tree = collected.tree;
+      bound = collected.bound;
       collectError = null;
     } catch (error) {
       collectError = error instanceof Error ? error.message : String(error);
@@ -175,8 +228,16 @@ async function runLivePage(): Promise<void> {
   await new Promise<void>((resolve) => {
     resolveReady = resolve;
 
-    process.once('SIGINT', finish);
-    process.once('SIGTERM', finish);
+    process.once('SIGINT', () => {
+      if (!closedByUser) {
+        finish();
+      }
+    });
+    process.once('SIGTERM', () => {
+      if (!closedByUser) {
+        finish();
+      }
+    });
     process.stdout.on('resize', () => {
       lastPaint = '';
       render();
@@ -192,8 +253,6 @@ async function runLivePage(): Promise<void> {
     dataTimer = setInterval(() => {
       void collect();
     }, DATA_REFRESH_MS);
-    // The ⇄/⇆ traffic marker and elapsed times advance between data
-    // refreshes, so re-render the cached tree at a higher cadence.
     renderTimer = setInterval(render, RENDER_MS);
   });
 }

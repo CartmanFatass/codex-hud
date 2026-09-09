@@ -79,4 +79,22 @@ if ! grep -q "CODEX_HUD_MAIN_PANE='%1'" "$log_file"; then
   exit 1
 fi
 
+if ! grep -q "CODEX_HOME=" "$log_file"; then
+  echo "expected Codex and HUD launch commands to set CODEX_HOME" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if ! grep -q "send-keys .*CODEX_HOME=" "$log_file"; then
+  echo "expected Linux main pane command to prefix CODEX_HOME" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if ! grep -q "bind-key -T root F12 if-shell" "$log_file"; then
+  echo "expected F12 to be gated on HUD sessions instead of an unconditional root bind" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
 echo "test-wrapper-main-pane-env: PASS"

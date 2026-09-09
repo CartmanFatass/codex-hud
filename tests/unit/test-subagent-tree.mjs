@@ -315,14 +315,14 @@ try {
 
   const pageLines = renderSubagentTreePage(withSiblings).map(stripAnsi);
   const page = pageLines.join('\n');
-  assert.match(page, /Subagent tree/);
-  assert.match(page, /● main/, 'popup should anchor the tree at the main session');
-  assert.match(page, /· 01a00bd0/, 'popup should show the shortened session id on its own line');
+  assert.match(page, /Agents/);
+  assert.match(page, /F12: HUD/);
+  assert.match(page, /main · 01a00bd0/, 'popup should anchor the tree at the main session');
   assert.match(page, /Gauss/);
   assert.match(page, /Singer/);
   assert.match(page, /Scout/);
   assert.match(page, /└─|├─/);
-  assert.match(page, /⇄ traffic/, 'popup should explain the traffic marker');
+  assert.match(page, /q\/Esc back/);
   const scoutLine = pageLines.find((line) => line.includes('Scout'));
   assert.ok(scoutLine, 'grandchild line exists');
   assert.match(scoutLine, /│\s+└─ .*Scout/, 'nested agents are indented under their parent');
@@ -337,9 +337,59 @@ try {
   assert.ok(oracleHead, 'Oracle sits on the tree connector line');
   assert.doesNotMatch(oracleHead, /gpt-5\.3/, 'model does not share the name row');
   assert.ok(
-    oraclePage.some((line) => line.includes('gpt-5.3·xhigh')),
+    oraclePage.some((line) => line.includes('gpt-5.3') && line.includes('xhigh')),
     'model and effort still appear on a stacked detail row'
   );
+
+  const deepNow = Date.now();
+  const deepTree = {
+    rootId: root,
+    nodes: [
+      {
+        id: 'd1',
+        name: 'Helmholtz',
+        status: 'running',
+        startedAt: new Date(deepNow - 50_000),
+        lastActivityAt: new Date(deepNow),
+        model: 'gpt-5.4',
+        effort: 'xhigh',
+        depth: 1,
+        children: [
+          {
+            id: 'd2',
+            name: 'Scout',
+            status: 'running',
+            startedAt: new Date(deepNow - 50_000),
+            model: 'gpt-5.4',
+            effort: 'xhigh',
+            depth: 2,
+            children: [
+              {
+                id: 'd3',
+                name: 'Tracker',
+                status: 'running',
+                startedAt: new Date(deepNow - 50_000),
+                lastActivityAt: new Date(deepNow),
+                model: 'gpt-5.4',
+                effort: 'xhigh',
+                depth: 3,
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    totalCount: 3,
+    updatedAt: new Date(deepNow),
+  };
+  const deep20 = renderSubagentTreePage(deepTree, 20).map(stripAnsi);
+  const trackerHead = deep20.find((line) => line.includes('Tracker'));
+  assert.ok(trackerHead, 'depth-3 name remains visible at 20 columns');
+  assert.match(trackerHead, /⇄|⇆/, 'traffic marker uses a reserved slot and survives 20-column truncation');
+  const trackerAt = deep20.indexOf(trackerHead);
+  assert.match(deep20[trackerAt + 1] ?? '', /50s/, 'elapsed is kept on the status row at 20 columns');
+  assert.match(deep20[trackerAt + 2] ?? '', /xhigh/, 'effort is kept on the model row at 20 columns');
 
   // Side-panel mode: every line clamps to the pane width, measured in
   // terminal columns so CJK nicknames cannot overflow.

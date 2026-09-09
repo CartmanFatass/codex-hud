@@ -17,7 +17,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HUD_DIR="$(dirname "$SCRIPT_DIR")"
 
-session_name="${1:-}"
+ensure_single=0
+session_name=""
+for arg in "$@"; do
+  case "$arg" in
+    --ensure-single) ensure_single=1 ;;
+    *) session_name="$arg" ;;
+  esac
+done
+
 if [[ -z "$session_name" ]]; then
   session_name=$(tmux display-message -p '#{session_id}' 2>/dev/null || true)
 fi
@@ -44,35 +52,39 @@ hud_height=$(get_opt @codex_hud_height)
 hud_height=${hud_height:-2}
 hud_cmd=$(get_opt @codex_hud_hud_cmd)
 session_start=$(get_opt @codex_hud_session_start)
+codex_home=$(get_opt @codex_hud_codex_home)
 cwd_q=$(printf '%q' "$cwd")
+codex_home_q=$(printf '%q' "$codex_home")
+toggle_q=$(printf '%q' "$SCRIPT_DIR/codex-hud-toggle")
+session_q=$(printf '%q' "$session_name")
+
+# Non-HUD sessions have no main pane option; F12 pass-through should have
+# prevented this, but exit quietly if we still get here.
+if [[ -z "$main_pane" ]]; then
+  exit 0
+fi
 
 # A stale pane reference is not an error; the pane may already be gone.
 pane_alive() {
   [[ -n "$1" ]] && tmux display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1
 }
 
-if [[ "$mode" == "tree" ]]; then
-  # tree -> single: recreate the bottom HUD FIRST (from the persisted launch
-  # command, so session start / capture-file / CODEX_HOME context survive),
-  # and only kill the side panel after the replacement is confirmed alive.
+restore_single() {
   if ! pane_alive "$main_pane"; then
-    exit 0
+    return 0
   fi
 
   if [[ -z "$hud_cmd" ]]; then
-    # Sessions created before @codex_hud_hud_cmd existed: fall back to the
-    # minimal environment (no stored launch context available).
-    hud_cmd="cd ${cwd_q} && CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' node '$HUD_DIR/dist/index.js'"
+    hud_cmd="cd ${cwd_q} && CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' node '$HUD_DIR/dist/index.js'"
   fi
 
   if ! new_hud=$(tmux split-window -v -l "$hud_height" -t "$main_pane" -d -P -F '#{pane_id}' "$hud_cmd"); then
-    # Keep the tree panel: the session still has a working HUD form.
     tmux display-message -t "$session_name" "codex-hud: failed to recreate the bottom HUD"
-    exit 1
+    return 1
   fi
   if ! pane_alive "$new_hud"; then
     tmux display-message -t "$session_name" "codex-hud: recreated bottom HUD died immediately"
-    exit 1
+    return 1
   fi
 
   tmux set-option -t "$session_name" @codex_hud_pane "$new_hud"
@@ -82,32 +94,52 @@ if [[ "$mode" == "tree" ]]; then
     tmux kill-pane -t "$tree_pane"
   fi
   tmux select-pane -t "$main_pane" 2>/dev/null || true
-else
-  # single -> tree: open the fixed right-side panel first; on failure keep
-  # the bottom HUD untouched. Only after the panel exists kill the bottom HUD.
-  if ! pane_alive "$main_pane"; then
+  return 0
+}
+
+if [[ "$ensure_single" == "1" ]]; then
+  if [[ "$mode" == "single" ]] && pane_alive "$hud_pane"; then
     exit 0
   fi
-
-  # A percentage split needs a client-provided window size and fails with
-  # "size missing" on detached sessions; compute an absolute width instead.
-  # display-message may print its error to stdout, so keep digits only.
-  # (Not `local`: this branch is at script scope.)
-  win_width=$(tmux display-message -p -t "$main_pane" '#{window_width}' 2>/dev/null | tr -dc '0-9' || true)
-  [[ -z "$win_width" ]] && win_width=120
-  panel_width=$(( win_width / 6 ))
-  if [[ "$panel_width" -lt 20 ]]; then panel_width=20; fi
-  if [[ "$panel_width" -gt 24 ]]; then panel_width=24; fi
-  if ! new_tree=$(tmux split-window -h -l "$panel_width" -t "$main_pane" -d -P -F '#{pane_id}' \
-    "env CODEX_HUD_CWD=$cwd_q node '$HUD_DIR/dist/tree-page.js'"); then
-    tmux display-message -t "$session_name" "codex-hud: failed to open the tree panel"
-    exit 1
-  fi
-
-  tmux set-option -t "$session_name" @codex_hud_tree_pane "$new_tree"
-  tmux set-option -t "$session_name" -q @codex_hud_mode "tree"
-  if pane_alive "$hud_pane"; then
-    tmux kill-pane -t "$hud_pane"
-  fi
-  tmux select-pane -t "$main_pane" 2>/dev/null || true
+  restore_single
+  exit $?
 fi
+
+if [[ "$mode" == "tree" ]]; then
+  restore_single
+  exit $?
+fi
+
+# single -> tree: open the fixed right-side panel first; on failure keep
+# the bottom HUD untouched. Only after the panel exists kill the bottom HUD.
+if ! pane_alive "$main_pane"; then
+  exit 0
+fi
+
+# A percentage split needs a client-provided window size and fails with
+# "size missing" on detached sessions; compute an absolute width instead.
+# display-message may print its error to stdout, so keep digits only.
+# (Not `local`: this branch is at script scope.)
+win_width=$(tmux display-message -p -t "$main_pane" '#{window_width}' 2>/dev/null | tr -dc '0-9' || true)
+[[ -z "$win_width" ]] && win_width=120
+panel_width=$(( win_width / 6 ))
+if [[ "$panel_width" -lt 20 ]]; then panel_width=20; fi
+if [[ "$panel_width" -gt 24 ]]; then panel_width=24; fi
+
+tree_cmd="env CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
+if ! new_tree=$(tmux split-window -h -l "$panel_width" -t "$main_pane" -d -P -F '#{pane_id}' "$tree_cmd"); then
+  tmux display-message -t "$session_name" "codex-hud: failed to open the tree panel"
+  exit 1
+fi
+if ! pane_alive "$new_tree"; then
+  tmux display-message -t "$session_name" "codex-hud: tree panel died immediately"
+  exit 1
+fi
+
+tmux set-option -t "$session_name" @codex_hud_tree_pane "$new_tree"
+tmux set-option -t "$session_name" -q @codex_hud_mode "tree"
+tmux set-option -t "$session_name" @codex_hud_pane ""
+if pane_alive "$hud_pane"; then
+  tmux kill-pane -t "$hud_pane"
+fi
+tmux select-pane -t "$main_pane" 2>/dev/null || true

@@ -79,19 +79,43 @@ function readFirstLine(filePath: string, maxBytes: number = 1024 * 1024): string
   }
 }
 
-function peekRolloutCwd(filePath: string): string | null {
+function peekRolloutMeta(filePath: string): {
+  cwd: string | null;
+  isRoot: boolean;
+} | null {
   try {
     const firstLine = readFirstLine(filePath);
     if (!firstLine) return null;
 
-    const entry = JSON.parse(firstLine.trim());
-    if (entry.type === 'session_meta' && entry.payload) {
-      return normalizePath(entry.payload.cwd);
+    const entry = JSON.parse(firstLine.trim()) as {
+      type?: string;
+      payload?: {
+        cwd?: string;
+        parent_thread_id?: string;
+        thread_source?: string;
+      };
+    };
+    if (entry.type !== 'session_meta' || !entry.payload) {
+      return null;
     }
+    const parentId = entry.payload.parent_thread_id;
+    const threadSource = entry.payload.thread_source;
+    const isRoot = !parentId && threadSource !== 'subagent';
+    return {
+      cwd: normalizePath(entry.payload.cwd),
+      isRoot,
+    };
   } catch {
-    // Ignore errors or malformed files
+    return null;
   }
-  return null;
+}
+
+function peekRolloutCwd(filePath: string): string | null {
+  return peekRolloutMeta(filePath)?.cwd ?? null;
+}
+
+function peekRolloutIsRoot(filePath: string): boolean {
+  return peekRolloutMeta(filePath)?.isRoot === true;
 }
 
 /**
@@ -219,8 +243,7 @@ export function findMostRecentRollout(
     const dayDir = path.join(sessionsDir, year, month, day);
     const rolloutsInDay = findRolloutsInDir(dayDir);
     
-    // Filter by CWD if provided
-    let sessions = rolloutsInDay;
+    let sessions = rolloutsInDay.filter((r) => peekRolloutIsRoot(r.path));
     if (normalizedTarget) {
       sessions = sessions.filter(r => peekRolloutCwd(r.path) === normalizedTarget);
     }

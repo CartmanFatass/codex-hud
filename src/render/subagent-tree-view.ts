@@ -1,50 +1,94 @@
-import { colors, theme, stripAnsi, truncateAnsi } from './colors.js';
-import { renderSubagentStackedLines } from './subagent-chip.js';
+import { colors, theme, stripAnsi, truncateAnsi, visualLength } from './colors.js';
+import { layoutLeftRight, subagentStackedParts } from './subagent-chip.js';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
 
-function renderRootLines(tree: SubagentTree): string[] {
+function countStatuses(nodes: SubagentTreeNode[]): { running: number; done: number } {
+  let running = 0;
+  let done = 0;
+  const walk = (items: SubagentTreeNode[]) => {
+    for (const node of items) {
+      if (node.status === 'completed' || node.status === 'error') {
+        done += 1;
+      } else {
+        running += 1;
+      }
+      walk(node.children);
+    }
+  };
+  walk(nodes);
+  return { running, done };
+}
+
+function renderRootLines(tree: SubagentTree, maxWidth?: number): string[] {
   const shortId = tree.rootId.length > 8 ? tree.rootId.slice(0, 8) : tree.rootId;
+  const counts = countStatuses(tree.nodes);
+  const idLine = colors.dim(`main · ${shortId}`);
+  const summary = colors.dim(`${counts.running} run · ${counts.done} done`);
   return [
-    theme.info('● main'),
-    colors.dim(`· ${shortId}`),
+    maxWidth ? truncateAnsi(idLine, maxWidth) : idLine,
+    maxWidth ? truncateAnsi(summary, maxWidth) : summary,
   ];
 }
 
-export function renderDirectoryTree(nodes: SubagentTreeNode[], prefix = ''): string[] {
+export function renderDirectoryTree(
+  nodes: SubagentTreeNode[],
+  prefix = '',
+  maxWidth?: number
+): string[] {
   const lines: string[] = [];
   nodes.forEach((node, index) => {
     const isLast = index === nodes.length - 1;
     const branch = isLast ? '└─ ' : '├─ ';
     const hang = prefix + (isLast ? '   ' : '│  ');
-    const [head, ...details] = renderSubagentStackedLines(node);
-    lines.push(`${colors.dim(prefix + branch)}${head}`);
-    for (const detail of details) {
-      lines.push(`${colors.dim(hang)}${detail}`);
+    const parts = subagentStackedParts(node);
+    const connector = colors.dim(prefix + branch);
+    const hangDim = colors.dim(hang);
+    const headBudget = maxWidth ? Math.max(1, maxWidth - visualLength(connector)) : undefined;
+    const detailBudget = maxWidth ? Math.max(1, maxWidth - visualLength(hangDim)) : undefined;
+    const head = headBudget
+      ? layoutLeftRight(headBudget, parts.iconName, parts.pulse)
+      : `${parts.iconName}${parts.pulse ? ` ${parts.pulse}` : ''}`;
+    const status = detailBudget
+      ? layoutLeftRight(detailBudget, parts.status, parts.elapsed)
+      : [parts.status, parts.elapsed].filter(Boolean).join('  ');
+    lines.push(`${connector}${head}`);
+    lines.push(`${hangDim}${status}`);
+    if (parts.model || parts.effort) {
+      const meta = detailBudget
+        ? layoutLeftRight(detailBudget, parts.model, parts.effort)
+        : [parts.model, parts.effort].filter(Boolean).join('·');
+      lines.push(`${hangDim}${meta}`);
     }
     if (node.children.length > 0) {
-      lines.push(...renderDirectoryTree(node.children, hang));
+      lines.push(...renderDirectoryTree(node.children, hang, maxWidth));
     }
   });
   return lines;
 }
 
 export function renderSubagentTreePage(tree: SubagentTree, maxWidth?: number): string[] {
-  const lines = [
-    theme.info('Subagent tree'),
-    colors.dim('q / Esc / Ctrl+C'),
-    '',
-  ];
+  const title = layoutLeftRight(maxWidth ?? 24, theme.info('Agents'), colors.dim('F12: HUD'));
+  const lines = [title];
   if (tree.nodes.length === 0) {
-    lines.push(colors.dim('No subagents in this session.'));
+    lines.push(...renderRootLines(tree, maxWidth));
+    lines.push(colors.dim('No subagents'));
   } else {
-    lines.push(...renderRootLines(tree));
-    lines.push(...renderDirectoryTree(tree.nodes));
-    lines.push('');
-    lines.push(colors.dim('⇄ traffic · 4s'));
-    lines.push(colors.dim('◐ running'));
+    lines.push(...renderRootLines(tree, maxWidth));
+    lines.push(...renderDirectoryTree(tree.nodes, '', maxWidth));
   }
-  lines.push('');
-  lines.push(colors.dim(`${tree.totalCount} node(s)`));
+  lines.push(colors.dim(`q/Esc back · ${tree.totalCount}`));
+  if (maxWidth && maxWidth > 0) {
+    return lines.map((line) => truncateAnsi(line, maxWidth));
+  }
+  return lines;
+}
+
+export function renderTreeUnboundPage(maxWidth?: number): string[] {
+  const lines = [
+    layoutLeftRight(maxWidth ?? 24, theme.info('Agents'), colors.dim('F12: HUD')),
+    colors.dim('Waiting for main session'),
+    colors.dim('q/Esc back'),
+  ];
   if (maxWidth && maxWidth > 0) {
     return lines.map((line) => truncateAnsi(line, maxWidth));
   }

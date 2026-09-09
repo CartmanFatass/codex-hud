@@ -72,6 +72,10 @@ setup_session() {
   t set-option -t "$sid" @codex_hud_height 2
   t set-option -t "$sid" @codex_hud_mode "single"
   t set-option -t "$sid" @codex_hud_session_start "1234567890"
+  t set-option -t "$sid" @codex_hud_codex_home "/tmp/codex-hud-test-home"
+  local hud
+  hud=$(t split-window -v -l 2 -t "$main" -d -P -F '#{pane_id}' "sleep 300")
+  t set-option -t "$sid" @codex_hud_pane "$hud"
   # Mimic the persisted launch command exactly as bin/codex-hud stores it:
   # the launch context is embedded in the command itself, so recreating the
   # pane from it restores the environment verbatim.

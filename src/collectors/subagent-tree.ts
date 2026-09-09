@@ -6,8 +6,6 @@ import * as fs from 'fs';
 import { findRolloutsInDays } from './session-finder.js';
 import type { SubagentInfo, SubagentStatus, SubagentTree, SubagentTreeNode } from '../types.js';
 
-const ACTIVE_WINDOW_MS = 45_000;
-
 // session_meta is the first line and never changes on append, so each rollout
 // only needs to be read once. Cache entries re-validate by stat signature and
 // re-peek when the file shrank (truncation/rotation rewrites the first line).
@@ -147,13 +145,15 @@ function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null
 
 function resolveStatus(
   known: SubagentInfo | undefined,
-  modifiedAt: Date,
-  nowMs: number
+  _modifiedAt: Date,
+  _nowMs: number
 ): SubagentStatus {
   if (known) {
     return known.status;
   }
-  return nowMs - modifiedAt.getTime() <= ACTIVE_WINDOW_MS ? 'running' : 'completed';
+  // Parent-link-only nodes have no terminal event. Do not infer "completed"
+  // from mtime silence (long thinking / idle is not done).
+  return 'running';
 }
 
 function countNodes(nodes: SubagentTreeNode[]): number {

@@ -49,20 +49,24 @@ export PATH="$FAKE_BIN_DIR:$FAKE_TMUX_DIR:$PATH"
 export CODEX_HUD_HEIGHT="5"
 export CODEX_HUD_HEIGHT_AUTO="0"
 
-hash_cwd() {
-  local cwd="$1"
+hash_identity() {
+  local identity="$1"
   if command -v md5sum >/dev/null 2>&1; then
-    printf "%s" "$cwd" | md5sum | awk '{print $1}' | cut -c1-8
+    printf "%s" "$identity" | md5sum | awk '{print $1}' | cut -c1-8
     return
   fi
   if command -v md5 >/dev/null 2>&1; then
-    printf "%s" "$cwd" | md5 -q 2>/dev/null | cut -c1-8
+    printf "%s" "$identity" | md5 -q 2>/dev/null | cut -c1-8
     return
   fi
-  printf "%s" "$cwd" | shasum -a 256 | awk '{print $1}' | cut -c1-8
+  printf "%s" "$identity" | shasum -a 256 | awk '{print $1}' | cut -c1-8
 }
 
-session_prefix="codex-hud-$(hash_cwd "$PWD")"
+codex_home="${CODEX_HOME:-$HOME/.codex}"
+if command -v realpath >/dev/null 2>&1; then
+  codex_home=$(realpath -m "$codex_home")
+fi
+session_prefix="codex-hud-$(hash_identity "${PWD}"$'\0'"$codex_home")"
 existing_session="${session_prefix}-20260209093000-4242"
 
 prepare_tmux_env() {

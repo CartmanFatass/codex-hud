@@ -130,15 +130,15 @@ resolve_alternate_screen_setting() {
     parse_boolean_setting "CODEX_HUD_ALTERNATE_SCREEN" "${CODEX_HUD_ALTERNATE_SCREEN:-}" "0"
 }
 
-hash_cwd() {
-    local cwd="$1"
+hash_identity() {
+    local identity="$1"
     local hash=""
     if command_exists md5sum; then
-        hash=$(printf "%s" "$cwd" | md5sum | awk '{print $1}')
+        hash=$(printf "%s" "$identity" | md5sum | awk '{print $1}')
     elif command_exists md5; then
-        hash=$(printf "%s" "$cwd" | md5 -q 2>/dev/null || printf "%s" "$cwd" | md5 | awk '{print $NF}')
+        hash=$(printf "%s" "$identity" | md5 -q 2>/dev/null || printf "%s" "$identity" | md5 | awk '{print $NF}')
     elif command_exists shasum; then
-        hash=$(printf "%s" "$cwd" | shasum -a 256 | awk '{print $1}')
+        hash=$(printf "%s" "$identity" | shasum -a 256 | awk '{print $1}')
     fi
     if [[ -n "$hash" ]]; then
         echo "${hash:0:8}"
@@ -147,10 +147,27 @@ hash_cwd() {
     fi
 }
 
-# Generate session name based on PWD hash (unique per invocation)
-SESSION_HASH="$(hash_cwd "$PWD")"
-SESSION_PREFIX="codex-hud-${SESSION_HASH}"
-SESSION_NAME="${SESSION_PREFIX}-$(date +%Y%m%d%H%M%S)-$$"
+resolve_codex_home() {
+    local raw="${CODEX_HOME:-${HOME}/.codex}"
+    if command_exists realpath; then
+        realpath -m "$raw" 2>/dev/null && return 0
+    fi
+    printf '%s\n' "$raw"
+}
+
+# Session identity is cwd + the effective Codex home so --attach/--kill
+# stay inside one account instead of mixing codex1/codex2 in the same directory.
+EFFECTIVE_CODEX_HOME=""
+SESSION_HASH=""
+SESSION_PREFIX=""
+SESSION_NAME=""
+
+init_session_identity() {
+    EFFECTIVE_CODEX_HOME="$(resolve_codex_home)"
+    SESSION_HASH="$(hash_identity "${PWD}"$'\0'"${EFFECTIVE_CODEX_HOME}")"
+    SESSION_PREFIX="codex-hud-${SESSION_HASH}"
+    SESSION_NAME="${SESSION_PREFIX}-$(date +%Y%m%d%H%M%S)-$$"
+}
 
 resolve_codex_cli() {
     local path
@@ -331,16 +348,22 @@ Install Node.js 18+ from: https://nodejs.org/"
 # Build the HUD renderer if needed
 build_hud() {
     local dist_file="$HUD_DIR/dist/index.js"
-    local src_file="$HUD_DIR/src/index.ts"
+    local tree_dist="$HUD_DIR/dist/tree-page.js"
+    local need_build=0
     
     # Check if node_modules exists
     if [[ ! -d "$HUD_DIR/node_modules" ]]; then
         step "Installing dependencies..."
         (cd "$HUD_DIR" && npm install) || error "Failed to install dependencies"
     fi
-    
-    # Check if we need to build
-    if [[ ! -f "$dist_file" ]] || [[ "$src_file" -nt "$dist_file" ]]; then
+
+    if [[ ! -f "$dist_file" || ! -f "$tree_dist" ]]; then
+        need_build=1
+    elif find "$HUD_DIR/src" -name '*.ts' -newer "$dist_file" 2>/dev/null | grep -q .; then
+        need_build=1
+    fi
+
+    if [[ "$need_build" == "1" ]]; then
         step "Building HUD renderer..."
         (cd "$HUD_DIR" && npm run build) || error "Failed to build HUD renderer"
     fi
@@ -680,8 +703,15 @@ EOF
         error "Failed to detect tmux pane for session: $SESSION_NAME"
     fi
 
+    local codex_home_escaped
+    codex_home_escaped=$(printf "%q" "$EFFECTIVE_CODEX_HOME")
+    # Session-level only: never set-environment -g, or a later account would
+    # overwrite every other HUD on this server.
+    tmux set-environment -t "$SESSION_NAME" CODEX_HOME "$EFFECTIVE_CODEX_HOME"
+    tmux set-option -t "$SESSION_NAME" @codex_hud_codex_home "$EFFECTIVE_CODEX_HOME"
+
     if [[ -z "$tmux_windows_bash" ]]; then
-        main_cmd="cd ${cwd_escaped} && $codex_cmd; tmux kill-session -t '$SESSION_NAME'"
+        main_cmd="cd ${cwd_escaped} && CODEX_HOME=${codex_home_escaped} $codex_cmd; tmux kill-session -t '$SESSION_NAME'"
         tmux send-keys -t "$main_pane_id" "$main_cmd" C-m
         sleep 0.2
     fi
@@ -693,7 +723,7 @@ EOF
     if [[ -n "$runtime_capture_file_windows" ]]; then
         hud_capture_file_env=" CODEX_HUD_PANE_CAPTURE_FILE=$(printf "%q" "$runtime_capture_file_windows")"
     fi
-    local hud_cmd="cd ${cwd_escaped} && LINES='$HUD_HEIGHT' COLUMNS='$term_width' CODEX_HUD_CWD=${cwd_escaped} CODEX_HUD_MAIN_PANE='$main_pane_id' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION='$SESSION_NAME' CODEX_HUD_CLEAR_SCROLLBACK='${CODEX_HUD_CLEAR_SCROLLBACK:-}'${hud_capture_file_env} node '$HUD_DIR/dist/index.js'"
+    local hud_cmd="cd ${cwd_escaped} && LINES='$HUD_HEIGHT' COLUMNS='$term_width' CODEX_HOME=${codex_home_escaped} CODEX_HUD_CWD=${cwd_escaped} CODEX_HUD_MAIN_PANE='$main_pane_id' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION='$SESSION_NAME' CODEX_HUD_CLEAR_SCROLLBACK='${CODEX_HUD_CLEAR_SCROLLBACK:-}'${hud_capture_file_env} node '$HUD_DIR/dist/index.js'"
     if [[ -n "$tmux_windows_bash" ]]; then
         hud_runner="$session_runtime_dir/hud.sh"
         cat > "$hud_runner" <<EOF
@@ -783,13 +813,18 @@ EOF
     # keypress time (run-shell expands #{session_id} then) instead of
     # capturing $SESSION_NAME here, or a second Codex session would hijack
     # the first session's toggle.
-    tmux bind-key -T root F12 run-shell -b "bash '$toggle_cmd' '#{session_id}'"
+    # Root F12 is server-global. Only HUD sessions have @codex_hud_main_pane;
+    # everywhere else pass F12 through to the pane application.
+    tmux bind-key -T root F12 if-shell -F '#{@codex_hud_main_pane}' \
+        "run-shell -b \"bash '$toggle_cmd' '#{session_id}'\"" \
+        "send-keys F12"
 
     SESSION_CREATED="true"
 }
 
 # Main function
 main() {
+    init_session_identity
     local codex_args=()
     if [[ "${CODEX_HUD_WINDOWS_DEFER_ATTACH:-}" == "1" ]]; then
         DEFER_FINAL_ATTACH="1"
@@ -995,6 +1030,7 @@ self_check() {
 
 # Kill existing session
 kill_session() {
+    init_session_identity
     local sessions
     sessions=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | grep "^${SESSION_PREFIX}" || true)
     if [[ -z "$sessions" ]]; then

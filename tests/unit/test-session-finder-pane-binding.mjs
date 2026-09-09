@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { SessionFinder } from '../../dist/collectors/session-finder.js';
+import { SessionFinder, findMostRecentRollout } from '../../dist/collectors/session-finder.js';
 
 function makeTempCodexHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'codex-hud-session-finder-'));
@@ -28,7 +28,7 @@ function rolloutTimestampLabel(offsetMinutes = 0) {
   return `${year}-${month}-${day}T${hour}-${minute}-${second}`;
 }
 
-function writeRollout(home, { sessionId, cwd, fileOffsetMinutes = 0, modifiedAt, extraLines = [] }) {
+function writeRollout(home, { sessionId, cwd, fileOffsetMinutes = 0, modifiedAt, extraLines = [], parentThreadId }) {
   const { year, month, day } = todayParts();
   const dir = path.join(home, 'sessions', year, month, day);
   fs.mkdirSync(dir, { recursive: true });
@@ -46,6 +46,8 @@ function writeRollout(home, { sessionId, cwd, fileOffsetMinutes = 0, modifiedAt,
         cli_version: '0.118.0',
         source: 'cli',
         model_provider: 'openai',
+        parent_thread_id: parentThreadId,
+        thread_source: parentThreadId ? 'subagent' : 'user',
       },
     }),
     ...extraLines.map((line) => JSON.stringify(line)),
@@ -192,6 +194,32 @@ try {
     const resolved = finder.check();
     assert.ok(resolved, 'expected cwd fallback when snapshots have no TMUX_PANE');
     assert.equal(resolved.path, rollout, 'fallback should follow the newest cwd rollout after HUD start');
+  }
+
+  {
+    const home = makeTempCodexHome();
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-hud-cwd-'));
+    process.env.CODEX_HOME = home;
+    delete process.env.CODEX_SESSIONS_PATH;
+    delete process.env.CODEX_HUD_MAIN_PANE;
+
+    const rootId = '01a00bd0-0000-4000-8000-000000000001';
+    const childId = '01a00bd0-0000-4000-8000-000000000002';
+    const rootRollout = writeRollout(home, {
+      sessionId: rootId,
+      cwd,
+      modifiedAt: new Date(Date.now() - 5_000),
+    });
+    writeRollout(home, {
+      sessionId: childId,
+      cwd,
+      parentThreadId: rootId,
+      modifiedAt: new Date(),
+    });
+
+    const recent = findMostRecentRollout(1, cwd);
+    assert.ok(recent, 'expected a root rollout');
+    assert.equal(recent.path, rootRollout, 'fallback must ignore newer subagent rollouts');
   }
 } finally {
   if (originalCodexHome === undefined) {
