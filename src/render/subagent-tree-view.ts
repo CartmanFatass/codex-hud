@@ -19,17 +19,6 @@ function countStatuses(nodes: SubagentTreeNode[]): { running: number; done: numb
   return { running, done };
 }
 
-function renderRootLines(tree: SubagentTree, maxWidth?: number): string[] {
-  const shortId = tree.rootId.length > 8 ? tree.rootId.slice(0, 8) : tree.rootId;
-  const counts = countStatuses(tree.nodes);
-  const idLine = colors.dim(`main · ${shortId}`);
-  const summary = colors.dim(`${counts.running} run · ${counts.done} done`);
-  return [
-    maxWidth ? truncateAnsi(idLine, maxWidth) : idLine,
-    maxWidth ? truncateAnsi(summary, maxWidth) : summary,
-  ];
-}
-
 export function renderDirectoryTree(
   nodes: SubagentTreeNode[],
   prefix = '',
@@ -67,16 +56,19 @@ export function renderDirectoryTree(
 }
 
 export function renderSubagentTreePage(tree: SubagentTree, maxWidth?: number): string[] {
-  const title = layoutLeftRight(maxWidth ?? 24, theme.info('Agents'), colors.dim('F12: HUD'));
-  const lines = [title];
+  const counts = countStatuses(tree.nodes);
+  const shortId = tree.rootId.length > 8 ? tree.rootId.slice(0, 8) : tree.rootId;
+  const headerLeft = theme.info(`main · ${shortId}`);
+  const headerRight = colors.dim(`${counts.running} run · ${counts.done} done`);
+  const header = maxWidth
+    ? layoutLeftRight(maxWidth, headerLeft, headerRight)
+    : `${headerLeft}  ${headerRight}`;
+  const lines = [header];
   if (tree.nodes.length === 0) {
-    lines.push(...renderRootLines(tree, maxWidth));
     lines.push(colors.dim('No subagents'));
   } else {
-    lines.push(...renderRootLines(tree, maxWidth));
     lines.push(...renderDirectoryTree(tree.nodes, '', maxWidth));
   }
-  lines.push(colors.dim(`q/Esc back · ${tree.totalCount}`));
   if (maxWidth && maxWidth > 0) {
     return lines.map((line) => truncateAnsi(line, maxWidth));
   }
@@ -84,11 +76,7 @@ export function renderSubagentTreePage(tree: SubagentTree, maxWidth?: number): s
 }
 
 export function renderTreeUnboundPage(maxWidth?: number): string[] {
-  const lines = [
-    layoutLeftRight(maxWidth ?? 24, theme.info('Agents'), colors.dim('F12: HUD')),
-    colors.dim('Waiting for main session'),
-    colors.dim('q/Esc back'),
-  ];
+  const lines = [colors.dim('Waiting for main session')];
   if (maxWidth && maxWidth > 0) {
     return lines.map((line) => truncateAnsi(line, maxWidth));
   }

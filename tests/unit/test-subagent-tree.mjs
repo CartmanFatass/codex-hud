@@ -202,6 +202,21 @@ try {
   const loneChild = '02a00bd0-0000-4000-8000-000000000002';
   writeRollout(home2, { id: loneRoot, parentId: null, nickname: null });
   writeRollout(home2, { id: loneChild, parentId: loneRoot, nickname: 'Solo' });
+  const compactLines = renderHud(hudDataFor(withSiblings), {
+    width: 160,
+    showDetails: false,
+    layout: {
+      mode: 'compact',
+      showSeparators: false,
+      showDuration: true,
+      showContextBar: false,
+      showContextBreakdown: false,
+      barWidth: 10,
+    },
+  }).map(stripAnsi);
+  assert.equal(compactLines.length, 1, 'compact mode is a single line');
+  assert.doesNotMatch(compactLines[0], /F12|q\/Esc/, 'compact line has no shortcut chrome');
+
   const loneRow = renderHud(
     hudDataFor(buildSubagentTree(loneRoot, [], 3, Date.now())),
     { width: 160, showDetails: true }
@@ -315,14 +330,13 @@ try {
 
   const pageLines = renderSubagentTreePage(withSiblings).map(stripAnsi);
   const page = pageLines.join('\n');
-  assert.match(page, /Agents/);
-  assert.match(page, /F12: HUD/);
   assert.match(page, /main · 01a00bd0/, 'popup should anchor the tree at the main session');
+  assert.doesNotMatch(page, /F12/);
+  assert.doesNotMatch(page, /q\/Esc/);
   assert.match(page, /Gauss/);
   assert.match(page, /Singer/);
   assert.match(page, /Scout/);
   assert.match(page, /└─|├─/);
-  assert.match(page, /q\/Esc back/);
   const scoutLine = pageLines.find((line) => line.includes('Scout'));
   assert.ok(scoutLine, 'grandchild line exists');
   assert.match(scoutLine, /│\s+└─ .*Scout/, 'nested agents are indented under their parent');

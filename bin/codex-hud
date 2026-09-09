@@ -5,7 +5,7 @@
 #
 # Environment variables:
 #   CODEX_HUD_POSITION - HUD pane position: bottom (default), top
-#   CODEX_HUD_HEIGHT   - HUD pane height in lines (default: 2; the HUD process
+#   CODEX_HUD_HEIGHT   - HUD pane height in lines (default: 1; the HUD process
 #                        auto-grows the pane up to 4 lines while active
 #                        subagent tree rows are shown)
 #   CODEX_HUD_HEIGHT_AUTO - Auto-adjust HUD height based on pane width (default: 0)
@@ -568,7 +568,7 @@ resolve_hud_height() {
         return 0
     fi
     
-    local desired=2
+    local desired=1
     if [[ "$desired" -lt "$min_height" ]]; then
         desired="$min_height"
     fi
@@ -798,8 +798,8 @@ EOF
         tmux set-hook -at "$SESSION_NAME" client-attached "refresh-client"
     fi
 
-    # HUD shows 1 header line plus up to 3 active subagent tree rows; the HUD
-    # process auto-resizes its own pane between 2 and 4 lines. F12 toggles the
+    # HUD shows 1 compact header line, plus up to 3 active subagent tree rows.
+    # The HUD process auto-resizes its pane between 1 and 4 lines. F12 toggles the
     # second HUD form: a fixed right-side subagent tree panel that replaces
     # the bottom HUD rows entirely.
     # Bind on the root table (no tmux prefix). Herdr uses Ctrl-b as prefix and
@@ -929,7 +929,7 @@ Options:
 
 Environment Variables:
   CODEX_HUD_POSITION  HUD pane position: bottom (default), top
-  CODEX_HUD_HEIGHT    HUD pane height in lines (default: 1/6 of terminal height, min 5)
+  CODEX_HUD_HEIGHT    HUD pane height in lines (default: 1; grows to 4 with active subagents)
   CODEX_HUD_HEIGHT_AUTO Auto-adjust HUD height based on pane width (default: 0)
   CODEX_HUD_HEIGHT_MIN Minimum HUD height when auto-adjusting (default: CODEX_HUD_HEIGHT)
   CODEX_HUD_HEIGHT_MAX Maximum HUD height when auto-adjusting (default: 12)

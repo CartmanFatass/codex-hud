@@ -5,9 +5,8 @@
 
 import { execFileSync } from 'node:child_process';
 import type { HudData, RenderOptions, LayoutConfig, LayoutMode } from '../types.js';
-import { DEFAULT_LAYOUT } from '../types.js';
 import { renderHud } from './header.js';
-import { colors, visualLength, truncateAnsi } from './colors.js';
+import { colors, truncateAnsi } from './colors.js';
 
 // ANSI escape codes for cursor/screen control
 const CURSOR_HOME = '\x1b[H';
@@ -18,22 +17,8 @@ const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
 
 let lastStdoutFrame: string | null = null;
-const STATUS_HINT = 'F12: Tree';
 const PANE_SIZE_TTL_MS = 2000;
 let cachedPaneSize: { width?: number; height?: number; at: number } | null = null;
-
-function applyStatusHint(lines: string[], width: number, maxLines: number): string[] {
-  if (lines.length === 0 || width <= 0 || lines.length >= maxLines) {
-    return lines;
-  }
-
-  const status = colors.dim(STATUS_HINT);
-  if (visualLength(status) > width) {
-    return lines;
-  }
-
-  return [...lines, status];
-}
 
 function readTmuxPaneSize(): { width?: number; height?: number } {
   const pane = process.env.TMUX_PANE;
@@ -141,8 +126,8 @@ function truncateLines(lines: string[], width: number): string[] {
  * Create default layout config based on terminal size
  */
 function createDefaultLayout(width: number, height: number): LayoutConfig {
-  // Compact is only for an explicit 1-line status bar, not a short HUD pane.
-  const mode: LayoutMode = height <= 0 ? 'compact' : 'expanded';
+  // Compact is the 1-line bar used when there are no active subagent rows.
+  const mode: LayoutMode = height <= 1 ? 'compact' : 'expanded';
   
   return {
     mode,
@@ -177,10 +162,7 @@ export function render(data: HudData): void {
   };
   
   const maxLines = Math.max(1, height);
-  const lines = truncateLines(
-    applyStatusHint(limitLines(renderHud(data, options), maxLines), width, maxLines),
-    width
-  );
+  const lines = truncateLines(limitLines(renderHud(data, options), maxLines), width);
   
   // Move cursor to home position and render
   process.stdout.write(CURSOR_HOME);
@@ -251,18 +233,19 @@ export function renderSingleLine(data: HudData): string {
  */
 export function renderToStdout(data: HudData, heightOverride?: number): void {
   const width = getTerminalWidth();
-  const layout = createDefaultLayout(width, 2);
+  const height = Math.max(1, heightOverride ?? 1);
+  const layout = createDefaultLayout(width, height);
   const clearScrollback = process.env.CODEX_HUD_CLEAR_SCROLLBACK === '1';
   
   const options: RenderOptions = {
     width,
-    showDetails: true,
+    showDetails: height >= 2,
     layout,
   };
 
   const rendered = truncateLines(renderHud(data, options), width);
-  const maxLines = Math.max(1, heightOverride ?? rendered.length);
-  const lines = applyStatusHint(limitLines(rendered, maxLines), width, maxLines);
+  const maxLines = height;
+  const lines = limitLines(rendered, maxLines);
 
   const frame = `${width}x${maxLines}\n${lines.join('\n')}`;
   if (frame === lastStdoutFrame) {

@@ -51,15 +51,14 @@ function windowPage(lines: string[], height: number, scroll: number): { lines: s
   if (height <= 0 || lines.length <= height) {
     return { lines, scroll: 0 };
   }
-  const headerCount = Math.min(3, lines.length);
+  const headerCount = Math.min(1, lines.length);
   const header = lines.slice(0, headerCount);
-  const footer = lines[lines.length - 1];
-  const body = lines.slice(headerCount, Math.max(headerCount, lines.length - 1));
-  const visible = Math.max(1, height - headerCount - 1);
+  const body = lines.slice(headerCount);
+  const visible = Math.max(1, height - header.length);
   const maxScroll = Math.max(0, body.length - visible);
   const off = Math.min(Math.max(0, scroll), maxScroll);
   return {
-    lines: [...header, ...body.slice(off, off + visible), footer],
+    lines: [...header, ...body.slice(off, off + visible)],
     scroll: off,
   };
 }
@@ -146,7 +145,6 @@ async function runLivePage(): Promise<void> {
       page = [
         'Failed to refresh tree.',
         collectError,
-        'q/Esc back',
       ];
     } else if (!bound) {
       page = renderTreeUnboundPage(maxWidth);

@@ -228,9 +228,9 @@ async function collectData(): Promise<HudData> {
   return hudData;
 }
 
-// The HUD pane holds the header line plus up to 3 active subagent tree rows.
-// The pane grows/shrinks to match so codex keeps the rest of the terminal.
-const HUD_PANE_MIN_HEIGHT = 2;
+// Compact HUD is 1 header line. Active subagents add up to 3 tree rows.
+// The pane grows/shrinks to match so Codex keeps the rest of the terminal.
+const HUD_PANE_MIN_HEIGHT = 1;
 const HUD_PANE_MAX_HEIGHT = 4;
 const HUD_FAST_RENDER_MS = 250;
 let lastPaneHeight = HUD_PANE_MIN_HEIGHT;
