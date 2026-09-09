@@ -769,9 +769,11 @@ EOF
     fi
 
     # HUD shows 1 header line plus up to 3 active subagent tree rows; the HUD
-    # process auto-resizes its own pane between 2 and 4 lines. Prefix+H /
-    # Prefix+t toggle the second HUD form: a fixed right-side subagent tree
-    # panel that replaces the bottom HUD rows entirely.
+    # process auto-resizes its own pane between 2 and 4 lines. F12 toggles the
+    # second HUD form: a fixed right-side subagent tree panel that replaces
+    # the bottom HUD rows entirely.
+    # Bind on the root table (no tmux prefix). Herdr uses Ctrl-b as prefix and
+    # prefix+h for pane focus, so Prefix+H / Prefix+t never reach inner tmux.
     # Do not bind root Ctrl+T — that belongs to Codex's transcript overlay.
     local toggle_cmd
     toggle_cmd="$SCRIPT_DIR/codex-hud-toggle"
@@ -781,8 +783,7 @@ EOF
     # keypress time (run-shell expands #{session_id} then) instead of
     # capturing $SESSION_NAME here, or a second Codex session would hijack
     # the first session's toggle.
-    tmux bind-key -T prefix H run-shell -b "bash '$toggle_cmd' '#{session_id}'"
-    tmux bind-key -T prefix t run-shell -b "bash '$toggle_cmd' '#{session_id}'"
+    tmux bind-key -T root F12 run-shell -b "bash '$toggle_cmd' '#{session_id}'"
 
     SESSION_CREATED="true"
 }

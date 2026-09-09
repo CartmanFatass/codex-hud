@@ -18,7 +18,7 @@ const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
 
 let lastStdoutFrame: string | null = null;
-const STATUS_HINT = 'Prefix+t: Tree';
+const STATUS_HINT = 'F12: Tree';
 const PANE_SIZE_TTL_MS = 2000;
 let cachedPaneSize: { width?: number; height?: number; at: number } | null = null;
 

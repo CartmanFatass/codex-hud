@@ -47,13 +47,11 @@ export function formatElapsedShort(startTime: Date, nowMs: number = Date.now()):
   return `${Math.floor(diffMin / 60)}h${String(diffMin % 60).padStart(2, '0')}m`;
 }
 
-export function renderSubagentChip(
-  node: SubagentTreeNode,
-  opts?: { showStatusText?: boolean; nowMs?: number }
-): string {
-  const nowMs = opts?.nowMs ?? Date.now();
+export function subagentVisual(node: SubagentTreeNode): {
+  icon: string;
+  paint: (text: string) => string;
+} {
   // Static icon per status; color carries the running/terminal distinction.
-  // Animation is reserved for the traffic marker below.
   const icon = node.status === 'completed'
     ? icons.check
     : node.status === 'error'
@@ -61,15 +59,45 @@ export function renderSubagentChip(
       : node.status === 'starting'
         ? '○'
         : icons.running;
-  const color = node.status === 'completed'
+  const paint = node.status === 'completed'
     ? theme.success
     : node.status === 'error'
       ? theme.error
       : theme.info;
+  return { icon, paint };
+}
+
+export function renderSubagentChip(
+  node: SubagentTreeNode,
+  opts?: { showStatusText?: boolean; nowMs?: number }
+): string {
+  const nowMs = opts?.nowMs ?? Date.now();
+  const { icon, paint } = subagentVisual(node);
   const pulse = hasFreshComm(node, nowMs) ? theme.warning(`${commFrame(nowMs)} `) : '';
   const meta = formatModelEffort(node);
   const metaText = meta ? ` ${colors.dim(meta)}` : '';
   const statusText = opts?.showStatusText ? ` ${colors.dim(node.status)}` : '';
   const elapsed = node.startedAt ? ` ${colors.dim(formatElapsedShort(node.startedAt, nowMs))}` : '';
-  return `${pulse}${color(`${icon} ${node.name}`)}${metaText}${statusText}${elapsed}`;
+  return `${pulse}${paint(`${icon} ${node.name}`)}${metaText}${statusText}${elapsed}`;
+}
+
+/** Side-panel rows: name on its own line, status/elapsed and model stacked below. */
+export function renderSubagentStackedLines(
+  node: SubagentTreeNode,
+  opts?: { nowMs?: number }
+): string[] {
+  const nowMs = opts?.nowMs ?? Date.now();
+  const { icon, paint } = subagentVisual(node);
+  const pulse = hasFreshComm(node, nowMs) ? theme.warning(` ${commFrame(nowMs)}`) : '';
+  const lines = [`${paint(`${icon} ${node.name}`)}${pulse}`];
+  const statusParts: string[] = [node.status];
+  if (node.startedAt) {
+    statusParts.push(formatElapsedShort(node.startedAt, nowMs));
+  }
+  lines.push(colors.dim(statusParts.join('  ')));
+  const meta = formatModelEffort(node);
+  if (meta) {
+    lines.push(colors.dim(meta));
+  }
+  return lines;
 }

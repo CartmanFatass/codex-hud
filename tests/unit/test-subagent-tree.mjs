@@ -313,21 +313,37 @@ try {
     "X sits inside C's slice in structure B"
   );
 
-  const page = renderSubagentTreePage(withSiblings).map(stripAnsi).join('\n');
+  const pageLines = renderSubagentTreePage(withSiblings).map(stripAnsi);
+  const page = pageLines.join('\n');
   assert.match(page, /Subagent tree/);
-  assert.match(page, /● main session · 01a00bd0/, 'popup should anchor the tree at the main session');
+  assert.match(page, /● main/, 'popup should anchor the tree at the main session');
+  assert.match(page, /· 01a00bd0/, 'popup should show the shortened session id on its own line');
   assert.match(page, /Gauss/);
   assert.match(page, /Singer/);
   assert.match(page, /Scout/);
   assert.match(page, /└─|├─/);
-  assert.match(page, /⇄\/⇆ main<->agent traffic/, 'popup should explain the traffic marker');
-  const scoutLine = page.split('\n').find((line) => line.includes('Scout'));
+  assert.match(page, /⇄ traffic/, 'popup should explain the traffic marker');
+  const scoutLine = pageLines.find((line) => line.includes('Scout'));
   assert.ok(scoutLine, 'grandchild line exists');
   assert.match(scoutLine, /│\s+└─ .*Scout/, 'nested agents are indented under their parent');
+  const gaussHead = pageLines.find((line) => /[├└]─ .*Gauss/.test(line));
+  assert.ok(gaussHead, 'Gauss sits on the tree connector line');
+  assert.doesNotMatch(gaussHead, /running|completed|starting|error/, 'status is stacked under the name');
+  assert.doesNotMatch(gaussHead, /gpt-/, 'model is stacked under the name');
+  const gaussHeadAt = pageLines.indexOf(gaussHead);
+  assert.match(pageLines[gaussHeadAt + 1] ?? '', /running|completed|starting|error/, 'status uses the next row');
+  const oraclePage = renderSubagentTreePage(withModel).map(stripAnsi);
+  const oracleHead = oraclePage.find((line) => /[├└]─ .*Oracle/.test(line));
+  assert.ok(oracleHead, 'Oracle sits on the tree connector line');
+  assert.doesNotMatch(oracleHead, /gpt-5\.3/, 'model does not share the name row');
+  assert.ok(
+    oraclePage.some((line) => line.includes('gpt-5.3·xhigh')),
+    'model and effort still appear on a stacked detail row'
+  );
 
   // Side-panel mode: every line clamps to the pane width, measured in
   // terminal columns so CJK nicknames cannot overflow.
-  const narrowWidth = 32;
+  const narrowWidth = 24;
   const narrow = renderSubagentTreePage(withSiblings, narrowWidth).map(stripAnsi);
   assert.ok(narrow.length > 0, 'panel render produces lines');
   for (const line of narrow) {

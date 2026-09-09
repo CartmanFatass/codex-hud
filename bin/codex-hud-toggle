@@ -95,9 +95,9 @@ else
   # (Not `local`: this branch is at script scope.)
   win_width=$(tmux display-message -p -t "$main_pane" '#{window_width}' 2>/dev/null | tr -dc '0-9' || true)
   [[ -z "$win_width" ]] && win_width=120
-  panel_width=$(( win_width / 3 ))
-  if [[ "$panel_width" -lt 24 ]]; then panel_width=24; fi
-  if [[ "$panel_width" -gt 60 ]]; then panel_width=60; fi
+  panel_width=$(( win_width / 6 ))
+  if [[ "$panel_width" -lt 20 ]]; then panel_width=20; fi
+  if [[ "$panel_width" -gt 24 ]]; then panel_width=24; fi
   if ! new_tree=$(tmux split-window -h -l "$panel_width" -t "$main_pane" -d -P -F '#{pane_id}' \
     "env CODEX_HUD_CWD=$cwd_q node '$HUD_DIR/dist/tree-page.js'"); then
     tmux display-message -t "$session_name" "codex-hud: failed to open the tree panel"
