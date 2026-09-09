@@ -131,9 +131,9 @@ function createDefaultLayout(width: number, height: number): LayoutConfig {
   
   return {
     mode,
-    showSeparators: mode === 'expanded',
+    showSeparators: true,
     showDuration: true,
-    showContextBar: mode === 'compact',
+    showContextBar: true,
     showContextBreakdown: false,
     barWidth: Math.min(10, Math.max(6, Math.floor(width / 12))),
   };

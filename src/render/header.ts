@@ -17,55 +17,46 @@ import {
   type SubagentTreeEntry,
 } from '../collectors/subagent-tree.js';
 import {
-  renderIdentityLine,
   renderProjectLine,
   renderEnvironmentCompact,
   renderUsageLine,
   renderTokenLine,
   formatTokenCount,
 } from './lines/index.js';
+import { getModelDisplayName } from '../collectors/codex-config.js';
+import { renderModelEffortToken } from './model-glyphs.js';
 
 /**
- * Render the compact layout (single line)
- * Format: [Model] █████ 45% | project git:(branch *) | 2 MCPs | ⏱️ 10m
+ * The single status line: model/effort glyphs plus the previous header fields.
+ * Compact mode is this line only; expanded mode appends subagent rows under it.
  */
+function renderStatusHeader(data: HudData, layout: LayoutConfig, width: number): string {
+  const modelName = data.session?.model ?? getModelDisplayName(data.config);
+  const reasoningEffort = data.session?.reasoningEffort ?? data.config.model_reasoning_effort;
+  const modelToken = renderModelEffortToken(modelName, reasoningEffort);
+  const plans = planWindows(data);
+  const ctxMeter = renderAlignedMeter('Ctx', contextPercent(data), contextTotals(data));
+  const planMeter = plans.length > 0
+    ? renderAlignedMeter('Plan', plans[0].percent, [plans[0].label, ...plans.slice(1).map((item) => `${item.percent}% ${item.label}`)].filter(Boolean).join(' · '))
+    : renderAlignedMeter('Plan');
+
+  return truncateAnsi(
+    joinDense([
+      modelToken,
+      renderTokenLine(data),
+      ctxMeter,
+      planMeter,
+      renderUsageLine(data, layout),
+      renderProjectLine(data, { includeFileStats: false }),
+      renderEnvironmentCompact(data),
+      renderSessionCompact(data),
+    ]),
+    width
+  );
+}
+
 function renderCompactLayout(data: HudData, layout: LayoutConfig, width: number): string[] {
-  const parts: string[] = [];
-  
-  // Identity (model + context bar)
-  parts.push(renderIdentityLine(data, layout, { maxWidth: width }));
-  
-  // Project + git
-  parts.push(renderProjectLine(data));
-  
-  // Quick stats (just MCP count)
-  const mcpCount = data.project.mcpCount;
-  if (mcpCount > 0) {
-    parts.push(theme.info(`${mcpCount}`) + colors.dim(' MCPs'));
-  }
-  
-  // Duration
-  const usageLine = renderUsageLine(data, layout);
-  if (usageLine) {
-    parts.push(usageLine);
-  }
-  
-  const separator = layout.showSeparators ? theme.separator(' │ ') : ' ';
-  let row = parts.join(separator);
-  if (visualLength(row) <= width) {
-    return [row];
-  }
-
-  const trimmedParts = parts.slice(0, 2);
-  row = trimmedParts.join(separator);
-  if (visualLength(row) <= width) {
-    return [row];
-  }
-
-  const identity = parts[0] ?? '';
-  const availableForProject = Math.max(0, width - visualLength(identity) - visualLength(separator));
-  const project = renderProjectLine(data, { includeFileStats: false, maxWidth: availableForProject });
-  return [identity + separator + project];
+  return [renderStatusHeader(data, layout, width)];
 }
 
 function joinDense(parts: Array<string | null | undefined>): string {
@@ -231,26 +222,7 @@ function renderActiveTreeRows(tree: SubagentTree | undefined, width: number): st
  * Header plus parallel directory trees for top-level subagents.
  */
 function renderExpandedLayout(data: HudData, layout: LayoutConfig, width: number): string[] {
-  const plans = planWindows(data);
-  const ctxMeter = renderAlignedMeter('Ctx', contextPercent(data), contextTotals(data));
-  const planMeter = plans.length > 0
-    ? renderAlignedMeter('Plan', plans[0].percent, [plans[0].label, ...plans.slice(1).map((item) => `${item.percent}% ${item.label}`)].filter(Boolean).join(' · '))
-    : renderAlignedMeter('Plan');
-
-  const header = truncateAnsi(
-    joinDense([
-      renderTokenLine(data),
-      ctxMeter,
-      planMeter,
-      renderUsageLine(data, layout),
-      renderProjectLine(data, { includeFileStats: false }),
-      renderEnvironmentCompact(data),
-      renderSessionCompact(data),
-    ]),
-    width
-  );
-
-  return [header, ...renderActiveTreeRows(data.subagentTree, width)];
+  return [renderStatusHeader(data, layout, width), ...renderActiveTreeRows(data.subagentTree, width)];
 }
 
 function renderDirectoryTree(nodes: SubagentTreeNode[], prefix = ''): string[] {

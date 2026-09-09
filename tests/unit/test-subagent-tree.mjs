@@ -216,6 +216,10 @@ try {
   }).map(stripAnsi);
   assert.equal(compactLines.length, 1, 'compact mode is a single line');
   assert.doesNotMatch(compactLines[0], /F12|q\/Esc/, 'compact line has no shortcut chrome');
+  assert.doesNotMatch(compactLines[0], /Gauss|Singer|Scout/, 'compact mode hides subagents');
+  assert.match(compactLines[0], /Ctx/, 'compact keeps the status header');
+  assert.match(compactLines[0], /Plan/);
+  assert.match(compactLines[0], /mode:/);
 
   const loneRow = renderHud(
     hudDataFor(buildSubagentTree(loneRoot, [], 3, Date.now())),
