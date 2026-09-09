@@ -117,8 +117,9 @@ export const icons = {
   // Activity
   check: '✓',
   cross: '✗',
-  running: '◐',       // In-progress spinner character
-  spinner: ['◐', '◓', '◑', '◒'],  // Rotating spinner
+  running: '▸',
+  starting: '·',
+  spinner: ['▸', '▹', '▸', '▹'],
   
   // Info
   clock: '⏱️',

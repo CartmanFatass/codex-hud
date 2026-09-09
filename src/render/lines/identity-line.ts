@@ -5,12 +5,13 @@
  */
 
 import type { HudData, LayoutConfig } from '../../types.js';
-import { theme, coloredBar, coloredPercent, truncate, truncateAnsi, visualLength } from '../colors.js';
+import { coloredBar, coloredPercent, truncateAnsi, visualLength } from '../colors.js';
 import { getModelDisplayName } from '../../collectors/codex-config.js';
+import { renderModelEffortToken } from '../model-glyphs.js';
 
 /**
  * Render the identity line
- * Format: [Model] █████░░░░░ 45%
+ * Format: ☀◐ █████░░░░░ 45%
  */
 export function renderIdentityLine(
   data: HudData,
@@ -19,11 +20,9 @@ export function renderIdentityLine(
 ): string {
   const parts: string[] = [];
   
-  // Model name in brackets
   const modelName = data.session?.model ?? getModelDisplayName(data.config);
   const reasoningEffort = data.session?.reasoningEffort ?? data.config.model_reasoning_effort;
-  const showReasoningEffort = Boolean((data.session?.model ?? data.config.model) && reasoningEffort);
-  const identityName = showReasoningEffort ? `${modelName} ${reasoningEffort}` : modelName;
+  const identityToken = renderModelEffortToken(modelName, reasoningEffort);
   let contextDisplay = '';
   const showContextBar = layout.showContextBar !== false;
 
@@ -42,21 +41,21 @@ export function renderIdentityLine(
   }
 
   const maxWidth = options.maxWidth;
-  let modelDisplay = theme.modelBracket('[') + theme.model(identityName) + theme.modelBracket(']');
+  let modelDisplay = identityToken;
   if (maxWidth && maxWidth > 0) {
     const contextLen = contextDisplay ? visualLength(contextDisplay) + 1 : 0;
     const availableForModel = Math.max(0, maxWidth - contextLen);
-    if (availableForModel <= 2 && contextDisplay) {
+    if (availableForModel <= 0 && contextDisplay) {
       return truncateAnsi(contextDisplay, maxWidth);
     }
-    if (availableForModel > 2) {
-      const maxModelLen = Math.max(1, availableForModel - 2);
-      const trimmedModel = truncate(identityName, maxModelLen, '…');
-      modelDisplay = theme.modelBracket('[') + theme.model(trimmedModel) + theme.modelBracket(']');
+    if (availableForModel > 0) {
+      modelDisplay = truncateAnsi(identityToken, availableForModel);
     }
   }
 
-  parts.push(modelDisplay);
+  if (modelDisplay) {
+    parts.push(modelDisplay);
+  }
   if (contextDisplay) {
     parts.push(contextDisplay);
   }

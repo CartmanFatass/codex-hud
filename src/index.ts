@@ -11,7 +11,7 @@ import { collectProjectInfo } from './collectors/project.js';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser } from './collectors/rollout.js';
-import { buildSubagentTree, collectActiveTreeLineages, countActiveTreeLevels } from './collectors/subagent-tree.js';
+import { buildSubagentTree } from './collectors/subagent-tree.js';
 import { createParseQueue } from './utils/parse-queue.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer } from './render/index.js';
@@ -228,18 +228,16 @@ async function collectData(): Promise<HudData> {
   return hudData;
 }
 
-// Compact HUD is 1 header line. Active subagents add up to 3 tree rows.
-// The pane grows/shrinks to match so Codex keeps the rest of the terminal.
+// Compact HUD is always a single identity line. Subagents live in the tree panel.
 const HUD_PANE_MIN_HEIGHT = 1;
-const HUD_PANE_MAX_HEIGHT = 4;
+const HUD_PANE_MAX_HEIGHT = 1;
 const HUD_FAST_RENDER_MS = 250;
 let lastPaneHeight = HUD_PANE_MIN_HEIGHT;
 let lastPaneResizeAt = 0;
 let paneResizeCooldownUntil = 0;
 
-function targetHudPaneHeight(data: HudData): number {
-  const levels = countActiveTreeLevels(collectActiveTreeLineages(data.subagentTree));
-  return Math.max(HUD_PANE_MIN_HEIGHT, Math.min(HUD_PANE_MAX_HEIGHT, 1 + levels));
+function targetHudPaneHeight(_data: HudData): number {
+  return HUD_PANE_MIN_HEIGHT;
 }
 
 function maybeResizeHudPane(desiredHeight: number): void {

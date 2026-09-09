@@ -63,15 +63,18 @@ const sessionDriven = stripAnsi(
 
 assert.match(
   sessionDriven,
-  /\[gpt-5\.4 xhigh\]/,
+  /5\.4/,
+  'identity line should prefer the current session model over config defaults'
+);
+assert.match(
+  sessionDriven,
+  /●/,
   'identity line should prefer the current session effort over config defaults'
 );
+assert.doesNotMatch(sessionDriven, /xhigh/, 'effort is a glyph, not the word xhigh');
 
 const configDriven = stripAnsi(renderIdentityLine(baseData, layout));
-assert.match(
-  configDriven,
-  /\[gpt-5\.4 high\]/,
-  'identity line should show config reasoning effort before a session is bound'
-);
+assert.match(configDriven, /5\.4/, 'identity line should show config model before a session is bound');
+assert.match(configDriven, /◕/, 'identity line should show config reasoning effort as a fill glyph');
 
 console.log('test-identity-line-effort: PASS');

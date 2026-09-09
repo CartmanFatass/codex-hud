@@ -231,7 +231,8 @@ try {
 
   // Model/effort chips: render a tree whose nodes carry model info.
   const modelRow = renderHud(hudDataFor(withModel), { width: 160, showDetails: true }).map(stripAnsi);
-  assert.match(modelRow[1] ?? '', /gpt-5\.3·xhigh/, 'chip should show model and effort');
+  assert.match(modelRow[1] ?? '', /●/, 'chip should show effort as a fill glyph');
+  assert.doesNotMatch(modelRow[1] ?? '', /gpt-5\.3·xhigh/, 'chip should not spell model and effort');
 
   // Fresh main<->agent traffic pulses the chip with the animated ⇄/⇆ marker.
   const commTree = buildSubagentTree(root, [
@@ -342,18 +343,17 @@ try {
   assert.match(scoutLine, /│\s+└─ .*Scout/, 'nested agents are indented under their parent');
   const gaussHead = pageLines.find((line) => /[├└]─ .*Gauss/.test(line));
   assert.ok(gaussHead, 'Gauss sits on the tree connector line');
-  assert.doesNotMatch(gaussHead, /running|completed|starting|error/, 'status is stacked under the name');
-  assert.doesNotMatch(gaussHead, /gpt-/, 'model is stacked under the name');
+  assert.match(gaussHead, /▸/, 'running agents use the play glyph, not the effort circle');
+  assert.doesNotMatch(gaussHead, /running|completed|starting|error/, 'status words are not shown');
+  assert.doesNotMatch(gaussHead, /gpt-/, 'model slugs are not shown');
   const gaussHeadAt = pageLines.indexOf(gaussHead);
-  assert.match(pageLines[gaussHeadAt + 1] ?? '', /running|completed|starting|error/, 'status uses the next row');
+  assert.doesNotMatch(pageLines[gaussHeadAt + 1] ?? '', /running|completed|12s|50s/, 'elapsed time is omitted');
   const oraclePage = renderSubagentTreePage(withModel).map(stripAnsi);
   const oracleHead = oraclePage.find((line) => /[├└]─ .*Oracle/.test(line));
   assert.ok(oracleHead, 'Oracle sits on the tree connector line');
-  assert.doesNotMatch(oracleHead, /gpt-5\.3/, 'model does not share the name row');
-  assert.ok(
-    oraclePage.some((line) => line.includes('gpt-5.3') && line.includes('xhigh')),
-    'model and effort still appear on a stacked detail row'
-  );
+  assert.doesNotMatch(oracleHead, /gpt-5\.3/, 'model slug is replaced by a token');
+  assert.match(oracleHead, /●/, 'effort is a glyph before the name');
+  assert.doesNotMatch(oraclePage.join('\n'), /xhigh/);
 
   const deepNow = Date.now();
   const deepTree = {
@@ -398,12 +398,13 @@ try {
     updatedAt: new Date(deepNow),
   };
   const deep20 = renderSubagentTreePage(deepTree, 20).map(stripAnsi);
-  const trackerHead = deep20.find((line) => line.includes('Tracker'));
-  assert.ok(trackerHead, 'depth-3 name remains visible at 20 columns');
+  const trackerHead = deep20.find((line) => /T/.test(line) && /└─/.test(line) && line.includes('▸'));
+  assert.ok(trackerHead, 'depth-3 row remains visible at 20 columns');
   assert.match(trackerHead, /⇄|⇆/, 'traffic marker uses a reserved slot and survives 20-column truncation');
-  const trackerAt = deep20.indexOf(trackerHead);
-  assert.match(deep20[trackerAt + 1] ?? '', /50s/, 'elapsed is kept on the status row at 20 columns');
-  assert.match(deep20[trackerAt + 2] ?? '', /xhigh/, 'effort is kept on the model row at 20 columns');
+  assert.match(trackerHead, /●/, 'effort glyph stays on the name row at 20 columns');
+  assert.doesNotMatch(trackerHead, /50s|xhigh|gpt-5\.4/);
+  const unconstrained = renderSubagentTreePage(deepTree).map(stripAnsi).find((line) => line.includes('Tracker'));
+  assert.ok(unconstrained, 'unconstrained tree keeps the full depth-3 name');
 
   // Side-panel mode: every line clamps to the pane width, measured in
   // terminal columns so CJK nicknames cannot overflow.

@@ -154,7 +154,7 @@ assert_eq "T7 s1 pane count" "$(pane_count s1)" "2"
 toggle s2
 assert_eq "T7 s2 back to single" "$(get_opt s2 @codex_hud_mode)" "single"
 
-# ------------------------------------------------- T8: real HUD render + auto height
+# ------------------------------------------------- T8: compact HUD stays one line
 # Uses a fresh session so leftover state from T1-T7 cannot mask regressions.
 t new-session -d -s s3 -x 200 -y 40 'sleep 300'
 FAKE_HOME=$(mktemp -d)
@@ -165,41 +165,32 @@ NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
 STAMP=$(date +%Y-%m-%dT%H-%M-%S)
 R1="aaaaaaaa-0000-4000-8000-000000000001"
 R2="aaaaaaaa-0000-4000-8000-000000000002"
-R3="aaaaaaaa-0000-4000-8000-000000000003"
 printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"%s","timestamp":"%s","cwd":"%s","originator":"codex-tui","source":"cli","thread_source":"user"}}\n' \
   "$NOW_ISO" "$R1" "$NOW_ISO" "$FAKE_CWD" > "$DATE_DIR/rollout-$STAMP-$R1.jsonl"
 printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"%s","parent_thread_id":"%s","agent_nickname":"TmuxChild","timestamp":"%s","cwd":"%s","source":"cli","thread_source":"subagent"}}\n' \
   "$NOW_ISO" "$R2" "$R1" "$NOW_ISO" "$FAKE_CWD" > "$DATE_DIR/rollout-$STAMP-$R2.jsonl"
-printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"%s","parent_thread_id":"%s","agent_nickname":"TmuxGrand","timestamp":"%s","cwd":"%s","source":"cli","thread_source":"subagent"}}\n' \
-  "$NOW_ISO" "$R3" "$R2" "$NOW_ISO" "$FAKE_CWD" > "$DATE_DIR/rollout-$STAMP-$R3.jsonl"
 
 S3_MAIN=$(t list-panes -t s3 -F '#{pane_id}' | head -1)
 T8_ENVFILE=$(mktemp)
-HUD_PANE=$(t split-window -v -l 2 -t "$S3_MAIN" -d -P -F '#{pane_id}' \
+HUD_PANE=$(t split-window -v -l 1 -t "$S3_MAIN" -d -P -F '#{pane_id}' \
   "sh -c 'env > \"$T8_ENVFILE\"; exec env CODEX_HOME=$FAKE_HOME CODEX_HUD_CWD=$FAKE_CWD node $REPO_DIR/dist/index.js'")
-TREE_OK=0
 HEIGHT_OK=0
+HEADER_OK=0
 for _ in $(seq 1 30); do
   CAPTURE=$(t capture-pane -p -t "$HUD_PANE" 2>/dev/null || true)
-  if [[ "$CAPTURE" == *"TmuxChild"* && "$CAPTURE" == *"TmuxGrand"* ]]; then
-    TREE_OK=1
-  fi
-  if [[ "$(t display-message -p -t "$HUD_PANE" '#{pane_height}')" == "3" ]]; then
+  if [[ "$(t display-message -p -t "$HUD_PANE" '#{pane_height}')" == "1" ]]; then
     HEIGHT_OK=1
   fi
-  [[ "$TREE_OK" == 1 && "$HEIGHT_OK" == 1 ]] && break
+  if [[ -n "$CAPTURE" && "$CAPTURE" != *"TmuxChild"* ]]; then
+    HEADER_OK=1
+  fi
+  [[ "$HEIGHT_OK" == 1 && "$HEADER_OK" == 1 ]] && break
   sleep 0.5
 done
-assert_eq "T8 HUD pane renders the 2-level active tree" "$TREE_OK" "1"
-assert_eq "T8 HUD pane auto-resized to 3 rows (header + 2 levels)" "$HEIGHT_OK" "1"
+assert_eq "T8 compact HUD stays 1 row" "$HEIGHT_OK" "1"
+assert_eq "T8 compact HUD hides subagent names" "$HEADER_OK" "1"
 CAPTURE=$(t capture-pane -p -t "$HUD_PANE" 2>/dev/null || true)
-assert_contains "T8 header line present" "$CAPTURE" "Ctx"
-if [[ "$TREE_OK" != 1 ]]; then
-  echo "T8 diagnostics - pane CODEX env:"
-  grep -E '^CODEX' "$T8_ENVFILE" 2>/dev/null || echo "(none)"
-  echo "T8 diagnostics - capture:"
-  echo "$CAPTURE"
-fi
+assert_not_contains "T8 does not render subagents on the compact line" "$CAPTURE" "TmuxChild"
 t kill-pane -t "$HUD_PANE" 2>/dev/null || true
 
 echo "----------------------------------------"

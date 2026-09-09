@@ -1,5 +1,5 @@
 import { colors, theme, stripAnsi, truncateAnsi, visualLength } from './colors.js';
-import { layoutLeftRight, subagentStackedParts } from './subagent-chip.js';
+import { layoutLeftRight, renderSubagentPrefix } from './subagent-chip.js';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
 
 function countStatuses(nodes: SubagentTreeNode[]): { running: number; done: number } {
@@ -29,25 +29,9 @@ export function renderDirectoryTree(
     const isLast = index === nodes.length - 1;
     const branch = isLast ? '└─ ' : '├─ ';
     const hang = prefix + (isLast ? '   ' : '│  ');
-    const parts = subagentStackedParts(node);
     const connector = colors.dim(prefix + branch);
-    const hangDim = colors.dim(hang);
-    const headBudget = maxWidth ? Math.max(1, maxWidth - visualLength(connector)) : undefined;
-    const detailBudget = maxWidth ? Math.max(1, maxWidth - visualLength(hangDim)) : undefined;
-    const head = headBudget
-      ? layoutLeftRight(headBudget, parts.iconName, parts.pulse)
-      : `${parts.iconName}${parts.pulse ? ` ${parts.pulse}` : ''}`;
-    const status = detailBudget
-      ? layoutLeftRight(detailBudget, parts.status, parts.elapsed)
-      : [parts.status, parts.elapsed].filter(Boolean).join('  ');
-    lines.push(`${connector}${head}`);
-    lines.push(`${hangDim}${status}`);
-    if (parts.model || parts.effort) {
-      const meta = detailBudget
-        ? layoutLeftRight(detailBudget, parts.model, parts.effort)
-        : [parts.model, parts.effort].filter(Boolean).join('·');
-      lines.push(`${hangDim}${meta}`);
-    }
+    const budget = maxWidth ? Math.max(1, maxWidth - visualLength(connector)) : undefined;
+    lines.push(`${connector}${renderSubagentPrefix(node, budget)}`);
     if (node.children.length > 0) {
       lines.push(...renderDirectoryTree(node.children, hang, maxWidth));
     }

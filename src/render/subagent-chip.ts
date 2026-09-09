@@ -5,6 +5,7 @@
  */
 
 import { colors, theme, icons, truncateAnsi, visualLength } from './colors.js';
+import { renderModelEffortToken } from './model-glyphs.js';
 import type { SubagentTreeNode } from '../types.js';
 
 // CollabAgentItem events newer than this count as live main<->agent traffic.
@@ -57,7 +58,7 @@ export function subagentVisual(node: SubagentTreeNode): {
     : node.status === 'error'
       ? icons.cross
       : node.status === 'starting'
-        ? '○'
+        ? icons.starting
         : icons.running;
   const paint = node.status === 'completed'
     ? theme.success
@@ -65,13 +66,6 @@ export function subagentVisual(node: SubagentTreeNode): {
       ? theme.error
       : theme.info;
   return { icon, paint };
-}
-
-function elapsedEndMs(node: SubagentTreeNode, nowMs: number): number {
-  if (node.status === 'completed' || node.status === 'error') {
-    return node.lastActivityAt?.getTime() ?? node.startedAt?.getTime() ?? nowMs;
-  }
-  return nowMs;
 }
 
 export function layoutLeftRight(maxWidth: number, left: string, right = '', gap = 1): string {
@@ -92,68 +86,28 @@ export function layoutLeftRight(maxWidth: number, left: string, right = '', gap 
   return `${truncateAnsi(left, leftBudget)}${' '.repeat(gap)}${right}`;
 }
 
+export function renderSubagentPrefix(node: SubagentTreeNode, maxWidth?: number): string {
+  const { icon, paint } = subagentVisual(node);
+  const token = renderModelEffortToken(node.model, node.effort);
+  const lead = token ? `${paint(icon)} ${token}` : paint(icon);
+  const name = paint(node.name);
+  const pulse = hasFreshComm(node) ? theme.warning(commFrame()) : '';
+  if (!maxWidth) {
+    return [lead, name, pulse].filter(Boolean).join(' ');
+  }
+  const pulseWidth = pulse ? visualLength(pulse) + 1 : 0;
+  const leadWidth = visualLength(lead) + 1;
+  const nameBudget = Math.max(1, maxWidth - leadWidth - pulseWidth);
+  const clippedName = truncateAnsi(name, nameBudget);
+  return [lead, clippedName, pulse].filter(Boolean).join(' ');
+}
+
 export function renderSubagentChip(
   node: SubagentTreeNode,
   opts?: { showStatusText?: boolean; nowMs?: number }
 ): string {
   const nowMs = opts?.nowMs ?? Date.now();
-  const { icon, paint } = subagentVisual(node);
   const pulse = hasFreshComm(node, nowMs) ? theme.warning(`${commFrame(nowMs)} `) : '';
-  const meta = formatModelEffort(node);
-  const metaText = meta ? ` ${colors.dim(meta)}` : '';
   const statusText = opts?.showStatusText ? ` ${colors.dim(node.status)}` : '';
-  const elapsed = node.startedAt
-    ? ` ${colors.dim(formatElapsedShort(node.startedAt, elapsedEndMs(node, nowMs)))}`
-    : '';
-  return `${pulse}${paint(`${icon} ${node.name}`)}${metaText}${statusText}${elapsed}`;
-}
-
-export interface StackedAgentParts {
-  iconName: string;
-  pulse: string;
-  status: string;
-  elapsed: string;
-  model: string;
-  effort: string;
-}
-
-export function subagentStackedParts(
-  node: SubagentTreeNode,
-  opts?: { nowMs?: number }
-): StackedAgentParts {
-  const nowMs = opts?.nowMs ?? Date.now();
-  const { icon, paint } = subagentVisual(node);
-  return {
-    iconName: paint(`${icon} ${node.name}`),
-    pulse: hasFreshComm(node, nowMs) ? theme.warning(commFrame(nowMs)) : '',
-    status: colors.dim(node.status),
-    elapsed: node.startedAt
-      ? colors.dim(formatElapsedShort(node.startedAt, elapsedEndMs(node, nowMs)))
-      : '',
-    model: node.model?.trim() ? colors.dim(node.model.trim()) : '',
-    effort: node.effort?.trim() ? colors.dim(node.effort.trim()) : '',
-  };
-}
-
-/** Side-panel rows: name on its own line, status/elapsed and model stacked below. */
-export function renderSubagentStackedLines(
-  node: SubagentTreeNode,
-  opts?: { nowMs?: number; maxWidth?: number }
-): string[] {
-  const parts = subagentStackedParts(node, opts);
-  const width = opts?.maxWidth;
-  const head = width
-    ? layoutLeftRight(width, parts.iconName, parts.pulse)
-    : `${parts.iconName}${parts.pulse ? ` ${parts.pulse}` : ''}`;
-  const status = width
-    ? layoutLeftRight(width, parts.status, parts.elapsed)
-    : [parts.status, parts.elapsed].filter(Boolean).join('  ');
-  const lines = [head, status];
-  if (parts.model || parts.effort) {
-    const meta = width
-      ? layoutLeftRight(width, parts.model, parts.effort)
-      : [parts.model, parts.effort].filter(Boolean).join('·');
-    lines.push(meta);
-  }
-  return lines;
+  return `${pulse}${renderSubagentPrefix(node)}${statusText}`;
 }
