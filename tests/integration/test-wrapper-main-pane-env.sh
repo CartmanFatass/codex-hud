@@ -97,4 +97,10 @@ if ! grep -q "bind-key -T root F12 if-shell" "$log_file"; then
   exit 1
 fi
 
+if ! grep -q "set-option -t .* status off" "$log_file"; then
+  echo "expected HUD sessions to disable the tmux status bar" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
 echo "test-wrapper-main-pane-env: PASS"

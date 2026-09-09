@@ -687,6 +687,8 @@ EOF
     tmux set-option -t "$SESSION_NAME" assume-paste-time 0
     tmux set-option -t "$SESSION_NAME" repeat-time 0
     tmux set-option -t "$SESSION_NAME" history-limit 200000
+    # HUD already draws the status line; hide tmux's default green bar.
+    tmux set-option -t "$SESSION_NAME" status off
 
     local alternate_screen
     alternate_screen=$(resolve_alternate_screen_setting) || exit 1
@@ -872,6 +874,7 @@ main() {
         if [[ -n "$hud_pane_id" ]]; then
             set_fixed_hud_height "$SESSION_NAME" "$hud_pane_id" "$HUD_HEIGHT" "$main_pane_id"
         fi
+        tmux set-option -t "$SESSION_NAME" status off
         if [[ "$DEFER_FINAL_ATTACH" == "1" ]]; then
             if [[ -n "$SESSION_NAME_FILE" ]]; then
                 printf "%s\n" "$SESSION_NAME" > "$SESSION_NAME_FILE"
