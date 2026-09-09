@@ -5,9 +5,7 @@
 #
 # Environment variables:
 #   CODEX_HUD_POSITION - HUD pane position: bottom (default), top
-#   CODEX_HUD_HEIGHT   - HUD pane height in lines (default: 1; the HUD process
-#                        auto-grows the pane up to 4 lines while active
-#                        subagent tree rows are shown)
+#   CODEX_HUD_HEIGHT   - HUD pane height in lines (default: 1; compact identity line)
 #   CODEX_HUD_HEIGHT_AUTO - Auto-adjust HUD height based on pane width (default: 0)
 #   CODEX_HUD_HEIGHT_MIN - Minimum HUD height when auto-adjusting (default: CODEX_HUD_HEIGHT)
 #   CODEX_HUD_HEIGHT_MAX - Maximum HUD height when auto-adjusting (default: 12)
@@ -929,7 +927,7 @@ Options:
 
 Environment Variables:
   CODEX_HUD_POSITION  HUD pane position: bottom (default), top
-  CODEX_HUD_HEIGHT    HUD pane height in lines (default: 1; grows to 4 with active subagents)
+  CODEX_HUD_HEIGHT    HUD pane height in lines (default: 1; compact identity line)
   CODEX_HUD_HEIGHT_AUTO Auto-adjust HUD height based on pane width (default: 0)
   CODEX_HUD_HEIGHT_MIN Minimum HUD height when auto-adjusting (default: CODEX_HUD_HEIGHT)
   CODEX_HUD_HEIGHT_MAX Maximum HUD height when auto-adjusting (default: 12)
