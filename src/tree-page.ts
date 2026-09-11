@@ -1,6 +1,6 @@
 /**
  * Live side panel for the subagent directory tree.
- * Replaces the 2-line HUD pane while tree mode is active.
+ * Sits beside the compact HUD while tree mode is active.
  */
 
 import { spawn } from 'child_process';

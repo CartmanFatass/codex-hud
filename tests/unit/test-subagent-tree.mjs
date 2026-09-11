@@ -10,6 +10,7 @@ import { stripAnsi } from '../../dist/render/colors.js';
 import { renderHud } from '../../dist/render/header.js';
 import { renderSubagentTreePage } from '../../dist/render/subagent-tree-view.js';
 import { commFrame, renderSubagentChip } from '../../dist/render/subagent-chip.js';
+import { MODEL_GLYPHS, EFFORT_GLYPHS } from '../../dist/render/model-glyphs.js';
 
 function todayParts() {
   const now = new Date();
@@ -92,6 +93,50 @@ try {
   assert.ok(oracleNode, 'newly spawned agent should appear in the tree');
   assert.equal(oracleNode.model, 'gpt-5.3', 'node should carry the spawned model');
   assert.equal(oracleNode.effort, 'xhigh', 'node should carry the spawned effort');
+
+  // Live Codex rollouts put model/effort on turn_context (and later
+  // thread_settings_applied), not on session_meta. The latest context wins.
+  const lunaId = '01a00bd0-0000-4000-8000-000000000006';
+  const lunaPath = writeRollout(home, { id: lunaId, parentId: root, nickname: 'LunaScout' });
+  const writeContext = (payload) => {
+    fs.appendFileSync(lunaPath, `${JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type: 'turn_context',
+      payload,
+    })}\n`);
+  };
+  writeContext({
+    model: 'gpt-6-astra',
+    effort: 'low',
+    collaboration_mode: { mode: 'default', settings: { model: 'gpt-6-astra', reasoning_effort: 'low' } },
+  });
+  fs.appendFileSync(lunaPath, `${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    type: 'event_msg',
+    payload: { type: 'thread_settings_applied', thread_settings: { model: 'gpt-5.6-luna' } },
+  })}\n`);
+  writeContext({
+    model: 'gpt-5.6-luna',
+    effort: 'medium',
+    collaboration_mode: { mode: 'default', settings: { model: 'gpt-5.6-luna', reasoning_effort: 'medium' } },
+  });
+  const withLuna = buildSubagentTree(root, [], 3, Date.now());
+  const lunaNode = withLuna.nodes.find((node) => node.name === 'LunaScout');
+  assert.ok(lunaNode, 'turn_context-backed agent should appear in the tree');
+  assert.equal(lunaNode.model, 'gpt-5.6-luna', 'latest turn_context model wins over the first');
+  assert.equal(lunaNode.effort, 'medium', 'latest turn_context effort wins over the first');
+  writeContext({
+    model: 'gpt-5.6-luna',
+    effort: 'xhigh',
+    collaboration_mode: { mode: 'default', settings: { model: 'gpt-5.6-luna', reasoning_effort: 'xhigh' } },
+  });
+  const lunaUpdated = buildSubagentTree(root, [], 3, Date.now()).nodes.find((node) => node.name === 'LunaScout');
+  assert.equal(lunaUpdated?.effort, 'xhigh', 'appended turn_context should refresh effort without a full re-peek');
+  const lunaPage = renderSubagentTreePage(withLuna).map(stripAnsi);
+  const lunaHead = lunaPage.find((line) => /[├└]─ .*LunaScout/.test(line));
+  assert.ok(lunaHead, 'LunaScout sits on the tree connector line');
+  assert.match(lunaHead, new RegExp(MODEL_GLYPHS.luna), 'tree chip shows the luna family glyph');
+  assert.match(lunaHead, new RegExp(EFFORT_GLYPHS.medium), 'tree chip shows the medium effort glyph');
 
   const lines = renderHud(
     {

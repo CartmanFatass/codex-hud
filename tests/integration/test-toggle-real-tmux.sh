@@ -2,7 +2,7 @@
 # Real-tmux integration test for the HUD layout toggle and the in-pane HUD.
 #
 # Covers the parts of the review checklist that can be scripted:
-#   - single <-> tree round trip (bottom HUD removed while the panel is up)
+#   - single <-> tree round trip (compact HUD stays while the panel is up)
 #   - toggle-back restores the persisted launch context (session start etc.)
 #   - concurrent double-press stays consistent (no orphan panes)
 #   - stale pane references self-heal (panel or bottom killed externally)
@@ -50,7 +50,10 @@ get_opt() { t show-option -t "$1" -qv "$2" 2>/dev/null || true; }
 pane_count() { t list-panes -t "$1" 2>/dev/null | wc -l | tr -d ' '; }
 session_id() { t display-message -p -t "$1" '#{session_id}' 2>/dev/null | tr -d '\r\n'; }
 pane_alive() {
-  [[ -n "$1" ]] && t display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1
+  [[ -n "${1:-}" ]] || return 1
+  local got
+  got=$(t display-message -p -t "$1" '#{pane_id}' 2>/dev/null || true)
+  [[ "$got" == "$1" ]]
 }
 
 # ---------------------------------------------------------------- test setup
@@ -90,25 +93,22 @@ ENVS2=$(setup_session s2)
 toggle() { bash "$TOGGLE" "$(session_id "$1")"; }
 
 # ------------------------------------------------- T1: single -> tree
+S1_HUD=$(get_opt s1 @codex_hud_pane)
 toggle s1
 assert_eq "T1 mode becomes tree" "$(get_opt s1 @codex_hud_mode)" "tree"
-assert_eq "T1 pane count (main + panel)" "$(pane_count s1)" "2"
+assert_eq "T1 pane count (main + HUD + panel)" "$(pane_count s1)" "3"
 if pane_alive "$(get_opt s1 @codex_hud_tree_pane)"; then ok "T1 tree pane reference is alive"; else bad "T1 tree pane reference is alive"; fi
-if pane_alive "$(get_opt s1 @codex_hud_pane)"; then bad "T1 bottom HUD removed"; else ok "T1 bottom HUD removed"; fi
+if pane_alive "$(get_opt s1 @codex_hud_pane)"; then ok "T1 compact HUD stays"; else bad "T1 compact HUD stays"; fi
+assert_eq "T1 compact HUD pane is reused" "$(get_opt s1 @codex_hud_pane)" "$S1_HUD"
 
 # ------------------------------------------------- T2: tree -> single
 toggle s1
 assert_eq "T2 mode becomes single" "$(get_opt s1 @codex_hud_mode)" "single"
 assert_eq "T2 pane count (main + bottom)" "$(pane_count s1)" "2"
-if pane_alive "$(get_opt s1 @codex_hud_pane)"; then ok "T2 bottom HUD restored alive"; else bad "T2 bottom HUD restored alive"; fi
-for _ in $(seq 1 20); do
-  [[ -s "$ENVS1" ]] && break
-  sleep 0.3
-done
-RECREATED_ENV=$(cat "$ENVS1" 2>/dev/null || true)
-assert_contains "T2 restored env keeps CODEX_HUD_SESSION_START" "$RECREATED_ENV" "CODEX_HUD_SESSION_START=1234567890"
-assert_contains "T2 restored env keeps CODEX_HUD_CWD" "$RECREATED_ENV" "CODEX_HUD_CWD=$REPO_DIR"
-assert_contains "T2 restored env keeps CODEX_HUD_MAIN_PANE" "$RECREATED_ENV" "CODEX_HUD_MAIN_PANE=%"
+if pane_alive "$(get_opt s1 @codex_hud_pane)"; then ok "T2 compact HUD still alive"; else bad "T2 compact HUD still alive"; fi
+assert_eq "T2 compact HUD pane is reused" "$(get_opt s1 @codex_hud_pane)" "$S1_HUD"
+# Compact HUD is reused on a clean round-trip, so the persisted launch
+# command is not re-execed here. Recreate-from-hud_cmd is covered in T5.
 
 # ------------------------------------------------- T3: concurrent double-press
 ( toggle s1 ) & ( toggle s1 ) & wait
@@ -131,9 +131,19 @@ if pane_alive "$(get_opt s1 @codex_hud_pane)"; then ok "T4 bottom HUD alive afte
 
 # ------------------------------------------------- T5: stale bottom reference
 t kill-pane -t "$(get_opt s1 @codex_hud_pane)" 2>/dev/null || true
-toggle s1                       # should still open the panel and clear the ref
+rm -f "$ENVS1"
+toggle s1                       # should recreate compact HUD and open the panel
 assert_eq "T5 mode becomes tree with stale bottom ref" "$(get_opt s1 @codex_hud_mode)" "tree"
-assert_eq "T5 pane count with stale bottom ref" "$(pane_count s1)" "2"
+assert_eq "T5 pane count with stale bottom ref" "$(pane_count s1)" "3"
+if pane_alive "$(get_opt s1 @codex_hud_pane)"; then ok "T5 compact HUD recreated"; else bad "T5 compact HUD recreated"; fi
+for _ in $(seq 1 20); do
+  [[ -s "$ENVS1" ]] && break
+  sleep 0.3
+done
+RECREATED_ENV=$(cat "$ENVS1" 2>/dev/null || true)
+assert_contains "T5 recreated env keeps CODEX_HUD_SESSION_START" "$RECREATED_ENV" "CODEX_HUD_SESSION_START=1234567890"
+assert_contains "T5 recreated env keeps CODEX_HUD_CWD" "$RECREATED_ENV" "CODEX_HUD_CWD=$REPO_DIR"
+assert_contains "T5 recreated env keeps CODEX_HUD_MAIN_PANE" "$RECREATED_ENV" "CODEX_HUD_MAIN_PANE=%"
 toggle s1                       # and back
 assert_eq "T5 back to single" "$(get_opt s1 @codex_hud_mode)" "single"
 
@@ -149,7 +159,7 @@ t set-option -t s1 @codex_hud_main_pane "$REAL_MAIN_S1"
 toggle s2
 assert_eq "T7 s2 in tree mode" "$(get_opt s2 @codex_hud_mode)" "tree"
 assert_eq "T7 s1 untouched (still single)" "$(get_opt s1 @codex_hud_mode)" "single"
-assert_eq "T7 s2 pane count" "$(pane_count s2)" "2"
+assert_eq "T7 s2 pane count" "$(pane_count s2)" "3"
 assert_eq "T7 s1 pane count" "$(pane_count s1)" "2"
 toggle s2
 assert_eq "T7 s2 back to single" "$(get_opt s2 @codex_hud_mode)" "single"
@@ -191,7 +201,45 @@ assert_eq "T8 compact HUD stays 1 row" "$HEIGHT_OK" "1"
 assert_eq "T8 compact HUD hides subagent names" "$HEADER_OK" "1"
 CAPTURE=$(t capture-pane -p -t "$HUD_PANE" 2>/dev/null || true)
 assert_not_contains "T8 does not render subagents on the compact line" "$CAPTURE" "TmuxChild"
-t kill-pane -t "$HUD_PANE" 2>/dev/null || true
+
+# ------------------------------------------------- T9: F12 keeps compact content; tree shows model/effort glyphs
+printf '{"timestamp":"%s","type":"turn_context","payload":{"model":"gpt-5.6-luna","effort":"medium","collaboration_mode":{"mode":"default","settings":{"model":"gpt-5.6-luna","reasoning_effort":"medium"}}}}\n' \
+  "$NOW_ISO" >> "$DATE_DIR/rollout-$STAMP-$R2.jsonl"
+t set-option -t s3 @codex_hud_cwd "$FAKE_CWD"
+t set-option -t s3 @codex_hud_main_pane "$S3_MAIN"
+t set-option -t s3 @codex_hud_height 1
+t set-option -t s3 @codex_hud_mode "single"
+t set-option -t s3 @codex_hud_session_start "$(date +%s)"
+t set-option -t s3 @codex_hud_codex_home "$FAKE_HOME"
+t set-option -t s3 @codex_hud_pane "$HUD_PANE"
+t set-option -t s3 @codex_hud_hud_cmd \
+  "env CODEX_HOME=$FAKE_HOME CODEX_HUD_CWD=$FAKE_CWD node $REPO_DIR/dist/index.js"
+toggle s3
+assert_eq "T9 mode becomes tree" "$(get_opt s3 @codex_hud_mode)" "tree"
+assert_eq "T9 pane count (main + HUD + panel)" "$(pane_count s3)" "3"
+if pane_alive "$(get_opt s3 @codex_hud_pane)"; then ok "T9 compact HUD stays after F12"; else bad "T9 compact HUD stays after F12"; fi
+assert_eq "T9 compact HUD pane is reused" "$(get_opt s3 @codex_hud_pane)" "$HUD_PANE"
+COMPACT_OK=0
+TREE_OK=0
+TREE_PANE=$(get_opt s3 @codex_hud_tree_pane)
+for _ in $(seq 1 30); do
+  HUD_CAPTURE=$(t capture-pane -p -t "$HUD_PANE" 2>/dev/null || true)
+  TREE_CAPTURE=$(t capture-pane -p -t "$TREE_PANE" 2>/dev/null || true)
+  if [[ "$HUD_CAPTURE" == *"Ctx"* || "$HUD_CAPTURE" == *"Plan"* || "$HUD_CAPTURE" == *"mode:"* ]]; then
+    COMPACT_OK=1
+  fi
+  if [[ "$TREE_CAPTURE" == *"TmuxChild"* && "$TREE_CAPTURE" == *"☽"* && "$TREE_CAPTURE" == *"◐"* ]]; then
+    TREE_OK=1
+  fi
+  [[ "$COMPACT_OK" == 1 && "$TREE_OK" == 1 ]] && break
+  sleep 0.5
+done
+HUD_CAPTURE=$(t capture-pane -p -t "$HUD_PANE" 2>/dev/null || true)
+TREE_CAPTURE=$(t capture-pane -p -t "$TREE_PANE" 2>/dev/null || true)
+assert_eq "T9 compact HUD still shows status after F12" "$COMPACT_OK" "1"
+assert_not_contains "T9 compact HUD still hides subagent names" "$HUD_CAPTURE" "TmuxChild"
+assert_eq "T9 tree shows subagent with model/effort glyphs" "$TREE_OK" "1"
+assert_contains "T9 tree lists the subagent" "$TREE_CAPTURE" "TmuxChild"
 
 echo "----------------------------------------"
 echo "pass=$PASS fail=$FAIL"

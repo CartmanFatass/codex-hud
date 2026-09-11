@@ -364,10 +364,8 @@ async function main(): Promise<void> {
   sessionFinder.start(5000); // Check for session changes every 5 seconds
   startFastRenderLoop();
 
-  // Start the render loop
-  console.log('Codex HUD starting...');
-
-  // Initial render
+  // Do not write to stdout before the first frame: the compact pane is one
+  // line, so a startup log would hide the status header after F12 restore.
   await mainLoop();
 }
 

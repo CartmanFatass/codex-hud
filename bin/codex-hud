@@ -798,10 +798,8 @@ EOF
         tmux set-hook -at "$SESSION_NAME" client-attached "refresh-client"
     fi
 
-    # HUD shows 1 compact header line, plus up to 3 active subagent tree rows.
-    # The HUD process auto-resizes its pane between 1 and 4 lines. F12 toggles the
-    # second HUD form: a fixed right-side subagent tree panel that replaces
-    # the bottom HUD rows entirely.
+    # HUD shows 1 compact header line. F12 toggles a right-side subagent tree
+    # panel; the compact bar stays visible so tokens/ctx/model are not dropped.
     # Bind on the root table (no tmux prefix). Herdr uses Ctrl-b as prefix and
     # prefix+h for pane focus, so Prefix+H / Prefix+t never reach inner tmux.
     # Do not bind root Ctrl+T — that belongs to Codex's transcript overlay.

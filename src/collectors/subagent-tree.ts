@@ -19,6 +19,9 @@ interface CachedLink {
   // REVALIDATE_INTERVAL_MS get re-peeked (bounded per tick) to bound how long
   // a stale link can survive.
   verifiedAt: number;
+  // Byte offset already scanned for turn_context / thread_settings_applied
+  // model+effort. Subagent session_meta does not carry those fields.
+  contextOffset: number;
 }
 
 const linkCache = new Map<string, CachedLink>();
@@ -36,6 +39,7 @@ interface SessionLink {
   id: string;
   parentId: string | null;
   name: string;
+  path: string;
   model?: string;
   effort?: string;
   startedAt?: Date;
@@ -94,6 +98,97 @@ function spawnFromSource(source: unknown): { model?: string; effort?: string } |
   return model || effort ? { model, effort } : undefined;
 }
 
+function modelEffortFromPayload(payload: Record<string, unknown>): { model?: string; effort?: string } {
+  const settings = (payload.collaboration_mode as { settings?: Record<string, unknown> } | undefined)?.settings
+    ?? (payload.thread_settings as Record<string, unknown> | undefined);
+  const modelCandidates = [payload.model, settings?.model];
+  const effortCandidates = [payload.effort, payload.reasoning_effort, settings?.effort, settings?.reasoning_effort];
+  const model = modelCandidates.find((value): value is string => typeof value === 'string' && value.length > 0);
+  const effort = effortCandidates.find((value): value is string => typeof value === 'string' && value.length > 0);
+  return { model, effort };
+}
+
+function applyModelEffortLine(line: string, into: { model?: string; effort?: string }): void {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return;
+  }
+  try {
+    const entry = JSON.parse(trimmed) as { type?: string; payload?: Record<string, unknown> };
+    if (!entry.payload) {
+      return;
+    }
+    if (entry.type === 'turn_context') {
+      const fields = modelEffortFromPayload(entry.payload);
+      if (fields.model) into.model = fields.model;
+      if (fields.effort) into.effort = fields.effort;
+      return;
+    }
+    if (entry.type === 'event_msg' && entry.payload.type === 'thread_settings_applied') {
+      const settings = entry.payload.thread_settings;
+      if (settings && typeof settings === 'object') {
+        const fields = modelEffortFromPayload(settings as Record<string, unknown>);
+        if (fields.model) into.model = fields.model;
+        if (fields.effort) into.effort = fields.effort;
+      }
+    }
+  } catch {
+    // skip malformed lines
+  }
+}
+
+function scanModelEffort(filePath: string, startOffset: number): { model?: string; effort?: string; endOffset: number } {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(64 * 1024);
+    let offset = Math.max(0, startOffset);
+    let leftover = '';
+    const fields: { model?: string; effort?: string; endOffset: number } = { endOffset: offset };
+    while (true) {
+      const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, offset);
+      if (bytesRead <= 0) {
+        break;
+      }
+      leftover += buffer.toString('utf8', 0, bytesRead);
+      offset += bytesRead;
+      let newline = leftover.indexOf('\n');
+      while (newline !== -1) {
+        applyModelEffortLine(leftover.slice(0, newline), fields);
+        leftover = leftover.slice(newline + 1);
+        newline = leftover.indexOf('\n');
+      }
+    }
+    if (leftover) {
+      applyModelEffortLine(leftover, fields);
+    }
+    fields.endOffset = offset;
+    return fields;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function refreshTurnContext(link: SessionLink): void {
+  const cached = linkCache.get(link.path);
+  if (!cached?.link) {
+    return;
+  }
+  const start = cached.contextOffset ?? 0;
+  if (start >= cached.size) {
+    return;
+  }
+  const extra = scanModelEffort(link.path, start);
+  if (extra.model) {
+    link.model = extra.model;
+    cached.link.model = extra.model;
+  }
+  if (extra.effort) {
+    link.effort = extra.effort;
+    cached.link.effort = extra.effort;
+  }
+  cached.contextOffset = extra.endOffset;
+}
+
 function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null {
   try {
     const firstLine = readFirstLine(filePath);
@@ -133,6 +228,7 @@ function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null
       id,
       parentId: entry.payload.parent_thread_id ?? null,
       name,
+      path: filePath,
       model: spawn?.model ?? payloadModel,
       effort: spawn?.effort ?? payloadEffort,
       startedAt: entry.payload.timestamp ? new Date(entry.payload.timestamp) : undefined,
@@ -357,13 +453,20 @@ export function buildSubagentTree(
     } else {
       // First sight, previously failed peek with new bytes, shrink, same-size
       // rewrite, or a scheduled revalidation: read the first line again.
+      const previous = cached;
       link = peekSessionLink(file.path, file.modifiedAt);
+      const keepContext = Boolean(revalidate && previous?.link && link && unchanged);
+      if (keepContext && previous?.link && link) {
+        link.model = previous.link.model ?? link.model;
+        link.effort = previous.link.effort ?? link.effort;
+      }
       linkCache.set(file.path, {
         link,
         size: file.size,
         mtimeMs: modifiedMs,
         ino: file.ino,
         verifiedAt: nowMs,
+        contextOffset: keepContext ? (previous?.contextOffset ?? 0) : 0,
       });
     }
     if (!link) {
@@ -407,6 +510,9 @@ export function buildSubagentTree(
   const buildNode = (id: string, depth: number): SubagentTreeNode => {
     visiting.add(id);
     const link = links.get(id);
+    if (link) {
+      refreshTurnContext(link);
+    }
     const knownAgent = known.get(id);
     const childIds = (children.get(id) ?? []).filter((childId) => !visiting.has(childId));
     const node: SubagentTreeNode = {
@@ -414,8 +520,9 @@ export function buildSubagentTree(
       name: knownAgent?.name || link?.name || id.slice(0, 8),
       status: resolveStatus(knownAgent, link?.modifiedAt ?? new Date(0), nowMs),
       startedAt: knownAgent?.startedAt ?? link?.startedAt,
-      model: knownAgent?.model ?? link?.model,
-      effort: knownAgent?.effort ?? link?.effort,
+      // Child turn_context is the live model/effort; spawn events are fallback.
+      model: link?.model ?? knownAgent?.model,
+      effort: link?.effort ?? knownAgent?.effort,
       lastActivityAt: knownAgent?.lastActivityAt,
       depth,
       children: childIds.map((childId) => buildNode(childId, depth + 1)),

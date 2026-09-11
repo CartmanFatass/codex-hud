@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Toggle the HUD layout between the bottom rows HUD (single) and the fixed
-# right-side subagent tree panel (tree). Invoked from tmux keybinds so
-# Codex-pane focus still works.
+# Toggle the right-side subagent tree panel on top of the compact HUD.
+# Invoked from tmux keybinds so Codex-pane focus still works.
 #
-# The two forms are mutually exclusive: entering tree mode kills the bottom
-# HUD pane; leaving tree mode kills the side panel and recreates the bottom
-# HUD pane from the exact launch command persisted at session creation.
+# Compact HUD (the 1-line status bar) stays up in both modes. F12 only
+# adds or removes the side panel; destroying the compact pane was wiping
+# tokens/ctx/model after the switch, and recreating a 1-line pane often
+# painted blank. If the compact pane is already gone, it is recreated
+# from the launch command persisted at session creation.
 #
 # Concurrency: rapid double-presses run this script twice concurrently, so
 # every state read and pane mutation happens under a session-scoped wait-for
-# lock. Failure ordering keeps the current HUD alive: the replacement form is
-# created and verified before the old form is destroyed.
+# lock. Failure ordering keeps the current HUD alive: the tree panel is
+# created and verified before any other pane is touched.
 
 set -euo pipefail
 
@@ -65,15 +66,16 @@ if [[ -z "$main_pane" ]]; then
 fi
 
 # A stale pane reference is not an error; the pane may already be gone.
+# display-message exits 0 for a recently-killed pane id (empty #{pane_id}),
+# so require the reported id to match.
 pane_alive() {
-  [[ -n "$1" ]] && tmux display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1
+  [[ -n "${1:-}" ]] || return 1
+  local got
+  got=$(tmux display-message -p -t "$1" '#{pane_id}' 2>/dev/null || true)
+  [[ "$got" == "$1" ]]
 }
 
-restore_single() {
-  if ! pane_alive "$main_pane"; then
-    return 0
-  fi
-
+create_hud_pane() {
   if [[ -z "$hud_cmd" ]]; then
     hud_cmd="cd ${cwd_q} && CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' node '$HUD_DIR/dist/index.js'"
   fi
@@ -86,14 +88,35 @@ restore_single() {
     tmux display-message -t "$session_name" "codex-hud: recreated bottom HUD died immediately"
     return 1
   fi
-
   tmux set-option -t "$session_name" @codex_hud_pane "$new_hud"
-  tmux set-option -t "$session_name" @codex_hud_mode "single"
+  hud_pane="$new_hud"
+  return 0
+}
+
+ensure_hud_pane() {
+  if pane_alive "$hud_pane"; then
+    return 0
+  fi
+  create_hud_pane
+}
+
+close_tree_pane() {
   tmux set-option -t "$session_name" @codex_hud_tree_pane ""
+  tmux set-option -t "$session_name" @codex_hud_mode "single"
   if pane_alive "$tree_pane"; then
     tmux kill-pane -t "$tree_pane"
   fi
   tmux select-pane -t "$main_pane" 2>/dev/null || true
+}
+
+restore_single() {
+  if ! pane_alive "$main_pane"; then
+    return 0
+  fi
+  if ! ensure_hud_pane; then
+    return 1
+  fi
+  close_tree_pane
   return 0
 }
 
@@ -110,10 +133,13 @@ if [[ "$mode" == "tree" ]]; then
   exit $?
 fi
 
-# single -> tree: open the fixed right-side panel first; on failure keep
-# the bottom HUD untouched. Only after the panel exists kill the bottom HUD.
+# single -> tree: open the fixed right-side panel. Compact HUD stays put so
+# tokens/ctx/model remain visible. Recreate it first only if it is gone.
 if ! pane_alive "$main_pane"; then
   exit 0
+fi
+if ! ensure_hud_pane; then
+  exit 1
 fi
 
 # A percentage split needs a client-provided window size and fails with
@@ -138,8 +164,4 @@ fi
 
 tmux set-option -t "$session_name" @codex_hud_tree_pane "$new_tree"
 tmux set-option -t "$session_name" -q @codex_hud_mode "tree"
-tmux set-option -t "$session_name" @codex_hud_pane ""
-if pane_alive "$hud_pane"; then
-  tmux kill-pane -t "$hud_pane"
-fi
 tmux select-pane -t "$main_pane" 2>/dev/null || true

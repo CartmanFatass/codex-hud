@@ -359,7 +359,9 @@ export async function parseRolloutFile(
           const payload = entry.payload as TurnContextPayload;
           const contextModel = payload.model ?? payload.collaboration_mode?.settings?.model;
           const reasoningEffort =
-            payload.reasoning_effort ?? payload.collaboration_mode?.settings?.reasoning_effort;
+            payload.effort ??
+            payload.reasoning_effort ??
+            payload.collaboration_mode?.settings?.reasoning_effort;
           const approvalPolicy = payload.approval_policy;
           const sandboxMode = payload.sandbox_policy?.type;
           const collaborationMode = payload.collaboration_mode?.mode;

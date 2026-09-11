@@ -203,6 +203,7 @@ export interface EventMsgPayload {
 
 export interface TurnContextPayload {
   model?: string;
+  effort?: string;
   reasoning_effort?: string;
   approval_policy?: string;
   sandbox_policy?: {
