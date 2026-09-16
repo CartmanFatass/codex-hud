@@ -26,7 +26,9 @@ test('live PTY: navigation, diff, zoom, resize, wheel and terminal cleanup', {sk
     line('event_msg',{type:'plan_update',plan:[{step:'Verify workbench',status:'in_progress'}]}));
   for (let i=0;i<14;i++) fs.writeFileSync(file(`bb${i.toString(16).padStart(2,'0')}`),
     line('session_meta',{id:`agent-${i.toString().padStart(2,'0')}`,cwd:repo,parent_thread_id:'root',timestamp:now.toISOString()})+
-    line('event_msg',{type:'task_started'})+line('turn_context',{model:'gpt-test',effort:'high'}));
+    line('event_msg',{type:'task_started'})+
+    line('event_msg',{type:'agent_message',message:`FOUND_THE_CAUSE_${i}`},50)+
+    line('turn_context',{model:'gpt-test',effort:'high'}));
   const script = String.raw`
 import os, pty, subprocess, fcntl, termios, struct, select, time, signal, re, sys
 master, slave = pty.openpty()
@@ -50,15 +52,15 @@ def send(keys):
  pending=b''
  os.write(master,keys)
 try:
- wait_for('agent-00')
+ wait_for('FOUND_THE_CAUSE')
  send(b'2v')
- wait_for('[v−]')
+ wait_for('Inspector')
  send(b'v')
- wait_for('[v+]')
+ wait_for('2 Reports')
  send(b'3\r')
- wait_for('Unstaged')
+ wait_for('1 unstaged')
  send(b'z')
- zoom=wait_for('after')
+ zoom=wait_for('read only')
  assert b'1 Agents' not in zoom, 'zoom must hide other panes'
  send(b'\x1b')
  wait_for('1 Agents')
@@ -70,6 +72,13 @@ try:
  fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',30,100,0,0))
  os.kill(proc.pid,signal.SIGWINCH)
  wait_for('3 Changes')
+ send(b'3\r')
+ wait_for('Unstaged')
+ send(b'z')
+ zoom=wait_for('after')
+ assert b'1 Agents' not in zoom, 'wide zoom must hide other panes'
+ send(b'\x1b')
+ wait_for('1 Agents')
  send(b'4')
  wait_for('Checks')
  send(b']')

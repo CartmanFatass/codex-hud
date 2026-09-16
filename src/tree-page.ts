@@ -1,6 +1,7 @@
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import { navigateSession } from './utils/session-navigation.js';
 import { visibleRows } from './render/panel-state.js';
+import { paneItemAt, canPreviewDiff } from './render/workbench-layout.js';
 import { defaultSettings, saveSettings } from './settings.js';
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import { resizeTreePane } from './utils/pane-width.js';
@@ -66,6 +67,7 @@ async function runLivePage(): Promise<void> {
   let settingsFrame: SettingsFrame | undefined;
   let lastCollect = 0;
   let navigating = false;
+  let lastClickSwitch: {id: string; at: number} | undefined;
   let navigationMessage: string | null = null;
   let tree: SubagentTree = {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
   let main: RolloutParseResult | null = null;
@@ -115,7 +117,7 @@ async function runLivePage(): Promise<void> {
     const selectedFile = git?.files.find(file=>file.path === state.selectedFile);
     const root = tree.rootId;
     try {
-      if (state.preview === 'agent') {
+      if (state.preview === 'agent' && state.detailExpanded) {
         if (selected?.rolloutPath !== agentPath) {
           agentPath = selected?.rolloutPath;
           agentParser = new RolloutParser(30);
@@ -128,7 +130,7 @@ async function runLivePage(): Promise<void> {
           agent = result;
           history.update(tree,main,agent);
         }
-      } else if (state.preview === 'file' && selectedFile && git?.root) {
+      } else if (state.preview === 'file' && selectedFile && git?.root && canPreviewDiff(frame?.panes ?? [])) {
         const key = JSON.stringify([git.root,selectedFile.path,gitRevision]);
         if (key !== diffKey) {
           const repoRoot = git.root;
@@ -140,7 +142,7 @@ async function runLivePage(): Promise<void> {
         }
       }
     } catch (err) {
-      if (state.preview === 'file') diff = [`Unable to read diff: ${String(err)}`];
+      if (state.preview === 'file') diff = ['Unable to read this file preview'];
       else agent = null;
     } finally {
       inspecting = false;
@@ -179,6 +181,13 @@ async function runLivePage(): Promise<void> {
       if (state.selectedFile !== oldFile) { diff = undefined; diffKey = ''; }
       render();
       void refreshInspection();
+    } catch {
+      git = {
+        root: git?.root ?? null, branch: git?.branch ?? null,
+        ahead: git?.ahead ?? 0, behind: git?.behind ?? 0,
+        files: git?.files ?? [], error: 'Git could not complete the request',
+      };
+      render();
     } finally { collectingGit = false; }
   };
   const finish = (user = false) => {
@@ -242,10 +251,9 @@ async function runLivePage(): Promise<void> {
         continue;
       }
       const agentPane = frame?.panes.find(p=>p.id === 'agents');
-      const clickedAgent = input.type === 'mouse' && input.button === 'left' && agentPane &&
-        input.x > agentPane.x && input.x < agentPane.x+agentPane.width-1 &&
-        input.y > agentPane.y && input.y < agentPane.y+agentPane.height-1
-        ? visibleRows(tree.nodes,state.tree)[agentPane.offset+input.y-agentPane.y-1]?.node : undefined;
+      const clickedIndex = input.type === 'mouse' && input.button === 'left' && agentPane
+        ? paneItemAt(agentPane,input.x,input.y) : undefined;
+      const clickedAgent = clickedIndex === undefined ? undefined : visibleRows(tree.nodes,state.tree)[clickedIndex]?.node;
       const previous = state;
       const result = handleWorkbenchInput(state,input,{tree,git,panes:frame?.panes ?? [],events:history.values()});
       state = result.state;
@@ -254,7 +262,14 @@ async function runLivePage(): Promise<void> {
       if (state.tree.selectedId !== previous.tree.selectedId) agent = null;
       render();
       void refreshInspection();
-      if (clickedAgent) void switchSession(clickedAgent.id);
+      if (clickedAgent) {
+        const at = Date.now();
+        // Ignore duplicate mouse events in one short click burst, NOT a cached
+        // 'current session'. Manual Codex navigation must never be guessed away.
+        const duplicate = lastClickSwitch?.id === clickedAgent.id && at-lastClickSwitch.at < 400;
+        lastClickSwitch = {id:clickedAgent.id,at};
+        if (!duplicate) void switchSession(clickedAgent.id);
+      }
     }
   };
   const onData = (chunk: Buffer) => {
@@ -268,7 +283,7 @@ async function runLivePage(): Promise<void> {
     process.once('SIGTERM',()=>finish());
     process.once('SIGHUP',()=>finish());
     process.stdin.once('end',()=>finish());
-    process.stdout.on('resize',()=>{lastPaint='';render();});
+    process.stdout.on('resize',()=>{lastPaint='';render();void refreshInspection();});
     if (process.stdin.isTTY) process.stdin.setRawMode(true);
     process.stdout.write(settings.mouse ? ENTER : '\x1b[?1049h\x1b[?25l');
     void resizeTreePane(settings.treeWidth).catch(()=>{});

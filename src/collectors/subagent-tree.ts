@@ -1,4 +1,5 @@
 import { taskText } from '../utils/task-text.js';
+import { extractAgentReport, type AgentReport } from './agent-report.js';
 /**
  * Build a multi-level subagent tree from rollout session_meta parent links.
  */
@@ -37,6 +38,7 @@ export function resetSubagentLinkCache(): void {
 }
 
 interface SessionLink {
+  lastReport?: AgentReport;
   task?: string;
   id: string;
   parentId: string | null;
@@ -113,7 +115,7 @@ function modelEffortFromPayload(payload: Record<string, unknown>): { model?: str
   return { model, effort };
 }
 
-type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task'>;
+type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task' | 'lastReport'>;
 
 function applyRolloutLine(line: string, into: RolloutFields): void {
   const trimmed = line.trim();
@@ -125,6 +127,8 @@ function applyRolloutLine(line: string, into: RolloutFields): void {
     if (!entry.payload) {
       return;
     }
+    const report = extractAgentReport(entry);
+    if (report && (!into.lastReport || report.at >= into.lastReport.at)) into.lastReport = report;
     if (entry.type === 'response_item' && entry.payload.type === 'message' && entry.payload.role === 'user' && Array.isArray(entry.payload.content)) {
       const text = taskText(entry.payload.content.map((part: { text?: unknown }) => typeof part?.text === 'string' ? part.text : '').filter(Boolean).join('\n'));
       if (text) into.task = text;
@@ -218,6 +222,7 @@ function refreshRolloutFields(link: SessionLink): void {
   }
   if (extra.turnStartedAt) link.turnStartedAt = extra.turnStartedAt;
   if (extra.task) link.task = extra.task;
+  if (extra.lastReport && (!link.lastReport || extra.lastReport.at >= link.lastReport.at)) link.lastReport = extra.lastReport;
   cached.contextOffset = extra.endOffset;
 }
 
@@ -506,6 +511,7 @@ export function buildSubagentTree(
         link.statusAt = previous.link.statusAt;
         link.turnStartedAt = previous.link.turnStartedAt;
         link.task = previous.link.task;
+        link.lastReport = previous.link.lastReport;
       }
       linkCache.set(file.path, {
         link,
@@ -569,6 +575,7 @@ export function buildSubagentTree(
       startedAt: knownAgent?.startedAt ?? link?.startedAt,
       turnStartedAt: link?.turnStartedAt,
       rolloutPath: link?.path,
+      lastReport: link?.lastReport,
       task: taskText(link?.task) ?? taskText(knownAgent?.task),
       statusAt: knownAgent?.lastActivityAt && (!link?.statusAt || knownAgent.lastActivityAt > link.statusAt)
         ? knownAgent.lastActivityAt : link?.statusAt,

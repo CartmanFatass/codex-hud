@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { collectGitChanges, readGitDiff } from '../../src/collectors/git-changes.js';
+import { collectGitChanges, describeGitFailure, readGitDiff } from '../../src/collectors/git-changes.js';
 
 function repository(t: { after(fn: () => void): void }): string {
   const root = mkdtempSync(join(tmpdir(), 'hud-git-'));
@@ -32,6 +32,33 @@ test('returns an empty result outside a repository', async t => {
   const result = await collectGitChanges(root);
   assert.equal(result.root, null);
   assert.deepEqual(result.files, []);
+  assert.equal(result.error, undefined);
+});
+
+function execError(message: string, extra: Record<string, unknown> = {}): Error {
+  return Object.assign(new Error(message), extra);
+}
+
+test('Git failures become short notices, never the failed command or raw stderr', () => {
+  const command = 'Command failed: git --no-optional-locks -c core.fsmonitor=false rev-parse --show-toplevel';
+  assert.equal(describeGitFailure(execError(`${command}\nfatal: not a git repository (or any of the parent directories): .git`, {
+    code: 128, cmd: command, stderr: 'fatal: not a git repository (or any of the parent directories): .git\n',
+  })), 'No Git repository');
+  assert.equal(describeGitFailure(execError('spawn git ENOENT', { code: 'ENOENT' })), 'Git is not installed');
+  assert.equal(describeGitFailure(execError('spawn git ETIMEDOUT', { code: 'ETIMEDOUT', killed: true })), 'Git timed out');
+  assert.equal(describeGitFailure(execError('Cannot safely disable configured Git filter')), 'Git filters could not be disabled safely');
+  assert.equal(describeGitFailure(execError('Command failed: git diff --numstat', {
+    code: 128, stderr: 'error: unable to read tree 0123456789abcdef\n',
+  })), 'Git objects are missing');
+  const fallback = describeGitFailure(execError(`${command}\nsome unrecognized git diagnostic`, { cmd: command }));
+  assert.equal(fallback, 'Git could not complete the request');
+  for (const notice of [
+    describeGitFailure(execError('spawn git ENOENT', { code: 'ENOENT' })),
+    describeGitFailure(execError(`${command}\nfatal: not a git repository`, { cmd: command, stderr: 'fatal: not a git repository' })),
+    fallback,
+  ]) {
+    assert.doesNotMatch(notice, /Command failed|git --no-optional-locks|rev-parse|spawn git|ENOENT|fatal:/);
+  }
 });
 
 test('collects both index and worktree counts and previews without changing the index', async t => {
@@ -234,7 +261,7 @@ test('fails closed when filter names cannot be expressed as Git command override
   git(root, 'config', 'filter.unsafe=name.clean', 'echo invoked > FILTER_EXECUTED; cat');
   const result = await collectGitChanges(root);
   assert.equal(existsSync(join(root, 'FILTER_EXECUTED')), false);
-  assert.match(result.error ?? '', /Cannot safely disable/);
+  assert.equal(result.error, 'Git filters could not be disabled safely');
   const preview = await readGitDiff(root, {
     path: 'file.txt', index: ' ', worktree: 'M', added: 1, removed: 1, binary: false, conflict: false,
   });
@@ -288,6 +315,7 @@ for (const operation of ['collect', 'preview']) {
       const result = await collectGitChanges(root);
       assert.deepEqual(snapshot(), beforePacks);
       assert.ok(result.error, 'missing objects should report unavailable statistics');
+      assert.doesNotMatch(result.error ?? '', /Command failed|git --no-optional-locks|fatal:|error:/);
       const file = result.files.find(file => file.path === 'file.txt');
       assert.ok(file);
       assert.equal(file.added, null);

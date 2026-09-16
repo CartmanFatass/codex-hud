@@ -1,4 +1,5 @@
 import type { TokenRateSnapshot } from './collectors/token-rate.js';
+import type { AgentReport } from './collectors/agent-report.js';
 /**
  * Type definitions for codex-hud
  * Phase 3: Redesigned to match claude-hud structure
@@ -363,6 +364,8 @@ export interface SubagentInfo {
 }
 
 export interface SubagentTreeNode {
+  /** Public agent-authored excerpt; not verified completion or a file attribution. */
+  lastReport?: AgentReport;
   task?: string;
   statusAt?: Date;
   /** Local rollout for inspecting this agent; never displayed as its task. */

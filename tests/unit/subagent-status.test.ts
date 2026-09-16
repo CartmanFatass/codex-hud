@@ -41,6 +41,18 @@ test('tree follows child lifecycle events, including completion and follow-up tu
     assert.equal(worker().children[0].status, 'completed');
     assert.equal(tree.nodes.find(node => node.id === 'unheard')?.status, 'unknown');
     assert.equal(summarizeSubagents(tree.nodes).active, 1);
+    fs.appendFileSync(child, JSON.stringify({
+      timestamp: new Date(now.getTime() + 1500).toISOString(),
+      type: 'event_msg', payload: { type: 'agent_message', message: 'FOUND_THE_CAUSE' },
+    }) + '\n');
+    fs.appendFileSync(child, JSON.stringify({
+      timestamp: new Date(now.getTime() + 1600).toISOString(),
+      type: 'event_msg', payload: { type: 'agent_reasoning', message: 'DO_NOT_SHOW' },
+    }) + '\n');
+    tree = build();
+    assert.equal(worker().lastReport?.text, 'FOUND_THE_CAUSE');
+    assert.equal(worker().lastReport?.kind, 'message');
+    assert.equal(tree.nodes.find(node => node.id === 'unheard')?.lastReport, undefined);
     const state = initialPanelState();
     const panel = renderPanelPlain({ tree, state, maxWidth: 80 });
     assert.match(panel, new RegExp(`${icons.running} worker`));

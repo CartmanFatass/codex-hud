@@ -62,8 +62,40 @@ function safeText(text: string): string {
     character => `\\x${character.charCodeAt(0).toString(16).padStart(2, '0')}`);
 }
 
-function errorText(error: unknown): string {
-  return safeText(error instanceof Error ? error.message : String(error)).slice(0, 300);
+type ExecFailure = Error & {
+  code?: string | number;
+  killed?: boolean;
+  stderr?: string;
+  stdout?: string;
+};
+
+function execFailureText(error: unknown): string {
+  const err = error as ExecFailure;
+  return [err?.stderr, err?.stdout, error instanceof Error ? error.message : String(error)]
+    .filter((part): part is string => typeof part === 'string' && part.length > 0)
+    .join('\n');
+}
+
+function isNotAGitRepository(error: unknown): boolean {
+  return /not a git repository/i.test(execFailureText(error));
+}
+
+/** User-facing Git failure. Never the spawned argv, Node code, or raw Git stderr. */
+export function describeGitFailure(error: unknown): string {
+  const err = error as ExecFailure;
+  const text = execFailureText(error);
+  if (err?.code === 'ENOENT') return 'Git is not installed';
+  if (err?.code === 'ETIMEDOUT' || err?.killed) return 'Git timed out';
+  if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'Git output was truncated';
+  if (/Cannot safely disable configured Git filter/i.test(text)) return 'Git filters could not be disabled safely';
+  if (isNotAGitRepository(error)) return 'No Git repository';
+  if (/permission denied|eacces|eperm/i.test(text)) return 'Git could not read the repository';
+  if (/index\.lock|unable to create .*\.lock/i.test(text)) return 'Git is locked by another process';
+  if (/bad object|missing blob|missing object|unable to read [0-9a-f]{4,}|unable to read tree|could not read/i.test(text)) {
+    return 'Git objects are missing';
+  }
+  if (/corrupt|broken repository/i.test(text)) return 'Git repository is damaged';
+  return 'Git could not complete the request';
 }
 
 const DIFF_OPTIONS = ['--no-ext-diff', '--no-textconv', '--no-color', '--find-renames', '--ignore-submodules=all'];
@@ -161,7 +193,7 @@ export async function collectGitChanges(cwd: string): Promise<GitChanges> {
     ]);
     for (const stat of stats) {
       if (stat.status === 'fulfilled') addNumstat(stat.value, files);
-      else result.error = errorText(stat.reason);
+      else result.error = describeGitFailure(stat.reason);
     }
     if (stats.some(stat => stat.status === 'rejected')) {
       // A partial result must not present missing-object or timeout failures as zero changes.
@@ -171,7 +203,9 @@ export async function collectGitChanges(cwd: string): Promise<GitChanges> {
       }
     }
   } catch (error) {
-    result.error = errorText(error);
+    // A workspace without Git is not a collector failure; keep root empty and do not
+    // surface the failed rev-parse command as the HUD message.
+    if (!isNotAGitRepository(error)) result.error = describeGitFailure(error);
   }
   return result;
 }
@@ -221,7 +255,7 @@ export async function readGitDiff(root: string, file: GitChangedFile): Promise<s
       }
     }
   } catch (error) {
-    sections.push(`[Preview unavailable: ${errorText(error)}]`);
+    sections.push(`[Preview unavailable: ${describeGitFailure(error)}]`);
   }
   // Reserve room for every section so a large staged patch cannot hide worktree edits.
   const budget = Math.floor(MAX_PREVIEW_LINES / Math.max(1, sections.length));
