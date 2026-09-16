@@ -11,122 +11,28 @@
 import type { HudData, RenderOptions, LayoutConfig, SubagentTree, SubagentTreeNode } from '../types.js';
 import { DEFAULT_LAYOUT } from '../types.js';
 import { colors, theme, coloredBar, coloredPercent, visualLength, truncateAnsi, padEnd } from './colors.js';
+import { buildBarModules } from './layout/bar-modules.js';
+import { fitModules } from './layout/engine.js';
 import { renderSubagentChip } from './subagent-chip.js';
 import {
   collectActiveTreeLineages,
   type SubagentTreeEntry,
 } from '../collectors/subagent-tree.js';
-import {
-  renderProjectLine,
-  renderEnvironmentCompact,
-  renderUsageLine,
-  renderTokenLine,
-  formatTokenCount,
-} from './lines/index.js';
-import { getModelDisplayName } from '../collectors/codex-config.js';
-import { renderModelEffortToken } from './model-glyphs.js';
 
 /**
- * The single status line: model/effort glyphs plus the previous header fields.
- * Compact mode is this line only; expanded mode appends subagent rows under it.
+ * The single status line.
+ *
+ * Fields are assembled as modules and fitted to the pane by
+ * `fitModules`, which shortens before it hides and keeps an alert on screen
+ * after everything else has gone. Nothing here concatenates and clips.
  */
 function renderStatusHeader(data: HudData, layout: LayoutConfig, width: number): string {
-  const modelName = data.session?.model ?? getModelDisplayName(data.config);
-  const reasoningEffort = data.session?.reasoningEffort ?? data.config.model_reasoning_effort;
-  const modelToken = renderModelEffortToken(modelName, reasoningEffort);
-  const plans = planWindows(data);
-  const ctxMeter = renderAlignedMeter('Ctx', contextPercent(data), contextTotals(data));
-  const planMeter = plans.length > 0
-    ? renderAlignedMeter('Plan', plans[0].percent, [plans[0].label, ...plans.slice(1).map((item) => `${item.percent}% ${item.label}`)].filter(Boolean).join(' · '))
-    : renderAlignedMeter('Plan');
-
-  return truncateAnsi(
-    joinDense([
-      modelToken,
-      renderTokenLine(data),
-      ctxMeter,
-      planMeter,
-      renderUsageLine(data, layout),
-      renderProjectLine(data, { includeFileStats: false }),
-      renderEnvironmentCompact(data),
-      renderSessionCompact(data),
-    ]),
-    width
-  );
+  const modules = buildBarModules(data, { barWidth: layout.barWidth ?? 10 });
+  return fitModules(modules, { width, separator: ` ${colors.dim('|')} ` }).line;
 }
 
 function renderCompactLayout(data: HudData, layout: LayoutConfig, width: number): string[] {
   return [renderStatusHeader(data, layout, width)];
-}
-
-function joinDense(parts: Array<string | null | undefined>): string {
-  return parts
-    .filter((part): part is string => Boolean(part && visualLength(part) > 0))
-    .join(` ${colors.dim('|')} `);
-}
-
-function renderSessionCompact(data: HudData): string {
-  const sessionId = data.session?.id;
-  if (!sessionId) {
-    return '';
-  }
-  const shortId = sessionId.length > 8 ? sessionId.slice(0, 8) : sessionId;
-  return colors.dim('Session: ') + theme.info(shortId);
-}
-
-function renderAlignedMeter(label: string, percent?: number, extra?: string): string {
-  const bar = typeof percent === 'number' ? coloredBar(percent, 10) : colors.dim('░'.repeat(10));
-  const percentText = typeof percent === 'number' ? coloredPercent(percent) : colors.dim('--%');
-  const extraText = extra ? ` ${colors.dim(extra)}` : '';
-  return `${colors.dim(label)} ${bar} ${percentText}${extraText}`;
-}
-
-function contextPercent(data: HudData): number | undefined {
-  if (data.contextUsage) {
-    return data.contextUsage.percent;
-  }
-  const usage = data.tokenUsage?.last_token_usage ?? data.tokenUsage?.total_token_usage;
-  const window = data.tokenUsage?.model_context_window;
-  if (!usage || !window) {
-    return undefined;
-  }
-  return Math.round(((usage.total_tokens ?? 0) / window) * 100);
-}
-
-function contextTotals(data: HudData): string | undefined {
-  if (data.contextUsage && data.contextUsage.total > 0) {
-    const compact = data.contextUsage.compactCount > 0
-      ? ` ↻${data.contextUsage.compactCount}`
-      : '';
-    return `(${formatTokenCount(data.contextUsage.used)}/${formatTokenCount(data.contextUsage.total)})${compact}`;
-  }
-
-  const usage = data.tokenUsage?.last_token_usage ?? data.tokenUsage?.total_token_usage;
-  const window = data.tokenUsage?.model_context_window;
-  if (!usage || !window) {
-    return undefined;
-  }
-  return `(${formatTokenCount(usage.total_tokens ?? 0)}/${formatTokenCount(window)})`;
-}
-
-function planWindows(data: HudData): Array<{ percent: number; label: string }> {
-  const limits = data.rateLimits;
-  if (!limits) {
-    return [];
-  }
-  return [limits.primary, limits.secondary]
-    .filter((window): window is NonNullable<typeof window> => typeof window?.used_percent === 'number')
-    .map((window) => {
-      const minutes = window.window_minutes ?? 0;
-      const label = minutes % 1440 === 0 && minutes > 0
-        ? `${minutes / 1440}d`
-        : minutes % 60 === 0 && minutes > 0
-          ? `${minutes / 60}h`
-          : minutes > 0
-            ? `${minutes}m`
-            : '';
-      return { percent: Math.round(window.used_percent ?? 0), label };
-    });
 }
 
 const MAX_HUD_TREE_LEVELS = 3;

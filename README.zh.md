@@ -34,11 +34,13 @@
 - **MCP 服务器状态 & 工具调用** —— 看 Codex 实际在干什么
 - **Reasoning effort 级别** —— 当前思考深度一目了然
 
-**Q: 我同时跑多个 Codex session，能一起监控吗？**
+**Q: session 会派生子代理，我能看到它们在做什么吗？**
 
-可以。按 `Ctrl+T` 切换到**多 Session 概览模式**，一屏显示所有活跃 session 的 context 使用情况。
+可以。按 `F12` 打开右侧的**子代理树**：当前 session 派生的每个代理、它的模型与推理强度、正在运行还是已结束或失败、以及是谁派生的它。再按一次 `F12` 关闭。整个过程状态栏一直在。
 
-![Codex HUD — 多 Session 概览](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+`Ctrl+T` 被刻意留空 —— 那是 Codex 自己的转写面板。
+
+![Codex HUD — 子代理树](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
 
 **Q: 需要手动配置 tmux 吗？**
 
@@ -47,7 +49,7 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/fwyc0573/codex-hud.git
+git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 ./bin/codex-hud-install
 
@@ -62,7 +64,7 @@ codex
 1. 下载并切换到当前 branch：
 
 ```powershell
-git clone https://github.com/fwyc0573/codex-hud.git
+git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 git switch feature/windows-support-dual-entry
 .\bin\codex-hud-install.ps1
@@ -104,21 +106,112 @@ codex
 
 ## HUD 显示了什么？
 
+终端底部常驻一行：
+
 ```
-[gpt-5.4 xhigh] █████░░░░ 45% │ my-project git:(main ●) │ 12m
-mode: dev | 3 extensions | 2 AGENTS.md | Approval: on-req | Sandbox: ws-write
-Tokens: 50.2K (in: 35.0K, cache: 5.0K, out: 15.2K) | Ctx: ████░░░░ 45% (50.2K/128K) ↻2
-Dir: ~/my-project | Session: abc12345 | CLI: 0.4.2
-◐ Edit: file.ts | ✓ Read ×3
+☀● Astra | codex-hud git:(main * ↑2) | Agents 1 run · 1 ok | Ctx ████░░░░░░ 42% (114.2K/272.0K) | 2/5 | Q61% | 12m | F12
 ```
 
-| 行 | 内容 |
-|----|------|
-| **标题** | 模型 + effort、context 进度条、项目名、git 分支、会话计时 |
-| **环境** | 配置数、工作模式、MCP 服务器、指令文件、审批/沙箱策略 |
-| **Tokens** | 总 token（输入/cache/输出拆分）、context 填充率、compact 次数 |
-| **Session** | 工作目录、Session ID、CLI 版本 |
-| **活动** | 正在执行的工具调用、最近工具调用历史 |
+有事需要你处理时，它会排到最前面：
+
+```
+! 1 tool failed · 1 agent failed | ☀● Astra | codex-hud git:(main * ↑2) | Agents 1 run · 1 ok · 1 fail | Ctx 42% | F12
+```
+
+| 字段 | 含义 |
+|------|------|
+| `!` | HUD 实际观测到的异常：工具返回失败、代理以错误结束、额度窗口报告已满 |
+| `☀● Astra` | 模型家族与推理强度 |
+| `codex-hud git:(main * ↑2)` | 项目、分支、未提交改动、领先/落后 |
+| `Agents 1 run · 1 ok · 1 fail` | 子代理按结果计数。成功与失败分开统计；没有观测到状态的代理记为 `?`，不会算作运行中 |
+| `Ctx 42%` | 上下文窗口占用；`↻2` 是压缩次数 |
+| `2/5` | 当前计划已完成的步骤数 |
+| `Q61%` | 账户额度窗口的消耗比例。这是额度，不是任务进度 |
+| `84.0K` | 本次会话消耗的 token |
+| `F12` | 打开子代理树 |
+
+只有拿到真实数据的字段才会出现。没有额度快照就不显示额度，而不是显示一条为 0 的进度条。
+
+### 窗口变窄时
+
+先缩短，再隐藏；隐藏从最不重要的开始；告警永远不会被丢掉。40 列、且有失败时：
+
+```
+! | ☀ | main* | 1▸1✗ | Ctx 42%
+```
+
+### 密度预设
+
+| 预设 | 显示内容 |
+|------|----------|
+| `focus` | 告警、模型、项目、代理、上下文 |
+| `balanced`（默认） | 在 focus 基础上加计划进度、额度、输出速度、会话计时 |
+| `full` | 全部，包括 token、审批/沙箱、Session ID |
+
+```bash
+CODEX_HUD_DENSITY=focus codex
+```
+
+## 开发面板
+
+`F12` 在右侧打开面板，光标仍留在 Codex。`Shift+F12` 打开并把光标移进面板。
+
+面板包含四个独立区域，焦点所在区域的边框高亮。Activity 默认折叠，Tasks 默认关闭，把空间留给其他区域：
+
+| 区域 | 内容 |
+|------|------|
+| **1 Agents** | 子代理树、运行/失败标记、子树活动数量 |
+| **2 Details** | 代理摘要与工具状态；按需展开命令/输出，或查看文件 diff、事件详情 |
+| **3 Changes** | 整个工作区的文件列表、暂存/未暂存状态、增删行数、冲突 |
+| **4 Activity** | Tasks / Checks / Events 标签页，展示主会话计划、验证命令记录和最近事件 |
+
+窄栏纵向排列；宽度达到 70 列时采用列表与预览分栏。窗口过小时只显示当前区域，可继续用 Tab 切换。
+每个区域保留自己的滚动位置。选中代理按 ID 保持，选中文件按路径保持。
+
+| 按键 | 作用 |
+|------|------|
+| `Tab` / `Shift+Tab` | 切换区域 |
+| `1` / `2` / `3` / `4` | 直接聚焦对应区域 |
+| `j` / `k`、`↑` / `↓` | 移动选中项或滚动详情 |
+| `PgUp` / `PgDn`、`g` / `G` | 翻页、跳到开头/末尾 |
+| 鼠标点击 / 滚轮 | 选择或滚动；点击区域标题折叠/展开 |
+| `,` 或 **Settings** | 打开设置；方向键或点击修改，`s` 或 Save 保存 |
+| `h` / `l`、`←` / `→` | 在树中折叠、展开或移动到父/子节点 |
+| `s` | 切换活跃优先 / 创建顺序 |
+| `f` 或 `/` | 筛选全部、运行中、失败、未知 |
+| `Enter` | 进入联动详情区域 |
+| `v` / `[v+]` | 展开/收起代理详情与工具记录 |
+| 点击 agent / `o` | 将实际 Codex 对话切换到该 agent |
+| **Main** / `m` | 将 Codex 对话切回主会话 |
+| `[` / `]` 或 `t` | 切换 Tasks / Checks / Events |
+| `z` | 放大/还原当前区域 |
+| `?` | 快捷键帮助 |
+| `Esc` | 关闭帮助、还原放大、返回列表；在 Agents 下关闭面板 |
+| `q`、`Ctrl+C` | 关闭面板 |
+
+会话切换通过 Codex 0.154 的 `/subagents` 选择器按完整 UUID 定位并核验。需要空输入框或已识别的选择器；有草稿、处于复制模式、无法识别界面或 ID 被截断时，会提示原因。键盘移动选中项只预览，按 `o` 才切换。目标已在选择器可见范围内时，合并移动操作，并在 Enter 前再次核对完整 ID。切换后不再重复打开选择器，避免二次弹窗和对话重绘；请求已发送不等于独立确认了最终显示的会话。
+
+活跃排序只调整同级节点：有运行中子孙的分支优先，按最新一轮启动时间排序，普通 token 或日志更新不会改变顺序。
+父子关系支持两种日志元数据格式。没有状态证据的代理显示为未知，不会凭最近写入时间判定为运行或完成。
+
+Agent detail 默认只显示简短任务、模型/effort、状态、时间和一行工具结果。长命令、输出、会话 ID 按 `v` 或点击 `[v+]` 再展开；选中另一个代理后自动恢复简洁视图。会话切换提示只显示在底部状态行。
+
+Changes 是工作区级别的信息，不推断某个文件由哪个 agent 修改。状态的第一列是暂存区，第二列是工作区；增删数合计两部分，二进制和无法读取的数据单独标记。
+选中文件即可查看暂存和未暂存 diff；未跟踪文件提供内容预览。预览有大小限制，长行会折行，支持 `z` 放大。
+这些操作只读取 Git 数据；禁用外部 diff、内容过滤器和部分克隆的自动下载，不提供暂存、提交或切换分支操作。
+Checks 展示已记录的命令/exec 结果：明确成功才显示 `✓`，明确失败显示 `✗`，只收到返回但没有退出结果时显示 `·`。
+
+Settings 提供四档宽度：窄（16 列）、默认（沿用原来的 20–30 列策略）、宽（45 列）、更宽（70 列）。保存后立即调整，并为主对话区保留空间。没有保存过设置时，仍支持 `CODEX_HUD_TREE_WIDTH` 指定初始宽度。
+
+独立设置页可调整密度、主题、模型标签、动画、排序、鼠标、各区域、Tasks、刷新间隔和宽度。Save 写入 `$CODEX_HOME/hud-settings.json`（可用 `CODEX_HUD_SETTINGS_PATH` 改路径），紧凑 HUD 下次刷新时同步显示偏好。已保存设置优先于环境默认值，`NO_COLOR` 始终优先。Back 放弃未保存修改；Reset 恢复默认草稿，需 Save 才应用。
+
+### 输出速度
+
+默认状态栏新增 `Out ~42.1 tok/s`，选中代理的详情也会展示其可用读数。
+它用日志里的**累计输出 token 增量 / 日志时间差**估算最近约 30 秒的吞吐，展开详情后注明实际采样窗口。
+这不是纯模型解码测速，窗口可能包含工具或服务等待时间；新一轮开始时排除跨轮空闲时间。
+没有足够样本时不显示；10 秒没有新样本后显示 `last ~42.1 tok/s`，保留上次读数。
+Ctx 仍保留当前占用与压缩次数，开发面板不绘制 Ctx 趋势。
 
 ## 使用方法
 
@@ -149,6 +242,9 @@ codex-hud --self-check       # 运行环境诊断
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
+| `CODEX_HUD_DENSITY` | `balanced` | 状态栏显示密度（`focus` / `balanced` / `full`） |
+| `CODEX_HUD_THEME` | `terminal` | 配色（`terminal` / `mocha` / `latte` / `none`） |
+| `CODEX_HUD_GLYPHS` | `both` | 模型标记样式（`glyph` / `text` / `both`） |
 | `CODEX_HUD_POSITION` | `bottom` | HUD 面板位置（`top` / `bottom`） |
 | `CODEX_HUD_HEIGHT` | 终端 1/6 | HUD 高度（行数） |
 | `CODEX_HUD_MOUSE` | `1` | 启用鼠标/触控板滚动 |
@@ -158,6 +254,10 @@ codex-hud --self-check       # 运行环境诊断
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
+| `CODEX_HUD_NOTIFY` | `0` | 通过 tmux 提示失败与代理结束 |
+| `CODEX_HUD_NOTIFY_COOLDOWN` | `300` | 同类提醒之间的冷却秒数 |
+| `CODEX_HUD_REDUCED_MOTION` | `0` | 关闭通信标记的动画 |
+| `NO_COLOR` | （未设置） | 任意取值都强制使用 `none` 配色 |
 | `CODEX_HUD_HEIGHT_AUTO` | `0` | 根据宽度自动调整高度 |
 | `CODEX_HUD_HEIGHT_MIN` | `CODEX_HUD_HEIGHT` | 自动模式最小高度 |
 | `CODEX_HUD_HEIGHT_MAX` | `12` | 自动模式最大高度 |
@@ -169,6 +269,17 @@ codex-hud --self-check       # 运行环境诊断
 | `CODEX_SESSIONS_PATH` | （未设置） | 覆盖 sessions 目录 |
 
 </details>
+
+### 提醒
+
+默认关闭：Codex 自己有通知机制，同一件事弹两次比不弹更糟。用 `CODEX_HUD_NOTIFY=1` 开启。
+
+```bash
+CODEX_HUD_NOTIFY=1 codex
+```
+
+它只提醒观测到的失败和已结束的代理，每次发生只发一条，并带冷却时间，避免状态反复时刷屏。
+它不会对会话做任何操作：不自动确认、不发送按键、不自动重试。
 
 ### config.toml
 
@@ -238,7 +349,7 @@ Windows 当前默认只使用 WSL HUD 启动路径：
 PowerShell 安装方式：
 
 ```powershell
-git clone https://github.com/fwyc0573/codex-hud.git
+git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 .\bin\codex-hud-install.ps1
 ```

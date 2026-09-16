@@ -31,11 +31,13 @@
 - **MCP 서버 상태 & 도구 호출** — Codex가 실제로 무엇을 하는지 모니터링
 - **Reasoning effort 레벨** — 현재 사고 깊이 표시
 
-**Q: 여러 Codex 세션을 동시에 모니터링할 수 있나요?**
+**Q: 세션이 서브에이전트를 생성합니다. 무엇을 하는지 볼 수 있나요?**
 
-네. `Ctrl+T`로 **멀티 세션 개요 모드**로 전환하면, 모든 활성 세션의 context 사용 현황을 한 화면에서 확인할 수 있습니다.
+네. `F12`를 누르면 오른쪽에 **서브에이전트 트리**가 열립니다. 세션이 생성한 각 에이전트, 모델과 추론 강도, 실행 중인지 종료됐는지 실패했는지, 그리고 어느 에이전트가 생성했는지를 보여줍니다. `F12`를 다시 누르면 닫힙니다. 그동안 상태 표시줄은 계속 유지됩니다.
 
-![Codex HUD — 멀티 세션 개요](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+`Ctrl+T`는 의도적으로 비워 두었습니다. Codex 자체의 트랜스크립트 오버레이용입니다.
+
+![Codex HUD — 서브에이전트 트리](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
 
 **Q: tmux를 수동으로 설정해야 하나요?**
 
@@ -44,7 +46,7 @@
 ## 빠른 시작
 
 ```bash
-git clone https://github.com/fwyc0573/codex-hud.git
+git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 ./bin/codex-hud-install
 
@@ -59,7 +61,7 @@ codex
 1. 다운로드하고 current branch로 전환합니다:
 
 ```powershell
-git clone https://github.com/fwyc0573/codex-hud.git
+git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 git switch feature/windows-support-dual-entry
 .\bin\codex-hud-install.ps1
@@ -145,6 +147,9 @@ codex-hud --self-check       # 환경 진단 실행
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
+| `CODEX_HUD_DENSITY` | `balanced` | 상태 표시줄 정보량 (`focus` / `balanced` / `full`) |
+| `CODEX_HUD_THEME` | `terminal` | 팔레트 (`terminal` / `mocha` / `latte` / `none`) |
+| `CODEX_HUD_GLYPHS` | `both` | 모델 배지 표기 (`glyph` / `text` / `both`) |
 | `CODEX_HUD_POSITION` | `bottom` | HUD 패인 위치 (`top` / `bottom`) |
 | `CODEX_HUD_HEIGHT` | 터미널의 1/6 | HUD 높이 (행 수) |
 | `CODEX_HUD_MOUSE` | `1` | 마우스/트랙패드 스크롤 활성화 |
@@ -154,6 +159,10 @@ codex-hud --self-check       # 환경 진단 실행
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
+| `CODEX_HUD_NOTIFY` | `0` | 실패와 에이전트 종료를 tmux로 알림 |
+| `CODEX_HUD_NOTIFY_COOLDOWN` | `300` | 같은 종류 알림의 쿨다운 초 |
+| `CODEX_HUD_REDUCED_MOTION` | `0` | 통신 마커 애니메이션 중지 |
+| `NO_COLOR` | (미설정) | 값이 있으면 `none` 팔레트 강제 |
 | `CODEX_HUD_HEIGHT_AUTO` | `0` | 너비에 따라 높이 자동 조정 |
 | `CODEX_HUD_HEIGHT_MIN` | `CODEX_HUD_HEIGHT` | 자동 모드 최소 높이 |
 | `CODEX_HUD_HEIGHT_MAX` | `12` | 자동 모드 최대 높이 |

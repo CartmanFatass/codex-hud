@@ -1,3 +1,4 @@
+import { sessionParentId } from '../utils/session-parent.js';
 /**
  * Session finder for locating active/recent Codex session rollout files
  * Searches ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
@@ -92,13 +93,14 @@ function peekRolloutMeta(filePath: string): {
       payload?: {
         cwd?: string;
         parent_thread_id?: string;
+        source?: unknown;
         thread_source?: string;
       };
     };
     if (entry.type !== 'session_meta' || !entry.payload) {
       return null;
     }
-    const parentId = entry.payload.parent_thread_id;
+    const parentId = sessionParentId(entry.payload);
     const threadSource = entry.payload.thread_source;
     const isRoot = !parentId && threadSource !== 'subagent';
     return {

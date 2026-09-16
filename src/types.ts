@@ -1,3 +1,4 @@
+import type { TokenRateSnapshot } from './collectors/token-rate.js';
 /**
  * Type definitions for codex-hud
  * Phase 3: Redesigned to match claude-hud structure
@@ -157,14 +158,15 @@ export interface SessionMetaPayload {
 }
 
 export interface ResponseItemPayload {
-  type: 'message' | 'function_call' | 'function_call_output';
+  type: 'message' | 'function_call' | 'function_call_output' | 'custom_tool_call' | 'custom_tool_call_output';
   role?: 'user' | 'assistant' | 'developer';
   content?: ContentBlock[];
   id?: string;
   call_id?: string;
   name?: string;
   arguments?: string;
-  output?: FunctionOutput;
+  input?: string;
+  output?: FunctionOutput | string | ContentBlock[];
 }
 
 export interface ContentBlock {
@@ -264,7 +266,13 @@ export interface CollabAgentItem {
 export interface RateLimitWindow {
   used_percent?: number;
   window_minutes?: number;
-  resets_at?: number;
+  /**
+   * Seen as an epoch (seconds or milliseconds), an RFC3339 string, and as a
+   * count of seconds from now. `resolveResetTime` decides which by magnitude
+   * rather than assuming one.
+   */
+  resets_at?: number | string;
+  resets_in_seconds?: number;
 }
 
 export interface RateLimitCredits {
@@ -294,6 +302,10 @@ export interface RateLimitSnapshot {
 export type ToolStatus = 'running' | 'completed' | 'error';
 
 export interface ToolCall {
+  /** Explicit tool result; completion alone does not prove command success. */
+  resultSuccess?: boolean;
+  exitCode?: number;
+  output?: string;
   id: string;
   name: string;
   arguments?: Record<string, unknown>;
@@ -331,9 +343,15 @@ export interface AgentActivity {
   lastUpdateTime: Date;
 }
 
-export type SubagentStatus = 'starting' | 'running' | 'completed' | 'error';
+/**
+ * `unknown` is a real answer: an agent the HUD can see exists but has no
+ * terminal or progress event for. It must not be shown as running, and it must
+ * not be counted as finished.
+ */
+export type SubagentStatus = 'starting' | 'running' | 'completed' | 'error' | 'unknown';
 
 export interface SubagentInfo {
+  task?: string;
   id: string;
   name: string;
   status: SubagentStatus;
@@ -345,13 +363,26 @@ export interface SubagentInfo {
 }
 
 export interface SubagentTreeNode {
+  task?: string;
+  statusAt?: Date;
+  /** Local rollout for inspecting this agent; never displayed as its task. */
+  rolloutPath?: string;
+  /** Latest observed turn start, distinct from agent creation and traffic. */
+  turnStartedAt?: Date;
   id: string;
   name: string;
   status: SubagentStatus;
   startedAt?: Date;
   model?: string;
   effort?: string;
+  /** Last main-to-agent exchange. */
   lastActivityAt?: Date;
+  /**
+   * Newest evidence of any kind about this agent, including its own rollout
+   * being written to. Freshness is a separate axis from status: an agent can
+   * be running and quiet, or unknown and recently active.
+   */
+  lastEventAt?: Date;
   depth: number;
   children: SubagentTreeNode[];
 }
@@ -416,6 +447,7 @@ export interface SessionInfo {
 // ============================================================================
 
 export interface HudData {
+  outputRate?: TokenRateSnapshot;
   // Core info
   config: CodexConfig;
   git: GitStatus;

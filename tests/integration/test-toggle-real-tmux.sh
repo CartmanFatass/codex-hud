@@ -110,6 +110,18 @@ assert_eq "T2 compact HUD pane is reused" "$(get_opt s1 @codex_hud_pane)" "$S1_H
 # Compact HUD is reused on a clean round-trip, so the persisted launch
 # command is not re-execed here. Recreate-from-hud_cmd is covered in T5.
 
+# Width presets survive both the shell split and the live page's initial resize.
+for requested in 16 0 45 70; do
+  CODEX_HUD_TREE_WIDTH=$requested toggle s1
+  sleep 0.3
+  panel=$(get_opt s1 @codex_hud_tree_pane)
+  actual=$(t display-message -p -t "$panel" '#{pane_width}')
+  expected=$requested
+  [[ "$requested" == 0 ]] && expected=30
+  assert_eq "T2 width preset $requested" "$actual" "$expected"
+  toggle s1
+done
+
 # ------------------------------------------------- T3: concurrent double-press
 ( toggle s1 ) & ( toggle s1 ) & wait
 mode_after_double=$(get_opt s1 @codex_hud_mode)
@@ -225,7 +237,10 @@ TREE_PANE=$(get_opt s3 @codex_hud_tree_pane)
 for _ in $(seq 1 30); do
   HUD_CAPTURE=$(t capture-pane -p -t "$HUD_PANE" 2>/dev/null || true)
   TREE_CAPTURE=$(t capture-pane -p -t "$TREE_PANE" 2>/dev/null || true)
-  if [[ "$HUD_CAPTURE" == *"Ctx"* || "$HUD_CAPTURE" == *"Plan"* || "$HUD_CAPTURE" == *"mode:"* ]]; then
+  # The bar drops fields it has no data for, and this synthetic session has no
+  # token_count event, so Ctx may be absent. F12 and the agent counts are the
+  # stable evidence that the bar is still alive.
+  if [[ "$HUD_CAPTURE" == *"Ctx"* || "$HUD_CAPTURE" == *"Agents"* || "$HUD_CAPTURE" == *"F12"* || "$HUD_CAPTURE" == *"mode:"* ]]; then
     COMPACT_OK=1
   fi
   if [[ "$TREE_CAPTURE" == *"TmuxChild"* && "$TREE_CAPTURE" == *"☽"* && "$TREE_CAPTURE" == *"◐"* ]]; then

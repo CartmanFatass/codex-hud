@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Paste into a tmux pane. Prefer the system clipboard; fall back to the
+# tmux paste buffer from a mouse selection. Never opens the tmux pane menu.
+set -euo pipefail
+
+pane="${1:-}"
+if [[ -z "$pane" ]]; then
+    pane="$(tmux display-message -p '#{mouse_pane}' 2>/dev/null || true)"
+fi
+if [[ -z "$pane" ]]; then
+    exit 0
+fi
+
+in_mode="$(tmux display-message -p -t "$pane" '#{pane_in_mode}' 2>/dev/null || true)"
+if [[ "$in_mode" == "1" ]]; then
+    tmux send-keys -t "$pane" -X copy-pipe-and-cancel 2>/dev/null || true
+    exit 0
+fi
+
+read_clipboard() {
+    if command -v wl-paste >/dev/null 2>&1; then
+        wl-paste --no-newline 2>/dev/null && return 0
+    fi
+    if command -v xclip >/dev/null 2>&1; then
+        xclip -o -selection clipboard 2>/dev/null && return 0
+    fi
+    if command -v xsel >/dev/null 2>&1; then
+        xsel -ob 2>/dev/null && return 0
+    fi
+    if command -v pbpaste >/dev/null 2>&1; then
+        pbpaste 2>/dev/null && return 0
+    fi
+    return 1
+}
+
+clip=""
+if clip=$(read_clipboard) && [[ -n "$clip" ]]; then
+    printf '%s' "$clip" | tmux load-buffer -b codex-hud-clip - 2>/dev/null || true
+    tmux paste-buffer -p -t "$pane" -b codex-hud-clip 2>/dev/null || true
+else
+    tmux paste-buffer -p -t "$pane" 2>/dev/null || true
+fi

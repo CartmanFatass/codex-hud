@@ -214,7 +214,12 @@ function renderRateWindow(usedPercent: number, windowMinutes?: number, barWidth:
     : `${bar} ${percentDisplay}`;
 }
 
-export function renderPlanQuota(data: HudData): string | null {
+/**
+ * The account's usage window. Named quota, not plan: it measures what has
+ * been spent against the rate limit, and has nothing to do with progress
+ * through a task list.
+ */
+export function renderQuotaLine(data: HudData): string | null {
   const limits = data.rateLimits;
   if (!limits) {
     return null;
@@ -232,7 +237,7 @@ export function renderPlanQuota(data: HudData): string | null {
   const rendered = windows.map((window) =>
     renderRateWindow(window.used_percent ?? 0, window.window_minutes, windows.length > 1 ? 6 : 8)
   );
-  return colors.dim('Plan: ') + rendered.join(` ${colors.dim('·')} `);
+  return colors.dim('Quota: ') + rendered.join(` ${colors.dim('·')} `);
 }
 
 export function renderTokenLine(data: HudData): string | null {

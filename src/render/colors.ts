@@ -1,12 +1,16 @@
 /**
- * ANSI color and style utilities for terminal rendering
- * Phase 3: Enhanced to match claude-hud style exactly
+ * ANSI colour and style utilities for terminal rendering.
+ *
+ * Nothing here picks a colour on its own: `theme` names a meaning and the
+ * active palette decides how to paint it, so swapping themes repaints every
+ * component at once. See `palette.ts`.
  */
+
+import { palette } from './palette.js';
 
 // ANSI escape codes
 const ESC = '\x1b[';
 const RESET = `${ESC}0m`;
-const DIM = `${ESC}2m`;
 
 // Foreground colors
 export const colors = {
@@ -30,70 +34,74 @@ export const colors = {
   brightCyan: (text: string) => `${ESC}96m${text}${RESET}`,
   brightWhite: (text: string) => `${ESC}97m${text}${RESET}`,
   
-  // Semantic colors
-  dim: (text: string) => `${ESC}2m${text}${RESET}`,
+  // Semantic colors. `dim` is the muted role, not a hard-coded attribute:
+  // the terminal palette maps it back to the ANSI dim attribute.
+  dim: (text: string) => palette().muted(text),
   bold: (text: string) => `${ESC}1m${text}${RESET}`,
   italic: (text: string) => `${ESC}3m${text}${RESET}`,
   underline: (text: string) => `${ESC}4m${text}${RESET}`,
 };
 
-// Semantic aliases for HUD components (claude-hud style)
+// Semantic aliases for HUD components. Each one is a role; the active palette
+// decides the colour at call time, so themes apply without touching callers.
 export const theme = {
   // Model and primary info
-  model: colors.brightCyan,
-  modelBracket: colors.cyan,
-  
+  model: (text: string) => palette().model(text),
+  modelBracket: (text: string) => palette().muted(text),
+
   // Git status (oh-my-zsh style)
-  gitBranch: colors.magenta,
-  gitClean: colors.green,
-  gitDirty: colors.yellow,
-  gitAhead: colors.green,
-  gitBehind: colors.red,
-  gitPrefix: colors.magenta,  // "git:(" prefix
-  
+  gitBranch: (text: string) => palette().branch(text),
+  gitClean: (text: string) => palette().success(text),
+  gitDirty: (text: string) => palette().warning(text),
+  gitAhead: (text: string) => palette().success(text),
+  gitBehind: (text: string) => palette().danger(text),
+  gitPrefix: (text: string) => palette().branch(text),
+
   // Project info
-  projectName: colors.yellow,  // Changed to yellow like claude-hud
-  projectPath: colors.dim,
-  
+  projectName: (text: string) => palette().project(text),
+  projectPath: (text: string) => palette().muted(text),
+
   // Status indicators
-  success: colors.green,
-  warning: colors.yellow,
-  error: colors.red,
-  info: colors.cyan,
-  
+  success: (text: string) => palette().success(text),
+  warning: (text: string) => palette().warning(text),
+  error: (text: string) => palette().danger(text),
+  info: (text: string) => palette().info(text),
+
   // Separators and decorations
-  separator: colors.dim,
-  label: colors.dim,
-  value: colors.white,
-  dim: colors.dim,
-  
-  // Context bar colors (based on percentage)
-  contextSafe: colors.green,      // < 70%
-  contextWarning: colors.yellow,  // 70-84%
-  contextDanger: colors.red,      // >= 85%
-  
+  separator: (text: string) => palette().muted(text),
+  label: (text: string) => palette().muted(text),
+  value: (text: string) => palette().text(text),
+  dim: (text: string) => palette().muted(text),
+  strong: (text: string) => palette().strong(text),
+  accent: (text: string) => palette().accent(text),
+
+  // Capacity meters: how full something is, so full is bad
+  contextSafe: (text: string) => palette().success(text),
+  contextWarning: (text: string) => palette().warning(text),
+  contextDanger: (text: string) => palette().danger(text),
+
   // Tool activity
-  toolRunning: colors.brightYellow,
-  toolCompleted: colors.green,
-  toolError: colors.red,
-  toolName: colors.cyan,
-  toolTarget: colors.dim,
-  
+  toolRunning: (text: string) => palette().accent(text),
+  toolCompleted: (text: string) => palette().success(text),
+  toolError: (text: string) => palette().danger(text),
+  toolName: (text: string) => palette().info(text),
+  toolTarget: (text: string) => palette().muted(text),
+
   // Agent activity
-  agentType: colors.brightMagenta,
-  agentRunning: colors.brightYellow,
-  agentCompleted: colors.green,
-  
+  agentType: (text: string) => palette().model(text),
+  agentRunning: (text: string) => palette().accent(text),
+  agentCompleted: (text: string) => palette().success(text),
+
   // Plan/Todo progress
-  planProgress: colors.brightMagenta,
-  planStepCompleted: colors.green,
-  planStepPending: colors.dim,
-  planStepInProgress: colors.yellow,
-  
+  planProgress: (text: string) => palette().accent(text),
+  planStepCompleted: (text: string) => palette().success(text),
+  planStepPending: (text: string) => palette().muted(text),
+  planStepInProgress: (text: string) => palette().accent(text),
+
   // Token usage
-  tokenCount: colors.brightBlue,
-  tokenWarning: colors.yellow,
-  tokenDanger: colors.red,
+  tokenCount: (text: string) => palette().accent(text),
+  tokenWarning: (text: string) => palette().warning(text),
+  tokenDanger: (text: string) => palette().danger(text),
 };
 
 // Progress bar characters
@@ -119,6 +127,7 @@ export const icons = {
   cross: '✗',
   running: '▸',
   starting: '·',
+  unknown: '?',
   spinner: ['▸', '▹', '▸', '▹'],
   
   // Info
@@ -350,6 +359,34 @@ export function coloredBar(percent: number, width: number = 10): string {
  */
 export function progressBar(percent: number, width: number = 10): string {
   return coloredBar(percent, width);
+}
+
+/**
+ * Completion colour: the opposite reading of `getContextColor`.
+ *
+ * A capacity meter turns red as it fills because a full context window is
+ * trouble. A task meter filling up is the good outcome, so completion is
+ * green and an untouched plan is merely muted. The two must never share a
+ * colour rule.
+ */
+export function getCompletionColor(percent: number): (text: string) => string {
+  if (percent >= 100) {
+    return theme.success;
+  }
+  if (percent > 0) {
+    return theme.accent;
+  }
+  return theme.dim;
+}
+
+/**
+ * A meter that reads as progress towards done rather than capacity consumed.
+ */
+export function completionBar(percent: number, width: number = 10): string {
+  const clamped = Math.max(0, Math.min(100, percent));
+  const filled = Math.round((clamped / 100) * width);
+  const colorFn = getCompletionColor(clamped);
+  return colorFn(progressChars.filled.repeat(filled)) + colors.dim(progressChars.empty.repeat(width - filled));
 }
 
 /**

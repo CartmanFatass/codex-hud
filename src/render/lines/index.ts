@@ -1,6 +1,10 @@
 /**
- * Line renderers index
- * Re-exports all line rendering functions
+ * Line renderers.
+ *
+ * These belong to the older multi-line HUD. The current status bar is built
+ * from `../layout/bar-modules.ts` instead, and takes only `formatTokenCount`
+ * from here. Anything else in this directory is kept for the expanded and
+ * overview layouts and is not on the single-line path.
  */
 
 export { renderIdentityLine } from './identity-line.js';
@@ -12,7 +16,7 @@ export {
   renderToolsLine, 
   renderTodosLine, 
   renderTokenLine,
-  renderPlanQuota,
+  renderQuotaLine,
   renderSessionDetailLine,
   collectActivityLines,
   formatTokenCount,

@@ -36,11 +36,13 @@ Because you're flying blind without one. Codex HUD gives you a persistent dashbo
 - **MCP server status & tool calls** — watch what Codex is actually doing
 - **Reasoning effort level** — see the current thinking depth
 
-**Q: I run multiple Codex sessions. Can I monitor them all?**
+**Q: My session spawns subagents. Can I see what they are doing?**
 
-Yes. Toggle to **multi-session overview** (`Ctrl+T`) and see every active session with its context usage — all in one place.
+Yes. Press `F12` to open the **subagent tree** in a side panel: every agent the session spawned, its model and reasoning effort, whether it is running, finished, or failed, and which agent spawned it. Press `F12` again to close it. The status bar stays up the whole time.
 
-![Codex HUD — Multi-Session Overview](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+`Ctrl+T` is left alone on purpose — that is Codex's own transcript overlay.
+
+![Codex HUD — Subagent Tree](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
 
 **Q: Do I need to set up tmux manually?**
 
@@ -49,7 +51,7 @@ No. Codex HUD auto-activates tmux for you. Just type `codex` and the HUD appears
 ## Quick Start
 
 ```bash
-git clone https://github.com/fwyc0573/codex-hud.git
+git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 ./bin/codex-hud-install
 
@@ -66,7 +68,7 @@ This branch uses WSL as the supported Windows HUD runtime. PowerShell and cmd ar
 1. Download and switch to this branch:
 
 ```powershell
-git clone https://github.com/fwyc0573/codex-hud.git
+git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 git switch feature/windows-support-dual-entry
 .\bin\codex-hud-install.ps1
@@ -143,21 +145,120 @@ After the first install, these are available in PowerShell and cmd:
 
 ## What's on the HUD?
 
+One line, pinned to the bottom of the terminal:
+
 ```
-[gpt-5.4 xhigh] █████░░░░ 45% │ my-project git:(main ●) │ 12m
-mode: dev | 3 extensions | 2 AGENTS.md | Approval: on-req | Sandbox: ws-write
-Tokens: 50.2K (in: 35.0K, cache: 5.0K, out: 15.2K) | Ctx: ████░░░░ 45% (50.2K/128K) ↻2
-Dir: ~/my-project | Session: abc12345 | CLI: 0.4.2
-◐ Edit: file.ts | ✓ Read ×3
+☀● Astra | codex-hud git:(main * ↑2) | Agents 1 run · 1 ok | Ctx ████░░░░░░ 42% (114.2K/272.0K) | 2/5 | Q61% | 12m | F12
 ```
 
-| Line | Shows |
-|------|-------|
-| **Header** | Model + effort, context bar, project, git branch, session timer |
-| **Environment** | Config count, work mode, MCP servers, instruction files, approval/sandbox |
-| **Tokens** | Total tokens with input/cache/output breakdown, context fill, compact count |
-| **Session** | Working directory, session ID, CLI version |
-| **Activity** | Running tool call, recent tool history |
+When something needs you, it takes the front of the line:
+
+```
+! 1 tool failed · 1 agent failed | ☀● Astra | codex-hud git:(main * ↑2) | Agents 1 run · 1 ok · 1 fail | Ctx 42% | F12
+```
+
+| Field | Means |
+|-------|-------|
+| `!` | Something the HUD actually observed went wrong: a tool that reported failure, an agent that ended in error, a usage window that reported itself full |
+| `☀● Astra` | Model family and reasoning effort |
+| `codex-hud git:(main * ↑2)` | Project, branch, uncommitted changes, ahead/behind |
+| `Agents 1 run · 1 ok · 1 fail` | Subagents by outcome. Finished and failed are separate numbers, and an agent with no observed state is counted as `?`, never as running |
+| `Ctx 42%` | How full the context window is. `↻2` counts compactions |
+| `2/5` | Steps completed in the current plan |
+| `Q61%` | Share of the account's usage window spent. This is quota, not task progress |
+| `84.0K` | Tokens spent this session |
+| `F12` | Opens the subagent tree |
+
+A field appears only when there is real data behind it. A missing quota
+snapshot means no quota field, not a bar reading zero.
+
+### When the pane is narrow
+
+Fields shorten before any of them disappears, the least important one
+disappears first, and an alert is never dropped. At 40 columns, with a failure
+on screen:
+
+```
+! | ☀ | main* | 1▸1✗ | Ctx 42%
+```
+
+### Density presets
+
+| Preset | Shows |
+|--------|-------|
+| `focus` | Alerts, model, project, agents, context |
+| `balanced` (default) | Focus, plus plan progress, quota, output speed and the session timer |
+| `full` | Everything, including tokens, approval/sandbox and the session id |
+
+```bash
+CODEX_HUD_DENSITY=focus codex
+```
+
+## Development workbench
+
+`F12` opens the right panel without taking focus from Codex. `Shift+F12` opens and focuses it.
+Four independently scrollable panes share the space (Activity starts collapsed, Tasks is disabled by default); the focused pane has a highlighted border:
+
+| Pane | Content |
+|------|---------|
+| **1 Agents** | Nested agents, state, active/failed descendant counts |
+| **2 Details** | Compact agent summary and tool status; expandable commands/output, file diff or event details |
+| **3 Changes** | Workspace files, index/worktree status, added/removed lines, conflicts |
+| **4 Activity** | Tasks / Checks / Events tabs for the main plan, recorded check commands, and recent events |
+
+Narrow panes stack vertically. At 70 columns the layout uses list and preview columns.
+Very small terminals show the focused pane; Tab still reaches the other panes.
+Selection follows agent IDs and file paths across refreshes, and every pane retains its scroll position.
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `Shift+Tab` | Cycle pane focus |
+| `1` / `2` / `3` / `4` | Focus a pane directly |
+| `j` / `k`, arrows | Move selection or scroll details |
+| `PgUp` / `PgDn`, `g` / `G` | Page, first/last item |
+| Mouse click / wheel | Select or scroll; click a pane title to fold/unfold it |
+| `,` or **Settings** | Open settings; arrows/click change values, `s` or Save applies them |
+| `h` / `l`, left/right | Fold/unfold or navigate parent/child agents |
+| `s` | Active-first / creation order |
+| `f` or `/` | Filter all, running, failed, unknown |
+| `Enter` | Focus the linked details |
+| `v` / `[v+]` | Expand/collapse agent details and tool records |
+| Click an agent / `o` | Switch the actual Codex conversation to that agent |
+| **Main** / `m` | Return the Codex conversation to the root session |
+| `[` / `]` or `t` | Change Tasks / Checks / Events tab |
+| `z` | Zoom/restore focused pane |
+| `?` | Key reference |
+| `Esc` | Dismiss help, unzoom, return to list; close from Agents |
+| `q`, `Ctrl+C` | Close the workbench |
+
+Session switching uses the Codex 0.154 `/subagents` picker and verifies the exact UUID; it never submits guessed `/agent <id>` commands. It requires an empty composer or the recognized picker. Drafts, copy mode, unsupported views and clipped IDs produce a visible message instead of forced input. Keyboard selection alone previews the agent; `o` switches. Visible targets are reached in one movement batch and their UUID is rechecked before Enter. The picker is not reopened afterward, avoiding a second popup and transcript redraw. A delivered request does not independently confirm the final Codex view.
+
+Active sorting only rearranges siblings. A running descendant brings its entire branch forward;
+latest turn starts determine order, while ordinary token and log updates do not reshuffle the tree.
+Parent links support both metadata locations. Missing status evidence stays unknown.
+
+Agent details default to a short task summary, model/effort, status, timing and one tool status line. Long commands, outputs and session IDs appear only when expanded. Selecting another agent restores the compact view. Session-switch notices stay in the footer.
+
+Changes belong to the whole workspace; no file ownership is inferred from agent activity.
+Status columns show index then worktree, and line counts sum both diffs. Binary/unavailable stats are marked separately.
+Selecting a file previews staged and unstaged patches, or bounded content for an untracked file.
+Long preview lines wrap; `z` gives the preview more space. Git reads disable external diffs,
+content filters and partial-clone lazy fetching. The panel provides no staging, commit or checkout actions.
+Checks shows recorded command/exec results: `✓` requires explicit success, `✗` indicates failure,
+and `·` means a result returned without an explicit command outcome.
+
+Settings offers four panel widths: narrow (16), default (the original 20–30 column policy), wide (45), and wider (70). Width changes apply immediately and preserve space for the main conversation. `CODEX_HUD_TREE_WIDTH` remains an initial override when no saved settings exist.
+
+Settings controls density, theme, model labels, motion, sorting, mouse input, optional panes, Tasks, refresh interval and width. Save persists to `$CODEX_HOME/hud-settings.json` (or `CODEX_HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Back discards unsaved edits; Reset prepares defaults for Save.
+
+### Output throughput
+
+The default bar shows `Out ~42.1 tok/s` when enough output-token samples exist.
+Selected-agent details show that agent's estimate; expand with `v` to see the sample interval.
+The estimate is the change in cumulative **output** tokens divided by rollout timestamp elapsed time
+in a roughly 30-second window. It can include tool/service waits and is not pure model decoding speed.
+A new turn excludes the preceding idle gap. After 10 seconds without a new sample, `last ~42.1 tok/s`
+retains the previous reading. Context usage and compaction counts stay in the bar; the workbench has no Ctx trend.
 
 ## Usage
 
@@ -188,6 +289,9 @@ codex-hud --self-check       # Run diagnostics
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `CODEX_HUD_DENSITY` | `balanced` | How much the bar shows (`focus` / `balanced` / `full`) |
+| `CODEX_HUD_THEME` | `terminal` | Palette (`terminal` / `mocha` / `latte` / `none`) |
+| `CODEX_HUD_GLYPHS` | `both` | Model badge style (`glyph` / `text` / `both`) |
 | `CODEX_HUD_POSITION` | `bottom` | HUD pane position (`top` / `bottom`) |
 | `CODEX_HUD_HEIGHT` | 1/6 terminal | HUD height in lines |
 | `CODEX_HUD_MOUSE` | `1` | Enable mouse/trackpad scrolling |
@@ -197,6 +301,10 @@ codex-hud --self-check       # Run diagnostics
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `CODEX_HUD_NOTIFY` | `0` | Announce failures and finished agents through tmux |
+| `CODEX_HUD_NOTIFY_COOLDOWN` | `300` | Seconds before a different alert of the same kind can fire |
+| `CODEX_HUD_REDUCED_MOTION` | `0` | Stop the traffic marker from animating |
+| `NO_COLOR` | (unset) | Any value forces the `none` palette |
 | `CODEX_HUD_HEIGHT_AUTO` | `0` | Auto-adjust height based on width |
 | `CODEX_HUD_HEIGHT_MIN` | `CODEX_HUD_HEIGHT` | Min height in auto mode |
 | `CODEX_HUD_HEIGHT_MAX` | `12` | Max height in auto mode |
@@ -208,6 +316,19 @@ codex-hud --self-check       # Run diagnostics
 | `CODEX_SESSIONS_PATH` | (unset) | Override sessions directory |
 
 </details>
+
+### Notifications
+
+Off by default, because Codex has its own notifier and two pop-ups for one
+event is worse than none. `CODEX_HUD_NOTIFY=1` turns them on.
+
+```bash
+CODEX_HUD_NOTIFY=1 codex
+```
+
+It announces failures it observed and agents that finished, one message per
+occurrence, with a cooldown so a flapping condition cannot become a stream. It
+never acts on the session: no auto-approval, no keystrokes, no retries.
 
 ### config.toml
 
@@ -240,7 +361,13 @@ enabled = true
 npm install && npm run build   # Build
 npm run dev                    # Watch mode
 node dist/index.js             # Run HUD directly
+npm test                       # Unit tests: parser replay, width safety, render cost
+npm run test:integration       # Shell suites: wrapper, tmux toggling, installer
 ```
+
+`npm test` compiles with `tsconfig.test.json` and runs `tests/unit` against the
+recorded rollouts in `tests/fixtures/rollouts`. `docs/BASELINE.md` records the
+layout and render-cost baseline those tests defend.
 
 On Windows PowerShell, use `npm.cmd run build` if `npm.ps1` is blocked by ExecutionPolicy.
 

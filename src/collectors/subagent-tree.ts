@@ -1,8 +1,10 @@
+import { taskText } from '../utils/task-text.js';
 /**
  * Build a multi-level subagent tree from rollout session_meta parent links.
  */
 
 import * as fs from 'fs';
+import { sessionParentId } from '../utils/session-parent.js';
 import { findRolloutsInDays } from './session-finder.js';
 import type { SubagentInfo, SubagentStatus, SubagentTree, SubagentTreeNode } from '../types.js';
 
@@ -19,8 +21,7 @@ interface CachedLink {
   // REVALIDATE_INTERVAL_MS get re-peeked (bounded per tick) to bound how long
   // a stale link can survive.
   verifiedAt: number;
-  // Byte offset already scanned for turn_context / thread_settings_applied
-  // model+effort. Subagent session_meta does not carry those fields.
+  // Byte offset already scanned for model/effort and lifecycle events.
   contextOffset: number;
 }
 
@@ -36,12 +37,16 @@ export function resetSubagentLinkCache(): void {
 }
 
 interface SessionLink {
+  task?: string;
   id: string;
   parentId: string | null;
   name: string;
   path: string;
   model?: string;
   effort?: string;
+  status?: SubagentStatus;
+  statusAt?: Date;
+  turnStartedAt?: Date;
   startedAt?: Date;
   modifiedAt: Date;
 }
@@ -108,15 +113,37 @@ function modelEffortFromPayload(payload: Record<string, unknown>): { model?: str
   return { model, effort };
 }
 
-function applyModelEffortLine(line: string, into: { model?: string; effort?: string }): void {
+type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task'>;
+
+function applyRolloutLine(line: string, into: RolloutFields): void {
   const trimmed = line.trim();
   if (!trimmed) {
     return;
   }
   try {
-    const entry = JSON.parse(trimmed) as { type?: string; payload?: Record<string, unknown> };
+    const entry = JSON.parse(trimmed) as { timestamp?: string; type?: string; payload?: Record<string, unknown> };
     if (!entry.payload) {
       return;
+    }
+    if (entry.type === 'response_item' && entry.payload.type === 'message' && entry.payload.role === 'user' && Array.isArray(entry.payload.content)) {
+      const text = taskText(entry.payload.content.map((part: { text?: unknown }) => typeof part?.text === 'string' ? part.text : '').filter(Boolean).join('\n'));
+      if (text) into.task = text;
+    }
+    if (entry.type === 'event_msg') {
+      const type = entry.payload.type;
+      if (type === 'user_message') {
+        const task = taskText(entry.payload.message);
+        if (task) into.task = task;
+      }
+      const status = type === 'task_started' || type === 'turn_started' ? 'running'
+        : type === 'task_complete' || type === 'turn_complete' ? 'completed'
+          : undefined;
+      const time = entry.timestamp ? new Date(entry.timestamp) : undefined;
+      if (status && time && Number.isFinite(time.getTime())) {
+        into.status = status;
+        into.statusAt = time;
+        if (status === 'running') into.turnStartedAt = time;
+      }
     }
     if (entry.type === 'turn_context') {
       const fields = modelEffortFromPayload(entry.payload);
@@ -137,38 +164,37 @@ function applyModelEffortLine(line: string, into: { model?: string; effort?: str
   }
 }
 
-function scanModelEffort(filePath: string, startOffset: number): { model?: string; effort?: string; endOffset: number } {
+function scanRolloutFields(filePath: string, startOffset: number): RolloutFields & { endOffset: number } {
   const fd = fs.openSync(filePath, 'r');
   try {
     const buffer = Buffer.alloc(64 * 1024);
     let offset = Math.max(0, startOffset);
-    let leftover = '';
-    const fields: { model?: string; effort?: string; endOffset: number } = { endOffset: offset };
+    let leftover: Buffer = Buffer.alloc(0);
+    const fields: RolloutFields & { endOffset: number } = { endOffset: offset };
     while (true) {
       const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, offset);
       if (bytesRead <= 0) {
         break;
       }
-      leftover += buffer.toString('utf8', 0, bytesRead);
+      leftover = Buffer.concat([leftover, buffer.subarray(0, bytesRead)]);
       offset += bytesRead;
-      let newline = leftover.indexOf('\n');
+      let newline = leftover.indexOf(10);
       while (newline !== -1) {
-        applyModelEffortLine(leftover.slice(0, newline), fields);
-        leftover = leftover.slice(newline + 1);
-        newline = leftover.indexOf('\n');
+        applyRolloutLine(leftover.subarray(0, newline).toString('utf8'), fields);
+        leftover = leftover.subarray(newline + 1);
+        newline = leftover.indexOf(10);
       }
     }
-    if (leftover) {
-      applyModelEffortLine(leftover, fields);
-    }
-    fields.endOffset = offset;
+    // A writer may stop halfway through an event. Re-read its bytes on the
+    // next tick instead of permanently skipping the eventual status change.
+    fields.endOffset = offset - leftover.length;
     return fields;
   } finally {
     fs.closeSync(fd);
   }
 }
 
-function refreshTurnContext(link: SessionLink): void {
+function refreshRolloutFields(link: SessionLink): void {
   const cached = linkCache.get(link.path);
   if (!cached?.link) {
     return;
@@ -177,7 +203,7 @@ function refreshTurnContext(link: SessionLink): void {
   if (start >= cached.size) {
     return;
   }
-  const extra = scanModelEffort(link.path, start);
+  const extra = scanRolloutFields(link.path, start);
   if (extra.model) {
     link.model = extra.model;
     cached.link.model = extra.model;
@@ -186,6 +212,12 @@ function refreshTurnContext(link: SessionLink): void {
     link.effort = extra.effort;
     cached.link.effort = extra.effort;
   }
+  if (extra.status) {
+    link.status = extra.status;
+    link.statusAt = extra.statusAt;
+  }
+  if (extra.turnStartedAt) link.turnStartedAt = extra.turnStartedAt;
+  if (extra.task) link.task = extra.task;
   cached.contextOffset = extra.endOffset;
 }
 
@@ -226,7 +258,7 @@ function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null
       : undefined;
     return {
       id,
-      parentId: entry.payload.parent_thread_id ?? null,
+      parentId: sessionParentId(entry.payload) ?? null,
       name,
       path: filePath,
       model: spawn?.model ?? payloadModel,
@@ -239,17 +271,28 @@ function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null
   }
 }
 
-function resolveStatus(
-  known: SubagentInfo | undefined,
-  _modifiedAt: Date,
-  _nowMs: number
-): SubagentStatus {
+function resolveStatus(known: SubagentInfo | undefined, link: SessionLink | undefined): SubagentStatus {
+  // Compare event timestamps, never file mtime: model settings and other
+  // writes after completion do not mean the agent has started another turn.
+  if (link?.status && (!known || !known.lastActivityAt ||
+      (link.statusAt && link.statusAt >= known.lastActivityAt))) {
+    return link.status;
+  }
   if (known) {
     return known.status;
   }
-  // Parent-link-only nodes have no terminal event. Do not infer "completed"
-  // from mtime silence (long thinking / idle is not done).
-  return 'running';
+  // A parent link alone does not establish activity or completion.
+  return 'unknown';
+}
+
+function newestEvidence(...times: Array<Date | undefined>): Date | undefined {
+  let newest: Date | undefined;
+  for (const time of times) {
+    if (time && (!newest || time > newest)) {
+      newest = time;
+    }
+  }
+  return newest;
 }
 
 function countNodes(nodes: SubagentTreeNode[]): number {
@@ -459,6 +502,10 @@ export function buildSubagentTree(
       if (keepContext && previous?.link && link) {
         link.model = previous.link.model ?? link.model;
         link.effort = previous.link.effort ?? link.effort;
+        link.status = previous.link.status;
+        link.statusAt = previous.link.statusAt;
+        link.turnStartedAt = previous.link.turnStartedAt;
+        link.task = previous.link.task;
       }
       linkCache.set(file.path, {
         link,
@@ -511,19 +558,27 @@ export function buildSubagentTree(
     visiting.add(id);
     const link = links.get(id);
     if (link) {
-      refreshTurnContext(link);
+      refreshRolloutFields(link);
     }
     const knownAgent = known.get(id);
     const childIds = (children.get(id) ?? []).filter((childId) => !visiting.has(childId));
     const node: SubagentTreeNode = {
       id,
       name: knownAgent?.name || link?.name || id.slice(0, 8),
-      status: resolveStatus(knownAgent, link?.modifiedAt ?? new Date(0), nowMs),
+      status: resolveStatus(knownAgent, link),
       startedAt: knownAgent?.startedAt ?? link?.startedAt,
+      turnStartedAt: link?.turnStartedAt,
+      rolloutPath: link?.path,
+      task: taskText(link?.task) ?? taskText(knownAgent?.task),
+      statusAt: knownAgent?.lastActivityAt && (!link?.statusAt || knownAgent.lastActivityAt > link.statusAt)
+        ? knownAgent.lastActivityAt : link?.statusAt,
       // Child turn_context is the live model/effort; spawn events are fallback.
       model: link?.model ?? knownAgent?.model,
       effort: link?.effort ?? knownAgent?.effort,
       lastActivityAt: knownAgent?.lastActivityAt,
+      // Newest evidence of any kind: a main-to-agent exchange, or the agent's
+      // own rollout growing. This is data freshness, not a status.
+      lastEventAt: newestEvidence(knownAgent?.lastActivityAt, link?.modifiedAt),
       depth,
       children: childIds.map((childId) => buildNode(childId, depth + 1)),
     };
@@ -538,4 +593,63 @@ export function buildSubagentTree(
     totalCount: countNodes(nodes),
     updatedAt: new Date(nowMs),
   };
+}
+
+/**
+ * Counts for the bar and the panel header.
+ *
+ * Finished and failed are separate numbers on purpose: a single "done" count
+ * reads a failure as work completed. Agents with no observed state are counted
+ * as unknown rather than folded into either side.
+ */
+export interface SubagentSummary {
+  total: number;
+  running: number;
+  starting: number;
+  completed: number;
+  failed: number;
+  unknown: number;
+  /** Agents that still need something to happen before the session can finish. */
+  active: number;
+}
+
+export function summarizeSubagents(nodes: SubagentTreeNode[]): SubagentSummary {
+  const summary: SubagentSummary = {
+    total: 0,
+    running: 0,
+    starting: 0,
+    completed: 0,
+    failed: 0,
+    unknown: 0,
+    active: 0,
+  };
+
+  const walk = (items: SubagentTreeNode[]): void => {
+    for (const node of items) {
+      summary.total += 1;
+      switch (node.status) {
+        case 'running':
+          summary.running += 1;
+          summary.active += 1;
+          break;
+        case 'starting':
+          summary.starting += 1;
+          summary.active += 1;
+          break;
+        case 'completed':
+          summary.completed += 1;
+          break;
+        case 'error':
+          summary.failed += 1;
+          break;
+        default:
+          summary.unknown += 1;
+          break;
+      }
+      walk(node.children);
+    }
+  };
+
+  walk(nodes);
+  return summary;
 }

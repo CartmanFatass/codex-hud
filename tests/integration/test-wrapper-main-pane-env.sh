@@ -97,6 +97,48 @@ if ! grep -q "bind-key -T root F12 if-shell" "$log_file"; then
   exit 1
 fi
 
+if ! grep -q "bind-key -T root MouseDown1Pane if-shell" "$log_file"; then
+  echo "expected HUD mouse clicks to be gated so they do not steal Codex input" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if ! grep -q "bind-key -T root WheelUpPane if-shell" "$log_file"; then
+  echo "expected HUD wheel events to be forwarded to the pane under the cursor" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if ! grep -q "bind-key -T root MouseDown3Pane if-shell" "$log_file"; then
+  echo "expected right-click to paste instead of opening the tmux pane menu" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if grep -qF "select-pane -t '#{@codex_hud_main_pane}'" "$log_file"; then
+  echo "pane ids must not be used as bind-key -t '#{@codex_hud_main_pane}' (tmux cannot find that pane)" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if ! grep -qF 'tmux select-pane -t #{@codex_hud_main_pane}' "$log_file"; then
+  echo "expected Codex focus to go through run-shell so % pane ids survive" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if grep -q "display-menu" "$log_file"; then
+  echo "HUD mouse binds must not open the tmux pane menu" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if ! grep -q "extended-keys=on" "$log_file"; then
+  echo "expected HUD sessions to enable tmux extended-keys for Codex shortcuts" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
 if ! grep -q "set-option -t .* status off" "$log_file"; then
   echo "expected HUD sessions to disable the tmux status bar" >&2
   cat "$log_file" >&2

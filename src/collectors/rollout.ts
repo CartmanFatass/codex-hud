@@ -1,3 +1,6 @@
+import { taskText } from '../utils/task-text.js';
+import { TokenRateTracker, type TokenRateSnapshot } from './token-rate.js';
+import { sessionParentId } from '../utils/session-parent.js';
 /**
  * Rollout file parser for extracting tool activity and plan updates
  * Parses ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl files
@@ -21,6 +24,16 @@ import type {
   SubagentStatus,
   CollabAgentItem,
 } from '../types.js';
+
+function mergeTokenUsage(previous: TokenUsageInfo | null, next: TokenUsageInfo | null): TokenUsageInfo | null {
+  if (!next) return previous;
+  if (!previous) return next;
+  return {
+    model_context_window: next.model_context_window ?? previous.model_context_window,
+    last_token_usage: next.last_token_usage ?? previous.last_token_usage,
+    total_token_usage: next.total_token_usage ?? previous.total_token_usage,
+  };
+}
 
 function hasUsableRateWindow(snapshot: RateLimitSnapshot | null | undefined): boolean {
   return Boolean(snapshot?.primary || snapshot?.secondary);
@@ -79,6 +92,7 @@ function applyCollabAgentItem(
       id,
       name: listed?.agent_nickname || previous?.name || id.slice(0, 8),
       status: inferSubagentStatus(state, item.tool),
+      task: taskText(item.prompt) ?? previous?.task,
       startedAt: previous?.startedAt ?? timestamp,
       model: item.model ?? previous?.model,
       effort: effort ?? previous?.effort,
@@ -156,6 +170,7 @@ function cloneSessionInfo(session: SessionInfo | null | undefined): SessionInfo 
  * Result of parsing a rollout file
  */
 export interface RolloutParseResult {
+  outputRate?: TokenRateSnapshot;
   session: SessionInfo | null;
   toolActivity: ToolActivity;
   planProgress: PlanProgress | null;
@@ -184,6 +199,58 @@ export function computeNextOffset(
   latestSize: number
 ): number {
   return Math.min(latestSize, startOffset + bytesRead);
+}
+
+function parseToolArguments(raw: string | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+  } catch { return undefined; }
+}
+
+function toolResult(output: unknown): { success?: boolean; exitCode?: number; output?: string } {
+  let text = '';
+  let success: boolean | undefined;
+  let exitCode: number | undefined;
+  let remaining = 1000;
+  const recordExit = (code: unknown) => {
+    if (typeof code !== 'number' || !Number.isSafeInteger(code)) return;
+    // Any explicit failure wins over successful siblings in a batched exec.
+    if (exitCode === undefined || exitCode === 0) exitCode = code;
+    if (code !== 0) success = false;
+    else if (success === undefined) success = true;
+  };
+  const visit = (data: unknown, depth: number): void => {
+    if (depth > 8 || remaining-- <= 0) return;
+    if (typeof data === 'string') {
+      // Decode structured tool results, never the recorded executable input.
+      if (data.length <= 128000) {
+        try {
+          const parsed: unknown = JSON.parse(data);
+          if (parsed && typeof parsed === 'object') { visit(parsed, depth + 1); return; }
+        } catch { /* Plain tool output. */ }
+      }
+      for (const match of data.matchAll(/(?:Process exited with code|Exit code:)\s*(-?\d+)/gi)) recordExit(Number(match[1]));
+      text = (text ? `${text}\n${data}` : data).slice(-8000);
+    } else if (Array.isArray(data)) {
+      for (const item of data) visit(item, depth + 1);
+    } else if (data && typeof data === 'object') {
+      const record = data as Record<string, unknown>;
+      if (record.success === false || record.isError === true) success = false;
+      else if (record.success === true && success === undefined) success = true;
+      recordExit(record.exit_code ?? record.exitCode);
+      if (record.type === 'text' || record.type === 'input_text' || record.type === 'output_text') visit(record.text, depth + 1);
+      else {
+        for (const [key, value] of Object.entries(record)) {
+          if (['output', 'content', 'content_items'].includes(key) ||
+              (!record.type && value && typeof value === 'object')) visit(value, depth + 1);
+        }
+      }
+    }
+  };
+  visit(output, 0);
+  return { success, exitCode, output: text || undefined };
 }
 
 /**
@@ -228,7 +295,8 @@ export async function parseRolloutFile(
   fromOffset: number = 0,
   maxRecentCalls: number = 10,
   runningCalls: Map<string, ToolCall> = new Map(),
-  initialSession: SessionInfo | null = null
+  initialSession: SessionInfo | null = null,
+  rateTracker: TokenRateTracker = new TokenRateTracker()
 ): Promise<RolloutParseOutput> {
   const toolActivity: ToolActivity = {
     recentCalls: [],
@@ -261,6 +329,7 @@ export async function parseRolloutFile(
         toolActivity,
         planProgress,
         tokenUsage,
+        outputRate: rateTracker.snapshot,
         rateLimits,
         subagents: [...subagents.values()],
         compactCount,
@@ -282,6 +351,7 @@ export async function parseRolloutFile(
   const wasTruncated = fromOffset > fileSize;
   const startOffset = wasTruncated ? 0 : fromOffset;
   if (wasTruncated) {
+    rateTracker.reset();
     runningCalls.clear();
   }
 
@@ -308,6 +378,7 @@ export async function parseRolloutFile(
           toolActivity,
           planProgress,
           tokenUsage,
+        outputRate: rateTracker.snapshot,
           rateLimits,
           subagents: [...subagents.values()],
           compactCount,
@@ -346,7 +417,7 @@ export async function parseRolloutFile(
             sandboxMode: sessionSandboxMode ?? existingSession?.sandboxMode,
             collaborationMode: sessionCollaborationMode ?? existingSession?.collaborationMode,
             modelProvider: meta.model_provider,
-            parentThreadId: meta.parent_thread_id,
+            parentThreadId: sessionParentId(meta),
             threadSource: typeof meta.thread_source === 'string' ? meta.thread_source : undefined,
             git: meta.git
               ? {
@@ -403,15 +474,17 @@ export async function parseRolloutFile(
         } else if (entry.type === 'response_item') {
           const payload = entry.payload as ResponseItemPayload;
 
-          if (payload.type === 'function_call' && payload.name) {
+          if ((payload.type === 'function_call' || payload.type === 'custom_tool_call') && payload.name) {
             // New tool call started
             lastToolActivityTime = timestamp;
             const toolCall: ToolCall = {
-              id: payload.id ?? payload.call_id ?? `call_${Date.now()}`,
+              id: payload.call_id ?? payload.id ?? `call_${Date.now()}`,
               name: payload.name,
               timestamp,
               status: 'running',
               target: extractToolTarget(payload.name, payload.arguments),
+              arguments: payload.type === 'custom_tool_call' && typeof payload.input === 'string'
+                ? { code: payload.input } : parseToolArguments(payload.arguments),
             };
 
             runningCalls.set(toolCall.id, toolCall);
@@ -424,13 +497,16 @@ export async function parseRolloutFile(
             if (toolActivity.recentCalls.length > maxRecentCalls) {
               toolActivity.recentCalls.shift();
             }
-          } else if (payload.type === 'function_call_output' && payload.call_id) {
+          } else if ((payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') && payload.call_id) {
             // Tool call completed
             lastToolActivityTime = timestamp;
             const runningCall = runningCalls.get(payload.call_id);
             if (runningCall) {
-              runningCall.status =
-                payload.output?.success === false ? 'error' : 'completed';
+              const outcome = toolResult(payload.output);
+              runningCall.status = outcome.success === false ? 'error' : 'completed';
+              runningCall.resultSuccess = outcome.success;
+              runningCall.exitCode = outcome.exitCode;
+              runningCall.output = outcome.output;
               runningCall.duration = timestamp.getTime() - runningCall.timestamp.getTime();
               runningCalls.delete(payload.call_id);
 
@@ -452,6 +528,10 @@ export async function parseRolloutFile(
           }
         } else if (entry.type === 'event_msg') {
           const payload = entry.payload as EventMsgPayload;
+          if (payload.type === 'task_started' || payload.type === 'turn_started') rateTracker.startTurn(timestamp);
+          if (payload.type === 'token_count' && typeof payload.info?.total_token_usage?.output_tokens === 'number') {
+            rateTracker.observe(payload.info.total_token_usage.output_tokens, timestamp);
+          }
 
           if (payload.type === 'plan_update' && payload.plan) {
             const completed = payload.plan.filter((s) => s.status === 'completed').length;
@@ -466,7 +546,7 @@ export async function parseRolloutFile(
             };
           } else if (payload.type === 'token_count') {
             if (payload.info) {
-              tokenUsage = payload.info;
+              tokenUsage = mergeTokenUsage(tokenUsage, payload.info);
             }
             if (payload.rate_limits) {
               rateLimits = mergeRateLimits(rateLimits, payload.rate_limits);
@@ -537,6 +617,7 @@ export class RolloutParser {
   private lastOffset: number = 0;
   private cachedResult: RolloutParseResult | null = null;
   private runningCalls: Map<string, ToolCall> = new Map();
+  private rateTracker = new TokenRateTracker();
 
   constructor(private maxRecentCalls: number = 10) {}
 
@@ -552,6 +633,7 @@ export class RolloutParser {
     this.lastOffset = 0;
     this.cachedResult = null;
     this.runningCalls = new Map();
+    this.rateTracker.reset();
   }
 
   /**
@@ -567,7 +649,8 @@ export class RolloutParser {
       this.lastOffset,
       this.maxRecentCalls,
       this.runningCalls,
-      this.cachedResult?.session ?? null
+      this.cachedResult?.session ?? null,
+      this.rateTracker
     );
 
     this.lastOffset = newOffset;
@@ -605,23 +688,17 @@ export class RolloutParser {
       }
       result.toolActivity.recentCalls = deduped.slice(-this.maxRecentCalls);
 
+      result.planProgress ??= this.cachedResult.planProgress;
+
       // Merge compact tracking
       result.compactCount += this.cachedResult.compactCount;
       if (!result.lastCompactTime && this.cachedResult.lastCompactTime) {
         result.lastCompactTime = this.cachedResult.lastCompactTime;
       }
 
-      // Keep tokenUsage from latest parse (it contains cumulative data from API)
-      // but preserve model_context_window if not in new result
-      if (this.cachedResult.tokenUsage?.model_context_window && result.tokenUsage) {
-        result.tokenUsage.model_context_window = 
-          result.tokenUsage.model_context_window ?? this.cachedResult.tokenUsage.model_context_window;
-      }
-
-      // Keep tokenUsage from latest parse if available, otherwise use cached
-      if (!result.tokenUsage && this.cachedResult.tokenUsage) {
-        result.tokenUsage = this.cachedResult.tokenUsage;
-      }
+      // Window-only turn events and partial token reports carry no new usage.
+      // Retain the last measurement until the same session reports another.
+      result.tokenUsage = mergeTokenUsage(this.cachedResult.tokenUsage, result.tokenUsage);
 
       result.rateLimits = mergeRateLimits(this.cachedResult.rateLimits, result.rateLimits);
       result.subagents = mergeSubagents(this.cachedResult.subagents, result.subagents);
@@ -637,6 +714,7 @@ export class RolloutParser {
   async fullParse(): Promise<RolloutParseResult | null> {
     this.lastOffset = 0;
     this.cachedResult = null;
+    this.rateTracker.reset();
     return this.parse();
   }
 

@@ -31,11 +31,13 @@
 - **MCP サーバー状況 & ツール呼び出し** —— Codex が実際に何をしているか監視
 - **Reasoning effort レベル** —— 現在の思考深度を表示
 
-**Q: 複数の Codex セッションを同時に監視できますか？**
+**Q: セッションがサブエージェントを起動します。その様子を見られますか？**
 
-はい。`Ctrl+T` で**マルチセッション概要モード**に切り替えると、すべてのアクティブセッションの context 使用状況を一画面で確認できます。
+はい。`F12` を押すと右側に**サブエージェントツリー**が開きます。起動した各エージェント、そのモデルと推論強度、実行中か終了か失敗か、そしてどのエージェントが起動したかが分かります。もう一度 `F12` で閉じます。その間ステータスバーは表示されたままです。
 
-![Codex HUD — マルチセッション概要](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+`Ctrl+T` は意図的に空けてあります。Codex 自身のトランスクリプト表示のためです。
+
+![Codex HUD — サブエージェントツリー](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
 
 **Q: tmux を手動で設定する必要がありますか？**
 
@@ -44,7 +46,7 @@
 ## クイックスタート
 
 ```bash
-git clone https://github.com/fwyc0573/codex-hud.git
+git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 ./bin/codex-hud-install
 
@@ -59,7 +61,7 @@ codex
 1. ダウンロードして current branch に切り替えます：
 
 ```powershell
-git clone https://github.com/fwyc0573/codex-hud.git
+git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 git switch feature/windows-support-dual-entry
 .\bin\codex-hud-install.ps1
@@ -145,6 +147,9 @@ codex-hud --self-check       # 環境診断を実行
 
 | 変数 | デフォルト | 説明 |
 |------|------------|------|
+| `CODEX_HUD_DENSITY` | `balanced` | ステータスバーの情報量（`focus` / `balanced` / `full`） |
+| `CODEX_HUD_THEME` | `terminal` | 配色（`terminal` / `mocha` / `latte` / `none`） |
+| `CODEX_HUD_GLYPHS` | `both` | モデル表記（`glyph` / `text` / `both`） |
 | `CODEX_HUD_POSITION` | `bottom` | HUD ペインの位置（`top` / `bottom`） |
 | `CODEX_HUD_HEIGHT` | ターミナルの 1/6 | HUD の高さ（行数） |
 | `CODEX_HUD_MOUSE` | `1` | マウス/トラックパッドスクロールを有効化 |
@@ -154,6 +159,10 @@ codex-hud --self-check       # 環境診断を実行
 
 | 変数 | デフォルト | 説明 |
 |------|------------|------|
+| `CODEX_HUD_NOTIFY` | `0` | 失敗とエージェント終了を tmux で通知 |
+| `CODEX_HUD_NOTIFY_COOLDOWN` | `300` | 同種の通知のクールダウン秒数 |
+| `CODEX_HUD_REDUCED_MOTION` | `0` | 通信マーカーのアニメーションを止める |
+| `NO_COLOR` | (未設定) | 値があれば `none` 配色を強制 |
 | `CODEX_HUD_HEIGHT_AUTO` | `0` | 幅に基づいて高さを自動調整 |
 | `CODEX_HUD_HEIGHT_MIN` | `CODEX_HUD_HEIGHT` | 自動モードの最小高さ |
 | `CODEX_HUD_HEIGHT_MAX` | `12` | 自動モードの最大高さ |

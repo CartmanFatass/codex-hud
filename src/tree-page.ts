@@ -1,267 +1,288 @@
-/**
- * Live side panel for the subagent directory tree.
- * Sits beside the compact HUD while tree mode is active.
- */
-
-import { spawn } from 'child_process';
+/** Live keyboard/mouse workbench beside the compact HUD. */
+import { navigateSession } from './utils/session-navigation.js';
+import { visibleRows } from './render/panel-state.js';
+import { defaultSettings, saveSettings } from './settings.js';
+import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
+import { resizeTreePane } from './utils/pane-width.js';
+import { renderSettingsPage, handleSettingsInput, type SettingsPageState, type SettingsFrame } from './render/settings-page.js';
+import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
 import { SessionFinder } from './collectors/session-finder.js';
-import { RolloutParser } from './collectors/rollout.js';
+import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
 import { buildSubagentTree } from './collectors/subagent-tree.js';
-import { renderSubagentTreePage, renderTreeUnboundPage } from './render/subagent-tree-view.js';
-import { parseTreeKey } from './utils/tree-keys.js';
-import * as fs from 'fs';
-import type { SubagentTree } from './types.js';
-
-const DATA_REFRESH_MS = 1000;
-const RENDER_MS = 250;
-const HIDE_CURSOR = '\x1b[?25l';
-const SHOW_CURSOR = '\x1b[?25h';
-const CURSOR_HOME = '\x1b[H';
-const CLEAR_SCREEN = '\x1b[2J';
+import { collectGitChanges, readGitDiff, type GitChanges } from './collectors/git-changes.js';
+import { WorkbenchHistory } from './collectors/workbench-events.js';
+import { renderWorkbench, type WorkbenchFrame } from './render/workbench.js';
+import { initialWorkbenchState, reconcileWorkbench, handleWorkbenchInput } from './render/workbench-state.js';
+import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
+import type { SubagentTree, SubagentTreeNode } from './types.js';
 
 const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
-const HUD_CWD_REAL = (() => {
-  try {
-    return fs.realpathSync(HUD_CWD);
-  } catch {
-    return HUD_CWD;
-  }
-})();
-
+const HUD_CWD_REAL = (() => { try { return fs.realpathSync(HUD_CWD); } catch { return HUD_CWD; } })();
 const HUD_SESSION_START = (() => {
-  const raw = process.env.CODEX_HUD_SESSION_START;
-  if (!raw) return null;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return null;
-  return parsed > 1_000_000_000_000 ? new Date(parsed) : new Date(parsed * 1000);
+  const raw = Number(process.env.CODEX_HUD_SESSION_START);
+  return Number.isFinite(raw) && raw > 0 ? new Date(raw > 1e12 ? raw : raw * 1000) : null;
 })();
-
-function restoreStdin(): void {
-  if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
-    process.stdin.setRawMode(false);
-  }
-  process.stdin.pause();
-}
-
-function paint(lines: string[]): void {
-  process.stdout.write(`${HIDE_CURSOR}${CURSOR_HOME}${CLEAR_SCREEN}${lines.join('\n')}`);
-}
-
-function windowPage(lines: string[], height: number, scroll: number): { lines: string[]; scroll: number } {
-  if (height <= 0 || lines.length <= height) {
-    return { lines, scroll: 0 };
-  }
-  const headerCount = Math.min(1, lines.length);
-  const header = lines.slice(0, headerCount);
-  const body = lines.slice(headerCount);
-  const visible = Math.max(1, height - header.length);
-  const maxScroll = Math.max(0, body.length - visible);
-  const off = Math.min(Math.max(0, scroll), maxScroll);
-  return {
-    lines: [...header, ...body.slice(off, off + visible)],
-    scroll: off,
-  };
-}
-
-const sessionFinder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
-const rolloutParser = new RolloutParser(10);
-let parserPath: string | null = null;
-let lastParseSig: { path: string; size: number; mtimeMs: number } | null = null;
-
-async function collectTree(): Promise<{ tree: SubagentTree | null; bound: boolean }> {
-  const session = sessionFinder.check();
-  if (!session) {
-    return { tree: null, bound: false };
-  }
-
-  if (parserPath !== session.path) {
-    rolloutParser.setRolloutPath(session.path);
-    parserPath = session.path;
-    lastParseSig = null;
-  }
-
-  let sig: { path: string; size: number; mtimeMs: number } | null = null;
-  try {
-    const stats = fs.statSync(session.path);
-    sig = { path: session.path, size: stats.size, mtimeMs: stats.mtimeMs };
-  } catch {
-    sig = null;
-  }
-  const unchanged =
-    sig !== null &&
-    lastParseSig !== null &&
-    lastParseSig.path === sig.path &&
-    lastParseSig.size === sig.size &&
-    lastParseSig.mtimeMs === sig.mtimeMs;
-
-  let result: Awaited<ReturnType<typeof rolloutParser.parse>> = rolloutParser.getCached();
-  if (!unchanged || !result) {
-    result = await rolloutParser.parse();
-    lastParseSig = sig;
-  }
-  const rootId = result?.session?.id ?? session.sessionId;
-  return { tree: buildSubagentTree(rootId, result?.subagents ?? []), bound: true };
-}
+const ENTER = '\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h';
+const LEAVE = '\x1b[?1000l\x1b[?1006l\x1b[?25h\x1b[?1049l';
 
 function requestEnsureSingle(): void {
   const toggle = process.env.CODEX_HUD_TOGGLE_CMD;
   const session = process.env.CODEX_HUD_TMUX_SESSION;
-  if (!toggle || !session) {
-    return;
-  }
+  if (!toggle || !session) return;
   try {
-    const child = spawn('bash', [toggle, session, '--ensure-single'], {
-      stdio: 'ignore',
-      detached: true,
-    });
+    const child = spawn('bash',[toggle,session,'--ensure-single'],{stdio:'ignore',detached:true});
+    child.on('error',()=>{});
     child.unref();
-  } catch {
-    // restore is best-effort; the pane is exiting anyway
+  } catch { /* Closing the side pane is best effort. */ }
+}
+function findNode(nodes: SubagentTreeNode[], id: string | null): SubagentTreeNode | undefined {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const child = findNode(node.children,id);
+    if (child) return child;
   }
+  return undefined;
 }
 
 async function runLivePage(): Promise<void> {
+  const finder = new SessionFinder(HUD_CWD_REAL,undefined,HUD_SESSION_START);
+  const parser = new RolloutParser(40);
+  const history = new WorkbenchHistory();
+  const decoder = new WorkbenchInputDecoder();
+  let settings = defaultSettings();
+  let settingsError = '';
+  try { settings = runtimeSettings(); } catch (err) { settingsError = `Settings: ${String(err)}`; }
+  applyDisplaySettings(settings);
+  const configuredState = () => {
+    const next = initialWorkbenchState();
+    next.tree.sort = settings.sort;
+    next.tasksEnabled = settings.tasks;
+    next.collapsed = {agents:false,details:!settings.details,changes:!settings.changes,activity:!settings.activity};
+    return next;
+  };
+  let state = configuredState();
+  let settingsPage: SettingsPageState | null = null;
+  let settingsFrame: SettingsFrame | undefined;
+  let lastCollect = 0;
+  let navigating = false;
+  let navigationMessage: string | null = null;
+  let tree: SubagentTree = {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+  let main: RolloutParseResult | null = null;
+  let agent: RolloutParseResult | null = null;
+  let git: GitChanges | null = null;
+  let gitRevision = 0;
+  let diff: string[] | undefined;
+  let diffKey = '';
+  let agentPath: string | undefined;
+  let agentParser = new RolloutParser(30);
+  let error: string | null = settingsError || null;
+  let frame: WorkbenchFrame | undefined;
+  let lastPaint = '';
   let closed = false;
   let collecting = false;
-  let tree: SubagentTree | null = null;
-  let bound = false;
-  let collectError: string | null = null;
-  let lastPaint = '';
-  let scroll = 0;
-  let dataTimer: ReturnType<typeof setInterval> | null = null;
-  let renderTimer: ReturnType<typeof setInterval> | null = null;
-  let closedByUser = false;
+  let collectingGit = false;
+  let inspecting = false;
+  let inspectAgain = false;
+  let escapeTimer: ReturnType<typeof setTimeout> | undefined;
+  const timers: Array<ReturnType<typeof setInterval>> = [];
+  let resolveDone = () => {};
 
   const render = () => {
-    if (closed) {
-      return;
-    }
-    const columns = Number(process.stdout.columns);
-    const rows = Number(process.stdout.rows);
-    const maxWidth = Number.isFinite(columns) && columns > 0 ? columns : 24;
-    const maxHeight = Number.isFinite(rows) && rows > 0 ? rows : 24;
-    let page: string[];
-    if (collectError) {
-      page = [
-        'Failed to refresh tree.',
-        collectError,
-      ];
-    } else if (!bound) {
-      page = renderTreeUnboundPage(maxWidth);
-    } else if (!tree) {
-      page = renderTreeUnboundPage(maxWidth);
+    if (closed) return;
+    let lines: string[];
+    if (settingsPage) {
+      settingsFrame = renderSettingsPage(settingsPage,process.stdout.columns || 30,process.stdout.rows || 24);
+      settingsPage = settingsFrame.state;
+      lines = settingsFrame.lines;
     } else {
-      page = renderSubagentTreePage(tree, maxWidth);
+    frame = renderWorkbench({tree,state,git,diff,main,agent,events:history.values(),error,notice:navigationMessage,
+      width:process.stdout.columns || 30,height:process.stdout.rows || 24});
+    state = frame.state;
+    lines = frame.lines;
     }
-    const windowed = windowPage(page, maxHeight, scroll);
-    scroll = windowed.scroll;
-    const painted = windowed.lines.join('\n');
-    if (painted === lastPaint) {
-      return;
+    const output = lines.map(line=>`${line}\x1b[K`).join('\r\n');
+    if (lastPaint !== output) {
+      lastPaint = output;
+      process.stdout.write(`\x1b[H${output}\x1b[J`);
     }
-    lastPaint = painted;
-    paint(windowed.lines);
   };
-
-  const finish = () => {
-    if (closed) {
-      return;
-    }
-    closed = true;
-    if (dataTimer) {
-      clearInterval(dataTimer);
-      dataTimer = null;
-    }
-    if (renderTimer) {
-      clearInterval(renderTimer);
-      renderTimer = null;
-    }
-    process.stdin.off('data', onData);
-    restoreStdin();
-    process.stdout.write(SHOW_CURSOR);
-    resolveReady();
-  };
-
-  const onData = (chunk: Buffer) => {
-    const key = parseTreeKey(chunk);
-    if (key === 'up') {
-      scroll = Math.max(0, scroll - 1);
-      lastPaint = '';
+  const refreshInspection = async () => {
+    if (closed) return;
+    if (inspecting) { inspectAgain = true; return; }
+    inspecting = true;
+    const selected = findNode(tree.nodes,state.tree.selectedId);
+    const selectedFile = git?.files.find(file=>file.path === state.selectedFile);
+    const root = tree.rootId;
+    try {
+      if (state.preview === 'agent') {
+        if (selected?.rolloutPath !== agentPath) {
+          agentPath = selected?.rolloutPath;
+          agentParser = new RolloutParser(30);
+          agentParser.setRolloutPath(agentPath ?? null);
+          agent = null;
+        }
+        const path = agentPath;
+        const result = path ? await agentParser.parse() : null;
+        if (!closed && root === tree.rootId && path === findNode(tree.nodes,state.tree.selectedId)?.rolloutPath) {
+          agent = result;
+          history.update(tree,main,agent);
+        }
+      } else if (state.preview === 'file' && selectedFile && git?.root) {
+        const key = JSON.stringify([git.root,selectedFile.path,gitRevision]);
+        if (key !== diffKey) {
+          const repoRoot = git.root;
+          const revision = gitRevision;
+          const result = await readGitDiff(repoRoot,selectedFile);
+          if (!closed && state.selectedFile === selectedFile.path && git?.root === repoRoot && gitRevision === revision) {
+            diff = result; diffKey = key;
+          } else inspectAgain = true;
+        }
+      }
+    } catch (err) {
+      if (state.preview === 'file') diff = [`Unable to read diff: ${String(err)}`];
+      else agent = null;
+    } finally {
+      inspecting = false;
       render();
-      return;
-    }
-    if (key === 'down') {
-      scroll += 1;
-      lastPaint = '';
-      render();
-      return;
-    }
-    if (key === 'close') {
-      closedByUser = true;
-      requestEnsureSingle();
-      finish();
+      if (inspectAgain && !closed) { inspectAgain = false; void refreshInspection(); }
     }
   };
-
   const collect = async () => {
-    if (closed || collecting) {
-      return;
-    }
+    if (closed || collecting) return;
     collecting = true;
     try {
-      const collected = await collectTree();
-      tree = collected.tree;
-      bound = collected.bound;
-      collectError = null;
-    } catch (error) {
-      collectError = error instanceof Error ? error.message : String(error);
-    } finally {
-      collecting = false;
-    }
+      const session = finder.check();
+      parser.setRolloutPath(session?.path ?? null);
+      main = session ? await parser.parse() : null;
+      const rootId = main?.session?.id ?? session?.sessionId ?? '';
+      if (rootId !== tree.rootId) {
+        state = configuredState(); agent = null; agentPath = undefined; diff = undefined; diffKey = '';
+      }
+      tree = rootId ? buildSubagentTree(rootId,main?.subagents ?? []) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+      state = reconcileWorkbench(state,tree,git);
+      history.update(tree,main);
+      error = settingsError || null;
+    } catch (err) { error = `Refresh: ${String(err)}`; }
+    finally { collecting = false; }
     render();
+    void refreshInspection();
   };
-
-  let resolveReady: () => void = () => {};
-
-  await new Promise<void>((resolve) => {
-    resolveReady = resolve;
-
-    process.once('SIGINT', () => {
-      if (!closedByUser) {
-        finish();
-      }
-    });
-    process.once('SIGTERM', () => {
-      if (!closedByUser) {
-        finish();
-      }
-    });
-    process.stdout.on('resize', () => {
-      lastPaint = '';
+  const refreshGit = async () => {
+    if (closed || collectingGit) return;
+    collectingGit = true;
+    try {
+      git = await collectGitChanges(HUD_CWD_REAL);
+      gitRevision++;
+      const oldFile = state.selectedFile;
+      state = reconcileWorkbench(state,tree,git);
+      if (state.selectedFile !== oldFile) { diff = undefined; diffKey = ''; }
       render();
-    });
-
-    if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
-      process.stdin.setRawMode(true);
+      void refreshInspection();
+    } finally { collectingGit = false; }
+  };
+  const finish = (user = false) => {
+    if (closed) return;
+    closed = true;
+    timers.forEach(clearInterval);
+    if (escapeTimer) clearTimeout(escapeTimer);
+    process.stdin.off('data',onData);
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    process.stdin.pause();
+    process.stdout.write(LEAVE);
+    if (user) requestEnsureSingle();
+    resolveDone();
+  };
+  const switchSession = async (id:string) => {
+    if (navigating || !id) return;
+    navigating = true;
+    navigationMessage = 'Switching Codex session…'; render();
+    try {
+      const result = await navigateSession(process.env.CODEX_HUD_MAIN_PANE,id);
+      navigationMessage = result.ok ? null : result.message;
+    } catch (err) { navigationMessage = `Switch failed: ${String(err)}`; }
+    finally { navigating = false; render(); }
+  };
+  const dispatch = (inputs: WorkbenchInput[]) => {
+    for (const input of inputs) {
+      if (closed) break;
+      if (input.type === 'mouse' && !settings.mouse) continue;
+      if (settingsPage && settingsFrame) {
+        const result = handleSettingsInput(settingsPage,input,settingsFrame);
+        settingsPage = result.state;
+        if (result.action === 'back') settingsPage = null;
+        else if (result.action === 'reset') settingsPage = {...settingsPage,draft:defaultSettings(),message:'Defaults ready; Save to apply'};
+        else if (result.action === 'save') {
+          try {
+            settings = saveSettings(settingsPage.draft);
+            settingsError = ''; error = null;
+            applyDisplaySettings(settings);
+            state = {...state,tree:{...state.tree,sort:settings.sort},tasksEnabled:settings.tasks,
+              activityTab:!settings.tasks && state.activityTab === 'tasks' ? 'checks' : state.activityTab,
+              collapsed:{...state.collapsed,details:!settings.details,changes:!settings.changes,activity:!settings.activity}};
+            settingsPage.message = 'Saved';
+            process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
+            void resizeTreePane(settings.treeWidth).catch(err=>{if(settingsPage) settingsPage.message=String(err);render();});
+          } catch (err) { settingsPage.message = `Save failed: ${String(err)}`; }
+        }
+        render(); continue;
+      }
+      if ((input.type === 'key' && input.key === 'settings') ||
+          (input.type === 'mouse' && input.button === 'left' && !state.help && input.y === 0 && input.x >= 7 && input.x < 17)) {
+        settingsPage = {draft:{...settings,details:!state.collapsed.details,changes:!state.collapsed.changes,
+          activity:!state.collapsed.activity,sort:state.tree.sort ?? 'active'},selected:0,offset:0,message:''};
+        render(); continue;
+      }
+      if ((input.type === 'key' && input.key === 'main') ||
+          (input.type === 'mouse' && input.button === 'left' && !state.help && input.y === 0 && input.x < 6)) {
+        void switchSession(tree.rootId); continue;
+      }
+      if (input.type === 'key' && input.key === 'open-session') {
+        if (state.tree.selectedId) void switchSession(state.tree.selectedId);
+        continue;
+      }
+      const agentPane = frame?.panes.find(p=>p.id === 'agents');
+      const clickedAgent = input.type === 'mouse' && input.button === 'left' && agentPane &&
+        input.x > agentPane.x && input.x < agentPane.x+agentPane.width-1 &&
+        input.y > agentPane.y && input.y < agentPane.y+agentPane.height-1
+        ? visibleRows(tree.nodes,state.tree)[agentPane.offset+input.y-agentPane.y-1]?.node : undefined;
+      const previous = state;
+      const result = handleWorkbenchInput(state,input,{tree,git,panes:frame?.panes ?? [],events:history.values()});
+      state = result.state;
+      if (result.close) { finish(true); break; }
+      if (state.selectedFile !== previous.selectedFile) { diff = undefined; diffKey = ''; }
+      if (state.tree.selectedId !== previous.tree.selectedId) agent = null;
+      render();
+      void refreshInspection();
+      if (clickedAgent) void switchSession(clickedAgent.id);
     }
+  };
+  const onData = (chunk: Buffer) => {
+    if (escapeTimer) clearTimeout(escapeTimer);
+    dispatch(decoder.push(chunk));
+    escapeTimer = setTimeout(()=>dispatch(decoder.flushEscape()),40);
+  };
+  await new Promise<void>(resolve => {
+    resolveDone = resolve;
+    process.once('SIGINT',()=>finish());
+    process.once('SIGTERM',()=>finish());
+    process.once('SIGHUP',()=>finish());
+    process.stdin.once('end',()=>finish());
+    process.stdout.on('resize',()=>{lastPaint='';render();});
+    if (process.stdin.isTTY) process.stdin.setRawMode(true);
+    process.stdout.write(settings.mouse ? ENTER : '\x1b[?1049h\x1b[?25l');
+    void resizeTreePane(settings.treeWidth).catch(()=>{});
     process.stdin.resume();
-    process.stdin.on('data', onData);
-
+    process.stdin.on('data',onData);
+    render();
     void collect();
-    dataTimer = setInterval(() => {
-      void collect();
-    }, DATA_REFRESH_MS);
-    renderTimer = setInterval(render, RENDER_MS);
+    void refreshGit();
+    timers.push(setInterval(()=>{if(Date.now()-lastCollect >= settings.refreshMs){lastCollect=Date.now();void collect();}},100),setInterval(()=>void refreshGit(),3000),setInterval(render,250));
   });
 }
 
-runLivePage()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(() => {
-    restoreStdin();
-    process.stdout.write(SHOW_CURSOR);
-    process.exit(process.exitCode ?? 0);
-  });
+runLivePage().catch(error=>{process.stderr.write(`${String(error)}\n`);process.exitCode=1;}).finally(()=>{
+  if (process.stdin.isTTY) process.stdin.setRawMode(false);
+  process.stdout.write(LEAVE);
+  process.exit(process.exitCode ?? 0);
+});

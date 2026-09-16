@@ -19,10 +19,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HUD_DIR="$(dirname "$SCRIPT_DIR")"
 
 ensure_single=0
+focus_tree=0
 session_name=""
 for arg in "$@"; do
   case "$arg" in
     --ensure-single) ensure_single=1 ;;
+    # Open the panel if needed and put the cursor in it. F12 deliberately
+    # leaves focus in the Codex pane, so this is the way to actually drive
+    # the panel's keys without reaching for the mouse.
+    --focus-tree) focus_tree=1 ;;
     *) session_name="$arg" ;;
   esac
 done
@@ -129,8 +134,20 @@ if [[ "$ensure_single" == "1" ]]; then
 fi
 
 if [[ "$mode" == "tree" ]]; then
-  restore_single
-  exit $?
+  if [[ "$focus_tree" == "1" ]]; then
+    if pane_alive "$tree_pane"; then
+      tmux select-pane -t "$tree_pane" 2>/dev/null || true
+      exit 0
+    fi
+    # The panel is gone but the session still thinks it is open; fall through
+    # and rebuild it below.
+    tmux set-option -t "$session_name" @codex_hud_tree_pane ""
+    tmux set-option -t "$session_name" @codex_hud_mode "single"
+    mode="single"
+  else
+    restore_single
+    exit $?
+  fi
 fi
 
 # single -> tree: open the fixed right-side panel. Compact HUD stays put so
@@ -148,11 +165,21 @@ fi
 # (Not `local`: this branch is at script scope.)
 win_width=$(tmux display-message -p -t "$main_pane" '#{window_width}' 2>/dev/null | tr -dc '0-9' || true)
 [[ -z "$win_width" ]] && win_width=120
-panel_width=$(( win_width / 6 ))
-if [[ "$panel_width" -lt 20 ]]; then panel_width=20; fi
-if [[ "$panel_width" -gt 24 ]]; then panel_width=24; fi
+# Default width is unchanged; explicit widths can expose the preview column.
+panel_width=${CODEX_HUD_TREE_WIDTH:-0}
+requested_width=0
+if [[ "$panel_width" =~ ^[0-9]+$ && "$panel_width" -gt 0 ]]; then requested_width=$panel_width; fi
+if [[ ! "$panel_width" =~ ^[0-9]+$ || "$panel_width" -le 0 ]]; then
+  panel_width=$(( win_width / 5 ))
+  if [[ "$panel_width" -lt 20 ]]; then panel_width=20; fi
+  if [[ "$panel_width" -gt 30 ]]; then panel_width=30; fi
+fi
+if [[ "$panel_width" -lt 16 ]]; then panel_width=16; fi
+max_panel=$(( win_width - 41 ))
+if [[ "$max_panel" -lt 10 ]]; then max_panel=$(( win_width / 3 )); fi
+if [[ "$panel_width" -gt "$max_panel" ]]; then panel_width=$max_panel; fi
 
-tree_cmd="env CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
+tree_cmd="env CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
 if ! new_tree=$(tmux split-window -h -l "$panel_width" -t "$main_pane" -d -P -F '#{pane_id}' "$tree_cmd"); then
   tmux display-message -t "$session_name" "codex-hud: failed to open the tree panel"
   exit 1
@@ -164,4 +191,9 @@ fi
 
 tmux set-option -t "$session_name" @codex_hud_tree_pane "$new_tree"
 tmux set-option -t "$session_name" -q @codex_hud_mode "tree"
-tmux select-pane -t "$main_pane" 2>/dev/null || true
+if [[ "$focus_tree" == "1" ]]; then
+  tmux select-pane -t "$new_tree" 2>/dev/null || true
+else
+  # F12 never steals the cursor from Codex.
+  tmux select-pane -t "$main_pane" 2>/dev/null || true
+fi

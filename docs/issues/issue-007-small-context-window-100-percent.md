@@ -30,3 +30,12 @@
 - 修复时间：2026-01-29
 - 变更说明：小窗口模型改为按真实窗口比例计算剩余百分比。
 - 验证方式：未执行；建议使用 8k/10k 模型观察占用百分比。
+
+### 复发与二次修复
+- 时间：2026-09-11
+- 复发原因：上一次改为 `min(contextWindow, BASELINE_TOKENS)`，在窗口小于基线时基线等于整个窗口，
+  预留吃掉全部 token，占用仍恒为 100%。该修复当时未验证。
+- 本次变更：基线只在窗口大于基线时生效（`baselineApplies()`），否则按原始比例计算。
+  逻辑移入 `src/collectors/context-usage.ts` 以便回放测试覆盖。
+- 验证方式：`tests/fixtures/rollouts/small-context.jsonl` + `npm test`，
+  断言 8K 窗口的占用既不为 0 也不为 100%。

@@ -3,6 +3,7 @@
  * Phase 3: Redesigned with claude-hud style rendering
  */
 
+import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import { readCodexConfig } from './collectors/codex-config.js';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
@@ -13,15 +14,14 @@ import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser } from './collectors/rollout.js';
 import { buildSubagentTree } from './collectors/subagent-tree.js';
 import { createParseQueue } from './utils/parse-queue.js';
+import { tmuxFocusPaneArgs, tmuxForwardKeyArgs } from './utils/hud-input.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer } from './render/index.js';
-import { BASELINE_TOKENS } from './types.js';
+import { buildContextUsage } from './collectors/context-usage.js';
+import { Notifier, resolveNotifierOptions } from './notify.js';
 import type {
   HudData,
-  TokenUsage,
-  ContextUsage,
   HudDisplayMode,
-  TokenUsageInfo,
   CodexConfig,
 } from './types.js';
 
@@ -55,70 +55,6 @@ let isRunning = true;
 
 const displayMode: HudDisplayMode = 'single';
 
-function getNonCachedInputTokens(usage: TokenUsage | undefined): number {
-  if (!usage) {
-    return 0;
-  }
-
-  const input = usage.input_tokens ?? 0;
-  const cached = usage.cached_input_tokens ?? 0;
-  return Math.max(0, input - cached);
-}
-
-function baselineAdjustedUsedTokens(tokensInContext: number, contextWindow: number): number {
-  if (contextWindow <= 0) {
-    return 0;
-  }
-
-  const baseline = Math.min(BASELINE_TOKENS, contextWindow);
-  const used = Math.max(0, tokensInContext) + baseline;
-  return Math.max(0, Math.min(contextWindow, used));
-}
-
-function percentOfContextWindowRemaining(tokensInContext: number, contextWindow: number): number {
-  if (contextWindow <= 0) {
-    return 0;
-  }
-
-  const used = baselineAdjustedUsedTokens(tokensInContext, contextWindow);
-  const remaining = Math.max(0, contextWindow - used);
-  const percent = (remaining / contextWindow) * 100;
-  return Math.round(Math.max(0, Math.min(100, percent)));
-}
-
-function buildContextUsage(
-  tokenUsage: TokenUsageInfo | undefined,
-  compactCount: number | undefined,
-  lastCompactTime: Date | null | undefined
-): ContextUsage | undefined {
-  if (!tokenUsage) {
-    return undefined;
-  }
-
-  const contextWindow = tokenUsage.model_context_window ?? 0;
-  const lastUsage = tokenUsage.last_token_usage;
-
-  if (contextWindow > 0 && lastUsage) {
-    const tokensInContext = lastUsage.total_tokens ?? 0;
-    const usedWithBaseline = baselineAdjustedUsedTokens(tokensInContext, contextWindow);
-    const percentRemaining = percentOfContextWindowRemaining(tokensInContext, contextWindow);
-    const percentUsed = 100 - percentRemaining;
-
-    return {
-      used: usedWithBaseline,
-      total: contextWindow,
-      percent: percentUsed,
-      inputTokens: getNonCachedInputTokens(lastUsage),
-      outputTokens: lastUsage.output_tokens ?? 0,
-      cachedTokens: lastUsage.cached_input_tokens ?? 0,
-      compactCount: compactCount ?? 0,
-      lastCompactTime: lastCompactTime ?? undefined,
-    };
-  }
-
-  return undefined;
-}
-
 // Phase 2: Session and rollout tracking
 const sessionFinder = new SessionFinder(HUD_CWD_REAL, (session) => {
   // When session changes, update rollout path
@@ -131,6 +67,10 @@ const sessionFinder = new SessionFinder(HUD_CWD_REAL, (session) => {
   rolloutParser.setRolloutPath(null);
   hudFileWatcher.setRolloutPath(null);
 }, HUD_SESSION_START);
+
+// Off unless CODEX_HUD_NOTIFY=1. Codex notifies on its own, and two pop-ups
+// for one event is worse than none.
+const notifier = new Notifier(resolveNotifierOptions());
 
 const rolloutParser = new RolloutParser(10);
 const hudFileWatcher = new HudFileWatcher();
@@ -156,6 +96,7 @@ let lastSyncAt = 0;
  * Collect all HUD data (synchronous parts)
  */
 function collectSyncData(): Omit<HudData, 'toolActivity' | 'planProgress' | 'tokenUsage' | 'session' | 'contextUsage' | 'rateLimits' | 'subagents' | 'subagentTree'> {
+  try { applyDisplaySettings(runtimeSettings()); } catch { /* Keep last valid display settings. */ }
   if (cachedConfig === null || configNeedsRefresh) {
     cachedConfig = readCodexConfig();
     configNeedsRefresh = false;
@@ -217,6 +158,7 @@ async function collectData(): Promise<HudData> {
     toolActivity: rolloutData?.toolActivity ?? undefined,
     planProgress: rolloutData?.planProgress ?? undefined,
     tokenUsage: rolloutData?.tokenUsage ?? undefined,
+    outputRate: rolloutData?.outputRate,
     contextUsage,
     rateLimits: rolloutData?.rateLimits ?? undefined,
     subagents: rolloutData?.subagents ?? [],
@@ -290,6 +232,8 @@ async function mainLoop(): Promise<void> {
     const targetHeight = targetHudPaneHeight(data);
     renderToStdout(data, targetHeight);
     maybeResizeHudPane(targetHeight);
+    // Notifications run on the collection tick, not the faster repaint.
+    notifier.update(data);
   } catch (error) {
     console.error('Render error:', error);
   }
@@ -327,11 +271,37 @@ function shutdown(): void {
   process.exit(0);
 }
 
+function spawnTmux(args: string[]): void {
+  try {
+    const child = spawn('tmux', args, { stdio: 'ignore' });
+    child.on('error', () => {});
+    child.unref();
+  } catch {
+    // Best-effort: the 1-line bar must not swallow Codex input.
+  }
+}
+
+function bounceKeysToCodex(data: Buffer): void {
+  const mainPane = process.env.CODEX_HUD_MAIN_PANE;
+  if (!mainPane) {
+    return;
+  }
+  const send = tmuxForwardKeyArgs(mainPane, data);
+  const focus = tmuxFocusPaneArgs(mainPane);
+  if (send) {
+    spawnTmux(send);
+  }
+  if (focus) {
+    spawnTmux(focus);
+  }
+}
+
 function setupKeyListener(): void {
   if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== 'function') {
     return;
   }
   process.stdin.setRawMode(true);
+  process.stdin.on('data', bounceKeysToCodex);
 }
 
 /**

@@ -12,7 +12,7 @@
 #   CODEX_HUD_AUTO_ATTACH - If set to true, auto-attach to existing session
 #   CODEX_HUD_NO_ATTACH - Deprecated: if set to true, do not attach to existing session
 #   CODEX_HUD_ALTERNATE_SCREEN - Use alternate screen in codex pane (default: 0)
-#   CODEX_HUD_MOUSE - Enable tmux mouse mode for this session (default: 1)
+#   CODEX_HUD_MOUSE - Enable mouse routing: HUD and Codex each keep their own mouse (default: 1)
 #   CODEX_HUD_CLEAR_SCROLLBACK - If set to 1, clears tmux scrollback on first render
 #
 
@@ -579,6 +579,81 @@ resolve_hud_height() {
     HUD_HEIGHT="$desired"
 }
 
+# Root key tables are server-global, so every binding is gated on
+# @codex_hud_main_pane (HUD sessions only). Elsewhere the original tmux
+# mouse/key behaviour is preserved.
+install_session_input_policy() {
+    local session_name="$1"
+    local toggle_cmd="$2"
+
+    tmux set-option -t "$session_name" extended-keys on 2>/dev/null || true
+    tmux set-option -t "$session_name" focus-events on 2>/dev/null || true
+
+    chmod +x "$toggle_cmd" 2>/dev/null || true
+
+    # Do not bind root Ctrl+T — that belongs to Codex's transcript overlay.
+    tmux bind-key -T root F12 if-shell -F '#{@codex_hud_main_pane}' \
+        "run-shell -b \"bash '$toggle_cmd' '#{session_id}'\"" \
+        "send-keys F12"
+    tmux bind-key -T root S-F12 if-shell -F '#{@codex_hud_main_pane}' \
+        "run-shell -b \"bash '$toggle_cmd' '#{session_id}' --focus-tree\"" \
+        "send-keys S-F12"
+
+    local paste_cmd
+    paste_cmd="$(cd "$(dirname "$toggle_cmd")" && pwd)/codex-hud-paste"
+    chmod +x "$paste_cmd" 2>/dev/null || true
+
+    # OSC 52 so a mouse selection is also the terminal clipboard.
+    tmux set-option -t "$session_name" set-clipboard on 2>/dev/null || true
+
+    # Pane ids are %N. Putting them in bind-key -t '#{@codex_hud_main_pane}'
+    # either fails to expand (can't find pane) or eats %N (syntax error).
+    # Focus the Codex pane through run-shell so the id is a CLI argument.
+    # Mouse forwarding stays as select-pane -t= / send-keys -M / copy-mode -M.
+    local toggle_q paste_q focus_main toggle_tree paste_mouse
+    toggle_q=$(printf '%q' "$toggle_cmd")
+    paste_q=$(printf '%q' "$paste_cmd")
+    focus_main='run-shell "tmux select-pane -t #{@codex_hud_main_pane}"'
+    toggle_tree="run-shell -b \"bash $toggle_q #{session_id}\""
+    paste_mouse="run-shell -b \"bash $paste_q #{mouse_pane}\""
+
+    tmux bind-key -T root MouseDown1Pane if-shell -F '#{@codex_hud_main_pane}' \
+        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$toggle_tree ; $focus_main' 'select-pane -t= ; send-keys -M'" \
+        'select-pane -t= ; send-keys -M'
+
+    tmux bind-key -T root MouseDown2Pane if-shell -F '#{@codex_hud_main_pane}' \
+        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; $paste_mouse'" \
+        'select-pane -t= ; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "paste-buffer -p"'
+
+    tmux bind-key -T root MouseDown3Pane if-shell -F '#{@codex_hud_main_pane}' \
+        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; $paste_mouse'" \
+        'select-pane -t= ; paste-buffer -p'
+
+    tmux bind-key -T root M-MouseDown3Pane if-shell -F '#{@codex_hud_main_pane}' \
+        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; $paste_mouse'" \
+        'select-pane -t= ; paste-buffer -p'
+
+    tmux bind-key -T root WheelUpPane if-shell -F '#{@codex_hud_main_pane}' \
+        'send-keys -t= -M' \
+        'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"'
+
+    tmux bind-key -T root WheelDownPane if-shell -F '#{@codex_hud_main_pane}' \
+        'send-keys -t= -M' \
+        'send-keys -M'
+
+    tmux bind-key -T root MouseDrag1Pane if-shell -F '#{@codex_hud_main_pane}' \
+        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'if-shell -F \"#{||:#{pane_in_mode},#{mouse_any_flag}}\" \"send-keys -M\" \"copy-mode -M\"'" \
+        'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
+
+    tmux bind-key -T root DoubleClick1Pane if-shell -F '#{@codex_hud_main_pane}' \
+        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; if-shell -F \"#{||:#{pane_in_mode},#{mouse_any_flag}}\" \"send-keys -M\" \"copy-mode -H ; send-keys -X select-word ; run-shell -d 0.3 ; send-keys -X copy-pipe-and-cancel\"'" \
+        'select-pane -t= ; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -H ; send-keys -X select-word ; run-shell -d 0.3 ; send-keys -X copy-pipe-and-cancel"'
+
+    tmux bind-key -T root TripleClick1Pane if-shell -F '#{@codex_hud_main_pane}' \
+        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; if-shell -F \"#{||:#{pane_in_mode},#{mouse_any_flag}}\" \"send-keys -M\" \"copy-mode -H ; send-keys -X select-line ; run-shell -d 0.3 ; send-keys -X copy-pipe-and-cancel\"'" \
+        'select-pane -t= ; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -H ; send-keys -X select-line ; run-shell -d 0.3 ; send-keys -X copy-pipe-and-cancel"'
+}
+
 # Create new tmux session with HUD
 create_session() {
     local cwd="$1"
@@ -672,7 +747,9 @@ EOF
     else
         tmux new-session -d -s "$SESSION_NAME" -x "$term_width" -y "$term_height"
     fi
-    # Keep wheel scrolling available in Codex pane by default.
+    # Mouse stays on so the HUD/tree can be clicked, but events are routed
+    # per pane: Codex keeps its own mouse, and the compact bar cannot steal
+    # Codex's keyboard. See install_session_input_policy.
     local mouse_setting
     mouse_setting=$(parse_boolean_setting "CODEX_HUD_MOUSE" "${CODEX_HUD_MOUSE:-}" "1") || exit 1
 
@@ -802,20 +879,10 @@ EOF
     # panel; the compact bar stays visible so tokens/ctx/model are not dropped.
     # Bind on the root table (no tmux prefix). Herdr uses Ctrl-b as prefix and
     # prefix+h for pane focus, so Prefix+H / Prefix+t never reach inner tmux.
-    # Do not bind root Ctrl+T — that belongs to Codex's transcript overlay.
     local toggle_cmd
     toggle_cmd="$SCRIPT_DIR/codex-hud-toggle"
-    chmod +x "$toggle_cmd" 2>/dev/null || true
     tmux set-option -t "$SESSION_NAME" -q @codex_hud_cwd "$cwd"
-    # Key tables are server-global, so the binding must resolve the session at
-    # keypress time (run-shell expands #{session_id} then) instead of
-    # capturing $SESSION_NAME here, or a second Codex session would hijack
-    # the first session's toggle.
-    # Root F12 is server-global. Only HUD sessions have @codex_hud_main_pane;
-    # everywhere else pass F12 through to the pane application.
-    tmux bind-key -T root F12 if-shell -F '#{@codex_hud_main_pane}' \
-        "run-shell -b \"bash '$toggle_cmd' '#{session_id}'\"" \
-        "send-keys F12"
+    install_session_input_policy "$SESSION_NAME" "$toggle_cmd"
 
     SESSION_CREATED="true"
 }
@@ -873,6 +940,7 @@ main() {
             set_fixed_hud_height "$SESSION_NAME" "$hud_pane_id" "$HUD_HEIGHT" "$main_pane_id"
         fi
         tmux set-option -t "$SESSION_NAME" status off
+        install_session_input_policy "$SESSION_NAME" "$SCRIPT_DIR/codex-hud-toggle"
         if [[ "$DEFER_FINAL_ATTACH" == "1" ]]; then
             if [[ -n "$SESSION_NAME_FILE" ]]; then
                 printf "%s\n" "$SESSION_NAME" > "$SESSION_NAME_FILE"
@@ -935,7 +1003,7 @@ Environment Variables:
   CODEX_HUD_AUTO_ATTACH Auto-attach to latest existing session (default: 0)
   CODEX_HUD_NO_ATTACH Deprecated: force new session (overrides auto attach)
   CODEX_HUD_ALTERNATE_SCREEN Use alternate screen in codex pane (default: 0)
-  CODEX_HUD_MOUSE Enable tmux mouse mode for this session (default: 1)
+  CODEX_HUD_MOUSE Enable mouse: HUD/tree clicks stay on the HUD, Codex keeps its mouse and shortcuts (default: 1)
   CODEX_HUD_CLEAR_SCROLLBACK Clear terminal scrollback on first render (default: 0)
 
 Requirements:

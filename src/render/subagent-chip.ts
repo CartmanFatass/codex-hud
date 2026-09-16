@@ -6,7 +6,8 @@
 
 import { colors, theme, icons, truncateAnsi, visualLength } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
-import type { SubagentTreeNode } from '../types.js';
+import { displayConfig } from './hud-config.js';
+import type { SubagentStatus, SubagentTreeNode } from '../types.js';
 
 // CollabAgentItem events newer than this count as live main<->agent traffic.
 export const COMM_FRESH_MS = 4000;
@@ -16,7 +17,17 @@ export const COMM_FRESH_MS = 4000;
 const COMM_FRAMES = ['⇄', '⇆'];
 const COMM_FRAME_MS = 250;
 
+/**
+ * The traffic marker's current frame.
+ *
+ * With reduced motion the marker stops flipping and shows a single static
+ * symbol. It still means the same thing: a main-to-agent exchange happened
+ * recently, not that the model is mid-sentence or a tool is running.
+ */
 export function commFrame(nowMs: number = Date.now()): string {
+  if (displayConfig().motion === 'reduced') {
+    return COMM_FRAMES[0];
+  }
   return COMM_FRAMES[Math.floor(nowMs / COMM_FRAME_MS) % COMM_FRAMES.length];
 }
 
@@ -48,24 +59,21 @@ export function formatElapsedShort(startTime: Date, nowMs: number = Date.now()):
   return `${Math.floor(diffMin / 60)}h${String(diffMin % 60).padStart(2, '0')}m`;
 }
 
+const STATUS_VISUALS: Record<SubagentStatus, { icon: string; paint: (text: string) => string }> = {
+  completed: { icon: icons.check, paint: theme.success },
+  error: { icon: icons.cross, paint: theme.error },
+  starting: { icon: icons.starting, paint: theme.info },
+  running: { icon: icons.running, paint: theme.info },
+  // An agent with no observed state reads as a question, not as activity.
+  unknown: { icon: icons.unknown, paint: theme.dim },
+};
+
 export function subagentVisual(node: SubagentTreeNode): {
   icon: string;
   paint: (text: string) => string;
 } {
-  // Static icon per status; color carries the running/terminal distinction.
-  const icon = node.status === 'completed'
-    ? icons.check
-    : node.status === 'error'
-      ? icons.cross
-      : node.status === 'starting'
-        ? icons.starting
-        : icons.running;
-  const paint = node.status === 'completed'
-    ? theme.success
-    : node.status === 'error'
-      ? theme.error
-      : theme.info;
-  return { icon, paint };
+  // Static icon per status; colour carries the running/terminal distinction.
+  return STATUS_VISUALS[node.status] ?? STATUS_VISUALS.running;
 }
 
 export function layoutLeftRight(maxWidth: number, left: string, right = '', gap = 1): string {
