@@ -21,14 +21,25 @@ HUD_DIR="$(dirname "$SCRIPT_DIR")"
 
 ensure_single=0
 focus_tree=0
+open_only=0
+click_x=""
+expect_click=0
 session_name=""
 for arg in "$@"; do
+  if [[ "$expect_click" == "1" ]]; then
+    click_x="$arg"
+    expect_click=0
+    continue
+  fi
   case "$arg" in
     --ensure-single) ensure_single=1 ;;
     # Open the panel if needed and put the cursor in it. F12 deliberately
     # leaves focus in the Codex pane, so this is the way to actually drive
     # the panel's keys without reaching for the mouse.
     --focus-tree) focus_tree=1 ;;
+    # A click on the status bar at column X. Which field was under the cursor
+    # decides what happens; see resolve_click below.
+    --click) expect_click=1 ;;
     *) session_name="$arg" ;;
   esac
 done
@@ -66,6 +77,42 @@ statusline_enabled=1
 if [[ "$statusline" == "0" ]]; then
   statusline_enabled=0
 fi
+# The HUD publishes what it drew, including which columns each field occupies,
+# so a click can be answered with the field under the cursor rather than with
+# one meaning for the whole bar. Everything here fails back to the old
+# behaviour: no snapshot, no node, an unreadable file or an unrecognised
+# column all mean "toggle", which is what the bar did before it had segments.
+resolve_click() {
+  [[ "$click_x" =~ ^[0-9]+$ ]] || return 0
+  command -v node >/dev/null 2>&1 || return 0
+  local click_map="$HUD_DIR/dist/utils/click-map.js"
+  [[ -r "$click_map" ]] || return 0
+
+  local tmux_session state_file action
+  # The binding passes #{session_id} ($N); the state file is named after the
+  # session name, which is what the HUD pane was given in its environment.
+  tmux_session=$(tmux display-message -p -t "$session_name" '#{session_name}' 2>/dev/null | tr -d '\r\n')
+  [[ -n "$tmux_session" ]] || return 0
+  local home="${codex_home:-${CODEX_HOME:-$HOME/.codex}}"
+  state_file="$home/hud/state/$(printf '%s' "$tmux_session" | tr -c 'A-Za-z0-9._-' '_').json"
+  [[ -r "$state_file" ]] || return 0
+
+  # Paths and the column arrive as arguments, never as script text.
+  action=$(node --input-type=module -e '
+    const { readFileSync } = await import("node:fs");
+    const { pathToFileURL } = await import("node:url");
+    const map = await import(pathToFileURL(process.argv[1]).href);
+    process.stdout.write(map.clickActionFromSnapshot(readFileSync(process.argv[2], "utf8"), Number(process.argv[3])));
+  ' "$click_map" "$state_file" "$click_x" 2>/dev/null) || return 0
+
+  case "$action" in
+    open-focus) focus_tree=1 ;;
+    open) open_only=1 ;;
+    *) ;;
+  esac
+}
+resolve_click
+
 cwd_q=$(printf '%q' "$cwd")
 codex_home_q=$(printf '%q' "$codex_home")
 toggle_q=$(printf '%q' "$SCRIPT_DIR/codex-hud-toggle")
@@ -144,9 +191,13 @@ if [[ "$ensure_single" == "1" ]]; then
 fi
 
 if [[ "$mode" == "tree" ]]; then
-  if [[ "$focus_tree" == "1" ]]; then
+  if [[ "$focus_tree" == "1" || "$open_only" == "1" ]]; then
     if pane_alive "$tree_pane"; then
-      tmux select-pane -t "$tree_pane" 2>/dev/null || true
+      # Already open. Focus it only when that is what was asked for: a glance
+      # at a meter is not a reason to take the keyboard out of Codex.
+      if [[ "$focus_tree" == "1" ]]; then
+        tmux select-pane -t "$tree_pane" 2>/dev/null || true
+      fi
       exit 0
     fi
     # The panel is gone but the session still thinks it is open; fall through

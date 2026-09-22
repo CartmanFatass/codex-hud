@@ -665,11 +665,16 @@ install_session_input_policy() {
     toggle_q=$(printf '%q' "$toggle_cmd")
     paste_q=$(printf '%q' "$paste_cmd")
     focus_main='run-shell "tmux select-pane -t #{@codex_hud_main_pane}"'
-    toggle_tree="run-shell -b \"bash $toggle_q #{session_id}\""
+    # The bar is a row of separate fields, so the column decides the meaning:
+    # the alert and the agent counts open the panel and hand it the keyboard,
+    # the meters open it and leave the cursor in Codex, anything else toggles.
+    # Focus is the script's job in every branch, so no focus_main here: adding
+    # one would pull the cursor back out of the panel it was just given.
+    toggle_tree="run-shell -b \"bash $toggle_q #{session_id} --click #{mouse_x}\""
     paste_mouse="run-shell -b \"bash $paste_q #{mouse_pane}\""
 
     tmux bind-key -T codex-hud MouseDown1Pane if-shell -F '#{@codex_hud_main_pane}' \
-        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$toggle_tree ; $focus_main' 'if-shell -F \"#{==:#{mouse_pane},#{@codex_hud_tree_pane}}\" \"send-keys -t= -M\" \"select-pane -t= ; send-keys -M\"'" \
+        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$toggle_tree' 'if-shell -F \"#{==:#{mouse_pane},#{@codex_hud_tree_pane}}\" \"send-keys -t= -M\" \"select-pane -t= ; send-keys -M\"'" \
         'select-pane -t= ; send-keys -M'
 
     # Applications that request mouse input own their complete button events.

@@ -176,6 +176,11 @@ When something needs you, it takes the front of the line:
 A field appears only when there is real data behind it. A missing quota
 snapshot means no quota field, not a bar reading zero.
 
+Clicking the bar acts on the field under the cursor: the alert, the agent
+counts and the `F12` hint open the panel and hand it the keyboard, the meters
+open it and leave the cursor in Codex, and anywhere else toggles the panel as
+the whole bar used to.
+
 ### When the pane is narrow
 
 Fields shorten before any of them disappears, the least important one

@@ -40,10 +40,21 @@ DOWN1=$(t list-keys -T codex-hud MouseDown1Pane)
 WHEEL=$(t list-keys -T codex-hud WheelUpPane)
 RIGHT=$(t list-keys -T codex-hud MouseDown3Pane)
 DRAG=$(t list-keys -T codex-hud MouseDrag1Pane)
-if [[ "$DOWN1" == *"@codex_hud_pane"* && "$DOWN1" == *"tmux select-pane -t #{@codex_hud_main_pane}"* && "$DOWN1" != *"select-pane -t '#{@codex_hud_main_pane}'"* ]]; then
-  ok "MouseDown1Pane focuses Codex through run-shell"
+# A click on the compact bar carries the column it landed on, because which
+# field was under the cursor decides what happens. Focus is then the toggle
+# script's job in every branch: the binding must not pull the cursor back to
+# Codex, or a click meant to hand the panel the keyboard would lose it again.
+if [[ "$DOWN1" == *"@codex_hud_pane"* && "$DOWN1" == *'--click #{mouse_x}'* &&
+      "$DOWN1" != *"select-pane -t '#{@codex_hud_main_pane}'"* ]]; then
+  ok "MouseDown1Pane hands the clicked column to the toggle script"
 else
-  bad "MouseDown1Pane focuses Codex through run-shell ($DOWN1)"
+  bad "MouseDown1Pane hands the clicked column to the toggle script ($DOWN1)"
+fi
+# The compact bar itself is still never a focus target.
+if [[ "$DOWN1" != *"select-pane -t '#{@codex_hud_pane}'"* && "$DOWN1" != *"select-pane -t #{@codex_hud_pane}"* ]]; then
+  ok "MouseDown1Pane never focuses the compact bar itself"
+else
+  bad "MouseDown1Pane never focuses the compact bar itself ($DOWN1)"
 fi
 if [[ "$WHEEL" == *"send-keys -t= -M"* || "$WHEEL" == *"send-keys -t = -M"* ]]; then
   ok "WheelUpPane forwards to the pane under the cursor"
