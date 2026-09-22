@@ -1,6 +1,6 @@
 /**
  * Usage Line Renderer
- * Renders: ⏱️ 10m (session duration and other usage info)
+ * Renders: ◴ 10m (session duration and other usage info)
  */
 
 import type { HudData, LayoutConfig } from '../../types.js';
@@ -27,7 +27,7 @@ function formatDuration(startTime: Date): string {
 
 /**
  * Render the usage line
- * Format: ⏱️ 10m
+ * Format: ◴ 10m
  */
 export function renderUsageLine(data: HudData, layout: LayoutConfig): string | null {
   if (!layout.showDuration) {

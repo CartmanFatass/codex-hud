@@ -112,6 +112,12 @@ export const progressChars = {
   half: '▓',
 };
 
+/**
+ * Eighth-block cells, indexed by how many eighths of a column are filled.
+ * Index 0 is nothing at all, so the caller drops the cell entirely.
+ */
+const PARTIAL_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+
 // Status icons
 export const icons = {
   // Git
@@ -131,13 +137,14 @@ export const icons = {
   unknown: '?',
   spinner: ['▸', '▹', '▸', '▹'],
   
-  // Info
-  clock: '⏱️',
-  folder: '📁',
-  file: '📄',
-  tokens: '🎫',
-  plan: '📝',
-  tools: '🔧',
+  // Info. Monochrome symbols only: an emoji is two columns wide in some
+  // terminals and one in others, and a variation selector makes it worse.
+  clock: '◴',
+  folder: '▪',
+  file: '·',
+  tokens: '#',
+  plan: '☰',
+  tools: '⚙',
   arrow: '→',
   bullet: '▸',
   multiply: '×',
@@ -339,20 +346,39 @@ export function getContextColor(percent: number): (text: string) => string {
 }
 
 /**
+ * A meter with eighth-block resolution.
+ *
+ * A whole-cell meter moves in steps of 100/width percent, so at six columns
+ * the bar sits still through a sixth of the range. The last filled cell is
+ * drawn as a partial block instead, which is eight times finer and costs
+ * nothing: the partial cell replaces an empty one, so the meter is always
+ * exactly `width` columns. It carries the filled colour, because it is fill
+ * rather than remainder.
+ */
+function meter(percent: number, width: number, colorFn: (text: string) => string): string {
+  if (width <= 0) {
+    return '';
+  }
+  const clamped = Math.max(0, Math.min(100, percent));
+  const cells = (clamped / 100) * width;
+  let full = Math.floor(cells);
+  let eighths = Math.round((cells - full) * 8);
+  if (eighths >= 8) {
+    full += 1;
+    eighths = 0;
+  }
+  full = Math.min(width, full);
+  const partial = full < width ? PARTIAL_BLOCKS[eighths] : '';
+  const empty = width - full - (partial ? 1 : 0);
+  return colorFn(progressChars.filled.repeat(full) + partial) + colors.dim(progressChars.empty.repeat(empty));
+}
+
+/**
  * Create a colored progress bar with percentage-based coloring
  * Matches claude-hud style exactly
  */
 export function coloredBar(percent: number, width: number = 10): string {
-  const clamped = Math.max(0, Math.min(100, percent));
-  const filled = Math.round((clamped / 100) * width);
-  const empty = width - filled;
-  
-  const colorFn = getContextColor(clamped);
-  
-  const filledStr = progressChars.filled.repeat(filled);
-  const emptyStr = progressChars.empty.repeat(empty);
-  
-  return colorFn(filledStr) + colors.dim(emptyStr);
+  return meter(percent, width, getContextColor(Math.max(0, Math.min(100, percent))));
 }
 
 /**
@@ -384,10 +410,7 @@ export function getCompletionColor(percent: number): (text: string) => string {
  * A meter that reads as progress towards done rather than capacity consumed.
  */
 export function completionBar(percent: number, width: number = 10): string {
-  const clamped = Math.max(0, Math.min(100, percent));
-  const filled = Math.round((clamped / 100) * width);
-  const colorFn = getCompletionColor(clamped);
-  return colorFn(progressChars.filled.repeat(filled)) + colors.dim(progressChars.empty.repeat(width - filled));
+  return meter(percent, width, getCompletionColor(Math.max(0, Math.min(100, percent))));
 }
 
 /**
