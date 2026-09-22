@@ -112,3 +112,43 @@ renders each field's variants before choosing between them.
 |---|---|
 | Unit (`npm test`) | 63 |
 | Integration (`npm run test:integration`) | 12 suites |
+
+---
+
+# Collection cost
+
+Rendering was never the expensive part. The HUD's idle cost was the work
+behind each frame: subprocesses, polling stats, and re-reading a file that had
+not changed. What follows is what a tick does now.
+
+## Per 1s collection tick
+
+| Work | Before | Now |
+|---|---|---|
+| `git` subprocesses | 5 every 3s (`rev-parse` ×2, `rev-list`, `status` ×2), synchronous, up to 5s of blocked event loop each | 1 `status --porcelain=v2 --branch`, async, at most once per 30s while the repo is still |
+| Rollout parse | every tick, plus once per watcher event | one `stat`; the file is opened only when size, mtime or inode moved |
+| Rollout / sessions / snapshot watches | chokidar polling at 1s on three paths | native fs events (polling kept for `win32` only) |
+| `tmux display-message` | every 2s, `execFileSync` with a 300ms timeout | once at startup, async, and only when stdout is not a TTY |
+| Fallback session scan (no session yet) | 30-day directory walk every 2s, two file reads per rollout | today and yesterday every 2s; the 30-day walk only when those are empty, at most every 30s; each rollout's first line and each shell snapshot read once per path |
+| Repaints | 4 per second, always | 1 per second, rising to 4 only while a subagent exchange is live in a pane taller than one row |
+
+Measured against this repository with a shim counting invocations: a 12-second
+idle run spawns `git` **once**, where the previous build spawned it twenty
+times. The compact pane repaints once a second instead of four times.
+
+## What a reader can notice
+
+The git cache is invalidated by the mtimes of `index`, `HEAD`, the branch ref,
+`packed-refs`, `FETCH_HEAD` and the upstream ref, so staging, committing,
+checking out, fetching and merging all show up on the next tick. An edit that
+only touches the working tree leaves no trace in the git directory, so the
+dirty marker and the file counts can lag it by up to the 30s cache bound. That
+is the one deliberate trade: it is what removes the steady-state subprocess.
+
+Counts themselves are unchanged. The porcelain v2 reader classifies each entry
+exactly as the v1 reader did — a rename counts as a modification, an
+unresolved conflict counts as none of the four kinds — and
+`tests/unit/git-status.test.ts` pins that with fixtures covering a clean
+tracked branch with ahead/behind, a dirty tree with staged, unstaged, renamed,
+conflicted and untracked entries, a detached HEAD, and a branch with no
+upstream.
