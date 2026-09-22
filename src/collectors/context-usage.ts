@@ -37,8 +37,8 @@ export function baselineAdjustedUsedTokens(tokensInContext: number, contextWindo
     return 0;
   }
   const baseline = baselineApplies(contextWindow) ? BASELINE_TOKENS : 0;
-  const used = Math.max(0, tokensInContext) + baseline;
-  return Math.max(0, Math.min(contextWindow, used));
+  const used = Math.max(0, tokensInContext - baseline);
+  return Math.min(contextWindow - baseline, used);
 }
 
 export function percentOfContextWindowRemaining(
@@ -48,9 +48,12 @@ export function percentOfContextWindowRemaining(
   if (contextWindow <= 0) {
     return 0;
   }
+  // Codex rust-v0.154.0 protocol.rs: normalize BOTH sides by the baseline.
+  // For custom windows <= 12K, retain the HUD's raw-window fallback.
+  const effectiveWindow = contextWindow - (baselineApplies(contextWindow) ? BASELINE_TOKENS : 0);
   const used = baselineAdjustedUsedTokens(tokensInContext, contextWindow);
-  const remaining = Math.max(0, contextWindow - used);
-  const percent = (remaining / contextWindow) * 100;
+  const remaining = Math.max(0, effectiveWindow - used);
+  const percent = (remaining / effectiveWindow) * 100;
   return Math.round(Math.max(0, Math.min(100, percent)));
 }
 
@@ -66,7 +69,8 @@ export function buildContextUsage(
   const contextWindow = tokenUsage.model_context_window ?? 0;
   const lastUsage = tokenUsage.last_token_usage;
 
-  if (contextWindow <= 0 || !lastUsage) {
+  if (!Number.isFinite(contextWindow) || contextWindow <= 0 || !lastUsage ||
+      typeof lastUsage.total_tokens !== 'number' || !Number.isFinite(lastUsage.total_tokens)) {
     return undefined;
   }
 
@@ -76,7 +80,7 @@ export function buildContextUsage(
 
   return {
     used: usedWithBaseline,
-    total: contextWindow,
+    total: contextWindow - (baselineApplies(contextWindow) ? BASELINE_TOKENS : 0),
     percent: 100 - percentRemaining,
     inputTokens: getNonCachedInputTokens(lastUsage),
     outputTokens: lastUsage.output_tokens ?? 0,

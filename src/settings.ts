@@ -5,6 +5,7 @@ import type { HudDisplayConfig } from './render/hud-config.js';
 import { getCodexHome } from './utils/codex-path.js';
 
 export interface HudSettings extends HudDisplayConfig {
+  statusline: boolean;
   sort: 'active' | 'created';
   mouse: boolean;
   tasks: boolean;
@@ -13,14 +14,22 @@ export interface HudSettings extends HudDisplayConfig {
   details: boolean;
   refreshMs: number;
   treeWidth: number;
+  // Monitor visibility is independent of legacy boolean panel preferences.
+  agentsPane: 'open' | 'folded' | 'closed';
+  worktreesPane: 'open' | 'folded' | 'closed';
+  changesPane: 'open' | 'folded' | 'closed';
+  detailsPane: 'open' | 'folded' | 'closed';
+  worktreeRoot: string;
 }
 
 /** Built-in defaults; callers apply environment or runtime display overrides. */
 export function defaultSettings(): HudSettings {
   return {
-    density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full',
-    sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
+    density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
+    statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
     details: true, refreshMs: 1000, treeWidth: 0,
+    agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
+    worktreeRoot: '',
   };
 }
 
@@ -32,15 +41,22 @@ const oneOf = (...allowed: string[]) => (value: unknown): boolean =>
   typeof value === 'string' && allowed.includes(value);
 
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
+  statusline: isBoolean,
   density: oneOf('focus', 'balanced', 'full'),
   theme: oneOf('terminal', 'mocha', 'latte', 'none'),
   glyphs: oneOf('glyph', 'text', 'both'),
   motion: oneOf('full', 'reduced'),
+  context: oneOf('used', 'remaining'),
   sort: oneOf('active', 'created'),
   mouse: isBoolean, tasks: isBoolean, changes: isBoolean,
   activity: isBoolean, details: isBoolean,
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
+  agentsPane: oneOf('open', 'folded', 'closed'),
+  worktreesPane: oneOf('open', 'folded', 'closed'),
+  changesPane: oneOf('open', 'folded', 'closed'),
+  detailsPane: oneOf('open', 'folded', 'closed'),
+  worktreeRoot: value => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
 };
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {

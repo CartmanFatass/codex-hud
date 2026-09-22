@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 FAKE_TMUX_DIR="$SCRIPT_DIR/fake-tmux"
 FAKE_BIN_DIR="$(mktemp -d)"
+export CODEX_HUD_TEST_REAL_NODE="$(command -v node)"
+export CODEX_HUD_SETTINGS_PATH="$FAKE_BIN_DIR/settings.json"
 
 cleanup() {
   rm -rf "$FAKE_BIN_DIR"
@@ -21,6 +23,9 @@ cat > "$FAKE_BIN_DIR/node" <<'FAKE'
 if [[ "${1:-}" == "--version" ]]; then
   echo "v20.0.0"
   exit 0
+fi
+if [[ "${1:-}" == "--input-type=module" ]]; then
+  exec "$CODEX_HUD_TEST_REAL_NODE" "$@"
 fi
 exit 0
 FAKE
@@ -73,6 +78,30 @@ if ! grep -q '^split-window ' "$log_file"; then
   exit 1
 fi
 
+if ! grep -qE '^split-window -v' "$log_file"; then
+  echo "default launch should create the bottom statusline pane" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if ! grep -qE '^split-window -h' "$log_file"; then
+  echo "expected default launch to open the right-side tree pane" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if ! grep -q 'tree-page.js' "$log_file"; then
+  echo "expected default tree pane to run tree-page.js" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
+if ! grep -q '@codex_hud_statusline=1' "$log_file" && ! grep -q '@codex_hud_statusline 1' "$log_file"; then
+  echo "expected session to persist statusline enabled" >&2
+  cat "$log_file" >&2
+  exit 1
+fi
+
 if ! grep -q "CODEX_HUD_MAIN_PANE='%1'" "$log_file"; then
   echo "expected HUD command to include CODEX_HUD_MAIN_PANE for pane-bound session resolution" >&2
   cat "$log_file" >&2
@@ -91,25 +120,25 @@ if ! grep -q "send-keys .*CODEX_HOME=" "$log_file"; then
   exit 1
 fi
 
-if ! grep -q "bind-key -T root F12 if-shell" "$log_file"; then
+if ! grep -q "bind-key -T codex-hud F12 if-shell" "$log_file"; then
   echo "expected F12 to be gated on HUD sessions instead of an unconditional root bind" >&2
   cat "$log_file" >&2
   exit 1
 fi
 
-if ! grep -q "bind-key -T root MouseDown1Pane if-shell" "$log_file"; then
+if ! grep -q "bind-key -T codex-hud MouseDown1Pane if-shell" "$log_file"; then
   echo "expected HUD mouse clicks to be gated so they do not steal Codex input" >&2
   cat "$log_file" >&2
   exit 1
 fi
 
-if ! grep -q "bind-key -T root WheelUpPane if-shell" "$log_file"; then
+if ! grep -q "bind-key -T codex-hud WheelUpPane if-shell" "$log_file"; then
   echo "expected HUD wheel events to be forwarded to the pane under the cursor" >&2
   cat "$log_file" >&2
   exit 1
 fi
 
-if ! grep -q "bind-key -T root MouseDown3Pane if-shell" "$log_file"; then
+if ! grep -q "bind-key -T codex-hud MouseDown3Pane if-shell" "$log_file"; then
   echo "expected right-click to paste instead of opening the tmux pane menu" >&2
   cat "$log_file" >&2
   exit 1
@@ -142,6 +171,28 @@ fi
 if ! grep -q "set-option -t .* status off" "$log_file"; then
   echo "expected HUD sessions to disable the tmux status bar" >&2
   cat "$log_file" >&2
+  exit 1
+fi
+
+# Explicit opt-out remains supported and persisted for later F12 toggles.
+: > "$log_file"
+CODEX_HUD_STATUSLINE=0 "$ROOT_DIR/bin/codex-hud" >/tmp/codex-hud-main-pane-test.log 2>&1
+if grep -qE '^split-window -v' "$log_file" || ! grep -q '@codex_hud_statusline=0' "$log_file"; then
+  echo "statusline opt-out must omit the bottom pane and persist disabled" >&2
+  exit 1
+fi
+
+printf '%s\n' '{"statusline":false}' > "$CODEX_HUD_SETTINGS_PATH"
+: > "$log_file"
+env -u CODEX_HUD_STATUSLINE "$ROOT_DIR/bin/codex-hud" >/tmp/codex-hud-main-pane-test.log 2>&1
+if grep -qE '^split-window -v' "$log_file"; then
+  echo "saved statusline=false must omit the bottom pane" >&2
+  exit 1
+fi
+: > "$log_file"
+CODEX_HUD_STATUSLINE=1 "$ROOT_DIR/bin/codex-hud" >/tmp/codex-hud-main-pane-test.log 2>&1
+if ! grep -qE '^split-window -v' "$log_file"; then
+  echo "explicit statusline=1 must override the saved preference" >&2
   exit 1
 fi
 

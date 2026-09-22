@@ -8,6 +8,7 @@ const KEYS: Record<string, string> = {
   '\t': 'tab', '\r': 'enter', '\n': 'enter', ' ': 'enter',
   q: 'close', Q: 'close', '\x03': 'close', '\x04': 'close',
   v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help',
+  x: 'pane-close', '-': 'pane-fold',
   '[': 'previous-tab', ']': 'next-tab', t: 'next-tab',
   '1': 'agents', '2': 'details', '3': 'changes', '4': 'activity',
 };
@@ -21,12 +22,31 @@ const ESCAPES: Record<string, string> = {
 
 export class WorkbenchInputDecoder {
   private pending = '';
+  private pasting = false;
+  constructor(private readonly profile: 'workbench' | 'monitor' = 'workbench') {}
   push(chunk: Buffer): WorkbenchInput[] {
     this.pending += chunk.toString('utf8');
     const inputs: WorkbenchInput[] = [];
     while (this.pending.length) {
+      if (this.pasting) {
+        const end = this.pending.indexOf('\x1b[201~');
+        if (end < 0) {
+          // Only a possible split end delimiter needs retaining, not the paste.
+          this.pending = this.pending.slice(-5);
+          break;
+        }
+        this.pending = this.pending.slice(end + 6);
+        this.pasting = false;
+        continue;
+      }
+      if (this.pending.startsWith('\x1b[200~')) {
+        this.pending = this.pending.slice(6);
+        this.pasting = true;
+        continue;
+      }
       if (this.pending[0] !== '\x1b') {
-        const key = KEYS[this.pending[0]];
+        const key = this.profile === 'monitor' && this.pending[0] === '2' ? 'worktrees'
+          : this.profile === 'monitor' && this.pending[0] === '4' ? 'details' : KEYS[this.pending[0]];
         this.pending = this.pending.slice(1);
         if (key) inputs.push({ type: 'key', key });
         continue;

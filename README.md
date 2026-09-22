@@ -197,17 +197,17 @@ CODEX_HUD_DENSITY=focus codex
 ## Development workbench
 
 `F12` opens the right panel without taking focus from Codex. `Shift+F12` opens and focuses it.
-Four independently scrollable panes share the space (Activity starts collapsed, Tasks is disabled by default); the focused pane has a highlighted border:
+Agents and Worktrees open by default; Changes and Inspector open on demand. The focused heading and selected row are highlighted; status colors are concentrated on the icons:
 
 | Pane | Content |
 |------|---------|
-| **1 Agents** | Nested agents, state, active/failed descendant counts |
-| **2 Details** | Compact agent summary and tool status; expandable commands/output, file diff or event details |
-| **3 Changes** | Workspace files, index/worktree status, added/removed lines, conflicts |
-| **4 Activity** | Tasks / Checks / Events tabs for the main plan, recorded check commands, and recent events |
+| **1 Agents** | Nested agents, state and model/effort badges; badges survive long-name truncation |
+| **2 Worktrees** | Branch, directory and changed/conflicted state for each worktree |
+| **3 Changes** | Files in the selected worktree, index/worktree status and conflicts; selectable even at narrow widths |
+| **4 Inspector** | Agent status and activity times, worktree details, or colored file diffs |
 
-Narrow panes stack vertically. At 70 columns the layout uses list and preview columns.
-Very small terminals show the focused pane; Tab still reaches the other panes.
+Panes stack vertically. Worktrees shrinks to its content; spare height goes to Agents or the focused Inspector.
+At 16–20 columns, margins shrink. Use `z` to give the focused pane the full height.
 Selection follows agent IDs and file paths across refreshes, and every pane retains its scroll position.
 
 | Key | Action |
@@ -221,13 +221,12 @@ Selection follows agent IDs and file paths across refreshes, and every pane reta
 | `h` / `l`, left/right | Fold/unfold or navigate parent/child agents |
 | `s` | Active-first / creation order |
 | `f` or `/` | Filter all, running, failed, unknown |
-| `Enter` | Focus the linked details |
-| `v` / `[v+]` | Expand/collapse agent details and tool records |
+| `Enter` / `v` | Open Inspector; inside Inspector, expand/collapse timestamps, IDs and full paths |
 | Click an agent / `o` | Switch the actual Codex conversation to that agent |
 | **Main** / `m` | Return the Codex conversation to the root session |
-| `[` / `]` or `t` | Change Tasks / Checks / Events tab |
+| `x` / `-` | Close / fold the focused pane; `1`–`4` reopens it |
 | `z` | Zoom/restore focused pane |
-| `?` | Key reference |
+| `?` | Wrapped, scrollable help; arrows, wheel, PgUp/PgDn and g/G navigate |
 | `Esc` | Dismiss help, unzoom, return to list; close from Agents |
 | `q`, `Ctrl+C` | Close the workbench |
 
@@ -237,19 +236,17 @@ Active sorting only rearranges siblings. A running descendant brings its entire 
 latest turn starts determine order, while ordinary token and log updates do not reshuffle the tree.
 Parent links support both metadata locations. Missing status evidence stays unknown.
 
-Agent details default to a short task summary, model/effort, status, timing and one tool status line. Long commands, outputs and session IDs appear only when expanded. Selecting another agent restores the compact view. Session-switch notices stay in the footer.
+Inspector starts with name, model/effort, status, turn age and last activity. Press `v` for full timestamps and UUIDs. Session-switch notices stay in the footer. Clicking Agents summary or blank rows does not navigate; only actual agent rows switch sessions.
 
-Changes belong to the whole workspace; no file ownership is inferred from agent activity.
-Status columns show index then worktree, and line counts sum both diffs. Binary/unavailable stats are marked separately.
-Selecting a file previews staged and unstaged patches, or bounded content for an untracked file.
-Long preview lines wrap; `z` gives the preview more space. Git reads disable external diffs,
+Changes belong to the selected worktree; no file ownership is inferred from agent activity.
+Status columns show index then worktree. Compact summaries use Δ for changed files, S for staged and U for unstaged.
+Select a file and press Enter for staged/unstaged patches or bounded untracked-file content. Inspector zooms automatically; Esc restores the panes.
+Long preview lines wrap; additions are green, deletions red and hunk markers cyan, retaining +/- markers without color. Git reads disable external diffs,
 content filters and partial-clone lazy fetching. The panel provides no staging, commit or checkout actions.
-Checks shows recorded command/exec results: `✓` requires explicit success, `✗` indicates failure,
-and `·` means a result returned without an explicit command outcome.
 
 Settings offers four panel widths: narrow (16), default (the original 20–30 column policy), wide (45), and wider (70). Width changes apply immediately and preserve space for the main conversation. `CODEX_HUD_TREE_WIDTH` remains an initial override when no saved settings exist.
 
-Settings controls density, theme, model labels, motion, sorting, mouse input, optional panes, Tasks, refresh interval and width. Save persists to `$CODEX_HOME/hud-settings.json` (or `CODEX_HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Back discards unsaved edits; Reset prepares defaults for Save.
+Settings controls density, theme, model labels, context mode, the bottom bar, motion, sorting, mouse input, panes, refresh interval and width. Unsaved fields show `*`; the bar switch is marked Next launch. Save persists to `$CODEX_HOME/hud-settings.json` (or `CODEX_HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Back discards unsaved edits; Reset or `r` prepares defaults for Save. Narrow views retain complete Back/Save buttons and use short labels.
 
 ### Output throughput
 
@@ -292,9 +289,27 @@ codex-hud --self-check       # Run diagnostics
 | `CODEX_HUD_DENSITY` | `balanced` | How much the bar shows (`focus` / `balanced` / `full`) |
 | `CODEX_HUD_THEME` | `terminal` | Palette (`terminal` / `mocha` / `latte` / `none`) |
 | `CODEX_HUD_GLYPHS` | `both` | Model badge style (`glyph` / `text` / `both`) |
+| `CODEX_HUD_STATUSLINE` | `1` | Bottom bar enabled by default; `0` disables for new HUD sessions, overriding Settings → Bar next launch |
+| `CODEX_HUD_CONTEXT` | `used` | Context percentage: `used` or `remaining`; also available in Settings |
 | `CODEX_HUD_POSITION` | `bottom` | HUD pane position (`top` / `bottom`) |
-| `CODEX_HUD_HEIGHT` | 1/6 terminal | HUD height in lines |
+| `CODEX_HUD_HEIGHT` | `1` | HUD height in lines |
 | `CODEX_HUD_MOUSE` | `1` | Enable mouse/trackpad scrolling |
+
+Status glyphs use semantic colors: cyan `▸` working, green `✓` turn complete, yellow `■` interrupted, red `✗` failed. Yellow `?` means collection failed; `Ctx~` marks the last context measurement while awaiting a new turn's or compaction's token report. Silence does not turn a working session idle.
+
+The same line includes a cache reminder: `◷~08m` means about eight minutes since the latest model usage report, advancing once per elapsed minute. It turns yellow at 25 minutes and red as `◷~30m+` at 30; a new usage report restarts the clock. This is a 30-minute reminder window, not server-confirmed cache validity or expiry (`~` means estimated). Collection failures use `?`; missing samples hide the field. All density presets include it, with warnings retained at narrow widths. Text mode shows `Cache ~25m`.
+
+Context percentages follow [Codex 0.154's calculation](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/protocol/src/protocol.rs#L2258), subtracting the fixed 12K baseline from both the latest context usage and the window. `Ctx 20%` equals native `80% context left`; the displayed token pair uses the same adjusted window. Custom windows <=12K retain a raw-window fallback. Cumulative session tokens never measure context fill.
+
+```bash
+CODEX_HUD_STATUSLINE=0 codex
+CODEX_HUD_CONTEXT=remaining codex
+CODEX_HUD_GLYPHS=glyph CODEX_HUD_THEME=mocha codex
+```
+
+Saved display preferences override environment defaults; change Context percent, Theme and Model labels in Settings when preferences already exist. Wheel events go to mouse-aware applications or fall back to tmux history scrolling. HUD bindings use a separate key table, and right-clicking the side panel no longer pastes clipboard text or moves keyboard focus.
+
+Settings → **Bar next launch** saves the bottom bar preference for the next new HUD session. An explicit `CODEX_HUD_STATUSLINE` takes precedence over that saved value.
 
 <details>
 <summary>All environment variables</summary>

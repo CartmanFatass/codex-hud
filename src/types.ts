@@ -189,6 +189,10 @@ export interface EventMsgPayload {
     | 'context_compacted'
     | 'turn_started'
     | 'task_started'
+    | 'task_complete'
+    | 'turn_complete'
+    | 'turn_aborted'
+    | 'task_failed'
     | 'item_completed'
     | 'other';
   explanation?: string;
@@ -450,6 +454,10 @@ export interface SessionInfo {
 // ============================================================================
 
 export interface HudData {
+  activity?: SessionActivity;
+  tokenUsageAt?: Date;
+  /** The latest collection failed; displayed values are the last good snapshot. */
+  stale?: boolean;
   outputRate?: TokenRateSnapshot;
   // Core info
   config: CodexConfig;
@@ -476,6 +484,12 @@ export interface HudData {
   displayMode?: HudDisplayMode;
   overview?: SessionOverview;
   subagentTree?: SubagentTree;
+}
+
+export interface SessionActivity {
+  state: 'working' | 'idle' | 'interrupted' | 'error';
+  updatedAt: Date;
+  turnStartedAt?: Date;
 }
 
 // ============================================================================

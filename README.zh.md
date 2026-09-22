@@ -156,16 +156,16 @@ CODEX_HUD_DENSITY=focus codex
 
 `F12` 在右侧打开面板，光标仍留在 Codex。`Shift+F12` 打开并把光标移进面板。
 
-面板包含四个独立区域，焦点所在区域的边框高亮。Activity 默认折叠，Tasks 默认关闭，把空间留给其他区域：
+面板默认显示 Agents 和 Worktrees；Changes、Inspector 按需打开。焦点标题和选中行高亮，状态颜色集中在图标上：
 
 | 区域 | 内容 |
 |------|------|
-| **1 Agents** | 子代理树、运行/失败标记、子树活动数量 |
-| **2 Details** | 代理摘要与工具状态；按需展开命令/输出，或查看文件 diff、事件详情 |
-| **3 Changes** | 整个工作区的文件列表、暂存/未暂存状态、增删行数、冲突 |
-| **4 Activity** | Tasks / Checks / Events 标签页，展示主会话计划、验证命令记录和最近事件 |
+| **1 Agents** | 子代理树、状态、模型/推理图形，长名字缩短时优先保留图形 |
+| **2 Worktrees** | 各 worktree 的分支、目录和修改/冲突状态 |
+| **3 Changes** | 所选 worktree 的文件列表、暂存/未暂存状态和冲突；窄屏也可选择文件 |
+| **4 Inspector** | 代理状态与活动时间、worktree 详情，或带增删配色的文件 diff |
 
-窄栏纵向排列；宽度达到 70 列时采用列表与预览分栏。窗口过小时只显示当前区域，可继续用 Tab 切换。
+各区域纵向排列；Worktrees 按内容收缩，剩余空间优先给 Agents 或当前 Inspector。16–20 列减少边距，`z` 可放大当前区域。
 每个区域保留自己的滚动位置。选中代理按 ID 保持，选中文件按路径保持。
 
 | 按键 | 作用 |
@@ -179,13 +179,12 @@ CODEX_HUD_DENSITY=focus codex
 | `h` / `l`、`←` / `→` | 在树中折叠、展开或移动到父/子节点 |
 | `s` | 切换活跃优先 / 创建顺序 |
 | `f` 或 `/` | 筛选全部、运行中、失败、未知 |
-| `Enter` | 进入联动详情区域 |
-| `v` / `[v+]` | 展开/收起代理详情与工具记录 |
+| `Enter` / `v` | 打开 Inspector；在 Inspector 内展开/收起完整时间、ID 和路径 |
 | 点击 agent / `o` | 将实际 Codex 对话切换到该 agent |
 | **Main** / `m` | 将 Codex 对话切回主会话 |
-| `[` / `]` 或 `t` | 切换 Tasks / Checks / Events |
+| `x` / `-` | 关闭 / 折叠当前区域；`1`–`4` 可重新打开 |
 | `z` | 放大/还原当前区域 |
-| `?` | 快捷键帮助 |
+| `?` | 可换行、滚动的快捷键帮助；支持方向键、滚轮、PgUp/PgDn、g/G |
 | `Esc` | 关闭帮助、还原放大、返回列表；在 Agents 下关闭面板 |
 | `q`、`Ctrl+C` | 关闭面板 |
 
@@ -194,16 +193,15 @@ CODEX_HUD_DENSITY=focus codex
 活跃排序只调整同级节点：有运行中子孙的分支优先，按最新一轮启动时间排序，普通 token 或日志更新不会改变顺序。
 父子关系支持两种日志元数据格式。没有状态证据的代理显示为未知，不会凭最近写入时间判定为运行或完成。
 
-Agent detail 默认只显示简短任务、模型/effort、状态、时间和一行工具结果。长命令、输出、会话 ID 按 `v` 或点击 `[v+]` 再展开；选中另一个代理后自动恢复简洁视图。会话切换提示只显示在底部状态行。
+Inspector 默认显示名字、模型/effort、状态、本轮经过时间和最近活动。按 `v` 展开完整时间与会话 ID。会话切换提示显示在底部；点击 Agents 摘要或空白行不会切换会话，只有具体条目会触发切换。
 
-Changes 是工作区级别的信息，不推断某个文件由哪个 agent 修改。状态的第一列是暂存区，第二列是工作区；增删数合计两部分，二进制和无法读取的数据单独标记。
-选中文件即可查看暂存和未暂存 diff；未跟踪文件提供内容预览。预览有大小限制，长行会折行，支持 `z` 放大。
+Changes 属于选中的 worktree，不推断某个文件由哪个 agent 修改。状态的第一列是暂存区，第二列是工作区；窄屏摘要中 `Δ` 是修改文件数，`S` 是暂存、`U` 是未暂存数量。
+选中文件后按 Enter 打开暂存和未暂存 diff，自动放大 Inspector；Esc 还原。新增行绿色、删除行红色、hunk 标记青色，保留 `+` / `-` 符号；长行会折行，未跟踪文件提供有大小限制的内容预览。
 这些操作只读取 Git 数据；禁用外部 diff、内容过滤器和部分克隆的自动下载，不提供暂存、提交或切换分支操作。
-Checks 展示已记录的命令/exec 结果：明确成功才显示 `✓`，明确失败显示 `✗`，只收到返回但没有退出结果时显示 `·`。
 
 Settings 提供四档宽度：窄（16 列）、默认（沿用原来的 20–30 列策略）、宽（45 列）、更宽（70 列）。保存后立即调整，并为主对话区保留空间。没有保存过设置时，仍支持 `CODEX_HUD_TREE_WIDTH` 指定初始宽度。
 
-独立设置页可调整密度、主题、模型标签、动画、排序、鼠标、各区域、Tasks、刷新间隔和宽度。Save 写入 `$CODEX_HOME/hud-settings.json`（可用 `CODEX_HUD_SETTINGS_PATH` 改路径），紧凑 HUD 下次刷新时同步显示偏好。已保存设置优先于环境默认值，`NO_COLOR` 始终优先。Back 放弃未保存修改；Reset 恢复默认草稿，需 Save 才应用。
+独立设置页可调整密度、主题、模型标签、上下文口径、底栏开关、动画、排序、鼠标、各区域、刷新间隔和宽度。未保存字段带 `*`；底栏开关标注 Next launch。Save 写入 `$CODEX_HOME/hud-settings.json`（可用 `CODEX_HUD_SETTINGS_PATH` 改路径），紧凑 HUD 下次刷新时同步显示偏好。已保存设置优先于环境默认值，`NO_COLOR` 始终优先。Back 放弃未保存修改；Reset 或 `r` 恢复默认草稿，需 Save 才应用。窄屏保留完整 Back/Save 按钮，使用短标签。
 
 ### 输出速度
 
@@ -245,9 +243,27 @@ codex-hud --self-check       # 运行环境诊断
 | `CODEX_HUD_DENSITY` | `balanced` | 状态栏显示密度（`focus` / `balanced` / `full`） |
 | `CODEX_HUD_THEME` | `terminal` | 配色（`terminal` / `mocha` / `latte` / `none`） |
 | `CODEX_HUD_GLYPHS` | `both` | 模型标记样式（`glyph` / `text` / `both`） |
+| `CODEX_HUD_STATUSLINE` | `1` | 默认开启底部状态栏，设为 `0` 关闭；覆盖 Settings 的 Bar next launch，下次新建会话生效 |
+| `CODEX_HUD_CONTEXT` | `used` | 上下文百分比：`used` 已用 / `remaining` 剩余；也可在 Settings 保存 |
 | `CODEX_HUD_POSITION` | `bottom` | HUD 面板位置（`top` / `bottom`） |
-| `CODEX_HUD_HEIGHT` | 终端 1/6 | HUD 高度（行数） |
+| `CODEX_HUD_HEIGHT` | `1` | HUD 高度（行数） |
 | `CODEX_HUD_MOUSE` | `1` | 启用鼠标/触控板滚动 |
+
+状态图形使用语义配色：青色 `▸` 工作中、绿色 `✓` 本轮结束、黄色 `■` 已中断、红色 `✗` 失败。读取暂时失败时显示黄色 `?`；`Ctx~` 表示当前仍是上一份上下文采样，等待新一轮或压缩后的 token 报告。安静的日志不会自行把工作中改成空闲。
+
+缓存提醒也在同一行：`◷~08m` 表示距最近一次模型用量报告约 8 分钟，每满一分钟更新；25 分钟变黄，30 分钟后显示红色 `◷~30m+`，新用量报告到达时重新计时。采用 30 分钟提醒窗口，`~` 表示估算，不代表服务端确认缓存仍有效或已经过期。读取异常时改用 `?`；没有采样时不显示。提醒在所有密度中启用，25 分钟后优先保留在窄窗口中；纯文字模式显示 `Cache ~25m`。
+
+上下文比例已对齐 [Codex 0.154 的计算](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/protocol/src/protocol.rs#L2258)：使用最近一次 token 报告，从已用量和窗口大小两侧扣除 12K 固定基线。`Ctx 20%` 对应原生的 `80% context left`；括号中显示扣除基线后的已用量/可用窗口。自定义窗口不超过 12K 时按原始窗口计算。总会话 token 不用于计算上下文占用。
+
+```bash
+CODEX_HUD_STATUSLINE=0 codex               # 关闭底部状态栏，仍可使用侧栏
+CODEX_HUD_CONTEXT=remaining codex         # 与原生状态栏同方向显示剩余比例
+CODEX_HUD_GLYPHS=glyph CODEX_HUD_THEME=mocha codex
+```
+
+已有保存的显示设置优先于环境默认值，可在侧栏 Settings 的 Context percent、Theme、Model labels 中修改。主区域滚轮在应用接收鼠标时转发给应用，否则保留 tmux 历史滚动；HUD 使用独立按键表，侧栏右键不再粘贴或夺走键盘焦点。
+
+底部状态栏也可在 Settings 的 **Bar next launch** 中保存开关，下一次新建 HUD 会话生效；显式 `CODEX_HUD_STATUSLINE` 优先于保存值。
 
 <details>
 <summary>全部环境变量</summary>

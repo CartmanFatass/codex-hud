@@ -27,7 +27,7 @@ test('Ctx retains the latest usage through idle polls and partial token updates'
   };
   try {
     const initial = await context();
-    assert.equal(initial?.used, 62000);
+    assert.equal(initial?.used, 38000);
     assert.deepEqual(await context(), initial, 'no new bytes keeps the snapshot');
     fs.appendFileSync(file, event({ type: 'task_complete' }) + event({ type: 'token_count', info: null }));
     assert.deepEqual(await context(), initial, 'idle and quota-only events keep the snapshot');
@@ -38,14 +38,14 @@ test('Ctx retains the latest usage through idle polls and partial token updates'
     const retained = await context();
     assert.deepEqual(retained, initial, 'partial token reports keep the last known usage');
     const line = stripAnsi(renderHud(makeHudData({ contextUsage: retained }), { width: 200, showDetails: false })[0]);
-    assert.match(line, /Ctx.*31%/);
+    assert.match(line, /Ctx.*20%/);
 
     const replay = await parseRolloutFile(file);
     assert.deepEqual(buildContextUsage(replay.result.tokenUsage ?? undefined, 0, null), initial,
       'a full replay retains usage exactly like incremental polling');
 
     fs.appendFileSync(file, event({ type: 'token_count', info: { last_token_usage: { total_tokens: 10000 } } }));
-    assert.equal((await context())?.used, 22000, 'new measurements replace old usage, including decreases');
+    assert.equal((await context())?.used, 0, 'new measurements replace old usage, including decreases');
     const emptySession = path.join(dir, 'other.jsonl');
     fs.writeFileSync(emptySession, event({ type: 'task_started', model_context_window: 200000 }));
     parser.setRolloutPath(emptySession);

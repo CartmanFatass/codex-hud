@@ -90,22 +90,22 @@ assert_mouse_setting() {
       cat "$log_file" >&2
       exit 1
     fi
-    if ! grep -q "bind-key -T root MouseDown1Pane if-shell" "$log_file"; then
+    if ! grep -q "bind-key -T codex-hud MouseDown1Pane if-shell" "$log_file"; then
       echo "[$label] expected MouseDown1Pane routing so HUD clicks do not steal Codex keys" >&2
       cat "$log_file" >&2
       exit 1
     fi
-    if ! grep -q "bind-key -T root WheelUpPane if-shell" "$log_file"; then
+    if ! grep -q "bind-key -T codex-hud WheelUpPane if-shell" "$log_file"; then
       echo "[$label] expected WheelUpPane routing so Codex keeps wheel input" >&2
       cat "$log_file" >&2
       exit 1
     fi
-    if ! grep -q "bind-key -T root MouseDrag1Pane if-shell" "$log_file"; then
+    if ! grep -q "bind-key -T codex-hud MouseDrag1Pane if-shell" "$log_file"; then
       echo "[$label] expected MouseDrag1Pane routing so drag can select text when Codex is not capturing mouse" >&2
       cat "$log_file" >&2
       exit 1
     fi
-    if ! grep -q "bind-key -T root MouseDown3Pane if-shell" "$log_file"; then
+    if ! grep -q "bind-key -T codex-hud MouseDown3Pane if-shell" "$log_file"; then
       echo "[$label] expected MouseDown3Pane paste instead of the tmux pane menu" >&2
       cat "$log_file" >&2
       exit 1

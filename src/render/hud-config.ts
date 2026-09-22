@@ -10,12 +10,14 @@ export type Density = 'focus' | 'balanced' | 'full';
 export type ThemeName = 'terminal' | 'mocha' | 'latte' | 'none';
 export type GlyphMode = 'glyph' | 'text' | 'both';
 export type MotionMode = 'full' | 'reduced';
+export type ContextMode = 'used' | 'remaining';
 
 export interface HudDisplayConfig {
   density: Density;
   theme: ThemeName;
   glyphs: GlyphMode;
   motion: MotionMode;
+  context: ContextMode;
 }
 
 const DENSITIES: Density[] = ['focus', 'balanced', 'full'];
@@ -44,6 +46,7 @@ export function resolveDisplayConfig(env: NodeJS.ProcessEnv = process.env): HudD
     theme: resolveTheme(env),
     glyphs: pick(env.CODEX_HUD_GLYPHS, GLYPH_MODES, 'both'),
     motion: env.CODEX_HUD_REDUCED_MOTION === '1' ? 'reduced' : 'full',
+    context: pick(env.CODEX_HUD_CONTEXT, ['used', 'remaining'], 'used'),
   };
 }
 

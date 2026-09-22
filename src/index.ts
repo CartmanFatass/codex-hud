@@ -126,14 +126,16 @@ async function collectData(): Promise<HudData> {
   const syncData = collectSyncData();
 
   // Check for active session
-  const session = sessionFinder.check();
+  let session = sessionFinder.getCurrentSession();
+  let stale = false;
+  try { session = sessionFinder.check(); } catch { stale = true; }
 
   // Re-parse the current rollout every refresh tick. The parser is incremental,
   // so this keeps runtime session state fresh even if file watcher events are
   // missed on Windows.
   let rolloutData = rolloutParser.getCached();
   if (session) {
-    rolloutData = await parseRolloutSafely();
+    try { rolloutData = await parseRolloutSafely(); } catch { stale = true; }
   }
 
   const runtimeSession = paneRuntimeStateCollector?.collect() ?? undefined;
@@ -153,6 +155,9 @@ async function collectData(): Promise<HudData> {
 
   const hudData: HudData = {
     ...syncData,
+    activity: rolloutData?.activity,
+    tokenUsageAt: rolloutData?.tokenUsageAt,
+    stale,
     session: rolloutData?.session ?? undefined,
     runtimeSession,
     toolActivity: rolloutData?.toolActivity ?? undefined,
@@ -323,11 +328,10 @@ async function main(): Promise<void> {
     configNeedsRefresh = true;
   });
 
-  hudFileWatcher.onRolloutChange(async () => {
-    const session = sessionFinder.check();
-    if (session) {
-      await parseRolloutSafely();
-    }
+  hudFileWatcher.onRolloutChange(() => {
+    try {
+      if (sessionFinder.check()) void parseRolloutSafely().catch(() => {});
+    } catch { /* The next collection displays a failed read without an unhandled rejection. */ }
   });
 
   hudFileWatcher.start();

@@ -20,15 +20,13 @@ export function createParseQueue<T>(parseFn: () => Promise<T>): () => Promise<T>
       return result;
     })();
 
-    const result = await parseInFlight;
-    parseInFlight = null;
-
-    if (parseQueued) {
+    try {
+      return await parseInFlight;
+    } finally {
+      // A transient read failure must not poison every later refresh.
+      parseInFlight = null;
       parseQueued = false;
-      return run();
     }
-
-    return result;
   };
 
   return run;

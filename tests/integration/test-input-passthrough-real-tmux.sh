@@ -30,35 +30,16 @@ t set-option -t s @codex_hud_pane "$HUD"
 t set-option -t s mouse on
 TOGGLE="$REPO_DIR/bin/codex-hud-toggle"
 
-# Same bindings the wrapper installs. Do not put %pane ids in -t inside
-# bind-key; tmux either fails to expand them or treats %N as a substitution.
+# Exercise the actual wrapper policy instead of maintaining a second copy.
+export TMUX="$(t display-message -p '#{socket_path}'),$$,%0"
 PASTE="$REPO_DIR/bin/codex-hud-paste"
-toggle_q=$(printf '%q' "$TOGGLE")
-paste_q=$(printf '%q' "$PASTE")
-focus_main='run-shell "tmux select-pane -t #{@codex_hud_main_pane}"'
-toggle_tree="run-shell -b \"bash $toggle_q #{session_id}\""
-paste_mouse="run-shell -b \"bash $paste_q #{mouse_pane}\""
+source <(sed -n '/^install_session_input_policy() {/,/^}/p' "$REPO_DIR/bin/codex-hud")
+install_session_input_policy s "$TOGGLE"
 
-t bind-key -T root MouseDown1Pane if-shell -F '#{@codex_hud_main_pane}' \
-  "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$toggle_tree ; $focus_main' 'select-pane -t= ; send-keys -M'" \
-  'select-pane -t= ; send-keys -M'
-
-t bind-key -T root WheelUpPane if-shell -F '#{@codex_hud_main_pane}' \
-  'send-keys -t= -M' \
-  'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"'
-
-t bind-key -T root MouseDown3Pane if-shell -F '#{@codex_hud_main_pane}' \
-  "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; $paste_mouse'" \
-  'select-pane -t= ; paste-buffer -p'
-
-t bind-key -T root MouseDrag1Pane if-shell -F '#{@codex_hud_main_pane}' \
-  "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'if-shell -F \"#{||:#{pane_in_mode},#{mouse_any_flag}}\" \"send-keys -M\" \"copy-mode -M\"'" \
-  'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
-
-DOWN1=$(t list-keys -T root MouseDown1Pane)
-WHEEL=$(t list-keys -T root WheelUpPane)
-RIGHT=$(t list-keys -T root MouseDown3Pane)
-DRAG=$(t list-keys -T root MouseDrag1Pane)
+DOWN1=$(t list-keys -T codex-hud MouseDown1Pane)
+WHEEL=$(t list-keys -T codex-hud WheelUpPane)
+RIGHT=$(t list-keys -T codex-hud MouseDown3Pane)
+DRAG=$(t list-keys -T codex-hud MouseDrag1Pane)
 if [[ "$DOWN1" == *"@codex_hud_pane"* && "$DOWN1" == *"tmux select-pane -t #{@codex_hud_main_pane}"* && "$DOWN1" != *"select-pane -t '#{@codex_hud_main_pane}'"* ]]; then
   ok "MouseDown1Pane focuses Codex through run-shell"
 else

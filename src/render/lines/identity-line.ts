@@ -8,6 +8,7 @@ import type { HudData, LayoutConfig } from '../../types.js';
 import { coloredBar, coloredPercent, truncateAnsi, visualLength } from '../colors.js';
 import { getModelDisplayName } from '../../collectors/codex-config.js';
 import { renderModelEffortToken } from '../model-glyphs.js';
+import { buildContextUsage } from '../../collectors/context-usage.js';
 
 /**
  * Render the identity line
@@ -27,17 +28,9 @@ export function renderIdentityLine(
   const showContextBar = layout.showContextBar !== false;
 
   // Context usage bar (if available)
-  if (showContextBar && data.contextUsage) {
-    const ctx = data.contextUsage;
+  const ctx = data.contextUsage ?? buildContextUsage(data.tokenUsage, 0, null);
+  if (showContextBar && ctx) {
     contextDisplay = `${coloredBar(ctx.percent, layout.barWidth)} ${coloredPercent(ctx.percent)}`;
-  } else if (showContextBar && data.tokenUsage?.total_token_usage) {
-    const usage = data.tokenUsage.total_token_usage;
-    const total = usage.total_tokens ?? 0;
-    const contextWindow = data.tokenUsage.model_context_window;
-    if (contextWindow && contextWindow > 0) {
-      const percent = Math.round((total / contextWindow) * 100);
-      contextDisplay = `${coloredBar(percent, layout.barWidth)} ${coloredPercent(percent)}`;
-    }
   }
 
   const maxWidth = options.maxWidth;

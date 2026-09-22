@@ -10,6 +10,6 @@ export function runtimeSettings():HudSettings {
   return settings;
 }
 export function applyDisplaySettings(settings:HudSettings):void {
-  setDisplayConfig({density:settings.density,glyphs:settings.glyphs,motion:settings.motion,
+  setDisplayConfig({density:settings.density,glyphs:settings.glyphs,motion:settings.motion,context:settings.context,
     theme:process.env.NO_COLOR ? 'none' : settings.theme});
 }

@@ -12,7 +12,7 @@ import { formatTokenRate } from '../../collectors/token-rate.js';
  */
 
 import type { HudData } from '../../types.js';
-import { colors, coloredBar, coloredPercent, completionBar, icons, theme, truncate } from '../colors.js';
+import { colors, coloredBar, coloredPercent, completionBar, getContextColor, icons, theme, truncate } from '../colors.js';
 import { renderModelEffortToken } from '../model-glyphs.js';
 import { formatTokenCount } from '../lines/index.js';
 import { collectAttention, highestSeverity } from '../attention.js';
@@ -25,9 +25,11 @@ import type { BarModule } from './engine.js';
 export const MODULE_PRIORITY = {
   attention: 100,
   identity: 92,
+  activity: 94,
   project: 88,
   agents: 70,
-  context: 66,
+  context: 93,
+  cache: 64,
   tasks: 60,
   quota: 50,
   tokens: 40,
@@ -43,8 +45,8 @@ export const MODULE_PRIORITY = {
  * layout engine's job; this is about what the user asked to see at all.
  */
 const DENSITY_MODULES: Record<Density, ReadonlyArray<keyof typeof MODULE_PRIORITY>> = {
-  focus: ['attention', 'identity', 'project', 'agents', 'context', 'hint'],
-  balanced: ['attention', 'identity', 'project', 'agents', 'context', 'tasks', 'quota', 'speed', 'timer', 'hint'],
+  focus: ['attention', 'activity', 'identity', 'project', 'agents', 'context', 'cache', 'hint'],
+  balanced: ['attention', 'activity', 'identity', 'project', 'agents', 'context', 'cache', 'tasks', 'quota', 'speed', 'timer', 'hint'],
   full: Object.keys(MODULE_PRIORITY) as Array<keyof typeof MODULE_PRIORITY>,
 };
 
@@ -121,6 +123,20 @@ function identityModule(data: HudData, glyphs: GlyphMode): BarModule {
   };
 }
 
+function activityModule(data: HudData, glyphs: GlyphMode): BarModule {
+  const status = data.stale ? 'stale' : data.activity?.state;
+  if (!status) return { id: 'activity', priority: MODULE_PRIORITY.activity, variants: {} };
+  const [glyph, label, paint] = {
+    working: ['▸', 'Working', theme.info],
+    idle: ['✓', 'Idle', theme.success],
+    interrupted: ['■', 'Interrupted', theme.warning],
+    error: ['✗', 'Failed', theme.error],
+    stale: ['?', 'Sync delayed', theme.warning],
+  }[status] as [string, string, (text: string) => string];
+  return { id: 'activity', priority: MODULE_PRIORITY.activity,
+    variants: { full: paint(glyphs === 'text' ? label : glyph), min: paint(glyphs === 'text' ? label : glyph) } };
+}
+
 function projectModule(data: HudData): BarModule {
   const name = data.project.projectName;
   const branch = data.git.isGitRepo ? data.git.branch : null;
@@ -160,16 +176,43 @@ function contextModule(data: HudData, barWidth: number): BarModule {
     return { id: 'context', priority: MODULE_PRIORITY.context, variants: {} };
   }
   const percent = usage.percent;
+  const remaining = displayConfig().context === 'remaining';
+  const number = getContextColor(percent)(remaining ? `${100 - percent}% left` : `${percent}%`);
+  const newerActivity = Math.max(data.activity?.turnStartedAt?.getTime() ?? 0, usage.lastCompactTime?.getTime() ?? 0);
+  const pending = data.stale || (newerActivity > 0 && (data.tokenUsageAt?.getTime() ?? 0) < newerActivity);
+  const label = colors.dim(pending ? 'Ctx~' : 'Ctx');
   const compact = usage.compactCount > 0 ? colors.dim(` ${icons.refresh}${usage.compactCount}`) : '';
   const totals = colors.dim(` (${formatTokenCount(usage.used)}/${formatTokenCount(usage.total)})`);
   return {
     id: 'context',
     priority: MODULE_PRIORITY.context,
     variants: {
-      full: `${colors.dim('Ctx')} ${coloredBar(percent, barWidth)} ${coloredPercent(percent)}${totals}${compact}`,
-      short: `${colors.dim('Ctx')} ${coloredBar(percent, Math.min(6, barWidth))} ${coloredPercent(percent)}`,
-      min: `${colors.dim('Ctx')} ${coloredPercent(percent)}`,
+      full: `${label} ${coloredBar(percent, barWidth)} ${number}${totals}${compact}`,
+      short: `${label} ${coloredBar(percent, Math.min(6, barWidth))} ${number}`,
+      min: `${label} ${number}`,
     },
+  };
+}
+
+// A user-facing 30-minute reminder, not a server-reported cache expiry.
+// Only model usage advances the anchor; polling, tools and UI activity do not.
+function cacheModule(data: HudData, nowMs: number, glyphs: GlyphMode): BarModule {
+  const sampledAt = data.tokenUsageAt?.getTime();
+  if (sampledAt === undefined || !Number.isFinite(sampledAt) || !Number.isFinite(nowMs)) {
+    return { id: 'cache', priority: MODULE_PRIORITY.cache, variants: {} };
+  }
+  const minutes = Math.max(0, Math.floor((nowMs - sampledAt) / 60_000));
+  const warning = minutes >= 25;
+  const expired = minutes >= 30;
+  const age = expired ? '30m+' : `${String(minutes).padStart(2, '0')}m`;
+  const marker = data.stale ? '?' : '~';
+  const text = `${glyphs === 'text' ? 'Cache ' : '◷'}${marker}${age}`;
+  const paint = expired ? theme.error : warning || data.stale ? theme.warning : colors.dim;
+  return {
+    id: 'cache',
+    priority: warning ? 96 : MODULE_PRIORITY.cache,
+    pinned: warning,
+    variants: { full: paint(text), min: paint(text) },
   };
 }
 
@@ -261,6 +304,10 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
 }
 
 function speedModule(data: HudData, nowMs: number): BarModule {
+  if (data.stale || (data.activity?.state === 'working' &&
+      (data.outputRate?.sampledAt.getTime() ?? 0) < (data.activity.turnStartedAt?.getTime() ?? 0))) {
+    return { id: 'speed', priority: MODULE_PRIORITY.speed, variants: {} };
+  }
   const rate = formatTokenRate(data.outputRate, nowMs);
   return { id: 'speed', priority: MODULE_PRIORITY.speed,
     variants: rate ? { full: `${colors.dim('Out')} ${theme.value(rate)}`, short: theme.value(rate) } : {} };
@@ -388,10 +435,12 @@ export function buildBarModules(data: HudData, options: BarModuleOptions = {}): 
 
   const modules: BarModule[] = [
     attentionModule(data, nowMs),
+    activityModule(data, glyphs),
     identityModule(data, glyphs),
     projectModule(data),
     agentsModule(data),
     contextModule(data, barWidth),
+    cacheModule(data, nowMs, glyphs),
     tasksModule(data),
     quotaModule(data, nowMs),
     tokensModule(data),

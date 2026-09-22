@@ -52,15 +52,21 @@ def send(keys):
  pending=b''
  os.write(master,keys)
 try:
- wait_for('FOUND_THE_CAUSE')
- send(b'2v')
- wait_for('Inspector')
+ screen=wait_for('agent-00')
+ plain=ansi.sub('', screen.decode('utf-8','replace'))
+ assert 'FOUND_THE_CAUSE' not in plain, 'monitor must not show reply text'
+ assert 'Checks' not in plain and 'Reports' not in plain
+ assert '1 Agents' in plain and '2 Worktrees' in plain
+ wait_for('1 mod')
  send(b'v')
- wait_for('2 Reports')
- send(b'3\r')
- wait_for('1 unstaged')
+ inspect=wait_for('Turn age:')
+ assert b'\\x1b[' not in inspect, 'Inspector must not print escaped colour codes'
+ send(b'x')
+ wait_for('1 Agents')
+ send(b'3')
+ wait_for('sample.ts')
  send(b'z')
- zoom=wait_for('read only')
+ zoom=wait_for('sample.ts')
  assert b'1 Agents' not in zoom, 'zoom must hide other panes'
  send(b'\x1b')
  wait_for('1 Agents')
@@ -71,18 +77,19 @@ try:
  wait_for('agent-12')
  fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',30,100,0,0))
  os.kill(proc.pid,signal.SIGWINCH)
- wait_for('3 Changes')
+ wait_for('sample.ts')
  send(b'3\r')
- wait_for('Unstaged')
+ zoom=wait_for('after')
+ assert b'1 Agents' not in zoom.rsplit(b'\x1b[H',1)[-1], 'opening diff must zoom automatically'
+ send(b'z')
+ wait_for('1 Agents')
  send(b'z')
  zoom=wait_for('after')
  assert b'1 Agents' not in zoom, 'wide zoom must hide other panes'
  send(b'\x1b')
  wait_for('1 Agents')
  send(b'4')
- wait_for('Checks')
- send(b']')
- wait_for('Events')
+ wait_for('Inspector')
  send(b',')
  wait_for('HUD density')
  send(b'l')
@@ -91,6 +98,15 @@ try:
  wait_for('Saved')
  send(b'\x1b')
  wait_for('1 Agents')
+ fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',12,16,0,0))
+ os.kill(proc.pid,signal.SIGWINCH)
+ wait_for('Agents')
+ send(b'?')
+ wait_for('Monitor keys')
+ send(b'G')
+ wait_for('ultra')
+ send(b'\x1b')
+ wait_for('Agents')
  send(b'q')
  tail=b''
  end=time.monotonic()+3
@@ -102,7 +118,7 @@ try:
  proc.wait(timeout=3)
  assert proc.returncode==0, proc.returncode
  assert b'\x1b[?1000l' in tail and b'\x1b[?1006l' in tail, 'mouse tracking must be disabled'
- print('PTY workbench flow passed')
+ print('PTY monitor flow passed')
 finally:
  if proc.poll() is None: proc.kill(); proc.wait()
  os.close(master)
@@ -113,7 +129,7 @@ finally:
       env:{...process.env,CODEX_HUD_CWD:repo,CODEX_SESSIONS_PATH:sessions,CODEX_HOME:dir,CODEX_HUD_SETTINGS_PATH:path.join(dir,'hud-settings.json'),CODEX_HUD_MAIN_PANE:'',CODEX_HUD_SESSION_START:'',CODEX_HUD_TOGGLE_CMD:'',TERM:'xterm-256color'},
       encoding:'utf8',timeout:30000,
     });
-    assert.match(result.stdout,/PTY workbench flow passed/);
+    assert.match(result.stdout,/PTY monitor flow passed/);
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'hud-settings.json'),'utf8')).density,'full');
   } finally { fs.rmSync(dir,{recursive:true,force:true}); }
 });

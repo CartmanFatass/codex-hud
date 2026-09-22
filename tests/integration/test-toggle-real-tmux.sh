@@ -256,6 +256,28 @@ assert_not_contains "T9 compact HUD still hides subagent names" "$HUD_CAPTURE" "
 assert_eq "T9 tree shows subagent with model/effort glyphs" "$TREE_OK" "1"
 assert_contains "T9 tree lists the subagent" "$TREE_CAPTURE" "TmuxChild"
 
+# ------------------------------------------------- T10: statusline off never recreates the bottom HUD
+t new-session -d -s s4 -x 200 -y 40 'sleep 300'
+S4_MAIN=$(t list-panes -t s4 -F '#{pane_id}' | head -1)
+t set-option -t s4 @codex_hud_cwd "$REPO_DIR"
+t set-option -t s4 @codex_hud_main_pane "$S4_MAIN"
+t set-option -t s4 @codex_hud_height 1
+t set-option -t s4 @codex_hud_mode "single"
+t set-option -t s4 @codex_hud_session_start "1234567890"
+t set-option -t s4 @codex_hud_codex_home "/tmp/codex-hud-test-home"
+t set-option -t s4 @codex_hud_statusline "0"
+t set-option -t s4 @codex_hud_hud_cmd \
+  "sh -c 'echo should-not-run; exec sleep 300'"
+toggle s4
+assert_eq "T10 mode becomes tree without statusline" "$(get_opt s4 @codex_hud_mode)" "tree"
+assert_eq "T10 pane count is main + tree" "$(pane_count s4)" "2"
+if pane_alive "$(get_opt s4 @codex_hud_tree_pane)"; then ok "T10 tree pane is alive"; else bad "T10 tree pane is alive"; fi
+if pane_alive "$(get_opt s4 @codex_hud_pane)"; then bad "T10 did not create a bottom HUD"; else ok "T10 did not create a bottom HUD"; fi
+toggle s4
+assert_eq "T10 back to single without HUD" "$(get_opt s4 @codex_hud_mode)" "single"
+assert_eq "T10 pane count is main only" "$(pane_count s4)" "1"
+if pane_alive "$(get_opt s4 @codex_hud_pane)"; then bad "T10 closing tree did not recreate HUD"; else ok "T10 closing tree did not recreate HUD"; fi
+
 echo "----------------------------------------"
 echo "pass=$PASS fail=$FAIL"
 if [[ "$FAIL" -gt 0 ]]; then

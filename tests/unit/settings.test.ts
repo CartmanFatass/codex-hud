@@ -23,9 +23,11 @@ function withSettingsFile(run: (file: string, directory: string) => void): void 
 test('missing settings keep display defaults and hide optional tasks and activity', () => {
   withSettingsFile((file) => {
     assert.deepEqual(loadSettings(), {
-      density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full',
-      sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
+      density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
+      statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
       details: true, refreshMs: 1000, treeWidth: 0,
+      agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
+      worktreeRoot: '',
     });
     assert.equal(fs.existsSync(file), false, 'reading defaults does not create files');
     const changed = defaultSettings();
@@ -34,17 +36,31 @@ test('missing settings keep display defaults and hide optional tasks and activit
   });
 });
 
+test('status bar and context display preferences persist and validate', () => {
+  withSettingsFile(file => {
+    assert.equal(loadSettings().statusline, true);
+    saveSettings({ statusline: false, context: 'remaining' });
+    assert.equal(loadSettings().statusline, false);
+    assert.equal(loadSettings().context, 'remaining');
+    fs.writeFileSync(file, JSON.stringify({ statusline: 'off', context: 'auto' }));
+    assert.equal(loadSettings().statusline, true);
+    assert.equal(loadSettings().context, 'used');
+  });
+});
+
 test('load validates known settings without importing unknown or invalid values', () => {
   withSettingsFile((file) => {
     fs.writeFileSync(file, JSON.stringify({
-      density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced',
-      sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
+      density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
+      statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
       details: false, refreshMs: 250, treeWidth: 40, unknown: 'ignored',
     }));
     assert.deepEqual(loadSettings(), {
-      density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced',
-      sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
+      density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
+      statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
       details: false, refreshMs: 250, treeWidth: 40,
+      agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
+      worktreeRoot: '',
     });
     fs.writeFileSync(file, JSON.stringify({
       density: 'huge', theme: {}, glyphs: null, motion: 'none', sort: 'recent',
@@ -52,6 +68,33 @@ test('load validates known settings without importing unknown or invalid values'
       refreshMs: 99, treeWidth: 15, unknown: true,
     }));
     assert.deepEqual(loadSettings(), defaultSettings());
+  });
+});
+
+test('monitor pane modes and worktreeRoot validate independently of legacy panel booleans', () => {
+  withSettingsFile((file) => {
+    fs.writeFileSync(file, JSON.stringify({
+      agentsPane: 'closed', worktreesPane: 'folded', changesPane: 'open', detailsPane: 'open',
+      worktreeRoot: '/repo', details: true, changes: false,
+    }));
+    const loaded = loadSettings();
+    assert.equal(loaded.agentsPane, 'closed');
+    assert.equal(loaded.worktreesPane, 'folded');
+    assert.equal(loaded.changesPane, 'open');
+    assert.equal(loaded.detailsPane, 'open');
+    assert.equal(loaded.worktreeRoot, '/repo');
+    assert.equal(loaded.details, true);
+    assert.equal(loaded.changes, false);
+    fs.writeFileSync(file, JSON.stringify({
+      agentsPane: 'hidden', worktreesPane: 1, changesPane: null, detailsPane: {},
+      worktreeRoot: 'x\0y',
+    }));
+    const invalid = loadSettings();
+    assert.equal(invalid.agentsPane, 'open');
+    assert.equal(invalid.worktreesPane, 'open');
+    assert.equal(invalid.changesPane, 'closed');
+    assert.equal(invalid.detailsPane, 'closed');
+    assert.equal(invalid.worktreeRoot, '');
   });
 });
 

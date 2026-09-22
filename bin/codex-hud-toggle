@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Toggle the right-side subagent tree panel on top of the compact HUD.
-# Invoked from tmux keybinds so Codex-pane focus still works.
+# Toggle the right-side subagent tree panel. Invoked from tmux keybinds so
+# Codex-pane focus still works.
 #
-# Compact HUD (the 1-line status bar) stays up in both modes. F12 only
+# Compact HUD is optional (@codex_hud_statusline). When it is on, F12 only
 # adds or removes the side panel; destroying the compact pane was wiping
 # tokens/ctx/model after the switch, and recreating a 1-line pane often
 # painted blank. If the compact pane is already gone, it is recreated
-# from the launch command persisted at session creation.
+# from the launch command persisted at session creation. When the
+# statusline is off, F12 never recreates it.
 #
 # Concurrency: rapid double-presses run this script twice concurrently, so
 # every state read and pane mutation happens under a session-scoped wait-for
@@ -59,6 +60,12 @@ hud_height=${hud_height:-1}
 hud_cmd=$(get_opt @codex_hud_hud_cmd)
 session_start=$(get_opt @codex_hud_session_start)
 codex_home=$(get_opt @codex_hud_codex_home)
+# Missing option: older sessions still have the compact HUD.
+statusline=$(get_opt @codex_hud_statusline)
+statusline_enabled=1
+if [[ "$statusline" == "0" ]]; then
+  statusline_enabled=0
+fi
 cwd_q=$(printf '%q' "$cwd")
 codex_home_q=$(printf '%q' "$codex_home")
 toggle_q=$(printf '%q' "$SCRIPT_DIR/codex-hud-toggle")
@@ -99,6 +106,9 @@ create_hud_pane() {
 }
 
 ensure_hud_pane() {
+  if [[ "$statusline_enabled" != "1" ]]; then
+    return 0
+  fi
   if pane_alive "$hud_pane"; then
     return 0
   fi
@@ -118,7 +128,7 @@ restore_single() {
   if ! pane_alive "$main_pane"; then
     return 0
   fi
-  if ! ensure_hud_pane; then
+  if [[ "$statusline_enabled" == "1" ]] && ! ensure_hud_pane; then
     return 1
   fi
   close_tree_pane
@@ -126,7 +136,7 @@ restore_single() {
 }
 
 if [[ "$ensure_single" == "1" ]]; then
-  if [[ "$mode" == "single" ]] && pane_alive "$hud_pane"; then
+  if [[ "$mode" == "single" ]] && { [[ "$statusline_enabled" != "1" ]] || pane_alive "$hud_pane"; }; then
     exit 0
   fi
   restore_single
@@ -150,12 +160,13 @@ if [[ "$mode" == "tree" ]]; then
   fi
 fi
 
-# single -> tree: open the fixed right-side panel. Compact HUD stays put so
-# tokens/ctx/model remain visible. Recreate it first only if it is gone.
+# single -> tree: open the fixed right-side panel. Compact HUD stays put when
+# it is enabled; recreate it first only if it is gone. Statusline-off sessions
+# keep Codex + tree only.
 if ! pane_alive "$main_pane"; then
   exit 0
 fi
-if ! ensure_hud_pane; then
+if [[ "$statusline_enabled" == "1" ]] && ! ensure_hud_pane; then
   exit 1
 fi
 

@@ -74,6 +74,7 @@ export const theme = {
   dim: (text: string) => palette().muted(text),
   strong: (text: string) => palette().strong(text),
   accent: (text: string) => palette().accent(text),
+  selected: (text: string) => palette().selected(text),
 
   // Capacity meters: how full something is, so full is bad
   contextSafe: (text: string) => palette().success(text),

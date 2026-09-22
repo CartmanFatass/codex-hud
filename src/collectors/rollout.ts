@@ -7,7 +7,6 @@ import { sessionParentId } from '../utils/session-parent.js';
  */
 
 import * as fs from 'fs';
-import * as readline from 'readline';
 import type {
   RolloutLine,
   ResponseItemPayload,
@@ -23,6 +22,7 @@ import type {
   SubagentInfo,
   SubagentStatus,
   CollabAgentItem,
+  SessionActivity,
 } from '../types.js';
 
 function mergeTokenUsage(previous: TokenUsageInfo | null, next: TokenUsageInfo | null): TokenUsageInfo | null {
@@ -170,6 +170,8 @@ function cloneSessionInfo(session: SessionInfo | null | undefined): SessionInfo 
  * Result of parsing a rollout file
  */
 export interface RolloutParseResult {
+  activity?: SessionActivity;
+  tokenUsageAt?: Date;
   outputRate?: TokenRateSnapshot;
   session: SessionInfo | null;
   toolActivity: ToolActivity;
@@ -191,6 +193,7 @@ export interface RolloutParseOutput {
   newOffset: number;
   runningCalls: Map<string, ToolCall>;
   wasTruncated: boolean;
+  fileIdentity?: string;
 }
 
 export function computeNextOffset(
@@ -296,7 +299,8 @@ export async function parseRolloutFile(
   maxRecentCalls: number = 10,
   runningCalls: Map<string, ToolCall> = new Map(),
   initialSession: SessionInfo | null = null,
-  rateTracker: TokenRateTracker = new TokenRateTracker()
+  rateTracker: TokenRateTracker = new TokenRateTracker(),
+  previousIdentity?: string
 ): Promise<RolloutParseOutput> {
   const toolActivity: ToolActivity = {
     recentCalls: [],
@@ -320,80 +324,25 @@ export async function parseRolloutFile(
   let lastToolActivityTime: Date | null = null;
   let lastAssistantMessageTime: Date | null = null;
   let lastEventTime: Date | null = null;
+  let activity: SessionActivity | undefined;
+  let tokenUsageAt: Date | undefined;
 
-  if (!fs.existsSync(rolloutPath)) {
-    runningCalls.clear();
-    return {
-      result: {
-        session,
-        toolActivity,
-        planProgress,
-        tokenUsage,
-        outputRate: rateTracker.snapshot,
-        rateLimits,
-        subagents: [...subagents.values()],
-        compactCount,
-        lastCompactTime,
-        lastToolActivityTime,
-        lastAssistantMessageTime,
-        lastEventTime,
-      },
-      newOffset: 0,
-      runningCalls,
-      wasTruncated: false,
-    };
-  }
-
-  const stats = fs.statSync(rolloutPath);
-  const fileSize = stats.size;
-
-  // If fromOffset is beyond file size, file might have been truncated
-  const wasTruncated = fromOffset > fileSize;
-  const startOffset = wasTruncated ? 0 : fromOffset;
-  if (wasTruncated) {
-    rateTracker.reset();
-    runningCalls.clear();
-  }
-
-  return new Promise((resolve) => {
-    const fileStream = fs.createReadStream(rolloutPath, {
-      encoding: 'utf8',
-      start: startOffset,
-    });
-
-    const rl = readline.createInterface({
-      input: fileStream,
-      crlfDelay: Infinity,
-    });
-
-    let resolved = false;
-    const finish = (newOffset: number) => {
-      if (resolved) {
-        return;
-      }
-      resolved = true;
-      resolve({
-        result: {
-          session,
-          toolActivity,
-          planProgress,
-          tokenUsage,
-        outputRate: rateTracker.snapshot,
-          rateLimits,
-          subagents: [...subagents.values()],
-          compactCount,
-          lastCompactTime,
-          lastToolActivityTime,
-          lastAssistantMessageTime,
-          lastEventTime,
-        },
-        newOffset,
-        runningCalls,
-        wasTruncated,
-      });
-    };
-
-    rl.on('line', (line) => {
+  // Open once: rename/unlink after open cannot invalidate an end-of-read stat.
+  // Read a bounded snapshot; bytes appended meanwhile belong to the next poll.
+  const handle = await fs.promises.open(rolloutPath, 'r');
+  try {
+    const stats = await handle.stat();
+    const fileIdentity = `${stats.dev}:${stats.ino}`;
+    const fileSize = stats.size;
+    const wasTruncated = fromOffset > fileSize ||
+      (previousIdentity !== undefined && previousIdentity !== fileIdentity);
+    const startOffset = wasTruncated ? 0 : fromOffset;
+    if (wasTruncated) {
+      rateTracker.reset();
+      runningCalls.clear();
+      session = null;
+    }
+    const processLine = (line: string) => {
       if (!line.trim()) return;
 
       try {
@@ -528,7 +477,14 @@ export async function parseRolloutFile(
           }
         } else if (entry.type === 'event_msg') {
           const payload = entry.payload as EventMsgPayload;
-          if (payload.type === 'task_started' || payload.type === 'turn_started') rateTracker.startTurn(timestamp);
+          if (payload.type === 'task_started' || payload.type === 'turn_started') {
+            rateTracker.startTurn(timestamp);
+            activity = { state: 'working', updatedAt: timestamp, turnStartedAt: timestamp };
+          } else if (payload.type === 'task_complete' || payload.type === 'turn_complete') {
+            activity = { ...activity, state: 'idle', updatedAt: timestamp };
+          } else if (payload.type === 'turn_aborted' || payload.type === 'task_failed') {
+            activity = { ...activity, state: payload.type === 'turn_aborted' ? 'interrupted' : 'error', updatedAt: timestamp };
+          }
           if (payload.type === 'token_count' && typeof payload.info?.total_token_usage?.output_tokens === 'number') {
             rateTracker.observe(payload.info.total_token_usage.output_tokens, timestamp);
           }
@@ -545,6 +501,7 @@ export async function parseRolloutFile(
               lastUpdate: timestamp,
             };
           } else if (payload.type === 'token_count') {
+            if (payload.info?.last_token_usage) tokenUsageAt = timestamp;
             if (payload.info) {
               tokenUsage = mergeTokenUsage(tokenUsage, payload.info);
             }
@@ -588,25 +545,44 @@ export async function parseRolloutFile(
       } catch {
         // Skip malformed lines
       }
-    });
-
-    const computeNewOffset = (): number => {
-      const latestSize = fs.statSync(rolloutPath).size;
-      return computeNextOffset(startOffset, fileStream.bytesRead, latestSize);
     };
 
-    rl.on('close', () => {
-      finish(computeNewOffset());
-    });
-
-    rl.on('error', () => {
-      finish(computeNewOffset());
-    });
-
-    fileStream.on('error', () => {
-      finish(computeNewOffset());
-    });
-  });
+    let committedOffset = startOffset;
+    let position = startOffset;
+    let pending: Buffer = Buffer.alloc(0);
+    const buffer = Buffer.alloc(64 * 1024);
+    while (position < fileSize) {
+      const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, fileSize - position), position);
+      if (!bytesRead) break;
+      position += bytesRead;
+      pending = Buffer.concat([pending, buffer.subarray(0, bytesRead)]);
+      let start = 0;
+      let newline: number;
+      while ((newline = pending.indexOf(10, start)) !== -1) {
+        processLine(pending.subarray(start, newline).toString('utf8'));
+        committedOffset += newline - start + 1;
+        start = newline + 1;
+      }
+      pending = pending.subarray(start);
+    }
+    // Support complete records without a final newline, but never consume a
+    // partial JSON record (including a split UTF-8 codepoint).
+    if (pending.length) {
+      try {
+        JSON.parse(pending.toString('utf8'));
+        processLine(pending.toString('utf8'));
+        committedOffset += pending.length;
+      } catch { /* Retry this tail from the last complete record next time. */ }
+    }
+    return {
+      result: { session, activity, tokenUsageAt, toolActivity, planProgress, tokenUsage, outputRate: rateTracker.snapshot,
+        rateLimits, subagents: [...subagents.values()], compactCount, lastCompactTime,
+        lastToolActivityTime, lastAssistantMessageTime, lastEventTime },
+      newOffset: committedOffset, runningCalls, wasTruncated, fileIdentity,
+    };
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
@@ -618,6 +594,9 @@ export class RolloutParser {
   private cachedResult: RolloutParseResult | null = null;
   private runningCalls: Map<string, ToolCall> = new Map();
   private rateTracker = new TokenRateTracker();
+  private generation = 0;
+  private fileIdentity?: string;
+  private needsReplay = false;
 
   constructor(private maxRecentCalls: number = 10) {}
 
@@ -629,11 +608,14 @@ export class RolloutParser {
       return;
     }
 
+    this.generation++;
+    this.fileIdentity = undefined;
+    this.needsReplay = false;
     this.rolloutPath = path;
     this.lastOffset = 0;
     this.cachedResult = null;
     this.runningCalls = new Map();
-    this.rateTracker.reset();
+    this.rateTracker = new TokenRateTracker();
   }
 
   /**
@@ -644,19 +626,32 @@ export class RolloutParser {
       return null;
     }
 
-    const { result, newOffset, runningCalls, wasTruncated } = await parseRolloutFile(
+    const generation = this.generation;
+    const replay = this.needsReplay;
+    // A failed or superseded read may not mutate the published snapshot.
+    const tracker = replay ? new TokenRateTracker() : this.rateTracker.clone();
+    const calls = replay ? new Map<string, ToolCall>() : new Map([...this.runningCalls].map(([id, call]) => [id, { ...call }]));
+    const { result, newOffset, runningCalls, wasTruncated, fileIdentity } = await parseRolloutFile(
       this.rolloutPath,
-      this.lastOffset,
+      replay ? 0 : this.lastOffset,
       this.maxRecentCalls,
-      this.runningCalls,
-      this.cachedResult?.session ?? null,
-      this.rateTracker
-    );
+      calls,
+      replay ? null : this.cachedResult?.session ?? null,
+      tracker,
+      this.fileIdentity
+    ).catch(error => {
+      if (generation === this.generation) this.needsReplay = true;
+      throw error;
+    });
 
+    if (generation !== this.generation) return this.cachedResult;
+    this.needsReplay = false;
+    this.rateTracker = tracker;
+    this.fileIdentity = fileIdentity;
     this.lastOffset = newOffset;
     this.runningCalls = runningCalls;
 
-    if (wasTruncated) {
+    if (wasTruncated || replay) {
       this.cachedResult = null;
     }
 
@@ -702,6 +697,14 @@ export class RolloutParser {
 
       result.rateLimits = mergeRateLimits(this.cachedResult.rateLimits, result.rateLimits);
       result.subagents = mergeSubagents(this.cachedResult.subagents, result.subagents);
+      result.activity ??= this.cachedResult.activity;
+      if (result.activity && !result.activity.turnStartedAt && this.cachedResult.activity?.turnStartedAt) {
+        result.activity = { ...result.activity, turnStartedAt: this.cachedResult.activity.turnStartedAt };
+      }
+      result.tokenUsageAt ??= this.cachedResult.tokenUsageAt;
+      result.lastEventTime ??= this.cachedResult.lastEventTime;
+      result.lastToolActivityTime ??= this.cachedResult.lastToolActivityTime;
+      result.lastAssistantMessageTime ??= this.cachedResult.lastAssistantMessageTime;
     }
 
     this.cachedResult = result;
@@ -712,9 +715,9 @@ export class RolloutParser {
    * Force a full re-parse from the beginning
    */
   async fullParse(): Promise<RolloutParseResult | null> {
-    this.lastOffset = 0;
-    this.cachedResult = null;
-    this.rateTracker.reset();
+    const path = this.rolloutPath;
+    this.setRolloutPath(null);
+    this.setRolloutPath(path);
     return this.parse();
   }
 

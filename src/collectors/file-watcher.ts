@@ -40,6 +40,8 @@ export class FileWatcher {
     this.watcher.on('add', (filePath) => this.notifyCallbacks(filePath, 'add'));
     this.watcher.on('change', (filePath) => this.notifyCallbacks(filePath, 'change'));
     this.watcher.on('unlink', (filePath) => this.notifyCallbacks(filePath, 'unlink'));
+    // The collection tick is the fallback when OS watches are unavailable.
+    this.watcher.on('error', () => {});
   }
 
   /**
@@ -106,16 +108,14 @@ export function createSessionWatcher(): FileWatcher {
   const day = now.getDate().toString().padStart(2, '0');
 
   const todayDir = path.join(getSessionsDir(), year, month, day);
-  const globPattern = path.join(todayDir, 'rollout-*.jsonl');
-
-  return new FileWatcher([globPattern], { usePolling: true });
+  return new FileWatcher([todayDir], { usePolling: true });
 }
 
 /**
  * Create a watcher for shell snapshots.
  */
 export function createShellSnapshotWatcher(): FileWatcher {
-  const snapshotsDir = path.join(getCodexHome(), 'shell_snapshots', '*.sh');
+  const snapshotsDir = path.join(getCodexHome(), 'shell_snapshots');
   return new FileWatcher([snapshotsDir], { usePolling: true });
 }
 

@@ -375,6 +375,10 @@ function parseSnapshotFilename(filename: string): { threadId: string; nonce: big
 function readSnapshotPane(filePath: string): string | null {
   try {
     const content = fs.readFileSync(filePath, 'utf8');
+    const tmux = content.match(/(?:^|\n)(?:export\s+)?TMUX=(?:'([^']*)'|"([^"]*)"|([^\n]+))/);
+    const recordedServer = (tmux?.[1] ?? tmux?.[2] ?? tmux?.[3])?.split(',')[0];
+    const currentServer = process.env.TMUX?.split(',')[0];
+    if (recordedServer && currentServer && recordedServer !== currentServer) return null;
     const match = content.match(
       /(?:^|\n)(?:export\s+)?TMUX_PANE=(?:'([^']*)'|"([^"]*)"|([^\n]+))/
     );
@@ -385,7 +389,7 @@ function readSnapshotPane(filePath: string): string | null {
   }
 }
 
-function findThreadIdForPane(mainPaneId: string): string | null {
+function findThreadIdForPane(mainPaneId: string, launchTime: Date | null): string | null {
   const snapshotsDir = path.join(getCodexHome(), SHELL_SNAPSHOTS_SUBDIR);
   if (!fs.existsSync(snapshotsDir)) {
     return null;
@@ -398,6 +402,11 @@ function findThreadIdForPane(mainPaneId: string): string | null {
     for (const file of files) {
       const parsed = parseSnapshotFilename(file);
       if (!parsed) {
+        continue;
+      }
+      // Snapshot nonces are Unix nanoseconds. Pane IDs can be reused after a
+      // server restart: a prior launch's snapshot is not a current binding.
+      if (launchTime && parsed.nonce < BigInt(Math.floor(launchTime.getTime() - 15_000)) * 1_000_000n) {
         continue;
       }
 
@@ -594,7 +603,7 @@ export class SessionFinder {
   check(): SessionFile | null {
     const mainPaneId = process.env.CODEX_HUD_MAIN_PANE;
     if (mainPaneId) {
-      const threadId = findThreadIdForPane(mainPaneId);
+      const threadId = findThreadIdForPane(mainPaneId, this.targetStartTime);
       if (threadId) {
         if (
           this.currentSession &&

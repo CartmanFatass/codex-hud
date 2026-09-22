@@ -1,0 +1,130 @@
+{
+  "monitorCases": 420,
+  "settingsCases": 840,
+  "barCases": 216,
+  "unicodeCases": 15,
+  "failures": [],
+  "probes": {
+    "inspectorEscapes": [],
+    "blankClick": {
+      "blankY": 9,
+      "visibleLine": "│                            │"
+    },
+    "rightClick": [],
+    "narrowChangeRows": [
+      "2Δ 1S 1U",
+      "›  M context-usage.ts",
+      "  M  bar-modules.ts"
+    ],
+    "narrowSettings": [
+      "[Back] [Save]",
+      "   Density: bal",
+      "   Theme: term",
+      "   Labels: both",
+      "   Motion: full",
+      "›  Ctx %: used",
+      "   Bar next: on"
+    ],
+    "barWidths": [
+      {
+        "width": 40,
+        "kept": [
+          "attention",
+          "activity",
+          "identity",
+          "project",
+          "context",
+          "cache"
+        ],
+        "text": "!2 | ▸ | ☀ | main* | Ctx~ 42% | ◷~25m"
+      },
+      {
+        "width": 60,
+        "kept": [
+          "attention",
+          "activity",
+          "identity",
+          "project",
+          "agents",
+          "context",
+          "cache",
+          "tasks",
+          "quota"
+        ],
+        "text": "!2 | ▸ | ☀ | main* | 1▸1✗ | Ctx~ 42% | ◷~25m | 2/5 | Q61%"
+      },
+      {
+        "width": 80,
+        "kept": [
+          "attention",
+          "activity",
+          "identity",
+          "project",
+          "agents",
+          "context",
+          "cache",
+          "tasks",
+          "quota",
+          "timer",
+          "hint"
+        ],
+        "text": "!2 | ▸ | ☀ | main* | 1▸1✗ | Ctx~ 42% | ◷~25m | 2/5 | Q61% | 30m | F12"
+      },
+      {
+        "width": 100,
+        "kept": [
+          "attention",
+          "activity",
+          "identity",
+          "project",
+          "agents",
+          "context",
+          "cache",
+          "tasks",
+          "quota",
+          "timer",
+          "hint"
+        ],
+        "text": "! 1 tool failed · 1 agent failed | ▸ | ☀ | main* | 1▸1✗ | Ctx~ 42% | ◷~25m | 2/5 | Q61% | 30m | F12"
+      },
+      {
+        "width": 120,
+        "kept": [
+          "attention",
+          "activity",
+          "identity",
+          "project",
+          "agents",
+          "context",
+          "cache",
+          "tasks",
+          "quota",
+          "timer",
+          "hint"
+        ],
+        "text": "! 1 tool failed · 1 agent failed | ▸ | ☀ | main* | 1▸1✗ | Ctx~ ███░░░ 42% | ◷~25m | 2/5 | Q61% | 30m | F12"
+      },
+      {
+        "width": 160,
+        "kept": [
+          "attention",
+          "activity",
+          "identity",
+          "project",
+          "agents",
+          "context",
+          "cache",
+          "tasks",
+          "quota",
+          "timer",
+          "hint"
+        ],
+        "text": "! 1 tool failed · 1 agent failed | ▸ | ☀● Astra | codex-hud git:(main * ↑2) | 1▸1✗ | Ctx~ ████░░░░░░ 42% (114.2K/272.0K) | ◷~25m | 2/5 | Q61% | 30m | F12"
+      }
+    ],
+    "mutedContrast": {
+      "mocha": 5.81,
+      "latte": 4.37
+    }
+  }
+}

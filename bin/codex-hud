@@ -9,6 +9,8 @@
 #   CODEX_HUD_HEIGHT_AUTO - Auto-adjust HUD height based on pane width (default: 0)
 #   CODEX_HUD_HEIGHT_MIN - Minimum HUD height when auto-adjusting (default: CODEX_HUD_HEIGHT)
 #   CODEX_HUD_HEIGHT_MAX - Maximum HUD height when auto-adjusting (default: 12)
+#   CODEX_HUD_STATUSLINE - Bottom compact HUD pane: 1 on (default), 0 off
+#   CODEX_HUD_TREE - Open the right-side tree pane on launch (default: 1)
 #   CODEX_HUD_AUTO_ATTACH - If set to true, auto-attach to existing session
 #   CODEX_HUD_NO_ATTACH - Deprecated: if set to true, do not attach to existing session
 #   CODEX_HUD_ALTERNATE_SCREEN - Use alternate screen in codex pane (default: 0)
@@ -509,6 +511,53 @@ set_fixed_hud_height() {
     fi
 }
 
+# Right-side tree pane used when the compact statusline is off, or when
+# CODEX_HUD_TREE=1 at launch. Width policy matches bin/codex-hud-toggle.
+open_default_tree_pane() {
+    local session_name="$1"
+    local main_pane_id="$2"
+    local cwd_escaped="$3"
+    local codex_home_escaped="$4"
+    local session_start="$5"
+    local toggle_cmd="$6"
+    local win_width
+    local panel_width
+    local requested_width=0
+    local max_panel
+    local toggle_q
+    local session_q
+    local tree_cmd
+    local tree_pane_id
+
+    if [[ -z "$session_name" || -z "$main_pane_id" ]]; then
+        return 0
+    fi
+
+    win_width=$(tmux display-message -p -t "$main_pane_id" '#{window_width}' 2>/dev/null | tr -dc '0-9' || true)
+    [[ -z "$win_width" ]] && win_width=120
+    panel_width=${CODEX_HUD_TREE_WIDTH:-0}
+    if [[ "$panel_width" =~ ^[0-9]+$ && "$panel_width" -gt 0 ]]; then
+        requested_width=$panel_width
+    fi
+    if [[ ! "$panel_width" =~ ^[0-9]+$ || "$panel_width" -le 0 ]]; then
+        panel_width=$(( win_width / 5 ))
+        if [[ "$panel_width" -lt 20 ]]; then panel_width=20; fi
+        if [[ "$panel_width" -gt 30 ]]; then panel_width=30; fi
+    fi
+    if [[ "$panel_width" -lt 16 ]]; then panel_width=16; fi
+    max_panel=$(( win_width - 41 ))
+    if [[ "$max_panel" -lt 10 ]]; then max_panel=$(( win_width / 3 )); fi
+    if [[ "$panel_width" -gt "$max_panel" ]]; then panel_width=$max_panel; fi
+
+    toggle_q=$(printf '%q' "$toggle_cmd")
+    session_q=$(printf '%q' "$session_name")
+    tree_cmd="env CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_escaped} CODEX_HUD_CWD=${cwd_escaped} CODEX_HUD_MAIN_PANE='$main_pane_id' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
+    tree_pane_id=$(tmux split-window -h -l "$panel_width" -t "$main_pane_id" -d -P -F '#{pane_id}' "$tree_cmd")
+    tmux set-option -t "$session_name" -q @codex_hud_tree_pane "$tree_pane_id"
+    tmux set-option -t "$session_name" -q @codex_hud_mode "tree"
+    tmux select-pane -t "$main_pane_id" 2>/dev/null || true
+}
+
 # Check if session already exists and is usable
 check_existing_session() {
     local attach_policy
@@ -579,12 +628,14 @@ resolve_hud_height() {
     HUD_HEIGHT="$desired"
 }
 
-# Root key tables are server-global, so every binding is gated on
-# @codex_hud_main_pane (HUD sessions only). Elsewhere the original tmux
-# mouse/key behaviour is preserved.
+# Use a session-selected table; never overwrite the server's root bindings.
+# Inherit the user's root keys before overriding HUD-specific input.
 install_session_input_policy() {
     local session_name="$1"
     local toggle_cmd="$2"
+
+    tmux list-keys -T root | sed 's/-T root /-T codex-hud /' | tmux source-file -
+    tmux set-option -t "$session_name" key-table codex-hud
 
     tmux set-option -t "$session_name" extended-keys on 2>/dev/null || true
     tmux set-option -t "$session_name" focus-events on 2>/dev/null || true
@@ -592,10 +643,10 @@ install_session_input_policy() {
     chmod +x "$toggle_cmd" 2>/dev/null || true
 
     # Do not bind root Ctrl+T — that belongs to Codex's transcript overlay.
-    tmux bind-key -T root F12 if-shell -F '#{@codex_hud_main_pane}' \
+    tmux bind-key -T codex-hud F12 if-shell -F '#{@codex_hud_main_pane}' \
         "run-shell -b \"bash '$toggle_cmd' '#{session_id}'\"" \
         "send-keys F12"
-    tmux bind-key -T root S-F12 if-shell -F '#{@codex_hud_main_pane}' \
+    tmux bind-key -T codex-hud S-F12 if-shell -F '#{@codex_hud_main_pane}' \
         "run-shell -b \"bash '$toggle_cmd' '#{session_id}' --focus-tree\"" \
         "send-keys S-F12"
 
@@ -617,39 +668,37 @@ install_session_input_policy() {
     toggle_tree="run-shell -b \"bash $toggle_q #{session_id}\""
     paste_mouse="run-shell -b \"bash $paste_q #{mouse_pane}\""
 
-    tmux bind-key -T root MouseDown1Pane if-shell -F '#{@codex_hud_main_pane}' \
+    tmux bind-key -T codex-hud MouseDown1Pane if-shell -F '#{@codex_hud_main_pane}' \
         "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$toggle_tree ; $focus_main' 'if-shell -F \"#{==:#{mouse_pane},#{@codex_hud_tree_pane}}\" \"send-keys -t= -M\" \"select-pane -t= ; send-keys -M\"'" \
         'select-pane -t= ; send-keys -M'
 
-    tmux bind-key -T root MouseDown2Pane if-shell -F '#{@codex_hud_main_pane}' \
-        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; $paste_mouse'" \
-        'select-pane -t= ; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "paste-buffer -p"'
+    # Applications that request mouse input own their complete button events.
+    # The side panel is never a clipboard target, even with its mouse disabled.
+    local mouse_key
+    for mouse_key in MouseDown2Pane MouseDown3Pane M-MouseDown3Pane; do
+        tmux bind-key -T codex-hud "$mouse_key" if-shell -F \
+            '#{||:#{==:#{mouse_pane},#{@codex_hud_tree_pane}},#{mouse_any_flag}}' \
+            'send-keys -t= -M' \
+            "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; $paste_mouse'"
+    done
 
-    tmux bind-key -T root MouseDown3Pane if-shell -F '#{@codex_hud_main_pane}' \
-        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; $paste_mouse'" \
-        'select-pane -t= ; paste-buffer -p'
-
-    tmux bind-key -T root M-MouseDown3Pane if-shell -F '#{@codex_hud_main_pane}' \
-        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; $paste_mouse'" \
-        'select-pane -t= ; paste-buffer -p'
-
-    tmux bind-key -T root WheelUpPane if-shell -F '#{@codex_hud_main_pane}' \
-        'send-keys -t= -M' \
+    tmux bind-key -T codex-hud WheelUpPane if-shell -F '#{@codex_hud_main_pane}' \
+        'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -t= -M" "copy-mode -e -t="' \
         'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"'
 
-    tmux bind-key -T root WheelDownPane if-shell -F '#{@codex_hud_main_pane}' \
+    tmux bind-key -T codex-hud WheelDownPane if-shell -F '#{@codex_hud_main_pane}' \
         'send-keys -t= -M' \
         'send-keys -M'
 
-    tmux bind-key -T root MouseDrag1Pane if-shell -F '#{@codex_hud_main_pane}' \
+    tmux bind-key -T codex-hud MouseDrag1Pane if-shell -F '#{@codex_hud_main_pane}' \
         "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'if-shell -F \"#{||:#{pane_in_mode},#{mouse_any_flag}}\" \"send-keys -M\" \"copy-mode -M\"'" \
         'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
 
-    tmux bind-key -T root DoubleClick1Pane if-shell -F '#{@codex_hud_main_pane}' \
+    tmux bind-key -T codex-hud DoubleClick1Pane if-shell -F '#{@codex_hud_main_pane}' \
         "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; if-shell -F \"#{||:#{pane_in_mode},#{mouse_any_flag}}\" \"send-keys -M\" \"copy-mode -H ; send-keys -X select-word ; run-shell -d 0.3 ; send-keys -X copy-pipe-and-cancel\"'" \
         'select-pane -t= ; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -H ; send-keys -X select-word ; run-shell -d 0.3 ; send-keys -X copy-pipe-and-cancel"'
 
-    tmux bind-key -T root TripleClick1Pane if-shell -F '#{@codex_hud_main_pane}' \
+    tmux bind-key -T codex-hud TripleClick1Pane if-shell -F '#{@codex_hud_main_pane}' \
         "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$focus_main' 'select-pane -t= ; if-shell -F \"#{||:#{pane_in_mode},#{mouse_any_flag}}\" \"send-keys -M\" \"copy-mode -H ; send-keys -X select-line ; run-shell -d 0.3 ; send-keys -X copy-pipe-and-cancel\"'" \
         'select-pane -t= ; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -H ; send-keys -X select-line ; run-shell -d 0.3 ; send-keys -X copy-pipe-and-cancel"'
 }
@@ -751,7 +800,19 @@ EOF
     # per pane: Codex keeps its own mouse, and the compact bar cannot steal
     # Codex's keyboard. See install_session_input_policy.
     local mouse_setting
+    local hud_statusline
+    local hud_tree
     mouse_setting=$(parse_boolean_setting "CODEX_HUD_MOUSE" "${CODEX_HUD_MOUSE:-}" "1") || exit 1
+    local saved_statusline="1"
+    if [[ -z "${CODEX_HUD_STATUSLINE:-}" && -f "$HUD_DIR/dist/settings.js" ]]; then
+        saved_statusline=$(CODEX_HOME="$EFFECTIVE_CODEX_HOME" node --input-type=module -e '
+            import { pathToFileURL } from "node:url";
+            const { loadSettings } = await import(pathToFileURL(process.argv[1]).href);
+            process.stdout.write(loadSettings().statusline ? "1" : "0");
+        ' "$HUD_DIR/dist/settings.js" 2>/dev/null) || saved_statusline="1"
+    fi
+    hud_statusline=$(parse_boolean_setting "CODEX_HUD_STATUSLINE" "${CODEX_HUD_STATUSLINE:-$saved_statusline}" "1") || exit 1
+    hud_tree=$(parse_boolean_setting "CODEX_HUD_TREE" "${CODEX_HUD_TREE:-}" "1") || exit 1
 
     if [[ "$mouse_setting" == "1" ]]; then
         tmux set-option -t "$SESSION_NAME" mouse on
@@ -826,29 +887,34 @@ EOF
     # drifting copy of the environment there.
     tmux set-option -t "$SESSION_NAME" @codex_hud_hud_cmd "$hud_cmd"
     tmux set-option -t "$SESSION_NAME" @codex_hud_session_start "$session_start"
+    tmux set-option -t "$SESSION_NAME" -q @codex_hud_main_pane "$main_pane_id"
+    tmux set-option -t "$SESSION_NAME" -q @codex_hud_statusline "$hud_statusline"
+    tmux set-option -t "$SESSION_NAME" -q @codex_hud_height "$HUD_HEIGHT"
 
-    if [[ "$HUD_POSITION" == "top" ]]; then
-        # Split at top, then swap panes
-        local hud_pane_id
-        if [[ -n "$tmux_windows_bash" ]]; then
-            hud_pane_id=$(tmux split-window -v -t "$SESSION_NAME" -l "$HUD_HEIGHT" -b -P -F "#{pane_id}" "$tmux_windows_bash" "$hud_runner")
+    local hud_pane_id=""
+    if [[ "$hud_statusline" == "1" ]]; then
+        if [[ "$HUD_POSITION" == "top" ]]; then
+            if [[ -n "$tmux_windows_bash" ]]; then
+                hud_pane_id=$(tmux split-window -v -t "$SESSION_NAME" -l "$HUD_HEIGHT" -b -P -F "#{pane_id}" "$tmux_windows_bash" "$hud_runner")
+            else
+                hud_pane_id=$(tmux split-window -v -t "$SESSION_NAME" -l "$HUD_HEIGHT" -b -P -F "#{pane_id}" "$hud_cmd")
+            fi
         else
-            hud_pane_id=$(tmux split-window -v -t "$SESSION_NAME" -l "$HUD_HEIGHT" -b -P -F "#{pane_id}" "$hud_cmd")
+            if [[ -n "$tmux_windows_bash" ]]; then
+                hud_pane_id=$(tmux split-window -v -t "$SESSION_NAME" -l "$HUD_HEIGHT" -P -F "#{pane_id}" "$tmux_windows_bash" "$hud_runner")
+            else
+                hud_pane_id=$(tmux split-window -v -t "$SESSION_NAME" -l "$HUD_HEIGHT" -P -F "#{pane_id}" "$hud_cmd")
+            fi
         fi
         tmux select-pane -t "$main_pane_id"
+        if [[ -n "$hud_pane_id" ]]; then
+            set_fixed_hud_height "$SESSION_NAME" "$hud_pane_id" "$HUD_HEIGHT" "$main_pane_id"
+        fi
     else
-        # Default: bottom
-        local hud_pane_id
-        if [[ -n "$tmux_windows_bash" ]]; then
-            hud_pane_id=$(tmux split-window -v -t "$SESSION_NAME" -l "$HUD_HEIGHT" -P -F "#{pane_id}" "$tmux_windows_bash" "$hud_runner")
-        else
-            hud_pane_id=$(tmux split-window -v -t "$SESSION_NAME" -l "$HUD_HEIGHT" -P -F "#{pane_id}" "$hud_cmd")
+        if [[ -z "$(tmux show-option -t "$SESSION_NAME" -qv @codex_hud_mode)" ]]; then
+            tmux set-option -t "$SESSION_NAME" -q @codex_hud_mode "single"
         fi
-        tmux select-pane -t "$main_pane_id"
-    fi
-
-    if [[ -n "${hud_pane_id:-}" ]]; then
-        set_fixed_hud_height "$SESSION_NAME" "$hud_pane_id" "$HUD_HEIGHT" "$main_pane_id"
+        tmux select-pane -t "$main_pane_id" 2>/dev/null || true
     fi
 
     if [[ -n "$tmux_windows_bash" ]]; then
@@ -875,14 +941,17 @@ EOF
         tmux set-hook -at "$SESSION_NAME" client-attached "refresh-client"
     fi
 
-    # HUD shows 1 compact header line. F12 toggles a right-side subagent tree
-    # panel; the compact bar stays visible so tokens/ctx/model are not dropped.
-    # Bind on the root table (no tmux prefix). Herdr uses Ctrl-b as prefix and
-    # prefix+h for pane focus, so Prefix+H / Prefix+t never reach inner tmux.
+    # Compact statusline is on by default. F12 still toggles the right-side
+    # tree. Bind on the root table (no tmux prefix). Herdr uses Ctrl-b as
+    # prefix and prefix+h for pane focus, so Prefix+H / Prefix+t never reach
+    # inner tmux.
     local toggle_cmd
     toggle_cmd="$SCRIPT_DIR/codex-hud-toggle"
     tmux set-option -t "$SESSION_NAME" -q @codex_hud_cwd "$cwd"
     install_session_input_policy "$SESSION_NAME" "$toggle_cmd"
+    if [[ "$hud_tree" == "1" ]]; then
+        open_default_tree_pane "$SESSION_NAME" "$main_pane_id" "$cwd_escaped" "$codex_home_escaped" "$session_start" "$toggle_cmd"
+    fi
 
     SESSION_CREATED="true"
 }
@@ -1000,6 +1069,8 @@ Environment Variables:
   CODEX_HUD_HEIGHT_AUTO Auto-adjust HUD height based on pane width (default: 0)
   CODEX_HUD_HEIGHT_MIN Minimum HUD height when auto-adjusting (default: CODEX_HUD_HEIGHT)
   CODEX_HUD_HEIGHT_MAX Maximum HUD height when auto-adjusting (default: 12)
+  CODEX_HUD_STATUSLINE Bottom compact HUD pane: 1 on (default), 0 off
+  CODEX_HUD_TREE      Open the right-side tree pane on launch (default: 1)
   CODEX_HUD_AUTO_ATTACH Auto-attach to latest existing session (default: 0)
   CODEX_HUD_NO_ATTACH Deprecated: force new session (overrides auto attach)
   CODEX_HUD_ALTERNATE_SCREEN Use alternate screen in codex pane (default: 0)

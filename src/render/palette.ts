@@ -29,6 +29,7 @@ export interface Palette {
   project: Paint;
   /** Emphasis without colour, for the identity of the session. */
   strong: Paint;
+  selected: Paint;
 }
 
 const ESC = '\x1b[';
@@ -46,6 +47,13 @@ function rgb(hex: string): Paint {
   return (text: string) => `${ESC}38;2;${r};${g};${b}m${text}${RESET}`;
 }
 
+// Internal spans reset their own attributes. Restore the row highlight after
+// each reset, so coloured status/model symbols don't punch holes in selection.
+function highlight(code: string): Paint {
+  const start = `${ESC}${code}m`;
+  return text => start + text.replaceAll(RESET, RESET + start) + RESET;
+}
+
 const identity: Paint = (text: string) => text;
 
 /**
@@ -54,7 +62,7 @@ const identity: Paint = (text: string) => text;
  */
 const TERMINAL: Palette = {
   name: 'terminal',
-  text: basic(37),
+  text: basic(39), // Terminal foreground remains legible on light and dark themes.
   muted: basic(2),
   accent: basic(96),
   success: basic(32),
@@ -65,13 +73,14 @@ const TERMINAL: Palette = {
   branch: basic(35),
   project: basic(33),
   strong: basic(1),
+  selected: highlight('7'),
 };
 
 // Catppuccin Mocha and Latte, from the published palettes.
 const MOCHA: Palette = {
   name: 'mocha',
   text: rgb('#CDD6F4'),
-  muted: rgb('#6C7086'),
+  muted: rgb('#9399B2'),
   accent: rgb('#89B4FA'),
   success: rgb('#A6E3A1'),
   warning: rgb('#F9E2AF'),
@@ -81,12 +90,13 @@ const MOCHA: Palette = {
   branch: rgb('#CBA6F7'),
   project: rgb('#FAB387'),
   strong: rgb('#B4BEFE'),
+  selected: highlight('48;2;49;50;68'),
 };
 
 const LATTE: Palette = {
   name: 'latte',
   text: rgb('#4C4F69'),
-  muted: rgb('#9CA0B0'),
+  muted: rgb('#6C6F85'),
   accent: rgb('#1E66F5'),
   success: rgb('#40A02B'),
   warning: rgb('#DF8E1D'),
@@ -96,6 +106,7 @@ const LATTE: Palette = {
   branch: rgb('#8839EF'),
   project: rgb('#FE640B'),
   strong: rgb('#7287FD'),
+  selected: highlight('48;2;204;208;218'),
 };
 
 const NONE: Palette = {
@@ -111,6 +122,7 @@ const NONE: Palette = {
   branch: identity,
   project: identity,
   strong: identity,
+  selected: identity,
 };
 
 const PALETTES: Record<ThemeName, Palette> = {

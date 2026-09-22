@@ -20,6 +20,15 @@ export class TokenRateTracker {
   private lastAtMs: number | undefined;
   private latest: TokenRateSnapshot | undefined;
 
+  clone(): TokenRateTracker {
+    const copy = new TokenRateTracker();
+    copy.samples = this.samples.map(sample => ({ ...sample }));
+    copy.lastTotal = this.lastTotal;
+    copy.lastAtMs = this.lastAtMs;
+    copy.latest = this.latest;
+    return copy;
+  }
+
   observe(totalOutputTokens: number, at: Date): void {
     const atMs = at.getTime();
     if (!Number.isSafeInteger(totalOutputTokens) || totalOutputTokens < 0 ||
