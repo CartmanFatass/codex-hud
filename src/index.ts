@@ -245,6 +245,7 @@ async function collectData(): Promise<HudData> {
     tokenUsage: rolloutData?.tokenUsage ?? undefined,
     outputRate: rolloutData?.outputRate,
     contextUsage,
+    pendingApproval: rolloutData?.pendingApproval ?? undefined,
     rateLimits: rolloutData?.rateLimits ?? undefined,
     subagents: rolloutData?.subagents ?? [],
     subagentTree,

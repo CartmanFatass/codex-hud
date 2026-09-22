@@ -9,7 +9,12 @@
 
 import type { HudData, SubagentTreeNode } from '../types.js';
 
-export type AttentionKind = 'tool-error' | 'agent-error' | 'quota-exhausted' | 'context-critical';
+export type AttentionKind =
+  | 'approval'
+  | 'tool-error'
+  | 'agent-error'
+  | 'quota-exhausted'
+  | 'context-critical';
 
 export interface AttentionItem {
   kind: AttentionKind;
@@ -29,8 +34,32 @@ function walk(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void
   }
 }
 
+const APPROVAL_LABELS: Record<'exec' | 'patch' | 'input', string> = {
+  exec: 'approval needed',
+  patch: 'patch approval needed',
+  input: 'input needed',
+};
+
+const APPROVAL_FALLBACK: Record<'exec' | 'patch' | 'input', string> = {
+  exec: 'a command is waiting for approval',
+  patch: 'a patch is waiting for approval',
+  input: 'the session is waiting for an answer',
+};
+
 export function collectAttention(data: HudData, nowMs: number = Date.now()): AttentionItem[] {
   const items: AttentionItem[] = [];
+
+  // Codex asked and nothing has answered. First in the list because it is the
+  // one item where the session cannot continue without the reader.
+  const approval = data.pendingApproval;
+  if (approval) {
+    items.push({
+      kind: 'approval',
+      label: APPROVAL_LABELS[approval.kind],
+      detail: approval.summary ?? APPROVAL_FALLBACK[approval.kind],
+      severity: 'warning',
+    });
+  }
 
   // A tool that reported failure. Counted from the recorded result, never from
   // the command's name.

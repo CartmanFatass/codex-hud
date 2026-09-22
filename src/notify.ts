@@ -64,7 +64,11 @@ export class Notifier {
    * events that were actually sent, which is what the tests assert on.
    */
   update(data: HudData, nowMs: number = Date.now()): NotifyEvent[] {
-    const candidates = [...this.attentionEvents(data, nowMs), ...this.agentEvents(data)];
+    const candidates = [
+      ...this.approvalEvents(data),
+      ...this.attentionEvents(data, nowMs),
+      ...this.agentEvents(data),
+    ];
     if (!this.options.enabled) {
       // Still advance the agent baseline, so enabling mid-session does not
       // immediately replay everything that already happened.
@@ -94,6 +98,28 @@ export class Notifier {
       return false;
     }
     return nowMs - previous.at >= this.options.cooldownMs;
+  }
+
+  /**
+   * One message per request. The fingerprint is the call and the moment it
+   * was recorded, so a request that stays open across many ticks announces
+   * itself once, and a second request for the same call does announce again.
+   */
+  private approvalEvents(data: HudData): NotifyEvent[] {
+    const pending = data.pendingApproval;
+    if (!pending) {
+      return [];
+    }
+    const label = pending.kind === 'patch' ? 'patch approval needed'
+      : pending.kind === 'input' ? 'input needed'
+      : 'approval needed';
+    return [
+      {
+        kind: 'approval',
+        fingerprint: `${pending.callId ?? ''}:${pending.since.getTime()}`,
+        message: pending.summary ? `${label}: ${pending.summary}` : label,
+      },
+    ];
   }
 
   private attentionEvents(data: HudData, nowMs: number): NotifyEvent[] {

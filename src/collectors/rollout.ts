@@ -23,7 +23,56 @@ import type {
   SubagentStatus,
   CollabAgentItem,
   SessionActivity,
+  PendingApproval,
 } from '../types.js';
+
+/** Approval summaries are pasted into the bar, so they carry no controls. */
+function plainText(text: string, limit: number): string {
+  const clean = text.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
+}
+
+/**
+ * What a recorded approval request is asking for.
+ *
+ * Only fields Codex actually wrote are read; an unrecognised shape yields no
+ * summary rather than a guess at one.
+ */
+function approvalFromEvent(payload: EventMsgPayload, timestamp: Date): PendingApproval {
+  const callId = typeof payload.call_id === 'string' && payload.call_id ? payload.call_id : undefined;
+  if (payload.type === 'apply_patch_approval_request') {
+    const files = payload.changes && typeof payload.changes === 'object'
+      ? Object.keys(payload.changes).length
+      : 0;
+    return {
+      kind: 'patch',
+      callId,
+      since: timestamp,
+      summary: files > 0 ? `${files} file${files === 1 ? '' : 's'}` : undefined,
+    };
+  }
+  if (payload.type === 'request_user_input') {
+    const first = payload.questions?.[0];
+    const text = typeof first === 'string' ? first : first?.header ?? first?.question;
+    return {
+      kind: 'input',
+      callId,
+      since: timestamp,
+      summary: typeof text === 'string' && text ? plainText(text, 60) : undefined,
+    };
+  }
+  const command = Array.isArray(payload.command)
+    ? payload.command.join(' ')
+    : typeof payload.command === 'string'
+      ? payload.command
+      : '';
+  return {
+    kind: 'exec',
+    callId,
+    since: timestamp,
+    summary: command ? plainText(command, 60) : undefined,
+  };
+}
 
 function mergeTokenUsage(previous: TokenUsageInfo | null, next: TokenUsageInfo | null): TokenUsageInfo | null {
   if (!next) return previous;
@@ -178,6 +227,8 @@ export interface RolloutParseResult {
   planProgress: PlanProgress | null;
   tokenUsage: TokenUsageInfo | null;
   rateLimits: RateLimitSnapshot | null;
+  /** An approval request with nothing recorded after it that answers it. */
+  pendingApproval: PendingApproval | null;
   subagents: SubagentInfo[];
   // Compact event tracking
   compactCount: number;
@@ -300,7 +351,8 @@ export async function parseRolloutFile(
   runningCalls: Map<string, ToolCall> = new Map(),
   initialSession: SessionInfo | null = null,
   rateTracker: TokenRateTracker = new TokenRateTracker(),
-  previousIdentity?: string
+  previousIdentity?: string,
+  initialPendingApproval: PendingApproval | null = null
 ): Promise<RolloutParseOutput> {
   const toolActivity: ToolActivity = {
     recentCalls: [],
@@ -326,6 +378,21 @@ export async function parseRolloutFile(
   let lastEventTime: Date | null = null;
   let activity: SessionActivity | undefined;
   let tokenUsageAt: Date | undefined;
+  // Carried in like `session` and `runningCalls`: the event that answers a
+  // request usually lands in a later batch than the request itself.
+  let pendingApproval: PendingApproval | null = initialPendingApproval;
+
+  /**
+   * Clear the request the given call answers. A request that recorded a call
+   * id is only cleared by that same id; one that recorded none has no other
+   * candidate, so any answering event clears it.
+   */
+  const clearApprovalFor = (callId: string | undefined): void => {
+    if (!pendingApproval) return;
+    if (!pendingApproval.callId || pendingApproval.callId === callId) {
+      pendingApproval = null;
+    }
+  };
 
   // Open once: rename/unlink after open cannot invalidate an end-of-read stat.
   // Read a bounded snapshot; bytes appended meanwhile belong to the next poll.
@@ -341,6 +408,7 @@ export async function parseRolloutFile(
       rateTracker.reset();
       runningCalls.clear();
       session = null;
+      pendingApproval = null;
     }
     const processLine = (line: string) => {
       if (!line.trim()) return;
@@ -449,6 +517,8 @@ export async function parseRolloutFile(
           } else if ((payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') && payload.call_id) {
             // Tool call completed
             lastToolActivityTime = timestamp;
+            // A result for the call is proof the approval was answered.
+            clearApprovalFor(payload.call_id);
             const runningCall = runningCalls.get(payload.call_id);
             if (runningCall) {
               const outcome = toolResult(payload.output);
@@ -485,6 +555,20 @@ export async function parseRolloutFile(
           } else if (payload.type === 'turn_aborted' || payload.type === 'task_failed') {
             activity = { ...activity, state: payload.type === 'turn_aborted' ? 'interrupted' : 'error', updatedAt: timestamp };
           }
+
+          // A turn that ended is no longer waiting on anyone, however it
+          // ended. A command that started is the answer to its own request.
+          if (payload.type === 'task_complete' || payload.type === 'turn_complete' ||
+              payload.type === 'turn_aborted' || payload.type === 'task_failed') {
+            pendingApproval = null;
+          } else if (payload.type === 'exec_command_begin' || payload.type === 'exec_command_end') {
+            clearApprovalFor(payload.call_id);
+          } else if (payload.type === 'exec_approval_request' ||
+                     payload.type === 'apply_patch_approval_request' ||
+                     payload.type === 'request_user_input') {
+            pendingApproval = approvalFromEvent(payload, timestamp);
+          }
+
           if (payload.type === 'token_count' && typeof payload.info?.total_token_usage?.output_tokens === 'number') {
             rateTracker.observe(payload.info.total_token_usage.output_tokens, timestamp);
           }
@@ -576,7 +660,7 @@ export async function parseRolloutFile(
     }
     return {
       result: { session, activity, tokenUsageAt, toolActivity, planProgress, tokenUsage, outputRate: rateTracker.snapshot,
-        rateLimits, subagents: [...subagents.values()], compactCount, lastCompactTime,
+        rateLimits, pendingApproval, subagents: [...subagents.values()], compactCount, lastCompactTime,
         lastToolActivityTime, lastAssistantMessageTime, lastEventTime },
       newOffset: committedOffset, runningCalls, wasTruncated, fileIdentity,
     };
@@ -638,7 +722,8 @@ export class RolloutParser {
       calls,
       replay ? null : this.cachedResult?.session ?? null,
       tracker,
-      this.fileIdentity
+      this.fileIdentity,
+      replay ? null : this.cachedResult?.pendingApproval ?? null
     ).catch(error => {
       if (generation === this.generation) this.needsReplay = true;
       throw error;
@@ -696,6 +781,9 @@ export class RolloutParser {
       result.tokenUsage = mergeTokenUsage(this.cachedResult.tokenUsage, result.tokenUsage);
 
       result.rateLimits = mergeRateLimits(this.cachedResult.rateLimits, result.rateLimits);
+      // `pendingApproval` is not merged here: it was handed to the parse as
+      // its starting state, so the batch already saw whether anything in it
+      // answered the outstanding request.
       result.subagents = mergeSubagents(this.cachedResult.subagents, result.subagents);
       result.activity ??= this.cachedResult.activity;
       if (result.activity && !result.activity.turnStartedAt && this.cachedResult.activity?.turnStartedAt) {

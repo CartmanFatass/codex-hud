@@ -184,6 +184,14 @@ export interface EventMsgPayload {
     | 'turn_aborted'
     | 'task_failed'
     | 'item_completed'
+    // Codex asks the user to decide. Recorded verbatim in the rollout, which
+    // is the only evidence the HUD has that a turn is blocked on a person.
+    | 'exec_approval_request'
+    | 'apply_patch_approval_request'
+    | 'request_user_input'
+    // The answer to an exec approval shows up as the command actually running.
+    | 'exec_command_begin'
+    | 'exec_command_end'
     | 'other';
   explanation?: string;
   plan?: PlanStep[];
@@ -196,6 +204,34 @@ export interface EventMsgPayload {
   // For turn_started events
   model_context_window?: number;
   collaboration_mode_kind?: string;
+  // Approval requests and the exec events that answer them.
+  call_id?: string;
+  /** `exec_approval_request`: argv, or a single command string. */
+  command?: string[] | string;
+  cwd?: string;
+  reason?: string;
+  /** `apply_patch_approval_request`: path -> change description. */
+  changes?: Record<string, unknown>;
+  grant_root?: string;
+  /** `request_user_input`: the questions waiting for an answer. */
+  questions?: Array<{ header?: string; question?: string } | string>;
+}
+
+/**
+ * A decision Codex is waiting on.
+ *
+ * Set from an approval request recorded in the rollout and cleared by the
+ * event that answers it (the tool output, the command starting, or the turn
+ * ending). It is never inferred from an approval policy: a policy says what
+ * would be asked, not that something is being asked right now.
+ */
+export interface PendingApproval {
+  kind: 'exec' | 'patch' | 'input';
+  /** The call the request belongs to, when Codex recorded one. */
+  callId?: string;
+  since: Date;
+  /** What is being approved, as short observed text. Absent when unknown. */
+  summary?: string;
 }
 
 export interface TurnContextPayload {
@@ -459,6 +495,9 @@ export interface HudData {
   session?: SessionInfo;
   runtimeSession?: Partial<SessionInfo>;
   
+  /** A recorded approval request that nothing has answered yet. */
+  pendingApproval?: PendingApproval;
+
   // Context/token usage
   contextUsage?: ContextUsage;
   tokenUsage?: TokenUsageInfo;

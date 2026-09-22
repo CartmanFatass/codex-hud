@@ -149,6 +149,44 @@ test('the alert survives every pane width', () => {
   }
 });
 
+test('a pending approval is the alert the narrow bar keeps', () => {
+  // A session that asks for its first approval has not reported tokens, a
+  // quota window, a plan or an agent yet, so every one of those fields is
+  // absent and 40 columns is enough for the phrase itself.
+  const data = makeHudData({
+    toolActivity: undefined,
+    subagentTree: makeSubagentTree([]),
+    subagents: [],
+    rateLimits: undefined,
+    contextUsage: undefined,
+    tokenUsage: undefined,
+    planProgress: undefined,
+    pendingApproval: {
+      kind: 'exec',
+      callId: 'call_exec_2',
+      since: FIXED_NOW,
+      summary: 'git push --force',
+    },
+  });
+  const line = renderHud(data, {
+    width: 40,
+    showDetails: false,
+    layout: { ...DEFAULT_LAYOUT, mode: 'compact' },
+  })[0];
+  const text = stripAnsi(line);
+  assert.ok(text.includes('! approval needed'), `40 columns lost the approval: ${JSON.stringify(text)}`);
+  assert.ok(visualWidth(line) <= 40, '40 columns overflowed');
+
+  // The other kinds keep their own words rather than all reading "approval".
+  const label = (kind: 'patch' | 'input') =>
+    stripAnsi(
+      buildBarModules({ ...data, pendingApproval: { kind, since: FIXED_NOW } }, { nowMs: FIXED_NOW.getTime() })
+        .find((module) => module.id === 'attention')!.variants.short!
+    );
+  assert.equal(label('patch'), '! patch approval needed');
+  assert.equal(label('input'), '! input needed');
+});
+
 test('a session with nothing wrong shows no alert', () => {
   const data = makeHudData({
     subagentTree: makeSubagentTree([

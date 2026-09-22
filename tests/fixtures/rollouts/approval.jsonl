@@ -1,0 +1,13 @@
+{"timestamp":"2026-03-01T11:30:00.000Z","type":"session_meta","payload":{"id":"approval-session","timestamp":"2026-03-01T11:30:00.000Z","cwd":"/home/fires/codex/codex-hud","originator":"codex_cli_rs","cli_version":"0.155.1","model_provider":"openai"}}
+{"timestamp":"2026-03-01T11:30:01.000Z","type":"event_msg","payload":{"type":"task_started","model_context_window":272000}}
+{"timestamp":"2026-03-01T11:30:05.000Z","type":"event_msg","payload":{"type":"exec_approval_request","call_id":"call_exec_1","command":["bash","-lc","rm -rf build && npm run build"],"cwd":"/home/fires/codex/codex-hud","reason":"writes outside the workspace"}}
+{"timestamp":"2026-03-01T11:30:09.000Z","type":"event_msg","payload":{"type":"exec_command_begin","call_id":"call_exec_1","command":["bash","-lc","rm -rf build && npm run build"],"cwd":"/home/fires/codex/codex-hud"}}
+{"timestamp":"2026-03-01T11:30:12.000Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call_exec_1","exit_code":0}}
+{"timestamp":"2026-03-01T11:30:13.000Z","type":"event_msg","payload":{"type":"task_complete"}}
+{"timestamp":"2026-03-01T11:31:00.000Z","type":"event_msg","payload":{"type":"task_started","model_context_window":272000}}
+{"timestamp":"2026-03-01T11:31:04.000Z","type":"event_msg","payload":{"type":"apply_patch_approval_request","call_id":"call_patch_1","changes":{"src/index.ts":{"update":{}},"src/types.ts":{"update":{}},"README.md":{"add":{}}},"reason":"patch touches tracked files","grant_root":"/home/fires/codex/codex-hud"}}
+{"timestamp":"2026-03-01T11:31:20.000Z","type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}
+{"timestamp":"2026-03-01T11:32:00.000Z","type":"event_msg","payload":{"type":"task_started","model_context_window":272000}}
+{"timestamp":"2026-03-01T11:32:02.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","call_id":"call_exec_2","arguments":"{\"command\":\"git push --force\"}"}}
+{"timestamp":"2026-03-01T11:32:03.000Z","type":"event_msg","payload":{"type":"exec_approval_request","call_id":"call_exec_2","command":["git","push","--force"],"cwd":"/home/fires/codex/codex-hud"}}
+{"timestamp":"2026-03-01T11:32:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":272000,"last_token_usage":{"input_tokens":4000,"cached_input_tokens":3000,"output_tokens":900,"total_tokens":4900},"total_token_usage":{"input_tokens":58800,"cached_input_tokens":42000,"output_tokens":25200,"total_tokens":84000}}}}
