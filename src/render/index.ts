@@ -3,7 +3,7 @@
  * Phase 3: Updated to use new LayoutConfig system
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import type { HudData, RenderOptions, LayoutConfig, LayoutMode } from '../types.js';
 import { renderHud } from './header.js';
 import { colors, truncateAnsi } from './colors.js';
@@ -17,40 +17,48 @@ const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
 
 let lastStdoutFrame: string | null = null;
-const PANE_SIZE_TTL_MS = 2000;
-let cachedPaneSize: { width?: number; height?: number; at: number } | null = null;
 
-function readTmuxPaneSize(): { width?: number; height?: number } {
+/**
+ * Pane size.
+ *
+ * The HUD pane is a real pty: tmux sends SIGWINCH, so `process.stdout` already
+ * reports the pane size and the 'resize' listener already covers changes.
+ * Asking tmux is only needed when stdout is not a TTY (a piped or redirected
+ * HUD), and then once: the answer is fetched asynchronously so no frame ever
+ * waits on a subprocess.
+ */
+let tmuxPaneSize: { width?: number; height?: number } = {};
+let tmuxQueryStarted = false;
+
+function requestTmuxPaneSize(): void {
   const pane = process.env.TMUX_PANE;
-  if (!pane) {
-    return {};
+  if (tmuxQueryStarted || !pane) {
+    return;
   }
-
-  // Spawning tmux per frame is too costly for the fast render pass; cache the
-  // answer briefly. Pane resizes emit stdout 'resize' events, which bust the
-  // cache in initRenderer().
-  if (cachedPaneSize && Date.now() - cachedPaneSize.at < PANE_SIZE_TTL_MS) {
-    return { width: cachedPaneSize.width, height: cachedPaneSize.height };
-  }
+  tmuxQueryStarted = true;
 
   try {
-    const out = execFileSync(
+    const child = execFile(
       'tmux',
       ['display-message', '-p', '-t', pane, '#{pane_width} #{pane_height}'],
-      { encoding: 'utf8', timeout: 300 }
-    ).trim();
-    const [rawWidth, rawHeight] = out.split(/\s+/);
-    const width = Number(rawWidth);
-    const height = Number(rawHeight);
-    const size = {
-      width: Number.isFinite(width) && width > 0 ? width : undefined,
-      height: Number.isFinite(height) && height > 0 ? height : undefined,
-    };
-    cachedPaneSize = { ...size, at: Date.now() };
-    return size;
+      { encoding: 'utf8', timeout: 1000, windowsHide: true },
+      (error, stdout) => {
+        if (error) {
+          return;
+        }
+        const [rawWidth, rawHeight] = stdout.trim().split(/\s+/);
+        const width = Number(rawWidth);
+        const height = Number(rawHeight);
+        tmuxPaneSize = {
+          width: Number.isFinite(width) && width > 0 ? width : undefined,
+          height: Number.isFinite(height) && height > 0 ? height : undefined,
+        };
+      }
+    );
+    // A pending size probe must not keep the HUD alive on shutdown.
+    child.unref();
   } catch {
-    cachedPaneSize = { at: Date.now() };
-    return {};
+    // tmux missing or unspawnable: stdout and the environment still answer.
   }
 }
 
@@ -58,13 +66,13 @@ function readTmuxPaneSize(): { width?: number; height?: number } {
  * Get terminal width
  */
 export function getTerminalWidth(): number {
-  const tmuxWidth = readTmuxPaneSize().width;
-  if (tmuxWidth) {
-    return tmuxWidth;
-  }
   const stdoutColumns = process.stdout.columns;
   if (Number.isFinite(stdoutColumns) && stdoutColumns > 0) {
     return stdoutColumns;
+  }
+  requestTmuxPaneSize();
+  if (tmuxPaneSize.width) {
+    return tmuxPaneSize.width;
   }
   const envColumns = process.env.COLUMNS ? Number(process.env.COLUMNS) : NaN;
   if (Number.isFinite(envColumns) && envColumns > 0) {
@@ -77,13 +85,13 @@ export function getTerminalWidth(): number {
  * Get terminal height
  */
 export function getTerminalHeight(): number {
-  const tmuxHeight = readTmuxPaneSize().height;
-  if (tmuxHeight) {
-    return tmuxHeight;
-  }
   const stdoutRows = process.stdout.rows;
   if (Number.isFinite(stdoutRows) && stdoutRows > 0) {
     return stdoutRows;
+  }
+  requestTmuxPaneSize();
+  if (tmuxPaneSize.height) {
+    return tmuxPaneSize.height;
   }
   const envLines = process.env.LINES ? Number(process.env.LINES) : NaN;
   if (Number.isFinite(envLines) && envLines > 0) {
@@ -191,7 +199,10 @@ export function initRenderer(): void {
   
   // Handle resize
   process.stdout.on('resize', () => {
-    cachedPaneSize = null;
+    // A non-TTY stdout never fires this, so the one-shot tmux answer only
+    // needs refreshing for the TTY case, where stdout is authoritative anyway.
+    tmuxPaneSize = {};
+    tmuxQueryStarted = false;
     lastStdoutFrame = null;
     process.stdout.write(CLEAR_SCREEN + CURSOR_HOME);
   });
