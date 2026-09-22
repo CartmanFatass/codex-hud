@@ -1,0 +1,862 @@
+diff --git a/src/render/workbench-layout.ts b/src/render/workbench-layout.ts
+new file mode 100644
+--- /dev/null
++++ b/src/render/workbench-layout.ts
+@@ -0,0 +1,122 @@
++/** Pure presentation policy. No rollout I/O, Git processes or terminal input. */
++import type { GitChanges } from '../collectors/git-changes.js';
++import type { ToolCall } from '../types.js';
++import type { PaneId, PaneRect, WorkbenchState } from './workbench-state.js';
++
++export const FILE_LIST_MIN_CONTENT_WIDTH = 36;
++export function panePadding(width: number): number { return width >= 6 ? 1 : 0; }
++export function paneContentWidth(width: number): number {
++  return Math.max(0, width - 2 - 2 * panePadding(width));
++}
++export function summaryOnly(width: number): boolean {
++  return paneContentWidth(width) < FILE_LIST_MIN_CONTENT_WIDTH;
++}
++export function canPreviewDiff(panes: PaneRect[]): boolean {
++  return panes.some(pane => pane.id === 'details' && pane.height > 2 && !summaryOnly(pane.width));
++}
++
++/** Screen lines are not list indices: cards can occupy two lines; summaries none. */
++export function paneItemAt(pane: PaneRect, x: number, y: number): number | undefined {
++  const pad = panePadding(pane.width);
++  if (x < pane.x + 1 + pad || x >= pane.x + pane.width - 1 - pad ||
++      y <= pane.y || y >= pane.y + pane.height - 1) return undefined;
++  const line = pane.offset + y - pane.y - 1;
++  if (line < 0 || line >= pane.contentLength) return undefined;
++  return pane.rowItems ? pane.rowItems[line] ?? undefined : line;
++}
++export function panePageSize(pane?: PaneRect): number {
++  const lines = Math.max(1, (pane?.height ?? 5) - 2);
++  if (!pane?.rowItems || pane.summary) return lines;
++  const items = pane.rowItems.slice(pane.offset, pane.offset + lines).filter(item => item !== null);
++  return Math.max(1, new Set(items).size);
++}
++
++export function workspaceCounts(git: GitChanges) {
++  // Staged and unstaged overlap. Neither their sum nor tool activity is a file count.
++  const changed = (status: string) => status !== ' ' && status !== '.' && status !== '?';
++  return {
++    files: git.files.length,
++    staged: git.files.filter(file => !file.conflict && changed(file.index)).length,
++    unstaged: git.files.filter(file => !file.conflict && changed(file.worktree)).length,
++    untracked: git.files.filter(file => file.index === '?' && file.worktree === '?').length,
++    conflicts: git.files.filter(file => file.conflict).length,
++    binary: git.files.filter(file => file.binary).length,
++  };
++}
++export function workspaceSummary(git?: GitChanges | null): string[] {
++  if (!git) return ['Loading Git…'];
++  if (!git.root) return [git.error ? 'Git unavailable' : 'No Git repository'];
++  const count = workspaceCounts(git);
++  if (!count.files) return [git.error ? 'Git incomplete' : 'Working tree clean'];
++  return [
++    ...(git.error ? ['Git incomplete'] : []),
++    ...(count.conflicts ? [`! ${count.conflicts} conflict${count.conflicts === 1 ? '' : 's'}`] : []),
++    `${count.files} files`, `${count.staged} staged`, `${count.unstaged} unstaged`, `${count.untracked} untracked`,
++  ];
++}
++
++/** Completion alone is not success. No inferred pass rate or agent progress. */
++export function toolResult(call: ToolCall): string {
++  if (call.exitCode !== undefined) return `exit ${call.exitCode}`;
++  if (call.resultSuccess === false || call.status === 'error') return 'reported error';
++  if (call.resultSuccess === true) return 'reported success';
++  return call.status === 'running' ? 'recorded running' : 'result unknown';
++}
++export function toolCommand(call: ToolCall, expanded = false): string {
++  const args = call.arguments;
++  const explicit = typeof args?.cmd === 'string' ? args.cmd : typeof args?.command === 'string' ? args.command : undefined;
++  if (explicit) return explicit;
++  if (typeof args?.code === 'string') return expanded ? args.code : `${call.name} · inline code`;
++  return call.target ?? call.name;
++}
++
++export function layoutWorkbench(width: number, height: number, state: WorkbenchState, agentCount: number, summaryRows = 4): PaneRect[] {
++  const available = Math.max(0, height - 2);
++  const make = (id: PaneId, x: number, y: number, w: number, h: number): PaneRect => ({
++    id, x, y, width: w, height: h, offset: 0, contentLength: 0,
++    summary: id === 'changes' && summaryOnly(w),
++  });
++  if (width <= 0 || !available) return [];
++  if (state.zoom || available < 12 || width < 12) {
++    return [make(state.focus, 0, 1, width, state.collapsed[state.focus] ? 1 : available)];
++  }
++  const stack = (ids: PaneId[], x: number, w: number): PaneRect[] => {
++    const sizes = ids.map(id => state.collapsed[id] ? 1 : 3);
++    let remaining = available - sizes.reduce((sum, n) => sum + n, 0);
++    const target: Record<PaneId, number> = {
++      agents: Math.min(12, Math.max(6, agentCount * (paneContentWidth(w) >= 16 ? 2 : 1) + 2)),
++      details: 10,
++      changes: summaryOnly(w) ? Math.min(8, summaryRows + 2) : 7,
++      activity: 5,
++    };
++    // Reserve enough Details lines for task + latest command + result before
++    // spending extra rows on agent cards. Summary/error rows get an explicit budget.
++    const minimum: Record<PaneId, number> = {agents:6, details:9, changes:Math.min(target.changes,8), activity:3};
++    for (const id of ['details','changes','agents','activity'] as PaneId[]) {
++      const index = ids.indexOf(id);
++      if (index < 0 || state.collapsed[id]) continue;
++      const extra = Math.min(remaining, Math.max(0,minimum[id]-sizes[index]));
++      sizes[index] += extra; remaining -= extra;
++    }
++    while (remaining > 0) {
++      let grew = false;
++      for (let i = 0; i < ids.length && remaining > 0; i++) {
++        if (!state.collapsed[ids[i]] && sizes[i] < target[ids[i]]) {
++          sizes[i]++; remaining--; grew = true;
++        }
++      }
++      if (!grew) break;
++    }
++    const flexible = ids.map((id, i) => ({id, i})).filter(({id}) => !state.collapsed[id] && (id === 'agents' || id === 'details'));
++    const fill = flexible.length ? flexible : ids.map((id, i) => ({id, i})).filter(({id}) => !state.collapsed[id]);
++    for (let i = 0; remaining > 0 && fill.length; i++, remaining--) sizes[fill[i % fill.length].i]++;
++    let y = 1;
++    return ids.map((id, i) => { const pane = make(id, x, y, w, sizes[i]); y += sizes[i]; return pane; });
++  };
++  if (width >= 70) {
++    const left = Math.min(40, Math.floor((width - 1) * 0.38));
++    // File names and their preview share the wider column; a gutter separates borders.
++    return [...stack(['agents', 'activity'], 0, left), ...stack(['details', 'changes'], left + 1, width - left - 1)];
++  }
++  return stack(['agents', 'details', 'changes', 'activity'], 0, width);
++}
+diff --git a/src/render/workbench-state.ts b/src/render/workbench-state.ts
+--- a/src/render/workbench-state.ts
++++ b/src/render/workbench-state.ts
+@@ -1,3 +1,4 @@
++import { paneItemAt, panePageSize } from './workbench-layout.js';
+ import type { SubagentTree } from '../types.js';
+ import type { GitChanges } from '../collectors/git-changes.js';
+ import type { WorkbenchInput } from '../utils/workbench-input.js';
+@@ -16,6 +17,9 @@
+ export interface PaneRect {
+   id: PaneId; x: number; y: number; width: number; height: number;
+   offset: number; contentLength: number;
++  /** Per content line: logical item index, or null for non-selectable text. */
++  rowItems?: Array<number | null>;
++  summary?: boolean;
+ }
+ export interface WorkbenchState {
+   tree: PanelState;
+@@ -23,7 +27,7 @@
+   scroll: Record<PaneId, number>;
+   selectedFile: string | null;
+   selectedEvent: string | null;
+-  preview: 'agent' | 'file' | 'event';
++  preview: 'agent' | 'file' | 'event' | 'workspace';
+   activityTab: ActivityTab;
+   zoom: boolean;
+   help: boolean;
+@@ -51,8 +55,8 @@
+     (state.preview === 'file' && selectedFile !== state.selectedFile);
+   return { ...state, tree: nextTree, selectedFile, detailExpanded:state.tree.selectedId === nextTree.selectedId && state.detailExpanded, scroll: { ...state.scroll, details: changed ? 0 : state.scroll.details } };
+ }
+-function focusPane(state: WorkbenchState, focus: PaneId): WorkbenchState {
+-  const preview = focus === 'agents' ? 'agent' : focus === 'changes' ? 'file'
++function focusPane(state: WorkbenchState, focus: PaneId, ctx: WorkbenchContext): WorkbenchState {
++  const preview = focus === 'agents' ? 'agent' : focus === 'changes' ? (ctx.panes.find(p => p.id === 'changes')?.summary ? 'workspace' : 'file')
+     : focus === 'activity' && state.activityTab === 'events' ? 'event' : state.preview;
+   return { ...state, focus, preview, collapsed:{...state.collapsed, [focus]:false}, scroll: { ...state.scroll, details: preview === state.preview ? state.scroll.details : 0 } };
+ }
+@@ -65,14 +69,14 @@
+     if (!pane) return { state, close: false };
+     if (input.button === 'left' && input.y === pane.y && pane.id === 'details' && next.preview === 'agent' &&
+         pane.width >= 8 && input.x >= pane.x+pane.width-5 && input.x < pane.x+pane.width-1) {
+-      return {state:{...focusPane(next,'details'),detailExpanded:!next.detailExpanded,scroll:{...next.scroll,details:0}},close:false};
++      return {state:{...focusPane(next,'details',ctx),detailExpanded:!next.detailExpanded,scroll:{...next.scroll,details:0}},close:false};
+     }
+     if (input.button === 'left' && input.y === pane.y) {
+-      return {state:{...focusPane(next,pane.id), collapsed:{...next.collapsed,[pane.id]:!next.collapsed[pane.id]}},close:false};
++      return {state:{...focusPane(next,pane.id,ctx), collapsed:{...next.collapsed,[pane.id]:!next.collapsed[pane.id]}},close:false};
+     }
+-    next = focusPane(next, pane.id);
++    next = focusPane(next, pane.id,ctx);
+     if (input.button === 'left') {
+-      if (input.y > pane.y && input.y < pane.y + pane.height - 1) clickIndex = pane.offset + input.y - pane.y - 1;
++      clickIndex = paneItemAt(pane, input.x, input.y);
+     } else key = input.button === 'wheel-down' ? 'down' : 'up';
+   }
+   if (key === 'close') return { state: next, close: true };
+@@ -82,27 +86,27 @@
+   }
+   if (key === 'help') next.help = true;
+   else if (key === 'tab' || key === 'shift-tab') {
+-    next = focusPane(next, PANE_IDS[(PANE_IDS.indexOf(next.focus) + (key === 'tab' ? 1 : 3)) % 4]);
+-  } else if (PANE_IDS.includes(key as PaneId)) next = focusPane(next, key as PaneId);
++    next = focusPane(next, PANE_IDS[(PANE_IDS.indexOf(next.focus) + (key === 'tab' ? 1 : 3)) % 4],ctx);
++  } else if (PANE_IDS.includes(key as PaneId)) next = focusPane(next, key as PaneId,ctx);
+   else if (key === 'detail-toggle' && next.preview === 'agent') {
+-    next = {...focusPane(next,'details'),detailExpanded:!next.detailExpanded,scroll:{...next.scroll,details:0}};
++    next = {...focusPane(next,'details',ctx),detailExpanded:!next.detailExpanded,scroll:{...next.scroll,details:0}};
+   }
+   else if (key === 'zoom') next.zoom = !next.zoom;
+   else if (key === 'escape') {
+     if (next.focus === 'details' && next.preview === 'agent' && next.detailExpanded) { next.detailExpanded=false; next.scroll.details=0; }
+     else if (next.zoom) next.zoom = false;
+-    else if (next.focus === 'details') next = focusPane(next, next.preview === 'file' ? 'changes' : next.preview === 'event' ? 'activity' : 'agents');
+-    else if (next.focus !== 'agents') next = focusPane(next, 'agents');
++    else if (next.focus === 'details') next = focusPane(next, next.preview === 'file' || next.preview === 'workspace' ? 'changes' : next.preview === 'event' ? 'activity' : 'agents',ctx);
++    else if (next.focus !== 'agents') next = focusPane(next, 'agents',ctx);
+     else return { state: next, close: true };
+   } else if (key === 'next-tab' || key === 'previous-tab') {
+     const tabs: ActivityTab[] = next.tasksEnabled ? ['tasks', 'checks', 'events'] : ['checks', 'events'];
+     next.activityTab = tabs[(tabs.indexOf(next.activityTab) + (key === 'next-tab' ? 1 : tabs.length - 1)) % tabs.length];
+     next.scroll.activity = 0;
+-    next = focusPane(next, 'activity');
+-  } else if (key === 'enter' && next.focus !== 'details') next = focusPane(next, 'details');
++    next = focusPane(next, 'activity',ctx);
++  } else if (key === 'enter' && next.focus !== 'details') next = focusPane(next, 'details',ctx);
+   else {
+     const pane = ctx.panes.find(p => p.id === next.focus);
+-    const page = Math.max(1, (pane?.height ?? 5) - 2);
++    const page = panePageSize(pane);
+     const delta = key === 'down' ? 1 : key === 'up' ? -1 : key === 'page-down' ? page : key === 'page-up' ? -page : 0;
+     if (next.focus === 'agents') {
+       const rows = visibleRows(ctx.tree.nodes, next.tree);
+@@ -113,7 +117,8 @@
+         if (row) next.tree = { ...next.tree, selectedId: row.node.id };
+       } else if (key === 'sort') next.tree = { ...next.tree, sort: next.tree.sort === 'active' ? 'created' : 'active' };
+       else if (['left', 'right', 'filter'].includes(key)) next.tree = applyKey(next.tree, key as 'left' | 'right' | 'filter', rows).state;
+-    } else if (next.focus === 'changes' || (next.focus === 'activity' && next.activityTab === 'events')) {
++    } else if ((next.focus === 'changes' && !pane?.summary) || (next.focus === 'activity' && next.activityTab === 'events')) {
++      if (!delta && key !== 'home' && key !== 'end' && clickIndex === undefined) return { state: next, close: false };
+       const files = next.focus === 'changes';
+       const ids = files ? ctx.git?.files.map(f => f.path) ?? [] : ctx.events.map(e => e.id);
+       const current = ids.indexOf(files ? next.selectedFile ?? '' : next.selectedEvent ?? '');
+diff --git a/src/render/workbench.ts b/src/render/workbench.ts
+--- a/src/render/workbench.ts
++++ b/src/render/workbench.ts
+@@ -1,6 +1,7 @@
+ import { taskText } from '../utils/task-text.js';
+ import { renderModelEffortToken, modelLegend } from './model-glyphs.js';
+ import { displayConfig } from './hud-config.js';
++import { layoutWorkbench, panePadding, paneContentWidth, summaryOnly, workspaceSummary, workspaceCounts, toolCommand, toolResult, FILE_LIST_MIN_CONTENT_WIDTH } from './workbench-layout.js';
+ import { formatTokenRate } from '../collectors/token-rate.js';
+ /** Pure layout/rendering for the tree workbench. Rectangles also drive mouse hit testing. */
+ import type { SubagentTree, SubagentTreeNode, ToolCall } from '../types.js';
+@@ -10,7 +11,7 @@
+ import { visibleRows } from './panel-state.js';
+ import { subagentVisual, formatElapsedShort } from './subagent-chip.js';
+ import { formatAge } from './subagent-tree-view.js';
+-import { colors, theme, truncateAnsi, visualLength, stripAnsi } from './colors.js';
++import { colors, theme, truncateAnsi, visualLength } from './colors.js';
+ import { reconcileWorkbench, type PaneId, type PaneRect, type WorkbenchState, type WorkbenchEvent } from './workbench-state.js';
+ 
+ export interface WorkbenchInputData {
+@@ -31,7 +32,7 @@
+ 
+ /** Escape terminal controls in external data, including filenames and tool text. */
+ export function safeText(text: string): string {
+-  return text.replace(/[\x00-\x1f\x7f-\x9f]/g, ch => ch === '\t' ? '  ' : ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : `\\x${ch.charCodeAt(0).toString(16).padStart(2, '0')}`);
++  return text.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, ch => ch === '\t' ? '\\t' : ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch.charCodeAt(0) > 255 ? `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}` : `\\x${ch.charCodeAt(0).toString(16).padStart(2, '0')}`);
+ }
+ function wrap(text: string, width: number): string[] {
+   const lines: string[] = [];
+@@ -52,36 +53,45 @@
+ function allNodes(nodes: SubagentTreeNode[]): SubagentTreeNode[] {
+   return nodes.flatMap(node => [node, ...allNodes(node.children)]);
+ }
+-function rectangles(width: number, height: number, state: WorkbenchState, agentCount: number): PaneRect[] {
+-  const make = (id: PaneId, x: number, y: number, w: number, h: number): PaneRect => ({ id, x, y, width:w, height:h, offset:0, contentLength:0 });
+-  const available = Math.max(0, height - 2);
+-  if (state.zoom || available < 12 || width < 12) return available > 0 ? [make(state.focus, 0, 1, width, state.collapsed[state.focus] ? 1 : available)] : [];
+-  const stack = (ids: PaneId[], x:number, w:number): PaneRect[] => {
+-    const expanded = ids.filter(id => !state.collapsed[id]);
+-    const reserved = ids.length - expanded.length;
+-    const space = available - reserved;
+-    let y = 1;
+-    let remaining = space;
+-    let count = expanded.length;
+-    return ids.map(id => {
+-      const h = state.collapsed[id] ? 1 : count === 1 ? remaining : Math.max(3, Math.floor(remaining / count));
+-      if (!state.collapsed[id]) { remaining -= h; count--; }
+-      const rect = make(id,x,y,w,h); y += h; return rect;
+-    });
+-  };
+-  if (width >= 70) {
+-    const left = Math.min(44, Math.floor(width * 0.38));
+-    return [...stack(['agents','changes'],0,left), ...stack(['details','activity'],left,width-left)];
+-  }
+-  return stack(['agents','details','changes','activity'],0,width);
++/** Bounded field previews; full text remains available with v. */
++function field(text: string, width: number, maxLines = 2): string[] {
++  const lines = wrap(text, width);
++  if (lines.length <= maxLines) return lines;
++  const preview = lines.slice(0, maxLines);
++  preview[maxLines - 1] = truncateAnsi(`${preview[maxLines - 1]}…`, width);
++  return preview;
++}
++/** Preserve the filename and nearest useful parent, not an uninformative path prefix. */
++function pathLabel(path: string, width: number): string {
++  const text = safeText(path);
++  if (visualLength(text) <= width) return text;
++  const parts = text.split('/');
++  let tail = parts.pop() ?? '';
++  while (parts.length && visualLength(`…/${parts.at(-1)}/${tail}`) <= width) tail = `${parts.pop()}/${tail}`;
++  if (visualLength(`…/${tail}`) <= width) return `…/${tail}`;
++  const chars = Array.from(tail);
++  while (chars.length && visualLength(`…${chars.join('')}`) > width) chars.shift();
++  return truncateAnsi(`…${chars.join('')}`,width);
++}
++function workspaceDetails(git: GitChanges | null | undefined, width: number): string[] {
++  const lines = [theme.strong('Workspace · read only'), ...workspaceSummary(git).map(line => line.startsWith('!') || line.startsWith('Git ') ? theme.warning(line) : theme.value(line))];
++  if (git?.root) {
++    lines.push(...wrap(`Branch: ${safeText(git.branch ?? 'HEAD')} · ↑${git.ahead} ↓${git.behind}`,width).map(colors.dim));
++    lines.push(...wrap('Staged and unstaged can overlap. Files belong to the workspace, not an agent.',width).map(colors.dim));
++    if (workspaceCounts(git).binary) lines.push(colors.dim(`${workspaceCounts(git).binary} binary files`));
++  }
++  if (git?.error) lines.push(...wrap(git.error,width).map(theme.warning));
++  return lines;
+ }
+ function command(call: ToolCall): string {
+   const args = call.arguments;
+   return typeof args?.code === 'string' ? args.code : typeof args?.cmd === 'string' ? args.cmd : typeof args?.command === 'string' ? args.command : call.target ?? call.name;
+ }
+ function statusLine(call: ToolCall, label = command(call)): string {
+-  const symbol = call.status === 'error' ? '✗' : call.status === 'running' ? '▸' : call.resultSuccess === true ? '✓' : '·';
+-  const paint = call.status === 'error' ? theme.error : call.status === 'running' ? theme.info : call.resultSuccess === true ? theme.success : colors.dim;
++  const failed = call.status === 'error' || call.resultSuccess === false || (call.exitCode !== undefined && call.exitCode !== 0);
++  const succeeded = call.resultSuccess === true || call.exitCode === 0;
++  const symbol = failed ? '✗' : call.status === 'running' ? '▸' : succeeded ? '✓' : '·';
++  const paint = failed ? theme.error : call.status === 'running' ? theme.info : succeeded ? theme.success : colors.dim;
+   return paint(`${symbol} ${safeText(label)}`);
+ }
+ function agentDetails(input: WorkbenchInputData, state: WorkbenchState, width: number): string[] {
+@@ -89,49 +99,57 @@
+   if (!node) return [colors.dim('Select an agent')];
+   const now = input.nowMs ?? Date.now();
+   const {icon, paint} = subagentVisual(node);
+-  const lines = [paint(`${icon} ${safeText(node.name)} · ${node.status}`)];
+   const expanded = state.detailExpanded;
+-  if (node.model || node.effort) lines.push(expanded ? theme.model(`${safeText(node.model ?? '')}${node.effort ? ` · ${safeText(node.effort)}` : ''}`) : renderModelEffortToken(safeText(node.model ?? ''),safeText(node.effort ?? '')));
+-  const task = taskText(node.task);
+-  if (task) lines.push(...(expanded ? wrap(`Task: ${task}`, width) : [truncateAnsi(`Task: ${safeText(task)}`,width)]));
+-  if (node.status === 'running' || node.status === 'starting') {
+-    const start = node.turnStartedAt ?? node.startedAt;
+-    if (start) lines.push(`This turn ${formatElapsedShort(start, now)}`);
+-  }
+-  lines.push(colors.dim(`Last event ${formatAge(node.lastEventAt, now) ?? 'unknown'}`));
++  const lines = field(`${icon} ${node.status} · ${safeText(node.name)}`,width,expanded ? Infinity : 1).map(paint);
++  lines.push(...field(`Task: ${taskText(node.task) ?? 'No task reported'}`,width,expanded ? Infinity : 2));
+   const agent = input.agent;
+   if (agent && (!agent.session || agent.session.id === node.id)) {
+-    const rate = formatTokenRate(agent.outputRate, now);
+-    if (rate) {
+-      lines.push(theme.value(`Out ${rate}`));
+-      if (expanded) lines.push(colors.dim(`Sample ${(agent.outputRate!.sampleMs / 1000).toFixed(1)}s; includes waits`));
+-    }
+     const calls = agent.toolActivity.recentCalls;
+     const latest = calls[calls.length - 1];
+     if (latest) {
+-      if (expanded) {
+-      lines.push(theme.strong('Latest tool'), ...wrap(stripAnsi(statusLine(latest)), width));
+-      if (latest.output) lines.push(...latest.output.split('\n').slice(-12).flatMap(line => wrap(line, width)));
+-      if (latest.duration !== undefined) lines.push(colors.dim(`${(latest.duration / 1000).toFixed(1)}s`));
+-      } else {
+-        const result = latest.exitCode !== undefined ? ` · exit ${latest.exitCode}` : '';
+-        const duration = latest.duration !== undefined ? ` · ${(latest.duration/1000).toFixed(1)}s` : '';
+-        const name = truncateAnsi(safeText(latest.name.replace(/^functions\./,'')),Math.max(1,width-2-visualLength(result+duration)));
+-        lines.push(truncateAnsi(statusLine(latest,stripAnsi(name)+result+duration),width));
+-      }
+-    }
++      const earlier = node.turnStartedAt && latest.timestamp < node.turnStartedAt;
++      lines.push(colors.dim(earlier ? 'Tool · prior turn' : 'Latest tool'));
++      lines.push(...field(toolCommand(latest,expanded),width,expanded ? Infinity : 2));
++      const result = `${toolResult(latest)} · ${latest.name.replace(/^functions\./,'')}${latest.duration !== undefined ? ` · ${(latest.duration/1000).toFixed(1)}s` : ''}`;
++      lines.push(statusLine(latest,result));
++      if (expanded && latest.output) lines.push(...latest.output.split('\n').slice(-12).flatMap(line => wrap(line,width)));
++    } else lines.push(colors.dim('No tool event reported'));
+     const plan = agent.planProgress;
+-    if (expanded && plan && state.tasksEnabled) lines.push(theme.strong(`Agent tasks ${plan.completedSteps}/${plan.totalSteps}`), ...plan.steps.flatMap(step => wrap(`${step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '▸' : '·'} ${step.step}`, width)));
+-  } else if (node.rolloutPath) lines.push(colors.dim('Loading agent activity…'));
+-  if (expanded) lines.push(colors.dim(`ID ${safeText(node.id)}`));
++    if (plan && state.tasksEnabled) {
++      if (expanded) lines.push(theme.strong(`Reported plan ${plan.completedSteps}/${plan.totalSteps}`), ...plan.steps.flatMap(step => wrap(`${step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '▸' : '·'} ${step.step}`,width)));
++      else {
++        const current = plan.steps.find(step => step.status === 'in_progress');
++        if (current) lines.push(...field(`Plan: ${current.step}`,width));
++      }
++    }
++    const rate = formatTokenRate(agent.outputRate,now);
++    if (expanded && rate) lines.push(theme.value(`Out ${rate}`), ...wrap(`Sample ${(agent.outputRate!.sampleMs/1000).toFixed(1)}s; includes waits`,width).map(colors.dim));
++  } else lines.push(colors.dim(node.rolloutPath ? 'Loading agent activity…' : 'No tool evidence'));
++  // Creation time is not this turn's start; quiet is not evidence of a stall.
++  if ((node.status === 'running' || node.status === 'starting') && node.turnStartedAt) lines.push(colors.dim(`This turn ${formatElapsedShort(node.turnStartedAt,now)}`));
++  lines.push(...field(`Last evidence ${formatAge(node.lastEventAt,now) ?? 'unknown'}`,width).map(colors.dim));
++  if (node.model || node.effort) lines.push(...field(`${node.model ?? 'Unknown model'}${node.effort ? ` · ${node.effort}` : ''}`,width).map(theme.model));
++  if (expanded) lines.push(...wrap(`ID ${node.id}`,width).map(colors.dim));
+   return lines;
+ }
+ function detailLines(input: WorkbenchInputData, state: WorkbenchState, width: number): string[] {
++  if (state.preview === 'workspace') return workspaceDetails(input.git,width);
+   if (state.preview === 'file') {
+     if (!state.selectedFile) return [colors.dim('No changed file selected')];
+-    return [theme.strong(safeText(state.selectedFile)), colors.dim('Workspace changes'), ...(input.diff ?? ['Loading diff…']).flatMap(raw => {
++    const file = input.git?.files.find(file => file.path === state.selectedFile);
++    const lines = [colors.dim('Workspace · read only'), ...wrap(safeText(state.selectedFile),width).map(theme.strong)];
++    if (file?.previousPath) lines.push(...wrap(`From: ${safeText(file.previousPath)}`,width).map(colors.dim));
++    if (input.git?.error) lines.push(...field(`Git incomplete: ${input.git.error}`,width).map(theme.warning));
++    if (file) {
++      lines.push(file.conflict ? theme.error('Conflict') : colors.dim(`Index ${file.index === ' ' ? '·' : safeText(file.index)} / Worktree ${file.worktree === ' ' ? '·' : safeText(file.worktree)}`));
++      lines.push(colors.dim(file.binary ? 'Binary file' : file.added !== null && file.removed !== null ? `+${file.added} -${file.removed}${width >= FILE_LIST_MIN_CONTENT_WIDTH ? ' (index + worktree)' : ''}` : 'Line counts unknown'));
++    }
++    if (width < FILE_LIST_MIN_CONTENT_WIDTH) return [...lines, colors.dim('Widen for diff')];
++    lines.push(colors.dim('Long lines clipped · z zoom'));
++    return [...lines, ...(input.diff ?? ['Loading diff…']).map(raw => {
+       const paint = raw.startsWith('+') ? theme.success : raw.startsWith('-') ? theme.error : raw.startsWith('@@') ? theme.info : theme.value;
+-      return wrap(raw, width).map(line => paint(line));
++      // One source line stays one screen line; no narrow-column diff wrapping.
++      return paint(truncateAnsi(safeText(raw),width));
+     })];
+   }
+   if (state.preview === 'event') {
+@@ -152,7 +170,12 @@
+     return {lines:help.slice(0,height).map(line => truncateAnsi(line,width)),panes:[],state};
+   }
+   const rows = visibleRows(input.tree.nodes, state.tree);
+-  const panes = rectangles(width,height,state,rows.length);
++  const panes = layoutWorkbench(width,height,state,rows.length,workspaceSummary(input.git).length);
++  if (state.focus === 'changes') {
++    const preview = panes.find(p => p.id === 'changes')?.summary ? 'workspace' : 'file';
++    if (state.preview !== preview) state.scroll.details = 0;
++    state.preview = preview;
++  }
+   const summary = summarizeSubagents(input.tree.nodes);
+   const git = input.git;
+   const repo = git?.root ? `${safeText(git.branch ?? 'HEAD')} ↑${git.ahead}↓${git.behind}${git.files.some(file => file.conflict) ? ' CONFLICT' : ''}` : git?.error ? safeText(git.error) : 'No Git repository';
+@@ -163,44 +186,66 @@
+   const header = theme.accent('[Main] [Settings]') + ' ' + (input.error ? theme.error(safeText(input.error)) : theme.info(heading));
+   const blocks = new Map<PaneId,string[]>();
+   for (const pane of panes) {
+-    const inner = Math.max(1,pane.width - 2);
++    const padding = panePadding(pane.width);
++    const inner = paneContentWidth(pane.width);
++    const count = Math.max(0,pane.height - 2);
+     let lines: string[] = [];
+     let selected = -1;
+     let title = '';
+     if (pane.id === 'agents') {
+-      title = `1 Agents · ${state.tree.sort === 'created' ? 'created' : 'active'}${state.tree.filter !== 'all' ? ` · ${state.tree.filter}` : ''}`;
+-      selected = rows.findIndex(row => row.node.id === state.tree.selectedId);
+-      lines = rows.map(row => {
++      title = `1 Agents${pane.width >= 40 ? ` · ${state.tree.sort === 'created' ? 'created' : 'active'}` : ''}${state.tree.filter !== 'all' ? ` · ${state.tree.filter}` : ''}`;
++      const cardHeight = inner >= 16 && count >= 4 ? 2 : 1;
++      pane.rowItems = [];
++      rows.forEach((row,index) => {
+         const {icon,paint} = subagentVisual(row.node);
+         const sub = summarizeSubagents(row.node.children);
+         const badge = sub.active ? ` ${sub.active}▸` : sub.failed ? ` ${sub.failed}✗` : row.collapsed ? ` +${sub.total}` : '';
+         const prefix = visualLength(row.prefix) > Math.floor(inner / 3) ? '… ' : row.prefix;
+         const lead = `${row.node.id === state.tree.selectedId ? '▌' : ' '}${prefix}${row.collapsed ? '+' : icon} `;
+         const token = truncateAnsi(renderModelEffortToken(safeText(row.node.model ?? ''),safeText(row.node.effort ?? ''),
+-          {mode:inner < 32 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs}),Math.max(2,Math.floor(inner/3)));
++          {mode:inner < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs}),Math.max(2,Math.floor(inner/4)));
+         const suffix = `${token ? ' '+token : ''}${badge}`;
+-        const name = truncateAnsi(safeText(row.node.name), Math.max(1,inner - visualLength(lead + suffix)));
+-        const line = `${lead}${name}${suffix}`;
+-        return row.context ? colors.dim(line) : paint(line);
++        const name = truncateAnsi(safeText(row.node.name),Math.max(1,inner-visualLength(lead+suffix)));
++        lines.push((row.context ? colors.dim : paint)(`${lead}${name}${suffix}`));
++        pane.rowItems!.push(index);
++        if (cardHeight === 2) {
++          lines.push(colors.dim(truncateAnsi(`  ${prefix}${safeText(taskText(row.node.task) ?? 'No task reported')}`,inner)));
++          pane.rowItems!.push(index);
++        }
+       });
++      selected = pane.rowItems.indexOf(rows.findIndex(row => row.node.id === state.tree.selectedId));
+       if (!lines.length) lines = [colors.dim(input.tree.nodes.length ? 'No matching agents' : 'No subagents')];
+     } else if (pane.id === 'details') {
+-      title = state.preview === 'file' ? '2 Diff' : state.preview === 'event' ? '2 Event detail' : '2 Agent detail';
++      title = state.preview === 'workspace' ? '2 Workspace' : state.preview === 'file' ? (inner < FILE_LIST_MIN_CONTENT_WIDTH ? '2 File' : '2 Diff') : state.preview === 'event' ? '2 Event' : pane.width < 24 ? '2 Info' : '2 Agent detail';
+       lines = [...(input.error ? wrap(input.error,inner).map(theme.warning) : []),...detailLines(input,state,inner)];
+     } else if (pane.id === 'changes') {
+-      title = `3 Changes · ${git?.files.length ?? 0}`;
+-      selected = git?.files.findIndex(file => file.path === state.selectedFile) ?? -1;
+-      lines = git?.files.map(file => {
+-        const marker = file.path === state.selectedFile ? '▌' : ' ';
+-        const status = file.conflict ? '!!' : `${file.index}${file.worktree}`;
+-        const counts = file.binary ? ' bin' : file.added !== null && file.removed !== null ? ` +${file.added}-${file.removed}` : '';
+-        const name = truncateAnsi(safeText(file.path), Math.max(1,inner - visualLength(marker + status + ' ' + counts)));
+-        const text = `${marker}${status} ${name}${counts}`;
+-        return file.conflict ? theme.error(text) : file.index === '?' ? theme.info(text) : theme.value(text);
+-      }) ?? [];
+-      if (!lines.length) lines = [colors.dim(git?.error ? safeText(git.error) : git?.root ? 'Working tree clean' : 'No Git repository')];
++      title = pane.width < 40 ? '3 Changes' : '3 Changes · workspace';
++      pane.rowItems = [];
++      if (pane.summary) {
++        lines = workspaceSummary(git).map(line => line.startsWith('!') || line.startsWith('Git ') ? theme.warning(line) : theme.value(line));
++        pane.rowItems = lines.map(() => null);
++      } else {
++        if (git?.error) { lines.push(theme.warning('! Git incomplete · see Details')); pane.rowItems.push(null); }
++        const stats = git?.files.map(file => file.binary ? 'binary' : file.added !== null && file.removed !== null ? `+${file.added} -${file.removed}` : 'unknown') ?? [];
++        const statWidth = inner >= 52 ? Math.min(24,stats.reduce((max,stat) => Math.max(max,visualLength(stat)),0)) : git?.files.some(file => file.binary) ? 3 : 0;
++        git?.files.forEach((file,index) => {
++          const marker = file.path === state.selectedFile ? '▌' : ' ';
++          const status = file.conflict ? '!!' : `${file.index === ' ' ? '·' : safeText(file.index)}${file.worktree === ' ' ? '·' : safeText(file.worktree)}`;
++          const stat = inner >= 52 ? stats[index] : file.binary ? 'bin' : '';
++          const suffix = statWidth ? ` ${truncateAnsi(stat,statWidth).padStart(statWidth)}` : '';
++          const nameWidth = Math.max(1,inner-5-visualLength(suffix));
++          const text = `${marker} ${status} ${fit(pathLabel(file.path,nameWidth),nameWidth)}${suffix}`;
++          if (file.path === state.selectedFile) selected = lines.length;
++          lines.push((file.conflict ? theme.error : file.index === '?' ? theme.info : theme.value)(text));
++          pane.rowItems!.push(index);
++        });
++        if (!git?.files.length) {
++          lines.push(...workspaceSummary(git).map(colors.dim));
++          pane.rowItems = lines.map(() => null);
++        }
++      }
+     } else {
+-      title = `4 ${state.activityTab === 'tasks' ? 'Tasks' : state.activityTab === 'checks' ? 'Checks' : 'Events'} [ ]`;
++      title = `4 ${state.activityTab === 'tasks' ? 'Tasks' : state.activityTab === 'checks' ? 'Checks' : 'Events'}${pane.width >= 24 ? ' [ ]' : ''}`;
+       if (state.activityTab === 'tasks') {
+         const plan = input.main?.planProgress;
+         lines = plan ? plan.steps.map(step => (step.status === 'completed' ? theme.success : step.status === 'in_progress' ? theme.info : colors.dim)(`${step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '▸' : '·'} ${safeText(step.step)}`)) : [colors.dim('No plan reported')];
+@@ -215,30 +260,40 @@
+       }
+     }
+     pane.contentLength = lines.length;
+-    const count = Math.max(0,pane.height - 2);
+     let offset = Math.min(state.scroll[pane.id], Math.max(0,lines.length-count));
+     if (selected >= 0 && count > 0) {
+       if (selected < offset) offset = selected;
+-      else if (selected >= offset + count) offset = selected - count + 1;
++      else {
++        const item = pane.rowItems?.[selected];
++        let end = selected;
++        while (item !== null && item !== undefined && pane.rowItems?.[end + 1] === item) end++;
++        if (end >= offset + count) offset = Math.min(selected,end-count+1);
++      }
++      // Keep card headers visible at the top; do not start on a task continuation.
++      while (offset > 0 && pane.rowItems?.[offset] != null && pane.rowItems?.[offset] === pane.rowItems?.[offset-1]) offset++;
+     }
+     pane.offset = offset;
+     state.scroll[pane.id] = offset;
+     const border = pane.id === state.focus ? theme.accent : colors.dim;
+     const toggle = pane.id === 'details' && state.preview === 'agent' && pane.width >= 8 ? `[v${state.detailExpanded ? '−' : '+'}]` : '';
+-    const top = border(`┌${fit(` ${state.collapsed[pane.id] ? "+" : "−"} ${title} `,Math.max(0,pane.width-2-toggle.length))}${toggle}┐`);
+-    const overflow = lines.length > count ? ` ${offset+1}-${Math.min(lines.length,offset+count)}/${lines.length} ` : '';
++    const titleWidth = Math.max(0,pane.width-2-toggle.length);
++    const label = truncateAnsi(` ${state.collapsed[pane.id] ? '+' : '−'} ${title} `,titleWidth);
++    const top = border(`┌${label}${'─'.repeat(Math.max(0,titleWidth-visualLength(label)))}${toggle}┐`);
++    const overflow = lines.length > count ? ` ${offset ? '↑ ' : ''}${offset+count < lines.length ? '↓ more' : ''} ` : pane.id === 'changes' ? (pane.summary ? ' workspace ' : ' XY index/worktree ') : '';
+     const bottom = border(`└${fit(overflow,Math.max(0,pane.width-2)).replace(/ /g,'─')}┘`);
+-    const body = Array.from({length:count},(_,i) => `${border('│')}${fit(lines[offset+i] ?? '',Math.max(0,pane.width-2))}${border('│')}`);
++    const body = Array.from({length:count},(_,i) => `${border('│')}${' '.repeat(padding)}${fit(lines[offset+i] ?? '',inner)}${' '.repeat(padding)}${border('│')}`);
+     blocks.set(pane.id,[top,...body,bottom].slice(0,pane.height).map(line => truncateAnsi(line,pane.width)));
+   }
+   const canvas: string[] = [truncateAnsi(header,width)];
+   for (let y=1; y<height-1; y++) {
+     const onRow = panes.filter(p => y >= p.y && y < p.y+p.height).sort((a,b)=>a.x-b.x);
+-    canvas.push(truncateAnsi(onRow.map(p => fit(blocks.get(p.id)?.[y-p.y] ?? '',p.width)).join(''),width));
++    let cursor = 0;
++    const line = onRow.map(p => { const gap = ' '.repeat(Math.max(0,p.x-cursor)); cursor=p.x+p.width; return gap+fit(blocks.get(p.id)?.[y-p.y] ?? '',p.width); }).join('');
++    canvas.push(fit(line,width));
+   }
+   if (height > 1) {
+-    const hint = state.focus === 'agents' ? 'j/k move  h/l fold  s sort  f filter' : state.focus === 'changes' ? 'j/k file  Enter diff' : state.focus === 'activity' ? '[ ] tab  j/k scroll' : state.preview === 'agent' ? 'v more/less  j/k scroll' : 'j/k scroll  Esc back';
+-    canvas.push(truncateAnsi(input.notice ? theme.info(safeText(input.notice)) : input.error ? theme.warning(safeText(input.error)) : colors.dim(width >= 60 ? `Tab pane  ${hint}  z zoom  ? keys  q close` : `, settings  m main  ? keys`),width));
++    const hint = state.focus === 'agents' ? 'j/k move  h/l fold  s sort  f filter' : state.focus === 'changes' ? (summaryOnly(width) ? 'Workspace summary · widen for files' : 'j/k file  Enter diff') : state.focus === 'activity' ? '[ ] tab  j/k scroll' : state.preview === 'agent' ? 'v more/less  j/k scroll' : 'j/k scroll  Esc back';
++    canvas.push(truncateAnsi(input.notice ? theme.info(safeText(input.notice)) : input.error ? theme.warning(safeText(input.error)) : colors.dim(width >= 60 ? `Tab pane  ${hint}  z zoom  ? keys  q close` : state.focus === 'changes' && panes.find(p => p.id === 'changes')?.summary ? 'Widen for files · ? keys' : `, settings  m main  ? keys`),width));
+   }
+   return {lines:canvas.slice(0,height),panes,state};
+ }
+diff --git a/src/tree-page.ts b/src/tree-page.ts
+--- a/src/tree-page.ts
++++ b/src/tree-page.ts
+@@ -1,6 +1,7 @@
+ /** Live keyboard/mouse workbench beside the compact HUD. */
+ import { navigateSession } from './utils/session-navigation.js';
+ import { visibleRows } from './render/panel-state.js';
++import { paneItemAt, canPreviewDiff } from './render/workbench-layout.js';
+ import { defaultSettings, saveSettings } from './settings.js';
+ import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
+ import { resizeTreePane } from './utils/pane-width.js';
+@@ -128,7 +129,7 @@
+           agent = result;
+           history.update(tree,main,agent);
+         }
+-      } else if (state.preview === 'file' && selectedFile && git?.root) {
++      } else if (state.preview === 'file' && selectedFile && git?.root && canPreviewDiff(frame?.panes ?? [])) {
+         const key = JSON.stringify([git.root,selectedFile.path,gitRevision]);
+         if (key !== diffKey) {
+           const repoRoot = git.root;
+@@ -242,10 +243,9 @@
+         continue;
+       }
+       const agentPane = frame?.panes.find(p=>p.id === 'agents');
+-      const clickedAgent = input.type === 'mouse' && input.button === 'left' && agentPane &&
+-        input.x > agentPane.x && input.x < agentPane.x+agentPane.width-1 &&
+-        input.y > agentPane.y && input.y < agentPane.y+agentPane.height-1
+-        ? visibleRows(tree.nodes,state.tree)[agentPane.offset+input.y-agentPane.y-1]?.node : undefined;
++      const clickedIndex = input.type === 'mouse' && input.button === 'left' && agentPane
++        ? paneItemAt(agentPane,input.x,input.y) : undefined;
++      const clickedAgent = clickedIndex === undefined ? undefined : visibleRows(tree.nodes,state.tree)[clickedIndex]?.node;
+       const previous = state;
+       const result = handleWorkbenchInput(state,input,{tree,git,panes:frame?.panes ?? [],events:history.values()});
+       state = result.state;
+@@ -268,7 +268,7 @@
+     process.once('SIGTERM',()=>finish());
+     process.once('SIGHUP',()=>finish());
+     process.stdin.once('end',()=>finish());
+-    process.stdout.on('resize',()=>{lastPaint='';render();});
++    process.stdout.on('resize',()=>{lastPaint='';render();void refreshInspection();});
+     if (process.stdin.isTTY) process.stdin.setRawMode(true);
+     process.stdout.write(settings.mouse ? ENTER : '\x1b[?1049h\x1b[?25l');
+     void resizeTreePane(settings.treeWidth).catch(()=>{});
+diff --git a/tests/unit/workbench-layout.test.ts b/tests/unit/workbench-layout.test.ts
+new file mode 100644
+--- /dev/null
++++ b/tests/unit/workbench-layout.test.ts
+@@ -0,0 +1,135 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { layoutWorkbench, paneContentWidth, panePadding, paneItemAt, panePageSize, summaryOnly, canPreviewDiff, workspaceCounts, workspaceSummary, toolCommand, toolResult } from '../../src/render/workbench-layout.js';
++import type { WorkbenchState, PaneId, PaneRect } from '../../src/render/workbench-state.js';
++import type { GitChanges, GitChangedFile } from '../../src/collectors/git-changes.js';
++import type { ToolCall } from '../../src/types.js';
++
++// No runtime dependency on collectors, process execution or tmux.
++const state = (focus: PaneId = 'agents'): WorkbenchState => ({
++  tree: { selectedId: null, collapsed: new Set<string>(), view: 'tree', filter: 'all', sort: 'active', scroll: 0 },
++  focus, scroll: {agents:0, details:0, changes:0, activity:0}, selectedFile:null, selectedEvent:null,
++  preview:'agent', activityTab:'checks', zoom:false, help:false,
++  collapsed:{agents:false, details:false, changes:false, activity:true}, tasksEnabled:false, detailExpanded:false,
++});
++const file = (overrides: Partial<GitChangedFile> = {}): GitChangedFile => ({path:'src/a.ts',index:' ',worktree:'M',added:2,removed:1,binary:false,conflict:false,...overrides});
++const git = (files: GitChangedFile[], error?: string): GitChanges => ({root:'/workspace',branch:'main',ahead:0,behind:0,files,error});
++const pane = (overrides: Partial<PaneRect> = {}): PaneRect => ({id:'agents',x:0,y:1,width:30,height:8,offset:0,contentLength:6,rowItems:[0,0,1,1,null,2],...overrides});
++const call = (overrides: Partial<ToolCall> = {}): ToolCall => ({id:'tool',name:'exec',status:'completed',timestamp:new Date('2026-09-16T00:00:00Z'),...overrides});
++
++test('one cell of padding on each side, including the 16-column mode', () => {
++  for (const width of [16,20,24,30,45,70]) { assert.equal(panePadding(width),1); assert.equal(paneContentWidth(width),width-4); }
++  assert.equal(paneContentWidth(1),0);
++  assert.equal(paneContentWidth(5),3);
++});
++
++test('all layouts stay inside the viewport, including collapse, zoom and tiny heights', () => {
++  const ids: PaneId[] = ['agents','details','changes','activity'];
++  for (const width of [1,10,16,20,30,40,45,69,70,100]) for (const height of [1,2,5,12,14,18,24,40]) {
++    for (let mask=0;mask<16;mask++) for (const focus of ids) for (const zoom of [false,true]) {
++      const s=state(focus); s.zoom=zoom; ids.forEach((id,i) => {s.collapsed[id]=Boolean(mask & (1<<i));});
++      const panes=layoutWorkbench(width,height,s,20,6);
++      for (const p of panes) {
++        assert.ok(p.width>0 && p.height>0,`${width}x${height}`);
++        assert.ok(p.x>=0 && p.x+p.width<=width,`${width}x${height}: x`);
++        assert.ok(p.y>=1 && p.y+p.height<=height-1,`${width}x${height}: y`);
++        if (s.collapsed[p.id]) assert.equal(p.height,1);
++      }
++      for (let i=0;i<panes.length;i++) for (let j=i+1;j<panes.length;j++) {
++        const a=panes[i],b=panes[j];
++        assert.ok(a.x+a.width<=b.x || b.x+b.width<=a.x || a.y+a.height<=b.y || b.y+b.height<=a.y,'overlapping panes');
++      }
++    }
++  }
++});
++
++test('16–30 columns keep Changes summary-only, 45 columns permit filenames', () => {
++  for (const width of [16,20,24,30]) {
++    const panes=layoutWorkbench(width,30,state(),5);
++    assert.equal(panes.find(p=>p.id==='changes')!.summary,true);
++    assert.equal(canPreviewDiff(panes),false);
++  }
++  assert.equal(layoutWorkbench(45,30,state(),5).find(p=>p.id==='changes')!.summary,false);
++  assert.equal(summaryOnly(39),true); assert.equal(summaryOnly(40),false);
++});
++
++test('70-column layout reserves a gutter and gives files the wider column', () => {
++  const panes=layoutWorkbench(70,32,state(),8);
++  const agents=panes.find(p=>p.id==='agents')!, details=panes.find(p=>p.id==='details')!, changes=panes.find(p=>p.id==='changes')!;
++  assert.equal(details.x,agents.width+1);
++  assert.equal(changes.x,details.x);
++  assert.ok(changes.width>agents.width);
++  assert.ok(paneContentWidth(changes.width)>=36);
++  assert.equal(canPreviewDiff(panes),true);
++});
++
++test('hidden or narrow Details do not request a diff', () => {
++  assert.equal(canPreviewDiff([]),false);
++  assert.equal(canPreviewDiff([pane({id:'details',width:70,height:1})]),false);
++  assert.equal(canPreviewDiff([pane({id:'details',width:30,height:20})]),false);
++  assert.equal(canPreviewDiff([pane({id:'details',width:45,height:10})]),true);
++});
++
++test('small agent sets reclaim space for Details instead of four equal boxes', () => {
++  const panes=layoutWorkbench(30,24,state(),1);
++  const changes=panes.find(p=>p.id==='changes')!, details=panes.find(p=>p.id==='details')!;
++  assert.equal(changes.height,6);
++  assert.ok(details.height>changes.height);
++});
++
++test('both card lines map to one logical agent, never to the next agent', () => {
++  const p=pane();
++  assert.equal(paneItemAt(p,2,2),0);
++  assert.equal(paneItemAt(p,2,3),0);
++  assert.equal(paneItemAt(p,2,4),1);
++  assert.equal(paneItemAt(p,2,5),1);
++});
++
++test('border, padding, blank body, titles and non-selectable rows do not select', () => {
++  const p=pane({height:12});
++  for (const [x,y] of [[0,2],[1,2],[28,2],[29,2],[2,1],[2,12],[2,6],[2,10]]) assert.equal(paneItemAt(p,x,y),undefined,`${x},${y}`);
++  assert.equal(paneItemAt(pane({summary:true,rowItems:[null,null],contentLength:2}),2,2),undefined);
++});
++
++test('hit testing includes scrolling and does not mutate rectangles', () => {
++  const p=pane({offset:2}); const snapshot=JSON.stringify(p);
++  assert.equal(paneItemAt(p,2,2),1);
++  assert.equal(paneItemAt(p,2,3),1);
++  assert.equal(JSON.stringify(p),snapshot);
++});
++
++test('PageDown counts logical agents rather than card text lines', () => {
++  assert.equal(panePageSize(pane({height:6,rowItems:[0,0,1,1,2,2]})),2);
++  assert.equal(panePageSize(pane({height:6,rowItems:undefined})),4);
++  assert.equal(panePageSize(pane({height:6,summary:true,rowItems:[null,null,null,null]})),4);
++});
++
++test('Git counts are workspace-wide and staged/unstaged overlap is explicit', () => {
++  const files=[file({index:'M'}),file({path:'new',index:'?',worktree:'?',added:null,removed:null}),file({path:'conflict',index:'U',worktree:'U',conflict:true}),file({path:'image',binary:true})];
++  const count=workspaceCounts(git(files));
++  assert.deepEqual(count,{files:4,staged:1,unstaged:2,untracked:1,conflicts:1,binary:1});
++  assert.deepEqual(workspaceSummary(git(files)),['! 1 conflict','4 files','1 staged','2 unstaged','1 untracked']);
++});
++
++test('missing Git evidence or a partial read must never be labelled clean', () => {
++  assert.deepEqual(workspaceSummary(null),['Loading Git…']);
++  assert.deepEqual(workspaceSummary({...git([]),root:null,error:'timeout'}),['Git unavailable']);
++  assert.deepEqual(workspaceSummary(git([],'timeout')),['Git incomplete']);
++  assert.deepEqual(workspaceSummary(git([])),['Working tree clean']);
++  assert.equal(workspaceSummary(git([file()],'timeout'))[0],'Git incomplete');
++});
++
++test('tool completion alone does not prove success or produce a pass rate', () => {
++  assert.equal(toolResult(call()),'result unknown');
++  assert.equal(toolResult(call({status:'running'})),'recorded running');
++  assert.equal(toolResult(call({resultSuccess:true})),'reported success');
++  assert.equal(toolResult(call({resultSuccess:false})),'reported error');
++  assert.equal(toolResult(call({exitCode:17})),'exit 17');
++});
++
++test('use an observed command, not a tool name alone; inline code stays bounded by default', () => {
++  assert.equal(toolCommand(call({arguments:{cmd:'npm test'}})),'npm test');
++  assert.equal(toolCommand(call({arguments:{command:'git status',code:'lots of code'}})),'git status');
++  assert.equal(toolCommand(call({arguments:{code:'const x = 1;\n'.repeat(100)}})),'exec · inline code');
++  assert.equal(toolCommand(call({arguments:{code:'const x = 1;'} }),true),'const x = 1;');
++});
+diff --git a/tests/unit/workbench.test.ts b/tests/unit/workbench.test.ts
+--- a/tests/unit/workbench.test.ts
++++ b/tests/unit/workbench.test.ts
+@@ -1,7 +1,8 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ import { initialWorkbenchState, handleWorkbenchInput, reconcileWorkbench } from '../../src/render/workbench-state.js';
+-import { renderWorkbench } from '../../src/render/workbench.js';
++import { paneItemAt } from '../../src/render/workbench-layout.js';
++import { renderWorkbench, safeText } from '../../src/render/workbench.js';
+ import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
+ import { node, treeOf } from '../fixtures/hud-data.js';
+ import { stripAnsi, visualLength } from '../../src/render/colors.js';
+@@ -15,7 +16,7 @@
+ 
+ test('focus, selection, and scrolling are independent across panes', () => {
+   let state = reconcileWorkbench(initialWorkbenchState(), tree, git);
+-  let frame = renderWorkbench({tree, git, state, width: 32, height: 35});
++  let frame = renderWorkbench({tree, git, state, width: 45, height: 35});
+   const context = () => ({tree, git, panes: frame.panes, events: []});
+   state = handleWorkbenchInput(state, key('page-down'), context()).state;
+   assert.notEqual(state.tree.selectedId, 'a0');
+@@ -135,8 +136,8 @@
+     arguments:{code:'const enormous_script = true;\n'.repeat(100)},output:'ENORMOUS_OUTPUT\n'.repeat(100),exitCode:1,duration:2000}],totalCalls:1,callsByType:{exec:1},lastUpdateTime:new Date()}};
+   const frame=renderWorkbench({tree:treeOf([item]),agent,state:{...initialWorkbenchState(),focus:'details',zoom:true},width:40,height:30});
+   const text=stripAnsi(frame.lines.join('\n'));
+-  assert.ok(frame.panes[0].contentLength<=7);
+-  assert.match(text,/✗ exec.*exit 1/);
++  assert.ok(frame.panes[0].contentLength<=12);
++  assert.match(text,/✗ exit 1.*exec/);
+   assert.doesNotMatch(text,/enormous_script|ENORMOUS_OUTPUT|ID verbose/);
+   assert.match(text,/\[v\+\]/);
+   const context={tree:treeOf([item]),panes:frame.panes,events:[]};
+@@ -164,3 +165,77 @@
+   assert.match(stripAnsi(frame.lines.at(-1)!),/Switch requested/);
+   assert.equal(frame.panes[0].contentLength,baseline.panes[0].contentLength);
+ });
++
++
++test('narrow Changes is a workspace summary, not a hidden file selector',()=>{
++  const frame=renderWorkbench({tree,git,state:{...initialWorkbenchState(),focus:'changes'},width:30,height:32});
++  const changes=frame.panes.find(p=>p.id==='changes')!;
++  assert.equal(changes.summary,true);
++  assert.equal(frame.state.preview,'workspace');
++  const lines=frame.lines.slice(changes.y+1,changes.y+changes.height-1).map(stripAnsi).join('\n');
++  assert.match(lines,/15 files/);
++  assert.doesNotMatch(lines,/src\/file|\+\d+-\d+/);
++  const ctx={tree,git,panes:frame.panes,events:[]};
++  const moved=handleWorkbenchInput(frame.state,key('down'),ctx).state;
++  assert.equal(moved.selectedFile,frame.state.selectedFile);
++  const details=handleWorkbenchInput(moved,key('enter'),ctx).state;
++  assert.equal(details.focus,'details');
++  assert.equal(details.preview,'workspace');
++  assert.equal(handleWorkbenchInput(details,key('escape'),ctx).state.focus,'changes');
++});
++
++test('an agent task continuation selects that agent; empty space is not an agent',()=>{
++  const sample=treeOf([{...node('a','alpha','unknown'),task:'Inspect picker UUIDs'}, {...node('b','beta','running'),task:'Check pane margins'}]);
++  const s=initialWorkbenchState(); s.tree.sort='created';
++  const frame=renderWorkbench({tree:sample,state:s,width:30,height:32});
++  const pane=frame.panes.find(p=>p.id==='agents')!;
++  assert.deepEqual(pane.rowItems,[0,0,1,1]);
++  assert.equal(paneItemAt(pane,pane.x+2,pane.y+2),0);
++  assert.equal(paneItemAt(pane,pane.x+1,pane.y+2),undefined);
++  assert.equal(paneItemAt(pane,pane.x+2,pane.y+5),undefined);
++  const selected=handleWorkbenchInput(frame.state,{type:'mouse',button:'left',x:pane.x+2,y:pane.y+2},{tree:sample,panes:frame.panes,events:[]}).state;
++  assert.equal(selected.tree.selectedId,'a');
++  const moved=handleWorkbenchInput(selected,key('down'),{tree:sample,panes:frame.panes,events:[]}).state;
++  assert.equal(moved.tree.selectedId,'b');
++});
++
++test('workspace warnings remain visible when a partial Git read returned files',()=>{
++  for (const width of [30,45,70]) {
++    const frame=renderWorkbench({tree,git:{...git,error:'numstat timeout'},state:initialWorkbenchState(),width,height:32});
++    assert.match(stripAnsi(frame.lines.join('\n')),/Git incomplete/);
++    assert.doesNotMatch(stripAnsi(frame.lines.join('\n')),/Working tree clean/);
++  }
++});
++
++test('literal filename controls and bidi marks cannot inject terminal structure',()=>{
++  assert.equal(safeText('a\tb\nc\r\x1b[2J\u202e'),'a\\tb\\nc\\r\\x1b[2J\\u202e');
++  const unsafe={...git,files:[{...git.files[0],path:'evil\nx.ts',previousPath:'old\tx.ts'}]};
++  const frame=renderWorkbench({tree,git:unsafe,state:{...initialWorkbenchState(),focus:'details',preview:'file',zoom:true},width:30,height:24});
++  const text=stripAnsi(frame.lines.join('\n'));
++  assert.match(text,/evil\\nx\.ts/);
++  assert.match(text,/old\\tx\.ts/);
++  assert.ok(frame.lines.every(line=>!line.includes('\n') && !line.includes('\x1b[2J')));
++});
++
++test('padding and two-column gutter use the same coordinates as hit testing',()=>{
++  const frame=renderWorkbench({tree,git,state:initialWorkbenchState(),width:70,height:32});
++  const changes=frame.panes.find(p=>p.id==='changes')!;
++  for (const pane of frame.panes.filter(p=>p.height>2)) {
++    for (let y=pane.y+1;y<pane.y+pane.height-1;y++) {
++      const line=stripAnsi(frame.lines[y]);
++      assert.equal(line[pane.x],'│');
++      assert.equal(line[pane.x+1],' ');
++      assert.equal(line[pane.x+pane.width-2],' ');
++      assert.equal(line[pane.x+pane.width-1],'│');
++    }
++  }
++  assert.ok(changes.width>frame.panes.find(p=>p.id==='agents')!.width);
++  assert.equal(stripAnsi(frame.lines[changes.y+1])[changes.x-1],' ');
++});
++
++test('a narrow file preview contains metadata, not wrapped diff lines',()=>{
++  const frame=renderWorkbench({tree,git,diff:['+THIS_PATCH_MUST_STAY_HIDDEN'],state:{...initialWorkbenchState(),focus:'details',preview:'file',zoom:true},width:30,height:24});
++  const text=stripAnsi(frame.lines.join('\n'));
++  assert.match(text,/Widen for diff/);
++  assert.doesNotMatch(text,/THIS_PATCH/);
++});

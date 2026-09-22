@@ -1,0 +1,398 @@
+diff --git a/src/collectors/agent-report.ts b/src/collectors/agent-report.ts
+new file mode 100644
+--- /dev/null
++++ b/src/collectors/agent-report.ts
+@@ -0,0 +1,39 @@
++/** Public agent-authored text, not tool activity, reasoning or verified workspace results. */
++export interface AgentReport {
++  text: string;
++  at: Date;
++  kind: 'message' | 'update' | 'reply';
++}
++const record = (value: unknown): Record<string, unknown> | undefined =>
++  value !== null && typeof value === 'object' && !Array.isArray(value)
++    ? value as Record<string, unknown> : undefined;
++
++/** Read completed public message records only. No synthesized task/progress/status. */
++export function extractAgentReport(raw: unknown): AgentReport | undefined {
++  const entry = record(raw);
++  const payload = record(entry?.payload);
++  if (!entry || !payload || typeof entry.timestamp !== 'string') return undefined;
++  const at = new Date(entry.timestamp);
++  if (!Number.isFinite(at.getTime())) return undefined;
++  // Never surface analysis/reasoning or an unknown future private channel.
++  const channel = payload.channel;
++  if (channel !== undefined && channel !== null && channel !== 'final' && channel !== 'commentary') return undefined;
++  const phase = payload.phase;
++  if (phase !== undefined && phase !== null && phase !== 'commentary' && phase !== 'final_answer') return undefined;
++  let text: string | undefined;
++  if (entry.type === 'event_msg' && payload.type === 'agent_message') {
++    text = typeof payload.message === 'string' ? payload.message : undefined;
++  } else if (entry.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant' && Array.isArray(payload.content)) {
++    text = payload.content.map(part => {
++      const block = record(part);
++      return block && (block.type === 'output_text' || block.type === 'text') && typeof block.text === 'string' ? block.text : '';
++    }).filter(Boolean).join(' ');
++  }
++  if (!text?.trim()) return undefined;
++  // Bound retained text; escaping happens at the rendering boundary. This is
++  // an excerpt, not a generated summary or proof that the claimed work happened.
++  const chars = Array.from(text.replace(/\s+/g, ' ').trim());
++  text = chars.slice(0, 600).join('') + (chars.length > 600 ? '…' : '');
++  return { text, at, kind: phase === 'final_answer' || channel === 'final' ? 'reply'
++    : phase === 'commentary' || channel === 'commentary' ? 'update' : 'message' };
++}
+diff --git a/src/render/workbench-state.ts b/src/render/workbench-state.ts
+--- a/src/render/workbench-state.ts
++++ b/src/render/workbench-state.ts
+@@ -51,7 +51,7 @@
+   const rows = visibleRows(tree.nodes, state.tree);
+   const nextTree = reconcileSelection(state.tree, tree.nodes, rows);
+   const selectedFile = git?.files.some(file => file.path === state.selectedFile) ? state.selectedFile : git?.files[0]?.path ?? null;
+-  const changed = (state.preview === 'agent' && state.tree.selectedId !== nextTree.selectedId) ||
++  const changed = (state.preview === 'agent' && state.detailExpanded && state.tree.selectedId !== nextTree.selectedId) ||
+     (state.preview === 'file' && selectedFile !== state.selectedFile);
+   return { ...state, tree: nextTree, selectedFile, detailExpanded:state.tree.selectedId === nextTree.selectedId && state.detailExpanded, scroll: { ...state.scroll, details: changed ? 0 : state.scroll.details } };
+ }
+@@ -77,6 +77,10 @@
+     next = focusPane(next, pane.id,ctx);
+     if (input.button === 'left') {
+       clickIndex = paneItemAt(pane, input.x, input.y);
++      if (pane.id === 'agents' && clickIndex !== undefined) {
++        if (next.detailExpanded) next.scroll.details = 0;
++        next.detailExpanded = false;
++      }
+     } else key = input.button === 'wheel-down' ? 'down' : 'up';
+   }
+   if (key === 'close') return { state: next, close: true };
+@@ -103,7 +107,11 @@
+     next.activityTab = tabs[(tabs.indexOf(next.activityTab) + (key === 'next-tab' ? 1 : tabs.length - 1)) % tabs.length];
+     next.scroll.activity = 0;
+     next = focusPane(next, 'activity',ctx);
+-  } else if (key === 'enter' && next.focus !== 'details') next = focusPane(next, 'details',ctx);
++  } else if (key === 'enter' && next.focus !== 'details') {
++    const inspect = next.focus === 'agents';
++    next = focusPane(next, 'details',ctx);
++    if (inspect) { next.detailExpanded = true; next.scroll.details = 0; }
++  }
+   else {
+     const pane = ctx.panes.find(p => p.id === next.focus);
+     const page = panePageSize(pane);
+@@ -129,7 +137,7 @@
+       next.scroll[next.focus] = key === 'home' ? 0 : key === 'end' ? Math.max(0, (pane?.contentLength ?? 0) - page) : Math.max(0, next.scroll[next.focus] + delta);
+     }
+   }
+-  if ((next.preview !== state.preview) || (next.preview === 'agent' && next.tree.selectedId !== state.tree.selectedId) ||
++  if ((next.preview !== state.preview) || (next.preview === 'agent' && state.detailExpanded && next.tree.selectedId !== state.tree.selectedId) ||
+       (next.preview === 'file' && next.selectedFile !== state.selectedFile) || (next.preview === 'event' && next.selectedEvent !== state.selectedEvent)) next.scroll.details = 0;
+   if (next.tree.selectedId !== state.tree.selectedId) next.detailExpanded = false;
+   return { state: next, close: false };
+diff --git a/src/render/workbench.ts b/src/render/workbench.ts
+--- a/src/render/workbench.ts
++++ b/src/render/workbench.ts
+@@ -102,6 +102,10 @@
+   const expanded = state.detailExpanded;
+   const lines = field(`${icon} ${node.status} · ${safeText(node.name)}`,width,expanded ? Infinity : 1).map(paint);
+   lines.push(...field(`Task: ${taskText(node.task) ?? 'No task reported'}`,width,expanded ? Infinity : 2));
++  if (node.lastReport) {
++    const prior = node.turnStartedAt && node.lastReport.at < node.turnStartedAt;
++    lines.push(colors.dim(prior ? 'Agent report · prior turn · unverified' : 'Agent report · unverified'), ...wrap(node.lastReport.text,width));
++  }
+   const agent = input.agent;
+   if (agent && (!agent.session || agent.session.id === node.id)) {
+     const calls = agent.toolActivity.recentCalls;
+@@ -132,6 +136,35 @@
+   if (expanded) lines.push(...wrap(`ID ${node.id}`,width).map(colors.dim));
+   return lines;
+ }
++/** Every agent, independent of selection/folds; the existing sibling sort is retained. */
++function teamReports(input: WorkbenchInputData, state: WorkbenchState, width: number): string[] {
++  const rows = visibleRows(input.tree.nodes, {...state.tree, filter:'all', collapsed:new Set<string>()});
++  if (!rows.length) return [colors.dim('No subagents')];
++  const now = input.nowMs ?? Date.now();
++  const lines: string[] = [colors.dim('Agent reports · unverified')];
++  for (const {node, prefix} of rows) {
++    const {icon, paint} = subagentVisual(node);
++    const report = node.lastReport;
++    const status = node.status === 'completed' ? 'turn done' : node.status;
++    const age = report ? formatAge(report.at,now) : undefined;
++    const suffix = ` ${status}${age && width >= 38 ? ' · '+age : ''}`;
++    const branch = visualLength(prefix) > Math.floor(width/4) ? '… ' : prefix;
++    const lead = `${branch}${icon} `;
++    // Status wins over a long name. No selected/current marker: HUD selection
++    // does not prove which thread Codex is currently displaying.
++    const name = truncateAnsi(safeText(node.name),Math.max(1,width-visualLength(lead+suffix)));
++    lines.push(truncateAnsi(paint(`${lead}${name}${suffix}`),width));
++    if (report) {
++      const prior = node.turnStartedAt && report.at < node.turnStartedAt;
++      const label = prior ? 'Prev' : report.kind === 'reply' ? 'Reply' : 'Says';
++      lines.push(...field(`${label}: ${report.text}`,width,width >= 38 ? 2 : 1));
++    } else {
++      // Task text describes the assignment, not the actual execution state.
++      lines.push(colors.dim('No public report yet'));
++    }
++  }
++  return lines;
++}
+ function detailLines(input: WorkbenchInputData, state: WorkbenchState, width: number): string[] {
+   if (state.preview === 'workspace') return workspaceDetails(input.git,width);
+   if (state.preview === 'file') {
+@@ -156,7 +189,7 @@
+     const event = input.events?.find(event => event.id === state.selectedEvent);
+     return event ? [theme.strong(safeText(event.title)), colors.dim(event.at.toLocaleTimeString()), ...event.detail.flatMap(line => wrap(line, width))] : [colors.dim('Select an event')];
+   }
+-  return agentDetails(input, state, width);
++  return state.detailExpanded ? agentDetails(input, state, width) : teamReports(input,state,width);
+ }
+ export function renderWorkbench(input: WorkbenchInputData): WorkbenchFrame {
+   const width = Math.max(0, Math.floor(input.width));
+@@ -166,7 +199,7 @@
+   const events = input.events ?? [];
+   if (!events.some(event => event.id === state.selectedEvent)) state.selectedEvent = events[0]?.id ?? null;
+   if (state.help) {
+-    const help = ['Workbench keys', 'Tab / Shift+Tab  focus pane', '1 Agents  2 Details', '3 Changes  4 Activity', 'j k / arrows  move', 'PgUp PgDn  page', 'g G  first / last', 'h l  fold / unfold tree', 'f  filter agents', 's  active / creation order', '[ ] or t  activity tab', 'Enter  enter detail', 'v / [v+]  expand agent detail', 'Esc  back / unzoom', 'z  zoom pane', 'Mouse: click / wheel', 'Click pane title: fold / open', ',  Settings    m  Main session', 'Click agent / o: switch Codex', 'q  close workbench', ...modelLegend().split('\n'), '? or Esc  close help'];
++    const help = ['Workbench keys', 'Tab / Shift+Tab  focus pane', '1 Agents  2 Reports / Inspector', '3 Changes  4 Activity', 'j k / arrows  move', 'PgUp PgDn  page', 'g G  first / last', 'h l  fold / unfold tree', 'f  filter agents', 's  active / creation order', '[ ] or t  activity tab', 'Enter  inspect without switching', 'v / [v+]  team / inspector', 'Esc  back / unzoom', 'z  zoom pane', 'Mouse: click / wheel', 'Click pane title: fold / open', ',  Settings    m  Main session', 'Click agent / o: switch Codex', 'q  close workbench', ...modelLegend().split('\n'), '? or Esc  close help'];
+     return {lines:help.slice(0,height).map(line => truncateAnsi(line,width)),panes:[],state};
+   }
+   const rows = visibleRows(input.tree.nodes, state.tree);
+@@ -216,7 +249,7 @@
+       selected = pane.rowItems.indexOf(rows.findIndex(row => row.node.id === state.tree.selectedId));
+       if (!lines.length) lines = [colors.dim(input.tree.nodes.length ? 'No matching agents' : 'No subagents')];
+     } else if (pane.id === 'details') {
+-      title = state.preview === 'workspace' ? '2 Workspace' : state.preview === 'file' ? (inner < FILE_LIST_MIN_CONTENT_WIDTH ? '2 File' : '2 Diff') : state.preview === 'event' ? '2 Event' : pane.width < 24 ? '2 Info' : '2 Agent detail';
++      title = state.preview === 'workspace' ? '2 Workspace' : state.preview === 'file' ? (inner < FILE_LIST_MIN_CONTENT_WIDTH ? '2 File' : '2 Diff') : state.preview === 'event' ? '2 Event' : state.detailExpanded ? '2 Inspector' : '2 Reports';
+       lines = [...(input.error ? wrap(input.error,inner).map(theme.warning) : []),...detailLines(input,state,inner)];
+     } else if (pane.id === 'changes') {
+       title = pane.width < 40 ? '3 Changes' : '3 Changes · workspace';
+@@ -292,7 +325,7 @@
+     canvas.push(fit(line,width));
+   }
+   if (height > 1) {
+-    const hint = state.focus === 'agents' ? 'j/k move  h/l fold  s sort  f filter' : state.focus === 'changes' ? (summaryOnly(width) ? 'Workspace summary · widen for files' : 'j/k file  Enter diff') : state.focus === 'activity' ? '[ ] tab  j/k scroll' : state.preview === 'agent' ? 'v more/less  j/k scroll' : 'j/k scroll  Esc back';
++    const hint = state.focus === 'agents' ? 'j/k move  h/l fold  s sort  f filter' : state.focus === 'changes' ? (summaryOnly(width) ? 'Workspace summary · widen for files' : 'j/k file  Enter diff') : state.focus === 'activity' ? '[ ] tab  j/k scroll' : state.preview === 'agent' ? 'v team/inspect  j/k scroll' : 'j/k scroll  Esc back';
+     canvas.push(truncateAnsi(input.notice ? theme.info(safeText(input.notice)) : input.error ? theme.warning(safeText(input.error)) : colors.dim(width >= 60 ? `Tab pane  ${hint}  z zoom  ? keys  q close` : state.focus === 'changes' && panes.find(p => p.id === 'changes')?.summary ? 'Widen for files · ? keys' : `, settings  m main  ? keys`),width));
+   }
+   return {lines:canvas.slice(0,height),panes,state};
+diff --git a/src/tree-page.ts b/src/tree-page.ts
+--- a/src/tree-page.ts
++++ b/src/tree-page.ts
+@@ -67,6 +67,7 @@
+   let settingsFrame: SettingsFrame | undefined;
+   let lastCollect = 0;
+   let navigating = false;
++  let lastClickSwitch: {id: string; at: number} | undefined;
+   let navigationMessage: string | null = null;
+   let tree: SubagentTree = {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+   let main: RolloutParseResult | null = null;
+@@ -116,7 +117,7 @@
+     const selectedFile = git?.files.find(file=>file.path === state.selectedFile);
+     const root = tree.rootId;
+     try {
+-      if (state.preview === 'agent') {
++      if (state.preview === 'agent' && state.detailExpanded) {
+         if (selected?.rolloutPath !== agentPath) {
+           agentPath = selected?.rolloutPath;
+           agentParser = new RolloutParser(30);
+@@ -254,7 +255,14 @@
+       if (state.tree.selectedId !== previous.tree.selectedId) agent = null;
+       render();
+       void refreshInspection();
+-      if (clickedAgent) void switchSession(clickedAgent.id);
++      if (clickedAgent) {
++        const at = Date.now();
++        // Ignore duplicate mouse events in one short click burst, NOT a cached
++        // 'current session'. Manual Codex navigation must never be guessed away.
++        const duplicate = lastClickSwitch?.id === clickedAgent.id && at-lastClickSwitch.at < 400;
++        lastClickSwitch = {id:clickedAgent.id,at};
++        if (!duplicate) void switchSession(clickedAgent.id);
++      }
+     }
+   };
+   const onData = (chunk: Buffer) => {
+diff --git a/tests/unit/agent-report.test.ts b/tests/unit/agent-report.test.ts
+new file mode 100644
+--- /dev/null
++++ b/tests/unit/agent-report.test.ts
+@@ -0,0 +1,35 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { extractAgentReport } from '../../src/collectors/agent-report.js';
++const timestamp = '2026-09-16T09:00:00Z';
++const message = (text: string, extra: Record<string, unknown> = {}) => ({timestamp,type:'response_item',payload:{type:'message',role:'assistant',content:[{type:'output_text',text}],...extra}});
++
++test('public assistant updates and replies retain exact words, not inferred progress',()=>{
++  assert.deepEqual(extractAgentReport(message('I found the cause.',{phase:'commentary'})),{text:'I found the cause.',at:new Date(timestamp),kind:'update'});
++  assert.equal(extractAgentReport(message('My test passed.',{phase:'final_answer'}))?.kind,'reply');
++  assert.equal(extractAgentReport(message('My test passed.'))?.text,'My test passed.');
++});
++test('public event messages are accepted, tools/token/plan events are not reports',()=>{
++  assert.equal(extractAgentReport({timestamp,type:'event_msg',payload:{type:'agent_message',message:'Checking the boundary.'}})?.text,'Checking the boundary.');
++  for (const type of ['token_count','plan_update','agent_reasoning','turn_started','task_complete','function_call_output']) {
++    assert.equal(extractAgentReport({timestamp,type:'event_msg',payload:{type,message:'private or irrelevant',output:'anything'}}),undefined);
++  }
++});
++test('reasoning, user text, private and unknown channels never leak into reports',()=>{
++  for (const extra of [{channel:'analysis'},{channel:'reasoning'},{channel:'future_private'},{phase:'analysis'},{phase:'future_private'},{role:'user'},{role:'developer'},{type:'reasoning'}]) {
++    assert.equal(extractAgentReport(message('DO_NOT_SHOW',extra)),undefined);
++  }
++});
++test('malformed or undated messages do not invent freshness',()=>{
++  for (const value of [null,[],{}, {type:'response_item',payload:{}}, {...message('x'),timestamp:'invalid'},message('   ')]) assert.equal(extractAgentReport(value),undefined);
++});
++test('retained excerpts are bounded by code points without splitting Unicode',()=>{
++  const report=extractAgentReport(message('界'.repeat(800)))!;
++  assert.equal(Array.from(report.text).length,601);
++  assert.ok(report.text.endsWith('…'));
++  assert.equal(extractAgentReport(message('first\nsecond\tthird'))?.text,'first second third');
++});
++test('message records do not create status, progress, success or file ownership',()=>{
++  const report=extractAgentReport(message('done, 100%, changed foo.ts'))!;
++  assert.deepEqual(Object.keys(report).sort(),['at','kind','text']);
++});
+diff --git a/tests/unit/workbench.test.ts b/tests/unit/workbench.test.ts
+--- a/tests/unit/workbench.test.ts
++++ b/tests/unit/workbench.test.ts
+@@ -129,32 +129,47 @@
+   assert.equal(renderWorkbench({tree,git,state,width:80,height:30}).panes[0].height,1);
+ });
+ 
+-test('agent details stay compact even with a long code call and output',()=>{
+-  const task='Investigate rendering '.repeat(20);
+-  const item={...node('verbose','worker','running'),task,model:'gpt-6-astra',effort:'high'};
+-  const agent={session:null,planProgress:null,tokenUsage:null,rateLimits:null,subagents:[],compactCount:0,lastCompactTime:null,lastToolActivityTime:null,lastAssistantMessageTime:null,lastEventTime:null,toolActivity:{recentCalls:[{id:'tool',name:'exec',timestamp:new Date(),status:'error' as const,
+-    arguments:{code:'const enormous_script = true;\n'.repeat(100)},output:'ENORMOUS_OUTPUT\n'.repeat(100),exitCode:1,duration:2000}],totalCalls:1,callsByType:{exec:1},lastUpdateTime:new Date()}};
+-  const frame=renderWorkbench({tree:treeOf([item]),agent,state:{...initialWorkbenchState(),focus:'details',zoom:true},width:40,height:30});
++test('team reports are selection independent and inspector is explicit',()=>{
++  const reportAt=new Date('2026-09-16T09:00:00Z');
++  const nodes=treeOf([
++    {...node('a','alpha','running'),lastReport:{text:'ALPHA_REPORT',at:reportAt,kind:'update' as const}},
++    {...node('b','beta','completed'),lastReport:{text:'BETA_REPORT',at:reportAt,kind:'reply' as const}},
++    node('c','gamma','unknown'),
++  ]);
++  const first=renderWorkbench({tree:nodes,state:{...initialWorkbenchState(),focus:'details',zoom:true},width:45,height:24,nowMs:reportAt.getTime()});
++  const second=renderWorkbench({tree:nodes,state:{...first.state,tree:{...first.state.tree,selectedId:'b'}},width:45,height:24,nowMs:reportAt.getTime()});
++  assert.deepEqual(first.lines,second.lines,'selection cannot filter the team reports');
++  const text=stripAnsi(first.lines.join('\n'));
++  assert.match(text,/ALPHA_REPORT/); assert.match(text,/BETA_REPORT/);
++  assert.match(text,/unknown/); assert.match(text,/No public report/);
++  const ctx={tree:nodes,panes:first.panes,events:[]};
++  const explicit=handleWorkbenchInput(first.state,key('detail-toggle'),ctx).state;
++  assert.equal(explicit.detailExpanded,true);
++  const inspected=renderWorkbench({tree:nodes,state:explicit,width:45,height:24});
++  assert.match(stripAnsi(inspected.lines.join('\n')),/Inspector/);
++  const back=handleWorkbenchInput(explicit,key('escape'),ctx).state;
++  assert.equal(back.detailExpanded,false);
++});
++
++test('old reports are marked prior-turn and report text cannot inject terminal controls',()=>{
++  const nodes=treeOf([{...node('a','alpha','running'),turnStartedAt:new Date('2026-09-16T09:01:00Z'),
++    lastReport:{text:'old\x1b[2Jreport',at:new Date('2026-09-16T09:00:00Z'),kind:'reply' as const}}]);
++  const frame=renderWorkbench({tree:nodes,state:{...initialWorkbenchState(),focus:'details',zoom:true},width:45,height:24});
+   const text=stripAnsi(frame.lines.join('\n'));
+-  assert.ok(frame.panes[0].contentLength<=12);
+-  assert.match(text,/✗ exit 1.*exec/);
+-  assert.doesNotMatch(text,/enormous_script|ENORMOUS_OUTPUT|ID verbose/);
+-  assert.match(text,/\[v\+\]/);
+-  const context={tree:treeOf([item]),panes:frame.panes,events:[]};
+-  const expanded=handleWorkbenchInput(frame.state,key('detail-toggle'),context).state;
+-  const expandedFrame=renderWorkbench({tree:context.tree,agent,state:expanded,width:40,height:30});
+-  assert.ok(expandedFrame.panes[0].contentLength>frame.panes[0].contentLength);
+-  assert.match(stripAnsi(expandedFrame.lines.join('\n')),/enormous_script/);
+-  const pane=expandedFrame.panes[0];
+-  const compact=handleWorkbenchInput(expandedFrame.state,{type:'mouse',button:'left',x:pane.x+pane.width-3,y:pane.y}, {...context,panes:expandedFrame.panes}).state;
+-  assert.equal(compact.detailExpanded,false);
+-  assert.equal(compact.scroll.details,0);
+-  assert.equal(compact.collapsed.details,false);
+-  const moved=handleWorkbenchInput({...expanded,focus:'agents',zoom:false},key('home'),{...context,tree:treeOf([item,node('next','next','running')])}).state;
+-  assert.equal(moved.tree.selectedId,'next');
+-  assert.equal(moved.detailExpanded,false);
+-});
+-
++  assert.match(text,/Prev:/); assert.doesNotMatch(text,/\x1b\[2J/);
++  assert.match(text,/\\x1b/);
++});
++
++test('enter inspects but a mouse agent selection returns to team view',()=>{
++  let frame=renderWorkbench({tree,git,state:initialWorkbenchState(),width:45,height:32});
++  let ctx={tree,git,panes:frame.panes,events:[]};
++  let state=handleWorkbenchInput(frame.state,key('enter'),ctx).state;
++  assert.equal(state.detailExpanded,true);
++  frame=renderWorkbench({tree,git,state,width:45,height:32});ctx={...ctx,panes:frame.panes};
++  const pane=frame.panes.find(p=>p.id==='agents')!;
++  state=handleWorkbenchInput(frame.state,{type:'mouse',button:'left',x:pane.x+2,y:pane.y+1},ctx).state;
++  assert.equal(state.detailExpanded,false);
++});
+ 
+ test('navigation notices occupy only the footer and never reflow agent details',()=>{
+   const state={...initialWorkbenchState(),focus:'details' as const,zoom:true};
+diff --git a/src/types.ts b/src/types.ts
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -1,4 +1,5 @@
+ import type { TokenRateSnapshot } from './collectors/token-rate.js';
++import type { AgentReport } from './collectors/agent-report.js';
+ /**
+  * Type definitions for codex-hud
+  * Phase 3: Redesigned to match claude-hud structure
+@@ -400,4 +400,6 @@
+ export interface SubagentTreeNode {
++  /** Public agent-authored excerpt; not verified completion or a file attribution. */
++  lastReport?: AgentReport;
+   task?: string;
+   statusAt?: Date;
+   /** Local rollout for inspecting this agent; never displayed as its task. */
+diff --git a/src/collectors/subagent-tree.ts b/src/collectors/subagent-tree.ts
+--- a/src/collectors/subagent-tree.ts
++++ b/src/collectors/subagent-tree.ts
+@@ -1,4 +1,5 @@
+ import { taskText } from '../utils/task-text.js';
++import { extractAgentReport, type AgentReport } from './agent-report.js';
+ /**
+  * Build a multi-level subagent tree from rollout session_meta parent links.
+  */
+@@ -40,4 +40,5 @@
+ interface SessionLink {
++  lastReport?: AgentReport;
+   task?: string;
+   id: string;
+   parentId: string | null;
+@@ -112,7 +112,7 @@
+   return { model, effort };
+ }
+ 
+-type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task'>;
++type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task' | 'lastReport'>;
+ 
+ function applyRolloutLine(line: string, into: RolloutFields): void {
+   const trimmed = line.trim();
+@@ -124,6 +124,8 @@
+     if (!entry.payload) {
+       return;
+     }
++    const report = extractAgentReport(entry);
++    if (report && (!into.lastReport || report.at >= into.lastReport.at)) into.lastReport = report;
+     if (entry.type === 'response_item' && entry.payload.type === 'message' && entry.payload.role === 'user' && Array.isArray(entry.payload.content)) {
+       const text = taskText(entry.payload.content.map((part: { text?: unknown }) => typeof part?.text === 'string' ? part.text : '').filter(Boolean).join('\n'));
+       if (text) into.task = text;
+@@ -222,5 +222,6 @@
+   if (extra.turnStartedAt) link.turnStartedAt = extra.turnStartedAt;
+   if (extra.task) link.task = extra.task;
++  if (extra.lastReport && (!link.lastReport || extra.lastReport.at >= link.lastReport.at)) link.lastReport = extra.lastReport;
+   cached.contextOffset = extra.endOffset;
+ }
+ 
+@@ -506,6 +506,7 @@
+         link.statusAt = previous.link.statusAt;
+         link.turnStartedAt = previous.link.turnStartedAt;
+         link.task = previous.link.task;
++        link.lastReport = previous.link.lastReport;
+       }
+       linkCache.set(file.path, {
+         link,
+@@ -580,5 +580,6 @@
+       turnStartedAt: link?.turnStartedAt,
+       rolloutPath: link?.path,
++      lastReport: link?.lastReport,
+       task: taskText(link?.task) ?? taskText(knownAgent?.task),
+       statusAt: knownAgent?.lastActivityAt && (!link?.statusAt || knownAgent.lastActivityAt > link.statusAt)
+         ? knownAgent.lastActivityAt : link?.statusAt,

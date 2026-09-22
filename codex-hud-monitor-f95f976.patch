@@ -1,0 +1,1266 @@
+diff --git a/src/tree-page.ts b/src/tree-page.ts
+--- a/src/tree-page.ts
++++ b/src/tree-page.ts
+@@ -1,7 +1,5 @@
+ /** Live keyboard/mouse workbench beside the compact HUD. */
+ import { navigateSession } from './utils/session-navigation.js';
+-import { visibleRows } from './render/panel-state.js';
+-import { paneItemAt, canPreviewDiff } from './render/workbench-layout.js';
+ import { defaultSettings, saveSettings } from './settings.js';
+ import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
+ import { resizeTreePane } from './utils/pane-width.js';
+@@ -12,11 +10,11 @@
+ import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
+ import { buildSubagentTree } from './collectors/subagent-tree.js';
+ import { collectGitChanges, readGitDiff, type GitChanges } from './collectors/git-changes.js';
+-import { WorkbenchHistory } from './collectors/workbench-events.js';
+-import { renderWorkbench, type WorkbenchFrame } from './render/workbench.js';
+-import { initialWorkbenchState, reconcileWorkbench, handleWorkbenchInput } from './render/workbench-state.js';
++import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
++import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
++  monitorModes, monitorPreferences, type MonitorFrame } from './render/monitor.js';
+ import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
+-import type { SubagentTree, SubagentTreeNode } from './types.js';
++import type { SubagentTree } from './types.js';
+ 
+ const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
+ const HUD_CWD_REAL = (() => { try { return fs.realpathSync(HUD_CWD); } catch { return HUD_CWD; } })();
+@@ -37,29 +35,20 @@
+     child.unref();
+   } catch { /* Closing the side pane is best effort. */ }
+ }
+-function findNode(nodes: SubagentTreeNode[], id: string | null): SubagentTreeNode | undefined {
+-  for (const node of nodes) {
+-    if (node.id === id) return node;
+-    const child = findNode(node.children,id);
+-    if (child) return child;
+-  }
+-  return undefined;
+-}
+ 
+ async function runLivePage(): Promise<void> {
+   const finder = new SessionFinder(HUD_CWD_REAL,undefined,HUD_SESSION_START);
+   const parser = new RolloutParser(40);
+-  const history = new WorkbenchHistory();
+-  const decoder = new WorkbenchInputDecoder();
++  const worktreeCollector = new WorktreeCollector();
++  const decoder = new WorkbenchInputDecoder('monitor');
+   let settings = defaultSettings();
+   let settingsError = '';
+   try { settings = runtimeSettings(); } catch (err) { settingsError = `Settings: ${String(err)}`; }
+   applyDisplaySettings(settings);
+   const configuredState = () => {
+-    const next = initialWorkbenchState();
++    const next = initialMonitorState();
+     next.tree.sort = settings.sort;
+-    next.tasksEnabled = settings.tasks;
+-    next.collapsed = {agents:false,details:!settings.details,changes:!settings.changes,activity:!settings.activity};
++    next.modes = monitorModes(settings);
+     return next;
+   };
+   let state = configuredState();
+@@ -71,19 +60,18 @@
+   let navigationMessage: string | null = null;
+   let tree: SubagentTree = {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+   let main: RolloutParseResult | null = null;
+-  let agent: RolloutParseResult | null = null;
++  let worktrees: WorktreesSnapshot | null = null;
+   let git: GitChanges | null = null;
+   let gitRevision = 0;
+   let diff: string[] | undefined;
+   let diffKey = '';
+-  let agentPath: string | undefined;
+-  let agentParser = new RolloutParser(30);
+   let error: string | null = settingsError || null;
+-  let frame: WorkbenchFrame | undefined;
++  let frame: MonitorFrame | undefined;
+   let lastPaint = '';
+   let closed = false;
+   let collecting = false;
+   let collectingGit = false;
++  let gitAgain = false;
+   let inspecting = false;
+   let inspectAgain = false;
+   let escapeTimer: ReturnType<typeof setTimeout> | undefined;
+@@ -98,7 +86,7 @@
+       settingsPage = settingsFrame.state;
+       lines = settingsFrame.lines;
+     } else {
+-    frame = renderWorkbench({tree,state,git,diff,main,agent,events:history.values(),error,notice:navigationMessage,
++    frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,
+       width:process.stdout.columns || 30,height:process.stdout.rows || 24});
+     state = frame.state;
+     lines = frame.lines;
+@@ -113,24 +101,9 @@
+     if (closed) return;
+     if (inspecting) { inspectAgain = true; return; }
+     inspecting = true;
+-    const selected = findNode(tree.nodes,state.tree.selectedId);
+     const selectedFile = git?.files.find(file=>file.path === state.selectedFile);
+-    const root = tree.rootId;
+-    try {
+-      if (state.preview === 'agent' && state.detailExpanded) {
+-        if (selected?.rolloutPath !== agentPath) {
+-          agentPath = selected?.rolloutPath;
+-          agentParser = new RolloutParser(30);
+-          agentParser.setRolloutPath(agentPath ?? null);
+-          agent = null;
+-        }
+-        const path = agentPath;
+-        const result = path ? await agentParser.parse() : null;
+-        if (!closed && root === tree.rootId && path === findNode(tree.nodes,state.tree.selectedId)?.rolloutPath) {
+-          agent = result;
+-          history.update(tree,main,agent);
+-        }
+-      } else if (state.preview === 'file' && selectedFile && git?.root && canPreviewDiff(frame?.panes ?? [])) {
++    try {
++      if (state.preview === 'file' && selectedFile && git?.root && canMonitorDiff(frame)) {
+         const key = JSON.stringify([git.root,selectedFile.path,gitRevision]);
+         if (key !== diffKey) {
+           const repoRoot = git.root;
+@@ -143,7 +116,6 @@
+       }
+     } catch (err) {
+       if (state.preview === 'file') diff = ['Unable to read this file preview'];
+-      else agent = null;
+     } finally {
+       inspecting = false;
+       render();
+@@ -159,36 +131,55 @@
+       main = session ? await parser.parse() : null;
+       const rootId = main?.session?.id ?? session?.sessionId ?? '';
+       if (rootId !== tree.rootId) {
+-        state = configuredState(); agent = null; agentPath = undefined; diff = undefined; diffKey = '';
++        state = configuredState(); diff = undefined; diffKey = ''; git = null; worktrees = null;
+       }
+       tree = rootId ? buildSubagentTree(rootId,main?.subagents ?? []) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+-      state = reconcileWorkbench(state,tree,git);
+-      history.update(tree,main);
++      state = reconcileMonitor(state,tree,git,worktrees);
+       error = settingsError || null;
+     } catch (err) { error = `Refresh: ${String(err)}`; }
+     finally { collecting = false; }
+     render();
+     void refreshInspection();
+   };
++  const sources = () => worktreeSources(HUD_CWD_REAL,main?.session?.cwd,settings.worktreeRoot,process.env.CODEX_HUD_WORKTREE_ROOT);
+   const refreshGit = async () => {
+-    if (closed || collectingGit) return;
++    if (closed) return;
++    if (collectingGit) { gitAgain=true; return; }
++    // Closed monitors are absent, not empty frames continuously collecting data.
++    const wantChanges = state.modes.changes === 'open' || (state.modes.details === 'open' && state.preview === 'file');
++    if (state.modes.worktrees !== 'open' && !wantChanges && !(state.modes.details === 'open' && state.preview === 'worktree')) return;
+     collectingGit = true;
+-    try {
+-      git = await collectGitChanges(HUD_CWD_REAL);
+-      gitRevision++;
+-      const oldFile = state.selectedFile;
+-      state = reconcileWorkbench(state,tree,git);
+-      if (state.selectedFile !== oldFile) { diff = undefined; diffKey = ''; }
++    const candidates = sources();
++    const requestKey = JSON.stringify(candidates);
++    try {
++      const snapshot = await worktreeCollector.refresh(candidates);
++      if (closed) return;
++      if (requestKey !== JSON.stringify(sources())) { gitAgain=true; return; }
++      worktrees = snapshot;
++      const previousWorktree = state.selectedWorktree;
++      state = reconcileMonitor(state,tree,git,worktrees);
++      if (state.selectedWorktree !== previousWorktree) {git=null;diff=undefined;diffKey='';}
++      render();
++      const entry = worktrees.entries.find(w=>w.path===state.selectedWorktree);
++      if (wantChanges && entry && !entry.bare && entry.prunable === undefined) {
++        const selected = entry.path;
++        const result = await collectGitChanges(selected);
++        if (closed) return;
++        if (requestKey !== JSON.stringify(sources()) || selected !== state.selectedWorktree) { gitAgain=true; return; }
++        git=result;gitRevision++;
++        const previousFile=state.selectedFile;
++        state=reconcileMonitor(state,tree,git,worktrees);
++        if(previousFile!==state.selectedFile){diff=undefined;diffKey='';}
++      } else if (!entry || entry.bare || entry.prunable !== undefined) {git=null;diff=undefined;diffKey='';}
+       render();
+       void refreshInspection();
+     } catch {
+-      git = {
+-        root: git?.root ?? null, branch: git?.branch ?? null,
+-        ahead: git?.ahead ?? 0, behind: git?.behind ?? 0,
+-        files: git?.files ?? [], error: 'Git could not complete the request',
+-      };
+-      render();
+-    } finally { collectingGit = false; }
++      worktrees = {sourcePath:null,entries:[],updatedAt:Date.now(),error:'Worktree read failed'};
++      git=null;diff=undefined;diffKey='';render();
++    } finally {
++      collectingGit=false;
++      if(gitAgain&&!closed){gitAgain=false;void refreshGit();}
++    }
+   };
+   const finish = (user = false) => {
+     if (closed) return;
+@@ -226,9 +217,8 @@
+             settings = saveSettings(settingsPage.draft);
+             settingsError = ''; error = null;
+             applyDisplaySettings(settings);
+-            state = {...state,tree:{...state.tree,sort:settings.sort},tasksEnabled:settings.tasks,
+-              activityTab:!settings.tasks && state.activityTab === 'tasks' ? 'checks' : state.activityTab,
+-              collapsed:{...state.collapsed,details:!settings.details,changes:!settings.changes,activity:!settings.activity}};
++            state = {...state,tree:{...state.tree,sort:settings.sort},modes:monitorModes(settings)};
++            git=null;diff=undefined;diffKey='';void refreshGit();
+             settingsPage.message = 'Saved';
+             process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
+             void resizeTreePane(settings.treeWidth).catch(err=>{if(settingsPage) settingsPage.message=String(err);render();});
+@@ -236,39 +226,29 @@
+         }
+         render(); continue;
+       }
+-      if ((input.type === 'key' && input.key === 'settings') ||
+-          (input.type === 'mouse' && input.button === 'left' && !state.help && input.y === 0 && input.x >= 7 && input.x < 17)) {
+-        settingsPage = {draft:{...settings,details:!state.collapsed.details,changes:!state.collapsed.changes,
+-          activity:!state.collapsed.activity,sort:state.tree.sort ?? 'active'},selected:0,offset:0,message:''};
+-        render(); continue;
+-      }
+-      if ((input.type === 'key' && input.key === 'main') ||
+-          (input.type === 'mouse' && input.button === 'left' && !state.help && input.y === 0 && input.x < 6)) {
+-        void switchSession(tree.rootId); continue;
+-      }
+-      if (input.type === 'key' && input.key === 'open-session') {
+-        if (state.tree.selectedId) void switchSession(state.tree.selectedId);
+-        continue;
+-      }
+-      const agentPane = frame?.panes.find(p=>p.id === 'agents');
+-      const clickedIndex = input.type === 'mouse' && input.button === 'left' && agentPane
+-        ? paneItemAt(agentPane,input.x,input.y) : undefined;
+-      const clickedAgent = clickedIndex === undefined ? undefined : visibleRows(tree.nodes,state.tree)[clickedIndex]?.node;
+       const previous = state;
+-      const result = handleWorkbenchInput(state,input,{tree,git,panes:frame?.panes ?? [],events:history.values()});
++      const result = handleMonitorInput(state,input,{tree,git,worktrees,frame});
+       state = result.state;
+       if (result.close) { finish(true); break; }
+-      if (state.selectedFile !== previous.selectedFile) { diff = undefined; diffKey = ''; }
+-      if (state.tree.selectedId !== previous.tree.selectedId) agent = null;
+-      render();
++      if (state.selectedFile !== previous.selectedFile) { diff=undefined;diffKey=''; }
++      if (state.selectedWorktree !== previous.selectedWorktree) {git=null;diff=undefined;diffKey='';}
++      if (JSON.stringify(state.modes) !== JSON.stringify(previous.modes)) {
++        try { settings=saveSettings(monitorPreferences(state)); }
++        catch (err) { settingsError=`Panel preferences could not be saved: ${String(err)}`;error=settingsError; }
++      }
++      if (result.action?.type === 'settings') {
++        settingsPage={draft:{...settings,...monitorPreferences(state),sort:state.tree.sort??'active'},selected:0,offset:0,message:''};
++      }
++      render();
++      if (state.selectedWorktree !== previous.selectedWorktree || JSON.stringify(state.modes) !== JSON.stringify(previous.modes)) void refreshGit();
+       void refreshInspection();
+-      if (clickedAgent) {
+-        const at = Date.now();
+-        // Ignore duplicate mouse events in one short click burst, NOT a cached
+-        // 'current session'. Manual Codex navigation must never be guessed away.
+-        const duplicate = lastClickSwitch?.id === clickedAgent.id && at-lastClickSwitch.at < 400;
+-        lastClickSwitch = {id:clickedAgent.id,at};
+-        if (!duplicate) void switchSession(clickedAgent.id);
++      if (result.action?.type === 'switch') {
++        const id=result.action.id;
++        const at=Date.now();
++        // Deduplicate a mouse burst only. This is NOT evidence of Codex's current thread.
++        const duplicate=input.type==='mouse'&&lastClickSwitch?.id===id&&at-lastClickSwitch.at<400;
++        if(input.type==='mouse')lastClickSwitch={id,at};
++        if(!duplicate)void switchSession(id);
+       }
+     }
+   };
+diff --git a/src/settings.ts b/src/settings.ts
+--- a/src/settings.ts
++++ b/src/settings.ts
+@@ -13,6 +13,12 @@
+   details: boolean;
+   refreshMs: number;
+   treeWidth: number;
++  // Monitor visibility is independent of legacy boolean panel preferences.
++  agentsPane: 'open' | 'folded' | 'closed';
++  worktreesPane: 'open' | 'folded' | 'closed';
++  changesPane: 'open' | 'folded' | 'closed';
++  detailsPane: 'open' | 'folded' | 'closed';
++  worktreeRoot: string;
+ }
+ 
+ /** Built-in defaults; callers apply environment or runtime display overrides. */
+@@ -21,6 +27,8 @@
+     density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full',
+     sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
+     details: true, refreshMs: 1000, treeWidth: 0,
++    agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
++    worktreeRoot: '',
+   };
+ }
+ 
+@@ -41,6 +49,11 @@
+   activity: isBoolean, details: isBoolean,
+   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
+   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
++  agentsPane: oneOf('open', 'folded', 'closed'),
++  worktreesPane: oneOf('open', 'folded', 'closed'),
++  changesPane: oneOf('open', 'folded', 'closed'),
++  detailsPane: oneOf('open', 'folded', 'closed'),
++  worktreeRoot: value => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
+ };
+ 
+ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
+diff --git a/src/render/settings-page.ts b/src/render/settings-page.ts
+--- a/src/render/settings-page.ts
++++ b/src/render/settings-page.ts
+@@ -9,10 +9,10 @@
+   {key:'motion',label:'Motion',values:['full','reduced']},
+   {key:'sort',label:'Agent order',values:['active','created']},
+   {key:'mouse',label:'Mouse interaction',values:[true,false]},
+-  {key:'details',label:'Agent / diff details',values:[true,false]},
+-  {key:'changes',label:'Git changes',values:[true,false]},
+-  {key:'activity',label:'Activity pane',values:[true,false]},
+-  {key:'tasks',label:'Tasks tab',values:[false,true]},
++  {key:'agentsPane',label:'1 Agents',values:['open','folded','closed']},
++  {key:'worktreesPane',label:'2 Worktrees',values:['open','folded','closed']},
++  {key:'changesPane',label:'3 Changes',values:['open','folded','closed']},
++  {key:'detailsPane',label:'4 Inspector',values:['open','folded','closed']},
+   {key:'refreshMs',label:'Refresh (ms)',values:[500,1000,2000,5000]},
+   {key:'treeWidth',label:'Panel width',values:[16,0,45,70]},
+ ];
+diff --git a/src/utils/workbench-input.ts b/src/utils/workbench-input.ts
+--- a/src/utils/workbench-input.ts
++++ b/src/utils/workbench-input.ts
+@@ -8,6 +8,7 @@
+   '\t': 'tab', '\r': 'enter', '\n': 'enter', ' ': 'enter',
+   q: 'close', Q: 'close', '\x03': 'close', '\x04': 'close',
+   v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help',
++  x: 'pane-close', '-': 'pane-fold',
+   '[': 'previous-tab', ']': 'next-tab', t: 'next-tab',
+   '1': 'agents', '2': 'details', '3': 'changes', '4': 'activity',
+ };
+@@ -21,12 +22,14 @@
+ 
+ export class WorkbenchInputDecoder {
+   private pending = '';
++  constructor(private readonly profile: 'workbench' | 'monitor' = 'workbench') {}
+   push(chunk: Buffer): WorkbenchInput[] {
+     this.pending += chunk.toString('utf8');
+     const inputs: WorkbenchInput[] = [];
+     while (this.pending.length) {
+       if (this.pending[0] !== '\x1b') {
+-        const key = KEYS[this.pending[0]];
++        const key = this.profile === 'monitor' && this.pending[0] === '2' ? 'worktrees'
++          : this.profile === 'monitor' && this.pending[0] === '4' ? 'details' : KEYS[this.pending[0]];
+         this.pending = this.pending.slice(1);
+         if (key) inputs.push({ type: 'key', key });
+         continue;
+diff --git a/src/render/monitor.ts b/src/render/monitor.ts
+new file mode 100644
+--- /dev/null
++++ b/src/render/monitor.ts
+@@ -0,0 +1,389 @@
++/** Default F12 view: a monitor, not another transcript. No I/O or terminal input here. */
++import type { SubagentTree, SubagentTreeNode } from '../types.js';
++import type { GitChanges } from '../collectors/git-changes.js';
++import type { WorktreesSnapshot, WorktreeInfo } from '../collectors/worktrees.js';
++import type { HudSettings } from '../settings.js';
++import type { WorkbenchInput } from '../utils/workbench-input.js';
++import { initialPanelState, reconcileSelection, visibleRows, applyKey, type PanelState } from './panel-state.js';
++import { theme, colors, visualLength, truncateAnsi } from './colors.js';
++
++export const MONITOR_PANES = ['agents', 'worktrees', 'changes', 'details'] as const;
++export type MonitorPane = typeof MONITOR_PANES[number];
++export type PaneMode = 'open' | 'folded' | 'closed';
++export type MonitorModes = Record<MonitorPane, PaneMode>;
++export interface MonitorState {
++  tree: PanelState;
++  focus: MonitorPane;
++  modes: MonitorModes;
++  scroll: Record<MonitorPane, number>;
++  selectedWorktree: string | null;
++  selectedFile: string | null;
++  preview: 'agent' | 'worktree' | 'file';
++  help: boolean;
++  zoom: boolean;
++}
++export interface MonitorRow { text: string; item?: string }
++export interface MonitorRect {
++  id: MonitorPane;
++  x: number; y: number; width: number; height: number;
++  offset: number;
++  contentLength: number;
++  rows: MonitorRow[];
++}
++export interface MonitorControl {
++  kind: 'main' | 'settings' | 'fold' | 'close';
++  pane?: MonitorPane;
++  x: number; y: number; width: number;
++}
++export interface MonitorFrame { lines: string[]; panes: MonitorRect[]; controls: MonitorControl[]; state: MonitorState }
++export interface MonitorData {
++  tree: SubagentTree;
++  state: MonitorState;
++  width: number; height: number;
++  git?: GitChanges | null;
++  worktrees?: WorktreesSnapshot | null;
++  diff?: string[];
++  nowMs?: number;
++  notice?: string | null;
++  error?: string | null;
++}
++export interface MonitorContext {
++  tree: SubagentTree;
++  git?: GitChanges | null;
++  worktrees?: WorktreesSnapshot | null;
++  frame?: MonitorFrame;
++}
++export interface MonitorOutcome {
++  state: MonitorState;
++  close: boolean;
++  action?: {type:'settings'} | {type:'switch'; id:string};
++}
++
++export function initialMonitorState(): MonitorState {
++  return {tree:{...initialPanelState(),sort:'active'}, focus:'agents',
++    modes:{agents:'open',worktrees:'open',changes:'closed',details:'closed'},
++    scroll:{agents:0,worktrees:0,changes:0,details:0}, selectedWorktree:null,selectedFile:null,
++    preview:'agent',help:false,zoom:false};
++}
++export function monitorModes(settings: HudSettings): MonitorModes {
++  return {agents:settings.agentsPane, worktrees:settings.worktreesPane, changes:settings.changesPane, details:settings.detailsPane};
++}
++export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
++  return {agentsPane:state.modes.agents, worktreesPane:state.modes.worktrees,
++    changesPane:state.modes.changes, detailsPane:state.modes.details};
++}
++export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null): MonitorState {
++  const rows = visibleRows(tree.nodes, state.tree);
++  const selected = reconcileSelection(state.tree, tree.nodes, rows);
++  const entries = worktrees?.entries ?? [];
++  const selectedWorktree = entries.some(w => w.path === state.selectedWorktree) ? state.selectedWorktree
++    : entries.find(w => !w.bare && w.prunable === undefined)?.path ?? entries[0]?.path ?? null;
++  const selectedFile = git?.files.some(f => f.path === state.selectedFile) ? state.selectedFile : git?.files[0]?.path ?? null;
++  const focus = state.modes[state.focus] !== 'closed' ? state.focus : MONITOR_PANES.find(id => state.modes[id] !== 'closed') ?? 'agents';
++  const changed = selected.selectedId !== state.tree.selectedId || selectedWorktree !== state.selectedWorktree || selectedFile !== state.selectedFile;
++  return {...state, tree:selected, selectedWorktree, selectedFile, focus,
++    scroll:{...state.scroll,details:changed ? 0 : state.scroll.details}};
++}
++
++/** External strings are escaped before width calculation or painting. */
++export function monitorText(text: string): string {
++  return text.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, ch => {
++    const cp = ch.charCodeAt(0);
++    return ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t'
++      : cp > 255 ? `\\u${cp.toString(16).padStart(4,'0')}` : `\\x${cp.toString(16).padStart(2,'0')}`;
++  });
++}
++function fit(text: string, width: number): string {
++  const clipped = truncateAnsi(text, Math.max(0,width));
++  return clipped + ' '.repeat(Math.max(0,width-visualLength(clipped)));
++}
++function pair(left: string, right: string, width: number): string {
++  if (!right) return truncateAnsi(left,width);
++  const rightWidth = visualLength(right);
++  if (rightWidth >= width) return truncateAnsi(right,width);
++  return fit(left,width-rightWidth-1)+' '+right;
++}
++function wrapped(text: string, width: number): string[] {
++  if (width < 1) return [];
++  const lines: string[] = []; let line = '';
++  for (const char of monitorText(text)) {
++    if (visualLength(line+char) > width && line) { lines.push(line); line=''; }
++    line += char;
++  }
++  lines.push(line);
++  return lines.map(s => truncateAnsi(s,width));
++}
++function age(at: Date | undefined, now: number): string {
++  if (!at || !Number.isFinite(at.getTime())) return '?';
++  const seconds = Math.max(0, Math.floor((now-at.getTime())/1000));
++  return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds/60)}m` : `${Math.floor(seconds/3600)}h`;
++}
++function nodeStatus(node: SubagentTreeNode, now: number): {icon:string; label:string; paint:(s:string)=>string} {
++  switch (node.status) {
++    case 'running': return {icon:'▸',label:node.turnStartedAt ? age(node.turnStartedAt,now) : 'run',paint:theme.info};
++    case 'starting': return {icon:'·',label:'start',paint:theme.info};
++    case 'completed': return {icon:'✓',label:'done',paint:theme.success};
++    case 'error': return {icon:'!',label:'error',paint:theme.error};
++    default: return {icon:'?',label:'unknown',paint:colors.dim};
++  }
++}
++export function worktreeLabel(entry: WorktreeInfo, now: number): string {
++  if (entry.bare) return 'bare';
++  if (entry.prunable !== undefined) return 'prunable';
++  if (entry.error) return 'unreadable';
++  if (!entry.status || entry.observedAt === undefined) return '?';
++  if (now-entry.observedAt > 30_000) return 'stale';
++  if (entry.status.conflicts) return `!${entry.status.conflicts}`;
++  return entry.status.changed ? `${entry.status.changed} mod` : 'clean';
++}
++function basename(path: string): string { return path.replace(/[\\/]+$/,'').split(/[\\/]/).at(-1) || path; }
++function findNode(nodes: SubagentTreeNode[], id: string | null): SubagentTreeNode | undefined {
++  for (const node of nodes) { if (node.id === id) return node; const found = findNode(node.children,id); if (found) return found; }
++  return undefined;
++}
++
++function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
++  if (id === 'agents') {
++    const all = visibleRows(input.tree.nodes,{...state.tree,filter:'all',collapsed:new Set()});
++    const totals = {run:0,done:0,error:0,unknown:0};
++    for (const {node} of all) totals[node.status === 'running' || node.status === 'starting' ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
++    const summary = width < 16
++      ? [totals.error ? `!${totals.error}` : '', `${totals.run}▸`, `${totals.done}✓`, totals.unknown ? `?${totals.unknown}` : ''].filter(Boolean).join(' ')
++      : [totals.error ? `!${totals.error}` : '', `${totals.run} run`, `${totals.done} done`, totals.unknown ? `?${totals.unknown}` : ''].filter(Boolean).join('  ');
++    const result: MonitorRow[] = [{text:colors.dim(truncateAnsi(summary,width))}];
++    for (const row of visibleRows(input.tree.nodes,state.tree)) {
++      const status = nodeStatus(row.node,now);
++      const branch = visualLength(row.prefix) > Math.floor(width/4) ? '… ' : row.prefix;
++      const prefix = `${row.node.id === state.tree.selectedId ? '›' : ' '}${branch}${row.collapsed && row.hasChildren ? '+' : ''}${status.icon} `;
++      // The status gets a fixed right-hand slot. No Task/Reply/tool text, even at wide widths.
++      const model = width >= 42 && row.node.model ? ` · ${monitorText(row.node.model)}` : '';
++      result.push({text:status.paint(pair(prefix+monitorText(row.node.name)+model,width < 16 ? '' : status.label,width)),item:row.node.id});
++    }
++    if (result.length === 1) result.push({text:colors.dim(all.length ? 'No matching agents' : 'No subagents')});
++    return result;
++  }
++  if (id === 'worktrees') {
++    const snapshot = input.worktrees;
++    if (!snapshot) return [{text:colors.dim('Reading worktrees…')}];
++    if (snapshot.error) return [{text:theme.warning('No readable repository')}, {text:colors.dim('Set worktreeRoot')}, ...wrapped(snapshot.error,width).map(text=>({text:colors.dim(text)}))];
++    const rows: MonitorRow[] = [];
++    if (snapshot.truncated) rows.push({text:theme.warning('Worktree list limited')});
++    for (const entry of snapshot.entries) {
++      const label = worktreeLabel(entry,now);
++      const mark = entry.locked !== undefined ? 'L ' : entry.path === state.selectedWorktree ? '› ' : '  ';
++      const name = monitorText(entry.branch ?? (entry.detached ? 'detached' : basename(entry.path)))
++        + (width >= 40 ? ' · '+monitorText(entry.path) : '');
++      const paint = label.startsWith('!') || entry.error ? theme.warning : label === 'clean' ? colors.dim : theme.value;
++      rows.push({text:paint(pair(mark+name,label,width)),item:entry.path});
++      // A directory label is useful identity, not a log line. Two lines only when it fits.
++      if (width >= 20 && width < 40) rows.push({text:colors.dim(truncateAnsi('  '+monitorText(basename(entry.path)),width)),item:entry.path});
++    }
++    return rows.length ? rows : [{text:colors.dim('No worktrees recorded')}];
++  }
++  if (id === 'changes') {
++    const git = input.git;
++    const rows: MonitorRow[] = [];
++    if (!git) return [{text:colors.dim('Reading selected worktree…')}];
++    if (git.error) rows.push({text:theme.warning('Git incomplete')});
++    if (!git.root) return [...rows,{text:colors.dim('No selected worktree')}];
++    if (width < 36) {
++      const changed = (x:string) => x !== ' ' && x !== '.' && x !== '?';
++      const conflicts = git.files.filter(file=>file.conflict).length;
++      return [...rows, ...(conflicts ? [{text:theme.warning(`! ${conflicts} conflicts`)}] : []), {text:colors.dim('Selected worktree')},
++        {text:`${git.files.length} changed files`},
++        {text:`${git.files.filter(f=>!f.conflict&&changed(f.index)).length} staged`},
++        {text:`${git.files.filter(f=>!f.conflict&&changed(f.worktree)).length} unstaged`},
++        {text:`${git.files.filter(f=>f.index==='?').length} untracked`}];
++    }
++    return [...rows, ...git.files.map(file => ({item:file.path,
++      text:truncateAnsi(`${file.path===state.selectedFile?'›':' '} ${file.conflict?'!!':file.index+file.worktree} ${monitorText(file.path)}`,width)})),
++      ...(git.files.length ? [] : [{text:colors.dim(git.error ? 'Status unknown' : 'Working tree clean')}])];
++  }
++  // Inspector is explicitly opened (Enter/v/4), never follows agent clicks into a transcript.
++  let lines: string[] = [];
++  if (state.preview === 'agent') {
++    const node = findNode(input.tree.nodes,state.tree.selectedId);
++    if (!node) lines = ['Select an agent'];
++    else lines = [`${node.name} · ${node.status}`,node.model ?? 'Model unknown',node.effort ?? 'Effort unknown',
++      `Turn start: ${node.turnStartedAt && Number.isFinite(node.turnStartedAt.getTime()) ? node.turnStartedAt.toISOString() : 'unknown'}`,`Last evidence: ${age(node.lastEventAt,now)}`,`UUID: ${node.id}`];
++  } else if (state.preview === 'worktree') {
++    const entry = input.worktrees?.entries.find(e=>e.path===state.selectedWorktree);
++    if (!entry) lines = ['Select a worktree'];
++    else {
++      lines = [entry.path,`Branch: ${entry.branch ?? (entry.bare?'bare':'detached')}`,`HEAD: ${entry.head ?? '?'}`,`Status: ${worktreeLabel(entry,now)}`];
++      if (entry.error) lines.push(entry.error);
++      if (entry.locked !== undefined) lines.push(`Locked: ${entry.locked || 'yes'}`);
++      if (entry.prunable !== undefined) lines.push(`Prunable: ${entry.prunable || 'yes'}`);
++      if (entry.status) lines.push(`${entry.status.staged} staged / ${entry.status.unstaged} unstaged`,`${entry.status.untracked} untracked / ${entry.status.conflicts} conflicts`,
++        `Ahead ${entry.status.ahead ?? '?'} / behind ${entry.status.behind ?? '?'}`);
++      lines.push('Workspace status, not agent ownership');
++    }
++  } else {
++    lines = [input.git?.root ?? 'No selected worktree', state.selectedFile ?? 'No selected file'];
++    if (width < 36) lines.push('Widen for diff');
++    else return [...lines.flatMap(t=>wrapped(t,width).map(text=>({text}))), ...(input.diff ?? ['Reading diff…']).map(t=>({text:truncateAnsi(monitorText(t),width)}))];
++  }
++  return lines.flatMap(line => wrapped(line,width).map(text=>({text})));
++}
++
++const TITLES: Record<MonitorPane,string> = {agents:'1 Agents',worktrees:'2 Worktrees',changes:'3 Changes',details:'4 Inspector'};
++export function renderMonitor(input: MonitorData): MonitorFrame {
++  const width = Math.max(0,Math.floor(input.width)); const height = Math.max(0,Math.floor(input.height));
++  const state = reconcileMonitor(input.state,input.tree,input.git,input.worktrees);
++  const frame: MonitorFrame = {lines:[],panes:[],controls:[],state};
++  if (!width || !height) return frame;
++  if (state.help) {
++    const help = ['Monitor keys','1 Agents  2 Worktrees','3 Changes  4 Inspector','x close pane  - fold','1–4 reopen closed pane','Tab next visible pane','j/k preview  o switch','Click agent: switch','m return Main','Enter / v inspect','z zoom  Esc back','q close tree  , settings','done = turn completed','? = no status evidence','mod = changed files','L = locked worktree','stale = >30s since read'];
++    frame.lines = help.slice(0,height).map(line=>truncateAnsi(line,width)); return frame;
++  }
++  const inner = Math.max(0,width-4); const now = input.nowMs ?? Date.now();
++  const notice = input.notice || input.error;
++  const noticeRows = notice && height >= 6 ? wrapped(notice,Math.max(1,width-2)).slice(0,2) : [];
++  let budget = Math.max(0,height-2-noticeRows.length);
++  const ids = MONITOR_PANES.filter(id=>state.modes[id] !== 'closed' && (!state.zoom || id===state.focus));
++  const content = new Map(ids.map(id=>[id,paneRows(id,input,state,inner,now)]));
++  // Header-only allocation first; small terminals never push another panel offscreen.
++  const sizes = new Map<MonitorPane,number>();
++  for (const id of ids) { sizes.set(id,budget>0?1:0); if (budget>0) budget--; }
++  // Focused pane gets first chance, then round-robin: content-sized, not giant empty boxes.
++  const order = [state.focus,...ids.filter(id=>id!==state.focus)].filter(id=>ids.includes(id));
++  while (budget > 0) {
++    let grew = false;
++    for (const id of order) {
++      if (!budget) break;
++      const target = state.modes[id] === 'folded' ? 1 : Math.min(state.zoom ? height : id === 'details' ? 12 : 14,(content.get(id)?.length ?? 0)+2);
++      const size = sizes.get(id) ?? 0;
++      if (size && size < target) { sizes.set(id,size+1);budget--;grew=true; }
++    }
++    if (!grew) break;
++  }
++  frame.lines = Array.from({length:height},()=>fit('',width));
++  frame.lines[0] = theme.accent(pair(width < 20 ? ' ← Main' : ' ← Main session','m ',width));
++  frame.controls.push({kind:'main',x:0,y:0,width}); // Full-width, persistent hit target.
++  let y = 1;
++  for (const id of ids) {
++    const h = sizes.get(id) ?? 0; if (!h) continue;
++    const rows = content.get(id) ?? [];
++    const count = Math.max(0,h-2);
++    let offset = Math.max(0,Math.min(state.scroll[id],Math.max(0,rows.length-count)));
++    const selected = id==='agents'?state.tree.selectedId:id==='worktrees'?state.selectedWorktree:id==='changes'&&inner>=36?state.selectedFile:null;
++    const index = selected ? rows.findIndex(row=>row.item===selected) : -1;
++    if (index>=0 && count) { if(index<offset)offset=index;else if(index>=offset+count)offset=index-count+1; }
++    state.scroll[id]=offset;
++    const pane = {id,x:0,y,width,height:h,rows,offset,contentLength:rows.length}; frame.panes.push(pane);
++    const border = id===state.focus ? theme.accent : colors.dim;
++    const buttons = width>=12 ? `[${state.modes[id]==='folded'?'+':'-'}][x]` : '';
++    const shortTitle = {agents:'Agents',worktrees:width<20?'WT':'Worktrees',changes:'Changes',details:'Inspect'}[id];
++    const title = fit(' '+(width<24 ? shortTitle : TITLES[id])+' ',Math.max(0,width-2-buttons.length));
++    frame.lines[y] = truncateAnsi(border('┌'+title+buttons+'┐'),width);
++    if(buttons) {
++      frame.controls.push({kind:'fold',pane:id,x:width-7,y,width:3},{kind:'close',pane:id,x:width-4,y,width:3});
++    }
++    for(let i=0;i<count;i++) frame.lines[y+1+i]=truncateAnsi(border('│')+' '+fit(rows[offset+i]?.text ?? '',inner)+' '+border('│'),width);
++    if(h>1) {
++      const range=rows.length>count&&count?` ${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length} `:'';
++      frame.lines[y+h-1]=truncateAnsi(border('└'+fit(range,Math.max(0,width-2)).replace(/ /g,'─')+'┘'),width);
++    }
++    y+=h;
++  }
++  for(let i=0;i<noticeRows.length;i++) frame.lines[height-1-noticeRows.length+i]=theme.warning(fit(noticeRows[i],width));
++  if(height>1) {
++    frame.lines[height-1]=colors.dim(truncateAnsi(width<30 ? ' , Settings  1–4' : ' , Settings   1–4 reopen   ? keys',width));
++    frame.controls.push({kind:'settings',x:0,y:height-1,width:Math.min(width,12)});
++  }
++  return frame;
++}
++
++function openPane(state: MonitorState, id: MonitorPane): MonitorState {
++  const preview = id==='agents'?'agent':id==='worktrees'?'worktree':id==='changes'?'file':state.preview;
++  return {...state,focus:id,preview,modes:{...state.modes,[id]:'open'},scroll:{...state.scroll,details:preview===state.preview?state.scroll.details:0}};
++}
++export function monitorItemAt(pane: MonitorRect, x: number, y: number): string | undefined {
++  if(x<pane.x+2 || x>=pane.x+pane.width-2 || y<=pane.y || y>=pane.y+pane.height-1) return undefined;
++  return pane.rows[pane.offset+y-pane.y-1]?.item;
++}
++export function canMonitorDiff(frame?: MonitorFrame): boolean {
++  return Boolean(frame?.panes.some(p=>p.id==='details'&&p.height>2&&p.width>=40));
++}
++export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
++  let next: MonitorState = {...state,tree:{...state.tree},modes:{...state.modes},scroll:{...state.scroll}};
++  let key = input.type==='key'?input.key:'';
++  const result = (action?:MonitorOutcome['action'],close=false): MonitorOutcome => ({state:next,close,action});
++  if(key==='close') return result(undefined,true);
++  if(next.help) { if(['escape','help','enter'].includes(key))next.help=false;return result(); }
++  if(input.type==='mouse') {
++    const control = input.button==='left'?ctx.frame?.controls.find(c=>input.y===c.y&&input.x>=c.x&&input.x<c.x+c.width):undefined;
++    if(control?.kind==='main') return result({type:'switch',id:ctx.tree.rootId});
++    if(control?.kind==='settings') return result({type:'settings'});
++    if(control?.pane) {
++      next.focus=control.pane;
++      key=control.kind==='close'?'pane-close':'pane-fold';
++    } else {
++      const pane=ctx.frame?.panes.find(p=>input.x>=p.x&&input.x<p.x+p.width&&input.y>=p.y&&input.y<p.y+p.height);
++      if(!pane) return result();
++      next.focus=pane.id;
++      if(input.button==='left') {
++        if(input.y===pane.y) key='pane-fold';
++        else {
++          const id=monitorItemAt(pane,input.x,input.y);
++          if(!id)return result();
++          if(pane.id==='agents') {
++            if(!visibleRows(ctx.tree.nodes,next.tree).some(row=>row.node.id===id))return result();
++            next.tree.selectedId=id;next.preview='agent';next.scroll.details=0;
++            return result({type:'switch',id});
++          }
++          if(pane.id==='worktrees') {next.selectedWorktree=id;next.preview='worktree';}
++          if(pane.id==='changes') {next.selectedFile=id;next.preview='file';}
++          next.scroll.details=0;return result();
++        }
++      } else key=input.button==='wheel-down'?'down':'up';
++    }
++  }
++  if(key==='settings')return result({type:'settings'});
++  if(key==='main')return result({type:'switch',id:ctx.tree.rootId});
++  if(key==='open-session')return next.focus==='agents'&&next.tree.selectedId?result({type:'switch',id:next.tree.selectedId}):result();
++  if(key==='help')next.help=true;
++  else if(key==='pane-close') {
++    next.modes[next.focus]='closed';next.zoom=false;
++    next.focus=MONITOR_PANES.find(id=>next.modes[id]!=='closed')??'agents';
++  } else if(key==='pane-fold')next.modes[next.focus]=next.modes[next.focus]==='folded'?'open':'folded';
++  else if(MONITOR_PANES.includes(key as MonitorPane))next=openPane(next,key as MonitorPane);
++  else if(key==='tab'||key==='shift-tab') {
++    const visible=MONITOR_PANES.filter(id=>next.modes[id]!=='closed');
++    if(visible.length)next.focus=visible[(visible.indexOf(next.focus)+(key==='tab'?1:visible.length-1))%visible.length];
++  } else if(key==='enter'||key==='detail-toggle') {
++    const from=next.focus;
++    if(from==='agents')next.preview='agent';else if(from==='worktrees')next.preview='worktree';else if(from==='changes')next.preview='file';
++    next=openPane(next,'details');next.scroll.details=0;
++  } else if(key==='zoom')next.zoom=!next.zoom;
++  else if(key==='escape') {
++    if(next.zoom)next.zoom=false;
++    else if(next.focus==='details'){next.modes.details='closed';next.focus=next.preview==='agent'?'agents':next.preview==='worktree'?'worktrees':'changes';}
++    else return result(undefined,true);
++  } else {
++    const pane=ctx.frame?.panes.find(p=>p.id===next.focus);
++    const page=Math.max(1,(pane?.height??5)-2);
++    // A two-line worktree card is one item, not two keyboard destinations.
++    const visibleItems = pane ? new Set(pane.rows.slice(pane.offset,pane.offset+page).flatMap(row=>row.item ? [row.item] : [])) : new Set<string>();
++    const itemPage = visibleItems.size || page;
++    const delta=key==='down'?1:key==='up'?-1:key==='page-down'?itemPage:key==='page-up'?-itemPage:0;
++    const move=delta!==0||key==='home'||key==='end';
++    if(next.focus==='agents') {
++      const rows=visibleRows(ctx.tree.nodes,next.tree);
++      if(move){const index=rows.findIndex(row=>row.node.id===next.tree.selectedId);const target=key==='home'?0:key==='end'?rows.length-1:Math.max(0,index)+delta;
++        const row=rows[Math.max(0,Math.min(rows.length-1,target))];if(row)next.tree.selectedId=row.node.id;
++      } else if(key==='sort')next.tree.sort=next.tree.sort==='active'?'created':'active';
++      else if(['left','right','filter'].includes(key))next.tree=applyKey(next.tree,key as 'left'|'right'|'filter',rows).state;
++    } else if(move) {
++      const ids=pane?[...new Set(pane.rows.map(row=>row.item).filter((id):id is string=>id!==undefined))]:[];
++      if(ids.length&&(next.focus==='worktrees'||next.focus==='changes')) {
++        const current=next.focus==='worktrees'?next.selectedWorktree:next.selectedFile;
++        const index=ids.indexOf(current??'');const target=key==='home'?0:key==='end'?ids.length-1:Math.max(0,index)+delta;
++        const id=ids[Math.max(0,Math.min(ids.length-1,target))];
++        if(next.focus==='worktrees'){next.selectedWorktree=id;next.preview='worktree';}else{next.selectedFile=id;next.preview='file';}
++      }else next.scroll[next.focus]=key==='home'?0:key==='end'?Math.max(0,(pane?.contentLength??0)-page):Math.max(0,next.scroll[next.focus]+delta);
++    }
++  }
++  if(next.tree.selectedId!==state.tree.selectedId||next.selectedWorktree!==state.selectedWorktree||next.selectedFile!==state.selectedFile)next.scroll.details=0;
++  return result();
++}
+diff --git a/src/collectors/worktrees.ts b/src/collectors/worktrees.ts
+new file mode 100644
+--- /dev/null
++++ b/src/collectors/worktrees.ts
+@@ -0,0 +1,198 @@
++/** Read-only worktree monitoring. Never attribute workspace files to agents. */
++import { execFile } from 'node:child_process';
++import { resolve } from 'node:path';
++
++export interface WorktreeStatus {
++  changed: number;
++  staged: number;
++  unstaged: number;
++  untracked: number;
++  conflicts: number;
++  ahead: number | null;
++  behind: number | null;
++  branch: string | null;
++}
++export interface WorktreeInfo {
++  path: string;
++  head?: string;
++  branch: string | null;
++  bare: boolean;
++  detached: boolean;
++  locked?: string;
++  prunable?: string;
++  status?: WorktreeStatus;
++  observedAt?: number;
++  error?: string;
++}
++export interface WorktreesSnapshot {
++  sourcePath: string | null;
++  entries: WorktreeInfo[];
++  updatedAt: number;
++  error?: string;
++  truncated?: boolean;
++}
++export type WorktreeGit = (cwd: string, args: string[]) => Promise<string>;
++export const WORKTREE_LIMIT = 128;
++export const PROBES_PER_REFRESH = 4;
++export const WORKTREE_STALE_MS = 30_000;
++
++/** All invocations have bounded output/time, no shell, no lazy object fetch. */
++export const worktreeGit: WorktreeGit = (cwd, args) => new Promise((yes, no) => {
++  const env = {...process.env};
++  // A process launched from another Git operation must not redirect these reads.
++  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_NAMESPACE', 'GIT_EXTERNAL_DIFF']) delete env[key];
++  execFile('git', ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'color.ui=false',
++    '-c', 'core.quotePath=true', ...args], {
++    cwd, encoding: 'utf8', shell: false, timeout: 5000, maxBuffer: 1024 * 1024,
++    windowsHide: true,
++    env: {...env, LC_ALL:'C', GIT_OPTIONAL_LOCKS:'0', GIT_NO_LAZY_FETCH:'1', GIT_LITERAL_PATHSPECS:'1', GIT_TERMINAL_PROMPT:'0'},
++  }, (error, stdout) => error ? no(error) : yes(stdout));
++});
++
++function failure(error: unknown): string {
++  const err = error as {code?: string | number; killed?: boolean; message?: string; stderr?: string};
++  if (err?.code === 'ENOENT') return 'Git or worktree path unavailable';
++  if (err?.killed || err?.code === 'ETIMEDOUT') return 'Git timed out';
++  if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'Git output limit reached';
++  const text = `${err?.message ?? ''}\n${err?.stderr ?? ''}`;
++  if (/not a git repository/i.test(text)) return 'No Git repository at this path';
++  if (/permission|dubious ownership/i.test(text)) return 'Repository access denied';
++  if (/filter/i.test(text)) return 'Could not disable Git filters';
++  return 'Worktree read failed';
++}
++
++/** NUL is the ONLY record delimiter. Paths and lock reasons may contain newlines. */
++export function parseWorktreeList(text: string): WorktreeInfo[] {
++  if (text && !text.endsWith('\0\0')) throw new Error('Incomplete worktree list');
++  const result: WorktreeInfo[] = [];
++  let entry: WorktreeInfo | undefined;
++  for (const field of text.split('\0')) {
++    if (!field) { if (entry) result.push(entry); entry = undefined; continue; }
++    const space = field.indexOf(' ');
++    const key = space < 0 ? field : field.slice(0, space);
++    const value = space < 0 ? '' : field.slice(space + 1);
++    if (key === 'worktree') {
++      if (entry || !value) throw new Error('Invalid worktree list');
++      entry = {path:value, branch:null, bare:false, detached:false};
++    } else if (entry) {
++      if (key === 'HEAD') entry.head = value;
++      else if (key === 'branch') entry.branch = value.replace(/^refs\/heads\//, '');
++      else if (key === 'bare') entry.bare = true;
++      else if (key === 'detached') entry.detached = true;
++      else if (key === 'locked') entry.locked = value;
++      else if (key === 'prunable') entry.prunable = value;
++    } else throw new Error('Worktree record missing path');
++  }
++  return result;
++}
++
++/** Porcelain v2 -z; a rename's extra source record must not be counted as a file. */
++export function parseWorktreeStatus(text: string): WorktreeStatus {
++  if (text && !text.endsWith('\0')) throw new Error('Incomplete worktree status');
++  const out: WorktreeStatus = {changed:0, staged:0, unstaged:0, untracked:0, conflicts:0, ahead:null, behind:null, branch:null};
++  const records = text.split('\0');
++  for (let i = 0; i < records.length; i++) {
++    const row = records[i];
++    if (!row || row.startsWith('! ')) continue;
++    if (row.startsWith('# branch.head ')) {
++      const branch = row.slice(14);
++      out.branch = branch === '(detached)' ? null : branch;
++      continue;
++    }
++    if (row.startsWith('# branch.ab ')) {
++      const pair = /^# branch.ab \+(\d+) -(\d+)$/.exec(row);
++      if (!pair) throw new Error('Invalid branch status');
++      out.ahead = Number(pair[1]); out.behind = Number(pair[2]); continue;
++    }
++    if (row.startsWith('# ')) continue;
++    if (row.startsWith('? ')) { out.changed++; out.untracked++; continue; }
++    if (!/^[12u] [A-Z.]{2} /.test(row)) throw new Error('Unknown status record');
++    out.changed++;
++    if (row[0] === 'u') out.conflicts++;
++    else {
++      if (row[2] !== '.') out.staged++;
++      if (row[3] !== '.') out.unstaged++;
++    }
++    if (row[0] === '2' && !records[++i]) throw new Error('Missing rename source');
++  }
++  return out;
++}
++
++async function neutralizeFilters(run: WorktreeGit, cwd: string): Promise<string[]> {
++  let text: string;
++  try { text = await run(cwd, ['config', '--null', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|process|required)$']); }
++  catch (error) { if ((error as {code?: number}).code === 1) return []; throw error; }
++  const names = new Set<string>();
++  for (const key of text.split('\0').filter(Boolean)) {
++    const match = /^filter\.([\s\S]+)\.(?:clean|process|required)$/.exec(key);
++    if (!match || match[1].includes('=')) throw new Error('Unsafe filter configuration');
++    names.add(match[1]);
++  }
++  return [...names].flatMap(name => ['-c', `filter.${name}.clean=`, '-c', `filter.${name}.process=`, '-c', `filter.${name}.required=false`]);
++}
++
++/** Only explicit settings/env or verified session/launch cwd are candidates. No log scraping. */
++export function worktreeSources(launchCwd: string, sessionCwd?: string, configuredRoot = '', envRoot = ''): string[] {
++  const explicit = envRoot || configuredRoot;
++  if (explicit) return [resolve(launchCwd, explicit)]; // Invalid explicit roots never silently fall back.
++  return [...new Set([sessionCwd, launchCwd].filter((x): x is string => Boolean(x)).map(x => resolve(launchCwd, x)))];
++}
++
++/** A bounded round-robin probe keeps big repositories from blocking the renderer. */
++export class WorktreeCollector {
++  private cache = new Map<string, WorktreeInfo>();
++  private source: string | null = null;
++  private cursor = 0;
++  private inFlight?: Promise<WorktreesSnapshot>;
++  constructor(private readonly run: WorktreeGit = worktreeGit, private readonly now: () => number = Date.now) {}
++
++  refresh(candidates: string[]): Promise<WorktreesSnapshot> {
++    if (this.inFlight) return this.inFlight;
++    this.inFlight = this.collect(candidates).finally(() => { this.inFlight = undefined; });
++    return this.inFlight;
++  }
++  private async collect(candidates: string[]): Promise<WorktreesSnapshot> {
++    let source: string | null = null;
++    let entries: WorktreeInfo[] = [];
++    let error = 'No repository configured';
++    for (const candidate of [...new Set(candidates)].slice(0, 2)) {
++      try {
++        entries = parseWorktreeList(await this.run(candidate, ['worktree', 'list', '--porcelain', '-z']));
++        if (!entries.length) throw new Error('Empty worktree list');
++        source = candidate; break;
++      } catch (err) { error = failure(err); }
++    }
++    if (!source) {
++      this.cache.clear(); this.source = null; this.cursor = 0;
++      return {sourcePath:null, entries:[], error, updatedAt:this.now()};
++    }
++    if (source !== this.source) { this.cache.clear(); this.cursor = 0; this.source = source; }
++    const truncated = entries.length > WORKTREE_LIMIT;
++    entries = entries.slice(0, WORKTREE_LIMIT).map(entry => {
++      const old = this.cache.get(entry.path);
++      // A metadata change invalidates old branch/clean status immediately.
++      return old && old.head === entry.head && old.branch === entry.branch && old.bare === entry.bare &&
++        old.locked === entry.locked && old.prunable === entry.prunable
++        ? {...entry, status:old.status, observedAt:old.observedAt, error:old.error} : entry;
++    });
++    const readable = entries.filter(entry => !entry.bare && entry.prunable === undefined);
++    const count = Math.min(PROBES_PER_REFRESH, readable.length);
++    const selected = Array.from({length:count}, (_, i) => readable[(this.cursor+i) % readable.length]);
++    this.cursor = readable.length ? (this.cursor+count) % readable.length : 0;
++    const probe = async (entry: WorktreeInfo) => {
++      try {
++        const overrides = await neutralizeFilters(this.run, entry.path);
++        const text = await this.run(entry.path, [...overrides, '-c', 'status.renames=true', 'status',
++          '--porcelain=v2', '--branch', '-z', '--untracked-files=all', '--ignore-submodules=all']);
++        entry.status = parseWorktreeStatus(text);
++        // Prefer the branch reported by this status read, not an earlier list snapshot.
++        entry.branch = entry.status.branch;
++        entry.observedAt = this.now(); entry.error = undefined;
++      } catch (err) { entry.status = undefined; entry.observedAt = undefined; entry.error = failure(err); }
++    };
++    // Never more than two simultaneous Git processes; no unbounded fan-out.
++    for (let i = 0; i < selected.length; i += 2) await Promise.all(selected.slice(i,i+2).map(probe));
++    this.cache = new Map(entries.map(entry => [entry.path, {...entry}]));
++    return {sourcePath:source, entries, updatedAt:this.now(), truncated};
++  }
++}
+diff --git a/tests/unit/monitor.test.ts b/tests/unit/monitor.test.ts
+new file mode 100644
+--- /dev/null
++++ b/tests/unit/monitor.test.ts
+@@ -0,0 +1,192 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { mkdtempSync, rmSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, worktreeLabel, monitorPreferences, monitorModes, canMonitorDiff } from '../../src/render/monitor.js';
++import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
++import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
++import { SETTING_ROWS, renderSettingsPage, handleSettingsInput } from '../../src/render/settings-page.js';
++import { stripAnsi, visualLength } from '../../src/render/colors.js';
++import { setDisplayConfig } from '../../src/render/hud-config.js';
++import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
++import type { WorktreesSnapshot } from '../../src/collectors/worktrees.js';
++const now = Date.parse('2026-09-16T10:00:00Z');
++const root = '00000000-0000-4000-8000-000000000001';
++const make = (id:string,name:string,status:SubagentTreeNode['status']):SubagentTreeNode => ({id,name,status,depth:1,children:[],startedAt:new Date(now-120_000),turnStartedAt:new Date(now-30_000),lastEventAt:new Date(now-1000)});
++const nodes = [make('00000000-0000-4000-8000-000000000002','Hegel','completed'),make('00000000-0000-4000-8000-000000000003','Pasteur','completed')];
++const tree: SubagentTree = {rootId:root,nodes,totalCount:nodes.length,updatedAt:new Date(now)};
++const worktrees: WorktreesSnapshot = {sourcePath:'/demo',updatedAt:now,entries:[
++  {path:'/demo/main',branch:'main',bare:false,detached:false,observedAt:now,status:{changed:3,staged:1,unstaged:2,untracked:0,conflicts:0,branch:'main',ahead:0,behind:0}},
++  {path:'/demo/docs',branch:'docs',bare:false,detached:false,observedAt:now,status:{changed:0,staged:0,unstaged:0,untracked:0,conflicts:0,branch:'docs',ahead:null,behind:null}},
++]};
++const key=(key:string)=>({type:'key' as const,key});
++const mouse=(x:number,y:number)=>({type:'mouse' as const,button:'left' as const,x,y});
++const draw=(state=initialMonitorState(),width=30,height=28)=>renderMonitor({tree,worktrees,state,width,height,nowMs:now});
++
++test('default monitor contains two compact panes, one row per agent, and no narratives',()=>{
++  const loud={...tree,nodes:nodes.map(n=>({...n,task:'SHOULD_NOT_SHOW_TASK',lastReport:{text:'SHOULD_NOT_SHOW_REPLY'.repeat(400),kind:'reply' as const,at:new Date(now)}}))};
++  for(const width of [16,20,30,45,70]){
++    const frame=renderMonitor({tree:loud,worktrees,state:initialMonitorState(),width,height:28,nowMs:now});
++    assert.deepEqual(frame.panes.map(p=>p.id),['agents','worktrees']);
++    assert.equal(frame.panes[0].rows.filter(row=>row.item).length,2);
++    assert.equal(frame.panes[0].height,5);
++    assert.doesNotMatch(stripAnsi(frame.lines.join('\n')),/SHOULD_NOT_SHOW|Reply|Task|Reports|Checks/);
++  }
++});
++
++test('width, height and margins remain bounded with CJK and terminal controls',()=>{
++  const malicious={...tree,nodes:[make(nodes[0].id,'中文\x1b[2J\n\t\u202e😀long','unknown')]};
++  for(const theme of ['terminal','none','mocha','latte'] as const){
++    setDisplayConfig({theme});
++    for(const width of [1,5,10,16,20,30,45,70])for(const height of [1,2,4,8,16,24,40]){
++      const frame=renderMonitor({tree:malicious,worktrees,state:initialMonitorState(),width,height,nowMs:now,notice:'View is blocked. No keys sent.'});
++      assert.equal(frame.lines.length,height);
++      assert.ok(frame.lines.every(line=>visualLength(line)<=width));
++      assert.doesNotMatch(frame.lines.join(''),/\x1b\[2J|\u202e/);
++      assert.ok(frame.lines.every(line=>!line.includes('\n')));
++      for(const p of frame.panes)assert.ok(p.y+p.height<=height-1);
++      if(width>=16)for(const p of frame.panes)for(let y=p.y+1;y<p.y+p.height-1;y++){
++        const line=stripAnsi(frame.lines[y]);assert.ok(line.startsWith('│ '));assert.ok(line.endsWith(' │'));
++      }
++    }
++  }
++  setDisplayConfig({theme:'terminal'});
++});
++
++test('closing removes the rectangle; folding only reduces height; Tab skips closed panes',()=>{
++  let frame=draw();let state=frame.state;
++  state=handleMonitorInput(state,key('pane-fold'),{tree,worktrees,frame}).state;
++  frame=draw(state);assert.equal(frame.panes[0].height,1);
++  state=handleMonitorInput(frame.state,key('pane-close'),{tree,worktrees,frame}).state;
++  frame=draw(state);assert.deepEqual(frame.panes.map(p=>p.id),['worktrees']);
++  state=handleMonitorInput(frame.state,key('tab'),{tree,worktrees,frame}).state;assert.equal(state.focus,'worktrees');
++  state=handleMonitorInput(state,key('agents'),{tree,worktrees,frame}).state;
++  assert.equal(state.modes.agents,'open');assert.equal(draw(state).panes[0].height,5);
++});
++
++test('all panels can be closed, but Main and Settings stay accessible',()=>{
++  let state=initialMonitorState();state.modes={agents:'closed',worktrees:'closed',changes:'closed',details:'closed'};
++  const frame=draw(state);assert.equal(frame.panes.length,0);
++  assert.equal(frame.controls.filter(c=>c.kind==='main').length,1);
++  assert.equal(frame.controls.filter(c=>c.kind==='settings').length,1);
++  assert.equal(handleMonitorInput(frame.state,key('worktrees'),{tree,worktrees,frame}).state.modes.worktrees,'open');
++});
++
++test('the full pinned Main row targets the root UUID, not the selected agent',()=>{
++  const frame=draw();
++  for(const x of [0,5,15,29])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
++  assert.deepEqual(handleMonitorInput(frame.state,key('main'),{tree,worktrees,frame}).action,{type:'switch',id:root});
++});
++
++test('mouse hit testing: summary, padding and borders cannot switch agents',()=>{
++  const frame=draw();const pane=frame.panes[0];
++  for(const [x,y] of [[2,pane.y+1],[0,pane.y+2],[1,pane.y+2],[29,pane.y+2],[28,pane.y+2],[3,pane.y+pane.height-1]]){
++    assert.equal(handleMonitorInput(frame.state,mouse(x,y),{tree,worktrees,frame}).action,undefined);
++  }
++  const y=pane.y+2;const id=monitorItemAt(pane,3,y)!;
++  assert.deepEqual(handleMonitorInput(frame.state,mouse(3,y),{tree,worktrees,frame}).action,{type:'switch',id});
++});
++
++test('x is not fold and its hit target cannot trigger navigation',()=>{
++  const frame=draw();const close=frame.controls.find(c=>c.kind==='close'&&c.pane==='agents')!;
++  const result=handleMonitorInput(frame.state,mouse(close.x+1,close.y),{tree,worktrees,frame});
++  assert.equal(result.action,undefined);assert.equal(result.state.modes.agents,'closed');assert.equal(draw(result.state).panes.some(p=>p.id==='agents'),false);
++});
++
++test('keyboard motion only previews; Inspector remains closed until explicitly opened',()=>{
++  const frame=draw();const next=handleMonitorInput(frame.state,key('down'),{tree,worktrees,frame});
++  assert.equal(next.action,undefined);assert.notEqual(next.state.tree.selectedId,frame.state.tree.selectedId);
++  assert.equal(next.state.modes.details,'closed');
++  const inspect=handleMonitorInput(next.state,key('enter'),{tree,worktrees,frame});assert.equal(inspect.action,undefined);assert.equal(inspect.state.modes.details,'open');
++  const opened=handleMonitorInput(next.state,key('open-session'),{tree,worktrees,frame});assert.deepEqual(opened.action,{type:'switch',id:next.state.tree.selectedId});
++});
++
++test('worktree clicks preview Git scope without switching sessions or claiming agent ownership',()=>{
++  const frame=draw();const pane=frame.panes.find(p=>p.id==='worktrees')!;
++  const result=handleMonitorInput(frame.state,mouse(4,pane.y+pane.rows.findIndex(r=>r.item==='/demo/docs')+1),{tree,worktrees,frame});
++  assert.equal(result.action,undefined);assert.equal(result.state.selectedWorktree,'/demo/docs');
++  assert.equal(result.state.tree.selectedId,frame.state.tree.selectedId);assert.equal(result.state.preview,'worktree');
++});
++
++test('same worktree maps to both identity rows',()=>{
++  const pane=draw().panes.find(p=>p.id==='worktrees')!;
++  assert.equal(monitorItemAt(pane,3,pane.y+1),'/demo/main');assert.equal(monitorItemAt(pane,3,pane.y+2),'/demo/main');
++});
++
++test('stale, unknown, prunable, and failed reads are never displayed as clean',()=>{
++  const base=worktrees.entries[1];
++  assert.equal(worktreeLabel(base,now),'clean');
++  assert.equal(worktreeLabel({...base,observedAt:now-31000},now),'stale');
++  assert.equal(worktreeLabel({...base,status:undefined},now),'?');
++  assert.equal(worktreeLabel({...base,error:'timeout'},now),'unreadable');
++  assert.equal(worktreeLabel({...base,prunable:''},now),'prunable');
++});
++
++test('state identity and sibling ordering are independent of freshness/reply text',()=>{
++  const frame=draw();const selected=frame.state.tree.selectedId;
++  const refreshed={...tree,nodes:tree.nodes.map(n=>({...n,lastEventAt:new Date(now+60000)}))};
++  const after=renderMonitor({tree:refreshed,worktrees,state:frame.state,width:30,height:28,nowMs:now});
++  assert.equal(after.state.tree.selectedId,selected);assert.deepEqual(after.panes[0].rows.map(r=>r.item),frame.panes[0].rows.map(r=>r.item));
++});
++
++test('narrow Changes is summary-only; hidden file identities do not move with j/k',()=>{
++  const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:['a','b'].map(path=>({path,index:' ',worktree:'M',added:1,removed:0,binary:false,conflict:false}))};
++  let state=initialMonitorState();state.modes.changes='open';state.focus='changes';state.selectedFile='a';
++  const frame=renderMonitor({tree,worktrees,git,state,width:30,height:30,nowMs:now});
++  assert.equal(frame.panes.find(p=>p.id==='changes')!.rows.some(r=>r.item),false);
++  assert.equal(handleMonitorInput(frame.state,key('down'),{tree,git,worktrees,frame}).state.selectedFile,'a');
++  assert.equal(canMonitorDiff(frame),false);
++});
++
++test('monitor key profile maps numbers without changing legacy decoder behavior',()=>{
++  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('1234x-')),['agents','worktrees','changes','details','pane-close','pane-fold'].map(key));
++  assert.deepEqual(new WorkbenchInputDecoder().push(Buffer.from('24')),['details','activity'].map(key));
++});
++
++test('monitor visibility persists independently from legacy open Reports/Changes settings',()=>{
++  const home=mkdtempSync(join(tmpdir(),'hud-monitor-settings-'));const old=process.env.CODEX_HUD_SETTINGS_PATH;
++  process.env.CODEX_HUD_SETTINGS_PATH=join(home,'hud-settings.json');
++  try{
++    const settings=saveSettings({details:true,changes:true,activity:true});
++    assert.deepEqual(monitorModes(settings),initialMonitorState().modes);
++    let state=initialMonitorState();state.modes.agents='closed';state.modes.worktrees='folded';
++    saveSettings(monitorPreferences(state));assert.deepEqual(monitorModes(loadSettings()),state.modes);
++    assert.equal(loadSettings().details,true);
++  }finally{if(old===undefined)delete process.env.CODEX_HUD_SETTINGS_PATH;else process.env.CODEX_HUD_SETTINGS_PATH=old;rmSync(home,{recursive:true,force:true});}
++});
++
++test('Settings exposes open/folded/closed for each monitor and omits Checks',()=>{
++  assert.equal(SETTING_ROWS.some(r=>r.key==='activity'),false);
++  const row=SETTING_ROWS.findIndex(r=>r.key==='agentsPane');assert.ok(row>=0);
++  let state={draft:defaultSettings(),selected:row,offset:0,message:''};
++  const frame=renderSettingsPage(state,40,30);
++  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.agentsPane,'folded');
++  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.agentsPane,'closed');
++});
++
++
++test('page movement counts distinct worktree cards rather than their directory continuation lines',()=>{
++  const many={...worktrees,entries:Array.from({length:12},(_,i)=>({...worktrees.entries[0],path:'/worktrees/'+i,branch:'branch'+i}))};
++  const state={...initialMonitorState(),focus:'worktrees' as const};
++  const frame=renderMonitor({tree,worktrees:many,state,width:30,height:18,nowMs:now});
++  const pane=frame.panes.find(p=>p.id==='worktrees')!;
++  const count=new Set(pane.rows.slice(pane.offset,pane.offset+pane.height-2).map(r=>r.item).filter(Boolean)).size;
++  const next=handleMonitorInput(frame.state,key('page-down'),{tree,worktrees:many,frame});
++  assert.equal(next.state.selectedWorktree,many.entries[count].path);
++  assert.equal(next.action,undefined);
++});
++
++test('conflicts precede file counts even in narrow optional Changes',()=>{
++  const state=initialMonitorState();state.modes.changes='open';
++  const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[{path:'conflict',index:'U',worktree:'U',added:null,removed:null,binary:false,conflict:true}]};
++  const frame=renderMonitor({tree,worktrees,git,state,width:20,height:30,nowMs:now});
++  assert.match(stripAnsi(frame.panes.find(p=>p.id==='changes')!.rows[0].text),/! 1 conflicts/);
++});
++
++test('malformed dates remain unknown rather than crashing the inspector',()=>{
++  const state=initialMonitorState();state.modes.details='open';state.focus='details';
++  const malformed={...tree,nodes:[{...nodes[0],turnStartedAt:new Date('invalid')}]};
++  const frame=renderMonitor({tree:malformed,worktrees,state,width:45,height:32,nowMs:now});
++  assert.match(frame.panes.find(p=>p.id==='details')!.rows.map(r=>stripAnsi(r.text)).join(' '),/Turn start: unknown/);
++});
+diff --git a/tests/unit/worktrees.test.ts b/tests/unit/worktrees.test.ts
+new file mode 100644
+--- /dev/null
++++ b/tests/unit/worktrees.test.ts
+@@ -0,0 +1,113 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { mkdtemp, writeFile, rm } from 'node:fs/promises';
++import { execFile } from 'node:child_process';
++import { promisify } from 'node:util';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { WorktreeCollector, worktreeGit, parseWorktreeList, parseWorktreeStatus, worktreeSources, PROBES_PER_REFRESH, WORKTREE_LIMIT } from '../../src/collectors/worktrees.js';
++const exec=promisify(execFile);
++const metadata=(paths:string[])=>paths.map((path,i)=>`worktree ${path}\0HEAD ${'a'.repeat(40)}\0branch refs/heads/branch${i}\0\0`).join('');
++const status='# branch.head main\0# branch.ab +2 -3\0';
++
++test('worktree list parses NUL fields, including multiline paths, empty lock reason and detached/bare',()=>{
++  const input='worktree /tmp/a\n\tb\0HEAD abcd\0branch refs/heads/test\0locked\0\0worktree /tmp/b\0HEAD efgh\0detached\0prunable gone\0\0worktree /bare\0bare\0\0';
++  const list=parseWorktreeList(input);assert.equal(list.length,3);assert.equal(list[0].path,'/tmp/a\n\tb');assert.equal(list[0].locked,'');
++  assert.equal(list[1].detached,true);assert.equal(list[1].prunable,'gone');assert.equal(list[2].bare,true);
++});
++
++test('status counts files, not rename paths, and staged/unstaged overlap',()=>{
++  const text=status+'1 MM N... 100644 100644 100644 a b x\0'+'2 R. N... 100644 100644 100644 a b R100 new\0? old\npath\0'+'? untracked\nname\0'+'u UU N... 100644 100644 100644 100644 a b c conflict\0';
++  const s=parseWorktreeStatus(text);assert.equal(s.changed,4);assert.equal(s.staged,2);assert.equal(s.unstaged,1);assert.equal(s.untracked,1);assert.equal(s.conflicts,1);assert.equal(s.ahead,2);assert.equal(s.behind,3);
++});
++
++test('truncated and unrecognized records fail instead of pretending clean',()=>{
++  assert.throws(()=>parseWorktreeList('worktree /x\0HEAD x\0'));
++  assert.throws(()=>parseWorktreeStatus('1 .M incomplete'));
++  assert.throws(()=>parseWorktreeStatus('unexpected\0'));
++  assert.throws(()=>parseWorktreeStatus('2 R. x\0'));
++});
++
++test('unknown upstream differs from ahead=0 behind=0',()=>{
++  assert.equal(parseWorktreeStatus('# branch.head main\0').ahead,null);
++  assert.equal(parseWorktreeStatus('# branch.head main\0# branch.ab +0 -0\0').ahead,0);
++});
++
++test('repository selection uses only explicit configuration or session/launch cwd',()=>{
++  assert.deepEqual(worktreeSources('/launch','/session'),['/session','/launch']);
++  assert.deepEqual(worktreeSources('/launch','/session','project'),['/launch/project']);
++  assert.deepEqual(worktreeSources('/launch','/session','/configured','/override'),['/override']);
++});
++
++test('collector probes a bounded round-robin batch with at most two concurrent Git calls',async()=>{
++  const paths=Array.from({length:9},(_,i)=>'/wt/'+i);let concurrent=0;let maximum=0;const reads:string[]=[];
++  const collector=new WorktreeCollector(async(cwd,args)=>{
++    concurrent++;maximum=Math.max(maximum,concurrent);try{
++      await new Promise(resolve=>setTimeout(resolve,1));
++      if(args[0]==='worktree')return metadata(paths);
++      if(args[0]==='config')throw {code:1};
++      assert.ok(args.includes('status'));reads.push(cwd);return '# branch.head branch'+paths.indexOf(cwd)+'\0';
++    }finally{concurrent--;}
++  },()=>1000);
++  const first=await collector.refresh(['/repo']);assert.equal(reads.length,PROBES_PER_REFRESH);assert.ok(maximum<=2);
++  assert.equal(first.entries.filter(w=>w.status).length,PROBES_PER_REFRESH);
++  assert.equal(first.entries.at(-1)?.status,undefined);
++  await collector.refresh(['/repo']);assert.ok(reads.includes('/wt/7'));
++});
++
++test('failed status clears old clean evidence and errors do not echo argv or paths',async()=>{
++  let fail=false;
++  const collector=new WorktreeCollector(async(_cwd,args)=>{
++    if(args[0]==='worktree')return metadata(['/private/repo']);if(args[0]==='config')throw {code:1};
++    if(fail)throw new Error('git status PRIVATE_SECRET');return '# branch.head branch0\0';
++  },()=>2000);
++  assert.equal((await collector.refresh(['/repo'])).entries[0].status?.changed,0);
++  fail=true;const next=await collector.refresh(['/repo']);assert.equal(next.entries[0].status,undefined);assert.equal(next.entries[0].observedAt,undefined);assert.doesNotMatch(next.entries[0].error??'',/PRIVATE|git status/);
++});
++
++test('prunable and bare entries never trigger status or filter commands',async()=>{
++  const calls:string[][]=[];
++  const snapshot=await new WorktreeCollector(async(_cwd,args)=>{calls.push(args);return 'worktree /bare\0bare\0\0worktree /gone\0prunable gone\0\0';}).refresh(['/repo']);
++  assert.equal(snapshot.entries.length,2);assert.equal(calls.length,1);
++});
++
++test('filter commands are disabled before status and never executed as shell text',async()=>{
++  const calls:string[][]=[];
++  await new WorktreeCollector(async(_cwd,args)=>{
++    calls.push(args);
++    if(args[0]==='worktree')return metadata(['/repo']);if(args[0]==='config')return 'filter.custom.clean\0filter.custom.required\0';
++    assert.ok(args.includes('filter.custom.clean='));assert.ok(args.includes('filter.custom.process='));assert.ok(args.includes('filter.custom.required=false'));
++    return '# branch.head branch0\0';
++  }).refresh(['/repo']);
++  assert.ok(calls.flat().every(arg=>!['add','commit','checkout','diff','fetch','prune'].includes(arg)));
++});
++
++test('an unrepresentable filter key fails closed before touching file contents',async()=>{
++  let statusRead=false;
++  const snapshot=await new WorktreeCollector(async(_cwd,args)=>{if(args[0]==='worktree')return metadata(['/repo']);if(args[0]==='config')return 'filter.a=b.clean\0';statusRead=true;return status;}).refresh(['/repo']);
++  assert.equal(statusRead,false);assert.equal(snapshot.entries[0].status,undefined);assert.ok(snapshot.entries[0].error);
++});
++
++test('list limit is visible rather than claiming an exhaustive result',async()=>{
++  const snapshot=await new WorktreeCollector(async(_cwd,args)=>{if(args[0]==='worktree')return metadata(Array.from({length:140},(_,i)=>'/x/'+i));if(args[0]==='config')throw {code:1};return status;}).refresh(['/repo']);
++  assert.equal(snapshot.entries.length,WORKTREE_LIMIT);assert.equal(snapshot.truncated,true);
++});
++
++test('concurrent refresh requests share a single collection instead of spawning duplicate probes',async()=>{
++  let reads=0;const c=new WorktreeCollector(async(_cwd,args)=>{if(args[0]==='worktree'){reads++;return metadata(['/x']);}if(args[0]==='config')throw{code:1};return status;});
++  const a=c.refresh(['/x']);const b=c.refresh(['/x']);assert.equal(a,b);await Promise.all([a,b]);assert.equal(reads,1);
++});
++
++test('real Git read-only smoke: unusual untracked filenames; no staging, commit or checkout',async()=>{
++  const dir=await mkdtemp(join(tmpdir(),'hud-worktrees-'));
++  try{
++    // Only initializes an isolated test repository. No add/commit/checkout/worktree-add.
++    await exec('git',['init','--quiet',dir],{timeout:5000});
++    await writeFile(join(dir,'space newline\n\t\x1b[2J.txt'),'fixture');
++    const before=await worktreeGit(dir,['status','--porcelain=v2','-z','--untracked-files=all']);
++    const snapshot=await new WorktreeCollector().refresh([dir]);
++    assert.equal(snapshot.error,undefined);assert.equal(snapshot.entries.length,1);assert.equal(snapshot.entries[0].status?.untracked,1);
++    assert.equal(snapshot.entries[0].status?.changed,1);
++    assert.equal(await worktreeGit(dir,['status','--porcelain=v2','-z','--untracked-files=all']),before);
++  }finally{await rm(dir,{recursive:true,force:true});}
++});

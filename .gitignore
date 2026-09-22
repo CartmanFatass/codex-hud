@@ -46,3 +46,6 @@ coverage/
 __pycache__/
 *.pyc
 dist-test/
+
+# Windows alternate data streams copied through WSL
+*:Zone.Identifier

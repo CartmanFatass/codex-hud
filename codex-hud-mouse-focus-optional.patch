@@ -1,0 +1,10 @@
+diff --git a/bin/codex-hud b/bin/codex-hud
+--- a/bin/codex-hud
++++ b/bin/codex-hud
+@@ -618,5 +618,5 @@
+     tmux bind-key -T root MouseDown1Pane if-shell -F '#{@codex_hud_main_pane}' \
+-        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$toggle_tree ; $focus_main' 'select-pane -t= ; send-keys -M'" \
++        "if-shell -F '#{==:#{mouse_pane},#{@codex_hud_pane}}' '$toggle_tree ; $focus_main' 'if-shell -F \"#{==:#{mouse_pane},#{@codex_hud_tree_pane}}\" \"send-keys -t= -M\" \"select-pane -t= ; send-keys -M\"'" \
+         'select-pane -t= ; send-keys -M'
+ 
+     tmux bind-key -T root MouseDown2Pane if-shell -F '#{@codex_hud_main_pane}' \
