@@ -14,8 +14,9 @@
     "test:render": "npm run build && node dist/index.js",
     "test:windows": "powershell -ExecutionPolicy Bypass -File ./tests/windows/test-powershell-entrypoints.ps1",
     "build:test": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
-    "test": "npm run build:test && node --test \"dist-test/tests/unit/*.test.js\"",
+    "test": "npm run build && npm run build:test && npm run test:unit && npm run test:mjs",
     "test:unit": "node --test \"dist-test/tests/unit/*.test.js\"",
+    "test:mjs": "node --test \"tests/unit/*.mjs\"",
     "test:integration": "bash tests/run-integration.sh"
   },
   "keywords": [

@@ -63,6 +63,7 @@ Each one is asserted in `tests/unit/rollout-replay.test.ts`.
 | `subagent-lifecycle.jsonl` | A failed agent is not counted as finished work |
 | `compaction.jsonl` | Compaction count and timestamp |
 | `small-context.jsonl` | An 8K window does not report as full |
+| `approval.jsonl` | An approval request, and each of the events that answers it |
 
 The last one was a live bug: `docs/issues/issue-007` was marked fixed in
 January with verification skipped, and the fix reserved the entire window on
@@ -123,10 +124,19 @@ grouped and right-aligned joins.
 
 ## Test counts
 
-| Suite | Count |
-|---|---|
-| Unit (`npm test`) | 63 |
-| Integration (`npm run test:integration`) | 12 suites |
+`npm test` builds `dist/` and `dist-test/`, then runs both unit suites: the
+TypeScript tests compiled into `dist-test/`, and the `.mjs` tests that import
+from `dist/` directly. Three of those `.mjs` suites had drifted out of date and
+now run again, which is why they are counted here.
+
+| Suite | Command | Count |
+|---|---|---|
+| Unit, TypeScript | `npm run test:unit` | 285 tests |
+| Unit, `.mjs` | `npm run test:mjs` | 16 suites |
+| Integration | `npm run test:integration` | 16 suites |
+
+The integration suites need a real tmux (3.4 here); each skips rather than
+fails where its dependency is missing.
 
 ---
 

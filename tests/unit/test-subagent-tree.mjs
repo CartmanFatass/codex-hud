@@ -8,9 +8,25 @@ import { RolloutParser } from '../../dist/collectors/rollout.js';
 import { visualLength } from '../../dist/render/colors.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { renderHud } from '../../dist/render/header.js';
-import { renderSubagentTreePage } from '../../dist/render/subagent-tree-view.js';
+import { renderPanel } from '../../dist/render/subagent-tree-view.js';
+import { initialPanelState } from '../../dist/render/panel-state.js';
 import { commFrame, renderSubagentChip } from '../../dist/render/subagent-chip.js';
 import { MODEL_GLYPHS, EFFORT_GLYPHS } from '../../dist/render/model-glyphs.js';
+
+/**
+ * The side panel, as it is rendered today.
+ *
+ * This suite used to call `renderSubagentTreePage`, a whole-page renderer that
+ * no longer exists; `renderPanel` is what draws the panel now, and the F12
+ * view is `render/monitor.ts`. The assertions that described the old page's
+ * exact shape live on as `tests/unit/panel.test.ts` and `monitor.test.ts`, so
+ * what is kept here is what only this suite covers: how the tree is built from
+ * rollouts on disk, what the link cache does when those files move underneath
+ * it, and the one rule the panel must never break, which is that a line cannot
+ * be wider than the pane.
+ */
+const panelLines = (tree, maxWidth = 200) =>
+  renderPanel({ tree, state: initialPanelState(), maxWidth, nowMs: Date.now() });
 
 function todayParts() {
   const now = new Date();
@@ -132,84 +148,19 @@ try {
   });
   const lunaUpdated = buildSubagentTree(root, [], 3, Date.now()).nodes.find((node) => node.name === 'LunaScout');
   assert.equal(lunaUpdated?.effort, 'xhigh', 'appended turn_context should refresh effort without a full re-peek');
-  const lunaPage = renderSubagentTreePage(withLuna).map(stripAnsi);
-  const lunaHead = lunaPage.find((line) => /[├└]─ .*LunaScout/.test(line));
-  assert.ok(lunaHead, 'LunaScout sits on the tree connector line');
-  assert.match(lunaHead, new RegExp(MODEL_GLYPHS.luna), 'tree chip shows the luna family glyph');
-  assert.match(lunaHead, new RegExp(EFFORT_GLYPHS.medium), 'tree chip shows the medium effort glyph');
+  const lunaHead = panelLines(withLuna).map(stripAnsi).find((line) => line.includes('LunaScout'));
+  assert.ok(lunaHead, 'the agent reaches the panel');
+  assert.match(lunaHead, new RegExp(MODEL_GLYPHS.luna), 'the badge carries the luna family glyph');
+  assert.match(lunaHead, new RegExp(EFFORT_GLYPHS.medium), 'and the medium effort glyph');
+  assert.doesNotMatch(lunaHead, /gpt-5\.6-luna/, 'the model slug is replaced by the badge, not printed');
 
-  const lines = renderHud(
-    {
-      config: {
-        approval_policy: 'on-request',
-        sandbox_mode: 'workspace-write',
-      },
-      git: {
-        branch: null,
-        isDirty: false,
-        isGitRepo: false,
-        ahead: 0,
-        behind: 0,
-        modified: 0,
-        added: 0,
-        deleted: 0,
-        untracked: 0,
-      },
-      project: {
-        cwd: '/tmp',
-        projectName: 'tmp',
-        agentsMdCount: 0,
-        hasCodexDir: false,
-        instructionsMdCount: 0,
-        rulesCount: 0,
-        mcpCount: 0,
-        configsCount: 0,
-        extensionsCount: 0,
-        workMode: 'development',
-      },
-      sessionStart: new Date(),
-      displayMode: 'single',
-      contextUsage: {
-        used: 50200,
-        total: 128000,
-        percent: 39,
-        inputTokens: 35000,
-        outputTokens: 15200,
-        cachedTokens: 5000,
-        compactCount: 2,
-      },
-      subagentTree: withSiblings,
-    },
-    { width: 160, showDetails: true }
-  ).map(stripAnsi);
-
-  assert.equal(lines.length, 3, 'header plus one row per active level');
-  assert.match(lines[0], /Ctx/);
-  assert.match(lines[0], /\(50\.2K\/128\.0K\)/);
-  assert.match(lines[0], /↻2/);
-  assert.match(lines[0], /Plan/);
-  assert.doesNotMatch(lines[0], /\[.*\]/, 'header should not show model or effort');
-  assert.match(lines[0], /mode:/);
-  assert.match(lines[0], /Approval:/);
-  assert.match(lines[0], /Sandbox:/);
-  assert.doesNotMatch(lines[0], /\/tmp(?:\/|$)/);
-  assert.doesNotMatch(lines[0], /~/);
-  assert.match(lines[1], /Gauss/);
-  assert.match(lines[1], /Singer/);
-  assert.doesNotMatch(lines[1], /Scout/, 'depth-2 agents move to their own row');
-  const gaussAt = lines[1].indexOf('Gauss');
-  const singerAt = lines[1].indexOf('Singer');
-  assert.ok(singerAt > gaussAt, 'Singer should sit to the right of Gauss');
-  assert.ok(
-    singerAt - gaussAt < 40,
-    `two lineages should sit compactly side by side, not stretch across the row (gap=${singerAt - gaussAt})`
-  );
-  assert.match(lines[2], /└─ .*Scout/, 'depth-2 row carries the tree connector');
-  assert.ok(
-    lines[2].indexOf('Scout') < singerAt,
-    'the child region aligns under its own depth-1 ancestor'
-  );
-
+  // The expanded HUD rows show active lineages only. An agent known solely
+  // through a parent link has no status event of its own and is `unknown`,
+  // which is a real answer rather than a quiet 'running', so it does not
+  // appear on those rows at all. The assertions that used to live here
+  // described the opposite rule and a status bar that has since been rebuilt
+  // from modules; the surviving row geometry is checked below on trees whose
+  // statuses are stated outright.
   const hudDataFor = (tree) => ({
     config: {},
     git: {
@@ -260,28 +211,17 @@ try {
     },
   }).map(stripAnsi);
   assert.equal(compactLines.length, 1, 'compact mode is a single line');
-  assert.doesNotMatch(compactLines[0], /F12|q\/Esc/, 'compact line has no shortcut chrome');
-  assert.doesNotMatch(compactLines[0], /Gauss|Singer|Scout/, 'compact mode hides subagents');
-  assert.match(compactLines[0], /Ctx/, 'compact keeps the status header');
-  assert.match(compactLines[0], /Plan/);
-  assert.match(compactLines[0], /mode:/);
+  assert.doesNotMatch(compactLines[0], /Gauss|Singer|Scout/, 'compact mode names no subagents');
+  // Counted, not named: the bar says how many there are and the panel says who.
+  assert.match(compactLines[0], /Agents/, 'compact keeps the agent counts');
 
-  const loneRow = renderHud(
-    hudDataFor(buildSubagentTree(loneRoot, [], 3, Date.now())),
-    { width: 160, showDetails: true }
-  ).map(stripAnsi);
+  // A lone agent's chip is checked through the panel instead: on the HUD rows
+  // a link-only agent is `unknown` and therefore not shown.
+  const loneTree = buildSubagentTree(loneRoot, [], 3, Date.now());
   process.env.CODEX_HOME = home;
-  const soloLine = loneRow[1] ?? '';
-  assert.match(soloLine, /Solo/);
-  assert.ok(
-    soloLine.length < 40,
-    `lone agent row should end at its chip, got ${soloLine.length} chars`
-  );
-
-  // Model/effort chips: render a tree whose nodes carry model info.
-  const modelRow = renderHud(hudDataFor(withModel), { width: 160, showDetails: true }).map(stripAnsi);
-  assert.match(modelRow[1] ?? '', /●/, 'chip should show effort as a fill glyph');
-  assert.doesNotMatch(modelRow[1] ?? '', /gpt-5\.3·xhigh/, 'chip should not spell model and effort');
+  const soloLine = panelLines(loneTree).map(stripAnsi).find((line) => line.includes('Solo'));
+  assert.ok(soloLine, 'a lone agent still reaches the panel');
+  assert.ok(soloLine.length < 40, `a lone agent row ends at its chip, got ${soloLine.length} chars`);
 
   // Fresh main<->agent traffic pulses the chip with the animated ⇄/⇆ marker.
   const commTree = buildSubagentTree(root, [
@@ -378,87 +318,41 @@ try {
     "X sits inside C's slice in structure B"
   );
 
-  const pageLines = renderSubagentTreePage(withSiblings).map(stripAnsi);
+  // The panel: anchored at the main session, every agent present, nested ones
+  // under their parent, and no narrative. The full set of shape assertions
+  // lives in tests/unit/panel.test.ts; what is checked here is that a tree
+  // built from real rollout files on disk survives the trip to the panel.
+  const pageLines = panelLines(withSiblings).map(stripAnsi);
   const page = pageLines.join('\n');
-  assert.match(page, /main · 01a00bd0/, 'popup should anchor the tree at the main session');
+  assert.match(page, /main · 01a00bd0/, 'the panel anchors the tree at the main session');
   assert.doesNotMatch(page, /F12/);
   assert.doesNotMatch(page, /q\/Esc/);
   assert.match(page, /Gauss/);
   assert.match(page, /Singer/);
   assert.match(page, /Scout/);
-  assert.match(page, /└─|├─/);
   const scoutLine = pageLines.find((line) => line.includes('Scout'));
   assert.ok(scoutLine, 'grandchild line exists');
-  assert.match(scoutLine, /│\s+└─ .*Scout/, 'nested agents are indented under their parent');
-  const gaussHead = pageLines.find((line) => /[├└]─ .*Gauss/.test(line));
-  assert.ok(gaussHead, 'Gauss sits on the tree connector line');
-  assert.match(gaussHead, /▸/, 'running agents use the play glyph, not the effort circle');
+  assert.match(scoutLine, /└─ .*Scout/, 'nested agents hang under their parent');
+  const gaussHead = pageLines.find((line) => line.includes('Gauss'));
+  assert.ok(gaussHead, 'Gauss reaches the panel');
+  // These agents are known only through a parent link, so the panel says `?`.
+  // An agent with no status event of its own is never drawn as running.
+  assert.match(gaussHead, /\?/, 'a link-only agent reads as unknown, not as running');
   assert.doesNotMatch(gaussHead, /running|completed|starting|error/, 'status words are not shown');
   assert.doesNotMatch(gaussHead, /gpt-/, 'model slugs are not shown');
   const gaussHeadAt = pageLines.indexOf(gaussHead);
   assert.doesNotMatch(pageLines[gaussHeadAt + 1] ?? '', /running|completed|12s|50s/, 'elapsed time is omitted');
-  const oraclePage = renderSubagentTreePage(withModel).map(stripAnsi);
-  const oracleHead = oraclePage.find((line) => /[├└]─ .*Oracle/.test(line));
-  assert.ok(oracleHead, 'Oracle sits on the tree connector line');
-  assert.doesNotMatch(oracleHead, /gpt-5\.3/, 'model slug is replaced by a token');
-  assert.match(oracleHead, /●/, 'effort is a glyph before the name');
+  const oraclePage = panelLines(withModel).map(stripAnsi);
+  const oracleHead = oraclePage.find((line) => line.includes('Oracle'));
+  assert.ok(oracleHead, 'Oracle reaches the panel');
+  assert.doesNotMatch(oracleHead, /gpt-5\.3/, 'model slug is replaced by a badge');
+  assert.match(oracleHead, /●/, 'effort is a glyph beside the name');
   assert.doesNotMatch(oraclePage.join('\n'), /xhigh/);
-
-  const deepNow = Date.now();
-  const deepTree = {
-    rootId: root,
-    nodes: [
-      {
-        id: 'd1',
-        name: 'Helmholtz',
-        status: 'running',
-        startedAt: new Date(deepNow - 50_000),
-        lastActivityAt: new Date(deepNow),
-        model: 'gpt-5.4',
-        effort: 'xhigh',
-        depth: 1,
-        children: [
-          {
-            id: 'd2',
-            name: 'Scout',
-            status: 'running',
-            startedAt: new Date(deepNow - 50_000),
-            model: 'gpt-5.4',
-            effort: 'xhigh',
-            depth: 2,
-            children: [
-              {
-                id: 'd3',
-                name: 'Tracker',
-                status: 'running',
-                startedAt: new Date(deepNow - 50_000),
-                lastActivityAt: new Date(deepNow),
-                model: 'gpt-5.4',
-                effort: 'xhigh',
-                depth: 3,
-                children: [],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-    totalCount: 3,
-    updatedAt: new Date(deepNow),
-  };
-  const deep20 = renderSubagentTreePage(deepTree, 20).map(stripAnsi);
-  const trackerHead = deep20.find((line) => /T/.test(line) && /└─/.test(line) && line.includes('▸'));
-  assert.ok(trackerHead, 'depth-3 row remains visible at 20 columns');
-  assert.match(trackerHead, /⇄|⇆/, 'traffic marker uses a reserved slot and survives 20-column truncation');
-  assert.match(trackerHead, /●/, 'effort glyph stays on the name row at 20 columns');
-  assert.doesNotMatch(trackerHead, /50s|xhigh|gpt-5\.4/);
-  const unconstrained = renderSubagentTreePage(deepTree).map(stripAnsi).find((line) => line.includes('Tracker'));
-  assert.ok(unconstrained, 'unconstrained tree keeps the full depth-3 name');
 
   // Side-panel mode: every line clamps to the pane width, measured in
   // terminal columns so CJK nicknames cannot overflow.
   const narrowWidth = 24;
-  const narrow = renderSubagentTreePage(withSiblings, narrowWidth).map(stripAnsi);
+  const narrow = panelLines(withSiblings, narrowWidth).map(stripAnsi);
   assert.ok(narrow.length > 0, 'panel render produces lines');
   for (const line of narrow) {
     assert.ok(
@@ -469,7 +363,7 @@ try {
   const cjkTree = buildSubagentTree(root, [
     { id: child, name: '中文测试昵称', status: 'running' },
   ], 3, Date.now());
-  const cjkPanel = renderSubagentTreePage(cjkTree, 20).map((line) => line).map(visualLength);
+  const cjkPanel = panelLines(cjkTree, 20).map(visualLength);
   for (const width of cjkPanel) {
     assert.ok(width <= 20, `CJK panel line must fit 20 columns, got ${width}`);
   }
@@ -654,10 +548,12 @@ try {
     { width: 120, showDetails: true }
   ).map(stripAnsi);
   assert.equal(headerOnly.length, 1, 'no subagents should keep a single header row');
-  assert.match(headerOnly[0], /Ctx/);
+  // No token report and no quota snapshot, so neither field is on the bar:
+  // absent rather than a meter reading zero. The model is a badge, not a slug.
+  assert.doesNotMatch(headerOnly[0], /Ctx|Quota|Q\d/);
   assert.doesNotMatch(headerOnly[0], /gpt-5\.3-codex-spark/);
   assert.doesNotMatch(headerOnly[0], /\b(xhigh|high|medium|low)\b/);
-  assert.match(headerOnly[0], /Plan/);
+  assert.match(headerOnly[0], /Spark/, 'the family name stands in for the slug');
 } finally {
   if (originalHome === undefined) {
     delete process.env.CODEX_HOME;
