@@ -5,7 +5,8 @@
 
 import { execFile } from 'node:child_process';
 import type { HudData, RenderOptions, LayoutConfig, LayoutMode } from '../types.js';
-import { renderHud } from './header.js';
+import { renderHud, fitStatusBar } from './header.js';
+import type { FitResult } from './layout/engine.js';
 import { colors, truncateAnsi } from './colors.js';
 
 // ANSI escape codes for cursor/screen control
@@ -145,6 +146,19 @@ function createDefaultLayout(width: number, height: number): LayoutConfig {
     showContextBreakdown: false,
     barWidth: Math.min(10, Math.max(6, Math.floor(width / 12))),
   };
+}
+
+/**
+ * The status bar as it was just fitted to this pane, columns and all.
+ *
+ * Fitting is done twice on a collection tick: once to draw and once for the
+ * state snapshot. The alternative is threading the result out of the render
+ * path, which would put a machine-readable side channel in the middle of the
+ * drawing code for the sake of a job that happens once a second.
+ */
+export function currentStatusBar(data: HudData): FitResult & { width: number } {
+  const width = getTerminalWidth();
+  return { ...fitStatusBar(data, createDefaultLayout(width, 1), width), width };
 }
 
 /**

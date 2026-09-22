@@ -12,7 +12,7 @@ import type { HudData, RenderOptions, LayoutConfig, SubagentTree } from '../type
 import { DEFAULT_LAYOUT } from '../types.js';
 import { colors, theme, visualLength, truncateAnsi, padEnd } from './colors.js';
 import { buildBarModules } from './layout/bar-modules.js';
-import { fitModules } from './layout/engine.js';
+import { fitModules, type FitResult } from './layout/engine.js';
 import { renderSubagentChip } from './subagent-chip.js';
 import {
   collectActiveTreeLineages,
@@ -26,7 +26,7 @@ import {
  * `fitModules`, which shortens before it hides and keeps an alert on screen
  * after everything else has gone. Nothing here concatenates and clips.
  */
-function renderStatusHeader(data: HudData, layout: LayoutConfig, width: number): string {
+export function fitStatusBar(data: HudData, layout: LayoutConfig, width: number): FitResult {
   const modules = buildBarModules(data, { barWidth: layout.barWidth ?? 10 });
   // A dimmed rule between clusters and a plain double space inside one: the
   // bar reads as a few groups rather than a list of equally spaced fields.
@@ -34,7 +34,11 @@ function renderStatusHeader(data: HudData, layout: LayoutConfig, width: number):
     width,
     separator: theme.separator(' │ '),
     groupSeparator: '  ',
-  }).line;
+  });
+}
+
+function renderStatusHeader(data: HudData, layout: LayoutConfig, width: number): string {
+  return fitStatusBar(data, layout, width).line;
 }
 
 function renderCompactLayout(data: HudData, layout: LayoutConfig, width: number): string[] {

@@ -17,7 +17,8 @@ import { createParseQueue } from './utils/parse-queue.js';
 import { fileSignature } from './utils/file-signature.js';
 import { tmuxFocusPaneArgs, tmuxForwardKeyArgs } from './utils/hud-input.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
-import { renderToStdout, cleanupRenderer } from './render/index.js';
+import { renderToStdout, cleanupRenderer, currentStatusBar } from './render/index.js';
+import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { displayConfig } from './render/hud-config.js';
 import { hasFreshComm } from './render/subagent-chip.js';
 import { buildContextUsage } from './collectors/context-usage.js';
@@ -78,6 +79,10 @@ const sessionFinder = new SessionFinder(HUD_CWD_REAL, (session) => {
 // Off unless CODEX_HUD_NOTIFY=1. Codex notifies on its own, and two pop-ups
 // for one event is worse than none.
 const notifier = new Notifier(resolveNotifierOptions());
+
+// The same tick that draws the bar also publishes what it drew, so a click,
+// a script or another pane can read the state the reader is looking at.
+const snapshotWriter = new SnapshotWriter();
 
 const rolloutParser = new RolloutParser(10);
 const hudFileWatcher = new HudFileWatcher();
@@ -319,8 +324,14 @@ async function mainLoop(): Promise<void> {
     renderToStdout(data, targetHeight);
     maybeResizeHudPane(targetHeight);
     syncFastRenderLoop(data);
-    // Notifications run on the collection tick, not the faster repaint.
+    // Notifications and the state file run on the collection tick, not the
+    // faster repaint.
     notifier.update(data);
+    try {
+      snapshotWriter.write(buildSnapshot(data, currentStatusBar(data)));
+    } catch {
+      // A state file nobody can write is not a reason to stop drawing.
+    }
   } catch (error) {
     console.error('Render error:', error);
   }
@@ -391,6 +402,8 @@ function shutdown(): void {
 
   // Clean up watchers
   syncFastRenderLoop(null);
+  // A snapshot of a HUD that is no longer running would read as live.
+  snapshotWriter.remove();
   sessionFinder.stop();
   hudFileWatcher.stop().catch(() => {
     // Ignore cleanup errors

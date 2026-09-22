@@ -229,12 +229,32 @@ codex-resume                 # 恢复上次会话
 ```bash
 codex-hud --kill             # 终止当前目录的会话
 codex-hud --list             # 列出所有 HUD 会话
+codex-hud --json             # 以 JSON 输出当前目录会话的 HUD 状态
 codex-hud --attach           # 复用已有会话
 codex-hud --new-session      # 强制新建会话
 codex-hud --self-check       # 运行环境诊断
 ```
 
 </details>
+
+### 机器可读的状态
+
+状态栏会按窗格宽度自我裁剪：能缩就缩，放不下就藏。这对读者是对的，对脚本是错的。
+所以每一次采集也会把已知状态写到 `$CODEX_HOME/hud/state/<tmux 会话名>.json`，
+`codex-hud --json` 则打印当前目录会话对应的那一份。
+
+```bash
+codex-hud --json | jq '.context.percent, .agents.active, .attention[].label'
+```
+
+其中包含会话、项目、活动、上下文、额度、token、代理与需要关注的事项，
+另有 `bar.segments`：真正画出的那一行里，每个字段落在哪几列。
+点击某一列能对应到某个字段，靠的就是它。
+
+规则与显示一致：每个值都是观测到的事实，没有数据的字段整个缺席而不是写 0，
+这样“没有额度快照”和“额度为 0%”不会长得一样。文件以 `0600` 权限原子写入，
+只在时钟之外确有变化时才写，且每秒至多一次；HUD 退出时删除——
+一个已经停止的 HUD 留下的状态文件，看起来会像还活着。
 
 ## 配置
 

@@ -1064,6 +1064,7 @@ Options:
   --self-check        Run environment diagnostics
   --kill              Kill existing session for current directory
   --list              List all codex-hud sessions
+  --json              Print this directory's HUD state as JSON
   --attach            Attach to latest existing session in this directory
   --new-session       Always create a new session for this launch
 
@@ -1193,6 +1194,35 @@ list_sessions() {
     tmux list-sessions 2>/dev/null | grep "^codex-hud-" || echo "  (none)"
 }
 
+# The HUD writes its state beside the sessions it belongs to. The name is the
+# tmux session name with anything a filename cannot hold replaced, which is the
+# same rule src/snapshot.ts applies when it writes the file.
+snapshot_file_for_session() {
+    local session_name="$1"
+    local home
+    home=$(tmux show-option -t "$session_name" -qv @codex_hud_codex_home 2>/dev/null || true)
+    [[ -z "$home" ]] && home="${CODEX_HOME:-$HOME/.codex}"
+    printf '%s/hud/state/%s.json' "$home" "$(printf '%s' "$session_name" | tr -c 'A-Za-z0-9._-' '_')"
+}
+
+# Print the HUD state for this directory's session as JSON.
+print_state_json() {
+    init_session_identity
+    local session_name
+    session_name=$(find_existing_session)
+    if [[ -z "$session_name" ]]; then
+        echo "codex-hud: no session for this directory" >&2
+        exit 1
+    fi
+    local state_file
+    state_file=$(snapshot_file_for_session "$session_name")
+    if [[ ! -r "$state_file" ]]; then
+        echo "codex-hud: no state recorded yet for session $session_name" >&2
+        exit 1
+    fi
+    cat "$state_file"
+}
+
 # Check for special flags first
 case "${1:-}" in
     -h|--help)
@@ -1215,6 +1245,14 @@ case "${1:-}" in
     --list)
         if command_exists tmux; then
             list_sessions
+        else
+            error "tmux not installed"
+        fi
+        exit 0
+        ;;
+    --json)
+        if command_exists tmux; then
+            print_state_json
         else
             error "tmux not installed"
         fi

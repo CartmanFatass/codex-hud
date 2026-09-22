@@ -37,12 +37,28 @@ export interface BarModule {
   variants: Partial<Record<VariantLevel, string>>;
 }
 
+/** Where one surviving module ended up on the finished line. */
+export interface BarSegment {
+  id: string;
+  level: VariantLevel;
+  /** First column the module occupies, counting from 0. */
+  x: number;
+  /** Columns it occupies, after any clipping at the right edge. */
+  width: number;
+}
+
 export interface FitResult {
   line: string;
   /** Module ids that survived, in display order. */
   kept: string[];
   /** The variant each surviving module settled on. */
   levels: Record<string, VariantLevel>;
+  /**
+   * Where each surviving module sits on the line, so a click at a column can
+   * be answered with the field under it. Columns, not string indices: a wide
+   * character is one column of text and two of string.
+   */
+  segments: BarSegment[];
   /** True when even the pinned minimum had to be clipped. */
   clipped: boolean;
 }
@@ -153,7 +169,7 @@ export function fitModules(
     .filter((candidate) => candidate.levels.length > 0);
 
   if (options.width <= 0 || candidates.length === 0) {
-    return { line: '', kept: [], levels: {}, clipped: false };
+    return { line: '', kept: [], levels: {}, segments: [], clipped: false };
   }
 
   // Shorten everything that can be shortened before hiding anything, then hide
@@ -176,9 +192,38 @@ export function fitModules(
   const joined = joinCandidates(live, options.separator, groupSeparator);
   const clipped = visualLength(joined) > options.width;
 
+  /**
+   * Lay a run of modules out from a starting column, measuring the same
+   * separators the join uses. Doing it here rather than re-deriving it from
+   * the rendered line keeps the columns exact through colour and wide glyphs.
+   */
+  const place = (items: Candidate[], from: number): BarSegment[] => {
+    const placed: BarSegment[] = [];
+    let x = from;
+    for (let i = 0; i < items.length; i++) {
+      if (i > 0) {
+        x += sameGroup(items[i - 1], items[i]) ? groupSeparatorWidth : separatorWidth;
+      }
+      placed.push({
+        id: items[i].module.id,
+        level: items[i].levels[items[i].levelIndex],
+        x,
+        width: visualLength(currentText(items[i])),
+      });
+      x += placed[placed.length - 1].width;
+    }
+    return placed;
+  };
+
   let line = joined;
+  let segments = place(live, 0);
   if (clipped) {
     line = truncateAnsi(joined, options.width);
+    // What ran off the edge is not on screen, and what straddles it is only
+    // on screen as far as the edge.
+    segments = segments
+      .filter((segment) => segment.x < options.width)
+      .map((segment) => ({ ...segment, width: Math.min(segment.width, options.width - segment.x) }));
   } else {
     // The trailing cluster is pushed to the last column with plain spaces.
     // Only slack is spent on this, so the line never grows past the pane.
@@ -189,6 +234,10 @@ export function fitModules(
       const gap = options.width - visualLength(left) - visualLength(right);
       if (gap > 0) {
         line = left + ' '.repeat(gap) + right;
+        segments = [
+          ...place(live.slice(0, start), 0),
+          ...place(live.slice(start), options.width - visualLength(right)),
+        ];
       }
     }
   }
@@ -199,6 +248,7 @@ export function fitModules(
     levels: Object.fromEntries(
       live.map((candidate) => [candidate.module.id, candidate.levels[candidate.levelIndex]])
     ),
+    segments,
     clipped,
   };
 }

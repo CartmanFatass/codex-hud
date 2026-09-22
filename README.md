@@ -278,11 +278,36 @@ codex-hud-wsl                # Explicit full HUD in WSL (Windows only)
 ```bash
 codex-hud --kill             # Kill session for current directory
 codex-hud --list             # List all HUD sessions
+codex-hud --json             # Print this directory's HUD state as JSON
 codex-hud --attach           # Attach to existing session
 codex-hud --new-session      # Force a new session
 codex-hud --self-check       # Run diagnostics
 ```
 </details>
+
+### Machine-readable state
+
+The bar fits itself to a pane: it shortens what it says and hides what does not
+fit, which is right for a reader and wrong for a script. So each collection
+tick also writes what it knows to
+`$CODEX_HOME/hud/state/<tmux-session>.json`, and `codex-hud --json` prints the
+file belonging to this directory's session.
+
+```bash
+codex-hud --json | jq '.context.percent, .agents.active, .attention[].label'
+```
+
+It carries the session, project, activity, context, quota, tokens, agents and
+attention items, plus `bar.segments`: which field ended up in which columns of
+the line that was actually drawn. That is what turns a click at a column into
+the field under it.
+
+The same rules as the display apply. Every value is something that was
+observed, and a field with no data is absent rather than zero, so `no quota
+snapshot` and `quota at 0%` do not look alike. The file is written atomically
+with mode `0600`, only when something other than the clock changed, at most
+once a second, and it is deleted when the HUD stops: a state file for a HUD
+that is no longer running would read as live.
 
 ## Configuration
 
