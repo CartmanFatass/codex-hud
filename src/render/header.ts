@@ -28,7 +28,13 @@ import {
  */
 function renderStatusHeader(data: HudData, layout: LayoutConfig, width: number): string {
   const modules = buildBarModules(data, { barWidth: layout.barWidth ?? 10 });
-  return fitModules(modules, { width, separator: ` ${colors.dim('|')} ` }).line;
+  // A dimmed rule between clusters and a plain double space inside one: the
+  // bar reads as a few groups rather than a list of equally spaced fields.
+  return fitModules(modules, {
+    width,
+    separator: theme.separator(' │ '),
+    groupSeparator: '  ',
+  }).line;
 }
 
 function renderCompactLayout(data: HudData, layout: LayoutConfig, width: number): string[] {

@@ -100,7 +100,7 @@ export function renderToolsLine(toolActivity: ToolActivity | undefined): string 
 
 /**
  * Render the todos/plan progress line
- * Format: 📝 3/7 steps | ✓ Task 1 | ◐ Task 2
+ * Format: ☰ 3/7 steps | ✓ Task 1 | ◐ Task 2
  */
 export function renderTodosLine(planProgress: PlanProgress | undefined): string | null {
   if (!planProgress) {
@@ -138,15 +138,19 @@ export function renderTodosLine(planProgress: PlanProgress | undefined): string 
   return parts.join(` ${colors.dim(icons.bar)} `);
 }
 
-/**
- * Collect all activity lines (tools + todos)
- */
+function trimTenth(value: number): string {
+  const text = value.toFixed(1);
+  // A tenth of nothing is noise: 84.0K says no more than 84K and costs two
+  // columns to say it.
+  return text.endsWith('.0') ? text.slice(0, -2) : text;
+}
+
 export function formatTokenCount(value: number): string {
   if (value >= 1000000) {
-    return `${(value / 1000000).toFixed(1)}M`;
+    return `${trimTenth(value / 1000000)}M`;
   }
   if (value >= 1000) {
-    return `${(value / 1000).toFixed(1)}K`;
+    return `${trimTenth(value / 1000)}K`;
   }
   return value.toString();
 }

@@ -20,6 +20,7 @@ import { summarizeSubagents } from '../../collectors/subagent-tree.js';
 import { getApprovalPolicyDisplayValue } from '../../collectors/codex-config.js';
 import { displayConfig, type Density, type GlyphMode } from '../hud-config.js';
 import { formatCountdown, readQuotaWindows } from '../quota.js';
+import { formatElapsedShort } from '../subagent-chip.js';
 import type { BarModule } from './engine.js';
 
 export const MODULE_PRIORITY = {
@@ -54,6 +55,14 @@ function formatDuration(startTime: Date, nowMs: number): string {
   const diffSec = Math.max(0, Math.floor((nowMs - startTime.getTime()) / 1000));
   const diffMin = Math.floor(diffSec / 60);
   const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+  // Past a week and a half the hours stop telling the reader anything.
+  if (diffDay >= 10) {
+    return `${diffDay}d`;
+  }
+  if (diffDay > 0) {
+    return `${diffDay}d${diffHour % 24}h`;
+  }
   if (diffHour > 0) {
     return `${diffHour}h${diffMin % 60}m`;
   }
@@ -94,6 +103,7 @@ function identityModule(data: HudData, glyphs: GlyphMode): BarModule {
     return {
       id: 'identity',
       priority: MODULE_PRIORITY.identity,
+      group: 'who',
       variants: {
         full: renderModelEffortToken(model, effort, { mode: 'text' }),
         short: renderModelEffortToken(model, undefined, { mode: 'text' }),
@@ -105,6 +115,7 @@ function identityModule(data: HudData, glyphs: GlyphMode): BarModule {
     return {
       id: 'identity',
       priority: MODULE_PRIORITY.identity,
+      group: 'who',
       variants: {
         full: renderModelEffortToken(model, effort, { mode: 'glyph' }),
         min: renderModelEffortToken(model, undefined, { mode: 'glyph' }),
@@ -115,6 +126,7 @@ function identityModule(data: HudData, glyphs: GlyphMode): BarModule {
   return {
     id: 'identity',
     priority: MODULE_PRIORITY.identity,
+    group: 'who',
     variants: {
       full: renderModelEffortToken(model, effort, { mode: 'both' }),
       short: renderModelEffortToken(model, effort, { mode: 'glyph' }),
@@ -123,9 +135,18 @@ function identityModule(data: HudData, glyphs: GlyphMode): BarModule {
   };
 }
 
-function activityModule(data: HudData, glyphs: GlyphMode): BarModule {
+/**
+ * What the session is doing.
+ *
+ * Idle, interrupted and failed are a single mark: there is nothing else to
+ * say. A working turn is the one state a reader wants detail about, so the
+ * widest form names the running tool and how long the turn has been going.
+ * Both halves are omitted when the evidence for them is missing rather than
+ * guessed at, and the narrow forms fall back to the mark alone.
+ */
+function activityModule(data: HudData, glyphs: GlyphMode, nowMs: number): BarModule {
   const status = data.stale ? 'stale' : data.activity?.state;
-  if (!status) return { id: 'activity', priority: MODULE_PRIORITY.activity, variants: {} };
+  if (!status) return { id: 'activity', priority: MODULE_PRIORITY.activity, group: 'who', variants: {} };
   const [glyph, label, paint] = {
     working: ['▸', 'Working', theme.info],
     idle: ['✓', 'Idle', theme.success],
@@ -133,8 +154,29 @@ function activityModule(data: HudData, glyphs: GlyphMode): BarModule {
     error: ['✗', 'Failed', theme.error],
     stale: ['?', 'Sync delayed', theme.warning],
   }[status] as [string, string, (text: string) => string];
-  return { id: 'activity', priority: MODULE_PRIORITY.activity,
-    variants: { full: paint(glyphs === 'text' ? label : glyph), min: paint(glyphs === 'text' ? label : glyph) } };
+  const mark = paint(glyphs === 'text' ? label : glyph);
+
+  if (status !== 'working') {
+    return { id: 'activity', priority: MODULE_PRIORITY.activity, group: 'who',
+      variants: { full: mark, min: mark } };
+  }
+
+  const running = [...(data.toolActivity?.recentCalls ?? [])].reverse().find((call) => call.status === 'running');
+  const tool = running
+    ? ` ${theme.value(running.name)}${running.target ? colors.dim(`: ${truncate(running.target, 20)}`) : ''}`
+    : '';
+  const turnStartedAt = data.activity?.turnStartedAt;
+  const elapsed = turnStartedAt ? formatElapsedShort(turnStartedAt, nowMs) : '';
+  return {
+    id: 'activity',
+    priority: MODULE_PRIORITY.activity,
+    group: 'who',
+    variants: {
+      full: `${mark}${tool}${elapsed ? colors.dim(`${tool ? ' · ' : ' '}${elapsed}`) : ''}`,
+      short: elapsed ? `${mark} ${colors.dim(elapsed)}` : mark,
+      min: mark,
+    },
+  };
 }
 
 function projectModule(data: HudData): BarModule {
@@ -150,6 +192,7 @@ function projectModule(data: HudData): BarModule {
     return {
       id: 'project',
       priority: MODULE_PRIORITY.project,
+      group: 'who',
       variants: {
         full: theme.projectName(name),
         short: theme.projectName(truncate(name, 16)),
@@ -162,6 +205,7 @@ function projectModule(data: HudData): BarModule {
   return {
     id: 'project',
     priority: MODULE_PRIORITY.project,
+    group: 'who',
     variants: {
       full: `${theme.projectName(name)} ${theme.gitPrefix('git:(')}${theme.gitBranch(branchFull)}${theme.gitPrefix(')')}`,
       short: `${theme.projectName(truncate(name, 16))} ${theme.gitBranch(`${branch}${dirty}`)}`,
@@ -173,7 +217,7 @@ function projectModule(data: HudData): BarModule {
 function contextModule(data: HudData, barWidth: number): BarModule {
   const usage = data.contextUsage;
   if (!usage || usage.total <= 0) {
-    return { id: 'context', priority: MODULE_PRIORITY.context, variants: {} };
+    return { id: 'context', priority: MODULE_PRIORITY.context, group: 'load', variants: {} };
   }
   const percent = usage.percent;
   const remaining = displayConfig().context === 'remaining';
@@ -186,6 +230,7 @@ function contextModule(data: HudData, barWidth: number): BarModule {
   return {
     id: 'context',
     priority: MODULE_PRIORITY.context,
+    group: 'load',
     variants: {
       full: `${label} ${coloredBar(percent, barWidth)} ${number}${totals}${compact}`,
       short: `${label} ${coloredBar(percent, Math.min(6, barWidth))} ${number}`,
@@ -199,7 +244,7 @@ function contextModule(data: HudData, barWidth: number): BarModule {
 function cacheModule(data: HudData, nowMs: number, glyphs: GlyphMode): BarModule {
   const sampledAt = data.tokenUsageAt?.getTime();
   if (sampledAt === undefined || !Number.isFinite(sampledAt) || !Number.isFinite(nowMs)) {
-    return { id: 'cache', priority: MODULE_PRIORITY.cache, variants: {} };
+    return { id: 'cache', priority: MODULE_PRIORITY.cache, group: 'load', variants: {} };
   }
   const minutes = Math.max(0, Math.floor((nowMs - sampledAt) / 60_000));
   const warning = minutes >= 25;
@@ -211,6 +256,7 @@ function cacheModule(data: HudData, nowMs: number, glyphs: GlyphMode): BarModule
   return {
     id: 'cache',
     priority: warning ? 96 : MODULE_PRIORITY.cache,
+    group: 'load',
     pinned: warning,
     variants: { full: paint(text), min: paint(text) },
   };
@@ -220,19 +266,23 @@ function tasksModule(data: HudData): BarModule {
   const plan = data.planProgress;
   if (!plan || plan.totalSteps <= 0) {
     // No structured plan means no progress to show. Nothing is invented here.
-    return { id: 'tasks', priority: MODULE_PRIORITY.tasks, variants: {} };
+    return { id: 'tasks', priority: MODULE_PRIORITY.tasks, group: 'usage', variants: {} };
   }
   const done = plan.completedSteps;
   const total = plan.totalSteps;
   const percent = Math.round((done / total) * 100);
   const current = plan.steps.find((step) => step.status === 'in_progress');
   const currentText = current ? colors.dim(` · ${truncate(current.step, 24)}`) : '';
+  // Which step is running matters more than the meter, so the shorter form
+  // keeps the step and drops the bar rather than the other way round.
+  const currentShort = current ? colors.dim(` · ${truncate(current.step, 16)}`) : '';
   return {
     id: 'tasks',
     priority: MODULE_PRIORITY.tasks,
+    group: 'usage',
     variants: {
       full: `${colors.dim('Tasks')} ${completionBar(percent, 6)} ${theme.value(`${done}/${total}`)}${currentText}`,
-      short: `${colors.dim('Tasks')} ${theme.value(`${done}/${total}`)}`,
+      short: `${theme.value(`${done}/${total}`)}${currentShort}`,
       min: theme.value(`${done}/${total}`),
     },
   };
@@ -241,7 +291,7 @@ function tasksModule(data: HudData): BarModule {
 function agentsModule(data: HudData): BarModule {
   const summary = summarizeSubagents(data.subagentTree?.nodes ?? []);
   if (summary.total === 0) {
-    return { id: 'agents', priority: MODULE_PRIORITY.agents, variants: {} };
+    return { id: 'agents', priority: MODULE_PRIORITY.agents, group: 'load', variants: {} };
   }
 
   const full: string[] = [];
@@ -258,6 +308,7 @@ function agentsModule(data: HudData): BarModule {
   return {
     id: 'agents',
     priority: MODULE_PRIORITY.agents,
+    group: 'load',
     variants: {
       full: `${colors.dim('Agents')} ${full.join(colors.dim(' · '))}`,
       short: `${colors.dim('Agents')} ${short.join(' ')}`,
@@ -270,7 +321,7 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
   const windows = readQuotaWindows(data.rateLimits, nowMs);
   if (windows.length === 0) {
     // No quota snapshot means no quota field, rather than a bar reading zero.
-    return { id: 'quota', priority: MODULE_PRIORITY.quota, variants: {} };
+    return { id: 'quota', priority: MODULE_PRIORITY.quota, group: 'usage', variants: {} };
   }
 
   const rendered = windows.map((window) => {
@@ -292,12 +343,16 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
       : '';
 
   const first = windows[0];
+  // The countdown is the half of the quota field a reader acts on, so it
+  // survives into the shorter form as a bare symbol and a duration.
+  const shortReset = soonest ? colors.dim(` ↺${formatCountdown(soonest.resetsAt!, nowMs)}`) : '';
   return {
     id: 'quota',
     priority: MODULE_PRIORITY.quota,
+    group: 'usage',
     variants: {
       full: `${colors.dim('Quota')} ${rendered.join(colors.dim(' · '))}${reset}`,
-      short: `${colors.dim(`Q${first.label}`)} ${coloredPercent(first.percent)}`,
+      short: `${colors.dim(`Q${first.label}`)} ${coloredPercent(first.percent)}${shortReset}`,
       min: `${colors.dim('Q')}${coloredPercent(first.percent)}`,
     },
   };
@@ -306,17 +361,17 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
 function speedModule(data: HudData, nowMs: number): BarModule {
   if (data.stale || (data.activity?.state === 'working' &&
       (data.outputRate?.sampledAt.getTime() ?? 0) < (data.activity.turnStartedAt?.getTime() ?? 0))) {
-    return { id: 'speed', priority: MODULE_PRIORITY.speed, variants: {} };
+    return { id: 'speed', priority: MODULE_PRIORITY.speed, group: 'usage', variants: {} };
   }
   const rate = formatTokenRate(data.outputRate, nowMs);
-  return { id: 'speed', priority: MODULE_PRIORITY.speed,
+  return { id: 'speed', priority: MODULE_PRIORITY.speed, group: 'usage',
     variants: rate ? { full: `${colors.dim('Out')} ${theme.value(rate)}`, short: theme.value(rate) } : {} };
 }
 
 function tokensModule(data: HudData): BarModule {
   const usage = data.tokenUsage?.total_token_usage ?? data.tokenUsage?.last_token_usage;
   if (!usage) {
-    return { id: 'tokens', priority: MODULE_PRIORITY.tokens, variants: {} };
+    return { id: 'tokens', priority: MODULE_PRIORITY.tokens, group: 'usage', variants: {} };
   }
   const input = usage.input_tokens ?? 0;
   const cached = usage.cached_input_tokens ?? 0;
@@ -325,6 +380,7 @@ function tokensModule(data: HudData): BarModule {
   return {
     id: 'tokens',
     priority: MODULE_PRIORITY.tokens,
+    group: 'usage',
     variants: {
       full: `${colors.dim('Tokens')} ${theme.tokenCount(total)}${cacheRate === null ? '' : colors.dim(` (cache ${cacheRate}%)`)}`,
       short: `${colors.dim('Tokens')} ${theme.tokenCount(total)}`,
@@ -339,6 +395,8 @@ function timerModule(data: HudData, nowMs: number): BarModule {
   return {
     id: 'timer',
     priority: MODULE_PRIORITY.timer,
+    group: 'meta',
+    align: 'right',
     variants: {
       full: colors.dim(`${icons.clock} ${duration}`),
       short: colors.dim(duration),
@@ -375,6 +433,8 @@ function environmentModule(data: HudData): BarModule {
   return {
     id: 'environment',
     priority: MODULE_PRIORITY.environment,
+    group: 'meta',
+    align: 'right',
     variants: {
       full: parts.join(colors.dim(' · ')),
       short: [
@@ -390,12 +450,14 @@ function environmentModule(data: HudData): BarModule {
 function sessionModule(data: HudData): BarModule {
   const id = data.session?.id;
   if (!id) {
-    return { id: 'session', priority: MODULE_PRIORITY.session, variants: {} };
+    return { id: 'session', priority: MODULE_PRIORITY.session, group: 'meta', align: 'right', variants: {} };
   }
   const shortId = id.length > 8 ? id.slice(0, 8) : id;
   return {
     id: 'session',
     priority: MODULE_PRIORITY.session,
+    group: 'meta',
+    align: 'right',
     variants: {
       full: colors.dim('Session: ') + theme.info(shortId),
       short: theme.info(shortId),
@@ -403,11 +465,24 @@ function sessionModule(data: HudData): BarModule {
   };
 }
 
-function hintModule(data: HudData): BarModule {
+const HINT_LIFETIME_MS = 10 * 60_000;
+
+/**
+ * The keyboard hint is for someone who has not learned the key yet. Ten
+ * minutes into a session with nothing to open, it has stopped teaching and
+ * started taking up a column, so it retires itself.
+ */
+function hintModule(data: HudData, nowMs: number): BarModule {
   const hasAgents = (data.subagentTree?.nodes.length ?? 0) > 0;
+  const started = (data.session?.startTime ?? data.sessionStart).getTime();
+  if (!hasAgents && nowMs - started > HINT_LIFETIME_MS) {
+    return { id: 'hint', priority: MODULE_PRIORITY.hint, group: 'meta', align: 'right', variants: {} };
+  }
   return {
     id: 'hint',
     priority: MODULE_PRIORITY.hint,
+    group: 'meta',
+    align: 'right',
     variants: {
       full: colors.dim(hasAgents ? 'F12 tree' : 'F12'),
       short: colors.dim('F12'),
@@ -435,7 +510,7 @@ export function buildBarModules(data: HudData, options: BarModuleOptions = {}): 
 
   const modules: BarModule[] = [
     attentionModule(data, nowMs),
-    activityModule(data, glyphs),
+    activityModule(data, glyphs, nowMs),
     identityModule(data, glyphs),
     projectModule(data),
     agentsModule(data),
@@ -448,7 +523,7 @@ export function buildBarModules(data: HudData, options: BarModuleOptions = {}): 
     timerModule(data, nowMs),
     environmentModule(data),
     sessionModule(data),
-    hintModule(data),
+    hintModule(data, nowMs),
   ];
 
   return modules.filter((module) => allowed.has(module.id));

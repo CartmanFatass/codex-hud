@@ -66,6 +66,77 @@ test('a pinned field is shortened but never hidden', () => {
   assert.equal(stripAnsi(result.line), '!');
 });
 
+test('fields in one group sit closer than fields in different groups', () => {
+  const modules: BarModule[] = [
+    { id: 'a', priority: 90, group: 'who', variants: { full: 'AAA' } },
+    { id: 'b', priority: 80, group: 'who', variants: { full: 'BBB' } },
+    { id: 'c', priority: 70, group: 'load', variants: { full: 'CCC' } },
+  ];
+  assert.equal(fitModules(modules, { width: 40, separator: SEP }).line, 'AAA  BBB | CCC');
+  assert.equal(
+    fitModules(modules, { width: 40, separator: SEP, groupSeparator: '' }).line,
+    'AAABBB | CCC'
+  );
+  // The width accounting has to agree with the joining, or the bar hides a
+  // field it had room for.
+  assert.deepEqual(fitModules(modules, { width: 14, separator: SEP }).kept, ['a', 'b', 'c']);
+  assert.deepEqual(fitModules(modules, { width: 13, separator: SEP }).kept, ['a', 'b']);
+});
+
+test('a right-aligned cluster ends at the last column, and gives that up before it clips', () => {
+  const modules: BarModule[] = [
+    { id: 'left', priority: 90, variants: { full: 'LEFT' } },
+    { id: 'clock', priority: 30, group: 'meta', align: 'right', variants: { full: '12m' } },
+    { id: 'hint', priority: 10, group: 'meta', align: 'right', variants: { full: 'F12' } },
+  ];
+  const wide = fitModules(modules, { width: 20, separator: SEP });
+  assert.equal(wide.line, 'LEFT        12m  F12');
+  assert.equal(visualWidth(wide.line), 20, 'the cluster must finish on the last column');
+  assert.equal(wide.clipped, false);
+
+  // At exactly the natural width the gap is the separator's own width, so the
+  // divider gives way to the spaces rather than the line overflowing.
+  const exact = fitModules(modules, { width: 15, separator: SEP });
+  assert.equal(exact.line, 'LEFT   12m  F12');
+  assert.equal(visualWidth(exact.line), 15);
+
+  // One column less and the cluster gives up its least important member
+  // rather than clipping the line.
+  const tight = fitModules(modules, { width: 14, separator: SEP });
+  assert.deepEqual(tight.kept, ['left', 'clock']);
+  assert.equal(visualWidth(tight.line), 14);
+});
+
+test('the session timer counts days once hours stop meaning anything', () => {
+  const data = makeHudData();
+  const started = data.session!.startTime.getTime();
+  const timer = (elapsedMs: number) =>
+    stripAnsi(
+      buildBarModules(data, { nowMs: started + elapsedMs, density: 'full' })
+        .find((module) => module.id === 'timer')!.variants.short!
+    );
+  const hour = 3_600_000;
+  assert.equal(timer(45_000), '45s');
+  assert.equal(timer(90_000), '1m');
+  assert.equal(timer(3 * hour), '3h0m');
+  assert.equal(timer(27 * hour + 10 * 60_000), '1d3h');
+  assert.equal(timer(9 * 24 * hour + 23 * hour), '9d23h');
+  assert.equal(timer(10 * 24 * hour), '10d');
+});
+
+test('the F12 hint retires once it has nothing left to teach', () => {
+  const data = makeHudData();
+  const alone = makeHudData({ subagentTree: undefined, subagents: [] });
+  const hint = (source: typeof data, elapsedMs: number) =>
+    buildBarModules(source, { nowMs: source.session!.startTime.getTime() + elapsedMs })
+      .find((module) => module.id === 'hint')!.variants;
+
+  assert.deepEqual(hint(alone, 9 * 60_000), hint(alone, 0), 'the hint stays for the first ten minutes');
+  assert.ok(hint(alone, 9 * 60_000).full, 'a new session is still being taught the key');
+  assert.deepEqual(hint(alone, 11 * 60_000), {}, 'nothing to open and the key is learned');
+  assert.ok(hint(data, 11 * 60_000).full, 'agents to show keep the hint on screen');
+});
+
 test('the alert survives every pane width', () => {
   // The fixture has one failed subagent, which is an observed terminal state
   // rather than an inference from silence.
