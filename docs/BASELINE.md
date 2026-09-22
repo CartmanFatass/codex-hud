@@ -125,7 +125,7 @@ not changed. What follows is what a tick does now.
 
 | Work | Before | Now |
 |---|---|---|
-| `git` subprocesses | 5 every 3s (`rev-parse` ×2, `rev-list`, `status` ×2), synchronous, up to 5s of blocked event loop each | 1 `status --porcelain=v2 --branch`, async, at most once per 30s while the repo is still |
+| `git` subprocesses | 5 every 3s (`rev-parse` ×2, `rev-list`, `status` ×2), synchronous, up to 5s of blocked event loop each | 1 `status --porcelain=v2 --branch`, async, at most once per 10s while the repo is still |
 | Rollout parse | every tick, plus once per watcher event | one `stat`; the file is opened only when size, mtime or inode moved |
 | Rollout / sessions / snapshot watches | chokidar polling at 1s on three paths | native fs events (polling kept for `win32` only) |
 | `tmux display-message` | every 2s, `execFileSync` with a 300ms timeout | once at startup, async, and only when stdout is not a TTY |
@@ -142,7 +142,7 @@ The git cache is invalidated by the mtimes of `index`, `HEAD`, the branch ref,
 `packed-refs`, `FETCH_HEAD` and the upstream ref, so staging, committing,
 checking out, fetching and merging all show up on the next tick. An edit that
 only touches the working tree leaves no trace in the git directory, so the
-dirty marker and the file counts can lag it by up to the 30s cache bound. That
+dirty marker and the file counts can lag it by up to the 10s cache bound. That
 is the one deliberate trade: it is what removes the steady-state subprocess.
 
 Counts themselves are unchanged. The porcelain v2 reader classifies each entry

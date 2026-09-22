@@ -27,7 +27,7 @@ const GIT_MAX_BUFFER = 4 * 1024 * 1024;
  * changed. Edits that only touch the working tree leave no trace in the git
  * directory, so this bound is what makes them appear at all.
  */
-const CACHE_MAX_AGE_MS = 30_000;
+const CACHE_MAX_AGE_MS = 10_000;
 
 /** Status for a directory that is not a git repository (or git is unusable). */
 function emptyGitStatus(): GitStatus {

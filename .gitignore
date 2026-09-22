@@ -49,3 +49,6 @@ dist-test/
 
 # Windows alternate data streams copied through WSL
 *:Zone.Identifier
+
+# Subagent worktrees
+.claude/worktrees/
