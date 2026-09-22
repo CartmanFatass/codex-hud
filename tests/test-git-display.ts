@@ -32,7 +32,7 @@ console.log('══════════════════════�
 // Test 1: Collect real git status
 console.log('[Test 1: Real Git Status Collection]');
 console.log('─'.repeat(60));
-const realGitStatus = collectGitStatus(process.cwd());
+const realGitStatus = await collectGitStatus(process.cwd());
 console.log('Git Status:', JSON.stringify(realGitStatus, null, 2));
 
 // Test 2: Mock git scenarios

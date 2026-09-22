@@ -20,7 +20,7 @@ console.log('══════════════════════�
 const cwd = process.cwd();
 console.log(`Testing in: ${cwd}\n`);
 
-const gitStatus = collectGitStatus(cwd);
+const gitStatus = await collectGitStatus(cwd);
 console.log('Git Status Collected:');
 console.log(JSON.stringify(gitStatus, null, 2));
 console.log('');

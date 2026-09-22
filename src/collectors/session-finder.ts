@@ -10,8 +10,31 @@ import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 
-// Minimum gap between expensive fallback session scans (30-day dir walk).
+// Minimum gap between fallback session scans.
 const FALLBACK_RESCAN_MS = 2000;
+
+// A session that started before the HUD is almost always today's or, across
+// midnight, yesterday's. The shallow scan covers those two directories.
+const RECENT_LOOKBACK_DAYS = 1;
+
+// The full 30-day walk only runs when the shallow scan found nothing at all,
+// and then at this cadence rather than on every fallback tick.
+const DEEP_RESCAN_MS = 30_000;
+
+// Entries kept in the per-file caches below. A HUD session sees far fewer
+// rollouts and snapshots than this; the cap only bounds a pathological home.
+const FILE_CACHE_LIMIT = 4096;
+
+function cachePut<K, V>(cache: Map<K, V>, key: K, value: V): V {
+  if (cache.size >= FILE_CACHE_LIMIT) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) {
+      cache.delete(oldest.value);
+    }
+  }
+  cache.set(key, value);
+  return value;
+}
 
 export interface SessionFile {
   path: string;
@@ -80,10 +103,28 @@ function readFirstLine(filePath: string, maxBytes: number = 1024 * 1024): string
   }
 }
 
-function peekRolloutMeta(filePath: string): {
+interface RolloutMeta {
   cwd: string | null;
   isRoot: boolean;
-} | null {
+}
+
+/**
+ * A rollout's `session_meta` is its first line and is never rewritten: the
+ * file is only ever appended to. Reading it once per path is therefore safe,
+ * and it is what turns a fallback scan from "open every rollout of the last 30
+ * days, twice" into a directory listing.
+ */
+const rolloutMetaCache = new Map<string, RolloutMeta | null>();
+
+function peekRolloutMeta(filePath: string): RolloutMeta | null {
+  const cached = rolloutMetaCache.get(filePath);
+  if (cached !== undefined) {
+    return cached;
+  }
+  return cachePut(rolloutMetaCache, filePath, readRolloutMeta(filePath));
+}
+
+function readRolloutMeta(filePath: string): RolloutMeta | null {
   try {
     const firstLine = readFirstLine(filePath);
     if (!firstLine) return null;
@@ -148,45 +189,78 @@ function parseRolloutFilename(filename: string): { timestamp: Date; sessionId: s
   };
 }
 
+interface DirListing {
+  signature: string;
+  entries: Array<{ path: string; sessionId: string; timestamp: Date }>;
+}
+
+// A day directory's mtime changes when a rollout is created, renamed or
+// removed, but not when one is appended to. That makes it a sound key for the
+// file *list*; every file is still stat'd, so size and mtime stay live.
+const dirListingCache = new Map<string, DirListing>();
+
+function listRollouts(dirPath: string): DirListing['entries'] {
+  let signature: string;
+  try {
+    const stats = fs.statSync(dirPath);
+    if (!stats.isDirectory()) {
+      return [];
+    }
+    signature = `${stats.mtimeMs}:${stats.size}`;
+  } catch {
+    dirListingCache.delete(dirPath);
+    return [];
+  }
+
+  const cached = dirListingCache.get(dirPath);
+  if (cached && cached.signature === signature) {
+    return cached.entries;
+  }
+
+  const entries: DirListing['entries'] = [];
+  try {
+    for (const file of fs.readdirSync(dirPath)) {
+      if (!file.startsWith('rollout-') || !file.endsWith('.jsonl')) {
+        continue;
+      }
+      const parsed = parseRolloutFilename(file);
+      if (!parsed) {
+        continue;
+      }
+      entries.push({
+        path: path.join(dirPath, file),
+        sessionId: parsed.sessionId,
+        timestamp: parsed.timestamp,
+      });
+    }
+  } catch {
+    // Directory read error
+    return [];
+  }
+
+  cachePut(dirListingCache, dirPath, { signature, entries });
+  return entries;
+}
+
 /**
  * Find all rollout files in a date directory
  */
 function findRolloutsInDir(dirPath: string): SessionFile[] {
   const results: SessionFile[] = [];
 
-  if (!fs.existsSync(dirPath)) {
-    return results;
-  }
-
-  try {
-    const files = fs.readdirSync(dirPath);
-
-    for (const file of files) {
-      if (!file.startsWith('rollout-') || !file.endsWith('.jsonl')) {
-        continue;
-      }
-
-      const parsed = parseRolloutFilename(file);
-      if (!parsed) {
-        continue;
-      }
-
-      const fullPath = path.join(dirPath, file);
-      try {
-        const stats = fs.statSync(fullPath);
-        results.push({
-          path: fullPath,
-          sessionId: parsed.sessionId,
-          timestamp: parsed.timestamp,
-          size: stats.size,
-          modifiedAt: stats.mtime,
-        });
-      } catch {
-        // Skip files we cannot stat
-      }
+  for (const entry of listRollouts(dirPath)) {
+    try {
+      const stats = fs.statSync(entry.path);
+      results.push({
+        path: entry.path,
+        sessionId: entry.sessionId,
+        timestamp: entry.timestamp,
+        size: stats.size,
+        modifiedAt: stats.mtime,
+      });
+    } catch {
+      // Skip files we cannot stat
     }
-  } catch {
-    // Directory read error
   }
 
   return results;
@@ -372,21 +446,44 @@ function parseSnapshotFilename(filename: string): { threadId: string; nonce: big
   }
 }
 
-function readSnapshotPane(filePath: string): string | null {
+interface SnapshotBinding {
+  server: string | null;
+  pane: string | null;
+}
+
+// Shell snapshots are written once and never edited, so their recorded
+// TMUX/TMUX_PANE values are parsed once per path instead of on every check.
+// The comparison against the live server still happens per call.
+const snapshotBindingCache = new Map<string, SnapshotBinding | null>();
+
+function readSnapshotBinding(filePath: string): SnapshotBinding | null {
+  const cached = snapshotBindingCache.get(filePath);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     const tmux = content.match(/(?:^|\n)(?:export\s+)?TMUX=(?:'([^']*)'|"([^"]*)"|([^\n]+))/);
-    const recordedServer = (tmux?.[1] ?? tmux?.[2] ?? tmux?.[3])?.split(',')[0];
-    const currentServer = process.env.TMUX?.split(',')[0];
-    if (recordedServer && currentServer && recordedServer !== currentServer) return null;
     const match = content.match(
       /(?:^|\n)(?:export\s+)?TMUX_PANE=(?:'([^']*)'|"([^"]*)"|([^\n]+))/
     );
     const pane = match?.[1] ?? match?.[2] ?? match?.[3];
-    return pane ? pane.trim() : null;
+    return cachePut(snapshotBindingCache, filePath, {
+      server: (tmux?.[1] ?? tmux?.[2] ?? tmux?.[3])?.split(',')[0] ?? null,
+      pane: pane ? pane.trim() : null,
+    });
   } catch {
-    return null;
+    return cachePut(snapshotBindingCache, filePath, null);
   }
+}
+
+function readSnapshotPane(filePath: string): string | null {
+  const binding = readSnapshotBinding(filePath);
+  if (!binding) return null;
+  const currentServer = process.env.TMUX?.split(',')[0];
+  if (binding.server && currentServer && binding.server !== currentServer) return null;
+  return binding.pane;
 }
 
 function findThreadIdForPane(mainPaneId: string, launchTime: Date | null): string | null {
@@ -518,9 +615,11 @@ export class SessionFinder {
   private targetCwd: string | null = null;
   private currentThreadId: string | null = null;
   private targetStartTime: Date | null = null;
-  // The fallback scan walks up to 30 days of session dirs; throttle it so a
-  // standalone HUD (no pane binding) does not repeat the walk every tick.
+  // The fallback scan walks session dirs; throttle it so a standalone HUD
+  // (no pane binding) does not repeat the walk every tick.
   private lastFallbackScanMs = 0;
+  // The 30-day walk behind the shallow scan runs on its own, slower clock.
+  private lastDeepScanMs = 0;
 
   constructor(
     targetCwd?: string,
@@ -558,7 +657,15 @@ export class SessionFinder {
    */
   private findFallbackSession(): SessionFile | null {
     const cwd = this.targetCwd ?? undefined;
-    const recent = findMostRecentRollout(DEFAULT_LOOKBACK_DAYS, cwd);
+    // Today and yesterday answer this in every realistic case. Only when they
+    // hold nothing at all does the 30-day walk run, and then at most every
+    // DEEP_RESCAN_MS: before Codex has written its first rollout the HUD would
+    // otherwise repeat that walk every two seconds, forever.
+    let recent = findMostRecentRollout(RECENT_LOOKBACK_DAYS, cwd);
+    if (!recent && Date.now() - this.lastDeepScanMs >= DEEP_RESCAN_MS) {
+      this.lastDeepScanMs = Date.now();
+      recent = findMostRecentRollout(DEFAULT_LOOKBACK_DAYS, cwd);
+    }
     if (!recent) {
       return null;
     }

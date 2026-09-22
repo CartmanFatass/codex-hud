@@ -14,14 +14,20 @@ import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser } from './collectors/rollout.js';
 import { buildSubagentTree } from './collectors/subagent-tree.js';
 import { createParseQueue } from './utils/parse-queue.js';
+import { fileSignature } from './utils/file-signature.js';
 import { tmuxFocusPaneArgs, tmuxForwardKeyArgs } from './utils/hud-input.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer } from './render/index.js';
+import { displayConfig } from './render/hud-config.js';
+import { hasFreshComm } from './render/subagent-chip.js';
 import { buildContextUsage } from './collectors/context-usage.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
+import type { RolloutParseResult } from './collectors/rollout.js';
 import type {
+  GitStatus,
   HudData,
   HudDisplayMode,
+  ProjectInfo,
   CodexConfig,
 } from './types.js';
 
@@ -58,6 +64,7 @@ const displayMode: HudDisplayMode = 'single';
 // Phase 2: Session and rollout tracking
 const sessionFinder = new SessionFinder(HUD_CWD_REAL, (session) => {
   // When session changes, update rollout path
+  resetRolloutSignature();
   if (session) {
     rolloutParser.setRolloutPath(session.path);
     hudFileWatcher.setRolloutPath(session.path);
@@ -82,15 +89,88 @@ let cachedHudData: HudData | null = null;
 let configNeedsRefresh = false;
 const parseRolloutSafely = createParseQueue(() => rolloutParser.parse());
 
+// Size/mtime/inode of the rollout as of the last parse. Reset when the session
+// changes, since the parser starts a new file from offset 0.
+let lastParsedRollout: string | null = null;
+
+function resetRolloutSignature(): void {
+  lastParsedRollout = null;
+}
+
+/**
+ * Parse the rollout unless it is byte-for-byte where the last parse left it.
+ * An unreadable file counts as changed so a transient error still surfaces.
+ */
+async function parseRolloutIfChanged(rolloutPath: string): Promise<RolloutParseResult | null> {
+  const signature = fileSignature(rolloutPath);
+  const cached = rolloutParser.getCached();
+  if (cached && signature !== null && signature === lastParsedRollout) {
+    return cached;
+  }
+  // Recorded before the parse: an append that lands mid-parse leaves the
+  // signature different afterwards, so the next tick parses again.
+  lastParsedRollout = signature;
+  try {
+    return await parseRolloutSafely();
+  } catch (error) {
+    // A failed read must not be remembered as "already parsed", or the tick
+    // would stop retrying until the file happened to change again.
+    lastParsedRollout = null;
+    throw error;
+  }
+}
+
 // Cached sync data. The 1s render tick stays (timers and elapsed displays
 // need it), but the expensive collectors behind it are invalidated by
 // signature instead of rerun unconditionally:
 //   - config re-reads only when the file watcher fires (or on first run)
-//   - git subprocess + project scans run on a slower 3s cadence
+//   - the project scan runs on a slower 3s cadence
+//   - git runs off the frame entirely: the tick starts a refresh at most every
+//     3s and always renders the last snapshot, so a slow `git status` (WSL
+//     /mnt/c) can never delay a repaint
 let cachedConfig: CodexConfig | null = null;
-let cachedSyncData: Pick<HudData, 'git' | 'project'> | null = null;
+let cachedGit: GitStatus = {
+  branch: null,
+  isDirty: false,
+  isGitRepo: false,
+  ahead: 0,
+  behind: 0,
+  modified: 0,
+  added: 0,
+  deleted: 0,
+  untracked: 0,
+};
+let cachedProject: ProjectInfo | null = null;
 const SYNC_REFRESH_MS = 3000;
 let lastSyncAt = 0;
+let gitRefreshInFlight = false;
+
+/**
+ * Start a git refresh if one is due and none is running. Never awaited by the
+ * render path: the resolved snapshot is picked up by the next frame, and an
+ * immediate repaint is requested so the first result is not held back a whole
+ * second at startup.
+ */
+function refreshGitStatus(): void {
+  if (gitRefreshInFlight) {
+    return;
+  }
+  gitRefreshInFlight = true;
+  collectGitStatus(HUD_CWD)
+    .then((status) => {
+      cachedGit = status;
+      if (cachedHudData) {
+        cachedHudData.git = status;
+      }
+      repaintCached();
+    })
+    .catch(() => {
+      // Keep the previous snapshot; the next tick tries again.
+    })
+    .finally(() => {
+      gitRefreshInFlight = false;
+    });
+}
 
 /**
  * Collect all HUD data (synchronous parts)
@@ -103,18 +183,16 @@ function collectSyncData(): Omit<HudData, 'toolActivity' | 'planProgress' | 'tok
   }
 
   const now = Date.now();
-  if (!cachedSyncData || now - lastSyncAt >= SYNC_REFRESH_MS) {
-    cachedSyncData = {
-      git: collectGitStatus(HUD_CWD),
-      project: collectProjectInfo(HUD_CWD, cachedConfig),
-    };
+  if (!cachedProject || now - lastSyncAt >= SYNC_REFRESH_MS) {
+    cachedProject = collectProjectInfo(HUD_CWD, cachedConfig);
     lastSyncAt = now;
+    refreshGitStatus();
   }
 
   return {
     config: cachedConfig,
-    git: cachedSyncData.git,
-    project: cachedSyncData.project,
+    git: cachedGit,
+    project: cachedProject,
     sessionStart: SESSION_START,
   };
 }
@@ -130,12 +208,14 @@ async function collectData(): Promise<HudData> {
   let stale = false;
   try { session = sessionFinder.check(); } catch { stale = true; }
 
-  // Re-parse the current rollout every refresh tick. The parser is incremental,
-  // so this keeps runtime session state fresh even if file watcher events are
-  // missed on Windows.
+  // Re-parse the current rollout only when the file actually moved. The parser
+  // is incremental, but reaching that conclusion still costs an open, a read
+  // and a close of a file that grows to tens of megabytes; one stat answers
+  // the same question. The tick remains the fallback when a watcher event is
+  // missed (always, on Windows, where watches are unreliable).
   let rolloutData = rolloutParser.getCached();
   if (session) {
-    try { rolloutData = await parseRolloutSafely(); } catch { stale = true; }
+    try { rolloutData = await parseRolloutIfChanged(session.path); } catch { stale = true; }
   }
 
   const runtimeSession = paneRuntimeStateCollector?.collect() ?? undefined;
@@ -237,6 +317,7 @@ async function mainLoop(): Promise<void> {
     const targetHeight = targetHudPaneHeight(data);
     renderToStdout(data, targetHeight);
     maybeResizeHudPane(targetHeight);
+    syncFastRenderLoop(data);
     // Notifications run on the collection tick, not the faster repaint.
     notifier.update(data);
   } catch (error) {
@@ -247,17 +328,58 @@ async function mainLoop(): Promise<void> {
   setTimeout(mainLoop, REFRESH_INTERVAL);
 }
 
-function startFastRenderLoop(): void {
-  setInterval(() => {
-    if (!isRunning || !cachedHudData) {
-      return;
-    }
-    try {
-      renderToStdout(cachedHudData, targetHudPaneHeight(cachedHudData));
-    } catch {
-      // between-collection repaints are best-effort
-    }
-  }, HUD_FAST_RENDER_MS);
+function repaintCached(): void {
+  if (!isRunning || !cachedHudData) {
+    return;
+  }
+  try {
+    renderToStdout(cachedHudData, targetHudPaneHeight(cachedHudData));
+  } catch {
+    // between-collection repaints are best-effort
+  }
+}
+
+/**
+ * The traffic marker in the expanded tree rows is the only element that
+ * animates, and it only exists above one row. A compact pane (the default,
+ * and currently the only height) or reduced motion therefore has nothing to
+ * animate, and the 250ms repaint is pure wakeup cost.
+ */
+function needsAnimationFrames(data: HudData | null): boolean {
+  if (!data) {
+    return false;
+  }
+  if (displayConfig().motion === 'reduced') {
+    return false;
+  }
+  if (targetHudPaneHeight(data) <= 1) {
+    return false;
+  }
+  return (data.subagentTree?.nodes ?? []).some((node) => hasFreshComm(node));
+}
+
+let fastRenderTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Start or stop the between-collection repaint. Kept as a loop rather than
+ * removed: the moment a subagent exchange goes live in a tall pane, the next
+ * collection tick turns it back on.
+ */
+function syncFastRenderLoop(data: HudData | null): void {
+  const wanted = needsAnimationFrames(data);
+  if (wanted && !fastRenderTimer) {
+    fastRenderTimer = setInterval(() => {
+      if (!isRunning || !needsAnimationFrames(cachedHudData)) {
+        return;
+      }
+      repaintCached();
+    }, HUD_FAST_RENDER_MS);
+    return;
+  }
+  if (!wanted && fastRenderTimer) {
+    clearInterval(fastRenderTimer);
+    fastRenderTimer = null;
+  }
 }
 
 /**
@@ -267,6 +389,7 @@ function shutdown(): void {
   isRunning = false;
 
   // Clean up watchers
+  syncFastRenderLoop(null);
   sessionFinder.stop();
   hudFileWatcher.stop().catch(() => {
     // Ignore cleanup errors
@@ -330,13 +453,13 @@ async function main(): Promise<void> {
 
   hudFileWatcher.onRolloutChange(() => {
     try {
-      if (sessionFinder.check()) void parseRolloutSafely().catch(() => {});
+      const session = sessionFinder.check();
+      if (session) void parseRolloutIfChanged(session.path).catch(() => {});
     } catch { /* The next collection displays a failed read without an unhandled rejection. */ }
   });
 
   hudFileWatcher.start();
   sessionFinder.start(5000); // Check for session changes every 5 seconds
-  startFastRenderLoop();
 
   // Do not write to stdout before the first frame: the compact pane is one
   // line, so a startup log would hide the status header after F12 restore.

@@ -25,7 +25,7 @@ console.log(`Testing directory: ${testDir}\n`);
 console.log('[Step 1: Collecting Git Status]');
 console.log('─'.repeat(60));
 
-const gitStatus = collectGitStatus(testDir);
+const gitStatus = await collectGitStatus(testDir);
 
 console.log('Git Status Object:');
 console.log(JSON.stringify(gitStatus, null, 2));

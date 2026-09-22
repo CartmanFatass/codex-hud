@@ -10,6 +10,14 @@ import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
 export type FileChangeCallback = (path: string, event: 'add' | 'change' | 'unlink') => void;
 
 /**
+ * Polling costs a stat per watched path per interval and never sleeps. Native
+ * fs events are reliable on Linux and macOS, so polling is kept for Windows
+ * only, where watches on the Codex session tree are unreliable. The 1s
+ * collection tick remains the fallback if a native event is missed.
+ */
+const WATCH_NEEDS_POLLING = process.platform === 'win32';
+
+/**
  * File watcher with cleanup support
  */
 export class FileWatcher {
@@ -29,7 +37,7 @@ export class FileWatcher {
     this.watcher = watch(this.paths, {
       persistent: true,
       ignoreInitial: true,
-      usePolling: this.options.usePolling ?? false,
+      usePolling: this.options.usePolling ?? WATCH_NEEDS_POLLING,
       interval: 1000,
       awaitWriteFinish: {
         stabilityThreshold: 100,
@@ -108,7 +116,7 @@ export function createSessionWatcher(): FileWatcher {
   const day = now.getDate().toString().padStart(2, '0');
 
   const todayDir = path.join(getSessionsDir(), year, month, day);
-  return new FileWatcher([todayDir], { usePolling: true });
+  return new FileWatcher([todayDir], { usePolling: WATCH_NEEDS_POLLING });
 }
 
 /**
@@ -116,7 +124,7 @@ export function createSessionWatcher(): FileWatcher {
  */
 export function createShellSnapshotWatcher(): FileWatcher {
   const snapshotsDir = path.join(getCodexHome(), 'shell_snapshots');
-  return new FileWatcher([snapshotsDir], { usePolling: true });
+  return new FileWatcher([snapshotsDir], { usePolling: WATCH_NEEDS_POLLING });
 }
 
 /**
@@ -178,7 +186,7 @@ export class HudFileWatcher {
     }
 
     // Create new watcher for this specific file
-    this.rolloutWatcher = new FileWatcher([rolloutPath], { usePolling: true });
+    this.rolloutWatcher = new FileWatcher([rolloutPath], { usePolling: WATCH_NEEDS_POLLING });
     this.rolloutWatcher.onChange((filePath) => {
       this.notifyRolloutChange(filePath);
     });

@@ -14,6 +14,7 @@ import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './co
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
   monitorModes, monitorPreferences, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
+import { fileSignature } from './utils/file-signature.js';
 import type { SubagentTree } from './types.js';
 
 const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
@@ -60,6 +61,9 @@ async function runLivePage(): Promise<void> {
   let navigationMessage: string | null = null;
   let tree: SubagentTree = {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
   let main: RolloutParseResult | null = null;
+  // Size/mtime/inode as of the last parse: this page runs its own parser over
+  // the same rollout as the HUD, so it re-reads nothing while the file is still.
+  let lastParsedRollout: string | null = null;
   let worktrees: WorktreesSnapshot | null = null;
   let git: GitChanges | null = null;
   let gitRevision = 0;
@@ -128,7 +132,25 @@ async function runLivePage(): Promise<void> {
     try {
       const session = finder.check();
       parser.setRolloutPath(session?.path ?? null);
-      main = session ? await parser.parse() : null;
+      if (!session) {
+        main = null;
+        lastParsedRollout = null;
+      } else {
+        const signature = fileSignature(session.path);
+        const cached = parser.getCached();
+        if (cached && signature !== null && signature === lastParsedRollout) {
+          main = cached;
+        } else {
+          lastParsedRollout = signature;
+          try {
+            main = await parser.parse();
+          } catch (err) {
+            // A failed read is not "already parsed"; let the next tick retry.
+            lastParsedRollout = null;
+            throw err;
+          }
+        }
+      }
       const rootId = main?.session?.id ?? session?.sessionId ?? '';
       if (rootId !== tree.rootId) {
         state = configuredState(); diff = undefined; diffKey = ''; git = null; worktrees = null;
