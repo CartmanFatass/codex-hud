@@ -7,6 +7,7 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { initialPanelState, reconcileSelection, visibleRows, applyKey, type PanelState } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { renderModelEffortToken, modelLegend } from './model-glyphs.js';
+import { formatTokenCount } from './lines/activity-line.js';
 import { displayConfig } from './hud-config.js';
 
 export const MONITOR_PANES = ['agents', 'worktrees', 'changes', 'details'] as const;
@@ -175,7 +176,12 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       });
       const badge = token ? truncateAnsi(token, Math.max(2, Math.floor(width/4))) : '';
       const elapsed = width >= 24 && row.node.status === 'running' ? colors.dim(status.label) : '';
-      const right = [badge,elapsed].filter(Boolean).join(' ');
+      // The agent's own context fill, where the row is wide enough to carry it
+      // without pushing the badge off: 26 content columns is a 30-column pane,
+      // the widest the default split makes, minus its borders. Absent data
+      // shows nothing rather than 0%.
+      const ctx = width >= 26 && row.node.contextUsage ? colors.dim(`${row.node.contextUsage.percent}%`) : '';
+      const right = [badge,elapsed,ctx].filter(Boolean).join(' ');
       result.push({text:pair(prefix+monitorText(row.node.name),right,width),item:row.node.id});
     }
     if (result.length === 1) result.push({text:colors.dim(all.length ? 'No matching agents' : 'No subagents')});
@@ -230,6 +236,9 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       const rows: MonitorRow[] = wrapped(node.name,width).map(text=>({text:theme.strong(text)}));
       if (token) rows.push({text:truncateAnsi(token,width)});
       rows.push({text:truncateAnsi(`${status.paint(status.icon)} ${node.status}`,width)});
+      const ctx = node.contextUsage;
+      if (ctx) rows.push({text:truncateAnsi(
+        `${colors.dim('Ctx')} ${ctx.percent}% (${formatTokenCount(ctx.used)}/${formatTokenCount(ctx.total)})`,width)});
       lines = [`Turn age: ${age(node.turnStartedAt,now)}`,`Last activity: ${age(node.lastEventAt,now)}`];
       if (state.expanded) lines.push(`Turn start: ${node.turnStartedAt && Number.isFinite(node.turnStartedAt.getTime()) ? node.turnStartedAt.toISOString() : 'unknown'}`,`UUID: ${node.id}`);
       rows.push(...lines.flatMap(line=>wrapped(line,width).map(text=>({text}))));

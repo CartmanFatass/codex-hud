@@ -297,3 +297,40 @@ test('worktree panels shrink to their content while Agents receives spare height
   assert.equal(wt.height,wt.rows.length+2);
   assert.ok(frame.panes[0].height>frame.panes[0].rows.length+2);
 });
+
+test('an agent shows its own context fill where the row can carry it, and nothing where it cannot',()=>{
+  const previous=setDisplayConfig({theme:'terminal',glyphs:'both'});
+  try {
+    const measured:SubagentTreeNode={...nodes[0],contextUsage:{used:114240,total:260000,percent:42,
+      inputTokens:68544,outputTokens:22848,cachedTokens:22848,compactCount:0}};
+    const unmeasured=nodes[1];
+    const named={...tree,nodes:[measured,unmeasured]};
+
+    for(const width of [30,45,70]){
+      const frame=renderMonitor({tree:named,worktrees,state:initialMonitorState(),width,height:28,nowMs:now});
+      const agents=frame.panes.find(p=>p.id==='agents')!;
+      const measuredRow=stripAnsi(agents.rows.find(r=>r.item===measured.id)!.text);
+      const unmeasuredRow=stripAnsi(agents.rows.find(r=>r.item===unmeasured.id)!.text);
+      assert.match(measuredRow,/42%/,`width ${width} lost the fill`);
+      assert.doesNotMatch(unmeasuredRow,/%/,'an agent with no report shows nothing, not 0%');
+      assert.ok(frame.lines.every(line=>visualLength(line)<=width),`width ${width} overflowed`);
+    }
+
+    // In a narrower pane the badge and the name are worth more than the number.
+    for(const width of [16,20,24,28]){
+      const frame=renderMonitor({tree:named,worktrees,state:initialMonitorState(),width,height:28,nowMs:now});
+      const agents=frame.panes.find(p=>p.id==='agents')!;
+      assert.doesNotMatch(stripAnsi(agents.rows.find(r=>r.item===measured.id)!.text),/42%/);
+      assert.ok(frame.lines.every(line=>visualLength(line)<=width),`width ${width} overflowed`);
+    }
+
+    // The Inspector spells it out, in the same shape the compact bar uses.
+    const inspect=(shown:SubagentTreeNode[])=>{
+      const state=initialMonitorState();state.modes.details='open';state.focus='details';
+      return stripAnsi(renderMonitor({tree:{...tree,nodes:shown},worktrees,state,width:45,height:32,nowMs:now})
+        .panes.find(p=>p.id==='details')!.rows.map(r=>r.text).join('\n'));
+    };
+    assert.match(inspect([measured]),/Ctx 42% \(114\.2K\/260K\)/);
+    assert.doesNotMatch(inspect([unmeasured]),/Ctx/,'no report, no line');
+  } finally {setDisplayConfig(previous);}
+});

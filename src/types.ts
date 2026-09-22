@@ -400,6 +400,8 @@ export interface SubagentTreeNode {
   statusAt?: Date;
   /** Local rollout for inspecting this agent; never displayed as its task. */
   rolloutPath?: string;
+  /** This agent's own context window, read from its rollout's last report. */
+  contextUsage?: ContextUsage;
   /** Latest observed turn start, distinct from agent creation and traffic. */
   turnStartedAt?: Date;
   id: string;

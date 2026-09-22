@@ -15,7 +15,15 @@ import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInpu
   monitorModes, monitorPreferences, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { fileSignature } from './utils/file-signature.js';
-import type { SubagentTree } from './types.js';
+import { readAgentContextUsage } from './collectors/agent-context.js';
+import type { ContextUsage, SubagentTree, SubagentTreeNode } from './types.js';
+
+/** At most one tail read per agent per this long, however often we repaint. */
+const AGENT_CONTEXT_INTERVAL_MS = 3000;
+
+function walkNodes(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
+  for (const node of nodes) { visit(node); walkNodes(node.children, visit); }
+}
 
 const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
 const HUD_CWD_REAL = (() => { try { return fs.realpathSync(HUD_CWD); } catch { return HUD_CWD; } })();
@@ -78,6 +86,11 @@ async function runLivePage(): Promise<void> {
   let gitAgain = false;
   let inspecting = false;
   let inspectAgain = false;
+  // Per-agent context fill, kept beside the tree because the tree is rebuilt
+  // from the rollout on every collection and would otherwise lose it.
+  const agentContext = new Map<string,ContextUsage>();
+  const agentContextReadAt = new Map<string,number>();
+  let readingAgentContext = false;
   let escapeTimer: ReturnType<typeof setTimeout> | undefined;
   const timers: Array<ReturnType<typeof setInterval>> = [];
   let resolveDone = () => {};
@@ -100,6 +113,47 @@ async function runLivePage(): Promise<void> {
       lastPaint = output;
       process.stdout.write(`\x1b[H${output}\x1b[J`);
     }
+  };
+  const applyAgentContext = () => {
+    walkNodes(tree.nodes,node=>{node.contextUsage = agentContext.get(node.id);});
+  };
+  /**
+   * Read the context fill of the agents actually on screen, plus the selected
+   * one. Rows nobody can see are not worth a file read, and each node is read
+   * at most once every few seconds however often the panel repaints.
+   */
+  const refreshAgentContext = async () => {
+    if (closed || readingAgentContext) return;
+    readingAgentContext = true;
+    try {
+      const pane = frame?.panes.find(p=>p.id==='agents');
+      const wanted = new Set<string>();
+      if (state.tree.selectedId) wanted.add(state.tree.selectedId);
+      if (pane) {
+        for (let i=pane.offset;i<pane.offset+Math.max(0,pane.height-2);i++) {
+          const item = pane.rows[i]?.item;
+          if (item) wanted.add(item);
+        }
+      }
+      const byId = new Map<string,SubagentTreeNode>();
+      walkNodes(tree.nodes,node=>byId.set(node.id,node));
+      const now = Date.now();
+      let changed = false;
+      for (const id of wanted) {
+        const path = byId.get(id)?.rolloutPath;
+        if (!path) continue;
+        if (now-(agentContextReadAt.get(id) ?? 0) < AGENT_CONTEXT_INTERVAL_MS) continue;
+        agentContextReadAt.set(id,now);
+        const usage = await readAgentContextUsage(path);
+        if (closed) return;
+        if (usage) agentContext.set(id,usage); else agentContext.delete(id);
+        changed = true;
+      }
+      // Entries for agents no longer in the tree would otherwise accumulate.
+      for (const id of [...agentContext.keys()]) if (!byId.has(id)) {agentContext.delete(id);agentContextReadAt.delete(id);}
+      if (changed) { applyAgentContext(); render(); }
+    } catch { /* A rollout that cannot be read has no fill to report. */ }
+    finally { readingAgentContext = false; }
   };
   const refreshInspection = async () => {
     if (closed) return;
@@ -156,12 +210,14 @@ async function runLivePage(): Promise<void> {
         state = configuredState(); diff = undefined; diffKey = ''; git = null; worktrees = null;
       }
       tree = rootId ? buildSubagentTree(rootId,main?.subagents ?? []) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+      applyAgentContext();
       state = reconcileMonitor(state,tree,git,worktrees);
       error = settingsError || null;
     } catch (err) { error = `Refresh: ${String(err)}`; }
     finally { collecting = false; }
     render();
     void refreshInspection();
+    void refreshAgentContext();
   };
   const sources = () => worktreeSources(HUD_CWD_REAL,main?.session?.cwd,settings.worktreeRoot,process.env.CODEX_HUD_WORKTREE_ROOT);
   const refreshGit = async () => {
