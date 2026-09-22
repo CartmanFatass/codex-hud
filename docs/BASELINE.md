@@ -72,16 +72,22 @@ small models, pinning the display at 100%. The replay test caught it.
 
 # After the layout work
 
-Same fixture, same command. The bar is now assembled from modules that each
-carry a priority and shorter forms of themselves, and the fixture includes one
-failed agent so the alert has something to report.
+Same fixture, same clock. The bar is assembled from modules that each carry a
+priority, a group, and shorter forms of themselves, and the fixture includes
+one failed tool and one failed agent so the alert has something to report.
+These lines are printed rather than written by hand:
+
+```bash
+npm run build:test
+node dist-test/tests/fixtures/samples.js 60 80 100 120 160
+```
 
 ```
- 60  ! | ☀ | main* | 1▸1✗ | Ctx 42% | 2/5 | Q61% | 12m | F12
- 80  ! 1 agent failed | ☀● | main* | 1▸1✗ | Ctx 42% | 2/5 | Q61% | 12m | F12
-100  ! 1 agent failed | ☀● Astra | codex-hud main* | 1▸1✗ | Ctx 42% | 2/5 | Q61% | 12m | F12
-120  ! 1 agent failed | ☀● Astra | codex-hud git:(main * ↑2) | Agents 1▸ 1✗ | Ctx 42% | 2/5 | Q61% | 12m | F12
-160  ! 1 agent failed | ☀● Astra | codex-hud git:(main * ↑2) | Agents 1 run · 1 ok · 1 fail | Ctx ████░░░░░░ 42% (114.2K/272.0K) | Tasks 2/5 | Q61% | 12m | F12
+ 60  !2 │ ☀  main* │ 1▸1✗  Ctx 42% │ 2/5  Q61%           30m  F12
+ 80  ! 1 tool failed │ ☀  main* │ 1▸1✗  Ctx 42% │ 2/5  Q61%                  30m  F12
+100  ! 1 tool failed · 1 agent failed │ ☀  main* │ 1▸1✗  Ctx ██▌░░░ 42% │ 2/5  Q61%              30m  F12
+120  ! 1 tool failed · 1 agent failed │ ☀● Astra  main* │ 1▸1✗  Ctx ████▎░░░░░ 42% (114.2K/272K) │ 2/5  Q61%         30m  F12
+160  ! 1 tool failed · 1 agent failed │ ☀● Astra  codex-hud git:(main * ↑2) │ Agents 1 run · 1 ok · 1 fail  Ctx ████▎░░░░░ 42% (114.2K/272K) │ 2/5  Q61%     30m  F12
 ```
 
 What changed for the reader:
@@ -95,16 +101,25 @@ What changed for the reader:
   list is a success.
 - Fields with no data are absent rather than zero. A session with no quota
   snapshot shows no quota field.
+- Related fields sit two spaces apart and unrelated ones are divided by a
+  dimmed `│`, so the bar reads as who / load / usage rather than as a list.
+- The session timer and the `F12` hint are pushed to the last column, which
+  keeps the left edge stable while the middle of the bar changes.
+- Meters fill by eighths of a column, so a six-column `Ctx` bar moves eight
+  times more often than it used to.
 
 ## Render cost, after
 
-| Measurement | Before | After |
-|---|---|---|
-| Render, per frame | 0.08 ms | 0.26 ms |
+| Measurement | Before | Layout work | With grouping and eighth-cell meters |
+|---|---|---|---|
+| Render, per frame | 0.08 ms | 0.26 ms | 0.33 ms |
 
-Three times the work for one frame, against a budget of 1 ms and a repaint
-rate of four frames a second. The extra cost buys the fitting pass, which
-renders each field's variants before choosing between them.
+Measured by `node --test dist-test/tests/unit/perf.test.js`, which prints the
+number it asserts on; repeated runs landed between 0.31 and 0.35 ms. Four times
+the original work for one frame, against a budget of 1 ms and a repaint rate of
+four frames a second. The cost buys the fitting pass, which renders each
+field's variants before choosing between them, and now also measures the
+grouped and right-aligned joins.
 
 ## Test counts
 
