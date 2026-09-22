@@ -322,6 +322,7 @@ Settings → **Bar next launch** saves the bottom bar preference for the next ne
 |----------|---------|-------------|
 | `CODEX_HUD_NOTIFY` | `0` | Announce failures and finished agents through tmux |
 | `CODEX_HUD_NOTIFY_COOLDOWN` | `300` | Seconds before a different alert of the same kind can fire |
+| `CODEX_HUD_NOTIFY_DESKTOP` | `0` | Also raise a desktop notification (needs `CODEX_HUD_NOTIFY=1`) |
 | `CODEX_HUD_REDUCED_MOTION` | `0` | Stop the traffic marker from animating |
 | `NO_COLOR` | (unset) | Any value forces the `none` palette |
 | `CODEX_HUD_HEIGHT_AUTO` | `0` | Auto-adjust height based on width |
@@ -345,9 +346,24 @@ event is worse than none. `CODEX_HUD_NOTIFY=1` turns them on.
 CODEX_HUD_NOTIFY=1 codex
 ```
 
-It announces failures it observed and agents that finished, one message per
-occurrence, with a cooldown so a flapping condition cannot become a stream. It
-never acts on the session: no auto-approval, no keystrokes, no retries.
+It announces failures it observed, approvals Codex is waiting on, and agents
+that finished, one message per occurrence, with a cooldown so a flapping
+condition cannot become a stream. It never acts on the session: no
+auto-approval, no keystrokes, no retries.
+
+`CODEX_HUD_NOTIFY_DESKTOP=1` adds a notification outside the terminal. It is a
+second opt-in because leaving the terminal is a bigger ask than a tmux message.
+
+```bash
+CODEX_HUD_NOTIFY=1 CODEX_HUD_NOTIFY_DESKTOP=1 codex
+```
+
+Two routes, both best-effort and both silent when unsupported: the OSC 9 and
+OSC 777 sequences a terminal may raise itself (wrapped in tmux passthrough,
+which the wrapper enables), and `notify-send` on Linux or `osascript` on macOS.
+Notification text comes from the rollout, so every control character is
+stripped before it is written: a message cannot close the sequence and have its
+tail run as terminal commands.
 
 ### config.toml
 

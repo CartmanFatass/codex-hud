@@ -24,16 +24,84 @@ export interface NotifyEvent {
 export interface NotifierOptions {
   enabled: boolean;
   cooldownMs: number;
+  /** Also raise a notification outside the terminal. Off unless asked for. */
+  desktop?: boolean;
   deliver?: (event: NotifyEvent) => void;
 }
 
+function truthy(value: string | undefined): boolean {
+  const raw = (value ?? '').trim();
+  return raw === '1' || raw.toLowerCase() === 'true';
+}
+
 export function resolveNotifierOptions(env: NodeJS.ProcessEnv = process.env): Omit<NotifierOptions, 'deliver'> {
-  const raw = (env.CODEX_HUD_NOTIFY ?? '').trim();
   const seconds = Number(env.CODEX_HUD_NOTIFY_COOLDOWN ?? '');
   return {
-    enabled: raw === '1' || raw.toLowerCase() === 'true',
+    enabled: truthy(env.CODEX_HUD_NOTIFY),
+    // A second opt-in: leaving the terminal is a bigger ask than a tmux
+    // message, so turning notifications on does not turn these on too.
+    desktop: truthy(env.CODEX_HUD_NOTIFY_DESKTOP),
     cooldownMs: Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 300_000,
   };
+}
+
+const ESC = '\x1b';
+const BEL = '\x07';
+
+/**
+ * The bytes that ask a terminal to raise a notification.
+ *
+ * Two spellings, because terminals disagree: OSC 9 is the one iTerm2 and
+ * Windows Terminal read, OSC 777 the one most Linux terminals read. A terminal
+ * that understands neither discards both, which is why this is safe to write
+ * onto a pane that is otherwise drawing a status bar.
+ *
+ * `text` is stripped of every control character first. Notification text comes
+ * from a rollout, so it is data, and data that could carry an ESC could close
+ * the sequence and have the rest of itself executed as terminal commands.
+ */
+export function desktopNotificationSequence(text: string, options: { tmux: boolean }): string {
+  const safe = text.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').trim();
+  const payload = `${ESC}]9;${safe}${BEL}${ESC}]777;notify;codex-hud;${safe}${BEL}`;
+  if (!options.tmux) {
+    return payload;
+  }
+  // tmux only forwards an unknown sequence to the outer terminal when it is
+  // wrapped in its passthrough DCS, and only with every ESC inside doubled.
+  return `${ESC}Ptmux;${payload.split(ESC).join(ESC + ESC)}${ESC}\\`;
+}
+
+/**
+ * Best-effort desktop notification: the terminal sequence, plus the platform's
+ * own notifier. Both are fire-and-forget; neither is allowed to fail loudly or
+ * to hold up a frame.
+ */
+export function desktopDeliver(event: NotifyEvent): void {
+  const text = `codex-hud: ${event.message}`;
+  try {
+    process.stdout.write(desktopNotificationSequence(text, { tmux: Boolean(process.env.TMUX) }));
+  } catch {
+    // A closed or full stdout is not worth crashing the HUD over.
+  }
+
+  const command: [string, string[]] | null =
+    process.platform === 'linux'
+      ? ['notify-send', ['codex-hud', event.message]]
+      : process.platform === 'darwin'
+        ? ['osascript', ['-e', `display notification ${JSON.stringify(event.message)} with title "codex-hud"`]]
+        : null;
+  if (!command) {
+    return;
+  }
+  try {
+    const child = spawn(command[0], command[1], { stdio: 'ignore' });
+    child.on('error', () => {
+      // notify-send or osascript missing: the terminal sequence still stands.
+    });
+    child.unref();
+  } catch {
+    // delivery is best-effort
+  }
 }
 
 /** Best-effort delivery through tmux; silent when not running under tmux. */
@@ -82,6 +150,9 @@ export class Notifier {
       }
       this.lastFired.set(event.kind, { fingerprint: event.fingerprint, at: nowMs });
       (this.options.deliver ?? tmuxDeliver)(event);
+      if (this.options.desktop) {
+        desktopDeliver(event);
+      }
       sent.push(event);
     }
     return sent;

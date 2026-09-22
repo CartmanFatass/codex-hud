@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { formatCountdown, readQuotaWindows, resolveResetTime } from '../../src/render/quota.js';
 import { sparkline } from '../../src/render/sparkline.js';
 import { SampleHistory } from '../../src/collectors/history.js';
-import { Notifier } from '../../src/notify.js';
+import { Notifier, desktopNotificationSequence, resolveNotifierOptions } from '../../src/notify.js';
 import { renderPanelPlain } from '../../src/render/subagent-tree-view.js';
 import { initialPanelState } from '../../src/render/panel-state.js';
 import { collectAttention } from '../../src/render/attention.js';
@@ -161,6 +161,49 @@ test('several agents finishing at once become one message', () => {
 
   assert.equal(sent.length, 1);
   assert.match(sent[0].message, /3 agents finished/);
+});
+
+test('a desktop notification is two sequences a terminal can ignore', () => {
+  assert.equal(
+    desktopNotificationSequence('build finished', { tmux: false }),
+    '\x1b]9;build finished\x07\x1b]777;notify;codex-hud;build finished\x07'
+  );
+});
+
+test('under tmux the sequences are wrapped in passthrough with every ESC doubled', () => {
+  const wrapped = desktopNotificationSequence('build finished', { tmux: true });
+  assert.equal(
+    wrapped,
+    '\x1bPtmux;\x1b\x1b]9;build finished\x07\x1b\x1b]777;notify;codex-hud;build finished\x07\x1b\\'
+  );
+  // Unwrapping is exactly un-doubling, which is what tmux does to the payload.
+  const payload = wrapped.slice('\x1bPtmux;'.length, -'\x1b\\'.length);
+  assert.equal(
+    payload.split('\x1b\x1b').join('\x1b'),
+    desktopNotificationSequence('build finished', { tmux: false })
+  );
+});
+
+test('notification text cannot close the sequence and run the rest as commands', () => {
+  // The message comes from a rollout, so it is data. An ESC inside it would
+  // otherwise end the OSC and leave the tail to be executed.
+  const hostile = 'ok\x07\x1b]0;pwned\x07\x1b[2J\r\nrm -rf /\x00';
+  const plain = desktopNotificationSequence(hostile, { tmux: false });
+  const safe = 'ok  ]0;pwned  [2J  rm -rf /';
+  assert.equal(plain, `\x1b]9;${safe}\x07\x1b]777;notify;codex-hud;${safe}\x07`);
+  assert.equal(plain.split('\x1b').length - 1, 2, 'only the two sequences we wrote carry an ESC');
+  assert.equal(plain.split('\x07').length - 1, 2, 'and only the two terminators we wrote');
+
+  const wrapped = desktopNotificationSequence(hostile, { tmux: true });
+  assert.ok(!wrapped.includes('\x1b\\\x1b'), 'the payload cannot terminate the passthrough early');
+  assert.ok(wrapped.endsWith('\x1b\\'));
+});
+
+test('desktop notifications are a second opt-in, not a consequence of the first', () => {
+  assert.equal(resolveNotifierOptions({ CODEX_HUD_NOTIFY: '1' }).desktop, false);
+  assert.equal(resolveNotifierOptions({ CODEX_HUD_NOTIFY: '1', CODEX_HUD_NOTIFY_DESKTOP: '1' }).enabled, true);
+  assert.equal(resolveNotifierOptions({ CODEX_HUD_NOTIFY: '1', CODEX_HUD_NOTIFY_DESKTOP: '1' }).desktop, true);
+  assert.equal(resolveNotifierOptions({ CODEX_HUD_NOTIFY_DESKTOP: 'true' }).enabled, false, 'still off overall');
 });
 
 test('silence is never announced as a failure', () => {

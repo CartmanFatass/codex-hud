@@ -274,6 +274,7 @@ CODEX_HUD_GLYPHS=glyph CODEX_HUD_THEME=mocha codex
 |------|--------|------|
 | `CODEX_HUD_NOTIFY` | `0` | 通过 tmux 提示失败与代理结束 |
 | `CODEX_HUD_NOTIFY_COOLDOWN` | `300` | 同类提醒之间的冷却秒数 |
+| `CODEX_HUD_NOTIFY_DESKTOP` | `0` | 额外发送桌面通知（需同时 `CODEX_HUD_NOTIFY=1`） |
 | `CODEX_HUD_REDUCED_MOTION` | `0` | 关闭通信标记的动画 |
 | `NO_COLOR` | （未设置） | 任意取值都强制使用 `none` 配色 |
 | `CODEX_HUD_HEIGHT_AUTO` | `0` | 根据宽度自动调整高度 |
@@ -296,8 +297,17 @@ CODEX_HUD_GLYPHS=glyph CODEX_HUD_THEME=mocha codex
 CODEX_HUD_NOTIFY=1 codex
 ```
 
-它只提醒观测到的失败和已结束的代理，每次发生只发一条，并带冷却时间，避免状态反复时刷屏。
+它只提醒观测到的失败、Codex 正在等待的审批，以及已结束的代理，每次发生只发一条，并带冷却时间，避免状态反复时刷屏。
 它不会对会话做任何操作：不自动确认、不发送按键、不自动重试。
+
+`CODEX_HUD_NOTIFY_DESKTOP=1` 会额外发出终端之外的桌面通知。这是第二道开关：走出终端比发一条 tmux 消息要冒昧得多。
+
+```bash
+CODEX_HUD_NOTIFY=1 CODEX_HUD_NOTIFY_DESKTOP=1 codex
+```
+
+两条通道都是尽力而为，不支持时静默：一条是终端自己可能响应的 OSC 9 与 OSC 777 序列（包在 tmux passthrough 里，由启动脚本负责开启），另一条是 Linux 的 `notify-send` 或 macOS 的 `osascript`。
+通知文本来自 rollout，写出前会剥掉全部控制字符：消息无法提前结束序列、把剩下的内容当成终端命令执行。
 
 ### config.toml
 

@@ -827,6 +827,9 @@ EOF
     tmux set-option -t "$SESSION_NAME" history-limit 200000
     # HUD already draws the status line; hide tmux's default green bar.
     tmux set-option -t "$SESSION_NAME" status off
+    # Let the HUD's desktop notification reach the outer terminal. tmux drops
+    # unknown sequences unless passthrough is on; older tmux has no such option.
+    tmux set-option -t "$SESSION_NAME" allow-passthrough on 2>/dev/null || true
 
     local alternate_screen
     alternate_screen=$(resolve_alternate_screen_setting) || exit 1
@@ -1009,6 +1012,7 @@ main() {
             set_fixed_hud_height "$SESSION_NAME" "$hud_pane_id" "$HUD_HEIGHT" "$main_pane_id"
         fi
         tmux set-option -t "$SESSION_NAME" status off
+        tmux set-option -t "$SESSION_NAME" allow-passthrough on 2>/dev/null || true
         install_session_input_policy "$SESSION_NAME" "$SCRIPT_DIR/codex-hud-toggle"
         if [[ "$DEFER_FINAL_ATTACH" == "1" ]]; then
             if [[ -n "$SESSION_NAME_FILE" ]]; then
