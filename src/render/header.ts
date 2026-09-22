@@ -1,16 +1,16 @@
 /**
  * Header line renderer
- * Phase 3: Redesigned to match claude-hud layout
  *
  * Layout:
- * Row 1: Tokens | Ctx bar | Plan bar | timer | project | mode/approval/sandbox | session
+ * Row 1: the status bar, assembled from the modules in `layout/bar-modules.ts`
+ * and fitted to the pane by `layout/engine.ts`.
  * Rows 2+: active subagents by depth — one row per level, up to 3 levels,
  * directory-tree prefixes showing which lineage each agent belongs to.
  */
 
-import type { HudData, RenderOptions, LayoutConfig, SubagentTree, SubagentTreeNode } from '../types.js';
+import type { HudData, RenderOptions, LayoutConfig, SubagentTree } from '../types.js';
 import { DEFAULT_LAYOUT } from '../types.js';
-import { colors, theme, coloredBar, coloredPercent, visualLength, truncateAnsi, padEnd } from './colors.js';
+import { colors, theme, visualLength, truncateAnsi, padEnd } from './colors.js';
 import { buildBarModules } from './layout/bar-modules.js';
 import { fitModules } from './layout/engine.js';
 import { renderSubagentChip } from './subagent-chip.js';
@@ -28,7 +28,13 @@ import {
  */
 function renderStatusHeader(data: HudData, layout: LayoutConfig, width: number): string {
   const modules = buildBarModules(data, { barWidth: layout.barWidth ?? 10 });
-  return fitModules(modules, { width, separator: ` ${colors.dim('|')} ` }).line;
+  // A dimmed rule between clusters and a plain double space inside one: the
+  // bar reads as a few groups rather than a list of equally spaced fields.
+  return fitModules(modules, {
+    width,
+    separator: theme.separator(' │ '),
+    groupSeparator: '  ',
+  }).line;
 }
 
 function renderCompactLayout(data: HudData, layout: LayoutConfig, width: number): string[] {
@@ -131,93 +137,15 @@ function renderExpandedLayout(data: HudData, layout: LayoutConfig, width: number
   return [renderStatusHeader(data, layout, width), ...renderActiveTreeRows(data.subagentTree, width)];
 }
 
-function renderDirectoryTree(nodes: SubagentTreeNode[], prefix = ''): string[] {
-  const lines: string[] = [];
-  nodes.forEach((node, index) => {
-    const isLast = index === nodes.length - 1;
-    const branch = isLast ? '└─ ' : '├─ ';
-    lines.push(`${colors.dim(prefix + branch)}${renderSubagentChip(node)}`);
-    if (node.children.length > 0) {
-      lines.push(...renderDirectoryTree(node.children, prefix + (isLast ? '   ' : '│  ')));
-    }
-  });
-  return lines;
-}
-
-/**
- * Original Ctrl+T page: session overview plus the current session's agent tree.
- */
-function renderOverviewLayout(data: HudData, layout: LayoutConfig, width: number): string[] {
-  const overview = data.overview;
-  const sessionLines = !overview || overview.sessions.length === 0
-    ? [colors.dim('No active sessions')]
-    : overview.sessions.map((session) => {
-      const shortId = session.id.length > 8 ? session.id.slice(0, 8) : session.id;
-      const ctx = session.contextUsage;
-      const ctxDisplay = ctx
-        ? `${coloredBar(ctx.percent, layout.barWidth)} ${coloredPercent(ctx.percent)}`
-        : colors.dim('Ctx: --');
-      const ctxLabel = ctx ? colors.dim('Ctx ') : '';
-      return `${ctxLabel}${ctxDisplay} ${colors.dim('Session: ')}${theme.info(shortId)}`;
-    });
-
-  const tree = data.subagentTree;
-  const treeLines = !tree || tree.nodes.length === 0
-    ? [colors.dim('No subagents')]
-    : renderDirectoryTree(tree.nodes);
-
-  return [
-    colors.dim('Overview') + theme.separator(' | ') + colors.dim('Ctrl+T back'),
-    ...sessionLines,
-    colors.dim('─'.repeat(Math.min(width, 40))),
-    ...treeLines,
-  ].map((line) => truncateAnsi(line, width));
-}
-
 /**
  * Render the full HUD output (all lines)
  */
 export function renderHud(data: HudData, options: RenderOptions): string[] {
   const layout = options.layout ?? DEFAULT_LAYOUT;
 
-  if (data.displayMode === 'overview') {
-    return renderOverviewLayout(data, layout, options.width);
-  }
-
   if (layout.mode === 'compact') {
     return renderCompactLayout(data, layout, options.width);
   }
   
   return renderExpandedLayout(data, layout, options.width);
-}
-
-// ============================================================================
-// Legacy exports for backward compatibility
-// ============================================================================
-
-/**
- * Render the main header line (legacy)
- * @deprecated Use renderHud instead
- */
-export function renderHeader(data: HudData, options: RenderOptions): string {
-  const lines = renderHud(data, options);
-  return lines[0] || '';
-}
-
-/**
- * Render the second line with detailed info (legacy)
- * @deprecated Use renderHud instead
- */
-export function renderDetails(data: HudData, options: RenderOptions): string {
-  const lines = renderHud(data, options);
-  return lines[1] || '';
-}
-
-/**
- * Render the third line with tool activity (legacy)
- * @deprecated Use renderHud instead
- */
-export function renderActivityLine(data: HudData, _options: RenderOptions): string | null {
-  const lines = renderHud(data, _options);
-  return lines[2] || null;
 }

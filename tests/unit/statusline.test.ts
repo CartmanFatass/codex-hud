@@ -32,7 +32,11 @@ test('remaining display keeps capacity warning colors and glyph status', () => {
     const context = modules.find(m => m.id === 'context')!.variants.min!;
     assert.match(stripAnsi(context), /5% left/);
     assert.ok(context.includes(getContextColor(95)('5% left')));
-    assert.equal(stripAnsi(modules.find(m => m.id === 'activity')!.variants.full!), '▸');
+    const activity = modules.find(m => m.id === 'activity')!;
+    assert.equal(stripAnsi(activity.variants.min!), '▸');
+    // The widest form names the tool the turn is waiting on, and the fixture's
+    // running call is the only one it is allowed to report.
+    assert.equal(stripAnsi(activity.variants.full!), '▸ Edit: src/types.ts');
   } finally { setDisplayConfig(previous); }
 });
 

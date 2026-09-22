@@ -71,7 +71,9 @@ const TERMINAL: Palette = {
   info: basic(36),
   model: basic(96),
   branch: basic(35),
-  project: basic(33),
+  // Identity, not a category: the project name is emphasis without a hue of
+  // its own, which leaves the accent free to mean one thing.
+  project: basic(1),
   strong: basic(1),
   selected: highlight('7'),
 };
@@ -87,8 +89,8 @@ const MOCHA: Palette = {
   danger: rgb('#F38BA8'),
   info: rgb('#89DCEB'),
   model: rgb('#CBA6F7'),
-  branch: rgb('#CBA6F7'),
-  project: rgb('#FAB387'),
+  branch: rgb('#F5C2E7'),
+  project: rgb('#B4BEFE'),
   strong: rgb('#B4BEFE'),
   selected: highlight('48;2;49;50;68'),
 };
@@ -103,8 +105,8 @@ const LATTE: Palette = {
   danger: rgb('#D20F39'),
   info: rgb('#04A5E5'),
   model: rgb('#8839EF'),
-  branch: rgb('#8839EF'),
-  project: rgb('#FE640B'),
+  branch: rgb('#EA76CB'),
+  project: rgb('#7287FD'),
   strong: rgb('#7287FD'),
   selected: highlight('48;2;204;208;218'),
 };

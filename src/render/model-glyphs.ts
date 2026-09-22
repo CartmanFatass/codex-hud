@@ -22,8 +22,8 @@ export const EFFORT_GLYPHS: Record<string, string> = {
   medium: '◐',
   high: '◕',
   xhigh: '●',
-  max: '⬤',
-  ultra: '◉',
+  max: '◆',
+  ultra: '✦',
 };
 
 export type ModelFamily = keyof typeof MODEL_GLYPHS;

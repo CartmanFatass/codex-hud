@@ -1,7 +1,7 @@
 /**
  * Session Line Renderer (Compact Mode)
  * Renders all session info in a single line
- * Format: [Model] █████░░░░░ 45% | project git:(branch) | 1 AGENTS.md | ⏱️ 10m
+ * Format: [Model] █████░░░░░ 45% | project git:(branch) | 1 AGENTS.md | ◴ 10m
  */
 
 import type { HudData, LayoutConfig } from '../../types.js';
@@ -50,7 +50,7 @@ function renderCompactEnvironment(data: HudData): string {
 
 /**
  * Render the complete session line (compact mode)
- * Format: [Model] █████░░░░░ 45% | project git:(branch) | 1 AGENTS.md | ⏱️ 10m
+ * Format: [Model] █████░░░░░ 45% | project git:(branch) | 1 AGENTS.md | ◴ 10m
  */
 export function renderSessionLine(data: HudData, layout: LayoutConfig): string {
   const sep = ` ${colors.dim(icons.bar)} `;

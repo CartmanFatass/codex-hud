@@ -88,20 +88,10 @@ export interface ContextUsage {
 }
 
 // ============================================================================
-// Display Mode (Single vs Overview)
+// Display Mode
 // ============================================================================
 
-export type HudDisplayMode = 'single' | 'tree' | 'overview';
-
-export interface SessionOverviewItem {
-  id: string;
-  contextUsage?: ContextUsage;
-}
-
-export interface SessionOverview {
-  sessions: SessionOverviewItem[];
-  updatedAt: Date;
-}
+export type HudDisplayMode = 'single' | 'tree';
 
 // ============================================================================
 // Layout Configuration
@@ -480,9 +470,8 @@ export interface HudData {
   agentActivity?: AgentActivity;
   planProgress?: PlanProgress;
 
-  // Display mode and overview data
+  // Display mode
   displayMode?: HudDisplayMode;
-  overview?: SessionOverview;
   subagentTree?: SubagentTree;
 }
 

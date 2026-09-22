@@ -81,8 +81,12 @@ test('width, height and margins remain bounded with CJK and terminal controls',(
       assert.doesNotMatch(frame.lines.join(''),/\x1b\[2J|\u202e/);
       assert.ok(frame.lines.every(line=>!line.includes('\n')));
       for(const p of frame.panes)assert.ok(p.y+p.height<=height-1);
+      // At 24 columns and up a pane is a box. Below that the side borders are
+      // two columns the content needs more, so rows run edge to edge.
       if(width>=16)for(const p of frame.panes)for(let y=p.y+1;y<p.y+p.height-1;y++){
-        const line=stripAnsi(frame.lines[y]);assert.ok(line.startsWith(width<24?'│':'│ '));assert.ok(line.endsWith(width<24?'│':' │'));
+        const line=stripAnsi(frame.lines[y]);
+        if(width<24){assert.ok(!line.startsWith('│'));assert.ok(visualLength(frame.lines[y])<=width);}
+        else{assert.ok(line.startsWith('│ '));assert.ok(line.endsWith(' │'));}
       }
     }
   }

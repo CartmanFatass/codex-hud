@@ -145,29 +145,33 @@ After the first install, these are available in PowerShell and cmd:
 
 ## What's on the HUD?
 
-One line, pinned to the bottom of the terminal:
+One line, pinned to the bottom of the terminal. Related fields sit two
+spaces apart, a dimmed `│` divides one group from the next, and the session
+timer and the key hint are held against the right edge:
 
 ```
-☀● Astra | codex-hud git:(main * ↑2) | Agents 1 run · 1 ok | Ctx ████░░░░░░ 42% (114.2K/272.0K) | 2/5 | Q61% | 12m | F12
+▸ Edit: src/types.ts · 1m20s  ☀● Astra  codex-hud git:(main * ↑2) │ Agents 1 run · 1 ok  Ctx ████▎░░░░░ 42% (114.2K/272K)  ◷~00m │ 2/5  Q61%            30m  F12
 ```
 
 When something needs you, it takes the front of the line:
 
 ```
-! 1 tool failed · 1 agent failed | ☀● Astra | codex-hud git:(main * ↑2) | Agents 1 run · 1 ok · 1 fail | Ctx 42% | F12
+! 1 tool failed · 1 agent failed │ ▸ Edit: src/types.ts · 1m20s  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m │ 2/5  Q61%    30m  F12
 ```
 
 | Field | Means |
 |-------|-------|
 | `!` | Something the HUD actually observed went wrong: a tool that reported failure, an agent that ended in error, a usage window that reported itself full |
-| `☀● Astra` | Model family and reasoning effort |
+| `▸ Edit: src/types.ts · 1m20s` | What this turn is doing: the running tool, what it is working on, and how long the turn has taken. A narrow pane keeps the mark and the elapsed time, then the mark alone |
+| `☀● Astra` | Model family and reasoning effort: `○` low, `◐` medium, `◕` high, `●` xhigh, `◆` max, `✦` ultra |
 | `codex-hud git:(main * ↑2)` | Project, branch, uncommitted changes, ahead/behind |
 | `Agents 1 run · 1 ok · 1 fail` | Subagents by outcome. Finished and failed are separate numbers, and an agent with no observed state is counted as `?`, never as running |
-| `Ctx 42%` | How full the context window is. `↻2` counts compactions |
+| `Ctx 42% (114.2K/272K)` | How full the context window is, to an eighth of a column. `↻2` counts compactions |
+| `◷~00m` | Minutes since the last model usage, as a prompt-cache reminder. It warns at 25 minutes and stops counting at `30m+` |
 | `2/5` | Steps completed in the current plan |
-| `Q61%` | Share of the account's usage window spent. This is quota, not task progress |
-| `84.0K` | Tokens spent this session |
-| `F12` | Opens the subagent tree |
+| `Q61%` | Share of the account's usage window spent. This is quota, not task progress; `↺1h23m` is the wait for the next reset |
+| `84K` | Tokens spent this session |
+| `F12` | Opens the subagent tree. Ten minutes into a session with no subagents to open it retires itself |
 
 A field appears only when there is real data behind it. A missing quota
 snapshot means no quota field, not a bar reading zero.
@@ -179,7 +183,7 @@ disappears first, and an alert is never dropped. At 40 columns, with a failure
 on screen:
 
 ```
-! | ☀ | main* | 1▸1✗ | Ctx 42%
+!2 │ ▸  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m
 ```
 
 ### Density presets
