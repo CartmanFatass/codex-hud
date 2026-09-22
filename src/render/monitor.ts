@@ -277,8 +277,13 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     if(height>1)frame.lines.push(colors.dim(`↑↓ ${state.helpScroll+1}/${help.length} Esc back`));
     frame.lines = frame.lines.slice(0,height).map(line=>truncateAnsi(line,width));return frame;
   }
-  const padding = width<24 ? '' : ' ';
-  const inner = Math.max(0,width-2-2*padding.length); const now = input.nowMs ?? Date.now();
+  // Under 24 columns the frame costs more than it earns: two border columns
+  // out of sixteen is an eighth of every row spent on decoration. Narrow panes
+  // keep the rules that separate them and give the rest back to the content.
+  const bordered = width>=24;
+  const padding = bordered ? ' ' : '';
+  const inner = bordered ? Math.max(0,width-2-2*padding.length) : width;
+  const now = input.nowMs ?? Date.now();
   const notice = input.notice || input.error;
   const noticeRows = notice && height >= 6 ? wrapped(notice,Math.max(1,width-2)).slice(0,2) : [];
   let budget = Math.max(0,height-2-noticeRows.length);
@@ -320,20 +325,36 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const heading = id===state.focus ? theme.accent : colors.dim;
     const buttons = width>=12 ? `[${state.modes[id]==='folded'?'+':'-'}][x]` : '';
     const shortTitle = {agents:'Agents',worktrees:width<20?'WT':'Worktrees',changes:'Changes',details:'Inspect'}[id];
-    const title = fit(' '+(width<24 ? shortTitle : TITLES[id])+' ',Math.max(0,width-2-buttons.length));
-    frame.lines[y] = truncateAnsi(heading('┌'+title+buttons+'┐'),width);
+    if(bordered) {
+      const title = fit(' '+TITLES[id]+' ',Math.max(0,width-2-buttons.length));
+      frame.lines[y] = truncateAnsi(heading('┌'+title+buttons+'┐'),width);
+    } else {
+      // "─ Agents ────[-][x]": the rule doubles as the frame.
+      const room = Math.max(0,width-buttons.length);
+      const label = truncateAnsi('─ '+shortTitle+' ',room);
+      frame.lines[y] = truncateAnsi(heading(label+'─'.repeat(Math.max(0,room-visualLength(label)))+buttons),width);
+    }
     if(buttons) {
-      frame.controls.push({kind:'fold',pane:id,x:width-7,y,width:3},{kind:'close',pane:id,x:width-4,y,width:3});
+      const right = bordered ? width-1 : width;
+      frame.controls.push({kind:'fold',pane:id,x:right-6,y,width:3},{kind:'close',pane:id,x:right-3,y,width:3});
     }
     for(let i=0;i<count;i++) {
       const row=rows[offset+i];
-      let text=fit(row?.text??'',inner);
-      if(row?.item&&row.item===selected&&id===state.focus)text=theme.selected(text);
-      frame.lines[y+1+i]=truncateAnsi(border('│')+padding+text+padding+border('│'),width);
+      const clipped=truncateAnsi(row?.text??'',inner);
+      // The highlight covers the row's words, not the blank run after them:
+      // a selected short name should not paint a bar across the pane.
+      const body=(row?.item&&row.item===selected&&id===state.focus?theme.selected(clipped):clipped)
+        +' '.repeat(Math.max(0,inner-visualLength(clipped)));
+      frame.lines[y+1+i]=truncateAnsi(bordered?border('│')+padding+body+padding+border('│'):body,width);
     }
     if(h>1) {
       const range=rows.length>count&&count?` ${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length} `:'';
-      frame.lines[y+h-1]=truncateAnsi(border('└'+fit(range,Math.max(0,width-2)).replace(/ /g,'─')+'┘'),width);
+      if(bordered) {
+        frame.lines[y+h-1]=truncateAnsi(border('└'+fit(range,Math.max(0,width-2)).replace(/ /g,'─')+'┘'),width);
+      } else {
+        const head=truncateAnsi('─'+range,width);
+        frame.lines[y+h-1]=truncateAnsi(border(head+'─'.repeat(Math.max(0,width-visualLength(head)))),width);
+      }
     }
     y+=h;
   }
