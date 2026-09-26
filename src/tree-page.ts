@@ -2,7 +2,7 @@
 import { navigateSession } from './utils/session-navigation.js';
 import { defaultSettings, saveSettings } from './settings.js';
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
-import { resizeTreePane } from './utils/pane-width.js';
+import { treeWidthKeeper } from './utils/pane-width.js';
 import { renderSettingsPage, handleSettingsInput, type SettingsPageState, type SettingsFrame } from './render/settings-page.js';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -93,6 +93,8 @@ async function runLivePage(): Promise<void> {
   const agentContextReadAt = new Map<string,number>();
   let readingAgentContext = false;
   let escapeTimer: ReturnType<typeof setTimeout> | undefined;
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  const widthKeeper = treeWidthKeeper(()=>settings.treeWidth);
   const timers: Array<ReturnType<typeof setInterval>> = [];
   let resolveDone = () => {};
 
@@ -265,6 +267,7 @@ async function runLivePage(): Promise<void> {
     closed = true;
     timers.forEach(clearInterval);
     if (escapeTimer) clearTimeout(escapeTimer);
+    if (resizeTimer) clearTimeout(resizeTimer);
     process.stdin.off('data',onData);
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.stdin.pause();
@@ -301,7 +304,7 @@ async function runLivePage(): Promise<void> {
             settingsPage.message = 'Saved';
             settingsPage.original = {...settings};
             process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
-            void resizeTreePane(settings.treeWidth).catch(err=>{if(settingsPage) settingsPage.message=String(err);render();});
+            void widthKeeper?.apply().catch(err=>{if(settingsPage) settingsPage.message=String(err);render();});
           } catch (err) { settingsPage.message = `Save failed: ${String(err)}`; }
         }
         render(); continue;
@@ -343,10 +346,16 @@ async function runLivePage(): Promise<void> {
     process.once('SIGTERM',()=>finish());
     process.once('SIGHUP',()=>finish());
     process.stdin.once('end',()=>finish());
-    process.stdout.on('resize',()=>{lastPaint='';render();void refreshInspection();});
+    process.stdout.on('resize',()=>{
+      lastPaint='';render();void refreshInspection();
+      // A client attaching at another size shares the change with this pane;
+      // wait for the burst of resizes to settle, then take back the policy width.
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(()=>{void widthKeeper?.follow().catch(()=>{});},150);
+    });
     if (process.stdin.isTTY) process.stdin.setRawMode(true);
     process.stdout.write(settings.mouse ? ENTER : '\x1b[?1049h\x1b[?25l\x1b[?2004h');
-    void resizeTreePane(settings.treeWidth).catch(()=>{});
+    void widthKeeper?.apply().catch(()=>{});
     process.stdin.resume();
     process.stdin.on('data',onData);
     render();
