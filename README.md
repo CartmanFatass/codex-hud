@@ -248,7 +248,7 @@ Parent links support both metadata locations. Missing status evidence stays unkn
 
 Agents are named by the last segment of their task path, the name Codex's `/subagents` picker shows: `/root/essays_2020_2021` reads `essays_2020_2021`. The random nickname Codex also assigns (Copernicus, Meitner…) and the role move to the Inspector. Guardian review threads read `guardian`.
 
-Finished agents leave the list 3 minutes after they finish. Running and failed agents never leave, and a finished agent whose child is still shown stays as a dimmed row. Each finished row says how long ago it finished; the summary row counts what was put away (`+12 older`), and clicking it or pressing `a` shows everything again.
+Finished agents leave the list 3 minutes after they finish (Settings → Hide finished: 1m, 3m, 10m, 30m or never). Running and failed agents never leave, and a finished agent whose child is still shown stays as a dimmed row. Each finished row says how long ago it finished; the summary row counts what was put away (`+12 older`), and clicking it or pressing `a` shows everything again.
 
 Inspector starts with name, model/effort, status, turn age and last activity. Press `v` for full timestamps and UUIDs. Session-switch notices stay in the footer. Clicking Agents summary or blank rows does not navigate; only actual agent rows switch sessions.
 
@@ -258,9 +258,9 @@ Select a file and press Enter for staged/unstaged patches or bounded untracked-f
 Long preview lines wrap; additions are green, deletions red and hunk markers cyan, retaining +/- markers without color. Git reads disable external diffs,
 content filters and partial-clone lazy fetching. The panel provides no staging, commit or checkout actions.
 
-Settings offers four panel widths: narrow (16), default (the original 20–30 column policy), wide (45), and wider (70). Width changes apply immediately and preserve space for the main conversation. `CODEX_HUD_TREE_WIDTH` remains an initial override when no saved settings exist.
+Settings offers four panel widths: narrow (16), auto (the original 20–30 column policy), wide (45), and wider (70). Width changes apply immediately and preserve space for the main conversation. `CODEX_HUD_TREE_WIDTH` remains an initial override when no saved settings exist.
 
-Settings controls density, theme, model labels, context mode, the bottom bar, motion, sorting, mouse input, panes, refresh interval and width. Unsaved fields show `*`; the bar switch is marked Next launch. Save persists to `$CODEX_HOME/hud-settings.json` (or `CODEX_HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Back discards unsaved edits; Reset or `r` prepares defaults for Save. Narrow views retain complete Back/Save buttons and use short labels.
+Settings is grouped into Status bar (density, theme, model label, motion, context, bar on launch), Agents (order, hide finished) and Panel (the four panes, width, mouse, refresh). Values sit in a right-hand column; the selected one reads `‹ value ›`, and ←/→, Enter or a click change it (a click on `‹` steps back). The line under the list says what the selected setting does. Unsaved fields show `*` and the Save button lights up; Bar on launch applies from the next launch. Save persists to `$CODEX_HOME/hud-settings.json` (or `CODEX_HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Back discards unsaved edits; Reset or `r` prepares defaults for Save. Narrow views retain complete Back/Save buttons and use short labels.
 
 ### Output throughput
 
@@ -328,7 +328,7 @@ that is no longer running would read as live.
 | `CODEX_HUD_DENSITY` | `balanced` | How much the bar shows (`focus` / `balanced` / `full`) |
 | `CODEX_HUD_THEME` | `terminal` | Palette (`terminal` / `mocha` / `latte` / `none`) |
 | `CODEX_HUD_GLYPHS` | `both` | Model badge style (`glyph` / `text` / `both`) |
-| `CODEX_HUD_STATUSLINE` | `1` | Bottom bar enabled by default; `0` disables for new HUD sessions, overriding Settings → Bar next launch |
+| `CODEX_HUD_STATUSLINE` | `1` | Bottom bar enabled by default; `0` disables for new HUD sessions, overriding Settings → Bar on launch |
 | `CODEX_HUD_CONTEXT` | `used` | Context percentage: `used` or `remaining`; also available in Settings |
 | `CODEX_HUD_POSITION` | `bottom` | HUD pane position (`top` / `bottom`) |
 | `CODEX_HUD_HEIGHT` | `1` | HUD height in lines |
@@ -346,9 +346,9 @@ CODEX_HUD_CONTEXT=remaining codex
 CODEX_HUD_GLYPHS=glyph CODEX_HUD_THEME=mocha codex
 ```
 
-Saved display preferences override environment defaults; change Context percent, Theme and Model labels in Settings when preferences already exist. Wheel events go to mouse-aware applications or fall back to tmux history scrolling. HUD bindings use a separate key table, and right-clicking the side panel no longer pastes clipboard text or moves keyboard focus.
+Saved display preferences override environment defaults; change Context, Theme and Model label in Settings when preferences already exist. Wheel events go to mouse-aware applications or fall back to tmux history scrolling. HUD bindings use a separate key table, and right-clicking the side panel no longer pastes clipboard text or moves keyboard focus.
 
-Settings → **Bar next launch** saves the bottom bar preference for the next new HUD session. An explicit `CODEX_HUD_STATUSLINE` takes precedence over that saved value.
+Settings → **Bar on launch** saves the bottom bar preference for the next new HUD session. An explicit `CODEX_HUD_STATUSLINE` takes precedence over that saved value.
 
 <details>
 <summary>All environment variables</summary>

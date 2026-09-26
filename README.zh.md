@@ -201,7 +201,7 @@ CODEX_HUD_DENSITY=focus codex
 
 代理以任务路径的最后一段命名，与 Codex `/subagents` 选择器显示的名字一致：`/root/essays_2020_2021` 显示为 `essays_2020_2021`。Codex 随机分配的昵称（Copernicus、Meitner 等）和角色移到 Inspector 中。Guardian 审查线程显示为 `guardian`。
 
-已完成的代理在完成 3 分钟后从列表中收起。运行中和失败的代理不会被收起；子代理仍在显示的已完成父代理保留为淡化行。每个已完成的行都显示完成了多久；摘要行统计被收起的数量（`+12 older`），点击摘要行或按 `a` 即可全部显示。
+已完成的代理在完成 3 分钟后从列表中收起（Settings → Hide finished：1m、3m、10m、30m 或 never）。运行中和失败的代理不会被收起；子代理仍在显示的已完成父代理保留为淡化行。每个已完成的行都显示完成了多久；摘要行统计被收起的数量（`+12 older`），点击摘要行或按 `a` 即可全部显示。
 
 Inspector 默认显示名字、模型/effort、状态、本轮经过时间和最近活动。按 `v` 展开完整时间与会话 ID。会话切换提示显示在底部；点击 Agents 摘要或空白行不会切换会话，只有具体条目会触发切换。
 
@@ -209,9 +209,9 @@ Changes 属于选中的 worktree，不推断某个文件由哪个 agent 修改�
 选中文件后按 Enter 打开暂存和未暂存 diff，自动放大 Inspector；Esc 还原。新增行绿色、删除行红色、hunk 标记青色，保留 `+` / `-` 符号；长行会折行，未跟踪文件提供有大小限制的内容预览。
 这些操作只读取 Git 数据；禁用外部 diff、内容过滤器和部分克隆的自动下载，不提供暂存、提交或切换分支操作。
 
-Settings 提供四档宽度：窄（16 列）、默认（沿用原来的 20–30 列策略）、宽（45 列）、更宽（70 列）。保存后立即调整，并为主对话区保留空间。没有保存过设置时，仍支持 `CODEX_HUD_TREE_WIDTH` 指定初始宽度。
+Settings 提供四档宽度：窄（16 列）、auto（沿用原来的 20–30 列策略）、宽（45 列）、更宽（70 列）。保存后立即调整，并为主对话区保留空间。没有保存过设置时，仍支持 `CODEX_HUD_TREE_WIDTH` 指定初始宽度。
 
-独立设置页可调整密度、主题、模型标签、上下文口径、底栏开关、动画、排序、鼠标、各区域、刷新间隔和宽度。未保存字段带 `*`；底栏开关标注 Next launch。Save 写入 `$CODEX_HOME/hud-settings.json`（可用 `CODEX_HUD_SETTINGS_PATH` 改路径），紧凑 HUD 下次刷新时同步显示偏好。已保存设置优先于环境默认值，`NO_COLOR` 始终优先。Back 放弃未保存修改；Reset 或 `r` 恢复默认草稿，需 Save 才应用。窄屏保留完整 Back/Save 按钮，使用短标签。
+独立设置页分为 Status bar（密度、主题、模型标签、动画、上下文口径、启动时的底栏）、Agents（排序、收起已完成代理）和 Panel（四个区域、宽度、鼠标、刷新间隔）三组。取值在右侧对齐；选中项显示为 `‹ 取值 ›`，←/→、Enter 或点击即可修改（点击 `‹` 向回切换）。列表下方一行说明选中设置的作用。未保存字段带 `*`，Save 按钮随之高亮；Bar on launch 在下次启动时生效。Save 写入 `$CODEX_HOME/hud-settings.json`（可用 `CODEX_HUD_SETTINGS_PATH` 改路径），紧凑 HUD 下次刷新时同步显示偏好。已保存设置优先于环境默认值，`NO_COLOR` 始终优先。Back 放弃未保存修改；Reset 或 `r` 恢复默认草稿，需 Save 才应用。窄屏保留完整 Back/Save 按钮，使用短标签。
 
 ### 输出速度
 
@@ -273,7 +273,7 @@ codex-hud --json | jq '.context.percent, .agents.active, .attention[].label'
 | `CODEX_HUD_DENSITY` | `balanced` | 状态栏显示密度（`focus` / `balanced` / `full`） |
 | `CODEX_HUD_THEME` | `terminal` | 配色（`terminal` / `mocha` / `latte` / `none`） |
 | `CODEX_HUD_GLYPHS` | `both` | 模型标记样式（`glyph` / `text` / `both`） |
-| `CODEX_HUD_STATUSLINE` | `1` | 默认开启底部状态栏，设为 `0` 关闭；覆盖 Settings 的 Bar next launch，下次新建会话生效 |
+| `CODEX_HUD_STATUSLINE` | `1` | 默认开启底部状态栏，设为 `0` 关闭；覆盖 Settings 的 Bar on launch，下次新建会话生效 |
 | `CODEX_HUD_CONTEXT` | `used` | 上下文百分比：`used` 已用 / `remaining` 剩余；也可在 Settings 保存 |
 | `CODEX_HUD_POSITION` | `bottom` | HUD 面板位置（`top` / `bottom`） |
 | `CODEX_HUD_HEIGHT` | `1` | HUD 高度（行数） |
@@ -291,9 +291,9 @@ CODEX_HUD_CONTEXT=remaining codex         # 与原生状态栏同方向显示剩
 CODEX_HUD_GLYPHS=glyph CODEX_HUD_THEME=mocha codex
 ```
 
-已有保存的显示设置优先于环境默认值，可在侧栏 Settings 的 Context percent、Theme、Model labels 中修改。主区域滚轮在应用接收鼠标时转发给应用，否则保留 tmux 历史滚动；HUD 使用独立按键表，侧栏右键不再粘贴或夺走键盘焦点。
+已有保存的显示设置优先于环境默认值，可在侧栏 Settings 的 Context、Theme、Model label 中修改。主区域滚轮在应用接收鼠标时转发给应用，否则保留 tmux 历史滚动；HUD 使用独立按键表，侧栏右键不再粘贴或夺走键盘焦点。
 
-底部状态栏也可在 Settings 的 **Bar next launch** 中保存开关，下一次新建 HUD 会话生效；显式 `CODEX_HUD_STATUSLINE` 优先于保存值。
+底部状态栏也可在 Settings 的 **Bar on launch** 中保存开关，下一次新建 HUD 会话生效；显式 `CODEX_HUD_STATUSLINE` 优先于保存值。
 
 <details>
 <summary>全部环境变量</summary>

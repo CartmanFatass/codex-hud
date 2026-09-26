@@ -91,7 +91,7 @@ try:
  send(b'4')
  wait_for('Inspector')
  send(b',')
- wait_for('HUD density')
+ wait_for('Status bar')
  send(b'l')
  wait_for('full')
  send(b's')
