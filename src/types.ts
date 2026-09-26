@@ -40,6 +40,11 @@ export interface McpServerConfig {
 
 export interface GitStatus {
   branch: string | null;
+  /**
+   * The repository's folder name, when the bar describes a repository inside
+   * the project folder rather than the folder itself.
+   */
+  repo?: string;
   isDirty: boolean;
   isGitRepo: boolean;
   // Extended git sync status
@@ -192,6 +197,8 @@ export interface EventMsgPayload {
     // The answer to an exec approval shows up as the command actually running.
     | 'exec_command_begin'
     | 'exec_command_end'
+    // Before 0.157 an edit was recorded as a patch event naming its files.
+    | 'patch_apply_begin'
     | 'other';
   explanation?: string;
   plan?: PlanStep[];

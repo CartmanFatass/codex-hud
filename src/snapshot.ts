@@ -43,7 +43,8 @@ export interface HudSnapshot {
   version: typeof SNAPSHOT_VERSION;
   updatedAt: string;
   session?: { id: string; model?: string; effort?: string; cwd?: string };
-  project: { name: string; branch?: string; dirty: boolean; ahead: number; behind: number };
+  /** `repo` names a repository inside the project folder, when that is what `branch` describes. */
+  project: { name: string; repo?: string; branch?: string; dirty: boolean; ahead: number; behind: number };
   activity?: { state: string; turnStartedAt?: string; tool?: { name: string; target?: string } };
   context?: { percent: number; used: number; total: number; compactions: number };
   quota: Array<{ label?: string; percent: number; resetsAt?: string }>;
@@ -97,6 +98,7 @@ export function buildSnapshot(
     updatedAt: new Date(nowMs).toISOString(),
     project: {
       name: data.project.projectName,
+      ...(data.git.isGitRepo && data.git.branch && data.git.repo ? { repo: data.git.repo } : {}),
       ...(data.git.isGitRepo && data.git.branch ? { branch: data.git.branch } : {}),
       dirty: data.git.isDirty,
       ahead: data.git.ahead,

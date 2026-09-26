@@ -61,7 +61,11 @@ export function renderProjectLine(data: HudData, options: ProjectLineOptions = {
   
   // Project name (yellow like claude-hud)
   const projectName = data.project.projectName;
-  const projectLabel = theme.projectName(projectName);
+  // A repository inside the project folder is named after it: "shenlun › Learn-to-Write".
+  const repo = data.git.isGitRepo && data.git.branch ? data.git.repo : undefined;
+  const projectLabel = repo
+    ? `${theme.projectName(projectName)} ${colors.dim('›')} ${theme.projectName(repo)}`
+    : theme.projectName(projectName);
   const parts: string[] = [projectLabel];
   let gitDisplay = '';
   let fileStats = '';
@@ -118,7 +122,7 @@ export function renderProjectLine(data: HudData, options: ProjectLineOptions = {
     if (availableForProject <= 0) {
       return gitDisplay;
     }
-    const truncatedName = truncate(projectName, availableForProject);
+    const truncatedName = truncate(repo ?? projectName, availableForProject);
     return [theme.projectName(truncatedName), gitDisplay].join(' ');
   }
 

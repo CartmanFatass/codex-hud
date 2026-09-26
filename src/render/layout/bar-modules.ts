@@ -202,13 +202,16 @@ function projectModule(data: HudData): BarModule {
   }
 
   const branchFull = `${branch}${dirty ? ` ${dirty}` : ''}${sync ? ` ${sync}` : ''}`;
+  // A repository inside the project folder is named after it: "shenlun › Learn-to-Write".
+  const repo = data.git.repo;
+  const where = repo ? `${theme.projectName(name)} ${colors.dim('›')} ${theme.projectName(repo)}` : theme.projectName(name);
   return {
     id: 'project',
     priority: MODULE_PRIORITY.project,
     group: 'who',
     variants: {
-      full: `${theme.projectName(name)} ${theme.gitPrefix('git:(')}${theme.gitBranch(branchFull)}${theme.gitPrefix(')')}`,
-      short: `${theme.projectName(truncate(name, 16))} ${theme.gitBranch(`${branch}${dirty}`)}`,
+      full: `${where} ${theme.gitPrefix('git:(')}${theme.gitBranch(branchFull)}${theme.gitPrefix(')')}`,
+      short: `${theme.projectName(truncate(repo ?? name, 16))} ${theme.gitBranch(`${branch}${dirty}`)}`,
       min: theme.gitBranch(truncate(`${branch}${dirty}`, 12)),
     },
   };

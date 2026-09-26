@@ -6,8 +6,10 @@
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import { readCodexConfig } from './collectors/codex-config.js';
 import * as fs from 'fs';
+import * as path from 'path';
 import { spawn } from 'child_process';
 import { collectGitStatus } from './collectors/git.js';
+import { GitTargetCache } from './collectors/git-root.js';
 import { collectProjectInfo } from './collectors/project.js';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
@@ -134,7 +136,7 @@ async function parseRolloutIfChanged(rolloutPath: string): Promise<RolloutParseR
 //     3s and always renders the last snapshot, so a slow `git status` (WSL
 //     /mnt/c) can never delay a repaint
 let cachedConfig: CodexConfig | null = null;
-let cachedGit: GitStatus = {
+const NO_GIT: GitStatus = {
   branch: null,
   isDirty: false,
   isGitRepo: false,
@@ -145,10 +147,12 @@ let cachedGit: GitStatus = {
   deleted: 0,
   untracked: 0,
 };
+let cachedGit: GitStatus = NO_GIT;
 let cachedProject: ProjectInfo | null = null;
 const SYNC_REFRESH_MS = 3000;
 let lastSyncAt = 0;
 let gitRefreshInFlight = false;
+const gitTargets = new GitTargetCache();
 
 /**
  * Start a git refresh if one is due and none is running. Never awaited by the
@@ -161,7 +165,15 @@ function refreshGitStatus(): void {
     return;
   }
   gitRefreshInFlight = true;
-  collectGitStatus(HUD_CWD)
+  Promise.resolve()
+    .then(async () => {
+      // Not always the launch folder: a session started above its repository
+      // is described by the repository it works in (see collectors/git-root.ts).
+      const target = gitTargets.resolve([cachedHudData?.session?.cwd, HUD_CWD], rolloutParser.getCached()?.workDirs);
+      if (!target) return { ...NO_GIT };
+      const collected = await collectGitStatus(target.dir);
+      return target.subRepo && collected.isGitRepo ? { ...collected, repo: path.basename(target.subRepo) } : collected;
+    })
     .then((status) => {
       cachedGit = status;
       if (cachedHudData) {

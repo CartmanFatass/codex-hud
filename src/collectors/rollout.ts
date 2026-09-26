@@ -7,6 +7,8 @@ import { sessionParentId } from '../utils/session-parent.js';
  */
 
 import * as fs from 'fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type {
   RolloutLine,
   ResponseItemPayload,
@@ -237,6 +239,12 @@ export interface RolloutParseResult {
   lastToolActivityTime: Date | null;
   lastAssistantMessageTime: Date | null;
   lastEventTime: Date | null;
+  /**
+   * Where the work happened: the directories commands ran in and edited files
+   * sit in, distinct, oldest first and newest last. A session started above
+   * its repository names that repository here and nowhere else.
+   */
+  workDirs: string[];
 }
 
 export interface RolloutParseOutput {
@@ -305,6 +313,42 @@ function toolResult(output: unknown): { success?: boolean; exitCode?: number; ou
   };
   visit(output, 0);
   return { success, exitCode, output: text || undefined };
+}
+
+const WORK_DIR_LIMIT = 12;
+
+/** An absolute directory from a command's cwd, which Codex 0.157 records as a file:// URI. */
+function localDir(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value) return undefined;
+  try {
+    const dir = value.startsWith('file://') ? fileURLToPath(value) : value;
+    return path.isAbsolute(dir) ? path.normalize(dir) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Move `dir` to the newest end of the list, keeping the list short. */
+function noteWorkDir(dirs: string[], dir: string | undefined): void {
+  if (!dir) return;
+  const at = dirs.indexOf(dir);
+  if (at >= 0) dirs.splice(at, 1);
+  dirs.push(dir);
+  if (dirs.length > WORK_DIR_LIMIT) dirs.shift();
+}
+
+/** The folders of the files an edit touched, keyed by absolute path. */
+function noteChangedFiles(dirs: string[], changes: unknown): void {
+  if (!changes || typeof changes !== 'object') return;
+  for (const file of Object.keys(changes)) {
+    if (path.isAbsolute(file)) noteWorkDir(dirs, path.dirname(path.normalize(file)));
+  }
+}
+
+export function mergeWorkDirs(older: readonly string[], newer: readonly string[]): string[] {
+  const merged = [...older];
+  for (const dir of newer) noteWorkDir(merged, dir);
+  return merged;
 }
 
 /**
@@ -376,6 +420,7 @@ export async function parseRolloutFile(
   let lastToolActivityTime: Date | null = null;
   let lastAssistantMessageTime: Date | null = null;
   let lastEventTime: Date | null = null;
+  const workDirs: string[] = [];
   let activity: SessionActivity | undefined;
   let tokenUsageAt: Date | undefined;
   // Carried in like `session` and `runningCalls`: the event that answers a
@@ -556,6 +601,18 @@ export async function parseRolloutFile(
             activity = { ...activity, state: payload.type === 'turn_aborted' ? 'interrupted' : 'error', updatedAt: timestamp };
           }
 
+          // Codex 0.157 reports commands and edits as completed items; older
+          // versions as exec and patch events.
+          if (payload.type === 'item_completed') {
+            const item = payload.item as { type?: string; cwd?: unknown; changes?: unknown } | undefined;
+            if (item?.type === 'CommandExecution') noteWorkDir(workDirs, localDir(item.cwd));
+            else if (item?.type === 'FileChange') noteChangedFiles(workDirs, item.changes);
+          } else if (payload.type === 'exec_command_begin') {
+            noteWorkDir(workDirs, localDir(payload.cwd));
+          } else if (payload.type === 'patch_apply_begin') {
+            noteChangedFiles(workDirs, payload.changes);
+          }
+
           // A turn that ended is no longer waiting on anyone, however it
           // ended. A command that started is the answer to its own request.
           if (payload.type === 'task_complete' || payload.type === 'turn_complete' ||
@@ -661,7 +718,7 @@ export async function parseRolloutFile(
     return {
       result: { session, activity, tokenUsageAt, toolActivity, planProgress, tokenUsage, outputRate: rateTracker.snapshot,
         rateLimits, pendingApproval, subagents: [...subagents.values()], compactCount, lastCompactTime,
-        lastToolActivityTime, lastAssistantMessageTime, lastEventTime },
+        lastToolActivityTime, lastAssistantMessageTime, lastEventTime, workDirs },
       newOffset: committedOffset, runningCalls, wasTruncated, fileIdentity,
     };
   } finally {
@@ -793,6 +850,7 @@ export class RolloutParser {
       result.lastEventTime ??= this.cachedResult.lastEventTime;
       result.lastToolActivityTime ??= this.cachedResult.lastToolActivityTime;
       result.lastAssistantMessageTime ??= this.cachedResult.lastAssistantMessageTime;
+      result.workDirs = mergeWorkDirs(this.cachedResult.workDirs, result.workDirs);
     }
 
     this.cachedResult = result;
