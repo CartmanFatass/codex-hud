@@ -138,6 +138,45 @@ export function agentDisplayName(identity: AgentIdentity): string | undefined {
   return agentPathLeaf(identity.agentPath) || identity.nickname || identity.role || identity.kind;
 }
 
+/**
+ * The row label Codex's `/subagents` picker prints for a thread, as built by
+ * `agent_picker_selection_view_params` and `format_agent_picker_item_name`
+ * in codex-rs/tui (0.157): the path for a path-backed agent, otherwise the
+ * nickname and role, and `Main [default]` for the session itself.
+ */
+export function agentPickerLabel(identity: AgentIdentity, isPrimary: boolean): string {
+  if (isPrimary) return 'Main [default]';
+  if (identity.agentPath) return identity.agentPath;
+  if (identity.nickname && identity.role) return `${identity.nickname} [${identity.role}]`;
+  if (identity.nickname) return identity.nickname;
+  if (identity.role) return `[${identity.role}]`;
+  return 'Agent';
+}
+
+/**
+ * The name a narrow Codex pane prints for this thread in /subagents, where
+ * ids no longer fit, or undefined when that name would not pick it out: a
+ * thread with nothing but the generic "Agent", or one sharing its name with
+ * another thread of the session. The session's own thread is always Main.
+ */
+export function uniquePickerLabel(tree: SubagentTree, id: string): string | undefined {
+  if (id === tree.rootId) return agentPickerLabel({}, true);
+  const labels = new Map<string, number>();
+  let target: SubagentTreeNode | undefined;
+  const walk = (nodes: SubagentTreeNode[]): void => {
+    for (const node of nodes) {
+      const label = agentPickerLabel(node, false);
+      labels.set(label, (labels.get(label) ?? 0) + 1);
+      if (node.id === id) target = node;
+      walk(node.children);
+    }
+  };
+  walk(tree.nodes);
+  if (!target || !(target.agentPath || target.nickname || target.role)) return undefined;
+  const label = agentPickerLabel(target, false);
+  return labels.get(label) === 1 ? label : undefined;
+}
+
 function spawnFromSource(source: unknown): { model?: string; effort?: string } | undefined {
   if (!source || typeof source !== 'object') {
     return undefined;

@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
-import { buildSubagentTree } from './collectors/subagent-tree.js';
+import { buildSubagentTree, uniquePickerLabel } from './collectors/subagent-tree.js';
 import { collectGitChanges, readGitDiff, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
@@ -280,7 +280,8 @@ async function runLivePage(): Promise<void> {
     navigating = true;
     navigationMessage = 'Switching Codex session…'; render();
     try {
-      const result = await navigateSession(process.env.CODEX_HUD_MAIN_PANE,id);
+      // The name is the fallback for a Codex pane too narrow to print ids.
+      const result = await navigateSession(process.env.CODEX_HUD_MAIN_PANE,{id,label:uniquePickerLabel(tree,id)});
       navigationMessage = result.ok ? null : result.message;
     } catch (err) { navigationMessage = `Switch failed: ${String(err)}`; }
     finally { navigating = false; render(); }

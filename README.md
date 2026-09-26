@@ -240,7 +240,9 @@ Selection follows agent IDs and file paths across refreshes, and every pane reta
 | `Esc` | Dismiss help, unzoom, return to list; close from Agents |
 | `q`, `Ctrl+C` | Close the workbench |
 
-Session switching uses the Codex 0.154 `/subagents` picker and verifies the exact UUID; it never submits guessed `/agent <id>` commands. It requires an empty composer or the recognized picker. Drafts, copy mode, unsupported views and clipped IDs produce a visible message instead of forced input. Keyboard selection alone previews the agent; `o` switches. Visible targets are reached in one movement batch and their UUID is rechecked before Enter. The picker is not reopened afterward, avoiding a second popup and transcript redraw. A delivered request does not independently confirm the final Codex view.
+Session switching drives Codex's own `/subagents` picker (verified against Codex 0.154 and 0.157) and selects the row showing the agent's exact UUID; it never submits guessed `/agent <id>` commands. It requires an empty composer (including the read-only composer of a sub-agent view) or the recognized picker. Drafts, copy mode and unsupported views produce a visible message instead of forced input. Keyboard selection alone previews the agent; `o` switches. Visible targets are reached in one movement batch, long lists a page at a time, and the row is rechecked before Enter. The picker is not reopened afterward, avoiding a second popup and transcript redraw. A delivered request does not independently confirm the final Codex view.
+
+Below about 63 columns Codex stops printing UUIDs in the picker. The agent is then matched by the name the picker prints (its task path, or `Main [default]`), and only when no other agent of the session prints the same name; otherwise the switch is refused with a request to widen the Codex pane. While agents are running, Codex adds a "Sub-agents running" note to the conversation each time the picker opens; that note is Codex's own.
 
 Active sorting only rearranges siblings. A running descendant brings its entire branch forward;
 latest turn starts determine order, while ordinary token and log updates do not reshuffle the tree.

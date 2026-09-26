@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { buildSubagentTree, resetSubagentLinkCache, summarizeSubagents } from '../../src/collectors/subagent-tree.js';
+import { agentPickerLabel, buildSubagentTree, resetSubagentLinkCache, summarizeSubagents, uniquePickerLabel } from '../../src/collectors/subagent-tree.js';
 import { initialPanelState, visibleRows } from '../../src/render/panel-state.js';
 import { renderPanelPlain } from '../../src/render/subagent-tree-view.js';
 import { icons } from '../../src/render/colors.js';
-import type { SubagentInfo, SubagentTreeNode } from '../../src/types.js';
+import type { SubagentInfo, SubagentTree, SubagentTreeNode } from '../../src/types.js';
 
 test('tree follows child lifecycle events, including completion and follow-up turns', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-agent-status-'));
@@ -159,4 +159,30 @@ test('agents are named by their task path, not the random nickname, and never by
     else process.env.CODEX_SESSIONS_PATH = previous;
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('the picker label is what Codex prints in /subagents', () => {
+  assert.equal(agentPickerLabel({ agentPath: '/root/audit_state_paths', nickname: 'Meitner' }, false), '/root/audit_state_paths');
+  assert.equal(agentPickerLabel({ nickname: 'Robie', role: 'explorer' }, false), 'Robie [explorer]');
+  assert.equal(agentPickerLabel({ nickname: 'Robie' }, false), 'Robie');
+  assert.equal(agentPickerLabel({ role: 'explorer' }, false), '[explorer]');
+  assert.equal(agentPickerLabel({}, false), 'Agent');
+  assert.equal(agentPickerLabel({ agentPath: '/root/x' }, true), 'Main [default]');
+});
+
+test('a picker name is offered for switching only when it picks out one thread', () => {
+  const node = (id: string, identity: Partial<SubagentTreeNode>, children: SubagentTreeNode[] = []): SubagentTreeNode =>
+    ({ id, name: id, status: 'running', children, ...identity }) as SubagentTreeNode;
+  const tree: SubagentTree = { rootId: 'root', totalCount: 5, updatedAt: new Date(), nodes: [
+    node('a', { agentPath: '/root/audit', nickname: 'Meitner' }, [node('a1', { agentPath: '/root/audit/fixtures' })]),
+    node('b', { nickname: 'Robie', role: 'explorer' }),
+    node('c', { nickname: 'Robie', role: 'explorer' }),
+    node('g', { kind: 'guardian' }),
+  ] };
+  assert.equal(uniquePickerLabel(tree, 'root'), 'Main [default]');
+  assert.equal(uniquePickerLabel(tree, 'a'), '/root/audit');
+  assert.equal(uniquePickerLabel(tree, 'a1'), '/root/audit/fixtures');
+  assert.equal(uniquePickerLabel(tree, 'b'), undefined, 'two threads print "Robie [explorer]"');
+  assert.equal(uniquePickerLabel(tree, 'g'), undefined, 'a guardian prints only the generic "Agent"');
+  assert.equal(uniquePickerLabel(tree, 'missing'), undefined);
 });
