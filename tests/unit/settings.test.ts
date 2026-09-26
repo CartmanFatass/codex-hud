@@ -25,7 +25,7 @@ test('missing settings keep display defaults and hide optional tasks and activit
     assert.deepEqual(loadSettings(), {
       density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
       statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
-      details: true, refreshMs: 1000, treeWidth: 0,
+      details: true, refreshMs: 1000, treeWidth: 0, finishedLingerMs: 180_000,
       agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
       worktreeRoot: '',
     });
@@ -53,19 +53,19 @@ test('load validates known settings without importing unknown or invalid values'
     fs.writeFileSync(file, JSON.stringify({
       density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
       statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
-      details: false, refreshMs: 250, treeWidth: 40, unknown: 'ignored',
+      details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0, unknown: 'ignored',
     }));
     assert.deepEqual(loadSettings(), {
       density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
       statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
-      details: false, refreshMs: 250, treeWidth: 40,
+      details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0,
       agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
       worktreeRoot: '',
     });
     fs.writeFileSync(file, JSON.stringify({
       density: 'huge', theme: {}, glyphs: null, motion: 'none', sort: 'recent',
       mouse: 'false', tasks: 1, changes: null, activity: [], details: {},
-      refreshMs: 99, treeWidth: 15, unknown: true,
+      refreshMs: 99, treeWidth: 15, finishedLingerMs: 5, unknown: true,
     }));
     assert.deepEqual(loadSettings(), defaultSettings());
   });

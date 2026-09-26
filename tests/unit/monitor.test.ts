@@ -334,3 +334,29 @@ test('an agent shows its own context fill where the row can carry it, and nothin
     assert.doesNotMatch(inspect([unmeasured]),/Ctx/,'no report, no line');
   } finally {setDisplayConfig(previous);}
 });
+
+test('the agents summary counts what the linger window hid, and a click or a brings it back',()=>{
+  const finished:SubagentTree={...tree,nodes:[{...nodes[0],statusAt:new Date(now-600_000)},{...nodes[1],status:'running'}]};
+  let state=initialMonitorState();state.tree.lingerMs=180_000;
+  let frame=renderMonitor({tree:finished,worktrees,state,width:30,height:28,nowMs:now});
+  let pane=frame.panes[0];
+  assert.deepEqual(pane.rows.filter(r=>r.item).map(r=>r.item),[nodes[1].id]);
+  assert.match(stripAnsi(pane.rows[0].text),/\+1 older/);
+  const ctx={tree:finished,worktrees,frame,nowMs:now};
+  const shown=handleMonitorInput(frame.state,mouse(3,pane.y+1),ctx);
+  assert.equal(shown.action,undefined,'the summary is a toggle, not a session switch');
+  assert.equal(shown.state.tree.showAll,true);
+  frame=renderMonitor({tree:finished,worktrees,state:shown.state,width:30,height:28,nowMs:now});
+  pane=frame.panes[0];
+  assert.equal(pane.rows.filter(r=>r.item).length,2);
+  assert.match(stripAnsi(pane.rows[0].text),/hide old/);
+  assert.equal(handleMonitorInput(frame.state,key('show-all'),{...ctx,frame}).state.tree.showAll,false);
+  // A finished row says how long ago, which is how a reader knows it will leave.
+  assert.match(stripAnsi(pane.rows.find(r=>r.item===nodes[0].id)!.text),/10m/);
+  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('a')),[key('show-all')]);
+  // Counts that are zero stay out of the summary.
+  const allDone:SubagentTree={...tree,nodes:[{...nodes[0],status:'completed',statusAt:new Date(now-1000)}]};
+  const summary=stripAnsi(renderMonitor({tree:allDone,worktrees,state:initialMonitorState(),width:30,height:28,nowMs:now}).panes[0].rows[0].text);
+  assert.match(summary,/✓1 done/);
+  assert.doesNotMatch(summary,/run|failed|unknown/);
+});

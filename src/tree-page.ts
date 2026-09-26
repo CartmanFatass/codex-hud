@@ -57,6 +57,7 @@ async function runLivePage(): Promise<void> {
   const configuredState = () => {
     const next = initialMonitorState();
     next.tree.sort = settings.sort;
+    next.tree.lingerMs = settings.finishedLingerMs;
     next.modes = monitorModes(settings);
     return next;
   };
@@ -295,7 +296,7 @@ async function runLivePage(): Promise<void> {
             settings = saveSettings(settingsPage.draft);
             settingsError = ''; error = null;
             applyDisplaySettings(settings);
-            state = {...state,tree:{...state.tree,sort:settings.sort},modes:monitorModes(settings)};
+            state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings)};
             git=null;diff=undefined;diffKey='';void refreshGit();
             settingsPage.message = 'Saved';
             settingsPage.original = {...settings};

@@ -23,6 +23,14 @@ export interface PanelState {
   collapsed: ReadonlySet<string>;
   filter: PanelFilter;
   scroll: number;
+  /**
+   * How long a finished agent stays in the unfiltered view, in ms; 0 or
+   * absent keeps every agent. A session that spawned thirty agents an hour
+   * ago should not bury the two that are running now.
+   */
+  lingerMs?: number;
+  /** Bring back the agents the linger window put away. */
+  showAll?: boolean;
 }
 
 export interface PanelRow {
@@ -54,8 +62,48 @@ function matchesFilter(node: SubagentTreeNode, filter: PanelFilter): boolean {
   }
 }
 
-function subtreeMatches(node: SubagentTreeNode, filter: PanelFilter): boolean {
-  return matchesFilter(node, filter) || node.children.some((child) => subtreeMatches(child, filter));
+/**
+ * A finished agent the linger window has put away.
+ *
+ * Only the unfiltered view expires anything: choosing "failed" or "unknown"
+ * is asking to see every one of them. Running agents never expire, and
+ * neither do failures, which are the one kind of finished that needs a
+ * person. An agent with no status expires once its rollout stops moving, and
+ * one that finished at no recorded time counts as long finished.
+ */
+export function isExpired(node: SubagentTreeNode, state: PanelState, nowMs: number): boolean {
+  if (!state.lingerMs || state.lingerMs <= 0 || state.showAll || state.filter !== 'all') {
+    return false;
+  }
+  if (node.status !== 'completed' && node.status !== 'unknown') {
+    return false;
+  }
+  const settled = node.status === 'completed'
+    ? node.statusAt ?? node.lastEventAt
+    : node.lastEventAt ?? node.statusAt;
+  const at = settled?.getTime();
+  return at === undefined || !Number.isFinite(at) || nowMs - at > state.lingerMs;
+}
+
+function ownMatch(node: SubagentTreeNode, state: PanelState, nowMs: number): boolean {
+  return matchesFilter(node, state.filter) && !isExpired(node, state, nowMs);
+}
+
+function subtreeMatches(node: SubagentTreeNode, state: PanelState, nowMs: number): boolean {
+  return ownMatch(node, state, nowMs) || node.children.some((child) => subtreeMatches(child, state, nowMs));
+}
+
+/** Agents the linger window keeps out of the view entirely, context rows aside. */
+export function countExpired(nodes: SubagentTreeNode[], state: PanelState, nowMs: number = Date.now()): number {
+  let hidden = 0;
+  const walk = (items: SubagentTreeNode[]): void => {
+    for (const node of items) {
+      if (!subtreeMatches(node, state, nowMs) && matchesFilter(node, state.filter)) hidden += 1;
+      walk(node.children);
+    }
+  };
+  walk(nodes);
+  return hidden;
 }
 
 /** Sort only siblings. Live descendants bring their whole branch forward. */
@@ -86,18 +134,21 @@ function orderedSiblings(nodes: SubagentTreeNode[], mode: PanelState['sort']): S
 
 /**
  * Flatten the tree into the rows the panel can actually show, honouring the
- * filter and any collapsed branches. An ancestor of a match is kept as
- * context so the reader can still see who spawned what.
+ * filter, the linger window and any collapsed branches. An ancestor of a
+ * match is kept as context so the reader can still see who spawned what.
+ *
+ * `nowMs` is a parameter because the linger window depends on it, and the
+ * renderer and the click handler must agree on which rows exist.
  */
-export function visibleRows(nodes: SubagentTreeNode[], state: PanelState): PanelRow[] {
+export function visibleRows(nodes: SubagentTreeNode[], state: PanelState, nowMs: number = Date.now()): PanelRow[] {
   const rows: PanelRow[] = [];
 
   const walk = (items: SubagentTreeNode[], depth: number, prefix: string, parentId: string | null): void => {
-    const shown = orderedSiblings(items.filter((node) => subtreeMatches(node, state.filter)), state.sort);
+    const shown = orderedSiblings(items.filter((node) => subtreeMatches(node, state, nowMs)), state.sort);
     shown.forEach((node, index) => {
       const isLast = index === shown.length - 1;
       const branch = depth === 0 ? '' : isLast ? '└─ ' : '├─ ';
-      const hasChildren = node.children.some((child) => subtreeMatches(child, state.filter));
+      const hasChildren = node.children.some((child) => subtreeMatches(child, state, nowMs));
       const collapsed = state.collapsed.has(node.id);
       rows.push({
         node,
@@ -105,7 +156,7 @@ export function visibleRows(nodes: SubagentTreeNode[], state: PanelState): Panel
         prefix: prefix + branch,
         hasChildren,
         collapsed,
-        context: !matchesFilter(node, state.filter),
+        context: !ownMatch(node, state, nowMs),
         parentId,
       });
       if (hasChildren && !collapsed) {

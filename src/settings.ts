@@ -14,6 +14,11 @@ export interface HudSettings extends HudDisplayConfig {
   details: boolean;
   refreshMs: number;
   treeWidth: number;
+  /**
+   * How long a finished agent stays in the tree's default view, in ms. 0
+   * keeps every agent; the panel can still reveal hidden ones on demand.
+   */
+  finishedLingerMs: number;
   // Monitor visibility is independent of legacy boolean panel preferences.
   agentsPane: 'open' | 'folded' | 'closed';
   worktreesPane: 'open' | 'folded' | 'closed';
@@ -27,7 +32,7 @@ export function defaultSettings(): HudSettings {
   return {
     density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
     statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
-    details: true, refreshMs: 1000, treeWidth: 0,
+    details: true, refreshMs: 1000, treeWidth: 0, finishedLingerMs: 180_000,
     agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
     worktreeRoot: '',
   };
@@ -52,6 +57,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   activity: isBoolean, details: isBoolean,
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
+  finishedLingerMs: (value) => value === 0 || isIntegerBetween(value, 10_000, 86_400_000),
   agentsPane: oneOf('open', 'folded', 'closed'),
   worktreesPane: oneOf('open', 'folded', 'closed'),
   changesPane: oneOf('open', 'folded', 'closed'),

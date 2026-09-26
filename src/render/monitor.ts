@@ -4,7 +4,7 @@ import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot, WorktreeInfo } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-import { initialPanelState, reconcileSelection, visibleRows, applyKey, type PanelState } from './panel-state.js';
+import { initialPanelState, reconcileSelection, visibleRows, applyKey, countExpired, type PanelState } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { renderModelEffortToken, modelLegend } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
@@ -27,7 +27,8 @@ export interface MonitorState {
   helpScroll?: number;
   expanded?: boolean;
 }
-export interface MonitorRow { text: string; item?: string }
+/** `item` is what a click selects; `action` is a row that is a control instead. */
+export interface MonitorRow { text: string; item?: string; action?: 'toggle-finished' }
 export interface MonitorRect {
   id: MonitorPane;
   x: number; y: number; width: number; height: number;
@@ -54,6 +55,8 @@ export interface MonitorData {
 }
 export interface MonitorContext {
   tree: SubagentTree;
+  /** The clock the frame was drawn with, so a click resolves against the rows it saw. */
+  nowMs?: number;
   git?: GitChanges | null;
   worktrees?: WorktreesSnapshot | null;
   frame?: MonitorFrame;
@@ -77,8 +80,8 @@ export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return {agentsPane:state.modes.agents, worktreesPane:state.modes.worktrees,
     changesPane:state.modes.changes, detailsPane:state.modes.details};
 }
-export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null): MonitorState {
-  const rows = visibleRows(tree.nodes, state.tree);
+export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null, nowMs: number = Date.now()): MonitorState {
+  const rows = visibleRows(tree.nodes, state.tree, nowMs);
   const selected = reconcileSelection(state.tree, tree.nodes, rows);
   const entries = worktrees?.entries ?? [];
   const selectedWorktree = entries.some(w => w.path === state.selectedWorktree) ? state.selectedWorktree
@@ -157,36 +160,65 @@ function findNode(nodes: SubagentTreeNode[], id: string | null): SubagentTreeNod
   return undefined;
 }
 
-function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
-  if (id === 'agents') {
-    const all = visibleRows(input.tree.nodes,{...state.tree,filter:'all',collapsed:new Set()});
-    const totals = {run:0,done:0,error:0,unknown:0};
-    for (const {node} of all) totals[node.status === 'running' || node.status === 'starting' ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
-    const summary = width < 16
-      ? [totals.error ? `!${totals.error}` : '', `${totals.run}▸`, `${totals.done}✓`, totals.unknown ? `?${totals.unknown}` : ''].filter(Boolean).join(' ')
-      : [totals.error ? `!${totals.error}` : '', `${totals.run} run`, `${totals.done} done`, totals.unknown ? `?${totals.unknown}` : ''].filter(Boolean).join('  ');
-    const result: MonitorRow[] = [{text:colors.dim(truncateAnsi(summary,width))}];
-    for (const row of visibleRows(input.tree.nodes,state.tree)) {
-      const status = nodeStatus(row.node,now);
-      const branch = visualLength(row.prefix) > Math.floor(width/4) ? '… ' : row.prefix;
-      const prefix = `${row.node.id === state.tree.selectedId ? '›' : ' '}${colors.dim(branch)}${row.collapsed && row.hasChildren ? '+' : ''}${status.paint(status.icon)} `;
-      // Same celestial badges as the compact HUD. Narrow panes keep glyphs only.
-      const token = width < 10 ? '' : renderModelEffortToken(row.node.model ? monitorText(row.node.model) : undefined, row.node.effort ? monitorText(row.node.effort) : undefined, {
-        mode: width < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs,
-      });
-      const badge = token ? truncateAnsi(token, Math.max(2, Math.floor(width/4))) : '';
-      const elapsed = width >= 24 && row.node.status === 'running' ? colors.dim(status.label) : '';
-      // The agent's own context fill, where the row is wide enough to carry it
-      // without pushing the badge off: 26 content columns is a 30-column pane,
-      // the widest the default split makes, minus its borders. Absent data
-      // shows nothing rather than 0%.
-      const ctx = width >= 26 && row.node.contextUsage ? colors.dim(`${row.node.contextUsage.percent}%`) : '';
-      const right = [badge,elapsed,ctx].filter(Boolean).join(' ');
-      result.push({text:pair(prefix+monitorText(row.node.name),right,width),item:row.node.id});
-    }
-    if (result.length === 1) result.push({text:colors.dim(all.length ? 'No matching agents' : 'No subagents')});
-    return result;
+/** When a finished agent finished: its completion event, else its last sign of life. */
+function finishedAt(node: SubagentTreeNode): Date | undefined {
+  return node.statusAt ?? node.lastEventAt;
+}
+
+function agentRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
+  const everyone = visibleRows(input.tree.nodes,{...state.tree,filter:'all',collapsed:new Set(),showAll:true},now);
+  const totals = {run:0,done:0,error:0,unknown:0};
+  for (const {node} of everyone) totals[node.status === 'running' || node.status === 'starting' ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
+  // What the linger window puts away, counted whether or not it is showing.
+  const expired = countExpired(input.tree.nodes,{...state.tree,showAll:false},now);
+  const words = width >= 22;
+  const count = (icon: string, paint: (s: string) => string, n: number, word: string) =>
+    `${paint(icon)}${n}${words ? colors.dim(` ${word}`) : ''}`;
+  // Only what is there: "▸0 run" beside thirty finished agents is noise.
+  const summary = [
+    totals.error ? count('!',theme.error,totals.error,'failed') : '',
+    totals.run ? count('▸',theme.info,totals.run,'run') : '',
+    totals.done ? count('✓',theme.success,totals.done,'done') : '',
+    totals.unknown ? count('?',colors.dim,totals.unknown,'unknown') : '',
+  ].filter(Boolean).join(words ? '  ' : ' ');
+  // The summary doubles as the switch for what the linger window hid.
+  const toggle = !expired ? '' : state.tree.showAll ? colors.dim(words ? 'hide old' : '−old')
+    : theme.accent(words ? `+${expired} older` : `+${expired}`);
+  const result: MonitorRow[] = [{text:pair(summary,toggle,width),...(expired ? {action:'toggle-finished' as const} : {})}];
+  for (const row of visibleRows(input.tree.nodes,state.tree,now)) {
+    const node = row.node;
+    const status = nodeStatus(node,now);
+    const branch = visualLength(row.prefix) > Math.floor(width/4) ? '… ' : row.prefix;
+    const prefix = `${node.id === state.tree.selectedId ? '›' : ' '}${colors.dim(branch)}${row.collapsed && row.hasChildren ? '+' : ''}${status.paint(status.icon)} `;
+    // A finished parent kept only to show whose child a live agent is recedes.
+    const name = row.context ? colors.dim(monitorText(node.name)) : monitorText(node.name);
+    // Same celestial badges as the compact HUD. Narrow panes keep glyphs only.
+    const token = width < 10 ? '' : renderModelEffortToken(node.model ? monitorText(node.model) : undefined, node.effort ? monitorText(node.effort) : undefined, {
+      mode: width < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs,
+    });
+    const badge = token ? truncateAnsi(token, Math.max(2, Math.floor(width/4))) : '';
+    // How long the turn has been running, or how long ago the agent finished:
+    // the second is how a reader knows a row is about to leave.
+    const when = width < 24 ? '' : node.status === 'running' ? status.label
+      : node.status === 'completed' && !row.context ? `${age(finishedAt(node),now)}${width >= 40 ? ' ago' : ''}` : '';
+    // The agent's own context fill, where the row is wide enough to carry it
+    // without pushing the badge off: 26 content columns is a 30-column pane,
+    // the widest the default split makes, minus its borders. Absent data
+    // shows nothing rather than 0%.
+    const ctx = width >= 26 && node.contextUsage ? colors.dim(`${node.contextUsage.percent}%`) : '';
+    const right = [badge,when ? colors.dim(when) : '',ctx].filter(Boolean).join(' ');
+    result.push({text:pair(prefix+name,right,width),item:node.id});
   }
+  if (result.length === 1) {
+    const empty = !everyone.length ? 'No subagents yet'
+      : expired && !state.tree.showAll && state.tree.filter === 'all' ? 'All finished · a shows' : 'No matching agents';
+    result.push({text:colors.dim(truncateAnsi(empty,width))});
+  }
+  return result;
+}
+
+function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
+  if (id === 'agents') return agentRows(input,state,width,now);
   if (id === 'worktrees') {
     const snapshot = input.worktrees;
     if (!snapshot) return [{text:colors.dim('Reading worktrees…')}];
@@ -234,12 +266,20 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       // Sanitize external text before painting. Never pass our own ANSI spans
       // back through monitorText (which correctly escapes untrusted controls).
       const rows: MonitorRow[] = wrapped(node.name,width).map(text=>({text:theme.strong(text)}));
+      // The full task path locates a nested agent; a one-segment path says
+      // nothing the name did not.
+      if (node.agentPath && node.agentPath.split('/').filter(Boolean).length > 2)
+        rows.push(...wrapped(node.agentPath,width).map(text=>({text:colors.dim(text)})));
       if (token) rows.push({text:truncateAnsi(token,width)});
-      rows.push({text:truncateAnsi(`${status.paint(status.icon)} ${node.status}`,width)});
+      const finished = node.status === 'completed' ? colors.dim(` · ${age(finishedAt(node),now)} ago`) : '';
+      rows.push({text:truncateAnsi(`${status.paint(status.icon)} ${node.status}${finished}`,width)});
       const ctx = node.contextUsage;
       if (ctx) rows.push({text:truncateAnsi(
         `${colors.dim('Ctx')} ${ctx.percent}% (${formatTokenCount(ctx.used)}/${formatTokenCount(ctx.total)})`,width)});
       lines = [`Turn age: ${age(node.turnStartedAt,now)}`,`Last activity: ${age(node.lastEventAt,now)}`];
+      // Codex's transcript still calls the agent by its nickname.
+      if (node.nickname && node.nickname !== node.name) lines.push(`Nickname: ${node.nickname}`);
+      if (node.role) lines.push(`Role: ${node.role}`);
       if (state.expanded) lines.push(`Turn start: ${node.turnStartedAt && Number.isFinite(node.turnStartedAt.getTime()) ? node.turnStartedAt.toISOString() : 'unknown'}`,`UUID: ${node.id}`);
       rows.push(...lines.flatMap(line=>wrapped(line,width).map(text=>({text}))));
       rows.push({text:colors.dim(truncateAnsi(state.expanded?'v Less':'v More',width))});
@@ -273,11 +313,11 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
 const TITLES: Record<MonitorPane,string> = {agents:'1 Agents',worktrees:'2 Worktrees',changes:'3 Changes',details:'4 Inspector'};
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const width = Math.max(0,Math.floor(input.width)); const height = Math.max(0,Math.floor(input.height));
-  const state = reconcileMonitor(input.state,input.tree,input.git,input.worktrees);
+  const state = reconcileMonitor(input.state,input.tree,input.git,input.worktrees,input.nowMs ?? Date.now());
   const frame: MonitorFrame = {lines:[],panes:[],controls:[],state};
   if (!width || !height) return frame;
   if (state.help) {
-    const help = ['1 Agents  2 Worktrees','3 Changes  4 Inspector','x close pane  - fold','1–4 reopen closed pane','Tab next visible pane','j/k select  o switch','Click agent: switch','m return Main','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','✓ = turn completed','? = no status evidence','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read',...stripAnsi(modelLegend()).split('\n')].flatMap(line=>helpLines(line,width));
+    const help = ['1 Agents  2 Worktrees','3 Changes  4 Inspector','x close pane  - fold','1–4 reopen closed pane','Tab next visible pane','j/k select  o switch','Click agent: switch','m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','✓ = turn completed','? = no status evidence','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read',...stripAnsi(modelLegend()).split('\n')].flatMap(line=>helpLines(line,width));
     const count = Math.max(0,height-2);
     state.helpScroll = Math.max(0,Math.min(state.helpScroll??0,Math.max(0,help.length-count)));
     frame.helpPage = {count,total:help.length};
@@ -379,12 +419,14 @@ function openPane(state: MonitorState, id: MonitorPane): MonitorState {
   const preview = id==='agents'?'agent':id==='worktrees'?'worktree':id==='changes'?'file':state.preview;
   return {...state,focus:id,preview,modes:{...state.modes,[id]:'open'},scroll:{...state.scroll,details:preview===state.preview?state.scroll.details:0}};
 }
-export function monitorItemAt(pane: MonitorRect, x: number, y: number): string | undefined {
+/** The row under a point inside a pane's frame, or nothing on its borders. */
+export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   if (x < pane.x || x >= pane.x + pane.width || y <= pane.y || y >= pane.y + pane.height - 1) return undefined;
   const line = pane.offset + y - pane.y - 1;
-  const direct = line >= 0 ? pane.rows[line]?.item : undefined;
-  if (direct) return direct;
-  return undefined;
+  return line >= 0 ? pane.rows[line] : undefined;
+}
+export function monitorItemAt(pane: MonitorRect, x: number, y: number): string | undefined {
+  return monitorRowAt(pane,x,y)?.item || undefined;
 }
 export function canMonitorDiff(frame?: MonitorFrame): boolean {
   return Boolean(frame?.panes.some(p=>p.id==='details'&&p.height>2&&p.width>=16));
@@ -419,10 +461,12 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       if(input.button==='left') {
         if(input.y===pane.y) key='pane-fold';
         else {
-          const id=monitorItemAt(pane,input.x,input.y);
+          const row=monitorRowAt(pane,input.x,input.y);
+          if(row?.action==='toggle-finished'){next.tree.showAll=!next.tree.showAll;return result();}
+          const id=row?.item;
           if(!id)return result();
           if(pane.id==='agents') {
-            if(!visibleRows(ctx.tree.nodes,next.tree).some(row=>row.node.id===id))return result();
+            if(!visibleRows(ctx.tree.nodes,next.tree,ctx.nowMs).some(row=>row.node.id===id))return result();
             next.tree.selectedId=id;next.preview='agent';next.scroll.details=0;
             return result({type:'switch',id});
           }
@@ -436,7 +480,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   if(key==='settings')return result({type:'settings'});
   if(key==='main')return result({type:'switch',id:ctx.tree.rootId});
   if(key==='open-session')return next.focus==='agents'&&next.tree.selectedId?result({type:'switch',id:next.tree.selectedId}):result();
-  if(key==='help'){next.help=true;next.helpScroll=0;}
+  if(key==='show-all')next.tree.showAll=!next.tree.showAll;
+  else if(key==='help'){next.help=true;next.helpScroll=0;}
   else if(key==='pane-close') {
     next.modes[next.focus]='closed';next.zoom=false;
     next.focus=MONITOR_PANES.find(id=>next.modes[id]!=='closed')??'agents';
@@ -466,7 +511,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     const delta=key==='down'?1:key==='up'?-1:key==='page-down'?itemPage:key==='page-up'?-itemPage:0;
     const move=delta!==0||key==='home'||key==='end';
     if(next.focus==='agents') {
-      const rows=visibleRows(ctx.tree.nodes,next.tree);
+      const rows=visibleRows(ctx.tree.nodes,next.tree,ctx.nowMs);
       if(move){const index=rows.findIndex(row=>row.node.id===next.tree.selectedId);const target=key==='home'?0:key==='end'?rows.length-1:Math.max(0,index)+delta;
         const row=rows[Math.max(0,Math.min(rows.length-1,target))];if(row)next.tree.selectedId=row.node.id;
       } else if(key==='sort')next.tree.sort=next.tree.sort==='active'?'created':'active';

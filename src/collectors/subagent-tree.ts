@@ -37,7 +37,7 @@ export function resetSubagentLinkCache(): void {
   linkCache.clear();
 }
 
-interface SessionLink {
+interface SessionLink extends AgentIdentity {
   lastReport?: AgentReport;
   task?: string;
   id: string;
@@ -81,12 +81,61 @@ function readFirstLine(filePath: string): string | null {
   }
 }
 
-function nicknameFromSource(source: unknown): string | undefined {
-  if (!source || typeof source !== 'object') {
-    return undefined;
-  }
-  const subagent = (source as { subagent?: { thread_spawn?: { agent_nickname?: string } } }).subagent;
-  return subagent?.thread_spawn?.agent_nickname;
+/**
+ * What Codex itself calls a thread.
+ *
+ * A spawned agent carries two names. `agent_path` (`/root/audit_code_paths`)
+ * is the task name the parent chose; it is what Codex's own `/subagents`
+ * picker prints, and it says what the agent is for. `agent_nickname`
+ * (`Meitner`) is drawn at random from a list of scientists, so it tells the
+ * reader nothing and repeats across sessions. The path wins; the nickname is
+ * kept for the inspector, because Codex's transcript still uses it.
+ */
+export interface AgentIdentity {
+  /** Canonical task path, `/root/<task>` for a first-level agent. */
+  agentPath?: string;
+  /** Randomly assigned nickname. */
+  nickname?: string;
+  /** Configured role, such as `explorer`, when the spawn named one. */
+  role?: string;
+  /**
+   * An internal thread with no task or nickname. Codex 0.155+ opens a
+   * `guardian` review thread beside every session (`source.subagent.other`,
+   * `thread_source: "guardian_review"`). Its id shares the time-ordered prefix
+   * of the thread it reviews, so an id-prefix name made it look like a second
+   * copy of that thread.
+   */
+  kind?: string;
+}
+
+function nonEmpty(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function identityFromMeta(payload: Record<string, unknown>): AgentIdentity {
+  const source = payload.source;
+  const subagent = source && typeof source === 'object'
+    ? (source as { subagent?: { other?: unknown; thread_spawn?: Record<string, unknown> } }).subagent
+    : undefined;
+  const spawn = subagent?.thread_spawn;
+  const threadSource = nonEmpty(payload.thread_source);
+  return {
+    agentPath: nonEmpty(payload.agent_path) ?? nonEmpty(spawn?.agent_path),
+    nickname: nonEmpty(payload.agent_nickname) ?? nonEmpty(spawn?.agent_nickname),
+    role: nonEmpty(payload.agent_role) ?? nonEmpty(spawn?.agent_role),
+    kind: nonEmpty(subagent?.other)
+      ?? (threadSource?.endsWith('_review') ? threadSource.slice(0, -'_review'.length) || undefined : undefined),
+  };
+}
+
+/** `/root/audit/code_paths` → `code_paths`: the tree already shows the rest. */
+export function agentPathLeaf(agentPath: string | undefined): string | undefined {
+  return agentPath?.split(/[\\/]+/).filter(Boolean).at(-1);
+}
+
+/** Task name first, then nickname, role, and what kind of thread it is. */
+export function agentDisplayName(identity: AgentIdentity): string | undefined {
+  return agentPathLeaf(identity.agentPath) || identity.nickname || identity.role || identity.kind;
 }
 
 function spawnFromSource(source: unknown): { model?: string; effort?: string } | undefined {
@@ -139,8 +188,10 @@ function applyRolloutLine(line: string, into: RolloutFields): void {
         const task = taskText(entry.payload.message);
         if (task) into.task = task;
       }
+      // An aborted turn (user interrupt) is over: the agent is idle, not
+      // still running, and not failed.
       const status = type === 'task_started' || type === 'turn_started' ? 'running'
-        : type === 'task_complete' || type === 'turn_complete' ? 'completed'
+        : type === 'task_complete' || type === 'turn_complete' || type === 'turn_aborted' ? 'completed'
           : undefined;
       const time = entry.timestamp ? new Date(entry.timestamp) : undefined;
       if (status && time && Number.isFinite(time.getTime())) {
@@ -238,7 +289,6 @@ function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null
         id?: string;
         session_id?: string;
         parent_thread_id?: string;
-        agent_nickname?: string;
         model?: string;
         effort?: string;
         timestamp?: string;
@@ -252,19 +302,17 @@ function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null
     if (!id) {
       return null;
     }
-    const name =
-      entry.payload.agent_nickname ||
-      nicknameFromSource(entry.payload.source) ||
-      id.slice(0, 8);
+    const identity = identityFromMeta(entry.payload as Record<string, unknown>);
     const spawn = spawnFromSource(entry.payload.source);
     const payloadModel = typeof entry.payload.model === 'string' ? entry.payload.model : undefined;
     const payloadEffort = typeof (entry.payload as { effort?: unknown }).effort === 'string'
       ? (entry.payload as { effort?: string }).effort
       : undefined;
     return {
+      ...identity,
       id,
       parentId: sessionParentId(entry.payload) ?? null,
-      name,
+      name: agentDisplayName(identity) ?? id.slice(0, 8),
       path: filePath,
       model: spawn?.model ?? payloadModel,
       effort: spawn?.effort ?? payloadEffort,
@@ -570,7 +618,13 @@ export function buildSubagentTree(
     const childIds = (children.get(id) ?? []).filter((childId) => !visiting.has(childId));
     const node: SubagentTreeNode = {
       id,
-      name: knownAgent?.name || link?.name || id.slice(0, 8),
+      // The task path and nickname from the agent's own rollout outrank the
+      // parent-side record, which only ever knew the nickname.
+      name: agentPathLeaf(link?.agentPath) || link?.nickname || knownAgent?.name || link?.name || id.slice(0, 8),
+      agentPath: link?.agentPath,
+      nickname: link?.nickname,
+      role: link?.role,
+      kind: link?.kind,
       status: resolveStatus(knownAgent, link),
       startedAt: knownAgent?.startedAt ?? link?.startedAt,
       turnStartedAt: link?.turnStartedAt,

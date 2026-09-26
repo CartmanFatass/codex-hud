@@ -7,7 +7,7 @@ import { buildSubagentTree, resetSubagentLinkCache, summarizeSubagents } from '.
 import { initialPanelState, visibleRows } from '../../src/render/panel-state.js';
 import { renderPanelPlain } from '../../src/render/subagent-tree-view.js';
 import { icons } from '../../src/render/colors.js';
-import type { SubagentInfo } from '../../src/types.js';
+import type { SubagentInfo, SubagentTreeNode } from '../../src/types.js';
 
 test('tree follows child lifecycle events, including completion and follow-up turns', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-agent-status-'));
@@ -21,10 +21,11 @@ test('tree follows child lifecycle events, including completion and follow-up tu
     timestamp: new Date(now.getTime() + seconds * 1000).toISOString(),
     type: 'event_msg', payload: { type, turn_id: 'turn-1' },
   }) + '\n';
-  const writeAgent = (id: string, parentId = 'root') => {
+  const writeAgent = (id: string, parentId = 'root', meta: Record<string, unknown> = {}) => {
     const file = path.join(day, `rollout-${now.toISOString().slice(0, 10)}T00-00-00-${Buffer.from(id).toString('hex')}.jsonl`);
     fs.writeFileSync(file, JSON.stringify({ type: 'session_meta', payload: {
       id, source: { subagent: { thread_spawn: { parent_thread_id: parentId } } }, agent_nickname: id, timestamp: now.toISOString(),
+      ...meta,
     } }) + '\n');
     return file;
   };
@@ -83,6 +84,75 @@ test('tree follows child lifecycle events, including completion and follow-up tu
     fs.writeFileSync(child, fs.readFileSync(child, 'utf8').split('\n')[0] + '\n');
     tree = build();
     assert.equal(worker().status, 'unknown', 'file truncation discards cached lifecycle state');
+
+    fs.appendFileSync(child, event('task_started', 8) + event('turn_aborted', 9));
+    tree = build();
+    assert.equal(worker().status, 'completed', 'an interrupted turn is over, not still running');
+    assert.equal(summarizeSubagents(tree.nodes).active, 0);
+  } finally {
+    resetSubagentLinkCache();
+    if (previous === undefined) delete process.env.CODEX_SESSIONS_PATH;
+    else process.env.CODEX_SESSIONS_PATH = previous;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('agents are named by their task path, not the random nickname, and never by id prefix', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-agent-names-'));
+  const previous = process.env.CODEX_SESSIONS_PATH;
+  const now = new Date();
+  const day = path.join(dir, String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0'));
+  fs.mkdirSync(day, { recursive: true });
+  process.env.CODEX_SESSIONS_PATH = dir;
+  resetSubagentLinkCache();
+  const write = (id: string, payload: Record<string, unknown>) => {
+    fs.writeFileSync(path.join(day, `rollout-${now.toISOString().slice(0, 10)}T00-00-00-${id}.jsonl`),
+      JSON.stringify({ type: 'session_meta', payload: { id, timestamp: now.toISOString(), ...payload } }) + '\n');
+  };
+  const root = '01a0c887-99ed-7bd1-83a1-af27abe6c4e4';
+  try {
+    // Codex 0.155 guardian review thread: same UUID prefix as the session it
+    // reviews, no nickname, parent link only in the payload.
+    write('01a0c887-9a7a-7cc1-b767-f1e0856f50f6', {
+      session_id: root, parent_thread_id: root,
+      source: { subagent: { other: 'guardian' } }, thread_source: 'guardian_review',
+    });
+    // A spawned agent whose nickname is missing still carries its task path.
+    write('01a0c79c-f033-7703-9b16-5833eb6d2ef5', {
+      source: { subagent: { thread_spawn: { parent_thread_id: root, depth: 1, agent_path: '/root/audit_code_paths', agent_nickname: null } } },
+    });
+    // The task path wins over the random nickname, which stays as a detail.
+    // Codex 0.157 also repeats both at the top level of the payload.
+    write('01a0c79d-1c88-7c30-8e7e-af8987f06081', {
+      agent_path: '/root/audit_state_paths', agent_nickname: 'Meitner',
+      source: { subagent: { thread_spawn: { parent_thread_id: root, depth: 1, agent_path: '/root/audit_state_paths', agent_nickname: 'Meitner', agent_role: null } } },
+    });
+    // A nested agent keeps only the last segment; the tree shows the rest.
+    write('01a0c7a0-0000-7000-8000-000000000001', {
+      source: { subagent: { thread_spawn: { parent_thread_id: '01a0c79d-1c88-7c30-8e7e-af8987f06081', depth: 2, agent_path: '/root/audit_state_paths/fixtures', agent_nickname: 'Noether' } } },
+    });
+    // No task path: the nickname and role are what is left.
+    write('01a0c7a1-0000-7000-8000-000000000002', {
+      source: { subagent: { thread_spawn: { parent_thread_id: root, depth: 1, agent_nickname: 'Robie', agent_role: 'explorer' } } },
+    });
+    // Nothing to go on: the id prefix remains the last resort.
+    write('01a0c7ff-0000-7000-8000-000000000000', {
+      source: { subagent: { thread_spawn: { parent_thread_id: root, depth: 1 } } },
+    });
+    const tree = buildSubagentTree(root);
+    const all = new Map<string, SubagentTreeNode>();
+    const walk = (nodes: SubagentTreeNode[]) => nodes.forEach(node => { all.set(node.id.slice(0, 13), node); walk(node.children); });
+    walk(tree.nodes);
+    assert.equal(all.get('01a0c887-9a7a')?.name, 'guardian');
+    assert.equal(all.get('01a0c887-9a7a')?.kind, 'guardian');
+    assert.equal(all.get('01a0c79c-f033')?.name, 'audit_code_paths');
+    assert.equal(all.get('01a0c79d-1c88')?.name, 'audit_state_paths');
+    assert.equal(all.get('01a0c79d-1c88')?.nickname, 'Meitner');
+    assert.equal(all.get('01a0c79d-1c88')?.agentPath, '/root/audit_state_paths');
+    assert.equal(all.get('01a0c7a0-0000')?.name, 'fixtures');
+    assert.equal(all.get('01a0c7a1-0000')?.name, 'Robie');
+    assert.equal(all.get('01a0c7a1-0000')?.role, 'explorer');
+    assert.equal(all.get('01a0c7ff-0000')?.name, '01a0c7ff');
   } finally {
     resetSubagentLinkCache();
     if (previous === undefined) delete process.env.CODEX_SESSIONS_PATH;

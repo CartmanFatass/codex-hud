@@ -405,7 +405,15 @@ export interface SubagentTreeNode {
   /** Latest observed turn start, distinct from agent creation and traffic. */
   turnStartedAt?: Date;
   id: string;
+  /** Display name: the task path's last segment, else nickname, role or kind. */
   name: string;
+  /** Codex task path, `/root/<task>`; also the agent's `/subagents` picker label. */
+  agentPath?: string;
+  /** Randomly assigned nickname (`Meitner`), shown only as a detail. */
+  nickname?: string;
+  role?: string;
+  /** Internal thread kind with no task or nickname, such as `guardian`. */
+  kind?: string;
   status: SubagentStatus;
   startedAt?: Date;
   model?: string;

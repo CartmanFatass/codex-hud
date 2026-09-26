@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 
 import {
   applyKey,
+  countExpired,
   initialPanelState,
   reconcileSelection,
   visibleRows,
@@ -225,4 +226,29 @@ test('the panel fits its column at every width it is given', () => {
       }
     }
   }
+});
+
+test('finished agents leave the unfiltered view once the linger window passes', () => {
+  const minute = 60_000;
+  const tree = treeOf([
+    node('run', 'live', 'running'),
+    { ...node('fresh', 'fresh', 'completed'), statusAt: new Date(NOW - 1 * minute) },
+    { ...node('old', 'old', 'completed'), statusAt: new Date(NOW - 10 * minute) },
+    { ...node('failed', 'failed', 'error'), statusAt: new Date(NOW - 60 * minute) },
+    { ...node('quiet', 'quiet', 'unknown'), lastEventAt: new Date(NOW - 10 * minute) },
+    {
+      ...node('parent', 'parent', 'completed', { children: [node('child', 'child', 'running', { depth: 2 })] }),
+      statusAt: new Date(NOW - 30 * minute),
+    },
+  ]);
+  const state = stateWith({ lingerMs: 3 * minute });
+  const ids = (s: PanelState) => visibleRows(tree.nodes, s, NOW).map((row) => row.node.id);
+  assert.deepEqual(ids(state), ['run', 'fresh', 'failed', 'parent', 'child']);
+  const parent = visibleRows(tree.nodes, state, NOW).find((row) => row.node.id === 'parent')!;
+  assert.equal(parent.context, true, 'a long-finished parent stays only to show whose child is running');
+  assert.equal(countExpired(tree.nodes, state, NOW), 2);
+  assert.equal(ids({ ...state, showAll: true }).length, 7);
+  assert.equal(ids({ ...state, lingerMs: 0 }).length, 7, 'zero keeps every agent');
+  assert.deepEqual(ids({ ...state, filter: 'unknown' }), ['quiet'], 'an explicit filter shows every match');
+  assert.deepEqual(ids(state).slice(0, 2), ids({ ...state, lingerMs: 3 * minute }).slice(0, 2));
 });

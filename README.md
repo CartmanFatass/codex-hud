@@ -229,6 +229,7 @@ Selection follows agent IDs and file paths across refreshes, and every pane reta
 | `,` or **Settings** | Open settings; arrows/click change values, `s` or Save applies them |
 | `h` / `l`, left/right | Fold/unfold or navigate parent/child agents |
 | `s` | Active-first / creation order |
+| `a` or click the summary row | Show or hide the finished agents the tree has put away |
 | `f` or `/` | Filter all, running, failed, unknown |
 | `Enter` / `v` | Open Inspector; inside Inspector, expand/collapse timestamps, IDs and full paths |
 | Click an agent / `o` | Switch the actual Codex conversation to that agent |
@@ -244,6 +245,10 @@ Session switching uses the Codex 0.154 `/subagents` picker and verifies the exac
 Active sorting only rearranges siblings. A running descendant brings its entire branch forward;
 latest turn starts determine order, while ordinary token and log updates do not reshuffle the tree.
 Parent links support both metadata locations. Missing status evidence stays unknown.
+
+Agents are named by the last segment of their task path, the name Codex's `/subagents` picker shows: `/root/essays_2020_2021` reads `essays_2020_2021`. The random nickname Codex also assigns (Copernicus, Meitner…) and the role move to the Inspector. Guardian review threads read `guardian`.
+
+Finished agents leave the list 3 minutes after they finish. Running and failed agents never leave, and a finished agent whose child is still shown stays as a dimmed row. Each finished row says how long ago it finished; the summary row counts what was put away (`+12 older`), and clicking it or pressing `a` shows everything again.
 
 Inspector starts with name, model/effort, status, turn age and last activity. Press `v` for full timestamps and UUIDs. Session-switch notices stay in the footer. Clicking Agents summary or blank rows does not navigate; only actual agent rows switch sessions.
 
