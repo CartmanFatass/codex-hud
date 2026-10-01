@@ -62,7 +62,7 @@ function writeRollout(home, { sessionId, cwd, fileOffsetMinutes = 0, modifiedAt,
   return filePath;
 }
 
-function writeSnapshot(home, threadId, paneId, nonce) {
+function writeSnapshot(home, threadId, paneId, nonce, tmux) {
   const dir = path.join(home, 'shell_snapshots');
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `${threadId}.${nonce}.sh`);
@@ -70,6 +70,7 @@ function writeSnapshot(home, threadId, paneId, nonce) {
     filePath,
     [
       '# Snapshot file',
+      ...(tmux ? [`export TMUX=${tmux}`] : []),
       `export TMUX_PANE='${paneId}'`,
       "export PATH='/usr/bin'",
       '',
@@ -82,6 +83,7 @@ function writeSnapshot(home, threadId, paneId, nonce) {
 const originalCodexHome = process.env.CODEX_HOME;
 const originalMainPane = process.env.CODEX_HUD_MAIN_PANE;
 const originalSessionsPath = process.env.CODEX_SESSIONS_PATH;
+const originalTmux = process.env.TMUX;
 
 try {
   {
@@ -221,6 +223,73 @@ try {
     assert.ok(recent, 'expected a root rollout');
     assert.equal(recent.path, rootRollout, 'fallback must ignore newer subagent rollouts');
   }
+
+  {
+    // Codex 0.159's app-server daemon writes every session's snapshot from its
+    // own environment: the pane that started it, under a tmux server that may
+    // since have restarted and handed that pane id to someone else.
+    const home = makeTempCodexHome();
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-hud-cwd-'));
+    process.env.CODEX_HOME = home;
+    delete process.env.CODEX_SESSIONS_PATH;
+    process.env.CODEX_HUD_MAIN_PANE = '%0';
+    process.env.TMUX = '/tmp/tmux-1000/default,3441458,0';
+
+    const ownThread = '01a0ede6-2db1-7b12-822e-e84172f5f720';
+    const otherThread = '01a0ef3b-1e9c-70f1-b758-53dd30d67bbb';
+    const ownRollout = writeRollout(home, { sessionId: ownThread, cwd, modifiedAt: new Date() });
+    const otherCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-hud-cwd-'));
+    writeRollout(home, { sessionId: otherThread, cwd: otherCwd, modifiedAt: new Date() });
+    writeSnapshot(home, otherThread, '%0', BigInt(Date.now()) * 1_000_000n, '/tmp/tmux-1000/default,3033953,0');
+
+    const finder = new SessionFinder(cwd, undefined, new Date());
+    const resolved = finder.check();
+    assert.ok(resolved, 'expected the cwd fallback to resolve');
+    assert.equal(resolved.path, ownRollout, 'a snapshot from an earlier tmux server must not bind this pane');
+
+    writeSnapshot(home, otherThread, '%0', BigInt(Date.now() + 1) * 1_000_000n, '/tmp/tmux-1000/default,3441458,0');
+    assert.equal(
+      new SessionFinder(cwd, undefined, new Date()).check()?.sessionId,
+      otherThread,
+      'a snapshot from this tmux server still binds the pane'
+    );
+  }
+
+  {
+    // A HUD left running past the next midnight but one: its rollout is under
+    // a day directory the shallow scan no longer covers.
+    const home = makeTempCodexHome();
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-hud-cwd-'));
+    process.env.CODEX_HOME = home;
+    delete process.env.CODEX_SESSIONS_PATH;
+    process.env.CODEX_HUD_MAIN_PANE = '%9';
+
+    const sessionId = '01a0ef3b-1e9c-70f1-b758-53dd30d67bbc';
+    const written = writeRollout(home, { sessionId, cwd, fileOffsetMinutes: -3 * 24 * 60 });
+    const old = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    const oldDir = path.join(
+      home,
+      'sessions',
+      old.getFullYear().toString(),
+      String(old.getMonth() + 1).padStart(2, '0'),
+      String(old.getDate()).padStart(2, '0')
+    );
+    fs.mkdirSync(oldDir, { recursive: true });
+    const rollout = path.join(oldDir, path.basename(written));
+    fs.renameSync(written, rollout);
+
+    const finder = new SessionFinder(cwd, undefined, new Date(old.getTime() - 5_000));
+    assert.equal(finder.check()?.path, rollout, 'the deep scan finds the session');
+    for (let i = 0; i < 3; i++) {
+      finder.lastFallbackScanMs = 0;
+      assert.equal(finder.check()?.path, rollout, 'the session stays bound between deep scans');
+    }
+
+    fs.rmSync(rollout);
+    finder.lastFallbackScanMs = 0;
+    finder.lastDeepScanMs = Date.now();
+    assert.equal(finder.check(), null, 'a deleted rollout is let go');
+  }
 } finally {
   if (originalCodexHome === undefined) {
     delete process.env.CODEX_HOME;
@@ -238,6 +307,12 @@ try {
     delete process.env.CODEX_SESSIONS_PATH;
   } else {
     process.env.CODEX_SESSIONS_PATH = originalSessionsPath;
+  }
+
+  if (originalTmux === undefined) {
+    delete process.env.TMUX;
+  } else {
+    process.env.TMUX = originalTmux;
   }
 }
 

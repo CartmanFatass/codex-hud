@@ -470,7 +470,7 @@ function readSnapshotBinding(filePath: string): SnapshotBinding | null {
     );
     const pane = match?.[1] ?? match?.[2] ?? match?.[3];
     return cachePut(snapshotBindingCache, filePath, {
-      server: (tmux?.[1] ?? tmux?.[2] ?? tmux?.[3])?.split(',')[0] ?? null,
+      server: tmux?.[1] ?? tmux?.[2] ?? tmux?.[3] ?? null,
       pane: pane ? pane.trim() : null,
     });
   } catch {
@@ -478,11 +478,25 @@ function readSnapshotBinding(filePath: string): SnapshotBinding | null {
   }
 }
 
+/**
+ * TMUX is "<socket>,<server pid>,<session index>". The socket path outlives a
+ * server restart and the pane ids start over at %0, so a snapshot from an
+ * earlier server names a pane that is not this one. Codex 0.159's app-server
+ * daemon makes that common: it writes every session's snapshot from its own
+ * environment, which is that of whatever pane started it, possibly days ago.
+ */
+function sameTmuxServer(recorded: string, current: string): boolean {
+  const [recordedSocket, recordedPid] = recorded.split(',');
+  const [currentSocket, currentPid] = current.split(',');
+  if (recordedSocket !== currentSocket) return false;
+  return !recordedPid || !currentPid || recordedPid === currentPid;
+}
+
 function readSnapshotPane(filePath: string): string | null {
   const binding = readSnapshotBinding(filePath);
   if (!binding) return null;
-  const currentServer = process.env.TMUX?.split(',')[0];
-  if (binding.server && currentServer && binding.server !== currentServer) return null;
+  const currentServer = process.env.TMUX;
+  if (binding.server && currentServer && !sameTmuxServer(binding.server, currentServer)) return null;
   return binding.pane;
 }
 
@@ -651,6 +665,24 @@ export class SessionFinder {
   }
 
   /**
+   * The current session with its size and mtime brought up to date, or null
+   * when there is none or its file is gone.
+   */
+  private refreshCurrentSession(): SessionFile | null {
+    if (!this.currentSession) {
+      return null;
+    }
+    try {
+      const stats = fs.statSync(this.currentSession.path);
+      this.currentSession.modifiedAt = stats.mtime;
+      this.currentSession.size = stats.size;
+      return this.currentSession;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Codex CLI 0.147+ on WSL often writes shell snapshots without TMUX_PANE,
    * or skips snapshots until a shell tool runs. Fall back to the newest cwd
    * rollout created/touched around HUD start so token usage can still appear.
@@ -662,6 +694,15 @@ export class SessionFinder {
     // DEEP_RESCAN_MS: before Codex has written its first rollout the HUD would
     // otherwise repeat that walk every two seconds, forever.
     let recent = findMostRecentRollout(RECENT_LOOKBACK_DAYS, cwd);
+    // The session already found stays a candidate. Rollouts live under the day
+    // they were created, so a HUD left running past the next midnight but one
+    // no longer sees its own session in the shallow scan; without this it
+    // would drop the session, wait for the deep scan to find it again, and
+    // drop it two seconds later.
+    const kept = this.refreshCurrentSession();
+    if (kept && (!recent || kept.modifiedAt.getTime() >= recent.modifiedAt.getTime())) {
+      recent = kept;
+    }
     if (!recent && Date.now() - this.lastDeepScanMs >= DEEP_RESCAN_MS) {
       this.lastDeepScanMs = Date.now();
       recent = findMostRecentRollout(DEFAULT_LOOKBACK_DAYS, cwd);
@@ -712,20 +753,12 @@ export class SessionFinder {
     if (mainPaneId) {
       const threadId = findThreadIdForPane(mainPaneId, this.targetStartTime);
       if (threadId) {
-        if (
-          this.currentSession &&
-          this.currentSession.sessionId === threadId &&
-          fs.existsSync(this.currentSession.path)
-        ) {
-          try {
-            const stats = fs.statSync(this.currentSession.path);
-            this.currentSession.modifiedAt = stats.mtime;
-            this.currentSession.size = stats.size;
-          } catch {
-            // ignore stat errors
+        if (this.currentSession?.sessionId === threadId) {
+          const kept = this.refreshCurrentSession();
+          if (kept) {
+            this.currentThreadId = threadId;
+            return kept;
           }
-          this.currentThreadId = threadId;
-          return this.currentSession;
         }
 
         const next = findSessionByThreadId(threadId);
@@ -737,18 +770,7 @@ export class SessionFinder {
 
     const fallbackScanFresh = Date.now() - this.lastFallbackScanMs < FALLBACK_RESCAN_MS;
     if (fallbackScanFresh) {
-      if (
-        this.currentSession &&
-        fs.existsSync(this.currentSession.path)
-      ) {
-        try {
-          const stats = fs.statSync(this.currentSession.path);
-          this.currentSession.modifiedAt = stats.mtime;
-          this.currentSession.size = stats.size;
-        } catch {
-          // ignore stat errors
-        }
-      }
+      this.refreshCurrentSession();
       return this.currentSession;
     }
 
