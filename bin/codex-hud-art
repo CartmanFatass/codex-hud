@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Set the picture the tree panel draws in its empty space.
+#
+#   codex-hud-art <image> [dots|color|ascii]   use this picture, in this style
+#   codex-hud-art off                          no decoration
+#
+# The image is copied next to the settings ($CODEX_HOME/hud-art.<ext>), so
+# moving or deleting the original later changes nothing. Any format ffmpeg
+# reads works; ffmpeg is what the panel decodes it with. An open panel picks
+# the change up the next time its settings are saved or it is reopened (F12).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HUD_DIR="$(dirname "$SCRIPT_DIR")"
+home="${CODEX_HOME:-$HOME/.codex}"
+
+save() {
+  CODEX_HOME="$home" node --input-type=module -e '
+    const { pathToFileURL } = await import("node:url");
+    const { saveSettings } = await import(pathToFileURL(process.argv[1]).href);
+    const patch = process.argv[3] === undefined ? { art: process.argv[2] } : { art: process.argv[2], artImage: process.argv[3] };
+    saveSettings(patch);
+  ' "$HUD_DIR/dist/settings.js" "$@"
+}
+
+if [[ "${1:-}" == "off" ]]; then
+  save off
+  echo "codex-hud: decoration off"
+  exit 0
+fi
+if [[ $# -lt 1 || ! -r "$1" ]]; then
+  echo "usage: codex-hud-art <image> [dots|color|ascii] | codex-hud-art off" >&2
+  exit 2
+fi
+style="${2:-dots}"
+case "$style" in dots|color|ascii) ;; *) echo "codex-hud-art: style must be dots, color or ascii" >&2; exit 2 ;; esac
+if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+  echo "codex-hud-art: ffmpeg and ffprobe are needed to read the picture" >&2
+  exit 1
+fi
+if ! ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 -- "$1" >/dev/null 2>&1; then
+  echo "codex-hud-art: ffmpeg cannot read $1 as an image" >&2
+  exit 1
+fi
+
+ext="${1##*.}"
+ext="$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
+dest="$home/hud-art.${ext:-img}"
+mkdir -p "$home"
+cp -- "$1" "$dest.tmp.$$"
+mv -f -- "$dest.tmp.$$" "$dest"
+save "$style" "$dest"
+echo "codex-hud: decoration set to $dest ($style)"

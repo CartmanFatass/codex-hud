@@ -38,7 +38,7 @@ Because you're flying blind without one. Codex HUD gives you a persistent dashbo
 
 **Q: My session spawns subagents. Can I see what they are doing?**
 
-Yes. Press `F12` to open the **subagent tree** in a side panel: every agent the session spawned, its model and reasoning effort, whether it is running, finished, or failed, and which agent spawned it. Press `F12` again to close it. The status bar stays up the whole time.
+Yes. Press `F12` to open the **subagent tree** in a side panel: every agent the session spawned, its model and reasoning effort, whether it is running, finished, or failed, and which agent spawned it. Press `F12` again to close it. The panel takes the status bar's place while it is open: the bar's fields move to the panel's foot, so Codex keeps the whole height and nothing is shown twice.
 
 `Ctrl+T` is left alone on purpose — that is Codex's own transcript overlay.
 
@@ -150,13 +150,13 @@ spaces apart, a dimmed `│` divides one group from the next, and the session
 timer and the key hint are held against the right edge:
 
 ```
-▸ Edit: src/types.ts · 1m20s  ☀● Astra  codex-hud git:(main * ↑2) │ Agents 1 run · 1 ok  Ctx ████▎░░░░░ 42% (114.2K/272K)  ◷~00m │ 2/5  Q61%            30m  F12
+▸ Edit: src/types.ts · 1m20s  ☀● Astra  codex-hud git:(main * ↑2) │ Agents 1 run · 1 ok  Ctx ████▎░░░░░ 42% (114.2K/272K)  ◷~00m │ 2/5  Q61%            30m
 ```
 
 When something needs you, it takes the front of the line:
 
 ```
-! 1 tool failed · 1 agent failed │ ▸ Edit: src/types.ts · 1m20s  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m │ 2/5  Q61%    30m  F12
+! 1 tool failed · 1 agent failed │ ▸ Edit: src/types.ts · 1m20s  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m │ 2/5  Q61%    30m
 ```
 
 | Field | Means |
@@ -171,13 +171,12 @@ When something needs you, it takes the front of the line:
 | `2/5` | Steps completed in the current plan |
 | `Q61%` | Share of the account's usage window spent. This is quota, not task progress; `↺1h23m` is the wait for the next reset |
 | `84K` | Tokens spent this session |
-| `F12` | Opens the subagent tree. Ten minutes into a session with no subagents to open it retires itself |
 
 A field appears only when there is real data behind it. A missing quota
 snapshot means no quota field, not a bar reading zero.
 
-Clicking the bar acts on the field under the cursor: the alert, the agent
-counts and the `F12` hint open the panel and hand it the keyboard, the meters
+Clicking the bar acts on the field under the cursor: the alert and the agent
+counts open the panel and hand it the keyboard, the meters
 open it and leave the cursor in Codex, and anywhere else toggles the panel as
 the whole bar used to.
 
@@ -263,6 +262,19 @@ content filters and partial-clone lazy fetching. The panel provides no staging, 
 Settings offers four panel widths: narrow (16), auto (the original 20–30 column policy), wide (45), and wider (70). Width changes apply immediately and preserve space for the main conversation. The width is applied again whenever the tmux window changes size, as when a session started detached is attached from a wider terminal; dragging the border by hand is left alone. `CODEX_HUD_TREE_WIDTH` remains an initial override when no saved settings exist.
 
 Settings is grouped into Status bar (density, theme, model label, motion, context, bar on launch), Agents (order, hide finished) and Panel (the four panes, width, mouse, refresh). Values sit in a right-hand column; the selected one reads `‹ value ›`, and ←/→, Enter or a click change it (a click on `‹` steps back). The line under the list says what the selected setting does. Unsaved fields show `*` and the Save button lights up; Bar on launch applies from the next launch. Save persists to `$CODEX_HOME/hud-settings.json` (or `CODEX_HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Back discards unsaved edits; Reset or `r` prepares defaults for Save. Narrow views retain complete Back/Save buttons and use short labels.
+
+**Brief.** Agents → Brief turns on a short written account of the subagents under the tree, in the panel's language. It is written by `omp`, `agy`, or any OpenAI-compatible chat completions endpoint (`api`), at most once per Brief every, and only when an agent's status or latest update changed. `b`, or a click on the switch at the end of the Brief rule, pauses and resumes it. For `api`, set these in `hud-settings.json`:
+
+```json
+{ "briefing": "api",
+  "briefingApiBase": "http://localhost:11434/v1",
+  "briefingApiModel": "qwen3:8b",
+  "briefingApiKey": "" }
+```
+
+An empty base is OpenAI's. An empty key falls back to `CODEX_HUD_BRIEF_API_KEY`, then `OPENAI_API_KEY`; with none the request is sent without one, for a local server. The file is written with mode 0600. `CODEX_HUD_BRIEF_MODEL` overrides the model for every brief command.
+
+**Decoration.** Panel → Decoration draws a picture in the panel's empty space: braille dots, dots in the picture's own colours, or ASCII. It only takes lines nothing else is using, and gives them back as the agents and the brief need them. `bin/codex-hud-art <image> [dots|color|ascii]` copies a picture next to the settings and switches it on; `bin/codex-hud-art off` switches it off. ffmpeg reads the picture, so any format it knows works.
 
 ### Output throughput
 

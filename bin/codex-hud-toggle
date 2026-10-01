@@ -2,12 +2,12 @@
 # Toggle the right-side subagent tree panel. Invoked from tmux keybinds so
 # Codex-pane focus still works.
 #
-# Compact HUD is optional (@codex_hud_statusline). When it is on, F12 only
-# adds or removes the side panel; destroying the compact pane was wiping
-# tokens/ctx/model after the switch, and recreating a 1-line pane often
-# painted blank. If the compact pane is already gone, it is recreated
-# from the launch command persisted at session creation. When the
-# statusline is off, F12 never recreates it.
+# The bar and the panel take turns: F12 swaps the one-line bar for the side
+# panel, which shows the bar's fields at its foot, and back. Two views of the
+# same session at once spent a row and a process on saying everything twice.
+# The bar is recreated from the launch command persisted at session creation.
+# When the statusline is off (@codex_hud_statusline=0), closing the panel
+# leaves Codex alone in the window and F12 never creates a bar.
 #
 # Concurrency: rapid double-presses run this script twice concurrently, so
 # every state read and pane mutation happens under a session-scoped wait-for
@@ -211,14 +211,10 @@ if [[ "$mode" == "tree" ]]; then
   fi
 fi
 
-# single -> tree: open the fixed right-side panel. Compact HUD stays put when
-# it is enabled; recreate it first only if it is gone. Statusline-off sessions
-# keep Codex + tree only.
+# single -> tree: open the fixed right-side panel, then retire the bar it
+# replaces. The bar is touched only once the panel is up and alive.
 if ! pane_alive "$main_pane"; then
   exit 0
-fi
-if [[ "$statusline_enabled" == "1" ]] && ! ensure_hud_pane; then
-  exit 1
 fi
 
 # A percentage split needs a client-provided window size and fails with
@@ -232,9 +228,8 @@ panel_width=${CODEX_HUD_TREE_WIDTH:-0}
 requested_width=0
 if [[ "$panel_width" =~ ^[0-9]+$ && "$panel_width" -gt 0 ]]; then requested_width=$panel_width; fi
 if [[ ! "$panel_width" =~ ^[0-9]+$ || "$panel_width" -le 0 ]]; then
-  panel_width=$(( win_width / 5 ))
-  if [[ "$panel_width" -lt 20 ]]; then panel_width=20; fi
-  if [[ "$panel_width" -gt 30 ]]; then panel_width=30; fi
+  # Narrow unless a width is asked for (src/utils/pane-width.ts).
+  panel_width=32
 fi
 if [[ "$panel_width" -lt 16 ]]; then panel_width=16; fi
 max_panel=$(( win_width - 41 ))
@@ -253,6 +248,10 @@ fi
 
 tmux set-option -t "$session_name" @codex_hud_tree_pane "$new_tree"
 tmux set-option -t "$session_name" -q @codex_hud_mode "tree"
+if pane_alive "$hud_pane"; then
+  tmux kill-pane -t "$hud_pane" 2>/dev/null || true
+fi
+tmux set-option -t "$session_name" @codex_hud_pane ""
 if [[ "$focus_tree" == "1" ]]; then
   tmux select-pane -t "$new_tree" 2>/dev/null || true
 else

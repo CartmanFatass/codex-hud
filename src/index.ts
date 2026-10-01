@@ -4,38 +4,24 @@
  */
 
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
-import { readCodexConfig } from './collectors/codex-config.js';
 import * as fs from 'fs';
-import * as path from 'path';
 import { spawn } from 'child_process';
-import { collectGitStatus } from './collectors/git.js';
-import { GitTargetCache } from './collectors/git-root.js';
-import { collectProjectInfo } from './collectors/project.js';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
+import { HudStatus } from './collectors/hud-status.js';
 import { RolloutParser } from './collectors/rollout.js';
-import { buildSubagentTree } from './collectors/subagent-tree.js';
 import { createParseQueue } from './utils/parse-queue.js';
 import { fileSignature } from './utils/file-signature.js';
 import { tmuxFocusPaneArgs, tmuxForwardKeyArgs } from './utils/hud-input.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer, currentStatusBar } from './render/index.js';
+import { colors } from './render/colors.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { displayConfig } from './render/hud-config.js';
 import { hasFreshComm } from './render/subagent-chip.js';
-import { buildContextUsage } from './collectors/context-usage.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import type { RolloutParseResult } from './collectors/rollout.js';
-import type {
-  GitStatus,
-  HudData,
-  HudDisplayMode,
-  ProjectInfo,
-  CodexConfig,
-} from './types.js';
-
-// Session start time
-const SESSION_START = new Date();
+import type { HudData } from './types.js';
 
 // Refresh interval in milliseconds
 const REFRESH_INTERVAL = 1000;
@@ -61,8 +47,6 @@ const HUD_SESSION_START = (() => {
 
 // Track if we're running
 let isRunning = true;
-
-const displayMode: HudDisplayMode = 'single';
 
 // Phase 2: Session and rollout tracking
 const sessionFinder = new SessionFinder(HUD_CWD_REAL, (session) => {
@@ -127,98 +111,20 @@ async function parseRolloutIfChanged(rolloutPath: string): Promise<RolloutParseR
   }
 }
 
-// Cached sync data. The 1s render tick stays (timers and elapsed displays
-// need it), but the expensive collectors behind it are invalidated by
-// signature instead of rerun unconditionally:
-//   - config re-reads only when the file watcher fires (or on first run)
-//   - the project scan runs on a slower 3s cadence
-//   - git runs off the frame entirely: the tick starts a refresh at most every
-//     3s and always renders the last snapshot, so a slow `git status` (WSL
-//     /mnt/c) can never delay a repaint
-let cachedConfig: CodexConfig | null = null;
-const NO_GIT: GitStatus = {
-  branch: null,
-  isDirty: false,
-  isGitRepo: false,
-  ahead: 0,
-  behind: 0,
-  modified: 0,
-  added: 0,
-  deleted: 0,
-  untracked: 0,
-};
-let cachedGit: GitStatus = NO_GIT;
-let cachedProject: ProjectInfo | null = null;
-const SYNC_REFRESH_MS = 3000;
-let lastSyncAt = 0;
-let gitRefreshInFlight = false;
-const gitTargets = new GitTargetCache();
-
-/**
- * Start a git refresh if one is due and none is running. Never awaited by the
- * render path: the resolved snapshot is picked up by the next frame, and an
- * immediate repaint is requested so the first result is not held back a whole
- * second at startup.
- */
-function refreshGitStatus(): void {
-  if (gitRefreshInFlight) {
-    return;
-  }
-  gitRefreshInFlight = true;
-  Promise.resolve()
-    .then(async () => {
-      // Not always the launch folder: a session started above its repository
-      // is described by the repository it works in (see collectors/git-root.ts).
-      const target = gitTargets.resolve([cachedHudData?.session?.cwd, HUD_CWD], rolloutParser.getCached()?.workDirs);
-      if (!target) return { ...NO_GIT };
-      const collected = await collectGitStatus(target.dir);
-      return target.subRepo && collected.isGitRepo ? { ...collected, repo: path.basename(target.subRepo) } : collected;
-    })
-    .then((status) => {
-      cachedGit = status;
-      if (cachedHudData) {
-        cachedHudData.git = status;
-      }
-      repaintCached();
-    })
-    .catch(() => {
-      // Keep the previous snapshot; the next tick tries again.
-    })
-    .finally(() => {
-      gitRefreshInFlight = false;
-    });
-}
-
-/**
- * Collect all HUD data (synchronous parts)
- */
-function collectSyncData(): Omit<HudData, 'toolActivity' | 'planProgress' | 'tokenUsage' | 'session' | 'contextUsage' | 'rateLimits' | 'subagents' | 'subagentTree'> {
-  try { applyDisplaySettings(runtimeSettings()); } catch { /* Keep last valid display settings. */ }
-  if (cachedConfig === null || configNeedsRefresh) {
-    cachedConfig = readCodexConfig();
-    configNeedsRefresh = false;
-  }
-
-  const now = Date.now();
-  if (!cachedProject || now - lastSyncAt >= SYNC_REFRESH_MS) {
-    cachedProject = collectProjectInfo(HUD_CWD, cachedConfig);
-    lastSyncAt = now;
-    refreshGitStatus();
-  }
-
-  return {
-    config: cachedConfig,
-    git: cachedGit,
-    project: cachedProject,
-    sessionStart: SESSION_START,
-  };
-}
+// The config, project scan and git status behind the bar, each on its own
+// cadence; shared with the tree panel, which shows the same fields while it
+// replaces the bar (see collectors/hud-status.ts).
+const hudStatus = new HudStatus(HUD_CWD, () => repaintCached());
 
 /**
  * Collect all HUD data including async rollout parsing
  */
 async function collectData(): Promise<HudData> {
-  const syncData = collectSyncData();
+  try { applyDisplaySettings(runtimeSettings()); } catch { /* Keep last valid display settings. */ }
+  if (configNeedsRefresh) {
+    hudStatus.invalidateConfig();
+    configNeedsRefresh = false;
+  }
 
   // Check for active session
   let session = sessionFinder.getCurrentSession();
@@ -235,40 +141,12 @@ async function collectData(): Promise<HudData> {
     try { rolloutData = await parseRolloutIfChanged(session.path); } catch { stale = true; }
   }
 
-  const runtimeSession = paneRuntimeStateCollector?.collect() ?? undefined;
-
-  // Build context usage from token usage if available
-  // Matches codex "context window left" calculation based on last_token_usage.
-  const contextUsage = buildContextUsage(
-    rolloutData?.tokenUsage ?? undefined,
-    rolloutData?.compactCount,
-    rolloutData?.lastCompactTime
-  );
-
-  const rootId = rolloutData?.session?.id ?? session?.sessionId ?? '';
-  const subagentTree = rootId
-    ? buildSubagentTree(rootId, rolloutData?.subagents ?? [])
-    : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
-
-  const hudData: HudData = {
-    ...syncData,
-    activity: rolloutData?.activity,
-    tokenUsageAt: rolloutData?.tokenUsageAt,
+  const hudData = hudStatus.build({
+    rollout: rolloutData,
+    sessionId: session?.sessionId,
     stale,
-    session: rolloutData?.session ?? undefined,
-    runtimeSession,
-    toolActivity: rolloutData?.toolActivity ?? undefined,
-    planProgress: rolloutData?.planProgress ?? undefined,
-    tokenUsage: rolloutData?.tokenUsage ?? undefined,
-    outputRate: rolloutData?.outputRate,
-    contextUsage,
-    pendingApproval: rolloutData?.pendingApproval ?? undefined,
-    rateLimits: rolloutData?.rateLimits ?? undefined,
-    subagents: rolloutData?.subagents ?? [],
-    subagentTree,
-    displayMode,
-  };
-
+    runtimeSession: paneRuntimeStateCollector?.collect() ?? undefined,
+  });
   cachedHudData = hudData;
   return hudData;
 }
@@ -487,8 +365,12 @@ async function main(): Promise<void> {
   hudFileWatcher.start();
   sessionFinder.start(5000); // Check for session changes every 5 seconds
 
-  // Do not write to stdout before the first frame: the compact pane is one
-  // line, so a startup log would hide the status header after F12 restore.
+  // Do not write logs to stdout: the compact pane is one line, so a startup
+  // log would hide the status header after F12 restore. The first read of a
+  // long rollout takes seconds; a dim line says so rather than a blank bar.
+  if (process.stdout.isTTY) {
+    process.stdout.write('\x1b[2J\x1b[H' + colors.dim(' codex-hud · reading session…'));
+  }
   await mainLoop();
 }
 

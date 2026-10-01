@@ -1,6 +1,7 @@
 import type { HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { truncateAnsi, colors, theme, visualLength } from './colors.js';
+import { t, language } from './i18n.js';
 
 type SettingValue = string | number | boolean;
 
@@ -32,12 +33,16 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'sort',group:'Agents',label:'Order',short:'Order',values:['active','created'],help:'Running first, or by age'},
   {key:'finishedLingerMs',group:'Agents',label:'Hide finished',short:'Hide',values:[60_000,180_000,600_000,1_800_000,0],
     help:'Done agents hide after this',format:minutes},
-  {key:'agentsPane',group:'Panel',label:'1 Agents',short:'1 Agents',values:['open','folded','closed'],help:PANE_HELP},
+  {key:'briefing',group:'Agents',label:'Brief',short:'Brief',values:['off','omp','agy','api'],help:'Model brief under the tree'},
+  {key:'briefingMs',group:'Agents',label:'Brief every',short:'Every',values:[60_000,120_000,300_000,600_000],
+    help:'At most this often, on change',format:minutes},
+  {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and brief language'},
   {key:'worktreesPane',group:'Panel',label:'2 Worktrees',short:'2 Trees',values:['open','folded','closed'],help:PANE_HELP},
   {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','folded','closed'],help:PANE_HELP},
   {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','folded','closed'],help:PANE_HELP},
-  {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:[16,0,45,70],help:'Panel columns; auto fits',
-    format:value => ({16:'narrow',0:'auto',45:'wide',70:'wider'} as Record<number,string>)[Number(value)] ?? String(value)},
+  {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:[32,56],help:'Panel columns',
+    format:value => ({32:'narrow',56:'wide'} as Record<number,string>)[Number(value)] ?? String(value)},
+  {key:'art',group:'Panel',label:'Decoration',short:'Art',values:['off','dots','color','ascii'],help:'Picture in empty space; codex-hud-art sets it'},
   {key:'mouse',group:'Panel',label:'Mouse',short:'Mouse',values:[true,false],help:'Click and scroll the panel'},
   {key:'refreshMs',group:'Panel',label:'Refresh',short:'Refresh',values:[500,1000,2000,5000],help:'How often the panel reads',format:seconds},
 ];
@@ -67,21 +72,24 @@ const DISPLAY: readonly DisplayLine[] = SETTING_ROWS.flatMap((row,index) =>
 
 function valueText(row:SettingRow,value:SettingValue,narrow:boolean):string {
   const text = typeof value === 'boolean' ? value ? 'on' : 'off' : row.format ? row.format(value) : String(value);
-  return narrow ? NARROW_VALUES[text] ?? text : text;
+  // Chinese words are short already; the narrow English forms are for English.
+  return narrow && language() === 'en' ? NARROW_VALUES[text] ?? text : t(text);
 }
 
 function rowLine(row:SettingRow,value:SettingValue,selected:boolean,dirty:boolean,width:number):{text:string;back?:number} {
   const narrow = width < 24;
   const gutter = `${selected ? '›' : ' '}${dirty ? '*' : ' '} `;
   const shown = valueText(row,value,narrow);
-  const label = narrow ? row.short : row.label;
+  const label = t(narrow ? row.short : row.label);
   const margin = narrow ? 0 : 1;
+  // Widths are display columns, not string lengths: a Chinese label is two
+  // columns a character.
   // The chevrons say ←→ changes this row; they go first when space runs out.
-  const chevrons = selected && gutter.length+label.length+1+shown.length+4+margin <= width;
+  const chevrons = selected && gutter.length+visualLength(label)+1+visualLength(shown)+4+margin <= width;
   const tail = chevrons ? `‹ ${shown} ›` : shown;
-  const room = Math.max(0,width-margin-gutter.length-tail.length-1);
+  const room = Math.max(0,width-margin-gutter.length-visualLength(tail)-1);
   const name = truncateAnsi(label,room);
-  const pad = ' '.repeat(Math.max(1,width-margin-gutter.length-visualLength(name)-tail.length));
+  const pad = ' '.repeat(Math.max(1,width-margin-gutter.length-visualLength(name)-visualLength(tail)));
   const drawn = chevrons ? `${colors.dim('‹')} ${theme.strong(shown)} ${colors.dim('›')}` : theme.accent(shown);
   const text = `${selected ? theme.accent('›') : ' '}${dirty ? theme.warning('*') : ' '} ${name}${pad}${drawn}`;
   // The highlight spans the whole row, gaps included, like the agent list's.
@@ -103,16 +111,17 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   const actions: SettingsFrame['actions'] = [];
   let header = '';
   let plainHeader = '';
-  for (const [action,label] of [['back','[Back]'],['save','[Save]'],['reset','[Reset]']] as const) {
-    const x = plainHeader.length+(plainHeader ? 1 : 0);
-    if (x+label.length > width) break;
-    actions.push({action,x,width:label.length});
+  for (const [action,key] of [['back','[Back]'],['save','[Save]'],['reset','[Reset]']] as const) {
+    const label = t(key);
+    const x = visualLength(plainHeader)+(plainHeader ? 1 : 0);
+    if (x+visualLength(label) > width) break;
+    actions.push({action,x,width:visualLength(label)});
     // Save lights up while there is something to save.
     const paint = action === 'save' ? dirty ? theme.warning : theme.accent : colors.dim;
     header += (header ? ' ' : '')+paint(label);
     plainHeader += (plainHeader ? ' ' : '')+label;
   }
-  if (width-plainHeader.length >= 9) header += ` ${theme.strong('Settings')}`;
+  if (width-visualLength(plainHeader) >= 9) header += ` ${theme.strong(t('Settings'))}`;
 
   const lines = [header];
   const rows: Array<number|null> = [null];
@@ -121,8 +130,8 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
     const line = DISPLAY[i+offset];
     if (!line) { lines.push(''); rows.push(null); continue; }
     if ('group' in line) {
-      const title = ` ${line.group} `;
-      lines.push(colors.dim(`──${title}${'─'.repeat(Math.max(0,width-2-title.length))}`));
+      const title = ` ${t(line.group)} `;
+      lines.push(colors.dim(`──${title}${'─'.repeat(Math.max(0,width-2-visualLength(title)))}`));
       rows.push(null);
       continue;
     }
@@ -134,10 +143,10 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   }
   if (height > 1) {
     const row = SETTING_ROWS[selected];
-    lines.push(state.message ? theme.accent(state.message) : colors.dim(row.help));
+    lines.push(state.message ? theme.accent(state.message) : colors.dim(t(row.help)));
   }
   if (height > 2) {
-    lines.push(colors.dim(width < 30 ? '↑↓ ←→ s r Esc' : width < 48 ? '↑↓ select ←→ change s save' : '↑↓ select  ←→ change  s save  r reset  Esc back'));
+    lines.push(colors.dim(width < 30 ? '↑↓ ←→ s r Esc' : t(width < 48 ? '↑↓ select ←→ change s save' : '↑↓ select  ←→ change  s save  r reset  Esc back')));
   }
   return {
     lines:lines.slice(0,height).map(line => truncateAnsi(line,Math.max(0,width))),

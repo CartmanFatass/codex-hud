@@ -36,7 +36,7 @@
 
 **Q: session 会派生子代理，我能看到它们在做什么吗？**
 
-可以。按 `F12` 打开右侧的**子代理树**：当前 session 派生的每个代理、它的模型与推理强度、正在运行还是已结束或失败、以及是谁派生的它。再按一次 `F12` 关闭。整个过程状态栏一直在。
+可以。按 `F12` 打开右侧的**子代理树**：当前 session 派生的每个代理、它的模型与推理强度、正在运行还是已结束或失败、以及是谁派生的它。再按一次 `F12` 关闭。侧栏打开时会取代状态栏：状态栏的字段移到侧栏底部，Codex 保留完整高度，同样的信息不显示两遍。
 
 `Ctrl+T` 被刻意留空 —— 那是 Codex 自己的转写面板。
 
@@ -109,13 +109,13 @@ codex
 终端底部常驻一行。相关的字段用两个空格相邻，组与组之间用淡化的 `│` 分隔；会话计时与按键提示靠右对齐：
 
 ```
-▸ Edit: src/types.ts · 1m20s  ☀● Astra  codex-hud git:(main * ↑2) │ Agents 1 run · 1 ok  Ctx ████▎░░░░░ 42% (114.2K/272K)  ◷~00m │ 2/5  Q61%            30m  F12
+▸ Edit: src/types.ts · 1m20s  ☀● Astra  codex-hud git:(main * ↑2) │ Agents 1 run · 1 ok  Ctx ████▎░░░░░ 42% (114.2K/272K)  ◷~00m │ 2/5  Q61%            30m
 ```
 
 有事需要你处理时，它会排到最前面：
 
 ```
-! 1 tool failed · 1 agent failed │ ▸ Edit: src/types.ts · 1m20s  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m │ 2/5  Q61%    30m  F12
+! 1 tool failed · 1 agent failed │ ▸ Edit: src/types.ts · 1m20s  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m │ 2/5  Q61%    30m
 ```
 
 | 字段 | 含义 |
@@ -130,11 +130,10 @@ codex
 | `2/5` | 当前计划已完成的步骤数 |
 | `Q61%` | 账户额度窗口的消耗比例。这是额度，不是任务进度；`↺1h23m` 是距下次重置的时间 |
 | `84K` | 本次会话消耗的 token |
-| `F12` | 打开子代理树。会话进行十分钟后，若没有子代理可开，它会自行退场 |
 
 只有拿到真实数据的字段才会出现。没有额度快照就不显示额度，而不是显示一条为 0 的进度条。
 
-点击状态栏时，落在哪个字段上就是什么动作：告警、代理计数与 `F12` 提示会打开侧栏并把键盘交给它；
+点击状态栏时，落在哪个字段上就是什么动作：告警与代理计数会打开侧栏并把键盘交给它；
 各类仪表只打开侧栏，光标留在 Codex；点在其他位置则与过去一样整条切换。
 
 ### 窗口变窄时
@@ -214,6 +213,19 @@ Changes 属于选中的 worktree，不推断某个文件由哪个 agent 修改�
 Settings 提供四档宽度：窄（16 列）、auto（沿用原来的 20–30 列策略）、宽（45 列）、更宽（70 列）。保存后立即调整，并为主对话区保留空间。tmux 窗口尺寸变化时（例如在后台创建的会话从更宽的终端接入）会重新套用宽度；手动拖动边框则保持不变。没有保存过设置时，仍支持 `CODEX_HUD_TREE_WIDTH` 指定初始宽度。
 
 独立设置页分为 Status bar（密度、主题、模型标签、动画、上下文口径、启动时的底栏）、Agents（排序、收起已完成代理）和 Panel（四个区域、宽度、鼠标、刷新间隔）三组。取值在右侧对齐；选中项显示为 `‹ 取值 ›`，←/→、Enter 或点击即可修改（点击 `‹` 向回切换）。列表下方一行说明选中设置的作用。未保存字段带 `*`，Save 按钮随之高亮；Bar on launch 在下次启动时生效。Save 写入 `$CODEX_HOME/hud-settings.json`（可用 `CODEX_HUD_SETTINGS_PATH` 改路径），紧凑 HUD 下次刷新时同步显示偏好。已保存设置优先于环境默认值，`NO_COLOR` 始终优先。Back 放弃未保存修改；Reset 或 `r` 恢复默认草稿，需 Save 才应用。窄屏保留完整 Back/Save 按钮，使用短标签。
+
+**简报。** Agents → 简报会在 tree 下方给出 subagent 的简短文字概况，语言跟随面板语言。可以由 `omp`、`agy` 或任意 OpenAI 兼容的 chat completions 接口（`api`）生成；最多每个「简报间隔」一次，并且只在某个 agent 的状态或最新说明变化时才调用。按 `b` 或点击简报标题右端的开关可以暂停和继续。使用 `api` 时在 `hud-settings.json` 里设置：
+
+```json
+{ "briefing": "api",
+  "briefingApiBase": "http://localhost:11434/v1",
+  "briefingApiModel": "qwen3:8b",
+  "briefingApiKey": "" }
+```
+
+base 留空即 OpenAI。key 留空时依次读取 `CODEX_HUD_BRIEF_API_KEY`、`OPENAI_API_KEY`；都没有就不带 key，适合本地服务。设置文件以 0600 权限写入。`CODEX_HUD_BRIEF_MODEL` 对所有简报方式覆盖模型名。
+
+**装饰。** 面板 → 装饰会在侧栏空白处画一张字符画：盲文点阵、按原图上色的点阵，或 ASCII。它只占用没有内容的行，agent 和简报需要空间时会自动让出。`bin/codex-hud-art <图片> [dots|color|ascii]` 会把图片复制到设置旁边并打开装饰；`bin/codex-hud-art off` 关闭。图片由 ffmpeg 读取，它支持的格式都可以。
 
 ### 输出速度
 

@@ -16,6 +16,12 @@ import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInpu
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentContextUsage } from './collectors/agent-context.js';
+import { Briefer } from './collectors/briefing.js';
+import { HudStatus } from './collectors/hud-status.js';
+import { statusCard } from './render/status-block.js';
+import { artSize, renderArt, type ArtBitmap } from './render/art.js';
+import { loadArtImage } from './collectors/art-image.js';
+import { t, setLanguage, resolveLanguage } from './render/i18n.js';
 import type { ContextUsage, SubagentTree, SubagentTreeNode } from './types.js';
 
 /** At most one tail read per agent per this long, however often we repaint. */
@@ -52,8 +58,11 @@ async function runLivePage(): Promise<void> {
   const decoder = new WorkbenchInputDecoder('monitor');
   let settings = defaultSettings();
   let settingsError = '';
-  try { settings = runtimeSettings(); } catch (err) { settingsError = `Settings: ${String(err)}`; }
+  let settingsFailure: unknown = null;
+  try { settings = runtimeSettings(); } catch (err) { settingsFailure = err; }
   applyDisplaySettings(settings);
+  setLanguage(resolveLanguage(settings.language));
+  if (settingsFailure) settingsError = t('Settings: {reason}',{reason:String(settingsFailure)});
   const configuredState = () => {
     const next = initialMonitorState();
     next.tree.sort = settings.sort;
@@ -65,6 +74,8 @@ async function runLivePage(): Promise<void> {
   let settingsPage: SettingsPageState | null = null;
   let settingsFrame: SettingsFrame | undefined;
   let lastCollect = 0;
+  // The first read of a long rollout takes seconds; until then say so.
+  let collected = false;
   let navigating = false;
   let lastClickSwitch: {id: string; at: number} | undefined;
   let navigationMessage: string | null = null;
@@ -95,6 +106,28 @@ async function runLivePage(): Promise<void> {
   let escapeTimer: ReturnType<typeof setTimeout> | undefined;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   const widthKeeper = treeWidthKeeper(()=>settings.treeWidth);
+  // Repaints when a brief starts, lands or fails; render() is defined below.
+  const briefer = new Briefer(()=>render());
+  // The decoration picture, decoded once per path; a failed read means none.
+  let art: {path: string; bitmap: ArtBitmap | null} = {path:'',bitmap:null};
+  const loadArt = () => {
+    const path = settings.art === 'off' ? '' : settings.artImage;
+    if (path === art.path) return;
+    art = {path,bitmap:null};
+    if (!path) { render(); return; }
+    loadArtImage(path).then(bitmap=>{if(art.path===path){art.bitmap=bitmap;render();}}).catch(()=>{});
+  };
+  const drawArt = (cols: number, rows: number) => {
+    const style = settings.art;
+    if (!art.bitmap || style === 'off') return null;
+    const size = artSize(art.bitmap,cols,rows);
+    return size ? renderArt(art.bitmap,style,size.cols,size.rows) : null;
+  };
+  const configureBriefer = () => briefer.configureApi({base:settings.briefingApiBase,model:settings.briefingApiModel,key:settings.briefingApiKey});
+  configureBriefer();
+  // The bar's fields, for the foot of the panel: the panel replaces the bar
+  // while it is open. Fed from this page's own parse of the rollout.
+  const hudStatus = new HudStatus(HUD_CWD,()=>render(),30_000);
   const timers: Array<ReturnType<typeof setInterval>> = [];
   let resolveDone = () => {};
 
@@ -106,8 +139,10 @@ async function runLivePage(): Promise<void> {
       settingsPage = settingsFrame.state;
       lines = settingsFrame.lines;
     } else {
-    frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,
-      width:process.stdout.columns || 30,height:process.stdout.rows || 24});
+    const width = process.stdout.columns || 30;
+    frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,
+      brief:settings.briefing === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused},
+      status:(rowWidth,maxRows)=>statusCard(hudStatus.current(),rowWidth,maxRows),width,height:process.stdout.rows || 24});
     state = frame.state;
     lines = frame.lines;
     }
@@ -133,7 +168,7 @@ async function runLivePage(): Promise<void> {
       const wanted = new Set<string>();
       if (state.tree.selectedId) wanted.add(state.tree.selectedId);
       if (pane) {
-        for (let i=pane.offset;i<pane.offset+Math.max(0,pane.height-2);i++) {
+        for (let i=pane.offset;i<pane.offset+Math.max(0,pane.height-2*(pane.edge??1));i++) {
           const item = pane.rows[i]?.item;
           if (item) wanted.add(item);
         }
@@ -186,8 +221,10 @@ async function runLivePage(): Promise<void> {
   const collect = async () => {
     if (closed || collecting) return;
     collecting = true;
+    let session: ReturnType<typeof finder.check> = null;
+    let stale = false;
     try {
-      const session = finder.check();
+      session = finder.check();
       parser.setRolloutPath(session?.path ?? null);
       if (!session) {
         main = null;
@@ -215,9 +252,11 @@ async function runLivePage(): Promise<void> {
       tree = rootId ? buildSubagentTree(rootId,main?.subagents ?? []) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
       applyAgentContext();
       state = reconcileMonitor(state,tree,git,worktrees);
+      briefer.update(tree,settings.briefing,settings.briefingMs,resolveLanguage(settings.language),Date.now(),settings.briefingPaused);
       error = settingsError || null;
-    } catch (err) { error = `Refresh: ${String(err)}`; }
-    finally { collecting = false; }
+    } catch (err) { error = t('Refresh: {reason}',{reason:String(err)}); stale = true; }
+    finally { collecting = false; collected = true; }
+    try { hudStatus.build({rollout:main,sessionId:session?.sessionId,stale}); } catch { /* The foot keeps its last good rows. */ }
     render();
     void refreshInspection();
     void refreshAgentContext();
@@ -265,6 +304,7 @@ async function runLivePage(): Promise<void> {
   const finish = (user = false) => {
     if (closed) return;
     closed = true;
+    briefer.stop();
     timers.forEach(clearInterval);
     if (escapeTimer) clearTimeout(escapeTimer);
     if (resizeTimer) clearTimeout(resizeTimer);
@@ -278,12 +318,12 @@ async function runLivePage(): Promise<void> {
   const switchSession = async (id:string) => {
     if (navigating || !id) return;
     navigating = true;
-    navigationMessage = 'Switching Codex session…'; render();
+    navigationMessage = t('Switching Codex session…'); render();
     try {
       // The name is the fallback for a Codex pane too narrow to print ids.
       const result = await navigateSession(process.env.CODEX_HUD_MAIN_PANE,{id,label:uniquePickerLabel(tree,id)});
       navigationMessage = result.ok ? null : result.message;
-    } catch (err) { navigationMessage = `Switch failed: ${String(err)}`; }
+    } catch (err) { navigationMessage = t('Switch failed: {reason}',{reason:String(err)}); }
     finally { navigating = false; render(); }
   };
   const dispatch = (inputs: WorkbenchInput[]) => {
@@ -294,19 +334,22 @@ async function runLivePage(): Promise<void> {
         const result = handleSettingsInput(settingsPage,input,settingsFrame);
         settingsPage = result.state;
         if (result.action === 'back') settingsPage = null;
-        else if (result.action === 'reset') settingsPage = {...settingsPage,draft:defaultSettings(),message:'Defaults ready; Save to apply'};
+        else if (result.action === 'reset') settingsPage = {...settingsPage,draft:defaultSettings(),message:t('Defaults ready; Save to apply')};
         else if (result.action === 'save') {
           try {
             settings = saveSettings(settingsPage.draft);
             settingsError = ''; error = null;
             applyDisplaySettings(settings);
+            setLanguage(resolveLanguage(settings.language));
+            configureBriefer();
+            loadArt();
             state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings)};
             git=null;diff=undefined;diffKey='';void refreshGit();
-            settingsPage.message = 'Saved';
+            settingsPage.message = t('Saved');
             settingsPage.original = {...settings};
             process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
             void widthKeeper?.apply().catch(err=>{if(settingsPage) settingsPage.message=String(err);render();});
-          } catch (err) { settingsPage.message = `Save failed: ${String(err)}`; }
+          } catch (err) { settingsPage.message = t('Save failed: {reason}',{reason:String(err)}); }
         }
         render(); continue;
       }
@@ -318,7 +361,15 @@ async function runLivePage(): Promise<void> {
       if (state.selectedWorktree !== previous.selectedWorktree) {git=null;diff=undefined;diffKey='';}
       if (JSON.stringify(state.modes) !== JSON.stringify(previous.modes)) {
         try { settings=saveSettings(monitorPreferences(state)); }
-        catch (err) { settingsError=`Panel preferences could not be saved: ${String(err)}`;error=settingsError; }
+        catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
+      }
+      if (result.action?.type === 'brief-toggle' && settings.briefing !== 'off') {
+        try {
+          settings = saveSettings({briefingPaused:!settings.briefingPaused});
+          // Resuming asks at once when there is news, rather than at the next tick.
+          if (!settings.briefingPaused) lastCollect = 0;
+          else briefer.update(tree,settings.briefing,settings.briefingMs,resolveLanguage(settings.language),Date.now(),true);
+        } catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
       }
       if (result.action?.type === 'settings') {
         settingsPage={draft:{...settings,...monitorPreferences(state),sort:state.tree.sort??'active'},selected:0,offset:0,message:''};
@@ -360,6 +411,7 @@ async function runLivePage(): Promise<void> {
     process.stdin.resume();
     process.stdin.on('data',onData);
     render();
+    loadArt();
     void collect();
     void refreshGit();
     timers.push(setInterval(()=>{if(Date.now()-lastCollect >= settings.refreshMs){lastCollect=Date.now();void collect();}},100),setInterval(()=>void refreshGit(),3000),setInterval(render,250));

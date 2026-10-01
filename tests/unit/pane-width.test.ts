@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TreeWidthKeeper } from '../../src/utils/pane-width.js';
+import { TreeWidthKeeper, panelWidth } from '../../src/utils/pane-width.js';
 
 function keeper(requested = 0) {
   const window = { width: 120 as number | null };
@@ -13,11 +13,11 @@ test('an attach at a wider terminal takes the tree back to its policy width', as
   const { window, resizes, keep } = keeper();
   // Launched detached, where the shell reported 120 columns.
   await keep.apply();
-  assert.deepEqual(resizes, [24]);
+  assert.deepEqual(resizes, [32]);
   // The client attaches at 188 and tmux hands the tree half of the growth.
   window.width = 188;
   await keep.follow();
-  assert.deepEqual(resizes, [24, 30]);
+  assert.deepEqual(resizes, [32, 32], 'taken back to the width it was set to');
 });
 
 test('a border drag leaves the window width alone, and the pane where it was put', async () => {
@@ -27,7 +27,7 @@ test('a border drag leaves the window width alone, and the pane where it was put
   // both arrive as a pane resize with the window width unchanged.
   await keep.follow();
   await keep.follow();
-  assert.deepEqual(resizes, [24]);
+  assert.deepEqual(resizes, [32]);
 });
 
 test('a saved width applies at once, and follows the window after that', async () => {
@@ -40,10 +40,17 @@ test('a saved width applies at once, and follows the window after that', async (
   await keep.apply();
   window.width = 100;
   await keep.follow();
-  assert.deepEqual(resizes, [30, 45, 45]);
+  assert.deepEqual(resizes, [32, 45, 45]);
   window.width = 80;
   await keep.follow();
-  assert.deepEqual(resizes, [30, 45, 45, 39], 'the main session keeps its minimum');
+  assert.deepEqual(resizes, [32, 45, 45, 39], 'the main session keeps its minimum');
+});
+
+test('no width asked for is the narrow preset, and Codex keeps 41', () => {
+  assert.equal(panelWidth(0, 188), 32);
+  assert.equal(panelWidth(56, 188), 56);
+  assert.equal(panelWidth(0, 60), 19, 'Codex keeps its 41 columns first');
+  assert.equal(panelWidth(70, 100), 59);
 });
 
 test('an unreadable window width changes nothing', async () => {
@@ -54,5 +61,5 @@ test('an unreadable window width changes nothing', async () => {
   assert.deepEqual(resizes, []);
   window.width = 120;
   await keep.follow();
-  assert.deepEqual(resizes, [24], 'the first readable width is applied');
+  assert.deepEqual(resizes, [32], 'the first readable width is applied');
 });

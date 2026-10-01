@@ -540,9 +540,8 @@ open_default_tree_pane() {
         requested_width=$panel_width
     fi
     if [[ ! "$panel_width" =~ ^[0-9]+$ || "$panel_width" -le 0 ]]; then
-        panel_width=$(( win_width / 5 ))
-        if [[ "$panel_width" -lt 20 ]]; then panel_width=20; fi
-        if [[ "$panel_width" -gt 30 ]]; then panel_width=30; fi
+        # Narrow unless a width is asked for (src/utils/pane-width.ts).
+        panel_width=32
     fi
     if [[ "$panel_width" -lt 16 ]]; then panel_width=16; fi
     max_panel=$(( win_width - 41 ))
@@ -959,6 +958,11 @@ EOF
     install_session_input_policy "$SESSION_NAME" "$toggle_cmd"
     if [[ "$hud_tree" == "1" ]]; then
         open_default_tree_pane "$SESSION_NAME" "$main_pane_id" "$cwd_escaped" "$codex_home_escaped" "$session_start" "$toggle_cmd"
+        # The panel replaces the bar (see bin/codex-hud-toggle); F12 brings it back.
+        if [[ -n "${hud_pane_id:-}" && -n "$(tmux show-option -t "$SESSION_NAME" -qv @codex_hud_tree_pane)" ]]; then
+            tmux kill-pane -t "$hud_pane_id" 2>/dev/null || true
+            tmux set-option -t "$SESSION_NAME" @codex_hud_pane ""
+        fi
     fi
 
     SESSION_CREATED="true"

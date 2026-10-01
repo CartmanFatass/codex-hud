@@ -56,20 +56,22 @@ try:
  plain=ansi.sub('', screen.decode('utf-8','replace'))
  assert 'FOUND_THE_CAUSE' not in plain, 'monitor must not show reply text'
  assert 'Checks' not in plain and 'Reports' not in plain
- assert '1 Agents' in plain and '2 Worktrees' in plain
+ # Agents is the page, with no box or title; every other pane starts closed.
+ assert '14 run' in plain and '1 Agents' not in plain and '2 Worktrees' not in plain
+ send(b'2')
  wait_for('1 mod')
- send(b'v')
+ send(b'1v')
  inspect=wait_for('Turn age:')
  assert b'\\x1b[' not in inspect, 'Inspector must not print escaped colour codes'
  send(b'x')
- wait_for('1 Agents')
+ wait_for('14 run')
  send(b'3')
  wait_for('sample.ts')
  send(b'z')
  zoom=wait_for('sample.ts')
- assert b'1 Agents' not in zoom, 'zoom must hide other panes'
+ assert b'14 run' not in zoom, 'zoom must hide other panes'
  send(b'\x1b')
- wait_for('1 Agents')
+ wait_for('14 run')
  send(b'1G')
  wait_for('agent-13')
  # Wheel up over Agents (SGR coordinates are one-based).
@@ -80,14 +82,19 @@ try:
  wait_for('sample.ts')
  send(b'3\r')
  zoom=wait_for('after')
- assert b'1 Agents' not in zoom.rsplit(b'\x1b[H',1)[-1], 'opening diff must zoom automatically'
+ assert b'14 run' not in zoom.rsplit(b'\x1b[H',1)[-1], 'opening diff must zoom automatically'
  send(b'z')
- wait_for('1 Agents')
+ wait_for('14 run')
  send(b'z')
  zoom=wait_for('after')
- assert b'1 Agents' not in zoom, 'wide zoom must hide other panes'
+ assert b'14 run' not in zoom, 'wide zoom must hide other panes'
  send(b'\x1b')
- wait_for('1 Agents')
+ wait_for('14 run')
+ # The diff left the Inspector open and focused; close it so 4 has
+ # something to reopen rather than relying on a timed repaint.
+ send(b'x')
+ closed=wait_for('14 run')
+ assert b'Inspector' not in closed.rsplit(b'\x1b[H',1)[-1], 'x must close the Inspector'
  send(b'4')
  wait_for('Inspector')
  send(b',')
@@ -97,16 +104,16 @@ try:
  send(b's')
  wait_for('Saved')
  send(b'\x1b')
- wait_for('1 Agents')
+ wait_for('14 run')
  fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',12,16,0,0))
  os.kill(proc.pid,signal.SIGWINCH)
- wait_for('Agents')
+ wait_for('Main')
  send(b'?')
  wait_for('Monitor keys')
  send(b'G')
  wait_for('ultra')
  send(b'\x1b')
- wait_for('Agents')
+ wait_for('Main')
  send(b'q')
  tail=b''
  end=time.monotonic()+3

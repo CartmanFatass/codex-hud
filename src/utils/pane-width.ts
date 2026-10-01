@@ -1,8 +1,16 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const exec = promisify(execFile);
+/** The narrow preset, and the width of a request for none (0, from older settings). */
+export const NARROW_WIDTH = 32;
+
+/**
+ * The panel takes the width asked for, narrow (32) unless told otherwise,
+ * and Codex keeps at least 41 columns. bin/codex-hud-toggle and bin/codex-hud
+ * open the pane at the narrow width before this takes over.
+ */
 export function panelWidth(requested:number,windowWidth:number):number {
-  const desired = requested > 0 ? requested : Math.max(20,Math.min(30,Math.floor(windowWidth/5)));
+  const desired = requested > 0 ? requested : NARROW_WIDTH;
   const max = windowWidth-41 >= 10 ? windowWidth-41 : Math.floor(windowWidth/3);
   return Math.max(1,Math.min(max,Math.max(16,desired)));
 }

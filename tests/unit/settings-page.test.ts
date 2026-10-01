@@ -18,15 +18,15 @@ test('settings keyboard and mouse edit a draft, with explicit save/back actions'
   assert.ok(frame.state.offset>0);
   assert.ok(frame.lines.every(line=>visualLength(line)<=16));
   state=handleSettingsInput(frame.state,{type:'key',key:'right'},frame).state;
-  assert.equal(state.draft.treeWidth,45);
+  assert.equal(state.draft.treeWidth,56);
   state=handleSettingsInput(state,{type:'key',key:'right'},frame).state;
-  assert.equal(state.draft.treeWidth,70);
-  state=handleSettingsInput(state,{type:'key',key:'right'},frame).state;
-  assert.equal(state.draft.treeWidth,16);
+  assert.equal(state.draft.treeWidth,32,'narrow and wide, nothing in between');
 });
-test('four width presets preserve original default and reserve main session space',()=>{
-  assert.deepEqual([16,0,45,70].map(w=>panelWidth(w,160)),[16,30,45,70]);
-  assert.equal(panelWidth(0,100),20);
+test('two width presets, narrow by default, and the main session keeps its space',()=>{
+  assert.deepEqual([32,56].map(w=>panelWidth(w,160)),[32,56]);
+  assert.deepEqual(SETTING_ROWS.find(r=>r.key==='treeWidth')!.values,[32,56]);
+  assert.equal(defaultSettings().treeWidth,32);
+  assert.equal(panelWidth(0,100),32,'a width from older settings, 0, is narrow');
   assert.equal(panelWidth(70,80),39);
   assert.ok(panelWidth(70,30)<30);
 });
@@ -55,7 +55,7 @@ test('settings read in sections, values aligned on the right and written for peo
   for (const group of ['Status bar','Agents','Panel']) assert.ok(text.some(line=>line.startsWith(`── ${group} `)),group);
   const line=(key:string)=>text[frame.rows.indexOf(SETTING_ROWS.findIndex(row=>row.key===key))];
   assert.match(line('refreshMs'),/Refresh +1s$/);
-  assert.match(line('treeWidth'),/Width +auto$/);
+  assert.match(line('treeWidth'),/Width +narrow$/);
   assert.match(line('finishedLingerMs'),/Hide finished +never$/);
   assert.match(line('density'),/^› +Density +‹ balanced ›$/, 'the selected value shows it can be changed');
   assert.equal(text.at(-2),'How much the bar shows');

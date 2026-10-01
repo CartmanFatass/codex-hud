@@ -77,7 +77,7 @@ test('the quota field carries the countdown and never invents a reset', () => {
 
 test('the bar keeps the quota label when it has to shorten it', () => {
   const text = stripAnsi(
-    renderHud(makeHudData(), { width: 200, showDetails: false, layout: { ...DEFAULT_LAYOUT, mode: 'compact' } })[0]
+    renderHud(makeHudData(), { width: 180, showDetails: false, layout: { ...DEFAULT_LAYOUT, mode: 'compact' } })[0]
   );
   assert.match(text, /Q5h 61%/);
 });

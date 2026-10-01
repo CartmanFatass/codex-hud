@@ -7,7 +7,7 @@ const KEYS: Record<string, string> = {
   j: 'down', k: 'up', h: 'left', l: 'right', g: 'home', G: 'end',
   '\t': 'tab', '\r': 'enter', '\n': 'enter', ' ': 'enter',
   q: 'close', Q: 'close', '\x03': 'close', '\x04': 'close',
-  a: 'show-all', v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help',
+  a: 'show-all', v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help', b: 'brief-toggle',
   x: 'pane-close', '-': 'pane-fold',
   '[': 'previous-tab', ']': 'next-tab', t: 'next-tab',
   '1': 'agents', '2': 'details', '3': 'changes', '4': 'activity',

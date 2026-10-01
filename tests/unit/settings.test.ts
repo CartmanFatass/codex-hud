@@ -25,9 +25,10 @@ test('missing settings keep display defaults and hide optional tasks and activit
     assert.deepEqual(loadSettings(), {
       density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
       statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
-      details: true, refreshMs: 1000, treeWidth: 0, finishedLingerMs: 180_000,
-      agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
-      worktreeRoot: '',
+      details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
+      agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed',
+      worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
+      briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', art: 'off', artImage: '',
     });
     assert.equal(fs.existsSync(file), false, 'reading defaults does not create files');
     const changed = defaultSettings();
@@ -59,8 +60,9 @@ test('load validates known settings without importing unknown or invalid values'
       density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
       statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
       details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0,
-      agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
-      worktreeRoot: '',
+      agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed',
+      worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
+      briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', art: 'off', artImage: '',
     });
     fs.writeFileSync(file, JSON.stringify({
       density: 'huge', theme: {}, glyphs: null, motion: 'none', sort: 'recent',
@@ -91,7 +93,7 @@ test('monitor pane modes and worktreeRoot validate independently of legacy panel
     }));
     const invalid = loadSettings();
     assert.equal(invalid.agentsPane, 'open');
-    assert.equal(invalid.worktreesPane, 'open');
+    assert.equal(invalid.worktreesPane, 'closed');
     assert.equal(invalid.changesPane, 'closed');
     assert.equal(invalid.detailsPane, 'closed');
     assert.equal(invalid.worktreeRoot, '');
@@ -114,7 +116,7 @@ test('refresh intervals and widths accept only bounded integer values', () => {
     }
     for (const treeWidth of [-1, 1, 15, 201, 40.5, '40']) {
       fs.writeFileSync(file, JSON.stringify({ treeWidth }));
-      assert.equal(loadSettings().treeWidth, 0);
+      assert.equal(loadSettings().treeWidth, 32);
     }
   });
 });
@@ -143,7 +145,7 @@ test('save ignores invalid patches and strips unknown fields from existing files
     } as unknown as Partial<HudSettings>);
     assert.equal(saved.theme, 'latte');
     assert.equal(saved.refreshMs, 500);
-    assert.equal(saved.treeWidth, 0);
+    assert.equal(saved.treeWidth, 32);
     assert.equal(saved.mouse, true);
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.equal('extra' in raw, false);

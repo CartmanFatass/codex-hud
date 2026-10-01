@@ -25,6 +25,30 @@ export interface HudSettings extends HudDisplayConfig {
   changesPane: 'open' | 'folded' | 'closed';
   detailsPane: 'open' | 'folded' | 'closed';
   worktreeRoot: string;
+  /**
+   * Who writes the agents brief under the tree: nobody, `omp`, `agy`, or any
+   * OpenAI-compatible chat completions endpoint (`api`, set up below).
+   */
+  briefing: 'off' | 'omp' | 'agy' | 'api';
+  /** The shortest gap between two briefs, in ms. A brief also waits for something to change. */
+  briefingMs: number;
+  /** The brief's switch in the panel: true holds the model calls, keeping the last brief. */
+  briefingPaused: boolean;
+  /** The tree panel's and the brief's language; auto follows the locale. */
+  language: 'auto' | 'en' | 'zh';
+  /** `api` brief: the endpoint's base URL, up to `/v1`; empty is OpenAI's. */
+  briefingApiBase: string;
+  /** `api` brief: the model name the endpoint expects. */
+  briefingApiModel: string;
+  /**
+   * `api` brief: the key. Empty falls back to CODEX_HUD_BRIEF_API_KEY, then
+   * OPENAI_API_KEY; a local server may need none. The file is written 0600.
+   */
+  briefingApiKey: string;
+  /** A picture drawn in text in the panel's empty space, and its style. */
+  art: 'off' | 'dots' | 'color' | 'ascii';
+  /** The picture: any image ffmpeg can read. `codex-hud-art <image>` sets it. */
+  artImage: string;
 }
 
 /** Built-in defaults; callers apply environment or runtime display overrides. */
@@ -32,9 +56,10 @@ export function defaultSettings(): HudSettings {
   return {
     density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
     statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
-    details: true, refreshMs: 1000, treeWidth: 0, finishedLingerMs: 180_000,
-    agentsPane: 'open', worktreesPane: 'open', changesPane: 'closed', detailsPane: 'closed',
-    worktreeRoot: '',
+    details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
+    agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed',
+    worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
+    briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', art: 'off', artImage: '',
   };
 }
 
@@ -44,6 +69,9 @@ const isIntegerBetween = (value: unknown, min: number, max: number): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
 const oneOf = (...allowed: string[]) => (value: unknown): boolean =>
   typeof value === 'string' && allowed.includes(value);
+
+const isText = (max: number) => (value: unknown): boolean =>
+  typeof value === 'string' && value.length <= max && !/[\0\r\n]/.test(value);
 
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusline: isBoolean,
@@ -63,6 +91,15 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   changesPane: oneOf('open', 'folded', 'closed'),
   detailsPane: oneOf('open', 'folded', 'closed'),
   worktreeRoot: value => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
+  briefing: oneOf('off', 'omp', 'agy', 'api'),
+  briefingMs: (value) => isIntegerBetween(value, 30_000, 3_600_000),
+  briefingPaused: isBoolean,
+  language: oneOf('auto', 'en', 'zh'),
+  briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
+  briefingApiModel: isText(200),
+  briefingApiKey: isText(4096),
+  art: oneOf('off', 'dots', 'color', 'ascii'),
+  artImage: isText(4096),
 };
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {

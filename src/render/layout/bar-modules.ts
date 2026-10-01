@@ -38,7 +38,6 @@ export const MODULE_PRIORITY = {
   timer: 34,
   environment: 30,
   session: 24,
-  hint: 12,
 } as const;
 
 /**
@@ -46,12 +45,12 @@ export const MODULE_PRIORITY = {
  * layout engine's job; this is about what the user asked to see at all.
  */
 const DENSITY_MODULES: Record<Density, ReadonlyArray<keyof typeof MODULE_PRIORITY>> = {
-  focus: ['attention', 'activity', 'identity', 'project', 'agents', 'context', 'cache', 'hint'],
-  balanced: ['attention', 'activity', 'identity', 'project', 'agents', 'context', 'cache', 'tasks', 'quota', 'speed', 'timer', 'hint'],
+  focus: ['attention', 'activity', 'identity', 'project', 'agents', 'context', 'cache'],
+  balanced: ['attention', 'activity', 'identity', 'project', 'agents', 'context', 'cache', 'tasks', 'quota', 'speed', 'timer'],
   full: Object.keys(MODULE_PRIORITY) as Array<keyof typeof MODULE_PRIORITY>,
 };
 
-function formatDuration(startTime: Date, nowMs: number): string {
+export function formatDuration(startTime: Date, nowMs: number): string {
   const diffSec = Math.max(0, Math.floor((nowMs - startTime.getTime()) / 1000));
   const diffMin = Math.floor(diffSec / 60);
   const diffHour = Math.floor(diffMin / 60);
@@ -217,7 +216,7 @@ function projectModule(data: HudData): BarModule {
   };
 }
 
-function contextModule(data: HudData, barWidth: number): BarModule {
+function contextModule(data: HudData, barWidth: number, meter: (percent: number, cells: number) => string = coloredBar): BarModule {
   const usage = data.contextUsage;
   if (!usage || usage.total <= 0) {
     return { id: 'context', priority: MODULE_PRIORITY.context, group: 'load', variants: {} };
@@ -235,8 +234,8 @@ function contextModule(data: HudData, barWidth: number): BarModule {
     priority: MODULE_PRIORITY.context,
     group: 'load',
     variants: {
-      full: `${label} ${coloredBar(percent, barWidth)} ${number}${totals}${compact}`,
-      short: `${label} ${coloredBar(percent, Math.min(6, barWidth))} ${number}`,
+      full: `${label} ${meter(percent, barWidth)} ${number}${totals}${compact}`,
+      short: `${label} ${meter(percent, Math.min(6, barWidth))} ${number}`,
       min: `${label} ${number}`,
     },
   };
@@ -468,36 +467,13 @@ function sessionModule(data: HudData): BarModule {
   };
 }
 
-const HINT_LIFETIME_MS = 10 * 60_000;
-
-/**
- * The keyboard hint is for someone who has not learned the key yet. Ten
- * minutes into a session with nothing to open, it has stopped teaching and
- * started taking up a column, so it retires itself.
- */
-function hintModule(data: HudData, nowMs: number): BarModule {
-  const hasAgents = (data.subagentTree?.nodes.length ?? 0) > 0;
-  const started = (data.session?.startTime ?? data.sessionStart).getTime();
-  if (!hasAgents && nowMs - started > HINT_LIFETIME_MS) {
-    return { id: 'hint', priority: MODULE_PRIORITY.hint, group: 'meta', align: 'right', variants: {} };
-  }
-  return {
-    id: 'hint',
-    priority: MODULE_PRIORITY.hint,
-    group: 'meta',
-    align: 'right',
-    variants: {
-      full: colors.dim(hasAgents ? 'F12 tree' : 'F12'),
-      short: colors.dim('F12'),
-    },
-  };
-}
-
 export interface BarModuleOptions {
   nowMs?: number;
   barWidth?: number;
   density?: Density;
   glyphs?: GlyphMode;
+  /** Draws the context meter; the bar's block meter by default. */
+  meter?: (percent: number, cells: number) => string;
 }
 
 /**
@@ -517,7 +493,7 @@ export function buildBarModules(data: HudData, options: BarModuleOptions = {}): 
     identityModule(data, glyphs),
     projectModule(data),
     agentsModule(data),
-    contextModule(data, barWidth),
+    contextModule(data, barWidth, options.meter),
     cacheModule(data, nowMs, glyphs),
     tasksModule(data),
     quotaModule(data, nowMs),
@@ -526,7 +502,6 @@ export function buildBarModules(data: HudData, options: BarModuleOptions = {}): 
     timerModule(data, nowMs),
     environmentModule(data),
     sessionModule(data),
-    hintModule(data, nowMs),
   ];
 
   return modules.filter((module) => allowed.has(module.id));

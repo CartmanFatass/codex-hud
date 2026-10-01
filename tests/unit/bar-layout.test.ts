@@ -124,17 +124,12 @@ test('the session timer counts days once hours stop meaning anything', () => {
   assert.equal(timer(10 * 24 * hour), '10d');
 });
 
-test('the F12 hint retires once it has nothing left to teach', () => {
-  const data = makeHudData();
-  const alone = makeHudData({ subagentTree: undefined, subagents: [] });
-  const hint = (source: typeof data, elapsedMs: number) =>
-    buildBarModules(source, { nowMs: source.session!.startTime.getTime() + elapsedMs })
-      .find((module) => module.id === 'hint')!.variants;
-
-  assert.deepEqual(hint(alone, 9 * 60_000), hint(alone, 0), 'the hint stays for the first ten minutes');
-  assert.ok(hint(alone, 9 * 60_000).full, 'a new session is still being taught the key');
-  assert.deepEqual(hint(alone, 11 * 60_000), {}, 'nothing to open and the key is learned');
-  assert.ok(hint(data, 11 * 60_000).full, 'agents to show keep the hint on screen');
+test('the bar spends no column on a key hint', () => {
+  for (const density of ['focus', 'balanced', 'full'] as const) {
+    const modules = buildBarModules(makeHudData(), { density });
+    assert.ok(!modules.some((module) => module.id === 'hint'), density);
+    assert.doesNotMatch(modules.map((module) => module.variants.full ?? '').join(' '), /F12/);
+  }
 });
 
 test('the alert survives every pane width', () => {
