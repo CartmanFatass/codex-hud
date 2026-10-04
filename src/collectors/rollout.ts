@@ -219,6 +219,49 @@ function cloneSessionInfo(session: SessionInfo | null | undefined): SessionInfo 
   };
 }
 
+/**
+ * Something that happened to the session, as the rollout recorded it. Facts
+ * only: a quiet stretch is not an event, and neither is a guess.
+ */
+export interface SessionEvent {
+  kind: 'approval-requested' | 'approval-answered' | 'compacted' | 'quota' | 'turn-finished' | 'turn-interrupted' | 'turn-failed';
+  at: Date;
+  /** What was asked for approval, or which quota window and threshold. */
+  text?: string;
+  /** For a quota crossing: the threshold crossed, 80 or 95, and the window's length. */
+  threshold?: number;
+  windowMinutes?: number;
+}
+export const SESSION_EVENT_LIMIT = 60;
+
+/** One reading of a quota window's use, for a forecast. */
+export interface QuotaSample {
+  window: 'primary' | 'secondary';
+  at: Date;
+  percent: number;
+  windowMinutes?: number;
+  /** When the window resets, as the reading gave it. */
+  resetsAt?: Date;
+}
+export const QUOTA_SAMPLE_LIMIT = 240;
+const QUOTA_THRESHOLDS = [80, 95];
+
+export function appendBounded<T>(older: readonly T[], newer: readonly T[], limit: number): T[] {
+  const all = [...older, ...newer];
+  return all.length > limit ? all.slice(all.length - limit) : all;
+}
+
+function resetTime(window: { resets_at?: number | string; resets_in_seconds?: number }, at: number): Date | undefined {
+  const raw = window.resets_at;
+  if (typeof raw === 'string') { const parsed = new Date(raw); return Number.isNaN(parsed.getTime()) ? undefined : parsed; }
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+    if (raw < 1_000_000_000) return new Date(at + raw * 1000);
+    return new Date(raw > 1_000_000_000_000 ? raw : raw * 1000);
+  }
+  const seconds = window.resets_in_seconds;
+  return typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 ? new Date(at + seconds * 1000) : undefined;
+}
+
 /** Public entries of the main conversation kept for the recap. */
 export const TRANSCRIPT_LIMIT = 12;
 
@@ -304,6 +347,10 @@ export interface RolloutParseResult {
   firstUserMessage?: TranscriptEntry;
   lastUserMessageAt?: Date;
   lastReplyAt?: Date;
+  /** The session's recorded events, oldest first, at most `SESSION_EVENT_LIMIT`. */
+  events: SessionEvent[];
+  /** Quota readings, oldest first, at most `QUOTA_SAMPLE_LIMIT`. */
+  quotaSamples: QuotaSample[];
 }
 
 export interface RolloutParseOutput {
@@ -455,7 +502,9 @@ export async function parseRolloutFile(
   initialSession: SessionInfo | null = null,
   rateTracker: TokenRateTracker = new TokenRateTracker(),
   previousIdentity?: string,
-  initialPendingApproval: PendingApproval | null = null
+  initialPendingApproval: PendingApproval | null = null,
+  /** The last quota reading before this batch, so a crossing at its start is seen. */
+  initialQuota: Partial<Record<'primary' | 'secondary', number>> = {}
 ): Promise<RolloutParseOutput> {
   const toolActivity: ToolActivity = {
     recentCalls: [],
@@ -485,6 +534,29 @@ export async function parseRolloutFile(
   let firstUserMessage: TranscriptEntry | undefined;
   let lastUserMessageAt: Date | undefined;
   let lastReplyAt: Date | undefined;
+  let events: SessionEvent[] = [];
+  let quotaSamples: QuotaSample[] = [];
+  let lastQuota = { ...initialQuota };
+  const event = (value: SessionEvent) => { events = appendBounded(events, [value], SESSION_EVENT_LIMIT); };
+  /** Note a quota reading; a crossing needs a reading below the threshold first. */
+  const noteQuota = (limits: RateLimitSnapshot | null | undefined, timestamp: Date) => {
+    for (const name of ['primary', 'secondary'] as const) {
+      const window = limits?.[name];
+      const percent = window?.used_percent;
+      if (!window || typeof percent !== 'number' || !Number.isFinite(percent)) continue;
+      const before = lastQuota[name];
+      for (const threshold of QUOTA_THRESHOLDS) {
+        if (before !== undefined && before < threshold && percent >= threshold) {
+          event({ kind: 'quota', at: timestamp, threshold, text: name,
+            ...(typeof window.window_minutes === 'number' ? { windowMinutes: window.window_minutes } : {}) });
+        }
+      }
+      lastQuota = { ...lastQuota, [name]: percent };
+      quotaSamples = appendBounded(quotaSamples, [{ window: name, at: timestamp, percent,
+        ...(typeof window.window_minutes === 'number' ? { windowMinutes: window.window_minutes } : {}),
+        ...(() => { const resetsAt = resetTime(window, timestamp.getTime()); return resetsAt ? { resetsAt } : {}; })() }], QUOTA_SAMPLE_LIMIT);
+    }
+  };
   let activity: SessionActivity | undefined;
   let tokenUsageAt: Date | undefined;
   // Carried in like `session` and `runningCalls`: the event that answers a
@@ -496,9 +568,10 @@ export async function parseRolloutFile(
    * id is only cleared by that same id; one that recorded none has no other
    * candidate, so any answering event clears it.
    */
-  const clearApprovalFor = (callId: string | undefined): void => {
+  const clearApprovalFor = (callId: string | undefined, at?: Date): void => {
     if (!pendingApproval) return;
     if (!pendingApproval.callId || pendingApproval.callId === callId) {
+      if (at) event({ kind: 'approval-answered', at, text: pendingApproval.summary });
       pendingApproval = null;
     }
   };
@@ -627,7 +700,7 @@ export async function parseRolloutFile(
             // Tool call completed
             lastToolActivityTime = timestamp;
             // A result for the call is proof the approval was answered.
-            clearApprovalFor(payload.call_id);
+            clearApprovalFor(payload.call_id, timestamp);
             const runningCall = runningCalls.get(payload.call_id);
             if (runningCall) {
               const outcome = toolResult(payload.output);
@@ -667,8 +740,10 @@ export async function parseRolloutFile(
             activity = { state: 'working', updatedAt: timestamp, turnStartedAt: timestamp };
           } else if (payload.type === 'task_complete' || payload.type === 'turn_complete') {
             activity = { ...activity, state: 'idle', updatedAt: timestamp };
+            event({ kind: 'turn-finished', at: timestamp });
           } else if (payload.type === 'turn_aborted' || payload.type === 'task_failed') {
             activity = { ...activity, state: payload.type === 'turn_aborted' ? 'interrupted' : 'error', updatedAt: timestamp };
+            event({ kind: payload.type === 'turn_aborted' ? 'turn-interrupted' : 'turn-failed', at: timestamp });
           }
 
           // Codex 0.157 reports commands and edits as completed items; older
@@ -689,11 +764,12 @@ export async function parseRolloutFile(
               payload.type === 'turn_aborted' || payload.type === 'task_failed') {
             pendingApproval = null;
           } else if (payload.type === 'exec_command_begin' || payload.type === 'exec_command_end') {
-            clearApprovalFor(payload.call_id);
+            clearApprovalFor(payload.call_id, timestamp);
           } else if (payload.type === 'exec_approval_request' ||
                      payload.type === 'apply_patch_approval_request' ||
                      payload.type === 'request_user_input') {
             pendingApproval = approvalFromEvent(payload, timestamp);
+            event({ kind: 'approval-requested', at: timestamp, text: pendingApproval.summary });
           }
 
           if (payload.type === 'token_count' && typeof payload.info?.total_token_usage?.output_tokens === 'number') {
@@ -718,15 +794,18 @@ export async function parseRolloutFile(
             }
             if (payload.rate_limits) {
               rateLimits = mergeRateLimits(rateLimits, payload.rate_limits);
+              noteQuota(payload.rate_limits, timestamp);
             }
           } else if (payload.type === 'rate_limit' && payload.rate_limits) {
             rateLimits = mergeRateLimits(rateLimits, payload.rate_limits);
+            noteQuota(payload.rate_limits, timestamp);
           } else if (payload.type === 'item_completed' && payload.item?.type === 'CollabAgentToolCall') {
             applyCollabAgentItem(subagents, payload.item, timestamp);
           } else if (payload.type === 'context_compacted') {
             // /compact command was executed - track it
             compactCount++;
             lastCompactTime = timestamp;
+            event({ kind: 'compacted', at: timestamp });
           } else if (payload.type === 'task_started') {
             if (payload.collaboration_mode_kind) {
               sessionCollaborationMode = payload.collaboration_mode_kind;
@@ -789,12 +868,19 @@ export async function parseRolloutFile(
       result: { session, activity, tokenUsageAt, toolActivity, planProgress, tokenUsage, outputRate: rateTracker.snapshot,
         rateLimits, pendingApproval, subagents: [...subagents.values()], compactCount, lastCompactTime,
         lastToolActivityTime, lastAssistantMessageTime, lastEventTime, workDirs,
-        transcript, transcriptDroppedAt, firstUserMessage, lastUserMessageAt, lastReplyAt },
+        transcript, transcriptDroppedAt, firstUserMessage, lastUserMessageAt, lastReplyAt, events, quotaSamples },
       newOffset: committedOffset, runningCalls, wasTruncated, fileIdentity,
     };
   } finally {
     await handle.close();
   }
+}
+
+/** Each window's latest reading, to carry into the next batch. */
+function lastQuotaReadings(samples: readonly QuotaSample[]): Partial<Record<'primary' | 'secondary', number>> {
+  const last: Partial<Record<'primary' | 'secondary', number>> = {};
+  for (const sample of samples) last[sample.window] = sample.percent;
+  return last;
 }
 
 /**
@@ -855,7 +941,8 @@ export class RolloutParser {
       replay ? null : this.cachedResult?.session ?? null,
       tracker,
       this.fileIdentity,
-      replay ? null : this.cachedResult?.pendingApproval ?? null
+      replay ? null : this.cachedResult?.pendingApproval ?? null,
+      replay ? {} : lastQuotaReadings(this.cachedResult?.quotaSamples ?? [])
     ).catch(error => {
       if (generation === this.generation) this.needsReplay = true;
       throw error;
@@ -937,6 +1024,8 @@ export class RolloutParser {
       result.firstUserMessage = this.cachedResult.firstUserMessage ?? result.firstUserMessage;
       result.lastUserMessageAt ??= this.cachedResult.lastUserMessageAt;
       result.lastReplyAt ??= this.cachedResult.lastReplyAt;
+      result.events = appendBounded(this.cachedResult.events, result.events, SESSION_EVENT_LIMIT);
+      result.quotaSamples = appendBounded(this.cachedResult.quotaSamples, result.quotaSamples, QUOTA_SAMPLE_LIMIT);
     }
 
     this.cachedResult = result;

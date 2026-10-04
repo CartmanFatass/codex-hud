@@ -414,6 +414,12 @@ export interface SubagentTreeNode {
   id: string;
   /** Display name: the task path's last segment, else nickname, role or kind. */
   name: string;
+  /**
+   * A short model-written label, shown in place of `name` in the tree row and
+   * the log when the labels feature is on and one has arrived. Never used to
+   * identify the agent: `id` and `name` do that.
+   */
+  label?: string;
   /** Codex task path, `/root/<task>`; also the agent's `/subagents` picker label. */
   agentPath?: string;
   /** Randomly assigned nickname (`Meitner`), shown only as a detail. */
@@ -532,6 +538,9 @@ export interface HudData {
 
   /** Whether the HUD's own reads go through; absent until one succeeds or fails. */
   health?: HudHealthState;
+
+  /** When a quota window is projected to run out before it resets; absent when no projection holds. */
+  quotaForecast?: import('./collectors/quota-forecast.js').QuotaForecast;
 }
 
 /** See collectors/hud-health.ts. */

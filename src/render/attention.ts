@@ -23,6 +23,18 @@ export interface AttentionItem {
   /** One line of context for the detail view. */
   detail: string;
   severity: 'warning' | 'error';
+  /** For an approval: when it was asked for, so the wait can be shown. */
+  since?: Date;
+}
+
+/** How long something has waited, at a glance: "45s", "12m", "1h05m". */
+export function waitedText(since: Date, nowMs: number): string {
+  const seconds = Math.max(0, Math.floor((nowMs - since.getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 48 ? `${hours}h${String(minutes % 60).padStart(2, '0')}m` : `${Math.floor(hours / 24)}d`;
 }
 
 const RECENT_TOOL_ERROR_MS = 120_000;
@@ -58,6 +70,9 @@ export function collectAttention(data: HudData, nowMs: number = Date.now()): Att
       label: APPROVAL_LABELS[approval.kind],
       detail: approval.summary ?? APPROVAL_FALLBACK[approval.kind],
       severity: 'warning',
+      // Only the main session's rollout records approvals, so the wait is
+      // the session's; which agent asked is not something it says.
+      ...(Number.isFinite(approval.since.getTime()) ? { since: approval.since } : {}),
     });
   }
 

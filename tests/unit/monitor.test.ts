@@ -62,7 +62,7 @@ test('open panes fill the tree column; folded panes stay one row',()=>{
   assert.equal(bottom.y+bottom.height,27);
   assert.ok(frame.panes[0].height>=5);
   let state=initialMonitorState();
-  state.modes={agents:'open',worktrees:'open',changes:'open',details:'open'};
+  state.modes={agents:'open',worktrees:'open',changes:'open',details:'open',timeline:'closed'};
   const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[{path:'a.ts',index:' ',worktree:'M',added:1,removed:0,binary:false,conflict:false}]};
   const four=renderMonitor({tree,worktrees,git,state,width:30,height:28,nowMs:now});
   assert.equal(four.panes.length,4);
@@ -115,7 +115,7 @@ test('a box closes and folds; Agents does neither; Tab skips closed panes',()=>{
 });
 
 test('Agents stays even when every setting says closed, and has no fold or close buttons',()=>{
-  const state=initialMonitorState();state.modes={agents:'closed',worktrees:'closed',changes:'closed',details:'closed'};
+  const state=initialMonitorState();state.modes={agents:'closed',worktrees:'closed',changes:'closed',details:'closed',timeline:'closed'};
   const frame=draw(state);
   assert.deepEqual(frame.panes.map(p=>p.id),['agents']);
   assert.equal(frame.controls.filter(c=>c.pane==='agents').length,0);

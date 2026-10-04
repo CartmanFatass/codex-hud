@@ -7,12 +7,26 @@ import { initialPanelState, visibleRows, reconcileSelection, applyKey, type Pane
 export type PaneId = 'agents' | 'details' | 'changes' | 'activity';
 export const PANE_IDS: PaneId[] = ['agents', 'details', 'changes', 'activity'];
 export type ActivityTab = 'tasks' | 'checks' | 'events';
+/** What a timeline event is, for words in the reader's language. */
+export type TimelineKind = 'approval-requested' | 'approval-answered' | 'compacted' | 'quota' | 'turn-finished' | 'turn-interrupted'
+  | 'turn-failed' | 'agent-started' | 'agent-finished' | 'agent-failed' | 'tool-failed';
 export interface WorkbenchEvent {
   id: string;
   at: Date;
   title: string;
   detail: string[];
   status: 'running' | 'completed' | 'error' | 'unknown';
+  /** Set on timeline events: the title is then written from these. */
+  kind?: TimelineKind;
+  /** The agent, tool or approval the event is about. */
+  subject?: string;
+  /** A quota crossing's threshold, and its window in minutes. */
+  threshold?: number;
+  windowMinutes?: number;
+  /** The agent the event belongs to, for a failure cause. */
+  agentId?: string;
+  /** A model-written line on why it failed (4.3), shown under the event. */
+  cause?: string;
 }
 export interface PaneRect {
   id: PaneId; x: number; y: number; width: number; height: number;

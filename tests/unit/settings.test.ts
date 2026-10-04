@@ -26,10 +26,10 @@ test('missing settings keep display defaults and hide optional tasks and activit
       density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
       statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
       details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
-      agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed',
+      agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-      briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60,
+      briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
       art: 'off', artImage: '',
     });
     assert.equal(fs.existsSync(file), false, 'reading defaults does not create files');
@@ -62,10 +62,10 @@ test('load validates known settings without importing unknown or invalid values'
       density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
       statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
       details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0,
-      agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed',
+      agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-      briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60,
+      briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
       art: 'off', artImage: '',
     });
     fs.writeFileSync(file, JSON.stringify({

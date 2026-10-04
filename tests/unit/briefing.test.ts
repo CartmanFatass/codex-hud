@@ -168,34 +168,40 @@ test('a brief reply is read as JSON when it is JSON, fenced or not, and refused 
   assert.equal(parseBrief(`{"agents":[{"agent":"a","note":"${'长'.repeat(500)}"}]}`)!.items[0].note.length, 121);
 });
 
-test('each agent in a brief looks like its tree row, and what needs a look leads in the warning colour', () => {
+test('each agent in the log looks like its tree row, newest news first, and what needs a look is in the warning colour', () => {
   const quiet = node('00000000-0000-4000-8000-000000000001', 'quiet_one', 'running',
     { turnStartedAt: new Date(now - 20 * 60_000), lastEventAt: new Date(now - 8 * 60_000) });
   const busy = node('00000000-0000-4000-8000-000000000002', 'busy_one', 'running',
     { turnStartedAt: new Date(now - 30_000), lastEventAt: new Date(now - 1000) });
-  const brief = { text: 'raw', at: now, overall: '两个在跑',
-    items: [{ agent: 'busy_one', note: '正在核对链接', attention: false }, { agent: 'quiet_one', note: '停在保存结果', attention: false },
-      { agent: 'ghost', note: '不在树里', attention: false }] };
-  const frame = renderMonitor({ tree: tree([busy, quiet]), state: initialMonitorState(), width: 30, height: 30, nowMs: now, brief });
-  // Tight on room: blocks follow each other directly.
-  const tight = renderMonitor({ tree: tree([busy, quiet]), state: initialMonitorState(), width: 30, height: 14, nowMs: now, brief });
+  const agentLog = new Map([
+    [quiet.id, [{ at: now - 20 * 60_000, kind: 'started' as const, text: '' }, { at: now - 9 * 60_000, kind: 'note' as const, text: '停在保存结果' }]],
+    [busy.id, [{ at: now - 30_000, kind: 'started' as const, text: '' }, { at: now - 10_000, kind: 'report' as const, text: 'Checking links' },
+      { at: now - 5000, kind: 'note' as const, text: '正在核对链接' }]],
+  ]);
+  const state = initialMonitorState();
+  state.tree.selectedId = null;
+  const brief = { text: 'raw', at: now, overall: '两个在跑', items: [] };
+  const tight = renderMonitor({ tree: tree([busy, quiet]), state, width: 30, height: 16, nowMs: now, brief, agentLog });
   const lines = tight.lines.map(stripAnsi);
   const rule = lines.findIndex(line => line.startsWith('─ Brief'));
   assert.equal(lines[rule + 1].trimEnd(), ' 两个在跑');
-  // The quiet agent leads although the model did not flag it.
-  assert.match(lines[rule + 2], /^!▸ quiet_one +$/, 'no clock: the tree row above has it');
-  assert.equal(lines[rule + 3].trimEnd(), '   停在保存结果');
-  assert.ok(tight.lines[rule + 2].includes(theme.warning('quiet_one')));
-  assert.match(lines[rule + 4], /^ ▸ busy_one +$/);
-  assert.equal(lines[rule + 5].trimEnd(), '   正在核对链接');
-  assert.ok(tight.lines[rule + 4].includes(theme.strong('busy_one')));
-  assert.match(lines[rule + 6], /^ · ghost/, 'a name the tree does not know is still shown, without a status');
-  // With room to spare, a blank line separates the blocks.
-  const roomy = frame.lines.map(stripAnsi);
-  const top = roomy.findIndex(line => line.startsWith('─ Brief'));
-  assert.deepEqual(roomy.slice(top + 1, top + 5).map(line => line.trimEnd()), [' 两个在跑', '', '!▸ quiet_one', '   停在保存结果']);
-  assert.equal(roomy[top + 5].trim(), '');
-  assert.ok(frame.lines.every(line => visualLength(line) <= 30));
+  // Selected first, then newest news: the busy agent's note is newer.
+  const sel = tight.state.tree.selectedId;
+  const first = sel === busy.id ? 'busy_one' : 'quiet_one';
+  assert.match(lines[rule + 2], new RegExp(`^.▸ ${first} +$`));
+  const busyAt = lines.findIndex(line => /^ ▸ busy_one/.test(line));
+  assert.ok(tight.lines[busyAt].includes(theme.strong('busy_one')));
+  assert.equal(lines[busyAt + 1].trimEnd(), '   5s ~ 正在核对链接', 'newest first, a model note marked');
+  assert.equal(lines[busyAt + 2].trimEnd(), '   10s Checking links');
+  const quietAt = lines.findIndex(line => /^!▸ quiet_one/.test(line));
+  assert.ok(quietAt > 0, 'the quiet agent is flagged although the model did not flag it');
+  assert.ok(tight.lines[quietAt].includes(theme.warning('quiet_one')));
+  assert.ok(tight.lines.every(line => visualLength(line) <= 30));
+  // A click on a log line selects its agent.
+  const control = tight.controls.find(c => c.kind === 'log' && c.item === quiet.id)!;
+  const picked = handleMonitorInput(tight.state, { type: 'mouse', button: 'left', x: 2, y: control.y }, { tree: tree([busy, quiet]), frame: tight });
+  assert.equal(picked.state.tree.selectedId, quiet.id);
+  assert.equal(picked.action, undefined, 'selecting from the log does not switch the Codex session');
   const plain = renderMonitor({ tree: tree([busy]), state: initialMonitorState(), width: 30, height: 20, nowMs: now, brief: { text: 'just text', at: now } });
   assert.ok(plain.lines.map(stripAnsi).some(line => line.trimEnd() === ' just text'), 'a reply in another shape is shown as text');
 });
@@ -210,17 +216,36 @@ test('closing punctuation never starts a brief line', () => {
   assert.ok(lines.includes(' 四。后面'));
 });
 
-test('the brief lists what needs a look, then live agents, then the rest, then finished ones', () => {
-  const done = node('00000000-0000-4000-8000-000000000001', 'done_one', 'completed', { statusAt: new Date(now - 60_000) });
-  const live = node('00000000-0000-4000-8000-000000000002', 'live_one', 'running', { turnStartedAt: new Date(now - 1000), lastEventAt: new Date(now) });
-  const odd = node('00000000-0000-4000-8000-000000000003', 'odd_one', 'unknown');
-  const items = ['done_one', 'odd_one', 'live_one', 'flagged_done'].map(agent => ({ agent, note: 'n', attention: agent === 'flagged_done' }));
-  const flagged = node('00000000-0000-4000-8000-000000000004', 'flagged_done', 'completed', { statusAt: new Date(now) });
-  const frame = renderMonitor({ tree: tree([done, live, odd, flagged]), state: initialMonitorState(), width: 30, height: 40, nowMs: now,
-    brief: { text: 'raw', at: now, items } });
-  const lines = frame.lines.map(stripAnsi);
-  const order = lines.slice(lines.findIndex(line => line.startsWith('─ Brief'))).map(line => line.match(/^.. (\w+_(?:one|done))/)?.[1]).filter(Boolean);
-  assert.deepEqual(order, ['flagged_done', 'live_one', 'odd_one', 'done_one']);
+test('the log follows the tree: what the tree hides it hides, a collapsed parent counts what is folded, the Inspector has it all', () => {
+  const child = node('00000000-0000-4000-8000-000000000011', 'child_one', 'running', { depth: 2, turnStartedAt: new Date(now - 60_000) });
+  const parent = node('00000000-0000-4000-8000-000000000010', 'parent_one', 'running', { turnStartedAt: new Date(now - 120_000), children: [child] });
+  const old = node('00000000-0000-4000-8000-000000000012', 'old_one', 'completed', { statusAt: new Date(now - 3 * 3600_000) });
+  const agentLog = new Map([
+    [child.id, [{ at: now - 60_000, kind: 'started' as const, text: '' }]],
+    [parent.id, [{ at: now - 120_000, kind: 'started' as const, text: '' }]],
+    [old.id, [{ at: now - 3 * 3600_000, kind: 'finished' as const, text: '' }]],
+  ]);
+  const agents = tree([parent, old]);
+  const state = initialMonitorState();
+  state.tree.selectedId = parent.id;
+  state.tree.lingerMs = 180_000;
+  const open = renderMonitor({ tree: agents, state, width: 30, height: 30, nowMs: now, brief: {}, agentLog }).lines.map(stripAnsi);
+  assert.ok(open.some(line => /▸ child_one/.test(line) && !line.includes('├')), 'a shown child has its log');
+  assert.ok(!open.slice(open.findIndex(line => line.startsWith('─ Brief'))).some(line => /old_one/.test(line)), 'put away by the linger window: not in the log');
+  const collapsed = { ...state, tree: { ...state.tree, collapsed: new Set([parent.id]) } };
+  const folded = renderMonitor({ tree: agents, state: collapsed, width: 30, height: 30, nowMs: now, brief: {}, agentLog }).lines.map(stripAnsi);
+  const from = folded.findIndex(line => line.startsWith('─ Brief'));
+  assert.ok(!folded.slice(from).some(line => /child_one/.test(line)));
+  assert.ok(folded.slice(from).some(line => line.trim() === '+1 folded below'));
+  const all = { ...state, tree: { ...state.tree, showAll: true } };
+  const shown = renderMonitor({ tree: agents, state: all, width: 30, height: 30, nowMs: now, brief: {}, agentLog }).lines.map(stripAnsi);
+  assert.ok(shown.slice(shown.findIndex(line => line.startsWith('─ Brief'))).some(line => /old_one/.test(line)), 'shown again with everything');
+  const off = renderMonitor({ tree: agents, state, width: 30, height: 30, nowMs: now, agentLog }).lines.map(stripAnsi);
+  assert.ok(off.some(line => line.startsWith('─ Agent log')), 'with no brief, the log has a rule of its own');
+  assert.ok(!off.some(line => /b pause/.test(line)));
+  const inspect = { ...state, modes: { ...state.modes, details: 'open' as const }, focus: 'details' as const };
+  const detail = renderMonitor({ tree: agents, state: inspect, width: 40, height: 40, nowMs: now, agentLog }).lines.map(stripAnsi);
+  assert.ok(detail.some(line => /│ Log/.test(line)));
 });
 
 test('an api brief is one chat completions call: base, model and key fall back sensibly', () => {

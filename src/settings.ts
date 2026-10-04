@@ -24,6 +24,8 @@ export interface HudSettings extends HudDisplayConfig {
   worktreesPane: 'open' | 'folded' | 'closed';
   changesPane: 'open' | 'folded' | 'closed';
   detailsPane: 'open' | 'folded' | 'closed';
+  /** The session's observed events, newest first. */
+  timelinePane: 'open' | 'folded' | 'closed';
   worktreeRoot: string;
   /**
    * Who writes the agents brief under the tree: nobody, `omp`, `agy`, or any
@@ -59,10 +61,16 @@ export interface HudSettings extends HudDisplayConfig {
   briefMain: boolean;
   /** The recap's slower trigger: at most one refresh per this while anything changed, in ms. */
   recapFloorMs: number;
+  /** Show each agent's log under the tree even with the model backend off (observed entries only). */
+  agentLog: boolean;
   /** The recap in the panel shows its goal line only. */
   recapFolded: boolean;
   /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
   modelCallsPerHour: number;
+  /** Notifications in tmux on approvals, failures and finished agents. CODEX_HUD_NOTIFY, when set, wins. */
+  notify: boolean;
+  /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
+  notifyDesktop: boolean;
   /** A picture drawn in text in the panel's empty space, and its style. */
   art: 'off' | 'dots' | 'color' | 'ascii';
   /** The picture: any image ffmpeg can read. `codex-hud-art <image>` sets it. */
@@ -80,10 +88,11 @@ export function defaultSettings(): HudSettings {
     density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
     statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
     details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
-    agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed',
+    agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed',
     worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60,
+    agentLog: false, notify: false, notifyDesktop: false,
     art: 'off', artImage: '',
   };
 }
@@ -115,6 +124,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   worktreesPane: oneOf('open', 'folded', 'closed'),
   changesPane: oneOf('open', 'folded', 'closed'),
   detailsPane: oneOf('open', 'folded', 'closed'),
+  timelinePane: oneOf('open', 'folded', 'closed'),
   worktreeRoot: value => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   briefing: oneOf('off', 'omp', 'agy', 'api'),
   briefingMs: (value) => isIntegerBetween(value, 30_000, 3_600_000),
@@ -128,6 +138,9 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   briefMain: isBoolean,
   recapFloorMs: (value) => isIntegerBetween(value, 60_000, 7_200_000),
   recapFolded: isBoolean,
+  agentLog: isBoolean,
+  notify: isBoolean,
+  notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
   art: oneOf('off', 'dots', 'color', 'ascii'),
   artImage: isText(4096),

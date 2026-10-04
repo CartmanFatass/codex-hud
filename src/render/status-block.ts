@@ -20,7 +20,7 @@
  */
 import type { HudData } from '../types.js';
 import { buildBarModules, formatDuration } from './layout/bar-modules.js';
-import { collectAttention } from './attention.js';
+import { collectAttention, waitedText } from './attention.js';
 import { colors, coloredPercent, getContextColor, icons, padEnd, theme, truncate, truncateAnsi, visualLength } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
@@ -64,7 +64,7 @@ export function statusCard(data: HudData | null, width: number, maxRows: number,
   const alerts = collectAttention(data, nowMs).filter((item) => item.kind !== 'quota-exhausted' && item.kind !== 'context-critical');
   if (alerts.length) {
     const paint = alerts.some((item) => item.severity === 'error') ? theme.error : theme.warning;
-    rows.set('alert', paint(`! ${alerts.map((item) => alertLabel(item.label)).join(' · ')}`));
+    rows.set('alert', paint(`! ${alerts.map((item) => alertLabel(item.label) + (item.since ? ` ${waitedText(item.since, nowMs)}` : '')).join(' · ')}`));
   }
 
   const model = renderModelEffortToken(data.session?.model ?? data.config.model,
@@ -120,7 +120,11 @@ export function statusCard(data: HudData | null, width: number, maxRows: number,
       : windows.some((window) => window.resetDue) ? colors.dim(` ${t('reset due')}`) : '';
     const mark = spent ? ` ${theme.error('!')}` : '';
     const one = (window: typeof worst) => `${window.label ? colors.dim(window.label) + ' ' : ''}${coloredPercent(window.percent)}`;
+    // A projection, marked as one, on the widest reading only.
+    const projected = data.quotaForecast;
+    const forecast = projected ? theme.warning(` ${t('out ~{d}', { d: formatCountdown(projected.exhaustAt, nowMs) })}`) : '';
     meters.set('quota', { label: label('Quota'), percent: worst.percent, readings: [
+      ...(forecast ? [windows.map(one).join('  ') + mark + reset + forecast, one(worst) + mark + forecast] : []),
       windows.map(one).join('  ') + mark + reset,
       one(worst) + mark + reset,
       one(worst) + mark,

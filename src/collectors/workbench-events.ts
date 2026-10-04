@@ -1,6 +1,11 @@
 import type { RolloutParseResult } from './rollout.js';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
-import type { WorkbenchEvent } from '../render/workbench-state.js';
+import type { WorkbenchEvent, TimelineKind } from '../render/workbench-state.js';
+import type { AgentLogEntry } from './agent-log.js';
+
+/** Events the timeline keeps; the oldest go first. */
+export const TIMELINE_LIMIT = 100;
+const AGENT_KINDS: Partial<Record<AgentLogEntry['kind'], TimelineKind>> = { started: 'agent-started', finished: 'agent-finished', failed: 'agent-failed' };
 
 /** Bounded observed history; polling never invents a new event. */
 export class WorkbenchHistory {
@@ -35,6 +40,46 @@ export class WorkbenchHistory {
     const latest = this.values().slice(0,100);
     this.entries = new Map(latest.map(event => [event.id,event]));
   }
+  /**
+   * The session timeline: what the rollout recorded (approvals asked and
+   * answered, compaction, quota crossings, turns ending, failed tool calls)
+   * and each agent's starts, finishes and failures, read from the agent log
+   * so the two never disagree. Kept in the same bounded, de-duplicated list
+   * as the rest of the history, newest first.
+   */
+  timeline(tree: SubagentTree, main: RolloutParseResult | null, logs: ReadonlyMap<string, readonly AgentLogEntry[]>): WorkbenchEvent[] {
+    if (tree.rootId !== this.rootId) { this.rootId = tree.rootId; this.entries.clear(); }
+    const add = (event: Omit<WorkbenchEvent, 'title' | 'detail'> & { detail?: string[] }) => {
+      if (!this.entries.has(event.id)) this.entries.set(event.id, { title: `${event.kind} ${event.subject ?? ''}`.trim(), detail: [], ...event });
+    };
+    for (const recorded of main?.events ?? []) {
+      add({ id: `session:${recorded.kind}:${recorded.at.getTime()}:${recorded.threshold ?? ''}:${recorded.text ?? ''}`, at: recorded.at, kind: recorded.kind,
+        status: recorded.kind === 'turn-failed' ? 'error' : 'completed', subject: recorded.kind === 'quota' ? undefined : recorded.text,
+        ...(recorded.threshold !== undefined ? { threshold: recorded.threshold } : {}),
+        ...(recorded.windowMinutes !== undefined ? { windowMinutes: recorded.windowMinutes } : {}) });
+    }
+    for (const call of main?.toolActivity.recentCalls ?? []) {
+      if (call.status !== 'error') continue;
+      add({ id: `tool:${call.id}`, at: new Date(call.timestamp.getTime() + (call.duration ?? 0)), kind: 'tool-failed', status: 'error',
+        subject: call.target ?? call.name, detail: call.output ? [call.output] : [] });
+    }
+    const names = new Map<string, SubagentTreeNode>();
+    const visit = (nodes: SubagentTreeNode[]) => { for (const node of nodes) { names.set(node.id, node); visit(node.children); } };
+    visit(tree.nodes);
+    for (const [id, entries] of logs) {
+      const node = names.get(id);
+      for (const entry of entries) {
+        const kind = AGENT_KINDS[entry.kind];
+        if (!kind) continue;
+        add({ id: `agent:${id}:${entry.kind}:${entry.at}`, at: new Date(entry.at), kind, agentId: id, subject: node?.label ?? node?.name ?? id.slice(0, 8),
+          status: kind === 'agent-failed' ? 'error' : kind === 'agent-started' ? 'running' : 'completed' });
+      }
+    }
+    const latest = this.values().slice(0, TIMELINE_LIMIT);
+    this.entries = new Map(latest.map(event => [event.id, event]));
+    return latest.filter(event => event.kind !== undefined);
+  }
+
   values(): WorkbenchEvent[] {
     return [...this.entries.values()].sort((a,b)=>b.at.getTime()-a.at.getTime() || a.id.localeCompare(b.id));
   }

@@ -15,7 +15,7 @@ import type { HudData } from '../../types.js';
 import { colors, coloredBar, coloredPercent, completionBar, getContextColor, icons, theme, truncate } from '../colors.js';
 import { renderModelEffortToken } from '../model-glyphs.js';
 import { formatTokenCount } from '../lines/index.js';
-import { collectAttention, highestSeverity } from '../attention.js';
+import { collectAttention, highestSeverity, waitedText } from '../attention.js';
 import { summarizeSubagents } from '../../collectors/subagent-tree.js';
 import { getApprovalPolicyDisplayValue } from '../../collectors/codex-config.js';
 import { displayConfig, type Density, type GlyphMode } from '../hud-config.js';
@@ -78,13 +78,16 @@ function attentionModule(data: HudData, nowMs: number): BarModule {
   }
   const paint = highestSeverity(items) === 'error' ? theme.error : theme.warning;
   const count = items.length;
+  // An approval says how long it has waited: a minute and an hour ask for different haste.
+  const label = (item: (typeof items)[number]) => item.since ? `${item.label} ${waitedText(item.since, nowMs)}` : item.label;
   return {
     id: 'attention',
     priority: MODULE_PRIORITY.attention,
     // Pinned: an alert is the one thing a narrow pane must not lose.
     pinned: true,
     variants: {
-      full: paint(`! ${items.map((item) => item.label).join(' · ')}`),
+      full: paint(`! ${items.map(label).join(' · ')}`),
+      // Narrower, the phrase alone: the wait is the first thing to go.
       short: paint(`! ${items[0].label}`),
       min: paint(count > 1 ? `!${count}` : '!'),
     },
@@ -344,6 +347,8 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
       ? colors.dim(' · reset due')
       : '';
 
+  const projected = data.quotaForecast;
+  const forecast = projected ? theme.warning(` · out in ~${formatCountdown(projected.exhaustAt, nowMs)}`) : '';
   const first = windows[0];
   // The countdown is the half of the quota field a reader acts on, so it
   // survives into the shorter form as a bare symbol and a duration.
@@ -353,7 +358,8 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
     priority: MODULE_PRIORITY.quota,
     group: 'usage',
     variants: {
-      full: `${colors.dim('Quota')} ${rendered.join(colors.dim(' · '))}${reset}`,
+      // The projection rides on the widest form only, marked as an estimate.
+      full: `${colors.dim('Quota')} ${rendered.join(colors.dim(' · '))}${reset}${forecast}`,
       short: `${colors.dim(`Q${first.label}`)} ${coloredPercent(first.percent)}${shortReset}`,
       min: `${colors.dim('Q')}${coloredPercent(first.percent)}`,
     },

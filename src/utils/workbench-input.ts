@@ -46,7 +46,8 @@ export class WorkbenchInputDecoder {
       }
       if (this.pending[0] !== '\x1b') {
         const key = this.profile === 'monitor' && this.pending[0] === '2' ? 'worktrees'
-          : this.profile === 'monitor' && this.pending[0] === '4' ? 'details' : KEYS[this.pending[0]];
+          : this.profile === 'monitor' && this.pending[0] === '4' ? 'details'
+            : this.profile === 'monitor' && this.pending[0] === '5' ? 'timeline' : KEYS[this.pending[0]];
         this.pending = this.pending.slice(1);
         if (key) inputs.push({ type: 'key', key });
         continue;

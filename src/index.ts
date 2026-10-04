@@ -119,7 +119,13 @@ const hudStatus = new HudStatus(HUD_CWD, () => repaintCached());
  * Collect all HUD data including async rollout parsing
  */
 async function collectData(): Promise<HudData> {
-  try { applyDisplaySettings(runtimeSettings()); } catch { /* Keep last valid display settings. */ }
+  try {
+    const settings = runtimeSettings();
+    applyDisplaySettings(settings);
+    // Settings saved in the panel reach the notifier here; an environment
+    // variable that was set still wins.
+    notifier.configure(resolveNotifierOptions(process.env, settings));
+  } catch { /* Keep last valid display settings. */ }
   if (configNeedsRefresh) {
     hudStatus.invalidateConfig();
     configNeedsRefresh = false;

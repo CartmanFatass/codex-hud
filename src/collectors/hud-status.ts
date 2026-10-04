@@ -21,6 +21,7 @@ import { buildSubagentTree } from './subagent-tree.js';
 import { HudHealth } from './hud-health.js';
 import { time, timeAsync } from '../utils/profile.js';
 import type { RolloutParseResult } from './rollout.js';
+import { quotaForecast } from './quota-forecast.js';
 import type { CodexConfig, GitStatus, HudData, ProjectInfo, SessionInfo } from '../types.js';
 
 const SYNC_REFRESH_MS = 3000;
@@ -101,6 +102,7 @@ export class HudStatus {
       ? time('tree.build', () => buildSubagentTree(rootId, rollout?.subagents ?? []))
       : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
     const health = this.health.current();
+    const forecast = quotaForecast(rollout?.quotaSamples ?? [], now);
 
     this.last = {
       config: this.config,
@@ -123,6 +125,7 @@ export class HudStatus {
       subagentTree,
       displayMode: 'single',
       ...(health.lastReadAt || health.lastError ? { health } : {}),
+      ...(forecast ? { quotaForecast: forecast } : {}),
     };
     return this.last;
   }

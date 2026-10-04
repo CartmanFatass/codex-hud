@@ -63,6 +63,10 @@ export interface HudSnapshot {
    * until the first read or failure; each half is absent until it happens.
    */
   health?: { lastReadAt?: string; lastError?: { source: string; message: string; at: string } };
+  /** A projection, not a reading: when a quota window runs out at its recent rate. Absent unless one holds. */
+  quotaForecast?: { window: string; exhaustAt: string; percent: number; windowMinutes?: number };
+  /** When the pending approval was asked for (its wait is now minus this); absent with none pending. */
+  approvalSince?: string;
 }
 
 function flattenAgents(nodes: SubagentTreeNode[], out: SnapshotAgentNode[] = []): SnapshotAgentNode[] {
@@ -178,6 +182,16 @@ export function buildSnapshot(
         : {}),
     };
   }
+
+  const forecast = data.quotaForecast;
+  const exhaustAt = iso(forecast?.exhaustAt);
+  if (forecast && exhaustAt) {
+    snapshot.quotaForecast = { window: forecast.window, exhaustAt, percent: forecast.percent,
+      ...(forecast.windowMinutes !== undefined ? { windowMinutes: forecast.windowMinutes } : {}) };
+  }
+  // A time rather than a running count, so the file only changes when the facts do.
+  const approvalSince = iso(data.pendingApproval?.since);
+  if (approvalSince) snapshot.approvalSince = approvalSince;
 
   if (usage) {
     snapshot.tokens = {

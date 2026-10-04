@@ -24,7 +24,7 @@ const entry = (role: TranscriptEntry['role'], kind: TranscriptEntry['kind'], tex
 const mainResult = (extra: Partial<RolloutParseResult> = {}): RolloutParseResult => ({
   session: null, toolActivity: { recentCalls: [], totalCalls: 0, callsByType: {}, lastUpdateTime: new Date(now) }, planProgress: null,
   tokenUsage: null, rateLimits: null, pendingApproval: null, subagents: [], compactCount: 0, lastCompactTime: null,
-  lastToolActivityTime: null, lastAssistantMessageTime: null, lastEventTime: null, workDirs: [], transcript: [], ...extra,
+  lastToolActivityTime: null, lastAssistantMessageTime: null, lastEventTime: null, workDirs: [], transcript: [], events: [], quotaSamples: [], ...extra,
 });
 
 const row = (type: string, payload: object, seconds: number) => JSON.stringify({ timestamp: at(seconds).toISOString(), type, payload }) + '\n';

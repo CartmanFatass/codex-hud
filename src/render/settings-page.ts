@@ -32,9 +32,12 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'motion',group:'Status bar',label:'Motion',short:'Motion',values:['full','reduced'],help:'Reduced keeps spinners still'},
   {key:'context',group:'Status bar',label:'Context',short:'Ctx',values:['used','remaining'],help:'Meter counts used or left'},
   {key:'statusline',group:'Status bar',label:'Bar on launch',short:'Bar',values:[true,false],help:'Next launch: one-line bar'},
+  {key:'notify',group:'Status bar',label:'Notifications',short:'Notify',values:[false,true],help:'tmux message on approvals, failures'},
+  {key:'notifyDesktop',group:'Status bar',label:'Desktop notices',short:'Desktop',values:[false,true],help:'Also outside the terminal'},
   {key:'sort',group:'Agents',label:'Order',short:'Order',values:['active','created'],help:'Running first, or by age'},
   {key:'finishedLingerMs',group:'Agents',label:'Hide finished',short:'Hide',values:[60_000,180_000,600_000,1_800_000,0],
     help:'Done agents hide after this',format:minutes},
+  {key:'agentLog',group:'Agents',label:'Log, model off',short:'Log',values:[false,true],help:'Agent log even with no backend'},
   // Everything that sends material to a model, in one place, each with its
   // own switch and a help line saying what it sends.
   {key:'briefing',group:'LLM',label:'Backend',short:'Model',values:['off','omp','agy','api'],help:'Who writes; off stops all below'},
@@ -50,6 +53,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'worktreesPane',group:'Panel',label:'2 Worktrees',short:'2 Trees',values:['open','folded','closed'],help:PANE_HELP},
   {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','folded','closed'],help:PANE_HELP},
   {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','folded','closed'],help:PANE_HELP},
+  {key:'timelinePane',group:'Panel',label:'5 Timeline',short:'5 Events',values:['open','folded','closed'],help:PANE_HELP},
   {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:[32,56],help:'Panel columns',
     format:value => ({32:'narrow',56:'wide'} as Record<number,string>)[Number(value)] ?? String(value)},
   {key:'art',group:'Panel',label:'Decoration',short:'Art',values:['off','dots','color','ascii'],help:'Picture in empty space; codex-hud-art sets it'},

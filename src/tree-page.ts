@@ -20,6 +20,9 @@ import { readAgentContextUsage } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
 import { SmallModel } from './collectors/small-model.js';
 import { RecapStore, recapPlainText } from './collectors/recap.js';
+import { AgentLog } from './collectors/agent-log.js';
+import { WorkbenchHistory } from './collectors/workbench-events.js';
+import type { WorkbenchEvent } from './render/workbench-state.js';
 import { getHudHome } from './utils/codex-path.js';
 import { copyToTmuxBuffer } from './utils/tmux-copy.js';
 import { HudStatus } from './collectors/hud-status.js';
@@ -116,8 +119,13 @@ async function runLivePage(): Promise<void> {
   // Every model call of the panel goes through one service: one queue, one
   // cache, one hourly cap. Its cache and call log live beside the HUD's state.
   const model = new SmallModel({dir:path.join(getHudHome(),'model-cache')});
+  // Each subagent's log: observed changes and model notes, kept per session.
+  const agentLog = new AgentLog(path.join(getHudHome(),'agent-log'));
+  // The Timeline pane's events: the rollout's and the agent log's, one list.
+  const history = new WorkbenchHistory();
+  let timeline: WorkbenchEvent[] = [];
   // Repaints when a brief starts, lands or fails; render() is defined below.
-  const briefer = new Briefer(()=>render(),{model,store:new RecapStore(path.join(getHudHome(),'recaps'))});
+  const briefer = new Briefer(()=>render(),{model,store:new RecapStore(path.join(getHudHome(),'recaps')),log:agentLog});
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   /** A short-lived line in the notice row, cleared after a few seconds. */
   const flash = (message: string) => {
@@ -172,6 +180,7 @@ async function runLivePage(): Promise<void> {
       const width = process.stdout.columns || 30;
       frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,
         brief:briefCommand() === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused,recapFolded:settings.recapFolded},
+        agentLog:settings.briefing !== 'off' || settings.agentLog ? agentLog.snapshot() : undefined,timeline,
         status:(rowWidth,maxRows)=>statusCard(hudStatus.current(),rowWidth,maxRows),width,height:process.stdout.rows || 24});
       state = frame.state;
       lines = frame.lines;
@@ -304,6 +313,9 @@ async function runLivePage(): Promise<void> {
       }
       tree = rootId ? time('tree.build',()=>buildSubagentTree(rootId,main?.subagents ?? [])) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
       applyAgentContext();
+      // On the same tick as the tree, so the log never lags it.
+      if (time('agentlog.observe',()=>agentLog.observe(tree))) agentLog.flush();
+      timeline = time('timeline',()=>history.timeline(tree,main,agentLog.snapshot()));
       state = reconcileMonitor(state,tree,git,worktrees);
       updateBriefer(settings.briefingPaused);
       error = settingsError || null;
@@ -361,6 +373,7 @@ async function runLivePage(): Promise<void> {
     closed = true;
     briefer.stop();
     model.cancelAll();
+    agentLog.flush();
     if (noticeTimer) clearTimeout(noticeTimer);
     timers.forEach(clearInterval);
     if (collectTimer) clearInterval(collectTimer);

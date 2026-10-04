@@ -169,7 +169,7 @@ When something needs you, it takes the front of the line:
 | `Ctx 42% (114.2K/272K)` | How full the context window is, to an eighth of a column. `↻2` counts compactions |
 | `◷~00m` | Minutes since the last model usage, as a prompt-cache reminder. It warns at 25 minutes and stops counting at `30m+` |
 | `2/5` | Steps completed in the current plan |
-| `Q61%` | Share of the account's usage window spent. This is quota, not task progress; `↺1h23m` is the wait for the next reset |
+| `Q61%` | Share of the account's usage window spent. This is quota, not task progress; `↺1h23m` is the wait for the next reset. At its widest the field adds `out in ~40m`: a straight-line projection of when the window runs out at its recent rate, shown only when readings span five minutes or more, use is rising, and the projection falls before the reset |
 | `84K` | Tokens spent this session |
 
 A field appears only when there is real data behind it. A missing quota
@@ -233,7 +233,8 @@ Selection follows agent IDs and file paths across refreshes, and every pane reta
 | `Enter` / `v` | Open Inspector; inside Inspector, expand/collapse timestamps, IDs and full paths |
 | Click an agent / `o` | Switch the actual Codex conversation to that agent |
 | **Main** / `m` | Return the Codex conversation to the root session |
-| `x` / `-` | Close / fold the focused pane; `1`–`4` reopens it |
+| `x` / `-` | Close / fold the focused pane; `1`–`5` reopens it |
+| `5` | Open the Timeline pane |
 | `z` | Zoom/restore focused pane |
 | `?` | Wrapped, scrollable help; arrows, wheel, PgUp/PgDn and g/G navigate |
 | `Esc` | Dismiss help, unzoom, return to list; close from Agents |
@@ -254,6 +255,10 @@ Agents are named by the last segment of their task path, the name Codex's `/suba
 
 Finished agents leave the list 3 minutes after they finish (Settings → Hide finished: 1m, 3m, 10m, 30m or never). Running and failed agents never leave, and a finished agent whose child is still shown stays as a dimmed row. Each finished row says how long ago it finished; the summary row counts what was put away (`+12 older`), and clicking it or pressing `a` shows everything again.
 
+**Timeline.** Pane 5, closed by default, lists the session's events newest first with their age: approvals asked for and answered, compaction, a quota window crossing 80 % and 95 %, turns finished, interrupted or failed, failed tool calls, and each subagent starting, finishing or failing. They are facts the rollout recorded; a quiet stretch is not an event. A pending approval also says how long it has waited, on the bar's alert (widest form) and in the panel's status card.
+
+**Agent log.** Under the tree, each subagent has a log, newest first: its starts, finishes and failures and its latest updates as observed, written on the same read that updates the tree, and the brief's notes about it, marked `~` as model-written. The log only grows; a new brief adds to it rather than replacing the last. It follows the tree: an agent the tree hides (put away, filtered out, under a collapsed parent) is not shown, and a collapsed parent says how many logs are folded under it; showing the agent again shows its whole log. Each agent shows its latest two entries, the selected one six and leads the list, and the Inspector shows all of them. Clicking a log line selects its agent. The log is kept per session in `$CODEX_HOME/hud/agent-log/` (mode 0600, removed after 30 days). It shows whenever a model backend is chosen; Agents → Log, model off shows it with observed entries only when the backend is off.
+
 Inspector starts with name, model/effort, status, turn age and last activity. Press `v` for full timestamps and UUIDs. Session-switch notices stay in the footer. Clicking Agents summary or blank rows does not navigate; only actual agent rows switch sessions.
 
 Changes belong to the selected worktree; no file ownership is inferred from agent activity.
@@ -268,7 +273,7 @@ Settings is grouped into Status bar (density, theme, model label, motion, contex
 
 **LLM.** Everything the panel asks a model to write is in the LLM settings group, each item with its own switch, and every item is written in the panel's language and shown under the Brief rule as model-written text, not as observed fact. LLM → Backend picks who writes: `omp`, `agy`, or any OpenAI-compatible chat completions endpoint (`api`); off turns every item off. All items share one queue (one call at a time), one cache and one hourly cap (Call cap, 60 calls an hour by default, counted across panels of the same `CODEX_HOME`); a request past the cap is refused and the reason is shown where its text would be. Settings shows the calls made today under the list. The cache and the call log (timestamps only) are kept in `$CODEX_HOME/hud/model-cache/`, mode 0600. What each item sends:
 
-- **Agents brief** (on by default once a backend is chosen): a short account of the subagents. It sends each listed agent's name, status, task text (300 characters) and latest public update (600 characters). It runs at most once per Brief every, and only when an agent's status or latest update changed.
+- **Agents brief** (on by default once a backend is chosen): a sentence on the subagents as a whole at the top of the area, and a note per agent that goes into its log. It sends each listed agent's name, status, task text (300 characters) and latest public update (600 characters). The whole picture runs at most once per Brief every, and only when an agent's status or latest update changed; between briefs, agents with news since their last note get new notes, all of them in one request at most once a minute.
 - **Main recap** (off by default): a rolling recap of the main session, shown at the top of the brief area: the goal, what is done (at most four items), where it stands, and, painted as a warning, what it needs from you. It sends your prompts and the assistant's public replies and commentary (each cut to about 600 characters, about 4,000 characters in all, never its reasoning), the plan steps, a pending approval's summary, the compaction count, and the name, status and turn time of each subagent; subagents' tasks and updates are sent only when Agents brief is on as well. Each run is given the previous recap and only what was said since, so it stays cheap and survives Codex compacting the conversation. It runs as soon as Brief every allows when you send a prompt, a final reply lands, a turn ends, a plan step completes or an approval is asked for; while a turn runs long (waiting on subagents, say) it is refreshed at most once per Recap floor (15 minutes by default, never more often than Brief every) if anything at all changed, commentary or a subagent moving on included. Nothing changed, nothing is sent. The recap is saved per session in `$CODEX_HOME/hud/recaps/` (mode 0600, removed after 30 days), so reopening the panel or `codex resume` shows the last one at once with its age; a recap in the other language is asked for again. `r` or a click on its switch folds it to the goal line; `y` copies it to the tmux paste buffer, never into the Codex pane.
 
 `b`, or a click on the switch at the end of the Brief rule, pauses and resumes both. For `api`, set these in `hud-settings.json`:
@@ -330,7 +335,8 @@ codex-hud --json | jq '.context.percent, .agents.active, .attention[].label'
 ```
 
 It carries the session, project, activity, context, quota, tokens, agents and
-attention items, plus `bar.segments`: which field ended up in which columns of
+attention items, `approvalSince` while an approval is pending, `quotaForecast`
+when a projection holds (an estimate, not a reading), plus `bar.segments`: which field ended up in which columns of
 the line that was actually drawn. That is what turns a click at a column into
 the field under it.
 
@@ -404,7 +410,9 @@ Settings → **Bar on launch** saves the bottom bar preference for the next new 
 ### Notifications
 
 Off by default, because Codex has its own notifier and two pop-ups for one
-event is worse than none. `CODEX_HUD_NOTIFY=1` turns them on.
+event is worse than none. Settings → Status bar → Notifications, or
+`CODEX_HUD_NOTIFY=1`, turns them on; Desktop notices is the second switch for
+`CODEX_HUD_NOTIFY_DESKTOP`. A variable that is set wins over the setting.
 
 ```bash
 CODEX_HUD_NOTIFY=1 codex

@@ -10,10 +10,13 @@ import { renderModelEffortToken, modelLegend } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { displayConfig } from './hud-config.js';
 import type { Brief } from '../collectors/briefing.js';
+import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
 import { t } from './i18n.js';
+import { formatWindowLabel } from './quota.js';
+import type { WorkbenchEvent } from './workbench-state.js';
 
-export const MONITOR_PANES = ['agents', 'worktrees', 'changes', 'details'] as const;
+export const MONITOR_PANES = ['agents', 'worktrees', 'changes', 'details', 'timeline'] as const;
 export type MonitorPane = typeof MONITOR_PANES[number];
 export type PaneMode = 'open' | 'folded' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
@@ -44,8 +47,10 @@ export interface MonitorRect {
   pinned?: number;
 }
 export interface MonitorControl {
-  kind: 'main' | 'settings' | 'fold' | 'close' | 'brief' | 'recap';
+  kind: 'main' | 'settings' | 'fold' | 'close' | 'brief' | 'recap' | 'log';
   pane?: MonitorPane;
+  /** The agent a log line belongs to: a click selects it. */
+  item?: string;
   x: number; y: number; width: number;
 }
 export interface MonitorFrame { lines: string[]; panes: MonitorRect[]; controls: MonitorControl[]; state: MonitorState; helpPage?: {count:number; total:number} }
@@ -71,6 +76,13 @@ export interface MonitorData {
    * texts for the frame's edges, which the monitor fits.
    */
   status?: (width: number, maxRows: number) => StatusCard | null;
+  /**
+   * Each agent's log, oldest entry first, by agent id: shown under the brief
+   * for the agents the tree shows, and whole in the Inspector.
+   */
+  agentLog?: ReadonlyMap<string, readonly AgentLogEntry[]>;
+  /** The session's observed events, newest first, for the Timeline pane. */
+  timeline?: readonly WorkbenchEvent[];
   /** The session has not been read yet: an empty tree is not news. */
   loading?: boolean;
   /**
@@ -95,17 +107,17 @@ export interface MonitorOutcome {
 
 export function initialMonitorState(): MonitorState {
   return {tree:{...initialPanelState(),sort:'active'}, focus:'agents',
-    modes:{agents:'open',worktrees:'closed',changes:'closed',details:'closed'},
-    scroll:{agents:0,worktrees:0,changes:0,details:0}, selectedWorktree:null,selectedFile:null,
+    modes:{agents:'open',worktrees:'closed',changes:'closed',details:'closed',timeline:'closed'},
+    scroll:{agents:0,worktrees:0,changes:0,details:0,timeline:0}, selectedWorktree:null,selectedFile:null,
     preview:'agent',help:false,zoom:false,helpScroll:0,expanded:false};
 }
 /** Agents is the page itself: always there, whatever an older settings file says. */
 export function monitorModes(settings: HudSettings): MonitorModes {
-  return {agents:'open', worktrees:settings.worktreesPane, changes:settings.changesPane, details:settings.detailsPane};
+  return {agents:'open', worktrees:settings.worktreesPane, changes:settings.changesPane, details:settings.detailsPane, timeline:settings.timelinePane};
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return {agentsPane:state.modes.agents, worktreesPane:state.modes.worktrees,
-    changesPane:state.modes.changes, detailsPane:state.modes.details};
+    changesPane:state.modes.changes, detailsPane:state.modes.details, timelinePane:state.modes.timeline};
 }
 export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null, nowMs: number = Date.now()): MonitorState {
   const rows = visibleRows(tree.nodes, state.tree, nowMs);
@@ -362,7 +374,8 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     const clock = width < 12 ? '' : turnClock(node,now) || ' ';
     const right = [badge,ctx,clock].filter(Boolean).join(' ');
     const room = Math.max(1,width-visualLength(prefix)-(right ? visualLength(right)+1 : 0));
-    const squeezed = squeeze(monitorText(node.name),room);
+    // A model-written label, when the labels feature gave one; the name otherwise.
+    const squeezed = squeeze(monitorText(node.label ?? node.name),room);
     const name = dimName ? colors.dim(squeezed) : squeezed;
     result.push({text:pair(prefix+name,right,width),item:node.id});
   }
@@ -375,8 +388,45 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
   return result;
 }
 
+/** A timeline event in the reader's words. Facts as recorded; nothing inferred. */
+export function timelineText(event: WorkbenchEvent): string {
+  const subject = event.subject ? monitorText(event.subject) : '';
+  switch (event.kind) {
+    case 'approval-requested': return subject ? t('Approval asked: {what}',{what:subject}) : t('Approval asked');
+    case 'approval-answered': return t('Approval answered');
+    case 'compacted': return t('Context compacted');
+    case 'quota': {
+      const window = formatWindowLabel(event.windowMinutes);
+      return t('Quota past {n}%',{n:event.threshold ?? '?'})+(window ? ` (${window})` : '');
+    }
+    case 'turn-finished': return t('Turn finished');
+    case 'turn-interrupted': return t('Turn interrupted');
+    case 'turn-failed': return t('Turn failed');
+    case 'agent-started': return t('{agent} started',{agent:subject});
+    case 'agent-finished': return t('{agent} finished',{agent:subject});
+    case 'agent-failed': return t('{agent} failed',{agent:subject});
+    case 'tool-failed': return t('Tool failed: {what}',{what:subject});
+    default: return monitorText(event.title);
+  }
+}
+
+function timelineRows(input: MonitorData, width: number, now: number): MonitorRow[] {
+  const events = input.timeline ?? [];
+  if (!events.length) return [{text:colors.dim(t('No events yet'))}];
+  const rows: MonitorRow[] = [];
+  for (const event of events) {
+    const when = age(event.at,now);
+    const paint = event.status === 'error' ? theme.error : event.kind === 'quota' || event.kind === 'approval-requested' ? theme.warning : (s: string) => s;
+    rows.push({text:truncateAnsi(`${colors.dim(when.padStart(3))} ${paint(timelineText(event))}`,width)});
+    // A model-written reading of a failure, marked as such.
+    if (event.cause) rows.push(...flowLines(monitorText(event.cause),Math.max(1,width-6)).map((line,i)=>({text:`    ${i ? ' ' : colors.dim('~')} ${line}`})));
+  }
+  return rows;
+}
+
 function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   if (id === 'agents') return agentRows(input,state,width,now);
+  if (id === 'timeline') return timelineRows(input,width,now);
   if (id === 'worktrees') {
     const snapshot = input.worktrees;
     if (!snapshot) return [{text:colors.dim(t('Reading worktrees…'))}];
@@ -423,7 +473,10 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       const status = nodeStatus(node,now);
       // Sanitize external text before painting. Never pass our own ANSI spans
       // back through monitorText (which correctly escapes untrusted controls).
-      const rows: MonitorRow[] = wrapped(node.name,width).map(text=>({text:theme.strong(text)}));
+      // A label stands in for the name in the tree; here both show, since the
+      // name is what Codex's own picker and transcript print.
+      const rows: MonitorRow[] = wrapped(node.label ?? node.name,width).map(text=>({text:theme.strong(text)}));
+      if (node.label && node.label !== node.name) rows.push(...wrapped(t('Name: {name}',{name:node.name}),width).map(text=>({text:colors.dim(text)})));
       // The full task path locates a nested agent; a one-segment path says
       // nothing the name did not.
       if (node.agentPath && node.agentPath.split('/').filter(Boolean).length > 2)
@@ -453,6 +506,12 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       if (node.task && (state.expanded || !report)) {
         rows.push({text:colors.dim(t('Task'))});
         rows.push(...flowLines(monitorText(node.task.replace(/\s+/g,' ').trim()),width).map(line=>({text:line})));
+      }
+      // The agent's whole log, newest first.
+      const log = input.agentLog?.get(node.id);
+      if (log?.length) {
+        rows.push({text:colors.dim(t('Log'))});
+        for (const entry of [...log].reverse()) rows.push(...logEntryLines(entry,width,now,0).map(text=>({text})));
       }
       lines = [t('Turn age: {age}',{age:age(node.turnStartedAt,now)}),t('Last activity: {age}',{age:age(node.lastEventAt,now)})+(isQuiet(node,now) ? t(' (quiet)') : '')];
       // Codex's transcript still calls the agent by its nickname.
@@ -490,57 +549,102 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
 }
 
 /**
- * The brief under the agents. When the model answered in the shape asked
- * for, each agent it mentions gets a block that looks like its tree row (the
- * same status icon, name and clock) with the note indented under it, so the
- * eye can go from a line in the brief to the agent it is about. Agents that
- * need the developer lead, marked ! in the column where the tree marks the
- * selection. A reply in any other shape is shown as the text it is. Model
- * output is sanitized like any other external string.
+ * The area under the agents: the Brief rule, then the main recap, the
+ * whole-picture sentence, and the per-agent log. With no brief configured
+ * but the log asked for, the rule names the log alone and carries no switch.
+ * Model output is sanitized like any other external string. `ids` gives the
+ * agent each line heads, for clicks.
  */
-function briefRows(brief: MonitorData['brief'], nodes: SubagentTreeNode[], width: number, now: number, spaced = false): string[] {
-  if (!brief) return [];
-  const rule = briefRule(brief,width).line;
-  const recap = brief.recap ? recapRows(brief.recap,Boolean(brief.recapFolded),width,now).lines : [];
-  const failure = brief.error ? flowLines(monitorText(brief.error),Math.max(1,width-1)).map(text=>theme.warning(' '+text)) : [];
+function briefRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced = false): {lines: string[]; ids: Array<string|undefined>} {
+  const brief = input.brief;
+  if (!brief && !input.agentLog) return {lines:[],ids:[]};
+  const rule = brief ? briefRule(brief,width).line : colors.dim(truncateAnsi(`${t('─ Agent log')} ${'─'.repeat(width)}`,width));
+  const recap = brief?.recap ? recapRows(brief.recap,Boolean(brief.recapFolded),width,now).lines : [];
+  const failure = brief?.error ? flowLines(monitorText(brief.error),Math.max(1,width-1)).map(text=>theme.warning(' '+text)) : [];
   const flow = (text: string, indent: number, paint: (s: string) => string = s => s) =>
     flowLines(monitorText(text),Math.max(1,width-indent)).map(line=>' '.repeat(indent)+paint(line));
-  let body: string[];
-  if (brief.items?.length || brief.overall) {
-    const byName = new Map<string,SubagentTreeNode>();
-    walkTree(nodes,node=>{
-      for (const key of [node.name,node.nickname,node.agentPath?.split('/').at(-1)]) if (key && !byName.has(key)) byName.set(key,node);
-    });
-    body = brief.overall ? flow(brief.overall,1,colors.dim) : [];
-    // What the panel knows for itself is not left to the model: a failed or
-    // quiet agent needs a look whatever the brief says about it.
-    const items = (brief.items ?? []).map(item=>{
-      const node = byName.get(item.agent);
-      return {item,node,attention:item.attention || node?.status === 'error' || (node ? isQuiet(node,now) : false)};
-    }).sort((a,b)=>briefRank(a)-briefRank(b));
-    for (const [index,{item,node,attention}] of items.entries()) {
-      // A blank line between agents, when the room allows it, is what makes
-      // one block end and the next begin at a glance.
-      if (spaced && (index || brief.overall)) body.push('');
-      const icon = node ? (()=>{const st=nodeStatus(node,now);return st.paint(st.icon);})() : colors.dim('·');
-      const mark = attention ? theme.warning('!') : ' ';
-      const head = `${mark}${icon} `;
-      const name = squeeze(monitorText(node?.name ?? item.agent),Math.max(1,width-visualLength(head)));
-      body.push(head+(attention ? theme.warning(name) : theme.strong(name)));
-      body.push(...flow(item.note,3,attention ? theme.warning : (s: string) => s));
-    }
-  } else if (brief.structured) {
-    // The JSON asked for, with nothing for the agents: the recap was all of it.
-    body = [];
-  } else {
-    body = (brief.text ?? '').split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flow(line,1));
+  let body: string[] = [];
+  if (brief?.overall) body = flow(brief.overall,1,colors.dim);
+  else if (brief?.text && !brief.structured && !brief.items) {
+    // A reply in another shape than the JSON asked for is shown as the text it is.
+    body = brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flow(line,1));
   }
-  const rest = [...(brief.text ? body : failure),...(brief.text ? failure.slice(0,1) : [])];
-  // The recap leads; a blank line sets it off from the agents when there is room.
-  let lines = [...recap,...(recap.length && rest.length && spaced ? [''] : []),...rest];
+  const said = [...(brief?.text ? body : failure),...(brief?.text ? failure.slice(0,1) : [])];
+  // The recap leads; a blank line sets it off from what follows when there is room.
+  let top = [...recap,...(recap.length && said.length && spaced ? [''] : []),...said];
   // Paused, the last brief stays for reference but steps back.
-  if (brief.paused) lines = lines.map(line=>colors.dim(stripAnsi(line)));
-  return ['',rule,...lines];
+  if (brief?.paused) top = top.map(line=>colors.dim(stripAnsi(line)));
+  const log = input.agentLog ? logRows(input,state,width,now,spaced) : {lines:[],ids:[]};
+  const gap = top.length && log.lines.length && spaced ? [''] : [];
+  return {lines:['',rule,...top,...gap,...log.lines],ids:[undefined,undefined,...top.map(()=>undefined),...gap.map(()=>undefined),...log.ids]};
+}
+
+/** Entries a model wrote, marked as such wherever they are shown. */
+const MODEL_LOG_KINDS: ReadonlySet<AgentLogKind> = new Set(['note','digest','cause']);
+/** Log entries shown per agent; the selected agent shows more, the Inspector all. */
+const LOG_ENTRIES = 2;
+const LOG_ENTRIES_SELECTED = 6;
+
+/**
+ * One log entry: its age, then what happened. Status changes are words in
+ * the tree's colours; an update is the agent's own excerpt; what a model
+ * wrote is marked with a muted "~".
+ */
+function logEntryLines(entry: AgentLogEntry, width: number, now: number, indent: number): string[] {
+  const when = age(new Date(entry.at),now);
+  const status = entry.kind === 'started' ? theme.info : entry.kind === 'finished' ? theme.success : entry.kind === 'failed' ? theme.error : null;
+  const model = MODEL_LOG_KINDS.has(entry.kind);
+  const text = status ? t(entry.kind) : entry.text;
+  const paint = status ?? (entry.attention ? theme.warning : (s: string) => s);
+  const lead = `${when} ${model ? '~ ' : ''}`;
+  return flowLines(monitorText(`${lead}${text}`),Math.max(1,width-indent)).map((line,i)=>{
+    const pad = ' '.repeat(indent);
+    if (i) return pad+paint(line);
+    return pad+colors.dim(line.slice(0,lead.length))+paint(line.slice(lead.length));
+  });
+}
+
+/**
+ * The per-agent log: a block per agent the tree shows, newest news first
+ * (the selected agent leads, opened up), each headed by the agent as its
+ * tree row shows it. What the tree hides, the log hides; a collapsed parent
+ * gets one line counting the logs folded under it. Nothing is deleted by
+ * hiding: showing the agent again shows all of it.
+ */
+function logRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): {lines: string[]; ids: Array<string|undefined>} {
+  const logs = input.agentLog!;
+  const shown = visibleRows(input.tree.nodes,state.tree,now);
+  const blocks: Array<{node: SubagentTreeNode; entries: readonly AgentLogEntry[]; folded: number; newest: number}> = [];
+  for (const row of shown) {
+    const entries = logs.get(row.node.id) ?? [];
+    const folded = row.collapsed && row.hasChildren
+      ? visibleRows(row.node.children,{...state.tree,collapsed:new Set()},now).filter(child=>(logs.get(child.node.id)?.length ?? 0) > 0).length : 0;
+    if (!entries.length && !folded) continue;
+    blocks.push({node:row.node,entries,folded,newest:entries.at(-1)?.at ?? 0});
+  }
+  const selected = state.tree.selectedId;
+  blocks.sort((a,b)=>Number(b.node.id === selected)-Number(a.node.id === selected) || b.newest-a.newest);
+  const lines: string[] = [];
+  const ids: Array<string|undefined> = [];
+  for (const [index,{node,entries,folded}] of blocks.entries()) {
+    // A blank line between agents, when the room allows it, is what makes
+    // one block end and the next begin at a glance.
+    if (spaced && index) { lines.push(''); ids.push(undefined); }
+    const st = nodeStatus(node,now);
+    // What the panel knows for itself is not left to the model: a failed or
+    // quiet agent needs a look, and so does one the latest note flagged.
+    const attention = node.status === 'error' || isQuiet(node,now) || Boolean(entries.at(-1)?.attention);
+    const head = `${attention ? theme.warning('!') : ' '}${st.paint(st.icon)} `;
+    const name = squeeze(monitorText(node.label ?? node.name),Math.max(1,width-visualLength(head)));
+    lines.push(head+(attention ? theme.warning(name) : theme.strong(name)));
+    ids.push(node.id);
+    const count = node.id === selected ? LOG_ENTRIES_SELECTED : LOG_ENTRIES;
+    for (const entry of [...entries].reverse().slice(0,count)) {
+      for (const line of logEntryLines(entry,width,now,3)) { lines.push(line); ids.push(node.id); }
+    }
+    if (folded) { lines.push(colors.dim(truncateAnsi(`   ${t('+{n} folded below',{n:folded})}`,width))); ids.push(node.id); }
+  }
+  return {lines,ids};
 }
 
 /** When something written once was written: no seconds ticking, days for an old one. */
@@ -597,28 +701,23 @@ function briefRule(brief: NonNullable<MonitorData['brief']>, width: number): {li
   return {line:colors.dim(label+'─'.repeat(room))+paint(switchText),control:{x:width-visualLength(switchText),width:visualLength(switchText)}};
 }
 
-/** Brief order, the tree's order: what needs a look, then live, then the rest, then done. */
-function briefRank({node,attention}: {node?: SubagentTreeNode; attention: boolean}): number {
-  return attention ? 0 : node && isLive(node) ? 1 : node?.status === 'completed' ? 3 : 2;
-}
-
 function walkTree(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
   for (const node of nodes) { visit(node); walkTree(node.children,visit); }
 }
 
 /** Lines of the latest update the Inspector shows before "v More". */
 const REPORT_LINES = 6;
-const TITLES: Record<MonitorPane,string> = {agents:'1 Agents',worktrees:'2 Worktrees',changes:'3 Changes',details:'4 Inspector'};
+const TITLES: Record<MonitorPane,string> = {agents:'1 Agents',worktrees:'2 Worktrees',changes:'3 Changes',details:'4 Inspector',timeline:'5 Timeline'};
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const width = Math.max(0,Math.floor(input.width)); const height = Math.max(0,Math.floor(input.height));
   const state = reconcileMonitor(input.state,input.tree,input.git,input.worktrees,input.nowMs ?? Date.now());
   const frame: MonitorFrame = {lines:[],panes:[],controls:[],state};
   if (!width || !height) return frame;
   if (state.help) {
-    const help = ['1 Agents  2 Worktrees','3 Changes  4 Inspector','x close pane  - fold','2–4 open a pane','Tab next visible pane','j/k select  o switch','Click agent: switch','m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief','r fold / unfold recap','y copy recap to tmux','✓ = turn completed','? = no status evidence','! = needs a look']
+    const help = ['1 Agents  2 Worktrees','3 Changes  4 Inspector','5 Timeline','x close pane  - fold','2–5 open a pane','Tab next visible pane','j/k select  o switch','g/G first / last  PgUp/PgDn','h/l fold / unfold agent','f or / filter  s order','Click agent: switch','m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief','r fold / unfold recap','y copy recap to tmux','Click a log line: select agent','✓ = turn completed','? = no status evidence','! = needs a look']
       .map(line=>t(line))
       .concat(t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
-        ...['yellow clock = quiet 5m+','━╸─ = agent context used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
+        ...['~ = written by a model','yellow clock = quiet 5m+','━╸─ = agent context used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
         ...stripAnsi(modelLegend()).split('\n'))
       .flatMap(line=>helpLines(line,width));
     const count = Math.max(0,height-2);
@@ -653,7 +752,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   // it can be neither closed nor folded. The other panes stay boxes.
   const edgeOf = (id: MonitorPane) => id === 'agents' ? 0 : 1;
   const content = new Map(ids.map(id=>[id,paneRows(id,input,state,edgeOf(id) ? inner : width,now)]));
-  let brief = ids.includes('agents') ? briefRows(input.brief,input.tree.nodes,width,now) : [];
+  let brief = ids.includes('agents') ? briefRows(input,state,width,now) : {lines:[],ids:[]};
   const sizes = new Map<MonitorPane,number>();
   for (const id of ids) { sizes.set(id,budget>0?1:0); if (budget>0) budget--; }
   const order = [state.focus,...ids.filter(id=>id!==state.focus)].filter(id=>ids.includes(id));
@@ -671,11 +770,11 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   // Spare height goes to the brief under the agents first: it is written to
   // fill exactly this room. What is left goes to the inspector when it has
   // focus, else below the agents. Small worktree lists stay compact.
-  if (brief.length && brief.length < budget) {
-    const spaced = briefRows(input.brief,input.tree.nodes,width,now,true);
-    if (spaced.length <= budget) brief = spaced;
+  if (brief.lines.length && brief.lines.length < budget) {
+    const spaced = briefRows(input,state,width,now,true);
+    if (spaced.lines.length <= budget) brief = spaced;
   }
-  let briefHeight = Math.min(budget,brief.length);
+  let briefHeight = Math.min(budget,brief.lines.length);
   budget -= briefHeight;
   const fillable = order.filter(id => (state.modes[id] !== 'folded' || !edgeOf(id)) && (sizes.get(id) ?? 0) > 0);
   const fill = state.focus==='details'&&fillable.includes('details') ? 'details' : fillable.includes('agents') ? 'agents' : fillable[0];
@@ -703,7 +802,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const border = colors.dim;
     const heading = id===state.focus ? theme.accent : colors.dim;
     const buttons = width>=12 ? `[${state.modes[id]==='folded'?'+':'-'}][x]` : '';
-    const shortTitle = t({agents:'Agents',worktrees:width<20?'WT':'Worktrees',changes:'Changes',details:'Inspect'}[id]);
+    const shortTitle = t({agents:'Agents',worktrees:width<20?'WT':'Worktrees',changes:'Changes',details:'Inspect',timeline:'Timeline'}[id]);
     if(!edge) {
       // No title row: the agents' summary line heads the page.
     } else if(bordered) {
@@ -741,7 +840,11 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     }
     y+=h;
     if(id==='agents'&&briefHeight) {
-      brief.slice(0,briefHeight).forEach((line,i)=>{frame.lines[y+i]=fit(line,width);});
+      brief.lines.slice(0,briefHeight).forEach((line,i)=>{
+        frame.lines[y+i]=fit(line,width);
+        const item=brief.ids[i];
+        if(item) frame.controls.push({kind:'log',item,x:0,y:y+i,width});
+      });
       // The rule is the brief's second line, after the blank that sets it off.
       const control = briefHeight>1 && input.brief ? briefRule(input.brief,width).control : undefined;
       if(control) frame.controls.push({kind:'brief',x:control.x,y:y+1,width:control.width});
@@ -764,7 +867,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     status.forEach((line,i)=>{frame.lines[foot+1+i]=colors.dim('│ ')+fit(line,width-4)+colors.dim(' │');});
     frame.lines[foot+status.length+1]=cardEdge('╰','╯',width,card.bottom ? ` ${card.bottom} ` : '','',card.bottomRight ? [` ${card.bottomRight} `] : [],true).line;
   } else if(height>1) {
-    frame.lines[foot]=colors.dim(truncateAnsi(t(width<24 ? ', Settings  ?' : ', Settings  ? keys  1–4'),width));
+    frame.lines[foot]=colors.dim(truncateAnsi(t(width<24 ? ', Settings  ?' : ', Settings  ? keys  1–5'),width));
     frame.controls.push({kind:'settings',x:0,y:foot,width:Math.min(width,12)});
   }
   return frame;
@@ -857,6 +960,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(control?.kind==='settings') return result({type:'settings'});
     if(control?.kind==='brief') return result({type:'brief-toggle'});
     if(control?.kind==='recap') return result({type:'recap-fold'});
+    if(control?.kind==='log'&&control.item){next.tree.selectedId=control.item;next.preview='agent';next.scroll.details=0;return result();}
     if(control?.pane) {
       next.focus=control.pane;
       key=control.kind==='close'?'pane-close':'pane-fold';
