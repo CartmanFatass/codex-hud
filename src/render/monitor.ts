@@ -182,7 +182,21 @@ function helpLines(text: string, width: number): string[] {
  * its lines instead of breaking only at the few spaces it has. A word longer
  * than a line is split anyway. Takes sanitized text.
  */
-function flowLines(text: string, width: number): string[] {
+const wordSegmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter('zh',{granularity:'word'}) : null;
+/**
+ * What a line may break between: runs of ASCII, spaces, and for other text
+ * its words where the runtime can tell them (「实验」 is not split into 实 and
+ * 验), else its characters.
+ */
+function flowTokens(text: string): string[] {
+  const tokens: string[] = [];
+  for (const run of text.match(/[\x21-\x7e]+|\s+|[^\s\x21-\x7e]+/gu) ?? []) {
+    if (/^[\s\x21-\x7e]/u.test(run) || !wordSegmenter) tokens.push(...(/^[\s\x21-\x7e]/u.test(run) ? [run] : run));
+    else for (const {segment} of wordSegmenter.segment(run)) tokens.push(segment);
+  }
+  return tokens;
+}
+export function flowLines(text: string, width: number): string[] {
   if (width < 1) return [];
   const lines: string[] = [];
   let line = '';
@@ -190,7 +204,7 @@ function flowLines(text: string, width: number): string[] {
   // Closing punctuation stays with the text before it: a line that starts
   // with "。" or "，" reads as a stray mark.
   const closing = /^[。，、；：！？）」』】》〉…%,.;:!?)\]}]/u;
-  for (const token of text.match(/[\x21-\x7e]+|\s+|./gu) ?? []) {
+  for (const token of flowTokens(text)) {
     if (/^\s+$/.test(token)) { if (line) line += ' '; continue; }
     if (line && visualLength(line+token) > width) {
       if (closing.test(token) && visualLength(line+token) <= width+2 && [...line].length > 1) {
@@ -208,6 +222,22 @@ function flowLines(text: string, width: number): string[] {
   }
   if (line.trim()) push();
   return lines;
+}
+/**
+ * `flowLines`, evened out: the same number of lines, wrapped at the narrowest
+ * width that still gives that number, so a paragraph does not end in a line
+ * of one or two characters.
+ */
+export function balancedLines(text: string, width: number): string[] {
+  const lines = flowLines(text,width);
+  if (lines.length < 2) return lines;
+  let best = lines;
+  for (let narrower = width-1; narrower >= Math.ceil(width/2); narrower--) {
+    const tried = flowLines(text,narrower);
+    if (tried.length !== lines.length) break;
+    best = tried;
+  }
+  return best;
 }
 /** Seconds, minutes or hours since `at`, the coarsest unit that is not zero. */
 export function age(at: Date | undefined, now: number): string {
@@ -586,7 +616,7 @@ function briefRows(input: MonitorData, state: MonitorState, width: number, now: 
   const flow = (text: string, indent: number, paint: (s: string) => string = s => s) =>
     flowLines(monitorText(text),Math.max(1,width-indent)).map(line=>' '.repeat(indent)+paint(line));
   let body: string[] = [];
-  if (brief?.overall) body = flow(brief.overall,1,colors.dim);
+  if (brief?.overall) body = balancedLines(monitorText(brief.overall),Math.max(1,width-1)).map(line=>' '+colors.dim(line));
   else if (brief?.text && !brief.structured && !brief.items) {
     // A reply in another shape than the JSON asked for is shown as the text it is.
     body = brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flow(line,1));
@@ -693,19 +723,16 @@ function recapRows(recap: NonNullable<Brief['recap']>, folded: boolean, width: n
   const room = width-visualLength(label)-visualLength(switchText);
   const head = room >= 0 ? {line:colors.dim(label+' '.repeat(room))+colors.dim(switchText),control:{x:width-visualLength(switchText),width:visualLength(switchText)}}
     : {line:colors.dim(truncateAnsi(label,width))};
-  // "Goal: text…", the label muted and the text wrapped under it from column one.
-  const field = (name: string, text: string, paint: (s: string) => string = s => s): string[] => {
-    const prefix = `${t(name)} `;
-    return flowLines(monitorText(`${prefix}${text}`),Math.max(1,width-1)).map((line,i)=>
-      ' '+(i === 0 && line.startsWith(prefix.trimEnd()) ? colors.dim(prefix.trimEnd())+paint(line.slice(prefix.trimEnd().length)) : paint(line)));
-  };
-  const lines = [head.line,...field('Goal:',recap.goal)];
+  // One gutter for the marks, one left edge for the text: ◎ the goal, ✓ what
+  // is done, ▸ where it stands, ! what it needs. A wrapped line hangs under
+  // the text, and lines are evened out so none ends in a stranded word.
+  const field = (mark: string, text: string, paint: (s: string) => string = s => s): string[] =>
+    balancedLines(monitorText(text),Math.max(1,width-3)).map((line,i)=>(i ? '   ' : ` ${mark} `)+paint(line));
+  const lines = [head.line,...field(colors.dim('◎'),recap.goal,theme.strong)];
   if (!folded) {
-    for (const item of recap.done) {
-      lines.push(...flowLines(monitorText(item),Math.max(1,width-3)).map((line,i)=>(i ? '   ' : ` ${theme.success('✓')} `)+line));
-    }
-    lines.push(...field('Now:',recap.now));
-    if (recap.needs) lines.push(...field('Needs:',recap.needs,theme.warning).map((line,i)=>i ? line : theme.warning('!')+line.slice(1)));
+    for (const item of recap.done) lines.push(...field(theme.success('✓'),item));
+    lines.push(...field(theme.info('▸'),recap.now));
+    if (recap.needs) lines.push(...field(theme.warning('!'),recap.needs,theme.warning));
   }
   return {lines,control:head.control};
 }

@@ -8,7 +8,7 @@ import { recapInput, parseRecapPart, recapPlainText, RecapStore, delegationDiges
   MAIN_MATERIAL_CHARS, type Recap } from '../../src/collectors/recap.js';
 import { Briefer, briefSystemPrompt, parseBrief } from '../../src/collectors/briefing.js';
 import type { SmallModel, ModelRequest } from '../../src/collectors/small-model.js';
-import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput, balancedLines, flowLines } from '../../src/render/monitor.js';
 import { stripAnsi, visualLength, theme } from '../../src/render/colors.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import { tmuxCopyArgs, tmuxSupportsClipboard } from '../../src/utils/tmux-copy.js';
@@ -300,6 +300,15 @@ test('with scope both, opening the panel again is not paid for either, and the l
   assert.equal(second.asked.filter(request => request.feature === 'recap').length, 1, 'news since then is still asked about');
 });
 
+test('wrapped text is evened out: same line count, no stranded last word', () => {
+  const plain = flowLines('核对 A/B/C/D 基准结果与独立复核', 27);
+  const even = balancedLines('核对 A/B/C/D 基准结果与独立复核', 27);
+  assert.equal(even.length, plain.length);
+  assert.ok(visualLength(even.at(-1)!) > visualLength(plain.at(-1)!), 'the last line is no longer two characters');
+  assert.ok(even.every(line => visualLength(line) <= 27));
+  assert.deepEqual(balancedLines('short', 27), ['short']);
+});
+
 const recapView: Recap = { goal: 'Fix the flaky cache test in the parser', done: ['Reproduced the failure', 'Found the race'],
   now: 'Waiting on reader agent', needs: 'Approve npm test', at: now - 5 * 60_000, coveredUntil: now, sessionId: 's', language: 'en' };
 
@@ -310,12 +319,12 @@ test('the recap leads the brief area: goal, done, now and needs, needs in the wa
   const lines = frame.lines.map(stripAnsi);
   const rule = lines.findIndex(line => line.startsWith('─ Brief'));
   assert.match(lines[rule + 1], /^ Main recap · 5m ago +r fold $/);
-  assert.equal(lines[rule + 2].trimEnd(), ' Goal: Fix the flaky cache');
-  assert.equal(lines[rule + 3].trimEnd(), ' test in the parser');
+  assert.equal(lines[rule + 2].trimEnd(), ' ◎ Fix the flaky cache');
+  assert.equal(lines[rule + 3].trimEnd(), '   test in the parser', 'a wrapped line hangs under the text');
   assert.equal(lines[rule + 4].trimEnd(), ' ✓ Reproduced the failure');
-  assert.equal(lines[rule + 6].trimEnd(), ' Now: Waiting on reader agent');
-  assert.equal(lines[rule + 7].trimEnd(), '!Needs: Approve npm test', 'the mark takes the column the tree marks with');
-  assert.ok(frame.lines[rule + 7].includes(theme.warning(' Approve npm test')));
+  assert.equal(lines[rule + 6].trimEnd(), ' ▸ Waiting on reader agent');
+  assert.equal(lines[rule + 7].trimEnd(), ' ! Approve npm test', 'the mark takes the column the tree marks with');
+  assert.ok(frame.lines[rule + 7].includes(theme.warning('Approve npm test')));
   assert.ok(!lines.some(line => line.includes('{}')), 'a recap-only reply shows no raw text');
   assert.ok(frame.lines.every(line => visualLength(line) <= 30));
   const control = frame.controls.find(c => c.kind === 'recap')!;
@@ -331,8 +340,8 @@ test('the recap leads the brief area: goal, done, now and needs, needs in the wa
   const shown = folded.lines.map(stripAnsi);
   const top = shown.findIndex(line => line.startsWith('─ Brief · writing…'));
   assert.match(shown[top + 1], /r more $/);
-  assert.match(shown[top + 2], /^ Goal:/);
-  assert.ok(!shown.some(line => /Now:|Needs:/.test(line)), 'folded: the goal line only, the previous recap kept while a run is in flight');
+  assert.match(shown[top + 2], /^ ◎ /);
+  assert.ok(!shown.some(line => /^ [▸!] /.test(line)), 'folded: the goal line only, the previous recap kept while a run is in flight');
 });
 
 test('copying uses set-buffer, with -w from tmux 3.2', () => {
