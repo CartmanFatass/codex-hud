@@ -461,13 +461,16 @@ function sessionModule(data: HudData): BarModule {
     return { id: 'session', priority: MODULE_PRIORITY.session, group: 'meta', align: 'right', variants: {} };
   }
   const shortId = id.length > 8 ? id.slice(0, 8) : id;
+  // A model-written title, when the labels feature wrote one: the widest
+  // reading only, and the id stays beside it.
+  const title = data.sessionTitle ? truncate(data.sessionTitle.replace(/[\u0000-\u001f\u007f-\u009f]/g, ''), 28) : '';
   return {
     id: 'session',
     priority: MODULE_PRIORITY.session,
     group: 'meta',
     align: 'right',
     variants: {
-      full: colors.dim('Session: ') + theme.info(shortId),
+      full: title ? theme.value(title) + colors.dim(` · ${shortId}`) : colors.dim('Session: ') + theme.info(shortId),
       short: theme.info(shortId),
     },
   };

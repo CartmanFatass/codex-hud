@@ -32,11 +32,12 @@ test('the rollout\'s events: approvals asked and answered, compaction, quota cro
   parser.setRolloutPath(file);
   fs.writeFileSync(file, row('session_meta', { id: 'S', timestamp: at(0).toISOString(), cwd: '/r' }, 0)
     + row('event_msg', { type: 'task_started' }, 1)
-    + row('event_msg', { type: 'exec_approval_request', call_id: 'c1', command: ['npm', 'test'] }, 2)
-    + row('response_item', { type: 'function_call_output', call_id: 'c1', output: 'ok' }, 30)
-    + row('event_msg', { type: 'context_compacted' }, 40)
-    + quota(79, 50));
+    + row('event_msg', { type: 'exec_approval_request', call_id: 'c1', command: ['npm', 'test'] }, 2));
   let result = (await parser.parse())!;
+  assert.equal(result.pendingApproval?.command, 'npm test', 'the whole command, for its description');
+  fs.appendFileSync(file, row('response_item', { type: 'function_call_output', call_id: 'c1', output: 'ok' }, 30)
+    + row('event_msg', { type: 'context_compacted' }, 40) + quota(79, 50));
+  result = (await parser.parse())!;
   assert.deepEqual(result.events.map(e => [e.kind, e.at.getTime(), e.text]), [
     ['approval-requested', at(2).getTime(), 'npm test'], ['approval-answered', at(30).getTime(), 'npm test'], ['compacted', at(40).getTime(), undefined]]);
   fs.appendFileSync(file, quota(81, 60) + quota(96, 70) + row('event_msg', { type: 'task_complete' }, 80) + row('event_msg', { type: 'turn_aborted' }, 90));

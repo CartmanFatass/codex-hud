@@ -232,12 +232,52 @@ export function parseStoredRecap(raw: unknown): Recap | null {
  * Recaps on disk, one file per session id, so a panel opened again (it is a
  * new process each time) or a `codex resume` shows the last recap at once.
  */
+/** The session's title, kept beside its recap for the bar to read. */
+export interface SessionTitle {
+  sessionId: string;
+  title: string;
+  /** Taken from the recap's goal, or written from the first prompt. */
+  source: 'recap' | 'prompt';
+  at: number;
+}
+
+export function parseStoredTitle(value: unknown): SessionTitle | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.sessionId !== 'string' || typeof raw.title !== 'string' || !raw.title.trim() || typeof raw.at !== 'number') return null;
+  if (raw.source !== 'recap' && raw.source !== 'prompt') return null;
+  return { sessionId: raw.sessionId, title: raw.title.replace(/\s+/g, ' ').trim().slice(0, 80), source: raw.source, at: raw.at };
+}
+
+function sessionFile(dir: string, sessionId: string, suffix: string): string | null {
+  // Session ids are UUIDs; anything else is not a file name we write.
+  return /^[A-Za-z0-9-]{1,128}$/.test(sessionId) ? path.join(dir, `${sessionId}${suffix}`) : null;
+}
+
+/** The stored title of a session, or null: what the bar reads. */
+export function readSessionTitle(dir: string, sessionId: string): SessionTitle | null {
+  const file = sessionFile(dir, sessionId, '.title.json');
+  if (!file) return null;
+  try {
+    const title = parseStoredTitle(JSON.parse(fs.readFileSync(file, 'utf8')));
+    return title?.sessionId === sessionId ? title : null;
+  } catch { return null; }
+}
+
 export class RecapStore {
   constructor(private readonly dir: string, private readonly clock: () => number = Date.now) {}
 
+  loadTitle(sessionId: string): SessionTitle | null {
+    return readSessionTitle(this.dir, sessionId);
+  }
+
+  saveTitle(title: SessionTitle): void {
+    const file = sessionFile(this.dir, title.sessionId, '.title.json');
+    if (file) writePrivateFile(file, `${JSON.stringify(title)}\n`);
+  }
+
   private file(sessionId: string): string | null {
-    // Session ids are UUIDs; anything else is not a file name we write.
-    return /^[A-Za-z0-9-]{1,128}$/.test(sessionId) ? path.join(this.dir, `${sessionId}.json`) : null;
+    return sessionFile(this.dir, sessionId, '.json');
   }
 
   load(sessionId: string): Recap | null {

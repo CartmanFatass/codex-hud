@@ -83,6 +83,12 @@ export interface MonitorData {
   agentLog?: ReadonlyMap<string, readonly AgentLogEntry[]>;
   /** The session's observed events, newest first, for the Timeline pane. */
   timeline?: readonly WorkbenchEvent[];
+  /**
+   * Model-written readings, each shown marked as such: the pending approval's
+   * command in plain words, and what the current diff does (`current` false
+   * once the diff has moved on since it was written).
+   */
+  notes?: {approval?: string; changes?: {lines: string[]; at: number; current: boolean}};
   /** The session has not been read yet: an empty tree is not news. */
   loading?: boolean;
   /**
@@ -458,6 +464,12 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       const staged=git.files.filter(f=>!f.conflict&&changed(f.index)).length;
       const unstaged=git.files.filter(f=>!f.conflict&&changed(f.worktree)).length;
       rows.push({text:colors.dim(width<36?`${git.files.length}Δ ${staged}S ${unstaged}U`:t('{n} files · {s} staged · {u} unstaged',{n:git.files.length,s:staged,u:unstaged}))});
+      // What the diff does, in the model's words, marked as such; older than the diff, it says so.
+      const summary = input.notes?.changes;
+      if (summary) {
+        for (const line of summary.lines) rows.push(...flowLines(monitorText(line),Math.max(1,width-2)).map((text,i)=>({text:`${i ? ' ' : colors.dim('~')} ${text}`})));
+        if (!summary.current) rows.push(...flowLines(t('(written {age}, before the latest edits)',{age:writtenAge(summary.at,now)}),Math.max(1,width-2)).map(text=>({text:colors.dim(`  ${text}`)})));
+      }
     }
     return [...rows, ...git.files.map(file => ({item:file.path,
       text:truncateAnsi(`${file.path===state.selectedFile?'›':' '} ${file.conflict?theme.error('!!'):file.index+file.worktree} ${monitorText(width<36?basename(file.path):file.path)}`,width)})),
@@ -503,13 +515,23 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
         }
         rows.push(...shown.map(line=>({text:line})));
       }
+      // What a model read from the final answer and from the failure, marked as such.
+      const log = input.agentLog?.get(node.id) ?? [];
+      const latest = (kind: AgentLogKind) => [...log].reverse().find(entry=>entry.kind===kind);
+      const written = (kind: AgentLogKind, heading: string) => {
+        const entry = latest(kind);
+        if (!entry || (kind === 'digest' && node.status !== 'completed') || (kind === 'cause' && node.status !== 'error')) return;
+        rows.push({text:colors.dim(truncateAnsi(`~ ${t(heading)} · ${writtenAge(entry.at,now)}`,width))});
+        rows.push(...entry.text.split(' · ').flatMap(part=>flowLines(monitorText(part),width)).map(line=>({text:line})));
+      };
+      written('digest','Result digest');
+      written('cause','Failure cause');
       if (node.task && (state.expanded || !report)) {
         rows.push({text:colors.dim(t('Task'))});
         rows.push(...flowLines(monitorText(node.task.replace(/\s+/g,' ').trim()),width).map(line=>({text:line})));
       }
       // The agent's whole log, newest first.
-      const log = input.agentLog?.get(node.id);
-      if (log?.length) {
+      if (log.length) {
         rows.push({text:colors.dim(t('Log'))});
         for (const entry of [...log].reverse()) rows.push(...logEntryLines(entry,width,now,0).map(text=>({text})));
       }
@@ -570,8 +592,11 @@ function briefRows(input: MonitorData, state: MonitorState, width: number, now: 
     body = brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flow(line,1));
   }
   const said = [...(brief?.text ? body : failure),...(brief?.text ? failure.slice(0,1) : [])];
+  // A pending approval in plain words leads: the session cannot go on without it.
+  const approval = input.notes?.approval
+    ? flowLines(monitorText(`${t('Approval, in the model\'s words:')} ${input.notes.approval}`),Math.max(1,width-2)).map((line,i)=>(i ? '  ' : colors.dim('~ '))+theme.warning(line)) : [];
   // The recap leads; a blank line sets it off from what follows when there is room.
-  let top = [...recap,...(recap.length && said.length && spaced ? [''] : []),...said];
+  let top = [...approval,...(approval.length && (recap.length || said.length) && spaced ? [''] : []),...recap,...(recap.length && said.length && spaced ? [''] : []),...said];
   // Paused, the last brief stays for reference but steps back.
   if (brief?.paused) top = top.map(line=>colors.dim(stripAnsi(line)));
   const log = input.agentLog ? logRows(input,state,width,now,spaced) : {lines:[],ids:[]};

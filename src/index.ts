@@ -5,6 +5,8 @@
 
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import * as fs from 'fs';
+import * as path from 'path';
+import { getHudHome } from './utils/codex-path.js';
 import { spawn } from 'child_process';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
@@ -125,6 +127,8 @@ async function collectData(): Promise<HudData> {
     // Settings saved in the panel reach the notifier here; an environment
     // variable that was set still wins.
     notifier.configure(resolveNotifierOptions(process.env, settings));
+    // The panel writes the session title beside the recap when the labels feature is on.
+    hudStatus.titleDir = settings.agentLabels && settings.briefing !== 'off' ? path.join(getHudHome(), 'recaps') : null;
   } catch { /* Keep last valid display settings. */ }
   if (configNeedsRefresh) {
     hudStatus.invalidateConfig();

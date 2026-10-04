@@ -75,6 +75,7 @@ function approvalFromEvent(payload: EventMsgPayload, timestamp: Date): PendingAp
     callId,
     since: timestamp,
     summary: command ? plainText(command, 60) : undefined,
+    ...(command.trim() ? { command: command.replace(/\s+/g, ' ').trim().slice(0, 4000) } : {}),
   };
 }
 

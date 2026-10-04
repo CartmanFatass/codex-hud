@@ -212,7 +212,10 @@ export function briefingInput(tree: SubagentTree, now: number = Date.now(), only
     if (node.contextUsage) facts.push(`context ${node.contextUsage.percent}% used`);
     lines.push(`- ${node.name}: ${facts.join(', ')}`);
     if (node.task) lines.push(`  task: ${clip(node.task, MAX_TASK_CHARS)}`);
-    if (node.lastReport) {
+    // A digest of the final answer, when one was written, says more than the
+    // excerpt's first 600 characters: it stands in for it.
+    if (node.digest) lines.push(`  result digest (model-written from its final answer): ${clip(node.digest, MAX_REPORT_CHARS)}`);
+    else if (node.lastReport) {
       const prior = node.turnStartedAt && node.lastReport.at < node.turnStartedAt ? ', previous turn' : '';
       lines.push(`  latest update (${ago(node.lastReport.at, now)} ago${prior}): ${clip(node.lastReport.text, MAX_REPORT_CHARS)}`);
     }

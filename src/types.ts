@@ -239,6 +239,8 @@ export interface PendingApproval {
   since: Date;
   /** What is being approved, as short observed text. Absent when unknown. */
   summary?: string;
+  /** The whole command of an exec request, whitespace collapsed and bounded; for its description. */
+  command?: string;
 }
 
 export interface TurnContextPayload {
@@ -420,6 +422,12 @@ export interface SubagentTreeNode {
    * identify the agent: `id` and `name` do that.
    */
   label?: string;
+  /**
+   * A model-written digest of the agent's final answer for its latest turn
+   * (conclusion, basis, caveats), when the result digest is on and one has
+   * arrived. Stands in for the raw excerpt in the brief's material.
+   */
+  digest?: string;
   /** Codex task path, `/root/<task>`; also the agent's `/subagents` picker label. */
   agentPath?: string;
   /** Randomly assigned nickname (`Meitner`), shown only as a detail. */
@@ -520,6 +528,8 @@ export interface HudData {
   
   /** A recorded approval request that nothing has answered yet. */
   pendingApproval?: PendingApproval;
+  /** The session's title, from the recap's goal or its first prompt, model-written; only when the labels feature is on. */
+  sessionTitle?: string;
 
   // Context/token usage
   contextUsage?: ContextUsage;

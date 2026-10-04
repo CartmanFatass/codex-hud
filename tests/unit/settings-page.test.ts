@@ -93,7 +93,10 @@ test('hide-finished steps through its presets, and mouse clicks respect headings
 
 test('every model feature sits in the LLM group, and the calls made today show under the list',()=>{
   const llm=SETTING_ROWS.filter(row=>row.group==='LLM').map(row=>row.key);
-  assert.deepEqual(llm,['briefing','briefingMs','recapFloorMs','modelCallsPerHour','briefAgents','briefMain']);
+  assert.deepEqual(llm,['briefing','briefingMs','recapFloorMs','modelCallsPerHour','briefAgents','briefMain',
+    'resultDigest','agentLabels','failureCause','changeSummary','approvalDescription']);
+  for (const key of ['resultDigest','agentLabels','failureCause','changeSummary','approvalDescription'] as const) assert.equal(defaultSettings()[key],false,key);
+  for (const row of SETTING_ROWS.filter(row=>row.group==='LLM'&&row.key!=='briefingMs'&&row.key!=='recapFloorMs'&&row.key!=='modelCallsPerHour'&&row.key!=='briefing')) assert.match(row.help,/^Sends /,row.key);
   assert.equal(defaultSettings().briefMain,false,'sending the main session is opt-in');
   assert.equal(modelCallsLine(undefined),null);
   assert.equal(modelCallsLine({today:0,lastHour:0,cap:60}),null,'no calls yet: no line');

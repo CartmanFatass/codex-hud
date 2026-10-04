@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
 import { buildSubagentTree, uniquePickerLabel } from './collectors/subagent-tree.js';
-import { collectGitChanges, readGitDiff, type GitChanges } from './collectors/git-changes.js';
+import { collectGitChanges, readGitDiff, readDiffHunks, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
   monitorModes, monitorPreferences, nextRepaintDelay, type MonitorFrame } from './render/monitor.js';
@@ -21,6 +21,7 @@ import { Briefer } from './collectors/briefing.js';
 import { SmallModel } from './collectors/small-model.js';
 import { RecapStore, recapPlainText } from './collectors/recap.js';
 import { AgentLog } from './collectors/agent-log.js';
+import { ModelJobs, NO_JOBS, type JobSwitches } from './collectors/model-jobs.js';
 import { WorkbenchHistory } from './collectors/workbench-events.js';
 import type { WorkbenchEvent } from './render/workbench-state.js';
 import { getHudHome } from './utils/codex-path.js';
@@ -124,8 +125,19 @@ async function runLivePage(): Promise<void> {
   // The Timeline pane's events: the rollout's and the agent log's, one list.
   const history = new WorkbenchHistory();
   let timeline: WorkbenchEvent[] = [];
+  const recaps = new RecapStore(path.join(getHudHome(),'recaps'));
   // Repaints when a brief starts, lands or fails; render() is defined below.
-  const briefer = new Briefer(()=>render(),{model,store:new RecapStore(path.join(getHudHome(),'recaps')),log:agentLog});
+  const briefer = new Briefer(()=>render(),{model,store:recaps,log:agentLog});
+  /** The model's other jobs, each behind its own switch; all off with the backend. */
+  const switches = (): JobSwitches => settings.briefing === 'off' ? NO_JOBS : {resultDigest:settings.resultDigest,agentLabels:settings.agentLabels,
+    failureCause:settings.failureCause,changeSummary:settings.changeSummary,approvalDescription:settings.approvalDescription};
+  const jobsOn = () => settings.briefing !== 'off' && !settings.briefingPaused;
+  // A label or digest landing is put on the tree at once, not at the next collection.
+  const jobs = new ModelJobs({model,log:agentLog,labelsFile:path.join(getHudHome(),'model-cache','labels.json'),titles:recaps,readHunks:readDiffHunks,
+    onChange:()=>{jobs.apply(tree,switches(),resolveLanguage(settings.language));render();}});
+  const updateJobs = () => time('jobs.update',()=>jobs.update({tree,main,switches:switches(),language:resolveLanguage(settings.language),on:jobsOn(),
+    inspected:state.modes.details === 'open' && state.preview === 'agent' ? state.tree.selectedId ?? undefined : undefined,
+    recapGoal:briefCommand() === 'off' ? undefined : briefer.current().recap?.goal,digestLabels:{basis:t('Basis:'),caveats:t('Caveats:')},now:Date.now()}));
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   /** A short-lived line in the notice row, cleared after a few seconds. */
   const flash = (message: string) => {
@@ -148,7 +160,7 @@ async function runLivePage(): Promise<void> {
     const size = artSize(art.bitmap,cols,rows);
     return size ? renderArt(art.bitmap,style,size.cols,size.rows) : null;
   };
-  const configureBriefer = () => model.configure({api:{base:settings.briefingApiBase,model:settings.briefingApiModel,key:settings.briefingApiKey,
+  const configureBriefer = () => model.configure({backend:settings.briefing,api:{base:settings.briefingApiBase,model:settings.briefingApiModel,key:settings.briefingApiKey,
     reasoning:settings.briefingApiReasoning},hourlyCap:settings.modelCallsPerHour});
   const scope = () => briefingScope(settings);
   /** The brief's backend as the Briefer sees it: off too when neither brief nor recap is on. */
@@ -180,7 +192,9 @@ async function runLivePage(): Promise<void> {
       const width = process.stdout.columns || 30;
       frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,
         brief:briefCommand() === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused,recapFolded:settings.recapFolded},
-        agentLog:settings.briefing !== 'off' || settings.agentLog ? agentLog.snapshot() : undefined,timeline,
+        agentLog:settings.briefing !== 'off' || settings.agentLog ? agentLog.snapshot() : undefined,timeline:jobs.withCauses(timeline),
+        notes:{approval:switches().approvalDescription ? jobs.approvalNote(main?.pendingApproval) : undefined,
+          changes:switches().changeSummary ? jobs.changeNote(git) : undefined},
         status:(rowWidth,maxRows)=>statusCard(hudStatus.current(),rowWidth,maxRows),width,height:process.stdout.rows || 24});
       state = frame.state;
       lines = frame.lines;
@@ -313,11 +327,13 @@ async function runLivePage(): Promise<void> {
       }
       tree = rootId ? time('tree.build',()=>buildSubagentTree(rootId,main?.subagents ?? [])) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
       applyAgentContext();
+      jobs.apply(tree,switches(),resolveLanguage(settings.language));
       // On the same tick as the tree, so the log never lags it.
       if (time('agentlog.observe',()=>agentLog.observe(tree))) agentLog.flush();
       timeline = time('timeline',()=>history.timeline(tree,main,agentLog.snapshot()));
       state = reconcileMonitor(state,tree,git,worktrees);
       updateBriefer(settings.briefingPaused);
+      updateJobs();
       error = settingsError || null;
     } catch (err) { error = t('Refresh: {reason}',{reason:String(err)}); stale = true; hudStatus.health.fail(stage,err); }
     finally { collecting = false; collected = true; }
@@ -353,6 +369,9 @@ async function runLivePage(): Promise<void> {
         if (closed) return;
         if (requestKey !== JSON.stringify(sources()) || selected !== state.selectedWorktree) { gitAgain=true; return; }
         git=result;gitRevision++;
+        // While the pane is open, and at most once per floor period.
+        jobs.updateChanges(git,{on:jobsOn(),enabled:switches().changeSummary,open:state.modes.changes === 'open',floorMs:settings.recapFloorMs,
+          language:resolveLanguage(settings.language),now:Date.now()});
         const previousFile=state.selectedFile;
         state=reconcileMonitor(state,tree,git,worktrees);
         if(previousFile!==state.selectedFile){diff=undefined;diffKey='';}
@@ -372,6 +391,7 @@ async function runLivePage(): Promise<void> {
     if (closed) return;
     closed = true;
     briefer.stop();
+    jobs.stop();
     model.cancelAll();
     agentLog.flush();
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -415,6 +435,9 @@ async function runLivePage(): Promise<void> {
             applyDisplaySettings(settings);
             setLanguage(resolveLanguage(settings.language));
             configureBriefer();
+            // A switched-off job's labels and digests leave the tree at once.
+            jobs.apply(tree,switches(),resolveLanguage(settings.language));
+            if (!jobsOn()) jobs.stop();
             armCollect();
             loadArt();
             state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings)};
@@ -442,7 +465,7 @@ async function runLivePage(): Promise<void> {
           settings = saveSettings({briefingPaused:!settings.briefingPaused});
           // Resuming asks at once when there is news, rather than at the next tick.
           if (!settings.briefingPaused) void collect();
-          else updateBriefer(true);
+          else { updateBriefer(true); jobs.stop(); }
         } catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
       }
       if (result.action?.type === 'recap-fold' && briefer.current().recap) {

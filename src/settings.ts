@@ -67,6 +67,16 @@ export interface HudSettings extends HudDisplayConfig {
   recapFolded: boolean;
   /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
   modelCallsPerHour: number;
+  /** A finished agent's final answer in three lines; sends the answer (head and tail when long). */
+  resultDigest: boolean;
+  /** Short labels for agents from their tasks, and a session title; sends task texts, and the first prompt when there is no recap. */
+  agentLabels: boolean;
+  /** One line on why a tool call or an agent failed; sends the tail of the error output. */
+  failureCause: boolean;
+  /** One or two lines on what the current diff does; sends the diff stat and bounded hunks. */
+  changeSummary: boolean;
+  /** The command awaiting approval in plain words; sends the command. A description, never a verdict. */
+  approvalDescription: boolean;
   /** Notifications in tmux on approvals, failures and finished agents. CODEX_HUD_NOTIFY, when set, wins. */
   notify: boolean;
   /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
@@ -93,6 +103,7 @@ export function defaultSettings(): HudSettings {
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60,
     agentLog: false, notify: false, notifyDesktop: false,
+    resultDigest: false, agentLabels: false, failureCause: false, changeSummary: false, approvalDescription: false,
     art: 'off', artImage: '',
   };
 }
@@ -142,6 +153,11 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   notify: isBoolean,
   notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
+  resultDigest: isBoolean,
+  agentLabels: isBoolean,
+  failureCause: isBoolean,
+  changeSummary: isBoolean,
+  approvalDescription: isBoolean,
   art: oneOf('off', 'dots', 'color', 'ascii'),
   artImage: isText(4096),
 };
