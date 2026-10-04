@@ -689,7 +689,9 @@ export function briefParts(input: MonitorData, width: number, indent = 1): {appr
     // A reply in another shape than the JSON asked for is shown as the text it is.
     body = brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flow(line,indent));
   }
-  const said = [...(brief?.text ? body : failure),...(brief?.text ? failure.slice(0,1) : [])];
+  // A line restored from an earlier panel has no reply text behind it and is shown all the same.
+  const spoke = Boolean(brief?.text || brief?.overall);
+  const said = [...(spoke ? body : failure),...(spoke ? failure.slice(0,1) : [])];
   // A pending approval in plain words leads: the session cannot go on without it.
   const approval = input.notes?.approval
     ? flowLines(monitorText(`${t('Approval, in the model\'s words:')} ${input.notes.approval}`),Math.max(1,width-2)).map((line,i)=>(i ? '  ' : colors.dim('~ '))+theme.warning(line)) : [];

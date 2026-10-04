@@ -291,6 +291,8 @@ test('with scope both, opening the panel again is not paid for either, and the l
   assert.equal(second.asked.filter(request => request.feature === 'recap').length, 0, 'nothing changed since it was written');
   assert.equal(after.current().recap?.goal, 'Fix the bug');
   assert.equal(after.current().overall, 'one reading');
+  const shown = renderMonitor({ tree: agents, state: initialMonitorState(), width: 32, height: 40, nowMs: now + 3_600_000, brief: after.current() });
+  assert.ok(shown.lines.some(line => stripAnsi(line).includes('one reading')), 'and it is on screen, though no reply text came with it');
   const moved = tree([node('a', 'reader', 'completed', { lastReport: { text: 'r2', kind: 'reply', at: at(3_000) } })]);
   after.update(moved, 'omp', 60_000, 'en', now + 3_700_000, false, ctx);
   await settle();
