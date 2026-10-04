@@ -27,5 +27,8 @@
 - 将 `newOffset` 与 `fileSize` 做 `min` 限制，避免超过真实文件大小。
 
 ## 修复记录
-- 状态：待修复
+- 状态：已修复
 - 备注：与 CRLF 的偏移问题不同，此处是末行无换行导致偏移偏大。
+- 修复时间：2026-09-22（69d2f4c）
+- 变更说明：`parseRolloutFile` 只读取打开时 `stat` 得到的文件大小以内的字节，offset 只在完整记录后提交；末行无换行时仅当其能完整解析为 JSON 才计入，否则下次从上一条完整记录处重读，offset 不会超过真实文件大小。
+- 验证方式：`tests/unit/rollout-live.test.ts`（末行无换行的 `function_call_output` 只计一次）。

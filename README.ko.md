@@ -1,3 +1,5 @@
+> **참고:** 이 한국어 번역은 요약본이며 최신 내용이 반영되지 않았을 수 있습니다. 전체 문서는 [README.md](./README.md)(영어)를 참조하세요.
+
 ## Modification History
 
 | Date       | Summary of Changes |
@@ -17,7 +19,7 @@
 
 > Claude Code의 [claude-hud](https://github.com/jarrodwatts/claude-hud)에서 영감을 받았습니다.
 
-![Codex HUD — 단일 세션](./doc/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
+![Codex HUD — 단일 세션](./docs/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
 
 ## 왜 Codex HUD가 필요한가요?
 
@@ -37,7 +39,7 @@
 
 `Ctrl+T`는 의도적으로 비워 두었습니다. Codex 자체의 트랜스크립트 오버레이용입니다.
 
-![Codex HUD — 서브에이전트 트리](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+![Codex HUD — 서브에이전트 트리](./docs/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
 
 **Q: tmux를 수동으로 설정해야 하나요?**
 
@@ -73,7 +75,7 @@ git switch feature/windows-support-dual-entry
 codex --self-check
 ```
 
-![Windows WSL self-check](./doc/fig/wsl-self-check.png)
+![Windows WSL self-check](./docs/fig/wsl-self-check.png)
 
 3. Codex HUD를 실행합니다:
 
@@ -81,7 +83,7 @@ codex --self-check
 codex
 ```
 
-![Windows WSL launch](./doc/fig/windows-wsl.png)
+![Windows WSL launch](./docs/fig/windows-wsl.png)
 
 Notes:
 

@@ -26,7 +26,9 @@
 - 或在退出时恢复旧绑定。
 
 ## 修复记录
-- 状态：待修复
+- 状态：已修复
+- 后续修复：2026-09-22（69d2f4c）起 `bin/codex-hud` 的 `install_session_input_policy` 不再绑定 `prefix`/`root` 表，而是把 root 绑定复制到独立的 `codex-hud` 键表，再以 `set-option -t "$session_name" key-table codex-hud` 仅让 HUD session 使用该表；F12 等 HUD 按键只绑定在 `codex-hud` 表中。`tests/integration/test-input-events-real-tmux.py` 断言用户自定义的 root F12 不被覆盖。
+- 以下为最初记录：
 - 修复人：codex
 - 修复时间：2026-01-30
 - 变更说明：尝试改为 session 级绑定 `bind-key -t "$SESSION_NAME"`，但 tmux 3.5a 不支持 `-t`，已回退为全局绑定，问题仍存在。

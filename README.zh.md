@@ -20,7 +20,7 @@
 
 > 灵感来源于 Claude Code 的 [claude-hud](https://github.com/jarrodwatts/claude-hud)。
 
-![Codex HUD — 单 Session 模式](./doc/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
+![Codex HUD — 单 Session 模式](./docs/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
 
 ## 为什么需要 Codex HUD？
 
@@ -40,7 +40,7 @@
 
 `Ctrl+T` 被刻意留空 —— 那是 Codex 自己的转写面板。
 
-![Codex HUD — 子代理树](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+![Codex HUD — 子代理树](./docs/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
 
 **Q: 需要手动配置 tmux 吗？**
 
@@ -76,7 +76,7 @@ git switch feature/windows-support-dual-entry
 codex --self-check
 ```
 
-![Windows WSL self-check](./doc/fig/wsl-self-check.png)
+![Windows WSL self-check](./docs/fig/wsl-self-check.png)
 
 3. 启动 Codex HUD：
 
@@ -84,7 +84,7 @@ codex --self-check
 codex
 ```
 
-![Windows WSL launch](./doc/fig/windows-wsl.png)
+![Windows WSL launch](./docs/fig/windows-wsl.png)
 
 说明：
 

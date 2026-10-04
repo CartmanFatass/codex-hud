@@ -1,3 +1,5 @@
+> **注意:** この日本語版は抄訳で、内容が最新でない場合があります。完全なドキュメントは [README.md](./README.md)（英語）を参照してください。
+
 ## Modification History
 
 | Date       | Summary of Changes |
@@ -17,7 +19,7 @@
 
 > Claude Code の [claude-hud](https://github.com/jarrodwatts/claude-hud) にインスパイアされています。
 
-![Codex HUD — シングルセッション](./doc/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
+![Codex HUD — シングルセッション](./docs/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
 
 ## なぜ Codex HUD が必要？
 
@@ -37,7 +39,7 @@
 
 `Ctrl+T` は意図的に空けてあります。Codex 自身のトランスクリプト表示のためです。
 
-![Codex HUD — サブエージェントツリー](./doc/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+![Codex HUD — サブエージェントツリー](./docs/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
 
 **Q: tmux を手動で設定する必要がありますか？**
 
@@ -73,7 +75,7 @@ git switch feature/windows-support-dual-entry
 codex --self-check
 ```
 
-![Windows WSL self-check](./doc/fig/wsl-self-check.png)
+![Windows WSL self-check](./docs/fig/wsl-self-check.png)
 
 3. Codex HUD を起動します：
 
@@ -81,7 +83,7 @@ codex --self-check
 codex
 ```
 
-![Windows WSL launch](./doc/fig/windows-wsl.png)
+![Windows WSL launch](./docs/fig/windows-wsl.png)
 
 Notes:
 

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y tmux
+      - run: npm ci
+      # Several suites drive dist/index.js, so build before running them.
+      - run: npm run build
+      - run: npm run test:integration
+
+  cx-continue:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cx-continue
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest
+      # Unit tests only: the e2e suite drives a fake codex in a real tmux session.
+      - run: python -m pytest tests/unit -q
+        env:
+          PYTHONPATH: src
