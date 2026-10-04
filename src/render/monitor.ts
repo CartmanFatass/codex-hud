@@ -44,7 +44,7 @@ export interface MonitorRect {
   pinned?: number;
 }
 export interface MonitorControl {
-  kind: 'main' | 'settings' | 'fold' | 'close' | 'brief';
+  kind: 'main' | 'settings' | 'fold' | 'close' | 'brief' | 'recap';
   pane?: MonitorPane;
   x: number; y: number; width: number;
 }
@@ -59,8 +59,11 @@ export interface MonitorData {
   nowMs?: number;
   notice?: string | null;
   error?: string | null;
-  /** The brief, when one is configured; `paused` puts the model calls on hold. */
-  brief?: Brief & {paused?: boolean};
+  /**
+   * The brief, when one is configured; `paused` puts the model calls on hold,
+   * `recapFolded` shows the main recap's goal line only.
+   */
+  brief?: Brief & {paused?: boolean; recapFolded?: boolean};
   /**
    * The status bar's fields for the card at the foot of the panel (while the
    * panel is open it replaces the bar): at most `maxRows` rows, each fitted
@@ -87,7 +90,7 @@ export interface MonitorContext {
 export interface MonitorOutcome {
   state: MonitorState;
   close: boolean;
-  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'brief-toggle'};
+  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'brief-toggle'} | {type:'recap-fold'} | {type:'recap-copy'};
 }
 
 export function initialMonitorState(): MonitorState {
@@ -498,6 +501,7 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
 function briefRows(brief: MonitorData['brief'], nodes: SubagentTreeNode[], width: number, now: number, spaced = false): string[] {
   if (!brief) return [];
   const rule = briefRule(brief,width).line;
+  const recap = brief.recap ? recapRows(brief.recap,Boolean(brief.recapFolded),width,now).lines : [];
   const failure = brief.error ? flowLines(monitorText(brief.error),Math.max(1,width-1)).map(text=>theme.warning(' '+text)) : [];
   const flow = (text: string, indent: number, paint: (s: string) => string = s => s) =>
     flowLines(monitorText(text),Math.max(1,width-indent)).map(line=>' '.repeat(indent)+paint(line));
@@ -525,12 +529,56 @@ function briefRows(brief: MonitorData['brief'], nodes: SubagentTreeNode[], width
       body.push(head+(attention ? theme.warning(name) : theme.strong(name)));
       body.push(...flow(item.note,3,attention ? theme.warning : (s: string) => s));
     }
+  } else if (brief.structured) {
+    // The JSON asked for, with nothing for the agents: the recap was all of it.
+    body = [];
   } else {
     body = (brief.text ?? '').split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flow(line,1));
   }
+  const rest = [...(brief.text ? body : failure),...(brief.text ? failure.slice(0,1) : [])];
+  // The recap leads; a blank line sets it off from the agents when there is room.
+  let lines = [...recap,...(recap.length && rest.length && spaced ? [''] : []),...rest];
   // Paused, the last brief stays for reference but steps back.
-  if (brief.paused) body = body.map(line=>colors.dim(stripAnsi(line)));
-  return ['',rule,...(brief.text ? body : failure),...(brief.text ? failure.slice(0,1) : [])];
+  if (brief.paused) lines = lines.map(line=>colors.dim(stripAnsi(line)));
+  return ['',rule,...lines];
+}
+
+/** When something written once was written: no seconds ticking, days for an old one. */
+function writtenAge(at: number, now: number): string {
+  const seconds = Math.max(0,Math.floor((now-at)/1000));
+  if (seconds < 60) return t('just now');
+  if (seconds >= 2*86_400) return t('{age} ago',{age:`${Math.floor(seconds/86_400)}d`});
+  return t('{age} ago',{age:age(new Date(at),now)});
+}
+
+/**
+ * The main session's recap, the first block under the Brief rule: a heading
+ * that says it is the model's and how old it is, with the fold switch at its
+ * end, then the goal, what is done, where it stands and, when the session
+ * waits on the person, what it needs, painted for attention. Folded, the
+ * goal alone. Model text is sanitized like any other external string.
+ */
+function recapRows(recap: NonNullable<Brief['recap']>, folded: boolean, width: number, now: number): {lines: string[]; control?: {x: number; width: number}} {
+  const label = ` ${t('Main recap')} · ${writtenAge(recap.at,now)} `;
+  const switchText = ` ${t(folded ? 'r more' : 'r fold')} `;
+  const room = width-visualLength(label)-visualLength(switchText);
+  const head = room >= 0 ? {line:colors.dim(label+' '.repeat(room))+colors.dim(switchText),control:{x:width-visualLength(switchText),width:visualLength(switchText)}}
+    : {line:colors.dim(truncateAnsi(label,width))};
+  // "Goal: text…", the label muted and the text wrapped under it from column one.
+  const field = (name: string, text: string, paint: (s: string) => string = s => s): string[] => {
+    const prefix = `${t(name)} `;
+    return flowLines(monitorText(`${prefix}${text}`),Math.max(1,width-1)).map((line,i)=>
+      ' '+(i === 0 && line.startsWith(prefix.trimEnd()) ? colors.dim(prefix.trimEnd())+paint(line.slice(prefix.trimEnd().length)) : paint(line)));
+  };
+  const lines = [head.line,...field('Goal:',recap.goal)];
+  if (!folded) {
+    for (const item of recap.done) {
+      lines.push(...flowLines(monitorText(item),Math.max(1,width-3)).map((line,i)=>(i ? '   ' : ` ${theme.success('✓')} `)+line));
+    }
+    lines.push(...field('Now:',recap.now));
+    if (recap.needs) lines.push(...field('Needs:',recap.needs,theme.warning).map((line,i)=>i ? line : theme.warning('!')+line.slice(1)));
+  }
+  return {lines,control:head.control};
 }
 
 /**
@@ -567,7 +615,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const frame: MonitorFrame = {lines:[],panes:[],controls:[],state};
   if (!width || !height) return frame;
   if (state.help) {
-    const help = ['1 Agents  2 Worktrees','3 Changes  4 Inspector','x close pane  - fold','2–4 open a pane','Tab next visible pane','j/k select  o switch','Click agent: switch','m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief','✓ = turn completed','? = no status evidence','! = needs a look']
+    const help = ['1 Agents  2 Worktrees','3 Changes  4 Inspector','x close pane  - fold','2–4 open a pane','Tab next visible pane','j/k select  o switch','Click agent: switch','m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief','r fold / unfold recap','y copy recap to tmux','✓ = turn completed','? = no status evidence','! = needs a look']
       .map(line=>t(line))
       .concat(t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
         ...['yellow clock = quiet 5m+','━╸─ = agent context used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
@@ -697,6 +745,9 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       // The rule is the brief's second line, after the blank that sets it off.
       const control = briefHeight>1 && input.brief ? briefRule(input.brief,width).control : undefined;
       if(control) frame.controls.push({kind:'brief',x:control.x,y:y+1,width:control.width});
+      // The recap's heading follows the rule, with its fold switch at the end.
+      const fold = briefHeight>2 && input.brief?.recap ? recapRows(input.brief.recap,Boolean(input.brief.recapFolded),width,now).control : undefined;
+      if(fold) frame.controls.push({kind:'recap',x:fold.x,y:y+2,width:fold.width});
       y+=briefHeight;
     }
   }
@@ -805,6 +856,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(control?.kind==='main') return result({type:'switch',id:ctx.tree.rootId});
     if(control?.kind==='settings') return result({type:'settings'});
     if(control?.kind==='brief') return result({type:'brief-toggle'});
+    if(control?.kind==='recap') return result({type:'recap-fold'});
     if(control?.pane) {
       next.focus=control.pane;
       key=control.kind==='close'?'pane-close':'pane-fold';
@@ -833,6 +885,9 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   }
   if(key==='settings')return result({type:'settings'});
   if(key==='brief-toggle')return result({type:'brief-toggle'});
+  // `r` is Reset on the settings page; here it folds the recap.
+  if(key==='reset')return result({type:'recap-fold'});
+  if(key==='copy')return result({type:'recap-copy'});
   if(key==='main')return result({type:'switch',id:ctx.tree.rootId});
   if(key==='open-session')return next.focus==='agents'&&next.tree.selectedId?result({type:'switch',id:next.tree.selectedId}):result();
   if(key==='show-all')next.tree.showAll=!next.tree.showAll;

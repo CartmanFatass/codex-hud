@@ -28,7 +28,9 @@ test('missing settings keep display defaults and hide optional tasks and activit
       details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
       agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
-      briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', art: 'off', artImage: '',
+      briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
+      briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60,
+      art: 'off', artImage: '',
     });
     assert.equal(fs.existsSync(file), false, 'reading defaults does not create files');
     const changed = defaultSettings();
@@ -62,7 +64,9 @@ test('load validates known settings without importing unknown or invalid values'
       details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0,
       agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
-      briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', art: 'off', artImage: '',
+      briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
+      briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60,
+      art: 'off', artImage: '',
     });
     fs.writeFileSync(file, JSON.stringify({
       density: 'huge', theme: {}, glyphs: null, motion: 'none', sort: 'recent',

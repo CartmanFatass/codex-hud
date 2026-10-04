@@ -1,4 +1,5 @@
 import { taskText } from '../utils/task-text.js';
+import { extractAgentReport } from './agent-report.js';
 import { TokenRateTracker, type TokenRateSnapshot } from './token-rate.js';
 import { sessionParentId } from '../utils/session-parent.js';
 import { timeAsync } from '../utils/profile.js';
@@ -218,6 +219,51 @@ function cloneSessionInfo(session: SessionInfo | null | undefined): SessionInfo 
   };
 }
 
+/** Public entries of the main conversation kept for the recap. */
+export const TRANSCRIPT_LIMIT = 12;
+
+/**
+ * One public entry of the main conversation: what the person asked (wrappers
+ * and injected context stripped) or what the assistant said on a public
+ * channel (`update` commentary, `reply` final answer, `message` when the
+ * rollout did not say which). Never reasoning. Text is an excerpt.
+ */
+export interface TranscriptEntry {
+  role: 'user' | 'assistant';
+  kind: 'prompt' | 'message' | 'update' | 'reply';
+  text: string;
+  at: Date;
+}
+
+/** The newest `TRANSCRIPT_LIMIT` entries, and when the newest one let go was written. */
+export function appendTranscript(older: readonly TranscriptEntry[], newer: readonly TranscriptEntry[],
+  droppedAt?: Date): { entries: TranscriptEntry[]; droppedAt?: Date } {
+  const all = [...older, ...newer];
+  const cut = Math.max(0, all.length - TRANSCRIPT_LIMIT);
+  let dropped = droppedAt;
+  for (const entry of all.slice(0, cut)) if (!dropped || entry.at > dropped) dropped = entry.at;
+  return { entries: all.slice(cut), droppedAt: dropped };
+}
+
+/** A main-conversation entry from one rollout record, or nothing. */
+function transcriptEntry(entry: RolloutLine, timestamp: Date): TranscriptEntry | undefined {
+  const payload = entry.payload as ResponseItemPayload & { content?: unknown };
+  if (entry.type !== 'response_item' || payload.type !== 'message') return undefined;
+  if (payload.role === 'user' && Array.isArray(payload.content)) {
+    const raw = payload.content.map(part => {
+      const block = part as { type?: unknown; text?: unknown } | null;
+      return block && (block.type === 'input_text' || block.type === 'text') && typeof block.text === 'string' ? block.text : '';
+    }).filter(Boolean).join('\n');
+    const text = taskText(raw);
+    return text ? { role: 'user', kind: 'prompt', text, at: timestamp } : undefined;
+  }
+  if (payload.role === 'assistant') {
+    const report = extractAgentReport(entry);
+    return report ? { role: 'assistant', kind: report.kind, text: report.text, at: report.at } : undefined;
+  }
+  return undefined;
+}
+
 /**
  * Result of parsing a rollout file
  */
@@ -246,6 +292,18 @@ export interface RolloutParseResult {
    * its repository names that repository here and nowhere else.
    */
   workDirs: string[];
+  /**
+   * The main conversation's latest public entries, oldest first, at most
+   * `TRANSCRIPT_LIMIT`. `transcriptDroppedAt` is the newest entry that fell
+   * off the front, so a reader can tell whether anything it has not seen was
+   * lost. The other fields survive the buffer: the first request, and the
+   * latest request and final reply however much commentary followed them.
+   */
+  transcript: TranscriptEntry[];
+  transcriptDroppedAt?: Date;
+  firstUserMessage?: TranscriptEntry;
+  lastUserMessageAt?: Date;
+  lastReplyAt?: Date;
 }
 
 export interface RolloutParseOutput {
@@ -422,6 +480,11 @@ export async function parseRolloutFile(
   let lastAssistantMessageTime: Date | null = null;
   let lastEventTime: Date | null = null;
   const workDirs: string[] = [];
+  let transcript: TranscriptEntry[] = [];
+  let transcriptDroppedAt: Date | undefined;
+  let firstUserMessage: TranscriptEntry | undefined;
+  let lastUserMessageAt: Date | undefined;
+  let lastReplyAt: Date | undefined;
   let activity: SessionActivity | undefined;
   let tokenUsageAt: Date | undefined;
   // Carried in like `session` and `runningCalls`: the event that answers a
@@ -591,6 +654,12 @@ export async function parseRolloutFile(
           } else if (payload.type === 'message' && payload.role === 'assistant') {
             lastAssistantMessageTime = timestamp;
           }
+          const spoken = payload.type === 'message' ? transcriptEntry(entry, timestamp) : undefined;
+          if (spoken) {
+            ({ entries: transcript, droppedAt: transcriptDroppedAt } = appendTranscript(transcript, [spoken], transcriptDroppedAt));
+            if (spoken.role === 'user') { firstUserMessage ??= spoken; lastUserMessageAt = spoken.at; }
+            else if (spoken.kind === 'reply') lastReplyAt = spoken.at;
+          }
         } else if (entry.type === 'event_msg') {
           const payload = entry.payload as EventMsgPayload;
           if (payload.type === 'task_started' || payload.type === 'turn_started') {
@@ -719,7 +788,8 @@ export async function parseRolloutFile(
     return {
       result: { session, activity, tokenUsageAt, toolActivity, planProgress, tokenUsage, outputRate: rateTracker.snapshot,
         rateLimits, pendingApproval, subagents: [...subagents.values()], compactCount, lastCompactTime,
-        lastToolActivityTime, lastAssistantMessageTime, lastEventTime, workDirs },
+        lastToolActivityTime, lastAssistantMessageTime, lastEventTime, workDirs,
+        transcript, transcriptDroppedAt, firstUserMessage, lastUserMessageAt, lastReplyAt },
       newOffset: committedOffset, runningCalls, wasTruncated, fileIdentity,
     };
   } finally {
@@ -856,6 +926,17 @@ export class RolloutParser {
       result.lastToolActivityTime ??= this.cachedResult.lastToolActivityTime;
       result.lastAssistantMessageTime ??= this.cachedResult.lastAssistantMessageTime;
       result.workDirs = mergeWorkDirs(this.cachedResult.workDirs, result.workDirs);
+      // Carried like the counts above; a truncation or replay cleared the
+      // cache, so the buffer starts over with the file.
+      const cachedDrop = this.cachedResult.transcriptDroppedAt;
+      const batchDrop = result.transcriptDroppedAt;
+      const merged = appendTranscript(this.cachedResult.transcript, result.transcript,
+        cachedDrop && (!batchDrop || cachedDrop > batchDrop) ? cachedDrop : batchDrop);
+      result.transcript = merged.entries;
+      result.transcriptDroppedAt = merged.droppedAt;
+      result.firstUserMessage = this.cachedResult.firstUserMessage ?? result.firstUserMessage;
+      result.lastUserMessageAt ??= this.cachedResult.lastUserMessageAt;
+      result.lastReplyAt ??= this.cachedResult.lastReplyAt;
     }
 
     this.cachedResult = result;

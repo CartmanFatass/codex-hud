@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultSettings } from '../../src/settings.js';
-import { renderSettingsPage,handleSettingsInput,SETTING_ROWS } from '../../src/render/settings-page.js';
+import { renderSettingsPage,handleSettingsInput,SETTING_ROWS,modelCallsLine } from '../../src/render/settings-page.js';
 import { panelWidth } from '../../src/utils/pane-width.js';
 import { stripAnsi, visualLength } from '../../src/render/colors.js';
 
@@ -50,9 +50,9 @@ test('narrow settings keep visible buttons aligned with hit targets and mark uns
 
 test('settings read in sections, values aligned on the right and written for people',()=>{
   const draft={...defaultSettings(),finishedLingerMs:0};
-  const frame=renderSettingsPage({draft,selected:0,offset:0,message:''},30,24);
+  const frame=renderSettingsPage({draft,selected:0,offset:0,message:''},30,40);
   const text=frame.lines.map(stripAnsi);
-  for (const group of ['Status bar','Agents','Panel']) assert.ok(text.some(line=>line.startsWith(`── ${group} `)),group);
+  for (const group of ['Status bar','Agents','LLM','Panel']) assert.ok(text.some(line=>line.startsWith(`── ${group} `)),group);
   const line=(key:string)=>text[frame.rows.indexOf(SETTING_ROWS.findIndex(row=>row.key===key))];
   assert.match(line('refreshMs'),/Refresh +1s$/);
   assert.match(line('treeWidth'),/Width +narrow$/);
@@ -89,4 +89,15 @@ test('hide-finished steps through its presets, and mouse clicks respect headings
   // Moving on shows the next row's help instead of an old message.
   const moved=handleSettingsInput({...state,message:'Saved'},{type:'key',key:'down'},frame).state;
   assert.equal(moved.message,'');
+});
+
+test('every model feature sits in the LLM group, and the calls made today show under the list',()=>{
+  const llm=SETTING_ROWS.filter(row=>row.group==='LLM').map(row=>row.key);
+  assert.deepEqual(llm,['briefing','briefingMs','recapFloorMs','modelCallsPerHour','briefAgents','briefMain']);
+  assert.equal(defaultSettings().briefMain,false,'sending the main session is opt-in');
+  assert.equal(modelCallsLine(undefined),null);
+  assert.equal(modelCallsLine({today:0,lastHour:0,cap:60}),null,'no calls yet: no line');
+  assert.equal(stripAnsi(modelCallsLine({today:12,lastHour:3,cap:60})!),'Model calls today: 12 · last hour 3/60');
+  const frame=renderSettingsPage({draft:defaultSettings(),selected:0,offset:0,message:''},45,20,{state:undefined,modelCalls:{today:5,lastHour:5,cap:5}});
+  assert.ok(frame.lines.map(stripAnsi).includes('Model calls today: 5 · last hour 5/5'));
 });

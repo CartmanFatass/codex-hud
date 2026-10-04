@@ -35,9 +35,17 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'sort',group:'Agents',label:'Order',short:'Order',values:['active','created'],help:'Running first, or by age'},
   {key:'finishedLingerMs',group:'Agents',label:'Hide finished',short:'Hide',values:[60_000,180_000,600_000,1_800_000,0],
     help:'Done agents hide after this',format:minutes},
-  {key:'briefing',group:'Agents',label:'Brief',short:'Brief',values:['off','omp','agy','api'],help:'Model brief under the tree'},
-  {key:'briefingMs',group:'Agents',label:'Brief every',short:'Every',values:[60_000,120_000,300_000,600_000],
+  // Everything that sends material to a model, in one place, each with its
+  // own switch and a help line saying what it sends.
+  {key:'briefing',group:'LLM',label:'Backend',short:'Model',values:['off','omp','agy','api'],help:'Who writes; off stops all below'},
+  {key:'briefingMs',group:'LLM',label:'Brief every',short:'Every',values:[60_000,120_000,300_000,600_000],
     help:'At most this often, on change',format:minutes},
+  {key:'recapFloorMs',group:'LLM',label:'Recap floor',short:'Floor',values:[300_000,600_000,900_000,1_800_000],
+    help:'During long waits, at most this often',format:minutes},
+  {key:'modelCallsPerHour',group:'LLM',label:'Call cap',short:'Cap',values:[30,60,120,240],help:'Model calls per hour, all items',
+    format:value => `${value}/h`},
+  {key:'briefAgents',group:'LLM',label:'Agents brief',short:'Agents',values:[true,false],help:'Sends agent tasks and updates'},
+  {key:'briefMain',group:'LLM',label:'Main recap',short:'Recap',values:[true,false],help:'Sends your prompts and replies'},
   {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and brief language'},
   {key:'worktreesPane',group:'Panel',label:'2 Worktrees',short:'2 Trees',values:['open','folded','closed'],help:PANE_HELP},
   {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','folded','closed'],help:PANE_HELP},
@@ -120,10 +128,18 @@ export function healthLine(health:HudHealthState|undefined,nowMs:number):string|
   return current ? theme.warning(`${read} · ${failure}`) : colors.dim(`${read} · ${failure}`);
 }
 
+/** Model calls so far today and in the last hour, against the cap; null before the first call. */
+export function modelCallsLine(usage:{today:number;lastHour:number;cap:number}|undefined):string|null {
+  if (!usage || !usage.today) return null;
+  const text = t('Model calls today: {n} · last hour {h}/{cap}',{n:usage.today,h:usage.lastHour,cap:usage.cap});
+  return usage.lastHour >= usage.cap ? theme.warning(text) : colors.dim(text);
+}
+
 export function renderSettingsPage(state:SettingsPageState,width:number,height:number,
-  health?:{state:HudHealthState|undefined;nowMs?:number}):SettingsFrame {
+  health?:{state:HudHealthState|undefined;nowMs?:number;modelCalls?:{today:number;lastHour:number;cap:number}}):SettingsFrame {
   const healthRow = health && height > 3 ? healthLine(health.state,health.nowMs ?? Date.now()) : null;
-  const count = Math.max(0,height-3-(healthRow ? 1 : 0));
+  const callsRow = health && height > 4 ? modelCallsLine(health.modelCalls) : null;
+  const count = Math.max(0,height-3-(healthRow ? 1 : 0)-(callsRow ? 1 : 0));
   const selected = Math.min(SETTING_ROWS.length-1,Math.max(0,state.selected));
   const at = DISPLAY.findIndex(line => 'index' in line && line.index === selected);
   // Scroll by screen line, keeping the selected row's heading in view with it.
@@ -168,6 +184,7 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
     rows.push(line.index);
   }
   if (healthRow) lines.push(healthRow);
+  if (callsRow) lines.push(callsRow);
   if (height > 1) {
     const row = SETTING_ROWS[selected];
     lines.push(state.message ? theme.accent(state.message) : colors.dim(t(row.help)));

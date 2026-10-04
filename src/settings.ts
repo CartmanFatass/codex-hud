@@ -45,10 +45,33 @@ export interface HudSettings extends HudDisplayConfig {
    * OPENAI_API_KEY; a local server may need none. The file is written 0600.
    */
   briefingApiKey: string;
+  /**
+   * `api` brief: the endpoint accepts `reasoning_effort`, so each request's
+   * thinking level is sent. Off sends only fields every server accepts.
+   */
+  briefingApiReasoning: boolean;
+  /** The agents brief: subagents' tasks and latest updates go to the backend. On by default once a backend is chosen. */
+  briefAgents: boolean;
+  /**
+   * The main-session recap: the person's prompts and the assistant's public
+   * replies go to the backend. Off by default; it is the more sensitive one.
+   */
+  briefMain: boolean;
+  /** The recap's slower trigger: at most one refresh per this while anything changed, in ms. */
+  recapFloorMs: number;
+  /** The recap in the panel shows its goal line only. */
+  recapFolded: boolean;
+  /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
+  modelCallsPerHour: number;
   /** A picture drawn in text in the panel's empty space, and its style. */
   art: 'off' | 'dots' | 'color' | 'ascii';
   /** The picture: any image ffmpeg can read. `codex-hud-art <image>` sets it. */
   artImage: string;
+}
+
+/** What the brief covers, from its two switches; null when neither is on. */
+export function briefingScope(settings: Pick<HudSettings, 'briefAgents' | 'briefMain'>): 'agents' | 'main' | 'both' | null {
+  return settings.briefAgents ? settings.briefMain ? 'both' : 'agents' : settings.briefMain ? 'main' : null;
 }
 
 /** Built-in defaults; callers apply environment or runtime display overrides. */
@@ -59,7 +82,9 @@ export function defaultSettings(): HudSettings {
     details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
     agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed',
     worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
-    briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', art: 'off', artImage: '',
+    briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
+    briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60,
+    art: 'off', artImage: '',
   };
 }
 
@@ -98,6 +123,12 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
   briefingApiModel: isText(200),
   briefingApiKey: isText(4096),
+  briefingApiReasoning: isBoolean,
+  briefAgents: isBoolean,
+  briefMain: isBoolean,
+  recapFloorMs: (value) => isIntegerBetween(value, 60_000, 7_200_000),
+  recapFolded: isBoolean,
+  modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
   art: oneOf('off', 'dots', 'color', 'ascii'),
   artImage: isText(4096),
 };

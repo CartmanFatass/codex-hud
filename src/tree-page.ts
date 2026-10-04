@@ -1,11 +1,12 @@
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import { navigateSession } from './utils/session-navigation.js';
-import { defaultSettings, saveSettings } from './settings.js';
+import { defaultSettings, saveSettings, briefingScope } from './settings.js';
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import { treeWidthKeeper } from './utils/pane-width.js';
 import { renderSettingsPage, handleSettingsInput, type SettingsPageState, type SettingsFrame } from './render/settings-page.js';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
 import { buildSubagentTree, uniquePickerLabel } from './collectors/subagent-tree.js';
@@ -17,6 +18,10 @@ import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-in
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentContextUsage } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
+import { SmallModel } from './collectors/small-model.js';
+import { RecapStore, recapPlainText } from './collectors/recap.js';
+import { getHudHome } from './utils/codex-path.js';
+import { copyToTmuxBuffer } from './utils/tmux-copy.js';
 import { HudStatus } from './collectors/hud-status.js';
 import { statusCard } from './render/status-block.js';
 import { artSize, renderArt, type ArtBitmap } from './render/art.js';
@@ -108,8 +113,18 @@ async function runLivePage(): Promise<void> {
   let escapeTimer: ReturnType<typeof setTimeout> | undefined;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   const widthKeeper = treeWidthKeeper(()=>settings.treeWidth);
+  // Every model call of the panel goes through one service: one queue, one
+  // cache, one hourly cap. Its cache and call log live beside the HUD's state.
+  const model = new SmallModel({dir:path.join(getHudHome(),'model-cache')});
   // Repaints when a brief starts, lands or fails; render() is defined below.
-  const briefer = new Briefer(()=>render());
+  const briefer = new Briefer(()=>render(),{model,store:new RecapStore(path.join(getHudHome(),'recaps'))});
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A short-lived line in the notice row, cleared after a few seconds. */
+  const flash = (message: string) => {
+    navigationMessage = message; render();
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(()=>{ if (navigationMessage === message) { navigationMessage = null; render(); } },3000);
+  };
   // The decoration picture, decoded once per path; a failed read means none.
   let art: {path: string; bitmap: ArtBitmap | null} = {path:'',bitmap:null};
   const loadArt = () => {
@@ -125,7 +140,13 @@ async function runLivePage(): Promise<void> {
     const size = artSize(art.bitmap,cols,rows);
     return size ? renderArt(art.bitmap,style,size.cols,size.rows) : null;
   };
-  const configureBriefer = () => briefer.configureApi({base:settings.briefingApiBase,model:settings.briefingApiModel,key:settings.briefingApiKey});
+  const configureBriefer = () => model.configure({api:{base:settings.briefingApiBase,model:settings.briefingApiModel,key:settings.briefingApiKey,
+    reasoning:settings.briefingApiReasoning},hourlyCap:settings.modelCallsPerHour});
+  const scope = () => briefingScope(settings);
+  /** The brief's backend as the Briefer sees it: off too when neither brief nor recap is on. */
+  const briefCommand = () => scope() ? settings.briefing : 'off';
+  const updateBriefer = (paused: boolean) => time('brief.update',()=>briefer.update(tree,briefCommand(),settings.briefingMs,
+    resolveLanguage(settings.language),Date.now(),paused,{scope:scope() ?? 'agents',main,floorMs:settings.recapFloorMs}));
   configureBriefer();
   // The bar's fields, for the foot of the panel: the panel replaces the bar
   // while it is open. Fed from this page's own parse of the rollout.
@@ -143,13 +164,14 @@ async function runLivePage(): Promise<void> {
     const output = time('render',() => {
       let lines: string[];
       if (settingsPage) {
-        settingsFrame = renderSettingsPage(settingsPage,process.stdout.columns || 30,process.stdout.rows || 24,{state:hudStatus.health.current()});
+        settingsFrame = renderSettingsPage(settingsPage,process.stdout.columns || 30,process.stdout.rows || 24,
+          {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage()});
         settingsPage = settingsFrame.state;
         lines = settingsFrame.lines;
       } else {
       const width = process.stdout.columns || 30;
       frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,
-        brief:settings.briefing === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused},
+        brief:briefCommand() === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused,recapFolded:settings.recapFolded},
         status:(rowWidth,maxRows)=>statusCard(hudStatus.current(),rowWidth,maxRows),width,height:process.stdout.rows || 24});
       state = frame.state;
       lines = frame.lines;
@@ -283,7 +305,7 @@ async function runLivePage(): Promise<void> {
       tree = rootId ? time('tree.build',()=>buildSubagentTree(rootId,main?.subagents ?? [])) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
       applyAgentContext();
       state = reconcileMonitor(state,tree,git,worktrees);
-      briefer.update(tree,settings.briefing,settings.briefingMs,resolveLanguage(settings.language),Date.now(),settings.briefingPaused);
+      updateBriefer(settings.briefingPaused);
       error = settingsError || null;
     } catch (err) { error = t('Refresh: {reason}',{reason:String(err)}); stale = true; hudStatus.health.fail(stage,err); }
     finally { collecting = false; collected = true; }
@@ -338,6 +360,8 @@ async function runLivePage(): Promise<void> {
     if (closed) return;
     closed = true;
     briefer.stop();
+    model.cancelAll();
+    if (noticeTimer) clearTimeout(noticeTimer);
     timers.forEach(clearInterval);
     if (collectTimer) clearInterval(collectTimer);
     if (repaintTimer) clearTimeout(repaintTimer);
@@ -400,13 +424,26 @@ async function runLivePage(): Promise<void> {
         try { settings=saveSettings(monitorPreferences(state)); }
         catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
       }
-      if (result.action?.type === 'brief-toggle' && settings.briefing !== 'off') {
+      if (result.action?.type === 'brief-toggle' && briefCommand() !== 'off') {
         try {
           settings = saveSettings({briefingPaused:!settings.briefingPaused});
           // Resuming asks at once when there is news, rather than at the next tick.
           if (!settings.briefingPaused) void collect();
-          else briefer.update(tree,settings.briefing,settings.briefingMs,resolveLanguage(settings.language),Date.now(),true);
+          else updateBriefer(true);
         } catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
+      }
+      if (result.action?.type === 'recap-fold' && briefer.current().recap) {
+        try { settings = saveSettings({recapFolded:!settings.recapFolded}); }
+        catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
+      }
+      if (result.action?.type === 'recap-copy') {
+        // The tmux paste buffer only: nothing is typed into the Codex pane.
+        const recap = briefCommand() === 'off' ? undefined : briefer.current().recap;
+        if (!recap) flash(t('No recap to copy yet'));
+        else {
+          const text = recapPlainText(recap,{goal:t('Goal:'),done:t('Done:'),now:t('Now:'),needs:t('Needs:')});
+          copyToTmuxBuffer(text).then(()=>flash(t('Recap copied to the tmux buffer')),err=>flash(t('Copy failed: {reason}',{reason:String((err as Error)?.message ?? err)})));
+        }
       }
       if (result.action?.type === 'settings') {
         settingsPage={draft:{...settings,...monitorPreferences(state),sort:state.tree.sort??'active'},selected:0,offset:0,message:''};
