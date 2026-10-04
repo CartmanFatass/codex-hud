@@ -7,7 +7,7 @@ const KEYS: Record<string, string> = {
   j: 'down', k: 'up', h: 'left', l: 'right', g: 'home', G: 'end',
   '\t': 'tab', '\r': 'enter', '\n': 'enter', ' ': 'enter',
   q: 'close', Q: 'close', '\x03': 'close', '\x04': 'close',
-  a: 'show-all', v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help', b: 'brief-toggle', y: 'copy',
+  e: 'expand', a: 'show-all', v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help', b: 'brief-toggle', y: 'copy',
   x: 'pane-close', '-': 'pane-fold',
   '[': 'previous-tab', ']': 'next-tab', t: 'next-tab',
   '1': 'agents', '2': 'details', '3': 'changes', '4': 'activity',
@@ -47,7 +47,9 @@ export class WorkbenchInputDecoder {
       if (this.pending[0] !== '\x1b') {
         const key = this.profile === 'monitor' && this.pending[0] === '2' ? 'worktrees'
           : this.profile === 'monitor' && this.pending[0] === '4' ? 'details'
-            : this.profile === 'monitor' && this.pending[0] === '5' ? 'timeline' : KEYS[this.pending[0]];
+            : this.profile === 'monitor' && this.pending[0] === '5' ? 'timeline'
+              // The monitor tells Space from Enter: on a card it opens the card.
+              : this.profile === 'monitor' && this.pending[0] === ' ' ? 'space' : KEYS[this.pending[0]];
         this.pending = this.pending.slice(1);
         if (key) inputs.push({ type: 'key', key });
         continue;

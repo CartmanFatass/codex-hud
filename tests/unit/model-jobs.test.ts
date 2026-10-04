@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   ModelJobs, NO_JOBS, headTail, tail, finalAnswer, errorMaterial, digestPrompt, parseDigest, digestText, labelKey, labelsPrompt,
-  parseLabels, titleFromGoal, oneLine, changeSummaryInput, changeFingerprint, twoLines, isVerdict, approvalSystemPrompt,
+  parseLabels, labelsSystemPrompt, titleFromGoal, oneLine, changeSummaryInput, changeFingerprint, twoLines, isVerdict, approvalSystemPrompt,
   DIGEST_INPUT_CHARS, CHANGE_HUNK_CHARS, RETRY_MS, type JobSwitches, type JobsInput,
 } from '../../src/collectors/model-jobs.js';
 import { AgentLog } from '../../src/collectors/agent-log.js';
@@ -81,7 +81,14 @@ test('replies are read strictly: a digest needs a conclusion, labels go by posit
   assert.equal(parseDigest('{"basis":"x"}'), null);
   assert.equal(parseDigest('no json'), null);
   assert.equal(digestText({ conclusion: 'A', basis: 'B', caveats: 'C' }, { basis: 'Basis:', caveats: 'Caveats:' }), 'A · Basis: B · Caveats: C');
-  assert.deepEqual(parseLabels('{"labels":["1. Audit paths", "", "“缓存测试”。"]}', 4), ['Audit paths', null, '缓存测试', null]);
+  // The reply shape: a kind of work and a name per task.
+  assert.deepEqual(parseLabels('{"labels":[{"kind":"research","name":"1. Audit paths"},{"kind":"fix","name":""},{"kind":"Review","name":"“缓存测试”。"}]}', 4),
+    [{ kind: 'research', name: 'Audit paths' }, null, { kind: 'review', name: '缓存测试' }, null]);
+  // An unknown or missing kind is `other`; the earlier shape, bare strings, still reads, as `other`.
+  assert.deepEqual(parseLabels('{"labels":[{"kind":"poetry","name":"Odes"},{"name":"No kind"},"Old shape",3]}', 4),
+    [{ kind: 'other', name: 'Odes' }, { kind: 'other', name: 'No kind' }, { kind: 'other', name: 'Old shape' }, null]);
+  assert.match(labelsSystemPrompt('en'), /"kind": string, "name": string/);
+  assert.match(labelsSystemPrompt('en'), /research, experiment, fix, review, writing, summary, other/);
   assert.match(labelsPrompt(['one', 'two']), /<tasks>\n1\. one\n2\. two\n<\/tasks>/);
   assert.notEqual(labelKey('task', 'en'), labelKey('task', 'zh'), 'a label is per language');
   assert.equal(labelKey(' a  task ', 'en'), labelKey('a task', 'en'));
@@ -163,7 +170,7 @@ test('labels are batched, kept per task text, survive a new panel, and never sta
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-labels-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'labels.json');
-  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"labels":["Code path audit","Cache tests"]}' }));
+  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"labels":[{"kind":"review","name":"Code path audit"},{"kind":"other","name":"Cache tests"}]}' }));
   const jobs = new ModelJobs({ model, log: new AgentLog(), labelsFile: file });
   const a = node('a', 'audit_code_paths', 'running', { task: 'Audit the code paths' });
   const b = node('b', 'cache_tests', 'running', { task: 'Write the cache tests' });
@@ -178,6 +185,7 @@ test('labels are batched, kept per task text, survive a new panel, and never sta
   assert.doesNotMatch(asked[0].prompt, /guardian/, 'an agent without a task has nothing to label');
   jobs.apply(agents, all, 'en');
   assert.deepEqual([a.label, b.label, c.label], ['Code path audit', 'Cache tests', undefined]);
+  assert.deepEqual([a.taskKind, b.taskKind, c.taskKind], ['review', undefined, undefined], '`other` is no kind');
   assert.equal(a.name, 'audit_code_paths', 'the name is kept');
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
 
@@ -188,8 +196,16 @@ test('labels are batched, kept per task text, survive a new panel, and never sta
   await settle();
   assert.equal(asked.length, 1, 'the next panel asks nothing');
   assert.equal(again.nodes[0].label, 'Code path audit');
+  assert.equal(again.nodes[0].taskKind, 'review');
   next.apply(again, { ...all, agentLabels: false }, 'en');
   assert.equal(again.nodes[0].label, undefined);
+  assert.equal(again.nodes[0].taskKind, undefined);
+  // A cache written before labels had a kind stays good: its names read as kind `other`.
+  fs.writeFileSync(file, JSON.stringify({ labels: { [labelKey('Audit the code paths', 'en')]: 'Old audit label' } }));
+  const old = new ModelJobs({ model, log: new AgentLog(), labelsFile: file });
+  const before = tree([node('a', 'audit_code_paths', 'running', { task: 'Audit the code paths' })]);
+  old.apply(before, all, 'en');
+  assert.deepEqual([before.nodes[0].label, before.nodes[0].taskKind], ['Old audit label', undefined]);
 });
 
 test('a failed request is not repeated at once, but is after a while', async () => {
@@ -333,8 +349,12 @@ test('the panel marks each model reading: approval words, the change summary, th
   const at = lines.findIndex(text => text.includes('~ Approval, in the model\'s words:'));
   assert.ok(at > 0, lines.join('\n'));
   assert.match(lines[at + 1], /^ {2}Removes the dist folder\./, 'under its label, before the log');
-  assert.ok(lines.some(text => text.includes('Code path audit')), 'the label in the tree row and the log');
-  assert.ok(!lines.some(text => text.includes('audit_code_paths')), 'not the name beside it');
+  // The tree row and the log header keep Codex's name; the label is what the agent is for, under the header.
+  const row = lines.findIndex(text => /^›✓ audit_code_paths/.test(text));
+  assert.ok(row > 0, lines.join('\n'));
+  const header = lines.findIndex(text => /^ ✓ audit_code_paths/.test(text));
+  assert.ok(header > row, 'the log header names the agent as Codex does');
+  assert.equal(lines[header + 1].trimEnd(), '   Code path audit');
 
   const inspect = { ...base, modes: { ...base.modes, details: 'open' as const }, preview: 'agent' as const, tree: { ...base.tree, selectedId: done.id } };
   const shown = renderMonitor({ tree: agents, state: inspect, width: 40, height: 40, nowMs: now, agentLog: log }).lines.map(stripAnsi).join('\n');

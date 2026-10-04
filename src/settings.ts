@@ -26,6 +26,11 @@ export interface HudSettings extends HudDisplayConfig {
   detailsPane: 'open' | 'folded' | 'closed';
   /** The session's observed events, newest first. */
   timelinePane: 'open' | 'folded' | 'closed';
+  /**
+   * How the panel shows the agents: `rich`, a card per agent with the recap
+   * as a card above them; `compact`, the tree with the brief and log under it.
+   */
+  panelStyle: 'rich' | 'compact';
   worktreeRoot: string;
   /**
    * Who writes the agents brief under the tree: nobody, `omp`, `agy`, or any
@@ -98,7 +103,7 @@ export function defaultSettings(): HudSettings {
     density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
     statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
     details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
-    agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed',
+    agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
     worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60,
@@ -136,6 +141,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   changesPane: oneOf('open', 'folded', 'closed'),
   detailsPane: oneOf('open', 'folded', 'closed'),
   timelinePane: oneOf('open', 'folded', 'closed'),
+  panelStyle: oneOf('rich', 'compact'),
   worktreeRoot: value => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   briefing: oneOf('off', 'omp', 'agy', 'api'),
   briefingMs: (value) => isIntegerBetween(value, 30_000, 3_600_000),

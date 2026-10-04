@@ -402,6 +402,10 @@ export interface SubagentInfo {
   lastActivityAt?: Date;
 }
 
+/** What sort of work a task is, as the labels job reads it; `other` has no glyph. */
+export const AGENT_TASK_KINDS = ['research', 'experiment', 'fix', 'review', 'writing', 'summary', 'other'] as const;
+export type AgentTaskKind = typeof AGENT_TASK_KINDS[number];
+
 export interface SubagentTreeNode {
   /** Public agent-authored excerpt; not verified completion or a file attribution. */
   lastReport?: AgentReport;
@@ -417,11 +421,14 @@ export interface SubagentTreeNode {
   /** Display name: the task path's last segment, else nickname, role or kind. */
   name: string;
   /**
-   * A short model-written label, shown in place of `name` in the tree row and
-   * the log when the labels feature is on and one has arrived. Never used to
+   * A short model-written name for what the agent works on, shown in its card
+   * and its log header when the labels feature is on and one has arrived; the
+   * tree row keeps `name`, as Codex's own picker prints it. Never used to
    * identify the agent: `id` and `name` do that.
    */
   label?: string;
+  /** The sort of work the same reply put the agent's task in; shown as a glyph beside its name. */
+  taskKind?: AgentTaskKind;
   /**
    * A model-written digest of the agent's final answer for its latest turn
    * (conclusion, basis, caveats), when the result digest is on and one has

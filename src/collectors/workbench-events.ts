@@ -71,7 +71,7 @@ export class WorkbenchHistory {
       for (const entry of entries) {
         const kind = AGENT_KINDS[entry.kind];
         if (!kind) continue;
-        add({ id: `agent:${id}:${entry.kind}:${entry.at}`, at: new Date(entry.at), kind, agentId: id, subject: node?.label ?? node?.name ?? id.slice(0, 8),
+        add({ id: `agent:${id}:${entry.kind}:${entry.at}`, at: new Date(entry.at), kind, agentId: id, subject: node?.name ?? id.slice(0, 8),
           status: kind === 'agent-failed' ? 'error' : kind === 'agent-started' ? 'running' : 'completed' });
       }
     }

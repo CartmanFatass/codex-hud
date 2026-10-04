@@ -80,6 +80,7 @@ async function runLivePage(): Promise<void> {
     next.tree.sort = settings.sort;
     next.tree.lingerMs = settings.finishedLingerMs;
     next.modes = monitorModes(settings);
+    next.style = settings.panelStyle;
     return next;
   };
   let state = configuredState();
@@ -440,7 +441,8 @@ async function runLivePage(): Promise<void> {
             if (!jobsOn()) jobs.stop();
             armCollect();
             loadArt();
-            state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings)};
+            state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
+              style:settings.panelStyle,scroll:{...state.scroll,agents:0},revealed:null};
             git=null;diff=undefined;diffKey='';void refreshGit();
             settingsPage.message = t('Saved');
             settingsPage.original = {...settings};

@@ -181,14 +181,15 @@ test('each agent in the log looks like its tree row, newest news first, and what
   const state = initialMonitorState();
   state.tree.selectedId = null;
   const brief = { text: 'raw', at: now, overall: '两个在跑', items: [] };
-  const tight = renderMonitor({ tree: tree([busy, quiet]), state, width: 30, height: 16, nowMs: now, brief, agentLog });
+  const tight = renderMonitor({ tree: tree([busy, quiet]), state, width: 30, height: 18, nowMs: now, brief, agentLog });
   const lines = tight.lines.map(stripAnsi);
   const rule = lines.findIndex(line => line.startsWith('─ Brief'));
   assert.equal(lines[rule + 1].trimEnd(), ' 两个在跑');
+  assert.equal(lines[rule + 2].trim(), '', 'a blank line between the brief and the log');
   // Selected first, then newest news: the busy agent's note is newer.
   const sel = tight.state.tree.selectedId;
   const first = sel === busy.id ? 'busy_one' : 'quiet_one';
-  assert.match(lines[rule + 2], new RegExp(`^.▸ ${first} +$`));
+  assert.match(lines[rule + 3], new RegExp(`^.▸ ${first} +$`));
   const busyAt = lines.findIndex(line => /^ ▸ busy_one/.test(line));
   assert.ok(tight.lines[busyAt].includes(theme.strong('busy_one')));
   assert.equal(lines[busyAt + 1].trimEnd(), '   5s ~ 正在核对链接', 'newest first, a model note marked');

@@ -13,6 +13,9 @@ import type { Brief } from '../collectors/briefing.js';
 import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
 import { t } from './i18n.js';
+import { agentTitle } from './agent-title.js';
+import { recapFields, taskLines, richRows } from './cards.js';
+import { drawAgentsView, WHEEL_ROWS } from './agents-view.js';
 import { formatWindowLabel } from './quota.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 
@@ -32,9 +35,34 @@ export interface MonitorState {
   zoom: boolean;
   helpScroll?: number;
   expanded?: boolean;
+  /**
+   * How the agents are shown: `rich`, a card each; `compact` (or absent), the
+   * tree with the brief and log under it. The panel sets it from settings.
+   */
+  style?: PanelStyle;
+  /** Rich: the cards opened to their timeline, by agent id. Panel state, reset with the session. */
+  cards?: ReadonlySet<string>;
+  /**
+   * The agent the agents view last scrolled into view: the view follows the
+   * selection when it moves, and otherwise stays where the reader put it.
+   */
+  revealed?: string | null;
+  /**
+   * The first row in view, as a block key and how far into it, so content
+   * arriving above does not move what the reader is looking at; `offset` is
+   * the scroll it was taken at, so a scroll since then is not undone.
+   */
+  anchor?: {key: string; delta: number; offset: number};
 }
-/** `item` is what a click selects; `action` is a row that is a control instead. */
-export interface MonitorRow { text: string; item?: string; action?: 'toggle-finished' }
+export type PanelStyle = 'rich' | 'compact';
+/** A click target on a row; `x` counts from the row's start. */
+export interface RowControl { kind: MonitorControl['kind']; item?: string; x: number; width: number }
+/**
+ * `item` is what a click selects; `action` is a row that is a control
+ * instead. `key` names the block a row belongs to, so a scrolled view can
+ * keep its place; `controls` are click targets on the row.
+ */
+export interface MonitorRow { text: string; item?: string; action?: 'toggle-finished'; key?: string; controls?: RowControl[] }
 export interface MonitorRect {
   id: MonitorPane;
   x: number; y: number; width: number; height: number;
@@ -45,9 +73,16 @@ export interface MonitorRect {
   edge?: number;
   /** Leading rows that stay put while the rest scrolls: Agents' summary line. */
   pinned?: number;
+  /** Content rows drawn, pinned ones included, when fewer than the frame holds: the rest is the scroll hint. */
+  visible?: number;
 }
 export interface MonitorControl {
-  kind: 'main' | 'settings' | 'fold' | 'close' | 'brief' | 'recap' | 'log';
+  /**
+   * `expand` opens or closes a card's timeline (and selects it), `switch`
+   * (a card's name) selects it and switches Codex to it, `copy` copies the
+   * recap, `more` scrolls the agents view a page.
+   */
+  kind: 'main' | 'settings' | 'fold' | 'close' | 'brief' | 'recap' | 'log' | 'expand' | 'copy' | 'more' | 'switch';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
@@ -117,6 +152,12 @@ export function initialMonitorState(): MonitorState {
     scroll:{agents:0,worktrees:0,changes:0,details:0,timeline:0}, selectedWorktree:null,selectedFile:null,
     preview:'agent',help:false,zoom:false,helpScroll:0,expanded:false};
 }
+/** Toggle one card's timeline. */
+export function toggleCard(state: MonitorState, id: string): MonitorState {
+  const cards = new Set(state.cards ?? []);
+  if (cards.has(id)) cards.delete(id); else cards.add(id);
+  return {...state, cards};
+}
 /** Agents is the page itself: always there, whatever an older settings file says. */
 export function monitorModes(settings: HudSettings): MonitorModes {
   return {agents:'open', worktrees:settings.worktreesPane, changes:settings.changesPane, details:settings.detailsPane, timeline:settings.timelinePane};
@@ -134,7 +175,10 @@ export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: 
   const selectedFile = git?.files.some(f => f.path === state.selectedFile) ? state.selectedFile : git?.files[0]?.path ?? null;
   const focus = state.modes[state.focus] !== 'closed' ? state.focus : MONITOR_PANES.find(id => state.modes[id] !== 'closed') ?? 'agents';
   const changed = selected.selectedId !== state.tree.selectedId || selectedWorktree !== state.selectedWorktree || selectedFile !== state.selectedFile;
-  return {...state, tree:selected, selectedWorktree, selectedFile, focus,
+  // A selection the panel made for itself (the first agent, or a stand-in
+  // for one that left) is not the reader moving: the view stays put.
+  const revealed = selected.selectedId !== state.tree.selectedId ? selected.selectedId : state.revealed;
+  return {...state, tree:selected, selectedWorktree, selectedFile, focus, revealed,
     scroll:{...state.scroll,details:changed ? 0 : state.scroll.details}};
 }
 
@@ -146,11 +190,11 @@ export function monitorText(text: string): string {
       : cp > 255 ? `\\u${cp.toString(16).padStart(4,'0')}` : `\\x${cp.toString(16).padStart(2,'0')}`;
   });
 }
-function fit(text: string, width: number): string {
+export function fit(text: string, width: number): string {
   const clipped = truncateAnsi(text, Math.max(0,width));
   return clipped + ' '.repeat(Math.max(0,width-visualLength(clipped)));
 }
-function pair(left: string, right: string, width: number): string {
+export function pair(left: string, right: string, width: number): string {
   if (!right) return truncateAnsi(left,width);
   const rightWidth = visualLength(right);
   if (rightWidth >= width) return truncateAnsi(right,width);
@@ -248,7 +292,7 @@ export function age(at: Date | undefined, now: number): string {
   const seconds = Math.max(0, Math.floor((now-at.getTime())/1000));
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds/60)}m` : `${Math.floor(seconds/3600)}h`;
 }
-function nodeStatus(node: SubagentTreeNode, now: number): {icon:string; label:string; paint:(s:string)=>string} {
+export function nodeStatus(node: SubagentTreeNode, now: number): {icon:string; label:string; paint:(s:string)=>string} {
   switch (node.status) {
     case 'running': return {icon:'▸',label:node.turnStartedAt ? age(node.turnStartedAt,now) : 'run',paint:theme.info};
     case 'starting': return {icon:'·',label:'start',paint:theme.info};
@@ -289,7 +333,7 @@ export const TURN_CLOCKS: ReadonlyArray<readonly [number, string]> = [
 ];
 const TURN_CLOCK_LONG = '◉';
 /** Columns of an agent row's context meter. */
-const CONTEXT_METER_WIDTH = 3;
+export const CONTEXT_METER_WIDTH = 3;
 
 /**
  * An agent's context fill as a short horizontal line: heavy where used,
@@ -306,18 +350,18 @@ export function contextLine(percent: number, cells: number): string {
   return getContextColor(clamped)(used)+colors.dim('─'.repeat(Math.max(0,cells-visualLength(used))));
 }
 /** A running agent with no event of any kind for this long is quiet, not necessarily stuck. */
-const QUIET_MS = 5 * 60_000;
+export const QUIET_MS = 5 * 60_000;
 /** A finished row stays bright this long, then recedes until the linger window takes it. */
-const FRESH_FINISH_MS = 60_000;
+export const FRESH_FINISH_MS = 60_000;
 
-function isLive(node: SubagentTreeNode): boolean {
+export function isLive(node: SubagentTreeNode): boolean {
   return node.status === 'running' || node.status === 'starting';
 }
-function isQuiet(node: SubagentTreeNode, now: number): boolean {
+export function isQuiet(node: SubagentTreeNode, now: number): boolean {
   const at = node.lastEventAt?.getTime();
   return isLive(node) && at !== undefined && Number.isFinite(at) && now-at > QUIET_MS;
 }
-function turnClock(node: SubagentTreeNode, now: number): string {
+export function turnClock(node: SubagentTreeNode, now: number): string {
   if (!isLive(node)) return '';
   const start = (node.turnStartedAt ?? node.startedAt)?.getTime();
   if (start === undefined || !Number.isFinite(start)) return '';
@@ -350,7 +394,7 @@ export function nextRepaintDelay(nowMs: number, anchorMs?: number): number {
  * beginnings (`b05_result_review`, `b05_result_diagnosis`); the end is what
  * tells them apart. Takes sanitized text with no escapes in it.
  */
-function squeeze(text: string, width: number): string {
+export function squeeze(text: string, width: number): string {
   if (visualLength(text) <= width) return text;
   if (width < 4) return truncateAnsi(text,width);
   const chars = [...text];
@@ -365,11 +409,15 @@ function squeeze(text: string, width: number): string {
 }
 
 /** When a finished agent finished: its completion event, else its last sign of life. */
-function finishedAt(node: SubagentTreeNode): Date | undefined {
+export function finishedAt(node: SubagentTreeNode): Date | undefined {
   return node.statusAt ?? node.lastEventAt;
 }
 
-function agentRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
+/**
+ * The agents' heading: what is running, failed and done, and the switch for
+ * what the linger window put away. The whole row is that switch.
+ */
+export function summaryRow(input: MonitorData, state: MonitorState, width: number, now: number): {row: MonitorRow; total: number; expired: number} {
   const everyone = visibleRows(input.tree.nodes,{...state.tree,filter:'all',collapsed:new Set(),showAll:true},now);
   const totals = {run:0,done:0,error:0,unknown:0};
   for (const {node} of everyone) totals[node.status === 'running' || node.status === 'starting' ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
@@ -388,7 +436,19 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
   // The summary doubles as the switch for what the linger window hid.
   const toggle = !expired ? '' : state.tree.showAll ? colors.dim(t(words ? 'hide old' : '−old'))
     : theme.accent(words ? t('+{n} older',{n:expired}) : `+${expired}`);
-  const result: MonitorRow[] = [{text:pair(summary,toggle,width),...(expired ? {action:'toggle-finished' as const} : {})}];
+  return {row:{text:pair(summary,toggle,width),...(expired ? {action:'toggle-finished' as const} : {})},total:everyone.length,expired};
+}
+
+/** What the agents view says when it has no agent to show. */
+export function emptyAgentsText(input: MonitorData, state: MonitorState, total: number, expired: number): string {
+  // Until the first read of the rollout lands, an empty tree means nothing.
+  return t(!total ? input.loading ? 'Reading session…' : 'No subagents yet'
+    : expired && !state.tree.showAll && state.tree.filter === 'all' ? 'All finished · a shows' : 'No matching agents');
+}
+
+function agentRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
+  const {row:head,total,expired} = summaryRow(input,state,width,now);
+  const result: MonitorRow[] = [head];
   for (const row of visibleRows(input.tree.nodes,state.tree,now)) {
     const node = row.node;
     const status = nodeStatus(node,now);
@@ -413,17 +473,13 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     const clock = width < 12 ? '' : turnClock(node,now) || ' ';
     const right = [badge,ctx,clock].filter(Boolean).join(' ');
     const room = Math.max(1,width-visualLength(prefix)-(right ? visualLength(right)+1 : 0));
-    // A model-written label, when the labels feature gave one; the name otherwise.
-    const squeezed = squeeze(monitorText(node.label ?? node.name),room);
+    // Codex's own name, as its /subagents picker prints it: what the agent
+    // is doing is the log's to say, under the tree.
+    const squeezed = squeeze(monitorText(node.name),room);
     const name = dimName ? colors.dim(squeezed) : squeezed;
-    result.push({text:pair(prefix+name,right,width),item:node.id});
+    result.push({text:pair(prefix+name,right,width),item:node.id,key:`row:${node.id}`});
   }
-  if (result.length === 1) {
-    // Until the first read of the rollout lands, an empty tree means nothing.
-    const empty = t(!everyone.length ? input.loading ? 'Reading session…' : 'No subagents yet'
-      : expired && !state.tree.showAll && state.tree.filter === 'all' ? 'All finished · a shows' : 'No matching agents');
-    result.push({text:colors.dim(truncateAnsi(empty,width))});
-  }
+  if (result.length === 1) result.push({text:colors.dim(truncateAnsi(emptyAgentsText(input,state,total,expired),width))});
   return result;
 }
 
@@ -518,8 +574,8 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       const status = nodeStatus(node,now);
       // Sanitize external text before painting. Never pass our own ANSI spans
       // back through monitorText (which correctly escapes untrusted controls).
-      // A label stands in for the name in the tree; here both show, since the
-      // name is what Codex's own picker and transcript print.
+      // Both names show here: the model's name for what the agent does, and
+      // the name Codex's own picker and transcript print.
       const rows: MonitorRow[] = wrapped(node.label ?? node.name,width).map(text=>({text:theme.strong(text)}));
       if (node.label && node.label !== node.name) rows.push(...wrapped(t('Name: {name}',{name:node.name}),width).map(text=>({text:colors.dim(text)})));
       // The full task path locates a nested agent; a one-segment path says
@@ -604,17 +660,12 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
 }
 
 /**
- * The area under the agents: the Brief rule, then the main recap, the
- * whole-picture sentence, and the per-agent log. With no brief configured
- * but the log asked for, the rule names the log alone and carries no switch.
- * Model output is sanitized like any other external string. `ids` gives the
- * agent each line heads, for clicks.
+ * The brief's own lines: the pending approval in plain words, then the
+ * whole-picture sentence (or a reply in another shape, as the text it is),
+ * with a failure. Model output is sanitized like any other external string.
  */
-function briefRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced = false): {lines: string[]; ids: Array<string|undefined>} {
+export function briefParts(input: MonitorData, width: number): {approval: string[]; said: string[]} {
   const brief = input.brief;
-  if (!brief && !input.agentLog) return {lines:[],ids:[]};
-  const rule = brief ? briefRule(brief,width).line : colors.dim(truncateAnsi(`${t('─ Agent log')} ${'─'.repeat(width)}`,width));
-  const recap = brief?.recap ? recapRows(brief.recap,Boolean(brief.recapFolded),width,now).lines : [];
   const failure = brief?.error ? flowLines(monitorText(brief.error),Math.max(1,width-1)).map(text=>theme.warning(' '+text)) : [];
   const flow = (text: string, indent: number, paint: (s: string) => string = s => s) =>
     flowLines(monitorText(text),Math.max(1,width-indent)).map(line=>' '.repeat(indent)+paint(line));
@@ -628,17 +679,39 @@ function briefRows(input: MonitorData, state: MonitorState, width: number, now: 
   // A pending approval in plain words leads: the session cannot go on without it.
   const approval = input.notes?.approval
     ? flowLines(monitorText(`${t('Approval, in the model\'s words:')} ${input.notes.approval}`),Math.max(1,width-2)).map((line,i)=>(i ? '  ' : colors.dim('~ '))+theme.warning(line)) : [];
-  // The recap leads; a blank line sets it off from what follows when there is room.
-  let top = [...approval,...(approval.length && (recap.length || said.length) && spaced ? [''] : []),...recap,...(recap.length && said.length && spaced ? [''] : []),...said];
+  return {approval,said};
+}
+
+/** The brief's rule as a row, its switch a click target. */
+export function briefRuleRow(brief: NonNullable<MonitorData['brief']>, width: number): MonitorRow {
+  const rule = briefRule(brief,width);
+  return {text:rule.line,key:'brief',...(rule.control ? {controls:[{kind:'brief' as const,x:rule.control.x,width:rule.control.width}]} : {})};
+}
+
+/**
+ * Compact: the area under the agents: the Brief rule, then the main recap,
+ * the whole-picture sentence, and the per-agent log. With no brief
+ * configured but the log asked for, the rule names the log alone and carries
+ * no switch. `spaced` puts a blank line between the parts.
+ */
+function briefRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
+  const brief = input.brief;
+  if (!brief && !input.agentLog) return [];
+  const rule = brief ? briefRuleRow(brief,width) : {text:colors.dim(truncateAnsi(`${t('─ Agent log')} ${'─'.repeat(width)}`,width)),key:'brief'};
+  const recap = brief?.recap ? recapRows(brief.recap,Boolean(brief.recapFolded),width,now,spaced) : [];
+  const {approval,said} = briefParts(input,width);
+  const gap = (on: unknown): MonitorRow[] => on && spaced ? [{text:''}] : [];
+  // The recap leads; a blank line sets it off from what follows.
+  let top: MonitorRow[] = [...approval.map(text=>({text,key:'approval'})),...gap(approval.length && (recap.length || said.length)),
+    ...recap,...gap(recap.length && said.length),...said.map(text=>({text,key:'said'}))];
   // Paused, the last brief stays for reference but steps back.
-  if (brief?.paused) top = top.map(line=>colors.dim(stripAnsi(line)));
-  const log = input.agentLog ? logRows(input,state,width,now,spaced) : {lines:[],ids:[]};
-  const gap = top.length && log.lines.length && spaced ? [''] : [];
-  return {lines:['',rule,...top,...gap,...log.lines],ids:[undefined,undefined,...top.map(()=>undefined),...gap.map(()=>undefined),...log.ids]};
+  if (brief?.paused) top = top.map(row=>({...row,text:colors.dim(stripAnsi(row.text))}));
+  const log = input.agentLog ? logRows(input,state,width,now,spaced) : [];
+  return [{text:''},rule,...top,...gap(top.length && log.length),...log];
 }
 
 /** Entries a model wrote, marked as such wherever they are shown. */
-const MODEL_LOG_KINDS: ReadonlySet<AgentLogKind> = new Set(['note','digest','cause']);
+export const MODEL_LOG_KINDS: ReadonlySet<AgentLogKind> = new Set(['note','digest','cause']);
 /** Log entries shown per agent; the selected agent shows more, the Inspector all. */
 const LOG_ENTRIES = 2;
 const LOG_ENTRIES_SELECTED = 6;
@@ -669,7 +742,7 @@ function logEntryLines(entry: AgentLogEntry, width: number, now: number, indent:
  * gets one line counting the logs folded under it. Nothing is deleted by
  * hiding: showing the agent again shows all of it.
  */
-function logRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): {lines: string[]; ids: Array<string|undefined>} {
+function logRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
   const logs = input.agentLog!;
   const shown = visibleRows(input.tree.nodes,state.tree,now);
   const blocks: Array<{node: SubagentTreeNode; entries: readonly AgentLogEntry[]; folded: number; newest: number}> = [];
@@ -682,31 +755,32 @@ function logRows(input: MonitorData, state: MonitorState, width: number, now: nu
   }
   const selected = state.tree.selectedId;
   blocks.sort((a,b)=>Number(b.node.id === selected)-Number(a.node.id === selected) || b.newest-a.newest);
-  const lines: string[] = [];
-  const ids: Array<string|undefined> = [];
+  const rows: MonitorRow[] = [];
   for (const [index,{node,entries,folded}] of blocks.entries()) {
-    // A blank line between agents, when the room allows it, is what makes
-    // one block end and the next begin at a glance.
-    if (spaced && index) { lines.push(''); ids.push(undefined); }
+    // A blank line between agents is what makes one block end and the next
+    // begin at a glance.
+    if (spaced && index) rows.push({text:''});
+    // Each line of the block is a click target that selects its agent.
+    const push = (text: string) => rows.push({text,key:`log:${node.id}`,controls:[{kind:'log',item:node.id,x:0,width}]});
     const st = nodeStatus(node,now);
     // What the panel knows for itself is not left to the model: a failed or
     // quiet agent needs a look, and so does one the latest note flagged.
     const attention = node.status === 'error' || isQuiet(node,now) || Boolean(entries.at(-1)?.attention);
-    const head = `${attention ? theme.warning('!') : ' '}${st.paint(st.icon)} `;
-    const name = squeeze(monitorText(node.label ?? node.name),Math.max(1,width-visualLength(head)));
-    lines.push(head+(attention ? theme.warning(name) : theme.strong(name)));
-    ids.push(node.id);
+    const title = agentTitle(node);
+    const head = `${attention ? theme.warning('!') : ' '}${st.paint(st.icon)} ${title.icon ? colors.dim(title.icon)+' ' : ''}`;
+    const name = squeeze(title.name,Math.max(1,width-visualLength(head)));
+    push(head+(attention ? theme.warning(name) : theme.strong(name)));
+    // Under the name that identifies it, what the agent is for.
+    for (const line of taskLines(title,Math.max(1,width-3)).lines) push('   '+(title.renamed ? line : colors.dim(line)));
     const count = node.id === selected ? LOG_ENTRIES_SELECTED : LOG_ENTRIES;
-    for (const entry of [...entries].reverse().slice(0,count)) {
-      for (const line of logEntryLines(entry,width,now,3)) { lines.push(line); ids.push(node.id); }
-    }
-    if (folded) { lines.push(colors.dim(truncateAnsi(`   ${t('+{n} folded below',{n:folded})}`,width))); ids.push(node.id); }
+    for (const entry of [...entries].reverse().slice(0,count)) for (const line of logEntryLines(entry,width,now,3)) push(line);
+    if (folded) push(colors.dim(truncateAnsi(`   ${t('+{n} folded below',{n:folded})}`,width)));
   }
-  return {lines,ids};
+  return rows;
 }
 
 /** When something written once was written: no seconds ticking, days for an old one. */
-function writtenAge(at: number, now: number): string {
+export function writtenAge(at: number, now: number): string {
   const seconds = Math.max(0,Math.floor((now-at)/1000));
   if (seconds < 60) return t('just now');
   if (seconds >= 2*86_400) return t('{age} ago',{age:`${Math.floor(seconds/86_400)}d`});
@@ -714,30 +788,18 @@ function writtenAge(at: number, now: number): string {
 }
 
 /**
- * The main session's recap, the first block under the Brief rule: a heading
- * that says it is the model's and how old it is, with the fold switch at its
- * end, then the goal, what is done, where it stands and, when the session
- * waits on the person, what it needs, painted for attention. Folded, the
- * goal alone. Model text is sanitized like any other external string.
+ * Compact: the main session's recap, the first block under the Brief rule:
+ * a heading that says it is the model's and how old it is, with the fold
+ * switch at its end, then its labelled fields (see `recapFields`).
  */
-function recapRows(recap: NonNullable<Brief['recap']>, folded: boolean, width: number, now: number): {lines: string[]; control?: {x: number; width: number}} {
+function recapRows(recap: NonNullable<Brief['recap']>, folded: boolean, width: number, now: number, spaced: boolean): MonitorRow[] {
   const label = ` ${t('Main recap')} · ${writtenAge(recap.at,now)} `;
   const switchText = ` ${t(folded ? 'r more' : 'r fold')} `;
   const room = width-visualLength(label)-visualLength(switchText);
-  const head = room >= 0 ? {line:colors.dim(label+' '.repeat(room))+colors.dim(switchText),control:{x:width-visualLength(switchText),width:visualLength(switchText)}}
-    : {line:colors.dim(truncateAnsi(label,width))};
-  // One gutter for the marks, one left edge for the text: ◎ the goal, ✓ what
-  // is done, ▸ where it stands, ! what it needs. A wrapped line hangs under
-  // the text, and lines are evened out so none ends in a stranded word.
-  const field = (mark: string, text: string, paint: (s: string) => string = s => s): string[] =>
-    balancedLines(monitorText(text),Math.max(1,width-3)).map((line,i)=>(i ? '   ' : ` ${mark} `)+paint(line));
-  const lines = [head.line,...field(colors.dim('◎'),recap.goal,theme.strong)];
-  if (!folded) {
-    for (const item of recap.done) lines.push(...field(theme.success('✓'),item));
-    lines.push(...field(theme.info('▸'),recap.now));
-    if (recap.needs) lines.push(...field(theme.warning('!'),recap.needs,theme.warning));
-  }
-  return {lines,control:head.control};
+  const head: MonitorRow = room >= 0
+    ? {text:colors.dim(label+' '.repeat(room))+colors.dim(switchText),key:'recap',controls:[{kind:'recap',x:width-visualLength(switchText),width:visualLength(switchText)}]}
+    : {text:colors.dim(truncateAnsi(label,width)),key:'recap'};
+  return [head,...recapFields(recap,folded,Math.max(1,width-1),spaced).map(line=>({text:line ? ' '+line : '',key:'recap'}))];
 }
 
 /**
@@ -746,7 +808,7 @@ function recapRows(recap: NonNullable<Brief['recap']>, folded: boolean, width: n
  * ticking up every second said nothing a reader acts on. The switch is where
  * the eye already is, and says what pressing it does.
  */
-function briefRule(brief: NonNullable<MonitorData['brief']>, width: number): {line: string; control?: {x: number; width: number}} {
+export function briefRule(brief: NonNullable<MonitorData['brief']>, width: number): {line: string; control?: {x: number; width: number}} {
   const status = brief.paused ? t('paused') : brief.running ? t('writing…') : brief.error ? t('failed') : '';
   const label = `${t('─ Brief')}${status ? ` · ${status}` : ''} `;
   const switchText = ` ${t(brief.paused ? 'b resume' : 'b pause')} `;
@@ -760,6 +822,19 @@ function walkTree(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => 
   for (const node of nodes) { visit(node); walkTree(node.children,visit); }
 }
 
+/** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
+const DENSE_BELOW = 12;
+
+/**
+ * The agents view's rows, its summary line first: in rich style the recap
+ * card, the brief and a card per agent; in compact the tree, then the brief
+ * and log under it. One view, scrolled as one.
+ */
+function agentsView(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
+  if (state.style === 'rich') return richRows(input,state,width,now,spaced);
+  return [...agentRows(input,state,width,now),...briefRows(input,state,width,now,spaced)];
+}
+
 /** Lines of the latest update the Inspector shows before "v More". */
 const REPORT_LINES = 6;
 const TITLES: Record<MonitorPane,string> = {agents:'1 Agents',worktrees:'2 Worktrees',changes:'3 Changes',details:'4 Inspector',timeline:'5 Timeline'};
@@ -769,7 +844,12 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const frame: MonitorFrame = {lines:[],panes:[],controls:[],state};
   if (!width || !height) return frame;
   if (state.help) {
-    const help = ['1 Agents  2 Worktrees','3 Changes  4 Inspector','5 Timeline','x close pane  - fold','2–5 open a pane','Tab next visible pane','j/k select  o switch','g/G first / last  PgUp/PgDn','h/l fold / unfold agent','f or / filter  s order','Click agent: switch','m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief','r fold / unfold recap','y copy recap to tmux','Click a log line: select agent','✓ = turn completed','? = no status evidence','! = needs a look']
+    const rich = state.style === 'rich';
+    // The keys as the current layout has them: cards in rich, the tree in compact.
+    const help = [rich ? '1 Cards  2 Worktrees' : '1 Agents  2 Worktrees','3 Changes  4 Inspector','5 Timeline','x close pane  - fold','2–5 open a pane','Tab next visible pane','j/k select  o switch','g/G first / last','PgUp/PgDn or wheel scroll',
+      ...(rich ? ['e or Space open / close card','Click card: select','Click its name: switch','Click top rule or ▾: open'] : []),
+      'h/l fold / unfold agent','f or / filter  s order',...(rich ? [] : ['Click agent: switch']),'m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief','r fold / unfold recap','y copy recap to tmux',...(rich ? [] : ['Click a log line: select agent']),'✓ = turn completed','? = no status evidence','! = needs a look',
+      '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary']
       .map(line=>t(line))
       .concat(t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
         ...['~ = written by a model','yellow clock = quiet 5m+','━╸─ = agent context used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
@@ -806,8 +886,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   // Agents is the page, not one box among several: no frame, no title, and
   // it can be neither closed nor folded. The other panes stay boxes.
   const edgeOf = (id: MonitorPane) => id === 'agents' ? 0 : 1;
-  const content = new Map(ids.map(id=>[id,paneRows(id,input,state,edgeOf(id) ? inner : width,now)]));
-  let brief = ids.includes('agents') ? briefRows(input,state,width,now) : {lines:[],ids:[]};
+  const content = new Map(ids.map(id=>[id,id === 'agents' ? agentsView(input,state,width,now,true) : paneRows(id,input,state,edgeOf(id) ? inner : width,now)]));
   const sizes = new Map<MonitorPane,number>();
   for (const id of ids) { sizes.set(id,budget>0?1:0); if (budget>0) budget--; }
   const order = [state.focus,...ids.filter(id=>id!==state.focus)].filter(id=>ids.includes(id));
@@ -822,19 +901,16 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     }
     if (!grew) break;
   }
-  // Spare height goes to the brief under the agents first: it is written to
-  // fill exactly this room. What is left goes to the inspector when it has
-  // focus, else below the agents. Small worktree lists stay compact.
-  if (brief.lines.length && brief.lines.length < budget) {
-    const spaced = briefRows(input,state,width,now,true);
-    if (spaced.lines.length <= budget) brief = spaced;
-  }
-  let briefHeight = Math.min(budget,brief.lines.length);
-  budget -= briefHeight;
+  // What is left goes to the inspector when it has focus, else to the agents
+  // view, where it is the room the art may use. Small worktree lists stay compact.
   const fillable = order.filter(id => (state.modes[id] !== 'folded' || !edgeOf(id)) && (sizes.get(id) ?? 0) > 0);
   const fill = state.focus==='details'&&fillable.includes('details') ? 'details' : fillable.includes('agents') ? 'agents' : fillable[0];
-  if(fill==='agents'&&briefHeight){briefHeight+=budget;budget=0;}
-  else if(fill){sizes.set(fill,(sizes.get(fill)??0)+budget);budget=0;}
+  if(fill){sizes.set(fill,(sizes.get(fill)??0)+budget);budget=0;}
+  // Spacing gives way to scrolling, not the other way round, except where the
+  // view is so short that blank lines would hide most of what it could show.
+  const agentsHeight = sizes.get('agents') ?? 0;
+  if (ids.includes('agents') && agentsHeight < DENSE_BELOW && (content.get('agents')?.length ?? 0) > agentsHeight)
+    content.set('agents',agentsView(input,state,width,now,false));
   frame.lines = Array.from({length:height},()=>fit('',width));
   frame.lines[0] = theme.accent(pair(t(width < 20 ? ' ← Main' : ' ← Main session'),'m ',width));
   frame.controls.push({kind:'main',x:0,y:0,width});
@@ -842,25 +918,21 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   for (const id of ids) {
     const h = sizes.get(id) ?? 0; if (!h) continue;
     const rows = content.get(id) ?? [];
+    if (id === 'agents') { drawAgentsView(frame,state,rows,y,width,h); y += h; continue; }
     const edge = edgeOf(id);
     const width_ = edge ? inner : width;
     const count = Math.max(0,h-2*edge);
-    // With no box title above it, the agents' summary line is the heading:
-    // it stays at the top while the agents under it scroll.
-    const pinned = edge ? 0 : Math.min(1,count);
     let offset = Math.max(0,Math.min(state.scroll[id],Math.max(0,rows.length-count)));
-    const selected = id==='agents'?state.tree.selectedId:id==='worktrees'?state.selectedWorktree:id==='changes'?state.selectedFile:null;
+    const selected = id==='worktrees'?state.selectedWorktree:id==='changes'?state.selectedFile:null;
     const index = selected ? rows.findIndex(row=>row.item===selected) : -1;
-    if (index>=pinned && count>pinned) { if(index-pinned<offset)offset=index-pinned;else if(index>=offset+count)offset=index-count+1; }
+    if (index>=0 && count>0) { if(index<offset)offset=index;else if(index>=offset+count)offset=index-count+1; }
     state.scroll[id]=offset;
-    const pane = {id,x:0,y,width,height:h,rows,offset,contentLength:rows.length,edge,pinned}; frame.panes.push(pane);
+    const pane = {id,x:0,y,width,height:h,rows,offset,contentLength:rows.length,edge,pinned:0}; frame.panes.push(pane);
     const border = colors.dim;
     const heading = id===state.focus ? theme.accent : colors.dim;
     const buttons = width>=12 ? `[${state.modes[id]==='folded'?'+':'-'}][x]` : '';
     const shortTitle = t({agents:'Agents',worktrees:width<20?'WT':'Worktrees',changes:'Changes',details:'Inspect',timeline:'Timeline'}[id]);
-    if(!edge) {
-      // No title row: the agents' summary line heads the page.
-    } else if(bordered) {
+    if(bordered) {
       const title = fit(' '+t(TITLES[id])+' ',Math.max(0,width-2-buttons.length));
       frame.lines[y] = truncateAnsi(heading('┌'+title+buttons+'┐'),width);
     } else {
@@ -869,22 +941,20 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       const label = truncateAnsi('─ '+shortTitle+' ',room);
       frame.lines[y] = truncateAnsi(heading(label+'─'.repeat(Math.max(0,room-visualLength(label)))+buttons),width);
     }
-    if(buttons && edge) {
+    if(buttons) {
       const right = bordered ? width-1 : width;
       frame.controls.push({kind:'fold',pane:id,x:right-6,y,width:3},{kind:'close',pane:id,x:right-3,y,width:3});
     }
     for(let i=0;i<count;i++) {
-      const row=i<pinned?rows[i]:rows[offset+i];
+      const row=rows[offset+i];
       const clipped=truncateAnsi(row?.text??'',width_);
       // The highlight covers the row's words, not the blank run after them:
-      // a selected short name should not paint a bar across the pane. An
-      // agent row carries no highlight at all: inverse video hid its colours,
-      // and its › marker already says which one is selected.
-      const highlight=row?.item&&row.item===selected&&id===state.focus&&id!=='agents';
+      // a selected short name should not paint a bar across the pane.
+      const highlight=row?.item&&row.item===selected&&id===state.focus;
       const body=(highlight?theme.selected(clipped):clipped)+' '.repeat(Math.max(0,width_-visualLength(clipped)));
-      frame.lines[y+edge+i]=truncateAnsi(edge&&bordered?border('│')+padding+body+padding+border('│'):body,width);
+      frame.lines[y+1+i]=truncateAnsi(bordered?border('│')+padding+body+padding+border('│'):body,width);
     }
-    if(edge&&h>1) {
+    if(h>1) {
       const range=rows.length>count&&count?` ${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length} `:'';
       if(bordered) {
         frame.lines[y+h-1]=truncateAnsi(border('└'+fit(range,Math.max(0,width-2)).replace(/ /g,'─')+'┘'),width);
@@ -894,20 +964,6 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       }
     }
     y+=h;
-    if(id==='agents'&&briefHeight) {
-      brief.lines.slice(0,briefHeight).forEach((line,i)=>{
-        frame.lines[y+i]=fit(line,width);
-        const item=brief.ids[i];
-        if(item) frame.controls.push({kind:'log',item,x:0,y:y+i,width});
-      });
-      // The rule is the brief's second line, after the blank that sets it off.
-      const control = briefHeight>1 && input.brief ? briefRule(input.brief,width).control : undefined;
-      if(control) frame.controls.push({kind:'brief',x:control.x,y:y+1,width:control.width});
-      // The recap's heading follows the rule, with its fold switch at the end.
-      const fold = briefHeight>2 && input.brief?.recap ? recapRows(input.brief.recap,Boolean(input.brief.recapFolded),width,now).control : undefined;
-      if(fold) frame.controls.push({kind:'recap',x:fold.x,y:y+2,width:fold.width});
-      y+=briefHeight;
-    }
   }
   const foot = height-footRows;
   if(input.art) placeArt(frame.lines,foot-noticeRows.length,width,input.art);
@@ -984,6 +1040,8 @@ function openPane(state: MonitorState, id: MonitorPane): MonitorState {
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
   if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height - edge) return undefined;
+  // Past the rows drawn is the scroll hint, not a row.
+  if (pane.visible !== undefined && y - pane.y - edge >= pane.visible) return undefined;
   const line = y - pane.y - edge < (pane.pinned ?? 0) ? y - pane.y - edge : pane.offset + y - pane.y - edge;
   return line >= 0 ? pane.rows[line] : undefined;
 }
@@ -998,6 +1056,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   let key = input.type==='key'?input.key:'';
   const result = (action?:MonitorOutcome['action'],close=false): MonitorOutcome => ({state:next,close,action});
   if(key==='close') return result(undefined,true);
+  // Space is Enter, except on the cards, where it opens or closes the selected one.
+  if(key==='space')key=next.style==='rich'&&next.focus==='agents'&&!next.help?'expand':'enter';
   if(next.help) {
     if(['escape','help','enter'].includes(key))next.help=false;
     else {
@@ -1015,7 +1075,20 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(control?.kind==='settings') return result({type:'settings'});
     if(control?.kind==='brief') return result({type:'brief-toggle'});
     if(control?.kind==='recap') return result({type:'recap-fold'});
-    if(control?.kind==='log'&&control.item){next.tree.selectedId=control.item;next.preview='agent';next.scroll.details=0;return result();}
+    if(control?.kind==='copy') return result({type:'recap-copy'});
+    // What was clicked is in view already: selecting it does not scroll.
+    const pick=(id: string)=>{next.tree.selectedId=id;next.preview='agent';next.scroll.details=0;next.revealed=id;next.focus='agents';};
+    if(control?.kind==='log'&&control.item){pick(control.item);return result();}
+    // A card's top rule or its ▾/▴: open or close its timeline, and select it.
+    if(control?.kind==='expand'&&control.item){pick(control.item);next=toggleCard(next,control.item);return result();}
+    // A card's name: go to that agent's session, as `o` does on it.
+    if(control?.kind==='switch'&&control.item){pick(control.item);return result({type:'switch',id:control.item});}
+    if(control?.kind==='more') {
+      const pane=ctx.frame?.panes.find(p=>p.id==='agents');
+      const page=Math.max(1,(pane?.visible??1)-(pane?.pinned??0));
+      const end=pane?pane.offset+(pane.visible??0)>=pane.contentLength:true;
+      next.scroll.agents=end?0:next.scroll.agents+page;return result();
+    }
     if(control?.pane) {
       next.focus=control.pane;
       key=control.kind==='close'?'pane-close':'pane-fold';
@@ -1032,13 +1105,19 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
           if(!id)return result();
           if(pane.id==='agents') {
             if(!visibleRows(ctx.tree.nodes,next.tree,ctx.nowMs).some(row=>row.node.id===id))return result();
-            next.tree.selectedId=id;next.preview='agent';next.scroll.details=0;
-            return result({type:'switch',id});
+            pick(id);
+            // A card is a place to read: a click selects it, `o` switches.
+            // A tree row is a list to pick from: a click switches.
+            return next.style==='rich'?result():result({type:'switch',id});
           }
           if(pane.id==='worktrees') {next.selectedWorktree=id;next.preview='worktree';}
           if(pane.id==='changes') {next.selectedFile=id;next.preview='file';}
           next.scroll.details=0;return result();
         }
+      } else if(pane.id==='agents') {
+        // The wheel scrolls what is under it, and leaves the selection be.
+        next.scroll.agents=Math.max(0,next.scroll.agents+(input.button==='wheel-down'?WHEEL_ROWS:-WHEEL_ROWS));
+        return result();
       } else key=input.button==='wheel-down'?'down':'up';
     }
   }
@@ -1049,7 +1128,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   if(key==='copy')return result({type:'recap-copy'});
   if(key==='main')return result({type:'switch',id:ctx.tree.rootId});
   if(key==='open-session')return next.focus==='agents'&&next.tree.selectedId?result({type:'switch',id:next.tree.selectedId}):result();
-  if(key==='show-all')next.tree.showAll=!next.tree.showAll;
+  if(key==='expand'){if(next.style==='rich'&&next.tree.selectedId){next=toggleCard(next,next.tree.selectedId);next.focus='agents';next.revealed=null;}}
+  else if(key==='show-all')next.tree.showAll=!next.tree.showAll;
   else if(key==='help'){next.help=true;next.helpScroll=0;}
   // Agents stays; closing or folding it is not a choice the page offers.
   else if(key==='pane-close') {
@@ -1084,7 +1164,12 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     const move=delta!==0||key==='home'||key==='end';
     if(next.focus==='agents') {
       const rows=visibleRows(ctx.tree.nodes,next.tree,ctx.nowMs);
-      if(move){const index=rows.findIndex(row=>row.node.id===next.tree.selectedId);const target=key==='home'?0:key==='end'?rows.length-1:Math.max(0,index)+delta;
+      // A page key scrolls the view a page; the selection keys move the
+      // selection, and the view follows it there.
+      if(key==='page-down'||key==='page-up'){
+        const view=Math.max(1,(pane?.visible??page)-(pane?.pinned??0)-1);
+        next.scroll.agents=Math.max(0,next.scroll.agents+(key==='page-down'?view:-view));
+      } else if(move){next.revealed=null;const index=rows.findIndex(row=>row.node.id===next.tree.selectedId);const target=key==='home'?0:key==='end'?rows.length-1:Math.max(0,index)+delta;
         const row=rows[Math.max(0,Math.min(rows.length-1,target))];if(row)next.tree.selectedId=row.node.id;
       } else if(key==='sort')next.tree.sort=next.tree.sort==='active'?'created':'active';
       else if(['left','right','filter'].includes(key))next.tree=applyKey(next.tree,key as 'left'|'right'|'filter',rows).state;
