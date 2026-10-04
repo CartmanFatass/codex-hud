@@ -204,18 +204,21 @@ export function flowLines(text: string, width: number): string[] {
   // Closing punctuation stays with the text before it: a line that starts
   // with "。" or "，" reads as a stray mark.
   const closing = /^[。，、；：！？）」』】》〉…%,.;:!?)\]}]/u;
+  let last = '';
   for (const token of flowTokens(text)) {
     if (/^\s+$/.test(token)) { if (line) line += ' '; continue; }
     if (line && visualLength(line+token) > width) {
       if (closing.test(token) && visualLength(line+token) <= width+2 && [...line].length > 1) {
-        // Carry the last character down with it rather than strand the mark.
-        const chars = [...line];
-        const carried = chars.pop()!;
-        line = chars.join('');
+        // Carry the last word down with it rather than strand the mark; a
+        // word that is the whole line gives up its last character instead.
+        const whole = last && line.endsWith(last) && line.length > last.length;
+        const carried = whole ? last : [...line].pop()!;
+        line = line.slice(0,line.length-carried.length);
         push();
         line = carried;
       } else push();
     }
+    last = token;
     if (visualLength(token) > width) {
       for (const char of token) { if (visualLength(line+char) > width) push(); line += char; }
     } else line += token;

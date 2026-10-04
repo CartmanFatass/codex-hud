@@ -213,7 +213,8 @@ test('closing punctuation never starts a brief line', () => {
   const frame = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 20, nowMs: now, brief: { text, at: now } });
   const lines = frame.lines.map(line => stripAnsi(line).trimEnd());
   assert.ok(!lines.some(line => /^ *[。，]/.test(line)), lines.join('\n'));
-  assert.ok(lines.includes(' 四。后面'));
+  // The stop takes the word before it down with it; how much that is depends on the segmenter.
+  assert.ok(lines.some(line => /^ \S*四。后面$/.test(line)), lines.join('\n'));
 });
 
 test('the log follows the tree: what the tree hides it hides, a collapsed parent counts what is folded, the Inspector has it all', () => {
