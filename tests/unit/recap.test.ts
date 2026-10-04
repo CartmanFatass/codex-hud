@@ -4,14 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { RolloutParser, appendTranscript, TRANSCRIPT_LIMIT, type RolloutParseResult, type TranscriptEntry } from '../../src/collectors/rollout.js';
-import { recapInput, parseRecapPart, recapPlainText, RecapStore, delegationDigest, previousRecapSection, RECAP_KEEP_MS,
+import { recapInput, parseRecapPart, RecapStore, delegationDigest, previousRecapSection, RECAP_KEEP_MS,
   MAIN_MATERIAL_CHARS, type Recap } from '../../src/collectors/recap.js';
 import { Briefer, briefSystemPrompt, parseBrief } from '../../src/collectors/briefing.js';
 import type { SmallModel, ModelRequest } from '../../src/collectors/small-model.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput, balancedLines, flowLines } from '../../src/render/monitor.js';
 import { stripAnsi, visualLength, theme } from '../../src/render/colors.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
-import { tmuxCopyArgs, tmuxSupportsClipboard } from '../../src/utils/tmux-copy.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
 
 const now = Date.parse('2026-10-01T10:00:00Z');
@@ -142,8 +141,6 @@ test('a recap reply is read tolerantly; a reply without a valid main keeps nothi
   assert.deepEqual(both.main, { goal: 'g', done: [], now: 'n', needs: 'approve' });
   assert.deepEqual(both.items, []);
   assert.equal(parseBrief('{"main":{"goal":""},"agents":"x"}'), null);
-  assert.equal(recapPlainText({ goal: 'g', done: ['a'], now: 'n', needs: 'x' }, { goal: 'Goal:', done: 'Done:', now: 'Now:', needs: 'Needs:' }),
-    'Goal: g\nDone:\n- a\nNow: n\nNeeds: x');
 });
 
 test('the recap instructions: scope agents is the brief as it was; the others ask for main and quote every section', () => {
@@ -312,13 +309,14 @@ test('wrapped text is evened out: same line count, no stranded last word', () =>
 const recapView: Recap = { goal: 'Fix the flaky cache test in the parser', done: ['Reproduced the failure', 'Found the race'],
   now: 'Waiting on reader agent', needs: 'Approve npm test', at: now - 5 * 60_000, coveredUntil: now, sessionId: 's', language: 'en' };
 
-test('the recap leads the brief area: labelled goal, done, now and needs, needs in the warning colour, all within 30 columns', () => {
+test('compact: the recap leads the brief area, labelled goal, done, now and needs, needs in the warning colour, all within 30 columns', () => {
   const agents = tree([node('00000000-0000-4000-8000-000000000001', 'worker', 'running', { turnStartedAt: new Date(now - 60_000) })]);
   const frame = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 30, nowMs: now,
     brief: { text: '{}', structured: true, at: now, recap: recapView } });
   const lines = frame.lines.map(stripAnsi);
   const rule = lines.findIndex(line => line.startsWith('─ Brief'));
-  assert.match(lines[rule + 1], /^ Main recap · 5m ago +r fold $/);
+  // The header names it and its age; there is no fold switch any more.
+  assert.equal(lines[rule + 1].trimEnd(), ' Main recap · 5m ago');
   // Each field a label on its own line, its text two columns in beneath it,
   // a blank line between fields; a wrapped line hangs under the text.
   assert.deepEqual(lines.slice(rule + 2, rule + 15).map(line => line.trimEnd()), [
@@ -330,61 +328,38 @@ test('the recap leads the brief area: labelled goal, done, now and needs, needs 
   assert.ok(frame.lines[rule + 13].includes(theme.warning('Needs')), 'the needs label is in the warning colour too');
   assert.ok(!lines.some(line => line.includes('{}')), 'a recap-only reply shows no raw text');
   assert.ok(frame.lines.every(line => visualLength(line) <= 30));
-  const control = frame.controls.find(c => c.kind === 'recap')!;
-  assert.equal(control.y, rule + 1);
+  assert.ok(!frame.controls.some(c => c.y === rule + 1), 'the header is not a switch');
+  // r now cycles the status card; y is no key at all.
   const ctx = { tree: agents, frame };
-  assert.deepEqual(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: control.x + 1, y: control.y }, ctx).action, { type: 'recap-fold' });
-  assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'reset' }, ctx).action, { type: 'recap-fold' });
-  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('ry')), [{ type: 'key', key: 'reset' }, { type: 'key', key: 'copy' }]);
-  assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'copy' }, ctx).action, { type: 'recap-copy' });
+  assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'reset' }, ctx).action, { type: 'status-level' });
+  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('ry')), [{ type: 'key', key: 'reset' }]);
 
-  const folded = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 30, nowMs: now,
-    brief: { recap: recapView, recapFolded: true, running: true } });
-  const shown = folded.lines.map(stripAnsi);
-  const top = shown.findIndex(line => line.startsWith('─ Brief · writing…'));
-  assert.match(shown[top + 1], /r more $/);
-  assert.equal(shown[top + 2].trimEnd(), ' Goal');
-  assert.ok(!shown.some(line => /^ (Done|Now|Needs)$/.test(line.trimEnd())), 'folded: the goal only, the previous recap kept while a run is in flight');
+  const writing = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 30, nowMs: now,
+    brief: { recap: recapView, running: true } }).lines.map(stripAnsi);
+  const top = writing.findIndex(line => line.startsWith('─ Brief · writing…'));
+  assert.equal(writing[top + 2].trimEnd(), ' Goal', 'the previous recap is kept while a run is in flight');
   // A cramped view gives up the blank lines before it gives up content.
   const dense = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 13, nowMs: now, brief: { recap: recapView } }).lines.map(stripAnsi);
   const goal = dense.findIndex(line => line.trimEnd() === ' Goal');
   assert.deepEqual(dense.slice(goal, goal + 4).map(line => line.trimEnd()), [' Goal', '   Fix the flaky cache', '   test in the parser', ' Done']);
 });
 
-test('rich: the recap is a card of its own, its fold switch the top rule, needs on the bottom rule beside copy', () => {
+test('rich: the recap is in the status card, needs in the warning colour, every width within bounds', () => {
   const agents = tree([node('00000000-0000-4000-8000-000000000001', 'worker', 'running', { turnStartedAt: new Date(now - 60_000) })]);
   const state = { ...initialMonitorState(), style: 'rich' as const };
+  const status = () => ({ rows: ['▸ working'], top: '', bottom: 'proj', bottomRight: '' });
   for (const width of [20, 24, 30, 32, 44, 60]) {
-    const frame = renderMonitor({ tree: agents, state, width, height: 40, nowMs: now, brief: { recap: recapView } });
+    const frame = renderMonitor({ tree: agents, state, width, height: 40, nowMs: now, brief: { recap: recapView }, status });
     assert.ok(frame.lines.every(line => visualLength(line) <= width), `${width}`);
   }
-  const frame = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: recapView } });
+  const frame = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: recapView }, status });
   const lines = frame.lines.map(stripAnsi);
-  const top = lines.findIndex(line => line.startsWith('┌ Main recap'));
-  assert.equal(lines[top].trimEnd(), '┌ Main recap ─ 5m ago · r fold');
-  assert.equal(lines[top + 1].trimEnd(), '│ Goal');
-  assert.equal(lines[top + 2].trimEnd(), '│   Fix the flaky cache');
-  const bottom = lines.findIndex(line => line.startsWith('└ '));
-  assert.match(lines[bottom], /^└ Needs Approve npm … ─ y copy$/);
-  assert.ok(frame.lines[top + 1].startsWith(theme.warning('│')), 'the bar is in the warning colour while it needs the person');
-  const fold = frame.controls.find(c => c.kind === 'recap')!;
-  assert.deepEqual([fold.x, fold.y, fold.width], [0, top, 30], 'the whole top rule folds');
-  const copy = frame.controls.find(c => c.kind === 'copy')!;
-  assert.equal(copy.y, bottom);
-  const ctx = { tree: agents, frame };
-  assert.deepEqual(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 3, y: top }, ctx).action, { type: 'recap-fold' });
-  assert.deepEqual(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: copy.x, y: bottom }, ctx).action, { type: 'recap-copy' });
-  const calm = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: { ...recapView, needs: '' } } });
-  const calmLines = calm.lines.map(stripAnsi);
-  assert.ok(!calmLines.some(line => /Needs/.test(line)), 'no needs: absent, field and rule alike');
-  assert.ok(calm.lines[top + 1].startsWith(theme.accent('│')));
-});
-
-test('copying uses set-buffer, with -w from tmux 3.2', () => {
-  assert.equal(tmuxSupportsClipboard('tmux 3.2a'), true);
-  assert.equal(tmuxSupportsClipboard('tmux 3.1c'), false);
-  assert.equal(tmuxSupportsClipboard('tmux next-3.5'), true);
-  assert.equal(tmuxSupportsClipboard(''), false);
-  assert.deepEqual(tmuxCopyArgs('-x', true), ['set-buffer', '-w', '--', '-x']);
-  assert.deepEqual(tmuxCopyArgs('x', false), ['set-buffer', '--', 'x']);
+  const rule = lines.findIndex(line => line.startsWith('├─ Recap 5m ago'));
+  assert.ok(rule > frame.statusCard!.y);
+  assert.equal(lines[rule + 1].trimEnd(), '│ Goal                       │');
+  const needs = lines.findIndex(line => line.startsWith('│ Needs'));
+  assert.ok(needs > rule && frame.lines[needs].includes(theme.warning('Needs')));
+  assert.ok(!lines.some(line => /^┌ Main recap|^─ Brief/.test(line)), 'no recap card, no brief rule');
+  const calm = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: { ...recapView, needs: '' } }, status });
+  assert.ok(!calm.lines.map(stripAnsi).some(line => /Needs/.test(line)), 'no needs: absent');
 });

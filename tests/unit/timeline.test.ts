@@ -153,11 +153,16 @@ test('the key help lists every key, the new ones included, in both languages', a
   const state = { ...initialMonitorState(), help: true };
   const lines = () => renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
   const en = lines();
-  for (const key of ['5 Timeline', '2–5 open a pane', 'b pause / resume brief', 'r fold / unfold recap', 'y copy recap to tmux',
+  for (const key of ['5 Timeline', '2–5 open a pane', 'b pause / resume brief', 'r status card: min / status', "Click the card's top edge: same as r",
     'Click a log line: select agent', '~ = written by a model', 'f or / filter', 'h/l fold / unfold agent', 'g/G first / last']) assert.ok(en.includes(key), key);
+  assert.ok(!en.includes('min / status / full'), 'compact has two levels');
+  assert.ok(!/copy|fold \/ unfold recap/.test(en), 'no recap copy, no recap fold');
+  const richHelp = renderMonitor({ tree: tree([]), state: { ...state, style: 'rich' }, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
+  for (const key of ['r status card: min / status / full', 'Wheel over the card: its brief', 'e or Space open / close card']) assert.ok(richHelp.includes(key), key);
   const previous = setLanguage('zh');
   try {
     const zh = lines();
-    for (const key of ['5 时间线', '2–5 打开面板', 'r 收起 / 展开回顾', 'y 复制回顾到 tmux', '点击日志行', '由模型撰写', '筛选']) assert.ok(zh.includes(key), key);
+    for (const key of ['5 时间线', '2–5 打开面板', 'r 状态卡：一行 / 状态', '点击状态卡顶边：同 r', '点击日志行', '由模型撰写', '筛选']) assert.ok(zh.includes(key), key);
+    assert.ok(!zh.includes('复制'));
   } finally { setLanguage(previous); }
 });

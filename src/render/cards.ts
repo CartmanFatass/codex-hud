@@ -33,7 +33,7 @@ import { agentTitle, type AgentTitle } from './agent-title.js';
 import {
   type MonitorData, type MonitorState, type MonitorRow, type RowControl,
   monitorText, flowLines, balancedLines, age, nodeStatus, isLive, isQuiet, turnClock, contextLine, squeeze, finishedAt,
-  writtenAge, summaryRow, emptyAgentsText, briefParts, briefRuleRow,
+  summaryRow, emptyAgentsText,
   MODEL_LOG_KINDS, FRESH_FINISH_MS, CONTEXT_METER_WIDTH,
 } from './monitor.js';
 
@@ -95,19 +95,17 @@ export function taskLines(title: AgentTitle, width: number, max = 2): {lines: st
  * indented two columns beneath it: the goal (strong), what is done (each
  * item with its ✓, wrapped under its own text), where it stands, and, when
  * the session waits on the person, what it needs, in the warning colour and
- * absent when empty. Folded, the goal alone. Lines are evened out so none
- * ends in a stranded word. `spaced` puts a blank line between fields.
+ * absent when empty. Lines are evened out so none ends in a stranded word.
+ * `spaced` puts a blank line between fields.
  */
-export function recapFields(recap: NonNullable<Brief['recap']>, folded: boolean, width: number, spaced: boolean): string[] {
+export function recapFields(recap: NonNullable<Brief['recap']>, width: number, spaced: boolean): string[] {
   const text = (value: string, indent: number, paint: Paint = plain) =>
     balancedLines(monitorText(value),Math.max(1,width-indent)).map(line=>' '.repeat(indent)+paint(line));
   const fields: string[][] = [[colors.dim(t('Goal')),...text(recap.goal,2,theme.strong)]];
-  if (!folded) {
-    if (recap.done.length) fields.push([colors.dim(t('Done')),...recap.done.flatMap(item =>
-      balancedLines(monitorText(item),Math.max(1,width-4)).map((line,i)=>(i ? '    ' : `  ${theme.success('✓')} `)+line))]);
-    fields.push([colors.dim(t('Now')),...text(recap.now,2)]);
-    if (recap.needs) fields.push([theme.warning(t('Needs')),...text(recap.needs,2,theme.warning)]);
-  }
+  if (recap.done.length) fields.push([colors.dim(t('Done')),...recap.done.flatMap(item =>
+    balancedLines(monitorText(item),Math.max(1,width-4)).map((line,i)=>(i ? '    ' : `  ${theme.success('✓')} `)+line))]);
+  fields.push([colors.dim(t('Now')),...text(recap.now,2)]);
+  if (recap.needs) fields.push([theme.warning(t('Needs')),...text(recap.needs,2,theme.warning)]);
   return fields.flatMap((field,i)=>[...(i && spaced ? [''] : []),...field]);
 }
 
@@ -267,55 +265,18 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
 }
 
 /**
- * The main recap as a card of the same family, told apart by its title and
- * its accent bar (the warning colour while it needs the person). The fold
- * switch rides on the top rule, which is all one click target; what it
- * needs is repeated on the bottom rule, cut to fit, beside the copy switch.
- */
-export function recapCard(recap: NonNullable<Brief['recap']>, folded: boolean, width: number, now: number, spaced: boolean): MonitorRow[] {
-  const paint: Paint = recap.needs ? theme.warning : theme.accent;
-  const key = 'recap';
-  const title = `${paint('┌')} ${theme.strong(t('Main recap'))} `;
-  const when = colors.dim(writtenAge(recap.at,now));
-  const fold = colors.dim(t(folded ? 'r more' : 'r fold'));
-  // The age and the switch, the switch alone, or neither: the first that leaves a dash.
-  const right = [`${when}${colors.dim(' · ')}${fold}`,fold,''].find(text => visualLength(title)+1+(text ? visualLength(text)+1 : 0) <= width) ?? '';
-  const dashes = Math.max(0,width-visualLength(title)-(right ? visualLength(right)+1 : 0));
-  const top = truncateAnsi(`${title}${paint('─'.repeat(dashes))}${right ? ' '+right : ''}`,width);
-  const rows: MonitorRow[] = [{text:top,key,controls:[{kind:'recap',x:0,width:visualLength(stripAnsi(top))}]}];
-  for (const line of recapFields(recap,folded,Math.max(1,width-2),spaced)) rows.push({text:line ? `${paint('│')} ${line}` : paint('│'),key});
-  const copy = colors.dim(t('y copy'));
-  const opening = `${paint('└')} `;
-  const room = width-visualLength(opening)-visualLength(copy)-3;
-  const needs = recap.needs && room >= 4 ? theme.warning(truncateAnsi(monitorText(`${t('Needs')} ${recap.needs}`),room)) : '';
-  const fill = Math.max(1,width-visualLength(opening)-visualLength(needs)-(needs ? 1 : 0)-visualLength(copy)-1);
-  const bottom = truncateAnsi(`${opening}${needs}${needs ? ' ' : ''}${paint('─'.repeat(fill))} ${copy}`,width);
-  rows.push({text:bottom,key,controls:[{kind:'copy',x:Math.max(0,visualLength(stripAnsi(bottom))-visualLength(copy)),width:visualLength(copy)}]});
-  return rows;
-}
-
-/**
- * Rich: the agents view. The summary line heads it and stays put; under it
- * scroll the recap card, the brief (its rule and switch, the approval in
- * plain words, the whole-picture sentence), then a card per agent the tree
- * would show, in the tree's order, under its filter and linger window.
- * `spaced` puts a blank line between the parts and between cards.
+ * Rich: the agents view, a list of agent cards and nothing else. The summary
+ * line heads it and stays put; under it scroll a card per agent the tree
+ * would show, in the tree's order, under its filter and linger window. The
+ * main session's brief is the status card's, at the foot. `spaced` puts a
+ * blank line between cards.
  */
 export function richRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
   const {row:head,total,expired} = summaryRow(input,state,width,now);
   const rows: MonitorRow[] = [head];
   const gap = () => { if (spaced && rows.at(-1)?.text !== '') rows.push({text:''}); };
-  const brief = input.brief;
-  const step = (list: MonitorRow[]) => brief?.paused ? list.map(row=>({...row,text:colors.dim(stripAnsi(row.text))})) : list;
-  if (brief?.recap) { gap(); rows.push(...step(recapCard(brief.recap,Boolean(brief.recapFolded),width,now,spaced))); }
-  const {approval,said} = briefParts(input,width);
-  if (brief) {
-    gap();
-    rows.push(briefRuleRow(brief,width),...step([...approval.map(text=>({text,key:'approval'})),...said.map(text=>({text,key:'said'}))]));
-  } else if (approval.length) { gap(); rows.push(...approval.map(text=>({text,key:'approval'}))); }
   const shown = visibleRows(input.tree.nodes,state.tree,now);
   for (const row of shown) { gap(); rows.push(...agentCard(row,input,state,width,now,spaced)); }
   if (!shown.length) { gap(); rows.push({text:colors.dim(truncateAnsi(emptyAgentsText(input,state,total,expired),width))}); }
   return rows;
 }
-

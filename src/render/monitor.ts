@@ -16,6 +16,7 @@ import { t } from './i18n.js';
 import { agentTitle } from './agent-title.js';
 import { recapFields, taskLines, richRows } from './cards.js';
 import { drawAgentsView, WHEEL_ROWS } from './agents-view.js';
+import { planFoot, nextLevel, type StatusLevel, type FootInfo } from './status-foot.js';
 import { formatWindowLabel } from './quota.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 
@@ -53,6 +54,10 @@ export interface MonitorState {
    * the scroll it was taken at, so a scroll since then is not undone.
    */
   anchor?: {key: string; delta: number; offset: number};
+  /** How much the status card shows; absent is `full`. The panel sets it from settings. */
+  statusLevel?: StatusLevel;
+  /** How far the status card's brief is scrolled. */
+  statusScroll?: number;
 }
 export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
@@ -79,16 +84,19 @@ export interface MonitorRect {
 export interface MonitorControl {
   /**
    * `expand` opens or closes a card's timeline (and selects it), `switch`
-   * (a card's name) selects it and switches Codex to it, `copy` copies the
-   * recap, `more` scrolls the agents view a page.
+   * (a card's name) selects it and switches Codex to it, `more` scrolls the
+   * agents view a page, `level` (the status card's top edge) changes how
+   * much the card shows.
    */
-  kind: 'main' | 'settings' | 'fold' | 'close' | 'brief' | 'recap' | 'log' | 'expand' | 'copy' | 'more' | 'switch';
+  kind: 'main' | 'settings' | 'fold' | 'close' | 'brief' | 'level' | 'log' | 'expand' | 'more' | 'switch';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
   x: number; y: number; width: number;
 }
-export interface MonitorFrame { lines: string[]; panes: MonitorRect[]; controls: MonitorControl[]; state: MonitorState; helpPage?: {count:number; total:number} }
+export interface MonitorFrame { lines: string[]; panes: MonitorRect[]; controls: MonitorControl[]; state: MonitorState; helpPage?: {count:number; total:number};
+  /** The status card's place and its brief's scroll, for the wheel. */
+  statusCard?: FootInfo }
 export interface MonitorData {
   tree: SubagentTree;
   state: MonitorState;
@@ -100,10 +108,9 @@ export interface MonitorData {
   notice?: string | null;
   error?: string | null;
   /**
-   * The brief, when one is configured; `paused` puts the model calls on hold,
-   * `recapFolded` shows the main recap's goal line only.
+   * The brief, when one is configured; `paused` puts the model calls on hold.
    */
-  brief?: Brief & {paused?: boolean; recapFolded?: boolean};
+  brief?: Brief & {paused?: boolean};
   /**
    * The status bar's fields for the card at the foot of the panel (while the
    * panel is open it replaces the bar): at most `maxRows` rows, each fitted
@@ -116,6 +123,12 @@ export interface MonitorData {
    * for the agents the tree shows, and whole in the Inspector.
    */
   agentLog?: ReadonlyMap<string, readonly AgentLogEntry[]>;
+  /**
+   * What the main session is doing, as the status card words it, for the
+   * card's one-line form; `attention` while it waits on the person, `failed`
+   * while a tool or agent has failed.
+   */
+  session?: (nowMs: number) => {text: string; short?: string; attention: boolean; failed?: boolean} | null;
   /** The session's observed events, newest first, for the Timeline pane. */
   timeline?: readonly WorkbenchEvent[];
   /**
@@ -143,7 +156,7 @@ export interface MonitorContext {
 export interface MonitorOutcome {
   state: MonitorState;
   close: boolean;
-  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'brief-toggle'} | {type:'recap-fold'} | {type:'recap-copy'};
+  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'brief-toggle'} | {type:'status-level'};
 }
 
 export function initialMonitorState(): MonitorState {
@@ -664,16 +677,17 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
  * whole-picture sentence (or a reply in another shape, as the text it is),
  * with a failure. Model output is sanitized like any other external string.
  */
-export function briefParts(input: MonitorData, width: number): {approval: string[]; said: string[]} {
+export function briefParts(input: MonitorData, width: number, indent = 1): {approval: string[]; said: string[]} {
   const brief = input.brief;
-  const failure = brief?.error ? flowLines(monitorText(brief.error),Math.max(1,width-1)).map(text=>theme.warning(' '+text)) : [];
+  const pad = ' '.repeat(indent);
+  const failure = brief?.error ? flowLines(monitorText(brief.error),Math.max(1,width-indent)).map(text=>theme.warning(pad+text)) : [];
   const flow = (text: string, indent: number, paint: (s: string) => string = s => s) =>
     flowLines(monitorText(text),Math.max(1,width-indent)).map(line=>' '.repeat(indent)+paint(line));
   let body: string[] = [];
-  if (brief?.overall) body = balancedLines(monitorText(brief.overall),Math.max(1,width-1)).map(line=>' '+colors.dim(line));
+  if (brief?.overall) body = balancedLines(monitorText(brief.overall),Math.max(1,width-indent)).map(line=>pad+colors.dim(line));
   else if (brief?.text && !brief.structured && !brief.items) {
     // A reply in another shape than the JSON asked for is shown as the text it is.
-    body = brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flow(line,1));
+    body = brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flow(line,indent));
   }
   const said = [...(brief?.text ? body : failure),...(brief?.text ? failure.slice(0,1) : [])];
   // A pending approval in plain words leads: the session cannot go on without it.
@@ -698,7 +712,7 @@ function briefRows(input: MonitorData, state: MonitorState, width: number, now: 
   const brief = input.brief;
   if (!brief && !input.agentLog) return [];
   const rule = brief ? briefRuleRow(brief,width) : {text:colors.dim(truncateAnsi(`${t('─ Agent log')} ${'─'.repeat(width)}`,width)),key:'brief'};
-  const recap = brief?.recap ? recapRows(brief.recap,Boolean(brief.recapFolded),width,now,spaced) : [];
+  const recap = brief?.recap ? recapRows(brief.recap,width,now,spaced) : [];
   const {approval,said} = briefParts(input,width);
   const gap = (on: unknown): MonitorRow[] => on && spaced ? [{text:''}] : [];
   // The recap leads; a blank line sets it off from what follows.
@@ -789,17 +803,12 @@ export function writtenAge(at: number, now: number): string {
 
 /**
  * Compact: the main session's recap, the first block under the Brief rule:
- * a heading that says it is the model's and how old it is, with the fold
- * switch at its end, then its labelled fields (see `recapFields`).
+ * a heading that says it is the model's and how old it is, then its
+ * labelled fields (see `recapFields`).
  */
-function recapRows(recap: NonNullable<Brief['recap']>, folded: boolean, width: number, now: number, spaced: boolean): MonitorRow[] {
-  const label = ` ${t('Main recap')} · ${writtenAge(recap.at,now)} `;
-  const switchText = ` ${t(folded ? 'r more' : 'r fold')} `;
-  const room = width-visualLength(label)-visualLength(switchText);
-  const head: MonitorRow = room >= 0
-    ? {text:colors.dim(label+' '.repeat(room))+colors.dim(switchText),key:'recap',controls:[{kind:'recap',x:width-visualLength(switchText),width:visualLength(switchText)}]}
-    : {text:colors.dim(truncateAnsi(label,width)),key:'recap'};
-  return [head,...recapFields(recap,folded,Math.max(1,width-1),spaced).map(line=>({text:line ? ' '+line : '',key:'recap'}))];
+function recapRows(recap: NonNullable<Brief['recap']>, width: number, now: number, spaced: boolean): MonitorRow[] {
+  const head: MonitorRow = {text:colors.dim(truncateAnsi(` ${t('Main recap')} · ${writtenAge(recap.at,now)}`,width)),key:'recap'};
+  return [head,...recapFields(recap,Math.max(1,width-1),spaced).map(line=>({text:line ? ' '+line : '',key:'recap'}))];
 }
 
 /**
@@ -826,9 +835,9 @@ function walkTree(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => 
 const DENSE_BELOW = 12;
 
 /**
- * The agents view's rows, its summary line first: in rich style the recap
- * card, the brief and a card per agent; in compact the tree, then the brief
- * and log under it. One view, scrolled as one.
+ * The agents view's rows, its summary line first: in rich style a card per
+ * agent (the main session's brief is in the status card at the foot); in
+ * compact the tree, then the brief and log under it. One view, scrolled as one.
  */
 function agentsView(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
   if (state.style === 'rich') return richRows(input,state,width,now,spaced);
@@ -848,7 +857,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     // The keys as the current layout has them: cards in rich, the tree in compact.
     const help = [rich ? '1 Cards  2 Worktrees' : '1 Agents  2 Worktrees','3 Changes  4 Inspector','5 Timeline','x close pane  - fold','2–5 open a pane','Tab next visible pane','j/k select  o switch','g/G first / last','PgUp/PgDn or wheel scroll',
       ...(rich ? ['e or Space open / close card','Click card: select','Click its name: switch','Click top rule or ▾: open'] : []),
-      'h/l fold / unfold agent','f or / filter  s order',...(rich ? [] : ['Click agent: switch']),'m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief','r fold / unfold recap','y copy recap to tmux',...(rich ? [] : ['Click a log line: select agent']),'✓ = turn completed','? = no status evidence','! = needs a look',
+      'h/l fold / unfold agent','f or / filter  s order',...(rich ? [] : ['Click agent: switch']),'m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief',rich ? 'r status card: min / status / full' : 'r status card: min / status',...(rich ? ['Wheel over the card: its brief'] : []),'Click the card\'s top edge: same as r',...(rich ? [] : ['Click a log line: select agent']),'✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary']
       .map(line=>t(line))
       .concat(t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
@@ -872,15 +881,10 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const now = input.nowMs ?? Date.now();
   const notice = input.notice || input.error;
   const noticeRows = notice && height >= 6 ? wrapped(notice,Math.max(1,width-2)).slice(0,2) : [];
-  // The status card takes the foot of the panel when it is tall enough to
-  // keep the agents in view as well; a shorter panel gets fewer of its rows.
-  // Under 24 columns the frame would cost more than it holds: no card.
-  const cardRows = width >= 24 ? (height >= 24 ? 5 : height >= 18 ? 4 : height >= 13 ? 2 : 0) : 0;
-  const card = cardRows && input.status ? input.status(width-4,cardRows) : null;
-  const status = card?.rows.slice(0,cardRows) ?? [];
-  // The card is its rows plus a top and bottom edge; the top edge carries the
-  // key hint, so it replaces the hint's own line.
-  const footRows = status.length ? status.length+2 : 1;
+  // The status card takes the foot, at the level chosen, at most about half
+  // the panel; it replaces the key hint's own line.
+  const footPlan = planFoot(input,state,width,height,now,noticeRows.length);
+  const footRows = footPlan.rows;
   let budget = Math.max(0,height-1-footRows-noticeRows.length);
   const ids = MONITOR_PANES.filter(id=>(id==='agents' || state.modes[id] !== 'closed') && (!state.zoom || id===state.focus));
   // Agents is the page, not one box among several: no frame, no title, and
@@ -968,19 +972,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const foot = height-footRows;
   if(input.art) placeArt(frame.lines,foot-noticeRows.length,width,input.art);
   for(let i=0;i<noticeRows.length;i++) frame.lines[foot-noticeRows.length+i]=theme.warning(fit(noticeRows[i],width));
-  if(card && status.length) {
-    const title = colors.dim(` ${t('Status')} `);
-    const top = cardEdge('╭','╮',width,card.top ? `${title}${card.top} ` : title,title,
-      [` ${t(', Settings  ? keys')} `,` ${t(', ?')} `]);
-    frame.lines[foot]=top.line;
-    // The whole hint opens settings; `?` works from the keyboard.
-    if(top.right) frame.controls.push({kind:'settings',x:top.right.x+1,y:foot,width:visualLength(top.right.text)-2});
-    status.forEach((line,i)=>{frame.lines[foot+1+i]=colors.dim('│ ')+fit(line,width-4)+colors.dim(' │');});
-    frame.lines[foot+status.length+1]=cardEdge('╰','╯',width,card.bottom ? ` ${card.bottom} ` : '','',card.bottomRight ? [` ${card.bottomRight} `] : [],true).line;
-  } else if(height>1) {
-    frame.lines[foot]=colors.dim(truncateAnsi(t(width<24 ? ', Settings  ?' : ', Settings  ? keys  1–5'),width));
-    frame.controls.push({kind:'settings',x:0,y:foot,width:Math.min(width,12)});
-  }
+  footPlan.draw(frame,foot);
   return frame;
 }
 
@@ -1011,7 +1003,7 @@ function placeArt(lines: string[], end: number, width: number, art: NonNullable<
  * text is cut to fit instead of falling back. The frame is muted; what rides
  * on it keeps its own colours.
  */
-function cardEdge(open: string, close: string, width: number, left: string, fallback: string, rights: string[], squeeze = false):
+export function cardEdge(open: string, close: string, width: number, left: string, fallback: string, rights: string[], squeeze = false):
   {line: string; right?: {x: number; text: string}} {
   const room = width-4;
   // The left text matters more: every right text is tried with it before
@@ -1074,8 +1066,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(control?.kind==='main') return result({type:'switch',id:ctx.tree.rootId});
     if(control?.kind==='settings') return result({type:'settings'});
     if(control?.kind==='brief') return result({type:'brief-toggle'});
-    if(control?.kind==='recap') return result({type:'recap-fold'});
-    if(control?.kind==='copy') return result({type:'recap-copy'});
+    if(control?.kind==='level'){next.statusLevel=nextLevel(next);next.statusScroll=0;return result({type:'status-level'});}
     // What was clicked is in view already: selecting it does not scroll.
     const pick=(id: string)=>{next.tree.selectedId=id;next.preview='agent';next.scroll.details=0;next.revealed=id;next.focus='agents';};
     if(control?.kind==='log'&&control.item){pick(control.item);return result();}
@@ -1088,6 +1079,12 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       const page=Math.max(1,(pane?.visible??1)-(pane?.pinned??0));
       const end=pane?pane.offset+(pane.visible??0)>=pane.contentLength:true;
       next.scroll.agents=end?0:next.scroll.agents+page;return result();
+    }
+    // The wheel over the status card scrolls its brief, the rows above it stay.
+    const card=ctx.frame?.statusCard;
+    if(input.button!=='left'&&card&&input.y>=card.y&&input.y<card.y+card.height) {
+      if(card.total>card.brief) next.statusScroll=Math.max(0,Math.min(card.total-card.brief,(next.statusScroll??0)+(input.button==='wheel-down'?WHEEL_ROWS:-WHEEL_ROWS)));
+      return result();
     }
     if(control?.pane) {
       next.focus=control.pane;
@@ -1123,9 +1120,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   }
   if(key==='settings')return result({type:'settings'});
   if(key==='brief-toggle')return result({type:'brief-toggle'});
-  // `r` is Reset on the settings page; here it folds the recap.
-  if(key==='reset')return result({type:'recap-fold'});
-  if(key==='copy')return result({type:'recap-copy'});
+  // `r` is Reset on the settings page; here it changes how much the status card shows.
+  if(key==='reset'){next.statusLevel=nextLevel(next);next.statusScroll=0;return result({type:'status-level'});}
   if(key==='main')return result({type:'switch',id:ctx.tree.rootId});
   if(key==='open-session')return next.focus==='agents'&&next.tree.selectedId?result({type:'switch',id:next.tree.selectedId}):result();
   if(key==='expand'){if(next.style==='rich'&&next.tree.selectedId){next=toggleCard(next,next.tree.selectedId);next.focus='agents';next.revealed=null;}}

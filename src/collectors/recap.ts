@@ -209,16 +209,6 @@ export function parseRecapPart(value: unknown): RecapPart | null {
   };
 }
 
-/** The recap as plain text, for pasting somewhere else. Labels come with their colon, in the reader's language. */
-export function recapPlainText(recap: RecapPart, labels: { goal: string; done: string; now: string; needs: string }): string {
-  return [
-    `${labels.goal} ${recap.goal}`,
-    ...(recap.done.length ? [labels.done, ...recap.done.map(item => `- ${item}`)] : []),
-    `${labels.now} ${recap.now}`,
-    ...(recap.needs ? [`${labels.needs} ${recap.needs}`] : []),
-  ].join('\n');
-}
-
 /** A stored recap, if the file holds one; anything else reads as none. */
 export function parseStoredRecap(raw: unknown): Recap | null {
   const part = parseRecapPart(raw);

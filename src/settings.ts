@@ -68,8 +68,13 @@ export interface HudSettings extends HudDisplayConfig {
   recapFloorMs: number;
   /** Show each agent's log under the tree even with the model backend off (observed entries only). */
   agentLog: boolean;
-  /** The recap in the panel shows its goal line only. */
-  recapFolded: boolean;
+  /**
+   * How much the status card at the foot of the panel shows: `min`, its top
+   * edge alone, the session's state on it; `status`, the bar's fields;
+   * `full`, those and the main session's brief under them (rich only:
+   * compact shows the brief above).
+   */
+  statusCard: 'min' | 'status' | 'full';
   /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
   modelCallsPerHour: number;
   /** A finished agent's final answer in three lines; sends the answer (head and tail when long). */
@@ -106,7 +111,7 @@ export function defaultSettings(): HudSettings {
     agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
     worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-    briefAgents: true, briefMain: false, recapFloorMs: 900_000, recapFolded: false, modelCallsPerHour: 60,
+    briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
     agentLog: false, notify: false, notifyDesktop: false,
     resultDigest: false, agentLabels: false, failureCause: false, changeSummary: false, approvalDescription: false,
     art: 'off', artImage: '',
@@ -154,7 +159,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   briefAgents: isBoolean,
   briefMain: isBoolean,
   recapFloorMs: (value) => isIntegerBetween(value, 60_000, 7_200_000),
-  recapFolded: isBoolean,
+  statusCard: oneOf('min', 'status', 'full'),
   agentLog: isBoolean,
   notify: isBoolean,
   notifyDesktop: isBoolean,

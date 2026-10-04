@@ -19,15 +19,14 @@ import { fileSignature } from './utils/file-signature.js';
 import { readAgentContextUsage } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
 import { SmallModel } from './collectors/small-model.js';
-import { RecapStore, recapPlainText } from './collectors/recap.js';
+import { RecapStore } from './collectors/recap.js';
 import { AgentLog } from './collectors/agent-log.js';
 import { ModelJobs, NO_JOBS, type JobSwitches } from './collectors/model-jobs.js';
 import { WorkbenchHistory } from './collectors/workbench-events.js';
 import type { WorkbenchEvent } from './render/workbench-state.js';
 import { getHudHome } from './utils/codex-path.js';
-import { copyToTmuxBuffer } from './utils/tmux-copy.js';
 import { HudStatus } from './collectors/hud-status.js';
-import { statusCard } from './render/status-block.js';
+import { statusCard, sessionState } from './render/status-block.js';
 import { artSize, renderArt, type ArtBitmap } from './render/art.js';
 import { loadArtImage } from './collectors/art-image.js';
 import { t, setLanguage, resolveLanguage } from './render/i18n.js';
@@ -81,6 +80,7 @@ async function runLivePage(): Promise<void> {
     next.tree.lingerMs = settings.finishedLingerMs;
     next.modes = monitorModes(settings);
     next.style = settings.panelStyle;
+    next.statusLevel = settings.statusCard;
     return next;
   };
   let state = configuredState();
@@ -192,11 +192,11 @@ async function runLivePage(): Promise<void> {
       } else {
       const width = process.stdout.columns || 30;
       frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,
-        brief:briefCommand() === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused,recapFolded:settings.recapFolded},
+        brief:briefCommand() === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused},
         agentLog:settings.briefing !== 'off' || settings.agentLog ? agentLog.snapshot() : undefined,timeline:jobs.withCauses(timeline),
         notes:{approval:switches().approvalDescription ? jobs.approvalNote(main?.pendingApproval) : undefined,
           changes:switches().changeSummary ? jobs.changeNote(git) : undefined},
-        status:(rowWidth,maxRows)=>statusCard(hudStatus.current(),rowWidth,maxRows),width,height:process.stdout.rows || 24});
+        status:(rowWidth,maxRows)=>statusCard(hudStatus.current(),rowWidth,maxRows),session:nowMs=>sessionState(hudStatus.current(),nowMs),width,height:process.stdout.rows || 24});
       state = frame.state;
       lines = frame.lines;
       }
@@ -442,7 +442,7 @@ async function runLivePage(): Promise<void> {
             armCollect();
             loadArt();
             state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
-              style:settings.panelStyle,scroll:{...state.scroll,agents:0},revealed:null};
+              style:settings.panelStyle,statusLevel:settings.statusCard,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
             git=null;diff=undefined;diffKey='';void refreshGit();
             settingsPage.message = t('Saved');
             settingsPage.original = {...settings};
@@ -470,18 +470,9 @@ async function runLivePage(): Promise<void> {
           else { updateBriefer(true); jobs.stop(); }
         } catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
       }
-      if (result.action?.type === 'recap-fold' && briefer.current().recap) {
-        try { settings = saveSettings({recapFolded:!settings.recapFolded}); }
+      if (result.action?.type === 'status-level' && state.statusLevel) {
+        try { settings = saveSettings({statusCard:state.statusLevel}); }
         catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
-      }
-      if (result.action?.type === 'recap-copy') {
-        // The tmux paste buffer only: nothing is typed into the Codex pane.
-        const recap = briefCommand() === 'off' ? undefined : briefer.current().recap;
-        if (!recap) flash(t('No recap to copy yet'));
-        else {
-          const text = recapPlainText(recap,{goal:t('Goal:'),done:t('Done:'),now:t('Now:'),needs:t('Needs:')});
-          copyToTmuxBuffer(text).then(()=>flash(t('Recap copied to the tmux buffer')),err=>flash(t('Copy failed: {reason}',{reason:String((err as Error)?.message ?? err)})));
-        }
       }
       if (result.action?.type === 'settings') {
         settingsPage={draft:{...settings,...monitorPreferences(state),sort:state.tree.sort??'active'},selected:0,offset:0,message:''};

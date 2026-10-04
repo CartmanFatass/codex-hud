@@ -51,6 +51,39 @@ function alertLabel(label: string): string {
   return t(label);
 }
 
+const SESSION_STATES = {
+  working: ['▸', 'Working', theme.info],
+  idle: ['✓', 'Idle', theme.success],
+  interrupted: ['■', 'Interrupted', theme.warning],
+  error: ['✗', 'Failed', theme.error],
+  stale: ['?', 'Sync delayed', theme.warning],
+} as const;
+
+/**
+ * What the main session is doing, in the card's own words, for the card's
+ * one-line form: an approval or input it waits on, with how long it has
+ * waited, wins; otherwise its state, with the turn's length while it works.
+ * `attention` is true while it waits on the person, `failed` while a tool or
+ * an agent has failed. Null when nothing has
+ * been read. `short` is the same without its glyph, for a tight line.
+ */
+export function sessionState(data: HudData | null, nowMs: number = Date.now()): { text: string; short: string; attention: boolean; failed: boolean } | null {
+  if (!data) return null;
+  const items = collectAttention(data, nowMs);
+  const waiting = items.find((item) => item.kind === 'approval');
+  const failed = items.some((item) => item.severity === 'error');
+  if (waiting) {
+    const words = `${alertLabel(waiting.label)}${waiting.since ? ` ${waitedText(waiting.since, nowMs)}` : ''}`;
+    return { text: theme.warning(`! ${words}`), short: theme.warning(words), attention: true, failed };
+  }
+  const status = data.stale ? 'stale' : data.activity?.state;
+  if (!status) return null;
+  const [glyph, word, paint] = SESSION_STATES[status];
+  const started = status === 'working' ? data.activity?.turnStartedAt : undefined;
+  const words = `${paint(t(word))}${started ? colors.dim(` ${formatElapsedShort(started, nowMs)}`) : ''}`;
+  return { text: `${paint(glyph)} ${words}`, short: words, attention: false, failed };
+}
+
 export function statusCard(data: HudData | null, width: number, maxRows: number, nowMs: number = Date.now()): StatusCard | null {
   if (!data || width < 12 || maxRows <= 0) return null;
   const glyphs = displayConfig().glyphs;
@@ -74,13 +107,7 @@ export function statusCard(data: HudData | null, width: number, maxRows: number,
 
   const status = data.stale ? 'stale' : data.activity?.state;
   if (status) {
-    const [glyph, word, paint] = {
-      working: ['▸', 'Working', theme.info],
-      idle: ['✓', 'Idle', theme.success],
-      interrupted: ['■', 'Interrupted', theme.warning],
-      error: ['✗', 'Failed', theme.error],
-      stale: ['?', 'Sync delayed', theme.warning],
-    }[status] as [string, string, (text: string) => string];
+    const [glyph, word, paint] = SESSION_STATES[status];
     let left = `${paint(glyph)} ${t(word)}`;
     if (status === 'working') {
       const running = [...(data.toolActivity?.recentCalls ?? [])].reverse().find((call) => call.status === 'running');
