@@ -39,6 +39,8 @@ export interface Recap extends RecapPart {
   /** What the material looked like when it was written, so a new panel knows what is news. */
   fingerprint?: string;
   floorFingerprint?: string;
+  /** The brief's line on the subagents from the same run, so a new panel has it without asking again. */
+  overall?: string;
 }
 
 const MAX_DONE = 4;
@@ -221,11 +223,12 @@ export function recapPlainText(recap: RecapPart, labels: { goal: string; done: s
 export function parseStoredRecap(raw: unknown): Recap | null {
   const part = parseRecapPart(raw);
   if (!part) return null;
-  const { at, coveredUntil, sessionId, language, fingerprint, floorFingerprint } = raw as Record<string, unknown>;
+  const { at, coveredUntil, sessionId, language, fingerprint, floorFingerprint, overall } = raw as Record<string, unknown>;
   if (typeof at !== 'number' || !Number.isFinite(at) || typeof coveredUntil !== 'number' || !Number.isFinite(coveredUntil)
     || typeof sessionId !== 'string' || (language !== 'en' && language !== 'zh')) return null;
   return { ...part, at, coveredUntil, sessionId, language,
-    ...(typeof fingerprint === 'string' ? { fingerprint } : {}), ...(typeof floorFingerprint === 'string' ? { floorFingerprint } : {}) };
+    ...(typeof fingerprint === 'string' ? { fingerprint } : {}), ...(typeof floorFingerprint === 'string' ? { floorFingerprint } : {}),
+    ...(typeof overall === 'string' && overall ? { overall } : {}) };
 }
 
 /**

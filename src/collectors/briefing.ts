@@ -375,13 +375,16 @@ export class Briefer {
       const stored = this.store?.load(this.rootId) ?? null;
       if (stored && (!this.recap || stored.at > this.recap.at)) {
         this.recap = stored;
-        // Opening the panel again is not news. With the recap alone on
-        // screen, carry on from where it was written rather than paying for
-        // the same recap again; `both` still needs a run for its agents part.
-        if (scope === 'main' && !this.handle && stored.fingerprint !== undefined) {
+        // Opening the panel again is not news: carry on from where the
+        // recap was written rather than paying for the same run again. The
+        // fingerprint names the scope and language, so a change of either
+        // still asks. The agents' notes are in their log; the line on them
+        // as a whole comes back with the recap.
+        if (!this.handle && stored.fingerprint !== undefined) {
           this.lastFingerprint = stored.fingerprint;
           this.lastFloorFingerprint = stored.floorFingerprint ?? '';
           this.lastStart = Math.max(this.lastStart, Math.min(stored.at, now));
+          if (stored.overall && !this.brief.overall) this.brief = { ...this.brief, overall: stored.overall, structured: true, at: stored.at };
         }
         this.onChange();
       }
@@ -489,7 +492,7 @@ export class Briefer {
         // Covered up to the newest entry this run saw; a reply without a
         // recap leaves the previous one, and what it covered, as it was.
         this.recap = { ...main, at: Date.now(), coveredUntil: newestAt ?? this.recap?.coveredUntil ?? 0, sessionId: rootId, language,
-          ...fingerprints };
+          ...fingerprints, ...('overall' in parsed && parsed.overall ? { overall: parsed.overall } : {}) };
         try { this.store?.save(this.recap); } catch { /* shown all the same; saved next time */ }
       }
       this.onChange();

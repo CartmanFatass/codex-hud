@@ -275,6 +275,31 @@ test('a stored recap is shown when the panel opens, and with scope main it is no
   assert.match(second.asked[0].prompt, /"goal":"Fix the bug"/, 'with the old one as the starting point');
 });
 
+test('with scope both, opening the panel again is not paid for either, and the line on the agents comes back', async (t: TestContext) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-recap-both-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const main = mainResult({ transcript: [entry('user', 'prompt', 'Go', -10)], lastUserMessageAt: at(-10) });
+  const ctx = { scope: 'both' as const, main, floorMs: 900_000 };
+  const agents = tree([node('a', 'reader', 'running', { lastReport: { text: 'r', kind: 'update', at: at(0) } })]);
+  const reply = REPLY.replace('"overall":""', '"overall":"one reading"');
+  const first = fakeModel(reply);
+  const before = new Briefer(() => {}, { model: first.model, store: new RecapStore(dir) });
+  before.update(agents, 'omp', 60_000, 'en', now, false, ctx);
+  await settle();
+  assert.equal(first.asked.filter(request => request.feature === 'recap').length, 1);
+  const second = fakeModel(reply);
+  const after = new Briefer(() => {}, { model: second.model, store: new RecapStore(dir) });
+  after.update(agents, 'omp', 60_000, 'en', now + 3_600_000, false, ctx);
+  await settle();
+  assert.equal(second.asked.filter(request => request.feature === 'recap').length, 0, 'nothing changed since it was written');
+  assert.equal(after.current().recap?.goal, 'Fix the bug');
+  assert.equal(after.current().overall, 'one reading');
+  const moved = tree([node('a', 'reader', 'completed', { lastReport: { text: 'r2', kind: 'reply', at: at(3_000) } })]);
+  after.update(moved, 'omp', 60_000, 'en', now + 3_700_000, false, ctx);
+  await settle();
+  assert.equal(second.asked.filter(request => request.feature === 'recap').length, 1, 'news since then is still asked about');
+});
+
 const recapView: Recap = { goal: 'Fix the flaky cache test in the parser', done: ['Reproduced the failure', 'Found the race'],
   now: 'Waiting on reader agent', needs: 'Approve npm test', at: now - 5 * 60_000, coveredUntil: now, sessionId: 's', language: 'en' };
 
