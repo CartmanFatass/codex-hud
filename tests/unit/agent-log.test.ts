@@ -105,3 +105,14 @@ test('notes are asked for just the agents with news since their last note, at mo
   briefer.update(agents(third), 'omp', 300_000, 'en', now + 10_000 + 4 * NOTES_INTERVAL_MS, true);
   assert.equal(asked.length, 3, 'paused: no notes either');
 });
+
+test('the same note said again moves the one already there up to now instead of adding a copy', () => {
+  const list: AgentLogEntry[] = [];
+  appendEntries(list, [{ at: 1000, kind: 'started', text: '' }, { at: 2000, kind: 'note', text: 'Reading the parser' }]);
+  assert.equal(appendEntries(list, [{ at: 62_000, kind: 'note', text: 'Reading the parser' }]), true, 'it still counts as news: the note is as of now');
+  assert.deepEqual(list.filter(entry => entry.kind === 'note'), [{ at: 62_000, kind: 'note', text: 'Reading the parser' }]);
+  appendEntries(list, [{ at: 122_000, kind: 'note', text: 'Found the race' }]);
+  appendEntries(list, [{ at: 182_000, kind: 'note', text: 'Reading the parser' }]);
+  assert.deepEqual(list.filter(entry => entry.kind === 'note').map(entry => entry.text),
+    ['Reading the parser', 'Found the race', 'Reading the parser'], 'only a repeat of the newest note is folded');
+});

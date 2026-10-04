@@ -90,7 +90,14 @@ export function appendEntries(list: AgentLogEntry[], added: readonly AgentLogEnt
     const entry = clean(raw);
     if (!Number.isFinite(entry.at) || seen.has(key(entry))) continue;
     seen.add(key(entry));
-    list.push(entry);
+    // The model saying the same thing again is not a new entry: the one
+    // already there moves up to now, so the log does not fill with copies
+    // and the note still counts as newer than what it was written about.
+    const same = entry.kind === 'note' ? [...list].reverse().find(item => item.kind === 'note') : undefined;
+    if (same && same.text === entry.text && entry.at >= same.at) {
+      same.at = entry.at;
+      if (entry.attention) same.attention = true; else delete same.attention;
+    } else list.push(entry);
     changed = true;
   }
   if (!changed) return false;
