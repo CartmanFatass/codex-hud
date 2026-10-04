@@ -261,7 +261,7 @@ content filters and partial-clone lazy fetching. The panel provides no staging, 
 
 Settings offers four panel widths: narrow (16), auto (the original 20–30 column policy), wide (45), and wider (70). Width changes apply immediately and preserve space for the main conversation. The width is applied again whenever the tmux window changes size, as when a session started detached is attached from a wider terminal; dragging the border by hand is left alone. `CODEX_HUD_TREE_WIDTH` remains an initial override when no saved settings exist.
 
-Settings is grouped into Status bar (density, theme, model label, motion, context, bar on launch), Agents (order, hide finished) and Panel (the four panes, width, mouse, refresh). Values sit in a right-hand column; the selected one reads `‹ value ›`, and ←/→, Enter or a click change it (a click on `‹` steps back). The line under the list says what the selected setting does. Unsaved fields show `*` and the Save button lights up; Bar on launch applies from the next launch. Save persists to `$CODEX_HOME/hud-settings.json` (or `CODEX_HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Back discards unsaved edits; Reset or `r` prepares defaults for Save. Narrow views retain complete Back/Save buttons and use short labels.
+Settings is grouped into Status bar (density, theme, model label, motion, context, bar on launch), Agents (order, hide finished) and Panel (the four panes, width, mouse, refresh). Values sit in a right-hand column; the selected one reads `‹ value ›`, and ←/→, Enter or a click change it (a click on `‹` steps back). The line under the list says what the selected setting does. Unsaved fields show `*` and the Save button lights up; Bar on launch applies from the next launch. Save persists to `$CODEX_HOME/hud-settings.json` (or `CODEX_HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Back discards unsaved edits; Reset or `r` prepares defaults for Save. Narrow views retain complete Back/Save buttons and use short labels. Above the help line, one row says when the panel last read the session (`Last read 2s ago`) and, if a read has failed, where, when and why; a failure newer than the last good read is shown as a warning. That is how a quiet session and a HUD that cannot read stop looking alike, since a failed read otherwise leaves the last good values on screen.
 
 **Brief.** Agents → Brief turns on a short written account of the subagents under the tree, in the panel's language. It is written by `omp`, `agy`, or any OpenAI-compatible chat completions endpoint (`api`), at most once per Brief every, and only when an agent's status or latest update changed. `b`, or a click on the switch at the end of the Brief rule, pauses and resumes it. For `api`, set these in `hud-settings.json`:
 
@@ -333,6 +333,12 @@ with mode `0600`, only when something other than the clock changed, at most
 once a second, and it is deleted when the HUD stops: a state file for a HUD
 that is no longer running would read as live.
 
+`health` says whether the bar's own reads go through: `lastReadAt`, when the
+session lookup and rollout read last succeeded, and `lastError` (`source`,
+`message`, `at`), the most recent failed collection. Each is absent until it
+happens. Another successful read alone does not rewrite the file, so
+`lastReadAt`, like `updatedAt`, is as of the last write.
+
 ## Configuration
 
 ### Environment Variables
@@ -381,6 +387,7 @@ Settings → **Bar on launch** saves the bottom bar preference for the next new 
 | `CODEX_HUD_ALTERNATE_SCREEN` | `0` | tmux alternate-screen for codex pane |
 | `CODEX_HUD_CLEAR_SCROLLBACK` | `0` | Clear scrollback on first render |
 | `CODEX_HUD_CWD` | (unset) | Override working directory |
+| `CODEX_HUD_PROFILE` | `0` | `1` times each stage of the bar's and the panel's ticks and appends a summary per stage every 10 s to `$CODEX_HOME/hud/profile.log` |
 | `CODEX_HOME` | `~/.codex` | Codex home directory |
 | `CODEX_SESSIONS_PATH` | (unset) | Override sessions directory |
 
@@ -454,6 +461,19 @@ recorded rollouts in `tests/fixtures/rollouts`. `docs/BASELINE.md` records the
 layout and render-cost baseline those tests defend.
 
 On Windows PowerShell, use `npm.cmd run build` if `npm.ps1` is blocked by ExecutionPolicy.
+
+To see where a tick's time goes, start a session with `CODEX_HUD_PROFILE=1`.
+Both processes time their stages (`session.find`, `rollout.parse`,
+`tree.build`, `status.build`, `git`, `render`, `write`, and the whole `tick` or
+`collect`) and every 10 s append one line per stage that ran to
+`$CODEX_HOME/hud/profile.log`:
+
+```
+2026-10-04T15:27:35.725Z bar pid=144913 tick n=10 avg=2.79ms p95=5.35ms max=5.35ms
+```
+
+Nothing goes to the terminal, and with the variable unset the timers cost a
+null check. The log starts over past 4 MiB, keeping one `.old` copy.
 
 ## Changelog
 

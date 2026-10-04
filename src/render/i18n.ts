@@ -183,6 +183,15 @@ const ZH: Record<string, string> = {
   'Save failed: {reason}': '保存失败：{reason}',
   'Defaults ready; Save to apply': '已恢复默认值，保存后生效',
 
+  // Settings page: whether the panel's reads go through
+  'Last read {age} ago': '上次读取 {age}前',
+  'No read yet': '尚未读取',
+  '{source} failed {age} ago: {reason}': '{source}失败（{age}前）：{reason}',
+  'Session lookup': '查找会话',
+  'Session read': '读取会话',
+  'Agent tree': 'Agent 树',
+  'Git': 'Git',
+
   // Settings page frame
   '[Back]': '[返回]',
   '[Save]': '[保存]',

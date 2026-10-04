@@ -17,7 +17,7 @@ import * as path from 'node:path';
 import { collectAttention } from './render/attention.js';
 import { readQuotaWindows } from './render/quota.js';
 import { summarizeSubagents } from './collectors/subagent-tree.js';
-import { getCodexHome } from './utils/codex-path.js';
+import { getCodexHome, getHudHome } from './utils/codex-path.js';
 import type { BarSegment, VariantLevel } from './render/layout/engine.js';
 import type { HudData, SubagentTreeNode } from './types.js';
 
@@ -58,6 +58,11 @@ export interface HudSnapshot {
   };
   attention: Array<{ kind: string; label: string; severity: string }>;
   bar: { width: number; segments: SnapshotSegment[] };
+  /**
+   * Whether the HUD's reads go through (collectors/hud-health.ts). Absent
+   * until the first read or failure; each half is absent until it happens.
+   */
+  health?: { lastReadAt?: string; lastError?: { source: string; message: string; at: string } };
 }
 
 function flattenAgents(nodes: SubagentTreeNode[], out: SnapshotAgentNode[] = []): SnapshotAgentNode[] {
@@ -162,6 +167,18 @@ export function buildSnapshot(
     };
   }
 
+  const health = data.health;
+  const lastReadAt = iso(health?.lastReadAt);
+  const errorAt = iso(health?.lastError?.at);
+  if (lastReadAt || (health?.lastError && errorAt)) {
+    snapshot.health = {
+      ...(lastReadAt ? { lastReadAt } : {}),
+      ...(health?.lastError && errorAt
+        ? { lastError: { source: health.lastError.source, message: health.lastError.message, at: errorAt } }
+        : {}),
+    };
+  }
+
   if (usage) {
     snapshot.tokens = {
       total: usage.total_tokens ?? 0,
@@ -170,6 +187,11 @@ export function buildSnapshot(
   }
 
   return snapshot;
+}
+
+function snapshotHealthSignature(health: HudSnapshot['health']): unknown {
+  if (!health) return undefined;
+  return { read: Boolean(health.lastReadAt), lastError: health.lastError };
 }
 
 /**
@@ -183,7 +205,7 @@ export function snapshotFileName(sessionName: string): string {
 }
 
 export function snapshotDirectory(codexHome: string = getCodexHome()): string {
-  return path.join(codexHome, 'hud', 'state');
+  return path.join(getHudHome(codexHome), 'state');
 }
 
 export function snapshotPath(env: NodeJS.ProcessEnv = process.env, pid: number = process.pid): string {
@@ -223,8 +245,9 @@ export class SnapshotWriter {
   write(snapshot: HudSnapshot, nowMs: number = Date.now()): boolean {
     const body = JSON.stringify(snapshot, null, 2);
     // The timestamp moves every tick by construction, so it cannot be part of
-    // the question "did anything change?".
-    const signature = JSON.stringify({ ...snapshot, updatedAt: '' });
+    // the question "did anything change?". Nor can the last successful read,
+    // which moves with it: like `updatedAt`, it is as of the last write.
+    const signature = JSON.stringify({ ...snapshot, updatedAt: '', health: snapshotHealthSignature(snapshot.health) });
     if (signature === this.signature || nowMs - this.lastWriteAt < MIN_WRITE_INTERVAL_MS) {
       return false;
     }

@@ -8,6 +8,7 @@ import type { HudData, RenderOptions, LayoutConfig, LayoutMode } from '../types.
 import { renderHud, fitStatusBar } from './header.js';
 import type { FitResult } from './layout/engine.js';
 import { colors, truncateAnsi } from './colors.js';
+import { time } from '../utils/profile.js';
 
 // ANSI escape codes for cursor/screen control
 const CURSOR_HOME = '\x1b[H';
@@ -257,11 +258,16 @@ export function renderSingleLine(data: HudData): string {
  * Used when running in a tmux pane
  */
 export function renderToStdout(data: HudData, heightOverride?: number): void {
+  const frame = time('render', () => composeStdoutFrame(data, heightOverride));
+  if (frame) time('write', () => writeStdoutFrame(frame));
+}
+
+/** The frame to draw, or null when it is the one already on screen. */
+function composeStdoutFrame(data: HudData, heightOverride?: number): { lines: string[]; maxLines: number; isFirstRender: boolean } | null {
   const width = getTerminalWidth();
   const height = Math.max(1, heightOverride ?? 1);
   const layout = createDefaultLayout(width, height);
-  const clearScrollback = process.env.CODEX_HUD_CLEAR_SCROLLBACK === '1';
-  
+
   const options: RenderOptions = {
     width,
     showDetails: height >= 2,
@@ -274,12 +280,16 @@ export function renderToStdout(data: HudData, heightOverride?: number): void {
 
   const frame = `${width}x${maxLines}\n${lines.join('\n')}`;
   if (frame === lastStdoutFrame) {
-    return;
+    return null;
   }
 
   const isFirstRender = lastStdoutFrame === null;
   lastStdoutFrame = frame;
+  return { lines, maxLines, isFirstRender };
+}
 
+function writeStdoutFrame({ lines, maxLines, isFirstRender }: { lines: string[]; maxLines: number; isFirstRender: boolean }): void {
+  const clearScrollback = process.env.CODEX_HUD_CLEAR_SCROLLBACK === '1';
   // Clear once on first render so the top line reliably appears in new panes.
   const clearPrefix = (isFirstRender && clearScrollback ? CLEAR_SCROLLBACK : '') + (isFirstRender ? CLEAR_SCREEN : '') + CURSOR_HOME;
   process.stdout.write(clearPrefix);

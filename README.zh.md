@@ -212,7 +212,7 @@ Changes 属于选中的 worktree，不推断某个文件由哪个 agent 修改�
 
 Settings 提供四档宽度：窄（16 列）、auto（沿用原来的 20–30 列策略）、宽（45 列）、更宽（70 列）。保存后立即调整，并为主对话区保留空间。tmux 窗口尺寸变化时（例如在后台创建的会话从更宽的终端接入）会重新套用宽度；手动拖动边框则保持不变。没有保存过设置时，仍支持 `CODEX_HUD_TREE_WIDTH` 指定初始宽度。
 
-独立设置页分为 Status bar（密度、主题、模型标签、动画、上下文口径、启动时的底栏）、Agents（排序、收起已完成代理）和 Panel（四个区域、宽度、鼠标、刷新间隔）三组。取值在右侧对齐；选中项显示为 `‹ 取值 ›`，←/→、Enter 或点击即可修改（点击 `‹` 向回切换）。列表下方一行说明选中设置的作用。未保存字段带 `*`，Save 按钮随之高亮；Bar on launch 在下次启动时生效。Save 写入 `$CODEX_HOME/hud-settings.json`（可用 `CODEX_HUD_SETTINGS_PATH` 改路径），紧凑 HUD 下次刷新时同步显示偏好。已保存设置优先于环境默认值，`NO_COLOR` 始终优先。Back 放弃未保存修改；Reset 或 `r` 恢复默认草稿，需 Save 才应用。窄屏保留完整 Back/Save 按钮，使用短标签。
+独立设置页分为 Status bar（密度、主题、模型标签、动画、上下文口径、启动时的底栏）、Agents（排序、收起已完成代理）和 Panel（四个区域、宽度、鼠标、刷新间隔）三组。取值在右侧对齐；选中项显示为 `‹ 取值 ›`，←/→、Enter 或点击即可修改（点击 `‹` 向回切换）。列表下方一行说明选中设置的作用。未保存字段带 `*`，Save 按钮随之高亮；Bar on launch 在下次启动时生效。Save 写入 `$CODEX_HOME/hud-settings.json`（可用 `CODEX_HUD_SETTINGS_PATH` 改路径），紧凑 HUD 下次刷新时同步显示偏好。已保存设置优先于环境默认值，`NO_COLOR` 始终优先。Back 放弃未保存修改；Reset 或 `r` 恢复默认草稿，需 Save 才应用。窄屏保留完整 Back/Save 按钮，使用短标签。说明行上方有一行显示侧栏上次读取会话的时间（`上次读取 2s前`）；如果读取失败过，还会写出失败的环节、时间和原因，失败比上次成功读取更新时以警告色显示。读取失败时屏幕上保留的是上次的好数据，有了这一行，“会话很安静”和“HUD 读不到”才不会看起来一样。
 
 **简报。** Agents → 简报会在 tree 下方给出 subagent 的简短文字概况，语言跟随面板语言。可以由 `omp`、`agy` 或任意 OpenAI 兼容的 chat completions 接口（`api`）生成；最多每个「简报间隔」一次，并且只在某个 agent 的状态或最新说明变化时才调用。按 `b` 或点击简报标题右端的开关可以暂停和继续。使用 `api` 时在 `hud-settings.json` 里设置：
 
@@ -278,6 +278,10 @@ codex-hud --json | jq '.context.percent, .agents.active, .attention[].label'
 只在时钟之外确有变化时才写，且每秒至多一次；HUD 退出时删除——
 一个已经停止的 HUD 留下的状态文件，看起来会像还活着。
 
+`health` 说明状态栏自己的读取是否顺利：`lastReadAt` 是会话查找和 rollout 读取上次成功的时间，
+`lastError`（`source`、`message`、`at`）是最近一次失败的采集。两者在发生之前都不出现。
+单纯又一次成功读取不会触发重写，所以 `lastReadAt` 和 `updatedAt` 一样，是“截至上次写入”的值。
+
 ## 配置
 
 ### 环境变量
@@ -326,6 +330,7 @@ CODEX_HUD_GLYPHS=glyph CODEX_HUD_THEME=mocha codex
 | `CODEX_HUD_ALTERNATE_SCREEN` | `0` | codex pane 的 tmux alternate-screen |
 | `CODEX_HUD_CLEAR_SCROLLBACK` | `0` | 首次渲染时清理 scrollback |
 | `CODEX_HUD_CWD` | （未设置） | 覆盖工作目录 |
+| `CODEX_HUD_PROFILE` | `0` | 设为 `1` 时为状态栏和侧栏每次刷新的各阶段计时，每 10 秒按阶段追加一行汇总到 `$CODEX_HOME/hud/profile.log` |
 | `CODEX_HOME` | `~/.codex` | Codex home 目录 |
 | `CODEX_SESSIONS_PATH` | （未设置） | 覆盖 sessions 目录 |
 
@@ -385,6 +390,16 @@ node dist/index.js             # 直接运行 HUD
 ```
 
 在 Windows PowerShell 中，如果 `npm.ps1` 被 ExecutionPolicy 阻止，请使用 `npm.cmd run build`。
+
+想知道每次刷新的时间花在哪里，用 `CODEX_HUD_PROFILE=1` 启动会话。两个进程都会为各阶段计时
+（`session.find`、`rollout.parse`、`tree.build`、`status.build`、`git`、`render`、`write`，
+以及整个 `tick` 或 `collect`），每 10 秒为运行过的每个阶段向 `$CODEX_HOME/hud/profile.log` 追加一行：
+
+```
+2026-10-04T15:27:35.725Z bar pid=144913 tick n=10 avg=2.79ms p95=5.35ms max=5.35ms
+```
+
+不会输出到终端；未设置该变量时，计时只是一次空值检查。日志超过 4 MiB 后重新开始，保留一份 `.old`。
 
 ## 更新日志
 

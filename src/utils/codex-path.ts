@@ -86,3 +86,13 @@ export function getSessionsDir(): string {
 
   return sessionsDir;
 }
+
+/**
+ * Where the HUD keeps what it writes for itself: the state snapshots
+ * (`state/`), the profile log, and anything else that belongs to the HUD
+ * rather than to Codex. One folder under the Codex home, so a second account
+ * (another CODEX_HOME) keeps its own.
+ */
+export function getHudHome(codexHome: string = getCodexHome()): string {
+  return path.join(codexHome, 'hud');
+}

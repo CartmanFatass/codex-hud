@@ -17,9 +17,8 @@ import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer, currentStatusBar } from './render/index.js';
 import { colors } from './render/colors.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
-import { displayConfig } from './render/hud-config.js';
-import { hasFreshComm } from './render/subagent-chip.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
+import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
 import type { RolloutParseResult } from './collectors/rollout.js';
 import type { HudData } from './types.js';
 
@@ -129,7 +128,8 @@ async function collectData(): Promise<HudData> {
   // Check for active session
   let session = sessionFinder.getCurrentSession();
   let stale = false;
-  try { session = sessionFinder.check(); } catch { stale = true; }
+  const health = hudStatus.health;
+  try { session = sessionFinder.check(); } catch (error) { stale = true; health.fail('session', error); }
 
   // Re-parse the current rollout only when the file actually moved. The parser
   // is incremental, but reaching that conclusion still costs an open, a read
@@ -138,8 +138,11 @@ async function collectData(): Promise<HudData> {
   // missed (always, on Windows, where watches are unreliable).
   let rolloutData = rolloutParser.getCached();
   if (session) {
-    try { rolloutData = await parseRolloutIfChanged(session.path); } catch { stale = true; }
+    try { rolloutData = await parseRolloutIfChanged(session.path); } catch (error) { stale = true; health.fail('rollout', error); }
   }
+  // No session is a successful read too: there is nothing to show, and the
+  // HUD could tell.
+  if (!stale) health.read();
 
   const hudData = hudStatus.build({
     rollout: rolloutData,
@@ -152,79 +155,34 @@ async function collectData(): Promise<HudData> {
 }
 
 // Compact HUD is always a single identity line. Subagents live in the tree panel.
-const HUD_PANE_MIN_HEIGHT = 1;
-const HUD_PANE_MAX_HEIGHT = 1;
-const HUD_FAST_RENDER_MS = 250;
-let lastPaneHeight = HUD_PANE_MIN_HEIGHT;
-let lastPaneResizeAt = 0;
-let paneResizeCooldownUntil = 0;
-
-function targetHudPaneHeight(_data: HudData): number {
-  return HUD_PANE_MIN_HEIGHT;
-}
-
-function maybeResizeHudPane(desiredHeight: number): void {
-  if (!process.env.TMUX || !process.env.TMUX_PANE) {
-    return;
-  }
-  if (Date.now() < paneResizeCooldownUntil) {
-    return;
-  }
-  const now = Date.now();
-  // Client-attached hooks reset the pane to the wrapper's fixed height, so
-  // re-assert taller panes periodically.
-  const needsReassert = desiredHeight > HUD_PANE_MIN_HEIGHT && now - lastPaneResizeAt > 10_000;
-  if (desiredHeight === lastPaneHeight && !needsReassert) {
-    return;
-  }
-  const previousHeight = lastPaneHeight;
-  lastPaneHeight = desiredHeight;
-  lastPaneResizeAt = now;
-  try {
-    const child = spawn('tmux', ['resize-pane', '-t', process.env.TMUX_PANE, '-y', String(desiredHeight)], {
-      stdio: 'ignore',
-    });
-    // Spawn failures surface asynchronously; without this handler they would
-    // crash the HUD instead of being a best-effort resize.
-    child.on('error', () => {
-      lastPaneHeight = previousHeight;
-      // Back off instead of hot-looping a failing spawn every tick.
-      paneResizeCooldownUntil = Date.now() + 30_000;
-    });
-    child.unref();
-  } catch {
-    // pane resizing is best-effort
-  }
-}
+const HUD_PANE_HEIGHT = 1;
 
 /**
- * Main render loop. Data collection runs every second; a faster render pass
- * repaints the cached snapshot so the traffic marker animates between
- * collections. The renderer always receives the target pane height so rows
- * that disappear leave no stale output behind.
+ * Main render loop. Data collection runs every second. The renderer always
+ * receives the pane height so rows that disappear leave no stale output behind.
  */
 async function mainLoop(): Promise<void> {
   if (!isRunning) {
     return;
   }
 
-  try {
-    const data = await collectData();
-    const targetHeight = targetHudPaneHeight(data);
-    renderToStdout(data, targetHeight);
-    maybeResizeHudPane(targetHeight);
-    syncFastRenderLoop(data);
-    // Notifications and the state file run on the collection tick, not the
-    // faster repaint.
-    notifier.update(data);
+  await timeAsync('tick', async () => {
     try {
-      snapshotWriter.write(buildSnapshot(data, currentStatusBar(data)));
-    } catch {
-      // A state file nobody can write is not a reason to stop drawing.
+      const data = await collectData();
+      renderToStdout(data, HUD_PANE_HEIGHT);
+      // Notifications and the state file run on the collection tick, not on
+      // the repaint a status refresh triggers.
+      notifier.update(data);
+      try {
+        time('snapshot.write', () => snapshotWriter.write(buildSnapshot(data, currentStatusBar(data))));
+      } catch {
+        // A state file nobody can write is not a reason to stop drawing.
+      }
+    } catch (error) {
+      hudStatus.health.fail('status', error);
+      console.error('Render error:', error);
     }
-  } catch (error) {
-    console.error('Render error:', error);
-  }
+  });
 
   // Schedule next render
   setTimeout(mainLoop, REFRESH_INTERVAL);
@@ -235,52 +193,9 @@ function repaintCached(): void {
     return;
   }
   try {
-    renderToStdout(cachedHudData, targetHudPaneHeight(cachedHudData));
+    renderToStdout(cachedHudData, HUD_PANE_HEIGHT);
   } catch {
     // between-collection repaints are best-effort
-  }
-}
-
-/**
- * The traffic marker in the expanded tree rows is the only element that
- * animates, and it only exists above one row. A compact pane (the default,
- * and currently the only height) or reduced motion therefore has nothing to
- * animate, and the 250ms repaint is pure wakeup cost.
- */
-function needsAnimationFrames(data: HudData | null): boolean {
-  if (!data) {
-    return false;
-  }
-  if (displayConfig().motion === 'reduced') {
-    return false;
-  }
-  if (targetHudPaneHeight(data) <= 1) {
-    return false;
-  }
-  return (data.subagentTree?.nodes ?? []).some((node) => hasFreshComm(node));
-}
-
-let fastRenderTimer: NodeJS.Timeout | null = null;
-
-/**
- * Start or stop the between-collection repaint. Kept as a loop rather than
- * removed: the moment a subagent exchange goes live in a tall pane, the next
- * collection tick turns it back on.
- */
-function syncFastRenderLoop(data: HudData | null): void {
-  const wanted = needsAnimationFrames(data);
-  if (wanted && !fastRenderTimer) {
-    fastRenderTimer = setInterval(() => {
-      if (!isRunning || !needsAnimationFrames(cachedHudData)) {
-        return;
-      }
-      repaintCached();
-    }, HUD_FAST_RENDER_MS);
-    return;
-  }
-  if (!wanted && fastRenderTimer) {
-    clearInterval(fastRenderTimer);
-    fastRenderTimer = null;
   }
 }
 
@@ -290,10 +205,10 @@ function syncFastRenderLoop(data: HudData | null): void {
 function shutdown(): void {
   isRunning = false;
 
-  // Clean up watchers
-  syncFastRenderLoop(null);
   // A snapshot of a HUD that is no longer running would read as live.
   snapshotWriter.remove();
+  stopProfiling();
+  // Clean up watchers
   sessionFinder.stop();
   hudFileWatcher.stop().catch(() => {
     // Ignore cleanup errors
@@ -344,6 +259,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
   process.on('SIGHUP', shutdown);
+  startProfiling('bar');
 
   // Handle stdin close (tmux pane closed)
   process.stdin.on('close', shutdown);

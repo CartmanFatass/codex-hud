@@ -188,7 +188,8 @@ function flowLines(text: string, width: number): string[] {
   if (line.trim()) push();
   return lines;
 }
-function age(at: Date | undefined, now: number): string {
+/** Seconds, minutes or hours since `at`, the coarsest unit that is not zero. */
+export function age(at: Date | undefined, now: number): string {
   if (!at || !Number.isFinite(at.getTime())) return '?';
   const seconds = Math.max(0, Math.floor((now-at.getTime())/1000));
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds/60)}m` : `${Math.floor(seconds/3600)}h`;
@@ -269,6 +270,25 @@ function turnClock(node: SubagentTreeNode, now: number): string {
   const elapsed = Math.max(0,now-start);
   const glyph = TURN_CLOCKS.find(([limit]) => elapsed < limit)?.[1] ?? TURN_CLOCK_LONG;
   return isQuiet(node,now) ? theme.warning(glyph) : theme.info(glyph);
+}
+
+/** Past a clock's boundary, so the repaint lands after its second has turned. */
+const REPAINT_SLACK_MS = 20;
+
+/**
+ * How long until the panel's text next changes with no new data. Nothing in
+ * the panel animates faster than a second: its clocks and ages count whole
+ * seconds ("4m07s", "12s ago", "↺45s") and the agent rows' clock glyphs move
+ * on the quarter hour. So it repaints once a second, timed to just after the
+ * main turn clock's second turns over while a turn runs (`anchorMs`, its
+ * start: those are the digits a reader watches tick), otherwise after the
+ * wall clock's. A fixed phase also keeps a clock from skipping a second
+ * when a timer runs late.
+ */
+export function nextRepaintDelay(nowMs: number, anchorMs?: number): number {
+  const origin = anchorMs !== undefined && Number.isFinite(anchorMs) ? anchorMs : 0;
+  const into = (((nowMs - origin) % 1000) + 1000) % 1000;
+  return 1000 - into + REPAINT_SLACK_MS;
 }
 
 /**

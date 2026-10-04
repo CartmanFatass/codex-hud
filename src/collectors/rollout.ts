@@ -1,6 +1,7 @@
 import { taskText } from '../utils/task-text.js';
 import { TokenRateTracker, type TokenRateSnapshot } from './token-rate.js';
 import { sessionParentId } from '../utils/session-parent.js';
+import { timeAsync } from '../utils/profile.js';
 /**
  * Rollout file parser for extracting tool activity and plan updates
  * Parses ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl files
@@ -763,6 +764,10 @@ export class RolloutParser {
    * Parse the rollout file, reading only new content since last parse
    */
   async parse(): Promise<RolloutParseResult | null> {
+    return timeAsync('rollout.parse', () => this.parseNow());
+  }
+
+  private async parseNow(): Promise<RolloutParseResult | null> {
     if (!this.rolloutPath) {
       return null;
     }

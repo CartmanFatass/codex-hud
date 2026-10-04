@@ -18,6 +18,8 @@ import { GitTargetCache } from './git-root.js';
 import { collectProjectInfo } from './project.js';
 import { buildContextUsage } from './context-usage.js';
 import { buildSubagentTree } from './subagent-tree.js';
+import { HudHealth } from './hud-health.js';
+import { time, timeAsync } from '../utils/profile.js';
 import type { RolloutParseResult } from './rollout.js';
 import type { CodexConfig, GitStatus, HudData, ProjectInfo, SessionInfo } from '../types.js';
 
@@ -56,6 +58,8 @@ export class HudStatus {
   private gitInFlight = false;
   private readonly gitTargets = new GitTargetCache();
   private last: HudData | null = null;
+  /** Fed by the caller's collection and by the git refresh here; carried on every build. */
+  readonly health = new HudHealth();
 
   /**
    * `configMaxAgeMs` re-reads the Codex config on a timer, for a caller with
@@ -73,7 +77,11 @@ export class HudStatus {
     return this.last;
   }
 
-  build({ rollout, sessionId, stale, runtimeSession }: HudStatusInput): HudData {
+  build(input: HudStatusInput): HudData {
+    return time('status.build', () => this.buildNow(input));
+  }
+
+  private buildNow({ rollout, sessionId, stale, runtimeSession }: HudStatusInput): HudData {
     const now = Date.now();
     if (this.config === null || this.configStale || now - this.configAt >= this.configMaxAgeMs) {
       this.config = readCodexConfig();
@@ -90,8 +98,9 @@ export class HudStatus {
     const contextUsage = buildContextUsage(rollout?.tokenUsage ?? undefined, rollout?.compactCount, rollout?.lastCompactTime);
     const rootId = rollout?.session?.id ?? sessionId ?? '';
     const subagentTree = rootId
-      ? buildSubagentTree(rootId, rollout?.subagents ?? [])
+      ? time('tree.build', () => buildSubagentTree(rootId, rollout?.subagents ?? []))
       : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
+    const health = this.health.current();
 
     this.last = {
       config: this.config,
@@ -113,6 +122,7 @@ export class HudStatus {
       subagents: rollout?.subagents ?? [],
       subagentTree,
       displayMode: 'single',
+      ...(health.lastReadAt || health.lastError ? { health } : {}),
     };
     return this.last;
   }
@@ -126,7 +136,7 @@ export class HudStatus {
         // is described by the repository it works in (see git-root.ts).
         const target = this.gitTargets.resolve([this.last?.session?.cwd ?? rollout?.session?.cwd, this.cwd], rollout?.workDirs);
         if (!target) return { ...NO_GIT };
-        const collected = await collectGitStatus(target.dir);
+        const collected = await timeAsync('git', () => collectGitStatus(target.dir));
         return target.subRepo && collected.isGitRepo ? { ...collected, repo: path.basename(target.subRepo) } : collected;
       })
       .then((status) => {
@@ -134,8 +144,9 @@ export class HudStatus {
         if (this.last) this.last.git = status;
         this.onChange();
       })
-      .catch(() => {
+      .catch((error) => {
         // Keep the previous snapshot; the next build tries again.
+        this.health.fail('git', error);
       })
       .finally(() => {
         this.gitInFlight = false;

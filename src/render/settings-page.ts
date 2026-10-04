@@ -1,7 +1,9 @@
 import type { HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
+import type { HudHealthState } from '../types.js';
 import { truncateAnsi, colors, theme, visualLength } from './colors.js';
 import { t, language } from './i18n.js';
+import { age } from './monitor.js';
 
 type SettingValue = string | number | boolean;
 
@@ -96,8 +98,32 @@ function rowLine(row:SettingRow,value:SettingValue,selected:boolean,dirty:boolea
   return {text:selected ? theme.selected(text) : text,back:chevrons ? gutter.length+visualLength(name)+pad.length : undefined};
 }
 
-export function renderSettingsPage(state:SettingsPageState,width:number,height:number):SettingsFrame {
-  const count = Math.max(0,height-3);
+/** Where a failed read happened, in the words of the health row. */
+const HEALTH_SOURCES: Record<string,string> = {
+  session:'Session lookup',rollout:'Session read',tree:'Agent tree',status:'Status',git:'Git',worktrees:'Worktrees',
+};
+
+/**
+ * The panel's own reads, in one row: "Last read 2s ago", and the latest
+ * failure when there has been one, so a quiet session and a HUD that cannot
+ * read stop looking alike. A failure newer than the last good read is the
+ * current state and is painted as a warning; an older one is history.
+ */
+export function healthLine(health:HudHealthState|undefined,nowMs:number):string|null {
+  if (!health?.lastReadAt && !health?.lastError) return null;
+  const read = health.lastReadAt ? t('Last read {age} ago',{age:age(health.lastReadAt,nowMs)}) : t('No read yet');
+  const error = health.lastError;
+  if (!error) return colors.dim(read);
+  const failure = t('{source} failed {age} ago: {reason}',{source:t(HEALTH_SOURCES[error.source] ?? error.source),
+    age:age(error.at,nowMs),reason:error.message});
+  const current = !health.lastReadAt || error.at.getTime() >= health.lastReadAt.getTime();
+  return current ? theme.warning(`${read} · ${failure}`) : colors.dim(`${read} · ${failure}`);
+}
+
+export function renderSettingsPage(state:SettingsPageState,width:number,height:number,
+  health?:{state:HudHealthState|undefined;nowMs?:number}):SettingsFrame {
+  const healthRow = health && height > 3 ? healthLine(health.state,health.nowMs ?? Date.now()) : null;
+  const count = Math.max(0,height-3-(healthRow ? 1 : 0));
   const selected = Math.min(SETTING_ROWS.length-1,Math.max(0,state.selected));
   const at = DISPLAY.findIndex(line => 'index' in line && line.index === selected);
   // Scroll by screen line, keeping the selected row's heading in view with it.
@@ -141,6 +167,7 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
     lines.push(drawn.text);
     rows.push(line.index);
   }
+  if (healthRow) lines.push(healthRow);
   if (height > 1) {
     const row = SETTING_ROWS[selected];
     lines.push(state.message ? theme.accent(state.message) : colors.dim(t(row.help)));

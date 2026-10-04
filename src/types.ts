@@ -529,6 +529,17 @@ export interface HudData {
   // Display mode
   displayMode?: HudDisplayMode;
   subagentTree?: SubagentTree;
+
+  /** Whether the HUD's own reads go through; absent until one succeeds or fails. */
+  health?: HudHealthState;
+}
+
+/** See collectors/hud-health.ts. */
+export interface HudHealthState {
+  /** The last time the session lookup and rollout read both went through. */
+  lastReadAt?: Date;
+  /** The most recent failed collection, whether or not a read has gone through since. */
+  lastError?: { source: string; message: string; at: Date };
 }
 
 export interface SessionActivity {

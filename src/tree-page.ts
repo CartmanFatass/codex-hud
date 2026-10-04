@@ -12,7 +12,7 @@ import { buildSubagentTree, uniquePickerLabel } from './collectors/subagent-tree
 import { collectGitChanges, readGitDiff, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
-  monitorModes, monitorPreferences, type MonitorFrame } from './render/monitor.js';
+  monitorModes, monitorPreferences, nextRepaintDelay, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentContextUsage } from './collectors/agent-context.js';
@@ -22,6 +22,8 @@ import { statusCard } from './render/status-block.js';
 import { artSize, renderArt, type ArtBitmap } from './render/art.js';
 import { loadArtImage } from './collectors/art-image.js';
 import { t, setLanguage, resolveLanguage } from './render/i18n.js';
+import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
+import type { HealthSource } from './collectors/hud-health.js';
 import type { ContextUsage, SubagentTree, SubagentTreeNode } from './types.js';
 
 /** At most one tail read per agent per this long, however often we repaint. */
@@ -52,6 +54,7 @@ function requestEnsureSingle(): void {
 }
 
 async function runLivePage(): Promise<void> {
+  startProfiling('panel');
   const finder = new SessionFinder(HUD_CWD_REAL,undefined,HUD_SESSION_START);
   const parser = new RolloutParser(40);
   const worktreeCollector = new WorktreeCollector();
@@ -73,7 +76,6 @@ async function runLivePage(): Promise<void> {
   let state = configuredState();
   let settingsPage: SettingsPageState | null = null;
   let settingsFrame: SettingsFrame | undefined;
-  let lastCollect = 0;
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
   let navigating = false;
@@ -129,28 +131,49 @@ async function runLivePage(): Promise<void> {
   // while it is open. Fed from this page's own parse of the rollout.
   const hudStatus = new HudStatus(HUD_CWD,()=>render(),30_000);
   const timers: Array<ReturnType<typeof setInterval>> = [];
+  // Collection runs at the refresh setting; repaints between collections only
+  // move the clocks, once a second (see nextRepaintDelay).
+  let collectTimer: ReturnType<typeof setInterval> | undefined;
+  let collectEvery = 0;
+  let repaintTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveDone = () => {};
 
   const render = () => {
     if (closed) return;
-    let lines: string[];
-    if (settingsPage) {
-      settingsFrame = renderSettingsPage(settingsPage,process.stdout.columns || 30,process.stdout.rows || 24);
-      settingsPage = settingsFrame.state;
-      lines = settingsFrame.lines;
-    } else {
-    const width = process.stdout.columns || 30;
-    frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,
-      brief:settings.briefing === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused},
-      status:(rowWidth,maxRows)=>statusCard(hudStatus.current(),rowWidth,maxRows),width,height:process.stdout.rows || 24});
-    state = frame.state;
-    lines = frame.lines;
-    }
-    const output = lines.map(line=>`${line}\x1b[K`).join('\r\n');
+    const output = time('render',() => {
+      let lines: string[];
+      if (settingsPage) {
+        settingsFrame = renderSettingsPage(settingsPage,process.stdout.columns || 30,process.stdout.rows || 24,{state:hudStatus.health.current()});
+        settingsPage = settingsFrame.state;
+        lines = settingsFrame.lines;
+      } else {
+      const width = process.stdout.columns || 30;
+      frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,
+        brief:settings.briefing === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused},
+        status:(rowWidth,maxRows)=>statusCard(hudStatus.current(),rowWidth,maxRows),width,height:process.stdout.rows || 24});
+      state = frame.state;
+      lines = frame.lines;
+      }
+      return lines.map(line=>`${line}\x1b[K`).join('\r\n');
+    });
     if (lastPaint !== output) {
       lastPaint = output;
-      process.stdout.write(`\x1b[H${output}\x1b[J`);
+      time('write',() => process.stdout.write(`\x1b[H${output}\x1b[J`));
     }
+  };
+  /** The next clock-only repaint, timed to the main turn clock while a turn runs. */
+  const scheduleRepaint = () => {
+    if (closed) return;
+    const activity = hudStatus.current()?.activity;
+    const anchor = activity?.state === 'working' ? activity.turnStartedAt?.getTime() : undefined;
+    repaintTimer = setTimeout(()=>{render();scheduleRepaint();},nextRepaintDelay(Date.now(),anchor));
+  };
+  /** (Re)arm collection at the refresh setting; a no-op while it is unchanged. */
+  const armCollect = () => {
+    if (closed || (collectTimer && collectEvery === settings.refreshMs)) return;
+    if (collectTimer) clearInterval(collectTimer);
+    collectEvery = settings.refreshMs;
+    collectTimer = setInterval(()=>void collect(),collectEvery);
   };
   const applyAgentContext = () => {
     walkNodes(tree.nodes,node=>{node.contextUsage = agentContext.get(node.id);});
@@ -220,11 +243,17 @@ async function runLivePage(): Promise<void> {
   };
   const collect = async () => {
     if (closed || collecting) return;
+    await timeAsync('collect',collectNow);
+  };
+  const collectNow = async () => {
     collecting = true;
     let session: ReturnType<typeof finder.check> = null;
     let stale = false;
+    // Where a failure happened, for the health row.
+    let stage: HealthSource = 'session';
     try {
       session = finder.check();
+      stage = 'rollout';
       parser.setRolloutPath(session?.path ?? null);
       if (!session) {
         main = null;
@@ -245,18 +274,21 @@ async function runLivePage(): Promise<void> {
           }
         }
       }
+      hudStatus.health.read();
+      stage = 'tree';
       const rootId = main?.session?.id ?? session?.sessionId ?? '';
       if (rootId !== tree.rootId) {
         state = configuredState(); diff = undefined; diffKey = ''; git = null; worktrees = null;
       }
-      tree = rootId ? buildSubagentTree(rootId,main?.subagents ?? []) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+      tree = rootId ? time('tree.build',()=>buildSubagentTree(rootId,main?.subagents ?? [])) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
       applyAgentContext();
       state = reconcileMonitor(state,tree,git,worktrees);
       briefer.update(tree,settings.briefing,settings.briefingMs,resolveLanguage(settings.language),Date.now(),settings.briefingPaused);
       error = settingsError || null;
-    } catch (err) { error = t('Refresh: {reason}',{reason:String(err)}); stale = true; }
+    } catch (err) { error = t('Refresh: {reason}',{reason:String(err)}); stale = true; hudStatus.health.fail(stage,err); }
     finally { collecting = false; collected = true; }
-    try { hudStatus.build({rollout:main,sessionId:session?.sessionId,stale}); } catch { /* The foot keeps its last good rows. */ }
+    try { hudStatus.build({rollout:main,sessionId:session?.sessionId,stale}); }
+    catch (err) { hudStatus.health.fail('status',err); /* The foot keeps its last good rows. */ }
     render();
     void refreshInspection();
     void refreshAgentContext();
@@ -272,7 +304,7 @@ async function runLivePage(): Promise<void> {
     const candidates = sources();
     const requestKey = JSON.stringify(candidates);
     try {
-      const snapshot = await worktreeCollector.refresh(candidates);
+      const snapshot = await timeAsync('git.worktrees',()=>worktreeCollector.refresh(candidates));
       if (closed) return;
       if (requestKey !== JSON.stringify(sources())) { gitAgain=true; return; }
       worktrees = snapshot;
@@ -283,7 +315,7 @@ async function runLivePage(): Promise<void> {
       const entry = worktrees.entries.find(w=>w.path===state.selectedWorktree);
       if (wantChanges && entry && !entry.bare && entry.prunable === undefined) {
         const selected = entry.path;
-        const result = await collectGitChanges(selected);
+        const result = await timeAsync('git.changes',()=>collectGitChanges(selected));
         if (closed) return;
         if (requestKey !== JSON.stringify(sources()) || selected !== state.selectedWorktree) { gitAgain=true; return; }
         git=result;gitRevision++;
@@ -293,7 +325,8 @@ async function runLivePage(): Promise<void> {
       } else if (!entry || entry.bare || entry.prunable !== undefined) {git=null;diff=undefined;diffKey='';}
       render();
       void refreshInspection();
-    } catch {
+    } catch (err) {
+      hudStatus.health.fail('worktrees',err);
       worktrees = {sourcePath:null,entries:[],updatedAt:Date.now(),error:'Worktree read failed'};
       git=null;diff=undefined;diffKey='';render();
     } finally {
@@ -306,6 +339,9 @@ async function runLivePage(): Promise<void> {
     closed = true;
     briefer.stop();
     timers.forEach(clearInterval);
+    if (collectTimer) clearInterval(collectTimer);
+    if (repaintTimer) clearTimeout(repaintTimer);
+    stopProfiling();
     if (escapeTimer) clearTimeout(escapeTimer);
     if (resizeTimer) clearTimeout(resizeTimer);
     process.stdin.off('data',onData);
@@ -342,6 +378,7 @@ async function runLivePage(): Promise<void> {
             applyDisplaySettings(settings);
             setLanguage(resolveLanguage(settings.language));
             configureBriefer();
+            armCollect();
             loadArt();
             state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings)};
             git=null;diff=undefined;diffKey='';void refreshGit();
@@ -367,7 +404,7 @@ async function runLivePage(): Promise<void> {
         try {
           settings = saveSettings({briefingPaused:!settings.briefingPaused});
           // Resuming asks at once when there is news, rather than at the next tick.
-          if (!settings.briefingPaused) lastCollect = 0;
+          if (!settings.briefingPaused) void collect();
           else briefer.update(tree,settings.briefing,settings.briefingMs,resolveLanguage(settings.language),Date.now(),true);
         } catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
       }
@@ -414,7 +451,9 @@ async function runLivePage(): Promise<void> {
     loadArt();
     void collect();
     void refreshGit();
-    timers.push(setInterval(()=>{if(Date.now()-lastCollect >= settings.refreshMs){lastCollect=Date.now();void collect();}},100),setInterval(()=>void refreshGit(),3000),setInterval(render,250));
+    armCollect();
+    scheduleRepaint();
+    timers.push(setInterval(()=>void refreshGit(),3000));
   });
 }
 
