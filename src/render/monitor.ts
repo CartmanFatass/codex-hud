@@ -6,6 +6,7 @@ import type { HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { initialPanelState, reconcileSelection, visibleRows, applyKey, countExpired, guardianCount, isGuardian, type PanelState } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi, getContextColor } from './colors.js';
+import { palette } from './palette.js';
 import { renderModelEffortToken, modelLegend } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { displayConfig } from './hud-config.js';
@@ -562,16 +563,84 @@ export function timelineText(event: WorkbenchEvent): string {
   }
 }
 
-function timelineRows(input: MonitorData, width: number, now: number): MonitorRow[] {
+/**
+ * An agent's own colour, the same on every repaint and in every pane: for
+ * following one agent down the timeline and into the Inspector. Not on its
+ * card, whose colour is its state.
+ */
+export function agentPaint(id: string): (s: string) => string {
+  const colours = palette().agents;
+  let hash = 0;
+  for (const ch of id) hash = (hash*31+ch.charCodeAt(0)) >>> 0;
+  return colours[hash%colours.length];
+}
+
+/** A timeline line before its time: what it says, the agent it is about, and how many it folds. */
+interface TimelineLine { at: Date; text: string; paint: (s: string) => string; key: string; count: number; cause?: string }
+
+/**
+ * The timeline's lines, newest first, made shorter to read: an agent that
+ * started and finished in the list is one line, at the finish ("▸ name 12m
+ * ✓"); a guardian review's comings and goings are left out (its failure
+ * stays); the same event in a row is one line, "×5", at its newest time.
+ * With glyphs on, a finished turn is ⏎ and a failed tool ✗.
+ */
+function timelineLines(input: MonitorData): TimelineLine[] {
   const events = input.timeline ?? [];
-  if (!events.length) return [{text:colors.dim(t('No events yet'))}];
-  const rows: MonitorRow[] = [];
+  const nodes = new Map<string, SubagentTreeNode>();
+  walkTree(input.tree.nodes,node=>nodes.set(node.id,node));
+  const guardian = (event: WorkbenchEvent) => Boolean(event.agentId && nodes.get(event.agentId) && isGuardian(nodes.get(event.agentId)!));
+  // Starts paired with a finish later in the list (the list is newest first).
+  const finishes = new Map<string, WorkbenchEvent>();
+  const paired = new Set<WorkbenchEvent>();
+  const startOf = new Map<WorkbenchEvent, WorkbenchEvent>();
   for (const event of events) {
-    const when = age(event.at,now);
-    const paint = event.status === 'error' ? theme.error : event.kind === 'quota' || event.kind === 'approval-requested' ? theme.warning : (s: string) => s;
-    rows.push({text:truncateAnsi(`${colors.dim(when.padStart(3))} ${paint(timelineText(event))}`,width)});
+    if (!event.agentId) continue;
+    if (event.kind === 'agent-finished' || event.kind === 'agent-failed') finishes.set(event.agentId,event);
+    else if (event.kind === 'agent-started') {
+      const end = finishes.get(event.agentId);
+      if (end) { paired.add(event); startOf.set(end,event); finishes.delete(event.agentId); }
+    }
+  }
+  const lines: TimelineLine[] = [];
+  for (const event of events) {
+    if (guardian(event) && event.kind !== 'agent-failed') continue;
+    if (event.kind === 'agent-started' && paired.has(event)) continue;
+    const plainPaint = (s: string) => s;
+    const paint = event.status === 'error' ? theme.error : event.kind === 'quota' || event.kind === 'approval-requested' ? theme.warning : plainPaint;
+    const name = event.agentId ? agentPaint(event.agentId)(monitorText(event.subject ?? '')) : '';
+    let text = paint(timelineText(event));
+    const start = startOf.get(event);
+    if (start) {
+      const ran = age(start.at,event.at.getTime());
+      const mark = event.kind === 'agent-failed' ? theme.error('✗') : theme.success('✓');
+      text = iconic() ? `${theme.info('▸')} ${name} ${colors.dim(ran)} ${mark}` : `${t('{agent} ran {time}',{agent:name,time:ran})} ${mark}`;
+    } else if (event.agentId && event.subject) {
+      // The agent's name in its own colour, the rest in the event's.
+      const words = timelineText(event);
+      const subject = monitorText(event.subject);
+      const at = words.indexOf(subject);
+      if (at >= 0) text = paint(words.slice(0,at))+name+paint(words.slice(at+subject.length));
+    } else if (iconic() && event.kind === 'turn-finished') text = colors.dim('⏎');
+    else if (iconic() && event.kind === 'tool-failed') text = `${theme.error('✗')} ${monitorText(event.subject ?? '')}`;
+    const key = `${event.kind ?? event.title}|${event.subject ?? ''}|${event.status}|${start ? 'ran' : ''}`;
+    const last = lines.at(-1);
+    // The same event again, with nothing between and nothing written about it: one line.
+    if (last && last.key === key && !event.cause && !last.cause && !start) { last.count++; continue; }
+    lines.push({at:event.at,text,paint,key,count:1,cause:event.cause});
+  }
+  return lines;
+}
+
+function timelineRows(input: MonitorData, width: number, now: number): MonitorRow[] {
+  const lines = timelineLines(input);
+  if (!lines.length) return [{text:colors.dim(t('No events yet'))}];
+  const rows: MonitorRow[] = [];
+  for (const line of lines) {
+    const when = age(line.at,now);
+    rows.push({text:truncateAnsi(`${colors.dim(when.padStart(3))} ${line.text}${line.count > 1 ? colors.dim(` ×${line.count}`) : ''}`,width)});
     // A model-written reading of a failure, marked as such.
-    if (event.cause) rows.push(...flowLines(monitorText(event.cause),Math.max(1,width-6)).map((line,i)=>({text:`    ${i ? ' ' : colors.dim('~')} ${line}`})));
+    if (line.cause) rows.push(...flowLines(monitorText(line.cause),Math.max(1,width-6)).map((text,i)=>({text:`    ${i ? ' ' : colors.dim('~')} ${text}`})));
   }
   return rows;
 }
@@ -633,7 +702,9 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       // back through monitorText (which correctly escapes untrusted controls).
       // Both names show here: the model's name for what the agent does, and
       // the name Codex's own picker and transcript print.
-      const rows: MonitorRow[] = wrapped(node.label ?? node.name,width).map(text=>({text:theme.strong(text)}));
+      // The heading in the agent's own colour, as the timeline names it.
+      const own = agentPaint(node.id);
+      const rows: MonitorRow[] = wrapped(node.label ?? node.name,width).map(text=>({text:theme.strong(own(text))}));
       if (node.label && node.label !== node.name) rows.push(...wrapped(t('Name: {name}',{name:node.name}),width).map(text=>({text:colors.dim(text)})));
       // The full task path locates a nested agent; a one-segment path says
       // nothing the name did not.
@@ -886,7 +957,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       .map(line=>t(line))
       .concat(t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
         ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve','b‖ / b▸ pause / resume brief  ~… writing',
-          'status card frame colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','yellow clock = quiet 5m+','━╸─ = context or quota used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
+          'status card frame colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','━╸─ = context or quota used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
         ...stripAnsi(modelLegend()).split('\n'))
       .flatMap(line=>helpLines(line,width));
     const count = Math.max(0,height-2);

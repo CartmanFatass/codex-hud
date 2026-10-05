@@ -30,6 +30,12 @@ export interface Palette {
   /** Emphasis without colour, for the identity of the session. */
   strong: Paint;
   selected: Paint;
+  /**
+   * Six colours to tell agents apart by, each agent keeping its own (a hash
+   * of its id), for following one down the timeline. None is a success,
+   * warning or error hue, so an agent's colour never reads as its state.
+   */
+  agents: readonly Paint[];
 }
 
 const ESC = '\x1b[';
@@ -37,6 +43,10 @@ const RESET = `${ESC}0m`;
 
 function basic(code: number): Paint {
   return (text: string) => `${ESC}${code}m${text}${RESET}`;
+}
+
+function ansi256(code: number): Paint {
+  return (text: string) => `${ESC}38;5;${code}m${text}${RESET}`;
 }
 
 function rgb(hex: string): Paint {
@@ -76,6 +86,8 @@ const TERMINAL: Palette = {
   project: basic(1),
   strong: basic(1),
   selected: highlight('7'),
+  // Mid-tones of the 256-colour cube, legible on dark and light backgrounds.
+  agents: [ansi256(33), ansi256(98), ansi256(133), ansi256(67), ansi256(37), ansi256(175)],
 };
 
 // Catppuccin Mocha and Latte, from the published palettes.
@@ -93,6 +105,7 @@ const MOCHA: Palette = {
   project: rgb('#B4BEFE'),
   strong: rgb('#B4BEFE'),
   selected: highlight('48;2;49;50;68'),
+  agents: ['#89B4FA', '#B4BEFE', '#CBA6F7', '#F5C2E7', '#74C7EC', '#F2CDCD'].map(rgb),
 };
 
 const LATTE: Palette = {
@@ -109,6 +122,7 @@ const LATTE: Palette = {
   project: rgb('#7287FD'),
   strong: rgb('#7287FD'),
   selected: highlight('48;2;204;208;218'),
+  agents: ['#1E66F5', '#7287FD', '#8839EF', '#EA76CB', '#209FB5', '#DD7878'].map(rgb),
 };
 
 const NONE: Palette = {
@@ -125,6 +139,7 @@ const NONE: Palette = {
   project: identity,
   strong: identity,
   selected: identity,
+  agents: [identity],
 };
 
 const PALETTES: Record<ThemeName, Palette> = {

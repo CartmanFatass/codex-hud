@@ -6,7 +6,9 @@ import path from 'node:path';
 import { RolloutParser, type QuotaSample } from '../../src/collectors/rollout.js';
 import { quotaForecast, slope, FORECAST_MIN_SPAN_MS } from '../../src/collectors/quota-forecast.js';
 import { WorkbenchHistory } from '../../src/collectors/workbench-events.js';
-import { initialMonitorState, renderMonitor, handleMonitorInput, monitorModes, monitorPreferences, timelineText } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput, monitorModes, monitorPreferences, timelineText, agentPaint } from '../../src/render/monitor.js';
+import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
+import type { WorkbenchEvent } from '../../src/render/workbench-state.js';
 import { waitedText, collectAttention } from '../../src/render/attention.js';
 import { buildBarModules } from '../../src/render/layout/bar-modules.js';
 import { statusCard } from '../../src/render/status-block.js';
@@ -15,7 +17,7 @@ import { resolveNotifierOptions } from '../../src/notify.js';
 import { defaultSettings } from '../../src/settings.js';
 import { stripAnsi, visualLength } from '../../src/render/colors.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
-import { makeHudData, FIXED_NOW } from '../fixtures/hud-data.js';
+import { makeHudData, makeSubagentTree, FIXED_NOW } from '../fixtures/hud-data.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
 
 const now = Date.parse('2026-10-01T10:00:00Z');
@@ -99,12 +101,48 @@ test('the Timeline pane opens with 5, lists events with their ages, and is saved
   const frame = renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now, timeline });
   const lines = frame.lines.map(stripAnsi);
   assert.ok(lines.some(line => line.includes('5 Timeline')));
-  assert.ok(lines.some(line => /2m Turn finished/.test(line)));
+  assert.ok(lines.some(line => /2m ⏎/.test(line)), 'with glyphs on a finished turn is ⏎');
   assert.ok(lines.some(line => /5m reader failed/.test(line)));
   assert.ok(lines.some(line => /~ The test fixture/.test(line)), 'a model-written cause is marked');
   assert.ok(frame.lines.every(line => visualLength(line) <= 30));
   const empty = renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now }).lines.map(stripAnsi);
   assert.ok(empty.some(line => line.includes('No events yet')));
+  const words = withGlyphs('text', () => renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now, timeline }).lines.map(stripAnsi));
+  assert.ok(words.some(line => /2m Turn finished/.test(line)), 'with glyphs off, the words');
+});
+
+const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
+  const previous = displayConfig();
+  setDisplayConfig({ glyphs });
+  try { return run(); } finally { setDisplayConfig(previous); }
+};
+
+test('the timeline folds repeats, makes an agent\'s run one line, leaves guardian reviews out, and colours each agent its own', () => {
+  const ev = (id: string, minutes: number, kind: WorkbenchEvent['kind'], extra: Partial<WorkbenchEvent> = {}): WorkbenchEvent =>
+    ({ id, at: new Date(now - minutes * 60_000), title: '', detail: [], status: kind === 'agent-failed' || kind === 'tool-failed' ? 'error' : 'completed', kind, ...extra });
+  const guard = { ...makeSubagentTree().nodes[0], id: 'g1', name: 'guardian', kind: 'guardian', children: [] };
+  const worker = { ...makeSubagentTree().nodes[0], id: 'w1', name: 'bench_corpus', children: [] };
+  const lost = { ...makeSubagentTree().nodes[0], id: 'w2', name: 'migrate', children: [] };
+  const agents = { rootId: 'root', nodes: [guard, worker, lost], totalCount: 3, updatedAt: new Date(now) };
+  const timeline = [
+    ev('1', 1, 'turn-finished'), ev('2', 2, 'turn-finished'), ev('3', 3, 'turn-finished'),
+    ev('4', 4, 'agent-finished', { agentId: 'g1', subject: 'guardian' }), ev('5', 5, 'agent-started', { agentId: 'g1', subject: 'guardian' }),
+    ev('6', 6, 'agent-finished', { agentId: 'w1', subject: 'bench_corpus' }), ev('7', 18, 'agent-started', { agentId: 'w1', subject: 'bench_corpus' }),
+    ev('8', 19, 'agent-failed', { agentId: 'w2', subject: 'migrate' }), ev('9', 20, 'tool-failed', { subject: 'exec' }),
+    ev('10', 21, 'agent-started', { agentId: 'w2', subject: 'migrate' }),
+  ];
+  const state = { ...initialMonitorState(), modes: { ...initialMonitorState().modes, timeline: 'open' as const }, focus: 'timeline' as const };
+  const draw = () => renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now, timeline });
+  const frame = draw();
+  const lines = frame.lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd());
+  assert.deepEqual(lines, [' 1m ⏎ ×3', ' 6m ▸ bench_corpus 12m ✓', '19m ▸ migrate 2m ✗', '20m ✗ exec']);
+  assert.ok(frame.lines.some(line => line.includes(agentPaint('w1')('bench_corpus'))), 'the agent\'s name in its own colour');
+  assert.equal(agentPaint('w1'), agentPaint('w1'), 'the same colour every time');
+  const words = withGlyphs('text', () => draw().lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd()));
+  assert.deepEqual(words, [' 1m Turn finished ×3', ' 6m bench_corpus ran 12m ✓', '19m migrate ran 2m ✗', '20m Tool failed: exec']);
+  // A failed review still shows.
+  const failed = renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now, timeline: [ev('11', 1, 'agent-failed', { agentId: 'g1', subject: 'guardian' })] });
+  assert.ok(failed.lines.map(stripAnsi).some(line => /guardian failed/.test(line)));
 });
 
 test('a pending approval says how long it has waited, in the bar\'s widest form, the panel card and the snapshot', () => {
