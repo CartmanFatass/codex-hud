@@ -180,7 +180,7 @@ test('the agents view scrolls: a hint says what is out of view, the wheel and pa
   for (const style of ['rich', 'compact'] as const) {
     let state: MonitorState = { ...rich(), style };
     const draw = () => renderMonitor({ tree: agents, state, width: 32, height: 20, nowMs: now, agentLog: style === 'compact' ? new Map() : undefined,
-      brief: style === 'compact' ? { text: '{}', structured: true, overall: 'line '.repeat(60) } : undefined });
+      brief: style === 'compact' ? { text: 'line\n'.repeat(40) } : undefined });
     let frame = draw();
     const hint = () => plain(frame)[frame.panes[0].y + frame.panes[0].height - 1];
     assert.match(hint(), /^↓ \d+ more lines/, style);

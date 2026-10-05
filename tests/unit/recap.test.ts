@@ -292,7 +292,11 @@ test('with scope both, opening the panel again is not paid for either, and the l
   assert.equal(after.current().recap?.goal, 'Fix the bug');
   assert.equal(after.current().overall, 'one reading');
   const shown = renderMonitor({ tree: agents, state: initialMonitorState(), width: 32, height: 40, nowMs: now + 3_600_000, brief: after.current() });
-  assert.ok(shown.lines.some(line => stripAnsi(line).includes('one reading')), 'and it is on screen, though no reply text came with it');
+  // Beside a recap the sentence repeats its Now, so the panel shows the recap alone.
+  assert.ok(shown.lines.some(line => stripAnsi(line).includes('Fix the bug')), 'the restored recap is on screen');
+  assert.ok(!shown.lines.some(line => stripAnsi(line).includes('one reading')), 'beside it the sentence is not repeated');
+  const alone = renderMonitor({ tree: agents, state: initialMonitorState(), width: 32, height: 40, nowMs: now + 3_600_000, brief: { ...after.current(), recap: undefined } });
+  assert.ok(alone.lines.some(line => stripAnsi(line).includes('one reading')), 'without one it is on screen, though no reply text came with it');
   const moved = tree([node('a', 'reader', 'completed', { lastReport: { text: 'r2', kind: 'reply', at: at(3_000) } })]);
   after.update(moved, 'omp', 60_000, 'en', now + 3_700_000, false, ctx);
   await settle();
@@ -319,15 +323,13 @@ test('compact: the recap leads the brief area, labelled goal, done, now and need
   const rule = lines.findIndex(line => line.startsWith('─ Brief'));
   // The header names it and its age; there is no fold switch any more.
   assert.equal(lines[rule + 1].trimEnd(), ' Main recap · 5m ago');
-  // Each field a label on its own line, its text two columns in beneath it,
-  // a blank line between fields; a wrapped line hangs under the text.
-  assert.deepEqual(lines.slice(rule + 2, rule + 15).map(line => line.trimEnd()), [
-    ' Goal', '   Fix the flaky cache', '   test in the parser', '',
-    ' Done', '   ✓ Reproduced the failure', '   ✓ Found the race', '',
-    ' Now', '   Waiting on reader agent', '',
-    ' Needs', '   Approve npm test']);
-  assert.ok(frame.lines[rule + 14].includes(theme.warning('Approve npm test')));
-  assert.ok(frame.lines[rule + 13].includes(theme.warning('Needs')), 'the needs label is in the warning colour too');
+  // Each field a label inline, its value after it, its wrapped lines hanging
+  // under the value; no blank lines between fields; needs first.
+  assert.deepEqual(lines.slice(rule + 2, rule + 8).map(line => line.trimEnd()), [
+    ' ! Approve npm test', ' ◎ Fix the flaky cache', '   test in the parser', ' ▸ Waiting on reader agent',
+    ' ✓ Reproduced the failure', ' ✓ Found the race']);
+  assert.ok(frame.lines[rule + 2].includes(theme.warning('Approve npm test')));
+  assert.ok(frame.lines[rule + 2].includes(theme.warning('!')), 'the needs label is in the warning colour too');
   assert.ok(!lines.some(line => line.includes('{}')), 'a recap-only reply shows no raw text');
   assert.ok(frame.lines.every(line => visualLength(line) <= 30));
   assert.ok(!frame.controls.some(c => c.y === rule + 1), 'the header is not a switch');
@@ -339,29 +341,24 @@ test('compact: the recap leads the brief area, labelled goal, done, now and need
   const writing = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 30, nowMs: now,
     brief: { recap: recapView, running: true } }).lines.map(stripAnsi);
   const top = writing.findIndex(line => line.startsWith('─ Brief · writing…'));
-  assert.equal(writing[top + 2].trimEnd(), ' Goal', 'the previous recap is kept while a run is in flight');
-  // A cramped view gives up the blank lines before it gives up content.
-  const dense = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 13, nowMs: now, brief: { recap: recapView } }).lines.map(stripAnsi);
-  const goal = dense.findIndex(line => line.trimEnd() === ' Goal');
-  assert.deepEqual(dense.slice(goal, goal + 4).map(line => line.trimEnd()), [' Goal', '   Fix the flaky cache', '   test in the parser', ' Done']);
+  assert.match(writing[top + 3], /^ ◎ Fix/, 'the previous recap is kept while a run is in flight');
 });
 
 test('rich: the recap is in the status card, needs in the warning colour, every width within bounds', () => {
   const agents = tree([node('00000000-0000-4000-8000-000000000001', 'worker', 'running', { turnStartedAt: new Date(now - 60_000) })]);
   const state = { ...initialMonitorState(), style: 'rich' as const };
-  const status = () => ({ rows: ['▸ working'], top: '', bottom: 'proj', bottomRight: '' });
+  const status = () => ({ tone: 'working' as const, alerts: [], state: '▸', rate: '', tasks: '', model: '', age: '', place: 'proj',
+    others: '', forecast: '', reset: '', cache: '' });
   for (const width of [20, 24, 30, 32, 44, 60]) {
     const frame = renderMonitor({ tree: agents, state, width, height: 40, nowMs: now, brief: { recap: recapView }, status });
     assert.ok(frame.lines.every(line => visualLength(line) <= width), `${width}`);
   }
   const frame = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: recapView }, status });
   const lines = frame.lines.map(stripAnsi);
-  const rule = lines.findIndex(line => line.startsWith('├─ Recap 5m ago'));
-  assert.ok(rule > frame.statusCard!.y);
-  assert.equal(lines[rule + 1].trimEnd(), '│ Goal                       │');
-  const needs = lines.findIndex(line => line.startsWith('│ Needs'));
-  assert.ok(needs > rule && frame.lines[needs].includes(theme.warning('Needs')));
+  assert.match(lines[frame.statusCard!.y], /~5m b‖ , \? ─╮$/);
+  assert.equal(lines[frame.statusCard!.y + 1].trimEnd(), '│ ! Approve npm test         │');
+  assert.ok(frame.lines[frame.statusCard!.y + 1].includes(theme.warning('!')));
   assert.ok(!lines.some(line => /^┌ Main recap|^─ Brief/.test(line)), 'no recap card, no brief rule');
   const calm = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: { ...recapView, needs: '' } }, status });
-  assert.ok(!calm.lines.map(stripAnsi).some(line => /Needs/.test(line)), 'no needs: absent');
+  assert.ok(!calm.lines.map(stripAnsi).some(line => /^│ ! /.test(line)), 'no needs: absent');
 });

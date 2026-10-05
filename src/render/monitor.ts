@@ -14,7 +14,7 @@ import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
 import { t } from './i18n.js';
 import { agentTitle } from './agent-title.js';
-import { recapFields, taskLines, richRows } from './cards.js';
+import { briefFields, taskLines, richRows } from './cards.js';
 import { drawAgentsView, WHEEL_ROWS } from './agents-view.js';
 import { planFoot, nextLevel, type StatusLevel, type FootInfo } from './status-foot.js';
 import { formatWindowLabel } from './quota.js';
@@ -113,11 +113,10 @@ export interface MonitorData {
   brief?: Brief & {paused?: boolean};
   /**
    * The status bar's fields for the card at the foot of the panel (while the
-   * panel is open it replaces the bar): at most `maxRows` rows, each fitted
-   * to `width`, the most wanted kept when they do not all fit, and short
-   * texts for the frame's edges, which the monitor fits.
+   * panel is open it replaces the bar), as parts the monitor fits to the
+   * card's edges.
    */
-  status?: (width: number, maxRows: number) => StatusCard | null;
+  status?: (nowMs: number) => StatusCard | null;
   /**
    * Each agent's log, oldest entry first, by agent id: shown under the brief
    * for the agents the tree shows, and whole in the Inspector.
@@ -299,11 +298,28 @@ export function balancedLines(text: string, width: number): string[] {
   }
   return best;
 }
-/** Seconds, minutes or hours since `at`, the coarsest unit that is not zero. */
+/**
+ * Icons stand in for the panel's words (a brief field's label, "ago" after a
+ * time) unless the reader set glyphs to text; then the words stay.
+ */
+export function iconic(): boolean {
+  return displayConfig().glyphs !== 'text';
+}
+/** How long ago, as the panel says it: "12d" where icons stand in for words, else "12d ago". */
+export function agoText(at: Date | undefined, now: number): string {
+  return iconic() ? age(at,now) : t('{age} ago',{age:age(at,now)});
+}
+/**
+ * Seconds, minutes, hours or days since `at`, the coarsest unit that is not
+ * zero; days past two of them, where "308h" is a sum the reader has to do.
+ * The panel's one relative-time formatter: cards, timeline, inspector and
+ * status card all say a time this way.
+ */
 export function age(at: Date | undefined, now: number): string {
   if (!at || !Number.isFinite(at.getTime())) return '?';
   const seconds = Math.max(0, Math.floor((now-at.getTime())/1000));
-  return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds/60)}m` : `${Math.floor(seconds/3600)}h`;
+  return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds/60)}m`
+    : seconds < 2*86_400 ? `${Math.floor(seconds/3600)}h` : `${Math.floor(seconds/86_400)}d`;
 }
 export function nodeStatus(node: SubagentTreeNode, now: number): {icon:string; label:string; paint:(s:string)=>string} {
   switch (node.status) {
@@ -673,29 +689,19 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
 }
 
 /**
- * The brief's own lines: the pending approval in plain words, then the
- * whole-picture sentence (or a reply in another shape, as the text it is),
- * with a failure. Model output is sanitized like any other external string.
+ * What the brief said besides its fields: a reply in another shape than the
+ * JSON asked for, as the text it is, and a failed call. Model output is
+ * sanitized like any other external string.
  */
-export function briefParts(input: MonitorData, width: number, indent = 1): {approval: string[]; said: string[]} {
+export function briefSaid(input: MonitorData, width: number): string[] {
   const brief = input.brief;
-  const pad = ' '.repeat(indent);
-  const failure = brief?.error ? flowLines(monitorText(brief.error),Math.max(1,width-indent)).map(text=>theme.warning(pad+text)) : [];
-  const flow = (text: string, indent: number, paint: (s: string) => string = s => s) =>
-    flowLines(monitorText(text),Math.max(1,width-indent)).map(line=>' '.repeat(indent)+paint(line));
-  let body: string[] = [];
-  if (brief?.overall) body = balancedLines(monitorText(brief.overall),Math.max(1,width-indent)).map(line=>pad+colors.dim(line));
-  else if (brief?.text && !brief.structured && !brief.items) {
-    // A reply in another shape than the JSON asked for is shown as the text it is.
-    body = brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flow(line,indent));
-  }
-  // A line restored from an earlier panel has no reply text behind it and is shown all the same.
+  const failure = brief?.error ? flowLines(monitorText(brief.error),Math.max(1,width)).map(text=>theme.warning(text)) : [];
+  // A reply in another shape than the JSON asked for is shown as the text it is.
+  const body = brief?.text && !brief.structured && !brief.items && !brief.overall
+    ? brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flowLines(monitorText(line),Math.max(1,width))) : [];
+  // A line restored from an earlier panel has no reply text behind it: its failure is all there is.
   const spoke = Boolean(brief?.text || brief?.overall);
-  const said = [...(spoke ? body : failure),...(spoke ? failure.slice(0,1) : [])];
-  // A pending approval in plain words leads: the session cannot go on without it.
-  const approval = input.notes?.approval
-    ? flowLines(monitorText(`${t('Approval, in the model\'s words:')} ${input.notes.approval}`),Math.max(1,width-2)).map((line,i)=>(i ? '  ' : colors.dim('~ '))+theme.warning(line)) : [];
-  return {approval,said};
+  return [...body,...(spoke ? failure.slice(0,1) : failure)];
 }
 
 /** The brief's rule as a row, its switch a click target. */
@@ -714,14 +720,12 @@ function briefRows(input: MonitorData, state: MonitorState, width: number, now: 
   const brief = input.brief;
   if (!brief && !input.agentLog) return [];
   const rule = brief ? briefRuleRow(brief,width) : {text:colors.dim(truncateAnsi(`${t('─ Agent log')} ${'─'.repeat(width)}`,width)),key:'brief'};
-  const recap = brief?.recap ? recapRows(brief.recap,width,now,spaced) : [];
-  const {approval,said} = briefParts(input,width);
-  const gap = (on: unknown): MonitorRow[] => on && spaced ? [{text:''}] : [];
-  // The recap leads; a blank line sets it off from what follows.
-  let top: MonitorRow[] = [...approval.map(text=>({text,key:'approval'})),...gap(approval.length && (recap.length || said.length)),
-    ...recap,...gap(recap.length && said.length),...said.map(text=>({text,key:'said'}))];
+  // The same fields as the status card's, a column in from the rule.
+  const head: MonitorRow[] = brief?.recap ? [{text:colors.dim(truncateAnsi(` ${t('Main recap')} · ${writtenAge(brief.recap.at,now)}`,width)),key:'recap'}] : [];
+  let top: MonitorRow[] = [...head,...briefFields(input,Math.max(1,width-1)).flatMap(field=>field.lines.map(line=>({text:' '+line,key:field.id === 'said' ? 'said' : 'recap'})))];
   // Paused, the last brief stays for reference but steps back.
   if (brief?.paused) top = top.map(row=>({...row,text:colors.dim(stripAnsi(row.text))}));
+  const gap = (on: unknown): MonitorRow[] => on && spaced ? [{text:''}] : [];
   const log = input.agentLog ? logRows(input,state,width,now,spaced) : [];
   return [{text:''},rule,...top,...gap(top.length && log.length),...log];
 }
@@ -799,18 +803,7 @@ function logRows(input: MonitorData, state: MonitorState, width: number, now: nu
 export function writtenAge(at: number, now: number): string {
   const seconds = Math.max(0,Math.floor((now-at)/1000));
   if (seconds < 60) return t('just now');
-  if (seconds >= 2*86_400) return t('{age} ago',{age:`${Math.floor(seconds/86_400)}d`});
   return t('{age} ago',{age:age(new Date(at),now)});
-}
-
-/**
- * Compact: the main session's recap, the first block under the Brief rule:
- * a heading that says it is the model's and how old it is, then its
- * labelled fields (see `recapFields`).
- */
-function recapRows(recap: NonNullable<Brief['recap']>, width: number, now: number, spaced: boolean): MonitorRow[] {
-  const head: MonitorRow = {text:colors.dim(truncateAnsi(` ${t('Main recap')} · ${writtenAge(recap.at,now)}`,width)),key:'recap'};
-  return [head,...recapFields(recap,Math.max(1,width-1),spaced).map(line=>({text:line ? ' '+line : '',key:'recap'}))];
 }
 
 /**
@@ -863,7 +856,8 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary']
       .map(line=>t(line))
       .concat(t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
-        ...['~ = written by a model','yellow clock = quiet 5m+','━╸─ = agent context used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
+        ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve','b‖ / b▸ pause / resume brief  ~… writing',
+          'status card frame colour = main session state','┃ = auto-compact point','yellow clock = quiet 5m+','━╸─ = context or quota used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
         ...stripAnsi(modelLegend()).split('\n'))
       .flatMap(line=>helpLines(line,width));
     const count = Math.max(0,height-2);
@@ -997,33 +991,84 @@ function placeArt(lines: string[], end: number, width: number, art: NonNullable<
   drawing.forEach((line,i)=>{lines[top+i]=fit(left+line,width);});
 }
 
+/** Fewest columns of bar a meter draws; under it the meter is its label alone. */
+export const METER_MIN = 6;
 /**
- * One edge of the status card: "╭─ left ──────── right ─╮". The left text is
- * tried whole, with each right text in turn and then none, before the same
- * again with `fallback`; the first pairing that leaves a dash between them
- * wins. With `squeeze` the left
- * text is cut to fit instead of falling back. The frame is muted; what rides
- * on it keeps its own colours.
+ * A meter drawn in the gap of a rule, as omp draws its context meter in the
+ * top border of its input box: the border is the meter.
  */
-export function cardEdge(open: string, close: string, width: number, left: string, fallback: string, rights: string[], squeeze = false):
-  {line: string; right?: {x: number; text: string}} {
-  const room = width-4;
-  // The left text matters more: every right text is tried with it before
-  // the fallback is.
-  for (const candidate of squeeze ? [left] : [left,fallback]) {
-    for (const right of [...rights,'']) {
-      const space = room-visualLength(right)-1;
-      if (space < 0) continue;
-      // Cut inside the padding, so the text still ends in a space before the rule.
-      const shown = squeeze && visualLength(candidate) > space ? truncateAnsi(candidate,Math.max(0,space-1))+' ' : candidate;
-      if (visualLength(shown) > space) continue;
-      const fill = room-visualLength(shown)-visualLength(right);
-      const line = colors.dim(open+'─')+shown+colors.dim('─'.repeat(fill))
-        +colors.dim(right)+colors.dim('─'+close);
-      return {line,right:right ? {x:2+visualLength(shown)+fill,text:right} : undefined};
-    }
-  }
-  return {line:colors.dim(open+'─'.repeat(Math.max(0,width-2))+close)};
+export interface EdgeMeter {
+  /** How full, 0–100: the share of the bar drawn heavy. */
+  percent: number;
+  /** The fill's colour, by the same thresholds as its reading. */
+  paint: (s: string) => string;
+  /** At the head of the bar, painted: "56%", "7d 99%". */
+  label?: string;
+  /** Closing the bar, painted: the window size, "246K". */
+  tail?: string;
+  /** Where a known threshold sits, 0–100, drawn "┃". Only one the HUD can read, never a guess. */
+  tick?: number;
+}
+
+/**
+ * The bar alone, `cells` wide: heavy and coloured where used, with a half
+ * step, the rest in the rule's own paint, and the tick where it has not been
+ * passed yet.
+ */
+export function meterBar(meter: EdgeMeter, cells: number, rule: (s: string) => string = colors.dim): string {
+  const clamped = Math.max(0,Math.min(100,meter.percent));
+  const halves = clamped > 0 ? Math.max(1,Math.round(clamped/100*cells*2)) : 0;
+  const full = Math.min(cells,Math.floor(halves/2));
+  const half = halves%2 && full < cells ? '╸' : '';
+  const used = full+half.length;
+  const tick = meter.tick !== undefined && meter.tick > 0 && meter.tick < 100 ? Math.min(cells-1,Math.round(meter.tick/100*cells)) : -1;
+  let rest = '';
+  for (let i = used; i < cells; i++) rest += i === tick ? '┃' : '─';
+  return meter.paint('━'.repeat(full)+half)+rule(rest);
+}
+
+/**
+ * A rule's gap filled as a meter, exactly `room` columns:
+ * "56%━━━━━━──────┃─246K". The bar takes what the label and tail leave, in
+ * proportion. Short of room the tail goes first, then the bar (under
+ * `METER_MIN` columns), then the label; what is left is plain rule. `bar`
+ * says whether the bar was drawn, `tail` whether the tail was.
+ */
+export function meterGap(room: number, meter: EdgeMeter | undefined, rule: (s: string) => string = colors.dim): {text: string; bar: boolean; tail: boolean} {
+  const plainRule = {text:rule('─'.repeat(Math.max(0,room))),bar:false,tail:false};
+  if (!meter || room <= 0) return plainRule;
+  const label = meter.label ?? '';
+  const head = visualLength(label);
+  const tail = meter.tail ? visualLength(meter.tail)+1 : 0;
+  if (room-head-tail >= METER_MIN && tail) return {text:label+meterBar(meter,room-head-tail,rule)+rule('─')+meter.tail,bar:true,tail:true};
+  if (room-head >= METER_MIN) return {text:label+meterBar(meter,room-head,rule),bar:true,tail:false};
+  if (head && room >= head) return {text:label+rule('─'.repeat(room-head)),bar:false,tail:false};
+  return plainRule;
+}
+
+/**
+ * A rule with texts riding on it, `width` wide: `lead`, " left ", the gap,
+ * " right ", `trail`. The gap is plain rule, at least one column, or a meter
+ * (`meterGap`). Null when the texts leave no gap, or when `needBar` and the
+ * meter's bar would be under `METER_MIN` (or `needTail` and its tail would
+ * not fit beside it): the caller then tries a shorter
+ * set of texts. `rightX` is where the right text starts, its padding
+ * included. The rule's glyphs take `rule`; what rides on it keeps its own
+ * colours.
+ */
+export function edgeLine(width: number, lead: string, trail: string, left: string, right: string,
+  meter?: EdgeMeter, needBar = false, rule: (s: string) => string = colors.dim, needTail = false): {line: string; rightX: number; bar: boolean} | null {
+  const shownLeft = left ? ` ${left} ` : ' ';
+  const shownRight = right ? ` ${right} ` : '';
+  const room = width-visualLength(lead)-visualLength(trail)-visualLength(shownLeft)-visualLength(shownRight);
+  if (room < 1) return null;
+  let gap = meterGap(room,meter,rule);
+  // A tail at the end of the rule keeps a space before the corner, as a right text does.
+  const spaced = !right && gap.tail && room > 1;
+  if (spaced) gap = meterGap(room-1,meter,rule);
+  if (meter && ((needBar && !gap.bar) || (needTail && meter.tail && !gap.tail))) return null;
+  const line = rule(lead)+shownLeft+gap.text+(spaced && gap.tail ? ' ' : spaced ? rule('─') : '')+shownRight+rule(trail);
+  return {line,rightX:visualLength(lead)+visualLength(shownLeft)+room,bar:gap.bar};
 }
 
 function openPane(state: MonitorState, id: MonitorPane): MonitorState {

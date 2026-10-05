@@ -32,7 +32,7 @@ import { t } from './i18n.js';
 import { agentTitle, type AgentTitle } from './agent-title.js';
 import {
   type MonitorData, type MonitorState, type MonitorRow, type RowControl,
-  monitorText, flowLines, balancedLines, age, nodeStatus, isLive, isQuiet, turnClock, contextLine, squeeze, finishedAt,
+  monitorText, flowLines, balancedLines, age, nodeStatus, iconic, briefSaid, isLive, isQuiet, turnClock, contextLine, squeeze, finishedAt,
   summaryRow, emptyAgentsText,
   MODEL_LOG_KINDS, FRESH_FINISH_MS, CONTEXT_METER_WIDTH,
 } from './monitor.js';
@@ -90,24 +90,109 @@ export function taskLines(title: AgentTitle, width: number, max = 2): {lines: st
   return clipLines(flowLines(title.task,width),max,width);
 }
 
+/** Which part of the brief a block of lines is. */
+export type BriefFieldId = 'approval' | 'needs' | 'goal' | 'now' | 'done' | 'said';
+export interface BriefField { id: BriefFieldId; lines: string[] }
+/** Lines one value of the brief gets before it is cut. */
+const FIELD_LINES = 2;
+/** Done items the brief shows: the newest; the rest are counted. */
+const DONE_SHOWN = 2;
 /**
- * The recap's fields, each a dim label on its own line with its text
- * indented two columns beneath it: the goal (strong), what is done (each
- * item with its ✓, wrapped under its own text), where it stands, and, when
- * the session waits on the person, what it needs, in the warning colour and
- * absent when empty. Lines are evened out so none ends in a stranded word.
- * `spaced` puts a blank line between fields.
+ * The brief's labels: an icon each where icons stand in for words, else the
+ * word. The words share one column, padded to the widest, so 已完成 and 目标
+ * line up; an icon is a column already.
  */
-export function recapFields(recap: NonNullable<Brief['recap']>, width: number, spaced: boolean): string[] {
-  const text = (value: string, indent: number, paint: Paint = plain) =>
-    balancedLines(monitorText(value),Math.max(1,width-indent)).map(line=>' '.repeat(indent)+paint(line));
-  const fields: string[][] = [[colors.dim(t('Goal')),...text(recap.goal,2,theme.strong)]];
-  if (recap.done.length) fields.push([colors.dim(t('Done')),...recap.done.flatMap(item =>
-    balancedLines(monitorText(item),Math.max(1,width-4)).map((line,i)=>(i ? '    ' : `  ${theme.success('✓')} `)+line))]);
-  fields.push([colors.dim(t('Now')),...text(recap.now,2)]);
-  if (recap.needs) fields.push([theme.warning(t('Needs')),...text(recap.needs,2,theme.warning)]);
-  return fields.flatMap((field,i)=>[...(i && spaced ? [''] : []),...field]);
+const FIELD_WORDS: Record<Exclude<BriefFieldId,'said'>, string> = {approval:'Approve',needs:'Needs',goal:'Goal',now:'Now',done:'Done'};
+const FIELD_ICONS: Record<Exclude<BriefFieldId,'said'>, string> = {approval:'⚑',needs:'!',goal:'◎',now:'▸',done:'✓'};
+/** The label column for the fields shown: the widest of their words, so a card without an approval is not padded for one. */
+function labelColumn(ids: ReadonlyArray<Exclude<BriefFieldId,'said'>>): number {
+  return iconic() ? 1 : Math.max(1,...ids.map(id=>visualLength(t(FIELD_WORDS[id]))));
 }
+function fieldLabel(id: Exclude<BriefFieldId,'said'>, column: number): string {
+  const text = iconic() ? FIELD_ICONS[id] : t(FIELD_WORDS[id]);
+  const paint = id === 'needs' || id === 'approval' ? theme.warning : id === 'done' && iconic() ? theme.success : colors.dim;
+  return paint(text)+' '.repeat(Math.max(0,column-visualLength(text)));
+}
+
+/**
+ * One field: its label in the label column, the value after it, wrapped
+ * with its lines hanging under the value and cut after two.
+ */
+function inlineField(id: Exclude<BriefFieldId,'said'>, value: string, width: number, column: number, paint: Paint = plain): BriefField {
+  const room = Math.max(1,width-column-1);
+  const lines = clipLines(balancedLines(monitorText(value),room),FIELD_LINES,room).lines;
+  return {id,lines:lines.map((line,i)=>(i ? ' '.repeat(column+1) : fieldLabel(id,column)+' ')+paint(line))};
+}
+
+/**
+ * Done: the newest two items, a dim "+N" closing the last when there were
+ * more. With icons each item has the ✓ in the label column; with words the
+ * label heads the first and each item keeps its own ✓.
+ */
+function doneField(done: readonly string[], width: number, column: number): BriefField | null {
+  if (!done.length) return null;
+  const items = done.slice(-DONE_SHOWN);
+  const more = done.length-items.length;
+  const suffix = more ? ` +${more}` : '';
+  const mark = iconic() ? '' : `${theme.success('✓')} `;
+  const lead = visualLength(stripAnsi(mark));
+  const room = Math.max(1,width-column-1-lead);
+  const lines: string[] = [];
+  items.forEach((item,index) => {
+    const last = index === items.length-1;
+    // The last item leaves room for the count, so it never wraps alone.
+    const wrapped = clipLines(balancedLines(monitorText(item),Math.max(1,room-(last ? suffix.length : 0))),FIELD_LINES,room-(last ? suffix.length : 0)).lines;
+    wrapped.forEach((line,i) => {
+      const label = i ? ' '.repeat(column+1) : iconic() || (!index && !i) ? fieldLabel('done',column)+' ' : ' '.repeat(column+1);
+      lines.push(label+(i ? ' '.repeat(lead) : mark)+line+(last && i === wrapped.length-1 && suffix ? colors.dim(suffix) : ''));
+    });
+  });
+  return {id:'done',lines};
+}
+
+function recapIds(recap: NonNullable<Brief['recap']>): Array<Exclude<BriefFieldId,'said'>> {
+  return [...(recap.needs ? ['needs' as const] : []),'goal','now',...(recap.done.length ? ['done' as const] : [])];
+}
+
+/**
+ * The recap's fields, each on its own lines with its label inline: what it
+ * needs from the person (in the warning colour, absent when empty), the goal
+ * (strong), where it stands, and what is done. No blank lines between them:
+ * the label column is what sets one field off from the next.
+ */
+export function recapFields(recap: NonNullable<Brief['recap']>, width: number, column = labelColumn(recapIds(recap))): BriefField[] {
+  const fields: BriefField[] = [];
+  if (recap.needs) fields.push(inlineField('needs',recap.needs,width,column,theme.warning));
+  fields.push(inlineField('goal',recap.goal,width,column,theme.strong));
+  fields.push(inlineField('now',recap.now,width,column));
+  const done = doneField(recap.done,width,column);
+  if (done) fields.push(done);
+  return fields;
+}
+
+/**
+ * The main session's brief as fields, in the order they are read: the
+ * pending approval in the model's words (it leads: the session cannot go on
+ * without it), the recap, and what else the brief said. The whole-picture
+ * sentence repeats Now when a recap is there, so it shows only without one,
+ * in Now's place. A failed call and a reply in another shape are rows of
+ * their own, as written.
+ */
+export function briefFields(input: MonitorData, width: number): BriefField[] {
+  const brief = input.brief;
+  const fields: BriefField[] = [];
+  const ids = [...(input.notes?.approval ? ['approval' as const] : []),...(brief?.recap ? recapIds(brief.recap) : brief?.overall ? ['now' as const] : [])];
+  const column = labelColumn(ids);
+  if (input.notes?.approval) fields.push(inlineField('approval',`~ ${input.notes.approval}`,width,column,theme.warning));
+  if (brief?.recap) fields.push(...recapFields(brief.recap,width,column));
+  else if (brief?.overall) fields.push(inlineField('now',brief.overall,width,column,colors.dim));
+  const said = briefSaid(input,width);
+  if (said.length) fields.push({id:'said',lines:said});
+  return fields;
+}
+
+/** The order fields give way in when the brief is taller than its room: the last goes first. */
+export const BRIEF_KEEP: readonly BriefFieldId[] = ['approval','needs','said','now','goal','done'];
 
 /** A running turn's length, counting seconds: 42s, 4m07s, 1h04m. */
 export function clockText(ms: number): string {

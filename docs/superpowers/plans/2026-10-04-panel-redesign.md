@@ -450,3 +450,122 @@ Afterwards:
    timeline.
 5. Any decision this plan left open, and any item you could not do, with
    the reason.
+
+---
+
+## G. Colour for state, icons instead of words (amendment, user-approved)
+
+Added after the plan was handed over. omp also animates text ("shimmer") to
+show work in progress. **The user rejected animation for performance
+reasons. Add no animation and no repaint faster than today's 1 Hz.**
+
+What they want instead:
+- colour carries the state;
+- icons replace text labels where an icon is clearer.
+
+### G1. Colour carries the state
+
+**Status card border.** Paint the whole rounded frame (both edges and the
+side `│`s) by the main session's state:
+
+| State | Border colour |
+|---|---|
+| idle | dim |
+| working | info |
+| failed | error |
+| stale | warning |
+| needs the person (pending approval, recap `needs`, a failed tool or agent alert) | warning |
+
+The meters keep their own threshold colours: only the plain rule parts and
+the corners take the state colour. Once the border carries the state:
+- **Idle:** drop the word (`空闲`/`Idle`) and keep only its glyph.
+- **Working:** drop the word too. The running tool name, its target and the
+  elapsed time already say it.
+- **Failed, stale, needs-you:** keep a glyph (`✗` `?` `!`). Colour alone is
+  lost on colour-blind readers and in copied text.
+
+**Agent cards and one-line rows** already paint their rule by state
+(`paint` in `agentCard`). Make it consistent:
+- live: info;
+- quiet 5m+: warning;
+- failed: error;
+- just finished: success;
+- old finished: dim.
+
+Then:
+- Drop the textual `starting` and keep a glyph.
+- The status icon (`✓ ✗ ▸ ?`) stays. It is one column and survives without
+  colour.
+
+**Per-agent accent, timeline and inspector only.** Give each agent a stable
+colour from a hash of its id, picked from a small palette of 6 readable
+256-colour or ANSI colours that work on dark and light terminals and avoid
+the success/warning/error hues. Use it for the agent's name in timeline
+lines and in the inspector heading, so the same agent can be followed down
+the timeline. Not on cards: their colour is the state.
+
+All of this must stay readable with `theme`/`palette` set to the
+monochrome or terminal themes, if those exist. Check
+`src/render/palette.ts`.
+
+### G2. Icons instead of text labels
+
+Rules:
+- Only when the `glyphs` display setting is `glyph` or `both`. With
+  `text`, keep the words.
+- Use single-column BMP symbols the codebase already treats as width 1
+  (`visualLength`). No emoji, and no symbols the width table marks wide.
+- Prefer glyphs already in use (`✓ ✗ ! ◷ ◈ ━ ╸`).
+- Add each new icon to the `?` key legend (`keys.txt` lists the current
+  legend), in both languages.
+
+Where to use them:
+- **Brief fields in the status card (A3):** the label column becomes one
+  icon plus a space, which also narrows the column.
+  - Needs: `!`, warning colour.
+  - Goal: `◎`.
+  - Now: `▸`.
+  - Done: `✓`, success colour. The items under it then need no `✓` of their
+    own; use `·`, or nothing.
+  - The whole-picture line, when it stands in for Now: `▸` as well.
+- **Approval words:** `?` or `⚑`, warning colour, in place of the
+  "Approval, in the model's words:" prefix. Keep the `~` model-written
+  marker.
+- **Status edges:**
+  - The context meter's head label stays the percentage. A leading `◔`, or
+    similar, is optional: use it only if the meter is ambiguous without it.
+  - The quota head stays `7d 99%`.
+  - The reset countdown is `↺114h`, which is already an icon.
+- **Brief state on the top edge:** `~3m` (no `前`/`ago`). A failure is `✗`
+  in the warning colour. Paused is `‖`, or `⏸` if it is narrow in the width
+  table, with no word. The switch text `b暂停`/`b继续` may shrink to
+  `b‖`/`b▸`, if the legend explains it.
+- **Agent cards and rows:**
+  - The time without `ago`/`前`: `12d`, `19h`.
+  - `+N folded` becomes `+N`, with a fold glyph if needed.
+  - The guardian chip is already `◈N`.
+- **Timeline (D):**
+  - `Turn finished` becomes `⏎`, or similar, plus the count `×5`.
+  - An agent's run reads `▸ name 12m ✓` (or `✗`).
+  - A tool failure reads `✗ exec`.
+- **Settings page:** leave the labels as words. The settings are where
+  words belong. Do not iconify there.
+
+Every place that drops a word for an icon still needs the word in
+`glyphs: text` mode. Add tests for both modes.
+
+### G3. Order and commit
+
+Fold G into the parts it touches:
+- the status card into A;
+- cards into B;
+- the timeline into D.
+
+Or, if those are already committed, do G as its own commit: "Let colour
+carry state and icons replace the panel's labels". Commit this amendment
+together with the part that first implements it, or on its own.
+
+The live check in F now also captures:
+- the status card in each state (idle, working, failed or stale, needs-you)
+  at 90 columns;
+- one capture with `glyphs: text`, to show the words come back.

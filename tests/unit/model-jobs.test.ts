@@ -17,7 +17,7 @@ import type { RolloutParseResult } from '../../src/collectors/rollout.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
 import { initialMonitorState, renderMonitor } from '../../src/render/monitor.js';
 import { buildBarModules } from '../../src/render/layout/bar-modules.js';
-import { stripAnsi } from '../../src/render/colors.js';
+import { stripAnsi, theme } from '../../src/render/colors.js';
 import { makeHudData, FIXED_NOW } from '../fixtures/hud-data.js';
 
 const now = Date.parse('2026-10-01T10:00:00Z');
@@ -346,9 +346,9 @@ test('the panel marks each model reading: approval words, the change summary, th
   const frame = renderMonitor({ tree: agents, state: base, width: 40, height: 30, nowMs: now, brief: {}, agentLog: log,
     notes: { approval: 'Removes the dist folder.' } });
   const lines = frame.lines.map(stripAnsi);
-  const at = lines.findIndex(text => text.includes('~ Approval, in the model\'s words:'));
+  const at = lines.findIndex(text => text.includes('⚑ ~ Removes the dist folder.'));
   assert.ok(at > 0, lines.join('\n'));
-  assert.match(lines[at + 1], /^ {2}Removes the dist folder\./, 'under its label, before the log');
+  assert.ok(frame.lines[at].includes(theme.warning('⚑')), 'its label in the warning colour, the model\'s mark kept');
   // The tree row and the log header keep Codex's name; the label is what the agent is for, under the header.
   const row = lines.findIndex(text => /^›✓ audit_code_paths/.test(text));
   assert.ok(row > 0, lines.join('\n'));

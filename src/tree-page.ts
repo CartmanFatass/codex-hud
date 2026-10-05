@@ -196,7 +196,7 @@ async function runLivePage(): Promise<void> {
         agentLog:settings.briefing !== 'off' || settings.agentLog ? agentLog.snapshot() : undefined,timeline:jobs.withCauses(timeline),
         notes:{approval:switches().approvalDescription ? jobs.approvalNote(main?.pendingApproval) : undefined,
           changes:switches().changeSummary ? jobs.changeNote(git) : undefined},
-        status:(rowWidth,maxRows)=>statusCard(hudStatus.current(),rowWidth,maxRows),session:nowMs=>sessionState(hudStatus.current(),nowMs),width,height:process.stdout.rows || 24});
+        status:nowMs=>statusCard(hudStatus.current(),nowMs),session:nowMs=>sessionState(hudStatus.current(),nowMs),width,height:process.stdout.rows || 24});
       state = frame.state;
       lines = frame.lines;
       }

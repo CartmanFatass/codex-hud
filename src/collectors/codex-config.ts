@@ -34,6 +34,8 @@ export function readCodexConfig(): CodexConfig {
       model: parsed.model as string | undefined,
       model_reasoning_effort: parsed.model_reasoning_effort as string | undefined,
       model_provider: parsed.model_provider as string | undefined,
+      model_auto_compact_token_limit: typeof parsed.model_auto_compact_token_limit === 'number'
+        ? parsed.model_auto_compact_token_limit : undefined,
       approval_policy: parsed.approval_policy as string | undefined,
       sandbox_mode: parsed.sandbox_mode as string | undefined,
       mcp_servers: parseMcpServers(parsed.mcp_servers),

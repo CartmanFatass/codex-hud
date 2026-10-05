@@ -118,7 +118,7 @@ test('a pending approval says how long it has waited, in the bar\'s widest form,
   const attention = buildBarModules(data, { nowMs }).find(module => module.id === 'attention')!;
   assert.match(stripAnsi(attention.variants.full!), /approval needed 2m/);
   assert.doesNotMatch(stripAnsi(attention.variants.short!), /2m/, 'narrower forms keep the phrase alone');
-  assert.match(stripAnsi(statusCard(data, 60, 5, nowMs)!.rows.join('\n')), /approval needed 2m/);
+  assert.match(stripAnsi(statusCard(data, nowMs)!.alerts.join('\n')), /approval needed 2m/);
   assert.equal(buildSnapshot(data, { width: 0, segments: [] }, nowMs).approvalSince, new Date(nowMs - 125_000).toISOString());
   assert.equal(buildSnapshot(makeHudData({ pendingApproval: undefined }), { width: 0, segments: [] }, nowMs).approvalSince, undefined);
 });
@@ -131,7 +131,7 @@ test('a quota forecast shows on the bar\'s widest quota form and the card, marke
   assert.match(stripAnsi(module(projected).variants.full!), /out in ~40m/);
   assert.equal(module(projected).variants.short, module(plain).variants.short, 'narrower forms unchanged');
   assert.doesNotMatch(stripAnsi(module(plain).variants.full!), /out in/);
-  assert.match(stripAnsi(statusCard(projected, 70, 5, nowMs)!.rows.join('\n')), /out ~40m/);
+  assert.match(stripAnsi(statusCard(projected, nowMs)!.forecast), /out ~40m/);
   assert.deepEqual(buildSnapshot(projected, { width: 0, segments: [] }, nowMs).quotaForecast,
     { window: 'primary', exhaustAt: new Date(nowMs + 40 * 60_000).toISOString(), percent: 70, windowMinutes: 300 });
   assert.equal(buildSnapshot(plain, { width: 0, segments: [] }, nowMs).quotaForecast, undefined);

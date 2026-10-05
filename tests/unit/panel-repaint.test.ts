@@ -42,7 +42,7 @@ test('nothing in the panel changes within a second, even with live traffic and f
     const tree = makeSubagentTree();
     const draw = (nowMs: number) => renderMonitor({
       tree, state: initialMonitorState(), width: 32, height: 30, nowMs,
-      status: (rowWidth, maxRows) => statusCard(data, rowWidth, maxRows, nowMs),
+      status: () => statusCard(data, nowMs),
     }).lines.join('\n');
     // From just after one turn of the turn clock to just before the next.
     const first = NOW + 720;

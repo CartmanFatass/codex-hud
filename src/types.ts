@@ -23,6 +23,8 @@ export interface CodexConfig {
   model?: string;
   model_reasoning_effort?: string;
   model_provider?: string;
+  /** Where Codex compacts the context on its own, in tokens, when the config sets it. */
+  model_auto_compact_token_limit?: number;
   approval_policy?: string;
   sandbox_mode?: string;
   mcp_servers?: Record<string, McpServerConfig>;

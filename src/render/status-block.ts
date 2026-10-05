@@ -1,48 +1,69 @@
 /**
- * The status bar's fields, as a card at the foot of the tree panel. While
+ * The status bar's fields, for the card at the foot of the tree panel. While
  * the panel is open it replaces the bar, so what the bar said has to be said
- * here; the panel is narrow and tall where the bar is wide and short, so the
- * fields become a small table, and the short identifying ones ride on the
- * card's frame where they cost no row:
+ * here. The card spends its rows on the brief, so the fields ride on its
+ * edges, and the edges are the meters, as omp's input box draws its context
+ * meter in its border:
  *
- *   ╭─ 状态 ☀◆ 2h10m ─────── , ? ─╮   model and session age on the top edge
- *   │ ! 等待批准                   │   alerts, only when there are any
- *   │ ▸ exec_command · 4m          │   what the session is doing
- *   │ 上下文 ━━━━━━━╸──── 61%      │   how full the context is
- *   │ 额度   ━━━━━━━━━━━━ 100% !   │   the account's usage window
- *   │ 输出   ~25.5 tok/s  任务 2/5 │   the rest, when there is any
- *   ╰─ hmasd-wsl · main * ── ◷~09m ─╯  where, and the prompt-cache reminder
+ *   ╭─ ▸ exec: npm test · 2m10s ☀◆ 2h 56%━━━━━━━────────246K , ? ─╮
+ *   │ ! 等待批准                                                   │   alerts, only when there are any
+ *   ╰─ atlas-wsl · main * 7d 99%━━━━━━━━━━━━━━━━━━━━━ ↺114h ◷~30m+ ─╯
  *
- * Labels sit in one column and meters start in the next, so the two meters
- * line up. The monitor draws the frame and fits the edge texts to it. Every value
- * here is read the way the bar reads it; a field with no data is left out
- * rather than shown as zero. The agents' counts are the panel's own job.
+ * Top: the session's state (while it works, the tool, the turn's clock and
+ * the output rate), the model's badge and the session's age, then the
+ * context meter with its window size. Bottom: where it works, the quota
+ * meter, the reset countdown and the prompt-cache reminder. This module
+ * hands the monitor the parts; the monitor fits them to the edge, dropping
+ * the least wanted first. Every value is read the way the bar reads it; a
+ * field with no data is left out rather than shown as zero. The agents'
+ * counts are the panel's own job.
  */
 import type { HudData } from '../types.js';
-import { buildBarModules, formatDuration } from './layout/bar-modules.js';
 import { collectAttention, waitedText } from './attention.js';
-import { colors, coloredPercent, getContextColor, icons, padEnd, theme, truncate, truncateAnsi, visualLength } from './colors.js';
+import { colors, getContextColor, icons, theme, truncate } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { formatCountdown, readQuotaWindows } from './quota.js';
 import { formatElapsedShort } from './subagent-chip.js';
 import { formatTokenRate } from '../collectors/token-rate.js';
 import { displayConfig } from './hud-config.js';
-import { contextLine } from './monitor.js';
+import { age, iconic, type EdgeMeter } from './monitor.js';
 import { t } from './i18n.js';
 
-type RowId = 'alert' | 'session' | 'context' | 'quota' | 'extras';
-/** What stays when the card is short of rows, most wanted first. */
-const KEEP_ORDER: RowId[] = ['alert', 'session', 'context', 'quota', 'extras'];
-const SHOW_ORDER: RowId[] = ['alert', 'session', 'context', 'quota', 'extras'];
+/**
+ * What the card's frame is painted by: the main session's state, or that it
+ * needs the person (an approval, a failed tool or agent).
+ */
+export type StatusTone = 'idle' | 'working' | 'error' | 'stale' | 'needs';
+/** The frame's colour for a tone; the meters keep their own. */
+export function tonePaint(tone: StatusTone): (s: string) => string {
+  return tone === 'working' ? theme.info : tone === 'error' ? theme.error : tone === 'stale' || tone === 'needs' ? theme.warning : colors.dim;
+}
 
 export interface StatusCard {
-  rows: string[];
-  /** For the top edge, after the title: the model's badge and the session's age. */
-  top: string;
-  /** For the bottom edge: where the session works, and the cache reminder. */
-  bottom: string;
-  bottomRight: string;
+  tone: StatusTone;
+  /** Rows for the card's body: what needs a look, painted. */
+  alerts: string[];
+  /** The session's state: "✓ Idle", or while it works "▸ exec: npm test · 2m10s". */
+  state: string;
+  /** While it works only: the output rate, and the plan's progress. */
+  rate: string;
+  tasks: string;
+  /** The model's badge and the session's age. */
+  model: string;
+  age: string;
+  /** How full the context is, its window size closing the bar. */
+  context?: EdgeMeter;
+  /** For the bottom edge: where the session works. */
+  place: string;
+  /** The account's tightest usage window, labelled with its length; `text` is its reading alone. */
+  quota?: EdgeMeter & {text: string};
+  /** The other window's reading, a projection of running out, and the soonest reset. */
+  others: string;
+  forecast: string;
+  reset: string;
+  /** The prompt-cache reminder: dim, but in the warning colour in the minutes before it lapses. */
+  cache: string;
 }
 
 function alertLabel(label: string): string {
@@ -80,115 +101,120 @@ export function sessionState(data: HudData | null, nowMs: number = Date.now()): 
   if (!status) return null;
   const [glyph, word, paint] = SESSION_STATES[status];
   const started = status === 'working' ? data.activity?.turnStartedAt : undefined;
-  const words = `${paint(t(word))}${started ? colors.dim(` ${formatElapsedShort(started, nowMs)}`) : ''}`;
+  const clock = started ? colors.dim(formatElapsedShort(started, nowMs)) : '';
+  // The card's frame is painted by the state: with icons the word goes and
+  // the glyph stays, which survives without colour.
+  if (iconic()) {
+    const text = [paint(glyph), clock].filter(Boolean).join(' ');
+    return { text, short: text, attention: false, failed };
+  }
+  const words = `${paint(t(word))}${clock ? ` ${clock}` : ''}`;
   return { text: `${paint(glyph)} ${words}`, short: words, attention: false, failed };
 }
 
-export function statusCard(data: HudData | null, width: number, maxRows: number, nowMs: number = Date.now()): StatusCard | null {
-  if (!data || width < 12 || maxRows <= 0) return null;
-  const glyphs = displayConfig().glyphs;
-  const labelWidth = Math.max(...['Context', 'Quota', 'Output'].map((label) => visualLength(t(label))));
-  const label = (text: string) => colors.dim(padEnd(t(text), labelWidth)) + ' ';
-  const rows = new Map<RowId, string>();
-  const meters = new Map<RowId, Meter>();
+/**
+ * The prompt-cache reminder as the card shows it. The bar paints it red once
+ * thirty minutes have passed, but on a card that stays open through a long
+ * idle session that is most of the time, and nothing is left to act on: it
+ * is dim then, and only the minutes before it lapses (25–29m) are a warning.
+ */
+function cacheReminder(data: HudData, nowMs: number): string {
+  const sampledAt = data.tokenUsageAt?.getTime();
+  if (sampledAt === undefined || !Number.isFinite(sampledAt) || !Number.isFinite(nowMs)) return '';
+  const minutes = Math.max(0, Math.floor((nowMs - sampledAt) / 60_000));
+  const text = `${displayConfig().glyphs === 'text' ? 'Cache ' : '◷'}${data.stale ? '?' : '~'}${minutes >= 30 ? '30m+' : `${String(minutes).padStart(2, '0')}m`}`;
+  return minutes >= 25 && minutes < 30 ? theme.warning(text) : colors.dim(text);
+}
 
-  // Alerts the other rows do not already carry: a full quota is marked on the
-  // quota row, a nearly full context is coloured on its meter.
+export function statusCard(data: HudData | null, nowMs: number = Date.now()): StatusCard | null {
+  if (!data) return null;
+  const glyphs = displayConfig().glyphs;
+
+  // Alerts the edges do not already carry: a full quota is marked on the
+  // quota meter, a nearly full context is coloured on its own.
   const alerts = collectAttention(data, nowMs).filter((item) => item.kind !== 'quota-exhausted' && item.kind !== 'context-critical');
-  if (alerts.length) {
-    const paint = alerts.some((item) => item.severity === 'error') ? theme.error : theme.warning;
-    rows.set('alert', paint(`! ${alerts.map((item) => alertLabel(item.label) + (item.since ? ` ${waitedText(item.since, nowMs)}` : '')).join(' · ')}`));
-  }
+  const paintAlert = alerts.some((item) => item.severity === 'error') ? theme.error : theme.warning;
+  const alertRows = alerts.length
+    ? [paintAlert(`! ${alerts.map((item) => alertLabel(item.label) + (item.since ? ` ${waitedText(item.since, nowMs)}` : '')).join(' · ')}`)]
+    : [];
 
   const model = renderModelEffortToken(data.session?.model ?? data.config.model,
     data.session?.reasoningEffort ?? data.config.model_reasoning_effort, { mode: glyphs === 'text' ? 'text' : 'glyph' });
-  const age = colors.dim(formatDuration(data.session?.startTime ?? data.sessionStart, nowMs));
-  const top = [model, age].filter(Boolean).join(' ');
+  const start = data.session?.startTime ?? data.sessionStart;
+  const shownAge = start ? colors.dim(age(start, nowMs)) : '';
 
   const status = data.stale ? 'stale' : data.activity?.state;
+  let state = '';
+  let rate = '';
+  let tasks = '';
   if (status) {
     const [glyph, word, paint] = SESSION_STATES[status];
-    let left = `${paint(glyph)} ${t(word)}`;
+    // The frame's colour says the state; with icons the word goes, the glyph stays.
+    state = iconic() ? paint(glyph) : `${paint(glyph)} ${t(word)}`;
     if (status === 'working') {
       const running = [...(data.toolActivity?.recentCalls ?? [])].reverse().find((call) => call.status === 'running');
       const started = data.activity?.turnStartedAt;
-      left = `${paint(glyph)} ${running ? theme.value(running.name) : t(word)}`
-        + (running?.target ? colors.dim(`: ${truncate(running.target, 20)}`) : '')
-        + (started ? colors.dim(` · ${formatElapsedShort(started, nowMs)}`) : '');
+      // The tool and the turn's clock say it is working; the word only without icons and a tool.
+      const doing = running ? theme.value(running.name) + (running.target ? colors.dim(`: ${truncate(running.target, 20)}`) : '')
+        : iconic() ? '' : t(word);
+      const clock = started ? formatElapsedShort(started, nowMs) : '';
+      state = [paint(glyph), doing, clock ? colors.dim(doing ? `· ${clock}` : clock) : ''].filter(Boolean).join(' ');
+      // The rate is the turn's own: a rate from an earlier turn says nothing now.
+      const reading = formatTokenRate(data.outputRate, nowMs);
+      if (reading && !reading.startsWith('last ')) rate = colors.dim(`· ${reading.replace(/(\.\d)? tok\/s$/, ' tok/s')}`);
+      const plan = data.planProgress;
+      if (plan && plan.totalSteps > 0) tasks = colors.dim(`${t('Tasks')} ${plan.completedSteps}/${plan.totalSteps}`);
     }
-    rows.set('session', truncateAnsi(left, width));
   }
 
   const git = data.git;
-    const sync = `${git.ahead > 0 ? `${icons.ahead}${git.ahead}` : ''}${git.behind > 0 ? `${icons.behind}${git.behind}` : ''}`;
-  const bottom = theme.projectName(data.project.projectName)
+  const sync = `${git.ahead > 0 ? `${icons.ahead}${git.ahead}` : ''}${git.behind > 0 ? `${icons.behind}${git.behind}` : ''}`;
+  const place = theme.projectName(data.project.projectName)
     + (git.repo ? `${colors.dim(' › ')}${theme.projectName(git.repo)}` : '')
     + (git.isGitRepo && git.branch ? `${colors.dim(' · ')}${theme.gitBranch(`${git.branch}${git.isDirty ? ` ${icons.dirty}` : ''}`)}${sync ? colors.dim(` ${sync}`) : ''}` : '');
-  const bottomRight = buildBarModules(data, { nowMs, density: 'full' }).find((module) => module.id === 'cache')?.variants.full ?? '';
 
+  let context: EdgeMeter | undefined;
   const usage = data.contextUsage;
   if (usage && usage.total > 0) {
     const newer = Math.max(data.activity?.turnStartedAt?.getTime() ?? 0, usage.lastCompactTime?.getTime() ?? 0);
     const pending = data.stale || (newer > 0 && (data.tokenUsageAt?.getTime() ?? 0) < newer);
     const shown = displayConfig().context === 'remaining' ? t('{n}% left', { n: 100 - usage.percent }) : `${usage.percent}%`;
-    const number = (pending ? colors.dim('~') : '') + getContextColor(usage.percent)(shown);
-    const totals = colors.dim(` ${formatTokenCount(usage.used)}/${formatTokenCount(usage.total)}`);
-    const compact = usage.compactCount > 0 ? colors.dim(` ${icons.refresh}${usage.compactCount}`) : '';
-    meters.set('context', { label: label('Context'), percent: usage.percent, readings: [number + totals + compact, number + compact, number] });
+    const paint = getContextColor(usage.percent);
+    const compacted = usage.compactCount > 0 ? colors.dim(` ${icons.refresh}${usage.compactCount}`) : '';
+    // The auto-compact point only where Codex's config names it: its default
+    // depends on the model and is not written anywhere the HUD reads.
+    const limit = data.config.model_auto_compact_token_limit;
+    context = { percent: usage.percent, paint, label: (pending ? colors.dim('~') : '') + paint(shown),
+      // The window's size, whole thousands: the meter is the reading, the tail only names its scale.
+      tail: colors.dim(usage.total >= 1_000_000 ? formatTokenCount(usage.total) : `${Math.round(usage.total / 1000)}K`) + compacted,
+      ...(limit && limit > 0 && limit < usage.total ? { tick: (limit / usage.total) * 100 } : {}) };
   }
 
+  let quota: StatusCard['quota'];
+  let others = '';
+  let forecast = '';
+  let reset = '';
   const windows = readQuotaWindows(data.rateLimits, nowMs);
   if (windows.length) {
+    // The meter is the window that runs out first; the other is a reading beside it.
     const worst = windows.reduce((a, b) => (b.percent > a.percent ? b : a));
     const spent = windows.some((window) => window.percent >= 100) || Boolean(data.rateLimits?.rate_limit_reached_type);
+    const paint = getContextColor(worst.percent);
+    const mark = spent ? theme.error('!') : '';
+    const text = `${worst.label ? colors.dim(worst.label) + ' ' : ''}${paint(`${worst.percent}%`)}${mark}`;
+    quota = { percent: worst.percent, paint, label: text, text };
+    others = windows.filter((window) => window !== worst)
+      .map((window) => `${window.label ? colors.dim(window.label) + ' ' : ''}${getContextColor(window.percent)(`${window.percent}%`)}`).join(' ');
     const soonest = windows.filter((window) => window.resetsAt && !window.resetDue)
       .sort((a, b) => a.resetsAt!.getTime() - b.resetsAt!.getTime())[0];
-    const reset = soonest ? colors.dim(` ↺${formatCountdown(soonest.resetsAt!, nowMs)}`)
-      : windows.some((window) => window.resetDue) ? colors.dim(` ${t('reset due')}`) : '';
-    const mark = spent ? ` ${theme.error('!')}` : '';
-    const one = (window: typeof worst) => `${window.label ? colors.dim(window.label) + ' ' : ''}${coloredPercent(window.percent)}`;
-    // A projection, marked as one, on the widest reading only.
+    reset = soonest ? colors.dim(`↺${formatCountdown(soonest.resetsAt!, nowMs)}`)
+      : windows.some((window) => window.resetDue) ? colors.dim(t('reset due')) : '';
     const projected = data.quotaForecast;
-    const forecast = projected ? theme.warning(` ${t('out ~{d}', { d: formatCountdown(projected.exhaustAt, nowMs) })}`) : '';
-    meters.set('quota', { label: label('Quota'), percent: worst.percent, readings: [
-      ...(forecast ? [windows.map(one).join('  ') + mark + reset + forecast, one(worst) + mark + forecast] : []),
-      windows.map(one).join('  ') + mark + reset,
-      one(worst) + mark + reset,
-      one(worst) + mark,
-    ] });
+    forecast = projected ? theme.warning(t('out ~{d}', { d: formatCountdown(projected.exhaustAt, nowMs) })) : '';
   }
 
-  const extras: Array<[string, string]> = [];
-  const rate = data.stale ? null : formatTokenRate(data.outputRate, nowMs);
-  // "last ~25 tok/s" is a rate from an earlier turn: shown dim, not reworded.
-  if (rate) extras.push(['Output', rate.startsWith('last ') ? colors.dim(rate.slice(5)) : theme.value(rate)]);
-  const plan = data.planProgress;
-  if (plan && plan.totalSteps > 0) extras.push(['Tasks', theme.value(`${plan.completedSteps}/${plan.totalSteps}`)]);
-  if (extras.length) {
-    rows.set('extras', truncateAnsi(extras.map(([name, value], i) =>
-      i ? `${colors.dim(t(name))} ${value}` : `${label(name)}${value}`).join('   '), width));
-  }
-
-  for (const [id, row] of meterRows([...meters.values()], width).map((row, i) => [[...meters.keys()][i], row] as const)) rows.set(id, row);
-
-  const kept = new Set(KEEP_ORDER.filter((id) => rows.has(id)).slice(0, maxRows));
-  return { rows: SHOW_ORDER.filter((id) => kept.has(id)).map((id) => rows.get(id)!), top, bottom, bottomRight };
-}
-
-interface Meter { label: string; percent: number; readings: string[] }
-
-/**
- * Meters drawn as one table: the same start column (the labels share a
- * width) and the same length, so both end where their readings begin. Each
- * reading shortens before the meters drop below four cells; past that the
- * meters go and the readings stay.
- */
-function meterRows(meters: Meter[], width: number): string[] {
-  if (!meters.length) return [];
-  const room = width - visualLength(meters[0].label) - 1;
-  const chosen = meters.map((meter) => meter.readings.find((reading) => room - visualLength(reading) >= 4) ?? meter.readings[meter.readings.length - 1]);
-  const cells = Math.min(20, room - Math.max(...chosen.map(visualLength)));
-  return meters.map((meter, i) => truncateAnsi(cells >= 4
-    ? `${meter.label}${contextLine(meter.percent, cells)} ${chosen[i]}`
-    : `${meter.label}${chosen[i]}`, width));
+  const tone: StatusTone = status === 'error' ? 'error' : alerts.length ? 'needs' : status === 'stale' ? 'stale'
+    : status === 'working' ? 'working' : 'idle';
+  return { tone, alerts: alertRows, state, rate, tasks, model, age: shownAge, context, place, quota, others, forecast, reset,
+    cache: cacheReminder(data, nowMs) };
 }
