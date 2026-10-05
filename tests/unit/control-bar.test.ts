@@ -150,6 +150,27 @@ test('the help is a modal with a [Back] button; the settings page names only its
   const click = (x: number, y: number) => ({ type: 'mouse' as const, button: 'left' as const, x, y });
   assert.equal(handleMonitorInput(frame.state, click(2, 0), { tree, frame }).state.help, false, '[Back] closes it');
   assert.equal(handleMonitorInput(frame.state, click(20, 5), { tree, frame }).state.help, true, 'elsewhere it stays');
+  // Too narrow for two shortcuts on a line, they split between the two, not inside one.
+  inChinese(() => {
+    const lines = renderMonitor({ tree, state: state({ help: true }), width: 32, height: 200 }).lines.map(stripAnsi);
+    for (const entry of ['Ctrl+] m 主会话', 'Ctrl+] o 切换到选中的', 'Ctrl+] Enter / v 查看详情', 'Ctrl+] z 放大'])
+      assert.ok(lines.includes(entry), `${entry}\n${lines.join('\n')}`);
+    assert.ok(
+      lines.some((l) => l.startsWith('Ctrl+] Ctrl+] 把 Ctrl+]')),
+      'the prefix twice is one entry'
+    );
+    assert.ok(lines.includes('F12 开 / 关侧栏') && lines.includes('Shift+F12 进入侧栏'), 'F12 and Shift+F12 apart');
+    const other = renderMonitor({
+      tree,
+      state: state({ help: true }),
+      width: 32,
+      height: 200,
+      prefix: 'Ctrl+\\',
+    }).lines.map(stripAnsi);
+    assert.ok(other.includes('Ctrl+\\ m 主会话') && other.includes('Ctrl+\\ o 切换到选中的'), 'any prefix');
+    const wide = renderMonitor({ tree, state: state({ help: true }), width: 70, height: 200 }).lines.map(stripAnsi);
+    assert.ok(wide.includes('Ctrl+] m 主会话 Ctrl+] o 切换到选中的'), 'two to a line where they fit');
+  });
   for (const width of [28, 40, 70]) {
     const page = renderSettingsPage({ draft: defaultSettings(), selected: 0, offset: 0, message: '' }, width, 30);
     const foot = stripAnsi(page.lines.at(-1)!);

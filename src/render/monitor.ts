@@ -969,7 +969,7 @@ function helpText(rich: boolean, prefix: string): Array<string | {head: string}>
   const head = (text: string) => ({head:t(text,p)});
   return [
     head('Shortcuts: {p}, then a key'),
-    ...['Keys typed in the panel go to Codex','F12 panel on / off  Shift+F12 into it',
+    ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
       '{p} ,  settings  {p} ?  help','{p} b  pause / resume brief','{p} a  show / hide older',
       '{p} m  main session  {p} o  switch to selected','{p} 1–5  open a pane  {p} Tab  next',
       '{p} x  close pane  {p} -  fold','{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
@@ -1003,8 +1003,22 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   if (!width || !height) return frame;
   if (state.help) {
     // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
-    const help = helpText(state.style === 'rich',input.prefix ?? 'Ctrl+]')
-      .flatMap(line=>typeof line === 'string' ? helpLines(line,width) : helpLines(line.head,width).map(text=>theme.accent(text)));
+    // A line of two shortcuts too wide for the panel splits between them, not
+    // inside one ("Ctrl+] m  main session" stays whole where it fits). An
+    // entry is a key, two spaces, what it does: "{p} {p}  {p} itself" is one.
+    const prefix = input.prefix ?? 'Ctrl+]';
+    const keyStart = new RegExp(`  (?=(?:${prefix.replace(/[\\^$.*+?()[\]{}|]/g,'\\$&')}|Shift\\+F12) )`);
+    const entries = (line: string) => {
+      if (visualLength(line) <= width) return [line];
+      const out: string[] = [];
+      for (const part of line.split(keyStart)) {
+        if (out.length && !out[out.length-1].includes('  ')) out[out.length-1] += `  ${part}`;
+        else out.push(part);
+      }
+      return out;
+    };
+    const help = helpText(state.style === 'rich',prefix)
+      .flatMap(line=>typeof line === 'string' ? entries(line).flatMap(entry=>helpLines(entry,width)) : helpLines(line.head,width).map(text=>theme.accent(text)));
     const count = Math.max(0,height-2);
     state.helpScroll = Math.max(0,Math.min(state.helpScroll??0,Math.max(0,help.length-count)));
     frame.helpPage = {count,total:help.length};

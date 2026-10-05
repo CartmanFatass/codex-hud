@@ -180,7 +180,7 @@ const ZH: Record<string, string> = {
   'Hide older': '收起',
   'Shortcuts: {p}, then a key': '快捷键：先按 {p}，再按一键',
   'Keys typed in the panel go to Codex': '在侧栏里打字，按键都交给 Codex',
-  'F12 panel on / off  Shift+F12 into it': 'F12 开 / 关侧栏  Shift+F12 进入侧栏',
+  'F12  panel on / off  Shift+F12  into it': 'F12  开 / 关侧栏  Shift+F12  进入侧栏',
   '{p} ,  settings  {p} ?  help': '{p} ,  设置  {p} ?  帮助',
   '{p} b  pause / resume brief': '{p} b  暂停 / 继续简报',
   '{p} a  show / hide older': '{p} a  显示 / 收起已完成',
