@@ -13,7 +13,7 @@ import { buildSubagentTree, uniquePickerLabel } from './collectors/subagent-tree
 import { collectGitChanges, readGitDiff, readDiffHunks, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
-  monitorModes, monitorPreferences, nextRepaintDelay, paneShown, panelTop, type MonitorFrame } from './render/monitor.js';
+  monitorModes, monitorSettings, monitorPreferences, nextRepaintDelay, paneShown, panelTop, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
@@ -128,11 +128,7 @@ async function runLivePage(): Promise<void> {
     next.tree.sort = settings.sort;
     next.tree.lingerMs = settings.finishedLingerMs;
     next.modes = monitorModes(settings);
-    next.tabbed = settings.paneLayout === 'tabs';
-    next.style = settings.panelStyle;
-    next.statusLevel = settings.statusCard;
-    next.labelAsName = settings.labelAsName;
-    return next;
+    return {...next,...monitorSettings(settings)};
   };
   let state = configuredState();
   let settingsPage: SettingsPageState | null = null;
@@ -531,8 +527,8 @@ async function runLivePage(): Promise<void> {
             if (!jobsOn()) jobs.stop();
             armCollect();
             loadArt();
-            state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
-              tabbed:settings.paneLayout === 'tabs',zoom:false,style:settings.panelStyle,statusLevel:settings.statusCard,labelAsName:settings.labelAsName,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
+            state = {...state,...monitorSettings(settings),tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
+              zoom:false,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
             git=null;diff=undefined;diffKey='';void refreshGit();
             if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
             settingsPage.message = t('Saved');

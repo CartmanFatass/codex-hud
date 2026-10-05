@@ -27,6 +27,7 @@ test('missing settings keep display defaults and hide optional tasks and activit
       statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
       details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
       agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+      timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
       briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
@@ -64,6 +65,7 @@ test('load validates known settings without importing unknown or invalid values'
       statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
       details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0,
       agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+      timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
       briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
@@ -103,6 +105,17 @@ test('monitor pane modes and worktreeRoot validate independently of legacy panel
     assert.equal(invalid.changesPane, 'closed');
     assert.equal(invalid.detailsPane, 'closed');
     assert.equal(invalid.worktreeRoot, '');
+  });
+});
+
+test('the timeline\'s style, window and roles keep to what the panel draws', () => {
+  withSettingsFile((file) => {
+    fs.writeFileSync(file, JSON.stringify({ timelineStyle: 'lanes', timelineHours: 12, importantRoles: 'reviewer, critic' }));
+    const loaded = loadSettings();
+    assert.deepEqual([loaded.timelineStyle, loaded.timelineHours, loaded.importantRoles], ['lanes', 12, 'reviewer, critic']);
+    fs.writeFileSync(file, JSON.stringify({ timelineStyle: 'zigzag', timelineHours: 2, importantRoles: 'a\nb' }));
+    const invalid = loadSettings();
+    assert.deepEqual([invalid.timelineStyle, invalid.timelineHours, invalid.importantRoles], ['rail', 3, '']);
   });
 });
 

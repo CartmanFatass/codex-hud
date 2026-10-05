@@ -6,21 +6,20 @@
 import type { SubagentTreeNode } from '../types.js';
 import type { GitChangedFile } from '../collectors/git-changes.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
-import type { WorkbenchEvent } from './workbench-state.js';
 import type { MonitorData, MonitorPane, MonitorRow, MonitorState } from './monitor.js';
-import { visibleRows, countExpired, guardianCount, isGuardian } from './panel-state.js';
+import { visibleRows, countExpired, guardianCount } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { displayConfig } from './hud-config.js';
 import { t } from './i18n.js';
-import { agentTitle, shownName, labelled } from './agent-title.js';
+import { agentTitle, shownName } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
-import { formatWindowLabel } from './quota.js';
 import { monitorText, fit, pair, wrapped, flowLines, squeeze } from './monitor-text.js';
-import { age, iconic, nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
+import { nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
   isUntracked, UNTRACKED_ROW, changeLetter, lineCounts, listsWorktrees, worktreeItem } from './monitor-labels.js';
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
+import { timelineRows } from './monitor-timeline.js';
 
 /**
  * The agents' heading: what is running, failed and done, as counts. The
@@ -106,114 +105,6 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     if (brief) result.push({text:' '.repeat(at)+colors.dim(truncateAnsi(brief,width-at)),item:node.id,key:`row:${node.id}`});
   }
   return result;
-}
-
-/** A timeline event in the reader's words. Facts as recorded; nothing inferred. */
-export function timelineText(event: WorkbenchEvent): string {
-  const subject = event.subject ? monitorText(event.subject) : '';
-  switch (event.kind) {
-    case 'approval-requested': return subject ? t('Approval asked: {what}',{what:subject}) : t('Approval asked');
-    case 'approval-answered': return t('Approval answered');
-    case 'compacted': return t('Context compacted');
-    case 'quota': {
-      const window = formatWindowLabel(event.windowMinutes);
-      return t('Quota past {n}%',{n:event.threshold ?? '?'})+(window ? ` (${window})` : '');
-    }
-    case 'turn-finished': return t('Turn finished');
-    case 'turn-interrupted': return t('Turn interrupted');
-    case 'turn-failed': return t('Turn failed');
-    case 'agent-started': return t('{agent} started',{agent:subject});
-    case 'agent-finished': return t('{agent} finished',{agent:subject});
-    case 'agent-failed': return t('{agent} failed',{agent:subject});
-    case 'tool-failed': return t('Tool failed: {what}',{what:subject});
-    default: return monitorText(event.title);
-  }
-}
-
-/** A timeline line before its time: what it says, the agent it is about, and how many it folds. */
-interface TimelineLine { at: Date; text: string; paint: (s: string) => string; key: string; count: number; cause?: string }
-
-/**
- * The timeline's lines, newest first, made shorter to read: an agent that
- * started and finished in the list is one line, at the finish ("▸ name 12m
- * ✓"); a guardian review's comings and goings are left out (its failure
- * stays); the same event in a row is one line, "×5", at its newest time.
- * With glyphs on, a finished turn is "⏎ Turn finished", a failed tool "✗ exec",
- * and the rest of an agent's run "▸ name" or "name ✓": the icon, and a word.
- */
-function timelineLines(input: MonitorData): TimelineLine[] {
-  const events = input.timeline ?? [];
-  const nodes = new Map<string, SubagentTreeNode>();
-  walkTree(input.tree.nodes,node=>nodes.set(node.id,node));
-  const guardian = (event: WorkbenchEvent) => Boolean(event.agentId && nodes.get(event.agentId) && isGuardian(nodes.get(event.agentId)!));
-  // Starts paired with a finish later in the list (the list is newest first).
-  const finishes = new Map<string, WorkbenchEvent>();
-  const paired = new Set<WorkbenchEvent>();
-  const startOf = new Map<WorkbenchEvent, WorkbenchEvent>();
-  for (const event of events) {
-    if (!event.agentId) continue;
-    if (event.kind === 'agent-finished' || event.kind === 'agent-failed') finishes.set(event.agentId,event);
-    else if (event.kind === 'agent-started') {
-      const end = finishes.get(event.agentId);
-      if (end) { paired.add(event); startOf.set(end,event); finishes.delete(event.agentId); }
-    }
-  }
-  const lines: TimelineLine[] = [];
-  // With labels as names, an agent's events say its label once it has one.
-  const relabel = (event: WorkbenchEvent): WorkbenchEvent => {
-    const node = event.agentId ? nodes.get(event.agentId) : undefined;
-    return node && event.subject && input.state.labelAsName && labelled(node) ? {...event,subject:node.label} : event;
-  };
-  for (const original of events) {
-    const event = relabel(original);
-    if (guardian(event) && event.kind !== 'agent-failed') continue;
-    if (event.kind === 'agent-started' && paired.has(original)) continue;
-    const plainPaint = (s: string) => s;
-    const paint = event.status === 'error' ? theme.error : event.kind === 'quota' || event.kind === 'approval-requested' ? theme.warning : plainPaint;
-    const name = event.agentId ? agentPaint(event.agentId)(monitorText(event.subject ?? '')) : '';
-    let text = paint(timelineText(event));
-    const start = startOf.get(original);
-    if (start) {
-      const ran = age(start.at,event.at.getTime());
-      const mark = event.kind === 'agent-failed' ? theme.error('✗') : theme.success('✓');
-      text = iconic() ? `${theme.info('▸')} ${name} ${colors.dim(ran)} ${mark}` : `${t('{agent} ran {time}',{agent:name,time:ran})} ${mark}`;
-    } else if (iconic() && event.subject && (event.kind === 'agent-started' || event.kind === 'agent-finished' || event.kind === 'agent-failed')) {
-      // Half a run in the list: "▸ name" while it runs, "name ✓" or "name ✗" at its end.
-      const who = event.agentId ? name : monitorText(event.subject);
-      text = event.kind === 'agent-started' ? `${theme.info('▸')} ${who}` : `${who} ${event.kind === 'agent-failed' ? theme.error('✗') : theme.success('✓')}`;
-    } else if (event.agentId && event.subject) {
-      // The agent's name in its own colour, the rest in the event's.
-      const words = timelineText(event);
-      const subject = monitorText(event.subject);
-      const at = words.indexOf(subject);
-      if (at >= 0) text = paint(words.slice(0,at))+name+paint(words.slice(at+subject.length));
-    } else if (iconic() && event.kind === 'turn-finished') text = colors.dim(`⏎ ${t('Turn finished')}`);
-    else if (iconic() && event.kind === 'tool-failed') text = `${theme.error('✗')} ${monitorText(event.subject ?? '')}`;
-    const key = `${event.kind ?? event.title}|${event.subject ?? ''}|${event.status}|${start ? 'ran' : ''}`;
-    const last = lines.at(-1);
-    // The same event again, with nothing between and nothing written about it: one line.
-    if (last && last.key === key && !event.cause && !last.cause && !start) { last.count++; continue; }
-    lines.push({at:event.at,text,paint,key,count:1,cause:event.cause});
-  }
-  return lines;
-}
-
-function timelineRows(input: MonitorData, width: number, now: number): MonitorRow[] {
-  const lines = timelineLines(input);
-  // No events, no rows: the pane's frame says what it is.
-  if (!lines.length) return [];
-  const rows: MonitorRow[] = [];
-  // A time only where it changes: a run of events of one age says it once, at its top.
-  let previous = '';
-  for (const line of lines) {
-    const when = age(line.at,now);
-    const shown = when === previous ? '' : when;
-    previous = when;
-    rows.push({text:truncateAnsi(`${colors.dim(shown.padStart(3))} ${line.text}${line.count > 1 ? colors.dim(` ×${line.count}`) : ''}`,width)});
-    // A model-written reading of a failure, marked as such.
-    if (line.cause) rows.push(...flowLines(monitorText(line.cause),Math.max(1,width-6)).map((text,i)=>({text:`    ${i ? ' ' : colors.dim('~')} ${text}`})));
-  }
-  return rows;
 }
 
 /**
@@ -490,10 +381,6 @@ export function briefRule(brief: NonNullable<MonitorData['brief']>, width: numbe
   const status = brief.paused ? t('paused') : brief.running ? t('writing…') : brief.error ? t('failed') : '';
   const label = `${t('─ Brief')}${status ? ` · ${status}` : ''} `;
   return colors.dim(truncateAnsi(label+'─'.repeat(Math.max(0,width-visualLength(label))),width));
-}
-
-function walkTree(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
-  for (const node of nodes) { visit(node); walkTree(node.children,visit); }
 }
 
 /**

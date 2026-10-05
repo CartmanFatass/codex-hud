@@ -150,9 +150,12 @@ export function turnClock(node: SubagentTreeNode, now: number): string {
   if (!isLive(node)) return '';
   const start = (node.turnStartedAt ?? node.startedAt)?.getTime();
   if (start === undefined || !Number.isFinite(start)) return '';
-  const elapsed = Math.max(0,now-start);
-  const glyph = TURN_CLOCKS.find(([limit]) => elapsed < limit)?.[1] ?? TURN_CLOCK_LONG;
+  const glyph = clockFace(now-start);
   return isQuiet(node,now) ? theme.warning(glyph) : theme.info(glyph);
+}
+/** The clock face for a run `elapsed` ms long. */
+export function clockFace(elapsed: number): string {
+  return TURN_CLOCKS.find(([limit]) => Math.max(0,elapsed) < limit)?.[1] ?? TURN_CLOCK_LONG;
 }
 
 /** Past a clock's boundary, so the repaint lands after its second has turned. */

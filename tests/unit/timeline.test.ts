@@ -6,7 +6,9 @@ import path from 'node:path';
 import { RolloutParser, type QuotaSample } from '../../src/collectors/rollout.js';
 import { quotaForecast, slope, FORECAST_MIN_SPAN_MS } from '../../src/collectors/quota-forecast.js';
 import { WorkbenchHistory } from '../../src/collectors/workbench-events.js';
-import { initialMonitorState, renderMonitor, handleMonitorInput, monitorModes, monitorPreferences, timelineText, agentPaint } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput, monitorModes, monitorPreferences, timelineText } from '../../src/render/monitor.js';
+import { directions } from '../../src/render/directions.js';
+import { theme } from '../../src/render/colors.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
 import type { WorkbenchEvent } from '../../src/render/workbench-state.js';
 import { waitedText, collectAttention } from '../../src/render/attention.js';
@@ -107,15 +109,15 @@ test('the Timeline pane opens with 2, lists events with their ages, and is saved
   const lines = frame.lines.map(stripAnsi);
   assert.ok(lines.some(line => line.includes('≣ Timeline')));
   assert.ok(lines.some(line => /2m ⏎ Turn finished/.test(line)), 'with glyphs on a finished turn is ⏎ and its words');
-  assert.ok(lines.some(line => /5m reader ✗/.test(line)), 'with glyphs on an agent\'s failure is its name and ✗');
+  assert.ok(lines.some(line => /5m ├─✗ reader/.test(line)), 'with glyphs on an agent\'s failure branches off the main session\'s rail, ✗ and its name');
   assert.ok(lines.some(line => /~ The test fixture/.test(line)), 'a model-written cause is marked');
   assert.ok(frame.lines.every(line => visualLength(line) <= 30));
   const empty = renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now }).lines.map(stripAnsi);
   assert.ok(!empty.some(line => line.includes('No events yet')), 'no events, no line saying so');
   assert.ok(empty.some(line => line.includes('Timeline')), 'the pane keeps its title');
   const words = withGlyphs('text', () => renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now, timeline }).lines.map(stripAnsi));
-  assert.ok(words.some(line => /2m Turn finished/.test(line)), 'with glyphs off, the words');
-  assert.ok(words.some(line => /5m reader failed/.test(line)));
+  assert.ok(words.some(line => /2m │ Turn finished/.test(line)), 'with glyphs off, the words, on the main session\'s rail');
+  assert.ok(words.some(line => /5m ├─ reader failed/.test(line)));
 });
 
 test('the timeline says a time once, at the top of a run of events of one age', () => {
@@ -125,7 +127,7 @@ test('the timeline says a time once, at the top of a run of events of one age', 
     { id: '3', at: at(-600), title: '', detail: [], status: 'error' as const, kind: 'agent-failed' as const, subject: 'reader' }];
   const lines = renderMonitor({ tree: tree([]), state, width: 40, height: 30, nowMs: now, timeline }).lines.map(stripAnsi)
     .filter(line => /^│ /.test(line) && line.trim() !== '│').map(line => line.slice(2).trimEnd());
-  assert.deepEqual(lines, [' 2m ⏎ Turn finished', '    ✗ exec', '10m reader ✗']);
+  assert.deepEqual(lines, [' 2m ⏎ Turn finished', '    ✗ exec', '10m ├─✗ reader']);
 });
 
 const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
@@ -134,7 +136,7 @@ const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
   try { return run(); } finally { setDisplayConfig(previous); }
 };
 
-test('the timeline folds repeats, makes an agent\'s run one line, leaves guardian reviews out, and colours each agent its own', () => {
+test('the timeline folds repeats, makes an agent\'s run one line, leaves guardian reviews out, and colours each direction its own', () => {
   const ev = (id: string, minutes: number, kind: WorkbenchEvent['kind'], extra: Partial<WorkbenchEvent> = {}): WorkbenchEvent =>
     ({ id, at: new Date(now - minutes * 60_000), title: '', detail: [], status: kind === 'agent-failed' || kind === 'tool-failed' ? 'error' : 'completed', kind, ...extra });
   const guard = { ...makeSubagentTree().nodes[0], id: 'g1', name: 'guardian', kind: 'guardian', children: [] };
@@ -151,21 +153,24 @@ test('the timeline folds repeats, makes an agent\'s run one line, leaves guardia
   const state = { ...initialMonitorState(), modes: { ...initialMonitorState().modes, timeline: 'open' as const }, focus: 'timeline' as const };
   const draw = () => renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now, timeline });
   const frame = draw();
-  const lines = frame.lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd());
-  assert.deepEqual(lines, [' 1m ⏎ Turn finished ×3', ' 6m ▸ bench_corpus 12m ✓', '19m ▸ migrate 2m ✗', '20m ✗ exec']);
-  assert.ok(frame.lines.some(line => line.includes(agentPaint('w1')('bench_corpus'))), 'the agent\'s name in its own colour');
-  assert.equal(agentPaint('w1'), agentPaint('w1'), 'the same colour every time');
-  const words = withGlyphs('text', () => draw().lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd()));
-  assert.deepEqual(words, [' 1m Turn finished ×3', ' 6m bench_corpus ran 12m ✓', '19m migrate ran 2m ✗', '20m Tool failed: exec']);
+  const lines = frame.lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2).trimEnd());
+  // A run is one line at its end, how long it took on the right.
+  assert.deepEqual(lines, [' 1m ⏎ Turn finished ×3', ' 6m ├─✓ bench_corpus               12m', '19m ├─✗ migrate                     2m', '20m ✗ exec']);
+  const dirs = directions(agents);
+  assert.notEqual(dirs.paint('w1'), dirs.paint('w2'), 'two directions at work together, two colours');
+  assert.ok(frame.lines.some(line => line.includes(theme.bold(dirs.paint('w1')('bench_corpus')))), 'an L1\'s name bold, in its direction\'s colour');
+  assert.equal(directions(agents).paint('w1'), dirs.paint('w1'), 'the same colour every time');
+  const words = withGlyphs('text', () => draw().lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2).trimEnd()));
+  assert.deepEqual(words, [' 1m │ Turn finished ×3', ' 6m ├─ bench_corpus finished       12m', '19m ├─ migrate failed               2m', '20m │ Tool failed: exec']);
   // A failed review still shows.
   const failed = renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now, timeline: [ev('11', 1, 'agent-failed', { agentId: 'g1', subject: 'guardian' })] });
-  assert.ok(failed.lines.map(stripAnsi).some(line => /guardian ✗/.test(line)));
-  // Half a run: still going, or its start out of the list.
+  assert.ok(failed.lines.map(stripAnsi).some(line => /├─✗ guardian/.test(line)));
+  // Half a run: still going, its clock on the right, or its start out of the list.
   const half = (glyphs: 'glyph' | 'text') => withGlyphs(glyphs, () => renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now,
     timeline: [ev('12', 1, 'agent-started', { agentId: 'w1', subject: 'bench_corpus' }), ev('13', 2, 'agent-finished', { agentId: 'w2', subject: 'migrate' })] }))
-    .lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd());
-  assert.deepEqual(half('glyph'), [' 1m ▸ bench_corpus', ' 2m migrate ✓']);
-  assert.deepEqual(half('text'), [' 1m bench_corpus started', ' 2m migrate finished']);
+    .lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2).trimEnd());
+  assert.deepEqual(half('glyph'), [' 1m ├─▸ bench_corpus                 ◷', ' 2m ├─✓ migrate']);
+  assert.deepEqual(half('text'), [' 1m ├─ bench_corpus started          ◷', ' 2m ├─ migrate finished']);
 });
 
 test('a pending approval says how long it has waited, in the bar\'s widest form, the panel card and the snapshot', () => {

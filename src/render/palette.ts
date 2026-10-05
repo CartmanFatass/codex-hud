@@ -37,6 +37,13 @@ export interface Palette {
    */
   agents: readonly Paint[];
   /**
+   * Eight colours for the research directions: an L1 agent and everything
+   * under it, on the timeline and the cards. Neighbours far apart on the
+   * wheel, so two directions at work together are told apart; none a
+   * status colour.
+   */
+  directions: readonly Paint[];
+  /**
    * Backgrounds, each one a row's surface rather than its text: the status
    * card's band row, the control bar at the top, the selected agent's row,
    * a button on the bar (`chip`), and the focused tab on the accent, its
@@ -131,6 +138,7 @@ const TERMINAL: Palette = {
   selected: highlight('48;5;237'),
   // Mid-tones of the 256-colour cube, legible on dark and light backgrounds.
   agents: [ansi256(33), ansi256(98), ansi256(133), ansi256(67), ansi256(37), ansi256(175)],
+  directions: [33, 208, 135, 179, 170, 67, 133, 75].map(ansi256),
   // Greys of the 256-colour ramp, a step apart: the band, the bar above it,
   // the selected row, a button on the bar and the focused tab each one
   // lighter than the last.
@@ -163,6 +171,7 @@ const MOCHA: Palette = {
   strong: rgb('#B4BEFE'),
   selected: highlight('48;2;49;50;68'),
   agents: ['#89B4FA', '#B4BEFE', '#CBA6F7', '#F5C2E7', '#74C7EC', '#F2CDCD'].map(rgb),
+  directions: ['#89B4FA', '#CBA6F7', '#94E2D5', '#FAB387', '#B4BEFE', '#89DCEB', '#F5C2E7', '#EBA0AC'].map(rgb),
   // Mantle under the band, the surfaces above the base for the rest.
   band: surface('#181825'),
   bar: surface('#313244'),
@@ -191,6 +200,7 @@ const LATTE: Palette = {
   strong: rgb('#7287FD'),
   selected: highlight('48;2;204;208;218'),
   agents: ['#1E66F5', '#7287FD', '#8839EF', '#EA76CB', '#209FB5', '#DD7878'].map(rgb),
+  directions: ['#1E66F5', '#8839EF', '#179299', '#FE640B', '#7287FD', '#04A5E5', '#EA76CB', '#DD7878'].map(rgb),
   // A light theme: the band is a light surface a step off the base, and the
   // track is lighter than the muted text rather than darker, which on a
   // light ground is what recedes.
@@ -234,6 +244,7 @@ const TITANIUM: Palette = {
   strong: rgbBold('#E8ECF4'),
   selected: surface('#272D36'),
   agents: ['#5EC8FF', '#8FA8FF', '#B79CFF', '#D06FED', '#2AC3DE', '#D4C090'].map(rgb),
+  directions: ['#5EC8FF', '#B79CFF', '#2AC3DE', '#E0A060', '#8FA8FF', '#7FE0D0', '#D06FED', '#D4C090'].map(rgb),
   band: surface('#232830'),
   bar: surface('#232830'),
   selectedBand: surface('#2E3540'),
@@ -261,6 +272,7 @@ const NONE: Palette = {
   strong: identity,
   selected: identity,
   agents: [identity],
+  directions: [identity],
   band: identity,
   bar: identity,
   selectedBand: identity,

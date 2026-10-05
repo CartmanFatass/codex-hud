@@ -3,7 +3,7 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { HudHealthState } from '../types.js';
 import { truncateAnsi, colors, theme, visualLength } from './colors.js';
 import { t, language } from './i18n.js';
-import { age } from './monitor.js';
+import { age, TIMELINE_STYLES, TIMELINE_HOURS } from './monitor.js';
 import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
 import { LOOKS, type IconMode, type LookName } from './hud-config.js';
 
@@ -72,6 +72,9 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'statusCard',group:'Panel',label:'Status card',short:'Card',values:['full','status','min'],help:'Foot card: brief, status, one line'},
   {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and brief language'},
   {key:'timelinePane',group:'Panel',label:'2 Timeline',short:'2 Events',values:['open','closed'],help:PANE_HELP},
+  {key:'timelineStyle',group:'Panel',label:'Timeline style',short:'Style',values:TIMELINE_STYLES,help:'Main rail, indent, or lanes'},
+  {key:'timelineHours',group:'Panel',label:'Timeline span',short:'Span',values:TIMELINE_HOURS,help:'Hours shown; more on demand',
+    format:value => `${value}h`},
   {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','closed'],help:PANE_HELP},
   {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','closed'],help:PANE_HELP},
   // Any even width from 24 to 80 columns, a step of two at a time; Codex keeps 41 whatever is asked.

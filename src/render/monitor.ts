@@ -18,6 +18,8 @@ import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
 import { TURN_CLOCKS, TURN_CLOCK_LONG, isUntracked, UNTRACKED_ROW, listsWorktrees, worktreeOfItem } from './monitor-labels.js';
 import { paneRows, agentsView } from './monitor-panes.js';
+import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
+import { roleSet } from './directions.js';
 
 // The panel is drawn by the modules beside this one; what they export is
 // exported here too, so a caller imports the monitor from one place.
@@ -25,7 +27,8 @@ export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from 
 export { iconic, agoText, age, nodeStatus, worktreeLabel, worktreeName, worktreePlace, TURN_CLOCKS, QUIET_MS, FRESH_FINISH_MS,
   isLive, isQuiet, turnClock, nextRepaintDelay, finishedAt, agentPaint, writtenAge } from './monitor-labels.js';
 export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type EdgeMeter } from './monitor-meter.js';
-export { summaryRow, guardianChip, timelineText, changeCounts, shownPaths, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
+export { summaryRow, guardianChip, changeCounts, shownPaths, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
+export { timelineText, TIMELINE_STYLES, TIMELINE_HOURS, TIMELINE_STEP, TIMELINE_EARLIER, type TimelineStyle } from './monitor-timeline.js';
 export { MODEL_LOG_KINDS } from './monitor-inspector.js';
 export { clickTab, monitorRowAt, monitorItemAt, canMonitorDiff, handleMonitorInput } from './monitor-input.js';
 
@@ -83,6 +86,14 @@ export interface MonitorState {
    * The panel sets it from settings.
    */
   tabbed?: boolean;
+  /** How the timeline draws its levels: off a rail, indented, or in lanes. The panel sets it from settings. */
+  timelineStyle?: TimelineStyle;
+  /** The timeline's window, the newest hours. The panel sets it from settings. */
+  timelineHours?: number;
+  /** Entries the reader brought back from before the window. Panel state, reset with the session. */
+  timelineMore?: number;
+  /** The L2 roles the timeline gives a line of their own. The panel sets it from settings. */
+  importantRoles?: ReadonlySet<string>;
 }
 export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
@@ -203,6 +214,11 @@ export function toggleCard(state: MonitorState, id: string): MonitorState {
 /** Agents is the page itself: always there, whatever an older settings file says. */
 export function monitorModes(settings: HudSettings): MonitorModes {
   return {agents:settings.agentsPane, timeline:settings.timelinePane, changes:settings.changesPane, details:settings.detailsPane};
+}
+/** What the settings say about how the panel shows things, as its state. */
+export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
+  return {tabbed:settings.paneLayout === 'tabs', style:settings.panelStyle, statusLevel:settings.statusCard, labelAsName:settings.labelAsName,
+    timelineStyle:settings.timelineStyle, timelineHours:settings.timelineHours, importantRoles:roleSet(settings.importantRoles)};
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return {agentsPane:state.modes.agents, timelinePane:state.modes.timeline, changesPane:state.modes.changes, detailsPane:state.modes.details};
@@ -458,7 +474,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     // how many there are on the right, as the look draws it; a click anywhere
     // on it zooms or restores the pane.
     const range = rows.length>count&&count ? `${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length}` : '';
-    const total = id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? input.timeline?.length ?? 0 : 0;
+    const total = id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? timelineCount(rows) : 0;
     const right = range || (total ? t(id==='changes'?'{n} files':'{n} events',{n:total}) : '');
     frame.lines[y] = paneHead(id,width,{right:right && colors.dim(right),focused,zoomed});
     titles.add(y);

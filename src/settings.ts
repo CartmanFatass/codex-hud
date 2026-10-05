@@ -27,6 +27,20 @@ export interface HudSettings extends HudDisplayConfig {
   /** The session's observed events, newest first. */
   timelinePane: 'open' | 'closed';
   /**
+   * How the timeline draws the main session and the agents' stages: `rail`,
+   * an L1's stages branching off the main session's rail; `indent`, a level
+   * in for an L1 and two for an L2; `lanes`, a lane per direction.
+   */
+  timelineStyle: 'rail' | 'indent' | 'lanes';
+  /** The timeline's window: the newest this many hours, the earlier entries a row at its end brings back. */
+  timelineHours: 1 | 3 | 6 | 12 | 24;
+  /**
+   * The roles of the agents an L1 starts (`reviewer`, `critic`) whose stages
+   * the timeline gives a line of their own, a comma list. The rest are counts
+   * on their L1's line; a failed or flagged one always gets its line.
+   */
+  importantRoles: string;
+  /**
    * How the panel shows the agents: `rich`, a card per agent with the recap
    * as a card above them; `compact`, the tree with the brief and log under it.
    */
@@ -139,6 +153,7 @@ export function defaultSettings(): HudSettings {
     statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
     details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
     agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+    timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
     worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
@@ -175,6 +190,9 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   changesPane: oneOf('open', 'closed'),
   detailsPane: oneOf('open', 'closed'),
   timelinePane: oneOf('open', 'closed'),
+  timelineStyle: oneOf('rail', 'indent', 'lanes'),
+  timelineHours: (value) => value === 1 || value === 3 || value === 6 || value === 12 || value === 24,
+  importantRoles: isText(1000),
   panelStyle: oneOf('rich', 'compact'),
   paneLayout: oneOf('stack', 'tabs'),
   look: oneOf(...LOOKS),
