@@ -46,8 +46,9 @@ const card = (lines: string[], name: string) => {
 
 test('only the L1 agents have cards; the summary counts them, at work while a subtask is, and their subtasks as one figure', () => {
   const lines = plain(draw().lines);
-  const summary = (lines: string[]) => lines.find(line => /^ ▦ Agents {2}\S/.test(line))!;
-  assert.match(summary(lines), /▸2 run .*· 6 subtasks/);
+  // The title gives up its name before the counts' words.
+  const summary = (lines: string[]) => lines.find(line => /^ ▦ (Agents )? \S/.test(line))!;
+  assert.match(summary(lines), /▸2 run .*· 6 subtasks, 1 failed$/, 'the subtasks as one figure, with their failures');
   for (const name of ['impl_a', 'impl_b', 'general_a', 'plain_a']) assert.ok(!lines.some(line => line.includes(name)), name);
   assert.ok(lines.some(line => /^ ✓ docs_writer +5h$/.test(line)), 'an old finished L1 is one line');
   // A finished lead with a subtask still at work keeps its card, and counts as at work.

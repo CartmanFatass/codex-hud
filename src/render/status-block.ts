@@ -19,7 +19,7 @@
  * than shown as zero. The agents' counts are the panel's own job.
  */
 import type { HudData } from '../types.js';
-import { collectAttention, waitedText } from './attention.js';
+import { collectAttention, waitedText, alertParts } from './attention.js';
 import { colors, getMeterColor, icons, theme, truncate } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
@@ -78,12 +78,6 @@ export interface StatusCard {
   cache: string;
 }
 
-function alertLabel(label: string): string {
-  const failed = label.match(/^(\d+) (tool|agent)s? failed$/);
-  if (failed) return t(failed[1] === '1' ? `1 ${failed[2]} failed` : `{n} ${failed[2]}s failed`, { n: failed[1] });
-  return t(label);
-}
-
 const SESSION_STATES = {
   working: ['▸', 'Working', theme.info],
   idle: ['✓', 'Idle', theme.success],
@@ -106,7 +100,7 @@ export function sessionState(data: HudData | null, nowMs: number = Date.now()): 
   const waiting = items.find((item) => item.kind === 'approval');
   const failed = items.some((item) => item.severity === 'error');
   if (waiting) {
-    const words = `${alertLabel(waiting.label)}${waiting.since ? ` ${waitedText(waiting.since, nowMs)}` : ''}`;
+    const words = `${t(waiting.label)}${waiting.since ? ` ${waitedText(waiting.since, nowMs)}` : ''}`;
     return { text: theme.warning(`! ${words}`), short: theme.warning(words), attention: true, failed };
   }
   const status = data.stale ? 'stale' : data.activity?.state;
@@ -143,7 +137,7 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
   const alerts = collectAttention(data, nowMs).filter((item) => item.kind !== 'quota-exhausted' && item.kind !== 'context-critical');
   const paintAlert = alerts.some((item) => item.severity === 'error') ? theme.error : theme.warning;
   const alertRows = alerts.length
-    ? [paintAlert(`! ${alerts.map((item) => alertLabel(item.label) + (item.since ? ` ${waitedText(item.since, nowMs)}` : '')).join(' · ')}`)]
+    ? [paintAlert(`! ${alertParts(alerts, nowMs, t).join(' · ')}`)]
     : [];
 
   const model = renderModelEffortToken(data.session?.model ?? data.config.model,

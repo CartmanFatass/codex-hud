@@ -165,16 +165,16 @@ timer and the key hint are held against the right edge:
 When something needs you, it takes the front of the line:
 
 ```
-! 1 tool failed · 1 agent failed │ ▸ Edit: src/types.ts · 1m20s  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m │ 2/5  Q61%    30m
+! 1 tool · 1 agent failed │ ▸ Edit: src/types.ts · 1m20s  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m │ 2/5  Q61%           30m
 ```
 
 | Field | Means |
 |-------|-------|
-| `!` | Something the HUD actually observed went wrong: a tool that reported failure, an agent that ended in error, a usage window that reported itself full |
+| `!` | Something the HUD actually observed went wrong: a tool that reported failure, an agent, subtask or guardian review that ended in error (the failures as one phrase, `1 tool · 1 agent failed`), a usage window that reported itself full |
 | `▸ Edit: src/types.ts · 1m20s` | What this turn is doing: the running tool, what it is working on, and how long the turn has taken. A narrow pane keeps the mark and the elapsed time, then the mark alone |
 | `☀● Astra` | Model family and reasoning effort: `○` low, `◐` medium, `◕` high, `●` xhigh, `◆` max, `✦` ultra |
 | `codex-hud git:(main * ↑2)` | Project, branch, uncommitted changes, ahead/behind. Started in a folder that holds the repository rather than inside it, the bar names the repository the session works in: `shenlun › Learn-to-Write git:(main *)` |
-| `Agents 1 run · 1 ok · 1 fail` | Subagents by outcome. Finished and failed are separate numbers, and an agent with no observed state is counted as `?`, never as running |
+| `Agents 1 run · 1 ok · 1 fail` | The agents the main session started, by outcome, as the panel's title counts them (one runs while a subtask of it does); a failed subtask or review is an alert. Finished and failed are separate numbers, and an agent with no observed state is counted as `?`, never as running |
 | `Ctx 42% (114.2K/272K)` | How full the context window is, to an eighth of a column. `↻2` counts compactions |
 | `◷~00m` | Minutes since the last model usage, as a prompt-cache reminder. It warns at 25 minutes and stops counting at `30m+` |
 | `2/5` | Steps completed in the current plan |
@@ -233,7 +233,7 @@ Agents opens by default; the Timeline, Changes and the Inspector open on demand.
 - **stacked** (the default): every open pane at once, as above.
 - **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+]` `1`–`4` does, and `Ctrl+]` `Tab` shows the next. The tab names the pane, so its title keeps only its counts and where its rows are. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
 
-**Two layouts** (Settings → Panel → Layout): **rich**, the default, gives each agent the main session started a card while it is running, has failed, has just finished or needs a look, and two lines once it is done, the agents it started in turn on its card; **compact** is the tree, one row per agent, with the brief, the recap and the agent log under it.
+**Two layouts** (Settings → Panel → Layout): **rich**, the default, gives each agent the main session started a card while it is running, has failed, has just finished or needs a look, and two lines once it is done, the agents it started in turn on its card; **compact** is the tree, one row per agent and subtask, with the brief, the recap and the agent log under it. Both count alike, as the status card, the bar and `codex-hud --json` do: the agents the main session started, their subtasks and the guardian reviews, each apart.
 
 **Look** (Settings → Panel → Look, or `CODEX_HUD_LOOK`) draws the bar and the panes' titles in one of five ways: tab (the default), band, tile, frame and pill.
 

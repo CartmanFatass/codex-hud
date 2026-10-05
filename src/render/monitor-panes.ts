@@ -7,8 +7,8 @@ import type { SubagentTreeNode } from '../types.js';
 import type { GitChangedFile } from '../collectors/git-changes.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { MonitorData, MonitorPane, MonitorRow, MonitorState } from './monitor.js';
-import { visibleRows, countExpired, guardianCount, isGuardian } from './panel-state.js';
-import { subtasks } from './directions.js';
+import { visibleRows, countExpired, guardianCount } from './panel-state.js';
+import { agentCounts, type StatusCounts } from '../collectors/subagent-tree.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { displayConfig } from './hud-config.js';
@@ -16,7 +16,7 @@ import { t } from './i18n.js';
 import { agentTitle, shownName } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { monitorText, fit, pair, wrapped, flowLines, squeeze } from './monitor-text.js';
-import { nodeStatus, isLive, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
+import { nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
   isUntracked, UNTRACKED_ROW, changeLetter, lineCounts, listsWorktrees, worktreeItem } from './monitor-labels.js';
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
@@ -35,62 +35,53 @@ export function putAwayCount(nodes: SubagentTreeNode[], state: MonitorState, now
 }
 
 /**
- * The agents' heading: what is running, failed and done, as counts. In rich
- * style it counts the cards, the L1 agents, one at work while a subtask of
- * it is, then their subtasks as one figure; compact, every agent. The
- * switch for what the linger window put away is on the control bar.
+ * The agents' heading, in both layouts the counts every view gives
+ * (`agentCounts`): the agents the main session started by how they stand,
+ * one at work while a subtask of it is, the guardian reviews, and their
+ * subtasks as one figure with how many of them failed. The switch for what
+ * the linger window put away is on the control bar.
  */
-export function summaryRow(input: Pick<MonitorData,'tree'>, state: MonitorState, width: number, now: number): {row: MonitorRow; total: number; expired: number} {
-  const rich = state.style === 'rich';
-  const rows = (showAll: boolean, filter?: 'all') => {
-    const all = visibleRows(input.tree.nodes,{...state.tree,...(filter ? {filter} : {}),collapsed:new Set(),showAll},now);
-    return rich ? all.filter(row=>row.depth === 0) : all;
-  };
-  const everyone = rows(true,'all');
-  const totals = {run:0,done:0,error:0,unknown:0};
-  const live = (node: SubagentTreeNode) => node.status === 'running' || node.status === 'starting' || (rich && subtasks(node).some(isLive));
-  for (const {node} of everyone) totals[live(node) ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
-  // What the linger window puts away, counted whether or not it is showing.
-  const expired = putAwayCount(input.tree.nodes,state,now);
-  let subs = 0;
-  const count = (nodes: readonly SubagentTreeNode[]) => { for (const node of nodes) { if (!isGuardian(node)) subs++; count(node.children); } };
-  if (rich) for (const {node} of everyone) count(node.children);
-  // Guardian reviews under the main session count here, not as agents.
-  const reviews = guardianCount(input.tree.nodes).count;
+export function summaryRow(input: Pick<MonitorData,'tree'>, width: number): {row: MonitorRow} {
+  const {agents,subtasks:subs,reviews} = agentCounts(input.tree.nodes);
   // "!1 失败  ▸1 运行  ✓5 完成": an icon and a count alone said nothing to a
-  // reader without the legend, so each count carries its word; the short
-  // form, the counts alone, is for where the words do not fit.
-  const build = (words: boolean) => {
+  // reader without the legend, so each count carries its word. Where the
+  // words do not fit, the agents' counts go without them but the subtasks
+  // keep theirs, and their failures; at the last, the agents' counts alone.
+  const build = (words: boolean, subtasks: boolean) => {
     const count = (icon: string, paint: (s: string) => string, n: number, word: string) =>
       `${paint(icon)}${n}${words ? colors.dim(` ${t(word)}`) : ''}`;
     // Only what is there: "▸0 run" beside thirty finished agents is noise.
     // A column in, under the entries' status icons; failures lead.
     const counts = [
-      totals.error ? count('!',theme.error,totals.error,'failed') : '',
-      totals.done ? count('✓',theme.success,totals.done,'done') : '',
-      totals.run ? count('▸',theme.info,totals.run,'run') : '',
-      totals.unknown ? count('?',colors.dim,totals.unknown,'unknown') : '',
-      reviews ? `${guardianChip(input.tree.nodes)}${words ? colors.dim(` ${t('reviews')}`) : ''}` : '',
-      subs && words ? colors.dim(t('· {n} subtasks',{n:subs})) : '',
+      agents.failed ? count('!',theme.error,agents.failed,'failed') : '',
+      agents.completed ? count('✓',theme.success,agents.completed,'done') : '',
+      agents.active ? count('▸',theme.info,agents.active,'run') : '',
+      agents.unknown ? count('?',colors.dim,agents.unknown,'unknown') : '',
+      reviews.total ? `${reviewChip(reviews)}${words ? colors.dim(` ${t('reviews')}`) : ''}` : '',
     ].filter(Boolean).join(words ? '  ' : ' ');
-    return counts ? truncateAnsi(' '+counts,width) : '';
+    const tasks = subtasks && subs.total ? colors.dim(t('· {n} subtasks',{n:subs.total}))+(subs.failed ? theme.error(t(', {n} failed',{n:subs.failed})) : '') : '';
+    const text = [counts,tasks].filter(Boolean).join('  ');
+    return text ? truncateAnsi(' '+text,width) : '';
   };
-  return {row:{text:build(true),short:build(false)},total:everyone.length,expired};
+  const text = build(true,true);
+  return {row:{text,fallbacks:[...new Set([build(false,true),build(false,false)])].filter(form=>form && form !== text)}};
 }
 
-/**
- * "◈5": the guardian reviews among `nodes`, in the info colour while one is
- * running. Empty when there are none.
- */
+/** "◈5": reviews, red when one failed, in the info colour while one is running. Empty when there are none. */
+function reviewChip(reviews: Pick<StatusCounts,'total'|'active'|'failed'>): string {
+  return reviews.total ? (reviews.failed ? theme.error : reviews.active ? theme.info : colors.dim)(`◈${reviews.total}`) : '';
+}
+
+/** "◈5": the guardian reviews among `nodes`, as `reviewChip` paints them. */
 export function guardianChip(nodes: readonly SubagentTreeNode[]): string {
-  const {count,running} = guardianCount(nodes);
-  return count ? (running ? theme.info : colors.dim)(`◈${count}`) : '';
+  const {count,running,failed} = guardianCount(nodes);
+  return reviewChip({total:count,active:running ? 1 : 0,failed});
 }
 
 function agentRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   // With no agent to show the view is empty: the summary's counts, the bar's
   // +N and the status card already say why, so no line says it again.
-  const {row:head} = summaryRow(input,state,width,now);
+  const {row:head} = summaryRow(input,width);
   const result: MonitorRow[] = [head];
   for (const row of visibleRows(input.tree.nodes,state.tree,now)) {
     const node = row.node;

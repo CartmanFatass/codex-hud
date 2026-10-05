@@ -11,7 +11,7 @@
 
 import { spawn } from 'child_process';
 import { collectAttention, type AttentionItem } from './render/attention.js';
-import { summarizeSubagents } from './collectors/subagent-tree.js';
+import { agentCounts } from './collectors/subagent-tree.js';
 import type { HudData } from './types.js';
 
 export interface NotifyEvent {
@@ -220,7 +220,8 @@ export class Notifier {
   }
 
   private agentEvents(data: HudData): NotifyEvent[] {
-    const summary = summarizeSubagents(data.subagentTree?.nodes ?? []);
+    // The agents the main session started, as every view counts them; a failed subtask or review is an attention event.
+    const summary = agentCounts(data.subagentTree?.nodes ?? []).agents;
     const previousActive = this.lastActiveAgents;
     const previousCompleted = this.lastCompletedAgents;
     this.lastActiveAgents = summary.active;

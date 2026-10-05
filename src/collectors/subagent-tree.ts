@@ -733,6 +733,50 @@ export interface SubagentSummary {
   active: number;
 }
 
+/** What a thread is to every view that counts them. */
+export type ThreadKind = 'agent' | 'subtask' | 'review';
+
+/**
+ * Every thread under the main session, with what it is: an agent (one the
+ * main session started), a subtask (a thread under an agent, at any depth)
+ * or a review (a guardian approval review, wherever it sits).
+ */
+export function eachThread(nodes: readonly SubagentTreeNode[], visit: (node: SubagentTreeNode, kind: ThreadKind) => void): void {
+  const walk = (node: SubagentTreeNode, top: boolean): void => {
+    visit(node, node.kind === 'guardian' ? 'review' : top ? 'agent' : 'subtask');
+    for (const child of node.children) walk(child, false);
+  };
+  for (const node of nodes) walk(node, true);
+}
+
+/** Threads by how they stand: active (running or starting), finished, failed, or with no observed state. */
+export interface StatusCounts { total: number; active: number; completed: number; failed: number; unknown: number }
+
+/**
+ * The counts the panel's title row, the status card's alerts, the bar,
+ * notifications and the JSON snapshot all give, so they agree: the agents,
+ * one active while it or a subtask under it is; their subtasks; the reviews.
+ */
+export interface AgentCounts { agents: StatusCounts; subtasks: StatusCounts; reviews: StatusCounts }
+
+const isActive = (node: SubagentTreeNode): boolean => node.status === 'running' || node.status === 'starting';
+const busyBelow = (node: SubagentTreeNode): boolean =>
+  node.children.some((child) => child.kind !== 'guardian' && (isActive(child) || busyBelow(child)));
+
+export function agentCounts(nodes: readonly SubagentTreeNode[]): AgentCounts {
+  const blank = (): StatusCounts => ({ total: 0, active: 0, completed: 0, failed: 0, unknown: 0 });
+  const counts: AgentCounts = { agents: blank(), subtasks: blank(), reviews: blank() };
+  eachThread(nodes, (node, kind) => {
+    const into = kind === 'agent' ? counts.agents : kind === 'subtask' ? counts.subtasks : counts.reviews;
+    into.total += 1;
+    if (isActive(node) || (kind === 'agent' && busyBelow(node))) into.active += 1;
+    else if (node.status === 'completed') into.completed += 1;
+    else if (node.status === 'error') into.failed += 1;
+    else into.unknown += 1;
+  });
+  return counts;
+}
+
 export function summarizeSubagents(nodes: SubagentTreeNode[]): SubagentSummary {
   const summary: SubagentSummary = {
     total: 0,

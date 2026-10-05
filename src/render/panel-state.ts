@@ -98,10 +98,11 @@ function folded(node: SubagentTreeNode): boolean {
   return isGuardian(node) && node.status !== 'error';
 }
 
-/** The guardian reviews directly under `nodes`, and whether one is running now. */
-export function guardianCount(nodes: readonly SubagentTreeNode[]): { count: number; running: boolean } {
+/** The guardian reviews directly under `nodes`, whether one is running now, and how many failed. */
+export function guardianCount(nodes: readonly SubagentTreeNode[]): { count: number; running: boolean; failed: number } {
   const guardians = nodes.filter(isGuardian);
-  return { count: guardians.length, running: guardians.some(node => node.status === 'running' || node.status === 'starting') };
+  return { count: guardians.length, running: guardians.some(node => node.status === 'running' || node.status === 'starting'),
+    failed: guardians.filter(node => node.status === 'error').length };
 }
 
 function ownMatch(node: SubagentTreeNode, state: PanelState, nowMs: number): boolean {

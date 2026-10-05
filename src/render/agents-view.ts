@@ -62,7 +62,7 @@ export function drawAgentsView(frame: MonitorFrame, state: MonitorState, rows: M
   if (pinned) {
     // The title spans the frame's sides too, where there is a frame.
     const range = overflow && shown > 0 ? `${offset+1}–${offset+shown}/${body}` : '';
-    const summary = [rows[0].text,rows[0].short ?? ''].map(text=>text.replace(/^ /,'')).filter(Boolean);
+    const summary = [rows[0].text,...rows[0].fallbacks ?? []].map(text=>text.replace(/^ /,'')).filter(Boolean);
     frame.lines[y] = head(summary,range);
     frame.controls.push({kind:'zoom',pane:'agents',x:0,y,width:width+2*x});
   }

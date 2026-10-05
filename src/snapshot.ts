@@ -16,16 +16,19 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { collectAttention } from './render/attention.js';
 import { readQuotaWindows } from './render/quota.js';
-import { summarizeSubagents } from './collectors/subagent-tree.js';
+import { agentCounts, eachThread, type StatusCounts, type ThreadKind } from './collectors/subagent-tree.js';
 import { getCodexHome, getHudHome } from './utils/codex-path.js';
 import type { BarSegment, VariantLevel } from './render/layout/engine.js';
 import type { HudData, SubagentTreeNode } from './types.js';
 
-export const SNAPSHOT_VERSION = 1;
+/** 2: `agents` counts the agents the main session started, with `subtasks` and `reviews` beside them; nodes carry a kind. */
+export const SNAPSHOT_VERSION = 2;
 
 export interface SnapshotAgentNode {
   id: string;
   name: string;
+  /** An agent the main session started, a subtask under one, or a guardian review. */
+  kind: ThreadKind;
   status: string;
   depth: number;
   model?: string;
@@ -49,11 +52,18 @@ export interface HudSnapshot {
   context?: { percent: number; used: number; total: number; compactions: number };
   quota: Array<{ label?: string; percent: number; resetsAt?: string }>;
   tokens?: { total: number; cached: number };
+  /**
+   * The agents the main session started, as the panel counts them (one is
+   * active while a subtask under it is), then their subtasks at any depth and
+   * the guardian reviews; `nodes` is every thread, depth first.
+   */
   agents: {
     active: number;
     completed: number;
     failed: number;
     unknown: number;
+    subtasks: Omit<StatusCounts, 'total'>;
+    reviews: Omit<StatusCounts, 'total'>;
     nodes: SnapshotAgentNode[];
   };
   attention: Array<{ kind: string; label: string; severity: string }>;
@@ -69,19 +79,25 @@ export interface HudSnapshot {
   approvalSince?: string;
 }
 
-function flattenAgents(nodes: SubagentTreeNode[], out: SnapshotAgentNode[] = []): SnapshotAgentNode[] {
-  for (const node of nodes) {
+function flattenAgents(nodes: SubagentTreeNode[]): SnapshotAgentNode[] {
+  const out: SnapshotAgentNode[] = [];
+  eachThread(nodes, (node, kind) => {
     out.push({
       id: node.id,
       name: node.name,
+      kind,
       status: node.status,
       depth: node.depth,
       ...(node.model ? { model: node.model } : {}),
       ...(node.effort ? { effort: node.effort } : {}),
     });
-    flattenAgents(node.children, out);
-  }
+  });
   return out;
+}
+
+/** A count's figures without the total, as the snapshot has always given them. */
+function figures({ active, completed, failed, unknown }: StatusCounts): Omit<StatusCounts, 'total'> {
+  return { active, completed, failed, unknown };
 }
 
 function iso(date: Date | undefined): string | undefined {
@@ -96,7 +112,7 @@ export function buildSnapshot(
   bar: { width: number; segments: BarSegment[] },
   nowMs: number = Date.now()
 ): HudSnapshot {
-  const agents = summarizeSubagents(data.subagentTree?.nodes ?? []);
+  const counts = agentCounts(data.subagentTree?.nodes ?? []);
   const running = [...(data.toolActivity?.recentCalls ?? [])]
     .reverse()
     .find((call) => call.status === 'running');
@@ -121,10 +137,9 @@ export function buildSnapshot(
       ...(window.resetsAt ? { resetsAt: window.resetsAt.toISOString() } : {}),
     })),
     agents: {
-      active: agents.active,
-      completed: agents.completed,
-      failed: agents.failed,
-      unknown: agents.unknown,
+      ...figures(counts.agents),
+      subtasks: figures(counts.subtasks),
+      reviews: figures(counts.reviews),
       nodes: flattenAgents(data.subagentTree?.nodes ?? []),
     },
     attention: collectAttention(data, nowMs).map((item) => ({

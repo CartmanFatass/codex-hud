@@ -107,8 +107,8 @@ export interface RowControl { kind: MonitorControl['kind']; item?: string; x: nu
  * keep its place; `controls` are click targets on the row.
  */
 export interface MonitorRow { text: string; item?: string; key?: string; controls?: RowControl[];
-  /** The text shortened, for where it does not fit: the agents' counts without their words. */
-  short?: string }
+  /** The text shortened, widest first, for where it does not fit: the agents' counts without their words. */
+  fallbacks?: string[] }
 export interface MonitorRect {
   id: MonitorPane;
   x: number; y: number; width: number; height: number;
@@ -281,8 +281,8 @@ export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: 
 export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state: MonitorState, width: number): string[] {
   const now = input.nowMs ?? Date.now();
   const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
-  const summary = state.focus === 'agents' ? summaryRow(input,state,width,now).row : undefined;
-  const info = summary ? [summary.text,summary.short ?? ''].map(text=>text.replace(/^ /,'')).filter(Boolean) : undefined;
+  const summary = state.focus === 'agents' ? summaryRow(input,width).row : undefined;
+  const info = summary ? [summary.text,...summary.fallbacks ?? []].map(text=>text.replace(/^ /,'')).filter(Boolean) : undefined;
   return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false,named:!state.tabbed,info})];
 }
 

@@ -395,7 +395,7 @@ test('an opened finished card with no log shows its last report, its markdown ta
   assert.ok(!shown.some(line => /^│ +1m$/.test(line)), 'no orphan age line');
 });
 
-test('guardian reviews fold into a ◈N chip on their parent, or on the summary under the main session; a failed one still shows', () => {
+test('guardian reviews fold into a ◈N chip on their parent, and the summary counts every one; a failed one still shows', () => {
   const guardian = (i: number, status: SubagentTreeNode['status'] = 'completed') =>
     agent(i, 'guardian', status, { kind: 'guardian', task: 'The following is the Codex agent history whose request action you are assessing.',
       statusAt: new Date(now - 3600_000), lastEventAt: new Date(now - 3600_000) });
@@ -404,7 +404,8 @@ test('guardian reviews fold into a ◈N chip on their parent, or on the summary 
   const state = rich({ tree: { ...rich().tree, showAll: true } });
   const frame = renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now });
   const lines = plain(frame);
-  assert.match(lines[frame.panes[0].y], /^ ▦ Agents {2}✓1 done {2}▸1 run {2}◈1 reviews *$/, 'the cards counted, folded reviews left out; the main session\'s chip is on the summary');
+  assert.match(lines[frame.panes[0].y], /^ ▦ Agents {2}✓1 done {2}▸1 run {2}◈4 reviews *$/, 'the agents counted, and beside them the session\'s reviews, wherever they sit');
+  assert.ok(frame.lines[frame.panes[0].y].includes(theme.error('◈4')), 'one failed: the summary\'s chip in the error colour');
   const top = lines.find(line => line.includes('bench_corpus'))!;
   assert.match(top, /◈2/);
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');
