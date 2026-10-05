@@ -143,6 +143,11 @@ const ZH: Record<string, string> = {
   '{n} staged': '{n} 已暂存',
   '{n} unstaged': '{n} 未暂存',
   '{n} untracked': '{n} 未跟踪',
+  'Untracked': '未跟踪',
+  'Staged': '已暂存',
+  'Unstaged': '未暂存',
+  'binary': '二进制',
+  '1 file': '1 个文件',
   'Branch: {branch}': '分支：{branch}',
   'Status: {status}': '状态：{status}',
   'Locked: {reason}': '已锁定：{reason}',
@@ -260,6 +265,7 @@ const ZH: Record<string, string> = {
   '[Save]': '[保存]',
   '[Reset]': '[重置]',
   'Settings': '设置',
+  'Preview': '预览',
 
   // Settings groups, labels and help
   'Status bar': '状态栏',

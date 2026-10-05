@@ -209,6 +209,14 @@ const LATTE: Palette = {
  * omp's titanium, as omp paints its status line and settings: aluminium text
  * on dark titanium, electric blue where the attention goes, deep blue under
  * the active tab, readout green, amber and alert red for state.
+ *
+ * omp sets its terminal's background to brushed titanium (#151820) and sinks
+ * its status line below it, in dark titanium (#0F1216). The HUD sits on the
+ * terminal's own background, often near black, where that band vanishes, so
+ * its surfaces rise above the usual dark backgrounds instead, as the terminal
+ * palette's greys do: the band, the selected row, the selected agent's row
+ * and a button on the bar, each a step lighter than the last. The track
+ * stays between the band and the frame, so a meter on the band still shows.
  */
 const TITANIUM: Palette = {
   name: 'titanium',
@@ -223,18 +231,18 @@ const TITANIUM: Palette = {
   branch: rgb('#D06FED'),
   project: rgbBold('#E8ECF4'),
   strong: rgbBold('#E8ECF4'),
-  selected: highlight('48;2;31;37;45'),
+  selected: surface('#272D36'),
   agents: ['#5EC8FF', '#8FA8FF', '#B79CFF', '#D06FED', '#2AC3DE', '#D4C090'].map(rgb),
-  band: surface('#0F1216'),
-  bar: surface('#0F1216'),
-  selectedBand: surface('#1C2029'),
-  chip: surface('#2A3038'),
+  band: surface('#232830'),
+  bar: surface('#232830'),
+  selectedBand: surface('#2E3540'),
+  chip: surface('#3A424E'),
   tab: highlight('48;2;0;130;179;38;2;232;236;244'),
-  track: rgb('#2A3038'),
+  track: rgb('#343B46'),
   tick: rgb('#6583A3'),
   frame: rgb('#454C59'),
   tabEdge: rgb('#0082B3'),
-  chipEdge: rgb('#2A3038'),
+  chipEdge: rgb('#3A424E'),
 };
 
 const NONE: Palette = {

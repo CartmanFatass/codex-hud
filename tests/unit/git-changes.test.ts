@@ -45,6 +45,8 @@ test('Git failures become short notices, never the failed command or raw stderr'
     code: 128, cmd: command, stderr: 'fatal: not a git repository (or any of the parent directories): .git\n',
   })), 'No Git repository');
   assert.equal(describeGitFailure(execError('spawn git ENOENT', { code: 'ENOENT' })), 'Git is not installed');
+  // A path deleted since the status read is not a missing git.
+  assert.equal(describeGitFailure(execError("ENOENT: no such file or directory, lstat 'gone'", { code: 'ENOENT', syscall: 'lstat' })), 'No longer on disk');
   assert.equal(describeGitFailure(execError('spawn git ETIMEDOUT', { code: 'ETIMEDOUT', killed: true })), 'Git timed out');
   assert.equal(describeGitFailure(execError('Cannot safely disable configured Git filter')), 'Git filters could not be disabled safely');
   assert.equal(describeGitFailure(execError('Command failed: git diff --numstat', {
@@ -131,6 +133,31 @@ test('previews untracked text in an unborn repository and bounds and escapes out
   assert.doesNotMatch(preview.join('\n'), /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
   assert.ok(preview.length <= 500);
   assert.match(preview.join('\n'), /truncat/i);
+});
+
+test('lists an untracked directory as one entry and, inspected, the files in it', async t => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'base\n');
+  commit(root);
+  mkdirSync(join(root, 'out', 'deep'), { recursive: true });
+  writeFileSync(join(root, 'out', 'a.txt'), 'a\n');
+  writeFileSync(join(root, 'out', 'deep', 'b.txt'), 'b\n');
+  writeFileSync(join(root, 'out', 'skip.log'), 'ignored\n');
+  writeFileSync(join(root, '.gitignore'), '*.log\n');
+  // A repository of its own is listed as itself: git does not look inside.
+  mkdirSync(join(root, 'nested'));
+  git(join(root, 'nested'), 'init', '-q');
+  writeFileSync(join(root, 'nested', 'n.txt'), 'n\n');
+  const result = await collectGitChanges(root);
+  assert.deepEqual(result.files.map(file => file.path).sort(), ['.gitignore', 'nested/', 'out/']);
+  const out = result.files.find(file => file.path === 'out/')!;
+  assert.equal(out.index, '?');
+  assert.deepEqual(await readGitDiff(root, out), ['Untracked', '2 files', 'a.txt', 'deep/b.txt']);
+  const nested = result.files.find(file => file.path === 'nested/')!;
+  assert.deepEqual(await readGitDiff(root, nested), ['Untracked', '[Preview unavailable: a repository of its own]']);
+  // Gone since the status read: said so, not blamed on git.
+  rmSync(join(root, 'out'), { recursive: true });
+  assert.deepEqual(await readGitDiff(root, out), ['[Preview unavailable: No longer on disk]']);
 });
 
 test('reports binary changes and does not follow untracked symlinks', async t => {
@@ -365,9 +392,11 @@ test('rejects paths outside the repository and parent symlink traversal', async 
   writeFileSync(join(outside, 'secret'), 'secret-content');
   symlinkSync(outside, join(root, 'dir'));
   const file = { path: 'dir/secret', index: '?', worktree: '?', added: null, removed: null, binary: false, conflict: false };
-  for (const path of ['dir/secret', '../secret', join(outside, 'secret')]) {
+  for (const path of ['dir/secret', '../secret', join(outside, 'secret'), 'dir/']) {
     const preview = (await readGitDiff(root, { ...file, path })).join('\n');
     assert.match(preview, /unavailable/i);
     assert.doesNotMatch(preview, /secret-content/);
+    // Nor, listing a directory, the names in one outside.
+    assert.doesNotMatch(preview, /\bsecret\b/);
   }
 });

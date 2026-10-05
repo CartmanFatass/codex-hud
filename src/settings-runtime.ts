@@ -9,7 +9,15 @@ export function runtimeSettings():HudSettings {
   }
   return settings;
 }
+function displayOf(settings:HudSettings) {
+  return {density:settings.density,glyphs:settings.glyphs,icons:settings.icons,look:settings.look,motion:settings.motion,context:settings.context,
+    theme:process.env.NO_COLOR ? 'none' as const : settings.theme};
+}
 export function applyDisplaySettings(settings:HudSettings):void {
-  setDisplayConfig({density:settings.density,glyphs:settings.glyphs,icons:settings.icons,look:settings.look,motion:settings.motion,context:settings.context,
-    theme:process.env.NO_COLOR ? 'none' : settings.theme});
+  setDisplayConfig(displayOf(settings));
+}
+/** What `draw` returns drawn in the display settings of `settings`, the ones in use put back after. */
+export function withDisplaySettings<T>(settings:HudSettings,draw:()=>T):T {
+  const previous = setDisplayConfig(displayOf(settings));
+  try { return draw(); } finally { setDisplayConfig(previous); }
 }

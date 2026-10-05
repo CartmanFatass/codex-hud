@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -104,10 +104,12 @@ test('real Git read-only smoke: unusual untracked filenames; no staging, commit 
     // Only initializes an isolated test repository. No add/commit/checkout/worktree-add.
     await exec('git',['init','--quiet',dir],{timeout:5000});
     await writeFile(join(dir,'space newline\n\t\x1b[2J.txt'),'fixture');
+    // An untracked directory counts once, as git status lists it.
+    await mkdir(join(dir,'out'));await writeFile(join(dir,'out','a'),'a');await writeFile(join(dir,'out','b'),'b');
     const before=await worktreeGit(dir,['status','--porcelain=v2','-z','--untracked-files=all']);
     const snapshot=await new WorktreeCollector().refresh([dir]);
-    assert.equal(snapshot.error,undefined);assert.equal(snapshot.entries.length,1);assert.equal(snapshot.entries[0].status?.untracked,1);
-    assert.equal(snapshot.entries[0].status?.changed,1);
+    assert.equal(snapshot.error,undefined);assert.equal(snapshot.entries.length,1);assert.equal(snapshot.entries[0].status?.untracked,2);
+    assert.equal(snapshot.entries[0].status?.changed,2);
     assert.equal(await worktreeGit(dir,['status','--porcelain=v2','-z','--untracked-files=all']),before);
   }finally{await rm(dir,{recursive:true,force:true});}
 });

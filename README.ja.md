@@ -19,7 +19,7 @@
 
 > Claude Code の [claude-hud](https://github.com/jarrodwatts/claude-hud) にインスパイアされています。
 
-![Codex HUD — シングルセッション](./docs/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
+![Codex HUD — シングルセッション](./docs/fig/bar.png)
 
 ## なぜ Codex HUD が必要？
 
@@ -39,7 +39,7 @@
 
 `Ctrl+T` は意図的に空けてあります。Codex 自身のトランスクリプト表示のためです。
 
-![Codex HUD — サブエージェントツリー](./docs/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+![Codex HUD — サブエージェントツリー](./docs/fig/panel.png)
 
 **Q: tmux を手動で設定する必要がありますか？**
 

@@ -1,7 +1,7 @@
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import { navigateSession } from './utils/session-navigation.js';
-import { defaultSettings, saveSettings, briefingScope } from './settings.js';
-import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
+import { defaultSettings, saveSettings, briefingScope, type HudSettings } from './settings.js';
+import { runtimeSettings, applyDisplaySettings, withDisplaySettings } from './settings-runtime.js';
 import { treeWidthKeeper } from './utils/pane-width.js';
 import { renderSettingsPage, handleSettingsInput, type SettingsPageState, type SettingsFrame } from './render/settings-page.js';
 import { spawn, execFile, execFileSync } from 'node:child_process';
@@ -13,7 +13,7 @@ import { buildSubagentTree, uniquePickerLabel } from './collectors/subagent-tree
 import { collectGitChanges, readGitDiff, readDiffHunks, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
-  monitorModes, monitorPreferences, nextRepaintDelay, paneShown, type MonitorFrame } from './render/monitor.js';
+  monitorModes, monitorPreferences, nextRepaintDelay, paneShown, panelTop, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
@@ -231,13 +231,16 @@ async function runLivePage(): Promise<void> {
   let repaintTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveDone = () => {};
 
+  // The panel's top as a draft of the settings would draw it.
+  const previewTop = (draft: HudSettings, width: number) => withDisplaySettings(draft,() =>
+    panelTop({tree,brief:briefCommand() === 'off' ? undefined : {paused:settings.briefingPaused}},{...state,tabbed:draft.paneLayout === 'tabs'},width));
   const render = () => {
     if (closed) return;
     const output = time('render',() => {
       let lines: string[];
       if (settingsPage) {
         settingsFrame = renderSettingsPage(settingsPage,process.stdout.columns || 30,process.stdout.rows || 24,
-          {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage()});
+          {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage()},previewTop);
         settingsPage = settingsFrame.state;
         lines = settingsFrame.lines;
       } else {

@@ -199,7 +199,7 @@ export class WorktreeCollector {
       try {
         const overrides = await neutralizeFilters(this.run, entry.path);
         const text = await this.run(entry.path, [...overrides, '-c', 'status.renames=true', 'status',
-          '--porcelain=v2', '--branch', '-z', '--untracked-files=all', '--ignore-submodules=all']);
+          '--porcelain=v2', '--branch', '-z', '--untracked-files=normal', '--ignore-submodules=all']);
         entry.status = parseWorktreeStatus(text);
         // Prefer the branch reported by this status read, not an earlier list snapshot.
         entry.branch = entry.status.branch;
