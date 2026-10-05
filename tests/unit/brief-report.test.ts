@@ -287,11 +287,16 @@ test('with the main session in scope: the recap material, the goal set in Codex,
   assert.doesNotMatch(main2.system, /<directions>/);
 });
 
-test('a bracketed user message may be a tool\'s; it is marked, and it is not a new request', () => {
+test('a bracketed user message or a peer\'s header may be a tool\'s; it is marked, and it is not a new request', () => {
   assert.equal(looksAutomatic('[hook-wait 30s] continue'), true);
   assert.equal(looksAutomatic('  [peer] lead finished'), true);
   assert.equal(looksAutomatic('Fix [the] bug'), false);
   assert.equal(looksAutomatic('[]'), false);
+  assert.equal(looksAutomatic('Docs lead → Root (peer, one need: information only, no reply owed). The index is rebuilt.'), true);
+  assert.equal(looksAutomatic('parser_lead -> main (no reply needed) done'), true);
+  assert.equal(looksAutomatic('Move login → dashboard (peer review found it)'), false, 'typed: the note is not a peer\'s');
+  assert.equal(looksAutomatic('Rename a → b (please)'), false);
+  assert.equal(looksAutomatic('go on; parser_lead → main (peer, no reply owed) said it is done'), false, 'a header quoted in a sentence');
 });
 
 test('the dry run prints what would be sent and writes nothing', async (t: TestContext) => {
