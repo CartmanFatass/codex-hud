@@ -196,7 +196,7 @@ test('each agent in the log looks like its tree row, newest news first, and what
   assert.match(lines[rule + 3], new RegExp(`^.▸ ${first} +$`));
   const busyAt = lines.findIndex(line => /^ ▸ busy_one/.test(line));
   assert.ok(tight.lines[busyAt].includes(theme.strong('busy_one')));
-  assert.equal(lines[busyAt + 1].trimEnd(), '   5s ~ 正在核对链接', 'newest first, a model note marked');
+  assert.equal(lines[busyAt + 1].trimEnd(), '   5s  ~ 正在核对链接', 'newest first, a model note marked, the ages in a column');
   assert.equal(lines[busyAt + 2].trimEnd(), '   10s Checking links');
   const quietAt = lines.findIndex(line => /^!▸ quiet_one/.test(line));
   assert.ok(quietAt > 0, 'the quiet agent is flagged although the model did not flag it');
@@ -228,7 +228,7 @@ test('the log follows the tree: what the tree hides it hides, a collapsed parent
   const old = node('00000000-0000-4000-8000-000000000012', 'old_one', 'completed', { statusAt: new Date(now - 3 * 3600_000) });
   const agentLog = new Map([
     [child.id, [{ at: now - 60_000, kind: 'started' as const, text: '' }]],
-    [parent.id, [{ at: now - 120_000, kind: 'started' as const, text: '' }]],
+    [parent.id, [{ at: now - 120_000, kind: 'started' as const, text: '' }, { at: now - 30_000, kind: 'note' as const, text: 'Reading the **parser**' }]],
     [old.id, [{ at: now - 3 * 3600_000, kind: 'finished' as const, text: '' }]],
   ]);
   const agents = tree([parent, old]);
@@ -251,7 +251,26 @@ test('the log follows the tree: what the tree hides it hides, a collapsed parent
   assert.ok(!/[ǁ▶]/.test(off[0]), 'no brief, no switch on the bar');
   const inspect = { ...state, modes: { ...state.modes, details: 'open' as const }, focus: 'details' as const };
   const detail = renderMonitor({ tree: agents, state: inspect, width: 40, height: 40, nowMs: now, agentLog }).lines.map(stripAnsi);
-  assert.ok(detail.some(line => /│ Log/.test(line)));
+  const log = detail.findIndex(line => /│ Log/.test(line));
+  assert.deepEqual(detail.slice(log + 1, log + 3).map(line => line.trimEnd()), ['│ 30s ~ Reading the parser', '│ 2m  started'], 'newest first, its markdown taken out');
+  // Started alone says no more than the status line: no log.
+  const childOnly = renderMonitor({ tree: agents, state: { ...inspect, tree: { ...inspect.tree, selectedId: child.id } }, width: 40, height: 40, nowMs: now, agentLog }).lines.map(stripAnsi);
+  assert.ok(childOnly.some(line => /child_one/.test(line)) && !childOnly.some(line => /│ Log/.test(line)));
+});
+
+test('the Inspector\'s log leaves out the update shown above it', () => {
+  const at = new Date(now - 60_000);
+  const reader = node('00000000-0000-4000-8000-000000000021', 'reader', 'running',
+    { turnStartedAt: new Date(now - 120_000), lastReport: { text: 'Read **all** the files', kind: 'reply', at } });
+  const agentLog = new Map([[reader.id, [{ at: now - 120_000, kind: 'started' as const, text: '' },
+    { at: at.getTime(), kind: 'report' as const, text: 'Read **all** the files' }, { at: now - 30_000, kind: 'note' as const, text: 'Moving on to the tests' }]]]);
+  const state = initialMonitorState();
+  state.tree.selectedId = reader.id;
+  const inspect = { ...state, modes: { ...state.modes, details: 'open' as const }, focus: 'details' as const };
+  const frame = renderMonitor({ tree: tree([reader]), state: inspect, width: 40, height: 40, nowMs: now, agentLog }).lines.map(stripAnsi);
+  const lines = frame.slice(frame.findIndex(line => line.includes('◫ Inspector')));
+  assert.equal(lines.filter(line => line.includes('Read all the files')).length, 1, lines.join('\n'));
+  assert.ok(lines.some(line => /^│ 30s ~ Moving on to the tests/.test(line)), lines.join('\n'));
 });
 
 test('an api brief is one chat completions call: base, model and key fall back sensibly', () => {

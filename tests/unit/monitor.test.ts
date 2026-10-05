@@ -42,7 +42,7 @@ test('the default monitor is Agents alone, one row per agent, the selected one w
   }
 });
 
-test('agent rows use model/effort glyphs, not full model names or effort words',()=>{
+test('agent rows use model/effort glyphs, not full model names or effort words; the Inspector names them beside the glyphs',()=>{
   setDisplayConfig({glyphs:'both'});
   const named={...tree,nodes:[{...nodes[0],model:'gpt-5.4-astra',effort:'high'},{...nodes[1],model:'gpt-5.4-astra',effort:'high'}]};
   for (const width of [20,30,45]) {
@@ -55,8 +55,11 @@ test('agent rows use model/effort glyphs, not full model names or effort words',
   }
   let state=initialMonitorState();state.modes.details='open';state.focus='details';
   const inspect=stripAnsi(renderMonitor({tree:named,worktrees,state,width:45,height:32,nowMs:now}).lines.join('\n'));
-  assert.match(inspect, new RegExp(MODEL_GLYPHS.astra));
-  assert.doesNotMatch(inspect,/Model unknown|Effort unknown|gpt-5\.4-astra/);
+  assert.match(inspect, new RegExp(`│ ${MODEL_GLYPHS.astra}${EFFORT_GLYPHS.high} gpt-5\\.4-astra · high`));
+  assert.doesNotMatch(inspect,/Model unknown|Effort unknown/);
+  setDisplayConfig({glyphs:'text'});
+  assert.match(stripAnsi(renderMonitor({tree:named,worktrees,state,width:45,height:32,nowMs:now}).lines.join('\n')),/│ gpt-5\.4-astra · high/,'glyphs off: the words alone');
+  setDisplayConfig({glyphs:'both'});
   setDisplayConfig({glyphs:'both',theme:'terminal'});
 });
 
