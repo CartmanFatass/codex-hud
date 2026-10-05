@@ -79,6 +79,7 @@ export const theme = {
   band: (text: string) => palette().band(text),
   bar: (text: string) => palette().bar(text),
   selectedBand: (text: string) => palette().selectedBand(text),
+  chip: (text: string) => palette().chip(text),
   tab: (text: string) => palette().tab(text),
   track: (text: string) => palette().track(text),
   tick: (text: string) => palette().tick(text),

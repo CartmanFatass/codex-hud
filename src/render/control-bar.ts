@@ -3,60 +3,100 @@
  * control the panel draws is here, and nowhere else: not on the status card,
  * not on a pane's title rule.
  *
- *   ← 主会话  1 2 3 4 5        b‖  a+31  ,设置  ?
+ *   ← 主会话  ▦ ⎇ ± ⌖ ⋮        ‖ 简报 +31 已收起 设置 帮助
+ *
+ * Each control is a button: a word, or an icon where words do not fit, on a
+ * chip a step lighter than the bar. No key is written anywhere on it; the
+ * keys (the tmux prefix, then a letter) are in the help alone.
  *
  * Left: the way back to the main session, then a tab per pane: an open
- * pane's number in the text colour, a closed one's dim, the focused one on
- * a lighter surface, a folded one dim and underlined. Right: each switch as
- * its key, dim, and a short label: the brief's pause (only with a brief
- * configured), the older agents (only when the linger window put some
- * away), settings and help. Short of room the words go first (",设置"
- * becomes ","), then the closed panes' tabs, then the older agents' switch,
- * then the main session's name; "←", "," and "?" stay. A tab's click is
- * `clickTab` in monitor.ts. Pure.
+ * pane's in the text colour, a closed one's dim, the focused one on a
+ * lighter chip and bold, a folded one dim and underlined. Right: the brief's
+ * pause (only with a brief configured), the older agents (only when the
+ * linger window put some away), settings and help. Short of room the tab
+ * names become icons first, then the other words (the brief's and the older
+ * agents' first, the main session's name next, settings and help last), then the closed panes'
+ * tabs go, then the older agents' button, then the brief's; "←", settings
+ * and help stay. A tab's click is `clickTab` in monitor.ts. Pure.
  */
 import type { MonitorControl, MonitorPane, MonitorState } from './monitor.js';
-import { MONITOR_PANES, iconic } from './monitor.js';
+import { MONITOR_PANES } from './monitor.js';
 import { theme, colors, visualLength, truncateAnsi } from './colors.js';
 import { palette } from './palette.js';
-import { t } from './i18n.js';
+import { t, language } from './i18n.js';
 
 /** What the bar needs to know besides the panel's state. */
 export interface BarInput {
   /** The brief, when one is configured. */
   brief?: { paused?: boolean };
-  /** Agents the linger window put away; 0 hides the switch. */
+  /** Agents the linger window put away; 0 hides the button. */
   expired: number;
 }
 
-interface Segment {
+/**
+ * Each pane's tab: its name, and its icon where names do not fit. The icons
+ * are one column wide and none is a glyph the legend gives another meaning
+ * (✓ ✗ ▸ ◈ ◎ ◷ ⌕ ≡ …).
+ */
+const TABS: Record<MonitorPane, { en: string; zh: string; icon: string }> = {
+  agents: { en: 'Agents', zh: '卡片', icon: '▦' },
+  worktrees: { en: 'Trees', zh: '工作树', icon: '⎇' },
+  changes: { en: 'Changes', zh: '改动', icon: '±' },
+  details: { en: 'Inspect', zh: '检查器', icon: '⌖' },
+  timeline: { en: 'Timeline', zh: '时间线', icon: '⋮' },
+};
+/** The settings button's icon: a menu, not the ≡ that is a model's glyph. */
+export const SETTINGS_ICON = '☰';
+
+interface Button {
   text: string;
-  kind?: MonitorControl['kind'];
+  kind: MonitorControl['kind'];
   pane?: MonitorPane;
 }
 
-/** A switch: its key dim, its label in the text colour (or `paint`). */
-function key(k: string, label: string, paint: (s: string) => string = theme.value): string {
-  return colors.dim(k) + (label ? paint(label) : '');
+/** A button: its face on a chip. Without colour there is no chip to pad, only the face. */
+function chip(face: string, pad: boolean): string {
+  return palette().name === 'none' ? face : theme.chip(pad ? ` ${face} ` : face);
 }
 
 /**
- * One pane's tab, its state in its paint. Without colour the paint says
- * nothing, so the focused pane is "[4]" and a folded one "4-" ("[4-]"
- * both); closed ones are not drawn there at all.
+ * One pane's tab. Without colour the paint says nothing, so the focused pane
+ * is "[▦]" and a folded one "⌖-" ("[⌖-]" both); closed ones are not drawn.
  */
-function tab(state: MonitorState, id: MonitorPane, index: number): string {
-  const n = String(index + 1);
-  const plain = palette().name === 'none';
+function tab(state: MonitorState, id: MonitorPane, names: boolean, pad: boolean): string {
+  const face = names ? TABS[id][language() === 'zh' ? 'zh' : 'en'] : TABS[id].icon;
   const mode = id === 'agents' ? 'open' : state.modes[id];
   const folded = mode === 'folded';
-  if (id === state.focus) {
-    if (plain) return `[${n}${folded ? '-' : ''}]`;
-    const face = theme.bold(theme.value(n));
-    return theme.tab(folded ? `\x1b[4m${face}\x1b[24m` : face);
+  if (palette().name === 'none') {
+    const plain = `${face}${folded ? '-' : ''}`;
+    return id === state.focus ? `[${plain}]` : plain;
   }
-  if (folded) return plain ? `${n}-` : `\x1b[4m${colors.dim(n)}\x1b[24m`;
-  return mode === 'closed' ? theme.track(n) : theme.value(n);
+  const text = pad ? ` ${face} ` : face;
+  if (id === state.focus) {
+    const bold = theme.bold(theme.value(text));
+    return theme.tab(folded ? `\x1b[4m${bold}\x1b[24m` : bold);
+  }
+  if (folded) return theme.chip(`\x1b[4m${colors.dim(text)}\x1b[24m`);
+  // Dim, not the meter's track colour: that is a step off the chip and would vanish on it.
+  return theme.chip(mode === 'closed' ? colors.dim(text) : theme.value(text));
+}
+
+interface Step {
+  /** The tabs as names rather than icons. */
+  names: boolean;
+  /**
+   * How many of the other buttons are words rather than icons: 3 all, 2 all
+   * but the brief's and the older agents', 1 settings and help only, 0 none.
+   */
+  words: 0 | 1 | 2 | 3;
+  /** A column of chip on each side of a button's face. */
+  pad: boolean;
+  /** Closed panes keep their tab. */
+  closed: boolean;
+  older: boolean;
+  brief: boolean;
+  /** 'all' the tabs there are, 'focus' only the focused pane's, '' none. */
+  tabs: 'all' | 'focus' | '';
 }
 
 export function controlBar(
@@ -65,79 +105,75 @@ export function controlBar(
   width: number
 ): { line: string; controls: MonitorControl[] } {
   const brief = input.brief;
-  const words = !iconic();
-  const attempt = (o: {
-    labels: boolean;
-    closed: boolean;
-    older: boolean;
-    sep: number;
-    name: '' | 'Main session' | 'Main';
-    pause: boolean;
-    /** 'all' the tabs there are, 'focus' only the focused pane's, '' none. */
-    tabs?: 'all' | 'focus' | '';
-  }) => {
-    const left: Segment[] = [{ text: theme.accent('←') + (o.name ? ` ${theme.value(t(o.name))}` : ''), kind: 'main' }];
+  const attempt = (o: Step) => {
+    const back: Button = {
+      text: chip(theme.accent('←') + (o.words >= 2 ? ` ${theme.value(t('Main'))}` : ''), o.pad),
+      kind: 'main',
+    };
     // With no colour the tabs cannot say closed; only the panes there are get one.
-    const shown = MONITOR_PANES.map((id, i) => ({ id, i }))
-      .filter(({ id }) => id === 'agents' || state.modes[id] !== 'closed' || (o.closed && palette().name !== 'none'))
-      .filter(({ id }) => (o.tabs ?? 'all') === 'all' || (o.tabs === 'focus' && id === state.focus));
-    const tabs: Segment[] = shown.map(({ id, i }) => ({ text: tab(state, id, i), kind: 'tab', pane: id }));
-    const right: Segment[] = [];
-    if (brief && o.pause) {
-      const label = words ? (o.labels ? ` ${t(brief.paused ? 'resume' : 'pause')}` : '') : brief.paused ? '▸' : '‖';
-      right.push({ text: key('b', label, brief.paused ? theme.accent : theme.value), kind: 'brief' });
+    const tabs: Button[] = MONITOR_PANES.filter(
+      (id) => id === 'agents' || state.modes[id] !== 'closed' || (o.closed && palette().name !== 'none')
+    )
+      .filter((id) => o.tabs === 'all' || (o.tabs === 'focus' && id === state.focus))
+      .map((id) => ({ text: tab(state, id, o.names, o.pad), kind: 'tab', pane: id }));
+    const right: Button[] = [];
+    if (brief && o.brief) {
+      const icon = brief.paused ? '▸' : '‖';
+      const paint = brief.paused ? theme.accent : theme.value;
+      right.push({ text: chip(paint(o.words >= 3 ? `${icon} ${t('Brief')}` : icon), o.pad), kind: 'brief' });
     }
     if (input.expired && o.older) {
       const n = input.expired;
-      const label = words
-        ? o.labels
-          ? ` ${t(state.tree.showAll ? 'hide {n}' : '+{n} older', { n })}`
-          : ''
-        : state.tree.showAll
-          ? `−${n}`
+      const face = state.tree.showAll
+        ? o.words >= 3
+          ? t('Hide older')
+          : `−${n}`
+        : o.words >= 3
+          ? t('+{n} older', { n })
           : `+${n}`;
-      right.push({ text: key('a', label), kind: 'older' });
+      right.push({ text: chip(theme.value(face), o.pad), kind: 'older' });
     }
-    right.push({ text: key(',', o.labels ? t('Settings') : ''), kind: 'settings' });
-    right.push({ text: key('?', ''), kind: 'help' });
-    const gap = ' '.repeat(o.sep);
-    const leftText = ' ' + left[0].text + (tabs.length ? '  ' + tabs.map((s) => s.text).join(' ') : '');
-    const rightText = right.map((s) => s.text).join(gap) + ' ';
+    right.push({ text: chip(theme.value(o.words >= 1 ? t('Settings') : SETTINGS_ICON), o.pad), kind: 'settings' });
+    right.push({ text: chip(theme.value(o.words >= 1 ? t('Help') : '?'), o.pad), kind: 'help' });
+
+    const leftText = ' ' + back.text + (tabs.length ? '  ' + tabs.map((b) => b.text).join(' ') : '');
+    const rightText = right.map((b) => b.text).join(' ') + ' ';
     const room = width - visualLength(leftText) - visualLength(rightText);
-    // Two blank columns at least keep the tabs and the switches apart.
+    // Two columns of bar at least keep the tabs and the buttons apart.
     if (room < 2) return null;
     const controls: MonitorControl[] = [];
-    let x = 1;
-    controls.push({ kind: 'main', x: 0, y: 0, width: x + visualLength(left[0].text) });
-    x += visualLength(left[0].text) + 2;
-    for (const s of tabs) {
-      controls.push({ kind: 'tab', pane: s.pane, x, y: 0, width: visualLength(s.text) });
-      x += visualLength(s.text) + 1;
+    controls.push({ kind: 'main', x: 0, y: 0, width: 1 + visualLength(back.text) });
+    let x = 1 + visualLength(back.text) + 2;
+    for (const b of tabs) {
+      controls.push({ kind: 'tab', pane: b.pane, x, y: 0, width: visualLength(b.text) });
+      x += visualLength(b.text) + 1;
     }
     x = width - visualLength(rightText);
-    for (const s of right) {
-      controls.push({ kind: s.kind!, x, y: 0, width: visualLength(s.text) });
-      x += visualLength(s.text) + o.sep;
+    for (const b of right) {
+      controls.push({ kind: b.kind, x, y: 0, width: visualLength(b.text) });
+      x += visualLength(b.text) + 1;
     }
     return { line: theme.bar(leftText + ' '.repeat(room) + rightText), controls };
   };
-  const steps: Parameters<typeof attempt>[0][] = [
-    { labels: true, closed: true, older: true, sep: 2, name: 'Main session', pause: true },
-    { labels: false, closed: true, older: true, sep: 2, name: 'Main session', pause: true },
-    { labels: false, closed: false, older: true, sep: 2, name: 'Main session', pause: true },
-    { labels: false, closed: false, older: false, sep: 2, name: 'Main session', pause: true },
-    { labels: false, closed: false, older: false, sep: 1, name: 'Main session', pause: true },
-    { labels: false, closed: false, older: false, sep: 1, name: 'Main', pause: true },
-    { labels: false, closed: false, older: false, sep: 1, name: '', pause: true },
-    { labels: false, closed: false, older: false, sep: 1, name: '', pause: false },
-    { labels: false, closed: false, older: false, sep: 1, name: '', pause: false, tabs: 'focus' },
-    { labels: false, closed: false, older: false, sep: 1, name: '', pause: false, tabs: '' },
+  const all = { closed: true, older: true, brief: true, tabs: 'all' } as const;
+  const steps: Step[] = [
+    { names: true, words: 3, pad: true, ...all },
+    { names: true, words: 3, pad: false, ...all },
+    { names: false, words: 3, pad: false, ...all },
+    { names: false, words: 2, pad: false, ...all },
+    { names: false, words: 1, pad: false, ...all },
+    { names: false, words: 0, pad: false, ...all },
+    { names: false, words: 0, pad: false, ...all, closed: false },
+    { names: false, words: 0, pad: false, ...all, closed: false, older: false },
+    { names: false, words: 0, pad: false, ...all, closed: false, older: false, brief: false },
+    { names: false, words: 0, pad: false, closed: false, older: false, brief: false, tabs: 'focus' },
+    { names: false, words: 0, pad: false, closed: false, older: false, brief: false, tabs: '' },
   ];
   for (const step of steps) {
     const found = attempt(step);
     if (found) return found;
   }
-  // Narrower than the arrow and the two keys: the arrow alone.
+  // Narrower than the arrow and the two buttons: the arrow alone.
   const line = theme.bar(truncateAnsi(' ' + theme.accent('←'), width) + ' '.repeat(Math.max(0, width - 2)));
   return { line, controls: [{ kind: 'main', x: 0, y: 0, width: Math.min(width, 2) }] };
 }

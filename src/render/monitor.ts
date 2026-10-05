@@ -104,6 +104,8 @@ export interface MonitorFrame { lines: string[]; panes: MonitorRect[]; controls:
   statusCard?: FootInfo }
 export interface MonitorData {
   tree: SubagentTree;
+  /** The tmux prefix as the help writes it ("Ctrl+]"). */
+  prefix?: string;
   state: MonitorState;
   width: number; height: number;
   git?: GitChanges | null;
@@ -783,7 +785,7 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       if (node.role) lines.push(t('Role: {role}',{role:node.role}));
       if (state.expanded) lines.push(t('Turn start: {at}',{at:node.turnStartedAt && Number.isFinite(node.turnStartedAt.getTime()) ? node.turnStartedAt.toISOString() : t('unknown')}),`UUID: ${node.id}`);
       rows.push(...lines.flatMap(line=>helpLines(monitorText(line),width).map(text=>({text}))));
-      rows.push({text:colors.dim(truncateAnsi(t(state.expanded?'v Less':'v More'),width))});
+      rows.push({text:colors.dim(truncateAnsi(t(state.expanded?'▴ Less':'▾ More'),width))});
       return rows;
     }
   } else if (state.preview === 'worktree') {
@@ -799,7 +801,7 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
         t('Ahead {a} / behind {b}',{a:entry.status.ahead ?? '?',b:entry.status.behind ?? '?'}));
       lines.push(t('Workspace status, not agent ownership'));
       if (state.expanded) lines.push(entry.path,`HEAD: ${entry.head ?? '?'}`);
-      lines.push(t(state.expanded?'v Less':'v More'));
+      lines.push(t(state.expanded?'▴ Less':'▾ More'));
     }
   } else {
     lines = [state.selectedFile ? basename(state.selectedFile) : t('No selected file')];
@@ -957,7 +959,41 @@ function agentsView(input: MonitorData, state: MonitorState, width: number, now:
   return [...agentRows(input,state,width,now),...briefRows(input,state,width,now,spaced)];
 }
 
-/** Lines of the latest update the Inspector shows before "v More". */
+/**
+ * The help: the shortcuts (the tmux prefix, then a key; nothing typed in the
+ * panel is the panel's), the buttons, the mouse, then the legend. `prefix`
+ * is the prefix as people write it, "Ctrl+]".
+ */
+function helpText(rich: boolean, prefix: string): Array<string | {head: string}> {
+  const p = {p:prefix};
+  const head = (text: string) => ({head:t(text,p)});
+  return [
+    head('Shortcuts: {p}, then a key'),
+    ...['Keys typed in the panel go to Codex','F12 panel on / off  Shift+F12 into it',
+      '{p} ,  settings  {p} ?  help','{p} b  pause / resume brief','{p} a  show / hide older',
+      '{p} m  main session  {p} o  switch to selected','{p} 1–5  open a pane  {p} Tab  next',
+      '{p} x  close pane  {p} -  fold','{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
+      '{p} Enter / v  inspect  {p} z  zoom',...(rich ? ['{p} e / Space  open / close card'] : []),
+      '{p} h l  fold / unfold agent','{p} f  filter  {p} s  order',
+      rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
+      '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex'].map(line=>t(line,p)),
+    head('Buttons, top row'),
+    ...['← main session  ▦ ⎇ ± ⌖ ⋮ panes','Click a pane: open, focus, then fold, close','‖ / ▸ pause / resume brief  +N older',
+      '☰ settings  ? help'].map(line=>t(line)),
+    head('Mouse'),
+    ...[...(rich ? ['Click card: select','Click its name: switch','Click top rule or ▾: open','Wheel over the card: its brief'] : ['Click agent: switch','Click a log line: select agent']),
+      "Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
+    head('Legend'),
+    ...['1 Cards  2 Worktrees','3 Changes  4 Inspector','5 Timeline','✓ = turn completed','? = no status evidence','! = needs a look',
+      '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
+    t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
+    ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve','‖ brief on  ▸ paused  ~… writing',
+      'status card gutter colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','──56%── = context or quota used, the % at the fill','meter: blue, yellow past 70%, red past 85%','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
+    ...stripAnsi(modelLegend()).split('\n'),
+  ];
+}
+
+/** Lines of the latest update the Inspector shows before "▾ More". */
 const REPORT_LINES = 6;
 const TITLES: Record<MonitorPane,string> = {agents:'1 Agents',worktrees:'2 Worktrees',changes:'3 Changes',details:'4 Inspector',timeline:'5 Timeline'};
 export function renderMonitor(input: MonitorData): MonitorFrame {
@@ -966,24 +1002,18 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const frame: MonitorFrame = {lines:[],panes:[],controls:[],state};
   if (!width || !height) return frame;
   if (state.help) {
-    const rich = state.style === 'rich';
-    // The keys as the current layout has them: cards in rich, the tree in compact.
-    const help = [rich ? '1 Cards  2 Worktrees' : '1 Agents  2 Worktrees','3 Changes  4 Inspector','5 Timeline','Top row: ← main  1–5 panes  b a , ?','Click a pane\'s number: open, focus, then - and x','x close pane  - fold','2–5 open a pane','Tab next visible pane','j/k select  o switch','g/G first / last','PgUp/PgDn or wheel scroll',
-      ...(rich ? ['e or Space open / close card','Click card: select','Click its name: switch','Click top rule or ▾: open'] : []),
-      'h/l fold / unfold agent','f or / filter  s order',...(rich ? [] : ['Click agent: switch']),'m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief',rich ? 'r status card: min / status / full' : 'r status card: min / status',...(rich ? ['Wheel over the card: its brief'] : []),'Click the card\'s band: same as r',...(rich ? [] : ['Click a log line: select agent']),'✓ = turn completed','? = no status evidence','! = needs a look',
-      '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary']
-      .map(line=>t(line))
-      .concat(t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
-        ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve','b‖ / b▸ pause / resume brief  ~… writing',
-          'status card gutter colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','──56%── = context or quota used, the % at the fill','meter: blue, yellow past 70%, red past 85%','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
-        ...stripAnsi(modelLegend()).split('\n'))
-      .flatMap(line=>helpLines(line,width));
+    // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
+    const help = helpText(state.style === 'rich',input.prefix ?? 'Ctrl+]')
+      .flatMap(line=>typeof line === 'string' ? helpLines(line,width) : helpLines(line.head,width).map(text=>theme.accent(text)));
     const count = Math.max(0,height-2);
     state.helpScroll = Math.max(0,Math.min(state.helpScroll??0,Math.max(0,help.length-count)));
     frame.helpPage = {count,total:help.length};
-    frame.lines = [theme.accent(t('Monitor keys')),...help.slice(state.helpScroll,state.helpScroll+count)];
+    // A modal: its keys are real while it is open, and its way out is a button.
+    const back = t('[Back]');
+    frame.controls.push({kind:'help',x:0,y:0,width:visualLength(back)});
+    frame.lines = [`${colors.dim(back)} ${theme.accent(t('Help'))}`,...help.slice(state.helpScroll,state.helpScroll+count)];
     while(frame.lines.length<height-1)frame.lines.push('');
-    if(height>1)frame.lines.push(colors.dim(t('↑↓ {at}/{total} Esc back',{at:state.helpScroll+1,total:help.length})));
+    if(height>1)frame.lines.push(colors.dim(`↕ ${state.helpScroll+1}/${help.length}`));
     frame.lines = frame.lines.slice(0,height).map(line=>truncateAnsi(line,width));return frame;
   }
   // Under 24 columns the frame costs more than it earns: two border columns
@@ -1219,7 +1249,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   // Space is Enter, except on the cards, where it opens or closes the selected one.
   if(key==='space')key=next.style==='rich'&&next.focus==='agents'&&!next.help?'expand':'enter';
   if(next.help) {
-    if(['escape','help','enter'].includes(key))next.help=false;
+    const back=input.type==='mouse'&&input.button==='left'&&ctx.frame?.controls.some(c=>c.kind==='help'&&input.y===c.y&&input.x>=c.x&&input.x<c.x+c.width);
+    if(back||['escape','help','enter'].includes(key))next.help=false;
     else {
       if(input.type==='mouse')key=input.button==='wheel-down'?'down':input.button==='wheel-up'?'up':'';
       const page=Math.max(1,ctx.frame?.helpPage?.count??1);

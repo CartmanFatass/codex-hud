@@ -198,16 +198,21 @@ test('the key help lists every key, the new ones included, in both languages', a
   const state = { ...initialMonitorState(), help: true };
   const lines = () => renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
   const en = lines();
-  for (const key of ['5 Timeline', '2–5 open a pane', 'b pause / resume brief', 'r status card: min / status', "Click the card's band: same as r",
-    'Click a log line: select agent', '~ = written by a model', 'f or / filter', 'h/l fold / unfold agent', 'g/G first / last']) assert.ok(en.includes(key), key);
+  for (const key of ['5 Timeline', 'Ctrl+] 1–5 open a pane', 'Ctrl+] b pause / resume brief', 'Ctrl+] r status card: min / status', "Click the card's band: its level",
+    'Click a log line: select agent', '~ = written by a model', 'Ctrl+] f filter', 'Ctrl+] h l fold / unfold agent', 'Ctrl+] g G first / last',
+    'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+], then a key', 'Ctrl+] Ctrl+] Ctrl+] itself, to Codex', '☰ settings ? help']) assert.ok(en.includes(key), key);
+  // The prefix the settings chose is the one the help names.
+  const other = renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now, prefix: 'Ctrl+\\' }).lines.map(stripAnsi).join('\n');
+  assert.ok(other.includes('Ctrl+\\ , settings') && !other.includes('Ctrl+]'), other);
   assert.ok(!en.includes('min / status / full'), 'compact has two levels');
   assert.ok(!/copy|fold \/ unfold recap/.test(en), 'no recap copy, no recap fold');
   const richHelp = renderMonitor({ tree: tree([]), state: { ...state, style: 'rich' }, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
-  for (const key of ['r status card: min / status / full', 'Wheel over the card: its brief', 'e or Space open / close card']) assert.ok(richHelp.includes(key), key);
+  for (const key of ['Ctrl+] r status card: min / status / full', 'Wheel over the card: its brief', 'Ctrl+] e / Space open / close card']) assert.ok(richHelp.includes(key), key);
   const previous = setLanguage('zh');
   try {
     const zh = lines();
-    for (const key of ['5 时间线', '2–5 打开面板', 'r 状态卡：一行 / 状态', '点击状态卡色带：同 r', '点击日志行', '由模型撰写', '筛选']) assert.ok(zh.includes(key), key);
+    for (const key of ['5 时间线', 'Ctrl+] 1–5 打开面板', 'Ctrl+] r 状态卡：一行 / 状态', '点击状态卡色带：切换显示层级', '点击日志行', '由模型撰写', '筛选',
+      '快捷键：先按 Ctrl+]，再按一键', '在侧栏里打字，按键都交给 Codex']) assert.ok(zh.includes(key), key);
     assert.ok(!zh.includes('复制'));
   } finally { setLanguage(previous); }
 });

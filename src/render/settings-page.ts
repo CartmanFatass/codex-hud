@@ -269,7 +269,8 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
     lines.push(state.message ? theme.accent(state.message) : colors.dim(t(row.help)));
   }
   if (height > 2) {
-    lines.push(colors.dim(width < 30 ? '↑↓ ←→ s r Esc' : t(width < 48 ? '↑↓ select ←→ change s save' : '↑↓ select  ←→ change  s save  r reset  Esc back')));
+    // Save, Reset and Back are the buttons on the top row; only the moves are left to say.
+    lines.push(colors.dim(width < 30 ? '↑↓ ←→' : t('↑↓ select  ←→ change')));
   }
   return {
     lines:lines.slice(0,height).map(line => truncateAnsi(line,Math.max(0,width))),

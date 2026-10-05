@@ -130,13 +130,13 @@ test('Agents stays even when every setting says closed, and has no fold or close
 
 test('the control bar: ← and the main session\'s name target the root UUID; the rest of the row is other switches',()=>{
   const frame=draw();
-  for(const x of [0,1,5,13])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
-  // At 30 columns the words go, then the tabs of closed panes.
-  assert.match(stripAnsi(frame.lines[0]),/^ ← Main session {2}1 2 +, {2}\? $/);
-  assert.match(stripAnsi(draw(withWorktrees(),45).lines[0]),/^ ← Main session {2}1 2 3 4 5 +,Settings {2}\? $/);
+  for(const x of [0,1])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
+  // At 30 columns the tab names and the main session's name give way to icons; settings and help keep their words.
+  assert.match(stripAnsi(frame.lines[0]),/^ ← {2}▦ ⎇ ± ⌖ ⋮ +Settings Help $/);
+  assert.match(stripAnsi(draw(withWorktrees(),45).lines[0]),/^ ← Main {2}▦ ⎇ ± ⌖ ⋮ +Settings Help $/);
   assert.equal(handleMonitorInput(frame.state,mouse(29,0),{tree,worktrees,frame}).action,undefined);
-  assert.equal(handleMonitorInput(frame.state,mouse(28,0),{tree,worktrees,frame}).state.help,true,'? opens the keys');
-  assert.deepEqual(handleMonitorInput(frame.state,mouse(25,0),{tree,worktrees,frame}).action,{type:'settings'});
+  assert.equal(handleMonitorInput(frame.state,mouse(26,0),{tree,worktrees,frame}).state.help,true,'Help opens the help');
+  assert.deepEqual(handleMonitorInput(frame.state,mouse(18,0),{tree,worktrees,frame}).action,{type:'settings'});
   assert.deepEqual(handleMonitorInput(frame.state,key('main'),{tree,worktrees,frame}).action,{type:'switch',id:root});
 });
 
@@ -385,7 +385,7 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   let pane=frame.panes[0];
   assert.deepEqual(pane.rows.filter(r=>r.item).map(r=>r.item),[nodes[1].id]);
   assert.match(stripAnsi(pane.rows[0].text),/^ ✓1 ▸1$/,'the summary is counts only');
-  assert.match(stripAnsi(frame.lines[0]),/ a\+1 /);
+  assert.match(stripAnsi(frame.lines[0]),/ \+1 /);
   const ctx={tree:finished,worktrees,frame,nowMs:now};
   assert.ok(!handleMonitorInput(frame.state,mouse(1,pane.y),ctx).state.tree.showAll,'the summary is no switch');
   const older=frame.controls.find(c=>c.kind==='older')!;
@@ -395,7 +395,7 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   frame=renderMonitor({tree:finished,worktrees,state:shown.state,width:30,height:28,nowMs:now});
   pane=frame.panes[0];
   assert.equal(pane.rows.filter(r=>r.item).length,2);
-  assert.match(stripAnsi(frame.lines[0]),/ a−1 /);
+  assert.match(stripAnsi(frame.lines[0]),/ −1 /);
   assert.equal(handleMonitorInput(frame.state,key('show-all'),{...ctx,frame}).state.tree.showAll,false);
   // A finished row carries no clock; it recedes once its finish is old news.
   const oldRow=pane.rows.find(r=>r.item===nodes[0].id)!.text;

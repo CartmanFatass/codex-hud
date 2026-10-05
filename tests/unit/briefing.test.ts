@@ -114,7 +114,7 @@ test('the brief fills the room under the agents, wraps Chinese by character and 
   const rule = lines.findIndex(line => line.startsWith('─ Brief ─'));
   assert.ok(rule > frame.panes[0].y, 'the brief sits under the agents');
   assert.match(lines[rule], /^─ Brief ─+$/, 'no age ticking on the rule, and no switch on it');
-  assert.match(lines[0], / b‖ /, 'the switch is on the bar');
+  assert.match(lines[0], / ‖ /, 'the button is on the bar');
   assert.equal(lines[rule + 1].trimEnd(), ' dm_parent_adaptation 静默 9');
   assert.equal(lines[rule + 2].trimEnd(), ' 分钟且运行超 50 分钟，需留意');
   assert.match(lines.join('\n'), /second\\x1b\[2J line/, 'model text is sanitized like any external text');
@@ -125,8 +125,8 @@ test('the brief fills the room under the agents, wraps Chinese by character and 
   assert.ok(!none.lines.map(stripAnsi).some(line => line.includes('Brief')), 'briefing off shows nothing');
   const empty = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 20, nowMs: now, brief: {} });
   assert.ok(empty.lines.map(stripAnsi).some(line => /^─ Brief ─+$/.test(line)));
-  assert.match(stripAnsi(empty.lines[0]), / b‖ /, 'before the first brief, the switch is already there');
-  assert.doesNotMatch(stripAnsi(none.lines[0]), / b/, 'no brief, no switch');
+  assert.match(stripAnsi(empty.lines[0]), / ‖ /, 'before the first brief, the button is already there');
+  assert.doesNotMatch(stripAnsi(none.lines[0]), /[‖▸]/, 'no brief, no button');
 });
 
 test('the brief switch pauses by key or click, and a paused brief steps back', () => {
@@ -137,14 +137,14 @@ test('the brief switch pauses by key or click, and a paused brief steps back', (
   const rule = lines.findIndex(line => line.startsWith('─ Brief · paused'));
   assert.ok(rule > 0);
   assert.match(lines[rule], /^─ Brief · paused ─+$/);
-  assert.match(lines[0], / b▸ /);
+  assert.match(lines[0], / ▸ /);
   assert.equal(lines[rule + 1].trimEnd(), ' still here', 'the last brief stays');
   assert.equal(frame.lines[rule + 1], colors.dim(' still here') + ' '.repeat(19));
   const control = frame.controls.find(c => c.kind === 'brief')!;
   assert.equal(control.y, 0, 'on the bar');
-  assert.equal(stripAnsi(frame.lines[0]).slice(control.x, control.x + control.width), 'b▸');
+  assert.equal(stripAnsi(frame.lines[0]).slice(control.x, control.x + control.width), '▸');
   const ctx = { tree: agents, frame };
-  assert.deepEqual(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: control.x + 1, y: 0 }, ctx).action, { type: 'brief-toggle' });
+  assert.deepEqual(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: control.x, y: 0 }, ctx).action, { type: 'brief-toggle' });
   assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'brief-toggle' }, ctx).action, { type: 'brief-toggle' });
   assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('b')), [{ type: 'key', key: 'brief-toggle' }]);
 });

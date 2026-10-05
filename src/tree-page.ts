@@ -15,7 +15,7 @@ import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './co
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
   monitorModes, monitorPreferences, nextRepaintDelay, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
-import { isPanelCommand, monitorKey, overlayKey, type PanelCommand } from './utils/panel-command.js';
+import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentContextUsage } from './collectors/agent-context.js';
@@ -241,7 +241,7 @@ async function runLivePage(): Promise<void> {
         lines = settingsFrame.lines;
       } else {
       const width = process.stdout.columns || 30;
-      frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,
+      frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,prefix:prefixName(settings.prefixKey),
         brief:briefCommand() === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused},
         agentLog:settings.briefing !== 'off' || settings.agentLog ? agentLog.snapshot() : undefined,timeline:jobs.withCauses(timeline),
         notes:{approval:switches().approvalDescription ? jobs.approvalNote(main?.pendingApproval) : undefined,

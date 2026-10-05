@@ -39,12 +39,14 @@ export interface Palette {
   /**
    * Backgrounds, each one a row's surface rather than its text: the status
    * card's band row, the control bar at the top, the selected agent's row,
-   * and the focused tab on the control bar. They restore themselves after
-   * every reset inside, so coloured spans keep the surface.
+   * a button on the bar (`chip`) and the focused tab, a step lighter still.
+   * They restore themselves after every reset inside, so coloured spans keep
+   * the surface.
    */
   band: Paint;
   bar: Paint;
   selectedBand: Paint;
+  chip: Paint;
   tab: Paint;
   /**
    * A meter's unfilled part, clearly darker than the frame's rules so the
@@ -113,11 +115,13 @@ const TERMINAL: Palette = {
   // Mid-tones of the 256-colour cube, legible on dark and light backgrounds.
   agents: [ansi256(33), ansi256(98), ansi256(133), ansi256(67), ansi256(37), ansi256(175)],
   // Greys of the 256-colour ramp, a step apart: the band, the bar above it,
-  // the selected row and the focused tab each one lighter than the last.
+  // the selected row, a button on the bar and the focused tab each one
+  // lighter than the last.
   band: highlight('48;5;235'),
   bar: highlight('48;5;236'),
   selectedBand: highlight('48;5;237'),
-  tab: highlight('48;5;238'),
+  chip: highlight('48;5;238'),
+  tab: highlight('48;5;240'),
   track: ansi256(239),
   // Steel blue: a scale, not a state, so neither the info blue nor a grey.
   tick: ansi256(67),
@@ -143,6 +147,7 @@ const MOCHA: Palette = {
   band: surface('#181825'),
   bar: surface('#313244'),
   selectedBand: surface('#45475A'),
+  chip: surface('#45475A'),
   tab: surface('#585B70'),
   track: rgb('#585B70'),
   tick: rgb('#89B4FA'),
@@ -169,7 +174,8 @@ const LATTE: Palette = {
   band: surface('#E6E9EF'),
   bar: surface('#DCE0E8'),
   selectedBand: surface('#CCD0DA'),
-  tab: surface('#BCC0CC'),
+  chip: surface('#CCD0DA'),
+  tab: surface('#ACB0BE'),
   track: rgb('#BCC0CC'),
   tick: rgb('#209FB5'),
 };
@@ -192,6 +198,7 @@ const NONE: Palette = {
   band: identity,
   bar: identity,
   selectedBand: identity,
+  chip: identity,
   tab: identity,
   track: identity,
   tick: identity,

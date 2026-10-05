@@ -59,7 +59,7 @@ test('the panel draws the art only on empty lines, centred, clear of the brief a
   assert.equal(lines[first - 1].trim(), '', 'a blank line above the art');
   assert.equal(lines.at(-2)!.trim(), '', 'never touching the foot');
   assert.ok(lines.some(line => line.includes('one line')), 'the brief is untouched');
-  assert.match(lines[0], / b‖ +, {2}\? $/, 'the keys are on the bar, the foot is the panel\'s');
+  assert.match(lines[0], / ‖ Settings Help $/, 'the buttons are on the bar, the foot is the panel\'s');
   const indent = lines[first].indexOf('⣿');
   assert.ok(indent > 5, 'centred, not at the left edge');
   assert.ok(frame.lines.every(line => visualLength(line) <= 40));

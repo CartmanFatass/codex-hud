@@ -237,7 +237,7 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const frame = renderMonitor({ tree: tree([named, old]), state, width: 32, height: 30, nowMs: now });
   const lines = plain(frame);
   assert.equal(lines[1].trimEnd(), ' ✓1 ▸1', 'counts only, the hidden one counted');
-  assert.match(lines[0], / a\+1 {2}, {2}\? $/);
+  assert.match(lines[0], / \+1 Settings Help $/);
   assert.ok(!lines.some(line => line.includes('old_one')));
   const older = frame.controls.find(c => c.kind === 'older')!;
   const shown = handleMonitorInput(frame.state, click(older.x, 0), { tree: tree([named, old]), frame, nowMs: now }).state;
@@ -246,13 +246,13 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const focused = handleMonitorInput({ ...frame.state, modes: { ...frame.state.modes, worktrees: 'open' }, focus: 'worktrees' }, key('agents'), { tree: tree([named]), frame }).state;
   assert.equal(focused.focus, 'agents');
   const help = (style: 'rich' | 'compact') => plain(renderMonitor({ tree: tree([]), state: { ...rich(), style, help: true }, width: 70, height: 80, nowMs: now })).join('\n');
-  assert.match(help('rich'), /e or Space open \/ close card/);
+  assert.match(help('rich'), /Ctrl\+\] e \/ Space open \/ close card/);
   assert.match(help('rich'), /Click its name: switch/);
   assert.match(help('rich'), /1 Cards/);
   assert.match(help('rich'), /⌕ research ⚗ experiment ⚒ fix/);
   assert.doesNotMatch(help('compact'), /open \/ close card/);
   const previous = setLanguage('zh');
-  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true }, width: 70, height: 80, nowMs: now })).join('\n'), /e 或空格 展开 \/ 收起卡片[\s\S]*⌕ 调研/); }
+  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true }, width: 70, height: 80, nowMs: now })).join('\n'), /e \/ 空格 展开 \/ 收起卡片[\s\S]*⌕ 调研/); }
   finally { setLanguage(previous); }
 });
 

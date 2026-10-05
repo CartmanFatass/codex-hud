@@ -109,7 +109,7 @@ try:
  os.kill(proc.pid,signal.SIGWINCH)
  wait_for('←')
  send(b'?')
- wait_for('Monitor keys')
+ wait_for('Shortcuts')
  send(b'G')
  wait_for('ultra')
  send(b'\x1b')
