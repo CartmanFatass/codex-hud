@@ -143,6 +143,8 @@ const ZH: Record<string, string> = {
   '{n} staged': '{n} 已暂存',
   '{n} unstaged': '{n} 未暂存',
   '{n} untracked': '{n} 未跟踪',
+  'Untracked': '未跟踪',
+  '1 file': '1 个文件',
   'Branch: {branch}': '分支：{branch}',
   'Status: {status}': '状态：{status}',
   'Locked: {reason}': '已锁定：{reason}',

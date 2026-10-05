@@ -749,7 +749,12 @@ export function changeCounts(files: readonly GitChangedFile[], width: number): s
  */
 let shownCache: {files: readonly unknown[]; width: number; shown: string[]} | undefined;
 export function shownPaths(paths: readonly string[], width: number): string[] {
-  const split = paths.map(path=>path.split('/').filter(Boolean));
+  // An untracked directory keeps its slash on its name: "r02/".
+  const split = paths.map(path=>{
+    const parts = path.split('/').filter(Boolean);
+    if (path.endsWith('/') && parts.length) parts[parts.length-1] += '/';
+    return parts;
+  });
   const ending = (n: number, of: string[]) => of.slice(-n).join('/');
   // How many paths end in each run of n parts, counted once per n: a list of
   // thousands of untracked files is drawn on every repaint.
@@ -938,8 +943,16 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
     }
   } else {
     if (!state.selectedFile) return [];
-    lines = [basename(state.selectedFile)];
+    lines = [basename(state.selectedFile)+(state.selectedFile.endsWith('/') ? '/' : '')];
     if (state.expanded) lines.push(...(input.git?.root ? [input.git.root] : []),state.selectedFile);
+    const heading = lines.flatMap(line=>wrapped(line,width).map(text=>({text:theme.strong(text)})));
+    // An untracked directory: how many files it holds, in the reader's words, then each one's path inside it.
+    const listing = state.selectedFile.endsWith('/') && input.diff?.[0] === 'Untracked' ? /^(\d+) files?$/.exec(input.diff[1] ?? '') : null;
+    if (listing) {
+      const n = Number(listing[1]);
+      return [...heading, {text:colors.dim(truncateAnsi(`${t('Untracked')} · ${n === 1 ? t('1 file') : t('{n} files',{n})}`,width))},
+        ...input.diff!.slice(2).flatMap(line=>wrapped(line,width).map(text=>({text:theme.value(text)})))];
+    }
     // A file's git header repeats its path and names its blobs by hash: the
     // heading above says which file it is, so only the hunks are shown.
     let header = false;
@@ -948,7 +961,7 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       if (line.startsWith('@@')) header = false;
       return !(header && /^(index [0-9a-f]+\.\.[0-9a-f]+|--- |\+\+\+ )/.test(line));
     });
-    return [...lines.flatMap(line=>wrapped(line,width).map(text=>({text:theme.strong(text)}))), ...body.flatMap(line=>{
+    return [...heading, ...body.flatMap(line=>{
       const paint = line.startsWith('@@') ? theme.info : line.startsWith('+') ? theme.success : line.startsWith('-') ? theme.error : theme.value;
       return wrapped(line,width).map(text=>({text:paint(text)}));
     })];

@@ -331,6 +331,29 @@ test('narrow Changes exposes selectable files and opens a readable zoomed previe
   assert.match(text,/--- old rule/);assert.match(text,/\+\+\+ new rule/,'inside a hunk such a line is content');
 });
 
+test('an untracked directory is one row, its slash kept, and inspected says what is in it in the reader\'s words',async()=>{
+  const {setLanguage}=await import('../../src/render/i18n.js');
+  const untracked=(path: string)=>({path,index:'?',worktree:'?',added:null,removed:null,binary:false,conflict:false});
+  const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[untracked('runs/r02/'),untracked('notes.md')]};
+  const state=initialMonitorState();state.modes.changes='open';state.focus='changes';state.selectedFile='runs/r02/';
+  const frame=renderMonitor({tree,worktrees,git,state,width:30,height:30,nowMs:now});
+  assert.match(stripAnsi(frame.lines.join('\n')),/› \?\? runs\/r02\//);
+  const opened=handleMonitorInput(frame.state,key('enter'),{tree,git,worktrees,frame}).state;
+  const diff=['Untracked','2 files','a.json','deep/b.json'];
+  const previous=setLanguage('zh');
+  try {
+    const text=stripAnsi(renderMonitor({tree,worktrees,git,state:opened,width:30,height:24,nowMs:now,diff}).lines.join('\n'));
+    assert.match(text,/r02\/ *\n.*未跟踪 · 2 个文件 *\n.*a\.json *\n.*deep\/b\.json/);
+    assert.doesNotMatch(text,/Untracked|2 files/);
+    assert.match(stripAnsi(renderMonitor({tree,worktrees,git,state:opened,width:30,height:24,nowMs:now,diff:['Untracked','1 file','a.json']}).lines.join('\n')),/未跟踪 · 1 个文件/);
+  } finally { setLanguage(previous); }
+  const en=stripAnsi(renderMonitor({tree,worktrees,git,state:opened,width:30,height:24,nowMs:now,diff:['Untracked','1 file','a.json']}).lines.join('\n'));
+  assert.match(en,/Untracked · 1 file\b/);
+  // Anything else the preview says is shown as it is.
+  const failed=stripAnsi(renderMonitor({tree,worktrees,git,state:opened,width:30,height:24,nowMs:now,diff:['[Preview unavailable: No longer on disk]']}).lines.join('\n'));
+  assert.match(failed,/\[Preview unavailable: No lon/);
+});
+
 test('monitor key profile maps numbers without changing legacy decoder behavior',()=>{
   assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('1234x')),['agents','worktrees','changes','details','pane-close'].map(key));
   assert.deepEqual(new WorkbenchInputDecoder().push(Buffer.from('24')),['details','activity'].map(key));
@@ -594,6 +617,10 @@ test('the changes say their counts in words, zeros left out, and tell two files 
   assert.deepEqual(shownPaths(paths, 27), ['.agents/…/SKILL.md', '.claude/…/SKILL.md', '.omp/APPEND_SYSTEM.md', 'a/SKILL2.md', 'b/x/SKILL2.md']);
   assert.deepEqual(shownPaths(paths, 12), ['.a…/SKILL.md', '.c…/SKILL.md', '…D_SYSTEM.md', 'a/SKILL2.md', 'x/SKILL2.md']);
   assert.deepEqual(shownPaths(paths, 80), paths, 'whole where it fits');
+  // An untracked directory keeps its slash, which also tells it from a file of its name.
+  const dirs = ['runs/2026/r02/', 'logs/2026/r02', 'experiments/very_long_directory_name/'];
+  assert.deepEqual(shownPaths(dirs, 12), ['r02/', 'r02', '…ctory_name/']);
+  assert.deepEqual(shownPaths(dirs, 80), dirs);
   // Thousands of untracked files, many of one name, are told apart on every repaint without stalling it.
   const many = Array.from({ length: 6000 }, (_, i) => i % 2 ? `experiments/run_${i % 300}/stage_${i % 20}/__init__.py` : `x06_sampled_progress/run_${i}/controller_${i}.py`);
   const started = performance.now();

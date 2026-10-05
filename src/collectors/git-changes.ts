@@ -64,6 +64,7 @@ function safeText(text: string): string {
 
 type ExecFailure = Error & {
   code?: string | number;
+  syscall?: string;
   killed?: boolean;
   stderr?: string;
   stdout?: string;
@@ -84,6 +85,8 @@ function isNotAGitRepository(error: unknown): boolean {
 export function describeGitFailure(error: unknown): string {
   const err = error as ExecFailure;
   const text = execFailureText(error);
+  // A path deleted since the status read is missing too, but git is not.
+  if (err?.code === 'ENOENT' && err.syscall && !err.syscall.startsWith('spawn')) return 'No longer on disk';
   if (err?.code === 'ENOENT') return 'Git is not installed';
   if (err?.code === 'ETIMEDOUT' || err?.killed) return 'Git timed out';
   if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'Git output was truncated';
@@ -152,8 +155,11 @@ export async function collectGitChanges(cwd: string): Promise<GitChanges> {
   try {
     result.root = (await git(cwd, ['rev-parse', '--show-toplevel'])).replace(/\r?\n$/, '');
     const overrides = await filterOverrides(result.root);
+    // An untracked directory is one entry, "out/", as `git status` lists it:
+    // thousands of generated files one by one would bury the edits. What is
+    // in it is the Inspector's to list.
     const output = await git(result.root, [...overrides, '-c', 'status.renames=true', 'status', '--porcelain=v2',
-      '--branch', '-z', '--untracked-files=all', '--ignore-submodules=all']);
+      '--branch', '-z', '--untracked-files=normal', '--ignore-submodules=all']);
     const records = output.split('\0');
     for (let i = 0; i < records.length; i++) {
       const record = records[i];
@@ -237,6 +243,19 @@ async function untrackedPreview(root: string, path: string): Promise<string> {
 }
 
 /**
+ * What an untracked directory holds: how many files, then each one's path
+ * inside it, as `git status --untracked-files=all` would list them. A
+ * repository of its own lists as itself, and git does not look inside it.
+ */
+async function untrackedListing(root: string, path: string): Promise<string> {
+  if (!contained(await realpath(root), await realpath(resolve(root, path)))) return '[Preview unavailable: path leaves repository]';
+  const listed = (await git(root, ['ls-files', '--others', '--exclude-standard', '-z', '--', path])).split('\0').filter(Boolean);
+  const files = listed.filter(file => file !== path && file.startsWith(path)).map(file => file.slice(path.length));
+  if (!files.length && listed.length) return '[Preview unavailable: a repository of its own]';
+  return [`${files.length} ${files.length === 1 ? 'file' : 'files'}`, ...files].join('\n');
+}
+
+/**
  * The hunks of the whole uncommitted diff, staged and unstaged, with one line
  * of context and capped, for the change summary. Untracked files are not
  * read: their names are in the stat.
@@ -258,7 +277,9 @@ export async function readGitDiff(root: string, file: GitChangedFile): Promise<s
   const sections: string[] = [];
   try {
     if (file.index === '?' && file.worktree === '?') {
-      sections.push(`Untracked\n${await untrackedPreview(root, file.path)}`);
+      // Only an untracked directory ends in a slash: git lists its files, never its contents.
+      const preview = file.path.endsWith('/') ? untrackedListing(root, file.path) : untrackedPreview(root, file.path);
+      sections.push(`Untracked\n${await preview}`);
     } else {
       const overrides = await filterOverrides(root);
       if (file.index !== ' ' && file.index !== '.') {

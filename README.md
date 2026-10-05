@@ -224,7 +224,7 @@ Agents and Worktrees open by default; Changes and Inspector open on demand. The 
 |------|---------|
 | **1 Agents** | Nested agents, state and model/effort badges; badges survive long-name truncation |
 | **2 Worktrees** | Each worktree by name (its branch; detached, the nearest directory that is not an id, such as `atlas-launch-sources`), its changed/conflicted state and `locked` in words, and under it its HEAD commit's subject. No hash is shown, here or in the Inspector |
-| **3 Changes** | Files in the selected worktree, index/worktree status and conflicts, under their counts in words (`5 unstaged · 2924 untracked`, zeros left out); a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
+| **3 Changes** | Files in the selected worktree, index/worktree status and conflicts, under their counts in words (`5 unstaged · 12 untracked`, zeros left out); an untracked directory is one row (`runs/r02/`), as `git status` lists it; a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
 | **4 Inspector** | Agent status and activity times, worktree details, or colored file diffs |
 
 Panes stack vertically. Each has a **title row** naming it, drawn as the panel's look draws it (below), with which rows are in view at its right end when it scrolls (`7–14/46`), or else how many it holds (`3 worktrees`, `12 files`, `9 events`); then its rows behind a gutter `│` on the left only (in the accent for the focused pane, dim for the rest): no right border and no bottom rule. In a panel 30 rows or taller a blank row parts the sections: under the bar, between two panes and above the status card; never at a pane's expense, and not in the frame look, whose edges part them already. A pane is **open or closed**; a closed one takes no row at all. A click on a pane's title zooms it to the room between the bar and the status card, and a second click restores it, as `Ctrl+]` `z` does. Worktrees shrinks to its content; spare height goes to Agents or the focused Inspector. The agents area works the same way: its title row carries the counts, a click on it zooms the cards, and it can be closed from the bar, the other panes then sharing its room.
@@ -352,7 +352,7 @@ Inspector starts with name, model/effort, status, turn age and last activity. Pr
 
 Changes belong to the selected worktree; no file ownership is inferred from agent activity.
 Status columns show index then worktree. Compact summaries use Δ for changed files, S for staged and U for unstaged.
-Select a file and press Enter for staged/unstaged patches (their hunks; the git header, which repeats the path and names blobs by hash, is left out) or bounded untracked-file content. Inspector zooms automatically; Esc restores the panes.
+Select a file and press Enter for staged/unstaged patches (their hunks; the git header, which repeats the path and names blobs by hash, is left out) or bounded untracked-file content; an untracked directory lists how many files it holds and their paths. Inspector zooms automatically; Esc restores the panes.
 Long preview lines wrap; additions are green, deletions red and hunk markers cyan, retaining +/- markers without color. Git reads disable external diffs,
 content filters and partial-clone lazy fetching. The panel provides no staging, commit or checkout actions.
 
