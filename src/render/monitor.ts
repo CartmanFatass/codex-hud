@@ -14,7 +14,7 @@ import type { Brief } from '../collectors/briefing.js';
 import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
 import { t } from './i18n.js';
-import { agentTitle } from './agent-title.js';
+import { agentTitle, shownName, labelled } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { drawAgentsView, WHEEL_ROWS } from './agents-view.js';
 import { planFoot, nextLevel, type StatusLevel, type FootInfo } from './status-foot.js';
@@ -57,6 +57,8 @@ export interface MonitorState {
   anchor?: {key: string; delta: number; offset: number};
   /** How much the status card shows; absent is `full`. The panel sets it from settings. */
   statusLevel?: StatusLevel;
+  /** A label, once arrived, stands where the agent's name is shown. The panel sets it from settings. */
+  labelAsName?: boolean;
   /** How far the status card's brief is scrolled. */
   statusScroll?: number;
 }
@@ -533,7 +535,7 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     const room = Math.max(1,width-visualLength(prefix)-(right ? visualLength(right)+1 : 0));
     // Codex's own name, as its /subagents picker prints it: what the agent
     // is doing is the log's to say, under the tree.
-    const squeezed = squeeze(monitorText(node.name),room);
+    const squeezed = squeeze(monitorText(shownName(node,state.labelAsName)),room);
     const name = dimName ? colors.dim(squeezed) : squeezed;
     const selected = node.id === state.tree.selectedId;
     const line = pair(prefix+name,right,width);
@@ -541,7 +543,7 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     // The selected row says how far its agent got, under its name; the rest
     // stay one line each, so the tree stays compact.
     const at = visualLength(prefix)+1;
-    const brief = selected && width > at+4 ? briefLine(node,input.agentLog?.get(node.id) ?? [],agentTitle(node)) : '';
+    const brief = selected && width > at+4 ? briefLine(node,input.agentLog?.get(node.id) ?? [],agentTitle(node,state.labelAsName)) : '';
     if (brief) result.push({text:' '.repeat(at)+colors.dim(truncateAnsi(brief,width-at)),item:node.id,key:`row:${node.id}`});
   }
   if (result.length === 1) result.push({text:colors.dim(truncateAnsi(emptyAgentsText(input,state,total,expired),width))});
@@ -611,14 +613,20 @@ function timelineLines(input: MonitorData): TimelineLine[] {
     }
   }
   const lines: TimelineLine[] = [];
-  for (const event of events) {
+  // With labels as names, an agent's events say its label once it has one.
+  const relabel = (event: WorkbenchEvent): WorkbenchEvent => {
+    const node = event.agentId ? nodes.get(event.agentId) : undefined;
+    return node && event.subject && input.state.labelAsName && labelled(node) ? {...event,subject:node.label} : event;
+  };
+  for (const original of events) {
+    const event = relabel(original);
     if (guardian(event) && event.kind !== 'agent-failed') continue;
-    if (event.kind === 'agent-started' && paired.has(event)) continue;
+    if (event.kind === 'agent-started' && paired.has(original)) continue;
     const plainPaint = (s: string) => s;
     const paint = event.status === 'error' ? theme.error : event.kind === 'quota' || event.kind === 'approval-requested' ? theme.warning : plainPaint;
     const name = event.agentId ? agentPaint(event.agentId)(monitorText(event.subject ?? '')) : '';
     let text = paint(timelineText(event));
-    const start = startOf.get(event);
+    const start = startOf.get(original);
     if (start) {
       const ran = age(start.at,event.at.getTime());
       const mark = event.kind === 'agent-failed' ? theme.error('✗') : theme.success('✓');
@@ -715,9 +723,12 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       // Both names show here: the model's name for what the agent does, and
       // the name Codex's own picker and transcript print.
       // The heading in the agent's own colour, as the timeline names it.
+      // With labels as names the label heads it and Codex's name is under
+      // it; without, the name heads it and the label is under it.
       const own = agentPaint(node.id);
-      const rows: MonitorRow[] = wrapped(node.label ?? node.name,width).map(text=>({text:theme.strong(own(text))}));
-      if (node.label && node.label !== node.name) rows.push(...wrapped(t('Name: {name}',{name:node.name}),width).map(text=>({text:colors.dim(text)})));
+      const rows: MonitorRow[] = wrapped(shownName(node,state.labelAsName),width).map(text=>({text:theme.strong(own(text))}));
+      if (labelled(node)) rows.push(...wrapped(state.labelAsName ? t('name {name}',{name:node.name}) : t('label {label}',{label:node.label!}),width)
+        .map(text=>({text:colors.dim(text)})));
       // The full task path locates a nested agent; a one-segment path says
       // nothing the name did not.
       if (node.agentPath && node.agentPath.split('/').filter(Boolean).length > 2)
@@ -898,12 +909,12 @@ function logRows(input: MonitorData, state: MonitorState, width: number, now: nu
     // What the panel knows for itself is not left to the model: a failed or
     // quiet agent needs a look, and so does one the latest note flagged.
     const attention = node.status === 'error' || isQuiet(node,now) || Boolean(entries.at(-1)?.attention);
-    const title = agentTitle(node);
+    const title = agentTitle(node,state.labelAsName);
     const head = `${attention ? theme.warning('!') : ' '}${st.paint(st.icon)} ${title.icon ? colors.dim(title.icon)+' ' : ''}`;
     const name = squeeze(title.name,Math.max(1,width-visualLength(head)));
     push(head+(attention ? theme.warning(name) : theme.strong(name)));
     // Under the name that identifies it, what the agent is for.
-    for (const line of taskLines(title,Math.max(1,width-3)).lines) push('   '+(title.renamed ? line : colors.dim(line)));
+    for (const line of taskLines(title,Math.max(1,width-3)).lines) push('   '+(title.renamed || title.original ? line : colors.dim(line)));
     const count = node.id === selected ? LOG_ENTRIES_SELECTED : LOG_ENTRIES;
     for (const entry of [...entries].reverse().slice(0,count)) for (const line of logEntryLines(entry,width,now,3)) push(line);
     if (folded) push(colors.dim(truncateAnsi(`   ${t('+{n} folded below',{n:folded})}`,width)));

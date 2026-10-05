@@ -355,7 +355,7 @@ function oneLineCard(row: PanelRow, input: MonitorData, state: MonitorState, wid
   const w = width-indent;
   const selected = node.id === state.tree.selectedId;
   const st = nodeStatus(node,now);
-  const title = agentTitle(node);
+  const title = agentTitle(node,state.labelAsName);
   const head = `${selected ? theme.accent('›') : ' '}${st.paint(st.icon)} ${title.icon ? colors.dim(title.icon)+' ' : ''}`;
   const token = w < BADGE_MIN ? '' : renderModelEffortToken(node.model ? monitorText(node.model) : undefined, node.effort ? monitorText(node.effort) : undefined, {
     mode: w < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs,
@@ -402,7 +402,7 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   const old = isOld(node,now);
   const paint = cardPaint(node,old,Boolean(row.context),now);
   const st = nodeStatus(node,now);
-  const title = agentTitle(node);
+  const title = agentTitle(node,state.labelAsName);
   const key = `card:${node.id}`;
   const rows: MonitorRow[] = [];
   const control = (x: number, width_: number): RowControl => ({kind:'expand',item:node.id,x:indent+x,width:width_});
@@ -443,11 +443,14 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   const task = open && purpose ? taskLines(title,inner) : {lines:[],clipped:Boolean(purpose)};
   if (!open) {
     const news = agentNews(log);
-    if (purpose) body.push(title.renamed ? theme.strong(truncateAnsi(purpose,inner)) : truncateAnsi(purpose,inner));
+    // Bold when it is the model's name for the agent, or the task under a label that took the name's place.
+    if (purpose) body.push(title.renamed || title.original ? theme.strong(truncateAnsi(purpose,inner)) : truncateAnsi(purpose,inner));
     if (news.note) body.push(colors.dim('~ ')+truncateAnsi(news.note,inner-2));
     if (news.update) body.push(truncateAnsi(news.update,inner));
   } else {
-    body.push(...task.lines.map(line=>title.renamed ? theme.strong(line) : line));
+    body.push(...task.lines.map(line=>title.renamed || title.original ? theme.strong(line) : line));
+    // The label took the name's place: Codex's own name stays in view here.
+    if (title.original) body.push(colors.dim(truncateAnsi(t('name {name}',{name:title.original}),inner)));
     const settled = settledAt(node);
     const ruleAge = settled && !isLive(node) ? age(settled,now) : undefined;
     // Opened, the whole timeline stands in for the newest news.

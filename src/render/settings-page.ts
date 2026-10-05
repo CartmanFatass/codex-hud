@@ -38,6 +38,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'finishedLingerMs',group:'Agents',label:'Hide finished',short:'Hide',values:[60_000,180_000,600_000,1_800_000,0],
     help:'Done agents hide after this',format:minutes},
   {key:'agentLog',group:'Agents',label:'Agent log',short:'Log',values:[false,true],help:'Keep a log on each card even with no backend'},
+  {key:'labelAsName',group:'Agents',label:'Label as name',short:'Label',values:[true,false],help:'A label, once there, replaces the name'},
   // Everything that sends material to a model, in one place, each with its
   // own switch and a help line saying what it sends.
   {key:'briefing',group:'LLM',label:'Backend',short:'Model',values:['off','omp','agy','api'],help:'Who writes; off stops all below'},
@@ -50,7 +51,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'briefAgents',group:'LLM',label:'Agents brief',short:'Agents',values:[true,false],help:'Sends agent tasks and updates'},
   {key:'briefMain',group:'LLM',label:'Main recap',short:'Recap',values:[true,false],help:'Sends your prompts and replies'},
   {key:'resultDigest',group:'LLM',label:'Result digest',short:'Digest',values:[false,true],help:'Sends finished agents\' answers'},
-  {key:'agentLabels',group:'LLM',label:'Labels and title',short:'Labels',values:[false,true],help:'Sends agent tasks, first prompt'},
+  {key:'agentLabels',group:'LLM',label:'Labels and title',short:'Labels',values:[true,false],help:'Sends agent tasks, first prompt; on, waits for a backend'},
   {key:'failureCause',group:'LLM',label:'Failure cause',short:'Cause',values:[false,true],help:'Sends the tail of error output'},
   {key:'changeSummary',group:'LLM',label:'Change summary',short:'Diff',values:[false,true],help:'Sends diff stat and hunks'},
   {key:'approvalDescription',group:'LLM',label:'Approval words',short:'Approve',values:[false,true],help:'Sends the command to approve'},
@@ -91,7 +92,7 @@ type DisplayLine = {group:string} | {index:number} | {note:string};
 /**
  * Rows that do nothing until another is on: every model feature needs a
  * backend, desktop notices need notifications, the recap floor needs the
- * main recap. They stay selectable, so they can be set up in advance, but
+ * main recap, a label as the name needs the labels. They stay selectable, so they can be set up in advance, but
  * step back while their parent is off.
  */
 function inactive(key:keyof HudSettings,draft:HudSettings):boolean {
@@ -99,6 +100,8 @@ function inactive(key:keyof HudSettings,draft:HudSettings):boolean {
   if (row?.group === 'LLM' && key !== 'briefing' && draft.briefing === 'off') return true;
   if (key === 'notifyDesktop' && !draft.notify) return true;
   if (key === 'recapFloorMs' && !draft.briefMain) return true;
+  // A label needs the labels, and they need a backend.
+  if (key === 'labelAsName' && (!draft.agentLabels || draft.briefing === 'off')) return true;
   return false;
 }
 

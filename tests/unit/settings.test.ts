@@ -30,7 +30,7 @@ test('missing settings keep display defaults and hide optional tasks and activit
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
       briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
-      resultDigest: false, agentLabels: false, failureCause: false, changeSummary: false, approvalDescription: false,
+      resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
       art: 'off', artImage: '',
     });
     assert.equal(fs.existsSync(file), false, 'reading defaults does not create files');
@@ -67,7 +67,7 @@ test('load validates known settings without importing unknown or invalid values'
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
       briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
-      resultDigest: false, agentLabels: false, failureCause: false, changeSummary: false, approvalDescription: false,
+      resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
       art: 'off', artImage: '',
     });
     fs.writeFileSync(file, JSON.stringify({

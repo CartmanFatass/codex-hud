@@ -79,8 +79,19 @@ export interface HudSettings extends HudDisplayConfig {
   modelCallsPerHour: number;
   /** A finished agent's final answer in three lines; sends the answer (head and tail when long). */
   resultDigest: boolean;
-  /** Short labels for agents from their tasks, and a session title; sends task texts, and the first prompt when there is no recap. */
+  /**
+   * Short labels for agents from their tasks, and a session title; sends task
+   * texts, and the first prompt when there is no recap. On by default, it does
+   * nothing until a backend is chosen, and the backend is off by default.
+   */
   agentLabels: boolean;
+  /**
+   * A label, once one has arrived, stands where the agent's name is shown:
+   * its card or row, the compact tree, the timeline, the Inspector's heading.
+   * The name stays one look away (the Inspector, an opened card), and
+   * switching to an agent still goes by the name Codex's picker prints.
+   */
+  labelAsName: boolean;
   /** One line on why a tool call or an agent failed; sends the tail of the error output. */
   failureCause: boolean;
   /** One or two lines on what the current diff does; sends the diff stat and bounded hunks. */
@@ -113,7 +124,7 @@ export function defaultSettings(): HudSettings {
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
     agentLog: false, notify: false, notifyDesktop: false,
-    resultDigest: false, agentLabels: false, failureCause: false, changeSummary: false, approvalDescription: false,
+    resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
     art: 'off', artImage: '',
   };
 }
@@ -166,6 +177,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
   resultDigest: isBoolean,
   agentLabels: isBoolean,
+  labelAsName: isBoolean,
   failureCause: isBoolean,
   changeSummary: isBoolean,
   approvalDescription: isBoolean,

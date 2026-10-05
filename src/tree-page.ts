@@ -81,6 +81,7 @@ async function runLivePage(): Promise<void> {
     next.modes = monitorModes(settings);
     next.style = settings.panelStyle;
     next.statusLevel = settings.statusCard;
+    next.labelAsName = settings.labelAsName;
     return next;
   };
   let state = configuredState();
@@ -442,7 +443,7 @@ async function runLivePage(): Promise<void> {
             armCollect();
             loadArt();
             state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
-              style:settings.panelStyle,statusLevel:settings.statusCard,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
+              style:settings.panelStyle,statusLevel:settings.statusCard,labelAsName:settings.labelAsName,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
             git=null;diff=undefined;diffKey='';void refreshGit();
             settingsPage.message = t('Saved');
             settingsPage.original = {...settings};
