@@ -352,7 +352,7 @@ Inspector starts with name, model/effort, status, turn age and last activity. Pr
 
 Changes belong to the selected worktree; no file ownership is inferred from agent activity.
 Status columns show index then worktree. Compact summaries use Δ for changed files, S for staged and U for unstaged.
-Select a file and press Enter for staged/unstaged patches (their hunks; the git header, which repeats the path and names blobs by hash, is left out) or bounded untracked-file content; an untracked directory lists how many files it holds and their paths. Inspector zooms automatically; Esc restores the panes.
+Select a file and press Enter for staged/unstaged patches (their hunks; the git header, which repeats the path and names blobs by hash, is left out) or bounded untracked-file content; an untracked directory lists how many files it holds and their paths. The heading names the file, with the lines it adds and removes (`+12 −3`) and, dim under it, its folder; each section is headed Staged, Unstaged or Untracked in the panel's language. A long line wraps where a word ends, its later rows two columns in so the `+`/`-` column starts only its first; a tab is spaces to the next fourth column. Inspector zooms automatically; Esc restores the panes.
 Long preview lines wrap; additions are green, deletions red and hunk markers cyan, retaining +/- markers without color. Git reads disable external diffs,
 content filters and partial-clone lazy fetching. The panel provides no staging, commit or checkout actions.
 

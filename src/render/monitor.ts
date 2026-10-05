@@ -943,30 +943,122 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
     }
   } else {
     if (!state.selectedFile) return [];
-    lines = [basename(state.selectedFile)+(state.selectedFile.endsWith('/') ? '/' : '')];
-    if (state.expanded) lines.push(...(input.git?.root ? [input.git.root] : []),state.selectedFile);
-    const heading = lines.flatMap(line=>wrapped(line,width).map(text=>({text:theme.strong(text)})));
-    // An untracked directory: how many files it holds, in the reader's words, then each one's path inside it.
-    const listing = state.selectedFile.endsWith('/') && input.diff?.[0] === 'Untracked' ? /^(\d+) files?$/.exec(input.diff[1] ?? '') : null;
-    if (listing) {
-      const n = Number(listing[1]);
-      return [...heading, {text:colors.dim(truncateAnsi(`${t('Untracked')} · ${n === 1 ? t('1 file') : t('{n} files',{n})}`,width))},
-        ...input.diff!.slice(2).flatMap(line=>wrapped(line,width).map(text=>({text:theme.value(text)})))];
-    }
-    // A file's git header repeats its path and names its blobs by hash: the
-    // heading above says which file it is, so only the hunks are shown.
-    let header = false;
-    const body = (input.diff ?? []).filter(line=>{
-      if (line.startsWith('diff --git ')) { header = true; return false; }
-      if (line.startsWith('@@')) header = false;
-      return !(header && /^(index [0-9a-f]+\.\.[0-9a-f]+|--- |\+\+\+ )/.test(line));
-    });
-    return [...heading, ...body.flatMap(line=>{
-      const paint = line.startsWith('@@') ? theme.info : line.startsWith('+') ? theme.success : line.startsWith('-') ? theme.error : theme.value;
-      return wrapped(line,width).map(text=>({text:paint(text)}));
-    })];
+    return [...fileHeading(state.selectedFile,input.git,Boolean(state.expanded),width),...fileBody(state.selectedFile,input.diff ?? [],width)];
   }
   return lines.flatMap(line => wrapped(line,width).map(text=>({text})));
+}
+
+/**
+ * The Inspector's heading for a changed file: its name, and the lines it
+ * adds and removes at the right end where they fit beside it ("+12 −3",
+ * a side with none left out), then the directory it is in, dim; expanded,
+ * the repository too. An untracked directory is named with its slash.
+ */
+function fileHeading(path: string, git: GitChanges | null | undefined, expanded: boolean, width: number): MonitorRow[] {
+  const file = git?.files.find(entry=>entry.path===path);
+  const counts = file?.binary ? colors.dim(t('binary'))
+    : [file?.added ? theme.success(`+${file.added}`) : '',file?.removed ? theme.error(`−${file.removed}`) : ''].filter(Boolean).join(' ');
+  const name = monitorText(basename(path)+(path.endsWith('/') ? '/' : ''));
+  const rows: MonitorRow[] = counts && visualLength(name)+1+visualLength(counts) <= width
+    ? [{text:pair(theme.strong(name),counts,width)}]
+    : [...wrapped(name,width).map(text=>({text:theme.strong(text)})),...(counts ? [{text:truncateAnsi(counts,width)}] : [])];
+  const parts = path.replace(/[\\/]+$/,'').split(/[\\/]/);
+  const folder = parts.length > 1 ? `${parts.slice(0,-1).join('/')}/` : '';
+  for (const line of [folder,expanded ? git?.root ?? '' : ''].filter(Boolean)) rows.push(...pathRows(line,width).map(text=>({text:colors.dim(text)})));
+  return rows;
+}
+
+/** The labels readGitDiff starts its sections with, in the reader's words. */
+const SECTIONS: Record<string,string> = {Staged:'Staged',Unstaged:'Unstaged',Untracked:'Untracked'};
+
+/**
+ * The Inspector's body for a changed file: readGitDiff's sections, each
+ * under its label in the reader's words on a dim rule. A section's label
+ * starts it: the first line, and Unstaged after Staged, whose lines are a
+ * diff's and never just that word. A file's git header repeats its path and
+ * names its blobs by hash: the heading says which file it is, so only the
+ * hunks are shown, each line wrapped where a word ends and painted for what
+ * it does. An untracked directory says how many files it holds, then each
+ * one's path inside it.
+ */
+function fileBody(path: string, diff: readonly string[], width: number): MonitorRow[] {
+  const label = (title: string) => {
+    const text = ` ${t(title)} `;
+    return {text:colors.dim(truncateAnsi(`──${text}${'─'.repeat(Math.max(0,width-2-visualLength(text)))}`,width))};
+  };
+  const listing = path.endsWith('/') && diff[0] === 'Untracked' ? /^(\d+) files?$/.exec(diff[1] ?? '') : null;
+  if (listing) {
+    const n = Number(listing[1]);
+    return [{text:colors.dim(truncateAnsi(`${t('Untracked')} · ${n === 1 ? t('1 file') : t('{n} files',{n})}`,width))},
+      ...diff.slice(2).flatMap(line=>diffRows(line,width).map(text=>({text:theme.value(text)})))];
+  }
+  const rows: MonitorRow[] = [];
+  let header = false;
+  diff.forEach((line,i) => {
+    if (SECTIONS[line] && (i === 0 || (line === 'Unstaged' && diff[0] === 'Staged'))) { header = false; rows.push(label(SECTIONS[line])); return; }
+    if (line.startsWith('diff --git ')) { header = true; return; }
+    if (line.startsWith('@@')) header = false;
+    if (header && /^(index [0-9a-f]+\.\.[0-9a-f]+|--- |\+\+\+ )/.test(line)) return;
+    const paint = line.startsWith('@@') ? theme.info : line.startsWith('+') ? theme.success : line.startsWith('-') ? theme.error : theme.value;
+    rows.push(...diffRows(line,width).map(text=>({text:paint(text)})));
+  });
+  return rows;
+}
+
+/**
+ * One line of a diff, or of a file's text, in rows `width` wide. Tabs are
+ * spaces to the next fourth column past the marker. Each row after the
+ * first starts two columns in, so the marker column starts only the line's
+ * first row, and the first row keeps some of the text, not just the marker
+ * and the indentation. Takes raw text.
+ */
+export function diffRows(line: string, width: number): string[] {
+  if (width < 1) return [];
+  let expanded = '';
+  for (const char of line) expanded += char === '\t' ? ' '.repeat(4-Math.max(0,visualLength(expanded)-1)%4) : char;
+  const text = monitorText(expanded);
+  return breakRows(text,width,width >= 12 ? '  ' : '',1+Math.max(0,text.slice(1).search(/\S/)));
+}
+
+/** A path in rows `width` wide, broken after a slash where it can be, as a folder is a word. Takes raw text. */
+function pathRows(path: string, width: number): string[] {
+  return width < 1 ? [] : breakRows(monitorText(path),width,'',0,true);
+}
+
+/**
+ * Text in rows `width` wide, each after the first starting with `hang`. A
+ * row ends after a space or a mark (",;:)]}/.=&|-", and an opening bracket
+ * that follows a word, as a call's does), or between two Chinese
+ * characters, never inside a word that fits on a row; a word longer than a
+ * row is cut. The first row breaks past `from`. A path breaks after its
+ * slashes alone. Takes sanitized text.
+ */
+function breakRows(text: string, width: number, hang: string, from: number, path = false): string[] {
+  if (visualLength(text) <= width) return [text];
+  const wide = (char: string | undefined) => char !== undefined && visualLength(char) > 1;
+  const rows: string[] = [];
+  let rest = text;
+  while (rest) {
+    const room = rows.length ? width-hang.length : width;
+    if (visualLength(rest) <= room) { rows.push((rows.length ? hang : '')+rest); break; }
+    const chars = [...rest];
+    const past = rows.length ? 0 : from;
+    let used = 0, at = 0, fits = 0, best = 0;
+    for (let k = 0; k < chars.length; k++) {
+      const char = chars[k];
+      const cols = visualLength(char);
+      if (used+cols > room) break;
+      used += cols; at += char.length; fits = at;
+      const next = chars[k+1];
+      const opens = /[([{]/.test(char) && k > 0 && /\S/.test(chars[k-1]);
+      const ends = path ? char === '/' : /[\s,;:)\]}/.=&|-]/.test(char) || opens || wide(char) || /\s/.test(next ?? '') || wide(next);
+      if (at > past && ends) best = at;
+    }
+    const cut = best || fits || (chars[0]?.length ?? 1);
+    rows.push((rows.length ? hang : '')+rest.slice(0,cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  return rows;
 }
 
 /**

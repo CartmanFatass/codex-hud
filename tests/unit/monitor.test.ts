@@ -343,7 +343,7 @@ test('an untracked directory is one row, its slash kept, and inspected says what
   const previous=setLanguage('zh');
   try {
     const text=stripAnsi(renderMonitor({tree,worktrees,git,state:opened,width:30,height:24,nowMs:now,diff}).lines.join('\n'));
-    assert.match(text,/r02\/ *\n.*未跟踪 · 2 个文件 *\n.*a\.json *\n.*deep\/b\.json/);
+    assert.match(text,/r02\/ *\n.*runs\/ *\n.*未跟踪 · 2 个文件 *\n.*a\.json *\n.*deep\/b\.json/);
     assert.doesNotMatch(text,/Untracked|2 files/);
     assert.match(stripAnsi(renderMonitor({tree,worktrees,git,state:opened,width:30,height:24,nowMs:now,diff:['Untracked','1 file','a.json']}).lines.join('\n')),/未跟踪 · 1 个文件/);
   } finally { setLanguage(previous); }
@@ -351,7 +351,7 @@ test('an untracked directory is one row, its slash kept, and inspected says what
   assert.match(en,/Untracked · 1 file\b/);
   // Anything else the preview says is shown as it is.
   const failed=stripAnsi(renderMonitor({tree,worktrees,git,state:opened,width:30,height:24,nowMs:now,diff:['[Preview unavailable: No longer on disk]']}).lines.join('\n'));
-  assert.match(failed,/\[Preview unavailable: No lon/);
+  assert.match(failed,/\[Preview unavailable: No *\n│ +longer on disk\]/);
 });
 
 test('monitor key profile maps numbers without changing legacy decoder behavior',()=>{
@@ -650,4 +650,63 @@ test('the panel\'s top, for the settings page to preview: the bar as the look dr
   } finally {
     setDisplayConfig(previous);
   }
+});
+
+test('a diff line wraps where a word ends, its later rows two columns in, a tab as spaces and a word too long for a row cut', async () => {
+  const { diffRows } = await import('../../src/render/monitor.js');
+  assert.deepEqual(diffRows('+const result = await collectGitChanges(selected);', 24), [
+    '+const result = await', '  collectGitChanges(', '  selected);']);
+  assert.deepEqual(diffRows('+short', 24), ['+short'], 'a line that fits is as it is');
+  // An opening bracket ends a row after a call's name, not where it opens an aside in prose.
+  assert.deepEqual(diffRows('+the interpreter (written below) is', 20), ['+the interpreter', '  (written below) is']);
+  // The first row keeps some text, never only the marker and the indentation.
+  assert.deepEqual(diffRows('+        averyveryverylongidentifier', 16), ['+        averyve', '  ryverylongiden', '  tifier']);
+  assert.deepEqual(diffRows('-\tif (x) {', 24), ['-    if (x) {'], 'a tab is spaces to the next fourth column');
+  assert.deepEqual(diffRows('+\t\treturn', 24), ['+        return']);
+  // Chinese breaks between any two characters; a path after a slash.
+  assert.deepEqual(diffRows('+这是一段很长的中文说明文字', 14), ['+这是一段很长', '  的中文说明文', '  字']);
+  assert.deepEqual(diffRows('+https://github.com/romkatv/powerlevel10k-media/raw', 24), [
+    '+https://github.com/', '  romkatv/powerlevel10k-', '  media/raw']);
+  // Control characters are escaped, as everywhere in the panel.
+  assert.deepEqual(diffRows('+a\u001b[2Jb', 24), ['+a\\x1b[2Jb']);
+  for (const width of [8, 12, 20, 33]) {
+    for (const line of ['+const result = await collectGitChanges(selected);', '+这是一段很长的中文说明文字 with words', ' x'.repeat(30)]) {
+      assert.ok(diffRows(line, width).every(row => visualLength(row) <= width), `${width}: ${line}`);
+    }
+  }
+});
+
+test('the Inspector heads a file with its name, its lines added and removed and its folder, and its sections in the reader\'s words', async () => {
+  const { setLanguage } = await import('../../src/render/i18n.js');
+  const file = (path: string, more = {}) => ({ path, index: 'M', worktree: 'M', added: 12, removed: 3, binary: false, conflict: false, ...more });
+  const git = { root: '/demo/main', branch: 'main', ahead: 0, behind: 0,
+    files: [file('.agents/skills/x/SKILL.md'), file('logo.png', { binary: true, added: null, removed: null }), file('only-added.txt', { removed: 0 })] };
+  const inspect = (selectedFile: string, diff: string[], width = 30) => {
+    const state = initialMonitorState(); state.modes.changes = 'open'; state.focus = 'changes'; state.selectedFile = selectedFile;
+    const frame = renderMonitor({ tree, worktrees, git, state, width, height: 24, nowMs: now });
+    const opened = handleMonitorInput(frame.state, key('enter'), { tree, git, worktrees, frame }).state;
+    return renderMonitor({ tree, worktrees, git, state: opened, width, height: 24, nowMs: now, diff }).lines.map(stripAnsi);
+  };
+  const diff = ['Staged', 'diff --git a/x b/x', '@@ -1 +1 @@', '-old', '+new', 'Unstaged', 'diff --git a/x b/x', '@@ -1 +1,2 @@', ' new', '+Staged'];
+  const previous = setLanguage('zh');
+  try {
+    const text = inspect('.agents/skills/x/SKILL.md', diff);
+    assert.match(text[2], /^│ SKILL\.md +\+12 −3 *$/);
+    assert.match(text[3], /^│ \.agents\/skills\/x\/ *$/);
+    assert.match(text[4], /^│ ── 已暂存 ─+$/);
+    assert.ok(text.some(line => /^│ ── 未暂存 ─+$/.test(line)));
+    assert.ok(text.some(line => /^│ \+Staged *$/.test(line)), 'inside a hunk the word is content');
+    assert.match(inspect('logo.png', [])[2], /^│ logo\.png +二进制 *$/);
+    assert.match(inspect('only-added.txt', [])[2], /^│ only-added\.txt +\+12 *$/, 'a side with none is left out');
+    // An untracked file's text may hold the words: only its first line is a label.
+    const untracked = inspect('only-added.txt', ['Untracked', 'Unstaged', 'Staged']);
+    assert.match(untracked[3], /^│ ── 未跟踪 ─+$/);
+    assert.deepEqual(untracked.slice(4, 6).map(line => line.trim()), ['│ Unstaged', '│ Staged']);
+  } finally {
+    setLanguage(previous);
+  }
+  // A name too long to share its row puts the counts under it.
+  const long = inspect('.agents/skills/x/SKILL.md', [], 14);
+  // The folder breaks after a slash.
+  assert.deepEqual(long.slice(2, 6).map(line => line.trimEnd()), ['│SKILL.md', '│+12 −3', '│.agents/', '│skills/x/']);
 });
