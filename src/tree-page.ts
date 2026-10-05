@@ -188,13 +188,6 @@ async function runLivePage(): Promise<void> {
   const updateJobs = () => time('jobs.update',()=>jobs.update({tree,main,switches:switches(),language:resolveLanguage(settings.language),on:jobsOn(),
     inspected:paneShown(state,'details') && state.preview === 'agent' ? state.tree.selectedId ?? undefined : undefined,
     recapGoal:briefCommand() === 'off' ? undefined : briefer.current().recap?.goal,digestLabels:{basis:t('Basis:'),caveats:t('Caveats:')},now:Date.now()}));
-  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-  /** A short-lived line in the notice row, cleared after a few seconds. */
-  const flash = (message: string) => {
-    navigationMessage = message; render();
-    if (noticeTimer) clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(()=>{ if (navigationMessage === message) { navigationMessage = null; render(); } },3000);
-  };
   // The decoration picture, decoded once per path; a failed read means none.
   let art: {path: string; bitmap: ArtBitmap | null} = {path:'',bitmap:null};
   const loadArt = () => {
@@ -450,7 +443,6 @@ async function runLivePage(): Promise<void> {
     jobs.stop();
     model.cancelAll();
     agentLog.flush();
-    if (noticeTimer) clearTimeout(noticeTimer);
     timers.forEach(clearInterval);
     if (collectTimer) clearInterval(collectTimer);
     if (repaintTimer) clearTimeout(repaintTimer);

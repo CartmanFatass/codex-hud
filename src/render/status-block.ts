@@ -27,7 +27,7 @@ import { formatCountdown, readQuotaWindows } from './quota.js';
 import { formatElapsedShort } from './subagent-chip.js';
 import { formatTokenRate } from '../collectors/token-rate.js';
 import { displayConfig } from './hud-config.js';
-import { age, iconic, type EdgeMeter } from './monitor.js';
+import { age, type EdgeMeter } from './monitor.js';
 import { t } from './i18n.js';
 
 /**

@@ -37,7 +37,7 @@ import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import type { Brief } from '../collectors/briefing.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
 import { isGuardian, type PanelRow } from './panel-state.js';
-import { theme, colors, visualLength, truncateAnsi, stripAnsi, getContextColor } from './colors.js';
+import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { displayConfig } from './hud-config.js';
 import { t } from './i18n.js';
