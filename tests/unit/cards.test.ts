@@ -196,7 +196,7 @@ test('the agents view scrolls: its band says which rows are in view, the wheel a
     assert.equal(frame.panes[0].offset, 3, style);
     assert.equal(frame.state.tree.selectedId, selected);
     assert.match(hint(), / 4–\d+\/\d+ $/);
-    assert.match(plain(frame)[frame.panes[0].y], /^ ▸12 run +4–/, 'the summary line stays put');
+    assert.match(plain(frame)[frame.panes[0].y], /^ ▦ Agents {2}▸12 run +4–/, 'the title stays put');
     // Repaints keep the place; PgDn goes a page on; past the end is clamped.
     frame = draw(); state = frame.state; frame = draw();
     assert.equal(frame.panes[0].offset, 3);
@@ -237,13 +237,13 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const state = rich({ tree: { ...rich().tree, lingerMs: 180_000 } });
   const frame = renderMonitor({ tree: tree([named, old]), state, width: 32, height: 30, nowMs: now });
   const lines = plain(frame);
-  assert.equal(lines[1].trimEnd(), ' ✓1 done  ▸1 run', 'each count with its word, the hidden one counted');
-  assert.match(lines[0], /⊕ +⚙ +\? +$/, lines[0]);
+  assert.equal(lines[1].trimEnd(), ' ▦ Agents  ✓1 done  ▸1 run', 'each count with its word, the hidden one counted');
+  assert.match(lines[0], /⊕1 ⚙ \? $/, lines[0]);
   assert.ok(!lines.some(line => line.includes('old_one')));
   const older = frame.controls.find(c => c.kind === 'older')!;
   const shown = handleMonitorInput(frame.state, click(older.x, 0), { tree: tree([named, old]), frame, nowMs: now }).state;
   assert.ok(plain(renderMonitor({ tree: tree([named, old]), state: shown, width: 32, height: 30, nowMs: now })).some(line => line.includes('old_one')));
-  assert.ok(!lines.some(line => line.includes('Agents')), 'no Agents pane');
+  assert.equal(lines.slice(1).filter(line => line.includes('Agents')).length, 1, 'under the bar, the cards have one title, their counts beside it');
   const focused = handleMonitorInput({ ...frame.state, modes: { ...frame.state.modes, agents: 'closed', worktrees: 'open' }, focus: 'worktrees' }, key('agents'), { tree: tree([named]), frame }).state;
   assert.equal(focused.focus, 'agents');
   assert.equal(focused.modes.agents, 'open', '1 opens the cards, and focuses them');
@@ -378,7 +378,7 @@ test('guardian reviews fold into a ◈N chip on their parent, or on the summary 
   const state = rich({ tree: { ...rich().tree, showAll: true } });
   const frame = renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now });
   const lines = plain(frame);
-  assert.match(lines[1], /^ !1 failed {2}✓1 done {2}▸1 run ◈1 reviews/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
+  assert.match(lines[1], /^ ▦ Agents {2}!1 failed {2}✓1 done {2}▸1 run {2}◈1 reviews/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
   const top = lines.find(line => line.includes('bench_corpus'))!;
   assert.match(top, /◈2/);
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');

@@ -1,47 +1,47 @@
 /**
- * The panel's one control bar: its first row, on its own background. Every
+ * The panel's one control bar: its first row, two in the frame look. Every
  * button the panel draws is here, and nowhere else: not on the status card,
- * not on a pane's band (a click there zooms the pane, but draws nothing).
+ * not on a pane's title (a click there zooms the pane, but draws nothing).
  *
- * With icons, every button is the same size and the buttons are spread
- * evenly over the row: the same step from each icon to the next, the widest
- * that fits, and the columns left over half at each end. The chip grows
- * with the step:
+ * The look (`look` in settings) draws it after omp; every look has the same
+ * buttons:
  *
- *   step 2    "X "             the icon and the column it may spill into
- *   step 3    " X "            chips side by side
- *   step 4–5  " X " + gap      a column or two of bar between chips
- *   step 6+   "  X  " + gap
+ *   tab    omp's settings tab row: the focused pane a filled tab with its
+ *          word, the other panes their icons, the actions at the right end.
+ *            ⌂ ▦  ⌥ 工作树  ±  ◫  ≣          ▶ ⊕31 ⚙ ?
+ *   band   omp's status line: a band of segments, the focused pane in the
+ *          accent with its word, a rule in the accent across to the actions.
+ *   tile   emoji tiles: the focused pane filled with its word, an open one
+ *          on a chip, a closed one bare.
+ *   frame  omp's settings frame round the panel: the main session is its
+ *          title and the actions sit in its top edge; the tabs, drawn as
+ *          `tab` draws them, are the row under it.
+ *   pill   the focused pane a rounded pill with its word.
  *
- *   32 columns, ten buttons    ␠␠⌂␠␠▦␠␠⌥␠␠±␠␠◫␠␠≣␠␠ǁ␠␠⊕␠␠⚙␠␠?␠␠
- *   44 columns, nine           ␠⌂␠␠␠▦␠␠␠⌥␠␠␠± … ⚙␠␠␠?␠␠
+ * An open pane's icon is in the text colour and a closed one's muted; the
+ * actions are muted, the paused brief's resume in the accent. Without colour
+ * the focused tab is in brackets and a closed pane has no tab. In the tabs
+ * layout every pane has a tab, the one shown focused.
  *
- * Where every button's word fits beside its icon (about 95 columns in
- * Chinese, 110 in English) the buttons carry their words, the same gap
- * between each two. The icons are the Unicode set, drawn by the font the
- * panel asks for (MesloLGS NF, which has every one of them), or Nerd Font
- * icons with `icons: nerd`. An icon is always in the full text colour and
- * bold, never dimmed; a tab's state is its chip: the focused pane on the
- * accent, an open one on a chip, a closed one on the bar itself. No key is
- * written anywhere on the bar; the keys (the tmux prefix, then a letter) are
- * in the help alone.
+ * Words come and go with the width as omp's tabs do: every tab's word where
+ * they all fit, then the open tabs', then the focused tab's alone, then none.
+ * The tabs close up from three columns apart to one on the way, but a word is
+ * never a single column from the next tab, and the actions stay further from
+ * the tabs than the tabs are from each other. Short of room after that, the
+ * closed tabs go, then the older agents' button, then the brief's, then the
+ * other tabs, then the focused one. Very wide, the actions take their words
+ * too. With icons off the words stay, shortened where they must be.
  *
- * The buttons, left to right: the main session, a tab per pane, the brief's
- * pause (only with a brief configured), the older agents (only when the
- * linger window put some away), settings and help. Short of two columns a
- * button, the closed panes' tabs go first, then the older agents' button,
- * then the brief's, then the tabs but the focused one's, then that one.
- *
- * With `icons: text` (or glyphs set to text) the buttons are words, which
- * cannot all be one size: they keep the steps below, giving up words, gaps
- * and buttons in turn. A click anywhere in a button's slot is its control; a
- * tab's click is `clickTab` in monitor.ts. Pure.
+ * A click anywhere from the midpoint of the gap before a button to the
+ * midpoint of the gap after it is that button's; a tab's click is `clickTab`
+ * in monitor.ts. No key is written on the bar; the keys (the tmux prefix,
+ * then a letter) are in the help alone. Pure.
  */
 import type { MonitorControl, MonitorPane, MonitorState } from './monitor.js';
 import { MONITOR_PANES } from './monitor.js';
-import { theme, visualLength, truncateAnsi } from './colors.js';
+import { theme, colors, visualLength, truncateAnsi } from './colors.js';
 import { palette } from './palette.js';
-import { iconSet } from './hud-config.js';
+import { iconSet, displayConfig, type LookName } from './hud-config.js';
 import { t, language } from './i18n.js';
 
 /** What the bar needs to know besides the panel's state. */
@@ -96,10 +96,38 @@ export const ICONS: Record<IconName, string> = {
   help: '',
 };
 
+/**
+ * Emoji for the panes, two columns each and in their own colours, as omp's
+ * Unicode preset draws its tabs; the actions keep their Unicode glyphs, which
+ * a colour can mark. Each is an emoji-presentation character, two columns in
+ * tmux and the HUD alike, never one that needs a variation selector to be one.
+ */
+export const EMOJI_ICONS: Record<IconName, string> = {
+  ...UNICODE_ICONS,
+  agents: '🤖',
+  worktrees: '🌳',
+  changes: '📝',
+  details: '🔍',
+  timeline: '🕘',
+};
+
 /** The icon the panel draws for `name`, or '' with icons off. */
 export function icon(name: IconName): string {
-  const set = iconSet();
-  return set === 'nerd' ? ICONS[name] : set === 'unicode' ? UNICODE_ICONS[name] : '';
+  switch (iconSet()) {
+    case 'nerd': return ICONS[name];
+    case 'unicode': return UNICODE_ICONS[name];
+    case 'emoji': return EMOJI_ICONS[name];
+    default: return '';
+  }
+}
+
+/** Fewest columns the frame look draws its frame in; narrower, it draws as `tab` does. */
+const FRAME_MIN = 20;
+
+/** The look the panel is drawn in at `width`: the frame needs room for its sides. */
+export function look(width = Infinity): LookName {
+  const chosen = displayConfig().look ?? 'tab';
+  return chosen === 'frame' && width < FRAME_MIN ? 'tab' : chosen;
 }
 
 /**
@@ -133,307 +161,359 @@ export function paneTitle(id: MonitorPane): { icon: string; name: string } {
   return { icon: icon(id), name: names(id).title };
 }
 
-/** How big a chip is: icon and word with a side column each, the icon between side columns, or the icon and one column. */
-type Size = 'wide' | 'pad' | 'tight';
-
-/**
- * A chip's text: `glyph` (an icon, or a count) and `word` where it has one.
- * Without icons the word stands alone. The Nerd Font icon always has a space
- * after it to spill into.
- */
-function chipText(glyph: string, word: string | null, size: Size): string {
-  const face = glyph ? (word ? `${glyph} ${word}` : glyph) : (word ?? '');
-  return size === 'tight' ? `${face} ` : ` ${face} `;
-}
+/** A pill's rounded ends: Powerline glyphs, which MesloLGS NF draws. */
+const CAP_LEFT = '';
+const CAP_RIGHT = '';
 
 type ChipState = 'focused' | 'open' | 'closed' | 'button';
 
-/**
- * A chip painted for its state. The face is always the full text colour and
- * bold; the state is the surface: the accent for the focused tab, a chip for
- * an open one or a button, the bar itself for a closed one. Without colour
- * the focused tab is in brackets ("[▦]").
- */
-function paint(text: string, state: ChipState, accent = false): string {
-  const lead = text.match(/^ */)![0];
-  const trail = text.match(/ *$/)![0];
-  const face = text.slice(lead.length, text.length - trail.length);
-  if (palette().name === 'none') {
-    if (state !== 'focused') return text;
-    // The brackets take a side column each, so the chip keeps its width.
-    if (lead && trail) return `${lead.slice(1)}[${face}]${trail.slice(1)}`;
-    return trail ? `${face}]${trail.slice(1)}` : `[${face}]`;
-  }
-  if (state === 'focused') return theme.tab(theme.bold(text));
-  const strong = theme.bold(accent ? theme.accent(face) : theme.value(face));
-  return state === 'closed' ? `${lead}${strong}${trail}` : theme.chip(`${lead}${strong}${trail}`);
-}
-
-interface Button {
-  text: string;
-  kind: MonitorControl['kind'];
-  pane?: MonitorPane;
-}
-
-interface Step {
-  size: Size;
-  /** The tabs keep their words. */
-  tabWords: boolean;
-  /**
-   * How many of the other buttons keep their words: 3 all, 2 all but the
-   * brief's and the older agents', 1 settings and help only, 0 none.
-   * Without icons the buttons are words at every step, shortened under 3.
-   */
-  words: 0 | 1 | 2 | 3;
-  /** Columns of bar between two chips. */
-  gap: 0 | 1;
-  /** Closed panes keep their tab. */
-  closed: boolean;
-  older: boolean;
-  /** The older agents' button is its count alone: a Nerd Font eye gives way before a size does. */
-  bare?: boolean;
-  brief: boolean;
-  /** 'all' the tabs there are, 'focus' only the focused pane's, '' none. */
-  tabs: 'all' | 'focus' | '';
-}
-
-const ALL = { closed: true, older: true, brief: true, tabs: 'all' } as const;
-/** From the widest chips to the fewest, in the order the bar gives them up. */
-const STEPS: Step[] = [
-  { size: 'wide', tabWords: true, words: 3, gap: 1, ...ALL },
-  { size: 'wide', tabWords: false, words: 3, gap: 1, ...ALL },
-  { size: 'wide', tabWords: false, words: 2, gap: 1, ...ALL },
-  { size: 'wide', tabWords: false, words: 1, gap: 1, ...ALL },
-  { size: 'pad', tabWords: false, words: 0, gap: 1, ...ALL },
-  { size: 'pad', tabWords: false, words: 0, gap: 0, ...ALL },
-  { size: 'pad', tabWords: false, words: 0, gap: 0, ...ALL, bare: true },
-  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL },
-  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, bare: true },
-  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, bare: true, closed: false },
-  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, closed: false, older: false },
-  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, closed: false, older: false, brief: false },
-  { size: 'tight', tabWords: false, words: 0, gap: 0, closed: false, older: false, brief: false, tabs: 'focus' },
-  { size: 'tight', tabWords: false, words: 0, gap: 0, closed: false, older: false, brief: false, tabs: '' },
-];
-/**
- * Where a width starts in STEPS: the chip sizes the panel's width calls for
- * (words from 56 columns, side columns from 36, gaps from 44), whether or not
- * something wider would fit.
- */
-function firstStep(width: number): number {
-  return width >= 56 ? 0 : width >= 44 ? 4 : width >= 36 ? 5 : 7;
-}
-
-type Bar = { line: string; controls: MonitorControl[] };
-
-export function controlBar(state: MonitorState, input: BarInput, width: number): Bar {
-  return iconSet() === 'text' ? wordBar(state, input, width) : iconBar(state, input, width);
-}
-
-/** One button of the icon bar: its icon, its word, and how its chip is painted. */
+/** One button: its icon, its word, the word where room is short and there is no icon, and its state. */
 interface Spec {
   kind: MonitorControl['kind'];
   pane?: MonitorPane;
   glyph: string;
   word: string;
+  short: string;
   state: ChipState;
   accent?: boolean;
 }
 
+interface Specs {
+  main: Spec;
+  tabs: Spec[];
+  actions: Spec[];
+}
+
 /**
- * The buttons there are, left to right, keeping those `keep` lets stay:
- * the closed tabs (4), the older agents (3), the brief (2), the tabs but the
- * focused one's (1) and that one too (0), in the order the bar gives them up.
+ * The buttons there are, keeping those `keep` lets stay: the closed tabs
+ * (4), the older agents (3), the brief (2), the tabs but the focused one's
+ * (1) and that one too (0), in the order the bar gives them up.
  */
-function specs(state: MonitorState, input: BarInput, keep: number): Spec[] {
-  const out: Spec[] = [{ kind: 'main', glyph: icon('main'), word: t('Main'), state: 'button' }];
+function specs(state: MonitorState, input: BarInput, keep: number): Specs {
+  const zh = language() === 'zh';
+  // With icons off the main session's button is an arrow and a word: a word alone would read as a tab.
+  const arrow = iconSet() === 'text' ? '← ' : '';
+  const main: Spec = { kind: 'main', glyph: icon('main'), word: `${arrow}${t('Main')}`, short: `${arrow}${zh ? '主' : 'Main'}`, state: 'button' };
+  const tabs: Spec[] = [];
   for (const id of MONITOR_PANES) {
-    const mode = state.modes[id];
+    // In the tabs layout every pane has a tab: none is closed.
+    const mode = state.tabbed ? 'open' : state.modes[id];
     const focused = id === state.focus && mode === 'open';
     // With no colour a tab cannot say closed; only the panes there are get one.
     if (mode === 'closed' && (keep < 4 || palette().name === 'none')) continue;
     if ((!focused && keep < 1) || keep < 0) continue;
-    out.push({ kind: 'tab', pane: id, glyph: icon(id), word: names(id).tab, state: focused ? 'focused' : mode });
+    tabs.push({ kind: 'tab', pane: id, glyph: icon(id), word: names(id).tab, short: names(id).short, state: focused ? 'focused' : mode });
   }
+  const actions: Spec[] = [];
   if (input.brief && keep >= 2) {
     const paused = Boolean(input.brief.paused);
-    out.push({
+    actions.push({
       kind: 'brief',
       glyph: icon(paused ? 'resume' : 'pause'),
       word: t(paused ? 'Resume brief' : 'Pause brief'),
+      short: t(paused ? 'Resume' : 'Pause'),
       state: 'button',
       accent: paused,
     });
   }
   if (input.expired && keep >= 3) {
     const shown = state.tree.showAll;
-    const word = shown ? t('Hide') : `${input.expired} ${t('older')}`;
-    out.push({ kind: 'older', glyph: icon(shown ? 'hide' : 'show'), word, state: 'button' });
+    const n = input.expired;
+    // The count is the button's own: nothing else on the panel says how many are put away.
+    const glyph = iconSet() === 'text' ? '' : `${UNICODE_ICONS[shown ? 'hide' : 'show']}${n}`;
+    const word = shown ? t('Hide') : glyph ? t('older') : t('+{n} older', { n });
+    actions.push({ kind: 'older', glyph, word, short: `${shown ? '−' : '+'}${n}`, state: 'button' });
   }
-  out.push({ kind: 'settings', glyph: icon('settings'), word: t('Settings'), state: 'button' });
-  out.push({ kind: 'help', glyph: icon('help'), word: t('Help'), state: 'button' });
-  return out;
+  actions.push({ kind: 'settings', glyph: icon('settings'), word: t('Settings'), short: t('Settings'), state: 'button' });
+  actions.push({ kind: 'help', glyph: icon('help'), word: t('Help'), short: '?', state: 'button' });
+  return { main, tabs, actions };
+}
+
+/** How many words a row carries: every button's, every tab's, the open tabs', the focused tab's, none. */
+type Level = 'every' | 'all' | 'open' | 'focus' | 'none';
+
+/** Words before room, and room before columns between tabs; a word never a column from the next tab. */
+const OPTIONS: ReadonlyArray<readonly [Level, number]> = [
+  ['every', 2],
+  ['all', 3],
+  ['all', 2],
+  ['open', 3],
+  ['open', 2],
+  ['focus', 3],
+  ['focus', 2],
+  ['focus', 1],
+  ['none', 2],
+  ['none', 1],
+];
+
+function hasWord(level: Level, spec: Spec): boolean {
+  if (spec.kind !== 'tab') return level === 'every';
+  if (level === 'every' || level === 'all') return true;
+  if (level === 'open') return spec.state !== 'closed';
+  return level === 'focus' && spec.state === 'focused';
+}
+
+/** A button's face: its icon, with its word where it has one; with no icon, its word or its short word. */
+function face(spec: Spec, word: boolean): string {
+  if (spec.glyph) return word ? `${spec.glyph} ${spec.word}` : spec.glyph;
+  return word ? spec.word : spec.short;
 }
 
 /**
- * A chip's width at a step of `pitch` columns from one icon to the next: the
- * icon and its spill column at 2, a column of chip each side from 3 (the
- * rest of the step a gap of bar), two each side from 6.
+ * A face painted for its state in the look. The focused tab is a filled tab
+ * (a column of surface each side), the accent in the band, a pill in `pill`;
+ * a tile's open tab sits on a chip, with side columns where `roomy`.
  */
-function chipSize(pitch: number): 2 | 3 | 5 {
-  return pitch >= 6 ? 5 : pitch >= 3 ? 3 : 2;
-}
-
-/**
- * The icon bar: the same step from each icon to the next, the spare columns
- * half at each end; or, where every word fits, each button's icon and word
- * with an equal gap between them.
- */
-function iconBar(state: MonitorState, input: BarInput, width: number): Bar {
-  for (let keep = 4; keep >= -1; keep--) {
-    const buttons = specs(state, input, keep);
-    const n = buttons.length;
-    const faces = buttons.map((b) => `${b.glyph} ${b.word}`);
-    const worded = faces.reduce((sum, face) => sum + visualLength(face) + 2, 0);
-    if (worded + n - 1 <= width) {
-      // Every word fits: the same gap between each two, up to three columns.
-      const gap = Math.min(3, Math.floor((width - worded) / Math.max(1, n - 1)));
-      const chips = faces.map((face) => ` ${face} `);
-      return lay(buttons, chips, width, (i) => visualLength(chips[i]) + (i < n - 1 ? gap : 0));
-    }
-    // The widest step from one icon to the next that fits: n chips and n − 1 gaps.
-    let pitch = 0;
-    for (let p = Math.floor(width / Math.max(1, n - 1)); p >= 2 && !pitch; p--) {
-      if ((n - 1) * p + chipSize(p) <= width) pitch = p;
-    }
-    if (!pitch) continue;
-    const size = chipSize(pitch);
-    const side = ' '.repeat((size - 1) / 2);
-    const chips = buttons.map((b) => (size === 2 ? `${b.glyph} ` : `${side}${b.glyph}${side}`));
-    return lay(buttons, chips, width, (i) => (i < n - 1 ? pitch : size));
+function paint(look: LookName, text: string, state: ChipState, accent = false, roomy = false): string {
+  const bare = palette().name === 'none';
+  if (state === 'focused') {
+    if (bare) return `[${text}]`;
+    if (look === 'band') return theme.bold(theme.accent(text));
+    if (look === 'pill') return `${theme.tabEdge(CAP_LEFT)}${theme.tab(theme.bold(text))}${theme.tabEdge(CAP_RIGHT)}`;
+    return theme.tab(theme.bold(` ${text} `));
   }
-  // Narrower than two buttons: the main session's alone.
-  const line = theme.bar(truncateAnsi(icon('main') || '⌂', width) + ' '.repeat(Math.max(0, width - 1)));
-  return { line, controls: [{ kind: 'main', x: 0, y: 0, width: Math.min(width, 2) }] };
+  if (state === 'button') return accent ? theme.accent(text) : colors.dim(text);
+  const shown = look === 'tile' && roomy ? ` ${text} ` : text;
+  if (look === 'tile' && state === 'open' && !bare) return theme.chip(shown);
+  return state === 'open' ? theme.value(shown) : colors.dim(shown);
+}
+
+type Bar = { lines: string[]; controls: MonitorControl[] };
+
+/** A button on a row: its spec, painted text, and where its face starts. */
+interface Placed {
+  spec: Spec;
+  text: string;
+  x: number;
+  width: number;
 }
 
 /**
- * Lay the chips out: button i takes `span(i)` columns, its chip first and
- * the gap after it; what the spans leave of `width` goes half to each end.
- * A click anywhere in a button's span (the ends' columns with the first and
- * the last) is that button's.
+ * The buttons' click spans on row `y`: from the midpoint of the gap before
+ * each to the midpoint of the gap after it, the first from `from` and the
+ * last to `to`.
  */
-function lay(buttons: Spec[], chips: string[], width: number, span: (i: number) => number): Bar {
-  const spans = buttons.map((_, i) => span(i));
-  const spare = width - spans.reduce((sum, w) => sum + w, 0);
-  const lead = Math.floor(spare / 2);
-  const controls: MonitorControl[] = [];
-  let text = ' '.repeat(lead);
-  let x = lead;
-  buttons.forEach((b, i) => {
-    const chip = visualLength(chips[i]);
-    text += paint(chips[i], b.state, b.accent) + ' '.repeat(spans[i] - chip);
-    const start = i === 0 ? 0 : x;
-    const end = i === buttons.length - 1 ? width : x + spans[i];
-    controls.push({ kind: b.kind, ...(b.pane ? { pane: b.pane } : {}), x: start, y: 0, width: end - start });
-    x += spans[i];
+function spans(placed: Placed[], y: number, from: number, to: number): MonitorControl[] {
+  return placed.map((p, i) => {
+    const prev = placed[i - 1];
+    const next = placed[i + 1];
+    const start = prev ? Math.ceil((prev.x + prev.width + p.x) / 2) : from;
+    const end = next ? Math.ceil((p.x + p.width + next.x) / 2) : to;
+    return { kind: p.spec.kind, ...(p.spec.pane ? { pane: p.spec.pane } : {}), x: start, y, width: Math.max(1, end - start) };
   });
-  text += ' '.repeat(Math.max(0, width - x));
-  return { line: theme.bar(text), controls };
 }
 
-/** The bar with icons off: words, given up step by step where they do not fit. */
-function wordBar(state: MonitorState, input: BarInput, width: number): Bar {
-  const brief = input.brief;
-  const zh = language() === 'zh';
-  const set = iconSet();
-  const words = set === 'text';
-  const attempt = (o: Step) => {
-    const gap = o.gap;
-    const backWord = words ? `← ${o.words >= 2 ? t('Main') : zh ? '主' : 'Main'}` : o.words >= 2 ? t('Main') : null;
-    const back: Button = { text: paint(chipText(icon('main'), backWord, o.size), 'button'), kind: 'main' };
-    // With no colour the tabs cannot say closed; only the panes there are get one.
-    const tabs: Button[] = MONITOR_PANES.filter(
-      (id) => state.modes[id] !== 'closed' || (o.closed && palette().name !== 'none')
-    )
-      .filter((id) => o.tabs === 'all' || (o.tabs === 'focus' && id === state.focus))
-      .map((id) => {
-        const word = o.tabWords ? names(id).tab : words ? names(id).short : null;
-        const mode = state.modes[id];
-        const chipState: ChipState = id === state.focus && mode === 'open' ? 'focused' : mode;
-        return {
-          text: paint(chipText(icon(id), word, o.size), chipState),
-          kind: 'tab',
-          pane: id,
-        };
-      });
-    const right: Button[] = [];
-    if (brief && o.brief) {
-      const paused = Boolean(brief.paused);
-      const wide = o.words >= 3;
-      const word = paused ? t(wide ? 'Resume brief' : 'Resume') : t(wide ? 'Pause brief' : 'Pause');
-      const glyph = icon(paused ? 'resume' : 'pause');
-      right.push({
-        text: paint(chipText(glyph, wide || words ? word : null, o.size), 'button', paused),
-        kind: 'brief',
-      });
-    }
-    if (input.expired && o.older) {
-      const n = input.expired;
-      const shown = state.tree.showAll;
-      const wide = o.words >= 3;
-      // The Unicode set's sign is the count's own: "+37", "−37".
-      const unicode = set === 'unicode';
-      const glyph = unicode ? `${UNICODE_ICONS[shown ? 'hide' : 'show']}${n}` : icon(shown ? 'hide' : 'show');
-      const count = unicode ? '' : `+${n}`;
-      const word = shown
-        ? wide || words
-          ? t('Hide')
-          : null
-        : wide
-          ? unicode
-            ? t('older')
-            : words
-              ? t('+{n} older', { n })
-              : `${count} ${t('older')}`
-          : count || null;
-      // Bare, a Nerd Font button says it as the Unicode set does: "+37", "−37".
-      const face = o.bare && !unicode && !words ? `${UNICODE_ICONS[shown ? 'hide' : 'show']}${n}` : null;
-      right.push({ text: paint(chipText(face ?? glyph, face ? null : word, o.size), 'button'), kind: 'older' });
-    }
-    const keep = o.words >= 1 || words;
-    right.push({
-      text: paint(chipText(icon('settings'), keep ? t('Settings') : null, o.size), 'button'),
-      kind: 'settings',
-    });
-    right.push({ text: paint(chipText(icon('help'), keep ? t('Help') : null, o.size), 'button'), kind: 'help' });
+export function controlBar(state: MonitorState, input: BarInput, width: number): Bar {
+  if (width <= 0) return { lines: [''], controls: [] };
+  return look(width) === 'frame' ? frameBar(state, input, width) : rowBar(state, input, width);
+}
 
-    const sep = ' '.repeat(gap);
-    // Back stands a column apart from the tabs, which are one group.
-    const leftText = back.text + (tabs.length ? ' ' + tabs.map((b) => b.text).join(sep) : '');
-    const rightText = right.map((b) => b.text).join(sep);
-    const room = width - visualLength(leftText) - visualLength(rightText);
-    // A column of bar at least keeps the tabs and the buttons apart.
-    if (room < 1) return null;
-    const controls: MonitorControl[] = [];
-    controls.push({ kind: 'main', x: 0, y: 0, width: visualLength(back.text) });
-    let x = visualLength(back.text) + 1;
-    for (const b of tabs) {
-      controls.push({ kind: 'tab', pane: b.pane, x, y: 0, width: visualLength(b.text) });
-      x += visualLength(b.text) + gap;
+/** The main session's button alone, for a bar too narrow for anything else. */
+function mainOnly(width: number): Bar {
+  const text = truncateAnsi(` ${icon('main') || '←'}`, width);
+  return { lines: [text + ' '.repeat(Math.max(0, width - visualLength(text)))], controls: [{ kind: 'main', x: 0, y: 0, width }] };
+}
+
+/** The one-row bar of the tab, band, tile and pill looks. */
+function rowBar(state: MonitorState, input: BarInput, width: number): Bar {
+  const style = look(width);
+  for (let keep = 4; keep >= -1; keep--) {
+    const set = specs(state, input, keep);
+    for (const [level, gap] of OPTIONS) {
+      // The actions' words come last and go first: never in place of a button.
+      if (level === 'every' && keep < 4) continue;
+      const laid = layRow(style, set, level, gap, width);
+      if (laid) return laid;
     }
-    x = width - visualLength(rightText);
-    for (const b of right) {
-      controls.push({ kind: b.kind, x, y: 0, width: visualLength(b.text) });
-      x += visualLength(b.text) + gap;
-    }
-    return { line: theme.bar(leftText + ' '.repeat(room) + rightText), controls };
-  };
-  for (const step of STEPS.slice(firstStep(width))) {
-    const found = attempt(step);
-    if (found) return found;
   }
-  // Narrower than back and the two buttons: back alone.
-  const line = theme.bar(truncateAnsi(icon('main') || '←', width) + ' '.repeat(Math.max(0, width - 1)));
-  return { line, controls: [{ kind: 'main', x: 0, y: 0, width: Math.min(width, 2) }] };
+  return mainOnly(width);
+}
+
+/**
+ * Lay a row out: a column, the main session's button, a column, the tabs
+ * `gap` apart; the spare columns; the actions and a column. In the band the
+ * two groups sit on the band and the spare columns are the accent's rule.
+ * Null when it does not fit.
+ */
+function layRow(style: LookName, set: Specs, level: Level, gap: number, width: number): Bar | null {
+  // A tab with no surface of its own needs two columns to the next tab for its word to stand apart.
+  if (style === 'band' && gap < 2 && level !== 'none' && palette().name !== 'none') return null;
+  const roomy = gap >= 2;
+  const make = (spec: Spec) => paint(style, face(spec, hasWord(level, spec)), spec.state, spec.accent, roomy);
+  const band = style === 'band';
+  const main = make(set.main);
+  const tabs = set.tabs.map(make);
+  const actions = set.actions.map(make);
+  const between = level === 'every' ? 2 : 1;
+  // The main session's button stands a column from the tabs, as far as they are apart once it has its word.
+  const lead = level === 'every' ? gap : 1;
+  const sum = (texts: string[], sep: number) => texts.reduce((n, text) => n + visualLength(text), 0) + sep * Math.max(0, texts.length - 1);
+  const leftWidth = 1 + visualLength(main) + (tabs.length ? lead + sum(tabs, gap) : 0) + (band ? 1 : 0);
+  const rightWidth = (band ? 1 : 0) + sum(actions, between) + 1;
+  const spare = width - leftWidth - rightWidth;
+  // The band's rule needs two columns to read as one; elsewhere the actions stand further off than a tab's gap.
+  if (spare < (band ? 2 : gap + 1)) return null;
+
+  const placed: Placed[] = [];
+  let x = 1;
+  const place = (spec: Spec, text: string) => {
+    placed.push({ spec, text, x, width: visualLength(text) });
+    x += visualLength(text);
+  };
+  let left = ' ';
+  place(set.main, main);
+  left += main;
+  tabs.forEach((text, i) => {
+    const sep = ' '.repeat(i ? gap : lead);
+    left += sep;
+    x += sep.length;
+    place(set.tabs[i], text);
+    left += text;
+  });
+  if (band) left += ' ';
+  x = leftWidth + spare + (band ? 1 : 0);
+  let right = band ? ' ' : '';
+  actions.forEach((text, i) => {
+    if (i) {
+      right += ' '.repeat(between);
+      x += between;
+    }
+    place(set.actions[i], text);
+    right += text;
+  });
+  right += ' ';
+  const line = band ? theme.band(left) + theme.accent('─'.repeat(spare)) + theme.band(right) : left + ' '.repeat(spare) + right;
+  return { lines: [line], controls: spans(placed, 0, 0, width) };
+}
+
+/**
+ * The frame look's two rows: the top edge of the panel's frame, the main
+ * session its title and the actions in the edge at its right end, then the
+ * tabs between the frame's sides.
+ *
+ *   ╭─ ⌂ 主会话 ───────────── ▶ ⊕31 ⚙ ? ─╮
+ *   │ ▦  ⌥ 工作树  ±  ◫  ≣              │
+ */
+function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
+  const rule = theme.frame;
+  for (let keep = 4; keep >= -1; keep--) {
+    const set = specs(state, input, keep);
+    const actions = set.actions.map((spec) => paint('frame', face(spec, false), spec.state, spec.accent));
+    const actionsWidth = actions.reduce((n, text) => n + visualLength(text), 0) + Math.max(0, actions.length - 1);
+    let top: Bar | null = null;
+    // The title gives up its word, then (with icons off) all but its arrow.
+    const titles = [...new Set([face(set.main, true), face(set.main, false), set.main.glyph || '←'])];
+    for (const name of titles) {
+      const title = theme.bold(theme.accent(` ${name} `));
+      const fill = width - 6 - visualLength(title) - actionsWidth;
+      if (fill < 1) continue;
+      const placed: Placed[] = [{ spec: set.main, text: title, x: 2, width: visualLength(title) }];
+      let x = 2 + visualLength(title) + fill + 1;
+      actions.forEach((text, i) => {
+        placed.push({ spec: set.actions[i], text, x, width: visualLength(text) });
+        x += visualLength(text) + 1;
+      });
+      const line = `${rule('╭─')}${title}${rule('─'.repeat(fill))} ${actions.join(' ')} ${rule('─╮')}`;
+      top = { lines: [line], controls: spans(placed, 0, 0, width) };
+      break;
+    }
+    if (!top) continue;
+    // The tabs, a column in from the frame's left side, ending a column short of its right.
+    for (const [level, gap] of OPTIONS) {
+      if (level === 'every') continue;
+      const tabs = set.tabs.map((spec) => paint('frame', face(spec, hasWord(level, spec)), spec.state));
+      const used = tabs.reduce((n, text) => n + visualLength(text), 0) + gap * Math.max(0, tabs.length - 1);
+      if (used > width - 4) continue;
+      const placed: Placed[] = [];
+      let x = 2;
+      tabs.forEach((text, i) => {
+        if (i) x += gap;
+        placed.push({ spec: set.tabs[i], text, x, width: visualLength(text) });
+        x += visualLength(text);
+      });
+      const row = `${rule('│')} ${tabs.join(' '.repeat(gap))}${' '.repeat(width - 3 - used)}${rule('│')}`;
+      return { lines: [...top.lines, row], controls: [...top.controls, ...spans(placed, 1, 1, width - 1)] };
+    }
+  }
+  return mainOnly(width);
+}
+
+/** What a pane's title row says besides its name. */
+export interface HeadOptions {
+  /** Painted, after the title: the agents' counts, or their forms from the fullest to the shortest. */
+  info?: string | readonly string[];
+  /** Painted, at the right end: where the pane's rows are, or how many there are. */
+  right?: string;
+  focused: boolean;
+  zoomed: boolean;
+}
+
+/**
+ * A pane's title row as the look draws it, `width` wide: its icon and name
+ * (the accent where the focus is), `info` after it, `right` at the right end.
+ *
+ *   tab    " ⌥ 工作树                       3 个 "      no surface of its own
+ *   band   the same on the band, zoomed on the tab surface
+ *   tile   " ⌥ 工作树 ─────────────────── 3 个 "      the rule the accent where the focus is
+ *   frame  "├─ ⌥ 工作树 ────────────────── 3 个 ─┤"    an edge of the panel's frame
+ *   pill   " ( ⌥ 工作树 )                  3 个 "      the deep blue where the focus is
+ *
+ * Zoomed, the title is a filled tab, as the focused tab on the bar is. Short
+ * of room the name gives way first, then the counts' words, then where the
+ * rows are; at the last the counts are cut.
+ */
+export function paneHead(id: MonitorPane, width: number, o: HeadOptions): string {
+  const style = look(width);
+  const { icon: glyph, name } = paneTitle(id);
+  const titles = glyph ? [`${glyph} ${name}`, glyph] : [name];
+  const infos = typeof o.info === 'string' ? [o.info] : o.info?.length ? [...o.info] : [''];
+  // The name gives way before the counts' words, and where the rows are
+  // before the counts; at the last the counts are cut.
+  for (const info of infos) {
+    for (const title of titles) {
+      const row = headRow(style, title, info, o, width, false);
+      if (row !== null) return row;
+    }
+  }
+  const bare = { ...o, right: undefined };
+  return headRow(style, titles.at(-1)!, infos.at(-1)!, bare, width, false) ?? headRow(style, titles.at(-1)!, infos.at(-1)!, bare, width, true)!;
+}
+
+function headRow(style: LookName, title: string, counts: string, o: HeadOptions, width: number, cut: boolean): string | null {
+  const bare = palette().name === 'none';
+  const right = o.right ?? '';
+  const strong = (text: string) => theme.bold(o.focused ? theme.accent(text) : theme.value(text));
+  const filled = (text: string) => (bare ? `[${text}]` : theme.tab(theme.bold(` ${text} `)));
+  let head: string;
+  if (style === 'pill') {
+    const on = o.focused || o.zoomed;
+    head = bare
+      ? `[${title}]`
+      : on
+        ? `${theme.tabEdge(CAP_LEFT)}${theme.tab(theme.bold(title))}${theme.tabEdge(CAP_RIGHT)}`
+        : `${theme.chipEdge(CAP_LEFT)}${theme.chip(theme.bold(theme.value(title)))}${theme.chipEdge(CAP_RIGHT)}`;
+  } else if (o.zoomed && style !== 'band') head = filled(title);
+  else head = style === 'band' && o.zoomed ? theme.bold(title) : strong(title);
+  const lead = style === 'frame' ? `${theme.frame('├─')} ` : ' ';
+  const info = counts ? `${style === 'tab' || style === 'band' ? '  ' : ' '}${counts}` : '';
+  // The rule's looks draw a rule across to the right end; the others leave the columns blank.
+  const ruled = style === 'tile' || style === 'frame';
+  const close = style === 'frame' ? theme.frame(right ? ' ─┤' : '─┤') : ' ';
+  const tail = right ? ` ${right}${close}` : style === 'frame' ? close : ruled ? ' ' : '';
+  const least = ruled || right ? 1 : 0;
+  const gap = ruled ? 1 : 0;
+  let left = `${lead}${head}${info}`;
+  let fill = width - visualLength(left) - visualLength(tail) - gap;
+  if (fill < least) {
+    if (!cut) return null;
+    // The last resort: the counts cut to what the title and where the rows are leave them.
+    left = truncateAnsi(left, Math.max(0, width - visualLength(tail) - gap - least));
+    fill = Math.max(0, width - visualLength(left) - visualLength(tail) - gap);
+  }
+  const rule = style === 'frame' ? theme.frame : o.focused ? theme.accent : theme.frame;
+  let row = ruled ? `${left} ${rule('─'.repeat(fill))}${tail}` : `${left}${' '.repeat(fill)}${tail}`;
+  row = truncateAnsi(row, width);
+  row += ' '.repeat(Math.max(0, width - visualLength(row)));
+  if (style === 'band') return o.zoomed ? theme.tab(row) : theme.band(row);
+  return row;
 }

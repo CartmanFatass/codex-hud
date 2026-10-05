@@ -17,7 +17,7 @@ import { t } from './i18n.js';
 import { agentTitle, shownName, labelled } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { drawAgentsView, WHEEL_ROWS } from './agents-view.js';
-import { controlBar, paneTitle, icon } from './control-bar.js';
+import { controlBar, paneHead, icon, look } from './control-bar.js';
 import { planFoot, nextLevel, type StatusLevel, type FootInfo } from './status-foot.js';
 import { formatWindowLabel } from './quota.js';
 import type { WorkbenchEvent } from './workbench-state.js';
@@ -62,6 +62,12 @@ export interface MonitorState {
   labelAsName?: boolean;
   /** How far the status card's brief is scrolled. */
   statusScroll?: number;
+  /**
+   * The panes as a browser's tabs: one shown at a time, the bar's tabs
+   * switching between them, and `modes` kept as the stacked panes left them.
+   * The panel sets it from settings.
+   */
+  tabbed?: boolean;
 }
 export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
@@ -70,7 +76,9 @@ export interface RowControl { kind: MonitorControl['kind']; item?: string; x: nu
  * `item` is what a click selects. `key` names the block a row belongs to, so a scrolled view can
  * keep its place; `controls` are click targets on the row.
  */
-export interface MonitorRow { text: string; item?: string; key?: string; controls?: RowControl[] }
+export interface MonitorRow { text: string; item?: string; key?: string; controls?: RowControl[];
+  /** The text shortened, for where it does not fit: the agents' counts without their words. */
+  short?: string }
 export interface MonitorRect {
   id: MonitorPane;
   x: number; y: number; width: number; height: number;
@@ -502,24 +510,26 @@ export function summaryRow(input: MonitorData, state: MonitorState, width: numbe
   for (const {node} of everyone) totals[node.status === 'running' || node.status === 'starting' ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
   // What the linger window puts away, counted whether or not it is showing.
   const expired = countExpired(input.tree.nodes,{...state.tree,showAll:false},now);
-  // "!1 失败 ▸1 运行 ✓5 完成": an icon and a count alone said nothing to a
-  // reader without the legend, so each count carries its word where it fits.
-  const words = width >= 22;
-  const count = (icon: string, paint: (s: string) => string, n: number, word: string) =>
-    `${paint(icon)}${n}${words ? colors.dim(` ${t(word)}`) : ''}`;
-  // Only what is there: "▸0 run" beside thirty finished agents is noise.
-  // A column in, under the entries' status icons; failures lead.
-  const summary = [
-    totals.error ? count('!',theme.error,totals.error,'failed') : '',
-    totals.done ? count('✓',theme.success,totals.done,'done') : '',
-    totals.run ? count('▸',theme.info,totals.run,'run') : '',
-    totals.unknown ? count('?',colors.dim,totals.unknown,'unknown') : '',
-  ].filter(Boolean).join(words ? '  ' : ' ');
   // Guardian reviews under the main session count here, not as agents.
   const reviews = guardianCount(input.tree.nodes).count;
-  const chip = reviews ? `${guardianChip(input.tree.nodes)}${words ? colors.dim(` ${t('reviews')}`) : ''}` : '';
-  const headed = chip ? `${summary}${summary ? ' ' : ''}${chip}` : summary;
-  return {row:{text:headed ? truncateAnsi(' '+headed,width) : ''},total:everyone.length,expired};
+  // "!1 失败  ▸1 运行  ✓5 完成": an icon and a count alone said nothing to a
+  // reader without the legend, so each count carries its word; the short
+  // form, the counts alone, is for where the words do not fit.
+  const build = (words: boolean) => {
+    const count = (icon: string, paint: (s: string) => string, n: number, word: string) =>
+      `${paint(icon)}${n}${words ? colors.dim(` ${t(word)}`) : ''}`;
+    // Only what is there: "▸0 run" beside thirty finished agents is noise.
+    // A column in, under the entries' status icons; failures lead.
+    const counts = [
+      totals.error ? count('!',theme.error,totals.error,'failed') : '',
+      totals.done ? count('✓',theme.success,totals.done,'done') : '',
+      totals.run ? count('▸',theme.info,totals.run,'run') : '',
+      totals.unknown ? count('?',colors.dim,totals.unknown,'unknown') : '',
+      reviews ? `${guardianChip(input.tree.nodes)}${words ? colors.dim(` ${t('reviews')}`) : ''}` : '',
+    ].filter(Boolean).join(words ? '  ' : ' ');
+    return counts ? truncateAnsi(' '+counts,width) : '';
+  };
+  return {row:{text:build(true),short:build(false)},total:everyone.length,expired};
 }
 
 /**
@@ -1152,25 +1162,31 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     if(height>1)frame.lines.push(colors.dim(`↕ ${state.helpScroll+1}/${help.length}`));
     frame.lines = frame.lines.slice(0,height).map(line=>truncateAnsi(line,width));return frame;
   }
-  // A pane is drawn as the status card is: a band naming it, then its rows
+  // A pane is drawn as the status card is: a title naming it, then its rows
   // behind a gutter on the left only. Under 24 columns the gutter is its rule
-  // alone, without the space after it.
-  const gutter = width>=24 ? '│ ' : '│';
-  const inner = Math.max(0,width-gutter.length);
+  // alone, without the space after it. In the frame look the rows sit
+  // between the frame's sides instead, `cw` wide, and the side is the gutter.
+  const framed = look(width) === 'frame';
+  const cw = framed ? width-4 : width;
+  const gutter = framed ? '' : width>=24 ? '│ ' : '│';
+  const inner = Math.max(0,cw-gutter.length);
   const now = input.nowMs ?? Date.now();
   const notice = input.notice || input.error;
-  const noticeRows = notice && height >= 6 ? wrapped(notice,Math.max(1,width-2)).slice(0,2) : [];
+  const noticeRows = notice && height >= 6 ? wrapped(notice,Math.max(1,cw-2)).slice(0,2) : [];
   // The status card takes the foot, at the level chosen, at most about half
   // the panel; it replaces the key hint's own line.
   const footPlan = planFoot(input,state,width,height,now,noticeRows.length);
   const footRows = footPlan.rows;
-  let budget = Math.max(0,height-1-footRows-noticeRows.length);
+  // Every control the panel has is on its first rows; nothing else is a button.
+  const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
+  const top = Math.min(height,bar.lines.length);
+  let budget = Math.max(0,height-top-footRows-noticeRows.length);
   // A closed pane takes no row at all.
   const ids = MONITOR_PANES.filter(id=>state.modes[id] !== 'closed' && (!state.zoom || id===state.focus));
   // Agents has no band of its own: its summary line, pinned at its top, is
   // painted as one. The other panes have a band row above their rows.
   const edgeOf = (id: MonitorPane) => id === 'agents' ? 0 : 1;
-  const content = new Map(ids.map(id=>[id,id === 'agents' ? agentsView(input,state,width,now,true) : paneRows(id,input,state,edgeOf(id) ? inner : width,now)]));
+  const content = new Map(ids.map(id=>[id,id === 'agents' ? agentsView(input,state,cw,now,true) : paneRows(id,input,state,inner,now)]));
   const sizes = new Map<MonitorPane,number>();
   for (const id of ids) { sizes.set(id,budget>0?1:0); if (budget>0) budget--; }
   const order = [state.focus,...ids.filter(id=>id!==state.focus)].filter(id=>ids.includes(id));
@@ -1194,17 +1210,24 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   // view is so short that blank lines would hide most of what it could show.
   const agentsHeight = sizes.get('agents') ?? 0;
   if (ids.includes('agents') && agentsHeight < DENSE_BELOW && (content.get('agents')?.length ?? 0) > agentsHeight)
-    content.set('agents',agentsView(input,state,width,now,false));
+    content.set('agents',agentsView(input,state,cw,now,false));
   frame.lines = Array.from({length:height},()=>fit('',width));
-  // Every control the panel has is on its first row; nothing else is a button.
-  const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
-  frame.lines[0] = bar.line;
-  frame.controls.push(...bar.controls);
-  let y = 1;
+  bar.lines.slice(0,top).forEach((line,i)=>{frame.lines[i]=fit(line,width);});
+  frame.controls.push(...bar.controls.filter(control=>control.y<top));
+  // The rows that are titles: in the frame look they are its edges, not rows between its sides.
+  const titles = new Set<number>();
+  let y = top;
   for (const id of ids) {
     const h = sizes.get(id) ?? 0; if (!h) continue;
     const rows = content.get(id) ?? [];
-    if (id === 'agents') { drawAgentsView(frame,state,rows,y,width,h); y += h; continue; }
+    const focused = id===state.focus;
+    const zoomed = state.zoom && focused;
+    if (id === 'agents') {
+      // Its title, then the counts the summary row has; where its rows are on the right.
+      drawAgentsView(frame,state,rows,y,cw,h,(summary,range)=>paneHead(id,width,{info:summary,right:range && colors.dim(range),focused,zoomed}),framed ? 2 : 0);
+      if (rows.length) titles.add(y);
+      y += h; continue;
+    }
     const edge = edgeOf(id);
     const count = Math.max(0,h-edge);
     let offset = Math.max(0,Math.min(state.scroll[id],Math.max(0,rows.length-count)));
@@ -1212,20 +1235,15 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const index = selected ? rows.findIndex(row=>row.item===selected) : -1;
     if (index>=0 && count>0) { if(index<offset)offset=index;else if(index>=offset+count)offset=index-count+1; }
     state.scroll[id]=offset;
-    const pane = {id,x:0,y,width,height:h,rows,offset,contentLength:rows.length,edge,pinned:0}; frame.panes.push(pane);
-    const focused = id===state.focus;
-    // The band: the pane's icon and name on the left, where its rows are or
-    // how many there are on the right. Zoomed, it sits on the accent, as the
-    // focused tab does; a click anywhere on it zooms or restores the pane.
-    const zoomed = state.zoom && focused;
-    const title = paneTitle(id);
-    const name = zoomed ? theme.bold(title.name) : focused ? theme.bold(theme.accent(title.name)) : theme.bold(title.name);
-    const left = ' '+(title.icon ? theme.bold(theme.value(title.icon))+' ' : '')+name;
+    const pane = {id,x:framed ? 2 : 0,y,width:cw,height:h,rows,offset,contentLength:rows.length,edge,pinned:0}; frame.panes.push(pane);
+    // The title: the pane's icon and name on the left, where its rows are or
+    // how many there are on the right, as the look draws it; a click anywhere
+    // on it zooms or restores the pane.
     const range = rows.length>count&&count ? `${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length}` : '';
     const total = id==='worktrees' ? input.worktrees?.entries.length ?? 0 : id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? input.timeline?.length ?? 0 : 0;
     const right = range || (total ? t(id==='worktrees'?'{n} worktrees':id==='changes'?'{n} files':'{n} events',{n:total}) : '');
-    const band = zoomed ? theme.tab : theme.band;
-    frame.lines[y] = band(fit(pair(left,right ? colors.dim(right)+' ' : '',width),width));
+    frame.lines[y] = paneHead(id,width,{right:right && colors.dim(right),focused,zoomed});
+    titles.add(y);
     frame.controls.push({kind:'zoom',pane:id,x:0,y,width});
     // The gutter in the pane's state colour: the accent where the keys go.
     const rule = focused ? theme.accent : colors.dim;
@@ -1236,13 +1254,22 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       // a selected short name should not paint a bar across the pane.
       const highlight=row?.item&&row.item===selected&&focused;
       const body=(highlight?theme.selected(clipped):clipped)+' '.repeat(Math.max(0,inner-visualLength(clipped)));
-      frame.lines[y+1+i]=truncateAnsi(rule(gutter)+body,width);
+      frame.lines[y+1+i]=truncateAnsi(rule(gutter)+body,cw);
     }
     y+=h;
   }
   const foot = height-footRows;
-  if(input.art) placeArt(frame.lines,foot-noticeRows.length,width,input.art);
-  for(let i=0;i<noticeRows.length;i++) frame.lines[foot-noticeRows.length+i]=theme.warning(fit(noticeRows[i],width));
+  if(input.art) placeArt(frame.lines,foot-noticeRows.length,cw,input.art,top);
+  for(let i=0;i<noticeRows.length;i++) frame.lines[foot-noticeRows.length+i]=theme.warning(fit(noticeRows[i],cw));
+  if (framed) {
+    // Between the frame's sides: the left one in the accent beside the pane the keys go to.
+    const shown = frame.panes.find(pane=>pane.id===state.focus);
+    for (let row = top; row < foot; row++) {
+      if (titles.has(row)) continue;
+      const side = shown && row >= shown.y && row < shown.y+shown.height ? theme.accent : theme.frame;
+      frame.lines[row] = `${side('│')} ${fit(frame.lines[row],cw)} ${theme.frame('│')}`;
+    }
+  }
   footPlan.draw(frame,foot);
   return frame;
 }
@@ -1253,9 +1280,9 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
  * brief or the card. It only ever takes lines nothing else drew on, so it
  * goes away by itself as agents and brief text need the room.
  */
-function placeArt(lines: string[], end: number, width: number, art: NonNullable<MonitorData['art']>): void {
+function placeArt(lines: string[], end: number, width: number, art: NonNullable<MonitorData['art']>, first = 1): void {
   let start = end;
-  while (start > 1 && stripAnsi(lines[start-1]).trim() === '') start--;
+  while (start > first && stripAnsi(lines[start-1]).trim() === '') start--;
   const rows = end-start-2;
   if (rows <= 0 || width < 8) return;
   const drawing = art(width-2,rows);

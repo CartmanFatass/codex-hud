@@ -8,7 +8,7 @@ import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
 import { SETTING_ROWS, renderSettingsPage, handleSettingsInput } from '../../src/render/settings-page.js';
 import { stripAnsi, visualLength, colors, theme } from '../../src/render/colors.js';
-import { setDisplayConfig } from '../../src/render/hud-config.js';
+import { setDisplayConfig, LOOKS } from '../../src/render/hud-config.js';
 import { MODEL_GLYPHS, EFFORT_GLYPHS } from '../../src/render/model-glyphs.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
 import type { WorktreesSnapshot } from '../../src/collectors/worktrees.js';
@@ -142,10 +142,10 @@ test('the agents area closes like any pane, and its setting is kept',()=>{
 
 test('the control bar: ⌂ targets the root UUID; every column of the row is some button',()=>{
   const frame=draw();
-  for(const x of [0,1,4])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
-  // The same step from each icon to the next, the spare columns at the two ends.
-  assert.equal(stripAnsi(frame.lines[0]),'    ⌂  ▦  ⌥  ±  ◫  ≣  ⚙  ?    ');
-  assert.equal(stripAnsi(draw(withWorktrees(),45).lines[0]),'    ⌂    ▦    ⌥    ±    ◫    ≣    ⚙    ?     ');
+  for(const x of [0,1,2])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
+  // The focused pane's tab filled, with its word; the actions at the right end.
+  assert.equal(stripAnsi(frame.lines[0]),' ⌂  ▦ Agents  ⌥ ± ◫ ≣     ⚙ ? ');
+  assert.equal(stripAnsi(draw(withWorktrees(),45).lines[0]),' ⌂  ▦ Agents    ⌥ Trees   ±   ◫   ≣      ⚙ ? ');
   const column=(glyph:string)=>[...stripAnsi(frame.lines[0])].indexOf(glyph);
   assert.equal(handleMonitorInput(frame.state,mouse(29,0),{tree,worktrees,frame}).state.help,true,'the columns after ? are still Help');
   assert.equal(handleMonitorInput(frame.state,mouse(column('?'),0),{tree,worktrees,frame}).state.help,true,'Help opens the help');
@@ -170,16 +170,18 @@ test('a pane\'s button opens or closes it in one click; a click on its band zoom
   const tab=(pane:string)=>frame.controls.find(c=>c.kind==='tab'&&c.pane===pane)!;
   assert.ok(!frame.controls.some(c=>c.y>0&&(c.kind==='tab'||c.kind==='settings'||c.kind==='help')),'no switch below the bar');
   const box=frame.panes.find(p=>p.id==='worktrees')!;
-  // The band: its icon and name on the left, how many on the right.
+  // The title: its icon and name on the left, how many on the right; on the band in the band look.
   assert.match(stripAnsi(frame.lines[box.y]),/^ ⌥ Worktrees +2 worktrees $/u);
-  assert.ok(frame.lines[box.y].startsWith(theme.band('').replace(/\x1b\[0m$/,'')),'on the band');
+  const looked=setDisplayConfig({look:'band'});
+  try{assert.ok(draw(withWorktrees(),45).lines[box.y].startsWith(theme.band('').replace(/\x1b\[0m$/,'')),'on the band');}
+  finally{setDisplayConfig(looked);}
   assert.ok(stripAnsi(frame.lines[box.y+1]).startsWith('│ '),'its rows behind a gutter');
   assert.ok(!frame.controls.some(c=>c.y===box.y&&c.kind!=='zoom'),'the band draws no button');
   let state=handleMonitorInput(frame.state,mouse(box.width-3,box.y),ctx()).state;
   assert.equal(state.zoom,true,'a click on the band zooms');assert.equal(state.focus,'worktrees');assert.equal(state.modes.worktrees,'open');
   frame=draw(state,45);
   assert.deepEqual(frame.panes.map(p=>p.id),['worktrees'],'zoomed, the pane fills the panel');
-  assert.ok(frame.lines[1].startsWith(theme.tab('').replace(/\x1b\[0m$/,'')),'zoomed, its band is on the accent');
+  assert.ok(frame.lines[1].includes(theme.tab(theme.bold(' ⌥ Worktrees '))),'zoomed, its title is a filled tab');
   state=handleMonitorInput(state,mouse(3,1),ctx()).state;
   assert.equal(state.zoom,false,'a second click restores it');
   frame=draw(state,45);
@@ -196,6 +198,37 @@ test('a pane\'s button opens or closes it in one click; a click on its band zoom
   state=handleMonitorInput(state,mouse(tab('agents').x,0),ctx()).state;
   assert.equal(state.modes.agents,'closed');
   frame=draw(state,45);assert.deepEqual(frame.panes.map(p=>p.id),['worktrees'],'the other panes take its room');
+});
+
+test('every look draws the panel to its width; the frame look closes its frame round the panes, and their rows still click',()=>{
+  for(const look of LOOKS){
+    const looked=setDisplayConfig({look});
+    try{
+      for(const width of [20,24,30,45]){
+        for(const state of [withWorktrees(),{...withWorktrees(),focus:'worktrees' as const,zoom:true}]){
+          const frame=draw(state,width);
+          frame.lines.forEach((line,y)=>assert.equal(visualLength(line),width,`${look} ${width} row ${y}: "${stripAnsi(line)}"`));
+        }
+      }
+    }finally{setDisplayConfig(looked);}
+  }
+  const looked=setDisplayConfig({look:'frame'});
+  try{
+    const frame=draw({...withWorktrees(),focus:'worktrees'},36);
+    const lines=frame.lines.map(stripAnsi);
+    assert.match(lines[0],/^╭─ ⌂ .* ─╮$/,'the main session and the actions in its top edge');
+    assert.match(lines[1],/^│ .*│$/,'the tabs between its sides');
+    assert.match(lines.at(-1)!,/^╰─+╯$/,'no status card: the frame closes on a row of its own');
+    const box=frame.panes.find(p=>p.id==='worktrees')!;
+    assert.match(lines[box.y],/^├─ ⌥ Worktrees .* ─┤$/,'a pane\'s title is an edge of the frame');
+    for(let y=box.y+1;y<box.y+box.height;y++)assert.match(lines[y],/^│ .* │$/,lines[y]);
+    assert.ok(frame.lines[box.y+1].startsWith(theme.accent('│')),'the focused pane\'s side in the accent');
+    assert.equal(box.x,2,'its rows start inside the frame');
+    const row=box.rows.findIndex(r=>r.item==='/demo/docs');
+    assert.equal(handleMonitorInput(frame.state,mouse(4,box.y+1+row),{tree,worktrees,frame}).state.selectedWorktree,'/demo/docs','a click on a row selects it');
+    const zoom=handleMonitorInput(frame.state,mouse(35,box.y),{tree,worktrees,frame}).state;
+    assert.equal(zoom.zoom,true,'a click anywhere on the title zooms');
+  }finally{setDisplayConfig(looked);}
 });
 
 test('keyboard motion only previews; Inspector remains closed until explicitly opened',()=>{

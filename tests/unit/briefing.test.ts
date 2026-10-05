@@ -156,7 +156,7 @@ test('the agents summary stays at the top while the list under it scrolls', () =
   state.tree.selectedId = many.nodes[0].id; // started last, so listed last
   const frame = renderMonitor({ tree: many, state, width: 30, height: 12, nowMs: now });
   const pane = frame.panes[0];
-  assert.match(stripAnsi(frame.lines[pane.y]), /^ ▸30 run +\d+–30\/30 $/, 'its band, and which rows are in view');
+  assert.match(stripAnsi(frame.lines[pane.y]), /^ ▦ Agents {2}▸30 run +\d+–30\/30 $/, 'its title, and which rows are in view');
   assert.ok(pane.offset > 0);
   assert.ok(frame.lines.some(line => /agent-0\b/.test(stripAnsi(line))), 'the selection is scrolled into view');
 });

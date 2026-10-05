@@ -38,6 +38,7 @@ import { briefFields, BRIEF_KEEP, type BriefField } from './cards.js';
 import { tonePaint, type StatusCard, type StatusTone } from './status-block.js';
 import { colors, theme, truncateAnsi, visualLength, stripAnsi } from './colors.js';
 import { t } from './i18n.js';
+import { look } from './control-bar.js';
 
 export type StatusLevel = 'min' | 'status' | 'full';
 const LEVELS: readonly StatusLevel[] = ['min', 'status', 'full'];
@@ -144,9 +145,15 @@ function briefRows(fields: BriefField[], room: number): string[] {
 
 export function planFoot(input: MonitorData, state: MonitorState, width: number, height: number, now: number, notices: number): FootPlan {
   const level = shownLevel(state);
+  // In the frame look the card closes the panel's frame: its band is an edge
+  // of it, its rows sit between its sides and its corner row is its foot.
+  // With no card the frame closes on a row of its own.
+  const framed = look(width) === 'frame';
   // Under 24 columns the card would cost more than it holds, and with nothing
   // to say it is not drawn: the foot is the panel's. The keys are the bar's.
-  const hint: FootPlan = { rows: 0, draw() {} };
+  const hint: FootPlan = framed && height > 2
+    ? { rows: 1, draw(frame, foot) { frame.lines[foot] = theme.frame(`╰${'─'.repeat(Math.max(0, width - 2))}╯`); } }
+    : { rows: 0, draw() {} };
   if (width < 24) return hint;
   const session = input.session?.(now) ?? null;
   const card = input.status?.(now) ?? null;
@@ -156,9 +163,11 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
 
   // A click anywhere on the band steps the level.
   const band = (frame: MonitorFrame, y: number, line: string) => {
-    frame.lines[y] = theme.band(line);
+    frame.lines[y] = framed ? line : theme.band(line);
     frame.controls.push({ kind: 'level', x: 0, y, width });
   };
+  // The band's ends: a column of band each side, or the frame's edge.
+  const edge = (open: string, close: string) => framed ? [`${theme.frame(open)} `, ` ${theme.frame(close)}`] : [' ', ' '];
   const meter = card?.context;
   // The brief's state, wherever a brief is configured: data, not a switch.
   const said = briefState(input, now);
@@ -173,20 +182,22 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
   const left = (state: string): Pieces => [['state', state], ['rate', card?.rate ?? ''], ['tasks', card?.tasks ?? ''],
     ['model', card?.model ?? ''], ['age', card?.age ?? '']];
 
-  const cap = Math.min(Math.floor(height / 3), height - 1 - notices - MIN_VIEW);
+  // The bar's rows: two in the frame look.
+  const cap = Math.min(Math.floor(height / 3), height - (framed ? 2 : 1) - notices - MIN_VIEW);
   if (level === 'min' || !card || cap < 2) {
     if (height <= 1) return { rows: 0, draw() {} };
     // One line: the band, and the quota's reading where the corner row would have had it.
     // An approval waited on says what it waits on, as the alerts row would have.
     const shown = session?.attention ? session.text : stateText;
+    const [lead, trail] = edge('╰─', '─╯');
     return { rows: 1, draw(frame, foot) {
-      band(frame, foot, fitRow(width, ' ', ' ', left(shown), [['brief', said], ['quota', card?.quota?.text ?? '']], meter,
+      band(frame, foot, fitRow(width, lead, trail, left(shown), [['brief', said], ['quota', card?.quota?.text ?? '']], meter,
         ['rate', 'tasks', 'age', 'tail', 'model', 'brief', 'bar', 'quota', 'label'], truncateAnsi, BAND_BAR));
       frame.statusCard = { y: foot, height: 1, brief: 0, total: 0, offset: 0 };
     } };
   }
 
-  const inner = width - 2;
+  const inner = width - (framed ? 4 : 2);
   const rule = tonePaint(tone);
   const alerts = card.alerts.slice(0, Math.max(0, cap - 2));
   const fields = level === 'full' ? briefFields(input, inner) : [];
@@ -202,11 +213,13 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
   state.statusScroll = offset;
   const rows = 2 + alerts.length + shown + (overflow ? 1 : 0);
   return { rows, draw(frame, foot) {
-    band(frame, foot, fitRow(width, ' ', ' ', left(stateText), [['brief', said]], meter,
+    const [lead, trail] = edge('├─', '─┤');
+    band(frame, foot, fitRow(width, lead, trail, left(stateText), [['brief', said]], meter,
       ['rate', 'tasks', 'age', 'tail', 'model', 'brief', 'bar', 'label'], truncateAnsi, BAND_BAR));
     let y = foot + 1;
-    // A gutter on the left only: the text gets the column a right border would take.
-    const row = (text: string) => { frame.lines[y++] = rule('│ ') + fit(text, inner); };
+    // A gutter on the left only: the text gets the column a right border would
+    // take. In the frame look the gutter is the frame's side, and the other side closes the row.
+    const row = (text: string) => { frame.lines[y++] = rule('│ ') + fit(text, inner) + (framed ? ` ${theme.frame('│')}` : ''); };
     for (const alert of alerts) row(alert);
     for (const line of lines.slice(offset, offset + shown)) row(line);
     if (overflow) {
@@ -215,7 +228,7 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
     }
     const quota = card.quota;
     // Narrow, the branch goes first, then the window's name, then the repository.
-    frame.lines[y] = fitRow(width, `${rule('╰─')} `, '',
+    frame.lines[y] = fitRow(width, `${rule('╰─')} `, framed ? ` ${theme.frame('─╯')}` : '',
       [['project', card.project || card.place], ['repo', card.repo ?? ''], ['branch', card.branch ?? ''], ['window', quota?.window ?? '']],
       [['others', card.others], ['spent', quota?.spent ?? ''], ['forecast', card.forecast], ['reset', card.reset], ['cache', card.cache]],
       quota ? { percent: quota.percent } : undefined, ['others', 'branch', 'window', 'repo', 'forecast', 'bar', 'reset', 'label'], squeezePlace,

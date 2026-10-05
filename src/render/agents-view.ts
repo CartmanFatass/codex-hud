@@ -1,26 +1,27 @@
 /**
- * The agents view as one scrolling viewport: the summary line pinned at the
- * top as the view's band, the rest (cards, or the tree, brief and log)
+ * The agents view as one scrolling viewport: its title, with the summary's
+ * counts, pinned at the top, the rest (cards, or the tree, brief and log)
  * scrolling under it. Pure: it writes into the frame it is given.
  */
 import type { MonitorFrame, MonitorState, MonitorRow } from './monitor.js';
-import { fit, pair } from './monitor.js';
-import { colors, theme } from './colors.js';
+import { fit } from './monitor.js';
 
 /** Rows one wheel step scrolls the agents view. */
 export const WHEEL_ROWS = 3;
 
 /**
- * Draw the agents view at `y`, `height` rows tall: the summary line stays
- * put, on the band as a pane's title is, and the rest scrolls under it. When
- * it does not all fit, the band's right end says which rows are in view
- * ("4–19/46"); a click on the band zooms the view, or restores it.
+ * Draw the agents view at `y`, `height` rows tall: its title stays put, as
+ * `head` draws it from the summary line's counts (with their words, then
+ * without), and the rest scrolls under
+ * it. When it does not all fit, the title's right end says which rows are in
+ * view ("4–19/46"); a click on the title zooms the view, or restores it.
  *
  * Where it is scrolled to is kept by block, not by row (`anchor`): content
  * arriving above what the reader is looking at does not move it. The view
  * follows the selection only when the selection moves.
  */
-export function drawAgentsView(frame: MonitorFrame, state: MonitorState, rows: MonitorRow[], y: number, width: number, height: number): void {
+export function drawAgentsView(frame: MonitorFrame, state: MonitorState, rows: MonitorRow[], y: number, width: number, height: number,
+  head: (summary: string[], range: string) => string, x = 0): void {
   const pinned = Math.min(1,height,rows.length);
   const room = height-pinned;
   const body = Math.max(0,rows.length-pinned);
@@ -51,16 +52,18 @@ export function drawAgentsView(frame: MonitorFrame, state: MonitorState, rows: M
   const top = pinned+offset;
   const keyed = rows.findIndex((row,i)=>i>=top&&row.key!==undefined);
   state.anchor = keyed >= 0 ? {key:rows[keyed].key!,delta:top-first(rows[keyed].key!),offset} : undefined;
-  frame.panes.push({id:'agents',x:0,y,width,height,rows,offset,contentLength:rows.length,edge:0,pinned,visible:pinned+shown});
+  frame.panes.push({id:'agents',x,y,width,height,rows,offset,contentLength:rows.length,edge:0,pinned,visible:pinned+shown});
   for (let i = 0; i < pinned+shown; i++) {
     const row = i < pinned ? rows[i] : rows[offset+i];
     if (!row) continue;
     frame.lines[y+i] = fit(row.text,width);
-    for (const control of row.controls ?? []) if (control.width > 0 && control.x < width) frame.controls.push({...control,x:Math.min(width-1,control.x),y:y+i,width:Math.max(1,Math.min(control.width,width-control.x))});
+    for (const control of row.controls ?? []) if (control.width > 0 && control.x < width) frame.controls.push({...control,x:x+Math.min(width-1,control.x),y:y+i,width:Math.max(1,Math.min(control.width,width-control.x))});
   }
   if (pinned) {
-    const range = overflow && shown > 0 ? `${offset+1}–${offset+shown}/${body} ` : '';
-    frame.lines[y] = theme.band(fit(pair(rows[0].text,range && colors.dim(range),width),width));
-    frame.controls.push({kind:'zoom',pane:'agents',x:0,y,width});
+    // The title spans the frame's sides too, where there is a frame.
+    const range = overflow && shown > 0 ? `${offset+1}–${offset+shown}/${body}` : '';
+    const summary = [rows[0].text,rows[0].short ?? ''].map(text=>text.replace(/^ /,'')).filter(Boolean);
+    frame.lines[y] = head(summary,range);
+    frame.controls.push({kind:'zoom',pane:'agents',x:0,y,width:width+2*x});
   }
 }
