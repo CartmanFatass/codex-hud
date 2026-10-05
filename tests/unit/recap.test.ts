@@ -9,6 +9,7 @@ import { recapInput, parseRecapPart, RecapStore, delegationDigest, previousRecap
 import { Briefer, briefSystemPrompt, parseBrief } from '../../src/collectors/briefing.js';
 import type { SmallModel, ModelRequest } from '../../src/collectors/small-model.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput, flowLines } from '../../src/render/monitor.js';
+import { recapFields } from '../../src/render/cards.js';
 import { stripAnsi, visualLength, theme } from '../../src/render/colors.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
@@ -328,6 +329,20 @@ test('wrapped text fills its lines: Chinese breaks between any two characters, a
     for (const line of lines) assert.ok(visualLength(line) <= width, `${width}: ${line}`);
     if (width >= 6) for (const line of lines.slice(1)) assert.doesNotMatch(line, /^[，。」]/, `${width}: ${lines.join('|')}`);
   }
+});
+
+test('the last done item fills its lines to the full width; only its last line keeps room for the dim +N', () => {
+  const recap = (item: string): Recap => ({ goal: 'g', now: 'n', done: ['a', 'b', 'Reproduced it', item], at: now, coveredUntil: now, sessionId: 's', language: 'zh' });
+  const done = (item: string, width: number) => recapFields(recap(item), width).find(field => field.id === 'done')!.lines.map(stripAnsi);
+  // The count takes no room from the lines before the last.
+  assert.deepEqual(done('提交 release 说明并推送到 main 分支', 33), ['✓ Reproduced it', '  提交 release 说明并推送到 main', '  分支 +2']);
+  // A last line too full for the count is filled again short of it; one with room keeps it.
+  assert.deepEqual(done('一二三四五六七八九十甲乙丙丁戊己', 34), ['✓ Reproduced it', '  一二三四五六七八九十甲乙丙丁', '  戊己 +2']);
+  assert.deepEqual(done('一二三四五六七八九十甲乙丙丁戊己', 37), ['✓ Reproduced it', '  一二三四五六七八九十甲乙丙丁戊己 +2']);
+  // Cut short, the item still ends in the count.
+  const cut = done('一二三四五六七八九十甲乙丙丁戊己庚辛壬癸子丑寅卯', 20);
+  assert.equal(cut.at(-1), '  十甲乙丙丁戊 … +2');
+  for (const line of cut) assert.ok(visualLength(line) <= 20, line);
 });
 
 const recapView: Recap = { goal: 'Fix the flaky cache test in the parser', done: ['Reproduced the failure', 'Found the race'],

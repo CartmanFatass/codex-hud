@@ -143,8 +143,13 @@ function doneField(done: readonly string[], width: number, column: number): Brie
   const lines: string[] = [];
   items.forEach((item,index) => {
     const last = index === items.length-1;
-    // The last item leaves room for the count, so it never wraps alone.
-    const wrapped = clipLines(flowLines(monitorText(item),Math.max(1,room-(last ? suffix.length : 0))),FIELD_LINES,room-(last ? suffix.length : 0)).lines;
+    // The last item's last line leaves room for the count, so it never wraps
+    // alone; the lines before it are filled to the full width.
+    let flowed = flowLines(monitorText(item),room);
+    const tail = flowed.at(-1) ?? '';
+    if (last && suffix && visualLength(tail)+suffix.length > room)
+      flowed = [...flowed.slice(0,-1),...flowLines(tail,Math.max(1,room-suffix.length))];
+    const wrapped = clipLines(flowed,FIELD_LINES,room-(last ? suffix.length : 0)).lines;
     wrapped.forEach((line,i) => {
       const label = !index && !i ? fieldLabel('done',column)+' ' : ' '.repeat(column+1);
       lines.push(label+(i ? ' '.repeat(lead) : mark)+line+(last && i === wrapped.length-1 && suffix ? colors.dim(suffix) : ''));
