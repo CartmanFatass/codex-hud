@@ -67,7 +67,7 @@ test('the brief\'s fields sit inline behind icons, or behind words padded to one
   const icons = full('glyph').slice(2, -1).map(line => line.slice(2).trimEnd());
   assert.deepEqual(icons, ['! Approve npm test', '◎ Fix the flaky cache test in the parser', '▸ Waiting on reader agent', '✓ Reproduced the failure', '  Found the race']);
   const words = full('text').slice(2, -1).map(line => line.slice(2).trimEnd());
-  assert.deepEqual(words, ['Needs Approve npm test', 'Goal  Fix the flaky cache', '      test in the parser', 'Now   Waiting on reader agent',
+  assert.deepEqual(words, ['Needs Approve npm test', 'Goal  Fix the flaky cache test in the', '      parser', 'Now   Waiting on reader agent',
     'Done  ✓ Reproduced the failure', '      ✓ Found the race']);
   assert.match(withGlyphs('text', () => card(draw(rich({ statusLevel: 'full' }), {}, 80)))[0], / ~5m ago $/);
   // The Chinese labels line up on display columns.
@@ -240,4 +240,32 @@ test('y is no longer a key: nothing copies the recap', () => {
   const frame = draw(rich());
   assert.ok(!frame.controls.some(c => (c.kind as string) === 'copy'));
   assert.ok(!plain(frame).some(line => line.includes('y copy')));
+});
+
+test('a blank row parts the sections where the panel is tall enough: under the bar, between panes, above the card', () => {
+  const blank = (line: string) => line.trim() === '';
+  const state = rich({ modes: { ...initialMonitorState().modes, timeline: 'open' } });
+  const frame = draw(state, { timeline: [] });
+  const lines = plain(frame);
+  const [agents, timeline] = frame.panes;
+  assert.ok(blank(lines[1]) && agents.y === 2, 'under the bar');
+  assert.ok(blank(lines[timeline.y - 1]) && timeline.y === agents.y + agents.height + 1, 'between the panes');
+  assert.ok(blank(lines[frame.statusCard!.y - 1]) && frame.statusCard!.y === timeline.y + timeline.height + 1, 'above the card');
+  // Short of rows, the panes keep them.
+  const short = draw(state, { timeline: [] }, 32, 24);
+  assert.equal(short.panes[0].y, 1);
+  assert.equal(short.panes[1].y, short.panes[0].y + short.panes[0].height);
+  // In the frame look its edges part the sections; in the tabs layout the one pane is parted from the bar and the card.
+  const previous = setDisplayConfig({ look: 'frame' });
+  try {
+    const framed = draw(state, { timeline: [] });
+    assert.equal(framed.panes[0].y, 2, 'the title edge right under the tabs');
+    assert.equal(framed.panes[1].y, framed.panes[0].y + framed.panes[0].height);
+  } finally {
+    setDisplayConfig(previous);
+  }
+  const tabbed = draw({ ...state, tabbed: true });
+  assert.equal(tabbed.panes.length, 1);
+  assert.equal(tabbed.panes[0].y, 2);
+  assert.equal(tabbed.statusCard!.y, tabbed.panes[0].y + tabbed.panes[0].height + 1);
 });

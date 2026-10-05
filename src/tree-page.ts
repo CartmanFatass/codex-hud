@@ -529,7 +529,7 @@ async function runLivePage(): Promise<void> {
             armCollect();
             loadArt();
             state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
-              tabbed:settings.paneLayout === 'tabs',style:settings.panelStyle,statusLevel:settings.statusCard,labelAsName:settings.labelAsName,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
+              tabbed:settings.paneLayout === 'tabs',zoom:false,style:settings.panelStyle,statusLevel:settings.statusCard,labelAsName:settings.labelAsName,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
             git=null;diff=undefined;diffKey='';void refreshGit();
             if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
             settingsPage.message = t('Saved');

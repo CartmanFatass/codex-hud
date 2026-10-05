@@ -237,7 +237,8 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const state = rich({ tree: { ...rich().tree, lingerMs: 180_000 } });
   const frame = renderMonitor({ tree: tree([named, old]), state, width: 32, height: 30, nowMs: now });
   const lines = plain(frame);
-  assert.equal(lines[1].trimEnd(), ' ▦ Agents  ✓1 done  ▸1 run', 'each count with its word, the hidden one counted');
+  assert.equal(lines[1], ' '.repeat(32), 'a blank row under the bar, the panel being tall enough');
+  assert.equal(lines[frame.panes[0].y].trimEnd(), ' ▦ Agents  ✓1 done  ▸1 run', 'each count with its word, the hidden one counted');
   assert.match(lines[0], /⊕1 ⚙ \? $/, lines[0]);
   assert.ok(!lines.some(line => line.includes('old_one')));
   const older = frame.controls.find(c => c.kind === 'older')!;
@@ -378,7 +379,7 @@ test('guardian reviews fold into a ◈N chip on their parent, or on the summary 
   const state = rich({ tree: { ...rich().tree, showAll: true } });
   const frame = renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now });
   const lines = plain(frame);
-  assert.match(lines[1], /^ ▦ Agents {2}!1 failed {2}✓1 done {2}▸1 run {2}◈1 reviews/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
+  assert.match(lines[frame.panes[0].y], /^ ▦ Agents {2}!1 failed {2}✓1 done {2}▸1 run {2}◈1 reviews/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
   const top = lines.find(line => line.includes('bench_corpus'))!;
   assert.match(top, /◈2/);
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');

@@ -265,70 +265,83 @@ function helpLines(text: string, width: number): string[] {
   return lines;
 }
 /**
- * Wrap prose that may mix Chinese and English. A line can break between any
- * two CJK characters but not inside a Latin word, so a Chinese sentence fills
- * its lines instead of breaking only at the few spaces it has. A word longer
- * than a line is split anyway. Takes sanitized text.
+ * Wrap prose that may mix Chinese and English, filling each line: a line can
+ * break between any two characters of Chinese, as Chinese is set, but not
+ * inside a Latin word. A word longer than a line is split anyway. Takes
+ * sanitized text.
  */
-const wordSegmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter('zh',{granularity:'word'}) : null;
-/**
- * What a line may break between: runs of ASCII, spaces, and for other text
- * its words where the runtime can tell them (「实验」 is not split into 实 and
- * 验), else its characters.
- */
+const graphemes = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined,{granularity:'grapheme'}) : null;
+/** What a line may break between: runs of ASCII, spaces, and each character of other text. */
 function flowTokens(text: string): string[] {
   const tokens: string[] = [];
   for (const run of text.match(/[\x21-\x7e]+|\s+|[^\s\x21-\x7e]+/gu) ?? []) {
-    if (/^[\s\x21-\x7e]/u.test(run) || !wordSegmenter) tokens.push(...(/^[\s\x21-\x7e]/u.test(run) ? [run] : run));
-    else for (const {segment} of wordSegmenter.segment(run)) tokens.push(segment);
+    if (/^[\s\x21-\x7e]/u.test(run)) tokens.push(run);
+    else if (graphemes) for (const {segment} of graphemes.segment(run)) tokens.push(segment);
+    else tokens.push(...run);
   }
   return tokens;
 }
+/**
+ * Closing punctuation stays with the text before it and opening punctuation
+ * with the text after it: a line that starts with "。" or "，", or ends with
+ * "「", reads as a stray mark.
+ */
+const CLOSING = /^[。，、；：！？）」』】》〉〕］｝”’…%,.;:!?)\]}]/u;
+const OPENING = /^[「『（《〈【〔［｛“‘]$/u;
 export function flowLines(text: string, width: number): string[] {
   if (width < 1) return [];
   const lines: string[] = [];
-  let line = '';
-  const push = () => { lines.push(line.trimEnd()); line = ''; };
-  // Closing punctuation stays with the text before it: a line that starts
-  // with "。" or "，" reads as a stray mark.
-  const closing = /^[。，、；：！？）」』】》〉…%,.;:!?)\]}]/u;
-  let last = '';
+  // The line's words, each with the space before it: a word moved down takes its space, and loses it there.
+  let parts: string[] = [];
+  const used = () => visualLength(parts.join(''));
+  const add = (piece: string) => { parts.push(parts.length ? piece : piece.trimStart()); };
+  const push = () => { lines.push(parts.join('').trimEnd()); parts = []; };
+  let space = false;
   for (const token of flowTokens(text)) {
-    if (/^\s+$/.test(token)) { if (line) line += ' '; continue; }
-    if (line && visualLength(line+token) > width) {
-      if (closing.test(token) && visualLength(line+token) <= width+2 && [...line].length > 1) {
-        // Carry the last word down with it rather than strand the mark; a
-        // word that is the whole line gives up its last character instead.
-        const whole = last && line.endsWith(last) && line.length > last.length;
-        const carried = whole ? last : [...line].pop()!;
-        line = line.slice(0,line.length-carried.length);
-        push();
-        line = carried;
-      } else push();
-    }
-    last = token;
+    if (/^\s+$/.test(token)) { space = parts.length > 0; continue; }
+    const piece = (space ? ' ' : '')+token;
+    space = false;
     if (visualLength(token) > width) {
-      for (const char of token) { if (visualLength(line+char) > width) push(); line += char; }
-    } else line += token;
+      [...token].forEach((char,i) => {
+        const bit = i ? char : piece.slice(0,piece.length-token.length)+char;
+        if (parts.length && used()+visualLength(bit) > width) push();
+        add(bit);
+      });
+      continue;
+    }
+    if (parts.length && used()+visualLength(piece) > width) {
+      let carried: string[] = [];
+      const room = (moved: string[]) => visualLength((moved.join('')+piece).trimStart()) <= width;
+      if (CLOSING.test(token)) {
+        // Down with the mark goes the word before it, and any marks just before that word.
+        const take: string[] = [];
+        while (parts.length-take.length > 1) {
+          take.unshift(parts[parts.length-1-take.length]);
+          if (!CLOSING.test(take[0].trimStart())) break;
+        }
+        if (take.length && !CLOSING.test(take[0].trimStart()) && room(take)) { carried = take; parts.length -= take.length; }
+      }
+      while (parts.length > 1 && OPENING.test(parts.at(-1)!.trim()) && room([parts.at(-1)!,...carried])) carried.unshift(parts.pop()!);
+      push();
+      for (const moved of carried) add(moved);
+    }
+    add(piece);
   }
-  if (line.trim()) push();
+  if (parts.length) push();
+  // A last line of one Chinese character, its closing marks aside, reads as
+  // a stray: the character before it comes down with it.
+  if (lines.length > 1) {
+    const split = (line: string) => graphemes ? [...graphemes.segment(line)].map(part=>part.segment) : [...line];
+    const last = split(lines.at(-1)!);
+    const before = split(lines.at(-2)!);
+    const bare = last.filter(char=>!CLOSING.test(char));
+    const lone = (char: string | undefined) => char !== undefined && !/^[\x00-\x7f]/.test(char) && !CLOSING.test(char) && !OPENING.test(char);
+    if (bare.length === 1 && lone(bare[0]) && before.length > 2 && lone(before.at(-1)) && visualLength(before.at(-1)!+lines.at(-1)!) <= width) {
+      lines[lines.length-1] = before.at(-1)!+lines.at(-1)!;
+      lines[lines.length-2] = before.slice(0,-1).join('').trimEnd();
+    }
+  }
   return lines;
-}
-/**
- * `flowLines`, evened out: the same number of lines, wrapped at the narrowest
- * width that still gives that number, so a paragraph does not end in a line
- * of one or two characters.
- */
-export function balancedLines(text: string, width: number): string[] {
-  const lines = flowLines(text,width);
-  if (lines.length < 2) return lines;
-  let best = lines;
-  for (let narrower = width-1; narrower >= Math.ceil(width/2); narrower--) {
-    const tried = flowLines(text,narrower);
-    if (tried.length !== lines.length) break;
-    best = tried;
-  }
-  return best;
 }
 /**
  * Icons stand in for the panel's words (a brief field's label, "ago" after a
@@ -1077,6 +1090,8 @@ function walkTree(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => 
 
 /** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
 const DENSE_BELOW = 12;
+/** Rows from which a blank row parts the panel's sections. */
+const PARTED_FROM = 30;
 
 /**
  * The agents view's rows, its summary line first: in rich style a card per
@@ -1193,6 +1208,14 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   // has rows, all of them, and there is nothing to zoom.
   const zoom = state.zoom && !state.tabbed;
   const ids = state.tabbed ? [state.focus] : MONITOR_PANES.filter(id=>state.modes[id] !== 'closed' && (!zoom || id===state.focus));
+  // Where the panel is tall enough a blank row parts its sections: under the
+  // bar, between two panes and above the status card. Not in the frame look,
+  // whose edges part them already, and never at a pane's expense: short of
+  // a title and a row for each pane besides, there are none.
+  const footed = footRows+noticeRows.length > 0;
+  let gaps = !framed && height >= PARTED_FROM && ids.length ? ids.length+(footed ? 1 : 0) : 0;
+  if (budget-gaps < 2*ids.length) gaps = 0;
+  budget -= gaps;
   // Agents has no band of its own: its summary line, pinned at its top, is
   // painted as one. The other panes have a band row above their rows.
   const edgeOf = (id: MonitorPane) => id === 'agents' ? 0 : 1;
@@ -1226,9 +1249,11 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   frame.controls.push(...bar.controls.filter(control=>control.y<top));
   // The rows that are titles: in the frame look they are its edges, not rows between its sides.
   const titles = new Set<number>();
-  let y = top;
+  let y = top+(gaps ? 1 : 0);
   for (const id of ids) {
     const h = sizes.get(id) ?? 0; if (!h) continue;
+    // The blank row after the pane before (the last one's is above the card).
+    if (gaps && y > top+1) y++;
     const rows = content.get(id) ?? [];
     const focused = id===state.focus;
     const zoomed = zoom && focused;

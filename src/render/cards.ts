@@ -37,7 +37,7 @@ import { t } from './i18n.js';
 import { agentTitle, type AgentTitle } from './agent-title.js';
 import {
   type MonitorData, type MonitorState, type MonitorRow, type RowControl,
-  monitorText, plainText, flowLines, balancedLines, age, agoText, nodeStatus, iconic, briefSaid, isLive, isQuiet, turnClock, squeeze, finishedAt,
+  monitorText, plainText, flowLines, age, agoText, nodeStatus, iconic, briefSaid, isLive, isQuiet, turnClock, squeeze, finishedAt,
   summaryRow, guardianChip, meterText, meterRow, type EdgeMeter,
   MODEL_LOG_KINDS, FRESH_FINISH_MS,
 } from './monitor.js';
@@ -85,11 +85,10 @@ export function hangLines(text: string, first: number, rest: number): string[] {
 
 /**
  * What an agent is for, under the name that identifies it: the model's name
- * for it, evened out, or else the task it was given, cut to `max` lines.
+ * for it, or else the task it was given, cut to `max` lines.
  */
 export function taskLines(title: AgentTitle, width: number, max = 2): {lines: string[]; clipped: boolean} {
   if (!title.task) return {lines:[],clipped:false};
-  if (title.renamed) return clipLines(balancedLines(title.task,width),max,width);
   return clipLines(flowLines(title.task,width),max,width);
 }
 
@@ -123,7 +122,7 @@ function fieldLabel(id: Exclude<BriefFieldId,'said'>, column: number): string {
  */
 function inlineField(id: Exclude<BriefFieldId,'said'>, value: string, width: number, column: number, paint: Paint = plain): BriefField {
   const room = Math.max(1,width-column-1);
-  const lines = clipLines(balancedLines(monitorText(value),room),FIELD_LINES,room).lines;
+  const lines = clipLines(flowLines(monitorText(value),room),FIELD_LINES,room).lines;
   return {id,lines:lines.map((line,i)=>(i ? ' '.repeat(column+1) : fieldLabel(id,column)+' ')+paint(line))};
 }
 
@@ -145,7 +144,7 @@ function doneField(done: readonly string[], width: number, column: number): Brie
   items.forEach((item,index) => {
     const last = index === items.length-1;
     // The last item leaves room for the count, so it never wraps alone.
-    const wrapped = clipLines(balancedLines(monitorText(item),Math.max(1,room-(last ? suffix.length : 0))),FIELD_LINES,room-(last ? suffix.length : 0)).lines;
+    const wrapped = clipLines(flowLines(monitorText(item),Math.max(1,room-(last ? suffix.length : 0))),FIELD_LINES,room-(last ? suffix.length : 0)).lines;
     wrapped.forEach((line,i) => {
       const label = !index && !i ? fieldLabel('done',column)+' ' : ' '.repeat(column+1);
       lines.push(label+(i ? ' '.repeat(lead) : mark)+line+(last && i === wrapped.length-1 && suffix ? colors.dim(suffix) : ''));

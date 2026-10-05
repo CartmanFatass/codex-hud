@@ -8,7 +8,7 @@ import { recapInput, parseRecapPart, RecapStore, delegationDigest, previousRecap
   MAIN_MATERIAL_CHARS, type Recap } from '../../src/collectors/recap.js';
 import { Briefer, briefSystemPrompt, parseBrief } from '../../src/collectors/briefing.js';
 import type { SmallModel, ModelRequest } from '../../src/collectors/small-model.js';
-import { initialMonitorState, renderMonitor, handleMonitorInput, balancedLines, flowLines } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput, flowLines } from '../../src/render/monitor.js';
 import { stripAnsi, visualLength, theme } from '../../src/render/colors.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
@@ -303,13 +303,31 @@ test('with scope both, opening the panel again is not paid for either, and the l
   assert.equal(second.asked.filter(request => request.feature === 'recap').length, 1, 'news since then is still asked about');
 });
 
-test('wrapped text is evened out: same line count, no stranded last word', () => {
-  const plain = flowLines('核对 A/B/C/D 基准结果与独立复核', 27);
-  const even = balancedLines('核对 A/B/C/D 基准结果与独立复核', 27);
-  assert.equal(even.length, plain.length);
-  assert.ok(visualLength(even.at(-1)!) > visualLength(plain.at(-1)!), 'the last line is no longer two characters');
-  assert.ok(even.every(line => visualLength(line) <= 27));
-  assert.deepEqual(balancedLines('short', 27), ['short']);
+test('wrapped text fills its lines: Chinese breaks between any two characters, a Latin word stays whole, and punctuation stays with its text', () => {
+  // The brief's goal: every line full but the last.
+  const goal = '整理测试数据补全文档，并在版本冻结前合并本轮改动';
+  assert.deepEqual(flowLines(goal, 36), ['整理测试数据补全文档，并在版本冻结前', '合并本轮改动']);
+  assert.deepEqual(flowLines(goal, 28), ['整理测试数据补全文档，并在版', '本冻结前合并本轮改动']);
+  // A Latin word is not split, and keeps the spaces round it.
+  assert.deepEqual(flowLines('核对 A/B/C/D 基准结果与独立复核', 27), ['核对 A/B/C/D 基准结果与独立', '复核']);
+  // A "，" that would start a line takes the character before it down with it.
+  assert.deepEqual(flowLines('一二三四五，六七', 10), ['一二三四', '五，六七']);
+  // A "「" that would end a line goes down with what it opens.
+  assert.deepEqual(flowLines('一二三四「五六」七', 10), ['一二三四', '「五六」七']);
+  // A last line is never one character alone: the one before it comes down too.
+  assert.deepEqual(flowLines('一二三四五', 8), ['一二三', '四五']);
+  assert.deepEqual(flowLines('提交 release 说明并推送到 main 分支', 33), ['提交 release 说明并推送到 main', '分支']);
+  assert.deepEqual(flowLines('一二三四五。', 8), ['一二三', '四五。']);
+  // A word longer than a line is split.
+  assert.deepEqual(flowLines('abcdefghij', 4), ['abcd', 'efgh', 'ij']);
+  assert.deepEqual(flowLines('short', 27), ['short']);
+  const long = `${goal} release 说明并推送到 main 分支。「下一步」等待指令，`;
+  for (let width = 2; width <= 40; width++) {
+    const lines = flowLines(long, width);
+    assert.equal(lines.join('').replace(/ /g, ''), long.replace(/ /g, ''), `${width}: nothing lost`);
+    for (const line of lines) assert.ok(visualLength(line) <= width, `${width}: ${line}`);
+    if (width >= 6) for (const line of lines.slice(1)) assert.doesNotMatch(line, /^[，。」]/, `${width}: ${lines.join('|')}`);
+  }
 });
 
 const recapView: Recap = { goal: 'Fix the flaky cache test in the parser', done: ['Reproduced the failure', 'Found the race'],
@@ -326,7 +344,7 @@ test('compact: the recap leads the brief area, labelled goal, done, now and need
   // Each field a label inline, its value after it, its wrapped lines hanging
   // under the value; no blank lines between fields; needs first.
   assert.deepEqual(lines.slice(rule + 2, rule + 8).map(line => line.trimEnd()), [
-    ' ! Approve npm test', ' ◎ Fix the flaky cache', '   test in the parser', ' ▸ Waiting on reader agent',
+    ' ! Approve npm test', ' ◎ Fix the flaky cache test in', '   the parser', ' ▸ Waiting on reader agent',
     ' ✓ Reproduced the failure', '   Found the race']);
   assert.ok(frame.lines[rule + 2].includes(theme.warning('Approve npm test')));
   assert.ok(frame.lines[rule + 2].includes(theme.warning('!')), 'the needs label is in the warning colour too');
