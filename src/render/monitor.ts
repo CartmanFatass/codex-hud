@@ -15,7 +15,7 @@ import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
 import { t } from './i18n.js';
 import { agentTitle } from './agent-title.js';
-import { briefFields, taskLines, richRows } from './cards.js';
+import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { drawAgentsView, WHEEL_ROWS } from './agents-view.js';
 import { planFoot, nextLevel, type StatusLevel, type FootInfo } from './status-foot.js';
 import { formatWindowLabel } from './quota.js';
@@ -535,7 +535,14 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     // is doing is the log's to say, under the tree.
     const squeezed = squeeze(monitorText(node.name),room);
     const name = dimName ? colors.dim(squeezed) : squeezed;
-    result.push({text:pair(prefix+name,right,width),item:node.id,key:`row:${node.id}`});
+    const selected = node.id === state.tree.selectedId;
+    const line = pair(prefix+name,right,width);
+    result.push({text:selected ? theme.selectedBand(fit(line,width)) : line,item:node.id,key:`row:${node.id}`});
+    // The selected row says how far its agent got, under its name; the rest
+    // stay one line each, so the tree stays compact.
+    const at = visualLength(prefix)+1;
+    const brief = selected && width > at+4 ? briefLine(node,input.agentLog?.get(node.id) ?? [],agentTitle(node)) : '';
+    if (brief) result.push({text:' '.repeat(at)+colors.dim(truncateAnsi(brief,width-at)),item:node.id,key:`row:${node.id}`});
   }
   if (result.length === 1) result.push({text:colors.dim(truncateAnsi(emptyAgentsText(input,state,total,expired),width))});
   return result;

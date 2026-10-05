@@ -28,13 +28,17 @@ const mouse=(x:number,y:number)=>({type:'mouse' as const,button:'left' as const,
 const withWorktrees=()=>{const state=initialMonitorState();state.modes.worktrees='open';return state;};
 const draw=(state=withWorktrees(),width=30,height=28)=>renderMonitor({tree,worktrees,state,width,height,nowMs:now});
 
-test('the default monitor is Agents alone, one row per agent, and no narratives',()=>{
-  const loud={...tree,nodes:nodes.map(n=>({...n,task:'SHOULD_NOT_SHOW_TASK',lastReport:{text:'SHOULD_NOT_SHOW_REPLY'.repeat(400),kind:'reply' as const,at:new Date(now)}}))};
+test('the default monitor is Agents alone, one row per agent, the selected one with a line on how far it got, and no narratives',()=>{
+  const loud={...tree,nodes:nodes.map(n=>({...n,task:'TASK_TEXT',lastReport:{text:'SHOULD_NOT_SHOW_REPLY'.repeat(400),kind:'reply' as const,at:new Date(now)}}))};
   for(const width of [16,20,30,45,70]){
     const frame=renderMonitor({tree:loud,worktrees,state:initialMonitorState(),width,height:28,nowMs:now});
     assert.deepEqual(frame.panes.map(p=>p.id),['agents']);
-    assert.equal(frame.panes[0].rows.filter(row=>row.item).length,2);
-    assert.doesNotMatch(stripAnsi(frame.lines.join('\n')),/SHOULD_NOT_SHOW|Reply|Task|Reports|Checks/);
+    const rows=frame.panes[0].rows.filter(row=>row.item);
+    assert.equal(new Set(rows.map(row=>row.item)).size,2);
+    assert.equal(rows.length,3,'the selected row has its second line, the other none');
+    const text=stripAnsi(frame.lines.join('\n'));
+    assert.doesNotMatch(text,/SHOULD_NOT_SHOW|Reply|Task|Reports|Checks/,'with no log, no agent words: the task says what it was for');
+    assert.equal(text.match(/TASK_TE/g)?.length,1);
   }
 });
 

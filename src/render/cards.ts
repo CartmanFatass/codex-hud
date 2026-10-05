@@ -1,25 +1,30 @@
 /**
- * The rich panel: a card per agent, and the main recap as a card above them,
- * all in the one scrolling view under the agents' summary line.
+ * The rich panel: a card per agent, all in the one scrolling view under the
+ * agents' summary line.
  *
  * A card is open on the right: a top rule, a bar down the left, a bottom
  * rule, so its text gets the column a closed box spends on its right side,
- * and it never reads as the status card at the foot, which is closed and
- * rounded. The border identifies the agent; the inside says what it is
- * doing:
+ * and it never reads as the status card at the foot. The border identifies
+ * the agent; the inside says, a line each, what it is for, the newest note
+ * a model wrote about it and its newest update:
  *
- *   ┌ ▸ ⌕ ablation_no_reranker ─ ★◐ Sol
+ *   ┌ ▸ ⌕ ablation_no_reranker ──────────── ★◐
  *   │ 去重排消融召回对比
- *   │
  *   │ ~ 召回下降，结果待核对
- *   │   6s
- *   └ ◷ 4m07s ─────────── ━━╸ 56% ▾
+ *   │ recall@10 0.71
+ *   └ ◷4m07s ─────────56%──────────────── ▾
  *
- * The rules and the bar take the status colour; a selected card's take the
- * accent and its top rule starts with "›". A card carries everything its tree
- * row did: status, name, model badge, context meter, turn clock, quiet or
- * failed, dimming once old news, the selection, its parent (by indent) and a
- * collapsed parent's count. Pure: no I/O.
+ * A finished agent a minute old is two lines instead: its row, and under it
+ * how far it got:
+ *
+ *  ✓ db_index_service          ☀◆ ────49%───── 19h
+ *    ~ 发布说明与文档已更新，无遗留
+ *
+ * The rules and the bar take the status colour; the selected card or row is
+ * marked "›" and its first line sits on the selected surface. A card carries
+ * everything its tree row did: status, name, model badge, context meter,
+ * turn clock, quiet or failed, dimming once old news, the selection, its
+ * parent (by indent) and a collapsed parent's count. Pure: no I/O.
  */
 import type { SubagentTreeNode } from '../types.js';
 import type { Brief } from '../collectors/briefing.js';
@@ -37,8 +42,6 @@ import {
   MODEL_LOG_KINDS, FRESH_FINISH_MS,
 } from './monitor.js';
 
-/** Lines of one entry in a closed card. */
-const ENTRY_LINES = 2;
 /** Lines of an expanded card's timeline; the rest is the Inspector's. */
 const TIMELINE_LINES = 20;
 /** Lines of the task text an expanded card ends with. */
@@ -213,8 +216,10 @@ function cardTime(node: SubagentTreeNode, now: number): string {
   if (isLive(node)) {
     const start = (node.turnStartedAt ?? node.startedAt)?.getTime();
     if (start === undefined || !Number.isFinite(start)) return iconic() ? theme.info('◌') : colors.dim(t('starting'));
-    const paint = isQuiet(node,now) ? theme.warning : theme.info;
-    return `${turnClock(node,now)} ${paint(clockText(now-start))}`;
+    const quiet = isQuiet(node,now);
+    // The clock face is the time's scale, in the tick colour; quiet, it is the warning.
+    const face = stripAnsi(turnClock(node,now));
+    return `${quiet ? theme.warning(face) : theme.tick(face)}${(quiet ? theme.warning : theme.info)(clockText(now-start))}`;
   }
   const at = settledAt(node);
   return at ? colors.dim(agoText(at,now)) : '';
@@ -250,16 +255,31 @@ export function cardEntryLines(entry: AgentLogEntry, width: number, now: number,
 }
 
 /**
- * The newest model-written entry, then the newest observed one; or the newest
- * observed alone. A status change is the bottom rule's to say ("◷ 4m07s",
- * "2m ago"), so it is not said twice here; the opened card lists it.
+ * What an agent last said, in brief, from its log: the newest note a model
+ * wrote about it, and the newest update in its own words, each as one line
+ * of sanitized text. A status change is the bottom rule's or the status
+ * icon's to say, so it is not news here. With no log there is no news: the
+ * panel is not a transcript unless the reader chose one (a backend, or the
+ * log switch); an opened card still shows the last report.
  */
-function briefEntries(log: readonly AgentLogEntry[]): AgentLogEntry[] {
-  const status = new Set(['started','finished','failed']);
-  const newest = (model: boolean) => [...log].reverse().find(entry=>MODEL_LOG_KINDS.has(entry.kind) === model && (model || !status.has(entry.kind)));
-  const note = newest(true);
-  const seen = newest(false);
-  return [note,seen].filter((entry): entry is AgentLogEntry => Boolean(entry));
+export function agentNews(log: readonly AgentLogEntry[]): {note?: string; update?: string} {
+  const flat = (text: string) => monitorText(plainText(text).replace(/\s+/g,' ').trim());
+  const note = [...log].reverse().find(entry=>MODEL_LOG_KINDS.has(entry.kind) && entry.text.trim());
+  const update = [...log].reverse().find(entry=>entry.kind === 'report' && entry.text.trim());
+  return {...(note ? {note:flat(note.text)} : {}),...(update ? {update:flat(update.text)} : {})};
+}
+
+/**
+ * The one line under a finished agent's row, saying how far it got:
+ * whichever there is first of the newest model note ("~ …"), its newest
+ * update in its own words, and what it was for. Plain text, uncut; empty
+ * when there is none of these.
+ */
+export function briefLine(node: SubagentTreeNode, log: readonly AgentLogEntry[], title: AgentTitle): string {
+  const news = agentNews(log);
+  if (news.note) return `~ ${news.note}`;
+  if (news.update) return news.update;
+  return isGuardian(node) ? '' : title.task ?? '';
 }
 
 /**
@@ -298,8 +318,12 @@ function contextMeter(node: SubagentTreeNode): EdgeMeter | undefined {
   return ctx ? {percent:ctx.percent} : undefined;
 }
 
-/** Columns of a one-line row's meter, so the meters line up down the list. */
+/** Columns of a one-line row's meter, so the meters line up down the list: 12 in a narrow panel, 16 from 56 columns. */
 const ROW_METER = 12;
+const ROW_METER_WIDE = 16;
+const ROW_METER_WIDE_AT = 56;
+/** Columns the brief line under a row is indented: under the name. */
+const BRIEF_INDENT = 3;
 
 /**
  * An age right-aligned in the column one-line rows share, as wide as a
@@ -311,47 +335,65 @@ function ageColumn(when: string): string {
   return ' '.repeat(Math.max(0,column-visualLength(when)))+when;
 }
 
+/** The selected row's first line on its own surface, as wide as the row. */
+function banded(text: string, width: number): string {
+  return theme.selectedBand(text+' '.repeat(Math.max(0,width-visualLength(text))));
+}
+
 /**
- * A finished agent as one line, in tree-row style: its name, a rule, its
- * guardian chip and model badge, then its context meter and how long ago, in
- * columns that line up down the list. Selecting it only marks it "›"; `e`,
- * Space or a click opens it into its card.
+ * A finished agent in two lines. The first in tree-row style: its status,
+ * its name, then its guardian chip and model badge, its context meter and
+ * how long ago, in columns that line up down the list. The second, dim and
+ * indented under the name, says how far it got (`briefLine`), cut to one
+ * line; without anything to say there is no second line. Selecting it marks
+ * it "›" and puts its first line on the selected surface; `e`, Space or a
+ * click opens it into its card.
  */
-function oneLineCard(row: PanelRow, state: MonitorState, width: number, now: number): MonitorRow {
+function oneLineCard(row: PanelRow, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   const node = row.node;
   const indent = Math.min(MAX_INDENT,row.depth,Math.max(0,width-8));
   const w = width-indent;
   const selected = node.id === state.tree.selectedId;
   const st = nodeStatus(node,now);
   const title = agentTitle(node);
-  const head = `${selected ? theme.accent('›') : ' '} ${st.paint(st.icon)} ${title.icon ? colors.dim(title.icon)+' ' : ''}`;
+  const head = `${selected ? theme.accent('›') : ' '}${st.paint(st.icon)} ${title.icon ? colors.dim(title.icon)+' ' : ''}`;
   const token = w < BADGE_MIN ? '' : renderModelEffortToken(node.model ? monitorText(node.model) : undefined, node.effort ? monitorText(node.effort) : undefined, {
     mode: w < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs,
   });
-  const badge = token ? colors.dim(stripAnsi(truncateAnsi(token,Math.max(2,Math.floor(w/4))))) : '';
+  // The badge keeps its colours: only the name steps back with old news.
+  const badge = token ? truncateAnsi(token,Math.max(2,Math.floor(w/4))) : '';
   const at = settledAt(node);
   const when = at ? agoText(at,now) : '';
   const meter = contextMeter(node);
-  const meterCols = meter && w >= METER_MIN+ROW_METER ? ROW_METER : 0;
+  const cells = w >= ROW_METER_WIDE_AT ? ROW_METER_WIDE : ROW_METER;
+  const meterCols = meter && w >= METER_MIN+cells ? cells : 0;
   const right = [guardianChip(node.children),badge].filter(Boolean).join(' ');
   const tail = `${right ? ' '+right : ''}${meter && meterCols ? ' '+meterText(meter,meterCols).text : ''}${when ? ' '+colors.dim(ageColumn(when)) : ''}`;
-  const room = Math.max(1,w-visualLength(head)-visualLength(tail)-2);
+  const room = Math.max(1,w-visualLength(head)-visualLength(tail)-1);
   const name = squeeze(title.name,room);
-  const dashes = Math.max(1,w-visualLength(head)-visualLength(name)-1-visualLength(tail));
-  const shownName = selected ? theme.accent(name) : colors.dim(name);
-  const text = truncateAnsi(`${head}${shownName} ${colors.dim('─'.repeat(dashes))}${tail}`,w);
-  return {text:' '.repeat(indent)+text,item:node.id,key:`card:${node.id}`,controls:[{kind:'expand',item:node.id,x:indent,width:w}]};
+  const gap = Math.max(1,w-visualLength(head)-visualLength(name)-visualLength(tail));
+  const shownName = selected ? theme.value(name) : colors.dim(name);
+  const first = truncateAnsi(`${head}${shownName}${' '.repeat(gap)}${tail}`,w);
+  const key = `card:${node.id}`;
+  const control = (x: number): RowControl[] => [{kind:'expand',item:node.id,x,width:w}];
+  const rows: MonitorRow[] = [{text:' '.repeat(indent)+(selected ? banded(first,w) : first),item:node.id,key,controls:control(indent)}];
+  const brief = briefLine(node,input.agentLog?.get(node.id) ?? [],title);
+  if (brief && w > BRIEF_INDENT+2) {
+    rows.push({text:' '.repeat(indent+BRIEF_INDENT)+colors.dim(truncateAnsi(brief,w-BRIEF_INDENT)),item:node.id,key,controls:control(indent)});
+  }
+  return rows;
 }
 
 /**
- * An agent's card. Collapsed: what it is for, then its newest news. Opened:
+ * An agent's card. Collapsed: what it is for, then its newest news, a line
+ * each, three lines at most. Opened:
  * its whole timeline as well, newest first (or, with no log, its last
  * report), then the task in full when the line at the top did not show all
  * of it.
  */
 export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
   const node = row.node;
-  if (isOneLine(node,input,state,now)) return [oneLineCard(row,state,width,now)];
+  if (isOneLine(node,input,state,now)) return oneLineCard(row,input,state,width,now);
   const indent = Math.min(MAX_INDENT,row.depth,Math.max(0,width-8));
   const w = width-indent;
   const lead = ' '.repeat(indent);
@@ -380,29 +422,35 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   // The name is the one thing on the rule to click to go to the agent's
   // session, so it alone is underlined; the rest of the rule opens the card.
   const shownName = colors.underline(name);
-  const named = selected ? theme.accent(shownName) : old || row.context ? colors.dim(shownName) : shownName;
+  const named = selected ? theme.accent(shownName) : old || row.context ? colors.dim(shownName) : theme.bold(shownName);
   const top = truncateAnsi(`${head}${named} ${paint('─'.repeat(dashes))}${tail}`,w);
   const nameAt = Math.min(w,visualLength(head));
-  rows.push({text:lead+top,item:node.id,key,controls:[
+  rows.push({text:lead+(selected ? banded(top,w) : top),item:node.id,key,controls:[
     {kind:'switch',item:node.id,x:indent+nameAt,width:Math.max(0,Math.min(visualLength(name),w-nameAt))},control(0,w)]});
 
-  // Inside: what the agent is doing.
+  // Inside: what the agent is doing. Closed, three lines at most, each cut
+  // to one: what it is for, the newest note a model wrote about it, and its
+  // newest update in its own words.
   const inner = Math.max(1,w-2);
   const body: string[] = [];
   const gap = () => { if (spaced && body.length) body.push(''); };
   // A guardian's task is Codex's review prompt, the same boilerplate every
   // time: never shown as what the agent is for.
-  const task = isGuardian(node) ? {lines:[],clipped:false} : taskLines(title,inner);
-  body.push(...task.lines.map(line=>title.renamed ? theme.strong(line) : line));
+  const purpose = isGuardian(node) ? undefined : title.task;
   // The log only when it is asked for (a backend, or the log switch): the
   // panel is not a transcript unless the reader chose one.
   const log = input.agentLog?.get(node.id) ?? [];
-  const news = briefEntries(log);
-  const settled = settledAt(node);
-  const ruleAge = settled && !isLive(node) ? age(settled,now) : undefined;
-  // Opened, the whole timeline stands in for the newest news.
-  if (!open && news.length) { gap(); for (const entry of news) body.push(...cardEntryLines(entry,inner,now,ENTRY_LINES,ruleAge)); }
-  if (open) {
+  const task = open && purpose ? taskLines(title,inner) : {lines:[],clipped:Boolean(purpose)};
+  if (!open) {
+    const news = agentNews(log);
+    if (purpose) body.push(title.renamed ? theme.strong(truncateAnsi(purpose,inner)) : truncateAnsi(purpose,inner));
+    if (news.note) body.push(colors.dim('~ ')+truncateAnsi(news.note,inner-2));
+    if (news.update) body.push(truncateAnsi(news.update,inner));
+  } else {
+    body.push(...task.lines.map(line=>title.renamed ? theme.strong(line) : line));
+    const settled = settledAt(node);
+    const ruleAge = settled && !isLive(node) ? age(settled,now) : undefined;
+    // Opened, the whole timeline stands in for the newest news.
     const timeline: string[] = [];
     let shown = 0;
     for (const entry of [...log].reverse()) {
@@ -432,7 +480,7 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   // Bottom rule: how long, how full, and the switch that opens the card.
   const folded = row.collapsed && row.hasChildren ? visibleRows(node.children,{...state.tree,collapsed:new Set()},now).length : 0;
   const left = [cardTime(node,now),folded ? colors.dim(iconic() ? `+${folded}` : t('+{n} folded',{n:folded})) : ''].filter(Boolean).join(colors.dim(' · '));
-  const toggle = theme.accent(open ? '▴' : '▾');
+  const toggle = colors.dim(open ? '▴' : '▾');
   // The rule's gap is the agent's context meter; short of room the meter
   // gives way to its reading, then the time is cut. Without context data the
   // gap is plain rule.
