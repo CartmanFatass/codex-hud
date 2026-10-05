@@ -22,7 +22,7 @@ Real-time statusline HUD for [OpenAI Codex CLI](https://github.com/openai/codex)
 
 > Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud) for Claude Code.
 
-![Codex HUD — the status bar while Codex works, and with a failed agent at its front](./docs/fig/bar.png)
+![Codex HUD — the status bar while Codex works, and with a failed agent and subtask at its front](./docs/fig/bar.png)
 
 ## Why Codex HUD?
 

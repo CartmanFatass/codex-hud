@@ -20,7 +20,7 @@
 
 > 灵感来源于 Claude Code 的 [claude-hud](https://github.com/jarrodwatts/claude-hud)。
 
-![Codex HUD — 状态栏：Codex 工作中，以及有 agent 失败时排在最前的告警](./docs/fig/bar.png)
+![Codex HUD — 状态栏：Codex 工作中，以及有 agent 和子任务失败时排在最前的告警](./docs/fig/bar.png)
 
 ## 为什么需要 Codex HUD？
 
