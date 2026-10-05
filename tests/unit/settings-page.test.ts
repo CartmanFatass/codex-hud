@@ -18,13 +18,20 @@ test('settings keyboard and mouse edit a draft, with explicit save/back actions'
   assert.ok(frame.state.offset>0);
   assert.ok(frame.lines.every(line=>visualLength(line)<=16));
   state=handleSettingsInput(frame.state,{type:'key',key:'right'},frame).state;
-  assert.equal(state.draft.treeWidth,56);
-  state=handleSettingsInput(state,{type:'key',key:'right'},frame).state;
-  assert.equal(state.draft.treeWidth,32,'narrow and wide, nothing in between');
+  assert.equal(state.draft.treeWidth,34,'two columns at a step');
+  state=handleSettingsInput(state,{type:'key',key:'left'},frame).state;
+  state=handleSettingsInput(state,{type:'key',key:'left'},frame).state;
+  assert.equal(state.draft.treeWidth,30);
+  for (const [from,key,to] of [[33,'right',34],[33,'left',32],[0,'right',24],[57,'left',56],[80,'right',24],[24,'left',80]] as const) {
+    const odd=handleSettingsInput({...state,draft:{...state.draft,treeWidth:from}},{type:'key',key},frame).state;
+    assert.equal(odd.draft.treeWidth,to,`${from} ${key}`);
+  }
 });
-test('two width presets, narrow by default, and the main session keeps its space',()=>{
-  assert.deepEqual([32,56].map(w=>panelWidth(w,160)),[32,56]);
-  assert.deepEqual(SETTING_ROWS.find(r=>r.key==='treeWidth')!.values,[32,56]);
+test('any even width from 24 to 80, 32 by default, and the main session keeps its space',()=>{
+  assert.deepEqual([32,44,56].map(w=>panelWidth(w,160)),[32,44,56]);
+  const widths=SETTING_ROWS.find(r=>r.key==='treeWidth')!.values;
+  assert.equal(widths[0],24);assert.equal(widths.at(-1),80);
+  assert.ok(widths.every((w,i)=>i===0||Number(w)-Number(widths[i-1])===2),'a step of two');
   assert.equal(defaultSettings().treeWidth,32);
   assert.equal(panelWidth(0,100),32,'a width from older settings, 0, is narrow');
   assert.equal(panelWidth(70,80),39);
@@ -50,12 +57,12 @@ test('narrow settings keep visible buttons aligned with hit targets and mark uns
 
 test('settings read in sections, values aligned on the right and written for people',()=>{
   const draft={...defaultSettings(),finishedLingerMs:0};
-  const frame=renderSettingsPage({draft,selected:0,offset:0,message:''},30,44);
+  const frame=renderSettingsPage({draft,selected:0,offset:0,message:''},30,50);
   const text=frame.lines.map(stripAnsi);
   for (const group of ['Status bar','Agents','LLM','Panel']) assert.ok(text.some(line=>line.startsWith(`── ${group} `)),group);
   const line=(key:string)=>text[frame.rows.indexOf(SETTING_ROWS.findIndex(row=>row.key===key))];
   assert.match(line('refreshMs'),/Refresh +1s$/);
-  assert.match(line('treeWidth'),/Width +narrow$/);
+  assert.match(line('treeWidth'),/Width +32 cols$/);
   assert.match(line('finishedLingerMs'),/Hide finished +never$/);
   assert.match(line('density'),/^› +Density +‹ balanced ›$/, 'the selected value shows it can be changed');
   assert.equal(text.at(-2),'How much the bar shows');

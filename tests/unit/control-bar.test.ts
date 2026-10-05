@@ -47,41 +47,53 @@ const everyPane = (extra: Partial<MonitorState> = {}) =>
     ...extra,
   });
 
-test('the chips grow with the panel: icon and word from 56 columns, side columns from 36, gaps from 44', () => {
+/** Where each icon on a plain bar is, and the columns before the first and after the last. */
+const rhythm = (line: string) => {
+  const at: number[] = [];
+  let col = 0;
+  for (const ch of line) {
+    if (ch !== ' ') at.push(col);
+    col += visualLength(ch);
+  }
+  return { steps: at.slice(1).map((c, i) => c - at[i]), lead: at[0], tail: col - at.at(-1)! - 1 };
+};
+
+test('the buttons are spread evenly at every width: one step between icons, the spare columns at the two ends', () => {
   inChinese(() => {
-    assert.equal(plain(everyPane(), 32), '←  ▦ ⎇ ± ⌖ ⋮          ‖ +31 ☰ ? ');
-    assert.equal(plain(everyPane(), 36), ' ←   ▦  ⎇  ±  ⌖  ⋮     ‖  +31  ☰  ? ');
-    assert.equal(plain(everyPane(), 44), ' ←   ▦   ⎇   ±   ⌖   ⋮      ‖   +31   ☰   ? ');
-    assert.equal(plain(everyPane(), 56), ' ←   ▦   ⎇   ±   ⌖   ⋮        ‖   +31   ☰ 设置   ? 帮助 ');
+    assert.equal(plain(everyPane(), 32), '  ⌂  ▦  ⌥  ±  ◫  ≣  ǁ  ⊕  ⚙  ?  ');
+    assert.equal(plain(everyPane(), 36), '    ⌂  ▦  ⌥  ±  ◫  ≣  ǁ  ⊕  ⚙  ?    ');
+    assert.equal(plain(everyPane(), 44), '   ⌂   ▦   ⌥   ±   ◫   ≣   ǁ   ⊕   ⚙   ?    ');
+    assert.equal(plain(everyPane(), 56), '     ⌂    ▦    ⌥    ±    ◫    ≣    ǁ    ⊕    ⚙    ?     ');
+    for (const input of [{ brief: {}, expired: 31 }, { expired: 0 }, { brief: { paused: true }, expired: 139 }]) {
+      for (const s of [state(), everyPane()]) {
+        for (let width = 12; width <= 94; width++) {
+          const text = plain(s, width, input as never);
+          // Where every word fits the buttons carry them, and the gaps are what is even.
+          if (/[\p{L}]{2}/u.test(text)) continue;
+          const { steps, lead, tail } = rhythm(text);
+          assert.equal(new Set(steps).size, 1, `${width}: one step from each icon to the next: "${text}"`);
+          assert.ok(Math.abs(lead - tail) <= 2, `${width}: the spare columns at both ends: "${text}"`);
+          assert.ok(steps[0] >= 2, `${width}: an icon never touches the next`);
+        }
+      }
+    }
+    // Wide enough for every word, each button carries its own, an equal gap between each two.
     assert.equal(
-      plain(everyPane(), 90),
-      ' ← 主会话   ▦   ⎇   ±   ⌖   ⋮                   ‖ 暂停简报   +31 已收起   ☰ 设置   ? 帮助 '
+      plain(everyPane(), 110),
+      '    ⌂ 主会话   ▦ 卡片   ⌥ 工作树   ± 改动   ◫ 详情   ≣ 时间线   ǁ 暂停简报   ⊕ 31 已收起   ⚙ 设置   ? 帮助    '
     );
-    assert.ok(plain(state({ tree: { ...initialMonitorState().tree, showAll: true } }), 90).includes(' −31 收起 '));
-    assert.ok(
-      plain(state(), 90, { brief: { paused: true }, expired: 0 })
-        .trimEnd()
-        .endsWith('▸ 继续简报   ☰ 设置   ? 帮助')
-    );
-    assert.ok(!plain(state(), 90, { expired: 0 } as never).includes('简报'), 'no brief configured, no button');
+    assert.ok(plain(state({ tree: { ...initialMonitorState().tree, showAll: true } }), 110).includes(' ⊖ 收起 '));
+    assert.ok(plain(state(), 110, { brief: { paused: true }, expired: 0 }).includes(' ▶ 继续简报 '));
+    assert.ok(!plain(state(), 110, { expired: 0 } as never).includes('简报'), 'no brief configured, no button');
   });
   assert.equal(
     plain(state(), 120),
-    ' ← Main   ▦ Agents   ⎇ Trees   ± Changes   ⌖ Inspect   ⋮ Timeline       ‖ Pause brief   +31 older   ☰ Settings   ? Help '
+    '  ⌂ Main   ▦ Agents   ⌥ Trees   ± Changes   ◫ Inspect   ≣ Timeline   ǁ Pause brief   ⊕ 31 older   ⚙ Settings   ? Help   '
   );
+  assert.ok(!/[a-z]/i.test(plain(state(), 110)), 'short of one word, no button has its word');
   withIcons('nerd', () => {
-    assert.equal(
-      at(plain(everyPane(), 36)),
-      ' @   @  @  @  @  @   @  @ +31  @  @ ',
-      'a Nerd Font icon keeps a column to spill into'
-    );
-    assert.equal(at(plain(everyPane(), 32)), '@  @ @ @ @ @        @ @ +31 @ @ ');
-    // A longer count lets the eye go before the chips lose their side columns.
-    assert.equal(
-      at(plain(everyPane(), 36, { brief: {}, expired: 139 })),
-      ' @   @  @  @  @  @    @  +139  @  @ ',
-      'the count alone, as the Unicode set has it'
-    );
+    assert.equal(at(plain(everyPane(), 36)), '    @  @  @  @  @  @  @  @  @  @    ', 'each icon has a column to spill into');
+    assert.equal(at(plain(everyPane(), 32)), '  @  @  @  @  @  @  @  @  @  @  ');
   });
   for (const width of [32, 36, 44, 56, 90]) {
     for (const lang of ['en', 'zh'] as const) {
@@ -112,20 +124,22 @@ test('the Nerd Font icons are one column each, and a cut never splits the robot 
   }
 });
 
-test('short of room the closed tabs go, then older and the brief; back, settings and help stay', () => {
+test('short of room the closed tabs go, then older and the brief, then the tabs; main, settings and help stay', () => {
   inChinese(() => {
     const s = state({ modes: { ...initialMonitorState().modes, timeline: 'open' } });
-    assert.equal(plain(s, 24), '←  ▦ ⎇ ± ⌖ ⋮  ‖ +31 ☰ ? ');
-    assert.equal(plain(s, 18), '←  ▦ ⋮  ‖ +31 ☰ ? ', 'the closed tabs go first');
-    assert.equal(plain(s, 13), '←  ▦ ⋮   ☰ ? ', 'then the older agents and the brief');
-    for (let width = 1; width <= 100; width++) {
+    assert.equal(plain(s, 24), '  ⌂ ▦ ⌥ ± ◫ ≣ ǁ ⊕ ⚙ ?   ');
+    assert.equal(plain(s, 18), '  ⌂ ▦ ≣ ǁ ⊕ ⚙ ?   ', 'the closed tabs go first');
+    assert.equal(plain(s, 13), '⌂ ▦ ≣ ǁ ⚙ ?  ', 'then the older agents');
+    assert.equal(plain(s, 8), '⌂ ▦ ⚙ ? ', 'then the brief and the tabs but the focused one');
+    assert.equal(plain(s, 6), '⌂ ⚙ ? ', 'then that one');
+    for (let width = 1; width <= 130; width++) {
       for (const icons of ['unicode', 'nerd', 'text'] as const) {
         const bar = withIcons(icons, () => controlBar(s, { brief: {}, expired: 31 }, width));
         const text = stripAnsi(bar.line);
         assert.equal(visualLength(bar.line), width, `${icons} ${width}: ${text}`);
         if (width >= 17 && icons === 'text') assert.match(text, /←.*设置.*帮助/, `${width}: ${text}`);
-        if (width >= 7 && icons === 'unicode') assert.match(text, /←.*☰.*\?/, `${width}: ${text}`);
-        if (width >= 7 && icons === 'nerd')
+        if (width >= 6 && icons === 'unicode') assert.match(text, /⌂.*⚙.*\?/, `${width}: ${text}`);
+        if (width >= 6 && icons === 'nerd')
           assert.match(text, new RegExp(`${ICONS.main}.*${ICONS.settings}.*${ICONS.help}`, 'u'), `${width}: ${text}`);
         for (const c of bar.controls) assert.ok(c.y === 0 && c.x >= 0 && c.x + c.width <= width, `${width}: ${c.kind}`);
       }
@@ -156,24 +170,27 @@ test('with icons off: words, shortened and cut with … where narrow', () => {
   }
 });
 
-test('a click anywhere on a chip, its side columns included, is its control', () => {
+test('a click anywhere on the bar is a button: each one owns its icon and the gap after it, the ends the first and last', () => {
   const s = state({ modes: { ...initialMonitorState().modes, worktrees: 'open' } });
-  for (const width of [32, 48, 120]) {
-    const bar = controlBar(s, { brief: {}, expired: 3 }, width);
-    const text = stripAnsi(bar.line);
-    const on = (kind: string, pane?: string) => {
-      const c = bar.controls.find((c) => c.kind === kind && (!pane || c.pane === pane))!;
-      return columns(text, c.x, c.width);
-    };
-    const size = width >= 56 ? 'wide' : width >= 36 ? 'pad' : 'tight';
-    const chip = (face: string) => (size === 'tight' ? `${face} ` : ` ${face} `);
-    assert.equal(on('main'), chip(size === 'wide' ? '← Main' : '←'), `${width}`);
-    assert.equal(on('tab', 'agents'), chip(size === 'wide' ? '▦ Agents' : '▦'));
-    assert.equal(on('tab', 'timeline'), chip(size === 'wide' ? '⋮ Timeline' : '⋮'));
-    assert.equal(on('brief'), chip(size === 'wide' ? '‖ Pause brief' : '‖'));
-    assert.equal(on('older'), chip(size === 'wide' ? '+3 older' : '+3'));
-    assert.equal(on('settings'), chip(size === 'wide' ? '☰ Settings' : '☰'));
-    assert.equal(on('help'), chip(size === 'wide' ? '? Help' : '?'));
+  for (const width of [24, 32, 36, 48, 56, 120]) {
+    for (const icons of ['unicode', 'nerd'] as const) {
+      const bar = withIcons(icons, () => controlBar(s, { brief: {}, expired: 3 }, width));
+      const text = stripAnsi(bar.line);
+      const controls = [...bar.controls].sort((a, b) => a.x - b.x);
+      assert.equal(controls[0].x, 0, `${width}`);
+      controls.forEach((c, i) => {
+        const next = controls[i + 1];
+        assert.equal(c.x + c.width, next ? next.x : width, `${width}: ${c.kind} meets the next`);
+        // Each control's own columns hold exactly one icon: its button's.
+        const own = columns(text, c.x, c.width).replace(/ /g, '');
+        assert.ok(own.length >= 1, `${width}: ${c.kind} has its icon: "${columns(text, c.x, c.width)}"`);
+      });
+      assert.deepEqual(
+        controls.map((c) => c.kind),
+        ['main', 'tab', 'tab', 'tab', 'tab', 'tab', 'brief', 'older', 'settings', 'help'],
+        `${width}: left to right`
+      );
+    }
   }
 });
 
@@ -186,31 +203,32 @@ test('the tabs say their state by their chip, the icon at full brightness: focus
     });
     for (const width of [32, 44]) {
       const line = controlBar(s, { expired: 0 }, width).line;
-      const pad = width >= 36 ? ' ' : '';
+      const pad = ' ';
       const face = (f: string) => `${pad}${f} `;
       // A chip's surface, then the face's own paint (the bar re-applies its own after each reset).
       const on = (surface: (s: string) => string, text: string) => surface(text).split('\x1b[0m')[0];
       assert.ok(line.includes(theme.tab(theme.bold(face('▦'))).split('\x1b[0m')[0]), `${width}: focused on the accent`);
-      assert.ok(line.includes(theme.bold(theme.value('⌖')).split('\x1b[0m')[0]), `${width}: closed, on the bar, bold`);
+      assert.ok(line.includes(theme.bold(theme.value('◫')).split('\x1b[0m')[0]), `${width}: closed, on the bar, bold`);
       assert.ok(
-        !line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('⌖'))}`)),
+        !line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('◫'))}`)),
         `${width}: closed has no chip`
       );
       assert.ok(line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('±'))}`)), `${width}: open, on a chip`);
-      assert.ok(line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('⎇'))}`)), `${width}: open, on a chip`);
+      assert.ok(line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('⌥'))}`)), `${width}: open, on a chip`);
       assert.ok(
-        line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('☰'))}`)),
+        line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('⚙'))}`)),
         `${width}: a button is a chip`
       );
       assert.ok(!line.includes('\x1b[2m'), `${width}: nothing on the bar is dimmed`);
       assert.ok(!line.includes('\x1b[4m'), `${width}: nothing is underlined`);
     }
     setDisplayConfig({ theme: 'none' });
+    // Without colour the focused tab is in brackets, in its chip's side columns, so nothing moves.
     const plainBar = controlBar(s, { expired: 0 }, 32);
-    assert.match(stripAnsi(plainBar.line), /^← {2}\[▦\] ⎇ ± {2,}☰ \? $/);
-    assert.match(stripAnsi(controlBar(s, { expired: 0 }, 44).line), /^ ← {2}\[▦\] {2}⎇ {3}± {2,}☰ {3}\? $/);
+    assert.equal(plainBar.line, '   ⌂   [▦]   ⌥    ±    ⚙    ?   ');
+    assert.deepEqual(rhythm(plainBar.line.replace(/[[\]]/g, ' ')).steps, [5, 5, 5, 5, 5], 'the brackets move no icon');
     const open = plainBar.controls.find((c) => c.kind === 'tab' && c.pane === 'worktrees')!;
-    assert.equal(columns(stripAnsi(plainBar.line), open.x, open.width), '⎇ ', 'each tab is clicked where it is drawn');
+    assert.equal(columns(plainBar.line, open.x, open.width), ' ⌥   ', 'each tab is clicked where it is drawn');
     assert.equal(
       controlBar(s, { expired: 0 }, 56).line,
       stripAnsi(controlBar(s, { expired: 0 }, 56).line),

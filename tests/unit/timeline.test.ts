@@ -100,7 +100,7 @@ test('the Timeline pane opens with 5, lists events with their ages, and is saved
     { id: '2', at: at(-300), title: '', detail: [], status: 'error' as const, kind: 'agent-failed' as const, subject: 'reader', cause: 'The test fixture is missing' }];
   const frame = renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now, timeline });
   const lines = frame.lines.map(stripAnsi);
-  assert.ok(lines.some(line => line.includes('⋮ Timeline')));
+  assert.ok(lines.some(line => line.includes('≣ Timeline')));
   assert.ok(lines.some(line => /2m ⏎ Turn finished/.test(line)), 'with glyphs on a finished turn is ⏎ and its words');
   assert.ok(lines.some(line => /5m reader ✗/.test(line)), 'with glyphs on an agent\'s failure is its name and ✗');
   assert.ok(lines.some(line => /~ The test fixture/.test(line)), 'a model-written cause is marked');
@@ -201,7 +201,7 @@ test('the key help lists every key, the new ones included, in both languages', a
   const en = lines();
   for (const key of ['5 Timeline', 'Ctrl+] 1–5 open / close a pane', 'Ctrl+] b pause / resume brief', 'Ctrl+] r status card: min / status', "Click the card's band: its level",
     'Click a log line: select agent', '~ = written by a model', 'Ctrl+] f filter', 'Ctrl+] h l fold / unfold agent', 'Ctrl+] g G first / last',
-    'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+], then a key', 'Ctrl+] Ctrl+] Ctrl+] itself, to Codex', '☰ settings ? help']) assert.ok(en.includes(key), key);
+    'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+], then a key', 'Ctrl+] Ctrl+] Ctrl+] itself, to Codex', '⚙ settings ? help']) assert.ok(en.includes(key), key);
   // The prefix the settings chose is the one the help names.
   const other = renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now, prefix: 'Ctrl+\\' }).lines.map(stripAnsi).join('\n');
   assert.ok(other.includes('Ctrl+\\ , settings') && !other.includes('Ctrl+]'), other);

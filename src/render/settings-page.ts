@@ -5,6 +5,7 @@ import { truncateAnsi, colors, theme, visualLength } from './colors.js';
 import { t, language } from './i18n.js';
 import { age } from './monitor.js';
 import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
+import { LOOKS, type IconMode, type LookName } from './hud-config.js';
 
 type SettingValue = string | number | boolean;
 
@@ -25,10 +26,15 @@ export interface SettingRow {
 const seconds = (value: SettingValue) => `${Number(value) / 1000}s`;
 const minutes = (value: SettingValue) => Number(value) === 0 ? 'never' : `${Number(value) / 60_000}m`;
 const PANE_HELP = 'Open or closed';
+/** Each look's name as the page says it. */
+const LOOK_WORDS: Record<LookName,string> = {tab:'Tab row',band:'Status band',tile:'Emoji tiles',frame:'Frame',pill:'Pills'};
+/** The icons each look was drawn with: picking a look puts them on, and Icons can change them after. */
+export const LOOK_ICONS: Record<LookName,IconMode> = {tab:'unicode',band:'unicode',tile:'emoji',frame:'unicode',pill:'nerd'};
+const ICON_WORDS: Record<IconMode,string> = {unicode:'Unicode',nerd:'Nerd Font',emoji:'Emoji',text:'text'};
 
 export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'density',group:'Status bar',label:'Density',short:'Density',values:['focus','balanced','full'],help:'How much the bar shows'},
-  {key:'theme',group:'Status bar',label:'Theme',short:'Theme',values:['terminal','mocha','latte','none'],help:'Colours of bar and panel'},
+  {key:'theme',group:'Status bar',label:'Theme',short:'Theme',values:['terminal','titanium','mocha','latte','none'],help:'Colours of bar and panel'},
   {key:'glyphs',group:'Status bar',label:'Model label',short:'Model',values:['glyph','text','both'],help:'Model as glyph, text, both'},
   {key:'motion',group:'Status bar',label:'Motion',short:'Motion',values:['full','reduced'],help:'Reduced keeps spinners still'},
   {key:'context',group:'Status bar',label:'Context',short:'Ctx',values:['used','remaining'],help:'Meter counts used or left'},
@@ -57,17 +63,23 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'changeSummary',group:'LLM',label:'Change summary',short:'Diff',values:[false,true],help:'Sends diff stat and hunks'},
   {key:'approvalDescription',group:'LLM',label:'Approval words',short:'Approve',values:[false,true],help:'Sends the command to approve'},
   {key:'panelStyle',group:'Panel',label:'Layout',short:'Layout',values:['rich','compact'],help:'Agent cards, or the tree and log'},
+  {key:'paneLayout',group:'Panel',label:'Panes',short:'Panes',values:['stack','tabs'],help:'Tabs: one pane at a time, from the bar',
+    format:value => value === 'tabs' ? 'tabs' : 'stacked'},
+  {key:'look',group:'Panel',label:'Look',short:'Look',values:LOOKS,help:'Bar and pane titles; sets their icons',
+    format:value => LOOK_WORDS[value as LookName] ?? String(value)},
+  {key:'icons',group:'Panel',label:'Icons',short:'Icons',values:['unicode','nerd','emoji','text'],help:'Nerd Font: needs that font',
+    format:value => ICON_WORDS[value as IconMode] ?? String(value)},
   {key:'statusCard',group:'Panel',label:'Status card',short:'Card',values:['full','status','min'],help:'Foot card: brief, status, one line'},
   {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and brief language'},
-  {key:'icons',group:'Panel',label:'Icons',short:'Icons',values:['unicode','nerd','text'],help:'Nerd Font: needs that font',
-    format:value => value === 'nerd' ? 'Nerd Font' : value === 'unicode' ? 'Unicode' : 'text'},
   {key:'worktreesPane',group:'Panel',label:'2 Worktrees',short:'2 Trees',values:['open','closed'],help:PANE_HELP},
   {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','closed'],help:PANE_HELP},
   {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','closed'],help:PANE_HELP},
   {key:'timelinePane',group:'Panel',label:'5 Timeline',short:'5 Events',values:['open','closed'],help:PANE_HELP},
-  {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:[32,56],help:'Panel columns',
+  // Any even width from 24 to 80 columns, a step of two at a time; Codex keeps 41 whatever is asked.
+  {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:Array.from({length:29},(_,i)=>24+2*i),
+    help:'Panel columns; Codex keeps 41',
     // 0, from an older settings file, is the panel's own choice.
-    format:value => ({0:'auto',32:'narrow',56:'wide'} as Record<number,string>)[Number(value)] ?? String(value)},
+    format:value => Number(value) === 0 ? 'auto' : t('{n} cols',{n:Number(value)})},
   {key:'art',group:'Panel',label:'Picture',short:'Art',values:['off','dots','color','ascii'],help:'Picture in empty space; codex-hud-art sets it'},
   {key:'mouse',group:'Panel',label:'Mouse',short:'Mouse',values:[true,false],help:'Click and scroll the panel'},
   {key:'prefixKey',group:'Panel',label:'Prefix key',short:'Prefix',values:PREFIX_KEYS,help:'Then a key: a panel command; others go to Codex',
@@ -76,7 +88,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
 ];
 
 /** Values that need a shorter word below 24 columns. */
-const NARROW_VALUES: Record<string,string> = {remaining:'left',balanced:'bal',terminal:'term',reduced:'less',created:'age'};
+const NARROW_VALUES: Record<string,string> = {remaining:'left',balanced:'bal',terminal:'term',reduced:'less',created:'age',
+  titanium:'ti','Tab row':'tab','Status band':'band','Emoji tiles':'tile',stacked:'stack'};
 
 export interface SettingsPageState { draft:HudSettings; selected:number; offset:number; message:string; original?:HudSettings }
 export interface SettingsFrame {
@@ -308,9 +321,17 @@ export function handleSettingsInput(state:SettingsPageState,input:WorkbenchInput
   if (next.selected !== moved) next.message = '';
   if (key === 'enter' || key === 'left' || key === 'right') {
     const row = SETTING_ROWS[next.selected];
-    const index = row.values.indexOf(next.draft[row.key]);
-    const value = row.values[(index+(key === 'left' ? row.values.length-1 : 1))%row.values.length];
+    const current = next.draft[row.key];
+    let index = row.values.indexOf(current);
+    if (index < 0 && typeof current === 'number') {
+      // A number between the steps (an odd width, a dragged border, the old presets): step from where it falls.
+      const above = row.values.findIndex(value => Number(value) > current);
+      index = key === 'left' ? (above < 0 ? row.values.length : above) : (above < 0 ? row.values.length-1 : above-1);
+    }
+    const value = row.values[(index+(key === 'left' ? row.values.length-1 : 1)+row.values.length)%row.values.length];
     next.draft = {...next.draft,[row.key]:value};
+    // A look comes with the icons it was drawn with.
+    if (row.key === 'look') next.draft.icons = LOOK_ICONS[value as LookName];
     next.message = '';
   }
   return {state:next};

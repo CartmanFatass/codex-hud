@@ -140,16 +140,17 @@ test('the agents area closes like any pane, and its setting is kept',()=>{
   }finally{if(old===undefined)delete process.env.CODEX_HUD_SETTINGS_PATH;else process.env.CODEX_HUD_SETTINGS_PATH=old;rmSync(home,{recursive:true,force:true});}
 });
 
-test('the control bar: ← and the main session\'s name target the root UUID; the rest of the row is other switches',()=>{
+test('the control bar: ⌂ targets the root UUID; every column of the row is some button',()=>{
   const frame=draw();
-  for(const x of [0,1])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
-  // Under 36 columns each button is its icon and a space; from 44 a chip with a column either side and a gap.
-  assert.equal(stripAnsi(frame.lines[0]),'←  ▦ ⎇ ± ⌖ ⋮              ☰ ? ');
-  assert.equal(stripAnsi(draw(withWorktrees(),45).lines[0]),' ←   ▦   ⎇   ±   ⌖   ⋮                 ☰   ? ');
-  assert.equal(handleMonitorInput(frame.state,mouse(20,0),{tree,worktrees,frame}).action,undefined,'the gap is no button');
-  assert.equal(handleMonitorInput(frame.state,mouse(29,0),{tree,worktrees,frame}).state.help,true,'the space after ? is still Help');
-  assert.equal(handleMonitorInput(frame.state,mouse(28,0),{tree,worktrees,frame}).state.help,true,'Help opens the help');
-  assert.deepEqual(handleMonitorInput(frame.state,mouse(26,0),{tree,worktrees,frame}).action,{type:'settings'});
+  for(const x of [0,1,4])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
+  // The same step from each icon to the next, the spare columns at the two ends.
+  assert.equal(stripAnsi(frame.lines[0]),'    ⌂  ▦  ⌥  ±  ◫  ≣  ⚙  ?    ');
+  assert.equal(stripAnsi(draw(withWorktrees(),45).lines[0]),'    ⌂    ▦    ⌥    ±    ◫    ≣    ⚙    ?     ');
+  const column=(glyph:string)=>[...stripAnsi(frame.lines[0])].indexOf(glyph);
+  assert.equal(handleMonitorInput(frame.state,mouse(29,0),{tree,worktrees,frame}).state.help,true,'the columns after ? are still Help');
+  assert.equal(handleMonitorInput(frame.state,mouse(column('?'),0),{tree,worktrees,frame}).state.help,true,'Help opens the help');
+  assert.deepEqual(handleMonitorInput(frame.state,mouse(column('⚙'),0),{tree,worktrees,frame}).action,{type:'settings'});
+  assert.deepEqual(handleMonitorInput(frame.state,mouse(column('⚙')+1,0),{tree,worktrees,frame}).action,{type:'settings'},'the column beside an icon is its button too');
   assert.deepEqual(handleMonitorInput(frame.state,key('main'),{tree,worktrees,frame}).action,{type:'switch',id:root});
 });
 
@@ -170,7 +171,7 @@ test('a pane\'s button opens or closes it in one click; a click on its band zoom
   assert.ok(!frame.controls.some(c=>c.y>0&&(c.kind==='tab'||c.kind==='settings'||c.kind==='help')),'no switch below the bar');
   const box=frame.panes.find(p=>p.id==='worktrees')!;
   // The band: its icon and name on the left, how many on the right.
-  assert.match(stripAnsi(frame.lines[box.y]),/^ ⎇ Worktrees +2 worktrees $/u);
+  assert.match(stripAnsi(frame.lines[box.y]),/^ ⌥ Worktrees +2 worktrees $/u);
   assert.ok(frame.lines[box.y].startsWith(theme.band('').replace(/\x1b\[0m$/,'')),'on the band');
   assert.ok(stripAnsi(frame.lines[box.y+1]).startsWith('│ '),'its rows behind a gutter');
   assert.ok(!frame.controls.some(c=>c.y===box.y&&c.kind!=='zoom'),'the band draws no button');
@@ -416,7 +417,7 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   let pane=frame.panes[0];
   assert.deepEqual(pane.rows.filter(r=>r.item).map(r=>r.item),[nodes[1].id]);
   assert.match(stripAnsi(pane.rows[0].text),/^ ✓1 done {2}▸1 run$/,'each count with its word');
-  assert.match(stripAnsi(frame.lines[0]),/ \+1 /);
+  assert.match(stripAnsi(frame.lines[0]),/⊕/,'the button that brings them back');
   const ctx={tree:finished,worktrees,frame,nowMs:now};
   assert.ok(!handleMonitorInput(frame.state,mouse(1,pane.y),ctx).state.tree.showAll,'the summary is no switch');
   const older=frame.controls.find(c=>c.kind==='older')!;
@@ -426,7 +427,7 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   frame=renderMonitor({tree:finished,worktrees,state:shown.state,width:30,height:28,nowMs:now});
   pane=frame.panes[0];
   assert.equal(pane.rows.filter(r=>r.item).length,2);
-  assert.ok(stripAnsi(frame.lines[0]).includes('−1 '));
+  assert.ok(stripAnsi(frame.lines[0]).includes('⊖'),'and the button that puts them away again');
   assert.equal(handleMonitorInput(frame.state,key('show-all'),{...ctx,frame}).state.tree.showAll,false);
   // A finished row carries no clock; it recedes once its finish is old news.
   const oldRow=pane.rows.find(r=>r.item===nodes[0].id)!.text;

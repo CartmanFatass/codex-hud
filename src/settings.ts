@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { HudDisplayConfig } from './render/hud-config.js';
+import { LOOKS, type HudDisplayConfig, type IconMode } from './render/hud-config.js';
 import { getCodexHome } from './utils/codex-path.js';
 import { PREFIX_KEYS, type PrefixKey } from './utils/panel-command.js';
 
@@ -32,6 +32,12 @@ export interface HudSettings extends HudDisplayConfig {
    * as a card above them; `compact`, the tree with the brief and log under it.
    */
   panelStyle: 'rich' | 'compact';
+  /**
+   * How the open panes share the panel: `stack`, one above the other, each
+   * opened and closed from the bar; `tabs`, one pane at a time over the whole
+   * panel, the bar's buttons switching between them as a browser's tabs do.
+   */
+  paneLayout: 'stack' | 'tabs';
   worktreeRoot: string;
   /**
    * Who writes the agents brief under the tree: nobody, `omp`, `agy`, or any
@@ -116,10 +122,10 @@ export interface HudSettings extends HudDisplayConfig {
   /**
    * The control bar's buttons and the panes' titles: Unicode icons
    * (`unicode`, the default), Nerd Font icons (`nerd`, for a terminal with
-   * one), each beside its word where it fits, or the words alone (`text`).
-   * `glyphs: text` means text here too.
+   * one), emoji for the panes (`emoji`), each beside its word where it fits,
+   * or the words alone (`text`). `glyphs: text` means text here too.
    */
-  icons: 'unicode' | 'nerd' | 'text';
+  icons: IconMode;
 }
 
 /** What the brief covers, from its two switches; null when neither is on. */
@@ -130,7 +136,7 @@ export function briefingScope(settings: Pick<HudSettings, 'briefAgents' | 'brief
 /** Built-in defaults; callers apply environment or runtime display overrides. */
 export function defaultSettings(): HudSettings {
   return {
-    density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
+    density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used', look: 'tab', paneLayout: 'stack',
     statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
     details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
     agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
@@ -156,7 +162,7 @@ const isText = (max: number) => (value: unknown): boolean =>
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusline: isBoolean,
   density: oneOf('focus', 'balanced', 'full'),
-  theme: oneOf('terminal', 'mocha', 'latte', 'none'),
+  theme: oneOf('terminal', 'mocha', 'latte', 'titanium', 'none'),
   glyphs: oneOf('glyph', 'text', 'both'),
   motion: oneOf('full', 'reduced'),
   context: oneOf('used', 'remaining'),
@@ -172,6 +178,8 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   detailsPane: oneOf('open', 'closed'),
   timelinePane: oneOf('open', 'closed'),
   panelStyle: oneOf('rich', 'compact'),
+  paneLayout: oneOf('stack', 'tabs'),
+  look: oneOf(...LOOKS),
   worktreeRoot: value => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   briefing: oneOf('off', 'omp', 'agy', 'api'),
   briefingMs: (value) => isIntegerBetween(value, 30_000, 3_600_000),
@@ -198,7 +206,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   art: oneOf('off', 'dots', 'color', 'ascii'),
   artImage: isText(4096),
   prefixKey: oneOf(...PREFIX_KEYS),
-  icons: oneOf('unicode', 'nerd', 'text'),
+  icons: oneOf('unicode', 'nerd', 'emoji', 'text'),
 };
 
 const PANE_KEYS = ['agentsPane', 'worktreesPane', 'changesPane', 'detailsPane', 'timelinePane'] as const;

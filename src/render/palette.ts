@@ -4,8 +4,8 @@
  * Components ask for meaning ("this is a warning"), never for a colour, so a
  * palette swap repaints the whole HUD consistently. `terminal` keeps the
  * original basic-ANSI look and inherits whatever the user's terminal theme
- * maps those codes to; the Catppuccin palettes pin exact colours; `none`
- * emits no escape sequences at all.
+ * maps those codes to; the Catppuccin palettes and omp's titanium pin exact
+ * colours; `none` emits no escape sequences at all.
  */
 
 import { displayConfig, type ThemeName } from './hud-config.js';
@@ -56,6 +56,15 @@ export interface Palette {
    */
   track: Paint;
   tick: Paint;
+  /** The rules of a look's frame and title lines: quieter than muted text, louder than the track. */
+  frame: Paint;
+  /**
+   * Text in the colour of the focused tab's surface and of a chip's, for a
+   * pill's rounded ends: the caps are glyphs, painted as text beside the
+   * surface they round off.
+   */
+  tabEdge: Paint;
+  chipEdge: Paint;
 }
 
 const ESC = '\x1b[';
@@ -77,6 +86,12 @@ function hexParts(hex: string): [number, number, number] {
 function rgb(hex: string): Paint {
   const [r, g, b] = hexParts(hex);
   return (text: string) => `${ESC}38;2;${r};${g};${b}m${text}${RESET}`;
+}
+
+/** Bold, in an exact colour: emphasis that keeps its hue. */
+function rgbBold(hex: string): Paint {
+  const [r, g, b] = hexParts(hex);
+  return (text: string) => `${ESC}1;38;2;${r};${g};${b}m${text}${RESET}`;
 }
 
 // Internal spans reset their own attributes. Restore the row highlight after
@@ -126,6 +141,9 @@ const TERMINAL: Palette = {
   track: ansi256(239),
   // Steel blue: a scale, not a state, so neither the info blue nor a grey.
   tick: ansi256(67),
+  frame: ansi256(240),
+  tabEdge: ansi256(31),
+  chipEdge: ansi256(238),
 };
 
 // Catppuccin Mocha and Latte, from the published palettes.
@@ -152,6 +170,9 @@ const MOCHA: Palette = {
   tab: highlight('48;2;137;180;250;38;2;30;30;46'),
   track: rgb('#585B70'),
   tick: rgb('#89B4FA'),
+  frame: rgb('#6C7086'),
+  tabEdge: rgb('#89B4FA'),
+  chipEdge: rgb('#45475A'),
 };
 
 const LATTE: Palette = {
@@ -179,6 +200,41 @@ const LATTE: Palette = {
   tab: highlight('48;2;30;102;245;38;2;239;241;245'),
   track: rgb('#BCC0CC'),
   tick: rgb('#209FB5'),
+  frame: rgb('#9CA0B0'),
+  tabEdge: rgb('#1E66F5'),
+  chipEdge: rgb('#CCD0DA'),
+};
+
+/**
+ * omp's titanium, as omp paints its status line and settings: aluminium text
+ * on dark titanium, electric blue where the attention goes, deep blue under
+ * the active tab, readout green, amber and alert red for state.
+ */
+const TITANIUM: Palette = {
+  name: 'titanium',
+  text: rgb('#E8ECF4'),
+  muted: rgb('#9CA3B0'),
+  accent: rgb('#00B4FF'),
+  success: rgb('#00FF88'),
+  warning: rgb('#FFB347'),
+  danger: rgb('#FF4757'),
+  info: rgb('#00B4FF'),
+  model: rgb('#D4C090'),
+  branch: rgb('#D06FED'),
+  project: rgbBold('#E8ECF4'),
+  strong: rgbBold('#E8ECF4'),
+  selected: highlight('48;2;31;37;45'),
+  agents: ['#5EC8FF', '#8FA8FF', '#B79CFF', '#D06FED', '#2AC3DE', '#D4C090'].map(rgb),
+  band: surface('#0F1216'),
+  bar: surface('#0F1216'),
+  selectedBand: surface('#1C2029'),
+  chip: surface('#2A3038'),
+  tab: highlight('48;2;0;130;179;38;2;232;236;244'),
+  track: rgb('#2A3038'),
+  tick: rgb('#6583A3'),
+  frame: rgb('#454C59'),
+  tabEdge: rgb('#0082B3'),
+  chipEdge: rgb('#2A3038'),
 };
 
 const NONE: Palette = {
@@ -203,12 +259,16 @@ const NONE: Palette = {
   tab: identity,
   track: identity,
   tick: identity,
+  frame: identity,
+  tabEdge: identity,
+  chipEdge: identity,
 };
 
 const PALETTES: Record<ThemeName, Palette> = {
   terminal: TERMINAL,
   mocha: MOCHA,
   latte: LATTE,
+  titanium: TITANIUM,
   none: NONE,
 };
 

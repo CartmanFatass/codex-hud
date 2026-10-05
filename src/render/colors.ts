@@ -83,6 +83,9 @@ export const theme = {
   tab: (text: string) => palette().tab(text),
   track: (text: string) => palette().track(text),
   tick: (text: string) => palette().tick(text),
+  frame: (text: string) => palette().frame(text),
+  tabEdge: (text: string) => palette().tabEdge(text),
+  chipEdge: (text: string) => palette().chipEdge(text),
   /** Bold, except with no colour at all: `none` emits no escapes. */
   bold: (text: string) => (palette().name === 'none' ? text : `${ESC}1m${text}${RESET}`),
 

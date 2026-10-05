@@ -64,15 +64,15 @@ test('the panel speaks Chinese and keeps its width at every size', () => {
     const frame = inChinese(() => renderMonitor({ tree, state: initialMonitorState(), width, height: 20, nowMs: now }));
     for (const line of frame.lines) assert.ok(visualLength(line) <= width, `${width}: ${stripAnsi(line)}`);
     const text = stripAnsi(frame.lines.join('\n'));
-    // Under 56 columns the bar is icons alone; the words come back at 56.
-    assert.ok(text.split('\n')[0].trimEnd().endsWith(width >= 36 ? '☰   ?' : '☰ ?'), text);
+    // Short of every word, the bar is icons alone.
+    assert.match(text.split('\n')[0], /⚙ +\? *$/, text);
     assert.doesNotMatch(text.split('\n')[0], /主会话|设置|帮助/);
     assert.doesNotMatch(text, /Main session|run\b|done\b/);
   }
   const english = stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 30, height: 20, nowMs: now }).lines.join('\n'));
-  assert.ok(english.split('\n')[0].endsWith('☰ ? '));
-  const wide = inChinese(() => stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 60, height: 20, nowMs: now }).lines[0]));
-  assert.match(wide, /^ ← 主会话 .*☰ 设置 {3}\? 帮助 $/, wide);
+  assert.match(english.split('\n')[0], /⚙ +\? *$/);
+  const wide = inChinese(() => stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 100, height: 20, nowMs: now }).lines[0]));
+  assert.match(wide, /^ +⌂ 主会话 .*⚙ 设置 +\? 帮助 +$/, wide);
   assert.match(english, / ✓1 done {2}▸1 run/);
 });
 
