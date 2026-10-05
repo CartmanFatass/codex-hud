@@ -3,6 +3,7 @@ import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import type { WorkbenchEvent, TimelineKind } from '../render/workbench-state.js';
 import type { AgentLogEntry } from './agent-log.js';
 import { directions, stageServes } from '../render/directions.js';
+import { actionText } from './agent-stages.js';
 
 /**
  * Events the timeline keeps of what it saw happen (the session's events, the
@@ -70,8 +71,10 @@ export class WorkbenchHistory {
     }
     for (const call of main?.toolActivity.recentCalls ?? []) {
       if (call.status !== 'error') continue;
+      // What failed, in a few words: the command it ran (an `exec` script's first one), not the tool's name.
+      const code = call.arguments?.code;
       add({ id: `tool:${call.id}`, at: new Date(call.timestamp.getTime() + (call.duration ?? 0)), kind: 'tool-failed', status: 'error',
-        subject: call.target ?? call.name, detail: call.output ? [call.output] : [] });
+        subject: call.target ?? actionText(call.name, typeof code === 'string' ? code : call.arguments), detail: call.output ? [call.output] : [] });
     }
     const names = new Map<string, SubagentTreeNode>();
     const visit = (nodes: SubagentTreeNode[]) => { for (const node of nodes) { names.set(node.id, node); visit(node.children); } };

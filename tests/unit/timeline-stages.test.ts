@@ -200,3 +200,17 @@ test('a running stage\'s event carries what the agent said it would do; an ended
   assert.equal(ended.at.getTime(), ago(20).getTime(), 'at its end');
   assert.equal(timeline.find(event => event.agentId === 'c1')?.serves, 'p1');
 });
+
+test('a failed tool call is named by the command it ran: an exec script\'s first, a shell call\'s own, else the tool', () => {
+  const call = (id: string, name: string, args: Record<string, unknown>, minutes: number) =>
+    ({ id, name, arguments: args, timestamp: ago(minutes), status: 'error' as const, duration: 1000 });
+  const main = { events: [], toolActivity: { recentCalls: [
+    call('x1', 'exec', { code: '// look for the cut\nconst hits = await tools.exec_command({ cmd: "rg -n surrogate src", yield_time_ms: 1000 });' }, 3),
+    call('x2', 'shell', { command: ['npm', 'test'] }, 2),
+    call('x3', 'apply_patch', {}, 1),
+  ], totalCalls: 3, callsByType: {} } } as never;
+  const timeline = new WorkbenchHistory().timeline({ rootId: 'root', nodes: [], totalCount: 0, updatedAt: new Date(NOW) }, main, new Map());
+  assert.deepEqual(timeline.filter(event => event.kind === 'tool-failed').map(event => event.subject), ['apply_patch', 'npm test', 'rg -n surrogate src']);
+  const shown = rows(draw({ tree: { rootId: 'root', nodes: [], totalCount: 0, updatedAt: new Date(NOW) }, timeline }));
+  assert.ok(shown.some(row => /✗ rg -n surrogate src/.test(row)), shown.join('\n'));
+});
