@@ -220,12 +220,33 @@ export function modelCallsLine(usage:{today:number;lastHour:number;cap:number}|u
   return usage.lastHour >= usage.cap ? theme.warning(text) : colors.dim(text);
 }
 
+/** The rows whose value the panel's top shows: the bar and the pane titles. */
+const PREVIEWED: ReadonlySet<keyof HudSettings> = new Set<keyof HudSettings>(['theme','glyphs','paneLayout','look','icons']);
+/** The fewest rows the list keeps when a preview takes some of the page. */
+const LIST_MIN = 6;
+
+/** A section's heading: its title on a dim rule across the page. */
+function heading(title:string,width:number):string {
+  const text = ` ${t(title)} `;
+  return colors.dim(`──${text}${'─'.repeat(Math.max(0,width-2-visualLength(text)))}`);
+}
+
+/**
+ * The page. `preview`, given, draws the panel's top (its bar and a pane's
+ * title) as a draft would: while a row it shows is selected, that goes at
+ * the foot above the row's help, so a look, its icons or a theme can be
+ * seen before it is saved.
+ */
 export function renderSettingsPage(state:SettingsPageState,width:number,height:number,
-  health?:{state:HudHealthState|undefined;nowMs?:number;modelCalls?:{today:number;lastHour:number;cap:number}}):SettingsFrame {
+  health?:{state:HudHealthState|undefined;nowMs?:number;modelCalls?:{today:number;lastHour:number;cap:number}},
+  preview?:(draft:HudSettings,width:number)=>string[]):SettingsFrame {
   const healthRow = health && height > 3 ? healthLine(health.state,health.nowMs ?? Date.now()) : null;
   const callsRow = health && height > 4 ? modelCallsLine(health.modelCalls) : null;
-  const count = Math.max(0,height-3-(healthRow ? 1 : 0)-(callsRow ? 1 : 0));
   const selected = Math.min(SETTING_ROWS.length-1,Math.max(0,state.selected));
+  const rest = height-3-(healthRow ? 1 : 0)-(callsRow ? 1 : 0);
+  const drawn = preview && PREVIEWED.has(SETTING_ROWS[selected].key) ? preview(state.draft,width) : [];
+  const shown = drawn.length && rest-1-drawn.length >= LIST_MIN ? [heading('Preview',width),...drawn] : [];
+  const count = Math.max(0,rest-shown.length);
   const DISPLAY = displayLines(state.draft);
   // The label column, where the widest value with its chevrons still fits beside it.
   const widest = Math.max(...SETTING_ROWS.map(row => visualLength(valueText(row,state.draft[row.key],false))));
@@ -266,8 +287,7 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
       continue;
     }
     if ('group' in line) {
-      const title = ` ${t(line.group)} `;
-      lines.push(colors.dim(`──${title}${'─'.repeat(Math.max(0,width-2-visualLength(title)))}`));
+      lines.push(heading(line.group,width));
       rows.push(null);
       continue;
     }
@@ -279,6 +299,7 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   }
   if (healthRow) lines.push(healthRow);
   if (callsRow) lines.push(callsRow);
+  lines.push(...shown);
   if (height > 1) {
     const row = SETTING_ROWS[selected];
     lines.push(state.message ? theme.accent(state.message) : colors.dim(t(row.help)));

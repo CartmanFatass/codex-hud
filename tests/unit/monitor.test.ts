@@ -629,3 +629,23 @@ test('the changes say their counts in words, zeros left out, and tell two files 
   assert.equal(shown.length, many.length);
   assert.ok(shown.every((text) => visualLength(text) <= 24));
 });
+
+test('the panel\'s top, for the settings page to preview: the bar as the look draws it and the focused pane\'s title', async () => {
+  const { panelTop } = await import('../../src/render/monitor.js');
+  const state = { ...initialMonitorState(), focus: 'changes' as const };
+  const previous = setDisplayConfig({ look: 'frame', icons: 'unicode', theme: 'terminal' });
+  try {
+    const top = panelTop({ tree }, state, 40).map(stripAnsi);
+    assert.equal(top.length, 3, 'the frame\'s two rows of bar, then the title');
+    assert.match(top[0], /^╭─ .*─╮$/);
+    assert.match(top[1], /^│ .* │$/);
+    assert.match(top[2], /^├─ ± Changes ─+┤$/);
+    setDisplayConfig({ look: 'tab' });
+    const tab = panelTop({ tree }, state, 40).map(stripAnsi);
+    assert.equal(tab.length, 2);
+    assert.match(tab[1], /^ ± Changes +$/);
+    assert.ok(tab.every(line => visualLength(line) === 40));
+  } finally {
+    setDisplayConfig(previous);
+  }
+});

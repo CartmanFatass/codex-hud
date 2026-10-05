@@ -262,6 +262,7 @@ const ZH: Record<string, string> = {
   '[Save]': '[保存]',
   '[Reset]': '[重置]',
   'Settings': '设置',
+  'Preview': '预览',
 
   // Settings groups, labels and help
   'Status bar': '状态栏',

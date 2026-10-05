@@ -154,3 +154,33 @@ test('with no backend the model rows step back under a note, still selectable; w
   const quiet=renderSettingsPage({draft:{...defaultSettings(),notify:false},selected:0,offset:0,message:''},90,50);
   assert.ok(quiet.lines[quiet.rows.indexOf(row('notifyDesktop'))].includes(colors.dim('Desktop notices')));
 });
+
+test('a row the panel\'s top shows previews it from the draft, above its help; the others, and a short page, do not',async()=>{
+  const {withDisplaySettings}=await import('../../src/settings-runtime.js');
+  const {displayConfig}=await import('../../src/render/hud-config.js');
+  const row=(key:string)=>SETTING_ROWS.findIndex(entry=>entry.key===key);
+  const seen:string[]=[];
+  const preview=(draft:ReturnType<typeof defaultSettings>,width:number)=>{seen.push(draft.look);return [`bar ${draft.look} ${width}`,'title'];};
+  const draft={...defaultSettings(),look:'pill' as const};
+  const frame=renderSettingsPage({draft,selected:row('look'),offset:0,message:''},40,30,undefined,preview);
+  const text=frame.lines.map(stripAnsi);
+  assert.deepEqual(text.slice(-5),[`── Preview ${'─'.repeat(29)}`,'bar pill 40','title','Bar and pane titles; sets their icons','↑↓ select  ←→ change']);
+  assert.deepEqual(seen,['pill'],'drawn from the draft');
+  assert.equal(frame.lines.length,30);
+  assert.equal(frame.rowCount,30-3-3,'the list gives the preview its rows');
+  for (const key of ['theme','glyphs','paneLayout','icons']) {
+    assert.ok(renderSettingsPage({draft,selected:row(key),offset:0,message:''},40,30,undefined,preview).lines.map(stripAnsi).includes('title'),key);
+  }
+  // A row the bar does not show, and a page too short to give up the rows, have none.
+  const plain=renderSettingsPage({draft,selected:row('density'),offset:0,message:''},40,30,undefined,preview);
+  assert.ok(!plain.lines.map(stripAnsi).includes('title'));
+  assert.equal(plain.rowCount,27);
+  assert.ok(!renderSettingsPage({draft,selected:row('look'),offset:0,message:''},40,11,undefined,preview).lines.map(stripAnsi).includes('title'));
+  assert.ok(renderSettingsPage({draft,selected:row('look'),offset:0,message:''},40,12,undefined,preview).lines.map(stripAnsi).includes('title'));
+  // Drawn in the draft's display settings, which are put back after, even when the drawing fails.
+  const before=displayConfig();
+  assert.equal(withDisplaySettings({...defaultSettings(),look:'band',icons:'emoji'},()=>displayConfig().look+' '+displayConfig().icons),'band emoji');
+  assert.deepEqual(displayConfig(),before);
+  assert.throws(()=>withDisplaySettings({...defaultSettings(),look:'tile'},()=>{throw new Error('drawing failed');}),/drawing failed/);
+  assert.deepEqual(displayConfig(),before);
+});

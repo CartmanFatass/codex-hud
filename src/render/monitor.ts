@@ -970,6 +970,17 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
 }
 
 /**
+ * The panel's top as the display config now draws it: the control bar and
+ * the focused pane's title, for the settings page to preview a look, its
+ * icons or a theme before they are saved.
+ */
+export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state: MonitorState, width: number): string[] {
+  const now = input.nowMs ?? Date.now();
+  const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
+  return [...bar.lines,paneHead(state.focus,width,{focused:true,zoomed:false})];
+}
+
+/**
  * What the brief said besides its fields: a reply in another shape than the
  * JSON asked for, as the text it is, and a failed call. Model output is
  * sanitized like any other external string.
