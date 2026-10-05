@@ -1,10 +1,11 @@
 /**
- * What the panel says about an agent or a worktree beside its name: its
- * status icon, how long ago, the turn clock, its own colour, and what a
- * worktree is called and where it is.
+ * What the panel says about an agent, a worktree or a changed file beside
+ * its name: its status icon, how long ago, the turn clock, its own colour,
+ * what a worktree is called and where it is, and what happened to a file.
  */
 import type { SubagentTreeNode } from '../types.js';
 import type { WorktreeInfo } from '../collectors/worktrees.js';
+import type { GitChangedFile } from '../collectors/git-changes.js';
 import { theme, colors } from './colors.js';
 import { palette } from './palette.js';
 import { displayConfig } from './hud-config.js';
@@ -52,6 +53,41 @@ export function worktreeLabel(entry: WorktreeInfo, now: number): string {
   if (now-entry.observedAt > 30_000) return 'stale';
   if (entry.status.conflicts) return `!${entry.status.conflicts}`;
   return entry.status.changed ? `${entry.status.changed} mod` : 'clean';
+}
+/** A file git does not track yet. */
+export function isUntracked(file: GitChangedFile): boolean {
+  return file.index === '?' && file.worktree === '?';
+}
+/** The changes list's one row for its untracked files, as an item: no path can hold a NUL. */
+export const UNTRACKED_ROW = '\0untracked';
+/** A worktree's row in the changes list, as an item: its path behind a NUL, so no file's path is one. */
+const WORKTREE_ROW = '\0worktree:';
+export function worktreeItem(path: string): string {
+  return WORKTREE_ROW+path;
+}
+/** Whether the changes list heads its files with the worktrees: only where there is more than one to choose from. */
+export function listsWorktrees(snapshot: {entries: readonly unknown[]} | null | undefined): boolean {
+  return (snapshot?.entries.length ?? 0) > 1;
+}
+/** The worktree a changes item is the row of, or undefined for a file's. */
+export function worktreeOfItem(item: string | null | undefined): string | undefined {
+  return item?.startsWith(WORKTREE_ROW) ? item.slice(WORKTREE_ROW.length) : undefined;
+}
+/**
+ * What happened to a changed file, as one letter in its colour: added
+ * green, deleted red, renamed or copied blue, modified (and the rest)
+ * yellow, and a conflict a red "!". Added, deleted, renamed or copied in the
+ * index says more than an edit on top of it.
+ */
+export function changeLetter(file: GitChangedFile): string {
+  if (file.conflict) return theme.error('!');
+  const set = (code: string) => code !== ' ' && code !== '.';
+  const code = set(file.index) && file.index !== 'M' ? file.index : set(file.worktree) ? file.worktree : file.index;
+  return (code === 'A' ? theme.success : code === 'D' ? theme.error : code === 'R' || code === 'C' ? theme.info : theme.warning)(code);
+}
+/** The lines a changed file adds and removes, "+12 −3", a side with none left out. */
+export function lineCounts(file: GitChangedFile): string {
+  return [file.added ? theme.success(`+${file.added}`) : '',file.removed ? theme.error(`−${file.removed}`) : ''].filter(Boolean).join(' ');
 }
 /** A worktree label in the reader's language; the label itself stays a stable code. */
 export function worktreeLabelText(label: string): string {
@@ -114,9 +150,12 @@ export function turnClock(node: SubagentTreeNode, now: number): string {
   if (!isLive(node)) return '';
   const start = (node.turnStartedAt ?? node.startedAt)?.getTime();
   if (start === undefined || !Number.isFinite(start)) return '';
-  const elapsed = Math.max(0,now-start);
-  const glyph = TURN_CLOCKS.find(([limit]) => elapsed < limit)?.[1] ?? TURN_CLOCK_LONG;
+  const glyph = clockFace(now-start);
   return isQuiet(node,now) ? theme.warning(glyph) : theme.info(glyph);
+}
+/** The clock face for a run `elapsed` ms long. */
+export function clockFace(elapsed: number): string {
+  return TURN_CLOCKS.find(([limit]) => Math.max(0,elapsed) < limit)?.[1] ?? TURN_CLOCK_LONG;
 }
 
 /** Past a clock's boundary, so the repaint lands after its second has turned. */

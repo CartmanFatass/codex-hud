@@ -26,10 +26,11 @@ test('missing settings keep display defaults and hide optional tasks and activit
       density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
       statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
       details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
-      agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+      agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+      timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-      briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
+      briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, cardCorners: 'square', cardRoleCounts: true, notify: false, notifyDesktop: false,
       resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
       art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode', look: 'tab', paneLayout: 'stack',
     });
@@ -63,10 +64,11 @@ test('load validates known settings without importing unknown or invalid values'
       density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
       statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
       details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0,
-      agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+      agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+      timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-      briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
+      briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, cardCorners: 'square', cardRoleCounts: true, notify: false, notifyDesktop: false,
       resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
       art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode', look: 'tab', paneLayout: 'stack',
     });
@@ -82,27 +84,38 @@ test('load validates known settings without importing unknown or invalid values'
 test('monitor pane modes and worktreeRoot validate independently of legacy panel booleans', () => {
   withSettingsFile((file) => {
     fs.writeFileSync(file, JSON.stringify({
-      agentsPane: 'closed', worktreesPane: 'folded', changesPane: 'open', detailsPane: 'open',
+      agentsPane: 'closed', timelinePane: 'folded', changesPane: 'open', detailsPane: 'open',
       worktreeRoot: '/repo', details: true, changes: false,
     }));
     const loaded = loadSettings();
     assert.equal(loaded.agentsPane, 'closed');
-    assert.equal(loaded.worktreesPane, 'closed', 'folded, from an earlier version, is closed');
+    assert.equal(loaded.timelinePane, 'closed', 'folded, from an earlier version, is closed');
     assert.equal(loaded.changesPane, 'open');
     assert.equal(loaded.detailsPane, 'open');
     assert.equal(loaded.worktreeRoot, '/repo');
     assert.equal(loaded.details, true);
     assert.equal(loaded.changes, false);
     fs.writeFileSync(file, JSON.stringify({
-      agentsPane: 'hidden', worktreesPane: 1, changesPane: null, detailsPane: {},
+      agentsPane: 'hidden', timelinePane: 1, changesPane: null, detailsPane: {},
       worktreeRoot: 'x\0y',
     }));
     const invalid = loadSettings();
     assert.equal(invalid.agentsPane, 'open');
-    assert.equal(invalid.worktreesPane, 'closed');
+    assert.equal(invalid.timelinePane, 'closed');
     assert.equal(invalid.changesPane, 'closed');
     assert.equal(invalid.detailsPane, 'closed');
     assert.equal(invalid.worktreeRoot, '');
+  });
+});
+
+test('the timeline\'s style, window and roles keep to what the panel draws', () => {
+  withSettingsFile((file) => {
+    fs.writeFileSync(file, JSON.stringify({ timelineStyle: 'lanes', timelineHours: 12, importantRoles: 'reviewer, critic' }));
+    const loaded = loadSettings();
+    assert.deepEqual([loaded.timelineStyle, loaded.timelineHours, loaded.importantRoles], ['lanes', 12, 'reviewer, critic']);
+    fs.writeFileSync(file, JSON.stringify({ timelineStyle: 'zigzag', timelineHours: 2, importantRoles: 'a\nb' }));
+    const invalid = loadSettings();
+    assert.deepEqual([invalid.timelineStyle, invalid.timelineHours, invalid.importantRoles], ['rail', 3, '']);
   });
 });
 

@@ -10,3 +10,15 @@ export function taskText(raw:unknown):string|undefined {
       /^Here is a list of plugins that are available but not installed\b/.test(text)) return undefined;
   return text.replace(/\s+/g,' ').slice(0,500);
 }
+
+/**
+ * A user-role message that may have been put there by a tool rather than
+ * typed: one that opens with a bracketed tag (`[hook-wait …]`, `[peer] …`),
+ * or with a peer's header, who to whom and a note that it is a peer's
+ * (`Docs lead → Root (peer, no reply owed).`); `(peer review …)` is typed.
+ * A heuristic: the rollout records no difference.
+ */
+export function looksAutomatic(text:string):boolean {
+  const head = text.trimStart();
+  return /^\[[^\]\n]{1,80}\]/.test(head) || /^[^\n→.,;:!?]{1,40}\s(?:→|->)\s[^\n(]{1,40}\s\((?:peer[,;:)]|[^)\n]*\bno reply\b)/i.test(head);
+}

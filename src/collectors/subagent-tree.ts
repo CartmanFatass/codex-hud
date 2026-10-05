@@ -1,5 +1,7 @@
 import { taskText } from '../utils/task-text.js';
 import { extractAgentReport, type AgentReport } from './agent-report.js';
+import { applyLedgerEntry, currentAction, newLedger, type AgentLedger } from './agent-stages.js';
+import { SAVE_MIN_BYTES, SCAN_VERSION, scanPrint, type SavedScan, type TreeScanStore } from './tree-scan-store.js';
 /**
  * Build a multi-level subagent tree from rollout session_meta parent links.
  */
@@ -7,7 +9,7 @@ import { extractAgentReport, type AgentReport } from './agent-report.js';
 import * as fs from 'fs';
 import { sessionParentId } from '../utils/session-parent.js';
 import { findRolloutsInDays } from './session-finder.js';
-import type { SubagentInfo, SubagentStatus, SubagentTree, SubagentTreeNode } from '../types.js';
+import type { AgentAction, AgentStage, SubagentInfo, SubagentStatus, SubagentTree, SubagentTreeNode } from '../types.js';
 
 // session_meta is the first line and never changes on append, so each rollout
 // only needs to be read once. Cache entries re-validate by stat signature and
@@ -24,9 +26,28 @@ interface CachedLink {
   verifiedAt: number;
   // Byte offset already scanned for model/effort and lifecycle events.
   contextOffset: number;
+  // The hash of the bytes just before contextOffset (scanPrint): the scan
+  // still describes the file while they are unchanged.
+  contextPrint?: string;
 }
 
 const linkCache = new Map<string, CachedLink>();
+
+let scanStore: TreeScanStore | undefined;
+
+/**
+ * Keep each rollout's scan on disk (tree-scan-store.ts), so a process started
+ * again reads only what was written since. Off unless a process asks: the
+ * panel and the bar do, the brief's dry run reads without writing.
+ */
+export function useTreeScanStore(store: TreeScanStore | undefined): void {
+  scanStore = store;
+}
+
+/** Writes the scans that moved on, when the process stops. */
+export function flushTreeScans(): void {
+  scanStore?.flush();
+}
 
 // Bound the staleness window of stat-only caching: re-peek at most this many
 // known files per build call, oldest verification first.
@@ -51,6 +72,8 @@ interface SessionLink extends AgentIdentity {
   turnStartedAt?: Date;
   startedAt?: Date;
   modifiedAt: Date;
+  /** Its stages, open tool calls and messages from other agents, as far as the scan has read. */
+  ledger?: AgentLedger;
 }
 
 // session_meta lines embed full instructions and can reach hundreds of KB;
@@ -205,7 +228,8 @@ function modelEffortFromPayload(payload: Record<string, unknown>): { model?: str
 
 type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task' | 'lastReport'>;
 
-function applyRolloutLine(line: string, into: RolloutFields): void {
+// What this reads is saved with the scan (tree-scan-store.ts): a change to it bumps SCAN_VERSION.
+function applyRolloutLine(line: string, into: RolloutFields, ledger?: AgentLedger): void {
   const trimmed = line.trim();
   if (!trimmed) {
     return;
@@ -215,6 +239,7 @@ function applyRolloutLine(line: string, into: RolloutFields): void {
     if (!entry.payload) {
       return;
     }
+    if (ledger) applyLedgerEntry(entry, ledger);
     const report = extractAgentReport(entry);
     if (report && (!into.lastReport || report.at >= into.lastReport.at)) into.lastReport = report;
     if (entry.type === 'response_item' && entry.payload.type === 'message' && entry.payload.role === 'user' && Array.isArray(entry.payload.content)) {
@@ -258,7 +283,7 @@ function applyRolloutLine(line: string, into: RolloutFields): void {
   }
 }
 
-function scanRolloutFields(filePath: string, startOffset: number): RolloutFields & { endOffset: number } {
+function scanRolloutFields(filePath: string, startOffset: number, ledger?: AgentLedger): RolloutFields & { endOffset: number } {
   const fd = fs.openSync(filePath, 'r');
   try {
     const buffer = Buffer.alloc(64 * 1024);
@@ -274,7 +299,7 @@ function scanRolloutFields(filePath: string, startOffset: number): RolloutFields
       offset += bytesRead;
       let newline = leftover.indexOf(10);
       while (newline !== -1) {
-        applyRolloutLine(leftover.subarray(0, newline).toString('utf8'), fields);
+        applyRolloutLine(leftover.subarray(0, newline).toString('utf8'), fields, ledger);
         leftover = leftover.subarray(newline + 1);
         newline = leftover.indexOf(10);
       }
@@ -288,6 +313,18 @@ function scanRolloutFields(filePath: string, startOffset: number): RolloutFields
   }
 }
 
+/** What a node carries of its ledger: copies, so a later scan never changes a tree already built. */
+function ledgerFields(ledger: AgentLedger | undefined): Pick<SubagentTreeNode, 'stages' | 'stageCount' | 'action' | 'peers'> {
+  if (!ledger || (!ledger.count && !ledger.peers.size && !ledger.open.size)) return {};
+  const action = currentAction(ledger);
+  return {
+    stages: ledger.stages.map(stage => ({ ...stage, ...(stage.by ? { by: { ...stage.by } } : {}), ...(stage.peers ? { peers: { ...stage.peers } } : {}) })),
+    stageCount: ledger.count,
+    ...(action ? { action: { ...action } } : {}),
+    ...(ledger.peers.size ? { peers: Object.fromEntries(ledger.peers) } : {}),
+  };
+}
+
 function refreshRolloutFields(link: SessionLink): void {
   const cached = linkCache.get(link.path);
   if (!cached?.link) {
@@ -297,7 +334,9 @@ function refreshRolloutFields(link: SessionLink): void {
   if (start >= cached.size) {
     return;
   }
-  const extra = scanRolloutFields(link.path, start);
+  cached.link.ledger ??= newLedger();
+  link.ledger = cached.link.ledger;
+  const extra = scanRolloutFields(link.path, start, link.ledger);
   if (extra.model) {
     link.model = extra.model;
     cached.link.model = extra.model;
@@ -313,7 +352,112 @@ function refreshRolloutFields(link: SessionLink): void {
   if (extra.turnStartedAt) link.turnStartedAt = extra.turnStartedAt;
   if (extra.task) link.task = extra.task;
   if (extra.lastReport && (!link.lastReport || extra.lastReport.at >= link.lastReport.at)) link.lastReport = extra.lastReport;
+  if (extra.endOffset === cached.contextOffset) return;
   cached.contextOffset = extra.endOffset;
+  cached.contextPrint = scanPrint(link.path, extra.endOffset);
+  if (extra.endOffset >= SAVE_MIN_BYTES) scanStore?.mark(link.path, () => savedScan(link.path));
+}
+
+const iso = (date: Date | undefined): string | undefined => date && Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+
+/** The scan of `filePath` as it stands, to be saved: what was read, how far, and the bytes it ended on. */
+function savedScan(filePath: string): SavedScan | undefined {
+  const cached = linkCache.get(filePath);
+  const link = cached?.link;
+  if (!cached || !link || cached.contextOffset < SAVE_MIN_BYTES || !cached.contextPrint) return undefined;
+  const ledger = link.ledger;
+  return {
+    version: SCAN_VERSION, path: filePath, id: link.id, ...(cached.ino !== undefined ? { ino: cached.ino } : {}),
+    offset: cached.contextOffset, print: cached.contextPrint,
+    fields: {
+      model: link.model, effort: link.effort, status: link.status, statusAt: iso(link.statusAt), turnStartedAt: iso(link.turnStartedAt),
+      task: link.task, lastReport: link.lastReport ? { ...link.lastReport, at: iso(link.lastReport.at) } : undefined,
+    },
+    ...(ledger ? { ledger: {
+      stages: ledger.stages.map((stage) => ({ ...stage, startedAt: iso(stage.startedAt), endedAt: iso(stage.endedAt) })),
+      count: ledger.count,
+      open: [...ledger.open].map(([id, action]) => [id, { ...action, at: iso(action.at) }]),
+      peers: [...ledger.peers],
+      ...(ledger.pending ? { pending: ledger.pending } : {}),
+    } } : {}),
+  };
+}
+
+const STATUSES = new Set<string>(['starting', 'running', 'completed', 'error', 'unknown']);
+const STAGE_STATUSES = new Set<string>(['running', 'done', 'aborted', 'failed']);
+const isText = (value: unknown): value is string => typeof value === 'string';
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const dateOf = (value: unknown): Date | undefined => {
+  if (!isText(value)) return undefined;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : undefined;
+};
+/** An optional field: absent, or what `read` makes of it; null when it is there and does not read. */
+const optional = <T>(value: unknown, read: (value: unknown) => T | undefined): T | undefined | null =>
+  value === undefined ? undefined : read(value) ?? null;
+const header = (value: unknown) => isRecord(value) && isText(value.type) && isText(value.sender) ? { type: value.type, sender: value.sender } : undefined;
+const counts = (value: unknown) => isRecord(value) && Object.values(value).every((n) => typeof n === 'number')
+  ? value as Record<string, number> : undefined;
+
+/**
+ * A saved scan put back on `link`, the fields and the ledger, when every part
+ * of it reads; false, with `link` untouched, when any part does not.
+ */
+function restoreScan(saved: SavedScan, link: SessionLink): boolean {
+  const f = saved.fields;
+  const statusAt = optional(f.statusAt, dateOf);
+  const turnStartedAt = optional(f.turnStartedAt, dateOf);
+  const report = optional(f.lastReport, (value) => {
+    const at = isRecord(value) ? dateOf(value.at) : undefined;
+    return isRecord(value) && at && isText(value.text) && (value.kind === 'message' || value.kind === 'update' || value.kind === 'reply')
+      ? { text: value.text, at, kind: value.kind } as AgentReport : undefined;
+  });
+  if ([f.model, f.effort, f.task].some((value) => value !== undefined && !isText(value))
+    || (f.status !== undefined && !(isText(f.status) && STATUSES.has(f.status)))
+    || statusAt === null || turnStartedAt === null || report === null) return false;
+  let ledger: AgentLedger | undefined;
+  if (saved.ledger !== undefined) {
+    const raw = saved.ledger;
+    if (!isRecord(raw) || !Array.isArray(raw.stages) || typeof raw.count !== 'number' || !Array.isArray(raw.open) || !Array.isArray(raw.peers)) return false;
+    const stages: AgentStage[] = [];
+    for (const value of raw.stages) {
+      const startedAt = isRecord(value) ? dateOf(value.startedAt) : undefined;
+      if (!isRecord(value) || !startedAt || !isText(value.status) || !STAGE_STATUSES.has(value.status)) return false;
+      const endedAt = optional(value.endedAt, dateOf);
+      const by = optional(value.by, header);
+      const peers = optional(value.peers, counts);
+      if (endedAt === null || by === null || peers === null || [value.turnId, value.intent, value.result].some((text) => text !== undefined && !isText(text))) return false;
+      stages.push({
+        startedAt, status: value.status as AgentStage['status'],
+        ...(isText(value.turnId) ? { turnId: value.turnId } : {}), ...(endedAt ? { endedAt } : {}), ...(by ? { by } : {}),
+        ...(isText(value.intent) ? { intent: value.intent } : {}), ...(isText(value.result) ? { result: value.result } : {}), ...(peers ? { peers } : {}),
+      });
+    }
+    const open = new Map<string, AgentAction>();
+    for (const value of raw.open) {
+      const action = Array.isArray(value) && isRecord(value[1]) ? value[1] : undefined;
+      const at = action ? dateOf(action.at) : undefined;
+      if (!action || !at || !isText(value[0]) || !isText(action.name) || !isText(action.text)) return false;
+      open.set(value[0], { name: action.name, text: action.text, at });
+    }
+    const peers = new Map<string, number>();
+    for (const value of raw.peers) {
+      if (!Array.isArray(value) || !isText(value[0]) || typeof value[1] !== 'number') return false;
+      peers.set(value[0], value[1]);
+    }
+    const pending = optional(raw.pending, header);
+    if (pending === null) return false;
+    ledger = { stages, count: raw.count, open, peers, ...(pending ? { pending } : {}) };
+  }
+  if (isText(f.model)) link.model = f.model;
+  if (isText(f.effort)) link.effort = f.effort;
+  if (isText(f.status)) link.status = f.status as SubagentStatus;
+  link.statusAt = statusAt;
+  link.turnStartedAt = turnStartedAt;
+  if (isText(f.task)) link.task = f.task;
+  link.lastReport = report;
+  link.ledger = ledger;
+  return true;
 }
 
 function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null {
@@ -590,7 +734,13 @@ export function buildSubagentTree(
       // rewrite, or a scheduled revalidation: read the first line again.
       const previous = cached;
       link = peekSessionLink(file.path, file.modifiedAt);
-      const keepContext = Boolean(revalidate && previous?.link && link && unchanged);
+      // A revalidation that finds the same thread, the file as it was or
+      // grown, and the bytes the scan ended on unchanged keeps the scan: a
+      // growing rollout is not read again from its first byte.
+      const keepContext = Boolean(revalidate && previous?.link && link && link.id === previous.link.id && (unchanged || appended)
+        && scanPrint(file.path, previous.contextOffset) === (previous.contextPrint ?? ''));
+      let contextOffset = 0;
+      let contextPrint: string | undefined;
       if (keepContext && previous?.link && link) {
         link.model = previous.link.model ?? link.model;
         link.effort = previous.link.effort ?? link.effort;
@@ -599,6 +749,22 @@ export function buildSubagentTree(
         link.turnStartedAt = previous.link.turnStartedAt;
         link.task = previous.link.task;
         link.lastReport = previous.link.lastReport;
+        link.ledger = previous.link.ledger;
+        contextOffset = previous.contextOffset;
+        contextPrint = previous.contextPrint;
+      } else if (!previous && link && scanStore) {
+        // First sight in this process: an earlier one's scan, while it still
+        // describes the file.
+        const saved = scanStore.load(file.path);
+        if (saved && saved.id === link.id && saved.offset <= file.size
+          && (saved.ino === undefined || file.ino === undefined || saved.ino === file.ino)
+          && scanPrint(file.path, saved.offset) === saved.print && restoreScan(saved, link)) {
+          contextOffset = saved.offset;
+          contextPrint = saved.print;
+          scanStore.used(file.path, nowMs);
+          // Saved before scans said which file they were made from: saved again, saying it.
+          if (saved.ino === undefined && file.ino !== undefined) scanStore.mark(file.path, () => savedScan(file.path));
+        }
       }
       linkCache.set(file.path, {
         link,
@@ -606,7 +772,8 @@ export function buildSubagentTree(
         mtimeMs: modifiedMs,
         ino: file.ino,
         verifiedAt: nowMs,
-        contextOffset: keepContext ? (previous?.contextOffset ?? 0) : 0,
+        contextOffset,
+        ...(contextPrint !== undefined ? { contextPrint } : {}),
       });
     }
     if (!link) {
@@ -669,6 +836,7 @@ export function buildSubagentTree(
       turnStartedAt: link?.turnStartedAt,
       rolloutPath: link?.path,
       lastReport: link?.lastReport,
+      ...ledgerFields(link?.ledger),
       task: taskText(link?.task) ?? taskText(knownAgent?.task),
       statusAt: knownAgent?.lastActivityAt && (!link?.statusAt || knownAgent.lastActivityAt > link.statusAt)
         ? knownAgent.lastActivityAt : link?.statusAt,
@@ -687,6 +855,7 @@ export function buildSubagentTree(
   };
 
   const nodes = (children.get(rootId) ?? []).map((id) => buildNode(id, 1));
+  scanStore?.flushDue(nowMs);
   return {
     rootId,
     nodes,
@@ -711,6 +880,50 @@ export interface SubagentSummary {
   unknown: number;
   /** Agents that still need something to happen before the session can finish. */
   active: number;
+}
+
+/** What a thread is to every view that counts them. */
+export type ThreadKind = 'agent' | 'subtask' | 'review';
+
+/**
+ * Every thread under the main session, with what it is: an agent (one the
+ * main session started), a subtask (a thread under an agent, at any depth)
+ * or a review (a guardian approval review, wherever it sits).
+ */
+export function eachThread(nodes: readonly SubagentTreeNode[], visit: (node: SubagentTreeNode, kind: ThreadKind) => void): void {
+  const walk = (node: SubagentTreeNode, top: boolean): void => {
+    visit(node, node.kind === 'guardian' ? 'review' : top ? 'agent' : 'subtask');
+    for (const child of node.children) walk(child, false);
+  };
+  for (const node of nodes) walk(node, true);
+}
+
+/** Threads by how they stand: active (running or starting), finished, failed, or with no observed state. */
+export interface StatusCounts { total: number; active: number; completed: number; failed: number; unknown: number }
+
+/**
+ * The counts the panel's title row, the status card's alerts, the bar,
+ * notifications and the JSON snapshot all give, so they agree: the agents,
+ * one active while it or a subtask under it is; their subtasks; the reviews.
+ */
+export interface AgentCounts { agents: StatusCounts; subtasks: StatusCounts; reviews: StatusCounts }
+
+const isActive = (node: SubagentTreeNode): boolean => node.status === 'running' || node.status === 'starting';
+const busyBelow = (node: SubagentTreeNode): boolean =>
+  node.children.some((child) => child.kind !== 'guardian' && (isActive(child) || busyBelow(child)));
+
+export function agentCounts(nodes: readonly SubagentTreeNode[]): AgentCounts {
+  const blank = (): StatusCounts => ({ total: 0, active: 0, completed: 0, failed: 0, unknown: 0 });
+  const counts: AgentCounts = { agents: blank(), subtasks: blank(), reviews: blank() };
+  eachThread(nodes, (node, kind) => {
+    const into = kind === 'agent' ? counts.agents : kind === 'subtask' ? counts.subtasks : counts.reviews;
+    into.total += 1;
+    if (isActive(node) || (kind === 'agent' && busyBelow(node))) into.active += 1;
+    else if (node.status === 'completed') into.completed += 1;
+    else if (node.status === 'error') into.failed += 1;
+    else into.unknown += 1;
+  });
+  return counts;
 }
 
 export function summarizeSubagents(nodes: SubagentTreeNode[]): SubagentSummary {

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultSettings } from '../../src/settings.js';
-import { renderSettingsPage,handleSettingsInput,SETTING_ROWS,modelCallsLine } from '../../src/render/settings-page.js';
+import { renderSettingsPage,handleSettingsInput,SETTING_ROWS,modelCallsLine,type SettingsPageState } from '../../src/render/settings-page.js';
+import { setLanguage } from '../../src/render/i18n.js';
 import { panelWidth } from '../../src/utils/pane-width.js';
 import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
 
@@ -18,20 +19,18 @@ test('settings keyboard and mouse edit a draft, with explicit save/back actions'
   assert.ok(frame.state.offset>0);
   assert.ok(frame.lines.every(line=>visualLength(line)<=16));
   state=handleSettingsInput(frame.state,{type:'key',key:'right'},frame).state;
-  assert.equal(state.draft.treeWidth,34,'two columns at a step');
+  assert.equal(state.draft.treeWidth,40,'the next width laid out for');
   state=handleSettingsInput(state,{type:'key',key:'left'},frame).state;
   state=handleSettingsInput(state,{type:'key',key:'left'},frame).state;
-  assert.equal(state.draft.treeWidth,30);
-  for (const [from,key,to] of [[33,'right',34],[33,'left',32],[0,'right',24],[57,'left',56],[80,'right',24],[24,'left',80]] as const) {
+  assert.equal(state.draft.treeWidth,56,'round past the narrowest');
+  for (const [from,key,to] of [[33,'right',40],[33,'left',32],[44,'right',48],[44,'left',40],[0,'right',32],[57,'left',56],[80,'right',32],[24,'left',56]] as const) {
     const odd=handleSettingsInput({...state,draft:{...state.draft,treeWidth:from}},{type:'key',key},frame).state;
     assert.equal(odd.draft.treeWidth,to,`${from} ${key}`);
   }
 });
-test('any even width from 24 to 80, 32 by default, and the main session keeps its space',()=>{
+test('the widths the panel is laid out for, 32 by default, and the main session keeps its space',()=>{
   assert.deepEqual([32,44,56].map(w=>panelWidth(w,160)),[32,44,56]);
-  const widths=SETTING_ROWS.find(r=>r.key==='treeWidth')!.values;
-  assert.equal(widths[0],24);assert.equal(widths.at(-1),80);
-  assert.ok(widths.every((w,i)=>i===0||Number(w)-Number(widths[i-1])===2),'a step of two');
+  assert.deepEqual(SETTING_ROWS.find(r=>r.key==='treeWidth')!.values,[32,40,48,56]);
   assert.equal(defaultSettings().treeWidth,32);
   assert.equal(panelWidth(0,100),32,'a width from older settings, 0, is narrow');
   assert.equal(panelWidth(70,80),39);
@@ -153,6 +152,10 @@ test('with no backend the model rows step back under a note, still selectable; w
   // Desktop notices wait on notifications the same way.
   const quiet=renderSettingsPage({draft:{...defaultSettings(),notify:false},selected:0,offset:0,message:''},90,50);
   assert.ok(quiet.lines[quiet.rows.indexOf(row('notifyDesktop'))].includes(colors.dim('Desktop notices')));
+  // The floor paces the agents brief as well as the recap, so it waits only on all of them.
+  assert.ok(!on.lines[on.rows.indexOf(row('recapFloorMs'))].includes(colors.dim('Routine every')),'the agents brief alone uses the floor');
+  const none=renderSettingsPage({draft:{...defaultSettings(),briefing:'omp',briefAgents:false,briefMain:false,changeSummary:false},selected:0,offset:0,message:''},90,50);
+  assert.ok(none.lines[none.rows.indexOf(row('recapFloorMs'))].includes(colors.dim('Routine every')));
 });
 
 test('a row the panel\'s top shows previews it from the draft, above its help; the others, and a short page, do not',async()=>{
@@ -183,4 +186,28 @@ test('a row the panel\'s top shows previews it from the draft, above its help; t
   assert.deepEqual(displayConfig(),before);
   assert.throws(()=>withDisplaySettings({...defaultSettings(),look:'tile'},()=>{throw new Error('drawing failed');}),/drawing failed/);
   assert.deepEqual(displayConfig(),before);
+});
+
+test('Key roles steps through none, the roles the subtasks have and what is set, a list from the settings file kept',()=>{
+  const index=SETTING_ROWS.findIndex(row=>row.key==='importantRoles');
+  let state:SettingsPageState={draft:{...defaultSettings(),importantRoles:'critic, oracle'},selected:index,offset:0,message:'',roles:['implementer','reviewer']};
+  let frame=renderSettingsPage(state,40,60);
+  const line=()=>stripAnsi(frame.lines[frame.rows.indexOf(index)]);
+  assert.match(line(),/Key roles +‹ critic, oracle ›/);
+  const seen:string[]=[];
+  for (let i=0;i<4;i++) {
+    state=handleSettingsInput(frame.state,{type:'key',key:'right'},frame).state;
+    frame=renderSettingsPage(state,40,60);
+    seen.push(state.draft.importantRoles);
+    if (i===0) assert.match(line(),/Key roles +‹ none ›/);
+  }
+  assert.deepEqual(seen,['','implementer','reviewer','critic, oracle'],'round to the list again, though it is no role of its own');
+  state=handleSettingsInput(frame.state,{type:'key',key:'left'},frame).state;
+  assert.equal(state.draft.importantRoles,'reviewer');
+  // A role is a name: said as it is in Chinese too, where none is a word.
+  setLanguage('zh');
+  try {
+    assert.match(stripAnsi(renderSettingsPage({...state,draft:{...state.draft,importantRoles:'general'}},40,60).lines.join('\n')),/重点角色 +‹ general ›/);
+    assert.match(stripAnsi(renderSettingsPage({...state,draft:{...state.draft,importantRoles:''}},40,60).lines.join('\n')),/重点角色 +‹ 无 ›/);
+  } finally { setLanguage('en'); }
 });

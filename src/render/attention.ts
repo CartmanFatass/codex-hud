@@ -8,11 +8,14 @@
  */
 
 import type { HudData, SubagentTreeNode } from '../types.js';
+import { eachThread, type ThreadKind } from '../collectors/subagent-tree.js';
 
 export type AttentionKind =
   | 'approval'
   | 'tool-error'
   | 'agent-error'
+  | 'subtask-error'
+  | 'review-error'
   | 'quota-exhausted'
   | 'context-critical';
 
@@ -39,11 +42,32 @@ export function waitedText(since: Date, nowMs: number): string {
 
 const RECENT_TOOL_ERROR_MS = 120_000;
 
-function walk(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
-  for (const node of nodes) {
-    visit(node);
-    walk(node.children, visit);
+type Say = (text: string, vars?: Record<string, string | number>) => string;
+const plain: Say = (text, vars) => text.replace(/\{(\w+)\}/g, (_, name: string) => String(vars?.[name] ?? ''));
+const FAILED = /^(\d+) (tool|agent|subtask|review)s? failed$/;
+
+/**
+ * The alerts as the bar and the status card say them, a phrase each: an
+ * approval with how long it has waited (`waits`), and the failures of every
+ * kind as one, `1 agent · 1 subtask failed`, where it would otherwise be
+ * `1 agent failed · 1 subtask failed`. `say` puts a phrase in the panel's
+ * language; a failure goes through it as `1 agent` and `{list} failed`.
+ */
+export function alertParts(items: readonly AttentionItem[], nowMs: number, say: Say = plain, waits = true): string[] {
+  const parts: string[] = [];
+  const failed: string[] = [];
+  let at = -1;
+  for (const item of items) {
+    const failure = item.label.match(FAILED);
+    if (failure) {
+      if (at < 0) at = parts.length;
+      failed.push(say(failure[1] === '1' ? `1 ${failure[2]}` : `{n} ${failure[2]}s`, { n: failure[1] }));
+      continue;
+    }
+    parts.push(`${say(item.label)}${waits && item.since ? ` ${waitedText(item.since, nowMs)}` : ''}`);
   }
+  if (at >= 0) parts.splice(at, 0, say('{list} failed', { list: failed.join(' · ') }));
+  return parts;
 }
 
 const APPROVAL_LABELS: Record<'exec' | 'patch' | 'input', string> = {
@@ -91,20 +115,25 @@ export function collectAttention(data: HudData, nowMs: number = Date.now()): Att
     });
   }
 
-  // An agent that ended in error, as opposed to one that merely ended.
-  const failedAgents: SubagentTreeNode[] = [];
-  walk(data.subagentTree?.nodes ?? [], (node) => {
+  // A thread that ended in error, as opposed to one that merely ended, under
+  // the name every view counts it by: an agent the main session started, a
+  // subtask under one, a guardian review.
+  const failed: Record<ThreadKind, SubagentTreeNode[]> = { agent: [], subtask: [], review: [] };
+  eachThread(data.subagentTree?.nodes ?? [], (node, kind) => {
     if (node.status === 'error') {
-      failedAgents.push(node);
+      failed[kind].push(node);
     }
   });
-  if (failedAgents.length > 0) {
-    items.push({
-      kind: 'agent-error',
-      label: failedAgents.length === 1 ? '1 agent failed' : `${failedAgents.length} agents failed`,
-      detail: failedAgents.map((node) => node.name).join(', '),
-      severity: 'error',
-    });
+  for (const kind of ['agent', 'subtask', 'review'] as const) {
+    const nodes = failed[kind];
+    if (nodes.length > 0) {
+      items.push({
+        kind: `${kind}-error`,
+        label: nodes.length === 1 ? `1 ${kind} failed` : `${nodes.length} ${kind}s failed`,
+        detail: nodes.map((node) => node.name).join(', '),
+        severity: 'error',
+      });
+    }
   }
 
   // Quota: only when the account actually reported being cut off, or a window

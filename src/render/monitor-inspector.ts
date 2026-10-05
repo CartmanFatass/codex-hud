@@ -5,12 +5,14 @@ import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { isGuardian } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi } from './colors.js';
-import { renderModelEffortToken } from './model-glyphs.js';
+import { renderModelEffortToken, classifyModelFamily } from './model-glyphs.js';
+import { displayConfig } from './hud-config.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { t } from './i18n.js';
 import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
-import { age, nodeStatus, isQuiet, finishedAt, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName, worktreePlace, ID_NAME } from './monitor-labels.js';
+import { age, nodeStatus, isQuiet, finishedAt, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName, worktreePlace, ID_NAME,
+  UNTRACKED_ROW, lineCounts } from './monitor-labels.js';
 
 function basename(path: string): string { return path.replace(/[\\/]+$/,'').split(/[\\/]/).at(-1) || path; }
 
@@ -30,7 +32,12 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
     const node = findNode(input.tree.nodes,state.tree.selectedId);
     if (!node) lines = [];
     else {
-      const token = renderModelEffortToken(node.model ? monitorText(node.model) : undefined, node.effort ? monitorText(node.effort) : undefined);
+      // The glyphs, then the model and the effort in words: here there is room to say them.
+      const model = node.model ? monitorText(node.model) : undefined;
+      const effort = node.effort ? monitorText(node.effort) : undefined;
+      const glyphs = displayConfig().glyphs !== 'text' && classifyModelFamily(model) ? renderModelEffortToken(model,effort,{mode:'glyph'}) : '';
+      const named = [model,effort].filter(Boolean).join(' · ');
+      const token = glyphs ? `${glyphs}${named ? ` ${colors.dim(named)}` : ''}` : named;
       const status = nodeStatus(node,now);
       // Sanitize external text before painting. Never pass our own ANSI spans
       // back through monitorText (which correctly escapes untrusted controls).
@@ -85,10 +92,12 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
         rows.push({text:colors.dim(t('Task'))});
         rows.push(...flowLines(monitorText(node.task.replace(/\s+/g,' ').trim()),width).map(line=>({text:line})));
       }
-      // The agent's whole log, newest first.
-      if (log.length) {
+      // The agent's whole log, newest first, less the update shown above. Started
+      // and finished alone say no more than the status line and the turn's age.
+      const kept = log.filter(entry=>!(entry.kind === 'report' && report && entry.at === report.at.getTime()));
+      if (kept.some(entry=>entry.kind !== 'started' && entry.kind !== 'finished')) {
         rows.push({text:colors.dim(t('Log'))});
-        for (const entry of [...log].reverse()) rows.push(...logEntryLines(entry,width,now,0).map(text=>({text})));
+        for (const entry of [...kept].reverse()) rows.push(...logEntryLines(entry,width,now,0).map(text=>({text})));
       }
       lines = [t('Turn age: {age}',{age:age(node.turnStartedAt,now)}),t('Last activity: {age}',{age:age(node.lastEventAt,now)})+(isQuiet(node,now) ? t(' (quiet)') : '')];
       // Codex's transcript still calls the agent by its nickname.
@@ -113,9 +122,13 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
       if (entry.error) lines.push(entry.error);
       if (entry.locked) lines.push(t('Locked: {reason}',{reason:entry.locked}));
       if (entry.prunable !== undefined) lines.push(t('Prunable: {reason}',{reason:entry.prunable || t('yes')}));
-      if (entry.status) lines.push(t('{s} staged / {u} unstaged',{s:entry.status.staged,u:entry.status.unstaged}),
-        t('{n} untracked / {c} conflicts',{n:entry.status.untracked,c:entry.status.conflicts}),
-        t('Ahead {a} / behind {b}',{a:entry.status.ahead ?? '?',b:entry.status.behind ?? '?'}));
+      // Its counts, and how far it is from its upstream, each left out at zero (or unknown).
+      if (entry.status) {
+        const status = entry.status;
+        const counts = (['conflicts','staged','unstaged','untracked'] as const).filter(key=>status[key]).map(key=>t(`{n} ${key}`,{n:status[key]}));
+        const drift = [status.ahead ? t('{n} ahead',{n:status.ahead}) : '',status.behind ? t('{n} behind',{n:status.behind}) : ''].filter(Boolean);
+        for (const parts of [counts,drift]) if (parts.length) lines.push(parts.join(' · '));
+      }
       lines.push(t('Workspace status, not agent ownership'));
       // The full path is more, where it holds no id; there is nothing else more to show.
       const full = entry.path.split(/[\\/]+/).some(part => ID_NAME.test(part)) ? '' : entry.path;
@@ -124,7 +137,7 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
       return [...rows,...lines.flatMap(line => wrapped(line,width).map(text=>({text})))];
     }
   } else {
-    if (!state.selectedFile) return [];
+    if (!state.selectedFile || state.selectedFile === UNTRACKED_ROW) return [];
     return [...fileHeading(state.selectedFile,input.git,Boolean(state.expanded),width),...fileBody(state.selectedFile,input.diff ?? [],width)];
   }
   return lines.flatMap(line => wrapped(line,width).map(text=>({text})));
@@ -138,8 +151,7 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
  */
 function fileHeading(path: string, git: GitChanges | null | undefined, expanded: boolean, width: number): MonitorRow[] {
   const file = git?.files.find(entry=>entry.path===path);
-  const counts = file?.binary ? colors.dim(t('binary'))
-    : [file?.added ? theme.success(`+${file.added}`) : '',file?.removed ? theme.error(`−${file.removed}`) : ''].filter(Boolean).join(' ');
+  const counts = file?.binary ? colors.dim(t('binary')) : file ? lineCounts(file) : '';
   const name = monitorText(basename(path)+(path.endsWith('/') ? '/' : ''));
   const rows: MonitorRow[] = counts && visualLength(name)+1+visualLength(counts) <= width
     ? [{text:pair(theme.strong(name),counts,width)}]
@@ -190,21 +202,24 @@ function fileBody(path: string, diff: readonly string[], width: number): Monitor
 /** Entries a model wrote, marked as such wherever they are shown. */
 export const MODEL_LOG_KINDS: ReadonlySet<AgentLogKind> = new Set(['note','digest','cause']);
 
+/** Columns of the log's age column: a three-character age and a space. */
+const LOG_GUTTER = 4;
+
 /**
- * One log entry: its age, then what happened. Status changes are words in
- * the tree's colours; an update is the agent's own excerpt; what a model
- * wrote is marked with a muted "~".
+ * One log entry: its age in a column of its own, then what happened, its
+ * lines hanging beside the age. Status changes are words in the tree's
+ * colours; an update is the agent's own excerpt, its chat markdown taken
+ * out; what a model wrote is marked with a muted "~".
  */
 export function logEntryLines(entry: AgentLogEntry, width: number, now: number, indent: number): string[] {
   const when = age(new Date(entry.at),now);
   const status = entry.kind === 'started' ? theme.info : entry.kind === 'finished' ? theme.success : entry.kind === 'failed' ? theme.error : null;
   const model = MODEL_LOG_KINDS.has(entry.kind);
-  const text = status ? t(entry.kind) : entry.text;
+  const text = status ? t(entry.kind) : plainText(entry.text).replace(/\s+/g,' ').trim();
   const paint = status ?? (entry.attention ? theme.warning : (s: string) => s);
-  const lead = `${when} ${model ? '~ ' : ''}`;
-  return flowLines(monitorText(`${lead}${text}`),Math.max(1,width-indent)).map((line,i)=>{
-    const pad = ' '.repeat(indent);
-    if (i) return pad+paint(line);
-    return pad+colors.dim(line.slice(0,lead.length))+paint(line.slice(lead.length));
-  });
+  const gutter = Math.max(LOG_GUTTER,visualLength(when)+1);
+  const lead = model ? '~ ' : '';
+  const pad = ' '.repeat(indent);
+  return flowLines(monitorText(`${lead}${text}`),Math.max(1,width-indent-gutter)).map((line,i)=>
+    pad+(i ? ' '.repeat(gutter) : colors.dim(when.padEnd(gutter)))+(i || !lead ? paint(line) : colors.dim(lead)+paint(line.slice(lead.length))));
 }

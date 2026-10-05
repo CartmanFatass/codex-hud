@@ -9,6 +9,9 @@ import { makeHudData } from '../fixtures/hud-data.js';
 import type { SubagentTree } from '../../src/types.js';
 
 const tree: SubagentTree = { rootId: 'root', nodes: [], totalCount: 0, updatedAt: new Date() };
+/** Running agents enough to fill a short panel. */
+const busy: SubagentTree = { ...tree, totalCount: 12, nodes: Array.from({ length: 12 }, (_, i) => ({ id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+  name: `worker_${i + 1}`, status: 'running' as const, depth: 1, children: [], startedAt: new Date(), lastEventAt: new Date(), task: `Task ${i + 1}` })) };
 const plain = (text: string) => stripAnsi(text);
 const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
   const previous = displayConfig();
@@ -153,10 +156,11 @@ test('a crowded row drops the age, the tail and the model before the bar; the co
   const long = draw(30, { project: 'a-very-long-project-name-indeed', branch: '' }).at(-1)!;
   assert.equal(visualLength(long), 30);
   assert.match(long, /^╰─ a-very.*….* 61% ↺1h$/, long);
-  const lines = (height: number, width = 30) =>
-    renderMonitor({ tree, state: initialMonitorState(), width, height, status: () => card(), session: () => ({ text: '✓', attention: false }) }).lines.map(plain);
+  const lines = (height: number, width = 30, agents = busy) =>
+    renderMonitor({ tree: agents, state: initialMonitorState(), width, height, status: () => card(), session: () => ({ text: '✓', attention: false }) }).lines.map(plain);
   assert.equal(lines(12).filter(line => line.startsWith('│')).length, 0, 'a short panel keeps its agents ten rows: one line');
   assert.match(lines(12).at(-1)!, /^ ✓ .* 5h 61% $/, 'the one line carries the quota reading');
+  assert.equal(lines(12, 30, tree).filter(line => line.startsWith('│')).length, 1, 'with no agent to keep the rows for, the card takes them');
   assert.equal(lines(40).filter(line => line.startsWith('│')).length, 1);
   assert.ok(!lines(24, 20).some(line => line.startsWith('╰')), 'too narrow for a card: no card');
 });

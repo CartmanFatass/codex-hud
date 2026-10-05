@@ -22,11 +22,26 @@ export interface HudSettings extends HudDisplayConfig {
   finishedLingerMs: number;
   // Monitor visibility is independent of legacy boolean panel preferences.
   agentsPane: 'open' | 'closed';
-  worktreesPane: 'open' | 'closed';
   changesPane: 'open' | 'closed';
   detailsPane: 'open' | 'closed';
   /** The session's observed events, newest first. */
   timelinePane: 'open' | 'closed';
+  /**
+   * How the timeline draws the main session and the agents' stages: `rail`,
+   * an L1's stages branching off the main session's rail; `indent`, a level
+   * in for an L1 and two for an L2; `lanes`, a lane per direction.
+   */
+  timelineStyle: 'rail' | 'indent' | 'lanes';
+  /** The timeline's window: the newest this many hours, the earlier entries a row at its end brings back. */
+  timelineHours: 1 | 3 | 6 | 12 | 24;
+  /**
+   * The roles of the agents an L1 starts (`reviewer`, `critic`) that the
+   * timeline and the cards give a line of their own, a comma list; a name
+   * also matches a role ending in it after a dash (`critic`, a
+   * `team-platform-critic`). The rest are counts on their L1's line and
+   * card; a failed or flagged one always gets its line.
+   */
+  importantRoles: string;
   /**
    * How the panel shows the agents: `rich`, a card per agent with the recap
    * as a card above them; `compact`, the tree with the brief and log under it.
@@ -71,10 +86,18 @@ export interface HudSettings extends HudDisplayConfig {
    * replies go to the backend. Off by default; it is the more sensitive one.
    */
   briefMain: boolean;
-  /** The recap's slower trigger: at most one refresh per this while anything changed, in ms. */
+  /**
+   * Routine every: the slower pace the agents brief (new updates, the running
+   * command, routine subtasks), the main recap (a long turn) and the change
+   * summary share, at most one run each per this while anything changed, in ms.
+   */
   recapFloorMs: number;
   /** Show each agent's log under the tree even with the model backend off (observed entries only). */
   agentLog: boolean;
+  /** The cards' corners: square (`┌ └`) or round (`╭ ╰`). */
+  cardCorners: 'square' | 'round';
+  /** A line at the foot of an L1's card counting its subtasks, at any depth, by role (`5 implementer · 2 general`). */
+  cardRoleCounts: boolean;
   /**
    * How much the status card at the foot of the panel shows: `min`, its top
    * edge alone, the session's state on it; `status`, the bar's fields;
@@ -139,11 +162,12 @@ export function defaultSettings(): HudSettings {
     density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used', look: 'tab', paneLayout: 'stack',
     statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
     details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
-    agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+    agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+    timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
     worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
-    agentLog: false, notify: false, notifyDesktop: false,
+    agentLog: false, cardCorners: 'square', cardRoleCounts: true, notify: false, notifyDesktop: false,
     resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
     art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode',
   };
@@ -173,10 +197,12 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   finishedLingerMs: (value) => value === 0 || isIntegerBetween(value, 10_000, 86_400_000),
   agentsPane: oneOf('open', 'closed'),
-  worktreesPane: oneOf('open', 'closed'),
   changesPane: oneOf('open', 'closed'),
   detailsPane: oneOf('open', 'closed'),
   timelinePane: oneOf('open', 'closed'),
+  timelineStyle: oneOf('rail', 'indent', 'lanes'),
+  timelineHours: (value) => value === 1 || value === 3 || value === 6 || value === 12 || value === 24,
+  importantRoles: isText(1000),
   panelStyle: oneOf('rich', 'compact'),
   paneLayout: oneOf('stack', 'tabs'),
   look: oneOf(...LOOKS),
@@ -194,6 +220,8 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   recapFloorMs: (value) => isIntegerBetween(value, 60_000, 7_200_000),
   statusCard: oneOf('min', 'status', 'full'),
   agentLog: isBoolean,
+  cardCorners: oneOf('square', 'round'),
+  cardRoleCounts: isBoolean,
   notify: isBoolean,
   notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
@@ -209,7 +237,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   icons: oneOf('unicode', 'nerd', 'emoji', 'text'),
 };
 
-const PANE_KEYS = ['agentsPane', 'worktreesPane', 'changesPane', 'detailsPane', 'timelinePane'] as const;
+const PANE_KEYS = ['agentsPane', 'changesPane', 'detailsPane', 'timelinePane'] as const;
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result = { ...base };
@@ -217,6 +245,8 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const values = { ...(raw as Record<string, unknown>) };
   // A pane is open or closed; one saved folded, as earlier versions could, is closed.
   for (const key of PANE_KEYS) if (values[key] === 'folded') values[key] = 'closed';
+  // The worktrees are listed over the changes now: a worktrees pane saved open opens the changes.
+  if (values.worktreesPane === 'open') values.changesPane = 'open';
   for (const key of Object.keys(validators) as Array<keyof HudSettings>) {
     if (Object.hasOwn(values, key) && validators[key](values[key])) {
       Object.assign(result, { [key]: values[key] });

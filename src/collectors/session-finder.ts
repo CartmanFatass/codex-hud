@@ -312,6 +312,7 @@ function findRolloutsInDir(dirPath: string): SessionFile[] {
         timestamp: entry.timestamp,
         size: stats.size,
         modifiedAt: stats.mtime,
+        ino: stats.ino > 0 ? stats.ino : undefined,
       });
     } catch {
       // Skip files we cannot stat

@@ -4,7 +4,9 @@
  *
  * - result digest: a finished agent's final answer (head and tail when it is
  *   long) becomes three short lines, conclusion, basis and caveats, in the
- *   panel's language. Written to the agent's log as a `digest` entry.
+ *   panel's language; so does a long answer at the end of a stage of an
+ *   agent still at work, for the brief. Written to the agent's log as a
+ *   `digest` entry.
  * - labels and title: an agent's task text becomes a short label shown in
  *   place of its name; the session gets a title, from the recap's goal when
  *   there is one, else from the first prompt.
@@ -31,7 +33,8 @@ import type { RolloutParseResult } from './rollout.js';
 import type { AgentLog, AgentLogEntry, AgentLogKind } from './agent-log.js';
 import type { RecapStore } from './recap.js';
 import { writePrivateFile, type ModelHandle, type SmallModel } from './small-model.js';
-import { AGENT_TASK_KINDS, type AgentTaskKind, type PendingApproval, type SubagentTree, type SubagentTreeNode } from '../types.js';
+import { AGENT_TASK_KINDS, type AgentStage, type AgentTaskKind, type PendingApproval, type SubagentTree, type SubagentTreeNode } from '../types.js';
+import { RESULT_RAW_CHARS } from './agent-stages.js';
 
 export interface JobSwitches {
   resultDigest: boolean;
@@ -555,6 +558,9 @@ export class ModelJobs {
 
   private digests(input: JobsInput): void {
     walk(input.tree.nodes, node => {
+      const stage = node.stages?.filter(stage => stage.status !== 'running').at(-1);
+      // The ledger has the answer: no rollout read, and no second digest of it.
+      if (stage?.result && stage.endedAt) { this.stageDigest(node, stage, input); return; }
       if (node.status !== 'completed' || !node.rolloutPath || this.currentDigest(node)) return;
       const finished = (node.statusAt ?? node.lastEventAt)?.getTime() ?? 0;
       if (node.id !== input.inspected && input.now - finished > DIGEST_RECENT_MS) return;
@@ -577,6 +583,31 @@ export class ModelJobs {
           return true;
         });
       }, () => { this.running.delete(key); this.failed.set(key, input.now); });
+    });
+  }
+
+  /**
+   * The digest of an agent's last finished stage, from the answer its ledger
+   * kept: once the agent has finished, as always; while an agent the main
+   * session started works on, when the answer is too long for the brief to
+   * send whole. Kept in the log at the stage's end.
+   */
+  private stageDigest(node: SubagentTreeNode, stage: AgentStage, input: JobsInput): void {
+    const result = stage.result!;
+    if (node.status !== 'completed' && !(input.tree.nodes.includes(node) && result.length > RESULT_RAW_CHARS)) return;
+    const end = stage.endedAt!.getTime();
+    if (node.id !== input.inspected && input.now - end > DIGEST_RECENT_MS) return;
+    const from = stage.startedAt.getTime();
+    if (this.log.entries(node.id).some(entry => entry.kind === 'digest' && entry.at >= from && entry.at <= end + 5000)) return;
+    const key = `digest:${node.id}:${end}`;
+    if (!this.due(key, input.now) || this.inFlight('digest:') >= MAX_IN_FLIGHT) return;
+    this.ask(key, input.now, { feature: 'digest', system: digestSystemPrompt(input.language), prompt: digestPrompt(result),
+      cacheKey: `${createHash('sha256').update(result).digest('hex').slice(0, 32)}:${input.language}` }, reply => {
+      const digest = parseDigest(reply);
+      if (!digest) return false;
+      this.log.add(node.id, [{ at: end, kind: 'digest', text: digestText(digest, input.digestLabels) }]);
+      this.log.flush();
+      return true;
     });
   }
 

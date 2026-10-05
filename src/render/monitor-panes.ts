@@ -6,66 +6,81 @@
 import type { SubagentTreeNode } from '../types.js';
 import type { GitChangedFile } from '../collectors/git-changes.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
-import type { WorkbenchEvent } from './workbench-state.js';
 import type { MonitorData, MonitorPane, MonitorRow, MonitorState } from './monitor.js';
-import { visibleRows, countExpired, guardianCount, isGuardian } from './panel-state.js';
+import type { CountsText } from './control-bar.js';
+import { visibleRows, countExpired, guardianCount } from './panel-state.js';
+import { agentCounts, type StatusCounts } from '../collectors/subagent-tree.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { displayConfig } from './hud-config.js';
 import { t } from './i18n.js';
-import { agentTitle, shownName, labelled } from './agent-title.js';
+import { agentTitle, shownName } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
-import { formatWindowLabel } from './quota.js';
 import { monitorText, fit, pair, wrapped, flowLines, squeeze } from './monitor-text.js';
-import { age, iconic, nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName } from './monitor-labels.js';
+import { nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
+  isUntracked, UNTRACKED_ROW, changeLetter, lineCounts, listsWorktrees, worktreeItem } from './monitor-labels.js';
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
+import { timelineRows } from './monitor-timeline.js';
 
 /**
- * The agents' heading: what is running, failed and done, as counts. The
- * switch for what the linger window put away is on the control bar.
+ * What the linger window put away from the list, counted whether or not it
+ * is showing: in rich the L1s alone, the list's rows (their subtasks are on
+ * their cards, and showing the rest brings none of them back as rows);
+ * compact, every agent in the tree.
  */
-export function summaryRow(input: MonitorData, state: MonitorState, width: number, now: number): {row: MonitorRow; total: number; expired: number} {
-  const everyone = visibleRows(input.tree.nodes,{...state.tree,filter:'all',collapsed:new Set(),showAll:true},now);
-  const totals = {run:0,done:0,error:0,unknown:0};
-  for (const {node} of everyone) totals[node.status === 'running' || node.status === 'starting' ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
-  // What the linger window puts away, counted whether or not it is showing.
-  const expired = countExpired(input.tree.nodes,{...state.tree,showAll:false},now);
-  // Guardian reviews under the main session count here, not as agents.
-  const reviews = guardianCount(input.tree.nodes).count;
+export function putAwayCount(nodes: SubagentTreeNode[], state: MonitorState, now: number): number {
+  if (state.style !== 'rich') return countExpired(nodes,{...state.tree,showAll:false},now);
+  const listed = (showAll: boolean) => visibleRows(nodes,{...state.tree,collapsed:new Set(),showAll},now).filter(row=>row.depth === 0).length;
+  return listed(true)-listed(false);
+}
+
+/**
+ * The agents' heading, in both layouts the counts every view gives
+ * (`agentCounts`): the agents the main session started by how they stand,
+ * one at work while a subtask of it is, the guardian reviews, and their
+ * subtasks as one figure with how many of them failed. The switch for what
+ * the linger window put away is on the control bar.
+ */
+export function summaryRow(input: Pick<MonitorData,'tree'>): {row: MonitorRow} {
+  const {agents,subtasks:subs,reviews} = agentCounts(input.tree.nodes);
   // "!1 失败  ▸1 运行  ✓5 完成": an icon and a count alone said nothing to a
-  // reader without the legend, so each count carries its word; the short
-  // form, the counts alone, is for where the words do not fit.
-  const build = (words: boolean) => {
+  // reader without the legend, so each count carries its word where it fits.
+  // The title row says as much as fits, each form whole (`paneHead`).
+  const build: CountsText = (words, subtasks) => {
     const count = (icon: string, paint: (s: string) => string, n: number, word: string) =>
       `${paint(icon)}${n}${words ? colors.dim(` ${t(word)}`) : ''}`;
     // Only what is there: "▸0 run" beside thirty finished agents is noise.
     // A column in, under the entries' status icons; failures lead.
     const counts = [
-      totals.error ? count('!',theme.error,totals.error,'failed') : '',
-      totals.done ? count('✓',theme.success,totals.done,'done') : '',
-      totals.run ? count('▸',theme.info,totals.run,'run') : '',
-      totals.unknown ? count('?',colors.dim,totals.unknown,'unknown') : '',
-      reviews ? `${guardianChip(input.tree.nodes)}${words ? colors.dim(` ${t('reviews')}`) : ''}` : '',
+      agents.failed ? count('!',theme.error,agents.failed,'failed') : '',
+      agents.completed ? count('✓',theme.success,agents.completed,'done') : '',
+      agents.active ? count('▸',theme.info,agents.active,'run') : '',
+      agents.unknown ? count('?',colors.dim,agents.unknown,'unknown') : '',
+      reviews.total ? `${reviewChip(reviews)}${words ? colors.dim(` ${t('reviews')}`) : ''}` : '',
     ].filter(Boolean).join(words ? '  ' : ' ');
-    return counts ? truncateAnsi(' '+counts,width) : '';
+    const tasks = subtasks && subs.total ? colors.dim(t('· {n} subtasks',{n:subs.total}))+(subs.failed ? theme.error(t(', {n} failed',{n:subs.failed})) : '') : '';
+    return [counts,tasks].filter(Boolean).join('  ');
   };
-  return {row:{text:build(true),short:build(false)},total:everyone.length,expired};
+  const text = build(true,true);
+  return {row:{text:text && ' '+text,counts:build}};
 }
 
-/**
- * "◈5": the guardian reviews among `nodes`, in the info colour while one is
- * running. Empty when there are none.
- */
+/** "◈5": reviews, red when one failed, in the info colour while one is running. Empty when there are none. */
+function reviewChip(reviews: Pick<StatusCounts,'total'|'active'|'failed'>): string {
+  return reviews.total ? (reviews.failed ? theme.error : reviews.active ? theme.info : colors.dim)(`◈${reviews.total}`) : '';
+}
+
+/** "◈5": the guardian reviews among `nodes`, as `reviewChip` paints them. */
 export function guardianChip(nodes: readonly SubagentTreeNode[]): string {
-  const {count,running} = guardianCount(nodes);
-  return count ? (running ? theme.info : colors.dim)(`◈${count}`) : '';
+  const {count,running,failed} = guardianCount(nodes);
+  return reviewChip({total:count,active:running ? 1 : 0,failed});
 }
 
 function agentRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   // With no agent to show the view is empty: the summary's counts, the bar's
   // +N and the status card already say why, so no line says it again.
-  const {row:head} = summaryRow(input,state,width,now);
+  const {row:head} = summaryRow(input);
   const result: MonitorRow[] = [head];
   for (const row of visibleRows(input.tree.nodes,state.tree,now)) {
     const node = row.node;
@@ -107,110 +122,6 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
   return result;
 }
 
-/** A timeline event in the reader's words. Facts as recorded; nothing inferred. */
-export function timelineText(event: WorkbenchEvent): string {
-  const subject = event.subject ? monitorText(event.subject) : '';
-  switch (event.kind) {
-    case 'approval-requested': return subject ? t('Approval asked: {what}',{what:subject}) : t('Approval asked');
-    case 'approval-answered': return t('Approval answered');
-    case 'compacted': return t('Context compacted');
-    case 'quota': {
-      const window = formatWindowLabel(event.windowMinutes);
-      return t('Quota past {n}%',{n:event.threshold ?? '?'})+(window ? ` (${window})` : '');
-    }
-    case 'turn-finished': return t('Turn finished');
-    case 'turn-interrupted': return t('Turn interrupted');
-    case 'turn-failed': return t('Turn failed');
-    case 'agent-started': return t('{agent} started',{agent:subject});
-    case 'agent-finished': return t('{agent} finished',{agent:subject});
-    case 'agent-failed': return t('{agent} failed',{agent:subject});
-    case 'tool-failed': return t('Tool failed: {what}',{what:subject});
-    default: return monitorText(event.title);
-  }
-}
-
-/** A timeline line before its time: what it says, the agent it is about, and how many it folds. */
-interface TimelineLine { at: Date; text: string; paint: (s: string) => string; key: string; count: number; cause?: string }
-
-/**
- * The timeline's lines, newest first, made shorter to read: an agent that
- * started and finished in the list is one line, at the finish ("▸ name 12m
- * ✓"); a guardian review's comings and goings are left out (its failure
- * stays); the same event in a row is one line, "×5", at its newest time.
- * With glyphs on, a finished turn is "⏎ Turn finished", a failed tool "✗ exec",
- * and the rest of an agent's run "▸ name" or "name ✓": the icon, and a word.
- */
-function timelineLines(input: MonitorData): TimelineLine[] {
-  const events = input.timeline ?? [];
-  const nodes = new Map<string, SubagentTreeNode>();
-  walkTree(input.tree.nodes,node=>nodes.set(node.id,node));
-  const guardian = (event: WorkbenchEvent) => Boolean(event.agentId && nodes.get(event.agentId) && isGuardian(nodes.get(event.agentId)!));
-  // Starts paired with a finish later in the list (the list is newest first).
-  const finishes = new Map<string, WorkbenchEvent>();
-  const paired = new Set<WorkbenchEvent>();
-  const startOf = new Map<WorkbenchEvent, WorkbenchEvent>();
-  for (const event of events) {
-    if (!event.agentId) continue;
-    if (event.kind === 'agent-finished' || event.kind === 'agent-failed') finishes.set(event.agentId,event);
-    else if (event.kind === 'agent-started') {
-      const end = finishes.get(event.agentId);
-      if (end) { paired.add(event); startOf.set(end,event); finishes.delete(event.agentId); }
-    }
-  }
-  const lines: TimelineLine[] = [];
-  // With labels as names, an agent's events say its label once it has one.
-  const relabel = (event: WorkbenchEvent): WorkbenchEvent => {
-    const node = event.agentId ? nodes.get(event.agentId) : undefined;
-    return node && event.subject && input.state.labelAsName && labelled(node) ? {...event,subject:node.label} : event;
-  };
-  for (const original of events) {
-    const event = relabel(original);
-    if (guardian(event) && event.kind !== 'agent-failed') continue;
-    if (event.kind === 'agent-started' && paired.has(original)) continue;
-    const plainPaint = (s: string) => s;
-    const paint = event.status === 'error' ? theme.error : event.kind === 'quota' || event.kind === 'approval-requested' ? theme.warning : plainPaint;
-    const name = event.agentId ? agentPaint(event.agentId)(monitorText(event.subject ?? '')) : '';
-    let text = paint(timelineText(event));
-    const start = startOf.get(original);
-    if (start) {
-      const ran = age(start.at,event.at.getTime());
-      const mark = event.kind === 'agent-failed' ? theme.error('✗') : theme.success('✓');
-      text = iconic() ? `${theme.info('▸')} ${name} ${colors.dim(ran)} ${mark}` : `${t('{agent} ran {time}',{agent:name,time:ran})} ${mark}`;
-    } else if (iconic() && event.subject && (event.kind === 'agent-started' || event.kind === 'agent-finished' || event.kind === 'agent-failed')) {
-      // Half a run in the list: "▸ name" while it runs, "name ✓" or "name ✗" at its end.
-      const who = event.agentId ? name : monitorText(event.subject);
-      text = event.kind === 'agent-started' ? `${theme.info('▸')} ${who}` : `${who} ${event.kind === 'agent-failed' ? theme.error('✗') : theme.success('✓')}`;
-    } else if (event.agentId && event.subject) {
-      // The agent's name in its own colour, the rest in the event's.
-      const words = timelineText(event);
-      const subject = monitorText(event.subject);
-      const at = words.indexOf(subject);
-      if (at >= 0) text = paint(words.slice(0,at))+name+paint(words.slice(at+subject.length));
-    } else if (iconic() && event.kind === 'turn-finished') text = colors.dim(`⏎ ${t('Turn finished')}`);
-    else if (iconic() && event.kind === 'tool-failed') text = `${theme.error('✗')} ${monitorText(event.subject ?? '')}`;
-    const key = `${event.kind ?? event.title}|${event.subject ?? ''}|${event.status}|${start ? 'ran' : ''}`;
-    const last = lines.at(-1);
-    // The same event again, with nothing between and nothing written about it: one line.
-    if (last && last.key === key && !event.cause && !last.cause && !start) { last.count++; continue; }
-    lines.push({at:event.at,text,paint,key,count:1,cause:event.cause});
-  }
-  return lines;
-}
-
-function timelineRows(input: MonitorData, width: number, now: number): MonitorRow[] {
-  const lines = timelineLines(input);
-  // No events, no rows: the pane's frame says what it is.
-  if (!lines.length) return [];
-  const rows: MonitorRow[] = [];
-  for (const line of lines) {
-    const when = age(line.at,now);
-    rows.push({text:truncateAnsi(`${colors.dim(when.padStart(3))} ${line.text}${line.count > 1 ? colors.dim(` ×${line.count}`) : ''}`,width)});
-    // A model-written reading of a failure, marked as such.
-    if (line.cause) rows.push(...flowLines(monitorText(line.cause),Math.max(1,width-6)).map((text,i)=>({text:`    ${i ? ' ' : colors.dim('~')} ${text}`})));
-  }
-  return rows;
-}
-
 /**
  * The changes' counts in words, zero counts left out, in the order
  * conflicts, staged, unstaged, untracked: "5 未暂存 · 2924 未跟踪". Short of
@@ -242,7 +153,6 @@ export function changeCounts(files: readonly GitChangedFile[], width: number): s
  * the middle goes (".agents/…/SKILL.md", then ".ag…/SKILL.md"), and last the
  * start is cut ("…/SKILL.md").
  */
-let shownCache: {files: readonly unknown[]; width: number; shown: string[]} | undefined;
 export function shownPaths(paths: readonly string[], width: number): string[] {
   // An untracked directory keeps its slash on its name: "r02/".
   const split = paths.map(path=>{
@@ -286,57 +196,105 @@ export function shownPaths(paths: readonly string[], width: number): string[] {
   });
 }
 
+/** The changed files, tracked then untracked, each with its path as the list shows it. */
+interface ChangesSplit {
+  files: readonly GitChangedFile[];
+  width: number;
+  tracked: Array<[GitChangedFile, string]>;
+  untracked: Array<[GitChangedFile, string]>;
+}
+let changesCache: ChangesSplit | undefined;
+function splitChanges(files: readonly GitChangedFile[], width: number): ChangesSplit {
+  const shown = shownPaths(files.map(file=>file.path),width);
+  const split: ChangesSplit = {files,width,tracked:[],untracked:[]};
+  files.forEach((file,i) => (isUntracked(file) ? split.untracked : split.tracked).push([file,shown[i]]));
+  return split;
+}
+
+/**
+ * The worktrees over the changes, where there is more than one: a row each,
+ * the one whose changes are listed marked "●" and named in bold, how far its
+ * branch is from upstream and its state on the right. Then a rule naming it
+ * again, with its counts, over its files.
+ */
+function worktreeRows(input: MonitorData, state: MonitorState, width: number, now: number, counts: string): MonitorRow[] {
+  const entries = input.worktrees?.entries ?? [];
+  const names = entries.map(worktreeName);
+  const rows: MonitorRow[] = [];
+  let listed = '';
+  for (const [i,entry] of entries.entries()) {
+    const item = worktreeItem(entry.path);
+    const current = entry.path === state.selectedWorktree;
+    const label = worktreeLabel(entry,now);
+    const paint = label.startsWith('!') || entry.error ? theme.warning : label === 'clean' ? colors.dim : theme.value;
+    const ahead = entry.status?.ahead ? theme.success(`↑${entry.status.ahead}`)+' ' : '';
+    const behind = entry.status?.behind ? theme.error(`↓${entry.status.behind}`)+' ' : '';
+    // Locked is a word after the status, not a letter glued to the name.
+    const locked = entry.locked !== undefined ? colors.dim(` · ${t('locked')}`) : '';
+    // Two of the same name are told apart by what their HEAD commit says,
+    // never by a hash: it stands in for the name, which the Inspector gives.
+    const twin = names.filter(name=>name === names[i]).length > 1;
+    const name = monitorText(twin && entry.subject ? entry.subject : names[i]);
+    if (current) listed = name;
+    const left = `${item === state.selectedFile ? '›' : ' '}${current ? theme.accent('●') : ' '} ${current ? theme.strong(name) : name}`;
+    rows.push({item,text:pair(left,`${ahead}${behind}${paint(worktreeLabelText(label))}${locked}`,width)});
+  }
+  const head = `${colors.dim('─ ')}${theme.strong(listed || t('Changes'))}${counts ? colors.dim(' · ')+counts : ''} `;
+  rows.push({text:truncateAnsi(head+colors.dim('─'.repeat(Math.max(0,width-visualLength(head)))),width)});
+  return rows;
+}
+
+/**
+ * The changes: the worktrees on top where there is a choice of them, then
+ * the listed one's counts, what the model said the diff does, and its files,
+ * the untracked folded into one row at the end. One cursor runs through the
+ * worktrees and the files alike.
+ */
+function changesRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
+  const snapshot = input.worktrees;
+  const git = input.git;
+  const rows: MonitorRow[] = [];
+  // Empty, loading or clean is no line of its own; an error says what is wrong.
+  if (snapshot?.error) rows.push({text:theme.warning(t('No readable repository'))}, {text:colors.dim(t('Set worktreeRoot'))}, ...wrapped(snapshot.error,width).map(text=>({text:colors.dim(text)})));
+  if (snapshot?.truncated) rows.push({text:theme.warning(t('Worktree list limited'))});
+  if (git?.error) rows.push({text:theme.warning(t('Git incomplete'))});
+  // Worked out once per git read and width, not on every repaint.
+  const pathWidth = Math.max(1,width-4);
+  const files = git?.root ? git.files : [];
+  if (changesCache?.files !== files || changesCache.width !== pathWidth) changesCache = splitChanges(files,pathWidth);
+  const {tracked,untracked} = changesCache;
+  // The untracked files are counted on their own row, at the end.
+  const counts = files.length ? changeCounts(tracked.map(([file])=>file),width) : '';
+  if (listsWorktrees(snapshot)) rows.push(...worktreeRows(input,state,width,now,counts));
+  else if (counts) rows.push({text:counts});
+  if (!git?.root) return rows;
+  // What the diff does, in the model's words, marked as such; older than the diff, it says so.
+  const summary = files.length ? input.notes?.changes : undefined;
+  if (summary) {
+    for (const line of summary.lines) rows.push(...flowLines(monitorText(line),Math.max(1,width-2)).map((text,i)=>({text:`${i ? ' ' : colors.dim('~')} ${text}`})));
+    if (!summary.current) rows.push(...flowLines(t('(written {age}, before the latest edits)',{age:writtenAge(summary.at,now)}),Math.max(1,width-2)).map(text=>({text:colors.dim(`  ${text}`)})));
+  }
+  const mark = (item: string) => item === state.selectedFile ? '›' : ' ';
+  // A letter for what happened, the path, and the lines it adds and removes at the right where they fit.
+  for (const [file,shown] of tracked) {
+    const left = `${mark(file.path)} ${changeLetter(file)} ${monitorText(shown)}`;
+    const lines = lineCounts(file);
+    const gap = width-visualLength(left)-visualLength(lines);
+    rows.push({item:file.path,text:truncateAnsi(lines && gap >= 2 ? left+' '.repeat(gap)+lines : left,width)});
+  }
+  // The untracked files folded into a row that counts them; Enter or a click lists them under it.
+  if (untracked.length) {
+    const open = Boolean(state.untrackedOpen);
+    rows.push({item:UNTRACKED_ROW,text:`${mark(UNTRACKED_ROW)} ${colors.dim(`${open ? '▾' : '▸'} ${t('{n} untracked',{n:untracked.length})}`)}`});
+    if (open) for (const [file,shown] of untracked) rows.push({item:file.path,text:truncateAnsi(`${mark(file.path)}   ${monitorText(shown)}`,width)});
+  }
+  return rows;
+}
+
 export function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   if (id === 'agents') return agentRows(input,state,width,now);
   if (id === 'timeline') return timelineRows(input,width,now);
-  if (id === 'worktrees') {
-    const snapshot = input.worktrees;
-    // Empty, loading or clean is no line of its own; an error says what is wrong.
-    if (!snapshot) return [];
-    if (snapshot.error) return [{text:theme.warning(t('No readable repository'))}, {text:colors.dim(t('Set worktreeRoot'))}, ...wrapped(snapshot.error,width).map(text=>({text:colors.dim(text)}))];
-    const rows: MonitorRow[] = [];
-    if (snapshot.truncated) rows.push({text:theme.warning(t('Worktree list limited'))});
-    const names = snapshot.entries.map(worktreeName);
-    for (const [i,entry] of snapshot.entries.entries()) {
-      const label = worktreeLabel(entry,now);
-      const mark = (entry.path === state.selectedWorktree ? '›' : ' ')+' ';
-      const subject = entry.subject ? monitorText(entry.subject) : '';
-      // Two of the same name are told apart by what their HEAD commit says,
-      // never by a hash: where it has no line of its own, it stands in for the name.
-      const twin = names.filter(name=>name === names[i]).length > 1;
-      const name = twin && subject && width < 20 ? subject : monitorText(names[i]);
-      const paint = label.startsWith('!') || entry.error ? theme.warning : label === 'clean' ? colors.dim : theme.value;
-      // Locked is a word after the status, not a letter glued to the name.
-      const locked = entry.locked !== undefined ? colors.dim(` · ${t('locked')}`) : '';
-      rows.push({text:pair(mark+name,paint(worktreeLabelText(label))+locked,width),item:entry.path});
-      // Under it, what its HEAD commit says, where a second line fits.
-      if (width >= 20 && subject) rows.push({text:colors.dim(truncateAnsi('  '+subject,width)),item:entry.path});
-    }
-    return rows;
-  }
-  if (id === 'changes') {
-    const git = input.git;
-    const rows: MonitorRow[] = [];
-    if (!git) return [];
-    if (git.error) rows.push({text:theme.warning(t('Git incomplete'))});
-    if (!git.root) return rows;
-    if (git.files.length) {
-      rows.push({text:changeCounts(git.files,width)});
-      // What the diff does, in the model's words, marked as such; older than the diff, it says so.
-      const summary = input.notes?.changes;
-      if (summary) {
-        for (const line of summary.lines) rows.push(...flowLines(monitorText(line),Math.max(1,width-2)).map((text,i)=>({text:`${i ? ' ' : colors.dim('~')} ${text}`})));
-        if (!summary.current) rows.push(...flowLines(t('(written {age}, before the latest edits)',{age:writtenAge(summary.at,now)}),Math.max(1,width-2)).map(text=>({text:colors.dim(`  ${text}`)})));
-      }
-    }
-    // Worked out once per git read and width, not on every repaint.
-    const pathWidth = Math.max(1,width-5);
-    if (shownCache?.files !== git.files || shownCache.width !== pathWidth)
-      shownCache = {files:git.files,width:pathWidth,shown:shownPaths(git.files.map(file=>file.path),pathWidth)};
-    const shown = shownCache.shown;
-    return [...rows, ...git.files.map((file,i) => ({item:file.path,
-      text:truncateAnsi(`${file.path===state.selectedFile?'›':' '} ${file.conflict?theme.error('!!'):file.index+file.worktree} ${monitorText(shown[i])}`,width)}))];
-  }
+  if (id === 'changes') return changesRows(input,state,width,now);
   return inspectorRows(input,state,width,now);
 }
 
@@ -347,7 +305,8 @@ export function paneRows(id: MonitorPane, input: MonitorData, state: MonitorStat
  */
 export function briefSaid(input: MonitorData, width: number): string[] {
   const brief = input.brief;
-  const failure = brief?.error ? flowLines(monitorText(brief.error),Math.max(1,width)).map(text=>theme.warning(text)) : [];
+  // A failure the panel itself names is in the reader's language; a backend's is as it came.
+  const failure = brief?.error ? flowLines(monitorText(t(brief.error)),Math.max(1,width)).map(text=>theme.warning(text)) : [];
   // A reply in another shape than the JSON asked for is shown as the text it is.
   const body = brief?.text && !brief.structured && !brief.items && !brief.overall
     ? brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flowLines(monitorText(line),Math.max(1,width))) : [];
@@ -438,10 +397,6 @@ export function briefRule(brief: NonNullable<MonitorData['brief']>, width: numbe
   const status = brief.paused ? t('paused') : brief.running ? t('writing…') : brief.error ? t('failed') : '';
   const label = `${t('─ Brief')}${status ? ` · ${status}` : ''} `;
   return colors.dim(truncateAnsi(label+'─'.repeat(Math.max(0,width-visualLength(label))),width));
-}
-
-function walkTree(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
-  for (const node of nodes) { visit(node); walkTree(node.children,visit); }
 }
 
 /**

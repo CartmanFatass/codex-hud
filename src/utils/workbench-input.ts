@@ -89,11 +89,10 @@ export class WorkbenchInputDecoder {
       }
       if (this.pending[0] !== '\x1b') {
         const ch = String.fromCodePoint(this.pending.codePointAt(0) ?? 0);
-        const name = this.profile === 'monitor' && ch === '2' ? 'worktrees'
+        const name = this.profile === 'monitor' && ch === '2' ? 'timeline'
           : this.profile === 'monitor' && ch === '4' ? 'details'
-            : this.profile === 'monitor' && ch === '5' ? 'timeline'
-              // The monitor tells Space from Enter: on a card it opens the card.
-              : this.profile === 'monitor' && ch === ' ' ? 'space' : KEYS[ch];
+            // The monitor tells Space from Enter: on a card it opens the card.
+            : this.profile === 'monitor' && ch === ' ' ? 'space' : KEYS[ch];
         this.pending = this.pending.slice(ch.length);
         key(name, ch);
         continue;

@@ -9,11 +9,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
-import { buildSubagentTree, uniquePickerLabel } from './collectors/subagent-tree.js';
+import { buildSubagentTree, uniquePickerLabel, useTreeScanStore, flushTreeScans } from './collectors/subagent-tree.js';
+import { TreeScanStore } from './collectors/tree-scan-store.js';
 import { collectGitChanges, readGitDiff, readDiffHunks, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
-  monitorModes, monitorPreferences, nextRepaintDelay, paneShown, panelTop, type MonitorFrame } from './render/monitor.js';
+  monitorModes, monitorSettings, monitorPreferences, nextRepaintDelay, paneShown, panelTop, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
@@ -26,7 +27,9 @@ import { AgentLog } from './collectors/agent-log.js';
 import { ModelJobs, NO_JOBS, type JobSwitches } from './collectors/model-jobs.js';
 import { WorkbenchHistory } from './collectors/workbench-events.js';
 import type { WorkbenchEvent } from './render/workbench-state.js';
-import { getHudHome } from './utils/codex-path.js';
+import { getCodexHome, getHudHome } from './utils/codex-path.js';
+import { codexGoal } from './collectors/codex-goal.js';
+import { roleSet, subtaskRoles } from './render/directions.js';
 import { HudStatus } from './collectors/hud-status.js';
 import { statusCard, sessionState } from './render/status-block.js';
 import { artSize, renderArt, type ArtBitmap } from './render/art.js';
@@ -108,6 +111,8 @@ function requestEnsureSingle(): void {
 
 async function runLivePage(): Promise<void> {
   startProfiling('panel');
+  // Opened again, the panel reads only what each rollout gained since it last saved its scan.
+  useTreeScanStore(new TreeScanStore(path.join(getHudHome(),'scan')));
   const finder = new SessionFinder(HUD_CWD_REAL,undefined,HUD_SESSION_START);
   const parser = new RolloutParser(40);
   const worktreeCollector = new WorktreeCollector();
@@ -128,11 +133,7 @@ async function runLivePage(): Promise<void> {
     next.tree.sort = settings.sort;
     next.tree.lingerMs = settings.finishedLingerMs;
     next.modes = monitorModes(settings);
-    next.tabbed = settings.paneLayout === 'tabs';
-    next.style = settings.panelStyle;
-    next.statusLevel = settings.statusCard;
-    next.labelAsName = settings.labelAsName;
-    return next;
+    return {...next,...monitorSettings(settings)};
   };
   let state = configuredState();
   let settingsPage: SettingsPageState | null = null;
@@ -190,13 +191,6 @@ async function runLivePage(): Promise<void> {
   const updateJobs = () => time('jobs.update',()=>jobs.update({tree,main,switches:switches(),language:resolveLanguage(settings.language),on:jobsOn(),
     inspected:paneShown(state,'details') && state.preview === 'agent' ? state.tree.selectedId ?? undefined : undefined,
     recapGoal:briefCommand() === 'off' ? undefined : briefer.current().recap?.goal,digestLabels:{basis:t('Basis:'),caveats:t('Caveats:')},now:Date.now()}));
-  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-  /** A short-lived line in the notice row, cleared after a few seconds. */
-  const flash = (message: string) => {
-    navigationMessage = message; render();
-    if (noticeTimer) clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(()=>{ if (navigationMessage === message) { navigationMessage = null; render(); } },3000);
-  };
   // The decoration picture, decoded once per path; a failed read means none.
   let art: {path: string; bitmap: ArtBitmap | null} = {path:'',bitmap:null};
   const loadArt = () => {
@@ -217,8 +211,10 @@ async function runLivePage(): Promise<void> {
   const scope = () => briefingScope(settings);
   /** The brief's backend as the Briefer sees it: off too when neither brief nor recap is on. */
   const briefCommand = () => scope() ? settings.briefing : 'off';
+  // The goal set in Codex is main-session material: read only for a scope that sends it.
   const updateBriefer = (paused: boolean) => time('brief.update',()=>briefer.update(tree,briefCommand(),settings.briefingMs,
-    resolveLanguage(settings.language),Date.now(),paused,{scope:scope() ?? 'agents',main,floorMs:settings.recapFloorMs}));
+    resolveLanguage(settings.language),Date.now(),paused,{scope:scope() ?? 'agents',main,floorMs:settings.recapFloorMs,
+      importantRoles:roleSet(settings.importantRoles),goal:settings.briefing !== 'off' && settings.briefMain ? codexGoal(getCodexHome(),tree.rootId) : null}));
   configureBriefer();
   // The bar's fields, for the foot of the panel: the panel replaces the bar
   // while it is open. Fed from this page's own parse of the rollout.
@@ -239,7 +235,8 @@ async function runLivePage(): Promise<void> {
     const output = time('render',() => {
       let lines: string[];
       if (settingsPage) {
-        settingsFrame = renderSettingsPage(settingsPage,process.stdout.columns || 30,process.stdout.rows || 24,
+        // Key roles offers the roles the subtasks have now.
+        settingsFrame = renderSettingsPage({...settingsPage,roles:subtaskRoles(tree)},process.stdout.columns || 30,process.stdout.rows || 24,
           {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage()},previewTop);
         settingsPage = settingsFrame.state;
         lines = settingsFrame.lines;
@@ -405,7 +402,7 @@ async function runLivePage(): Promise<void> {
     // Closed monitors are absent, not empty frames continuously collecting
     // data; in the tabs layout only the pane shown is read for.
     const wantChanges = paneShown(state,'changes') || (paneShown(state,'details') && state.preview === 'file');
-    if (!paneShown(state,'worktrees') && !wantChanges && !(paneShown(state,'details') && state.preview === 'worktree')) return;
+    if (!wantChanges && !(paneShown(state,'details') && state.preview === 'worktree')) return;
     collectingGit = true;
     const candidates = sources();
     const requestKey = JSON.stringify(candidates);
@@ -450,7 +447,7 @@ async function runLivePage(): Promise<void> {
     jobs.stop();
     model.cancelAll();
     agentLog.flush();
-    if (noticeTimer) clearTimeout(noticeTimer);
+    flushTreeScans();
     timers.forEach(clearInterval);
     if (collectTimer) clearInterval(collectTimer);
     if (repaintTimer) clearTimeout(repaintTimer);
@@ -531,8 +528,8 @@ async function runLivePage(): Promise<void> {
             if (!jobsOn()) jobs.stop();
             armCollect();
             loadArt();
-            state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
-              tabbed:settings.paneLayout === 'tabs',zoom:false,style:settings.panelStyle,statusLevel:settings.statusCard,labelAsName:settings.labelAsName,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
+            state = {...state,...monitorSettings(settings),tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
+              zoom:false,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
             git=null;diff=undefined;diffKey='';void refreshGit();
             if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
             settingsPage.message = t('Saved');

@@ -1085,6 +1085,9 @@ Options:
   --json              Print this directory's HUD state as JSON
   --attach            Attach to latest existing session in this directory
   --new-session       Always create a new session for this launch
+  brief --dry-run [FILE]
+                      Print (or write to FILE) the brief the panel would send
+                      to the model now for this directory's session; nothing is sent
 
 Environment Variables:
   CODEX_HUD_POSITION  HUD pane position: bottom (default), top
@@ -1275,6 +1278,12 @@ case "${1:-}" in
             error "tmux not installed"
         fi
         exit 0
+        ;;
+    brief)
+        # Only with --dry-run: `codex-hud brief` alone is a prompt for Codex.
+        if [[ "${2:-}" == "--dry-run" ]]; then
+            exec node "$HUD_DIR/dist/brief-dry-run.js" "${@:3}"
+        fi
         ;;
 esac
 

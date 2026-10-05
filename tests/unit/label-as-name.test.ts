@@ -159,8 +159,8 @@ test('the compact tree and the timeline show the label too', () => {
     draw(state(labelAsName, { modes: { ...initialMonitorState().modes, timeline: 'open' } }), {
       timeline: [event],
     }).join('\n');
-  assert.match(timeline(true), /1m ▸ 缓存清理复核/);
-  assert.match(timeline(false), /1m ▸ cache_cleanup_reviewer/);
+  assert.match(timeline(true), /1m ├─▸ 缓存清理复核/);
+  assert.match(timeline(false), /1m ├─▸ cache_cleanup_reviewer/);
 });
 
 test('switching goes by the name the picker prints, never by the label', () => {

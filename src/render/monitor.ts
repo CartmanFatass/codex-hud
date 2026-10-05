@@ -3,7 +3,7 @@ import type { SubagentTree } from '../types.js';
 import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
-import { initialPanelState, reconcileSelection, visibleRows, countExpired, type PanelState } from './panel-state.js';
+import { initialPanelState, reconcileSelection, visibleRows, type PanelState, type PanelRow } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { modelLegend } from './model-glyphs.js';
 import { iconSet } from './hud-config.js';
@@ -12,12 +12,14 @@ import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
 import { t } from './i18n.js';
 import { drawAgentsView } from './agents-view.js';
-import { controlBar, paneHead, icon, look } from './control-bar.js';
+import { controlBar, paneHead, icon, look, type CountsText } from './control-bar.js';
 import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
-import { TURN_CLOCKS, TURN_CLOCK_LONG } from './monitor-labels.js';
-import { paneRows, agentsView } from './monitor-panes.js';
+import { TURN_CLOCKS, TURN_CLOCK_LONG, isUntracked, UNTRACKED_ROW, listsWorktrees, worktreeOfItem } from './monitor-labels.js';
+import { paneRows, agentsView, putAwayCount, summaryRow } from './monitor-panes.js';
+import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
+import { roleSet } from './directions.js';
 
 // The panel is drawn by the modules beside this one; what they export is
 // exported here too, so a caller imports the monitor from one place.
@@ -25,12 +27,13 @@ export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from 
 export { iconic, agoText, age, nodeStatus, worktreeLabel, worktreeName, worktreePlace, TURN_CLOCKS, QUIET_MS, FRESH_FINISH_MS,
   isLive, isQuiet, turnClock, nextRepaintDelay, finishedAt, agentPaint, writtenAge } from './monitor-labels.js';
 export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type EdgeMeter } from './monitor-meter.js';
-export { summaryRow, guardianChip, timelineText, changeCounts, shownPaths, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
+export { summaryRow, guardianChip, changeCounts, shownPaths, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
+export { timelineText, TIMELINE_STYLES, TIMELINE_HOURS, TIMELINE_STEP, TIMELINE_EARLIER, type TimelineStyle } from './monitor-timeline.js';
 export { MODEL_LOG_KINDS } from './monitor-inspector.js';
 export { clickTab, monitorRowAt, monitorItemAt, canMonitorDiff, handleMonitorInput } from './monitor-input.js';
 
 
-export const MONITOR_PANES = ['agents', 'worktrees', 'changes', 'details', 'timeline'] as const;
+export const MONITOR_PANES = ['agents', 'timeline', 'changes', 'details'] as const;
 export type MonitorPane = typeof MONITOR_PANES[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
@@ -39,8 +42,15 @@ export interface MonitorState {
   focus: MonitorPane;
   modes: MonitorModes;
   scroll: Record<MonitorPane, number>;
+  /** The worktree whose changes are listed. */
   selectedWorktree: string | null;
+  /**
+   * The changes' cursor: a file's path, the untracked files' row, or a
+   * worktree's row (`worktreeItem`), where the list heads its files with them.
+   */
   selectedFile: string | null;
+  /** Changes: the untracked files listed under their row, not folded into it. */
+  untrackedOpen?: boolean;
   preview: 'agent' | 'worktree' | 'file';
   help: boolean;
   zoom: boolean;
@@ -76,6 +86,18 @@ export interface MonitorState {
    * The panel sets it from settings.
    */
   tabbed?: boolean;
+  /** How the timeline draws its levels: off a rail, indented, or in lanes. The panel sets it from settings. */
+  timelineStyle?: TimelineStyle;
+  /** The timeline's window, the newest hours. The panel sets it from settings. */
+  timelineHours?: number;
+  /** Entries the reader brought back from before the window. Panel state, reset with the session. */
+  timelineMore?: number;
+  /** The L2 roles the timeline and the cards give a line of their own. The panel sets it from settings. */
+  importantRoles?: ReadonlySet<string>;
+  /** The cards' corners. The panel sets it from settings. */
+  cardCorners?: 'square' | 'round';
+  /** False leaves out the line on a card counting its subtasks by role. The panel sets it from settings. */
+  roleCounts?: boolean;
 }
 export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
@@ -85,8 +107,8 @@ export interface RowControl { kind: MonitorControl['kind']; item?: string; x: nu
  * keep its place; `controls` are click targets on the row.
  */
 export interface MonitorRow { text: string; item?: string; key?: string; controls?: RowControl[];
-  /** The text shortened, for where it does not fit: the agents' counts without their words. */
-  short?: string }
+  /** On the agents' heading: its counts in each form, for the title row to say as much as fits. */
+  counts?: CountsText }
 export interface MonitorRect {
   id: MonitorPane;
   x: number; y: number; width: number; height: number;
@@ -183,8 +205,8 @@ export interface MonitorOutcome {
 
 export function initialMonitorState(): MonitorState {
   return {tree:{...initialPanelState(),sort:'active'}, focus:'agents',
-    modes:{agents:'open',worktrees:'closed',changes:'closed',details:'closed',timeline:'closed'},
-    scroll:{agents:0,worktrees:0,changes:0,details:0,timeline:0}, selectedWorktree:null,selectedFile:null,
+    modes:{agents:'open',timeline:'closed',changes:'closed',details:'closed'},
+    scroll:{agents:0,timeline:0,changes:0,details:0}, selectedWorktree:null,selectedFile:null,
     preview:'agent',help:false,zoom:false,helpScroll:0,expanded:false};
 }
 /** Toggle one card's timeline. */
@@ -195,19 +217,49 @@ export function toggleCard(state: MonitorState, id: string): MonitorState {
 }
 /** Agents is the page itself: always there, whatever an older settings file says. */
 export function monitorModes(settings: HudSettings): MonitorModes {
-  return {agents:settings.agentsPane, worktrees:settings.worktreesPane, changes:settings.changesPane, details:settings.detailsPane, timeline:settings.timelinePane};
+  return {agents:settings.agentsPane, timeline:settings.timelinePane, changes:settings.changesPane, details:settings.detailsPane};
+}
+/** What the settings say about how the panel shows things, as its state. */
+export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
+  return {tabbed:settings.paneLayout === 'tabs', style:settings.panelStyle, statusLevel:settings.statusCard, labelAsName:settings.labelAsName,
+    timelineStyle:settings.timelineStyle, timelineHours:settings.timelineHours, importantRoles:roleSet(settings.importantRoles),
+    cardCorners:settings.cardCorners, roleCounts:settings.cardRoleCounts};
+}
+/**
+ * The agents the agents view lists, in its order: in rich style the L1s
+ * alone, a card each, their subtasks counted and the ones that matter named
+ * on it; compact, the whole tree.
+ */
+export function listedAgents(nodes: SubagentTree['nodes'], state: MonitorState, nowMs: number): PanelRow[] {
+  const rows = visibleRows(nodes, state.tree, nowMs);
+  return state.style === 'rich' ? rows.filter(row => row.depth === 0) : rows;
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
-  return {agentsPane:state.modes.agents, worktreesPane:state.modes.worktrees,
-    changesPane:state.modes.changes, detailsPane:state.modes.details, timelinePane:state.modes.timeline};
+  return {agentsPane:state.modes.agents, timelinePane:state.modes.timeline, changesPane:state.modes.changes, detailsPane:state.modes.details};
+}
+/**
+ * The changes' cursor: the row it was on while that row is listed (a
+ * worktree's, or a file's), the untracked files' row when its file is folded
+ * into it, else the first file. Only the reader puts it on a worktree's row:
+ * the files of a worktree just listed are still being read.
+ */
+function fileSelection(state: MonitorState, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null): string | null {
+  const on = worktreeOfItem(state.selectedFile);
+  if (on !== undefined && listsWorktrees(worktrees) && worktrees!.entries.some(w => w.path === on)) return state.selectedFile;
+  const files = git?.files ?? [];
+  const folded = files.some(isUntracked);
+  if (state.selectedFile === UNTRACKED_ROW && folded) return UNTRACKED_ROW;
+  const file = files.find(f => f.path === state.selectedFile);
+  if (file) return isUntracked(file) && !state.untrackedOpen ? UNTRACKED_ROW : file.path;
+  return files.find(f => !isUntracked(f))?.path ?? (folded ? UNTRACKED_ROW : null);
 }
 export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null, nowMs: number = Date.now()): MonitorState {
-  const rows = visibleRows(tree.nodes, state.tree, nowMs);
+  const rows = listedAgents(tree.nodes, state, nowMs);
   const selected = reconcileSelection(state.tree, tree.nodes, rows);
   const entries = worktrees?.entries ?? [];
   const selectedWorktree = entries.some(w => w.path === state.selectedWorktree) ? state.selectedWorktree
     : entries.find(w => !w.bare && w.prunable === undefined)?.path ?? entries[0]?.path ?? null;
-  const selectedFile = git?.files.some(f => f.path === state.selectedFile) ? state.selectedFile : git?.files[0]?.path ?? null;
+  const selectedFile = fileSelection(state,git,worktrees);
   // In the tabs layout any pane can be the one shown, whatever the stacked layout left closed.
   const focus = state.tabbed || state.modes[state.focus] !== 'closed' ? state.focus : MONITOR_PANES.find(id => state.modes[id] !== 'closed') ?? 'agents';
   const changed = selected.selectedId !== state.tree.selectedId || selectedWorktree !== state.selectedWorktree || selectedFile !== state.selectedFile;
@@ -220,21 +272,25 @@ export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: 
 
 /**
  * The panel's top as the display config now draws it: the control bar and
- * the focused pane's title, for the settings page to preview a look, its
- * icons or a theme before they are saved. A one-row bar has a blank row
- * under it, as a tall panel parts its sections, so every look is three rows
- * and the page holds still while the looks are stepped through.
+ * the focused pane's title (the agents' with their counts; in the tabs
+ * layout, the counts alone), for the settings page to preview a look, its
+ * icons, a theme or the panes before they are saved. A one-row bar has a
+ * blank row under it, as a tall panel parts its sections, so every look is
+ * three rows and the page holds still while the looks are stepped through.
  */
 export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state: MonitorState, width: number): string[] {
   const now = input.nowMs ?? Date.now();
-  const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
-  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false})];
+  const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
+  const info = state.focus === 'agents' ? summaryRow(input).row.counts : undefined;
+  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false,named:!state.tabbed,info})];
 }
 
 /** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
 const DENSE_BELOW = 12;
 /** Rows from which a blank row parts the panel's sections. */
 const PARTED_FROM = 30;
+/** The widest the help's key column grows: a longer key pushes its own line on. */
+const HELP_KEY_COLUMN = 12;
 
 /**
  * The help: the shortcuts (the tmux prefix, then a key; nothing typed in the
@@ -250,10 +306,10 @@ function helpText(rich: boolean, prefix: string, tabbed = false): Array<string |
       '{p} ,  settings  {p} ?  help','{p} b  pause / resume brief','{p} a  show / hide older',
       '{p} m  main session  {p} o  switch to selected',
       // The tabs layout shows one pane at a time: nothing to close or zoom.
-      ...(tabbed ? ['{p} 1–5  show a pane  {p} Tab  next'] : ['{p} 1–5  open / close a pane  {p} Tab  next','{p} x  close pane']),
+      ...(tabbed ? ['{p} 1–4  show a pane  {p} Tab  next'] : ['{p} 1–4  open / close a pane  {p} Tab  next','{p} x  close pane']),
       '{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
       tabbed ? '{p} Enter / v  inspect' : '{p} Enter / v  inspect  {p} z  zoom',...(rich ? ['{p} e / Space  open / close card'] : []),
-      '{p} h l  fold / unfold agent','{p} f  filter  {p} s  order',
+      ...(rich ? [] : ['{p} h l  fold / unfold agent']),'{p} f  filter  {p} s  order',
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
       '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex'].map(line=>t(line,p)),
     head('Buttons, top row'),
@@ -268,7 +324,7 @@ function helpText(rich: boolean, prefix: string, tabbed = false): Array<string |
     ...[...(rich ? ['Click card: select','Click its name: switch','Click top rule or ▾: open','Wheel over the card: its brief'] : ['Click agent: switch','Click a log line: select agent']),
       ...(tabbed ? [] : ["Click a pane's title: zoom / restore"]),"Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
     head('Legend'),
-    ...['1 Cards  2 Worktrees','3 Changes  4 Inspector','5 Timeline','✓ = turn completed','? = no status evidence','! = needs a look',
+    ...['1 Cards  2 Timeline','3 Changes  4 Inspector','✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
     t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
     ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve',
@@ -289,13 +345,11 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   if (!width || !height) return frame;
   if (state.help) {
     // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
-    // A line of two shortcuts too wide for the panel splits between them, not
-    // inside one ("Ctrl+] m  main session" stays whole where it fits). An
-    // entry is a key, two spaces, what it does: "{p} {p}  {p} itself" is one.
+    // An entry is a key, two spaces, what it does: "{p} {p}  {p} itself" is
+    // one. A line of two shortcuts is split between them, never inside one.
     const prefix = input.prefix ?? 'Ctrl+]';
     const keyStart = new RegExp(`  (?=(?:${prefix.replace(/[\\^$.*+?()[\]{}|]/g,'\\$&')}|Shift\\+F12) )`);
-    const entries = (line: string) => {
-      if (visualLength(line) <= width) return [line];
+    const split = (line: string) => {
       const out: string[] = [];
       for (const part of line.split(keyStart)) {
         if (out.length && !out[out.length-1].includes('  ')) out[out.length-1] += `  ${part}`;
@@ -303,8 +357,31 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       }
       return out;
     };
-    const help = helpText(state.style === 'rich',prefix,Boolean(state.tabbed))
-      .flatMap(line=>typeof line === 'string' ? entries(line).flatMap(entry=>helpLines(entry,width)) : helpLines(line.head,width).map(text=>theme.accent(text)));
+    const entries = (line: string) => visualLength(line) <= width ? [line] : split(line);
+    const text = helpText(state.style === 'rich',prefix,Boolean(state.tabbed));
+    // The shortcuts, up to the second heading, are a table: each key without
+    // the prefix its heading names, in a column, and what it does beside it,
+    // wrapped under itself. A line with no key is a sentence.
+    const shortcuts = Math.max(1,text.findIndex((line,i)=>i > 0 && typeof line !== 'string'));
+    const keyed = (entry: string) => {
+      const bare = entry.startsWith(`${prefix} `) ? entry.slice(prefix.length+1) : entry;
+      const at = bare.indexOf('  ');
+      return at > 0 ? {key:bare.slice(0,at),does:bare.slice(at+2)} : null;
+    };
+    const keys = text.slice(0,shortcuts).flatMap(line=>typeof line === 'string' ? split(line).flatMap(entry=>keyed(entry) ?? []) : []);
+    const column = Math.min(HELP_KEY_COLUMN,Math.max(1,...keys.map(entry=>visualLength(entry.key))));
+    const help = text.flatMap((line,i) => {
+      // A blank line parts the sections.
+      if (typeof line !== 'string') return [...(i ? [''] : []),...helpLines(line.head,width).map(text=>theme.accent(text))];
+      if (i >= shortcuts) return entries(line).flatMap(entry=>helpLines(entry,width));
+      return split(line).flatMap(entry => {
+        const shortcut = keyed(entry);
+        if (!shortcut) return helpLines(entry,width);
+        const key = shortcut.key+' '.repeat(Math.max(0,column-visualLength(shortcut.key)));
+        const hang = visualLength(key)+2;
+        return helpLines(shortcut.does,Math.max(1,width-hang)).map((does,j)=>j ? ' '.repeat(hang)+does : `${theme.value(key)}  ${does}`);
+      });
+    });
     const count = Math.max(0,height-2);
     state.helpScroll = Math.max(0,Math.min(state.helpScroll??0,Math.max(0,help.length-count)));
     frame.helpPage = {count,total:help.length};
@@ -327,12 +404,12 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const now = input.nowMs ?? Date.now();
   const notice = input.notice || input.error;
   const noticeRows = notice && height >= 6 ? wrapped(notice,Math.max(1,cw-2)).slice(0,2) : [];
-  // The status card takes the foot, at the level chosen, at most about half
-  // the panel; it replaces the key hint's own line.
-  const footPlan = planFoot(input,state,width,height,now,noticeRows.length);
-  const footRows = footPlan.rows;
+  // The status card takes the foot, at the level chosen, at most about a
+  // third of the panel; it replaces the key hint's own line.
+  let footPlan = planFoot(input,state,width,height,now,noticeRows.length);
+  let footRows = footPlan.rows;
   // Every control the panel has is on its first rows; nothing else is a button.
-  const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
+  const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
   const top = Math.min(height,bar.lines.length);
   let budget = Math.max(0,height-top-footRows-noticeRows.length);
   // A closed pane takes no row at all; in the tabs layout only the one shown
@@ -365,6 +442,12 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     }
     if (!grew) break;
   }
+  // Rows no pane has a use for are the status card's, as far as its brief fills them.
+  if (budget > 0 && footRows) {
+    footPlan = planFoot(input,state,width,height,now,noticeRows.length,footRows+budget);
+    budget += footRows-footPlan.rows;
+    footRows = footPlan.rows;
+  }
   // What is left goes to the inspector when it has focus, else to the agents
   // view, where it is the room the art may use. Small worktree lists stay compact.
   const fillable = order.filter(id => (sizes.get(id) ?? 0) > 0);
@@ -391,14 +474,15 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const zoomed = zoom && focused;
     if (id === 'agents') {
       // Its title, then the counts the summary row has; where its rows are on the right.
-      drawAgentsView(frame,state,rows,y,cw,h,(summary,range)=>paneHead(id,width,{info:summary,right:range && colors.dim(range),focused,zoomed}),framed ? 2 : 0);
+      // In the tabs layout the tab above names the pane: its title is its counts and where its rows are.
+      drawAgentsView(frame,state,rows,y,cw,h,(counts,range)=>paneHead(id,width,{info:counts,right:range && colors.dim(range),focused,zoomed,named:!state.tabbed}),framed ? 2 : 0);
       if (rows.length) titles.add(y);
       y += h; continue;
     }
     const edge = edgeOf(id);
     const count = Math.max(0,h-edge);
     let offset = Math.max(0,Math.min(state.scroll[id],Math.max(0,rows.length-count)));
-    const selected = id==='worktrees'?state.selectedWorktree:id==='changes'?state.selectedFile:null;
+    const selected = id==='changes'?state.selectedFile:null;
     const index = selected ? rows.findIndex(row=>row.item===selected) : -1;
     if (index>=0 && count>0) { if(index<offset)offset=index;else if(index>=offset+count)offset=index-count+1; }
     state.scroll[id]=offset;
@@ -407,9 +491,9 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     // how many there are on the right, as the look draws it; a click anywhere
     // on it zooms or restores the pane.
     const range = rows.length>count&&count ? `${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length}` : '';
-    const total = id==='worktrees' ? input.worktrees?.entries.length ?? 0 : id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? input.timeline?.length ?? 0 : 0;
-    const right = range || (total ? t(id==='worktrees'?'{n} worktrees':id==='changes'?'{n} files':'{n} events',{n:total}) : '');
-    frame.lines[y] = paneHead(id,width,{right:right && colors.dim(right),focused,zoomed});
+    const total = id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? timelineCount(rows) : 0;
+    const right = range || (total ? t(id==='changes'?'{n} files':'{n} events',{n:total}) : '');
+    frame.lines[y] = paneHead(id,width,{right:right && colors.dim(right),focused,zoomed,named:!state.tabbed});
     titles.add(y);
     frame.controls.push({kind:'zoom',pane:id,x:0,y,width});
     // The gutter in the pane's state colour: the accent where the keys go.

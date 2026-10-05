@@ -3,6 +3,12 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 /** The narrow preset, and the width of a request for none (0, from older settings). */
 export const NARROW_WIDTH = 32;
+/**
+ * The widths Settings offers, the ones the panel is laid out and checked at:
+ * narrow, then each a step in what fits (the row meters, the model badge's
+ * words, the timeline's fourth lane). Any other width still draws.
+ */
+export const PANEL_WIDTHS: readonly number[] = [NARROW_WIDTH, 40, 48, 56];
 
 /**
  * The panel takes the width asked for, narrow (32) unless told otherwise,

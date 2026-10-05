@@ -1,6 +1,7 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -9,8 +10,9 @@ import {
   DIGEST_INPUT_CHARS, CHANGE_HUNK_CHARS, RETRY_MS, type JobSwitches, type JobsInput,
 } from '../../src/collectors/model-jobs.js';
 import { AgentLog } from '../../src/collectors/agent-log.js';
+import { RESULT_RAW_CHARS } from '../../src/collectors/agent-stages.js';
 import { RecapStore, readSessionTitle, parseStoredTitle } from '../../src/collectors/recap.js';
-import { briefingInput } from '../../src/collectors/briefing.js';
+import { briefMaterial } from '../../src/collectors/briefing.js';
 import type { SmallModel, ModelRequest, ModelResult } from '../../src/collectors/small-model.js';
 import type { GitChangedFile, GitChanges } from '../../src/collectors/git-changes.js';
 import type { RolloutParseResult } from '../../src/collectors/rollout.js';
@@ -141,11 +143,12 @@ test('a finished agent is digested once from its whole final answer, into its lo
 
   jobs.apply(agents, all, 'en');
   assert.equal(done.digest, 'Cache race found · Basis: read cache.ts · Caveats: not run');
-  assert.match(briefingInput(agents, now)?.prompt ?? '', /result digest \(model-written from its final answer\): Cache race found/);
-  assert.doesNotMatch(briefingInput(agents, now)?.prompt ?? '', /latest update/);
+  const material = (t: SubagentTree) => briefMaterial(t, { scope: 'agents', language: 'en', main: null, recap: null, since: null, now })?.write().prompt ?? '';
+  assert.match(material(agents), /result digest \(model-written from its final answer\): Cache race found/);
+  assert.doesNotMatch(material(agents), /latest update/);
   jobs.apply(agents, NO_JOBS, 'en');
   assert.equal(done.digest, undefined, 'switched off: the excerpt again');
-  assert.match(briefingInput(agents, now)?.prompt ?? '', /latest update/);
+  assert.match(material(agents), /latest update/);
 
   const old = node('b', 'old', 'completed', { rolloutPath: rollout, statusAt: new Date(now - 3 * 3_600_000) });
   jobs.update(input(tree([old])));
@@ -154,6 +157,35 @@ test('a finished agent is digested once from its whole final answer, into its lo
   jobs.update(input(tree([old]), { inspected: 'b' }));
   await settle();
   assert.equal(asked.length, 2, 'unless it is inspected');
+});
+
+test('a stage\'s answer is digested from the ledger: a finished agent\'s last one, and a long one while a lead works on', async () => {
+  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"conclusion":"Recovery rewritten","basis":"3 tests","caveats":""}' }));
+  const log = new AgentLog();
+  const reads: string[] = [];
+  const jobs = new ModelJobs({ model, log, read: async file => { reads.push(file); return ''; } });
+  const long = `Head ${'w'.repeat(RESULT_RAW_CHARS)} tail`;
+  const ended = (start: number, end: number, result: string) => ({ startedAt: new Date(now - start), endedAt: new Date(now - end), status: 'done' as const, result });
+  const running = (start: number) => ({ startedAt: new Date(now - start), status: 'running' as const });
+  const helper = node('k', 'helper', 'running', { depth: 2, rolloutPath: '/x/k.jsonl', stages: [ended(500_000, 400_000, long), running(400_000)] });
+  const lead = node('lead', 'lead', 'running', { rolloutPath: '/x/lead.jsonl', stages: [ended(600_000, 300_000, long), running(300_000)], children: [helper] });
+  const brief = node('brief', 'brief', 'running', { rolloutPath: '/x/brief.jsonl', stages: [ended(600_000, 300_000, 'A short answer.'), running(300_000)] });
+  const done = node('done', 'done', 'completed', { rolloutPath: '/x/done.jsonl', statusAt: new Date(now - 60_000), turnStartedAt: new Date(now - 120_000),
+    stages: [ended(120_000, 60_000, 'Short final answer.')] });
+  const agents = tree([lead, brief, done]);
+  jobs.update(input(agents));
+  await settle();
+  assert.deepEqual(reads, [], 'the ledger has the answers: no rollout read');
+  assert.deepEqual(asked.map(request => request.prompt.includes('Head') ? 'lead' : 'done'), ['lead', 'done'],
+    'not a short answer, nor a subtask\'s, while the agent works on');
+  assert.equal(asked[0].cacheKey, `${createHash('sha256').update(long).digest('hex').slice(0, 32)}:en`);
+  assert.deepEqual(log.entries('lead').map(entry => [entry.kind, entry.at]), [['digest', now - 300_000]], 'kept at the stage\'s end');
+  jobs.update(input(agents));
+  await settle();
+  assert.equal(asked.length, 2, 'once per stage');
+  jobs.apply(agents, all, 'en');
+  assert.equal(done.digest, 'Recovery rewritten · Basis: 3 tests');
+  assert.equal(lead.digest, undefined, 'a stage before the running one is not the agent\'s digest');
 });
 
 test('nothing is asked with the backend off or paused, or with every switch off', async () => {

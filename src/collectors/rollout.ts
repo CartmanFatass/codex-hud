@@ -1,4 +1,4 @@
-import { taskText } from '../utils/task-text.js';
+import { taskText, looksAutomatic } from '../utils/task-text.js';
 import { extractAgentReport } from './agent-report.js';
 import { TokenRateTracker, type TokenRateSnapshot } from './token-rate.js';
 import { sessionParentId } from '../utils/session-parent.js';
@@ -227,13 +227,15 @@ function cloneSessionInfo(session: SessionInfo | null | undefined): SessionInfo 
 export interface SessionEvent {
   kind: 'approval-requested' | 'approval-answered' | 'compacted' | 'quota' | 'turn-finished' | 'turn-interrupted' | 'turn-failed';
   at: Date;
-  /** What was asked for approval, or which quota window and threshold. */
+  /** What was asked for approval, or a finished turn's answer (its head). */
   text?: string;
   /** For a quota crossing: the threshold crossed, 80 or 95, and the window's length. */
   threshold?: number;
   windowMinutes?: number;
 }
 export const SESSION_EVENT_LIMIT = 60;
+/** A finished turn's answer kept on its event, its first characters. */
+export const TURN_TEXT_CHARS = 600;
 
 /** One reading of a quota window's use, for a forecast. */
 export interface QuotaSample {
@@ -342,6 +344,8 @@ export interface RolloutParseResult {
    * off the front, so a reader can tell whether anything it has not seen was
    * lost. The other fields survive the buffer: the first request, and the
    * latest request and final reply however much commentary followed them.
+   * The latest request leaves out a message that looks put there by a tool
+   * (`looksAutomatic`).
    */
   transcript: TranscriptEntry[];
   transcriptDroppedAt?: Date;
@@ -731,7 +735,8 @@ export async function parseRolloutFile(
           const spoken = payload.type === 'message' ? transcriptEntry(entry, timestamp) : undefined;
           if (spoken) {
             ({ entries: transcript, droppedAt: transcriptDroppedAt } = appendTranscript(transcript, [spoken], transcriptDroppedAt));
-            if (spoken.role === 'user') { firstUserMessage ??= spoken; lastUserMessageAt = spoken.at; }
+            // A message a tool put in the user's place is not a new request.
+            if (spoken.role === 'user') { firstUserMessage ??= spoken; if (!looksAutomatic(spoken.text)) lastUserMessageAt = spoken.at; }
             else if (spoken.kind === 'reply') lastReplyAt = spoken.at;
           }
         } else if (entry.type === 'event_msg') {
@@ -741,7 +746,9 @@ export async function parseRolloutFile(
             activity = { state: 'working', updatedAt: timestamp, turnStartedAt: timestamp };
           } else if (payload.type === 'task_complete' || payload.type === 'turn_complete') {
             activity = { ...activity, state: 'idle', updatedAt: timestamp };
-            event({ kind: 'turn-finished', at: timestamp });
+            // What the turn told the person, at its head: the timeline's line for it.
+            const said = typeof payload.last_agent_message === 'string' ? payload.last_agent_message.replace(/\s+/g, ' ').trim() : '';
+            event({ kind: 'turn-finished', at: timestamp, ...(said ? { text: Array.from(said).slice(0, TURN_TEXT_CHARS).join('') } : {}) });
           } else if (payload.type === 'turn_aborted' || payload.type === 'task_failed') {
             activity = { ...activity, state: payload.type === 'turn_aborted' ? 'interrupted' : 'error', updatedAt: timestamp };
             event({ kind: payload.type === 'turn_aborted' ? 'turn-interrupted' : 'turn-failed', at: timestamp });

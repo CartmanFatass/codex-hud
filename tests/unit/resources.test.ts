@@ -42,7 +42,10 @@ test('reset times are read in every shape they arrive in', () => {
   assert.equal(resolveResetTime({}, NOW), null);
 });
 
-test('a countdown reads in hours, minutes, then seconds', () => {
+test('a countdown reads in days and hours, hours and minutes, then seconds', () => {
+  assert.equal(formatCountdown(at(103 * 3600 + 60), NOW), '4d7h', 'a weekly window: not 103h1m');
+  assert.equal(formatCountdown(at(2 * 86400 + 59), NOW), '2d');
+  assert.equal(formatCountdown(at(86399), NOW), '23h59m');
   assert.equal(formatCountdown(at(5000), NOW), '1h23m');
   assert.equal(formatCountdown(at(3600), NOW), '1h');
   assert.equal(formatCountdown(at(300), NOW), '5m');

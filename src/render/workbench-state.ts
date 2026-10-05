@@ -9,7 +9,7 @@ export const PANE_IDS: PaneId[] = ['agents', 'details', 'changes', 'activity'];
 export type ActivityTab = 'tasks' | 'checks' | 'events';
 /** What a timeline event is, for words in the reader's language. */
 export type TimelineKind = 'approval-requested' | 'approval-answered' | 'compacted' | 'quota' | 'turn-finished' | 'turn-interrupted'
-  | 'turn-failed' | 'agent-started' | 'agent-finished' | 'agent-failed' | 'tool-failed';
+  | 'turn-failed' | 'agent-started' | 'agent-finished' | 'agent-failed' | 'tool-failed' | 'agent-stage';
 export interface WorkbenchEvent {
   id: string;
   at: Date;
@@ -27,6 +27,15 @@ export interface WorkbenchEvent {
   agentId?: string;
   /** A model-written line on why it failed (4.3), shown under the event. */
   cause?: string;
+  /** A finished turn's final answer, its head, flattened; a stage's, whole. */
+  summary?: string;
+  /** An agent's stage (`agent-stage`): how it stands, and when it started. */
+  stage?: 'running' | 'done' | 'aborted' | 'failed';
+  startedAt?: Date;
+  /** The lead a helper's stage was for, by agent id. */
+  serves?: string;
+  /** A running stage: what the agent said it would do, its first update. */
+  intent?: string;
 }
 export interface PaneRect {
   id: PaneId; x: number; y: number; width: number; height: number;

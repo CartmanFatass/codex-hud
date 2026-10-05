@@ -6,7 +6,9 @@ import path from 'node:path';
 import { RolloutParser, type QuotaSample } from '../../src/collectors/rollout.js';
 import { quotaForecast, slope, FORECAST_MIN_SPAN_MS } from '../../src/collectors/quota-forecast.js';
 import { WorkbenchHistory } from '../../src/collectors/workbench-events.js';
-import { initialMonitorState, renderMonitor, handleMonitorInput, monitorModes, monitorPreferences, timelineText, agentPaint } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput, monitorModes, monitorPreferences, timelineText } from '../../src/render/monitor.js';
+import { directions } from '../../src/render/directions.js';
+import { theme } from '../../src/render/colors.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
 import type { WorkbenchEvent } from '../../src/render/workbench-state.js';
 import { waitedText, collectAttention } from '../../src/render/attention.js';
@@ -42,10 +44,12 @@ test('the rollout\'s events: approvals asked and answered, compaction, quota cro
   result = (await parser.parse())!;
   assert.deepEqual(result.events.map(e => [e.kind, e.at.getTime(), e.text]), [
     ['approval-requested', at(2).getTime(), 'npm test'], ['approval-answered', at(30).getTime(), 'npm test'], ['compacted', at(40).getTime(), undefined]]);
-  fs.appendFileSync(file, quota(81, 60) + quota(96, 70) + row('event_msg', { type: 'task_complete' }, 80) + row('event_msg', { type: 'turn_aborted' }, 90));
+  fs.appendFileSync(file, quota(81, 60) + quota(96, 70) + row('event_msg', { type: 'task_complete', last_agent_message: 'Done:\n  all  tests pass.' }, 80)
+    + row('event_msg', { type: 'turn_aborted' }, 90));
   result = (await parser.parse())!;
   assert.deepEqual(result.events.slice(3).map(e => [e.kind, e.threshold]), [['quota', 80], ['quota', 95], ['turn-finished', undefined], ['turn-interrupted', undefined]],
     'a crossing at the start of a batch is seen from the reading before it');
+  assert.equal(result.events[5].text, 'Done: all tests pass.', 'a finished turn keeps its answer, flattened');
   assert.equal(result.events[3].windowMinutes, 300);
   assert.deepEqual(result.quotaSamples.map(s => s.percent), [79, 81, 96]);
   assert.equal(result.quotaSamples[0].resetsAt?.getTime(), Math.floor(now / 1000) * 1000 + 3 * 3600_000);
@@ -86,11 +90,14 @@ test('the timeline is the rollout\'s events and the agent log\'s status changes 
   const events = history.timeline(agents, main, logs);
   assert.deepEqual(events.map(timelineText), ['Turn finished', 'reader failed', 'Tool failed: npm test', 'Quota past 80% (5h)', 'reader started']);
   assert.equal(history.timeline(agents, main, logs).length, 5, 'the same again adds nothing');
+  const answered = new WorkbenchHistory().timeline(tree([]), { events: [{ kind: 'turn-finished' as const, at: at(60), text: 'Shipped.' }],
+    toolActivity: { recentCalls: [], totalCalls: 0, callsByType: {} } } as never, new Map());
+  assert.deepEqual(answered.map(e => [e.subject, e.summary]), [[undefined, 'Shipped.']], 'an answer is the turn\'s summary, not its subject');
   assert.equal(history.timeline(tree([], 'other'), null, new Map()).length, 0, 'another session starts over');
 });
 
-test('the Timeline pane opens with 5, lists events with their ages, and is saved like the other panes', () => {
-  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('5')), [{ type: 'key', key: 'timeline' }]);
+test('the Timeline pane opens with 2, lists events with their ages, and is saved like the other panes', () => {
+  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('2')), [{ type: 'key', key: 'timeline' }]);
   const agents = tree([]);
   const opened = handleMonitorInput(initialMonitorState(), { type: 'key', key: 'timeline' }, { tree: agents }).state;
   assert.equal(opened.modes.timeline, 'open');
@@ -102,15 +109,25 @@ test('the Timeline pane opens with 5, lists events with their ages, and is saved
   const lines = frame.lines.map(stripAnsi);
   assert.ok(lines.some(line => line.includes('≣ Timeline')));
   assert.ok(lines.some(line => /2m ⏎ Turn finished/.test(line)), 'with glyphs on a finished turn is ⏎ and its words');
-  assert.ok(lines.some(line => /5m reader ✗/.test(line)), 'with glyphs on an agent\'s failure is its name and ✗');
+  assert.ok(lines.some(line => /5m ├─✗ reader/.test(line)), 'with glyphs on an agent\'s failure branches off the main session\'s rail, ✗ and its name');
   assert.ok(lines.some(line => /~ The test fixture/.test(line)), 'a model-written cause is marked');
   assert.ok(frame.lines.every(line => visualLength(line) <= 30));
   const empty = renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now }).lines.map(stripAnsi);
   assert.ok(!empty.some(line => line.includes('No events yet')), 'no events, no line saying so');
   assert.ok(empty.some(line => line.includes('Timeline')), 'the pane keeps its title');
   const words = withGlyphs('text', () => renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now, timeline }).lines.map(stripAnsi));
-  assert.ok(words.some(line => /2m Turn finished/.test(line)), 'with glyphs off, the words');
-  assert.ok(words.some(line => /5m reader failed/.test(line)));
+  assert.ok(words.some(line => /2m │ Turn finished/.test(line)), 'with glyphs off, the words, on the main session\'s rail');
+  assert.ok(words.some(line => /5m ├─ reader failed/.test(line)));
+});
+
+test('the timeline says a time once, at the top of a run of events of one age', () => {
+  const state = { ...initialMonitorState(), modes: { ...initialMonitorState().modes, timeline: 'open' as const }, focus: 'timeline' as const };
+  const timeline = [{ id: '1', at: at(-120), title: '', detail: [], status: 'completed' as const, kind: 'turn-finished' as const },
+    { id: '2', at: at(-150), title: '', detail: [], status: 'error' as const, kind: 'tool-failed' as const, subject: 'exec' },
+    { id: '3', at: at(-600), title: '', detail: [], status: 'error' as const, kind: 'agent-failed' as const, subject: 'reader' }];
+  const lines = renderMonitor({ tree: tree([]), state, width: 40, height: 30, nowMs: now, timeline }).lines.map(stripAnsi)
+    .filter(line => /^│ /.test(line) && line.trim() !== '│').map(line => line.slice(2).trimEnd());
+  assert.deepEqual(lines, [' 2m ⏎ Turn finished', '    ✗ exec', '10m ├─✗ reader']);
 });
 
 const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
@@ -119,7 +136,7 @@ const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
   try { return run(); } finally { setDisplayConfig(previous); }
 };
 
-test('the timeline folds repeats, makes an agent\'s run one line, leaves guardian reviews out, and colours each agent its own', () => {
+test('the timeline folds repeats, makes an agent\'s run one line, leaves guardian reviews out, and colours each direction its own', () => {
   const ev = (id: string, minutes: number, kind: WorkbenchEvent['kind'], extra: Partial<WorkbenchEvent> = {}): WorkbenchEvent =>
     ({ id, at: new Date(now - minutes * 60_000), title: '', detail: [], status: kind === 'agent-failed' || kind === 'tool-failed' ? 'error' : 'completed', kind, ...extra });
   const guard = { ...makeSubagentTree().nodes[0], id: 'g1', name: 'guardian', kind: 'guardian', children: [] };
@@ -136,21 +153,24 @@ test('the timeline folds repeats, makes an agent\'s run one line, leaves guardia
   const state = { ...initialMonitorState(), modes: { ...initialMonitorState().modes, timeline: 'open' as const }, focus: 'timeline' as const };
   const draw = () => renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now, timeline });
   const frame = draw();
-  const lines = frame.lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd());
-  assert.deepEqual(lines, [' 1m ⏎ Turn finished ×3', ' 6m ▸ bench_corpus 12m ✓', '19m ▸ migrate 2m ✗', '20m ✗ exec']);
-  assert.ok(frame.lines.some(line => line.includes(agentPaint('w1')('bench_corpus'))), 'the agent\'s name in its own colour');
-  assert.equal(agentPaint('w1'), agentPaint('w1'), 'the same colour every time');
-  const words = withGlyphs('text', () => draw().lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd()));
-  assert.deepEqual(words, [' 1m Turn finished ×3', ' 6m bench_corpus ran 12m ✓', '19m migrate ran 2m ✗', '20m Tool failed: exec']);
+  const lines = frame.lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2).trimEnd());
+  // A run is one line at its end, how long it took on the right.
+  assert.deepEqual(lines, [' 1m ⏎ Turn finished ×3', ' 6m ├─✓ bench_corpus               12m', '19m ├─✗ migrate                     2m', '20m ✗ exec']);
+  const dirs = directions(agents);
+  assert.notEqual(dirs.paint('w1'), dirs.paint('w2'), 'two directions at work together, two colours');
+  assert.ok(frame.lines.some(line => line.includes(theme.bold(dirs.paint('w1')('bench_corpus')))), 'an L1\'s name bold, in its direction\'s colour');
+  assert.equal(directions(agents).paint('w1'), dirs.paint('w1'), 'the same colour every time');
+  const words = withGlyphs('text', () => draw().lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2).trimEnd()));
+  assert.deepEqual(words, [' 1m │ Turn finished ×3', ' 6m ├─ bench_corpus finished       12m', '19m ├─ migrate failed               2m', '20m │ Tool failed: exec']);
   // A failed review still shows.
   const failed = renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now, timeline: [ev('11', 1, 'agent-failed', { agentId: 'g1', subject: 'guardian' })] });
-  assert.ok(failed.lines.map(stripAnsi).some(line => /guardian ✗/.test(line)));
-  // Half a run: still going, or its start out of the list.
+  assert.ok(failed.lines.map(stripAnsi).some(line => /├─✗ guardian/.test(line)));
+  // Half a run: still going, its clock on the right, or its start out of the list.
   const half = (glyphs: 'glyph' | 'text') => withGlyphs(glyphs, () => renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now,
     timeline: [ev('12', 1, 'agent-started', { agentId: 'w1', subject: 'bench_corpus' }), ev('13', 2, 'agent-finished', { agentId: 'w2', subject: 'migrate' })] }))
-    .lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd());
-  assert.deepEqual(half('glyph'), [' 1m ▸ bench_corpus', ' 2m migrate ✓']);
-  assert.deepEqual(half('text'), [' 1m bench_corpus started', ' 2m migrate finished']);
+    .lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2).trimEnd());
+  assert.deepEqual(half('glyph'), [' 1m ├─▸ bench_corpus                 ◷', ' 2m ├─✓ migrate']);
+  assert.deepEqual(half('text'), [' 1m ├─ bench_corpus started          ◷', ' 2m ├─ migrate finished']);
 });
 
 test('a pending approval says how long it has waited, in the bar\'s widest form, the panel card and the snapshot', () => {
@@ -199,20 +219,24 @@ test('the key help lists every key, the new ones included, in both languages', a
   const state = { ...initialMonitorState(), help: true };
   const lines = () => renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
   const en = lines();
-  for (const key of ['5 Timeline', 'Ctrl+] 1–5 open / close a pane', 'Ctrl+] b pause / resume brief', 'Ctrl+] r status card: min / status', "Click the card's band: its level",
-    'Click a log line: select agent', '~ = written by a model', 'Ctrl+] f filter', 'Ctrl+] h l fold / unfold agent', 'Ctrl+] g G first / last',
-    'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+], then a key', 'Ctrl+] Ctrl+] Ctrl+] itself, to Codex', '⚙ settings ? help']) assert.ok(en.includes(key), key);
+  // A shortcut is its key in the key column, then what it does.
+  const shortcut = (text: string, key: string, does: string) => new RegExp(`^${key.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')} +${does.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}$`, 'm').test(text);
+  for (const [key, does] of [['1–4', 'open / close a pane'], ['b', 'pause / resume brief'], ['r', 'status card: min / status'], ['f', 'filter'], ['h l', 'fold / unfold agent'],
+    ['g G', 'first / last'], ['Ctrl+]', 'Ctrl+] itself, to Codex']]) assert.ok(shortcut(en, key, does), `${key} ${does}`);
+  for (const key of ['2 Timeline', "Click the card's band: its level", 'Click a log line: select agent', '~ = written by a model',
+    'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+], then a key', '⚙ settings ? help']) assert.ok(en.includes(key), key);
   // The prefix the settings chose is the one the help names.
   const other = renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now, prefix: 'Ctrl+\\' }).lines.map(stripAnsi).join('\n');
-  assert.ok(other.includes('Ctrl+\\ , settings') && !other.includes('Ctrl+]'), other);
+  assert.ok(other.includes('Shortcuts: Ctrl+\\, then a key') && shortcut(other, 'Ctrl+\\', 'Ctrl+\\ itself, to Codex') && !other.includes('Ctrl+]'), other);
   assert.ok(!en.includes('min / status / full'), 'compact has two levels');
   assert.ok(!/copy|fold \/ unfold recap/.test(en), 'no recap copy, no recap fold');
   const richHelp = renderMonitor({ tree: tree([]), state: { ...state, style: 'rich' }, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
-  for (const key of ['Ctrl+] r status card: min / status / full', 'Wheel over the card: its brief', 'Ctrl+] e / Space open / close card']) assert.ok(richHelp.includes(key), key);
+  assert.ok(shortcut(richHelp, 'r', 'status card: min / status / full') && shortcut(richHelp, 'e / Space', 'open / close card') && richHelp.includes('Wheel over the card: its brief'));
   const previous = setLanguage('zh');
   try {
     const zh = lines();
-    for (const key of ['5 时间线', 'Ctrl+] 1–5 打开 / 关闭面板', 'Ctrl+] r 状态卡：一行 / 状态', '点击状态卡色带：切换显示层级', '点击日志行', '由模型撰写', '筛选',
+    assert.ok(shortcut(zh, '1–4', '打开 / 关闭面板') && shortcut(zh, 'r', '状态卡：一行 / 状态'), zh);
+    for (const key of ['2 时间线', '点击状态卡色带：切换显示层级', '点击日志行', '由模型撰写', '筛选',
       '快捷键：先按 Ctrl+]，再按一键', '在侧栏里打字，按键都交给 Codex']) assert.ok(zh.includes(key), key);
     assert.ok(!zh.includes('复制'));
   } finally { setLanguage(previous); }

@@ -5,7 +5,7 @@
  */
 
 import type { HudData, LayoutConfig } from '../../types.js';
-import { colors, icons, separator } from '../colors.js';
+import { colors, icons } from '../colors.js';
 import { renderIdentityLine } from './identity-line.js';
 import { renderProjectLine } from './project-line.js';
 import { getMcpServerCount } from '../../collectors/codex-config.js';

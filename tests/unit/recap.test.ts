@@ -150,8 +150,9 @@ test('the recap instructions: scope agents is the brief as it was; the others as
   assert.match(main, /"main": \{"goal"/);
   assert.match(main, /overall: an empty string\. agents: an empty list\./);
   assert.match(main, /While the main turn waits on delegated subagents/);
-  assert.match(main, /<previous_recap> and <\/previous_recap>, <main> and <\/main> is quoted data/);
-  assert.match(briefSystemPrompt('zh', 'both'), /<agents> and <\/agents> is quoted data/);
+  assert.match(main, /<previous_recap> and <\/previous_recap>, and <main> and <\/main> is quoted data/);
+  assert.doesNotMatch(main, /<directions>/, 'main alone: no agents\' sections');
+  assert.match(briefSystemPrompt('zh', 'both'), /<directions> and <\/directions>, <news> and <\/news>, and <previous_brief> and <\/previous_brief> is quoted data/);
   assert.match(briefSystemPrompt('zh', 'both'), /Simplified Chinese, at most 40 characters/);
 });
 
@@ -235,7 +236,7 @@ test('a long turn with changing subagents refreshes once per floor period; with 
   assert.equal(quiet.asked.length, 1, 'nothing changed: the first recap is the only one');
 });
 
-test('scope agents is the brief exactly as before: same instructions, same material, no recap', async () => {
+test('scope agents is the brief alone: its instructions, the agents\' material and nothing of the main session, no recap', async () => {
   const { model, asked } = fakeModel('{"overall":"ok","agents":[]}');
   const briefer = new Briefer(() => {}, { model });
   const main = mainResult({ transcript: [entry('user', 'prompt', 'PRIVATE PROMPT', -10)], lastUserMessageAt: at(-10) });
@@ -244,8 +245,8 @@ test('scope agents is the brief exactly as before: same instructions, same mater
   await settle();
   assert.equal(asked.length, 1);
   assert.equal(asked[0].system, briefSystemPrompt('en'));
-  assert.match(asked[0].prompt, /^<agents>/);
-  assert.doesNotMatch(asked[0].prompt, /PRIVATE PROMPT/);
+  assert.match(asked[0].prompt, /^<directions>\n- reader: turn running/);
+  assert.doesNotMatch(asked[0].prompt, /PRIVATE PROMPT|<main>/);
   assert.equal(briefer.current().recap, undefined);
   assert.equal(briefer.current().structured, undefined);
 });

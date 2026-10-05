@@ -1,10 +1,13 @@
 /** What a key, a click or the wheel does to the panel: the next state, and anything it asks of the page. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorFrame, MonitorOutcome, MonitorPane, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
-import { MONITOR_PANES, toggleCard } from './monitor.js';
-import { visibleRows, applyKey } from './panel-state.js';
+import { MONITOR_PANES, toggleCard, listedAgents } from './monitor.js';
+import { applyKey } from './panel-state.js';
+import { directions } from './directions.js';
 import { WHEEL_ROWS } from './agents-view.js';
 import { nextLevel } from './status-foot.js';
+import { UNTRACKED_ROW, worktreeOfItem } from './monitor-labels.js';
+import { TIMELINE_EARLIER, TIMELINE_STEP } from './monitor-timeline.js';
 
 /**
  * A click on a pane's button, or its number after the prefix: an open pane
@@ -22,8 +25,22 @@ function closePane(state: MonitorState, id: MonitorPane): MonitorState {
   const focus = state.focus !== id ? state.focus : MONITOR_PANES.find(pane=>modes[pane]!=='closed') ?? id;
   return {...state,modes,zoom:state.zoom && state.focus !== id,focus};
 }
+/** What the Inspector shows for the changes' cursor: the worktree it is on, else the file. */
+function changesPreview(state: MonitorState): MonitorState['preview'] {
+  return worktreeOfItem(state.selectedFile) !== undefined ? 'worktree' : 'file';
+}
+/**
+ * The changes' cursor onto `item`. On a worktree's row it lists that
+ * worktree's changes too, as the old worktrees pane's selection did.
+ */
+function pointChanges(state: MonitorState, item: string): void {
+  state.selectedFile = item;
+  const worktree = worktreeOfItem(item);
+  if (worktree !== undefined) state.selectedWorktree = worktree;
+  state.preview = changesPreview(state);
+}
 function openPane(state: MonitorState, id: MonitorPane): MonitorState {
-  const preview = id==='agents'?'agent':id==='worktrees'?'worktree':id==='changes'?'file':state.preview;
+  const preview = id==='agents'?'agent':id==='changes'?changesPreview(state):state.preview;
   // The tabs layout shows it and leaves the stacked layout's panes as they were.
   const modes = state.tabbed ? state.modes : {...state.modes,[id]:'open' as const};
   return {...state,focus:id,preview,modes,scroll:{...state.scroll,details:preview===state.preview?state.scroll.details:0}};
@@ -96,14 +113,15 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
           const id=row?.item;
           if(!id)return result();
           if(pane.id==='agents') {
-            if(!visibleRows(ctx.tree.nodes,next.tree,ctx.nowMs).some(row=>row.node.id===id))return result();
+            if(!listedAgents(ctx.tree.nodes,next,ctx.nowMs??Date.now()).some(row=>row.node.id===id))return result();
             pick(id);
             // A card is a place to read: a click selects it, `o` switches.
             // A tree row is a list to pick from: a click switches.
             return next.style==='rich'?result():result({type:'switch',id});
           }
-          if(pane.id==='worktrees') {next.selectedWorktree=id;next.preview='worktree';}
-          if(pane.id==='changes') {next.selectedFile=id;next.preview='file';}
+          if(pane.id==='changes') {pointChanges(next,id);if(id===UNTRACKED_ROW)next.untrackedOpen=!next.untrackedOpen;}
+          // The timeline's last row: twenty more from before its window.
+          else if(pane.id==='timeline'&&id===TIMELINE_EARLIER){next.timelineMore=(next.timelineMore??0)+TIMELINE_STEP;return result();}
           next.scroll.details=0;return result();
         }
       } else if(pane.id==='agents') {
@@ -119,7 +137,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   if(key==='reset'){next.statusLevel=nextLevel(next);next.statusScroll=0;return result({type:'status-level'});}
   if(key==='main')return result({type:'switch',id:ctx.tree.rootId});
   if(key==='open-session')return next.focus==='agents'&&next.tree.selectedId?result({type:'switch',id:next.tree.selectedId}):result();
-  if(key==='expand'){if(next.style==='rich'&&next.tree.selectedId){next=toggleCard(next,next.tree.selectedId);next.focus='agents';next.revealed=null;}}
+  // A subtask selected from its lead's card opens or closes that card.
+  if(key==='expand'){if(next.style==='rich'&&next.tree.selectedId){next=toggleCard(next,directions(ctx.tree).family.get(next.tree.selectedId)??next.tree.selectedId);next.focus='agents';next.revealed=null;}}
   else if(key==='show-all')next.tree.showAll=!next.tree.showAll;
   else if(key==='help'){next.help=true;next.helpScroll=0;}
   else if(key==='pane-close'){if(!next.tabbed&&next.modes[next.focus]!=='closed')next=closePane(next,next.focus);}
@@ -131,45 +150,57 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   } else if(key==='enter'||key==='detail-toggle') {
     const from=next.focus;
     if(from==='details') {next.expanded=!next.expanded;next.scroll.details=0;return result();}
-    if(from==='agents')next.preview='agent';else if(from==='worktrees')next.preview='worktree';else if(from==='changes')next.preview='file';
+    // The timeline has no cursor: Enter brings back twenty more from before its window, where there are any.
+    if(from==='timeline') {
+      if(ctx.frame?.panes.find(p=>p.id==='timeline')?.rows.some(row=>row.item===TIMELINE_EARLIER))next.timelineMore=(next.timelineMore??0)+TIMELINE_STEP;
+      return result();
+    }
+    // The untracked files' row lists them under it, or folds them back, in place.
+    if(from==='changes'&&next.selectedFile===UNTRACKED_ROW){next.untrackedOpen=!next.untrackedOpen;return result();}
+    if(from==='agents')next.preview='agent';else if(from==='changes')next.preview=changesPreview(next);
     next=openPane(next,'details');next.scroll.details=0;
     next.expanded=false;
-    if(from==='changes'&&!next.tabbed)next.zoom=true;
+    // A diff wants the room; a worktree's details are a few lines.
+    if(from==='changes'&&next.preview==='file'&&!next.tabbed)next.zoom=true;
   } else if(key==='zoom'){if(!next.tabbed)next.zoom=!next.zoom;}
   else if(key==='escape') {
     if(next.zoom&&!next.tabbed)next.zoom=false;
     else if(next.focus==='details'){
       // Back to what was inspected; the tabs layout closes nothing on the way.
       if(!next.tabbed)next.modes.details='closed';
-      next.focus=next.preview==='agent'?'agents':next.preview==='worktree'?'worktrees':'changes';
+      next.focus=next.preview==='agent'?'agents':'changes';
     }
     else return result(undefined,true);
   } else {
     const pane=ctx.frame?.panes.find(p=>p.id===next.focus);
     const page=Math.max(1,(pane?.height??5)-(pane?.edge??1));
-    // A two-line worktree card is one item, not two keyboard destinations.
+    // A row an item takes more than one line of is one keyboard destination.
     const visibleItems = pane ? new Set(pane.rows.slice(pane.offset,pane.offset+page).flatMap(row=>row.item ? [row.item] : [])) : new Set<string>();
     const itemPage = visibleItems.size || page;
     const delta=key==='down'?1:key==='up'?-1:key==='page-down'?itemPage:key==='page-up'?-itemPage:0;
     const move=delta!==0||key==='home'||key==='end';
     if(next.focus==='agents') {
-      const rows=visibleRows(ctx.tree.nodes,next.tree,ctx.nowMs);
+      const rows=listedAgents(ctx.tree.nodes,next,ctx.nowMs??Date.now());
       // A page key scrolls the view a page; the selection keys move the
       // selection, and the view follows it there.
       if(key==='page-down'||key==='page-up'){
         const view=Math.max(1,(pane?.visible??page)-(pane?.pinned??0)-1);
         next.scroll.agents=Math.max(0,next.scroll.agents+(key==='page-down'?view:-view));
-      } else if(move){next.revealed=null;const index=rows.findIndex(row=>row.node.id===next.tree.selectedId);const target=key==='home'?0:key==='end'?rows.length-1:Math.max(0,index)+delta;
+      } else if(move){next.revealed=null;
+        // A subtask selected from its lead's card sits inside that card: up goes to the lead, down past it.
+        let index=rows.findIndex(row=>row.node.id===next.tree.selectedId);
+        const inside=index<0&&next.tree.selectedId?rows.findIndex(row=>row.node.id===directions(ctx.tree).family.get(next.tree.selectedId!)):-1;
+        if(inside>=0)index=delta<0?inside+1:inside;
+        const target=key==='home'?0:key==='end'?rows.length-1:Math.max(0,index)+delta;
         const row=rows[Math.max(0,Math.min(rows.length-1,target))];if(row)next.tree.selectedId=row.node.id;
       } else if(key==='sort')next.tree.sort=next.tree.sort==='active'?'created':'active';
       else if(['left','right','filter'].includes(key))next.tree=applyKey(next.tree,key as 'left'|'right'|'filter',rows).state;
     } else if(move) {
       const ids=pane?[...new Set(pane.rows.map(row=>row.item).filter((id):id is string=>id!==undefined))]:[];
-      if(ids.length&&(next.focus==='worktrees'||next.focus==='changes')) {
-        const current=next.focus==='worktrees'?next.selectedWorktree:next.selectedFile;
-        const index=ids.indexOf(current??'');const target=key==='home'?0:key==='end'?ids.length-1:Math.max(0,index)+delta;
-        const id=ids[Math.max(0,Math.min(ids.length-1,target))];
-        if(next.focus==='worktrees'){next.selectedWorktree=id;next.preview='worktree';}else{next.selectedFile=id;next.preview='file';}
+      if(ids.length&&next.focus==='changes') {
+        // No cursor yet: down starts at the first row, up at the last.
+        const index=ids.indexOf(next.selectedFile??'');const target=key==='home'?0:key==='end'?ids.length-1:index<0?(delta>0?0:ids.length-1):index+delta;
+        pointChanges(next,ids[Math.max(0,Math.min(ids.length-1,target))]);
       }else next.scroll[next.focus]=key==='home'?0:key==='end'?Math.max(0,(pane?.contentLength??0)-page):Math.max(0,next.scroll[next.focus]+delta);
     }
   }

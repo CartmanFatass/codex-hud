@@ -6,6 +6,7 @@ import path from 'node:path';
 import { initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, type MonitorState, type MonitorFrame } from '../../src/render/monitor.js';
 import { agentTitle, KIND_GLYPHS } from '../../src/render/agent-title.js';
 import { hangLines, clockText } from '../../src/render/cards.js';
+import { directions } from '../../src/render/directions.js';
 import { stripAnsi, visualLength, theme, colors, truncateAnsi } from '../../src/render/colors.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
@@ -100,12 +101,11 @@ test('cards never run past the panel, in either language, and give up badge and 
   assert.ok(narrow.some(line => /^› ▸ ⌕ ablation…anker ─+ *$/.test(line)), `under 24 columns the badge goes first\n${narrow.join('\n')}`);
   const tiny = plain(renderMonitor({ tree: tree([named]), state: rich(), width: 19, height: 30, nowMs: now }));
   assert.ok(tiny.some(line => /^└ .*56%─* ▾$/.test(line) && !line.includes('━')), 'then the meter, the percent kept');
-  // A child card is indented, one column a level.
+  // A subtask gets no card: its lead's card counts it by role.
   const nested = plain(renderMonitor({ tree: tree([parent]), state: rich(), width: 40, height: 40, nowMs: now }));
-  assert.ok(nested.some(line => /^ ┌ ▸ ◈ b05_result/.test(line)), nested.join('\n'));
-  const folded = plain(renderMonitor({ tree: tree([parent]), state: rich({ tree: { ...rich().tree, collapsed: new Set([parent.id]) } }), width: 40, height: 40, nowMs: now }));
-  assert.ok(!folded.some(line => line.includes('b05_result')));
-  assert.ok(folded.some(line => /^└ ◷4m07s · \+1 folded ─+ ▾$/.test(line)), 'a collapsed parent counts what it folds');
+  assert.ok(!nested.some(line => line.includes('b05_result')), nested.join('\n'));
+  assert.ok(nested.some(line => line.trimEnd() === '│ 1 general'), 'Codex\'s default agent, or one with no role, is "general"');
+  assert.ok(!nested.some(line => /folded/.test(line)));
 });
 
 test('a card opens to its whole timeline and the task in full; Enter still inspects, e and Space open', () => {
@@ -245,18 +245,18 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const shown = handleMonitorInput(frame.state, click(older.x, 0), { tree: tree([named, old]), frame, nowMs: now }).state;
   assert.ok(plain(renderMonitor({ tree: tree([named, old]), state: shown, width: 32, height: 30, nowMs: now })).some(line => line.includes('old_one')));
   assert.equal(lines.slice(1).filter(line => line.includes('Agents')).length, 1, 'under the bar, the cards have one title, their counts beside it');
-  const focused = handleMonitorInput({ ...frame.state, modes: { ...frame.state.modes, agents: 'closed', worktrees: 'open' }, focus: 'worktrees' }, key('agents'), { tree: tree([named]), frame }).state;
+  const focused = handleMonitorInput({ ...frame.state, modes: { ...frame.state.modes, agents: 'closed', changes: 'open' }, focus: 'changes' }, key('agents'), { tree: tree([named]), frame }).state;
   assert.equal(focused.focus, 'agents');
   assert.equal(focused.modes.agents, 'open', '1 opens the cards, and focuses them');
   assert.equal(handleMonitorInput(focused, key('agents'), { tree: tree([named]), frame }).state.modes.agents, 'closed', 'and closes them again');
   const help = (style: 'rich' | 'compact') => plain(renderMonitor({ tree: tree([]), state: { ...rich(), style, help: true }, width: 70, height: 80, nowMs: now })).join('\n');
-  assert.match(help('rich'), /Ctrl\+\] e \/ Space open \/ close card/);
+  assert.match(help('rich'), /\ne \/ Space +open \/ close card\n/);
   assert.match(help('rich'), /Click its name: switch/);
   assert.match(help('rich'), /1 Cards/);
   assert.match(help('rich'), /⌕ research ⚗ experiment ⚒ fix/);
   assert.doesNotMatch(help('compact'), /open \/ close card/);
   const previous = setLanguage('zh');
-  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true }, width: 70, height: 80, nowMs: now })).join('\n'), /e \/ 空格 展开 \/ 收起卡片[\s\S]*⌕ 调研/); }
+  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true }, width: 70, height: 80, nowMs: now })).join('\n'), /e \/ 空格 +展开 \/ 收起卡片[\s\S]*⌕ 调研/); }
   finally { setLanguage(previous); }
 });
 
@@ -349,6 +349,31 @@ test('a finished agent a minute old is one line, its meter and age in columns; e
   } finally { setLanguage(previous); }
 });
 
+test('finished rows keep their names whole, drawing meters only where most names fit beside them, and say a run of equal ages once', () => {
+  const names = ['refactor_session_store', 'audit_render_paths', 'migrate_settings_file'];
+  const nodes = [...names.map((name, i) => finished(40 + i, name, 60 * 24 * 12)), finished(43, 'tidy_docs', 180)];
+  const state = rich({ tree: { ...rich().tree, showAll: true } });
+  const rowsOf = (list: SubagentTreeNode[], width: number, at = state) =>
+    plain(renderMonitor({ tree: tree(list), state: at, width, height: 40, nowMs: now })).filter(line => /^[› ]✓ /.test(line));
+  const narrow = rowsOf(nodes, 40);
+  assert.equal(narrow.length, 4, narrow.join('\n'));
+  assert.ok(narrow.every(line => !line.includes('%')), `at 40 a meter would cut the names, so none is drawn:\n${narrow.join('\n')}`);
+  assert.ok(names.every(name => narrow.some(line => line.includes(name))));
+  const wide = rowsOf(nodes, 56);
+  assert.ok(wide.every(line => line.includes('57%')) && names.every(name => wide.some(line => line.includes(name))), wide.join('\n'));
+  // The age at the top of a run only, its column kept so the rows still line up.
+  assert.match(wide[0], /─ 12d$/);
+  assert.ok(wide.slice(1, 3).every(line => /─ {4}$/.test(line)), wide.join('\n'));
+  assert.match(wide[3], /─ {2}3h$/);
+  assert.ok(wide.every(line => line.length === wide[0].length));
+  // An opened card between two rows ends the run: the row after it says its age again.
+  const split = rowsOf(nodes, 56, rich({ cards: new Set([nodes[1].id]), tree: { ...rich().tree, showAll: true } }));
+  assert.match(split[1], /^ ✓ migrate_settings_file .* 12d$/, split.join('\n'));
+  // One long name among short ones does not cost the others their meters: it alone is cut.
+  const mixed = rowsOf([finished(44, 'alpha', 60), finished(45, 'beta', 60), finished(46, 'refactor_the_session_store_layer', 60)], 56);
+  assert.ok(mixed.every(line => line.includes('57%')) && mixed[2].includes('…'), mixed.join('\n'));
+});
+
 test('an opened finished card with no log shows its last report, its markdown taken out, and an old card steps its words back', () => {
   const report = 'Published [the handoff](/x/HANDOFF.md) at **`d97a7a688774ad9b45da44f5825ae1ac198b4bb1`**. ### Next __steps__ follow.';
   const done = finished(30, 'cache_clean', 60 * 19, { lastReport: { text: report, kind: 'reply', at: new Date(now - 19 * 3600_000) }, task: 'Write the handoff' });
@@ -370,7 +395,7 @@ test('an opened finished card with no log shows its last report, its markdown ta
   assert.ok(!shown.some(line => /^│ +1m$/.test(line)), 'no orphan age line');
 });
 
-test('guardian reviews fold into a ◈N chip on their parent, or on the summary under the main session; a failed one still shows', () => {
+test('guardian reviews fold into a ◈N chip on their parent, and the summary counts every one; a failed one still shows', () => {
   const guardian = (i: number, status: SubagentTreeNode['status'] = 'completed') =>
     agent(i, 'guardian', status, { kind: 'guardian', task: 'The following is the Codex agent history whose request action you are assessing.',
       statusAt: new Date(now - 3600_000), lastEventAt: new Date(now - 3600_000) });
@@ -379,13 +404,18 @@ test('guardian reviews fold into a ◈N chip on their parent, or on the summary 
   const state = rich({ tree: { ...rich().tree, showAll: true } });
   const frame = renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now });
   const lines = plain(frame);
-  assert.match(lines[frame.panes[0].y], /^ ▦ Agents {2}!1 failed {2}✓1 done {2}▸1 run {2}◈1 reviews/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
+  assert.match(lines[frame.panes[0].y], /^ ▦ Agents {2}✓1 done {2}▸1 run {2}◈4 reviews *$/, 'the agents counted, and beside them the session\'s reviews, wherever they sit');
+  assert.ok(frame.lines[frame.panes[0].y].includes(theme.error('◈4')), 'one failed: the summary\'s chip in the error colour');
   const top = lines.find(line => line.includes('bench_corpus'))!;
   assert.match(top, /◈2/);
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');
   assert.ok(!lines.some(line => /The following is the Codex/.test(line)), 'never the review prompt');
-  assert.equal(lines.filter(line => line.includes('guardian')).length, 1, 'only the failed one has a card');
-  assert.ok(lines.some(line => /^ ┌ ! guardian/.test(line)));
+  assert.ok(!lines.some(line => line.includes('guardian')), 'a review is no card');
+  const other = frame.lines.find(line => stripAnsi(line).includes('other'))!;
+  assert.doesNotMatch(stripAnsi(other), /✗/, 'a failed review is not one of its lead\'s failed subtasks');
+  assert.ok(other.includes(theme.error('◈1')), 'it is its lead\'s chip, in the error colour');
+  const opened = plain(renderMonitor({ tree: tree(nodes), state: { ...state, cards: new Set([id(44)]) }, width: 60, height: 50, nowMs: now }));
+  assert.ok(opened.some(line => /^│ ! guardian +\d+h$/.test(line.trimEnd())), 'and has a line on its lead\'s card');
   // j/k never lands on a folded review.
   let s = frame.state;
   const seen = new Set<string>();
@@ -418,7 +448,7 @@ test('a finished agent\'s second line says how far it got: the newest model note
     assert.equal(row.lastIndexOf('─') - row.indexOf('─') + 1, width >= 56 ? 16 : width < 36 ? 8 : 12, `${width}: the meter's cells`);
     const meter = frame.lines.find(line => line.includes('done_50'))!;
     assert.ok(meter.includes(theme.info('X').split('X')[0] + '─'), 'an old row keeps its meter\'s zone colour');
-    assert.ok(meter.includes(colors.dim('done_50')), 'only the name dims');
+    assert.ok(meter.includes(colors.dim(directions(tree(nodes)).paint(nodes[0].id)('done_50'))), 'only the name dims, in its direction\'s colour');
   }
   // Compact: only the selected row has its second line.
   const compact = plain(renderMonitor({ tree: tree(nodes), state: { ...initialMonitorState(), tree: { ...initialMonitorState().tree, selectedId: nodes[0].id } },

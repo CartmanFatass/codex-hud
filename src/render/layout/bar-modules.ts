@@ -15,8 +15,8 @@ import type { HudData } from '../../types.js';
 import { colors, coloredBar, coloredPercent, completionBar, getContextColor, icons, theme, truncate } from '../colors.js';
 import { renderModelEffortToken } from '../model-glyphs.js';
 import { formatTokenCount } from '../lines/index.js';
-import { collectAttention, highestSeverity, waitedText } from '../attention.js';
-import { summarizeSubagents } from '../../collectors/subagent-tree.js';
+import { collectAttention, highestSeverity, alertParts } from '../attention.js';
+import { agentCounts } from '../../collectors/subagent-tree.js';
 import { getApprovalPolicyDisplayValue } from '../../collectors/codex-config.js';
 import { displayConfig, type Density, type GlyphMode } from '../hud-config.js';
 import { formatCountdown, readQuotaWindows } from '../quota.js';
@@ -77,19 +77,19 @@ function attentionModule(data: HudData, nowMs: number): BarModule {
     return { id: 'attention', priority: MODULE_PRIORITY.attention, pinned: true, variants: {} };
   }
   const paint = highestSeverity(items) === 'error' ? theme.error : theme.warning;
-  const count = items.length;
-  // An approval says how long it has waited: a minute and an hour ask for different haste.
-  const label = (item: (typeof items)[number]) => item.since ? `${item.label} ${waitedText(item.since, nowMs)}` : item.label;
+  // An approval says how long it has waited: a minute and an hour ask for
+  // different haste. The failures are one phrase, as the status card says them.
+  const parts = alertParts(items, nowMs);
   return {
     id: 'attention',
     priority: MODULE_PRIORITY.attention,
     // Pinned: an alert is the one thing a narrow pane must not lose.
     pinned: true,
     variants: {
-      full: paint(`! ${items.map(label).join(' · ')}`),
-      // Narrower, the phrase alone: the wait is the first thing to go.
-      short: paint(`! ${items[0].label}`),
-      min: paint(count > 1 ? `!${count}` : '!'),
+      full: paint(`! ${parts.join(' · ')}`),
+      // Narrower, the first phrase alone: the wait is the first thing to go.
+      short: paint(`! ${alertParts(items, nowMs, undefined, false)[0]}`),
+      min: paint(parts.length > 1 ? `!${parts.length}` : '!'),
     },
   };
 }
@@ -294,7 +294,8 @@ function tasksModule(data: HudData): BarModule {
 }
 
 function agentsModule(data: HudData): BarModule {
-  const summary = summarizeSubagents(data.subagentTree?.nodes ?? []);
+  // The agents the main session started, as the panel's title counts them; a failed subtask or review is an alert.
+  const summary = agentCounts(data.subagentTree?.nodes ?? []).agents;
   if (summary.total === 0) {
     return { id: 'agents', priority: MODULE_PRIORITY.agents, group: 'load', variants: {} };
   }

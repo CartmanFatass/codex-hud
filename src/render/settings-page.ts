@@ -3,8 +3,9 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { HudHealthState } from '../types.js';
 import { truncateAnsi, colors, theme, visualLength } from './colors.js';
 import { t, language } from './i18n.js';
-import { age } from './monitor.js';
+import { age, TIMELINE_STYLES, TIMELINE_HOURS } from './monitor.js';
 import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
+import { PANEL_WIDTHS } from '../utils/pane-width.js';
 import { LOOKS, type IconMode, type LookName } from './hud-config.js';
 
 type SettingValue = string | number | boolean;
@@ -21,6 +22,8 @@ export interface SettingRow {
   help: string;
   /** How a value reads, when the stored value would not say it. */
   format?: (value: SettingValue) => string;
+  /** The value is a name, said as it is, never translated. */
+  literal?: boolean;
 }
 
 const seconds = (value: SettingValue) => `${Number(value) / 1000}s`;
@@ -46,18 +49,25 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help:'Done agents hide after this',format:minutes},
   {key:'agentLog',group:'Agents',label:'Agent log',short:'Log',values:[false,true],help:'Keep a log on each card even with no backend'},
   {key:'labelAsName',group:'Agents',label:'Label as name',short:'Label',values:[true,false],help:'A label, once there, replaces the name'},
+  {key:'cardRoleCounts',group:'Agents',label:'Role counts',short:'Roles',values:[true,false],help:'A card counts its subtasks by role'},
+  {key:'cardCorners',group:'Agents',label:'Card corners',short:'Corners',values:['square','round'],help:'Square or round'},
+  // The roles whose subtasks matter: none, a role this session's subtasks have (`rowValues`), or what is set, a list
+  // from the settings file included.
+  {key:'importantRoles',group:'Agents',label:'Key roles',short:'Key',values:[''],help:'Their subtasks are named',literal:true,
+    // Clipped to keep the page's columns at 40 wide.
+    format:value => value === '' ? 'none' : truncateAnsi(String(value),15)},
   // Everything that sends material to a model, in one place, each with its
   // own switch and a help line saying what it sends.
   {key:'briefing',group:'LLM',label:'Backend',short:'Model',values:['off','omp','agy','api'],help:'Who writes; off stops all below'},
   {key:'briefingMs',group:'LLM',label:'Brief every',short:'Every',values:[60_000,120_000,300_000,600_000],
     help:'At most this often, on change',format:minutes},
-  {key:'recapFloorMs',group:'LLM',label:'Recap floor',short:'Floor',values:[300_000,600_000,900_000,1_800_000],
-    help:'During long waits, at most this often',format:minutes},
+  {key:'recapFloorMs',group:'LLM',label:'Routine every',short:'Routine',values:[300_000,600_000,900_000,1_800_000],
+    help:'At most this often, routine news',format:minutes},
   {key:'modelCallsPerHour',group:'LLM',label:'Call cap',short:'Cap',values:[30,60,120,240],help:'Model calls per hour, all items',
     format:value => `${value}/h`},
-  {key:'briefAgents',group:'LLM',label:'Agents brief',short:'Agents',values:[true,false],help:'Sends agent tasks and updates'},
+  {key:'briefAgents',group:'LLM',label:'Agents brief',short:'Agents',values:[true,false],help:'Sends agent tasks, updates and stage results'},
   {key:'briefMain',group:'LLM',label:'Main recap',short:'Recap',values:[true,false],help:'Sends your prompts and replies'},
-  {key:'resultDigest',group:'LLM',label:'Result digest',short:'Digest',values:[false,true],help:'Sends finished agents\' answers'},
+  {key:'resultDigest',group:'LLM',label:'Result digest',short:'Digest',values:[false,true],help:'Sends agents\' final and long stage answers'},
   {key:'agentLabels',group:'LLM',label:'Labels and title',short:'Labels',values:[true,false],help:'Sends agent tasks, first prompt; on, waits for a backend'},
   {key:'failureCause',group:'LLM',label:'Failure cause',short:'Cause',values:[false,true],help:'Sends the tail of error output'},
   {key:'changeSummary',group:'LLM',label:'Change summary',short:'Diff',values:[false,true],help:'Sends diff stat and hunks'},
@@ -71,12 +81,15 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format:value => ICON_WORDS[value as IconMode] ?? String(value)},
   {key:'statusCard',group:'Panel',label:'Status card',short:'Card',values:['full','status','min'],help:'Foot card: brief, status, one line'},
   {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and brief language'},
-  {key:'worktreesPane',group:'Panel',label:'2 Worktrees',short:'2 Trees',values:['open','closed'],help:PANE_HELP},
+  {key:'timelinePane',group:'Panel',label:'2 Timeline',short:'2 Events',values:['open','closed'],help:PANE_HELP},
+  {key:'timelineStyle',group:'Panel',label:'Timeline style',short:'Style',values:TIMELINE_STYLES,help:'Main rail, indent, or lanes'},
+  {key:'timelineHours',group:'Panel',label:'Timeline span',short:'Span',values:TIMELINE_HOURS,help:'Hours shown; more on demand',
+    format:value => `${value}h`},
   {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','closed'],help:PANE_HELP},
   {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','closed'],help:PANE_HELP},
-  {key:'timelinePane',group:'Panel',label:'5 Timeline',short:'5 Events',values:['open','closed'],help:PANE_HELP},
-  // Any even width from 24 to 80 columns, a step of two at a time; Codex keeps 41 whatever is asked.
-  {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:Array.from({length:29},(_,i)=>24+2*i),
+  // The widths the panel is laid out for, each a step in what fits: the meters, the model badge's words, the timeline's
+  // lanes. Codex keeps 41 whatever is asked, and a width from the file or a dragged border steps from where it falls.
+  {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:PANEL_WIDTHS,
     help:'Panel columns; Codex keeps 41',
     // 0, from an older settings file, is the panel's own choice.
     format:value => Number(value) === 0 ? 'auto' : t('{n} cols',{n:Number(value)})},
@@ -91,7 +104,21 @@ export const SETTING_ROWS: readonly SettingRow[] = [
 const NARROW_VALUES: Record<string,string> = {remaining:'left',balanced:'bal',terminal:'term',reduced:'less',created:'age',
   titanium:'ti','Tab row':'tab','Status band':'band','Emoji tiles':'tile',stacked:'stack'};
 
-export interface SettingsPageState { draft:HudSettings; selected:number; offset:number; message:string; original?:HudSettings }
+export interface SettingsPageState {
+  draft:HudSettings; selected:number; offset:number; message:string; original?:HudSettings;
+  /** The roles the session's subtasks have, the most used first: what Key roles offers. */
+  roles?:readonly string[];
+}
+
+/**
+ * The values ←/→ step through. Key roles offers none, each role the
+ * session's subtasks have, and what is set and was saved, so a list from the
+ * settings file stays one of them.
+ */
+export function rowValues(row:SettingRow,state:Pick<SettingsPageState,'draft'|'original'|'roles'>):readonly SettingValue[] {
+  if (row.key !== 'importantRoles') return row.values;
+  return [...new Set(['',...state.roles ?? [],state.original?.importantRoles ?? '',state.draft.importantRoles])];
+}
 export interface SettingsFrame {
   lines:string[];
   state:SettingsPageState;
@@ -109,15 +136,16 @@ type DisplayLine = {group:string} | {index:number} | {note:string};
 
 /**
  * Rows that do nothing until another is on: every model feature needs a
- * backend, desktop notices need notifications, the recap floor needs the
- * main recap, a label as the name needs the labels. They stay selectable, so they can be set up in advance, but
+ * backend, desktop notices need notifications, Routine every needs one of
+ * the items it paces (the agents brief, the main recap, the change summary),
+ * a label as the name needs the labels. They stay selectable, so they can be set up in advance, but
  * step back while their parent is off.
  */
 function inactive(key:keyof HudSettings,draft:HudSettings):boolean {
   const row = SETTING_ROWS.find(entry => entry.key === key);
   if (row?.group === 'LLM' && key !== 'briefing' && draft.briefing === 'off') return true;
   if (key === 'notifyDesktop' && !draft.notify) return true;
-  if (key === 'recapFloorMs' && !draft.briefMain) return true;
+  if (key === 'recapFloorMs' && !draft.briefAgents && !draft.briefMain && !draft.changeSummary) return true;
   // A label needs the labels, and they need a backend.
   if (key === 'labelAsName' && (!draft.agentLabels || draft.briefing === 'off')) return true;
   return false;
@@ -138,6 +166,7 @@ function displayLines(draft:HudSettings):DisplayLine[] {
 
 function valueText(row:SettingRow,value:SettingValue,narrow:boolean):string {
   const text = typeof value === 'boolean' ? value ? 'on' : 'off' : row.format ? row.format(value) : String(value);
+  if (row.literal && value !== '') return text;
   // Chinese words are short already; the narrow English forms are for English.
   return narrow && language() === 'en' ? NARROW_VALUES[text] ?? text : t(text);
 }
@@ -342,14 +371,15 @@ export function handleSettingsInput(state:SettingsPageState,input:WorkbenchInput
   if (next.selected !== moved) next.message = '';
   if (key === 'enter' || key === 'left' || key === 'right') {
     const row = SETTING_ROWS[next.selected];
+    const values = rowValues(row,next);
     const current = next.draft[row.key];
-    let index = row.values.indexOf(current);
+    let index = values.indexOf(current);
     if (index < 0 && typeof current === 'number') {
       // A number between the steps (an odd width, a dragged border, the old presets): step from where it falls.
-      const above = row.values.findIndex(value => Number(value) > current);
-      index = key === 'left' ? (above < 0 ? row.values.length : above) : (above < 0 ? row.values.length-1 : above-1);
+      const above = values.findIndex(value => Number(value) > current);
+      index = key === 'left' ? (above < 0 ? values.length : above) : (above < 0 ? values.length-1 : above-1);
     }
-    const value = row.values[(index+(key === 'left' ? row.values.length-1 : 1)+row.values.length)%row.values.length];
+    const value = values[(index+(key === 'left' ? values.length-1 : 1)+values.length)%values.length];
     next.draft = {...next.draft,[row.key]:value};
     // A look comes with the icons it was drawn with.
     if (row.key === 'look') next.draft.icons = LOOK_ICONS[value as LookName];

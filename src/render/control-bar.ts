@@ -63,7 +63,6 @@ type IconName = MonitorPane | 'main' | 'pause' | 'resume' | 'show' | 'hide' | 's
 export const UNICODE_ICONS: Record<IconName, string> = {
   main: '⌂',
   agents: '▦',
-  worktrees: '⌥',
   changes: '±',
   details: '◫',
   timeline: '≣',
@@ -84,7 +83,6 @@ export const UNICODE_ICONS: Record<IconName, string> = {
 export const ICONS: Record<IconName, string> = {
   main: '',
   agents: '\u{f06a9}',
-  worktrees: '',
   changes: '',
   details: '',
   timeline: '',
@@ -105,7 +103,6 @@ export const ICONS: Record<IconName, string> = {
 export const EMOJI_ICONS: Record<IconName, string> = {
   ...UNICODE_ICONS,
   agents: '🤖',
-  worktrees: '🌳',
   changes: '📝',
   details: '🔍',
   timeline: '🕘',
@@ -137,10 +134,6 @@ export function look(width = Infinity): LookName {
  */
 const PANE_NAMES: Record<MonitorPane, Record<'en' | 'zh', { title: string; tab: string; short: string }>> = {
   agents: { en: { title: 'Agents', tab: 'Agents', short: 'Ag' }, zh: { title: '卡片', tab: '卡片', short: '卡片' } },
-  worktrees: {
-    en: { title: 'Worktrees', tab: 'Trees', short: 'Wt' },
-    zh: { title: '工作树', tab: '工作树', short: '工作…' },
-  },
   changes: { en: { title: 'Changes', tab: 'Changes', short: 'Ch' }, zh: { title: '改动', tab: '改动', short: '改动' } },
   details: {
     en: { title: 'Inspector', tab: 'Inspect', short: 'In' },
@@ -438,14 +431,23 @@ function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
   return mainOnly(width);
 }
 
+/**
+ * The agents' counts in the form asked for: each count with its word or
+ * without, and with the subtasks figure or without it. Painted; '' with
+ * nothing to count.
+ */
+export type CountsText = (words: boolean, figure: boolean) => string;
+
 /** What a pane's title row says besides its name. */
 export interface HeadOptions {
-  /** Painted, after the title: the agents' counts, or their forms from the fullest to the shortest. */
-  info?: string | readonly string[];
+  /** Painted, after the title: the pane's counts, or the agents' in each of their forms. */
+  info?: string | CountsText;
   /** Painted, at the right end: where the pane's rows are, or how many there are. */
   right?: string;
   focused: boolean;
   zoomed: boolean;
+  /** False where the bar's tab above already names the pane (the tabs layout): the row keeps its counts and where its rows are. */
+  named?: boolean;
 }
 
 /**
@@ -458,25 +460,33 @@ export interface HeadOptions {
  *   frame  "├─ ⌥ 工作树 ────────────────── 3 个 ─┤"    an edge of the panel's frame
  *   pill   " ( ⌥ 工作树 )                  3 个 "      the deep blue where the focus is
  *
- * Zoomed, the title is a filled tab, as the focused tab on the bar is. Short
- * of room the name gives way first, then the counts' words, then where the
- * rows are; at the last the counts are cut.
+ * Zoomed, the title is a filled tab, as the focused tab on the bar is.
+ * Short of room, what matters least gives way first: the name, then the
+ * counts' words, then where the rows are, then the subtasks figure. One that
+ * gave way comes back where what it made room for does not fit anyway; at
+ * the last the counts are cut. Unnamed (the tabs layout, its tab on the bar
+ * above), the row is the counts and where the rows are alone, on the look's
+ * rule or surface.
  */
 export function paneHead(id: MonitorPane, width: number, o: HeadOptions): string {
   const style = look(width);
   const { icon: glyph, name } = paneTitle(id);
-  const titles = glyph ? [`${glyph} ${name}`, glyph] : [name];
-  const infos = typeof o.info === 'string' ? [o.info] : o.info?.length ? [...o.info] : [''];
-  // The name gives way before the counts' words, and where the rows are
-  // before the counts; at the last the counts are cut.
-  for (const info of infos) {
-    for (const title of titles) {
-      const row = headRow(style, title, info, o, width, false);
-      if (row !== null) return row;
+  const titles = o.named === false ? [''] : glyph ? [`${glyph} ${name}`, glyph] : [name];
+  const info = o.info;
+  const counts: CountsText = typeof info === 'function' ? info : () => info ?? '';
+  const bare = { ...o, right: undefined };
+  const both = [true, false];
+  for (const figure of both) {
+    for (const right of o.right ? both : [false]) {
+      for (const words of both) {
+        for (const title of titles) {
+          const row = headRow(style, title, counts(words, figure), right ? o : bare, width, false);
+          if (row !== null) return row;
+        }
+      }
     }
   }
-  const bare = { ...o, right: undefined };
-  return headRow(style, titles.at(-1)!, infos.at(-1)!, bare, width, false) ?? headRow(style, titles.at(-1)!, infos.at(-1)!, bare, width, true)!;
+  return headRow(style, titles.at(-1)!, counts(false, false), bare, width, true)!;
 }
 
 function headRow(style: LookName, title: string, counts: string, o: HeadOptions, width: number, cut: boolean): string | null {
@@ -485,7 +495,8 @@ function headRow(style: LookName, title: string, counts: string, o: HeadOptions,
   const strong = (text: string) => theme.bold(o.focused ? theme.accent(text) : theme.value(text));
   const filled = (text: string) => (bare ? `[${text}]` : theme.tab(theme.bold(` ${text} `)));
   let head: string;
-  if (style === 'pill') {
+  if (!title) head = '';
+  else if (style === 'pill') {
     const on = o.focused || o.zoomed;
     head = bare
       ? `[${title}]`
@@ -494,14 +505,16 @@ function headRow(style: LookName, title: string, counts: string, o: HeadOptions,
         : `${theme.chipEdge(CAP_LEFT)}${theme.chip(theme.bold(theme.value(title)))}${theme.chipEdge(CAP_RIGHT)}`;
   } else if (o.zoomed && style !== 'band') head = filled(title);
   else head = style === 'band' && o.zoomed ? theme.bold(title) : strong(title);
-  const lead = style === 'frame' ? `${theme.frame('├─')} ` : ' ';
-  const info = counts ? `${style === 'tab' || style === 'band' ? '  ' : ' '}${counts}` : '';
+  // With no title and nothing after it, a rule runs on from the frame's edge (or the row's first column).
+  const bareRow = !head && !counts;
+  const lead = style === 'frame' ? bareRow ? theme.frame('├') : `${theme.frame('├─')} ` : bareRow && style === 'tile' ? '' : ' ';
+  const info = counts ? `${head ? style === 'tab' || style === 'band' ? '  ' : ' ' : ''}${counts}` : '';
   // The rule's looks draw a rule across to the right end; the others leave the columns blank.
   const ruled = style === 'tile' || style === 'frame';
   const close = style === 'frame' ? theme.frame(right ? ' ─┤' : '─┤') : ' ';
   const tail = right ? ` ${right}${close}` : style === 'frame' ? close : ruled ? ' ' : '';
   const least = ruled || right ? 1 : 0;
-  const gap = ruled ? 1 : 0;
+  const gap = ruled && !bareRow ? 1 : 0;
   let left = `${lead}${head}${info}`;
   let fill = width - visualLength(left) - visualLength(tail) - gap;
   if (fill < least) {
@@ -511,7 +524,7 @@ function headRow(style: LookName, title: string, counts: string, o: HeadOptions,
     fill = Math.max(0, width - visualLength(left) - visualLength(tail) - gap);
   }
   const rule = style === 'frame' ? theme.frame : o.focused ? theme.accent : theme.frame;
-  let row = ruled ? `${left} ${rule('─'.repeat(fill))}${tail}` : `${left}${' '.repeat(fill)}${tail}`;
+  let row = ruled ? `${left}${gap ? ' ' : ''}${rule('─'.repeat(fill))}${tail}` : `${left}${' '.repeat(fill)}${tail}`;
   row = truncateAnsi(row, width);
   row += ' '.repeat(Math.max(0, width - visualLength(row)));
   if (style === 'band') return o.zoomed ? theme.tab(row) : theme.band(row);
