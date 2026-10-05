@@ -641,10 +641,12 @@ test('the panel\'s top, for the settings page to preview: the bar as the look dr
     assert.match(top[1], /^│ .* │$/);
     assert.match(top[2], /^├─ ± Changes ─+┤$/);
     setDisplayConfig({ look: 'tab' });
+    // One row of bar, then a blank one as the panel has: every look is as tall, so the page does not move as they are stepped through.
     const tab = panelTop({ tree }, state, 40).map(stripAnsi);
-    assert.equal(tab.length, 2);
-    assert.match(tab[1], /^ ± Changes +$/);
-    assert.ok(tab.every(line => visualLength(line) === 40));
+    assert.equal(tab.length, 3);
+    assert.equal(tab[1], '');
+    assert.match(tab[2], /^ ± Changes +$/);
+    assert.equal(visualLength(tab[0]), 40);
   } finally {
     setDisplayConfig(previous);
   }

@@ -972,12 +972,14 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
 /**
  * The panel's top as the display config now draws it: the control bar and
  * the focused pane's title, for the settings page to preview a look, its
- * icons or a theme before they are saved.
+ * icons or a theme before they are saved. A one-row bar has a blank row
+ * under it, as a tall panel parts its sections, so every look is three rows
+ * and the page holds still while the looks are stepped through.
  */
 export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state: MonitorState, width: number): string[] {
   const now = input.nowMs ?? Date.now();
   const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
-  return [...bar.lines,paneHead(state.focus,width,{focused:true,zoomed:false})];
+  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false})];
 }
 
 /**
