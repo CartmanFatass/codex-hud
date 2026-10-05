@@ -90,7 +90,11 @@ test('an action is the command run, the agent a collaboration call is about, or 
   assert.equal(actionText('exec_command', JSON.stringify({ cmd: 'git status' })), 'git status');
   assert.equal(actionText('shell', { command: ['rg', '-n', 'TODO'] }), 'rg -n TODO');
   assert.equal(actionText('exec', "await tools.exec_command({ cmd: 'pytest -q' })"), 'pytest -q');
-  assert.equal(actionText('exec', '\n  const files = await tools.list();\n'), 'const files = await tools.list();');
+  assert.equal(actionText('exec', 'text(await tools.exec_command({cmd:"python3 - <<\'PY\'\\nprint(1)\\nPY","yield_time_ms":1000}));'), "python3 - <<'PY' print(1) PY",
+    'a command over several lines, flattened');
+  assert.equal(actionText('exec', 'const r = await tools.exec_command({ "cmd": `make\n  all` });'), 'make all');
+  assert.equal(actionText('exec', 'text(await tools.write_stdin({session_id:7,chars:""}));'), 'write_stdin', 'no command: the tool it calls');
+  assert.equal(actionText('exec', '// @exec: {"yield_time_ms": 60000}\nconst x = 1;\n'), 'const x = 1;', 'a comment is not what it does');
   assert.equal(actionText('send_message', JSON.stringify({ target: '/root/reviewer', message: 'gAAAA' })), '→ /root/reviewer');
   assert.equal(actionText('wait_agent', '{}'), 'wait_agent');
   assert.equal(actionText('exec_command', JSON.stringify({ cmd: `echo ${'y'.repeat(300)}` })).length, 200);

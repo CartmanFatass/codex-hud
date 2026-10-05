@@ -94,10 +94,13 @@ export function actionText(name: string, raw: unknown): string {
   const command = text(given.cmd) ?? text(given.command) ?? (Array.isArray(given.command) ? given.command.filter(part => typeof part === 'string').join(' ') : undefined);
   if (command) return clip(command, 200);
   if (typeof raw === 'string' && !raw.trimStart().startsWith('{')) {
-    // A script (the `exec` tool): the first command it runs, else its first line.
-    const quoted = /\bcmd\s*:\s*(["'`])((?:\\.|(?!\1).)*)\1/.exec(raw);
-    if (quoted) return clip(quoted[2].replace(/\\(["'`\\])/g, '$1'), 200);
-    const first = raw.split('\n').map(line => line.trim()).find(Boolean);
+    // A script (the `exec` tool): the first command it runs, else the first
+    // tool it calls, else its first line that is not a comment.
+    const quoted = /\bcmd["']?\s*:\s*(["'`])((?:\\[\s\S]|(?!\1)[^\\])*)\1/.exec(raw);
+    if (quoted) return clip(quoted[2].replace(/\\[nt]/g, ' ').replace(/\\([\s\S])/g, '$1'), 200);
+    const tool = /\btools\.(\w+)\s*\(/.exec(raw);
+    if (tool) return tool[1];
+    const first = raw.split('\n').map(line => line.trim()).find(line => line && !line.startsWith('//'));
     if (first) return clip(first, 200);
   }
   if (name === 'spawn_agent') return [text(given.task_name), text(given.agent_type) && `(${given.agent_type as string})`].filter(Boolean).join(' ') || name;
