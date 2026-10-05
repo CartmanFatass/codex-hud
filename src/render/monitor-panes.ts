@@ -46,7 +46,8 @@ export function summaryRow(input: Pick<MonitorData,'tree'>, width: number): {row
   // "!1 失败  ▸1 运行  ✓5 完成": an icon and a count alone said nothing to a
   // reader without the legend, so each count carries its word. Where the
   // words do not fit, the agents' counts go without them but the subtasks
-  // keep theirs, and their failures; at the last, the agents' counts alone.
+  // keep theirs, and their failures; at the last, once where the rows are
+  // has given way too, the agents' counts alone.
   const build = (words: boolean, subtasks: boolean) => {
     const count = (icon: string, paint: (s: string) => string, n: number, word: string) =>
       `${paint(icon)}${n}${words ? colors.dim(` ${t(word)}`) : ''}`;
@@ -64,7 +65,9 @@ export function summaryRow(input: Pick<MonitorData,'tree'>, width: number): {row
     return text ? truncateAnsi(' '+text,width) : '';
   };
   const text = build(true,true);
-  return {row:{text,fallbacks:[...new Set([build(false,true),build(false,false)])].filter(form=>form && form !== text)}};
+  const short = build(false,true);
+  const least = build(false,false);
+  return {row:{text,fallbacks:short && short !== text ? [short] : [],...(least && least !== short ? {least} : {})}};
 }
 
 /** "◈5": reviews, red when one failed, in the info colour while one is running. Empty when there are none. */

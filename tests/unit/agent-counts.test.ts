@@ -101,6 +101,21 @@ test('the title row, the status card, the bar, notifications and the snapshot sa
   assert.deepEqual(sent.map((event) => event.message), ['1 agent failed, 1 subtask failed, 1 review failed', '2 agents finished, 1 failed']);
 });
 
+test('short of room, the title row gives up where its rows are before the subtasks, and the subtasks before the agents', () => {
+  const many = treeOf(Array.from({ length: 12 }, (_, i) => node(`a${i}`, `lead_${i}`, i === 0 ? 'error' : 'running', { children: [
+    node(`a${i}s`, `impl_${i}`, i === 1 ? 'error' : 'completed', { depth: 2 }),
+  ] })));
+  for (const style of ['rich', 'compact'] as const) {
+    const title = (width: number) => {
+      const frame = renderMonitor({ tree: many, state: { ...initialMonitorState(), style }, width, height: 24, nowMs: NOW });
+      return stripAnsi(frame.lines[frame.panes[0].y]).trimEnd();
+    };
+    assert.match(title(56), /^ ▦ Agents {2}!1 ▸11 {2}· 12 subtasks, 1 failed +1–22\/\d+$/, style);
+    assert.equal(title(40), ' ▦  !1 ▸11  · 12 subtasks, 1 failed', style);
+    assert.match(title(32), /^ ▦ Agents {2}!1 ▸11 +1–22\/\d+$/, style);
+  }
+});
+
 test('the alerts and the title row in Chinese', () => {
   setLanguage('zh');
   try {

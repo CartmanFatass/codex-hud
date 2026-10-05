@@ -435,6 +435,8 @@ function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
 export interface HeadOptions {
   /** Painted, after the title: the agents' counts, or their forms from the fullest to the shortest. */
   info?: string | readonly string[];
+  /** Shorter still, a figure left out: used only once `right` has given way and `info`'s shortest does not fit. */
+  least?: string;
   /** Painted, at the right end: where the pane's rows are, or how many there are. */
   right?: string;
   focused: boolean;
@@ -455,25 +457,35 @@ export interface HeadOptions {
  *
  * Zoomed, the title is a filled tab, as the focused tab on the bar is. Short
  * of room the name gives way first, then the counts' words, then where the
- * rows are; at the last the counts are cut. Unnamed (the tabs layout, its
- * tab on the bar above), the row is the counts and where the rows are alone,
- * on the look's rule or surface.
+ * rows are, then a figure (`least`); at the last the counts are cut.
+ * Unnamed (the tabs layout, its tab on the bar above), the row is the
+ * counts and where the rows are alone, on the look's rule or surface.
  */
 export function paneHead(id: MonitorPane, width: number, o: HeadOptions): string {
   const style = look(width);
   const { icon: glyph, name } = paneTitle(id);
   const titles = o.named === false ? [''] : glyph ? [`${glyph} ${name}`, glyph] : [name];
   const infos = typeof o.info === 'string' ? [o.info] : o.info?.length ? [...o.info] : [''];
-  // The name gives way before the counts' words, and where the rows are
-  // before the counts; at the last the counts are cut.
-  for (const info of infos) {
+  const bare = { ...o, right: undefined };
+  const first = (info: string, options: HeadOptions) => {
     for (const title of titles) {
-      const row = headRow(style, title, info, o, width, false);
+      const row = headRow(style, title, info, options, width, false);
       if (row !== null) return row;
     }
+    return null;
+  };
+  // The name gives way before the counts' words, where the rows are before
+  // a figure, and that figure before the counts are cut.
+  for (const info of infos) {
+    const row = first(info, o);
+    if (row !== null) return row;
   }
-  const bare = { ...o, right: undefined };
-  return headRow(style, titles.at(-1)!, infos.at(-1)!, bare, width, false) ?? headRow(style, titles.at(-1)!, infos.at(-1)!, bare, width, true)!;
+  if (o.least !== undefined) {
+    const row = (o.right ? first(infos.at(-1)!, bare) : null) ?? first(o.least, o);
+    if (row !== null) return row;
+  }
+  const last = o.least ?? infos.at(-1)!;
+  return headRow(style, titles.at(-1)!, last, bare, width, false) ?? headRow(style, titles.at(-1)!, last, bare, width, true)!;
 }
 
 function headRow(style: LookName, title: string, counts: string, o: HeadOptions, width: number, cut: boolean): string | null {

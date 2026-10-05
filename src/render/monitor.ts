@@ -108,7 +108,9 @@ export interface RowControl { kind: MonitorControl['kind']; item?: string; x: nu
  */
 export interface MonitorRow { text: string; item?: string; key?: string; controls?: RowControl[];
   /** The text shortened, widest first, for where it does not fit: the agents' counts without their words. */
-  fallbacks?: string[] }
+  fallbacks?: string[];
+  /** The shortest, a figure left out (the agents' counts without their subtasks): only once where the rows are has given way. */
+  least?: string }
 export interface MonitorRect {
   id: MonitorPane;
   x: number; y: number; width: number; height: number;
@@ -283,7 +285,8 @@ export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state:
   const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
   const summary = state.focus === 'agents' ? summaryRow(input,width).row : undefined;
   const info = summary ? [summary.text,...summary.fallbacks ?? []].map(text=>text.replace(/^ /,'')).filter(Boolean) : undefined;
-  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false,named:!state.tabbed,info})];
+  const least = summary?.least?.replace(/^ /,'') || undefined;
+  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false,named:!state.tabbed,info,least})];
 }
 
 /** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
@@ -476,7 +479,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     if (id === 'agents') {
       // Its title, then the counts the summary row has; where its rows are on the right.
       // In the tabs layout the tab above names the pane: its title is its counts and where its rows are.
-      drawAgentsView(frame,state,rows,y,cw,h,(summary,range)=>paneHead(id,width,{info:summary,right:range && colors.dim(range),focused,zoomed,named:!state.tabbed}),framed ? 2 : 0);
+      drawAgentsView(frame,state,rows,y,cw,h,(summary,range,least)=>paneHead(id,width,{info:summary,least,right:range && colors.dim(range),focused,zoomed,named:!state.tabbed}),framed ? 2 : 0);
       if (rows.length) titles.add(y);
       y += h; continue;
     }

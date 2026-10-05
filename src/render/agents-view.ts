@@ -12,7 +12,7 @@ export const WHEEL_ROWS = 3;
 /**
  * Draw the agents view at `y`, `height` rows tall: its title stays put, as
  * `head` draws it from the summary line's counts (with their words, then
- * without), and the rest scrolls under
+ * without, then the agents' alone), and the rest scrolls under
  * it. When it does not all fit, the title's right end says which rows are in
  * view ("4–19/46"); a click on the title zooms the view, or restores it.
  *
@@ -21,7 +21,7 @@ export const WHEEL_ROWS = 3;
  * follows the selection only when the selection moves.
  */
 export function drawAgentsView(frame: MonitorFrame, state: MonitorState, rows: MonitorRow[], y: number, width: number, height: number,
-  head: (summary: string[], range: string) => string, x = 0): void {
+  head: (summary: string[], range: string, least?: string) => string, x = 0): void {
   const pinned = Math.min(1,height,rows.length);
   const room = height-pinned;
   const body = Math.max(0,rows.length-pinned);
@@ -63,7 +63,7 @@ export function drawAgentsView(frame: MonitorFrame, state: MonitorState, rows: M
     // The title spans the frame's sides too, where there is a frame.
     const range = overflow && shown > 0 ? `${offset+1}–${offset+shown}/${body}` : '';
     const summary = [rows[0].text,...rows[0].fallbacks ?? []].map(text=>text.replace(/^ /,'')).filter(Boolean);
-    frame.lines[y] = head(summary,range);
+    frame.lines[y] = head(summary,range,rows[0].least?.replace(/^ /,'') || undefined);
     frame.controls.push({kind:'zoom',pane:'agents',x:0,y,width:width+2*x});
   }
 }
