@@ -17,7 +17,8 @@ import { agentTitle, shownName, labelled } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { formatWindowLabel } from './quota.js';
 import { monitorText, fit, pair, wrapped, flowLines, squeeze } from './monitor-text.js';
-import { age, iconic, nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName } from './monitor-labels.js';
+import { age, iconic, nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
+  isUntracked, UNTRACKED_ROW, changeLetter, lineCounts } from './monitor-labels.js';
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
 
@@ -242,7 +243,6 @@ export function changeCounts(files: readonly GitChangedFile[], width: number): s
  * the middle goes (".agents/…/SKILL.md", then ".ag…/SKILL.md"), and last the
  * start is cut ("…/SKILL.md").
  */
-let shownCache: {files: readonly unknown[]; width: number; shown: string[]} | undefined;
 export function shownPaths(paths: readonly string[], width: number): string[] {
   // An untracked directory keeps its slash on its name: "r02/".
   const split = paths.map(path=>{
@@ -286,6 +286,21 @@ export function shownPaths(paths: readonly string[], width: number): string[] {
   });
 }
 
+/** The changed files, tracked then untracked, each with its path as the list shows it. */
+interface ChangesSplit {
+  files: readonly GitChangedFile[];
+  width: number;
+  tracked: Array<[GitChangedFile, string]>;
+  untracked: Array<[GitChangedFile, string]>;
+}
+let changesCache: ChangesSplit | undefined;
+function splitChanges(files: readonly GitChangedFile[], width: number): ChangesSplit {
+  const shown = shownPaths(files.map(file=>file.path),width);
+  const split: ChangesSplit = {files,width,tracked:[],untracked:[]};
+  files.forEach((file,i) => (isUntracked(file) ? split.untracked : split.tracked).push([file,shown[i]]));
+  return split;
+}
+
 export function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   if (id === 'agents') return agentRows(input,state,width,now);
   if (id === 'timeline') return timelineRows(input,width,now);
@@ -320,8 +335,14 @@ export function paneRows(id: MonitorPane, input: MonitorData, state: MonitorStat
     if (!git) return [];
     if (git.error) rows.push({text:theme.warning(t('Git incomplete'))});
     if (!git.root) return rows;
+    // Worked out once per git read and width, not on every repaint.
+    const pathWidth = Math.max(1,width-4);
+    if (changesCache?.files !== git.files || changesCache.width !== pathWidth) changesCache = splitChanges(git.files,pathWidth);
+    const {tracked,untracked} = changesCache;
     if (git.files.length) {
-      rows.push({text:changeCounts(git.files,width)});
+      // The untracked files are counted on their own row, at the end.
+      const counts = changeCounts(tracked.map(([file])=>file),width);
+      if (counts) rows.push({text:counts});
       // What the diff does, in the model's words, marked as such; older than the diff, it says so.
       const summary = input.notes?.changes;
       if (summary) {
@@ -329,13 +350,21 @@ export function paneRows(id: MonitorPane, input: MonitorData, state: MonitorStat
         if (!summary.current) rows.push(...flowLines(t('(written {age}, before the latest edits)',{age:writtenAge(summary.at,now)}),Math.max(1,width-2)).map(text=>({text:colors.dim(`  ${text}`)})));
       }
     }
-    // Worked out once per git read and width, not on every repaint.
-    const pathWidth = Math.max(1,width-5);
-    if (shownCache?.files !== git.files || shownCache.width !== pathWidth)
-      shownCache = {files:git.files,width:pathWidth,shown:shownPaths(git.files.map(file=>file.path),pathWidth)};
-    const shown = shownCache.shown;
-    return [...rows, ...git.files.map((file,i) => ({item:file.path,
-      text:truncateAnsi(`${file.path===state.selectedFile?'›':' '} ${file.conflict?theme.error('!!'):file.index+file.worktree} ${monitorText(shown[i])}`,width)}))];
+    const mark = (item: string) => item === state.selectedFile ? '›' : ' ';
+    // A letter for what happened, the path, and the lines it adds and removes at the right where they fit.
+    for (const [file,shown] of tracked) {
+      const left = `${mark(file.path)} ${changeLetter(file)} ${monitorText(shown)}`;
+      const counts = lineCounts(file);
+      const gap = width-visualLength(left)-visualLength(counts);
+      rows.push({item:file.path,text:truncateAnsi(counts && gap >= 2 ? left+' '.repeat(gap)+counts : left,width)});
+    }
+    // The untracked files folded into a row that counts them; Enter or a click lists them under it.
+    if (untracked.length) {
+      const open = Boolean(state.untrackedOpen);
+      rows.push({item:UNTRACKED_ROW,text:`${mark(UNTRACKED_ROW)} ${colors.dim(`${open ? '▾' : '▸'} ${t('{n} untracked',{n:untracked.length})}`)}`});
+      if (open) for (const [file,shown] of untracked) rows.push({item:file.path,text:truncateAnsi(`${mark(file.path)}   ${monitorText(shown)}`,width)});
+    }
+    return rows;
   }
   return inspectorRows(input,state,width,now);
 }

@@ -5,6 +5,7 @@ import { MONITOR_PANES, toggleCard } from './monitor.js';
 import { visibleRows, applyKey } from './panel-state.js';
 import { WHEEL_ROWS } from './agents-view.js';
 import { nextLevel } from './status-foot.js';
+import { UNTRACKED_ROW } from './monitor-labels.js';
 
 /**
  * A click on a pane's button, or its number after the prefix: an open pane
@@ -103,7 +104,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
             return next.style==='rich'?result():result({type:'switch',id});
           }
           if(pane.id==='worktrees') {next.selectedWorktree=id;next.preview='worktree';}
-          if(pane.id==='changes') {next.selectedFile=id;next.preview='file';}
+          if(pane.id==='changes') {next.selectedFile=id;next.preview='file';if(id===UNTRACKED_ROW)next.untrackedOpen=!next.untrackedOpen;}
           next.scroll.details=0;return result();
         }
       } else if(pane.id==='agents') {
@@ -131,6 +132,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   } else if(key==='enter'||key==='detail-toggle') {
     const from=next.focus;
     if(from==='details') {next.expanded=!next.expanded;next.scroll.details=0;return result();}
+    // The untracked files' row lists them under it, or folds them back, in place.
+    if(from==='changes'&&next.selectedFile===UNTRACKED_ROW){next.untrackedOpen=!next.untrackedOpen;return result();}
     if(from==='agents')next.preview='agent';else if(from==='worktrees')next.preview='worktree';else if(from==='changes')next.preview='file';
     next=openPane(next,'details');next.scroll.details=0;
     next.expanded=false;

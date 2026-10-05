@@ -225,7 +225,7 @@ Agents and Worktrees open by default; Changes and Inspector open on demand. The 
 |------|---------|
 | **1 Agents** | Nested agents, state and model/effort badges; badges survive long-name truncation |
 | **2 Worktrees** | Each worktree by name (its branch; detached, the nearest directory that is not an id, such as `bench-sources`), its changed/conflicted state and `locked` in words, and under it its HEAD commit's subject. No hash is shown, here or in the Inspector |
-| **3 Changes** | Files in the selected worktree, index/worktree status and conflicts, under their counts in words (`5 unstaged · 12 untracked`, zeros left out); an untracked directory is one row (`bench/corpus/`), as `git status` lists it; a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
+| **3 Changes** | Files in the selected worktree, each with a coloured letter for what happened to it (`M`, `A`, `D`, `R`, `!` for a conflict) and its `+12 −3` where it fits, under their counts in words (`2 staged · 5 unstaged`, zeros left out); untracked files fold into one last row (`▸ 12 untracked`) that Enter or a click opens, and an untracked directory is one row there (`bench/corpus/`), as `git status` lists it; a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
 | **4 Inspector** | Agent status and activity times, worktree details, or colored file diffs |
 
 **Panes** (Settings → Panel → Panes) sets how the panes share the panel:

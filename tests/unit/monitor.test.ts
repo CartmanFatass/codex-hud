@@ -335,9 +335,9 @@ test('an untracked directory is one row, its slash kept, and inspected says what
   const {setLanguage}=await import('../../src/render/i18n.js');
   const untracked=(path: string)=>({path,index:'?',worktree:'?',added:null,removed:null,binary:false,conflict:false});
   const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[untracked('runs/r02/'),untracked('notes.md')]};
-  const state=initialMonitorState();state.modes.changes='open';state.focus='changes';state.selectedFile='runs/r02/';
+  const state=initialMonitorState();state.modes.changes='open';state.focus='changes';state.selectedFile='runs/r02/';state.untrackedOpen=true;
   const frame=renderMonitor({tree,worktrees,git,state,width:30,height:30,nowMs:now});
-  assert.match(stripAnsi(frame.lines.join('\n')),/› \?\? runs\/r02\//);
+  assert.match(stripAnsi(frame.lines.join('\n')),/▾ 2 untracked *\n│ ›   runs\/r02\/ /);
   const opened=handleMonitorInput(frame.state,key('enter'),{tree,git,worktrees,frame}).state;
   const diff=['Untracked','2 files','a.json','deep/b.json'];
   const previous=setLanguage('zh');
@@ -352,6 +352,46 @@ test('an untracked directory is one row, its slash kept, and inspected says what
   // Anything else the preview says is shown as it is.
   const failed=stripAnsi(renderMonitor({tree,worktrees,git,state:opened,width:30,height:24,nowMs:now,diff:['[Preview unavailable: No longer on disk]']}).lines.join('\n'));
   assert.match(failed,/\[Preview unavailable: No *\n│ +longer on disk\]/);
+});
+
+test('a changed file is a letter in its colour, its path and its line counts; untracked files fold into one last row that Enter or a click opens',()=>{
+  const file=(path:string,index:string,worktree:string,added:number|null,removed:number|null,conflict=false)=>({path,index,worktree,added,removed,binary:false,conflict});
+  const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[file('src/cards.ts','.','M',54,16),file('src/new.ts','A','M',120,0),
+    file('docs/old.md','D','.',0,33),file('src/moved.ts','R','.',3,1),file('src/both.ts','U','U',null,null,true),
+    file('notes.md','?','?',null,null),file('runs/','?','?',null,null)]};
+  const state=initialMonitorState();state.modes.changes='open';state.focus='changes';
+  const draw=(at:MonitorState,width=44)=>renderMonitor({tree,worktrees,git,state:at,width,height:30,nowMs:now});
+  const frame=draw(state);
+  const pane=frame.panes.find(p=>p.id==='changes')!;
+  const text=pane.rows.map(row=>stripAnsi(row.text));
+  assert.deepEqual(text.map(line=>line.trimEnd()),['1 conflicts · 3 staged · 2 unstaged','› M src/cards.ts                   +54 −16','  A src/new.ts                        +120',
+    '  D docs/old.md                        −33','  R src/moved.ts                     +3 −1','  ! src/both.ts','  ▸ 2 untracked'],'the counts leave the untracked to their own row');
+  const row=(path:string)=>pane.rows.find(r=>r.item===path)!.text;
+  assert.ok(row('src/cards.ts').includes(theme.warning('M'))&&row('src/new.ts').includes(theme.success('A'))&&row('docs/old.md').includes(theme.error('D'))
+    &&row('src/moved.ts').includes(theme.info('R'))&&row('src/both.ts').includes(theme.error('!')),'added green, deleted red, renamed blue, modified yellow, a conflict red');
+  assert.ok(row('src/cards.ts').includes(theme.success('+54'))&&row('src/cards.ts').includes(theme.error('−16')));
+  assert.ok(!stripAnsi(draw(state,24).lines.join('\n')).includes('+54'),'narrow, the counts give way to the path');
+  // The keys reach the row; Enter lists the files under it, and again folds them, without opening the Inspector.
+  const ctx=(shown:typeof frame)=>({tree,git,worktrees,frame:shown,nowMs:now});
+  const last=handleMonitorInput(frame.state,key('end'),ctx(frame)).state;
+  const opened=handleMonitorInput(last,key('enter'),ctx(draw(last))).state;
+  assert.equal(opened.untrackedOpen,true);assert.equal(opened.modes.details,'closed');assert.ok(!opened.zoom);
+  const open=draw(opened);
+  assert.deepEqual(open.panes.find(p=>p.id==='changes')!.rows.slice(-3).map(r=>stripAnsi(r.text).trimEnd()),['› ▾ 2 untracked','    notes.md','    runs/']);
+  const into=handleMonitorInput(opened,key('down'),ctx(open)).state;
+  assert.equal(into.selectedFile,'notes.md');
+  assert.equal(handleMonitorInput(into,key('enter'),ctx(draw(into))).state.modes.details,'open','a listed untracked file opens as any file does');
+  assert.equal(handleMonitorInput(opened,key('enter'),ctx(open)).state.untrackedOpen,false);
+  // A click on the row does the same; folded, a file under it is selected as the row.
+  const y=frame.panes.find(p=>p.id==='changes')!.y+1+text.length-1;
+  const clicked=handleMonitorInput(frame.state,mouse(5,y),ctx(frame)).state;
+  assert.equal(clicked.untrackedOpen,true);
+  const folded=draw({...into,untrackedOpen:false});
+  assert.match(stripAnsi(folded.lines.join('\n')),/› ▸ 2 untracked/);
+  assert.notEqual(folded.state.selectedFile,'notes.md');
+  // On the row the Inspector has no file to show.
+  const inspected=renderMonitor({tree,worktrees,git,state:{...folded.state,modes:{...folded.state.modes,details:'open'},preview:'file'},width:44,height:30,nowMs:now});
+  assert.equal(inspected.panes.find(p=>p.id==='details')!.rows.length,0);
 });
 
 test('monitor key profile maps numbers without changing legacy decoder behavior',()=>{

@@ -16,7 +16,7 @@ import { controlBar, paneHead, icon, look } from './control-bar.js';
 import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
-import { TURN_CLOCKS, TURN_CLOCK_LONG } from './monitor-labels.js';
+import { TURN_CLOCKS, TURN_CLOCK_LONG, isUntracked, UNTRACKED_ROW } from './monitor-labels.js';
 import { paneRows, agentsView } from './monitor-panes.js';
 
 // The panel is drawn by the modules beside this one; what they export is
@@ -41,6 +41,8 @@ export interface MonitorState {
   scroll: Record<MonitorPane, number>;
   selectedWorktree: string | null;
   selectedFile: string | null;
+  /** Changes: the untracked files listed under their row, not folded into it. */
+  untrackedOpen?: boolean;
   preview: 'agent' | 'worktree' | 'file';
   help: boolean;
   zoom: boolean;
@@ -201,13 +203,26 @@ export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return {agentsPane:state.modes.agents, worktreesPane:state.modes.worktrees,
     changesPane:state.modes.changes, detailsPane:state.modes.details, timelinePane:state.modes.timeline};
 }
+/**
+ * The changed file selected: the one before while it is listed, or the
+ * untracked files' row when that file is folded into it, else the first
+ * row of the list.
+ */
+function fileSelection(state: MonitorState, git?: GitChanges | null): string | null {
+  const files = git?.files ?? [];
+  const folded = files.some(isUntracked);
+  if (state.selectedFile === UNTRACKED_ROW && folded) return UNTRACKED_ROW;
+  const file = files.find(f => f.path === state.selectedFile);
+  if (file) return isUntracked(file) && !state.untrackedOpen ? UNTRACKED_ROW : file.path;
+  return files.find(f => !isUntracked(f))?.path ?? (folded ? UNTRACKED_ROW : null);
+}
 export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null, nowMs: number = Date.now()): MonitorState {
   const rows = visibleRows(tree.nodes, state.tree, nowMs);
   const selected = reconcileSelection(state.tree, tree.nodes, rows);
   const entries = worktrees?.entries ?? [];
   const selectedWorktree = entries.some(w => w.path === state.selectedWorktree) ? state.selectedWorktree
     : entries.find(w => !w.bare && w.prunable === undefined)?.path ?? entries[0]?.path ?? null;
-  const selectedFile = git?.files.some(f => f.path === state.selectedFile) ? state.selectedFile : git?.files[0]?.path ?? null;
+  const selectedFile = fileSelection(state,git);
   // In the tabs layout any pane can be the one shown, whatever the stacked layout left closed.
   const focus = state.tabbed || state.modes[state.focus] !== 'closed' ? state.focus : MONITOR_PANES.find(id => state.modes[id] !== 'closed') ?? 'agents';
   const changed = selected.selectedId !== state.tree.selectedId || selectedWorktree !== state.selectedWorktree || selectedFile !== state.selectedFile;

@@ -10,7 +10,8 @@ import { formatTokenCount } from './lines/activity-line.js';
 import { t } from './i18n.js';
 import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
-import { age, nodeStatus, isQuiet, finishedAt, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName, worktreePlace, ID_NAME } from './monitor-labels.js';
+import { age, nodeStatus, isQuiet, finishedAt, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName, worktreePlace, ID_NAME,
+  UNTRACKED_ROW, lineCounts } from './monitor-labels.js';
 
 function basename(path: string): string { return path.replace(/[\\/]+$/,'').split(/[\\/]/).at(-1) || path; }
 
@@ -124,7 +125,7 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
       return [...rows,...lines.flatMap(line => wrapped(line,width).map(text=>({text})))];
     }
   } else {
-    if (!state.selectedFile) return [];
+    if (!state.selectedFile || state.selectedFile === UNTRACKED_ROW) return [];
     return [...fileHeading(state.selectedFile,input.git,Boolean(state.expanded),width),...fileBody(state.selectedFile,input.diff ?? [],width)];
   }
   return lines.flatMap(line => wrapped(line,width).map(text=>({text})));
@@ -138,8 +139,7 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
  */
 function fileHeading(path: string, git: GitChanges | null | undefined, expanded: boolean, width: number): MonitorRow[] {
   const file = git?.files.find(entry=>entry.path===path);
-  const counts = file?.binary ? colors.dim(t('binary'))
-    : [file?.added ? theme.success(`+${file.added}`) : '',file?.removed ? theme.error(`−${file.removed}`) : ''].filter(Boolean).join(' ');
+  const counts = file?.binary ? colors.dim(t('binary')) : file ? lineCounts(file) : '';
   const name = monitorText(basename(path)+(path.endsWith('/') ? '/' : ''));
   const rows: MonitorRow[] = counts && visualLength(name)+1+visualLength(counts) <= width
     ? [{text:pair(theme.strong(name),counts,width)}]
