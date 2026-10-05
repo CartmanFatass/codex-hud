@@ -114,11 +114,12 @@ export interface HudSettings extends HudDisplayConfig {
    */
   prefixKey: PrefixKey;
   /**
-   * The control bar's buttons and the panes' titles: Nerd Font icons
-   * (`nerd`, beside the words where they fit) or the words alone (`text`).
+   * The control bar's buttons and the panes' titles: Unicode icons
+   * (`unicode`, the default), Nerd Font icons (`nerd`, for a terminal with
+   * one), each beside its word where it fits, or the words alone (`text`).
    * `glyphs: text` means text here too.
    */
-  icons: 'nerd' | 'text';
+  icons: 'unicode' | 'nerd' | 'text';
 }
 
 /** What the brief covers, from its two switches; null when neither is on. */
@@ -138,7 +139,7 @@ export function defaultSettings(): HudSettings {
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
     agentLog: false, notify: false, notifyDesktop: false,
     resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
-    art: 'off', artImage: '', prefixKey: 'C-]', icons: 'nerd',
+    art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode',
   };
 }
 
@@ -197,7 +198,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   art: oneOf('off', 'dots', 'color', 'ascii'),
   artImage: isText(4096),
   prefixKey: oneOf(...PREFIX_KEYS),
-  icons: oneOf('nerd', 'text'),
+  icons: oneOf('unicode', 'nerd', 'text'),
 };
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {

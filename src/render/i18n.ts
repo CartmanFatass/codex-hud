@@ -164,6 +164,7 @@ const ZH: Record<string, string> = {
   // Help
   // Round 3: the prefix, the buttons, the help's sections
   'Help': '帮助',
+  'older': '已收起',
   'Pause brief': '暂停简报',
   'Resume brief': '继续简报',
   'Pause': '暂停',
@@ -193,6 +194,7 @@ const ZH: Record<string, string> = {
   'Click a pane: open, focus, then fold, close': '点面板按钮：打开、聚焦，再折叠、关闭',
   '{pause} / {resume} pause / resume brief': '{pause} / {resume} 暂停 / 继续简报',
   '{show} +N show older  {hide} hide them': '{show} +N 显示已收起的  {hide} 再收起',
+  '+N show older  −N hide them': '+N 显示已收起的  −N 再收起',
   '{settings} settings  {help} help': '{settings} 设置  {help} 帮助',
   'Narrow, the buttons keep their icons alone': '窄时按钮只留图标',
   "Click the card's band: its level": '点击状态卡色带：切换显示层级',
@@ -333,7 +335,7 @@ const ZH: Record<string, string> = {
   'Language': '语言',
   'Lang': '语言',
   'Icons': '图标',
-  'Needs a Nerd Font in the terminal': '需要终端用 Nerd Font 字体',
+  'Nerd Font: needs that font': 'Nerd Font 需终端装该字体',
   'Panel and brief language': '侧栏和简报的语言',
   'Picture': '背景图',
   'Art': '装饰',

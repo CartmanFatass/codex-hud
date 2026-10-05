@@ -3,30 +3,37 @@
  * control the panel draws is here, and nowhere else: not on the status card,
  * not on a pane's title rule.
  *
- *    主会话  󰚩 卡片  工作树  改动  详情  时间线    暂停简报  +37 已收起  设置  帮助
+ *   ≥56 columns   ␠←␠主会话␠ ␠▦␠ ␠⎇␠ ␠±␠ ␠⌖␠ ␠⋮␠      ␠‖␠ ␠+37␠ ␠☰␠设置␠ ␠?␠帮助␠
+ *   44–55         ␠←␠ ␠▦␠ ␠⎇␠ ␠±␠ ␠⌖␠ ␠⋮␠           ␠‖␠ ␠+37␠ ␠☰␠ ␠?␠
+ *   36–43         ␠←␠ ␠▦␠␠⎇␠␠±␠␠⌖␠␠⋮␠             ␠‖␠␠+37␠␠☰␠␠?␠
+ *   <36           ←␠ ▦␠⎇␠±␠⌖␠⋮␠                    ‖␠+37␠☰␠?␠
  *
- * Each control is a button on a chip a step lighter than the bar: a Nerd
- * Font icon and its word where they fit, the icon alone where they do not
- * (`icons: text`, or glyphs set to text: the words alone, shortened). No key
- * is written anywhere on it; the keys (the tmux prefix, then a letter) are in
- * the help alone.
+ * Each control is a chip whose size follows the panel's width: its icon (the
+ * round-3 Unicode set, or Nerd Font icons with `icons: nerd`) and its word
+ * with a column of chip on each side where there is room, the icon alone
+ * between those columns narrower, and the icon and the one column its
+ * drawing may spill into narrowest. The icon is always in the full text
+ * colour and bold, never dimmed; a tab's state is its chip: the focused pane
+ * on the accent, an open one on a chip, a folded one on a chip and
+ * underlined, a closed one on the bar itself. With `icons: text` (or glyphs
+ * set to text) the buttons are words. No key is written anywhere on the bar;
+ * the keys (the tmux prefix, then a letter) are in the help alone.
  *
- * Left: the way back to the main session, then a tab per pane, named as the
- * pane's title names it: an open pane's in the text colour, a closed one's
- * dim, the focused one on a lighter chip and bold, a folded one dim and
- * underlined. Right: the brief's pause (only with a brief configured), the
- * older agents (only when the linger window put some away), settings and
- * help. Short of room the tabs lose their words first, then the closed panes'
- * tabs go, then the other buttons lose theirs (the brief's and the older
- * agents' first, the main session's next, settings and help last), then the
- * older agents' button goes, then the brief's; back, settings and help stay.
- * A tab's click is `clickTab` in monitor.ts. Pure.
+ * Left: the way back to the main session, then a tab per pane. Right: the
+ * brief's pause (only with a brief configured), the older agents (only when
+ * the linger window put some away), settings and help. Where a width's chips
+ * do not fit, the next narrower ones are tried: words go first (the tabs',
+ * then the brief's and the older agents', then the main session's, settings
+ * and help last), then the gaps, then the side columns; then the closed
+ * panes' tabs go, then the older agents' button, then the brief's; back,
+ * settings and help stay. A click anywhere on a chip is its control; a tab's
+ * click is `clickTab` in monitor.ts. Pure.
  */
 import type { MonitorControl, MonitorPane, MonitorState } from './monitor.js';
 import { MONITOR_PANES } from './monitor.js';
-import { theme, colors, visualLength, truncateAnsi } from './colors.js';
+import { theme, visualLength, truncateAnsi } from './colors.js';
 import { palette } from './palette.js';
-import { nerdIcons } from './hud-config.js';
+import { iconSet } from './hud-config.js';
 import { t, language } from './i18n.js';
 
 /** What the bar needs to know besides the panel's state. */
@@ -37,13 +44,35 @@ export interface BarInput {
   expired: number;
 }
 
+type IconName = MonitorPane | 'main' | 'pause' | 'resume' | 'show' | 'hide' | 'settings' | 'help';
+
 /**
- * The Nerd Font icons the bar and the pane titles use, mostly Font Awesome's
- * solid set for one look. Each takes one cell but draws wider, so one is
- * always followed by a space or its word. The robot is a Material Design
- * icon past the BMP: a surrogate pair in a JS string.
+ * The round-3 icons: one column each, and none a glyph the legend gives
+ * another meaning (✓ ✗ ◈ ◎ ◷ ⌕ ≡ …). The older agents' are the sign before
+ * their count.
  */
-export const ICONS = {
+export const UNICODE_ICONS: Record<IconName, string> = {
+  main: '←',
+  agents: '▦',
+  worktrees: '⎇',
+  changes: '±',
+  details: '⌖',
+  timeline: '⋮',
+  pause: '‖',
+  resume: '▸',
+  show: '+',
+  hide: '−',
+  settings: '☰',
+  help: '?',
+};
+
+/**
+ * The Nerd Font icons, mostly Font Awesome's solid set for one look. Each
+ * takes one cell but draws wider, so one is always followed by a space. The
+ * robot is a Material Design icon past the BMP: a surrogate pair in a JS
+ * string.
+ */
+export const ICONS: Record<IconName, string> = {
   main: '',
   agents: '\u{f06a9}',
   worktrees: '',
@@ -56,7 +85,13 @@ export const ICONS = {
   hide: '',
   settings: '',
   help: '',
-} as const;
+};
+
+/** The icon the panel draws for `name`, or '' with icons off. */
+export function icon(name: IconName): string {
+  const set = iconSet();
+  return set === 'nerd' ? ICONS[name] : set === 'unicode' ? UNICODE_ICONS[name] : '';
+}
 
 /**
  * Each pane's names: `title` heads its frame, `tab` is its tab's word (the
@@ -84,19 +119,48 @@ function names(id: MonitorPane) {
   return PANE_NAMES[id][language() === 'zh' ? 'zh' : 'en'];
 }
 
-/** A pane's title, as its frame and its tab name it: its icon first when icons are on. */
-export function paneTitle(id: MonitorPane): string {
-  return nerdIcons() ? `${ICONS[id]} ${names(id).title}` : names(id).title;
+/** A pane's title as its frame draws it: its icon (painted by the caller) and its name. */
+export function paneTitle(id: MonitorPane): { icon: string; name: string } {
+  return { icon: icon(id), name: names(id).title };
 }
 
+/** How big a chip is: icon and word with a side column each, the icon between side columns, or the icon and one column. */
+type Size = 'wide' | 'pad' | 'tight';
+
 /**
- * A button's face: the icon and its word, the icon alone (and the space its
- * drawing spills into), or without icons the word alone.
+ * A chip's text: `glyph` (an icon, or a count) and `word` where it has one.
+ * Without icons the word stands alone. The Nerd Font icon always has a space
+ * after it to spill into.
  */
-function face(icon: string, word: string | null, pad: boolean): string {
-  const text = nerdIcons() ? (word ? `${icon} ${word}` : `${icon} `) : (word ?? '');
-  // Padded, the icon alone already has its space after it. Without colour there is no chip to pad.
-  return pad && palette().name !== 'none' ? ` ${text.endsWith(' ') ? text.slice(0, -1) : text} ` : text;
+function chipText(glyph: string, word: string | null, size: Size): string {
+  const face = glyph ? (word ? `${glyph} ${word}` : glyph) : (word ?? '');
+  return size === 'tight' ? `${face} ` : ` ${face} `;
+}
+
+type ChipState = 'focused' | 'open' | 'folded' | 'closed' | 'button';
+
+/**
+ * A chip painted for its state. The face is always the full text colour and
+ * bold; the state is the surface: the accent for the focused tab, a chip for
+ * an open one or a button, a chip and an underline for a folded tab, the bar
+ * itself for a closed one. Without colour the focused tab is in brackets
+ * ("[▦]") and a folded one ends in "-" ("⎇-").
+ */
+function paint(text: string, state: ChipState, accent = false, folded = state === 'folded'): string {
+  const lead = text.match(/^ */)![0];
+  const trail = text.match(/ *$/)![0];
+  const face = text.slice(lead.length, text.length - trail.length);
+  if (palette().name === 'none') {
+    const marked = folded ? `${face}-` : face;
+    // The brackets take the side columns' place; a tight chip keeps its spill column.
+    if (state === 'focused') return `[${marked}]${lead ? '' : trail}`;
+    return `${lead}${marked}${folded && lead ? trail.slice(1) : trail}`;
+  }
+  if (state === 'focused')
+    return theme.tab(folded ? `${lead}\x1b[4m${theme.bold(face)}\x1b[24m${trail}` : theme.bold(text));
+  const strong = theme.bold(accent ? theme.accent(face) : theme.value(face));
+  const shown = folded ? `\x1b[4m${strong}\x1b[24m` : strong;
+  return state === 'closed' ? `${lead}${shown}${trail}` : theme.chip(`${lead}${shown}${trail}`);
 }
 
 interface Button {
@@ -105,51 +169,49 @@ interface Button {
   pane?: MonitorPane;
 }
 
-/** A button: its face on a chip. Without colour there is no chip, only the face. */
-function chip(text: string): string {
-  return palette().name === 'none' ? text : theme.chip(text);
-}
-
-/**
- * One pane's tab. Without colour the paint says nothing, so the focused pane
- * is "[ 卡片]" and a folded one " 工作树-" ("[ 工作树-]" both); closed ones
- * are not drawn.
- */
-function tab(state: MonitorState, id: MonitorPane, words: boolean, pad: boolean): string {
-  const name = names(id);
-  const text = face(ICONS[id], words ? name.tab : nerdIcons() ? null : name.short, pad);
-  const mode = id === 'agents' ? 'open' : state.modes[id];
-  const folded = mode === 'folded';
-  if (palette().name === 'none') {
-    const plain = `${text}${folded ? '-' : ''}`;
-    return id === state.focus ? `[${plain}]` : plain;
-  }
-  if (id === state.focus) {
-    const bold = theme.bold(theme.value(text));
-    return theme.tab(folded ? `\x1b[4m${bold}\x1b[24m` : bold);
-  }
-  if (folded) return theme.chip(`\x1b[4m${colors.dim(text)}\x1b[24m`);
-  // Dim, not the meter's track colour: that is a step off the chip and would vanish on it.
-  return theme.chip(mode === 'closed' ? colors.dim(text) : theme.value(text));
-}
-
 interface Step {
+  size: Size;
   /** The tabs keep their words. */
   tabWords: boolean;
   /**
    * How many of the other buttons keep their words: 3 all, 2 all but the
-   * brief's and the older agents', 1 settings and help only, 0 none. Without
-   * icons settings and help are words at every step.
+   * brief's and the older agents', 1 settings and help only, 0 none.
+   * Without icons the buttons are words at every step, shortened under 3.
    */
   words: 0 | 1 | 2 | 3;
-  /** A column of chip on each side of a button's face. */
-  pad: boolean;
+  /** Columns of bar between two chips. */
+  gap: 0 | 1;
   /** Closed panes keep their tab. */
   closed: boolean;
   older: boolean;
   brief: boolean;
   /** 'all' the tabs there are, 'focus' only the focused pane's, '' none. */
   tabs: 'all' | 'focus' | '';
+}
+
+const ALL = { closed: true, older: true, brief: true, tabs: 'all' } as const;
+/** From the widest chips to the fewest, in the order the bar gives them up. */
+const STEPS: Step[] = [
+  { size: 'wide', tabWords: true, words: 3, gap: 1, ...ALL },
+  { size: 'wide', tabWords: false, words: 3, gap: 1, ...ALL },
+  { size: 'wide', tabWords: false, words: 2, gap: 1, ...ALL },
+  { size: 'wide', tabWords: false, words: 1, gap: 1, ...ALL },
+  { size: 'pad', tabWords: false, words: 0, gap: 1, ...ALL },
+  { size: 'pad', tabWords: false, words: 0, gap: 0, ...ALL },
+  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL },
+  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, closed: false },
+  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, closed: false, older: false },
+  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, closed: false, older: false, brief: false },
+  { size: 'tight', tabWords: false, words: 0, gap: 0, closed: false, older: false, brief: false, tabs: 'focus' },
+  { size: 'tight', tabWords: false, words: 0, gap: 0, closed: false, older: false, brief: false, tabs: '' },
+];
+/**
+ * Where a width starts in STEPS: the chip sizes the panel's width calls for
+ * (words from 56 columns, side columns from 36, gaps from 44), whether or not
+ * something wider would fit.
+ */
+function firstStep(width: number): number {
+  return width >= 56 ? 0 : width >= 44 ? 4 : width >= 36 ? 5 : 6;
 }
 
 export function controlBar(
@@ -159,24 +221,35 @@ export function controlBar(
 ): { line: string; controls: MonitorControl[] } {
   const brief = input.brief;
   const zh = language() === 'zh';
-  const icons = nerdIcons();
+  const set = iconSet();
+  const words = set === 'text';
   const attempt = (o: Step) => {
-    const backWord = icons ? (o.words >= 2 ? t('Main') : null) : `← ${o.words >= 2 ? t('Main') : zh ? '主' : 'Main'}`;
-    const back: Button = { text: chip(theme.value(face(ICONS.main, backWord, o.pad))), kind: 'main' };
+    const gap = o.gap;
+    const backWord = words ? `← ${o.words >= 2 ? t('Main') : zh ? '主' : 'Main'}` : o.words >= 2 ? t('Main') : null;
+    const back: Button = { text: paint(chipText(icon('main'), backWord, o.size), 'button'), kind: 'main' };
     // With no colour the tabs cannot say closed; only the panes there are get one.
     const tabs: Button[] = MONITOR_PANES.filter(
       (id) => id === 'agents' || state.modes[id] !== 'closed' || (o.closed && palette().name !== 'none')
     )
       .filter((id) => o.tabs === 'all' || (o.tabs === 'focus' && id === state.focus))
-      .map((id) => ({ text: tab(state, id, o.tabWords, o.pad), kind: 'tab', pane: id }));
+      .map((id) => {
+        const word = o.tabWords ? names(id).tab : words ? names(id).short : null;
+        const mode = id === 'agents' ? 'open' : state.modes[id];
+        const chipState: ChipState = id === state.focus ? 'focused' : mode;
+        return {
+          text: paint(chipText(icon(id), word, o.size), chipState, false, mode === 'folded'),
+          kind: 'tab',
+          pane: id,
+        };
+      });
     const right: Button[] = [];
     if (brief && o.brief) {
       const paused = Boolean(brief.paused);
       const wide = o.words >= 3;
       const word = paused ? t(wide ? 'Resume brief' : 'Resume') : t(wide ? 'Pause brief' : 'Pause');
-      const paint = paused ? theme.accent : theme.value;
+      const glyph = icon(paused ? 'resume' : 'pause');
       right.push({
-        text: chip(paint(face(paused ? ICONS.resume : ICONS.pause, wide || !icons ? word : null, o.pad))),
+        text: paint(chipText(glyph, wide || words ? word : null, o.size), 'button', paused),
         kind: 'brief',
       });
     }
@@ -184,54 +257,56 @@ export function controlBar(
       const n = input.expired;
       const shown = state.tree.showAll;
       const wide = o.words >= 3;
-      const word = shown ? (wide || !icons ? t('Hide') : null) : wide ? t('+{n} older', { n }) : `+${n}`;
-      right.push({ text: chip(theme.value(face(shown ? ICONS.hide : ICONS.show, word, o.pad))), kind: 'older' });
+      // The Unicode set's sign is the count's own: "+37", "−37".
+      const unicode = set === 'unicode';
+      const glyph = unicode ? `${UNICODE_ICONS[shown ? 'hide' : 'show']}${n}` : icon(shown ? 'hide' : 'show');
+      const count = unicode ? '' : `+${n}`;
+      const word = shown
+        ? wide || words
+          ? t('Hide')
+          : null
+        : wide
+          ? unicode
+            ? t('older')
+            : words
+              ? t('+{n} older', { n })
+              : `${count} ${t('older')}`
+          : count || null;
+      right.push({ text: paint(chipText(glyph, word, o.size), 'button'), kind: 'older' });
     }
-    const keep = o.words >= 1 || !icons;
-    right.push({ text: chip(theme.value(face(ICONS.settings, keep ? t('Settings') : null, o.pad))), kind: 'settings' });
-    right.push({ text: chip(theme.value(face(ICONS.help, keep ? t('Help') : null, o.pad))), kind: 'help' });
+    const keep = o.words >= 1 || words;
+    right.push({
+      text: paint(chipText(icon('settings'), keep ? t('Settings') : null, o.size), 'button'),
+      kind: 'settings',
+    });
+    right.push({ text: paint(chipText(icon('help'), keep ? t('Help') : null, o.size), 'button'), kind: 'help' });
 
-    const leftText = ' ' + back.text + (tabs.length ? '  ' + tabs.map((b) => b.text).join(' ') : '');
-    const rightText = right.map((b) => b.text).join(' ') + ' ';
+    const sep = ' '.repeat(gap);
+    // Back stands a column apart from the tabs, which are one group.
+    const leftText = back.text + (tabs.length ? ' ' + tabs.map((b) => b.text).join(sep) : '');
+    const rightText = right.map((b) => b.text).join(sep);
     const room = width - visualLength(leftText) - visualLength(rightText);
-    // Two columns of bar at least keep the tabs and the buttons apart.
-    if (room < 2) return null;
+    // A column of bar at least keeps the tabs and the buttons apart.
+    if (room < 1) return null;
     const controls: MonitorControl[] = [];
-    controls.push({ kind: 'main', x: 0, y: 0, width: 1 + visualLength(back.text) });
-    let x = 1 + visualLength(back.text) + 2;
+    controls.push({ kind: 'main', x: 0, y: 0, width: visualLength(back.text) });
+    let x = visualLength(back.text) + 1;
     for (const b of tabs) {
       controls.push({ kind: 'tab', pane: b.pane, x, y: 0, width: visualLength(b.text) });
-      x += visualLength(b.text) + 1;
+      x += visualLength(b.text) + gap;
     }
     x = width - visualLength(rightText);
     for (const b of right) {
       controls.push({ kind: b.kind, x, y: 0, width: visualLength(b.text) });
-      x += visualLength(b.text) + 1;
+      x += visualLength(b.text) + gap;
     }
     return { line: theme.bar(leftText + ' '.repeat(room) + rightText), controls };
   };
-  const all = { closed: true, older: true, brief: true, tabs: 'all' } as const;
-  const bare = { tabWords: false, words: 0, pad: false } as const;
-  const steps: Step[] = [
-    { tabWords: true, words: 3, pad: true, ...all },
-    { tabWords: true, words: 3, pad: false, ...all },
-    { tabWords: false, words: 3, pad: false, ...all },
-    { tabWords: false, words: 3, pad: false, ...all, closed: false },
-    { tabWords: false, words: 2, pad: false, ...all, closed: false },
-    { tabWords: false, words: 1, pad: false, ...all, closed: false },
-    { ...bare, ...all, closed: false },
-    { ...bare, ...all, closed: false, older: false },
-    { ...bare, ...all, closed: false, older: false, brief: false },
-    { ...bare, closed: false, older: false, brief: false, tabs: 'focus' },
-    { ...bare, closed: false, older: false, brief: false, tabs: '' },
-  ];
-  for (const step of steps) {
-    // Fewer tabs may have room for their words again.
-    const found = (!step.tabWords && step.tabs && attempt({ ...step, tabWords: true })) || attempt(step);
+  for (const step of STEPS.slice(firstStep(width))) {
+    const found = attempt(step);
     if (found) return found;
   }
   // Narrower than back and the two buttons: back alone.
-  const arrow = icons ? ICONS.main : '←';
-  const line = theme.bar(truncateAnsi(' ' + theme.accent(arrow), width) + ' '.repeat(Math.max(0, width - 2)));
+  const line = theme.bar(truncateAnsi(icon('main') || '←', width) + ' '.repeat(Math.max(0, width - 1)));
   return { line, controls: [{ kind: 'main', x: 0, y: 0, width: Math.min(width, 2) }] };
 }

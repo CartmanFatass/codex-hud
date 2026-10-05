@@ -182,6 +182,7 @@ test('no key hints and no placeholder lines in any pane, on the bar or on the st
       setLanguage(lang);
       for (const theme of ['terminal', 'none'] as const) {
         for (const [glyphs, icons] of [
+          ['both', 'unicode'],
           ['both', 'nerd'],
           ['both', 'text'],
           ['text', 'text'],

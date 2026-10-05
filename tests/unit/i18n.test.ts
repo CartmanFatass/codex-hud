@@ -1,5 +1,4 @@
 import test from 'node:test';
-import { ICONS } from '../../src/render/control-bar.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -65,14 +64,15 @@ test('the panel speaks Chinese and keeps its width at every size', () => {
     const frame = inChinese(() => renderMonitor({ tree, state: initialMonitorState(), width, height: 20, nowMs: now }));
     for (const line of frame.lines) assert.ok(visualLength(line) <= width, `${width}: ${stripAnsi(line)}`);
     const text = stripAnsi(frame.lines.join('\n'));
-    // Narrow, the bar is icons; from 45 columns the main session and settings are words again.
-    if (width >= 45) assert.match(text, /主会话/);
-    if (width >= 45) assert.ok(text.includes(`${ICONS.settings} 设置 ${ICONS.help} 帮助`));
-    if (width < 30) assert.ok(text.includes(`${ICONS.settings}  ${ICONS.help}`), text);
+    // Under 56 columns the bar is icons alone; the words come back at 56.
+    assert.ok(text.split('\n')[0].trimEnd().endsWith(width >= 36 ? '☰   ?' : '☰ ?'), text);
+    assert.doesNotMatch(text.split('\n')[0], /主会话|设置|帮助/);
     assert.doesNotMatch(text, /Main session|run\b|done\b/);
   }
   const english = stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 30, height: 20, nowMs: now }).lines.join('\n'));
-  assert.ok(english.includes(`${ICONS.settings} Settings ${ICONS.help} Help`));
+  assert.ok(english.split('\n')[0].endsWith('☰ ? '));
+  const wide = inChinese(() => stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 60, height: 20, nowMs: now }).lines[0]));
+  assert.match(wide, /^ ← 主会话 .*☰ 设置 {3}\? 帮助 $/, wide);
   assert.match(english, / ✓1 done {2}▸1 run/);
 });
 

@@ -298,3 +298,69 @@ card, the summary counts, the bar's `+N` button, the pane's own frame),
 Add the placeholder strings to the hint-scan test from part 2, so that they
 cannot come back. Live check: capture the agents area with every agent
 hidden (no line at all), and a pane in its empty state.
+
+---
+
+## Amendment C: icon scale and layout; Unicode icons default, Nerd Font optional (supersedes Amendment A's default)
+
+The user, after comparing: the round-3 Unicode icons (`▦ ⎇ ± ⌖ ⋮` and the
+rest) were **not bad in themselves**. The problem was **scale and
+layout**:
+- the icons drew small;
+- the buttons were tiny;
+- they were crammed together with no proper spacing;
+- the closed-pane tabs were dimmed until they were faint.
+
+So the clarity was poor. Swapping in Nerd Font glyphs ("pictures") without
+fixing the layout would not solve it.
+
+**Decision.**
+1. `icons` setting:
+   - `unicode` is the **default**: the round-3 glyph set (`▦ ⎇ ± ⌖ ⋮`, and
+     for the brief, older-agents, settings and help buttons the round-3
+     choices);
+   - `nerd` is the **option**: the Amendment A glyphs;
+   - `text` is words only.
+2. **The fix is the layout.** It applies to both icon sets.
+
+**Buttons are real chips with width that scales with the panel's
+columns.**
+- Each control is drawn as a chip: the palette's `bar` background with a
+  lighter chip background, the glyph in the **full text colour**, **never
+  dimmed**, and bold if the font allows.
+- Show state by the chip, not by fading the glyph:
+  - **focused:** accent background;
+  - **open:** chip background;
+  - **closed:** no chip background, glyph at normal brightness;
+  - **folded:** chip background plus an underline, or a variant you choose.
+  - With no colour: `[ ]` brackets mark the focused one, and the others
+    keep the round-3 no-colour marks.
+- **Chip width tiers by panel width** (tune the exact numbers live, and
+  report them):
+
+  | Panel width | Pane-tab chip | Gap between chips | Other buttons |
+  |---|---|---|---|
+  | ≥ 56 cols | `␠icon␠word␠` | 1 col | `␠icon␠word␠` |
+  | 44–55 | `␠icon␠` (3 cols) | 1 col | `␠icon␠`; words drop first |
+  | 36–43 | `␠icon␠` (3 cols) | 0 | `␠icon␠` |
+  | < 36 | `icon␠` (2 cols) | 0 | `icon␠`, dropping closed tabs first, then the older-agents button |
+
+  Back, settings and help never drop.
+- A Nerd Font glyph draws wider than its cell. In `nerd` mode always give
+  it a following space (the tiers already do).
+- **Click targets** cover the whole chip, padding included. Update
+  `click-map` and its tests.
+- **The pane titles** in the pane frames use the same icon, at full
+  brightness, before the name.
+
+**Live check additions.**
+- PNGs of the bar at 32, 36, 44 and 56 columns, in both `unicode` (default)
+  and `nerd`. Render with `$S/meslo.ttf`, which also covers the Unicode
+  glyphs, so the PNG matches the user's terminal.
+- Compare against the user's `/mnt/c/Users/fires/OneDrive/图片/hud.png`.
+  The bar must read clearly larger and better spaced.
+- Copy the 36-column default (`unicode`) bar and panel to
+  `OneDrive/图片/hud-r4-panel.png`, and the `nerd` variant to
+  `hud-r4-panel-nerd.png`.
+
+---

@@ -1,5 +1,4 @@
 import test from 'node:test';
-import { ICONS } from '../../src/render/control-bar.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -132,12 +131,13 @@ test('Agents stays even when every setting says closed, and has no fold or close
 test('the control bar: ← and the main session\'s name target the root UUID; the rest of the row is other switches',()=>{
   const frame=draw();
   for(const x of [0,1])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
-  // At 30 columns the tab words and the main session's give way to icons alone; settings and help keep theirs.
-  assert.equal(stripAnsi(frame.lines[0]),` ${ICONS.main}   ${ICONS.agents}  ${ICONS.worktrees}   ${ICONS.settings} Settings ${ICONS.help} Help `);
-  assert.match(stripAnsi(draw(withWorktrees(),45).lines[0]),new RegExp(`^ ${ICONS.main} Main  ${ICONS.agents}  ${ICONS.worktrees}  ${ICONS.changes}  ${ICONS.details}  ${ICONS.timeline}  +${ICONS.settings} Settings ${ICONS.help} Help $`,'u'));
-  assert.equal(handleMonitorInput(frame.state,mouse(29,0),{tree,worktrees,frame}).action,undefined);
-  assert.equal(handleMonitorInput(frame.state,mouse(26,0),{tree,worktrees,frame}).state.help,true,'Help opens the help');
-  assert.deepEqual(handleMonitorInput(frame.state,mouse(18,0),{tree,worktrees,frame}).action,{type:'settings'});
+  // Under 36 columns each button is its icon and a space; from 44 a chip with a column either side and a gap.
+  assert.equal(stripAnsi(frame.lines[0]),'←  ▦ ⎇ ± ⌖ ⋮              ☰ ? ');
+  assert.equal(stripAnsi(draw(withWorktrees(),45).lines[0]),' ←   ▦   ⎇   ±   ⌖   ⋮                 ☰   ? ');
+  assert.equal(handleMonitorInput(frame.state,mouse(20,0),{tree,worktrees,frame}).action,undefined,'the gap is no button');
+  assert.equal(handleMonitorInput(frame.state,mouse(29,0),{tree,worktrees,frame}).state.help,true,'the space after ? is still Help');
+  assert.equal(handleMonitorInput(frame.state,mouse(28,0),{tree,worktrees,frame}).state.help,true,'Help opens the help');
+  assert.deepEqual(handleMonitorInput(frame.state,mouse(26,0),{tree,worktrees,frame}).action,{type:'settings'});
   assert.deepEqual(handleMonitorInput(frame.state,key('main'),{tree,worktrees,frame}).action,{type:'switch',id:root});
 });
 
@@ -157,7 +157,7 @@ test('a pane\'s tab: open and focus, then fold, then close; its title rule is on
   const tab=(pane:string)=>frame.controls.find(c=>c.kind==='tab'&&c.pane===pane)!;
   assert.ok(!frame.controls.some(c=>c.y>0&&(c.kind==='tab'||c.kind==='settings'||c.kind==='help')),'no switch below the bar');
   const box=frame.panes.find(p=>p.id==='worktrees')!;
-  assert.match(stripAnsi(frame.lines[box.y]),new RegExp(`^┌ ${ICONS.worktrees} Worktrees ─+┐$`,'u'));
+  assert.match(stripAnsi(frame.lines[box.y]),/^┌ ⎇ Worktrees ─+┐$/u);
   assert.equal(handleMonitorInput(frame.state,mouse(box.width-3,box.y),ctx()).state.modes.worktrees,'open','the rule is no button');
   let state=handleMonitorInput(frame.state,mouse(tab('worktrees').x,0),ctx()).state;
   assert.equal(state.focus,'worktrees');assert.equal(state.modes.worktrees,'open');
@@ -396,7 +396,7 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   frame=renderMonitor({tree:finished,worktrees,state:shown.state,width:30,height:28,nowMs:now});
   pane=frame.panes[0];
   assert.equal(pane.rows.filter(r=>r.item).length,2);
-  assert.ok(stripAnsi(frame.lines[0]).includes(`${ICONS.hide} `));
+  assert.ok(stripAnsi(frame.lines[0]).includes('−1 '));
   assert.equal(handleMonitorInput(frame.state,key('show-all'),{...ctx,frame}).state.tree.showAll,false);
   // A finished row carries no clock; it recedes once its finish is old news.
   const oldRow=pane.rows.find(r=>r.item===nodes[0].id)!.text;

@@ -39,7 +39,8 @@ export interface Palette {
   /**
    * Backgrounds, each one a row's surface rather than its text: the status
    * card's band row, the control bar at the top, the selected agent's row,
-   * a button on the bar (`chip`) and the focused tab, a step lighter still.
+   * a button on the bar (`chip`), and the focused tab on the accent, its
+   * text in a colour that reads on it.
    * They restore themselves after every reset inside, so coloured spans keep
    * the surface.
    */
@@ -121,7 +122,7 @@ const TERMINAL: Palette = {
   bar: highlight('48;5;236'),
   selectedBand: highlight('48;5;237'),
   chip: highlight('48;5;238'),
-  tab: highlight('48;5;240'),
+  tab: highlight('48;5;31;97'),
   track: ansi256(239),
   // Steel blue: a scale, not a state, so neither the info blue nor a grey.
   tick: ansi256(67),
@@ -148,7 +149,7 @@ const MOCHA: Palette = {
   bar: surface('#313244'),
   selectedBand: surface('#45475A'),
   chip: surface('#45475A'),
-  tab: surface('#585B70'),
+  tab: highlight('48;2;137;180;250;38;2;30;30;46'),
   track: rgb('#585B70'),
   tick: rgb('#89B4FA'),
 };
@@ -175,7 +176,7 @@ const LATTE: Palette = {
   bar: surface('#DCE0E8'),
   selectedBand: surface('#CCD0DA'),
   chip: surface('#CCD0DA'),
-  tab: surface('#ACB0BE'),
+  tab: highlight('48;2;30;102;245;38;2;239;241;245'),
   track: rgb('#BCC0CC'),
   tick: rgb('#209FB5'),
 };
