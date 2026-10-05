@@ -762,6 +762,8 @@ export function buildSubagentTree(
           contextOffset = saved.offset;
           contextPrint = saved.print;
           scanStore.used(file.path, nowMs);
+          // Saved before scans said which file they were made from: saved again, saying it.
+          if (saved.ino === undefined && file.ino !== undefined) scanStore.mark(file.path, () => savedScan(file.path));
         }
       }
       linkCache.set(file.path, {

@@ -122,6 +122,21 @@ test('nor one saved under another reading of the lines, or with a part that does
   assert.deepEqual(told(lead), [['done', 'Taking the parser REWRITE.', 'First answer.']], 'read again, nothing taken from it');
 });
 
+test('one saved before scans said which file they were made from is used, and saved again saying it', (t) => {
+  let file = '';
+  let saved = '';
+  const lead = restarted(t, (s, at) => {
+    file = s.file;
+    saved = at;
+    const { ino, ...record } = JSON.parse(fs.readFileSync(at, 'utf8'));
+    assert.equal(ino, fs.statSync(s.file).ino);
+    fs.writeFileSync(at, JSON.stringify(record));
+  });
+  assert.deepEqual(told(lead), [['done', 'Taking the parser rewrite.', 'First answer.']], 'used');
+  flushTreeScans();
+  assert.equal(JSON.parse(fs.readFileSync(saved, 'utf8')).ino, fs.statSync(file).ino);
+});
+
 test('checking a growing rollout again keeps its scan while the bytes it ended on hold', (t) => {
   const s = session(t);
   assert.deepEqual(told(s.build(5)), [['done', 'Taking the parser rewrite.', 'First answer.']]);
