@@ -513,4 +513,11 @@ test('the changes say their counts in words, zeros left out, and tell two files 
   assert.deepEqual(shownPaths(paths, 27), ['.agents/…/SKILL.md', '.claude/…/SKILL.md', '.omp/APPEND_SYSTEM.md', 'a/SKILL2.md', 'b/x/SKILL2.md']);
   assert.deepEqual(shownPaths(paths, 12), ['.a…/SKILL.md', '.c…/SKILL.md', '…D_SYSTEM.md', 'a/SKILL2.md', 'x/SKILL2.md']);
   assert.deepEqual(shownPaths(paths, 80), paths, 'whole where it fits');
+  // Thousands of untracked files, many of one name, are told apart on every repaint without stalling it.
+  const many = Array.from({ length: 6000 }, (_, i) => i % 2 ? `experiments/run_${i % 300}/stage_${i % 20}/__init__.py` : `x06_sampled_progress/run_${i}/controller_${i}.py`);
+  const started = performance.now();
+  const shown = shownPaths(many, 24);
+  assert.ok(performance.now() - started < 1000, `${Math.round(performance.now() - started)}ms`);
+  assert.equal(shown.length, many.length);
+  assert.ok(shown.every((text) => visualLength(text) <= 24));
 });

@@ -725,12 +725,24 @@ export function changeCounts(files: readonly GitChangedFile[], width: number): s
  */
 export function shownPaths(paths: readonly string[], width: number): string[] {
   const split = paths.map(path=>path.split('/').filter(Boolean));
+  const ending = (n: number, of: string[]) => of.slice(-n).join('/');
+  // How many paths end in each run of n parts, counted once per n: a list of
+  // thousands of untracked files is drawn on every repaint.
+  const counts = new Map<number, Map<string, number>>();
+  const shared = (n: number, parts: string[]) => {
+    let byEnding = counts.get(n);
+    if (!byEnding) {
+      byEnding = new Map();
+      for (const other of split) if (other.length >= n) { const key = ending(n,other); byEnding.set(key,(byEnding.get(key) ?? 0)+1); }
+      counts.set(n,byEnding);
+    }
+    return (byEnding.get(ending(n,parts)) ?? 0) > 1;
+  };
   return paths.map((path,i) => {
     if (visualLength(path) <= width) return path;
     const parts = split[i];
     let k = 1;
-    const ending = (n: number, of: string[]) => of.slice(-n).join('/');
-    while (k < parts.length && split.some((other,j)=>j !== i && other.length >= k && ending(k,other) === ending(k,parts))) k++;
+    while (k < parts.length && shared(k,parts)) k++;
     const unique = ending(k,parts);
     if (visualLength(unique) <= width) return unique;
     if (k > 1) {
