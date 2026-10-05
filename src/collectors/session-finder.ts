@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
 import { time } from '../utils/profile.js';
+import { DaemonBinding } from './daemon-binding.js';
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 
@@ -107,6 +108,8 @@ function readFirstLine(filePath: string, maxBytes: number = 1024 * 1024): string
 interface RolloutMeta {
   cwd: string | null;
   isRoot: boolean;
+  /** A subagent's root session: `session_id` where Codex wrote one, else its parent. */
+  rootId?: string;
 }
 
 /**
@@ -133,6 +136,8 @@ function readRolloutMeta(filePath: string): RolloutMeta | null {
     const entry = JSON.parse(firstLine.trim()) as {
       type?: string;
       payload?: {
+        id?: string;
+        session_id?: string;
         cwd?: string;
         parent_thread_id?: string;
         source?: unknown;
@@ -145,9 +150,12 @@ function readRolloutMeta(filePath: string): RolloutMeta | null {
     const parentId = sessionParentId(entry.payload);
     const threadSource = entry.payload.thread_source;
     const isRoot = !parentId && threadSource !== 'subagent';
+    const sessionId = entry.payload.session_id;
+    const rootId = isRoot ? undefined : sessionId && sessionId !== entry.payload.id ? sessionId : parentId ?? undefined;
     return {
       cwd: normalizePath(entry.payload.cwd),
       isRoot,
+      ...(rootId ? { rootId } : {}),
     };
   } catch {
     return null;
@@ -675,6 +683,30 @@ function buildSessionFile(filePath: string): SessionFile | null {
   }
 }
 
+/** Each thread the daemon named, by the root session it belongs to. */
+const rootThreadCache = new Map<string, string>();
+const rootThreadMiss = new Map<string, number>();
+
+/**
+ * The root session of `threadId`: itself, or for a subagent the session it
+ * belongs to. Switching Codex to a subagent's view resumes that subagent's
+ * thread on the TUI's connection; the panel stays on the session.
+ */
+function rootThreadOf(threadId: string): string {
+  const cached = rootThreadCache.get(threadId);
+  if (cached) return cached;
+  // A thread with no rollout yet is its own root; whether it has one is the
+  // caller's next question, so it is not asked twice here.
+  if ((rootThreadMiss.get(threadId) ?? 0) > Date.now() - FALLBACK_RESCAN_MS) return threadId;
+  const file = findSessionByThreadId(threadId);
+  if (!file) {
+    cachePut(rootThreadMiss, threadId, Date.now());
+    return threadId;
+  }
+  const meta = peekRolloutMeta(file.path);
+  return cachePut(rootThreadCache, threadId, meta && !meta.isRoot && meta.rootId ? meta.rootId : threadId);
+}
+
 function findSessionByThreadId(sessionId: string): SessionFile | null {
   const codexHome = getCodexHome();
   // The archive is only walked when the live tree does not have the file.
@@ -699,6 +731,8 @@ export class SessionFinder {
   private lastFallbackScanMs = 0;
   // The 30-day walk behind the shallow scan runs on its own, slower clock.
   private lastDeepScanMs = 0;
+  // The daemon's log, read for the main pane's TUI; made on first use.
+  private daemon: DaemonBinding | null = null;
 
   constructor(
     targetCwd?: string,
@@ -820,7 +854,12 @@ export class SessionFinder {
   private checkNow(): SessionFile | null {
     const mainPaneId = process.env.CODEX_HUD_MAIN_PANE;
     if (mainPaneId) {
-      const threadId = findThreadIdForPane(mainPaneId, this.targetStartTime);
+      // The daemon's log says which conversation the pane's TUI has open,
+      // a resumed one included, before it writes to it; the snapshots are
+      // the older Codex's word for it.
+      this.daemon ??= new DaemonBinding(getCodexHome(), mainPaneId, this.targetStartTime?.getTime() ?? null);
+      const daemonThread = this.daemon.threadId();
+      const threadId = (daemonThread && rootThreadOf(daemonThread)) || findThreadIdForPane(mainPaneId, this.targetStartTime);
       if (threadId) {
         if (this.currentSession?.sessionId === threadId) {
           const kept = this.refreshCurrentSession();
