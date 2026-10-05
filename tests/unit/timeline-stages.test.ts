@@ -90,6 +90,18 @@ test('an L1\'s stage is a line off the main session\'s rail at its end: how long
   assert.ok(at(/⏎ The recovery rewrite is in\./) >= 0, 'a finished turn says what it told the person');
 });
 
+test('a stage counts the subtasks under its agent at any depth, as the agent\'s card does', () => {
+  const tree = session();
+  const deep = (id: string, name: string, status: SubagentStatus, start: number, end: number): SubagentTreeNode =>
+    ({ ...kid(id, name, 'implementer', status, start, end), depth: 3 });
+  const nodes = tree.nodes.map(item => item.id !== 'b1' ? item : { ...item, children: [
+    { ...item.children[0], children: [deep('b1a1', 'bench_simd', 'completed', 110, 95), deep('b1a2', 'bench_wide', 'error', 105, 92)] },
+    ...item.children.slice(1),
+  ] });
+  const shown = rows(draw({ tree: { ...tree, nodes } }));
+  assert.ok(shown.some(line => /^20m ├─✓ bench_lead +✓3 ✗1 1h$/.test(line)), shown.join('\n'));
+});
+
 test('of the L2s only those that matter get a line, at their end: failed, in a role the reader named, or flagged', () => {
   const tree = session();
   const plain = rows(draw({ tree })).join('\n');

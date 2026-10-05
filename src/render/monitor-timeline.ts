@@ -4,12 +4,12 @@
  * The main session's own events sit at the left: a finished turn with the
  * head of what it told the person, approvals, compaction, quota, failures.
  * An L1 agent's stages are a level in, each at its end, with how long it
- * took, the subtasks it saw finish in that time and, for its newest, what it
- * returned; a running stage sits at its start, with its clock and what the
- * agent said it would do. Of the L2s only those that matter get a line, a
- * level further in, at their end: failed, in a role the reader named, or
- * flagged by the brief. An agent's line is in its direction's colour
- * (src/render/directions.ts).
+ * took, the subtasks under it, at any depth, that finished in that time and,
+ * for its newest, what it returned; a running stage sits at its start, with
+ * its clock and what the agent said it would do. Of the L2s only those that
+ * matter get a line, a level further in, at their end: failed, in a role the
+ * reader named, or flagged by the brief. An agent's line is in its
+ * direction's colour (src/render/directions.ts).
  *
  * Three styles draw the levels: off a rail for the main session, indented,
  * or in a lane per direction. The newest hours show, the window the reader
@@ -141,11 +141,11 @@ function timelineEntries(input: MonitorData, now: number): Entry[] {
       && !failure.has(other) && Math.abs(other.at.getTime() - event.at.getTime()) <= FAILURE_SLACK_MS);
     if (stage) { failure.set(stage, event); merged.add(event); }
   }
-  // When each L1's subtasks ended, to count those a stage of it saw finish.
+  // When each L1's subtasks, at any depth, ended, to count those a stage of it saw finish.
   const ends = new Map<string, Array<{ at: number; failed: boolean }>>();
   for (const event of events) {
     const hit = event.agentId ? dirs.node.get(event.agentId) : undefined;
-    if (!hit || hit.level !== 1 || isGuardian(hit.node) || merged.has(event)) continue;
+    if (!hit || hit.level === 0 || isGuardian(hit.node) || merged.has(event)) continue;
     const failed = event.stage === 'failed' || event.kind === 'agent-failed' || failure.has(event);
     if (event.kind === 'agent-stage' ? event.stage === 'running' : !failed && event.kind !== 'agent-finished') continue;
     const l1 = dirs.family.get(hit.node.id)!;
