@@ -29,7 +29,7 @@ import type { RolloutParseResult } from './rollout.js';
 import type { AgentLog, AgentLogEntry } from './agent-log.js';
 import type { CodexGoal } from './codex-goal.js';
 import { headTail, RESULT_RAW_CHARS } from './agent-stages.js';
-import { directions, subtasks, isImportant, type Directions } from '../render/directions.js';
+import { directions, subtasks, reviewsUnder, isImportant, type Directions } from '../render/directions.js';
 import { isGuardian } from '../render/panel-state.js';
 
 export { completionText } from './small-model.js';
@@ -263,7 +263,7 @@ export interface ReportFacts {
 
 function rankOf(node: SubagentTreeNode, logs: Logs | undefined, now: number): { rank: number; attention: boolean } {
   const recent = (at: number) => now - at < ATTENTION_MS;
-  const failed = (node.status === 'error' && recent(settled(node))) || node.children.some(kid => kid.status === 'error' && recent(settled(kid)));
+  const failed = (node.status === 'error' && recent(settled(node))) || [...subtasks(node), ...reviewsUnder(node)].some(kid => kid.status === 'error' && recent(settled(kid)));
   const note = logs?.get(node.id)?.at(-1);
   const attention = failed || Boolean(note?.attention && recent(note.at));
   const rank = attention ? 0 : isLive(node) || subtasks(node).some(isLive) ? 1 : node.status === 'unknown' ? 2
@@ -297,7 +297,7 @@ export function reportFacts(tree: SubagentTree, logs: Logs | undefined, roles: R
   const fast = entries.map(({ node }) => {
     const last = node.stages?.at(-1);
     return [node.id, node.status, node.stageCount ?? 0, last?.status ?? '', last?.endedAt?.getTime() ?? 0, node.statusAt?.getTime() ?? 0,
-      node.children.filter(kid => kid.status === 'error').length,
+      [...subtasks(node), ...reviewsUnder(node)].filter(kid => kid.status === 'error').length,
       // A brief's own note flagging a subtask is not news for the next one.
       subtasks(node).filter(kid => isImportant(kid, undefined, roles)).map(kid => [kid.id, kid.status, kid.stageCount ?? 0])];
   });
@@ -414,7 +414,7 @@ function entryLines(entry: ReportEntry, dirs: Directions, logs: Logs | undefined
     lines.push({ kind: 'earlier', text: `  earlier result (stage ${number(stages.indexOf(stage))}, ${ago(stage.endedAt, now)} ago): ${clip(answer(log, stage).text, EARLIER_CHARS)}` });
   }
   if (kids.length) lines.push({ kind: 'detail', text: `  subtasks: ${roleCounts(kids)}` });
-  const reviews = node.children.filter(kid => isGuardian(kid) && kid.status === 'error').length;
+  const reviews = reviewsUnder(node).filter(kid => kid.status === 'error').length;
   if (reviews) lines.push({ kind: 'detail', text: `  approval reviews failed: ${reviews}` });
   const important = kids.filter(kid => isImportant(kid, logs?.get(kid.id), roles))
     .sort((a, b) => Number(b.status === 'error') - Number(a.status === 'error') || heard(b) - heard(a));

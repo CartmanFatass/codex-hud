@@ -98,6 +98,22 @@ test('a long answer goes as its digest, else its head and tail; a failed subtask
   assert.equal(digested.split('\n')[1].startsWith('- lead'), true, 'a failed subtask makes its lead need a look');
 });
 
+test('a lead\'s subtasks and failed reviews count at any depth, as every view counts them', () => {
+  const t = tree([
+    node('lead', 'lead', 'completed', { statusAt: ago(40), stageCount: 1, stages: [stage(60, 40, 'done', { result: 'Done.' })],
+      children: [kid('i1', 'impl_a', 'team-implementer', 'completed', 30, { children: [
+        kid('x1', 'probe_x', 'team-scout', 'error', 3, { depth: 3 }),
+        node('g1', 'guardian', 'error', { depth: 3, kind: 'guardian', statusAt: ago(4) }),
+      ] })] }),
+    node('calm', 'calm', 'running', { stageCount: 1, stages: [stage(10, undefined, 'running')] }),
+  ]);
+  const text = report(t);
+  assert.ok(text.split('\n')[1].startsWith('- lead'), 'a failure two levels down makes its lead need a look');
+  assert.match(text, /  subtasks: team-implementer 1 done · team-scout 1 failed\n/);
+  assert.match(text, /  approval reviews failed: 1\n/);
+  assert.match(text, /  important subtask probe_x \[team-scout\]: failed 3m ago/);
+});
+
 test('clocks are not news; commentary, the action and routine subtasks wait for the floor; stages and failures do not', () => {
   const base = session();
   const facts = reportFacts(base, undefined, ROLES, NOW)!;

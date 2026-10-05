@@ -98,7 +98,7 @@ test('the title row, the status card, the bar, notifications and the snapshot sa
   const notifier = new Notifier({ enabled: true, cooldownMs: 60_000, deliver: (event) => sent.push(event) });
   notifier.update(data, NOW);
   notifier.update(makeHudData({ ...quiet, subagentTree: session('completed', 'completed') }), NOW + 1000);
-  assert.deepEqual(sent.map((event) => event.message), ['1 agent failed, 1 subtask failed, 1 review failed', '2 agents finished, 1 failed']);
+  assert.deepEqual(sent.map((event) => event.message), ['1 agent · 1 subtask · 1 review failed', '2 agents finished, 1 failed']);
 });
 
 test('short of room, the title row gives up where its rows are before the subtasks, and the subtasks before the agents', () => {

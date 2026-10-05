@@ -48,7 +48,7 @@ import {
   summaryRow, guardianChip, meterText, meterRow, listedAgents, type EdgeMeter,
   MODEL_LOG_KINDS, FRESH_FINISH_MS,
 } from './monitor.js';
-import { directions, subtasks, tally, talk, isImportant, rolePrefix, TALK_MIN } from './directions.js';
+import { directions, subtasks, reviewsUnder, tally, talk, isImportant, rolePrefix, TALK_MIN } from './directions.js';
 
 /** Lines of an expanded card's timeline; the rest is the Inspector's. */
 const TIMELINE_LINES = 20;
@@ -371,11 +371,10 @@ function banded(text: string, width: number): string {
   return theme.selectedBand(text+' '.repeat(Math.max(0,width-visualLength(text))));
 }
 
-/** "✓12 ✗1 ▸2": an L1's subtasks by state, a failed guardian review among the failed; empty with none. */
+/** "✓12 ✗1 ▸2": an L1's subtasks by state, at any depth; empty with none. Its reviews are its `◈N`, red when one failed. */
 function tallyText(node: SubagentTreeNode): string {
   const n = tally(subtasks(node));
-  const failed = n.failed+node.children.filter(kid => isGuardian(kid) && kid.status === 'error').length;
-  return [n.done ? colors.dim(`✓${n.done}`) : '',failed ? theme.error(`✗${failed}`) : '',n.running ? theme.info(`▸${n.running}`) : ''].filter(Boolean).join(' ');
+  return [n.done ? colors.dim(`✓${n.done}`) : '',n.failed ? theme.error(`✗${n.failed}`) : '',n.running ? theme.info(`▸${n.running}`) : ''].filter(Boolean).join(' ');
 }
 
 /**
@@ -400,7 +399,7 @@ function oneLineParts(row: PanelRow, state: MonitorState, width: number, now: nu
   const meter = run.meters ? contextMeter(node) : undefined;
   const cells = w >= ROW_METER_WIDE_AT ? ROW_METER_WIDE : w < ROW_METER_NARROW_BELOW ? ROW_METER_NARROW : ROW_METER;
   const meterCols = meter && w >= METER_MIN+cells ? cells : 0;
-  const right = [guardianChip(node.children),badge,tallyText(node)].filter(Boolean).join(' ');
+  const right = [guardianChip(reviewsUnder(node)),badge,tallyText(node)].filter(Boolean).join(' ');
   // An age the row above said already leaves its column blank, so the columns still line up.
   const shown = when === run.previousAge ? '' : when;
   const tail = `${right ? ' '+right : ''}${meter && meterCols ? ' '+meterText(meter,meterCols).text : ''}${when ? ' '+colors.dim(ageColumn(shown)) : ''}`;
@@ -493,14 +492,14 @@ function actionLine(node: SubagentTreeNode, width: number): string {
 }
 
 /**
- * An L1's subtasks that get a line on its card: failed, in a role the reader
- * named, or flagged, and a guardian review that failed; failures first, then
- * the newest.
+ * An L1's subtasks that get a line on its card, at any depth: failed, in a
+ * role the reader named, or flagged, and a guardian review under it that
+ * failed; failures first, then the newest.
  */
 function importantKids(node: SubagentTreeNode, input: MonitorData, state: MonitorState): SubagentTreeNode[] {
   const roles = state.importantRoles ?? new Set<string>();
   const at = (kid: SubagentTreeNode) => isLive(kid) ? Infinity : finishedAt(kid)?.getTime() ?? 0;
-  return node.children.filter(kid => isGuardian(kid) ? kid.status === 'error' : isImportant(kid,input.agentLog?.get(kid.id),roles))
+  return [...subtasks(node).filter(kid => isImportant(kid,input.agentLog?.get(kid.id),roles)),...reviewsUnder(node).filter(kid => kid.status === 'error')]
     .sort((a,b) => Number(b.status === 'error')-Number(a.status === 'error') || at(b)-at(a));
 }
 
@@ -592,7 +591,7 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   });
   const badge = token ? truncateAnsi(token,Math.max(2,Math.floor(w/4))) : '';
   const head = `${corner} ${st.paint(st.icon)} ${title.icon ? colors.dim(title.icon)+' ' : ''}`;
-  const chip = guardianChip(node.children);
+  const chip = guardianChip(reviewsUnder(node));
   const tail = [chip,badge].filter(Boolean).map(part=>' '+part).join('');
   const room = Math.max(1,w-visualLength(head)-visualLength(tail)-2);
   const name = squeeze(title.name,room);

@@ -10,7 +10,7 @@
  */
 
 import { spawn } from 'child_process';
-import { collectAttention, type AttentionItem } from './render/attention.js';
+import { collectAttention, alertParts, type AttentionItem } from './render/attention.js';
 import { agentCounts } from './collectors/subagent-tree.js';
 import type { HudData } from './types.js';
 
@@ -209,12 +209,13 @@ export class Notifier {
     if (items.length === 0) {
       return [];
     }
-    // One message for everything currently wrong, rather than one per item.
+    // One message for everything currently wrong, rather than one per item,
+    // said as the status card and the bar say it: `1 agent · 1 subtask failed`.
     return [
       {
         kind: 'attention',
         fingerprint: items.map((item: AttentionItem) => `${item.kind}:${item.label}`).join('|'),
-        message: items.map((item) => item.label).join(', '),
+        message: alertParts(items, nowMs, undefined, false).join(' · '),
       },
     ];
   }

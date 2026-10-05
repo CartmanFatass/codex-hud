@@ -411,7 +411,9 @@ test('guardian reviews fold into a ◈N chip on their parent, and the summary co
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');
   assert.ok(!lines.some(line => /The following is the Codex/.test(line)), 'never the review prompt');
   assert.ok(!lines.some(line => line.includes('guardian')), 'a review is no card');
-  assert.match(lines.find(line => line.includes('other'))!, /✗1/, 'a failed one counts among its lead\'s failures');
+  const other = frame.lines.find(line => stripAnsi(line).includes('other'))!;
+  assert.doesNotMatch(stripAnsi(other), /✗/, 'a failed review is not one of its lead\'s failed subtasks');
+  assert.ok(other.includes(theme.error('◈1')), 'it is its lead\'s chip, in the error colour');
   const opened = plain(renderMonitor({ tree: tree(nodes), state: { ...state, cards: new Set([id(44)]) }, width: 60, height: 50, nowMs: now }));
   assert.ok(opened.some(line => /^│ ! guardian +\d+h$/.test(line.trimEnd())), 'and has a line on its lead\'s card');
   // j/k never lands on a folded review.

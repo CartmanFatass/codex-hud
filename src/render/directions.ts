@@ -11,6 +11,7 @@
  */
 import type { AgentStage, SubagentTree, SubagentTreeNode } from '../types.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
+import { eachThread } from '../collectors/subagent-tree.js';
 import { isGuardian } from './panel-state.js';
 import { palette, type Paint } from './palette.js';
 import { isLive, finishedAt } from './monitor-labels.js';
@@ -31,9 +32,21 @@ export interface Directions {
   paint(id?: string): Paint;
 }
 
-/** An L1's subtasks: the agents it started, guardian reviews aside, in the order they started. */
+/**
+ * An L1's subtasks: the agents under it at any depth, guardian reviews
+ * aside, as every view counts them (`eachThread`), in the order they started.
+ */
 export function subtasks(node: SubagentTreeNode): SubagentTreeNode[] {
-  return node.children.filter(child => !isGuardian(child)).sort((a, b) => (a.startedAt?.getTime() ?? 0) - (b.startedAt?.getTime() ?? 0));
+  const found: SubagentTreeNode[] = [];
+  eachThread(node.children, (thread, kind) => { if (kind !== 'review') found.push(thread); });
+  return found.sort((a, b) => (a.startedAt?.getTime() ?? 0) - (b.startedAt?.getTime() ?? 0));
+}
+
+/** The guardian reviews under an L1, at any depth, in the tree's order. */
+export function reviewsUnder(node: SubagentTreeNode): SubagentTreeNode[] {
+  const found: SubagentTreeNode[] = [];
+  eachThread(node.children, (thread, kind) => { if (kind === 'review') found.push(thread); });
+  return found;
 }
 
 /** Messages two agents exchanged over the session, both ways, as each one's rollout counted what it was sent. */
@@ -176,17 +189,15 @@ export function rolePrefix(tree: SubagentTree): string {
 export function subtaskRoles(tree: SubagentTree): string[] {
   const prefix = rolePrefix(tree);
   const counts = new Map<string, number>();
-  const walk = (node: SubagentTreeNode) => {
+  for (const node of tree.nodes) {
+    if (isGuardian(node)) continue;
     for (const kid of subtasks(node)) {
       const role = kid.role;
-      if (role && role !== 'default') {
-        const name = prefix && role.startsWith(prefix) && role.length > prefix.length ? role.slice(prefix.length) : role;
-        counts.set(name, (counts.get(name) ?? 0) + 1);
-      }
-      walk(kid);
+      if (!role || role === 'default') continue;
+      const name = prefix && role.startsWith(prefix) && role.length > prefix.length ? role.slice(prefix.length) : role;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
     }
-  };
-  for (const node of tree.nodes) if (!isGuardian(node)) walk(node);
+  }
   return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
 }
 

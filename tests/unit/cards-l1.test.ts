@@ -137,6 +137,33 @@ test('j and k step from card to card, never onto a subtask; from one selected on
   assert.ok(plain(draw({ ...initialMonitorState(), help: true }, 70).lines).join('\n').includes('fold / unfold agent'), 'the compact tree still folds');
 });
 
+test('a card counts as every view does: its subtasks at any depth, and its reviews apart, on its ◈, red when one failed', () => {
+  const review = (id: string, status: SubagentStatus) =>
+    node(id, 'guardian', status, { depth: 2, kind: 'guardian', startedAt: ago(320), statusAt: ago(310) });
+  // The writer, long finished: a subtask whose own subtask failed, and a review that failed.
+  const tree = session();
+  tree.nodes[2] = { ...tree.nodes[2], children: [
+    kid('w1', 'w1', 'team-implementer', 'completed', 310, { children: [node('w1x', 'w1_probe', 'error', { depth: 3, startedAt: ago(315), statusAt: ago(312) })] }),
+    review('wg', 'error'),
+  ] };
+  const lines = draw(rich(), 44, tree).lines;
+  const row = lines.find(line => stripAnsi(line).includes('docs_writer'))!;
+  assert.match(stripAnsi(row).trimEnd(), /^ ✓ docs_writer +◈1 ✓1 ✗1 +5h$/, 'the failed review is its ◈, not one of the ✗; the probe two levels down is');
+  assert.ok(row.includes(theme.error('◈1')), 'the ◈ in red: a review failed');
+  assert.match(plain(lines).find(line => /^ ▦ /.test(line))!, /· 8 subtasks, 2 failed$/, 'as the title counts them');
+  // A lead at work names a failure two levels down on its card, and a review under a subtask that failed.
+  const deep = session();
+  const [lead] = deep.nodes;
+  deep.nodes[0] = { ...lead, children: [...lead.children.slice(0, 2), kid('i3', 'impl_c', 'team-implementer', 'completed', 10, { children: [
+    node('i3x', 'deep_probe', 'error', { depth: 3, startedAt: ago(9), statusAt: ago(8) }),
+    { ...review('i3g', 'error'), depth: 3 },
+  ] })] };
+  const drawn = card(plain(draw(rich(), 44, deep).lines), 'parser_lead');
+  assert.match(drawn[0], / ◈1( |$)/, drawn.join('\n'));
+  assert.ok(drawn.some(line => line.includes('deep_probe')), drawn.join('\n'));
+  assert.ok(drawn.some(line => /! guardian/.test(line)), drawn.join('\n'));
+});
+
 test('a finished L1\'s row counts its subtasks by state, and cards keep to the width in both languages', () => {
   const tree = session();
   tree.nodes[2] = { ...tree.nodes[2], children: [kid('w1', 'w1', 'team-implementer', 'completed', 310), kid('w2', 'w2', 'team-scout', 'error', 305)] };
