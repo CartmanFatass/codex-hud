@@ -19,7 +19,7 @@
 
 > Claude Code의 [claude-hud](https://github.com/jarrodwatts/claude-hud)에서 영감을 받았습니다.
 
-![Codex HUD — 단일 세션](./docs/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
+![Codex HUD — 단일 세션](./docs/fig/bar.png)
 
 ## 왜 Codex HUD가 필요한가요?
 
@@ -39,7 +39,7 @@
 
 `Ctrl+T`는 의도적으로 비워 두었습니다. Codex 자체의 트랜스크립트 오버레이용입니다.
 
-![Codex HUD — 서브에이전트 트리](./docs/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+![Codex HUD — 서브에이전트 트리](./docs/fig/panel.png)
 
 **Q: tmux를 수동으로 설정해야 하나요?**
 

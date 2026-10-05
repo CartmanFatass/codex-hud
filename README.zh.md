@@ -20,7 +20,7 @@
 
 > 灵感来源于 Claude Code 的 [claude-hud](https://github.com/jarrodwatts/claude-hud)。
 
-![Codex HUD — 单 Session 模式](./docs/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
+![Codex HUD — 状态栏：Codex 工作中，以及有 agent 失败时排在最前的告警](./docs/fig/bar.png)
 
 ## 为什么需要 Codex HUD？
 
@@ -40,7 +40,7 @@
 
 `Ctrl+T` 被刻意留空 —— 那是 Codex 自己的转写面板。
 
-![Codex HUD — 子代理树](./docs/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+![Codex HUD — 侧栏：卡片形式的 agent、工作树和状态卡；旁边是详情区域里一个文件的 diff](./docs/fig/panel.zh.png)
 
 **Q: 需要手动配置 tmux 吗？**
 

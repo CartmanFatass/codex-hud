@@ -22,7 +22,7 @@ Real-time statusline HUD for [OpenAI Codex CLI](https://github.com/openai/codex)
 
 > Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud) for Claude Code.
 
-![Codex HUD — Single Session](./docs/fig/2a00eaf0-496a-4039-a0ce-87a9453df30d.png)
+![Codex HUD — the status bar while Codex works, and with a failed agent at its front](./docs/fig/bar.png)
 
 ## Why Codex HUD?
 
@@ -42,7 +42,7 @@ Yes. Press `F12` to open the **subagent tree** in a side panel: every agent the 
 
 `Ctrl+T` is left alone on purpose — that is Codex's own transcript overlay.
 
-![Codex HUD — Subagent Tree](./docs/fig/6d0edbdd-19b5-4038-b9a3-ca5341fd39d1.png)
+![Codex HUD — the panel: the agents as cards, the worktrees and the status card; beside it, a file's diff in the Inspector](./docs/fig/panel.png)
 
 **Q: Do I need to set up tmux manually?**
 
