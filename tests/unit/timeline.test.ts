@@ -107,7 +107,8 @@ test('the Timeline pane opens with 5, lists events with their ages, and is saved
   assert.ok(lines.some(line => /~ The test fixture/.test(line)), 'a model-written cause is marked');
   assert.ok(frame.lines.every(line => visualLength(line) <= 30));
   const empty = renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now }).lines.map(stripAnsi);
-  assert.ok(empty.some(line => line.includes('No events yet')));
+  assert.ok(!empty.some(line => line.includes('No events yet')), 'no events, no line saying so');
+  assert.ok(empty.some(line => line.includes('Timeline')), 'the pane keeps its title');
   const words = withGlyphs('text', () => renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now, timeline }).lines.map(stripAnsi));
   assert.ok(words.some(line => /2m Turn finished/.test(line)), 'with glyphs off, the words');
   assert.ok(words.some(line => /5m reader failed/.test(line)));

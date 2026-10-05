@@ -51,8 +51,6 @@ const ZH: Record<string, string> = {
   '+{n} older': '+{n} 已收起',
   'Main session': '主会话',
   'Main': '主会话',
-  'No subagents yet': '还没有 subagent',
-  'Reading session…': '正在读取会话…',
 
   // Status card
   'Status': '状态',
@@ -74,8 +72,6 @@ const ZH: Record<string, string> = {
   '{n} tools failed': '{n} 个工具失败',
   '1 agent failed': '1 个 agent 失败',
   '{n} agents failed': '{n} 个 agent 失败',
-  'All finished · a shows': '全部已完成 · 按 a 显示',
-  'No matching agents': '没有匹配的 agent',
 
   // Brief
   '─ Brief': '─ 简报',
@@ -84,7 +80,6 @@ const ZH: Record<string, string> = {
   'Main recap': '主会话回顾',
   'out ~{d}': '约 {d} 后用完',
   'Timeline': '时间线',
-  'No events yet': '还没有事件',
   'Approval asked: {what}': '请求批准：{what}',
   'Approval asked': '请求批准',
   'Approval answered': '批准已答复',
@@ -123,7 +118,6 @@ const ZH: Record<string, string> = {
   'Model calls today: {n} · last hour {h}/{cap}': '今日模型调用 {n} 次 · 近一小时 {h}/{cap}',
 
   // Inspector, agent
-  'Select an agent': '选择一个 agent',
   'Ctx': '上下文',
   'running': '运行中',
   'starting': '启动中',
@@ -140,19 +134,12 @@ const ZH: Record<string, string> = {
   'Turn start: {at}': '本轮开始：{at}',
 
   // Worktrees and changes
-  'Reading worktrees…': '正在读取工作树…',
   'No readable repository': '没有可读的仓库',
   'Set worktreeRoot': '请设置 worktreeRoot',
   'Worktree list limited': '工作树列表已截断',
-  'No worktrees recorded': '没有工作树记录',
-  'Reading selected worktree…': '正在读取所选工作树…',
   'Git incomplete': 'Git 信息不完整',
-  'No selected worktree': '未选择工作树',
   '! {n} conflicts': '! {n} 处冲突',
   '{n} files · {s} staged · {u} unstaged': '{n} 个文件 · {s} 已暂存 · {u} 未暂存',
-  'Status unknown': '状态未知',
-  'Working tree clean': '工作树干净',
-  'Select a worktree': '选择一个工作树',
   'Branch: {branch}': '分支：{branch}',
   'Status: {status}': '状态：{status}',
   'Locked: {reason}': '已锁定：{reason}',
@@ -161,8 +148,6 @@ const ZH: Record<string, string> = {
   '{n} untracked / {c} conflicts': '{n} 未跟踪 / {c} 冲突',
   'Ahead {a} / behind {b}': '领先 {a} / 落后 {b}',
   'Workspace status, not agent ownership': '这是工作区状态，不代表归属哪个 agent',
-  'No selected file': '未选择文件',
-  'Reading diff…': '正在读取 diff…',
   'bare': '裸仓库',
   'prunable': '可清理',
   'unreadable': '不可读',
@@ -338,7 +323,7 @@ const ZH: Record<string, string> = {
   'Layout': '布局',
   'Status card': '状态卡',
   'Card': '状态卡',
-  'Foot card: brief, status, one line; r': '底部状态卡：含简报、仅状态或一行；按 r 切换',
+  'Foot card: brief, status, one line': '底部状态卡：含简报、仅状态或一行',
   'min': '一行',
   'status': '状态',
   'Agent cards, or the tree and log': 'agent 卡片，或树和日志',

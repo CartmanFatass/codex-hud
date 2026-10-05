@@ -57,7 +57,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'changeSummary',group:'LLM',label:'Change summary',short:'Diff',values:[false,true],help:'Sends diff stat and hunks'},
   {key:'approvalDescription',group:'LLM',label:'Approval words',short:'Approve',values:[false,true],help:'Sends the command to approve'},
   {key:'panelStyle',group:'Panel',label:'Layout',short:'Layout',values:['rich','compact'],help:'Agent cards, or the tree and log'},
-  {key:'statusCard',group:'Panel',label:'Status card',short:'Card',values:['full','status','min'],help:'Foot card: brief, status, one line; r'},
+  {key:'statusCard',group:'Panel',label:'Status card',short:'Card',values:['full','status','min'],help:'Foot card: brief, status, one line'},
   {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and brief language'},
   {key:'icons',group:'Panel',label:'Icons',short:'Icons',values:['nerd','text'],help:'Needs a Nerd Font in the terminal',
     format:value => value === 'nerd' ? 'Nerd Font' : 'text'},

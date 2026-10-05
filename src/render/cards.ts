@@ -38,7 +38,7 @@ import { agentTitle, type AgentTitle } from './agent-title.js';
 import {
   type MonitorData, type MonitorState, type MonitorRow, type RowControl,
   monitorText, plainText, flowLines, balancedLines, age, agoText, nodeStatus, iconic, briefSaid, isLive, isQuiet, turnClock, squeeze, finishedAt,
-  summaryRow, emptyAgentsText, guardianChip, meterText, meterRow, type EdgeMeter,
+  summaryRow, guardianChip, meterText, meterRow, type EdgeMeter,
   MODEL_LOG_KINDS, FRESH_FINISH_MS,
 } from './monitor.js';
 
@@ -515,7 +515,7 @@ const REPORT_LINES = 8;
  * together, as a list.
  */
 export function richRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
-  const {row:head,total,expired} = summaryRow(input,state,width,now);
+  const {row:head} = summaryRow(input,state,width,now);
   const rows: MonitorRow[] = [head];
   let lastOneLine = false;
   const shown = visibleRows(input.tree.nodes,state.tree,now);
@@ -525,6 +525,7 @@ export function richRows(input: MonitorData, state: MonitorState, width: number,
     rows.push(...agentCard(row,input,state,width,now,spaced));
     lastOneLine = oneLine;
   }
-  if (!shown.length) { if (spaced) rows.push({text:''}); rows.push({text:colors.dim(truncateAnsi(emptyAgentsText(input,state,total,expired),width))}); }
+  // No agent to show: no line saying so. The counts above, the bar's +N and
+  // the status card already do.
   return rows;
 }

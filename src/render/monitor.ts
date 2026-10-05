@@ -502,15 +502,10 @@ export function guardianChip(nodes: readonly SubagentTreeNode[]): string {
   return count ? (running ? theme.info : colors.dim)(`◈${count}`) : '';
 }
 
-/** What the agents view says when it has no agent to show. */
-export function emptyAgentsText(input: MonitorData, state: MonitorState, total: number, expired: number): string {
-  // Until the first read of the rollout lands, an empty tree means nothing.
-  return t(!total ? input.loading ? 'Reading session…' : 'No subagents yet'
-    : expired && !state.tree.showAll && state.tree.filter === 'all' ? 'All finished · a shows' : 'No matching agents');
-}
-
 function agentRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
-  const {row:head,total,expired} = summaryRow(input,state,width,now);
+  // With no agent to show the view is empty: the summary's counts, the bar's
+  // +N and the status card already say why, so no line says it again.
+  const {row:head} = summaryRow(input,state,width,now);
   const result: MonitorRow[] = [head];
   for (const row of visibleRows(input.tree.nodes,state.tree,now)) {
     const node = row.node;
@@ -549,7 +544,6 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     const brief = selected && width > at+4 ? briefLine(node,input.agentLog?.get(node.id) ?? [],agentTitle(node,state.labelAsName)) : '';
     if (brief) result.push({text:' '.repeat(at)+colors.dim(truncateAnsi(brief,width-at)),item:node.id,key:`row:${node.id}`});
   }
-  if (result.length === 1) result.push({text:colors.dim(truncateAnsi(emptyAgentsText(input,state,total,expired),width))});
   return result;
 }
 
@@ -657,7 +651,8 @@ function timelineLines(input: MonitorData): TimelineLine[] {
 
 function timelineRows(input: MonitorData, width: number, now: number): MonitorRow[] {
   const lines = timelineLines(input);
-  if (!lines.length) return [{text:colors.dim(t('No events yet'))}];
+  // No events, no rows: the pane's frame says what it is.
+  if (!lines.length) return [];
   const rows: MonitorRow[] = [];
   for (const line of lines) {
     const when = age(line.at,now);
@@ -673,7 +668,8 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
   if (id === 'timeline') return timelineRows(input,width,now);
   if (id === 'worktrees') {
     const snapshot = input.worktrees;
-    if (!snapshot) return [{text:colors.dim(t('Reading worktrees…'))}];
+    // Empty, loading or clean is no line of its own; an error says what is wrong.
+    if (!snapshot) return [];
     if (snapshot.error) return [{text:theme.warning(t('No readable repository'))}, {text:colors.dim(t('Set worktreeRoot'))}, ...wrapped(snapshot.error,width).map(text=>({text:colors.dim(text)}))];
     const rows: MonitorRow[] = [];
     if (snapshot.truncated) rows.push({text:theme.warning(t('Worktree list limited'))});
@@ -687,14 +683,14 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       // A directory label is useful identity, not a log line. Two lines only when it fits.
       if (width >= 20 && width < 40) rows.push({text:colors.dim(truncateAnsi('  '+monitorText(basename(entry.path)),width)),item:entry.path});
     }
-    return rows.length ? rows : [{text:colors.dim(t('No worktrees recorded'))}];
+    return rows;
   }
   if (id === 'changes') {
     const git = input.git;
     const rows: MonitorRow[] = [];
-    if (!git) return [{text:colors.dim(t('Reading selected worktree…'))}];
+    if (!git) return [];
     if (git.error) rows.push({text:theme.warning(t('Git incomplete'))});
-    if (!git.root) return [...rows,{text:colors.dim(t('No selected worktree'))}];
+    if (!git.root) return rows;
     const changed = (x:string) => x !== ' ' && x !== '.' && x !== '?';
     const conflicts = git.files.filter(file=>file.conflict).length;
     if (conflicts) rows.push({text:theme.warning(t('! {n} conflicts',{n:conflicts}))});
@@ -710,14 +706,13 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       }
     }
     return [...rows, ...git.files.map(file => ({item:file.path,
-      text:truncateAnsi(`${file.path===state.selectedFile?'›':' '} ${file.conflict?theme.error('!!'):file.index+file.worktree} ${monitorText(width<36?basename(file.path):file.path)}`,width)})),
-      ...(git.files.length ? [] : [{text:colors.dim(t(git.error ? 'Status unknown' : 'Working tree clean'))}])];
+      text:truncateAnsi(`${file.path===state.selectedFile?'›':' '} ${file.conflict?theme.error('!!'):file.index+file.worktree} ${monitorText(width<36?basename(file.path):file.path)}`,width)}))];
   }
   // Inspector is explicitly opened (Enter/v/4), never follows agent clicks into a transcript.
   let lines: string[] = [];
   if (state.preview === 'agent') {
     const node = findNode(input.tree.nodes,state.tree.selectedId);
-    if (!node) lines = [t('Select an agent')];
+    if (!node) lines = [];
     else {
       const token = renderModelEffortToken(node.model ? monitorText(node.model) : undefined, node.effort ? monitorText(node.effort) : undefined);
       const status = nodeStatus(node,now);
@@ -790,7 +785,7 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
     }
   } else if (state.preview === 'worktree') {
     const entry = input.worktrees?.entries.find(e=>e.path===state.selectedWorktree);
-    if (!entry) lines = [t('Select a worktree')];
+    if (!entry) lines = [];
     else {
       lines = [t('Branch: {branch}',{branch:entry.branch ?? t(entry.bare?'bare':'detached')}),t('Status: {status}',{status:worktreeLabelText(worktreeLabel(entry,now))}),basename(entry.path)];
       if (entry.error) lines.push(entry.error);
@@ -804,9 +799,10 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       lines.push(t(state.expanded?'▴ Less':'▾ More'));
     }
   } else {
-    lines = [state.selectedFile ? basename(state.selectedFile) : t('No selected file')];
-    if (state.expanded) lines.push(input.git?.root ?? t('No selected worktree'),state.selectedFile ?? '');
-    return [...lines.flatMap(line=>wrapped(line,width).map(text=>({text:theme.strong(text)}))), ...(input.diff ?? [t('Reading diff…')]).flatMap(line=>{
+    if (!state.selectedFile) return [];
+    lines = [basename(state.selectedFile)];
+    if (state.expanded) lines.push(...(input.git?.root ? [input.git.root] : []),state.selectedFile);
+    return [...lines.flatMap(line=>wrapped(line,width).map(text=>({text:theme.strong(text)}))), ...(input.diff ?? []).flatMap(line=>{
       const paint = line.startsWith('@@') ? theme.info : line.startsWith('+') ? theme.success : line.startsWith('-') ? theme.error : theme.value;
       return wrapped(line,width).map(text=>({text:paint(text)}));
     })];

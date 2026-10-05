@@ -259,3 +259,42 @@ captures). Pass `--allow-file-access-from-files` to Chrome.
   rendered with the Meslo font.
 - One capture with `icons: text`.
 - Copy the 36-column one to `OneDrive/图片/hud-r4-panel.png`.
+
+---
+
+## Amendment B: no placeholder lines (user request, supersedes part 2's "全部已完成")
+
+The user: "全部已完成 这样的提示也不要写，这种单独的占位提示不要占空间……这些其实直接能从底部的状态卡片就能看出来，你在做冗余设计。" In
+English: don't write prompts like "all finished"; standalone placeholder
+lines shouldn't take up space; the status card at the bottom already shows
+this; this is redundant design.
+
+**Rule:** a line that only says something is empty, done, clean or
+waiting, and whose fact the reader can already see elsewhere (the status
+card, the summary counts, the bar's `+N` button, the pane's own frame),
+**is not drawn and takes no row**.
+
+**Remove:**
+- `全部已完成` / `All finished`, and every variant of the agents' empty
+  text (`emptyAgentsText`): `No subagents yet` (还没有 subagent),
+  `No matching agents`, and the rest. With no agents to list, the agents
+  area is simply empty, and the summary row shows its counts, or nothing.
+- **Empty-state lines in panes:**
+  - `Working tree clean` / `干净`, when it is the only content: the pane
+    shows no rows. Per-worktree status words in the worktree list stay,
+    because there they are data.
+  - `No worktrees recorded`.
+  - `No selected worktree`.
+  - `Reading worktrees…` / `Reading selected worktree…`, and other
+    "reading…" placeholders. Show nothing until the data arrives.
+  - Any other line of this kind you find. Sweep `monitor.ts`, `cards.ts`,
+    `status-*.ts` and `i18n.ts`.
+- **Keep** text that carries information found nowhere else: errors and
+  warnings such as `No readable repository` with its reason, `Git
+  incomplete`, the stale-read warning, and settings or health errors.
+- A pane with no rows still shows its title rule, which the reader needs
+  in order to find it. It may shrink to just that.
+
+Add the placeholder strings to the hint-scan test from part 2, so that they
+cannot come back. Live check: capture the agents area with every agent
+hidden (no line at all), and a pane in its empty state.
