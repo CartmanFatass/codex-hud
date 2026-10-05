@@ -13,10 +13,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Codex stays up, as a real one does, until cleanup kills the server: a codex
+# that exits at once takes the session with it, and the attach then fails on
+# "no such session" or "not a terminal" depending on how fast the wrapper is.
 cat > "$FAKE_BIN_DIR/codex" <<'FAKE'
 #!/usr/bin/env bash
 echo fake-codex
-exit 0
+exec sleep 60
 FAKE
 
 cat > "$FAKE_BIN_DIR/node" <<'FAKE'
