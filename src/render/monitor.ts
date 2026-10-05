@@ -327,10 +327,10 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const now = input.nowMs ?? Date.now();
   const notice = input.notice || input.error;
   const noticeRows = notice && height >= 6 ? wrapped(notice,Math.max(1,cw-2)).slice(0,2) : [];
-  // The status card takes the foot, at the level chosen, at most about half
-  // the panel; it replaces the key hint's own line.
-  const footPlan = planFoot(input,state,width,height,now,noticeRows.length);
-  const footRows = footPlan.rows;
+  // The status card takes the foot, at the level chosen, at most about a
+  // third of the panel; it replaces the key hint's own line.
+  let footPlan = planFoot(input,state,width,height,now,noticeRows.length);
+  let footRows = footPlan.rows;
   // Every control the panel has is on its first rows; nothing else is a button.
   const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
   const top = Math.min(height,bar.lines.length);
@@ -364,6 +364,12 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       if (size && size < target) { sizes.set(id,size+1);budget--;grew=true; }
     }
     if (!grew) break;
+  }
+  // Rows no pane has a use for are the status card's, as far as its brief fills them.
+  if (budget > 0 && footRows) {
+    footPlan = planFoot(input,state,width,height,now,noticeRows.length,footRows+budget);
+    budget += footRows-footPlan.rows;
+    footRows = footPlan.rows;
   }
   // What is left goes to the inspector when it has focus, else to the agents
   // view, where it is the room the art may use. Small worktree lists stay compact.

@@ -12,7 +12,7 @@
  *   │ ▸ 本轮改动已合并并发布，无待办任务，等待新的需求
  *   │ ✓ 整理两个 CI 失败与下一步排查记录
  *   │   提交 release 说明并推送到 main 分支 +2
- *   ╰─ atlas-wsl · main * 7d ──────────99% ↺113h
+ *   ╰─ atlas-wsl · main * 7d ──────────99% ↺4d17h
  *
  * - `min`: the band row alone, the quota's reading at its right end, with a
  *   mark when something needs the person.
@@ -28,13 +28,14 @@
  * click on the band steps the level, as `r` does.
  *
  * The card takes at most a third of the panel and leaves the agents ten rows
- * when the panel is tall enough; a brief taller than its room keeps its most
- * wanted fields in view and scrolls the rest, with a line saying what is out
- * of view. Pure.
+ * when the panel is tall enough, and rows the panes leave unused besides,
+ * where its brief can say more in them; a brief taller than its room keeps
+ * its most wanted fields in view and scrolls the rest, with a line saying
+ * what is out of view. Pure.
  */
 import type { MonitorData, MonitorFrame, MonitorState } from './monitor.js';
 import { fit, meterRow, writtenAge, iconic, squeeze, age, METER_MIN, type EdgeMeter } from './monitor.js';
-import { briefFields, BRIEF_KEEP, type BriefField } from './cards.js';
+import { briefFields, BRIEF_KEEP, type BriefField, type BriefShape } from './cards.js';
 import { tonePaint, type StatusCard, type StatusTone } from './status-block.js';
 import { colors, theme, truncateAnsi, visualLength, stripAnsi } from './colors.js';
 import { t } from './i18n.js';
@@ -48,6 +49,11 @@ const MIN_VIEW = 10;
 const QUOTA_BAR = 12;
 /** Columns of bar the band's context meter keeps while the identity can still give way. */
 const BAND_BAR = 8;
+/**
+ * The brief with rows to spare, the roomiest that fits first: every done
+ * item and four lines a value, then every done item.
+ */
+const ROOMY: readonly BriefShape[] = [{ fieldLines: 4, doneShown: Infinity }, { fieldLines: 2, doneShown: Infinity }];
 
 /** The level as drawn: absent is `full`, and compact has no `full` of its own. */
 export function shownLevel(state: MonitorState): StatusLevel {
@@ -143,7 +149,12 @@ function briefRows(fields: BriefField[], room: number): string[] {
   return [...fields.filter(field => keep.has(field)), ...fields.filter(field => !keep.has(field))].flatMap(field => field.lines);
 }
 
-export function planFoot(input: MonitorData, state: MonitorState, width: number, height: number, now: number, notices: number): FootPlan {
+/**
+ * The card at the level chosen. `unused` is the rows it may have in all
+ * when the panes above leave some: then it may grow past its third, as far
+ * as its brief fills them.
+ */
+export function planFoot(input: MonitorData, state: MonitorState, width: number, height: number, now: number, notices: number, unused = 0): FootPlan {
   const level = shownLevel(state);
   // In the frame look the card closes the panel's frame: its band is an edge
   // of it, its rows sit between its sides and its corner row is its foot.
@@ -183,7 +194,8 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
     ['model', card?.model ?? ''], ['age', card?.age ?? '']];
 
   // The bar's rows: two in the frame look.
-  const cap = Math.min(Math.floor(height / 3), height - (framed ? 2 : 1) - notices - MIN_VIEW);
+  const fair = Math.min(Math.floor(height / 3), height - (framed ? 2 : 1) - notices - MIN_VIEW);
+  const cap = Math.max(fair, unused);
   if (level === 'min' || !card || cap < 2) {
     if (height <= 1) return { rows: 0, draw() {} };
     // One line: the band, and the quota's reading where the corner row would have had it.
@@ -200,11 +212,13 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
   const inner = width - (framed ? 4 : 2);
   const rule = tonePaint(tone);
   const alerts = card.alerts.slice(0, Math.max(0, cap - 2));
-  const fields = level === 'full' ? briefFields(input, inner) : [];
-  const lines0 = briefRows(fields, Math.max(0, cap - 2 - alerts.length));
+  const room = cap - 2 - alerts.length;
+  const roomy = level === 'full' && cap > fair ? ROOMY.map(shape => briefFields(input, inner, shape))
+    .find(fields => fields.reduce((sum, field) => sum + field.lines.length, 0) <= room) : undefined;
+  const fields = level !== 'full' ? [] : roomy ?? briefFields(input, inner);
+  const lines0 = briefRows(fields, Math.max(0, room));
   // Paused, the brief stays for reference but steps back.
   const lines = brief?.paused ? lines0.map(line => colors.dim(stripAnsi(line))) : lines0;
-  const room = cap - 2 - alerts.length;
   // Cut, the brief needs room for a line of it beside the line saying so.
   const section = lines.length > 0 && room >= 1 && (lines.length <= room || room >= 2);
   const overflow = section && lines.length > room;

@@ -95,10 +95,13 @@ export function taskLines(title: AgentTitle, width: number, max = 2): {lines: st
 /** Which part of the brief a block of lines is. */
 export type BriefFieldId = 'approval' | 'needs' | 'goal' | 'now' | 'done' | 'said';
 export interface BriefField { id: BriefFieldId; lines: string[] }
-/** Lines one value of the brief gets before it is cut. */
-const FIELD_LINES = 2;
-/** Done items the brief shows: the newest; the rest are counted. */
-const DONE_SHOWN = 2;
+/**
+ * How much of the brief is drawn: the lines one value gets before it is cut,
+ * and how many done items show, the newest (the rest are counted).
+ */
+export interface BriefShape { fieldLines: number; doneShown: number }
+/** The brief as it usually is: two lines a value, the newest two done items. */
+const BRIEF_SHAPE: BriefShape = {fieldLines:2,doneShown:2};
 /**
  * The brief's labels: an icon each where icons stand in for words, else the
  * word. The words share one column, padded to the widest, so 已完成 and 目标
@@ -118,23 +121,23 @@ function fieldLabel(id: Exclude<BriefFieldId,'said'>, column: number): string {
 
 /**
  * One field: its label in the label column, the value after it, wrapped
- * with its lines hanging under the value and cut after two.
+ * with its lines hanging under the value and cut after `max`.
  */
-function inlineField(id: Exclude<BriefFieldId,'said'>, value: string, width: number, column: number, paint: Paint = plain): BriefField {
+function inlineField(id: Exclude<BriefFieldId,'said'>, value: string, width: number, column: number, paint: Paint = plain, max = BRIEF_SHAPE.fieldLines): BriefField {
   const room = Math.max(1,width-column-1);
-  const lines = clipLines(flowLines(monitorText(value),room),FIELD_LINES,room).lines;
+  const lines = clipLines(flowLines(monitorText(value),room),max,room).lines;
   return {id,lines:lines.map((line,i)=>(i ? ' '.repeat(column+1) : fieldLabel(id,column)+' ')+paint(line))};
 }
 
 /**
- * Done: the newest two items, a dim "+N" closing the last when there were
- * more. With icons the ✓ in the label column heads the first item and the
- * rest hang under it; with words the label heads the first and each item
- * keeps its own ✓.
+ * Done: the newest items, two as a rule, a dim "+N" closing the last when
+ * there were more. With icons the ✓ in the label column heads the first item
+ * and the rest hang under it; with words the label heads the first and each
+ * item keeps its own ✓.
  */
-function doneField(done: readonly string[], width: number, column: number): BriefField | null {
+function doneField(done: readonly string[], width: number, column: number, shape = BRIEF_SHAPE): BriefField | null {
   if (!done.length) return null;
-  const items = done.slice(-DONE_SHOWN);
+  const items = done.slice(-shape.doneShown);
   const more = done.length-items.length;
   const suffix = more ? ` +${more}` : '';
   const mark = iconic() ? '' : `${theme.success('✓')} `;
@@ -149,7 +152,7 @@ function doneField(done: readonly string[], width: number, column: number): Brie
     const tail = flowed.at(-1) ?? '';
     if (last && suffix && visualLength(tail)+suffix.length > room)
       flowed = [...flowed.slice(0,-1),...flowLines(tail,Math.max(1,room-suffix.length))];
-    const wrapped = clipLines(flowed,FIELD_LINES,room-(last ? suffix.length : 0)).lines;
+    const wrapped = clipLines(flowed,shape.fieldLines,room-(last ? suffix.length : 0)).lines;
     wrapped.forEach((line,i) => {
       const label = !index && !i ? fieldLabel('done',column)+' ' : ' '.repeat(column+1);
       lines.push(label+(i ? ' '.repeat(lead) : mark)+line+(last && i === wrapped.length-1 && suffix ? colors.dim(suffix) : ''));
@@ -168,12 +171,12 @@ function recapIds(recap: NonNullable<Brief['recap']>): Array<Exclude<BriefFieldI
  * (strong), where it stands, and what is done. No blank lines between them:
  * the label column is what sets one field off from the next.
  */
-export function recapFields(recap: NonNullable<Brief['recap']>, width: number, column = labelColumn(recapIds(recap))): BriefField[] {
+export function recapFields(recap: NonNullable<Brief['recap']>, width: number, column = labelColumn(recapIds(recap)), shape = BRIEF_SHAPE): BriefField[] {
   const fields: BriefField[] = [];
-  if (recap.needs) fields.push(inlineField('needs',recap.needs,width,column,theme.warning));
-  fields.push(inlineField('goal',recap.goal,width,column,theme.strong));
-  fields.push(inlineField('now',recap.now,width,column));
-  const done = doneField(recap.done,width,column);
+  if (recap.needs) fields.push(inlineField('needs',recap.needs,width,column,theme.warning,shape.fieldLines));
+  fields.push(inlineField('goal',recap.goal,width,column,theme.strong,shape.fieldLines));
+  fields.push(inlineField('now',recap.now,width,column,plain,shape.fieldLines));
+  const done = doneField(recap.done,width,column,shape);
   if (done) fields.push(done);
   return fields;
 }
@@ -186,14 +189,14 @@ export function recapFields(recap: NonNullable<Brief['recap']>, width: number, c
  * in Now's place. A failed call and a reply in another shape are rows of
  * their own, as written.
  */
-export function briefFields(input: MonitorData, width: number): BriefField[] {
+export function briefFields(input: MonitorData, width: number, shape = BRIEF_SHAPE): BriefField[] {
   const brief = input.brief;
   const fields: BriefField[] = [];
   const ids = [...(input.notes?.approval ? ['approval' as const] : []),...(brief?.recap ? recapIds(brief.recap) : brief?.overall ? ['now' as const] : [])];
   const column = labelColumn(ids);
-  if (input.notes?.approval) fields.push(inlineField('approval',`~ ${input.notes.approval}`,width,column,theme.warning));
-  if (brief?.recap) fields.push(...recapFields(brief.recap,width,column));
-  else if (brief?.overall) fields.push(inlineField('now',brief.overall,width,column,colors.dim));
+  if (input.notes?.approval) fields.push(inlineField('approval',`~ ${input.notes.approval}`,width,column,theme.warning,shape.fieldLines));
+  if (brief?.recap) fields.push(...recapFields(brief.recap,width,column,shape));
+  else if (brief?.overall) fields.push(inlineField('now',brief.overall,width,column,colors.dim,shape.fieldLines));
   const said = briefSaid(input,width);
   if (said.length) fields.push({id:'said',lines:said});
   return fields;

@@ -77,13 +77,18 @@ test('the brief\'s fields sit inline behind icons, or behind words padded to one
     const valueColumn = (line: string) => visualLength(line.match(/^\S+ +/)?.[0] ?? '');
     assert.equal(new Set(zh.filter(line => !line.startsWith(' ')).map(valueColumn)).size, 1, zh.join('\n'));
   } finally { setLanguage(previous); }
-  // Each value two lines at most; Done shows the newest two and counts the rest.
+  // With the agents using every row: each value two lines at most; Done shows the newest two and counts the rest.
   const long: Recap = { ...recap, goal: 'word '.repeat(40), done: ['a', 'b', 'c', 'd', 'e'] };
-  const cut = card(draw(rich({ statusLevel: 'full' }), { brief: { recap: long } }, 44));
+  const cut = card(draw(rich({ statusLevel: 'full' }), { brief: { recap: long }, tree: tree(12) }, 44));
   assert.equal(cut.filter(line => /^│ [◎ ] +word/.test(line)).length, 2);
   assert.ok(cut.some(line => /word.* …$/.test(line.trimEnd())));
   const done = cut.findIndex(line => line.startsWith('│ ✓'));
   assert.deepEqual(cut.slice(done, done + 2).map(line => line.slice(2).trimEnd()), ['✓ d', '  e +3'], 'the ✓ heads the first item, the rest hang under it');
+  // Rows the agents leave unused are the card's: every done item, no count, and four lines a value.
+  const roomy = card(draw(rich({ statusLevel: 'full' }), { brief: { recap: long } }, 44));
+  assert.equal(roomy.filter(line => /^│ [◎ ] +word/.test(line)).length, 4, roomy.join('\n'));
+  const all = roomy.findIndex(line => line.startsWith('│ ✓'));
+  assert.deepEqual(roomy.slice(all, all + 5).map(line => line.slice(2).trimEnd()), ['✓ a', '  b', '  c', '  d', '  e']);
 });
 
 test('rich frames carry the recap only inside the status card; no brief rule, no recap card', () => {
@@ -131,7 +136,9 @@ test('full with no recap: the whole-picture sentence as Now, a failure or a repl
 
 test('full takes at most a third of the panel and leaves the agents ten rows; a taller brief keeps its most wanted fields and scrolls the rest', () => {
   const long: Recap = { ...recap, needs: 'Approve the migration before the reader agent goes on', done: ['Step one of the work, written out at some length', 'Step two of the work, written out at some length'] };
-  const frame = draw(rich({ statusLevel: 'full' }), { brief: { recap: long } }, 32, 24);
+  // Eight agents: more than the panel holds, so no row is left unused.
+  const draw8 = (state: MonitorState) => draw(state, { brief: { recap: long }, tree: tree(8) }, 32, 24);
+  const frame = draw8(rich({ statusLevel: 'full' }));
   const info = frame.statusCard!;
   assert.ok(info.height <= 8, `${info.height} rows of 24`);
   assert.ok(info.y >= 11, 'the agents keep ten rows');
@@ -144,39 +151,48 @@ test('full takes at most a third of the panel and leaves the agents ten rows; a 
   assert.match(lines.at(-2)!, /↓ \d+ more lines/);
 
   const wheel = (state: MonitorState, shown: MonitorFrame, button: 'wheel-down' | 'wheel-up') =>
-    handleMonitorInput(state, { type: 'mouse', button, x: 4, y: shown.statusCard!.y + 2 }, { tree: tree(3), frame: shown }).state;
+    handleMonitorInput(state, { type: 'mouse', button, x: 4, y: shown.statusCard!.y + 2 }, { tree: tree(8), frame: shown }).state;
   const agentsBefore = frame.state.scroll.agents;
   const down = wheel(frame.state, frame, 'wheel-down');
   assert.equal(down.statusScroll, 3);
   assert.equal(down.scroll.agents, agentsBefore, 'the wheel over the card leaves the agents alone');
-  const scrolled = card(draw(down, { brief: { recap: long } }, 32, 24));
+  const scrolled = card(draw8(down));
   assert.deepEqual(scrolled.slice(0, 2), lines.slice(0, 2), 'the edge and the alert stay put');
   assert.ok(scrolled.some(line => line.startsWith('│ ✓')), 'what gave way is a scroll away');
   let state = down;
-  for (let i = 0; i < 20; i++) state = wheel(state, draw(state, { brief: { recap: long } }, 32, 24), 'wheel-down');
-  const end = draw(state, { brief: { recap: long } }, 32, 24);
+  for (let i = 0; i < 20; i++) state = wheel(state, draw8(state), 'wheel-down');
+  const end = draw8(state);
   assert.equal(end.statusCard!.offset, end.statusCard!.total - end.statusCard!.brief);
-  for (let i = 0; i < 20; i++) state = wheel(state, draw(state, { brief: { recap: long } }, 32, 24), 'wheel-up');
+  for (let i = 0; i < 20; i++) state = wheel(state, draw8(state), 'wheel-up');
   assert.equal(state.statusScroll, 0);
+  // One agent leaves rows unused: the card takes them, past its third, and the whole brief is in view.
+  const one = draw(rich({ statusLevel: 'full' }), { brief: { recap: long }, tree: tree(1) }, 32, 24);
+  assert.ok(one.statusCard!.height > 8 && one.statusCard!.total === one.statusCard!.brief, `${one.statusCard!.height} rows`);
+  assert.ok(!card(one).some(line => /more lines/.test(line)));
+  assert.ok(plain(one).slice(0, one.statusCard!.y).some(line => line.includes('worker_1')), 'the agent keeps its card');
 
   // A brief that fits has no hint, and the wheel over it does nothing.
   const short = draw(rich({ statusLevel: 'full' }), {}, 32, 40);
   assert.equal(short.statusCard!.total, short.statusCard!.brief);
   assert.equal(wheel(short.state, short, 'wheel-down').statusScroll ?? 0, 0);
   // Too short for a card that leaves the agents their rows: the one line.
-  const cramped = draw(rich({ statusLevel: 'full' }), {}, 32, 12);
+  const cramped = draw(rich({ statusLevel: 'full' }), { tree: tree(8) }, 32, 12);
   assert.equal(card(cramped).length, 1);
 });
 
-test('at 90×42 a brief like the atlas one takes at most seven rows', () => {
+test('at 90×42 a brief like the atlas one takes at most seven rows, and shows its every done item with rows to spare', () => {
   const previous = setLanguage('zh');
   try {
     const atlas: Recap = { goal: '整理测试数据补全文档，并在版本冻结前合并本轮改动', now: '本轮改动已合并并发布，无待办任务，等待新的需求',
       done: ['修复构建脚本 steer 超时处理并推送', '核对 A/B/C/D 基准结果与独立复核', '整理两个 CI 失败与下一步排查记录', '提交 release 说明并推送到 main 分支'],
       needs: '', at: now - 3 * 60_000, coveredUntil: now, sessionId: 's', language: 'zh' };
-    const frame = draw(rich({ statusLevel: 'full' }), { brief: { recap: atlas, running: true }, status: () => ({ ...status!(now)!, alerts: [] }) }, 90, 42);
+    const at = (agents: number) => draw(rich({ statusLevel: 'full' }), { brief: { recap: atlas, running: true }, status: () => ({ ...status!(now)!, alerts: [] }), tree: tree(agents) }, 90, 42);
+    const frame = at(12);
     assert.ok(frame.statusCard!.height <= 7, `${frame.statusCard!.height}`);
     assert.ok(frame.lines.every(line => visualLength(line) === 90));
+    assert.ok(card(frame).some(line => /推送到 main 分支 \+2/.test(line)));
+    const roomy = card(at(3));
+    assert.ok(atlas.done.every(item => roomy.some(line => line.includes(item))) && !roomy.some(line => /\+2/.test(line)), roomy.join('\n'));
   } finally { setLanguage(previous); }
 });
 

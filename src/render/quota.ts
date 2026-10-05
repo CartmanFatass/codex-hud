@@ -63,9 +63,14 @@ export function formatWindowLabel(minutes?: number): string {
   return `${minutes}m`;
 }
 
-/** Coarse countdown: hours and minutes, then minutes, then seconds. */
+/** Coarse countdown: days and hours, then hours and minutes, then minutes, then seconds. */
 export function formatCountdown(target: Date, nowMs: number): string {
   const seconds = Math.max(0, Math.round((target.getTime() - nowMs) / 1000));
+  if (seconds >= 86400) {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    return hours > 0 ? `${days}d${hours}h` : `${days}d`;
+  }
   if (seconds >= 3600) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);

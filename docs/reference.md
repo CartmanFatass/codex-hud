@@ -67,7 +67,7 @@ pill   ⌂ ▦  ⌥ Trees  ±  ◫  ≣      ǁ ⊕31 ⚙ ?
 │ ▸ Waiting on the CJK fix and the cache review
 │ ✓ Dependency audit clean
 │   Add the streaming tokenizer API +2
-╰─ parser-kit · main * ↑2 7d ────────────────────────────99% ↺114h
+╰─ parser-kit · main * ↑2 7d ───────────────────────────99% ↺4d18h
 ```
 
 - **The band**, on its own background across the width: the session's state (while it works, the running tool and its target, the turn's clock and `~N tok/s`), the model badge and the session's age; the context meter, the percentage where the fill ends and the window size at the tail (a `┃` tick marks the auto-compact point when `config.toml` sets `model_auto_compact_token_limit`); then, wherever a brief is configured, its state (`~3m` for the recap's age, then in words: writing…, failed, paused). A click anywhere on the band steps the level, as `r`.
@@ -80,7 +80,7 @@ It has three levels (Settings → Panel → Status card, saved like the other pa
 
 - **min**: the band alone, with the brief's state and the quota's reading at its right end, marked `!` when a tool or agent failed or the recap says it needs you.
 - **status**: the band, the alerts when there are any, and the corner.
-- **full** (the default): those, then the main session's brief: the pending approval in the model's words first (`⚑ ~ …`), then the recap with its labels inline in one column, needs (`!`, in the warning colour) first, then goal (`◎`), now (`▸`) and the newest two done items (`✓`, a dim `+N` for the rest), each value at most two lines; the whole-picture sentence stands in for Now only when there is no recap; then a failed call or a reply in another shape than asked for. Paused, the brief steps back to dim. With glyphs set to text, the labels are words (Needs, Goal, Now, Done) padded to one column. The card takes at most a third of the panel and leaves the agents at least ten rows when the panel is tall enough; a brief taller than its room keeps needs, now and goal in view and the rest a scroll away (the wheel over the card), with a line saying what is out of view.
+- **full** (the default): those, then the main session's brief: the pending approval in the model's words first (`⚑ ~ …`), then the recap with its labels inline in one column, needs (`!`, in the warning colour) first, then goal (`◎`), now (`▸`) and the newest two done items (`✓`, a dim `+N` for the rest), each value at most two lines; the whole-picture sentence stands in for Now only when there is no recap; then a failed call or a reply in another shape than asked for. Paused, the brief steps back to dim. With glyphs set to text, the labels are words (Needs, Goal, Now, Done) padded to one column. The card takes at most a third of the panel and leaves the agents at least ten rows when the panel is tall enough; rows the panes above leave unused are its too, as far as the brief fills them, and then it shows every done item and up to four lines a value. A brief taller than its room keeps needs, now and goal in view and the rest a scroll away (the wheel over the card), with a line saying what is out of view.
 
 Compact keeps its layout: the brief and recap stay in the area under the tree, in the same inline fields, so its card has only min and status (full there is status) and `Ctrl+]` `r` switches between the two.
 
