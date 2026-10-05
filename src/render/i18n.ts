@@ -357,6 +357,9 @@ const ZH: Record<string, string> = {
   'Panel columns': '侧栏宽度',
   'Mouse': '鼠标',
   'Click and scroll the panel': '在侧栏中点击和滚动',
+  'Prefix key': '前缀键',
+  'Prefix': '前缀',
+  'Then a key: a panel command; others go to Codex': '再按一键执行侧栏命令；其余按键交给 Codex',
   'Refresh': '刷新',
   'How often the panel reads': '侧栏多久读取一次',
 

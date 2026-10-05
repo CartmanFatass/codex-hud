@@ -4,6 +4,7 @@ import type { HudHealthState } from '../types.js';
 import { truncateAnsi, colors, theme, visualLength } from './colors.js';
 import { t, language } from './i18n.js';
 import { age } from './monitor.js';
+import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
 
 type SettingValue = string | number | boolean;
 
@@ -67,6 +68,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format:value => ({0:'auto',32:'narrow',56:'wide'} as Record<number,string>)[Number(value)] ?? String(value)},
   {key:'art',group:'Panel',label:'Picture',short:'Art',values:['off','dots','color','ascii'],help:'Picture in empty space; codex-hud-art sets it'},
   {key:'mouse',group:'Panel',label:'Mouse',short:'Mouse',values:[true,false],help:'Click and scroll the panel'},
+  {key:'prefixKey',group:'Panel',label:'Prefix key',short:'Prefix',values:PREFIX_KEYS,help:'Then a key: a panel command; others go to Codex',
+    format:value => prefixName(String(value))},
   {key:'refreshMs',group:'Panel',label:'Refresh',short:'Refresh',values:[500,1000,2000,5000],help:'How often the panel reads',format:seconds},
 ];
 

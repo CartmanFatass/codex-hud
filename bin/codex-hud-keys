@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Install the HUD's prefix key and its command table.
+#
+#   codex-hud-keys <session> [prefix]
+#
+# Every panel command is the prefix (Ctrl+] unless the settings say
+# otherwise), then one key. The prefix is bound in the session's own key
+# table, codex-hud (see install_session_input_policy in bin/codex-hud), and
+# switches the client to the codex-hud-prefix table for one key. The server's
+# root and prefix tables are never touched.
+#
+# Both tables are the server's, shared by every HUD session on it. A
+# changed prefix therefore first takes the old one out of codex-hud (giving
+# back whatever the user's root table had on that key), and the command
+# table is rebuilt from nothing. The installed prefix is remembered in the
+# global option @codex_hud_prefix_key for exactly that.
+#
+# Without a prefix argument it is read from hud-settings.json (CODEX_HOME,
+# or CODEX_HUD_SETTINGS_PATH), the same way bin/codex-hud reads the others.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HUD_DIR="$(dirname "$SCRIPT_DIR")"
+session_name="${1:-}"
+prefix="${2:-}"
+
+if [[ -z "$prefix" && -f "$HUD_DIR/dist/settings.js" ]] && command -v node >/dev/null 2>&1; then
+    prefix=$(node --input-type=module -e '
+        import { pathToFileURL } from "node:url";
+        const { loadSettings } = await import(pathToFileURL(process.argv[1]).href);
+        process.stdout.write(loadSettings().prefixKey);
+    ' "$HUD_DIR/dist/settings.js" 2>/dev/null) || prefix=""
+fi
+# The keys checked against Codex's own bindings (src/utils/panel-command.ts).
+case "$prefix" in
+    'C-]'|'C-\') ;;
+    *) prefix='C-]' ;;
+esac
+
+old=$(tmux show-option -gqv @codex_hud_prefix_key 2>/dev/null)
+if [[ -n "$old" && "$old" != "$prefix" ]]; then
+    tmux unbind-key -T codex-hud "$old" 2>/dev/null || true
+    # The user's own root binding of that key, if there was one, comes back.
+    tmux list-keys -T root "$old" 2>/dev/null | sed 's/-T root /-T codex-hud /' | tmux source-file - 2>/dev/null || true
+fi
+
+tmux unbind-key -a -T codex-hud-prefix 2>/dev/null || true
+tmux bind-key -T codex-hud "$prefix" switch-client -T codex-hud-prefix
+# The prefix twice is the prefix key itself, for whichever pane has focus.
+tmux bind-key -T codex-hud-prefix "$prefix" send-keys "$prefix"
+
+command_q=$(printf '%q' "$SCRIPT_DIR/codex-hud-command")
+bind_command() {
+    local repeat="$1" key="$2" name="$3"
+    # Blocking run-shell: the client's queue waits for each, so a burst runs in order.
+    if [[ "$repeat" == "1" ]]; then
+        tmux bind-key -r -T codex-hud-prefix "$key" run-shell "bash $command_q '#{session_id}' $name"
+    else
+        tmux bind-key -T codex-hud-prefix "$key" run-shell "bash $command_q '#{session_id}' $name"
+    fi
+}
+
+bind_command 0 m main
+bind_command 0 b brief
+bind_command 0 a older
+bind_command 0 , settings
+bind_command 0 '?' help
+bind_command 0 r level
+bind_command 0 1 pane-1
+bind_command 0 2 pane-2
+bind_command 0 3 pane-3
+bind_command 0 4 pane-4
+bind_command 0 5 pane-5
+bind_command 0 x close-pane
+bind_command 0 - fold-pane
+bind_command 0 Tab next-pane
+bind_command 0 BTab previous-pane
+bind_command 0 z zoom
+bind_command 0 f filter
+bind_command 0 / filter
+bind_command 0 s order
+bind_command 0 q quit
+bind_command 0 o switch
+bind_command 0 Enter inspect
+bind_command 0 v inspect
+bind_command 0 e open
+bind_command 0 Space open
+bind_command 0 g first
+bind_command 0 G last
+bind_command 0 h left
+bind_command 0 l right
+bind_command 0 Escape back
+# Within repeat-time the next of these needs no prefix: prefix j j j.
+bind_command 1 j down
+bind_command 1 k up
+bind_command 1 Down down
+bind_command 1 Up up
+bind_command 1 NPage page-down
+bind_command 1 PPage page-up
+
+tmux set-option -gq @codex_hud_prefix_key "$prefix"
+# bind-key -r repeats only within repeat-time; 500 ms is tmux's own default.
+if [[ -n "$session_name" ]]; then
+    tmux set-option -t "$session_name" repeat-time 500 2>/dev/null || true
+fi

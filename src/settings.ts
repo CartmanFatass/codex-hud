@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { HudDisplayConfig } from './render/hud-config.js';
 import { getCodexHome } from './utils/codex-path.js';
+import { PREFIX_KEYS, type PrefixKey } from './utils/panel-command.js';
 
 export interface HudSettings extends HudDisplayConfig {
   statusline: boolean;
@@ -106,6 +107,12 @@ export interface HudSettings extends HudDisplayConfig {
   art: 'off' | 'dots' | 'color' | 'ascii';
   /** The picture: any image ffmpeg can read. `codex-hud-art <image>` sets it. */
   artImage: string;
+  /**
+   * The tmux key in front of every panel command (`Ctrl+]` then `,` opens
+   * settings). Only keys checked against Codex's own bindings are offered;
+   * see PREFIX_KEYS. bin/codex-hud-keys installs it.
+   */
+  prefixKey: PrefixKey;
 }
 
 /** What the brief covers, from its two switches; null when neither is on. */
@@ -125,7 +132,7 @@ export function defaultSettings(): HudSettings {
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
     agentLog: false, notify: false, notifyDesktop: false,
     resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
-    art: 'off', artImage: '',
+    art: 'off', artImage: '', prefixKey: 'C-]',
   };
 }
 
@@ -183,6 +190,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   approvalDescription: isBoolean,
   art: oneOf('off', 'dots', 'color', 'ascii'),
   artImage: isText(4096),
+  prefixKey: oneOf(...PREFIX_KEYS),
 };
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {

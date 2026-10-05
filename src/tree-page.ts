@@ -4,7 +4,7 @@ import { defaultSettings, saveSettings, briefingScope } from './settings.js';
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import { treeWidthKeeper } from './utils/pane-width.js';
 import { renderSettingsPage, handleSettingsInput, type SettingsPageState, type SettingsFrame } from './render/settings-page.js';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { SessionFinder } from './collectors/session-finder.js';
@@ -15,6 +15,7 @@ import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './co
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
   monitorModes, monitorPreferences, nextRepaintDelay, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
+import { isPanelCommand, monitorKey, overlayKey, type PanelCommand } from './utils/panel-command.js';
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentContextUsage } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
@@ -49,6 +50,37 @@ const HUD_SESSION_START = (() => {
 })();
 const ENTER = '\x1b[?1049h\x1b[?25l\x1b[?2004h\x1b[?1000h\x1b[?1006h';
 const LEAVE = '\x1b[?1000l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[?1049l';
+
+/** A tmux command, through CODEX_HUD_TMUX_BIN when set (the test harness's server). */
+function tmux(args: string[], input?: string): Promise<void> {
+  return new Promise(resolve => {
+    try {
+      const child = execFile(process.env.CODEX_HUD_TMUX_BIN || 'tmux',args,{timeout:3000,windowsHide:true},()=>resolve());
+      if (input !== undefined) child.stdin?.end(input);
+    } catch { resolve(); }
+  });
+}
+
+/** This pane: an overlay opened from the prefix or a button takes the keyboard. */
+function focusPanel(): void {
+  const pane = process.env.TMUX_PANE;
+  if (pane) void tmux(['select-pane','-t',pane]);
+}
+
+/**
+ * Install the prefix key again after the setting changed (bin/codex-hud-keys),
+ * for this session's server. Only inside a HUD session, which passes the toggle.
+ */
+function reinstallPrefix(prefix: string): void {
+  const toggle = process.env.CODEX_HUD_TOGGLE_CMD;
+  const session = process.env.CODEX_HUD_TMUX_SESSION;
+  if (!toggle || !session) return;
+  try {
+    const child = spawn('bash',[path.join(path.dirname(toggle),'codex-hud-keys'),session,prefix],{stdio:'ignore',detached:true});
+    child.on('error',()=>{});
+    child.unref();
+  } catch { /* The next launch installs it. */ }
+}
 
 function requestEnsureSingle(): void {
   const toggle = process.env.CODEX_HUD_TOGGLE_CMD;
@@ -421,10 +453,28 @@ async function runLivePage(): Promise<void> {
     } catch (err) { navigationMessage = t('Switch failed: {reason}',{reason:String(err)}); }
     finally { navigating = false; render(); }
   };
+  /**
+   * A command from the prefix table as the input it stands for. An open
+   * overlay keeps the ones that move inside it or close it; any other
+   * closes the overlay and goes to the panel.
+   */
+  const commandInput = (command: PanelCommand): WorkbenchInput => {
+    const overlay = settingsPage ? 'settings' : state.help ? 'help' : null;
+    if (overlay) {
+      const key = overlayKey(command,overlay);
+      if (key) return {type:'key',key};
+      settingsPage = null;
+      state = {...state,help:false};
+    }
+    return {type:'key',key:monitorKey(command)};
+  };
   const dispatch = (inputs: WorkbenchInput[]) => {
-    for (const input of inputs) {
+    const overlayBefore = Boolean(settingsPage || state.help);
+    for (let input of inputs) {
       if (closed) break;
       if (input.type === 'mouse' && !settings.mouse) continue;
+      if (input.type === 'command') input = commandInput(input.command);
+      if (input.type === 'paste') continue;
       if (settingsPage && settingsFrame) {
         const result = handleSettingsInput(settingsPage,input,settingsFrame);
         settingsPage = result.state;
@@ -432,6 +482,7 @@ async function runLivePage(): Promise<void> {
         else if (result.action === 'reset') settingsPage = {...settingsPage,draft:defaultSettings(),message:t('Defaults ready; Save to apply')};
         else if (result.action === 'save') {
           try {
+            const previousPrefix = settings.prefixKey;
             settings = saveSettings(settingsPage.draft);
             settingsError = ''; error = null;
             applyDisplaySettings(settings);
@@ -445,6 +496,7 @@ async function runLivePage(): Promise<void> {
             state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
               style:settings.panelStyle,statusLevel:settings.statusCard,labelAsName:settings.labelAsName,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
             git=null;diff=undefined;diffKey='';void refreshGit();
+            if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
             settingsPage.message = t('Saved');
             settingsPage.original = {...settings};
             process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
@@ -490,6 +542,13 @@ async function runLivePage(): Promise<void> {
         if(!duplicate)void switchSession(id);
       }
     }
+    if (!closed && !overlayBefore && (settingsPage || state.help)) focusPanel();
+  };
+  /** A command that opened the panel (bin/codex-hud-toggle --command): run once, after the first read. */
+  const initialCommand = process.env.CODEX_HUD_INITIAL_COMMAND;
+  delete process.env.CODEX_HUD_INITIAL_COMMAND;
+  const runInitialCommand = () => {
+    if (initialCommand && isPanelCommand(initialCommand)) dispatch([{type:'command',command:initialCommand}]);
   };
   const onData = (chunk: Buffer) => {
     if (escapeTimer) clearTimeout(escapeTimer);
@@ -516,7 +575,7 @@ async function runLivePage(): Promise<void> {
     process.stdin.on('data',onData);
     render();
     loadArt();
-    void collect();
+    void collect().then(runInitialCommand);
     void refreshGit();
     armCollect();
     scheduleRepaint();

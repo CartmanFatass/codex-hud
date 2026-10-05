@@ -24,11 +24,21 @@ focus_tree=0
 open_only=0
 click_x=""
 expect_click=0
+command=""
+expect_command=0
 session_name=""
 for arg in "$@"; do
   if [[ "$expect_click" == "1" ]]; then
     click_x="$arg"
     expect_click=0
+    continue
+  fi
+  if [[ "$expect_command" == "1" ]]; then
+    # A panel command (bin/codex-hud-command): open the panel if needed and
+    # run it there once. A name, never anything else.
+    [[ "$arg" =~ ^[a-z0-9-]{1,32}$ ]] && command="$arg"
+    open_only=1
+    expect_command=0
     continue
   fi
   case "$arg" in
@@ -40,6 +50,7 @@ for arg in "$@"; do
     # A click on the status bar at column X. Which field was under the cursor
     # decides what happens; see resolve_click below.
     --click) expect_click=1 ;;
+    --command) expect_command=1 ;;
     *) session_name="$arg" ;;
   esac
 done
@@ -198,6 +209,11 @@ if [[ "$mode" == "tree" ]]; then
       if [[ "$focus_tree" == "1" ]]; then
         tmux select-pane -t "$tree_pane" 2>/dev/null || true
       fi
+      # It opened while the command was on its way: hand it over the usual way.
+      if [[ -n "$command" ]]; then
+        # shellcheck disable=SC2046 # one word per byte
+        tmux send-keys -t "$tree_pane" -H $(printf '%s' $'\e_codex-hud:'"$command"$'\e\\' | od -An -v -tx1) 2>/dev/null || true
+      fi
       exit 0
     fi
     # The panel is gone but the session still thinks it is open; fall through
@@ -236,7 +252,12 @@ max_panel=$(( win_width - 41 ))
 if [[ "$max_panel" -lt 10 ]]; then max_panel=$(( win_width / 3 )); fi
 if [[ "$panel_width" -gt "$max_panel" ]]; then panel_width=$max_panel; fi
 
-tree_cmd="env CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
+# A command that opened the panel runs in it once, from its environment.
+initial_command=""
+if [[ -n "$command" ]]; then
+  initial_command=" CODEX_HUD_INITIAL_COMMAND='$command'"
+fi
+tree_cmd="env${initial_command} CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
 if ! new_tree=$(tmux split-window -h -l "$panel_width" -t "$main_pane" -d -P -F '#{pane_id}' "$tree_cmd"); then
   tmux display-message -t "$session_name" "codex-hud: failed to open the tree panel"
   exit 1

@@ -649,6 +649,15 @@ install_session_input_policy() {
         "run-shell -b \"bash '$toggle_cmd' '#{session_id}' --focus-tree\"" \
         "send-keys S-F12"
 
+    # Every panel command is the prefix (Ctrl+] by default), then a key; no
+    # plain key is the panel's. The prefix and the codex-hud-prefix table it
+    # leads to are installed by codex-hud-keys, which the panel runs again
+    # when the prefix setting changes.
+    local keys_cmd
+    keys_cmd="$(cd "$(dirname "$toggle_cmd")" && pwd)/codex-hud-keys"
+    chmod +x "$keys_cmd" "$(dirname "$keys_cmd")/codex-hud-command" 2>/dev/null || true
+    CODEX_HOME="${EFFECTIVE_CODEX_HOME:-${CODEX_HOME:-$HOME/.codex}}" bash "$keys_cmd" "$session_name" || true
+
     local paste_cmd
     paste_cmd="$(cd "$(dirname "$toggle_cmd")" && pwd)/codex-hud-paste"
     chmod +x "$paste_cmd" 2>/dev/null || true
@@ -827,7 +836,7 @@ EOF
 
     tmux set-option -t "$SESSION_NAME" escape-time 0
     tmux set-option -t "$SESSION_NAME" assume-paste-time 0
-    tmux set-option -t "$SESSION_NAME" repeat-time 0
+    # repeat-time is the prefix table's (bin/codex-hud-keys): prefix j j j.
     tmux set-option -t "$SESSION_NAME" history-limit 200000
     # HUD already draws the status line; hide tmux's default green bar.
     tmux set-option -t "$SESSION_NAME" status off
