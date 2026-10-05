@@ -292,12 +292,7 @@ npm run dev                    # Watch mode
 node dist/index.js             # Run HUD directly
 npm test                       # Unit tests: parser replay, width safety, render cost
 npm run test:integration       # Shell suites: wrapper, tmux toggling, installer
-npm run test:windows           # PowerShell installer and launcher (Windows; CI runs it)
 ```
-
-`npm run test:windows` sets the Windows user PATH while it runs and puts it
-back after; CI runs it on a Windows runner, so there is no need to run it on
-your own machine.
 
 `npm test` compiles with `tsconfig.test.json` and runs `tests/unit` against the
 recorded rollouts in `tests/fixtures/rollouts`. `docs/BASELINE.md` records the

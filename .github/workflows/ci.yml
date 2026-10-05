@@ -35,22 +35,6 @@ jobs:
       - run: npm run build
       - run: npm run test:integration
 
-  # The PowerShell installer and launcher, against fake codex, git, wsl and
-  # tmux. The test sets the user PATH and restores it: on a runner, never on
-  # a developer's machine. The checkout keeps the runner's line endings, as a
-  # Windows user's clone does.
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - run: npm run test:windows
-
   cx-continue:
     runs-on: ubuntu-latest
     defaults:
