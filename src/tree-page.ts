@@ -4,7 +4,7 @@ import { defaultSettings, saveSettings, briefingScope } from './settings.js';
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import { treeWidthKeeper } from './utils/pane-width.js';
 import { renderSettingsPage, handleSettingsInput, type SettingsPageState, type SettingsFrame } from './render/settings-page.js';
-import { spawn, execFile } from 'node:child_process';
+import { spawn, execFile, execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { SessionFinder } from './collectors/session-finder.js';
@@ -16,6 +16,7 @@ import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInpu
   monitorModes, monitorPreferences, nextRepaintDelay, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, type PanelCommand } from './utils/panel-command.js';
+import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentContextUsage } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
@@ -61,6 +62,18 @@ function tmux(args: string[], input?: string): Promise<void> {
   });
 }
 
+/** The Codex pane typing is passed to: the launch's, else the session's option. */
+function resolveMainPane(): string | undefined {
+  const pane = process.env.CODEX_HUD_MAIN_PANE;
+  if (pane) return pane;
+  if (!process.env.TMUX) return undefined;
+  try {
+    const option = execFileSync(process.env.CODEX_HUD_TMUX_BIN || 'tmux',['show-options','-qv','@codex_hud_main_pane'],
+      {encoding:'utf8',timeout:1500,stdio:['ignore','pipe','ignore']}).trim();
+    return /^%\d+$/.test(option) ? option : undefined;
+  } catch { return undefined; }
+}
+
 /** This pane: an overlay opened from the prefix or a button takes the keyboard. */
 function focusPanel(): void {
   const pane = process.env.TMUX_PANE;
@@ -98,7 +111,11 @@ async function runLivePage(): Promise<void> {
   const finder = new SessionFinder(HUD_CWD_REAL,undefined,HUD_SESSION_START);
   const parser = new RolloutParser(40);
   const worktreeCollector = new WorktreeCollector();
-  const decoder = new WorkbenchInputDecoder('monitor');
+  // Typing here goes to Codex; with no Codex pane to give it to (the panel
+  // run on its own), the keys drive the panel as they used to.
+  const mainPane = resolveMainPane();
+  const decoder = new WorkbenchInputDecoder('monitor',{forward:Boolean(mainPane)});
+  const forwarder = new KeyForwarder(()=>mainPane,call=>tmux(call.args,call.input));
   let settings = defaultSettings();
   let settingsError = '';
   let settingsFailure: unknown = null;
@@ -470,10 +487,26 @@ async function runLivePage(): Promise<void> {
   };
   const dispatch = (inputs: WorkbenchInput[]) => {
     const overlayBefore = Boolean(settingsPage || state.help);
+    // What goes to Codex, in order, sent once the whole read is through.
+    const forward: ForwardItem[] = [];
     for (let input of inputs) {
       if (closed) break;
       if (input.type === 'mouse' && !settings.mouse) continue;
       if (input.type === 'command') input = commandInput(input.command);
+      else if (mainPane && input.type !== 'mouse') {
+        const overlay = Boolean(settingsPage || state.help);
+        if (!overlay) {
+          // Not the panel's: every key and paste is Codex's.
+          if (input.type === 'paste') forward.push({kind:'paste',text:input.text});
+          else if (input.raw) forward.push({kind:'keys',text:input.raw});
+          continue;
+        }
+        // An open overlay owns the keyboard until it closes. Its keys are
+        // the ones it needs; q and Ctrl+C close it, not the panel, and a
+        // paste has nowhere to go.
+        if (input.type === 'paste') continue;
+        if (input.key === 'close') input = {type:'key',key:'escape'};
+      }
       if (input.type === 'paste') continue;
       if (settingsPage && settingsFrame) {
         const result = handleSettingsInput(settingsPage,input,settingsFrame);
@@ -542,6 +575,7 @@ async function runLivePage(): Promise<void> {
         if(!duplicate)void switchSession(id);
       }
     }
+    if (forward.length) void forwarder.send(forward);
     if (!closed && !overlayBefore && (settingsPage || state.help)) focusPanel();
   };
   /** A command that opened the panel (bin/codex-hud-toggle --command): run once, after the first read. */
