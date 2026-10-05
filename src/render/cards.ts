@@ -1,8 +1,8 @@
 /**
  * The rich panel: a card for each L1 agent (one the main session started),
- * all in the one scrolling view under the agents' summary line. The agents
- * an L1 started are its card's to count by role and, those that matter, to
- * name; they get no card of their own.
+ * all in the one scrolling view under the agents' summary line. An L1's
+ * subtasks, at any depth, are its card's to count by role and, those that
+ * matter, to name; they get no card of their own.
  *
  * A card is open on the right: a top rule, a bar down the left, a bottom
  * rule, so its text gets the column a closed box spends on its right side,
@@ -529,10 +529,10 @@ function kidLine(kid: SubagentTreeNode, input: MonitorData, state: MonitorState,
 }
 
 /**
- * The agents an L1 started, counted by role, the most first: "5 implementer
- * · 3 reviewer · 1 general" (Codex's default agent is "general"). A count is
- * in the running colour while one of its agents runs. As many roles as fit,
- * then "+N" for the agents of the rest.
+ * An L1's subtasks, at any depth, counted by role, the most first: "5
+ * implementer · 3 reviewer · 1 general" (Codex's default agent is
+ * "general"). A count is in the running colour while one of its subtasks
+ * runs. As many roles as fit, then "+N" for the subtasks of the rest.
  */
 function roleLine(node: SubagentTreeNode, tree: SubagentTree, width: number): string {
   const kids = subtasks(node);
@@ -702,8 +702,8 @@ const REPORT_LINES = 8;
 
 /**
  * Rich: the agents view, a list of cards and nothing else, one for each L1
- * agent: the subtasks an L1 started are its card's to count and, the ones
- * that matter, to name. The summary line heads it and stays put; under it
+ * agent: an L1's subtasks, at any depth, are its card's to count and, the
+ * ones that matter, to name. The summary line heads it and stays put; under it
  * scroll the cards, in the tree's order, under its filter and linger window.
  * The main session's brief is the status card's, at the foot. `spaced` puts
  * a blank line between cards; the one-line rows of finished agents sit

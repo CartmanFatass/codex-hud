@@ -96,7 +96,7 @@ export interface HudSettings extends HudDisplayConfig {
   agentLog: boolean;
   /** The cards' corners: square (`┌ └`) or round (`╭ ╰`). */
   cardCorners: 'square' | 'round';
-  /** A line at the foot of an L1's card counting the agents it started by role (`5 implementer · 2 general`). */
+  /** A line at the foot of an L1's card counting its subtasks, at any depth, by role (`5 implementer · 2 general`). */
   cardRoleCounts: boolean;
   /**
    * How much the status card at the foot of the panel shows: `min`, its top

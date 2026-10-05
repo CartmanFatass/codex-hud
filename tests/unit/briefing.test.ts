@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { Briefer, briefingCommand, briefingRequest, completionText, parseBrief, briefSystemPrompt, BRIEF_SHAPE_ERROR } from '../../src/collectors/briefing.js';
+import { Briefer, briefingCommand, briefingRequest, completionText, parseBrief, briefSystemPrompt } from '../../src/collectors/briefing.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../src/render/monitor.js';
 import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
