@@ -1244,7 +1244,8 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const agentsHeight = sizes.get('agents') ?? 0;
   if (ids.includes('agents') && agentsHeight < DENSE_BELOW && (content.get('agents')?.length ?? 0) > agentsHeight)
     content.set('agents',agentsView(input,state,cw,now,false));
-  frame.lines = Array.from({length:height},()=>fit('',width));
+  // In the frame look a row no pane draws on is blank between the frame's sides, `cw` wide.
+  frame.lines = Array.from({length:height},()=>fit('',cw));
   bar.lines.slice(0,top).forEach((line,i)=>{frame.lines[i]=fit(line,width);});
   frame.controls.push(...bar.controls.filter(control=>control.y<top));
   // The rows that are titles: in the frame look they are its edges, not rows between its sides.

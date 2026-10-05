@@ -228,6 +228,11 @@ test('every look draws the panel to its width; the frame look closes its frame r
     assert.equal(handleMonitorInput(frame.state,mouse(4,box.y+1+row),{tree,worktrees,frame}).state.selectedWorktree,'/demo/docs','a click on a row selects it');
     const zoom=handleMonitorInput(frame.state,mouse(35,box.y),{tree,worktrees,frame}).state;
     assert.equal(zoom.zoom,true,'a click anywhere on the title zooms');
+    // Rows a pane leaves empty are blank between the frame's sides, not cut short with "…".
+    for(const state of [{...withWorktrees(),tabbed:true},{...withWorktrees(),zoom:true}]){
+      const shown=draw(state,36).lines.map(stripAnsi);
+      for(const line of shown.slice(2))assert.doesNotMatch(line,/^│ +… │$/,`${state.tabbed?'tabs':'zoomed'}: ${line}`);
+    }
   }finally{setDisplayConfig(looked);}
 });
 
