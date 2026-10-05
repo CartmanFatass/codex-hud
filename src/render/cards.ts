@@ -345,21 +345,23 @@ function ageColumn(when: string): string {
   return ' '.repeat(Math.max(0,column-visualLength(when)))+when;
 }
 
+/**
+ * How a list draws its one-line rows: whether their meters are drawn, and
+ * the age of the one-line row above, so that a run of rows of the same age
+ * says it once, at the top of the run.
+ */
+interface OneLineRun { meters: boolean; previousAge?: string }
+
 /** The selected row's first line on its own surface, as wide as the row. */
 function banded(text: string, width: number): string {
   return theme.selectedBand(text+' '.repeat(Math.max(0,width-visualLength(text))));
 }
 
 /**
- * A finished agent in two lines. The first in tree-row style: its status,
- * its name, then its guardian chip and model badge, its context meter and
- * how long ago, in columns that line up down the list. The second, dim and
- * indented under the name, says how far it got (`briefLine`), cut to one
- * line; without anything to say there is no second line. Selecting it marks
- * it "›" and puts its first line on the selected surface; `e`, Space or a
- * click opens it into its card.
+ * A one-line row's first line in parts: its lead, its name squeezed into the
+ * room left, and what follows the name, with or without the meter.
  */
-function oneLineCard(row: PanelRow, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
+function oneLineParts(row: PanelRow, state: MonitorState, width: number, now: number, run: OneLineRun) {
   const node = row.node;
   const indent = Math.min(MAX_INDENT,row.depth,Math.max(0,width-8));
   const w = width-indent;
@@ -374,12 +376,44 @@ function oneLineCard(row: PanelRow, input: MonitorData, state: MonitorState, wid
   const badge = token ? truncateAnsi(token,Math.max(2,Math.floor(w/4))) : '';
   const at = settledAt(node);
   const when = at ? agoText(at,now) : '';
-  const meter = contextMeter(node);
+  const meter = run.meters ? contextMeter(node) : undefined;
   const cells = w >= ROW_METER_WIDE_AT ? ROW_METER_WIDE : w < ROW_METER_NARROW_BELOW ? ROW_METER_NARROW : ROW_METER;
   const meterCols = meter && w >= METER_MIN+cells ? cells : 0;
   const right = [guardianChip(node.children),badge].filter(Boolean).join(' ');
-  const tail = `${right ? ' '+right : ''}${meter && meterCols ? ' '+meterText(meter,meterCols).text : ''}${when ? ' '+colors.dim(ageColumn(when)) : ''}`;
+  // An age the row above said already leaves its column blank, so the columns still line up.
+  const shown = when === run.previousAge ? '' : when;
+  const tail = `${right ? ' '+right : ''}${meter && meterCols ? ' '+meterText(meter,meterCols).text : ''}${when ? ' '+colors.dim(ageColumn(shown)) : ''}`;
   const room = Math.max(1,w-visualLength(head)-visualLength(tail)-1);
+  return {indent,w,selected,title,head,tail,room,when,hasMeter:Boolean(meter && meterCols)};
+}
+
+/**
+ * Whether a list's one-line rows draw their meters: where the meter would cut
+ * most of their names, they all go without, so the names stay whole. A
+ * row with no context reading has no meter either way and does not count.
+ */
+function oneLineMeters(rows: readonly PanelRow[], state: MonitorState, width: number, now: number): boolean {
+  const metered = rows.map(row=>oneLineParts(row,state,width,now,{meters:true})).filter(parts=>parts.hasMeter);
+  if (!metered.length) return true;
+  const whole = metered.filter(parts=>visualLength(parts.title.name) <= parts.room).length;
+  return whole*2 >= metered.length;
+}
+
+/**
+ * A finished agent in two lines. The first in tree-row style: its status,
+ * its name, then its guardian chip and model badge, its context meter and
+ * how long ago, in columns that line up down the list. The meter is there
+ * when the list has room for it beside most names (`oneLineMeters`), and the
+ * age only where it differs from the row above. The second, dim and
+ * indented under the name, says how far it got (`briefLine`), cut to one
+ * line; without anything to say there is no second line. Selecting it marks
+ * it "›" and puts its first line on the selected surface; `e`, Space or a
+ * click opens it into its card. Returns the rows and the row's age, for the
+ * next row to compare with.
+ */
+function oneLineCard(row: PanelRow, input: MonitorData, state: MonitorState, width: number, now: number, run: OneLineRun): {rows: MonitorRow[]; age: string} {
+  const node = row.node;
+  const {indent,w,selected,title,head,tail,room,when} = oneLineParts(row,state,width,now,run);
   const name = squeeze(title.name,room);
   const gap = Math.max(1,w-visualLength(head)-visualLength(name)-visualLength(tail));
   const shownName = selected ? theme.value(name) : colors.dim(name);
@@ -391,7 +425,7 @@ function oneLineCard(row: PanelRow, input: MonitorData, state: MonitorState, wid
   if (brief && w > BRIEF_INDENT+2) {
     rows.push({text:' '.repeat(indent+BRIEF_INDENT)+colors.dim(truncateAnsi(brief,w-BRIEF_INDENT)),item:node.id,key,controls:control(indent)});
   }
-  return rows;
+  return {rows,age:when};
 }
 
 /**
@@ -403,7 +437,7 @@ function oneLineCard(row: PanelRow, input: MonitorData, state: MonitorState, wid
  */
 export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
   const node = row.node;
-  if (isOneLine(node,input,state,now)) return oneLineCard(row,input,state,width,now);
+  if (isOneLine(node,input,state,now)) return oneLineCard(row,input,state,width,now,{meters:true}).rows;
   const indent = Math.min(MAX_INDENT,row.depth,Math.max(0,width-8));
   const w = width-indent;
   const lead = ' '.repeat(indent);
@@ -523,11 +557,22 @@ export function richRows(input: MonitorData, state: MonitorState, width: number,
   const rows: MonitorRow[] = [head];
   let lastOneLine = false;
   const shown = visibleRows(input.tree.nodes,state.tree,now);
+  const oneLine = new Set(shown.filter(row=>isOneLine(row.node,input,state,now)));
+  const meters = oneLineMeters([...oneLine],state,width,now);
+  // The age of the one-line row above; a card between two runs ends the first.
+  let previousAge: string | undefined;
   for (const row of shown) {
-    const oneLine = isOneLine(row.node,input,state,now);
-    if (spaced && rows.at(-1)?.text !== '' && !(oneLine && lastOneLine)) rows.push({text:''});
-    rows.push(...agentCard(row,input,state,width,now,spaced));
-    lastOneLine = oneLine;
+    const single = oneLine.has(row);
+    if (spaced && rows.at(-1)?.text !== '' && !(single && lastOneLine)) rows.push({text:''});
+    if (single) {
+      const drawn = oneLineCard(row,input,state,width,now,{meters,previousAge});
+      rows.push(...drawn.rows);
+      previousAge = drawn.age;
+    } else {
+      rows.push(...agentCard(row,input,state,width,now,spaced));
+      previousAge = undefined;
+    }
+    lastOneLine = single;
   }
   // No agent to show: no line saying so. The counts above, the bar's +N and
   // the status card already do.

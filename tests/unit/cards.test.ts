@@ -349,6 +349,31 @@ test('a finished agent a minute old is one line, its meter and age in columns; e
   } finally { setLanguage(previous); }
 });
 
+test('finished rows keep their names whole, drawing meters only where most names fit beside them, and say a run of equal ages once', () => {
+  const names = ['refactor_session_store', 'audit_render_paths', 'migrate_settings_file'];
+  const nodes = [...names.map((name, i) => finished(40 + i, name, 60 * 24 * 12)), finished(43, 'tidy_docs', 180)];
+  const state = rich({ tree: { ...rich().tree, showAll: true } });
+  const rowsOf = (list: SubagentTreeNode[], width: number, at = state) =>
+    plain(renderMonitor({ tree: tree(list), state: at, width, height: 40, nowMs: now })).filter(line => /^[› ]✓ /.test(line));
+  const narrow = rowsOf(nodes, 40);
+  assert.equal(narrow.length, 4, narrow.join('\n'));
+  assert.ok(narrow.every(line => !line.includes('%')), `at 40 a meter would cut the names, so none is drawn:\n${narrow.join('\n')}`);
+  assert.ok(names.every(name => narrow.some(line => line.includes(name))));
+  const wide = rowsOf(nodes, 56);
+  assert.ok(wide.every(line => line.includes('57%')) && names.every(name => wide.some(line => line.includes(name))), wide.join('\n'));
+  // The age at the top of a run only, its column kept so the rows still line up.
+  assert.match(wide[0], /─ 12d$/);
+  assert.ok(wide.slice(1, 3).every(line => /─ {4}$/.test(line)), wide.join('\n'));
+  assert.match(wide[3], /─ {2}3h$/);
+  assert.ok(wide.every(line => line.length === wide[0].length));
+  // An opened card between two rows ends the run: the row after it says its age again.
+  const split = rowsOf(nodes, 56, rich({ cards: new Set([nodes[1].id]), tree: { ...rich().tree, showAll: true } }));
+  assert.match(split[1], /^ ✓ migrate_settings_file .* 12d$/, split.join('\n'));
+  // One long name among short ones does not cost the others their meters: it alone is cut.
+  const mixed = rowsOf([finished(44, 'alpha', 60), finished(45, 'beta', 60), finished(46, 'refactor_the_session_store_layer', 60)], 56);
+  assert.ok(mixed.every(line => line.includes('57%')) && mixed[2].includes('…'), mixed.join('\n'));
+});
+
 test('an opened finished card with no log shows its last report, its markdown taken out, and an old card steps its words back', () => {
   const report = 'Published [the handoff](/x/HANDOFF.md) at **`d97a7a688774ad9b45da44f5825ae1ac198b4bb1`**. ### Next __steps__ follow.';
   const done = finished(30, 'cache_clean', 60 * 19, { lastReport: { text: report, kind: 'reply', at: new Date(now - 19 * 3600_000) }, task: 'Write the handoff' });
