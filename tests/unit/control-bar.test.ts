@@ -42,32 +42,32 @@ const columns = (s: string, x: number, width: number) => {
 };
 const everyPane = (extra: Partial<MonitorState> = {}) =>
   state({
-    focus: 'worktrees',
-    modes: { agents: 'open', worktrees: 'open', changes: 'open', details: 'open', timeline: 'open' },
+    focus: 'timeline',
+    modes: { agents: 'open', timeline: 'open', changes: 'open', details: 'open' },
     ...extra,
   });
-/** Cards focused, worktrees and changes open, the inspector and the timeline closed. */
+/** Cards focused, the timeline and changes open, the inspector closed. */
 const some = () =>
-  state({ focus: 'agents', modes: { ...initialMonitorState().modes, worktrees: 'open', changes: 'open' } });
+  state({ focus: 'agents', modes: { ...initialMonitorState().modes, timeline: 'open', changes: 'open' } });
 const key = (c: MonitorControl) => (c.pane ? `${c.kind}:${c.pane}` : c.kind);
 /** Every width a panel is likely to be, then a few wider. */
 const WIDTHS = [...Array.from({ length: 57 }, (_, i) => i + 8), 70, 80, 90, 100, 110, 120, 130];
 
 test('the tab look: the focused pane a filled tab with its word, the other panes their icons, the actions at the right end', () => {
   inChinese(() => {
-    assert.equal(plain(everyPane(), 32), ' ⌂ ▦   ⌥   ±  ◫  ≣    ǁ ⊕31 ⚙ ? ');
-    assert.equal(plain(everyPane(), 40), ' ⌂ ▦   ⌥ 工作树   ±  ◫  ≣     ǁ ⊕31 ⚙ ? ');
-    assert.equal(plain(everyPane(), 70), ' ⌂ ▦ 卡片    ⌥ 工作树    ± 改动   ◫ 详情   ≣ 时间线         ǁ ⊕31 ⚙ ? ');
+    assert.equal(plain(everyPane(), 32), ' ⌂ ▦  ≣ 时间线  ± ◫   ǁ ⊕31 ⚙ ? ');
+    assert.equal(plain(everyPane(), 40), ' ⌂ ▦    ≣ 时间线    ±   ◫     ǁ ⊕31 ⚙ ? ');
+    assert.equal(plain(everyPane(), 70), ' ⌂ ▦ 卡片    ≣ 时间线    ± 改动   ◫ 详情                    ǁ ⊕31 ⚙ ? ');
     // Very wide, the actions take their words too, and the main session's button stands off from the tabs.
     assert.match(plain(everyPane(), 130), /^ ⌂ 主会话 {2}▦ 卡片 .* ǁ 暂停简报 {2}⊕31 已收起 {2}⚙ 设置 {2}\? 帮助 $/);
     assert.ok(plain(state({ tree: { ...initialMonitorState().tree, showAll: true } }), 130).includes(' ⊖31 收起 '));
     assert.ok(plain(state(), 130, { brief: { paused: true }, expired: 0 }).includes(' ▶ 继续简报 '));
     assert.ok(!plain(state(), 130, { expired: 0 }).includes('简报'), 'no brief configured, no button');
   });
-  assert.equal(plain(everyPane(), 40), ' ⌂ ▦   ⌥ Trees   ±  ◫  ≣      ǁ ⊕31 ⚙ ? ');
+  assert.equal(plain(everyPane(), 40), ' ⌂ ▦   ≣ Timeline   ±  ◫      ǁ ⊕31 ⚙ ? ');
   assert.equal(
     plain(everyPane(), 90),
-    ' ⌂ ▦ Agents    ⌥ Trees    ± Changes   ◫ Inspect   ≣ Timeline                    ǁ ⊕31 ⚙ ? '
+    ' ⌂ ▦ Agents    ≣ Timeline    ± Changes   ◫ Inspect                              ǁ ⊕31 ⚙ ? '
   );
   // Once every button is on the bar, words come with the width and never go
   // again: the focused tab's first, then every open tab's. (Narrower, a
@@ -80,8 +80,8 @@ test('the tab look: the focused pane a filled tab with its word, the other panes
       for (let width = 12; width <= 130; width++) {
         if (controlBar(s, BRIEF, width).controls.length < buttons) continue;
         const text = plain(s, width);
-        const has = MONITOR_PANES.filter((id) => s.modes[id] === 'open').map((id) => text.includes({ agents: '卡片', worktrees: '工作树', changes: '改动', details: '详情', timeline: '时间线' }[id]));
-        const focusedHas = text.includes(s.focus === 'agents' ? '卡片' : '工作树');
+        const has = MONITOR_PANES.filter((id) => s.modes[id] === 'open').map((id) => text.includes({ agents: '卡片', changes: '改动', details: '详情', timeline: '时间线' }[id]));
+        const focusedHas = text.includes(s.focus === 'agents' ? '卡片' : '时间线');
         assert.ok(!focused || focusedHas, `${width}: the focused tab keeps its word: "${text}"`);
         assert.ok(!all || has.every(Boolean), `${width}: the open tabs keep their words: "${text}"`);
         focused ||= focusedHas;
@@ -140,7 +140,7 @@ test('short of room the closed tabs go, then older and the brief, then the tabs;
           before = now;
         }
         const at = (k: string) => gone.get(k) ?? 0;
-        assert.ok(at('tab:worktrees') >= at('older') && at('older') >= at('brief'), `${lk}: closed tabs, then older, then the brief`);
+        assert.ok(at('tab:changes') >= at('older') && at('older') >= at('brief'), `${lk}: closed tabs, then older, then the brief`);
         assert.ok(at('brief') >= at('tab:timeline') && at('tab:timeline') >= at('tab:agents'), `${lk}: then the tabs, the focused one last`);
         for (const k of ['main', 'settings', 'help']) assert.ok(!gone.has(k), `${lk}: ${k} stays`);
       });
@@ -169,7 +169,7 @@ test('a click anywhere on the bar is a button: each owns its face and half the g
           }
           // Left to right (the frame's top edge first): main, the tabs, the actions.
           const order = [...bar.controls].sort((a, b) => a.y - b.y || a.x - b.x).map(key);
-          const tabs = ['tab:agents', 'tab:worktrees', 'tab:changes', 'tab:details', 'tab:timeline'];
+          const tabs = ['tab:agents', 'tab:timeline', 'tab:changes', 'tab:details'];
           const actions = ['brief', 'older', 'settings', 'help'];
           const all = lk === 'frame' ? ['main', ...actions, ...tabs] : ['main', ...tabs, ...actions];
           assert.deepEqual(order, all.filter((k) => order.includes(k)), `${lk} ${icons} ${width}`);
@@ -187,8 +187,9 @@ test('colour says each tab\'s state: focused filled, open in the text colour, cl
         const line = controlBar(some(), { brief: { paused: true }, expired: 3 }, width).lines[0];
         const focused = stripAnsi(line).includes('▦ 卡片') ? ' ▦ 卡片 ' : ' ▦ ';
         assert.ok(line.includes(theme.tab(theme.bold(focused))), `${width}: the focused tab filled`);
-        assert.ok(line.includes(theme.value('⌥')) && line.includes(theme.value('±')), `${width}: open, in the text colour`);
-        assert.ok(line.includes(colors.dim('◫')) && line.includes(colors.dim('≣')), `${width}: closed, muted`);
+        const open = (glyph: string, word: string) => line.includes(theme.value(glyph)) || line.includes(theme.value(`${glyph} ${word}`));
+        assert.ok(open('≣', '时间线') && open('±', '改动'), `${width}: open, in the text colour`);
+        assert.ok(line.includes(colors.dim('◫')), `${width}: closed, muted`);
         assert.ok(line.includes(colors.dim('⚙')) && line.includes(colors.dim('?')), `${width}: the actions muted`);
         assert.ok(line.includes(theme.accent('▶')), `${width}: the paused brief's resume in the accent`);
         assert.ok(!line.includes('\x1b[4m'), `${width}: nothing is underlined`);
@@ -200,12 +201,12 @@ test('colour says each tab\'s state: focused filled, open in the text colour, cl
     const bar = controlBar(some(), { expired: 0 }, 44);
     assert.equal(bar.lines[0], stripAnsi(bar.lines[0]), 'no escapes');
     assert.match(bar.lines[0], /\[▦ Agents\]|\[▦\]/);
-    assert.ok(!bar.lines[0].includes('◫') && !bar.lines[0].includes('≣'), bar.lines[0]);
+    assert.ok(!bar.lines[0].includes('◫') && bar.lines[0].includes('≣'), bar.lines[0]);
   });
   // In the tabs layout every pane has a tab, none of them closed.
   withConfig({ theme: 'terminal' }, () => {
     const line = controlBar(state({ tabbed: true, focus: 'changes' }), { expired: 0 }, 44).lines[0];
-    for (const id of ['agents', 'worktrees', 'details', 'timeline'] as const) assert.ok(line.includes(theme.value(UNICODE_ICONS[id])), id);
+    for (const id of ['agents', 'details', 'timeline'] as const) assert.ok(line.includes(theme.value(UNICODE_ICONS[id])), id);
     assert.match(stripAnsi(line), / ± Changes /);
   });
 });
@@ -219,11 +220,11 @@ test('the band, tile, pill and frame looks', () => {
           const line = controlBar(everyPane(), BRIEF, width).lines[0];
           assert.ok(line.startsWith(theme.band(' ').split(' ')[0]), `${width}: on the band`);
           assert.match(stripAnsi(line), / ─{2,} /, `${width}: the rule`);
-          assert.doesNotMatch(stripAnsi(line), /[\p{Script=Han}a-z] [▦⌥±◫≣]/u, `${width}: "${stripAnsi(line)}"`);
+          assert.doesNotMatch(stripAnsi(line), /[\p{Script=Han}a-z] [▦±◫≣]/u, `${width}: "${stripAnsi(line)}"`);
         }
         // The band paints its surface again after every reset inside it: compare up to the first one.
         const opened = (text: string) => text.split('\x1b[0m')[0];
-        assert.ok(controlBar(everyPane(), BRIEF, 44).lines[0].includes(opened(theme.bold(theme.accent('⌥ 工作树')))), 'the focused tab in the accent');
+        assert.ok(controlBar(everyPane(), BRIEF, 44).lines[0].includes(opened(theme.bold(theme.accent('≣ 时间线')))), 'the focused tab in the accent');
       });
       // Tiles: an open tab on a chip, with a column each side where the tabs are apart.
       withConfig({ look: 'tile', icons: 'emoji' }, () => {
@@ -234,20 +235,20 @@ test('the band, tile, pill and frame looks', () => {
       // Pills: the focused tab rounded.
       withConfig({ look: 'pill', icons: 'nerd' }, () => {
         const line = controlBar(everyPane(), BRIEF, 40).lines[0];
-        assert.ok(line.includes(`${theme.tabEdge('')}${theme.tab(theme.bold(`${ICONS.worktrees} 工作树`))}${theme.tabEdge('')}`));
+        assert.ok(line.includes(`${theme.tabEdge('')}${theme.tab(theme.bold(`${ICONS.timeline} 时间线`))}${theme.tabEdge('')}`));
       });
       // The frame: the main session its title and the actions in its top edge, the tabs between its sides.
       withConfig({ look: 'frame' }, () => {
         assert.deepEqual(rows(everyPane(), 40), [
           '╭─ ⌂ 主会话 ─────────────── ǁ ⊕31 ⚙ ? ─╮',
-          '│ ▦    ⌥ 工作树    ±   ◫   ≣           │',
+          '│ ▦ 卡片   ≣ 时间线   ± 改动  ◫ 详情   │',
         ]);
-        assert.deepEqual(rows(everyPane(), 20), ['╭─ ⌂ ── ǁ ⊕31 ⚙ ? ─╮', '│ ▦   ⌥   ±  ◫  ≣  │']);
+        assert.deepEqual(rows(everyPane(), 20), ['╭─ ⌂ ── ǁ ⊕31 ⚙ ? ─╮', '│ ▦  ≣ 时间线  ± ◫ │']);
         assert.equal(look(19), 'tab', 'narrower than its sides, the tab look');
         assert.equal(rows(everyPane(), 19).length, 1);
         withConfig({ icons: 'text' }, () => {
           setLanguage('en');
-          assert.deepEqual(rows(everyPane(), 20), ['╭─ ← ─ Settings ? ─╮', '│ Ag  Wt  Ch In Tl │'], 'the title down to its arrow');
+          assert.deepEqual(rows(everyPane(), 20), ['╭─ ← ─ Settings ? ─╮', '│ Ag   Tl   Ch  In │'], 'the title down to its arrow');
           setLanguage('zh');
         });
       });
@@ -274,7 +275,7 @@ test('with icons off: words, shortened where narrow, the main session an arrow a
       assert.equal(plain(state(), 40), ' ← 主  卡片             暂停 +31 设置 ? ');
       assert.equal(
         plain(state(), 90),
-        ' ← 主会话   卡片   工作树  改动  详情  时间线            暂停简报  +31 已收起  设置  帮助 '
+        ' ← 主会话   卡片   时间线  改动  详情                    暂停简报  +31 已收起  设置  帮助 '
       );
     });
   });
@@ -289,10 +290,10 @@ test('a pane\'s title in each look: its icon and name, the counts after it, wher
   withConfig({ theme: 'titanium' }, () => {
     inChinese(() => {
       withConfig({ look: 'tab' }, () => {
-        assert.equal(stripAnsi(head('worktrees', 32, { right: '5 个' })), ' ⌥ 工作树                  5 个 ');
+        assert.equal(stripAnsi(head('timeline', 32, { right: '5 个' })), ' ≣ 时间线                  5 个 ');
         assert.equal(stripAnsi(head('agents', 32, { info: '✓139 完成', right: '1–9/40' })), ' ▦ 卡片  ✓139 完成       1–9/40 ');
-        assert.ok(head('worktrees', 32, { focused: true }).includes(theme.bold(theme.accent('⌥ 工作树'))), 'the accent where the focus is');
-        assert.ok(head('worktrees', 32, { focused: true, zoomed: true }).includes(theme.tab(theme.bold(' ⌥ 工作树 '))), 'zoomed, a filled tab');
+        assert.ok(head('timeline', 32, { focused: true }).includes(theme.bold(theme.accent('≣ 时间线'))), 'the accent where the focus is');
+        assert.ok(head('timeline', 32, { focused: true, zoomed: true }).includes(theme.tab(theme.bold(' ≣ 时间线 '))), 'zoomed, a filled tab');
         // Short of room the name goes, then the counts' words, then where the rows are.
         const counts = ['✓139 完成  ▸1 运行', '✓139 ▸1'];
         assert.equal(stripAnsi(head('agents', 31, { info: counts, right: '1–9/40' })), ' ▦  ✓139 完成  ▸1 运行  1–9/40 ');

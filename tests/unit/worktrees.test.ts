@@ -163,7 +163,7 @@ test('the HEAD subjects are read in one git log, once per hash, and a failure is
   assert.equal(logs.length, 2, 'a failed read is remembered');
 });
 
-test('the worktree pane: names, subjects and the word locked; no hash anywhere', async () => {
+test('the worktrees over the changes: names, subjects and the word locked; no hash anywhere', async () => {
   const { renderMonitor, initialMonitorState } = await import('../../src/render/monitor.js');
   const { stripAnsi } = await import('../../src/render/colors.js');
   const { setLanguage } = await import('../../src/render/i18n.js');
@@ -185,22 +185,23 @@ test('the worktree pane: names, subjects and the word locked; no hash anywhere',
       for (const preview of ['worktree', 'agent'] as const) {
         for (const expanded of [false, true]) {
           const state = { ...initialMonitorState(), focus: 'details' as const, preview, expanded, selectedWorktree: worktrees.entries[1].path,
-            modes: { agents: 'open' as const, worktrees: 'open' as const, changes: 'closed' as const, details: 'open' as const, timeline: 'closed' as const } };
+            modes: { agents: 'open' as const, timeline: 'closed' as const, changes: 'open' as const, details: 'open' as const } };
           const text = renderMonitor({ tree: { rootId: 'r', nodes: [], totalCount: 0, updatedAt: new Date(1000) }, state, worktrees, width, height: 40, nowMs: 1000 })
             .lines.map(stripAnsi).join('\n');
           assert.doesNotMatch(text, /[0-9a-f]{7,}/, `${width}\n${text}`);
           assert.doesNotMatch(text, /Ldetached|分离 ·/, text);
           assert.match(text, /干净 · 锁定/);
           assert.match(text, /Launch script for r02/);
-          assert.match(text, /Freeze B12 inputs/);
+          // Each twin by its subject, whole where the row has room for it.
+          assert.match(text, width >= 56 ? /Freeze B12 inputs/ : /Freeze B12 in/);
           if (preview === 'worktree') assert.match(text, /\.git\/atlas-launch-sources\/…/);
         }
       }
     }
     const narrow = renderMonitor({ tree: { rootId: 'r', nodes: [], totalCount: 0, updatedAt: new Date(1000) },
-      state: { ...initialMonitorState(), modes: { ...initialMonitorState().modes, worktrees: 'open' } }, worktrees, width: 18, height: 30, nowMs: 1000 });
-    const rows = narrow.panes.find((p) => p.id === 'worktrees')!.rows.map((r) => stripAnsi(r.text));
-    assert.equal(rows.length, 3, 'one line each where two do not fit');
+      state: { ...initialMonitorState(), modes: { ...initialMonitorState().modes, changes: 'open' } }, worktrees, width: 18, height: 30, nowMs: 1000 });
+    const rows = narrow.panes.find((p) => p.id === 'changes')!.rows.map((r) => stripAnsi(r.text));
+    assert.equal(rows.length, 4, 'a line each, then the rule over the files');
     assert.notEqual(rows[1], rows[2], 'the twins are told apart by their subjects');
   } finally {
     setLanguage(previous);

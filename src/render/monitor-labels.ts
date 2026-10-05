@@ -60,6 +60,19 @@ export function isUntracked(file: GitChangedFile): boolean {
 }
 /** The changes list's one row for its untracked files, as an item: no path can hold a NUL. */
 export const UNTRACKED_ROW = '\0untracked';
+/** A worktree's row in the changes list, as an item: its path behind a NUL, so no file's path is one. */
+const WORKTREE_ROW = '\0worktree:';
+export function worktreeItem(path: string): string {
+  return WORKTREE_ROW+path;
+}
+/** Whether the changes list heads its files with the worktrees: only where there is more than one to choose from. */
+export function listsWorktrees(snapshot: {entries: readonly unknown[]} | null | undefined): boolean {
+  return (snapshot?.entries.length ?? 0) > 1;
+}
+/** The worktree a changes item is the row of, or undefined for a file's. */
+export function worktreeOfItem(item: string | null | undefined): string | undefined {
+  return item?.startsWith(WORKTREE_ROW) ? item.slice(WORKTREE_ROW.length) : undefined;
+}
 /**
  * What happened to a changed file, as one letter in its colour: added
  * green, deleted red, renamed or copied blue, modified (and the rest)

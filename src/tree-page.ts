@@ -405,7 +405,7 @@ async function runLivePage(): Promise<void> {
     // Closed monitors are absent, not empty frames continuously collecting
     // data; in the tabs layout only the pane shown is read for.
     const wantChanges = paneShown(state,'changes') || (paneShown(state,'details') && state.preview === 'file');
-    if (!paneShown(state,'worktrees') && !wantChanges && !(paneShown(state,'details') && state.preview === 'worktree')) return;
+    if (!wantChanges && !(paneShown(state,'details') && state.preview === 'worktree')) return;
     collectingGit = true;
     const candidates = sources();
     const requestKey = JSON.stringify(candidates);

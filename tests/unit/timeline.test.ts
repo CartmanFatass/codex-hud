@@ -94,8 +94,8 @@ test('the timeline is the rollout\'s events and the agent log\'s status changes 
   assert.equal(history.timeline(tree([], 'other'), null, new Map()).length, 0, 'another session starts over');
 });
 
-test('the Timeline pane opens with 5, lists events with their ages, and is saved like the other panes', () => {
-  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('5')), [{ type: 'key', key: 'timeline' }]);
+test('the Timeline pane opens with 2, lists events with their ages, and is saved like the other panes', () => {
+  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('2')), [{ type: 'key', key: 'timeline' }]);
   const agents = tree([]);
   const opened = handleMonitorInput(initialMonitorState(), { type: 'key', key: 'timeline' }, { tree: agents }).state;
   assert.equal(opened.modes.timeline, 'open');
@@ -216,9 +216,9 @@ test('the key help lists every key, the new ones included, in both languages', a
   const en = lines();
   // A shortcut is its key in the key column, then what it does.
   const shortcut = (text: string, key: string, does: string) => new RegExp(`^${key.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')} +${does.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}$`, 'm').test(text);
-  for (const [key, does] of [['1–5', 'open / close a pane'], ['b', 'pause / resume brief'], ['r', 'status card: min / status'], ['f', 'filter'], ['h l', 'fold / unfold agent'],
+  for (const [key, does] of [['1–4', 'open / close a pane'], ['b', 'pause / resume brief'], ['r', 'status card: min / status'], ['f', 'filter'], ['h l', 'fold / unfold agent'],
     ['g G', 'first / last'], ['Ctrl+]', 'Ctrl+] itself, to Codex']]) assert.ok(shortcut(en, key, does), `${key} ${does}`);
-  for (const key of ['5 Timeline', "Click the card's band: its level", 'Click a log line: select agent', '~ = written by a model',
+  for (const key of ['2 Timeline', "Click the card's band: its level", 'Click a log line: select agent', '~ = written by a model',
     'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+], then a key', '⚙ settings ? help']) assert.ok(en.includes(key), key);
   // The prefix the settings chose is the one the help names.
   const other = renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now, prefix: 'Ctrl+\\' }).lines.map(stripAnsi).join('\n');
@@ -230,8 +230,8 @@ test('the key help lists every key, the new ones included, in both languages', a
   const previous = setLanguage('zh');
   try {
     const zh = lines();
-    assert.ok(shortcut(zh, '1–5', '打开 / 关闭面板') && shortcut(zh, 'r', '状态卡：一行 / 状态'), zh);
-    for (const key of ['5 时间线', '点击状态卡色带：切换显示层级', '点击日志行', '由模型撰写', '筛选',
+    assert.ok(shortcut(zh, '1–4', '打开 / 关闭面板') && shortcut(zh, 'r', '状态卡：一行 / 状态'), zh);
+    for (const key of ['2 时间线', '点击状态卡色带：切换显示层级', '点击日志行', '由模型撰写', '筛选',
       '快捷键：先按 Ctrl+]，再按一键', '在侧栏里打字，按键都交给 Codex']) assert.ok(zh.includes(key), key);
     assert.ok(!zh.includes('复制'));
   } finally { setLanguage(previous); }

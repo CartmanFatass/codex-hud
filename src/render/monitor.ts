@@ -16,7 +16,7 @@ import { controlBar, paneHead, icon, look } from './control-bar.js';
 import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
-import { TURN_CLOCKS, TURN_CLOCK_LONG, isUntracked, UNTRACKED_ROW } from './monitor-labels.js';
+import { TURN_CLOCKS, TURN_CLOCK_LONG, isUntracked, UNTRACKED_ROW, listsWorktrees, worktreeOfItem } from './monitor-labels.js';
 import { paneRows, agentsView } from './monitor-panes.js';
 
 // The panel is drawn by the modules beside this one; what they export is
@@ -30,7 +30,7 @@ export { MODEL_LOG_KINDS } from './monitor-inspector.js';
 export { clickTab, monitorRowAt, monitorItemAt, canMonitorDiff, handleMonitorInput } from './monitor-input.js';
 
 
-export const MONITOR_PANES = ['agents', 'worktrees', 'changes', 'details', 'timeline'] as const;
+export const MONITOR_PANES = ['agents', 'timeline', 'changes', 'details'] as const;
 export type MonitorPane = typeof MONITOR_PANES[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
@@ -39,7 +39,12 @@ export interface MonitorState {
   focus: MonitorPane;
   modes: MonitorModes;
   scroll: Record<MonitorPane, number>;
+  /** The worktree whose changes are listed. */
   selectedWorktree: string | null;
+  /**
+   * The changes' cursor: a file's path, the untracked files' row, or a
+   * worktree's row (`worktreeItem`), where the list heads its files with them.
+   */
   selectedFile: string | null;
   /** Changes: the untracked files listed under their row, not folded into it. */
   untrackedOpen?: boolean;
@@ -185,8 +190,8 @@ export interface MonitorOutcome {
 
 export function initialMonitorState(): MonitorState {
   return {tree:{...initialPanelState(),sort:'active'}, focus:'agents',
-    modes:{agents:'open',worktrees:'closed',changes:'closed',details:'closed',timeline:'closed'},
-    scroll:{agents:0,worktrees:0,changes:0,details:0,timeline:0}, selectedWorktree:null,selectedFile:null,
+    modes:{agents:'open',timeline:'closed',changes:'closed',details:'closed'},
+    scroll:{agents:0,timeline:0,changes:0,details:0}, selectedWorktree:null,selectedFile:null,
     preview:'agent',help:false,zoom:false,helpScroll:0,expanded:false};
 }
 /** Toggle one card's timeline. */
@@ -197,18 +202,20 @@ export function toggleCard(state: MonitorState, id: string): MonitorState {
 }
 /** Agents is the page itself: always there, whatever an older settings file says. */
 export function monitorModes(settings: HudSettings): MonitorModes {
-  return {agents:settings.agentsPane, worktrees:settings.worktreesPane, changes:settings.changesPane, details:settings.detailsPane, timeline:settings.timelinePane};
+  return {agents:settings.agentsPane, timeline:settings.timelinePane, changes:settings.changesPane, details:settings.detailsPane};
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
-  return {agentsPane:state.modes.agents, worktreesPane:state.modes.worktrees,
-    changesPane:state.modes.changes, detailsPane:state.modes.details, timelinePane:state.modes.timeline};
+  return {agentsPane:state.modes.agents, timelinePane:state.modes.timeline, changesPane:state.modes.changes, detailsPane:state.modes.details};
 }
 /**
- * The changed file selected: the one before while it is listed, or the
- * untracked files' row when that file is folded into it, else the first
- * row of the list.
+ * The changes' cursor: the row it was on while that row is listed (a
+ * worktree's, or a file's), the untracked files' row when its file is folded
+ * into it, else the first file. Only the reader puts it on a worktree's row:
+ * the files of a worktree just listed are still being read.
  */
-function fileSelection(state: MonitorState, git?: GitChanges | null): string | null {
+function fileSelection(state: MonitorState, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null): string | null {
+  const on = worktreeOfItem(state.selectedFile);
+  if (on !== undefined && listsWorktrees(worktrees) && worktrees!.entries.some(w => w.path === on)) return state.selectedFile;
   const files = git?.files ?? [];
   const folded = files.some(isUntracked);
   if (state.selectedFile === UNTRACKED_ROW && folded) return UNTRACKED_ROW;
@@ -222,7 +229,7 @@ export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: 
   const entries = worktrees?.entries ?? [];
   const selectedWorktree = entries.some(w => w.path === state.selectedWorktree) ? state.selectedWorktree
     : entries.find(w => !w.bare && w.prunable === undefined)?.path ?? entries[0]?.path ?? null;
-  const selectedFile = fileSelection(state,git);
+  const selectedFile = fileSelection(state,git,worktrees);
   // In the tabs layout any pane can be the one shown, whatever the stacked layout left closed.
   const focus = state.tabbed || state.modes[state.focus] !== 'closed' ? state.focus : MONITOR_PANES.find(id => state.modes[id] !== 'closed') ?? 'agents';
   const changed = selected.selectedId !== state.tree.selectedId || selectedWorktree !== state.selectedWorktree || selectedFile !== state.selectedFile;
@@ -267,7 +274,7 @@ function helpText(rich: boolean, prefix: string, tabbed = false): Array<string |
       '{p} ,  settings  {p} ?  help','{p} b  pause / resume brief','{p} a  show / hide older',
       '{p} m  main session  {p} o  switch to selected',
       // The tabs layout shows one pane at a time: nothing to close or zoom.
-      ...(tabbed ? ['{p} 1–5  show a pane  {p} Tab  next'] : ['{p} 1–5  open / close a pane  {p} Tab  next','{p} x  close pane']),
+      ...(tabbed ? ['{p} 1–4  show a pane  {p} Tab  next'] : ['{p} 1–4  open / close a pane  {p} Tab  next','{p} x  close pane']),
       '{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
       tabbed ? '{p} Enter / v  inspect' : '{p} Enter / v  inspect  {p} z  zoom',...(rich ? ['{p} e / Space  open / close card'] : []),
       '{p} h l  fold / unfold agent','{p} f  filter  {p} s  order',
@@ -285,7 +292,7 @@ function helpText(rich: boolean, prefix: string, tabbed = false): Array<string |
     ...[...(rich ? ['Click card: select','Click its name: switch','Click top rule or ▾: open','Wheel over the card: its brief'] : ['Click agent: switch','Click a log line: select agent']),
       ...(tabbed ? [] : ["Click a pane's title: zoom / restore"]),"Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
     head('Legend'),
-    ...['1 Cards  2 Worktrees','3 Changes  4 Inspector','5 Timeline','✓ = turn completed','? = no status evidence','! = needs a look',
+    ...['1 Cards  2 Timeline','3 Changes  4 Inspector','✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
     t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
     ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve',
@@ -442,7 +449,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const edge = edgeOf(id);
     const count = Math.max(0,h-edge);
     let offset = Math.max(0,Math.min(state.scroll[id],Math.max(0,rows.length-count)));
-    const selected = id==='worktrees'?state.selectedWorktree:id==='changes'?state.selectedFile:null;
+    const selected = id==='changes'?state.selectedFile:null;
     const index = selected ? rows.findIndex(row=>row.item===selected) : -1;
     if (index>=0 && count>0) { if(index<offset)offset=index;else if(index>=offset+count)offset=index-count+1; }
     state.scroll[id]=offset;
@@ -451,8 +458,8 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     // how many there are on the right, as the look draws it; a click anywhere
     // on it zooms or restores the pane.
     const range = rows.length>count&&count ? `${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length}` : '';
-    const total = id==='worktrees' ? input.worktrees?.entries.length ?? 0 : id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? input.timeline?.length ?? 0 : 0;
-    const right = range || (total ? t(id==='worktrees'?'{n} worktrees':id==='changes'?'{n} files':'{n} events',{n:total}) : '');
+    const total = id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? input.timeline?.length ?? 0 : 0;
+    const right = range || (total ? t(id==='changes'?'{n} files':'{n} events',{n:total}) : '');
     frame.lines[y] = paneHead(id,width,{right:right && colors.dim(right),focused,zoomed});
     titles.add(y);
     frame.controls.push({kind:'zoom',pane:id,x:0,y,width});

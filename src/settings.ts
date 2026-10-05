@@ -22,7 +22,6 @@ export interface HudSettings extends HudDisplayConfig {
   finishedLingerMs: number;
   // Monitor visibility is independent of legacy boolean panel preferences.
   agentsPane: 'open' | 'closed';
-  worktreesPane: 'open' | 'closed';
   changesPane: 'open' | 'closed';
   detailsPane: 'open' | 'closed';
   /** The session's observed events, newest first. */
@@ -139,7 +138,7 @@ export function defaultSettings(): HudSettings {
     density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used', look: 'tab', paneLayout: 'stack',
     statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
     details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
-    agentsPane: 'open', worktreesPane: 'closed', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
+    agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
     worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
@@ -173,7 +172,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   finishedLingerMs: (value) => value === 0 || isIntegerBetween(value, 10_000, 86_400_000),
   agentsPane: oneOf('open', 'closed'),
-  worktreesPane: oneOf('open', 'closed'),
   changesPane: oneOf('open', 'closed'),
   detailsPane: oneOf('open', 'closed'),
   timelinePane: oneOf('open', 'closed'),
@@ -209,7 +207,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   icons: oneOf('unicode', 'nerd', 'emoji', 'text'),
 };
 
-const PANE_KEYS = ['agentsPane', 'worktreesPane', 'changesPane', 'detailsPane', 'timelinePane'] as const;
+const PANE_KEYS = ['agentsPane', 'changesPane', 'detailsPane', 'timelinePane'] as const;
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result = { ...base };
@@ -217,6 +215,8 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const values = { ...(raw as Record<string, unknown>) };
   // A pane is open or closed; one saved folded, as earlier versions could, is closed.
   for (const key of PANE_KEYS) if (values[key] === 'folded') values[key] = 'closed';
+  // The worktrees are listed over the changes now: a worktrees pane saved open opens the changes.
+  if (values.worktreesPane === 'open') values.changesPane = 'open';
   for (const key of Object.keys(validators) as Array<keyof HudSettings>) {
     if (Object.hasOwn(values, key) && validators[key](values[key])) {
       Object.assign(result, { [key]: values[key] });

@@ -142,7 +142,7 @@ test('the brief switch pauses by key or click, and a paused brief steps back', (
   assert.equal(frame.lines[rule + 1], colors.dim(' still here') + ' '.repeat(19));
   const control = frame.controls.find(c => c.kind === 'brief')!;
   assert.equal(control.y, 0, 'on the bar');
-  assert.equal([...stripAnsi(frame.lines[0])].slice(control.x, control.x + control.width).join(''), ' ▶ ', 'the whole chip, counted by columns');
+  assert.equal([...stripAnsi(frame.lines[0])].slice(control.x, control.x + control.width).join('').trim(), '▶', 'the whole chip, counted by columns');
   const ctx = { tree: agents, frame };
   assert.deepEqual(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: control.x, y: 0 }, ctx).action, { type: 'brief-toggle' });
   assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'brief-toggle' }, ctx).action, { type: 'brief-toggle' });

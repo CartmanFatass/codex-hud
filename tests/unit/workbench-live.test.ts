@@ -15,6 +15,8 @@ test('live PTY: navigation, diff, zoom, resize, wheel and terminal cleanup', {sk
   const git = (...args: string[]) => exec('git',args,{cwd:repo});
   await git('init','-b','main'); await git('config','user.name','HUD test'); await git('config','user.email','hud@example.invalid');
   fs.writeFileSync(path.join(repo,'sample.ts'),'before\n'); await git('add','sample.ts'); await git('commit','-m','initial');
+  // A second worktree: the changes list then heads its files with the two.
+  await git('worktree','add','-b','docs',path.join(dir,'docs'));
   fs.writeFileSync(path.join(repo,'sample.ts'),'after\n');
   const now = new Date();
   const sessions = path.join(dir,'sessions');
@@ -57,8 +59,9 @@ try:
  assert 'FOUND_THE_CAUSE' not in plain, 'monitor must not show reply text'
  assert 'Checks' not in plain and 'Reports' not in plain
  # Agents is the page, with no box or title; every other pane starts closed.
- assert '▸14' in plain and '1 Agents' not in plain and '2 Worktrees' not in plain
- send(b'2')
+ assert '▸14' in plain and '1 Agents' not in plain and '2 Timeline' not in plain
+ # The changes, the worktrees over its files.
+ send(b'3')
  wait_for('1 mod')
  # 1 would close the agents now: Tab is the way back to them.
  send(b'\tv')
@@ -66,7 +69,8 @@ try:
  assert b'\\x1b[' not in inspect, 'Inspector must not print escaped colour codes'
  send(b'x')
  wait_for('▸14')
- send(b'3')
+ # 3 closes the changes and 3 again opens them, focused.
+ send(b'33')
  wait_for('sample.ts')
  send(b'z')
  zoom=wait_for('sample.ts')
@@ -81,7 +85,7 @@ try:
  fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',30,100,0,0))
  os.kill(proc.pid,signal.SIGWINCH)
  wait_for('sample.ts')
- send(b'\t\t\r')
+ send(b'\t\r')
  zoom=wait_for('after')
  assert '▸14'.encode() not in zoom.rsplit(b'\x1b[H',1)[-1], 'opening diff must zoom automatically'
  send(b'z')

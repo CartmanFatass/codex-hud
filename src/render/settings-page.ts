@@ -71,10 +71,9 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format:value => ICON_WORDS[value as IconMode] ?? String(value)},
   {key:'statusCard',group:'Panel',label:'Status card',short:'Card',values:['full','status','min'],help:'Foot card: brief, status, one line'},
   {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and brief language'},
-  {key:'worktreesPane',group:'Panel',label:'2 Worktrees',short:'2 Trees',values:['open','closed'],help:PANE_HELP},
+  {key:'timelinePane',group:'Panel',label:'2 Timeline',short:'2 Events',values:['open','closed'],help:PANE_HELP},
   {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','closed'],help:PANE_HELP},
   {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','closed'],help:PANE_HELP},
-  {key:'timelinePane',group:'Panel',label:'5 Timeline',short:'5 Events',values:['open','closed'],help:PANE_HELP},
   // Any even width from 24 to 80 columns, a step of two at a time; Codex keeps 41 whatever is asked.
   {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:Array.from({length:29},(_,i)=>24+2*i),
     help:'Panel columns; Codex keeps 41',

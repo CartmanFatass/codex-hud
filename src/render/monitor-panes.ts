@@ -18,7 +18,7 @@ import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { formatWindowLabel } from './quota.js';
 import { monitorText, fit, pair, wrapped, flowLines, squeeze } from './monitor-text.js';
 import { age, iconic, nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
-  isUntracked, UNTRACKED_ROW, changeLetter, lineCounts } from './monitor-labels.js';
+  isUntracked, UNTRACKED_ROW, changeLetter, lineCounts, listsWorktrees, worktreeItem } from './monitor-labels.js';
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
 
@@ -305,71 +305,90 @@ function splitChanges(files: readonly GitChangedFile[], width: number): ChangesS
   return split;
 }
 
+/**
+ * The worktrees over the changes, where there is more than one: a row each,
+ * the one whose changes are listed marked "●" and named in bold, how far its
+ * branch is from upstream and its state on the right. Then a rule naming it
+ * again, with its counts, over its files.
+ */
+function worktreeRows(input: MonitorData, state: MonitorState, width: number, now: number, counts: string): MonitorRow[] {
+  const entries = input.worktrees?.entries ?? [];
+  const names = entries.map(worktreeName);
+  const rows: MonitorRow[] = [];
+  let listed = '';
+  for (const [i,entry] of entries.entries()) {
+    const item = worktreeItem(entry.path);
+    const current = entry.path === state.selectedWorktree;
+    const label = worktreeLabel(entry,now);
+    const paint = label.startsWith('!') || entry.error ? theme.warning : label === 'clean' ? colors.dim : theme.value;
+    const ahead = entry.status?.ahead ? theme.success(`↑${entry.status.ahead}`)+' ' : '';
+    const behind = entry.status?.behind ? theme.error(`↓${entry.status.behind}`)+' ' : '';
+    // Locked is a word after the status, not a letter glued to the name.
+    const locked = entry.locked !== undefined ? colors.dim(` · ${t('locked')}`) : '';
+    // Two of the same name are told apart by what their HEAD commit says,
+    // never by a hash: it stands in for the name, which the Inspector gives.
+    const twin = names.filter(name=>name === names[i]).length > 1;
+    const name = monitorText(twin && entry.subject ? entry.subject : names[i]);
+    if (current) listed = name;
+    const left = `${item === state.selectedFile ? '›' : ' '}${current ? theme.accent('●') : ' '} ${current ? theme.strong(name) : name}`;
+    rows.push({item,text:pair(left,`${ahead}${behind}${paint(worktreeLabelText(label))}${locked}`,width)});
+  }
+  const head = `${colors.dim('─ ')}${theme.strong(listed || t('Changes'))}${counts ? colors.dim(' · ')+counts : ''} `;
+  rows.push({text:truncateAnsi(head+colors.dim('─'.repeat(Math.max(0,width-visualLength(head)))),width)});
+  return rows;
+}
+
+/**
+ * The changes: the worktrees on top where there is a choice of them, then
+ * the listed one's counts, what the model said the diff does, and its files,
+ * the untracked folded into one row at the end. One cursor runs through the
+ * worktrees and the files alike.
+ */
+function changesRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
+  const snapshot = input.worktrees;
+  const git = input.git;
+  const rows: MonitorRow[] = [];
+  // Empty, loading or clean is no line of its own; an error says what is wrong.
+  if (snapshot?.error) rows.push({text:theme.warning(t('No readable repository'))}, {text:colors.dim(t('Set worktreeRoot'))}, ...wrapped(snapshot.error,width).map(text=>({text:colors.dim(text)})));
+  if (snapshot?.truncated) rows.push({text:theme.warning(t('Worktree list limited'))});
+  if (git?.error) rows.push({text:theme.warning(t('Git incomplete'))});
+  // Worked out once per git read and width, not on every repaint.
+  const pathWidth = Math.max(1,width-4);
+  const files = git?.root ? git.files : [];
+  if (changesCache?.files !== files || changesCache.width !== pathWidth) changesCache = splitChanges(files,pathWidth);
+  const {tracked,untracked} = changesCache;
+  // The untracked files are counted on their own row, at the end.
+  const counts = files.length ? changeCounts(tracked.map(([file])=>file),width) : '';
+  if (listsWorktrees(snapshot)) rows.push(...worktreeRows(input,state,width,now,counts));
+  else if (counts) rows.push({text:counts});
+  if (!git?.root) return rows;
+  // What the diff does, in the model's words, marked as such; older than the diff, it says so.
+  const summary = files.length ? input.notes?.changes : undefined;
+  if (summary) {
+    for (const line of summary.lines) rows.push(...flowLines(monitorText(line),Math.max(1,width-2)).map((text,i)=>({text:`${i ? ' ' : colors.dim('~')} ${text}`})));
+    if (!summary.current) rows.push(...flowLines(t('(written {age}, before the latest edits)',{age:writtenAge(summary.at,now)}),Math.max(1,width-2)).map(text=>({text:colors.dim(`  ${text}`)})));
+  }
+  const mark = (item: string) => item === state.selectedFile ? '›' : ' ';
+  // A letter for what happened, the path, and the lines it adds and removes at the right where they fit.
+  for (const [file,shown] of tracked) {
+    const left = `${mark(file.path)} ${changeLetter(file)} ${monitorText(shown)}`;
+    const lines = lineCounts(file);
+    const gap = width-visualLength(left)-visualLength(lines);
+    rows.push({item:file.path,text:truncateAnsi(lines && gap >= 2 ? left+' '.repeat(gap)+lines : left,width)});
+  }
+  // The untracked files folded into a row that counts them; Enter or a click lists them under it.
+  if (untracked.length) {
+    const open = Boolean(state.untrackedOpen);
+    rows.push({item:UNTRACKED_ROW,text:`${mark(UNTRACKED_ROW)} ${colors.dim(`${open ? '▾' : '▸'} ${t('{n} untracked',{n:untracked.length})}`)}`});
+    if (open) for (const [file,shown] of untracked) rows.push({item:file.path,text:truncateAnsi(`${mark(file.path)}   ${monitorText(shown)}`,width)});
+  }
+  return rows;
+}
+
 export function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   if (id === 'agents') return agentRows(input,state,width,now);
   if (id === 'timeline') return timelineRows(input,width,now);
-  if (id === 'worktrees') {
-    const snapshot = input.worktrees;
-    // Empty, loading or clean is no line of its own; an error says what is wrong.
-    if (!snapshot) return [];
-    if (snapshot.error) return [{text:theme.warning(t('No readable repository'))}, {text:colors.dim(t('Set worktreeRoot'))}, ...wrapped(snapshot.error,width).map(text=>({text:colors.dim(text)}))];
-    const rows: MonitorRow[] = [];
-    if (snapshot.truncated) rows.push({text:theme.warning(t('Worktree list limited'))});
-    const names = snapshot.entries.map(worktreeName);
-    for (const [i,entry] of snapshot.entries.entries()) {
-      const label = worktreeLabel(entry,now);
-      const mark = (entry.path === state.selectedWorktree ? '›' : ' ')+' ';
-      const subject = entry.subject ? monitorText(entry.subject) : '';
-      // Two of the same name are told apart by what their HEAD commit says,
-      // never by a hash: where it has no line of its own, it stands in for the name.
-      const twin = names.filter(name=>name === names[i]).length > 1;
-      const name = twin && subject && width < 20 ? subject : monitorText(names[i]);
-      const paint = label.startsWith('!') || entry.error ? theme.warning : label === 'clean' ? colors.dim : theme.value;
-      // Locked is a word after the status, not a letter glued to the name.
-      const locked = entry.locked !== undefined ? colors.dim(` · ${t('locked')}`) : '';
-      rows.push({text:pair(mark+name,paint(worktreeLabelText(label))+locked,width),item:entry.path});
-      // Under it, what its HEAD commit says, where a second line fits.
-      if (width >= 20 && subject) rows.push({text:colors.dim(truncateAnsi('  '+subject,width)),item:entry.path});
-    }
-    return rows;
-  }
-  if (id === 'changes') {
-    const git = input.git;
-    const rows: MonitorRow[] = [];
-    if (!git) return [];
-    if (git.error) rows.push({text:theme.warning(t('Git incomplete'))});
-    if (!git.root) return rows;
-    // Worked out once per git read and width, not on every repaint.
-    const pathWidth = Math.max(1,width-4);
-    if (changesCache?.files !== git.files || changesCache.width !== pathWidth) changesCache = splitChanges(git.files,pathWidth);
-    const {tracked,untracked} = changesCache;
-    if (git.files.length) {
-      // The untracked files are counted on their own row, at the end.
-      const counts = changeCounts(tracked.map(([file])=>file),width);
-      if (counts) rows.push({text:counts});
-      // What the diff does, in the model's words, marked as such; older than the diff, it says so.
-      const summary = input.notes?.changes;
-      if (summary) {
-        for (const line of summary.lines) rows.push(...flowLines(monitorText(line),Math.max(1,width-2)).map((text,i)=>({text:`${i ? ' ' : colors.dim('~')} ${text}`})));
-        if (!summary.current) rows.push(...flowLines(t('(written {age}, before the latest edits)',{age:writtenAge(summary.at,now)}),Math.max(1,width-2)).map(text=>({text:colors.dim(`  ${text}`)})));
-      }
-    }
-    const mark = (item: string) => item === state.selectedFile ? '›' : ' ';
-    // A letter for what happened, the path, and the lines it adds and removes at the right where they fit.
-    for (const [file,shown] of tracked) {
-      const left = `${mark(file.path)} ${changeLetter(file)} ${monitorText(shown)}`;
-      const counts = lineCounts(file);
-      const gap = width-visualLength(left)-visualLength(counts);
-      rows.push({item:file.path,text:truncateAnsi(counts && gap >= 2 ? left+' '.repeat(gap)+counts : left,width)});
-    }
-    // The untracked files folded into a row that counts them; Enter or a click lists them under it.
-    if (untracked.length) {
-      const open = Boolean(state.untrackedOpen);
-      rows.push({item:UNTRACKED_ROW,text:`${mark(UNTRACKED_ROW)} ${colors.dim(`${open ? '▾' : '▸'} ${t('{n} untracked',{n:untracked.length})}`)}`});
-      if (open) for (const [file,shown] of untracked) rows.push({item:file.path,text:truncateAnsi(`${mark(file.path)}   ${monitorText(shown)}`,width)});
-    }
-    return rows;
-  }
+  if (id === 'changes') return changesRows(input,state,width,now);
   return inspectorRows(input,state,width,now);
 }
 

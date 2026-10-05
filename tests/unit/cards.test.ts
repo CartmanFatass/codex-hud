@@ -245,7 +245,7 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const shown = handleMonitorInput(frame.state, click(older.x, 0), { tree: tree([named, old]), frame, nowMs: now }).state;
   assert.ok(plain(renderMonitor({ tree: tree([named, old]), state: shown, width: 32, height: 30, nowMs: now })).some(line => line.includes('old_one')));
   assert.equal(lines.slice(1).filter(line => line.includes('Agents')).length, 1, 'under the bar, the cards have one title, their counts beside it');
-  const focused = handleMonitorInput({ ...frame.state, modes: { ...frame.state.modes, agents: 'closed', worktrees: 'open' }, focus: 'worktrees' }, key('agents'), { tree: tree([named]), frame }).state;
+  const focused = handleMonitorInput({ ...frame.state, modes: { ...frame.state.modes, agents: 'closed', changes: 'open' }, focus: 'changes' }, key('agents'), { tree: tree([named]), frame }).state;
   assert.equal(focused.focus, 'agents');
   assert.equal(focused.modes.agents, 'open', '1 opens the cards, and focuses them');
   assert.equal(handleMonitorInput(focused, key('agents'), { tree: tree([named]), frame }).state.modes.agents, 'closed', 'and closes them again');

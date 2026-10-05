@@ -12,6 +12,7 @@ import { setDisplayConfig, LOOKS } from '../../src/render/hud-config.js';
 import { MODEL_GLYPHS, EFFORT_GLYPHS } from '../../src/render/model-glyphs.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
 import type { WorktreesSnapshot } from '../../src/collectors/worktrees.js';
+import { worktreeItem } from '../../src/render/monitor-labels.js';
 const now = Date.parse('2026-09-16T10:00:00Z');
 const root = '00000000-0000-4000-8000-000000000001';
 const make = (id:string,name:string,status:SubagentTreeNode['status']):SubagentTreeNode => ({id,name,status,depth:1,children:[],startedAt:new Date(now-120_000),turnStartedAt:new Date(now-30_000),lastEventAt:new Date(now-1000)});
@@ -23,10 +24,13 @@ const worktrees: WorktreesSnapshot = {sourcePath:'/demo',updatedAt:now,entries:[
 ]};
 const key=(key:string)=>({type:'key' as const,key});
 const mouse=(x:number,y:number)=>({type:'mouse' as const,button:'left' as const,x,y});
-// Most layout tests exercise Agents beside an open Worktrees box, which is no
-// longer the default: open it explicitly.
-const withWorktrees=()=>{const state=initialMonitorState();state.modes.worktrees='open';return state;};
-const draw=(state=withWorktrees(),width=30,height=28)=>renderMonitor({tree,worktrees,state,width,height,nowMs:now});
+// One worktree of the two, for the tests about files: the changes list then has no worktree rows over them.
+const one: WorktreesSnapshot = {...worktrees,entries:[worktrees.entries[0]]};
+const changed={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[{path:'a.ts',index:' ',worktree:'M',added:1,removed:0,binary:false,conflict:false}]};
+// Most layout tests exercise Agents beside an open Changes pane, which lists
+// the two worktrees over the files; it is not open by default: open it explicitly.
+const withChanges=()=>{const state=initialMonitorState();state.modes.changes='open';return state;};
+const draw=(state=withChanges(),width=30,height=28)=>renderMonitor({tree,worktrees,git:changed,state,width,height,nowMs:now});
 
 test('the default monitor is Agents alone, one row per agent, the selected one with a line on how far it got, and no narratives',()=>{
   const loud={...tree,nodes:nodes.map(n=>({...n,task:'TASK_TEXT',lastReport:{text:'SHOULD_NOT_SHOW_REPLY'.repeat(400),kind:'reply' as const,at:new Date(now)}}))};
@@ -69,20 +73,19 @@ test('open panes fill the tree column; a closed pane takes no row',()=>{
   assert.equal(bottom.y+bottom.height,28,'with no status card, the panes reach the foot');
   assert.ok(frame.panes[0].height>=5);
   let state=initialMonitorState();
-  state.modes={agents:'open',worktrees:'open',changes:'open',details:'open',timeline:'closed'};
-  const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[{path:'a.ts',index:' ',worktree:'M',added:1,removed:0,binary:false,conflict:false}]};
-  const four=renderMonitor({tree,worktrees,git,state,width:30,height:28,nowMs:now});
+  state.modes={agents:'open',timeline:'open',changes:'open',details:'open'};
+  const four=renderMonitor({tree,worktrees,git:changed,state,width:30,height:28,nowMs:now});
   assert.equal(four.panes.length,4);
   assert.equal(four.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b).y+four.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b).height,28);
-  state=withWorktrees();state.modes.worktrees='closed';
+  state=withChanges();state.modes.changes='closed';
   const closed=draw(state);
   assert.deepEqual(closed.panes.map(p=>p.id),['agents']);
   assert.equal(closed.panes[0].y+closed.panes[0].height,28,'Agents takes every row the closed pane gave up');
-  assert.ok(!closed.lines.map(stripAnsi).some(line=>line.includes('Worktrees')),'no title line is left behind');
-  state=withWorktrees();state.modes.agents='closed';
+  assert.ok(!closed.lines.map(stripAnsi).some(line=>line.includes('Changes')),'no title line is left behind');
+  state=withChanges();state.modes.agents='closed';
   const alone=draw(state);
-  assert.deepEqual(alone.panes.map(p=>p.id),['worktrees']);
-  assert.equal(alone.panes[0].y,1,'with the agents closed, the worktrees start under the bar');
+  assert.deepEqual(alone.panes.map(p=>p.id),['changes']);
+  assert.equal(alone.panes[0].y,1,'with the agents closed, the changes start under the bar');
   assert.equal(alone.panes[0].y+alone.panes[0].height,28,'and take their room');
 });
 
@@ -111,14 +114,14 @@ test('width, height and margins remain bounded with CJK and terminal controls',(
 });
 
 test('a pane opens and closes, its number toggles it, the agents too; Tab skips closed panes',()=>{
-  let frame=draw();let state:MonitorState={...frame.state,focus:'worktrees'};
+  let frame=draw();let state:MonitorState={...frame.state,focus:'changes'};
   state=handleMonitorInput(state,key('pane-close'),{tree,worktrees,frame}).state;
   frame=draw(state);assert.deepEqual(frame.panes.map(p=>p.id),['agents']);assert.equal(state.focus,'agents');
   state=handleMonitorInput(frame.state,key('tab'),{tree,worktrees,frame}).state;assert.equal(state.focus,'agents');
-  state=handleMonitorInput(state,key('worktrees'),{tree,worktrees,frame}).state;
-  assert.equal(state.modes.worktrees,'open');assert.equal(state.focus,'worktrees');
-  state=handleMonitorInput(state,key('worktrees'),{tree,worktrees,frame}).state;
-  assert.equal(state.modes.worktrees,'closed','its number again closes it');
+  state=handleMonitorInput(state,key('changes'),{tree,worktrees,frame}).state;
+  assert.equal(state.modes.changes,'open');assert.equal(state.focus,'changes');
+  state=handleMonitorInput(state,key('changes'),{tree,worktrees,frame}).state;
+  assert.equal(state.modes.changes,'closed','its number again closes it');
   state=handleMonitorInput(state,key('agents'),{tree,worktrees,frame}).state;
   assert.equal(state.modes.agents,'closed');assert.deepEqual(draw(state).panes,[],'every pane closed: the bar and nothing under it');
   for(const k of ['tab','shift-tab','down','page-down','pane-close','zoom'])handleMonitorInput(state,key(k),{tree,worktrees,frame:draw(state)});
@@ -127,7 +130,7 @@ test('a pane opens and closes, its number toggles it, the agents too; Tab skips 
 });
 
 test('the agents area closes like any pane, and its setting is kept',()=>{
-  const state=initialMonitorState();state.modes={agents:'closed',worktrees:'closed',changes:'closed',details:'closed',timeline:'closed'};
+  const state=initialMonitorState();state.modes={agents:'closed',timeline:'closed',changes:'closed',details:'closed'};
   const frame=draw(state);
   assert.deepEqual(frame.panes.map(p=>p.id),[]);
   assert.equal(monitorModes({...defaultSettings(),agentsPane:'closed'}).agents,'closed');
@@ -137,9 +140,13 @@ test('the agents area closes like any pane, and its setting is kept',()=>{
   const home=mkdtempSync(join(tmpdir(),'hud-monitor-folded-'));const old=process.env.CODEX_HUD_SETTINGS_PATH;
   process.env.CODEX_HUD_SETTINGS_PATH=join(home,'hud-settings.json');
   try{
-    writeFileSync(process.env.CODEX_HUD_SETTINGS_PATH,JSON.stringify({agentsPane:'folded',worktreesPane:'folded',changesPane:'open'}));
+    writeFileSync(process.env.CODEX_HUD_SETTINGS_PATH,JSON.stringify({agentsPane:'folded',timelinePane:'folded',changesPane:'open'}));
     const modes=monitorModes(loadSettings());
-    assert.equal(modes.agents,'closed');assert.equal(modes.worktrees,'closed');assert.equal(modes.changes,'open');
+    assert.equal(modes.agents,'closed');assert.equal(modes.timeline,'closed');assert.equal(modes.changes,'open');
+    // The worktrees are listed over the changes now: a worktrees pane saved open opens them.
+    writeFileSync(process.env.CODEX_HUD_SETTINGS_PATH,JSON.stringify({worktreesPane:'open',changesPane:'closed'}));
+    assert.equal(monitorModes(loadSettings()).changes,'open');
+    assert.ok(!('worktreesPane' in saveSettings({})),'and the old key is not written back');
   }finally{if(old===undefined)delete process.env.CODEX_HUD_SETTINGS_PATH;else process.env.CODEX_HUD_SETTINGS_PATH=old;rmSync(home,{recursive:true,force:true});}
 });
 
@@ -147,8 +154,8 @@ test('the control bar: ⌂ targets the root UUID; every column of the row is som
   const frame=draw();
   for(const x of [0,1,2])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
   // The focused pane's tab filled, with its word; the actions at the right end.
-  assert.equal(stripAnsi(frame.lines[0]),' ⌂  ▦ Agents  ⌥ ± ◫ ≣     ⚙ ? ');
-  assert.equal(stripAnsi(draw(withWorktrees(),45).lines[0]),' ⌂  ▦ Agents    ⌥ Trees   ±   ◫   ≣      ⚙ ? ');
+  assert.equal(stripAnsi(frame.lines[0]),' ⌂  ▦ Agents   ≣  ±  ◫    ⚙ ? ');
+  assert.equal(stripAnsi(draw(withChanges(),45).lines[0]),' ⌂  ▦ Agents    ≣   ± Changes   ◫        ⚙ ? ');
   const column=(glyph:string)=>[...stripAnsi(frame.lines[0])].indexOf(glyph);
   assert.equal(handleMonitorInput(frame.state,mouse(29,0),{tree,worktrees,frame}).state.help,true,'the columns after ? are still Help');
   assert.equal(handleMonitorInput(frame.state,mouse(column('?'),0),{tree,worktrees,frame}).state.help,true,'Help opens the help');
@@ -169,30 +176,30 @@ test('only visible agent rows navigate; the summary and empty space do not',()=>
 });
 
 test('a pane\'s button opens or closes it in one click; a click on its band zooms it and restores it',()=>{
-  let frame=draw(withWorktrees(),45);const ctx=()=>({tree,worktrees,frame});
+  let frame=draw(withChanges(),45);const ctx=()=>({tree,worktrees,frame});
   const tab=(pane:string)=>frame.controls.find(c=>c.kind==='tab'&&c.pane===pane)!;
   assert.ok(!frame.controls.some(c=>c.y>0&&(c.kind==='tab'||c.kind==='settings'||c.kind==='help')),'no switch below the bar');
-  const box=frame.panes.find(p=>p.id==='worktrees')!;
+  const box=frame.panes.find(p=>p.id==='changes')!;
   // The title: its icon and name on the left, how many on the right; on the band in the band look.
-  assert.match(stripAnsi(frame.lines[box.y]),/^ ⌥ Worktrees +2 worktrees $/u);
+  assert.match(stripAnsi(frame.lines[box.y]),/^ ± Changes +1 files $/u);
   const looked=setDisplayConfig({look:'band'});
-  try{assert.ok(draw(withWorktrees(),45).lines[box.y].startsWith(theme.band('').replace(/\x1b\[0m$/,'')),'on the band');}
+  try{assert.ok(draw(withChanges(),45).lines[box.y].startsWith(theme.band('').replace(/\x1b\[0m$/,'')),'on the band');}
   finally{setDisplayConfig(looked);}
   assert.ok(stripAnsi(frame.lines[box.y+1]).startsWith('│ '),'its rows behind a gutter');
   assert.ok(!frame.controls.some(c=>c.y===box.y&&c.kind!=='zoom'),'the band draws no button');
   let state=handleMonitorInput(frame.state,mouse(box.width-3,box.y),ctx()).state;
-  assert.equal(state.zoom,true,'a click on the band zooms');assert.equal(state.focus,'worktrees');assert.equal(state.modes.worktrees,'open');
+  assert.equal(state.zoom,true,'a click on the band zooms');assert.equal(state.focus,'changes');assert.equal(state.modes.changes,'open');
   frame=draw(state,45);
-  assert.deepEqual(frame.panes.map(p=>p.id),['worktrees'],'zoomed, the pane fills the panel');
-  assert.ok(frame.lines[1].includes(theme.tab(theme.bold(' ⌥ Worktrees '))),'zoomed, its title is a filled tab');
+  assert.deepEqual(frame.panes.map(p=>p.id),['changes'],'zoomed, the pane fills the panel');
+  assert.ok(frame.lines[1].includes(theme.tab(theme.bold(' ± Changes '))),'zoomed, its title is a filled tab');
   state=handleMonitorInput(state,mouse(3,1),ctx()).state;
   assert.equal(state.zoom,false,'a second click restores it');
   frame=draw(state,45);
-  state=handleMonitorInput(frame.state,mouse(tab('worktrees').x,0),ctx()).state;
-  assert.equal(state.modes.worktrees,'closed','one click on an open pane\'s button closes it');
-  frame=draw(state,45);assert.equal(frame.panes.some(p=>p.id==='worktrees'),false);
-  state=handleMonitorInput(state,mouse(tab('worktrees').x,0),ctx()).state;
-  assert.equal(state.modes.worktrees,'open');assert.equal(state.focus,'worktrees','opened, it takes focus');
+  state=handleMonitorInput(frame.state,mouse(tab('changes').x,0),ctx()).state;
+  assert.equal(state.modes.changes,'closed','one click on an open pane\'s button closes it');
+  frame=draw(state,45);assert.equal(frame.panes.some(p=>p.id==='changes'),false);
+  state=handleMonitorInput(state,mouse(tab('changes').x,0),ctx()).state;
+  assert.equal(state.modes.changes,'open');assert.equal(state.focus,'changes','opened, it takes focus');
   // The agents area too: its button closes it, its summary line zooms it.
   frame=draw(state,45);
   const summary=frame.panes.find(p=>p.id==='agents')!;
@@ -200,7 +207,7 @@ test('a pane\'s button opens or closes it in one click; a click on its band zoom
   assert.equal(zoomed.zoom,true);assert.equal(zoomed.focus,'agents');
   state=handleMonitorInput(state,mouse(tab('agents').x,0),ctx()).state;
   assert.equal(state.modes.agents,'closed');
-  frame=draw(state,45);assert.deepEqual(frame.panes.map(p=>p.id),['worktrees'],'the other panes take its room');
+  frame=draw(state,45);assert.deepEqual(frame.panes.map(p=>p.id),['changes'],'the other panes take its room');
 });
 
 test('every look draws the panel to its width; the frame look closes its frame round the panes, and their rows still click',()=>{
@@ -208,7 +215,7 @@ test('every look draws the panel to its width; the frame look closes its frame r
     const looked=setDisplayConfig({look});
     try{
       for(const width of [20,24,30,45]){
-        for(const state of [withWorktrees(),{...withWorktrees(),focus:'worktrees' as const,zoom:true}]){
+        for(const state of [withChanges(),{...withChanges(),focus:'changes' as const,zoom:true}]){
           const frame=draw(state,width);
           frame.lines.forEach((line,y)=>assert.equal(visualLength(line),width,`${look} ${width} row ${y}: "${stripAnsi(line)}"`));
         }
@@ -217,34 +224,34 @@ test('every look draws the panel to its width; the frame look closes its frame r
   }
   const looked=setDisplayConfig({look:'frame'});
   try{
-    const frame=draw({...withWorktrees(),focus:'worktrees'},36);
+    const frame=draw({...withChanges(),focus:'changes'},36);
     const lines=frame.lines.map(stripAnsi);
     assert.match(lines[0],/^╭─ ⌂ .* ─╮$/,'the main session and the actions in its top edge');
     assert.match(lines[1],/^│ .*│$/,'the tabs between its sides');
     assert.match(lines.at(-1)!,/^╰─+╯$/,'no status card: the frame closes on a row of its own');
-    const box=frame.panes.find(p=>p.id==='worktrees')!;
-    assert.match(lines[box.y],/^├─ ⌥ Worktrees .* ─┤$/,'a pane\'s title is an edge of the frame');
+    const box=frame.panes.find(p=>p.id==='changes')!;
+    assert.match(lines[box.y],/^├─ ± Changes .* ─┤$/,'a pane\'s title is an edge of the frame');
     for(let y=box.y+1;y<box.y+box.height;y++)assert.match(lines[y],/^│ .* │$/,lines[y]);
     assert.ok(frame.lines[box.y+1].startsWith(theme.accent('│')),'the focused pane\'s side in the accent');
     assert.equal(box.x,2,'its rows start inside the frame');
-    const row=box.rows.findIndex(r=>r.item==='/demo/docs');
+    const row=box.rows.findIndex(r=>r.item===worktreeItem('/demo/docs'));
     assert.equal(handleMonitorInput(frame.state,mouse(4,box.y+1+row),{tree,worktrees,frame}).state.selectedWorktree,'/demo/docs','a click on a row selects it');
     const zoom=handleMonitorInput(frame.state,mouse(35,box.y),{tree,worktrees,frame}).state;
     assert.equal(zoom.zoom,true,'a click anywhere on the title zooms');
     // Rows a pane leaves empty are blank between the frame's sides, not cut short with "…".
-    for(const state of [{...withWorktrees(),tabbed:true},{...withWorktrees(),zoom:true}]){
+    for(const state of [{...withChanges(),tabbed:true},{...withChanges(),zoom:true}]){
       const shown=draw(state,36).lines.map(stripAnsi);
       for(const line of shown.slice(2))assert.doesNotMatch(line,/^│ +… │$/,`${state.tabbed?'tabs':'zoomed'}: ${line}`);
     }
   }finally{setDisplayConfig(looked);}
 });
 
-test('the tabs layout: one pane at a time, the bar\'s tabs and 1–5 switch it, and the stacked layout\'s panes stay as they were',()=>{
-  const start={...withWorktrees(),tabbed:true};
+test('the tabs layout: one pane at a time, the bar\'s tabs and 1–4 switch it, and the stacked layout\'s panes stay as they were',()=>{
+  const start={...withChanges(),tabbed:true};
   let frame=draw(start,45);const ctx=()=>({tree,worktrees,frame});
   assert.deepEqual(frame.panes.map(p=>p.id),['agents'],'only the pane shown');
   const tab=(pane:string)=>frame.controls.find(c=>c.kind==='tab'&&c.pane===pane)!;
-  assert.deepEqual(frame.controls.filter(c=>c.kind==='tab').map(c=>c.pane),['agents','worktrees','changes','details','timeline'],'every pane has a tab');
+  assert.deepEqual(frame.controls.filter(c=>c.kind==='tab').map(c=>c.pane),['agents','timeline','changes','details'],'every pane has a tab');
   // A click on a tab the stacked layout has closed shows that pane, and opens nothing.
   let next=handleMonitorInput(frame.state,mouse(tab('changes').x,0),ctx()).state;
   assert.equal(next.focus,'changes');assert.deepEqual(next.modes,start.modes,'nothing to save');
@@ -253,10 +260,11 @@ test('the tabs layout: one pane at a time, the bar\'s tabs and 1–5 switch it, 
   assert.equal(frame.panes[0].height,28-1,'all the rows under the bar');
   next=handleMonitorInput(frame.state,mouse(tab('changes').x,0),ctx()).state;
   assert.equal(next.focus,'changes','a second click keeps it shown');
-  // 1–5 and Tab go through every pane; x and z do nothing.
-  next=handleMonitorInput(next,key('timeline'),ctx()).state;assert.equal(next.focus,'timeline');
+  // 1–4 and Tab go through every pane; x and z do nothing.
+  next=handleMonitorInput(next,key('details'),ctx()).state;assert.equal(next.focus,'details');
   next=handleMonitorInput(next,key('tab'),ctx()).state;assert.equal(next.focus,'agents','Tab wraps round');
-  next=handleMonitorInput(next,key('tab'),ctx()).state;assert.equal(next.focus,'worktrees');
+  next=handleMonitorInput(next,key('tab'),ctx()).state;assert.equal(next.focus,'timeline');
+  next=handleMonitorInput(next,key('tab'),ctx()).state;assert.equal(next.focus,'changes');
   assert.deepEqual(handleMonitorInput(next,key('pane-close'),ctx()).state.modes,start.modes,'x closes nothing');
   assert.equal(handleMonitorInput(next,key('zoom'),ctx()).state.zoom,false,'z zooms nothing');
   frame=draw(next,45);
@@ -266,12 +274,12 @@ test('the tabs layout: one pane at a time, the bar\'s tabs and 1–5 switch it, 
   next=handleMonitorInput(next,key('enter'),ctx()).state;
   assert.equal(next.focus,'details');assert.equal(next.zoom,false);
   next=handleMonitorInput(next,key('escape'),ctx()).state;
-  assert.equal(next.focus,'worktrees');assert.deepEqual(next.modes,start.modes);
+  assert.equal(next.focus,'changes');assert.deepEqual(next.modes,start.modes);
   // The stacked layout comes back as it was left.
-  assert.deepEqual(draw({...next,tabbed:false},45).panes.map(p=>p.id),['agents','worktrees']);
+  assert.deepEqual(draw({...next,tabbed:false},45).panes.map(p=>p.id),['agents','changes']);
   // The help says what the tabs do.
   const help=draw({...next,help:true},45,200).lines.map(stripAnsi).join('\n');
-  assert.match(help,/\n1–5 +show a pane\n/);assert.doesNotMatch(help,/close pane\b|zoom/);
+  assert.match(help,/\n1–4 +show a pane\n/);assert.doesNotMatch(help,/close pane\b|zoom/);
 });
 
 test('keyboard motion only previews; Inspector remains closed until explicitly opened',()=>{
@@ -284,7 +292,7 @@ test('keyboard motion only previews; Inspector remains closed until explicitly o
 
 test('a worktree\'s details count only what it has: no zero counts, and no ahead or behind at zero or unknown',()=>{
   const state={...initialMonitorState(),preview:'worktree' as const,focus:'details' as const,selectedWorktree:'/demo/main'};
-  state.modes={...state.modes,worktrees:'open',details:'open'};
+  state.modes={...state.modes,changes:'open',details:'open'};
   const details=(snapshot:WorktreesSnapshot)=>renderMonitor({tree,worktrees:snapshot,state,width:40,height:30,nowMs:now}).panes.find(p=>p.id==='details')!.rows.map(r=>stripAnsi(r.text));
   const main=details(worktrees);
   assert.ok(main.includes('1 staged · 2 unstaged'),main.join('\n'));
@@ -299,16 +307,54 @@ test('a selected row is on the band the selected card is on, in the terminal the
   finally { setDisplayConfig(previous); }
 });
 
-test('worktree clicks preview Git scope without switching sessions or claiming agent ownership',()=>{
-  const frame=draw();const pane=frame.panes.find(p=>p.id==='worktrees')!;
-  const result=handleMonitorInput(frame.state,mouse(4,pane.y+pane.rows.findIndex(r=>r.item==='/demo/docs')+1),{tree,worktrees,frame});
+test('worktree clicks list that worktree\'s changes without switching sessions or claiming agent ownership',()=>{
+  const frame=draw();const pane=frame.panes.find(p=>p.id==='changes')!;
+  const result=handleMonitorInput(frame.state,mouse(4,pane.y+pane.rows.findIndex(r=>r.item===worktreeItem('/demo/docs'))+1),{tree,worktrees,frame});
   assert.equal(result.action,undefined);assert.equal(result.state.selectedWorktree,'/demo/docs');
+  assert.equal(result.state.selectedFile,worktreeItem('/demo/docs'),'the cursor is on its row');
   assert.equal(result.state.tree.selectedId,frame.state.tree.selectedId);assert.equal(result.state.preview,'worktree');
 });
 
-test('same worktree maps to both identity rows',()=>{
-  const pane=draw().panes.find(p=>p.id==='worktrees')!;
-  assert.equal(monitorItemAt(pane,3,pane.y+1),'/demo/main');assert.equal(monitorItemAt(pane,3,pane.y+2),'/demo/main');
+test('the worktrees head the changes where there is a choice: a row each, the listed one marked, a rule naming it with its counts',()=>{
+  const pane=draw(withChanges(),40).panes.find(p=>p.id==='changes')!;
+  assert.deepEqual(pane.rows.map(r=>stripAnsi(r.text).trimEnd()),[' ● main                          3 mod','   docs                          clean',
+    '─ main · 1 unstaged ──────────────────','› M a.ts                            +1']);
+  assert.equal(monitorItemAt(pane,3,pane.y+1),worktreeItem('/demo/main'));assert.equal(monitorItemAt(pane,3,pane.y+4),'a.ts');
+  assert.ok(pane.rows[0].text.includes(theme.accent('●')));
+  // One worktree is no choice: the counts alone, as before.
+  const alone=renderMonitor({tree,worktrees:one,git:changed,state:withChanges(),width:40,height:28,nowMs:now}).panes.find(p=>p.id==='changes')!;
+  assert.deepEqual(alone.rows.map(r=>stripAnsi(r.text).trimEnd()),['1 unstaged','› M a.ts                            +1']);
+  // Twins are told apart by what their HEAD commits say; ahead and behind are counted beside the state.
+  const twins={...worktrees,entries:[{...worktrees.entries[0],status:{...worktrees.entries[0].status!,ahead:2,behind:1}},{...worktrees.entries[1],branch:'main'}]};
+  const rows=renderMonitor({tree,worktrees:twins,git:changed,state:withChanges(),width:40,height:28,nowMs:now}).panes.find(p=>p.id==='changes')!.rows.map(r=>stripAnsi(r.text).trimEnd());
+  assert.deepEqual(rows.slice(0,3),[' ● Main work               ↑2 ↓1 3 mod','   Docs work                     clean','─ Main work · 1 unstaged ─────────────']);
+});
+
+test('one cursor runs through the worktrees and the files: on a worktree it lists that one, Enter inspects it, Esc comes back',()=>{
+  let frame=draw({...withChanges(),focus:'changes'},40);
+  const ctx=()=>({tree,worktrees,git:changed,frame,nowMs:now});
+  assert.equal(frame.state.selectedFile,'a.ts','the cursor starts on the first file');
+  let state=handleMonitorInput(frame.state,key('up'),ctx()).state;
+  assert.equal(state.selectedFile,worktreeItem('/demo/docs'));assert.equal(state.selectedWorktree,'/demo/docs','on a worktree, it is the one listed');
+  assert.equal(state.preview,'worktree');
+  frame=draw(state,40);
+  state=handleMonitorInput(state,key('enter'),ctx()).state;
+  assert.equal(state.focus,'details');assert.equal(state.preview,'worktree');assert.equal(state.zoom,false,'a worktree\'s details do not take the panel');
+  state=handleMonitorInput(state,key('escape'),ctx()).state;
+  assert.equal(state.focus,'changes');
+  state=handleMonitorInput({...state,modes:{...state.modes,details:'closed'}},key('home'),ctx()).state;
+  assert.equal(state.selectedFile,worktreeItem('/demo/main'));
+  state=handleMonitorInput(state,key('end'),ctx()).state;
+  assert.equal(state.selectedFile,'a.ts');assert.equal(state.preview,'file');assert.equal(state.selectedWorktree,'/demo/main');
+  // A worktree that went away takes the cursor with it, to the first file.
+  const gone=renderMonitor({tree,worktrees:one,git:changed,state:{...state,selectedFile:worktreeItem('/demo/docs')},width:40,height:28,nowMs:now});
+  assert.equal(gone.state.selectedFile,'a.ts');
+  // With no file to start on, the cursor waits for the reader: the files may still be on their way. Down starts it at the top.
+  const clean=renderMonitor({tree,worktrees,git:{...changed,files:[]},state:{...withChanges(),focus:'changes',selectedFile:null},width:40,height:28,nowMs:now});
+  assert.equal(clean.state.selectedFile,null);
+  assert.equal(handleMonitorInput(clean.state,key('down'),{tree,worktrees,frame:clean}).state.selectedFile,worktreeItem('/demo/main'));
+  const arrived=renderMonitor({tree,worktrees,git:changed,state:clean.state,width:40,height:28,nowMs:now});
+  assert.equal(arrived.state.selectedFile,'a.ts','the files arrive: the first of them');
 });
 
 test('stale, unknown, prunable, and failed reads are never displayed as clean',()=>{
@@ -330,7 +376,7 @@ test('state identity and sibling ordering are independent of freshness/reply tex
 test('narrow Changes exposes selectable files and opens a readable zoomed preview',()=>{
   const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:['a','b'].map(path=>({path,index:' ',worktree:'M',added:1,removed:0,binary:false,conflict:false}))};
   let state=initialMonitorState();state.modes.changes='open';state.focus='changes';state.selectedFile='a';
-  const frame=renderMonitor({tree,worktrees,git,state,width:30,height:30,nowMs:now});
+  const frame=renderMonitor({tree,worktrees:one,git,state,width:30,height:30,nowMs:now});
   assert.equal(frame.panes.find(p=>p.id==='changes')!.rows.some(r=>r.item),true);
   const moved=handleMonitorInput(frame.state,key('down'),{tree,git,worktrees,frame}).state;
   assert.equal(moved.selectedFile,'b');
@@ -356,7 +402,7 @@ test('an untracked directory is one row, its slash kept, and inspected says what
   const untracked=(path: string)=>({path,index:'?',worktree:'?',added:null,removed:null,binary:false,conflict:false});
   const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[untracked('runs/r02/'),untracked('notes.md')]};
   const state=initialMonitorState();state.modes.changes='open';state.focus='changes';state.selectedFile='runs/r02/';state.untrackedOpen=true;
-  const frame=renderMonitor({tree,worktrees,git,state,width:30,height:30,nowMs:now});
+  const frame=renderMonitor({tree,worktrees:one,git,state,width:30,height:30,nowMs:now});
   assert.match(stripAnsi(frame.lines.join('\n')),/▾ 2 untracked *\n│ ›   runs\/r02\/ /);
   const opened=handleMonitorInput(frame.state,key('enter'),{tree,git,worktrees,frame}).state;
   const diff=['Untracked','2 files','a.json','deep/b.json'];
@@ -380,7 +426,7 @@ test('a changed file is a letter in its colour, its path and its line counts; un
     file('docs/old.md','D','.',0,33),file('src/moved.ts','R','.',3,1),file('src/both.ts','U','U',null,null,true),
     file('notes.md','?','?',null,null),file('runs/','?','?',null,null)]};
   const state=initialMonitorState();state.modes.changes='open';state.focus='changes';
-  const draw=(at:MonitorState,width=44)=>renderMonitor({tree,worktrees,git,state:at,width,height:30,nowMs:now});
+  const draw=(at:MonitorState,width=44)=>renderMonitor({tree,worktrees:one,git,state:at,width,height:30,nowMs:now});
   const frame=draw(state);
   const pane=frame.panes.find(p=>p.id==='changes')!;
   const text=pane.rows.map(row=>stripAnsi(row.text));
@@ -392,7 +438,7 @@ test('a changed file is a letter in its colour, its path and its line counts; un
   assert.ok(row('src/cards.ts').includes(theme.success('+54'))&&row('src/cards.ts').includes(theme.error('−16')));
   assert.ok(!stripAnsi(draw(state,24).lines.join('\n')).includes('+54'),'narrow, the counts give way to the path');
   // The keys reach the row; Enter lists the files under it, and again folds them, without opening the Inspector.
-  const ctx=(shown:typeof frame)=>({tree,git,worktrees,frame:shown,nowMs:now});
+  const ctx=(shown:typeof frame)=>({tree,git,worktrees:one,frame:shown,nowMs:now});
   const last=handleMonitorInput(frame.state,key('end'),ctx(frame)).state;
   const opened=handleMonitorInput(last,key('enter'),ctx(draw(last))).state;
   assert.equal(opened.untrackedOpen,true);assert.equal(opened.modes.details,'closed');assert.ok(!opened.zoom);
@@ -410,12 +456,12 @@ test('a changed file is a letter in its colour, its path and its line counts; un
   assert.match(stripAnsi(folded.lines.join('\n')),/› ▸ 2 untracked/);
   assert.notEqual(folded.state.selectedFile,'notes.md');
   // On the row the Inspector has no file to show.
-  const inspected=renderMonitor({tree,worktrees,git,state:{...folded.state,modes:{...folded.state.modes,details:'open'},preview:'file'},width:44,height:30,nowMs:now});
+  const inspected=renderMonitor({tree,worktrees:one,git,state:{...folded.state,modes:{...folded.state.modes,details:'open'},preview:'file'},width:44,height:30,nowMs:now});
   assert.equal(inspected.panes.find(p=>p.id==='details')!.rows.length,0);
 });
 
 test('monitor key profile maps numbers without changing legacy decoder behavior',()=>{
-  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('1234x')),['agents','worktrees','changes','details','pane-close'].map(key));
+  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('1234x')),['agents','timeline','changes','details','pane-close'].map(key));
   assert.deepEqual(new WorkbenchInputDecoder().push(Buffer.from('24')),['details','activity'].map(key));
 });
 
@@ -425,7 +471,7 @@ test('monitor visibility persists independently from legacy open Reports/Changes
   try{
     const settings=saveSettings({details:true,changes:true,activity:true});
     assert.deepEqual(monitorModes(settings),initialMonitorState().modes);
-    let state=initialMonitorState();state.modes.changes='open';state.modes.worktrees='closed';state.modes.agents='closed';
+    let state=initialMonitorState();state.modes.changes='open';state.modes.timeline='closed';state.modes.agents='closed';
     saveSettings(monitorPreferences(state));assert.deepEqual(monitorModes(loadSettings()),state.modes);
     assert.equal(loadSettings().details,true);
   }finally{if(old===undefined)delete process.env.CODEX_HUD_SETTINGS_PATH;else process.env.CODEX_HUD_SETTINGS_PATH=old;rmSync(home,{recursive:true,force:true});}
@@ -434,19 +480,20 @@ test('monitor visibility persists independently from legacy open Reports/Changes
 test('Settings exposes open/closed for each pane but the agents, and omits Checks',()=>{
   assert.equal(SETTING_ROWS.some(r=>r.key==='activity'),false);
   assert.equal(SETTING_ROWS.some(r=>r.key==='agentsPane'),false);
-  const row=SETTING_ROWS.findIndex(r=>r.key==='worktreesPane');assert.ok(row>=0);
+  assert.deepEqual(SETTING_ROWS.filter(r=>/Pane$/.test(r.key)).map(r=>r.label),['2 Timeline','3 Changes','4 Inspector'],'in the bar\'s order, by their keys');
+  const row=SETTING_ROWS.findIndex(r=>r.key==='timelinePane');assert.ok(row>=0);
   let state={draft:defaultSettings(),selected:row,offset:0,message:''};
   const frame=renderSettingsPage(state,40,30);
-  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.worktreesPane,'open');
-  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.worktreesPane,'closed');
+  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.timelinePane,'open');
+  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.timelinePane,'closed');
 });
 
 
-test('page movement counts distinct worktree cards rather than their directory continuation lines',()=>{
-  const many={...worktrees,entries:Array.from({length:12},(_,i)=>({...worktrees.entries[0],path:'/worktrees/'+i,branch:'branch'+i}))};
-  const state={...withWorktrees(),focus:'worktrees' as const};
+test('page movement counts the rows in view that can be selected, the worktrees\' rule not among them',()=>{
+  const many={...worktrees,entries:Array.from({length:30},(_,i)=>({...worktrees.entries[0],path:'/worktrees/'+i,branch:'branch'+i}))};
+  const state={...withChanges(),focus:'changes' as const,selectedFile:worktreeItem('/worktrees/0')};
   const frame=renderMonitor({tree,worktrees:many,state,width:30,height:18,nowMs:now});
-  const pane=frame.panes.find(p=>p.id==='worktrees')!;
+  const pane=frame.panes.find(p=>p.id==='changes')!;
   const count=new Set(pane.rows.slice(pane.offset,pane.offset+pane.height-1).map(r=>r.item).filter(Boolean)).size;
   const next=handleMonitorInput(frame.state,key('page-down'),{tree,worktrees:many,frame});
   assert.equal(next.state.selectedWorktree,many.entries[count].path);
@@ -456,8 +503,10 @@ test('page movement counts distinct worktree cards rather than their directory c
 test('conflicts precede file counts even in narrow optional Changes',()=>{
   const state=initialMonitorState();state.modes.changes='open';
   const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[{path:'conflict',index:'U',worktree:'U',added:null,removed:null,binary:false,conflict:true}]};
-  const frame=renderMonitor({tree,worktrees,git,state,width:20,height:30,nowMs:now});
+  const frame=renderMonitor({tree,worktrees:one,git,state,width:20,height:30,nowMs:now});
   assert.match(stripAnsi(frame.panes.find(p=>p.id==='changes')!.rows[0].text),/^1 conflicts/,'conflicts lead the counts');
+  const listed=renderMonitor({tree,worktrees,git,state,width:30,height:30,nowMs:now});
+  assert.match(stripAnsi(listed.panes.find(p=>p.id==='changes')!.rows[2].text),/^─ main · 1 conflicts/,'and on the worktrees\' rule');
 });
 
 test('malformed dates remain unknown rather than crashing the inspector',()=>{
@@ -519,9 +568,9 @@ test('short help pages wrap and scroll to the complete model legend',()=>{
   assert.equal(handleMonitorInput(frame.state,key('escape'),{tree,worktrees,frame}).state.help,false);
 });
 
-test('worktree panels shrink to their content while Agents receives spare height',()=>{
+test('the changes pane shrinks to its content while Agents receives spare height',()=>{
   const frame=draw();
-  const wt=frame.panes.find(p=>p.id==='worktrees')!;
+  const wt=frame.panes.find(p=>p.id==='changes')!;
   assert.equal(wt.height,wt.rows.length+1,'its band and its rows');
   assert.ok(frame.panes[0].height>frame.panes[0].rows.length+2);
 });

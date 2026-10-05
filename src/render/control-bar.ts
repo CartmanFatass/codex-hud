@@ -63,7 +63,6 @@ type IconName = MonitorPane | 'main' | 'pause' | 'resume' | 'show' | 'hide' | 's
 export const UNICODE_ICONS: Record<IconName, string> = {
   main: '⌂',
   agents: '▦',
-  worktrees: '⌥',
   changes: '±',
   details: '◫',
   timeline: '≣',
@@ -84,7 +83,6 @@ export const UNICODE_ICONS: Record<IconName, string> = {
 export const ICONS: Record<IconName, string> = {
   main: '',
   agents: '\u{f06a9}',
-  worktrees: '',
   changes: '',
   details: '',
   timeline: '',
@@ -105,7 +103,6 @@ export const ICONS: Record<IconName, string> = {
 export const EMOJI_ICONS: Record<IconName, string> = {
   ...UNICODE_ICONS,
   agents: '🤖',
-  worktrees: '🌳',
   changes: '📝',
   details: '🔍',
   timeline: '🕘',
@@ -137,10 +134,6 @@ export function look(width = Infinity): LookName {
  */
 const PANE_NAMES: Record<MonitorPane, Record<'en' | 'zh', { title: string; tab: string; short: string }>> = {
   agents: { en: { title: 'Agents', tab: 'Agents', short: 'Ag' }, zh: { title: '卡片', tab: '卡片', short: '卡片' } },
-  worktrees: {
-    en: { title: 'Worktrees', tab: 'Trees', short: 'Wt' },
-    zh: { title: '工作树', tab: '工作树', short: '工作…' },
-  },
   changes: { en: { title: 'Changes', tab: 'Changes', short: 'Ch' }, zh: { title: '改动', tab: '改动', short: '改动' } },
   details: {
     en: { title: 'Inspector', tab: 'Inspect', short: 'In' },

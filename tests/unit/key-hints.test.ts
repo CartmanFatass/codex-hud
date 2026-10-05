@@ -171,7 +171,7 @@ const status: MonitorData['status'] = () => ({
 });
 const everyPane = (extra: Partial<MonitorState>): MonitorState => ({
   ...initialMonitorState(),
-  modes: { agents: 'open', worktrees: 'open', changes: 'open', details: 'open', timeline: 'open' },
+  modes: { agents: 'open', timeline: 'open', changes: 'open', details: 'open' },
   ...extra,
 });
 
