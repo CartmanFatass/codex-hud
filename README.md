@@ -143,6 +143,15 @@ After the first install, these are available in PowerShell and cmd:
 | `codex-hud-upgrade` | Pull latest changes, then rebuild |
 | `codex-hud-uninstall` | Remove aliases and stop HUD sessions |
 
+### Font
+
+The panel's icons, the pills' rounded ends and the frame are glyphs that **MesloLGS NF**, the Nerd Font powerlevel10k uses, draws one column wide; another font draws some of them from a fallback at another size, or not at all. The installers put it in place for your user:
+
+- `./bin/codex-hud-install` (and so `codex-hud-sync` and `codex-hud-upgrade`) runs `bin/codex-hud-fonts`, which installs its four faces into `~/.local/share/fonts` on Linux (then runs `fc-cache`) or `~/Library/Fonts` on macOS.
+- On Windows, `codex-hud-install.ps1` installs them for your Windows user, as Explorer's *Install* does. In WSL the terminal that draws the panel is a Windows program, so the font belongs there: `bin/codex-hud-fonts` run in WSL only says whether Windows has it and how to add it, and writes nothing.
+
+The files come from one pinned commit of [romkatv/powerlevel10k-media](https://github.com/romkatv/powerlevel10k-media), from GitHub or else jsDelivr's copy of it, and each must match its SHA-256. Then set the terminal's font to `MesloLGS NF` (Windows Terminal: Settings → Profiles → Defaults → Appearance → Font face). `bin/codex-hud-fonts --check` says whether it is installed; `CODEX_HUD_SKIP_FONTS=1` leaves the font out of the install. The HUD runs without it, some icons then drawn by another font.
+
 ## What's on the HUD?
 
 One line, pinned to the bottom of the terminal. Related fields sit two
@@ -218,29 +227,50 @@ Agents and Worktrees open by default; Changes and Inspector open on demand. The 
 | **3 Changes** | Files in the selected worktree, index/worktree status and conflicts, under their counts in words (`5 unstaged · 2924 untracked`, zeros left out); a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
 | **4 Inspector** | Agent status and activity times, worktree details, or colored file diffs |
 
-Panes stack vertically, each drawn as the status card is: a **band** with its icon and name on the left and, on the right, which rows are in view when it scrolls (`7–14/46`) or else how many it holds (`3 worktrees`, `12 files`, `9 events`), then its rows behind a gutter `│` on the left only (in the accent for the focused pane, dim for the rest): no right border and no bottom rule. A pane is **open or closed**; a closed one takes no row at all. A click on a pane's band zooms it to the room between the bar and the status card, and a second click restores it, as `Ctrl+]` `z` does. Worktrees shrinks to its content; spare height goes to Agents or the focused Inspector. The agents area works the same way: its summary line is its band, a click on it zooms the cards, and it can be closed from the bar, the other panes then sharing its room.
+Panes stack vertically. Each has a **title row** naming it, drawn as the panel's look draws it (below), with which rows are in view at its right end when it scrolls (`7–14/46`), or else how many it holds (`3 worktrees`, `12 files`, `9 events`); then its rows behind a gutter `│` on the left only (in the accent for the focused pane, dim for the rest): no right border and no bottom rule. In a panel 30 rows or taller a blank row parts the sections: under the bar, between two panes and above the status card; never at a pane's expense, and not in the frame look, whose edges part them already. A pane is **open or closed**; a closed one takes no row at all. A click on a pane's title zooms it to the room between the bar and the status card, and a second click restores it, as `Ctrl+]` `z` does. Worktrees shrinks to its content; spare height goes to Agents or the focused Inspector. The agents area works the same way: its title row carries the counts, a click on it zooms the cards, and it can be closed from the bar, the other panes then sharing its room.
+
+**Panes** (Settings → Panel → Panes) sets how the panes share the panel:
+
+- **stacked** (the default): every open pane at once, as above.
+- **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+]` `1`–`5` does, and `Ctrl+]` `Tab` shows the next. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
 
 **Two layouts** (Settings → Panel → Layout, applied at once):
 
 - **rich** (the default): no Agents pane. One line at the top counts what is failed, running and done (`!1 failed  ▸2 run  ✓5 done`, each count with its word; guardian reviews left out), with `◈N` for the guardian reviews under the main session; under it, in one scrolling view, an entry per subagent in the tree's order, under the same filter and linger window. A running agent, a failed one, one that finished in the last minute and one that needs a look get a **card**, open on the right. Its top rule has the status icon, a glyph for the kind of work (when Labels and title gave one), the agent's name (middle-cut when long, underlined because a click on it switches to the agent), `◈N` for its guardian reviews and the model/effort badge; the bottom rule has the turn clock counting seconds while it runs (`◷4m07s`, in the warning colour when quiet) or how long ago it finished or failed (`12d`), a collapsed parent's count (`+3 folded`), then the agent's context meter filling the rest of the rule as a thin line with its percentage at the end of the fill (`────57%──────`), and `▾`. Inside, one line each: its task (strong), its newest model note (`~`) and its newest update. Cards take their state's colour: running info, quiet warning, failed error, just finished success; the selected card's top rule sits on a lighter band. Every other finished agent is **two lines**: `✓ audit_code_paths   ☽◐ ───57%──── 12d`, its meter and age in columns down the list, and under it, indented and dim, how far it got: its newest model note, else its newest update, else its task. `j`/`k` only marks it (its first line on the lighter band), and `e`, Space or a click opens it into its card. Child entries are indented a column a level, at most two. An opened card (`e`, Space, or a click on its top rule or `▾`) adds the name Codex prints when a label stands in for it, the agent's whole log newest first, about twenty lines, the rest left to the Inspector (or, with no log, its last report), then the task in full. Agent text loses its chat markdown in cards and the Inspector: links keep their text, bold, code and heading marks go, a full commit hash shows seven characters. Guardian review threads get no card: they are the `◈N` chip, and a failed one shows as a card. The main session's brief is not in this view: it is in the status card at the foot (below).
 - **compact**: the Agents pane (the tree, one row per agent, by Codex's own name) with the brief, the recap and the agent log under it, as before.
 
-**The control bar** is the panel's first row, on its own background, and every control the panel has is on it; cards, the status card and the panes' bands draw none. Each control is a **button**, a chip with its icon in the text colour and bold, never dimmed, and its word where it fits. No key is written on it; the keys are in the help.
+**The control bar** is the panel's first row (two in the frame look), and every control the panel has is on it; cards, the status card and the panes' titles draw none. Each control is a **button**: its icon, and its word where it fits. No key is written on it; the keys are in the help.
 
 ```
-90 columns   ← 主会话   ▦   ⎇   ±   ⌖   ⋮                   ‖ 暂停简报   +31 已收起   ☰ 设置   ? 帮助
-56 columns    ←   ▦   ⎇   ±   ⌖   ⋮        ‖   +31   ☰ 设置   ? 帮助
-44 columns    ←   ▦   ⎇   ±   ⌖   ⋮      ‖   +31   ☰   ?
-36 columns    ←   ▦  ⎇  ±  ⌖  ⋮     ‖  +31  ☰  ?
-32 columns   ←  ▦ ⎇ ± ⌖ ⋮          ‖ +31 ☰ ?
+120 columns  ⌂ Main  ▦ Agents   ⌥ Trees   ± Changes  ◫ Inspect  ≣ Timeline             ǁ Pause brief  ⊕31 older  ⚙ Settings  ? Help
+ 56 columns  ⌂ ▦    ⌥ Trees    ±   ◫   ≣                  ǁ ⊕31 ⚙ ?
+ 40 columns  ⌂ ▦   ⌥ Trees   ±  ◫  ≣      ǁ ⊕31 ⚙ ?
+ 32 columns  ⌂ ▦  ⌥ Trees  ± ◫ ≣  ǁ ⊕31 ⚙ ?
 ```
 
-- `←`, with the main session's name where it fits, returns Codex to the main session.
-- The tabs are the panes, with the icon their pane's band carries: ▦ 卡片 / Agents, ⎇ 工作树 / Trees, ± 改动 / Changes, ⌖ 详情 / Inspect, ⋮ 时间线 / Timeline. A tab says its pane's state by its chip: the focused one sits on the accent, an open one on a chip a step lighter than the bar, a closed one on the bar itself, its icon as bright as the rest. One click opens a closed pane and focuses it, and closes an open one, the cards included.
-- `‖` / `▸` (暂停简报 / 继续简报) pauses or resumes the brief, shown only while one is configured; `+31` (已收起) shows the finished agents the linger window put away and `−31` (收起) hides them again, shown only when there are some; `☰` (设置) opens settings; `?` (帮助) the help.
-- The chips follow the width. From 56 columns a chip is a space, its icon, its word and a space, a column apart; the tabs' words go first, then the other buttons', so at 56 settings and help keep theirs. From 44 the chips are their icon with a space either side, a column apart; from 36 the same with no column between; under 36 a chip is its icon and one space, and short of room the closed panes' tabs go, then the older agents' button, then the brief's. With Nerd Font icons, before a chip loses its side columns the older agents' button gives up its eye and keeps its count (`+139`). Back, settings and help never go. A click anywhere on a chip, its spaces included, is its button. Without colour (`theme: none`) there are no chips: the focused tab is in brackets, and a closed pane has no tab.
-- **Icons** in settings picks the set: `unicode` (the default, the glyphs above), `nerd` ([Nerd Font](https://www.nerdfonts.com/) icons: a home `U+F015`, a robot `U+F06A9`, a branch `U+E725`, a diff `U+F440`, an info circle `U+F05A`, a history clock `U+F1DA`, pause / play `U+F04C` / `U+F04B`, an eye `U+F06E` / `U+F070`, a cog `U+F013`, a question circle `U+F059`; it needs that font in the terminal, MesloLGS NF for one), or `text`.
-- With **Icons** set to `text` (`glyphs: text` does the same) the buttons are words alone (`← 主会话`, `卡片 工作树 …`, `暂停简报`, `设置 帮助`), shortened where narrow (`← 主`, `工作…`, `Ag Wt Ch In Tl`, `暂停`).
+- `⌂` returns Codex to the main session. Its word (Main) shows where every button has room for its own, and in the frame look's title wherever it fits.
+- The tabs are the panes: `▦` Agents, `⌥` Trees, `±` Changes, `◫` Inspect, `≣` Timeline, each the icon its pane's title carries. The focused tab is drawn as the look draws it (a filled tab in the tab look); an open one is in the text colour, a closed one dim. In the stacked layout one click opens a closed pane and focuses it, and closes an open one, the cards included; in the tabs layout it shows that pane.
+- `ǁ` / `▶` (Pause brief / Resume brief) pauses or resumes the brief, shown only while one is configured; `⊕31` (older) shows the finished agents the linger window put away and `⊖31` (Hide) hides them again, shown only when there are some; `⚙` opens settings; `?` the help.
+- The bar follows the width. Words go before buttons: first the actions' words (they show only when every button has its word), then the closed tabs', then the open tabs' but the focused one's, then that one's, the columns between the tabs narrowing from three to one on the way. Then buttons go: the closed panes' tabs, the older agents' button, the brief's, the other tabs, the focused tab. The main session's button, settings and help never go. A click anywhere between the midpoints of the gaps either side of a button is that button. Without colour (`theme: none`) the focused tab is in brackets, and a closed pane has no tab.
+
+**Look** (Settings → Panel → Look, or `CODEX_HUD_LOOK`) draws the bar and the panes' titles in one of five ways. Picking a look sets Icons to the set it was drawn with; Icons can change them after.
+
+```
+tab    ⌂ ▦   ⌥ Trees   ±  ◫  ≣      ǁ ⊕31 ⚙ ?
+band   ⌂ ▦   ⌥ Trees   ±   ◫   ≣ ── ǁ ⊕31 ⚙ ?
+tile   ⌂ 🤖  🌳 Trees  📝 🔍 🕘     ǁ ⊕31 ⚙ ?
+frame  ╭─ ⌂ Main ───────────────── ǁ ⊕31 ⚙ ? ─╮
+       │ ▦    ⌥ Trees    ±   ◫   ≣            │
+pill   ⌂ ▦  ⌥ Trees  ±  ◫  ≣      ǁ ⊕31 ⚙ ?
+```
+
+- **tab** (Tab row, the default; Unicode icons): the focused tab is filled, a column of its colour either side of its face. A pane's title is its icon and name, the accent where the focus is, on no surface of its own.
+- **band** (Status band; Unicode icons): the bar is a band on its own background, as the status card's is, its spare columns an accent rule between the tabs and the actions; the focused tab is in the accent. The panes' titles are bands too, a zoomed one filled as the focused tab is.
+- **tile** (Emoji tiles; emoji icons): every open tab sits on a chip of its own, the focused one filled; a pane's title runs on into a rule, the accent where the focus is.
+- **frame** (Frame; Unicode icons): a rounded frame round the whole panel. The main session is the title on its top edge, with the actions at that edge's right end; the tabs are the row under it; each pane's title is an edge across the frame (`├─ ⌥ Worktrees ────── 3 worktrees ─┤`), its rows between the frame's sides (the left one in the accent beside the focused pane), and the status card's corner closes it (`╰─ … ─╯`). Under 20 columns it is drawn as tab.
+- **pill** (Pills; Nerd Font icons): the focused tab is a pill with rounded ends; the panes' titles are pills, the focused pane's in the tab colour, the rest on a chip.
+
+**Icons** (Settings → Panel → Icons, or `CODEX_HUD_ICONS`) picks the set: `unicode` (the glyphs above), `nerd` ([Nerd Font](https://www.nerdfonts.com/) icons: a home `U+F015`, a robot `U+F06A9`, a branch `U+E725`, a diff `U+F440`, an info circle `U+F05A`, a history clock `U+F1DA`, pause / play `U+F04C` / `U+F04B`, a cog `U+F013`, a question circle `U+F059`), `emoji` (the panes as 🤖 🌳 📝 🔍 🕘, two columns each, the actions keeping their Unicode glyphs), or `text`: the buttons are words alone (`← Main`, `Agents Trees …`, `Pause brief`, `Settings Help`), shortened where narrow (`Ag Wt Ch In Tl`, `Pause`). `glyphs: text` does the same. The Unicode and Nerd Font icons and the pills' rounded ends are drawn by MesloLGS NF (see [Font](#font)).
 
 **The status card** at the foot is a band and a corner, as omp draws its status line, and its meters are thin lines with the reading where the fill ends:
 
@@ -267,7 +297,7 @@ It has three levels (Settings → Panel → Status card, saved like the other pa
 
 Compact keeps its layout: the brief and recap stay in the area under the tree, in the same inline fields, so its card has only min and status (full there is status) and `Ctrl+]` `r` switches between the two.
 
-The view under the summary line scrolls when it does not fit: the wheel over it, `PgUp`/`PgDn`, and moving the selection, which brings the selected agent into view. Its band, the summary line, says at its right end which rows are in view (`6–17/40`). Where it is scrolled to holds across repaints and new content, and is clamped when content shrinks. A view under 12 rows drops its blank lines before it hides content. The status card and the open panes 2–5 keep their place.
+The view under the agents' title row scrolls when it does not fit: the wheel over it, `PgUp`/`PgDn`, and moving the selection, which brings the selected agent into view. The title row says at its right end which rows are in view (`6–17/40`). Where it is scrolled to holds across repaints and new content, and is clamped when content shrinks. A view under 12 rows drops its blank lines before it hides content. The status card and the open panes 2–5 keep their place.
 At 16–20 columns, margins shrink. Use `Ctrl+]` `z` to give the focused pane the full height.
 Selection follows agent IDs and file paths across refreshes, and every pane retains its scroll position.
 
@@ -275,22 +305,22 @@ Every key below follows the prefix: `Ctrl+]`, then the key (or the prefix chosen
 
 | `Ctrl+]`, then | Action |
 |-----|--------|
-| `,` / `?` | Open settings / the help (also the `设置` and `帮助` buttons); arrows, Enter and click change values, Save applies them |
-| `Tab` / `Shift+Tab` | Cycle pane focus |
-| `1`–`5` | Open and focus a pane, or close it if it is open (`1` is the cards in rich); so does a click on its tab |
-| `x` | Close the focused pane |
+| `,` / `?` | Open settings / the help (also the `⚙` and `?` buttons); arrows, Enter and click change values, Save applies them |
+| `Tab` / `Shift+Tab` | Cycle pane focus (in the tabs layout, show the next or the previous pane) |
+| `1`–`5` | Open and focus a pane, or close it if it is open (`1` is the cards in rich); in the tabs layout, show it; so does a click on its tab |
+| `x` | Close the focused pane (stacked layout) |
 | `j` / `k`, `↑` / `↓` | Move the selection or scroll; repeats without the prefix for half a second (`Ctrl+]` `j` `j` `j`) |
 | `PgUp` / `PgDn`, `g` / `G` | Page (the agents view scrolls a page; repeats), first/last item |
 | `e` or Space (rich) | Open or close the selected card's timeline, or open a one-line finished agent into its card |
 | `Enter` / `v` | Open Inspector; inside Inspector, expand/collapse timestamps, IDs and full paths (`▾ More`) |
 | `h` / `l` | Fold/unfold or navigate parent/child agents |
 | `s` | Active-first / creation order |
-| `a` | Show or hide the finished agents the tree has put away (the `+N` button) |
+| `a` | Show or hide the finished agents the tree has put away (the `⊕N` button) |
 | `f` or `/` | Filter all, running, failed, unknown |
 | `o` | Switch the actual Codex conversation to the selected agent (a click on an agent in compact, on a card's name in rich) |
-| `m` | Return the Codex conversation to the root session (the `←` button) |
-| `z` | Zoom/restore focused pane; a click on its band too |
-| `b` | Pause / resume the brief and recap model calls (the pause button, 暂停简报) |
+| `m` | Return the Codex conversation to the root session (the `⌂` button) |
+| `z` | Zoom/restore focused pane, a click on its title too (stacked layout) |
+| `b` | Pause / resume the brief and recap model calls (the `ǁ` button) |
 | `r` | Status card level: min → status → full (compact: min ↔ status); a click on the card's band too |
 | `Esc` | Dismiss help, unzoom, return to list; close from Agents |
 | `q` | Close the panel |
@@ -312,7 +342,7 @@ Parent links support both metadata locations. Missing status evidence stays unkn
 
 Agents are named by the last segment of their task path, the name Codex's `/subagents` picker shows: `/root/essays_2020_2021` reads `essays_2020_2021`. That name heads the tree row, the card and the agent's log block until a label arrives. With Labels and title on (the default, once a backend is set), the model's short name then stands in for it in cards, rows, the compact tree, the timeline and the Inspector's heading (Settings → Agents → Label as name; off, the label is the line under the name instead); an opened card and the Inspector still show the name Codex prints, and switching to an agent always goes by that name. The random nickname Codex also assigns (Copernicus, Meitner…) and the role move to the Inspector. Guardian review threads (Codex 0.155+ opens one beside a session to review its approvals) get no row or card of their own: their parent carries `◈N`, in the info colour while one runs, and a failed one still shows.
 
-Finished agents leave the list 3 minutes after they finish (Settings → Hide finished: 1m, 3m, 10m, 30m or never). Running and failed agents never leave, and a finished agent whose child is still shown stays as a dimmed row. Each finished row says how long ago it finished; the control bar counts what was put away (`+12 older`), and clicking that or `Ctrl+]` `a` shows everything again.
+Finished agents leave the list 3 minutes after they finish (Settings → Hide finished: 1m, 3m, 10m, 30m or never). Running and failed agents never leave, and a finished agent whose child is still shown stays as a dimmed row. Each finished row says how long ago it finished; the control bar counts what was put away (`⊕12`), and clicking that or `Ctrl+]` `a` shows everything again.
 
 **Timeline.** Pane 5, closed by default, lists the session's events newest first with their age: approvals asked for and answered, compaction, a quota window crossing 80 % and 95 %, turns finished, interrupted or failed, failed tool calls, and each subagent starting, finishing or failing. They are facts the rollout recorded; a quiet stretch is not an event. The same event in a row is one line with `×N` (`12d ⏎ Turn finished ×7`: every line carries a word beside its icon); an agent that started and finished in the list is one line at the finish (`▸ bench_tokenizer 7m ✓`, or `bench_tokenizer ran 7m ✓` with glyphs set to text), and one still running is `▸ bench_tokenizer`; guardian reviews' comings and goings are left out, their failures kept. Each agent's name has its own colour, here and in the Inspector's heading, so one agent can be followed down the list. A pending approval also says how long it has waited, on the bar's alert (widest form) and in the panel's status card.
 
@@ -426,13 +456,16 @@ happens. Another successful read alone does not rewrite the file, so
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CODEX_HUD_DENSITY` | `balanced` | How much the bar shows (`focus` / `balanced` / `full`) |
-| `CODEX_HUD_THEME` | `terminal` | Palette (`terminal` / `mocha` / `latte` / `none`) |
+| `CODEX_HUD_THEME` | `terminal` | Palette (`terminal` / `titanium` / `mocha` / `latte` / `none`) |
+| `CODEX_HUD_LOOK` | `tab` | How the panel's bar and pane titles are drawn (`tab` / `band` / `tile` / `frame` / `pill`) |
+| `CODEX_HUD_ICONS` | `unicode` | The panel's icons (`unicode` / `nerd` / `emoji` / `text`) |
 | `CODEX_HUD_GLYPHS` | `both` | Model badge style (`glyph` / `text` / `both`) |
 | `CODEX_HUD_STATUSLINE` | `1` | Bottom bar enabled by default; `0` disables for new HUD sessions, overriding Settings → Bar on launch |
 | `CODEX_HUD_CONTEXT` | `used` | Context percentage: `used` or `remaining`; also available in Settings |
 | `CODEX_HUD_POSITION` | `bottom` | HUD pane position (`top` / `bottom`) |
 | `CODEX_HUD_HEIGHT` | `1` | HUD height in lines |
 | `CODEX_HUD_MOUSE` | `1` | Enable mouse/trackpad scrolling |
+| `CODEX_HUD_SKIP_FONTS` | unset | `1`: the installers leave the MesloLGS NF font out |
 
 Status glyphs use semantic colors: cyan `▸` working, green `✓` turn complete, yellow `■` interrupted, red `✗` failed. Yellow `?` means collection failed; `Ctx~` marks the last context measurement while awaiting a new turn's or compaction's token report. Silence does not turn a working session idle.
 

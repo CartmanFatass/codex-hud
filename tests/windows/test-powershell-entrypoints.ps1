@@ -50,6 +50,7 @@ $originalSkipWslReinstall = $env:CODEX_HUD_SKIP_WSL_CLI_REINSTALL
 $originalSkipWsl = $env:CODEX_HUD_SKIP_WSL_SETUP
 $originalSkipBuild = $env:CODEX_HUD_SKIP_BUILD
 $originalSkipNativeTmux = $env:CODEX_HUD_SKIP_NATIVE_TMUX_SETUP
+$originalSkipFonts = $env:CODEX_HUD_SKIP_FONTS
 $originalRealCodex = $env:CODEX_HUD_REAL_CODEX
 $originalTestCodex = $env:CODEX_HUD_TEST_REAL_CODEX
 $originalWslLog = $env:CODEX_HUD_TEST_WSL_LOG
@@ -459,6 +460,7 @@ exit /b 0
     Remove-Item Env:CODEX_HUD_SKIP_WSL_SETUP -ErrorAction SilentlyContinue
     $env:CODEX_HUD_SKIP_BUILD = '1'
     $env:CODEX_HUD_SKIP_NATIVE_TMUX_SETUP = '1'
+    $env:CODEX_HUD_SKIP_FONTS = '1'
     $env:CODEX_HUD_WSL_COMMAND = $fakeWslNativeCmd
     $env:CODEX_HUD_TEST_REAL_CODEX = $fakeCodexCmd
 
@@ -495,6 +497,7 @@ exit /b 0
     $env:CODEX_HUD_SKIP_WSL_SETUP = '1'
     $env:CODEX_HUD_SKIP_BUILD = '1'
     $env:CODEX_HUD_SKIP_NATIVE_TMUX_SETUP = '1'
+    $env:CODEX_HUD_SKIP_FONTS = '1'
     $env:CODEX_HUD_TEST_REAL_CODEX = $fakeCodexCmd
 
     & (Join-Path $repoRoot 'bin\codex-hud-install.ps1') -Mode install
@@ -554,6 +557,7 @@ exit /b 0
     $env:CODEX_HUD_SKIP_WSL_SETUP = $originalSkipWsl
     $env:CODEX_HUD_SKIP_BUILD = $originalSkipBuild
     $env:CODEX_HUD_SKIP_NATIVE_TMUX_SETUP = $originalSkipNativeTmux
+    $env:CODEX_HUD_SKIP_FONTS = $originalSkipFonts
     $env:CODEX_HUD_REAL_CODEX = $originalRealCodex
     $env:CODEX_HUD_TEST_REAL_CODEX = $originalTestCodex
     $env:CODEX_HUD_TEST_WSL_LOG = $originalWslLog
