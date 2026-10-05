@@ -86,7 +86,11 @@ export interface HudSettings extends HudDisplayConfig {
    * replies go to the backend. Off by default; it is the more sensitive one.
    */
   briefMain: boolean;
-  /** The recap's slower trigger: at most one refresh per this while anything changed, in ms. */
+  /**
+   * Routine every: the slower pace the agents brief (new updates, the running
+   * command, routine subtasks), the main recap (a long turn) and the change
+   * summary share, at most one run each per this while anything changed, in ms.
+   */
   recapFloorMs: number;
   /** Show each agent's log under the tree even with the model backend off (observed entries only). */
   agentLog: boolean;

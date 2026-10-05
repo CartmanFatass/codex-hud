@@ -152,9 +152,9 @@ test('with no backend the model rows step back under a note, still selectable; w
   const quiet=renderSettingsPage({draft:{...defaultSettings(),notify:false},selected:0,offset:0,message:''},90,50);
   assert.ok(quiet.lines[quiet.rows.indexOf(row('notifyDesktop'))].includes(colors.dim('Desktop notices')));
   // The floor paces the agents brief as well as the recap, so it waits only on all of them.
-  assert.ok(!on.lines[on.rows.indexOf(row('recapFloorMs'))].includes(colors.dim('Recap floor')),'the agents brief alone uses the floor');
+  assert.ok(!on.lines[on.rows.indexOf(row('recapFloorMs'))].includes(colors.dim('Routine every')),'the agents brief alone uses the floor');
   const none=renderSettingsPage({draft:{...defaultSettings(),briefing:'omp',briefAgents:false,briefMain:false,changeSummary:false},selected:0,offset:0,message:''},90,50);
-  assert.ok(none.lines[none.rows.indexOf(row('recapFloorMs'))].includes(colors.dim('Recap floor')));
+  assert.ok(none.lines[none.rows.indexOf(row('recapFloorMs'))].includes(colors.dim('Routine every')));
 });
 
 test('a row the panel\'s top shows previews it from the draft, above its help; the others, and a short page, do not',async()=>{

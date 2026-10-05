@@ -54,8 +54,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'briefing',group:'LLM',label:'Backend',short:'Model',values:['off','omp','agy','api'],help:'Who writes; off stops all below'},
   {key:'briefingMs',group:'LLM',label:'Brief every',short:'Every',values:[60_000,120_000,300_000,600_000],
     help:'At most this often, on change',format:minutes},
-  {key:'recapFloorMs',group:'LLM',label:'Recap floor',short:'Floor',values:[300_000,600_000,900_000,1_800_000],
-    help:'During long waits, at most this often',format:minutes},
+  {key:'recapFloorMs',group:'LLM',label:'Routine every',short:'Routine',values:[300_000,600_000,900_000,1_800_000],
+    help:'At most this often, routine news',format:minutes},
   {key:'modelCallsPerHour',group:'LLM',label:'Call cap',short:'Cap',values:[30,60,120,240],help:'Model calls per hour, all items',
     format:value => `${value}/h`},
   {key:'briefAgents',group:'LLM',label:'Agents brief',short:'Agents',values:[true,false],help:'Sends agent tasks, updates and stage results'},
@@ -115,7 +115,7 @@ type DisplayLine = {group:string} | {index:number} | {note:string};
 
 /**
  * Rows that do nothing until another is on: every model feature needs a
- * backend, desktop notices need notifications, the recap floor needs one of
+ * backend, desktop notices need notifications, Routine every needs one of
  * the items it paces (the agents brief, the main recap, the change summary),
  * a label as the name needs the labels. They stay selectable, so they can be set up in advance, but
  * step back while their parent is off.
