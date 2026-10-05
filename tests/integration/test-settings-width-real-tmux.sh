@@ -11,7 +11,7 @@ trap cleanup EXIT
 main=$(t new-session -d -s width -x 188 -y 40 -P -F '#{pane_id}' 'sleep 120')
 open_tree() {
   panel=$(t split-window -h -l 30 -t "$main" -d -P -F '#{pane_id}' \
-    "env CODEX_HOME='$dir' CODEX_HUD_SETTINGS_PATH='$dir/settings.json' CODEX_HUD_CWD='$repo' CODEX_HUD_MAIN_PANE='$main' node '$repo/dist/tree-page.js'")
+    "env LC_ALL=C.UTF-8 CODEX_HOME='$dir' CODEX_HUD_SETTINGS_PATH='$dir/settings.json' CODEX_HUD_CWD='$repo' CODEX_HUD_MAIN_PANE='$main' node '$repo/dist/tree-page.js'")
 }
 # A panel command as the prefix table delivers it (bin/codex-hud-command).
 panel_command() {

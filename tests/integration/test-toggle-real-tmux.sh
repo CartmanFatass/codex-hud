@@ -233,8 +233,9 @@ t set-option -t s3 @codex_hud_mode "single"
 t set-option -t s3 @codex_hud_session_start "$(date +%s)"
 t set-option -t s3 @codex_hud_codex_home "$FAKE_HOME"
 t set-option -t s3 @codex_hud_pane "$HUD_PANE"
+# English whatever the locale, for the check on the recreated bar below.
 t set-option -t s3 @codex_hud_hud_cmd \
-  "env CODEX_HOME=$FAKE_HOME CODEX_HUD_CWD=$FAKE_CWD node $REPO_DIR/dist/index.js"
+  "env LC_ALL=C.UTF-8 CODEX_HOME=$FAKE_HOME CODEX_HUD_CWD=$FAKE_CWD node $REPO_DIR/dist/index.js"
 toggle s3
 assert_eq "T9 mode becomes tree" "$(get_opt s3 @codex_hud_mode)" "tree"
 assert_eq "T9 pane count (main + panel)" "$(pane_count s3)" "2"
