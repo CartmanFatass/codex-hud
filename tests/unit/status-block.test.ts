@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { statusCard, type StatusCard } from '../../src/render/status-block.js';
-import { initialMonitorState, renderMonitor, meterGap, edgeLine, METER_MIN } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, meterText, meterRow, METER_MIN } from '../../src/render/monitor.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
@@ -26,10 +26,14 @@ test('the card hands over parts for its edges: state, identity, the two meters, 
   assert.match(plain(card.context!.tail!), /^\d+K$/, 'the window size, in whole thousands');
   assert.equal(card.context!.tick, undefined, 'no auto-compact point in the config: no tick');
   // The tightest window is the meter; the other is a reading beside it.
-  assert.equal(plain(card.quota!.label!), '5h 61%');
+  assert.equal(plain(card.quota!.text), '5h 61%');
+  assert.equal(plain(card.quota!.window), '5h');
+  assert.equal(card.quota!.percent, 61);
   assert.equal(plain(card.others), '7d 23%');
   assert.match(plain(card.reset), /^↺/);
+  assert.ok(card.reset.startsWith(theme.tick('↺').slice(0, 8)), 'the reset is the quota meter\'s scale: the tick colour');
   assert.match(plain(card.place), new RegExp(data.project.projectName));
+  assert.equal(plain(card.project!), data.project.projectName);
   assert.equal(plain(card.age), '1h');
   assert.equal(statusCard(null), null);
 });
@@ -62,87 +66,109 @@ test('while it works the state is the tool, its target and the clock, with the o
   assert.equal(statusCard({ ...idle, stale: true }, now)!.tone, 'stale');
 });
 
-test('the cache reminder is dim once lapsed, a warning only in the minutes before', () => {
+test('the cache reminder shows only in the minutes before it lapses, as a warning', () => {
   const at = Date.parse('2026-03-01T12:00:00Z');
   const data = makeHudData({ tokenUsageAt: new Date(at) });
-  assert.equal(statusCard(data, at + 40 * 60_000)!.cache, colors.dim('◷~30m+'));
+  assert.equal(statusCard(data, at + 40 * 60_000)!.cache, '');
   assert.equal(statusCard(data, at + 27 * 60_000)!.cache, theme.warning('◷~27m'));
-  assert.equal(statusCard(data, at + 3 * 60_000)!.cache, colors.dim('◷~03m'));
+  assert.equal(statusCard(data, at + 3 * 60_000)!.cache, '');
 });
 
-test('a meter fills its gap in proportion, giving up its tail, then its bar, then its label', () => {
-  const meter = { percent: 50, paint: (s: string) => s, label: '50%', tail: '246K' };
-  const full = plain(meterGap(30, meter).text);
-  assert.equal(visualLength(full), 30);
-  assert.match(full, /^50%━+╸?─+─246K$/);
-  const bar = full.slice(3, full.length - 5);
-  assert.equal([...bar].filter(ch => ch !== '─').length, Math.ceil(bar.length / 2));
-  assert.equal(plain(meterGap(3 + 1 + 4 + METER_MIN - 1, meter).text).includes('246K'), false, 'short of room the tail goes first');
-  assert.equal(plain(meterGap(3 + METER_MIN - 1, meter).text), '50%' + '─'.repeat(METER_MIN - 1), 'under the minimum: the label alone');
-  assert.equal(plain(meterGap(2, meter).text), '──');
-  const ticked = plain(meterGap(24, { ...meter, tail: undefined, label: '', tick: 75 }).text);
-  assert.equal(ticked.indexOf('┃'), 18);
-  const line = edgeLine(40, '╭─', '─╮', 'left', 'right', meter)!;
-  assert.equal(visualLength(line.line), 40);
-  assert.match(plain(line.line), /^╭─ left 50%━+╸?─+─246K right ─╮$/);
-  assert.equal(edgeLine(14, '╭─', '─╮', 'left', 'right', meter, true), null, 'no room for the bar when it is asked for');
+test('a meter is a thin line: the fill in its zone colour, the bold reading at its head, the track, the tail', () => {
+  const meter = { percent: 50, tail: '246K' };
+  const full = meterText(meter, 30);
+  assert.equal(visualLength(full.text), 30);
+  assert.match(plain(full.text), /^─+50%─+─246K$/);
+  // The bar is the cells the reading and tail leave; half of it is filled, ahead of the reading.
+  assert.equal(plain(full.text).indexOf('50%'), Math.round((30 - 3 - 5) / 2));
+  assert.ok(full.text.includes(theme.info('─'.repeat(11))), 'under 70% the fill is info');
+  assert.ok(full.text.includes(theme.bold(theme.info('50%'))), 'the reading is bold, in the zone colour');
+  assert.ok(full.text.includes(theme.track('─')), 'the rest is track');
+  assert.ok(full.text.includes(theme.tick('246K')), 'the tail is in the tick colour');
+  const opens = (paint: (s: string) => string) => paint('X').split('X')[0] + '─';
+  assert.ok(meterText({ percent: 75 }, 20).text.includes(opens(theme.warning)), '70–85% is a warning');
+  assert.ok(meterText({ percent: 90 }, 20).text.includes(opens(theme.error)), '85% and above is danger');
+  assert.equal(plain(meterText(meter, 3 + 5 + METER_MIN - 1).text).includes('246K'), false, 'short of room the tail goes first');
+  assert.equal(plain(meterText(meter, 3).text), '50%', 'at the reading\'s width, the reading alone');
+  assert.equal(plain(meterText(meter, 2).text), '──', 'under it, track');
+  assert.equal(plain(meterText({ percent: 0 }, 10).text), '0%────────', 'the reading rides the fill: at 0 it leads');
+  const ticked = plain(meterText({ percent: 10, tick: 75 }, 24).text);
+  assert.equal(ticked.indexOf('┃'), 3 + Math.round(0.75 * 21), 'a known threshold is a tick in the track');
+  assert.equal(meterRow(14, 'left ', ' right', meter, 6), null, 'no room for the bar when it is asked for');
+  assert.equal(visualLength(meterRow(40, 'left ', ' right', meter)!), 40);
+  assert.equal(meterRow(10, 'left ', ' right'), null);
+});
+
+test('with no colour the meter stays readable: heavy fill, light track, no escapes', () => {
+  const previous = displayConfig();
+  setDisplayConfig({ theme: 'none' });
+  try {
+    const text = meterText({ percent: 50, tail: '246K' }, 30).text;
+    assert.equal(text, stripAnsi(text), 'no escapes');
+    assert.match(text, /^━+50%─+─246K$/);
+  } finally { setDisplayConfig(previous); }
 });
 
 const card = (extra: Partial<StatusCard> = {}): StatusCard => ({
   tone: 'idle', alerts: ['! one'], state: '✓', rate: '', tasks: '', model: '☀◆', age: '2h',
-  context: { percent: 40, paint: theme.success, label: '40%', tail: '246K' },
-  place: 'repo · main *', quota: { percent: 61, paint: theme.success, label: '5h 61%', text: '5h 61%' },
-  others: '', forecast: '', reset: '↺1h', cache: '◷~03m', ...extra,
+  context: { percent: 40, tail: '246K' }, place: 'repo · main *', project: 'repo', branch: '· main *',
+  quota: { percent: 61, window: '5h', spent: '', text: '5h 61%' },
+  others: '', forecast: '', reset: '↺1h', cache: '', ...extra,
 });
 
-test('the edges carry the meters: context on the top with the hints, quota on the bottom with reset and cache', () => {
+test('the band carries the context meter, the corner row the quota meter with its reset', () => {
   for (const lang of ['en', 'zh'] as const) {
     const previous = setLanguage(lang);
     try {
-      for (const width of [32, 56, 90]) {
+      for (const width of [32, 40, 56, 90]) {
         const frame = renderMonitor({ tree, state: { ...initialMonitorState(), statusLevel: 'status' }, width, height: 24, status: () => card() });
         const lines = frame.lines.map(plain);
         for (const line of frame.lines) assert.equal(visualLength(line), width, `${lang} ${width}: ${stripAnsi(line)}`);
         const top = lines.at(-3)!, body = lines.at(-2)!, bottom = lines.at(-1)!;
-        assert.match(top, /^╭─ ✓ (☀◆ )?(2h )?40%[━╸]+─+(─246K)?( , \? ─╮| ─╮)$/, `${lang} ${width}: ${top}`);
-        assert.match(body, /^│ ! one +│$/);
-        assert.match(bottom, /^╰─ repo · main \* 5h 61%[━╸─]+ (↺1h )?(◷~03m )?─╯$/, `${lang} ${width}: ${bottom}`);
-        if (width === 90) assert.match(top, /☀◆ 2h 40%[━╸]+─+─246K , \?/);
-        const control = frame.controls.find(c => c.kind === 'settings')!;
-        assert.equal(control.y, 24 - 3);
-        assert.equal(top.slice(control.x).replace(/^(.).*/, '$1'), ',', 'the hint opens settings');
+        assert.match(top, /^ ✓ (☀◆ )?(2h )?─*40%─+(─246K)? $/, `${lang} ${width}: ${top}`);
+        assert.equal(body, '│ ! one'.padEnd(width), 'a gutter on the left only');
+        assert.match(bottom, /^╰─ repo (· main \* )?(5h )?─*61%─+ ↺1h$/, `${lang} ${width}: ${bottom}`);
+        if (width >= 56) assert.match(bottom, /^╰─ repo · main \* 5h /);
+        if (width === 90) assert.match(top, /☀◆ 2h ─+40%─+─246K $/);
+        assert.ok(frame.lines.at(-3)!.startsWith(theme.band(' ').slice(0, 10)), 'the band has its own background');
+        assert.ok(!frame.controls.some(c => c.kind === 'settings' || c.kind === 'brief'), 'no switch or hint on the card');
+        assert.ok(frame.controls.some(c => c.kind === 'level' && c.y === 24 - 3 && c.width === width), 'the band steps the level');
       }
     } finally { setLanguage(previous); }
   }
 });
 
-test('a crowded edge drops the hints, the age, the model and the tail before the bar; the place is cut in the middle', () => {
+test('a crowded row drops the age, the tail and the model before the bar; the corner row gives up the branch, then the window', () => {
   const draw = (width: number, extra: Partial<StatusCard> = {}) =>
     renderMonitor({ tree, state: { ...initialMonitorState(), statusLevel: 'status' }, width, height: 24, status: () => card(extra) }).lines.map(plain);
-  const wide = draw(40);
-  assert.ok(wide.at(-3)!.includes('━'));
   const narrow = draw(26);
-  assert.match(narrow.at(-3)!, /^╭─ ✓ (☀◆ )?40%[━╸]+─*(─246K ─╮|─╮)$/, narrow.at(-3)!);
-  const long = draw(30, { place: 'a-very-long-project-name › repo · main *' }).at(-1)!;
+  assert.match(narrow.at(-3)!, /^ ✓ (☀◆ )?(2h )?─*40%─+(─246K)? $/, narrow.at(-3)!);
+  assert.match(draw(24).at(-3)!, /^ ✓ (☀◆ )?─*40%─+(246K)? $/, 'the age goes before the bar');
+  assert.match(draw(56, { project: 'atlas-wsl' }).at(-1)!, /^╰─ atlas-wsl · main \* 5h ─+61%─+ ↺1h$/);
+  assert.match(draw(40, { project: 'atlas-wsl' }).at(-1)!, /^╰─ atlas-wsl 5h ─+61%─+ ↺1h$/, 'at 40 the branch goes first');
+  assert.match(draw(30, { project: 'atlas-wsl' }).at(-1)!, /^╰─ atlas-wsl ─+61%─+ ↺1h$/, 'then the window');
+  const long = draw(30, { project: 'a-very-long-project-name-indeed', branch: '' }).at(-1)!;
   assert.equal(visualLength(long), 30);
-  assert.match(long, /^╰─ a-very.*….*main \* /, long);
+  assert.match(long, /^╰─ a-very.*….* 61% ↺1h$/, long);
   const lines = (height: number, width = 30) =>
     renderMonitor({ tree, state: initialMonitorState(), width, height, status: () => card(), session: () => ({ text: '✓', attention: false }) }).lines.map(plain);
   assert.equal(lines(12).filter(line => line.startsWith('│')).length, 0, 'a short panel keeps its agents ten rows: one line');
-  assert.match(lines(12).at(-1)!, /^╶─ ✓ /);
+  assert.match(lines(12).at(-1)!, /^ ✓ .* 5h 61% $/, 'the one line carries the quota reading');
   assert.equal(lines(40).filter(line => line.startsWith('│')).length, 1);
-  assert.ok(!lines(24, 20).some(line => line.startsWith('╭')), 'too narrow for a frame: no card');
+  assert.ok(!lines(24, 20).some(line => line.startsWith('╰')), 'too narrow for a card: no card');
 });
 
-test('the frame takes the state colour; the meters keep their own', () => {
+test('the gutter and corner take the state colour; the meters keep their own', () => {
   const draw = (tone: StatusCard['tone']) =>
     renderMonitor({ tree, state: { ...initialMonitorState(), statusLevel: 'status' }, width: 60, height: 40, status: () => card({ tone }) });
   const working = draw('working');
   const y = working.statusCard!.y;
-  assert.ok(working.lines[y].startsWith(theme.info('╭─')));
   assert.ok(working.lines[y + 1].startsWith(theme.info('│ ')));
-  assert.ok(working.lines[y].includes(theme.success('X').split('X')[0] + '━'), 'the context fill keeps its threshold colour');
-  assert.ok(draw('error').lines[y].startsWith(theme.error('╭─')));
-  assert.ok(draw('needs').lines[y].startsWith(theme.warning('╭─')));
-  assert.ok(draw('idle').lines[y].startsWith(colors.dim('╭─')));
+  assert.ok(working.lines[y + 2].startsWith(theme.info('╰─')));
+  assert.ok(working.lines[y].includes(theme.info('X').split('X')[0] + '─'), 'the context fill keeps its zone colour');
+  assert.ok(draw('error').lines[y + 2].startsWith(theme.error('╰─')));
+  assert.ok(draw('needs').lines[y + 2].startsWith(theme.warning('╰─')));
+  assert.ok(draw('stale').lines[y + 2].startsWith(theme.warning('╰─')));
+  assert.ok(draw('idle').lines[y + 2].startsWith(colors.dim('╰─')));
+  assert.match(plain(draw('needs').lines[y]), /^ ! /, 'needing the person is "!", in place of the idle glyph');
 });

@@ -56,7 +56,7 @@ test('a card: Codex\'s name, glyph and badge on the rule; the smart name, then t
   assert.equal(lines[top + 2].trimEnd(), '│', 'a blank line before the news');
   assert.match(lines[top + 3], /^│ ~ 召回下降，结果待核对 +6s$/, 'the newest model note first, its age at the right');
   assert.match(lines[top + 4], /^│ recall@10 0\.71 +2m$/, 'then the newest observed entry');
-  assert.match(lines[top + 5], /^└ ◷ 4m07s 56%[━╸]+─+ ▾$/, 'the turn clock counting seconds, the rule as the context meter, the switch');
+  assert.match(lines[top + 5], /^└ ◷ 4m07s ─*56%─+ ▾$/, 'the turn clock counting seconds, the rule as the context meter, the switch');
   assert.ok(frame.lines[top + 1].startsWith(theme.info('│')), 'a card is painted by its state, selected or not');
   assert.ok(frame.lines[top].startsWith(theme.accent('›')), 'the selection is the corner');
   // A card with no smart name: the task under the name, cut to two lines; the time since it failed.
@@ -302,9 +302,9 @@ test('a finished agent a minute old is one line, its meter and age in columns; e
   const lines = plain(frame);
   const rows = lines.filter(line => /^[› ] ✓ (audit|migrate)/.test(line));
   assert.equal(rows.length, 2, lines.join('\n'));
-  assert.match(rows[0], /^› ✓ audit_code_paths ─+ ☽◐ Luna 57%[━╸]+─+ 12d$/);
+  assert.match(rows[0], /^› ✓ audit_code_paths ─+ ☽◐ Luna ─+57%─+ 12d$/);
   assert.equal(rows[0].length, rows[1].length);
-  assert.equal(rows[0].indexOf('%'), rows[1].indexOf('%'), 'the meters line up');
+  assert.equal(rows[0].lastIndexOf('─'), rows[1].lastIndexOf('─'), 'the meters line up');
   assert.equal(lines.indexOf(rows[1]) - lines.indexOf(rows[0]), 1, 'one-line rows sit together, no blank between');
   assert.ok(lines.some(line => /^┌ ✓ just_done/.test(line)), 'just finished: still a card, so its report shows for a minute');
   assert.ok(frame.lines.every(line => visualLength(line) <= 90));
@@ -322,7 +322,7 @@ test('a finished agent a minute old is one line, its meter and age in columns; e
   const clicked = handleMonitorInput(frame.state, click(10, y), ctx).state;
   assert.ok(clicked.cards?.has(old[1].id));
   const open = plain(renderMonitor({ tree: tree(nodes), state: opened, width: 90, height: 40, nowMs: now }));
-  assert.ok(open.some(line => /^› ✓ migrate ─+/.test(line)) && open.some(line => /^└ 12d 29%[━╸]+─+ ▴$/.test(line)), open.join('\n'));
+  assert.ok(open.some(line => /^› ✓ migrate ─+/.test(line)) && open.some(line => /^└ 12d ─+29%─+ ▴$/.test(line)), open.join('\n'));
   // Glyphs off: the age says ago.
   const words = withGlyphs('text', () => plain(renderMonitor({ tree: tree(nodes), state, width: 90, height: 40, nowMs: now })));
   assert.ok(words.some(line => /12d ago$/.test(line)), words.join('\n'));
@@ -336,7 +336,7 @@ test('a finished agent a minute old is one line, its meter and age in columns; e
     assert.match(zh[0], /[━╸─] 12d前$/, 'the column is as wide as the words, not the English ones');
     assert.match(zh[1], /[━╸─] {2}2m前$/);
     assert.equal(visualLength(zh[0]), visualLength(zh[1]));
-    assert.equal(visualLength(zh[0].slice(0, zh[0].indexOf('%'))), visualLength(zh[1].slice(0, zh[1].indexOf('%'))), 'the meters line up');
+    assert.equal(visualLength(zh[0].slice(0, zh[0].lastIndexOf('─'))), visualLength(zh[1].slice(0, zh[1].lastIndexOf('─'))), 'the meters line up');
   } finally { setLanguage(previous); }
 });
 

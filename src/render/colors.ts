@@ -75,6 +75,15 @@ export const theme = {
   strong: (text: string) => palette().strong(text),
   accent: (text: string) => palette().accent(text),
   selected: (text: string) => palette().selected(text),
+  // Row surfaces and the meter's track and scale; see `palette.ts`.
+  band: (text: string) => palette().band(text),
+  bar: (text: string) => palette().bar(text),
+  selectedBand: (text: string) => palette().selectedBand(text),
+  tab: (text: string) => palette().tab(text),
+  track: (text: string) => palette().track(text),
+  tick: (text: string) => palette().tick(text),
+  /** Bold, except with no colour at all: `none` emits no escapes. */
+  bold: (text: string) => (palette().name === 'none' ? text : `${ESC}1m${text}${RESET}`),
 
   // Capacity meters: how full something is, so full is bad
   contextSafe: (text: string) => palette().success(text),
@@ -333,16 +342,30 @@ export function truncateAnsi(text: string, maxWidth: number, ellipsis = '…'): 
   return truncated + RESET;
 }
 
+/** Where a capacity reading turns to a warning, and to danger. */
+export const METER_WARN = 70;
+export const METER_DANGER = 85;
+
 /**
  * Get the appropriate color function based on context usage percentage
  */
 export function getContextColor(percent: number): (text: string) => string {
-  if (percent >= 85) {
+  if (percent >= METER_DANGER) {
     return theme.contextDanger;
-  } else if (percent >= 70) {
+  } else if (percent >= METER_WARN) {
     return theme.contextWarning;
   }
   return theme.contextSafe;
+}
+
+/**
+ * A panel meter's zone, at the same thresholds as `getContextColor`: info
+ * while there is room, then warning, then danger. Info rather than success
+ * below the first threshold, so a meter's fill is a reading and not a
+ * verdict, and stands apart from the finished agents' green.
+ */
+export function getMeterColor(percent: number): (text: string) => string {
+  return percent >= METER_DANGER ? theme.contextDanger : percent >= METER_WARN ? theme.contextWarning : theme.info;
 }
 
 /**

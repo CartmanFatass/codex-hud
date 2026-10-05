@@ -36,6 +36,23 @@ export interface Palette {
    * warning or error hue, so an agent's colour never reads as its state.
    */
   agents: readonly Paint[];
+  /**
+   * Backgrounds, each one a row's surface rather than its text: the status
+   * card's band row, the control bar at the top, the selected agent's row,
+   * and the focused tab on the control bar. They restore themselves after
+   * every reset inside, so coloured spans keep the surface.
+   */
+  band: Paint;
+  bar: Paint;
+  selectedBand: Paint;
+  tab: Paint;
+  /**
+   * A meter's unfilled part, clearly darker than the frame's rules so the
+   * fill reads against it, and its scale (the window size, the reset) and
+   * threshold tick.
+   */
+  track: Paint;
+  tick: Paint;
 }
 
 const ESC = '\x1b[';
@@ -49,11 +66,13 @@ function ansi256(code: number): Paint {
   return (text: string) => `${ESC}38;5;${code}m${text}${RESET}`;
 }
 
-function rgb(hex: string): Paint {
+function hexParts(hex: string): [number, number, number] {
   const value = hex.replace('#', '');
-  const r = parseInt(value.slice(0, 2), 16);
-  const g = parseInt(value.slice(2, 4), 16);
-  const b = parseInt(value.slice(4, 6), 16);
+  return [parseInt(value.slice(0, 2), 16), parseInt(value.slice(2, 4), 16), parseInt(value.slice(4, 6), 16)];
+}
+
+function rgb(hex: string): Paint {
+  const [r, g, b] = hexParts(hex);
   return (text: string) => `${ESC}38;2;${r};${g};${b}m${text}${RESET}`;
 }
 
@@ -62,6 +81,11 @@ function rgb(hex: string): Paint {
 function highlight(code: string): Paint {
   const start = `${ESC}${code}m`;
   return text => start + text.replaceAll(RESET, RESET + start) + RESET;
+}
+
+/** A background in exact colour, kept across the resets inside it. */
+function surface(hex: string): Paint {
+  return highlight(`48;2;${hexParts(hex).join(';')}`);
 }
 
 const identity: Paint = (text: string) => text;
@@ -88,6 +112,15 @@ const TERMINAL: Palette = {
   selected: highlight('7'),
   // Mid-tones of the 256-colour cube, legible on dark and light backgrounds.
   agents: [ansi256(33), ansi256(98), ansi256(133), ansi256(67), ansi256(37), ansi256(175)],
+  // Greys of the 256-colour ramp, a step apart: the band, the bar above it,
+  // the selected row and the focused tab each one lighter than the last.
+  band: highlight('48;5;235'),
+  bar: highlight('48;5;236'),
+  selectedBand: highlight('48;5;237'),
+  tab: highlight('48;5;238'),
+  track: ansi256(239),
+  // Steel blue: a scale, not a state, so neither the info blue nor a grey.
+  tick: ansi256(67),
 };
 
 // Catppuccin Mocha and Latte, from the published palettes.
@@ -106,6 +139,13 @@ const MOCHA: Palette = {
   strong: rgb('#B4BEFE'),
   selected: highlight('48;2;49;50;68'),
   agents: ['#89B4FA', '#B4BEFE', '#CBA6F7', '#F5C2E7', '#74C7EC', '#F2CDCD'].map(rgb),
+  // Mantle under the band, the surfaces above the base for the rest.
+  band: surface('#181825'),
+  bar: surface('#313244'),
+  selectedBand: surface('#45475A'),
+  tab: surface('#585B70'),
+  track: rgb('#585B70'),
+  tick: rgb('#89B4FA'),
 };
 
 const LATTE: Palette = {
@@ -123,6 +163,15 @@ const LATTE: Palette = {
   strong: rgb('#7287FD'),
   selected: highlight('48;2;204;208;218'),
   agents: ['#1E66F5', '#7287FD', '#8839EF', '#EA76CB', '#209FB5', '#DD7878'].map(rgb),
+  // A light theme: the band is a light surface a step off the base, and the
+  // track is lighter than the muted text rather than darker, which on a
+  // light ground is what recedes.
+  band: surface('#E6E9EF'),
+  bar: surface('#DCE0E8'),
+  selectedBand: surface('#CCD0DA'),
+  tab: surface('#BCC0CC'),
+  track: rgb('#BCC0CC'),
+  tick: rgb('#209FB5'),
 };
 
 const NONE: Palette = {
@@ -140,6 +189,12 @@ const NONE: Palette = {
   strong: identity,
   selected: identity,
   agents: [identity],
+  band: identity,
+  bar: identity,
+  selectedBand: identity,
+  tab: identity,
+  track: identity,
+  tick: identity,
 };
 
 const PALETTES: Record<ThemeName, Palette> = {

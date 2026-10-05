@@ -1,26 +1,26 @@
 /**
  * The status bar's fields, for the card at the foot of the tree panel. While
  * the panel is open it replaces the bar, so what the bar said has to be said
- * here. The card spends its rows on the brief, so the fields ride on its
- * edges, and the edges are the meters, as omp's input box draws its context
- * meter in its border:
+ * here. The card is drawn in omp's band style: a band row carrying the
+ * session's state and its context meter, the brief under it behind a left
+ * gutter, and a corner row with where it works and its quota meter:
  *
- *   ╭─ ▸ exec: npm test · 2m10s ☀◆ 2h 56%━━━━━━━────────246K , ? ─╮
- *   │ ! 等待批准                                                   │   alerts, only when there are any
- *   ╰─ atlas-wsl · main * 7d 99%━━━━━━━━━━━━━━━━━━━━━ ↺114h ◷~30m+ ─╯
+ *   ▕ ✓ ★◕ 41s ──────────56%──────────────246K ~3m ▏   band, on its own background
+ *   │ ! 等待批准                                          alerts, only when there are any
+ *   ╰─ atlas-wsl · main * 7d ──────────99% ↺113h
  *
- * Top: the session's state (while it works, the tool, the turn's clock and
+ * Band: the session's state (while it works, the tool, the turn's clock and
  * the output rate), the model's badge and the session's age, then the
- * context meter with its window size. Bottom: where it works, the quota
- * meter, the reset countdown and the prompt-cache reminder. This module
- * hands the monitor the parts; the monitor fits them to the edge, dropping
- * the least wanted first. Every value is read the way the bar reads it; a
- * field with no data is left out rather than shown as zero. The agents'
- * counts are the panel's own job.
+ * context meter with its window size. Corner row: where it works, the quota
+ * meter, the reset countdown and, only in the minutes before it lapses, the
+ * prompt-cache reminder. This module hands the monitor the parts; the
+ * monitor fits them to the row, dropping the least wanted first. Every value
+ * is read the way the bar reads it; a field with no data is left out rather
+ * than shown as zero. The agents' counts are the panel's own job.
  */
 import type { HudData } from '../types.js';
 import { collectAttention, waitedText } from './attention.js';
-import { colors, getContextColor, icons, theme, truncate } from './colors.js';
+import { colors, getMeterColor, icons, theme, truncate } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { formatCountdown, readQuotaWindows } from './quota.js';
@@ -42,6 +42,8 @@ export function tonePaint(tone: StatusTone): (s: string) => string {
 
 export interface StatusCard {
   tone: StatusTone;
+  /** The session is working: a "needs" mark leads its state rather than replacing it. */
+  busy?: boolean;
   /** Rows for the card's body: what needs a look, painted. */
   alerts: string[];
   /** The session's state: "✓ Idle", or while it works "▸ exec: npm test · 2m10s". */
@@ -54,15 +56,25 @@ export interface StatusCard {
   age: string;
   /** How full the context is, its window size closing the bar. */
   context?: EdgeMeter;
-  /** For the bottom edge: where the session works. */
+  /**
+   * For the corner row: where the session works, in parts so the narrow
+   * row can give up the branch, then the repository.
+   */
   place: string;
-  /** The account's tightest usage window, labelled with its length; `text` is its reading alone. */
-  quota?: EdgeMeter & {text: string};
-  /** The other window's reading, a projection of running out, and the soonest reset. */
+  project?: string;
+  repo?: string;
+  branch?: string;
+  /**
+   * The account's tightest usage window: its meter, the window's name before
+   * it ("7d", dim), a mark when the quota is spent, and `text`, the reading
+   * alone for the one-line card ("7d 99%").
+   */
+  quota?: EdgeMeter & {window: string; spent: string; text: string};
+  /** The other window's reading, a projection of running out, and the soonest reset (in the tick colour). */
   others: string;
   forecast: string;
   reset: string;
-  /** The prompt-cache reminder: dim, but in the warning colour in the minutes before it lapses. */
+  /** The prompt-cache reminder, only in the minutes before it lapses: the rest of the time there is nothing to act on. */
   cache: string;
 }
 
@@ -115,15 +127,15 @@ export function sessionState(data: HudData | null, nowMs: number = Date.now()): 
 /**
  * The prompt-cache reminder as the card shows it. The bar paints it red once
  * thirty minutes have passed, but on a card that stays open through a long
- * idle session that is most of the time, and nothing is left to act on: it
- * is dim then, and only the minutes before it lapses (25–29m) are a warning.
+ * idle session that is most of the time, and nothing is left to act on: the
+ * card shows it only in the minutes before it lapses (25–29m), as a warning.
  */
 function cacheReminder(data: HudData, nowMs: number): string {
   const sampledAt = data.tokenUsageAt?.getTime();
   if (sampledAt === undefined || !Number.isFinite(sampledAt) || !Number.isFinite(nowMs)) return '';
   const minutes = Math.max(0, Math.floor((nowMs - sampledAt) / 60_000));
-  const text = `${displayConfig().glyphs === 'text' ? 'Cache ' : '◷'}${data.stale ? '?' : '~'}${minutes >= 30 ? '30m+' : `${String(minutes).padStart(2, '0')}m`}`;
-  return minutes >= 25 && minutes < 30 ? theme.warning(text) : colors.dim(text);
+  if (minutes < 25 || minutes >= 30) return '';
+  return theme.warning(`${displayConfig().glyphs === 'text' ? 'Cache ' : '◷'}${data.stale ? '?' : '~'}${String(minutes).padStart(2, '0')}m`);
 }
 
 export function statusCard(data: HudData | null, nowMs: number = Date.now()): StatusCard | null {
@@ -169,9 +181,11 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
 
   const git = data.git;
   const sync = `${git.ahead > 0 ? `${icons.ahead}${git.ahead}` : ''}${git.behind > 0 ? `${icons.behind}${git.behind}` : ''}`;
-  const place = theme.projectName(data.project.projectName)
-    + (git.repo ? `${colors.dim(' › ')}${theme.projectName(git.repo)}` : '')
-    + (git.isGitRepo && git.branch ? `${colors.dim(' · ')}${theme.gitBranch(`${git.branch}${git.isDirty ? ` ${icons.dirty}` : ''}`)}${sync ? colors.dim(` ${sync}`) : ''}` : '');
+  // The project is the card's identity: bold, as the band's mock has it.
+  const project = theme.bold(theme.projectName(data.project.projectName));
+  const repo = git.repo ? `${colors.dim('› ')}${theme.projectName(git.repo)}` : '';
+  const branch = git.isGitRepo && git.branch ? `${colors.dim('· ')}${theme.gitBranch(`${git.branch}${git.isDirty ? ` ${icons.dirty}` : ''}`)}${sync ? colors.dim(` ${sync}`) : ''}` : '';
+  const place = [project, repo, branch].filter(Boolean).join(' ');
 
   let context: EdgeMeter | undefined;
   const usage = data.contextUsage;
@@ -179,14 +193,13 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
     const newer = Math.max(data.activity?.turnStartedAt?.getTime() ?? 0, usage.lastCompactTime?.getTime() ?? 0);
     const pending = data.stale || (newer > 0 && (data.tokenUsageAt?.getTime() ?? 0) < newer);
     const shown = displayConfig().context === 'remaining' ? t('{n}% left', { n: 100 - usage.percent }) : `${usage.percent}%`;
-    const paint = getContextColor(usage.percent);
-    const compacted = usage.compactCount > 0 ? colors.dim(` ${icons.refresh}${usage.compactCount}`) : '';
+    const compacted = usage.compactCount > 0 ? ` ${icons.refresh}${usage.compactCount}` : '';
     // The auto-compact point only where Codex's config names it: its default
     // depends on the model and is not written anywhere the HUD reads.
     const limit = data.config.model_auto_compact_token_limit;
-    context = { percent: usage.percent, paint, label: (pending ? colors.dim('~') : '') + paint(shown),
+    context = { percent: usage.percent, label: shown, ...(pending ? { mark: colors.dim('~') } : {}),
       // The window's size, whole thousands: the meter is the reading, the tail only names its scale.
-      tail: colors.dim(usage.total >= 1_000_000 ? formatTokenCount(usage.total) : `${Math.round(usage.total / 1000)}K`) + compacted,
+      tail: (usage.total >= 1_000_000 ? formatTokenCount(usage.total) : `${Math.round(usage.total / 1000)}K`) + compacted,
       ...(limit && limit > 0 && limit < usage.total ? { tick: (limit / usage.total) * 100 } : {}) };
   }
 
@@ -199,15 +212,16 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
     // The meter is the window that runs out first; the other is a reading beside it.
     const worst = windows.reduce((a, b) => (b.percent > a.percent ? b : a));
     const spent = windows.some((window) => window.percent >= 100) || Boolean(data.rateLimits?.rate_limit_reached_type);
-    const paint = getContextColor(worst.percent);
     const mark = spent ? theme.error('!') : '';
-    const text = `${worst.label ? colors.dim(worst.label) + ' ' : ''}${paint(`${worst.percent}%`)}${mark}`;
-    quota = { percent: worst.percent, paint, label: text, text };
+    const window = worst.label ? colors.dim(worst.label) : '';
+    const text = `${window ? window + ' ' : ''}${getMeterColor(worst.percent)(`${worst.percent}%`)}${mark}`;
+    quota = { percent: worst.percent, window, spent: mark, text };
     others = windows.filter((window) => window !== worst)
-      .map((window) => `${window.label ? colors.dim(window.label) + ' ' : ''}${getContextColor(window.percent)(`${window.percent}%`)}`).join(' ');
+      .map((window) => `${window.label ? colors.dim(window.label) + ' ' : ''}${getMeterColor(window.percent)(`${window.percent}%`)}`).join(' ');
     const soonest = windows.filter((window) => window.resetsAt && !window.resetDue)
       .sort((a, b) => a.resetsAt!.getTime() - b.resetsAt!.getTime())[0];
-    reset = soonest ? colors.dim(`↺${formatCountdown(soonest.resetsAt!, nowMs)}`)
+    // The reset is the quota meter's scale, as the window size is the context's: the tick colour.
+    reset = soonest ? theme.tick(`↺${formatCountdown(soonest.resetsAt!, nowMs)}`)
       : windows.some((window) => window.resetDue) ? colors.dim(t('reset due')) : '';
     const projected = data.quotaForecast;
     forecast = projected ? theme.warning(t('out ~{d}', { d: formatCountdown(projected.exhaustAt, nowMs) })) : '';
@@ -215,6 +229,6 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
 
   const tone: StatusTone = status === 'error' ? 'error' : alerts.length ? 'needs' : status === 'stale' ? 'stale'
     : status === 'working' ? 'working' : 'idle';
-  return { tone, alerts: alertRows, state, rate, tasks, model, age: shownAge, context, place, quota, others, forecast, reset,
-    cache: cacheReminder(data, nowMs) };
+  return { tone, busy: status === 'working', alerts: alertRows, state, rate, tasks, model, age: shownAge, context, place, project, repo, branch,
+    quota, others, forecast, reset, cache: cacheReminder(data, nowMs) };
 }

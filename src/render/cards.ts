@@ -33,7 +33,7 @@ import { agentTitle, type AgentTitle } from './agent-title.js';
 import {
   type MonitorData, type MonitorState, type MonitorRow, type RowControl,
   monitorText, plainText, flowLines, balancedLines, age, agoText, nodeStatus, iconic, briefSaid, isLive, isQuiet, turnClock, squeeze, finishedAt,
-  summaryRow, emptyAgentsText, guardianChip, meterGap, edgeLine, type EdgeMeter,
+  summaryRow, emptyAgentsText, guardianChip, meterText, meterRow, type EdgeMeter,
   MODEL_LOG_KINDS, FRESH_FINISH_MS,
 } from './monitor.js';
 
@@ -110,7 +110,7 @@ function labelColumn(ids: ReadonlyArray<Exclude<BriefFieldId,'said'>>): number {
 }
 function fieldLabel(id: Exclude<BriefFieldId,'said'>, column: number): string {
   const text = iconic() ? FIELD_ICONS[id] : t(FIELD_WORDS[id]);
-  const paint = id === 'needs' || id === 'approval' ? theme.warning : id === 'done' && iconic() ? theme.success : colors.dim;
+  const paint = id === 'needs' || id === 'approval' ? theme.warning : id === 'done' && iconic() ? theme.success : id === 'now' && iconic() ? theme.info : colors.dim;
   return paint(text)+' '.repeat(Math.max(0,column-visualLength(text)));
 }
 
@@ -126,8 +126,9 @@ function inlineField(id: Exclude<BriefFieldId,'said'>, value: string, width: num
 
 /**
  * Done: the newest two items, a dim "+N" closing the last when there were
- * more. With icons each item has the ✓ in the label column; with words the
- * label heads the first and each item keeps its own ✓.
+ * more. With icons the ✓ in the label column heads the first item and the
+ * rest hang under it; with words the label heads the first and each item
+ * keeps its own ✓.
  */
 function doneField(done: readonly string[], width: number, column: number): BriefField | null {
   if (!done.length) return null;
@@ -143,7 +144,7 @@ function doneField(done: readonly string[], width: number, column: number): Brie
     // The last item leaves room for the count, so it never wraps alone.
     const wrapped = clipLines(balancedLines(monitorText(item),Math.max(1,room-(last ? suffix.length : 0))),FIELD_LINES,room-(last ? suffix.length : 0)).lines;
     wrapped.forEach((line,i) => {
-      const label = i ? ' '.repeat(column+1) : iconic() || (!index && !i) ? fieldLabel('done',column)+' ' : ' '.repeat(column+1);
+      const label = !index && !i ? fieldLabel('done',column)+' ' : ' '.repeat(column+1);
       lines.push(label+(i ? ' '.repeat(lead) : mark)+line+(last && i === wrapped.length-1 && suffix ? colors.dim(suffix) : ''));
     });
   });
@@ -287,11 +288,14 @@ export function isOneLine(node: SubagentTreeNode, input: MonitorData, state: Mon
   return !input.agentLog?.get(node.id)?.at(-1)?.attention;
 }
 
-/** The agent's context as a meter for a rule's gap; dim once the card is old news. */
-function contextMeter(node: SubagentTreeNode, old: boolean): EdgeMeter | undefined {
+/**
+ * The agent's context as a meter. It keeps its zone colour once the card is
+ * old news: a grey meter on a grey row could not be told from its track,
+ * and the name dimming says the news is old.
+ */
+function contextMeter(node: SubagentTreeNode): EdgeMeter | undefined {
   const ctx = node.contextUsage;
-  if (!ctx) return undefined;
-  return {percent:ctx.percent,paint:old ? colors.dim : getContextColor(ctx.percent),label:colors.dim(`${ctx.percent}%`)};
+  return ctx ? {percent:ctx.percent} : undefined;
 }
 
 /** Columns of a one-line row's meter, so the meters line up down the list. */
@@ -327,10 +331,10 @@ function oneLineCard(row: PanelRow, state: MonitorState, width: number, now: num
   const badge = token ? colors.dim(stripAnsi(truncateAnsi(token,Math.max(2,Math.floor(w/4))))) : '';
   const at = settledAt(node);
   const when = at ? agoText(at,now) : '';
-  const meter = contextMeter(node,true);
+  const meter = contextMeter(node);
   const meterCols = meter && w >= METER_MIN+ROW_METER ? ROW_METER : 0;
   const right = [guardianChip(node.children),badge].filter(Boolean).join(' ');
-  const tail = `${right ? ' '+right : ''}${meterCols ? ' '+meterGap(meterCols,meter).text : ''}${when ? ' '+colors.dim(ageColumn(when)) : ''}`;
+  const tail = `${right ? ' '+right : ''}${meter && meterCols ? ' '+meterText(meter,meterCols).text : ''}${when ? ' '+colors.dim(ageColumn(when)) : ''}`;
   const room = Math.max(1,w-visualLength(head)-visualLength(tail)-2);
   const name = squeeze(title.name,room);
   const dashes = Math.max(1,w-visualLength(head)-visualLength(name)-1-visualLength(tail));
@@ -430,11 +434,14 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   const left = [cardTime(node,now),folded ? colors.dim(iconic() ? `+${folded}` : t('+{n} folded',{n:folded})) : ''].filter(Boolean).join(colors.dim(' · '));
   const toggle = theme.accent(open ? '▴' : '▾');
   // The rule's gap is the agent's context meter; short of room the meter
-  // gives way to its label, then the time is cut.
-  const meter = contextMeter(node,old);
-  const edge = edgeLine(w-2,'└','',left,'',meter,false,paint)
-    ?? edgeLine(w-2,'└','',truncateAnsi(left,Math.max(0,w-7)),'',undefined,false,paint);
-  const bottom = edge ? `${edge.line} ${toggle}` : truncateAnsi(`${paint('└')} ${toggle}`,w);
+  // gives way to its reading, then the time is cut. Without context data the
+  // gap is plain rule.
+  const meter = contextMeter(node);
+  const foot = `${paint('└')} ${left ? left+' ' : ''}`;
+  const rest = Math.max(0,w-2-visualLength(foot));
+  const rule = meter ? meterRow(w-2,foot,'',meter) : foot+paint('─'.repeat(rest));
+  const bottom = rule && visualLength(foot) < w-2 ? `${rule} ${toggle}`
+    : truncateAnsi(`${paint('└')} ${truncateAnsi(left,Math.max(0,w-5))} ${toggle}`,w);
   rows.push({text:lead+bottom,item:node.id,key,controls:[control(visualLength(stripAnsi(bottom))-1,1)]});
   return rows;
 }

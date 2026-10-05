@@ -16,9 +16,9 @@ const agent = (i: number): SubagentTreeNode => ({ id: id(i), name: `worker_${i}`
 const tree = (n: number): SubagentTree => ({ rootId: 'root', nodes: Array.from({ length: n }, (_, i) => agent(i + 1)), totalCount: n, updatedAt: new Date(now) });
 const recap: Recap = { goal: 'Fix the flaky cache test in the parser', done: ['Reproduced the failure', 'Found the race'],
   now: 'Waiting on reader agent', needs: '', at: now - 5 * 60_000, coveredUntil: now, sessionId: 's', language: 'en' };
-const status: MonitorData['status'] = () => ({ tone: 'needs', alerts: ['! 1 agent failed'], state: '▸ exec · 33m51s', rate: '', tasks: '',
-  model: '☀', age: '2h', context: { percent: 61, paint: (s: string) => s, label: '61%', tail: '246K' }, place: 'proj · main',
-  quota: { percent: 20, paint: (s: string) => s, label: '7d 20%', text: '7d 20%' }, others: '', forecast: '', reset: '', cache: '' });
+const status: MonitorData['status'] = () => ({ tone: 'needs', busy: true, alerts: ['! 1 agent failed'], state: '▸ exec · 33m51s', rate: '', tasks: '',
+  model: '☀', age: '2h', context: { percent: 61, tail: '246K' }, place: 'proj · main', project: 'proj', branch: '· main',
+  quota: { percent: 20, window: '7d', spent: '', text: '7d 20%' }, others: '', forecast: '', reset: '', cache: '' });
 const session = (attention = false): MonitorData['session'] => () =>
   attention ? { text: '! waiting for approval 2m', attention: true } : { text: '▸ 33m51s', attention: false };
 const rich = (extra: Partial<MonitorState> = {}): MonitorState => ({ ...initialMonitorState(), style: 'rich', ...extra });
@@ -33,8 +33,8 @@ const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
   try { return run(); } finally { setDisplayConfig(previous); }
 };
 
-test('rich: min is one line, status the two edges round the alerts, full the brief between them too, at 24, 32, 44 and 90 columns', () => {
-  for (const width of [24, 32, 44, 90]) {
+test('rich: min is the band alone, status the band and the corner round the alerts, full the brief between them too, at 24, 32, 40, 56 and 90 columns', () => {
+  for (const width of [24, 32, 40, 56, 90]) {
     const min = draw(rich({ statusLevel: 'min' }), {}, width);
     const status = draw(rich({ statusLevel: 'status' }), {}, width);
     const full = draw(rich({ statusLevel: 'full' }), {}, width);
@@ -42,37 +42,34 @@ test('rich: min is one line, status the two edges round the alerts, full the bri
 
     const one = card(min);
     assert.equal(one.length, 1, `${width}: min is one line`);
-    assert.match(one[0], /^╶─ ▸ 33m51s .*─╴$/, `${width}: ${one[0]}`);
+    assert.match(one[0], /^ ! ▸ exec · 33m51s .* $/, `${width}: ${one[0]}`);
 
     const box = card(status);
-    assert.equal(box.length, 3, `${width}: two edges and the alert`);
-    assert.ok(box[0].startsWith('╭─ ▸ exec · 33m51s') && box[0].endsWith('╮'), `${width}: ${box[0]}`);
-    assert.ok(box.at(-1)!.startsWith('╰─ proj · main 7d 20%') && box.at(-1)!.endsWith('╯'), box.at(-1)!);
-    assert.equal(box[1].slice(2, -2).trimEnd(), '! 1 agent failed');
+    assert.equal(box.length, 3, `${width}: the band, the alert and the corner`);
+    assert.ok(box[0].startsWith(' ! ▸ exec · 33m51s'), `${width}: ${box[0]}`);
+    assert.match(box.at(-1)!, /^╰─ proj (· main )?(7d )?─*20%─+$/, box.at(-1)!);
+    assert.equal(box[1].trimEnd(), '│ ! 1 agent failed');
 
     const lines = card(full);
     assert.equal(lines[1], box[1], `${width}: the alerts come first`);
     assert.match(lines[2], /^│ ◎ Fix the flaky/, `${width}: ${lines[2]}`);
     assert.ok(lines.some(line => /^│ ✓ Reproduced/.test(line)), `${width}`);
     assert.equal(lines.at(-1), box.at(-1));
-    if (width >= 44) assert.match(lines[0], /~5m b‖ (, \? )?─╮$/, `${width}: the brief's state and switch ride on the top edge`);
-    if (width >= 90) assert.match(lines[0], /~5m b‖ , \? ─╮$/);
+    if (width >= 40) assert.match(lines[0], / ~5m $/, `${width}: the brief's state is data at the band's end`);
+    assert.ok(!lines[0].includes('b‖') && !lines[0].includes(', ?'), 'no switch and no hints on the card');
   }
-  // The hints go first when the edge is short, the state never.
-  const narrow = card(draw(rich({ statusLevel: 'min' }), {}, 24))[0];
-  assert.ok(!narrow.includes('?'), narrow);
-  assert.ok(card(draw(rich({ statusLevel: 'min' }), {}, 60))[0].includes(', ?'));
   assert.ok(card(draw(rich({ statusLevel: 'min' }), {}, 60))[0].includes('7d 20%'), 'min carries the quota reading');
+  assert.ok(card(draw(rich({ statusLevel: 'status' }), {}, 60))[0].includes('~5m'), 'status carries the brief\'s state too');
 });
 
 test('the brief\'s fields sit inline behind icons, or behind words padded to one column with glyphs off', () => {
   const full = (glyphs: 'glyph' | 'text', width = 44) => withGlyphs(glyphs, () => card(draw(rich({ statusLevel: 'full' }), { brief: { recap: { ...recap, needs: 'Approve npm test' } } }, width)));
-  const icons = full('glyph').slice(2, -1).map(line => line.slice(2, -2).trimEnd());
-  assert.deepEqual(icons, ['! Approve npm test', '◎ Fix the flaky cache test in the parser', '▸ Waiting on reader agent', '✓ Reproduced the failure', '✓ Found the race']);
-  const words = full('text').slice(2, -1).map(line => line.slice(2, -2).trimEnd());
+  const icons = full('glyph').slice(2, -1).map(line => line.slice(2).trimEnd());
+  assert.deepEqual(icons, ['! Approve npm test', '◎ Fix the flaky cache test in the parser', '▸ Waiting on reader agent', '✓ Reproduced the failure', '  Found the race']);
+  const words = full('text').slice(2, -1).map(line => line.slice(2).trimEnd());
   assert.deepEqual(words, ['Needs Approve npm test', 'Goal  Fix the flaky cache', '      test in the parser', 'Now   Waiting on reader agent',
     'Done  ✓ Reproduced the failure', '      ✓ Found the race']);
-  assert.match(withGlyphs('text', () => card(draw(rich({ statusLevel: 'full' }), {}, 80)))[0], /~5m ago b pause , \? ─╮$/);
+  assert.match(withGlyphs('text', () => card(draw(rich({ statusLevel: 'full' }), {}, 80)))[0], / ~5m ago $/);
   // The Chinese labels line up on display columns.
   const previous = setLanguage('zh');
   try {
@@ -83,9 +80,10 @@ test('the brief\'s fields sit inline behind icons, or behind words padded to one
   // Each value two lines at most; Done shows the newest two and counts the rest.
   const long: Recap = { ...recap, goal: 'word '.repeat(40), done: ['a', 'b', 'c', 'd', 'e'] };
   const cut = card(draw(rich({ statusLevel: 'full' }), { brief: { recap: long } }, 44));
-  assert.equal(cut.filter(line => /^│ [◎ ] /.test(line) && !/^│ +│$/.test(line)).length, 2);
-  assert.ok(cut.some(line => line.includes('word …')));
-  assert.deepEqual(cut.filter(line => line.startsWith('│ ✓')).map(line => line.slice(2, -2).trimEnd()), ['✓ d', '✓ e +3']);
+  assert.equal(cut.filter(line => /^│ [◎ ] +word/.test(line)).length, 2);
+  assert.ok(cut.some(line => /word.* …$/.test(line.trimEnd())));
+  const done = cut.findIndex(line => line.startsWith('│ ✓'));
+  assert.deepEqual(cut.slice(done, done + 2).map(line => line.slice(2).trimEnd()), ['✓ d', '  e +3'], 'the ✓ heads the first item, the rest hang under it');
 });
 
 test('rich frames carry the recap only inside the status card; no brief rule, no recap card', () => {
@@ -106,7 +104,7 @@ test('full with no recap: the whole-picture sentence as Now, a failure or a repl
 
   const failed = draw(rich({ statusLevel: 'full' }), { brief: { error: 'quota exhausted' } }, 44);
   const lines = card(failed);
-  assert.match(lines[0], / ✗ b‖ (, \? )?─╮$/, lines[0]);
+  assert.match(lines[0], / ✗ $/, lines[0]);
   assert.ok(failed.lines[failed.statusCard!.y].includes(theme.warning('✗')));
   assert.ok(lines.some(line => line.includes('quota exhausted')), 'the error itself has a home');
 
@@ -123,15 +121,12 @@ test('full with no recap: the whole-picture sentence as Now, a failure or a repl
   assert.match(approval[2], /^│ ⚑ ~ delete dist/);
   const words = withGlyphs('text', () => card(draw(rich({ statusLevel: 'full' }), { brief: undefined, notes: { approval: 'delete dist' } })));
   assert.match(words[2], /^│ Approve ~ delete dist/);
-  assert.ok(!words[0].includes('b pause'), words[0]);
+  assert.ok(!words[0].includes('pause'), words[0]);
 
   const paused = draw(rich({ statusLevel: 'full' }), { brief: { recap, paused: true } }, 44);
-  assert.match(card(paused)[0], / ‖ b▸ (, \? )?─╮$/, card(paused)[0]);
-  assert.ok(card(paused).slice(2, -1).every((line, i) => paused.lines[paused.statusCard!.y + 2 + i].includes(colors.dim(line.slice(2, -2).trimEnd()))), 'paused: the brief steps back');
-  const control = paused.controls.find(c => c.kind === 'brief')!;
-  assert.equal(control.y, paused.statusCard!.y);
-  assert.deepEqual(handleMonitorInput(paused.state, { type: 'mouse', button: 'left', x: control.x, y: control.y }, { tree: tree(3), frame: paused }).action,
-    { type: 'brief-toggle' });
+  assert.match(card(paused)[0], / ‖ $/, card(paused)[0]);
+  assert.ok(card(paused).slice(2, -1).every((line, i) => paused.lines[paused.statusCard!.y + 2 + i].includes(colors.dim(line.slice(2).trimEnd()))), 'paused: the brief steps back');
+  assert.ok(!paused.controls.some(c => c.kind === 'brief' && c.y >= paused.statusCard!.y), 'the switch is not on the card');
 });
 
 test('full takes at most a third of the panel and leaves the agents ten rows; a taller brief keeps its most wanted fields and scrolls the rest', () => {
@@ -198,14 +193,14 @@ test('r and a click on the card\'s top edge cycle min, status, full in rich, and
   assert.deepEqual(seen, ['status', 'full', 'min']);
   assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('r')), [{ type: 'key', key: 'reset' }]);
 
-  // The top edge: anywhere but its hint, which opens settings.
+  // The band: anywhere on it.
   const top = draw(rich({ statusLevel: 'status' }), {}, 60);
   const y = top.statusCard!.y;
-  const clicked = handleMonitorInput(top.state, { type: 'mouse', button: 'left', x: 3, y }, ctx(top));
-  assert.deepEqual(clicked.action, { type: 'status-level' });
-  assert.equal(clicked.state.statusLevel, 'full');
-  const hint = top.controls.find(c => c.kind === 'settings' && c.y === y)!;
-  assert.deepEqual(handleMonitorInput(top.state, { type: 'mouse', button: 'left', x: hint.x + 1, y }, ctx(top)).action, { type: 'settings' });
+  for (const x of [3, 58]) {
+    const clicked = handleMonitorInput(top.state, { type: 'mouse', button: 'left', x, y }, ctx(top));
+    assert.deepEqual(clicked.action, { type: 'status-level' });
+    assert.equal(clicked.state.statusLevel, 'full');
+  }
   const min = draw(rich({ statusLevel: 'min' }), {}, 44);
   assert.equal(handleMonitorInput(min.state, { type: 'mouse', button: 'left', x: 5, y: min.statusCard!.y }, ctx(min)).state.statusLevel, 'status');
 
@@ -219,14 +214,14 @@ test('r and a click on the card\'s top edge cycle min, status, full in rich, and
 
 test('min marks what needs the person: a pending approval, a recap that needs them, a failure', () => {
   const approval = draw(rich({ statusLevel: 'min' }), { session: session(true) });
-  assert.match(card(approval)[0], /^╶─ ! waiting for approval 2m /);
-  assert.ok(approval.lines[approval.statusCard!.y].startsWith(theme.warning('╶─')), 'needing the person paints the line');
+  assert.match(card(approval)[0], /^ ! waiting for approval 2m /);
   const needs = draw(rich({ statusLevel: 'min' }), { brief: { recap: { ...recap, needs: 'Approve npm test' } } });
-  assert.match(card(needs)[0], /^╶─ ! ▸ 33m51s /);
-  assert.ok(needs.lines[needs.statusCard!.y].includes(theme.warning('! ')));
-  const failed = draw(rich({ statusLevel: 'min' }), { session: () => ({ text: '▸ working 33m51s', attention: false, failed: true }) });
-  assert.ok(failed.lines[failed.statusCard!.y].includes(theme.error('! ')));
-  const calm = draw(rich({ statusLevel: 'min' }));
+  assert.match(card(needs)[0], /^ ! ▸ exec · 33m51s /);
+  assert.ok(needs.lines[needs.statusCard!.y].includes(theme.warning('!')));
+  const quiet: MonitorData['status'] = () => ({ ...status!(now)!, tone: 'working', alerts: [] });
+  const failed = draw(rich({ statusLevel: 'min' }), { status: quiet, session: () => ({ text: '▸ working 33m51s', attention: false, failed: true }) });
+  assert.ok(failed.lines[failed.statusCard!.y].includes(theme.error('!')));
+  const calm = draw(rich({ statusLevel: 'min' }), { status: quiet });
   assert.ok(!card(calm)[0].includes('!'), 'nothing to act on: no mark');
 });
 

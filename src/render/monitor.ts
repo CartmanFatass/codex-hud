@@ -5,7 +5,7 @@ import type { WorktreesSnapshot, WorktreeInfo } from '../collectors/worktrees.js
 import type { HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { initialPanelState, reconcileSelection, visibleRows, applyKey, countExpired, guardianCount, isGuardian, type PanelState } from './panel-state.js';
-import { theme, colors, visualLength, truncateAnsi, stripAnsi, getContextColor } from './colors.js';
+import { theme, colors, visualLength, truncateAnsi, stripAnsi, getContextColor, getMeterColor } from './colors.js';
 import { palette } from './palette.js';
 import { renderModelEffortToken, modelLegend } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
@@ -957,12 +957,12 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     // The keys as the current layout has them: cards in rich, the tree in compact.
     const help = [rich ? '1 Cards  2 Worktrees' : '1 Agents  2 Worktrees','3 Changes  4 Inspector','5 Timeline','x close pane  - fold','2–5 open a pane','Tab next visible pane','j/k select  o switch','g/G first / last','PgUp/PgDn or wheel scroll',
       ...(rich ? ['e or Space open / close card','Click card: select','Click its name: switch','Click top rule or ▾: open'] : []),
-      'h/l fold / unfold agent','f or / filter  s order',...(rich ? [] : ['Click agent: switch']),'m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief',rich ? 'r status card: min / status / full' : 'r status card: min / status',...(rich ? ['Wheel over the card: its brief'] : []),'Click the card\'s top edge: same as r',...(rich ? [] : ['Click a log line: select agent']),'✓ = turn completed','? = no status evidence','! = needs a look',
+      'h/l fold / unfold agent','f or / filter  s order',...(rich ? [] : ['Click agent: switch']),'m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief',rich ? 'r status card: min / status / full' : 'r status card: min / status',...(rich ? ['Wheel over the card: its brief'] : []),'Click the card\'s band: same as r',...(rich ? [] : ['Click a log line: select agent']),'✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary']
       .map(line=>t(line))
       .concat(t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
         ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve','b‖ / b▸ pause / resume brief  ~… writing',
-          'status card frame colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','━╸─ = context or quota used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
+          'status card gutter colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','──56%── = context or quota used, the % at the fill','meter: blue, yellow past 70%, red past 85%','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
         ...stripAnsi(modelLegend()).split('\n'))
       .flatMap(line=>helpLines(line,width));
     const count = Math.max(0,height-2);
@@ -1096,84 +1096,77 @@ function placeArt(lines: string[], end: number, width: number, art: NonNullable<
   drawing.forEach((line,i)=>{lines[top+i]=fit(left+line,width);});
 }
 
-/** Fewest columns of bar a meter draws; under it the meter is its label alone. */
-export const METER_MIN = 6;
+/** Fewest columns of bar a meter keeps beside its reading; under it the tail goes first. */
+export const METER_MIN = 4;
 /**
- * A meter drawn in the gap of a rule, as omp draws its context meter in the
- * top border of its input box: the border is the meter.
+ * A meter drawn as a thin line, as omp draws its context meter in the gap
+ * of its status band: "────56%──────────────246K". One look for every meter
+ * in the panel: the status card's context and quota, the agent cards'
+ * bottom rules and the finished agents' rows.
  */
 export interface EdgeMeter {
-  /** How full, 0–100: the share of the bar drawn heavy. */
+  /** How full, 0–100: the share of the line drawn in the zone colour. */
   percent: number;
-  /** The fill's colour, by the same thresholds as its reading. */
-  paint: (s: string) => string;
-  /** At the head of the bar, painted: "56%", "7d 99%". */
+  /** The reading at the fill's head, plain: "56%", "44% left". Absent is the percentage. */
   label?: string;
-  /** Closing the bar, painted: the window size, "246K". */
+  /** Painted, just before the reading: "~" while it waits on a newer turn. */
+  mark?: string;
+  /** Plain, closing the line in the tick colour: the window size, "246K". */
   tail?: string;
   /** Where a known threshold sits, 0–100, drawn "┃". Only one the HUD can read, never a guess. */
   tick?: number;
 }
 
 /**
- * The bar alone, `cells` wide: heavy and coloured where used, with a half
- * step, the rest in the rule's own paint, and the tick where it has not been
- * passed yet.
+ * The meter `cells` wide, exactly: the fill in its zone colour (info, then
+ * warning past 70%, danger past 85%), the reading in bold at the fill's head
+ * and moving with it, the track in the track colour, then "─" and the tail
+ * in the tick colour. Short of room the tail goes, then the bar shrinks to
+ * nothing but the reading; under the reading's width it is track alone. With
+ * no colour at all (`none`) the fill is heavy and the track light, so the
+ * reading still shows how full. `bar` says whether at least `METER_MIN`
+ * columns of bar were drawn (`cols` how many), `tail` whether the tail was.
  */
-export function meterBar(meter: EdgeMeter, cells: number, rule: (s: string) => string = colors.dim): string {
-  const clamped = Math.max(0,Math.min(100,meter.percent));
-  const halves = clamped > 0 ? Math.max(1,Math.round(clamped/100*cells*2)) : 0;
-  const full = Math.min(cells,Math.floor(halves/2));
-  const half = halves%2 && full < cells ? '╸' : '';
-  const used = full+half.length;
-  const tick = meter.tick !== undefined && meter.tick > 0 && meter.tick < 100 ? Math.min(cells-1,Math.round(meter.tick/100*cells)) : -1;
-  let rest = '';
-  for (let i = used; i < cells; i++) rest += i === tick ? '┃' : '─';
-  return meter.paint('━'.repeat(full)+half)+rule(rest);
+export function meterText(meter: EdgeMeter, cells: number): {text: string; bar: boolean; tail: boolean; cols: number} {
+  if (cells <= 0) return {text:'',bar:false,tail:false,cols:0};
+  const percent = Math.max(0,Math.min(100,meter.percent));
+  const zone = getMeterColor(percent);
+  const label = meter.label ?? `${Math.round(meter.percent)}%`;
+  const mark = meter.mark ?? '';
+  const head = visualLength(mark)+visualLength(label);
+  if (cells < head) return {text:theme.track('─'.repeat(cells)),bar:false,tail:false,cols:0};
+  const tailCols = meter.tail ? 1+visualLength(meter.tail) : 0;
+  const withTail = tailCols > 0 && cells-head-tailCols >= METER_MIN;
+  const bar = cells-head-(withTail ? tailCols : 0);
+  const full = Math.max(0,Math.min(bar,Math.round(percent/100*bar)));
+  const heavy = palette().name === 'none';
+  const tick = meter.tick !== undefined && meter.tick > 0 && meter.tick < 100 ? Math.min(bar-1,Math.round(meter.tick/100*bar)) : -1;
+  let track = '';
+  let run = '';
+  for (let i = full; i < bar; i++) {
+    if (i === tick) { track += theme.track(run)+theme.tick('┃'); run = ''; }
+    else run += '─';
+  }
+  if (run) track += theme.track(run);
+  const fill = full ? zone((heavy ? '━' : '─').repeat(full)) : '';
+  const tail = withTail ? theme.track('─')+theme.tick(meter.tail!) : '';
+  return {text:fill+mark+theme.bold(zone(label))+track+tail,bar:bar >= METER_MIN,tail:withTail,cols:bar};
 }
 
 /**
- * A rule's gap filled as a meter, exactly `room` columns:
- * "56%━━━━━━──────┃─246K". The bar takes what the label and tail leave, in
- * proportion. Short of room the tail goes first, then the bar (under
- * `METER_MIN` columns), then the label; what is left is plain rule. `bar`
- * says whether the bar was drawn, `tail` whether the tail was.
+ * Texts with a meter in the gap between them, `width` wide exactly:
+ * `left`, the meter, `right`, each given with whatever spacing it wants.
+ * Without a meter the gap is blank. Null when the texts leave no gap, or
+ * when the meter's bar would be under `needBar` columns (or `needTail` and
+ * its tail would not fit): the caller then tries a shorter set of texts.
  */
-export function meterGap(room: number, meter: EdgeMeter | undefined, rule: (s: string) => string = colors.dim): {text: string; bar: boolean; tail: boolean} {
-  const plainRule = {text:rule('─'.repeat(Math.max(0,room))),bar:false,tail:false};
-  if (!meter || room <= 0) return plainRule;
-  const label = meter.label ?? '';
-  const head = visualLength(label);
-  const tail = meter.tail ? visualLength(meter.tail)+1 : 0;
-  if (room-head-tail >= METER_MIN && tail) return {text:label+meterBar(meter,room-head-tail,rule)+rule('─')+meter.tail,bar:true,tail:true};
-  if (room-head >= METER_MIN) return {text:label+meterBar(meter,room-head,rule),bar:true,tail:false};
-  if (head && room >= head) return {text:label+rule('─'.repeat(room-head)),bar:false,tail:false};
-  return plainRule;
-}
-
-/**
- * A rule with texts riding on it, `width` wide: `lead`, " left ", the gap,
- * " right ", `trail`. The gap is plain rule, at least one column, or a meter
- * (`meterGap`). Null when the texts leave no gap, or when `needBar` and the
- * meter's bar would be under `METER_MIN` (or `needTail` and its tail would
- * not fit beside it): the caller then tries a shorter
- * set of texts. `rightX` is where the right text starts, its padding
- * included. The rule's glyphs take `rule`; what rides on it keeps its own
- * colours.
- */
-export function edgeLine(width: number, lead: string, trail: string, left: string, right: string,
-  meter?: EdgeMeter, needBar = false, rule: (s: string) => string = colors.dim, needTail = false): {line: string; rightX: number; bar: boolean} | null {
-  const shownLeft = left ? ` ${left} ` : ' ';
-  const shownRight = right ? ` ${right} ` : '';
-  const room = width-visualLength(lead)-visualLength(trail)-visualLength(shownLeft)-visualLength(shownRight);
+export function meterRow(width: number, left: string, right: string, meter?: EdgeMeter, needBar = 0, needTail = false): string | null {
+  const room = width-visualLength(left)-visualLength(right);
   if (room < 1) return null;
-  let gap = meterGap(room,meter,rule);
-  // A tail at the end of the rule keeps a space before the corner, as a right text does.
-  const spaced = !right && gap.tail && room > 1;
-  if (spaced) gap = meterGap(room-1,meter,rule);
-  if (meter && ((needBar && !gap.bar) || (needTail && meter.tail && !gap.tail))) return null;
-  const line = rule(lead)+shownLeft+gap.text+(spaced && gap.tail ? ' ' : spaced ? rule('─') : '')+shownRight+rule(trail);
-  return {line,rightX:visualLength(lead)+visualLength(shownLeft)+room,bar:gap.bar};
+  if (!meter) return left+' '.repeat(room)+right;
+  const drawn = meterText(meter,room);
+  if ((needBar && drawn.cols < needBar) || (needTail && meter.tail && !drawn.tail)) return null;
+  return left+drawn.text+right;
 }
 
 function openPane(state: MonitorState, id: MonitorPane): MonitorState {

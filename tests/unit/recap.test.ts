@@ -327,7 +327,7 @@ test('compact: the recap leads the brief area, labelled goal, done, now and need
   // under the value; no blank lines between fields; needs first.
   assert.deepEqual(lines.slice(rule + 2, rule + 8).map(line => line.trimEnd()), [
     ' ! Approve npm test', ' ◎ Fix the flaky cache', '   test in the parser', ' ▸ Waiting on reader agent',
-    ' ✓ Reproduced the failure', ' ✓ Found the race']);
+    ' ✓ Reproduced the failure', '   Found the race']);
   assert.ok(frame.lines[rule + 2].includes(theme.warning('Approve npm test')));
   assert.ok(frame.lines[rule + 2].includes(theme.warning('!')), 'the needs label is in the warning colour too');
   assert.ok(!lines.some(line => line.includes('{}')), 'a recap-only reply shows no raw text');
@@ -355,8 +355,8 @@ test('rich: the recap is in the status card, needs in the warning colour, every 
   }
   const frame = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: recapView }, status });
   const lines = frame.lines.map(stripAnsi);
-  assert.match(lines[frame.statusCard!.y], /~5m b‖ , \? ─╮$/);
-  assert.equal(lines[frame.statusCard!.y + 1].trimEnd(), '│ ! Approve npm test         │');
+  assert.match(lines[frame.statusCard!.y], /^ ! ▸ +~5m $/, 'the brief\'s state is data at the band\'s end, the needs mark leads');
+  assert.equal(lines[frame.statusCard!.y + 1].trimEnd(), '│ ! Approve npm test');
   assert.ok(frame.lines[frame.statusCard!.y + 1].includes(theme.warning('!')));
   assert.ok(!lines.some(line => /^┌ Main recap|^─ Brief/.test(line)), 'no recap card, no brief rule');
   const calm = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: { ...recapView, needs: '' } }, status });
