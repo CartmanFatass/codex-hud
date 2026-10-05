@@ -67,8 +67,10 @@ pill    ⌂ ▦ Agents   ≣   ±   ◫      ǁ ⊕1 ⚙ ?
  ✓ Idle ★◆ 5d ──────────────────────56%──────────────────272K ~3m
 │ ◎ Make the tokenizer twice as fast without breaking CJK text
 │ ▸ Waiting on the CJK fix and the cache review
-│ ✓ Dependency audit clean
-│   Add the streaming tokenizer API +2
+│ ✓ Streaming API merged
+│   Benchmarks set up on the 50 MB corpus
+│   Dependency audit clean
+│   Add the streaming tokenizer API
 ╰─ parser-kit · main * ↑2 7d ───────────────────────────99% ↺4d18h
 ```
 
