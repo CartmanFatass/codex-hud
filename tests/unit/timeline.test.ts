@@ -102,13 +102,14 @@ test('the Timeline pane opens with 5, lists events with their ages, and is saved
   const lines = frame.lines.map(stripAnsi);
   assert.ok(lines.some(line => line.includes('5 Timeline')));
   assert.ok(lines.some(line => /2m ⏎/.test(line)), 'with glyphs on a finished turn is ⏎');
-  assert.ok(lines.some(line => /5m reader failed/.test(line)));
+  assert.ok(lines.some(line => /5m reader ✗/.test(line)), 'with glyphs on an agent\'s failure is its name and ✗');
   assert.ok(lines.some(line => /~ The test fixture/.test(line)), 'a model-written cause is marked');
   assert.ok(frame.lines.every(line => visualLength(line) <= 30));
   const empty = renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now }).lines.map(stripAnsi);
   assert.ok(empty.some(line => line.includes('No events yet')));
   const words = withGlyphs('text', () => renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now, timeline }).lines.map(stripAnsi));
   assert.ok(words.some(line => /2m Turn finished/.test(line)), 'with glyphs off, the words');
+  assert.ok(words.some(line => /5m reader failed/.test(line)));
 });
 
 const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
@@ -142,7 +143,13 @@ test('the timeline folds repeats, makes an agent\'s run one line, leaves guardia
   assert.deepEqual(words, [' 1m Turn finished ×3', ' 6m bench_corpus ran 12m ✓', '19m migrate ran 2m ✗', '20m Tool failed: exec']);
   // A failed review still shows.
   const failed = renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now, timeline: [ev('11', 1, 'agent-failed', { agentId: 'g1', subject: 'guardian' })] });
-  assert.ok(failed.lines.map(stripAnsi).some(line => /guardian failed/.test(line)));
+  assert.ok(failed.lines.map(stripAnsi).some(line => /guardian ✗/.test(line)));
+  // Half a run: still going, or its start out of the list.
+  const half = (glyphs: 'glyph' | 'text') => withGlyphs(glyphs, () => renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now,
+    timeline: [ev('12', 1, 'agent-started', { agentId: 'w1', subject: 'bench_corpus' }), ev('13', 2, 'agent-finished', { agentId: 'w2', subject: 'migrate' })] }))
+    .lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd());
+  assert.deepEqual(half('glyph'), [' 1m ▸ bench_corpus', ' 2m migrate ✓']);
+  assert.deepEqual(half('text'), [' 1m bench_corpus started', ' 2m migrate finished']);
 });
 
 test('a pending approval says how long it has waited, in the bar\'s widest form, the panel card and the snapshot', () => {

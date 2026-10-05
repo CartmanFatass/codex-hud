@@ -326,6 +326,18 @@ test('a finished agent a minute old is one line, its meter and age in columns; e
   // Glyphs off: the age says ago.
   const words = withGlyphs('text', () => plain(renderMonitor({ tree: tree(nodes), state, width: 90, height: 40, nowMs: now })));
   assert.ok(words.some(line => /12d ago$/.test(line)), words.join('\n'));
+  // In Chinese the age column is measured in display width: snug, and still one column.
+  const mixed = [old[0], finished(23, 'migrate', 2, { contextUsage: ctxUsage(29) })];
+  const previous = setLanguage('zh');
+  try {
+    const zh = withGlyphs('text', () => plain(renderMonitor({ tree: tree(mixed), state, width: 90, height: 40, nowMs: now })))
+      .filter(line => /^[› ] ✓ (audit|migrate)/.test(line));
+    assert.equal(zh.length, 2, zh.join('\n'));
+    assert.match(zh[0], /[━╸─] 12d前$/, 'the column is as wide as the words, not the English ones');
+    assert.match(zh[1], /[━╸─] {2}2m前$/);
+    assert.equal(visualLength(zh[0]), visualLength(zh[1]));
+    assert.equal(visualLength(zh[0].slice(0, zh[0].indexOf('%'))), visualLength(zh[1].slice(0, zh[1].indexOf('%'))), 'the meters line up');
+  } finally { setLanguage(previous); }
 });
 
 test('an opened finished card with no log shows its last report, its markdown taken out, and an old card steps its words back', () => {

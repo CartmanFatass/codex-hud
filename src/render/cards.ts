@@ -298,6 +298,16 @@ function contextMeter(node: SubagentTreeNode, old: boolean): EdgeMeter | undefin
 const ROW_METER = 12;
 
 /**
+ * An age right-aligned in the column one-line rows share, as wide as a
+ * three-character age in the reader's words ("12m", "12m ago", "12m前"),
+ * by display width so that CJK lines up.
+ */
+function ageColumn(when: string): string {
+  const column = iconic() ? 3 : visualLength(t('{age} ago',{age:'59m'}));
+  return ' '.repeat(Math.max(0,column-visualLength(when)))+when;
+}
+
+/**
  * A finished agent as one line, in tree-row style: its name, a rule, its
  * guardian chip and model badge, then its context meter and how long ago, in
  * columns that line up down the list. Selecting it only marks it "›"; `e`,
@@ -320,7 +330,7 @@ function oneLineCard(row: PanelRow, state: MonitorState, width: number, now: num
   const meter = contextMeter(node,true);
   const meterCols = meter && w >= METER_MIN+ROW_METER ? ROW_METER : 0;
   const right = [guardianChip(node.children),badge].filter(Boolean).join(' ');
-  const tail = `${right ? ' '+right : ''}${meterCols ? ' '+meterGap(meterCols,meter).text : ''}${when ? ' '+colors.dim(when.padStart(iconic() ? 3 : 7)) : ''}`;
+  const tail = `${right ? ' '+right : ''}${meterCols ? ' '+meterGap(meterCols,meter).text : ''}${when ? ' '+colors.dim(ageColumn(when)) : ''}`;
   const room = Math.max(1,w-visualLength(head)-visualLength(tail)-2);
   const name = squeeze(title.name,room);
   const dashes = Math.max(1,w-visualLength(head)-visualLength(name)-1-visualLength(tail));

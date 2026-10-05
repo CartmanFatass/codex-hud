@@ -583,7 +583,8 @@ interface TimelineLine { at: Date; text: string; paint: (s: string) => string; k
  * started and finished in the list is one line, at the finish ("▸ name 12m
  * ✓"); a guardian review's comings and goings are left out (its failure
  * stays); the same event in a row is one line, "×5", at its newest time.
- * With glyphs on, a finished turn is ⏎ and a failed tool ✗.
+ * With glyphs on, a finished turn is ⏎, a failed tool ✗, and the rest of an
+ * agent's run "▸ name" or "name ✓".
  */
 function timelineLines(input: MonitorData): TimelineLine[] {
   const events = input.timeline ?? [];
@@ -615,6 +616,10 @@ function timelineLines(input: MonitorData): TimelineLine[] {
       const ran = age(start.at,event.at.getTime());
       const mark = event.kind === 'agent-failed' ? theme.error('✗') : theme.success('✓');
       text = iconic() ? `${theme.info('▸')} ${name} ${colors.dim(ran)} ${mark}` : `${t('{agent} ran {time}',{agent:name,time:ran})} ${mark}`;
+    } else if (iconic() && event.subject && (event.kind === 'agent-started' || event.kind === 'agent-finished' || event.kind === 'agent-failed')) {
+      // Half a run in the list: "▸ name" while it runs, "name ✓" or "name ✗" at its end.
+      const who = event.agentId ? name : monitorText(event.subject);
+      text = event.kind === 'agent-started' ? `${theme.info('▸')} ${who}` : `${who} ${event.kind === 'agent-failed' ? theme.error('✗') : theme.success('✓')}`;
     } else if (event.agentId && event.subject) {
       // The agent's name in its own colour, the rest in the event's.
       const words = timelineText(event);
