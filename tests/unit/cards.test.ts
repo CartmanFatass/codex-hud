@@ -6,7 +6,7 @@ import path from 'node:path';
 import { initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, type MonitorState, type MonitorFrame } from '../../src/render/monitor.js';
 import { agentTitle, KIND_GLYPHS } from '../../src/render/agent-title.js';
 import { hangLines, clockText } from '../../src/render/cards.js';
-import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
+import { stripAnsi, visualLength, theme, colors, truncateAnsi } from '../../src/render/colors.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
@@ -195,7 +195,7 @@ test('the agents view scrolls: a hint says what is out of view, the wheel and pa
     assert.equal(frame.panes[0].offset, 3, style);
     assert.equal(frame.state.tree.selectedId, selected);
     assert.match(hint(), /^↑ 3  ↓ \d+ more lines/);
-    assert.match(plain(frame)[frame.panes[0].y], /^▸12 *$/, 'the summary line stays put');
+    assert.match(plain(frame)[frame.panes[0].y], /^ ▸12 *$/, 'the summary line stays put');
     // Repaints keep the place; PgDn goes a page on; past the end is clamped.
     frame = draw(); state = frame.state; frame = draw();
     assert.equal(frame.panes[0].offset, 3);
@@ -236,7 +236,7 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const state = rich({ tree: { ...rich().tree, lingerMs: 180_000 } });
   const frame = renderMonitor({ tree: tree([named, old]), state, width: 32, height: 30, nowMs: now });
   const lines = plain(frame);
-  assert.equal(lines[1].trimEnd(), '▸1 ✓1', 'counts only, the hidden one counted');
+  assert.equal(lines[1].trimEnd(), ' ✓1 ▸1', 'counts only, the hidden one counted');
   assert.match(lines[0], / a\+1 {2}, {2}\? $/);
   assert.ok(!lines.some(line => line.includes('old_one')));
   const older = frame.controls.find(c => c.kind === 'older')!;
@@ -375,7 +375,7 @@ test('guardian reviews fold into a ◈N chip on their parent, or on the summary 
   const state = rich({ tree: { ...rich().tree, showAll: true } });
   const frame = renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now });
   const lines = plain(frame);
-  assert.match(lines[1], /^!1 ▸1 ✓1 · ◈1/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
+  assert.match(lines[1], /^ !1 ✓1 ▸1 ◈1/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
   const top = lines.find(line => line.includes('bench_corpus'))!;
   assert.match(top, /◈2/);
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');
@@ -400,18 +400,18 @@ test('a finished agent\'s second line says how far it got: the newest model note
     [nodes[0].id, [{ at: now - 7200_000, kind: 'report', text: 'Pushed **the** handoff' }, { at: now - 3600_000, kind: 'note', text: 'Handoff published, awaiting review' }]],
     [nodes[1].id, [{ at: now - 3600_000, kind: 'report', text: 'Pushed **the** handoff' }, { at: now - 60_000, kind: 'finished', text: '' }]],
   ]);
-  for (const width of [40, 56]) {
+  for (const width of [32, 40, 56]) {
     const state = rich({ tree: { ...rich().tree, showAll: true, selectedId: nodes[1].id } });
     const frame = renderMonitor({ tree: tree(nodes), state, width, height: 44, nowMs: now, agentLog });
     const lines = plain(frame);
     const under = (name: string) => lines[lines.findIndex(line => line.includes(name)) + 1];
-    assert.equal(under('done_50').trimEnd(), '   ~ Handoff published, awaiting review');
+    assert.equal(under('done_50').trimEnd(), truncateAnsi('   ~ Handoff published, awaiting review', width));
     assert.equal(under('done_51').trimEnd(), '   Pushed the handoff', 'the agent\'s own words, markdown out');
     assert.equal(under('done_52').trimEnd(), '   Task of 52');
     assert.ok(!/^ {3}\S/.test(under('done_53') ?? ''), 'nothing to say: no second line');
     assert.ok(frame.lines.every(line => visualLength(line) <= width));
     const row = lines.find(line => line.includes('done_50'))!;
-    assert.equal(row.lastIndexOf('─') - row.indexOf('─') + 1, width >= 56 ? 16 : 12, `${width}: the meter's cells`);
+    assert.equal(row.lastIndexOf('─') - row.indexOf('─') + 1, width >= 56 ? 16 : width < 36 ? 8 : 12, `${width}: the meter's cells`);
     const meter = frame.lines.find(line => line.includes('done_50'))!;
     assert.ok(meter.includes(theme.info('X').split('X')[0] + '─'), 'an old row keeps its meter\'s zone colour');
     assert.ok(meter.includes(colors.dim('done_50')), 'only the name dims');

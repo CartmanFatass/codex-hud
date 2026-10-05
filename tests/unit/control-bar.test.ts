@@ -77,7 +77,19 @@ test('the tabs: focused on its own surface, folded underlined, closed dim; witho
     assert.ok(line.includes(theme.track('4')), 'a closed tab is dim');
     assert.ok(line.includes(theme.value('3')), 'an open tab in the text colour');
     setDisplayConfig({ theme: 'none' });
-    assert.match(stripAnsi(controlBar(s, { expired: 0 }, 56).line), /^ ← Main session {2}1 2 3 +,Settings {2}\? $/);
+    assert.match(
+      stripAnsi(controlBar(s, { expired: 0 }, 56).line),
+      /^ ← Main session {2}\[1\] 2- 3 +,Settings {2}\? $/
+    );
+    const plainBar = controlBar(s, { expired: 0 }, 56);
+    const folded = plainBar.controls.find((c) => c.kind === 'tab' && c.pane === 'worktrees')!;
+    assert.equal(
+      stripAnsi(plainBar.line).slice(folded.x, folded.x + folded.width),
+      '2-',
+      'each tab is clicked where it is drawn'
+    );
+    const focusedFolded = controlBar({ ...s, focus: 'worktrees' }, { expired: 0 }, 56);
+    assert.match(stripAnsi(focusedFolded.line), /^ ← Main session {2}1 \[2-\] 3 /, 'focused and folded at once');
   } finally {
     setDisplayConfig(previous);
   }

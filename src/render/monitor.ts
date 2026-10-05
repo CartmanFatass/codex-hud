@@ -478,16 +478,17 @@ export function summaryRow(input: MonitorData, state: MonitorState, width: numbe
   const count = (icon: string, paint: (s: string) => string, n: number, word: string) =>
     `${paint(icon)}${n}${words ? colors.dim(` ${t(word)}`) : ''}`;
   // Only what is there: "▸0 run" beside thirty finished agents is noise.
+  // A column in, under the entries' status icons; failures lead.
   const summary = [
     totals.error ? count('!',theme.error,totals.error,'failed') : '',
-    totals.run ? count('▸',theme.info,totals.run,'run') : '',
     totals.done ? count('✓',theme.success,totals.done,'done') : '',
+    totals.run ? count('▸',theme.info,totals.run,'run') : '',
     totals.unknown ? count('?',colors.dim,totals.unknown,'unknown') : '',
   ].filter(Boolean).join(words ? '  ' : ' ');
   // Guardian reviews under the main session count here, not as agents.
   const chip = guardianChip(input.tree.nodes);
-  const headed = chip ? `${summary}${summary ? colors.dim(' · ') : ''}${chip}` : summary;
-  return {row:{text:truncateAnsi(headed,width)},total:everyone.length,expired};
+  const headed = chip ? `${summary}${summary ? ' ' : ''}${chip}` : summary;
+  return {row:{text:headed ? truncateAnsi(' '+headed,width) : ''},total:everyone.length,expired};
 }
 
 /**

@@ -318,10 +318,16 @@ function contextMeter(node: SubagentTreeNode): EdgeMeter | undefined {
   return ctx ? {percent:ctx.percent} : undefined;
 }
 
-/** Columns of a one-line row's meter, so the meters line up down the list: 12 in a narrow panel, 16 from 56 columns. */
+/**
+ * Columns of a one-line row's meter, so the meters line up down the list:
+ * 12 in a narrow panel, 16 from 56 columns, and 8 under 36, where the name
+ * needs the room more than the meter does.
+ */
 const ROW_METER = 12;
 const ROW_METER_WIDE = 16;
 const ROW_METER_WIDE_AT = 56;
+const ROW_METER_NARROW = 8;
+const ROW_METER_NARROW_BELOW = 36;
 /** Columns the brief line under a row is indented: under the name. */
 const BRIEF_INDENT = 3;
 
@@ -365,7 +371,7 @@ function oneLineCard(row: PanelRow, input: MonitorData, state: MonitorState, wid
   const at = settledAt(node);
   const when = at ? agoText(at,now) : '';
   const meter = contextMeter(node);
-  const cells = w >= ROW_METER_WIDE_AT ? ROW_METER_WIDE : ROW_METER;
+  const cells = w >= ROW_METER_WIDE_AT ? ROW_METER_WIDE : w < ROW_METER_NARROW_BELOW ? ROW_METER_NARROW : ROW_METER;
   const meterCols = meter && w >= METER_MIN+cells ? cells : 0;
   const right = [guardianChip(node.children),badge].filter(Boolean).join(' ');
   const tail = `${right ? ' '+right : ''}${meter && meterCols ? ' '+meterText(meter,meterCols).text : ''}${when ? ' '+colors.dim(ageColumn(when)) : ''}`;

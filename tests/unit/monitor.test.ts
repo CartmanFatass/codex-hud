@@ -384,7 +384,7 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   let frame=renderMonitor({tree:finished,worktrees,state,width:30,height:28,nowMs:now});
   let pane=frame.panes[0];
   assert.deepEqual(pane.rows.filter(r=>r.item).map(r=>r.item),[nodes[1].id]);
-  assert.match(stripAnsi(pane.rows[0].text),/^▸1 ✓1$/,'the summary is counts only');
+  assert.match(stripAnsi(pane.rows[0].text),/^ ✓1 ▸1$/,'the summary is counts only');
   assert.match(stripAnsi(frame.lines[0]),/ a\+1 /);
   const ctx={tree:finished,worktrees,frame,nowMs:now};
   assert.ok(!handleMonitorInput(frame.state,mouse(1,pane.y),ctx).state.tree.showAll,'the summary is no switch');
@@ -405,12 +405,12 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   // Counts that are zero stay out of the summary.
   const allDone:SubagentTree={...tree,nodes:[{...nodes[0],status:'completed',statusAt:new Date(now-1000)}]};
   const summary=stripAnsi(renderMonitor({tree:allDone,worktrees,state:initialMonitorState(),width:30,height:28,nowMs:now}).panes[0].rows[0].text);
-  assert.equal(summary.trimEnd(),'✓1');
+  assert.equal(summary.trimEnd(),' ✓1');
   // Where the reader asked for words, the counts say what they count.
   const previous=setDisplayConfig({glyphs:'text'});
   try {
     const worded=stripAnsi(renderMonitor({tree:allDone,worktrees,state:initialMonitorState(),width:30,height:28,nowMs:now}).panes[0].rows[0].text);
-    assert.equal(worded.trimEnd(),'✓1 done');
+    assert.equal(worded.trimEnd(),' ✓1 done');
   } finally {setDisplayConfig(previous);}
 });
 

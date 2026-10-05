@@ -40,12 +40,22 @@ function key(k: string, label: string, paint: (s: string) => string = theme.valu
   return colors.dim(k) + (label ? paint(label) : '');
 }
 
-/** One pane's tab, its state in its paint. */
+/**
+ * One pane's tab, its state in its paint. Without colour the paint says
+ * nothing, so the focused pane is "[4]" and a folded one "4-" ("[4-]"
+ * both); closed ones are not drawn there at all.
+ */
 function tab(state: MonitorState, id: MonitorPane, index: number): string {
   const n = String(index + 1);
-  if (id === state.focus) return theme.tab(theme.bold(theme.value(n)));
+  const plain = palette().name === 'none';
   const mode = id === 'agents' ? 'open' : state.modes[id];
-  if (mode === 'folded') return palette().name === 'none' ? n : `\x1b[4m${colors.dim(n)}\x1b[24m`;
+  const folded = mode === 'folded';
+  if (id === state.focus) {
+    if (plain) return `[${n}${folded ? '-' : ''}]`;
+    const face = theme.bold(theme.value(n));
+    return theme.tab(folded ? `\x1b[4m${face}\x1b[24m` : face);
+  }
+  if (folded) return plain ? `${n}-` : `\x1b[4m${colors.dim(n)}\x1b[24m`;
   return mode === 'closed' ? theme.track(n) : theme.value(n);
 }
 
@@ -101,8 +111,8 @@ export function controlBar(
     controls.push({ kind: 'main', x: 0, y: 0, width: x + visualLength(left[0].text) });
     x += visualLength(left[0].text) + 2;
     for (const s of tabs) {
-      controls.push({ kind: 'tab', pane: s.pane, x, y: 0, width: 1 });
-      x += 2;
+      controls.push({ kind: 'tab', pane: s.pane, x, y: 0, width: visualLength(s.text) });
+      x += visualLength(s.text) + 1;
     }
     x = width - visualLength(rightText);
     for (const s of right) {
