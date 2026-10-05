@@ -66,7 +66,7 @@ test('a process started again resumes the scan the last one saved, and reads onl
   assert.equal(saved.length, 1);
   assert.equal(fs.statSync(path.join(s.scan, saved[0])).mode & 0o777, 0o600);
   const record = JSON.parse(fs.readFileSync(path.join(s.scan, saved[0]), 'utf8'));
-  assert.deepEqual([record.version, record.path, record.id, record.offset], [SCAN_VERSION, s.file, 'lead', fs.statSync(s.file).size]);
+  assert.deepEqual([record.version, record.path, record.id, record.ino, record.offset], [SCAN_VERSION, s.file, 'lead', fs.statSync(s.file).ino, fs.statSync(s.file).size]);
 
   // Started again: the early bytes changed would show if they were read again; they are not.
   resetSubagentLinkCache();
@@ -103,6 +103,14 @@ test('nor is one for a file now shorter than the scan', (t) => {
   assert.deepEqual(told(lead), [['running', 'Taking the parser REWRITE.', null]]);
 });
 
+test('nor one for another file put in its place, though it ends in the same bytes', (t) => {
+  const lead = restarted(t, (s) => {
+    fs.writeFileSync(`${s.file}.new`, fs.readFileSync(s.file));
+    fs.renameSync(`${s.file}.new`, s.file);
+  });
+  assert.deepEqual(told(lead), [['done', 'Taking the parser REWRITE.', 'First answer.']]);
+});
+
 test('nor one saved under another reading of the lines, or with a part that does not read', (t) => {
   const lead = restarted(t, (s, saved) => {
     const record = JSON.parse(fs.readFileSync(saved, 'utf8'));
@@ -128,7 +136,7 @@ test('checking a growing rollout again keeps its scan while the bytes it ended o
     ['done', null, 'Third answer.']], 'the bytes it ended on changed: read again from the start');
 });
 
-test('a read-only store writes nothing, and saved scans not written for a week go', () => {
+test('a read-only store writes nothing, and a saved scan neither used nor written for a week goes', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-tree-scan-store-'));
   try {
     const scan = path.join(dir, 'scan');
@@ -143,11 +151,13 @@ test('a read-only store writes nothing, and saved scans not written for a week g
     assert.equal(fs.existsSync(scan), false, 'not yet: writes go out once a minute');
     store.flushDue(Date.now() + 61_000);
     assert.equal(store.load('/x.jsonl')?.id, 'x');
-    const [old, kept] = fs.readdirSync(scan);
     const week = Date.now() / 1000 - 8 * 24 * 3600;
-    fs.utimesSync(path.join(scan, old), week, week);
+    for (const name of fs.readdirSync(scan)) fs.utimesSync(path.join(scan, name), week, week);
+    readOnly.used('/y.jsonl');
+    store.used('/x.jsonl');
     new TreeScanStore(scan);
-    assert.deepEqual(fs.readdirSync(scan), [kept]);
+    assert.deepEqual(fs.readdirSync(scan).map((name) => JSON.parse(fs.readFileSync(path.join(scan, name), 'utf8')).id), ['x'],
+      'the one used this week stays; a dry run\'s use keeps nothing');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -8,7 +8,7 @@
  * path, inode and thread, the file at least as long as the scan, and the
  * 4 KB before the scan's end unchanged (`print`). Anything else is read
  * again. One small JSON file per rollout, mode 0600, under
- * `$CODEX_HOME/hud/scan/`; the files of rollouts not read for a week go.
+ * `$CODEX_HOME/hud/scan/`; one neither used nor written for a week goes.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -26,7 +26,7 @@ export const SCAN_VERSION = 1;
 export const SAVE_MIN_BYTES = 256 * 1024;
 /** Writes go out at most this often, and when the process stops. */
 const FLUSH_EVERY_MS = 60_000;
-/** A saved scan not written for this long is for a rollout the tree no longer reads. */
+/** A saved scan neither used nor written for this long is for a rollout the tree no longer reads. */
 const KEEP_MS = 7 * 24 * 3600_000;
 const PRINT_BYTES = 4096;
 
@@ -87,6 +87,13 @@ export class TreeScanStore {
     } catch {
       return undefined;
     }
+  }
+
+  /** `rollout`'s saved scan was used: it is kept another week. */
+  used(rollout: string, now = Date.now()): void {
+    if (this.options.readOnly) return;
+    const at = new Date(now);
+    try { fs.utimesSync(this.file(rollout), at, at); } catch { /* gone: saved again once the scan moves on */ }
   }
 
   /** `rollout`'s scan moved on: `take` gives it as it stands when the writes go out. */

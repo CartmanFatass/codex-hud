@@ -761,6 +761,7 @@ export function buildSubagentTree(
           && scanPrint(file.path, saved.offset) === saved.print && restoreScan(saved, link)) {
           contextOffset = saved.offset;
           contextPrint = saved.print;
+          scanStore.used(file.path, nowMs);
         }
       }
       linkCache.set(file.path, {
