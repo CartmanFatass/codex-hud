@@ -8,6 +8,7 @@ import { agentTitle, KIND_GLYPHS } from '../../src/render/agent-title.js';
 import { hangLines, clockText } from '../../src/render/cards.js';
 import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
 import { setLanguage } from '../../src/render/i18n.js';
+import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
 import { SETTING_ROWS } from '../../src/render/settings-page.js';
@@ -55,14 +56,15 @@ test('a card: Codex\'s name, glyph and badge on the rule; the smart name, then t
   assert.equal(lines[top + 2].trimEnd(), '│', 'a blank line before the news');
   assert.match(lines[top + 3], /^│ ~ 召回下降，结果待核对 +6s$/, 'the newest model note first, its age at the right');
   assert.match(lines[top + 4], /^│ recall@10 0\.71 +2m$/, 'then the newest observed entry');
-  assert.match(lines[top + 5], /^└ ◷ 4m07s ─+ ━╸─ 56% ▾$/, 'the turn clock counting seconds, the meter, the switch');
-  assert.ok(frame.lines[top + 1].startsWith(theme.accent('│')), 'a selected card is painted in the accent');
+  assert.match(lines[top + 5], /^└ ◷ 4m07s 56%[━╸]+─+ ▾$/, 'the turn clock counting seconds, the rule as the context meter, the switch');
+  assert.ok(frame.lines[top + 1].startsWith(theme.info('│')), 'a card is painted by its state, selected or not');
+  assert.ok(frame.lines[top].startsWith(theme.accent('›')), 'the selection is the corner');
   // A card with no smart name: the task under the name, cut to two lines; the time since it failed.
   const second = lines.findIndex(line => line.includes('small_index_ablation'));
   assert.match(lines[second], /^┌ ! small_index_ablation ─+$/, 'no glyph, no badge, no right border');
   assert.equal(lines[second + 1].trimEnd(), '│ Build a small index and');
   assert.match(lines[second + 2], /^│ compare recall against the … *$/);
-  assert.match(lines[second + 3], /^└ 2m ago ─+ ▾$/, 'its failing is the bottom rule\'s to say, not said twice inside');
+  assert.match(lines[second + 3], /^└ 2m ─+ ▾$/, 'its failing is the bottom rule\'s to say, not said twice inside');
   assert.ok(frame.lines[second + 1].startsWith(theme.error('│')), 'a failed card is painted in the error colour');
   assert.equal(lines[second - 1].trim(), '', 'a blank line between cards');
   // The compact tree row keeps Codex's name; its log header shows the glyph and the name, the smart name under it.
@@ -97,13 +99,13 @@ test('cards never run past the panel, in either language, and give up badge and 
   const narrow = plain(renderMonitor({ tree: tree([named]), state: rich(), width: 22, height: 30, nowMs: now }));
   assert.ok(narrow.some(line => /^› ▸ ⌕ ablation…anker ─+ *$/.test(line)), `under 24 columns the badge goes first\n${narrow.join('\n')}`);
   const tiny = plain(renderMonitor({ tree: tree([named]), state: rich(), width: 19, height: 30, nowMs: now }));
-  assert.ok(tiny.some(line => /^└ .*56% ▾$/.test(line) && !line.includes('━')), 'then the meter, the percent kept');
+  assert.ok(tiny.some(line => /^└ .*56%─* ▾$/.test(line) && !line.includes('━')), 'then the meter, the percent kept');
   // A child card is indented, one column a level.
   const nested = plain(renderMonitor({ tree: tree([parent]), state: rich(), width: 40, height: 40, nowMs: now }));
   assert.ok(nested.some(line => /^ ┌ ▸ ◈ b05_result/.test(line)), nested.join('\n'));
   const folded = plain(renderMonitor({ tree: tree([parent]), state: rich({ tree: { ...rich().tree, collapsed: new Set([parent.id]) } }), width: 40, height: 40, nowMs: now }));
   assert.ok(!folded.some(line => line.includes('b05_result')));
-  assert.ok(folded.some(line => /^└ ◷ 4m07s · \+1 folded ─+ ▾$/.test(line)), 'a collapsed parent counts what it folds');
+  assert.ok(folded.some(line => /^└ ◷ 4m07s · \+1 ─+ ▾$/.test(line)), 'a collapsed parent counts what it folds');
 });
 
 test('a card opens to its whole timeline and the task in full; Enter still inspects, e and Space open', () => {
@@ -279,4 +281,96 @@ test('helpers: a hanging wrap keeps its text, the turn clock counts seconds', ()
   assert.equal(lines.join(' '), 'one two three four five six');
   assert.ok(visualLength(lines[0]) <= 9 && lines.slice(1).every(line => visualLength(line) <= 7));
   assert.deepEqual([clockText(42_000), clockText(247_000), clockText(3_840_000)], ['42s', '4m07s', '1h04m']);
+});
+
+const ctxUsage = (percent: number) => ({ percent, used: percent, total: 100, inputTokens: 0, outputTokens: 0, cachedTokens: 0, compactCount: 0 });
+const finished = (i: number, name: string, minutesAgo: number, extra: Partial<SubagentTreeNode> = {}) =>
+  agent(i, name, 'completed', { statusAt: new Date(now - minutesAgo * 60_000), lastEventAt: new Date(now - minutesAgo * 60_000), contextUsage: ctxUsage(57),
+    model: 'gpt-5.4-luna', effort: 'medium', ...extra });
+const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
+  const previous = displayConfig();
+  setDisplayConfig({ glyphs });
+  try { return run(); } finally { setDisplayConfig(previous); }
+};
+
+test('a finished agent a minute old is one line, its meter and age in columns; e, Space or a click opens it, j/k only marks it', () => {
+  const old = [finished(20, 'audit_code_paths', 60 * 24 * 12), finished(21, 'migrate', 60 * 24 * 12, { contextUsage: ctxUsage(29) })];
+  const fresh = finished(22, 'just_done', 0.5, { lastReport: { text: 'All done', kind: 'reply', at: new Date(now - 30_000) } });
+  const nodes = [...old, fresh];
+  const state = rich({ tree: { ...rich().tree, showAll: true, selectedId: old[0].id } });
+  const frame = renderMonitor({ tree: tree(nodes), state, width: 90, height: 40, nowMs: now });
+  const lines = plain(frame);
+  const rows = lines.filter(line => /^[› ] ✓ (audit|migrate)/.test(line));
+  assert.equal(rows.length, 2, lines.join('\n'));
+  assert.match(rows[0], /^› ✓ audit_code_paths ─+ ☽◐ Luna 57%[━╸]+─+ 12d$/);
+  assert.equal(rows[0].length, rows[1].length);
+  assert.equal(rows[0].indexOf('%'), rows[1].indexOf('%'), 'the meters line up');
+  assert.equal(lines.indexOf(rows[1]) - lines.indexOf(rows[0]), 1, 'one-line rows sit together, no blank between');
+  assert.ok(lines.some(line => /^┌ ✓ just_done/.test(line)), 'just finished: still a card, so its report shows for a minute');
+  assert.ok(frame.lines.every(line => visualLength(line) <= 90));
+  // j/k moves the mark and does not open.
+  const ctx = { tree: tree(nodes), frame, nowMs: now };
+  const moved = handleMonitorInput(frame.state, key('down'), ctx).state;
+  assert.equal(moved.tree.selectedId, old[1].id);
+  assert.ok(!(moved.cards?.has(old[1].id)));
+  const after = plain(renderMonitor({ tree: tree(nodes), state: moved, width: 90, height: 40, nowMs: now }));
+  assert.equal(after.filter(line => /^[› ] ✓ (audit|migrate)/.test(line)).length, 2, 'the height does not jump');
+  // e opens it; a click on the row does too.
+  const opened = handleMonitorInput(moved, key('expand'), ctx).state;
+  assert.ok(opened.cards?.has(old[1].id));
+  const y = lines.indexOf(rows[1]);
+  const clicked = handleMonitorInput(frame.state, click(10, y), ctx).state;
+  assert.ok(clicked.cards?.has(old[1].id));
+  const open = plain(renderMonitor({ tree: tree(nodes), state: opened, width: 90, height: 40, nowMs: now }));
+  assert.ok(open.some(line => /^› ✓ migrate ─+/.test(line)) && open.some(line => /^└ 12d 29%[━╸]+─+ ▴$/.test(line)), open.join('\n'));
+  // Glyphs off: the age says ago.
+  const words = withGlyphs('text', () => plain(renderMonitor({ tree: tree(nodes), state, width: 90, height: 40, nowMs: now })));
+  assert.ok(words.some(line => /12d ago$/.test(line)), words.join('\n'));
+});
+
+test('an opened finished card with no log shows its last report, its markdown taken out, and an old card steps its words back', () => {
+  const report = 'Published [the handoff](/x/HANDOFF.md) at **`d97a7a688774ad9b45da44f5825ae1ac198b4bb1`**. ### Next __steps__ follow.';
+  const done = finished(30, 'cache_clean', 60 * 19, { lastReport: { text: report, kind: 'reply', at: new Date(now - 19 * 3600_000) }, task: 'Write the handoff' });
+  const state = rich({ cards: new Set([done.id]), tree: { ...rich().tree, showAll: true } });
+  const frame = renderMonitor({ tree: tree([done]), state, width: 90, height: 40, nowMs: now });
+  const lines = plain(frame);
+  const at = lines.findIndex(line => line.includes('Published'));
+  assert.ok(at > 0, lines.join('\n'));
+  assert.equal(lines[at].trimEnd(), '│ Published the handoff at d97a7a6. Next steps follow.');
+  assert.ok(frame.lines[at].includes(colors.dim('X').split('X')[0] + 'Published the handoff'), 'old news: the body is dim with the name');
+  // A closed card's entry: two lines at most, and no age on a line of its own.
+  const long = 'word '.repeat(80);
+  const busy = agent(31, 'busy', 'running', { contextUsage: ctxUsage(20) });
+  const shown = plain(renderMonitor({ tree: tree([busy]), state: rich(), width: 40, height: 40, nowMs: now,
+    agentLog: new Map([[busy.id, [{ at: now - 60_000, kind: 'report' as const, text: long }]]]) }));
+  const body = shown.filter(line => line.startsWith('│ word') || line.startsWith('│   word'));
+  assert.equal(body.length, 2, shown.join('\n'));
+  assert.ok(!shown.some(line => /^│ +1m$/.test(line)), 'no orphan age line');
+});
+
+test('guardian reviews fold into a ◈N chip on their parent, or on the summary under the main session; a failed one still shows', () => {
+  const guardian = (i: number, status: SubagentTreeNode['status'] = 'completed') =>
+    agent(i, 'guardian', status, { kind: 'guardian', task: 'The following is the Codex agent history whose request action you are assessing.',
+      statusAt: new Date(now - 3600_000), lastEventAt: new Date(now - 3600_000) });
+  const parent = agent(40, 'bench_corpus', 'running', { children: [guardian(41), guardian(42, 'running')] });
+  const nodes = [guardian(43), parent, finished(44, 'other', 30, { children: [guardian(45, 'error')] })];
+  const state = rich({ tree: { ...rich().tree, showAll: true } });
+  const frame = renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now });
+  const lines = plain(frame);
+  assert.match(lines[1], /^!1 failed {2}▸1 run {2}✓1 done · ◈1/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
+  const top = lines.find(line => line.includes('bench_corpus'))!;
+  assert.match(top, /◈2/);
+  assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');
+  assert.ok(!lines.some(line => /The following is the Codex/.test(line)), 'never the review prompt');
+  assert.equal(lines.filter(line => line.includes('guardian')).length, 1, 'only the failed one has a card');
+  assert.ok(lines.some(line => /^ ┌ ! guardian/.test(line)));
+  // j/k never lands on a folded review.
+  let s = frame.state;
+  const seen = new Set<string>();
+  for (let i = 0; i < 6; i++) { s = handleMonitorInput(s, key('down'), { tree: tree(nodes), frame, nowMs: now }).state; seen.add(s.tree.selectedId!); }
+  assert.ok(![41, 42, 43].some(i => seen.has(id(i))), [...seen].join(','));
+  // The compact tree folds them the same way.
+  const compact = plain(renderMonitor({ tree: tree(nodes), state: { ...state, style: 'compact' }, width: 60, height: 50, nowMs: now }));
+  assert.ok(compact.some(line => /bench_corpus .*◈2/.test(line)), compact.join('\n'));
+  assert.equal(compact.filter(line => / guardian/.test(line)).length, 1);
 });

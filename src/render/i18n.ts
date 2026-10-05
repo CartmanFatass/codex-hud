@@ -212,6 +212,7 @@ const ZH: Record<string, string> = {
   'b‖ / b▸ pause / resume brief  ~… writing': 'b‖ / b▸ 暂停 / 继续简报  ~… 生成中',
   'status card frame colour = main session state': '状态卡边框颜色 = 主会话状态',
   '┃ = auto-compact point': '┃ = 自动压缩点',
+  '◈N = guardian reviews  +N = folded agents': '◈N = 守护评审次数  +N = 收起的 agent',
   'Tab next visible pane': 'Tab 下一个面板',
   'j/k select  o switch': 'j/k 选择  o 切换会话',
   'Click agent: switch': '点击 agent：切换会话',

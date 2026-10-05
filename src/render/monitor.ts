@@ -4,7 +4,7 @@ import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot, WorktreeInfo } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-import { initialPanelState, reconcileSelection, visibleRows, applyKey, countExpired, type PanelState } from './panel-state.js';
+import { initialPanelState, reconcileSelection, visibleRows, applyKey, countExpired, guardianCount, isGuardian, type PanelState } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi, getContextColor } from './colors.js';
 import { renderModelEffortToken, modelLegend } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
@@ -201,6 +201,22 @@ export function monitorText(text: string): string {
     return ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t'
       : cp > 255 ? `\\u${cp.toString(16).padStart(4,'0')}` : `\\x${cp.toString(16).padStart(2,'0')}`;
   });
+}
+/**
+ * An agent's own words with the markdown it writes for a chat window taken
+ * out, for a card or the Inspector: a link is its text, bold, code and
+ * heading marks go, and a full commit hash is cut to the seven characters git shows. The
+ * raw text stays the log's and the brief material's. Takes raw text; the
+ * result still needs `monitorText`.
+ */
+export function plainText(text: string): string {
+  return text
+    .replace(/\[([^\]\n]+)\]\([^)\s]*\)/g,'$1')
+    .replace(/\*\*([^*\n]+?)\*\*/g,'$1')
+    .replace(/__([^_\n]+?)__/g,'$1')
+    .replace(/`+/g,'')
+    .replace(/(^|\s)#{1,6}(?=\s)/g,'$1')
+    .replace(/\b[0-9a-f]{40}\b/g,hash=>hash.slice(0,7));
 }
 export function fit(text: string, width: number): string {
   const clipped = truncateAnsi(text, Math.max(0,width));
@@ -462,10 +478,22 @@ export function summaryRow(input: MonitorData, state: MonitorState, width: numbe
     totals.done ? count('✓',theme.success,totals.done,'done') : '',
     totals.unknown ? count('?',colors.dim,totals.unknown,'unknown') : '',
   ].filter(Boolean).join(words ? '  ' : ' ');
+  // Guardian reviews under the main session count here, not as agents.
+  const chip = guardianChip(input.tree.nodes);
+  const headed = chip ? `${summary}${summary ? colors.dim(' · ') : ''}${chip}` : summary;
   // The summary doubles as the switch for what the linger window hid.
   const toggle = !expired ? '' : state.tree.showAll ? colors.dim(t(words ? 'hide old' : '−old'))
     : theme.accent(words ? t('+{n} older',{n:expired}) : `+${expired}`);
-  return {row:{text:pair(summary,toggle,width),...(expired ? {action:'toggle-finished' as const} : {})},total:everyone.length,expired};
+  return {row:{text:pair(headed,toggle,width),...(expired ? {action:'toggle-finished' as const} : {})},total:everyone.length,expired};
+}
+
+/**
+ * "◈5": the guardian reviews among `nodes`, in the info colour while one is
+ * running. Empty when there are none.
+ */
+export function guardianChip(nodes: readonly SubagentTreeNode[]): string {
+  const {count,running} = guardianCount(nodes);
+  return count ? (running ? theme.info : colors.dim)(`◈${count}`) : '';
 }
 
 /** What the agents view says when it has no agent to show. */
@@ -500,7 +528,7 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     // there is nothing to draw, so meters and clocks line up down the pane.
     const ctx = width < 26 ? '' : node.contextUsage ? contextLine(node.contextUsage.percent,CONTEXT_METER_WIDTH) : ' '.repeat(CONTEXT_METER_WIDTH);
     const clock = width < 12 ? '' : turnClock(node,now) || ' ';
-    const right = [badge,ctx,clock].filter(Boolean).join(' ');
+    const right = [guardianChip(node.children),badge,ctx,clock].filter(Boolean).join(' ');
     const room = Math.max(1,width-visualLength(prefix)-(right ? visualLength(right)+1 : 0));
     // Codex's own name, as its /subagents picker prints it: what the agent
     // is doing is the log's to say, under the tree.
@@ -624,7 +652,7 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       if (report) {
         const prior = node.turnStartedAt && report.at < node.turnStartedAt;
         rows.push({text:colors.dim(truncateAnsi(`${t(prior ? 'Previous turn' : 'Latest update')} · ${t('{age} ago',{age:age(report.at,now)})}`,width))});
-        const text = flowLines(monitorText(report.text.replace(/\s+/g,' ').trim()),width);
+        const text = flowLines(monitorText(plainText(report.text).replace(/\s+/g,' ').trim()),width);
         const shown = state.expanded ? text : text.slice(0,REPORT_LINES);
         if (shown.length < text.length) {
           let last = [...shown[shown.length-1]];
@@ -644,7 +672,8 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
       };
       written('digest','Result digest');
       written('cause','Failure cause');
-      if (node.task && (state.expanded || !report)) {
+      // A guardian's task is Codex's review prompt, the same every time.
+      if (node.task && !isGuardian(node) && (state.expanded || !report)) {
         rows.push({text:colors.dim(t('Task'))});
         rows.push(...flowLines(monitorText(node.task.replace(/\s+/g,' ').trim()),width).map(line=>({text:line})));
       }
@@ -857,7 +886,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       .map(line=>t(line))
       .concat(t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
         ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve','b‖ / b▸ pause / resume brief  ~… writing',
-          'status card frame colour = main session state','┃ = auto-compact point','yellow clock = quiet 5m+','━╸─ = context or quota used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
+          'status card frame colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','yellow clock = quiet 5m+','━╸─ = context or quota used','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
         ...stripAnsi(modelLegend()).split('\n'))
       .flatMap(line=>helpLines(line,width));
     const count = Math.max(0,height-2);

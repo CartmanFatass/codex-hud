@@ -85,11 +85,31 @@ export function isExpired(node: SubagentTreeNode, state: PanelState, nowMs: numb
   return at === undefined || !Number.isFinite(at) || nowMs - at > state.lingerMs;
 }
 
+/**
+ * A guardian review thread: Codex 0.155+ opens one beside a session to review
+ * its approvals, every few seconds. It is not an agent the reader started,
+ * so it gets no row of its own: its parent carries a `◈N` chip instead. A
+ * failed one still shows, as anything failed does.
+ */
+export function isGuardian(node: SubagentTreeNode): boolean {
+  return node.kind === 'guardian';
+}
+function folded(node: SubagentTreeNode): boolean {
+  return isGuardian(node) && node.status !== 'error';
+}
+
+/** The guardian reviews directly under `nodes`, and whether one is running now. */
+export function guardianCount(nodes: readonly SubagentTreeNode[]): { count: number; running: boolean } {
+  const guardians = nodes.filter(isGuardian);
+  return { count: guardians.length, running: guardians.some(node => node.status === 'running' || node.status === 'starting') };
+}
+
 function ownMatch(node: SubagentTreeNode, state: PanelState, nowMs: number): boolean {
   return matchesFilter(node, state.filter) && !isExpired(node, state, nowMs);
 }
 
 function subtreeMatches(node: SubagentTreeNode, state: PanelState, nowMs: number): boolean {
+  if (folded(node)) return false;
   return ownMatch(node, state, nowMs) || node.children.some((child) => subtreeMatches(child, state, nowMs));
 }
 
@@ -98,7 +118,7 @@ export function countExpired(nodes: SubagentTreeNode[], state: PanelState, nowMs
   let hidden = 0;
   const walk = (items: SubagentTreeNode[]): void => {
     for (const node of items) {
-      if (!subtreeMatches(node, state, nowMs) && matchesFilter(node, state.filter)) hidden += 1;
+      if (!folded(node) && !subtreeMatches(node, state, nowMs) && matchesFilter(node, state.filter)) hidden += 1;
       walk(node.children);
     }
   };
