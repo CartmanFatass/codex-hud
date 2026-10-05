@@ -1,20 +1,20 @@
 /**
  * The agents view as one scrolling viewport: the summary line pinned at the
- * top, the rest (cards, or the tree, brief and log) scrolling under it, and a
- * line saying what is out of view. Pure: it writes into the frame it is given.
+ * top as the view's band, the rest (cards, or the tree, brief and log)
+ * scrolling under it. Pure: it writes into the frame it is given.
  */
 import type { MonitorFrame, MonitorState, MonitorRow } from './monitor.js';
-import { fit } from './monitor.js';
-import { colors } from './colors.js';
-import { t } from './i18n.js';
+import { fit, pair } from './monitor.js';
+import { colors, theme } from './colors.js';
 
 /** Rows one wheel step scrolls the agents view. */
 export const WHEEL_ROWS = 3;
 
 /**
  * Draw the agents view at `y`, `height` rows tall: the summary line stays
- * put and the rest scrolls under it. When it does not all fit, the last row
- * says how much is out of view, and is a click target that scrolls on.
+ * put, on the band as a pane's title is, and the rest scrolls under it. When
+ * it does not all fit, the band's right end says which rows are in view
+ * ("4–19/46"); a click on the band zooms the view, or restores it.
  *
  * Where it is scrolled to is kept by block, not by row (`anchor`): content
  * arriving above what the reader is looking at does not move it. The view
@@ -24,8 +24,8 @@ export function drawAgentsView(frame: MonitorFrame, state: MonitorState, rows: M
   const pinned = Math.min(1,height,rows.length);
   const room = height-pinned;
   const body = Math.max(0,rows.length-pinned);
-  const overflow = room >= 2 && body > room;
-  const shown = overflow ? room-1 : room;
+  const overflow = body > room;
+  const shown = room;
   const max = Math.max(0,body-shown);
   let offset = state.scroll.agents;
   const first = (key: string) => rows.findIndex((row,i)=>i>=pinned&&row.key===key);
@@ -58,12 +58,9 @@ export function drawAgentsView(frame: MonitorFrame, state: MonitorState, rows: M
     frame.lines[y+i] = fit(row.text,width);
     for (const control of row.controls ?? []) if (control.width > 0 && control.x < width) frame.controls.push({...control,x:Math.min(width-1,control.x),y:y+i,width:Math.max(1,Math.min(control.width,width-control.x))});
   }
-  if (overflow) {
-    const above = offset;
-    const below = body-offset-shown;
-    const text = below ? (above ? t('↑ {a}  ↓ {n} more lines',{a:above,n:below}) : t('↓ {n} more lines',{n:below})) : t('↑ {n} more lines',{n:above});
-    frame.lines[y+height-1] = colors.dim(fit(text,width));
-    frame.controls.push({kind:'more',x:0,y:y+height-1,width});
+  if (pinned) {
+    const range = overflow && shown > 0 ? `${offset+1}–${offset+shown}/${body} ` : '';
+    frame.lines[y] = theme.band(fit(pair(rows[0].text,range && colors.dim(range),width),width));
+    frame.controls.push({kind:'zoom',pane:'agents',x:0,y,width});
   }
 }
-

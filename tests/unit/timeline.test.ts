@@ -95,7 +95,7 @@ test('the Timeline pane opens with 5, lists events with their ages, and is saved
   const opened = handleMonitorInput(initialMonitorState(), { type: 'key', key: 'timeline' }, { tree: agents }).state;
   assert.equal(opened.modes.timeline, 'open');
   assert.equal(monitorPreferences(opened).timelinePane, 'open');
-  assert.equal(monitorModes({ ...defaultSettings(), timelinePane: 'folded' }).timeline, 'folded');
+  assert.equal(monitorModes({ ...defaultSettings(), timelinePane: 'closed' }).timeline, 'closed');
   const timeline = [{ id: '1', at: at(-120), title: '', detail: [], status: 'completed' as const, kind: 'turn-finished' as const },
     { id: '2', at: at(-300), title: '', detail: [], status: 'error' as const, kind: 'agent-failed' as const, subject: 'reader', cause: 'The test fixture is missing' }];
   const frame = renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now, timeline });
@@ -199,7 +199,7 @@ test('the key help lists every key, the new ones included, in both languages', a
   const state = { ...initialMonitorState(), help: true };
   const lines = () => renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
   const en = lines();
-  for (const key of ['5 Timeline', 'Ctrl+] 1–5 open a pane', 'Ctrl+] b pause / resume brief', 'Ctrl+] r status card: min / status', "Click the card's band: its level",
+  for (const key of ['5 Timeline', 'Ctrl+] 1–5 open / close a pane', 'Ctrl+] b pause / resume brief', 'Ctrl+] r status card: min / status', "Click the card's band: its level",
     'Click a log line: select agent', '~ = written by a model', 'Ctrl+] f filter', 'Ctrl+] h l fold / unfold agent', 'Ctrl+] g G first / last',
     'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+], then a key', 'Ctrl+] Ctrl+] Ctrl+] itself, to Codex', '☰ settings ? help']) assert.ok(en.includes(key), key);
   // The prefix the settings chose is the one the help names.
@@ -212,7 +212,7 @@ test('the key help lists every key, the new ones included, in both languages', a
   const previous = setLanguage('zh');
   try {
     const zh = lines();
-    for (const key of ['5 时间线', 'Ctrl+] 1–5 打开面板', 'Ctrl+] r 状态卡：一行 / 状态', '点击状态卡色带：切换显示层级', '点击日志行', '由模型撰写', '筛选',
+    for (const key of ['5 时间线', 'Ctrl+] 1–5 打开 / 关闭面板', 'Ctrl+] r 状态卡：一行 / 状态', '点击状态卡色带：切换显示层级', '点击日志行', '由模型撰写', '筛选',
       '快捷键：先按 Ctrl+]，再按一键', '在侧栏里打字，按键都交给 Codex']) assert.ok(zh.includes(key), key);
     assert.ok(!zh.includes('复制'));
   } finally { setLanguage(previous); }

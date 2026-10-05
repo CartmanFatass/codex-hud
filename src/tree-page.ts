@@ -287,7 +287,7 @@ async function runLivePage(): Promise<void> {
       const wanted = new Set<string>();
       if (state.tree.selectedId) wanted.add(state.tree.selectedId);
       if (pane) {
-        for (let i=pane.offset;i<pane.offset+Math.max(0,pane.height-2*(pane.edge??1));i++) {
+        for (let i=pane.offset;i<pane.offset+Math.max(0,pane.height-(pane.edge??1));i++) {
           const item = pane.rows[i]?.item;
           if (item) wanted.add(item);
         }

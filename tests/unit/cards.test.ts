@@ -176,7 +176,7 @@ test('card clicks: the name switches, the rest of the top rule and ▾ open, the
   assert.deepEqual(handleMonitorInput(compact.state, click(4, row), { tree: agents, frame: compact, nowMs: now }).action, { type: 'switch', id: bare.id });
 });
 
-test('the agents view scrolls: a hint says what is out of view, the wheel and pages move it, the selection pulls it', () => {
+test('the agents view scrolls: its band says which rows are in view, the wheel and pages move it, the selection pulls it', () => {
   const nodes = Array.from({ length: 12 }, (_, i) => agent(10 + i, `worker_${i}`, 'running', { task: `task ${i}` }));
   const agents = tree(nodes);
   for (const style of ['rich', 'compact'] as const) {
@@ -184,8 +184,9 @@ test('the agents view scrolls: a hint says what is out of view, the wheel and pa
     const draw = () => renderMonitor({ tree: agents, state, width: 32, height: 20, nowMs: now, agentLog: style === 'compact' ? new Map() : undefined,
       brief: style === 'compact' ? { text: 'line\n'.repeat(40) } : undefined });
     let frame = draw();
-    const hint = () => plain(frame)[frame.panes[0].y + frame.panes[0].height - 1];
-    assert.match(hint(), /^↓ \d+ more lines/, style);
+    const hint = () => plain(frame)[frame.panes[0].y];
+    assert.match(hint(), / 1–\d+\/\d+ $/, style);
+    assert.ok(!plain(frame).some(line => /more lines/.test(line)), 'no line says what is below');
     assert.equal(frame.panes[0].offset, 0, 'opening the panel does not scroll to the first agent');
     const ctx = () => ({ tree: agents, frame, nowMs: now });
     // The wheel over the view scrolls it and leaves the selection be.
@@ -194,8 +195,8 @@ test('the agents view scrolls: a hint says what is out of view, the wheel and pa
     frame = draw();
     assert.equal(frame.panes[0].offset, 3, style);
     assert.equal(frame.state.tree.selectedId, selected);
-    assert.match(hint(), /^↑ 3  ↓ \d+ more lines/);
-    assert.match(plain(frame)[frame.panes[0].y], /^ ▸12 run *$/, 'the summary line stays put');
+    assert.match(hint(), / 4–\d+\/\d+ $/);
+    assert.match(plain(frame)[frame.panes[0].y], /^ ▸12 run +4–/, 'the summary line stays put');
     // Repaints keep the place; PgDn goes a page on; past the end is clamped.
     frame = draw(); state = frame.state; frame = draw();
     assert.equal(frame.panes[0].offset, 3);
@@ -203,7 +204,7 @@ test('the agents view scrolls: a hint says what is out of view, the wheel and pa
     assert.ok(frame.panes[0].offset > 3);
     state = { ...frame.state, scroll: { ...frame.state.scroll, agents: 999 } }; frame = draw();
     assert.equal(frame.panes[0].offset, frame.panes[0].contentLength - frame.panes[0].visible!, 'clamped');
-    assert.match(hint(), /^↑ \d+ more lines/);
+    assert.match(hint(), /–(\d+)\/\1 $/, 'at the end');
     // Moving the selection brings it into view.
     state = handleMonitorInput(frame.state, key('home'), ctx()).state; frame = draw();
     const first = frame.panes[0].rows.findIndex(row => row.item === frame.state.tree.selectedId);
@@ -211,9 +212,9 @@ test('the agents view scrolls: a hint says what is out of view, the wheel and pa
     state = handleMonitorInput(frame.state, key('end'), ctx()).state; frame = draw();
     const last = frame.panes[0].rows.map(row => row.item).lastIndexOf(frame.state.tree.selectedId!);
     assert.ok(last < 1 + frame.panes[0].offset + frame.panes[0].visible! - 1, `${style}: the last one too`);
-    // A click on the hint scrolls a page.
-    const more = frame.controls.find(c => c.kind === 'more')!;
-    assert.ok(more);
+    // The band is the view's title: a click there zooms it.
+    const zoom = frame.controls.find(c => c.kind === 'zoom' && c.pane === 'agents')!;
+    assert.equal(zoom.y, frame.panes[0].y);
   }
   // Content arriving above does not move what the reader is looking at.
   let state = rich();
@@ -231,7 +232,7 @@ test('the agents view scrolls: a hint says what is out of view, the wheel and pa
   assert.ok(tall.slice(2, 12).some(line => line.trim() === ''), 'with room, a blank line between cards');
 });
 
-test('rich: the summary heads the view with the linger switch; hidden agents have no card; 1 focuses the cards; help says so', () => {
+test('rich: the summary heads the view with the linger switch; hidden agents have no card; 1 opens and closes the cards; help says so', () => {
   const old = agent(30, 'old_one', 'completed', { statusAt: new Date(now - 3 * 3600_000) });
   const state = rich({ tree: { ...rich().tree, lingerMs: 180_000 } });
   const frame = renderMonitor({ tree: tree([named, old]), state, width: 32, height: 30, nowMs: now });
@@ -243,8 +244,10 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const shown = handleMonitorInput(frame.state, click(older.x, 0), { tree: tree([named, old]), frame, nowMs: now }).state;
   assert.ok(plain(renderMonitor({ tree: tree([named, old]), state: shown, width: 32, height: 30, nowMs: now })).some(line => line.includes('old_one')));
   assert.ok(!lines.some(line => line.includes('Agents')), 'no Agents pane');
-  const focused = handleMonitorInput({ ...frame.state, modes: { ...frame.state.modes, worktrees: 'open' }, focus: 'worktrees' }, key('agents'), { tree: tree([named]), frame }).state;
+  const focused = handleMonitorInput({ ...frame.state, modes: { ...frame.state.modes, agents: 'closed', worktrees: 'open' }, focus: 'worktrees' }, key('agents'), { tree: tree([named]), frame }).state;
   assert.equal(focused.focus, 'agents');
+  assert.equal(focused.modes.agents, 'open', '1 opens the cards, and focuses them');
+  assert.equal(handleMonitorInput(focused, key('agents'), { tree: tree([named]), frame }).state.modes.agents, 'closed', 'and closes them again');
   const help = (style: 'rich' | 'compact') => plain(renderMonitor({ tree: tree([]), state: { ...rich(), style, help: true }, width: 70, height: 80, nowMs: now })).join('\n');
   assert.match(help('rich'), /Ctrl\+\] e \/ Space open \/ close card/);
   assert.match(help('rich'), /Click its name: switch/);

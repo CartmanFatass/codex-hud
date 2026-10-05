@@ -21,12 +21,12 @@ export interface HudSettings extends HudDisplayConfig {
    */
   finishedLingerMs: number;
   // Monitor visibility is independent of legacy boolean panel preferences.
-  agentsPane: 'open' | 'folded' | 'closed';
-  worktreesPane: 'open' | 'folded' | 'closed';
-  changesPane: 'open' | 'folded' | 'closed';
-  detailsPane: 'open' | 'folded' | 'closed';
+  agentsPane: 'open' | 'closed';
+  worktreesPane: 'open' | 'closed';
+  changesPane: 'open' | 'closed';
+  detailsPane: 'open' | 'closed';
   /** The session's observed events, newest first. */
-  timelinePane: 'open' | 'folded' | 'closed';
+  timelinePane: 'open' | 'closed';
   /**
    * How the panel shows the agents: `rich`, a card per agent with the recap
    * as a card above them; `compact`, the tree with the brief and log under it.
@@ -166,11 +166,11 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   finishedLingerMs: (value) => value === 0 || isIntegerBetween(value, 10_000, 86_400_000),
-  agentsPane: oneOf('open', 'folded', 'closed'),
-  worktreesPane: oneOf('open', 'folded', 'closed'),
-  changesPane: oneOf('open', 'folded', 'closed'),
-  detailsPane: oneOf('open', 'folded', 'closed'),
-  timelinePane: oneOf('open', 'folded', 'closed'),
+  agentsPane: oneOf('open', 'closed'),
+  worktreesPane: oneOf('open', 'closed'),
+  changesPane: oneOf('open', 'closed'),
+  detailsPane: oneOf('open', 'closed'),
+  timelinePane: oneOf('open', 'closed'),
   panelStyle: oneOf('rich', 'compact'),
   worktreeRoot: value => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   briefing: oneOf('off', 'omp', 'agy', 'api'),
@@ -201,10 +201,14 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   icons: oneOf('unicode', 'nerd', 'text'),
 };
 
+const PANE_KEYS = ['agentsPane', 'worktreesPane', 'changesPane', 'detailsPane', 'timelinePane'] as const;
+
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result = { ...base };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
-  const values = raw as Record<string, unknown>;
+  const values = { ...(raw as Record<string, unknown>) };
+  // A pane is open or closed; one saved folded, as earlier versions could, is closed.
+  for (const key of PANE_KEYS) if (values[key] === 'folded') values[key] = 'closed';
   for (const key of Object.keys(validators) as Array<keyof HudSettings>) {
     if (Object.hasOwn(values, key) && validators[key](values[key])) {
       Object.assign(result, { [key]: values[key] });

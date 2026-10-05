@@ -218,14 +218,14 @@ Agents and Worktrees open by default; Changes and Inspector open on demand. The 
 | **3 Changes** | Files in the selected worktree, index/worktree status and conflicts, under their counts in words (`5 unstaged · 2924 untracked`, zeros left out); a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
 | **4 Inspector** | Agent status and activity times, worktree details, or colored file diffs |
 
-Panes stack vertically. Worktrees shrinks to its content; spare height goes to Agents or the focused Inspector.
+Panes stack vertically, each drawn as the status card is: a **band** with its icon and name on the left and, on the right, which rows are in view when it scrolls (`7–14/46`) or else how many it holds (`3 worktrees`, `12 files`, `9 events`), then its rows behind a gutter `│` on the left only (in the accent for the focused pane, dim for the rest): no right border and no bottom rule. A pane is **open or closed**; a closed one takes no row at all. A click on a pane's band zooms it to the room between the bar and the status card, and a second click restores it, as `Ctrl+]` `z` does. Worktrees shrinks to its content; spare height goes to Agents or the focused Inspector. The agents area works the same way: its summary line is its band, a click on it zooms the cards, and it can be closed from the bar, the other panes then sharing its room.
 
 **Two layouts** (Settings → Panel → Layout, applied at once):
 
 - **rich** (the default): no Agents pane. One line at the top counts what is failed, running and done (`!1 failed  ▸2 run  ✓5 done`, each count with its word; guardian reviews left out), with `◈N` for the guardian reviews under the main session; under it, in one scrolling view, an entry per subagent in the tree's order, under the same filter and linger window. A running agent, a failed one, one that finished in the last minute and one that needs a look get a **card**, open on the right. Its top rule has the status icon, a glyph for the kind of work (when Labels and title gave one), the agent's name (middle-cut when long, underlined because a click on it switches to the agent), `◈N` for its guardian reviews and the model/effort badge; the bottom rule has the turn clock counting seconds while it runs (`◷4m07s`, in the warning colour when quiet) or how long ago it finished or failed (`12d`), a collapsed parent's count (`+3 folded`), then the agent's context meter filling the rest of the rule as a thin line with its percentage at the end of the fill (`────57%──────`), and `▾`. Inside, one line each: its task (strong), its newest model note (`~`) and its newest update. Cards take their state's colour: running info, quiet warning, failed error, just finished success; the selected card's top rule sits on a lighter band. Every other finished agent is **two lines**: `✓ audit_code_paths   ☽◐ ───57%──── 12d`, its meter and age in columns down the list, and under it, indented and dim, how far it got: its newest model note, else its newest update, else its task. `j`/`k` only marks it (its first line on the lighter band), and `e`, Space or a click opens it into its card. Child entries are indented a column a level, at most two. An opened card (`e`, Space, or a click on its top rule or `▾`) adds the name Codex prints when a label stands in for it, the agent's whole log newest first, about twenty lines, the rest left to the Inspector (or, with no log, its last report), then the task in full. Agent text loses its chat markdown in cards and the Inspector: links keep their text, bold, code and heading marks go, a full commit hash shows seven characters. Guardian review threads get no card: they are the `◈N` chip, and a failed one shows as a card. The main session's brief is not in this view: it is in the status card at the foot (below).
 - **compact**: the Agents pane (the tree, one row per agent, by Codex's own name) with the brief, the recap and the agent log under it, as before.
 
-**The control bar** is the panel's first row, on its own background, and every control the panel has is on it; cards, the status card and the panes' title rules carry none. Each control is a **button**, a chip with its icon in the text colour and bold, never dimmed, and its word where it fits. No key is written on it; the keys are in the help.
+**The control bar** is the panel's first row, on its own background, and every control the panel has is on it; cards, the status card and the panes' bands draw none. Each control is a **button**, a chip with its icon in the text colour and bold, never dimmed, and its word where it fits. No key is written on it; the keys are in the help.
 
 ```
 90 columns   ← 主会话   ▦   ⎇   ±   ⌖   ⋮                   ‖ 暂停简报   +31 已收起   ☰ 设置   ? 帮助
@@ -236,9 +236,9 @@ Panes stack vertically. Worktrees shrinks to its content; spare height goes to A
 ```
 
 - `←`, with the main session's name where it fits, returns Codex to the main session.
-- The tabs are the panes, with the icon their pane's title carries: ▦ 卡片 / Agents, ⎇ 工作树 / Trees, ± 改动 / Changes, ⌖ 详情 / Inspect, ⋮ 时间线 / Timeline. A tab says its pane's state by its chip: the focused one sits on the accent, an open one on a chip a step lighter than the bar, a folded one on a chip and underlined, a closed one on the bar itself, its icon as bright as the rest. A click on a closed pane's tab opens and focuses it; on an unfocused one, focuses it (and opens it if folded); on the focused one, folds it, and a second click closes it. The cards' tab only focuses.
+- The tabs are the panes, with the icon their pane's band carries: ▦ 卡片 / Agents, ⎇ 工作树 / Trees, ± 改动 / Changes, ⌖ 详情 / Inspect, ⋮ 时间线 / Timeline. A tab says its pane's state by its chip: the focused one sits on the accent, an open one on a chip a step lighter than the bar, a closed one on the bar itself, its icon as bright as the rest. One click opens a closed pane and focuses it, and closes an open one, the cards included.
 - `‖` / `▸` (暂停简报 / 继续简报) pauses or resumes the brief, shown only while one is configured; `+31` (已收起) shows the finished agents the linger window put away and `−31` (收起) hides them again, shown only when there are some; `☰` (设置) opens settings; `?` (帮助) the help.
-- The chips follow the width. From 56 columns a chip is a space, its icon, its word and a space, a column apart; the tabs' words go first, then the other buttons', so at 56 settings and help keep theirs. From 44 the chips are their icon with a space either side, a column apart; from 36 the same with no column between; under 36 a chip is its icon and one space, and short of room the closed panes' tabs go, then the older agents' button, then the brief's. Back, settings and help never go. A click anywhere on a chip, its spaces included, is its button. Without colour (`theme: none`) there are no chips: the focused tab is in brackets, a folded one ends in `-`.
+- The chips follow the width. From 56 columns a chip is a space, its icon, its word and a space, a column apart; the tabs' words go first, then the other buttons', so at 56 settings and help keep theirs. From 44 the chips are their icon with a space either side, a column apart; from 36 the same with no column between; under 36 a chip is its icon and one space, and short of room the closed panes' tabs go, then the older agents' button, then the brief's. Back, settings and help never go. A click anywhere on a chip, its spaces included, is its button. Without colour (`theme: none`) there are no chips: the focused tab is in brackets, and a closed pane has no tab.
 - **Icons** in settings picks the set: `unicode` (the default, the glyphs above), `nerd` ([Nerd Font](https://www.nerdfonts.com/) icons: a home `U+F015`, a robot `U+F06A9`, a branch `U+E725`, a diff `U+F440`, an info circle `U+F05A`, a history clock `U+F1DA`, pause / play `U+F04C` / `U+F04B`, an eye `U+F06E` / `U+F070`, a cog `U+F013`, a question circle `U+F059`; it needs that font in the terminal, MesloLGS NF for one), or `text`.
 - With **Icons** set to `text` (`glyphs: text` does the same) the buttons are words alone (`← 主会话`, `卡片 工作树 …`, `暂停简报`, `设置 帮助`), shortened where narrow (`← 主`, `工作…`, `Ag Wt Ch In Tl`, `暂停`).
 
@@ -267,7 +267,7 @@ It has three levels (Settings → Panel → Status card, saved like the other pa
 
 Compact keeps its layout: the brief and recap stay in the area under the tree, in the same inline fields, so its card has only min and status (full there is status) and `Ctrl+]` `r` switches between the two.
 
-The view under the summary line scrolls when it does not fit: the wheel over it, `PgUp`/`PgDn`, and moving the selection, which brings the selected agent into view. Its last line says what is out of view (`↑ 5  ↓ 12 more lines`; a click scrolls on). Where it is scrolled to holds across repaints and new content, and is clamped when content shrinks. A view under 12 rows drops its blank lines before it hides content. The status card and the open panes 2–5 keep their place.
+The view under the summary line scrolls when it does not fit: the wheel over it, `PgUp`/`PgDn`, and moving the selection, which brings the selected agent into view. Its band, the summary line, says at its right end which rows are in view (`6–17/40`). Where it is scrolled to holds across repaints and new content, and is clamped when content shrinks. A view under 12 rows drops its blank lines before it hides content. The status card and the open panes 2–5 keep their place.
 At 16–20 columns, margins shrink. Use `Ctrl+]` `z` to give the focused pane the full height.
 Selection follows agent IDs and file paths across refreshes, and every pane retains its scroll position.
 
@@ -277,8 +277,8 @@ Every key below follows the prefix: `Ctrl+]`, then the key (or the prefix chosen
 |-----|--------|
 | `,` / `?` | Open settings / the help (also the `设置` and `帮助` buttons); arrows, Enter and click change values, Save applies them |
 | `Tab` / `Shift+Tab` | Cycle pane focus |
-| `1`–`5` | Open and focus a pane (`1` is the cards in rich); so does a click on its tab |
-| `x` / `-` | Close / fold the focused pane. A click on the focused pane's tab folds it, a second closes it |
+| `1`–`5` | Open and focus a pane, or close it if it is open (`1` is the cards in rich); so does a click on its tab |
+| `x` | Close the focused pane |
 | `j` / `k`, `↑` / `↓` | Move the selection or scroll; repeats without the prefix for half a second (`Ctrl+]` `j` `j` `j`) |
 | `PgUp` / `PgDn`, `g` / `G` | Page (the agents view scrolls a page; repeats), first/last item |
 | `e` or Space (rich) | Open or close the selected card's timeline, or open a one-line finished agent into its card |
@@ -289,7 +289,7 @@ Every key below follows the prefix: `Ctrl+]`, then the key (or the prefix chosen
 | `f` or `/` | Filter all, running, failed, unknown |
 | `o` | Switch the actual Codex conversation to the selected agent (a click on an agent in compact, on a card's name in rich) |
 | `m` | Return the Codex conversation to the root session (the `←` button) |
-| `z` | Zoom/restore focused pane |
+| `z` | Zoom/restore focused pane; a click on its band too |
 | `b` | Pause / resume the brief and recap model calls (the pause button, 暂停简报) |
 | `r` | Status card level: min → status → full (compact: min ↔ status); a click on the card's band too |
 | `Esc` | Dismiss help, unzoom, return to list; close from Agents |

@@ -151,7 +151,7 @@ test('with icons off: words, shortened and cut with … where narrow', () => {
 });
 
 test('a click anywhere on a chip, its side columns included, is its control', () => {
-  const s = state({ modes: { ...initialMonitorState().modes, worktrees: 'folded' } });
+  const s = state({ modes: { ...initialMonitorState().modes, worktrees: 'open' } });
   for (const width of [32, 48, 120]) {
     const bar = controlBar(s, { brief: {}, expired: 3 }, width);
     const text = stripAnsi(bar.line);
@@ -171,12 +171,12 @@ test('a click anywhere on a chip, its side columns included, is its control', ()
   }
 });
 
-test('the tabs say their state by their chip, the icon at full brightness: focused on the accent, open on a chip, folded underlined, closed on the bar', () => {
+test('the tabs say their state by their chip, the icon at full brightness: focused on the accent, open on a chip, closed on the bar', () => {
   const previous = setDisplayConfig({ theme: 'terminal' });
   try {
     const s = state({
       focus: 'agents',
-      modes: { ...initialMonitorState().modes, worktrees: 'folded', changes: 'open' },
+      modes: { ...initialMonitorState().modes, worktrees: 'open', changes: 'open' },
     });
     for (const width of [32, 44]) {
       const line = controlBar(s, { expired: 0 }, width).line;
@@ -185,34 +185,26 @@ test('the tabs say their state by their chip, the icon at full brightness: focus
       // A chip's surface, then the face's own paint (the bar re-applies its own after each reset).
       const on = (surface: (s: string) => string, text: string) => surface(text).split('\x1b[0m')[0];
       assert.ok(line.includes(theme.tab(theme.bold(face('▦'))).split('\x1b[0m')[0]), `${width}: focused on the accent`);
-      assert.ok(
-        line.includes(on(theme.chip, `${pad}\x1b[4m${theme.bold(theme.value('⎇'))}`)),
-        `${width}: folded, a chip and underlined`
-      );
       assert.ok(line.includes(theme.bold(theme.value('⌖')).split('\x1b[0m')[0]), `${width}: closed, on the bar, bold`);
       assert.ok(
         !line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('⌖'))}`)),
         `${width}: closed has no chip`
       );
       assert.ok(line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('±'))}`)), `${width}: open, on a chip`);
+      assert.ok(line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('⎇'))}`)), `${width}: open, on a chip`);
       assert.ok(
         line.includes(on(theme.chip, `${pad}${theme.bold(theme.value('☰'))}`)),
         `${width}: a button is a chip`
       );
       assert.ok(!line.includes('\x1b[2m'), `${width}: nothing on the bar is dimmed`);
+      assert.ok(!line.includes('\x1b[4m'), `${width}: nothing is underlined`);
     }
     setDisplayConfig({ theme: 'none' });
-    assert.equal(stripAnsi(controlBar(s, { expired: 0 }, 44).line), ' ←  [▦]  ⎇-  ±                        ☰   ? ');
-    assert.equal(stripAnsi(controlBar(s, { expired: 0 }, 32).line), '←  [▦] ⎇- ±                 ☰ ? ');
     const plainBar = controlBar(s, { expired: 0 }, 32);
-    const folded = plainBar.controls.find((c) => c.kind === 'tab' && c.pane === 'worktrees')!;
-    assert.equal(
-      columns(stripAnsi(plainBar.line), folded.x, folded.width),
-      '⎇- ',
-      'each tab is clicked where it is drawn'
-    );
-    const focusedFolded = controlBar({ ...s, focus: 'worktrees' }, { expired: 0 }, 32);
-    assert.match(stripAnsi(focusedFolded.line), /^← {2}▦ \[⎇-\] ± /, 'focused and folded at once');
+    assert.match(stripAnsi(plainBar.line), /^← {2}\[▦\] ⎇ ± {2,}☰ \? $/);
+    assert.match(stripAnsi(controlBar(s, { expired: 0 }, 44).line), /^ ← {2}\[▦\] {2}⎇ {3}± {2,}☰ {3}\? $/);
+    const open = plainBar.controls.find((c) => c.kind === 'tab' && c.pane === 'worktrees')!;
+    assert.equal(columns(stripAnsi(plainBar.line), open.x, open.width), '⎇ ', 'each tab is clicked where it is drawn');
     assert.equal(
       controlBar(s, { expired: 0 }, 56).line,
       stripAnsi(controlBar(s, { expired: 0 }, 56).line),

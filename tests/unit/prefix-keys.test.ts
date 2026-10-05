@@ -111,7 +111,7 @@ test('codex-hud-keys binds the prefix in the session table, the commands in thei
     log.some((l) => /^bind-key -r -T codex-hud-prefix j run-shell .* down$/.test(l)),
     'j repeats'
   );
-  assert.ok(log.some((l) => /^bind-key -T codex-hud-prefix - run-shell .* fold-pane$/.test(l)));
+  assert.ok(!log.some((l) => /^bind-key -T codex-hud-prefix - /.test(l)), 'panes open and close; nothing folds');
   assert.ok(log.includes('unbind-key -a -T codex-hud-prefix'), 'rebuilt from nothing');
   assert.ok(log.includes('set-option -gq @codex_hud_prefix_key C-]'));
   assert.ok(log.includes('set-option -t hud-1 repeat-time 500'));

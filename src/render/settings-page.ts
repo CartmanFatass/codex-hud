@@ -24,7 +24,7 @@ export interface SettingRow {
 
 const seconds = (value: SettingValue) => `${Number(value) / 1000}s`;
 const minutes = (value: SettingValue) => Number(value) === 0 ? 'never' : `${Number(value) / 60_000}m`;
-const PANE_HELP = 'Open, folded, or closed';
+const PANE_HELP = 'Open or closed';
 
 export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'density',group:'Status bar',label:'Density',short:'Density',values:['focus','balanced','full'],help:'How much the bar shows'},
@@ -61,10 +61,10 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and brief language'},
   {key:'icons',group:'Panel',label:'Icons',short:'Icons',values:['unicode','nerd','text'],help:'Nerd Font: needs that font',
     format:value => value === 'nerd' ? 'Nerd Font' : value === 'unicode' ? 'Unicode' : 'text'},
-  {key:'worktreesPane',group:'Panel',label:'2 Worktrees',short:'2 Trees',values:['open','folded','closed'],help:PANE_HELP},
-  {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','folded','closed'],help:PANE_HELP},
-  {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','folded','closed'],help:PANE_HELP},
-  {key:'timelinePane',group:'Panel',label:'5 Timeline',short:'5 Events',values:['open','folded','closed'],help:PANE_HELP},
+  {key:'worktreesPane',group:'Panel',label:'2 Worktrees',short:'2 Trees',values:['open','closed'],help:PANE_HELP},
+  {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','closed'],help:PANE_HELP},
+  {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','closed'],help:PANE_HELP},
+  {key:'timelinePane',group:'Panel',label:'5 Timeline',short:'5 Events',values:['open','closed'],help:PANE_HELP},
   {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:[32,56],help:'Panel columns',
     // 0, from an older settings file, is the panel's own choice.
     format:value => ({0:'auto',32:'narrow',56:'wide'} as Record<number,string>)[Number(value)] ?? String(value)},

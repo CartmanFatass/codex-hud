@@ -358,9 +358,9 @@ test('the panel marks each model reading: approval words, the change summary, th
 
   const inspect = { ...base, modes: { ...base.modes, details: 'open' as const }, preview: 'agent' as const, tree: { ...base.tree, selectedId: done.id } };
   const shown = renderMonitor({ tree: agents, state: inspect, width: 40, height: 40, nowMs: now, agentLog: log }).lines.map(stripAnsi).join('\n');
-  assert.match(shown, /│ audit_code_paths +│\n│ label Code path audit/, 'labels off as names: the Inspector heads with the name Codex prints, the label under it');
+  assert.match(shown, /│ audit_code_paths *\n│ label Code path audit/, 'labels off as names: the Inspector heads with the name Codex prints, the label under it');
   const named = renderMonitor({ tree: agents, state: { ...inspect, labelAsName: true }, width: 40, height: 40, nowMs: now, agentLog: log }).lines.map(stripAnsi).join('\n');
-  assert.match(named, /│ Code path audit +│\n│ name audit_code_paths/, 'labels as names: the label heads it, the name Codex prints under it');
+  assert.match(named, /│ Code path audit *\n│ name audit_code_paths/, 'labels as names: the label heads it, the name Codex prints under it');
   assert.match(shown, /~ Result digest · 1m ago/);
   assert.match(shown, /Basis: read cache\.ts/);
 

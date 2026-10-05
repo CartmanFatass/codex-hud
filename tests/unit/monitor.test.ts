@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type MonitorState, initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, worktreeLabel, monitorPreferences, monitorModes, canMonitorDiff } from '../../src/render/monitor.js';
@@ -60,7 +60,7 @@ test('agent rows use model/effort glyphs, not full model names or effort words',
   setDisplayConfig({glyphs:'both',theme:'terminal'});
 });
 
-test('open panes fill the tree column; folded panes stay one row',()=>{
+test('open panes fill the tree column; a closed pane takes no row',()=>{
   const frame=draw();
   const bottom=frame.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b);
   assert.equal(bottom.y+bottom.height,28,'with no status card, the panes reach the foot');
@@ -71,12 +71,16 @@ test('open panes fill the tree column; folded panes stay one row',()=>{
   const four=renderMonitor({tree,worktrees,git,state,width:30,height:28,nowMs:now});
   assert.equal(four.panes.length,4);
   assert.equal(four.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b).y+four.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b).height,28);
-  state=withWorktrees();state.modes.worktrees='folded';
-  const folded=draw(state);
-  assert.equal(folded.panes[1].height,1);
-  assert.equal(folded.panes[0].y+folded.panes[0].height,27,'Agents takes the room the folded box gave up');
-  state=withWorktrees();state.modes.agents='folded';
-  assert.ok(draw(state).panes[0].height>1,'Agents cannot be folded');
+  state=withWorktrees();state.modes.worktrees='closed';
+  const closed=draw(state);
+  assert.deepEqual(closed.panes.map(p=>p.id),['agents']);
+  assert.equal(closed.panes[0].y+closed.panes[0].height,28,'Agents takes every row the closed pane gave up');
+  assert.ok(!closed.lines.map(stripAnsi).some(line=>line.includes('Worktrees')),'no title line is left behind');
+  state=withWorktrees();state.modes.agents='closed';
+  const alone=draw(state);
+  assert.deepEqual(alone.panes.map(p=>p.id),['worktrees']);
+  assert.equal(alone.panes[0].y,1,'with the agents closed, the worktrees start under the bar');
+  assert.equal(alone.panes[0].y+alone.panes[0].height,28,'and take their room');
 });
 
 test('width, height and margins remain bounded with CJK and terminal controls',()=>{
@@ -90,42 +94,50 @@ test('width, height and margins remain bounded with CJK and terminal controls',(
       assert.doesNotMatch(frame.lines.join(''),/\x1b\[2J|\u202e/);
       assert.ok(frame.lines.every(line=>!line.includes('\n')));
       for(const p of frame.panes)assert.ok(p.y>=1&&p.y+p.height<=height,'below the bar, inside the panel');
-      // At 24 columns and up a pane is a box. Below that the side borders are
-      // two columns the content needs more, so rows run edge to edge.
-      if(width>=16)for(const p of frame.panes)for(let y=p.y+1;y<p.y+p.height-1;y++){
+      // A pane's rows sit behind a gutter on the left only: "│ " from 24
+      // columns, "│" under that. No right border, no bottom rule.
+      if(width>=16)for(const p of frame.panes)for(let y=p.y+1;y<p.y+p.height;y++){
         const line=stripAnsi(frame.lines[y]);
-        if(width<24){assert.ok(!line.startsWith('│'));assert.ok(visualLength(frame.lines[y])<=width);}
-        else if(p.id!=='agents'){assert.ok(line.startsWith('│ '));assert.ok(line.endsWith(' │'));}
-        else assert.ok(!line.startsWith('│'),'Agents has no frame');
+        if(p.id==='agents'){assert.ok(!line.startsWith('│'),'Agents has no gutter');continue;}
+        assert.ok(line.startsWith(width<24?'│':'│ '),line);
+        assert.ok(!/[│┘└─]\s*$/.test(line.slice(2)),line);
       }
     }
   }
   setDisplayConfig({theme:'terminal'});
 });
 
-test('a box closes and folds; Agents does neither; Tab skips closed panes',()=>{
+test('a pane opens and closes, its number toggles it, the agents too; Tab skips closed panes',()=>{
   let frame=draw();let state:MonitorState={...frame.state,focus:'worktrees'};
-  state=handleMonitorInput(state,key('pane-fold'),{tree,worktrees,frame}).state;
-  frame=draw(state);assert.equal(frame.panes[1].height,1);
-  state=handleMonitorInput(frame.state,key('pane-close'),{tree,worktrees,frame}).state;
-  frame=draw(state);assert.deepEqual(frame.panes.map(p=>p.id),['agents']);
-  for(const k of ['pane-close','pane-fold']){
-    const kept=handleMonitorInput({...frame.state,focus:'agents'},key(k),{tree,worktrees,frame}).state;
-    assert.equal(kept.modes.agents,'open');assert.deepEqual(draw(kept).panes.map(p=>p.id),['agents']);
-  }
+  state=handleMonitorInput(state,key('pane-close'),{tree,worktrees,frame}).state;
+  frame=draw(state);assert.deepEqual(frame.panes.map(p=>p.id),['agents']);assert.equal(state.focus,'agents');
   state=handleMonitorInput(frame.state,key('tab'),{tree,worktrees,frame}).state;assert.equal(state.focus,'agents');
   state=handleMonitorInput(state,key('worktrees'),{tree,worktrees,frame}).state;
   assert.equal(state.modes.worktrees,'open');assert.equal(state.focus,'worktrees');
+  state=handleMonitorInput(state,key('worktrees'),{tree,worktrees,frame}).state;
+  assert.equal(state.modes.worktrees,'closed','its number again closes it');
+  state=handleMonitorInput(state,key('agents'),{tree,worktrees,frame}).state;
+  assert.equal(state.modes.agents,'closed');assert.deepEqual(draw(state).panes,[],'every pane closed: the bar and nothing under it');
+  for(const k of ['tab','shift-tab','down','page-down','pane-close','zoom'])handleMonitorInput(state,key(k),{tree,worktrees,frame:draw(state)});
+  state=handleMonitorInput(state,key('agents'),{tree,worktrees,frame}).state;
+  assert.equal(state.modes.agents,'open');assert.equal(state.focus,'agents');
 });
 
-test('Agents stays even when every setting says closed, and has no fold or close buttons',()=>{
+test('the agents area closes like any pane, and its setting is kept',()=>{
   const state=initialMonitorState();state.modes={agents:'closed',worktrees:'closed',changes:'closed',details:'closed',timeline:'closed'};
   const frame=draw(state);
-  assert.deepEqual(frame.panes.map(p=>p.id),['agents']);
-  assert.ok(frame.controls.filter(c=>c.pane==='agents').every(c=>c.kind==='tab'&&c.y===0),'its only switch is its tab');
+  assert.deepEqual(frame.panes.map(p=>p.id),[]);
+  assert.equal(monitorModes({...defaultSettings(),agentsPane:'closed'}).agents,'closed');
   assert.equal(frame.controls.filter(c=>c.kind==='main').length,1);
   assert.equal(frame.controls.filter(c=>c.kind==='settings').length,1);
-  assert.equal(monitorModes({...defaultSettings(),agentsPane:'closed'}).agents,'open');
+  // A pane saved folded, as earlier versions could, comes back closed.
+  const home=mkdtempSync(join(tmpdir(),'hud-monitor-folded-'));const old=process.env.CODEX_HUD_SETTINGS_PATH;
+  process.env.CODEX_HUD_SETTINGS_PATH=join(home,'hud-settings.json');
+  try{
+    writeFileSync(process.env.CODEX_HUD_SETTINGS_PATH,JSON.stringify({agentsPane:'folded',worktreesPane:'folded',changesPane:'open'}));
+    const modes=monitorModes(loadSettings());
+    assert.equal(modes.agents,'closed');assert.equal(modes.worktrees,'closed');assert.equal(modes.changes,'open');
+  }finally{if(old===undefined)delete process.env.CODEX_HUD_SETTINGS_PATH;else process.env.CODEX_HUD_SETTINGS_PATH=old;rmSync(home,{recursive:true,force:true});}
 });
 
 test('the control bar: ← and the main session\'s name target the root UUID; the rest of the row is other switches',()=>{
@@ -152,26 +164,37 @@ test('only visible agent rows navigate; the summary and empty space do not',()=>
   assert.equal(handleMonitorInput(frame.state,mouse(3,pane.y+pane.height-1),{tree,worktrees,frame}).action,undefined);
 });
 
-test('a pane\'s tab: open and focus, then fold, then close; its title rule is only its name',()=>{
+test('a pane\'s button opens or closes it in one click; a click on its band zooms it and restores it',()=>{
   let frame=draw(withWorktrees(),45);const ctx=()=>({tree,worktrees,frame});
   const tab=(pane:string)=>frame.controls.find(c=>c.kind==='tab'&&c.pane===pane)!;
   assert.ok(!frame.controls.some(c=>c.y>0&&(c.kind==='tab'||c.kind==='settings'||c.kind==='help')),'no switch below the bar');
   const box=frame.panes.find(p=>p.id==='worktrees')!;
-  assert.match(stripAnsi(frame.lines[box.y]),/^┌ ⎇ Worktrees ─+┐$/u);
-  assert.equal(handleMonitorInput(frame.state,mouse(box.width-3,box.y),ctx()).state.modes.worktrees,'open','the rule is no button');
-  let state=handleMonitorInput(frame.state,mouse(tab('worktrees').x,0),ctx()).state;
-  assert.equal(state.focus,'worktrees');assert.equal(state.modes.worktrees,'open');
-  frame=draw(state,45);state=handleMonitorInput(state,mouse(tab('worktrees').x,0),ctx()).state;
-  assert.equal(state.modes.worktrees,'folded');
-  frame=draw(state,45);state=handleMonitorInput(state,mouse(tab('worktrees').x,0),ctx()).state;
-  assert.equal(state.modes.worktrees,'closed');assert.notEqual(state.focus,'worktrees');
+  // The band: its icon and name on the left, how many on the right.
+  assert.match(stripAnsi(frame.lines[box.y]),/^ ⎇ Worktrees +2 worktrees $/u);
+  assert.ok(frame.lines[box.y].startsWith(theme.band('').replace(/\x1b\[0m$/,'')),'on the band');
+  assert.ok(stripAnsi(frame.lines[box.y+1]).startsWith('│ '),'its rows behind a gutter');
+  assert.ok(!frame.controls.some(c=>c.y===box.y&&c.kind!=='zoom'),'the band draws no button');
+  let state=handleMonitorInput(frame.state,mouse(box.width-3,box.y),ctx()).state;
+  assert.equal(state.zoom,true,'a click on the band zooms');assert.equal(state.focus,'worktrees');assert.equal(state.modes.worktrees,'open');
+  frame=draw(state,45);
+  assert.deepEqual(frame.panes.map(p=>p.id),['worktrees'],'zoomed, the pane fills the panel');
+  assert.ok(frame.lines[1].startsWith(theme.tab('').replace(/\x1b\[0m$/,'')),'zoomed, its band is on the accent');
+  state=handleMonitorInput(state,mouse(3,1),ctx()).state;
+  assert.equal(state.zoom,false,'a second click restores it');
+  frame=draw(state,45);
+  state=handleMonitorInput(frame.state,mouse(tab('worktrees').x,0),ctx()).state;
+  assert.equal(state.modes.worktrees,'closed','one click on an open pane\'s button closes it');
   frame=draw(state,45);assert.equal(frame.panes.some(p=>p.id==='worktrees'),false);
   state=handleMonitorInput(state,mouse(tab('worktrees').x,0),ctx()).state;
-  assert.equal(state.modes.worktrees,'open');assert.equal(state.focus,'worktrees');
-  // Agents is the page: its tab only focuses.
-  frame=draw(state,45);state=handleMonitorInput(state,mouse(tab('agents').x,0),ctx()).state;
-  assert.equal(state.focus,'agents');
-  frame=draw(state,45);assert.equal(handleMonitorInput(state,mouse(tab('agents').x,0),ctx()).state.modes.agents,'open');
+  assert.equal(state.modes.worktrees,'open');assert.equal(state.focus,'worktrees','opened, it takes focus');
+  // The agents area too: its button closes it, its summary line zooms it.
+  frame=draw(state,45);
+  const summary=frame.panes.find(p=>p.id==='agents')!;
+  const zoomed=handleMonitorInput(state,mouse(2,summary.y),ctx()).state;
+  assert.equal(zoomed.zoom,true);assert.equal(zoomed.focus,'agents');
+  state=handleMonitorInput(state,mouse(tab('agents').x,0),ctx()).state;
+  assert.equal(state.modes.agents,'closed');
+  frame=draw(state,45);assert.deepEqual(frame.panes.map(p=>p.id),['worktrees'],'the other panes take its room');
 });
 
 test('keyboard motion only previews; Inspector remains closed until explicitly opened',()=>{
@@ -228,7 +251,7 @@ test('narrow Changes exposes selectable files and opens a readable zoomed previe
 });
 
 test('monitor key profile maps numbers without changing legacy decoder behavior',()=>{
-  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('1234x-')),['agents','worktrees','changes','details','pane-close','pane-fold'].map(key));
+  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('1234x')),['agents','worktrees','changes','details','pane-close'].map(key));
   assert.deepEqual(new WorkbenchInputDecoder().push(Buffer.from('24')),['details','activity'].map(key));
 });
 
@@ -238,20 +261,20 @@ test('monitor visibility persists independently from legacy open Reports/Changes
   try{
     const settings=saveSettings({details:true,changes:true,activity:true});
     assert.deepEqual(monitorModes(settings),initialMonitorState().modes);
-    let state=initialMonitorState();state.modes.changes='open';state.modes.worktrees='folded';
+    let state=initialMonitorState();state.modes.changes='open';state.modes.worktrees='closed';state.modes.agents='closed';
     saveSettings(monitorPreferences(state));assert.deepEqual(monitorModes(loadSettings()),state.modes);
     assert.equal(loadSettings().details,true);
   }finally{if(old===undefined)delete process.env.CODEX_HUD_SETTINGS_PATH;else process.env.CODEX_HUD_SETTINGS_PATH=old;rmSync(home,{recursive:true,force:true});}
 });
 
-test('Settings exposes open/folded/closed for each box, not for Agents, and omits Checks',()=>{
+test('Settings exposes open/closed for each pane but the agents, and omits Checks',()=>{
   assert.equal(SETTING_ROWS.some(r=>r.key==='activity'),false);
   assert.equal(SETTING_ROWS.some(r=>r.key==='agentsPane'),false);
   const row=SETTING_ROWS.findIndex(r=>r.key==='worktreesPane');assert.ok(row>=0);
   let state={draft:defaultSettings(),selected:row,offset:0,message:''};
   const frame=renderSettingsPage(state,40,30);
   state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.worktreesPane,'open');
-  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.worktreesPane,'folded');
+  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.worktreesPane,'closed');
 });
 
 
@@ -260,7 +283,7 @@ test('page movement counts distinct worktree cards rather than their directory c
   const state={...withWorktrees(),focus:'worktrees' as const};
   const frame=renderMonitor({tree,worktrees:many,state,width:30,height:18,nowMs:now});
   const pane=frame.panes.find(p=>p.id==='worktrees')!;
-  const count=new Set(pane.rows.slice(pane.offset,pane.offset+pane.height-2).map(r=>r.item).filter(Boolean)).size;
+  const count=new Set(pane.rows.slice(pane.offset,pane.offset+pane.height-1).map(r=>r.item).filter(Boolean)).size;
   const next=handleMonitorInput(frame.state,key('page-down'),{tree,worktrees:many,frame});
   assert.equal(next.state.selectedWorktree,many.entries[count].path);
   assert.equal(next.action,undefined);
@@ -335,7 +358,7 @@ test('short help pages wrap and scroll to the complete model legend',()=>{
 test('worktree panels shrink to their content while Agents receives spare height',()=>{
   const frame=draw();
   const wt=frame.panes.find(p=>p.id==='worktrees')!;
-  assert.equal(wt.height,wt.rows.length+2);
+  assert.equal(wt.height,wt.rows.length+1,'its band and its rows');
   assert.ok(frame.panes[0].height>frame.panes[0].rows.length+2);
 });
 

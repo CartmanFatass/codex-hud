@@ -60,7 +60,8 @@ try:
  assert '▸14' in plain and '1 Agents' not in plain and '2 Worktrees' not in plain
  send(b'2')
  wait_for('1 mod')
- send(b'1v')
+ # 1 would close the agents now: Tab is the way back to them.
+ send(b'\tv')
  inspect=wait_for('Turn age:')
  assert b'\\x1b[' not in inspect, 'Inspector must not print escaped colour codes'
  send(b'x')
@@ -72,7 +73,7 @@ try:
  assert '▸14'.encode() not in zoom, 'zoom must hide other panes'
  send(b'\x1b')
  wait_for('▸14')
- send(b'1G')
+ send(b'\tG')
  wait_for('agent-13')
  # Wheel up over Agents (SGR coordinates are one-based).
  send(b'\x1b[<64;3;3M')
@@ -80,7 +81,7 @@ try:
  fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',30,100,0,0))
  os.kill(proc.pid,signal.SIGWINCH)
  wait_for('sample.ts')
- send(b'3\r')
+ send(b'\t\t\r')
  zoom=wait_for('after')
  assert '▸14'.encode() not in zoom.rsplit(b'\x1b[H',1)[-1], 'opening diff must zoom automatically'
  send(b'z')

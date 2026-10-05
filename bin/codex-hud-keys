@@ -73,7 +73,6 @@ bind_command 0 3 pane-3
 bind_command 0 4 pane-4
 bind_command 0 5 pane-5
 bind_command 0 x close-pane
-bind_command 0 - fold-pane
 bind_command 0 Tab next-pane
 bind_command 0 BTab previous-pane
 bind_command 0 z zoom

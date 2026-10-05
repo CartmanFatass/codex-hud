@@ -364,3 +364,52 @@ columns.**
   `hud-r4-panel-nerd.png`.
 
 ---
+
+## Amendment D: panes as bands, open/closed only, title click zooms (user request)
+
+The user's screenshot is `/mnt/c/Users/fires/OneDrive/图片/hud2.png`. It is
+still the round-3 build, so its leftover hashes and placeholder lines are
+already handled above. What it newly shows:
+- The panes (工作树 / 改动 / 详情 / 时间线) are full boxes, with a numbered
+  title and a bottom rule carrying `└─1–9/11─┘`. Their visual design is far
+  behind the band-style status card at the foot.
+- A folded pane leaves a title line behind, taking a row (`3 改动`).
+- There is no quick way to zoom a pane.
+
+**Decisions** (the user chose these):
+1. **Two pane states only: open and closed.**
+   - Remove "folded" everywhere: the state, the `-` key and the
+     `codex-hud-prefix -` binding, and the settings values.
+   - Migrate saved `folded` to `closed` when settings load.
+   - **A closed pane takes zero rows.** No title line or rule remains.
+2. **The top bar's pane button toggles open and closed** with one click,
+   and the prefix `1–5` does the same. Opening a pane also focuses it. The
+   round-3 click cycle of open, folded and closed is gone.
+3. **Panes look like the status card** (round 2's band style):
+   - **Title row:** a band (the palette's `band` background) carrying the
+     pane's icon (`icons` setting) and its name on the left. On the right
+     go its summary or position, for example `3 个`, `1–9/11`, `7–14/46`,
+     the counts the bottom rule used to carry.
+   - **Body:** a left gutter `│` only, painted in the pane's state colour:
+     focused accent, otherwise dim. No right border and no bottom rule.
+   - The scroll position moves to the band's right side, and the `↓ n`
+     lines-below hint goes away. The position already says it.
+4. **Clicking a pane's title band zooms it** (maximise, then restore). It
+   is the existing zoom (`z` / prefix `z`), now also reachable by mouse. A
+   zoomed pane fills the space between the bar and the status card; click
+   its band again to restore.
+   - The title band draws no extra button.
+   - Show a small zoom state on the band only if it can be done without a
+     key letter, for example an outline or accent change.
+   - Closing a pane stays on the top bar.
+5. **The agents area** (卡片) follows the same rules where they apply. It
+   can also be closed from the bar, and the other panes then share its
+   space.
+
+**Live check additions.**
+- Capture the four panes open at 36×60 in the band style.
+- Close one: confirm it leaves no line behind.
+- Zoom one by clicking its band, then restore it.
+- Copy the 36-column result to `OneDrive/图片/hud-r4-panes.png`.
+
+Make this its own commit, including this amendment text.

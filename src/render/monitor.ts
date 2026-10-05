@@ -24,7 +24,7 @@ import type { WorkbenchEvent } from './workbench-state.js';
 
 export const MONITOR_PANES = ['agents', 'worktrees', 'changes', 'details', 'timeline'] as const;
 export type MonitorPane = typeof MONITOR_PANES[number];
-export type PaneMode = 'open' | 'folded' | 'closed';
+export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
   tree: PanelState;
@@ -77,7 +77,7 @@ export interface MonitorRect {
   offset: number;
   contentLength: number;
   rows: MonitorRow[];
-  /** Rows of frame above and below the content: 1 for a box, 0 for Agents. */
+  /** Rows above the content: 1 for a pane's band, 0 for Agents (its band is its pinned summary). */
   edge?: number;
   /** Leading rows that stay put while the rest scrolls: Agents' summary line. */
   pinned?: number;
@@ -87,13 +87,13 @@ export interface MonitorRect {
 export interface MonitorControl {
   /**
    * `expand` opens or closes a card's timeline (and selects it), `switch`
-   * (a card's name) selects it and switches Codex to it, `more` scrolls the
-   * agents view a page, `level` (the status card's band) changes how
-   * much the card shows. `tab` (a pane's number on the control bar) opens,
-   * focuses, folds or closes that pane; `older` shows or hides what the
-   * linger window put away; `help` opens the keys.
+   * (a card's name) selects it and switches Codex to it, `level` (the status card's band) changes how
+   * much the card shows. `tab` (a pane's button on the control bar) opens
+   * or closes that pane; `zoom` (a pane's band) zooms or restores it;
+   * `older` shows or hides what the linger window put away; `help` opens
+   * the keys.
    */
-  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'brief' | 'level' | 'log' | 'expand' | 'more' | 'switch';
+  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'brief' | 'level' | 'log' | 'expand' | 'switch' | 'zoom';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
@@ -179,7 +179,7 @@ export function toggleCard(state: MonitorState, id: string): MonitorState {
 }
 /** Agents is the page itself: always there, whatever an older settings file says. */
 export function monitorModes(settings: HudSettings): MonitorModes {
-  return {agents:'open', worktrees:settings.worktreesPane, changes:settings.changesPane, details:settings.detailsPane, timeline:settings.timelinePane};
+  return {agents:settings.agentsPane, worktrees:settings.worktreesPane, changes:settings.changesPane, details:settings.detailsPane, timeline:settings.timelinePane};
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return {agentsPane:state.modes.agents, worktreesPane:state.modes.worktrees,
@@ -1062,8 +1062,8 @@ function helpText(rich: boolean, prefix: string): Array<string | {head: string}>
     head('Shortcuts: {p}, then a key'),
     ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
       '{p} ,  settings  {p} ?  help','{p} b  pause / resume brief','{p} a  show / hide older',
-      '{p} m  main session  {p} o  switch to selected','{p} 1–5  open a pane  {p} Tab  next',
-      '{p} x  close pane  {p} -  fold','{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
+      '{p} m  main session  {p} o  switch to selected','{p} 1–5  open / close a pane  {p} Tab  next',
+      '{p} x  close pane','{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
       '{p} Enter / v  inspect  {p} z  zoom',...(rich ? ['{p} e / Space  open / close card'] : []),
       '{p} h l  fold / unfold agent','{p} f  filter  {p} s  order',
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
@@ -1075,10 +1075,10 @@ function helpText(rich: boolean, prefix: string): Array<string | {head: string}>
       t('{pause} / {resume} pause / resume brief',{pause:icon('pause'),resume:icon('resume')}),
       iconSet() === 'unicode' ? t('+N show older  −N hide them') : t('{show} +N show older  {hide} hide them',{show:icon('show'),hide:icon('hide')}),
       t('{settings} settings  {help} help',{settings:icon('settings'),help:icon('help')}),t('Narrow, the buttons keep their icons alone')] : []),
-    t('Click a pane: open, focus, then fold, close'),
+    t('Click a pane\'s button: open or close it'),
     head('Mouse'),
     ...[...(rich ? ['Click card: select','Click its name: switch','Click top rule or ▾: open','Wheel over the card: its brief'] : ['Click agent: switch','Click a log line: select agent']),
-      "Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
+      "Click a pane's title: zoom / restore","Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
     head('Legend'),
     ...['1 Cards  2 Worktrees','3 Changes  4 Inspector','5 Timeline','✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
@@ -1125,12 +1125,11 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     if(height>1)frame.lines.push(colors.dim(`↕ ${state.helpScroll+1}/${help.length}`));
     frame.lines = frame.lines.slice(0,height).map(line=>truncateAnsi(line,width));return frame;
   }
-  // Under 24 columns the frame costs more than it earns: two border columns
-  // out of sixteen is an eighth of every row spent on decoration. Narrow panes
-  // keep the rules that separate them and give the rest back to the content.
-  const bordered = width>=24;
-  const padding = bordered ? ' ' : '';
-  const inner = bordered ? Math.max(0,width-2-2*padding.length) : width;
+  // A pane is drawn as the status card is: a band naming it, then its rows
+  // behind a gutter on the left only. Under 24 columns the gutter is its rule
+  // alone, without the space after it.
+  const gutter = width>=24 ? '│ ' : '│';
+  const inner = Math.max(0,width-gutter.length);
   const now = input.nowMs ?? Date.now();
   const notice = input.notice || input.error;
   const noticeRows = notice && height >= 6 ? wrapped(notice,Math.max(1,width-2)).slice(0,2) : [];
@@ -1139,9 +1138,10 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const footPlan = planFoot(input,state,width,height,now,noticeRows.length);
   const footRows = footPlan.rows;
   let budget = Math.max(0,height-1-footRows-noticeRows.length);
-  const ids = MONITOR_PANES.filter(id=>(id==='agents' || state.modes[id] !== 'closed') && (!state.zoom || id===state.focus));
-  // Agents is the page, not one box among several: no frame, no title, and
-  // it can be neither closed nor folded. The other panes stay boxes.
+  // A closed pane takes no row at all.
+  const ids = MONITOR_PANES.filter(id=>state.modes[id] !== 'closed' && (!state.zoom || id===state.focus));
+  // Agents has no band of its own: its summary line, pinned at its top, is
+  // painted as one. The other panes have a band row above their rows.
   const edgeOf = (id: MonitorPane) => id === 'agents' ? 0 : 1;
   const content = new Map(ids.map(id=>[id,id === 'agents' ? agentsView(input,state,width,now,true) : paneRows(id,input,state,edgeOf(id) ? inner : width,now)]));
   const sizes = new Map<MonitorPane,number>();
@@ -1152,7 +1152,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     for (const id of order) {
       if (!budget) break;
       const rows = content.get(id)?.length ?? 0;
-      const target = state.modes[id] === 'folded' && edgeOf(id) ? 1 : state.zoom ? height : rows + 2*edgeOf(id);
+      const target = state.zoom ? height : rows + edgeOf(id);
       const size = sizes.get(id) ?? 0;
       if (size && size < target) { sizes.set(id,size+1);budget--;grew=true; }
     }
@@ -1160,7 +1160,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   }
   // What is left goes to the inspector when it has focus, else to the agents
   // view, where it is the room the art may use. Small worktree lists stay compact.
-  const fillable = order.filter(id => (state.modes[id] !== 'folded' || !edgeOf(id)) && (sizes.get(id) ?? 0) > 0);
+  const fillable = order.filter(id => (sizes.get(id) ?? 0) > 0);
   const fill = state.focus==='details'&&fillable.includes('details') ? 'details' : fillable.includes('agents') ? 'agents' : fillable[0];
   if(fill){sizes.set(fill,(sizes.get(fill)??0)+budget);budget=0;}
   // Spacing gives way to scrolling, not the other way round, except where the
@@ -1179,48 +1179,37 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const rows = content.get(id) ?? [];
     if (id === 'agents') { drawAgentsView(frame,state,rows,y,width,h); y += h; continue; }
     const edge = edgeOf(id);
-    const width_ = edge ? inner : width;
-    const count = Math.max(0,h-2*edge);
+    const count = Math.max(0,h-edge);
     let offset = Math.max(0,Math.min(state.scroll[id],Math.max(0,rows.length-count)));
     const selected = id==='worktrees'?state.selectedWorktree:id==='changes'?state.selectedFile:null;
     const index = selected ? rows.findIndex(row=>row.item===selected) : -1;
     if (index>=0 && count>0) { if(index<offset)offset=index;else if(index>=offset+count)offset=index-count+1; }
     state.scroll[id]=offset;
     const pane = {id,x:0,y,width,height:h,rows,offset,contentLength:rows.length,edge,pinned:0}; frame.panes.push(pane);
-    const border = colors.dim;
-    const heading = id===state.focus ? theme.accent : colors.dim;
-    // The pane's name, as its tab on the bar names it; no digit, no switch.
-    // Its icon at full brightness, as its tab on the bar has it, then its name.
+    const focused = id===state.focus;
+    // The band: the pane's icon and name on the left, where its rows are or
+    // how many there are on the right. Zoomed, it sits on the accent, as the
+    // focused tab does; a click anywhere on it zooms or restores the pane.
+    const zoomed = state.zoom && focused;
     const title = paneTitle(id);
-    const named = (title.icon ? theme.bold(theme.value(title.icon))+heading(' ') : '')+heading(title.name);
-    const titleWidth = (title.icon ? visualLength(title.icon)+1 : 0)+visualLength(title.name);
-    if(bordered) {
-      // "┌ ⋮ Timeline ─────┐": its switches are its tab on the bar.
-      const room = Math.max(0,width-2);
-      const label = heading(' ')+named+heading(' ');
-      frame.lines[y] = truncateAnsi(heading('┌')+label+heading('─'.repeat(Math.max(0,room-titleWidth-2))+'┐'),width);
-      if (titleWidth+2 > room) frame.lines[y] = truncateAnsi(heading('┌')+truncateAnsi(label,room)+heading('┐'),width);
-    } else {
-      // "─ ⋮ Timeline ────": the rule doubles as the frame.
-      frame.lines[y] = truncateAnsi(heading('─ ')+named+heading(' '+'─'.repeat(Math.max(0,width-titleWidth-3))),width);
-    }
+    const name = zoomed ? theme.bold(title.name) : focused ? theme.bold(theme.accent(title.name)) : theme.bold(title.name);
+    const left = ' '+(title.icon ? theme.bold(theme.value(title.icon))+' ' : '')+name;
+    const range = rows.length>count&&count ? `${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length}` : '';
+    const total = id==='worktrees' ? input.worktrees?.entries.length ?? 0 : id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? input.timeline?.length ?? 0 : 0;
+    const right = range || (total ? t(id==='worktrees'?'{n} worktrees':id==='changes'?'{n} files':'{n} events',{n:total}) : '');
+    const band = zoomed ? theme.tab : theme.band;
+    frame.lines[y] = band(fit(pair(left,right ? colors.dim(right)+' ' : '',width),width));
+    frame.controls.push({kind:'zoom',pane:id,x:0,y,width});
+    // The gutter in the pane's state colour: the accent where the keys go.
+    const rule = focused ? theme.accent : colors.dim;
     for(let i=0;i<count;i++) {
       const row=rows[offset+i];
-      const clipped=truncateAnsi(row?.text??'',width_);
+      const clipped=truncateAnsi(row?.text??'',inner);
       // The highlight covers the row's words, not the blank run after them:
       // a selected short name should not paint a bar across the pane.
-      const highlight=row?.item&&row.item===selected&&id===state.focus;
-      const body=(highlight?theme.selected(clipped):clipped)+' '.repeat(Math.max(0,width_-visualLength(clipped)));
-      frame.lines[y+1+i]=truncateAnsi(bordered?border('│')+padding+body+padding+border('│'):body,width);
-    }
-    if(h>1) {
-      const range=rows.length>count&&count?` ${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length} `:'';
-      if(bordered) {
-        frame.lines[y+h-1]=truncateAnsi(border('└'+fit(range,Math.max(0,width-2)).replace(/ /g,'─')+'┘'),width);
-      } else {
-        const head=truncateAnsi('─'+range,width);
-        frame.lines[y+h-1]=truncateAnsi(border(head+'─'.repeat(Math.max(0,width-visualLength(head)))),width);
-      }
+      const highlight=row?.item&&row.item===selected&&focused;
+      const body=(highlight?theme.selected(clipped):clipped)+' '.repeat(Math.max(0,inner-visualLength(clipped)));
+      frame.lines[y+1+i]=truncateAnsi(rule(gutter)+body,width);
     }
     y+=h;
   }
@@ -1324,17 +1313,18 @@ export function meterRow(width: number, left: string, right: string, meter?: Edg
 }
 
 /**
- * A click on a pane's tab: a closed pane opens and takes focus, an unfocused
- * one takes focus (a folded one opens too), and the focused one steps on,
- * open → folded → closed, as `-` then `x` do. Agents is the page: its tab
- * only focuses.
+ * A click on a pane's button, or its number after the prefix: an open pane
+ * closes, a closed one opens and takes focus. Closed, it takes no row, and
+ * the focus moves to the next pane still open.
  */
 export function clickTab(state: MonitorState, id: MonitorPane): MonitorState {
-  const mode = id === 'agents' ? 'open' : state.modes[id];
-  if (id === 'agents' || mode === 'closed' || state.focus !== id) return openPane(state,id);
-  if (mode === 'open') return {...state,modes:{...state.modes,[id]:'folded'}};
+  if (state.modes[id] === 'closed') return openPane({...state,zoom:false},id);
+  return closePane(state,id);
+}
+function closePane(state: MonitorState, id: MonitorPane): MonitorState {
   const modes = {...state.modes,[id]:'closed' as const};
-  return {...state,modes,zoom:false,focus:MONITOR_PANES.find(pane=>modes[pane]!=='closed')??'agents'};
+  const focus = state.focus !== id ? state.focus : MONITOR_PANES.find(pane=>modes[pane]!=='closed') ?? id;
+  return {...state,modes,zoom:state.zoom && state.focus !== id,focus};
 }
 function openPane(state: MonitorState, id: MonitorPane): MonitorState {
   const preview = id==='agents'?'agent':id==='worktrees'?'worktree':id==='changes'?'file':state.preview;
@@ -1343,7 +1333,7 @@ function openPane(state: MonitorState, id: MonitorPane): MonitorState {
 /** The row under a point inside a pane's frame, or nothing on its borders. */
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
-  if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height - edge) return undefined;
+  if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height) return undefined;
   // Past the rows drawn is the scroll hint, not a row.
   if (pane.visible !== undefined && y - pane.y - edge >= pane.visible) return undefined;
   const line = y - pane.y - edge < (pane.pinned ?? 0) ? y - pane.y - edge : pane.offset + y - pane.y - edge;
@@ -1353,7 +1343,7 @@ export function monitorItemAt(pane: MonitorRect, x: number, y: number): string |
   return monitorRowAt(pane,x,y)?.item || undefined;
 }
 export function canMonitorDiff(frame?: MonitorFrame): boolean {
-  return Boolean(frame?.panes.some(p=>p.id==='details'&&p.height>2&&p.width>=16));
+  return Boolean(frame?.panes.some(p=>p.id==='details'&&p.height>1&&p.width>=16));
 }
 export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   let next: MonitorState = {...state,tree:{...state.tree},modes:{...state.modes},scroll:{...state.scroll}};
@@ -1381,6 +1371,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(control?.kind==='help'){next.help=true;next.helpScroll=0;return result();}
     if(control?.kind==='older'){next.tree.showAll=!next.tree.showAll;return result();}
     if(control?.kind==='tab'&&control.pane){next=clickTab(next,control.pane);return result();}
+    // A pane's band, or the agents' summary: zoom that pane, or restore it.
+    if(control?.kind==='zoom'&&control.pane){next.zoom=!(next.zoom&&next.focus===control.pane);next.focus=control.pane;return result();}
     if(control?.kind==='brief') return result({type:'brief-toggle'});
     if(control?.kind==='level'){next.statusLevel=nextLevel(next);next.statusScroll=0;return result({type:'status-level'});}
     // What was clicked is in view already: selecting it does not scroll.
@@ -1390,12 +1382,6 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(control?.kind==='expand'&&control.item){pick(control.item);next=toggleCard(next,control.item);return result();}
     // A card's name: go to that agent's session, as `o` does on it.
     if(control?.kind==='switch'&&control.item){pick(control.item);return result({type:'switch',id:control.item});}
-    if(control?.kind==='more') {
-      const pane=ctx.frame?.panes.find(p=>p.id==='agents');
-      const page=Math.max(1,(pane?.visible??1)-(pane?.pinned??0));
-      const end=pane?pane.offset+(pane.visible??0)>=pane.contentLength:true;
-      next.scroll.agents=end?0:next.scroll.agents+page;return result();
-    }
     // The wheel over the status card scrolls its brief, the rows above it stay.
     const card=ctx.frame?.statusCard;
     if(input.button!=='left'&&card&&input.y>=card.y&&input.y<card.y+card.height) {
@@ -1407,9 +1393,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       if(!pane) return result();
       next.focus=pane.id;
       if(input.button==='left') {
-        // A pane's title rule is its name, not a switch: a click there focuses it.
-        if((pane.edge ?? 1)&&input.y===pane.y) return result();
-        else {
+        {
           const row=monitorRowAt(pane,input.x,input.y);
           const id=row?.item;
           if(!id)return result();
@@ -1440,14 +1424,9 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   if(key==='expand'){if(next.style==='rich'&&next.tree.selectedId){next=toggleCard(next,next.tree.selectedId);next.focus='agents';next.revealed=null;}}
   else if(key==='show-all')next.tree.showAll=!next.tree.showAll;
   else if(key==='help'){next.help=true;next.helpScroll=0;}
-  // Agents stays; closing or folding it is not a choice the page offers.
-  else if(key==='pane-close') {
-    if(next.focus!=='agents'){
-      next.modes[next.focus]='closed';next.zoom=false;
-      next.focus=MONITOR_PANES.find(id=>next.modes[id]!=='closed')??'agents';
-    }
-  } else if(key==='pane-fold'){if(next.focus!=='agents')next.modes[next.focus]=next.modes[next.focus]==='folded'?'open':'folded';}
-  else if(MONITOR_PANES.includes(key as MonitorPane))next=openPane(next,key as MonitorPane);
+  else if(key==='pane-close'){if(next.modes[next.focus]!=='closed')next=closePane(next,next.focus);}
+  // A pane's number, as its button: open it, or close it.
+  else if(MONITOR_PANES.includes(key as MonitorPane))next=clickTab(next,key as MonitorPane);
   else if(key==='tab'||key==='shift-tab') {
     const visible=MONITOR_PANES.filter(id=>next.modes[id]!=='closed');
     if(visible.length)next.focus=visible[(visible.indexOf(next.focus)+(key==='tab'?1:visible.length-1))%visible.length];
@@ -1465,7 +1444,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     else return result(undefined,true);
   } else {
     const pane=ctx.frame?.panes.find(p=>p.id===next.focus);
-    const page=Math.max(1,(pane?.height??5)-2*(pane?.edge??1));
+    const page=Math.max(1,(pane?.height??5)-(pane?.edge??1));
     // A two-line worktree card is one item, not two keyboard destinations.
     const visibleItems = pane ? new Set(pane.rows.slice(pane.offset,pane.offset+page).flatMap(row=>row.item ? [row.item] : [])) : new Set<string>();
     const itemPage = visibleItems.size || page;

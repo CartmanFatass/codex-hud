@@ -87,7 +87,7 @@ test('monitor pane modes and worktreeRoot validate independently of legacy panel
     }));
     const loaded = loadSettings();
     assert.equal(loaded.agentsPane, 'closed');
-    assert.equal(loaded.worktreesPane, 'folded');
+    assert.equal(loaded.worktreesPane, 'closed', 'folded, from an earlier version, is closed');
     assert.equal(loaded.changesPane, 'open');
     assert.equal(loaded.detailsPane, 'open');
     assert.equal(loaded.worktreeRoot, '/repo');

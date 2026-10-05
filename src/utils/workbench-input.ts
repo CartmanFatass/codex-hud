@@ -19,7 +19,7 @@ const KEYS: Record<string, string> = {
   '\t': 'tab', '\r': 'enter', '\n': 'enter', ' ': 'enter',
   q: 'close', Q: 'close', '\x03': 'close', '\x04': 'close',
   e: 'expand', a: 'show-all', v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help', b: 'brief-toggle',
-  x: 'pane-close', '-': 'pane-fold',
+  x: 'pane-close',
   '[': 'previous-tab', ']': 'next-tab', t: 'next-tab',
   '1': 'agents', '2': 'details', '3': 'changes', '4': 'activity',
 };

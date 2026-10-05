@@ -1,7 +1,7 @@
 /**
  * The panel's one control bar: its first row, on its own background. Every
- * control the panel draws is here, and nowhere else: not on the status card,
- * not on a pane's title rule.
+ * button the panel draws is here, and nowhere else: not on the status card,
+ * not on a pane's band (a click there zooms the pane, but draws nothing).
  *
  *   ≥56 columns   ␠←␠主会话␠ ␠▦␠ ␠⎇␠ ␠±␠ ␠⌖␠ ␠⋮␠      ␠‖␠ ␠+37␠ ␠☰␠设置␠ ␠?␠帮助␠
  *   44–55         ␠←␠ ␠▦␠ ␠⎇␠ ␠±␠ ␠⌖␠ ␠⋮␠           ␠‖␠ ␠+37␠ ␠☰␠ ␠?␠
@@ -14,8 +14,7 @@
  * between those columns narrower, and the icon and the one column its
  * drawing may spill into narrowest. The icon is always in the full text
  * colour and bold, never dimmed; a tab's state is its chip: the focused pane
- * on the accent, an open one on a chip, a folded one on a chip and
- * underlined, a closed one on the bar itself. With `icons: text` (or glyphs
+ * on the accent, an open one on a chip, a closed one on the bar itself. With `icons: text` (or glyphs
  * set to text) the buttons are words. No key is written anywhere on the bar;
  * the keys (the tmux prefix, then a letter) are in the help alone.
  *
@@ -137,30 +136,26 @@ function chipText(glyph: string, word: string | null, size: Size): string {
   return size === 'tight' ? `${face} ` : ` ${face} `;
 }
 
-type ChipState = 'focused' | 'open' | 'folded' | 'closed' | 'button';
+type ChipState = 'focused' | 'open' | 'closed' | 'button';
 
 /**
  * A chip painted for its state. The face is always the full text colour and
  * bold; the state is the surface: the accent for the focused tab, a chip for
- * an open one or a button, a chip and an underline for a folded tab, the bar
- * itself for a closed one. Without colour the focused tab is in brackets
- * ("[▦]") and a folded one ends in "-" ("⎇-").
+ * an open one or a button, the bar itself for a closed one. Without colour
+ * the focused tab is in brackets ("[▦]").
  */
-function paint(text: string, state: ChipState, accent = false, folded = state === 'folded'): string {
+function paint(text: string, state: ChipState, accent = false): string {
   const lead = text.match(/^ */)![0];
   const trail = text.match(/ *$/)![0];
   const face = text.slice(lead.length, text.length - trail.length);
   if (palette().name === 'none') {
-    const marked = folded ? `${face}-` : face;
     // The brackets take the side columns' place; a tight chip keeps its spill column.
-    if (state === 'focused') return `[${marked}]${lead ? '' : trail}`;
-    return `${lead}${marked}${folded && lead ? trail.slice(1) : trail}`;
+    if (state === 'focused') return `[${face}]${lead ? '' : trail}`;
+    return text;
   }
-  if (state === 'focused')
-    return theme.tab(folded ? `${lead}\x1b[4m${theme.bold(face)}\x1b[24m${trail}` : theme.bold(text));
+  if (state === 'focused') return theme.tab(theme.bold(text));
   const strong = theme.bold(accent ? theme.accent(face) : theme.value(face));
-  const shown = folded ? `\x1b[4m${strong}\x1b[24m` : strong;
-  return state === 'closed' ? `${lead}${shown}${trail}` : theme.chip(`${lead}${shown}${trail}`);
+  return state === 'closed' ? `${lead}${strong}${trail}` : theme.chip(`${lead}${strong}${trail}`);
 }
 
 interface Button {
@@ -229,15 +224,15 @@ export function controlBar(
     const back: Button = { text: paint(chipText(icon('main'), backWord, o.size), 'button'), kind: 'main' };
     // With no colour the tabs cannot say closed; only the panes there are get one.
     const tabs: Button[] = MONITOR_PANES.filter(
-      (id) => id === 'agents' || state.modes[id] !== 'closed' || (o.closed && palette().name !== 'none')
+      (id) => state.modes[id] !== 'closed' || (o.closed && palette().name !== 'none')
     )
       .filter((id) => o.tabs === 'all' || (o.tabs === 'focus' && id === state.focus))
       .map((id) => {
         const word = o.tabWords ? names(id).tab : words ? names(id).short : null;
-        const mode = id === 'agents' ? 'open' : state.modes[id];
-        const chipState: ChipState = id === state.focus ? 'focused' : mode;
+        const mode = state.modes[id];
+        const chipState: ChipState = id === state.focus && mode === 'open' ? 'focused' : mode;
         return {
-          text: paint(chipText(icon(id), word, o.size), chipState, false, mode === 'folded'),
+          text: paint(chipText(icon(id), word, o.size), chipState),
           kind: 'tab',
           pane: id,
         };
