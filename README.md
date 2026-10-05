@@ -214,7 +214,7 @@ Agents and Worktrees open by default; Changes and Inspector open on demand. The 
 | Pane | Content |
 |------|---------|
 | **1 Agents** | Nested agents, state and model/effort badges; badges survive long-name truncation |
-| **2 Worktrees** | Branch, directory and changed/conflicted state for each worktree |
+| **2 Worktrees** | Each worktree by name (its branch; detached, the nearest directory that is not an id, such as `atlas-launch-sources`), its changed/conflicted state and `locked` in words, and under it its HEAD commit's subject. No hash is shown, here or in the Inspector |
 | **3 Changes** | Files in the selected worktree, index/worktree status and conflicts; selectable even at narrow widths |
 | **4 Inspector** | Agent status and activity times, worktree details, or colored file diffs |
 

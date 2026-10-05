@@ -155,6 +155,7 @@ const ZH: Record<string, string> = {
   'clean': '干净',
   '{n} mod': '{n} 改动',
   'detached': '分离',
+  'locked': '锁定',
   'yes': '是',
 
   // Help
@@ -225,7 +226,6 @@ const ZH: Record<string, string> = {
   'dim name = done 1m+ ago': '名字变暗 = 完成已超 1 分钟',
   'mod / Δ = changed files': 'mod / Δ = 改动的文件',
   'S staged · U unstaged': 'S 已暂存 · U 未暂存',
-  'L = locked worktree': 'L = 已锁定的工作树',
   'stale = >30s since read': '过期 = 超过 30 秒未读取',
 
   // Tree page messages

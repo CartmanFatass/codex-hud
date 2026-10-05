@@ -169,7 +169,7 @@ CODEX_HUD_DENSITY=focus codex
 | 区域 | 内容 |
 |------|------|
 | **1 Agents** | 子代理树、状态、模型/推理图形，长名字缩短时优先保留图形 |
-| **2 Worktrees** | 各 worktree 的分支、目录和修改/冲突状态 |
+| **2 Worktrees** | 各 worktree 的名字（有分支用分支；分离 HEAD 时用最近的不是 id 的目录名，如 `atlas-launch-sources`）、修改/冲突状态和文字 `锁定`，下一行是 HEAD 提交的标题。这里和详情里都不显示哈希 |
 | **3 Changes** | 所选 worktree 的文件列表、暂存/未暂存状态和冲突；窄屏也可选择文件 |
 | **4 Inspector** | 代理状态与活动时间、worktree 详情，或带增删配色的文件 diff |
 

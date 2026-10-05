@@ -19,8 +19,8 @@ const make = (id:string,name:string,status:SubagentTreeNode['status']):SubagentT
 const nodes = [make('00000000-0000-4000-8000-000000000002','Hegel','completed'),make('00000000-0000-4000-8000-000000000003','Pasteur','completed')];
 const tree: SubagentTree = {rootId:root,nodes,totalCount:nodes.length,updatedAt:new Date(now)};
 const worktrees: WorktreesSnapshot = {sourcePath:'/demo',updatedAt:now,entries:[
-  {path:'/demo/main',branch:'main',bare:false,detached:false,observedAt:now,status:{changed:3,staged:1,unstaged:2,untracked:0,conflicts:0,branch:'main',ahead:0,behind:0}},
-  {path:'/demo/docs',branch:'docs',bare:false,detached:false,observedAt:now,status:{changed:0,staged:0,unstaged:0,untracked:0,conflicts:0,branch:'docs',ahead:null,behind:null}},
+  {path:'/demo/main',branch:'main',subject:'Main work',bare:false,detached:false,observedAt:now,status:{changed:3,staged:1,unstaged:2,untracked:0,conflicts:0,branch:'main',ahead:0,behind:0}},
+  {path:'/demo/docs',branch:'docs',subject:'Docs work',bare:false,detached:false,observedAt:now,status:{changed:0,staged:0,unstaged:0,untracked:0,conflicts:0,branch:'docs',ahead:null,behind:null}},
 ]};
 const key=(key:string)=>({type:'key' as const,key});
 const mouse=(x:number,y:number)=>({type:'mouse' as const,button:'left' as const,x,y});

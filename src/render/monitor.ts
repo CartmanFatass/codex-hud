@@ -367,6 +367,33 @@ function worktreeLabelText(label: string): string {
   const changed = label.match(/^(\d+) mod$/);
   return changed ? t('{n} mod',{n:changed[1]}) : label.startsWith('!') ? label : t(label);
 }
+/** A directory name that is an id, not a name: hex of 7 or more characters, or a UUID. */
+const ID_NAME = /^(?:[0-9a-f]{7,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+/**
+ * What a worktree is called on screen: its branch; detached, its
+ * directory's name, or, where that is an id, the nearest directory above it
+ * that is neither an id nor `.git` (`atlas-launch-sources`, not a 32-digit
+ * hash). No hash is ever shown.
+ */
+export function worktreeName(entry: WorktreeInfo): string {
+  if (entry.branch) return entry.branch;
+  const parts = entry.path.split(/[\\/]+/).filter(Boolean);
+  for (let i = parts.length-1; i >= 0; i--) if (!ID_NAME.test(parts[i]) && parts[i] !== '.git') return parts[i];
+  return t(entry.bare ? 'bare' : 'detached');
+}
+/**
+ * Where a worktree is, relative to the repository's main worktree: up to its
+ * first id directory, then "…" (`.git/atlas-launch-sources/…`). Empty for
+ * the main worktree itself.
+ */
+export function worktreePlace(entry: WorktreeInfo, root: string | undefined): string {
+  const path = entry.path.replace(/[\\/]+$/,'');
+  const base = root?.replace(/[\\/]+$/,'');
+  const relative = base && path.startsWith(base+'/') ? path.slice(base.length+1) : base === path ? '' : path;
+  const parts = relative.split(/[\\/]+/).filter(Boolean);
+  const id = parts.findIndex(part => ID_NAME.test(part));
+  return id < 0 ? parts.join('/') : [...parts.slice(0,id),'…'].join('/');
+}
 function basename(path: string): string { return path.replace(/[\\/]+$/,'').split(/[\\/]/).at(-1) || path; }
 function findNode(nodes: SubagentTreeNode[], id: string | null): SubagentTreeNode | undefined {
   for (const node of nodes) { if (node.id === id) return node; const found = findNode(node.children,id); if (found) return found; }
@@ -673,15 +700,21 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
     if (snapshot.error) return [{text:theme.warning(t('No readable repository'))}, {text:colors.dim(t('Set worktreeRoot'))}, ...wrapped(snapshot.error,width).map(text=>({text:colors.dim(text)}))];
     const rows: MonitorRow[] = [];
     if (snapshot.truncated) rows.push({text:theme.warning(t('Worktree list limited'))});
-    for (const entry of snapshot.entries) {
+    const names = snapshot.entries.map(worktreeName);
+    for (const [i,entry] of snapshot.entries.entries()) {
       const label = worktreeLabel(entry,now);
-      const mark = (entry.path === state.selectedWorktree ? '›' : ' ') + (entry.locked !== undefined ? 'L' : ' ');
-      const name = monitorText(entry.branch ?? (entry.detached ? 'detached' : basename(entry.path)))
-        + (width >= 40 ? ' · '+monitorText(basename(entry.path)) : '');
+      const mark = (entry.path === state.selectedWorktree ? '›' : ' ')+' ';
+      const subject = entry.subject ? monitorText(entry.subject) : '';
+      // Two of the same name are told apart by what their HEAD commit says,
+      // never by a hash: where it has no line of its own, it stands in for the name.
+      const twin = names.filter(name=>name === names[i]).length > 1;
+      const name = twin && subject && width < 20 ? subject : monitorText(names[i]);
       const paint = label.startsWith('!') || entry.error ? theme.warning : label === 'clean' ? colors.dim : theme.value;
-      rows.push({text:pair(mark+name,paint(worktreeLabelText(label)),width),item:entry.path});
-      // A directory label is useful identity, not a log line. Two lines only when it fits.
-      if (width >= 20 && width < 40) rows.push({text:colors.dim(truncateAnsi('  '+monitorText(basename(entry.path)),width)),item:entry.path});
+      // Locked is a word after the status, not a letter glued to the name.
+      const locked = entry.locked !== undefined ? colors.dim(` · ${t('locked')}`) : '';
+      rows.push({text:pair(mark+name,paint(worktreeLabelText(label))+locked,width),item:entry.path});
+      // Under it, what its HEAD commit says, where a second line fits.
+      if (width >= 20 && subject) rows.push({text:colors.dim(truncateAnsi('  '+subject,width)),item:entry.path});
     }
     return rows;
   }
@@ -787,16 +820,25 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
     const entry = input.worktrees?.entries.find(e=>e.path===state.selectedWorktree);
     if (!entry) lines = [];
     else {
-      lines = [t('Branch: {branch}',{branch:entry.branch ?? t(entry.bare?'bare':'detached')}),t('Status: {status}',{status:worktreeLabelText(worktreeLabel(entry,now))}),basename(entry.path)];
+      // Its name, where it is and what its HEAD commit says; no hash, not even a short one.
+      const place = worktreePlace(entry,input.worktrees?.entries[0]?.path);
+      const rows: MonitorRow[] = wrapped(worktreeName(entry),width).map(text=>({text:theme.strong(text)}));
+      if (entry.subject) rows.push(...flowLines(monitorText(entry.subject),width).map(text=>({text:colors.dim(text)})));
+      lines = [t('Branch: {branch}',{branch:entry.branch ?? t(entry.bare?'bare':'detached')}),
+        t('Status: {status}',{status:worktreeLabelText(worktreeLabel(entry,now))})+(entry.locked !== undefined ? ` · ${t('locked')}` : '')];
+      if (place) lines.push(place);
       if (entry.error) lines.push(entry.error);
-      if (entry.locked !== undefined) lines.push(t('Locked: {reason}',{reason:entry.locked || t('yes')}));
+      if (entry.locked) lines.push(t('Locked: {reason}',{reason:entry.locked}));
       if (entry.prunable !== undefined) lines.push(t('Prunable: {reason}',{reason:entry.prunable || t('yes')}));
       if (entry.status) lines.push(t('{s} staged / {u} unstaged',{s:entry.status.staged,u:entry.status.unstaged}),
         t('{n} untracked / {c} conflicts',{n:entry.status.untracked,c:entry.status.conflicts}),
         t('Ahead {a} / behind {b}',{a:entry.status.ahead ?? '?',b:entry.status.behind ?? '?'}));
       lines.push(t('Workspace status, not agent ownership'));
-      if (state.expanded) lines.push(entry.path,`HEAD: ${entry.head ?? '?'}`);
-      lines.push(t(state.expanded?'▴ Less':'▾ More'));
+      // The full path is more, where it holds no id; there is nothing else more to show.
+      const full = entry.path.split(/[\\/]+/).some(part => ID_NAME.test(part)) ? '' : entry.path;
+      if (full && state.expanded) lines.push(full);
+      if (full) lines.push(t(state.expanded?'▴ Less':'▾ More'));
+      return [...rows,...lines.flatMap(line => wrapped(line,width).map(text=>({text})))];
     }
   } else {
     if (!state.selectedFile) return [];
@@ -988,7 +1030,7 @@ function helpText(rich: boolean, prefix: string): Array<string | {head: string}>
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
     t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
     ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve','‖ brief on  ▸ paused  ~… writing',
-      'status card gutter colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','──56%── = context or quota used, the % at the fill','meter: blue, yellow past 70%, red past 85%','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','L = locked worktree','stale = >30s since read'].map(line=>t(line)),
+      'status card gutter colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','──56%── = context or quota used, the % at the fill','meter: blue, yellow past 70%, red past 85%','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','stale = >30s since read'].map(line=>t(line)),
     ...stripAnsi(modelLegend()).split('\n'),
   ];
 }
