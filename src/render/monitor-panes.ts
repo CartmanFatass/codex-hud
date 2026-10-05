@@ -23,6 +23,18 @@ import { inspectorRows, logEntryLines } from './monitor-inspector.js';
 import { timelineRows } from './monitor-timeline.js';
 
 /**
+ * What the linger window put away from the list, counted whether or not it
+ * is showing: in rich the L1s alone, the list's rows (their subtasks are on
+ * their cards, and showing the rest brings none of them back as rows);
+ * compact, every agent in the tree.
+ */
+export function putAwayCount(nodes: SubagentTreeNode[], state: MonitorState, now: number): number {
+  if (state.style !== 'rich') return countExpired(nodes,{...state.tree,showAll:false},now);
+  const listed = (showAll: boolean) => visibleRows(nodes,{...state.tree,collapsed:new Set(),showAll},now).filter(row=>row.depth === 0).length;
+  return listed(true)-listed(false);
+}
+
+/**
  * The agents' heading: what is running, failed and done, as counts. In rich
  * style it counts the cards, the L1 agents, one at work while a subtask of
  * it is, then their subtasks as one figure; compact, every agent. The
@@ -39,7 +51,7 @@ export function summaryRow(input: MonitorData, state: MonitorState, width: numbe
   const live = (node: SubagentTreeNode) => node.status === 'running' || node.status === 'starting' || (rich && subtasks(node).some(isLive));
   for (const {node} of everyone) totals[live(node) ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
   // What the linger window puts away, counted whether or not it is showing.
-  const expired = rich ? rows(true).length-rows(false).length : countExpired(input.tree.nodes,{...state.tree,showAll:false},now);
+  const expired = putAwayCount(input.tree.nodes,state,now);
   let subs = 0;
   const count = (nodes: readonly SubagentTreeNode[]) => { for (const node of nodes) { if (!isGuardian(node)) subs++; count(node.children); } };
   if (rich) for (const {node} of everyone) count(node.children);

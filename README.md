@@ -42,7 +42,7 @@ Yes. Press `F12` to open the **subagent tree** in a side panel: every agent the 
 
 `Ctrl+T` is left alone on purpose — that is Codex's own transcript overlay.
 
-![Codex HUD — the panel: the agents as cards, the worktrees and the status card; beside it, a file's diff in the Inspector](./docs/fig/panel.png)
+![Codex HUD — the panel: the agents the session started as cards, their subtasks inside, the timeline under them and the status card; beside it, a file's diff in the Inspector](./docs/fig/panel.png)
 
 **Q: Do I need to set up tmux manually?**
 
@@ -219,21 +219,21 @@ CODEX_HUD_DENSITY=focus codex
 
 `Ctrl+]` twice sends `Ctrl+]` itself to the pane with the cursor. Codex 0.160 binds `Ctrl+]` to *Skip Question*; that is `Ctrl+]` `Ctrl+]` now. To keep `Ctrl+]` for Codex, choose `Ctrl+\` in Settings → Panel → Prefix key (no Codex 0.160 binding uses it; `Ctrl+G`, its external editor, and `Alt+]`, which a terminal sends as the start of an escape sequence, are not offered). The prefix is a key table in the HUD's own tmux session: the server's root and `Ctrl+B` tables are untouched. A changed prefix is installed at once for the panel that saved it; a session started before this version keeps its old keys until it is launched again.
 
-Agents and Worktrees open by default; Changes and Inspector open on demand. The focused heading and selected row are highlighted; status colors are concentrated on the icons:
+Agents opens by default; the Timeline, Changes and the Inspector open on demand. The focused heading and selected row are highlighted; status colors are concentrated on the icons:
 
 | Pane | Content |
 |------|---------|
-| **1 Agents** | Nested agents, state and model/effort badges; badges survive long-name truncation |
-| **2 Worktrees** | Each worktree by name (its branch; detached, the nearest directory that is not an id, such as `bench-sources`), its changed/conflicted state and `locked` in words, and under it its HEAD commit's subject. No hash is shown, here or in the Inspector |
-| **3 Changes** | Files in the selected worktree, each with a coloured letter for what happened to it (`M`, `A`, `D`, `R`, `!` for a conflict) and its `+12 −3` where it fits, under their counts in words (`2 staged · 5 unstaged`, zeros left out); untracked files fold into one last row (`▸ 12 untracked`) that Enter or a click opens, and an untracked directory is one row there (`bench/corpus/`), as `git status` lists it; a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
+| **1 Agents** | A card for each agent the main session started: what it is for, who it works with, what it is doing now, the subtasks that matter and the rest counted by role, its name in its direction's colour; compact, the tree of every agent |
+| **2 Timeline** | The session on the main session's axis: its turns, approvals and failures, each agent's stages a level in with what they returned, and only the subtasks that matter, in each direction's colour, as a rail, indents or lanes |
+| **3 Changes** | The worktrees on top, where there are several, each by name (its branch; detached, the nearest directory that is not an id, such as `bench-sources`) with its changed/conflicted state and `locked` in words, and no hash, here or in the Inspector; then the files of the selected one, each with a coloured letter for what happened to it (`M`, `A`, `D`, `R`, `!` for a conflict) and its `+12 −3` where it fits, under their counts in words (`2 staged · 5 unstaged`, zeros left out); untracked files fold into one last row (`▸ 12 untracked`) that Enter or a click opens, and an untracked directory is one row there (`bench/corpus/`), as `git status` lists it; a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
 | **4 Inspector** | Agent status and activity times, worktree details, or colored file diffs |
 
 **Panes** (Settings → Panel → Panes) sets how the panes share the panel:
 
 - **stacked** (the default): every open pane at once, as above.
-- **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+]` `1`–`5` does, and `Ctrl+]` `Tab` shows the next. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
+- **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+]` `1`–`4` does, and `Ctrl+]` `Tab` shows the next. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
 
-**Two layouts** (Settings → Panel → Layout): **rich**, the default, gives a card to each agent that is running, has failed, has just finished or needs a look, and two lines to every other finished one; **compact** is the tree, one row per agent, with the brief, the recap and the agent log under it.
+**Two layouts** (Settings → Panel → Layout): **rich**, the default, gives each agent the main session started a card while it is running, has failed, has just finished or needs a look, and two lines once it is done, the agents it started in turn on its card; **compact** is the tree, one row per agent, with the brief, the recap and the agent log under it.
 
 **Look** (Settings → Panel → Look, or `CODEX_HUD_LOOK`) draws the bar and the panes' titles in one of five ways: tab (the default), band, tile, frame and pill.
 

@@ -3,7 +3,7 @@ import type { SubagentTree } from '../types.js';
 import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
-import { initialPanelState, reconcileSelection, visibleRows, countExpired, type PanelState, type PanelRow } from './panel-state.js';
+import { initialPanelState, reconcileSelection, visibleRows, type PanelState, type PanelRow } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { modelLegend } from './model-glyphs.js';
 import { iconSet } from './hud-config.js';
@@ -17,7 +17,7 @@ import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
 import { TURN_CLOCKS, TURN_CLOCK_LONG, isUntracked, UNTRACKED_ROW, listsWorktrees, worktreeOfItem } from './monitor-labels.js';
-import { paneRows, agentsView } from './monitor-panes.js';
+import { paneRows, agentsView, putAwayCount } from './monitor-panes.js';
 import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
 import { roleSet } from './directions.js';
 
@@ -279,7 +279,7 @@ export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: 
  */
 export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state: MonitorState, width: number): string[] {
   const now = input.nowMs ?? Date.now();
-  const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
+  const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
   return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false})];
 }
 
@@ -407,7 +407,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   let footPlan = planFoot(input,state,width,height,now,noticeRows.length);
   let footRows = footPlan.rows;
   // Every control the panel has is on its first rows; nothing else is a button.
-  const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
+  const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
   const top = Math.min(height,bar.lines.length);
   let budget = Math.max(0,height-top-footRows-noticeRows.length);
   // A closed pane takes no row at all; in the tabs layout only the one shown

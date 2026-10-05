@@ -615,6 +615,19 @@ test('an agent shows its own context fill where the row can carry it, and nothin
   } finally {setDisplayConfig(previous);}
 });
 
+test('in rich the older button counts the agents the list put away, not the subtasks on their cards',()=>{
+  const gone=new Date(now-600_000);
+  const lead:SubagentTreeNode={...make('00000000-0000-4000-8000-000000000004','lead','running'),children:[
+    {...make('00000000-0000-4000-8000-000000000005','impl','completed'),depth:2,statusAt:gone},
+    {...make('00000000-0000-4000-8000-000000000006','review','completed'),depth:2,statusAt:gone}]};
+  const shown:SubagentTree={...tree,nodes:[lead,{...nodes[0],statusAt:gone}]};
+  const state:MonitorState={...initialMonitorState(),style:'rich'};state.tree.lingerMs=180_000;
+  const frame=renderMonitor({tree:shown,worktrees,state,width:40,height:28,nowMs:now});
+  assert.match(stripAnsi(frame.lines[0]),/⊕1 /,'Hegel alone: the subtasks are on the lead\'s card');
+  const compact=renderMonitor({tree:shown,worktrees,state:{...state,style:'compact'},width:40,height:28,nowMs:now});
+  assert.match(stripAnsi(compact.lines[0]),/⊕3 /,'compact lists every agent');
+});
+
 test('the agents summary counts what the linger window hid, and a click or a brings it back',()=>{
   const finished:SubagentTree={...tree,nodes:[{...nodes[0],statusAt:new Date(now-600_000)},{...nodes[1],status:'running'}]};
   let state=initialMonitorState();state.tree.lingerMs=180_000;

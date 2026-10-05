@@ -36,7 +36,7 @@
 import type { MonitorData, MonitorFrame, MonitorState } from './monitor.js';
 import { fit, meterRow, writtenAge, iconic, squeeze, age, METER_MIN, type EdgeMeter } from './monitor.js';
 import { briefFields, BRIEF_KEEP, type BriefField, type BriefShape } from './cards.js';
-import { tonePaint, type StatusCard, type StatusTone } from './status-block.js';
+import { tonePaint, type StatusTone } from './status-block.js';
 import { colors, theme, truncateAnsi, visualLength, stripAnsi } from './colors.js';
 import { t } from './i18n.js';
 import { look } from './control-bar.js';
