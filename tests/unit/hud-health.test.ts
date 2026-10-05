@@ -48,20 +48,20 @@ test('the record starts empty and keeps one read time and one error', () => {
 test('the health row says when the HUD last read, and a current failure stands out', () => {
   assert.equal(healthLine(undefined, NOW), null);
   assert.equal(healthLine({}, NOW), null, 'no data is no row, not "never"');
-  assert.equal(healthLine({ lastReadAt: ago(3) }, NOW), colors.dim('Last read 3s ago'));
+  assert.equal(healthLine({ lastReadAt: ago(3) }, NOW), colors.dim('HUD read the session 3s ago'));
 
   const failing = healthLine({ lastReadAt: ago(120), lastError: { source: 'rollout', message: 'EACCES', at: ago(2) } }, NOW);
-  assert.equal(failing, theme.warning('Last read 2m ago · Session read failed 2s ago: EACCES'));
+  assert.equal(failing, theme.warning('HUD read the session 2m ago · Session read failed 2s ago: EACCES'));
 
   const recovered = healthLine({ lastReadAt: ago(1), lastError: { source: 'git', message: 'boom', at: ago(600) } }, NOW);
-  assert.equal(recovered, colors.dim('Last read 1s ago · Git failed 10m ago: boom'), 'an old failure is history');
+  assert.equal(recovered, colors.dim('HUD read the session 1s ago · Git failed 10m ago: boom'), 'an old failure is history');
 
   const never = healthLine({ lastError: { source: 'session', message: 'ENOENT', at: ago(4) } }, NOW);
   assert.equal(stripAnsi(never ?? ''), 'No read yet · Session lookup failed 4s ago: ENOENT');
 
   const previous = setLanguage('zh');
   try {
-    assert.equal(stripAnsi(healthLine({ lastReadAt: ago(3) }, NOW) ?? ''), '上次读取 3s前');
+    assert.equal(stripAnsi(healthLine({ lastReadAt: ago(3) }, NOW) ?? ''), 'HUD 读取会话 3s前');
   } finally {
     setLanguage(previous);
   }
@@ -76,7 +76,7 @@ test('the settings page carries the health row above the help, within its width'
     const text = frame.lines.map(stripAnsi);
     assert.equal(frame.lines.length, 12);
     assert.ok(frame.lines.every((line) => visualLength(line) <= width), `width ${width}`);
-    assert.ok(text.at(-3)?.startsWith('Last read'.slice(0, width)), text.join('\n'));
+    assert.ok(text.at(-3)?.startsWith('HUD read'.slice(0, width - 1)), text.join('\n'));
     assert.equal(frame.rowCount, plain.rowCount - 1, 'the row costs one setting row, not the help');
   }
   assert.equal(renderSettingsPage(state, 30, 12, { state: {}, nowMs: NOW }).rowCount, plain.rowCount);

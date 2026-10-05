@@ -1,4 +1,4 @@
-import type { HudSettings } from '../settings.js';
+import { defaultSettings, type HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { HudHealthState } from '../types.js';
 import { truncateAnsi, colors, theme, visualLength } from './colors.js';
@@ -37,7 +37,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'sort',group:'Agents',label:'Order',short:'Order',values:['active','created'],help:'Running first, or by age'},
   {key:'finishedLingerMs',group:'Agents',label:'Hide finished',short:'Hide',values:[60_000,180_000,600_000,1_800_000,0],
     help:'Done agents hide after this',format:minutes},
-  {key:'agentLog',group:'Agents',label:'Log, model off',short:'Log',values:[false,true],help:'Agent log even with no backend'},
+  {key:'agentLog',group:'Agents',label:'Agent log',short:'Log',values:[false,true],help:'Keep a log on each card even with no backend'},
   // Everything that sends material to a model, in one place, each with its
   // own switch and a help line saying what it sends.
   {key:'briefing',group:'LLM',label:'Backend',short:'Model',values:['off','omp','agy','api'],help:'Who writes; off stops all below'},
@@ -62,8 +62,9 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','folded','closed'],help:PANE_HELP},
   {key:'timelinePane',group:'Panel',label:'5 Timeline',short:'5 Events',values:['open','folded','closed'],help:PANE_HELP},
   {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:[32,56],help:'Panel columns',
-    format:value => ({32:'narrow',56:'wide'} as Record<number,string>)[Number(value)] ?? String(value)},
-  {key:'art',group:'Panel',label:'Decoration',short:'Art',values:['off','dots','color','ascii'],help:'Picture in empty space; codex-hud-art sets it'},
+    // 0, from an older settings file, is the panel's own choice.
+    format:value => ({0:'auto',32:'narrow',56:'wide'} as Record<number,string>)[Number(value)] ?? String(value)},
+  {key:'art',group:'Panel',label:'Picture',short:'Art',values:['off','dots','color','ascii'],help:'Picture in empty space; codex-hud-art sets it'},
   {key:'mouse',group:'Panel',label:'Mouse',short:'Mouse',values:[true,false],help:'Click and scroll the panel'},
   {key:'refreshMs',group:'Panel',label:'Refresh',short:'Refresh',values:[500,1000,2000,5000],help:'How often the panel reads',format:seconds},
 ];
@@ -85,11 +86,34 @@ export interface SettingsFrame {
   actions:Array<{action:'back'|'save'|'reset';x:number;width:number}>;
 }
 
-type DisplayLine = {group:string} | {index:number};
+type DisplayLine = {group:string} | {index:number} | {note:string};
 
-/** Section headings interleaved with the rows they head, in reading order. */
-const DISPLAY: readonly DisplayLine[] = SETTING_ROWS.flatMap((row,index) =>
-  index === 0 || SETTING_ROWS[index-1].group !== row.group ? [{group:row.group},{index}] : [{index}]);
+/**
+ * Rows that do nothing until another is on: every model feature needs a
+ * backend, desktop notices need notifications, the recap floor needs the
+ * main recap. They stay selectable, so they can be set up in advance, but
+ * step back while their parent is off.
+ */
+function inactive(key:keyof HudSettings,draft:HudSettings):boolean {
+  const row = SETTING_ROWS.find(entry => entry.key === key);
+  if (row?.group === 'LLM' && key !== 'briefing' && draft.briefing === 'off') return true;
+  if (key === 'notifyDesktop' && !draft.notify) return true;
+  if (key === 'recapFloorMs' && !draft.briefMain) return true;
+  return false;
+}
+
+/**
+ * Section headings interleaved with the rows they head, in reading order,
+ * and under Backend, while it is off, the note saying why the rows below
+ * it are dim.
+ */
+function displayLines(draft:HudSettings):DisplayLine[] {
+  return SETTING_ROWS.flatMap((row,index):DisplayLine[] => [
+    ...(index === 0 || SETTING_ROWS[index-1].group !== row.group ? [{group:row.group}] : []),
+    {index},
+    ...(row.key === 'briefing' && draft.briefing === 'off' ? [{note:'takes effect with a backend'}] : []),
+  ]);
+}
 
 function valueText(row:SettingRow,value:SettingValue,narrow:boolean):string {
   const text = typeof value === 'boolean' ? value ? 'on' : 'off' : row.format ? row.format(value) : String(value);
@@ -97,23 +121,52 @@ function valueText(row:SettingRow,value:SettingValue,narrow:boolean):string {
   return narrow && language() === 'en' ? NARROW_VALUES[text] ?? text : t(text);
 }
 
-function rowLine(row:SettingRow,value:SettingValue,selected:boolean,dirty:boolean,width:number):{text:string;back?:number} {
-  const narrow = width < 24;
+/** The label column: the widest label on the page and two columns, so each value starts beside its name. */
+function labelColumn(narrow:boolean):number {
+  return Math.max(...SETTING_ROWS.map(row => visualLength(t(narrow ? row.short : row.label))))+2;
+}
+
+/**
+ * A row: its label in the label column, the value right after it (in the
+ * accent when it is not the default), and where the page is wide enough a
+ * dim hint saying what it does. Too narrow for the column and the widest
+ * value, the values sit at the right edge instead, lined up there. `dim`
+ * steps a row back whose parent is off.
+ */
+function rowLine(row:SettingRow,value:SettingValue,selected:boolean,dirty:boolean,dim:boolean,width:number,columns:boolean,hintAt=0):{text:string;back?:number} {
+  const narrow = !columns;
   const gutter = `${selected ? '›' : ' '}${dirty ? '*' : ' '} `;
-  const shown = valueText(row,value,narrow);
-  const label = t(narrow ? row.short : row.label);
-  const margin = narrow ? 0 : 1;
-  // Widths are display columns, not string lengths: a Chinese label is two
-  // columns a character.
-  // The chevrons say ←→ changes this row; they go first when space runs out.
-  const chevrons = selected && gutter.length+visualLength(label)+1+visualLength(shown)+4+margin <= width;
-  const tail = chevrons ? `‹ ${shown} ›` : shown;
-  const room = Math.max(0,width-margin-gutter.length-visualLength(tail)-1);
-  const name = truncateAnsi(label,room);
-  const pad = ' '.repeat(Math.max(1,width-margin-gutter.length-visualLength(name)-visualLength(tail)));
-  const drawn = chevrons ? `${colors.dim('‹')} ${theme.strong(shown)} ${colors.dim('›')}` : theme.accent(shown);
-  const text = `${selected ? theme.accent('›') : ' '}${dirty ? theme.warning('*') : ' '} ${name}${pad}${drawn}`;
-  // The highlight spans the whole row, gaps included, like the agent list's.
+  const shown = valueText(row,value,width < 24);
+  const label = t(width < 24 ? row.short : row.label);
+  const changed = defaultSettings()[row.key] !== value;
+  const paintValue = dim ? colors.dim : changed ? theme.accent : (s:string) => s;
+  if (narrow) {
+    const margin = width < 24 ? 0 : 1;
+    // Widths are display columns, not string lengths: a Chinese label is two
+    // columns a character.
+    // The chevrons say ←→ changes this row; they go first when space runs out.
+    const chevrons = selected && gutter.length+visualLength(label)+1+visualLength(shown)+4+margin <= width;
+    const tail = chevrons ? `‹ ${shown} ›` : shown;
+    const room = Math.max(0,width-margin-gutter.length-visualLength(tail)-1);
+    const name = truncateAnsi(label,room);
+    const pad = ' '.repeat(Math.max(1,width-margin-gutter.length-visualLength(name)-visualLength(tail)));
+    const drawn = chevrons ? `${colors.dim('‹')} ${theme.strong(shown)} ${colors.dim('›')}` : paintValue(shown);
+    const text = `${selected ? theme.accent('›') : ' '}${dirty ? theme.warning('*') : ' '} ${dim ? colors.dim(name) : name}${pad}${drawn}`;
+    return {text:selected ? theme.selected(text) : text,back:chevrons ? gutter.length+visualLength(name)+pad.length : undefined};
+  }
+  const column = labelColumn(false);
+  const chevrons = selected && gutter.length+column+visualLength(shown)+4 <= width;
+  const name = truncateAnsi(label,Math.max(1,width-gutter.length-visualLength(shown)-(chevrons ? 4 : 0)-1));
+  const pad = ' '.repeat(Math.max(1,Math.min(column,width-gutter.length-visualLength(shown)-(chevrons ? 4 : 0))-visualLength(name)));
+  const drawn = chevrons ? `${colors.dim('‹')} ${theme.strong(shown)} ${colors.dim('›')}` : paintValue(shown);
+  const used = gutter.length+visualLength(name)+pad.length+visualLength(shown)+(chevrons ? 4 : 0);
+  // What the row does, beside it, where the page has room for it; the
+  // selected row's help is also at the foot, whole.
+  // The hints share a column too, past the widest value.
+  const gap = Math.max(2,hintAt-used);
+  const room = width-used-gap;
+  const hint = width >= 70 && room >= 8 ? ' '.repeat(gap)+colors.dim(truncateAnsi(t(row.help),room)) : '';
+  const text = `${selected ? theme.accent('›') : ' '}${dirty ? theme.warning('*') : ' '} ${dim ? colors.dim(name) : name}${pad}${drawn}${hint}`;
   return {text:selected ? theme.selected(text) : text,back:chevrons ? gutter.length+visualLength(name)+pad.length : undefined};
 }
 
@@ -123,14 +176,14 @@ const HEALTH_SOURCES: Record<string,string> = {
 };
 
 /**
- * The panel's own reads, in one row: "Last read 2s ago", and the latest
+ * The panel's own reads, in one row: "HUD read the session 2s ago", and the latest
  * failure when there has been one, so a quiet session and a HUD that cannot
  * read stop looking alike. A failure newer than the last good read is the
  * current state and is painted as a warning; an older one is history.
  */
 export function healthLine(health:HudHealthState|undefined,nowMs:number):string|null {
   if (!health?.lastReadAt && !health?.lastError) return null;
-  const read = health.lastReadAt ? t('Last read {age} ago',{age:age(health.lastReadAt,nowMs)}) : t('No read yet');
+  const read = health.lastReadAt ? t('HUD read the session {age} ago',{age:age(health.lastReadAt,nowMs)}) : t('No read yet');
   const error = health.lastError;
   if (!error) return colors.dim(read);
   const failure = t('{source} failed {age} ago: {reason}',{source:t(HEALTH_SOURCES[error.source] ?? error.source),
@@ -152,6 +205,10 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   const callsRow = health && height > 4 ? modelCallsLine(health.modelCalls) : null;
   const count = Math.max(0,height-3-(healthRow ? 1 : 0)-(callsRow ? 1 : 0));
   const selected = Math.min(SETTING_ROWS.length-1,Math.max(0,state.selected));
+  const DISPLAY = displayLines(state.draft);
+  // The label column, where the widest value with its chevrons still fits beside it.
+  const widest = Math.max(...SETTING_ROWS.map(row => visualLength(valueText(row,state.draft[row.key],false))));
+  const columns = width >= 24 && width >= 3+labelColumn(false)+widest+4;
   const at = DISPLAY.findIndex(line => 'index' in line && line.index === selected);
   // Scroll by screen line, keeping the selected row's heading in view with it.
   const top = at > 0 && 'group' in DISPLAY[at-1] ? at-1 : at;
@@ -182,6 +239,11 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   for (let i = 0; i < count; i++) {
     const line = DISPLAY[i+offset];
     if (!line) { lines.push(''); rows.push(null); continue; }
+    if ('note' in line) {
+      lines.push(colors.dim(truncateAnsi(`     ${t(line.note)}`,width)));
+      rows.push(null);
+      continue;
+    }
     if ('group' in line) {
       const title = ` ${t(line.group)} `;
       lines.push(colors.dim(`──${title}${'─'.repeat(Math.max(0,width-2-visualLength(title)))}`));
@@ -189,7 +251,7 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
       continue;
     }
     const row = SETTING_ROWS[line.index];
-    const drawn = rowLine(row,state.draft[row.key],line.index === selected,original[row.key] !== state.draft[row.key],width);
+    const drawn = rowLine(row,state.draft[row.key],line.index === selected,original[row.key] !== state.draft[row.key],inactive(row.key,state.draft),width,columns,3+labelColumn(false)+widest+4+2);
     if (drawn.back !== undefined) back = {y:lines.length,x:drawn.back};
     lines.push(drawn.text);
     rows.push(line.index);
