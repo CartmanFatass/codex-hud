@@ -57,21 +57,21 @@ try:
  assert 'FOUND_THE_CAUSE' not in plain, 'monitor must not show reply text'
  assert 'Checks' not in plain and 'Reports' not in plain
  # Agents is the page, with no box or title; every other pane starts closed.
- assert '14 run' in plain and '1 Agents' not in plain and '2 Worktrees' not in plain
+ assert '▸14' in plain and '1 Agents' not in plain and '2 Worktrees' not in plain
  send(b'2')
  wait_for('1 mod')
  send(b'1v')
  inspect=wait_for('Turn age:')
  assert b'\\x1b[' not in inspect, 'Inspector must not print escaped colour codes'
  send(b'x')
- wait_for('14 run')
+ wait_for('▸14')
  send(b'3')
  wait_for('sample.ts')
  send(b'z')
  zoom=wait_for('sample.ts')
- assert b'14 run' not in zoom, 'zoom must hide other panes'
+ assert '▸14'.encode() not in zoom, 'zoom must hide other panes'
  send(b'\x1b')
- wait_for('14 run')
+ wait_for('▸14')
  send(b'1G')
  wait_for('agent-13')
  # Wheel up over Agents (SGR coordinates are one-based).
@@ -82,18 +82,18 @@ try:
  wait_for('sample.ts')
  send(b'3\r')
  zoom=wait_for('after')
- assert b'14 run' not in zoom.rsplit(b'\x1b[H',1)[-1], 'opening diff must zoom automatically'
+ assert '▸14'.encode() not in zoom.rsplit(b'\x1b[H',1)[-1], 'opening diff must zoom automatically'
  send(b'z')
- wait_for('14 run')
+ wait_for('▸14')
  send(b'z')
  zoom=wait_for('after')
- assert b'14 run' not in zoom, 'wide zoom must hide other panes'
+ assert '▸14'.encode() not in zoom, 'wide zoom must hide other panes'
  send(b'\x1b')
- wait_for('14 run')
+ wait_for('▸14')
  # The diff left the Inspector open and focused; close it so 4 has
  # something to reopen rather than relying on a timed repaint.
  send(b'x')
- closed=wait_for('14 run')
+ closed=wait_for('▸14')
  assert b'Inspector' not in closed.rsplit(b'\x1b[H',1)[-1], 'x must close the Inspector'
  send(b'4')
  wait_for('Inspector')
@@ -104,16 +104,16 @@ try:
  send(b's')
  wait_for('Saved')
  send(b'\x1b')
- wait_for('14 run')
+ wait_for('▸14')
  fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',12,16,0,0))
  os.kill(proc.pid,signal.SIGWINCH)
- wait_for('Main')
+ wait_for('←')
  send(b'?')
  wait_for('Monitor keys')
  send(b'G')
  wait_for('ultra')
  send(b'\x1b')
- wait_for('Main')
+ wait_for('←')
  send(b'q')
  tail=b''
  end=time.monotonic()+3

@@ -63,18 +63,18 @@ test('agent rows use model/effort glyphs, not full model names or effort words',
 test('open panes fill the tree column; folded panes stay one row',()=>{
   const frame=draw();
   const bottom=frame.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b);
-  assert.equal(bottom.y+bottom.height,27);
+  assert.equal(bottom.y+bottom.height,28,'with no status card, the panes reach the foot');
   assert.ok(frame.panes[0].height>=5);
   let state=initialMonitorState();
   state.modes={agents:'open',worktrees:'open',changes:'open',details:'open',timeline:'closed'};
   const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[{path:'a.ts',index:' ',worktree:'M',added:1,removed:0,binary:false,conflict:false}]};
   const four=renderMonitor({tree,worktrees,git,state,width:30,height:28,nowMs:now});
   assert.equal(four.panes.length,4);
-  assert.equal(four.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b).y+four.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b).height,27);
+  assert.equal(four.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b).y+four.panes.reduce((a,b)=>a.y+a.height>=b.y+b.height?a:b).height,28);
   state=withWorktrees();state.modes.worktrees='folded';
   const folded=draw(state);
   assert.equal(folded.panes[1].height,1);
-  assert.equal(folded.panes[0].y+folded.panes[0].height,26,'Agents takes the room the folded box gave up');
+  assert.equal(folded.panes[0].y+folded.panes[0].height,27,'Agents takes the room the folded box gave up');
   state=withWorktrees();state.modes.agents='folded';
   assert.ok(draw(state).panes[0].height>1,'Agents cannot be folded');
 });
@@ -89,7 +89,7 @@ test('width, height and margins remain bounded with CJK and terminal controls',(
       assert.ok(frame.lines.every(line=>visualLength(line)<=width));
       assert.doesNotMatch(frame.lines.join(''),/\x1b\[2J|\u202e/);
       assert.ok(frame.lines.every(line=>!line.includes('\n')));
-      for(const p of frame.panes)assert.ok(p.y+p.height<=height-1);
+      for(const p of frame.panes)assert.ok(p.y>=1&&p.y+p.height<=height,'below the bar, inside the panel');
       // At 24 columns and up a pane is a box. Below that the side borders are
       // two columns the content needs more, so rows run edge to edge.
       if(width>=16)for(const p of frame.panes)for(let y=p.y+1;y<p.y+p.height-1;y++){
@@ -122,15 +122,21 @@ test('Agents stays even when every setting says closed, and has no fold or close
   const state=initialMonitorState();state.modes={agents:'closed',worktrees:'closed',changes:'closed',details:'closed',timeline:'closed'};
   const frame=draw(state);
   assert.deepEqual(frame.panes.map(p=>p.id),['agents']);
-  assert.equal(frame.controls.filter(c=>c.pane==='agents').length,0);
+  assert.ok(frame.controls.filter(c=>c.pane==='agents').every(c=>c.kind==='tab'&&c.y===0),'its only switch is its tab');
   assert.equal(frame.controls.filter(c=>c.kind==='main').length,1);
   assert.equal(frame.controls.filter(c=>c.kind==='settings').length,1);
   assert.equal(monitorModes({...defaultSettings(),agentsPane:'closed'}).agents,'open');
 });
 
-test('the full pinned Main row targets the root UUID, not the selected agent',()=>{
+test('the control bar: ← and the main session\'s name target the root UUID; the rest of the row is other switches',()=>{
   const frame=draw();
-  for(const x of [0,5,15,29])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
+  for(const x of [0,1,5,13])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
+  // At 30 columns the words go, then the tabs of closed panes.
+  assert.match(stripAnsi(frame.lines[0]),/^ ← Main session {2}1 2 +, {2}\? $/);
+  assert.match(stripAnsi(draw(withWorktrees(),45).lines[0]),/^ ← Main session {2}1 2 3 4 5 +,Settings {2}\? $/);
+  assert.equal(handleMonitorInput(frame.state,mouse(29,0),{tree,worktrees,frame}).action,undefined);
+  assert.equal(handleMonitorInput(frame.state,mouse(28,0),{tree,worktrees,frame}).state.help,true,'? opens the keys');
+  assert.deepEqual(handleMonitorInput(frame.state,mouse(25,0),{tree,worktrees,frame}).action,{type:'settings'});
   assert.deepEqual(handleMonitorInput(frame.state,key('main'),{tree,worktrees,frame}).action,{type:'switch',id:root});
 });
 
@@ -145,10 +151,26 @@ test('only visible agent rows navigate; the summary and empty space do not',()=>
   assert.equal(handleMonitorInput(frame.state,mouse(3,pane.y+pane.height-1),{tree,worktrees,frame}).action,undefined);
 });
 
-test('x on a box is not fold and its hit target cannot trigger navigation',()=>{
-  const frame=draw();const close=frame.controls.find(c=>c.kind==='close'&&c.pane==='worktrees')!;
-  const result=handleMonitorInput(frame.state,mouse(close.x+1,close.y),{tree,worktrees,frame});
-  assert.equal(result.action,undefined);assert.equal(result.state.modes.worktrees,'closed');assert.equal(draw(result.state).panes.some(p=>p.id==='worktrees'),false);
+test('a pane\'s tab: open and focus, then fold, then close; its title rule is only its name',()=>{
+  let frame=draw(withWorktrees(),45);const ctx=()=>({tree,worktrees,frame});
+  const tab=(pane:string)=>frame.controls.find(c=>c.kind==='tab'&&c.pane===pane)!;
+  assert.ok(!frame.controls.some(c=>c.y>0&&(c.kind==='tab'||c.kind==='settings'||c.kind==='help')),'no switch below the bar');
+  const box=frame.panes.find(p=>p.id==='worktrees')!;
+  assert.match(stripAnsi(frame.lines[box.y]),/^┌ 2 Worktrees ─+┐$/);
+  assert.equal(handleMonitorInput(frame.state,mouse(box.width-3,box.y),ctx()).state.modes.worktrees,'open','the rule is no button');
+  let state=handleMonitorInput(frame.state,mouse(tab('worktrees').x,0),ctx()).state;
+  assert.equal(state.focus,'worktrees');assert.equal(state.modes.worktrees,'open');
+  frame=draw(state,45);state=handleMonitorInput(state,mouse(tab('worktrees').x,0),ctx()).state;
+  assert.equal(state.modes.worktrees,'folded');
+  frame=draw(state,45);state=handleMonitorInput(state,mouse(tab('worktrees').x,0),ctx()).state;
+  assert.equal(state.modes.worktrees,'closed');assert.notEqual(state.focus,'worktrees');
+  frame=draw(state,45);assert.equal(frame.panes.some(p=>p.id==='worktrees'),false);
+  state=handleMonitorInput(state,mouse(tab('worktrees').x,0),ctx()).state;
+  assert.equal(state.modes.worktrees,'open');assert.equal(state.focus,'worktrees');
+  // Agents is the page: its tab only focuses.
+  frame=draw(state,45);state=handleMonitorInput(state,mouse(tab('agents').x,0),ctx()).state;
+  assert.equal(state.focus,'agents');
+  frame=draw(state,45);assert.equal(handleMonitorInput(state,mouse(tab('agents').x,0),ctx()).state.modes.agents,'open');
 });
 
 test('keyboard motion only previews; Inspector remains closed until explicitly opened',()=>{
@@ -362,15 +384,18 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   let frame=renderMonitor({tree:finished,worktrees,state,width:30,height:28,nowMs:now});
   let pane=frame.panes[0];
   assert.deepEqual(pane.rows.filter(r=>r.item).map(r=>r.item),[nodes[1].id]);
-  assert.match(stripAnsi(pane.rows[0].text),/\+1 older/);
+  assert.match(stripAnsi(pane.rows[0].text),/^▸1 ✓1$/,'the summary is counts only');
+  assert.match(stripAnsi(frame.lines[0]),/ a\+1 /);
   const ctx={tree:finished,worktrees,frame,nowMs:now};
-  const shown=handleMonitorInput(frame.state,mouse(3,pane.y),ctx);
-  assert.equal(shown.action,undefined,'the summary is a toggle, not a session switch');
+  assert.ok(!handleMonitorInput(frame.state,mouse(1,pane.y),ctx).state.tree.showAll,'the summary is no switch');
+  const older=frame.controls.find(c=>c.kind==='older')!;
+  const shown=handleMonitorInput(frame.state,mouse(older.x,0),ctx);
+  assert.equal(shown.action,undefined,'a+1 is a toggle, not a session switch');
   assert.equal(shown.state.tree.showAll,true);
   frame=renderMonitor({tree:finished,worktrees,state:shown.state,width:30,height:28,nowMs:now});
   pane=frame.panes[0];
   assert.equal(pane.rows.filter(r=>r.item).length,2);
-  assert.match(stripAnsi(pane.rows[0].text),/hide old/);
+  assert.match(stripAnsi(frame.lines[0]),/ a−1 /);
   assert.equal(handleMonitorInput(frame.state,key('show-all'),{...ctx,frame}).state.tree.showAll,false);
   // A finished row carries no clock; it recedes once its finish is old news.
   const oldRow=pane.rows.find(r=>r.item===nodes[0].id)!.text;
@@ -380,8 +405,13 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   // Counts that are zero stay out of the summary.
   const allDone:SubagentTree={...tree,nodes:[{...nodes[0],status:'completed',statusAt:new Date(now-1000)}]};
   const summary=stripAnsi(renderMonitor({tree:allDone,worktrees,state:initialMonitorState(),width:30,height:28,nowMs:now}).panes[0].rows[0].text);
-  assert.match(summary,/✓1 done/);
-  assert.doesNotMatch(summary,/run|failed|unknown/);
+  assert.equal(summary.trimEnd(),'✓1');
+  // Where the reader asked for words, the counts say what they count.
+  const previous=setDisplayConfig({glyphs:'text'});
+  try {
+    const worded=stripAnsi(renderMonitor({tree:allDone,worktrees,state:initialMonitorState(),width:30,height:28,nowMs:now}).panes[0].rows[0].text);
+    assert.equal(worded.trimEnd(),'✓1 done');
+  } finally {setDisplayConfig(previous);}
 });
 
 test('a running row shows its turn length as a clock face, and a quiet agent in the warning colour',()=>{

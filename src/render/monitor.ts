@@ -17,6 +17,7 @@ import { t } from './i18n.js';
 import { agentTitle, shownName, labelled } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { drawAgentsView, WHEEL_ROWS } from './agents-view.js';
+import { controlBar } from './control-bar.js';
 import { planFoot, nextLevel, type StatusLevel, type FootInfo } from './status-foot.js';
 import { formatWindowLabel } from './quota.js';
 import type { WorkbenchEvent } from './workbench-state.js';
@@ -66,11 +67,10 @@ export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
 export interface RowControl { kind: MonitorControl['kind']; item?: string; x: number; width: number }
 /**
- * `item` is what a click selects; `action` is a row that is a control
- * instead. `key` names the block a row belongs to, so a scrolled view can
+ * `item` is what a click selects. `key` names the block a row belongs to, so a scrolled view can
  * keep its place; `controls` are click targets on the row.
  */
-export interface MonitorRow { text: string; item?: string; action?: 'toggle-finished'; key?: string; controls?: RowControl[] }
+export interface MonitorRow { text: string; item?: string; key?: string; controls?: RowControl[] }
 export interface MonitorRect {
   id: MonitorPane;
   x: number; y: number; width: number; height: number;
@@ -88,10 +88,12 @@ export interface MonitorControl {
   /**
    * `expand` opens or closes a card's timeline (and selects it), `switch`
    * (a card's name) selects it and switches Codex to it, `more` scrolls the
-   * agents view a page, `level` (the status card's top edge) changes how
-   * much the card shows.
+   * agents view a page, `level` (the status card's band) changes how
+   * much the card shows. `tab` (a pane's number on the control bar) opens,
+   * focuses, folds or closes that pane; `older` shows or hides what the
+   * linger window put away; `help` opens the keys.
    */
-  kind: 'main' | 'settings' | 'fold' | 'close' | 'brief' | 'level' | 'log' | 'expand' | 'more' | 'switch';
+  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'brief' | 'level' | 'log' | 'expand' | 'more' | 'switch';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
@@ -462,8 +464,8 @@ export function finishedAt(node: SubagentTreeNode): Date | undefined {
 }
 
 /**
- * The agents' heading: what is running, failed and done, and the switch for
- * what the linger window put away. The whole row is that switch.
+ * The agents' heading: what is running, failed and done, as counts. The
+ * switch for what the linger window put away is on the control bar.
  */
 export function summaryRow(input: MonitorData, state: MonitorState, width: number, now: number): {row: MonitorRow; total: number; expired: number} {
   const everyone = visibleRows(input.tree.nodes,{...state.tree,filter:'all',collapsed:new Set(),showAll:true},now);
@@ -471,7 +473,8 @@ export function summaryRow(input: MonitorData, state: MonitorState, width: numbe
   for (const {node} of everyone) totals[node.status === 'running' || node.status === 'starting' ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
   // What the linger window puts away, counted whether or not it is showing.
   const expired = countExpired(input.tree.nodes,{...state.tree,showAll:false},now);
-  const words = width >= 22;
+  // Counts only, "!1 ▸1 ✓5": the words come back where the reader asked for words.
+  const words = !iconic() && width >= 22;
   const count = (icon: string, paint: (s: string) => string, n: number, word: string) =>
     `${paint(icon)}${n}${words ? colors.dim(` ${t(word)}`) : ''}`;
   // Only what is there: "▸0 run" beside thirty finished agents is noise.
@@ -484,10 +487,7 @@ export function summaryRow(input: MonitorData, state: MonitorState, width: numbe
   // Guardian reviews under the main session count here, not as agents.
   const chip = guardianChip(input.tree.nodes);
   const headed = chip ? `${summary}${summary ? colors.dim(' · ') : ''}${chip}` : summary;
-  // The summary doubles as the switch for what the linger window hid.
-  const toggle = !expired ? '' : state.tree.showAll ? colors.dim(t(words ? 'hide old' : '−old'))
-    : theme.accent(words ? t('+{n} older',{n:expired}) : `+${expired}`);
-  return {row:{text:pair(headed,toggle,width),...(expired ? {action:'toggle-finished' as const} : {})},total:everyone.length,expired};
+  return {row:{text:truncateAnsi(headed,width)},total:everyone.length,expired};
 }
 
 /**
@@ -827,10 +827,9 @@ export function briefSaid(input: MonitorData, width: number): string[] {
   return [...body,...(spoke ? failure.slice(0,1) : failure)];
 }
 
-/** The brief's rule as a row, its switch a click target. */
+/** The brief's rule as a row. Its switch is on the control bar. */
 export function briefRuleRow(brief: NonNullable<MonitorData['brief']>, width: number): MonitorRow {
-  const rule = briefRule(brief,width);
-  return {text:rule.line,key:'brief',...(rule.control ? {controls:[{kind:'brief' as const,x:rule.control.x,width:rule.control.width}]} : {})};
+  return {text:briefRule(brief,width),key:'brief'};
 }
 
 /**
@@ -930,19 +929,14 @@ export function writtenAge(at: number, now: number): string {
 }
 
 /**
- * "─ Brief · writing… ──────── b pause": the rule heading the brief, with
- * the switch that holds the model calls at its right end. No age: a counter
- * ticking up every second said nothing a reader acts on. The switch is where
- * the eye already is, and says what pressing it does.
+ * "─ Brief · writing… ────────": the rule heading the brief and its state.
+ * No age: a counter ticking up every second said nothing a reader acts on.
+ * The switch that holds the model calls is `b‖` on the control bar.
  */
-export function briefRule(brief: NonNullable<MonitorData['brief']>, width: number): {line: string; control?: {x: number; width: number}} {
+export function briefRule(brief: NonNullable<MonitorData['brief']>, width: number): string {
   const status = brief.paused ? t('paused') : brief.running ? t('writing…') : brief.error ? t('failed') : '';
   const label = `${t('─ Brief')}${status ? ` · ${status}` : ''} `;
-  const switchText = ` ${t(brief.paused ? 'b resume' : 'b pause')} `;
-  const room = width-visualLength(label)-visualLength(switchText);
-  if (room < 1) return {line:colors.dim(truncateAnsi(label+'─'.repeat(Math.max(0,width-visualLength(label))),width))};
-  const paint = brief.paused ? theme.accent : colors.dim;
-  return {line:colors.dim(label+'─'.repeat(room))+paint(switchText),control:{x:width-visualLength(switchText),width:visualLength(switchText)}};
+  return colors.dim(truncateAnsi(label+'─'.repeat(Math.max(0,width-visualLength(label))),width));
 }
 
 function walkTree(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
@@ -973,7 +967,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   if (state.help) {
     const rich = state.style === 'rich';
     // The keys as the current layout has them: cards in rich, the tree in compact.
-    const help = [rich ? '1 Cards  2 Worktrees' : '1 Agents  2 Worktrees','3 Changes  4 Inspector','5 Timeline','x close pane  - fold','2–5 open a pane','Tab next visible pane','j/k select  o switch','g/G first / last','PgUp/PgDn or wheel scroll',
+    const help = [rich ? '1 Cards  2 Worktrees' : '1 Agents  2 Worktrees','3 Changes  4 Inspector','5 Timeline','Top row: ← main  1–5 panes  b a , ?','Click a pane\'s number: open, focus, then - and x','x close pane  - fold','2–5 open a pane','Tab next visible pane','j/k select  o switch','g/G first / last','PgUp/PgDn or wheel scroll',
       ...(rich ? ['e or Space open / close card','Click card: select','Click its name: switch','Click top rule or ▾: open'] : []),
       'h/l fold / unfold agent','f or / filter  s order',...(rich ? [] : ['Click agent: switch']),'m return Main','a show/hide older','Enter / v inspect','v more / less details','z zoom  Esc back','q close tree  , settings','b pause / resume brief',rich ? 'r status card: min / status / full' : 'r status card: min / status',...(rich ? ['Wheel over the card: its brief'] : []),'Click the card\'s band: same as r',...(rich ? [] : ['Click a log line: select agent']),'✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary']
@@ -1035,8 +1029,10 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   if (ids.includes('agents') && agentsHeight < DENSE_BELOW && (content.get('agents')?.length ?? 0) > agentsHeight)
     content.set('agents',agentsView(input,state,width,now,false));
   frame.lines = Array.from({length:height},()=>fit('',width));
-  frame.lines[0] = theme.accent(pair(t(width < 20 ? ' ← Main' : ' ← Main session'),'m ',width));
-  frame.controls.push({kind:'main',x:0,y:0,width});
+  // Every control the panel has is on its first row; nothing else is a button.
+  const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
+  frame.lines[0] = bar.line;
+  frame.controls.push(...bar.controls);
   let y = 1;
   for (const id of ids) {
     const h = sizes.get(id) ?? 0; if (!h) continue;
@@ -1053,20 +1049,15 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const pane = {id,x:0,y,width,height:h,rows,offset,contentLength:rows.length,edge,pinned:0}; frame.panes.push(pane);
     const border = colors.dim;
     const heading = id===state.focus ? theme.accent : colors.dim;
-    const buttons = width>=12 ? `[${state.modes[id]==='folded'?'+':'-'}][x]` : '';
     const shortTitle = t({agents:'Agents',worktrees:width<20?'WT':'Worktrees',changes:'Changes',details:'Inspect',timeline:'Timeline'}[id]);
     if(bordered) {
-      const title = fit(' '+t(TITLES[id])+' ',Math.max(0,width-2-buttons.length));
-      frame.lines[y] = truncateAnsi(heading('┌'+title+buttons+'┐'),width);
+      // "┌ 5 Timeline ─────┐": the name only; its switches are its tab on the bar.
+      const label = truncateAnsi(' '+t(TITLES[id])+' ',Math.max(0,width-2));
+      frame.lines[y] = truncateAnsi(heading('┌'+label+'─'.repeat(Math.max(0,width-2-visualLength(label)))+'┐'),width);
     } else {
-      // "─ Agents ────[-][x]": the rule doubles as the frame.
-      const room = Math.max(0,width-buttons.length);
-      const label = truncateAnsi('─ '+shortTitle+' ',room);
-      frame.lines[y] = truncateAnsi(heading(label+'─'.repeat(Math.max(0,room-visualLength(label)))+buttons),width);
-    }
-    if(buttons) {
-      const right = bordered ? width-1 : width;
-      frame.controls.push({kind:'fold',pane:id,x:right-6,y,width:3},{kind:'close',pane:id,x:right-3,y,width:3});
+      // "─ Timeline ────": the rule doubles as the frame.
+      const label = truncateAnsi('─ '+shortTitle+' ',width);
+      frame.lines[y] = truncateAnsi(heading(label+'─'.repeat(Math.max(0,width-visualLength(label)))),width);
     }
     for(let i=0;i<count;i++) {
       const row=rows[offset+i];
@@ -1187,6 +1178,19 @@ export function meterRow(width: number, left: string, right: string, meter?: Edg
   return left+drawn.text+right;
 }
 
+/**
+ * A click on a pane's tab: a closed pane opens and takes focus, an unfocused
+ * one takes focus (a folded one opens too), and the focused one steps on,
+ * open → folded → closed, as `-` then `x` do. Agents is the page: its tab
+ * only focuses.
+ */
+export function clickTab(state: MonitorState, id: MonitorPane): MonitorState {
+  const mode = id === 'agents' ? 'open' : state.modes[id];
+  if (id === 'agents' || mode === 'closed' || state.focus !== id) return openPane(state,id);
+  if (mode === 'open') return {...state,modes:{...state.modes,[id]:'folded'}};
+  const modes = {...state.modes,[id]:'closed' as const};
+  return {...state,modes,zoom:false,focus:MONITOR_PANES.find(pane=>modes[pane]!=='closed')??'agents'};
+}
 function openPane(state: MonitorState, id: MonitorPane): MonitorState {
   const preview = id==='agents'?'agent':id==='worktrees'?'worktree':id==='changes'?'file':state.preview;
   return {...state,focus:id,preview,modes:{...state.modes,[id]:'open'},scroll:{...state.scroll,details:preview===state.preview?state.scroll.details:0}};
@@ -1228,6 +1232,9 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     const control = input.button==='left'?ctx.frame?.controls.find(c=>input.y===c.y&&input.x>=c.x&&input.x<c.x+c.width):undefined;
     if(control?.kind==='main') return result({type:'switch',id:ctx.tree.rootId});
     if(control?.kind==='settings') return result({type:'settings'});
+    if(control?.kind==='help'){next.help=true;next.helpScroll=0;return result();}
+    if(control?.kind==='older'){next.tree.showAll=!next.tree.showAll;return result();}
+    if(control?.kind==='tab'&&control.pane){next=clickTab(next,control.pane);return result();}
     if(control?.kind==='brief') return result({type:'brief-toggle'});
     if(control?.kind==='level'){next.statusLevel=nextLevel(next);next.statusScroll=0;return result({type:'status-level'});}
     // What was clicked is in view already: selecting it does not scroll.
@@ -1249,18 +1256,15 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       if(card.total>card.brief) next.statusScroll=Math.max(0,Math.min(card.total-card.brief,(next.statusScroll??0)+(input.button==='wheel-down'?WHEEL_ROWS:-WHEEL_ROWS)));
       return result();
     }
-    if(control?.pane) {
-      next.focus=control.pane;
-      key=control.kind==='close'?'pane-close':'pane-fold';
-    } else {
+    {
       const pane=ctx.frame?.panes.find(p=>input.x>=p.x&&input.x<p.x+p.width&&input.y>=p.y&&input.y<p.y+p.height);
       if(!pane) return result();
       next.focus=pane.id;
       if(input.button==='left') {
-        if((pane.edge ?? 1)&&input.y===pane.y) key='pane-fold';
+        // A pane's title rule is its name, not a switch: a click there focuses it.
+        if((pane.edge ?? 1)&&input.y===pane.y) return result();
         else {
           const row=monitorRowAt(pane,input.x,input.y);
-          if(row?.action==='toggle-finished'){next.tree.showAll=!next.tree.showAll;return result();}
           const id=row?.item;
           if(!id)return result();
           if(pane.id==='agents') {

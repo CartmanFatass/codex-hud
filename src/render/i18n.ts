@@ -36,10 +36,6 @@ export function language(): Language {
 
 const ZH: Record<string, string> = {
   // Page frame
-  ' ← Main session': ' ← 主会话',
-  ' ← Main': ' ← 主会话',
-  ', Settings  ?': ', 设置  ?',
-  ', Settings  ? keys  1–5': ', 设置  ? 按键  1–5',
   '1 Agents': '1 Agents',
   '2 Worktrees': '2 工作树',
   '3 Changes': '3 改动',
@@ -54,16 +50,19 @@ const ZH: Record<string, string> = {
   'run': '运行',
   'done': '完成',
   'unknown': '未知',
-  'hide old': '收起',
-  '−old': '−收起',
   '+{n} older': '+{n} 已收起',
+  'hide {n}': '收起 {n}',
+  'Main session': '主会话',
+  'Main': '主会话',
+  'pause': '暂停',
+  'resume': '继续',
+  'Top row: ← main  1–5 panes  b a , ?': '顶行: ← 主会话  1–5 面板  b a , ?',
+  'Click a pane\'s number: open, focus, then - and x': '点面板编号: 打开、聚焦, 再点为 - 和 x',
   'No subagents yet': '还没有 subagent',
   'Reading session…': '正在读取会话…',
 
   // Status card
   'Status': '状态',
-  ', Settings  ? keys': ', 设置  ? 按键',
-  ', Settings': ', 设置',
   ', ?': ', ?',
   'Quota': '额度',
   'Output': '输出',
@@ -89,8 +88,6 @@ const ZH: Record<string, string> = {
   '─ Brief': '─ 简报',
   'writing…': '生成中…',
   'paused': '已暂停',
-  'b pause': 'b 暂停',
-  'b resume': 'b 继续',
   'b pause / resume brief': 'b 暂停 / 继续简报',
   'Main recap': '主会话回顾',
   'out ~{d}': '约 {d} 后用完',

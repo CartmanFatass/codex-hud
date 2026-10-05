@@ -143,12 +143,9 @@ function briefRows(fields: BriefField[], room: number): string[] {
 
 export function planFoot(input: MonitorData, state: MonitorState, width: number, height: number, now: number, notices: number): FootPlan {
   const level = shownLevel(state);
-  // Under 24 columns the card would cost more than it holds: a hint line.
-  const hint: FootPlan = { rows: height > 1 ? 1 : 0, draw(frame, foot) {
-    if (height <= 1) return;
-    frame.lines[foot] = colors.dim(truncateAnsi(t(width < 24 ? ', Settings  ?' : ', Settings  ? keys  1–5'), width));
-    frame.controls.push({ kind: 'settings', x: 0, y: foot, width: Math.min(width, 12) });
-  } };
+  // Under 24 columns the card would cost more than it holds, and with nothing
+  // to say it is not drawn: the foot is the panel's. The keys are the bar's.
+  const hint: FootPlan = { rows: 0, draw() {} };
   if (width < 24) return hint;
   const session = input.session?.(now) ?? null;
   const card = input.status?.(now) ?? null;

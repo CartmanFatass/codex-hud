@@ -131,7 +131,10 @@ test('the band carries the context meter, the corner row the quota meter with it
         if (width >= 56) assert.match(bottom, /^╰─ repo · main \* 5h /);
         if (width === 90) assert.match(top, /☀◆ 2h ─+40%─+─246K $/);
         assert.ok(frame.lines.at(-3)!.startsWith(theme.band(' ').slice(0, 10)), 'the band has its own background');
-        assert.ok(!frame.controls.some(c => c.kind === 'settings' || c.kind === 'brief'), 'no switch or hint on the card');
+        assert.ok(
+          !frame.controls.some(c => c.y > 0 && (c.kind === 'settings' || c.kind === 'brief')),
+          'no switch or hint on the card'
+        );
         assert.ok(frame.controls.some(c => c.kind === 'level' && c.y === 24 - 3 && c.width === width), 'the band steps the level');
       }
     } finally { setLanguage(previous); }

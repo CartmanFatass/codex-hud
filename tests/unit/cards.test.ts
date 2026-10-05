@@ -195,7 +195,7 @@ test('the agents view scrolls: a hint says what is out of view, the wheel and pa
     assert.equal(frame.panes[0].offset, 3, style);
     assert.equal(frame.state.tree.selectedId, selected);
     assert.match(hint(), /^↑ 3  ↓ \d+ more lines/);
-    assert.match(plain(frame)[frame.panes[0].y], /12 run/, 'the summary line stays put');
+    assert.match(plain(frame)[frame.panes[0].y], /^▸12 *$/, 'the summary line stays put');
     // Repaints keep the place; PgDn goes a page on; past the end is clamped.
     frame = draw(); state = frame.state; frame = draw();
     assert.equal(frame.panes[0].offset, 3);
@@ -236,9 +236,11 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const state = rich({ tree: { ...rich().tree, lingerMs: 180_000 } });
   const frame = renderMonitor({ tree: tree([named, old]), state, width: 32, height: 30, nowMs: now });
   const lines = plain(frame);
-  assert.match(lines[1], /▸1 run .* \+1 older$/);
+  assert.equal(lines[1].trimEnd(), '▸1 ✓1', 'counts only, the hidden one counted');
+  assert.match(lines[0], / a\+1 {2}, {2}\? $/);
   assert.ok(!lines.some(line => line.includes('old_one')));
-  const shown = handleMonitorInput(frame.state, click(2, 1), { tree: tree([named, old]), frame, nowMs: now }).state;
+  const older = frame.controls.find(c => c.kind === 'older')!;
+  const shown = handleMonitorInput(frame.state, click(older.x, 0), { tree: tree([named, old]), frame, nowMs: now }).state;
   assert.ok(plain(renderMonitor({ tree: tree([named, old]), state: shown, width: 32, height: 30, nowMs: now })).some(line => line.includes('old_one')));
   assert.ok(!lines.some(line => line.includes('Agents')), 'no Agents pane');
   const focused = handleMonitorInput({ ...frame.state, modes: { ...frame.state.modes, worktrees: 'open' }, focus: 'worktrees' }, key('agents'), { tree: tree([named]), frame }).state;
@@ -373,7 +375,7 @@ test('guardian reviews fold into a ◈N chip on their parent, or on the summary 
   const state = rich({ tree: { ...rich().tree, showAll: true } });
   const frame = renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now });
   const lines = plain(frame);
-  assert.match(lines[1], /^!1 failed {2}▸1 run {2}✓1 done · ◈1/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
+  assert.match(lines[1], /^!1 ▸1 ✓1 · ◈1/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
   const top = lines.find(line => line.includes('bench_corpus'))!;
   assert.match(top, /◈2/);
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');

@@ -113,7 +113,8 @@ test('the brief fills the room under the agents, wraps Chinese by character and 
   const lines = frame.lines.map(stripAnsi);
   const rule = lines.findIndex(line => line.startsWith('─ Brief ─'));
   assert.ok(rule > frame.panes[0].y, 'the brief sits under the agents');
-  assert.match(lines[rule], /─ b pause $/, 'no age ticking on the rule; the switch at its end');
+  assert.match(lines[rule], /^─ Brief ─+$/, 'no age ticking on the rule, and no switch on it');
+  assert.match(lines[0], / b‖ /, 'the switch is on the bar');
   assert.equal(lines[rule + 1].trimEnd(), ' dm_parent_adaptation 静默 9');
   assert.equal(lines[rule + 2].trimEnd(), ' 分钟且运行超 50 分钟，需留意');
   assert.match(lines.join('\n'), /second\\x1b\[2J line/, 'model text is sanitized like any external text');
@@ -123,7 +124,9 @@ test('the brief fills the room under the agents, wraps Chinese by character and 
   const none = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 20, nowMs: now });
   assert.ok(!none.lines.map(stripAnsi).some(line => line.includes('Brief')), 'briefing off shows nothing');
   const empty = renderMonitor({ tree: agents, state: initialMonitorState(), width: 30, height: 20, nowMs: now, brief: {} });
-  assert.ok(empty.lines.map(stripAnsi).some(line => /^─ Brief ─+ b pause $/.test(line)), 'before the first brief, the switch is already there');
+  assert.ok(empty.lines.map(stripAnsi).some(line => /^─ Brief ─+$/.test(line)));
+  assert.match(stripAnsi(empty.lines[0]), / b‖ /, 'before the first brief, the switch is already there');
+  assert.doesNotMatch(stripAnsi(none.lines[0]), / b/, 'no brief, no switch');
 });
 
 test('the brief switch pauses by key or click, and a paused brief steps back', () => {
@@ -133,14 +136,15 @@ test('the brief switch pauses by key or click, and a paused brief steps back', (
   const lines = frame.lines.map(stripAnsi);
   const rule = lines.findIndex(line => line.startsWith('─ Brief · paused'));
   assert.ok(rule > 0);
-  assert.match(lines[rule], / b resume $/);
+  assert.match(lines[rule], /^─ Brief · paused ─+$/);
+  assert.match(lines[0], / b▸ /);
   assert.equal(lines[rule + 1].trimEnd(), ' still here', 'the last brief stays');
   assert.equal(frame.lines[rule + 1], colors.dim(' still here') + ' '.repeat(19));
   const control = frame.controls.find(c => c.kind === 'brief')!;
-  assert.equal(control.y, rule);
-  assert.equal(control.x + control.width, 30);
+  assert.equal(control.y, 0, 'on the bar');
+  assert.equal(stripAnsi(frame.lines[0]).slice(control.x, control.x + control.width), 'b▸');
   const ctx = { tree: agents, frame };
-  assert.deepEqual(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: control.x + 1, y: rule }, ctx).action, { type: 'brief-toggle' });
+  assert.deepEqual(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: control.x + 1, y: 0 }, ctx).action, { type: 'brief-toggle' });
   assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'brief-toggle' }, ctx).action, { type: 'brief-toggle' });
   assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('b')), [{ type: 'key', key: 'brief-toggle' }]);
 });
@@ -152,7 +156,7 @@ test('the agents summary stays at the top while the list under it scrolls', () =
   state.tree.selectedId = many.nodes[0].id; // started last, so listed last
   const frame = renderMonitor({ tree: many, state, width: 30, height: 12, nowMs: now });
   const pane = frame.panes[0];
-  assert.match(stripAnsi(frame.lines[pane.y]), /30 run/);
+  assert.match(stripAnsi(frame.lines[pane.y]), /^▸30 *$/);
   assert.ok(pane.offset > 0);
   assert.ok(frame.lines.some(line => /agent-0\b/.test(stripAnsi(line))), 'the selection is scrolled into view');
 });
@@ -244,7 +248,7 @@ test('the log follows the tree: what the tree hides it hides, a collapsed parent
   assert.ok(shown.slice(shown.findIndex(line => line.startsWith('─ Brief'))).some(line => /old_one/.test(line)), 'shown again with everything');
   const off = renderMonitor({ tree: agents, state, width: 30, height: 30, nowMs: now, agentLog }).lines.map(stripAnsi);
   assert.ok(off.some(line => line.startsWith('─ Agent log')), 'with no brief, the log has a rule of its own');
-  assert.ok(!off.some(line => /b pause/.test(line)));
+  assert.ok(!/ b[‖▸]/.test(off[0]), 'no brief, no switch on the bar');
   const inspect = { ...state, modes: { ...state.modes, details: 'open' as const }, focus: 'details' as const };
   const detail = renderMonitor({ tree: agents, state: inspect, width: 40, height: 40, nowMs: now, agentLog }).lines.map(stripAnsi);
   assert.ok(detail.some(line => /│ Log/.test(line)));
