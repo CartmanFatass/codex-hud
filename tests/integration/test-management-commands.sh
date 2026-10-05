@@ -87,6 +87,7 @@ export PATH="$FAKE_BIN_DIR:$PATH"
 export HOME="$TEST_HOME"
 export ZDOTDIR="$ZDOTDIR_DIR"
 export SHELL="/bin/bash"
+export CODEX_HUD_SKIP_FONTS=1
 
 assert_alias_present() {
   local file="$1"

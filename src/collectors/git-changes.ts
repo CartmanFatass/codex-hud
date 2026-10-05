@@ -236,6 +236,20 @@ async function untrackedPreview(root: string, path: string): Promise<string> {
   }
 }
 
+/**
+ * The hunks of the whole uncommitted diff, staged and unstaged, with one line
+ * of context and capped, for the change summary. Untracked files are not
+ * read: their names are in the stat.
+ */
+export async function readDiffHunks(root: string): Promise<string> {
+  const overrides = await filterOverrides(root);
+  const [staged, unstaged] = await Promise.all([
+    git(root, [...overrides, 'diff', ...DIFF_OPTIONS, '--unified=1', '--cached'], true),
+    git(root, [...overrides, 'diff', ...DIFF_OPTIONS, '--unified=1'], true),
+  ]);
+  return safeText([staged.trim() && `Staged\n${staged}`, unstaged.trim() && `Unstaged\n${unstaged}`].filter(Boolean).join('\n'));
+}
+
 export async function readGitDiff(root: string, file: GitChangedFile): Promise<string[]> {
   const paths = file.previousPath ? [file.path, file.previousPath] : [file.path];
   if (paths.some(path => !path || isAbsolute(path) || !contained(resolve(root), resolve(root, path)))) {

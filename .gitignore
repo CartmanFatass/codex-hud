@@ -47,6 +47,10 @@ __pycache__/
 *.pyc
 dist-test/
 
+# Review patches and archives dropped in the repo root
+/*.patch
+/*.zip
+
 # Windows alternate data streams copied through WSL
 *:Zone.Identifier
 

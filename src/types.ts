@@ -23,6 +23,8 @@ export interface CodexConfig {
   model?: string;
   model_reasoning_effort?: string;
   model_provider?: string;
+  /** Where Codex compacts the context on its own, in tokens, when the config sets it. */
+  model_auto_compact_token_limit?: number;
   approval_policy?: string;
   sandbox_mode?: string;
   mcp_servers?: Record<string, McpServerConfig>;
@@ -239,6 +241,8 @@ export interface PendingApproval {
   since: Date;
   /** What is being approved, as short observed text. Absent when unknown. */
   summary?: string;
+  /** The whole command of an exec request, whitespace collapsed and bounded; for its description. */
+  command?: string;
 }
 
 export interface TurnContextPayload {
@@ -400,6 +404,10 @@ export interface SubagentInfo {
   lastActivityAt?: Date;
 }
 
+/** What sort of work a task is, as the labels job reads it; `other` has no glyph. */
+export const AGENT_TASK_KINDS = ['research', 'experiment', 'fix', 'review', 'writing', 'summary', 'other'] as const;
+export type AgentTaskKind = typeof AGENT_TASK_KINDS[number];
+
 export interface SubagentTreeNode {
   /** Public agent-authored excerpt; not verified completion or a file attribution. */
   lastReport?: AgentReport;
@@ -414,6 +422,21 @@ export interface SubagentTreeNode {
   id: string;
   /** Display name: the task path's last segment, else nickname, role or kind. */
   name: string;
+  /**
+   * A short model-written name for what the agent works on, shown in its card
+   * and its log header when the labels feature is on and one has arrived; the
+   * tree row keeps `name`, as Codex's own picker prints it. Never used to
+   * identify the agent: `id` and `name` do that.
+   */
+  label?: string;
+  /** The sort of work the same reply put the agent's task in; shown as a glyph beside its name. */
+  taskKind?: AgentTaskKind;
+  /**
+   * A model-written digest of the agent's final answer for its latest turn
+   * (conclusion, basis, caveats), when the result digest is on and one has
+   * arrived. Stands in for the raw excerpt in the brief's material.
+   */
+  digest?: string;
   /** Codex task path, `/root/<task>`; also the agent's `/subagents` picker label. */
   agentPath?: string;
   /** Randomly assigned nickname (`Meitner`), shown only as a detail. */
@@ -514,6 +537,8 @@ export interface HudData {
   
   /** A recorded approval request that nothing has answered yet. */
   pendingApproval?: PendingApproval;
+  /** The session's title, from the recap's goal or its first prompt, model-written; only when the labels feature is on. */
+  sessionTitle?: string;
 
   // Context/token usage
   contextUsage?: ContextUsage;
@@ -529,6 +554,20 @@ export interface HudData {
   // Display mode
   displayMode?: HudDisplayMode;
   subagentTree?: SubagentTree;
+
+  /** Whether the HUD's own reads go through; absent until one succeeds or fails. */
+  health?: HudHealthState;
+
+  /** When a quota window is projected to run out before it resets; absent when no projection holds. */
+  quotaForecast?: import('./collectors/quota-forecast.js').QuotaForecast;
+}
+
+/** See collectors/hud-health.ts. */
+export interface HudHealthState {
+  /** The last time the session lookup and rollout read both went through. */
+  lastReadAt?: Date;
+  /** The most recent failed collection, whether or not a read has gone through since. */
+  lastError?: { source: string; message: string; at: Date };
 }
 
 export interface SessionActivity {

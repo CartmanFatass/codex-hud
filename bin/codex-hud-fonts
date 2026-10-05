@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# codex-hud-fonts - install the font the panel is drawn in: MesloLGS NF.
+#
+# The panel's icons, its tabs' rounded ends and its frame are glyphs that
+# MesloLGS NF draws itself, each one column wide; another font draws some of
+# them from a fallback at another size, or not at all. This installs the
+# four MesloLGS NF faces (the ones powerlevel10k ships) for the current user:
+#
+#   Linux   ${XDG_DATA_HOME:-~/.local/share}/fonts, then fc-cache
+#   macOS   ~/Library/Fonts
+#   WSL     the terminal that draws the text runs on Windows, so the font
+#           belongs there: this says whether Windows has it and how to
+#           install it (codex-hud-install.ps1 does), and writes nothing.
+#
+# The files come from one commit of romkatv/powerlevel10k-media, from GitHub
+# or else jsDelivr's copy of it, and each must have the SHA-256 listed here.
+# Then set the terminal's font to "MesloLGS NF".
+#
+# Usage: codex-hud-fonts [--check]
+#   --check   only say whether the font is installed; exit 1 if it is not
+# CODEX_HUD_FONT_DIR puts the files in that directory instead, WSL included.
+
+set -euo pipefail
+
+FAMILY="MesloLGS NF"
+COMMIT="145eb9fbc2f42ee408dacd9b22d8e6e0e553f83d"
+SOURCES=(
+    "https://github.com/romkatv/powerlevel10k-media/raw/$COMMIT"
+    "https://cdn.jsdelivr.net/gh/romkatv/powerlevel10k-media@$COMMIT"
+)
+FACES=("Regular" "Bold" "Italic" "Bold Italic")
+SUMS=(
+    d97946186e97f8d7c0139e8983abf40a1d2d086924f2c5dbf1c29bd8f2c6e57d
+    b6c0199cf7c7483c8343ea020658925e6de0aeb318b89908152fcb4d19226003
+    6f357bcbe2597704e157a915625928bca38364a89c22a4ac36e7a116dcd392ef
+    56b4131adecec052c4b324efb818dd326d586dbc316fc68f98f1cae2eb8d1220
+)
+CHECK=0
+
+case "${1:-}" in
+    --check) CHECK=1 ;;
+    --help|-h) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
+    "") ;;
+    *) echo "Unknown option: $1 (try --help)" >&2; exit 2 ;;
+esac
+
+is_wsl() {
+    [[ -n "${WSL_DISTRO_NAME:-}" ]] || grep -qi microsoft /proc/version 2>/dev/null
+}
+
+# Where the files go: the override, else the user's font directory.
+font_dir() {
+    if [[ -n "${CODEX_HUD_FONT_DIR:-}" ]]; then echo "$CODEX_HUD_FONT_DIR"
+    elif [[ "$OSTYPE" == darwin* ]]; then echo "$HOME/Library/Fonts"
+    else echo "${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
+    fi
+}
+
+# All four faces in `dir`.
+has_faces() {
+    local dir="$1" face
+    for face in "${FACES[@]}"; do
+        [[ -s "$dir/$FAMILY $face.ttf" ]] || return 1
+    done
+}
+
+# Windows' own font directories, seen from WSL: read only.
+windows_has_font() {
+    local dir
+    for dir in /mnt/c/Windows/Fonts /mnt/c/Users/*/AppData/Local/Microsoft/Windows/Fonts; do
+        [[ -d "$dir" ]] && has_faces "$dir" && return 0
+    done
+    return 1
+}
+
+url_name() { printf '%s' "$1" | sed 's/ /%20/g'; }
+
+sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+    else shasum -a 256 "$1" | cut -d' ' -f1
+    fi
+}
+
+# One try at `url`, quietly; curl carries on from where an earlier try was
+# cut short.
+download() {
+    local url="$1" out="$2"
+    if command -v curl >/dev/null 2>&1; then curl -fsL --connect-timeout 15 -C - -o "$out" "$url"
+    else wget -q -T 15 -O "$out" "$url"
+    fi
+}
+
+# `name` into `out`: each source in turn, three tries each, until the file
+# has the SHA-256 `sum`. A source that answers with an error (curl 22,
+# wget 8) is not tried again.
+fetch() {
+    local name="$1" sum="$2" out="$3" base try status
+    for base in "${SOURCES[@]}"; do
+        rm -f "$out"
+        for try in 1 2 3; do
+            status=0
+            download "$base/$(url_name "$name")" "$out" || status=$?
+            if [[ $status -eq 0 ]]; then
+                [[ "$(sha256 "$out")" == "$sum" ]] && return 0
+                rm -f "$out"
+            fi
+            [[ $status -eq 22 || $status -eq 8 ]] && break
+        done
+    done
+    echo "Could not download $name, or it was not the file expected." >&2
+    return 1
+}
+
+if is_wsl && [[ -z "${CODEX_HUD_FONT_DIR:-}" ]]; then
+    if windows_has_font; then
+        echo "[OK] $FAMILY is installed on Windows. Set it as the terminal's font if it is not already"
+        echo "     (Windows Terminal: Settings > Profiles > Defaults > Appearance > Font face)."
+        exit 0
+    fi
+    [[ $CHECK -eq 1 ]] && { echo "$FAMILY is not installed on Windows."; exit 1; }
+    cat <<EOF
+The panel is drawn by the Windows terminal, so $FAMILY belongs on Windows.
+Install it with codex-hud-install.ps1 (it installs the font for your user), or by hand:
+  1. Download the four faces:
+$(for face in "${FACES[@]}"; do printf '       %s/%s\n' "${SOURCES[0]}" "$(url_name "$FAMILY $face.ttf")"; done)
+  2. Select them in Explorer, right-click, Install.
+  3. Windows Terminal: Settings > Profiles > Defaults > Appearance > Font face: $FAMILY.
+EOF
+    exit 0
+fi
+
+DIR="$(font_dir)"
+if has_faces "$DIR" || { [[ -z "${CODEX_HUD_FONT_DIR:-}" ]] && command -v fc-list >/dev/null 2>&1 && fc-list : family | grep -qF "$FAMILY"; }; then
+    echo "[OK] $FAMILY is installed."
+    exit 0
+fi
+[[ $CHECK -eq 1 ]] && { echo "$FAMILY is not installed."; exit 1; }
+if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+    echo "Neither curl nor wget is installed: cannot download $FAMILY." >&2
+    exit 1
+fi
+
+mkdir -p "$DIR"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+for i in "${!FACES[@]}"; do
+    fetch "$FAMILY ${FACES[$i]}.ttf" "${SUMS[$i]}" "$TMP/$FAMILY ${FACES[$i]}.ttf"
+done
+mv "$TMP"/*.ttf "$DIR"/
+command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$DIR" >/dev/null 2>&1 || true
+echo "[OK] $FAMILY installed in $DIR. Set it as the terminal's font."

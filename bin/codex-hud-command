@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Deliver one panel command from the tmux prefix table (bin/codex-hud-keys).
+#
+#   codex-hud-command <session> <command>
+#
+# The panel open: the command goes to its pane as a private APC string,
+# ESC _ codex-hud:<command> ESC \, which no terminal sends as input. It shares
+# the pane's input stream with typed keys, so it lands in order, and it needs
+# no focus: send-keys names the pane. The decoder is src/utils/workbench-input.ts,
+# the vocabulary src/utils/panel-command.ts.
+#
+# The panel closed: a command that only moves inside the panel (navigation,
+# back, close) does nothing; any other opens the panel and hands the command
+# to the new process in its environment (codex-hud-toggle --command), so it
+# runs exactly once, after the panel is up, and is never lost to the start-up.
+#
+# Bound with a blocking run-shell, so a burst of commands runs in the order
+# pressed. Nothing here may print: run-shell would show it over the pane.
+
+exec >/dev/null 2>&1
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+session_name="${1:-}"
+command="${2:-}"
+
+[[ -n "$session_name" ]] || exit 0
+[[ "$command" =~ ^[a-z0-9-]{1,32}$ ]] || exit 0
+
+hex_of() {
+  printf '%s' "$1" | od -An -v -tx1
+}
+
+tree_pane=$(tmux display-message -p -t "$session_name" '#{@codex_hud_tree_pane}' 2>/dev/null | tr -d '\r\n')
+if [[ "$tree_pane" =~ ^%[0-9]+$ ]]; then
+  # shellcheck disable=SC2046 # one word per byte
+  if tmux send-keys -t "$tree_pane" -H $(hex_of $'\e_codex-hud:'"$command"$'\e\\'); then
+    exit 0
+  fi
+fi
+
+case "$command" in
+  quit|back|up|down|page-up|page-down|first|last|left|right) exit 0 ;;
+esac
+
+# Not a HUD session after all: nothing to open.
+main_pane=$(tmux show-option -t "$session_name" -qv @codex_hud_main_pane 2>/dev/null)
+[[ -n "$main_pane" ]] || exit 0
+
+exec bash "$SCRIPT_DIR/codex-hud-toggle" "$session_name" --command "$command"

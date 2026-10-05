@@ -566,6 +566,95 @@ function Install-CmdShims {
     return $shimDir
 }
 
+# One face of MesloLGS NF into $Target: from GitHub, else jsDelivr's copy of the
+# same commit, three tries each, until the file has the SHA-256 $Sum.
+function Save-HudFontFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$File,
+        [Parameter(Mandatory = $true)][string]$Sum,
+        [Parameter(Mandatory = $true)][string]$Target
+    )
+
+    $commit = '145eb9fbc2f42ee408dacd9b22d8e6e0e553f83d'
+    $sources = @(
+        "https://github.com/romkatv/powerlevel10k-media/raw/$commit",
+        "https://cdn.jsdelivr.net/gh/romkatv/powerlevel10k-media@$commit"
+    )
+    $temp = "$Target.download"
+    foreach ($source in $sources) {
+        for ($try = 1; $try -le 3; $try++) {
+            try {
+                Invoke-WebRequest -Uri "$source/$([uri]::EscapeDataString($File))" -OutFile $temp -UseBasicParsing
+            } catch {
+                continue
+            }
+            if ((Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash -eq $Sum) {
+                Move-Item -LiteralPath $temp -Destination $Target -Force
+                return
+            }
+        }
+    }
+    Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+    throw "Could not download $File, or it was not the file expected."
+}
+
+# MesloLGS NF draws the panel's icons, its tabs' rounded ends and its frame, each
+# one column wide. Its four faces are installed for the current user as Explorer's
+# Install does: the files in the user's font folder, registered under HKCU, and
+# loaded for this session. The HUD runs without the font, so a failure only warns.
+function Ensure-HudFont {
+    if ($env:CODEX_HUD_SKIP_FONTS -eq '1') {
+        Write-Warn 'Skipping the MesloLGS NF font due to CODEX_HUD_SKIP_FONTS=1.'
+        return
+    }
+
+    $family = 'MesloLGS NF'
+    $sums = [ordered]@{
+        'Regular'     = 'd97946186e97f8d7c0139e8983abf40a1d2d086924f2c5dbf1c29bd8f2c6e57d'
+        'Bold'        = 'b6c0199cf7c7483c8343ea020658925e6de0aeb318b89908152fcb4d19226003'
+        'Italic'      = '6f357bcbe2597704e157a915625928bca38364a89c22a4ac36e7a116dcd392ef'
+        'Bold Italic' = '56b4131adecec052c4b324efb818dd326d586dbc316fc68f98f1cae2eb8d1220'
+    }
+    $userFonts = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+    $systemFonts = Join-Path $env:WINDIR 'Fonts'
+    $missing = @($sums.Keys | Where-Object {
+        $file = "$family $_.ttf"
+        -not ((Test-Path -LiteralPath (Join-Path $userFonts $file)) -or (Test-Path -LiteralPath (Join-Path $systemFonts $file)))
+    })
+    if ($missing.Count -eq 0) {
+        Write-Info "$family is installed."
+        return
+    }
+
+    $protocol = [Net.ServicePointManager]::SecurityProtocol
+    try {
+        # Windows PowerShell may offer GitHub only TLS 1.0, which it refuses, and its
+        # progress bar slows a download many times over.
+        [Net.ServicePointManager]::SecurityProtocol = $protocol -bor [Net.SecurityProtocolType]::Tls12
+        $ProgressPreference = 'SilentlyContinue'
+        New-Item -ItemType Directory -Force -Path $userFonts | Out-Null
+        $key = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+        if (-not (Test-Path -LiteralPath $key)) {
+            New-Item -Path $key -Force | Out-Null
+        }
+        if (-not ('CodexHud.FontApi' -as [type])) {
+            Add-Type -Namespace CodexHud -Name FontApi -MemberDefinition '[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern int AddFontResourceW(string file);'
+        }
+        foreach ($face in $missing) {
+            $file = "$family $face.ttf"
+            $target = Join-Path $userFonts $file
+            Save-HudFontFile -File $file -Sum $sums[$face] -Target $target
+            New-ItemProperty -Path $key -Name "$family $face (TrueType)" -Value $target -PropertyType String -Force | Out-Null
+            [void][CodexHud.FontApi]::AddFontResourceW($target)
+        }
+        Write-Info "$family installed for your user. Restart the terminal and set its font to $family (Windows Terminal: Settings > Profiles > Defaults > Appearance > Font face)."
+    } catch {
+        Write-Warn "$family was not installed ($($_.Exception.Message)); the panel draws some icons in another font. Run codex-hud-install again to retry."
+    } finally {
+        [Net.ServicePointManager]::SecurityProtocol = $protocol
+    }
+}
+
 function Upgrade-Checkout {
     $git = Get-GitCommand
     if (-not $git) {
@@ -616,6 +705,7 @@ if ($Mode -eq 'install') {
 }
 
 Ensure-RepoBuild -NodeExecutable $nodeExe
+Ensure-HudFont
 
 $managedCodexShim = Join-Path (Get-CmdShimDirectory) 'codex.cmd'
 $realCodex = Get-RealCodexCommand -RepoRoot $repoRoot -ExcludedPaths @($managedCodexShim)

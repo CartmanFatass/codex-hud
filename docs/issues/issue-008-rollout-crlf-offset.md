@@ -26,5 +26,8 @@
 - 或使用 `fs.statSync` 与当前偏移做校准。
 
 ## 修复记录
-- 状态：待讨论
-- 备注：当前仅为潜在风险提示，尚未验证。
+- 状态：已修复
+- 备注：最初仅为潜在风险提示，尚未验证。
+- 修复时间：2026-09-22（69d2f4c）
+- 变更说明：`parseRolloutFile` 改为通过单一文件句柄按字节读取，按缓冲区中 `\n` 的真实位置累加 offset（`\r` 计入该行字节），不再以 `+1` 估算换行长度。
+- 验证方式：`tests/unit/rollout-live.test.ts`「split UTF-8/CRLF records are retried and counted exactly once」。

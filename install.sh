@@ -502,7 +502,19 @@ setup_wrapper() {
     if [[ -f "$SCRIPT_DIR/bin/codex-hud-resize" ]]; then
         chmod +x "$SCRIPT_DIR/bin/codex-hud-resize"
     fi
+    chmod +x "$SCRIPT_DIR/bin/codex-hud-fonts"
     info "Wrapper is executable"
+}
+
+# Install the font the panel is drawn in. The HUD runs without it, its icons
+# drawn by a fallback font, so a failure only warns.
+install_font() {
+    if [[ "${CODEX_HUD_SKIP_FONTS:-}" == "1" ]]; then
+        warn "Skipping the MesloLGS NF font due to CODEX_HUD_SKIP_FONTS=1."
+        return 0
+    fi
+    step "Checking the panel's font, MesloLGS NF..."
+    "$SCRIPT_DIR/bin/codex-hud-fonts" || warn "MesloLGS NF was not installed; the panel draws some icons in another font. Run ./bin/codex-hud-fonts to try again."
 }
 
 # Main installation
@@ -534,6 +546,8 @@ main() {
     
     # Setup wrapper
     setup_wrapper
+
+    install_font
     
     # Detect shell and configure aliases for bash and zsh
     local shell_name

@@ -64,12 +64,16 @@ test('the panel speaks Chinese and keeps its width at every size', () => {
     const frame = inChinese(() => renderMonitor({ tree, state: initialMonitorState(), width, height: 20, nowMs: now }));
     for (const line of frame.lines) assert.ok(visualLength(line) <= width, `${width}: ${stripAnsi(line)}`);
     const text = stripAnsi(frame.lines.join('\n'));
-    assert.match(text, /主会话/);
+    // Short of every word, the bar is icons alone.
+    assert.match(text.split('\n')[0], /⚙ +\? *$/, text);
+    assert.doesNotMatch(text.split('\n')[0], /主会话|设置|帮助/);
     assert.doesNotMatch(text, /Main session|run\b|done\b/);
   }
   const english = stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 30, height: 20, nowMs: now }).lines.join('\n'));
-  assert.match(english, /Main session/);
-  assert.match(english, /1 run/);
+  assert.match(english.split('\n')[0], /⚙ +\? *$/);
+  const wide = inChinese(() => stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 100, height: 20, nowMs: now }).lines[0]));
+  assert.match(wide, /^ +⌂ 主会话 .*⚙ 设置 +\? 帮助 +$/, wide);
+  assert.match(english, / ✓1 done {2}▸1 run/);
 });
 
 test('the settings page lays Chinese labels out by display width', () => {

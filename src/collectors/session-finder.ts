@@ -7,6 +7,8 @@ import { sessionParentId } from '../utils/session-parent.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
+import { time } from '../utils/profile.js';
+import { DaemonBinding } from './daemon-binding.js';
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 
@@ -106,6 +108,8 @@ function readFirstLine(filePath: string, maxBytes: number = 1024 * 1024): string
 interface RolloutMeta {
   cwd: string | null;
   isRoot: boolean;
+  /** A subagent's root session: `session_id` where Codex wrote one, else its parent. */
+  rootId?: string;
 }
 
 /**
@@ -132,6 +136,8 @@ function readRolloutMeta(filePath: string): RolloutMeta | null {
     const entry = JSON.parse(firstLine.trim()) as {
       type?: string;
       payload?: {
+        id?: string;
+        session_id?: string;
         cwd?: string;
         parent_thread_id?: string;
         source?: unknown;
@@ -144,9 +150,12 @@ function readRolloutMeta(filePath: string): RolloutMeta | null {
     const parentId = sessionParentId(entry.payload);
     const threadSource = entry.payload.thread_source;
     const isRoot = !parentId && threadSource !== 'subagent';
+    const sessionId = entry.payload.session_id;
+    const rootId = isRoot ? undefined : sessionId && sessionId !== entry.payload.id ? sessionId : parentId ?? undefined;
     return {
       cwd: normalizePath(entry.payload.cwd),
       isRoot,
+      ...(rootId ? { rootId } : {}),
     };
   } catch {
     return null;
@@ -194,26 +203,39 @@ interface DirListing {
   entries: Array<{ path: string; sessionId: string; timestamp: Date }>;
 }
 
-// A day directory's mtime changes when a rollout is created, renamed or
-// removed, but not when one is appended to. That makes it a sound key for the
-// file *list*; every file is still stat'd, so size and mtime stay live.
+// A directory modified this recently is listed afresh rather than from a
+// cache: on a filesystem with coarse timestamps the next creation could still
+// carry the same mtime, and a listing cached now would hide it.
+const DIR_SETTLE_MS = 2000;
+
+/**
+ * A directory's mtime and size, which change when an entry is created,
+ * renamed or removed but not when a file in it is appended to: a sound key
+ * for its *list* of entries. Null while the directory is still settling.
+ */
+function directorySignature(stats: fs.Stats, nowMs: number = Date.now()): string | null {
+  return nowMs - stats.mtimeMs < DIR_SETTLE_MS ? null : `${stats.mtimeMs}:${stats.size}`;
+}
+
+// Day directories' rollout lists. Every file is still stat'd, so size and
+// mtime stay live.
 const dirListingCache = new Map<string, DirListing>();
 
 function listRollouts(dirPath: string): DirListing['entries'] {
-  let signature: string;
+  let signature: string | null;
   try {
     const stats = fs.statSync(dirPath);
     if (!stats.isDirectory()) {
       return [];
     }
-    signature = `${stats.mtimeMs}:${stats.size}`;
+    signature = directorySignature(stats);
   } catch {
     dirListingCache.delete(dirPath);
     return [];
   }
 
   const cached = dirListingCache.get(dirPath);
-  if (cached && cached.signature === signature) {
+  if (signature !== null && cached && cached.signature === signature) {
     return cached.entries;
   }
 
@@ -238,7 +260,40 @@ function listRollouts(dirPath: string): DirListing['entries'] {
     return [];
   }
 
-  cachePut(dirListingCache, dirPath, { signature, entries });
+  if (signature !== null) {
+    cachePut(dirListingCache, dirPath, { signature, entries });
+  } else {
+    dirListingCache.delete(dirPath);
+  }
+  return entries;
+}
+
+interface DirEntry {
+  name: string;
+  isDirectory: boolean;
+  isFile: boolean;
+}
+
+// Every directory the by-id walk below has listed, by the same key.
+const dirEntryCache = new Map<string, { signature: string; entries: DirEntry[] }>();
+
+/** A directory's entries, re-read only when the directory itself changed. Throws like readdirSync. */
+function listDirectory(dirPath: string): DirEntry[] {
+  const signature = directorySignature(fs.statSync(dirPath));
+  const cached = dirEntryCache.get(dirPath);
+  if (signature !== null && cached && cached.signature === signature) {
+    return cached.entries;
+  }
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true }).map((entry) => ({
+    name: entry.name,
+    isDirectory: entry.isDirectory(),
+    isFile: entry.isFile(),
+  }));
+  if (signature !== null) {
+    cachePut(dirEntryCache, dirPath, { signature, entries });
+  } else {
+    dirEntryCache.delete(dirPath);
+  }
   return entries;
 }
 
@@ -500,12 +555,32 @@ function readSnapshotPane(filePath: string): string | null {
   return binding.pane;
 }
 
+// The last answer of the scan below. Snapshots are written once and never
+// edited, so while the folder lists the same files the answer for the same
+// pane, server and launch time is the same; with Codex 0.159's daemon writing
+// every session's snapshot there, the folder holds thousands of them.
+let paneScanCache: { key: string; threadId: string | null } | null = null;
+
 function findThreadIdForPane(mainPaneId: string, launchTime: Date | null): string | null {
   const snapshotsDir = path.join(getCodexHome(), SHELL_SNAPSHOTS_SUBDIR);
-  if (!fs.existsSync(snapshotsDir)) {
+  let signature: string | null;
+  try {
+    signature = directorySignature(fs.statSync(snapshotsDir));
+  } catch {
     return null;
   }
+  const key = signature === null
+    ? null
+    : JSON.stringify([snapshotsDir, signature, mainPaneId, launchTime?.getTime() ?? null, process.env.TMUX ?? null]);
+  if (key !== null && paneScanCache?.key === key) {
+    return paneScanCache.threadId;
+  }
+  const threadId = scanSnapshotsForPane(snapshotsDir, mainPaneId, launchTime);
+  paneScanCache = key === null ? null : { key, threadId };
+  return threadId;
+}
 
+function scanSnapshotsForPane(snapshotsDir: string, mainPaneId: string, launchTime: Date | null): string | null {
   const matches: Array<{ threadId: string; nonce: bigint; path: string }> = [];
 
   try {
@@ -560,22 +635,22 @@ function findRolloutPathBySessionIdInRoot(rootDir: string, sessionId: string): s
       continue;
     }
 
-    let entries: fs.Dirent[];
+    let entries: DirEntry[];
     try {
-      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      entries = listDirectory(currentDir);
     } catch {
       continue;
     }
 
     for (const entry of entries) {
       const fullPath = path.join(currentDir, entry.name);
-      if (entry.isDirectory()) {
+      if (entry.isDirectory) {
         stack.push(fullPath);
         continue;
       }
 
       if (
-        entry.isFile() &&
+        entry.isFile &&
         entry.name.startsWith('rollout-') &&
         entry.name.endsWith(expectedSuffix)
       ) {
@@ -608,15 +683,37 @@ function buildSessionFile(filePath: string): SessionFile | null {
   }
 }
 
+/** Each thread the daemon named, by the root session it belongs to. */
+const rootThreadCache = new Map<string, string>();
+const rootThreadMiss = new Map<string, number>();
+
+/**
+ * The root session of `threadId`: itself, or for a subagent the session it
+ * belongs to. Switching Codex to a subagent's view resumes that subagent's
+ * thread on the TUI's connection; the panel stays on the session.
+ */
+function rootThreadOf(threadId: string): string {
+  const cached = rootThreadCache.get(threadId);
+  if (cached) return cached;
+  // A thread with no rollout yet is its own root; whether it has one is the
+  // caller's next question, so it is not asked twice here.
+  if ((rootThreadMiss.get(threadId) ?? 0) > Date.now() - FALLBACK_RESCAN_MS) return threadId;
+  const file = findSessionByThreadId(threadId);
+  if (!file) {
+    cachePut(rootThreadMiss, threadId, Date.now());
+    return threadId;
+  }
+  const meta = peekRolloutMeta(file.path);
+  return cachePut(rootThreadCache, threadId, meta && !meta.isRoot && meta.rootId ? meta.rootId : threadId);
+}
+
 function findSessionByThreadId(sessionId: string): SessionFile | null {
   const codexHome = getCodexHome();
-  const activePath = findRolloutPathBySessionIdInRoot(path.join(codexHome, 'sessions'), sessionId);
-  const archivedPath = findRolloutPathBySessionIdInRoot(
-    path.join(codexHome, ARCHIVED_SESSIONS_SUBDIR),
-    sessionId
-  );
+  // The archive is only walked when the live tree does not have the file.
+  const found = findRolloutPathBySessionIdInRoot(path.join(codexHome, 'sessions'), sessionId)
+    ?? findRolloutPathBySessionIdInRoot(path.join(codexHome, ARCHIVED_SESSIONS_SUBDIR), sessionId);
 
-  return buildSessionFile(activePath ?? archivedPath ?? '');
+  return buildSessionFile(found ?? '');
 }
 
 /**
@@ -634,6 +731,8 @@ export class SessionFinder {
   private lastFallbackScanMs = 0;
   // The 30-day walk behind the shallow scan runs on its own, slower clock.
   private lastDeepScanMs = 0;
+  // The daemon's log, read for the main pane's TUI; made on first use.
+  private daemon: DaemonBinding | null = null;
 
   constructor(
     targetCwd?: string,
@@ -749,9 +848,18 @@ export class SessionFinder {
    * Check for active or recent sessions
    */
   check(): SessionFile | null {
+    return time('session.find', () => this.checkNow());
+  }
+
+  private checkNow(): SessionFile | null {
     const mainPaneId = process.env.CODEX_HUD_MAIN_PANE;
     if (mainPaneId) {
-      const threadId = findThreadIdForPane(mainPaneId, this.targetStartTime);
+      // The daemon's log says which conversation the pane's TUI has open,
+      // a resumed one included, before it writes to it; the snapshots are
+      // the older Codex's word for it.
+      this.daemon ??= new DaemonBinding(getCodexHome(), mainPaneId, this.targetStartTime?.getTime() ?? null);
+      const daemonThread = this.daemon.threadId();
+      const threadId = (daemonThread && rootThreadOf(daemonThread)) || findThreadIdForPane(mainPaneId, this.targetStartTime);
       if (threadId) {
         if (this.currentSession?.sessionId === threadId) {
           const kept = this.refreshCurrentSession();

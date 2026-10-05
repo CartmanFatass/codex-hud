@@ -4,8 +4,8 @@
  * Components ask for meaning ("this is a warning"), never for a colour, so a
  * palette swap repaints the whole HUD consistently. `terminal` keeps the
  * original basic-ANSI look and inherits whatever the user's terminal theme
- * maps those codes to; the Catppuccin palettes pin exact colours; `none`
- * emits no escape sequences at all.
+ * maps those codes to; the Catppuccin palettes and omp's titanium pin exact
+ * colours; `none` emits no escape sequences at all.
  */
 
 import { displayConfig, type ThemeName } from './hud-config.js';
@@ -30,6 +30,41 @@ export interface Palette {
   /** Emphasis without colour, for the identity of the session. */
   strong: Paint;
   selected: Paint;
+  /**
+   * Six colours to tell agents apart by, each agent keeping its own (a hash
+   * of its id), for following one down the timeline. None is a success,
+   * warning or error hue, so an agent's colour never reads as its state.
+   */
+  agents: readonly Paint[];
+  /**
+   * Backgrounds, each one a row's surface rather than its text: the status
+   * card's band row, the control bar at the top, the selected agent's row,
+   * a button on the bar (`chip`), and the focused tab on the accent, its
+   * text in a colour that reads on it.
+   * They restore themselves after every reset inside, so coloured spans keep
+   * the surface.
+   */
+  band: Paint;
+  bar: Paint;
+  selectedBand: Paint;
+  chip: Paint;
+  tab: Paint;
+  /**
+   * A meter's unfilled part, clearly darker than the frame's rules so the
+   * fill reads against it, and its scale (the window size, the reset) and
+   * threshold tick.
+   */
+  track: Paint;
+  tick: Paint;
+  /** The rules of a look's frame and title lines: quieter than muted text, louder than the track. */
+  frame: Paint;
+  /**
+   * Text in the colour of the focused tab's surface and of a chip's, for a
+   * pill's rounded ends: the caps are glyphs, painted as text beside the
+   * surface they round off.
+   */
+  tabEdge: Paint;
+  chipEdge: Paint;
 }
 
 const ESC = '\x1b[';
@@ -39,12 +74,24 @@ function basic(code: number): Paint {
   return (text: string) => `${ESC}${code}m${text}${RESET}`;
 }
 
-function rgb(hex: string): Paint {
+function ansi256(code: number): Paint {
+  return (text: string) => `${ESC}38;5;${code}m${text}${RESET}`;
+}
+
+function hexParts(hex: string): [number, number, number] {
   const value = hex.replace('#', '');
-  const r = parseInt(value.slice(0, 2), 16);
-  const g = parseInt(value.slice(2, 4), 16);
-  const b = parseInt(value.slice(4, 6), 16);
+  return [parseInt(value.slice(0, 2), 16), parseInt(value.slice(2, 4), 16), parseInt(value.slice(4, 6), 16)];
+}
+
+function rgb(hex: string): Paint {
+  const [r, g, b] = hexParts(hex);
   return (text: string) => `${ESC}38;2;${r};${g};${b}m${text}${RESET}`;
+}
+
+/** Bold, in an exact colour: emphasis that keeps its hue. */
+function rgbBold(hex: string): Paint {
+  const [r, g, b] = hexParts(hex);
+  return (text: string) => `${ESC}1;38;2;${r};${g};${b}m${text}${RESET}`;
 }
 
 // Internal spans reset their own attributes. Restore the row highlight after
@@ -52,6 +99,11 @@ function rgb(hex: string): Paint {
 function highlight(code: string): Paint {
   const start = `${ESC}${code}m`;
   return text => start + text.replaceAll(RESET, RESET + start) + RESET;
+}
+
+/** A background in exact colour, kept across the resets inside it. */
+function surface(hex: string): Paint {
+  return highlight(`48;2;${hexParts(hex).join(';')}`);
 }
 
 const identity: Paint = (text: string) => text;
@@ -76,6 +128,22 @@ const TERMINAL: Palette = {
   project: basic(1),
   strong: basic(1),
   selected: highlight('7'),
+  // Mid-tones of the 256-colour cube, legible on dark and light backgrounds.
+  agents: [ansi256(33), ansi256(98), ansi256(133), ansi256(67), ansi256(37), ansi256(175)],
+  // Greys of the 256-colour ramp, a step apart: the band, the bar above it,
+  // the selected row, a button on the bar and the focused tab each one
+  // lighter than the last.
+  band: highlight('48;5;235'),
+  bar: highlight('48;5;236'),
+  selectedBand: highlight('48;5;237'),
+  chip: highlight('48;5;238'),
+  tab: highlight('48;5;31;97'),
+  track: ansi256(239),
+  // Steel blue: a scale, not a state, so neither the info blue nor a grey.
+  tick: ansi256(67),
+  frame: ansi256(240),
+  tabEdge: ansi256(31),
+  chipEdge: ansi256(238),
 };
 
 // Catppuccin Mocha and Latte, from the published palettes.
@@ -93,6 +161,18 @@ const MOCHA: Palette = {
   project: rgb('#B4BEFE'),
   strong: rgb('#B4BEFE'),
   selected: highlight('48;2;49;50;68'),
+  agents: ['#89B4FA', '#B4BEFE', '#CBA6F7', '#F5C2E7', '#74C7EC', '#F2CDCD'].map(rgb),
+  // Mantle under the band, the surfaces above the base for the rest.
+  band: surface('#181825'),
+  bar: surface('#313244'),
+  selectedBand: surface('#45475A'),
+  chip: surface('#45475A'),
+  tab: highlight('48;2;137;180;250;38;2;30;30;46'),
+  track: rgb('#585B70'),
+  tick: rgb('#89B4FA'),
+  frame: rgb('#6C7086'),
+  tabEdge: rgb('#89B4FA'),
+  chipEdge: rgb('#45475A'),
 };
 
 const LATTE: Palette = {
@@ -109,6 +189,52 @@ const LATTE: Palette = {
   project: rgb('#7287FD'),
   strong: rgb('#7287FD'),
   selected: highlight('48;2;204;208;218'),
+  agents: ['#1E66F5', '#7287FD', '#8839EF', '#EA76CB', '#209FB5', '#DD7878'].map(rgb),
+  // A light theme: the band is a light surface a step off the base, and the
+  // track is lighter than the muted text rather than darker, which on a
+  // light ground is what recedes.
+  band: surface('#E6E9EF'),
+  bar: surface('#DCE0E8'),
+  selectedBand: surface('#CCD0DA'),
+  chip: surface('#CCD0DA'),
+  tab: highlight('48;2;30;102;245;38;2;239;241;245'),
+  track: rgb('#BCC0CC'),
+  tick: rgb('#209FB5'),
+  frame: rgb('#9CA0B0'),
+  tabEdge: rgb('#1E66F5'),
+  chipEdge: rgb('#CCD0DA'),
+};
+
+/**
+ * omp's titanium, as omp paints its status line and settings: aluminium text
+ * on dark titanium, electric blue where the attention goes, deep blue under
+ * the active tab, readout green, amber and alert red for state.
+ */
+const TITANIUM: Palette = {
+  name: 'titanium',
+  text: rgb('#E8ECF4'),
+  muted: rgb('#9CA3B0'),
+  accent: rgb('#00B4FF'),
+  success: rgb('#00FF88'),
+  warning: rgb('#FFB347'),
+  danger: rgb('#FF4757'),
+  info: rgb('#00B4FF'),
+  model: rgb('#D4C090'),
+  branch: rgb('#D06FED'),
+  project: rgbBold('#E8ECF4'),
+  strong: rgbBold('#E8ECF4'),
+  selected: highlight('48;2;31;37;45'),
+  agents: ['#5EC8FF', '#8FA8FF', '#B79CFF', '#D06FED', '#2AC3DE', '#D4C090'].map(rgb),
+  band: surface('#0F1216'),
+  bar: surface('#0F1216'),
+  selectedBand: surface('#1C2029'),
+  chip: surface('#2A3038'),
+  tab: highlight('48;2;0;130;179;38;2;232;236;244'),
+  track: rgb('#2A3038'),
+  tick: rgb('#6583A3'),
+  frame: rgb('#454C59'),
+  tabEdge: rgb('#0082B3'),
+  chipEdge: rgb('#2A3038'),
 };
 
 const NONE: Palette = {
@@ -125,12 +251,24 @@ const NONE: Palette = {
   project: identity,
   strong: identity,
   selected: identity,
+  agents: [identity],
+  band: identity,
+  bar: identity,
+  selectedBand: identity,
+  chip: identity,
+  tab: identity,
+  track: identity,
+  tick: identity,
+  frame: identity,
+  tabEdge: identity,
+  chipEdge: identity,
 };
 
 const PALETTES: Record<ThemeName, Palette> = {
   terminal: TERMINAL,
   mocha: MOCHA,
   latte: LATTE,
+  titanium: TITANIUM,
   none: NONE,
 };
 

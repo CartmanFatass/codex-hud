@@ -23,6 +23,8 @@ export interface WorktreeInfo {
   status?: WorktreeStatus;
   observedAt?: number;
   error?: string;
+  /** The HEAD commit's subject (`git log -1 --format=%s`), once read: what the worktree is for, in words. */
+  subject?: string;
 }
 export interface WorktreesSnapshot {
   sourcePath: string | null;
@@ -132,6 +134,18 @@ async function neutralizeFilters(run: WorktreeGit, cwd: string): Promise<string[
 }
 
 /** Only explicit settings/env or verified session/launch cwd are candidates. No log scraping. */
+/** `git log -z --format=%H%x1f%s` output: each commit's subject by its full hash. */
+export function parseSubjects(text: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const record of text.split('\0')) {
+    const at = record.indexOf('\x1f');
+    if (at < 0) continue;
+    const sha = record.slice(0, at).trim();
+    if (/^[0-9a-f]{40,64}$/.test(sha)) out.set(sha, record.slice(at + 1).replace(/\s+/g, ' ').trim());
+  }
+  return out;
+}
+
 export function worktreeSources(launchCwd: string, sessionCwd?: string, configuredRoot = '', envRoot = ''): string[] {
   const explicit = envRoot || configuredRoot;
   if (explicit) return [resolve(launchCwd, explicit)]; // Invalid explicit roots never silently fall back.
@@ -141,6 +155,8 @@ export function worktreeSources(launchCwd: string, sessionCwd?: string, configur
 /** A bounded round-robin probe keeps big repositories from blocking the renderer. */
 export class WorktreeCollector {
   private cache = new Map<string, WorktreeInfo>();
+  /** HEAD commit subjects by hash; null where the read failed. Kept to the heads in view. */
+  private subjects = new Map<string, string | null>();
   private source: string | null = null;
   private cursor = 0;
   private inFlight?: Promise<WorktreesSnapshot>;
@@ -192,7 +208,28 @@ export class WorktreeCollector {
     };
     // Never more than two simultaneous Git processes; no unbounded fan-out.
     for (let i = 0; i < selected.length; i += 2) await Promise.all(selected.slice(i,i+2).map(probe));
+    await this.readSubjects(source, entries);
+    for (const entry of entries) {
+      const subject = entry.head ? this.subjects.get(entry.head) : undefined;
+      if (subject) entry.subject = subject;
+    }
     this.cache = new Map(entries.map(entry => [entry.path, {...entry}]));
     return {sourcePath:source, entries, updatedAt:this.now(), truncated};
+  }
+  /**
+   * The subjects of the HEADs not read yet, in one `git log` for all of them
+   * (worktrees share one object store), each read once per hash. A failed
+   * read is remembered as such, not retried every refresh.
+   */
+  private async readSubjects(source: string, entries: WorktreeInfo[]): Promise<void> {
+    const heads = new Set(entries.flatMap(entry => entry.head && /^[0-9a-f]{40,64}$/.test(entry.head) ? [entry.head] : []));
+    for (const head of this.subjects.keys()) if (!heads.has(head)) this.subjects.delete(head);
+    const wanted = [...heads].filter(head => !this.subjects.has(head));
+    if (!wanted.length) return;
+    let read = new Map<string, string>();
+    try {
+      read = parseSubjects(await this.run(source, ['log', '--no-walk=unsorted', '--no-show-signature', '-z', '--format=%H%x1f%s', ...wanted]));
+    } catch { /* no subjects this time: the list does without */ }
+    for (const head of wanted) this.subjects.set(head, read.get(head) ?? null);
   }
 }

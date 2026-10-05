@@ -34,13 +34,19 @@ function truthy(value: string | undefined): boolean {
   return raw === '1' || raw.toLowerCase() === 'true';
 }
 
-export function resolveNotifierOptions(env: NodeJS.ProcessEnv = process.env): Omit<NotifierOptions, 'deliver'> {
+/** An environment variable that was set to something wins; unset or empty, the setting decides. */
+function envOr(value: string | undefined, setting: boolean | undefined): boolean {
+  return (value ?? '').trim() ? truthy(value) : setting === true;
+}
+
+export function resolveNotifierOptions(env: NodeJS.ProcessEnv = process.env,
+  settings: { notify?: boolean; notifyDesktop?: boolean } = {}): Omit<NotifierOptions, 'deliver'> {
   const seconds = Number(env.CODEX_HUD_NOTIFY_COOLDOWN ?? '');
   return {
-    enabled: truthy(env.CODEX_HUD_NOTIFY),
+    enabled: envOr(env.CODEX_HUD_NOTIFY, settings.notify),
     // A second opt-in: leaving the terminal is a bigger ask than a tmux
     // message, so turning notifications on does not turn these on too.
-    desktop: truthy(env.CODEX_HUD_NOTIFY_DESKTOP),
+    desktop: envOr(env.CODEX_HUD_NOTIFY_DESKTOP, settings.notifyDesktop),
     cooldownMs: Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 300_000,
   };
 }
@@ -125,7 +131,12 @@ export class Notifier {
   private lastActiveAgents: number | null = null;
   private lastCompletedAgents = 0;
 
-  constructor(private readonly options: NotifierOptions) {}
+  constructor(private options: NotifierOptions) {}
+
+  /** New options from settings saved since; the baselines stay, so nothing is replayed. */
+  configure(options: Omit<NotifierOptions, 'deliver'>): void {
+    this.options = { ...this.options, ...options };
+  }
 
   /**
    * Decide what to announce for this snapshot and deliver it. Returns the
