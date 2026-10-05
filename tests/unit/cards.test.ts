@@ -6,6 +6,7 @@ import path from 'node:path';
 import { initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, type MonitorState, type MonitorFrame } from '../../src/render/monitor.js';
 import { agentTitle, KIND_GLYPHS } from '../../src/render/agent-title.js';
 import { hangLines, clockText } from '../../src/render/cards.js';
+import { directions } from '../../src/render/directions.js';
 import { stripAnsi, visualLength, theme, colors, truncateAnsi } from '../../src/render/colors.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
@@ -100,12 +101,11 @@ test('cards never run past the panel, in either language, and give up badge and 
   assert.ok(narrow.some(line => /^› ▸ ⌕ ablation…anker ─+ *$/.test(line)), `under 24 columns the badge goes first\n${narrow.join('\n')}`);
   const tiny = plain(renderMonitor({ tree: tree([named]), state: rich(), width: 19, height: 30, nowMs: now }));
   assert.ok(tiny.some(line => /^└ .*56%─* ▾$/.test(line) && !line.includes('━')), 'then the meter, the percent kept');
-  // A child card is indented, one column a level.
+  // A subtask gets no card: its lead's card counts it by role.
   const nested = plain(renderMonitor({ tree: tree([parent]), state: rich(), width: 40, height: 40, nowMs: now }));
-  assert.ok(nested.some(line => /^ ┌ ▸ ◈ b05_result/.test(line)), nested.join('\n'));
-  const folded = plain(renderMonitor({ tree: tree([parent]), state: rich({ tree: { ...rich().tree, collapsed: new Set([parent.id]) } }), width: 40, height: 40, nowMs: now }));
-  assert.ok(!folded.some(line => line.includes('b05_result')));
-  assert.ok(folded.some(line => /^└ ◷4m07s · \+1 folded ─+ ▾$/.test(line)), 'a collapsed parent counts what it folds');
+  assert.ok(!nested.some(line => line.includes('b05_result')), nested.join('\n'));
+  assert.ok(nested.some(line => line.trimEnd() === '│ 1 general'), 'Codex\'s default agent, or one with no role, is "general"');
+  assert.ok(!nested.some(line => /folded/.test(line)));
 });
 
 test('a card opens to its whole timeline and the task in full; Enter still inspects, e and Space open', () => {
@@ -404,13 +404,15 @@ test('guardian reviews fold into a ◈N chip on their parent, or on the summary 
   const state = rich({ tree: { ...rich().tree, showAll: true } });
   const frame = renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now });
   const lines = plain(frame);
-  assert.match(lines[frame.panes[0].y], /^ ▦ Agents {2}!1 failed {2}✓1 done {2}▸1 run {2}◈1 reviews/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
+  assert.match(lines[frame.panes[0].y], /^ ▦ Agents {2}✓1 done {2}▸1 run {2}◈1 reviews *$/, 'the cards counted, folded reviews left out; the main session\'s chip is on the summary');
   const top = lines.find(line => line.includes('bench_corpus'))!;
   assert.match(top, /◈2/);
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');
   assert.ok(!lines.some(line => /The following is the Codex/.test(line)), 'never the review prompt');
-  assert.equal(lines.filter(line => line.includes('guardian')).length, 1, 'only the failed one has a card');
-  assert.ok(lines.some(line => /^ ┌ ! guardian/.test(line)));
+  assert.ok(!lines.some(line => line.includes('guardian')), 'a review is no card');
+  assert.match(lines.find(line => line.includes('other'))!, /✗1/, 'a failed one counts among its lead\'s failures');
+  const opened = plain(renderMonitor({ tree: tree(nodes), state: { ...state, cards: new Set([id(44)]) }, width: 60, height: 50, nowMs: now }));
+  assert.ok(opened.some(line => /^│ ! guardian +\d+h$/.test(line.trimEnd())), 'and has a line on its lead\'s card');
   // j/k never lands on a folded review.
   let s = frame.state;
   const seen = new Set<string>();
@@ -443,7 +445,7 @@ test('a finished agent\'s second line says how far it got: the newest model note
     assert.equal(row.lastIndexOf('─') - row.indexOf('─') + 1, width >= 56 ? 16 : width < 36 ? 8 : 12, `${width}: the meter's cells`);
     const meter = frame.lines.find(line => line.includes('done_50'))!;
     assert.ok(meter.includes(theme.info('X').split('X')[0] + '─'), 'an old row keeps its meter\'s zone colour');
-    assert.ok(meter.includes(colors.dim('done_50')), 'only the name dims');
+    assert.ok(meter.includes(colors.dim(directions(tree(nodes)).paint(nodes[0].id)('done_50'))), 'only the name dims, in its direction\'s colour');
   }
   // Compact: only the selected row has its second line.
   const compact = plain(renderMonitor({ tree: tree(nodes), state: { ...initialMonitorState(), tree: { ...initialMonitorState().tree, selectedId: nodes[0].id } },

@@ -1,8 +1,9 @@
 /** What a key, a click or the wheel does to the panel: the next state, and anything it asks of the page. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorFrame, MonitorOutcome, MonitorPane, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
-import { MONITOR_PANES, toggleCard } from './monitor.js';
-import { visibleRows, applyKey } from './panel-state.js';
+import { MONITOR_PANES, toggleCard, listedAgents } from './monitor.js';
+import { applyKey } from './panel-state.js';
+import { directions } from './directions.js';
 import { WHEEL_ROWS } from './agents-view.js';
 import { nextLevel } from './status-foot.js';
 import { UNTRACKED_ROW, worktreeOfItem } from './monitor-labels.js';
@@ -112,7 +113,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
           const id=row?.item;
           if(!id)return result();
           if(pane.id==='agents') {
-            if(!visibleRows(ctx.tree.nodes,next.tree,ctx.nowMs).some(row=>row.node.id===id))return result();
+            if(!listedAgents(ctx.tree.nodes,next,ctx.nowMs??Date.now()).some(row=>row.node.id===id))return result();
             pick(id);
             // A card is a place to read: a click selects it, `o` switches.
             // A tree row is a list to pick from: a click switches.
@@ -136,7 +137,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   if(key==='reset'){next.statusLevel=nextLevel(next);next.statusScroll=0;return result({type:'status-level'});}
   if(key==='main')return result({type:'switch',id:ctx.tree.rootId});
   if(key==='open-session')return next.focus==='agents'&&next.tree.selectedId?result({type:'switch',id:next.tree.selectedId}):result();
-  if(key==='expand'){if(next.style==='rich'&&next.tree.selectedId){next=toggleCard(next,next.tree.selectedId);next.focus='agents';next.revealed=null;}}
+  // A subtask selected from its lead's card opens or closes that card.
+  if(key==='expand'){if(next.style==='rich'&&next.tree.selectedId){next=toggleCard(next,directions(ctx.tree).family.get(next.tree.selectedId)??next.tree.selectedId);next.focus='agents';next.revealed=null;}}
   else if(key==='show-all')next.tree.showAll=!next.tree.showAll;
   else if(key==='help'){next.help=true;next.helpScroll=0;}
   else if(key==='pane-close'){if(!next.tabbed&&next.modes[next.focus]!=='closed')next=closePane(next,next.focus);}
@@ -178,13 +180,18 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     const delta=key==='down'?1:key==='up'?-1:key==='page-down'?itemPage:key==='page-up'?-itemPage:0;
     const move=delta!==0||key==='home'||key==='end';
     if(next.focus==='agents') {
-      const rows=visibleRows(ctx.tree.nodes,next.tree,ctx.nowMs);
+      const rows=listedAgents(ctx.tree.nodes,next,ctx.nowMs??Date.now());
       // A page key scrolls the view a page; the selection keys move the
       // selection, and the view follows it there.
       if(key==='page-down'||key==='page-up'){
         const view=Math.max(1,(pane?.visible??page)-(pane?.pinned??0)-1);
         next.scroll.agents=Math.max(0,next.scroll.agents+(key==='page-down'?view:-view));
-      } else if(move){next.revealed=null;const index=rows.findIndex(row=>row.node.id===next.tree.selectedId);const target=key==='home'?0:key==='end'?rows.length-1:Math.max(0,index)+delta;
+      } else if(move){next.revealed=null;
+        // A subtask selected from its lead's card sits inside that card: up goes to the lead, down past it.
+        let index=rows.findIndex(row=>row.node.id===next.tree.selectedId);
+        const inside=index<0&&next.tree.selectedId?rows.findIndex(row=>row.node.id===directions(ctx.tree).family.get(next.tree.selectedId!)):-1;
+        if(inside>=0)index=delta<0?inside+1:inside;
+        const target=key==='home'?0:key==='end'?rows.length-1:Math.max(0,index)+delta;
         const row=rows[Math.max(0,Math.min(rows.length-1,target))];if(row)next.tree.selectedId=row.node.id;
       } else if(key==='sort')next.tree.sort=next.tree.sort==='active'?'created':'active';
       else if(['left','right','filter'].includes(key))next.tree=applyKey(next.tree,key as 'left'|'right'|'filter',rows).state;

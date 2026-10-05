@@ -140,10 +140,14 @@ export function tally(kids: readonly SubagentTreeNode[]): { running: number; fai
 /**
  * Whether an L2's comings and goings are worth a line of their own: it
  * failed, it is in a role the reader named (one whose results matter, a
- * critic's verdict), or the brief flagged it.
+ * critic's verdict), or the brief flagged it. A name matches the role or
+ * its end after a dash: `critic` names `team-platform-critic`, as the cards,
+ * leaving a shared prefix out, may say it.
  */
 export function isImportant(node: SubagentTreeNode, log: readonly AgentLogEntry[] | undefined, roles: ReadonlySet<string>): boolean {
-  return node.status === 'error' || Boolean(node.role && roles.has(node.role)) || Boolean(log?.at(-1)?.attention);
+  const role = node.role;
+  const named = Boolean(role && [...roles].some(name => role === name || role.endsWith(`-${name}`)));
+  return node.status === 'error' || named || Boolean(log?.at(-1)?.attention);
 }
 
 /** The roles named in the setting: a comma list, spaces ignored. */

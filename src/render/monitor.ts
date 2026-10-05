@@ -3,7 +3,7 @@ import type { SubagentTree } from '../types.js';
 import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
-import { initialPanelState, reconcileSelection, visibleRows, countExpired, type PanelState } from './panel-state.js';
+import { initialPanelState, reconcileSelection, visibleRows, countExpired, type PanelState, type PanelRow } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { modelLegend } from './model-glyphs.js';
 import { iconSet } from './hud-config.js';
@@ -92,8 +92,12 @@ export interface MonitorState {
   timelineHours?: number;
   /** Entries the reader brought back from before the window. Panel state, reset with the session. */
   timelineMore?: number;
-  /** The L2 roles the timeline gives a line of their own. The panel sets it from settings. */
+  /** The L2 roles the timeline and the cards give a line of their own. The panel sets it from settings. */
   importantRoles?: ReadonlySet<string>;
+  /** The cards' corners. The panel sets it from settings. */
+  cardCorners?: 'square' | 'round';
+  /** False leaves out the line on a card counting its subtasks by role. The panel sets it from settings. */
+  roleCounts?: boolean;
 }
 export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
@@ -218,7 +222,17 @@ export function monitorModes(settings: HudSettings): MonitorModes {
 /** What the settings say about how the panel shows things, as its state. */
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
   return {tabbed:settings.paneLayout === 'tabs', style:settings.panelStyle, statusLevel:settings.statusCard, labelAsName:settings.labelAsName,
-    timelineStyle:settings.timelineStyle, timelineHours:settings.timelineHours, importantRoles:roleSet(settings.importantRoles)};
+    timelineStyle:settings.timelineStyle, timelineHours:settings.timelineHours, importantRoles:roleSet(settings.importantRoles),
+    cardCorners:settings.cardCorners, roleCounts:settings.cardRoleCounts};
+}
+/**
+ * The agents the agents view lists, in its order: in rich style the L1s
+ * alone, a card each, their subtasks counted and the ones that matter named
+ * on it; compact, the whole tree.
+ */
+export function listedAgents(nodes: SubagentTree['nodes'], state: MonitorState, nowMs: number): PanelRow[] {
+  const rows = visibleRows(nodes, state.tree, nowMs);
+  return state.style === 'rich' ? rows.filter(row => row.depth === 0) : rows;
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return {agentsPane:state.modes.agents, timelinePane:state.modes.timeline, changesPane:state.modes.changes, detailsPane:state.modes.details};
@@ -240,7 +254,7 @@ function fileSelection(state: MonitorState, git?: GitChanges | null, worktrees?:
   return files.find(f => !isUntracked(f))?.path ?? (folded ? UNTRACKED_ROW : null);
 }
 export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null, nowMs: number = Date.now()): MonitorState {
-  const rows = visibleRows(tree.nodes, state.tree, nowMs);
+  const rows = listedAgents(tree.nodes, state, nowMs);
   const selected = reconcileSelection(state.tree, tree.nodes, rows);
   const entries = worktrees?.entries ?? [];
   const selectedWorktree = entries.some(w => w.path === state.selectedWorktree) ? state.selectedWorktree
@@ -293,7 +307,7 @@ function helpText(rich: boolean, prefix: string, tabbed = false): Array<string |
       ...(tabbed ? ['{p} 1–4  show a pane  {p} Tab  next'] : ['{p} 1–4  open / close a pane  {p} Tab  next','{p} x  close pane']),
       '{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
       tabbed ? '{p} Enter / v  inspect' : '{p} Enter / v  inspect  {p} z  zoom',...(rich ? ['{p} e / Space  open / close card'] : []),
-      '{p} h l  fold / unfold agent','{p} f  filter  {p} s  order',
+      ...(rich ? [] : ['{p} h l  fold / unfold agent']),'{p} f  filter  {p} s  order',
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
       '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex'].map(line=>t(line,p)),
     head('Buttons, top row'),

@@ -46,6 +46,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help:'Done agents hide after this',format:minutes},
   {key:'agentLog',group:'Agents',label:'Agent log',short:'Log',values:[false,true],help:'Keep a log on each card even with no backend'},
   {key:'labelAsName',group:'Agents',label:'Label as name',short:'Label',values:[true,false],help:'A label, once there, replaces the name'},
+  {key:'cardRoleCounts',group:'Agents',label:'Role counts',short:'Roles',values:[true,false],help:'A card counts its subtasks by role'},
+  {key:'cardCorners',group:'Agents',label:'Card corners',short:'Corners',values:['square','round'],help:'Square or round'},
   // Everything that sends material to a model, in one place, each with its
   // own switch and a help line saying what it sends.
   {key:'briefing',group:'LLM',label:'Backend',short:'Model',values:['off','omp','agy','api'],help:'Who writes; off stops all below'},

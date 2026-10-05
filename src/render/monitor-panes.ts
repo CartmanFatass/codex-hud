@@ -7,7 +7,8 @@ import type { SubagentTreeNode } from '../types.js';
 import type { GitChangedFile } from '../collectors/git-changes.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { MonitorData, MonitorPane, MonitorRow, MonitorState } from './monitor.js';
-import { visibleRows, countExpired, guardianCount } from './panel-state.js';
+import { visibleRows, countExpired, guardianCount, isGuardian } from './panel-state.js';
+import { subtasks } from './directions.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { displayConfig } from './hud-config.js';
@@ -15,22 +16,33 @@ import { t } from './i18n.js';
 import { agentTitle, shownName } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { monitorText, fit, pair, wrapped, flowLines, squeeze } from './monitor-text.js';
-import { nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
+import { nodeStatus, isLive, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
   isUntracked, UNTRACKED_ROW, changeLetter, lineCounts, listsWorktrees, worktreeItem } from './monitor-labels.js';
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
 import { timelineRows } from './monitor-timeline.js';
 
 /**
- * The agents' heading: what is running, failed and done, as counts. The
+ * The agents' heading: what is running, failed and done, as counts. In rich
+ * style it counts the cards, the L1 agents, one at work while a subtask of
+ * it is, then their subtasks as one figure; compact, every agent. The
  * switch for what the linger window put away is on the control bar.
  */
 export function summaryRow(input: MonitorData, state: MonitorState, width: number, now: number): {row: MonitorRow; total: number; expired: number} {
-  const everyone = visibleRows(input.tree.nodes,{...state.tree,filter:'all',collapsed:new Set(),showAll:true},now);
+  const rich = state.style === 'rich';
+  const rows = (showAll: boolean, filter?: 'all') => {
+    const all = visibleRows(input.tree.nodes,{...state.tree,...(filter ? {filter} : {}),collapsed:new Set(),showAll},now);
+    return rich ? all.filter(row=>row.depth === 0) : all;
+  };
+  const everyone = rows(true,'all');
   const totals = {run:0,done:0,error:0,unknown:0};
-  for (const {node} of everyone) totals[node.status === 'running' || node.status === 'starting' ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
+  const live = (node: SubagentTreeNode) => node.status === 'running' || node.status === 'starting' || (rich && subtasks(node).some(isLive));
+  for (const {node} of everyone) totals[live(node) ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
   // What the linger window puts away, counted whether or not it is showing.
-  const expired = countExpired(input.tree.nodes,{...state.tree,showAll:false},now);
+  const expired = rich ? rows(true).length-rows(false).length : countExpired(input.tree.nodes,{...state.tree,showAll:false},now);
+  let subs = 0;
+  const count = (nodes: readonly SubagentTreeNode[]) => { for (const node of nodes) { if (!isGuardian(node)) subs++; count(node.children); } };
+  if (rich) for (const {node} of everyone) count(node.children);
   // Guardian reviews under the main session count here, not as agents.
   const reviews = guardianCount(input.tree.nodes).count;
   // "!1 失败  ▸1 运行  ✓5 完成": an icon and a count alone said nothing to a
@@ -47,6 +59,7 @@ export function summaryRow(input: MonitorData, state: MonitorState, width: numbe
       totals.run ? count('▸',theme.info,totals.run,'run') : '',
       totals.unknown ? count('?',colors.dim,totals.unknown,'unknown') : '',
       reviews ? `${guardianChip(input.tree.nodes)}${words ? colors.dim(` ${t('reviews')}`) : ''}` : '',
+      subs && words ? colors.dim(t('· {n} subtasks',{n:subs})) : '',
     ].filter(Boolean).join(words ? '  ' : ' ');
     return counts ? truncateAnsi(' '+counts,width) : '';
   };

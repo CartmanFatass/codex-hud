@@ -35,9 +35,11 @@ export interface HudSettings extends HudDisplayConfig {
   /** The timeline's window: the newest this many hours, the earlier entries a row at its end brings back. */
   timelineHours: 1 | 3 | 6 | 12 | 24;
   /**
-   * The roles of the agents an L1 starts (`reviewer`, `critic`) whose stages
-   * the timeline gives a line of their own, a comma list. The rest are counts
-   * on their L1's line; a failed or flagged one always gets its line.
+   * The roles of the agents an L1 starts (`reviewer`, `critic`) that the
+   * timeline and the cards give a line of their own, a comma list; a name
+   * also matches a role ending in it after a dash (`critic`, a
+   * `team-platform-critic`). The rest are counts on their L1's line and
+   * card; a failed or flagged one always gets its line.
    */
   importantRoles: string;
   /**
@@ -88,6 +90,10 @@ export interface HudSettings extends HudDisplayConfig {
   recapFloorMs: number;
   /** Show each agent's log under the tree even with the model backend off (observed entries only). */
   agentLog: boolean;
+  /** The cards' corners: square (`┌ └`) or round (`╭ ╰`). */
+  cardCorners: 'square' | 'round';
+  /** A line at the foot of an L1's card counting the agents it started by role (`5 implementer · 2 general`). */
+  cardRoleCounts: boolean;
   /**
    * How much the status card at the foot of the panel shows: `min`, its top
    * edge alone, the session's state on it; `status`, the bar's fields;
@@ -157,7 +163,7 @@ export function defaultSettings(): HudSettings {
     worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
-    agentLog: false, notify: false, notifyDesktop: false,
+    agentLog: false, cardCorners: 'square', cardRoleCounts: true, notify: false, notifyDesktop: false,
     resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
     art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode',
   };
@@ -210,6 +216,8 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   recapFloorMs: (value) => isIntegerBetween(value, 60_000, 7_200_000),
   statusCard: oneOf('min', 'status', 'full'),
   agentLog: isBoolean,
+  cardCorners: oneOf('square', 'round'),
+  cardRoleCounts: isBoolean,
   notify: isBoolean,
   notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
