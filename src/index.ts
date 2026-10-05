@@ -11,6 +11,8 @@ import { spawn } from 'child_process';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
 import { HudStatus } from './collectors/hud-status.js';
+import { useTreeScanStore, flushTreeScans } from './collectors/subagent-tree.js';
+import { TreeScanStore } from './collectors/tree-scan-store.js';
 import { RolloutParser } from './collectors/rollout.js';
 import { createParseQueue } from './utils/parse-queue.js';
 import { fileSignature } from './utils/file-signature.js';
@@ -217,6 +219,7 @@ function shutdown(): void {
 
   // A snapshot of a HUD that is no longer running would read as live.
   snapshotWriter.remove();
+  flushTreeScans();
   stopProfiling();
   // Clean up watchers
   sessionFinder.stop();
@@ -270,6 +273,8 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
   process.on('SIGHUP', shutdown);
   startProfiling('bar');
+  // Started again, the bar reads only what each rollout gained since it last saved its scan.
+  useTreeScanStore(new TreeScanStore(path.join(getHudHome(), 'scan')));
 
   // Handle stdin close (tmux pane closed)
   process.stdin.on('close', shutdown);

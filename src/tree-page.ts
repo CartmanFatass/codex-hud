@@ -9,7 +9,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { SessionFinder } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
-import { buildSubagentTree, uniquePickerLabel } from './collectors/subagent-tree.js';
+import { buildSubagentTree, uniquePickerLabel, useTreeScanStore, flushTreeScans } from './collectors/subagent-tree.js';
+import { TreeScanStore } from './collectors/tree-scan-store.js';
 import { collectGitChanges, readGitDiff, readDiffHunks, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
@@ -110,6 +111,8 @@ function requestEnsureSingle(): void {
 
 async function runLivePage(): Promise<void> {
   startProfiling('panel');
+  // Opened again, the panel reads only what each rollout gained since it last saved its scan.
+  useTreeScanStore(new TreeScanStore(path.join(getHudHome(),'scan')));
   const finder = new SessionFinder(HUD_CWD_REAL,undefined,HUD_SESSION_START);
   const parser = new RolloutParser(40);
   const worktreeCollector = new WorktreeCollector();
@@ -444,6 +447,7 @@ async function runLivePage(): Promise<void> {
     jobs.stop();
     model.cancelAll();
     agentLog.flush();
+    flushTreeScans();
     timers.forEach(clearInterval);
     if (collectTimer) clearInterval(collectTimer);
     if (repaintTimer) clearTimeout(repaintTimer);

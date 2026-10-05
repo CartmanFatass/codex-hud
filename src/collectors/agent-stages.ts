@@ -137,6 +137,7 @@ function settle(ledger: AgentLedger): void {
  * One rollout record into the ledger. Records of other kinds, and malformed
  * ones, are left alone.
  */
+// What this reads is saved with the scan (tree-scan-store.ts): a change to it bumps SCAN_VERSION.
 export function applyLedgerEntry(entry: Entry, ledger: AgentLedger): void {
   const payload = entry.payload;
   if (!payload) return;

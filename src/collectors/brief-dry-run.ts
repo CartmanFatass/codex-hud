@@ -10,7 +10,8 @@
 import * as path from 'node:path';
 import { SessionFinder } from './session-finder.js';
 import { RolloutParser } from './rollout.js';
-import { buildSubagentTree } from './subagent-tree.js';
+import { buildSubagentTree, useTreeScanStore } from './subagent-tree.js';
+import { TreeScanStore } from './tree-scan-store.js';
 import { AgentLog } from './agent-log.js';
 import { RecapStore } from './recap.js';
 import { SmallModel } from './small-model.js';
@@ -44,7 +45,10 @@ export async function dryRunText(options: DryRunOptions): Promise<{ text: string
   const main = await parser.parse();
   const rootId = main?.session?.id ?? session.sessionId ?? '';
   if (!rootId) return { error: `The session at ${session.path} has no id yet` };
+  // The panel's saved scans spare a read of every rollout from its start; none is written.
+  useTreeScanStore(new TreeScanStore(path.join(options.hudHome, 'scan'), { readOnly: true, now }));
   const tree = buildSubagentTree(rootId, main?.subagents ?? []);
+  useTreeScanStore(undefined);
   const language = resolveLanguage(settings.language);
   // Read, never flushed: the log on disk stays as it is.
   const log = new AgentLog(path.join(options.hudHome, 'agent-log'));
