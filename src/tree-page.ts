@@ -13,7 +13,7 @@ import { buildSubagentTree, uniquePickerLabel } from './collectors/subagent-tree
 import { collectGitChanges, readGitDiff, readDiffHunks, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
-  monitorModes, monitorPreferences, nextRepaintDelay, type MonitorFrame } from './render/monitor.js';
+  monitorModes, monitorPreferences, nextRepaintDelay, paneShown, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
@@ -128,6 +128,7 @@ async function runLivePage(): Promise<void> {
     next.tree.sort = settings.sort;
     next.tree.lingerMs = settings.finishedLingerMs;
     next.modes = monitorModes(settings);
+    next.tabbed = settings.paneLayout === 'tabs';
     next.style = settings.panelStyle;
     next.statusLevel = settings.statusCard;
     next.labelAsName = settings.labelAsName;
@@ -187,7 +188,7 @@ async function runLivePage(): Promise<void> {
   const jobs = new ModelJobs({model,log:agentLog,labelsFile:path.join(getHudHome(),'model-cache','labels.json'),titles:recaps,readHunks:readDiffHunks,
     onChange:()=>{jobs.apply(tree,switches(),resolveLanguage(settings.language));render();}});
   const updateJobs = () => time('jobs.update',()=>jobs.update({tree,main,switches:switches(),language:resolveLanguage(settings.language),on:jobsOn(),
-    inspected:state.modes.details === 'open' && state.preview === 'agent' ? state.tree.selectedId ?? undefined : undefined,
+    inspected:paneShown(state,'details') && state.preview === 'agent' ? state.tree.selectedId ?? undefined : undefined,
     recapGoal:briefCommand() === 'off' ? undefined : briefer.current().recap?.goal,digestLabels:{basis:t('Basis:'),caveats:t('Caveats:')},now:Date.now()}));
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   /** A short-lived line in the notice row, cleared after a few seconds. */
@@ -398,9 +399,10 @@ async function runLivePage(): Promise<void> {
   const refreshGit = async () => {
     if (closed) return;
     if (collectingGit) { gitAgain=true; return; }
-    // Closed monitors are absent, not empty frames continuously collecting data.
-    const wantChanges = state.modes.changes === 'open' || (state.modes.details === 'open' && state.preview === 'file');
-    if (state.modes.worktrees !== 'open' && !wantChanges && !(state.modes.details === 'open' && state.preview === 'worktree')) return;
+    // Closed monitors are absent, not empty frames continuously collecting
+    // data; in the tabs layout only the pane shown is read for.
+    const wantChanges = paneShown(state,'changes') || (paneShown(state,'details') && state.preview === 'file');
+    if (!paneShown(state,'worktrees') && !wantChanges && !(paneShown(state,'details') && state.preview === 'worktree')) return;
     collectingGit = true;
     const candidates = sources();
     const requestKey = JSON.stringify(candidates);
@@ -421,7 +423,7 @@ async function runLivePage(): Promise<void> {
         if (requestKey !== JSON.stringify(sources()) || selected !== state.selectedWorktree) { gitAgain=true; return; }
         git=result;gitRevision++;
         // While the pane is open, and at most once per floor period.
-        jobs.updateChanges(git,{on:jobsOn(),enabled:switches().changeSummary,open:state.modes.changes === 'open',floorMs:settings.recapFloorMs,
+        jobs.updateChanges(git,{on:jobsOn(),enabled:switches().changeSummary,open:paneShown(state,'changes'),floorMs:settings.recapFloorMs,
           language:resolveLanguage(settings.language),now:Date.now()});
         const previousFile=state.selectedFile;
         state=reconcileMonitor(state,tree,git,worktrees);
@@ -527,7 +529,7 @@ async function runLivePage(): Promise<void> {
             armCollect();
             loadArt();
             state = {...state,tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
-              style:settings.panelStyle,statusLevel:settings.statusCard,labelAsName:settings.labelAsName,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
+              tabbed:settings.paneLayout === 'tabs',style:settings.panelStyle,statusLevel:settings.statusCard,labelAsName:settings.labelAsName,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
             git=null;diff=undefined;diffKey='';void refreshGit();
             if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
             settingsPage.message = t('Saved');
@@ -564,7 +566,9 @@ async function runLivePage(): Promise<void> {
         settingsPage={draft:{...settings,...monitorPreferences(state),sort:state.tree.sort??'active'},selected:0,offset:0,message:''};
       }
       render();
-      if (state.selectedWorktree !== previous.selectedWorktree || JSON.stringify(state.modes) !== JSON.stringify(previous.modes)) void refreshGit();
+      // A tab shown in the tabs layout is read for at once, as an opened pane is.
+      if (state.selectedWorktree !== previous.selectedWorktree || JSON.stringify(state.modes) !== JSON.stringify(previous.modes)
+        || (state.tabbed && state.focus !== previous.focus)) void refreshGit();
       void refreshInspection();
       if (result.action?.type === 'switch') {
         const id=result.action.id;

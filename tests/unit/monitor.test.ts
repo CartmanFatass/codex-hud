@@ -231,6 +231,41 @@ test('every look draws the panel to its width; the frame look closes its frame r
   }finally{setDisplayConfig(looked);}
 });
 
+test('the tabs layout: one pane at a time, the bar\'s tabs and 1–5 switch it, and the stacked layout\'s panes stay as they were',()=>{
+  const start={...withWorktrees(),tabbed:true};
+  let frame=draw(start,45);const ctx=()=>({tree,worktrees,frame});
+  assert.deepEqual(frame.panes.map(p=>p.id),['agents'],'only the pane shown');
+  const tab=(pane:string)=>frame.controls.find(c=>c.kind==='tab'&&c.pane===pane)!;
+  assert.deepEqual(frame.controls.filter(c=>c.kind==='tab').map(c=>c.pane),['agents','worktrees','changes','details','timeline'],'every pane has a tab');
+  // A click on a tab the stacked layout has closed shows that pane, and opens nothing.
+  let next=handleMonitorInput(frame.state,mouse(tab('changes').x,0),ctx()).state;
+  assert.equal(next.focus,'changes');assert.deepEqual(next.modes,start.modes,'nothing to save');
+  frame=draw(next,45);
+  assert.deepEqual(frame.panes.map(p=>p.id),['changes']);
+  assert.equal(frame.panes[0].height,28-1,'all the rows under the bar');
+  next=handleMonitorInput(frame.state,mouse(tab('changes').x,0),ctx()).state;
+  assert.equal(next.focus,'changes','a second click keeps it shown');
+  // 1–5 and Tab go through every pane; x and z do nothing.
+  next=handleMonitorInput(next,key('timeline'),ctx()).state;assert.equal(next.focus,'timeline');
+  next=handleMonitorInput(next,key('tab'),ctx()).state;assert.equal(next.focus,'agents','Tab wraps round');
+  next=handleMonitorInput(next,key('tab'),ctx()).state;assert.equal(next.focus,'worktrees');
+  assert.deepEqual(handleMonitorInput(next,key('pane-close'),ctx()).state.modes,start.modes,'x closes nothing');
+  assert.equal(handleMonitorInput(next,key('zoom'),ctx()).state.zoom,false,'z zooms nothing');
+  frame=draw(next,45);
+  const head=frame.panes[0];
+  assert.equal(handleMonitorInput(frame.state,mouse(3,head.y),ctx()).state.zoom,false,'nor does a click on the title');
+  // Enter inspects in the inspector's tab; Esc goes back to what was inspected.
+  next=handleMonitorInput(next,key('enter'),ctx()).state;
+  assert.equal(next.focus,'details');assert.equal(next.zoom,false);
+  next=handleMonitorInput(next,key('escape'),ctx()).state;
+  assert.equal(next.focus,'worktrees');assert.deepEqual(next.modes,start.modes);
+  // The stacked layout comes back as it was left.
+  assert.deepEqual(draw({...next,tabbed:false},45).panes.map(p=>p.id),['agents','worktrees']);
+  // The help says what the tabs do.
+  const help=draw({...next,help:true},45,200).lines.map(stripAnsi).join('\n');
+  assert.match(help,/1–5 show a pane/);assert.doesNotMatch(help,/close pane\b|zoom/);
+});
+
 test('keyboard motion only previews; Inspector remains closed until explicitly opened',()=>{
   const frame=draw();const next=handleMonitorInput(frame.state,key('down'),{tree,worktrees,frame});
   assert.equal(next.action,undefined);assert.notEqual(next.state.tree.selectedId,frame.state.tree.selectedId);

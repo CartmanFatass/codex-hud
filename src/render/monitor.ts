@@ -200,7 +200,8 @@ export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: 
   const selectedWorktree = entries.some(w => w.path === state.selectedWorktree) ? state.selectedWorktree
     : entries.find(w => !w.bare && w.prunable === undefined)?.path ?? entries[0]?.path ?? null;
   const selectedFile = git?.files.some(f => f.path === state.selectedFile) ? state.selectedFile : git?.files[0]?.path ?? null;
-  const focus = state.modes[state.focus] !== 'closed' ? state.focus : MONITOR_PANES.find(id => state.modes[id] !== 'closed') ?? 'agents';
+  // In the tabs layout any pane can be the one shown, whatever the stacked layout left closed.
+  const focus = state.tabbed || state.modes[state.focus] !== 'closed' ? state.focus : MONITOR_PANES.find(id => state.modes[id] !== 'closed') ?? 'agents';
   const changed = selected.selectedId !== state.tree.selectedId || selectedWorktree !== state.selectedWorktree || selectedFile !== state.selectedFile;
   // A selection the panel made for itself (the first agent, or a stand-in
   // for one that left) is not the reader moving: the view stays put.
@@ -1092,16 +1093,18 @@ function agentsView(input: MonitorData, state: MonitorState, width: number, now:
  * panel is the panel's), the buttons, the mouse, then the legend. `prefix`
  * is the prefix as people write it, "Ctrl+]".
  */
-function helpText(rich: boolean, prefix: string): Array<string | {head: string}> {
+function helpText(rich: boolean, prefix: string, tabbed = false): Array<string | {head: string}> {
   const p = {p:prefix};
   const head = (text: string) => ({head:t(text,p)});
   return [
     head('Shortcuts: {p}, then a key'),
     ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
       '{p} ,  settings  {p} ?  help','{p} b  pause / resume brief','{p} a  show / hide older',
-      '{p} m  main session  {p} o  switch to selected','{p} 1–5  open / close a pane  {p} Tab  next',
-      '{p} x  close pane','{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
-      '{p} Enter / v  inspect  {p} z  zoom',...(rich ? ['{p} e / Space  open / close card'] : []),
+      '{p} m  main session  {p} o  switch to selected',
+      // The tabs layout shows one pane at a time: nothing to close or zoom.
+      ...(tabbed ? ['{p} 1–5  show a pane  {p} Tab  next'] : ['{p} 1–5  open / close a pane  {p} Tab  next','{p} x  close pane']),
+      '{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
+      tabbed ? '{p} Enter / v  inspect' : '{p} Enter / v  inspect  {p} z  zoom',...(rich ? ['{p} e / Space  open / close card'] : []),
       '{p} h l  fold / unfold agent','{p} f  filter  {p} s  order',
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
       '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex'].map(line=>t(line,p)),
@@ -1112,10 +1115,10 @@ function helpText(rich: boolean, prefix: string): Array<string | {head: string}>
       t('{pause} / {resume} pause / resume brief',{pause:icon('pause'),resume:icon('resume')}),
       t('{show} show older  {hide} hide them',{show:icon('show'),hide:icon('hide')}),
       t('{settings} settings  {help} help',{settings:icon('settings'),help:icon('help')})] : []),
-    t('Click a pane\'s button: open or close it'),
+    t(tabbed ? 'Click a pane\'s tab: show it' : 'Click a pane\'s button: open or close it'),
     head('Mouse'),
     ...[...(rich ? ['Click card: select','Click its name: switch','Click top rule or ▾: open','Wheel over the card: its brief'] : ['Click agent: switch','Click a log line: select agent']),
-      "Click a pane's title: zoom / restore","Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
+      ...(tabbed ? [] : ["Click a pane's title: zoom / restore"]),"Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
     head('Legend'),
     ...['1 Cards  2 Worktrees','3 Changes  4 Inspector','5 Timeline','✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
@@ -1128,6 +1131,11 @@ function helpText(rich: boolean, prefix: string): Array<string | {head: string}>
 
 /** Lines of the latest update the Inspector shows before "▾ More". */
 const REPORT_LINES = 6;
+/** Whether a pane is drawn, and so worth reading for: open when stacked, the one shown in the tabs layout. */
+export function paneShown(state: MonitorState, id: MonitorPane): boolean {
+  return state.tabbed ? state.focus === id : state.modes[id] === 'open';
+}
+
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const width = Math.max(0,Math.floor(input.width)); const height = Math.max(0,Math.floor(input.height));
   const state = reconcileMonitor(input.state,input.tree,input.git,input.worktrees,input.nowMs ?? Date.now());
@@ -1149,7 +1157,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       }
       return out;
     };
-    const help = helpText(state.style === 'rich',prefix)
+    const help = helpText(state.style === 'rich',prefix,Boolean(state.tabbed))
       .flatMap(line=>typeof line === 'string' ? entries(line).flatMap(entry=>helpLines(entry,width)) : helpLines(line.head,width).map(text=>theme.accent(text)));
     const count = Math.max(0,height-2);
     state.helpScroll = Math.max(0,Math.min(state.helpScroll??0,Math.max(0,help.length-count)));
@@ -1181,8 +1189,10 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const bar = controlBar(state,{brief:input.brief,expired:countExpired(input.tree.nodes,{...state.tree,showAll:false},now)},width);
   const top = Math.min(height,bar.lines.length);
   let budget = Math.max(0,height-top-footRows-noticeRows.length);
-  // A closed pane takes no row at all.
-  const ids = MONITOR_PANES.filter(id=>state.modes[id] !== 'closed' && (!state.zoom || id===state.focus));
+  // A closed pane takes no row at all; in the tabs layout only the one shown
+  // has rows, all of them, and there is nothing to zoom.
+  const zoom = state.zoom && !state.tabbed;
+  const ids = state.tabbed ? [state.focus] : MONITOR_PANES.filter(id=>state.modes[id] !== 'closed' && (!zoom || id===state.focus));
   // Agents has no band of its own: its summary line, pinned at its top, is
   // painted as one. The other panes have a band row above their rows.
   const edgeOf = (id: MonitorPane) => id === 'agents' ? 0 : 1;
@@ -1195,7 +1205,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     for (const id of order) {
       if (!budget) break;
       const rows = content.get(id)?.length ?? 0;
-      const target = state.zoom ? height : rows + edgeOf(id);
+      const target = zoom ? height : rows + edgeOf(id);
       const size = sizes.get(id) ?? 0;
       if (size && size < target) { sizes.set(id,size+1);budget--;grew=true; }
     }
@@ -1221,7 +1231,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const h = sizes.get(id) ?? 0; if (!h) continue;
     const rows = content.get(id) ?? [];
     const focused = id===state.focus;
-    const zoomed = state.zoom && focused;
+    const zoomed = zoom && focused;
     if (id === 'agents') {
       // Its title, then the counts the summary row has; where its rows are on the right.
       drawAgentsView(frame,state,rows,y,cw,h,(summary,range)=>paneHead(id,width,{info:summary,right:range && colors.dim(range),focused,zoomed}),framed ? 2 : 0);
@@ -1372,6 +1382,8 @@ export function meterRow(width: number, left: string, right: string, meter?: Edg
  * the focus moves to the next pane still open.
  */
 export function clickTab(state: MonitorState, id: MonitorPane): MonitorState {
+  // In the tabs layout a tab shows its pane, as a browser's does: none opens or closes.
+  if (state.tabbed) return openPane(state,id);
   if (state.modes[id] === 'closed') return openPane({...state,zoom:false},id);
   return closePane(state,id);
 }
@@ -1382,7 +1394,9 @@ function closePane(state: MonitorState, id: MonitorPane): MonitorState {
 }
 function openPane(state: MonitorState, id: MonitorPane): MonitorState {
   const preview = id==='agents'?'agent':id==='worktrees'?'worktree':id==='changes'?'file':state.preview;
-  return {...state,focus:id,preview,modes:{...state.modes,[id]:'open'},scroll:{...state.scroll,details:preview===state.preview?state.scroll.details:0}};
+  // The tabs layout shows it and leaves the stacked layout's panes as they were.
+  const modes = state.tabbed ? state.modes : {...state.modes,[id]:'open' as const};
+  return {...state,focus:id,preview,modes,scroll:{...state.scroll,details:preview===state.preview?state.scroll.details:0}};
 }
 /** The row under a point inside a pane's frame, or nothing on its borders. */
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
@@ -1426,7 +1440,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(control?.kind==='older'){next.tree.showAll=!next.tree.showAll;return result();}
     if(control?.kind==='tab'&&control.pane){next=clickTab(next,control.pane);return result();}
     // A pane's band, or the agents' summary: zoom that pane, or restore it.
-    if(control?.kind==='zoom'&&control.pane){next.zoom=!(next.zoom&&next.focus===control.pane);next.focus=control.pane;return result();}
+    if(control?.kind==='zoom'&&control.pane){if(!next.tabbed)next.zoom=!(next.zoom&&next.focus===control.pane);next.focus=control.pane;return result();}
     if(control?.kind==='brief') return result({type:'brief-toggle'});
     if(control?.kind==='level'){next.statusLevel=nextLevel(next);next.statusScroll=0;return result({type:'status-level'});}
     // What was clicked is in view already: selecting it does not scroll.
@@ -1478,11 +1492,11 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   if(key==='expand'){if(next.style==='rich'&&next.tree.selectedId){next=toggleCard(next,next.tree.selectedId);next.focus='agents';next.revealed=null;}}
   else if(key==='show-all')next.tree.showAll=!next.tree.showAll;
   else if(key==='help'){next.help=true;next.helpScroll=0;}
-  else if(key==='pane-close'){if(next.modes[next.focus]!=='closed')next=closePane(next,next.focus);}
+  else if(key==='pane-close'){if(!next.tabbed&&next.modes[next.focus]!=='closed')next=closePane(next,next.focus);}
   // A pane's number, as its button: open it, or close it.
   else if(MONITOR_PANES.includes(key as MonitorPane))next=clickTab(next,key as MonitorPane);
   else if(key==='tab'||key==='shift-tab') {
-    const visible=MONITOR_PANES.filter(id=>next.modes[id]!=='closed');
+    const visible=MONITOR_PANES.filter(id=>next.tabbed||next.modes[id]!=='closed');
     if(visible.length)next.focus=visible[(visible.indexOf(next.focus)+(key==='tab'?1:visible.length-1))%visible.length];
   } else if(key==='enter'||key==='detail-toggle') {
     const from=next.focus;
@@ -1490,11 +1504,15 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(from==='agents')next.preview='agent';else if(from==='worktrees')next.preview='worktree';else if(from==='changes')next.preview='file';
     next=openPane(next,'details');next.scroll.details=0;
     next.expanded=false;
-    if(from==='changes')next.zoom=true;
-  } else if(key==='zoom')next.zoom=!next.zoom;
+    if(from==='changes'&&!next.tabbed)next.zoom=true;
+  } else if(key==='zoom'){if(!next.tabbed)next.zoom=!next.zoom;}
   else if(key==='escape') {
-    if(next.zoom)next.zoom=false;
-    else if(next.focus==='details'){next.modes.details='closed';next.focus=next.preview==='agent'?'agents':next.preview==='worktree'?'worktrees':'changes';}
+    if(next.zoom&&!next.tabbed)next.zoom=false;
+    else if(next.focus==='details'){
+      // Back to what was inspected; the tabs layout closes nothing on the way.
+      if(!next.tabbed)next.modes.details='closed';
+      next.focus=next.preview==='agent'?'agents':next.preview==='worktree'?'worktrees':'changes';
+    }
     else return result(undefined,true);
   } else {
     const pane=ctx.frame?.panes.find(p=>p.id===next.focus);
