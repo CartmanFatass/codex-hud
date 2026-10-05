@@ -196,10 +196,10 @@ test('the timeline settings: a style, a window, the roles that matter; each vali
   const team = session();
   const prefixed = (kids: SubagentTreeNode[]) => kids.map(child => ({ ...child, role: `team-${child.role}` }));
   team.nodes[1] = { ...team.nodes[1], children: [...prefixed(team.nodes[1].children),
-    kid('p1e', 'critic_tokens', 'team-platform-critic', 'completed', 30, 20), kid('p1f', 'helper', 'default', 'completed', 30, 20)] };
+    kid('p1e', 'critic_tokens', 'team-perf-critic', 'completed', 30, 20), kid('p1f', 'helper', 'default', 'completed', 30, 20)] };
   team.nodes[2] = { ...team.nodes[2], children: prefixed(team.nodes[2].children) };
-  assert.deepEqual(subtaskRoles(team), ['implementer', 'platform-critic', 'reviewer', 'scout'], 'Codex\'s default agent has no role to name');
-  assert.ok(isImportant(team.nodes[1].children[4], undefined, roleSet('platform-critic')));
+  assert.deepEqual(subtaskRoles(team), ['implementer', 'perf-critic', 'reviewer', 'scout'], 'Codex\'s default agent has no role to name');
+  assert.ok(isImportant(team.nodes[1].children[4], undefined, roleSet('perf-critic')));
 });
 
 test('a running stage\'s event carries what the agent said it would do; an ended one, what it returned', () => {
