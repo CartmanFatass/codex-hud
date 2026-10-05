@@ -40,7 +40,7 @@ export function putAwayCount(nodes: SubagentTreeNode[], state: MonitorState, now
  * it is, then their subtasks as one figure; compact, every agent. The
  * switch for what the linger window put away is on the control bar.
  */
-export function summaryRow(input: MonitorData, state: MonitorState, width: number, now: number): {row: MonitorRow; total: number; expired: number} {
+export function summaryRow(input: Pick<MonitorData,'tree'>, state: MonitorState, width: number, now: number): {row: MonitorRow; total: number; expired: number} {
   const rich = state.style === 'rich';
   const rows = (showAll: boolean, filter?: 'all') => {
     const all = visibleRows(input.tree.nodes,{...state.tree,...(filter ? {filter} : {}),collapsed:new Set(),showAll},now);

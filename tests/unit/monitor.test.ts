@@ -769,6 +769,32 @@ test('the panel\'s top, for the settings page to preview: the bar as the look dr
     assert.equal(tab[1], '');
     assert.match(tab[2], /^ ± Changes +$/);
     assert.equal(visualLength(tab[0]), 40);
+    // Tabs: the tab above names the pane, so the title is the agents' counts alone, or a rule in the frame look.
+    const counts = panelTop({ tree }, { ...state, focus: 'agents', tabbed: true }, 40).map(stripAnsi);
+    assert.doesNotMatch(counts[2], /Agents/);
+    assert.match(counts[2], /^ ✓2 done +$/);
+    setDisplayConfig({ look: 'frame' });
+    assert.match(panelTop({ tree }, { ...state, tabbed: true }, 40).map(stripAnsi)[2], /^├─+┤$/);
+  } finally {
+    setDisplayConfig(previous);
+  }
+});
+
+test('in the tabs layout a pane\'s title leaves its name to the tab above: the counts and where the rows are', () => {
+  const previous = setDisplayConfig({ look: 'frame', icons: 'unicode', theme: 'terminal' });
+  try {
+    for (const focus of ['agents', 'timeline'] as const) {
+      const state = { ...initialMonitorState(), tabbed: true, focus };
+      const lines = renderMonitor({ tree, worktrees, state, width: 40, height: 30, nowMs: now, timeline: [] }).lines.map(stripAnsi);
+      const title = lines.find(line => line.startsWith('├'))!;
+      assert.ok(title, lines.join('\n'));
+      assert.doesNotMatch(title, focus === 'agents' ? /Agents/ : /Timeline/);
+      assert.equal(visualLength(title), 40);
+      if (focus === 'agents') assert.match(title, /^├─ ✓2 done ─+┤$/);
+      else assert.match(title, /^├─+┤$/, 'nothing to count: the frame\'s edge alone');
+    }
+    const stacked = renderMonitor({ tree, worktrees, state: initialMonitorState(), width: 40, height: 30, nowMs: now }).lines.map(stripAnsi);
+    assert.ok(stacked.some(line => /^├─ ▦ Agents /.test(line)), 'stacked, each pane is named');
   } finally {
     setDisplayConfig(previous);
   }

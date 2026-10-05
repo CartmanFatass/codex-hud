@@ -17,7 +17,7 @@ import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
 import { TURN_CLOCKS, TURN_CLOCK_LONG, isUntracked, UNTRACKED_ROW, listsWorktrees, worktreeOfItem } from './monitor-labels.js';
-import { paneRows, agentsView, putAwayCount } from './monitor-panes.js';
+import { paneRows, agentsView, putAwayCount, summaryRow } from './monitor-panes.js';
 import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
 import { roleSet } from './directions.js';
 
@@ -272,15 +272,18 @@ export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: 
 
 /**
  * The panel's top as the display config now draws it: the control bar and
- * the focused pane's title, for the settings page to preview a look, its
- * icons or a theme before they are saved. A one-row bar has a blank row
- * under it, as a tall panel parts its sections, so every look is three rows
- * and the page holds still while the looks are stepped through.
+ * the focused pane's title (the agents' with their counts; in the tabs
+ * layout, the counts alone), for the settings page to preview a look, its
+ * icons, a theme or the panes before they are saved. A one-row bar has a
+ * blank row under it, as a tall panel parts its sections, so every look is
+ * three rows and the page holds still while the looks are stepped through.
  */
 export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state: MonitorState, width: number): string[] {
   const now = input.nowMs ?? Date.now();
   const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
-  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false})];
+  const summary = state.focus === 'agents' ? summaryRow(input,state,width,now).row : undefined;
+  const info = summary ? [summary.text,summary.short ?? ''].map(text=>text.replace(/^ /,'')).filter(Boolean) : undefined;
+  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false,named:!state.tabbed,info})];
 }
 
 /** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
@@ -472,7 +475,8 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const zoomed = zoom && focused;
     if (id === 'agents') {
       // Its title, then the counts the summary row has; where its rows are on the right.
-      drawAgentsView(frame,state,rows,y,cw,h,(summary,range)=>paneHead(id,width,{info:summary,right:range && colors.dim(range),focused,zoomed}),framed ? 2 : 0);
+      // In the tabs layout the tab above names the pane: its title is its counts and where its rows are.
+      drawAgentsView(frame,state,rows,y,cw,h,(summary,range)=>paneHead(id,width,{info:summary,right:range && colors.dim(range),focused,zoomed,named:!state.tabbed}),framed ? 2 : 0);
       if (rows.length) titles.add(y);
       y += h; continue;
     }
@@ -490,7 +494,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const range = rows.length>count&&count ? `${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length}` : '';
     const total = id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? timelineCount(rows) : 0;
     const right = range || (total ? t(id==='changes'?'{n} files':'{n} events',{n:total}) : '');
-    frame.lines[y] = paneHead(id,width,{right:right && colors.dim(right),focused,zoomed});
+    frame.lines[y] = paneHead(id,width,{right:right && colors.dim(right),focused,zoomed,named:!state.tabbed});
     titles.add(y);
     frame.controls.push({kind:'zoom',pane:id,x:0,y,width});
     // The gutter in the pane's state colour: the accent where the keys go.

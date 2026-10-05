@@ -439,6 +439,8 @@ export interface HeadOptions {
   right?: string;
   focused: boolean;
   zoomed: boolean;
+  /** False where the bar's tab above already names the pane (the tabs layout): the row keeps its counts and where its rows are. */
+  named?: boolean;
 }
 
 /**
@@ -453,12 +455,14 @@ export interface HeadOptions {
  *
  * Zoomed, the title is a filled tab, as the focused tab on the bar is. Short
  * of room the name gives way first, then the counts' words, then where the
- * rows are; at the last the counts are cut.
+ * rows are; at the last the counts are cut. Unnamed (the tabs layout, its
+ * tab on the bar above), the row is the counts and where the rows are alone,
+ * on the look's rule or surface.
  */
 export function paneHead(id: MonitorPane, width: number, o: HeadOptions): string {
   const style = look(width);
   const { icon: glyph, name } = paneTitle(id);
-  const titles = glyph ? [`${glyph} ${name}`, glyph] : [name];
+  const titles = o.named === false ? [''] : glyph ? [`${glyph} ${name}`, glyph] : [name];
   const infos = typeof o.info === 'string' ? [o.info] : o.info?.length ? [...o.info] : [''];
   // The name gives way before the counts' words, and where the rows are
   // before the counts; at the last the counts are cut.
@@ -478,7 +482,8 @@ function headRow(style: LookName, title: string, counts: string, o: HeadOptions,
   const strong = (text: string) => theme.bold(o.focused ? theme.accent(text) : theme.value(text));
   const filled = (text: string) => (bare ? `[${text}]` : theme.tab(theme.bold(` ${text} `)));
   let head: string;
-  if (style === 'pill') {
+  if (!title) head = '';
+  else if (style === 'pill') {
     const on = o.focused || o.zoomed;
     head = bare
       ? `[${title}]`
@@ -487,14 +492,16 @@ function headRow(style: LookName, title: string, counts: string, o: HeadOptions,
         : `${theme.chipEdge(CAP_LEFT)}${theme.chip(theme.bold(theme.value(title)))}${theme.chipEdge(CAP_RIGHT)}`;
   } else if (o.zoomed && style !== 'band') head = filled(title);
   else head = style === 'band' && o.zoomed ? theme.bold(title) : strong(title);
-  const lead = style === 'frame' ? `${theme.frame('├─')} ` : ' ';
-  const info = counts ? `${style === 'tab' || style === 'band' ? '  ' : ' '}${counts}` : '';
+  // With no title and nothing after it, a rule runs on from the frame's edge (or the row's first column).
+  const bareRow = !head && !counts;
+  const lead = style === 'frame' ? bareRow ? theme.frame('├') : `${theme.frame('├─')} ` : bareRow && style === 'tile' ? '' : ' ';
+  const info = counts ? `${head ? style === 'tab' || style === 'band' ? '  ' : ' ' : ''}${counts}` : '';
   // The rule's looks draw a rule across to the right end; the others leave the columns blank.
   const ruled = style === 'tile' || style === 'frame';
   const close = style === 'frame' ? theme.frame(right ? ' ─┤' : '─┤') : ' ';
   const tail = right ? ` ${right}${close}` : style === 'frame' ? close : ruled ? ' ' : '';
   const least = ruled || right ? 1 : 0;
-  const gap = ruled ? 1 : 0;
+  const gap = ruled && !bareRow ? 1 : 0;
   let left = `${lead}${head}${info}`;
   let fill = width - visualLength(left) - visualLength(tail) - gap;
   if (fill < least) {
@@ -504,7 +511,7 @@ function headRow(style: LookName, title: string, counts: string, o: HeadOptions,
     fill = Math.max(0, width - visualLength(left) - visualLength(tail) - gap);
   }
   const rule = style === 'frame' ? theme.frame : o.focused ? theme.accent : theme.frame;
-  let row = ruled ? `${left} ${rule('─'.repeat(fill))}${tail}` : `${left}${' '.repeat(fill)}${tail}`;
+  let row = ruled ? `${left}${gap ? ' ' : ''}${rule('─'.repeat(fill))}${tail}` : `${left}${' '.repeat(fill)}${tail}`;
   row = truncateAnsi(row, width);
   row += ' '.repeat(Math.max(0, width - visualLength(row)));
   if (style === 'band') return o.zoomed ? theme.tab(row) : theme.band(row);

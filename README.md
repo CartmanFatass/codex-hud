@@ -231,7 +231,7 @@ Agents opens by default; the Timeline, Changes and the Inspector open on demand.
 **Panes** (Settings → Panel → Panes) sets how the panes share the panel:
 
 - **stacked** (the default): every open pane at once, as above.
-- **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+]` `1`–`4` does, and `Ctrl+]` `Tab` shows the next. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
+- **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+]` `1`–`4` does, and `Ctrl+]` `Tab` shows the next. The tab names the pane, so its title keeps only its counts and where its rows are. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
 
 **Two layouts** (Settings → Panel → Layout): **rich**, the default, gives each agent the main session started a card while it is running, has failed, has just finished or needs a look, and two lines once it is done, the agents it started in turn on its card; **compact** is the tree, one row per agent, with the brief, the recap and the agent log under it.
 
