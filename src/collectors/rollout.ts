@@ -1,4 +1,4 @@
-import { taskText } from '../utils/task-text.js';
+import { taskText, looksAutomatic } from '../utils/task-text.js';
 import { extractAgentReport } from './agent-report.js';
 import { TokenRateTracker, type TokenRateSnapshot } from './token-rate.js';
 import { sessionParentId } from '../utils/session-parent.js';
@@ -344,6 +344,8 @@ export interface RolloutParseResult {
    * off the front, so a reader can tell whether anything it has not seen was
    * lost. The other fields survive the buffer: the first request, and the
    * latest request and final reply however much commentary followed them.
+   * The latest request leaves out a message that looks put there by a tool
+   * (`looksAutomatic`).
    */
   transcript: TranscriptEntry[];
   transcriptDroppedAt?: Date;
@@ -733,7 +735,8 @@ export async function parseRolloutFile(
           const spoken = payload.type === 'message' ? transcriptEntry(entry, timestamp) : undefined;
           if (spoken) {
             ({ entries: transcript, droppedAt: transcriptDroppedAt } = appendTranscript(transcript, [spoken], transcriptDroppedAt));
-            if (spoken.role === 'user') { firstUserMessage ??= spoken; lastUserMessageAt = spoken.at; }
+            // A message a tool put in the user's place is not a new request.
+            if (spoken.role === 'user') { firstUserMessage ??= spoken; if (!looksAutomatic(spoken.text)) lastUserMessageAt = spoken.at; }
             else if (spoken.kind === 'reply') lastReplyAt = spoken.at;
           }
         } else if (entry.type === 'event_msg') {

@@ -10,3 +10,12 @@ export function taskText(raw:unknown):string|undefined {
       /^Here is a list of plugins that are available but not installed\b/.test(text)) return undefined;
   return text.replace(/\s+/g,' ').slice(0,500);
 }
+
+/**
+ * A user-role message that may have been put there by a tool rather than
+ * typed: one that opens with a bracketed tag (`[hook-wait …]`, `[peer] …`).
+ * A heuristic: the rollout records no difference.
+ */
+export function looksAutomatic(text:string):boolean {
+  return /^\[[^\]\n]{1,80}\]/.test(text.trimStart());
+}

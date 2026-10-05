@@ -26,6 +26,11 @@ export const STAGES_KEPT = 8;
 export const STAGE_RESULT_CHARS = 8000;
 /** The first update of a stage, cut to this. */
 export const STAGE_INTENT_CHARS = 400;
+/**
+ * A stage's answer up to this long is sent to the brief as it is; a longer
+ * one as its digest (src/collectors/model-jobs.ts), else its head and tail.
+ */
+export const RESULT_RAW_CHARS = 1500;
 /** Open tool calls tracked at once; a call whose output never came does not pile up. */
 const OPEN_CALLS = 16;
 

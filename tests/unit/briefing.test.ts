@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { Briefer, briefingCommand, briefingInput, briefingRequest, completionText, parseBrief, briefSystemPrompt } from '../../src/collectors/briefing.js';
+import { Briefer, briefingCommand, briefingRequest, completionText, parseBrief, briefSystemPrompt, BRIEF_SHAPE_ERROR } from '../../src/collectors/briefing.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../src/render/monitor.js';
 import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
@@ -14,36 +14,6 @@ const now = Date.parse('2026-10-01T10:00:00Z');
 const node = (id: string, name: string, status: SubagentTreeNode['status'], extra: Partial<SubagentTreeNode> = {}): SubagentTreeNode =>
   ({ id, name, status, depth: 1, children: [], ...extra });
 const tree = (nodes: SubagentTreeNode[], rootId = 'root'): SubagentTree => ({ rootId, nodes, totalCount: nodes.length, updatedAt: new Date(now) });
-
-test('the brief covers live, failed and recently finished agents, in that order, and nothing long finished', () => {
-  const input = briefingInput(tree([
-    node('a', 'old_done', 'completed', { statusAt: new Date(now - 3 * 3600_000) }),
-    node('b', 'just_done', 'completed', { statusAt: new Date(now - 60_000), lastReport: { text: 'Result is in', kind: 'reply', at: new Date(now - 60_000) } }),
-    node('c', 'worker', 'running', { turnStartedAt: new Date(now - 600_000), lastEventAt: new Date(now - 6 * 60_000), task: 'Review the package',
-      lastReport: { text: 'Checking   the\nreader', kind: 'update', at: new Date(now - 30_000) } }),
-    node('d', 'broken', 'error'),
-  ]), now)!;
-  const lines = input.prompt.split('\n');
-  assert.equal(lines[0], '<agents>');
-  assert.equal(lines.at(-1), '</agents>');
-  const order = lines.filter(line => line.startsWith('- ')).map(line => line.slice(2).split(':')[0]);
-  assert.deepEqual(order, ['broken', 'worker', 'just_done']);
-  assert.match(input.prompt, /worker: status running, turn running 10m, last event 6m ago \(quiet\)/);
-  assert.match(input.prompt, /task: Review the package/);
-  assert.match(input.prompt, /latest update \(30s ago\): Checking the reader/);
-  assert.doesNotMatch(input.prompt, /old_done/);
-  assert.equal(briefingInput(tree([node('a', 'old_done', 'completed', { statusAt: new Date(now - 3 * 3600_000) })]), now), null);
-});
-
-test('the fingerprint ignores clocks and changes with a new update or status', () => {
-  const worker = node('c', 'worker', 'running', { turnStartedAt: new Date(now - 600_000), lastEventAt: new Date(now - 1000),
-    lastReport: { text: 'one', kind: 'update', at: new Date(now - 30_000) } });
-  const first = briefingInput(tree([worker]), now)!.fingerprint;
-  assert.equal(briefingInput(tree([worker]), now + 45_000)!.fingerprint, first, 'time passing is not news');
-  const updated = { ...worker, lastReport: { text: 'two', kind: 'update' as const, at: new Date(now + 10_000) } };
-  assert.notEqual(briefingInput(tree([updated]), now)!.fingerprint, first);
-  assert.notEqual(briefingInput(tree([{ ...worker, status: 'completed', statusAt: new Date(now) }]), now)!.fingerprint, first);
-});
 
 test('omp runs with no tools, no session and the brief instructions; agy gets them in the prompt', () => {
   const omp = briefingCommand('omp', '<agents>x</agents>', {});
@@ -63,7 +33,7 @@ test('omp runs with no tools, no session and the brief instructions; agy gets th
 test('a Briefer runs once per change, waits out its interval, and reports a failed run', async () => {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-brief-bin-'));
   const calls = path.join(bin, 'calls');
-  fs.writeFileSync(path.join(bin, 'omp'), `#!/bin/sh\necho call >> '${calls}'\nif [ -f '${bin}/fail' ]; then echo 'quota exceeded' >&2; exit 3; fi\nprintf '\\033[1mworker 正在核对\\033[0m\\n\\n\\nsecond line\\n'\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'omp'), `#!/bin/sh\necho call >> '${calls}'\nif [ -f '${bin}/fail' ]; then echo 'quota exceeded' >&2; exit 3; fi\nprintf '\\033[1m{"overall":"worker 正在核对","agents":[]}\\033[0m\\n'\n`, { mode: 0o755 });
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
   try {
@@ -73,31 +43,37 @@ test('a Briefer runs once per change, waits out its interval, and reports a fail
       const poll = () => briefer.current().running ? setTimeout(poll, 10) : resolve();
       poll();
     });
-    const worker = node('c', 'worker', 'running', { lastReport: { text: 'one', kind: 'update', at: new Date(now) } });
+    const count = () => fs.readFileSync(calls, 'utf8').trim().split('\n').length;
+    const worker = node('c', 'worker', 'running', { stages: [{ startedAt: new Date(now - 60_000), status: 'running' }], stageCount: 1,
+      lastReport: { text: 'one', kind: 'update', at: new Date(now) } });
     briefer.update(tree([worker]), 'omp', 60_000, 'zh', now);
     assert.equal(briefer.current().running, true);
     await settle();
-    assert.equal(briefer.current().text, 'worker 正在核对\n\nsecond line', 'colour codes and runs of blank lines are dropped');
+    assert.equal(briefer.current().overall, 'worker 正在核对', 'colour codes around the JSON are dropped');
     assert.ok(changed >= 2);
     briefer.update(tree([worker]), 'omp', 60_000, 'zh', now + 120_000);
     const updated = { ...worker, lastReport: { text: 'two', kind: 'update' as const, at: new Date(now + 1) } };
-    briefer.update(tree([updated]), 'omp', 60_000, 'zh', now + 1000);
-    assert.equal(fs.readFileSync(calls, 'utf8').trim().split('\n').length, 1, 'same material, or too soon: no call');
+    briefer.update(tree([updated]), 'omp', 60_000, 'zh', now + 130_000);
+    assert.equal(count(), 1, 'the same material, or commentary alone before the floor: no call');
+    const ended = { ...updated, status: 'completed' as const, statusAt: new Date(now + 2000),
+      stages: [{ startedAt: new Date(now - 60_000), endedAt: new Date(now + 2000), status: 'done' as const, result: 'Found it' }] };
+    briefer.update(tree([ended]), 'omp', 60_000, 'zh', now + 1000);
+    assert.equal(count(), 1, 'a stage that ended, too soon: no call');
 
     fs.writeFileSync(path.join(bin, 'fail'), '');
-    briefer.update(tree([updated]), 'omp', 60_000, 'zh', now + 120_000);
+    briefer.update(tree([ended]), 'omp', 60_000, 'zh', now + 140_000);
     await settle();
     assert.match(briefer.current().error ?? '', /omp exit 3: quota exceeded/);
-    assert.equal(briefer.current().text, 'worker 正在核对\n\nsecond line', 'a failure keeps the last brief');
+    assert.equal(briefer.current().overall, 'worker 正在核对', 'a failure keeps the last brief');
     fs.rmSync(path.join(bin, 'fail'));
-    briefer.update(tree([updated]), 'omp', 60_000, 'zh', now + 240_000);
+    briefer.update(tree([ended]), 'omp', 60_000, 'zh', now + 240_000);
     await settle();
     assert.equal(briefer.current().error, undefined, 'the same material is tried again after a failure');
 
-    briefer.update(tree([updated], 'other-session'), 'omp', 60_000, 'zh', now + 250_000);
-    assert.equal(briefer.current().text, undefined, 'another session starts from an empty brief');
+    briefer.update(tree([ended], 'other-session'), 'omp', 60_000, 'zh', now + 250_000);
+    assert.equal(briefer.current().overall, undefined, 'another session starts from an empty brief');
     await settle();
-    briefer.update(tree([updated], 'other-session'), 'off', 60_000, 'zh', now + 400_000);
+    briefer.update(tree([ended], 'other-session'), 'off', 60_000, 'zh', now + 400_000);
     assert.deepEqual(briefer.current(), {});
   } finally {
     process.env.PATH = oldPath;
@@ -328,7 +304,7 @@ test('a Briefer on an api endpoint reads the reply, and reports what the server 
     assert.equal(seen[0].body.model, 'local-model');
 
     status = 401;
-    const updated = { ...worker, lastReport: { text: 'two', kind: 'update' as const, at: new Date(now + 1) } };
+    const updated = { ...worker, status: 'completed' as const, statusAt: new Date(now + 1) };
     briefer.update(tree([updated]), 'api', 60_000, 'en', now + 120_000);
     await settle();
     assert.equal(briefer.current().error, 'api HTTP 401: invalid api key');

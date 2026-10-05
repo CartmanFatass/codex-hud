@@ -58,9 +58,9 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help:'During long waits, at most this often',format:minutes},
   {key:'modelCallsPerHour',group:'LLM',label:'Call cap',short:'Cap',values:[30,60,120,240],help:'Model calls per hour, all items',
     format:value => `${value}/h`},
-  {key:'briefAgents',group:'LLM',label:'Agents brief',short:'Agents',values:[true,false],help:'Sends agent tasks and updates'},
+  {key:'briefAgents',group:'LLM',label:'Agents brief',short:'Agents',values:[true,false],help:'Sends agent tasks, updates and stage results'},
   {key:'briefMain',group:'LLM',label:'Main recap',short:'Recap',values:[true,false],help:'Sends your prompts and replies'},
-  {key:'resultDigest',group:'LLM',label:'Result digest',short:'Digest',values:[false,true],help:'Sends finished agents\' answers'},
+  {key:'resultDigest',group:'LLM',label:'Result digest',short:'Digest',values:[false,true],help:'Sends agents\' final and long stage answers'},
   {key:'agentLabels',group:'LLM',label:'Labels and title',short:'Labels',values:[true,false],help:'Sends agent tasks, first prompt; on, waits for a backend'},
   {key:'failureCause',group:'LLM',label:'Failure cause',short:'Cause',values:[false,true],help:'Sends the tail of error output'},
   {key:'changeSummary',group:'LLM',label:'Change summary',short:'Diff',values:[false,true],help:'Sends diff stat and hunks'},
@@ -115,15 +115,16 @@ type DisplayLine = {group:string} | {index:number} | {note:string};
 
 /**
  * Rows that do nothing until another is on: every model feature needs a
- * backend, desktop notices need notifications, the recap floor needs the
- * main recap, a label as the name needs the labels. They stay selectable, so they can be set up in advance, but
+ * backend, desktop notices need notifications, the recap floor needs one of
+ * the items it paces (the agents brief, the main recap, the change summary),
+ * a label as the name needs the labels. They stay selectable, so they can be set up in advance, but
  * step back while their parent is off.
  */
 function inactive(key:keyof HudSettings,draft:HudSettings):boolean {
   const row = SETTING_ROWS.find(entry => entry.key === key);
   if (row?.group === 'LLM' && key !== 'briefing' && draft.briefing === 'off') return true;
   if (key === 'notifyDesktop' && !draft.notify) return true;
-  if (key === 'recapFloorMs' && !draft.briefMain) return true;
+  if (key === 'recapFloorMs' && !draft.briefAgents && !draft.briefMain && !draft.changeSummary) return true;
   // A label needs the labels, and they need a backend.
   if (key === 'labelAsName' && (!draft.agentLabels || draft.briefing === 'off')) return true;
   return false;

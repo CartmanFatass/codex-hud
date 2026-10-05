@@ -303,7 +303,8 @@ export function paneRows(id: MonitorPane, input: MonitorData, state: MonitorStat
  */
 export function briefSaid(input: MonitorData, width: number): string[] {
   const brief = input.brief;
-  const failure = brief?.error ? flowLines(monitorText(brief.error),Math.max(1,width)).map(text=>theme.warning(text)) : [];
+  // A failure the panel itself names is in the reader's language; a backend's is as it came.
+  const failure = brief?.error ? flowLines(monitorText(t(brief.error)),Math.max(1,width)).map(text=>theme.warning(text)) : [];
   // A reply in another shape than the JSON asked for is shown as the text it is.
   const body = brief?.text && !brief.structured && !brief.items && !brief.overall
     ? brief.text.split('\n').map(line=>line.trim()).filter(Boolean).flatMap(line=>flowLines(monitorText(line),Math.max(1,width))) : [];

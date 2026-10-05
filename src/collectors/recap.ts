@@ -15,7 +15,9 @@ import * as path from 'node:path';
 import type { RolloutParseResult, TranscriptEntry } from './rollout.js';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import type { Language } from '../render/i18n.js';
+import type { CodexGoal } from './codex-goal.js';
 import { writePrivateFile } from './small-model.js';
+import { looksAutomatic } from '../utils/task-text.js';
 
 export type BriefingScope = 'agents' | 'main' | 'both';
 
@@ -96,8 +98,9 @@ export function delegationDigest(tree: SubagentTree, now: number): string[] {
 }
 
 /** Facts about the main session that are not in its conversation. */
-function mainFacts(main: RolloutParseResult, now: number): string[] {
+function mainFacts(main: RolloutParseResult, now: number, goal?: CodexGoal | null): string[] {
   const facts: string[] = [];
+  if (goal) facts.push(`goal set in Codex${goal.status ? ` (${goal.status})` : ''}: ${goal.objective}`);
   const activity = main.activity;
   if (activity?.state === 'working') facts.push(`turn running ${ago(activity.turnStartedAt ?? activity.updatedAt, now)}`);
   else if (activity) facts.push(`turn ${activity.state === 'idle' ? 'finished' : activity.state} ${ago(activity.updatedAt, now)} ago`);
@@ -117,7 +120,8 @@ function mainFacts(main: RolloutParseResult, now: number): string[] {
 }
 
 function entryLine(entry: TranscriptEntry, now: number): string {
-  const who = entry.role === 'user' ? 'user' : entry.kind === 'reply' ? 'assistant final reply'
+  // A tool can put a message in the user's place; nothing in the rollout tells which.
+  const who = entry.role === 'user' ? looksAutomatic(entry.text) ? 'user, possibly automatic' : 'user' : entry.kind === 'reply' ? 'assistant final reply'
     : entry.kind === 'update' ? 'assistant commentary' : 'assistant';
   return `[${ago(entry.at, now)} ago, ${who}] ${entry.text}`;
 }
@@ -141,18 +145,19 @@ export interface RecapInput {
 }
 
 /**
- * The main-session material for one run, from the parse result, the tree and
- * the previous recap. Null when the session has said nothing yet.
+ * The main-session material for one run, from the parse result, the tree,
+ * the previous recap and the goal set in Codex, when there is one. Null when
+ * the session has said nothing yet.
  */
 export function recapInput(main: RolloutParseResult, tree: SubagentTree, previous: RecapPart & { coveredUntil: number } | null,
-  now: number): RecapInput | null {
+  now: number, goal?: CodexGoal | null): RecapInput | null {
   const transcript = main.transcript ?? [];
   if (!transcript.length && !main.firstUserMessage) return null;
   const covered = previous?.coveredUntil ?? 0;
   const fresh = transcript.filter(entry => entry.at.getTime() > covered);
   const newestAt = Math.max(covered, ...transcript.map(entry => entry.at.getTime()));
 
-  const lines: string[] = ['<main>', ...mainFacts(main, now)];
+  const lines: string[] = ['<main>', ...mainFacts(main, now, goal)];
   const digest = delegationDigest(tree, now);
   if (digest.length) lines.push('delegated to subagents:', ...digest.map(line => `  ${line}`));
   // With no recap to build on, the session's first request says what it set
@@ -179,7 +184,7 @@ export function recapInput(main: RolloutParseResult, tree: SubagentTree, previou
   const approval = main.pendingApproval ? main.pendingApproval.callId ?? main.pendingApproval.since.getTime() : null;
   const turnEnded = main.activity && main.activity.state !== 'working' ? main.activity.updatedAt.getTime() : null;
   const fingerprint = JSON.stringify([main.lastUserMessageAt?.getTime() ?? 0, main.lastReplyAt?.getTime() ?? 0, turnEnded,
-    main.planProgress?.completedSteps ?? 0, approval]);
+    main.planProgress?.completedSteps ?? 0, approval, ...(goal ? [goal.objective, goal.status] : [])]);
   const delegated: unknown[] = [];
   walk(tree.nodes, node => delegated.push([node.id, node.status, node.statusAt?.getTime() ?? 0, node.lastReport?.at.getTime() ?? 0]));
   const floorFingerprint = JSON.stringify([fingerprint, transcript.at(-1)?.at.getTime() ?? 0, delegated]);

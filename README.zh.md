@@ -217,6 +217,7 @@ codex-hud --json             # 以 JSON 输出当前目录会话的 HUD 状态
 codex-hud --attach           # 复用已有会话
 codex-hud --new-session      # 强制新建会话
 codex-hud --self-check       # 运行环境诊断
+codex-hud brief --dry-run    # 打印简报此刻会发送的内容
 ```
 
 </details>

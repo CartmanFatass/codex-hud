@@ -264,6 +264,7 @@ codex-hud --json             # Print this directory's HUD state as JSON
 codex-hud --attach           # Attach to existing session
 codex-hud --new-session      # Force a new session
 codex-hud --self-check       # Run diagnostics
+codex-hud brief --dry-run    # Print what the brief would send now
 ```
 </details>
 
