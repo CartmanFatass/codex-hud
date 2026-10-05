@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultSettings } from '../../src/settings.js';
-import { renderSettingsPage,handleSettingsInput,SETTING_ROWS,modelCallsLine } from '../../src/render/settings-page.js';
+import { renderSettingsPage,handleSettingsInput,SETTING_ROWS,modelCallsLine,type SettingsPageState } from '../../src/render/settings-page.js';
+import { setLanguage } from '../../src/render/i18n.js';
 import { panelWidth } from '../../src/utils/pane-width.js';
 import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
 
@@ -185,4 +186,28 @@ test('a row the panel\'s top shows previews it from the draft, above its help; t
   assert.deepEqual(displayConfig(),before);
   assert.throws(()=>withDisplaySettings({...defaultSettings(),look:'tile'},()=>{throw new Error('drawing failed');}),/drawing failed/);
   assert.deepEqual(displayConfig(),before);
+});
+
+test('Key roles steps through none, the roles the subtasks have and what is set, a list from the settings file kept',()=>{
+  const index=SETTING_ROWS.findIndex(row=>row.key==='importantRoles');
+  let state:SettingsPageState={draft:{...defaultSettings(),importantRoles:'critic, oracle'},selected:index,offset:0,message:'',roles:['implementer','reviewer']};
+  let frame=renderSettingsPage(state,40,60);
+  const line=()=>stripAnsi(frame.lines[frame.rows.indexOf(index)]);
+  assert.match(line(),/Key roles +‹ critic, oracle ›/);
+  const seen:string[]=[];
+  for (let i=0;i<4;i++) {
+    state=handleSettingsInput(frame.state,{type:'key',key:'right'},frame).state;
+    frame=renderSettingsPage(state,40,60);
+    seen.push(state.draft.importantRoles);
+    if (i===0) assert.match(line(),/Key roles +‹ none ›/);
+  }
+  assert.deepEqual(seen,['','implementer','reviewer','critic, oracle'],'round to the list again, though it is no role of its own');
+  state=handleSettingsInput(frame.state,{type:'key',key:'left'},frame).state;
+  assert.equal(state.draft.importantRoles,'reviewer');
+  // A role is a name: said as it is in Chinese too, where none is a word.
+  setLanguage('zh');
+  try {
+    assert.match(stripAnsi(renderSettingsPage({...state,draft:{...state.draft,importantRoles:'general'}},40,60).lines.join('\n')),/重点角色 +‹ general ›/);
+    assert.match(stripAnsi(renderSettingsPage({...state,draft:{...state.draft,importantRoles:''}},40,60).lines.join('\n')),/重点角色 +‹ 无 ›/);
+  } finally { setLanguage('en'); }
 });

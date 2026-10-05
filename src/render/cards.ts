@@ -48,7 +48,7 @@ import {
   summaryRow, guardianChip, meterText, meterRow, listedAgents, type EdgeMeter,
   MODEL_LOG_KINDS, FRESH_FINISH_MS,
 } from './monitor.js';
-import { directions, subtasks, tally, talk, isImportant, TALK_MIN } from './directions.js';
+import { directions, subtasks, tally, talk, isImportant, rolePrefix, TALK_MIN } from './directions.js';
 
 /** Lines of an expanded card's timeline; the rest is the Inspector's. */
 const TIMELINE_LINES = 20;
@@ -527,24 +527,6 @@ function kidLine(kid: SubagentTreeNode, input: MonitorData, state: MonitorState,
   const named = directions(input.tree).paint(kid.id)(name);
   const left = `${head}${named}${said && visualLength(name)+2 < room ? ` ${colors.dim(said)}` : ''}`;
   return pair(left,right,width);
-}
-
-let prefixMemo: {tree: SubagentTree; prefix: string} | undefined;
-/**
- * The first part of a role's name every role with one shares: `team-` of
- * `team-implementer` and `team-reviewer`, which the cards leave out. Read over
- * the whole session, so every card says a role the same way.
- */
-function rolePrefix(tree: SubagentTree): string {
-  if (prefixMemo?.tree === tree) return prefixMemo.prefix;
-  const roles = new Set<string>();
-  const walk = (nodes: readonly SubagentTreeNode[]) => { for (const node of nodes) { if (node.role?.includes('-')) roles.add(node.role); walk(node.children); } };
-  walk(tree.nodes);
-  const [first,...rest] = [...roles];
-  const head = first ? first.slice(0,first.indexOf('-')+1) : '';
-  const prefix = rest.length && rest.every(role => role.startsWith(head)) ? head : '';
-  prefixMemo = {tree,prefix};
-  return prefix;
 }
 
 /**

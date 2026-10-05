@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WorkbenchHistory } from '../../src/collectors/workbench-events.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput, monitorSettings, TIMELINE_EARLIER, type MonitorData, type MonitorState } from '../../src/render/monitor.js';
-import { directions, roleSet } from '../../src/render/directions.js';
+import { directions, roleSet, subtaskRoles, isImportant } from '../../src/render/directions.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { stripAnsi, visualLength } from '../../src/render/colors.js';
-import { SETTING_ROWS } from '../../src/render/settings-page.js';
+import { SETTING_ROWS, rowValues } from '../../src/render/settings-page.js';
 import { defaultSettings } from '../../src/settings.js';
 import type { AgentLogEntry } from '../../src/collectors/agent-log.js';
 import type { AgentStage, SubagentStatus, SubagentTree, SubagentTreeNode } from '../../src/types.js';
@@ -186,7 +186,20 @@ test('the timeline settings: a style, a window, the roles that matter; each vali
   assert.equal(defaultSettings().importantRoles, '');
   const rows = SETTING_ROWS.filter(row => row.key === 'timelineStyle' || row.key === 'timelineHours');
   assert.deepEqual(rows.map(row => row.values), [['rail', 'indent', 'lanes'], [1, 3, 6, 12, 24]]);
-  assert.ok(!SETTING_ROWS.some(row => row.key === 'importantRoles'), 'a list of names is for the settings file');
+  // Key roles, on the page: none, the roles the subtasks have, the most used first, and a list set in the file.
+  const row = SETTING_ROWS.find(row => row.key === 'importantRoles')!;
+  assert.equal(row.group, 'Agents');
+  const roles = subtaskRoles(session());
+  assert.deepEqual(roles, ['implementer', 'reviewer', 'scout'], 'the subtasks\' roles, not the leads\'');
+  assert.deepEqual(rowValues(row, { draft: settings, original: settings, roles }), ['', 'implementer', 'reviewer', 'scout', 'reviewer, critic']);
+  // Said as the cards say them, the prefix every role shares left out, and each a name that matches its role.
+  const team = session();
+  const prefixed = (kids: SubagentTreeNode[]) => kids.map(child => ({ ...child, role: `team-${child.role}` }));
+  team.nodes[1] = { ...team.nodes[1], children: [...prefixed(team.nodes[1].children),
+    kid('p1e', 'critic_tokens', 'team-platform-critic', 'completed', 30, 20), kid('p1f', 'helper', 'default', 'completed', 30, 20)] };
+  team.nodes[2] = { ...team.nodes[2], children: prefixed(team.nodes[2].children) };
+  assert.deepEqual(subtaskRoles(team), ['implementer', 'platform-critic', 'reviewer', 'scout'], 'Codex\'s default agent has no role to name');
+  assert.ok(isImportant(team.nodes[1].children[4], undefined, roleSet('platform-critic')));
 });
 
 test('a running stage\'s event carries what the agent said it would do; an ended one, what it returned', () => {

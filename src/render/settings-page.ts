@@ -22,6 +22,8 @@ export interface SettingRow {
   help: string;
   /** How a value reads, when the stored value would not say it. */
   format?: (value: SettingValue) => string;
+  /** The value is a name, said as it is, never translated. */
+  literal?: boolean;
 }
 
 const seconds = (value: SettingValue) => `${Number(value) / 1000}s`;
@@ -49,6 +51,11 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'labelAsName',group:'Agents',label:'Label as name',short:'Label',values:[true,false],help:'A label, once there, replaces the name'},
   {key:'cardRoleCounts',group:'Agents',label:'Role counts',short:'Roles',values:[true,false],help:'A card counts its subtasks by role'},
   {key:'cardCorners',group:'Agents',label:'Card corners',short:'Corners',values:['square','round'],help:'Square or round'},
+  // The roles whose subtasks matter: none, a role this session's subtasks have (`rowValues`), or what is set, a list
+  // from the settings file included.
+  {key:'importantRoles',group:'Agents',label:'Key roles',short:'Key',values:[''],help:'Their subtasks are named',literal:true,
+    // Clipped to keep the page's columns at 40 wide.
+    format:value => value === '' ? 'none' : truncateAnsi(String(value),15)},
   // Everything that sends material to a model, in one place, each with its
   // own switch and a help line saying what it sends.
   {key:'briefing',group:'LLM',label:'Backend',short:'Model',values:['off','omp','agy','api'],help:'Who writes; off stops all below'},
@@ -97,7 +104,21 @@ export const SETTING_ROWS: readonly SettingRow[] = [
 const NARROW_VALUES: Record<string,string> = {remaining:'left',balanced:'bal',terminal:'term',reduced:'less',created:'age',
   titanium:'ti','Tab row':'tab','Status band':'band','Emoji tiles':'tile',stacked:'stack'};
 
-export interface SettingsPageState { draft:HudSettings; selected:number; offset:number; message:string; original?:HudSettings }
+export interface SettingsPageState {
+  draft:HudSettings; selected:number; offset:number; message:string; original?:HudSettings;
+  /** The roles the session's subtasks have, the most used first: what Key roles offers. */
+  roles?:readonly string[];
+}
+
+/**
+ * The values ←/→ step through. Key roles offers none, each role the
+ * session's subtasks have, and what is set and was saved, so a list from the
+ * settings file stays one of them.
+ */
+export function rowValues(row:SettingRow,state:Pick<SettingsPageState,'draft'|'original'|'roles'>):readonly SettingValue[] {
+  if (row.key !== 'importantRoles') return row.values;
+  return [...new Set(['',...state.roles ?? [],state.original?.importantRoles ?? '',state.draft.importantRoles])];
+}
 export interface SettingsFrame {
   lines:string[];
   state:SettingsPageState;
@@ -145,6 +166,7 @@ function displayLines(draft:HudSettings):DisplayLine[] {
 
 function valueText(row:SettingRow,value:SettingValue,narrow:boolean):string {
   const text = typeof value === 'boolean' ? value ? 'on' : 'off' : row.format ? row.format(value) : String(value);
+  if (row.literal && value !== '') return text;
   // Chinese words are short already; the narrow English forms are for English.
   return narrow && language() === 'en' ? NARROW_VALUES[text] ?? text : t(text);
 }
@@ -349,14 +371,15 @@ export function handleSettingsInput(state:SettingsPageState,input:WorkbenchInput
   if (next.selected !== moved) next.message = '';
   if (key === 'enter' || key === 'left' || key === 'right') {
     const row = SETTING_ROWS[next.selected];
+    const values = rowValues(row,next);
     const current = next.draft[row.key];
-    let index = row.values.indexOf(current);
+    let index = values.indexOf(current);
     if (index < 0 && typeof current === 'number') {
       // A number between the steps (an odd width, a dragged border, the old presets): step from where it falls.
-      const above = row.values.findIndex(value => Number(value) > current);
-      index = key === 'left' ? (above < 0 ? row.values.length : above) : (above < 0 ? row.values.length-1 : above-1);
+      const above = values.findIndex(value => Number(value) > current);
+      index = key === 'left' ? (above < 0 ? values.length : above) : (above < 0 ? values.length-1 : above-1);
     }
-    const value = row.values[(index+(key === 'left' ? row.values.length-1 : 1)+row.values.length)%row.values.length];
+    const value = values[(index+(key === 'left' ? values.length-1 : 1)+values.length)%values.length];
     next.draft = {...next.draft,[row.key]:value};
     // A look comes with the icons it was drawn with.
     if (row.key === 'look') next.draft.icons = LOOK_ICONS[value as LookName];

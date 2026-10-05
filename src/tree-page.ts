@@ -28,7 +28,7 @@ import { WorkbenchHistory } from './collectors/workbench-events.js';
 import type { WorkbenchEvent } from './render/workbench-state.js';
 import { getCodexHome, getHudHome } from './utils/codex-path.js';
 import { codexGoal } from './collectors/codex-goal.js';
-import { roleSet } from './render/directions.js';
+import { roleSet, subtaskRoles } from './render/directions.js';
 import { HudStatus } from './collectors/hud-status.js';
 import { statusCard, sessionState } from './render/status-block.js';
 import { artSize, renderArt, type ArtBitmap } from './render/art.js';
@@ -232,7 +232,8 @@ async function runLivePage(): Promise<void> {
     const output = time('render',() => {
       let lines: string[];
       if (settingsPage) {
-        settingsFrame = renderSettingsPage(settingsPage,process.stdout.columns || 30,process.stdout.rows || 24,
+        // Key roles offers the roles the subtasks have now.
+        settingsFrame = renderSettingsPage({...settingsPage,roles:subtaskRoles(tree)},process.stdout.columns || 30,process.stdout.rows || 24,
           {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage()},previewTop);
         settingsPage = settingsFrame.state;
         lines = settingsFrame.lines;

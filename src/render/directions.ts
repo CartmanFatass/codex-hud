@@ -150,6 +150,46 @@ export function isImportant(node: SubagentTreeNode, log: readonly AgentLogEntry[
   return node.status === 'error' || named || Boolean(log?.at(-1)?.attention);
 }
 
+let prefixMemo: {tree: SubagentTree; prefix: string} | undefined;
+/**
+ * The first part of a role's name every role with one shares: `team-` of
+ * `team-implementer` and `team-reviewer`, which the cards leave out. Read over
+ * the whole session, so every card says a role the same way.
+ */
+export function rolePrefix(tree: SubagentTree): string {
+  if (prefixMemo?.tree === tree) return prefixMemo.prefix;
+  const roles = new Set<string>();
+  const walk = (nodes: readonly SubagentTreeNode[]) => { for (const node of nodes) { if (node.role?.includes('-')) roles.add(node.role); walk(node.children); } };
+  walk(tree.nodes);
+  const [first,...rest] = [...roles];
+  const head = first ? first.slice(0,first.indexOf('-')+1) : '';
+  const prefix = rest.length && rest.every(role => role.startsWith(head)) ? head : '';
+  prefixMemo = {tree,prefix};
+  return prefix;
+}
+
+/**
+ * The roles the session's subtasks have, as the cards say them (the prefix
+ * every role shares left out), the most used first: what Settings → Key
+ * roles offers. Codex's default agent has no role to name.
+ */
+export function subtaskRoles(tree: SubagentTree): string[] {
+  const prefix = rolePrefix(tree);
+  const counts = new Map<string, number>();
+  const walk = (node: SubagentTreeNode) => {
+    for (const kid of subtasks(node)) {
+      const role = kid.role;
+      if (role && role !== 'default') {
+        const name = prefix && role.startsWith(prefix) && role.length > prefix.length ? role.slice(prefix.length) : role;
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+      }
+      walk(kid);
+    }
+  };
+  for (const node of tree.nodes) if (!isGuardian(node)) walk(node);
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
+}
+
 /** The roles named in the setting: a comma list, spaces ignored. */
 export function roleSet(text: string | undefined): ReadonlySet<string> {
   return new Set((text ?? '').split(',').map(role => role.trim()).filter(Boolean));
