@@ -150,7 +150,7 @@ const ZH: Record<string, string> = {
   '{s} staged / {u} unstaged': '{s} 已暂存 / {u} 未暂存',
   '{n} untracked / {c} conflicts': '{n} 未跟踪 / {c} 冲突',
   'Ahead {a} / behind {b}': '领先 {a} / 落后 {b}',
-  'Workspace status, not agent ownership': '这是工作区状态，不代表归属哪个 agent',
+  'Workspace status, not agent ownership': '工作区状态，不代表归属哪个代理',
   'bare': '裸仓库',
   'prunable': '可清理',
   'unreadable': '不可读',
