@@ -76,6 +76,12 @@ test('the chips grow with the panel: icon and word from 56 columns, side columns
       'a Nerd Font icon keeps a column to spill into'
     );
     assert.equal(at(plain(everyPane(), 32)), '@  @ @ @ @ @        @ @ +31 @ @ ');
+    // A longer count lets the eye go before the chips lose their side columns.
+    assert.equal(
+      at(plain(everyPane(), 36, { brief: {}, expired: 139 })),
+      ' @   @  @  @  @  @    @  +139  @  @ ',
+      'the count alone, as the Unicode set has it'
+    );
   });
   for (const width of [32, 36, 44, 56, 90]) {
     for (const lang of ['en', 'zh'] as const) {

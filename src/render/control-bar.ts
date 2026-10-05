@@ -23,10 +23,11 @@
  * the linger window put some away), settings and help. Where a width's chips
  * do not fit, the next narrower ones are tried: words go first (the tabs',
  * then the brief's and the older agents', then the main session's, settings
- * and help last), then the gaps, then the side columns; then the closed
- * panes' tabs go, then the older agents' button, then the brief's; back,
- * settings and help stay. A click anywhere on a chip is its control; a tab's
- * click is `clickTab` in monitor.ts. Pure.
+ * and help last), then the gaps, then a Nerd Font eye on the older agents'
+ * count, then the side columns; then the closed panes' tabs go, then the
+ * older agents' button, then the brief's; back, settings and help stay.
+ * A click anywhere on a chip is its control; a tab's click is `clickTab`
+ * in monitor.ts. Pure.
  */
 import type { MonitorControl, MonitorPane, MonitorState } from './monitor.js';
 import { MONITOR_PANES } from './monitor.js';
@@ -179,6 +180,8 @@ interface Step {
   /** Closed panes keep their tab. */
   closed: boolean;
   older: boolean;
+  /** The older agents' button is its count alone: a Nerd Font eye gives way before a size does. */
+  bare?: boolean;
   brief: boolean;
   /** 'all' the tabs there are, 'focus' only the focused pane's, '' none. */
   tabs: 'all' | 'focus' | '';
@@ -193,8 +196,10 @@ const STEPS: Step[] = [
   { size: 'wide', tabWords: false, words: 1, gap: 1, ...ALL },
   { size: 'pad', tabWords: false, words: 0, gap: 1, ...ALL },
   { size: 'pad', tabWords: false, words: 0, gap: 0, ...ALL },
+  { size: 'pad', tabWords: false, words: 0, gap: 0, ...ALL, bare: true },
   { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL },
-  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, closed: false },
+  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, bare: true },
+  { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, bare: true, closed: false },
   { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, closed: false, older: false },
   { size: 'tight', tabWords: false, words: 0, gap: 0, ...ALL, closed: false, older: false, brief: false },
   { size: 'tight', tabWords: false, words: 0, gap: 0, closed: false, older: false, brief: false, tabs: 'focus' },
@@ -206,7 +211,7 @@ const STEPS: Step[] = [
  * something wider would fit.
  */
 function firstStep(width: number): number {
-  return width >= 56 ? 0 : width >= 44 ? 4 : width >= 36 ? 5 : 6;
+  return width >= 56 ? 0 : width >= 44 ? 4 : width >= 36 ? 5 : 7;
 }
 
 export function controlBar(
@@ -267,7 +272,9 @@ export function controlBar(
               ? t('+{n} older', { n })
               : `${count} ${t('older')}`
           : count || null;
-      right.push({ text: paint(chipText(glyph, word, o.size), 'button'), kind: 'older' });
+      // Bare, a Nerd Font button says it as the Unicode set does: "+37", "−37".
+      const face = o.bare && !unicode && !words ? `${UNICODE_ICONS[shown ? 'hide' : 'show']}${n}` : null;
+      right.push({ text: paint(chipText(face ?? glyph, face ? null : word, o.size), 'button'), kind: 'older' });
     }
     const keep = o.words >= 1 || words;
     right.push({
