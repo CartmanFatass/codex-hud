@@ -248,6 +248,13 @@ test('narrow Changes exposes selectable files and opens a readable zoomed previe
   assert.deepEqual(preview.panes.map(p=>p.id),['details']);
   assert.match(stripAnsi(preview.lines.join('\n')),/\+new/);
   assert.equal(handleMonitorInput(preview.state,key('escape'),{tree,git,worktrees,frame:preview}).state.zoom,false);
+  // The git header repeats the path and names blobs by hash: the hunks are what is shown.
+  const headed=renderMonitor({tree,worktrees,git,state:opened,width:30,height:24,nowMs:now,
+    diff:['Unstaged','diff --git a/b b/b','index febb64905..64f804d91 100644','--- a/b','+++ b/b','@@ -1 +1 @@','--- old rule','+++ new rule']});
+  const text=stripAnsi(headed.lines.join('\n'));
+  assert.doesNotMatch(text,/[0-9a-f]{7,}|diff --git|--- a\/b|\+\+\+ b\/b/);
+  assert.match(text,/Unstaged/);assert.match(text,/@@ -1 \+1 @@/);
+  assert.match(text,/--- old rule/);assert.match(text,/\+\+\+ new rule/,'inside a hunk such a line is content');
 });
 
 test('monitor key profile maps numbers without changing legacy decoder behavior',()=>{

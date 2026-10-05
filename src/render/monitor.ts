@@ -916,7 +916,15 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
     if (!state.selectedFile) return [];
     lines = [basename(state.selectedFile)];
     if (state.expanded) lines.push(...(input.git?.root ? [input.git.root] : []),state.selectedFile);
-    return [...lines.flatMap(line=>wrapped(line,width).map(text=>({text:theme.strong(text)}))), ...(input.diff ?? []).flatMap(line=>{
+    // A file's git header repeats its path and names its blobs by hash: the
+    // heading above says which file it is, so only the hunks are shown.
+    let header = false;
+    const body = (input.diff ?? []).filter(line=>{
+      if (line.startsWith('diff --git ')) { header = true; return false; }
+      if (line.startsWith('@@')) header = false;
+      return !(header && /^(index [0-9a-f]+\.\.[0-9a-f]+|--- |\+\+\+ )/.test(line));
+    });
+    return [...lines.flatMap(line=>wrapped(line,width).map(text=>({text:theme.strong(text)}))), ...body.flatMap(line=>{
       const paint = line.startsWith('@@') ? theme.info : line.startsWith('+') ? theme.success : line.startsWith('-') ? theme.error : theme.value;
       return wrapped(line,width).map(text=>({text:paint(text)}));
     })];
