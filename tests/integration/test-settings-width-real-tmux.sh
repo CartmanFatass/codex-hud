@@ -46,12 +46,12 @@ t send-keys -t "$panel" End Up Up Up Up
 wait_text 'Panel columns'
 t send-keys -t "$panel" Right
 t send-keys -t "$panel" -l s
-wait_width 34
+wait_width 40
 # Down from the narrowest width comes round to the widest.
-t send-keys -t "$panel" Left Left Left Left Left Left
+t send-keys -t "$panel" Left Left
 t send-keys -t "$panel" -l s
-wait_width 80
+wait_width 56
 t kill-pane -t "$panel"
 open_tree
-wait_width 80
+wait_width 56
 echo 'Settings save and reopen width: PASS'

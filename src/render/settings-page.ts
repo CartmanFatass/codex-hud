@@ -5,6 +5,7 @@ import { truncateAnsi, colors, theme, visualLength } from './colors.js';
 import { t, language } from './i18n.js';
 import { age, TIMELINE_STYLES, TIMELINE_HOURS } from './monitor.js';
 import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
+import { PANEL_WIDTHS } from '../utils/pane-width.js';
 import { LOOKS, type IconMode, type LookName } from './hud-config.js';
 
 type SettingValue = string | number | boolean;
@@ -79,8 +80,9 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format:value => `${value}h`},
   {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','closed'],help:PANE_HELP},
   {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','closed'],help:PANE_HELP},
-  // Any even width from 24 to 80 columns, a step of two at a time; Codex keeps 41 whatever is asked.
-  {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:Array.from({length:29},(_,i)=>24+2*i),
+  // The widths the panel is laid out for, each a step in what fits: the meters, the model badge's words, the timeline's
+  // lanes. Codex keeps 41 whatever is asked, and a width from the file or a dragged border steps from where it falls.
+  {key:'treeWidth',group:'Panel',label:'Width',short:'Width',values:PANEL_WIDTHS,
     help:'Panel columns; Codex keeps 41',
     // 0, from an older settings file, is the panel's own choice.
     format:value => Number(value) === 0 ? 'auto' : t('{n} cols',{n:Number(value)})},

@@ -18,20 +18,18 @@ test('settings keyboard and mouse edit a draft, with explicit save/back actions'
   assert.ok(frame.state.offset>0);
   assert.ok(frame.lines.every(line=>visualLength(line)<=16));
   state=handleSettingsInput(frame.state,{type:'key',key:'right'},frame).state;
-  assert.equal(state.draft.treeWidth,34,'two columns at a step');
+  assert.equal(state.draft.treeWidth,40,'the next width laid out for');
   state=handleSettingsInput(state,{type:'key',key:'left'},frame).state;
   state=handleSettingsInput(state,{type:'key',key:'left'},frame).state;
-  assert.equal(state.draft.treeWidth,30);
-  for (const [from,key,to] of [[33,'right',34],[33,'left',32],[0,'right',24],[57,'left',56],[80,'right',24],[24,'left',80]] as const) {
+  assert.equal(state.draft.treeWidth,56,'round past the narrowest');
+  for (const [from,key,to] of [[33,'right',40],[33,'left',32],[44,'right',48],[44,'left',40],[0,'right',32],[57,'left',56],[80,'right',32],[24,'left',56]] as const) {
     const odd=handleSettingsInput({...state,draft:{...state.draft,treeWidth:from}},{type:'key',key},frame).state;
     assert.equal(odd.draft.treeWidth,to,`${from} ${key}`);
   }
 });
-test('any even width from 24 to 80, 32 by default, and the main session keeps its space',()=>{
+test('the widths the panel is laid out for, 32 by default, and the main session keeps its space',()=>{
   assert.deepEqual([32,44,56].map(w=>panelWidth(w,160)),[32,44,56]);
-  const widths=SETTING_ROWS.find(r=>r.key==='treeWidth')!.values;
-  assert.equal(widths[0],24);assert.equal(widths.at(-1),80);
-  assert.ok(widths.every((w,i)=>i===0||Number(w)-Number(widths[i-1])===2),'a step of two');
+  assert.deepEqual(SETTING_ROWS.find(r=>r.key==='treeWidth')!.values,[32,40,48,56]);
   assert.equal(defaultSettings().treeWidth,32);
   assert.equal(panelWidth(0,100),32,'a width from older settings, 0, is narrow');
   assert.equal(panelWidth(70,80),39);
