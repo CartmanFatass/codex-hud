@@ -127,7 +127,8 @@ const TERMINAL: Palette = {
   // its own, which leaves the accent free to mean one thing.
   project: basic(1),
   strong: basic(1),
-  selected: highlight('7'),
+  // A selected row in a list is on the selected card's band.
+  selected: highlight('48;5;237'),
   // Mid-tones of the 256-colour cube, legible on dark and light backgrounds.
   agents: [ansi256(33), ansi256(98), ansi256(133), ansi256(67), ansi256(37), ansi256(175)],
   // Greys of the 256-colour ramp, a step apart: the band, the bar above it,

@@ -122,9 +122,13 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
       if (entry.error) lines.push(entry.error);
       if (entry.locked) lines.push(t('Locked: {reason}',{reason:entry.locked}));
       if (entry.prunable !== undefined) lines.push(t('Prunable: {reason}',{reason:entry.prunable || t('yes')}));
-      if (entry.status) lines.push(t('{s} staged / {u} unstaged',{s:entry.status.staged,u:entry.status.unstaged}),
-        t('{n} untracked / {c} conflicts',{n:entry.status.untracked,c:entry.status.conflicts}),
-        t('Ahead {a} / behind {b}',{a:entry.status.ahead ?? '?',b:entry.status.behind ?? '?'}));
+      // Its counts, and how far it is from its upstream, each left out at zero (or unknown).
+      if (entry.status) {
+        const status = entry.status;
+        const counts = (['conflicts','staged','unstaged','untracked'] as const).filter(key=>status[key]).map(key=>t(`{n} ${key}`,{n:status[key]}));
+        const drift = [status.ahead ? t('{n} ahead',{n:status.ahead}) : '',status.behind ? t('{n} behind',{n:status.behind}) : ''].filter(Boolean);
+        for (const parts of [counts,drift]) if (parts.length) lines.push(parts.join(' · '));
+      }
       lines.push(t('Workspace status, not agent ownership'));
       // The full path is more, where it holds no id; there is nothing else more to show.
       const full = entry.path.split(/[\\/]+/).some(part => ID_NAME.test(part)) ? '' : entry.path;

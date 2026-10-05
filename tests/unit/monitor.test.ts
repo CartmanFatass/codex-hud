@@ -282,6 +282,23 @@ test('keyboard motion only previews; Inspector remains closed until explicitly o
   const opened=handleMonitorInput(next.state,key('open-session'),{tree,worktrees,frame});assert.deepEqual(opened.action,{type:'switch',id:next.state.tree.selectedId});
 });
 
+test('a worktree\'s details count only what it has: no zero counts, and no ahead or behind at zero or unknown',()=>{
+  const state={...initialMonitorState(),preview:'worktree' as const,focus:'details' as const,selectedWorktree:'/demo/main'};
+  state.modes={...state.modes,worktrees:'open',details:'open'};
+  const details=(snapshot:WorktreesSnapshot)=>renderMonitor({tree,worktrees:snapshot,state,width:40,height:30,nowMs:now}).panes.find(p=>p.id==='details')!.rows.map(r=>stripAnsi(r.text));
+  const main=details(worktrees);
+  assert.ok(main.includes('1 staged · 2 unstaged'),main.join('\n'));
+  assert.ok(!main.some(line=>/\b0 |ahead|behind|Ahead/.test(line)),main.join('\n'));
+  const drifted=details({...worktrees,entries:[{...worktrees.entries[0],status:{...worktrees.entries[0].status!,conflicts:1,ahead:2,behind:0}},worktrees.entries[1]]});
+  assert.ok(drifted.includes('1 conflicts · 1 staged · 2 unstaged') && drifted.includes('2 ahead'),drifted.join('\n'));
+});
+
+test('a selected row is on the band the selected card is on, in the terminal theme too',()=>{
+  const previous=setDisplayConfig({theme:'terminal'});
+  try { assert.equal(theme.selected('x'),theme.selectedBand('x')); assert.ok(!theme.selected('x').includes('\x1b[7m'),'not reverse video'); }
+  finally { setDisplayConfig(previous); }
+});
+
 test('worktree clicks preview Git scope without switching sessions or claiming agent ownership',()=>{
   const frame=draw();const pane=frame.panes.find(p=>p.id==='worktrees')!;
   const result=handleMonitorInput(frame.state,mouse(4,pane.y+pane.rows.findIndex(r=>r.item==='/demo/docs')+1),{tree,worktrees,frame});
