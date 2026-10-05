@@ -723,6 +723,7 @@ export function changeCounts(files: readonly GitChangedFile[], width: number): s
  * the middle goes (".agents/…/SKILL.md", then ".ag…/SKILL.md"), and last the
  * start is cut ("…/SKILL.md").
  */
+let shownCache: {files: readonly unknown[]; width: number; shown: string[]} | undefined;
 export function shownPaths(paths: readonly string[], width: number): string[] {
   const split = paths.map(path=>path.split('/').filter(Boolean));
   const ending = (n: number, of: string[]) => of.slice(-n).join('/');
@@ -750,11 +751,13 @@ export function shownPaths(paths: readonly string[], width: number): string[] {
       if (visualLength(kept) <= width) return kept;
       // Narrower still, the start of that directory is what tells it apart: ".ag…/SKILL.md".
       let head = '';
-      for (const ch of parts[parts.length-k]) { if (visualLength(head+ch+'…/'+parts.at(-1)) > width) break; head += ch; }
+      let used = visualLength(`…/${parts.at(-1)}`);
+      for (const ch of parts[parts.length-k]) { used += visualLength(ch); if (used > width) break; head += ch; }
       if (head) return `${head}…/${parts.at(-1)}`;
     }
     let tail = '';
-    for (const ch of [...unique].reverse()) { if (visualLength('…'+ch+tail) > width) break; tail = ch+tail; }
+    let used = 1;
+    for (const ch of [...unique].reverse()) { used += visualLength(ch); if (used > width) break; tail = ch+tail; }
     return '…'+tail;
   });
 }
@@ -802,7 +805,11 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
         if (!summary.current) rows.push(...flowLines(t('(written {age}, before the latest edits)',{age:writtenAge(summary.at,now)}),Math.max(1,width-2)).map(text=>({text:colors.dim(`  ${text}`)})));
       }
     }
-    const shown = shownPaths(git.files.map(file=>file.path),Math.max(1,width-5));
+    // Worked out once per git read and width, not on every repaint.
+    const pathWidth = Math.max(1,width-5);
+    if (shownCache?.files !== git.files || shownCache.width !== pathWidth)
+      shownCache = {files:git.files,width:pathWidth,shown:shownPaths(git.files.map(file=>file.path),pathWidth)};
+    const shown = shownCache.shown;
     return [...rows, ...git.files.map((file,i) => ({item:file.path,
       text:truncateAnsi(`${file.path===state.selectedFile?'›':' '} ${file.conflict?theme.error('!!'):file.index+file.worktree} ${monitorText(shown[i])}`,width)}))];
   }

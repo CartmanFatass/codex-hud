@@ -206,6 +206,8 @@ const WIDE_RANGES: Array<[number, number]> = [
 ];
 
 function codePointWidth(codePoint: number): number {
+  // Below the first range every code point is one column: most text is ASCII.
+  if (codePoint < 0x0300) return 1;
   for (const [lo, hi] of ZERO_WIDTH_RANGES) {
     if (codePoint >= lo && codePoint <= hi) {
       return 0;
