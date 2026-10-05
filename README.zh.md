@@ -500,7 +500,12 @@ enabled = true
 npm install && npm run build   # 构建
 npm run dev                    # 监听模式
 node dist/index.js             # 直接运行 HUD
+npm test                       # 单元测试：解析回放、宽度安全、渲染开销
+npm run test:integration       # Shell 测试：包装脚本、tmux 开关、安装器
+npm run test:windows           # PowerShell 安装器和启动器（Windows；CI 会运行）
 ```
+
+`npm run test:windows` 运行期间会改动 Windows 用户 PATH，结束后再恢复；CI 在 Windows 运行器上执行它，不需要在自己的电脑上运行。
 
 在 Windows PowerShell 中，如果 `npm.ps1` 被 ExecutionPolicy 阻止，请使用 `npm.cmd run build`。
 
