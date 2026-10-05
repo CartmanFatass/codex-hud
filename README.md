@@ -253,7 +253,7 @@ Panes stack vertically. Each has a **title row** naming it, drawn as the panel's
 - `ǁ` / `▶` (Pause brief / Resume brief) pauses or resumes the brief, shown only while one is configured; `⊕31` (older) shows the finished agents the linger window put away and `⊖31` (Hide) hides them again, shown only when there are some; `⚙` opens settings; `?` the help.
 - The bar follows the width. Words go before buttons: first the actions' words (they show only when every button has its word), then the closed tabs', then the open tabs' but the focused one's, then that one's, the columns between the tabs narrowing from three to one on the way. Then buttons go: the closed panes' tabs, the older agents' button, the brief's, the other tabs, the focused tab. The main session's button, settings and help never go. A click anywhere between the midpoints of the gaps either side of a button is that button. Without colour (`theme: none`) the focused tab is in brackets, and a closed pane has no tab.
 
-**Look** (Settings → Panel → Look, or `CODEX_HUD_LOOK`) draws the bar and the panes' titles in one of five ways. Picking a look sets Icons to the set it was drawn with; Icons can change them after.
+**Look** (Settings → Panel → Look, or `CODEX_HUD_LOOK`) draws the bar and the panes' titles in one of five ways. Picking a look in Settings sets Icons to the set it was drawn with (`CODEX_HUD_LOOK` alone leaves them as they are); Icons can change them after.
 
 ```
 tab    ⌂ ▦   ⌥ Trees   ±  ◫  ≣      ǁ ⊕31 ⚙ ?
