@@ -250,13 +250,13 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   assert.equal(focused.modes.agents, 'open', '1 opens the cards, and focuses them');
   assert.equal(handleMonitorInput(focused, key('agents'), { tree: tree([named]), frame }).state.modes.agents, 'closed', 'and closes them again');
   const help = (style: 'rich' | 'compact') => plain(renderMonitor({ tree: tree([]), state: { ...rich(), style, help: true }, width: 70, height: 80, nowMs: now })).join('\n');
-  assert.match(help('rich'), /Ctrl\+\] e \/ Space open \/ close card/);
+  assert.match(help('rich'), /\ne \/ Space +open \/ close card\n/);
   assert.match(help('rich'), /Click its name: switch/);
   assert.match(help('rich'), /1 Cards/);
   assert.match(help('rich'), /⌕ research ⚗ experiment ⚒ fix/);
   assert.doesNotMatch(help('compact'), /open \/ close card/);
   const previous = setLanguage('zh');
-  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true }, width: 70, height: 80, nowMs: now })).join('\n'), /e \/ 空格 展开 \/ 收起卡片[\s\S]*⌕ 调研/); }
+  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true }, width: 70, height: 80, nowMs: now })).join('\n'), /e \/ 空格 +展开 \/ 收起卡片[\s\S]*⌕ 调研/); }
   finally { setLanguage(previous); }
 });
 

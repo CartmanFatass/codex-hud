@@ -203,9 +203,13 @@ function timelineRows(input: MonitorData, width: number, now: number): MonitorRo
   // No events, no rows: the pane's frame says what it is.
   if (!lines.length) return [];
   const rows: MonitorRow[] = [];
+  // A time only where it changes: a run of events of one age says it once, at its top.
+  let previous = '';
   for (const line of lines) {
     const when = age(line.at,now);
-    rows.push({text:truncateAnsi(`${colors.dim(when.padStart(3))} ${line.text}${line.count > 1 ? colors.dim(` ×${line.count}`) : ''}`,width)});
+    const shown = when === previous ? '' : when;
+    previous = when;
+    rows.push({text:truncateAnsi(`${colors.dim(shown.padStart(3))} ${line.text}${line.count > 1 ? colors.dim(` ×${line.count}`) : ''}`,width)});
     // A model-written reading of a failure, marked as such.
     if (line.cause) rows.push(...flowLines(monitorText(line.cause),Math.max(1,width-6)).map((text,i)=>({text:`    ${i ? ' ' : colors.dim('~')} ${text}`})));
   }

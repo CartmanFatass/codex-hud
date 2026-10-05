@@ -250,6 +250,8 @@ export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state:
 const DENSE_BELOW = 12;
 /** Rows from which a blank row parts the panel's sections. */
 const PARTED_FROM = 30;
+/** The widest the help's key column grows: a longer key pushes its own line on. */
+const HELP_KEY_COLUMN = 12;
 
 /**
  * The help: the shortcuts (the tmux prefix, then a key; nothing typed in the
@@ -304,13 +306,11 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   if (!width || !height) return frame;
   if (state.help) {
     // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
-    // A line of two shortcuts too wide for the panel splits between them, not
-    // inside one ("Ctrl+] m  main session" stays whole where it fits). An
-    // entry is a key, two spaces, what it does: "{p} {p}  {p} itself" is one.
+    // An entry is a key, two spaces, what it does: "{p} {p}  {p} itself" is
+    // one. A line of two shortcuts is split between them, never inside one.
     const prefix = input.prefix ?? 'Ctrl+]';
     const keyStart = new RegExp(`  (?=(?:${prefix.replace(/[\\^$.*+?()[\]{}|]/g,'\\$&')}|Shift\\+F12) )`);
-    const entries = (line: string) => {
-      if (visualLength(line) <= width) return [line];
+    const split = (line: string) => {
       const out: string[] = [];
       for (const part of line.split(keyStart)) {
         if (out.length && !out[out.length-1].includes('  ')) out[out.length-1] += `  ${part}`;
@@ -318,8 +318,31 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       }
       return out;
     };
-    const help = helpText(state.style === 'rich',prefix,Boolean(state.tabbed))
-      .flatMap(line=>typeof line === 'string' ? entries(line).flatMap(entry=>helpLines(entry,width)) : helpLines(line.head,width).map(text=>theme.accent(text)));
+    const entries = (line: string) => visualLength(line) <= width ? [line] : split(line);
+    const text = helpText(state.style === 'rich',prefix,Boolean(state.tabbed));
+    // The shortcuts, up to the second heading, are a table: each key without
+    // the prefix its heading names, in a column, and what it does beside it,
+    // wrapped under itself. A line with no key is a sentence.
+    const shortcuts = Math.max(1,text.findIndex((line,i)=>i > 0 && typeof line !== 'string'));
+    const keyed = (entry: string) => {
+      const bare = entry.startsWith(`${prefix} `) ? entry.slice(prefix.length+1) : entry;
+      const at = bare.indexOf('  ');
+      return at > 0 ? {key:bare.slice(0,at),does:bare.slice(at+2)} : null;
+    };
+    const keys = text.slice(0,shortcuts).flatMap(line=>typeof line === 'string' ? split(line).flatMap(entry=>keyed(entry) ?? []) : []);
+    const column = Math.min(HELP_KEY_COLUMN,Math.max(1,...keys.map(entry=>visualLength(entry.key))));
+    const help = text.flatMap((line,i) => {
+      // A blank line parts the sections.
+      if (typeof line !== 'string') return [...(i ? [''] : []),...helpLines(line.head,width).map(text=>theme.accent(text))];
+      if (i >= shortcuts) return entries(line).flatMap(entry=>helpLines(entry,width));
+      return split(line).flatMap(entry => {
+        const shortcut = keyed(entry);
+        if (!shortcut) return helpLines(entry,width);
+        const key = shortcut.key+' '.repeat(Math.max(0,column-visualLength(shortcut.key)));
+        const hang = visualLength(key)+2;
+        return helpLines(shortcut.does,Math.max(1,width-hang)).map((does,j)=>j ? ' '.repeat(hang)+does : `${theme.value(key)}  ${does}`);
+      });
+    });
     const count = Math.max(0,height-2);
     state.helpScroll = Math.max(0,Math.min(state.helpScroll??0,Math.max(0,help.length-count)));
     frame.helpPage = {count,total:help.length};

@@ -271,7 +271,7 @@ test('the tabs layout: one pane at a time, the bar\'s tabs and 1–5 switch it, 
   assert.deepEqual(draw({...next,tabbed:false},45).panes.map(p=>p.id),['agents','worktrees']);
   // The help says what the tabs do.
   const help=draw({...next,help:true},45,200).lines.map(stripAnsi).join('\n');
-  assert.match(help,/1–5 show a pane/);assert.doesNotMatch(help,/close pane\b|zoom/);
+  assert.match(help,/\n1–5 +show a pane\n/);assert.doesNotMatch(help,/close pane\b|zoom/);
 });
 
 test('keyboard motion only previews; Inspector remains closed until explicitly opened',()=>{
