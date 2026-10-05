@@ -27,6 +27,8 @@ export interface WorkbenchEvent {
   agentId?: string;
   /** A model-written line on why it failed (4.3), shown under the event. */
   cause?: string;
+  /** A finished turn's final answer, its head, flattened. */
+  summary?: string;
 }
 export interface PaneRect {
   id: PaneId; x: number; y: number; width: number; height: number;

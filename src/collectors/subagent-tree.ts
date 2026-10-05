@@ -1,5 +1,6 @@
 import { taskText } from '../utils/task-text.js';
 import { extractAgentReport, type AgentReport } from './agent-report.js';
+import { applyLedgerEntry, currentAction, newLedger, type AgentLedger } from './agent-stages.js';
 /**
  * Build a multi-level subagent tree from rollout session_meta parent links.
  */
@@ -51,6 +52,8 @@ interface SessionLink extends AgentIdentity {
   turnStartedAt?: Date;
   startedAt?: Date;
   modifiedAt: Date;
+  /** Its stages, open tool calls and messages from other agents, as far as the scan has read. */
+  ledger?: AgentLedger;
 }
 
 // session_meta lines embed full instructions and can reach hundreds of KB;
@@ -205,7 +208,7 @@ function modelEffortFromPayload(payload: Record<string, unknown>): { model?: str
 
 type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task' | 'lastReport'>;
 
-function applyRolloutLine(line: string, into: RolloutFields): void {
+function applyRolloutLine(line: string, into: RolloutFields, ledger?: AgentLedger): void {
   const trimmed = line.trim();
   if (!trimmed) {
     return;
@@ -215,6 +218,7 @@ function applyRolloutLine(line: string, into: RolloutFields): void {
     if (!entry.payload) {
       return;
     }
+    if (ledger) applyLedgerEntry(entry, ledger);
     const report = extractAgentReport(entry);
     if (report && (!into.lastReport || report.at >= into.lastReport.at)) into.lastReport = report;
     if (entry.type === 'response_item' && entry.payload.type === 'message' && entry.payload.role === 'user' && Array.isArray(entry.payload.content)) {
@@ -258,7 +262,7 @@ function applyRolloutLine(line: string, into: RolloutFields): void {
   }
 }
 
-function scanRolloutFields(filePath: string, startOffset: number): RolloutFields & { endOffset: number } {
+function scanRolloutFields(filePath: string, startOffset: number, ledger?: AgentLedger): RolloutFields & { endOffset: number } {
   const fd = fs.openSync(filePath, 'r');
   try {
     const buffer = Buffer.alloc(64 * 1024);
@@ -274,7 +278,7 @@ function scanRolloutFields(filePath: string, startOffset: number): RolloutFields
       offset += bytesRead;
       let newline = leftover.indexOf(10);
       while (newline !== -1) {
-        applyRolloutLine(leftover.subarray(0, newline).toString('utf8'), fields);
+        applyRolloutLine(leftover.subarray(0, newline).toString('utf8'), fields, ledger);
         leftover = leftover.subarray(newline + 1);
         newline = leftover.indexOf(10);
       }
@@ -288,6 +292,18 @@ function scanRolloutFields(filePath: string, startOffset: number): RolloutFields
   }
 }
 
+/** What a node carries of its ledger: copies, so a later scan never changes a tree already built. */
+function ledgerFields(ledger: AgentLedger | undefined): Pick<SubagentTreeNode, 'stages' | 'stageCount' | 'action' | 'peers'> {
+  if (!ledger || (!ledger.count && !ledger.peers.size && !ledger.open.size)) return {};
+  const action = currentAction(ledger);
+  return {
+    stages: ledger.stages.map(stage => ({ ...stage, ...(stage.by ? { by: { ...stage.by } } : {}), ...(stage.peers ? { peers: { ...stage.peers } } : {}) })),
+    stageCount: ledger.count,
+    ...(action ? { action: { ...action } } : {}),
+    ...(ledger.peers.size ? { peers: Object.fromEntries(ledger.peers) } : {}),
+  };
+}
+
 function refreshRolloutFields(link: SessionLink): void {
   const cached = linkCache.get(link.path);
   if (!cached?.link) {
@@ -297,7 +313,9 @@ function refreshRolloutFields(link: SessionLink): void {
   if (start >= cached.size) {
     return;
   }
-  const extra = scanRolloutFields(link.path, start);
+  cached.link.ledger ??= newLedger();
+  link.ledger = cached.link.ledger;
+  const extra = scanRolloutFields(link.path, start, link.ledger);
   if (extra.model) {
     link.model = extra.model;
     cached.link.model = extra.model;
@@ -599,6 +617,7 @@ export function buildSubagentTree(
         link.turnStartedAt = previous.link.turnStartedAt;
         link.task = previous.link.task;
         link.lastReport = previous.link.lastReport;
+        link.ledger = previous.link.ledger;
       }
       linkCache.set(file.path, {
         link,
@@ -669,6 +688,7 @@ export function buildSubagentTree(
       turnStartedAt: link?.turnStartedAt,
       rolloutPath: link?.path,
       lastReport: link?.lastReport,
+      ...ledgerFields(link?.ledger),
       task: taskText(link?.task) ?? taskText(knownAgent?.task),
       statusAt: knownAgent?.lastActivityAt && (!link?.statusAt || knownAgent.lastActivityAt > link.statusAt)
         ? knownAgent.lastActivityAt : link?.statusAt,

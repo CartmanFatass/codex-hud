@@ -210,6 +210,8 @@ export interface EventMsgPayload {
   // For context_compacted events
   compacted_items?: CompactedItem[];
   summary?: string;
+  /** `task_complete`: the turn's final answer. */
+  last_agent_message?: string | null;
   // For turn_started events
   model_context_window?: number;
   collaboration_mode_kind?: string;
@@ -408,9 +410,42 @@ export interface SubagentInfo {
 export const AGENT_TASK_KINDS = ['research', 'experiment', 'fix', 'review', 'writing', 'summary', 'other'] as const;
 export type AgentTaskKind = typeof AGENT_TASK_KINDS[number];
 
+/**
+ * One turn of an agent, from what started it to its final answer, as its
+ * rollout recorded it (see src/collectors/agent-stages.ts).
+ */
+export interface AgentStage {
+  turnId?: string;
+  startedAt: Date;
+  endedAt?: Date;
+  status: 'running' | 'done' | 'aborted' | 'failed';
+  /** The header of the message that started it: its type (`NEW_TASK`, `MESSAGE`) and sender's task path. */
+  by?: { type: string; sender: string };
+  /** The agent's first public update in the stage: the task in its own words, a stand-in for the task. */
+  intent?: string;
+  /** The final answer, its head and tail when long. */
+  result?: string;
+  /** Messages other agents sent it during the stage, by sender's task path. */
+  peers?: Record<string, number>;
+}
+
+/** A tool call the agent has open: its tool and what it is doing, in a few words. */
+export interface AgentAction {
+  name: string;
+  text: string;
+  at: Date;
+}
+
 export interface SubagentTreeNode {
   /** Public agent-authored excerpt; not verified completion or a file attribution. */
   lastReport?: AgentReport;
+  /** The newest stages, oldest first; `stageCount` counts them all. */
+  stages?: AgentStage[];
+  stageCount?: number;
+  /** The tool call it opened last and has no answer to yet. */
+  action?: AgentAction;
+  /** Messages from other agents over the whole session, by sender's task path. */
+  peers?: Record<string, number>;
   task?: string;
   statusAt?: Date;
   /** Local rollout for inspecting this agent; never displayed as its task. */

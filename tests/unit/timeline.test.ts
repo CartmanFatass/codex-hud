@@ -42,10 +42,12 @@ test('the rollout\'s events: approvals asked and answered, compaction, quota cro
   result = (await parser.parse())!;
   assert.deepEqual(result.events.map(e => [e.kind, e.at.getTime(), e.text]), [
     ['approval-requested', at(2).getTime(), 'npm test'], ['approval-answered', at(30).getTime(), 'npm test'], ['compacted', at(40).getTime(), undefined]]);
-  fs.appendFileSync(file, quota(81, 60) + quota(96, 70) + row('event_msg', { type: 'task_complete' }, 80) + row('event_msg', { type: 'turn_aborted' }, 90));
+  fs.appendFileSync(file, quota(81, 60) + quota(96, 70) + row('event_msg', { type: 'task_complete', last_agent_message: 'Done:\n  all  tests pass.' }, 80)
+    + row('event_msg', { type: 'turn_aborted' }, 90));
   result = (await parser.parse())!;
   assert.deepEqual(result.events.slice(3).map(e => [e.kind, e.threshold]), [['quota', 80], ['quota', 95], ['turn-finished', undefined], ['turn-interrupted', undefined]],
     'a crossing at the start of a batch is seen from the reading before it');
+  assert.equal(result.events[5].text, 'Done: all tests pass.', 'a finished turn keeps its answer, flattened');
   assert.equal(result.events[3].windowMinutes, 300);
   assert.deepEqual(result.quotaSamples.map(s => s.percent), [79, 81, 96]);
   assert.equal(result.quotaSamples[0].resetsAt?.getTime(), Math.floor(now / 1000) * 1000 + 3 * 3600_000);
@@ -86,6 +88,9 @@ test('the timeline is the rollout\'s events and the agent log\'s status changes 
   const events = history.timeline(agents, main, logs);
   assert.deepEqual(events.map(timelineText), ['Turn finished', 'reader failed', 'Tool failed: npm test', 'Quota past 80% (5h)', 'reader started']);
   assert.equal(history.timeline(agents, main, logs).length, 5, 'the same again adds nothing');
+  const answered = new WorkbenchHistory().timeline(tree([]), { events: [{ kind: 'turn-finished' as const, at: at(60), text: 'Shipped.' }],
+    toolActivity: { recentCalls: [], totalCalls: 0, callsByType: {} } } as never, new Map());
+  assert.deepEqual(answered.map(e => [e.subject, e.summary]), [[undefined, 'Shipped.']], 'an answer is the turn\'s summary, not its subject');
   assert.equal(history.timeline(tree([], 'other'), null, new Map()).length, 0, 'another session starts over');
 });
 

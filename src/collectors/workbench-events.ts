@@ -53,8 +53,11 @@ export class WorkbenchHistory {
       if (!this.entries.has(event.id)) this.entries.set(event.id, { title: `${event.kind} ${event.subject ?? ''}`.trim(), detail: [], ...event });
     };
     for (const recorded of main?.events ?? []) {
-      add({ id: `session:${recorded.kind}:${recorded.at.getTime()}:${recorded.threshold ?? ''}:${recorded.text ?? ''}`, at: recorded.at, kind: recorded.kind,
-        status: recorded.kind === 'turn-failed' ? 'error' : 'completed', subject: recorded.kind === 'quota' ? undefined : recorded.text,
+      // A finished turn's text is its answer, not what the event is about: the same event twice stays one line.
+      const answer = recorded.kind === 'turn-finished';
+      add({ id: `session:${recorded.kind}:${recorded.at.getTime()}:${recorded.threshold ?? ''}:${answer ? '' : recorded.text ?? ''}`, at: recorded.at, kind: recorded.kind,
+        status: recorded.kind === 'turn-failed' ? 'error' : 'completed', subject: recorded.kind === 'quota' || answer ? undefined : recorded.text,
+        ...(answer && recorded.text ? { summary: recorded.text } : {}),
         ...(recorded.threshold !== undefined ? { threshold: recorded.threshold } : {}),
         ...(recorded.windowMinutes !== undefined ? { windowMinutes: recorded.windowMinutes } : {}) });
     }
