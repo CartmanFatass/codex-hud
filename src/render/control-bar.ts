@@ -431,12 +431,17 @@ function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
   return mainOnly(width);
 }
 
+/**
+ * The agents' counts in the form asked for: each count with its word or
+ * without, and with the subtasks figure or without it. Painted; '' with
+ * nothing to count.
+ */
+export type CountsText = (words: boolean, figure: boolean) => string;
+
 /** What a pane's title row says besides its name. */
 export interface HeadOptions {
-  /** Painted, after the title: the agents' counts, or their forms from the fullest to the shortest. */
-  info?: string | readonly string[];
-  /** Shorter still, a figure left out: used only once `right` has given way and `info`'s shortest does not fit. */
-  least?: string;
+  /** Painted, after the title: the pane's counts, or the agents' in each of their forms. */
+  info?: string | CountsText;
   /** Painted, at the right end: where the pane's rows are, or how many there are. */
   right?: string;
   focused: boolean;
@@ -455,37 +460,33 @@ export interface HeadOptions {
  *   frame  "├─ ⌥ 工作树 ────────────────── 3 个 ─┤"    an edge of the panel's frame
  *   pill   " ( ⌥ 工作树 )                  3 个 "      the deep blue where the focus is
  *
- * Zoomed, the title is a filled tab, as the focused tab on the bar is. Short
- * of room the name gives way first, then the counts' words, then where the
- * rows are, then a figure (`least`); at the last the counts are cut.
- * Unnamed (the tabs layout, its tab on the bar above), the row is the
- * counts and where the rows are alone, on the look's rule or surface.
+ * Zoomed, the title is a filled tab, as the focused tab on the bar is.
+ * Short of room, what matters least gives way first: the name, then the
+ * counts' words, then where the rows are, then the subtasks figure. One that
+ * gave way comes back where what it made room for does not fit anyway; at
+ * the last the counts are cut. Unnamed (the tabs layout, its tab on the bar
+ * above), the row is the counts and where the rows are alone, on the look's
+ * rule or surface.
  */
 export function paneHead(id: MonitorPane, width: number, o: HeadOptions): string {
   const style = look(width);
   const { icon: glyph, name } = paneTitle(id);
   const titles = o.named === false ? [''] : glyph ? [`${glyph} ${name}`, glyph] : [name];
-  const infos = typeof o.info === 'string' ? [o.info] : o.info?.length ? [...o.info] : [''];
+  const info = o.info;
+  const counts: CountsText = typeof info === 'function' ? info : () => info ?? '';
   const bare = { ...o, right: undefined };
-  const first = (info: string, options: HeadOptions) => {
-    for (const title of titles) {
-      const row = headRow(style, title, info, options, width, false);
-      if (row !== null) return row;
+  const both = [true, false];
+  for (const figure of both) {
+    for (const right of o.right ? both : [false]) {
+      for (const words of both) {
+        for (const title of titles) {
+          const row = headRow(style, title, counts(words, figure), right ? o : bare, width, false);
+          if (row !== null) return row;
+        }
+      }
     }
-    return null;
-  };
-  // The name gives way before the counts' words, where the rows are before
-  // a figure, and that figure before the counts are cut.
-  for (const info of infos) {
-    const row = first(info, o);
-    if (row !== null) return row;
   }
-  if (o.least !== undefined) {
-    const row = (o.right ? first(infos.at(-1)!, bare) : null) ?? first(o.least, o);
-    if (row !== null) return row;
-  }
-  const last = o.least ?? infos.at(-1)!;
-  return headRow(style, titles.at(-1)!, last, bare, width, false) ?? headRow(style, titles.at(-1)!, last, bare, width, true)!;
+  return headRow(style, titles.at(-1)!, counts(false, false), bare, width, true)!;
 }
 
 function headRow(style: LookName, title: string, counts: string, o: HeadOptions, width: number, cut: boolean): string | null {

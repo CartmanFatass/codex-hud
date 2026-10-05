@@ -294,12 +294,13 @@ test('a pane\'s title in each look: its icon and name, the counts after it, wher
         assert.equal(stripAnsi(head('agents', 32, { info: '✓139 完成', right: '1–9/40' })), ' ▦ 卡片  ✓139 完成       1–9/40 ');
         assert.ok(head('timeline', 32, { focused: true }).includes(theme.bold(theme.accent('≣ 时间线'))), 'the accent where the focus is');
         assert.ok(head('timeline', 32, { focused: true, zoomed: true }).includes(theme.tab(theme.bold(' ≣ 时间线 '))), 'zoomed, a filled tab');
-        // Short of room the name goes, then the counts' words, then where the rows are.
-        const counts = ['✓139 完成  ▸1 运行', '✓139 ▸1'];
+        // Short of room what matters least goes first: the name, then the counts' words, then where the rows
+        // are; the name comes back where what it made room for does not fit anyway.
+        const counts = (words: boolean) => words ? '✓139 完成  ▸1 运行' : '✓139 ▸1';
         assert.equal(stripAnsi(head('agents', 31, { info: counts, right: '1–9/40' })), ' ▦  ✓139 完成  ▸1 运行  1–9/40 ');
         assert.equal(stripAnsi(head('agents', 30, { info: counts, right: '1–9/40' })), ' ▦ 卡片  ✓139 ▸1       1–9/40 ');
         assert.equal(stripAnsi(head('agents', 24, { info: counts, right: '1–9/40' })), ' ▦  ✓139 ▸1      1–9/40 ');
-        assert.equal(stripAnsi(head('agents', 16, { info: counts, right: '1–9/40' })), ' ▦  ✓139 ▸1     ');
+        assert.equal(stripAnsi(head('agents', 16, { info: counts, right: '1–9/40' })), ' ▦ 卡片  ✓139 ▸1');
         assert.equal(stripAnsi(head('changes', 16, { right: '1–9/2987' })), ' ±     1–9/2987 ');
       });
       withConfig({ look: 'band' }, () => {

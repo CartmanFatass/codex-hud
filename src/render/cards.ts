@@ -710,7 +710,7 @@ const REPORT_LINES = 8;
  * together, as a list.
  */
 export function richRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
-  const {row:head} = summaryRow(input,width);
+  const {row:head} = summaryRow(input);
   const rows: MonitorRow[] = [head];
   let lastOneLine = false;
   const shown = listedAgents(input.tree.nodes,state,now);

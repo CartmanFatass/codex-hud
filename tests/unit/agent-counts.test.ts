@@ -6,7 +6,8 @@ import { statusCard } from '../../src/render/status-block.js';
 import { buildBarModules } from '../../src/render/layout/bar-modules.js';
 import { buildSnapshot } from '../../src/snapshot.js';
 import { Notifier, type NotifyEvent } from '../../src/notify.js';
-import { initialMonitorState, renderMonitor } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, panelTop } from '../../src/render/monitor.js';
+import { setDisplayConfig } from '../../src/render/hud-config.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { stripAnsi, theme } from '../../src/render/colors.js';
 import { makeHudData, node, treeOf, FIXED_NOW } from '../fixtures/hud-data.js';
@@ -101,7 +102,7 @@ test('the title row, the status card, the bar, notifications and the snapshot sa
   assert.deepEqual(sent.map((event) => event.message), ['1 agent · 1 subtask · 1 review failed', '2 agents finished, 1 failed']);
 });
 
-test('short of room, the title row gives up where its rows are before the subtasks, and the subtasks before the agents', () => {
+test('short of room, the title row gives up the name, the words, where its rows are, then the subtasks, each back where what it made room for does not fit', () => {
   const many = treeOf(Array.from({ length: 12 }, (_, i) => node(`a${i}`, `lead_${i}`, i === 0 ? 'error' : 'running', { children: [
     node(`a${i}s`, `impl_${i}`, i === 1 ? 'error' : 'completed', { depth: 2 }),
   ] })));
@@ -112,7 +113,48 @@ test('short of room, the title row gives up where its rows are before the subtas
     };
     assert.match(title(56), /^ ▦ Agents {2}!1 ▸11 {2}· 12 subtasks, 1 failed +1–22\/\d+$/, style);
     assert.equal(title(40), ' ▦  !1 ▸11  · 12 subtasks, 1 failed', style);
-    assert.match(title(32), /^ ▦ Agents {2}!1 ▸11 +1–22\/\d+$/, style);
+    // The subtasks do not fit even alone: where the rows are comes back, and the words.
+    assert.match(title(32), /^ ▦ {2}!1 failed {2}▸11 run +1–22\/\d+$/, style);
+  }
+});
+
+test('in the tabs layout too, and on the settings page, the title takes a shorter form rather than cut one', () => {
+  const kids = (i: number, n: number, failed: boolean) =>
+    Array.from({ length: n }, (_, k) => node(`a${i}s${k}`, `impl_${i}_${k}`, failed && k === 0 ? 'error' : 'completed', { depth: 2 }));
+  const tree = treeOf([
+    node('a0', 'lead_0', 'error'),
+    ...[1, 2, 3].map((i) => node(`a${i}`, `lead_${i}`, 'completed', { children: kids(i, 2, false) })),
+    ...[4, 5, 6].map((i) => node(`a${i}`, `lead_${i}`, 'running', { children: kids(i, i === 4 ? 2 : 1, i === 4) })),
+  ]);
+  const previous = setDisplayConfig({});
+  try {
+    for (const language of ['en', 'zh'] as const) {
+      setLanguage(language);
+      for (const look of ['tab', 'band', 'tile', 'frame', 'pill'] as const) {
+        setDisplayConfig({ look });
+        for (const tabbed of [true, false]) for (const style of ['rich', 'compact'] as const) for (const width of [32, 40, 48, 56]) {
+          const state = { ...initialMonitorState(), style, tabbed };
+          const frame = renderMonitor({ tree, state, width, height: 24, nowMs: NOW });
+          const title = stripAnsi(frame.lines[frame.panes[0].y]);
+          const preview = stripAnsi(panelTop({ tree }, { ...state, focus: 'agents' }, width)[2]);
+          const where = `${language} ${look} ${tabbed ? 'tabs' : 'stacked'} ${style} ${width}`;
+          assert.doesNotMatch(title, /…/, `${where}: "${title}"`);
+          assert.doesNotMatch(preview, /…/, `${where}, preview: "${preview}"`);
+          assert.match(title, /!1/, where);
+        }
+      }
+    }
+    setLanguage('en');
+    setDisplayConfig({ look: 'tab' });
+    const tabs = (style: 'rich' | 'compact', width: number) => {
+      const frame = renderMonitor({ tree, state: { ...initialMonitorState(), style, tabbed: true }, width, height: 24, nowMs: NOW });
+      return stripAnsi(frame.lines[frame.panes[0].y]).trimEnd();
+    };
+    assert.equal(tabs('compact', 48), ' !1 ✓3 ▸3  · 10 subtasks, 1 failed');
+    assert.equal(tabs('compact', 32), ' !1 failed  ✓3 done  ▸3 run');
+  } finally {
+    setDisplayConfig(previous);
+    setLanguage('en');
   }
 });
 

@@ -12,7 +12,7 @@ import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
 import { t } from './i18n.js';
 import { drawAgentsView } from './agents-view.js';
-import { controlBar, paneHead, icon, look } from './control-bar.js';
+import { controlBar, paneHead, icon, look, type CountsText } from './control-bar.js';
 import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
@@ -107,10 +107,8 @@ export interface RowControl { kind: MonitorControl['kind']; item?: string; x: nu
  * keep its place; `controls` are click targets on the row.
  */
 export interface MonitorRow { text: string; item?: string; key?: string; controls?: RowControl[];
-  /** The text shortened, widest first, for where it does not fit: the agents' counts without their words. */
-  fallbacks?: string[];
-  /** The shortest, a figure left out (the agents' counts without their subtasks): only once where the rows are has given way. */
-  least?: string }
+  /** On the agents' heading: its counts in each form, for the title row to say as much as fits. */
+  counts?: CountsText }
 export interface MonitorRect {
   id: MonitorPane;
   x: number; y: number; width: number; height: number;
@@ -283,10 +281,8 @@ export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: 
 export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state: MonitorState, width: number): string[] {
   const now = input.nowMs ?? Date.now();
   const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
-  const summary = state.focus === 'agents' ? summaryRow(input,width).row : undefined;
-  const info = summary ? [summary.text,...summary.fallbacks ?? []].map(text=>text.replace(/^ /,'')).filter(Boolean) : undefined;
-  const least = summary?.least?.replace(/^ /,'') || undefined;
-  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false,named:!state.tabbed,info,least})];
+  const info = state.focus === 'agents' ? summaryRow(input).row.counts : undefined;
+  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false,named:!state.tabbed,info})];
 }
 
 /** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
@@ -479,7 +475,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     if (id === 'agents') {
       // Its title, then the counts the summary row has; where its rows are on the right.
       // In the tabs layout the tab above names the pane: its title is its counts and where its rows are.
-      drawAgentsView(frame,state,rows,y,cw,h,(summary,range,least)=>paneHead(id,width,{info:summary,least,right:range && colors.dim(range),focused,zoomed,named:!state.tabbed}),framed ? 2 : 0);
+      drawAgentsView(frame,state,rows,y,cw,h,(counts,range)=>paneHead(id,width,{info:counts,right:range && colors.dim(range),focused,zoomed,named:!state.tabbed}),framed ? 2 : 0);
       if (rows.length) titles.add(y);
       y += h; continue;
     }
