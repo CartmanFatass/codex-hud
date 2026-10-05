@@ -107,13 +107,13 @@ try:
  wait_for('▸14')
  fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',12,16,0,0))
  os.kill(proc.pid,signal.SIGWINCH)
- wait_for('←')
+ wait_for('\uf015')
  send(b'?')
  wait_for('Shortcuts')
  send(b'G')
  wait_for('ultra')
  send(b'\x1b')
- wait_for('←')
+ wait_for('\uf015')
  send(b'q')
  tail=b''
  end=time.monotonic()+3

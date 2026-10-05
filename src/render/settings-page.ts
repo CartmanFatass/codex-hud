@@ -59,6 +59,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'panelStyle',group:'Panel',label:'Layout',short:'Layout',values:['rich','compact'],help:'Agent cards, or the tree and log'},
   {key:'statusCard',group:'Panel',label:'Status card',short:'Card',values:['full','status','min'],help:'Foot card: brief, status, one line; r'},
   {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and brief language'},
+  {key:'icons',group:'Panel',label:'Icons',short:'Icons',values:['nerd','text'],help:'Needs a Nerd Font in the terminal',
+    format:value => value === 'nerd' ? 'Nerd Font' : 'text'},
   {key:'worktreesPane',group:'Panel',label:'2 Worktrees',short:'2 Trees',values:['open','folded','closed'],help:PANE_HELP},
   {key:'changesPane',group:'Panel',label:'3 Changes',short:'3 Files',values:['open','folded','closed'],help:PANE_HELP},
   {key:'detailsPane',group:'Panel',label:'4 Inspector',short:'4 Info',values:['open','folded','closed'],help:PANE_HELP},

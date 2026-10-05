@@ -31,7 +31,7 @@ test('missing settings keep display defaults and hide optional tasks and activit
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
       briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
       resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
-      art: 'off', artImage: '', prefixKey: 'C-]',
+      art: 'off', artImage: '', prefixKey: 'C-]', icons: 'nerd',
     });
     assert.equal(fs.existsSync(file), false, 'reading defaults does not create files');
     const changed = defaultSettings();
@@ -68,7 +68,7 @@ test('load validates known settings without importing unknown or invalid values'
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
       briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, notify: false, notifyDesktop: false,
       resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
-      art: 'off', artImage: '', prefixKey: 'C-]',
+      art: 'off', artImage: '', prefixKey: 'C-]', icons: 'nerd',
     });
     fs.writeFileSync(file, JSON.stringify({
       density: 'huge', theme: {}, glyphs: null, motion: 'none', sort: 'recent',

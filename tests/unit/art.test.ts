@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { ICONS } from '../../src/render/control-bar.js';
 import assert from 'node:assert/strict';
 import { artSize, renderArt, type ArtBitmap } from '../../src/render/art.js';
 import { initialMonitorState, renderMonitor } from '../../src/render/monitor.js';
@@ -59,7 +60,7 @@ test('the panel draws the art only on empty lines, centred, clear of the brief a
   assert.equal(lines[first - 1].trim(), '', 'a blank line above the art');
   assert.equal(lines.at(-2)!.trim(), '', 'never touching the foot');
   assert.ok(lines.some(line => line.includes('one line')), 'the brief is untouched');
-  assert.match(lines[0], / ‖ Settings Help $/, 'the buttons are on the bar, the foot is the panel\'s');
+  assert.ok(lines[0].endsWith(`${ICONS.pause}  ${ICONS.settings} Settings ${ICONS.help} Help `), 'the buttons are on the bar, the foot is the panel\'s');
   const indent = lines[first].indexOf('⣿');
   assert.ok(indent > 5, 'centred, not at the left edge');
   assert.ok(frame.lines.every(line => visualLength(line) <= 40));

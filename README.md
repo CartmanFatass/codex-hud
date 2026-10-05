@@ -225,18 +225,18 @@ Panes stack vertically. Worktrees shrinks to its content; spare height goes to A
 - **rich** (the default): no Agents pane. One line at the top counts what is failed, running and done (`!1 ▸2 ✓5`, with words when glyphs are set to text; guardian reviews left out), with `◈N` for the guardian reviews under the main session; under it, in one scrolling view, an entry per subagent in the tree's order, under the same filter and linger window. A running agent, a failed one, one that finished in the last minute and one that needs a look get a **card**, open on the right. Its top rule has the status icon, a glyph for the kind of work (when Labels and title gave one), the agent's name (middle-cut when long, underlined because a click on it switches to the agent), `◈N` for its guardian reviews and the model/effort badge; the bottom rule has the turn clock counting seconds while it runs (`◷4m07s`, in the warning colour when quiet) or how long ago it finished or failed (`12d`), a collapsed parent's count (`+3`), then the agent's context meter filling the rest of the rule as a thin line with its percentage at the end of the fill (`────57%──────`), and `▾`. Inside, one line each: its task (strong), its newest model note (`~`) and its newest update. Cards take their state's colour: running info, quiet warning, failed error, just finished success; the selected card's top rule sits on a lighter band. Every other finished agent is **two lines**: `✓ audit_code_paths   ☽◐ ───57%──── 12d`, its meter and age in columns down the list, and under it, indented and dim, how far it got: its newest model note, else its newest update, else its task. `j`/`k` only marks it (its first line on the lighter band), and `e`, Space or a click opens it into its card. Child entries are indented a column a level, at most two. An opened card (`e`, Space, or a click on its top rule or `▾`) adds the name Codex prints when a label stands in for it, the agent's whole log newest first, about twenty lines, the rest left to the Inspector (or, with no log, its last report), then the task in full. Agent text loses its chat markdown in cards and the Inspector: links keep their text, bold, code and heading marks go, a full commit hash shows seven characters. Guardian review threads get no card: they are the `◈N` chip, and a failed one shows as a card. The main session's brief is not in this view: it is in the status card at the foot (below).
 - **compact**: the Agents pane (the tree, one row per agent, by Codex's own name) with the brief, the recap and the agent log under it, as before.
 
-**The control bar** is the panel's first row, on its own background, and every control the panel has is on it; cards, the status card and the panes' title rules carry none. Each control is a **button**, a word or, where words do not fit, an icon, on a chip a step lighter than the bar. No key is written on it; the keys are in the help.
+**The control bar** is the panel's first row, on its own background, and every control the panel has is on it; cards, the status card and the panes' title rules carry none. Each control is a **button** on a chip a step lighter than the bar: a [Nerd Font](https://www.nerdfonts.com/) icon and its word where they fit, the icon alone where they do not. No key is written on it; the keys are in the help.
 
 ```
-56 columns   ← 主会话  ▦ ⎇ ± ⌖ ⋮        ‖ 简报 +31 已收起 设置 帮助
-40 columns   ← 主会话  ▦ ⎇ ± ⌖ ⋮    ‖ +31 设置 帮助
-28 columns   ←  ▦ ⎇ ± ⌖ ⋮     ‖ +31 ☰ ?
+90 columns   [home] 主会话  [robot] 卡片 [branch] 工作树 [diff] 改动 [info] 详情 [history] 时间线   [pause] 暂停简报 [eye] +31 已收起 [cog] 设置 [?] 帮助
+36 columns   [home]  [robot] [branch] [diff] [info] [history]  [pause] [eye] +31 [cog] [?]
 ```
 
-- `←` and the main session's name (`← Main`) return Codex to the main session.
-- The tabs are the panes: by name where there is room (卡片 · 工作树 · 改动 · 检查器 · 时间线; Agents · Trees · Changes · Inspect · Timeline), otherwise `▦` cards, `⎇` worktrees, `±` changes, `⌖` inspector, `⋮` timeline. An open one is in the text colour, a closed one dim, a folded one dim and underlined, the focused one bold on a lighter chip. A click on a closed pane's tab opens and focuses it; on an unfocused one, focuses it (and opens it if folded); on the focused one, folds it, and a second click closes it. The cards' tab only focuses.
-- `‖ 简报` / `▸ 简报` (`‖` / `▸`) pauses or resumes the brief, shown only while one is configured; `+31 已收起` / `收起` (`+31` / `−31`) shows or hides the finished agents the linger window put away, shown only when there are some; `设置` (`☰`) opens settings; `帮助` (`?`) the help.
-- Short of room, the tab names become icons first, then the other words (the brief's and the older agents', then the main session's name, then settings and help), then the closed panes' tabs go, then the older agents' button, then the brief's; `←`, settings and help stay. Without colour (`theme: none`) there are no chips: the focused tab is `[▦]`, a folded one `⎇-`, closed ones are not drawn.
+- The home icon (`U+F015`), with the main session's name where it fits, returns Codex to the main session.
+- The tabs are the panes, each named as its pane's title names it: a robot (`U+F06A9`) 卡片 / Agents, a branch (`U+E725`) 工作树 / Trees, a diff (`U+F440`) 改动 / Changes, an info circle (`U+F05A`) 详情 / Inspect, a history clock (`U+F1DA`) 时间线 / Timeline. The pane titles carry the same icon and no digit. An open tab is in the text colour, a closed one dim, a folded one dim and underlined, the focused one bold on a lighter chip. A click on a closed pane's tab opens and focuses it; on an unfocused one, focuses it (and opens it if folded); on the focused one, folds it, and a second click closes it. The cards' tab only focuses.
+- Pause / play (`U+F04C` / `U+F04B`, 暂停简报 / 继续简报) pauses or resumes the brief, shown only while one is configured; an eye (`U+F06E`, `+31 已收起`) shows the finished agents the linger window put away and an eye with a slash (`U+F070`, 收起) hides them again, shown only when there are some; a cog (`U+F013`, 设置) opens settings; a question circle (`U+F059`, 帮助) the help.
+- Short of room, the tabs lose their words first, then the closed panes' tabs go, then the other buttons lose theirs (the brief's and the older agents', then the main session's, then settings and help), then the older agents' button goes, then the brief's; back, settings and help stay. Without colour (`theme: none`) there are no chips: the focused tab is in brackets, a folded one ends in `-`, closed ones are not drawn.
+- The icons need a Nerd Font in the terminal (MesloLGS NF, for one). Without one, set **Icons** to `text` in settings (`glyphs: text` does the same): the buttons are words alone (`← 主会话`, `卡片 工作树 …`, `暂停简报`, `设置 帮助`), shortened where narrow (`← 主`, `工作…`, `Ag Wt Ch In Tl`, `暂停`).
 
 **The status card** at the foot is a band and a corner, as omp draws its status line, and its meters are thin lines with the reading where the fill ends:
 
@@ -286,7 +286,7 @@ Every key below follows the prefix: `Ctrl+]`, then the key (or the prefix chosen
 | `o` | Switch the actual Codex conversation to the selected agent (a click on an agent in compact, on a card's name in rich) |
 | `m` | Return the Codex conversation to the root session (the `←` button) |
 | `z` | Zoom/restore focused pane |
-| `b` | Pause / resume the brief and recap model calls (the `‖` button) |
+| `b` | Pause / resume the brief and recap model calls (the pause button, 暂停简报) |
 | `r` | Status card level: min → status → full (compact: min ↔ status); a click on the card's band too |
 | `Esc` | Dismiss help, unzoom, return to list; close from Agents |
 | `q` | Close the panel |
@@ -338,7 +338,7 @@ Settings is grouped into Status bar (density, theme, model label, motion, contex
 
 Every item's answer is cached by its input, so the same answer, digest or diff is never sent twice, also across panels. A request that fails is not repeated for 10 minutes.
 
-`Ctrl+]` `b`, or a click on `‖ Brief` on the control bar, pauses and resumes every item above (it is offered while Agents brief or Main recap is on). For `api`, set these in `hud-settings.json`:
+`Ctrl+]` `b`, or a click on the bar's pause button (Pause brief), pauses and resumes every item above (it is offered while Agents brief or Main recap is on). For `api`, set these in `hud-settings.json`:
 
 ```json
 { "briefing": "api",

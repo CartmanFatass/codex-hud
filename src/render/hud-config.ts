@@ -11,11 +11,14 @@ export type ThemeName = 'terminal' | 'mocha' | 'latte' | 'none';
 export type GlyphMode = 'glyph' | 'text' | 'both';
 export type MotionMode = 'full' | 'reduced';
 export type ContextMode = 'used' | 'remaining';
+/** The panel's buttons and titles: Nerd Font icons, or words alone. */
+export type IconMode = 'nerd' | 'text';
 
 export interface HudDisplayConfig {
   density: Density;
   theme: ThemeName;
   glyphs: GlyphMode;
+  icons: IconMode;
   motion: MotionMode;
   context: ContextMode;
 }
@@ -45,9 +48,18 @@ export function resolveDisplayConfig(env: NodeJS.ProcessEnv = process.env): HudD
     density: pick(env.CODEX_HUD_DENSITY, DENSITIES, 'balanced'),
     theme: resolveTheme(env),
     glyphs: pick(env.CODEX_HUD_GLYPHS, GLYPH_MODES, 'both'),
+    icons: pick(env.CODEX_HUD_ICONS, ['nerd', 'text'], 'nerd'),
     motion: env.CODEX_HUD_REDUCED_MOTION === '1' ? 'reduced' : 'full',
     context: pick(env.CODEX_HUD_CONTEXT, ['used', 'remaining'], 'used'),
   };
+}
+
+/**
+ * Nerd Font icons on the panel's buttons and titles: the `icons` setting,
+ * and glyphs not set to text (words there mean words here too).
+ */
+export function nerdIcons(): boolean {
+  return active.icons !== 'text' && active.glyphs !== 'text';
 }
 
 let active: HudDisplayConfig = resolveDisplayConfig();

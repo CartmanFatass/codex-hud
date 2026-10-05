@@ -36,12 +36,10 @@ export function language(): Language {
 
 const ZH: Record<string, string> = {
   // Page frame
-  '1 Agents': '1 Agents',
   '2 Worktrees': '2 工作树',
   '3 Changes': '3 改动',
   '4 Inspector': '4 详情',
   'Worktrees': '工作树',
-  'WT': '工作树',
   'Changes': '改动',
   'Inspect': '详情',
 
@@ -177,7 +175,10 @@ const ZH: Record<string, string> = {
   // Help
   // Round 3: the prefix, the buttons, the help's sections
   'Help': '帮助',
-  'Hide older': '收起',
+  'Pause brief': '暂停简报',
+  'Resume brief': '继续简报',
+  'Pause': '暂停',
+  'Resume': '继续',
   'Shortcuts: {p}, then a key': '快捷键：先按 {p}，再按一键',
   'Keys typed in the panel go to Codex': '在侧栏里打字，按键都交给 Codex',
   'F12  panel on / off  Shift+F12  into it': 'F12  开 / 关侧栏  Shift+F12  进入侧栏',
@@ -198,10 +199,13 @@ const ZH: Record<string, string> = {
   '{p} Esc  back  {p} q  close panel': '{p} Esc  返回  {p} q  关闭侧栏',
   '{p} {p}  {p} itself, to Codex': '{p} {p}  把 {p} 本身交给 Codex',
   'Buttons, top row': '按钮（顶行）',
-  '← main session  ▦ ⎇ ± ⌖ ⋮ panes': '← 主会话  ▦ ⎇ ± ⌖ ⋮ 面板',
+  '{icon} main session': '{icon} 主会话',
+  '{icons} the panes, as titled': '{icons} 各面板，同面板标题',
   'Click a pane: open, focus, then fold, close': '点面板按钮：打开、聚焦，再折叠、关闭',
-  '‖ / ▸ pause / resume brief  +N older': '‖ / ▸ 暂停 / 继续简报  +N 已收起',
-  '☰ settings  ? help': '☰ 设置  ? 帮助',
+  '{pause} / {resume} pause / resume brief': '{pause} / {resume} 暂停 / 继续简报',
+  '{show} +N show older  {hide} hide them': '{show} +N 显示已收起的  {hide} 再收起',
+  '{settings} settings  {help} help': '{settings} 设置  {help} 帮助',
+  'Narrow, the buttons keep their icons alone': '窄时按钮只留图标',
   "Click the card's band: its level": '点击状态卡色带：切换显示层级',
   'Legend': '图例',
   '‖ brief on  ▸ paused  ~… writing': '‖ 简报运行中  ▸ 已暂停  ~… 生成中',
@@ -342,6 +346,8 @@ const ZH: Record<string, string> = {
   'compact': '紧凑',
   'Language': '语言',
   'Lang': '语言',
+  'Icons': '图标',
+  'Needs a Nerd Font in the terminal': '需要终端用 Nerd Font 字体',
   'Panel and brief language': '侧栏和简报的语言',
   'Picture': '背景图',
   'Art': '装饰',

@@ -9,7 +9,7 @@ import { theme, colors, visualLength, truncateAnsi, stripAnsi, getContextColor, 
 import { palette } from './palette.js';
 import { renderModelEffortToken, modelLegend } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
-import { displayConfig } from './hud-config.js';
+import { displayConfig, nerdIcons } from './hud-config.js';
 import type { Brief } from '../collectors/briefing.js';
 import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
@@ -17,7 +17,7 @@ import { t } from './i18n.js';
 import { agentTitle, shownName, labelled } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { drawAgentsView, WHEEL_ROWS } from './agents-view.js';
-import { controlBar } from './control-bar.js';
+import { controlBar, paneTitle, ICONS } from './control-bar.js';
 import { planFoot, nextLevel, type StatusLevel, type FootInfo } from './status-foot.js';
 import { formatWindowLabel } from './quota.js';
 import type { WorkbenchEvent } from './workbench-state.js';
@@ -978,8 +978,12 @@ function helpText(rich: boolean, prefix: string): Array<string | {head: string}>
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
       '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex'].map(line=>t(line,p)),
     head('Buttons, top row'),
-    ...['← main session  ▦ ⎇ ± ⌖ ⋮ panes','Click a pane: open, focus, then fold, close','‖ / ▸ pause / resume brief  +N older',
-      '☰ settings  ? help'].map(line=>t(line)),
+    // With icons on, what each icon is; with words, the words say it.
+    ...(nerdIcons() ? [t('{icon} main session',{icon:ICONS.main}),
+      t('{icons} the panes, as titled',{icons:MONITOR_PANES.map(id=>ICONS[id]).join(' ')}),
+      t('{pause} / {resume} pause / resume brief',ICONS),t('{show} +N show older  {hide} hide them',ICONS),
+      t('{settings} settings  {help} help',ICONS),t('Narrow, the buttons keep their icons alone')] : []),
+    t('Click a pane: open, focus, then fold, close'),
     head('Mouse'),
     ...[...(rich ? ['Click card: select','Click its name: switch','Click top rule or ▾: open','Wheel over the card: its brief'] : ['Click agent: switch','Click a log line: select agent']),
       "Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
@@ -995,7 +999,6 @@ function helpText(rich: boolean, prefix: string): Array<string | {head: string}>
 
 /** Lines of the latest update the Inspector shows before "▾ More". */
 const REPORT_LINES = 6;
-const TITLES: Record<MonitorPane,string> = {agents:'1 Agents',worktrees:'2 Worktrees',changes:'3 Changes',details:'4 Inspector',timeline:'5 Timeline'};
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const width = Math.max(0,Math.floor(input.width)); const height = Math.max(0,Math.floor(input.height));
   const state = reconcileMonitor(input.state,input.tree,input.git,input.worktrees,input.nowMs ?? Date.now());
@@ -1094,14 +1097,15 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const pane = {id,x:0,y,width,height:h,rows,offset,contentLength:rows.length,edge,pinned:0}; frame.panes.push(pane);
     const border = colors.dim;
     const heading = id===state.focus ? theme.accent : colors.dim;
-    const shortTitle = t({agents:'Agents',worktrees:width<20?'WT':'Worktrees',changes:'Changes',details:'Inspect',timeline:'Timeline'}[id]);
+    // The pane's name, as its tab on the bar names it; no digit, no switch.
+    const title = paneTitle(id);
     if(bordered) {
-      // "┌ 5 Timeline ─────┐": the name only; its switches are its tab on the bar.
-      const label = truncateAnsi(' '+t(TITLES[id])+' ',Math.max(0,width-2));
+      // "┌  Timeline ─────┐": its switches are its tab on the bar.
+      const label = truncateAnsi(' '+title+' ',Math.max(0,width-2));
       frame.lines[y] = truncateAnsi(heading('┌'+label+'─'.repeat(Math.max(0,width-2-visualLength(label)))+'┐'),width);
     } else {
       // "─ Timeline ────": the rule doubles as the frame.
-      const label = truncateAnsi('─ '+shortTitle+' ',width);
+      const label = truncateAnsi('─ '+title+' ',width);
       frame.lines[y] = truncateAnsi(heading(label+'─'.repeat(Math.max(0,width-visualLength(label)))),width);
     }
     for(let i=0;i<count;i++) {

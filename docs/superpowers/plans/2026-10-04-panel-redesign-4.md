@@ -191,3 +191,71 @@ Copy the 36-column full-panel PNG to
 3. The captures: paste the 36-column `.txt` capture inline, and give the PNG
    paths.
 4. The decisions made, and anything not done, with the reason.
+
+---
+
+## Amendment A: real Nerd Font icons (user request, supersedes part 1's one-character words)
+
+The user rejected the one-character CJK abbreviations (卡 树 改 详 时) as
+"not intuitive either". They asked for **real icons**, rather than the
+rendered Unicode symbols.
+
+**Their terminal font is a Nerd Font.** Windows Terminal uses `MesloLGS NF`;
+the files are under `/mnt/c/Users/fires/AppData/Local/Microsoft/Windows/Fonts/`,
+and a copy is at `$S/meslo.ttf`. Its icon ranges include:
+- Font Awesome `f000–f2e0`;
+- Octicons `f400–f4a9`;
+- Codicons `ea60–ebeb`;
+- Devicons `e700–e7c5`;
+- Material Design both old (`f500–fd46`) and new (`f0001+`).
+
+I rendered candidates with that font in `$S/prev/icons.png`. All of them
+draw cleanly.
+
+**Use these glyphs**, in mostly Font Awesome's solid style, for one
+consistent look:
+
+| Control | Glyph | Codepoint |
+|---|---|---|
+| Main session (back) | home | `U+F015` |
+| Agents pane | robot | `U+F06A9` (MD; a surrogate pair in JS) |
+| Worktrees pane | git branch | `U+E725` |
+| Changes pane | diff | `U+F440` |
+| Inspector / details pane | info circle | `U+F05A` |
+| Timeline pane | history | `U+F1DA` |
+| Pause brief / resume brief | pause / play | `U+F04C` / `U+F04B` |
+| Older agents: show / hide | eye / eye slash | `U+F06E` / `U+F070` |
+| Settings | cog | `U+F013` |
+| Help | question circle | `U+F059` |
+
+**How they are drawn.**
+- A Nerd Font icon takes **1 cell**, but draws wider than one cell. Always
+  follow it with a space, or with its word.
+- Make sure `visualLength`/`codePointWidth` counts BMP private use
+  (`E000–F8FF`) and plane-15 private use (`F0000–FFFFD`) as width 1, and
+  that truncation never splits a surrogate pair.
+- **Wide:** icon plus word (` 设置`, ` 时间线`, `󰚩 卡片`).
+- **Narrow:** icon only. The words drop before any button does.
+- The pane titles in the pane frames may carry the same icon before the
+  name.
+- The open, closed, focused and folded tab states stay as round 2/3 drew
+  them, by colour and chip, plus the no-colour variants.
+
+**Settings.** Add an `icons` setting:
+- `nerd` (default): the glyphs above;
+- `text`: the words only, the part 1 behaviour without the one-character
+  abbreviations, cut with `…` when narrow.
+
+Put a help line on the setting: "Needs a Nerd Font in the terminal". The
+existing `glyphs: text` mode implies `icons: text`.
+
+**PNGs.** The PNG pipeline must load the user's font, or the icons render
+as tofu boxes. Add `@font-face{font-family:M;src:url(file://$S/meslo.ttf)}`
+and use it in `ansi2html.py`'s CSS (copy the script, don't break round 3's
+captures). Pass `--allow-file-access-from-files` to Chrome.
+
+**Live check additions.**
+- The bar and the pane titles at 32, 36 and 56 columns with `icons: nerd`,
+  rendered with the Meslo font.
+- One capture with `icons: text`.
+- Copy the 36-column one to `OneDrive/图片/hud-r4-panel.png`.
