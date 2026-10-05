@@ -1,6 +1,6 @@
 /** Default F12 view: a monitor, not another transcript. No I/O or terminal input here. */
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
-import type { GitChanges } from '../collectors/git-changes.js';
+import type { GitChanges, GitChangedFile } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot, WorktreeInfo } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
@@ -502,8 +502,9 @@ export function summaryRow(input: MonitorData, state: MonitorState, width: numbe
   for (const {node} of everyone) totals[node.status === 'running' || node.status === 'starting' ? 'run' : node.status === 'completed' ? 'done' : node.status === 'error' ? 'error' : 'unknown']++;
   // What the linger window puts away, counted whether or not it is showing.
   const expired = countExpired(input.tree.nodes,{...state.tree,showAll:false},now);
-  // Counts only, "!1 ▸1 ✓5": the words come back where the reader asked for words.
-  const words = !iconic() && width >= 22;
+  // "!1 失败 ▸1 运行 ✓5 完成": an icon and a count alone said nothing to a
+  // reader without the legend, so each count carries its word where it fits.
+  const words = width >= 22;
   const count = (icon: string, paint: (s: string) => string, n: number, word: string) =>
     `${paint(icon)}${n}${words ? colors.dim(` ${t(word)}`) : ''}`;
   // Only what is there: "▸0 run" beside thirty finished agents is noise.
@@ -515,7 +516,8 @@ export function summaryRow(input: MonitorData, state: MonitorState, width: numbe
     totals.unknown ? count('?',colors.dim,totals.unknown,'unknown') : '',
   ].filter(Boolean).join(words ? '  ' : ' ');
   // Guardian reviews under the main session count here, not as agents.
-  const chip = guardianChip(input.tree.nodes);
+  const reviews = guardianCount(input.tree.nodes).count;
+  const chip = reviews ? `${guardianChip(input.tree.nodes)}${words ? colors.dim(` ${t('reviews')}`) : ''}` : '';
   const headed = chip ? `${summary}${summary ? ' ' : ''}${chip}` : summary;
   return {row:{text:headed ? truncateAnsi(' '+headed,width) : ''},total:everyone.length,expired};
 }
@@ -616,8 +618,8 @@ interface TimelineLine { at: Date; text: string; paint: (s: string) => string; k
  * started and finished in the list is one line, at the finish ("▸ name 12m
  * ✓"); a guardian review's comings and goings are left out (its failure
  * stays); the same event in a row is one line, "×5", at its newest time.
- * With glyphs on, a finished turn is ⏎, a failed tool ✗, and the rest of an
- * agent's run "▸ name" or "name ✓".
+ * With glyphs on, a finished turn is "⏎ Turn finished", a failed tool "✗ exec",
+ * and the rest of an agent's run "▸ name" or "name ✓": the icon, and a word.
  */
 function timelineLines(input: MonitorData): TimelineLine[] {
   const events = input.timeline ?? [];
@@ -665,7 +667,7 @@ function timelineLines(input: MonitorData): TimelineLine[] {
       const subject = monitorText(event.subject);
       const at = words.indexOf(subject);
       if (at >= 0) text = paint(words.slice(0,at))+name+paint(words.slice(at+subject.length));
-    } else if (iconic() && event.kind === 'turn-finished') text = colors.dim('⏎');
+    } else if (iconic() && event.kind === 'turn-finished') text = colors.dim(`⏎ ${t('Turn finished')}`);
     else if (iconic() && event.kind === 'tool-failed') text = `${theme.error('✗')} ${monitorText(event.subject ?? '')}`;
     const key = `${event.kind ?? event.title}|${event.subject ?? ''}|${event.status}|${start ? 'ran' : ''}`;
     const last = lines.at(-1);
@@ -688,6 +690,61 @@ function timelineRows(input: MonitorData, width: number, now: number): MonitorRo
     if (line.cause) rows.push(...flowLines(monitorText(line.cause),Math.max(1,width-6)).map((text,i)=>({text:`    ${i ? ' ' : colors.dim('~')} ${text}`})));
   }
   return rows;
+}
+
+/**
+ * The changes' counts in words, zero counts left out, in the order
+ * conflicts, staged, unstaged, untracked: "5 未暂存 · 2924 未跟踪". Short of
+ * room the least wanted count goes first, untracked, then staged; the words
+ * stay.
+ */
+export function changeCounts(files: readonly GitChangedFile[], width: number): string {
+  const changed = (x: string) => x !== ' ' && x !== '.' && x !== '?';
+  const count = {
+    conflicts: files.filter(f=>f.conflict).length,
+    staged: files.filter(f=>!f.conflict&&changed(f.index)).length,
+    unstaged: files.filter(f=>!f.conflict&&changed(f.worktree)).length,
+    untracked: files.filter(f=>!f.conflict&&f.index==='?'&&f.worktree==='?').length,
+  };
+  const part = (key: keyof typeof count) => count[key] ? (key === 'conflicts' ? theme.warning : colors.dim)(t(`{n} ${key}`,{n:count[key]})) : '';
+  const line = (keys: Array<keyof typeof count>) => keys.map(part).filter(Boolean).join(colors.dim(' · '));
+  for (const keys of [['conflicts','staged','unstaged','untracked'],['conflicts','staged','unstaged'],['conflicts','unstaged']] as Array<Array<keyof typeof count>>) {
+    const text = line(keys);
+    if (text && visualLength(text) <= width) return text;
+  }
+  return truncateAnsi(line(['conflicts','unstaged']) || line(['conflicts','staged','unstaged','untracked']),width);
+}
+
+/**
+ * Each path as the changes list shows it in `width` columns: whole where it
+ * fits, else the shortest ending that no other path in the list shares
+ * ("a/SKILL.md", "SKILL.md" for a name only it has). Where that ending is
+ * still too long, the directory that tells it apart stays with the name and
+ * the middle goes (".agents/…/SKILL.md", then ".ag…/SKILL.md"), and last the
+ * start is cut ("…/SKILL.md").
+ */
+export function shownPaths(paths: readonly string[], width: number): string[] {
+  const split = paths.map(path=>path.split('/').filter(Boolean));
+  return paths.map((path,i) => {
+    if (visualLength(path) <= width) return path;
+    const parts = split[i];
+    let k = 1;
+    const ending = (n: number, of: string[]) => of.slice(-n).join('/');
+    while (k < parts.length && split.some((other,j)=>j !== i && other.length >= k && ending(k,other) === ending(k,parts))) k++;
+    const unique = ending(k,parts);
+    if (visualLength(unique) <= width) return unique;
+    if (k > 1) {
+      const kept = `${parts[parts.length-k]}/…/${parts.at(-1)}`;
+      if (visualLength(kept) <= width) return kept;
+      // Narrower still, the start of that directory is what tells it apart: ".ag…/SKILL.md".
+      let head = '';
+      for (const ch of parts[parts.length-k]) { if (visualLength(head+ch+'…/'+parts.at(-1)) > width) break; head += ch; }
+      if (head) return `${head}…/${parts.at(-1)}`;
+    }
+    let tail = '';
+    for (const ch of [...unique].reverse()) { if (visualLength('…'+ch+tail) > width) break; tail = ch+tail; }
+    return '…'+tail;
+  });
 }
 
 function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
@@ -724,13 +781,8 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
     if (!git) return [];
     if (git.error) rows.push({text:theme.warning(t('Git incomplete'))});
     if (!git.root) return rows;
-    const changed = (x:string) => x !== ' ' && x !== '.' && x !== '?';
-    const conflicts = git.files.filter(file=>file.conflict).length;
-    if (conflicts) rows.push({text:theme.warning(t('! {n} conflicts',{n:conflicts}))});
     if (git.files.length) {
-      const staged=git.files.filter(f=>!f.conflict&&changed(f.index)).length;
-      const unstaged=git.files.filter(f=>!f.conflict&&changed(f.worktree)).length;
-      rows.push({text:colors.dim(width<36?`${git.files.length}Δ ${staged}S ${unstaged}U`:t('{n} files · {s} staged · {u} unstaged',{n:git.files.length,s:staged,u:unstaged}))});
+      rows.push({text:changeCounts(git.files,width)});
       // What the diff does, in the model's words, marked as such; older than the diff, it says so.
       const summary = input.notes?.changes;
       if (summary) {
@@ -738,8 +790,9 @@ function paneRows(id: MonitorPane, input: MonitorData, state: MonitorState, widt
         if (!summary.current) rows.push(...flowLines(t('(written {age}, before the latest edits)',{age:writtenAge(summary.at,now)}),Math.max(1,width-2)).map(text=>({text:colors.dim(`  ${text}`)})));
       }
     }
-    return [...rows, ...git.files.map(file => ({item:file.path,
-      text:truncateAnsi(`${file.path===state.selectedFile?'›':' '} ${file.conflict?theme.error('!!'):file.index+file.worktree} ${monitorText(width<36?basename(file.path):file.path)}`,width)}))];
+    const shown = shownPaths(git.files.map(file=>file.path),Math.max(1,width-5));
+    return [...rows, ...git.files.map((file,i) => ({item:file.path,
+      text:truncateAnsi(`${file.path===state.selectedFile?'›':' '} ${file.conflict?theme.error('!!'):file.index+file.worktree} ${monitorText(shown[i])}`,width)}))];
   }
   // Inspector is explicitly opened (Enter/v/4), never follows agent clicks into a transcript.
   let lines: string[] = [];
@@ -972,7 +1025,7 @@ export function writtenAge(at: number, now: number): string {
 /**
  * "─ Brief · writing… ────────": the rule heading the brief and its state.
  * No age: a counter ticking up every second said nothing a reader acts on.
- * The switch that holds the model calls is `b‖` on the control bar.
+ * The switch that holds the model calls is the pause button on the control bar.
  */
 export function briefRule(brief: NonNullable<MonitorData['brief']>, width: number): string {
   const status = brief.paused ? t('paused') : brief.running ? t('writing…') : brief.error ? t('failed') : '';
@@ -1029,8 +1082,8 @@ function helpText(rich: boolean, prefix: string): Array<string | {head: string}>
     ...['1 Cards  2 Worktrees','3 Changes  4 Inspector','5 Timeline','✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
     t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
-    ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve','‖ brief on  ▸ paused  ~… writing',
-      'status card gutter colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','──56%── = context or quota used, the % at the fill','meter: blue, yellow past 70%, red past 85%','dim name = done 1m+ ago','mod / Δ = changed files','S staged · U unstaged','stale = >30s since read'].map(line=>t(line)),
+    ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve',
+      'status card gutter colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','──56%── = context or quota used, the % at the fill','meter: blue, yellow past 70%, red past 85%','dim name = done 1m+ ago','mod = changed files','stale = >30s since read'].map(line=>t(line)),
     ...stripAnsi(modelLegend()).split('\n'),
   ];
 }

@@ -73,7 +73,7 @@ test('the panel speaks Chinese and keeps its width at every size', () => {
   }
   const english = stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 30, height: 20, nowMs: now }).lines.join('\n'));
   assert.ok(english.includes(`${ICONS.settings} Settings ${ICONS.help} Help`));
-  assert.match(english, / ✓1 ▸1/);
+  assert.match(english, / ✓1 done {2}▸1 run/);
 });
 
 test('the settings page lays Chinese labels out by display width', () => {

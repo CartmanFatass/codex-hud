@@ -110,14 +110,15 @@ function fitRow(width: number, lead: string, trail: string, left: Pieces, right:
 /**
  * The brief's own state, for the band's right end: how old the recap is
  * ("~" marks the model's words), that one is being written, that the last
- * call failed, that it is paused. Words with glyphs off, icons with them on.
+ * call failed, that it is paused: the recap's age as "~3m", the rest in words.
  */
 function briefState(input: MonitorData, now: number): string {
   const brief = input.brief;
   if (!brief) return '';
-  if (brief.paused) return theme.accent(iconic() ? '‖' : t('paused'));
-  if (brief.running) return colors.dim(iconic() ? '~…' : t('writing…'));
-  if (brief.error) return theme.warning(iconic() ? '✗' : t('failed'));
+  // Words: a lone "‖", "~…" or "✗" at the band's end said nothing without the legend.
+  if (brief.paused) return theme.accent(t('paused'));
+  if (brief.running) return colors.dim(t('writing…'));
+  if (brief.error) return theme.warning(t('failed'));
   if (!brief.recap) return '';
   return colors.dim(`~${iconic() ? age(new Date(brief.recap.at), now) : writtenAge(brief.recap.at, now)}`);
 }

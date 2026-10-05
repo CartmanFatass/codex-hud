@@ -106,7 +106,7 @@ test('cards never run past the panel, in either language, and give up badge and 
   assert.ok(nested.some(line => /^ ┌ ▸ ◈ b05_result/.test(line)), nested.join('\n'));
   const folded = plain(renderMonitor({ tree: tree([parent]), state: rich({ tree: { ...rich().tree, collapsed: new Set([parent.id]) } }), width: 40, height: 40, nowMs: now }));
   assert.ok(!folded.some(line => line.includes('b05_result')));
-  assert.ok(folded.some(line => /^└ ◷4m07s · \+1 ─+ ▾$/.test(line)), 'a collapsed parent counts what it folds');
+  assert.ok(folded.some(line => /^└ ◷4m07s · \+1 folded ─+ ▾$/.test(line)), 'a collapsed parent counts what it folds');
 });
 
 test('a card opens to its whole timeline and the task in full; Enter still inspects, e and Space open', () => {
@@ -196,7 +196,7 @@ test('the agents view scrolls: a hint says what is out of view, the wheel and pa
     assert.equal(frame.panes[0].offset, 3, style);
     assert.equal(frame.state.tree.selectedId, selected);
     assert.match(hint(), /^↑ 3  ↓ \d+ more lines/);
-    assert.match(plain(frame)[frame.panes[0].y], /^ ▸12 *$/, 'the summary line stays put');
+    assert.match(plain(frame)[frame.panes[0].y], /^ ▸12 run *$/, 'the summary line stays put');
     // Repaints keep the place; PgDn goes a page on; past the end is clamped.
     frame = draw(); state = frame.state; frame = draw();
     assert.equal(frame.panes[0].offset, 3);
@@ -237,7 +237,7 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const state = rich({ tree: { ...rich().tree, lingerMs: 180_000 } });
   const frame = renderMonitor({ tree: tree([named, old]), state, width: 32, height: 30, nowMs: now });
   const lines = plain(frame);
-  assert.equal(lines[1].trimEnd(), ' ✓1 ▸1', 'counts only, the hidden one counted');
+  assert.equal(lines[1].trimEnd(), ' ✓1 done  ▸1 run', 'each count with its word, the hidden one counted');
   assert.ok(lines[0].endsWith(`${ICONS.show} +1 ${ICONS.settings} Settings ${ICONS.help} Help `), lines[0]);
   assert.ok(!lines.some(line => line.includes('old_one')));
   const older = frame.controls.find(c => c.kind === 'older')!;
@@ -376,7 +376,7 @@ test('guardian reviews fold into a ◈N chip on their parent, or on the summary 
   const state = rich({ tree: { ...rich().tree, showAll: true } });
   const frame = renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now });
   const lines = plain(frame);
-  assert.match(lines[1], /^ !1 ✓1 ▸1 ◈1/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
+  assert.match(lines[1], /^ !1 failed {2}✓1 done {2}▸1 run ◈1 reviews/, 'the counts leave folded reviews out; the main session\'s chip is on the summary');
   const top = lines.find(line => line.includes('bench_corpus'))!;
   assert.match(top, /◈2/);
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');

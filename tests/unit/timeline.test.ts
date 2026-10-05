@@ -102,7 +102,7 @@ test('the Timeline pane opens with 5, lists events with their ages, and is saved
   const frame = renderMonitor({ tree: agents, state: opened, width: 30, height: 24, nowMs: now, timeline });
   const lines = frame.lines.map(stripAnsi);
   assert.ok(lines.some(line => line.includes(`${ICONS.timeline} Timeline`)));
-  assert.ok(lines.some(line => /2m ⏎/.test(line)), 'with glyphs on a finished turn is ⏎');
+  assert.ok(lines.some(line => /2m ⏎ Turn finished/.test(line)), 'with glyphs on a finished turn is ⏎ and its words');
   assert.ok(lines.some(line => /5m reader ✗/.test(line)), 'with glyphs on an agent\'s failure is its name and ✗');
   assert.ok(lines.some(line => /~ The test fixture/.test(line)), 'a model-written cause is marked');
   assert.ok(frame.lines.every(line => visualLength(line) <= 30));
@@ -138,7 +138,7 @@ test('the timeline folds repeats, makes an agent\'s run one line, leaves guardia
   const draw = () => renderMonitor({ tree: agents, state, width: 40, height: 40, nowMs: now, timeline });
   const frame = draw();
   const lines = frame.lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd());
-  assert.deepEqual(lines, [' 1m ⏎ ×3', ' 6m ▸ bench_corpus 12m ✓', '19m ▸ migrate 2m ✗', '20m ✗ exec']);
+  assert.deepEqual(lines, [' 1m ⏎ Turn finished ×3', ' 6m ▸ bench_corpus 12m ✓', '19m ▸ migrate 2m ✗', '20m ✗ exec']);
   assert.ok(frame.lines.some(line => line.includes(agentPaint('w1')('bench_corpus'))), 'the agent\'s name in its own colour');
   assert.equal(agentPaint('w1'), agentPaint('w1'), 'the same colour every time');
   const words = withGlyphs('text', () => draw().lines.map(stripAnsi).filter(line => /^│ +\d/.test(line)).map(line => line.slice(2, -2).trimEnd()));

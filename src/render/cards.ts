@@ -210,12 +210,12 @@ export function clockText(ms: number): string {
  * The time a card's bottom rule carries: while the turn runs, the tree's
  * clock face and the turn's length (in the warning colour when quiet); once
  * finished or failed, how long ago. Nothing when nothing says. A turn not
- * started yet is its clock glyph alone, the word only with glyphs off.
+ * started yet is its clock glyph and the word.
  */
 function cardTime(node: SubagentTreeNode, now: number): string {
   if (isLive(node)) {
     const start = (node.turnStartedAt ?? node.startedAt)?.getTime();
-    if (start === undefined || !Number.isFinite(start)) return iconic() ? theme.info('◌') : colors.dim(t('starting'));
+    if (start === undefined || !Number.isFinite(start)) return `${iconic() ? theme.info('◌')+' ' : ''}${colors.dim(t('starting'))}`;
     const quiet = isQuiet(node,now);
     // The clock face is the time's scale, in the tick colour; quiet, it is the warning.
     const face = stripAnsi(turnClock(node,now));
@@ -488,7 +488,7 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
 
   // Bottom rule: how long, how full, and the switch that opens the card.
   const folded = row.collapsed && row.hasChildren ? visibleRows(node.children,{...state.tree,collapsed:new Set()},now).length : 0;
-  const left = [cardTime(node,now),folded ? colors.dim(iconic() ? `+${folded}` : t('+{n} folded',{n:folded})) : ''].filter(Boolean).join(colors.dim(' · '));
+  const left = [cardTime(node,now),folded ? colors.dim(t('+{n} folded',{n:folded})) : ''].filter(Boolean).join(colors.dim(' · '));
   const toggle = colors.dim(open ? '▴' : '▾');
   // The rule's gap is the agent's context meter; short of room the meter
   // gives way to its reading, then the time is cut. Without context data the

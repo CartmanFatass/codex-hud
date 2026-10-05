@@ -104,8 +104,8 @@ test('full with no recap: the whole-picture sentence as Now, a failure or a repl
 
   const failed = draw(rich({ statusLevel: 'full' }), { brief: { error: 'quota exhausted' } }, 44);
   const lines = card(failed);
-  assert.match(lines[0], / ✗ $/, lines[0]);
-  assert.ok(failed.lines[failed.statusCard!.y].includes(theme.warning('✗')));
+  assert.match(lines[0], / failed $/, lines[0]);
+  assert.ok(failed.lines[failed.statusCard!.y].includes(theme.warning('failed')), 'in words: a lone ✗ said nothing');
   assert.ok(lines.some(line => line.includes('quota exhausted')), 'the error itself has a home');
 
   const odd = card(draw(rich({ statusLevel: 'full' }), { brief: { text: 'All three agents look fine.', at: now } }));
@@ -124,7 +124,7 @@ test('full with no recap: the whole-picture sentence as Now, a failure or a repl
   assert.ok(!words[0].includes('pause'), words[0]);
 
   const paused = draw(rich({ statusLevel: 'full' }), { brief: { recap, paused: true } }, 44);
-  assert.match(card(paused)[0], / ‖ $/, card(paused)[0]);
+  assert.match(card(paused)[0], / paused $/, card(paused)[0]);
   assert.ok(card(paused).slice(2, -1).every((line, i) => paused.lines[paused.statusCard!.y + 2 + i].includes(colors.dim(line.slice(2).trimEnd()))), 'paused: the brief steps back');
   assert.ok(!paused.controls.some(c => c.kind === 'brief' && c.y >= paused.statusCard!.y), 'the switch is not on the card');
 });

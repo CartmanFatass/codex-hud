@@ -270,7 +270,7 @@ test('conflicts precede file counts even in narrow optional Changes',()=>{
   const state=initialMonitorState();state.modes.changes='open';
   const git={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[{path:'conflict',index:'U',worktree:'U',added:null,removed:null,binary:false,conflict:true}]};
   const frame=renderMonitor({tree,worktrees,git,state,width:20,height:30,nowMs:now});
-  assert.match(stripAnsi(frame.panes.find(p=>p.id==='changes')!.rows[0].text),/! 1 conflicts/);
+  assert.match(stripAnsi(frame.panes.find(p=>p.id==='changes')!.rows[0].text),/^1 conflicts/,'conflicts lead the counts');
 });
 
 test('malformed dates remain unknown rather than crashing the inspector',()=>{
@@ -385,7 +385,7 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   let frame=renderMonitor({tree:finished,worktrees,state,width:30,height:28,nowMs:now});
   let pane=frame.panes[0];
   assert.deepEqual(pane.rows.filter(r=>r.item).map(r=>r.item),[nodes[1].id]);
-  assert.match(stripAnsi(pane.rows[0].text),/^ ✓1 ▸1$/,'the summary is counts only');
+  assert.match(stripAnsi(pane.rows[0].text),/^ ✓1 done {2}▸1 run$/,'each count with its word');
   assert.match(stripAnsi(frame.lines[0]),/ \+1 /);
   const ctx={tree:finished,worktrees,frame,nowMs:now};
   assert.ok(!handleMonitorInput(frame.state,mouse(1,pane.y),ctx).state.tree.showAll,'the summary is no switch');
@@ -406,7 +406,7 @@ test('the agents summary counts what the linger window hid, and a click or a bri
   // Counts that are zero stay out of the summary.
   const allDone:SubagentTree={...tree,nodes:[{...nodes[0],status:'completed',statusAt:new Date(now-1000)}]};
   const summary=stripAnsi(renderMonitor({tree:allDone,worktrees,state:initialMonitorState(),width:30,height:28,nowMs:now}).panes[0].rows[0].text);
-  assert.equal(summary.trimEnd(),' ✓1');
+  assert.equal(summary.trimEnd(),' ✓1 done');
   // Where the reader asked for words, the counts say what they count.
   const previous=setDisplayConfig({glyphs:'text'});
   try {
@@ -468,4 +468,26 @@ test('the Inspector shows what the agent last said, labelled as such, and v More
   const prior={...agent,lastReport:{...agent.lastReport,at:new Date(now-120_000)}};
   const state=initialMonitorState();state.modes.details='open';state.focus='details';
   assert.match(stripAnsi(renderMonitor({tree:{...tree,nodes:[prior]},worktrees,state,width:30,height:60,nowMs:now}).lines.join('\n')),/Previous turn · 2m ago/);
+});
+
+test('the changes say their counts in words, zeros left out, and tell two files of one name apart', async () => {
+  const { changeCounts, shownPaths } = await import('../../src/render/monitor.js');
+  const { setLanguage } = await import('../../src/render/i18n.js');
+  const file = (index: string, worktree: string, path = 'f', conflict = false) => ({ path, index, worktree, added: 1, removed: 0, binary: false, conflict });
+  const files = [...Array.from({ length: 5 }, () => file('.', 'M')), ...Array.from({ length: 2924 }, () => file('?', '?'))];
+  const previous = setLanguage('zh');
+  try {
+    assert.equal(stripAnsi(changeCounts(files, 32)), '5 未暂存 · 2924 未跟踪');
+    assert.equal(stripAnsi(changeCounts(files, 12)), '5 未暂存', 'untracked goes first, the words stay');
+    const all = [file('M', '.'), file('.', 'M'), file('?', '?'), file('U', 'U', 'c', true)];
+    assert.equal(stripAnsi(changeCounts(all, 60)), '1 冲突 · 1 已暂存 · 1 未暂存 · 1 未跟踪');
+    assert.equal(stripAnsi(changeCounts(all, 22)), '1 冲突 · 1 未暂存', 'then staged; conflicts stay');
+  } finally {
+    setLanguage(previous);
+  }
+  const paths = ['.agents/skills/atlas-web-api-transport/SKILL.md', '.claude/skills/atlas-web-api-transport/SKILL.md',
+    '.omp/APPEND_SYSTEM.md', 'a/SKILL2.md', 'b/x/SKILL2.md'];
+  assert.deepEqual(shownPaths(paths, 27), ['.agents/…/SKILL.md', '.claude/…/SKILL.md', '.omp/APPEND_SYSTEM.md', 'a/SKILL2.md', 'b/x/SKILL2.md']);
+  assert.deepEqual(shownPaths(paths, 12), ['.a…/SKILL.md', '.c…/SKILL.md', '…D_SYSTEM.md', 'a/SKILL2.md', 'x/SKILL2.md']);
+  assert.deepEqual(shownPaths(paths, 80), paths, 'whole where it fits');
 });

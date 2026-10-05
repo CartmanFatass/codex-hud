@@ -46,7 +46,7 @@ test('the auto-compact point is a tick only where the config names it', () => {
   assert.equal(statusCard({ ...data, config: { ...data.config, model_auto_compact_token_limit: total * 2 } })!.context!.tick, undefined);
 });
 
-test('while it works the state is the tool, its target and the clock, with the output rate; idle drops the word with icons', () => {
+test('while it works the state is the tool, its target and the clock, with the output rate; idle keeps its word', () => {
   const data = makeHudData();
   const now = data.session!.startTime.getTime() + 3_600_000;
   const working = { ...data, activity: { state: 'working' as const, updatedAt: new Date(now), turnStartedAt: new Date(now - 130_000) },
@@ -59,8 +59,8 @@ test('while it works the state is the tool, its target and the clock, with the o
   }
   const idle = { ...data, toolActivity: undefined, subagents: [], subagentTree: undefined, activity: { state: 'idle' as const, updatedAt: new Date(now) } };
   const calm = (glyphs: 'glyph' | 'text') => withGlyphs(glyphs, () => statusCard(idle, now)!);
-  assert.equal(plain(calm('glyph').state), '✓');
-  assert.equal(plain(calm('text').state), '✓ Idle', 'with glyphs off the word stays');
+  assert.equal(plain(calm('glyph').state), '✓ Idle', 'the glyph and its word: a lone ✓ said nothing');
+  assert.equal(plain(calm('text').state), '✓ Idle');
   assert.equal(calm('glyph').rate, '', 'no rate while idle');
   assert.equal(statusCard({ ...idle, activity: { state: 'error', updatedAt: new Date(now) } }, now)!.tone, 'error');
   assert.equal(statusCard({ ...idle, stale: true }, now)!.tone, 'stale');

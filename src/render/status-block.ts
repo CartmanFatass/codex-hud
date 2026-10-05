@@ -114,12 +114,8 @@ export function sessionState(data: HudData | null, nowMs: number = Date.now()): 
   const [glyph, word, paint] = SESSION_STATES[status];
   const started = status === 'working' ? data.activity?.turnStartedAt : undefined;
   const clock = started ? colors.dim(formatElapsedShort(started, nowMs)) : '';
-  // The card's frame is painted by the state: with icons the word goes and
-  // the glyph stays, which survives without colour.
-  if (iconic()) {
-    const text = [paint(glyph), clock].filter(Boolean).join(' ');
-    return { text, short: text, attention: false, failed };
-  }
+  // The glyph and its word: the glyph survives without colour, the word
+  // says what the glyph means.
   const words = `${paint(t(word))}${clock ? ` ${clock}` : ''}`;
   return { text: `${paint(glyph)} ${words}`, short: words, attention: false, failed };
 }
@@ -161,14 +157,14 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
   let tasks = '';
   if (status) {
     const [glyph, word, paint] = SESSION_STATES[status];
-    // The frame's colour says the state; with icons the word goes, the glyph stays.
-    state = iconic() ? paint(glyph) : `${paint(glyph)} ${t(word)}`;
+    // The glyph and its word: a lone "✓" said nothing without the legend.
+    state = `${paint(glyph)} ${t(word)}`;
     if (status === 'working') {
       const running = [...(data.toolActivity?.recentCalls ?? [])].reverse().find((call) => call.status === 'running');
       const started = data.activity?.turnStartedAt;
-      // The tool and the turn's clock say it is working; the word only without icons and a tool.
+      // The tool and the turn's clock say it is working; with no tool, the word does.
       const doing = running ? theme.value(running.name) + (running.target ? colors.dim(`: ${truncate(running.target, 20)}`) : '')
-        : iconic() ? '' : t(word);
+        : t(word);
       const clock = started ? formatElapsedShort(started, nowMs) : '';
       state = [paint(glyph), doing, clock ? colors.dim(doing ? `· ${clock}` : clock) : ''].filter(Boolean).join(' ');
       // The rate is the turn's own: a rate from an earlier turn says nothing now.
