@@ -49,6 +49,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help:'Done agents hide after this',format:minutes},
   {key:'agentLog',group:'Agents',label:'Agent log',short:'Log',values:[false,true],help:'Keep a log on each card even with no backend'},
   {key:'labelAsName',group:'Agents',label:'Label as name',short:'Label',values:[true,false],help:'A label, once there, replaces the name'},
+  {key:'cardNotes',group:'Agents',label:'Notes on card',short:'Notes',values:[1,2,3,4,5],help:'Newest notes a working card shows'},
   {key:'cardRoleCounts',group:'Agents',label:'Role counts',short:'Roles',values:[true,false],help:'A card counts its subtasks by role'},
   {key:'cardCorners',group:'Agents',label:'Card corners',short:'Corners',values:['square','round'],help:'Square or round'},
   // The roles whose subtasks matter: none, a role this session's subtasks have (`rowValues`), or what is set, a list

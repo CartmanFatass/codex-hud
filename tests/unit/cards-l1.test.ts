@@ -59,13 +59,12 @@ test('only the L1 agents have cards; the summary counts them, at work while a su
   assert.match(summary(kept), /▸2 run/);
 });
 
-test('a card: its name in its direction\'s colour, what it set out to do, whom it works with, what it is doing, the subtasks that matter, the rest by role', () => {
+test('a card: its name in its direction\'s colour, whom it works with, what it is doing, the subtasks that matter, the rest by role; not its own words cut to a line', () => {
   const tree = session();
   const frame = draw(rich(), 44, tree);
   const lines = plain(frame.lines);
   const lead = card(lines, 'parser_lead');
   assert.deepEqual(lead.slice(1, -1), [
-    '│ I will wire the streaming API through the…',
     '│ ⇄ critic',
     '│ ▸ npm run bench',
     '│ ! scout_a                              20m',
@@ -88,7 +87,11 @@ test('the subtasks that matter: failed, a named role (or its end), or flagged; t
   const named = rich({ importantRoles: roleSet('reviewer') });
   const lines = plain(draw(named, 52, tree).lines);
   const lead = card(lines, 'parser_lead');
-  assert.ok(lead.includes('│ ✓ review_a Two nits; ship it.                  30m'), lead.join('\n'));
+  assert.ok(lead.some(line => /^│ ✓ review_a +30m$/.test(line)), 'its own answer is the Inspector\'s: ' + lead.join('\n'));
+  // The model's digest of it is the model's words, marked.
+  const digested = session();
+  digested.nodes[0].children = digested.nodes[0].children.map(kid => kid.id === 'r1' ? { ...kid, digest: 'ship it' } : kid);
+  assert.ok(card(plain(draw(named, 52, digested).lines), 'parser_lead').some(line => /^│ ✓ review_a ship it +30m$/.test(line)));
   // Flag four more: three show closed, a fourth is counted; opened, all.
   const log = new Map<string, AgentLogEntry[]>(['i1', 'i2', 'g1', 'n1'].map(id => [id, [{ at: NOW - 60_000, kind: 'note', text: 'look', attention: true }]]));
   const closed = card(plain(draw(named, 52, tree, log).lines), 'parser_lead');

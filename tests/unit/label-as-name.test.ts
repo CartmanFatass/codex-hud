@@ -6,7 +6,7 @@ import { uniquePickerLabel } from '../../src/collectors/subagent-tree.js';
 import { SETTING_ROWS } from '../../src/render/settings-page.js';
 import { defaultSettings } from '../../src/settings.js';
 import { setLanguage, t } from '../../src/render/i18n.js';
-import { stripAnsi, theme } from '../../src/render/colors.js';
+import { stripAnsi } from '../../src/render/colors.js';
 import type { AgentLogEntry } from '../../src/collectors/agent-log.js';
 import type { WorkbenchEvent } from '../../src/render/workbench-state.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
@@ -88,7 +88,7 @@ test('the title: with the setting on a label is the name, the task goes under it
   );
 });
 
-test("cards and rows show the label in the name's place; the task line is the task, bold", () => {
+test("cards and rows show the label in the name's place; closed, no task line under it", () => {
   const on = draw(state(true));
   assert.ok(
     on.some((line) => /^› ▸ 缓存清理复核 ─+/.test(line)),
@@ -103,13 +103,7 @@ test("cards and rows show the label in the name's place; the task line is the ta
     'no label yet: the name'
   );
   const at = on.findIndex((line) => line.includes('缓存清理复核'));
-  assert.equal(
-    on[at + 1].trimEnd(),
-    '│ Write the cache cleanup audit handoff',
-    'under the label, the task, not the label again'
-  );
-  const raw = renderMonitor({ tree: tree(nodes), state: state(true), width: 56, height: 44, nowMs: now }).lines;
-  assert.ok(raw[at + 1].includes(theme.strong('Write the cache cleanup audit handoff')));
+  assert.match(on[at + 1], /^└ /, 'closed, under the label no task cut to a line, and not the label again');
   assert.ok(
     !on.some((line) => line.includes('cache_cleanup_reviewer')),
     'closed, the name Codex prints is not repeated'
@@ -191,5 +185,5 @@ test("a finished row's brief line, under its label", () => {
   ]);
   const lines = draw(state(true), { agentLog: log });
   const at = lines.findIndex((line) => line.includes('会话重启恢复'));
-  assert.equal(lines[at + 1].trimEnd(), '   ~ socket 检查改为 stat()');
+  assert.equal(lines[at + 1].trimEnd(), '   socket 检查改为 stat()');
 });

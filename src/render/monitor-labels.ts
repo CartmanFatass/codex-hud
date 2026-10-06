@@ -146,6 +146,31 @@ export function isQuiet(node: SubagentTreeNode, now: number): boolean {
   const at = node.lastEventAt?.getTime();
   return isLive(node) && at !== undefined && Number.isFinite(at) && now-at > QUIET_MS;
 }
+/**
+ * How long an agent's output rate stands after its newest token report.
+ * Codex reports after each model call, 5 seconds to a few minutes apart, with
+ * tool runs between, so the main band's ten seconds would hide it most of the time.
+ */
+export const RATE_FRESH_MS = 3 * 60_000;
+/**
+ * A running agent's output rate in tokens a second, from its rollout's
+ * reports: absent when it is finished or quiet, the reading is from an
+ * earlier turn or rounds to nothing, or its newest report is older than
+ * `RATE_FRESH_MS`.
+ */
+export function agentRate(node: SubagentTreeNode, now: number): number | undefined {
+  const rate = node.outputRate;
+  if (!rate || !isLive(node) || isQuiet(node,now) || !Number.isFinite(rate.tokensPerSecond) || rate.tokensPerSecond < 0) return undefined;
+  const at = rate.sampledAt.getTime();
+  const turn = node.turnStartedAt?.getTime();
+  if (!Number.isFinite(at) || now-at >= RATE_FRESH_MS || (turn !== undefined && at < turn)) return undefined;
+  // "~0 tok/s" says no more than the clock does: it is waiting on a tool.
+  return rate.tokensPerSecond < 0.5 ? undefined : rate.tokensPerSecond;
+}
+/** A rate as the band writes it: "~26 tok/s". */
+export function rateText(tokensPerSecond: number): string {
+  return `~${Math.round(tokensPerSecond)} tok/s`;
+}
 export function turnClock(node: SubagentTreeNode, now: number): string {
   if (!isLive(node)) return '';
   const start = (node.turnStartedAt ?? node.startedAt)?.getTime();

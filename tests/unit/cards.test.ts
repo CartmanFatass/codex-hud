@@ -6,6 +6,7 @@ import path from 'node:path';
 import { initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, type MonitorState, type MonitorFrame } from '../../src/render/monitor.js';
 import { agentTitle, KIND_GLYPHS } from '../../src/render/agent-title.js';
 import { hangLines, clockText } from '../../src/render/cards.js';
+import { inspectorRows } from '../../src/render/monitor-inspector.js';
 import { directions } from '../../src/render/directions.js';
 import { stripAnsi, visualLength, theme, colors, truncateAnsi } from '../../src/render/colors.js';
 import { setLanguage } from '../../src/render/i18n.js';
@@ -54,20 +55,22 @@ test('a card: Codex\'s name, glyph and badge on the rule; the smart name, then t
   assert.ok(frame.lines[top].includes(colors.underline('ablation_no_reranker')), 'the name is underlined: it is the thing to click');
   assert.equal(lines[top + 1].trimEnd(), '│ 去重排消融召回对比');
   assert.ok(frame.lines[top + 1].includes(theme.strong('去重排消融召回对比')));
-  assert.equal(lines[top + 2].trimEnd(), '│ ~ 召回下降，结果待核对', 'then the newest model note, one line, no age');
-  assert.equal(lines[top + 3].trimEnd(), '│ recall@10 0.71', 'then the newest update in its own words');
-  assert.match(lines[top + 4], /^└ ◷4m07s ─*56%─+ ▾$/, 'the turn clock counting seconds, the rule as the context meter, the switch');
-  assert.ok(frame.lines[top + 4].includes(theme.tick('◷')), 'the clock face is the time\'s scale: the tick colour');
+  assert.equal(lines[top + 2].trimEnd(), '│ 召回下降，结果待核对', 'then the model\'s newest note, no mark, no age');
+  assert.ok(frame.lines[top + 2].includes('召回下降') && !frame.lines[top + 2].includes(colors.dim('召回下降')), 'the newest in the text colour, not dim');
+  assert.ok(!lines.some(line => line.includes('recall@10')), 'not its update: the agent\'s own words are the Inspector\'s, whole');
+  assert.match(lines[top + 3], /^└ ◷4m07s ─*56%─+ ▾$/, 'the turn clock counting seconds, the rule as the context meter, the switch');
+  assert.ok(frame.lines[top + 3].includes(theme.tick('◷')), 'the clock face is the time\'s scale: the tick colour');
   assert.ok(frame.lines[top + 1].startsWith(theme.info('│')), 'a card is painted by its state, selected or not');
   assert.ok(frame.lines[top].startsWith(theme.selectedBand('X').split('X')[0]) && frame.lines[top].includes(theme.accent('›')),
     'the selection is the corner, on the selected surface');
-  // A card with no smart name: the task under the name, cut to one line; the time since it failed.
+  // At rest (here failed) a card is its one-line preview: the status, the name, the time since.
   const second = lines.findIndex(line => line.includes('small_index_ablation'));
-  assert.match(lines[second], /^┌ ! small_index_ablation ─+$/, 'no glyph, no badge, no right border');
-  assert.match(lines[second + 1], /^│ Build a small index and comp.*…$/);
-  assert.match(lines[second + 2], /^└ 2m ─+ ▾$/, 'its failing is the bottom rule\'s to say, not said twice inside');
-  assert.ok(frame.lines[second + 1].startsWith(theme.error('│')), 'a failed card is painted in the error colour');
-  assert.equal(lines[second - 1].trim(), '', 'a blank line between cards');
+  assert.match(lines[second], /^ ! small_index_ablation +2m$/, lines.join('\n'));
+  assert.equal(lines[second - 1].trim(), '', 'a blank line between a card and a row');
+  // Opened, it is a card again: no glyph, no badge, no right border; its failing is the bottom rule's to say.
+  const opened = plain(renderMonitor({ tree: tree([named, bare]), state: rich({ cards: new Set([bare.id]) }), width: 32, height: 40, nowMs: now, agentLog: log }));
+  const at = opened.findIndex(line => line.includes('small_index_ablation'));
+  assert.match(opened[at], /^┌ ! small_index_ablation ─+$/, opened.join('\n'));
   // The compact tree row keeps Codex's name; its log header shows the glyph and the name, the smart name under it.
   const compact = renderMonitor({ tree: tree([named, bare]), state: initialMonitorState(), width: 32, height: 40, nowMs: now, agentLog: log });
   const rows = plain(compact);
@@ -108,8 +111,8 @@ test('cards never run past the panel, in either language, and give up badge and 
   assert.ok(!nested.some(line => /folded/.test(line)));
 });
 
-test('a card opens to its whole timeline and the task in full; Enter still inspects, e and Space open', () => {
-  const many = [...log.get(named.id)!, ...Array.from({ length: 30 }, (_, i) => ({ at: now - 200_000 + i * 1000, kind: 'report' as const, text: `step ${i}` }))]
+test('a card opens to its timeline of the model\'s notes, not its updates or its task; Enter still inspects, e and Space open', () => {
+  const many = [...log.get(named.id)!, ...Array.from({ length: 60 }, (_, i) => ({ at: now - 200_000 + i * 1000, kind: i % 2 ? 'report' as const : 'note' as const, text: `step ${i}` }))]
     .sort((a, b) => a.at - b.at);
   const agentLog = new Map([[named.id, many]]);
   const frame = renderMonitor({ tree: tree([named]), state: rich(), width: 32, height: 60, nowMs: now, agentLog });
@@ -125,11 +128,16 @@ test('a card opens to its whole timeline and the task in full; Enter still inspe
   const bottom = open.findIndex((line, i) => i > top && line.startsWith('└'));
   const card = open.slice(top, bottom + 1);
   assert.match(card.at(-1)!, /▴$/);
-  assert.ok(card.some(line => /step 29/.test(line)), 'newest first');
+  const at = card.findIndex(line => /step 58/.test(line));
+  assert.ok(at > 0 && card.findIndex(line => /step 56/.test(line)) > at, 'newest first');
+  assert.ok(!card.some(line => /~/.test(line)), 'no mark');
+  assert.ok(!card.some(line => /step (59|57|1)\b/.test(line)), 'no update in the agent\'s own words');
+  const raw = renderMonitor({ tree: tree([named]), state: viaE, width: 32, height: 60, nowMs: now, agentLog }).lines;
+  assert.ok(raw.some(line => line.includes('召回下降')) && !raw.some(line => line.includes(colors.dim('召回下降'))), 'the newest note in the text colour');
+  assert.ok(raw.some(line => line.includes(colors.dim('step 58'))), 'older ones dim');
   assert.ok(card.some(line => /… \d+ earlier — Inspector/.test(line)), 'capped, the rest left to the Inspector');
   assert.ok(card.length <= 32, `${card.length} lines`);
-  assert.equal(card.at(-2)!.trimEnd(), '│ reranker');
-  assert.ok(card.some(line => line.trimEnd() === '│ Task'), 'the task in full after a smart name');
+  assert.ok(!card.some(line => /Task|Run the ablation/.test(line)), 'the task is the Inspector\'s');
   // A compact panel has no cards to open.
   const compact = renderMonitor({ tree: tree([named]), state: initialMonitorState(), width: 32, height: 30, nowMs: now });
   assert.equal(handleMonitorInput(compact.state, key('expand'), { tree: tree([named]), frame: compact }).state.cards, undefined);
@@ -137,8 +145,10 @@ test('a card opens to its whole timeline and the task in full; Enter still inspe
 });
 
 test('card clicks: the name switches, the rest of the top rule and ▾ open, the body selects', () => {
-  const agents = tree([named, bare]);
-  const frame = renderMonitor({ tree: agents, state: rich(), width: 32, height: 40, nowMs: now, agentLog: log });
+  // At work, so it is a card and not a row, with a note for a body.
+  const agents = tree([named, { ...bare, status: 'running' }]);
+  const notes = new Map(log).set(bare.id, [{ at: now - 6000, kind: 'note', text: '索引对比进行中' }]);
+  const frame = renderMonitor({ tree: agents, state: rich(), width: 32, height: 40, nowMs: now, agentLog: notes });
   const lines = plain(frame);
   const ctx = { tree: agents, frame, nowMs: now };
   const top = lines.findIndex(line => line.includes('small_index_ablation'));
@@ -226,7 +236,7 @@ test('the agents view scrolls: its band says which rows are in view, the wheel a
   frame = renderMonitor({ tree: grown, state: frame.state, width: 32, height: 20, nowMs: now });
   assert.equal(plain(frame)[2], before, 'the same line stays at the top of the view');
   // A cramped view drops its blank lines rather than scroll past most of what it holds.
-  const short = plain(renderMonitor({ tree: tree(nodes.slice(0, 3)), state: rich(), width: 32, height: 12, nowMs: now }));
+  const short = plain(renderMonitor({ tree: tree(nodes.slice(0, 5)), state: rich(), width: 32, height: 12, nowMs: now }));
   assert.ok(!short.slice(2, 10).some(line => line.trim() === ''), short.join('\n'));
   const tall = plain(renderMonitor({ tree: tree(nodes.slice(0, 3)), state: rich(), width: 32, height: 30, nowMs: now }));
   assert.ok(tall.slice(2, 12).some(line => line.trim() === ''), 'with room, a blank line between cards');
@@ -310,11 +320,11 @@ test('a finished agent a minute old is one line, its meter and age in columns; e
   assert.equal(rows.length, 2, lines.join('\n'));
   assert.match(rows[0], /^›✓ audit_code_paths +☽◐ Luna ─+57%─+ 12d$/);
   assert.ok(frame.lines[lines.indexOf(rows[0])].startsWith(theme.selectedBand('X').split('X')[0]), 'the selected row is on its own surface');
-  assert.equal(lines[lines.indexOf(rows[0]) + 1].trimEnd(), '   Audit the code paths', 'under it, indented under the name, how far it got: here, what it was for');
+  assert.ok(!lines.some(line => line.includes('Audit the code paths')), 'no note from the model: no second line; the task is the Inspector\'s');
   assert.equal(rows[0].length, rows[1].length);
   assert.equal(rows[0].lastIndexOf('─'), rows[1].lastIndexOf('─'), 'the meters line up');
-  assert.equal(lines.indexOf(rows[1]) - lines.indexOf(rows[0]), 2, 'finished rows sit together, two lines each, no blank between');
-  assert.ok(lines.some(line => /^┌ ✓ just_done/.test(line)), 'just finished: still a card, so its report shows for a minute');
+  assert.equal(lines.indexOf(rows[1]) - lines.indexOf(rows[0]), 1, 'finished rows sit together, no blank between');
+  assert.ok(lines.some(line => /^[› ]✓ just_done/.test(line)), 'just finished: at rest, so one line too');
   assert.ok(frame.lines.every(line => visualLength(line) <= 90));
   // j/k moves the mark and does not open.
   const ctx = { tree: tree(nodes), frame, nowMs: now };
@@ -374,24 +384,26 @@ test('finished rows keep their names whole, drawing meters only where most names
   assert.ok(mixed.every(line => line.includes('57%')) && mixed[2].includes('…'), mixed.join('\n'));
 });
 
-test('an opened finished card with no log shows its last report, its markdown taken out, and an old card steps its words back', () => {
+test('an opened card leaves the last report to the Inspector, its markdown taken out there; an old card steps its words back', () => {
   const report = 'Published [the handoff](/x/HANDOFF.md) at **`d97a7a688774ad9b45da44f5825ae1ac198b4bb1`**. ### Next __steps__ follow.';
   const done = finished(30, 'cache_clean', 60 * 19, { lastReport: { text: report, kind: 'reply', at: new Date(now - 19 * 3600_000) }, task: 'Write the handoff' });
-  const state = rich({ cards: new Set([done.id]), tree: { ...rich().tree, showAll: true } });
-  const frame = renderMonitor({ tree: tree([done]), state, width: 90, height: 40, nowMs: now });
+  const state = rich({ cards: new Set([done.id]), tree: { ...rich().tree, showAll: true, selectedId: done.id } });
+  const notes = new Map([[done.id, [{ at: now - 19 * 3600_000, kind: 'digest' as const, text: 'handoff published' }]]]);
+  const frame = renderMonitor({ tree: tree([done]), state, width: 90, height: 40, nowMs: now, agentLog: notes });
   const lines = plain(frame);
-  const at = lines.findIndex(line => line.includes('Published'));
+  assert.ok(!lines.some(line => line.includes('Published') || line.includes('Write the handoff')), lines.join('\n'));
+  const at = lines.findIndex(line => line.includes('handoff published'));
   assert.ok(at > 0, lines.join('\n'));
-  assert.equal(lines[at].trimEnd(), '│ Published the handoff at d97a7a6. Next steps follow.');
-  assert.ok(frame.lines[at].includes(colors.dim('X').split('X')[0] + 'Published the handoff'), 'old news: the body is dim with the name');
-  // A closed card's entry: one line, cut, and no age on a line of its own.
+  assert.ok(frame.lines[at].includes(colors.dim('X').split('X')[0]) && !frame.lines[at].includes(theme.info('X').split('X')[0]), 'old news: the body is dim with the name');
+  const inspector = inspectorRows({ tree: tree([done]), nowMs: now } as never, { ...state, preview: 'agent' }, 90, now).map(row => stripAnsi(row.text));
+  assert.ok(inspector.includes('Published the handoff at d97a7a6. Next steps follow.'), inspector.join('\n'));
+  assert.ok(inspector.includes('Write the handoff'), 'the task, always, where the cards leave it');
+  // A closed card leaves its update to the opened card and the Inspector: no line cut short, no orphan age.
   const long = 'word '.repeat(80);
   const busy = agent(31, 'busy', 'running', { contextUsage: ctxUsage(20) });
   const shown = plain(renderMonitor({ tree: tree([busy]), state: rich(), width: 40, height: 40, nowMs: now,
     agentLog: new Map([[busy.id, [{ at: now - 60_000, kind: 'report' as const, text: long }]]]) }));
-  const body = shown.filter(line => line.startsWith('│ word') || line.startsWith('│   word'));
-  assert.equal(body.length, 1, shown.join('\n'));
-  assert.match(body[0], /…$/);
+  assert.ok(!shown.some(line => line.includes('word')), shown.join('\n'));
   assert.ok(!shown.some(line => /^│ +1m$/.test(line)), 'no orphan age line');
 });
 
@@ -427,7 +439,7 @@ test('guardian reviews fold into a ◈N chip on their parent, and the summary co
   assert.equal(compact.filter(line => / guardian/.test(line)).length, 1);
 });
 
-test('a finished agent\'s second line says how far it got: the newest model note, else its newest update, else its task', () => {
+test('a finished agent\'s second line is the newest note the model wrote, no mark; its updates and task are the Inspector\'s', () => {
   const done = (i: number, extra: Partial<SubagentTreeNode> = {}) => finished(i, `done_${i}`, 60 * 19, { task: `Task of ${i}`, contextUsage: ctxUsage(41), ...extra });
   const nodes = [done(50), done(51), done(52), done(53, { task: undefined })];
   const agentLog = new Map<string, AgentLogEntry[]>([
@@ -439,10 +451,8 @@ test('a finished agent\'s second line says how far it got: the newest model note
     const frame = renderMonitor({ tree: tree(nodes), state, width, height: 44, nowMs: now, agentLog });
     const lines = plain(frame);
     const under = (name: string) => lines[lines.findIndex(line => line.includes(name)) + 1];
-    assert.equal(under('done_50').trimEnd(), truncateAnsi('   ~ Handoff published, awaiting review', width));
-    assert.equal(under('done_51').trimEnd(), '   Pushed the handoff', 'the agent\'s own words, markdown out');
-    assert.equal(under('done_52').trimEnd(), '   Task of 52');
-    assert.ok(!/^ {3}\S/.test(under('done_53') ?? ''), 'nothing to say: no second line');
+    assert.equal(under('done_50').trimEnd(), truncateAnsi('   Handoff published, awaiting review', width));
+    for (const name of ['done_51', 'done_52', 'done_53']) assert.ok(!/^ {3}\S/.test(under(name) ?? ''), `${name}: no note, no second line`);
     assert.ok(frame.lines.every(line => visualLength(line) <= width));
     const row = lines.find(line => line.includes('done_50'))!;
     assert.equal(row.lastIndexOf('─') - row.indexOf('─') + 1, width >= 56 ? 16 : width < 36 ? 8 : 12, `${width}: the meter's cells`);
@@ -453,6 +463,6 @@ test('a finished agent\'s second line says how far it got: the newest model note
   // Compact: only the selected row has its second line.
   const compact = plain(renderMonitor({ tree: tree(nodes), state: { ...initialMonitorState(), tree: { ...initialMonitorState().tree, selectedId: nodes[0].id } },
     width: 40, height: 44, nowMs: now, agentLog }));
-  assert.equal(compact.filter(line => /^ +~ Handoff/.test(line)).length, 1, compact.join('\n'));
+  assert.equal(compact.filter(line => /^ +Handoff/.test(line)).length, 1, compact.join('\n'));
   assert.ok(!compact.some(line => /Task of 52/.test(line)), 'the others stay one line');
 });

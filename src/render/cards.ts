@@ -46,14 +46,14 @@ import {
   type MonitorData, type MonitorState, type MonitorRow, type RowControl,
   monitorText, plainText, flowLines, pair, age, agoText, nodeStatus, iconic, briefSaid, isLive, isQuiet, turnClock, squeeze, finishedAt,
   summaryRow, guardianChip, meterText, meterRow, listedAgents, type EdgeMeter,
-  MODEL_LOG_KINDS, FRESH_FINISH_MS,
+  MODEL_LOG_KINDS, FRESH_FINISH_MS, agentRate, rateText,
 } from './monitor.js';
 import { directions, subtasks, reviewsUnder, tally, talk, isImportant, rolePrefix, TALK_MIN } from './directions.js';
 
 /** Lines of an expanded card's timeline; the rest is the Inspector's. */
 const TIMELINE_LINES = 20;
-/** Lines of the task text an expanded card ends with. */
-const TASK_TEXT_LINES = 8;
+/** The model's newest notes a working card shows closed, unless Settings say otherwise. */
+const NOTES_SHOWN = 3;
 /** The important subtasks a closed card names; opened, it names them all. */
 const KIDS_SHOWN = 3;
 /** Narrower than this, a card gives up its model badge; narrower still, its meter. */
@@ -246,55 +246,42 @@ function settledAt(node: SubagentTreeNode): Date | undefined {
 }
 
 /**
- * One entry inside a card: a model's words after a muted "~", a status
- * change as a word in the tree's colours, an update as the agent's own
- * words, its chat markdown taken out. Wrapped lines hang under the text, and
- * the age sits at the right end of the last line; when it does not fit
- * there, or says what the bottom rule says already (`ruleAge`), it is left
- * out rather than given a line of its own.
+ * One entry inside a card: a model's words, a status change as a word in the
+ * tree's colours. The model's words are the only text a card holds, so no
+ * mark sets them apart; colour says new from old instead: the newest
+ * (`fresh`) in the text colour (the warning colour when flagged), older ones
+ * dim. Wrapped lines hang two columns in, so each entry's first line stands
+ * out, and the age sits at the right end of the last line; when it does not
+ * fit there, or says what the bottom rule says already (`ruleAge`), it is
+ * left out rather than given a line of its own. `when: false` leaves it out.
  */
-export function cardEntryLines(entry: AgentLogEntry, width: number, now: number, max = Infinity, ruleAge?: string): string[] {
+export function cardEntryLines(entry: AgentLogEntry, width: number, now: number, fresh: boolean, ruleAge?: string | false): string[] {
   const status = entry.kind === 'started' ? theme.info : entry.kind === 'finished' ? theme.success : entry.kind === 'failed' ? theme.error : null;
-  const model = MODEL_LOG_KINDS.has(entry.kind);
-  const paint = status ?? (entry.attention ? theme.warning : plain);
-  const lead = model ? '~ ' : '';
-  const text = status ? t(entry.kind) : monitorText(plainText(entry.text));
-  let lines = hangLines(text,width-lead.length,width-2);
+  const paint = status ?? (!fresh ? colors.dim : entry.attention ? theme.warning : plain);
+  const text = status ? t(entry.kind) : monitorText(plainText(entry.text).replace(/\s+/g,' ').trim());
+  const lines = hangLines(text,width,width-2);
   if (!lines.length) return [];
-  lines = clipLines(lines,max,width-2).lines;
+  const painted = lines.map((line,i)=>(i ? '  ' : '')+paint(line));
+  if (ruleAge === false) return painted;
   const when = age(new Date(entry.at),now);
-  const painted = lines.map((line,i)=>i ? '  '+paint(line) : colors.dim(lead)+paint(line));
   const last = visualLength(stripAnsi(painted.at(-1)!));
   if (when !== ruleAge && last+1+visualLength(when) <= width) painted[painted.length-1] += ' '.repeat(width-last-visualLength(when))+colors.dim(when);
   return painted;
 }
 
-/**
- * What an agent last said, in brief, from its log: the newest note a model
- * wrote about it, and the newest update in its own words, each as one line
- * of sanitized text. A status change is the bottom rule's or the status
- * icon's to say, so it is not news here. With no log there is no news: the
- * panel is not a transcript unless the reader chose one (a backend, or the
- * log switch); an opened card still shows the last report.
- */
-export function agentNews(log: readonly AgentLogEntry[]): {note?: string; update?: string} {
-  const flat = (text: string) => monitorText(plainText(text).replace(/\s+/g,' ').trim());
-  const note = [...log].reverse().find(entry=>MODEL_LOG_KINDS.has(entry.kind) && entry.text.trim());
-  const update = [...log].reverse().find(entry=>entry.kind === 'report' && entry.text.trim());
-  return {...(note ? {note:flat(note.text)} : {}),...(update ? {update:flat(update.text)} : {})};
+/** The model's notes about an agent (its notes, result digests and failure causes), newest first. */
+export function modelNotes(log: readonly AgentLogEntry[]): AgentLogEntry[] {
+  return log.filter(entry => MODEL_LOG_KINDS.has(entry.kind) && entry.text.trim()).reverse();
 }
 
 /**
- * The one line under a finished agent's row, saying how far it got:
- * whichever there is first of the newest model note ("~ …"), its newest
- * update in its own words, and what it was for. Plain text, uncut; empty
- * when there is none of these.
+ * The one line under a resting agent's row: the newest note the model wrote
+ * about it, plain text, uncut; empty when there is none. Its updates and its
+ * task are the Inspector's.
  */
-export function briefLine(node: SubagentTreeNode, log: readonly AgentLogEntry[], title: AgentTitle): string {
-  const news = agentNews(log);
-  if (news.note) return `~ ${news.note}`;
-  if (news.update) return news.update;
-  return isGuardian(node) ? '' : title.task ?? '';
+export function briefLine(log: readonly AgentLogEntry[]): string {
+  const note = modelNotes(log)[0];
+  return note ? monitorText(plainText(note.text).replace(/\s+/g,' ').trim()) : '';
 }
 
 /**
@@ -316,13 +303,12 @@ function isOld(node: SubagentTreeNode, now: number): boolean {
 }
 
 /**
- * Whether a card draws as one line: finished a minute ago or more, no
- * subtask at work, not opened, and nothing about it needs a look. A running,
- * failed, quiet or opened agent keeps its card, and so does one just
- * finished, so its final report shows for a minute.
+ * Whether a card draws as one line, its compact preview: not at work, with
+ * no subtask at work, not opened, and nothing flagged for a look. A running
+ * (or quiet) agent keeps its card, its note whole; so does an opened one.
  */
 export function isOneLine(node: SubagentTreeNode, input: MonitorData, state: MonitorState, now: number): boolean {
-  if (!isOld(node,now) || state.cards?.has(node.id)) return false;
+  if (isLive(node) || subtasks(node).some(isLive) || state.cards?.has(node.id)) return false;
   return !input.agentLog?.get(node.id)?.at(-1)?.attention;
 }
 
@@ -442,7 +428,7 @@ function oneLineCard(row: PanelRow, input: MonitorData, state: MonitorState, wid
   const key = `card:${node.id}`;
   const control: RowControl[] = [{kind:'expand',item:node.id,x:0,width:w}];
   const rows: MonitorRow[] = [{text:selected ? banded(first,w) : first,item:node.id,key,controls:control}];
-  const brief = briefLine(node,input.agentLog?.get(node.id) ?? [],title);
+  const brief = briefLine(input.agentLog?.get(node.id) ?? []);
   if (brief && w > BRIEF_INDENT+2) rows.push({text:' '.repeat(BRIEF_INDENT)+colors.dim(truncateAnsi(brief,w-BRIEF_INDENT)),item:node.id,key,controls:control});
   return {rows,age:when};
 }
@@ -453,7 +439,7 @@ const flat = (text: string) => monitorText(plainText(text).replace(/\s+/g,' ').t
  * What an agent said it would do in its newest stage that said so: the
  * stand-in for a task the rollout keeps sealed.
  */
-function newestIntent(node: SubagentTreeNode): string | undefined {
+export function newestIntent(node: SubagentTreeNode): string | undefined {
   const intent = [...node.stages ?? []].reverse().find(stage => stage.intent)?.intent;
   return intent ? flat(intent) : undefined;
 }
@@ -504,9 +490,9 @@ function importantKids(node: SubagentTreeNode, input: MonitorData, state: Monito
 }
 
 /**
- * A subtask's line on its lead's card: its status, its name, what it
- * returned or, failed, why (a model's reading, marked), and its time at the
- * right: its clock while it runs, else how long ago it finished. A click
+ * A subtask's line on its lead's card: its status, its name, the model's
+ * digest of what it returned or, failed, why (marked `~`; its own answer is
+ * the Inspector's), and its time at the right: its clock while it runs, else how long ago it finished. A click
  * selects it, for the Inspector.
  */
 function kidLine(kid: SubagentTreeNode, input: MonitorData, state: MonitorState, width: number, now: number): string {
@@ -519,8 +505,8 @@ function kidLine(kid: SubagentTreeNode, input: MonitorData, state: MonitorState,
   const head = `${kid.id === state.tree.selectedId ? theme.accent('›') : ''}${st.paint(st.icon)} `;
   const log = input.agentLog?.get(kid.id) ?? [];
   const cause = kid.status === 'error' ? [...log].reverse().find(entry => entry.kind === 'cause' && entry.text.trim())?.text : undefined;
-  const result = [...kid.stages ?? []].reverse().find(stage => stage.status !== 'running' && stage.result)?.result;
-  const said = cause ? `~ ${flat(cause)}` : flat(result ?? kid.digest ?? kid.lastReport?.text ?? '');
+  // The model's words only: why it failed, else the digest of what it returned. Its own answer is the Inspector's.
+  const said = cause ? flat(cause) : kid.digest ? flat(kid.digest) : '';
   const room = Math.max(1,width-visualLength(head)-(when ? visualLength(when)+1 : 0));
   const name = squeeze(monitorText(agentTitle(kid,state.labelAsName).name),room);
   const named = directions(input.tree).paint(kid.id)(name);
@@ -560,14 +546,18 @@ interface BodyLine { text: string; pick?: string }
 
 /**
  * An L1 agent's card. Its top rule names it, in its direction's colour.
- * Closed, the inside says, a line each and each only when there is
- * something to say: what it is for (its task, or what it said it would do),
- * who it works with, what it is doing this moment, the newest note a model
- * wrote about it and its newest update, the subtasks that matter, and the
- * rest of its subtasks counted by role. Opened: the task in two lines, the
- * same lines but every subtask that matters, then its whole timeline, newest
- * first (or, with no log, its last report), then the task in full when the
- * lines at the top did not show all of it.
+ * The inside holds no one's words but the model's that were written to fit:
+ * not the task, not what the agent said it would do, not its updates (a
+ * line cut short of them said too little to read; they are the
+ * Inspector's, whole). Closed, a line each and each only when there is
+ * something to say: the model's short name for it (when that is not already
+ * its name), who it works with, what it is doing this moment, the newest
+ * note a model wrote about it (whole while it works, one line at rest), the
+ * subtasks that matter, and the rest of its subtasks counted by role. The
+ * bottom rule has its clock and, while it writes, its output rate. Opened:
+ * the same, with Codex's name where a label took its place and every
+ * subtask that matters, then its timeline newest first: the model's notes,
+ * whole, and its starts, finishes and failures.
  */
 export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
   const node = row.node;
@@ -610,16 +600,15 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   const body: BodyLine[] = [];
   const push = (text: string, pick?: string) => { body.push(pick ? {text,pick} : {text}); };
   const gap = () => { if (spaced && body.length) push(''); };
-  // What it is for: a guardian's task is Codex's review prompt, the same
-  // boilerplate every time, never shown; an agent whose task the rollout
-  // keeps sealed says what it would do, in its newest stage.
-  const purpose = isGuardian(node) ? undefined : title.task ?? newestIntent(node);
-  // Bold when it is the model's name for the agent, or the task under a label that took the name's place.
-  const strong = (line: string) => title.task && (title.renamed || title.original) ? theme.strong(line) : line;
+  // No one's words but the model's that were written to fit: not the task,
+  // not what the agent said it would do, not its updates. A line cut short of
+  // them said too little to read; they are the Inspector's, whole.
   // The log only when it is asked for (a backend, or the log switch): the
-  // panel is not a transcript unless the reader chose one.
-  const log = input.agentLog?.get(node.id) ?? [];
-  const task = !open || !purpose ? {lines:[],clipped:Boolean(purpose)} : title.task ? taskLines(title,inner) : clipLines(flowLines(purpose,inner),2,inner);
+  // panel is not a transcript unless the reader chose one. Its updates, in
+  // the agent's own words, are left to the Inspector.
+  const log = (input.agentLog?.get(node.id) ?? []).filter(entry => entry.kind !== 'report');
+  // The model's short name for it, bold: it was written to fit.
+  const label = () => { if (title.renamed && title.task) push(theme.strong(truncateAnsi(title.task,inner))); };
   // Who it works with and what it is doing this moment.
   const doing = () => {
     const relation = relationLine(node,input,state,inner);
@@ -637,42 +626,33 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
     if (roles) push(roles);
   };
   if (!open) {
-    const news = agentNews(log);
-    if (purpose) push(strong(truncateAnsi(purpose,inner)));
+    const notes = modelNotes(log);
+    label();
     doing();
-    if (news.note) push(colors.dim('~ ')+truncateAnsi(news.note,inner-2));
-    if (news.update) push(truncateAnsi(news.update,inner));
+    // At work, its newest notes (Settings → Agents → Notes on card), each
+    // whole, the newest in the text colour, the others dim; at rest, the newest, one line.
+    if (isLive(node)) notes.slice(0,state.cardNotes ?? NOTES_SHOWN).forEach((entry,i) => cardEntryLines(entry,inner,now,i === 0,false).forEach(line => push(line)));
+    else if (notes[0]) push(truncateAnsi(briefLine(log),inner));
     kids(false);
   } else {
-    for (const line of task.lines) push(strong(line));
+    label();
     // The label took the name's place: Codex's own name stays in view here.
     if (title.original) push(colors.dim(truncateAnsi(t('name {name}',{name:title.original}),inner)));
     doing();
     kids(true);
     const settled = settledAt(node);
     const ruleAge = settled && !isLive(node) ? age(settled,now) : undefined;
-    // Opened, the whole timeline stands in for the newest news.
+    // Opened, the whole timeline (the model's notes and its comings and goings) stands in for the newest note.
     const timeline: string[] = [];
     let shown = 0;
+    const newest = modelNotes(log)[0];
     for (const entry of [...log].reverse()) {
-      const lines = cardEntryLines(entry,inner,now,Infinity,ruleAge);
+      const lines = cardEntryLines(entry,inner,now,entry === newest,ruleAge);
       if (timeline.length+lines.length > TIMELINE_LINES) break;
       timeline.push(...lines); shown++;
     }
-    if (timeline.length || log.length) { gap(); for (const line of timeline) push(line); }
-    else if (node.lastReport?.text.trim()) {
-      // No log kept: what the Inspector calls the latest update, cut like an entry.
-      gap();
-      for (const line of clipLines(hangLines(monitorText(plainText(node.lastReport.text.replace(/\s+/g,' ').trim())),inner,inner),REPORT_LINES,inner).lines) push(line);
-    }
+    if (timeline.length) { gap(); for (const line of timeline) push(line); }
     if (shown < log.length) push(colors.dim(truncateAnsi(t('… {n} earlier — Inspector',{n:log.length-shown}),inner)));
-    // The task in full, when the line at the top was the model's name for it or a cut.
-    const full = node.task?.replace(/\s+/g,' ').trim();
-    if (full && !isGuardian(node) && (title.renamed || task.clipped)) {
-      gap();
-      push(colors.dim(t('Task')));
-      for (const line of clipLines(flowLines(monitorText(full),inner),TASK_TEXT_LINES,inner).lines) push(line);
-    }
   }
   // Old news reads as old news: its words step back with its name.
   for (const line of body) {
@@ -688,7 +668,11 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   // gives way to its reading, then the time is cut. Without context data the
   // gap is plain rule.
   const meter = contextMeter(node);
-  const foot = `${paint(bottomCorner)} ${left ? left+' ' : ''}`;
+  // Beside the clock, while it runs, how fast it writes; it gives way before the meter does.
+  const rate = agentRate(node,now);
+  const speed = rate === undefined ? '' : colors.dim(`· ${rateText(rate)}`);
+  const footOf = (extra: string) => `${paint(bottomCorner)} ${left ? left+' ' : ''}${extra ? extra+' ' : ''}`;
+  const foot = speed && visualLength(footOf(speed))+RATE_BAR <= w-2 ? footOf(speed) : footOf('');
   const rest = Math.max(0,w-2-visualLength(foot));
   const rule = meter ? meterRow(w-2,foot,'',meter) : foot+paint('─'.repeat(rest));
   const bottom = rule && visualLength(foot) < w-2 ? `${rule} ${toggle}`
@@ -697,8 +681,8 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   return rows;
 }
 
-/** Lines of an opened card's last report, when it has no log to show. */
-const REPORT_LINES = 8;
+/** Columns of meter the bottom rule keeps before the rate beside the clock gives way. */
+const RATE_BAR = 12;
 
 /**
  * Rich: the agents view, a list of cards and nothing else, one for each L1
@@ -710,7 +694,7 @@ const REPORT_LINES = 8;
  * together, as a list.
  */
 export function richRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
-  const {row:head} = summaryRow(input);
+  const {row:head} = summaryRow(input,now);
   const rows: MonitorRow[] = [head];
   let lastOneLine = false;
   const shown = listedAgents(input.tree.nodes,state,now);

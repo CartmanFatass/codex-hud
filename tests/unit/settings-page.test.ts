@@ -56,7 +56,7 @@ test('narrow settings keep visible buttons aligned with hit targets and mark uns
 
 test('settings read in sections, values aligned on the right and written for people',()=>{
   const draft={...defaultSettings(),finishedLingerMs:0};
-  const frame=renderSettingsPage({draft,selected:0,offset:0,message:''},30,50);
+  const frame=renderSettingsPage({draft,selected:0,offset:0,message:''},30,52);
   const text=frame.lines.map(stripAnsi);
   for (const group of ['Status bar','Agents','LLM','Panel']) assert.ok(text.some(line=>line.startsWith(`── ${group} `)),group);
   const line=(key:string)=>text[frame.rows.indexOf(SETTING_ROWS.findIndex(row=>row.key===key))];
@@ -117,7 +117,7 @@ test('every model feature sits in the LLM group, and the calls made today show u
 
 test('wide, each value sits beside its label in one column, a changed one in the accent, with a short hint after it',()=>{
   const draft={...defaultSettings(),density:'full' as const,treeWidth:0};
-  const frame=renderSettingsPage({draft,selected:1,offset:0,message:''},90,50);
+  const frame=renderSettingsPage({draft,selected:1,offset:0,message:''},90,52);
   const text=frame.lines.map(stripAnsi);
   const y=(key:string)=>frame.rows.indexOf(SETTING_ROWS.findIndex(row=>row.key===key));
   const valueAt=(key:string,value:string)=>text[y(key)].indexOf(value);

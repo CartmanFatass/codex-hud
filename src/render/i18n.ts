@@ -127,6 +127,8 @@ const ZH: Record<string, string> = {
 
   // Inspector, agent
   'Ctx': '上下文',
+  'Out': '输出',
+  'Took on': '本阶段自述',
   'running': '运行中',
   'starting': '启动中',
   'completed': '已完成',
@@ -388,6 +390,9 @@ const ZH: Record<string, string> = {
   'Roles': '角色',
   'A card counts its subtasks by role': '卡片末行按角色统计子任务',
   'Card corners': '卡片边角',
+  'Notes on card': '卡片说明条数',
+  'Notes': '条数',
+  'Newest notes a working card shows': '工作中的卡片显示几条最新说明',
   'Corners': '边角',
   'Square or round': '直角或圆角',
   'square': '直角',

@@ -11,7 +11,8 @@ import { formatTokenCount } from './lines/activity-line.js';
 import { t } from './i18n.js';
 import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
-import { age, nodeStatus, isQuiet, finishedAt, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName, worktreePlace, ID_NAME,
+import { newestIntent } from './cards.js';
+import { age, nodeStatus, isQuiet, agentRate, rateText, finishedAt, agentPaint, writtenAge, worktreeLabel, worktreeLabelText, worktreeName, worktreePlace, ID_NAME,
   UNTRACKED_ROW, lineCounts } from './monitor-labels.js';
 
 function basename(path: string): string { return path.replace(/[\\/]+$/,'').split(/[\\/]/).at(-1) || path; }
@@ -60,6 +61,15 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
       const ctx = node.contextUsage;
       if (ctx) rows.push({text:truncateAnsi(
         `${colors.dim(t('Ctx'))} ${ctx.percent}% (${formatTokenCount(ctx.used)}/${formatTokenCount(ctx.total)})`,width)});
+      const rate = agentRate(node,now);
+      if (rate !== undefined) rows.push({text:truncateAnsi(`${colors.dim(t('Out'))} ${rateText(rate)}`,width)});
+      // A task the rollout keeps sealed: what the agent said it would do, in
+      // its own words, as it opened its newest stage. The card leaves it here.
+      const intent = node.task || isGuardian(node) ? undefined : newestIntent(node);
+      if (intent) {
+        rows.push({text:colors.dim(t('Took on'))});
+        rows.push(...flowLines(intent,width).map(line=>({text:line})));
+      }
       // What the agent last said about its work. It is the agent's own words,
       // not a checked result, so it is labelled as such and kept to a few
       // lines until asked for in full.
@@ -87,8 +97,9 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
       };
       written('digest','Result digest');
       written('cause','Failure cause');
-      // A guardian's task is Codex's review prompt, the same every time.
-      if (node.task && !isGuardian(node) && (state.expanded || !report)) {
+      // A guardian's task is Codex's review prompt, the same every time. The
+      // cards leave the task here, so it is always shown.
+      if (node.task && !isGuardian(node)) {
         rows.push({text:colors.dim(t('Task'))});
         rows.push(...flowLines(monitorText(node.task.replace(/\s+/g,' ').trim()),width).map(line=>({text:line})));
       }

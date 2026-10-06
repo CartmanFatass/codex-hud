@@ -98,6 +98,8 @@ export interface HudSettings extends HudDisplayConfig {
   cardCorners: 'square' | 'round';
   /** A line at the foot of an L1's card counting its subtasks, at any depth, by role (`5 implementer · 2 general`). */
   cardRoleCounts: boolean;
+  /** How many of the model's newest notes a closed card shows while its agent works, 1–5, each whole. */
+  cardNotes: number;
   /**
    * How much the status card at the foot of the panel shows: `min`, its top
    * edge alone, the session's state on it; `status`, the bar's fields;
@@ -167,7 +169,7 @@ export function defaultSettings(): HudSettings {
     worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
     briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
     briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
-    agentLog: false, cardCorners: 'square', cardRoleCounts: true, notify: false, notifyDesktop: false,
+    agentLog: false, cardCorners: 'square', cardRoleCounts: true, cardNotes: 3, notify: false, notifyDesktop: false,
     resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
     art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode',
   };
@@ -222,6 +224,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   agentLog: isBoolean,
   cardCorners: oneOf('square', 'round'),
   cardRoleCounts: isBoolean,
+  cardNotes: (value) => isIntegerBetween(value, 1, 5),
   notify: isBoolean,
   notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),

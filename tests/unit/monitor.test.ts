@@ -32,17 +32,16 @@ const changed={root:'/demo/main',branch:'main',ahead:0,behind:0,files:[{path:'a.
 const withChanges=()=>{const state=initialMonitorState();state.modes.changes='open';return state;};
 const draw=(state=withChanges(),width=30,height=28)=>renderMonitor({tree,worktrees,git:changed,state,width,height,nowMs:now});
 
-test('the default monitor is Agents alone, one row per agent, the selected one with a line on how far it got, and no narratives',()=>{
+test('the default monitor is Agents alone, one row per agent, and no narratives',()=>{
   const loud={...tree,nodes:nodes.map(n=>({...n,task:'TASK_TEXT',lastReport:{text:'SHOULD_NOT_SHOW_REPLY'.repeat(400),kind:'reply' as const,at:new Date(now)}}))};
   for(const width of [16,20,30,45,70]){
     const frame=renderMonitor({tree:loud,worktrees,state:initialMonitorState(),width,height:28,nowMs:now});
     assert.deepEqual(frame.panes.map(p=>p.id),['agents']);
     const rows=frame.panes[0].rows.filter(row=>row.item);
     assert.equal(new Set(rows.map(row=>row.item)).size,2);
-    assert.equal(rows.length,3,'the selected row has its second line, the other none');
+    assert.equal(rows.length,2,'with no note from the model, no second line: the task and the agent\'s words are the Inspector\'s');
     const text=stripAnsi(frame.lines.join('\n'));
-    assert.doesNotMatch(text,/SHOULD_NOT_SHOW|Reply|Task|Reports|Checks/,'with no log, no agent words: the task says what it was for');
-    assert.equal(text.match(/TASK_TE/g)?.length,1);
+    assert.doesNotMatch(text,/SHOULD_NOT_SHOW|Reply|Task|Reports|Checks|TASK_TE/);
   }
 });
 
@@ -709,7 +708,8 @@ test('the Inspector shows what the agent last said, labelled as such, and v More
   assert.ok(short.includes('Latest update · 30s ago'));
   assert.match(short.join('\n'),/First sentence/);
   assert.ok(short.some(line=>line.endsWith(' …')),'a long update is cut and says so');
-  assert.doesNotMatch(short.join('\n'),/THE_END|Review the package/);
+  assert.doesNotMatch(short.join('\n'),/THE_END/);
+  assert.match(short.join('\n'),/Task\nReview the package/,'the task always: the cards leave it here');
   assert.ok(short.every(line=>visualLength(line)<=30));
   const full=inspect(true).join('\n');
   assert.match(full,/THE_END/);

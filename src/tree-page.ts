@@ -19,7 +19,7 @@ import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-in
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
 import { fileSignature } from './utils/file-signature.js';
-import { readAgentContextUsage } from './collectors/agent-context.js';
+import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
 import { SmallModel } from './collectors/small-model.js';
 import { RecapStore } from './collectors/recap.js';
@@ -37,7 +37,7 @@ import { loadArtImage } from './collectors/art-image.js';
 import { t, setLanguage, resolveLanguage } from './render/i18n.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
 import type { HealthSource } from './collectors/hud-health.js';
-import type { ContextUsage, SubagentTree, SubagentTreeNode } from './types.js';
+import type { SubagentTree, SubagentTreeNode } from './types.js';
 
 /** At most one tail read per agent per this long, however often we repaint. */
 const AGENT_CONTEXT_INTERVAL_MS = 3000;
@@ -162,9 +162,9 @@ async function runLivePage(): Promise<void> {
   let gitAgain = false;
   let inspecting = false;
   let inspectAgain = false;
-  // Per-agent context fill, kept beside the tree because the tree is rebuilt
-  // from the rollout on every collection and would otherwise lose it.
-  const agentContext = new Map<string,ContextUsage>();
+  // Per-agent context fill and output rate, kept beside the tree because the
+  // tree is rebuilt from the rollout on every collection and would otherwise lose them.
+  const agentContext = new Map<string,AgentTokens>();
   const agentContextReadAt = new Map<string,number>();
   let readingAgentContext = false;
   let escapeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -273,12 +273,18 @@ async function runLivePage(): Promise<void> {
     collectTimer = setInterval(()=>void collect(),collectEvery);
   };
   const applyAgentContext = () => {
-    walkNodes(tree.nodes,node=>{node.contextUsage = agentContext.get(node.id);});
+    walkNodes(tree.nodes,node=>{
+      const tokens = agentContext.get(node.id);
+      node.contextUsage = tokens?.usage;
+      node.outputRate = tokens?.rate;
+    });
   };
   /**
-   * Read the context fill of the agents actually on screen, plus the selected
-   * one. Rows nobody can see are not worth a file read, and each node is read
-   * at most once every few seconds however often the panel repaints.
+   * Read the context fill and output rate of the agents actually on screen,
+   * the selected one, and every one still running, for the summary's total
+   * rate. Finished rows nobody can see are not worth a file read; a running
+   * one costs what its rollout grew by. Each node is read at most once every
+   * few seconds however often the panel repaints.
    */
   const refreshAgentContext = async () => {
     if (closed || readingAgentContext) return;
@@ -294,7 +300,10 @@ async function runLivePage(): Promise<void> {
         }
       }
       const byId = new Map<string,SubagentTreeNode>();
-      walkNodes(tree.nodes,node=>byId.set(node.id,node));
+      walkNodes(tree.nodes,node=>{
+        byId.set(node.id,node);
+        if (node.status === 'running' || node.status === 'starting') wanted.add(node.id);
+      });
       const now = Date.now();
       let changed = false;
       for (const id of wanted) {
@@ -302,9 +311,9 @@ async function runLivePage(): Promise<void> {
         if (!path) continue;
         if (now-(agentContextReadAt.get(id) ?? 0) < AGENT_CONTEXT_INTERVAL_MS) continue;
         agentContextReadAt.set(id,now);
-        const usage = await readAgentContextUsage(path);
+        const tokens = await readAgentTokens(path);
         if (closed) return;
-        if (usage) agentContext.set(id,usage); else agentContext.delete(id);
+        if (tokens.usage || tokens.rate) agentContext.set(id,tokens); else agentContext.delete(id);
         changed = true;
       }
       // Entries for agents no longer in the tree would otherwise accumulate.

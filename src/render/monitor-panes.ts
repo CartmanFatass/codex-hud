@@ -9,7 +9,7 @@ import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { MonitorData, MonitorPane, MonitorRow, MonitorState } from './monitor.js';
 import type { CountsText } from './control-bar.js';
 import { visibleRows, countExpired, guardianCount } from './panel-state.js';
-import { agentCounts, type StatusCounts } from '../collectors/subagent-tree.js';
+import { agentCounts, eachThread, type StatusCounts } from '../collectors/subagent-tree.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { displayConfig } from './hud-config.js';
@@ -18,7 +18,7 @@ import { agentTitle, shownName } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
 import { monitorText, fit, pair, wrapped, flowLines, squeeze } from './monitor-text.js';
 import { nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
-  isUntracked, UNTRACKED_ROW, changeLetter, lineCounts, listsWorktrees, worktreeItem } from './monitor-labels.js';
+  isUntracked, UNTRACKED_ROW, changeLetter, lineCounts, listsWorktrees, worktreeItem, agentRate, rateText } from './monitor-labels.js';
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
 import { timelineRows } from './monitor-timeline.js';
@@ -42,8 +42,16 @@ export function putAwayCount(nodes: SubagentTreeNode[], state: MonitorState, now
  * subtasks as one figure with how many of them failed. The switch for what
  * the linger window put away is on the control bar.
  */
-export function summaryRow(input: Pick<MonitorData,'tree'>): {row: MonitorRow} {
+export function summaryRow(input: Pick<MonitorData,'tree'>, now?: number): {row: MonitorRow} {
   const {agents,subtasks:subs,reviews} = agentCounts(input.tree.nodes);
+  // How fast every running agent writes, subtasks and reviews too, together;
+  // it gives way with the subtasks figure. The main session's own rate is the band's.
+  let total: number | undefined;
+  if (now !== undefined) eachThread(input.tree.nodes,node => {
+    const rate = agentRate(node,now);
+    if (rate !== undefined) total = (total ?? 0)+rate;
+  });
+  const speed = total !== undefined ? colors.dim(`· ${rateText(total)}`) : '';
   // "!1 失败  ▸1 运行  ✓5 完成": an icon and a count alone said nothing to a
   // reader without the legend, so each count carries its word where it fits.
   // The title row says as much as fits, each form whole (`paneHead`).
@@ -60,7 +68,7 @@ export function summaryRow(input: Pick<MonitorData,'tree'>): {row: MonitorRow} {
       reviews.total ? `${reviewChip(reviews)}${words ? colors.dim(` ${t('reviews')}`) : ''}` : '',
     ].filter(Boolean).join(words ? '  ' : ' ');
     const tasks = subtasks && subs.total ? colors.dim(t('· {n} subtasks',{n:subs.total}))+(subs.failed ? theme.error(t(', {n} failed',{n:subs.failed})) : '') : '';
-    return [counts,tasks].filter(Boolean).join('  ');
+    return [counts,tasks,subtasks ? speed : ''].filter(Boolean).join('  ');
   };
   const text = build(true,true);
   return {row:{text:text && ' '+text,counts:build}};
@@ -80,7 +88,7 @@ export function guardianChip(nodes: readonly SubagentTreeNode[]): string {
 function agentRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   // With no agent to show the view is empty: the summary's counts, the bar's
   // +N and the status card already say why, so no line says it again.
-  const {row:head} = summaryRow(input);
+  const {row:head} = summaryRow(input,now);
   const result: MonitorRow[] = [head];
   for (const row of visibleRows(input.tree.nodes,state.tree,now)) {
     const node = row.node;
@@ -116,7 +124,7 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     // The selected row says how far its agent got, under its name; the rest
     // stay one line each, so the tree stays compact.
     const at = visualLength(prefix)+1;
-    const brief = selected && width > at+4 ? briefLine(node,input.agentLog?.get(node.id) ?? [],agentTitle(node,state.labelAsName)) : '';
+    const brief = selected && width > at+4 ? briefLine(input.agentLog?.get(node.id) ?? []) : '';
     if (brief) result.push({text:' '.repeat(at)+colors.dim(truncateAnsi(brief,width-at)),item:node.id,key:`row:${node.id}`});
   }
   return result;

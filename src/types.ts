@@ -452,6 +452,8 @@ export interface SubagentTreeNode {
   rolloutPath?: string;
   /** This agent's own context window, read from its rollout's last report. */
   contextUsage?: ContextUsage;
+  /** This agent's output rate, from its rollout's reports, as the main session's is taken. */
+  outputRate?: TokenRateSnapshot;
   /** Latest observed turn start, distinct from agent creation and traffic. */
   turnStartedAt?: Date;
   id: string;

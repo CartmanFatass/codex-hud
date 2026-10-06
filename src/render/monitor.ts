@@ -25,7 +25,7 @@ import { roleSet } from './directions.js';
 // exported here too, so a caller imports the monitor from one place.
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export { iconic, agoText, age, nodeStatus, worktreeLabel, worktreeName, worktreePlace, TURN_CLOCKS, QUIET_MS, FRESH_FINISH_MS,
-  isLive, isQuiet, turnClock, nextRepaintDelay, finishedAt, agentPaint, writtenAge } from './monitor-labels.js';
+  isLive, isQuiet, turnClock, nextRepaintDelay, finishedAt, agentPaint, writtenAge, agentRate, rateText, RATE_FRESH_MS } from './monitor-labels.js';
 export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type EdgeMeter } from './monitor-meter.js';
 export { summaryRow, guardianChip, changeCounts, shownPaths, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
 export { timelineText, TIMELINE_STYLES, TIMELINE_HOURS, TIMELINE_STEP, TIMELINE_EARLIER, type TimelineStyle } from './monitor-timeline.js';
@@ -98,6 +98,8 @@ export interface MonitorState {
   cardCorners?: 'square' | 'round';
   /** False leaves out the line on a card counting its subtasks by role. The panel sets it from settings. */
   roleCounts?: boolean;
+  /** How many of the model's newest notes a closed card shows while its agent works (default 3). The panel sets it from settings. */
+  cardNotes?: number;
 }
 export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
@@ -223,7 +225,7 @@ export function monitorModes(settings: HudSettings): MonitorModes {
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
   return {tabbed:settings.paneLayout === 'tabs', style:settings.panelStyle, statusLevel:settings.statusCard, labelAsName:settings.labelAsName,
     timelineStyle:settings.timelineStyle, timelineHours:settings.timelineHours, importantRoles:roleSet(settings.importantRoles),
-    cardCorners:settings.cardCorners, roleCounts:settings.cardRoleCounts};
+    cardCorners:settings.cardCorners, roleCounts:settings.cardRoleCounts, cardNotes:settings.cardNotes};
 }
 /**
  * The agents the agents view lists, in its order: in rich style the L1s
