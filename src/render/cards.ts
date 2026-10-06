@@ -19,7 +19,8 @@
  *   │ ⇄ Performance advice
  *   │ ▸ npm run bench -- --corpus 50mb
  *   │ B03 is down to the surrogate-pair tests
- *   │ ! b03_review_harness The review harness… 40m
+ *   │ ! b03_review_harness The review harness  40m
+ *   │   timed out on the 50 MB corpus
  *   │ ✓ b02_result_critic                     1h
  *   │ 3 implementer · 2 reviewer · 1 critic +1
  *   └ ◉1h15m · ~42 tok/s ─────63%─────────── ▾
@@ -56,6 +57,8 @@ const TIMELINE_LINES = 20;
 const NOTES_SHOWN = 3;
 /** The important subtasks a closed card names; opened, it names them all. */
 const KIDS_SHOWN = 3;
+/** The fewest columns a subtask's digest or cause starts with beside its name; less, it starts on the next line. */
+const KID_SAID_BESIDE = 8;
 /** Narrower than this, a card gives up its model badge; narrower still, its meter. */
 const BADGE_MIN = 24;
 const METER_MIN = 20;
@@ -490,12 +493,15 @@ function importantKids(node: SubagentTreeNode, input: MonitorData, state: Monito
 }
 
 /**
- * A subtask's line on its lead's card: its status, its name, the model's
+ * A subtask's lines on its lead's card: its status, its name, the model's
  * digest of what it returned or, failed, why (dim, with no mark; its own
- * answer is the Inspector's), and its time at the right: its clock while it runs, else how long ago it finished. A click
- * selects it, for the Inspector.
+ * answer is the Inspector's), and its time at the right of the first line:
+ * its clock while it runs, else how long ago it finished. The model's words
+ * start beside the name and wrap under it, whole, never cut; where the name
+ * leaves them too little room they start on the next line. A click on any
+ * of its lines selects it, for the Inspector.
  */
-function kidLine(kid: SubagentTreeNode, input: MonitorData, state: MonitorState, width: number, now: number): string {
+function kidLines(kid: SubagentTreeNode, input: MonitorData, state: MonitorState, width: number, now: number): string[] {
   const st = nodeStatus(kid,now);
   const live = isLive(kid);
   const start = (kid.turnStartedAt ?? kid.startedAt)?.getTime();
@@ -510,8 +516,12 @@ function kidLine(kid: SubagentTreeNode, input: MonitorData, state: MonitorState,
   const room = Math.max(1,width-visualLength(head)-(when ? visualLength(when)+1 : 0));
   const name = squeeze(monitorText(agentTitle(kid,state.labelAsName).name),room);
   const named = directions(input.tree).paint(kid.id)(name);
-  const left = `${head}${named}${said && visualLength(name)+2 < room ? ` ${colors.dim(said)}` : ''}`;
-  return pair(left,right,width);
+  const indent = visualLength(head);
+  const beside = room-visualLength(name)-1;
+  const rest = Math.max(1,width-indent);
+  const words = !said ? [] : beside >= KID_SAID_BESIDE ? hangLines(said,beside,rest) : ['',...flowLines(said,rest)];
+  const first = pair(`${head}${named}${words[0] ? ` ${colors.dim(words[0])}` : ''}`,right,width);
+  return [first,...words.slice(1).map(line => ' '.repeat(indent)+colors.dim(line))];
 }
 
 /**
@@ -620,7 +630,7 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   const kids = (all: boolean) => {
     const important = importantKids(node,input,state);
     const named = all ? important : important.slice(0,KIDS_SHOWN);
-    for (const kid of named) push(kidLine(kid,input,state,inner,now),kid.id);
+    for (const kid of named) for (const line of kidLines(kid,input,state,inner,now)) push(line,kid.id);
     if (named.length < important.length) push(colors.dim(t('+{n} more',{n:important.length-named.length})));
     const roles = state.roleCounts === false ? '' : roleLine(node,input.tree,inner);
     if (roles) push(roles);

@@ -109,6 +109,33 @@ test('the subtasks that matter: failed, a named role (or its end), or flagged; t
   assert.ok(plain(draw(picked, 52, tree).lines).some(line => line.startsWith('│ ›! scout_a')));
 });
 
+test('a subtask\'s digest or cause wraps under its name, whole; with too little room beside the name it starts on the next line', () => {
+  const cause = 'The harness timed out on the large corpus after the cache warmed up';
+  const tree = session();
+  tree.nodes[0].children = tree.nodes[0].children.map(kid => kid.id === 's1' ? { ...kid, name: 'scout_streams_long_name' } : kid);
+  const log = new Map<string, AgentLogEntry[]>([['s1', [{ at: NOW - 60_000, kind: 'cause', text: cause }]]]);
+  const said = (width: number) => {
+    const frame = draw(rich(), width, tree, log);
+    const lead = card(plain(frame.lines), 'parser_lead');
+    const at = lead.findIndex(line => line.includes('scout_streams'));
+    const lines = [lead[at], ...lead.slice(at + 1).filter((line, i, all) => all.slice(0, i + 1).every(l => /^│ {3}\S/.test(l)))];
+    return { frame, lines };
+  };
+  for (const width of [32, 44, 56]) {
+    const { lines } = said(width);
+    assert.ok(!lines.some(line => line.includes('…')), lines.join('\n'));
+    assert.match(lines[0], /20m$/, 'its time stays at the right of its first line');
+    const words = lines.map(line => line.replace(/^│ (! scout_\S*)?/, '').replace(/20m$/, '').trim()).join(' ').trim();
+    assert.equal(words, cause, `${width}: ${lines.join('\n')}`);
+  }
+  // Narrow, the name leaves no room beside it: the words start under it.
+  assert.match(said(32).lines[0], /^│ ! scout_streams_long_name +20m$/);
+  // A click on a wrapped line selects the subtask too.
+  const { frame } = said(44);
+  const y = frame.lines.findIndex(line => stripAnsi(line).startsWith('│   ') && stripAnsi(line).includes('corpus'));
+  assert.equal(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 6, y }, { tree, frame, nowMs: NOW }).state.tree.selectedId, 's1');
+});
+
 test('the role counts can be left out, and the corners can be round', () => {
   const lines = plain(draw(rich({ roleCounts: false, cardCorners: 'round', tree: { ...initialMonitorState().tree, selectedId: 'writer' } })).lines);
   const lead = card(lines, 'parser_lead');

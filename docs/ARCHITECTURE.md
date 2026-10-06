@@ -458,6 +458,9 @@ rules below were set by the user; keep them.
   newest `cardNotes` notes (Settings, 1–5, default 3), each wrapped in full and
   never cut. The newest is in the text colour (the warning colour when
   flagged). Older notes are dim. There is no `~` mark on cards.
+- **A subtask line** (`kidLines`) has the model's digest or cause beside the
+  name, wrapped under it in full. When the name leaves less than
+  `KID_SAID_BESIDE` columns, the words start on the next line.
 - **A resting agent** (not working, no subtask working, not opened, nothing
   flagged; `isOneLine`) is its row, with the newest note (`briefLine`) on a
   dim line under it. Cutting that note to one line is acceptable there.
