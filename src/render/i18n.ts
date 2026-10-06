@@ -66,6 +66,7 @@ const ZH: Record<string, string> = {
   'Sync delayed': '同步延迟',
   '{n}% left': '剩 {n}%',
   'reset due': '待重置',
+  'credits {n}': '积分 {n}',
   'approval needed': '等待批准',
   'patch approval needed': '补丁待批准',
   'input needed': '等待输入',

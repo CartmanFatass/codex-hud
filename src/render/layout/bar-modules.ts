@@ -19,7 +19,7 @@ import { collectAttention, highestSeverity, alertParts } from '../attention.js';
 import { agentCounts } from '../../collectors/subagent-tree.js';
 import { getApprovalPolicyDisplayValue } from '../../collectors/codex-config.js';
 import { displayConfig, type Density, type GlyphMode } from '../hud-config.js';
-import { formatCountdown, readQuotaWindows } from '../quota.js';
+import { formatCountdown, formatCredits, quotaState, readQuotaWindows } from '../quota.js';
 import { formatElapsedShort } from '../subagent-chip.js';
 import type { BarModule } from './engine.js';
 
@@ -350,6 +350,9 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
 
   const projected = data.quotaForecast;
   const forecast = projected ? theme.warning(` · out in ~${formatCountdown(projected.exhaustAt, nowMs)}`) : '';
+  // A full window with credits behind it: the balance is what is left to spend.
+  const { credits: left } = quotaState(data.rateLimits, windows);
+  const credits = left ? `${colors.dim(' · credits')} ${theme.value(formatCredits(left))}` : '';
   const first = windows[0];
   // The countdown is the half of the quota field a reader acts on, so it
   // survives into the shorter form as a bare symbol and a duration.
@@ -360,8 +363,8 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
     group: 'usage',
     variants: {
       // The projection rides on the widest form only, marked as an estimate.
-      full: `${colors.dim('Quota')} ${rendered.join(colors.dim(' · '))}${reset}${forecast}`,
-      short: `${colors.dim(`Q${first.label}`)} ${coloredPercent(first.percent)}${shortReset}`,
+      full: `${colors.dim('Quota')} ${rendered.join(colors.dim(' · '))}${credits}${reset}${forecast}`,
+      short: `${colors.dim(`Q${first.label}`)} ${coloredPercent(first.percent)}${left ? ` ${theme.value(formatCredits(left))}` : ''}${shortReset}`,
       min: `${colors.dim('Q')}${coloredPercent(first.percent)}`,
     },
   };

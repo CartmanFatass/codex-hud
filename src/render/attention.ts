@@ -9,6 +9,7 @@
 
 import type { HudData, SubagentTreeNode } from '../types.js';
 import { eachThread, type ThreadKind } from '../collectors/subagent-tree.js';
+import { quotaState, readQuotaWindows } from './quota.js';
 
 export type AttentionKind =
   | 'approval'
@@ -137,21 +138,16 @@ export function collectAttention(data: HudData, nowMs: number = Date.now()): Att
   }
 
   // Quota: only when the account actually reported being cut off, or a window
-  // reported itself full.
+  // reported itself full with no credits to carry on.
   const limits = data.rateLimits;
-  if (limits) {
+  if (limits && quotaState(limits, readQuotaWindows(limits, nowMs)).spent) {
     const reached = limits.rate_limit_reached_type;
-    const fullWindow = [limits.primary, limits.secondary].find(
-      (window) => typeof window?.used_percent === 'number' && window.used_percent >= 100
-    );
-    if (reached || fullWindow) {
-      items.push({
-        kind: 'quota-exhausted',
-        label: 'quota spent',
-        detail: reached ? `rate limit reached: ${reached}` : 'a usage window is full',
-        severity: 'error',
-      });
-    }
+    items.push({
+      kind: 'quota-exhausted',
+      label: 'quota spent',
+      detail: reached ? `rate limit reached: ${reached}` : 'a usage window is full',
+      severity: 'error',
+    });
   }
 
   const contextPercent = data.contextUsage?.percent;

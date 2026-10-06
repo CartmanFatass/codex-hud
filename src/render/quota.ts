@@ -9,6 +9,7 @@
  */
 
 import type { RateLimitSnapshot, RateLimitWindow } from '../types.js';
+import { formatTokenCount } from './lines/activity-line.js';
 
 export interface QuotaWindow {
   percent: number;
@@ -100,4 +101,42 @@ export function readQuotaWindows(
         resetDue: Boolean(resetsAt && resetsAt.getTime() <= nowMs),
       };
     });
+}
+
+/**
+ * What the account can spend once a window is full: Codex goes on drawing
+ * on its credits, so a full window with credits left is not a stop. Null
+ * when it has none, or the balance is not a number.
+ */
+export interface QuotaCredits {
+  unlimited: boolean;
+  balance?: number;
+}
+
+export function readCredits(limits: RateLimitSnapshot | undefined | null): QuotaCredits | null {
+  const credits = limits?.credits;
+  if (!credits) return null;
+  if (credits.unlimited) return { unlimited: true };
+  if (!credits.has_credits) return null;
+  const balance = Number(credits.balance);
+  return Number.isFinite(balance) && balance > 0 ? { unlimited: false, balance } : null;
+}
+
+/** The balance in a few columns: "31.8K", "205", "∞". */
+export function formatCredits(credits: QuotaCredits): string {
+  if (credits.unlimited) return '∞';
+  const balance = credits.balance ?? 0;
+  return balance >= 1000 ? formatTokenCount(balance) : String(Math.round(balance));
+}
+
+/**
+ * Where the account stands against its windows: `spent` when Codex said it
+ * cut the account off, or a window is full with no credits behind it;
+ * `credits` when a window is full and the credits carry on.
+ */
+export function quotaState(limits: RateLimitSnapshot | undefined | null, windows: readonly QuotaWindow[]): {spent: boolean; credits: QuotaCredits | null} {
+  const reached = Boolean(limits?.rate_limit_reached_type);
+  const full = windows.some((window) => window.percent >= 100);
+  const credits = full && !reached ? readCredits(limits) : null;
+  return { spent: reached || (full && !credits), credits };
 }

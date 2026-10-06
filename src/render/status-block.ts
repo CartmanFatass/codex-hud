@@ -23,7 +23,7 @@ import { collectAttention, waitedText, alertParts } from './attention.js';
 import { colors, getMeterColor, icons, theme, truncate } from './colors.js';
 import { renderModelEffortToken } from './model-glyphs.js';
 import { formatTokenCount } from './lines/activity-line.js';
-import { formatCountdown, readQuotaWindows } from './quota.js';
+import { formatCountdown, formatCredits, quotaState, readQuotaWindows } from './quota.js';
 import { formatElapsedShort } from './subagent-chip.js';
 import { formatTokenRate } from '../collectors/token-rate.js';
 import { displayConfig } from './hud-config.js';
@@ -67,7 +67,8 @@ export interface StatusCard {
   /**
    * The account's tightest usage window: its meter, the window's name before
    * it ("7d", dim), a mark when the quota is spent, and `text`, the reading
-   * alone for the one-line card ("7d 99%").
+   * alone for the one-line card ("7d 99%"). A full window with credits behind
+   * it reads the balance instead ("credits 31.8K"), with no mark.
    */
   quota?: EdgeMeter & {window: string; spent: string; text: string};
   /** The other window's reading, a projection of running out, and the soonest reset (in the tick colour). */
@@ -201,11 +202,13 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
   if (windows.length) {
     // The meter is the window that runs out first; the other is a reading beside it.
     const worst = windows.reduce((a, b) => (b.percent > a.percent ? b : a));
-    const spent = windows.some((window) => window.percent >= 100) || Boolean(data.rateLimits?.rate_limit_reached_type);
+    const { spent, credits } = quotaState(data.rateLimits, windows);
     const mark = spent ? theme.error('!') : '';
     const window = worst.label ? colors.dim(worst.label) : '';
-    const text = `${window ? window + ' ' : ''}${getMeterColor(worst.percent)(`${worst.percent}%`)}${mark}`;
-    quota = { percent: worst.percent, window, spent: mark, text };
+    // Full, with credits carrying on: the full bar says 100%, the reading says what is left to spend.
+    const label = credits ? t('credits {n}', { n: formatCredits(credits) }) : undefined;
+    const text = `${window ? window + ' ' : ''}${getMeterColor(worst.percent)(label ?? `${worst.percent}%`)}${mark}`;
+    quota = { percent: worst.percent, ...(label ? { label } : {}), window, spent: mark, text };
     others = windows.filter((window) => window !== worst)
       .map((window) => `${window.label ? colors.dim(window.label) + ' ' : ''}${getMeterColor(window.percent)(`${window.percent}%`)}`).join(' ');
     const soonest = windows.filter((window) => window.resetsAt && !window.resetDue)
