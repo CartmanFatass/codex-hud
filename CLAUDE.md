@@ -10,3 +10,6 @@
 | #185 | 1:25 AM | 🔵 | Project Dependencies and Build Configuration | ~280 |
 | #184 | " | 🔵 | Codex HUD Implementation Already Complete with Phase 2 Features | ~473 |
 </claude-mem-context>
+# Project guide
+
+Read `docs/ARCHITECTURE.md` before changing code: the two processes (bar `src/index.ts`, panel `src/tree-page.ts`), data collection, the optional model features, rendering, the rules every change keeps (§8), recipes and gotchas. What users see is in `docs/reference.md`.

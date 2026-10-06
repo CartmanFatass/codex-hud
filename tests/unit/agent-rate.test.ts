@@ -99,7 +99,7 @@ test('a card at work: its note whole, its rate beside the clock; the summary add
   const body = lines.slice(top + 1, lines.findIndex((line, i) => i > top && line.startsWith('└')));
   assert.ok(!body.some(line => line.includes('…')), body.join('\n'));
   const said = body.filter(line => !line.includes('general'));
-  assert.equal(said.map(line => line.slice(2).trim()).join('').replace(/^~ /, ''), note, 'the note whole, hanging under its "~"');
+  assert.equal(said.map(line => line.slice(2).trim()).join(''), note, 'the note whole, with no mark before it');
   assert.ok(!lines.some(line => line.includes('taking over')), 'not the agent\'s own words');
   assert.match(lines[top + 1 + body.length], /^└ ◷3m01s · ~42 tok\/s ─+34%─+ ▾$/);
   assert.match(lines.find(line => line.includes('▸2 run'))!, /· ~186 tok\/s/, 'the two agents and the subtask under one, together');

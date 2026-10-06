@@ -223,7 +223,7 @@ Agents opens by default; the Timeline, Changes and the Inspector open on demand.
 
 | Pane | Content |
 |------|---------|
-| **1 Agents** | A card for each agent the main session started: what it is for, who it works with, what it is doing now, the subtasks that matter and the rest counted by role, its name in its direction's colour; compact, the tree of every agent |
+| **1 Agents** | A card for each agent the main session started: who it works with, what it is doing now, the newest notes a model wrote about it, the subtasks that matter and the rest counted by role, its name in its direction's colour; the agent's own words and its task are in the Inspector, whole; compact, the tree of every agent |
 | **2 Timeline** | The session on the main session's axis: its turns, approvals and failures, each agent's stages a level in with what they returned, and only the subtasks that matter, in each direction's colour, as a rail, indents or lanes |
 | **3 Changes** | The worktrees on top, where there are several, each by name (its branch; detached, the nearest directory that is not an id, such as `bench-sources`) with its changed/conflicted state and `locked` in words, and no hash, here or in the Inspector; then the files of the selected one, each with a coloured letter for what happened to it (`M`, `A`, `D`, `R`, `!` for a conflict) and its `+12 −3` where it fits, under their counts in words (`2 staged · 5 unstaged`, zeros left out); untracked files fold into one last row (`▸ 12 untracked`) that Enter or a click opens, and an untracked directory is one row there (`bench/corpus/`), as `git status` lists it; a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
 | **4 Inspector** | Agent status and activity times, worktree details, or colored file diffs |
@@ -233,7 +233,7 @@ Agents opens by default; the Timeline, Changes and the Inspector open on demand.
 - **stacked** (the default): every open pane at once, as above.
 - **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+]` `1`–`4` does, and `Ctrl+]` `Tab` shows the next. The tab names the pane, so its title keeps only its counts and where its rows are. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
 
-**Two layouts** (Settings → Panel → Layout): **rich**, the default, gives each agent the main session started a card while it is running, has failed, has just finished or needs a look, and two lines once it is done, its subtasks, at any depth, on its card; **compact** is the tree, one row per agent and subtask, with the brief, the recap and the agent log under it. Both count alike, as the status card, the bar and `codex-hud --json` do: the agents the main session started, their subtasks and the guardian reviews, each apart.
+**Two layouts** (Settings → Panel → Layout): **rich**, the default, gives each agent the main session started a card while it or one of its subtasks is at work, while its newest note asks for a look, or when you open it, and otherwise a row with the model's newest note dim under it, its subtasks, at any depth, on its card; **compact** is the tree, one row per agent and subtask, with the brief, the recap and the agent log under it. Both count alike, as the status card, the bar and `codex-hud --json` do: the agents the main session started, their subtasks and the guardian reviews, each apart.
 
 **Look** (Settings → Panel → Look, or `CODEX_HUD_LOOK`) draws the bar and the panes' titles in one of five ways: tab (the default), band, tile, frame and pill.
 
@@ -294,6 +294,9 @@ node dist/index.js             # Run HUD directly
 npm test                       # Unit tests: parser replay, width safety, render cost
 npm run test:integration       # Shell suites: wrapper, tmux toggling, installer
 ```
+
+How the code fits together (processes, collection, rendering, the rules a change keeps) is in
+**[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
 
 `npm test` compiles with `tsconfig.test.json` and runs `tests/unit` against the
 recorded rollouts in `tests/fixtures/rollouts`. `docs/BASELINE.md` records the

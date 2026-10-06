@@ -7,25 +7,25 @@
  * A card is open on the right: a top rule, a bar down the left, a bottom
  * rule, so its text gets the column a closed box spends on its right side,
  * and it never reads as the status card at the foot. The border identifies
- * the agent, its name in its direction's colour; the inside says, a line
- * each, what it is for, who it works with, what it is doing this moment, the
- * newest note a model wrote about it and its newest update, the subtasks
- * that matter, and the rest counted by role:
+ * the agent, its name in its direction's colour. The inside holds only what
+ * a model wrote or what the HUD observed, a line each: who it works with,
+ * what it is doing this moment, the newest notes a model wrote about it
+ * (whole, the newest in the text colour and older ones dim, with no mark),
+ * the subtasks that matter with the model's word on each, and the rest
+ * counted by role. The agent's own words and its task are the Inspector's,
+ * uncut:
  *
- *   ┌ ▸ ⌕ ablation_lead ─────────────────── ★◐
- *   │ 去重排消融召回对比
- *   │ ⇄ critic
- *   │ ▸ python eval.py --k 10
- *   │ ~ 召回下降，结果待核对
- *   │ ✗ scout_streams ~ hit the rate limit  41m
- *   │ 5 implementer · 3 reviewer · 1 general
- *   └ ◷4m07s ─────────56%──────────────── ▾
+ *   ┌ ▸ ⚗ Tokenizer speed ───────────────── ☀◕
+ *   │ ⇄ Performance advice
+ *   │ ▸ npm run bench -- --corpus 50mb
+ *   │ B03 is down to the surrogate-pair tests
+ *   │ ! b03_review_harness The review harness… 40m
+ *   │ ✓ b02_result_critic                     1h
+ *   │ 3 implementer · 2 reviewer · 1 critic +1
+ *   └ ◉1h15m · ~42 tok/s ─────63%─────────── ▾
  *
- * A finished agent a minute old is two lines instead: its row, and under it
- * how far it got:
- *
- *  ✓ db_index_service      ☀◆ ✓4 ────49%───── 19h
- *    ~ 发布说明与文档已更新，无遗留
+ * An agent at rest, with none of its subtasks at work, is its row instead,
+ * with the model's newest note about it, cut to one line, dim under it.
  *
  * The rules and the bar take the status colour; the selected card or row is
  * marked "›" and its first line sits on the selected surface. A card carries
@@ -491,8 +491,8 @@ function importantKids(node: SubagentTreeNode, input: MonitorData, state: Monito
 
 /**
  * A subtask's line on its lead's card: its status, its name, the model's
- * digest of what it returned or, failed, why (marked `~`; its own answer is
- * the Inspector's), and its time at the right: its clock while it runs, else how long ago it finished. A click
+ * digest of what it returned or, failed, why (dim, with no mark; its own
+ * answer is the Inspector's), and its time at the right: its clock while it runs, else how long ago it finished. A click
  * selects it, for the Inspector.
  */
 function kidLine(kid: SubagentTreeNode, input: MonitorData, state: MonitorState, width: number, now: number): string {
