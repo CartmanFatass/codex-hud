@@ -262,6 +262,7 @@ export class SnapshotWriter {
   private readonly file: string;
   private signature: string | null = null;
   private lastWriteAt = 0;
+  private ownedFile: fs.Stats | null = null;
 
   constructor(file: string = snapshotPath()) {
     this.file = file;
@@ -285,7 +286,11 @@ export class SnapshotWriter {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
       fs.writeFileSync(temporary, body, { mode: 0o600 });
+      const ownedFile = fs.statSync(temporary);
       fs.renameSync(temporary, this.file);
+      // Ownership travels with the atomically renamed inode, not a separate
+      // pid file that can lag behind it during a bar/panel handoff.
+      this.ownedFile = ownedFile;
       this.signature = signature;
       this.lastWriteAt = nowMs;
       return true;
@@ -299,12 +304,20 @@ export class SnapshotWriter {
     }
   }
 
-  /** The HUD is gone; so is its state. A stale file is worse than none. */
+  /**
+   * The HUD is gone; so is its state, when this process still owns the file.
+   * The bar and the panel share one path. A panel that is closing must not
+   * delete a snapshot the bar has already taken over.
+   */
   remove(): void {
+    const ownedFile = this.ownedFile;
+    this.ownedFile = null;
+    this.signature = null;
+    if (!ownedFile) return;
     try {
+      const current = fs.statSync(this.file);
+      if (current.dev !== ownedFile.dev || current.ino !== ownedFile.ino) return;
       fs.unlinkSync(this.file);
-    } catch {
-      // Already gone, or never written.
-    }
+    } catch { /* Already gone, or no longer readable. */ }
   }
 }

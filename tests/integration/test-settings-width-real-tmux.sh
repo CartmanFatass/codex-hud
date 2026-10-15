@@ -37,21 +37,44 @@ wait_width() {
 }
 open_tree
 # Opened at 30, the panel takes the default width at once.
-wait_width 32
+wait_width 48
 panel_command settings
-wait_text Settings
-# The page is a modal and its keys are its own. Width is the fifth row from
-# the end, and the line under the list names the selected row.
-t send-keys -t "$panel" End Up Up Up Up
+wait_text '[Back]'
+# The page is a modal and its keys are its own. Find Width by its selected
+# help text, not a positional offset that breaks when settings are regrouped.
+t send-keys -t "$panel" Home
+for ((n=0;n<80;n++)); do
+  if [[ "$(t capture-pane -p -t "$panel")" == *'Panel columns'* ]]; then break; fi
+  t send-keys -t "$panel" Down
+  sleep 0.05
+done
 wait_text 'Panel columns'
+value_x() {
+  t capture-pane -p -t "$panel" > "$dir/capture.txt"
+  node --input-type=module - "$dir/capture.txt" <<'NODE'
+import fs from 'node:fs';
+const row = fs.readFileSync(process.argv[2], 'utf8').split('\n').find(line => /^›.*Width.*‹/.test(line));
+if (!row) throw new Error('Selected Width row is missing');
+console.log(row.indexOf('‹'));
+NODE
+}
+x48=$(value_x)
 t send-keys -t "$panel" Right
 t send-keys -t "$panel" -l s
-wait_width 40
-# Down from the narrowest width comes round to the widest.
+wait_width 56
+# The actual resize must reflow the menu too, not only pad a left-packed row.
+for ((n=0;n<200;n++)); do
+  x56=$(value_x)
+  if ((x56 > x48 && x56 >= 28)); then break; fi
+  sleep 0.05
+done
+((x56 > x48 && x56 >= 28)) || { echo "FAIL: values stayed left-packed ($x48 -> $x56)"; exit 1; }
+echo "PASS: settings values reflow right ($x48 -> $x56)"
+# Two steps down from the default lands on 40.
 t send-keys -t "$panel" Left Left
 t send-keys -t "$panel" -l s
-wait_width 56
+wait_width 40
 t kill-pane -t "$panel"
 open_tree
-wait_width 56
+wait_width 40
 echo 'Settings save and reopen width: PASS'

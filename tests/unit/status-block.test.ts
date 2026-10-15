@@ -15,7 +15,8 @@ const busy: SubagentTree = { ...tree, totalCount: 12, nodes: Array.from({ length
 const plain = (text: string) => stripAnsi(text);
 const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
   const previous = displayConfig();
-  setDisplayConfig({ glyphs });
+  // Words in place of marks are the icons' setting; the model badge is the glyphs'. Text here means both.
+  setDisplayConfig(glyphs === 'text' ? { glyphs, icons: 'text' } : { glyphs });
   try { return run(); } finally { setDisplayConfig(previous); }
 };
 
@@ -123,7 +124,7 @@ test('the band carries the context meter, the corner row the quota meter with it
   for (const lang of ['en', 'zh'] as const) {
     const previous = setLanguage(lang);
     try {
-      for (const width of [32, 40, 56, 90]) {
+      for (const width of [40, 56, 90]) {
         const frame = renderMonitor({ tree, state: { ...initialMonitorState(), statusLevel: 'status' }, width, height: 24, status: () => card() });
         const lines = frame.lines.map(plain);
         for (const line of frame.lines) assert.equal(visualLength(line), width, `${lang} ${width}: ${stripAnsi(line)}`);
@@ -140,6 +141,14 @@ test('the band carries the context meter, the corner row the quota meter with it
         );
         assert.ok(frame.controls.some(c => c.kind === 'level' && c.y === 24 - 3 && c.width === width), 'the band steps the level');
       }
+      // 32 columns and under draw the saved status level as the one line.
+      const narrow = renderMonitor({ tree, state: { ...initialMonitorState(), statusLevel: 'status' }, width: 32, height: 24, status: () => card() });
+      const narrowLines = narrow.lines.map(plain);
+      for (const line of narrow.lines) assert.equal(visualLength(line), 32, `${lang} 32: ${stripAnsi(line)}`);
+      assert.equal(narrow.statusCard?.height, 1, 'at 32 columns the card is the one line');
+      assert.match(narrowLines.at(-1)!, /^ ✓ ☀◆ ─+40%─+246K 5h 61% $/, `${lang} 32: ${narrowLines.at(-1)}`);
+      assert.ok(narrow.lines.at(-1)!.startsWith(theme.band(' ').slice(0, 10)), 'the one line has the band background');
+      assert.ok(narrow.controls.some(c => c.kind === 'level' && c.y === 23 && c.width === 32), 'the one line steps the level');
     } finally { setLanguage(previous); }
   }
 });
@@ -147,21 +156,26 @@ test('the band carries the context meter, the corner row the quota meter with it
 test('a crowded row drops the age, the tail and the model before the bar; the corner row gives up the branch, then the window', () => {
   const draw = (width: number, extra: Partial<StatusCard> = {}) =>
     renderMonitor({ tree, state: { ...initialMonitorState(), statusLevel: 'status' }, width, height: 24, status: () => card(extra) }).lines.map(plain);
-  const narrow = draw(26);
-  assert.match(narrow.at(-3)!, /^ ✓ (☀◆ )?(2h )?─*40%─+(─246K)? $/, narrow.at(-3)!);
-  assert.match(draw(24).at(-3)!, /^ ✓ (☀◆ )?─*40%─+(246K)? $/, 'the age goes before the bar');
+  // 32 and under are the one line, which gives up the age, then the tail, then the model, and keeps the bar.
+  const one = (width: number) => draw(width).at(-1)!;
+  assert.match(one(30), /^ ✓ ☀◆ ─+40%─+246K 5h 61% $/, one(30));
+  assert.doesNotMatch(one(30), /2h/, 'the age goes first');
+  assert.match(one(26), /^ ✓ ☀◆ ─+40%─+ 5h 61% $/, one(26));
+  assert.doesNotMatch(one(26), /246K/, 'then the tail');
+  assert.match(one(24), /^ ✓ ─+40%─+ 5h 61% $/, 'the model goes before the bar');
   assert.match(draw(56, { project: 'atlas-wsl' }).at(-1)!, /^╰─ atlas-wsl · main \* 5h ─+61%─+ ↺1h$/);
   assert.match(draw(40, { project: 'atlas-wsl' }).at(-1)!, /^╰─ atlas-wsl 5h ─+61%─+ ↺1h$/, 'at 40 the branch goes first');
-  assert.match(draw(30, { project: 'atlas-wsl' }).at(-1)!, /^╰─ atlas-wsl ─+61%─+ ↺1h$/, 'then the window');
-  const long = draw(30, { project: 'a-very-long-project-name-indeed', branch: '' }).at(-1)!;
-  assert.equal(visualLength(long), 30);
+  assert.match(draw(33, { project: 'atlas-wsl' }).at(-1)!, /^╰─ atlas-wsl ─+61%─+ ↺1h$/, 'then the window');
+  const long = draw(33, { project: 'a-very-long-project-name-indeed', branch: '' }).at(-1)!;
+  assert.equal(visualLength(long), 33);
   assert.match(long, /^╰─ a-very.*….* 61% ↺1h$/, long);
   const lines = (height: number, width = 30, agents = busy) =>
     renderMonitor({ tree: agents, state: initialMonitorState(), width, height, status: () => card(), session: () => ({ text: '✓', attention: false }) }).lines.map(plain);
   assert.equal(lines(12).filter(line => line.startsWith('│')).length, 0, 'a short panel keeps its agents ten rows: one line');
   assert.match(lines(12).at(-1)!, /^ ✓ .* 5h 61% $/, 'the one line carries the quota reading');
-  assert.equal(lines(12, 30, tree).filter(line => line.startsWith('│')).length, 1, 'with no agent to keep the rows for, the card takes them');
-  assert.equal(lines(40).filter(line => line.startsWith('│')).length, 1);
+  assert.equal(lines(12, 32, tree).filter(line => line.startsWith('│')).length, 0, 'at 32 columns the card stays one line');
+  assert.equal(lines(12, 40, tree).filter(line => line.startsWith('│')).length, 1, 'wider, spare rows let the card show its alert');
+  assert.equal(lines(40, 40).filter(line => line.startsWith('│')).length, 1);
   assert.ok(!lines(24, 20).some(line => line.startsWith('╰')), 'too narrow for a card: no card');
 });
 

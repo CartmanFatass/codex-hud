@@ -1,8 +1,10 @@
+import type { ProgressState, ProgressContext } from '../collectors/progress-summary.js';
 /** Default F12 view: a monitor, not another transcript. No I/O or terminal input here. */
 import type { SubagentTree } from '../types.js';
 import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
+import { defaultCardVisibility, type CardVisibility } from '../card-visibility.js';
 import { initialPanelState, reconcileSelection, visibleRows, type PanelState, type PanelRow } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { modelLegend } from './model-glyphs.js';
@@ -25,7 +27,7 @@ import { roleSet } from './directions.js';
 // exported here too, so a caller imports the monitor from one place.
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export { iconic, agoText, age, nodeStatus, worktreeLabel, worktreeName, worktreePlace, TURN_CLOCKS, QUIET_MS, FRESH_FINISH_MS,
-  isLive, isQuiet, turnClock, nextRepaintDelay, finishedAt, agentPaint, writtenAge, agentRate, rateText, RATE_FRESH_MS } from './monitor-labels.js';
+  isLive, isQuiet, turnClock, nextRepaintDelay, msUntilAgeChanges, msUntilCountdownChanges, finishedAt, agentPaint, writtenAge, agentRate, rateText, RATE_FRESH_MS } from './monitor-labels.js';
 export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type EdgeMeter } from './monitor-meter.js';
 export { summaryRow, guardianChip, changeCounts, shownPaths, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
 export { timelineText, TIMELINE_STYLES, TIMELINE_HOURS, TIMELINE_STEP, TIMELINE_EARLIER, type TimelineStyle } from './monitor-timeline.js';
@@ -61,8 +63,8 @@ export interface MonitorState {
    * tree with the brief and log under it. The panel sets it from settings.
    */
   style?: PanelStyle;
-  /** Rich: the cards opened to their timeline, by agent id. Panel state, reset with the session. */
-  cards?: ReadonlySet<string>;
+  /** Rich-card fields shown independently. The panel sets them from settings. */
+  cardVisibility?: Partial<CardVisibility>;
   /**
    * The agent the agents view last scrolled into view: the view follows the
    * selection when it moves, and otherwise stays where the reader put it.
@@ -76,6 +78,8 @@ export interface MonitorState {
   anchor?: {key: string; delta: number; offset: number};
   /** How much the status card shows; absent is `full`. The panel sets it from settings. */
   statusLevel?: StatusLevel;
+  /** Keys stay in the panel. Esc clears it and returns them to Codex. */
+  keys?: boolean;
   /** A label, once arrived, stands where the agent's name is shown. The panel sets it from settings. */
   labelAsName?: boolean;
   /** How far the status card's brief is scrolled. */
@@ -96,10 +100,6 @@ export interface MonitorState {
   importantRoles?: ReadonlySet<string>;
   /** The cards' corners. The panel sets it from settings. */
   cardCorners?: 'square' | 'round';
-  /** False leaves out the line on a card counting its subtasks by role. The panel sets it from settings. */
-  roleCounts?: boolean;
-  /** How many of the model's newest notes a closed card shows while its agent works (default 3). The panel sets it from settings. */
-  cardNotes?: number;
 }
 export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
@@ -126,14 +126,14 @@ export interface MonitorRect {
 }
 export interface MonitorControl {
   /**
-   * `expand` opens or closes a card's timeline (and selects it), `switch`
-   * (a card's name) selects it and switches Codex to it, `level` (the status card's band) changes how
+   * `switch` (a card's name) selects it and arms a double-click switch to
+   * Codex, `level` (the status card's band) changes how
    * much the card shows. `tab` (a pane's button on the control bar) opens
    * or closes that pane; `zoom` (a pane's band) zooms or restores it;
    * `older` shows or hides what the linger window put away; `help` opens
    * the keys.
    */
-  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'brief' | 'level' | 'log' | 'expand' | 'switch' | 'zoom';
+  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'brief' | 'level' | 'log' | 'switch' | 'zoom';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
@@ -169,6 +169,9 @@ export interface MonitorData {
    * for the agents the tree shows, and whole in the Inspector.
    */
   agentLog?: ReadonlyMap<string, readonly AgentLogEntry[]>;
+  /** Per-agent progress request state, collected without rendering I/O. */
+  progress?: ReadonlyMap<string, ProgressState>;
+   progressContext?: ProgressContext;
   /**
    * What the main session is doing, as the status card words it, for the
    * card's one-line form; `attention` while it waits on the person, `failed`
@@ -186,6 +189,11 @@ export interface MonitorData {
   /** The session has not been read yet: an empty tree is not news. */
   loading?: boolean;
   /**
+   * Underline an agent's name, the click that switches to it. False when the
+   * Codex pane is too narrow to show agent ids. Absent means yes.
+   */
+  linkNames?: boolean;
+  /**
    * Decoration for the empty stretch above the foot: lines at most `cols`
    * wide and `rows` tall, or null when nothing fits.
    */
@@ -198,11 +206,13 @@ export interface MonitorContext {
   git?: GitChanges | null;
   worktrees?: WorktreesSnapshot | null;
   frame?: MonitorFrame;
+  /** Leaving a modal via a navigation tab selects/opens its pane instead of toggling it shut. */
+  navigationOverlay?: boolean;
 }
 export interface MonitorOutcome {
   state: MonitorState;
   close: boolean;
-  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'brief-toggle'} | {type:'status-level'};
+  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'pick'; id:string} | {type:'brief-toggle'} | {type:'status-level'};
 }
 
 export function initialMonitorState(): MonitorState {
@@ -211,21 +221,18 @@ export function initialMonitorState(): MonitorState {
     scroll:{agents:0,timeline:0,changes:0,details:0}, selectedWorktree:null,selectedFile:null,
     preview:'agent',help:false,zoom:false,helpScroll:0,expanded:false};
 }
-/** Toggle one card's timeline. */
-export function toggleCard(state: MonitorState, id: string): MonitorState {
-  const cards = new Set(state.cards ?? []);
-  if (cards.has(id)) cards.delete(id); else cards.add(id);
-  return {...state, cards};
-}
 /** Agents is the page itself: always there, whatever an older settings file says. */
 export function monitorModes(settings: HudSettings): MonitorModes {
   return {agents:settings.agentsPane, timeline:settings.timelinePane, changes:settings.changesPane, details:settings.detailsPane};
 }
 /** What the settings say about how the panel shows things, as its state. */
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
+  const cardVisibility = defaultCardVisibility();
+  const copy = <K extends keyof CardVisibility>(key: K) => { cardVisibility[key] = settings[key]; };
+  (Object.keys(cardVisibility) as Array<keyof CardVisibility>).forEach(copy);
   return {tabbed:settings.paneLayout === 'tabs', style:settings.panelStyle, statusLevel:settings.statusCard, labelAsName:settings.labelAsName,
     timelineStyle:settings.timelineStyle, timelineHours:settings.timelineHours, importantRoles:roleSet(settings.importantRoles),
-    cardCorners:settings.cardCorners, roleCounts:settings.cardRoleCounts, cardNotes:settings.cardNotes};
+    cardCorners:settings.cardCorners, cardVisibility};
 }
 /**
  * The agents the agents view lists, in its order: in rich style the L1s
@@ -299,18 +306,18 @@ const HELP_KEY_COLUMN = 12;
  * panel is the panel's), the buttons, the mouse, then the legend. `prefix`
  * is the prefix as people write it, "Ctrl+]".
  */
-function helpText(rich: boolean, prefix: string, tabbed = false): Array<string | {head: string}> {
+function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = true): Array<string | {head: string}> {
   const p = {p:prefix};
   const head = (text: string) => ({head:t(text,p)});
   return [
     head('Shortcuts: {p}, then a key'),
     ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
-      '{p} ,  settings  {p} ?  help','{p} b  pause / resume brief','{p} a  show / hide older',
+      '{p} ,  settings  {p} ?  help','{p} b  pause / resume models','{p} a  show / hide older',
       '{p} m  main session  {p} o  switch to selected',
       // The tabs layout shows one pane at a time: nothing to close or zoom.
       ...(tabbed ? ['{p} 1–4  show a pane  {p} Tab  next'] : ['{p} 1–4  open / close a pane  {p} Tab  next','{p} x  close pane']),
       '{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
-      tabbed ? '{p} Enter / v  inspect' : '{p} Enter / v  inspect  {p} z  zoom',...(rich ? ['{p} e / Space  open / close card'] : []),
+      tabbed ? '{p} Enter / Space / v  inspect' : '{p} Enter / Space / v  inspect  {p} z  zoom',
       ...(rich ? [] : ['{p} h l  fold / unfold agent']),'{p} f  filter  {p} s  order',
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
       '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex'].map(line=>t(line,p)),
@@ -318,17 +325,18 @@ function helpText(rich: boolean, prefix: string, tabbed = false): Array<string |
     // With icons on, what each icon is; with words, the words say it.
     ...(iconSet() !== 'text' ? [t('{icon} main session',{icon:icon('main')}),
       t('{icons} the panes, as titled',{icons:MONITOR_PANES.map(id=>icon(id)).join(' ')}),
-      t('{pause} / {resume} pause / resume brief',{pause:icon('pause'),resume:icon('resume')}),
+      t('{pause} / {resume} pause / resume models',{pause:icon('pause'),resume:icon('resume')}),
       t('{show} show older  {hide} hide them',{show:icon('show'),hide:icon('hide')}),
       t('{settings} settings  {help} help',{settings:icon('settings'),help:icon('help')})] : []),
     t(tabbed ? 'Click a pane\'s tab: show it' : 'Click a pane\'s button: open or close it'),
     head('Mouse'),
-    ...[...(rich ? ['Click card: select','Click its name: switch','Click top rule or ▾: open','Wheel over the card: its brief'] : ['Click agent: switch','Click a log line: select agent']),
+    ...[...(rich ? ['Click a card: select','Click its name: select; double-click switches','A subtask line selects it','Click a blank row: keys stay here','Esc: keys back to Codex','Wheel over the card: its brief'] : ['Click agent: inspect; double-click switches','Click a log line: inspect','Click a blank row: keys stay here','Esc: keys back to Codex']),
       ...(tabbed ? [] : ["Click a pane's title: zoom / restore"]),"Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
     head('Legend'),
     ...['1 Cards  2 Timeline','3 Changes  4 Inspector','✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
     t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
+    ...(rich && cardSummary ? [t('Latest note: written by a model')] : []),
     ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve',
       'status card gutter colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','──56%── = context or quota used, the % at the fill','meter: blue, yellow past 70%, red past 85%','dim name = done 1m+ ago','mod = changed files','stale = >30s since read'].map(line=>t(line)),
     ...stripAnsi(modelLegend()).split('\n'),
@@ -360,7 +368,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       return out;
     };
     const entries = (line: string) => visualLength(line) <= width ? [line] : split(line);
-    const text = helpText(state.style === 'rich',prefix,Boolean(state.tabbed));
+    const text = helpText(state.style === 'rich',prefix,Boolean(state.tabbed),state.cardVisibility?.cardSummary ?? defaultCardVisibility().cardSummary);
     // The shortcuts, up to the second heading, are a table: each key without
     // the prefix its heading names, in a column, and what it does beside it,
     // wrapped under itself. A line with no key is a sentence.
@@ -445,7 +453,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     if (!grew) break;
   }
   // Rows no pane has a use for are the status card's, as far as its brief fills them.
-  if (budget > 0 && footRows) {
+  if (budget > 0 && footRows && state.style !== 'rich') {
     footPlan = planFoot(input,state,width,height,now,noticeRows.length,footRows+budget);
     budget += footRows-footPlan.rows;
     footRows = footPlan.rows;

@@ -65,7 +65,8 @@ function draw(data: Partial<MonitorData> & { tree: SubagentTree }, state = opene
 const rows = (lines: string[]) => lines.filter(line => line.startsWith('│ ')).map(line => line.slice(2).trimEnd()).filter(Boolean);
 const withGlyphs = <T>(glyphs: 'both' | 'text', run: () => T): T => {
   const previous = displayConfig();
-  setDisplayConfig({ glyphs });
+  // Words in place of marks are the icons' setting; the model badge is the glyphs'. Text here means both.
+  setDisplayConfig(glyphs === 'text' ? { glyphs, icons: 'text' } : { glyphs });
   try { return run(); } finally { setDisplayConfig(previous); }
 };
 

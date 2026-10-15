@@ -130,7 +130,7 @@ for requested in 16 0 45 70; do
   panel=$(get_opt s1 @codex_hud_tree_pane)
   actual=$(t display-message -p -t "$panel" '#{pane_width}')
   expected=$requested
-  [[ "$requested" == 0 ]] && expected=32
+  [[ "$requested" == 0 ]] && expected=48
   assert_eq "T2 width preset $requested" "$actual" "$expected"
   toggle s1
 done

@@ -3,16 +3,17 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type MonitorState, initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, worktreeLabel, monitorPreferences, monitorModes, canMonitorDiff } from '../../src/render/monitor.js';
+import { type MonitorState, initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, worktreeLabel, monitorPreferences, monitorModes, monitorSettings, canMonitorDiff } from '../../src/render/monitor.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
-import { SETTING_ROWS, renderSettingsPage, handleSettingsInput } from '../../src/render/settings-page.js';
+import { defaultCardVisibility, type CardVisibility } from '../../src/card-visibility.js';
+import { SETTING_ROWS } from '../../src/render/settings-page.js';
 import { stripAnsi, visualLength, colors, theme } from '../../src/render/colors.js';
 import { setDisplayConfig, LOOKS } from '../../src/render/hud-config.js';
 import { MODEL_GLYPHS, EFFORT_GLYPHS } from '../../src/render/model-glyphs.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
 import type { WorktreesSnapshot } from '../../src/collectors/worktrees.js';
-import { worktreeItem } from '../../src/render/monitor-labels.js';
+import { worktreeItem, agoText } from '../../src/render/monitor-labels.js';
 const now = Date.parse('2026-09-16T10:00:00Z');
 const root = '00000000-0000-4000-8000-000000000001';
 const make = (id:string,name:string,status:SubagentTreeNode['status']):SubagentTreeNode => ({id,name,status,depth:1,children:[],startedAt:new Date(now-120_000),turnStartedAt:new Date(now-30_000),lastEventAt:new Date(now-1000)});
@@ -152,14 +153,14 @@ test('the agents area closes like any pane, and its setting is kept',()=>{
 test('the control bar: ⌂ targets the root UUID; every column of the row is some button',()=>{
   const frame=draw();
   for(const x of [0,1,2])assert.deepEqual(handleMonitorInput(frame.state,mouse(x,0),{tree,worktrees,frame}).action,{type:'switch',id:root});
-  // The focused pane's tab filled, with its word; the actions at the right end.
-  assert.equal(stripAnsi(frame.lines[0]),' ⌂  ▦ Agents   ≣  ±  ◫    ⚙ ? ');
-  assert.equal(stripAnsi(draw(withChanges(),45).lines[0]),' ⌂  ▦ Agents    ≣   ± Changes   ◫        ⚙ ? ');
-  const column=(glyph:string)=>[...stripAnsi(frame.lines[0])].indexOf(glyph);
+  // Settings retains its labelled navigation tab; actions remain at the right end.
+  assert.match(stripAnsi(frame.lines[0]),/^ ⌂.*Settings.*\? $/);
+  assert.match(stripAnsi(draw(withChanges(),45).lines[0]),/^ ⌂.*Settings.*\? $/);
+  const column=(word:string)=>visualLength(stripAnsi(frame.lines[0]).split(word)[0]);
   assert.equal(handleMonitorInput(frame.state,mouse(29,0),{tree,worktrees,frame}).state.help,true,'the columns after ? are still Help');
   assert.equal(handleMonitorInput(frame.state,mouse(column('?'),0),{tree,worktrees,frame}).state.help,true,'Help opens the help');
-  assert.deepEqual(handleMonitorInput(frame.state,mouse(column('⚙'),0),{tree,worktrees,frame}).action,{type:'settings'});
-  assert.deepEqual(handleMonitorInput(frame.state,mouse(column('⚙')+1,0),{tree,worktrees,frame}).action,{type:'settings'},'the column beside an icon is its button too');
+  assert.deepEqual(handleMonitorInput(frame.state,mouse(column('Settings'),0),{tree,worktrees,frame}).action,{type:'settings'});
+  assert.deepEqual(handleMonitorInput(frame.state,mouse(column('Settings')+1,0),{tree,worktrees,frame}).action,{type:'settings'},'the tab word is clickable across its columns');
   assert.deepEqual(handleMonitorInput(frame.state,key('main'),{tree,worktrees,frame}).action,{type:'switch',id:root});
 });
 
@@ -168,10 +169,35 @@ test('only visible agent rows navigate; the summary and empty space do not',()=>
   assert.equal(pane.edge,0);
   const first=pane.rows.find(row=>row.item)!.item!;
   // Unframed: the summary is the pane's first line, the first agent its second.
-  assert.deepEqual(handleMonitorInput(frame.state,mouse(3,pane.y+1),{tree,worktrees,frame}).action,{type:'switch',id:first});
-  assert.deepEqual(handleMonitorInput(frame.state,mouse(0,pane.y+1),{tree,worktrees,frame}).action,{type:'switch',id:first});
+  const rowClick=handleMonitorInput(frame.state,mouse(3,pane.y+1),{tree,worktrees,frame});
+  assert.deepEqual(rowClick.action,{type:'pick',id:first});
+  assert.equal(rowClick.state.modes.details,'open');
+  assert.equal(rowClick.state.tree.selectedId,first);
+  const edgeClick=handleMonitorInput(frame.state,mouse(0,pane.y+1),{tree,worktrees,frame});
+  assert.deepEqual(edgeClick.action,{type:'pick',id:first});
+  assert.equal(edgeClick.state.modes.details,'open');
   assert.equal(handleMonitorInput(frame.state,mouse(3,pane.y),{tree,worktrees,frame}).action,undefined);
-  assert.equal(handleMonitorInput(frame.state,mouse(3,pane.y+pane.height-1),{tree,worktrees,frame}).action,undefined);
+  const blank=handleMonitorInput(frame.state,mouse(3,pane.y+pane.height-1),{tree,worktrees,frame});
+  assert.equal(blank.action,undefined);
+  assert.equal(blank.state.keys,true,'a row with no agent keeps the next keys here');
+});
+
+test('Esc hands keys back before it closes, and the frame gutter keeps them',()=>{
+  const frame=draw();
+  const held={...frame.state,keys:true};
+  const back=handleMonitorInput(held,key('escape'),{tree,worktrees,frame});
+  assert.equal(back.state.keys,false);
+  assert.equal(back.close,false);
+  assert.equal(back.state.modes.agents,'open');
+  assert.equal(handleMonitorInput(back.state,key('escape'),{tree,worktrees,frame}).close,true);
+  const looked=setDisplayConfig({look:'frame'});
+  try{
+    const framed=draw(withChanges(),36);
+    const box=framed.panes.find(p=>p.id==='changes')!;
+    const gutter=handleMonitorInput(framed.state,mouse(0,box.y+1),{tree,worktrees,frame:framed});
+    assert.equal(gutter.state.keys,true);
+    assert.equal(gutter.action,undefined);
+  }finally{setDisplayConfig(looked);}
 });
 
 test('a pane\'s button opens or closes it in one click; a click on its band zooms it and restores it',()=>{
@@ -476,15 +502,11 @@ test('monitor visibility persists independently from legacy open Reports/Changes
   }finally{if(old===undefined)delete process.env.CODEX_HUD_SETTINGS_PATH;else process.env.CODEX_HUD_SETTINGS_PATH=old;rmSync(home,{recursive:true,force:true});}
 });
 
-test('Settings exposes open/closed for each pane but the agents, and omits Checks',()=>{
+test('Settings has no row for a pane: the bar opens and closes them, and saves them; nor one for Checks',()=>{
   assert.equal(SETTING_ROWS.some(r=>r.key==='activity'),false);
-  assert.equal(SETTING_ROWS.some(r=>r.key==='agentsPane'),false);
-  assert.deepEqual(SETTING_ROWS.filter(r=>/Pane$/.test(r.key)).map(r=>r.label),['2 Timeline','3 Changes','4 Inspector'],'in the bar\'s order, by their keys');
-  const row=SETTING_ROWS.findIndex(r=>r.key==='timelinePane');assert.ok(row>=0);
-  let state={draft:defaultSettings(),selected:row,offset:0,message:''};
-  const frame=renderSettingsPage(state,40,30);
-  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.timelinePane,'open');
-  state=handleSettingsInput(state,key('right'),frame).state;assert.equal(state.draft.timelinePane,'closed');
+  assert.deepEqual(SETTING_ROWS.filter(r=>/Pane$/.test(r.key)),[]);
+  const state=initialMonitorState();state.modes.timeline='open';
+  assert.equal(monitorPreferences(state).timelinePane,'open','what the bar saves');
 });
 
 
@@ -705,15 +727,15 @@ test('the Inspector shows what the agent last said, labelled as such, and v More
       .panes.find(p=>p.id==='details')!.rows.map(r=>stripAnsi(r.text));
   };
   const short=inspect(false);
-  assert.ok(short.includes('Latest update · 30s ago'));
+  assert.ok(short.some(line => line.includes('Latest update · 30s ago')));
   assert.match(short.join('\n'),/First sentence/);
   assert.ok(short.some(line=>line.endsWith(' …')),'a long update is cut and says so');
   assert.doesNotMatch(short.join('\n'),/THE_END/);
-  assert.match(short.join('\n'),/Task\nReview the package/,'the task always: the cards leave it here');
+  assert.match(short.join('\n'),/Task[^\n]*\n {2}Review the package/,'the task always: the cards leave it here');
   assert.ok(short.every(line=>visualLength(line)<=30));
   const full=inspect(true).join('\n');
   assert.match(full,/THE_END/);
-  assert.match(full,/Task\nReview the package/);
+  assert.match(full,/Task[^\n]*\n {2}Review the package/);
   const prior={...agent,lastReport:{...agent.lastReport,at:new Date(now-120_000)}};
   const state=initialMonitorState();state.modes.details='open';state.focus='details';
   assert.match(stripAnsi(renderMonitor({tree:{...tree,nodes:[prior]},worktrees,state,width:30,height:60,nowMs:now}).lines.join('\n')),/Previous turn · 2m ago/);
@@ -857,4 +879,67 @@ test('the Inspector heads a file with its name, its lines added and removed and 
   const long = inspect('.agents/skills/x/SKILL.md', [], 14);
   // The folder breaks after a slash.
   assert.deepEqual(long.slice(2, 6).map(line => line.trimEnd()), ['│SKILL.md', '│+12 −3', '│.agents/', '│skills/x/']);
+});
+
+test('the model label as text changes the model badge alone; icons as text put the words back everywhere else',()=>{
+  const previous=setDisplayConfig({glyphs:'text',icons:'unicode'});
+  try {
+    assert.equal(agoText(new Date(now-60_000),now),'1m','glyphs say nothing about the rest');
+    setDisplayConfig({glyphs:'glyph',icons:'text'});
+    assert.equal(agoText(new Date(now-60_000),now),'1m ago');
+  } finally { setDisplayConfig(previous); }
+});
+
+test('monitor settings map every independently composable card visibility field',()=>{
+  const defaults=defaultCardVisibility();
+  assert.deepEqual(monitorSettings(defaultSettings()).cardVisibility,defaults);
+  const visibility=Object.fromEntries((Object.keys(defaults) as Array<keyof CardVisibility>)
+    .map(key=>[key,key==='cardSubagentScope'?'all':!defaults[key]])) as unknown as CardVisibility;
+  assert.deepEqual(monitorSettings({...defaultSettings(),...visibility}).cardVisibility,visibility);
+});
+
+test('rich card clicks select only; names arm switching, log lines select the exact thread, and Enter or Space inspects',()=>{
+  const child={...make('child','Child','running'),depth:2};
+  const richTree={...tree,nodes:[{...nodes[0],children:[child]},nodes[1]]};
+  const state:MonitorState={...initialMonitorState(),style:'rich',tree:{...initialMonitorState().tree,selectedId:nodes[1].id}};
+  const frame=renderMonitor({tree:richTree,state,width:48,height:32,nowMs:now});
+  const pane=frame.panes.find(p=>p.id==='agents')!;
+  const index=pane.rows.findIndex(row=>row.item===nodes[0].id);
+  const rowY=pane.y+index;
+  // Remove row controls to exercise the broad card click path, not the name or summary target.
+  const broad={...frame,controls:frame.controls.filter(c=>c.y!==rowY)};
+  const picked=handleMonitorInput(frame.state,mouse(20,rowY),{tree:richTree,frame:broad,nowMs:now});
+  assert.equal(picked.state.tree.selectedId,nodes[0].id);
+  assert.equal(picked.state.focus,'agents');
+  assert.equal(picked.state.modes.details,'closed');
+  assert.equal(picked.action,undefined);
+  const clickControl=(kind:'log'|'switch',item:string)=>handleMonitorInput(frame.state,mouse(3,rowY),{
+    tree:richTree,nowMs:now,frame:{...frame,controls:[{kind,item,x:0,y:rowY,width:48}]}});
+  for(const item of [nodes[0].id,child.id]){
+    const logged=clickControl('log',item);
+    assert.equal(logged.state.tree.selectedId,item);
+    assert.equal(logged.state.modes.details,'closed');
+    assert.equal(logged.action,undefined);
+    for(const inspectKey of ['enter','space']){
+      const inspected=handleMonitorInput(logged.state,key(inspectKey),{tree:richTree,frame,nowMs:now});
+      assert.equal(inspected.state.tree.selectedId,item);
+      assert.equal(inspected.state.modes.details,'open');
+      assert.equal(inspected.state.focus,'details');
+    }
+  }
+  const named=clickControl('switch',nodes[0].id);
+  assert.deepEqual(named.action,{type:'pick',id:nodes[0].id});
+  assert.equal(named.state.modes.details,'closed');
+  const before=renderMonitor({tree,state:{...state,tree:{...state.tree,selectedId:nodes[0].id}},width:48,height:32,nowMs:now});
+  const after=renderMonitor({tree,state:{...state,tree:{...state.tree,selectedId:nodes[1].id}},width:48,height:32,nowMs:now});
+  assert.deepEqual(before.panes[0].rows.map(row=>row.item),after.panes[0].rows.map(row=>row.item),'selection does not open a resting card');
+});
+
+test('compact Space still opens the Inspector and compact log clicks still inspect',()=>{
+  const frame=draw();
+  const ctx={tree,worktrees,frame,nowMs:now};
+  assert.equal(handleMonitorInput(frame.state,key('space'),ctx).state.focus,'details');
+  const logged=handleMonitorInput(frame.state,mouse(0,2),{...ctx,frame:{...frame,controls:[{kind:'log',item:nodes[1].id,x:0,y:2,width:30}]}});
+  assert.equal(logged.state.tree.selectedId,nodes[1].id);
+  assert.equal(logged.state.focus,'details');
 });

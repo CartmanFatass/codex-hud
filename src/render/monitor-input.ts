@@ -1,7 +1,7 @@
 /** What a key, a click or the wheel does to the panel: the next state, and anything it asks of the page. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorFrame, MonitorOutcome, MonitorPane, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
-import { MONITOR_PANES, toggleCard, listedAgents } from './monitor.js';
+import { MONITOR_PANES, listedAgents } from './monitor.js';
 import { applyKey } from './panel-state.js';
 import { directions } from './directions.js';
 import { WHEEL_ROWS } from './agents-view.js';
@@ -39,6 +39,12 @@ function pointChanges(state: MonitorState, item: string): void {
   if (worktree !== undefined) state.selectedWorktree = worktree;
   state.preview = changesPreview(state);
 }
+/** `r` or the band: step the level that is on screen. */
+function cycleStatus(state: MonitorState, ctx: MonitorContext): void {
+  const height = ctx.frame?.lines.length ?? Number.POSITIVE_INFINITY;
+  state.statusLevel = nextLevel(state, height);
+  state.statusScroll = 0;
+}
 function openPane(state: MonitorState, id: MonitorPane): MonitorState {
   const preview = id==='agents'?'agent':id==='changes'?changesPreview(state):state.preview;
   // The tabs layout shows it and leaves the stacked layout's panes as they were.
@@ -65,8 +71,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   let key = input.type==='key'?input.key:'';
   const result = (action?:MonitorOutcome['action'],close=false): MonitorOutcome => ({state:next,close,action});
   if(key==='close') return result(undefined,true);
-  // Space is Enter, except on the cards, where it opens or closes the selected one.
-  if(key==='space')key=next.style==='rich'&&next.focus==='agents'&&!next.help?'expand':'enter';
+  // Space and Enter inspect the selection in either panel style.
+  if(key==='space')key='enter';
   if(next.help) {
     const back=input.type==='mouse'&&input.button==='left'&&ctx.frame?.controls.some(c=>c.kind==='help'&&input.y===c.y&&input.x>=c.x&&input.x<c.x+c.width);
     if(back||['escape','help','enter'].includes(key))next.help=false;
@@ -85,18 +91,21 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(control?.kind==='settings') return result({type:'settings'});
     if(control?.kind==='help'){next.help=true;next.helpScroll=0;return result();}
     if(control?.kind==='older'){next.tree.showAll=!next.tree.showAll;return result();}
-    if(control?.kind==='tab'&&control.pane){next=clickTab(next,control.pane);return result();}
+    if(control?.kind==='tab'&&control.pane){next=ctx.navigationOverlay ? openPane({...next,zoom:false},control.pane) : clickTab(next,control.pane);return result();}
     // A pane's band, or the agents' summary: zoom that pane, or restore it.
     if(control?.kind==='zoom'&&control.pane){if(!next.tabbed)next.zoom=!(next.zoom&&next.focus===control.pane);next.focus=control.pane;return result();}
     if(control?.kind==='brief') return result({type:'brief-toggle'});
-    if(control?.kind==='level'){next.statusLevel=nextLevel(next);next.statusScroll=0;return result({type:'status-level'});}
+    if(control?.kind==='level'){cycleStatus(next,ctx);return result({type:'status-level'});}
     // What was clicked is in view already: selecting it does not scroll.
     const pick=(id: string)=>{next.tree.selectedId=id;next.preview='agent';next.scroll.details=0;next.revealed=id;next.focus='agents';};
-    if(control?.kind==='log'&&control.item){pick(control.item);return result();}
-    // A card's top rule or its ▾/▴: open or close its timeline, and select it.
-    if(control?.kind==='expand'&&control.item){pick(control.item);next=toggleCard(next,control.item);return result();}
-    // A card's name: go to that agent's session, as `o` does on it.
-    if(control?.kind==='switch'&&control.item){pick(control.item);return result({type:'switch',id:control.item});}
+    const inspect=(id: string)=>{pick(id);next=openPane(next,'details');};
+    if(control?.kind==='log'&&control.item){
+      // A subtask line on a rich card only selects it. The compact log still opens the Inspector.
+      if(next.style==='rich'){pick(control.item);return result();}
+      inspect(control.item);return result();
+    }
+    // A card's name: select it. A second click, timed by the page, switches.
+    if(control?.kind==='switch'&&control.item){pick(control.item);return result({type:'pick',id:control.item});}
     // The wheel over the status card scrolls its brief, the rows above it stay.
     const card=ctx.frame?.statusCard;
     if(input.button!=='left'&&card&&input.y>=card.y&&input.y<card.y+card.height) {
@@ -105,19 +114,24 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     }
     {
       const pane=ctx.frame?.panes.find(p=>input.x>=p.x&&input.x<p.x+p.width&&input.y>=p.y&&input.y<p.y+p.height);
-      if(!pane) return result();
+      if(!pane) {
+        // The frame's side, or the gutter left of a pane: keys stay here.
+        const panes=ctx.frame?.panes??[];
+        if(input.button==='left'&&panes.some(p=>input.x<p.x&&input.y>=p.y&&input.y<p.y+p.height)) next.keys=true;
+        return result();
+      }
       next.focus=pane.id;
       if(input.button==='left') {
         {
           const row=monitorRowAt(pane,input.x,input.y);
           const id=row?.item;
-          if(!id)return result();
+          if(!id){next.keys=true;return result();}
           if(pane.id==='agents') {
             if(!listedAgents(ctx.tree.nodes,next,ctx.nowMs??Date.now()).some(row=>row.node.id===id))return result();
-            pick(id);
-            // A card is a place to read: a click selects it, `o` switches.
-            // A tree row is a list to pick from: a click switches.
-            return next.style==='rich'?result():result({type:'switch',id});
+            // A rich card only selects. A compact row opens the Inspector and arms a second click, which switches.
+            if(next.style==='rich'){pick(id);return result();}
+            inspect(id);
+            return result({type:'pick',id});
           }
           if(pane.id==='changes') {pointChanges(next,id);if(id===UNTRACKED_ROW)next.untrackedOpen=!next.untrackedOpen;}
           // The timeline's last row: twenty more from before its window.
@@ -134,16 +148,14 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   if(key==='settings')return result({type:'settings'});
   if(key==='brief-toggle')return result({type:'brief-toggle'});
   // `r` is Reset on the settings page; here it changes how much the status card shows.
-  if(key==='reset'){next.statusLevel=nextLevel(next);next.statusScroll=0;return result({type:'status-level'});}
+  if(key==='reset'){cycleStatus(next,ctx);return result({type:'status-level'});}
   if(key==='main')return result({type:'switch',id:ctx.tree.rootId});
   if(key==='open-session')return next.focus==='agents'&&next.tree.selectedId?result({type:'switch',id:next.tree.selectedId}):result();
-  // A subtask selected from its lead's card opens or closes that card.
-  if(key==='expand'){if(next.style==='rich'&&next.tree.selectedId){next=toggleCard(next,directions(ctx.tree).family.get(next.tree.selectedId)??next.tree.selectedId);next.focus='agents';next.revealed=null;}}
-  else if(key==='show-all')next.tree.showAll=!next.tree.showAll;
+  if(key==='show-all')next.tree.showAll=!next.tree.showAll;
   else if(key==='help'){next.help=true;next.helpScroll=0;}
   else if(key==='pane-close'){if(!next.tabbed&&next.modes[next.focus]!=='closed')next=closePane(next,next.focus);}
   // A pane's number, as its button: open it, or close it.
-  else if(MONITOR_PANES.includes(key as MonitorPane))next=clickTab(next,key as MonitorPane);
+  else if(MONITOR_PANES.includes(key as MonitorPane))next=ctx.navigationOverlay ? openPane({...next,zoom:false},key as MonitorPane) : clickTab(next,key as MonitorPane);
   else if(key==='tab'||key==='shift-tab') {
     const visible=MONITOR_PANES.filter(id=>next.tabbed||next.modes[id]!=='closed');
     if(visible.length)next.focus=visible[(visible.indexOf(next.focus)+(key==='tab'?1:visible.length-1))%visible.length];
@@ -164,6 +176,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(from==='changes'&&next.preview==='file'&&!next.tabbed)next.zoom=true;
   } else if(key==='zoom'){if(!next.tabbed)next.zoom=!next.zoom;}
   else if(key==='escape') {
+    if(next.keys){next.keys=false;return result();}
     if(next.zoom&&!next.tabbed)next.zoom=false;
     else if(next.focus==='details'){
       // Back to what was inspected; the tabs layout closes nothing on the way.

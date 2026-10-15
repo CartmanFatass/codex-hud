@@ -172,7 +172,7 @@ When something needs you, it takes the front of the line:
 |-------|-------|
 | `!` | Something the HUD actually observed went wrong: a tool that reported failure, an agent, subtask or guardian review that ended in error (the failures as one phrase, `1 tool · 1 agent failed`), a usage window that reported itself full with no credits behind it |
 | `▸ Edit: src/types.ts · 1m20s` | What this turn is doing: the running tool, what it is working on, and how long the turn has taken. A narrow pane keeps the mark and the elapsed time, then the mark alone |
-| `☀● Astra` | Model family and reasoning effort: `○` low, `◐` medium, `◕` high, `●` xhigh, `◆` max, `✦` ultra |
+| `☀● 5.6astra` | Model version, family and effort. Text mode spells `5.6astra·high`; glyphs stay `☀●`. The `?` legend keeps the family name (`☀ Astra`). Effort: `○` low, `◐` medium, `◕` high, `●` xhigh, `◆` max, `✦` ultra |
 | `codex-hud git:(main * ↑2)` | Project, branch, uncommitted changes, ahead/behind. Started in a folder that holds the repository rather than inside it, the bar names the repository the session works in: `shenlun › Learn-to-Write git:(main *)` |
 | `Agents 1 run · 1 ok · 1 fail` | The agents the main session started, by outcome, as the panel's title counts them (one runs while a subtask of it does); a failed subtask or review is an alert. Finished and failed are separate numbers, and an agent with no observed state is counted as `?`, never as running |
 | `Ctx 42% (114.2K/272K)` | How full the context window is, to an eighth of a column. `↻2` counts compactions |
@@ -217,7 +217,7 @@ CODEX_HUD_DENSITY=focus codex
 
 **The panel takes no keys of its own.** Every panel command is the **prefix key, `Ctrl+]`, then one key**: `Ctrl+]` `,` opens settings, `Ctrl+]` `?` the help, `Ctrl+]` `b` pauses the brief (the full list is in [the reference](./docs/reference.md#keys), and the help's Shortcuts section). The prefix works wherever the cursor is, in Codex's pane or in the panel; `Ctrl+]` `j` `j` `j` moves three rows, since the moves repeat for half a second without the prefix. A command that needs the panel opens it first. Anything typed without the prefix goes to Codex: with the cursor in the panel (after `Shift+F12`, or a click), keys and pastes are passed to Codex's pane exactly as typed, a paste stays one bracketed paste, and the cursor moves back to Codex with them. The settings page and the help are the exception: while one is open it takes the keys it needs (arrows, Enter, `Esc`), until `Esc` or its `[Back]` button closes it. The mouse works as before.
 
-`Ctrl+]` twice sends `Ctrl+]` itself to the pane with the cursor. Codex 0.160 binds `Ctrl+]` to *Skip Question*; that is `Ctrl+]` `Ctrl+]` now. To keep `Ctrl+]` for Codex, choose `Ctrl+\` in Settings → Panel → Prefix key (no Codex 0.160 binding uses it; `Ctrl+G`, its external editor, and `Alt+]`, which a terminal sends as the start of an escape sequence, are not offered). The prefix is a key table in the HUD's own tmux session: the server's root and `Ctrl+B` tables are untouched. A changed prefix is installed at once for the panel that saved it; a session started before this version keeps its old keys until it is launched again.
+`Ctrl+]` twice sends `Ctrl+]` itself to the pane with the cursor. Codex 0.160 binds `Ctrl+]` to *Skip Question*; that is `Ctrl+]` `Ctrl+]` now. To keep `Ctrl+]` for Codex, choose `Ctrl+\` in Settings → Input → Prefix key (no Codex 0.160 binding uses it; `Ctrl+G`, its external editor, and `Alt+]`, which a terminal sends as the start of an escape sequence, are not offered). The prefix is a key table in the HUD's own tmux session: the server's root and `Ctrl+B` tables are untouched. A changed prefix is installed at once for the panel that saved it; a session started before this version keeps its old keys until it is launched again.
 
 Agents opens by default; the Timeline, Changes and the Inspector open on demand. The focused heading and selected row are highlighted; status colors are concentrated on the icons:
 
@@ -233,9 +233,13 @@ Agents opens by default; the Timeline, Changes and the Inspector open on demand.
 - **stacked** (the default): every open pane at once, as above.
 - **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+]` `1`–`4` does, and `Ctrl+]` `Tab` shows the next. The tab names the pane, so its title keeps only its counts and where its rows are. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
 
-**Two layouts** (Settings → Panel → Layout): **rich**, the default, gives each agent the main session started a card while it or one of its subtasks is at work, while its newest note asks for a look, or when you open it, and otherwise a row with the model's newest note dim under it, its subtasks, at any depth, on its card; **compact** is the tree, one row per agent and subtask, with the brief, the recap and the agent log under it. Both count alike, as the status card, the bar and `codex-hud --json` do: the agents the main session started, their subtasks and the guardian reviews, each apart.
+**Two layouts** (Settings → Panel → Layout): **rich**, the default, gives every visible agent the main session started the same configurable card, active or idle. There is no expand/collapse: Settings → Cards controls each field independently, including the latest AI summary and child-agent one-sentence summaries. Child scope defaults to live and important tasks; names and status always remain. Child role counts independently hides the footer counts without hiding child rows or summaries. Click selects, Enter or Space opens the Inspector. **compact** is the tree, one row per agent and subtask, with the brief, the recap and the agent log under it. Both count alike, as the status card, the bar and `codex-hud --json` do: the agents the main session started, their subtasks and the guardian reviews, each apart.
 
-**Look** (Settings → Panel → Look, or `CODEX_HUD_LOOK`) draws the bar and the panes' titles in one of five ways: tab (the default), band, tile, frame and pill.
+**Card presets** (Settings → Cards) offer `minimal` (task label and summary), `progress` (adds the current action, child agents and their sentences), and `monitor` (adds relations, role/review counts, model, clock, rate and context). Individual switches stay editable; a non-matching combination reads `custom`. The preset is derived, not saved as a separate `cardPreset` field, and changes only thirteen content booleans—not child scope, corners, model permissions or backend/API/call-cap settings. Name and status always remain. See [Card settings](./docs/reference.md#card-settings).
+
+Cards keep progress status brief (queued, writing, failed or capped). The Inspector shows the newest model note and the reason generation is unavailable or waiting, with explicit Coverage/Generated timestamps only when known; old notes say Recorded instead. Stored model notes remain visible when models are off or paused; observed logs keep their own switch.
+
+**Look** (Settings → Display → Look, or `CODEX_HUD_LOOK`) draws the bar and the panes' titles in one of five ways: tab (the default), band, tile, frame and pill.
 
 <img src="./docs/fig/looks.png" width="414" alt="The five looks: tab, band, tile, frame and pill">
 
@@ -272,7 +276,9 @@ What `codex-hud --json` prints is described under [Machine-readable state](./doc
 
 ## Configuration
 
-Most preferences are on the panel's settings page (`Ctrl+]` `,`) and are saved to `$CODEX_HOME/hud-settings.json`; environment variables such as `CODEX_HUD_DENSITY`, `CODEX_HUD_THEME` and `CODEX_HUD_LOOK` set the defaults that saved preferences then override. Every variable, the notifications and what the HUD reads from `config.toml` are in [the reference](./docs/reference.md#configuration).
+Most preferences are on the main Settings navigation tab (also `Ctrl+]` `,`) and are saved to `$CODEX_HOME/hud-settings.json`; environment variables such as `CODEX_HUD_DENSITY`, `CODEX_HUD_THEME` and `CODEX_HUD_LOOK` set the defaults that saved preferences then override. Every variable, the notifications and what the HUD reads from `config.toml` are in [the reference](./docs/reference.md#configuration).
+
+Leaving a changed settings draft via Back/Esc, navigation or a leaving prefix command asks **Save and leave / Discard changes / Continue editing** (the default). Clicking the active Settings tab keeps the draft; a failed save keeps the draft and confirmation for retry, while a clean draft leaves immediately. This does not intercept F12 pane replacement or process termination. **Reset group** (`r` in settings) resets only the current section; **Reset all** resets known page preferences, not connection secrets or the whole file. LLM/all resets disable generation and pause it, preserving the backend, API credentials/base, model tiers/override/reasoning, hourly cap and picture assets. Resets prepare a draft for Save; see [Settings](./docs/reference.md#settings).
 
 ## System Support
 
@@ -292,6 +298,8 @@ npm install && npm run build   # Build
 npm run dev                    # Watch mode
 node dist/index.js             # Run HUD directly
 npm test                       # Unit tests: parser replay, width safety, render cost
+npm run test:visual            # Verify reviewed terminal-cell baselines
+npm run test:visual:update     # Explicit local update after review (refused in CI)
 npm run test:integration       # Shell suites: wrapper, tmux toggling, installer
 ```
 
@@ -301,6 +309,8 @@ How the code fits together (processes, collection, rendering, the rules a change
 `npm test` compiles with `tsconfig.test.json` and runs `tests/unit` against the
 recorded rollouts in `tests/fixtures/rollouts`. `docs/BASELINE.md` records the
 layout and render-cost baseline those tests defend.
+
+Visual tests use fixed-time, synthetic **terminal-cell text**, not pixel/font screenshots or live session data. They cover EN/ZH, all five looks, widths 32/40/48/56/80 and the three card presets, plus active Settings, saved-width reflow, leave confirmations/save errors and Inspector summary status/timestamps. Baselines retain trailing cells and check exact display widths. Verify with `npm run test:visual`; regenerate only intentionally with `npm run test:visual:update`, inspect the baseline diff, and commit the reviewed change. Updates are refused whenever `CI` is set (even `CI=false`); normal tests verify rather than rewrite baselines.
 
 On Windows PowerShell, use `npm.cmd run build` if `npm.ps1` is blocked by ExecutionPolicy.
 

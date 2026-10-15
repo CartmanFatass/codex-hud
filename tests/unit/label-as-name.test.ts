@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { initialMonitorState, renderMonitor, handleMonitorInput, type MonitorState } from '../../src/render/monitor.js';
 import { agentTitle, shownName } from '../../src/render/agent-title.js';
 import { uniquePickerLabel } from '../../src/collectors/subagent-tree.js';
-import { SETTING_ROWS } from '../../src/render/settings-page.js';
+import { SETTING_ROWS, rowValue, withRowValue } from '../../src/render/settings-page.js';
 import { defaultSettings } from '../../src/settings.js';
 import { setLanguage, t } from '../../src/render/i18n.js';
 import { stripAnsi } from '../../src/render/colors.js';
@@ -54,15 +54,24 @@ const state = (labelAsName: boolean, extra: Partial<MonitorState> = {}): Monitor
 const draw = (s: MonitorState, extra = {}) =>
   renderMonitor({ tree: tree(nodes), state: s, width: 56, height: 44, nowMs: now, ...extra }).lines.map(stripAnsi);
 
-test('label as name is a setting under Agents, on by default, and labels are on by default too', () => {
-  const row = SETTING_ROWS.find((entry) => entry.key === 'labelAsName')!;
-  assert.equal(row.group, 'Agents');
-  assert.equal(row.label, 'Label as name');
+test('agent names is one row among the model features, over labels and label as name, both on by default', () => {
+  const row = SETTING_ROWS.find((entry) => entry.key === 'agentLabels')!;
+  assert.equal(row.group, 'LLM');
+  assert.equal(row.label, 'Agent names');
+  assert.ok(!SETTING_ROWS.some((entry) => entry.key === 'labelAsName'), 'no row of its own');
   assert.equal(defaultSettings().labelAsName, true);
   assert.equal(defaultSettings().agentLabels, true);
+  assert.equal(rowValue(row, defaultSettings()), 'name');
+  assert.equal(rowValue(row, { ...defaultSettings(), labelAsName: false }), 'line');
+  assert.equal(rowValue(row, { ...defaultSettings(), agentLabels: false }), 'off');
+  const off = withRowValue(defaultSettings(), row, 'off');
+  assert.deepEqual([off.agentLabels, off.labelAsName], [false, true], 'off keeps where a label would go');
+  const line = withRowValue(off, row, 'line');
+  assert.deepEqual([line.agentLabels, line.labelAsName], [true, false]);
   const previous = setLanguage('zh');
   try {
-    assert.equal(t('Label as name'), '标签替换名字');
+    assert.equal(t('Agent names'), 'Agent 名称');
+    assert.equal(t('under name'), '写在名字下');
   } finally {
     setLanguage(previous);
   }
@@ -95,7 +104,7 @@ test("cards and rows show the label in the name's place; closed, no task line un
     on.join('\n')
   );
   assert.ok(
-    on.some((line) => /^[› ]✓ 会话重启恢复 /.test(line)),
+    on.some((line) => /^[┌›] ✓ 会话重启恢复 /.test(line)),
     'a finished row too'
   );
   assert.ok(
@@ -114,7 +123,7 @@ test("cards and rows show the label in the name's place; closed, no task line un
 });
 
 test('an opened card and the Inspector keep the name Codex prints', () => {
-  const opened = draw(state(true, { cards: new Set([labelled.id]) }));
+  const opened = draw(state(true, {cardVisibility:{cardOriginalName:true}}));
   assert.ok(
     opened.some((line) => line.trimEnd() === '│ name cache_cleanup_reviewer'),
     opened.join('\n')
@@ -161,7 +170,7 @@ test('switching goes by the name the picker prints, never by the label', () => {
   const agents = tree(nodes);
   assert.equal(uniquePickerLabel(agents, labelled.id), 'cache_cleanup_reviewer');
   assert.ok(!(uniquePickerLabel(agents, labelled.id) ?? '').includes('决策'));
-  // A click on the card's name switches to that agent by its id.
+  // A click on the card's name selects that agent by its id. A second click switches.
   const s = state(true);
   const frame = renderMonitor({ tree: agents, state: s, width: 56, height: 44, nowMs: now });
   const control = frame.controls.find((c) => c.kind === 'switch' && c.item === labelled.id)!;
@@ -170,7 +179,9 @@ test('switching goes by the name the picker prints, never by the label', () => {
     { type: 'mouse', button: 'left', x: control.x, y: control.y },
     { tree: agents, frame, nowMs: now }
   );
-  assert.deepEqual(out.action, { type: 'switch', id: labelled.id });
+  assert.deepEqual(out.action, { type: 'pick', id: labelled.id });
+  assert.equal(out.state.tree.selectedId, labelled.id);
+  assert.equal(out.state.modes.details, 'closed');
   const key = handleMonitorInput(
     frame.state,
     { type: 'key', key: 'open-session' },
@@ -185,5 +196,18 @@ test("a finished row's brief line, under its label", () => {
   ]);
   const lines = draw(state(true), { agentLog: log });
   const at = lines.findIndex((line) => line.includes('会话重启恢复'));
-  assert.equal(lines[at + 1].trimEnd(), '   socket 检查改为 stat()');
+  assert.equal(lines[at + 1].trimEnd(), '│ socket 检查改为 stat()');
 });
+
+ test('card label visibility is local: Codex names for L1 and child, smart names remain in other views', () => {
+  const child = agent(8,'original_child',{depth:2,label:'smart_child',taskKind:'review'});
+  const lead = {...labelled,children:[child]};
+  const agents = tree([lead]);
+  const frame = renderMonitor({tree:agents,state:state(true,{cardVisibility:{cardLabel:false,cardOriginalName:true}}),width:56,height:44,nowMs:now});
+  const text = frame.lines.map(stripAnsi).join('\n');
+  assert.ok(text.includes('cache_cleanup_reviewer') && text.includes('original_child'));
+  assert.ok(!/缓存清理复核|smart_child|name cache_cleanup/.test(text),text);
+  assert.equal(agentTitle(lead,true).name,'缓存清理复核');
+  const compact = renderMonitor({tree:agents,state:{...frame.state,style:'compact'},width:56,height:44,nowMs:now}).lines.map(stripAnsi).join('\n');
+  assert.ok(compact.includes('缓存清理复核'));
+ });

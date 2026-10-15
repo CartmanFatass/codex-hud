@@ -220,7 +220,7 @@ test('notes come with the brief alone: an agent the reply leaves out keeps its n
   const log = new AgentLog();
   const briefer = new Briefer(() => {}, { model, log });
   const t = session();
-  briefer.update(t, 'omp', 300_000, 'en', NOW);
+  briefer.update(t, 'api', 300_000, 'en', NOW);
   await settle();
   assert.equal(asked.length, 1);
   assert.equal(asked[0].feature, 'brief');
@@ -231,11 +231,11 @@ test('notes come with the brief alone: an agent the reply leaves out keeps its n
 
   const lead = t.nodes[1];
   const talking = tree(t.nodes.map(n => n === lead ? { ...lead, lastReport: { text: 'still going', kind: 'update', at: new Date(NOW + 60_000) } } : n));
-  briefer.update(talking, 'omp', 300_000, 'en', NOW + 300_000);
+  briefer.update(talking, 'api', 300_000, 'en', NOW + 300_000);
   assert.equal(asked.length, 1, 'commentary alone waits for the floor');
   const ended = tree(t.nodes.map(n => n === lead ? { ...lead, stages: [...lead.stages!.slice(0, 2), { ...lead.stages![2], status: 'done' as const,
     endedAt: new Date(NOW + 200_000), result: 'Streaming wired.' }] } : n));
-  briefer.update(ended, 'omp', 300_000, 'en', NOW + 300_000);
+  briefer.update(ended, 'api', 300_000, 'en', NOW + 300_000);
   await settle();
   assert.equal(asked.length, 2, 'a stage that ended: at once, the interval past');
   assert.match(asked[1].prompt, /<news>\nsince the previous brief \(5m ago\):\n- 2m ago: parser_lead finished stage 3\n<\/news>/);
@@ -245,9 +245,9 @@ test('notes come with the brief alone: an agent the reply leaves out keeps its n
   assert.equal(briefer.current().overall, 'Streaming is in.');
 
   const quiet = tree(ended.nodes.map(n => n.id === 'lead' ? { ...n, lastReport: { text: 'tidying', kind: 'update' as const, at: new Date(NOW + 400_000) } } : n));
-  briefer.update(quiet, 'omp', 300_000, 'en', NOW + 300_000 + 15 * 60_000 - 1);
+  briefer.update(quiet, 'api', 300_000, 'en', NOW + 300_000 + 15 * 60_000 - 1);
   assert.equal(asked.length, 2);
-  briefer.update(quiet, 'omp', 300_000, 'en', NOW + 300_000 + 15 * 60_000);
+  briefer.update(quiet, 'api', 300_000, 'en', NOW + 300_000 + 15 * 60_000);
   await settle();
   assert.equal(asked.length, 3, 'the floor: fifteen minutes by default');
 });
@@ -256,7 +256,7 @@ test('a reply that is not the JSON asked for is asked for once more; twice wrong
   const t = session();
   const { model, asked } = fakeModel(['Sure! Here is the brief: everything is fine.', '{"overall":"Fixed.","agents":[]}']);
   const briefer = new Briefer(() => {}, { model });
-  briefer.update(t, 'omp', 300_000, 'en', NOW);
+  briefer.update(t, 'api', 300_000, 'en', NOW);
   await settle(); await settle();
   assert.equal(asked.length, 2);
   assert.equal(asked[1].system, asked[0].system, 'the same instructions');
@@ -266,10 +266,10 @@ test('a reply that is not the JSON asked for is asked for once more; twice wrong
 
   const wrong = fakeModel(['{"overall":"First."}'.replace('}', ',"agents":[]}'), 'still prose', 'prose again']);
   const kept = new Briefer(() => {}, { model: wrong.model });
-  kept.update(t, 'omp', 300_000, 'en', NOW);
+  kept.update(t, 'api', 300_000, 'en', NOW);
   await settle();
   assert.equal(kept.current().overall, 'First.');
-  kept.update(tree(t.nodes.slice(1)), 'omp', 300_000, 'en', NOW + 300_000);
+  kept.update(tree(t.nodes.slice(1)), 'api', 300_000, 'en', NOW + 300_000);
   await settle(); await settle();
   assert.equal(wrong.asked.length, 3);
   assert.equal(kept.current().overall, 'First.', 'the last brief stays');
@@ -340,10 +340,10 @@ test('the dry run prints what would be sent and writes nothing', async (t: TestC
     + line({ timestamp: near(4), type: 'response_item', payload: { type: 'message', role: 'assistant', phase: 'commentary', content: [{ type: 'output_text', text: 'Reading the parser first.' }] } }));
   const hud = path.join(home, 'hud');
   const before = fs.readdirSync(home, { recursive: true }).sort();
-  const settings = { ...defaultSettings(), briefing: 'omp' as const, language: 'en' as const };
+  const settings = { ...defaultSettings(), briefing: 'api' as const, language: 'en' as const };
   const result = await dryRunText({ cwd, settings, codexHome: home, hudHome: hud });
   assert.ok('text' in result, 'error' in result ? result.error : '');
-  assert.match(result.text, /^# codex-hud brief --dry-run: what the panel would send now\. Nothing was sent\.\n# session 00000000-0000-0000-0000-00000000aaaa, scope agents, language en, backend omp\n/);
+  assert.match(result.text, /^# codex-hud brief --dry-run: what the panel would send now\. Nothing was sent\.\n# session 00000000-0000-0000-0000-00000000aaaa, scope agents, language en, backend api\n/);
   assert.match(result.text, /=== instructions ===\nYou write the status brief/);
   assert.match(result.text, /=== material ===\n<directions>\n- mapper \[team-scout\]: stage 1, running/);
   assert.match(result.text, /took on \(its own words, its first update of the stage\): Reading the parser first\./);

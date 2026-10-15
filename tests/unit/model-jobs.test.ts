@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  ModelJobs, NO_JOBS, headTail, tail, finalAnswer, errorMaterial, digestPrompt, parseDigest, digestText, labelKey, labelsPrompt,
+  ModelJobs, NO_JOBS, headTail, tail, finalAnswer, errorMaterial, digestPrompt, parseDigest, digestText, labelKey, labelSource, labelsPrompt,
   parseLabels, labelsSystemPrompt, titleFromGoal, oneLine, changeSummaryInput, changeFingerprint, twoLines, isVerdict, approvalSystemPrompt,
   DIGEST_INPUT_CHARS, CHANGE_HUNK_CHARS, RETRY_MS, type JobSwitches, type JobsInput,
 } from '../../src/collectors/model-jobs.js';
@@ -240,6 +240,56 @@ test('labels are batched, kept per task text, survive a new panel, and never sta
   assert.deepEqual([before.nodes[0].label, before.nodes[0].taskKind], ['Old audit label', undefined]);
 });
 
+test('a label from the text written before the agent was created wins; the brief fills in until then; a sealed task asks nothing', async () => {
+  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"labels":[{"kind":"review","name":"Code path audit"}]}' }));
+  const log = new AgentLog();
+  const jobs = new ModelJobs({ model, log });
+  // Codex 0.162 sends a task to an agent encrypted: the tree has no task text for it.
+  const hidden = node('h', 'worker_one', 'running');
+  const plain = node('p', 'audit_code_paths', 'running', { task: 'Audit the code paths' });
+  const agents = tree([hidden, plain]);
+  jobs.update(input(agents));
+  await settle();
+  assert.equal(asked.length, 1);
+  assert.doesNotMatch(asked[0].prompt, /worker_one/, 'no task, nothing to label from');
+  log.add('h', [{ at: now, kind: 'note', text: 'Reading the cache module', lang: 'en', label: 'Cache audit', taskKind: 'research' }]);
+  log.add('p', [{ at: now, kind: 'note', text: '正在核对路径', lang: 'zh', label: '路径核对' }]);
+  jobs.apply(agents, all, 'en');
+  assert.deepEqual([hidden.label, hidden.taskKind], ['Cache audit', 'research'], 'the brief named it');
+  assert.equal(plain.label, 'Code path audit', 'a name in the other language is not shown: the task\'s is');
+  jobs.apply(agents, all, 'zh');
+  assert.deepEqual([hidden.label, plain.label, plain.taskKind], [undefined, '路径核对', undefined]);
+  log.add('p', [{ at: now + 1000, kind: 'note', text: 'Auditing the paths', lang: 'en', label: 'Path audit' }]);
+  jobs.apply(agents, all, 'en');
+  assert.equal(plain.label, 'Code path audit', 'the name from what it was given wins over the brief\'s current note');
+  jobs.apply(agents, { ...all, agentLabels: false }, 'en');
+  assert.deepEqual([hidden.label, plain.label], [undefined, undefined]);
+});
+
+test('a label is asked from the plaintext written before the spawn, not a sealed task, and it wins over the brief', async () => {
+  assert.match(labelsSystemPrompt('en'), /before that subagent was created/);
+  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"labels":[{"kind":"writing","name":"Session binding"}]}' }));
+  const log = new AgentLog();
+  const jobs = new ModelJobs({ model, log });
+  const sealed = node('s', 'sealed', 'running', { task: 'gAAAAAtoken' });
+  const charged = node('q', 'binder', 'running', {
+    task: 'gAAAAAtoken', charge: 'Bind the session before the first send', agentPath: '/root/binder', role: 'oracle',
+  });
+  const agents = tree([sealed, charged]);
+  assert.equal(labelSource(sealed), undefined);
+  assert.equal(labelSource(charged), '/root/binder oracle Bind the session before the first send');
+  jobs.update(input(agents));
+  await settle();
+  assert.equal(asked.length, 1);
+  assert.match(asked[0].prompt, /Bind the session before the first send/);
+  assert.doesNotMatch(asked[0].prompt, /gAAAAA/);
+  log.add('q', [{ at: now, kind: 'note', text: 'now', lang: 'en', label: 'Taking over', taskKind: 'other' }]);
+  jobs.apply(agents, all, 'en');
+  assert.equal(charged.label, 'Session binding');
+  assert.equal(charged.taskKind, 'writing');
+  assert.equal(sealed.label, undefined, 'a sealed task and no charge: nothing to name, and no brief either');
+});
+
 test('a failed request is not repeated at once, but is after a while', async () => {
   const { model, asked } = fakeModel(() => ({ ok: false, error: 'boom' }));
   const jobs = new ModelJobs({ model, log: new AgentLog() });
@@ -412,4 +462,45 @@ test('the bar shows the session title at its widest reading only, the id beside 
   assert.equal(stripAnsi(session?.variants.short ?? ''), 'root-ses');
   const plain = buildBarModules(makeHudData(), { density: 'full', nowMs: FIXED_NOW.getTime() }).find(module => module.id === 'session');
   assert.equal(stripAnsi(plain?.variants.full ?? ''), 'Session: root-ses');
+});
+
+test('late replies from a previous language cannot replace or consume a restarted approval job', async () => {
+  for (const oldResult of [{ok:true,text:'Old English description'}, {ok:false,error:'cancelled',cancelled:true}] as ModelResult[]) {
+    const pending: Array<(result: ModelResult) => void> = [];
+    const model = {submit() {
+      return {result:new Promise<ModelResult>(resolve=>{pending.push(resolve);}),cancel() {}};
+    }} as unknown as SmallModel;
+    const jobs = new ModelJobs({model,log:new AgentLog()});
+    const approval = {kind:'exec' as const,callId:'language-race',since:new Date(now),command:'printf synthetic',summary:'synthetic'};
+    const main = {pendingApproval:approval,toolActivity:{recentCalls:[]}} as unknown as RolloutParseResult;
+    const options = {main,switches:{...NO_JOBS,approvalDescription:true}};
+    jobs.update(input(tree([]),options));
+    jobs.update(input(tree([]),{...options,language:'zh'}));
+    pending[0](oldResult);
+    await settle();
+    assert.equal(jobs.approvalNote(approval),undefined,'the previous language never returns to the display');
+    pending[1]({ok:true,text:'输出合成文本'});
+    await settle();
+    assert.equal(jobs.approvalNote(approval),'输出合成文本','the new request still owns its completion');
+    jobs.stop();
+  }
+});
+
+test('a rollout read completed after a language restart cannot revive its obsolete digest', async () => {
+  const reads: Array<(text: string) => void> = [];
+  const log = new AgentLog();
+  const {model,asked} = fakeModel(()=>({ok:true,text:'{"conclusion":"当前结果"}'}));
+  const jobs = new ModelJobs({model,log,read:()=>new Promise<string>(resolve=>{reads.push(resolve);})});
+  const done = node('language-digest','worker','completed',{rolloutPath:'/synthetic/agent.jsonl',statusAt:new Date(now)});
+  const options = {switches:{...NO_JOBS,resultDigest:true}};
+  jobs.update(input(tree([done]),options));
+  jobs.update(input(tree([done]),{...options,language:'zh'}));
+  reads[0](answer('Obsolete answer',now));
+  await settle();
+  assert.equal(asked.length,0,'an obsolete disk read sends nothing');
+  reads[1](answer('当前答案',now));
+  await settle();
+  assert.deepEqual(log.entries(done.id).map(entry=>({kind:entry.kind,lang:entry.lang,text:entry.text})),
+    [{kind:'digest',lang:'zh',text:'当前结果'}]);
+  jobs.stop();
 });

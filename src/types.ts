@@ -447,6 +447,12 @@ export interface SubagentTreeNode {
   /** Messages from other agents over the whole session, by sender's task path. */
   peers?: Record<string, number>;
   task?: string;
+  /**
+   * Plaintext the parent wrote before this agent was created. The details
+   * page shows it whole. A card never prints it raw: a label may be named
+   * from it, and that short name is what the card shows.
+   */
+  charge?: string;
   statusAt?: Date;
   /** Local rollout for inspecting this agent; never displayed as its task. */
   rolloutPath?: string;

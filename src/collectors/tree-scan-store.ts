@@ -20,7 +20,7 @@ import { writePrivateFile } from './small-model.js';
  * agent-stages.ts `applyLedgerEntry`. A change to either bumps this, so
  * scans saved under the old reading are read again.
  */
-export const SCAN_VERSION = 1;
+export const SCAN_VERSION = 3;
 
 /** Only a scan this far into its file is worth keeping: a shorter one is read again in no time. */
 export const SAVE_MIN_BYTES = 256 * 1024;

@@ -82,8 +82,7 @@ bind_command 0 q quit
 bind_command 0 o switch
 bind_command 0 Enter inspect
 bind_command 0 v inspect
-bind_command 0 e open
-bind_command 0 Space open
+bind_command 0 Space inspect
 bind_command 0 g first
 bind_command 0 G last
 bind_command 0 h left

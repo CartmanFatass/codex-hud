@@ -1,6 +1,7 @@
 /** The Inspector: the selected agent in full, a worktree's details, or a changed file's diff. */
 import type { SubagentTreeNode } from '../types.js';
 import type { GitChanges } from '../collectors/git-changes.js';
+import { progressReason, type ProgressReason } from '../collectors/progress-summary.js';
 import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { isGuardian } from './panel-state.js';
@@ -22,8 +23,41 @@ function findNode(nodes: SubagentTreeNode[], id: string | null): SubagentTreeNod
   return undefined;
 }
 
+const PROGRESS_REASONS: Record<ProgressReason,string> = {
+  off:'model backend off', paused:'models paused', 'progress-disabled':'live progress disabled',
+  'summary-hidden':'summary hidden', 'not-live':'agent not live', 'no-evidence':'no public progress evidence',
+  cooldown:'refresh cooldown', retry:'retry wait', 'concurrency-cap':'progress concurrency cap', 'hourly-cap':'hourly model call cap',
+};
+function timestamp(at: number): string {
+  return Number.isFinite(at) && Math.abs(at) <= 8.64e15 ? new Date(at).toISOString() : t('unknown');
+}
+
 /** Lines of the latest update the Inspector shows before "▾ More". */
 const REPORT_LINES = 6;
+
+/** A dim rule naming one block of the details page, the same shape as a diff's section. */
+function sectionRule(title: string, width: number): string {
+  const label = ` ${title} `;
+  const rule = `──${label}${'─'.repeat(Math.max(0, width - 2 - visualLength(label)))}`;
+  return colors.dim(truncateAnsi(rule, width));
+}
+
+/**
+ * Prose under a section rule: two columns in, wrapped on that inner width,
+ * and cut to `limit` lines with an ellipsis when the reader has not asked
+ * for the rest.
+ */
+function proseLines(text: string, width: number, limit?: number): string[] {
+  const inner = Math.max(1, width - 2);
+  const lines = flowLines(text, inner);
+  const shown = limit === undefined ? lines : lines.slice(0, limit);
+  if (shown.length && shown.length < lines.length) {
+    let last = [...shown[shown.length - 1]];
+    while (last.length && visualLength(`${last.join('')} …`) > inner) last = last.slice(0, -1);
+    shown[shown.length - 1] = `${last.join('').trimEnd()} …`;
+  }
+  return shown.map(line => `  ${line}`);
+}
 
 /** The Inspector's rows: the agent, worktree or file it was opened on. */
 export function inspectorRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
@@ -51,9 +85,9 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
       const rows: MonitorRow[] = wrapped(shownName(node,state.labelAsName),width).map(text=>({text:theme.strong(own(text))}));
       if (labelled(node)) rows.push(...wrapped(state.labelAsName ? t('name {name}',{name:node.name}) : t('label {label}',{label:node.label!}),width)
         .map(text=>({text:colors.dim(text)})));
-      // The full task path locates a nested agent; a one-segment path says
-      // nothing the name did not.
-      if (node.agentPath && node.agentPath.split('/').filter(Boolean).length > 2)
+      // A path of two or more segments locates the agent (`/root/<task>`).
+      // One segment says nothing the name did not.
+      if (node.agentPath && node.agentPath.split('/').filter(Boolean).length > 1)
         rows.push(...wrapped(node.agentPath,width).map(text=>({text:colors.dim(text)})));
       if (token) rows.push({text:truncateAnsi(token,width)});
       const finished = node.status === 'completed' ? colors.dim(` · ${t('{age} ago',{age:age(finishedAt(node),now)})}`) : '';
@@ -63,28 +97,33 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
         `${colors.dim(t('Ctx'))} ${ctx.percent}% (${formatTokenCount(ctx.used)}/${formatTokenCount(ctx.total)})`,width)});
       const rate = agentRate(node,now);
       if (rate !== undefined) rows.push({text:truncateAnsi(`${colors.dim(t('Out'))} ${rateText(rate)}`,width)});
+      // Short facts sit with the heading. The long text is a section each,
+      // under a rule, so a charge, an update and the log do not run together.
+      const facts = [t('Turn age: {age}',{age:age(node.turnStartedAt,now)}),t('Last activity: {age}',{age:age(node.lastEventAt,now)})+(isQuiet(node,now) ? t(' (quiet)') : '')];
+      if (node.nickname && node.nickname !== node.name) facts.push(t('Nickname: {name}',{name:node.nickname}));
+      if (node.role) facts.push(t('Role: {role}',{role:node.role}));
+      if (state.expanded) facts.push(t('Turn start: {at}',{at:node.turnStartedAt && Number.isFinite(node.turnStartedAt.getTime()) ? node.turnStartedAt.toISOString() : t('unknown')}),`UUID: ${node.id}`);
+      rows.push(...facts.flatMap(line=>helpLines(monitorText(line),width).map(text=>({text}))));
+      const section = (title: string, body: string[]) => {
+        if (!body.length) return;
+        rows.push({text:''},{text:sectionRule(title,width)},...body.map(text=>({text})));
+      };
+      // The parent's own words from before this agent was created. A sealed
+      // payload is not shown; the card keeps only a short name made from this.
+      const given = node.charge?.replace(/\s+/g,' ').trim();
+      if (given && !given.includes('gAAAAA')) section(t('What it was given'), proseLines(monitorText(given), width));
       // A task the rollout keeps sealed: what the agent said it would do, in
       // its own words, as it opened its newest stage. The card leaves it here.
       const intent = node.task || isGuardian(node) ? undefined : newestIntent(node);
-      if (intent) {
-        rows.push({text:colors.dim(t('Took on'))});
-        rows.push(...flowLines(intent,width).map(line=>({text:line})));
-      }
+      if (intent) section(t('Took on'), proseLines(monitorText(intent), width));
       // What the agent last said about its work. It is the agent's own words,
       // not a checked result, so it is labelled as such and kept to a few
       // lines until asked for in full.
       const report = node.lastReport;
       if (report) {
         const prior = node.turnStartedAt && report.at < node.turnStartedAt;
-        rows.push({text:colors.dim(truncateAnsi(`${t(prior ? 'Previous turn' : 'Latest update')} · ${t('{age} ago',{age:age(report.at,now)})}`,width))});
-        const text = flowLines(monitorText(plainText(report.text).replace(/\s+/g,' ').trim()),width);
-        const shown = state.expanded ? text : text.slice(0,REPORT_LINES);
-        if (shown.length < text.length) {
-          let last = [...shown[shown.length-1]];
-          while (last.length && visualLength(`${last.join('')} …`) > width) last = last.slice(0,-1);
-          shown[shown.length-1] = `${last.join('').trimEnd()} …`;
-        }
-        rows.push(...shown.map(line=>({text:line})));
+        const title = `${t(prior ? 'Previous turn' : 'Latest update')} · ${t('{age} ago',{age:age(report.at,now)})}`;
+        section(title, proseLines(monitorText(plainText(report.text).replace(/\s+/g,' ').trim()), width, state.expanded ? undefined : REPORT_LINES));
       }
       // What a model read from the final answer and from the failure, marked as such.
       const log = input.agentLog?.get(node.id) ?? [];
@@ -92,30 +131,44 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
       const written = (kind: AgentLogKind, heading: string) => {
         const entry = latest(kind);
         if (!entry || (kind === 'digest' && node.status !== 'completed') || (kind === 'cause' && node.status !== 'error')) return;
-        rows.push({text:colors.dim(truncateAnsi(`~ ${t(heading)} · ${writtenAge(entry.at,now)}`,width))});
-        rows.push(...entry.text.split(' · ').flatMap(part=>flowLines(monitorText(part),width)).map(line=>({text:line})));
+        const parts = entry.text.split(' · ').map(part => part.trim()).filter(Boolean);
+        section(`~ ${t(heading)} · ${writtenAge(entry.at,now)}`, parts.flatMap(part => proseLines(monitorText(part), width)));
       };
+      const note = latest('note');
+      const request = input.progress?.get(node.id);
+      const gate = input.progressContext ? progressReason(node,input.progressContext) : undefined;
+      const reason = gate ?? request?.reason;
+      const progress = reason ? t(PROGRESS_REASONS[reason])
+        : request?.phase === 'queued' ? t('queued')
+        : request?.running ? t('writing')
+        : request?.error ? t('Progress summary failed')
+        : request?.phase === 'idle' ? t('up to date') : '';
+      const details: string[] = [];
+      if (note) {
+        details.push(...proseLines(monitorText(plainText(note.text).replace(/\s+/g,' ').trim()),width,state.expanded ? undefined : REPORT_LINES));
+        // Legacy and periodic notes don't establish a coverage boundary.
+        // Only explicit metadata may claim which public snapshot was covered.
+        details.push(...proseLines(t(note.coverageAt !== undefined ? 'Coverage: {at}' : 'Recorded: {at}',
+          {at:timestamp(note.coverageAt ?? note.at)}),width,2));
+        if (note.generatedAt !== undefined) details.push(...proseLines(t('Generated: {at}',{at:timestamp(note.generatedAt)}),width,2));
+      }
+      if (progress) details.push(...proseLines(t('Progress: {status}',{status:progress}),width,2));
+      if (!gate && request?.retryAt !== undefined && request.retryAt > now)
+        details.push(...proseLines(t('Retry: {age}',{age:age(new Date(now-(request.retryAt-now)),now)}),width,2));
+      section(`~ ${t('Model summary')}`,details);
       written('digest','Result digest');
       written('cause','Failure cause');
       // A guardian's task is Codex's review prompt, the same every time. The
       // cards leave the task here, so it is always shown.
-      if (node.task && !isGuardian(node)) {
-        rows.push({text:colors.dim(t('Task'))});
-        rows.push(...flowLines(monitorText(node.task.replace(/\s+/g,' ').trim()),width).map(line=>({text:line})));
-      }
+      const task = node.task?.replace(/\s+/g,' ').trim();
+      if (task && !task.includes('gAAAAA') && !isGuardian(node)) section(t('Task'), proseLines(monitorText(task), width));
       // The agent's whole log, newest first, less the update shown above. Started
       // and finished alone say no more than the status line and the turn's age.
-      const kept = log.filter(entry=>!(entry.kind === 'report' && report && entry.at === report.at.getTime()));
+      const kept = log.filter(entry=>entry !== note && !(entry.kind === 'report' && report && entry.at === report.at.getTime()));
       if (kept.some(entry=>entry.kind !== 'started' && entry.kind !== 'finished')) {
-        rows.push({text:colors.dim(t('Log'))});
-        for (const entry of [...kept].reverse()) rows.push(...logEntryLines(entry,width,now,0).map(text=>({text})));
+        rows.push({text:''},{text:sectionRule(t('Log'),width)});
+        for (const entry of [...kept].reverse()) rows.push(...logEntryLines(entry,width,now,2).map(text=>({text})));
       }
-      lines = [t('Turn age: {age}',{age:age(node.turnStartedAt,now)}),t('Last activity: {age}',{age:age(node.lastEventAt,now)})+(isQuiet(node,now) ? t(' (quiet)') : '')];
-      // Codex's transcript still calls the agent by its nickname.
-      if (node.nickname && node.nickname !== node.name) lines.push(t('Nickname: {name}',{name:node.nickname}));
-      if (node.role) lines.push(t('Role: {role}',{role:node.role}));
-      if (state.expanded) lines.push(t('Turn start: {at}',{at:node.turnStartedAt && Number.isFinite(node.turnStartedAt.getTime()) ? node.turnStartedAt.toISOString() : t('unknown')}),`UUID: ${node.id}`);
-      rows.push(...lines.flatMap(line=>helpLines(monitorText(line),width).map(text=>({text}))));
       rows.push({text:colors.dim(truncateAnsi(t(state.expanded?'▴ Less':'▾ More'),width))});
       return rows;
     }

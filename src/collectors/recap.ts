@@ -237,6 +237,8 @@ export interface SessionTitle {
   /** Taken from the recap's goal, or written from the first prompt. */
   source: 'recap' | 'prompt';
   at: number;
+  /** The panel's language when it was written; absent in titles from before it was kept. */
+  language?: Language;
 }
 
 export function parseStoredTitle(value: unknown): SessionTitle | null {
@@ -244,7 +246,8 @@ export function parseStoredTitle(value: unknown): SessionTitle | null {
   const raw = value as Record<string, unknown>;
   if (typeof raw.sessionId !== 'string' || typeof raw.title !== 'string' || !raw.title.trim() || typeof raw.at !== 'number') return null;
   if (raw.source !== 'recap' && raw.source !== 'prompt') return null;
-  return { sessionId: raw.sessionId, title: raw.title.replace(/\s+/g, ' ').trim().slice(0, 80), source: raw.source, at: raw.at };
+  return { sessionId: raw.sessionId, title: raw.title.replace(/\s+/g, ' ').trim().slice(0, 80), source: raw.source, at: raw.at,
+    ...(raw.language === 'en' || raw.language === 'zh' ? { language: raw.language } : {}) };
 }
 
 function sessionFile(dir: string, sessionId: string, suffix: string): string | null {

@@ -28,8 +28,8 @@
  * click on the band steps the level, as `r` does.
  *
  * The card takes at most a third of the panel and leaves the agents ten rows
- * when the panel is tall enough, and rows the panes leave unused besides,
- * where its brief can say more in them; a brief taller than its room keeps
+ * when the panel is tall enough. Rich reserves the same recap budget whether
+ * cards are closed or open; a brief taller than its room keeps
  * its most wanted fields in view and scrolls the rest, with a line saying
  * what is out of view. Pure.
  */
@@ -55,16 +55,21 @@ const BAND_BAR = 8;
  */
 const ROOMY: readonly BriefShape[] = [{ fieldLines: 4, doneShown: Infinity }, { fieldLines: 2, doneShown: Infinity }];
 
-/** The level as drawn: absent is `full`, and compact has no `full` of its own. */
-export function shownLevel(state: MonitorState): StatusLevel {
+/**
+ * The level as drawn: absent is `full`, and compact has no `full` of its own.
+ * Height limits the space, not the reader's chosen level.
+ */
+export function shownLevel(state: MonitorState, height = Number.POSITIVE_INFINITY): StatusLevel {
   const level = state.statusLevel ?? 'full';
-  return level === 'full' && state.style !== 'rich' ? 'status' : level;
+  if (level === 'full' && state.style !== 'rich') return 'status';
+  return level;
 }
 
 /** The next level `r` or a click on the card's top edge gives: min → status → full, compact skipping full. */
-export function nextLevel(state: MonitorState): StatusLevel {
+export function nextLevel(state: MonitorState, height = Number.POSITIVE_INFINITY): StatusLevel {
   const levels = state.style === 'rich' ? LEVELS : LEVELS.slice(0, 2);
-  return levels[(levels.indexOf(shownLevel(state)) + 1) % levels.length];
+  const shown = shownLevel(state, height);
+  return levels[(levels.indexOf(shown) + 1) % levels.length];
 }
 
 /** Where the card sits, for the wheel: the whole card scrolls its brief. */
@@ -155,7 +160,10 @@ function briefRows(fields: BriefField[], room: number): string[] {
  * as its brief fills them.
  */
 export function planFoot(input: MonitorData, state: MonitorState, width: number, height: number, now: number, notices: number, unused = 0): FootPlan {
-  const level = shownLevel(state);
+  // The narrow preset has no room for the card's rows. The saved level is left
+  // as it is, so widening the pane brings it back.
+  let level = shownLevel(state, height);
+  if (width <= 32) level = 'min';
   // In the frame look the card closes the panel's frame: its band is an edge
   // of it, its rows sit between its sides and its corner row is its foot.
   // With no card the frame closes on a row of its own.
@@ -195,7 +203,7 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
 
   // The bar's rows: two in the frame look.
   const fair = Math.min(Math.floor(height / 3), height - (framed ? 2 : 1) - notices - MIN_VIEW);
-  const cap = Math.max(fair, unused);
+  const cap = state.style === 'rich' ? fair : Math.max(fair, unused);
   if (level === 'min' || !card || cap < 2) {
     if (height <= 1) return { rows: 0, draw() {} };
     // One line: the band, and the quota's reading where the corner row would have had it.

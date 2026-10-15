@@ -23,18 +23,26 @@ const session = (attention = false): MonitorData['session'] => () =>
   attention ? { text: '! waiting for approval 2m', attention: true } : { text: '▸ 33m51s', attention: false };
 const rich = (extra: Partial<MonitorState> = {}): MonitorState => ({ ...initialMonitorState(), style: 'rich', ...extra });
 const plain = (frame: MonitorFrame) => frame.lines.map(stripAnsi);
-const draw = (state: MonitorState, extra: Partial<MonitorData> = {}, width = 32, height = 40) =>
+const draw = (state: MonitorState, extra: Partial<MonitorData> = {}, width = 48, height = 40) =>
   renderMonitor({ tree: tree(3), state, width, height, nowMs: now, status, session: session(), brief: { recap, structured: true, text: '{}', at: now }, ...extra });
 /** The card's lines, by the frame's own record of where it sits. */
 const card = (frame: MonitorFrame) => plain(frame).slice(frame.statusCard!.y, frame.statusCard!.y + frame.statusCard!.height);
 const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
   const previous = displayConfig();
-  setDisplayConfig({ glyphs });
+  // Words in place of marks are the icons' setting; the model badge is the glyphs'. Text here means both.
+  setDisplayConfig(glyphs === 'text' ? { glyphs, icons: 'text' } : { glyphs });
   try { return run(); } finally { setDisplayConfig(previous); }
 };
 
-test('rich: min is the band alone, status the band and the corner round the alerts, full the brief between them too, at 24, 32, 40, 56 and 90 columns', () => {
-  for (const width of [24, 32, 40, 56, 90]) {
+test('rich: min is the band alone, status the band and the corner round the alerts, full the brief between them too, at 40, 56 and 90 columns; 32 and under draw min', () => {
+  for (const width of [24, 32]) {
+    for (const statusLevel of ['min', 'status', 'full'] as const) {
+      const frame = draw(rich({ statusLevel }), {}, width);
+      assert.equal(card(frame).length, 1, `${width} ${statusLevel} draws the band alone`);
+      assert.equal(frame.state.statusLevel, statusLevel, 'drawing does not rewrite the saved level');
+    }
+  }
+  for (const width of [40, 56, 90]) {
     const min = draw(rich({ statusLevel: 'min' }), {}, width);
     const status = draw(rich({ statusLevel: 'status' }), {}, width);
     const full = draw(rich({ statusLevel: 'full' }), {}, width);
@@ -84,11 +92,8 @@ test('the brief\'s fields sit inline behind icons, or behind words padded to one
   assert.ok(cut.some(line => /word.* …$/.test(line.trimEnd())));
   const done = cut.findIndex(line => line.startsWith('│ ✓'));
   assert.deepEqual(cut.slice(done, done + 2).map(line => line.slice(2).trimEnd()), ['✓ d', '  e +3'], 'the ✓ heads the first item, the rest hang under it');
-  // Rows the agents leave unused are the card's: every done item, no count, and four lines a value.
-  const roomy = card(draw(rich({ statusLevel: 'full' }), { brief: { recap: long } }, 44));
-  assert.equal(roomy.filter(line => /^│ [◎ ] +word/.test(line)).length, 4, roomy.join('\n'));
-  const all = roomy.findIndex(line => line.startsWith('│ ✓'));
-  assert.deepEqual(roomy.slice(all, all + 5).map(line => line.slice(2).trimEnd()), ['✓ a', '  b', '  c', '  d', '  e']);
+  // Spare agent rows never change the recap shape.
+  assert.deepEqual(card(draw(rich({ statusLevel: 'full' }), { brief: { recap: long } }, 44)), cut);
 });
 
 test('rich frames carry the recap only inside the status card; no brief rule, no recap card', () => {
@@ -137,7 +142,7 @@ test('full with no recap: the whole-picture sentence as Now, a failure or a repl
 test('full takes at most a third of the panel and leaves the agents ten rows; a taller brief keeps its most wanted fields and scrolls the rest', () => {
   const long: Recap = { ...recap, needs: 'Approve the migration before the reader agent goes on', done: ['Step one of the work, written out at some length', 'Step two of the work, written out at some length'] };
   // Eight agents: more than the panel holds, so no row is left unused.
-  const draw8 = (state: MonitorState) => draw(state, { brief: { recap: long }, tree: tree(8) }, 32, 24);
+  const draw8 = (state: MonitorState) => draw(state, { brief: { recap: long }, tree: tree(8) }, 40, 24);
   const frame = draw8(rich({ statusLevel: 'full' }));
   const info = frame.statusCard!;
   assert.ok(info.height <= 8, `${info.height} rows of 24`);
@@ -166,13 +171,13 @@ test('full takes at most a third of the panel and leaves the agents ten rows; a 
   for (let i = 0; i < 20; i++) state = wheel(state, draw8(state), 'wheel-up');
   assert.equal(state.statusScroll, 0);
   // One agent leaves rows unused: the card takes them, past its third, and the whole brief is in view.
-  const one = draw(rich({ statusLevel: 'full' }), { brief: { recap: long }, tree: tree(1) }, 32, 24);
-  assert.ok(one.statusCard!.height > 8 && one.statusCard!.total === one.statusCard!.brief, `${one.statusCard!.height} rows`);
-  assert.ok(!card(one).some(line => /more lines/.test(line)));
+  const one = draw(rich({ statusLevel: 'full' }), { brief: { recap: long }, tree: tree(1) }, 40, 24);
+  assert.deepEqual(one.statusCard, info);
+  assert.deepEqual(card(one), lines);
   assert.ok(plain(one).slice(0, one.statusCard!.y).some(line => line.includes('worker_1')), 'the agent keeps its card');
 
   // A brief that fits has no hint, and the wheel over it does nothing.
-  const short = draw(rich({ statusLevel: 'full' }), {}, 32, 40);
+  const short = draw(rich({ statusLevel: 'full' }), {}, 48, 40);
   assert.equal(short.statusCard!.total, short.statusCard!.brief);
   assert.equal(wheel(short.state, short, 'wheel-down').statusScroll ?? 0, 0);
   // Too short for a card that leaves the agents their rows: the one line.
@@ -192,7 +197,7 @@ test('at 90×42 a brief like the atlas one takes at most seven rows, and shows i
     assert.ok(frame.lines.every(line => visualLength(line) === 90));
     assert.ok(card(frame).some(line => /推送到 main 分支 \+2/.test(line)));
     const roomy = card(at(3));
-    assert.ok(atlas.done.every(item => roomy.some(line => line.includes(item))) && !roomy.some(line => /\+2/.test(line)), roomy.join('\n'));
+    assert.deepEqual(roomy, card(frame));
   } finally { setLanguage(previous); }
 });
 
@@ -226,6 +231,19 @@ test('r and a click on the card\'s top edge cycle min, status, full in rich, and
   assert.equal(nextLevel(compact), 'min');
   assert.equal(nextLevel({ ...compact, statusLevel: 'min' }), 'status');
   assert.equal(nextLevel({ ...compact, statusLevel: 'status' }), 'min');
+});
+
+test('a short window retains full; 32 columns draw min', () => {
+  assert.equal(shownLevel(rich(), 24), 'full');
+  assert.equal(shownLevel(rich({ statusLevel: 'full' }), 24), 'full');
+  assert.equal(nextLevel(rich({ statusLevel: 'full' }), 24), 'min');
+  const short = draw(rich({ statusLevel: 'full' }), {}, 48, 24);
+  assert.ok(card(short).some(line => line.includes('Fix the flaky')), card(short).join('\n'));
+  const stepped = handleMonitorInput(short.state, { type: 'key', key: 'reset' }, { tree: tree(3), frame: short });
+  assert.equal(stepped.state.statusLevel, 'min');
+  const narrow = draw(rich({ statusLevel: 'full' }), {}, 32, 40);
+  assert.equal(card(narrow).length, 1);
+  assert.equal(narrow.state.statusLevel, 'full');
 });
 
 test('min marks what needs the person: a pending approval, a recap that needs them, a failure', () => {
@@ -284,4 +302,18 @@ test('a blank row parts the sections where the panel is tall enough: under the b
   assert.equal(tabbed.panes.length, 1);
   assert.equal(tabbed.panes[0].y, 2);
   assert.equal(tabbed.statusCard!.y, tabbed.panes[0].y + tabbed.panes[0].height + 1);
+});
+
+test('full recap geometry and content are stable when card summaries change visibility, with and without alerts', () => {
+  for (const height of [24,39,40,56]) for (const alerts of [[], ['! synthetic alert']]) {
+    const agents = tree(1);
+    const log = new Map([[id(1), [{at: now, kind: 'note' as const, text: 'Long model progress note '.repeat(60)}]]]);
+    const extra = {tree: agents, agentLog: log, status: () => ({...status!(now)!, alerts})};
+    const hidden = draw(rich({statusLevel:'full',cardVisibility:{cardSummary:false}}),extra,48,height);
+    const shown = draw(rich({statusLevel:'full',cardVisibility:{cardSummary:true}}),extra,48,height);
+    assert.deepEqual(shown.statusCard,hidden.statusCard);
+    assert.deepEqual(card(shown),card(hidden));
+    assert.equal(shown.state.statusLevel,'full');
+    assert.ok(shown.statusCard!.brief > 0);
+  }
 });

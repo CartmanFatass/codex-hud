@@ -18,6 +18,8 @@
     "test:unit": "node --test dist-test/tests/unit/*.test.js",
     "test:mjs": "node --test tests/unit/*.mjs",
     "test:integration": "bash tests/run-integration.sh",
+    "test:visual": "npm run build:test && node --test dist-test/tests/unit/visual-baselines.test.js",
+    "test:visual:update": "node tests/update-visual-baselines.mjs",
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write src tests",
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check src tests"
   },

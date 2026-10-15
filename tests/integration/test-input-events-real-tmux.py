@@ -72,6 +72,8 @@ with open(sys.argv[1], "ab", buffering=0) as output:
         end = source.index("\n}\n", start) + 3
         toggle = root / "codex-hud-toggle"
         toggle.write_text("#!/bin/sh\nexit 0\n")
+        (root / "codex-hud-keys").symlink_to(repo / "bin/codex-hud-keys")
+        (root / "codex-hud-command").symlink_to(repo / "bin/codex-hud-command")
         # Synthetic tmux buffer only; never invoke the real clipboard helper.
         paste = root / "codex-hud-paste"
         paste.write_text('#!/bin/sh\nexec tmux paste-buffer -p -t "$1"\n')

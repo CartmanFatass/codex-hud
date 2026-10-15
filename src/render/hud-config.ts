@@ -65,11 +65,13 @@ export function resolveDisplayConfig(env: NodeJS.ProcessEnv = process.env): HudD
 }
 
 /**
- * The icons on the panel's buttons and titles: the `icons` setting, except
- * that glyphs set to text mean words here too.
+ * The icons on the panel's buttons and titles, and whether a glyph stands in
+ * for a word anywhere else (a brief field's label, "ago", the bar's activity
+ * mark): the `icons` setting alone. `glyphs` is the model badge's and says
+ * nothing about the rest.
  */
 export function iconSet(): IconMode {
-  return active.glyphs === 'text' ? 'text' : active.icons;
+  return active.icons;
 }
 
 let active: HudDisplayConfig = resolveDisplayConfig();

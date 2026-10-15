@@ -7,9 +7,12 @@
  *   panel's language; so does a long answer at the end of a stage of an
  *   agent still at work, for the brief. Written to the agent's log as a
  *   `digest` entry.
- * - labels and title: an agent's task text becomes a short label shown in
- *   place of its name; the session gets a title, from the recap's goal when
- *   there is one, else from the first prompt.
+ * - labels and title: the plaintext written before an agent was created
+ *   becomes a short label shown in place of its name; a plaintext task is
+ *   the fallback, and the brief's name fills in until either arrives. The
+ *   session gets a title, from the recap's goal when there is one, else from
+ *   the first prompt. Codex now sends agents their tasks encrypted, so the
+ *   parent's own words from before the spawn are what the labels job reads.
  * - failure cause: when a tool call or an agent fails, the tail of the error
  *   output becomes one line naming the cause, on the timeline event and in
  *   the agent's log as a `cause` entry.
@@ -30,7 +33,7 @@ import * as fs from 'node:fs';
 import type { GitChangedFile, GitChanges } from './git-changes.js';
 import type { Language } from '../render/i18n.js';
 import type { RolloutParseResult } from './rollout.js';
-import type { AgentLog, AgentLogEntry, AgentLogKind } from './agent-log.js';
+import { entryLanguage, type AgentLog, type AgentLogEntry, type AgentLogKind } from './agent-log.js';
 import type { RecapStore } from './recap.js';
 import { writePrivateFile, type ModelHandle, type SmallModel } from './small-model.js';
 import { AGENT_TASK_KINDS, type AgentStage, type AgentTaskKind, type PendingApproval, type SubagentTree, type SubagentTreeNode } from '../types.js';
@@ -228,16 +231,37 @@ export function digestText(digest: ResultDigest, labels: { basis: string; caveat
 
 // ---------------------------------------------------------------- labels and title
 
-/** The cache key of one label: the task text and the language it is written in. */
+/** The cache key of one label: the source text and the language it is written in. */
 export function labelKey(task: string, language: Language): string {
   return createHash('sha256').update(`${language}\n${flat(task)}`).digest('hex').slice(0, 32);
+}
+
+/** Plaintext worth naming an agent from. A sealed payload is not. */
+function usableCharge(value: string | undefined): string | undefined {
+  const text = value?.replace(/\s+/g, ' ').trim();
+  if (!text || text.includes('gAAAAA') || /^Message Type:/.test(text)) return undefined;
+  return text;
+}
+
+/**
+ * What a label is named from: the parent's words from before this agent was
+ * created, with its path and role so two agents given the same words stay
+ * apart, else a plaintext task. Empty when Codex kept both sealed.
+ */
+export function labelSource(node: SubagentTreeNode): string | undefined {
+  const charge = usableCharge(node.charge);
+  if (charge) {
+    const where = [node.agentPath, node.role].filter((part): part is string => Boolean(part)).join(' ');
+    return where ? `${where} ${charge}` : charge;
+  }
+  return usableCharge(node.task);
 }
 
 export function labelsSystemPrompt(language: Language = 'zh'): string {
   const length = language === 'zh' ? 'about 10 Chinese characters' : 'at most 4 words';
   return [
     'You name subagents for the cards of a narrow terminal panel beside a Codex session.',
-    'Each numbered item is the task one subagent was given.',
+    'Each numbered item is what was written before that subagent was created.',
     'Reply with one JSON object and nothing else, no markdown fence:',
     '{"labels": [{"kind": string, "name": string}]}',
     'labels: one per item, in the same order.',
@@ -455,6 +479,10 @@ export class ModelJobs {
   private changeAskedAt = 0;
   private title: { sessionId: string; title: string } | null = null;
   private rootId = '';
+  /** The language the in-memory readings (causes, approval, change summary) were written in. */
+  private language: Language | null = null;
+  /** Invalidates both model replies and disk reads across stop/restart. */
+  private generation = 0;
 
   constructor(private readonly options: ModelJobsOptions) {
     this.model = options.model;
@@ -465,6 +493,7 @@ export class ModelJobs {
 
   /** Cancel whatever is waiting or running: the panel is closing, or the jobs were switched off. */
   stop(): void {
+    this.generation++;
     for (const handle of this.handles) handle.cancel();
     this.handles.clear();
     this.running.clear();
@@ -477,11 +506,13 @@ export class ModelJobs {
   }
 
   private ask(key: string, now: number, request: Parameters<SmallModel['submit']>[0], land: (text: string) => boolean, fail?: () => void): void {
+    const generation = this.generation;
     this.running.add(key);
     const handle = this.model.submit(request);
     this.handles.add(handle);
     void handle.result.then(result => {
       this.handles.delete(handle);
+      if (generation !== this.generation) return;
       if (!this.running.delete(key)) return;
       if (result.ok && land(result.text)) { this.failed.delete(key); this.onChange(); }
       else if (!(!result.ok && result.cancelled)) { this.failed.set(key, now); fail?.(); }
@@ -514,33 +545,47 @@ export class ModelJobs {
   apply(tree: SubagentTree, switches: JobSwitches, language: Language): void {
     if (switches.agentLabels) this.loadLabels();
     walk(tree.nodes, node => {
-      const label = switches.agentLabels && node.task ? this.labels.get(labelKey(node.task, language)) : undefined;
+      // The name for what it was given, once that label has arrived; until
+      // then, what the brief last called the work it is on.
+      const source = switches.agentLabels ? labelSource(node) : undefined;
+      const fromSource = source ? this.labels.get(labelKey(source, language)) : undefined;
+      const noted = switches.agentLabels ? this.log.label(node.id, language) : undefined;
+      const label = fromSource ?? (noted ? { name: noted.name, kind: noted.kind ?? 'other' as AgentTaskKind } : undefined);
       if (label && label.name !== node.name) node.label = label.name; else delete node.label;
       if (label && label.kind !== 'other') node.taskKind = label.kind; else delete node.taskKind;
-      const digest = switches.resultDigest && node.status === 'completed' ? this.currentDigest(node) : undefined;
+      const digest = switches.resultDigest && node.status === 'completed' ? this.currentDigest(node, language) : undefined;
       if (digest) node.digest = digest.text; else delete node.digest;
     });
   }
 
-  /** The digest of the agent's latest turn, if one was written. */
-  private currentDigest(node: SubagentTreeNode): AgentLogEntry | undefined {
-    const digest = this.log.latest(node.id, DIGEST_KINDS);
+  /** The digest of the agent's latest turn, if one was written in this language. */
+  private currentDigest(node: SubagentTreeNode, language: Language): AgentLogEntry | undefined {
+    const digest = this.log.latest(node.id, DIGEST_KINDS, language);
     const started = Math.max(node.turnStartedAt?.getTime() ?? 0, this.log.latest(node.id, START_KINDS)?.at ?? 0);
     return digest && digest.at >= started ? digest : undefined;
   }
 
   /** Start whatever is due. Cheap when nothing is: no reads, no calls. */
   update(input: JobsInput): void {
-    if (input.tree.rootId !== this.rootId) {
-      this.rootId = input.tree.rootId;
+    if (input.tree.rootId !== this.rootId || input.language !== this.language) {
+      // Another session's readings, or ones in the other language, are not
+      // shown: they are asked for again. Work still in flight would land
+      // after the reset and repopulate the old language's readings, so it
+      // is cancelled rather than waited out.
       this.stop();
+      this.rootId = input.tree.rootId;
+      this.language = input.language;
       this.causes.clear();
       this.approval = null;
+      this.change = null;
+      this.changeAskedAt = 0;
       this.title = null;
+      // A failure in the old language does not make the new one wait.
+      this.failed.clear();
     }
     // Causes already written to the log are the timeline's as well.
     if (input.switches.failureCause) walk(input.tree.nodes, node => {
-      const cause = this.log.latest(node.id, CAUSE_KINDS);
+      const cause = this.log.latest(node.id, CAUSE_KINDS, input.language);
       if (cause) this.causes.set(`agent:${node.id}:failed:${cause.at}`, cause.text);
     });
     if (!input.on) return;
@@ -561,15 +606,16 @@ export class ModelJobs {
       const stage = node.stages?.filter(stage => stage.status !== 'running').at(-1);
       // The ledger has the answer: no rollout read, and no second digest of it.
       if (stage?.result && stage.endedAt) { this.stageDigest(node, stage, input); return; }
-      if (node.status !== 'completed' || !node.rolloutPath || this.currentDigest(node)) return;
+      if (node.status !== 'completed' || !node.rolloutPath || this.currentDigest(node, input.language)) return;
       const finished = (node.statusAt ?? node.lastEventAt)?.getTime() ?? 0;
       if (node.id !== input.inspected && input.now - finished > DIGEST_RECENT_MS) return;
       const key = `digest:${node.id}:${finished}`;
       if (!this.due(key, input.now) || this.inFlight('digest:') >= MAX_IN_FLIGHT) return;
       const file = node.rolloutPath;
+      const generation = this.generation;
       this.running.add(key);
       this.read(file).then(text => {
-        if (!this.running.has(key)) return;
+        if (generation !== this.generation || !this.running.has(key)) return;
         this.running.delete(key);
         const answer = finalAnswer(text);
         // No final answer recorded: nothing to digest, and nothing guessed.
@@ -578,11 +624,14 @@ export class ModelJobs {
           cacheKey: `${file}:${answer.at.getTime()}:${input.language}` }, reply => {
           const digest = parseDigest(reply);
           if (!digest) return false;
-          this.log.add(node.id, [{ at: answer.at.getTime(), kind: 'digest', text: digestText(digest, input.digestLabels) }]);
+          this.log.add(node.id, [{ at: answer.at.getTime(), kind: 'digest', text: digestText(digest, input.digestLabels), lang: input.language }]);
           this.log.flush();
           return true;
         });
-      }, () => { this.running.delete(key); this.failed.set(key, input.now); });
+      }, () => {
+        if (generation !== this.generation) return;
+        this.running.delete(key); this.failed.set(key, input.now);
+      });
     });
   }
 
@@ -598,14 +647,14 @@ export class ModelJobs {
     const end = stage.endedAt!.getTime();
     if (node.id !== input.inspected && input.now - end > DIGEST_RECENT_MS) return;
     const from = stage.startedAt.getTime();
-    if (this.log.entries(node.id).some(entry => entry.kind === 'digest' && entry.at >= from && entry.at <= end + 5000)) return;
+    if (this.log.entries(node.id).some(entry => entry.kind === 'digest' && entry.at >= from && entry.at <= end + 5000 && entryLanguage(entry) === input.language)) return;
     const key = `digest:${node.id}:${end}`;
     if (!this.due(key, input.now) || this.inFlight('digest:') >= MAX_IN_FLIGHT) return;
     this.ask(key, input.now, { feature: 'digest', system: digestSystemPrompt(input.language), prompt: digestPrompt(result),
       cacheKey: `${createHash('sha256').update(result).digest('hex').slice(0, 32)}:${input.language}` }, reply => {
       const digest = parseDigest(reply);
       if (!digest) return false;
-      this.log.add(node.id, [{ at: end, kind: 'digest', text: digestText(digest, input.digestLabels) }]);
+      this.log.add(node.id, [{ at: end, kind: 'digest', text: digestText(digest, input.digestLabels), lang: input.language }]);
       this.log.flush();
       return true;
     });
@@ -616,9 +665,10 @@ export class ModelJobs {
     if (this.inFlight('labels:')) return;
     const pending = new Map<string, string>();
     walk(input.tree.nodes, node => {
-      if (!node.task || pending.size >= LABEL_BATCH) return;
-      const key = labelKey(node.task, input.language);
-      if (!this.labels.has(key) && this.due(`label:${key}`, input.now)) pending.set(key, node.task);
+      const source = labelSource(node);
+      if (!source || pending.size >= LABEL_BATCH) return;
+      const key = labelKey(source, input.language);
+      if (!this.labels.has(key) && this.due(`label:${key}`, input.now)) pending.set(key, source);
     });
     if (!pending.size) return;
     const keys = [...pending.keys()];
@@ -639,13 +689,15 @@ export class ModelJobs {
     const store = this.options.titles;
     if (!sessionId || !store) return;
     if (this.title?.sessionId !== sessionId) {
+      // A title in the other language is written again, as a label would be.
       const stored = store.loadTitle(sessionId);
-      this.title = stored ? { sessionId, title: stored.title } : { sessionId, title: '' };
+      const same = stored && (stored.language ?? (/[\u3400-\u9fff]/.test(stored.title) ? 'zh' : 'en')) === input.language;
+      this.title = stored && same ? { sessionId, title: stored.title } : { sessionId, title: '' };
     }
     if (input.recapGoal) {
       // The recap already says what the session is for: no call.
       const title = titleFromGoal(input.recapGoal);
-      if (title && title !== this.title.title) { this.title = { sessionId, title }; this.saveTitle(store, sessionId, title, 'recap', input.now); }
+      if (title && title !== this.title.title) { this.title = { sessionId, title }; this.saveTitle(store, sessionId, title, 'recap', input.now, input.language); }
       return;
     }
     const first = input.main?.firstUserMessage?.text;
@@ -655,13 +707,13 @@ export class ModelJobs {
       const title = oneLine(reply, 40);
       if (!title || this.title?.sessionId !== sessionId || this.title.title) return Boolean(title);
       this.title = { sessionId, title };
-      this.saveTitle(store, sessionId, title, 'prompt', input.now);
+      this.saveTitle(store, sessionId, title, 'prompt', input.now, input.language);
       return true;
     });
   }
 
-  private saveTitle(store: RecapStore, sessionId: string, title: string, source: 'recap' | 'prompt', now: number): void {
-    try { store.saveTitle({ sessionId, title, source, at: now }); } catch { /* The bar goes on without it. */ }
+  private saveTitle(store: RecapStore, sessionId: string, title: string, source: 'recap' | 'prompt', now: number, language: Language): void {
+    try { store.saveTitle({ sessionId, title, source, at: now, language }); } catch { /* The bar goes on without it. */ }
   }
 
   private causeJobs(input: JobsInput): void {
@@ -686,9 +738,10 @@ export class ModelJobs {
       if (this.causes.has(id) || (node.id !== input.inspected && input.now - at > CAUSE_RECENT_MS)) return;
       if (!this.due(id, input.now) || this.inFlight('tool:') + this.inFlight('agent:') >= MAX_IN_FLIGHT) return;
       const file = node.rolloutPath;
+      const generation = this.generation;
       this.running.add(id);
       this.read(file).then(text => {
-        if (!this.running.has(id)) return;
+        if (generation !== this.generation || !this.running.has(id)) return;
         this.running.delete(id);
         const material = errorMaterial(text);
         // The rollout recorded no error to read: nothing is sent, nothing guessed.
@@ -698,11 +751,14 @@ export class ModelJobs {
           const cause = oneLine(reply);
           if (!cause) return false;
           this.causes.set(id, cause);
-          this.log.add(node.id, [{ at, kind: 'cause', text: cause }]);
+          this.log.add(node.id, [{ at, kind: 'cause', text: cause, lang: input.language }]);
           this.log.flush();
           return true;
         });
-      }, () => { this.running.delete(id); this.failed.set(id, input.now); });
+      }, () => {
+        if (generation !== this.generation) return;
+        this.running.delete(id); this.failed.set(id, input.now);
+      });
     });
   }
 
@@ -737,11 +793,12 @@ export class ModelJobs {
     this.changeAskedAt = input.now;
     const root = git.root;
     const files = git.files;
+    const generation = this.generation;
     const readHunks = this.options.readHunks;
     if (!readHunks) return;
     this.running.add(key);
     readHunks(root).then(hunks => {
-      if (!this.running.has(key)) return;
+      if (generation !== this.generation || !this.running.has(key)) return;
       this.running.delete(key);
       this.ask(key, input.now, { feature: 'changes', system: changeSystemPrompt(input.language), prompt: changeSummaryInput(files, hunks), cacheKey: `${root}:${input.language}` }, reply => {
         const lines = twoLines(reply);
@@ -749,7 +806,10 @@ export class ModelJobs {
         this.change = { root, fingerprint, lines, at: Date.now() };
         return true;
       });
-    }, () => { this.running.delete(key); this.failed.set(key, input.now); });
+    }, () => {
+      if (generation !== this.generation) return;
+      this.running.delete(key); this.failed.set(key, input.now);
+    });
   }
 
   /** The summary for this repository, while it has changes. */

@@ -8,15 +8,15 @@ import type { WorktreeInfo } from '../collectors/worktrees.js';
 import type { GitChangedFile } from '../collectors/git-changes.js';
 import { theme, colors } from './colors.js';
 import { palette } from './palette.js';
-import { displayConfig } from './hud-config.js';
+import { iconSet } from './hud-config.js';
 import { t } from './i18n.js';
 
 /**
  * Icons stand in for the panel's words (a brief field's label, "ago" after a
- * time) unless the reader set glyphs to text; then the words stay.
+ * time) unless the reader set the icons to text; then the words stay.
  */
 export function iconic(): boolean {
-  return displayConfig().glyphs !== 'text';
+  return iconSet() !== 'text';
 }
 /** How long ago, as the panel says it: "12d" where icons stand in for words, else "12d ago". */
 export function agoText(at: Date | undefined, now: number): string {
@@ -200,6 +200,32 @@ export function nextRepaintDelay(nowMs: number, anchorMs?: number): number {
   const origin = anchorMs !== undefined && Number.isFinite(anchorMs) ? anchorMs : 0;
   const into = (((nowMs - origin) % 1000) + 1000) % 1000;
   return 1000 - into + REPAINT_SLACK_MS;
+}
+
+/** How long until `age()` next prints a different string for a moment at `at`. */
+export function msUntilAgeChanges(at: number, nowMs: number): number {
+  if (!Number.isFinite(at)) return 60_000;
+  const elapsed = Math.max(0, nowMs - at);
+  const seconds = Math.floor(elapsed / 1000);
+  // The same steps age() uses: seconds, then minutes, hours, and days past two.
+  const boundary = seconds < 60 ? (seconds + 1) * 1000
+    : seconds < 3600 ? (Math.floor(seconds / 60) + 1) * 60_000
+    : seconds < 2 * 86_400 ? (Math.floor(seconds / 3600) + 1) * 3_600_000
+    : (Math.floor(seconds / 86_400) + 1) * 86_400_000;
+  return Math.max(1, boundary - elapsed) + REPAINT_SLACK_MS;
+}
+
+/**
+ * How long until `formatCountdown` next changes. Seconds tick in the last
+ * minute; minutes tick until a day; hours tick after that. Exactly on a
+ * boundary, the next second is the one that changes the text.
+ */
+export function msUntilCountdownChanges(targetMs: number, nowMs: number): number {
+  const seconds = Math.max(0, Math.round((targetMs - nowMs) / 1000));
+  if (seconds < 60) return nextRepaintDelay(nowMs);
+  const span = seconds >= 86_400 ? 3600 : 60;
+  if (seconds % span === 0) return nextRepaintDelay(nowMs);
+  return (seconds % span) * 1000 + REPAINT_SLACK_MS;
 }
 
 /** When a finished agent finished: its completion event, else its last sign of life. */

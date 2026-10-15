@@ -217,8 +217,9 @@ function directorySignature(stats: fs.Stats, nowMs: number = Date.now()): string
   return nowMs - stats.mtimeMs < DIR_SETTLE_MS ? null : `${stats.mtimeMs}:${stats.size}`;
 }
 
-// Day directories' rollout lists. Every file is still stat'd, so size and
-// mtime stay live.
+// Day directories' rollout lists. The sync finder still stats every file.
+// The panel's yielding finder stats new, growing and priority files, plus a
+// few quiet ones, and keeps the rest from the last stat.
 const dirListingCache = new Map<string, DirListing>();
 
 function listRollouts(dirPath: string): DirListing['entries'] {
@@ -343,6 +344,115 @@ export function findRolloutsInDays(maxDaysBack: number = DEFAULT_LOOKBACK_DAYS):
   }
 
   return rollouts;
+}
+
+interface StatMemo {
+  size: number;
+  mtimeMs: number;
+  modifiedAt: Date;
+  ino?: number;
+  /** The last stat differed from the one before it, so the next tick looks again. */
+  grew: boolean;
+}
+
+// Sizes from the panel's yielding finder. The sync finder does not read this:
+// a test that appends and rebuilds immediately must see the new size.
+const rolloutStatCache = new Map<string, StatMemo>();
+let quietCursor = 0;
+/** Quiet rollouts restated each yielding pass, so an idle file is not invisible forever. */
+const QUIET_STAT_BUDGET = 2;
+
+/** Drop the yielding finder's remembered sizes. Tests call this between homes. */
+export function resetRolloutStatCache(): void {
+  rolloutStatCache.clear();
+  quietCursor = 0;
+}
+
+function rolloutFile(entry: DirListing['entries'][number], size: number, modifiedAt: Date, ino?: number): SessionFile {
+  return { path: entry.path, sessionId: entry.sessionId, timestamp: entry.timestamp, size, modifiedAt, ino };
+}
+
+function rememberStat(entry: DirListing['entries'][number], stats: fs.Stats, previous: StatMemo | undefined): SessionFile {
+  const ino = stats.ino > 0 ? stats.ino : undefined;
+  const grew = Boolean(previous && (stats.size !== previous.size || stats.mtimeMs !== previous.mtimeMs || ino !== previous.ino));
+  rolloutStatCache.set(entry.path, { size: stats.size, mtimeMs: stats.mtimeMs, modifiedAt: stats.mtime, ino, grew });
+  return rolloutFile(entry, stats.size, stats.mtime, ino);
+}
+
+/**
+ * The panel's rollout list. New files, files that grew last time, and
+ * `priority` (the tree's own rollouts) are stat'd every pass. Quiet files
+ * keep the last size, except two of them, taken in turn, so a file that
+ * starts growing is seen within a few ticks. Each real stat yields, so a
+ * long first pass does not hold the keys that are on their way to Codex.
+ */
+export async function findRolloutsInDaysYielding(
+  maxDaysBack: number = DEFAULT_LOOKBACK_DAYS,
+  priority: ReadonlySet<string> = new Set(),
+): Promise<SessionFile[]> {
+  const sessionsDir = getSessionsDir();
+  const now = new Date();
+  const listed: DirListing['entries'] = [];
+  for (let daysAgo = 0; daysAgo <= maxDaysBack; daysAgo++) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - daysAgo);
+    const year = date.getFullYear().toString();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    listed.push(...listRollouts(path.join(sessionsDir, year, month, day)));
+  }
+  const listedPaths = new Set(listed.map(entry => entry.path));
+  const prefix = sessionsDir.endsWith(path.sep) ? sessionsDir : sessionsDir + path.sep;
+  for (const key of rolloutStatCache.keys()) {
+    if (key.startsWith(prefix) && !listedPaths.has(key)) rolloutStatCache.delete(key);
+  }
+  if (rolloutStatCache.size > FILE_CACHE_LIMIT) {
+    const extra = rolloutStatCache.size - FILE_CACHE_LIMIT;
+    let dropped = 0;
+    for (const key of rolloutStatCache.keys()) {
+      if (dropped >= extra) break;
+      rolloutStatCache.delete(key);
+      dropped++;
+    }
+  }
+
+  const yieldNow = () => new Promise<void>(resolve => { setImmediate(resolve); });
+  const statOne = async (entry: DirListing['entries'][number]): Promise<SessionFile | null> => {
+    try {
+      const stats = fs.statSync(entry.path);
+      const file = rememberStat(entry, stats, rolloutStatCache.get(entry.path));
+      await yieldNow();
+      return file;
+    } catch {
+      rolloutStatCache.delete(entry.path);
+      return null;
+    }
+  };
+
+  const quiet: DirListing['entries'] = [];
+  const results: SessionFile[] = [];
+  for (const entry of listed) {
+    const memo = rolloutStatCache.get(entry.path);
+    if (!memo || memo.grew || priority.has(entry.path)) {
+      const file = await statOne(entry);
+      if (file) results.push(file);
+    } else {
+      quiet.push(entry);
+      results.push(rolloutFile(entry, memo.size, memo.modifiedAt, memo.ino));
+    }
+  }
+  if (quiet.length > 0) {
+    const count = Math.min(QUIET_STAT_BUDGET, quiet.length);
+    for (let i = 0; i < count; i++) {
+      const entry = quiet[(quietCursor + i) % quiet.length];
+      const file = await statOne(entry);
+      if (!file) continue;
+      const at = results.findIndex(item => item.path === entry.path);
+      if (at >= 0) results[at] = file;
+    }
+    quietCursor = (quietCursor + count) % quiet.length;
+  }
+  return results;
 }
 
 /**

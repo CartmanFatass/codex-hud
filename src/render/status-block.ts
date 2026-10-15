@@ -26,7 +26,7 @@ import { formatTokenCount } from './lines/activity-line.js';
 import { formatCountdown, formatCredits, quotaState, readQuotaWindows } from './quota.js';
 import { formatElapsedShort } from './subagent-chip.js';
 import { formatTokenRate } from '../collectors/token-rate.js';
-import { displayConfig } from './hud-config.js';
+import { displayConfig, iconSet } from './hud-config.js';
 import { age, type EdgeMeter } from './monitor.js';
 import { t } from './i18n.js';
 
@@ -126,7 +126,7 @@ function cacheReminder(data: HudData, nowMs: number): string {
   if (sampledAt === undefined || !Number.isFinite(sampledAt) || !Number.isFinite(nowMs)) return '';
   const minutes = Math.max(0, Math.floor((nowMs - sampledAt) / 60_000));
   if (minutes < 25 || minutes >= 30) return '';
-  return theme.warning(`${displayConfig().glyphs === 'text' ? 'Cache ' : '◷'}${data.stale ? '?' : '~'}${String(minutes).padStart(2, '0')}m`);
+  return theme.warning(`${iconSet() === 'text' ? 'Cache ' : '◷'}${data.stale ? '?' : '~'}${String(minutes).padStart(2, '0')}m`);
 }
 
 export function statusCard(data: HudData | null, nowMs: number = Date.now()): StatusCard | null {

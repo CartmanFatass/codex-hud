@@ -244,8 +244,8 @@ panel_width=${CODEX_HUD_TREE_WIDTH:-0}
 requested_width=0
 if [[ "$panel_width" =~ ^[0-9]+$ && "$panel_width" -gt 0 ]]; then requested_width=$panel_width; fi
 if [[ ! "$panel_width" =~ ^[0-9]+$ || "$panel_width" -le 0 ]]; then
-  # Narrow unless a width is asked for (src/utils/pane-width.ts).
-  panel_width=32
+  # 48 unless a width is asked for (src/utils/pane-width.ts).
+  panel_width=48
 fi
 if [[ "$panel_width" -lt 16 ]]; then panel_width=16; fi
 max_panel=$(( win_width - 41 ))

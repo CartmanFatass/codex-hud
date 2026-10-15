@@ -239,7 +239,7 @@ test('model badges can be read as words instead of symbols', () => {
     const text = stripAnsi(
       renderHud(data, { width: 160, showDetails: false, layout: { ...DEFAULT_LAYOUT, mode: 'compact' } })[0]
     );
-    assert.ok(text.includes('Astra'), `expected a spelled-out model name: ${text}`);
+    assert.ok(text.includes('5.6astra'), `expected a versioned model name: ${text}`);
     assert.ok(!text.includes('☀'), 'text mode should not print the symbol');
   } finally {
     setDisplayConfig(previous);

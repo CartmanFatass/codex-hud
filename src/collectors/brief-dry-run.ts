@@ -12,7 +12,7 @@ import { SessionFinder } from './session-finder.js';
 import { RolloutParser } from './rollout.js';
 import { buildSubagentTree, useTreeScanStore } from './subagent-tree.js';
 import { TreeScanStore } from './tree-scan-store.js';
-import { AgentLog } from './agent-log.js';
+import { AgentLog, logsIn } from './agent-log.js';
 import { RecapStore } from './recap.js';
 import { SmallModel } from './small-model.js';
 import { ModelJobs, NO_JOBS } from './model-jobs.js';
@@ -59,10 +59,12 @@ export async function dryRunText(options: DryRunOptions): Promise<{ text: string
   const chosen = briefingScope(settings);
   const scope = chosen ?? 'agents';
   const recap = scope !== 'agents' ? new RecapStore(path.join(options.hudHome, 'recaps')).load(rootId) : null;
-  const logs = log.snapshot();
-  const material = briefMaterial(tree, { scope, language, main, recap, logs,
+  // As the panel sends it: what a model wrote in another language is not handed back.
+  const logs = logsIn(log.snapshot(), language);
+  const same = recap?.language === language;
+  const material = briefMaterial(tree, { scope, language, main, recap, logs, labels: settings.agentLabels,
     roles: roleSet(settings.importantRoles), goal: scope !== 'agents' ? codexGoal(options.codexHome, rootId, now) : null,
-    since: recap?.at ?? lastNoteAt(tree, logs), overall: recap?.overall, now });
+    since: (same ? recap?.at : undefined) ?? lastNoteAt(tree, logs), overall: same ? recap?.overall : undefined, now });
   if (!material) return { error: 'Nothing to brief yet: no agents, and nothing said in the main session' };
   const { system, prompt } = material.write();
   const notes = [

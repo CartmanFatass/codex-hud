@@ -132,7 +132,8 @@ test('the timeline says a time once, at the top of a run of events of one age', 
 
 const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
   const previous = displayConfig();
-  setDisplayConfig({ glyphs });
+  // Words in place of marks are the icons' setting; the model badge is the glyphs'. Text here means both.
+  setDisplayConfig(glyphs === 'text' ? { glyphs, icons: 'text' } : { glyphs });
   try { return run(); } finally { setDisplayConfig(previous); }
 };
 
@@ -221,9 +222,9 @@ test('the key help lists every key, the new ones included, in both languages', a
   const en = lines();
   // A shortcut is its key in the key column, then what it does.
   const shortcut = (text: string, key: string, does: string) => new RegExp(`^${key.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')} +${does.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}$`, 'm').test(text);
-  for (const [key, does] of [['1–4', 'open / close a pane'], ['b', 'pause / resume brief'], ['r', 'status card: min / status'], ['f', 'filter'], ['h l', 'fold / unfold agent'],
+  for (const [key, does] of [['1–4', 'open / close a pane'], ['b', 'pause / resume models'], ['r', 'status card: min / status'], ['f', 'filter'], ['h l', 'fold / unfold agent'],
     ['g G', 'first / last'], ['Ctrl+]', 'Ctrl+] itself, to Codex']]) assert.ok(shortcut(en, key, does), `${key} ${does}`);
-  for (const key of ['2 Timeline', "Click the card's band: its level", 'Click a log line: select agent', '~ = written by a model',
+  for (const key of ['2 Timeline', "Click the card's band: its level", 'Click a log line: inspect', '~ = written by a model',
     'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+], then a key', '⚙ settings ? help']) assert.ok(en.includes(key), key);
   // The prefix the settings chose is the one the help names.
   const other = renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now, prefix: 'Ctrl+\\' }).lines.map(stripAnsi).join('\n');
@@ -231,7 +232,9 @@ test('the key help lists every key, the new ones included, in both languages', a
   assert.ok(!en.includes('min / status / full'), 'compact has two levels');
   assert.ok(!/copy|fold \/ unfold recap/.test(en), 'no recap copy, no recap fold');
   const richHelp = renderMonitor({ tree: tree([]), state: { ...state, style: 'rich' }, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
-  assert.ok(shortcut(richHelp, 'r', 'status card: min / status / full') && shortcut(richHelp, 'e / Space', 'open / close card') && richHelp.includes('Wheel over the card: its brief'));
+  assert.ok(shortcut(richHelp, 'r', 'status card: min / status / full') && richHelp.includes('Enter / Space / v') && richHelp.includes('inspect') && richHelp.includes('Wheel over the card: its brief'));
+  assert.ok(richHelp.includes('Click a card: select'));
+  assert.doesNotMatch(richHelp, /e \/ Space|open \/ close card/);
   const previous = setLanguage('zh');
   try {
     const zh = lines();

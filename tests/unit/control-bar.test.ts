@@ -55,19 +55,19 @@ const WIDTHS = [...Array.from({ length: 57 }, (_, i) => i + 8), 70, 80, 90, 100,
 
 test('the tab look: the focused pane a filled tab with its word, the other panes their icons, the actions at the right end', () => {
   inChinese(() => {
-    assert.equal(plain(everyPane(), 32), ' ⌂ ▦  ≣ 时间线  ± ◫   ǁ ⊕31 ⚙ ? ');
-    assert.equal(plain(everyPane(), 40), ' ⌂ ▦    ≣ 时间线    ±   ◫     ǁ ⊕31 ⚙ ? ');
-    assert.equal(plain(everyPane(), 70), ' ⌂ ▦ 卡片    ≣ 时间线    ± 改动   ◫ 详情                    ǁ ⊕31 ⚙ ? ');
+    assert.equal(plain(everyPane(), 32), ' ⌂ ▦   ≣   ±  ◫  设置   ǁ ⊕31 ? ');
+    assert.equal(plain(everyPane(), 40), ' ⌂ ▦   ≣ 时间线   ±  ◫  设置    ǁ ⊕31 ? ');
+    assert.equal(plain(everyPane(), 70), ' ⌂ ▦ 卡片    ≣ 时间线    ± 改动   ◫ 详情   ⚙ 设置             ǁ ⊕31 ? ');
     // Very wide, the actions take their words too, and the main session's button stands off from the tabs.
-    assert.match(plain(everyPane(), 130), /^ ⌂ 主会话 {2}▦ 卡片 .* ǁ 暂停简报 {2}⊕31 已收起 {2}⚙ 设置 {2}\? 帮助 $/);
-    assert.ok(plain(state({ tree: { ...initialMonitorState().tree, showAll: true } }), 130).includes(' ⊖31 收起 '));
-    assert.ok(plain(state(), 130, { brief: { paused: true }, expired: 0 }).includes(' ▶ 继续简报 '));
-    assert.ok(!plain(state(), 130, { expired: 0 }).includes('简报'), 'no brief configured, no button');
+    assert.match(plain(everyPane(), 130), /^ ⌂ 主会话 {2}▦ 卡片 .*⚙ 设置 +ǁ 暂停模型 {2}⊕ 31 个已完成 {2}\? 帮助 $/);
+    assert.ok(plain(state({ tree: { ...initialMonitorState().tree, showAll: true } }), 130).includes(' ⊖ 收起 '));
+    assert.ok(plain(state(), 130, { brief: { paused: true }, expired: 0 }).includes(' ▶ 继续模型 '));
+    assert.ok(!plain(state(), 130, { expired: 0 }).includes('模型'), 'no model backend configured, no button');
   });
-  assert.equal(plain(everyPane(), 40), ' ⌂ ▦   ≣ Timeline   ±  ◫      ǁ ⊕31 ⚙ ? ');
+  assert.equal(plain(everyPane(), 40), ' ⌂ ▦  ≣ Timeline  ± ◫ Settings  ǁ ⊕31 ? ');
   assert.equal(
     plain(everyPane(), 90),
-    ' ⌂ ▦ Agents    ≣ Timeline    ± Changes   ◫ Inspect                              ǁ ⊕31 ⚙ ? '
+    ' ⌂ ▦ Agents    ≣ Timeline    ± Changes   ◫ Inspect   ⚙ Settings         ǁ ⊕ 31 finished ? '
   );
   // Once every button is on the bar, words come with the width and never go
   // again: the focused tab's first, then every open tab's. (Narrower, a
@@ -133,7 +133,7 @@ test('short of room the closed tabs go, then older and the brief, then the tabs;
         const s = state({ modes: { ...initialMonitorState().modes, timeline: 'open' } });
         const gone = new Map<string, number>();
         let before = new Set<string>();
-        for (let width = 130; width >= 10; width--) {
+        for (let width = 130; width >= 12; width--) {
           const now = new Set(controlBar(s, BRIEF, width).controls.map(key));
           for (const k of now) assert.ok(width === 130 || before.has(k), `${lk} ${width}: ${k} comes back`);
           for (const k of before) if (!now.has(k)) gone.set(k, width);
@@ -169,8 +169,8 @@ test('a click anywhere on the bar is a button: each owns its face and half the g
           }
           // Left to right (the frame's top edge first): main, the tabs, the actions.
           const order = [...bar.controls].sort((a, b) => a.y - b.y || a.x - b.x).map(key);
-          const tabs = ['tab:agents', 'tab:timeline', 'tab:changes', 'tab:details'];
-          const actions = ['brief', 'older', 'settings', 'help'];
+          const tabs = ['tab:agents', 'tab:timeline', 'tab:changes', 'tab:details', 'settings'];
+          const actions = ['brief', 'older', 'help'];
           const all = lk === 'frame' ? ['main', ...actions, ...tabs] : ['main', ...tabs, ...actions];
           assert.deepEqual(order, all.filter((k) => order.includes(k)), `${lk} ${icons} ${width}`);
           if (width >= 48) assert.deepEqual(order, all, `${lk} ${icons} ${width}: every button`);
@@ -190,7 +190,8 @@ test('colour says each tab\'s state: focused filled, open in the text colour, cl
         const open = (glyph: string, word: string) => line.includes(theme.value(glyph)) || line.includes(theme.value(`${glyph} ${word}`));
         assert.ok(open('≣', '时间线') && open('±', '改动'), `${width}: open, in the text colour`);
         assert.ok(line.includes(colors.dim('◫')), `${width}: closed, muted`);
-        assert.ok(line.includes(colors.dim('⚙')) && line.includes(colors.dim('?')), `${width}: the actions muted`);
+        assert.ok(line.includes(theme.value('设置')) || line.includes(theme.value('⚙ 设置')), `${width}: Settings is an open navigation tab`);
+        assert.ok(line.includes(colors.dim('?')), `${width}: the actions muted`);
         assert.ok(line.includes(theme.accent('▶')), `${width}: the paused brief's resume in the accent`);
         assert.ok(!line.includes('\x1b[4m'), `${width}: nothing is underlined`);
       }
@@ -208,6 +209,24 @@ test('colour says each tab\'s state: focused filled, open in the text colour, cl
     const line = controlBar(state({ tabbed: true, focus: 'changes' }), { expired: 0 }, 44).lines[0];
     for (const id of ['agents', 'details', 'timeline'] as const) assert.ok(line.includes(theme.value(UNICODE_ICONS[id])), id);
     assert.match(stripAnsi(line), / ± Changes /);
+  });
+});
+
+test('in the tabs layout a +N older button costs the other tabs their icons, not their words', () => {
+  withConfig({ theme: 'titanium', look: 'pill', icons: 'nerd' }, () => {
+    inChinese(() => {
+      const tabbed = state({ tabbed: true });
+      const words = (line: string) => ['时间线', '改动', '详情'].every((word) => line.includes(word));
+      // Settings adds a labelled tab: at 52 columns, every word with no button, and with one.
+      const bare = plain(tabbed, 52, { brief: {}, expired: 0 });
+      const older = plain(tabbed, 52, { brief: {}, expired: 7 });
+      assert.ok(words(bare) && bare.includes(`${ICONS.timeline} 时间线`), bare);
+      assert.ok(words(older) && older.includes('⊕7'), older);
+      assert.ok(!older.includes(ICONS.timeline) && older.includes(`${ICONS.agents} 卡片`), `the focused tab keeps its icon: ${older}`);
+      // Stacked, the icons say which panes are open: they stay, and the words go first.
+      const stacked = plain(everyPane(), 48, { brief: {}, expired: 7 });
+      assert.ok(stacked.includes(ICONS.changes) && stacked.includes(ICONS.details), stacked);
+    });
   });
 });
 
@@ -240,20 +259,118 @@ test('the band, tile, pill and frame looks', () => {
       // The frame: the main session its title and the actions in its top edge, the tabs between its sides.
       withConfig({ look: 'frame' }, () => {
         assert.deepEqual(rows(everyPane(), 40), [
-          '╭─ ⌂ 主会话 ─────────────── ǁ ⊕31 ⚙ ? ─╮',
-          '│ ▦ 卡片   ≣ 时间线   ± 改动  ◫ 详情   │',
+          '╭─ ⌂ 主会话 ─────── ǁ ⊕ 31 个已完成 ? ─╮',
+          '│ ▦    ≣ 时间线    ±   ◫   设置        │',
         ]);
-        assert.deepEqual(rows(everyPane(), 20), ['╭─ ⌂ ── ǁ ⊕31 ⚙ ? ─╮', '│ ▦  ≣ 时间线  ± ◫ │']);
+        assert.deepEqual(rows(everyPane(), 20), ['╭─ ⌂ ──── ǁ ⊕31 ? ─╮', '│ ▦   ≣   ±  ◫  设 │']);
         assert.equal(look(19), 'tab', 'narrower than its sides, the tab look');
         assert.equal(rows(everyPane(), 19).length, 1);
         withConfig({ icons: 'text' }, () => {
           setLanguage('en');
-          assert.deepEqual(rows(everyPane(), 20), ['╭─ ← ─ Settings ? ─╮', '│ Ag   Tl   Ch  In │'], 'the title down to its arrow');
+          assert.deepEqual(rows(everyPane(), 20), ['╭─ ← Main ───── ? ─╮', '│  Timeline    Set │'], 'the labelled Settings tab leaves the focused pane room');
           setLanguage('zh');
         });
       });
     });
   });
+});
+
+test('Settings is labelled navigation at useful widths, with one non-pane click span and exclusive focus', () => {
+  for (const lang of ['en', 'zh'] as const) {
+    const previous = setLanguage(lang);
+    try {
+      const label = lang === 'zh' ? '设置' : 'Settings';
+      for (const lk of LOOKS) {
+        for (const icons of ['unicode', 'nerd', 'emoji', 'text'] as const) {
+          for (const skin of ['terminal', 'none'] as const) {
+            withConfig({ look: lk, icons, theme: skin }, () => {
+              const focusedText = (face: string) => {
+                const painted = skin === 'none' ? `[${face}]`
+                  : lk === 'band' ? theme.bold(theme.accent(face))
+                  : lk === 'pill' ? `${theme.tabEdge('')}${theme.tab(theme.bold(face))}${theme.tabEdge('')}`
+                  : theme.tab(theme.bold(` ${face} `));
+                // The band reapplies its surface after an inner reset.
+                return lk === 'band' && skin !== 'none' ? painted.split('\x1b[0m')[0] : painted;
+              };
+              for (const width of [24, 32, 40, 48, 56]) {
+                for (const active of [false, true]) {
+                  for (const s of [state(), everyPane(), state({ tabbed: true, focus: 'changes' })]) {
+                    const bar = controlBar(s, { ...BRIEF, settingsActive: active }, width);
+                    const context = `${lang} ${lk} ${icons} ${skin} ${width} active=${active}`;
+                    const settings = bar.controls.filter(c => c.kind === 'settings');
+                    assert.equal(settings.length, 1, `${context}: no duplicate Settings action`);
+                    const c = settings[0];
+                    assert.equal(c.pane, undefined, `${context}: Settings is not a MonitorPane`);
+                    assert.equal(c.y, lk === 'frame' ? 1 : 0, `${context}: on the navigation row`);
+                    const own = columns(stripAnsi(bar.lines[c.y]), c.x, c.width);
+                    assert.ok(own.includes(label), `${context}: entire label belongs to its click span: ${own}`);
+                    for (const line of bar.lines) {
+                      assert.equal(visualLength(line), width, context);
+                      if (skin === 'none') assert.equal(line, stripAnsi(line), `${context}: no colour escapes`);
+                    }
+                    for (let y = 0; y < bar.lines.length; y++) {
+                      const controls = bar.controls.filter(c => c.y === y).sort((a, b) => a.x - b.x);
+                      controls.forEach((c, i) => {
+                        assert.ok(c.x >= 0 && c.width > 0 && c.x + c.width <= width, context);
+                        const next = controls[i + 1];
+                        if (next) assert.equal(c.x + c.width, next.x, `${context}: contiguous, non-overlapping spans`);
+                      });
+                    }
+                    const face = own.replace(/[│─╭╮\[\]]/gu, '').trim();
+                    assert.equal(bar.lines[c.y].includes(focusedText(face)), active, `${context}: Settings focus follows settingsActive`);
+                    if (active) {
+                      for (const tab of bar.controls.filter(c => c.kind === 'tab')) {
+                        const own = columns(stripAnsi(bar.lines[tab.y]), tab.x, tab.width);
+                        assert.doesNotMatch(own, /[\[\]]/u, `${context}: ordinary pane is not focused`);
+                        assert.ok(!bar.lines[tab.y].includes(focusedText(own.trim())), `${context}: no ordinary focused tab`);
+                      }
+                    }
+                    const order = bar.controls.filter(c => c.y === (lk === 'frame' ? 1 : 0)).map(key);
+                    const before = order.slice(0, order.indexOf('settings'));
+                    assert.ok(before.every(k => k === 'main' || k.startsWith('tab:')), `${context}: after ordinary tabs, before actions`);
+                  }
+                }
+              }
+            });
+          }
+        }
+      }
+    } finally {
+      setLanguage(previous);
+    }
+  }
+});
+
+test('below 24 columns Settings falls back to a compact label, never a gear alone', () => {
+  for (const lang of ['en', 'zh'] as const) {
+    const previous = setLanguage(lang);
+    try {
+      for (const lk of LOOKS) {
+        for (const icons of ['unicode', 'nerd', 'emoji', 'text'] as const) {
+          withConfig({ look: lk, icons }, () => {
+            for (const width of [12, 16, 20, 23]) {
+              for (const active of [false, true]) {
+                const bar = controlBar(state({ tabbed: true }), { expired: 0, settingsActive: active }, width);
+                for (const line of bar.lines) assert.equal(visualLength(line), width);
+                const settings = bar.controls.filter(c => c.kind === 'settings');
+                // Below the minimum labelled layout, only Main remains.
+                if (!settings.length) {
+                  assert.deepEqual(bar.controls.map(c => c.kind), ['main']);
+                  continue;
+                }
+                const c = settings[0];
+                const own = columns(stripAnsi(bar.lines[c.y]), c.x, c.width);
+                assert.ok(own.includes(lang === 'zh' ? '设' : 'Set'), `${lang} ${lk} ${icons} ${width}: ${own}`);
+                assert.doesNotMatch(own, /…/u, 'the compact label is a word, not an ellipsis');
+              }
+            }
+          });
+        }
+      }
+    } finally {
+      setLanguage(previous);
+    }
+  }
 });
 
 test('the Nerd Font icons are one column each, and a cut never splits the robot in two', () => {
@@ -271,16 +388,22 @@ test('the Nerd Font icons are one column each, and a cut never splits the robot 
 test('with icons off: words, shortened where narrow, the main session an arrow and a word', () => {
   withConfig({ icons: 'text' }, () => {
     inChinese(() => {
-      assert.equal(plain(state(), 24), ' ← 主  卡片      设置 ? ');
-      assert.equal(plain(state(), 40), ' ← 主  卡片             暂停 +31 设置 ? ');
+      assert.equal(plain(state(), 24), ' ← 主  卡片   设置    ? ');
+      assert.equal(plain(state(), 40), ' ← 主  卡片    设置          暂停 +31 ? ');
       assert.equal(
         plain(state(), 90),
-        ' ← 主会话   卡片   时间线  改动  详情                    暂停简报  +31 已收起  设置  帮助 '
+        ' ← 主会话   卡片   时间线  改动  详情  设置                    暂停模型  +31 已收起  帮助 '
       );
     });
   });
-  withConfig({ glyphs: 'text' }, () => {
-    assert.match(plain(state(), 130, { brief: { paused: true }, expired: 2 }), / Resume brief {2}\+2 older {2}Settings {2}Help $/, 'glyphs: text means words');
+  withConfig({ icons: 'text' }, () => {
+    assert.match(plain(state(), 130, { brief: { paused: true }, expired: 2 }), /Settings +Resume models {2}\+2 older {2}Help $/, 'icons: text means words');
+  });
+  // The model label is the model badge's alone: set to text, the bar keeps its icons.
+  withConfig({ glyphs: 'text', icons: 'unicode' }, () => {
+    const bar = plain(state(), 130, { brief: { paused: true }, expired: 2 });
+    assert.match(bar, /⌂ Main/, bar);
+    assert.match(bar, /⚙ Settings +▶ Resume models {2}⊕ 2 finished {2}\? Help $/, bar);
   });
 });
 
@@ -352,9 +475,9 @@ test('the help is a modal with a [Back] button; the settings page names only its
   inChinese(() => {
     const lines = renderMonitor({ tree, state: state({ help: true }), width: 32, height: 200 }).lines.map(stripAnsi);
     assert.equal(lines[1], '快捷键：先按 Ctrl+]，再按一键');
-    for (const entry of ['m          主会话', 'o          切换到选中的', 'Enter / v  查看详情', 'z          放大', 'F12        开 / 关侧栏', 'Shift+F12  进入侧栏'])
-      assert.ok(lines.includes(entry), `${entry}\n${lines.join('\n')}`);
-    assert.ok(lines.some(line => line.startsWith('Ctrl+]     把 Ctrl+]')), 'the prefix twice is one entry, its key the prefix');
+    for (const entry of [/^m +主会话$/, /^o +切换到选中的$/, /^Enter \/ 空格 \/ v +详情$/, /^z +放大$/, /^F12 +开 \/ 关侧栏$/, /^Shift\+F12 +进入侧栏$/])
+      assert.ok(lines.some(line => entry.test(line)), `${entry}\n${lines.join('\n')}`);
+    assert.ok(lines.some(line => /^Ctrl\+\] +把 Ctrl\+\]/.test(line)), 'the prefix twice is one entry, its key the prefix');
     assert.equal(lines.filter(line => line.includes('Ctrl+]')).length, 2, 'nowhere else');
     const other = renderMonitor({
       tree,
@@ -363,16 +486,29 @@ test('the help is a modal with a [Back] button; the settings page names only its
       height: 200,
       prefix: 'Ctrl+\\',
     }).lines.map(stripAnsi);
-    assert.ok(other.includes('m          主会话') && other[1].includes('Ctrl+\\'), 'any prefix');
+    assert.ok(other.some(line => /^m +主会话$/.test(line)) && other[1].includes('Ctrl+\\'), 'any prefix');
     // Too narrow for what a key does, it wraps under itself.
     const narrow = renderMonitor({ tree, state: state({ help: true }), width: 20, height: 200 }).lines.map(stripAnsi);
-    const at = narrow.findIndex(line => line.startsWith('r          '));
-    assert.ok(at > 0 && /^ {11}\S/.test(narrow[at + 1]), narrow.slice(at, at + 3).join('\n'));
+    const at = narrow.findIndex(line => /^r +\S/.test(line));
+    const hang = narrow[at]?.match(/^r( +)/)?.[1].length;
+    assert.ok(at > 0 && hang !== undefined && narrow[at + 1].startsWith(' '.repeat(hang + 1)), narrow.slice(at, at + 3).join('\n'));
   });
   for (const width of [28, 40, 70]) {
     const page = renderSettingsPage({ draft: defaultSettings(), selected: 0, offset: 0, message: '' }, width, 30);
     const foot = stripAnsi(page.lines.at(-1)!);
     assert.doesNotMatch(foot, /\bs save|r reset|Esc/, `${width}: ${foot}`);
-    assert.match(stripAnsi(page.lines[0]), /^\[Back\] \[Save\] \[Reset\]/);
+    assert.match(stripAnsi(page.lines[0]), /^\[Back\] \[Save\] \[Reset group\]/);
   }
+});
+
+test('rich help explains selection and Inspector keys, with the latest-note field only when shown', async () => {
+  const { renderMonitor } = await import('../../src/render/monitor.js');
+  const tree = { rootId: 'r', nodes: [], totalCount: 0, updatedAt: new Date('2026-09-16T10:00:00Z') };
+  const help = (cardSummary: boolean) => renderMonitor({tree,state:state({style:'rich',help:true,cardVisibility:{cardSummary}}),width:80,height:200}).lines.map(stripAnsi).join('\n');
+  assert.match(help(true), /Click a card: select/);
+  assert.match(help(true), /Enter \/ Space \/ v +inspect/);
+  assert.match(help(true), /Click its name: select; double-click switches/);
+  assert.match(help(true), /Latest note: written by a model/);
+  assert.doesNotMatch(help(false), /Latest note: written by a model/);
+  assert.doesNotMatch(help(true), /open \/ close card|Click a card: open|e \/ Space/);
 });

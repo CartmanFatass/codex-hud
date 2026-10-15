@@ -3,18 +3,20 @@ import { navigateSession } from './utils/session-navigation.js';
 import { defaultSettings, saveSettings, briefingScope, type HudSettings } from './settings.js';
 import { runtimeSettings, applyDisplaySettings, withDisplaySettings } from './settings-runtime.js';
 import { treeWidthKeeper } from './utils/pane-width.js';
-import { renderSettingsPage, handleSettingsInput, type SettingsPageState, type SettingsFrame } from './render/settings-page.js';
+import { renderSettingsPage, handleSettingsInput, settingsDirty, resetSettingsGroup, resetAllPreferences, SETTING_ROWS, type SettingsPageState, type SettingsFrame } from './render/settings-page.js';
+import { renderSettingsConfirmation, handleSettingsConfirmation, type SettingsConfirmationState, type SettingsConfirmationFrame } from './render/settings-confirmation.js';
 import { spawn, execFile, execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { SessionFinder } from './collectors/session-finder.js';
+import { SessionFinder, findRolloutsInDaysYielding } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
 import { buildSubagentTree, uniquePickerLabel, useTreeScanStore, flushTreeScans } from './collectors/subagent-tree.js';
 import { TreeScanStore } from './collectors/tree-scan-store.js';
 import { collectGitChanges, readGitDiff, readDiffHunks, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import { renderMonitor, initialMonitorState, reconcileMonitor, handleMonitorInput, canMonitorDiff,
-  monitorModes, monitorSettings, monitorPreferences, nextRepaintDelay, paneShown, panelTop, type MonitorFrame } from './render/monitor.js';
+  monitorModes, monitorSettings, monitorPreferences, nextRepaintDelay, msUntilAgeChanges, msUntilCountdownChanges,
+  finishedAt, paneShown, panelTop, type MonitorFrame } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
@@ -22,8 +24,11 @@ import { fileSignature } from './utils/file-signature.js';
 import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
 import { SmallModel } from './collectors/small-model.js';
+import { ProgressSummarizer, progressTargets } from './collectors/progress-summary.js';
+import { cardSummaryTargets } from './render/cards.js';
+import { controlBar } from './render/control-bar.js';
 import { RecapStore } from './collectors/recap.js';
-import { AgentLog } from './collectors/agent-log.js';
+import { AgentLog, logsIn } from './collectors/agent-log.js';
 import { ModelJobs, NO_JOBS, type JobSwitches } from './collectors/model-jobs.js';
 import { WorkbenchHistory } from './collectors/workbench-events.js';
 import type { WorkbenchEvent } from './render/workbench-state.js';
@@ -31,6 +36,9 @@ import { getCodexHome, getHudHome } from './utils/codex-path.js';
 import { codexGoal } from './collectors/codex-goal.js';
 import { roleSet, subtaskRoles } from './render/directions.js';
 import { HudStatus } from './collectors/hud-status.js';
+import { Notifier, resolveNotifierOptions } from './notify.js';
+import { buildSnapshot, SnapshotWriter } from './snapshot.js';
+import { resolveResetTime } from './render/quota.js';
 import { statusCard, sessionState } from './render/status-block.js';
 import { artSize, renderArt, type ArtBitmap } from './render/art.js';
 import { loadArtImage } from './collectors/art-image.js';
@@ -44,6 +52,13 @@ const AGENT_CONTEXT_INTERVAL_MS = 3000;
 
 function walkNodes(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
   for (const node of nodes) { visit(node); walkNodes(node.children, visit); }
+}
+
+/** Rollouts the current tree already shows, so a quiet one that starts writing is stat'd at once. */
+function treePaths(nodes: SubagentTreeNode[]): Set<string> {
+  const paths = new Set<string>();
+  walkNodes(nodes, node => { if (node.rolloutPath) paths.add(node.rolloutPath); });
+  return paths;
 }
 
 const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
@@ -83,9 +98,16 @@ function focusPanel(): void {
   if (pane) void tmux(['select-pane','-t',pane]);
 }
 
+/** Esc leaves focus mode: the keys go back to the Codex pane. */
+function focusMain(): void {
+  const pane = process.env.CODEX_HUD_MAIN_PANE;
+  if (pane) void tmux(['select-pane','-t',pane]);
+}
+
 /**
- * Install the prefix key again after the setting changed (bin/codex-hud-keys),
- * for this session's server. Only inside a HUD session, which passes the toggle.
+ * Refresh the command table at panel startup or after the prefix changed,
+ * so an existing session picks up removed commands and new bindings too.
+ * Only inside a HUD session, which passes the toggle.
  */
 function reinstallPrefix(prefix: string): void {
   const toggle = process.env.CODEX_HUD_TOGGLE_CMD;
@@ -128,6 +150,7 @@ async function runLivePage(): Promise<void> {
   applyDisplaySettings(settings);
   setLanguage(resolveLanguage(settings.language));
   if (settingsFailure) settingsError = t('Settings: {reason}',{reason:String(settingsFailure)});
+  else reinstallPrefix(settings.prefixKey);
   const configuredState = () => {
     const next = initialMonitorState();
     next.tree.sort = settings.sort;
@@ -138,6 +161,8 @@ async function runLivePage(): Promise<void> {
   let state = configuredState();
   let settingsPage: SettingsPageState | null = null;
   let settingsFrame: SettingsFrame | undefined;
+  let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
+  let confirmationFrame: SettingsConfirmationFrame | undefined;
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
   let navigating = false;
@@ -181,6 +206,18 @@ async function runLivePage(): Promise<void> {
   const recaps = new RecapStore(path.join(getHudHome(),'recaps'));
   // Repaints when a brief starts, lands or fails; render() is defined below.
   const briefer = new Briefer(()=>render(),{model,store:recaps,log:agentLog});
+  // Visible summary subjects request public progress independently of the periodic brief.
+  const progress = new ProgressSummarizer(model,agentLog,{onChange:()=>render()});
+  const updateProgress = () => {
+    const now = Date.now();
+    const language = resolveLanguage(settings.language);
+    progress.update({tree,
+      targets:state.style === 'rich' && paneShown(state,'agents') && !state.help && !settingsPage
+        ? progressTargets(tree,cardSummaryTargets({tree,agentLog:logsIn(agentLog.snapshot(),language)},state,now)) : new Set(),
+      on:settings.briefing !== 'off' && settings.agentProgress && !settings.briefingPaused,
+      offReason:settings.briefing === 'off' ? 'off' : settings.briefingPaused ? 'paused' : 'progress-disabled',
+      language,now});
+  };
   /** The model's other jobs, each behind its own switch; all off with the backend. */
   const switches = (): JobSwitches => settings.briefing === 'off' ? NO_JOBS : {resultDigest:settings.resultDigest,agentLabels:settings.agentLabels,
     failureCause:settings.failureCause,changeSummary:settings.changeSummary,approvalDescription:settings.approvalDescription};
@@ -207,18 +244,25 @@ async function runLivePage(): Promise<void> {
     return size ? renderArt(art.bitmap,style,size.cols,size.rows) : null;
   };
   const configureBriefer = () => model.configure({backend:settings.briefing,api:{base:settings.briefingApiBase,model:settings.briefingApiModel,key:settings.briefingApiKey,
-    reasoning:settings.briefingApiReasoning},hourlyCap:settings.modelCallsPerHour});
+    reasoning:settings.briefingApiReasoning,models:{lite:settings.briefingApiLiteModel,low:settings.briefingApiLowModel,
+      medium:settings.briefingApiMediumModel}},hourlyCap:settings.modelCallsPerHour});
   const scope = () => briefingScope(settings);
   /** The brief's backend as the Briefer sees it: off too when neither brief nor recap is on. */
   const briefCommand = () => scope() ? settings.briefing : 'off';
   // The goal set in Codex is main-session material: read only for a scope that sends it.
   const updateBriefer = (paused: boolean) => time('brief.update',()=>briefer.update(tree,briefCommand(),settings.briefingMs,
     resolveLanguage(settings.language),Date.now(),paused,{scope:scope() ?? 'agents',main,floorMs:settings.recapFloorMs,
-      importantRoles:roleSet(settings.importantRoles),goal:settings.briefing !== 'off' && settings.briefMain ? codexGoal(getCodexHome(),tree.rootId) : null}));
+      importantRoles:roleSet(settings.importantRoles),goal:settings.briefing !== 'off' && settings.briefMain ? codexGoal(getCodexHome(),tree.rootId) : null,
+      labels:switches().agentLabels}));
   configureBriefer();
   // The bar's fields, for the foot of the panel: the panel replaces the bar
   // while it is open. Fed from this page's own parse of the rollout.
   const hudStatus = new HudStatus(HUD_CWD,()=>render(),30_000);
+  // The panel replaces the bar, so it publishes the same notifications and snapshot.
+  const notifier = new Notifier(resolveNotifierOptions(process.env, settings));
+  const snapshotWriter = new SnapshotWriter();
+  /** Codex's pane width, when tmux has reported it. Unknown still allows session links. */
+  let mainCols: number | null = null;
   const timers: Array<ReturnType<typeof setInterval>> = [];
   // Collection runs at the refresh setting; repaints between collections only
   // move the clocks, once a second (see nextRepaintDelay).
@@ -229,7 +273,7 @@ async function runLivePage(): Promise<void> {
 
   // The panel's top as a draft of the settings would draw it.
   const previewTop = (draft: HudSettings, width: number) => withDisplaySettings(draft,() =>
-    panelTop({tree,brief:briefCommand() === 'off' ? undefined : {paused:settings.briefingPaused}},{...state,tabbed:draft.paneLayout === 'tabs'},width));
+    panelTop({tree,brief:settings.briefing === 'off' ? undefined : {paused:settings.briefingPaused}},{...state,tabbed:draft.paneLayout === 'tabs'},width));
   const render = () => {
     if (closed) return;
     const output = time('render',() => {
@@ -237,17 +281,27 @@ async function runLivePage(): Promise<void> {
       if (settingsPage) {
         // Key roles offers the roles the subtasks have now.
         settingsFrame = renderSettingsPage({...settingsPage,roles:subtaskRoles(tree)},process.stdout.columns || 30,process.stdout.rows || 24,
-          {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage()},previewTop);
+          {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage()},previewTop,
+          controlBar(state,{settingsActive:true,expired:0,brief:settings.briefing === 'off' ? undefined : {paused:settings.briefingPaused}},process.stdout.columns || 30));
         settingsPage = settingsFrame.state;
         lines = settingsFrame.lines;
+        if (settingsLeave) {
+          confirmationFrame = renderSettingsConfirmation(lines,settingsLeave,process.stdout.columns || 30,process.stdout.rows || 24,settingsFrame.headerY);
+          lines = confirmationFrame.lines;
+        }
       } else {
       const width = process.stdout.columns || 30;
-      frame = renderMonitor({tree,state,git,worktrees,diff,error,notice:navigationMessage,loading:!collected,art:drawArt,prefix:prefixName(settings.prefixKey),
-        brief:briefCommand() === 'off' ? undefined : {...briefer.current(),paused:settings.briefingPaused},
-        agentLog:settings.briefing !== 'off' || settings.agentLog ? agentLog.snapshot() : undefined,timeline:jobs.withCauses(timeline),
+      const nowMs = Date.now();
+      const agentLogs = logsIn(agentLog.snapshot(),resolveLanguage(settings.language),settings.briefing !== 'off' || settings.agentLog);
+      frame = renderMonitor({tree,state,git,worktrees,diff,error,nowMs,notice:navigationMessage,loading:!collected,art:drawArt,prefix:prefixName(settings.prefixKey),
+        brief:settings.briefing === 'off' ? undefined : {...(briefCommand() === 'off' ? {} : briefer.current()),paused:settings.briefingPaused},
+        agentLog:agentLogs,
+        progress:progress.state(),progressContext:{backendOn:settings.briefing !== 'off',paused:settings.briefingPaused,enabled:settings.agentProgress,
+          targets:cardSummaryTargets({tree,agentLog:agentLogs},state,nowMs)},timeline:jobs.withCauses(timeline),
         notes:{approval:switches().approvalDescription ? jobs.approvalNote(main?.pendingApproval) : undefined,
           changes:switches().changeSummary ? jobs.changeNote(git) : undefined},
-        status:nowMs=>statusCard(hudStatus.current(),nowMs),session:nowMs=>sessionState(hudStatus.current(),nowMs),width,height:process.stdout.rows || 24});
+        status:nowMs=>statusCard(hudStatus.current(),nowMs),session:nowMs=>sessionState(hudStatus.current(),nowMs),width,height:process.stdout.rows || 24,
+        linkNames:mainCols === null || mainCols >= 63});
       state = frame.state;
       lines = frame.lines;
       }
@@ -258,12 +312,50 @@ async function runLivePage(): Promise<void> {
       time('write',() => process.stdout.write(`\x1b[H${output}\x1b[J`));
     }
   };
-  /** The next clock-only repaint, timed to the main turn clock while a turn runs. */
+  /**
+   * The next clock-only repaint. A second while something on screen shows
+   * seconds (a turn, a live agent, the settings health line). Otherwise the
+   * next age or countdown boundary, and never more than a minute.
+   */
+  const repaintDelay = () => {
+    const now = Date.now();
+    const data = hudStatus.current();
+    const activity = data?.activity;
+    const anchor = activity?.state === 'working' ? activity.turnStartedAt?.getTime() : undefined;
+    if (settingsPage) return nextRepaintDelay(now, anchor);
+    let live = activity?.state === 'working';
+    if (!live) walkNodes(tree.nodes, node => { if (node.status === 'running' || node.status === 'starting') live = true; });
+    if (live) return nextRepaintDelay(now, anchor);
+    let wait = 60_000;
+    const consider = (ms: number) => { if (ms > 0 && ms < wait) wait = ms; };
+    const ageAt = (at?: Date) => { if (at && Number.isFinite(at.getTime())) consider(msUntilAgeChanges(at.getTime(), now)); };
+    walkNodes(tree.nodes, node => { ageAt(finishedAt(node)); ageAt(node.startedAt); ageAt(node.turnStartedAt); ageAt(node.lastEventAt); ageAt(node.statusAt); });
+    ageAt(data?.session?.startTime);
+    ageAt(data?.sessionStart);
+    for (const window of [data?.rateLimits?.primary, data?.rateLimits?.secondary]) {
+      if (!window) continue;
+      const target = resolveResetTime(window, now);
+      if (target) consider(msUntilCountdownChanges(target.getTime(), now));
+    }
+    if (paneShown(state, 'timeline')) for (const event of timeline) ageAt(event.at);
+    return Math.min(60_000, Math.max(1, wait));
+  };
   const scheduleRepaint = () => {
     if (closed) return;
-    const activity = hudStatus.current()?.activity;
-    const anchor = activity?.state === 'working' ? activity.turnStartedAt?.getTime() : undefined;
-    repaintTimer = setTimeout(()=>{render();scheduleRepaint();},nextRepaintDelay(Date.now(),anchor));
+    repaintTimer = setTimeout(()=>{render();scheduleRepaint();},repaintDelay());
+  };
+  /** The Codex pane's columns, so a narrow one is not offered as a link. */
+  const readMainCols = () => {
+    const pane = process.env.CODEX_HUD_MAIN_PANE;
+    if (!pane) return;
+    execFile(process.env.CODEX_HUD_TMUX_BIN || 'tmux', ['display-message', '-p', '-t', pane, '#{pane_width}'],
+      { timeout: 1500, windowsHide: true }, (err, stdout) => {
+        if (closed || err) return;
+        const cols = Number(String(stdout ?? '').trim());
+        if (!Number.isInteger(cols) || cols <= 0 || cols === mainCols) return;
+        mainCols = cols;
+        render();
+      });
   };
   /** (Re)arm collection at the refresh setting; a no-op while it is unchanged. */
   const armCollect = () => {
@@ -386,21 +478,34 @@ async function runLivePage(): Promise<void> {
       if (rootId !== tree.rootId) {
         state = configuredState(); diff = undefined; diffKey = ''; git = null; worktrees = null;
       }
-      tree = rootId ? time('tree.build',()=>buildSubagentTree(rootId,main?.subagents ?? [])) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+      const priority = treePaths(tree.nodes);
+      // The root is not a card node, but its new spawn charges must be read
+      // on this tick too, rather than waiting for the quiet-file budget.
+      if (session) priority.add(session.path);
+      const listed = rootId ? await findRolloutsInDaysYielding(3, priority) : undefined;
+      tree = rootId ? time('tree.build',()=>buildSubagentTree(rootId,main?.subagents ?? [],3,Date.now(),listed)) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
       applyAgentContext();
       jobs.apply(tree,switches(),resolveLanguage(settings.language));
       // On the same tick as the tree, so the log never lags it.
       if (time('agentlog.observe',()=>agentLog.observe(tree))) agentLog.flush();
-      timeline = time('timeline',()=>history.timeline(tree,main,agentLog.snapshot()));
+      timeline = time('timeline',()=>history.timeline(tree,main,logsIn(agentLog.snapshot(),resolveLanguage(settings.language))));
       state = reconcileMonitor(state,tree,git,worktrees);
+      updateProgress();
       updateBriefer(settings.briefingPaused);
       updateJobs();
       error = settingsError || null;
     } catch (err) { error = t('Refresh: {reason}',{reason:String(err)}); stale = true; hudStatus.health.fail(stage,err); }
     finally { collecting = false; collected = true; }
-    try { hudStatus.build({rollout:main,sessionId:session?.sessionId,stale}); }
+    let built: ReturnType<HudStatus['build']> | null = null;
+    try { built = hudStatus.build({rollout:main,sessionId:session?.sessionId,stale,tree}); }
     catch (err) { hudStatus.health.fail('status',err); /* The foot keeps its last good rows. */ }
+    if (built && !stale) {
+      notifier.update(built);
+      try { snapshotWriter.write(buildSnapshot(built, {width:0,segments:[]})); }
+      catch { /* A state file nobody can write is not a reason to stop drawing. */ }
+    }
     render();
+    readMainCols();
     void refreshInspection();
     void refreshAgentContext();
   };
@@ -454,6 +559,7 @@ async function runLivePage(): Promise<void> {
     closed = true;
     briefer.stop();
     jobs.stop();
+    progress.stop();
     model.cancelAll();
     agentLog.flush();
     flushTreeScans();
@@ -467,6 +573,7 @@ async function runLivePage(): Promise<void> {
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.stdin.pause();
     process.stdout.write(LEAVE);
+    snapshotWriter.remove();
     if (user) requestEnsureSingle();
     resolveDone();
   };
@@ -486,11 +593,48 @@ async function runLivePage(): Promise<void> {
    * overlay keeps the ones that move inside it or close it; any other
    * closes the overlay and goes to the panel.
    */
-  const commandInput = (command: PanelCommand): WorkbenchInput => {
+  const applySettingsDraft = (): boolean => {
+    const page = settingsPage;
+    if (!page) return false;
+    try {
+      const previousPrefix = settings.prefixKey;
+      settings = saveSettings(page.draft);
+      settingsError = ''; error = null;
+      applyDisplaySettings(settings);
+      setLanguage(resolveLanguage(settings.language));
+      configureBriefer();
+      jobs.apply(tree,switches(),resolveLanguage(settings.language));
+      if (!jobsOn()) jobs.stop();
+      armCollect(); loadArt();
+      state = {...state,...monitorSettings(settings),tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
+        zoom:false,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
+      updateProgress(); updateBriefer(settings.briefingPaused);
+      git=null;diff=undefined;diffKey='';void refreshGit();
+      notifier.configure(resolveNotifierOptions(process.env, settings));
+      if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
+      page.message = t('Saved'); page.original = {...settings};
+      process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
+      void widthKeeper?.apply().then(()=>{lastPaint='';render();}).catch(err=>{if(settingsPage) settingsPage.message=String(err);render();});
+      return true;
+    } catch (err) {
+      page.message = t('Save failed: {reason}',{reason:String(err)});
+      return false;
+    }
+  };
+  const requestSettingsLeave = (destination?: string): boolean => {
+    if (settingsPage && settingsDirty(settingsPage)) {
+      settingsLeave = {choice:'cancel',destination};
+      return false;
+    }
+    settingsPage = null;
+    return true;
+  };
+  const commandInput = (command: PanelCommand): WorkbenchInput | null => {
     const overlay = settingsPage ? 'settings' : state.help ? 'help' : null;
     if (overlay) {
       const key = overlayKey(command,overlay);
       if (key) return {type:'key',key};
+      if (settingsPage && !requestSettingsLeave(monitorKey(command))) return null;
       settingsPage = null;
       state = {...state,help:false};
     }
@@ -502,10 +646,36 @@ async function runLivePage(): Promise<void> {
     const forward: ForwardItem[] = [];
     for (let input of inputs) {
       if (closed) break;
+      const fromSettings = Boolean(settingsPage);
+      let panelInput = input.type === 'command';
       if (input.type === 'mouse' && !settings.mouse) continue;
-      if (input.type === 'command') input = commandInput(input.command);
-      else if (mainPane && input.type !== 'mouse') {
-        const overlay = Boolean(settingsPage || state.help);
+      if (settingsLeave && confirmationFrame) {
+        const dialogInput: WorkbenchInput = input.type === 'command'
+          ? {type:'key',key:overlayKey(input.command,'settings') ?? ''} : input;
+        const result = handleSettingsConfirmation(settingsLeave,dialogInput,confirmationFrame);
+        settingsLeave = {...settingsLeave,...result.state};
+        if (!result.action) {render();continue;}
+        if (result.action === 'cancel') {settingsLeave=null;render();continue;}
+        if (result.action === 'save' && !applySettingsDraft()) {
+          settingsLeave.error = settingsPage?.message || t('Could not save settings');
+          render();continue;
+        }
+        const destination = settingsLeave.destination;
+        settingsLeave = null; settingsPage = null;
+        if (!destination) {updateProgress();render();continue;}
+        // Preserve the destination by key, not old mouse coordinates: Save
+        // may have changed the pane width and therefore every tab's hit span.
+        input = {type:'key',key:destination}; panelInput = true;
+      }
+      if (input.type === 'command') {
+        const decoded = commandInput(input.command);
+        if (!decoded) {render();continue;}
+        input = decoded;
+      }
+      else if (mainPane && input.type !== 'mouse' && !panelInput) {
+        // Focus mode keeps keys here, as an overlay does, without being one:
+        // a prefix command is still a panel command.
+        const overlay = Boolean(settingsPage || state.help || state.keys);
         if (!overlay) {
           // Not the panel's: every key and paste is Codex's.
           if (input.type === 'paste') forward.push({kind:'paste',text:input.text});
@@ -519,38 +689,34 @@ async function runLivePage(): Promise<void> {
         if (input.key === 'close') input = {type:'key',key:'escape'};
       }
       if (input.type === 'paste') continue;
+      if (settingsPage && settingsFrame && input.type === 'mouse' && input.button === 'left') {
+        const {x,y} = input;
+        const hit = settingsFrame.navigationControls.find(c=>y === c.y && x >= c.x && x < c.x+c.width);
+        if (hit) {
+          if (hit.kind === 'settings') continue;
+          const destination = hit.kind === 'tab' ? hit.pane
+            : ({main:'main',help:'help',brief:'brief-toggle',older:'show-all'} as Record<string,string>)[hit.kind];
+          if (!destination) continue;
+          if (!requestSettingsLeave(destination)) {render();continue;}
+          input = {type:'key',key:destination};
+        }
+      }
       if (settingsPage && settingsFrame) {
         const result = handleSettingsInput(settingsPage,input,settingsFrame);
         settingsPage = result.state;
-        if (result.action === 'back') settingsPage = null;
-        else if (result.action === 'reset') settingsPage = {...settingsPage,draft:defaultSettings(),message:t('Defaults ready; Save to apply')};
-        else if (result.action === 'save') {
-          try {
-            const previousPrefix = settings.prefixKey;
-            settings = saveSettings(settingsPage.draft);
-            settingsError = ''; error = null;
-            applyDisplaySettings(settings);
-            setLanguage(resolveLanguage(settings.language));
-            configureBriefer();
-            // A switched-off job's labels and digests leave the tree at once.
-            jobs.apply(tree,switches(),resolveLanguage(settings.language));
-            if (!jobsOn()) jobs.stop();
-            armCollect();
-            loadArt();
-            state = {...state,...monitorSettings(settings),tree:{...state.tree,sort:settings.sort,lingerMs:settings.finishedLingerMs},modes:monitorModes(settings),
-              zoom:false,statusScroll:0,scroll:{...state.scroll,agents:0},revealed:null};
-            git=null;diff=undefined;diffKey='';void refreshGit();
-            if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
-            settingsPage.message = t('Saved');
-            settingsPage.original = {...settings};
-            process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
-            void widthKeeper?.apply().catch(err=>{if(settingsPage) settingsPage.message=String(err);render();});
-          } catch (err) { settingsPage.message = t('Save failed: {reason}',{reason:String(err)}); }
+        if (result.action === 'back') requestSettingsLeave();
+        else if (result.action === 'reset') {
+          const group = SETTING_ROWS[settingsPage.selected].group;
+          settingsPage = {...settingsPage,draft:resetSettingsGroup(settingsPage.draft,group),
+            message:t(group === 'LLM' ? 'Model generation disabled; connection preserved; Save to apply' : 'Group defaults ready; Save to apply')};
         }
+        else if (result.action === 'reset-all') settingsPage = {...settingsPage,draft:resetAllPreferences(settingsPage.draft),message:t('Preference defaults ready; model connection preserved and generation paused')};
+        else if (result.action === 'save') applySettingsDraft();
+        updateProgress();
         render(); continue;
       }
       const previous = state;
-      const result = handleMonitorInput(state,input,{tree,git,worktrees,frame});
+      const result = handleMonitorInput(state,input,{tree,git,worktrees,frame,navigationOverlay:fromSettings});
       state = result.state;
       if (result.close) { finish(true); break; }
       if (state.selectedFile !== previous.selectedFile) { diff=undefined;diffKey=''; }
@@ -559,12 +725,13 @@ async function runLivePage(): Promise<void> {
         try { settings=saveSettings(monitorPreferences(state)); }
         catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
       }
-      if (result.action?.type === 'brief-toggle' && briefCommand() !== 'off') {
+      if (result.action?.type === 'brief-toggle' && settings.briefing !== 'off') {
         try {
           settings = saveSettings({briefingPaused:!settings.briefingPaused});
           // Resuming asks at once when there is news, rather than at the next tick.
           if (!settings.briefingPaused) void collect();
           else { updateBriefer(true); jobs.stop(); }
+          updateProgress();
         } catch (err) { settingsError=t('Panel preferences could not be saved: {reason}',{reason:String(err)});error=settingsError; }
       }
       if (result.action?.type === 'status-level' && state.statusLevel) {
@@ -574,6 +741,19 @@ async function runLivePage(): Promise<void> {
       if (result.action?.type === 'settings') {
         settingsPage={draft:{...settings,...monitorPreferences(state),sort:state.tree.sort??'active'},selected:0,offset:0,message:''};
       }
+      if (result.action?.type === 'pick' && input.type === 'mouse') {
+        const id = result.action.id;
+        const at = Date.now();
+        const again = lastClickSwitch?.id === id && at - lastClickSwitch.at < 400;
+        lastClickSwitch = again ? undefined : {id, at};
+        if (again) {
+          if (mainCols !== null && mainCols < 63) navigationMessage = t('The Codex pane is too narrow to show agent IDs; widen it, then try again.');
+          else void switchSession(id);
+        }
+      }
+      if (!previous.keys && state.keys) focusPanel();
+      if (previous.keys && !state.keys) focusMain();
+      updateProgress();
       render();
       // A tab shown in the tabs layout is read for at once, as an opened pane is.
       if (state.selectedWorktree !== previous.selectedWorktree || JSON.stringify(state.modes) !== JSON.stringify(previous.modes)
@@ -609,7 +789,7 @@ async function runLivePage(): Promise<void> {
     process.once('SIGHUP',()=>finish());
     process.stdin.once('end',()=>finish());
     process.stdout.on('resize',()=>{
-      lastPaint='';render();void refreshInspection();
+      lastPaint='';render();readMainCols();void refreshInspection();
       // A client attaching at another size shares the change with this pane;
       // wait for the burst of resizes to settle, then take back the policy width.
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -621,6 +801,7 @@ async function runLivePage(): Promise<void> {
     process.stdin.resume();
     process.stdin.on('data',onData);
     render();
+    readMainCols();
     loadArt();
     void collect().then(runInitialCommand);
     void refreshGit();

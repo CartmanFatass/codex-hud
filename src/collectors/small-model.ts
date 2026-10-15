@@ -7,7 +7,7 @@
  *
  * - one request is `{feature, system, prompt, thinking?, cacheKey?}` and its
  *   answer is text or a reason there is none;
- * - the backend is the `briefing` setting: `omp`, `agy`, or an
+ * - the backend is the `briefing` setting: `agy` or an
  *   OpenAI-compatible chat completions endpoint (`api`);
  * - one request is in flight at a time; the rest wait their turn, and the
  *   owner of a request can cancel it, waiting or running;
@@ -28,14 +28,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { t } from '../render/i18n.js';
 
-export type ModelBackend = 'off' | 'omp' | 'agy' | 'api';
-/** omp's thinking levels; agy and `api` take the subset they know. */
+export type ModelBackend = 'off' | 'agy' | 'api';
+/** Thinking levels; agy and `api` take the subset they know. */
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto';
 
 /** Where `api` requests go. Empty fields fall back as `modelHttpRequest` says. */
 export interface ModelApi {
   base: string;
+  /** Nonempty is a global override, retained for existing configurations. */
   model: string;
+  models?: Partial<Record<ApiModelTier, string>>;
   key: string;
   /**
    * The endpoint accepts `reasoning_effort`. Off by default: only fields
@@ -45,7 +47,7 @@ export interface ModelApi {
 }
 
 export interface ModelRequest {
-  /** Who is asking, for the call log and error messages; never sent. */
+  /** Who is asking; selects an API model route, but is never sent. */
   feature: string;
   system: string;
   prompt: string;
@@ -61,9 +63,15 @@ export interface ModelRequest {
 
 export type ModelResult =
   | { ok: true; text: string; cached?: boolean }
-  | { ok: false; error: string; refused?: boolean; cancelled?: boolean };
+  | { ok: false; error: string; refused?: boolean; cancelled?: boolean; reason?: 'hourly-cap' };
+
+export type ModelStatus = 'queued' | 'running' | 'settled';
 
 export interface ModelHandle {
+  /** Public lifecycle only: never exposes a prompt, endpoint or credential. */
+  readonly status: ModelStatus;
+  readonly generatedAt?: number;
+  subscribe(listener: () => void): () => void;
   result: Promise<ModelResult>;
   /** Drop the request: a waiting one never runs, a running one is stopped. */
   cancel(): void;
@@ -78,7 +86,6 @@ export interface ModelUsage {
 }
 
 export const DEFAULT_THINKING: ThinkingLevel = 'low';
-export const DEFAULT_OMP_MODEL = 'google-antigravity/gemini-3.8-flash';
 /** agy's model names carry their effort level; this one is `low`. */
 export const DEFAULT_AGY_MODEL = 'gemini-3.8-flash-low';
 const AGY_MODEL_FAMILY = 'gemini-3.8-flash';
@@ -101,44 +108,58 @@ const CACHE_LIMIT = 200;
 /** Call timestamps kept: a day's worth, bounded however busy the day was. */
 const CALL_LOG_LIMIT = 5000;
 const OPENAI_BASE = 'https://api.openai.com/v1';
+export type ApiModelTier = 'lite' | 'low' | 'medium';
+export const DEFAULT_API_MODELS: Readonly<Record<ApiModelTier, string>> = {
+  lite: 'gemini-3.5-flash-lite', low: 'gemini-3.8-flash-low', medium: 'gemini-3.8-flash-medium',
+};
+
+export function apiModelTier(feature: string): ApiModelTier {
+  if (['labels', 'title', 'approval'].includes(feature)) return 'lite';
+  if (['recap', 'cause'].includes(feature)) return 'medium';
+  return 'low';
+}
 
 /** The program and arguments for one request. No shell is involved. */
-export function modelCommand(backend: 'omp' | 'agy', request: Pick<ModelRequest, 'system' | 'prompt' | 'thinking'>,
+export function modelCommand(backend: 'agy', request: Pick<ModelRequest, 'system' | 'prompt' | 'thinking'>,
   env: NodeJS.ProcessEnv = process.env): { file: string; args: string[] } {
   const override = env.CODEX_HUD_BRIEF_MODEL?.trim();
   const thinking = request.thinking ?? DEFAULT_THINKING;
-  if (backend === 'agy') {
-    // agy has no system prompt flag; the instructions lead the prompt instead.
-    // Its default model's name carries the level, so a level it has a name
-    // for picks that model; anything else goes to --effort. At `low` this is
-    // exactly the command the brief has always run.
-    let model = override || DEFAULT_AGY_MODEL;
-    let effort: string | undefined;
-    if (!override && AGY_MODEL_LEVELS.includes(thinking)) model = `${AGY_MODEL_FAMILY}-${thinking}`;
-    else if (AGY_EFFORTS.includes(thinking) && (override || thinking !== DEFAULT_THINKING)) effort = thinking;
-    return { file: 'agy', args: ['-p', `${request.system}\n\n${request.prompt}`, '--model', model,
-      ...(effort ? ['--effort', effort] : []),
-      '--output-format', 'text', '--print-timeout', '80s', '--disable-slash-commands'] };
-  }
-  return { file: 'omp', args: ['-p', '--no-session', '--no-tools', '--no-skills', '--no-rules', '--no-extensions', '--no-lsp', '--no-title',
-    '--model', override || DEFAULT_OMP_MODEL, '--thinking', thinking, '--system-prompt', request.system, request.prompt] };
+  // agy has no system prompt flag; the instructions lead the prompt instead.
+  // Its default model's name carries the level, so a level it has a name
+  // for picks that model; anything else goes to --effort. At `low` this is
+  // exactly the command the brief has always run.
+  let model = override || DEFAULT_AGY_MODEL;
+  let effort: string | undefined;
+  if (!override && AGY_MODEL_LEVELS.includes(thinking)) model = `${AGY_MODEL_FAMILY}-${thinking}`;
+  else if (AGY_EFFORTS.includes(thinking) && (override || thinking !== DEFAULT_THINKING)) effort = thinking;
+  return { file: 'agy', args: ['-p', `${request.system}\n\n${request.prompt}`, '--model', model,
+    ...(effort ? ['--effort', effort] : []),
+    '--output-format', 'text', '--print-timeout', '80s', '--disable-slash-commands'] };
 }
 
 /**
  * One chat completions request. The base may be given up to `/v1` or as the
  * full `/chat/completions` URL. The key falls back to CODEX_HUD_BRIEF_API_KEY,
- * then OPENAI_API_KEY; with none the request goes without, for a local
- * server. CODEX_HUD_BRIEF_MODEL overrides the model. Only the fields every
+ * then OPENAI_API_KEY only for the official OpenAI origin; custom endpoints
+ * never receive the general OpenAI key. With none it goes without, for a local server. CODEX_HUD_BRIEF_MODEL overrides the model. Only the fields every
  * compatible server accepts are sent, plus `reasoning_effort` when the
  * endpoint is marked as taking it.
  */
-export function modelHttpRequest(api: ModelApi, request: Pick<ModelRequest, 'system' | 'prompt' | 'thinking'>,
+export function modelHttpRequest(api: ModelApi, request: Pick<ModelRequest, 'feature' | 'system' | 'prompt' | 'thinking'>,
   env: NodeJS.ProcessEnv = process.env): { url: string; headers: Record<string, string>; body: string } | { error: string } {
   const base = (api.base.trim() || OPENAI_BASE).replace(/\/+$/, '');
   const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
-  const model = env.CODEX_HUD_BRIEF_MODEL?.trim() || api.model.trim();
-  if (!model) return { error: 'api: set briefingApiModel' };
-  const key = api.key.trim() || env.CODEX_HUD_BRIEF_API_KEY?.trim() || env.OPENAI_API_KEY?.trim() || '';
+  let official = false;
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return { error: 'api: invalid endpoint' };
+    official = parsed.origin === 'https://api.openai.com';
+  } catch { return { error: 'api: invalid endpoint' }; }
+  const tier = apiModelTier(request.feature);
+  const model = env.CODEX_HUD_BRIEF_MODEL?.trim() || api.model.trim()
+    || api.models?.[tier]?.trim() || DEFAULT_API_MODELS[tier];
+  // An endpoint-specific HUD key is deliberate. Never leak OPENAI_API_KEY to a custom origin.
+  const key = api.key.trim() || env.CODEX_HUD_BRIEF_API_KEY?.trim() || (official ? env.OPENAI_API_KEY?.trim() : '') || '';
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (key) headers.authorization = `Bearer ${key}`;
   const effort = api.reasoning ? API_EFFORTS[request.thinking ?? DEFAULT_THINKING] : undefined;
@@ -175,9 +196,9 @@ function clip(text: string, max: number): string {
  * The cache key of a request: everything that shapes the answer, so a
  * changed prompt, instruction or level is a different question.
  */
-export function requestDigest(request: ModelRequest): string {
+export function requestDigest(request: ModelRequest, route?: { backend: ModelBackend; endpoint?: string; model?: string; reasoning?: boolean }): string {
   return createHash('sha256').update(JSON.stringify([request.feature, request.cacheKey ?? '', request.thinking ?? DEFAULT_THINKING,
-    request.system, request.prompt])).digest('hex');
+    request.system, request.prompt, route ?? null])).digest('hex');
 }
 
 /** Calls within `windowMs` before `now`. */
@@ -214,8 +235,15 @@ function readJson(file: string): unknown {
 
 interface Job {
   request: ModelRequest;
+  backend: ModelBackend;
+  command?: ReturnType<typeof modelCommand>;
+  http?: ReturnType<typeof modelHttpRequest>;
+  digest: string | null;
   resolve: (result: ModelResult) => void;
   settled: boolean;
+  status: ModelStatus;
+  generatedAt?: number;
+  listeners: Set<() => void>;
   /** Stops a running job; set while it runs. */
   stop?: () => void;
 }
@@ -246,8 +274,11 @@ export class SmallModel {
   }
 
   configure(patch: { backend?: ModelBackend; api?: ModelApi; hourlyCap?: number }): void {
-    if (patch.backend !== undefined) this.backend = patch.backend;
-    if (patch.api !== undefined) this.api = patch.api;
+    const backend = patch.backend ?? this.backend;
+    const api = patch.api ? { ...patch.api, models: patch.api.models ? { ...patch.api.models } : undefined } : this.api;
+    if (backend !== this.backend || JSON.stringify(api) !== JSON.stringify(this.api)) this.cancelAll();
+    this.backend = backend;
+    this.api = api;
     if (patch.hourlyCap !== undefined && Number.isFinite(patch.hourlyCap) && patch.hourlyCap > 0) this.cap = Math.floor(patch.hourlyCap);
   }
 
@@ -259,14 +290,29 @@ export class SmallModel {
 
   /** Queue a request. It starts at once when nothing else is in flight. */
   submit(request: ModelRequest): ModelHandle {
+    // Resolve everything now, including environment overrides and credentials: queued work
+    // must not silently change destinations when its settings or environment change.
+    request = { ...request };
+    const backend = this.backend;
+    const env = { ...(this.options.env ?? process.env) };
+    const http = backend === 'api' ? modelHttpRequest(this.api, request, env) : undefined;
+    const command = backend === 'agy' ? modelCommand('agy', request, env) : undefined;
+    const route = { backend, endpoint: http && !('error' in http) ? http.url : '',
+      model: http && !('error' in http) ? JSON.parse(http.body).model as string : command?.args[command.args.indexOf('--model') + 1],
+      reasoning: backend === 'api' && !!this.api.reasoning };
+    const digest = request.cacheKey !== undefined ? requestDigest(request, route) : null;
     let job!: Job;
     const result = new Promise<ModelResult>(resolve => {
-      job = { request, settled: false, resolve: value => { if (!job.settled) { job.settled = true; resolve(value); } } };
+      job = { request, backend, http, command, digest, settled: false, status: 'queued', listeners: new Set(), resolve: value => {
+        if (!job.settled) { job.settled = true; this.setStatus(job, 'settled'); resolve(value); }
+      } };
     });
     this.load();
-    const digest = request.cacheKey !== undefined ? requestDigest(request) : null;
     const hit = digest ? this.cache.get(digest) : undefined;
-    if (hit) {
+    if (backend === 'off') {
+      job.resolve({ ok: false, error: 'model backend off', refused: true });
+    } else if (hit) {
+      job.generatedAt = hit.at;
       job.resolve({ ok: true, text: hit.text, cached: true });
     } else {
       this.queue.push(job);
@@ -274,13 +320,17 @@ export class SmallModel {
     }
     return {
       result,
+      get status() { return job.status; },
+      get generatedAt() { return job.generatedAt; },
+      subscribe: listener => { job.listeners.add(listener); return () => { job.listeners.delete(listener); }; },
       cancel: () => {
         if (job.settled) return;
         const at = this.queue.indexOf(job);
         if (at >= 0) this.queue.splice(at, 1);
         job.stop?.();
         job.resolve({ ok: false, error: 'cancelled', cancelled: true });
-        if (this.active === job) { this.active = null; this.pump(); }
+        // Abort is asynchronous. Keep the active slot until run() settles,
+        // otherwise a replacement can overlap a fetch/subprocess still stopping.
       },
     };
   }
@@ -292,37 +342,43 @@ export class SmallModel {
       job.resolve({ ok: false, error: 'cancelled', cancelled: true });
     }
     this.queue.length = 0;
-    this.active = null;
+    // The active job releases its slot in pump() only after it has stopped.
+  }
+
+  private setStatus(job: Job, status: ModelStatus): void {
+    if (job.status === status) return;
+    job.status = status;
+    for (const listener of job.listeners) {
+      try { listener(); } catch { /* Observers must not strand a queue slot or its result. */ }
+    }
   }
 
   private pump(): void {
     if (this.active || !this.queue.length) return;
     const job = this.queue.shift()!;
     this.active = job;
+    this.setStatus(job, 'running');
     void this.run(job).then(outcome => {
-      if (outcome.ok && job.request.cacheKey !== undefined && !job.settled) this.remember(requestDigest(job.request), outcome.text);
+      if (outcome.ok) job.generatedAt = this.clock();
+      if (outcome.ok && job.request.cacheKey !== undefined && !job.settled) this.remember(job.digest!, outcome.text, job.generatedAt!);
       job.resolve(outcome);
       if (this.active === job) { this.active = null; this.pump(); }
     });
   }
 
   private async run(job: Job): Promise<ModelResult> {
-    const backend = this.backend;
+    const backend = job.backend;
     if (backend === 'off') return { ok: false, error: 'model backend off', refused: true };
-    const env = this.options.env ?? process.env;
-    let http: ReturnType<typeof modelHttpRequest> | null = null;
-    if (backend === 'api') {
-      http = modelHttpRequest(this.api, job.request, env);
-      if ('error' in http) return { ok: false, error: http.error };
-    }
+    const http = job.http;
+    if (http && 'error' in http) return { ok: false, error: http.error };
     const now = this.clock();
     this.reloadCalls();
     if (callsWithin(this.calls, now, HOUR_MS) >= this.cap) {
-      return { ok: false, error: t('Model call cap reached ({n} per hour)', { n: this.cap }), refused: true };
+      return { ok: false, error: t('Model call cap reached ({n} per hour)', { n: this.cap }), refused: true, reason: 'hourly-cap' };
     }
     this.recordCall(now);
-    if (backend === 'api') return this.request(job, http as Exclude<typeof http, { error: string } | null>);
-    return this.spawn(job, modelCommand(backend, job.request, env));
+    if (backend === 'api') return this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>);
+    return this.spawn(job, job.command!);
   }
 
   private spawn(job: Job, { file, args }: { file: string; args: string[] }): Promise<ModelResult> {
@@ -358,19 +414,22 @@ export class SmallModel {
     const abort = new AbortController();
     job.stop = () => abort.abort();
     const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+    const secret = headers.authorization?.replace(/^Bearer /, '') ?? '';
+    const redact = (message: string) => secret ? message.split(secret).join('[redacted]') : message;
     try {
-      const response = await (this.options.fetch ?? fetch)(url, { method: 'POST', headers, body, signal: abort.signal });
+      // Do not forward credentials or session material through endpoint redirects.
+      const response = await (this.options.fetch ?? fetch)(url, { method: 'POST', headers, body, signal: abort.signal, redirect: 'error' });
       const raw = (await response.text()).slice(0, MAX_OUTPUT_BYTES);
       let json: unknown = null;
       try { json = JSON.parse(raw); } catch { /* reported below */ }
       if (!response.ok) {
         const detail = (json as { error?: { message?: unknown } } | null)?.error?.message;
-        return { ok: false, error: `api HTTP ${response.status}${typeof detail === 'string' ? `: ${clip(detail, 120)}` : ''}` };
+        return { ok: false, error: `api HTTP ${response.status}${typeof detail === 'string' ? `: ${clip(redact(detail), 120)}` : ''}` };
       }
       const text = cleanOutput(completionText(json) ?? '');
       return text ? { ok: true, text } : { ok: false, error: json === null ? 'api: reply is not JSON' : 'api returned nothing' };
     } catch (error) {
-      return { ok: false, error: abort.signal.aborted ? 'api stopped' : `api: ${clip(String((error as Error)?.message ?? error), 120)}` };
+      return { ok: false, error: abort.signal.aborted ? 'api stopped' : `api: ${clip(redact(String((error as Error)?.message ?? error)), 120)}` };
     } finally {
       clearTimeout(timer);
     }
@@ -411,9 +470,9 @@ export class SmallModel {
     try { writePrivateFile(file, `${JSON.stringify(this.calls)}\n`); } catch { /* kept in memory */ }
   }
 
-  private remember(digest: string, text: string): void {
+  private remember(digest: string, text: string, generatedAt: number): void {
     this.cache.delete(digest);
-    this.cache.set(digest, { text, at: this.clock() });
+    this.cache.set(digest, { text, at: generatedAt });
     this.trimCache();
     const file = this.cacheFile();
     if (!file) return;

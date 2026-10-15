@@ -18,7 +18,7 @@ import { formatTokenCount } from '../lines/index.js';
 import { collectAttention, highestSeverity, alertParts } from '../attention.js';
 import { agentCounts } from '../../collectors/subagent-tree.js';
 import { getApprovalPolicyDisplayValue } from '../../collectors/codex-config.js';
-import { displayConfig, type Density, type GlyphMode } from '../hud-config.js';
+import { displayConfig, iconSet, type Density, type GlyphMode } from '../hud-config.js';
 import { formatCountdown, formatCredits, quotaState, readQuotaWindows } from '../quota.js';
 import { formatElapsedShort } from '../subagent-chip.js';
 import type { BarModule } from './engine.js';
@@ -146,7 +146,7 @@ function identityModule(data: HudData, glyphs: GlyphMode): BarModule {
  * Both halves are omitted when the evidence for them is missing rather than
  * guessed at, and the narrow forms fall back to the mark alone.
  */
-function activityModule(data: HudData, glyphs: GlyphMode, nowMs: number): BarModule {
+function activityModule(data: HudData, words: boolean, nowMs: number): BarModule {
   const status = data.stale ? 'stale' : data.activity?.state;
   if (!status) return { id: 'activity', priority: MODULE_PRIORITY.activity, group: 'who', variants: {} };
   const [glyph, label, paint] = {
@@ -156,7 +156,7 @@ function activityModule(data: HudData, glyphs: GlyphMode, nowMs: number): BarMod
     error: ['✗', 'Failed', theme.error],
     stale: ['?', 'Sync delayed', theme.warning],
   }[status] as [string, string, (text: string) => string];
-  const mark = paint(glyphs === 'text' ? label : glyph);
+  const mark = paint(words ? label : glyph);
 
   if (status !== 'working') {
     return { id: 'activity', priority: MODULE_PRIORITY.activity, group: 'who',
@@ -246,7 +246,7 @@ function contextModule(data: HudData, barWidth: number, meter: (percent: number,
 
 // A user-facing 30-minute reminder, not a server-reported cache expiry.
 // Only model usage advances the anchor; polling, tools and UI activity do not.
-function cacheModule(data: HudData, nowMs: number, glyphs: GlyphMode): BarModule {
+function cacheModule(data: HudData, nowMs: number, words: boolean): BarModule {
   const sampledAt = data.tokenUsageAt?.getTime();
   if (sampledAt === undefined || !Number.isFinite(sampledAt) || !Number.isFinite(nowMs)) {
     return { id: 'cache', priority: MODULE_PRIORITY.cache, group: 'load', variants: {} };
@@ -256,7 +256,7 @@ function cacheModule(data: HudData, nowMs: number, glyphs: GlyphMode): BarModule
   const expired = minutes >= 30;
   const age = expired ? '30m+' : `${String(minutes).padStart(2, '0')}m`;
   const marker = data.stale ? '?' : '~';
-  const text = `${glyphs === 'text' ? 'Cache ' : '◷'}${marker}${age}`;
+  const text = `${words ? 'Cache ' : '◷'}${marker}${age}`;
   const paint = expired ? theme.error : warning || data.stale ? theme.warning : colors.dim;
   return {
     id: 'cache',
@@ -484,7 +484,10 @@ export interface BarModuleOptions {
   nowMs?: number;
   barWidth?: number;
   density?: Density;
+  /** The model badge: a glyph, its name, or both. */
   glyphs?: GlyphMode;
+  /** Words where a mark would stand (the activity, the cache reminder): the icons set to text. */
+  words?: boolean;
   /** Draws the context meter; the bar's block meter by default. */
   meter?: (percent: number, cells: number) => string;
 }
@@ -498,16 +501,17 @@ export function buildBarModules(data: HudData, options: BarModuleOptions = {}): 
   const barWidth = options.barWidth ?? 10;
   const density = options.density ?? displayConfig().density;
   const glyphs = options.glyphs ?? displayConfig().glyphs;
+  const words = options.words ?? iconSet() === 'text';
   const allowed = new Set<string>(DENSITY_MODULES[density] ?? DENSITY_MODULES.balanced);
 
   const modules: BarModule[] = [
     attentionModule(data, nowMs),
-    activityModule(data, glyphs, nowMs),
+    activityModule(data, words, nowMs),
     identityModule(data, glyphs),
     projectModule(data),
     agentsModule(data),
     contextModule(data, barWidth, options.meter),
-    cacheModule(data, nowMs, glyphs),
+    cacheModule(data, nowMs, words),
     tasksModule(data),
     quotaModule(data, nowMs),
     tokensModule(data),

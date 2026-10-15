@@ -27,21 +27,21 @@ Codex writes to disk.
  |                         | tree-    |        | %hud: node dist/index.js (1 line) |
  |                         | page.js  |        +-----------------------------------+
  +-------------------------+----------+
-   panel is 32 cols by default; Codex keeps >= 41 columns
+   panel is 48 cols by default; Codex keeps >= 41 columns
 ```
 
 | | The bar | The panel |
 |---|---|---|
 | Entry | `src/index.ts` | `src/tree-page.ts` |
-| Size | 1 line (`HUD_PANE_HEIGHT`) | a column, usually 32–56 wide |
+| Size | 1 line (`HUD_PANE_HEIGHT`) | a column, usually 32–56 wide, 48 unless a width is asked for |
 | Loop | 1 s tick + chokidar watchers | `settings.refreshMs` collect (default 1 s), no watcher |
 | Renders with | `render/header.ts` → `layout/` engine | `render/monitor.ts` `renderMonitor` |
-| Writes | `hud/state/<session>.json` snapshot, notifications | scan cache, agent logs, model cache, recaps, settings |
+| Writes | `hud/state/<session>.json` snapshot, notifications | the same snapshot and notifications, on its collect tick; scan cache, agent logs, model cache, recaps, settings |
 
 At any time **only one of the two is running**. The launcher opens the panel by
 default and kills the bar pane. `codex-hud-toggle` (F12) swaps one for the
 other. The two processes never talk to each other directly. They share state
-through tmux user options (`@codex_hud_*`), the bar's snapshot file, and files
+through tmux user options (`@codex_hud_*`), the snapshot file whichever of them is running wrote, and files
 under `$CODEX_HOME/hud/`.
 
 Data flows one way:
@@ -73,8 +73,8 @@ src/tree-page.ts     the panel process (collect → render → paint, input rout
 src/types.ts         shared types: HudData, SubagentTree(Node), RolloutState …
 src/settings.ts      HudSettings: defaults, validation, load/save of hud-settings.json
 src/settings-runtime.ts  applies settings + env to the display config
-src/snapshot.ts      the bar's machine-readable snapshot (codex-hud --json)
-src/notify.ts        tmux / desktop notifications (bar only)
+src/snapshot.ts      machine-readable snapshot (codex-hud --json); bar or panel
+src/notify.ts        tmux / desktop notifications (bar or panel)
 src/brief-dry-run.ts `codex-hud brief --dry-run`
 src/collectors/      everything that reads disk, sqlite, git, or calls a model
 src/render/          pure rendering: bar modules, panel panes, cards, theme, i18n
@@ -230,13 +230,17 @@ a file is read at all.
 - `token-rate.ts`;
 - `quota-forecast.ts` (a least-squares fit of the usage window).
 
-The bar renders `HudData`, and so does the panel's status card.
+The bar renders `HudData`, and so does the panel's status card. The panel passes the tree it already built into `HudStatus.build`, so that build does not scan the rollouts again. A git refresh calls `onChange` only when the status itself changed.
 
 ### 4.4 The agent tree (`collectors/subagent-tree.ts`)
 
 `buildSubagentTree` scans the last three days of rollouts. For each one it
 reads only the first line, up to 1 MB. From those lines it builds a parent
-map and the tree under the current root thread.
+map and the tree under the current root thread. The panel lists those files
+with `findRolloutsInDaysYielding` and passes the list in: that path stats new
+files, files that grew, the main rollout and the current tree's rollouts,
+and two quiet files a tick. `findRolloutsInDays`, used by the bar and by tests, stats every file
+and does not read or write that cache. An empty list means do not scan.
 
 **Vocabulary.** Every view uses the same counts, from `agentCounts`:
 
@@ -273,7 +277,8 @@ Iterate with `eachThread`. Do not walk the tree by hand.
 ## 5. The optional model features
 
 Everything here is **off by default**. The master switch is
-`settings.briefing` (`off | omp | agy | api`). While it is `off`, nothing
+`settings.briefing` (`off | agy | api`). Legacy `omp` settings migrate to
+`api`; the OMP subprocess backend is no longer supported. While it is `off`, nothing
 leaves the machine.
 
 ### 5.1 One service: `collectors/small-model.ts`
@@ -281,11 +286,20 @@ leaves the machine.
 Every request goes through `SmallModel.submit`, which provides:
 
 - **Backends.**
-  - `omp` and `agy` run as CLI subprocesses: no shell, cwd set to the system
+  - `agy` runs as a CLI subprocess: no shell, cwd set to the system
     temp directory, 90 s timeout, output capped at 64 KB.
   - `api` sends an OpenAI-compatible `POST <base>/chat/completions`.
-  - `CODEX_HUD_BRIEF_MODEL` overrides the model on all three.
-- **Queue.** One request in flight at a time. `cancelAll()` runs when the panel closes.
+    Labels, titles and approval descriptions use `gemini-3.5-flash-lite`;
+    progress summaries, agents briefs, digests and changes use
+    `gemini-3.8-flash-low`; recaps and failure causes use
+    `gemini-3.8-flash-medium`. The three tiers are configurable.
+  - `briefingApiModel`, when nonempty, overrides the API tiers.
+    `CODEX_HUD_BRIEF_MODEL` overrides the model on either backend.
+  - A queued request retains its submitted backend and model. Cache identity
+    includes backend, endpoint and actual model, never the API key.
+- **Queue.** One request in flight at a time. `cancelAll()` runs when the panel
+  closes; cancellation holds the active slot until the fetch/subprocess settles.
+  HTTP redirects are refused, and reflected credentials are removed from errors.
 - **Cache.** Only for callers that pass a `cacheKey`. Up to 200 entries in
   `hud/model-cache/cache.json`.
 - **Hourly cap.** `modelCallsPerHour`, default 60. The call log
@@ -294,6 +308,9 @@ Every request goes through `SmallModel.submit`, which provides:
   to a temp file and renamed into place. The panel's state files (scan cache,
   agent log, model cache, recaps) use it. `settings.ts` and `snapshot.ts` do
   the same temp-file, 0600 and rename write on their own.
+  Snapshot ownership follows the atomically renamed file's device/inode, so
+  an outgoing writer leaves a replacement snapshot alone; no separate owner
+  sidecar is involved.
 
 Nothing calls a model while rendering. Results are stored, and then
 `onChange` triggers a repaint.
@@ -307,12 +324,16 @@ from `briefingScope()`, set by the two switches `briefAgents` and `briefMain`.
 
 **When it runs.** There are two triggers:
 
-- **Brief every** (`briefingMs`, default 5 min): runs when a fast fingerprint
+- **The interval** (`briefingMs`, default 5 min): runs when a fast fingerprint
   has changed. That fingerprint covers stage edges, status changes, failures,
   important subtasks, and for the recap new user messages, turn ends, plan
   steps and approvals.
-- **Routine every** (`recapFloorMs`, default 15 min): runs when a floor
+- **The floor** (`recapFloorMs`, default 15 min): runs when a floor
   fingerprint has changed. It adds routine progress.
+
+Settings shows the two as one row, Brief pace, with four pairs to choose from.
+Periodic agent brief (`briefAgents`) and main recap (`briefMain`) have separate
+switches. Live progress (`agentProgress`) is independent and not paced by this row.
 
 **Input.** `briefMaterial` builds:
 
@@ -325,14 +346,29 @@ from `briefingScope()`, set by the two switches `briefAgents` and `briefMain`.
 order. Entries flagged for attention are never trimmed.
 
 **Reply.** It must be JSON: `{overall, agents:[{agent, attention, note}], main?}`.
+With `agentLabels` on (`BriefingContext.labels`), each agent entry also has
+`label` and `kind`: a short name for what the agent is on now and its kind of
+work. `parseBrief` reads them as `readLabel` reads the labels job's.
 A reply in any other shape gets one repair request.
+
+**Language.** Every prompt says to write in the panel's language, whatever the
+material is in, and to translate what it keeps from `<previous_recap>` or
+`<previous_brief>` (`tongueRule`). A language switch drops the brief on screen,
+resets `coveredAt` and asks at once. The log is passed through `logsIn`, so a
+note in the other language is neither the previous brief nor counted as
+covering the news. A stored recap's `overall` and `coveredAt` are used only
+when it is in the current language.
 
 **Where results go:**
 
-- each agent's note goes to the agent log as a `note`;
+- each agent's note goes to the agent log as a `note`, stamped with its
+  language (`lang`) and, when given, its `label` and `taskKind`;
 - the main part goes to `hud/recaps/<sessionId>.json`, with its fingerprints.
 
 Saving the fingerprints means reopening the panel does not start a new call.
+
+Changing the model connection cancels the active brief without reporting a
+failure. Its material remains eligible for the next interval.
 
 ### 5.3 Background jobs (`collectors/model-jobs.ts`)
 
@@ -341,9 +377,24 @@ Each job has its own switch. All of them follow the backend and pause switches.
 | Job | Output |
 |---|---|
 | Result digest, stage digest | an agent log `digest` |
-| Agent labels, session title | `model-cache/labels.json`, `recaps/<id>.title.json` |
+| Agent labels from task texts, session title | `model-cache/labels.json`, `recaps/<id>.title.json` |
 | Failure cause | an agent log `cause` (agents); in memory only (tool calls) |
 | Change summary, approval description | in memory only |
+
+**Where a label comes from.** `ModelJobs.apply` shows the labels job's name
+for the parent's plaintext from before this agent was created (`node.charge`,
+with its path and role), else for a plaintext task, else the newest label a
+brief note gave in the panel's language (`AgentLog.label`). A Fernet payload
+(`gAAAAA`) is not sent. Codex 0.162 encrypts the task a subagent is sent
+(§11), so the charge is the text the labels job can still read. The brief's
+name fills in until that label arrives, and does not replace it once it has.
+
+**Language.** Digests and causes are stamped with the language they were
+asked in. A language change clears the in-memory readings; a digest, cause or
+title in the other language counts as absent and is asked for again.
+Language/root changes and stop/restart also advance a request generation:
+late model replies and pending disk reads cannot land in, or clear, a newer
+job using the same key. Retry cooldowns do not carry across languages.
 
 **Retries.** A failed or refused job retries after 10 minutes.
 
@@ -358,17 +409,61 @@ command ("safe", "should approve") instead of describing it.
 
 | Setting | What can leave the machine |
 |---|---|
-| `briefAgents` | agent names and roles, tasks and intents (≤300 characters), updates (≤600), stage results, previous notes |
+| `briefAgents` | periodic brief: agent names and roles, tasks and intents (≤300 characters), updates (≤600), stage results, previous notes |
+| `agentProgress` | visible live card summaries: the bounded public progress material in §5.5; independent of `briefAgents` |
 | `briefMain` | user prompts and the assistant's public replies (≤4000 characters), plan, goal, approval summary |
 | `resultDigest` | final answers, head and tail, ≤8000 characters |
-| `agentLabels` | task texts (≤400), the first prompt (≤1500) |
+| `agentLabels` | the parent's plaintext from before the subagent was created (≤400, with its path and role), else a plaintext task (≤400), and the first prompt (≤1500). A Fernet payload is not sent. The brief's labels send nothing more than the brief |
 | `failureCause` | error output (≤2000) and the command |
 | `changeSummary` | diff stat and hunks (≤6000) |
 | `approvalDescription` | the command (≤2000) |
 
 Reasoning and other private channels are never read for any of these.
+Pre-create charge collection uses the same public channel/phase boundary as
+agent reports and accepts only public text blocks. Private or unknown
+assistant channels are excluded before anything reaches a label or summary;
+scan version 3 invalidates previously collected charge caches.
 `codex-hud brief --dry-run` prints exactly what a brief or recap would send,
 with its sizes. It does not cover the jobs in §5.3.
+
+### 5.5 On-demand live progress (`collectors/progress-summary.ts`)
+
+`ProgressSummarizer` is independent of the rolling brief's interval and scope.
+`cardSummaryTargets` uses the exact card visibility settings, list filters and
+linger window; `progressTargets` narrows those explicit IDs to live agents.
+A hidden main summary, child list or child summary never implicitly requests
+that subject. This follows `agentProgress`, backend and pause switches, not
+`briefAgents`. Closing the Agents pane or opening a modal clears the targets.
+Rendering only reads lifecycle state and stored notes; it calls no model.
+`ModelHandle.status` and subscriptions distinguish queued from running without
+releasing a cancelled single-flight slot early. Public progress diagnostics
+contain only phases, safe reasons and timestamps, never request text, endpoints
+or reflected backend errors. The Inspector explains disabled/hidden/inactive,
+missing public evidence, cooldown/retry, concurrency and hourly limits. Cards
+show only concise queued/running/failure/cap hints beside enabled summaries.
+Generated notes carry explicit `coverageAt` and actual `generatedAt` (cache reuse
+keeps the original generation time); old/periodic notes have only recorded time
+unless coverage is explicitly known. Stored model entries remain visible with
+the backend off; `logsIn(..., observed=false)` still hides observed history when
+its separate log switch is off.
+
+Input is quoted public evidence from the current turn: up to four reports of
+600 characters each, current stage intent (300), current tool/action (200),
+plaintext task and pre-create charge (300 each), name and role (80 each), stage
+metadata and descendant status counts. It reads no rollout file or reasoning
+channel and never sends a sealed Fernet task. A running status or assignment
+alone is insufficient evidence, so it sends nothing without a public report,
+stage intent or open action. Output is exactly one sentence of at most 120
+characters in the panel language, stamped with the request snapshot time in
+the agent log. `summarySentence` also trims verbose replies to one sentence.
+
+A stable input fingerprint caches and deduplicates notes. Changed public
+progress is refreshed at most once per minute while its summary is visible;
+failures retry after ten minutes. Hiding a summary, pausing, changing
+roots/language/turns or exiting cancels obsolete work. Newer reports in the same turn do not starve
+an in-flight snapshot; its note lands with its original coverage time, then a
+later refresh can cover the new evidence. There are at most three pending
+progress jobs, sharing `SmallModel`'s single-flight queue and hourly cap.
 
 ---
 
@@ -414,9 +509,11 @@ The bar is English-only.
 - **`render`** calls `renderMonitor(input)` and gets back a `MonitorFrame`:
   `lines`, `panes`, `controls` and `state`.
 - **Painting.** Writes `ESC[H … ESC[J` only when the frame differs from `lastPaint`.
+  Rich card cache keys include live clock seconds and the output rate's
+  freshness state independently, so hiding the clock cannot freeze a rate.
 
 **Always keep `frame.state`.** `renderMonitor` reconciles the state (selection,
-scroll, open cards) and returns the result in `frame.state`. The caller must
+scroll, visibility preferences) and returns the result in `frame.state`. The caller must
 continue from that, never from the state it passed in.
 
 The steps inside `renderMonitor` (`render/monitor.ts`):
@@ -424,7 +521,7 @@ The steps inside `renderMonitor` (`render/monitor.ts`):
 ```
 reconcile state
 planFoot                     status card (status-foot.ts / status-block.ts), levels min | status | full
-controlBar                   tabs; 5 looks: tab, band, tile, frame, pill  (control-bar.ts)
+controlBar                   pane tabs + Settings; 5 looks: tab, band, tile, frame, pill  (control-bar.ts)
 panes (PANES = agents, timeline, changes, details):
   agents   → agents-view.ts  agentsView → richRows (cards.ts) | agentRows (compact)
   timeline → monitor-timeline.ts timelineRows
@@ -435,8 +532,10 @@ footPlan.draw
 ```
 
 **Height budget.** Each open pane gets one row first. The remaining rows are
-handed out round-robin. What is left goes to the status brief, then to details
-or agents. Blank separator rows appear only when the height is 30 or more.
+handed out round-robin. Rich mode reserves the status brief's height independently
+of card content settings, so adding fields scrolls agents rather than shrinking
+the recap. Compact mode can give unused rows to the foot. What is left goes to
+details or agents. Blank separator rows appear only when the height is 30 or more.
 
 **Types.** A `MonitorRow` is `{text, item, key, controls, counts}`. A
 `MonitorControl` is a clickable rectangle. `panel-state.ts` keeps the
@@ -447,23 +546,37 @@ selection by item id, so it survives reordering.
 The agents pane shows one card per L1 agent, with its subtasks inside. The
 rules below were set by the user; keep them.
 
-- **A card shows only text a model wrote:**
-  - the model-written label, shown only when the agent was renamed;
-  - notes, digests and causes (`modelNotes`);
-  - the status line.
-- **Never on a card:** the task text, a stage intent or the agent's own
-  reports. That text is long, and cut to one line it is unreadable. The
-  Inspector shows it whole.
-- **A working card** (the agent or one of its subtasks is live) shows its
-  newest `cardNotes` notes (Settings, 1–5, default 3), each wrapped in full and
-  never cut. The newest is in the text colour (the warning colour when
-  flagged). Older notes are dim. There is no `~` mark on cards.
-- **A subtask line** (`kidLines`) has the model's digest or cause beside the
-  name, wrapped under it in full. When the name leaves less than
-  `KID_SAID_BESIDE` columns, the words start on the next line.
-- **A resting agent** (not working, no subtask working, not opened, nothing
-  flagged; `isOneLine`) is its row, with the newest note (`briefLine`) on a
-  dim line under it. Cutting that note to one line is acceptable there.
+- **No expand/collapse state.** Every visible L1 is the same configurable
+  card, working or idle. There is no card arrow, `cards` set or expansion
+  control. Clicking selects; Enter/Space or the Inspector button opens details.
+- **Independent contents.** `src/card-visibility.ts` defines booleans for AI
+  label, Codex original name, newest summary, relations, current action, child
+  list, child summary, role counts, model badge, review chip, clock, output rate
+  and context meter. Child role counts (`cardRoleCounts`, shown as 子 agent
+  数量统计) controls only the footer's `2 scout · 1 implementer` counts;
+  disabling it leaves child lines, summaries and progress targets unchanged.
+  Name and status always remain. `cardSubagentScope` is
+  `live | important | all`, default `important` (live plus failed, flagged and
+  key-role descendants). Disabling a field removes its space, not its data.
+- **Model text only.** A main summary shows only the latest model note wrapped
+  whole. Raw task, pre-create `charge`, stage intent, agent reports and older
+  notes remain in the Inspector. `cardLabel` affects names on this card only;
+  other views keep their own naming policy. Original name is optional.
+- **Child summaries are one sentence.** An active child uses its newest note,
+  never a stale digest. A failed child prefers cause; a settled child prefers
+  digest, else a note. `summarySentence` takes the first sentence/first digest
+  line, capped at 160 code points, so evidence and caveats stay in the
+  Inspector. The sentence wraps beside/under the name, rather than losing the
+  end to a one-row cut. Child clocks follow the card clock switch.
+- **Visibility controls generation.** `cardSummaryTargets` returns only the
+  subject IDs whose summary is enabled in the current rendered list. Progress
+  requests (§5.5) run in the collection/input layer, never in rendering.
+  Pending/error text accompanies the respective enabled summary and retains
+  old words. Turning off child summaries leaves the child names and status.
+- **The model badge** spells the version with the family (`6.1sol·max` in
+  text mode, glyph then those words in both). Glyph mode stays the symbols.
+  `modelLegend()` keeps the family names (`★ Sol`): it is a key, not a badge.
+  The Inspector shows the full slug.
 - **The footer** shows the clock, then the output rate (`~42 tok/s`) when it
   fits, then the context meter.
 - **The summary row** at the top of the pane adds up every live thread's rate.
@@ -486,7 +599,9 @@ pane with `send-keys -H`.
 4. `monitorKey` or `overlayKey` in `utils/panel-command.ts` turn it into an action.
 
 The command travels in the same input stream as typed keys, so ordering is
-kept.
+kept. On panel startup the prefix command table is refreshed from
+`bin/codex-hud-keys`, so existing sessions lose the obsolete card `e` binding
+and Space opens the Inspector after a restart; the root key table is preserved.
 
 **Other keys.** With a main pane set and no overlay open, **every other key
 and paste is forwarded to Codex** (`utils/key-forward.ts`). The settings page
@@ -509,6 +624,36 @@ against Codex 0.154 and 0.157.
 
 - `HudSettings` holds the type, `defaultSettings()` the defaults, a per-key
   validator table the checks, and `loadSettings` / `saveSettings` the I/O.
+- The page separates Display, Panel, Agents, Cards, LLM, Status bar and Input.
+  Settings is a labelled main navigation tab (`BarInput.settingsActive`), not a
+  gear-only action. The page keeps that bar above its Back/Save/Reset header;
+  `navigationControls` and `headerY` retain correct hit maps. Clicking the
+  active Settings tab keeps the draft. A dirty draft leaving through Back,
+  Escape, navigation or a prefix command goes through `settings-confirmation`:
+  save-and-leave, discard, or continue editing (the safe default). Save failure
+  retains the draft and pending decision. Destinations are keys rather than
+  old mouse coordinates, because saving can resize the panel. Clean drafts
+  leave immediately. `navigationOverlay` opens/selects the target instead of
+  toggling an already-open stacked pane closed. Normal stacked clicks still toggle.
+  Values use the actual terminal width's right edge; from 70 columns a stable
+  help column reserves the rightmost portion. Width applies on Save, followed
+  by a repaint as well as the stdout resize event; no draft-only resize.
+  Cards controls presentation; LLM controls model generation and privacy.
+  A selected unavailable row explains its dependency rather than just dimming.
+  Rows stay editable to prepare preferences in advance. Pausing models does
+  not hide stored summaries, and hiding card content does not disable unrelated
+  periodic briefs or result digests. The automatic progress target list follows
+  only the enabled card summaries.
+- `card-presets.ts` owns three combinations of the thirteen content booleans:
+  minimal, progress and monitor. The virtual `cardPreset` row derives custom
+  from actual switches, never persists metadata, and leaves child scope,
+  corners, model permissions, credentials and other settings unchanged.
+- Reset group restores only its explicit owned fields (including hidden
+  counterparts of composite rows). Reset all means known page preferences,
+  not connection data: backend, API endpoint/key/models/reasoning, call cap
+  and picture/worktree assets survive. LLM/all reset disables generation and
+  pauses models rather than silently granting default permissions. Both
+  helpers only prepare drafts; Save is required.
 - They are stored in `$CODEX_HOME/hud-settings.json`, or at
   `CODEX_HUD_SETTINGS_PATH`. The file is capped at 64 KiB and written
   atomically with mode 0600.
@@ -520,12 +665,17 @@ against Codex 0.154 and 0.157.
 
 | Path | Writer | Contents |
 |---|---|---|
-| `state/<session>.json` | bar | snapshot for `--json` and bar clicks; deleted on exit |
+| `state/<session>.json` | bar or panel | snapshot for `--json` and bar clicks; deleted on exit only by the process that owns it |
 | `scan/` | panel | tree scan cache (`SCAN_VERSION`) |
 | `agent-log/<rootId>.json` | panel | per-agent history |
 | `model-cache/{cache,calls,labels}.json` | panel | model replies, hourly call log, labels |
 | `recaps/<sessionId>{,.title}.json` | panel | main recap and session title |
 | `profile.log` | both | only with `CODEX_HUD_PROFILE=1` |
+
+**Display.** `icons` decides icons or words everywhere: the buttons, the
+titles, the brief's field labels, "ago", the bar's activity and cache marks
+(`iconSet()`, `iconic()`). `glyphs` is the model badge's alone; nothing else
+reads it.
 
 **Read from `$CODEX_HOME`, never written:** `config.toml`, `sessions/`,
 `shell_snapshots/`, `logs_2.sqlite`, `goals_1.sqlite`.
@@ -584,6 +734,8 @@ npm test                 # build + build:test (tsconfig.test.json → dist-test/
                          #   then node --test dist-test/tests/unit/*.test.js
                          #   then node --test tests/unit/*.mjs   (these import dist/)
 npm run test:integration # tests/run-integration.sh: tmux shell suites, exit 77 = skip
+npm run test:visual      # fixed synthetic terminal-cell frames + semantic checks
+npm run test:visual:update # explicit local-only baseline update; refused in CI
 npm run test:windows     # PowerShell entry points, with fake binaries
 ```
 
@@ -607,6 +759,14 @@ runs them.
 - Read the output with `stripAnsi`, and loop over several widths.
 - Make temporary directories with `mkdtemp` and remove them in `finally`.
 - `setDisplayConfig` and `setLanguage` return the previous value; restore it in `finally`.
+
+**Visual regressions.** `tests/fixtures/visual-baselines.ts` creates fixed-time
+EN/ZH frames across five widths, five looks and three shared presets, plus
+settings, confirmations and Inspector lifecycle scenes. The reviewed JSON
+retains trailing cells; tests report the exact case and first changed row.
+This is textual terminal-cell coverage, not pixel/font screenshots. Updating
+requires the explicit local command above and is refused with any CI variable.
+No real rollout, wall clock, credential or network input enters a baseline.
 
 **README figures.** `tests/fixtures/readme-demo.ts` renders the synthetic
 "parser-kit" scenes as `.ansi` files. The PNGs are rasterised from those files
@@ -648,13 +808,19 @@ Do this on your own tmux server (`tmux -L <name>`) with a throwaway
 
 ### Add a setting
 
-The `cardNotes` setting (commit `c71a1c9`) is a complete example.
+Card visibility fields are declared in `src/card-visibility.ts` and mapped
+through `monitorSettings`. The obsolete `cardNotes` option is no longer used.
 
 1. `src/settings.ts`: add the field to `HudSettings`, its default to
    `defaultSettings()`, and a validator, for example
-   `cardNotes: (v) => isIntegerBetween(v, 1, 5)`.
+   `cardSummary: isBoolean`.
 2. `src/render/settings-page.ts`: add a row, for example
-   `{key, group, label, short, values, help}`.
+   `{key, group, label, short, values, help}`, in the group it belongs to:
+   Display, Panel, Agents, Cards, LLM (anything that sends material to a model, its
+   help starting "Sends"), Status bar or Input. Settings that only make sense
+   together are one row: give it `get` (their value as one) and `set` (the
+   settings a value stands for), as Brief pace, Agent names and
+   Notifications do; `rowValue` and `withRowValue` read and write through them.
 3. If rendering needs it: add a field to `MonitorState`
    (`render/monitor.ts`), map it in `monitorSettings`, and read it where it
    is drawn.
@@ -706,8 +872,9 @@ The credits field (commit `44ce0a7`) is a complete example.
 
 - **Stale code.** A running bar or panel keeps the code it started with. After
   a build, restart the pane before you judge a change.
-- **No bar by default.** In the default layout no bar process runs. That
-  means no `hud/state/*.json`, no `--json` output, and no notifications.
+- **No bar by default.** In the default layout no bar process runs. The open
+  panel writes `hud/state/*.json` and sends notifications on its collect tick,
+  so `--json` still has a file to read. The panel's `bar.segments` is empty.
 - **Shared prefix table.** The prefix table belongs to the whole tmux server.
   Changing the prefix in one panel changes it in every session.
 - **Display variables ignored.** The display environment variables stop
@@ -722,18 +889,20 @@ The credits field (commit `44ce0a7`) is a complete example.
 
 - **Null peeks cached forever.** `rolloutMetaCache` caches a null first-line
   peek permanently.
-- **Tree built twice.** Each panel collect builds the tree twice.
+- **One tree a tick.** The panel passes the tree it built into the status build.
 - **Guardian threads.** Since Codex 0.155, each session gets a nickname-less
   guardian review thread. It used to be mistaken for the main session, so
   count guardians as reviews.
 
 **Model features**
 
-- **Prompts on the command line.** `omp` and `agy` receive the whole prompt as
+- **Prompts on the command line.** `agy` receives the whole prompt as
   command-line arguments, so other local users can read it with `ps`.
-- **API key fallback.** The `api` backend falls back to `OPENAI_API_KEY`
-  whatever the base URL is, so a custom endpoint can receive that key.
-- **No cache for briefs.** Briefs and recaps are never cached. Only §5.3 jobs are.
+- **API key fallback.** The `api` backend uses its explicit key or
+  `CODEX_HUD_BRIEF_API_KEY`. `OPENAI_API_KEY` is a fallback only for the
+  official OpenAI origin, never for a custom endpoint.
+- **No cache for briefs.** Briefs and recaps are never cached. Background jobs
+  (§5.3) and live progress (§5.5) are cached.
 - **Late refusal.** The hourly cap is checked when a request runs, not when it
   is queued, so a queued job can be refused late.
 - **Unlocked call log.** Two panels writing `calls.json` at once can lose a count.
@@ -741,9 +910,29 @@ The credits field (commit `44ce0a7`) is a complete example.
   switches, not `briefAgents` or `briefMain`.
 - **Lost on restart.** Tool-call causes, change summaries and approval
   descriptions live only in memory.
+- **Encrypted tasks.** Codex 0.162 sends inter-agent messages encrypted:
+  `spawn_agent`, `send_message` and `followup_task` carry a Fernet token, and
+  an `agent_message` a plaintext header and `encrypted_content`. `node.task`
+  is then empty or sealed. The labels job sends the parent's own plaintext
+  from before the spawn (`node.charge`) when the rollout still has it, and
+  otherwise has nothing to send; the brief's labels (§5.2) cover that case
+  until a charge label arrives. The details page shows the charge whole.
+  The card does not.
+- **Mixed languages.** What a model wrote stays in the log in the language it
+  was written in. Anything that shows or resends log text goes through
+  `logsIn`; an entry from before `lang` existed is read by its text (any Han
+  character is Chinese).
 
 **Rendering**
 
+- **Two terminals, two fonts.** The same settings can look different in two
+  windows because the terminal draws them. In Windows Terminal a shell started
+  from Explorer or a shortcut runs in `profiles.defaults`, while the WSL
+  distribution's profile (Ubuntu-24.04, generated from a fragment) has its own
+  font face and size. Set the font on both, or start both from one profile.
+- **Bar fallbacks.** When a button costs the tabs room (`⊕N` older), the bar
+  gives up the unfocused tabs' icons before their words (`rowBar`'s `named`
+  level), so the same panel width can read differently with and without it.
 - **NUL sentinels.** Item ids starting with NUL (`'\0untracked'`,
   `'\0worktree:'`, `'\0earlier'`) are internal markers, not paths.
 

@@ -3,9 +3,10 @@
  *
  * The rate is read from the agent's rollout as the main session's is taken;
  * it stands while the agent works and its newest report is recent, and the
- * summary adds up every running agent's. A card at work keeps its note
- * whole; a card at rest is one line; the agent's own words and its sealed
- * task's stand-in are the Inspector's, uncut.
+ * summary adds up every running agent's. A card at work names a live
+ * subtask on one line and leaves its notes to the Inspector; a card at rest
+ * is one line; the agent's own words and its sealed task's stand-in are the
+ * Inspector's, uncut.
  */
 
 import test from 'node:test';
@@ -87,7 +88,7 @@ test('a rate stands while the agent works this turn and its newest report is rec
   assert.equal(agentRate({ ...live, lastEventAt: new Date(now - 6 * 60_000) }, now), undefined, 'quiet');
 });
 
-test('a card at work: its note whole, its rate beside the clock; the summary adds every running agent\'s', () => {
+test('a card at work: a live subtask on one line, its rate beside the clock; the summary adds every running agent\'s', () => {
   const note = '整理测试数据补全文档，并把基准结果写回发布说明供后续核对一遍';
   const worker = agent(1, 'worker', { outputRate: rate(42.4), contextUsage: { percent: 34, used: 1, total: 3, inputTokens: 0, outputTokens: 0, cachedTokens: 0, compactCount: 0 },
     children: [agent(3, 'helper', { depth: 2, outputRate: rate(100) })] });
@@ -97,11 +98,11 @@ test('a card at work: its note whole, its rate beside the clock; the summary add
   const lines = stripAnsi(renderMonitor({ tree: tree([worker, other]), state: rich(), width: 40, height: 40, nowMs: now, agentLog: log }).lines.join('\n')).split('\n');
   const top = lines.findIndex(line => line.includes(' worker '));
   const body = lines.slice(top + 1, lines.findIndex((line, i) => i > top && line.startsWith('└')));
-  assert.ok(!body.some(line => line.includes('…')), body.join('\n'));
-  const said = body.filter(line => !line.includes('general'));
-  assert.equal(said.map(line => line.slice(2).trim()).join(''), note, 'the note whole, with no mark before it');
+  assert.ok(body.some(line => /▸ helper/.test(line)), body.join('\n'));
+  assert.ok(body.some(line => line.includes(note.slice(0, 4))), 'closed: the newest note, one line');
+  assert.equal(body.filter(line => line.includes(note.slice(0, 4))).length, 1);
   assert.ok(!lines.some(line => line.includes('taking over')), 'not the agent\'s own words');
-  assert.match(lines[top + 1 + body.length], /^└ ◷3m01s · ~42 tok\/s ─+34%─+ ▾$/);
+  assert.match(lines[top + 1 + body.length], /^└ ◷3m01s · ~42 tok\/s ─+34%─+$/);
   assert.match(lines.find(line => line.includes('▸2 run'))!, /· ~186 tok\/s/, 'the two agents and the subtask under one, together');
   // Narrow, the rate gives way before the meter does.
   const narrow = stripAnsi(renderMonitor({ tree: tree([worker]), state: rich(), width: 24, height: 40, nowMs: now }).lines.join('\n'));
@@ -114,26 +115,31 @@ test('the Inspector has what the card leaves out: the rate, and the stand-in for
   const state = rich({ tree: { ...rich().tree, selectedId: node.id } });
   const rows = inspectorRows({ tree: tree([node]), state, width: 40, height: 40, nowMs: now } as never, state, 40, now).map(row => stripAnsi(row.text));
   assert.ok(rows.includes('Out ~42 tok/s'), rows.join('\n'));
-  const at = rows.indexOf('Took on');
+  const at = rows.findIndex(line => line.includes('Took on'));
   assert.ok(at > 0, rows.join('\n'));
-  assert.equal(rows.slice(at + 1).join(' ').startsWith(intent), true, 'wrapped, not cut');
+  assert.equal(rows.slice(at + 1).map(line => line.trim()).filter(Boolean).join(' ').startsWith(intent), true, 'wrapped, not cut');
   // With its task known, the task is the Inspector's to say, as before.
   const tasked = inspectorRows({ tree: tree([{ ...node, task: 'Check the cache' }]), state, width: 40, height: 40, nowMs: now } as never, state, 40, now);
   assert.ok(!tasked.some(row => stripAnsi(row.text) === 'Took on'));
 });
 
-test('a working card shows its newest notes, three by default, one to five by Settings; the newest in the text colour, the rest dim', () => {
+test('a working card keeps only its newest model note; the tool line stays', () => {
   const node = agent(1, 'worker');
   const log = new Map<string, AgentLogEntry[]>([[node.id, Array.from({ length: 6 }, (_, i) => ({ at: now - 60_000 + i * 1000, kind: 'note' as const, text: `note ${i}` }))]]);
-  const body = (state: MonitorState) => {
-    const lines = renderMonitor({ tree: tree([node]), state, width: 40, height: 40, nowMs: now, agentLog: log }).lines;
-    return lines.filter(line => /note \d/.test(stripAnsi(line)));
-  };
-  const three = body(rich());
-  assert.deepEqual(three.map(line => stripAnsi(line).trim()), ['│ note 5', '│ note 4', '│ note 3']);
-  assert.ok(!three[0].includes('\x1b[2mnote 5') && three[1].includes('\x1b[2mnote 4'), 'new from old by colour, no mark');
-  assert.equal(body(rich({ cardNotes: 5 })).length, 5);
-  assert.equal(body(rich({ cardNotes: 1 })).length, 1);
-  assert.equal(monitorSettings({ ...defaultSettings(), cardNotes: 4 }).cardNotes, 4);
-  assert.equal(defaultSettings().cardNotes, 3);
+  const drawn = (state: MonitorState, width = 40) =>
+    renderMonitor({ tree: tree([node]), state, width, height: 40, nowMs: now, agentLog: log }).lines
+      .filter(line => /note \d/.test(stripAnsi(line)));
+  assert.equal(drawn(rich()).length, 1, 'closed: the newest note, and only that one');
+  assert.ok(drawn(rich()).some(line => stripAnsi(line).includes('note 5')));
+  assert.equal(drawn(rich({cardVisibility:{cardSummary:true}})).length, 1, 'opened: the newest note stays, history is the Inspector’s');
+  assert.equal(drawn(rich(), 36).length, 1, 'a narrow card still keeps the one line');
+  const rows = inspectorRows({ tree: tree([node]), state: rich(), width: 40, height: 40, nowMs: now, agentLog: log } as never, rich({ tree: { ...rich().tree, selectedId: node.id } }), 40, now)
+    .map(row => stripAnsi(row.text));
+  assert.ok(rows.some(line => line.includes('note 5')), rows.join('\n'));
+  const acting = agent(1, 'worker', { action: { name: 'exec', text: 'npm test', at: new Date(now - 1000) } });
+  const tool = stripAnsi(renderMonitor({ tree: tree([acting]), state: rich(), width: 36, height: 40, nowMs: now, agentLog: log }).lines.join('\n'));
+  assert.ok(tool.includes('npm test'), tool);
+  assert.equal(tool.split('\n').filter(line => /note \d/.test(line)).length, 1);
+  assert.equal(monitorSettings({...defaultSettings(),cardSummary:false}).cardVisibility?.cardSummary,false);
+  assert.equal(defaultSettings().cardSummary,true);
 });

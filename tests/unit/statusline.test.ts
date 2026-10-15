@@ -102,7 +102,7 @@ test('cache warning stays in the existing single line across densities and narro
       assert.ok(visualWidth(result.line) <= width);
     }
   }
-  const words = buildBarModules(data, { nowMs: now, glyphs: 'text' });
+  const words = buildBarModules(data, { nowMs: now, words: true });
   assert.equal(stripAnsi(words.find(m => m.id === 'cache')!.variants.full!), 'Cache ~25m');
 });
 

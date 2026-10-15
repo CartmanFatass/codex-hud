@@ -553,7 +553,7 @@ try {
   assert.doesNotMatch(headerOnly[0], /Ctx|Quota|Q\d/);
   assert.doesNotMatch(headerOnly[0], /gpt-5\.3-codex-spark/);
   assert.doesNotMatch(headerOnly[0], /\b(xhigh|high|medium|low)\b/);
-  assert.match(headerOnly[0], /Spark/, 'the family name stands in for the slug');
+  assert.match(headerOnly[0], /5\.3spark/, 'the versioned family stands in for the slug');
 } finally {
   if (originalHome === undefined) {
     delete process.env.CODEX_HOME;

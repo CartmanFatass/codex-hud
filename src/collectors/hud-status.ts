@@ -18,6 +18,7 @@ import { GitTargetCache } from './git-root.js';
 import { collectProjectInfo } from './project.js';
 import { buildContextUsage } from './context-usage.js';
 import { buildSubagentTree } from './subagent-tree.js';
+import type { SubagentTree } from '../types.js';
 import { HudHealth } from './hud-health.js';
 import { time, timeAsync } from '../utils/profile.js';
 import type { RolloutParseResult } from './rollout.js';
@@ -41,6 +42,14 @@ export const NO_GIT: GitStatus = {
   untracked: 0,
 };
 
+/** True when a git refresh would draw the same status the last frame already has. */
+export function sameGit(a: GitStatus, b: GitStatus): boolean {
+  return a.branch === b.branch && (a.repo ?? '') === (b.repo ?? '') && a.isDirty === b.isDirty
+    && a.isGitRepo === b.isGitRepo && a.ahead === b.ahead && a.behind === b.behind
+    && a.modified === b.modified && a.added === b.added && a.deleted === b.deleted
+    && a.untracked === b.untracked;
+}
+
 export interface HudStatusInput {
   rollout: RolloutParseResult | null;
   /** The session finder's answer, used before the rollout names the session. */
@@ -48,6 +57,11 @@ export interface HudStatusInput {
   /** The latest collection failed; the values shown are the last good ones. */
   stale: boolean;
   runtimeSession?: Partial<SessionInfo>;
+  /**
+   * The panel's tree, when this build is the second one on a tick. Passed
+   * through instead of scanning the rollouts again.
+   */
+  tree?: SubagentTree;
 }
 
 export class HudStatus {
@@ -91,7 +105,7 @@ export class HudStatus {
     return time('status.build', () => this.buildNow(input));
   }
 
-  private buildNow({ rollout, sessionId, stale, runtimeSession }: HudStatusInput): HudData {
+  private buildNow({ rollout, sessionId, stale, runtimeSession, tree }: HudStatusInput): HudData {
     const now = Date.now();
     if (this.config === null || this.configStale || now - this.configAt >= this.configMaxAgeMs) {
       this.config = readCodexConfig();
@@ -107,9 +121,9 @@ export class HudStatus {
     // Matches Codex's "context window left", from last_token_usage.
     const contextUsage = buildContextUsage(rollout?.tokenUsage ?? undefined, rollout?.compactCount, rollout?.lastCompactTime);
     const rootId = rollout?.session?.id ?? sessionId ?? '';
-    const subagentTree = rootId
+    const subagentTree = tree ?? (rootId
       ? time('tree.build', () => buildSubagentTree(rootId, rollout?.subagents ?? []))
-      : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
+      : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() });
     const health = this.health.current();
     const forecast = quotaForecast(rollout?.quotaSamples ?? [], now);
     const sessionTitle = this.sessionTitle(rootId, now);
@@ -163,9 +177,11 @@ export class HudStatus {
         return target.subRepo && collected.isGitRepo ? { ...collected, repo: path.basename(target.subRepo) } : collected;
       })
       .then((status) => {
+        const same = sameGit(this.git, status);
         this.git = status;
         if (this.last) this.last.git = status;
-        this.onChange();
+        // An unchanged status is not a new frame. The tick already drew this one.
+        if (!same) this.onChange();
       })
       .catch((error) => {
         // Keep the previous snapshot; the next build tries again.

@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { initialMonitorState, nextRepaintDelay, renderMonitor } from '../../src/render/monitor.js';
+import { initialMonitorState, msUntilAgeChanges, msUntilCountdownChanges, nextRepaintDelay, renderMonitor } from '../../src/render/monitor.js';
 import { statusCard } from '../../src/render/status-block.js';
 import { setDisplayConfig, displayConfig } from '../../src/render/hud-config.js';
 import { makeHudData, makeSubagentTree, FIXED_NOW, at } from '../fixtures/hud-data.js';
@@ -51,4 +51,19 @@ test('nothing in the panel changes within a second, even with live traffic and f
   } finally {
     setDisplayConfig({ ...displayConfig(), motion: previous });
   }
+});
+
+test('a resting age waits for its next bucket, and a countdown ticks only while it shows seconds', () => {
+  assert.equal(msUntilAgeChanges(Number.NaN, NOW), 60_000);
+  assert.equal(msUntilAgeChanges(NOW, NOW), 1020);
+  assert.equal(msUntilAgeChanges(NOW - 59_500, NOW), 520);
+  assert.equal(msUntilAgeChanges(NOW - 60_000, NOW), 60_020);
+  assert.equal(msUntilAgeChanges(NOW - 3_599_000, NOW), 1020);
+  assert.equal(msUntilAgeChanges(NOW - 3_600_000, NOW), 3_600_020);
+  assert.equal(msUntilAgeChanges(NOW - 2 * 86_400_000, NOW), 86_400_020);
+  assert.equal(msUntilCountdownChanges(NOW + 30_000, NOW), nextRepaintDelay(NOW));
+  assert.equal(msUntilCountdownChanges(NOW + 90_000, NOW), 30_020);
+  assert.equal(msUntilCountdownChanges(NOW + 3_660_000, NOW), nextRepaintDelay(NOW));
+  assert.equal(msUntilCountdownChanges(NOW + 86_400_000, NOW), nextRepaintDelay(NOW));
+  assert.equal(msUntilCountdownChanges(NOW + 90_061_000, NOW), 61_020);
 });

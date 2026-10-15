@@ -103,9 +103,9 @@ try:
  send(b'4')
  wait_for('Inspector')
  send(b',')
- wait_for('Status bar')
+ wait_for('Display')
  send(b'l')
- wait_for('full')
+ wait_for('titanium')
  send(b's')
  wait_for('Saved')
  send(b'\x1b')
@@ -142,6 +142,6 @@ finally:
       encoding:'utf8',timeout:30000,
     });
     assert.match(result.stdout,/PTY monitor flow passed/);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'hud-settings.json'),'utf8')).density,'full');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'hud-settings.json'),'utf8')).theme,'titanium');
   } finally { fs.rmSync(dir,{recursive:true,force:true}); }
 });

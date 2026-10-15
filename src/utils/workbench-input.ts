@@ -18,7 +18,7 @@ const KEYS: Record<string, string> = {
   j: 'down', k: 'up', h: 'left', l: 'right', g: 'home', G: 'end',
   '\t': 'tab', '\r': 'enter', '\n': 'enter', ' ': 'enter',
   q: 'close', Q: 'close', '\x03': 'close', '\x04': 'close',
-  e: 'expand', a: 'show-all', v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help', b: 'brief-toggle',
+  a: 'show-all', v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help', b: 'brief-toggle',
   x: 'pane-close',
   '[': 'previous-tab', ']': 'next-tab', t: 'next-tab',
   '1': 'agents', '2': 'details', '3': 'changes', '4': 'activity',
@@ -90,9 +90,7 @@ export class WorkbenchInputDecoder {
       if (this.pending[0] !== '\x1b') {
         const ch = String.fromCodePoint(this.pending.codePointAt(0) ?? 0);
         const name = this.profile === 'monitor' && ch === '2' ? 'timeline'
-          : this.profile === 'monitor' && ch === '4' ? 'details'
-            // The monitor tells Space from Enter: on a card it opens the card.
-            : this.profile === 'monitor' && ch === ' ' ? 'space' : KEYS[ch];
+          : this.profile === 'monitor' && ch === '4' ? 'details' : KEYS[ch];
         this.pending = this.pending.slice(ch.length);
         key(name, ch);
         continue;

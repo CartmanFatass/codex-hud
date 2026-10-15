@@ -9,7 +9,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, statSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -183,8 +183,16 @@ test('the file is written atomically, privately, and only when something changed
     assert.equal(writer.write(changed, NOW + 2000), true);
     assert.equal('context' in JSON.parse(readFileSync(file, 'utf8')), false);
 
+    const successor = new SnapshotWriter(file);
+    assert.equal(successor.write(snapshot, NOW + 3000), true);
     writer.remove();
-    assert.equal(existsSync(file), false, 'a HUD that stopped leaves no state behind');
+    assert.equal(existsSync(file), true, 'a replacement snapshot belongs to its new writer');
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), snapshot);
+    successor.remove();
+    assert.equal(existsSync(file), false, 'the current writer removes its own state');
+    writeFileSync(file, '{}');
+    new SnapshotWriter(file).remove();
+    assert.equal(existsSync(file), true, 'a process that never wrote does not delete the file');
     writer.remove();
   } finally {
     rmSync(dir, { recursive: true, force: true });

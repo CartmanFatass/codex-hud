@@ -5,13 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, type MonitorState, type MonitorFrame } from '../../src/render/monitor.js';
 import { agentTitle, KIND_GLYPHS } from '../../src/render/agent-title.js';
-import { hangLines, clockText } from '../../src/render/cards.js';
+import { hangLines, clockText, agentCard, cardSummaryTargets } from '../../src/render/cards.js';
 import { inspectorRows } from '../../src/render/monitor-inspector.js';
 import { directions } from '../../src/render/directions.js';
 import { stripAnsi, visualLength, theme, colors, truncateAnsi } from '../../src/render/colors.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
-import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
 import { SETTING_ROWS } from '../../src/render/settings-page.js';
 import type { AgentLogEntry } from '../../src/collectors/agent-log.js';
@@ -47,38 +46,31 @@ test('the kind of work is a fixed one-column glyph the HUD picks; other and unkn
   assert.deepEqual(agentTitle(agent(3, 'x\x1b[2J', 'running', { taskKind: 'other' })), { name: 'x\\x1b[2J', renamed: false });
 });
 
-test('a card: Codex\'s name, glyph and badge on the rule; the smart name, then the news, inside; time and meter below', () => {
+test('a card always names/statuses the L1, keeps model text inside, and clock/context below', () => {
   const frame = renderMonitor({ tree: tree([named, bare]), state: rich(), width: 32, height: 40, nowMs: now, agentLog: log });
   const lines = plain(frame);
   const top = lines.findIndex(line => line.includes('ablation_no_reranker'));
-  assert.match(lines[top], /^› ▸ ⌕ ablation_no_reranker ─+ \S/, 'selected: › for the corner; the status, the glyph, the name, the badge');
-  assert.ok(frame.lines[top].includes(colors.underline('ablation_no_reranker')), 'the name is underlined: it is the thing to click');
+  assert.match(lines[top], /^› ▸ ⌕ ablation_no_reranker ─+ \S/);
+  assert.ok(frame.lines[top].includes(colors.underline('ablation_no_reranker')));
   assert.equal(lines[top + 1].trimEnd(), '│ 去重排消融召回对比');
   assert.ok(frame.lines[top + 1].includes(theme.strong('去重排消融召回对比')));
-  assert.equal(lines[top + 2].trimEnd(), '│ 召回下降，结果待核对', 'then the model\'s newest note, no mark, no age');
-  assert.ok(frame.lines[top + 2].includes('召回下降') && !frame.lines[top + 2].includes(colors.dim('召回下降')), 'the newest in the text colour, not dim');
-  assert.ok(!lines.some(line => line.includes('recall@10')), 'not its update: the agent\'s own words are the Inspector\'s, whole');
-  assert.match(lines[top + 3], /^└ ◷4m07s ─*56%─+ ▾$/, 'the turn clock counting seconds, the rule as the context meter, the switch');
-  assert.ok(frame.lines[top + 3].includes(theme.tick('◷')), 'the clock face is the time\'s scale: the tick colour');
-  assert.ok(frame.lines[top + 1].startsWith(theme.info('│')), 'a card is painted by its state, selected or not');
-  assert.ok(frame.lines[top].startsWith(theme.selectedBand('X').split('X')[0]) && frame.lines[top].includes(theme.accent('›')),
-    'the selection is the corner, on the selected surface');
-  // At rest (here failed) a card is its one-line preview: the status, the name, the time since.
+  assert.equal(lines[top + 2].trimEnd(), '│ 召回下降，结果待核对');
+  assert.ok(!lines.some(line => line.includes('recall@10')));
+  assert.match(lines[top + 3], /^└ ◷4m07s ─*56%─+$/);
+  assert.ok(frame.lines[top + 3].includes(theme.tick('◷')));
+  assert.ok(frame.lines[top + 1].startsWith(theme.info('│')));
+  assert.ok(frame.lines[top].includes(theme.accent('›')));
   const second = lines.findIndex(line => line.includes('small_index_ablation'));
-  assert.match(lines[second], /^ ! small_index_ablation +2m$/, lines.join('\n'));
-  assert.equal(lines[second - 1].trim(), '', 'a blank line between a card and a row');
-  // Opened, it is a card again: no glyph, no badge, no right border; its failing is the bottom rule's to say.
-  const opened = plain(renderMonitor({ tree: tree([named, bare]), state: rich({ cards: new Set([bare.id]) }), width: 32, height: 40, nowMs: now, agentLog: log }));
-  const at = opened.findIndex(line => line.includes('small_index_ablation'));
-  assert.match(opened[at], /^┌ ! small_index_ablation ─+$/, opened.join('\n'));
-  // The compact tree row keeps Codex's name; its log header shows the glyph and the name, the smart name under it.
-  const compact = renderMonitor({ tree: tree([named, bare]), state: initialMonitorState(), width: 32, height: 40, nowMs: now, agentLog: log });
-  const rows = plain(compact);
-  assert.ok(rows.some(line => /^›▸ ablation_no_reranker/.test(line)), 'tree row: the original name');
-  assert.ok(!rows.slice(0, 4).some(line => line.includes('去重排')), 'not the smart name in the tree');
-  const header = rows.findIndex(line => /^ ▸ ⌕ ablation_no_reranker/.test(line));
-  assert.ok(header > 0, rows.join('\n'));
-  assert.equal(rows[header + 1].trimEnd(), '   去重排消融召回对比');
+  assert.match(lines[second], /^┌ ! small_index_ablation ─+$/);
+  assert.match(lines[second+1], /^└ 2m ─+$/);
+  assert.equal(lines[second-1].trim(), '');
+  assert.ok(!frame.controls.some(c => (c.kind as string) === 'expand'));
+  assert.ok(!lines.some(line => /[▾▴]/.test(line)));
+  const compact = plain(renderMonitor({ tree: tree([named, bare]), state: initialMonitorState(), width: 32, height: 40, nowMs: now, agentLog: log }));
+  assert.ok(compact.some(line => /^›▸ ablation_no_reranker/.test(line)));
+  const header = compact.findIndex(line => /^ ▸ ⌕ ablation_no_reranker/.test(line));
+  assert.ok(header > 0);
+  assert.equal(compact[header+1].trimEnd(), '   去重排消融召回对比');
 });
 
 test('cards never run past the panel, in either language, and give up badge and meter when narrow', () => {
@@ -90,8 +82,8 @@ test('cards never run past the panel, in either language, and give up badge and 
   for (const language of ['en', 'zh'] as const) {
     const previous = setLanguage(language);
     try {
-      for (const width of [20, 24, 30, 32, 44, 60]) for (const open of [false, true]) {
-        const state = rich({ cards: new Set(open ? nodes.map(n => n.id).concat(child.id) : []) });
+      for (const width of [16, 24, 32, 40, 48, 56]) {
+        const state = rich();
         for (const style of ['rich', 'compact'] as const) {
           const frame = renderMonitor({ tree: tree(nodes), state: { ...state, style }, width, height: 80, nowMs: now, agentLog: log, brief: { recap, overall: '两个在跑' } });
           for (const line of frame.lines) assert.ok(visualLength(line) <= width, `${language} ${style} ${width}: ${stripAnsi(line)}`);
@@ -103,87 +95,90 @@ test('cards never run past the panel, in either language, and give up badge and 
   const narrow = plain(renderMonitor({ tree: tree([named]), state: rich(), width: 22, height: 30, nowMs: now }));
   assert.ok(narrow.some(line => /^› ▸ ⌕ ablation…anker ─+ *$/.test(line)), `under 24 columns the badge goes first\n${narrow.join('\n')}`);
   const tiny = plain(renderMonitor({ tree: tree([named]), state: rich(), width: 19, height: 30, nowMs: now }));
-  assert.ok(tiny.some(line => /^└ .*56%─* ▾$/.test(line) && !line.includes('━')), 'then the meter, the percent kept');
-  // A subtask gets no card: its lead's card counts it by role.
+  assert.ok(tiny.some(line => /^└ .*56%─*$/.test(line) && !line.includes('━')), 'then the meter, the percent kept');
+  // A subtask gets no card of its own. Closed, a live one is one line and the role count waits until the card is open.
   const nested = plain(renderMonitor({ tree: tree([parent]), state: rich(), width: 40, height: 40, nowMs: now }));
-  assert.ok(!nested.some(line => line.includes('b05_result')), nested.join('\n'));
-  assert.ok(nested.some(line => line.trimEnd() === '│ 1 general'), 'Codex\'s default agent, or one with no role, is "general"');
+  assert.ok(nested.some(line => line.includes('b05_result')), nested.join('\n'));
+  assert.ok(nested.some(line => /1 general/.test(line)), 'role counts are independent of child scope');
+  const openedNested = plain(renderMonitor({ tree: tree([parent]), state: rich(), width: 40, height: 40, nowMs: now }));
+  assert.ok(openedNested.some(line => line.trimEnd() === '│ 1 general'), 'Codex\'s default agent, or one with no role, is "general"');
   assert.ok(!nested.some(line => /folded/.test(line)));
 });
 
-test('a card opens to its timeline of the model\'s notes, not its updates or its task; Enter still inspects, e and Space open', () => {
-  const many = [...log.get(named.id)!, ...Array.from({ length: 60 }, (_, i) => ({ at: now - 200_000 + i * 1000, kind: i % 2 ? 'report' as const : 'note' as const, text: `step ${i}` }))]
-    .sort((a, b) => a.at - b.at);
-  const agentLog = new Map([[named.id, many]]);
-  const frame = renderMonitor({ tree: tree([named]), state: rich(), width: 32, height: 60, nowMs: now, agentLog });
-  const ctx = { tree: tree([named]), frame, nowMs: now };
-  const viaE = handleMonitorInput(frame.state, key('expand'), ctx).state;
-  assert.ok(viaE.cards?.has(named.id));
-  assert.deepEqual(new WorkbenchInputDecoder('monitor').push(Buffer.from('e ')), [key('expand'), key('space')]);
-  assert.ok(handleMonitorInput(frame.state, key('space'), ctx).state.cards?.has(named.id), 'Space opens a card');
-  assert.equal(handleMonitorInput(frame.state, key('enter'), ctx).state.modes.details, 'open', 'Enter opens the Inspector, as on a tree row');
-  assert.ok(!handleMonitorInput(viaE, key('expand'), ctx).state.cards?.has(named.id), 'e again closes it');
-  const open = plain(renderMonitor({ tree: tree([named]), state: viaE, width: 32, height: 60, nowMs: now, agentLog }));
-  const top = open.findIndex(line => line.includes('ablation_no_reranker'));
-  const bottom = open.findIndex((line, i) => i > top && line.startsWith('└'));
-  const card = open.slice(top, bottom + 1);
-  assert.match(card.at(-1)!, /▴$/);
-  const at = card.findIndex(line => /step 58/.test(line));
-  assert.ok(at > 0 && card.findIndex(line => /step 56/.test(line)) > at, 'newest first');
-  assert.ok(!card.some(line => /~/.test(line)), 'no mark');
-  assert.ok(!card.some(line => /step (59|57|1)\b/.test(line)), 'no update in the agent\'s own words');
-  const raw = renderMonitor({ tree: tree([named]), state: viaE, width: 32, height: 60, nowMs: now, agentLog }).lines;
-  assert.ok(raw.some(line => line.includes('召回下降')) && !raw.some(line => line.includes(colors.dim('召回下降'))), 'the newest note in the text colour');
-  assert.ok(raw.some(line => line.includes(colors.dim('step 58'))), 'older ones dim');
-  assert.ok(card.some(line => /… \d+ earlier — Inspector/.test(line)), 'capped, the rest left to the Inspector');
-  assert.ok(card.length <= 32, `${card.length} lines`);
-  assert.ok(!card.some(line => /Task|Run the ablation/.test(line)), 'the task is the Inspector\'s');
-  // A compact panel has no cards to open.
-  const compact = renderMonitor({ tree: tree([named]), state: initialMonitorState(), width: 32, height: 30, nowMs: now });
-  assert.equal(handleMonitorInput(compact.state, key('expand'), { tree: tree([named]), frame: compact }).state.cards, undefined);
-  assert.equal(handleMonitorInput(compact.state, key('space'), { tree: tree([named]), frame: compact }).state.modes.details, 'open', 'compact: Space is Enter');
+test('a card is already complete without history; Enter inspects it', () => {
+  const many = [...log.get(named.id)!, ...Array.from({length:60},(_,i)=>({at:now-200_000+i*1000,kind:i%2 ? 'report' as const : 'note' as const,text:`step ${i}`}))];
+  const agentLog = new Map([[named.id,many]]);
+  const frame = renderMonitor({tree:tree([named]),state:rich(),width:32,height:60,nowMs:now,agentLog});
+  const ctx = {tree:tree([named]),frame,nowMs:now};
+  assert.equal(handleMonitorInput(frame.state,key('enter'),ctx).state.modes.details,'open');
+  const after = plain(renderMonitor({tree:ctx.tree,state:frame.state,width:32,height:60,nowMs:now,agentLog}));
+  assert.ok(after.some(line=>line.includes('step 58')),'only newest model entry');
+  assert.ok(!after.some(line=>/step (?:[0-9]|[1-4][0-9])(?: |$)|Run the ablation/.test(line)));
+  const compact = renderMonitor({tree:ctx.tree,state:initialMonitorState(),width:32,height:30,nowMs:now});
+  assert.equal(handleMonitorInput(compact.state,key('space'),{tree:ctx.tree,frame:compact}).state.modes.details,'open');
 });
 
-test('card clicks: the name switches, the rest of the top rule and ▾ open, the body selects', () => {
-  // At work, so it is a card and not a row, with a note for a body.
-  const agents = tree([named, { ...bare, status: 'running' }]);
-  const notes = new Map(log).set(bare.id, [{ at: now - 6000, kind: 'note', text: '索引对比进行中' }]);
-  const frame = renderMonitor({ tree: agents, state: rich(), width: 32, height: 40, nowMs: now, agentLog: notes });
+test('card clicks select; only its name arms the double-click switch, Enter inspects', () => {
+  const agents = tree([named,{...bare,status:'running'}]);
+  const notes = new Map(log).set(bare.id,[{at:now-6000,kind:'note',text:'索引对比进行中'}]);
+  const frame = renderMonitor({tree:agents,state:rich(),width:32,height:40,nowMs:now,agentLog:notes});
   const lines = plain(frame);
-  const ctx = { tree: agents, frame, nowMs: now };
+  const ctx = {tree:agents,frame,nowMs:now};
+  const top = lines.findIndex(line=>line.includes('small_index_ablation'));
+  const name = frame.controls.find(c=>c.kind==='switch' && c.item===bare.id)!;
+  assert.equal(name.y,top); assert.equal(name.x,lines[top].indexOf('small_index_ablation'));
+  assert.equal(name.width,visualLength('small_index_ablation'));
+  const go = handleMonitorInput(frame.state,click(name.x,top),ctx);
+  assert.deepEqual(go.action,{type:'pick',id:bare.id});
+  assert.equal(go.state.tree.selectedId,bare.id);
+  assert.equal(go.state.modes.details,'closed');
+  const second = handleMonitorInput(go.state,click(name.x,top),{...ctx,nowMs:now+100});
+  assert.deepEqual(second.action,{type:'pick',id:bare.id},'page times the second click and switches');
+  const bottom = lines.findIndex((line,i)=>i>top && line.startsWith('└'));
+  for (const [x,y] of [[name.x-1,top],[name.x+name.width,top],[4,top+1],[3,bottom]]) {
+    const out = handleMonitorInput(frame.state,click(x,y),ctx);
+    assert.equal(out.state.tree.selectedId,bare.id); assert.equal(out.state.modes.details,'closed');
+    assert.equal(out.action,undefined);
+  }
+  assert.equal(handleMonitorInput(go.state,key('enter'),ctx).state.modes.details,'open');
+  assert.equal(monitorItemAt(frame.panes[0],4,top+1),bare.id);
+  assert.deepEqual(handleMonitorInput(go.state,key('open-session'),ctx).action,{type:'switch',id:bare.id});
+  const compact = renderMonitor({tree:agents,state:initialMonitorState(),width:32,height:40,nowMs:now});
+  const row = plain(compact).findIndex(line=>line.includes('small_index_ablation'));
+  const out = handleMonitorInput(compact.state,click(4,row),{tree:agents,frame:compact,nowMs:now});
+  assert.deepEqual(out.action,{type:'pick',id:bare.id}); assert.equal(out.state.modes.details,'open');
+});
+
+test('a narrow Codex pane does not underline the name; a click there selects', () => {
+  const agents = tree([{ ...bare, status: 'running' }]);
+  const frame = renderMonitor({ tree: agents, state: rich(), width: 48, height: 40, nowMs: now, linkNames: false });
+  const lines = plain(frame);
   const top = lines.findIndex(line => line.includes('small_index_ablation'));
-  const name = frame.controls.find(c => c.kind === 'switch' && c.item === bare.id)!;
-  assert.equal(name.y, top);
-  assert.equal(name.x, lines[top].indexOf('small_index_ablation'));
-  assert.equal(name.width, 'small_index_ablation'.length);
-  const go = handleMonitorInput(frame.state, click(name.x, top), ctx);
-  assert.deepEqual(go.action, { type: 'switch', id: bare.id });
-  assert.equal(go.state.tree.selectedId, bare.id);
-  // One column either side of the name opens the card instead.
-  for (const x of [name.x - 1, name.x + name.width]) {
-    const side = handleMonitorInput(frame.state, click(x, top), ctx);
-    assert.equal(side.action, undefined, `x ${x}`);
-    assert.ok(side.state.cards?.has(bare.id));
-    assert.equal(side.state.tree.selectedId, bare.id);
-  }
-  const bottom = lines.findIndex((line, i) => i > top && line.startsWith('└'));
-  const toggle = frame.controls.find(c => c.kind === 'expand' && c.y === bottom)!;
-  assert.equal(stripAnsi(lines[bottom])[toggle.x], '▾');
-  assert.ok(handleMonitorInput(frame.state, click(toggle.x, bottom), ctx).state.cards?.has(bare.id));
-  // The body and the rest of the bottom rule select, and do no more.
-  for (const [x, y] of [[4, top + 1], [3, bottom]]) {
-    const picked = handleMonitorInput(frame.state, click(x, y), ctx);
-    assert.equal(picked.action, undefined);
-    assert.equal(picked.state.tree.selectedId, bare.id);
-    assert.ok(!picked.state.cards?.has(bare.id));
-  }
-  assert.equal(monitorItemAt(frame.panes[0], 4, top + 1), bare.id);
-  // `o` still switches to the selected card.
-  assert.deepEqual(handleMonitorInput(go.state, key('open-session'), ctx).action, { type: 'switch', id: bare.id });
-  // Compact keeps what a click on a tree row did: select and switch.
-  const compact = renderMonitor({ tree: agents, state: initialMonitorState(), width: 32, height: 40, nowMs: now });
-  const row = plain(compact).findIndex(line => line.includes('small_index_ablation'));
-  assert.deepEqual(handleMonitorInput(compact.state, click(4, row), { tree: agents, frame: compact, nowMs: now }).action, { type: 'switch', id: bare.id });
+  assert.ok(top > 0, lines.join('\n'));
+  assert.ok(!frame.lines[top].includes(colors.underline('small_index_ablation')));
+  assert.equal(frame.controls.some(c => c.kind === 'switch'), false);
+  const out = handleMonitorInput(frame.state, click(lines[top].indexOf('small_index_ablation'), top), { tree: agents, frame, nowMs: now });
+  assert.equal(out.action, undefined);
+  assert.equal(out.state.tree.selectedId,bare.id);
+  assert.equal(out.state.modes.details, 'closed');
+});
+
+test('a click on a subtask line selects it and leaves the Inspector closed', () => {
+  const kid = agent(9, 'scout', 'error', { depth: 2, statusAt: new Date(now - 10_000) });
+  const lead = agent(8, 'lead', 'running', { children: [kid] });
+  const agents = tree([lead]);
+  // A finished subtask is on the opened card. A closed card keeps only a live one.
+  const frame = renderMonitor({ tree: agents, state: rich(), width: 48, height: 40, nowMs: now });
+  const line = plain(frame).findIndex(row => row.includes('scout'));
+  assert.ok(line > 0, plain(frame).join('\n'));
+  const out = handleMonitorInput(frame.state, click(4, line), { tree: agents, frame, nowMs: now });
+  assert.equal(out.action, undefined);
+  assert.equal(out.state.tree.selectedId, kid.id);
+  assert.equal(out.state.modes.details, 'closed');
+  assert.ok(!frame.controls.some(c=>(c.kind as string)==='expand'));
+  const details = handleMonitorInput(out.state, key('enter'), { tree: agents, frame, nowMs: now }).state;
+  assert.equal(details.modes.details, 'open');
+  assert.equal(details.tree.selectedId, kid.id);
 });
 
 test('the agents view scrolls: its band says which rows are in view, the wheel and pages move it, the selection pulls it', () => {
@@ -249,7 +244,7 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   const lines = plain(frame);
   assert.equal(lines[1], ' '.repeat(32), 'a blank row under the bar, the panel being tall enough');
   assert.equal(lines[frame.panes[0].y].trimEnd(), ' ▦ Agents  ✓1 done  ▸1 run', 'each count with its word, the hidden one counted');
-  assert.match(lines[0], /⊕1 ⚙ \? $/, lines[0]);
+  assert.match(lines[0], /Settings.*⊕1 +\? *$/, lines[0]);
   assert.ok(!lines.some(line => line.includes('old_one')));
   const older = frame.controls.find(c => c.kind === 'older')!;
   const shown = handleMonitorInput(frame.state, click(older.x, 0), { tree: tree([named, old]), frame, nowMs: now }).state;
@@ -260,13 +255,16 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   assert.equal(focused.modes.agents, 'open', '1 opens the cards, and focuses them');
   assert.equal(handleMonitorInput(focused, key('agents'), { tree: tree([named]), frame }).state.modes.agents, 'closed', 'and closes them again');
   const help = (style: 'rich' | 'compact') => plain(renderMonitor({ tree: tree([]), state: { ...rich(), style, help: true }, width: 70, height: 80, nowMs: now })).join('\n');
-  assert.match(help('rich'), /\ne \/ Space +open \/ close card\n/);
-  assert.match(help('rich'), /Click its name: switch/);
+  assert.doesNotMatch(help('rich'), /open \/ close card/);
+  assert.match(help('rich'), /Click a card: select/);
+  assert.match(help('rich'), /Click its name: select; double-click switches/);
+  assert.match(help('rich'), /Click a blank row: keys stay here/);
+  assert.match(help('compact'), /Click agent: inspect; double-click switches/);
   assert.match(help('rich'), /1 Cards/);
   assert.match(help('rich'), /⌕ research ⚗ experiment ⚒ fix/);
   assert.doesNotMatch(help('compact'), /open \/ close card/);
   const previous = setLanguage('zh');
-  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true }, width: 70, height: 80, nowMs: now })).join('\n'), /e \/ 空格 +展开 \/ 收起卡片[\s\S]*⌕ 调研/); }
+  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true }, width: 70, height: 80, nowMs: now })).join('\n'), /⌕ 调研/); }
   finally { setLanguage(previous); }
 });
 
@@ -305,99 +303,68 @@ const finished = (i: number, name: string, minutesAgo: number, extra: Partial<Su
     model: 'gpt-5.4-luna', effort: 'medium', ...extra });
 const withGlyphs = <T>(glyphs: 'glyph' | 'text' | 'both', run: () => T): T => {
   const previous = displayConfig();
-  setDisplayConfig({ glyphs });
+  // Words in place of marks are the icons' setting; the model badge is the glyphs'. Text here means both.
+  setDisplayConfig(glyphs === 'text' ? { glyphs, icons: 'text' } : { glyphs });
   try { return run(); } finally { setDisplayConfig(previous); }
 };
 
-test('a finished agent a minute old is one line, its meter and age in columns; e, Space or a click opens it, j/k only marks it', () => {
-  const old = [finished(20, 'audit_code_paths', 60 * 24 * 12, { task: 'Audit the code paths' }), finished(21, 'migrate', 60 * 24 * 12, { contextUsage: ctxUsage(29) })];
-  const fresh = finished(22, 'just_done', 0.5, { lastReport: { text: 'All done', kind: 'reply', at: new Date(now - 30_000) } });
-  const nodes = [...old, fresh];
-  const state = rich({ tree: { ...rich().tree, showAll: true, selectedId: old[0].id } });
-  const frame = renderMonitor({ tree: tree(nodes), state, width: 90, height: 40, nowMs: now });
+test('finished agents keep the same card layout, dim old news, navigate without a height jump', () => {
+  const old = [finished(20,'audit_code_paths',60*24*12,{task:'Audit the code paths'}),finished(21,'migrate',60*24*12,{contextUsage:ctxUsage(29)})];
+  const fresh = finished(22,'just_done',0.5,{lastReport:{text:'All done',kind:'reply',at:new Date(now-30_000)}});
+  const nodes = [...old,fresh]; const agents = tree(nodes);
+  const state = rich({tree:{...rich().tree,showAll:true,selectedId:old[0].id}});
+  const frame = renderMonitor({tree:agents,state,width:90,height:40,nowMs:now});
   const lines = plain(frame);
-  const rows = lines.filter(line => /^[› ]✓ (audit|migrate)/.test(line));
-  assert.equal(rows.length, 2, lines.join('\n'));
-  assert.match(rows[0], /^›✓ audit_code_paths +☽◐ Luna ─+57%─+ 12d$/);
-  assert.ok(frame.lines[lines.indexOf(rows[0])].startsWith(theme.selectedBand('X').split('X')[0]), 'the selected row is on its own surface');
-  assert.ok(!lines.some(line => line.includes('Audit the code paths')), 'no note from the model: no second line; the task is the Inspector\'s');
-  assert.equal(rows[0].length, rows[1].length);
-  assert.equal(rows[0].lastIndexOf('─'), rows[1].lastIndexOf('─'), 'the meters line up');
-  assert.equal(lines.indexOf(rows[1]) - lines.indexOf(rows[0]), 1, 'finished rows sit together, no blank between');
-  assert.ok(lines.some(line => /^[› ]✓ just_done/.test(line)), 'just finished: at rest, so one line too');
-  assert.ok(frame.lines.every(line => visualLength(line) <= 90));
-  // j/k moves the mark and does not open.
-  const ctx = { tree: tree(nodes), frame, nowMs: now };
-  const moved = handleMonitorInput(frame.state, key('down'), ctx).state;
-  assert.equal(moved.tree.selectedId, old[1].id);
-  assert.ok(!(moved.cards?.has(old[1].id)));
-  const after = plain(renderMonitor({ tree: tree(nodes), state: moved, width: 90, height: 40, nowMs: now }));
-  assert.equal(after.filter(line => /^[› ]✓ (audit|migrate)/.test(line)).length, 2, 'the height does not jump');
-  assert.equal(after.length, lines.length);
-  // e opens it; a click on the row does too.
-  const opened = handleMonitorInput(moved, key('expand'), ctx).state;
-  assert.ok(opened.cards?.has(old[1].id));
-  const y = lines.indexOf(rows[1]);
-  const clicked = handleMonitorInput(frame.state, click(10, y), ctx).state;
-  assert.ok(clicked.cards?.has(old[1].id));
-  const open = plain(renderMonitor({ tree: tree(nodes), state: opened, width: 90, height: 40, nowMs: now }));
-  assert.ok(open.some(line => /^› ✓ migrate ─+/.test(line)) && open.some(line => /^└ 12d ─+29%─+ ▴$/.test(line)), open.join('\n'));
-  // Glyphs off: the age says ago.
-  const words = withGlyphs('text', () => plain(renderMonitor({ tree: tree(nodes), state, width: 90, height: 40, nowMs: now })));
-  assert.ok(words.some(line => /12d ago$/.test(line)), words.join('\n'));
-  // In Chinese the age column is measured in display width: snug, and still one column.
-  const mixed = [old[0], finished(23, 'migrate', 2, { contextUsage: ctxUsage(29) })];
+  assert.equal(lines.filter(line=>/^[┌›] ✓ /.test(line)).length,3);
+  assert.equal(lines.filter(line=>/^└ /.test(line)).length,3);
+  assert.ok(lines.some(line=>/^└ 12d .*57%/.test(line)));
+  assert.ok(lines.some(line=>/^└ 12d .*29%/.test(line)));
+  assert.ok(!lines.some(line=>/Audit the code paths|All done/.test(line)));
+  const ctx = {tree:agents,frame,nowMs:now};
+  const moved = handleMonitorInput(frame.state,key('down'),ctx).state;
+  assert.equal(moved.tree.selectedId,old[1].id);
+  const next = renderMonitor({tree:agents,state:moved,width:90,height:40,nowMs:now});
+  assert.equal(next.panes[0].contentLength,frame.panes[0].contentLength);
+  const y = lines.findIndex(line=>line.includes('migrate'));
+  const clicked = handleMonitorInput(frame.state,click(2,y),ctx).state;
+  assert.equal(clicked.tree.selectedId,old[1].id); assert.equal(clicked.modes.details,'closed');
+  const words = withGlyphs('text',()=>plain(renderMonitor({tree:agents,state,width:90,height:40,nowMs:now})));
+  assert.ok(words.some(line=>/^└ 12d ago /.test(line)));
   const previous = setLanguage('zh');
-  try {
-    const zh = withGlyphs('text', () => plain(renderMonitor({ tree: tree(mixed), state, width: 90, height: 40, nowMs: now })))
-      .filter(line => /^[› ]✓ (audit|migrate)/.test(line));
-    assert.equal(zh.length, 2, zh.join('\n'));
-    assert.match(zh[0], /[━╸─] 12d前$/, 'the column is as wide as the words, not the English ones');
-    assert.match(zh[1], /[━╸─] {2}2m前$/);
-    assert.equal(visualLength(zh[0]), visualLength(zh[1]));
-    assert.equal(visualLength(zh[0].slice(0, zh[0].lastIndexOf('─'))), visualLength(zh[1].slice(0, zh[1].lastIndexOf('─'))), 'the meters line up');
-  } finally { setLanguage(previous); }
+  try { assert.ok(withGlyphs('text',()=>plain(renderMonitor({tree:agents,state,width:90,height:40,nowMs:now}))).some(line=>/^└ 12d前 /.test(line))); }
+  finally {setLanguage(previous);}
 });
 
-test('finished rows keep their names whole, drawing meters only where most names fit beside them, and say a run of equal ages once', () => {
-  const names = ['refactor_session_store', 'audit_render_paths', 'migrate_settings_file'];
-  const nodes = [...names.map((name, i) => finished(40 + i, name, 60 * 24 * 12)), finished(43, 'tidy_docs', 180)];
-  const state = rich({ tree: { ...rich().tree, showAll: true } });
-  const rowsOf = (list: SubagentTreeNode[], width: number, at = state) =>
-    plain(renderMonitor({ tree: tree(list), state: at, width, height: 40, nowMs: now })).filter(line => /^[› ]✓ /.test(line));
-  const narrow = rowsOf(nodes, 40);
-  assert.equal(narrow.length, 4, narrow.join('\n'));
-  assert.ok(narrow.every(line => !line.includes('%')), `at 40 a meter would cut the names, so none is drawn:\n${narrow.join('\n')}`);
-  assert.ok(names.every(name => narrow.some(line => line.includes(name))));
-  const wide = rowsOf(nodes, 56);
-  assert.ok(wide.every(line => line.includes('57%')) && names.every(name => wide.some(line => line.includes(name))), wide.join('\n'));
-  // The age at the top of a run only, its column kept so the rows still line up.
-  assert.match(wide[0], /─ 12d$/);
-  assert.ok(wide.slice(1, 3).every(line => /─ {4}$/.test(line)), wide.join('\n'));
-  assert.match(wide[3], /─ {2}3h$/);
-  assert.ok(wide.every(line => line.length === wide[0].length));
-  // An opened card between two rows ends the run: the row after it says its age again.
-  const split = rowsOf(nodes, 56, rich({ cards: new Set([nodes[1].id]), tree: { ...rich().tree, showAll: true } }));
-  assert.match(split[1], /^ ✓ migrate_settings_file .* 12d$/, split.join('\n'));
-  // One long name among short ones does not cost the others their meters: it alone is cut.
-  const mixed = rowsOf([finished(44, 'alpha', 60), finished(45, 'beta', 60), finished(46, 'refactor_the_session_store_layer', 60)], 56);
-  assert.ok(mixed.every(line => line.includes('57%')) && mixed[2].includes('…'), mixed.join('\n'));
+test('finished card names stay whole when they fit; each footer retains its own context and age', () => {
+  const names = ['refactor_session_store','audit_render_paths','migrate_settings_file'];
+  const nodes = [...names.map((name,i)=>finished(40+i,name,60*24*12)),finished(43,'tidy_docs',180)];
+  const state = rich({tree:{...rich().tree,showAll:true}});
+  for (const width of [32,40,48,56]) {
+    const frame = renderMonitor({tree:tree(nodes),state,width,height:60,nowMs:now});
+    const lines = plain(frame);
+    assert.ok(names.every(name=>lines.some(line=>line.includes(name))),lines.join('\n'));
+    assert.equal(lines.filter(line=>/^└ 12d /.test(line)).length,3,'each card owns its age');
+    assert.ok(lines.some(line=>/^└ 3h /.test(line)));
+    assert.equal(lines.filter(line=>line.includes('57%')).length,4);
+    assert.ok(frame.lines.every(line=>visualLength(line)===width));
+  }
+  const long = finished(44,'refactor_the_session_store_layer_with_extra_suffix',60);
+  const lines = plain(renderMonitor({tree:tree([long]),state,width:32,height:40,nowMs:now}));
+  assert.ok(lines.some(line=>/^› ✓ /.test(line) && line.includes('…')));
 });
 
 test('an opened card leaves the last report to the Inspector, its markdown taken out there; an old card steps its words back', () => {
   const report = 'Published [the handoff](/x/HANDOFF.md) at **`d97a7a688774ad9b45da44f5825ae1ac198b4bb1`**. ### Next __steps__ follow.';
   const done = finished(30, 'cache_clean', 60 * 19, { lastReport: { text: report, kind: 'reply', at: new Date(now - 19 * 3600_000) }, task: 'Write the handoff' });
-  const state = rich({ cards: new Set([done.id]), tree: { ...rich().tree, showAll: true, selectedId: done.id } });
+  const state = rich({ tree: { ...rich().tree, showAll: true, selectedId: done.id } });
   const notes = new Map([[done.id, [{ at: now - 19 * 3600_000, kind: 'digest' as const, text: 'handoff published' }]]]);
   const frame = renderMonitor({ tree: tree([done]), state, width: 90, height: 40, nowMs: now, agentLog: notes });
   const lines = plain(frame);
   assert.ok(!lines.some(line => line.includes('Published') || line.includes('Write the handoff')), lines.join('\n'));
-  const at = lines.findIndex(line => line.includes('handoff published'));
-  assert.ok(at > 0, lines.join('\n'));
-  assert.ok(frame.lines[at].includes(colors.dim('X').split('X')[0]) && !frame.lines[at].includes(theme.info('X').split('X')[0]), 'old news: the body is dim with the name');
-  const inspector = inspectorRows({ tree: tree([done]), nowMs: now } as never, { ...state, preview: 'agent' }, 90, now).map(row => stripAnsi(row.text));
-  assert.ok(inspector.includes('Published the handoff at d97a7a6. Next steps follow.'), inspector.join('\n'));
-  assert.ok(inspector.includes('Write the handoff'), 'the task, always, where the cards leave it');
+  const inspector = inspectorRows({ tree: tree([done]), nowMs: now, agentLog: notes } as never, { ...state, preview: 'agent' }, 90, now).map(row => stripAnsi(row.text));
+  assert.ok(inspector.some(line => line.includes('Published the handoff at d97a7a6. Next steps follow.')), inspector.join('\n'));
+  assert.ok(inspector.some(line => line.includes('Write the handoff')), 'the task, always, where the cards leave it');
+  assert.ok(inspector.some(line => line.includes('handoff published')), 'the digest is the Inspector\'s');
   // A closed card leaves its update to the opened card and the Inspector: no line cut short, no orphan age.
   const long = 'word '.repeat(80);
   const busy = agent(31, 'busy', 'running', { contextUsage: ctxUsage(20) });
@@ -422,11 +389,12 @@ test('guardian reviews fold into a ◈N chip on their parent, and the summary co
   assert.match(top, /◈2/);
   assert.ok(frame.lines.some(line => line.includes(theme.info('◈2'))), 'a running review: the chip in the info colour');
   assert.ok(!lines.some(line => /The following is the Codex/.test(line)), 'never the review prompt');
-  assert.ok(!lines.some(line => line.includes('guardian')), 'a review is no card');
+  assert.ok(lines.some(line => /^│ ▸ guardian/.test(line)), 'a live review is one line on its parent');
+  assert.ok(!lines.some(line => /^[┌╭›]/.test(line) && line.includes('guardian')), 'a review is no card of its own');
   const other = frame.lines.find(line => stripAnsi(line).includes('other'))!;
   assert.doesNotMatch(stripAnsi(other), /✗/, 'a failed review is not one of its lead\'s failed subtasks');
   assert.ok(other.includes(theme.error('◈1')), 'it is its lead\'s chip, in the error colour');
-  const opened = plain(renderMonitor({ tree: tree(nodes), state: { ...state, cards: new Set([id(44)]) }, width: 60, height: 50, nowMs: now }));
+  const opened = plain(renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now }));
   assert.ok(opened.some(line => /^│ ! guardian +\d+h$/.test(line.trimEnd())), 'and has a line on its lead\'s card');
   // j/k never lands on a folded review.
   let s = frame.state;
@@ -439,30 +407,54 @@ test('guardian reviews fold into a ◈N chip on their parent, and the summary co
   assert.equal(compact.filter(line => / guardian/.test(line)).length, 1);
 });
 
-test('a finished agent\'s second line is the newest note the model wrote, no mark; its updates and task are the Inspector\'s', () => {
-  const done = (i: number, extra: Partial<SubagentTreeNode> = {}) => finished(i, `done_${i}`, 60 * 19, { task: `Task of ${i}`, contextUsage: ctxUsage(41), ...extra });
-  const nodes = [done(50), done(51), done(52), done(53, { task: undefined })];
-  const agentLog = new Map<string, AgentLogEntry[]>([
-    [nodes[0].id, [{ at: now - 7200_000, kind: 'report', text: 'Pushed **the** handoff' }, { at: now - 3600_000, kind: 'note', text: 'Handoff published, awaiting review' }]],
-    [nodes[1].id, [{ at: now - 3600_000, kind: 'report', text: 'Pushed **the** handoff' }, { at: now - 60_000, kind: 'finished', text: '' }]],
+test('finished cards wrap only the newest model entry, retain meter colors, and never show task/report text', () => {
+  const nodes = [50,51,52,53].map(i=>finished(i,`done_${i}`,60*19,{task:`Task of ${i}`,contextUsage:ctxUsage(41)}));
+  const agentLog = new Map<string,AgentLogEntry[]>([
+    [nodes[0].id,[{at:now-7200_000,kind:'report',text:'Pushed the handoff'},{at:now-3600_000,kind:'note',text:'Handoff published, awaiting review'}]],
+    [nodes[1].id,[{at:now-3600_000,kind:'report',text:'Pushed the handoff'},{at:now-60_000,kind:'finished',text:''}]],
   ]);
-  for (const width of [32, 40, 56]) {
-    const state = rich({ tree: { ...rich().tree, showAll: true, selectedId: nodes[1].id } });
-    const frame = renderMonitor({ tree: tree(nodes), state, width, height: 44, nowMs: now, agentLog });
-    const lines = plain(frame);
-    const under = (name: string) => lines[lines.findIndex(line => line.includes(name)) + 1];
-    assert.equal(under('done_50').trimEnd(), truncateAnsi('   Handoff published, awaiting review', width));
-    for (const name of ['done_51', 'done_52', 'done_53']) assert.ok(!/^ {3}\S/.test(under(name) ?? ''), `${name}: no note, no second line`);
-    assert.ok(frame.lines.every(line => visualLength(line) <= width));
-    const row = lines.find(line => line.includes('done_50'))!;
-    assert.equal(row.lastIndexOf('─') - row.indexOf('─') + 1, width >= 56 ? 16 : width < 36 ? 8 : 12, `${width}: the meter's cells`);
-    const meter = frame.lines.find(line => line.includes('done_50'))!;
-    assert.ok(meter.includes(theme.info('X').split('X')[0] + '─'), 'an old row keeps its meter\'s zone colour');
-    assert.ok(meter.includes(colors.dim(directions(tree(nodes)).paint(nodes[0].id)('done_50'))), 'only the name dims, in its direction\'s colour');
+  for (const width of [16,24,32,40,48,56]) {
+    const state = rich({tree:{...rich().tree,showAll:true,selectedId:nodes[1].id}});
+    const frame = renderMonitor({tree:tree(nodes),state,width,height:60,nowMs:now,agentLog});
+    const lines = plain(frame); const at = lines.findIndex(line=>line.includes('done_50'));
+    const end = lines.findIndex((line,i)=>i>at && line.startsWith('└'));
+    assert.equal(lines.slice(at+1,end).map(line=>line.slice(2).trim()).join(' '),'Handoff published, awaiting review');
+    assert.ok(!lines.some(line=>/Pushed|Task of/.test(line)));
+    assert.equal(lines.filter(line=>line.includes('41%')).length,4);
+    assert.ok(frame.lines.every(line=>visualLength(line)===width));
+    assert.ok(frame.lines.some(line=>line.includes(theme.info('X').split('X')[0]) && line.includes('41%')),'meter keeps zone color');
   }
-  // Compact: only the selected row has its second line.
-  const compact = plain(renderMonitor({ tree: tree(nodes), state: { ...initialMonitorState(), tree: { ...initialMonitorState().tree, selectedId: nodes[0].id } },
-    width: 40, height: 44, nowMs: now, agentLog }));
-  assert.equal(compact.filter(line => /^ +Handoff/.test(line)).length, 1, compact.join('\n'));
-  assert.ok(!compact.some(line => /Task of 52/.test(line)), 'the others stay one line');
+  const compact = plain(renderMonitor({tree:tree(nodes),state:{...initialMonitorState(),tree:{...initialMonitorState().tree,selectedId:nodes[0].id}},width:40,height:44,nowMs:now,agentLog}));
+  assert.equal(compact.filter(line=>/^ +Handoff/.test(line)).length,1);
+});
+
+test('a running card\'s clock ticks on cached renders; a resting card keeps its cache entry', () => {
+  const working = agent(60,'working_agent','running',{ turnStartedAt: new Date(now-12*60_000), lastEventAt: new Date(now-5*60_000) });
+  const resting = finished(61,'resting_agent',60*24*12);
+  const agents = tree([working,resting]);
+  const footOf = (frame: MonitorFrame, name: string) => {
+    const lines = plain(frame);
+    const top = lines.findIndex(line=>line.includes(name));
+    return lines.slice(top).find((line,i)=>i>0 && /^└/.test(line)) ?? '';
+  };
+  const first = renderMonitor({tree:agents,state:rich(),width:48,height:40,nowMs:now});
+  // The running turn is 12m00s old; a second later the same render loop must say 12m01s.
+  const next = renderMonitor({tree:agents,state:first.state,width:48,height:40,nowMs:now+1000});
+  assert.match(footOf(first,'working_agent'),/◷12m00s/);
+  assert.match(footOf(next,'working_agent'),/◷12m01s/);
+  // A resting card's text is the same either way; its cache entry survives the second.
+  assert.equal(footOf(next,'resting_agent'),footOf(first,'resting_agent'));
+  assert.match(footOf(next,'resting_agent'),/└ 12d /,footOf(next,'resting_agent'));
+});
+
+test('a cached card drops an expired output rate even with its clock hidden', () => {
+  const working = agent(62,'rate_agent','running',{
+    turnStartedAt:new Date(now-12*60_000),lastEventAt:new Date(now-181_000),
+    outputRate:{tokensPerSecond:42,sampleMs:30_000,sampledAt:new Date(now-179_500)},
+  });
+  const agents = tree([working]);
+  const first = renderMonitor({tree:agents,state:rich({cardVisibility:{cardClock:false,cardRate:true}}),width:56,height:30,nowMs:now});
+  const next = renderMonitor({tree:agents,state:first.state,width:56,height:30,nowMs:now+1000});
+  assert.match(plain(first).find(line=>line.startsWith('└')) ?? '',/~42 tok\/s/);
+  assert.doesNotMatch(plain(next).find(line=>line.startsWith('└')) ?? '',/tok\/s/);
 });

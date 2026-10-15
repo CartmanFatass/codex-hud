@@ -34,7 +34,6 @@ export const PANEL_COMMANDS = [
   'quit',
   'switch',
   'inspect',
-  'open',
   'first',
   'last',
   'back',
@@ -72,8 +71,6 @@ const MONITOR_KEYS: Record<PanelCommand, string> = {
   quit: 'close',
   switch: 'open-session',
   inspect: 'enter',
-  // Space's meaning: on a card, open or close it; elsewhere, Enter.
-  open: 'space',
   first: 'home',
   last: 'end',
   back: 'escape',

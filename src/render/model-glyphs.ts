@@ -51,6 +51,19 @@ export function shortModelLabel(model?: string | null): string {
   return raw.replace(/^gpt-?/i, '') || raw;
 }
 
+/**
+ * The badge's words: the version joined to the family, `gpt-6.1-sol` as
+ * `6.1sol`. A model with no family keeps its own name, the `gpt-` prefix off.
+ */
+export function versionedModelLabel(model?: string | null): string {
+  const raw = (model ?? '').trim();
+  if (!raw) return '';
+  const family = classifyModelFamily(raw);
+  if (!family) return shortModelLabel(raw);
+  const version = raw.toLowerCase().replace(/^gpt-/, '').match(/^\d+(?:\.\d+)?/)?.[0] ?? '';
+  return version ? `${version}${family}` : family;
+}
+
 function paintEffort(effort: string, glyph: string): string {
   const key = effort.toLowerCase();
   if (key === 'max' || key === 'ultra') {
@@ -70,10 +83,10 @@ export interface ModelTokenOptions {
 /**
  * The model/effort badge.
  *
- * `glyph` is the compact celestial symbol, `text` spells the family and effort
- * out for anyone who has not memorised the symbols, and `both` shows the
- * symbol next to the words. An unrecognised model always falls back to its own
- * name rather than being forced into a family.
+ * `glyph` is the compact celestial symbol, `text` spells the version, family
+ * and effort (`6.1sol·max`) for anyone who has not memorised the symbols, and
+ * `both` shows the symbol next to those words. An unrecognised model always
+ * falls back to its own name rather than being forced into a family.
  */
 export function renderModelEffortToken(
   model?: string | null,
@@ -87,7 +100,7 @@ export function renderModelEffortToken(
 
   // Unknown models have no symbol to show, so they read as text in every mode.
   const familyGlyph = family ? MODEL_GLYPHS[family] : '';
-  const familyText = family ? MODEL_LABELS[family] : model ? shortModelLabel(model) : '';
+  const familyText = model ? versionedModelLabel(model) : '';
 
   if (mode === 'glyph' && familyGlyph) {
     const painted = theme.model(familyGlyph);

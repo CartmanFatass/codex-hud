@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { defaultCardVisibility } from '../../src/card-visibility.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
 import type { HudSettings } from '../../src/settings.js';
 
@@ -23,14 +24,16 @@ function withSettingsFile(run: (file: string, directory: string) => void): void 
 test('missing settings keep display defaults and hide optional tasks and activity', () => {
   withSettingsFile((file) => {
     assert.deepEqual(loadSettings(), {
+      ...defaultCardVisibility(),
       density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
       statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
-      details: true, refreshMs: 1000, treeWidth: 32, finishedLingerMs: 180_000,
+      details: true, refreshMs: 1000, treeWidth: 48, finishedLingerMs: 180_000,
       agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
       timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-      briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, cardCorners: 'square', cardRoleCounts: true, cardNotes: 3, notify: false, notifyDesktop: false,
+      briefingApiLiteModel: 'gemini-3.5-flash-lite', briefingApiLowModel: 'gemini-3.8-flash-low', briefingApiMediumModel: 'gemini-3.8-flash-medium',
+      briefAgents: true, briefMain: false, agentProgress: true, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, cardCorners: 'square', notify: false, notifyDesktop: false,
       resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
       art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode', look: 'tab', paneLayout: 'stack',
     });
@@ -61,6 +64,7 @@ test('load validates known settings without importing unknown or invalid values'
       details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0, unknown: 'ignored',
     }));
     assert.deepEqual(loadSettings(), {
+      ...defaultCardVisibility(),
       density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
       statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
       details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0,
@@ -68,7 +72,8 @@ test('load validates known settings without importing unknown or invalid values'
       timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
       worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
       briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-      briefAgents: true, briefMain: false, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, cardCorners: 'square', cardRoleCounts: true, cardNotes: 3, notify: false, notifyDesktop: false,
+      briefingApiLiteModel: 'gemini-3.5-flash-lite', briefingApiLowModel: 'gemini-3.8-flash-low', briefingApiMediumModel: 'gemini-3.8-flash-medium',
+      briefAgents: true, briefMain: false, agentProgress: true, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, cardCorners: 'square', notify: false, notifyDesktop: false,
       resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
       art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode', look: 'tab', paneLayout: 'stack',
     });
@@ -135,7 +140,7 @@ test('refresh intervals and widths accept only bounded integer values', () => {
     }
     for (const treeWidth of [-1, 1, 15, 201, 40.5, '40']) {
       fs.writeFileSync(file, JSON.stringify({ treeWidth }));
-      assert.equal(loadSettings().treeWidth, 32);
+      assert.equal(loadSettings().treeWidth, 48);
     }
   });
 });
@@ -164,7 +169,7 @@ test('save ignores invalid patches and strips unknown fields from existing files
     } as unknown as Partial<HudSettings>);
     assert.equal(saved.theme, 'latte');
     assert.equal(saved.refreshMs, 500);
-    assert.equal(saved.treeWidth, 32);
+    assert.equal(saved.treeWidth, 48);
     assert.equal(saved.mouse, true);
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.equal('extra' in raw, false);
@@ -199,5 +204,65 @@ test('nonobject JSON cannot become settings and oversized files are rejected', (
     }
     fs.writeFileSync(file, ' '.repeat(65_537));
     assert.throws(() => loadSettings(), /too large/i);
+  });
+});
+
+test('legacy OMP settings migrate to API deterministically and task models validate', () => {
+  withSettingsFile(file => {
+    assert.equal(defaultSettings().briefing, 'off');
+    assert.equal(defaultSettings().briefingApiBase, '');
+    fs.writeFileSync(file, JSON.stringify({ briefing: 'omp', briefingApiModel: 'legacy-override', briefingApiLiteModel: 'custom-lite' }));
+    const loaded = loadSettings();
+    assert.equal(loaded.briefing, 'api');
+    assert.equal(loaded.briefingApiModel, 'legacy-override');
+    assert.equal(loaded.briefingApiLiteModel, 'custom-lite');
+    assert.equal(loaded.briefingApiLowModel, 'gemini-3.8-flash-low');
+    assert.equal(loaded.briefingApiMediumModel, 'gemini-3.8-flash-medium');
+    const saved = saveSettings({ briefingApiLowModel: 'custom-low', briefingApiMediumModel: 'custom-medium' });
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).briefing, 'api');
+    assert.equal(saved.briefingApiLowModel, 'custom-low');
+    assert.equal(saved.briefingApiMediumModel, 'custom-medium');
+    const invalid = saveSettings({ briefingApiLiteModel: 'bad\nmodel', briefingApiLowModel: 'x'.repeat(201), briefingApiMediumModel: 42 } as unknown as Partial<HudSettings>);
+    assert.equal(invalid.briefingApiLiteModel, 'custom-lite');
+    assert.equal(invalid.briefingApiLowModel, 'custom-low');
+    assert.equal(invalid.briefingApiMediumModel, 'custom-medium');
+  });
+});
+
+
+test('flat card visibility and progress defaults validate independently; legacy notes are ignored', () => {
+  withSettingsFile(file => {
+    const cards = defaultCardVisibility();
+    const defaults = defaultSettings();
+    for (const [key,value] of Object.entries(cards)) assert.equal(defaults[key as keyof HudSettings],value,key);
+    assert.equal(defaults.agentProgress,true);
+    const booleanKeys = Object.keys(cards).filter(key => key !== 'cardSubagentScope') as Array<keyof HudSettings>;
+    assert.equal(booleanKeys.length,13);
+    const toggled = Object.fromEntries(booleanKeys.map(key => [key,!defaults[key]]));
+    fs.writeFileSync(file,JSON.stringify({...toggled,cardSubagentScope:'all',agentProgress:false,briefAgents:true,cardNotes:5}));
+    const loaded = loadSettings();
+    for (const key of booleanKeys) assert.equal(loaded[key],toggled[key],key);
+    assert.equal(loaded.cardSubagentScope,'all');
+    assert.equal(loaded.agentProgress,false);
+    assert.equal(loaded.briefAgents,true);
+    assert.equal('cardNotes' in loaded,false);
+    fs.writeFileSync(file,JSON.stringify({...Object.fromEntries(booleanKeys.map(key => [key,'off'])),cardSubagentScope:'finished',agentProgress:1}));
+    assert.deepEqual(loadSettings(),defaults);
+    for (const scope of ['live','important','all'] as const) assert.equal(saveSettings({cardSubagentScope:scope}).cardSubagentScope,scope);
+    assert.equal(saveSettings({briefAgents:false,agentProgress:true}).agentProgress,true);
+    assert.equal(loadSettings().briefAgents,false);
+    assert.equal('cardNotes' in JSON.parse(fs.readFileSync(file,'utf8')),false);
+  });
+});
+
+test('saving display preferences retains synthetic API credentials and task routing', () => {
+  withSettingsFile(file => {
+    const credentials = {briefingApiKey:'synthetic-test-secret',briefingApiBase:'https://synthetic.invalid/v1',
+      briefingApiModel:'synthetic-model',briefingApiLiteModel:'synthetic-lite',briefingApiLowModel:'synthetic-low',briefingApiMediumModel:'synthetic-medium',briefingApiReasoning:true};
+    saveSettings(credentials);
+    const saved = saveSettings({cardLabel:false,cardSummary:false,briefAgents:false,agentProgress:true});
+    for (const [key,value] of Object.entries(credentials)) assert.equal(saved[key as keyof HudSettings],value,key);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),saved);
+    assert.deepEqual(loadSettings(),saved);
   });
 });

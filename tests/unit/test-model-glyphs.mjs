@@ -29,12 +29,16 @@ assert.equal(MODEL_GLYPHS.sol, '★');
 // The other two modes, so the default is pinned rather than merely avoided.
 assert.equal(
   stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium', { mode: 'both' })),
-  `${MODEL_GLYPHS.astra}${EFFORT_GLYPHS.medium} Astra`
+  `${MODEL_GLYPHS.astra}${EFFORT_GLYPHS.medium} 6astra`
 );
 assert.equal(stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium')),
   stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium', { mode: 'both' })),
   'both is the default');
-assert.equal(stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium', { mode: 'text' })), 'Astra·medium');
+assert.equal(stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium', { mode: 'text' })), '6astra·medium');
+assert.equal(stripAnsi(renderModelEffortToken('gpt-6.1-sol', 'max', { mode: 'text' })), '6.1sol·max');
+assert.equal(stripAnsi(renderModelEffortToken('gpt-6-sol', 'max', { mode: 'text' })), '6sol·max');
+assert.equal(stripAnsi(renderModelEffortToken('gpt-5.6-luna', undefined, { mode: 'text' })), '5.6luna');
+assert.equal(stripAnsi(renderModelEffortToken('gpt-5.3-codex-spark', undefined, { mode: 'text' })), '5.3spark');
 
 // An unrecognised model keeps its own name rather than being filed under a
 // family it does not belong to, in every mode.

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { t } from '../render/i18n.js';
 
 export interface NavigationPane {
   capture: string;
@@ -240,8 +241,8 @@ export async function navigateSession(mainPane: string | null | undefined, targe
     if (targetIn(opened.rows) === null) {
       await closePicker();
       return fail(label
-        ? 'Two Codex threads print this name; widen the Codex pane so their IDs show, then try again.'
-        : 'The Codex pane is too narrow to show agent IDs; widen it, then try again.');
+        ? t('Two Codex threads print this name; widen the Codex pane so their IDs show, then try again.')
+        : t('The Codex pane is too narrow to show agent IDs; widen it, then try again.'));
     }
     // Start from the current row. Go back to the top only when the target is
     // not already on screen; from there, page down until it is.

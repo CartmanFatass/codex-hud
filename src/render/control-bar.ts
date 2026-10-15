@@ -7,8 +7,8 @@
  * buttons:
  *
  *   tab    omp's settings tab row: the focused pane a filled tab with its
- *          word, the other panes their icons, the actions at the right end.
- *            ⌂ ▦  ⌥ 工作树  ±  ◫  ≣          ▶ ⊕31 ⚙ ?
+ *          word, the other panes their icons, Settings with its label,
+ *          and the actions at the right end.
  *   band   omp's status line: a band of segments, the focused pane in the
  *          accent with its word, a rule in the accent across to the actions.
  *   tile   emoji tiles: the focused pane filled with its word, an open one
@@ -23,7 +23,10 @@
  * the focused tab is in brackets and a closed pane has no tab. In the tabs
  * layout every pane has a tab, the one shown focused.
  *
- * Words come and go with the width as omp's tabs do: every tab's word where
+ * Settings is a navigation tab (not a pane). It keeps its localized word
+ * at widths of 24 or more, then a compact label; its icon gives way first.
+ * While Settings is active none of the ordinary pane tabs is focused.
+ * Other words come and go with the width as omp's tabs do: every tab's word where
  * they all fit, then the open tabs', then the focused tab's alone, then none.
  * The tabs close up from three columns apart to one on the way, but a word is
  * never a single column from the next tab, and the actions stay further from
@@ -34,8 +37,9 @@
  *
  * A click anywhere from the midpoint of the gap before a button to the
  * midpoint of the gap after it is that button's; a tab's click is `clickTab`
- * in monitor.ts. No key is written on the bar; the keys (the tmux prefix,
- * then a letter) are in the help alone. Pure.
+ * in monitor.ts; Settings retains its own `settings` control kind. No key
+ * is written on the bar; the keys (the tmux prefix, then a letter) are in
+ * the help alone. Pure.
  */
 import type { MonitorControl, MonitorPane, MonitorState } from './monitor.js';
 import { MONITOR_PANES } from './monitor.js';
@@ -50,6 +54,8 @@ export interface BarInput {
   brief?: { paused?: boolean };
   /** Agents the linger window put away; 0 hides the button. */
   expired: number;
+  /** Settings is the active navigation tab while its modal is open. */
+  settingsActive?: boolean;
 }
 
 type IconName = MonitorPane | 'main' | 'pause' | 'resume' | 'show' | 'hide' | 'settings' | 'help';
@@ -180,9 +186,10 @@ interface Specs {
 /**
  * The buttons there are, keeping those `keep` lets stay: the closed tabs
  * (4), the older agents (3), the brief (2), the tabs but the focused one's
- * (1) and that one too (0), in the order the bar gives them up.
+ * (1) and that one too (0), in the order the bar gives them up. Main,
+ * Settings and Help outlast these optional controls.
  */
-function specs(state: MonitorState, input: BarInput, keep: number): Specs {
+function specs(state: MonitorState, input: BarInput, keep: number, width: number): Specs {
   const zh = language() === 'zh';
   // With icons off the main session's button is an arrow and a word: a word alone would read as a tab.
   const arrow = iconSet() === 'text' ? '← ' : '';
@@ -191,19 +198,24 @@ function specs(state: MonitorState, input: BarInput, keep: number): Specs {
   for (const id of MONITOR_PANES) {
     // In the tabs layout every pane has a tab: none is closed.
     const mode = state.tabbed ? 'open' : state.modes[id];
-    const focused = id === state.focus && mode === 'open';
+    const focused = !input.settingsActive && id === state.focus && mode === 'open';
     // With no colour a tab cannot say closed; only the panes there are get one.
     if (mode === 'closed' && (keep < 4 || palette().name === 'none')) continue;
     if ((!focused && keep < 1) || keep < 0) continue;
     tabs.push({ kind: 'tab', pane: id, glyph: icon(id), word: names(id).tab, short: names(id).short, state: focused ? 'focused' : mode });
   }
+  // Settings is navigation, not a pane and not a right-hand action. Its word
+  // survives the pane tabs' fitting levels; even the narrow fallback is labelled.
+  const settingsWord = t('Settings');
+  const settingsLabel = width >= 24 ? settingsWord : truncateAnsi(settingsWord, zh ? 3 : 4).replace(/…$/u, '');
+  tabs.push({ kind: 'settings', glyph: icon('settings'), word: settingsLabel, short: settingsLabel, state: input.settingsActive ? 'focused' : 'open' });
   const actions: Spec[] = [];
   if (input.brief && keep >= 2) {
     const paused = Boolean(input.brief.paused);
     actions.push({
       kind: 'brief',
       glyph: icon(paused ? 'resume' : 'pause'),
-      word: t(paused ? 'Resume brief' : 'Pause brief'),
+      word: t(paused ? 'Resume models' : 'Pause models'),
       short: t(paused ? 'Resume' : 'Pause'),
       state: 'button',
       accent: paused,
@@ -213,23 +225,36 @@ function specs(state: MonitorState, input: BarInput, keep: number): Specs {
     const shown = state.tree.showAll;
     const n = input.expired;
     // The count is the button's own: nothing else on the panel says how many are put away.
-    const glyph = iconSet() === 'text' ? '' : `${UNICODE_ICONS[shown ? 'hide' : 'show']}${n}`;
-    const word = shown ? t('Hide') : glyph ? t('older') : t('+{n} older', { n });
+    // With a word, the glyph's trailing count is dropped so it is not said twice.
+    const textIcons = iconSet() === 'text';
+    const glyph = textIcons ? '' : `${UNICODE_ICONS[shown ? 'hide' : 'show']}${n}`;
+    const word = shown ? t('Hide') : textIcons ? t('+{n} older', { n }) : t('{n} finished', { n });
     actions.push({ kind: 'older', glyph, word, short: `${shown ? '−' : '+'}${n}`, state: 'button' });
   }
-  actions.push({ kind: 'settings', glyph: icon('settings'), word: t('Settings'), short: t('Settings'), state: 'button' });
   actions.push({ kind: 'help', glyph: icon('help'), word: t('Help'), short: '?', state: 'button' });
   return { main, tabs, actions };
 }
 
-/** How many words a row carries: every button's, every tab's, the open tabs', the focused tab's, none. */
-type Level = 'every' | 'all' | 'open' | 'focus' | 'none';
+/**
+ * How many words a row carries: every button's, every tab's, every tab's
+ * with the icons of all but the focused one left off, the open tabs', the
+ * focused tab's, none.
+ */
+type Level = 'every' | 'all' | 'named' | 'open' | 'focus' | 'none';
 
-/** Words before room, and room before columns between tabs; a word never a column from the next tab. */
+/**
+ * Words before room, and room before columns between tabs; a word never a
+ * column from the next tab. In the tabs layout a tab's word outlasts its
+ * icon: a row a few columns short of every icon and word (a `+N older`
+ * button beside them) keeps the words and drops the other tabs' icons,
+ * rather than every word but the focused tab's. Stacked, the icons say which
+ * panes are open, and the open panes' words outlast the closed ones'.
+ */
 const OPTIONS: ReadonlyArray<readonly [Level, number]> = [
   ['every', 2],
   ['all', 3],
   ['all', 2],
+  ['named', 2],
   ['open', 3],
   ['open', 2],
   ['focus', 3],
@@ -239,16 +264,26 @@ const OPTIONS: ReadonlyArray<readonly [Level, number]> = [
   ['none', 1],
 ];
 
-function hasWord(level: Level, spec: Spec): boolean {
+function hasWord(level: Level, spec: Spec, olderWords = false): boolean {
+  if (spec.kind === 'older') return olderWords;
+  if (spec.kind === 'settings') return true;
   if (spec.kind !== 'tab') return level === 'every';
-  if (level === 'every' || level === 'all') return true;
+  if (level === 'every' || level === 'all' || level === 'named') return true;
   if (level === 'open') return spec.state !== 'closed';
   return level === 'focus' && spec.state === 'focused';
 }
 
+/** Whether a button keeps its icon at a level: every one but the tabs the `named` level gives a word alone. */
+function hasIcon(level: Level, spec: Spec): boolean {
+  // Settings gives up its icon before its label, including the last fitting level.
+  if (spec.kind === 'settings' && (level === 'focus' || level === 'none')) return false;
+  return level !== 'named' || (spec.kind !== 'tab' && spec.kind !== 'settings') || spec.state === 'focused';
+}
+
 /** A button's face: its icon, with its word where it has one; with no icon, its word or its short word. */
-function face(spec: Spec, word: boolean): string {
-  if (spec.glyph) return word ? `${spec.glyph} ${spec.word}` : spec.glyph;
+function face(spec: Spec, word: boolean, icon = true): string {
+  if (spec.kind === 'older' && spec.glyph && word) return `${spec.glyph.replace(/\d+$/u, '')} ${spec.word}`;
+  if (spec.glyph && icon) return word ? `${spec.glyph} ${spec.word}` : spec.glyph;
   return word ? spec.word : spec.short;
 }
 
@@ -311,11 +346,13 @@ function mainOnly(width: number): Bar {
 function rowBar(state: MonitorState, input: BarInput, width: number): Bar {
   const style = look(width);
   for (let keep = 4; keep >= -1; keep--) {
-    const set = specs(state, input, keep);
+    const set = specs(state, input, keep, width);
     for (const [level, gap] of OPTIONS) {
       // The actions' words come last and go first: never in place of a button.
       if (level === 'every' && keep < 4) continue;
-      const laid = layRow(style, set, level, gap, width);
+      if (level === 'named' && !state.tabbed) continue;
+      // The older button's words first. When they do not fit, the same row with the icon alone.
+      const laid = layRow(style, set, level, gap, width, true) ?? (input.expired ? layRow(style, set, level, gap, width, false) : null);
       if (laid) return laid;
     }
   }
@@ -328,11 +365,11 @@ function rowBar(state: MonitorState, input: BarInput, width: number): Bar {
  * two groups sit on the band and the spare columns are the accent's rule.
  * Null when it does not fit.
  */
-function layRow(style: LookName, set: Specs, level: Level, gap: number, width: number): Bar | null {
+function layRow(style: LookName, set: Specs, level: Level, gap: number, width: number, olderWords: boolean): Bar | null {
   // A tab with no surface of its own needs two columns to the next tab for its word to stand apart.
   if (style === 'band' && gap < 2 && level !== 'none' && palette().name !== 'none') return null;
   const roomy = gap >= 2;
-  const make = (spec: Spec) => paint(style, face(spec, hasWord(level, spec)), spec.state, spec.accent, roomy);
+  const make = (spec: Spec) => paint(style, face(spec, hasWord(level, spec, olderWords), hasIcon(level, spec)), spec.state, spec.accent, roomy);
   const band = style === 'band';
   const main = make(set.main);
   const tabs = set.tabs.map(make);
@@ -384,37 +421,41 @@ function layRow(style: LookName, set: Specs, level: Level, gap: number, width: n
  * session its title and the actions in the edge at its right end, then the
  * tabs between the frame's sides.
  *
- *   ╭─ ⌂ 主会话 ───────────── ▶ ⊕31 ⚙ ? ─╮
- *   │ ▦  ⌥ 工作树  ±  ◫  ≣              │
+ *   ╭─ ⌂ 主会话 ───────────── ▶ ⊕31 ? ─╮
+ *   │ ▦  ≣ 时间线  ±  ◫  ⚙ 设置       │
  */
 function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
   const rule = theme.frame;
   for (let keep = 4; keep >= -1; keep--) {
-    const set = specs(state, input, keep);
-    const actions = set.actions.map((spec) => paint('frame', face(spec, false), spec.state, spec.accent));
-    const actionsWidth = actions.reduce((n, text) => n + visualLength(text), 0) + Math.max(0, actions.length - 1);
+    const set = specs(state, input, keep, width);
     let top: Bar | null = null;
     // The title gives up its word, then (with icons off) all but its arrow.
+    // The older button tries its words, then the icon alone when those do not fit.
     const titles = [...new Set([face(set.main, true), face(set.main, false), set.main.glyph || '←'])];
-    for (const name of titles) {
-      const title = theme.bold(theme.accent(` ${name} `));
-      const fill = width - 6 - visualLength(title) - actionsWidth;
-      if (fill < 1) continue;
-      const placed: Placed[] = [{ spec: set.main, text: title, x: 2, width: visualLength(title) }];
-      let x = 2 + visualLength(title) + fill + 1;
-      actions.forEach((text, i) => {
-        placed.push({ spec: set.actions[i], text, x, width: visualLength(text) });
-        x += visualLength(text) + 1;
-      });
-      const line = `${rule('╭─')}${title}${rule('─'.repeat(fill))} ${actions.join(' ')} ${rule('─╮')}`;
-      top = { lines: [line], controls: spans(placed, 0, 0, width) };
-      break;
+    for (const olderWords of [true, false]) {
+      const actions = set.actions.map((spec) => paint('frame', face(spec, spec.kind === 'older' && olderWords), spec.state, spec.accent));
+      const actionsWidth = actions.reduce((n, text) => n + visualLength(text), 0) + Math.max(0, actions.length - 1);
+      for (const name of titles) {
+        const title = theme.bold(theme.accent(` ${name} `));
+        const fill = width - 6 - visualLength(title) - actionsWidth;
+        if (fill < 1) continue;
+        const placed: Placed[] = [{ spec: set.main, text: title, x: 2, width: visualLength(title) }];
+        let x = 2 + visualLength(title) + fill + 1;
+        actions.forEach((text, i) => {
+          placed.push({ spec: set.actions[i], text, x, width: visualLength(text) });
+          x += visualLength(text) + 1;
+        });
+        const line = `${rule('╭─')}${title}${rule('─'.repeat(fill))} ${actions.join(' ')} ${rule('─╮')}`;
+        top = { lines: [line], controls: spans(placed, 0, 0, width) };
+        break;
+      }
+      if (top) break;
     }
     if (!top) continue;
     // The tabs, a column in from the frame's left side, ending a column short of its right.
     for (const [level, gap] of OPTIONS) {
-      if (level === 'every') continue;
-      const tabs = set.tabs.map((spec) => paint('frame', face(spec, hasWord(level, spec)), spec.state));
+      if (level === 'every' || (level === 'named' && !state.tabbed)) continue;
+      const tabs = set.tabs.map((spec) => paint('frame', face(spec, hasWord(level, spec), hasIcon(level, spec)), spec.state));
       const used = tabs.reduce((n, text) => n + visualLength(text), 0) + gap * Math.max(0, tabs.length - 1);
       if (used > width - 4) continue;
       const placed: Placed[] = [];

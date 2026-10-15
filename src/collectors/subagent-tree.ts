@@ -8,7 +8,7 @@ import { SAVE_MIN_BYTES, SCAN_VERSION, scanPrint, type SavedScan, type TreeScanS
 
 import * as fs from 'fs';
 import { sessionParentId } from '../utils/session-parent.js';
-import { findRolloutsInDays } from './session-finder.js';
+import { findRolloutsInDays, type SessionFile } from './session-finder.js';
 import type { AgentAction, AgentStage, SubagentInfo, SubagentStatus, SubagentTree, SubagentTreeNode } from '../types.js';
 
 // session_meta is the first line and never changes on append, so each rollout
@@ -74,6 +74,13 @@ interface SessionLink extends AgentIdentity {
   modifiedAt: Date;
   /** Its stages, open tool calls and messages from other agents, as far as the scan has read. */
   ledger?: AgentLedger;
+  /**
+   * Plaintext the parent wrote before it spawned someone, the tail of this
+   * turn. A spawn snapshots it onto `charges` for that child.
+   */
+  preface?: string;
+  /** Child thread id to the parent's words from before that child was created. */
+  charges?: Record<string, string>;
 }
 
 // session_meta lines embed full instructions and can reach hundreds of KB;
@@ -226,7 +233,41 @@ function modelEffortFromPayload(payload: Record<string, unknown>): { model?: str
   return { model, effort };
 }
 
-type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task' | 'lastReport'>;
+type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task' | 'lastReport' | 'preface' | 'charges'>;
+
+const PREFACE_LIMIT = 1500;
+
+/** Parent words worth keeping: not a sealed payload, not the spawn header. */
+function prefaceText(value: string): string | undefined {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (!text || text.includes('gAAAAA') || /^Message Type:/.test(text)) return undefined;
+  return text;
+}
+
+function rememberPreface(into: RolloutFields, value: string): void {
+  const text = prefaceText(value);
+  if (!text) return;
+  const next = into.preface ? `${into.preface} ${text}` : text;
+  into.preface = next.length > PREFACE_LIMIT ? next.slice(next.length - PREFACE_LIMIT) : next;
+}
+
+function snapshotCharge(into: RolloutFields, id: string): void {
+  const text = into.preface?.trim();
+  if (!text) return;
+  into.charges ??= {};
+  into.charges[id] = text;
+}
+
+function messageText(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const parts = content.flatMap((part) => {
+    if (!part || typeof part !== 'object') return [];
+    const record = part as { type?: unknown; text?: unknown };
+    if ((record.type !== 'input_text' && record.type !== 'output_text' && record.type !== 'text') || typeof record.text !== 'string') return [];
+    return [record.text];
+  });
+  return parts.length ? parts.join('\n') : undefined;
+}
 
 // What this reads is saved with the scan (tree-scan-store.ts): a change to it bumps SCAN_VERSION.
 function applyRolloutLine(line: string, into: RolloutFields, ledger?: AgentLedger): void {
@@ -242,12 +283,25 @@ function applyRolloutLine(line: string, into: RolloutFields, ledger?: AgentLedge
     if (ledger) applyLedgerEntry(entry, ledger);
     const report = extractAgentReport(entry);
     if (report && (!into.lastReport || report.at >= into.lastReport.at)) into.lastReport = report;
-    if (entry.type === 'response_item' && entry.payload.type === 'message' && entry.payload.role === 'user' && Array.isArray(entry.payload.content)) {
-      const text = taskText(entry.payload.content.map((part: { text?: unknown }) => typeof part?.text === 'string' ? part.text : '').filter(Boolean).join('\n'));
-      if (text) into.task = text;
+    if (entry.type === 'response_item' && entry.payload.type === 'message' && Array.isArray(entry.payload.content)) {
+      const joined = messageText(entry.payload.content);
+      if (entry.payload.role === 'user') {
+        const text = taskText(joined);
+        if (text) into.task = text;
+      }
+      // Reuse the public-report boundary: private/unknown assistant channels
+      // must never become a charge sent to the labels or progress model.
+      if (joined && (entry.payload.role === 'user' || (entry.payload.role === 'assistant' && report))) rememberPreface(into, joined);
     }
     if (entry.type === 'event_msg') {
       const type = entry.payload.type;
+      const item = entry.payload.item;
+      if (type === 'item_completed' && item && typeof item === 'object') {
+        const activity = item as { type?: unknown; kind?: unknown; agent_thread_id?: unknown };
+        if (activity.type === 'SubAgentActivity' && activity.kind === 'started' && typeof activity.agent_thread_id === 'string') {
+          snapshotCharge(into, activity.agent_thread_id);
+        }
+      }
       if (type === 'user_message') {
         const task = taskText(entry.payload.message);
         if (task) into.task = task;
@@ -283,13 +337,17 @@ function applyRolloutLine(line: string, into: RolloutFields, ledger?: AgentLedge
   }
 }
 
-function scanRolloutFields(filePath: string, startOffset: number, ledger?: AgentLedger): RolloutFields & { endOffset: number } {
+function scanRolloutFields(filePath: string, startOffset: number, ledger?: AgentLedger, seed?: Pick<SessionLink, 'preface' | 'charges'>): RolloutFields & { endOffset: number } {
   const fd = fs.openSync(filePath, 'r');
   try {
     const buffer = Buffer.alloc(64 * 1024);
     let offset = Math.max(0, startOffset);
     let leftover: Buffer = Buffer.alloc(0);
-    const fields: RolloutFields & { endOffset: number } = { endOffset: offset };
+    const fields: RolloutFields & { endOffset: number } = {
+      endOffset: offset,
+      ...(seed?.preface ? { preface: seed.preface } : {}),
+      ...(seed?.charges ? { charges: { ...seed.charges } } : {}),
+    };
     while (true) {
       const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, offset);
       if (bytesRead <= 0) {
@@ -336,7 +394,7 @@ function refreshRolloutFields(link: SessionLink): void {
   }
   cached.link.ledger ??= newLedger();
   link.ledger = cached.link.ledger;
-  const extra = scanRolloutFields(link.path, start, link.ledger);
+  const extra = scanRolloutFields(link.path, start, link.ledger, start > 0 ? link : undefined);
   if (extra.model) {
     link.model = extra.model;
     cached.link.model = extra.model;
@@ -351,6 +409,14 @@ function refreshRolloutFields(link: SessionLink): void {
   }
   if (extra.turnStartedAt) link.turnStartedAt = extra.turnStartedAt;
   if (extra.task) link.task = extra.task;
+  if (extra.preface) {
+    link.preface = extra.preface;
+    cached.link.preface = extra.preface;
+  }
+  if (extra.charges) {
+    link.charges = extra.charges;
+    cached.link.charges = extra.charges;
+  }
   if (extra.lastReport && (!link.lastReport || extra.lastReport.at >= link.lastReport.at)) link.lastReport = extra.lastReport;
   if (extra.endOffset === cached.contextOffset) return;
   cached.contextOffset = extra.endOffset;
@@ -372,6 +438,8 @@ function savedScan(filePath: string): SavedScan | undefined {
     fields: {
       model: link.model, effort: link.effort, status: link.status, statusAt: iso(link.statusAt), turnStartedAt: iso(link.turnStartedAt),
       task: link.task, lastReport: link.lastReport ? { ...link.lastReport, at: iso(link.lastReport.at) } : undefined,
+      ...(link.preface ? { preface: link.preface } : {}),
+      ...(link.charges ? { charges: link.charges } : {}),
     },
     ...(ledger ? { ledger: {
       stages: ledger.stages.map((stage) => ({ ...stage, startedAt: iso(stage.startedAt), endedAt: iso(stage.endedAt) })),
@@ -455,6 +523,10 @@ function restoreScan(saved: SavedScan, link: SessionLink): boolean {
   link.statusAt = statusAt;
   link.turnStartedAt = turnStartedAt;
   if (isText(f.task)) link.task = f.task;
+  if (f.preface !== undefined && !isText(f.preface)) return false;
+  if (f.charges !== undefined && (!isRecord(f.charges) || !Object.values(f.charges).every(isText))) return false;
+  if (isText(f.preface)) link.preface = f.preface;
+  if (isRecord(f.charges)) link.charges = Object.fromEntries(Object.entries(f.charges).filter((entry): entry is [string, string] => isText(entry[1])));
   link.lastReport = report;
   link.ledger = ledger;
   return true;
@@ -667,12 +739,14 @@ export function buildSubagentTree(
   rootId: string,
   knownSubagents: SubagentInfo[] = [],
   maxDaysBack: number = 3,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  /** Rollouts already listed. Passed by the panel so this build does not scan again. */
+  listed?: SessionFile[],
 ): SubagentTree {
   const known = new Map(knownSubagents.map((agent) => [agent.id, agent]));
   const links = new Map<string, SessionLink>();
 
-  const files = findRolloutsInDays(maxDaysBack);
+  const files = listed ?? findRolloutsInDays(maxDaysBack);
   const seen = new Set<string>();
   // Same-signature rewrites are invisible to stat; force a re-read of entries
   // whose content has not been verified recently, oldest verification first,
@@ -748,6 +822,8 @@ export function buildSubagentTree(
         link.statusAt = previous.link.statusAt;
         link.turnStartedAt = previous.link.turnStartedAt;
         link.task = previous.link.task;
+        link.preface = previous.link.preface;
+        link.charges = previous.link.charges;
         link.lastReport = previous.link.lastReport;
         link.ledger = previous.link.ledger;
         contextOffset = previous.contextOffset;
@@ -817,9 +893,11 @@ export function buildSubagentTree(
   const buildNode = (id: string, depth: number): SubagentTreeNode => {
     visiting.add(id);
     const link = links.get(id);
-    if (link) {
-      refreshRolloutFields(link);
-    }
+    // The root rollout is never a node, so a child's charge is read only
+    // after the parent link has been scanned.
+    const parent = link?.parentId ? links.get(link.parentId) : undefined;
+    if (parent) refreshRolloutFields(parent);
+    if (link) refreshRolloutFields(link);
     const knownAgent = known.get(id);
     const childIds = (children.get(id) ?? []).filter((childId) => !visiting.has(childId));
     const node: SubagentTreeNode = {
@@ -838,6 +916,7 @@ export function buildSubagentTree(
       lastReport: link?.lastReport,
       ...ledgerFields(link?.ledger),
       task: taskText(link?.task) ?? taskText(knownAgent?.task),
+      charge: parent?.charges?.[id],
       statusAt: knownAgent?.lastActivityAt && (!link?.statusAt || knownAgent.lastActivityAt > link.statusAt)
         ? knownAgent.lastActivityAt : link?.statusAt,
       // Child turn_context is the live model/effort; spawn events are fallback.

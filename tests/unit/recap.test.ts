@@ -192,7 +192,7 @@ test('turn end runs the recap at once, subject to the interval', async () => {
   const briefer = new Briefer(() => {}, { model });
   const ctx = (main: RolloutParseResult) => ({ scope: 'main' as const, main, floorMs: 900_000 });
   const base = mainResult({ transcript: [entry('user', 'prompt', 'Fix the bug', -100)], lastUserMessageAt: at(-100), activity: { state: 'working', updatedAt: at(-100) } });
-  briefer.update(tree([]), 'omp', 60_000, 'en', now, false, ctx(base));
+  briefer.update(tree([]), 'api', 60_000, 'en', now, false, ctx(base));
   await settle();
   assert.equal(asked.length, 1, 'scope main runs with no subagents at all');
   assert.equal(asked[0].feature, 'recap');
@@ -201,14 +201,14 @@ test('turn end runs the recap at once, subject to the interval', async () => {
     { goal: 'Fix the bug', coveredUntil: at(-100).getTime() });
   const ended = { ...base, transcript: [...base.transcript, entry('assistant', 'reply', 'done', 10)], lastReplyAt: at(10),
     activity: { state: 'idle' as const, updatedAt: at(11) } };
-  briefer.update(tree([]), 'omp', 60_000, 'en', now + 20_000, false, ctx(ended));
+  briefer.update(tree([]), 'api', 60_000, 'en', now + 20_000, false, ctx(ended));
   assert.equal(asked.length, 1, 'within the interval: not yet');
-  briefer.update(tree([]), 'omp', 60_000, 'en', now + 61_000, false, ctx(ended));
+  briefer.update(tree([]), 'api', 60_000, 'en', now + 61_000, false, ctx(ended));
   await settle();
   assert.equal(asked.length, 2, 'turn end fires as soon as the interval allows');
   assert.match(asked[1].prompt, /"goal":"Fix the bug"/, 'the previous recap is handed back');
   assert.doesNotMatch(asked[1].prompt, /user\] Fix the bug/, 'what it covered is not sent again');
-  briefer.update(tree([]), 'omp', 60_000, 'en', now + 3_600_000, false, ctx(ended));
+  briefer.update(tree([]), 'api', 60_000, 'en', now + 3_600_000, false, ctx(ended));
   assert.equal(asked.length, 2, 'nothing changed: no run, however long');
 });
 
@@ -218,20 +218,20 @@ test('a long turn with changing subagents refreshes once per floor period; with 
   const main = mainResult({ transcript: [entry('user', 'prompt', 'Research', -10)], lastUserMessageAt: at(-10), activity: { state: 'working', updatedAt: at(-10) } });
   const ctx = { scope: 'main' as const, main, floorMs: 900_000 };
   const agents = (n: number) => tree([node('a', 'reader', 'running', { lastReport: { text: `r${n}`, kind: 'update', at: at(n) } })]);
-  briefer.update(agents(0), 'omp', 60_000, 'en', now, false, ctx);
+  briefer.update(agents(0), 'api', 60_000, 'en', now, false, ctx);
   await settle();
   assert.equal(asked.length, 1);
   // A new subagent report every two minutes for an hour.
   for (let minute = 2; minute <= 60; minute += 2) {
-    briefer.update(agents(minute * 60), 'omp', 60_000, 'en', now + minute * 60_000, false, ctx);
+    briefer.update(agents(minute * 60), 'api', 60_000, 'en', now + minute * 60_000, false, ctx);
     await settle();
   }
   assert.equal(asked.length, 4, 'at 0, then at 16, 32 and 48 minutes: once per 15-minute floor period');
   const quiet = fakeModel(REPLY);
   const idle = new Briefer(() => {}, { model: quiet.model });
-  idle.update(agents(0), 'omp', 60_000, 'en', now, false, ctx);
+  idle.update(agents(0), 'api', 60_000, 'en', now, false, ctx);
   await settle();
-  for (let minute = 1; minute <= 120; minute++) idle.update(agents(0), 'omp', 60_000, 'en', now + minute * 60_000, false, ctx);
+  for (let minute = 1; minute <= 120; minute++) idle.update(agents(0), 'api', 60_000, 'en', now + minute * 60_000, false, ctx);
   await settle();
   assert.equal(quiet.asked.length, 1, 'nothing changed: the first recap is the only one');
 });
@@ -241,7 +241,7 @@ test('scope agents is the brief alone: its instructions, the agents\' material a
   const briefer = new Briefer(() => {}, { model });
   const main = mainResult({ transcript: [entry('user', 'prompt', 'PRIVATE PROMPT', -10)], lastUserMessageAt: at(-10) });
   const agents = tree([node('a', 'reader', 'running', { lastReport: { text: 'r', kind: 'update', at: at(0) } })]);
-  briefer.update(agents, 'omp', 60_000, 'en', now, false, { scope: 'agents', main, floorMs: 900_000 });
+  briefer.update(agents, 'api', 60_000, 'en', now, false, { scope: 'agents', main, floorMs: 900_000 });
   await settle();
   assert.equal(asked.length, 1);
   assert.equal(asked[0].system, briefSystemPrompt('en'));
@@ -258,16 +258,16 @@ test('a stored recap is shown when the panel opens, and with scope main it is no
   const ctx = { scope: 'main' as const, main, floorMs: 900_000 };
   const first = fakeModel(REPLY);
   const before = new Briefer(() => {}, { model: first.model, store: new RecapStore(dir) });
-  before.update(tree([]), 'omp', 60_000, 'en', now, false, ctx);
+  before.update(tree([]), 'api', 60_000, 'en', now, false, ctx);
   await settle();
   assert.equal(first.asked.length, 1);
   const second = fakeModel(REPLY);
   const after = new Briefer(() => {}, { model: second.model, store: new RecapStore(dir) });
-  after.update(tree([]), 'omp', 60_000, 'en', now + 3_600_000, false, ctx);
+  after.update(tree([]), 'api', 60_000, 'en', now + 3_600_000, false, ctx);
   await settle();
   assert.equal(after.current().recap?.goal, 'Fix the bug', 'the last recap is there at once');
   assert.equal(second.asked.length, 0, 'opening the panel again is not news');
-  after.update(tree([]), 'omp', 60_000, 'zh', now + 3_600_000, false, ctx);
+  after.update(tree([]), 'api', 60_000, 'zh', now + 3_600_000, false, ctx);
   assert.equal(after.current().recap, undefined, 'a recap in the other language is not shown');
   await settle();
   assert.equal(second.asked.length, 1, 'and is asked for again at once');
@@ -283,12 +283,12 @@ test('with scope both, opening the panel again is not paid for either, and the l
   const reply = REPLY.replace('"overall":""', '"overall":"one reading"');
   const first = fakeModel(reply);
   const before = new Briefer(() => {}, { model: first.model, store: new RecapStore(dir) });
-  before.update(agents, 'omp', 60_000, 'en', now, false, ctx);
+  before.update(agents, 'api', 60_000, 'en', now, false, ctx);
   await settle();
   assert.equal(first.asked.filter(request => request.feature === 'recap').length, 1);
   const second = fakeModel(reply);
   const after = new Briefer(() => {}, { model: second.model, store: new RecapStore(dir) });
-  after.update(agents, 'omp', 60_000, 'en', now + 3_600_000, false, ctx);
+  after.update(agents, 'api', 60_000, 'en', now + 3_600_000, false, ctx);
   await settle();
   assert.equal(second.asked.filter(request => request.feature === 'recap').length, 0, 'nothing changed since it was written');
   assert.equal(after.current().recap?.goal, 'Fix the bug');
@@ -300,7 +300,7 @@ test('with scope both, opening the panel again is not paid for either, and the l
   const alone = renderMonitor({ tree: agents, state: initialMonitorState(), width: 32, height: 40, nowMs: now + 3_600_000, brief: { ...after.current(), recap: undefined } });
   assert.ok(alone.lines.some(line => stripAnsi(line).includes('one reading')), 'without one it is on screen, though no reply text came with it');
   const moved = tree([node('a', 'reader', 'completed', { lastReport: { text: 'r2', kind: 'reply', at: at(3_000) } })]);
-  after.update(moved, 'omp', 60_000, 'en', now + 3_700_000, false, ctx);
+  after.update(moved, 'api', 60_000, 'en', now + 3_700_000, false, ctx);
   await settle();
   assert.equal(second.asked.filter(request => request.feature === 'recap').length, 1, 'news since then is still asked about');
 });
@@ -387,12 +387,13 @@ test('rich: the recap is in the status card, needs in the warning colour, every 
     const frame = renderMonitor({ tree: agents, state, width, height: 40, nowMs: now, brief: { recap: recapView }, status });
     assert.ok(frame.lines.every(line => visualLength(line) <= width), `${width}`);
   }
-  const frame = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: recapView }, status });
+  const frame = renderMonitor({ tree: agents, state, width: 48, height: 40, nowMs: now, brief: { recap: recapView }, status });
   const lines = frame.lines.map(stripAnsi);
-  assert.match(lines[frame.statusCard!.y], /^ ! ▸ +~5m $/, 'the brief\'s state is data at the band\'s end, the needs mark leads');
+  assert.match(lines[frame.statusCard!.y], /^ ! ▸/, 'the needs mark leads the band');
+  assert.match(lines[frame.statusCard!.y], /~5m/, 'the brief\'s state is data at the band\'s end');
   assert.equal(lines[frame.statusCard!.y + 1].trimEnd(), '│ ! Approve npm test');
   assert.ok(frame.lines[frame.statusCard!.y + 1].includes(theme.warning('!')));
   assert.ok(!lines.some(line => /^┌ Main recap|^─ Brief/.test(line)), 'no recap card, no brief rule');
-  const calm = renderMonitor({ tree: agents, state, width: 30, height: 40, nowMs: now, brief: { recap: { ...recapView, needs: '' } }, status });
+  const calm = renderMonitor({ tree: agents, state, width: 48, height: 40, nowMs: now, brief: { recap: { ...recapView, needs: '' } }, status });
   assert.ok(!calm.lines.map(stripAnsi).some(line => /^│ ! /.test(line)), 'no needs: absent');
 });
