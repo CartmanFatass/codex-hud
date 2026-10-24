@@ -152,9 +152,8 @@ async function collectData(): Promise<HudData> {
   if (session) {
     try { rolloutData = await parseRolloutIfChanged(session.path); } catch (error) { stale = true; health.fail('rollout', error); }
   }
-  // No session is a successful read too: there is nothing to show, and the
-  // HUD could tell.
-  if (!stale) health.read();
+  // Keep lookup success distinct from an actual bound Codex session.
+  if (!stale) { health.bind(Boolean(session)); health.read(); }
 
   const hudData = hudStatus.build({
     rollout: rolloutData,

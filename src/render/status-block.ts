@@ -48,7 +48,7 @@ export interface StatusCard {
   alerts: string[];
   /** The session's state: "✓ Idle", or while it works "▸ exec: npm test · 2m10s". */
   state: string;
-  /** While it works only: the output rate, and the plan's progress. */
+  /** Latest measured rate, explicitly marked when old; progress is working-only. */
   rate: string;
   tasks: string;
   /** The model's badge and the session's age. */
@@ -162,12 +162,17 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
         : t(word);
       const clock = started ? formatElapsedShort(started, nowMs) : '';
       state = [paint(glyph), doing, clock ? colors.dim(doing ? `· ${clock}` : clock) : ''].filter(Boolean).join(' ');
-      // The rate is the turn's own: a rate from an earlier turn says nothing now.
-      const reading = formatTokenRate(data.outputRate, nowMs);
-      if (reading && !reading.startsWith('last ')) rate = colors.dim(`· ${reading.replace(/(\.\d)? tok\/s$/, ' tok/s')}`);
       const plan = data.planProgress;
       if (plan && plan.totalSteps > 0) tasks = colors.dim(`${t('Tasks')} ${plan.completedSteps}/${plan.totalSteps}`);
     }
+  }
+
+  const reading = formatTokenRate(data.outputRate, nowMs);
+  if (reading) {
+    const previous = status !== 'working' || reading.startsWith('last ') ||
+      (data.outputRate!.sampledAt.getTime() < (data.activity?.turnStartedAt?.getTime() ?? 0));
+    const value = reading.replace(/^last /, '').replace(/(\.\d)? tok\/s$/, ' tok/s');
+    rate = colors.dim(`· ${previous ? t('last {rate}', { rate: value }) : value}`);
   }
 
   const git = data.git;

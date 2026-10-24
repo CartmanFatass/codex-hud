@@ -1,0 +1,583 @@
+{
+  "version": 1,
+  "measuredUtc": "2026-10-24T14:20:00Z/2026-10-24T14:34:00Z",
+  "gitHead": "1d238ac367eb18c8c0f3504ea0516d899e43ef51",
+  "initialCheckout": "dirty; baseline includes existing frame-diff/token-rate/Herdr work",
+  "environment": {
+    "node": "v24.22.1",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "terminal": "PTY 100 columns x 40 rows, theme none",
+    "refreshMs": 250,
+    "modelBackend": "off",
+    "cpuPercent": "process user+system CPU / wall time; not machine utilization"
+  },
+  "collector": {
+    "baselineSmall": {
+      "agents": 4,
+      "kb": 256,
+      "cold": {
+        "list": 1.0551669999999973,
+        "tree": 10.217574999999997
+      },
+      "list": {
+        "n": 30,
+        "avg": 0.3785910666666652,
+        "p95": 0.6195189999999968,
+        "max": 0.65673799999999
+      },
+      "tree": {
+        "n": 30,
+        "avg": 0.5013803666666661,
+        "p95": 0.746374000000003,
+        "max": 0.7804770000000048
+      },
+      "timerLagMs": {
+        "n": 40,
+        "avg": 0.4485599999999998,
+        "p95": 1.1384710000000098,
+        "max": 5.853864999999999
+      },
+      "eventLoopMs": {
+        "p95": 1.822719,
+        "max": 10.829823
+      },
+      "cpuMs": 78.299,
+      "wallMs": 216.02831600000002,
+      "cpuPercent": 36.24478561412292
+    },
+    "baselineLarge": {
+      "agents": 256,
+      "kb": 256,
+      "cold": {
+        "list": 4.726011999999997,
+        "tree": 225.28804499999998
+      },
+      "list": {
+        "n": 30,
+        "avg": 2.9149639000000076,
+        "p95": 4.545851999999968,
+        "max": 5.1220519999999965
+      },
+      "tree": {
+        "n": 30,
+        "avg": 10.110728199999999,
+        "p95": 23.033965999999964,
+        "max": 23.239686000000006
+      },
+      "timerLagMs": {
+        "n": 64,
+        "avg": 8.497612984375,
+        "p95": 10.022815000000037,
+        "max": 226.53083999999998
+      },
+      "eventLoopMs": {
+        "p95": 9.953279,
+        "max": 229.769215
+      },
+      "cpuMs": 885.679,
+      "wallMs": 867.877768,
+      "cpuPercent": 102.05112201929339
+    },
+    "yieldingSmall": {
+      "agents": 4,
+      "kb": 256,
+      "cold": {
+        "list": 1.5411880000000053,
+        "tree": 13.122555000000006
+      },
+      "list": {
+        "n": 30,
+        "avg": 0.42450246666666513,
+        "p95": 0.7450719999999933,
+        "max": 1.1069320000000005
+      },
+      "tree": {
+        "n": 30,
+        "avg": 0.4905623666666675,
+        "p95": 0.7654890000000023,
+        "max": 0.7935619999999943
+      },
+      "timerLagMs": {
+        "n": 42,
+        "avg": 0.3442240000000002,
+        "p95": 1.2301279999999792,
+        "max": 1.8570640000000012
+      },
+      "eventLoopMs": {
+        "p95": 1.860607,
+        "max": 6.713343
+      },
+      "cpuMs": 77.101,
+      "wallMs": 218.611069,
+      "cpuPercent": 35.26857096151888
+    },
+    "yieldingLarge": {
+      "agents": 256,
+      "kb": 256,
+      "cold": {
+        "list": 5.6101930000000095,
+        "tree": 200.40489699999998
+      },
+      "list": {
+        "n": 30,
+        "avg": 3.009944466666663,
+        "p95": 4.130057000000079,
+        "max": 6.450445999999943
+      },
+      "tree": {
+        "n": 30,
+        "avg": 9.956242933333334,
+        "p95": 16.07394400000004,
+        "max": 17.39829000000003
+      },
+      "timerLagMs": {
+        "n": 126,
+        "avg": 1.8186066111111125,
+        "p95": 4.472663000000011,
+        "max": 5.893789999999967
+      },
+      "eventLoopMs": {
+        "p95": 5.177343,
+        "max": 6.791167
+      },
+      "cpuMs": 915.043,
+      "wallMs": 853.590617,
+      "cpuPercent": 107.19928051880167
+    }
+  },
+  "terminal": {
+    "baseline-small": {
+      "agents": 4,
+      "kb": 256,
+      "warmKeyToOutputMs": {
+        "n": 60,
+        "avg": 1.513621483203072,
+        "p95": 2.336060999368783,
+        "max": 3.7218010002106894
+      },
+      "terminalBytes": 244717,
+      "runtime": {
+        "wallMs": 3594.352146,
+        "cpuMs": 463.919,
+        "cpuPercent": 12.906887838362625,
+        "eventLoopMs": {
+          "p95": 1.150975,
+          "max": 27.738111
+        }
+      },
+      "profiles": [
+        "2026-10-24T14:32:58.672Z panel pid=584867 agentlog.observe n=15 avg=0.09ms p95=0.38ms max=0.38ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 brief.update n=15 avg=0.46ms p95=6.58ms max=6.58ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 collect n=15 avg=6.41ms p95=35.6ms max=35.6ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 jobs.update n=15 avg=0.02ms p95=0.17ms max=0.17ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 render n=154 avg=0.89ms p95=1.86ms max=6.19ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 rollout.parse n=11 avg=1.15ms p95=4.80ms max=4.80ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 session.find n=15 avg=0.34ms p95=3.12ms max=3.12ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 status.build n=15 avg=0.09ms p95=0.98ms max=0.98ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 timeline n=15 avg=0.16ms p95=1.25ms max=1.25ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 tree.build n=15 avg=0.89ms p95=8.83ms max=8.83ms",
+        "2026-10-24T14:32:58.672Z panel pid=584867 write n=64 avg=0.09ms p95=0.19ms max=0.34ms"
+      ]
+    },
+    "baseline-large": {
+      "agents": 256,
+      "kb": 256,
+      "warmKeyToOutputMs": {
+        "n": 60,
+        "avg": 370.35464828331897,
+        "p95": 1325.1650590009376,
+        "max": 1549.0926540005603
+      },
+      "terminalBytes": 363852,
+      "runtime": {
+        "wallMs": 26786.524275999996,
+        "cpuMs": 26441.682,
+        "cpuPercent": 98.71262776593616,
+        "eventLoopMs": {
+          "p95": 3.639295,
+          "max": 2485.125119
+        }
+      },
+      "profiles": [
+        "2026-10-24T14:33:09.344Z panel pid=585433 agentlog.observe n=11 avg=3.85ms p95=11.6ms max=11.6ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 brief.update n=11 avg=15.0ms p95=164.4ms max=164.4ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 collect n=11 avg=353.9ms p95=1553.7ms max=1553.7ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 jobs.update n=11 avg=0.03ms p95=0.17ms max=0.17ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 render n=62 avg=151.1ms p95=753.6ms max=1528.2ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 rollout.parse n=5 avg=4.55ms p95=8.69ms max=8.69ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 session.find n=12 avg=1.80ms p95=11.6ms max=11.6ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 status.build n=11 avg=0.11ms p95=0.70ms max=0.70ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 timeline n=11 avg=2.00ms p95=4.12ms max=4.12ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 tree.build n=11 avg=22.3ms p95=202.4ms max=202.4ms",
+        "2026-10-24T14:33:09.344Z panel pid=585433 write n=26 avg=0.12ms p95=0.26ms max=0.28ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 agentlog.observe n=10 avg=4.18ms p95=14.6ms max=14.6ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 brief.update n=10 avg=0.02ms p95=0.05ms max=0.05ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 collect n=10 avg=31.1ms p95=87.0ms max=87.0ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 jobs.update n=10 avg=0.02ms p95=0.06ms max=0.06ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 render n=74 avg=131.8ms p95=834.4ms max=1426.5ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 rollout.parse n=4 avg=1.71ms p95=3.23ms max=3.23ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 session.find n=10 avg=0.40ms p95=1.62ms max=1.62ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 status.build n=10 avg=0.19ms p95=1.55ms max=1.55ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 timeline n=10 avg=0.95ms p95=1.39ms max=1.39ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 tree.build n=10 avg=4.57ms p95=13.5ms max=13.5ms",
+        "2026-10-24T14:33:19.676Z panel pid=585433 write n=30 avg=0.16ms p95=0.18ms max=2.09ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 agentlog.observe n=7 avg=2.78ms p95=4.12ms max=4.12ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 brief.update n=7 avg=0.02ms p95=0.04ms max=0.04ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 collect n=7 avg=212.7ms p95=1332.8ms max=1332.8ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 jobs.update n=7 avg=0.01ms p95=0.01ms max=0.01ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 render n=48 avg=117.2ms p95=680.5ms max=704.0ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 rollout.parse n=4 avg=1.44ms p95=2.81ms max=2.81ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 session.find n=7 avg=0.34ms p95=1.05ms max=1.05ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 status.build n=7 avg=0.08ms p95=0.28ms max=0.28ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 timeline n=7 avg=0.77ms p95=1.16ms max=1.16ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 tree.build n=7 avg=5.03ms p95=9.04ms max=9.04ms",
+        "2026-10-24T14:33:25.721Z panel pid=585433 write n=19 avg=0.09ms p95=0.17ms max=0.17ms"
+      ]
+    },
+    "both-small": {
+      "agents": 4,
+      "kb": 256,
+      "warmKeyToOutputMs": {
+        "n": 60,
+        "avg": 1.4266922999316496,
+        "p95": 2.3313470010180026,
+        "max": 3.029567000339739
+      },
+      "terminalBytes": 244596,
+      "runtime": {
+        "wallMs": 3594.295535,
+        "cpuMs": 458.618,
+        "cpuPercent": 12.75960742610443,
+        "eventLoopMs": {
+          "p95": 1.162239,
+          "max": 20.119551
+        }
+      },
+      "profiles": [
+        "2026-10-24T14:33:29.500Z panel pid=589555 agentlog.observe n=15 avg=0.09ms p95=0.54ms max=0.54ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 brief.update n=15 avg=0.36ms p95=5.17ms max=5.17ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 collect n=15 avg=6.15ms p95=34.7ms max=34.7ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 jobs.update n=15 avg=0.03ms p95=0.18ms max=0.18ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 render n=154 avg=0.86ms p95=1.79ms max=4.91ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 rollout.parse n=11 avg=1.13ms p95=5.33ms max=5.33ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 session.find n=15 avg=0.24ms p95=1.34ms max=1.34ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 status.build n=15 avg=0.08ms p95=0.85ms max=0.85ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 timeline n=15 avg=0.13ms p95=0.99ms max=0.99ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 tree.build n=15 avg=1.05ms p95=11.0ms max=11.0ms",
+        "2026-10-24T14:33:29.500Z panel pid=589555 write n=63 avg=0.09ms p95=0.15ms max=0.27ms"
+      ]
+    },
+    "both-large": {
+      "agents": 256,
+      "kb": 256,
+      "warmKeyToOutputMs": {
+        "n": 60,
+        "avg": 6.21756675003174,
+        "p95": 28.296411999690463,
+        "max": 55.54447200120194
+      },
+      "terminalBytes": 329013,
+      "runtime": {
+        "wallMs": 4172.00862,
+        "cpuMs": 2092.069,
+        "cpuPercent": 50.14536619054254,
+        "eventLoopMs": {
+          "p95": 1.783807,
+          "max": 68.157439
+        }
+      },
+      "profiles": [
+        "2026-10-24T14:33:33.876Z panel pid=589727 agentlog.observe n=17 avg=3.39ms p95=6.40ms max=6.40ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 brief.update n=17 avg=1.63ms p95=27.5ms max=27.5ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 collect n=17 avg=45.9ms p95=283.1ms max=283.1ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 jobs.update n=17 avg=0.02ms p95=0.13ms max=0.13ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 render n=158 avg=3.65ms p95=19.7ms max=44.9ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 rollout.parse n=13 avg=1.04ms p95=4.33ms max=4.33ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 session.find n=17 avg=0.84ms p95=10.4ms max=10.4ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 status.build n=17 avg=0.07ms p95=0.71ms max=0.71ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 timeline n=17 avg=1.42ms p95=3.69ms max=3.69ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 tree.build n=17 avg=19.0ms p95=197.9ms max=197.9ms",
+        "2026-10-24T14:33:33.876Z panel pid=589727 write n=63 avg=0.09ms p95=0.17ms max=0.20ms"
+      ]
+    }
+  },
+  "preliminaryCardOnly": {
+    "small": {
+      "agents": 4,
+      "kb": 256,
+      "warmKeyToOutputMs": {
+        "n": 60,
+        "avg": 1.6705441165868251,
+        "p95": 3.381569998964551,
+        "max": 3.665360998638789
+      },
+      "terminalBytes": 247194,
+      "runtime": {
+        "wallMs": 3583.530591,
+        "cpuMs": 461.507,
+        "cpuPercent": 12.878556169133034,
+        "eventLoopMs": {
+          "p95": 1.148927,
+          "max": 26.411007
+        }
+      },
+      "profiles": [
+        "2026-10-24T14:30:48.951Z panel pid=577480 agentlog.observe n=15 avg=0.08ms p95=0.44ms max=0.44ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 brief.update n=15 avg=0.39ms p95=5.56ms max=5.56ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 collect n=15 avg=5.05ms p95=33.5ms max=33.5ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 jobs.update n=15 avg=0.02ms p95=0.12ms max=0.12ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 render n=156 avg=0.89ms p95=2.55ms max=5.30ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 rollout.parse n=11 avg=1.09ms p95=4.24ms max=4.24ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 session.find n=15 avg=0.26ms p95=1.99ms max=1.99ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 status.build n=15 avg=0.08ms p95=0.67ms max=0.67ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 timeline n=15 avg=0.15ms p95=1.25ms max=1.25ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 tree.build n=15 avg=1.03ms p95=10.8ms max=10.8ms",
+        "2026-10-24T14:30:48.951Z panel pid=577480 write n=64 avg=0.09ms p95=0.14ms max=0.15ms"
+      ]
+    },
+    "large": {
+      "agents": 256,
+      "kb": 256,
+      "warmKeyToOutputMs": {
+        "n": 60,
+        "avg": 8.385227583312371,
+        "p95": 34.23883600044064,
+        "max": 50.28557100013131
+      },
+      "terminalBytes": 332099,
+      "runtime": {
+        "wallMs": 4109.219273,
+        "cpuMs": 2146.923,
+        "cpuPercent": 52.24649397773814,
+        "eventLoopMs": {
+          "p95": 1.293311,
+          "max": 278.659071
+        }
+      },
+      "profiles": [
+        "2026-10-24T14:30:53.314Z panel pid=577665 agentlog.observe n=16 avg=4.12ms p95=7.40ms max=7.40ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 brief.update n=16 avg=2.17ms p95=34.3ms max=34.3ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 collect n=16 avg=52.2ms p95=299.5ms max=299.5ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 jobs.update n=16 avg=0.03ms p95=0.19ms max=0.19ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 render n=158 avg=3.74ms p95=20.7ms max=35.4ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 rollout.parse n=12 avg=1.07ms p95=3.69ms max=3.69ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 session.find n=16 avg=1.10ms p95=13.2ms max=13.2ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 status.build n=16 avg=0.09ms p95=0.94ms max=0.94ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 timeline n=16 avg=2.57ms p95=8.22ms max=8.22ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 tree.build n=16 avg=20.7ms p95=211.8ms max=211.8ms",
+        "2026-10-24T14:30:53.314Z panel pid=577665 write n=64 avg=0.10ms p95=0.19ms max=0.25ms"
+      ]
+    }
+  },
+  "buildHashes": {
+    "baseline": {
+      "brief-dry-run.js": "f242665ec9d1541ba011e34f349bec72fad8928ef032b74d0be95a2413b6ffea",
+      "card-presets.js": "4761d6f0789944957297d3d2fd2b244ee9482daee50eb326b1fdababfeb61d08",
+      "card-visibility.js": "5bbb9cc4787a1fd775e823e98dd9fbffb769b7fcfa9d99812ae74f25192a5301",
+      "collectors/agent-context.js": "e6048c7ce8b8c393390b63f07c180293dbab99ad56468db4e113327f09f71326",
+      "collectors/agent-log.js": "66598eeda1e8e15fe9c87e37c29ed2ad7a43c95f62b23e008036dac6f0b67835",
+      "collectors/agent-report.js": "25f4add2525716b44a3486feca0b8e13ee27ff55858922c4ee8cd1b435ac1c0c",
+      "collectors/agent-stages.js": "38dd66612250413d8af2233e1f81c09c1121a357a11ba30f2ff969d088a914f0",
+      "collectors/art-image.js": "b368fa5db9d94f9594f438c99421e38cc082373291efc81b6144939c2af185fa",
+      "collectors/brief-dry-run.js": "c8ce6b30b5b110da405eea9c014f54afafaebdc3ce26cfe956c873a37bd66fc6",
+      "collectors/briefing.js": "c42ccca5c17746eff80808768267cdef7025c6641bbb86a74e7c3ba7a32260c9",
+      "collectors/codex-config.js": "6844f864b100cbd4284ad24dae17364f97e49521bae8de5d8650ddbfe853e2be",
+      "collectors/codex-goal.js": "fe0abe3655a937b99c5d72205e7afccc3633ec3b45e22f80db3d261ecda6116a",
+      "collectors/context-usage.js": "2cec6f5f2828bb3c8c94ff6d2e961399f01bd968dff16a02061dc616132f4bda",
+      "collectors/daemon-binding.js": "186d700efa803a13e76f088bb00aa18dfa2f40c3368e16b8ef810aa8217902a1",
+      "collectors/file-watcher.js": "30b9c483df335fc4165b95cd986973ca4da06ff9644a9f606c7d3198b2bf4e27",
+      "collectors/git-changes.js": "a04d5233744e4c509691b5e1e0ad92ff1e9a0bdaf7b918f5a74245bfded3ead3",
+      "collectors/git-root.js": "13cb15d09dc602e83786c966c4e32093004d67b2ec35c7d88adb985a920af499",
+      "collectors/git.js": "c2510710291b6a45b335b4ca89b5d744ce29824f9fcf6152500013ff3cd3a49d",
+      "collectors/history.js": "da3091f68d0dba0b74ef82d7cbb8bd61922de12e7794d0a1bd8f4e274081959c",
+      "collectors/hud-health.js": "a1bf45738bfbaaf02a7e68ede7b7fa10e444621f145943ed2371d7a1ae0c3fc2",
+      "collectors/hud-status.js": "adab54443d32adfcdb6cfec3aab1de1f9b81d1286441b366e992ef2072e99267",
+      "collectors/model-jobs.js": "5274fb61021c301d880928e297f526a70aa49a84290b3cf96aca1a05a126ee94",
+      "collectors/pane-runtime-state.js": "bb0abf4a09148cec29db33e3709550284cbb90baff62ad3ab914eb7898abb0c5",
+      "collectors/progress-summary.js": "493d92b2571c3c19e70eee6e8ecf2ed3d7640f78699fa6c19e6ea602c9409069",
+      "collectors/project.js": "2c64ad2477d808fa376414e63e527f9a907a00c6b14ca2ff90aa58fea914bdf1",
+      "collectors/quota-forecast.js": "9fa934a4a6b6ae8e80f2de36096ac177d9d2612cad819b707bcec8c60a0c57ca",
+      "collectors/recap.js": "280c964e6d5859fb35e275ad7850137d2dac3aeae919a0aa5f4c3ffc21a82936",
+      "collectors/rollout.js": "9cbc002b5afffee1d05935f8fa2e98177484909dec3ecb1d639c6f5c19d6be72",
+      "collectors/session-finder.js": "1070b299b4f324b9a6c20c046d4e2093f32f3dd596774cfd2500bf36dec795fd",
+      "collectors/small-model.js": "02c488af89d30c79d0f1305e8b5aed0411282d0adf7ff05078b7023402c4b4a8",
+      "collectors/subagent-tree.js": "d4b5623eb25261f423b39f127c726213bf6039cb8f993b12b214ebe7b9fad27d",
+      "collectors/token-rate.js": "e9a8fff00b02704a0dcd7d65ad296f8ce2c6e0bc168cd2591edd956b8f4ff1d7",
+      "collectors/tree-scan-store.js": "967e0ae179083bb8f786d0aef1fe119d5eff6af313330c8d52089884f48d1d7a",
+      "collectors/workbench-events.js": "6d265c906d7836b6e070a5cecac0475bafaa5f53f4837b89bbf18d90e909f284",
+      "collectors/worktrees.js": "faf281d3bca5dd12500e2fbd8ffe393167d8919fd60689b3381c2c2f095eee73",
+      "index.js": "0568571f2e48c956b4e6e37cce4c4aaac53d273e4a2a328be84faf15ede1e549",
+      "notify.js": "7f50853d8b8f6fd4f725115b29834764829dd86e786b61fbaaf51274aede808b",
+      "render/agent-title.js": "f474d78d6b68bed7f3db4dd129ae601c840e12eee4ce54c0b20bae92f586dfd0",
+      "render/agents-view.js": "6a91e8bd7c3822d2dc81bbcd32cbaeb1858ebd1595c838e0fb1c3d996666decd",
+      "render/art.js": "316a4ef972859ae31fcd88c507648d441d7f24ce549c2b486935f1e3ad14e834",
+      "render/attention.js": "db9b2b725789c0f11d6babee4715d3089d6ff1bdc935364388ac51d496ba731a",
+      "render/cards.js": "28706d2708ecc8ba7147e437d944894411da155a7515be2db232114f1126d546",
+      "render/colors.js": "df18ef2401e60d18b87447403c8b3e76dc191484c982a1fdb7db2b5e0ffa0260",
+      "render/control-bar.js": "857fcd8efa12616bfe13258a476924bcd53aef0729033661ebfb4c3905476e30",
+      "render/directions.js": "87520ecdcf6b647c5a0c3c4ce7334262d8d84d89c5a4e625a63447da4e693328",
+      "render/frame-diff.js": "b2b8ecc2b0237d84625f9414d83338a47f1ede70b11e13b3f08e23baec263efa",
+      "render/header.js": "8bfc38c4f61b77c42ba7336c71c4671da7362e4fa3c9ef241c5217f5b808a133",
+      "render/hud-config.js": "2d559bde02e193a71f1414997c157d43e2f6d1f5a347523ec7edef401006cb04",
+      "render/i18n.js": "c641e61a573ffbdd43a8095c7221d6a0222f5830d545b1f242fe9f3acf6daccd",
+      "render/index.js": "c752fe6c37385c91a54e99e1a92db2b66c84b7ba7627e96ad5ea26b01418bfd9",
+      "render/layout/bar-modules.js": "5c71664ca4af978fa7231c53f1f85700d6b0bd7b1687d68d0555e6d632b10a01",
+      "render/layout/engine.js": "8cf773244601845684592cce7da3cb03a0f7fe67a84929f983f019a68755b5c5",
+      "render/lines/activity-line.js": "e03b45693b45f7e0f01de57e14981b2d5a6875b7343b2bd516e8b32b9ce5f927",
+      "render/lines/environment-line.js": "ffc694aceb036ae7af52afbce4154b39e68904c3fdf1ca61991aa847025f0980",
+      "render/lines/identity-line.js": "218560905da83d6a5943958e02d8ceee9be98958f0b0ca00175e8fd3d16c5e0a",
+      "render/lines/index.js": "a25484af885bb43d72eed6c1207ac062a87b3b70cc140e57912d7ff62f2ffc47",
+      "render/lines/project-line.js": "035b4a2477d8522daa23cb4331d6fab7426b58625ccca279c56cd1a97f9fbef1",
+      "render/lines/session-line.js": "324078ac76a68be3ce157ec937e45d18470b22d10f1729eea692947465d9205c",
+      "render/lines/usage-line.js": "1d1e7c438c06a934ef17ca88bf04a2ec7575c2525392c71c87f5e9987938a838",
+      "render/model-glyphs.js": "2d30baa60d7b967f986b430520a1f8e50dde4521b892c86b21f133004bb58bec",
+      "render/monitor-input.js": "e422b2966a90a3323ce0f1801bbed79fc404d324c4d78235224fa57a1a0c74d4",
+      "render/monitor-inspector.js": "93b1ea9a5e44e46c4ef68ffd350859897ef88363d211f4c21d9678fece548ea1",
+      "render/monitor-labels.js": "584b32d34ea9c0c0d28c59e65f5c95472a81aec00560e292dfb2348f22edd713",
+      "render/monitor-meter.js": "37e35826ea915b9e3af8d77e7f07ed4567a7a985ccaaa387b65a55135cc445bd",
+      "render/monitor-panes.js": "2b8f291e2c801e50be25ea784dca09acb48031fc92e71820c86c3d07a046ddf6",
+      "render/monitor-text.js": "a8e6dd03f9d3bd51d09862a6eebc4f5d95ef9a7741321a1ef942693d764ca0d3",
+      "render/monitor-timeline.js": "cc236d6f6e2ca234d2f408af37f8fb53421f77cb792f457af9c6e9395ff7fc52",
+      "render/monitor.js": "bf2bcac728e1215c648f3553a45a0843bfb85346cbdae2762cbdad786ddef70e",
+      "render/palette.js": "9fe236f54718c9531945e5d698201c2a2845f3a89dea3a97c3bd0cce4a96812e",
+      "render/panel-state.js": "4fac7618ddb466749e7050bf48a0dcaffae7550ac156cf9d5cff06268c8e47f0",
+      "render/quota.js": "a8ea767cc45bd058af1d9134c2db3d7c15fc0c5e6d5ae56672bd409d8b97aea8",
+      "render/settings-confirmation.js": "96af162ae9c0a4d446407a8d686fedcecb9676c8c91c3bc85537b8bca9e095b7",
+      "render/settings-page.js": "631e11a7e4a762daa12993229f7cc61ca0d2f2d89dbea664e57b71ef73ddabf3",
+      "render/sparkline.js": "bba2ddddd8279d487f251e3880c0181c0b10777fab3a81a20be82353a2462060",
+      "render/status-block.js": "05c8983195a2d02917951af40df60e74f3b09136adddc7fe87ac44b55b3dee97",
+      "render/status-foot.js": "47695ee8fce7ff988daeb5a3ec813d9ba5cd0a9e7a930a1ffe9ba7620e0d9ba7",
+      "render/subagent-chip.js": "2428f506e3745c11203462cdb2f3c95faee808b4e4eacd4a55eec8d0e451b87b",
+      "render/subagent-tree-view.js": "f29ea78901da46158004be5dc6c2168e13a3a54539d907b084006a2ed29d3507",
+      "render/workbench-layout.js": "3ecbcde3d89c7b4e022bbd3654ee48cf73277c661ea4e62966471af579e739a8",
+      "render/workbench-state.js": "7ac16367978ac07bda08540c2be154143d5924c33b81ff39f70bb9e03bf6477b",
+      "render/workbench.js": "4f9474f0139fa4ad94410324efcceb52e01ef3df75725bf61c5fd28c4cf8b6cc",
+      "settings-runtime.js": "a59b7c76bff3cde721a5554969b643bd6610aa5d5e1cb5101cd7b59679ff4f65",
+      "settings.js": "a2e6efdbc366762f3e59856ac8dc5a89581fb08fd98aa3278190c9962f93c359",
+      "snapshot.js": "6d303306063200dcb9ccd84f654deb46a754198b89514059a9f022ef8d042845",
+      "test-render.js": "40730a5ed655b8eeff6eb93d0daac51b1419a6d0995273df42a865642fe388c5",
+      "tree-page.js": "fe19377f5a8f7455f269b500b1396bcb3fc6c72e44b69776281cf699c7ad6c15",
+      "types.js": "b0d0a413d3d9f0f7910088ec8df218837aeeb92c3a27cd7db27e96af5127de21",
+      "utils/click-map.js": "38db5b5f4de9d9a9fa4baa84cc9e8103233e3aef12a8a250aa3f8ffc2a1cfa96",
+      "utils/codex-path.js": "69e4dd48c9d5cb9396dc0261777cedff85f1c0a494a6ea47181077b509daba7a",
+      "utils/file-signature.js": "c5f7fcf3b459146ec9cbb8f8a7699f745eb5fbc0ae1d846b67ebf02e1216a368",
+      "utils/hud-input.js": "df6bf5fb2b75b31319239cd23e0449a1d88d61acb112abb05fd5b49167a99cb4",
+      "utils/key-forward.js": "c5f9c6731299b8b3d65be3a0750768d0aac2fc93919859dbea02a044c9a83ae3",
+      "utils/pane-width.js": "a28167a55ed4bbc3329ab64465f9b8f21940ead987e8c841da751ffa3a8ff39a",
+      "utils/panel-command.js": "c943225cc0d93a0314fc5f2ed7321ecfc064d4f5d1265ac21466e5a4524e0389",
+      "utils/parse-queue.js": "cd7d2d093f65c438c5e0d3668f17e8086f3d34e7d77d2a2ef8707f7361888c45",
+      "utils/profile.js": "99c353f23bb230734ef7e414b504b240ffb76d56b8df11f0c55eab34d7e8837f",
+      "utils/session-navigation.js": "34cf6e71e249355a9a229769eb5b1e4311cae013f3ad9a4623ec3b429d057bc8",
+      "utils/session-parent.js": "99bcaf238dc8c6a263cd91c75d8a669dc4488b9d49bbdca5f818ad7c8b1e5367",
+      "utils/summary-sentence.js": "74772edd6f0d65d29417c4ef4c8ebf7aedab582889473f1b74ff98a27ed05cd4",
+      "utils/task-text.js": "365ce60ffc56e67dc04ee00ff00268ef795b63626cf33cede5b34f13aac07ee8",
+      "utils/tree-keys.js": "b35f75e7d5cb3cc45bbd5971dee57aa39742245e4afeba6999a99135085b0687",
+      "utils/workbench-input.js": "e4703c9ab00350d3f1c841e5de4fd58f5e04a079a9e009ebf8de3d1f3ff53e3c"
+    },
+    "optimized": {
+      "brief-dry-run.js": "f242665ec9d1541ba011e34f349bec72fad8928ef032b74d0be95a2413b6ffea",
+      "card-presets.js": "4761d6f0789944957297d3d2fd2b244ee9482daee50eb326b1fdababfeb61d08",
+      "card-visibility.js": "5bbb9cc4787a1fd775e823e98dd9fbffb769b7fcfa9d99812ae74f25192a5301",
+      "collectors/agent-context.js": "e6048c7ce8b8c393390b63f07c180293dbab99ad56468db4e113327f09f71326",
+      "collectors/agent-log.js": "66598eeda1e8e15fe9c87e37c29ed2ad7a43c95f62b23e008036dac6f0b67835",
+      "collectors/agent-report.js": "25f4add2525716b44a3486feca0b8e13ee27ff55858922c4ee8cd1b435ac1c0c",
+      "collectors/agent-stages.js": "38dd66612250413d8af2233e1f81c09c1121a357a11ba30f2ff969d088a914f0",
+      "collectors/art-image.js": "b368fa5db9d94f9594f438c99421e38cc082373291efc81b6144939c2af185fa",
+      "collectors/brief-dry-run.js": "c8ce6b30b5b110da405eea9c014f54afafaebdc3ce26cfe956c873a37bd66fc6",
+      "collectors/briefing.js": "c42ccca5c17746eff80808768267cdef7025c6641bbb86a74e7c3ba7a32260c9",
+      "collectors/codex-config.js": "6844f864b100cbd4284ad24dae17364f97e49521bae8de5d8650ddbfe853e2be",
+      "collectors/codex-goal.js": "fe0abe3655a937b99c5d72205e7afccc3633ec3b45e22f80db3d261ecda6116a",
+      "collectors/context-usage.js": "2cec6f5f2828bb3c8c94ff6d2e961399f01bd968dff16a02061dc616132f4bda",
+      "collectors/daemon-binding.js": "186d700efa803a13e76f088bb00aa18dfa2f40c3368e16b8ef810aa8217902a1",
+      "collectors/file-watcher.js": "30b9c483df335fc4165b95cd986973ca4da06ff9644a9f606c7d3198b2bf4e27",
+      "collectors/git-changes.js": "a04d5233744e4c509691b5e1e0ad92ff1e9a0bdaf7b918f5a74245bfded3ead3",
+      "collectors/git-root.js": "13cb15d09dc602e83786c966c4e32093004d67b2ec35c7d88adb985a920af499",
+      "collectors/git.js": "c2510710291b6a45b335b4ca89b5d744ce29824f9fcf6152500013ff3cd3a49d",
+      "collectors/history.js": "da3091f68d0dba0b74ef82d7cbb8bd61922de12e7794d0a1bd8f4e274081959c",
+      "collectors/hud-health.js": "a1bf45738bfbaaf02a7e68ede7b7fa10e444621f145943ed2371d7a1ae0c3fc2",
+      "collectors/hud-status.js": "adab54443d32adfcdb6cfec3aab1de1f9b81d1286441b366e992ef2072e99267",
+      "collectors/model-jobs.js": "5274fb61021c301d880928e297f526a70aa49a84290b3cf96aca1a05a126ee94",
+      "collectors/pane-runtime-state.js": "bb0abf4a09148cec29db33e3709550284cbb90baff62ad3ab914eb7898abb0c5",
+      "collectors/progress-summary.js": "493d92b2571c3c19e70eee6e8ecf2ed3d7640f78699fa6c19e6ea602c9409069",
+      "collectors/project.js": "2c64ad2477d808fa376414e63e527f9a907a00c6b14ca2ff90aa58fea914bdf1",
+      "collectors/quota-forecast.js": "9fa934a4a6b6ae8e80f2de36096ac177d9d2612cad819b707bcec8c60a0c57ca",
+      "collectors/recap.js": "280c964e6d5859fb35e275ad7850137d2dac3aeae919a0aa5f4c3ffc21a82936",
+      "collectors/rollout.js": "9cbc002b5afffee1d05935f8fa2e98177484909dec3ecb1d639c6f5c19d6be72",
+      "collectors/session-finder.js": "1070b299b4f324b9a6c20c046d4e2093f32f3dd596774cfd2500bf36dec795fd",
+      "collectors/small-model.js": "02c488af89d30c79d0f1305e8b5aed0411282d0adf7ff05078b7023402c4b4a8",
+      "collectors/subagent-tree.js": "a90163eec12477c57654c1141fa477c3dd0d077cb836df414ad49e4aabb3baed",
+      "collectors/token-rate.js": "e9a8fff00b02704a0dcd7d65ad296f8ce2c6e0bc168cd2591edd956b8f4ff1d7",
+      "collectors/tree-scan-store.js": "967e0ae179083bb8f786d0aef1fe119d5eff6af313330c8d52089884f48d1d7a",
+      "collectors/workbench-events.js": "6d265c906d7836b6e070a5cecac0475bafaa5f53f4837b89bbf18d90e909f284",
+      "collectors/worktrees.js": "faf281d3bca5dd12500e2fbd8ffe393167d8919fd60689b3381c2c2f095eee73",
+      "index.js": "0568571f2e48c956b4e6e37cce4c4aaac53d273e4a2a328be84faf15ede1e549",
+      "notify.js": "7f50853d8b8f6fd4f725115b29834764829dd86e786b61fbaaf51274aede808b",
+      "render/agent-title.js": "f474d78d6b68bed7f3db4dd129ae601c840e12eee4ce54c0b20bae92f586dfd0",
+      "render/agents-view.js": "6a91e8bd7c3822d2dc81bbcd32cbaeb1858ebd1595c838e0fb1c3d996666decd",
+      "render/art.js": "316a4ef972859ae31fcd88c507648d441d7f24ce549c2b486935f1e3ad14e834",
+      "render/attention.js": "db9b2b725789c0f11d6babee4715d3089d6ff1bdc935364388ac51d496ba731a",
+      "render/cards.js": "46f927e566843be949088929b106344b01ed16855b473d82a76238fa28bf904d",
+      "render/colors.js": "df18ef2401e60d18b87447403c8b3e76dc191484c982a1fdb7db2b5e0ffa0260",
+      "render/control-bar.js": "857fcd8efa12616bfe13258a476924bcd53aef0729033661ebfb4c3905476e30",
+      "render/directions.js": "87520ecdcf6b647c5a0c3c4ce7334262d8d84d89c5a4e625a63447da4e693328",
+      "render/frame-diff.js": "b2b8ecc2b0237d84625f9414d83338a47f1ede70b11e13b3f08e23baec263efa",
+      "render/header.js": "8bfc38c4f61b77c42ba7336c71c4671da7362e4fa3c9ef241c5217f5b808a133",
+      "render/hud-config.js": "2d559bde02e193a71f1414997c157d43e2f6d1f5a347523ec7edef401006cb04",
+      "render/i18n.js": "c641e61a573ffbdd43a8095c7221d6a0222f5830d545b1f242fe9f3acf6daccd",
+      "render/index.js": "c752fe6c37385c91a54e99e1a92db2b66c84b7ba7627e96ad5ea26b01418bfd9",
+      "render/layout/bar-modules.js": "5c71664ca4af978fa7231c53f1f85700d6b0bd7b1687d68d0555e6d632b10a01",
+      "render/layout/engine.js": "8cf773244601845684592cce7da3cb03a0f7fe67a84929f983f019a68755b5c5",
+      "render/lines/activity-line.js": "e03b45693b45f7e0f01de57e14981b2d5a6875b7343b2bd516e8b32b9ce5f927",
+      "render/lines/environment-line.js": "ffc694aceb036ae7af52afbce4154b39e68904c3fdf1ca61991aa847025f0980",
+      "render/lines/identity-line.js": "218560905da83d6a5943958e02d8ceee9be98958f0b0ca00175e8fd3d16c5e0a",
+      "render/lines/index.js": "a25484af885bb43d72eed6c1207ac062a87b3b70cc140e57912d7ff62f2ffc47",
+      "render/lines/project-line.js": "035b4a2477d8522daa23cb4331d6fab7426b58625ccca279c56cd1a97f9fbef1",
+      "render/lines/session-line.js": "324078ac76a68be3ce157ec937e45d18470b22d10f1729eea692947465d9205c",
+      "render/lines/usage-line.js": "1d1e7c438c06a934ef17ca88bf04a2ec7575c2525392c71c87f5e9987938a838",
+      "render/model-glyphs.js": "2d30baa60d7b967f986b430520a1f8e50dde4521b892c86b21f133004bb58bec",
+      "render/monitor-input.js": "e422b2966a90a3323ce0f1801bbed79fc404d324c4d78235224fa57a1a0c74d4",
+      "render/monitor-inspector.js": "93b1ea9a5e44e46c4ef68ffd350859897ef88363d211f4c21d9678fece548ea1",
+      "render/monitor-labels.js": "584b32d34ea9c0c0d28c59e65f5c95472a81aec00560e292dfb2348f22edd713",
+      "render/monitor-meter.js": "37e35826ea915b9e3af8d77e7f07ed4567a7a985ccaaa387b65a55135cc445bd",
+      "render/monitor-panes.js": "2b8f291e2c801e50be25ea784dca09acb48031fc92e71820c86c3d07a046ddf6",
+      "render/monitor-text.js": "a8e6dd03f9d3bd51d09862a6eebc4f5d95ef9a7741321a1ef942693d764ca0d3",
+      "render/monitor-timeline.js": "cc236d6f6e2ca234d2f408af37f8fb53421f77cb792f457af9c6e9395ff7fc52",
+      "render/monitor.js": "bf2bcac728e1215c648f3553a45a0843bfb85346cbdae2762cbdad786ddef70e",
+      "render/palette.js": "9fe236f54718c9531945e5d698201c2a2845f3a89dea3a97c3bd0cce4a96812e",
+      "render/panel-state.js": "4fac7618ddb466749e7050bf48a0dcaffae7550ac156cf9d5cff06268c8e47f0",
+      "render/quota.js": "a8ea767cc45bd058af1d9134c2db3d7c15fc0c5e6d5ae56672bd409d8b97aea8",
+      "render/settings-confirmation.js": "96af162ae9c0a4d446407a8d686fedcecb9676c8c91c3bc85537b8bca9e095b7",
+      "render/settings-page.js": "631e11a7e4a762daa12993229f7cc61ca0d2f2d89dbea664e57b71ef73ddabf3",
+      "render/sparkline.js": "bba2ddddd8279d487f251e3880c0181c0b10777fab3a81a20be82353a2462060",
+      "render/status-block.js": "05c8983195a2d02917951af40df60e74f3b09136adddc7fe87ac44b55b3dee97",
+      "render/status-foot.js": "47695ee8fce7ff988daeb5a3ec813d9ba5cd0a9e7a930a1ffe9ba7620e0d9ba7",
+      "render/subagent-chip.js": "2428f506e3745c11203462cdb2f3c95faee808b4e4eacd4a55eec8d0e451b87b",
+      "render/subagent-tree-view.js": "f29ea78901da46158004be5dc6c2168e13a3a54539d907b084006a2ed29d3507",
+      "render/workbench-layout.js": "3ecbcde3d89c7b4e022bbd3654ee48cf73277c661ea4e62966471af579e739a8",
+      "render/workbench-state.js": "7ac16367978ac07bda08540c2be154143d5924c33b81ff39f70bb9e03bf6477b",
+      "render/workbench.js": "4f9474f0139fa4ad94410324efcceb52e01ef3df75725bf61c5fd28c4cf8b6cc",
+      "settings-runtime.js": "a59b7c76bff3cde721a5554969b643bd6610aa5d5e1cb5101cd7b59679ff4f65",
+      "settings.js": "a2e6efdbc366762f3e59856ac8dc5a89581fb08fd98aa3278190c9962f93c359",
+      "snapshot.js": "6d303306063200dcb9ccd84f654deb46a754198b89514059a9f022ef8d042845",
+      "test-render.js": "40730a5ed655b8eeff6eb93d0daac51b1419a6d0995273df42a865642fe388c5",
+      "tree-page.js": "b2429252fb7000dfb8dba7118414c333663d9281487530adec010e700a4c10c9",
+      "types.js": "b0d0a413d3d9f0f7910088ec8df218837aeeb92c3a27cd7db27e96af5127de21",
+      "utils/click-map.js": "38db5b5f4de9d9a9fa4baa84cc9e8103233e3aef12a8a250aa3f8ffc2a1cfa96",
+      "utils/codex-path.js": "69e4dd48c9d5cb9396dc0261777cedff85f1c0a494a6ea47181077b509daba7a",
+      "utils/file-signature.js": "c5f7fcf3b459146ec9cbb8f8a7699f745eb5fbc0ae1d846b67ebf02e1216a368",
+      "utils/hud-input.js": "df6bf5fb2b75b31319239cd23e0449a1d88d61acb112abb05fd5b49167a99cb4",
+      "utils/key-forward.js": "c5f9c6731299b8b3d65be3a0750768d0aac2fc93919859dbea02a044c9a83ae3",
+      "utils/pane-width.js": "a28167a55ed4bbc3329ab64465f9b8f21940ead987e8c841da751ffa3a8ff39a",
+      "utils/panel-command.js": "c943225cc0d93a0314fc5f2ed7321ecfc064d4f5d1265ac21466e5a4524e0389",
+      "utils/parse-queue.js": "cd7d2d093f65c438c5e0d3668f17e8086f3d34e7d77d2a2ef8707f7361888c45",
+      "utils/profile.js": "99c353f23bb230734ef7e414b504b240ffb76d56b8df11f0c55eab34d7e8837f",
+      "utils/session-navigation.js": "34cf6e71e249355a9a229769eb5b1e4311cae013f3ad9a4623ec3b429d057bc8",
+      "utils/session-parent.js": "99bcaf238dc8c6a263cd91c75d8a669dc4488b9d49bbdca5f818ad7c8b1e5367",
+      "utils/summary-sentence.js": "74772edd6f0d65d29417c4ef4c8ebf7aedab582889473f1b74ff98a27ed05cd4",
+      "utils/task-text.js": "365ce60ffc56e67dc04ee00ff00268ef795b63626cf33cede5b34f13aac07ee8",
+      "utils/tree-keys.js": "b35f75e7d5cb3cc45bbd5971dee57aa39742245e4afeba6999a99135085b0687",
+      "utils/workbench-input.js": "e4703c9ab00350d3f1c841e5de4fd58f5e04a079a9e009ebf8de3d1f3ff53e3c"
+    }
+  },
+  "excludedMetric": "An initial cold-key token detector could match old output and was removed; no cold input latency claim."
+}

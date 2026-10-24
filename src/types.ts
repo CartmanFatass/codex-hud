@@ -563,6 +563,22 @@ export interface SessionInfo {
 // ============================================================================
 
 export interface HudData {
+  /** Safe model lifecycle facts; never includes credentials, endpoints or prompts. */
+  modelHealth?: {
+    queued: number;
+    running?: { feature: string; startedAt: number };
+    lastSuccessAt?: number;
+    lastFailure?: { classification?: string; reason?: string; at: number; feature: string };
+  };
+  bridgeHealth?: {
+    state: 'connected' | 'pending' | 'disconnected' | 'unresponsive' | 'unavailable';
+    mode?: 'native' | 'report';
+    nativeState?: 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
+    stateMismatch?: boolean;
+    probeFailed?: boolean;
+    notificationGap?: boolean;
+    lastSuccessAtMs?: number;
+  };
   activity?: SessionActivity;
   tokenUsageAt?: Date;
   /** The latest collection failed; displayed values are the last good snapshot. */
@@ -607,6 +623,8 @@ export interface HudData {
 
 /** See collectors/hud-health.ts. */
 export interface HudHealthState {
+  /** A successful lookup can still have no bound Codex session. */
+  sessionBound?: boolean;
   /** The last time the session lookup and rollout read both went through. */
   lastReadAt?: Date;
   /** The most recent failed collection, whether or not a read has gone through since. */

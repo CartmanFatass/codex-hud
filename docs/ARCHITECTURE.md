@@ -19,7 +19,7 @@ one pane. The HUD runs next to it, in one of two forms, and only reads what
 Codex writes to disk.
 
 ```
- Default (panel)                               F12 toggles to (bar)
+ F12 opens (panel)                             Default (bar)
  +-------------------------+----------+        +-----------------------------------+
  | %main: shell -> codex   | %tree    |        | %main: shell -> codex             |
  |                         | node     |        |                                   |
@@ -38,8 +38,8 @@ Codex writes to disk.
 | Renders with | `render/header.ts` → `layout/` engine | `render/monitor.ts` `renderMonitor` |
 | Writes | `hud/state/<session>.json` snapshot, notifications | the same snapshot and notifications, on its collect tick; scan cache, agent logs, model cache, recaps, settings |
 
-At any time **only one of the two is running**. The launcher opens the panel by
-default and kills the bar pane. `codex-hud-toggle` (F12) swaps one for the
+At any time **only one of the two is running**. The launcher starts with the compact bar. `CODEX_HUD_TREE=1` opens the
+panel instead and kills the bar pane. `codex-hud-toggle` (F12) swaps one for the
 other. The two processes never talk to each other directly. They share state
 through tmux user options (`@codex_hud_*`), the snapshot file whichever of them is running wrote, and files
 under `$CODEX_HOME/hud/`.
@@ -130,9 +130,20 @@ check that no test uses it.
    - Saves the bar's full command line in `@codex_hud_hud_cmd`, so the toggle
      can recreate the bar later.
    - Installs the input policy (§7).
-   - Opens the panel (`open_default_tree_pane`, `split-window -h -l 32`) and
-     kills the bar pane, unless `CODEX_HUD_TREE=0`.
-6. **Cleanup.** An `EXIT` trap kills the session only if this run created it. Then the script attaches.
+   - Keeps the compact bar by default. With `CODEX_HUD_TREE=1`, opens the
+     panel (`open_default_tree_pane`) and kills the bar pane.
+6. **Attach and cleanup.** An `EXIT` trap kills the session only if this run created it.
+   In Herdr, `attach_session` marks only the outer foreground attach process
+   with `HERDR_AGENT=codex` and relays the designated main pane's OSC title
+   using session-scoped tmux options. Herdr's native detector handles status
+   and notifications while retaining its native Codex session identity.
+   `bin/codex-hud-herdr.mjs` is a read-only observer: it compares the main pane
+   against `pane.get` and records transport failures or state mismatches.
+   A successful API response alone is not proof that a lifecycle report applied.
+   The observer is independent of the replaceable bar/panel, never clears native
+   state on detach, and does not modify global tmux options. Deferred session
+   creation starts no observer. `CODEX_HUD_HERDR_BRIDGE=0` disables this integration. See
+   [Herdr context and status bridging](./herdr-context-fix.md).
 
 The bar and panel get their context from environment variables:
 `CODEX_HOME`, `CODEX_HUD_CWD`, `CODEX_HUD_MAIN_PANE` (Codex's pane id),
@@ -227,7 +238,11 @@ a file is read at all.
   every 3 s and kept off the frame path);
 - `codex-goal.ts` (`goals_1.sqlite`);
 - `context-usage.ts` (`BASELINE_TOKENS` = 12000);
-- `token-rate.ts`;
+- `token-rate.ts`: a turn-level wallclock proxy, with TTFT/stalls included and
+  the union of known tool waits excluded; not exact per-request telemetry.
+  `observeTokenRateRecord` feeds identical evidence to the main parser and the
+  agent tail reader. There is no rolling window, smoothing or speed cap; unchanged
+  cumulative counters do not refresh a measurement;
 - `quota-forecast.ts` (a least-squares fit of the usage window).
 
 The bar renders `HudData`, and so does the panel's status card. The panel passes the tree it already built into `HudStatus.build`, so that build does not scan the rollouts again. A git refresh calls `onChange` only when the status itself changed.
@@ -268,7 +283,7 @@ Iterate with `eachThread`. Do not walk the tree by hand.
 | Module | What it keeps |
 |---|---|
 | `agent-log.ts` (`AgentLog.observe`) | A per-agent history in `hud/agent-log/<rootId>.json`, capped at 30 entries per agent, 200 agents, 600 characters per entry, and 30 days. It has two families of kinds. **Observed:** `started`, `finished`, `failed` and `report` (the agent's own words, through `agent-report.ts`, final and commentary channels only). **Model-written:** `note`, `digest` and `cause` (`MODEL_LOG_KINDS`). |
-| `agent-context.ts` (`readAgentTokens`) | Each running agent's context fill and output rate (`AgentTokens {usage, rate}`). It reads incrementally from the rollout tail, at most every 3 s, and re-reads after a shrink or inode change. `task_started` resets the rate's baseline. |
+| `agent-context.ts` (`readAgentTokens`) | Each running agent's context fill and output rate (`AgentTokens {usage, rate}`). It reads incrementally from the rollout tail, at most every 3 s, and re-reads after a shrink or inode change. `task_started` resets the rate's baseline; tool-call/output pairs exclude the union of tool waits. It shares the wallclock proxy with the main parser. |
 | `workbench-events.ts` | The timeline's events, capped at 500. |
 | `git-changes.ts`, `worktrees.ts` | The Changes pane. Read only while a pane that shows them is open. Probes run round-robin. On failure the counts are null, never 0. |
 
@@ -872,7 +887,7 @@ The credits field (commit `44ce0a7`) is a complete example.
 
 - **Stale code.** A running bar or panel keeps the code it started with. After
   a build, restart the pane before you judge a change.
-- **No bar by default.** In the default layout no bar process runs. The open
+- **Panel replaces the bar.** While the right-side panel is open no bar process runs. The open
   panel writes `hud/state/*.json` and sends notifications on its collect tick,
   so `--json` still has a file to read. The panel's `bar.segments` is empty.
 - **Shared prefix table.** The prefix table belongs to the whole tmux server.
@@ -905,7 +920,7 @@ The credits field (commit `44ce0a7`) is a complete example.
   (§5.3) and live progress (§5.5) are cached.
 - **Late refusal.** The hourly cap is checked when a request runs, not when it
   is queued, so a queued job can be refused late.
-- **Unlocked call log.** Two panels writing `calls.json` at once can lose a count.
+- **Shared model state.** `model-runtime-store.ts` coordinates local panels with unique process tickets, atomic budget reservation, cache merge and same-input claims. A lost sender may conservatively consume its reservation; failures refuse rather than bypass accounting.
 - **Jobs ignore the scope.** §5.3 jobs follow only the backend and pause
   switches, not `briefAgents` or `briefMain`.
 - **Lost on restart.** Tool-call causes, change summaries and approval
@@ -943,3 +958,31 @@ The credits field (commit `44ce0a7`) is a complete example.
   for it either way.
 - Can anything still reach the native-Windows tmux branch in `bin/codex-hud`?
   `codex-hud.ps1` routes only to WSL or plain Codex.
+
+### Incremental terminal painting
+
+`render/frame-diff.ts` compares panel rows and writes only changed rows with
+absolute cursor positioning. Initial paint and resize invalidate all rows.
+Shortened or removed rows are erased, and updates do not emit scrolling
+newlines. This reduces nested tmux/Herdr traffic for clock-only repaints.
+
+### Operational diagnostics and explicit probes
+
+`collectors/bridge-health.ts` reads bounded per-attach health reports on collection
+ticks. The pure `render/hud-diagnostics.ts` formats current failures and TPS evidence.
+`Ctrl+] d` selects Inspector preview `diagnostics`; agent TPS evidence is expanded
+with the existing Inspector Enter action. Unbound sessions are distinct from read
+failures via `HudHealth.bind`, while model lifecycle callbacks repaint classified
+failures and queue status without performing I/O in the renderer.
+
+`collectors/model-probe.ts` owns cancellable Settings API checks. It snapshots the
+connection, resolves three feature routes, uses a separate SmallModel instance
+sharing the ordinary budget directory, and sends only fixed synthetic text. A
+configuration fingerprint and generation counter reject late results when leaving
+or changing the draft. Off remains no-network; explicit probes may run while
+ordinary model generation is paused.
+
+Performance evidence and the reproducible synthetic workload are documented in
+[the performance report](./performance-20261024.md). Panel tree collection uses
+`buildSubagentTreeYielding` to yield between files; the synchronous API remains
+for existing consumers. Neither API changes the scan cache schema.

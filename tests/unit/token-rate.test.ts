@@ -39,7 +39,9 @@ test('turn starts exclude idle time and preserve the previous estimate until mea
   tracker.startTurn(at(100));
   assert.deepEqual(tracker.snapshot, measured);
   tracker.observe(325, at(100.5));
-  assert.deepEqual(tracker.snapshot, measured);
+  assert.deepEqual(tracker.snapshot, {
+    tokensPerSecond: 50, sampleMs: 500, sampledAt: at(100.5),
+  });
   tracker.observe(400, at(102));
   assert.deepEqual(tracker.snapshot, {
     tokensPerSecond: 50, sampleMs: 2000, sampledAt: at(102),
@@ -104,20 +106,18 @@ test('duplicate or older timestamps cannot change the counter or turn baseline',
   });
 });
 
-test('explicit zero-output observations report zero while absent observations retain the rate', () => {
+test('unchanged cumulative usage does not dilute or refresh a previous model measurement', () => {
   const tracker = new TokenRateTracker();
   tracker.observe(0, at(0));
   tracker.observe(0, at(10));
-  assert.equal(tracker.snapshot?.tokensPerSecond, 0);
+  assert.equal(tracker.snapshot ?? null, null, 'no measurable model output');
   tracker.startTurn(at(20));
   tracker.observe(100, at(25));
   const measured = tracker.snapshot;
   assert.equal(measured?.tokensPerSecond, 20);
-  assert.deepEqual(tracker.snapshot, measured);
   tracker.observe(100, at(30));
-  assert.equal(tracker.snapshot?.tokensPerSecond, 10);
   tracker.observe(100, at(100));
-  assert.equal(tracker.snapshot?.tokensPerSecond, 0);
+  assert.deepEqual(tracker.snapshot, measured, 'quota-only reports are not new model calls');
 });
 
 test('invalid counters and timestamps cannot poison subsequent observations', () => {
@@ -132,19 +132,17 @@ test('invalid counters and timestamps cannot poison subsequent observations', ()
   assert.equal(tracker.snapshot?.tokensPerSecond, 20);
 });
 
-test('subsecond bursts wait for at least one second of elapsed observation time', () => {
+test('positive subsecond wall time is measurable without smoothing or a speed cap', () => {
   const tracker = new TokenRateTracker();
   tracker.observe(0, at(0));
   tracker.observe(100, at(0.001));
-  tracker.observe(200, at(0.999));
-  assert.equal(tracker.snapshot ?? null, null);
-  tracker.observe(300, at(1));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 300, sampleMs: 1000, sampledAt: at(1),
+    tokensPerSecond: 100_000, sampleMs: 1, sampledAt: at(0.001),
   });
+  assert.equal(formatTokenRate(tracker.snapshot, at(0.001).getTime()), '~100000.0 tok/s');
 });
 
-test('recent observations replace older throughput in the rolling window', () => {
+test('the whole measured turn contributes, rather than only the last 30 seconds', () => {
   const tracker = new TokenRateTracker();
   tracker.observe(0, at(0));
   tracker.observe(1000, at(10));
@@ -152,7 +150,7 @@ test('recent observations replace older throughput in the rolling window', () =>
   tracker.observe(1200, at(30));
   tracker.observe(1300, at(40));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 10, sampleMs: 30_000, sampledAt: at(40),
+    tokensPerSecond: 32.5, sampleMs: 40_000, sampledAt: at(40),
   });
 });
 

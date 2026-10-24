@@ -7,6 +7,7 @@ import { SAVE_MIN_BYTES, SCAN_VERSION, scanPrint, type SavedScan, type TreeScanS
  */
 
 import * as fs from 'fs';
+import { performance } from 'node:perf_hooks';
 import { sessionParentId } from '../utils/session-parent.js';
 import { findRolloutsInDays, type SessionFile } from './session-finder.js';
 import type { AgentAction, AgentStage, SubagentInfo, SubagentStatus, SubagentTree, SubagentTreeNode } from '../types.js';
@@ -743,6 +744,44 @@ export function buildSubagentTree(
   /** Rollouts already listed. Passed by the panel so this build does not scan again. */
   listed?: SessionFile[],
 ): SubagentTree {
+  const work = buildTreeSteps(rootId, knownSubagents, maxDaysBack, nowMs, listed);
+  let step = work.next();
+  while (!step.done) step = work.next();
+  return step.value;
+}
+
+/**
+ * The panel's build: same scan and result as the synchronous API, yielding
+ * between files after a short work slice so queued terminal input can run.
+ * A single file's scan remains synchronous; this is not a per-file time cap.
+ */
+export async function buildSubagentTreeYielding(
+  rootId: string,
+  knownSubagents: SubagentInfo[] = [],
+  maxDaysBack: number = 3,
+  nowMs: number = Date.now(),
+  listed?: SessionFile[],
+): Promise<SubagentTree> {
+  const work = buildTreeSteps(rootId, knownSubagents, maxDaysBack, nowMs, listed);
+  let deadline = performance.now() + 4;
+  let step = work.next();
+  while (!step.done) {
+    if (performance.now() >= deadline) {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      deadline = performance.now() + 4;
+    }
+    step = work.next();
+  }
+  return step.value;
+}
+
+function* buildTreeSteps(
+  rootId: string,
+  knownSubagents: SubagentInfo[],
+  maxDaysBack: number,
+  nowMs: number,
+  listed?: SessionFile[],
+): Generator<void, SubagentTree> {
   const known = new Map(knownSubagents.map((agent) => [agent.id, agent]));
   const links = new Map<string, SessionLink>();
 
@@ -853,12 +892,14 @@ export function buildSubagentTree(
       });
     }
     if (!link) {
+      yield;
       continue;
     }
     const existing = links.get(link.id);
     if (!existing || link.modifiedAt > existing.modifiedAt) {
       links.set(link.id, link);
     }
+    yield;
   }
   for (const key of Array.from(linkCache.keys())) {
     if (!seen.has(key)) {
@@ -890,14 +931,27 @@ export function buildSubagentTree(
 
   const visiting = new Set<string>();
 
+  // Scan parents before children, preserving spawn charges and lifecycle
+  // ordering. Only this root's reachable rollouts need their event histories.
+  const scanned = new Set<string>();
+  const pending = children.get(rootId)?.length ? [rootId] : [];
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (scanned.has(id)) continue;
+    scanned.add(id);
+    const link = links.get(id);
+    if (link) refreshRolloutFields(link);
+    const descendants = children.get(id) ?? [];
+    for (let i = descendants.length - 1; i >= 0; i--) pending.push(descendants[i]);
+    yield;
+  }
+
   const buildNode = (id: string, depth: number): SubagentTreeNode => {
     visiting.add(id);
     const link = links.get(id);
     // The root rollout is never a node, so a child's charge is read only
     // after the parent link has been scanned.
     const parent = link?.parentId ? links.get(link.parentId) : undefined;
-    if (parent) refreshRolloutFields(parent);
-    if (link) refreshRolloutFields(link);
     const knownAgent = known.get(id);
     const childIds = (children.get(id) ?? []).filter((childId) => !visiting.has(childId));
     const node: SubagentTreeNode = {

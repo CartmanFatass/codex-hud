@@ -10,6 +10,7 @@ import { renderModelEffortToken, classifyModelFamily } from './model-glyphs.js';
 import { displayConfig } from './hud-config.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { t } from './i18n.js';
+import { diagnosticLines, tokenRateDetails } from './hud-diagnostics.js';
 import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
 import { newestIntent } from './cards.js';
@@ -63,6 +64,7 @@ function proseLines(text: string, width: number, limit?: number): string[] {
 export function inspectorRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   // Inspector is explicitly opened (Enter/v/4), never follows agent clicks into a transcript.
   let lines: string[] = [];
+  if (state.preview === 'diagnostics') return diagnosticLines(input.hud, width, now).map(text => ({ text }));
   if (state.preview === 'agent') {
     const node = findNode(input.tree.nodes,state.tree.selectedId);
     if (!node) lines = [];
@@ -97,6 +99,8 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
         `${colors.dim(t('Ctx'))} ${ctx.percent}% (${formatTokenCount(ctx.used)}/${formatTokenCount(ctx.total)})`,width)});
       const rate = agentRate(node,now);
       if (rate !== undefined) rows.push({text:truncateAnsi(`${colors.dim(t('Out'))} ${rateText(rate)}`,width)});
+      if (state.expanded) rows.push(...tokenRateDetails(node.outputRate, node.turnStartedAt, node.status === 'running', now)
+        .flatMap(line => helpLines(monitorText(line), width).map(text => ({ text }))));
       // Short facts sit with the heading. The long text is a section each,
       // under a rule, so a charge, an update and the log do not run together.
       const facts = [t('Turn age: {age}',{age:age(node.turnStartedAt,now)}),t('Last activity: {age}',{age:age(node.lastEventAt,now)})+(isQuiet(node,now) ? t(' (quiet)') : '')];

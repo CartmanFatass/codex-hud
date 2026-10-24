@@ -52,6 +52,7 @@ export interface HudSnapshot {
   context?: { percent: number; used: number; total: number; compactions: number };
   quota: Array<{ label?: string; percent: number; resetsAt?: string }>;
   tokens?: { total: number; cached: number };
+  outputRate?: { estimated: true; tokensPerSecond: number; sampleMs: number; sampledAt: string };
   /**
    * The agents the main session started, as the panel counts them (one is
    * active while a subtask under it is), then their subtasks at any depth and
@@ -72,7 +73,8 @@ export interface HudSnapshot {
    * Whether the HUD's reads go through (collectors/hud-health.ts). Absent
    * until the first read or failure; each half is absent until it happens.
    */
-  health?: { lastReadAt?: string; lastError?: { source: string; message: string; at: string } };
+  health?: { sessionBound?: boolean; lastReadAt?: string; lastError?: { source: string; message: string; at: string } };
+  bridgeHealth?: HudData['bridgeHealth'];
   /** A projection, not a reading: when a quota window runs out at its recent rate. Absent unless one holds. */
   quotaForecast?: { window: string; exhaustAt: string; percent: number; windowMinutes?: number };
   /** When the pending approval was asked for (its wait is now minus this); absent with none pending. */
@@ -159,6 +161,10 @@ export function buildSnapshot(
   };
 
   const session = data.session;
+  if (data.bridgeHealth) snapshot.bridgeHealth = data.bridgeHealth;
+  const rate = data.outputRate;
+  if (rate && Number.isFinite(rate.tokensPerSecond) && rate.tokensPerSecond >= 0 && Number.isFinite(rate.sampleMs) && rate.sampleMs > 0 && iso(rate.sampledAt))
+    snapshot.outputRate = { estimated: true, tokensPerSecond: rate.tokensPerSecond, sampleMs: rate.sampleMs, sampledAt: rate.sampledAt.toISOString() };
   if (session) {
     snapshot.session = {
       id: session.id,
@@ -189,8 +195,9 @@ export function buildSnapshot(
   const health = data.health;
   const lastReadAt = iso(health?.lastReadAt);
   const errorAt = iso(health?.lastError?.at);
-  if (lastReadAt || (health?.lastError && errorAt)) {
+  if (health?.sessionBound !== undefined || lastReadAt || (health?.lastError && errorAt)) {
     snapshot.health = {
+      ...(health?.sessionBound !== undefined ? { sessionBound: health.sessionBound } : {}),
       ...(lastReadAt ? { lastReadAt } : {}),
       ...(health?.lastError && errorAt
         ? { lastError: { source: health.lastError.source, message: health.lastError.message, at: errorAt } }
@@ -220,7 +227,7 @@ export function buildSnapshot(
 
 function snapshotHealthSignature(health: HudSnapshot['health']): unknown {
   if (!health) return undefined;
-  return { read: Boolean(health.lastReadAt), lastError: health.lastError };
+  return { sessionBound: health.sessionBound, read: Boolean(health.lastReadAt), lastError: health.lastError };
 }
 
 /**

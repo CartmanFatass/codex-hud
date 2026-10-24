@@ -1,6 +1,6 @@
 import type { ProgressState, ProgressContext } from '../collectors/progress-summary.js';
 /** Default F12 view: a monitor, not another transcript. No I/O or terminal input here. */
-import type { SubagentTree } from '../types.js';
+import type { HudData, SubagentTree } from '../types.js';
 import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
@@ -53,7 +53,7 @@ export interface MonitorState {
   selectedFile: string | null;
   /** Changes: the untracked files listed under their row, not folded into it. */
   untrackedOpen?: boolean;
-  preview: 'agent' | 'worktree' | 'file';
+  preview: 'agent' | 'worktree' | 'file' | 'diagnostics';
   help: boolean;
   zoom: boolean;
   helpScroll?: number;
@@ -143,6 +143,7 @@ export interface MonitorFrame { lines: string[]; panes: MonitorRect[]; controls:
   /** The status card's place and its brief's scroll, for the wheel. */
   statusCard?: FootInfo }
 export interface MonitorData {
+  hud?: HudData;
   tree: SubagentTree;
   /** The tmux prefix as the help writes it ("Ctrl+]"). */
   prefix?: string;
@@ -313,6 +314,7 @@ function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = t
     head('Shortcuts: {p}, then a key'),
     ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
       '{p} ,  settings  {p} ?  help','{p} b  pause / resume models','{p} a  show / hide older',
+      '{p} d  HUD diagnostics and TPS details',
       '{p} m  main session  {p} o  switch to selected',
       // The tabs layout shows one pane at a time: nothing to close or zoom.
       ...(tabbed ? ['{p} 1–4  show a pane  {p} Tab  next'] : ['{p} 1–4  open / close a pane  {p} Tab  next','{p} x  close pane']),

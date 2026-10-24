@@ -25,6 +25,8 @@ import type { RolloutParseResult } from './rollout.js';
 import { quotaForecast } from './quota-forecast.js';
 import { readSessionTitle } from './recap.js';
 import type { CodexConfig, GitStatus, HudData, ProjectInfo, SessionInfo } from '../types.js';
+import { BridgeHealthReader } from './bridge-health.js';
+import { getCodexHome } from '../utils/codex-path.js';
 
 const SYNC_REFRESH_MS = 3000;
 /** The session title file is read at most this often. */
@@ -82,6 +84,7 @@ export class HudStatus {
   titleDir: string | null = null;
   private title: { dir: string; id: string; at: number; text?: string } | null = null;
   private last: HudData | null = null;
+  private readonly bridgeHealth = new BridgeHealthReader(getCodexHome());
   /** Fed by the caller's collection and by the git refresh here; carried on every build. */
   readonly health = new HudHealth();
 
@@ -129,6 +132,7 @@ export class HudStatus {
     const sessionTitle = this.sessionTitle(rootId, now);
 
     this.last = {
+      bridgeHealth: this.bridgeHealth.read(now),
       config: this.config,
       git: this.git,
       project: this.project,

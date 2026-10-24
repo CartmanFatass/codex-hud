@@ -577,6 +577,7 @@ function selectedHere(node: SubagentTreeNode, selectedId: string | null | undefi
 
 const CARD_CACHE_LIMIT = 500;
 const cardCache = new Map<string, {rows: MonitorRow[]}>();
+let cardCacheContext: string | undefined;
 
 export function richRows(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
   const {row:head} = summaryRow(input,now);
@@ -589,10 +590,18 @@ export function richRows(input: MonitorData, state: MonitorState, width: number,
     visibility(state), state.cardCorners ?? null, state.labelAsName ?? null,
     state.importantRoles ? [...state.importantRoles].sort() : [],
   ]);
+  // Keep session-wide identity outside every per-card map key. Prefixing
+  // hundreds of keys with the same large tree description makes V8's string
+  // map operations dominate rendering (and duplicates that text in memory).
+  // All previous shared inputs still invalidate the cache as one context.
+  if (shared !== cardCacheContext) {
+    cardCache.clear();
+    cardCacheContext = shared;
+  }
   for (const row of shown) {
     if (spaced && rows.at(-1)?.text !== '') rows.push({text:''});
     const node = row.node;
-    const key = shared + JSON.stringify([
+    const key = JSON.stringify([
       nodeStamp(node, now), cardNow(node, state, now), Boolean(row.context),
       selectedHere(node, state.tree.selectedId), subtreeLogs(node, input, now),
     ]);

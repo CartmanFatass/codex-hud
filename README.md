@@ -1,5 +1,9 @@
 ## Modification History
 
+New launches use the compact bottom bar. Press `F12` to open the right-side panel; `CODEX_HUD_TREE=1` opts into opening it at launch.
+
+Press `Ctrl+]`, then `d`, for diagnostics and main-session TPS evidence. Settings → LLM → Test API (`t`) checks all three routes using fixed synthetic messages within the shared call cap. See the [performance measurements](./docs/performance-20261024.md).
+
 | Date       | Summary of Changes |
 |------------|--------------------|
 | 2026-05-22 | Documented Windows current-branch download, self-check, and WSL launch flow with screenshots. |

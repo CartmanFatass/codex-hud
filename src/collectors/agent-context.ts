@@ -13,15 +13,15 @@
  * absent field — the same answer as an agent that has not reported yet.
  *
  * The same reports give the agent's output rate, as the main session's is
- * taken: output tokens over the last half minute or more of reports, a turn
- * start beginning it afresh. After the first read only what was appended is
- * read, so every live agent can be followed for the panel's total.
+ * taken: a turn-level wallclock proxy that includes TTFT/stalls and excludes
+ * identifiable tool waits, with no rolling window. After the first read only
+ * what was appended is read, so every live agent can be followed for the panel's total.
  */
 
 import * as fs from 'node:fs';
 import { buildContextUsage } from './context-usage.js';
 import { fileSignature } from '../utils/file-signature.js';
-import { TokenRateTracker, type TokenRateSnapshot } from './token-rate.js';
+import { TokenRateTracker, observeTokenRateRecord, type TokenRateSnapshot } from './token-rate.js';
 import type { ContextUsage, EventMsgPayload, RolloutLine, TokenUsage, TokenUsageInfo } from '../types.js';
 
 /** First tail window. Comfortably more than a turn's worth of events. */
@@ -77,7 +77,8 @@ function scan(entry: CacheEntry, text: string): void {
   const lines = (entry.rest + text).split('\n');
   entry.rest = lines.pop() ?? '';
   for (const line of lines) {
-    if (!line.includes('"token_count"') && !line.includes('"task_started"') && !line.includes('"turn_started"')) {
+    if (!line.includes('"token_count"') && !line.includes('"task_started"') && !line.includes('"turn_started"') &&
+        !line.includes('"function_call') && !line.includes('"custom_tool_call')) {
       continue;
     }
     let row: RolloutLine;
@@ -86,15 +87,11 @@ function scan(entry: CacheEntry, text: string): void {
     } catch {
       continue;
     }
+    observeTokenRateRecord(entry.tracker, row);
     if (row.type !== 'event_msg') {
       continue;
     }
     const payload = row.payload as EventMsgPayload;
-    const at = new Date(row.timestamp);
-    if (payload.type === 'task_started' || payload.type === 'turn_started') {
-      entry.tracker.startTurn(at);
-      continue;
-    }
     if (payload.type !== 'token_count' || !payload.info) {
       continue;
     }
@@ -104,9 +101,6 @@ function scan(entry: CacheEntry, text: string): void {
     }
     if (typeof info.model_context_window === 'number' && info.model_context_window > 0) {
       entry.window = info.model_context_window;
-    }
-    if (typeof info.total_token_usage?.output_tokens === 'number') {
-      entry.tracker.observe(info.total_token_usage.output_tokens, at);
     }
   }
 }
@@ -133,7 +127,7 @@ export async function readAgentTokens(rolloutPath: string): Promise<AgentTokens>
       const stamp = signature ?? '';
       if (cached && cached.ino === ino && size >= cached.offset) {
         // Append-only: what is new since the last read.
-        entry = { ...cached, signature: stamp };
+        entry = { ...cached, tracker: cached.tracker.clone(), signature: stamp };
         scan(entry, await readRange(handle, cached.offset, size));
       } else {
         entry = fresh(stamp, ino);

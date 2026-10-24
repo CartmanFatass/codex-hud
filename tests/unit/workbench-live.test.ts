@@ -38,15 +38,27 @@ fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 34, 30, 0, 0))
 proc = subprocess.Popen([sys.argv[1], sys.argv[2]], stdin=slave, stdout=slave, stderr=slave, env=os.environ.copy(), start_new_session=True)
 os.close(slave)
 pending = b''
+terminal = b''
 ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+def screen_text():
+ # Reconstruct rows from completed cursor-positioned writes, including erasures.
+ # Output is incremental: concatenating stripped PTY bytes retains obsolete rows.
+ rows = {}
+ for match in re.finditer(rb'\x1b\[(\d+);1H\x1b\[0m(.*?)\x1b\[0m\x1b\[K', terminal, re.S):
+  rows[int(match[1])] = ansi.sub('', match[2].decode('utf-8','replace'))
+ height = struct.unpack('HHHH', fcntl.ioctl(master, termios.TIOCGWINSZ, b'\0'*8))[0]
+ return '\n'.join(rows.get(i,'') for i in range(1,height+1))
 def wait_for(text, timeout=8):
- global pending
+ global pending, terminal
  end=time.monotonic()+timeout
  while time.monotonic()<end:
-  if text in ansi.sub('',pending.decode('utf-8','replace')):
-   result=pending; pending=b''; return result
+  if pending and text in screen_text() and not select.select([master],[],[],0.05)[0]:
+   result=screen_text().encode(); pending=b''; return result
   if select.select([master],[],[],0.1)[0]:
-   try: pending += os.read(master,262144)
+   try:
+    chunk = os.read(master,262144)
+    pending += chunk
+    terminal += chunk
    except OSError: break
  raise AssertionError('Missing '+repr(text)+'; output='+repr(pending[-4000:]))
 def send(keys):

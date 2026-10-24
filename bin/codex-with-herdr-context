@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""Pass this client's Herdr context to commands run by Codex's shared daemon."""
+import json
+import os
+import sys
+
+
+CONTEXT_KEYS = (
+    "HERDR_ENV", "HERDR_WORKSPACE_ID", "HERDR_TAB_ID", "HERDR_PANE_ID",
+    "HERDR_SESSION", "HERDR_SOCKET", "HERDR_SOCKET_PATH", "HERDR_CONFIG_PATH",
+)
+
+
+def command(binary, arguments, environment):
+    # Do not inherit another client's pane identity from the daemon. Empty
+    # values make the Herdr preflight fail normally outside a managed pane.
+    inside = environment.get("HERDR_ENV") == "1"
+    overrides = []
+    for key in CONTEXT_KEYS:
+        value = environment.get(key, "") if inside else ""
+        overrides += ["-c", f"shell_environment_policy.set.{key}={json.dumps(value)}"]
+    return [binary, *overrides, *arguments]
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        sys.exit("usage: codex-with-herdr-context <codex-binary> [arguments...]")
+    argv = command(sys.argv[1], sys.argv[2:], os.environ)
+    os.execvp(argv[0], argv)

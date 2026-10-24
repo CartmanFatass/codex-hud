@@ -26,7 +26,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { t } from '../render/i18n.js';
+import { ModelRuntimeStore } from './model-runtime-store.js';
 
 export type ModelBackend = 'off' | 'agy' | 'api';
 /** Thinking levels; agy and `api` take the subset they know. */
@@ -53,6 +55,12 @@ export interface ModelRequest {
   prompt: string;
   /** Defaults to `low`, what every feature used before levels were a choice. */
   thinking?: ThinkingLevel;
+  /** Approvals/probes, visible progress, then background work; FIFO within a class. */
+  priority?: ModelPriority;
+  /** Bounded to 100–90000 ms; defaults to 90000. */
+  timeoutMs?: number;
+  /** Optional API output bound, from 1 through 8192 tokens. */
+  maxOutputTokens?: number;
   /**
    * Answer from the cache when the same input was answered before. The key
    * names what the input is about (an agent id, a rollout path); the cache is
@@ -61,9 +69,19 @@ export interface ModelRequest {
   cacheKey?: string;
 }
 
+export type ModelPriority = 'interactive' | 'visible' | 'background';
+export type ModelFailureClassification = 'auth' | 'model-not-found' | 'rate-limit' | 'timeout' | 'network' | 'server' | 'invalid-response' | 'output-limit';
+
+export interface ModelDiagnostics {
+  queued: number;
+  running?: { feature: string; startedAt: number };
+  lastSuccessAt?: number;
+  lastFailure?: { classification?: ModelFailureClassification; reason?: 'hourly-cap' | 'runtime-unavailable'; at: number; feature: string };
+}
+
 export type ModelResult =
   | { ok: true; text: string; cached?: boolean }
-  | { ok: false; error: string; refused?: boolean; cancelled?: boolean; reason?: 'hourly-cap' };
+  | { ok: false; error: string; refused?: boolean; cancelled?: boolean; reason?: 'hourly-cap' | 'runtime-unavailable'; classification?: ModelFailureClassification };
 
 export type ModelStatus = 'queued' | 'running' | 'settled';
 
@@ -78,7 +96,7 @@ export interface ModelHandle {
 }
 
 export interface ModelUsage {
-  /** Calls actually sent since local midnight, by any panel on this CODEX_HOME. */
+  /** Calls reserved since local midnight, shared by panels on this CODEX_HOME. */
   today: number;
   /** Calls in the last hour, which is what the cap counts. */
   lastHour: number;
@@ -101,12 +119,12 @@ const API_EFFORTS: Partial<Record<ThinkingLevel, string>> = {
 const TIMEOUT_MS = 90_000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 const HOUR_MS = 3_600_000;
-const DAY_MS = 24 * HOUR_MS;
+const STARVATION_MS = 30_000;
+const PRIORITY_BURST = 4;
+const WAITING_FOR_PEER = Symbol('waiting-for-peer');
 export const DEFAULT_HOURLY_CAP = 60;
 /** Cached answers kept; the oldest go first. */
 const CACHE_LIMIT = 200;
-/** Call timestamps kept: a day's worth, bounded however busy the day was. */
-const CALL_LOG_LIMIT = 5000;
 const OPENAI_BASE = 'https://api.openai.com/v1';
 export type ApiModelTier = 'lite' | 'low' | 'medium';
 export const DEFAULT_API_MODELS: Readonly<Record<ApiModelTier, string>> = {
@@ -145,7 +163,7 @@ export function modelCommand(backend: 'agy', request: Pick<ModelRequest, 'system
  * compatible server accepts are sent, plus `reasoning_effort` when the
  * endpoint is marked as taking it.
  */
-export function modelHttpRequest(api: ModelApi, request: Pick<ModelRequest, 'feature' | 'system' | 'prompt' | 'thinking'>,
+export function modelHttpRequest(api: ModelApi, request: Pick<ModelRequest, 'feature' | 'system' | 'prompt' | 'thinking' | 'maxOutputTokens'>,
   env: NodeJS.ProcessEnv = process.env): { url: string; headers: Record<string, string>; body: string } | { error: string } {
   const base = (api.base.trim() || OPENAI_BASE).replace(/\/+$/, '');
   const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
@@ -163,7 +181,8 @@ export function modelHttpRequest(api: ModelApi, request: Pick<ModelRequest, 'fea
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (key) headers.authorization = `Bearer ${key}`;
   const effort = api.reasoning ? API_EFFORTS[request.thinking ?? DEFAULT_THINKING] : undefined;
-  const body = JSON.stringify({ model, stream: false, ...(effort ? { reasoning_effort: effort } : {}), messages: [
+  const maxTokens = outputTokens(request.maxOutputTokens);
+  const body = JSON.stringify({ model, stream: false, ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}), ...(effort ? { reasoning_effort: effort } : {}), messages: [
     { role: 'system', content: request.system },
     { role: 'user', content: request.prompt },
   ] });
@@ -198,7 +217,7 @@ function clip(text: string, max: number): string {
  */
 export function requestDigest(request: ModelRequest, route?: { backend: ModelBackend; endpoint?: string; model?: string; reasoning?: boolean }): string {
   return createHash('sha256').update(JSON.stringify([request.feature, request.cacheKey ?? '', request.thinking ?? DEFAULT_THINKING,
-    request.system, request.prompt, route ?? null])).digest('hex');
+    request.system, request.prompt, route ?? null, ...(outputTokens(request.maxOutputTokens) !== undefined ? [outputTokens(request.maxOutputTokens)] : [])])).digest('hex');
 }
 
 /** Calls within `windowMs` before `now`. */
@@ -229,8 +248,29 @@ export function writePrivateFile(file: string, content: string): void {
   }
 }
 
-function readJson(file: string): unknown {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+function outputTokens(value?: number): number | undefined {
+  return value !== undefined && Number.isFinite(value) ? Math.max(1, Math.min(8192, Math.floor(value))) : undefined;
+}
+
+function timeoutMs(request: ModelRequest): number {
+  return Number.isFinite(request.timeoutMs) ? Math.max(100, Math.min(TIMEOUT_MS, Math.floor(request.timeoutMs!))) : TIMEOUT_MS;
+}
+
+function requestPriority(request: ModelRequest): number {
+  const priority = request.priority ?? (['approval', 'probe'].includes(request.feature) ? 'interactive'
+    : request.feature === 'progress' ? 'visible' : 'background');
+  return { interactive: 0, visible: 1, background: 2 }[priority];
+}
+
+/** Safe categories only; backend messages are never used as diagnostics. */
+function httpClassification(status: number, json: unknown): ModelFailureClassification {
+  const error = (json as { error?: { code?: unknown; type?: unknown; message?: unknown } } | null)?.error;
+  const marker = `${error?.code ?? ''} ${error?.type ?? ''} ${error?.message ?? ''}`;
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 429) return 'rate-limit';
+  if (status === 404 || /model[_ -]?(not[_ -]?found|unavailable)|unknown model|model.*does not exist/i.test(marker)) return 'model-not-found';
+  if (status === 408 || status === 504) return 'timeout';
+  return status >= 500 ? 'server' : 'invalid-response';
 }
 
 interface Job {
@@ -243,6 +283,11 @@ interface Job {
   settled: boolean;
   status: ModelStatus;
   generatedAt?: number;
+  queuedAt: number;
+  order: number;
+  retryAt?: number;
+  startedAt?: number;
+  id: string;
   listeners: Set<() => void>;
   /** Stops a running job; set while it runs. */
   stop?: () => void;
@@ -254,6 +299,8 @@ export interface SmallModelOptions {
   env?: NodeJS.ProcessEnv;
   fetch?: typeof fetch;
   clock?: () => number;
+  /** Safe lifecycle notification; callers can read diagnostics() and repaint. */
+  onChange?: () => void;
 }
 
 export class SmallModel {
@@ -264,13 +311,19 @@ export class SmallModel {
   private active: Job | null = null;
   private cache = new Map<string, { text: string; at: number }>();
   private calls: number[] = [];
-  private loaded = false;
+  private priorityBurst = 0;
+  private nextOrder = 0;
+  private wakeTimer?: ReturnType<typeof setTimeout>;
+  private lastSuccessAt?: number;
+  private lastFailure?: ModelDiagnostics['lastFailure'];
+  private readonly store: ModelRuntimeStore | null;
   private readonly dir: string | null;
   private readonly clock: () => number;
 
   constructor(private readonly options: SmallModelOptions = {}) {
     this.dir = options.dir ?? null;
     this.clock = options.clock ?? Date.now;
+    this.store = this.dir ? new ModelRuntimeStore(this.dir) : null;
   }
 
   configure(patch: { backend?: ModelBackend; api?: ModelApi; hourlyCap?: number }): void {
@@ -283,9 +336,19 @@ export class SmallModel {
   }
 
   usage(now: number = this.clock()): ModelUsage {
-    this.load();
     this.reloadCalls();
     return { today: callsToday(this.calls, now), lastHour: callsWithin(this.calls, now, HOUR_MS), cap: this.cap };
+  }
+
+  diagnostics(): ModelDiagnostics {
+    return { queued: this.queue.filter(job => !job.settled).length + (this.active?.status === 'queued' && !this.active.settled ? 1 : 0),
+      ...(this.active?.startedAt !== undefined && !this.active.settled ? { running: { feature: this.active.request.feature, startedAt: this.active.startedAt } } : {}),
+      ...(this.lastSuccessAt !== undefined ? { lastSuccessAt: this.lastSuccessAt } : {}),
+      ...(this.lastFailure ? { lastFailure: { ...this.lastFailure } } : {}) };
+  }
+
+  private changed(): void {
+    try { this.options.onChange?.(); } catch { /* Observers cannot strand work. */ }
   }
 
   /** Queue a request. It starts at once when nothing else is in flight. */
@@ -303,11 +366,11 @@ export class SmallModel {
     const digest = request.cacheKey !== undefined ? requestDigest(request, route) : null;
     let job!: Job;
     const result = new Promise<ModelResult>(resolve => {
-      job = { request, backend, http, command, digest, settled: false, status: 'queued', listeners: new Set(), resolve: value => {
+      job = { request, backend, http, command, digest, id: randomUUID(), queuedAt: this.clock(), order: this.nextOrder++, settled: false, status: 'queued', listeners: new Set(), resolve: value => {
         if (!job.settled) { job.settled = true; this.setStatus(job, 'settled'); resolve(value); }
       } };
     });
-    this.load();
+    this.reloadCache();
     const hit = digest ? this.cache.get(digest) : undefined;
     if (backend === 'off') {
       job.resolve({ ok: false, error: 'model backend off', refused: true });
@@ -316,6 +379,7 @@ export class SmallModel {
       job.resolve({ ok: true, text: hit.text, cached: true });
     } else {
       this.queue.push(job);
+      this.changed();
       this.pump();
     }
     return {
@@ -329,6 +393,7 @@ export class SmallModel {
         if (at >= 0) this.queue.splice(at, 1);
         job.stop?.();
         job.resolve({ ok: false, error: 'cancelled', cancelled: true });
+        this.pump();
         // Abort is asynchronous. Keep the active slot until run() settles,
         // otherwise a replacement can overlap a fetch/subprocess still stopping.
       },
@@ -342,43 +407,131 @@ export class SmallModel {
       job.resolve({ ok: false, error: 'cancelled', cancelled: true });
     }
     this.queue.length = 0;
+    clearTimeout(this.wakeTimer);
+    this.wakeTimer = undefined;
+    this.changed();
     // The active job releases its slot in pump() only after it has stopped.
   }
 
   private setStatus(job: Job, status: ModelStatus): void {
     if (job.status === status) return;
     job.status = status;
+    this.changed();
     for (const listener of job.listeners) {
       try { listener(); } catch { /* Observers must not strand a queue slot or its result. */ }
     }
   }
 
   private pump(): void {
-    if (this.active || !this.queue.length) return;
-    const job = this.queue.shift()!;
+    if (this.active) return;
+    clearTimeout(this.wakeTimer);
+    this.wakeTimer = undefined;
+    if (!this.queue.length) return;
+    const readyAt = performance.now();
+    const eligible = this.queue.map((job, index) => ({ job, index })).filter(({ job }) => (job.retryAt ?? 0) <= readyAt);
+    if (!eligible.length) {
+      const delay = Math.max(1, Math.min(...this.queue.map(job => job.retryAt!)) - readyAt);
+      this.wakeTimer = setTimeout(() => { this.wakeTimer = undefined; this.pump(); }, delay);
+      return;
+    }
+    // Bound overtaking by both age and dispatch count. A steady stream of
+    // approvals cannot keep the oldest ready background summary queued forever.
+    const oldest = eligible[0];
+    let index = oldest.index;
+    if (this.clock() - oldest.job.queuedAt < STARVATION_MS && this.priorityBurst < PRIORITY_BURST) {
+      for (const candidate of eligible) {
+        if (requestPriority(candidate.job.request) < requestPriority(this.queue[index].request)) index = candidate.index;
+      }
+    }
+    this.priorityBurst = index === oldest.index ? 0 : this.priorityBurst + 1;
+    const job = this.queue.splice(index, 1)[0];
     this.active = job;
-    this.setStatus(job, 'running');
-    void this.run(job).then(outcome => {
-      if (outcome.ok) job.generatedAt = this.clock();
-      if (outcome.ok && job.request.cacheKey !== undefined && !job.settled) this.remember(job.digest!, outcome.text, job.generatedAt!);
+    // Disk coordination can wait for another panel. It becomes running only
+    // once this process has a reservation and is about to send.
+    if (!this.store) this.markRunning(job);
+    void this.run(job).catch((): ModelResult => ({ ok: false, error: 'model shared state unavailable', refused: true, reason: 'runtime-unavailable' })).then(outcome => {
+      if (outcome === WAITING_FOR_PEER) {
+        if (!job.settled) {
+          job.retryAt = performance.now() + 35;
+          this.queue.push(job);
+          this.queue.sort((a, b) => a.order - b.order);
+        }
+        if (this.active === job) this.active = null;
+        this.pump();
+        return;
+      }
+      if (outcome.ok && job.generatedAt === undefined) job.generatedAt = this.clock();
+      if (!job.settled) {
+        if (outcome.ok) {
+          this.lastSuccessAt = job.generatedAt;
+          if (job.digest) this.remember(job.digest, outcome.text, job.generatedAt!);
+        } else if (!outcome.cancelled) this.lastFailure = { classification: outcome.classification, reason: outcome.reason, at: this.clock(), feature: job.request.feature };
+      }
       job.resolve(outcome);
-      if (this.active === job) { this.active = null; this.pump(); }
+      if (this.active === job) { this.active = null; this.changed(); this.pump(); }
     });
   }
 
-  private async run(job: Job): Promise<ModelResult> {
+  private markRunning(job: Job): void {
+    job.startedAt = this.clock();
+    this.setStatus(job, 'running');
+  }
+
+  private capResult(): ModelResult {
+    return { ok: false, error: t('Model call cap reached ({n} per hour)', { n: this.cap }), refused: true, reason: 'hourly-cap' };
+  }
+
+  private async run(job: Job): Promise<ModelResult | typeof WAITING_FOR_PEER> {
+    if (job.settled) return { ok: false, error: 'cancelled', cancelled: true };
     const backend = job.backend;
     if (backend === 'off') return { ok: false, error: 'model backend off', refused: true };
     const http = job.http;
-    if (http && 'error' in http) return { ok: false, error: http.error };
-    const now = this.clock();
-    this.reloadCalls();
-    if (callsWithin(this.calls, now, HOUR_MS) >= this.cap) {
-      return { ok: false, error: t('Model call cap reached ({n} per hour)', { n: this.cap }), refused: true, reason: 'hourly-cap' };
+    if (http && 'error' in http) return { ok: false, error: http.error, classification: 'invalid-response' };
+    if (this.store) {
+      const reservation = await this.store.reserve(job.digest, job.id, this.cap, this.clock, () => job.settled);
+      if (job.settled) {
+        if (reservation.kind === 'reserved' && job.digest) await this.store.finish(job.digest, job.id);
+        return { ok: false, error: 'cancelled', cancelled: true };
+      }
+      if (reservation.kind === 'cached') {
+        job.generatedAt = reservation.entry.at;
+        return { ok: true, text: reservation.entry.text, cached: true };
+      }
+      if (reservation.kind === 'refused') return this.capResult();
+      // A peer's same-input request holds no local network slot. Keep this
+      // handle queued and let approvals/progress run during its free wait.
+      if (reservation.kind === 'waiting') return WAITING_FOR_PEER;
+      this.markRunning(job);
+      if (job.settled) {
+        if (job.digest) await this.store.finish(job.digest, job.id);
+        return { ok: false, error: 'cancelled', cancelled: true };
+      }
+    } else {
+      // Keep the in-memory path synchronous up to dispatch for existing users.
+      const now = this.clock();
+      if (job.digest) {
+        const hit = this.cache.get(job.digest);
+        if (hit) { job.generatedAt = hit.at; return { ok: true, text: hit.text, cached: true }; }
+      }
+      if (callsWithin(this.calls, now, HOUR_MS) >= this.cap) return this.capResult();
+      this.calls.push(now);
     }
-    this.recordCall(now);
-    if (backend === 'api') return this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>);
-    return this.spawn(job, job.command!);
+    let outcome: ModelResult;
+    try {
+      outcome = await (backend === 'api'
+        ? this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>)
+        : this.spawn(job, job.command!));
+      if (outcome.ok) job.generatedAt = this.clock();
+    } catch {
+      outcome = { ok: false, error: 'model request failed', classification: 'network' };
+    } finally {
+      job.stop = undefined;
+    }
+    if (this.store && job.digest) {
+      // Cancellation holds the claim until the underlying transport settles.
+      await this.store.finish(job.digest, job.id, outcome.ok && !job.settled ? { text: outcome.text, at: job.generatedAt! } : undefined, () => !job.settled);
+    }
+    return outcome;
   }
 
   private spawn(job: Job, { file, args }: { file: string; args: string[] }): Promise<ModelResult> {
@@ -390,19 +543,26 @@ export class SmallModel {
         resolve({ ok: false, error: `${file}: ${String(error)}` });
         return;
       }
-      job.stop = () => child.kill();
+      let killTimer: ReturnType<typeof setTimeout> | undefined;
+      const stop = () => {
+        child.kill();
+        killTimer ??= setTimeout(() => child.kill('SIGKILL'), 1000);
+      };
+      job.stop = stop;
       let out = '';
       let err = '';
       child.stdout?.on('data', (chunk: Buffer) => { if (out.length < MAX_OUTPUT_BYTES) out += chunk.toString('utf8'); });
       child.stderr?.on('data', (chunk: Buffer) => { if (err.length < MAX_OUTPUT_BYTES) err += chunk.toString('utf8'); });
-      const timer = setTimeout(() => child.kill(), TIMEOUT_MS);
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs(job.request));
       let settled = false;
       const done = (message: string | null) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        clearTimeout(killTimer);
         const text = cleanOutput(out);
-        resolve(message === null && text ? { ok: true, text } : { ok: false, error: message ?? `${file} returned nothing` });
+        resolve(!timedOut && message === null && text ? { ok: true, text } : { ok: false, error: timedOut ? `${file} timed out` : message ?? `${file} returned nothing`, classification: timedOut ? 'timeout' : message === null ? 'invalid-response' : 'network' });
       };
       child.on('error', error => done((error as NodeJS.ErrnoException).code === 'ENOENT' ? `${file} not found` : `${file}: ${error.message}`));
       child.on('close', (code, signal) => done(code === 0 ? null
@@ -413,74 +573,46 @@ export class SmallModel {
   private async request(job: Job, { url, headers, body }: { url: string; headers: Record<string, string>; body: string }): Promise<ModelResult> {
     const abort = new AbortController();
     job.stop = () => abort.abort();
-    const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; abort.abort(); }, timeoutMs(job.request));
     const secret = headers.authorization?.replace(/^Bearer /, '') ?? '';
     const redact = (message: string) => secret ? message.split(secret).join('[redacted]') : message;
     try {
       // Do not forward credentials or session material through endpoint redirects.
       const response = await (this.options.fetch ?? fetch)(url, { method: 'POST', headers, body, signal: abort.signal, redirect: 'error' });
       const raw = (await response.text()).slice(0, MAX_OUTPUT_BYTES);
+      if (timedOut) return { ok: false, error: 'api stopped', classification: 'timeout' };
       let json: unknown = null;
       try { json = JSON.parse(raw); } catch { /* reported below */ }
       if (!response.ok) {
         const detail = (json as { error?: { message?: unknown } } | null)?.error?.message;
-        return { ok: false, error: `api HTTP ${response.status}${typeof detail === 'string' ? `: ${clip(redact(detail), 120)}` : ''}` };
+        return { ok: false, error: `api HTTP ${response.status}${typeof detail === 'string' ? `: ${clip(redact(detail), 120)}` : ''}`, classification: httpClassification(response.status, json) };
       }
       const text = cleanOutput(completionText(json) ?? '');
-      return text ? { ok: true, text } : { ok: false, error: json === null ? 'api: reply is not JSON' : 'api returned nothing' };
+      if (!text && (json as { choices?: Array<{ finish_reason?: unknown }> } | null)?.choices?.[0]?.finish_reason === 'length') {
+        return { ok: false, error: 'api output limit reached', classification: 'output-limit' };
+      }
+      return text ? { ok: true, text } : { ok: false, error: json === null ? 'api: reply is not JSON' : 'api returned nothing', classification: 'invalid-response' };
     } catch (error) {
-      return { ok: false, error: abort.signal.aborted ? 'api stopped' : `api: ${clip(redact(String((error as Error)?.message ?? error)), 120)}` };
+      return { ok: false, error: abort.signal.aborted ? 'api stopped' : `api: ${clip(redact(String((error as Error)?.message ?? error)), 120)}`, classification: timedOut ? 'timeout' : 'network' };
     } finally {
       clearTimeout(timer);
     }
   }
 
-  private cacheFile(): string | null { return this.dir && path.join(this.dir, 'cache.json'); }
-  private callsFile(): string | null { return this.dir && path.join(this.dir, 'calls.json'); }
-
-  private load(): void {
-    if (this.loaded) return;
-    this.loaded = true;
-    const file = this.cacheFile();
-    const raw = file ? readJson(file) : null;
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-        const entry = value as { text?: unknown; at?: unknown } | null;
-        if (/^[0-9a-f]{64}$/.test(key) && typeof entry?.text === 'string' && typeof entry.at === 'number') this.cache.set(key, { text: entry.text, at: entry.at });
-      }
-      this.trimCache();
-    }
+  private reloadCache(): void {
+    if (!this.store) return;
+    try { this.cache = this.store.cache(); } catch { /* Dispatch fails closed if shared state remains unavailable. */ }
   }
 
-  /** Other panels on the same CODEX_HOME spend from the same budget. */
   private reloadCalls(): void {
-    const file = this.callsFile();
-    if (!file) return;
-    const raw = readJson(file);
-    // The file is the log once it exists: this panel writes every call to it.
-    if (Array.isArray(raw)) this.calls = raw.filter((at): at is number => typeof at === 'number' && Number.isFinite(at)).sort((a, b) => a - b);
-  }
-
-  private recordCall(now: number): void {
-    this.reloadCalls();
-    this.calls = [...this.calls, now].filter(at => at > now - DAY_MS).slice(-CALL_LOG_LIMIT);
-    const file = this.callsFile();
-    if (!file) return;
-    // The log is a convenience; a write that fails costs only the count.
-    try { writePrivateFile(file, `${JSON.stringify(this.calls)}\n`); } catch { /* kept in memory */ }
+    if (!this.store) return;
+    try { this.calls = this.store.calls(); } catch { /* Last known usage only; dispatch still fails closed. */ }
   }
 
   private remember(digest: string, text: string, generatedAt: number): void {
     this.cache.delete(digest);
     this.cache.set(digest, { text, at: generatedAt });
-    this.trimCache();
-    const file = this.cacheFile();
-    if (!file) return;
-    try { writePrivateFile(file, `${JSON.stringify(Object.fromEntries(this.cache))}\n`); } catch { /* kept in memory */ }
-  }
-
-  private trimCache(): void {
-    // Map order is insertion order: the oldest answers go first.
     while (this.cache.size > CACHE_LIMIT) this.cache.delete(this.cache.keys().next().value!);
   }
 }

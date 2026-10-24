@@ -1,6 +1,6 @@
 import { taskText, looksAutomatic } from '../utils/task-text.js';
 import { extractAgentReport } from './agent-report.js';
-import { TokenRateTracker, type TokenRateSnapshot } from './token-rate.js';
+import { TokenRateTracker, observeTokenRateRecord, type TokenRateSnapshot } from './token-rate.js';
 import { sessionParentId } from '../utils/session-parent.js';
 import { timeAsync } from '../utils/profile.js';
 /**
@@ -604,6 +604,8 @@ export async function parseRolloutFile(
         const entry = JSON.parse(line) as RolloutLine;
         const timestamp = new Date(entry.timestamp);
 
+        // Shared with the agent tail reader, including overlapping tool waits.
+        observeTokenRateRecord(rateTracker, entry);
         // Process based on entry type
         lastEventTime = timestamp;
         if (entry.type === 'session_meta') {
@@ -742,7 +744,6 @@ export async function parseRolloutFile(
         } else if (entry.type === 'event_msg') {
           const payload = entry.payload as EventMsgPayload;
           if (payload.type === 'task_started' || payload.type === 'turn_started') {
-            rateTracker.startTurn(timestamp);
             activity = { state: 'working', updatedAt: timestamp, turnStartedAt: timestamp };
           } else if (payload.type === 'task_complete' || payload.type === 'turn_complete') {
             activity = { ...activity, state: 'idle', updatedAt: timestamp };
@@ -778,10 +779,6 @@ export async function parseRolloutFile(
                      payload.type === 'request_user_input') {
             pendingApproval = approvalFromEvent(payload, timestamp);
             event({ kind: 'approval-requested', at: timestamp, text: pendingApproval.summary });
-          }
-
-          if (payload.type === 'token_count' && typeof payload.info?.total_token_usage?.output_tokens === 'number') {
-            rateTracker.observe(payload.info.total_token_usage.output_tokens, timestamp);
           }
 
           if (payload.type === 'plan_update' && payload.plan) {

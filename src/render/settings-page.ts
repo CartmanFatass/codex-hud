@@ -9,11 +9,16 @@ import { age, TIMELINE_STYLES, TIMELINE_HOURS, type MonitorControl } from './mon
 import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
 import { PANEL_WIDTHS } from '../utils/pane-width.js';
 import { LOOKS, type IconMode, type LookName } from './hud-config.js';
+import type { ModelProbeState } from '../collectors/model-probe.js';
+import { monitorText } from './monitor-text.js';
 
 type SettingValue = string | number | boolean;
+const PROBE_FAILURES: Record<string,string> = {auth:'Authentication failed','model-not-found':'Model not found',
+  'rate-limit':'Rate limited',timeout:'Request timed out',network:'Connection failed',server:'Service unavailable',
+  'invalid-response':'Invalid response','output-limit':'Output limit reached','hourly-cap':'Call cap reached','runtime-unavailable':'Budget store unavailable'};
 export type SettingKey = keyof HudSettings | 'cardPreset';
 export type SettingGroup = 'Display' | 'Panel' | 'Agents' | 'Cards' | 'LLM' | 'Status bar' | 'Input';
-export type SettingsAction = 'back' | 'save' | 'reset' | 'reset-all';
+export type SettingsAction = 'back' | 'save' | 'reset' | 'reset-all' | 'test-api' | 'diagnostics';
 
 export interface SettingRow {
   /** A real field, or a virtual row whose get/set must read/write only real fields. */
@@ -235,7 +240,8 @@ export interface SettingsFrame {
   headerY:number;
   /** Main navigation hit targets, routed by the caller, not settings input. */
   navigationControls:MonitorControl[];
-  actions:Array<{action:SettingsAction;x:number;width:number}>;
+  actions:Array<{action:Exclude<SettingsAction,'test-api'|'diagnostics'>;x:number;width:number}>;
+  probeAction?: { y: number; width: number };
 }
 
 type DisplayLine = {group:string} | {index:number} | {note:string};
@@ -326,6 +332,7 @@ const HEALTH_SOURCES: Record<string,string> = {
  * current state and is painted as a warning; an older one is history.
  */
 export function healthLine(health:HudHealthState|undefined,nowMs:number):string|null {
+  if (health?.sessionBound === false) return theme.warning(t('No Codex session bound'));
   if (!health?.lastReadAt && !health?.lastError) return null;
   const read = health.lastReadAt ? t('HUD read the session {age} ago',{age:age(health.lastReadAt,nowMs)}) : t('No read yet');
   const error = health.lastError;
@@ -361,7 +368,7 @@ function heading(title:string,width:number):string {
  * seen before it is saved.
  */
 export function renderSettingsPage(state:SettingsPageState,width:number,height:number,
-  health?:{state:HudHealthState|undefined;nowMs?:number;modelCalls?:{today:number;lastHour:number;cap:number}},
+  health?:{state:HudHealthState|undefined;nowMs?:number;modelCalls?:{today:number;lastHour:number;cap:number};probe?:ModelProbeState},
   preview?:(draft:HudSettings,width:number)=>string[],
   navigation?:{lines:string[];controls:MonitorControl[]}):SettingsFrame {
   width = Math.max(0,Math.floor(width));
@@ -372,10 +379,17 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   const healthRow = health && available > 3 ? healthLine(health.state,health.nowMs ?? Date.now()) : null;
   const callsRow = health && available > 4 ? modelCallsLine(health.modelCalls) : null;
   const selected = Math.min(SETTING_ROWS.length-1,Math.max(0,state.selected));
+  const probe = health?.probe;
+  const probeRows = probe && SETTING_ROWS[selected].group === 'LLM' && available > 8 ? [
+    t(probe.running ? '[Cancel test]' : '[Test API]'),
+    t('Synthetic messages only; counts toward call cap'),
+    ...(probe.unavailable ? [t('Select API backend to test')] : probe.rows.map(row =>
+      `${row.tier}: ${row.status === 'failed' ? t(PROBE_FAILURES[row.failure ?? ''] ?? 'Model request failed') : t(row.status)}${row.elapsedMs !== undefined ? ` ${row.elapsedMs}ms` : ''} · ${monitorText(row.model)}`)),
+  ] : [];
   const reason = settingInactiveReason(SETTING_ROWS[selected],state.draft);
   const footerCount = Math.min(2,Math.max(0,available-1));
   const reasonLines = reason && available > 3 ? flowLines(reason,width).slice(0,Math.max(0,available-1-footerCount-(healthRow ? 1 : 0)-(callsRow ? 1 : 0))) : [];
-  const rest = Math.max(0,available-1-footerCount-reasonLines.length-(healthRow ? 1 : 0)-(callsRow ? 1 : 0));
+  const rest = Math.max(0,available-1-footerCount-reasonLines.length-(healthRow ? 1 : 0)-(callsRow ? 1 : 0)-probeRows.length);
   const drawn = preview && PREVIEWED.has(SETTING_ROWS[selected].key) ? preview(state.draft,width) : [];
   const shown = drawn.length && rest-1-drawn.length >= LIST_MIN ? [heading('Preview',width),...drawn] : [];
   const count = Math.max(0,rest-shown.length);
@@ -429,6 +443,8 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   }
   if (healthRow) lines.push(healthRow);
   if (callsRow) lines.push(callsRow);
+  const probeAction = probeRows.length ? { y: lines.length, width: Math.min(width, visualLength(probeRows[0])) } : undefined;
+  lines.push(...probeRows);
   lines.push(...shown);
   lines.push(...reasonLines.map(line => theme.warning(line)));
   if (footerCount > 0) {
@@ -437,10 +453,10 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   }
   if (footerCount > 1) {
     // Save, Reset and Back are the buttons on the top row; only the moves are left to say.
-    lines.push(colors.dim(width < 30 ? '↑↓ ←→' : t('↑↓ select  ←→ change')));
+    lines.push(colors.dim(SETTING_ROWS[selected].group === 'LLM' && probe ? t('t: test/cancel API · d: diagnostics') : width < 30 ? '↑↓ ←→' : t('↑↓ select  ←→ change')));
   }
   return {
-    lines:lines.slice(0,height).map(line => fitLine(line,width)),
+    lines:lines.slice(0,height).map(line => fitLine(line,width)),probeAction,
     state:{...state,original,selected,offset},
     rowStart:headerY+1,rowCount:count,rows:[...rows,...Array(Math.max(0,height-rows.length)).fill(null)].slice(0,height),back,footerY:height-1,actions,headerY,
     navigationControls:(navigation?.controls ?? []).flatMap(control => {
@@ -456,6 +472,8 @@ export function handleSettingsInput(state:SettingsPageState,input:WorkbenchInput
   const next = {...state,original:state.original??frame.state.original};
   let key = input.type === 'key' ? input.key : '';
   if (input.type === 'mouse') {
+    if (input.button === 'left' && input.y === frame.probeAction?.y && input.x < frame.probeAction.width)
+      return {state:next,action:'test-api'};
     if (input.button === 'left' && input.y === frame.headerY) {
       return {state:next,action:frame.actions.find(action=>input.x>=action.x&&input.x<action.x+action.width)?.action};
     }
@@ -470,6 +488,8 @@ export function handleSettingsInput(state:SettingsPageState,input:WorkbenchInput
   if (key === 'escape' || key === 'settings' || key === 'close') return {state:next,action:'back'};
   if (key === 'sort') return {state:next,action:'save'};
   if (key === 'reset') return {state:next,action:'reset'};
+  if (key === 'diagnostics') return {state:next,action:'diagnostics'};
+  if (key === 'next-tab' && settingGroup(next) === 'LLM') return {state:next,action:'test-api'};
   const moved = next.selected;
   if (key === 'down' || key === 'tab') next.selected = Math.min(SETTING_ROWS.length-1,next.selected+1);
   if (key === 'up' || key === 'shift-tab') next.selected = Math.max(0,next.selected-1);

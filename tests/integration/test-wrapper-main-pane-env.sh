@@ -53,6 +53,7 @@ chmod +x "$FAKE_BIN_DIR/codex" "$FAKE_BIN_DIR/node" "$FAKE_BIN_DIR/npm" "$FAKE_B
 export PATH="$FAKE_BIN_DIR:$FAKE_TMUX_DIR:$PATH"
 export CODEX_HUD_HEIGHT="5"
 export CODEX_HUD_HEIGHT_AUTO="0"
+unset CODEX_HUD_TREE
 
 log_file="$(mktemp)"
 export TMUX_LOG_FILE="$log_file"
@@ -84,14 +85,14 @@ if ! grep -qE '^split-window -v' "$log_file"; then
   exit 1
 fi
 
-if ! grep -qE '^split-window -h' "$log_file"; then
-  echo "expected default launch to open the right-side tree pane" >&2
+if grep -qE '^split-window -h' "$log_file"; then
+  echo "default launch must keep the compact bottom bar" >&2
   cat "$log_file" >&2
   exit 1
 fi
 
-if ! grep -q 'tree-page.js' "$log_file"; then
-  echo "expected default tree pane to run tree-page.js" >&2
+if grep -q 'tree-page.js' "$log_file"; then
+  echo "default launch must not run the expanded panel" >&2
   cat "$log_file" >&2
   exit 1
 fi
@@ -171,6 +172,14 @@ fi
 if ! grep -q "set-option -t .* status off" "$log_file"; then
   echo "expected HUD sessions to disable the tmux status bar" >&2
   cat "$log_file" >&2
+  exit 1
+fi
+
+# Explicit panel opt-in still works.
+: > "$log_file"
+CODEX_HUD_TREE=1 "$ROOT_DIR/bin/codex-hud" >/tmp/codex-hud-main-pane-test.log 2>&1
+if ! grep -qE '^split-window -h' "$log_file" || ! grep -q 'tree-page.js' "$log_file"; then
+  echo "CODEX_HUD_TREE=1 must open the expanded panel" >&2
   exit 1
 fi
 

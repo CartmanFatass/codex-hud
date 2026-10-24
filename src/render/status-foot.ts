@@ -198,8 +198,14 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
   const flag = (session?.failed && !needs && !session.attention ? theme.error : theme.warning)('!');
   const busy = card?.busy ?? card?.tone === 'working';
   const stateText = !card ? session?.text ?? '' : flagged ? (busy ? `${flag} ${card.state}` : flag) : card.state;
-  const left = (state: string): Pieces => [['state', state], ['rate', card?.rate ?? ''], ['tasks', card?.tasks ?? ''],
-    ['model', card?.model ?? ''], ['age', card?.age ?? '']];
+  const left = (state: string): Pieces => {
+    const rate = card?.rate ?? '';
+    // Reserve the rate and context reading even with a long tool/target or text model badge.
+    const readingWidth = meter ? visualLength(meter.label ?? `${meter.percent}%`) + visualLength(meter.mark ?? '') : 1;
+    const room = width - visualLength(rate) - readingWidth - (framed ? 6 : 2) - 3;
+    return [['state', rate ? truncateAnsi(state, Math.max(1, room)) : state], ['rate', rate], ['tasks', card?.tasks ?? ''],
+      ['model', card?.model ?? ''], ['age', card?.age ?? '']];
+  };
 
   // The bar's rows: two in the frame look.
   const fair = Math.min(Math.floor(height / 3), height - (framed ? 2 : 1) - notices - MIN_VIEW);
@@ -212,7 +218,7 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
     const [lead, trail] = edge('╰─', '─╯');
     return { rows: 1, draw(frame, foot) {
       band(frame, foot, fitRow(width, lead, trail, left(shown), [['brief', said], ['quota', card?.quota?.text ?? '']], meter,
-        ['rate', 'tasks', 'age', 'tail', 'model', 'brief', 'bar', 'quota', 'label'], truncateAnsi, BAND_BAR));
+        ['tasks', 'age', 'tail', 'model', 'brief', 'bar', 'quota', 'rate', 'label'], truncateAnsi, BAND_BAR));
       frame.statusCard = { y: foot, height: 1, brief: 0, total: 0, offset: 0 };
     } };
   }
@@ -237,7 +243,7 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
   return { rows, draw(frame, foot) {
     const [lead, trail] = edge('├─', '─┤');
     band(frame, foot, fitRow(width, lead, trail, left(stateText), [['brief', said]], meter,
-      ['rate', 'tasks', 'age', 'tail', 'model', 'brief', 'bar', 'label'], truncateAnsi, BAND_BAR));
+      ['tasks', 'age', 'tail', 'model', 'brief', 'bar', 'rate', 'label'], truncateAnsi, BAND_BAR));
     let y = foot + 1;
     // A gutter on the left only: the text gets the column a right border would
     // take. In the frame look the gutter is the frame's side, and the other side closes the row.

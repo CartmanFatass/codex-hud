@@ -1,5 +1,9 @@
 ## Modification History
 
+新启动默认使用底部单行缩小模式。按 `F12` 打开右侧扩展面板；设置 `CODEX_HUD_TREE=1` 可改为启动时展开。
+
+`Ctrl+]` 后按 `d` 打开故障诊断与主会话 TPS 详情。设置 → 模型增强中的「测试连接」（`t`）检查三个模型档位，只发送固定测试消息并计入调用预算。性能测量见[报告](./docs/performance-20261024.md)。
+
 | Date       | Summary of Changes |
 |------------|--------------------|
 | 2026-05-22 | 补充 Windows 用户当前 branch 下载、self-check、运行流程，并加入 WSL 截图。 |

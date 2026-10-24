@@ -1,4 +1,5 @@
 import { formatTokenRate } from '../../collectors/token-rate.js';
+import { hudProblems } from '../hud-diagnostics.js';
 /**
  * The status bar's fields, each one declared with its importance and with
  * shorter ways to say itself.
@@ -147,6 +148,9 @@ function identityModule(data: HudData, glyphs: GlyphMode): BarModule {
  * guessed at, and the narrow forms fall back to the mark alone.
  */
 function activityModule(data: HudData, words: boolean, nowMs: number): BarModule {
+  const problem = hudProblems(data, nowMs)[0];
+  if (problem) return { id: 'activity', priority: MODULE_PRIORITY.activity, group: 'who',
+    variants: { full: theme.warning(`! ${problem}`), short: theme.warning('! HUD'), min: theme.warning(data.stale ? '?' : '! HUD') } };
   const status = data.stale ? 'stale' : data.activity?.state;
   if (!status) return { id: 'activity', priority: MODULE_PRIORITY.activity, group: 'who', variants: {} };
   const [glyph, label, paint] = {

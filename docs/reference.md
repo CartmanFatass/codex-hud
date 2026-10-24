@@ -21,7 +21,7 @@ There are four panes: **1 Agents** (the cards in rich, the tree in compact), **2
   - **Identity and selection:** the top rule has status, the name in its direction's timeline colour (middle-cut when long), and the optional work-kind glyph, review chip and model/effort badge. A click on the card selects it; a child line selects that child. The name is underlined when the Codex pane is at least 63 columns or its width is not yet known; a second click on the name within 400 ms switches the Codex conversation. `Ctrl+]` `Enter`, Space or `v`, or the Inspector button, opens details on the selection. These never expand a card; the old prefix `e` command is removed. The selected top rule is on a lighter band. State colours are info for running, warning for quiet, error for failed, success for just finished, and dim for older settled work.
   - **Independent contents:** Settings → Cards controls each field separately (see the [card settings table](#card-settings)). Name and status always remain. The body may show the model's task label under the name, Codex's original name when a label replaces it, relations (`⇄` for collaborators that exchanged at least three messages; `→` for the lead a helper serves), the latest stored model summary, the current tool/action (`▸ npm run bench`), children and role counts (`3 implementer · 2 reviewer · 1 critic +1`, omitting a shared role prefix). The L1's latest model note wraps in full; older notes, raw tasks, pre-create charge, stage intent, reports and log history stay in the Inspector, never as card text. Hiding a field removes its space, not its stored data.
   - **Children:** Child scope defaults to **live + important** (`important`), meaning live children plus failed, flagged and key-role descendants (and eligible guardian reviews); it can be **live** or **all** instead. A child always keeps its name and status. With Child summaries on, an active child uses its latest model progress note, not a stale digest; a failed child prefers its model failure cause; a completed child prefers its result digest, falling back to a note. Only the **first sentence / first digest line**, at most **160 Unicode code points**, is shown, wrapping beside or under the name rather than being cut to a single display row. The digest's evidence and caveats remain in the Inspector. Child summaries off keeps the child names and statuses. Child clocks follow the same Turn clock switch as the L1.
-  - **Footer and models:** the optional clock counts seconds during the turn (`◷4m07s`, warning when quiet), or shows the age since finish/failure (`12d`); the optional rate (`· ~42 tok/s`) follows, then the optional context meter (`────57%──────`). The rate uses output-token reports over roughly the last half minute, resets at a turn start, and disappears when the newest report is three minutes old, rounds to zero or would leave the meter under twelve columns. Card corners are square (`┌`, default) or round (`╭`), in Settings → Cards. The Card progress generator requests only the live subjects whose summaries these settings allow in the currently shown Agents list, while Agents is shown and no modal is open; pending/error text accompanies the corresponding enabled summary and retains its old words. Guardian reviews have no separate card: their parent carries `◈N`, with failed reviews still visible as rows. Agent text loses chat markdown in cards and the Inspector: links keep their text, bold/code/heading marks go, and a full commit hash shows seven characters. The main session's brief stays in the status card at the foot.
+  - **Footer and models:** the optional clock counts seconds during the turn (`◷4m07s`, warning when quiet), or shows the age since finish/failure (`12d`); the optional rate (`· ~42 tok/s`) follows, then the optional context meter (`────57%──────`). The rate uses a turn-level wallclock estimate (including initial latency and generation stalls, excluding identifiable tool waits), resets at a turn start, and disappears when the newest report is three minutes old, rounds to zero or would leave the meter under twelve columns. Card corners are square (`┌`, default) or round (`╭`), in Settings → Cards. The Card progress generator requests only the live subjects whose summaries these settings allow in the currently shown Agents list, while Agents is shown and no modal is open; pending/error text accompanies the corresponding enabled summary and retains its old words. Guardian reviews have no separate card: their parent carries `◈N`, with failed reviews still visible as rows. Agent text loses chat markdown in cards and the Inspector: links keep their text, bold/code/heading marks go, and a full commit hash shows seven characters. The main session's brief stays in the status card at the foot.
 
 - **compact**: the Agents pane (the tree, one row per agent and subtask, by Codex's own name, under the same title row as rich) with the brief, the recap and the agent log under it, as before.
 
@@ -268,15 +268,15 @@ Background job answers are cached by their input, backend, endpoint and actual m
 
 ```json
 { "briefing": "api",
-  "briefingApiBase": "http://127.0.0.1:7861/antigravity/v1",
+  "briefingApiBase": "http://127.0.0.1:4000/v1",
   "briefingApiModel": "",
-  "briefingApiLiteModel": "gemini-3.5-flash-lite",
-  "briefingApiLowModel": "gemini-3.8-flash-low",
-  "briefingApiMediumModel": "gemini-3.8-flash-medium",
+  "briefingApiLiteModel": "zai-glm-vibe-none",
+  "briefingApiLowModel": "zai-glm-vibe-low",
+  "briefingApiMediumModel": "zai-glm-vibe-high",
   "briefingApiKey": "" }
 ```
 
-An empty base is OpenAI's. An empty key falls back to `CODEX_HUD_BRIEF_API_KEY`; `OPENAI_API_KEY` is used only for the official OpenAI origin, never for a custom endpoint. With none the request is sent without one, for a local server. The file is written with mode 0600. API tasks route by feature: labels, titles and approval descriptions use the lite tier; active progress summaries, agents briefs, result digests and change summaries use low; main recaps and failure causes use medium. A nonempty `briefingApiModel` overrides all API tiers; `CODEX_HUD_BRIEF_MODEL` overrides either backend. The low/medium suffix is part of the API model name, not an extra parameter, and there is no silent fallback to another model on failure. HTTP redirects are refused rather than forwarding credentials or session material. `agy` keeps its default `gemini-3.8-flash-low`. Only the fields every compatible server accepts are sent to an `api` endpoint; set `"briefingApiReasoning": true` if yours takes `reasoning_effort` and it will be sent too.
+An empty base is OpenAI's. An empty key falls back to `CODEX_HUD_BRIEF_API_KEY`; `OPENAI_API_KEY` is used only for the official OpenAI origin, never for a custom endpoint. With none the request is sent without one, for a local server. The file is written with mode 0600. API tasks route by feature: labels, titles and approval descriptions use the lite tier; active progress summaries, agents briefs, result digests and change summaries use low; main recaps and failure causes use medium. A nonempty `briefingApiModel` overrides all API tiers; `CODEX_HUD_BRIEF_MODEL` overrides either backend. In this GLM example the internal lite/low/medium tiers use none/low/high aliases; effort is encoded in the model name, not an extra parameter, and there is no silent fallback to another model on failure. HTTP redirects are refused rather than forwarding credentials or session material. `agy` keeps its default `gemini-3.8-flash-low`. Only the fields every compatible server accepts are sent to an `api` endpoint; set `"briefingApiReasoning": true` if yours takes `reasoning_effort` and it will be sent too.
 
 ### Picture
 
@@ -286,8 +286,19 @@ Panel → Picture draws a picture in the panel's empty space: braille dots, dots
 
 The default bar shows `Out ~42.1 tok/s` when enough output-token samples exist.
 Selected-agent details show that agent's estimate; expand with `v` to see the sample interval.
-The estimate is the change in cumulative **output** tokens divided by rollout timestamp elapsed time
-in a roughly 30-second window. It can include tool/service waits and is not pure model decoding speed.
+The estimate follows the **wallclock** convention: measured **output** tokens divided by
+elapsed time in the current turn, including initial latency (TTFT) and generation stalls,
+minus the union of identifiable tool-call/output waits. Parallel waits are deducted only once.
+Only fully closed wait unions are deducted; missing results conservatively remain in elapsed time
+instead of freezing the denominator while output continues to grow.
+There is no 30-second rolling window, smoothing, speed cap or one-second minimum.
+Codex rollouts lack exact per-request start/stream-end telemetry, so `~` marks a turn-level
+proxy, not an exact reproduction of Pi's request-timed wall TPS or pure decoding speed.
+Unidentified waits and logging delays may remain in the denominator.
+If the prior counter is missing, the estimate waits for two cumulative reports and covers only
+their measured interval. A first report's last-call usage may repeat the previous turn, so it
+is never used to invent a turn-start counter.
+Repeated unchanged counters do not dilute or refresh a reading.
 A new turn excludes the preceding idle gap. After 10 seconds without a new sample, `last ~42.1 tok/s`
 retains the previous reading. Context usage and compaction counts stay in the bar; the workbench has no Ctx trend.
 
@@ -377,6 +388,7 @@ Settings → **Bar on launch** saves the bottom bar preference for the next new 
 | `CODEX_HUD_HEIGHT_MIN` | `CODEX_HUD_HEIGHT` | Min height in auto mode |
 | `CODEX_HUD_HEIGHT_MAX` | `12` | Max height in auto mode |
 | `CODEX_HUD_AUTO_ATTACH` | `0` | Auto-attach to latest session in same dir |
+| `CODEX_HUD_HERDR_BRIDGE` | `1` | In Herdr, enable native Codex detection with a foreground-process hint and main-pane title relay; read back status for diagnostics. `0` disables this integration. No Herdr configuration changes. [Details](./herdr-context-fix.md) |
 | `CODEX_HUD_ALTERNATE_SCREEN` | `0` | tmux alternate-screen for codex pane |
 | `CODEX_HUD_CLEAR_SCROLLBACK` | `0` | Clear scrollback on first render |
 | `CODEX_HUD_CWD` | (unset) | Override working directory |
@@ -430,3 +442,38 @@ sandbox_mode = "workspace-write"
 command = ["node", "server.js"]
 enabled = true
 ```
+
+New sessions start with the compact bottom bar (`CODEX_HUD_TREE=0`); `F12` opens the panel. The main session rate keeps space ahead of optional model/age fields at ordinary panel widths. A sample older than ten seconds, from a previous turn, or shown while idle is labelled `last`, rather than disappearing or implying a live measurement.
+
+### Diagnostics and connection checks
+
+Press the HUD prefix (`Ctrl+]` by default), then `d`, to open HUD diagnostics
+in the Inspector, including the main session's TPS sample time, sample duration
+and estimation method. In an agent's Inspector, Enter expands those same TPS
+details. Current-turn, older/previous-turn and missing measurements are distinct.
+The JSON snapshot also includes optional `outputRate` evidence and `health.sessionBound`.
+
+The normal panel shows current faults without opening Settings: no bound Codex
+session, failed session reads, Herdr probe/transport failure, uncertain notification
+history after reconnection, and classified model failures or queue waiting. The
+compact bar shows collection/bridge problems. Diagnostic details retain the last
+successful read/acknowledgement; normal operation adds no diagnostic banner.
+
+Settings → LLM offers **Test API** (or `t` in that group), and `t` again cancels.
+It checks the lite/low/medium routes from the current draft, with fixed synthetic
+messages only, up to 256 output tokens per request and a 15-second request timeout.
+The three calls share the normal hourly budget; nothing is saved and no session
+text is sent. Backend off or AGY does not issue an API test. Closing Settings or
+changing the connection cancels pending checks and prevents late results from
+reappearing. Results distinguish authentication, unavailable model, rate limiting,
+timeout, connection/service failure, output truncation and invalid responses. The test can run while
+ordinary model generation is paused because it is an explicit user action.
+
+Model calls sharing one local CODEX_HOME now atomically reserve a budget slot
+before sending. Replies merge into a shared cache under coordination; simultaneous
+identical cacheable requests share one result. A crashed/cancelled sender may
+conservatively consume its reserved slot. Coordination failure refuses the call
+instead of sending without accounting. Approvals and explicit probes precede
+queued visible progress, which precedes background summaries; background requests
+are protected from starvation. In-flight requests are not preempted. Shared-disk
+coordination requires local filesystem atomic rename and coherent directory reads.

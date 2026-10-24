@@ -65,6 +65,7 @@ bind_command 0 m main
 bind_command 0 b brief
 bind_command 0 a older
 bind_command 0 , settings
+bind_command 0 d diagnostics
 bind_command 0 '?' help
 bind_command 0 r level
 bind_command 0 1 pane-1

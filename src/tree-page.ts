@@ -3,6 +3,7 @@ import { navigateSession } from './utils/session-navigation.js';
 import { defaultSettings, saveSettings, briefingScope, type HudSettings } from './settings.js';
 import { runtimeSettings, applyDisplaySettings, withDisplaySettings } from './settings-runtime.js';
 import { treeWidthKeeper } from './utils/pane-width.js';
+import { frameDiff } from './render/frame-diff.js';
 import { renderSettingsPage, handleSettingsInput, settingsDirty, resetSettingsGroup, resetAllPreferences, SETTING_ROWS, type SettingsPageState, type SettingsFrame } from './render/settings-page.js';
 import { renderSettingsConfirmation, handleSettingsConfirmation, type SettingsConfirmationState, type SettingsConfirmationFrame } from './render/settings-confirmation.js';
 import { spawn, execFile, execFileSync } from 'node:child_process';
@@ -10,7 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { SessionFinder, findRolloutsInDaysYielding } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
-import { buildSubagentTree, uniquePickerLabel, useTreeScanStore, flushTreeScans } from './collectors/subagent-tree.js';
+import { buildSubagentTreeYielding, uniquePickerLabel, useTreeScanStore, flushTreeScans } from './collectors/subagent-tree.js';
 import { TreeScanStore } from './collectors/tree-scan-store.js';
 import { collectGitChanges, readGitDiff, readDiffHunks, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
@@ -24,6 +25,8 @@ import { fileSignature } from './utils/file-signature.js';
 import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
 import { SmallModel } from './collectors/small-model.js';
+import { ModelProbe } from './collectors/model-probe.js';
+import { hudProblems } from './render/hud-diagnostics.js';
 import { ProgressSummarizer, progressTargets } from './collectors/progress-summary.js';
 import { cardSummaryTargets } from './render/cards.js';
 import { controlBar } from './render/control-bar.js';
@@ -180,7 +183,7 @@ async function runLivePage(): Promise<void> {
   let diffKey = '';
   let error: string | null = settingsError || null;
   let frame: MonitorFrame | undefined;
-  let lastPaint = '';
+  let lastPaint: string[] | null = null;
   let closed = false;
   let collecting = false;
   let collectingGit = false;
@@ -197,7 +200,9 @@ async function runLivePage(): Promise<void> {
   const widthKeeper = treeWidthKeeper(()=>settings.treeWidth);
   // Every model call of the panel goes through one service: one queue, one
   // cache, one hourly cap. Its cache and call log live beside the HUD's state.
-  const model = new SmallModel({dir:path.join(getHudHome(),'model-cache')});
+  let modelChanged = () => {};
+  const model = new SmallModel({dir:path.join(getHudHome(),'model-cache'),onChange:()=>modelChanged()});
+  const probe = new ModelProbe({dir:path.join(getHudHome(),'model-cache')},()=>render());
   // Each subagent's log: observed changes and model notes, kept per session.
   const agentLog = new AgentLog(path.join(getHudHome(),'agent-log'));
   // The Timeline pane's events: the rollout's and the agent log's, one list.
@@ -258,6 +263,10 @@ async function runLivePage(): Promise<void> {
   // The bar's fields, for the foot of the panel: the panel replaces the bar
   // while it is open. Fed from this page's own parse of the rollout.
   const hudStatus = new HudStatus(HUD_CWD,()=>render(),30_000);
+  const currentHud = () => {
+    const data = hudStatus.current();
+    return data ? {...data,modelHealth:settings.briefing === 'off' ? undefined : model.diagnostics()} : undefined;
+  };
   // The panel replaces the bar, so it publishes the same notifications and snapshot.
   const notifier = new Notifier(resolveNotifierOptions(process.env, settings));
   const snapshotWriter = new SnapshotWriter();
@@ -281,7 +290,7 @@ async function runLivePage(): Promise<void> {
       if (settingsPage) {
         // Key roles offers the roles the subtasks have now.
         settingsFrame = renderSettingsPage({...settingsPage,roles:subtaskRoles(tree)},process.stdout.columns || 30,process.stdout.rows || 24,
-          {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage()},previewTop,
+          {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage(),probe:probe.current()},previewTop,
           controlBar(state,{settingsActive:true,expired:0,brief:settings.briefing === 'off' ? undefined : {paused:settings.briefingPaused}},process.stdout.columns || 30));
         settingsPage = settingsFrame.state;
         lines = settingsFrame.lines;
@@ -292,26 +301,27 @@ async function runLivePage(): Promise<void> {
       } else {
       const width = process.stdout.columns || 30;
       const nowMs = Date.now();
+      const hud = currentHud();
       const agentLogs = logsIn(agentLog.snapshot(),resolveLanguage(settings.language),settings.briefing !== 'off' || settings.agentLog);
-      frame = renderMonitor({tree,state,git,worktrees,diff,error,nowMs,notice:navigationMessage,loading:!collected,art:drawArt,prefix:prefixName(settings.prefixKey),
+      frame = renderMonitor({tree,state,git,worktrees,diff,error,nowMs,hud,notice:navigationMessage || hudProblems(hud,nowMs,t)[0],loading:!collected,art:drawArt,prefix:prefixName(settings.prefixKey),
         brief:settings.briefing === 'off' ? undefined : {...(briefCommand() === 'off' ? {} : briefer.current()),paused:settings.briefingPaused},
         agentLog:agentLogs,
         progress:progress.state(),progressContext:{backendOn:settings.briefing !== 'off',paused:settings.briefingPaused,enabled:settings.agentProgress,
           targets:cardSummaryTargets({tree,agentLog:agentLogs},state,nowMs)},timeline:jobs.withCauses(timeline),
         notes:{approval:switches().approvalDescription ? jobs.approvalNote(main?.pendingApproval) : undefined,
           changes:switches().changeSummary ? jobs.changeNote(git) : undefined},
-        status:nowMs=>statusCard(hudStatus.current(),nowMs),session:nowMs=>sessionState(hudStatus.current(),nowMs),width,height:process.stdout.rows || 24,
+        status:nowMs=>statusCard(hud ?? null,nowMs),session:nowMs=>sessionState(hud ?? null,nowMs),width,height:process.stdout.rows || 24,
         linkNames:mainCols === null || mainCols >= 63});
       state = frame.state;
       lines = frame.lines;
       }
-      return lines.map(line=>`${line}\x1b[K`).join('\r\n');
+      return lines;
     });
-    if (lastPaint !== output) {
-      lastPaint = output;
-      time('write',() => process.stdout.write(`\x1b[H${output}\x1b[J`));
-    }
+    const update = frameDiff(lastPaint, output);
+    lastPaint = output;
+    if (update) time('write',() => process.stdout.write(update));
   };
+  modelChanged = () => render();
   /**
    * The next clock-only repaint. A second while something on screen shows
    * seconds (a turn, a live agent, the settings health line). Otherwise the
@@ -472,6 +482,7 @@ async function runLivePage(): Promise<void> {
           }
         }
       }
+      hudStatus.health.bind(Boolean(session));
       hudStatus.health.read();
       stage = 'tree';
       const rootId = main?.session?.id ?? session?.sessionId ?? '';
@@ -482,8 +493,8 @@ async function runLivePage(): Promise<void> {
       // The root is not a card node, but its new spawn charges must be read
       // on this tick too, rather than waiting for the quiet-file budget.
       if (session) priority.add(session.path);
-      const listed = rootId ? await findRolloutsInDaysYielding(3, priority) : undefined;
-      tree = rootId ? time('tree.build',()=>buildSubagentTree(rootId,main?.subagents ?? [],3,Date.now(),listed)) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+      const listed = rootId ? await timeAsync('tree.list', () => findRolloutsInDaysYielding(3, priority)) : undefined;
+      tree = rootId ? await timeAsync('tree.build',()=>buildSubagentTreeYielding(rootId,main?.subagents ?? [],3,Date.now(),listed)) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
       applyAgentContext();
       jobs.apply(tree,switches(),resolveLanguage(settings.language));
       // On the same tick as the tree, so the log never lags it.
@@ -561,6 +572,7 @@ async function runLivePage(): Promise<void> {
     jobs.stop();
     progress.stop();
     model.cancelAll();
+    probe.cancel();
     agentLog.flush();
     flushTreeScans();
     timers.forEach(clearInterval);
@@ -614,7 +626,7 @@ async function runLivePage(): Promise<void> {
       if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
       page.message = t('Saved'); page.original = {...settings};
       process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
-      void widthKeeper?.apply().then(()=>{lastPaint='';render();}).catch(err=>{if(settingsPage) settingsPage.message=String(err);render();});
+      void widthKeeper?.apply().then(()=>{lastPaint=null;render();}).catch(err=>{if(settingsPage) settingsPage.message=String(err);render();});
       return true;
     } catch (err) {
       page.message = t('Save failed: {reason}',{reason:String(err)});
@@ -704,6 +716,7 @@ async function runLivePage(): Promise<void> {
       if (settingsPage && settingsFrame) {
         const result = handleSettingsInput(settingsPage,input,settingsFrame);
         settingsPage = result.state;
+        probe.invalidate(settingsPage.draft);
         if (result.action === 'back') requestSettingsLeave();
         else if (result.action === 'reset') {
           const group = SETTING_ROWS[settingsPage.selected].group;
@@ -712,6 +725,17 @@ async function runLivePage(): Promise<void> {
         }
         else if (result.action === 'reset-all') settingsPage = {...settingsPage,draft:resetAllPreferences(settingsPage.draft),message:t('Preference defaults ready; model connection preserved and generation paused')};
         else if (result.action === 'save') applySettingsDraft();
+        else if (result.action === 'test-api') {
+          if (probe.current().running) probe.cancel();
+          else void probe.run({...settingsPage.draft}).catch(()=>{
+            probe.cancel();
+            if (settingsPage) settingsPage.message=t('Connection test failed');
+            render();
+          });
+        }
+        else if (result.action === 'diagnostics' && requestSettingsLeave('diagnostics')) {
+          state={...state,preview:'diagnostics',focus:'details',modes:{...state.modes,details:'open'},scroll:{...state.scroll,details:0}};
+        }
         updateProgress();
         render(); continue;
       }
@@ -769,6 +793,7 @@ async function runLivePage(): Promise<void> {
       }
     }
     if (forward.length) void forwarder.send(forward);
+    if (!settingsPage) probe.cancel();
     if (!closed && !overlayBefore && (settingsPage || state.help)) focusPanel();
   };
   /** A command that opened the panel (bin/codex-hud-toggle --command): run once, after the first read. */
@@ -789,7 +814,7 @@ async function runLivePage(): Promise<void> {
     process.once('SIGHUP',()=>finish());
     process.stdin.once('end',()=>finish());
     process.stdout.on('resize',()=>{
-      lastPaint='';render();readMainCols();void refreshInspection();
+      lastPaint=null;render();readMainCols();void refreshInspection();
       // A client attaching at another size shares the change with this pane;
       // wait for the burst of resizes to settle, then take back the policy width.
       if (resizeTimer) clearTimeout(resizeTimer);

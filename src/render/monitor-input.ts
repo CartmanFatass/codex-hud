@@ -146,6 +146,10 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     }
   }
   if(key==='settings')return result({type:'settings'});
+  if(key==='diagnostics') {
+    next.preview='diagnostics';next=openPane(next,'details');next.scroll.details=0;
+    return result();
+  }
   if(key==='brief-toggle')return result({type:'brief-toggle'});
   // `r` is Reset on the settings page; here it changes how much the status card shows.
   if(key==='reset'){cycleStatus(next,ctx);return result({type:'status-level'});}

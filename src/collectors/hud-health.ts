@@ -38,4 +38,8 @@ export class HudHealth {
   current(): HudHealthState {
     return this.state;
   }
+
+  bind(bound: boolean): void {
+    this.state = { ...this.state, sessionBound: bound };
+  }
 }

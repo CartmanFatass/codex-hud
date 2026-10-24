@@ -50,7 +50,9 @@ test('old usage is visibly marked while a new turn is waiting for telemetry', ()
   modules = buildBarModules(data);
   assert.doesNotMatch(stripAnsi(modules.find(m => m.id === 'context')!.variants.min!), /Ctx~/);
   data.stale = true;
-  assert.equal(stripAnsi(buildBarModules(data).find(m => m.id === 'activity')!.variants.full!), '?');
+  const staleActivity = buildBarModules(data).find(m => m.id === 'activity')!;
+  assert.match(stripAnsi(staleActivity.variants.full!), /Session read failed; showing last data/);
+  assert.equal(stripAnsi(staleActivity.variants.min!), '?');
 });
 
 test('split bracketed paste never runs monitor shortcuts', () => {

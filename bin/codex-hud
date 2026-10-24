@@ -10,7 +10,7 @@
 #   CODEX_HUD_HEIGHT_MIN - Minimum HUD height when auto-adjusting (default: CODEX_HUD_HEIGHT)
 #   CODEX_HUD_HEIGHT_MAX - Maximum HUD height when auto-adjusting (default: 12)
 #   CODEX_HUD_STATUSLINE - Bottom compact HUD pane: 1 on (default), 0 off
-#   CODEX_HUD_TREE - Open the right-side tree pane on launch (default: 1)
+#   CODEX_HUD_TREE - Open the right-side tree pane on launch (default: 0)
 #   CODEX_HUD_AUTO_ATTACH - If set to true, auto-attach to existing session
 #   CODEX_HUD_NO_ATTACH - Deprecated: if set to true, do not attach to existing session
 #   CODEX_HUD_ALTERNATE_SCREEN - Use alternate screen in codex pane (default: 0)
@@ -574,8 +574,50 @@ check_existing_session() {
     return 1
 }
 
-# Cleanup function - only cleanup on explicit exit, not on attach to existing
+# The bridge belongs to this outer attach client, not the shared tmux server or
+# the bar/panel (which F12 replaces). Always use the caller's Herdr identity.
+start_herdr_bridge() {
+    local main_pane_id="$1"
+    if [[ "${HERDR_ENV:-}" != "1" || -z "${HERDR_SOCKET_PATH:-}" ||
+          -z "${HERDR_PANE_ID:-}" || -z "$main_pane_id" ||
+          "${CODEX_HUD_HERDR_BRIDGE:-1}" == "0" ]]; then
+        return 0
+    fi
+    # The native session hook owns Codex identity/restore. Custom lifecycle
+    # reports can be silently ignored after that hook, despite a successful ACK.
+    # Relay only the stored main pane title, even while the tree pane has focus.
+    tmux set-option -t "$SESSION_NAME" set-titles-string "#{P:#{?#{==:#{pane_id},$main_pane_id},#{pane_title},}}"
+    tmux set-option -t "$SESSION_NAME" set-titles on
+    node "$SCRIPT_DIR/codex-hud-herdr.mjs" "$SESSION_NAME" "$main_pane_id" "$$" "$EFFECTIVE_CODEX_HOME" native \
+        </dev/null >/dev/null 2>&1 &
+    HERDR_BRIDGE_PID=$!
+}
+
+stop_herdr_bridge() {
+    if [[ -n "${HERDR_BRIDGE_PID:-}" ]]; then
+        kill "$HERDR_BRIDGE_PID" 2>/dev/null || true
+        wait "$HERDR_BRIDGE_PID" 2>/dev/null || true
+        HERDR_BRIDGE_PID=""
+    fi
+}
+
+attach_session() {
+    local main_pane_id="$1"
+    local attach_status=0
+    start_herdr_bridge "$main_pane_id"
+    if [[ "${HERDR_ENV:-}" == "1" && -n "${HERDR_SOCKET_PATH:-}" &&
+          -n "${HERDR_PANE_ID:-}" && "${CODEX_HUD_HERDR_BRIDGE:-1}" != "0" ]]; then
+        HERDR_AGENT=codex tmux attach-session -t "$SESSION_NAME" || attach_status=$?
+    else
+        tmux attach-session -t "$SESSION_NAME" || attach_status=$?
+    fi
+    stop_herdr_bridge
+    return "$attach_status"
+}
+
+# Cleanup function - only kill sessions we created, never an existing session.
 cleanup() {
+    stop_herdr_bridge
     if [[ "$DEFER_FINAL_ATTACH" == "1" ]]; then
         return 0
     fi
@@ -759,7 +801,8 @@ create_session() {
     resolve_hud_height "$term_height"
     
     # Build the codex command string
-    local codex_cmd="$CODEX_CLI_PATH"
+    local codex_cmd
+    codex_cmd="$(printf '%q' "$SCRIPT_DIR/codex-with-herdr-context") $(printf '%q' "$CODEX_CLI_PATH")"
     for arg in "${codex_args[@]}"; do
         codex_cmd="$codex_cmd $(printf "%q" "$arg")"
     done
@@ -803,11 +846,27 @@ EOF
         chmod +x "$main_runner"
     fi
 
+    # A reused tmux server can retain a different Herdr pane (or no Herdr
+    # context at all). Set/clear the caller's values at session creation,
+    # before the first shell starts. Never change the server's global env.
+    local herdr_environment=()
+    local herdr_key
+    for herdr_key in HERDR_ENV HERDR_WORKSPACE_ID HERDR_TAB_ID HERDR_PANE_ID \
+        HERDR_SESSION HERDR_SOCKET HERDR_SOCKET_PATH HERDR_CONFIG_PATH; do
+        if [[ "${HERDR_ENV:-}" == "1" && -n "${!herdr_key+x}" ]]; then
+            herdr_environment+=(-e "$herdr_key=${!herdr_key}")
+        else
+            # An unset session value falls back to tmux's global environment.
+            # An explicit empty value blocks that fallback and fails preflight.
+            herdr_environment+=(-e "$herdr_key=")
+        fi
+    done
+
     # Create new detached session
     if [[ -n "$tmux_windows_bash" ]]; then
-        tmux new-session -d -s "$SESSION_NAME" -x "$term_width" -y "$term_height" "$tmux_windows_bash" "$main_runner"
+        tmux new-session -d -s "$SESSION_NAME" -x "$term_width" -y "$term_height" "${herdr_environment[@]}" "$tmux_windows_bash" "$main_runner"
     else
-        tmux new-session -d -s "$SESSION_NAME" -x "$term_width" -y "$term_height"
+        tmux new-session -d -s "$SESSION_NAME" -x "$term_width" -y "$term_height" "${herdr_environment[@]}"
     fi
     # Mouse stays on so the HUD/tree can be clicked, but events are routed
     # per pane: Codex keeps its own mouse, and the compact bar cannot steal
@@ -825,7 +884,7 @@ EOF
         ' "$HUD_DIR/dist/settings.js" 2>/dev/null) || saved_statusline="1"
     fi
     hud_statusline=$(parse_boolean_setting "CODEX_HUD_STATUSLINE" "${CODEX_HUD_STATUSLINE:-$saved_statusline}" "1") || exit 1
-    hud_tree=$(parse_boolean_setting "CODEX_HUD_TREE" "${CODEX_HUD_TREE:-}" "1") || exit 1
+    hud_tree=$(parse_boolean_setting "CODEX_HUD_TREE" "${CODEX_HUD_TREE:-}" "0") || exit 1
 
     if [[ "$mouse_setting" == "1" ]]; then
         tmux set-option -t "$SESSION_NAME" mouse on
@@ -1016,6 +1075,9 @@ main() {
     local cwd
     cwd=$(get_cwd)
     
+    # Also clean up an attach-only bridge if this shell exits unexpectedly.
+    trap cleanup EXIT
+
     # Check for existing session
     if check_existing_session; then
         info "Attaching to existing session: $SESSION_NAME"
@@ -1038,12 +1100,9 @@ main() {
             fi
             return 0
         fi
-        tmux attach-session -t "$SESSION_NAME"
+        attach_session "$main_pane_id"
         return 0
     fi
-    
-    # Set up cleanup trap
-    trap cleanup EXIT
     
     # Create new session
     info "Starting Codex with HUD (session: $SESSION_NAME)..."
@@ -1062,7 +1121,7 @@ main() {
     if [[ -n "$main_pane_id" ]]; then
         tmux select-pane -t "$main_pane_id" 2>/dev/null || true
     fi
-    tmux attach-session -t "$SESSION_NAME"
+    attach_session "$main_pane_id"
 }
 
 # Show help
@@ -1096,7 +1155,7 @@ Environment Variables:
   CODEX_HUD_HEIGHT_MIN Minimum HUD height when auto-adjusting (default: CODEX_HUD_HEIGHT)
   CODEX_HUD_HEIGHT_MAX Maximum HUD height when auto-adjusting (default: 12)
   CODEX_HUD_STATUSLINE Bottom compact HUD pane: 1 on (default), 0 off
-  CODEX_HUD_TREE      Open the right-side tree pane on launch (default: 1)
+  CODEX_HUD_TREE      Open the right-side tree pane on launch (default: 0)
   CODEX_HUD_AUTO_ATTACH Auto-attach to latest existing session (default: 0)
   CODEX_HUD_NO_ATTACH Deprecated: force new session (overrides auto attach)
   CODEX_HUD_ALTERNATE_SCREEN Use alternate screen in codex pane (default: 0)

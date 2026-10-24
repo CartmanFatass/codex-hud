@@ -64,7 +64,8 @@ test('an agent\'s rollout gives its rate as the main session\'s is taken, readin
     // A report appended later: the rate runs on from what was read before.
     await grow(file, tokenCount(2800, t0 + 60_000), 5);
     const second = await readAgentTokens(file);
-    assert.equal(second.rate?.tokensPerSecond, 30, '1200 tokens in the 40 s since the window\'s baseline');
+    assert.equal(second.rate?.tokensPerSecond, 30, '1800 tokens over the full 60 s measured interval');
+    assert.equal(second.rate?.sampleMs, 60_000, 'no rolling window');
     assert.equal(second.rate?.sampledAt.getTime(), t0 + 60_000);
 
     // A new turn begins it afresh: the idle gap is not counted as slow writing.

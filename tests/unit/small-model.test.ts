@@ -219,20 +219,20 @@ test('off and invalid configuration do not call fetch or spend budget; HTTP, tra
   const model = new SmallModel({ env: {}, fetch: (async () => { calls++; return reply(); }) as typeof fetch });
   assert.ok(!(await model.submit(question).result).ok);
   model.configure({ backend: 'api', api: { ...api, base: 'invalid' } });
-  assert.deepEqual(await model.submit(question).result, { ok: false, error: 'api: invalid endpoint' });
+  assert.deepEqual(await model.submit(question).result, { ok: false, error: 'api: invalid endpoint', classification: 'invalid-response' });
   assert.equal(calls, 0); assert.equal(model.usage().lastHour, 0);
-  for (const [response, expected] of [
-    [new Response('{"error":{"message":"synthetic error"}}', { status: 429 }), 'api HTTP 429: synthetic error'],
-    [new Response('not JSON'), 'api: reply is not JSON'],
-    [new Response('{}'), 'api returned nothing'],
+  for (const [response, expected, classification] of [
+    [new Response('{"error":{"message":"synthetic error"}}', { status: 429 }), 'api HTTP 429: synthetic error', 'rate-limit'],
+    [new Response('not JSON'), 'api: reply is not JSON', 'invalid-response'],
+    [new Response('{}'), 'api returned nothing', 'invalid-response'],
   ] as const) {
     const failing = new SmallModel({ env: {}, fetch: (async () => response) as typeof fetch });
     failing.configure({ backend: 'api', api });
-    assert.deepEqual(await failing.submit(question).result, { ok: false, error: expected });
+    assert.deepEqual(await failing.submit(question).result, { ok: false, error: expected, classification });
   }
   const failing = new SmallModel({ env: {}, fetch: (async () => { throw new Error('synthetic connection error'); }) as typeof fetch });
   failing.configure({ backend: 'api', api });
-  assert.deepEqual(await failing.submit(question).result, { ok: false, error: 'api: synthetic connection error' });
+  assert.deepEqual(await failing.submit(question).result, { ok: false, error: 'api: synthetic connection error', classification: 'network' });
   await tick();
 });
 

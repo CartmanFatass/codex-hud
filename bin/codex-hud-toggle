@@ -127,7 +127,11 @@ resolve_click
 cwd_q=$(printf '%q' "$cwd")
 codex_home_q=$(printf '%q' "$codex_home")
 toggle_q=$(printf '%q' "$SCRIPT_DIR/codex-hud-toggle")
-session_q=$(printf '%q' "$session_name")
+# Key bindings target a stable tmux id ($N), but snapshots and bridge health
+# are published under the launcher's session name. Keep that identity in the
+# replacement panel too; the id is still used for tmux operations and locking.
+session_identity=$(tmux display-message -p -t "$session_name" '#{session_name}' 2>/dev/null | tr -d '\r\n') || session_identity=""
+session_q=$(printf '%q' "${session_identity:-$session_name}")
 
 # Non-HUD sessions have no main pane option; F12 pass-through should have
 # prevented this, but exit quietly if we still get here.

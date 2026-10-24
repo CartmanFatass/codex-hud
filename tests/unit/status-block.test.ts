@@ -78,6 +78,31 @@ test('the cache reminder shows only in the minutes before it lapses, as a warnin
   assert.equal(statusCard(data, at + 3 * 60_000)!.cache, '');
 });
 
+test('main TPS remains visible at panel widths and distinguishes old samples from live ones', () => {
+  const now = Date.parse('2026-03-01T12:00:00Z');
+  const data = makeHudData({
+    activity: { state: 'working', updatedAt: new Date(now), turnStartedAt: new Date(now - 5000) },
+    outputRate: { tokensPerSecond: 36.2, sampleMs: 4000, sampledAt: new Date(now - 1000) },
+  });
+  for (const lang of ['en', 'zh'] as const) {
+    const oldLang = setLanguage(lang);
+    try {
+      for (const glyphs of ['glyph', 'text'] as const) withGlyphs(glyphs, () => {
+        for (const age of [0, 20_000]) for (const width of [32, 40, 48, 56]) {
+          const c = statusCard(data, now + age)!;
+          const frame = renderMonitor({ tree, state: initialMonitorState(), width, height: 48, status: () => c });
+          const band = frame.lines[frame.statusCard!.y];
+          assert.match(plain(band), /~36 tok\/s/, `${lang}/${glyphs}/${width}/${age}: ${plain(band)}`);
+          assert.equal(visualLength(band), width);
+          if (age) assert.match(plain(c.rate), /last|上次/);
+        }
+      });
+      assert.match(plain(statusCard({ ...data, activity: { state: 'idle', updatedAt: new Date(now) } }, now)!.rate), /last|上次/);
+      assert.match(plain(statusCard({ ...data, activity: { state: 'working', updatedAt: new Date(now), turnStartedAt: new Date(now) } }, now)!.rate), /last|上次/);
+    } finally { setLanguage(oldLang); }
+  }
+});
+
 test('a meter is a thin line: the fill in its zone colour, the bold reading at its head, the track, the tail', () => {
   const meter = { percent: 50, tail: '246K' };
   const full = meterText(meter, 30);
