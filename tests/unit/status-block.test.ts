@@ -7,6 +7,9 @@ import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
 import { makeHudData } from '../fixtures/hud-data.js';
 import type { SubagentTree } from '../../src/types.js';
+import { useDisplayFixture } from '../fixtures/display.js';
+
+useDisplayFixture();
 
 const tree: SubagentTree = { rootId: 'root', nodes: [], totalCount: 0, updatedAt: new Date() };
 /** Running agents enough to fill a short panel. */

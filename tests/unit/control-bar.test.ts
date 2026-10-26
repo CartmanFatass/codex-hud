@@ -5,6 +5,9 @@ import { initialMonitorState, MONITOR_PANES, type MonitorState, type MonitorCont
 import { setDisplayConfig, LOOKS, type HudDisplayConfig } from '../../src/render/hud-config.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { stripAnsi, visualLength, truncateAnsi, theme, colors } from '../../src/render/colors.js';
+import { useDisplayFixture } from '../fixtures/display.js';
+
+useDisplayFixture();
 
 const state = (extra: Partial<MonitorState> = {}): MonitorState => ({ ...initialMonitorState(), ...extra });
 type Input = Parameters<typeof controlBar>[1];

@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-25",
+  "timezone": "America/Los_Angeles",
+  "baseCommit": "f92523e2c1341468b2e2abfeef7e62bdc5d90f15",
+  "runtime": {
+    "node": "24.22.1",
+    "tmux": "3.4",
+    "herdr": "0.9.5",
+    "codex": "0.164.0"
+  },
+  "scope": "Isolated new synthetic conversations with real Codex and native Herdr UI; no production panes driven.",
+  "prompt": "This is a synthetic terminal notification acceptance test. Do not use any tools, read files, or ask questions. Write the integers from 1 through 120 in order, separated by spaces, then end with HUD_ACCEPTANCE_DONE.",
+  "realTurns": [
+    {
+      "layout": "compact",
+      "session": {
+        "agent": "codex",
+        "kind": "id",
+        "source": "herdr:codex",
+        "value": "01a176be-06cc-7283-a4a8-c1e299915c6e"
+      },
+      "states": [
+        {
+          "at_s": 3.349,
+          "state": "unknown"
+        },
+        {
+          "at_s": 4.982,
+          "state": "working"
+        },
+        {
+          "at_s": 13.419,
+          "state": "done"
+        }
+      ],
+      "toast_observed": true,
+      "screen_contains_final_marker": true,
+      "observer": {
+        "mode": "native",
+        "observedState": "idle",
+        "nativeState": "done",
+        "stateMatches": true,
+        "updatedAtMs": 1792993538855
+      }
+    },
+    {
+      "layout": "panel",
+      "session": {
+        "agent": "codex",
+        "kind": "id",
+        "source": "herdr:codex",
+        "value": "01a176c0-7532-7a03-8d24-a79f30d673c0"
+      },
+      "states": [
+        {
+          "at_s": 3.129,
+          "state": "unknown"
+        },
+        {
+          "at_s": 4.984,
+          "state": "working"
+        },
+        {
+          "at_s": 11.621,
+          "state": "done"
+        }
+      ],
+      "toast_observed": true,
+      "screen_contains_final_marker": true,
+      "observer": {
+        "mode": "native",
+        "observedState": "idle",
+        "nativeState": "done",
+        "stateMatches": true,
+        "updatedAtMs": 1792993696951
+      }
+    }
+  ],
+  "panelCompletionRecords": [
+    {
+      "file": "rollout-2026-10-25T22-48-06-01a176c0-7532-7a03-8d24-a79f30d673c0.jsonl",
+      "timestamp": "2026-10-26T05:48:07.609Z",
+      "type": "task_started",
+      "final_marker": false
+    },
+    {
+      "file": "rollout-2026-10-25T22-48-06-01a176c0-7532-7a03-8d24-a79f30d673c0.jsonl",
+      "timestamp": "2026-10-26T05:48:16.039Z",
+      "type": "task_complete",
+      "final_marker": false
+    }
+  ],
+  "incompleteAttempt": {
+    "layout": "compact-to-panel",
+    "result": "not accepted",
+    "reason": "real Codex working state absent",
+    "observation": "Second prompt remained in the composer; no new working transition observed. No automatic resubmission.",
+    "followUp": "Separate panel session with bracketed paste and a separate Enter; one prompt submission."
+  },
+  "limitations": [
+    "No compact-turn rollout event retained; its evidence is native transitions, toast, observer readback and screen readback.",
+    "Screen final marker alone is not proof of an answer because the prompt contains the marker.",
+    "Desktop OS toast, sound, historical notification replay, full Herdr restart, and pre-existing production sessions were not accepted."
+  ],
+  "preservation": {
+    "distFiles": 428,
+    "distManifestSha256": "34723fc4afb79990cbb7280e2049a853261deebba3a34ea73584d6f8a42cbdbc",
+    "distChanged": false,
+    "preExistingProcessesChecked": 5,
+    "sameProcessIdsAndStartTimes": true,
+    "temporaryCredentialsRemoved": true
+  }
+}

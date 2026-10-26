@@ -8,6 +8,9 @@ import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js'
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import type { Recap } from '../../src/collectors/recap.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
+import { useDisplayFixture } from '../fixtures/display.js';
+
+useDisplayFixture();
 
 const now = Date.parse('2026-10-04T10:00:00Z');
 const id = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;

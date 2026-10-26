@@ -7,6 +7,9 @@ import { applyCardPreset, identifyCardPreset, CARD_PRESET_KEYS } from '../../src
 import { setLanguage, t } from '../../src/render/i18n.js';
 import { panelWidth } from '../../src/utils/pane-width.js';
 import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
+import { useDisplayFixture } from '../fixtures/display.js';
+
+useDisplayFixture();
 
 const FULL_HEIGHT = SETTING_ROWS.length+14;
 

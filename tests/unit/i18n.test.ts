@@ -11,6 +11,9 @@ import { Briefer, briefingCommand, briefSystemPrompt } from '../../src/collector
 import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
 import { stripAnsi, visualLength } from '../../src/render/colors.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
+import { useDisplayFixture } from '../fixtures/display.js';
+
+useDisplayFixture();
 
 const now = Date.parse('2026-10-01T10:00:00Z');
 const root = '00000000-0000-4000-8000-000000000001';

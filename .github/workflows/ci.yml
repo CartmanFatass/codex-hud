@@ -12,6 +12,9 @@ jobs:
       fail-fast: false
       matrix:
         node: [18, 20, 22]
+        no_color: ['', '1']
+    env:
+      NO_COLOR: ${{ matrix.no_color }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

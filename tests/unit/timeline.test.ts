@@ -21,6 +21,9 @@ import { stripAnsi, visualLength } from '../../src/render/colors.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import { makeHudData, makeSubagentTree, FIXED_NOW } from '../fixtures/hud-data.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
+import { useDisplayFixture } from '../fixtures/display.js';
+
+useDisplayFixture();
 
 const now = Date.parse('2026-10-01T10:00:00Z');
 const at = (seconds: number) => new Date(now + seconds * 1000);

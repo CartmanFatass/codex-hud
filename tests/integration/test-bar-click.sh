@@ -9,6 +9,9 @@
 #   - padding between fields still toggles, as the whole bar used to
 #   - a missing, empty or malformed state file falls back to toggling
 #
+# The snapshot is fixed test input. The panel process is a no-op: a live
+# renderer would overwrite the same snapshot with its empty bar segments.
+# Rendering and native mouse input are covered by the narrow-panel suite.
 # Requires a real tmux and a build (dist/utils/click-map.js); SKIPs otherwise.
 
 set -uo pipefail
@@ -29,8 +32,8 @@ if [[ ! -r "$REPO_DIR/dist/utils/click-map.js" ]]; then
   exit 77
 fi
 
-SOCKET="codex-hud-bar-click-test"
-t() { tmux -L "$SOCKET" "$@"; }
+SOCKET_DIR=$(mktemp -d)
+t() { tmux -S "$SOCKET_DIR/tmux.sock" "$@"; }
 
 PASS=0
 FAIL=0
@@ -44,11 +47,19 @@ FAKE_HOME=""
 cleanup() {
   t kill-server 2>/dev/null || true
   [[ -n "$FAKE_HOME" ]] && rm -rf "$FAKE_HOME"
+  rm -rf "$SOCKET_DIR"
 }
 trap cleanup EXIT
-t kill-server 2>/dev/null || true
 
 FAKE_HOME=$(mktemp -d)
+# Exercise the real toggle and click map, with one owner for the fixture.
+RUNTIME="$FAKE_HOME/runtime"
+mkdir -p "$RUNTIME/bin" "$RUNTIME/dist/utils"
+cp "$TOGGLE" "$RUNTIME/bin/codex-hud-toggle"
+cp "$REPO_DIR/dist/utils/click-map.js" "$RUNTIME/dist/utils/click-map.js"
+printf '{"type":"module"}\n' > "$RUNTIME/package.json"
+printf 'setInterval(() => {}, 1000);\n' > "$RUNTIME/dist/tree-page.js"
+TOGGLE="$RUNTIME/bin/codex-hud-toggle"
 get_opt() { t show-option -t "$1" -qv "$2" 2>/dev/null || true; }
 session_id() { t display-message -p -t "$1" '#{session_id}' 2>/dev/null | tr -d '\r\n'; }
 active_pane() { t display-message -p -t "$1" '#{pane_id}' 2>/dev/null | tr -d '\r\n'; }

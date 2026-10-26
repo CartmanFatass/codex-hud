@@ -755,7 +755,8 @@ npm run test:windows     # PowerShell entry points, with fake binaries
 ```
 
 **Continuous integration.** CI (`.github/workflows/ci.yml`) runs `npm test` on
-Node 18, 20 and 22, and the integration suite with tmux on Node 20.
+Node 18, 20 and 22 with both empty `NO_COLOR` and `NO_COLOR=1`, and the
+integration suite with tmux on Node 20.
 
 **Node before 22.** Node 18 and 20 have no `node:sqlite`, so on them daemon
 binding and the goal reader switch themselves off. Only the Node 22 CI job
@@ -774,6 +775,15 @@ runs them.
 - Read the output with `stripAnsi`, and loop over several widths.
 - Make temporary directories with `mkdtemp` and remove them in `finally`.
 - `setDisplayConfig` and `setLanguage` return the previous value; restore it in `finally`.
+- Colour-dependent suites call `useDisplayFixture` from `tests/fixtures/display.ts`:
+  each test starts with an explicit display and restores the previous one. Do not
+  remove `NO_COLOR` globally to make colour assertions pass. No-colour expectations
+  choose `theme: 'none'` explicitly; `narrow-modes.test.ts` also checks the real
+  environment override for saved settings and navigation at narrow widths.
+- `test-narrow-panel-real-tmux.sh` drives a private tmux client with actual mouse
+  input, reads the resulting screen, and checks modal return and input forwarding
+  at 32/40/48/56 columns, in EN/ZH and both colour modes. Its session fixtures use
+  the local date for the rollout directory, matching the session finder.
 
 **Visual regressions.** `tests/fixtures/visual-baselines.ts` creates fixed-time
 EN/ZH frames across five widths, five looks and three shared presets, plus

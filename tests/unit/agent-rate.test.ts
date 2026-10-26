@@ -8,6 +8,9 @@
  * is one line; the agent's own words and its sealed task's stand-in are the
  * Inspector's, uncut.
  */
+import { useDisplayFixture } from '../fixtures/display.js';
+
+useDisplayFixture();
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

@@ -195,7 +195,7 @@ Windows was not tested. Per-client command environment overrides still require
 a new/resumed Codex invocation; replacing an outer tmux client alone cannot
 rewrite the environment of a running Codex process.
 
-## Current production acceptance boundary
+## Production acceptance boundary (2026-10-24)
 
 On 2026-10-24 the controlled Jinjian outer-client migration preserved the
 main Codex process and native session reference, removed only the verified old
@@ -210,6 +210,18 @@ process was preserved. The cause of the outer pane disappearing was not verified
 completion in that outer pane has been observed. Controlled synthetic turns in
 both layouts validate the repaired notification path, but do not replace that
 remaining real-turn acceptance item.
+
+### Isolated natural completion acceptance (2026-10-25)
+
+New isolated sessions using real Codex 0.164.0 and Herdr 0.9.5 now establish
+natural completion in both compact and panel layouts: native `working → done`,
+a Herdr completion toast, and matching observer readback. The panel test kept
+focus on the HUD pane and retained actual `task_started` / `task_complete`
+record coordinates. It used a synthetic prompt and a private configuration,
+not either existing production conversation. A compact-to-panel attempt left
+the second prompt unsubmitted and is explicitly not counted as passing.
+See the [acceptance report](./acceptance-20261025.md) and its machine-readable
+receipt for evidence and the remaining desktop/audio/restart boundaries.
 
 ## Compatibility with already attached launchers
 

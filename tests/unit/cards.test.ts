@@ -15,6 +15,9 @@ import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.
 import { SETTING_ROWS } from '../../src/render/settings-page.js';
 import type { AgentLogEntry } from '../../src/collectors/agent-log.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
+import { useDisplayFixture } from '../fixtures/display.js';
+
+useDisplayFixture();
 
 const now = Date.parse('2026-10-04T10:00:00Z');
 const id = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
