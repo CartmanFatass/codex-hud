@@ -3,6 +3,20 @@ import assert from 'node:assert/strict';
 import { WorkbenchInputDecoder, type WorkbenchInput } from '../../src/utils/workbench-input.js';
 import { commandSequence } from '../../src/utils/panel-command.js';
 
+test('Escape before a prefix command or another Escape preserves both inputs', () => {
+  for (const split of [false, true]) {
+    const decoder = new WorkbenchInputDecoder('monitor', {forward:true});
+    if (split) assert.deepEqual(decoder.push(Buffer.from('\x1b')), []);
+    assert.deepEqual(decoder.push(Buffer.from((split ? '' : '\x1b') + commandSequence('activity'))), [
+      {type:'key',key:'escape',raw:'\x1b'}, {type:'command',command:'activity'},
+    ]);
+  }
+  const decoder = new WorkbenchInputDecoder('monitor', {forward:true});
+  assert.deepEqual([...decoder.push(Buffer.from('\x1b\x1b')), ...decoder.flushEscape()], [
+    {type:'key',key:'escape',raw:'\x1b'}, {type:'key',key:'escape',raw:'\x1b'},
+  ]);
+});
+
 test('both decoder profiles map Space and Enter to Inspector keys and have no e action', () => {
   for (const profile of ['monitor', 'workbench'] as const) {
     assert.deepEqual(new WorkbenchInputDecoder(profile).push(Buffer.from('e \r')), [

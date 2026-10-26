@@ -1,0 +1,90 @@
+{
+  "recordedAt": "2026-10-26T06:33:42.235171+00:00",
+  "base": "6617ded",
+  "branch": "codex/hud-observability",
+  "environment": {
+    "node": "24.22.1",
+    "tmux": "3.4",
+    "platform": "WSL Linux"
+  },
+  "tests": {
+    "typescript": {
+      "passed": 1009,
+      "failed": 0,
+      "modes": [
+        "NO_COLOR=1",
+        "NO_COLOR unset"
+      ]
+    },
+    "mjs": {
+      "passed": 47,
+      "failed": 0
+    },
+    "integration": {
+      "runner": {
+        "passed": 26,
+        "failed": 0,
+        "skipped": 1
+      },
+      "actualPassed": 25,
+      "notExecuted": [
+        "native Windows Git Bash",
+        "opt-in real Herdr"
+      ]
+    },
+    "newNativeViewportCases": 3
+  },
+  "preservation": {
+    "omp": {
+      "unchanged": true,
+      "files": 1
+    },
+    "dist": {
+      "unchanged": true,
+      "files": 428
+    },
+    "processes": {
+      "2436": {
+        "same_start": true
+      },
+      "401810": {
+        "same_start": true
+      },
+      "402532": {
+        "same_start": true
+      },
+      "405732": {
+        "same_start": true
+      },
+      "3708712": {
+        "same_start": true
+      }
+    }
+  },
+  "performance": "../tests/performance/results-adaptive-post-integrity-20261026.json",
+  "temporaryLogs": {
+    "tests": {
+      "path": "/tmp/hud-observability-final-tests.log",
+      "sha256": "0e9e824a5be2518c9a25eb900852c9447d618d050baa371ca8933ed5b26b07dd"
+    },
+    "color": {
+      "path": "/tmp/hud-observability-final-color.log",
+      "sha256": "6e0f6465e81ec1ca2a816c4235ae5bfa7e40bcaf9ac94ece2543e4540e5241b5"
+    },
+    "integration": {
+      "path": "/tmp/hud-observability-final-integration.log",
+      "sha256": "b5ed261a1903db48715dd497bd636814cc31ee847c6f3edff0ac7b7d92a02c41"
+    },
+    "preservation": {
+      "path": "/tmp/hud-observability-final-preservation.json",
+      "sha256": "689c69db9d7d2f40f0c7ccd48477a104f8da138b4b9b7857afbc308962ace98d"
+    }
+  },
+  "limits": [
+    "No production session restart or input",
+    "No new real-model calls",
+    "Synthetic tmux acceptance does not verify native emulator pixels or screen reader",
+    "History includes only observed retained state",
+    "Runtime identity hashes the entry file at startup only"
+  ]
+}

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { boundedTelemetry, cleanTelemetryRecord, type ModelTelemetryRecord } from './model-telemetry.js';
 
 export interface CachedModelReply { text: string; at: number }
 interface Owner { pid: number; start: string; host: string }
@@ -99,6 +100,33 @@ export class ModelRuntimeStore {
         await pause();
       }
     } finally { try { fs.unlinkSync(file); } catch { /* Failed before registration or already recovered. */ } }
+  }
+
+  /** Read only; telemetry corruption never changes call reservations or cache claims. */
+  telemetry(): ModelTelemetryRecord[] {
+    const file = path.join(this.dir, 'telemetry.json');
+    try { if (fs.statSync(file).size > 1_048_576) throw new Error('model telemetry unavailable'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    const value = read(file);
+    if (value === undefined) return [];
+    if (!Array.isArray(value)) throw new Error('model telemetry unavailable');
+    return value.map(row => {
+      const safe = cleanTelemetryRecord(row);
+      if (!safe) throw new Error('model telemetry unavailable');
+      return safe;
+    });
+  }
+
+  async recordTelemetry(record: ModelTelemetryRecord, now: number): Promise<void> {
+    await this.recordTelemetryBatch([record], now);
+  }
+
+  async recordTelemetryBatch(records: readonly ModelTelemetryRecord[], now: number): Promise<void> {
+    await this.transaction(() => {
+      const safe = records.flatMap(record => { const row = cleanTelemetryRecord(record); return row ? [row] : []; });
+      if (!safe.length) return;
+      atomicWrite(path.join(this.dir, 'telemetry.json'), boundedTelemetry([...this.telemetry(), ...safe], now));
+    });
   }
 
   calls(): number[] {

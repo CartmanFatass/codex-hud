@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { SmallModel } from '../../src/collectors/small-model.js';
 import { ModelProbe } from '../../src/collectors/model-probe.js';
 import { defaultSettings } from '../../src/settings.js';
 import { renderSettingsPage, handleSettingsInput, SETTING_ROWS } from '../../src/render/settings-page.js';
@@ -54,4 +58,27 @@ test('settings exposes a mouse and keyboard test action and keeps failure reason
   assert.equal(handleSettingsInput(state, { type: 'key', key: 'next-tab' }, frame).action, 'test-api');
   assert.equal(handleSettingsInput(state, { type: 'mouse', button: 'left', x: 1, y: frame.probeAction!.y }, frame).action, 'test-api');
   assert.match(frame.lines.map(stripAnsi).join('\n'), /Authentication failed/);
+});
+
+
+test('synthetic probes have their own shared telemetry category without changing route payloads', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-probe-telemetry-'));
+  const bodies: Array<Record<string, unknown>> = [];
+  const probe = new ModelProbe({ dir, env: {}, fetch: (async (_url, options) => {
+    bodies.push(JSON.parse(String(options?.body)));
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'OK' } }] }));
+  }) as typeof fetch });
+  try {
+    await probe.run(settings());
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.deepEqual(bodies.map(body => body.model), ['fixture-none', 'fixture-low', 'fixture-high']);
+    assert.ok(bodies.every(body => !('telemetryFeature' in body) && !('feature' in body)));
+    const model = new SmallModel({ dir, env: {} });
+    const summary = model.telemetry();
+    assert.equal(summary.features.length, 1);
+    assert.equal(summary.features[0].feature, 'probe');
+    assert.equal(summary.features[0].requests, 3); assert.equal(summary.features[0].successes, 3);
+    assert.equal(model.usage().lastHour, 3, 'synthetic tests retain the existing shared call budget');
+    assert.ok(!JSON.stringify(summary).includes('synthetic-only-key'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

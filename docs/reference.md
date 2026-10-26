@@ -101,10 +101,13 @@ Selection follows agent IDs and file paths across refreshes, and every pane reta
 
 ### Keys
 
-Every key below follows the prefix: `Ctrl+]`, then the key (or the prefix chosen in Settings). Typed without it, a key goes to Codex.
+Every key below follows the prefix: `Ctrl+]`, then the key (or the prefix chosen in Settings). Outside settings, help, activity and evidence modals, a key typed without it goes to Codex.
 
 | `Ctrl+]`, then | Action |
 |-----|--------|
+| `u` | Activity hub: inbox, since viewed, find, history |
+| `p` | Find agents by name, role or path; pin selected agents |
+| `c` | Evidence sources, model-call dashboard, diagnostic preview/export |
 | `,` / `?` | Open settings / the help (also the Settings tab and `?` button); arrows, Enter and click change values, Save applies them |
 | `Tab` / `Shift+Tab` | Cycle pane focus (in the tabs layout, show the next or the previous pane) |
 | `1`–`4` | Open and focus a pane, or close it if it is open: `1` Agents (the cards in rich), `2` Timeline, `3` Changes, `4` Inspector; in the tabs layout, show it; so does a click on its tab |
@@ -131,6 +134,25 @@ Every key below follows the prefix: `Ctrl+]`, then the key (or the prefix chosen
 | Click a card (rich) | Select it, without expanding or collapsing. A second click on the name within 400 ms switches (underlined when the Codex pane is at least 63 columns). A child line selects that child. Enter, Space, `v` or `◫` opens the Inspector |
 | Click an agent (compact) | Open the Inspector; a second click within 400 ms switches |
 | Click a blank row, or the gutter | Keep the next keys in the panel until Esc |
+
+### Local activity and evidence
+
+`Ctrl+] u` opens a modal with four tabs. Tab/left/right change tabs, arrows/wheel select rows, Enter inspects a current agent, and Escape returns. Historical agents absent from the current tree are not used as live navigation targets.
+
+- **Inbox:** observed approvals, failures and readback/collection problems. Mark read (`r`), snooze ten minutes (`s`), pin (`p`), or use the named buttons. Read is not resolved: recovery requires successful evidence from the corresponding source. This does not add another desktop notification channel.
+- **Since viewed:** unacknowledged completion/failure, observed Git-state changes and stored model-summary changes. `v` / Mark viewed acknowledges only the visible events; opening or closing the modal does not discard unseen events. Git file state is collected on demand while this tab or Changes is open; unavailable/stale state is labelled. This is not a complete between-times Git diff.
+- **Find:** filter name, role or agent path, including Unicode and pasted text. Ordinary letters are query text while editing; Ctrl+P or the Pin button pins the selection, Ctrl+F returns to query editing. Pins are scoped to the root session. Normal input forwarding resumes when the modal closes.
+- **History:** bounded observed state snapshots and their retained events, explicitly labelled historical. It does not record the conversation, restore the terminal or rerun tasks.
+
+The private atomic journal under `$CODEX_HOME/hud/activity/` is scoped by root session and bounded to 500 events, 48 snapshots, 200 agents/pins, 30 days and 4 MiB serialized. It retains only necessary status, bounded paths and already generated model summaries, not raw tasks, conversation, commands or reasoning. Bar and panel both observe; concurrent panels merge changes. A contended/unwritable store remains visibly pending for a later flush. Time without a running HUD is not reconstructed.
+
+`Ctrl+] c` explains main/selected-agent evidence, timestamps, estimated TPS and Herdr readback/conflicts. The status-band TPS is clickable; `Ctrl+] d` retains the Inspector diagnostics with a Sources/Calls/Export entry. Unknown data remains unknown, and lifecycle completion does not verify work quality.
+
+The Calls tab groups locally observed requests, cache hits, successes, failures, cancellations, limits and mean dispatch-to-settlement duration by feature, including connection probes. Retention is 24 hours / 1000 records. Requests include cached consumers and refusals, not just provider calls; durations exclude queue time. Other panels' pending work and older/pre-instrumentation calls are unavailable. Unknown tokens and dollar cost are not estimated as billing.
+
+Export shows a fixed full JSON preview first. Save report / `s` writes those exact bytes to a new 0600 file under `$CODEX_HOME/hud/diagnostics/`. It excludes credentials, endpoints, identifiers, file paths and source/summary text. Versions, platform and a startup entry-file hash identify only the entry observed at process start, not the whole build or current Git checkout.
+
+Repeated positively idle, unchanged observations gradually reduce collection to at most five seconds (an already slower configured cadence is preserved). Activity, uncertainty, failure, input or source change restores normal polling. Redraw/input remain independent. Large scans yield between chunks; individual JSON parsing remains synchronous. Poll cadence is not a model or notification delivery guarantee.
 
 ### Switching sessions
 

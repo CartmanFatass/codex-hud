@@ -64,7 +64,12 @@ function proseLines(text: string, width: number, limit?: number): string[] {
 export function inspectorRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
   // Inspector is explicitly opened (Enter/v/4), never follows agent clicks into a transcript.
   let lines: string[] = [];
-  if (state.preview === 'diagnostics') return diagnosticLines(input.hud, width, now).map(text => ({ text }));
+  if (state.preview === 'diagnostics') {
+    const label = truncateAnsi(t('[Sources · Calls · Export]'), width);
+    return [{text:theme.accent(label),controls:[{kind:'observability',x:0,width:visualLength(label)}]},
+      ...diagnosticLines(input.hud, width, now,
+        {tree:input.tree,selectedId:state.tree.selectedId ?? undefined}).map(text => ({ text }))];
+  }
   if (state.preview === 'agent') {
     const node = findNode(input.tree.nodes,state.tree.selectedId);
     if (!node) lines = [];

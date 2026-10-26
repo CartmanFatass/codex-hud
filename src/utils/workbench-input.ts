@@ -96,6 +96,13 @@ export class WorkbenchInputDecoder {
         key(name, ch);
         continue;
       }
+      // A second Escape can begin a prefix command or an arrow sequence.
+      // Keep the first as Escape instead of swallowing the next sequence as Alt+Esc.
+      if (this.pending.startsWith('\x1b\x1b')) {
+        this.pending = this.pending.slice(1);
+        key('escape', '\x1b');
+        continue;
+      }
       const command = this.command();
       if (command === 'wait') break;
       if (command) {

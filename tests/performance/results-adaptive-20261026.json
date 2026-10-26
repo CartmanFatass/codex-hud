@@ -1,0 +1,135 @@
+{
+  "measuredAt": "2026-10-26T06:12:16.733Z",
+  "node": "v24.22.1",
+  "platform": "linux",
+  "arch": "x64",
+  "boundary": "Synthetic cached-filesystem run; queued callback and timer delay, not native terminal input. Individual JSON parsing, first-line peeks, listing and cache writes remain synchronous. No universal throughput or latency claim.",
+  "cases": [
+    {
+      "name": "many-records",
+      "fileBytes": 44120323,
+      "rounds": [
+        {
+          "sync": {
+            "wallMs": 77.90624600000001,
+            "cpuMs": 90.763,
+            "inputDelayMs": 78.37062700000001,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 78.06523000000001,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 56.99861199999998,
+            "cpuMs": 70.043,
+            "inputDelayMs": 4.337812999999983,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 8.519546999999989,
+            "timerCallbacks": 14
+          },
+          "identicalTree": true
+        },
+        {
+          "sync": {
+            "wallMs": 51.11672100000004,
+            "cpuMs": 58.976,
+            "inputDelayMs": 51.36195600000002,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 51.411006999999984,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 50.584047999999996,
+            "cpuMs": 61.208,
+            "inputDelayMs": 4.13830200000001,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 8.25696499999998,
+            "timerCallbacks": 12
+          },
+          "identicalTree": true
+        },
+        {
+          "sync": {
+            "wallMs": 46.322202000000004,
+            "cpuMs": 47.059,
+            "inputDelayMs": 46.59046000000001,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 46.67001799999997,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 48.14245600000004,
+            "cpuMs": 49.951,
+            "inputDelayMs": 4.092318000000034,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 8.454957999999976,
+            "timerCallbacks": 12
+          },
+          "identicalTree": true
+        }
+      ]
+    },
+    {
+      "name": "large-record",
+      "fileBytes": 27660402,
+      "rounds": [
+        {
+          "sync": {
+            "wallMs": 52.06703499999992,
+            "cpuMs": 59.001,
+            "inputDelayMs": 52.30215099999998,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 52.35713200000009,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 51.29058399999997,
+            "cpuMs": 62.799,
+            "inputDelayMs": 4.117520000000013,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 13.393404000000032,
+            "timerCallbacks": 10
+          },
+          "identicalTree": true
+        },
+        {
+          "sync": {
+            "wallMs": 40.95288900000003,
+            "cpuMs": 42.041,
+            "inputDelayMs": 41.026906000000054,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 41.08113700000001,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 44.30334899999991,
+            "cpuMs": 44.698,
+            "inputDelayMs": 4.097607999999923,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 10.373715999999945,
+            "timerCallbacks": 9
+          },
+          "identicalTree": true
+        },
+        {
+          "sync": {
+            "wallMs": 37.556317000000035,
+            "cpuMs": 37.898,
+            "inputDelayMs": 37.60971600000005,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 37.642949000000044,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 42.17173099999991,
+            "cpuMs": 42.316,
+            "inputDelayMs": 4.0983289999999215,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 11.338002999999958,
+            "timerCallbacks": 9
+          },
+          "identicalTree": true
+        }
+      ]
+    }
+  ]
+}

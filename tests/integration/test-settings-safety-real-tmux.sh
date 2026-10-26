@@ -11,8 +11,10 @@ trap cleanup EXIT
 printf '%s\n' '{"language":"en","briefing":"off","briefingApiBase":"http://synthetic.invalid/v1","briefingApiKey":"synthetic-only","modelCallsPerHour":240}' > "$dir/settings.json"
 chmod 600 "$dir/settings.json"
 main=$(t new-session -d -s safety -x 188 -y 40 -P -F '#{pane_id}' 'sleep 120')
+# This case clicks an inactive Changes tab, which the no-colour layout omits.
+# The no-colour modal flows have their own narrow-panel acceptance matrix.
 panel=$(t split-window -h -l 48 -t "$main" -d -P -F '#{pane_id}' \
-  "env LC_ALL=C.UTF-8 CODEX_HOME='$dir' CODEX_HUD_SETTINGS_PATH='$dir/settings.json' CODEX_HUD_CWD='$dir' CODEX_HUD_MAIN_PANE='$main' node '$repo/dist/tree-page.js'")
+  "env NO_COLOR= LC_ALL=C.UTF-8 CODEX_HOME='$dir' CODEX_HUD_SETTINGS_PATH='$dir/settings.json' CODEX_HUD_CWD='$dir' CODEX_HUD_MAIN_PANE='$main' node '$repo/dist/tree-page.js'")
 command_panel() {
   # shellcheck disable=SC2046 # one word per byte
   t send-keys -t "$panel" -H $(printf '%s' $'\e_codex-hud:'"$1"$'\e\\' | od -An -v -tx1)

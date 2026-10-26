@@ -55,7 +55,7 @@ export class ModelProbe {
       if (generation !== this.generation) return;
       const start = Date.now();
       this.value.rows[i].status = 'running'; this.onChange();
-      const handle = this.handle = model.submit({ ...question, feature: ROUTES[i].feature });
+      const handle = this.handle = model.submit({ ...question, feature: ROUTES[i].feature, telemetryFeature: 'probe' });
       const result: ModelResult = await handle.result;
       if (generation !== this.generation) return;
       this.value.rows[i] = { ...this.value.rows[i], status: result.ok ? 'ok' : result.cancelled ? 'cancelled' : 'failed',

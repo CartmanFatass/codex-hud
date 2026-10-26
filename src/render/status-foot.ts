@@ -183,6 +183,18 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
   // A click anywhere on the band steps the level.
   const band = (frame: MonitorFrame, y: number, line: string) => {
     frame.lines[y] = framed ? line : theme.band(line);
+    // The observed rate opens its evidence; the rest of the band keeps its level action.
+    const rate = stripAnsi(card?.rate ?? '').trim();
+    const plain = stripAnsi(line);
+    const start = input.hud && rate ? plain.indexOf(rate) : -1;
+    if (start >= 0) {
+      const x = visualLength(plain.slice(0,start));
+      const size = visualLength(rate);
+      if (x > 0) frame.controls.push({kind:'level',x:0,y,width:x});
+      frame.controls.push({kind:'observability',x,y,width:size});
+      if (x+size < width) frame.controls.push({kind:'level',x:x+size,y,width:width-x-size});
+      return;
+    }
     frame.controls.push({ kind: 'level', x: 0, y, width });
   };
   // The band's ends: a column of band each side, or the frame's edge.

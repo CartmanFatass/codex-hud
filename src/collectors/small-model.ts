@@ -29,6 +29,7 @@ import * as path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { t } from '../render/i18n.js';
 import { ModelRuntimeStore } from './model-runtime-store.js';
+import { boundedTelemetry, summarizeModelTelemetry, telemetryFeature, telemetryFailure, TELEMETRY_RECORD_LIMIT, type ModelTelemetryRecord, type ModelTelemetrySummary, type TelemetryFeature } from './model-telemetry.js';
 
 export type ModelBackend = 'off' | 'agy' | 'api';
 /** Thinking levels; agy and `api` take the subset they know. */
@@ -51,6 +52,8 @@ export interface ModelApi {
 export interface ModelRequest {
   /** Who is asking; selects an API model route, but is never sent. */
   feature: string;
+  /** Optional allowlisted accounting group; never affects routing, payload or cache identity. */
+  telemetryFeature?: TelemetryFeature;
   system: string;
   prompt: string;
   /** Defaults to `low`, what every feature used before levels were a choice. */
@@ -71,6 +74,11 @@ export interface ModelRequest {
 
 export type ModelPriority = 'interactive' | 'visible' | 'background';
 export type ModelFailureClassification = 'auth' | 'model-not-found' | 'rate-limit' | 'timeout' | 'network' | 'server' | 'invalid-response' | 'output-limit';
+const FAILURE_LABELS: Record<ModelFailureClassification, string> = {
+  auth: 'Authentication failed', 'model-not-found': 'Model not found', 'rate-limit': 'Rate limited',
+  timeout: 'Request timed out', network: 'Connection failed', server: 'Service unavailable',
+  'invalid-response': 'Invalid response', 'output-limit': 'Output limit reached',
+};
 
 export interface ModelDiagnostics {
   queued: number;
@@ -206,11 +214,6 @@ export function cleanOutput(raw: string): string {
     .filter((line, i, all) => line || (i > 0 && all[i - 1])).join('\n').trim();
 }
 
-function clip(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
-}
-
 /**
  * The cache key of a request: everything that shapes the answer, so a
  * changed prompt, instruction or level is a different question.
@@ -287,6 +290,7 @@ interface Job {
   order: number;
   retryAt?: number;
   startedAt?: number;
+  dispatchedAt?: number;
   id: string;
   listeners: Set<() => void>;
   /** Stops a running job; set while it runs. */
@@ -317,13 +321,20 @@ export class SmallModel {
   private lastSuccessAt?: number;
   private lastFailure?: ModelDiagnostics['lastFailure'];
   private readonly store: ModelRuntimeStore | null;
+  private readonly telemetryStore: ModelRuntimeStore | null;
   private readonly dir: string | null;
   private readonly clock: () => number;
+  private telemetryRecords: ModelTelemetryRecord[] = [];
+  private telemetryWrites: Promise<void> = Promise.resolve();
+  private telemetrySaving = false;
+  private readonly telemetryDirty = new Map<string, ModelTelemetryRecord>();
+  private telemetryUnavailable = false;
 
   constructor(private readonly options: SmallModelOptions = {}) {
     this.dir = options.dir ?? null;
     this.clock = options.clock ?? Date.now;
     this.store = this.dir ? new ModelRuntimeStore(this.dir) : null;
+    this.telemetryStore = this.dir ? new ModelRuntimeStore(path.join(this.dir, 'telemetry')) : null;
   }
 
   configure(patch: { backend?: ModelBackend; api?: ModelApi; hourlyCap?: number }): void {
@@ -347,6 +358,57 @@ export class SmallModel {
       ...(this.lastFailure ? { lastFailure: { ...this.lastFailure } } : {}) };
   }
 
+  /**
+   * Local read-only disk sampling when dir is configured; never sends a request.
+   * Shared settled records plus this instance's pending work, within 24h/1000
+   * records. Other panels' in-flight work and pre-instrumentation calls are unknown.
+   * Cache hits count local consumers, not provider calls. Durations exclude queue
+   * time; they measure dispatch to public settlement (including cancellation).
+   */
+  telemetry(now: number = this.clock()): ModelTelemetrySummary {
+    let shared: ModelTelemetryRecord[] = [];
+    if (this.telemetryStore) {
+      try { shared = this.telemetryStore.telemetry(); } catch { this.telemetryUnavailable = true; }
+    }
+    return summarizeModelTelemetry([...shared, ...this.telemetryRecords], now,
+      !this.store ? 'memory' : this.telemetryUnavailable ? 'unavailable' : this.telemetrySaving ? 'pending' : 'shared');
+  }
+
+  /** Optional shutdown/test barrier; never sends model traffic or retries failures. */
+  async flushTelemetry(): Promise<void> {
+    do { await this.telemetryWrites; } while (this.telemetrySaving);
+  }
+
+  private recordTelemetry(job: Job, result?: ModelResult): void {
+    const now = this.clock();
+    const outcome = !result ? 'pending' : result.ok ? result.cached ? 'cache' : 'success'
+      : result.cancelled ? 'cancelled' : result.reason === 'hourly-cap' ? 'limited'
+      : result.refused ? 'refused' : 'failure';
+    const record: ModelTelemetryRecord = { id: job.id, feature: telemetryFeature(job.request.telemetryFeature ?? job.request.feature), at: job.queuedAt,
+      outcome, durationMs: result && job.dispatchedAt !== undefined && now >= job.dispatchedAt ? now - job.dispatchedAt : null,
+      failure: result && !result.ok && !result.cancelled ? telemetryFailure(result.classification ?? result.reason) : null };
+    this.telemetryRecords = boundedTelemetry([...this.telemetryRecords, record], now);
+    // Accounting must never delay settlement, change request ordering or cause a retry.
+    if (this.telemetryStore && result) {
+      this.telemetryDirty.set(record.id, record);
+      while (this.telemetryDirty.size > TELEMETRY_RECORD_LIMIT) this.telemetryDirty.delete(this.telemetryDirty.keys().next().value!);
+      if (!this.telemetrySaving) {
+        this.telemetrySaving = true;
+        // Coalesce a burst into bounded batches; no unbounded promise chain.
+        this.telemetryWrites = Promise.resolve().then(async () => {
+          try {
+            while (this.telemetryDirty.size) {
+              const records = [...this.telemetryDirty.values()];
+              this.telemetryDirty.clear();
+              try { await this.telemetryStore!.recordTelemetryBatch(records, this.clock()); }
+              catch { this.telemetryUnavailable = true; }
+            }
+          } finally { this.telemetrySaving = false; }
+        });
+      }
+    }
+  }
+
   private changed(): void {
     try { this.options.onChange?.(); } catch { /* Observers cannot strand work. */ }
   }
@@ -367,9 +429,10 @@ export class SmallModel {
     let job!: Job;
     const result = new Promise<ModelResult>(resolve => {
       job = { request, backend, http, command, digest, id: randomUUID(), queuedAt: this.clock(), order: this.nextOrder++, settled: false, status: 'queued', listeners: new Set(), resolve: value => {
-        if (!job.settled) { job.settled = true; this.setStatus(job, 'settled'); resolve(value); }
+        if (!job.settled) { job.settled = true; this.recordTelemetry(job, value); this.setStatus(job, 'settled'); resolve(value); }
       } };
     });
+    this.recordTelemetry(job);
     this.reloadCache();
     const hit = digest ? this.cache.get(digest) : undefined;
     if (backend === 'off') {
@@ -517,6 +580,7 @@ export class SmallModel {
       this.calls.push(now);
     }
     let outcome: ModelResult;
+    job.dispatchedAt = this.clock();
     try {
       outcome = await (backend === 'api'
         ? this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>)
@@ -539,8 +603,8 @@ export class SmallModel {
       let child: ChildProcess;
       try {
         child = spawn(file, args, { cwd: os.tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] });
-      } catch (error) {
-        resolve({ ok: false, error: `${file}: ${String(error)}` });
+      } catch {
+        resolve({ ok: false, error: `${file}: connection failed`, classification: 'network' });
         return;
       }
       let killTimer: ReturnType<typeof setTimeout> | undefined;
@@ -550,9 +614,8 @@ export class SmallModel {
       };
       job.stop = stop;
       let out = '';
-      let err = '';
       child.stdout?.on('data', (chunk: Buffer) => { if (out.length < MAX_OUTPUT_BYTES) out += chunk.toString('utf8'); });
-      child.stderr?.on('data', (chunk: Buffer) => { if (err.length < MAX_OUTPUT_BYTES) err += chunk.toString('utf8'); });
+      child.stderr?.resume();
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs(job.request));
       let settled = false;
@@ -564,9 +627,9 @@ export class SmallModel {
         const text = cleanOutput(out);
         resolve(!timedOut && message === null && text ? { ok: true, text } : { ok: false, error: timedOut ? `${file} timed out` : message ?? `${file} returned nothing`, classification: timedOut ? 'timeout' : message === null ? 'invalid-response' : 'network' });
       };
-      child.on('error', error => done((error as NodeJS.ErrnoException).code === 'ENOENT' ? `${file} not found` : `${file}: ${error.message}`));
+      child.on('error', error => done((error as NodeJS.ErrnoException).code === 'ENOENT' ? `${file} not found` : `${file}: connection failed`));
       child.on('close', (code, signal) => done(code === 0 ? null
-        : signal ? `${file} stopped (${signal})` : `${file} exit ${code}: ${cleanOutput(err).split('\n').at(-1) ?? ''}`.trim()));
+        : signal ? `${file} stopped (${signal})` : `${file} exit ${code}`));
     });
   }
 
@@ -575,8 +638,6 @@ export class SmallModel {
     job.stop = () => abort.abort();
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; abort.abort(); }, timeoutMs(job.request));
-    const secret = headers.authorization?.replace(/^Bearer /, '') ?? '';
-    const redact = (message: string) => secret ? message.split(secret).join('[redacted]') : message;
     try {
       // Do not forward credentials or session material through endpoint redirects.
       const response = await (this.options.fetch ?? fetch)(url, { method: 'POST', headers, body, signal: abort.signal, redirect: 'error' });
@@ -585,16 +646,16 @@ export class SmallModel {
       let json: unknown = null;
       try { json = JSON.parse(raw); } catch { /* reported below */ }
       if (!response.ok) {
-        const detail = (json as { error?: { message?: unknown } } | null)?.error?.message;
-        return { ok: false, error: `api HTTP ${response.status}${typeof detail === 'string' ? `: ${clip(redact(detail), 120)}` : ''}`, classification: httpClassification(response.status, json) };
+        const classification = httpClassification(response.status, json);
+        return { ok: false, error: `api HTTP ${response.status}: ${t(FAILURE_LABELS[classification])}`, classification };
       }
       const text = cleanOutput(completionText(json) ?? '');
       if (!text && (json as { choices?: Array<{ finish_reason?: unknown }> } | null)?.choices?.[0]?.finish_reason === 'length') {
         return { ok: false, error: 'api output limit reached', classification: 'output-limit' };
       }
       return text ? { ok: true, text } : { ok: false, error: json === null ? 'api: reply is not JSON' : 'api returned nothing', classification: 'invalid-response' };
-    } catch (error) {
-      return { ok: false, error: abort.signal.aborted ? 'api stopped' : `api: ${clip(redact(String((error as Error)?.message ?? error)), 120)}`, classification: timedOut ? 'timeout' : 'network' };
+    } catch {
+      return { ok: false, error: abort.signal.aborted ? 'api stopped' : 'api: connection failed', classification: timedOut ? 'timeout' : 'network' };
     } finally {
       clearTimeout(timer);
     }

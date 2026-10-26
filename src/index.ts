@@ -6,7 +6,7 @@
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getHudHome } from './utils/codex-path.js';
+import { getHudHome, getCodexHome } from './utils/codex-path.js';
 import { spawn } from 'child_process';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
@@ -16,6 +16,10 @@ import { TreeScanStore } from './collectors/tree-scan-store.js';
 import { RolloutParser } from './collectors/rollout.js';
 import { createParseQueue } from './utils/parse-queue.js';
 import { fileSignature } from './utils/file-signature.js';
+import { createAdaptivePollState, adaptivePollDue, forceAdaptivePoll, recordAdaptivePoll } from './collectors/adaptive-poll.js';
+import { collectionObservation } from './utils/collection-observation.js';
+import { ActivityJournal } from './collectors/activity-journal.js';
+import { scopedActivityObservation } from './utils/activity-observation.js';
 import { tmuxFocusPaneArgs, tmuxForwardKeyArgs } from './utils/hud-input.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer, currentStatusBar } from './render/index.js';
@@ -28,6 +32,9 @@ import type { HudData } from './types.js';
 
 // Refresh interval in milliseconds
 const REFRESH_INTERVAL = 1000;
+let adaptive = createAdaptivePollState(REFRESH_INTERVAL);
+let collectionEpoch = 0;
+const wakeCollection = () => { adaptive = forceAdaptivePoll(adaptive); collectionEpoch++; };
 
 // Current working directory for the HUD
 const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
@@ -53,6 +60,7 @@ let isRunning = true;
 
 // Phase 2: Session and rollout tracking
 const sessionFinder = new SessionFinder(HUD_CWD_REAL, (session) => {
+  wakeCollection();
   // When session changes, update rollout path
   resetRolloutSignature();
   if (session) {
@@ -80,6 +88,8 @@ const paneRuntimeStateCollector =
 
 // Cached data that gets updated by watchers
 let cachedHudData: HudData | null = null;
+let journal: ActivityJournal | undefined;
+let journalRoot = '';
 let configNeedsRefresh = false;
 const parseRolloutSafely = createParseQueue(() => rolloutParser.parse());
 
@@ -178,8 +188,17 @@ async function mainLoop(): Promise<void> {
   }
 
   await timeAsync('tick', async () => {
+    const scopeKey = sessionFinder.getCurrentSession()?.sessionId ?? '';
+    if (!adaptivePollDue(adaptive, scopeKey, Date.now())) { repaintCached(); return; }
+    const epoch = collectionEpoch;
     try {
       const data = await collectData();
+      const rootId = data.session?.id ?? data.subagentTree?.rootId ?? '';
+      if (rootId !== journalRoot) {
+        journal?.flush(); journalRoot = rootId;
+        journal = rootId ? new ActivityJournal({codexHome:getCodexHome(),rootId}) : undefined;
+      }
+      journal?.observe(scopedActivityObservation(rootId,rootId,{tree:data.subagentTree,data}));
       renderToStdout(data, HUD_PANE_HEIGHT);
       // Notifications and the state file run on the collection tick, not on
       // the repaint a status refresh triggers.
@@ -189,7 +208,12 @@ async function mainLoop(): Promise<void> {
       } catch {
         // A state file nobody can write is not a reason to stop drawing.
       }
+      if (epoch === collectionEpoch) adaptive = recordAdaptivePoll(adaptive, {
+        scopeKey: data.session?.id ?? '', nowMs: Date.now(), ...collectionObservation(data, data.subagentTree),
+        succeeded: !data.stale && data.health?.sessionBound === true,
+      });
     } catch (error) {
+      wakeCollection();
       hudStatus.health.fail('status', error);
       console.error('Render error:', error);
     }
@@ -218,6 +242,7 @@ function shutdown(): void {
 
   // A snapshot of a HUD that is no longer running would read as live.
   snapshotWriter.remove();
+  journal?.flush();
   flushTreeScans();
   stopProfiling();
   // Clean up watchers
@@ -241,6 +266,7 @@ function spawnTmux(args: string[]): void {
 }
 
 function bounceKeysToCodex(data: Buffer): void {
+  wakeCollection();
   const mainPane = process.env.CODEX_HUD_MAIN_PANE;
   if (!mainPane) {
     return;
@@ -282,10 +308,12 @@ async function main(): Promise<void> {
 
   // Set up file watchers
   hudFileWatcher.onConfigChange(() => {
+    wakeCollection();
     configNeedsRefresh = true;
   });
 
   hudFileWatcher.onRolloutChange(() => {
+    wakeCollection();
     try {
       const session = sessionFinder.check();
       if (session) void parseRolloutIfChanged(session.path).catch(() => {});

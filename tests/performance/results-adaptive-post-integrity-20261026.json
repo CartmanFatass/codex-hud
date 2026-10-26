@@ -1,0 +1,144 @@
+{
+  "measuredAt": "2026-10-26T06:26:19.064Z",
+  "node": "v24.22.1",
+  "platform": "linux",
+  "arch": "x64",
+  "sourceHashes": {
+    "src/collectors/subagent-tree.ts": "2e4ea33ec8c57dff2e504bb4f1fb67446dd8c2e7e6c84b900007b13d70dff9c9",
+    "src/collectors/adaptive-poll.ts": "17b843d1082f56565ccad4d906d30a120f34a89da645067686e95bfc813359f0",
+    "tests/performance/adaptive-scan.mjs": "8804dcd9698e557c5c635ebf7dbb039b0c3f53a9444dc4cfc826ccda7caa4a4f"
+  },
+  "compiledHashes": {
+    "collectors/subagent-tree.js": "8f37b5333f0808ac940dcb96c963e629856a920e6d0e82e5ec6e3c4da52885e7",
+    "collectors/adaptive-poll.js": "496c74aa1408417f2e7761374d0207045a1187d2594f7cb69dddbb32d1cac901"
+  },
+  "boundary": "Synthetic cached-filesystem run; queued callback and timer delay, not native terminal input. Individual JSON parsing, first-line peeks, listing and cache writes remain synchronous. No universal throughput or latency claim.",
+  "cases": [
+    {
+      "name": "many-records",
+      "fileBytes": 44120323,
+      "rounds": [
+        {
+          "sync": {
+            "wallMs": 120.47573,
+            "cpuMs": 145.006,
+            "inputDelayMs": 120.726515,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 120.687603,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 75.81330300000002,
+            "cpuMs": 91.135,
+            "inputDelayMs": 4.155655000000024,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 8.24206300000003,
+            "timerCallbacks": 18
+          },
+          "identicalTree": true
+        },
+        {
+          "sync": {
+            "wallMs": 86.27330899999998,
+            "cpuMs": 90.109,
+            "inputDelayMs": 86.31845299999998,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 86.36868599999997,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 69.11501200000004,
+            "cpuMs": 71.032,
+            "inputDelayMs": 4.397604000000001,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 8.456699000000015,
+            "timerCallbacks": 17
+          },
+          "identicalTree": true
+        },
+        {
+          "sync": {
+            "wallMs": 72.70038699999998,
+            "cpuMs": 82.635,
+            "inputDelayMs": 72.74353699999995,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 72.839335,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 74.084427,
+            "cpuMs": 75.372,
+            "inputDelayMs": 4.08571500000005,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 8.184556000000043,
+            "timerCallbacks": 18
+          },
+          "identicalTree": true
+        }
+      ]
+    },
+    {
+      "name": "large-record",
+      "fileBytes": 27660402,
+      "rounds": [
+        {
+          "sync": {
+            "wallMs": 57.13804700000003,
+            "cpuMs": 57.638,
+            "inputDelayMs": 57.18184800000006,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 57.23875399999997,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 54.343796,
+            "cpuMs": 61.79,
+            "inputDelayMs": 4.063985000000002,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 8.329564000000005,
+            "timerCallbacks": 12
+          },
+          "identicalTree": true
+        },
+        {
+          "sync": {
+            "wallMs": 63.53386599999999,
+            "cpuMs": 64.439,
+            "inputDelayMs": 65.55629699999997,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 65.60330399999998,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 46.98147000000006,
+            "cpuMs": 47.736,
+            "inputDelayMs": 4.14933300000007,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 9.641237000000046,
+            "timerCallbacks": 10
+          },
+          "identicalTree": true
+        },
+        {
+          "sync": {
+            "wallMs": 51.28558799999996,
+            "cpuMs": 51.449,
+            "inputDelayMs": 51.33327600000007,
+            "inputDuringScan": false,
+            "maxTimerGapMs": 51.37455199999988,
+            "timerCallbacks": 2
+          },
+          "yielding": {
+            "wallMs": 43.557863000000225,
+            "cpuMs": 43.618,
+            "inputDelayMs": 4.1297470000001795,
+            "inputDuringScan": true,
+            "maxTimerGapMs": 9.954977999999983,
+            "timerCallbacks": 9
+          },
+          "identicalTree": true
+        }
+      ]
+    }
+  ]
+}

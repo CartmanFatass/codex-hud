@@ -89,6 +89,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     const control = input.button==='left'?ctx.frame?.controls.find(c=>input.y===c.y&&input.x>=c.x&&input.x<c.x+c.width):undefined;
     if(control?.kind==='main') return result({type:'switch',id:ctx.tree.rootId});
     if(control?.kind==='settings') return result({type:'settings'});
+    if(control?.kind==='observability') return result({type:'observability'});
     if(control?.kind==='help'){next.help=true;next.helpScroll=0;return result();}
     if(control?.kind==='older'){next.tree.showAll=!next.tree.showAll;return result();}
     if(control?.kind==='tab'&&control.pane){next=ctx.navigationOverlay ? openPane({...next,zoom:false},control.pane) : clickTab(next,control.pane);return result();}

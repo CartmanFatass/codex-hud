@@ -7,6 +7,7 @@ import { SAVE_MIN_BYTES, SCAN_VERSION, scanPrint, type SavedScan, type TreeScanS
  */
 
 import * as fs from 'fs';
+import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { sessionParentId } from '../utils/session-parent.js';
 import { findRolloutsInDays, type SessionFile } from './session-finder.js';
@@ -60,6 +61,8 @@ export function resetSubagentLinkCache(): void {
 }
 
 interface SessionLink extends AgentIdentity {
+  /** The session_meta bytes (as read by readFirstLine), independent of append. */
+  headerPrint?: string;
   lastReport?: AgentReport;
   task?: string;
   id: string;
@@ -338,34 +341,100 @@ function applyRolloutLine(line: string, into: RolloutFields, ledger?: AgentLedge
   }
 }
 
-function scanRolloutFields(filePath: string, startOffset: number, ledger?: AgentLedger, seed?: Pick<SessionLink, 'preface' | 'charges'>): RolloutFields & { endOffset: number } {
+function* scanRolloutFields(
+  filePath: string,
+  startOffset: number,
+  source: Pick<CachedLink, 'size' | 'ino' | 'mtimeMs' | 'contextPrint'> & { headerPrint?: string },
+  ledger?: AgentLedger,
+  seed?: Pick<SessionLink, 'preface' | 'charges'>,
+): Generator<void, RolloutFields & { endOffset: number }> {
+  const { size: observedSize, ino: observedIno, mtimeMs: observedMtimeMs } = source;
   const fd = fs.openSync(filePath, 'r');
   try {
+    const before = fs.fstatSync(fd);
+    if (before.size < observedSize || (observedIno !== undefined && before.ino !== observedIno)
+      || (before.size === observedSize && before.mtime.getTime() !== observedMtimeMs)) {
+      throw new Error('Rollout changed before its scan');
+    }
+    if (startOffset > 0 && scanPrint(filePath, startOffset) !== source.contextPrint) {
+      throw new Error('Rollout changed before its scan');
+    }
     const buffer = Buffer.alloc(64 * 1024);
+    const consumed = createHash('sha256');
     let offset = Math.max(0, startOffset);
-    let leftover: Buffer = Buffer.alloc(0);
+    let parts: Buffer[] = [];
+    let partialBytes = 0;
+    let lines = 0;
     const fields: RolloutFields & { endOffset: number } = {
       endOffset: offset,
       ...(seed?.preface ? { preface: seed.preface } : {}),
       ...(seed?.charges ? { charges: { ...seed.charges } } : {}),
     };
-    while (true) {
-      const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, offset);
+    // Never follow a live writer forever. Bytes beyond this listing's size
+    // belong to the next collection, including completion of a partial line.
+    while (offset < observedSize) {
+      const bytesRead = fs.readSync(fd, buffer, 0, Math.min(buffer.length, observedSize - offset), offset);
       if (bytesRead <= 0) {
-        break;
+        throw new Error('Rollout changed during its scan');
       }
-      leftover = Buffer.concat([leftover, buffer.subarray(0, bytesRead)]);
+      consumed.update(buffer.subarray(0, bytesRead));
       offset += bytesRead;
-      let newline = leftover.indexOf(10);
+      let start = 0;
+      let newline = buffer.indexOf(10, start);
       while (newline !== -1) {
-        applyRolloutLine(leftover.subarray(0, newline).toString('utf8'), fields, ledger);
-        leftover = leftover.subarray(newline + 1);
-        newline = leftover.indexOf(10);
+        if (newline >= bytesRead) break;
+        const tail = buffer.subarray(start, newline);
+        const line = parts.length ? Buffer.concat([...parts, tail], partialBytes + tail.length) : tail;
+        applyRolloutLine(line.toString('utf8'), fields, ledger);
+        parts = [];
+        partialBytes = 0;
+        start = newline + 1;
+        if (++lines % 64 === 0) yield;
+        newline = buffer.indexOf(10, start);
+      }
+      if (start < bytesRead) {
+        // Own these bytes: the read buffer is reused after the next yield.
+        parts.push(Buffer.from(buffer.subarray(start, bytesRead)));
+        partialBytes += bytesRead - start;
+      }
+      yield;
+    }
+    const after = fs.statSync(filePath);
+    if (after.ino !== before.ino || after.dev !== before.dev || after.size < observedSize
+      || (after.size === before.size && after.mtimeMs !== before.mtimeMs)) {
+      throw new Error('Rollout changed during its scan');
+    }
+    // Size growth is not proof of append: a writer may truncate and regrow
+    // this very inode between checkpoints. If the generation changed, compare
+    // every byte consumed (including an incomplete last line) with the same
+    // bounded region as it now stands. Never commit an old prefix/new suffix.
+    if (before.size !== observedSize || before.mtime.getTime() !== observedMtimeMs
+      || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
+      const verified = createHash('sha256');
+      let verifyOffset = Math.max(0, startOffset);
+      while (verifyOffset < observedSize) {
+        const read = fs.readSync(fd, buffer, 0, Math.min(buffer.length, observedSize - verifyOffset), verifyOffset);
+        if (read <= 0) throw new Error('Rollout changed during its scan');
+        verified.update(buffer.subarray(0, read));
+        verifyOffset += read;
+        yield;
+      }
+      if (verified.digest('hex') !== consumed.digest('hex')
+        || (startOffset > 0 && scanPrint(filePath, startOffset) !== source.contextPrint)
+        || (source.headerPrint !== undefined && headerPrint(readFirstLine(filePath)) !== source.headerPrint)) {
+        throw new Error('Rollout changed during its scan');
+      }
+      const final = fs.statSync(filePath);
+      // A second source change while verifying is uncertain, even if it might
+      // be append. Retry from a fresh listing instead of chasing a live writer.
+      if (final.ino !== after.ino || final.dev !== after.dev || final.size !== after.size
+        || final.mtimeMs !== after.mtimeMs || final.ctimeMs !== after.ctimeMs) {
+        throw new Error('Rollout changed during its scan');
       }
     }
     // A writer may stop halfway through an event. Re-read its bytes on the
     // next tick instead of permanently skipping the eventual status change.
-    fields.endOffset = offset - leftover.length;
+    fields.endOffset = offset - partialBytes;
     return fields;
   } finally {
     fs.closeSync(fd);
@@ -384,7 +453,7 @@ function ledgerFields(ledger: AgentLedger | undefined): Pick<SubagentTreeNode, '
   };
 }
 
-function refreshRolloutFields(link: SessionLink): void {
+function* refreshRolloutFields(link: SessionLink): Generator<void, void> {
   const cached = linkCache.get(link.path);
   if (!cached?.link) {
     return;
@@ -393,9 +462,22 @@ function refreshRolloutFields(link: SessionLink): void {
   if (start >= cached.size) {
     return;
   }
-  cached.link.ledger ??= newLedger();
-  link.ledger = cached.link.ledger;
-  const extra = scanRolloutFields(link.path, start, link.ledger, start > 0 ? link : undefined);
+  // A yield can let the file be replaced/truncated. Keep the old cache whole
+  // until this scan verifies its source and commits its fields and byte offset.
+  const ledger = cached.link.ledger ? structuredClone(cached.link.ledger) : newLedger();
+  let extra: RolloutFields & { endOffset: number };
+  try {
+    extra = yield* scanRolloutFields(link.path, start, {
+      size: cached.size, ino: cached.ino, mtimeMs: cached.mtimeMs,
+      contextPrint: cached.contextPrint, headerPrint: link.headerPrint,
+    }, ledger, start > 0 ? link : undefined);
+    if (linkCache.get(link.path) !== cached) throw new Error('Rollout cache changed during its scan');
+  } catch (error) {
+    if (linkCache.get(link.path) === cached) linkCache.delete(link.path);
+    throw error;
+  }
+  link.ledger = ledger;
+  cached.link.ledger = ledger;
   if (extra.model) {
     link.model = extra.model;
     cached.link.model = extra.model;
@@ -533,6 +615,8 @@ function restoreScan(saved: SavedScan, link: SessionLink): boolean {
   return true;
 }
 
+const headerPrint = (line: string | null): string | undefined => line === null ? undefined : createHash('sha256').update(line).digest('hex');
+
 function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null {
   try {
     const firstLine = readFirstLine(filePath);
@@ -566,6 +650,7 @@ function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null
       : undefined;
     return {
       ...identity,
+      headerPrint: headerPrint(firstLine),
       id,
       parentId: sessionParentId(entry.payload) ?? null,
       name: agentDisplayName(identity) ?? id.slice(0, 8),
@@ -752,8 +837,9 @@ export function buildSubagentTree(
 
 /**
  * The panel's build: same scan and result as the synchronous API, yielding
- * between files after a short work slice so queued terminal input can run.
- * A single file's scan remains synchronous; this is not a per-file time cap.
+ * within files after a short work slice so queued terminal input can run.
+ * Each read and group of 64 lines is a checkpoint. A single JSON record is
+ * still parsed atomically, so this is not a hard per-record time cap.
  */
 export async function buildSubagentTreeYielding(
   rootId: string,
@@ -940,7 +1026,7 @@ function* buildTreeSteps(
     if (scanned.has(id)) continue;
     scanned.add(id);
     const link = links.get(id);
-    if (link) refreshRolloutFields(link);
+    if (link) yield* refreshRolloutFields(link);
     const descendants = children.get(id) ?? [];
     for (let i = descendants.length - 1; i >= 0; i--) pending.push(descendants[i]);
     yield;

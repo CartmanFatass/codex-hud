@@ -133,7 +133,7 @@ export interface MonitorControl {
    * `older` shows or hides what the linger window put away; `help` opens
    * the keys.
    */
-  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'brief' | 'level' | 'log' | 'switch' | 'zoom';
+  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'brief' | 'level' | 'log' | 'switch' | 'zoom' | 'observability';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
@@ -213,7 +213,7 @@ export interface MonitorContext {
 export interface MonitorOutcome {
   state: MonitorState;
   close: boolean;
-  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'pick'; id:string} | {type:'brief-toggle'} | {type:'status-level'};
+  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'pick'; id:string} | {type:'brief-toggle'} | {type:'status-level'} | {type:'observability'};
 }
 
 export function initialMonitorState(): MonitorState {
@@ -315,6 +315,9 @@ function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = t
     ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
       '{p} ,  settings  {p} ?  help','{p} b  pause / resume models','{p} a  show / hide older',
       '{p} d  HUD diagnostics and TPS details',
+      '{p} u  inbox, updates and history',
+      '{p} p  find and pin agents',
+      '{p} c  sources, model calls and export',
       '{p} m  main session  {p} o  switch to selected',
       // The tabs layout shows one pane at a time: nothing to close or zoom.
       ...(tabbed ? ['{p} 1–4  show a pane  {p} Tab  next'] : ['{p} 1–4  open / close a pane  {p} Tab  next','{p} x  close pane']),

@@ -26,7 +26,17 @@ import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js
 import { Briefer } from './collectors/briefing.js';
 import { SmallModel } from './collectors/small-model.js';
 import { ModelProbe } from './collectors/model-probe.js';
-import { hudProblems } from './render/hud-diagnostics.js';
+import { hudProblems, diagnosticLines } from './render/hud-diagnostics.js';
+import { ActivityJournal } from './collectors/activity-journal.js';
+import { initialActivityHubState, renderActivityHub, handleActivityHubInput, type ActivityHubState, type ActivityHubFrame } from './render/activity-hub.js';
+import { initialObservabilityState, renderObservabilityPage, handleObservabilityInput, type ObservabilityState, type ObservabilityFrame } from './render/observability-page.js';
+import { createDiagnosticExportPreview, saveDiagnosticExport, type DiagnosticExportPreview } from './diagnostics/diagnostic-export.js';
+import { captureRuntimeIdentity } from './diagnostics/runtime-identity.js';
+import { modelTelemetryLines } from './render/model-telemetry.js';
+import type { ModelTelemetrySummary } from './collectors/model-telemetry.js';
+import { createAdaptivePollState, adaptivePollDue, forceAdaptivePoll, recordAdaptivePoll } from './collectors/adaptive-poll.js';
+import { collectionObservation } from './utils/collection-observation.js';
+import { scopedActivityObservation } from './utils/activity-observation.js';
 import { ProgressSummarizer, progressTargets } from './collectors/progress-summary.js';
 import { cardSummaryTargets } from './render/cards.js';
 import { controlBar } from './render/control-bar.js';
@@ -52,6 +62,8 @@ import type { SubagentTree, SubagentTreeNode } from './types.js';
 
 /** At most one tail read per agent per this long, however often we repaint. */
 const AGENT_CONTEXT_INTERVAL_MS = 3000;
+// This identifies the entry file observed at startup, not files replaced later.
+const runtimeIdentity = captureRuntimeIdentity({entryFile:new URL(import.meta.url)});
 
 function walkNodes(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
   for (const node of nodes) { visit(node); walkNodes(node.children, visit); }
@@ -144,7 +156,8 @@ async function runLivePage(): Promise<void> {
   // Typing here goes to Codex; with no Codex pane to give it to (the panel
   // run on its own), the keys drive the panel as they used to.
   const mainPane = resolveMainPane();
-  const decoder = new WorkbenchInputDecoder('monitor',{forward:Boolean(mainPane)});
+  // Search modals need literal Unicode and paste even in a standalone panel.
+  const decoder = new WorkbenchInputDecoder('monitor',{forward:true});
   const forwarder = new KeyForwarder(()=>mainPane,call=>tmux(call.args,call.input));
   let settings = defaultSettings();
   let settingsError = '';
@@ -162,6 +175,16 @@ async function runLivePage(): Promise<void> {
     return {...next,...monitorSettings(settings)};
   };
   let state = configuredState();
+  let journal = new ActivityJournal({rootId:''});
+  let journalRoot = '';
+  let agentLogRoot = '';
+  let activityHealthSuccess = {tree:0,status:0,worktrees:0};
+  let activityHub: ActivityHubState | null = null;
+  let activityFrame: ActivityHubFrame | undefined;
+  let observability: ObservabilityState | null = null;
+  let observabilityFrame: ObservabilityFrame | undefined;
+  let exportPreview: DiagnosticExportPreview | undefined;
+  let telemetry: ModelTelemetrySummary | undefined;
   let settingsPage: SettingsPageState | null = null;
   let settingsFrame: SettingsFrame | undefined;
   let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
@@ -179,6 +202,7 @@ async function runLivePage(): Promise<void> {
   let worktrees: WorktreesSnapshot | null = null;
   let git: GitChanges | null = null;
   let gitRevision = 0;
+  let gitObservedAt = 0;
   let diff: string[] | undefined;
   let diffKey = '';
   let error: string | null = settingsError || null;
@@ -217,7 +241,7 @@ async function runLivePage(): Promise<void> {
     const now = Date.now();
     const language = resolveLanguage(settings.language);
     progress.update({tree,
-      targets:state.style === 'rich' && paneShown(state,'agents') && !state.help && !settingsPage
+      targets:state.style === 'rich' && paneShown(state,'agents') && !state.help && !settingsPage && !activityHub && !observability
         ? progressTargets(tree,cardSummaryTargets({tree,agentLog:logsIn(agentLog.snapshot(),language)},state,now)) : new Set(),
       on:settings.briefing !== 'off' && settings.agentProgress && !settings.briefingPaused,
       offReason:settings.briefing === 'off' ? 'off' : settings.briefingPaused ? 'paused' : 'progress-disabled',
@@ -267,6 +291,31 @@ async function runLivePage(): Promise<void> {
     const data = hudStatus.current();
     return data ? {...data,modelHealth:settings.briefing === 'off' ? undefined : model.diagnostics()} : undefined;
   };
+  const observeActivity = () => {
+    if (tree.rootId !== journalRoot) {
+      journal.flush(); journalRoot = tree.rootId;
+      journal = new ActivityJournal({codexHome:getCodexHome(),rootId:journalRoot});
+      activityHub = activityHub ? initialActivityHubState(activityHub.tab) : null;
+      exportPreview = undefined;
+    }
+    if (!journalRoot) return;
+    journal.observe(scopedActivityObservation(journalRoot,agentLogRoot,{tree,data:currentHud(),
+      logs:agentLog.snapshot(),git,gitObservedAt,
+      gitFresh:!!git?.root && !git.error && gitObservedAt > 0 && Date.now() - gitObservedAt <= 15_000,
+      modelAvailable:settings.briefing !== 'off',
+      healthSignals:Object.entries(activityHealthSuccess).filter(([,at])=>at>0)
+        .map(([source,at])=>({key:`collector:${source}`,kind:'health' as const,active:false,at}))}));
+  };
+  const sampleTelemetry = () => { telemetry = model.telemetry(); };
+  const markActivitySourceSuccess = (source: keyof typeof activityHealthSuccess) => {
+    const failure=hudStatus.health.current().lastError;
+    if (!activityHealthSuccess[source] || (failure?.source===source && failure.at.getTime()>=activityHealthSuccess[source]))
+      activityHealthSuccess[source]=Date.now();
+  };
+  const captureExport = () => {
+    sampleTelemetry();
+    exportPreview = createDiagnosticExportPreview({data:currentHud(),tree,selectedId:state.tree.selectedId ?? undefined,telemetry,runtimeIdentity,nowMs:Date.now()});
+  };
   // The panel replaces the bar, so it publishes the same notifications and snapshot.
   const notifier = new Notifier(resolveNotifierOptions(process.env, settings));
   const snapshotWriter = new SnapshotWriter();
@@ -277,6 +326,8 @@ async function runLivePage(): Promise<void> {
   // move the clocks, once a second (see nextRepaintDelay).
   let collectTimer: ReturnType<typeof setInterval> | undefined;
   let collectEvery = 0;
+  let adaptive = createAdaptivePollState(settings.refreshMs);
+  let collectionEpoch = 0;
   let repaintTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveDone = () => {};
 
@@ -287,7 +338,19 @@ async function runLivePage(): Promise<void> {
     if (closed) return;
     const output = time('render',() => {
       let lines: string[];
-      if (settingsPage) {
+      if (activityHub) {
+        activityFrame = renderActivityHub(journal.view(),activityHub,process.stdout.columns || 30,process.stdout.rows || 24,Date.now());
+        activityHub = activityFrame.state;
+        lines = activityFrame.lines;
+      } else if (observability) {
+        const width = process.stdout.columns || 30;
+        observabilityFrame = renderObservabilityPage(observability,{
+          sources:diagnosticLines(currentHud(),width,Date.now(),{tree,selectedId:state.tree.selectedId ?? undefined}),
+          calls:modelTelemetryLines(telemetry,width),preview:exportPreview?.json,
+        },width,process.stdout.rows || 24);
+        observability = observabilityFrame.state;
+        lines = observabilityFrame.lines;
+      } else if (settingsPage) {
         // Key roles offers the roles the subtasks have now.
         settingsFrame = renderSettingsPage({...settingsPage,roles:subtaskRoles(tree)},process.stdout.columns || 30,process.stdout.rows || 24,
           {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage(),probe:probe.current()},previewTop,
@@ -321,7 +384,7 @@ async function runLivePage(): Promise<void> {
     lastPaint = output;
     if (update) time('write',() => process.stdout.write(update));
   };
-  modelChanged = () => render();
+  modelChanged = () => { adaptive = forceAdaptivePoll(adaptive); collectionEpoch++; render(); };
   /**
    * The next clock-only repaint. A second while something on screen shows
    * seconds (a turn, a live agent, the settings health line). Otherwise the
@@ -332,7 +395,7 @@ async function runLivePage(): Promise<void> {
     const data = hudStatus.current();
     const activity = data?.activity;
     const anchor = activity?.state === 'working' ? activity.turnStartedAt?.getTime() : undefined;
-    if (settingsPage) return nextRepaintDelay(now, anchor);
+    if (settingsPage || activityHub || observability) return nextRepaintDelay(now, anchor);
     let live = activity?.state === 'working';
     if (!live) walkNodes(tree.nodes, node => { if (node.status === 'running' || node.status === 'starting') live = true; });
     if (live) return nextRepaintDelay(now, anchor);
@@ -372,6 +435,7 @@ async function runLivePage(): Promise<void> {
     if (closed || (collectTimer && collectEvery === settings.refreshMs)) return;
     if (collectTimer) clearInterval(collectTimer);
     collectEvery = settings.refreshMs;
+    adaptive = createAdaptivePollState(collectEvery);
     collectTimer = setInterval(()=>void collect(),collectEvery);
   };
   const applyAgentContext = () => {
@@ -449,9 +513,18 @@ async function runLivePage(): Promise<void> {
       if (inspectAgain && !closed) { inspectAgain = false; void refreshInspection(); }
     }
   };
-  const collect = async () => {
+  const collectionScope = () => `${tree.rootId}:${activityHub?.tab ?? observability?.tab ?? state.focus}:${JSON.stringify(state.modes)}`;
+  const collect = async (force = false) => {
+    if (force) { adaptive = forceAdaptivePoll(adaptive); collectionEpoch++; }
     if (closed || collecting) return;
+    if (!adaptivePollDue(adaptive, collectionScope(), Date.now())) return;
+    const epoch = collectionEpoch;
     await timeAsync('collect',collectNow);
+    if (epoch === collectionEpoch) adaptive = recordAdaptivePoll(adaptive, {
+      scopeKey: collectionScope(), nowMs: Date.now(), ...collectionObservation(currentHud(), tree),
+      succeeded: !currentHud()?.stale && !error && currentHud()?.health?.sessionBound === true,
+    });
+    else if (!closed) void collect(true);
   };
   const collectNow = async () => {
     collecting = true;
@@ -487,7 +560,14 @@ async function runLivePage(): Promise<void> {
       stage = 'tree';
       const rootId = main?.session?.id ?? session?.sessionId ?? '';
       if (rootId !== tree.rootId) {
-        state = configuredState(); diff = undefined; diffKey = ''; git = null; worktrees = null;
+        state = configuredState(); diff = undefined; diffKey = ''; git = null; gitObservedAt = 0; worktrees = null;
+        // Cancel old-root writers before loading the next root's model log. A failed
+        // subsequent tree read must never journal the previous session's summaries.
+        progress.stop();jobs.stop();briefer.stop();
+        agentLog.attach(rootId);agentLogRoot=rootId;
+        activityHealthSuccess={tree:0,status:0,worktrees:0};
+        agentContext.clear();agentContextReadAt.clear();
+        tree = {rootId,nodes:[],totalCount:0,updatedAt:new Date()};
       }
       const priority = treePaths(tree.nodes);
       // The root is not a card node, but its new spawn charges must be read
@@ -495,6 +575,7 @@ async function runLivePage(): Promise<void> {
       if (session) priority.add(session.path);
       const listed = rootId ? await timeAsync('tree.list', () => findRolloutsInDaysYielding(3, priority)) : undefined;
       tree = rootId ? await timeAsync('tree.build',()=>buildSubagentTreeYielding(rootId,main?.subagents ?? [],3,Date.now(),listed)) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+      markActivitySourceSuccess('tree');
       applyAgentContext();
       jobs.apply(tree,switches(),resolveLanguage(settings.language));
       // On the same tick as the tree, so the log never lags it.
@@ -508,13 +589,15 @@ async function runLivePage(): Promise<void> {
     } catch (err) { error = t('Refresh: {reason}',{reason:String(err)}); stale = true; hudStatus.health.fail(stage,err); }
     finally { collecting = false; collected = true; }
     let built: ReturnType<HudStatus['build']> | null = null;
-    try { built = hudStatus.build({rollout:main,sessionId:session?.sessionId,stale,tree}); }
+    try { built = hudStatus.build({rollout:main,sessionId:session?.sessionId,stale,tree});markActivitySourceSuccess('status'); }
     catch (err) { hudStatus.health.fail('status',err); /* The foot keeps its last good rows. */ }
     if (built && !stale) {
       notifier.update(built);
       try { snapshotWriter.write(buildSnapshot(built, {width:0,segments:[]})); }
       catch { /* A state file nobody can write is not a reason to stop drawing. */ }
     }
+    observeActivity();
+    if (observability) sampleTelemetry();
     render();
     readMainCols();
     void refreshInspection();
@@ -526,7 +609,7 @@ async function runLivePage(): Promise<void> {
     if (collectingGit) { gitAgain=true; return; }
     // Closed monitors are absent, not empty frames continuously collecting
     // data; in the tabs layout only the pane shown is read for.
-    const wantChanges = paneShown(state,'changes') || (paneShown(state,'details') && state.preview === 'file');
+    const wantChanges = activityHub?.tab === 'updates' || paneShown(state,'changes') || (paneShown(state,'details') && state.preview === 'file');
     if (!wantChanges && !(paneShown(state,'details') && state.preview === 'worktree')) return;
     collectingGit = true;
     const candidates = sources();
@@ -536,6 +619,7 @@ async function runLivePage(): Promise<void> {
       if (closed) return;
       if (requestKey !== JSON.stringify(sources())) { gitAgain=true; return; }
       worktrees = snapshot;
+      if (!snapshot.error) markActivitySourceSuccess('worktrees');
       const previousWorktree = state.selectedWorktree;
       state = reconcileMonitor(state,tree,git,worktrees);
       if (state.selectedWorktree !== previousWorktree) {git=null;diff=undefined;diffKey='';}
@@ -546,7 +630,7 @@ async function runLivePage(): Promise<void> {
         const result = await timeAsync('git.changes',()=>collectGitChanges(selected));
         if (closed) return;
         if (requestKey !== JSON.stringify(sources()) || selected !== state.selectedWorktree) { gitAgain=true; return; }
-        git=result;gitRevision++;
+        git=result;gitRevision++;gitObservedAt=Date.now();
         // While the pane is open, and at most once per floor period.
         jobs.updateChanges(git,{on:jobsOn(),enabled:switches().changeSummary,open:paneShown(state,'changes'),floorMs:settings.recapFloorMs,
           language:resolveLanguage(settings.language),now:Date.now()});
@@ -554,12 +638,12 @@ async function runLivePage(): Promise<void> {
         state=reconcileMonitor(state,tree,git,worktrees);
         if(previousFile!==state.selectedFile){diff=undefined;diffKey='';}
       } else if (!entry || entry.bare || entry.prunable !== undefined) {git=null;diff=undefined;diffKey='';}
-      render();
+      observeActivity();render();
       void refreshInspection();
     } catch (err) {
       hudStatus.health.fail('worktrees',err);
       worktrees = {sourcePath:null,entries:[],updatedAt:Date.now(),error:'Worktree read failed'};
-      git=null;diff=undefined;diffKey='';render();
+      git=null;gitObservedAt=0;diff=undefined;diffKey='';observeActivity();render();
     } finally {
       collectingGit=false;
       if(gitAgain&&!closed){gitAgain=false;void refreshGit();}
@@ -574,6 +658,7 @@ async function runLivePage(): Promise<void> {
     model.cancelAll();
     probe.cancel();
     agentLog.flush();
+    journal.flush();
     flushTreeScans();
     timers.forEach(clearInterval);
     if (collectTimer) clearInterval(collectTimer);
@@ -587,7 +672,8 @@ async function runLivePage(): Promise<void> {
     process.stdout.write(LEAVE);
     snapshotWriter.remove();
     if (user) requestEnsureSingle();
-    resolveDone();
+    // Settle bounded local telemetry writes before the terminal process exits.
+    void model.flushTelemetry().catch(()=>{}).finally(resolveDone);
   };
   const switchSession = async (id:string) => {
     if (navigating || !id) return;
@@ -653,7 +739,8 @@ async function runLivePage(): Promise<void> {
     return {type:'key',key:monitorKey(command)};
   };
   const dispatch = (inputs: WorkbenchInput[]) => {
-    const overlayBefore = Boolean(settingsPage || state.help);
+    if (inputs.length) void collect(true);
+    const overlayBefore = Boolean(settingsPage || state.help || activityHub || observability);
     // What goes to Codex, in order, sent once the whole read is through.
     const forward: ForwardItem[] = [];
     for (let input of inputs) {
@@ -679,6 +766,48 @@ async function runLivePage(): Promise<void> {
         // may have changed the pane width and therefore every tab's hit span.
         input = {type:'key',key:destination}; panelInput = true;
       }
+      if (activityHub || observability) {
+        if (input.type === 'command') {
+          const key = overlayKey(input.command,'help');
+          if (key) input = {type:'key',key};
+          else { activityHub=null; observability=null; exportPreview=undefined; }
+        }
+        if (activityHub && activityFrame) {
+          const tab = activityHub.tab;
+          const result = handleActivityHubInput(activityHub,input,activityFrame);
+          activityHub = result.state;
+          const action = result.action;
+          if (action?.type === 'close') { activityHub=null; focusMain(); }
+          else if (action?.type === 'read') journal.markRead(action.eventId,action.value);
+          else if (action?.type === 'snooze') journal.snooze(action.eventId,action.until);
+          else if (action?.type === 'pin') journal.pin(action.agentId,action.value);
+          else if (action?.type === 'viewed') journal.markViewed(action.receipt);
+          else if (action?.type === 'target') {
+            let live = action.agentId === tree.rootId;
+            walkNodes(tree.nodes,node=>{if(node.id===action.agentId)live=true;});
+            if (live) {
+              state={...state,keys:true,focus:'details',preview:action.agentId===tree.rootId?'diagnostics':'agent',
+                tree:{...state.tree,selectedId:action.agentId===tree.rootId?state.tree.selectedId:action.agentId,showAll:true},
+                modes:{...state.modes,details:'open'},scroll:{...state.scroll,details:0}};
+              activityHub=null;
+            } else navigationMessage=t('This historical agent is no longer in the current tree');
+          }
+          updateProgress(); render();
+          if (activityHub?.tab === 'updates' && tab !== 'updates') void refreshGit();
+          continue;
+        }
+        if (observability && observabilityFrame) {
+          const result = handleObservabilityInput(observability,input,observabilityFrame);
+          observability=result.state;
+          if (result.action === 'close') { observability=null; exportPreview=undefined; focusMain(); }
+          else if (result.action === 'preview') captureExport();
+          else if (result.action === 'save' && exportPreview) {
+            const saved=saveDiagnosticExport(exportPreview,getCodexHome());
+            observability.message=saved.ok ? t('Report saved: {path}',{path:saved.path}) : t('Report could not be saved');
+          }
+          updateProgress();render();continue;
+        }
+      }
       if (input.type === 'command') {
         const decoded = commandInput(input.command);
         if (!decoded) {render();continue;}
@@ -699,6 +828,13 @@ async function runLivePage(): Promise<void> {
         // paste has nowhere to go.
         if (input.type === 'paste') continue;
         if (input.key === 'close') input = {type:'key',key:'escape'};
+      }
+      if (input.type === 'key' && ['activity-hub','find-agent','observability'].includes(input.key)) {
+        if (settingsPage && !requestSettingsLeave(input.key)) { render();continue; }
+        state={...state,help:false};
+        if (input.key === 'observability') { sampleTelemetry();observability=initialObservabilityState();activityHub=null; }
+        else { observeActivity();activityHub=initialActivityHubState(input.key==='find-agent'?'find':'inbox');observability=null; }
+        exportPreview=undefined;focusPanel();updateProgress();render();continue;
       }
       if (input.type === 'paste') continue;
       if (settingsPage && settingsFrame && input.type === 'mouse' && input.button === 'left') {
@@ -765,6 +901,9 @@ async function runLivePage(): Promise<void> {
       if (result.action?.type === 'settings') {
         settingsPage={draft:{...settings,...monitorPreferences(state),sort:state.tree.sort??'active'},selected:0,offset:0,message:''};
       }
+      if (result.action?.type === 'observability') {
+        sampleTelemetry();observability=initialObservabilityState();activityHub=null;exportPreview=undefined;focusPanel();
+      }
       if (result.action?.type === 'pick' && input.type === 'mouse') {
         const id = result.action.id;
         const at = Date.now();
@@ -794,7 +933,7 @@ async function runLivePage(): Promise<void> {
     }
     if (forward.length) void forwarder.send(forward);
     if (!settingsPage) probe.cancel();
-    if (!closed && !overlayBefore && (settingsPage || state.help)) focusPanel();
+    if (!closed && !overlayBefore && (settingsPage || state.help || activityHub || observability)) focusPanel();
   };
   /** A command that opened the panel (bin/codex-hud-toggle --command): run once, after the first read. */
   const initialCommand = process.env.CODEX_HUD_INITIAL_COMMAND;

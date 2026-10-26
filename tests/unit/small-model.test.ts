@@ -147,7 +147,7 @@ test('API redirects are refused and reflected credentials are removed from error
     model.configure({ backend: 'api', api: { ...api, key } });
     const result = await model.submit(question).result;
     assert.ok(!result.ok);
-    if (!result.ok) { assert.ok(!result.error.includes(key)); assert.match(result.error, /\[redacted\]/); }
+    if (!result.ok) { assert.ok(!result.error.includes(key)); assert.match(result.error, /Authentication failed|connection failed/); }
   }
 });
 
@@ -222,7 +222,7 @@ test('off and invalid configuration do not call fetch or spend budget; HTTP, tra
   assert.deepEqual(await model.submit(question).result, { ok: false, error: 'api: invalid endpoint', classification: 'invalid-response' });
   assert.equal(calls, 0); assert.equal(model.usage().lastHour, 0);
   for (const [response, expected, classification] of [
-    [new Response('{"error":{"message":"synthetic error"}}', { status: 429 }), 'api HTTP 429: synthetic error', 'rate-limit'],
+    [new Response('{"error":{"message":"synthetic error"}}', { status: 429 }), 'api HTTP 429: Rate limited', 'rate-limit'],
     [new Response('not JSON'), 'api: reply is not JSON', 'invalid-response'],
     [new Response('{}'), 'api returned nothing', 'invalid-response'],
   ] as const) {
@@ -232,7 +232,7 @@ test('off and invalid configuration do not call fetch or spend budget; HTTP, tra
   }
   const failing = new SmallModel({ env: {}, fetch: (async () => { throw new Error('synthetic connection error'); }) as typeof fetch });
   failing.configure({ backend: 'api', api });
-  assert.deepEqual(await failing.submit(question).result, { ok: false, error: 'api: synthetic connection error', classification: 'network' });
+  assert.deepEqual(await failing.submit(question).result, { ok: false, error: 'api: connection failed', classification: 'network' });
   await tick();
 });
 

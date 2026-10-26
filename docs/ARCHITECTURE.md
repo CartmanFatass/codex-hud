@@ -685,6 +685,9 @@ against Codex 0.154 and 0.157.
 | `agent-log/<rootId>.json` | panel | per-agent history |
 | `model-cache/{cache,calls,labels}.json` | panel | model replies, hourly call log, labels |
 | `recaps/<sessionId>{,.title}.json` | panel | main recap and session title |
+| `activity/<root-hash>.json` | bar or panel | bounded per-root events, observed snapshots, pins and explicit viewed/read/snooze receipts |
+| `model-cache/telemetry/telemetry.json` | model service | allowlisted settled feature outcomes, 24h/1000 records, coordination independent of budget/cache claims |
+| `diagnostics/diagnostic-<uuid>.json` | explicit export action | exact preview bytes, fresh exclusive 0600 file, no source content or identifiers |
 | `profile.log` | both | only with `CODEX_HUD_PROFILE=1` |
 
 **Display.** `icons` decides icons or words everywhere: the buttons, the
@@ -996,3 +999,38 @@ Performance evidence and the reproducible synthetic workload are documented in
 [the performance report](./performance-20261024.md). Panel tree collection uses
 `buildSubagentTreeYielding` to yield between files; the synchronous API remains
 for existing consumers. Neither API changes the scan cache schema.
+
+### Local activity, evidence and adaptive collection
+
+`ActivityJournal` distils root-scoped facts from fresh coherent HudData/tree/logs;
+both entry points observe it so closing the panel does not stop recording. The
+panel uses `scopedActivityObservation` to reject retained material from a previous
+root, and cancels old model jobs/attaches AgentLog before awaiting a new tree.
+Per-source successful collection watermarks resolve that source's historic
+errors; a successful session read does not certify Git/tree/status recovery.
+Unchanged observations are coalesced; mutations reload and merge under a private
+lock, and a pending write is retained. The journal's in-memory `view()` is safe
+on redraw. Its limits and incomplete-history semantics are in the reference.
+
+`render/activity-hub.ts` is a pure modal renderer/input reducer for Inbox,
+Since viewed, Find and History. A seen receipt names only the events actually
+visible in that frame. Search receives literal Unicode/paste; keys cannot fall
+through into Codex while either new modal owns input. Historical target IDs
+are checked against the current tree before opening an Inspector.
+
+`diagnostics/provenance.ts` builds an allowlisted evidence object. The Sources
+view and diagnostic export share it; `model.telemetry()` samples local records
+outside rendering. Export freezes an allowlisted preview; only an explicit
+save writes the same bytes. Startup identity is captured once from the panel
+entry file and manifest, labelled `entry-file-at-start`, not whole-build/Git
+identity. Telemetry never changes provider payloads, cache keys, budget claims,
+or retry behavior; probe telemetry overrides grouping only. Shutdown settles
+bounded local telemetry writes before process exit.
+
+`adaptive-poll.ts` changes collection cadence, never repaint/input cadence.
+`collectionObservation` fingerprints stable evidence, excluding refresh-time
+noise, and only classifies positively bound idle sessions without unknown/live
+descendants as quiet. Panel input uses an epoch so a force during an awaited
+scan cannot be lost to that scan's completion. The bar's native watcher wakes
+collection; the periodic tick remains its fallback. The yielding scanner has
+within-file checkpoints; a single JSON.parse is still atomic.

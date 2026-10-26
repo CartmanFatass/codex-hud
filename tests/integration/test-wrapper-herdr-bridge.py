@@ -196,6 +196,9 @@ def run():
             # Simultaneous attaches own separate outer panes and private sidecars.
             second, second_master = attach(["--attach"], context("parallel:p3"))
             wait(lambda: has_state(before, "parallel:p3", "idle"), second_master, "parallel bridge missing")
+            # The response is recorded before the observer atomically publishes
+            # its health receipt. Readback, rather than the ACK, is the barrier.
+            wait(lambda: health("reattach:p2") and health("parallel:p3"), second_master, "parallel health receipts missing")
             assert health("reattach:p2")["bridgePid"] != health("parallel:p3")["bridgePid"]
             detach(second, second_master, reused)
             assert not health("parallel:p3")

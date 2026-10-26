@@ -22,7 +22,7 @@ function stubModel(reply: string) {
     asked.push(JSON.parse(String(init?.body)));
     return new Response(JSON.stringify(response.status === 200
       ? { choices: [{ message: { content: reply } }] }
-      : { error: { message: 'quota exceeded' } }), { status: response.status });
+      : { error: { message: 'quota exceeded SYNTHETIC_SECRET_BACKEND_QUOTA /private/path?token=synthetic-token' } }), { status: response.status });
   }) as typeof fetch });
   model.configure({ api: { base: '', model: 'test-model', key: '' } });
   return { model, asked, response };
@@ -71,7 +71,8 @@ test('a Briefer runs once per change, waits out its interval, and reports a fail
   response.status = 429;
   briefer.update(tree([ended]), 'api', 60_000, 'zh', now + 140_000);
   await settle();
-  assert.match(briefer.current().error ?? '', /api HTTP 429: quota exceeded/);
+  assert.match(briefer.current().error ?? '', /api HTTP 429: Rate limited/);
+  assert.doesNotMatch(briefer.current().error ?? '', /SYNTHETIC_SECRET_BACKEND_QUOTA|private\/path|synthetic-token|quota exceeded/);
   assert.equal(briefer.current().overall, 'worker 正在核对', 'a failure keeps the last brief');
   response.status = 200;
   briefer.update(tree([ended]), 'api', 60_000, 'zh', now + 240_000);
@@ -284,7 +285,7 @@ test('an api brief is one chat completions call: base, model and key fall back s
   assert.equal(completionText({ choices: [] }), null);
 });
 
-test('a Briefer on an api endpoint reads the reply, and reports what the server says when it refuses', async () => {
+test('a Briefer on an api endpoint reads the reply and reports a safe classification when refused', async () => {
   const seen: Array<{ auth?: string; body: { model: string } }> = [];
   let status = 200;
   const server = http.createServer((req, res) => {
@@ -295,7 +296,7 @@ test('a Briefer on an api endpoint reads the reply, and reports what the server 
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(status === 200
         ? JSON.stringify({ choices: [{ message: { content: '{"overall":"all fine","agents":[{"agent":"worker","attention":false,"note":"reading"}]}' } }] })
-        : JSON.stringify({ error: { message: 'invalid api key' } }));
+        : JSON.stringify({ error: { message: 'invalid api key SYNTHETIC_SECRET_BACKEND_AUTH sk-test /private/path?token=synthetic-token' } }));
     });
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -320,7 +321,8 @@ test('a Briefer on an api endpoint reads the reply, and reports what the server 
     const updated = { ...worker, status: 'completed' as const, statusAt: new Date(now + 1) };
     briefer.update(tree([updated]), 'api', 60_000, 'en', now + 120_000);
     await settle();
-    assert.equal(briefer.current().error, 'api HTTP 401: invalid api key');
+    assert.equal(briefer.current().error, 'api HTTP 401: Authentication failed');
+    assert.doesNotMatch(briefer.current().error ?? '', /SYNTHETIC_SECRET_BACKEND_AUTH|sk-test|private\/path|synthetic-token|invalid api key/);
     assert.equal(briefer.current().overall, 'all fine', 'a failure keeps the last brief');
   } finally {
     server.close();

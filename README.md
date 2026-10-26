@@ -2,6 +2,8 @@
 
 New launches use the compact bottom bar. Press `F12` to open the right-side panel; `CODEX_HUD_TREE=1` opts into opening it at launch.
 
+Local activity and evidence: `Ctrl+] u` opens the inbox, unseen changes and history; `Ctrl+] p` finds/pins agents; `Ctrl+] c` shows sources, model calls and an export preview. Saving a report is explicit, and these features make no additional model requests. See the [reference](./docs/reference.md#local-activity-and-evidence).
+
 Press `Ctrl+]`, then `d`, for diagnostics and main-session TPS evidence. Settings → LLM → Test API (`t`) checks all three routes using fixed synthetic messages within the shared call cap. See the [performance measurements](./docs/performance-20261024.md).
 
 | Date       | Summary of Changes |
@@ -219,7 +221,7 @@ CODEX_HUD_DENSITY=focus codex
 
 `F12` opens the right panel without taking focus from Codex. `Shift+F12` opens and focuses it.
 
-**The panel takes no keys of its own.** Every panel command is the **prefix key, `Ctrl+]`, then one key**: `Ctrl+]` `,` opens settings, `Ctrl+]` `?` the help, `Ctrl+]` `b` pauses the brief (the full list is in [the reference](./docs/reference.md#keys), and the help's Shortcuts section). The prefix works wherever the cursor is, in Codex's pane or in the panel; `Ctrl+]` `j` `j` `j` moves three rows, since the moves repeat for half a second without the prefix. A command that needs the panel opens it first. Anything typed without the prefix goes to Codex: with the cursor in the panel (after `Shift+F12`, or a click), keys and pastes are passed to Codex's pane exactly as typed, a paste stays one bracketed paste, and the cursor moves back to Codex with them. The settings page and the help are the exception: while one is open it takes the keys it needs (arrows, Enter, `Esc`), until `Esc` or its `[Back]` button closes it. The mouse works as before.
+**Outside modal pages, the panel forwards ordinary input to Codex.** Every panel command is the **prefix key, `Ctrl+]`, then one key**: `Ctrl+]` `,` opens settings, `Ctrl+]` `?` the help, `Ctrl+]` `b` pauses the brief (the full list is in [the reference](./docs/reference.md#keys), and the help's Shortcuts section). The prefix works wherever the cursor is, in Codex's pane or in the panel; `Ctrl+]` `j` `j` `j` moves three rows, since the moves repeat for half a second without the prefix. A command that needs the panel opens it first. Anything typed without the prefix goes to Codex: with the cursor in the panel (after `Shift+F12`, or a click), keys and pastes are passed to Codex's pane exactly as typed, a paste stays one bracketed paste, and the cursor moves back to Codex with them. Settings, help, activity and evidence pages capture their own navigation keys; Find also captures query text. Close the page with `Esc` or its Back button to resume normal forwarding. The mouse works as before.
 
 `Ctrl+]` twice sends `Ctrl+]` itself to the pane with the cursor. Codex 0.160 binds `Ctrl+]` to *Skip Question*; that is `Ctrl+]` `Ctrl+]` now. To keep `Ctrl+]` for Codex, choose `Ctrl+\` in Settings → Input → Prefix key (no Codex 0.160 binding uses it; `Ctrl+G`, its external editor, and `Alt+]`, which a terminal sends as the start of an escape sequence, are not offered). The prefix is a key table in the HUD's own tmux session: the server's root and `Ctrl+B` tables are untouched. A changed prefix is installed at once for the panel that saved it; a session started before this version keeps its old keys until it is launched again.
 

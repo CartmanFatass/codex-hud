@@ -11,6 +11,8 @@
  * caller wants the same answer.
  */
 
+import { DIAGNOSTIC_ZH } from '../diagnostics/diagnostic-translations.js';
+
 export type Language = 'en' | 'zh';
 export type LanguageSetting = 'auto' | Language;
 
@@ -35,6 +37,57 @@ export function language(): Language {
 }
 
 const ZH: Record<string, string> = {
+  'Close': '关闭',
+  'Back': '返回',
+  "Activity hub": "活动中心",
+  "Inbox": "收件箱",
+  "Since viewed": "离开后的变化",
+  "Find": "查找",
+  "History": "历史",
+  "Search name, role or path": "搜索名称、角色或路径",
+  "Approval needed": "等待批准",
+  "Agent failed": "代理失败",
+  "Agent completed": "代理完成",
+  "Tool failed": "工具失败",
+  "Health problem": "读取异常",
+  "State mismatch": "状态不一致",
+  "Git changed": "文件变更",
+  "Model summary changed": "模型摘要更新",
+  "Recovered": "已恢复",
+  "Resolved": "已解除",
+  "Read": "已读",
+  "Unread": "未读",
+  "Model-written": "模型生成",
+  "Pinned": "已关注",
+  "Git unavailable": "Git 数据不可用",
+  "Git stale": "Git 数据已过时",
+  "Git observed": "Git 已观测",
+  "Model off; stored summaries only": "模型已关闭，仅显示已有摘要",
+  "Model summaries unavailable": "模型摘要不可用",
+  "Stored model summaries": "已保存模型摘要",
+  "Historical observation": "历史观测",
+  "Activity save pending": "活动记录等待保存",
+  "Snooze": "稍后处理",
+  "Unpin": "取消关注",
+  "Pin": "关注",
+  "Mark viewed": "标记已查看",
+  "Replay": "回放",
+  ...DIAGNOSTIC_ZH,
+  'Sources': '来源',
+  '[Sources · Calls · Export]': '[来源 · 调用 · 导出]',
+  'Model calls': '调用',
+  'Export': '导出',
+  'HUD evidence': 'HUD 证据',
+  '[Save report]': '[保存报告]',
+  'No export preview': '尚无导出预览',
+  'Preview: exact report contents': '预览：报告完整内容',
+  'Rows {from}–{to}/{total}': '第 {from}–{to} 行／共 {total} 行',
+  'Report saved: {path}': '报告已保存：{path}',
+  'Report could not be saved': '报告保存失败',
+  'This historical agent is no longer in the current tree': '该历史代理已不在当前会话树中',
+  '{p} u  inbox, updates and history': '{p} u  收件箱、变化与历史',
+  '{p} p  find and pin agents': '{p} p  搜索与关注代理',
+  '{p} c  sources, model calls and export': '{p} c  状态来源、模型调用与导出',
   'Authentication failed': '鉴权失败',
   'Rate limited': '请求被限流',
   'Request timed out': '请求超时',
