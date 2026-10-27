@@ -58,7 +58,7 @@ export interface BarInput {
   settingsActive?: boolean;
 }
 
-type IconName = MonitorPane | 'main' | 'pause' | 'resume' | 'show' | 'hide' | 'settings' | 'help';
+type IconName = MonitorPane | 'main' | 'pause' | 'resume' | 'show' | 'hide' | 'settings' | 'help' | 'keys' | 'open';
 
 /**
  * The Unicode icons: one column each, every one a glyph MesloLGS NF (the
@@ -78,6 +78,8 @@ export const UNICODE_ICONS: Record<IconName, string> = {
   hide: '⊖',
   settings: '⚙',
   help: '?',
+  keys: '⌨',
+  open: '⇢',
 };
 
 /**
@@ -98,6 +100,8 @@ export const ICONS: Record<IconName, string> = {
   hide: '',
   settings: '',
   help: '',
+  keys: '\uf11c',
+  open: '\uf090',
 };
 
 /**
@@ -185,7 +189,7 @@ interface Specs {
 
 /**
  * The buttons there are, keeping those `keep` lets stay: the closed tabs
- * (4), the older agents (3), the brief (2), the tabs but the focused one's
+ * (4), the older agents (3), the brief and Switch (2), the tabs but the focused one's
  * (1) and that one too (0), in the order the bar gives them up. Main,
  * Settings and Help outlast these optional controls.
  */
@@ -210,6 +214,13 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
   const settingsLabel = width >= 24 ? settingsWord : truncateAnsi(settingsWord, zh ? 3 : 4).replace(/…$/u, '');
   tabs.push({ kind: 'settings', glyph: icon('settings'), word: settingsLabel, short: settingsLabel, state: input.settingsActive ? 'focused' : 'open' });
   const actions: Spec[] = [];
+  // Keys held in the panel: nothing typed reaches Codex until Esc or a click
+  // here hands them back, so the bar says so for as long as it lasts, and
+  // never gives the chip up for room.
+  if (state.keys) actions.push({ kind: 'keys', glyph: icon('keys'), word: t('Keys here'), short: t('Keys'), state: 'button', accent: true });
+  // An agent selected, in its list or its Inspector: switching Codex to it, as `o` does, is a click away.
+  const switchable = state.tree.selectedId && (state.focus === 'agents' || (state.focus === 'details' && state.preview === 'agent'));
+  if (switchable && !input.settingsActive && keep >= 2) actions.push({ kind: 'open-session', glyph: icon('open'), word: t('Switch'), short: '⇢', state: 'button' });
   if (input.brief && keep >= 2) {
     const paused = Boolean(input.brief.paused);
     actions.push({
@@ -266,6 +277,8 @@ const OPTIONS: ReadonlyArray<readonly [Level, number]> = [
 
 function hasWord(level: Level, spec: Spec, olderWords = false): boolean {
   if (spec.kind === 'older') return olderWords;
+  // The held keys' word outlasts the closed tabs' and the other actions', as an alert would.
+  if (spec.kind === 'keys') return level !== 'focus' && level !== 'none';
   if (spec.kind === 'settings') return true;
   if (spec.kind !== 'tab') return level === 'every';
   if (level === 'every' || level === 'all' || level === 'named') return true;
@@ -433,7 +446,7 @@ function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
     // The older button tries its words, then the icon alone when those do not fit.
     const titles = [...new Set([face(set.main, true), face(set.main, false), set.main.glyph || '←'])];
     for (const olderWords of [true, false]) {
-      const actions = set.actions.map((spec) => paint('frame', face(spec, spec.kind === 'older' && olderWords), spec.state, spec.accent));
+      const actions = set.actions.map((spec) => paint('frame', face(spec, (spec.kind === 'older' || spec.kind === 'keys') && olderWords), spec.state, spec.accent));
       const actionsWidth = actions.reduce((n, text) => n + visualLength(text), 0) + Math.max(0, actions.length - 1);
       for (const name of titles) {
         const title = theme.bold(theme.accent(` ${name} `));

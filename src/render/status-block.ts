@@ -28,6 +28,7 @@ import { formatElapsedShort } from './subagent-chip.js';
 import { formatTokenRate } from '../collectors/token-rate.js';
 import { displayConfig, iconSet } from './hud-config.js';
 import { age, type EdgeMeter } from './monitor.js';
+import { idleFor } from './monitor-labels.js';
 import { t } from './i18n.js';
 
 /**
@@ -108,7 +109,9 @@ export function sessionState(data: HudData | null, nowMs: number = Date.now()): 
   if (!status) return null;
   const [glyph, word, paint] = SESSION_STATES[status];
   const started = status === 'working' ? data.activity?.turnStartedAt : undefined;
-  const clock = started ? colors.dim(formatElapsedShort(started, nowMs)) : '';
+  // Working, the turn's clock; idle, how long it has waited on the person.
+  const idle = idleFor(data.activity, nowMs, data.stale);
+  const clock = started ? colors.dim(formatElapsedShort(started, nowMs)) : idle ? colors.dim(idle) : '';
   // The glyph and its word: the glyph survives without colour, the word
   // says what the glyph means.
   const words = `${paint(t(word))}${clock ? ` ${clock}` : ''}`;
@@ -153,7 +156,9 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
   if (status) {
     const [glyph, word, paint] = SESSION_STATES[status];
     // The glyph and its word: a lone "✓" said nothing without the legend.
-    state = `${paint(glyph)} ${t(word)}`;
+    // Idle, how long the session has waited on the person since its turn finished.
+    const idle = idleFor(data.activity, nowMs, data.stale);
+    state = `${paint(glyph)} ${t(word)}${idle ? ` ${colors.dim(idle)}` : ''}`;
     if (status === 'working') {
       const running = [...(data.toolActivity?.recentCalls ?? [])].reverse().find((call) => call.status === 'running');
       const started = data.activity?.turnStartedAt;

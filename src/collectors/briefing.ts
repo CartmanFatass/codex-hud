@@ -838,12 +838,12 @@ export class Briefer {
     this.lastFloorFingerprint = material.floorFingerprint;
     const request = { feature: material.feature, newestAt: material.newestAt, fingerprint: material.fingerprint,
       floorFingerprint: material.floorFingerprint, ...material.write() };
-    const handle = this.model.submit({ feature: request.feature, system: request.system, prompt: request.prompt, thinking: 'low' });
+    const language = this.language ?? 'zh';
+    const handle = this.model.submit({ feature: request.feature, system: request.system, prompt: request.prompt, thinking: 'low', language });
     this.handle = handle;
     this.brief = { ...this.brief, running: true };
     this.onChange();
     const rootId = this.rootId;
-    const language = this.language ?? 'zh';
     const scope = this.scope;
     const land = (text: string, parsed: NonNullable<ReturnType<typeof parseBrief>>) => {
       const { main, ...brief } = parsed;
@@ -873,7 +873,7 @@ export class Briefer {
       if (parsed) { land(result.text, parsed); return; }
       // Not the JSON asked for: asked once more to put it right, the same
       // instructions with the reply; then the last brief stays.
-      const repair = this.model.submit({ feature: request.feature, system: request.system, prompt: repairPrompt(result.text), thinking: 'low' });
+      const repair = this.model.submit({ feature: request.feature, system: request.system, prompt: repairPrompt(result.text), thinking: 'low', language });
       this.handle = repair;
       void repair.result.then(again => {
         if (this.handle !== repair) return;

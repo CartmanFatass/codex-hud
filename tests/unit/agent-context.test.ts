@@ -13,6 +13,7 @@ import * as path from 'node:path';
 
 import {
   readAgentContextUsage,
+  readAgentTokens,
   resetAgentContextCache,
   TAIL_BYTES,
   TAIL_BYTES_GROWN,
@@ -71,6 +72,21 @@ test('the last token report wins, even when the file starts with an older one', 
     assert.equal(usage.total, WINDOW - BASELINE_TOKENS);
     assert.equal(usage.used, 126_240 - BASELINE_TOKENS);
     assert.equal(usage.percent, 44);
+  });
+});
+
+test('what the agent spent in all is the newest cumulative report, with no summing', async () => {
+  const report = (input: number, cached: number, output: number) => `${JSON.stringify({
+    timestamp: '2026-03-01T11:30:00.000Z', type: 'event_msg',
+    payload: { type: 'token_count', info: { model_context_window: WINDOW, last_token_usage: { input_tokens: 40_000, output_tokens: 900 },
+      total_token_usage: { input_tokens: input, cached_input_tokens: cached, output_tokens: output } } },
+  })}\n`;
+  await withRollout(report(100_000, 60_000, 2_000) + padding(2048) + report(1_200_000, 1_000_000, 32_000), async (file) => {
+    assert.deepEqual((await readAgentTokens(file)).spent, { input: 1_200_000, cached: 1_000_000, output: 32_000 });
+  });
+  // A report with no spend says nothing of it.
+  await withRollout(tokenCount(4_900), async (file) => {
+    assert.equal((await readAgentTokens(file)).spent, undefined);
   });
 });
 

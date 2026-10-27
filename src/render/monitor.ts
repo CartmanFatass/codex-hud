@@ -9,6 +9,7 @@ import { initialPanelState, reconcileSelection, visibleRows, type PanelState, ty
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
 import { modelLegend } from './model-glyphs.js';
 import { iconSet } from './hud-config.js';
+import { palette } from './palette.js';
 import type { Brief } from '../collectors/briefing.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
@@ -29,7 +30,7 @@ export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from 
 export { iconic, agoText, age, nodeStatus, worktreeLabel, worktreeName, worktreePlace, TURN_CLOCKS, QUIET_MS, FRESH_FINISH_MS,
   isLive, isQuiet, turnClock, nextRepaintDelay, msUntilAgeChanges, msUntilCountdownChanges, finishedAt, agentPaint, writtenAge, agentRate, rateText, RATE_FRESH_MS } from './monitor-labels.js';
 export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type EdgeMeter } from './monitor-meter.js';
-export { summaryRow, guardianChip, changeCounts, shownPaths, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
+export { summaryRow, emptyAgentsRows, guardianChip, changeCounts, shownPaths, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
 export { timelineText, TIMELINE_STYLES, TIMELINE_HOURS, TIMELINE_STEP, TIMELINE_EARLIER, type TimelineStyle } from './monitor-timeline.js';
 export { MODEL_LOG_KINDS } from './monitor-inspector.js';
 export { clickTab, monitorRowAt, monitorItemAt, canMonitorDiff, handleMonitorInput } from './monitor-input.js';
@@ -57,6 +58,8 @@ export interface MonitorState {
   help: boolean;
   zoom: boolean;
   helpScroll?: number;
+  /** The help's page: keys, then buttons and mouse, then the legend. */
+  helpTab?: HelpTab;
   expanded?: boolean;
   /**
    * How the agents are shown: `rich`, a card each; `compact` (or absent), the
@@ -96,6 +99,10 @@ export interface MonitorState {
   timelineHours?: number;
   /** Entries the reader brought back from before the window. Panel state, reset with the session. */
   timelineMore?: number;
+  /** The timeline's cursor: an agent entry's item, or the earlier row's. None until ↑ or ↓ in the pane. */
+  timelineCursor?: string | null;
+  /** The pane the Inspector was opened from, when it is not the agent's own list: Esc goes back there. */
+  inspectFrom?: 'timeline';
   /** The L2 roles the timeline and the cards give a line of their own. The panel sets it from settings. */
   importantRoles?: ReadonlySet<string>;
   /** The cards' corners. The panel sets it from settings. */
@@ -133,7 +140,7 @@ export interface MonitorControl {
    * `older` shows or hides what the linger window put away; `help` opens
    * the keys.
    */
-  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'brief' | 'level' | 'log' | 'switch' | 'zoom' | 'observability';
+  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'help-tab' | 'brief' | 'level' | 'log' | 'switch' | 'zoom' | 'observability' | 'keys' | 'open-session';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
@@ -145,7 +152,7 @@ export interface MonitorFrame { lines: string[]; panes: MonitorRect[]; controls:
 export interface MonitorData {
   hud?: HudData;
   tree: SubagentTree;
-  /** The tmux prefix as the help writes it ("Ctrl+]"). */
+  /** The tmux prefix as the help writes it ("Ctrl+\"). */
   prefix?: string;
   state: MonitorState;
   width: number; height: number;
@@ -295,6 +302,11 @@ export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state:
   return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false,named:!state.tabbed,info})];
 }
 
+/** The help's pages, in order: one at a time, a tab each on its top row. */
+export const HELP_TABS = ['keys','mouse','legend'] as const;
+export type HelpTab = typeof HELP_TABS[number];
+const HELP_TAB_WORDS: Record<HelpTab,string> = {keys:'Keys',mouse:'Mouse',legend:'Legend'};
+
 /** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
 const DENSE_BELOW = 12;
 /** Rows from which a blank row parts the panel's sections. */
@@ -305,11 +317,11 @@ const HELP_KEY_COLUMN = 12;
 /**
  * The help: the shortcuts (the tmux prefix, then a key; nothing typed in the
  * panel is the panel's), the buttons, the mouse, then the legend. `prefix`
- * is the prefix as people write it, "Ctrl+]".
+ * is the prefix as people write it, "Ctrl+\".
  */
-function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = true): Array<string | {head: string}> {
+function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = true): Array<string | {head: string; tab: HelpTab}> {
   const p = {p:prefix};
-  const head = (text: string) => ({head:t(text,p)});
+  const head = (text: string, tab: HelpTab = 'keys') => ({head:t(text,p),tab});
   return [
     head('Shortcuts: {p}, then a key'),
     ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
@@ -323,21 +335,25 @@ function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = t
       ...(tabbed ? ['{p} 1–4  show a pane  {p} Tab  next'] : ['{p} 1–4  open / close a pane  {p} Tab  next','{p} x  close pane']),
       '{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
       tabbed ? '{p} Enter / Space / v  inspect' : '{p} Enter / Space / v  inspect  {p} z  zoom',
+      'Timeline: ↑ ↓ an agent\'s entry, Enter inspects',
       ...(rich ? [] : ['{p} h l  fold / unfold agent']),'{p} f  filter  {p} s  order',
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
       '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex'].map(line=>t(line,p)),
-    head('Buttons, top row'),
+    head('Buttons, top row','mouse'),
     // With icons on, what each icon is; with words, the words say it.
     ...(iconSet() !== 'text' ? [t('{icon} main session',{icon:icon('main')}),
       t('{icons} the panes, as titled',{icons:MONITOR_PANES.map(id=>icon(id)).join(' ')}),
       t('{pause} / {resume} pause / resume models',{pause:icon('pause'),resume:icon('resume')}),
       t('{show} show older  {hide} hide them',{show:icon('show'),hide:icon('hide')}),
-      t('{settings} settings  {help} help',{settings:icon('settings'),help:icon('help')})] : []),
+      t('{settings} settings  {help} help',{settings:icon('settings'),help:icon('help')}),
+      t('{keys} keys stay in the panel: click it or Esc',{keys:icon('keys')}),
+      t('{open} switch Codex to the selected agent',{open:icon('open')})] : []),
     t(tabbed ? 'Click a pane\'s tab: show it' : 'Click a pane\'s button: open or close it'),
-    head('Mouse'),
+    head('Mouse','mouse'),
     ...[...(rich ? ['Click a card: select','Click its name: select; double-click switches','A subtask line selects it','Click a blank row: keys stay here','Esc: keys back to Codex','Wheel over the card: its brief'] : ['Click agent: inspect; double-click switches','Click a log line: inspect','Click a blank row: keys stay here','Esc: keys back to Codex']),
+      'Click an agent on the timeline: inspect',
       ...(tabbed ? [] : ["Click a pane's title: zoom / restore"]),"Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
-    head('Legend'),
+    head('Legend','legend'),
     ...['1 Cards  2 Timeline','3 Changes  4 Inspector','✓ = turn completed','? = no status evidence','! = needs a look',
       '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
     t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
@@ -362,7 +378,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
     // An entry is a key, two spaces, what it does: "{p} {p}  {p} itself" is
     // one. A line of two shortcuts is split between them, never inside one.
-    const prefix = input.prefix ?? 'Ctrl+]';
+    const prefix = input.prefix ?? 'Ctrl+\\';
     const keyStart = new RegExp(`  (?=(?:${prefix.replace(/[\\^$.*+?()[\]{}|]/g,'\\$&')}|Shift\\+F12) )`);
     const split = (line: string) => {
       const out: string[] = [];
@@ -385,25 +401,63 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     };
     const keys = text.slice(0,shortcuts).flatMap(line=>typeof line === 'string' ? split(line).flatMap(entry=>keyed(entry) ?? []) : []);
     const column = Math.min(HELP_KEY_COLUMN,Math.max(1,...keys.map(entry=>visualLength(entry.key))));
+    // One page at a time: the lines under the headings of the chosen tab.
+    const page: HelpTab = HELP_TABS.includes(state.helpTab as HelpTab) ? state.helpTab as HelpTab : 'keys';
+    let tab: HelpTab = 'keys';
+    let first = true;
     const help = text.flatMap((line,i) => {
-      // A blank line parts the sections.
-      if (typeof line !== 'string') return [...(i ? [''] : []),...helpLines(line.head,width).map(text=>theme.accent(text))];
+      if (typeof line !== 'string') tab = line.tab;
+      if (tab !== page) return [];
+      // A blank line parts the sections of a page.
+      // The legend's page is its one section: its tab names it already.
+      if (typeof line !== 'string' && line.tab === 'legend') return [];
+      if (typeof line !== 'string') { const gap = first ? [] : ['']; first = false; return [...gap,...helpLines(line.head,width).map(text=>theme.accent(text))]; }
       if (i >= shortcuts) return entries(line).flatMap(entry=>helpLines(entry,width));
       return split(line).flatMap(entry => {
         const shortcut = keyed(entry);
         if (!shortcut) return helpLines(entry,width);
         const key = shortcut.key+' '.repeat(Math.max(0,column-visualLength(shortcut.key)));
         const hang = visualLength(key)+2;
+        // A column too narrow to read beside: what it does goes under the key.
+        if (width-hang < 6) return [theme.value(shortcut.key),...helpLines(shortcut.does,Math.max(1,width-2)).map(does=>`  ${does}`)];
         return helpLines(shortcut.does,Math.max(1,width-hang)).map((does,j)=>j ? ' '.repeat(hang)+does : `${theme.value(key)}  ${does}`);
       });
     });
-    const count = Math.max(0,height-2);
-    state.helpScroll = Math.max(0,Math.min(state.helpScroll??0,Math.max(0,help.length-count)));
-    frame.helpPage = {count,total:help.length};
     // A modal: its keys are real while it is open, and its way out is a button.
+    // Its pages are tabs beside the title, or on a row of their own where they do not fit.
     const back = t('[Back]');
     frame.controls.push({kind:'help',x:0,y:0,width:visualLength(back)});
-    frame.lines = [`${colors.dim(back)} ${theme.accent(t('Help'))}`,...help.slice(state.helpScroll,state.helpScroll+count)];
+    const title = `${colors.dim(back)} ${theme.accent(t('Help'))}`;
+    const faces = HELP_TABS.map(id => {
+      const word = t(HELP_TAB_WORDS[id]);
+      const text = id !== page ? colors.dim(` ${word} `) : palette().name === 'none' ? `[${word}]` : theme.tab(theme.bold(` ${word} `));
+      return {id,text};
+    });
+    const tabsWidth = faces.reduce((n,face)=>n+visualLength(face.text),0)+faces.length-1;
+    const beside = visualLength(title)+2+tabsWidth <= width;
+    const header = beside ? [title+'  '] : [title,''];
+    const y0 = beside ? 0 : 1;
+    if (beside || tabsWidth <= width) {
+      let x = visualLength(header[y0]);
+      for (const face of faces) {
+        frame.controls.push({kind:'help-tab',item:face.id,x,y:y0,width:visualLength(face.text)});
+        header[y0] += face.text+' ';
+        x += visualLength(face.text)+1;
+      }
+    } else {
+      // Too narrow for every tab: the page shown between the steps to the one before and after.
+      const at = HELP_TABS.indexOf(page);
+      const before = HELP_TABS[(at+HELP_TABS.length-1)%HELP_TABS.length];
+      const after = HELP_TABS[(at+1)%HELP_TABS.length];
+      const word = faces[at].text;
+      header[1] = `${colors.dim('‹')} ${word} ${colors.dim('›')}`;
+      frame.controls.push({kind:'help-tab',item:before,x:0,y:1,width:1});
+      frame.controls.push({kind:'help-tab',item:after,x:visualLength(header[1])-1,y:1,width:1});
+    }
+    const count = Math.max(0,height-header.length-1);
+    state.helpScroll = Math.max(0,Math.min(state.helpScroll??0,Math.max(0,help.length-count)));
+    frame.helpPage = {count,total:help.length};
+    frame.lines = [...header,...help.slice(state.helpScroll,state.helpScroll+count)];
     while(frame.lines.length<height-1)frame.lines.push('');
     if(height>1)frame.lines.push(colors.dim(`↕ ${state.helpScroll+1}/${help.length}`));
     frame.lines = frame.lines.slice(0,height).map(line=>truncateAnsi(line,width));return frame;
@@ -497,7 +551,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const edge = edgeOf(id);
     const count = Math.max(0,h-edge);
     let offset = Math.max(0,Math.min(state.scroll[id],Math.max(0,rows.length-count)));
-    const selected = id==='changes'?state.selectedFile:null;
+    const selected = id==='changes'?state.selectedFile:id==='timeline'?state.timelineCursor ?? null:null;
     const index = selected ? rows.findIndex(row=>row.item===selected) : -1;
     if (index>=0 && count>0) { if(index<offset)offset=index;else if(index>=offset+count)offset=index-count+1; }
     state.scroll[id]=offset;

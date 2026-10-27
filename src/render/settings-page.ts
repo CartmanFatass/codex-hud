@@ -8,7 +8,7 @@ import { flowLines } from './monitor-text.js';
 import { age, TIMELINE_STYLES, TIMELINE_HOURS, type MonitorControl } from './monitor.js';
 import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
 import { PANEL_WIDTHS } from '../utils/pane-width.js';
-import { LOOKS, type IconMode, type LookName } from './hud-config.js';
+import { LOOKS, AGENT_COLOR_MODES, type IconMode, type LookName } from './hud-config.js';
 import type { ModelProbeState } from '../collectors/model-probe.js';
 import { monitorText } from './monitor-text.js';
 
@@ -63,6 +63,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {key:'icons',group:'Display',label:'Icons',short:'Icons',values:['unicode','nerd','emoji','text'],help:'Icons, or words (text); Nerd Font needs it',
     format:value => ICON_WORDS[value as IconMode] ?? String(value)},
   {key:'glyphs',group:'Display',label:'Model label',short:'Model',values:['glyph','text','both'],help:'The model badge alone: glyph, name, both'},
+  {key:'agentColors',group:'Display',label:'Agent colours',short:'Colours',values:AGENT_COLOR_MODES,help:'On names and marks, marks only, or none',
+    format:value => value === 'name' ? 'names' : value === 'mark' ? 'marks' : 'off'},
   {key:'motion',group:'Display',label:'Motion',short:'Motion',values:['full','reduced'],help:'Reduced keeps spinners still'},
   {key:'language',group:'Panel',label:'Language',short:'Lang',values:['auto','en','zh'],help:'Panel and everything a model writes'},
   {key:'panelStyle',group:'Panel',label:'Layout',short:'Layout',values:['rich','compact'],help:'Agent cards, or the tree and log'},
@@ -138,7 +140,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     get:settings => settings.notify ? settings.notifyDesktop ? 'desktop' : 'tmux' : 'off',
     set:value => ({notify:value !== 'off',notifyDesktop:value === 'desktop'})},
   {key:'mouse',group:'Input',label:'Mouse',short:'Mouse',values:[true,false],help:'Click and scroll the panel'},
-  {key:'prefixKey',group:'Input',label:'Prefix key',short:'Prefix',values:PREFIX_KEYS,help:'Then a key: a panel command; others go to Codex',
+  {key:'prefixKey',group:'Input',label:'Prefix key',short:'Prefix',values:PREFIX_KEYS,help:'Then a key: a panel command. Codex uses Ctrl+] for Skip Question',
     format:value => prefixName(String(value))},
   {key:'refreshMs',group:'Input',label:'Refresh',short:'Refresh',values:[500,1000,2000,5000],help:'How often the panel reads',format:seconds},
 ];
@@ -178,7 +180,7 @@ export function settingsDirty(state:Pick<SettingsPageState,'draft'|'original'>):
 // Explicit ownership keeps new settings, assets and connection configuration out of resets by default.
 // Composite rows own their hidden counterparts even when their current value does not expose them.
 const RESET_FIELDS: Record<SettingGroup,readonly (keyof HudSettings)[]> = {
-  Display:['theme','look','icons','glyphs','motion'],
+  Display:['theme','look','icons','glyphs','agentColors','motion'],
   Panel:['language','panelStyle','paneLayout','statusCard','timelineStyle','timelineHours','treeWidth','art'],
   Agents:['sort','finishedLingerMs','importantRoles','agentLog'],
   Cards:[...CARD_PRESET_KEYS,'cardCorners','cardSubagentScope'],
@@ -233,6 +235,8 @@ export interface SettingsFrame {
   rowCount:number;
   /** The SETTING_ROWS index drawn on each screen line; null for headers and blanks. */
   rows:Array<number|null>;
+  /** On a folded section's line, the index of its first row: a click there opens it, changing nothing. */
+  groups?:Array<number|null>;
   /** Where the selected row's "‹" sits, so a click on it steps back. */
   back?:{y:number;x:number};
   footerY:number;
@@ -244,7 +248,24 @@ export interface SettingsFrame {
   probeAction?: { y: number; width: number };
 }
 
-type DisplayLine = {group:string} | {index:number} | {note:string};
+type DisplayLine = {group:string} | {index:number} | {note:string} | {folded:SettingGroup;first:number};
+
+/**
+ * Where the model connection is set, for the Backend row: the settings file
+ * and the keys in it, with whether base and key are set (never their
+ * values). AGY needs no connection; off says what to choose first.
+ */
+function connectionLines(draft:HudSettings,file:string,width:number):string[] {
+  const text = draft.briefing === 'agy'
+    ? [t('AGY runs the agy command; CODEX_HUD_BRIEF_MODEL overrides its model')]
+    : draft.briefing !== 'api' ? [t('For api, set the connection in {file}',{file})]
+    : [t('Connection: edit {file}',{file}),
+      // Neither the endpoint nor the key is shown, only whether each is set, as diagnostics treat them.
+      t('briefingApiBase: {base}',{base:t(draft.briefingApiBase ? 'set' : 'empty, uses OpenAI')}),
+      t('briefingApiKey: {key}',{key:t(draft.briefingApiKey ? 'set' : 'empty, uses CODEX_HUD_BRIEF_API_KEY')}),
+      t('Models: briefingApiLiteModel, briefingApiLowModel, briefingApiMediumModel')];
+  return text.flatMap(line => flowLines(line,width)).map(line => colors.dim(line));
+}
 
 /** Why a selectable row currently has no effect, translated for the selected-row help. */
 export function settingInactiveReason(rowOrKey:SettingRow|SettingKey,draft:HudSettings):string|null {
@@ -272,16 +293,59 @@ export function settingInactiveReason(rowOrKey:SettingRow|SettingKey,draft:HudSe
 }
 
 /**
- * Section headings interleaved with the rows they head, in reading order,
- * and under Backend, while it is off, the note saying why the rows below
- * it are dim.
+ * The page as an accordion: the selected row's section open, its heading
+ * then its rows (and under Backend, while it is off, the note saying why
+ * the rows below it are dim); every other section folded to one line, its
+ * name and the values that say most about it. Seven sections and one open
+ * fit a 24-row page without scrolling, where fifty-odd rows did not.
+ * ↑/↓ still walk the rows in order, opening each section as they enter it.
  */
-function displayLines(draft:HudSettings):DisplayLine[] {
-  return SETTING_ROWS.flatMap((row,index):DisplayLine[] => [
-    ...(index === 0 || SETTING_ROWS[index-1].group !== row.group ? [{group:row.group}] : []),
-    {index},
-    ...(row.key === 'briefing' && draft.briefing === 'off' ? [{note:'takes effect with a backend'}] : []),
-  ]);
+function displayLines(draft:HudSettings,selected:number):DisplayLine[] {
+  const open = SETTING_ROWS[selected]?.group;
+  return SETTING_ROWS.flatMap((row,index):DisplayLine[] => {
+    const first = index === 0 || SETTING_ROWS[index-1].group !== row.group;
+    if (row.group !== open) return first ? [{folded:row.group,first:index}] : [];
+    return [
+      ...(first ? [{group:row.group}] : []),
+      {index},
+      ...(row.key === 'briefing' && draft.briefing === 'off' ? [{note:'takes effect with a backend'}] : []),
+    ];
+  });
+}
+
+/** The values a folded section shows on its line: the ones that say most about it. */
+const SECTION_SUMMARY: Record<SettingGroup,readonly SettingKey[]> = {
+  Display:['theme','look','icons'],
+  Panel:['language','panelStyle','treeWidth'],
+  Agents:['sort','finishedLingerMs'],
+  Cards:['cardPreset','cardSubagentScope'],
+  LLM:['briefing'],
+  'Status bar':['statusline','density'],
+  Input:['prefixKey','refreshMs'],
+};
+
+/** A folded section's line: a mark, its name, `*` when a row in it is unsaved, its summary at the right edge. */
+function foldedLine(group:SettingGroup,draft:HudSettings,original:HudSettings,width:number):string {
+  const rows = SETTING_ROWS.filter(row => row.group === group);
+  const dirty = rows.some(row => rowValue(row,draft) !== rowValue(row,original));
+  const narrow = width < 24;
+  const parts = SECTION_SUMMARY[group].flatMap(key => {
+    const row = rows.find(entry => entry.key === key);
+    if (!row) return [];
+    const value = rowValue(row,draft);
+    const text = valueText(row,value,narrow);
+    // On or off alone says nothing: the switch's short name goes with it.
+    return [typeof value === 'boolean' ? `${t(row.short)} ${text}` : text];
+  });
+  if (group === 'LLM' && draft.briefing !== 'off' && draft.briefingPaused) parts.push(t('paused'));
+  const gutter = ` ${dirty ? theme.warning('*') : ' '} `;
+  const name = `${colors.dim('▸')} ${t(group)}`;
+  const room = width-visualLength(gutter)-visualLength(name)-2;
+  // Short of room a value goes whole, the last first; none is cut.
+  while (parts.length && visualLength(parts.join(' · ')) > room) parts.pop();
+  const summary = parts.join(' · ');
+  const pad = ' '.repeat(Math.max(1,width-visualLength(gutter)-visualLength(name)-visualLength(summary)-(narrow ? 0 : 1)));
+  return `${gutter}${name}${pad}${colors.dim(summary)}`;
 }
 
 function valueText(row:SettingRow,value:SettingValue,narrow:boolean):string {
@@ -356,8 +420,8 @@ const PREVIEWED: ReadonlySet<SettingKey> = new Set<SettingKey>(['theme','paneLay
 const LIST_MIN = 6;
 
 /** A section's heading: its title on a dim rule across the page. */
-function heading(title:string,width:number):string {
-  const text = ` ${t(title)} `;
+function heading(title:string,width:number,mark = ''):string {
+  const text = ` ${mark}${t(title)} `;
   return colors.dim(`──${text}${'─'.repeat(Math.max(0,width-2-visualLength(text)))}`);
 }
 
@@ -368,7 +432,7 @@ function heading(title:string,width:number):string {
  * seen before it is saved.
  */
 export function renderSettingsPage(state:SettingsPageState,width:number,height:number,
-  health?:{state:HudHealthState|undefined;nowMs?:number;modelCalls?:{today:number;lastHour:number;cap:number};probe?:ModelProbeState},
+  health?:{state:HudHealthState|undefined;nowMs?:number;modelCalls?:{today:number;lastHour:number;cap:number};probe?:ModelProbeState;settingsFile?:string},
   preview?:(draft:HudSettings,width:number)=>string[],
   navigation?:{lines:string[];controls:MonitorControl[]}):SettingsFrame {
   width = Math.max(0,Math.floor(width));
@@ -386,14 +450,18 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
     ...(probe.unavailable ? [t('Select API backend to test')] : probe.rows.map(row =>
       `${row.tier}: ${row.status === 'failed' ? t(PROBE_FAILURES[row.failure ?? ''] ?? 'Model request failed') : t(row.status)}${row.elapsedMs !== undefined ? ` ${row.elapsedMs}ms` : ''} · ${monitorText(row.model)}`)),
   ] : [];
+  // The connection is not edited here (no secret is typed into a terminal
+  // page): selected, Backend says which file and which keys hold it.
+  const connection = health?.settingsFile && SETTING_ROWS[selected].key === 'briefing' && available > 10
+    ? connectionLines(state.draft,monitorText(health.settingsFile),width) : [];
   const reason = settingInactiveReason(SETTING_ROWS[selected],state.draft);
   const footerCount = Math.min(2,Math.max(0,available-1));
   const reasonLines = reason && available > 3 ? flowLines(reason,width).slice(0,Math.max(0,available-1-footerCount-(healthRow ? 1 : 0)-(callsRow ? 1 : 0))) : [];
-  const rest = Math.max(0,available-1-footerCount-reasonLines.length-(healthRow ? 1 : 0)-(callsRow ? 1 : 0)-probeRows.length);
+  const rest = Math.max(0,available-1-footerCount-reasonLines.length-(healthRow ? 1 : 0)-(callsRow ? 1 : 0)-probeRows.length-connection.length);
   const drawn = preview && PREVIEWED.has(SETTING_ROWS[selected].key) ? preview(state.draft,width) : [];
   const shown = drawn.length && rest-1-drawn.length >= LIST_MIN ? [heading('Preview',width),...drawn] : [];
   const count = Math.max(0,rest-shown.length);
-  const DISPLAY = displayLines(state.draft);
+  const DISPLAY = displayLines(state.draft,selected);
   const hintAt = width >= 70 ? Math.max(60,Math.floor(width*0.8)) : 0;
   const at = DISPLAY.findIndex(line => 'index' in line && line.index === selected);
   // Scroll by screen line, keeping the selected row's heading in view with it.
@@ -421,17 +489,24 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
 
   const lines = [...navLines,...(available ? [header] : [])];
   const rows: Array<number|null> = lines.map(()=>null);
+  const groups: Array<number|null> = lines.map(()=>null);
   let back: SettingsFrame['back'];
   for (let i = 0; i < count; i++) {
     const line = DISPLAY[i+offset];
+    groups.push('folded' in (line ?? {}) ? (line as {first:number}).first : null);
     if (!line) { lines.push(''); rows.push(null); continue; }
+    if ('folded' in line) {
+      lines.push(foldedLine(line.folded,state.draft,original,width));
+      rows.push(null);
+      continue;
+    }
     if ('note' in line) {
       lines.push(colors.dim(truncateAnsi(`     ${t(line.note)}`,width)));
       rows.push(null);
       continue;
     }
     if ('group' in line) {
-      lines.push(heading(line.group,width));
+      lines.push(heading(line.group,width,'▾ '));
       rows.push(null);
       continue;
     }
@@ -445,6 +520,7 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   if (callsRow) lines.push(callsRow);
   const probeAction = probeRows.length ? { y: lines.length, width: Math.min(width, visualLength(probeRows[0])) } : undefined;
   lines.push(...probeRows);
+  lines.push(...connection);
   lines.push(...shown);
   lines.push(...reasonLines.map(line => theme.warning(line)));
   if (footerCount > 0) {
@@ -453,12 +529,13 @@ export function renderSettingsPage(state:SettingsPageState,width:number,height:n
   }
   if (footerCount > 1) {
     // Save, Reset and Back are the buttons on the top row; only the moves are left to say.
-    lines.push(colors.dim(SETTING_ROWS[selected].group === 'LLM' && probe ? t('t: test/cancel API · d: diagnostics') : width < 30 ? '↑↓ ←→' : t('↑↓ select  ←→ change')));
+    lines.push(colors.dim(SETTING_ROWS[selected].group === 'LLM' && probe ? t('t: test/cancel API · d: diagnostics') : width < 30 ? '↑↓ ←→' : width >= 48 ? t('↑↓ select  ←→ change  PgUp/PgDn section') : t('↑↓ select  ←→ change')));
   }
   return {
     lines:lines.slice(0,height).map(line => fitLine(line,width)),probeAction,
     state:{...state,original,selected,offset},
-    rowStart:headerY+1,rowCount:count,rows:[...rows,...Array(Math.max(0,height-rows.length)).fill(null)].slice(0,height),back,footerY:height-1,actions,headerY,
+    rowStart:headerY+1,rowCount:count,rows:[...rows,...Array(Math.max(0,height-rows.length)).fill(null)].slice(0,height),
+    groups:[...groups,...Array(Math.max(0,height-groups.length)).fill(null)].slice(0,height),back,footerY:height-1,actions,headerY,
     navigationControls:(navigation?.controls ?? []).flatMap(control => {
       if (control.y < 0 || control.y >= navLines.length || control.width <= 0) return [];
       const x = Math.max(0,control.x);
@@ -478,6 +555,9 @@ export function handleSettingsInput(state:SettingsPageState,input:WorkbenchInput
       return {state:next,action:frame.actions.find(action=>input.x>=action.x&&input.x<action.x+action.width)?.action};
     }
     if (input.button === 'left') {
+      // A folded section's line opens it at its first row; no value moves.
+      const opened = frame.groups?.[input.y];
+      if (opened !== null && opened !== undefined) { next.selected = opened; next.message = ''; return {state:next}; }
       const index = frame.rows[input.y];
       if (index === null || index === undefined) return {state:next};
       // A click picks the row and moves its value on; the "‹" moves it back.
@@ -493,6 +573,16 @@ export function handleSettingsInput(state:SettingsPageState,input:WorkbenchInput
   const moved = next.selected;
   if (key === 'down' || key === 'tab') next.selected = Math.min(SETTING_ROWS.length-1,next.selected+1);
   if (key === 'up' || key === 'shift-tab') next.selected = Math.max(0,next.selected-1);
+  // A page is a section: the first row of the next one, or of this one (then the one before).
+  if (key === 'page-down') {
+    const after = SETTING_ROWS.findIndex((row,i) => i > next.selected && row.group !== SETTING_ROWS[next.selected].group);
+    if (after >= 0) next.selected = after;
+  }
+  if (key === 'page-up') {
+    const start = (i:number) => { while (i > 0 && SETTING_ROWS[i-1].group === SETTING_ROWS[i].group) i--; return i; };
+    const here = start(next.selected);
+    next.selected = here < next.selected ? here : start(Math.max(0,here-1));
+  }
   if (key === 'home') next.selected = 0;
   if (key === 'end') next.selected = SETTING_ROWS.length-1;
   // A status message gives way to the help of the next row looked at.

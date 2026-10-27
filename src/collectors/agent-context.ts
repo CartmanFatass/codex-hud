@@ -12,6 +12,9 @@
  * token report is further back than that reports nothing, which renders as an
  * absent field — the same answer as an agent that has not reported yet.
  *
+ * Each report also carries the agent's whole spend so far
+ * (`total_token_usage`), so the newest one is its total: no need to sum.
+ *
  * The same reports give the agent's output rate, as the main session's is
  * taken: a turn-level wallclock proxy that includes TTFT/stalls and excludes
  * identifiable tool waits, with no rolling window. After the first read only
@@ -22,17 +25,18 @@ import * as fs from 'node:fs';
 import { buildContextUsage } from './context-usage.js';
 import { fileSignature } from '../utils/file-signature.js';
 import { TokenRateTracker, observeTokenRateRecord, type TokenRateSnapshot } from './token-rate.js';
-import type { ContextUsage, EventMsgPayload, RolloutLine, TokenUsage, TokenUsageInfo } from '../types.js';
+import type { ContextUsage, EventMsgPayload, RolloutLine, TokenSpent, TokenUsage, TokenUsageInfo } from '../types.js';
 
 /** First tail window. Comfortably more than a turn's worth of events. */
 export const TAIL_BYTES = 256 * 1024;
 /** The one retry, for a rollout that went quiet after a long tool run. */
 export const TAIL_BYTES_GROWN = 4 * TAIL_BYTES;
 
-/** What an agent's rollout says of its tokens: its context fill and its output rate, each absent when it has not said. */
+/** What an agent's rollout says of its tokens: its context fill, its output rate and what it spent in all, each absent when it has not said. */
 export interface AgentTokens {
   usage?: ContextUsage;
   rate?: TokenRateSnapshot;
+  spent?: TokenSpent;
 }
 
 interface CacheEntry {
@@ -42,6 +46,8 @@ interface CacheEntry {
   offset: number;
   rest: string;
   lastUsage?: TokenUsage;
+  /** The newest cumulative report: each one carries the whole life's sum, so the tail is enough. */
+  totalUsage?: TokenUsage;
   window?: number;
   tracker: TokenRateTracker;
   reading: AgentTokens;
@@ -99,6 +105,9 @@ function scan(entry: CacheEntry, text: string): void {
     if (info.last_token_usage) {
       entry.lastUsage = info.last_token_usage;
     }
+    if (info.total_token_usage) {
+      entry.totalUsage = info.total_token_usage;
+    }
     if (typeof info.model_context_window === 'number' && info.model_context_window > 0) {
       entry.window = info.model_context_window;
     }
@@ -154,7 +163,11 @@ export async function readAgentTokens(rolloutPath: string): Promise<AgentTokens>
     ? buildContextUsage({ last_token_usage: entry.lastUsage, model_context_window: entry.window }, undefined, undefined)
     : undefined;
   const rate = entry.tracker.snapshot;
-  entry.reading = { ...(usage ? { usage } : {}), ...(rate ? { rate } : {}) };
+  const total = entry.totalUsage;
+  const spent: TokenSpent | undefined = total && (total.input_tokens || total.output_tokens)
+    ? { input: total.input_tokens ?? 0, cached: total.cached_input_tokens ?? 0, output: total.output_tokens ?? 0 }
+    : undefined;
+  entry.reading = { ...(usage ? { usage } : {}), ...(rate ? { rate } : {}), ...(spent ? { spent } : {}) };
   if (signature !== null) {
     cache.set(rolloutPath, entry);
   } else {

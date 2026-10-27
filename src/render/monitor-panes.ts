@@ -11,12 +11,12 @@ import type { CountsText } from './control-bar.js';
 import { visibleRows, countExpired, guardianCount } from './panel-state.js';
 import { agentCounts, eachThread, type StatusCounts } from '../collectors/subagent-tree.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
-import { renderModelEffortToken } from './model-glyphs.js';
+import { fitModelEffortToken } from './model-glyphs.js';
 import { displayConfig } from './hud-config.js';
 import { t } from './i18n.js';
 import { agentTitle, shownName } from './agent-title.js';
 import { briefFields, taskLines, richRows, briefLine } from './cards.js';
-import { monitorText, fit, pair, wrapped, flowLines, squeeze } from './monitor-text.js';
+import { monitorText, fit, pair, wrapped, flowLines, squeeze, helpLines } from './monitor-text.js';
 import { nodeStatus, isQuiet, turnClock, finishedAt, FRESH_FINISH_MS, writtenAge, worktreeLabel, worktreeLabelText, worktreeName,
   isUntracked, UNTRACKED_ROW, changeLetter, lineCounts, listsWorktrees, worktreeItem, agentRate, rateText } from './monitor-labels.js';
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
@@ -85,11 +85,26 @@ export function guardianChip(nodes: readonly SubagentTreeNode[]): string {
   return reviewChip({total:count,active:running ? 1 : 0,failed});
 }
 
+/**
+ * The one line an agents view has with nothing in it, and only when that is
+ * a fact: the session is read and bound, and its tree, built for this root,
+ * holds no thread at all (no agent, subtask or review, so no count and no
+ * +N either). A dim sentence saying so, and where the help is. While the
+ * session is unread, unbound or its tree not built, nothing: no guess.
+ */
+export function emptyAgentsRows(input: Pick<MonitorData,'tree'|'loading'|'prefix'>, width: number): MonitorRow[] {
+  if (input.loading || !input.tree.rootId || input.tree.nodes.length) return [];
+  const room = Math.max(1,width-1);
+  return [t('No agents started in this session yet'),t('Help: {p} ?',{p:input.prefix ?? 'Ctrl+\\'})]
+    .flatMap(text=>helpLines(text,room).map(line=>({text:` ${colors.dim(line)}`})));
+}
+
 function agentRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
-  // With no agent to show the view is empty: the summary's counts, the bar's
-  // +N and the status card already say why, so no line says it again.
+  // With agents to show but none listed, the view is empty: the summary's
+  // counts, the bar's +N and the status card already say why, so no line
+  // says it again. With none at all, one line says so (emptyAgentsRows).
   const {row:head} = summaryRow(input,now);
-  const result: MonitorRow[] = [head];
+  const result: MonitorRow[] = [head,...emptyAgentsRows(input,width)];
   for (const row of visibleRows(input.tree.nodes,state.tree,now)) {
     const node = row.node;
     const status = nodeStatus(node,now);
@@ -100,10 +115,9 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     const finished = node.status === 'completed' && now-(finishedAt(node)?.getTime() ?? 0) > FRESH_FINISH_MS;
     const dimName = row.context || finished;
     // Same celestial badges as the compact HUD. Narrow panes keep glyphs only.
-    const token = width < 10 ? '' : renderModelEffortToken(node.model ? monitorText(node.model) : undefined, node.effort ? monitorText(node.effort) : undefined, {
-      mode: width < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs,
-    });
-    const badge = token ? truncateAnsi(token, Math.max(2, Math.floor(width/4))) : '';
+    // The widest whole form that fits a quarter of the row; never a cut one.
+    const badge = width < 10 ? '' : fitModelEffortToken(node.model ? monitorText(node.model) : undefined, node.effort ? monitorText(node.effort) : undefined,
+      Math.max(2, Math.floor(width/4)), width < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs);
     // The agent's own context fill, where the row is wide enough to carry it
     // without pushing the badge off: 26 content columns is a 30-column pane,
     // the widest the default split makes, minus its borders. Absent data

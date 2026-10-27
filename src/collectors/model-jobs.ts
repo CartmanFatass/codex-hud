@@ -620,7 +620,7 @@ export class ModelJobs {
         const answer = finalAnswer(text);
         // No final answer recorded: nothing to digest, and nothing guessed.
         if (!answer) { this.failed.set(key, input.now); return; }
-        this.ask(key, input.now, { feature: 'digest', system: digestSystemPrompt(input.language), prompt: digestPrompt(answer.text),
+        this.ask(key, input.now, { feature: 'digest', language: input.language, system: digestSystemPrompt(input.language), prompt: digestPrompt(answer.text),
           cacheKey: `${file}:${answer.at.getTime()}:${input.language}` }, reply => {
           const digest = parseDigest(reply);
           if (!digest) return false;
@@ -650,7 +650,7 @@ export class ModelJobs {
     if (this.log.entries(node.id).some(entry => entry.kind === 'digest' && entry.at >= from && entry.at <= end + 5000 && entryLanguage(entry) === input.language)) return;
     const key = `digest:${node.id}:${end}`;
     if (!this.due(key, input.now) || this.inFlight('digest:') >= MAX_IN_FLIGHT) return;
-    this.ask(key, input.now, { feature: 'digest', system: digestSystemPrompt(input.language), prompt: digestPrompt(result),
+    this.ask(key, input.now, { feature: 'digest', language: input.language, system: digestSystemPrompt(input.language), prompt: digestPrompt(result),
       cacheKey: `${createHash('sha256').update(result).digest('hex').slice(0, 32)}:${input.language}` }, reply => {
       const digest = parseDigest(reply);
       if (!digest) return false;
@@ -673,7 +673,7 @@ export class ModelJobs {
     if (!pending.size) return;
     const keys = [...pending.keys()];
     const batch = `labels:${keys.join(',')}`;
-    this.ask(batch, input.now, { feature: 'labels', system: labelsSystemPrompt(input.language), prompt: labelsPrompt([...pending.values()]),
+    this.ask(batch, input.now, { feature: 'labels', language: input.language, system: labelsSystemPrompt(input.language), prompt: labelsPrompt([...pending.values()]),
       cacheKey: keys.join(',') }, reply => {
       const labels = parseLabels(reply, keys.length);
       let got = false;
@@ -703,7 +703,7 @@ export class ModelJobs {
     const first = input.main?.firstUserMessage?.text;
     const key = `title:${sessionId}`;
     if (this.title.title || !first || !this.due(key, input.now)) return;
-    this.ask(key, input.now, { feature: 'title', system: titleSystemPrompt(input.language), prompt: titlePrompt(first), cacheKey: `${sessionId}:${input.language}` }, reply => {
+    this.ask(key, input.now, { feature: 'title', language: input.language, system: titleSystemPrompt(input.language), prompt: titlePrompt(first), cacheKey: `${sessionId}:${input.language}` }, reply => {
       const title = oneLine(reply, 40);
       if (!title || this.title?.sessionId !== sessionId || this.title.title) return Boolean(title);
       this.title = { sessionId, title };
@@ -725,7 +725,7 @@ export class ModelJobs {
       const args = call.arguments ?? {};
       const command = [args.cmd, args.command, args.code].find(value => typeof value === 'string') as string | undefined;
       const what = `Tool ${call.name}${command ? `: ${command}` : call.target ? `: ${call.target}` : ''}${call.exitCode !== undefined ? ` (exit code ${call.exitCode})` : ''}`;
-      this.ask(id, input.now, { feature: 'cause', system: causeSystemPrompt(input.language), prompt: causePrompt(what, call.output), cacheKey: `${id}:${input.language}` }, reply => {
+      this.ask(id, input.now, { feature: 'cause', language: input.language, system: causeSystemPrompt(input.language), prompt: causePrompt(what, call.output), cacheKey: `${id}:${input.language}` }, reply => {
         const cause = oneLine(reply);
         if (cause) this.causes.set(id, cause);
         return Boolean(cause);
@@ -746,7 +746,7 @@ export class ModelJobs {
         const material = errorMaterial(text);
         // The rollout recorded no error to read: nothing is sent, nothing guessed.
         if (!material) { this.failed.set(id, input.now); return; }
-        this.ask(id, input.now, { feature: 'cause', system: causeSystemPrompt(input.language),
+        this.ask(id, input.now, { feature: 'cause', language: input.language, system: causeSystemPrompt(input.language),
           prompt: causePrompt(`Subagent ${node.name}${node.task ? `, task: ${node.task}` : ''}`, material), cacheKey: `${file}:${at}:${input.language}` }, reply => {
           const cause = oneLine(reply);
           if (!cause) return false;
@@ -767,7 +767,7 @@ export class ModelJobs {
     if (!pending || pending.kind !== 'exec' || !pending.command) return;
     const key = `approval:${approvalKey(pending)}`;
     if (this.approval?.key === key || !this.due(key, input.now)) return;
-    this.ask(key, input.now, { feature: 'approval', system: approvalSystemPrompt(input.language), prompt: approvalPrompt(pending.command),
+    this.ask(key, input.now, { feature: 'approval', language: input.language, system: approvalSystemPrompt(input.language), prompt: approvalPrompt(pending.command),
       cacheKey: `${createHash('sha256').update(pending.command).digest('hex').slice(0, 32)}:${input.language}` }, reply => {
       const text = oneLine(reply);
       // A judgement in place of a description is not shown at all.
@@ -800,7 +800,7 @@ export class ModelJobs {
     readHunks(root).then(hunks => {
       if (generation !== this.generation || !this.running.has(key)) return;
       this.running.delete(key);
-      this.ask(key, input.now, { feature: 'changes', system: changeSystemPrompt(input.language), prompt: changeSummaryInput(files, hunks), cacheKey: `${root}:${input.language}` }, reply => {
+      this.ask(key, input.now, { feature: 'changes', language: input.language, system: changeSystemPrompt(input.language), prompt: changeSummaryInput(files, hunks), cacheKey: `${root}:${input.language}` }, reply => {
         const lines = twoLines(reply);
         if (!lines.length) return false;
         this.change = { root, fingerprint, lines, at: Date.now() };

@@ -317,6 +317,16 @@ Every request goes through `SmallModel.submit`, which provides:
   HTTP redirects are refused, and reflected credentials are removed from errors.
 - **Cache.** Only for callers that pass a `cacheKey`. Up to 200 entries in
   `hud/model-cache/cache.json`.
+- **Reply language.** A request that names its `language` (every feature
+  but the connection probe) gets back only a reply in that language:
+  `reply-language.ts` judges the words a person reads (a JSON reply's string
+  values, echoed `agent`/`id`/`path` fields, code, paths and URLs left out)
+  by share, so a quoted name passes. A reply plainly in another language
+  (kana or Hangul a fifth of its CJK for Chinese, CJK three tenths of its
+  letters for English, no Han at all in a sentence of Latin for Chinese) is
+  an `invalid-response` failure and is not cached; a cached one that fails
+  is dropped and asked again. Han alone cannot tell Chinese from Japanese,
+  which is why the stored `lang` stamp is not enough.
 - **Hourly cap.** `modelCallsPerHour`, default 60. The call log
   `hud/model-cache/calls.json` is shared by every panel on the same `CODEX_HOME`.
 - **Private files.** `writePrivateFile`: directories 0700, files 0600, written
@@ -608,7 +618,7 @@ pane with `send-keys -H`.
 
 **Panel keys.** Panel commands come only through the prefix:
 
-1. The user presses the prefix key (`Ctrl+]` by default) and then one key.
+1. The user presses the prefix key (`Ctrl+\` by default) and then one key.
 2. `codex-hud-command` writes `ESC _ codex-hud:<cmd> ESC \` into the panel's input.
 3. `WorkbenchInputDecoder` decodes it.
 4. `monitorKey` or `overlayKey` in `utils/panel-command.ts` turn it into an action.
@@ -639,7 +649,12 @@ against Codex 0.154 and 0.157.
 
 - `HudSettings` holds the type, `defaultSettings()` the defaults, a per-key
   validator table the checks, and `loadSettings` / `saveSettings` the I/O.
-- The page separates Display, Panel, Agents, Cards, LLM, Status bar and Input.
+- The page separates Display, Panel, Agents, Cards, LLM, Status bar and Input,
+  drawn as an accordion (`displayLines(draft, selected)`): the selected row's
+  group open, the others folded to one line with `SECTION_SUMMARY` values.
+  `SettingsFrame.groups` maps a folded line to its group's first row, so a
+  click there only selects; `rows` stays the map of real rows, whose click
+  steps a value. PgUp/PgDn step by group.
   Settings is a labelled main navigation tab (`BarInput.settingsActive`), not a
   gear-only action. The page keeps that bar above its Back/Save/Reset header;
   `navigationControls` and `headerY` retain correct hit maps. Clicking the
@@ -719,8 +734,12 @@ Check this list before every change to `src/render/` or `src/collectors/`.
   `colors.bold` and `underline` still emit escapes under the `none` theme.
 - [ ] Controls show words or icons, never shortcut letters. Every glyph has a word next to it.
 - [ ] When space is short, drop a field before cutting one. Do not add
-  placeholder or empty-state lines, or hints that repeat what a count already
-  says. Show nothing rather than a guess.
+  placeholder lines, or hints that repeat what a count already says. Show
+  nothing rather than a guess. Two exceptions state a fact once, dim, in rows
+  nothing else uses: an agents view whose tree, read and built for the bound
+  root, holds no thread at all (`emptyAgentsRows`: one sentence and where the
+  help is; nothing while `loading`), and, in rich, a closing line after the
+  cards when the card summary is shown but no backend is set.
 - [ ] Cards hold model-written text only (§6.3).
 - [ ] Rendering is pure. Pass `nowMs` in, never call `Date.now()`, and compute
   click rows with the same `nowMs` the frame used.
@@ -983,7 +1002,7 @@ newlines. This reduces nested tmux/Herdr traffic for clock-only repaints.
 
 `collectors/bridge-health.ts` reads bounded per-attach health reports on collection
 ticks. The pure `render/hud-diagnostics.ts` formats current failures and TPS evidence.
-`Ctrl+] d` selects Inspector preview `diagnostics`; agent TPS evidence is expanded
+`Ctrl+\ d` selects Inspector preview `diagnostics`; agent TPS evidence is expanded
 with the existing Inspector Enter action. Unbound sessions are distinct from read
 failures via `HudHealth.bind`, while model lifecycle callbacks repaint classified
 failures and queue status without performing I/O in the renderer.

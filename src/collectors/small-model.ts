@@ -27,7 +27,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { t } from '../render/i18n.js';
+import { t, type Language } from '../render/i18n.js';
+import { wrongLanguage } from './reply-language.js';
 import { ModelRuntimeStore } from './model-runtime-store.js';
 import { boundedTelemetry, summarizeModelTelemetry, telemetryFeature, telemetryFailure, TELEMETRY_RECORD_LIMIT, type ModelTelemetryRecord, type ModelTelemetrySummary, type TelemetryFeature } from './model-telemetry.js';
 
@@ -64,6 +65,12 @@ export interface ModelRequest {
   timeoutMs?: number;
   /** Optional API output bound, from 1 through 8192 tokens. */
   maxOutputTokens?: number;
+  /**
+   * The language the reply must be in. A reply plainly in another (see
+   * reply-language.ts) is a failure, `invalid-response`, and is never cached;
+   * one cached before is dropped. Never sent, and no part of the cache identity.
+   */
+  language?: Language;
   /**
    * Answer from the cache when the same input was answered before. The key
    * names what the input is about (an agent id, a rollout path); the cache is
@@ -221,6 +228,11 @@ export function cleanOutput(raw: string): string {
 export function requestDigest(request: ModelRequest, route?: { backend: ModelBackend; endpoint?: string; model?: string; reasoning?: boolean }): string {
   return createHash('sha256').update(JSON.stringify([request.feature, request.cacheKey ?? '', request.thinking ?? DEFAULT_THINKING,
     request.system, request.prompt, route ?? null, ...(outputTokens(request.maxOutputTokens) !== undefined ? [outputTokens(request.maxOutputTokens)] : [])])).digest('hex');
+}
+
+/** Whether a reply is one the request can take: in its language, when it names one. */
+function acceptable(request: ModelRequest, text: string): boolean {
+  return !request.language || !wrongLanguage(text, request.language);
 }
 
 /** Calls within `windowMs` before `now`. */
@@ -434,7 +446,9 @@ export class SmallModel {
     });
     this.recordTelemetry(job);
     this.reloadCache();
-    const hit = digest ? this.cache.get(digest) : undefined;
+    let hit = digest ? this.cache.get(digest) : undefined;
+    // An answer cached in the wrong language is no answer: dropped, and asked again.
+    if (hit && !acceptable(request, hit.text)) { this.cache.delete(digest!); hit = undefined; }
     if (backend === 'off') {
       job.resolve({ ok: false, error: 'model backend off', refused: true });
     } else if (hit) {
@@ -551,7 +565,7 @@ export class SmallModel {
     const http = job.http;
     if (http && 'error' in http) return { ok: false, error: http.error, classification: 'invalid-response' };
     if (this.store) {
-      const reservation = await this.store.reserve(job.digest, job.id, this.cap, this.clock, () => job.settled);
+      const reservation = await this.store.reserve(job.digest, job.id, this.cap, this.clock, () => job.settled, text => acceptable(job.request, text));
       if (job.settled) {
         if (reservation.kind === 'reserved' && job.digest) await this.store.finish(job.digest, job.id);
         return { ok: false, error: 'cancelled', cancelled: true };
@@ -574,7 +588,8 @@ export class SmallModel {
       const now = this.clock();
       if (job.digest) {
         const hit = this.cache.get(job.digest);
-        if (hit) { job.generatedAt = hit.at; return { ok: true, text: hit.text, cached: true }; }
+        if (hit && acceptable(job.request, hit.text)) { job.generatedAt = hit.at; return { ok: true, text: hit.text, cached: true }; }
+        if (hit) this.cache.delete(job.digest);
       }
       if (callsWithin(this.calls, now, HOUR_MS) >= this.cap) return this.capResult();
       this.calls.push(now);
@@ -585,6 +600,8 @@ export class SmallModel {
       outcome = await (backend === 'api'
         ? this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>)
         : this.spawn(job, job.command!));
+      // Written in another language than asked: a failure, never cached, never shown as if it obeyed.
+      if (outcome.ok && !acceptable(job.request, outcome.text)) outcome = { ok: false, error: t('Reply not in the panel language'), classification: 'invalid-response' };
       if (outcome.ok) job.generatedAt = this.clock();
     } catch {
       outcome = { ok: false, error: 'model request failed', classification: 'network' };

@@ -1,11 +1,5 @@
 > **注意:** この日本語版は抄訳で、内容が最新でない場合があります。完全なドキュメントは [README.md](./README.md)（英語）を参照してください。
 
-## Modification History
-
-| Date       | Summary of Changes |
-|------------|--------------------|
-| 2026-05-22 | Windows ユーザー向けに current branch のダウンロード、self-check、WSL 起動手順とスクリーンショットを追加。 |
-
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
   <a href="./README.zh.md"><img src="https://img.shields.io/badge/lang-中文-red.svg" alt="中文"></a>
@@ -56,7 +50,8 @@ cd codex-hud
 codex
 ```
 
-### Windows current branch（WSL デフォルト）
+<details>
+<summary><b>Windows（WSL デフォルト）</b>：インストール、self-check、PowerShell / cmd コマンド</summary>
 
 この branch では、Windows のサポート対象 HUD runtime は WSL です。PowerShell と cmd はランチャー shell として使い、HUD 本体は Ubuntu WSL の Bash + tmux で動作します。
 
@@ -93,7 +88,7 @@ Notes:
 - `codex-hud-wsl` は Ubuntu WSL で完全な HUD を起動する明示コマンドです。
 - `cmd.exe` ユーザーには、同じ PowerShell entrypoint を呼び出す管理済み `.cmd` shim が提供されます。
 
-### 管理コマンド
+**管理コマンド**
 
 初回インストール後、以下のコマンドがシェルに追加されます：
 
@@ -102,6 +97,8 @@ Notes:
 | `codex-hud-sync` | 現在のチェックアウトを再ビルドしエイリアスを更新 |
 | `codex-hud-upgrade` | 最新の変更をプルして再ビルド |
 | `codex-hud-uninstall` | エイリアスを削除し HUD セッションを停止 |
+
+</details>
 
 ## HUD に何が表示される？
 
@@ -219,6 +216,12 @@ node dist/index.js             # HUD を直接実行
 | 2026-04-09 | HUD セッションを tmux ペインにバインド、reasoning effort を表示 |
 | 2026-02-09 | リサイズ後のメインペインフォーカス修正、マウススクロールのデフォルト改善 |
 | 2026-02-09 | セッションアタッチのデフォルトとスクロールバック設定を更新 |
+
+ドキュメント更新履歴：
+
+| Date       | Summary of Changes |
+|------------|--------------------|
+| 2026-05-22 | Windows ユーザー向けに current branch のダウンロード、self-check、WSL 起動手順とスクリーンショットを追加。 |
 
 ## ライセンス
 

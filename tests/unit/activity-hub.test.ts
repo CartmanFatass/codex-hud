@@ -110,3 +110,41 @@ test('unknown data displays absence labels, paused model summary availability is
     assert.ok(frame.lines.every(line=>visualLength(line)===width));
   }
 });
+
+test('Sessions lists this directory\'s recent sessions with the command that resumes one, whole, and runs nothing',()=>{
+  const a=fixture();
+  const sessions=[{id:'019bc10d-c89d-7352-935c-76b351384357',modifiedAt:NOW-60_000,title:'Fix parser recovery',current:true},
+    {id:'019bc10e-0000-7352-935c-000000000001',modifiedAt:NOW-3*3_600_000},{id:'019bc10f-1111-7352-935c-000000000002',modifiedAt:NOW-2*86_400_000,title:'Release notes'}];
+  for(const lang of ['en','zh'] as const) {
+    const previous=setLanguage(lang); try {
+      for(const width of [20,24,32,40,48,56,80]) for(const selected of [0,1,2]) {
+        const frame=renderActivityHub(a.view(),{...initialActivityHubState('sessions'),selected},width,18,NOW,sessions);
+        for(const line of frame.lines) assert.equal(visualLength(line),width,`${lang}/${width}: ${stripAnsi(line)}`);
+        const text=frame.lines.map(stripAnsi);
+        // The selected session's id is on the page whole, maybe across lines, never cut.
+        const id=sessions[selected].id;
+        const command=text.slice(text.findIndex(line=>line.startsWith('$ codex resume')));
+        assert.ok(command.length,`${lang}/${width}: the command`);
+        assert.equal(command.join('').replace(/^\$ codex resume/,'').replace(/\s+/g,'').slice(0,id.length),id,`${lang}/${width}: ${command.join('|')}`);
+        // This session's mark and each age stay whole; the date gives way first.
+        const marked=frame.rows[0].text;
+        assert.match(marked,lang==='en' ? /this session$/ : /当前会话$/);
+        assert.match(frame.rows[1].text,lang==='en' ? /3h ago/ : /3h前/);
+        // Nothing to inspect, read or pin: Close is the only action, and Enter asks for nothing.
+        assert.deepEqual(frame.controls.filter(c=>c.action.type!=='row' && c.action.type!=='tab').map(c=>c.action.type),['close']);
+        assert.equal(handleActivityHubInput(frame.state,{type:'key',key:'enter'} as never,frame).action,undefined);
+      }
+    } finally {setLanguage(previous);}
+  }
+  const wide=renderActivityHub(a.view(),initialActivityHubState('sessions'),80,18,NOW,sessions).lines.map(stripAnsi);
+  assert.ok(wide.some(line=>line.includes('$ codex resume 019bc10d-c89d-7352-935c-76b351384357')),'wide: one line');
+  assert.ok(wide.some(line=>/\d\d-\d\d \d\d:\d\d · 1m ago · Fix parser recovery · this session/.test(line)),wide.join('\n'));
+  // None: says so, in a fact.
+  const none=renderActivityHub(a.view(),initialActivityHubState('sessions'),48,12,NOW,[]).lines.map(stripAnsi);
+  assert.ok(none.some(line=>line.startsWith('No session started here in the last 7 days')));
+  // Tab walks into Sessions after Find; ← from the Inbox still reaches History.
+  const find=renderActivityHub(a.view(),initialActivityHubState('find'),48,12,NOW);
+  assert.equal(handleActivityHubInput({...find.state,querying:false},{type:'key',key:'tab'} as never,find).state.tab,'sessions');
+  const inbox=renderActivityHub(a.view(),initialActivityHubState('inbox'),48,12,NOW);
+  assert.equal(handleActivityHubInput(inbox.state,{type:'key',key:'left'} as never,inbox).state.tab,'history');
+});

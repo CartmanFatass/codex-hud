@@ -6,7 +6,7 @@ import path from 'node:path';
 import { RolloutParser, type QuotaSample } from '../../src/collectors/rollout.js';
 import { quotaForecast, slope, FORECAST_MIN_SPAN_MS } from '../../src/collectors/quota-forecast.js';
 import { WorkbenchHistory } from '../../src/collectors/workbench-events.js';
-import { initialMonitorState, renderMonitor, handleMonitorInput, monitorModes, monitorPreferences, timelineText } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput, monitorModes, monitorPreferences, timelineText, HELP_TABS } from '../../src/render/monitor.js';
 import { directions } from '../../src/render/directions.js';
 import { theme } from '../../src/render/colors.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
@@ -177,6 +177,76 @@ test('the timeline folds repeats, makes an agent\'s run one line, leaves guardia
   assert.deepEqual(half('text'), [' 1m ├─ bench_corpus started          ◷', ' 2m ├─ migrate finished']);
 });
 
+test('the timeline\'s agent entries are a cursor\'s stops: Enter or a click opens the agent, Esc comes back', () => {
+  const worker = { ...makeSubagentTree().nodes[0], id: 'w1', name: 'bench_corpus', children: [] };
+  const other = { ...makeSubagentTree().nodes[0], id: 'w2', name: 'migrate', children: [] };
+  const agents = { rootId: 'root', nodes: [worker, other], totalCount: 2, updatedAt: new Date(now) };
+  const ev = (id: string, minutes: number, kind: WorkbenchEvent['kind'], extra: Partial<WorkbenchEvent> = {}): WorkbenchEvent =>
+    ({ id, at: new Date(now - minutes * 60_000), title: '', detail: [], status: kind === 'agent-failed' || kind === 'tool-failed' ? 'error' : 'completed', kind, ...extra });
+  const timeline = [ev('1', 1, 'turn-finished'), ev('2', 2, 'agent-finished', { agentId: 'w1', subject: 'bench_corpus' }),
+    ev('3', 9, 'agent-started', { agentId: 'w1', subject: 'bench_corpus' }), ev('4', 10, 'agent-failed', { agentId: 'w2', subject: 'migrate' })];
+  const draw = (state: ReturnType<typeof initialMonitorState>) => renderMonitor({ tree: agents, state, width: 48, height: 30, nowMs: now, timeline });
+  let state: ReturnType<typeof initialMonitorState> = { ...initialMonitorState(), modes: { ...initialMonitorState().modes, timeline: 'open' as const }, focus: 'timeline' as const };
+  let frame = draw(state);
+  const pane = frame.panes.find(p => p.id === 'timeline')!;
+  const items = [...new Set(pane.rows.map(row => row.item).filter(Boolean))];
+  assert.equal(items.length, 2, 'two agents\' entries; the main session\'s turn is no stop');
+  const press = (key: string) => { const out = handleMonitorInput(frame.state, { type: 'key', key }, { tree: agents, frame, nowMs: now }); state = out.state; frame = draw(state); return out; };
+  press('down');
+  assert.equal(state.timelineCursor, items[0], 'down starts at the first entry');
+  const cursorRow = frame.panes.find(p => p.id === 'timeline')!;
+  const shownAt = cursorRow.y + (cursorRow.edge ?? 1) + cursorRow.rows.findIndex(r => r.item === items[0]) - cursorRow.offset;
+  assert.notEqual(frame.lines[shownAt], draw({ ...state, timelineCursor: null }).lines[shownAt], 'the cursor\'s entry is highlighted');
+  assert.match(stripAnsi(frame.lines[shownAt]), /bench_corpus/);
+  press('down');
+  assert.equal(state.timelineCursor, items[1]);
+  press('enter');
+  assert.equal(state.focus, 'details', 'Enter opens the Inspector');
+  assert.equal(state.tree.selectedId, 'w2', 'on the entry\'s agent');
+  assert.ok(frame.lines.some(line => stripAnsi(line).includes('migrate')));
+  press('escape');
+  assert.equal(state.focus, 'timeline', 'Esc comes back to the timeline');
+  assert.equal(state.timelineCursor, items[1], 'the cursor where it was');
+  // A click on an entry opens its agent too.
+  const at = frame.panes.find(p => p.id === 'timeline')!;
+  const row = at.rows.findIndex(r => r.item === items[0]) - at.offset;
+  const clicked = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: at.x + 6, y: at.y + (at.edge ?? 1) + row }, { tree: agents, frame, nowMs: now }).state;
+  assert.equal(clicked.focus, 'details');
+  assert.equal(clicked.tree.selectedId, 'w1');
+  // The wheel scrolls and lets the cursor go; Enter with no cursor keeps its old meaning.
+  const wheeled = handleMonitorInput(frame.state, { type: 'mouse', button: 'wheel-down', x: at.x + 6, y: at.y + 2 }, { tree: agents, frame, nowMs: now }).state;
+  assert.equal(wheeled.timelineCursor, null);
+  const plain = handleMonitorInput({ ...frame.state, timelineCursor: null }, { type: 'key', key: 'enter' }, { tree: agents, frame, nowMs: now }).state;
+  assert.equal(plain.focus, 'timeline', 'no cursor: Enter does not open anything');
+});
+
+test('agent colours: on names and marks, the marks alone, or nowhere', () => {
+  const worker = { ...makeSubagentTree().nodes[0], id: 'w1', name: 'bench_corpus', children: [] };
+  const agents = { rootId: 'root', nodes: [worker], totalCount: 1, updatedAt: new Date(now) };
+  const timeline: WorkbenchEvent[] = [
+    { id: '1', at: new Date(now - 60_000), title: '', detail: [], status: 'completed', kind: 'agent-finished', agentId: 'w1', subject: 'bench_corpus' },
+    { id: '2', at: new Date(now - 300_000), title: '', detail: [], status: 'completed', kind: 'agent-started', agentId: 'w1', subject: 'bench_corpus' },
+  ];
+  const state = { ...initialMonitorState(), modes: { ...initialMonitorState().modes, timeline: 'open' as const }, focus: 'timeline' as const };
+  const draw = (agentColors: 'name' | 'mark' | 'off') => {
+    const previous = setDisplayConfig({ agentColors });
+    try {
+      const colour = directions(agents).paint('w1');
+      return { lines: renderMonitor({ tree: agents, state, width: 40, height: 30, nowMs: now, timeline }).lines.join('\n'), colour };
+    } finally { setDisplayConfig(previous); }
+  };
+  const on = draw('name');
+  assert.ok(on.lines.includes(on.colour('├─')) && on.lines.includes(theme.bold(on.colour('bench_corpus'))), 'the default: name and rail in the direction\'s colour');
+  const marks = draw('mark');
+  assert.ok(marks.lines.includes(on.colour('├─')), 'marks only: the rail keeps the colour');
+  assert.ok(!marks.lines.includes(on.colour('bench_corpus')) && marks.lines.includes(theme.bold('bench_corpus')), 'marks only: the name in the text colour');
+  const off = draw('off');
+  assert.equal(off.colour('x'), 'x', 'off: no direction colour');
+  assert.ok(!off.lines.includes(on.colour('├─')) && !off.lines.includes(on.colour('bench_corpus')), 'off: neither');
+  // The settings page offers it with the display rows, saved like them.
+  assert.equal(defaultSettings().agentColors, 'name');
+});
+
 test('a pending approval says how long it has waited, in the bar\'s widest form, the panel card and the snapshot', () => {
   assert.equal(waitedText(new Date(now - 45_000), now), '45s');
   assert.equal(waitedText(new Date(now - 125_000), now), '2m');
@@ -221,20 +291,22 @@ test('notifications follow the settings unless an environment variable was set',
 test('the key help lists every key, the new ones included, in both languages', async () => {
   const { setLanguage } = await import('../../src/render/i18n.js');
   const state = { ...initialMonitorState(), help: true };
-  const lines = () => renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
+  // Every page of the help, in order.
+  const pages = (extra: object, prefix?: string) => HELP_TABS.map(helpTab => renderMonitor({ tree: tree([]), state: { ...state, ...extra, helpTab }, width: 70, height: 80, nowMs: now, ...(prefix ? { prefix } : {}) }).lines.map(stripAnsi).join('\n')).join('\n');
+  const lines = () => pages({});
   const en = lines();
   // A shortcut is its key in the key column, then what it does.
   const shortcut = (text: string, key: string, does: string) => new RegExp(`^${key.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')} +${does.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}$`, 'm').test(text);
   for (const [key, does] of [['1–4', 'open / close a pane'], ['b', 'pause / resume models'], ['r', 'status card: min / status'], ['f', 'filter'], ['h l', 'fold / unfold agent'],
-    ['g G', 'first / last'], ['Ctrl+]', 'Ctrl+] itself, to Codex']]) assert.ok(shortcut(en, key, does), `${key} ${does}`);
+    ['g G', 'first / last'], ['Ctrl+\\', 'Ctrl+\\ itself, to Codex']]) assert.ok(shortcut(en, key, does), `${key} ${does}`);
   for (const key of ['2 Timeline', "Click the card's band: its level", 'Click a log line: inspect', '~ = written by a model',
-    'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+], then a key', '⚙ settings ? help']) assert.ok(en.includes(key), key);
+    'Keys typed in the panel go to Codex', 'Shortcuts: Ctrl+\\, then a key', '⚙ settings ? help']) assert.ok(en.includes(key), key);
   // The prefix the settings chose is the one the help names.
-  const other = renderMonitor({ tree: tree([]), state, width: 70, height: 80, nowMs: now, prefix: 'Ctrl+\\' }).lines.map(stripAnsi).join('\n');
-  assert.ok(other.includes('Shortcuts: Ctrl+\\, then a key') && shortcut(other, 'Ctrl+\\', 'Ctrl+\\ itself, to Codex') && !other.includes('Ctrl+]'), other);
+  const other = pages({}, 'Ctrl+]');
+  assert.ok(other.includes('Shortcuts: Ctrl+], then a key') && shortcut(other, 'Ctrl+]', 'Ctrl+] itself, to Codex') && !other.includes('Ctrl+\\'), other);
   assert.ok(!en.includes('min / status / full'), 'compact has two levels');
   assert.ok(!/copy|fold \/ unfold recap/.test(en), 'no recap copy, no recap fold');
-  const richHelp = renderMonitor({ tree: tree([]), state: { ...state, style: 'rich' }, width: 70, height: 80, nowMs: now }).lines.map(stripAnsi).join('\n');
+  const richHelp = pages({ style: 'rich' });
   assert.ok(shortcut(richHelp, 'r', 'status card: min / status / full') && richHelp.includes('Enter / Space / v') && richHelp.includes('inspect') && richHelp.includes('Wheel over the card: its brief'));
   assert.ok(richHelp.includes('Click a card: select'));
   assert.doesNotMatch(richHelp, /e \/ Space|open \/ close card/);
@@ -243,7 +315,7 @@ test('the key help lists every key, the new ones included, in both languages', a
     const zh = lines();
     assert.ok(shortcut(zh, '1–4', '打开 / 关闭面板') && shortcut(zh, 'r', '状态卡：一行 / 状态'), zh);
     for (const key of ['2 时间线', '点击状态卡色带：切换显示层级', '点击日志行', '由模型撰写', '筛选',
-      '快捷键：先按 Ctrl+]，再按一键', '在侧栏里打字，按键都交给 Codex']) assert.ok(zh.includes(key), key);
+      '快捷键：先按 Ctrl+\\，再按一键', '在侧栏里打字，按键都交给 Codex']) assert.ok(zh.includes(key), key);
     assert.ok(!zh.includes('复制'));
   } finally { setLanguage(previous); }
 });

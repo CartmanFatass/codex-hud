@@ -3,12 +3,12 @@
  * its name: its status icon, how long ago, the turn clock, its own colour,
  * what a worktree is called and where it is, and what happened to a file.
  */
-import type { SubagentTreeNode } from '../types.js';
+import type { SessionActivity, SubagentTreeNode } from '../types.js';
 import type { WorktreeInfo } from '../collectors/worktrees.js';
 import type { GitChangedFile } from '../collectors/git-changes.js';
 import { theme, colors } from './colors.js';
 import { palette } from './palette.js';
-import { iconSet } from './hud-config.js';
+import { iconSet, displayConfig } from './hud-config.js';
 import { t } from './i18n.js';
 
 /**
@@ -33,6 +33,19 @@ export function age(at: Date | undefined, now: number): string {
   const seconds = Math.max(0, Math.floor((now-at.getTime())/1000));
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds/60)}m`
     : seconds < 2*86_400 ? `${Math.floor(seconds/3600)}h` : `${Math.floor(seconds/86_400)}d`;
+}
+
+/**
+ * How long the main session has waited on the person since its turn
+ * finished, as `age()` writes it ("12m"): none under a minute, while it
+ * works, after an interruption or failure (marked on their own), or when the
+ * reading is stale.
+ */
+export function idleFor(activity: SessionActivity | undefined, now: number, stale = false): string {
+  if (stale || activity?.state !== 'idle') return '';
+  const at = activity.updatedAt?.getTime();
+  if (at === undefined || !Number.isFinite(at) || now - at < 60_000) return '';
+  return age(activity.updatedAt, now);
 }
 
 export function nodeStatus(node: SubagentTreeNode, now: number): {icon:string; label:string; paint:(s:string)=>string} {
@@ -236,9 +249,11 @@ export function finishedAt(node: SubagentTreeNode): Date | undefined {
 /**
  * An agent's own colour, the same on every repaint and in every pane: for
  * following one agent down the timeline and into the Inspector. Not on its
- * card, whose colour is its state.
+ * card, whose colour is its state. A name's colour, so none unless agent
+ * colours are on names.
  */
 export function agentPaint(id: string): (s: string) => string {
+  if (displayConfig().agentColors !== 'name') return s => s;
   const colours = palette().agents;
   let hash = 0;
   for (const ch of id) hash = (hash*31+ch.charCodeAt(0)) >>> 0;

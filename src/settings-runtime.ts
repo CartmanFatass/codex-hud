@@ -10,7 +10,7 @@ export function runtimeSettings():HudSettings {
   return settings;
 }
 function displayOf(settings:HudSettings) {
-  return {density:settings.density,glyphs:settings.glyphs,icons:settings.icons,look:settings.look,motion:settings.motion,context:settings.context,
+  return {density:settings.density,glyphs:settings.glyphs,icons:settings.icons,look:settings.look,motion:settings.motion,context:settings.context,agentColors:settings.agentColors,
     theme:process.env.NO_COLOR ? 'none' as const : settings.theme};
 }
 export function applyDisplaySettings(settings:HudSettings):void {

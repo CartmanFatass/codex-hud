@@ -158,15 +158,18 @@ export class ModelRuntimeStore {
     return value as Claims;
   }
 
-  async reserve(digest: string | null, id: string, cap: number, clock: () => number, cancelled: () => boolean): Promise<
+  /** `accept` judges a cached answer: one it refuses (written in the wrong language) is dropped and the call is made afresh. */
+  async reserve(digest: string | null, id: string, cap: number, clock: () => number, cancelled: () => boolean, accept?: (text: string) => boolean): Promise<
     | { kind: 'cached'; entry: CachedModelReply }
     | { kind: 'waiting' | 'refused' | 'reserved' }
   > {
     return this.transaction(() => {
       const now = clock();
       if (digest) {
-        const hit = this.cache().get(digest);
-        if (hit) return { kind: 'cached', entry: hit };
+        const cache = this.cache();
+        const hit = cache.get(digest);
+        if (hit && (!accept || accept(hit.text))) return { kind: 'cached', entry: hit };
+        if (hit) { cache.delete(digest); atomicWrite(path.join(this.dir, 'cache.json'), Object.fromEntries(cache)); }
       }
       const claims = this.claims();
       for (const [key, claim] of Object.entries(claims)) {

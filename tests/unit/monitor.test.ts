@@ -182,14 +182,58 @@ test('only visible agent rows navigate; the summary and empty space do not',()=>
   assert.equal(blank.state.keys,true,'a row with no agent keeps the next keys here');
 });
 
-test('Esc hands keys back before it closes, and the frame gutter keeps them',()=>{
+test('an agents view with nothing in it says so in one dim line, only once the session is read and its tree built',()=>{
+  const empty: SubagentTree = {rootId:root,nodes:[],totalCount:0,updatedAt:new Date(now)};
+  const text=(input: Partial<Parameters<typeof renderMonitor>[0]>,width:number)=>renderMonitor({tree:empty,state:{...initialMonitorState(),...input.state},width,height:12,nowMs:now,prefix:'Ctrl+]',...input} as never).lines.map(stripAnsi).join('\n');
+  for(const style of ['rich','compact'] as const) for(const width of [24,32,48,56]){
+    const frame=renderMonitor({tree:empty,state:{...initialMonitorState(),style},width,height:12,nowMs:now,prefix:'Ctrl+]'});
+    for(const line of frame.lines) assert.equal(visualLength(line),width);
+    const plain=frame.lines.map(stripAnsi).join(' ').replace(/\s+/g,' ');
+    assert.match(plain,/No agents started in this session yet/,`${style} ${width}`);
+    assert.match(plain,/Help: Ctrl\+\] \?/,`${style} ${width}`);
+    // The line is not a target: a click on it keeps keys here, as a blank row does.
+    const pane=frame.panes.find(p=>p.id==='agents')!;
+    assert.ok(pane.rows.every(row=>!row.item));
+  }
+  // Unread, unbound or not yet built for this root: no line, no guess.
+  assert.doesNotMatch(text({loading:true},40),/No agents/);
+  assert.doesNotMatch(text({tree:{...empty,rootId:''}},40),/No agents/);
+  // Agents there, all put away: the counts and the +N say it; no line.
+  const finished={...tree,nodes:nodes.map(n=>({...n,statusAt:new Date(now-3_600_000)}))};
+  assert.doesNotMatch(text({tree:finished,state:{...initialMonitorState(),finishedLingerMs:60_000} as never},40),/No agents/);
+});
+
+test('with no model backend, one closing line after the cards says no new summaries are written',()=>{
+  const draw2=(backendOn:boolean,cardSummary=true)=>renderMonitor({tree,state:{...initialMonitorState(),style:'rich',cardVisibility:{...defaultCardVisibility(),cardSummary}},width:40,height:30,nowMs:now,
+    progressContext:{backendOn,paused:false,enabled:true,targets:new Set()}}).lines.map(stripAnsi).join(' ').replace(/\s+/g,' ');
+  assert.match(draw2(false),/~ No model backend, so no new summaries: Settings → LLM/);
+  assert.doesNotMatch(draw2(true),/No model backend/);
+  assert.doesNotMatch(draw2(false,false),/No model backend/,'summary hidden: nothing to explain');
+});
+
+test('Esc hands keys back, steps back to the list and stops there; the frame gutter keeps keys',()=>{
   const frame=draw();
   const held={...frame.state,keys:true};
   const back=handleMonitorInput(held,key('escape'),{tree,worktrees,frame});
   assert.equal(back.state.keys,false);
   assert.equal(back.close,false);
   assert.equal(back.state.modes.agents,'open');
-  assert.equal(handleMonitorInput(back.state,key('escape'),{tree,worktrees,frame}).close,true);
+  // Esc never closes the panel: from the list it stays; q does close it.
+  const again=handleMonitorInput(back.state,key('escape'),{tree,worktrees,frame});
+  assert.equal(again.close,false);
+  assert.equal(again.state.focus,'agents');
+  assert.equal(handleMonitorInput(again.state,key('escape'),{tree,worktrees,frame}).close,false);
+  assert.equal(handleMonitorInput(again.state,key('close'),{tree,worktrees,frame}).close,true);
+  // From another pane it comes back to the list, and stops there.
+  const timeline={...back.state,focus:'timeline' as const,modes:{...back.state.modes,timeline:'open' as const}};
+  const home=handleMonitorInput(timeline,key('escape'),{tree,worktrees,frame});
+  assert.equal(home.close,false);
+  assert.equal(home.state.focus,'agents');
+  // With the list closed, there is nowhere to go back to: Esc does nothing.
+  const alone={...timeline,modes:{...timeline.modes,agents:'closed' as const}};
+  const stay=handleMonitorInput(alone,key('escape'),{tree,worktrees,frame});
+  assert.equal(stay.close,false);
+  assert.equal(stay.state.focus,'timeline');
   const looked=setDisplayConfig({look:'frame'});
   try{
     const framed=draw(withChanges(),36);
@@ -576,8 +620,54 @@ test('Inspector paints internal tokens without escaping ANSI and still sanitizes
   } finally {setDisplayConfig(previous);}
 });
 
+test('the help is three pages, a tab each: a click, Tab or the arrows turn them; narrow, the page shown between its steps',()=>{
+  const help=(extra:Partial<MonitorState>,width=48,height=24)=>renderMonitor({tree,state:{...initialMonitorState(),help:true,...extra},width,height,nowMs:now});
+  const text=(frame:ReturnType<typeof help>)=>frame.lines.map(stripAnsi).join('\n');
+  let frame=help({});
+  assert.match(stripAnsi(frame.lines[0]),/^\[Back\] Help +Keys +Mouse +Legend/);
+  assert.match(text(frame),/Shortcuts:/);
+  assert.doesNotMatch(text(frame),/Click a card|turn completed/,'one page at a time');
+  // A click on a tab shows its page.
+  const mouseTab=frame.controls.find(c=>c.kind==='help-tab'&&c.item==='mouse')!;
+  let state=handleMonitorInput(frame.state,mouse(mouseTab.x+1,mouseTab.y),{tree,worktrees,frame}).state;
+  assert.equal(state.help,true);
+  assert.equal(state.helpTab,'mouse');
+  assert.match(text(help(state)),/Buttons, top row[\s\S]*Click a blank row: keys stay here/);
+  // Tab and → go on, round past the end; Shift+Tab and ← go back.
+  frame=help(state);
+  state=handleMonitorInput(frame.state,key('tab'),{tree,worktrees,frame}).state;
+  assert.equal(state.helpTab,'legend');
+  assert.match(text(help(state)),/turn completed/);
+  assert.doesNotMatch(text(help(state)),/^Legend$/m,'its tab names the page');
+  state=handleMonitorInput(state,key('right'),{tree,worktrees,frame}).state;
+  assert.equal(state.helpTab,'keys');
+  state=handleMonitorInput(state,key('left'),{tree,worktrees,frame}).state;
+  assert.equal(state.helpTab,'legend');
+  state=handleMonitorInput(state,key('shift-tab'),{tree,worktrees,frame}).state;
+  assert.equal(state.helpTab,'mouse');
+  // Every width draws within itself; too narrow for the tabs, "‹ page ›" and its steps click.
+  for(const width of [16,20,24,32,40,48,56,80]) for(const helpTab of ['keys','mouse','legend'] as const){
+    const f=help({helpTab},width);
+    assert.ok(f.lines.every(line=>visualLength(line)<=width),`${width} ${helpTab}`);
+    const tabs=f.controls.filter(c=>c.kind==='help-tab');
+    assert.ok(tabs.length===3||tabs.length===2,`${width}`);
+    for(const c of tabs) assert.ok(c.x>=0&&c.x+c.width<=width,`${width} ${c.item}`);
+  }
+  const narrow=help({helpTab:'legend'},16);
+  assert.match(stripAnsi(narrow.lines[1]),/^‹ +Legend +›/);
+  const [back,on]=narrow.controls.filter(c=>c.kind==='help-tab');
+  assert.equal(back.item,'mouse');
+  assert.equal(on.item,'keys');
+  assert.equal(handleMonitorInput(narrow.state,mouse(on.x,on.y),{tree,worktrees,frame:narrow}).state.helpTab,'keys');
+  // At 16 columns what a key does goes under it, not two letters at a time beside it.
+  const keys=help({helpTab:'keys'},16,200).lines.map(stripAnsi);
+  const at=keys.findIndex(line=>/^b\s*$/.test(line));
+  assert.ok(at>0,keys.join('\n'));
+  assert.match(keys[at+1],/^ {2}pause \/ resume/);
+});
+
 test('short help pages wrap and scroll to the complete model legend',()=>{
-  let state=initialMonitorState();state.help=true;
+  let state=initialMonitorState();state.help=true;state.helpTab='legend';
   let frame=draw(state,16,12);
   assert.ok(frame.helpPage!.total>frame.helpPage!.count);
   const start=frame.lines.join('\n');

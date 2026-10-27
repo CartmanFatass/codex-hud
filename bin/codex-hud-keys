@@ -3,7 +3,7 @@
 #
 #   codex-hud-keys <session> [prefix]
 #
-# Every panel command is the prefix (Ctrl+] unless the settings say
+# Every panel command is the prefix (Ctrl+\ unless the settings say
 # otherwise), then one key. The prefix is bound in the session's own key
 # table, codex-hud (see install_session_input_policy in bin/codex-hud), and
 # switches the client to the codex-hud-prefix table for one key. The server's
@@ -35,7 +35,7 @@ fi
 # The keys checked against Codex's own bindings (src/utils/panel-command.ts).
 case "$prefix" in
     'C-]'|'C-\') ;;
-    *) prefix='C-]' ;;
+    *) prefix='C-\' ;;
 esac
 
 old=$(tmux show-option -gqv @codex_hud_prefix_key 2>/dev/null)

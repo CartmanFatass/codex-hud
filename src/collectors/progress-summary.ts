@@ -248,7 +248,7 @@ export class ProgressSummarizer {
     delete work.error;
     delete work.reason;
     delete work.failedAt;
-    const handle = this.model.submit({ feature: 'progress', thinking: 'low', system: progressSystemPrompt(language),
+    const handle = this.model.submit({ feature: 'progress', thinking: 'low', language, system: progressSystemPrompt(language),
       prompt: snapshot.prompt, cacheKey: `progress-sentence-v2:${root}:${id}:${language}:${snapshot.identity}:${snapshot.fingerprint}` });
     work.handle = handle;
     // A queue transition repaints without waiting for the next collection tick.

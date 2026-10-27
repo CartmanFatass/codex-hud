@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { initialMonitorState, renderMonitor, handleMonitorInput, monitorSettings, type MonitorState } from '../../src/render/monitor.js';
 import { directions, roleSet } from '../../src/render/directions.js';
 import { setLanguage } from '../../src/render/i18n.js';
+import { setDisplayConfig } from '../../src/render/hud-config.js';
 import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
 import { cardSummaryTargets, cardSentence, agentCard } from '../../src/render/cards.js';
 import { defaultCardVisibility } from '../../src/card-visibility.js';
@@ -76,6 +77,14 @@ test('a card: its name in its direction\'s colour, whom it works with, what it i
   assert.ok(!lead.some(line=>/review_a/.test(line)),'ordinary completed child hidden');
   const paint = directions(tree).paint('lead');
   assert.ok(frame.lines.some(line => line.includes(theme.bold(paint(colors.underline('parser_lead'))))), 'bold, in its direction\'s colour, underlined to click');
+  // Agent colours on the marks alone: the name in the text colour; off: no colour at all.
+  for (const agentColors of ['mark','off'] as const) {
+    const previous = setDisplayConfig({agentColors});
+    try {
+      const lines = draw(rich(), 44, tree).lines;
+      assert.ok(lines.some(line => line.includes(theme.bold(colors.underline('parser_lead')))) && !lines.some(line => line.includes(paint('parser_lead'))), agentColors);
+    } finally { setDisplayConfig(previous); }
+  }
   const openedLead = card(plain(draw(rich(), 44, tree).lines), 'parser_lead');
   assert.ok(openedLead.some(line => /^│ ! scout_a +20m$/.test(line)), openedLead.join('\n'));
   assert.ok(draw(rich(), 44, tree).lines.some(line => line.includes(theme.info('2'))), 'a role with an agent running: its count in the running colour');

@@ -15,7 +15,8 @@
  *   ╰─ atlas-wsl · main * 7d ──────────99% ↺4d17h
  *
  * - `min`: the band row alone, the quota's reading at its right end, with a
- *   mark when something needs the person.
+ *   mark when something needs the person; its meter named Ctx, as the
+ *   quota's reading is named by its window.
  * - `status`: the band and the corner row, and between them the alerts,
  *   when there are any.
  * - `full`: those, then the main session's brief between them: the model's
@@ -107,6 +108,9 @@ function fitRow(width: number, lead: string, trail: string, left: Pieces, right:
       leftText = room > 1 ? shorten(leftText, room) : '';
     }
     const before = lead + (leftText ? `${leftText} ` : '');
+    // A meter whose reading does not fit draws as track alone: the reading
+    // goes only when the label is dropped on purpose, never by squeezing.
+    if (!cut && shown && width - visualLength(before) - visualLength(after) < visualLength(shown.label ?? `${Math.round(shown.percent)}%`) + visualLength(shown.mark ?? '')) return null;
     return meterRow(width, before, after, shown, !cut && !gone.has('bar') ? minBar : 0, !cut);
   };
   for (const key of ['', ...drops]) {
@@ -228,9 +232,12 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
     // An approval waited on says what it waits on, as the alerts row would have.
     const shown = session?.attention ? session.text : stateText;
     const [lead, trail] = edge('╰─', '─╯');
+    // Alone on its row, the meter says which it is: beside the quota's
+    // reading two bare percentages read alike. The word outlasts the bar.
+    const named: Pieces = [...left(shown), ['ctx', meter ? colors.dim(t('Ctx')) : '']];
     return { rows: 1, draw(frame, foot) {
-      band(frame, foot, fitRow(width, lead, trail, left(shown), [['brief', said], ['quota', card?.quota?.text ?? '']], meter,
-        ['tasks', 'age', 'tail', 'model', 'brief', 'bar', 'quota', 'rate', 'label'], truncateAnsi, BAND_BAR));
+      band(frame, foot, fitRow(width, lead, trail, named, [['brief', said], ['quota', card?.quota?.text ?? '']], meter,
+        ['tasks', 'age', 'tail', 'model', 'brief', 'bar', 'ctx', 'quota', 'rate', 'label'], truncateAnsi, BAND_BAR));
       frame.statusCard = { y: foot, height: 1, brief: 0, total: 0, offset: 0 };
     } };
   }

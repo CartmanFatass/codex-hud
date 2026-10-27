@@ -691,7 +691,7 @@ install_session_input_policy() {
         "run-shell -b \"bash '$toggle_cmd' '#{session_id}' --focus-tree\"" \
         "send-keys S-F12"
 
-    # Every panel command is the prefix (Ctrl+] by default), then a key; no
+    # Every panel command is the prefix (Ctrl+\ by default), then a key; no
     # plain key is the panel's. The prefix and the codex-hud-prefix table it
     # leads to are installed by codex-hud-keys, which the panel runs again
     # when the prefix setting changes.

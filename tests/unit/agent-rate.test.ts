@@ -21,7 +21,9 @@ import * as path from 'node:path';
 import { readAgentTokens, resetAgentContextCache } from '../../src/collectors/agent-context.js';
 import { initialMonitorState, renderMonitor, monitorSettings, agentRate, RATE_FRESH_MS, type MonitorState } from '../../src/render/monitor.js';
 import { defaultSettings } from '../../src/settings.js';
-import { inspectorRows } from '../../src/render/monitor-inspector.js';
+import { inspectorRows, spentLine } from '../../src/render/monitor-inspector.js';
+import { setLanguage } from '../../src/render/i18n.js';
+import { visualLength } from '../../src/render/colors.js';
 import { stripAnsi } from '../../src/render/colors.js';
 import type { AgentLogEntry } from '../../src/collectors/agent-log.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
@@ -125,6 +127,22 @@ test('the Inspector has what the card leaves out: the rate, and the stand-in for
   // With its task known, the task is the Inspector's to say, as before.
   const tasked = inspectorRows({ tree: tree([{ ...node, task: 'Check the cache' }]), state, width: 40, height: 40, nowMs: now } as never, state, 40, now);
   assert.ok(!tasked.some(row => stripAnsi(row.text) === 'Took on'));
+});
+
+test('the Inspector says what an agent spent in all; narrow, the cache share goes, then the output', () => {
+  const spent = { input: 1_234_000, cached: 1_037_000, output: 32_100 };
+  const node = agent(1, 'worker', { tokensSpent: spent });
+  const state = rich({ tree: { ...rich().tree, selectedId: node.id } });
+  const rows = inspectorRows({ tree: tree([node]), state, width: 48, height: 40, nowMs: now } as never, state, 48, now).map(row => stripAnsi(row.text));
+  assert.ok(rows.includes('Tokens 1.2M in (cache 84%) · 32.1K out'), rows.join('\n'));
+  assert.equal(stripAnsi(spentLine(spent, 30)), 'Tokens 1.2M in · 32.1K out');
+  assert.equal(stripAnsi(spentLine(spent, 20)), 'Tokens 1.2M in');
+  for (let width = 4; width <= 48; width++) assert.ok(visualLength(spentLine(spent, width)) <= width, String(width));
+  const previous = setLanguage('zh');
+  try { assert.equal(stripAnsi(spentLine(spent, 48)), '用量 1.2M 输入 (缓存 84%) · 32.1K 输出'); } finally { setLanguage(previous); }
+  // Nothing read, nothing said.
+  const none = inspectorRows({ tree: tree([agent(1, 'worker')]), state, width: 48, height: 40, nowMs: now } as never, state, 48, now);
+  assert.ok(!none.some(row => stripAnsi(row.text).startsWith('Tokens')));
 });
 
 test('a working card keeps only its newest model note; the tool line stays', () => {

@@ -1,18 +1,3 @@
-## Modification History
-
-New launches use the compact bottom bar. Press `F12` to open the right-side panel; `CODEX_HUD_TREE=1` opts into opening it at launch.
-
-Local activity and evidence: `Ctrl+] u` opens the inbox, unseen changes and history; `Ctrl+] p` finds/pins agents; `Ctrl+] c` shows sources, model calls and an export preview. Saving a report is explicit, and these features make no additional model requests. See the [reference](./docs/reference.md#local-activity-and-evidence).
-
-Press `Ctrl+]`, then `d`, for diagnostics and main-session TPS evidence. Settings → LLM → Test API (`t`) checks all three routes using fixed synthetic messages within the shared call cap. See the [performance measurements](./docs/performance-20261024.md).
-
-| Date       | Summary of Changes |
-|------------|--------------------|
-| 2026-05-22 | Documented Windows current-branch download, self-check, and WSL launch flow with screenshots. |
-| 2026-05-22 | Switched Windows default launch policy to WSL-only and marked native PowerShell HUD as unsupported. |
-| 2026-05-22 | Documented explicit Windows launch-mode flags and Bash installer dependency guidance. |
-| 2026-05-21 | Documented completed Windows PowerShell, cmd, and WSL dual-entry behavior. |
-
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
   <a href="./README.zh.md"><img src="https://img.shields.io/badge/lang-中文-red.svg" alt="中文"></a>
@@ -23,8 +8,6 @@ Press `Ctrl+]`, then `d`, for diagnostics and main-session TPS evidence. Setting
 # Codex HUD
 
 Real-time statusline HUD for [OpenAI Codex CLI](https://github.com/openai/codex). Lightweight, zero-config, works inside tmux.
-
-> This branch documents the Windows WSL-first build: Windows `codex` launches the WSL HUD by default, native PowerShell HUD is not a supported user launch mode, and Linux/macOS keep the existing Bash flow.
 
 > Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud) for Claude Code.
 
@@ -65,7 +48,10 @@ cd codex-hud
 codex
 ```
 
-### Windows Current Branch (WSL Default)
+<details>
+<summary><b>Windows (WSL default)</b>: install, self-check and the PowerShell / cmd commands</summary>
+
+> This branch documents the Windows WSL-first build: Windows `codex` launches the WSL HUD by default, native PowerShell HUD is not a supported user launch mode, and Linux/macOS keep the existing Bash flow.
 
 This branch uses WSL as the supported Windows HUD runtime. PowerShell and cmd are launcher shells; the HUD itself runs in Ubuntu WSL with Bash and tmux.
 
@@ -114,7 +100,7 @@ Notes:
 
 For Linux/macOS/Git Bash installs, `install.sh` now fails fast with exact checks and install guidance when required tools are missing. The main required checks are `command -v node`, `node --version`, `command -v npm`, `npm --version`, `command -v tmux`, and `tmux -V`.
 
-#### Windows Default Path
+**Windows default path**
 
 ```powershell
 . $PROFILE.CurrentUserAllHosts
@@ -126,7 +112,7 @@ codex-resume
 
 Use `codex` when you want the normal Windows entry. It uses WSL HUD by default. Use `codex --wsl` when you want to be explicit about the WSL path. Legacy native-mode requests are intentionally rejected because native PowerShell HUD is not supported yet.
 
-#### WSL Full HUD Path
+**WSL full HUD path**
 
 ```powershell
 . $PROFILE.CurrentUserAllHosts
@@ -136,7 +122,7 @@ codex-hud-wsl "help me debug this"
 
 Use this when you want the full Bash + tmux HUD inside WSL Ubuntu.
 
-### Management Commands
+**Management commands**
 
 After the first install, these are available in PowerShell and cmd:
 
@@ -148,6 +134,8 @@ After the first install, these are available in PowerShell and cmd:
 | `codex-hud-sync` | Rebuild and refresh aliases for the current checkout |
 | `codex-hud-upgrade` | Pull latest changes, then rebuild |
 | `codex-hud-uninstall` | Remove aliases and stop HUD sessions |
+
+</details>
 
 ### Font
 
@@ -219,11 +207,11 @@ CODEX_HUD_DENSITY=focus codex
 
 ## Development workbench
 
-`F12` opens the right panel without taking focus from Codex. `Shift+F12` opens and focuses it.
+New launches use the compact bottom bar. `F12` opens the right panel without taking focus from Codex; `Shift+F12` opens and focuses it; `CODEX_HUD_TREE=1` opens it at launch.
 
-**Outside modal pages, the panel forwards ordinary input to Codex.** Every panel command is the **prefix key, `Ctrl+]`, then one key**: `Ctrl+]` `,` opens settings, `Ctrl+]` `?` the help, `Ctrl+]` `b` pauses the brief (the full list is in [the reference](./docs/reference.md#keys), and the help's Shortcuts section). The prefix works wherever the cursor is, in Codex's pane or in the panel; `Ctrl+]` `j` `j` `j` moves three rows, since the moves repeat for half a second without the prefix. A command that needs the panel opens it first. Anything typed without the prefix goes to Codex: with the cursor in the panel (after `Shift+F12`, or a click), keys and pastes are passed to Codex's pane exactly as typed, a paste stays one bracketed paste, and the cursor moves back to Codex with them. Settings, help, activity and evidence pages capture their own navigation keys; Find also captures query text. Close the page with `Esc` or its Back button to resume normal forwarding. The mouse works as before.
+**Outside modal pages, the panel forwards ordinary input to Codex.** Every panel command is the **prefix key, `Ctrl+\`, then one key**: `Ctrl+\` `,` opens settings, `Ctrl+\` `?` the help, `Ctrl+\` `b` pauses the brief (the full list is in [the reference](./docs/reference.md#keys), and the help's Shortcuts section). The prefix works wherever the cursor is, in Codex's pane or in the panel; `Ctrl+\` `j` `j` `j` moves three rows, since the moves repeat for half a second without the prefix. A command that needs the panel opens it first. Anything typed without the prefix goes to Codex: with the cursor in the panel (after `Shift+F12`, or a click), keys and pastes are passed to Codex's pane exactly as typed, a paste stays one bracketed paste, and the cursor moves back to Codex with them. Settings, help, activity and evidence pages capture their own navigation keys; Find also captures query text. Close the page with `Esc` or its Back button to resume normal forwarding. The mouse works as before.
 
-`Ctrl+]` twice sends `Ctrl+]` itself to the pane with the cursor. Codex 0.160 binds `Ctrl+]` to *Skip Question*; that is `Ctrl+]` `Ctrl+]` now. To keep `Ctrl+]` for Codex, choose `Ctrl+\` in Settings → Input → Prefix key (no Codex 0.160 binding uses it; `Ctrl+G`, its external editor, and `Alt+]`, which a terminal sends as the start of an escape sequence, are not offered). The prefix is a key table in the HUD's own tmux session: the server's root and `Ctrl+B` tables are untouched. A changed prefix is installed at once for the panel that saved it; a session started before this version keeps its old keys until it is launched again.
+`Ctrl+\` twice sends `Ctrl+\` itself to the pane with the cursor. `Ctrl+\` is the prefix on a fresh install because Codex 0.160 binds `Ctrl+]` to *Skip Question* (no Codex 0.160 binding uses `Ctrl+\`). A settings file saved before this change, with no prefix of its own, keeps `Ctrl+]`; Settings → Input → Prefix key switches between the two (`Ctrl+G`, Codex's external editor, and `Alt+]`, which a terminal sends as the start of an escape sequence, are not offered). With `Ctrl+]` as the prefix, Codex's Skip Question is `Ctrl+]` `Ctrl+]`. The prefix is a key table in the HUD's own tmux session: the server's root and `Ctrl+B` tables are untouched. A changed prefix is installed at once for the panel that saved it; a session started before this version keeps its old keys until it is launched again.
 
 Agents opens by default; the Timeline, Changes and the Inspector open on demand. The focused heading and selected row are highlighted; status colors are concentrated on the icons:
 
@@ -237,7 +225,7 @@ Agents opens by default; the Timeline, Changes and the Inspector open on demand.
 **Panes** (Settings → Panel → Panes) sets how the panes share the panel:
 
 - **stacked** (the default): every open pane at once, as above.
-- **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+]` `1`–`4` does, and `Ctrl+]` `Tab` shows the next. The tab names the pane, so its title keeps only its counts and where its rows are. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
+- **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+\` `1`–`4` does, and `Ctrl+\` `Tab` shows the next. The tab names the pane, so its title keeps only its counts and where its rows are. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
 
 **Two layouts** (Settings → Panel → Layout): **rich**, the default, gives every visible agent the main session started the same configurable card, active or idle. There is no expand/collapse: Settings → Cards controls each field independently, including the latest AI summary and child-agent one-sentence summaries. Child scope defaults to live and important tasks; names and status always remain. Child role counts independently hides the footer counts without hiding child rows or summaries. Click selects, Enter or Space opens the Inspector. **compact** is the tree, one row per agent and subtask, with the brief, the recap and the agent log under it. Both count alike, as the status card, the bar and `codex-hud --json` do: the agents the main session started, their subtasks and the guardian reviews, each apart.
 
@@ -249,7 +237,11 @@ Cards keep progress status brief (queued, writing, failed or capped). The Inspec
 
 <img src="./docs/fig/looks.png" width="414" alt="The five looks: tab, band, tile, frame and pill">
 
-**The status card** at the foot carries the bar's fields while the panel is open and, at its full level, the main session's brief; `Ctrl+]` `r` steps through its three levels.
+**The status card** at the foot carries the bar's fields while the panel is open and, at its full level, the main session's brief; `Ctrl+\` `r` steps through its three levels.
+
+Local activity and evidence: `Ctrl+\ u` opens the inbox, unseen changes and history; `Ctrl+\ p` finds/pins agents; `Ctrl+\ c` shows sources, model calls and an export preview. Saving a report is explicit, and these features make no additional model requests. See the [reference](./docs/reference.md#local-activity-and-evidence).
+
+Press `Ctrl+\`, then `d`, for diagnostics and main-session TPS evidence. Settings → LLM → Test API (`t`) checks all three routes using fixed synthetic messages within the shared call cap. See the [performance measurements](./docs/performance-20261024.md).
 
 The rest is in **[the reference](./docs/reference.md)**: the panes and both layouts in full, the control bar, the looks and icon sets, the status card, every key and mouse action, switching sessions, the Timeline, the agent log, the Inspector, Settings, the LLM features, the picture and the output rate.
 
@@ -282,7 +274,7 @@ What `codex-hud --json` prints is described under [Machine-readable state](./doc
 
 ## Configuration
 
-Most preferences are on the main Settings navigation tab (also `Ctrl+]` `,`) and are saved to `$CODEX_HOME/hud-settings.json`; environment variables such as `CODEX_HUD_DENSITY`, `CODEX_HUD_THEME` and `CODEX_HUD_LOOK` set the defaults that saved preferences then override. Every variable, the notifications and what the HUD reads from `config.toml` are in [the reference](./docs/reference.md#configuration).
+Most preferences are on the main Settings navigation tab (also `Ctrl+\` `,`) and are saved to `$CODEX_HOME/hud-settings.json`; environment variables such as `CODEX_HUD_DENSITY`, `CODEX_HUD_THEME` and `CODEX_HUD_LOOK` set the defaults that saved preferences then override. Every variable, the notifications and what the HUD reads from `config.toml` are in [the reference](./docs/reference.md#configuration).
 
 Leaving a changed settings draft via Back/Esc, navigation or a leaving prefix command asks **Save and leave / Discard changes / Continue editing** (the default). Clicking the active Settings tab keeps the draft; a failed save keeps the draft and confirmation for retry, while a clean draft leaves immediately. This does not intercept F12 pane replacement or process termination. **Reset group** (`r` in settings) resets only the current section; **Reset all** resets known page preferences, not connection secrets or the whole file. LLM/all resets disable generation and pause it, preserving the backend, API credentials/base, model tiers/override/reasoning, hourly cap and picture assets. Resets prepare a draft for Save; see [Settings](./docs/reference.md#settings).
 
@@ -346,6 +338,15 @@ null check. The log starts over past 4 MiB, keeping one `.old` copy.
 | 2026-04-09 | Bind HUD session to current tmux pane; display reasoning effort |
 | 2026-02-09 | Keep Codex pane focused after resize; refine mouse-scroll defaults |
 | 2026-02-09 | Update session attach defaults and scrollback config |
+
+Documentation history:
+
+| Date       | Summary of Changes |
+|------------|--------------------|
+| 2026-05-22 | Documented Windows current-branch download, self-check, and WSL launch flow with screenshots. |
+| 2026-05-22 | Switched Windows default launch policy to WSL-only and marked native PowerShell HUD as unsupported. |
+| 2026-05-22 | Documented explicit Windows launch-mode flags and Bash installer dependency guidance. |
+| 2026-05-21 | Documented completed Windows PowerShell, cmd, and WSL dual-entry behavior. |
 
 ## License
 

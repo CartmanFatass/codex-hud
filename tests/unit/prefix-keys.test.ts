@@ -130,7 +130,7 @@ test('a changed prefix takes the old one out of the session table', () => {
   // Anything else is the default.
   const other = fakeTmux();
   run(path.join(root, 'bin/codex-hud-keys'), ['hud-1', 'C-b'], other);
-  assert.ok(calls(other.log).includes('bind-key -T codex-hud C-] switch-client -T codex-hud-prefix'));
+  assert.ok(calls(other.log).includes('bind-key -T codex-hud C-\\ switch-client -T codex-hud-prefix'));
 });
 
 test('codex-hud-keys reads the prefix from the settings file when none is given', () => {

@@ -1,5 +1,5 @@
 /** The Inspector: the selected agent in full, a worktree's details, or a changed file's diff. */
-import type { SubagentTreeNode } from '../types.js';
+import type { SubagentTreeNode, TokenSpent } from '../types.js';
 import type { GitChanges } from '../collectors/git-changes.js';
 import { progressReason, type ProgressReason } from '../collectors/progress-summary.js';
 import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
@@ -104,6 +104,7 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
         `${colors.dim(t('Ctx'))} ${ctx.percent}% (${formatTokenCount(ctx.used)}/${formatTokenCount(ctx.total)})`,width)});
       const rate = agentRate(node,now);
       if (rate !== undefined) rows.push({text:truncateAnsi(`${colors.dim(t('Out'))} ${rateText(rate)}`,width)});
+      if (node.tokensSpent) rows.push({text:spentLine(node.tokensSpent,width)});
       if (state.expanded) rows.push(...tokenRateDetails(node.outputRate, node.turnStartedAt, node.status === 'running', now)
         .flatMap(line => helpLines(monitorText(line), width).map(text => ({ text }))));
       // Short facts sit with the heading. The long text is a section each,
@@ -295,4 +296,17 @@ export function logEntryLines(entry: AgentLogEntry, width: number, now: number, 
   const pad = ' '.repeat(indent);
   return flowLines(monitorText(`${lead}${text}`),Math.max(1,width-indent-gutter)).map((line,i)=>
     pad+(i ? ' '.repeat(gutter) : colors.dim(when.padEnd(gutter)))+(i || !lead ? paint(line) : colors.dim(lead)+paint(line.slice(lead.length))));
+}
+
+/**
+ * What an agent spent over its life, as the bar's Tokens field says the
+ * main session's: input with its cached share, then output. Too narrow, the
+ * cached share goes, then the output; the words are never cut.
+ */
+export function spentLine(spent: TokenSpent, width: number): string {
+  const cache = spent.input > 0 ? colors.dim(` (${t('cache {n}%',{n:Math.round(spent.cached/spent.input*100)})})`) : '';
+  const head = `${colors.dim(t('Tokens'))} ${theme.tokenCount(formatTokenCount(spent.input))} ${colors.dim(t('in'))}`;
+  const out = ` · ${theme.tokenCount(formatTokenCount(spent.output))} ${colors.dim(t('out'))}`;
+  for (const text of [head+cache+out, head+out, head]) if (visualLength(text) <= width) return text;
+  return truncateAnsi(head,width);
 }

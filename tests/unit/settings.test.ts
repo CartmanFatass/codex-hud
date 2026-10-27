@@ -25,7 +25,7 @@ test('missing settings keep display defaults and hide optional tasks and activit
   withSettingsFile((file) => {
     assert.deepEqual(loadSettings(), {
       ...defaultCardVisibility(),
-      density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used',
+      density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used', agentColors: 'name',
       statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
       details: true, refreshMs: 1000, treeWidth: 48, finishedLingerMs: 180_000,
       agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
@@ -35,7 +35,7 @@ test('missing settings keep display defaults and hide optional tasks and activit
       briefingApiLiteModel: 'gemini-3.5-flash-lite', briefingApiLowModel: 'gemini-3.8-flash-low', briefingApiMediumModel: 'gemini-3.8-flash-medium',
       briefAgents: true, briefMain: false, agentProgress: true, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, cardCorners: 'square', notify: false, notifyDesktop: false,
       resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
-      art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode', look: 'tab', paneLayout: 'stack',
+      art: 'off', artImage: '', prefixKey: 'C-\\', icons: 'unicode', look: 'tab', paneLayout: 'stack',
     });
     assert.equal(fs.existsSync(file), false, 'reading defaults does not create files');
     const changed = defaultSettings();
@@ -65,7 +65,7 @@ test('load validates known settings without importing unknown or invalid values'
     }));
     assert.deepEqual(loadSettings(), {
       ...defaultCardVisibility(),
-      density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
+      density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used', agentColors: 'name',
       statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
       details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0,
       agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
@@ -82,7 +82,8 @@ test('load validates known settings without importing unknown or invalid values'
       mouse: 'false', tasks: 1, changes: null, activity: [], details: {},
       refreshMs: 99, treeWidth: 15, finishedLingerMs: 5, unknown: true,
     }));
-    assert.deepEqual(loadSettings(), defaultSettings());
+    // A file saved before Ctrl+\\ was the default keeps Ctrl+].
+    assert.deepEqual(loadSettings(), { ...defaultSettings(), prefixKey: 'C-]' });
   });
 });
 
@@ -247,7 +248,7 @@ test('flat card visibility and progress defaults validate independently; legacy 
     assert.equal(loaded.briefAgents,true);
     assert.equal('cardNotes' in loaded,false);
     fs.writeFileSync(file,JSON.stringify({...Object.fromEntries(booleanKeys.map(key => [key,'off'])),cardSubagentScope:'finished',agentProgress:1}));
-    assert.deepEqual(loadSettings(),defaults);
+    assert.deepEqual(loadSettings(),{...defaults,prefixKey:'C-]'},'a file without a prefix keeps the old default');
     for (const scope of ['live','important','all'] as const) assert.equal(saveSettings({cardSubagentScope:scope}).cardSubagentScope,scope);
     assert.equal(saveSettings({briefAgents:false,agentProgress:true}).agentProgress,true);
     assert.equal(loadSettings().briefAgents,false);
@@ -264,5 +265,24 @@ test('saving display preferences retains synthetic API credentials and task rout
     for (const [key,value] of Object.entries(credentials)) assert.equal(saved[key as keyof HudSettings],value,key);
     assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),saved);
     assert.deepEqual(loadSettings(),saved);
+  });
+});
+
+test('the prefix: Ctrl+\\ on a fresh install, Ctrl+] kept by a file saved without one, a saved choice kept either way', () => {
+  withSettingsFile((file) => {
+    assert.equal(defaultSettings().prefixKey, 'C-\\');
+    assert.equal(loadSettings().prefixKey, 'C-\\', 'no file: the new default');
+    fs.writeFileSync(file, JSON.stringify({ theme: 'mocha' }));
+    assert.equal(loadSettings().prefixKey, 'C-]', 'saved before it existed: the old default');
+    // Saving something else writes the kept prefix down, so it stays.
+    saveSettings({ theme: 'latte' });
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).prefixKey, 'C-]');
+    fs.writeFileSync(file, JSON.stringify({ prefixKey: 'C-\\' }));
+    assert.equal(loadSettings().prefixKey, 'C-\\');
+    fs.writeFileSync(file, JSON.stringify({ prefixKey: 'C-]' }));
+    assert.equal(loadSettings().prefixKey, 'C-]');
+    // A malformed prefix in a file that has one is invalid, not legacy: the default.
+    fs.writeFileSync(file, JSON.stringify({ prefixKey: 'C-x' }));
+    assert.equal(loadSettings().prefixKey, 'C-\\');
   });
 });

@@ -477,19 +477,21 @@ test('the help is a modal with a [Back] button; the settings page names only its
   // The shortcuts are a table: the prefix said once, in the heading; each key in a column, what it does beside it.
   inChinese(() => {
     const lines = renderMonitor({ tree, state: state({ help: true }), width: 32, height: 200 }).lines.map(stripAnsi);
-    assert.equal(lines[1], '快捷键：先按 Ctrl+]，再按一键');
+    // Too narrow for the tabs beside the title, they take the row under it.
+    assert.match(lines[1], /^ 按键 +鼠标 +图例/);
+    assert.equal(lines[2], '快捷键：先按 Ctrl+\\，再按一键');
     for (const entry of [/^m +主会话$/, /^o +切换到选中的$/, /^Enter \/ 空格 \/ v +详情$/, /^z +放大$/, /^F12 +开 \/ 关侧栏$/, /^Shift\+F12 +进入侧栏$/])
       assert.ok(lines.some(line => entry.test(line)), `${entry}\n${lines.join('\n')}`);
-    assert.ok(lines.some(line => /^Ctrl\+\] +把 Ctrl\+\]/.test(line)), 'the prefix twice is one entry, its key the prefix');
-    assert.equal(lines.filter(line => line.includes('Ctrl+]')).length, 2, 'nowhere else');
+    assert.ok(lines.some(line => /^Ctrl\+\\ +把 Ctrl\+\\/.test(line)), 'the prefix twice is one entry, its key the prefix');
+    assert.equal(lines.filter(line => line.includes('Ctrl+\\')).length, 2, 'nowhere else');
     const other = renderMonitor({
       tree,
       state: state({ help: true }),
       width: 32,
       height: 200,
-      prefix: 'Ctrl+\\',
+      prefix: 'Ctrl+]',
     }).lines.map(stripAnsi);
-    assert.ok(other.some(line => /^m +主会话$/.test(line)) && other[1].includes('Ctrl+\\'), 'any prefix');
+    assert.ok(other.some(line => /^m +主会话$/.test(line)) && other[2].includes('Ctrl+]'), 'any prefix');
     // Too narrow for what a key does, it wraps under itself.
     const narrow = renderMonitor({ tree, state: state({ help: true }), width: 20, height: 200 }).lines.map(stripAnsi);
     const at = narrow.findIndex(line => /^r +\S/.test(line));
@@ -507,11 +509,76 @@ test('the help is a modal with a [Back] button; the settings page names only its
 test('rich help explains selection and Inspector keys, with the latest-note field only when shown', async () => {
   const { renderMonitor } = await import('../../src/render/monitor.js');
   const tree = { rootId: 'r', nodes: [], totalCount: 0, updatedAt: new Date('2026-09-16T10:00:00Z') };
-  const help = (cardSummary: boolean) => renderMonitor({tree,state:state({style:'rich',help:true,cardVisibility:{cardSummary}}),width:80,height:200}).lines.map(stripAnsi).join('\n');
+  const { HELP_TABS } = await import('../../src/render/monitor.js');
+  // Every page of it.
+  const help = (cardSummary: boolean) => HELP_TABS.map(helpTab => renderMonitor({tree,state:state({style:'rich',help:true,helpTab,cardVisibility:{cardSummary}}),width:80,height:200}).lines.map(stripAnsi).join('\n')).join('\n');
   assert.match(help(true), /Click a card: select/);
   assert.match(help(true), /Enter \/ Space \/ v +inspect/);
   assert.match(help(true), /Click its name: select; double-click switches/);
   assert.match(help(true), /Latest note: written by a model/);
   assert.doesNotMatch(help(false), /Latest note: written by a model/);
   assert.doesNotMatch(help(true), /open \/ close card|Click a card: open|e \/ Space/);
+});
+
+test('keys held in the panel: a chip on the bar for as long as they are, at every width and look, and a click on it hands them back', async () => {
+  const { handleMonitorInput } = await import('../../src/render/monitor-input.js');
+  for (const lang of ['en', 'zh'] as const) {
+    const previous = setLanguage(lang);
+    try {
+      for (const lk of LOOKS) {
+        for (const icons of ['unicode', 'nerd', 'emoji', 'text'] as const) {
+          withConfig({ look: lk, icons }, () => {
+            for (const width of WIDTHS) {
+              const held = controlBar(state({ keys: true }), BRIEF, width);
+              const free = controlBar(state(), BRIEF, width);
+              assert.ok(!free.controls.some((c) => c.kind === 'keys'), `${lang} ${lk} ${icons} ${width}: no chip without held keys`);
+              for (const line of held.lines) assert.equal(visualLength(line), width, `${lang} ${lk} ${icons} ${width}: "${stripAnsi(line)}"`);
+              // The chip lasts as long as the help button does: never given up for room before it.
+              if (held.controls.some((c) => c.kind === 'help')) assert.ok(held.controls.some((c) => c.kind === 'keys'), `${lang} ${lk} ${icons} ${width}: "${held.lines.map(stripAnsi).join('|')}"`);
+            }
+          });
+        }
+      }
+    } finally {
+      setLanguage(previous);
+    }
+  }
+  // Its word where the row has room, the glyph alone where it does not; with icons off, a word.
+  assert.match(plain(state({ keys: true }), 80, { expired: 0 }), /⌨ Keys here /);
+  assert.match(plain(state({ keys: true }), 32, { expired: 0 }), / ⌨ \? $/);
+  withConfig({ icons: 'text' }, () => assert.match(plain(state({ keys: true }), 32, { expired: 0 }), /Keys/));
+  inChinese(() => assert.match(plain(state({ keys: true }), 80, { expired: 0 }), /⌨ 按键在侧栏 /));
+  // A click on the chip clears the held keys, as Esc does.
+  const s = state({ keys: true });
+  const bar = controlBar(s, { expired: 0 }, 80);
+  const chip = bar.controls.find((c) => c.kind === 'keys')!;
+  const frame = { lines: bar.lines, panes: [], controls: bar.controls, state: s };
+  const out = handleMonitorInput(s, { type: 'mouse', button: 'left', x: chip.x, y: chip.y } as never, { tree: { rootId: 'r', nodes: [] } as never, frame } as never);
+  assert.equal(out.state.keys, false);
+  assert.equal(out.close, false);
+});
+
+test('an agent selected in its list or its Inspector: a Switch button, as o, that gives way with the brief\'s', async () => {
+  const { handleMonitorInput } = await import('../../src/render/monitor-input.js');
+  const picked = (extra: Partial<MonitorState> = {}) => state({ ...extra, tree: { ...initialMonitorState().tree, selectedId: 'a1' } });
+  assert.match(plain(picked(), 120, { expired: 0 }), /⇢ Switch +\? Help $/, 'its word where there is room');
+  assert.match(plain(picked(), 48, { expired: 0 }), / ⇢ \? $/, 'the glyph alone where there is not');
+  inChinese(() => assert.match(plain(picked(), 120, { expired: 0 }), /⇢ 切换 /));
+  withConfig({ icons: 'text' }, () => assert.match(plain(picked(), 120, { expired: 0 }), /Switch/));
+  assert.match(plain(picked({ focus: 'details', preview: 'agent' }), 80, { expired: 0 }), /⇢/, 'from its Inspector too');
+  // Nothing selected, another pane in focus, or settings open: no button.
+  assert.doesNotMatch(plain(state(), 80, { expired: 0 }), /⇢/);
+  assert.doesNotMatch(plain(picked({ focus: 'timeline' }), 80, { expired: 0 }), /⇢/);
+  assert.doesNotMatch(controlBar(picked(), { expired: 0, settingsActive: true }, 80).lines.map(stripAnsi)[0], /⇢/);
+  // Every width and look keeps its width; the button goes before the tabs and the help.
+  for (const lk of LOOKS) withConfig({ look: lk }, () => {
+    for (const width of WIDTHS) for (const line of controlBar(picked(), BRIEF, width).lines) assert.equal(visualLength(line), width, `${lk} ${width}: "${stripAnsi(line)}"`);
+  });
+  // A click on it asks to switch to the selected agent, as o.
+  const s = picked();
+  const bar = controlBar(s, { expired: 0 }, 80);
+  const button = bar.controls.find((c) => c.kind === 'open-session')!;
+  const frame = { lines: bar.lines, panes: [], controls: bar.controls, state: s };
+  const out = handleMonitorInput(s, { type: 'mouse', button: 'left', x: button.x, y: button.y } as never, { tree: { rootId: 'r', nodes: [] } as never, frame } as never);
+  assert.deepEqual(out.action, { type: 'switch', id: 'a1' });
 });

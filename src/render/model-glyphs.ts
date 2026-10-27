@@ -1,4 +1,4 @@
-import { colors, theme } from './colors.js';
+import { colors, theme, visualLength } from './colors.js';
 import { displayConfig, type GlyphMode } from './hud-config.js';
 
 export const MODEL_GLYPHS = {
@@ -133,6 +133,22 @@ export function renderModelEffortToken(
  * Symbol key, for help output and the tree panel footer. Users should not have
  * to learn the symbols from context.
  */
+/**
+ * The widest form of the badge that fits `max` columns, never a cut one: a
+ * badge read as `6.1sol·…` says less than `6.1sol` and is wider than `☀◕`.
+ * Text gives up the effort, then itself (no glyph where words were asked
+ * for); both gives way to the glyphs; '' when nothing fits.
+ */
+export function fitModelEffortToken(model: string | undefined, effort: string | undefined, max: number, mode: ModelTokenOptions['mode'] = displayConfig().glyphs): string {
+  const forms = mode === 'text' ? ['text','text-bare'] : mode === 'glyph' ? ['glyph'] : ['both','glyph'];
+  for (const form of forms) {
+    const token = form === 'text-bare' ? renderModelEffortToken(model, undefined, { mode: 'text' })
+      : renderModelEffortToken(model, effort, { mode: form as ModelTokenOptions['mode'] });
+    if (token && visualLength(token) <= max) return token;
+  }
+  return '';
+}
+
 export function modelLegend(): string {
   const families = (Object.keys(MODEL_GLYPHS) as ModelFamily[])
     .map((family) => `${MODEL_GLYPHS[family]} ${MODEL_LABELS[family]}`)

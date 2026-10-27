@@ -1,18 +1,3 @@
-## Modification History
-
-新启动默认使用底部单行缩小模式。按 `F12` 打开右侧扩展面板；设置 `CODEX_HUD_TREE=1` 可改为启动时展开。
-
-新增本地活动与证据入口：`Ctrl+] u` 查看收件箱、未查看变化和历史；`Ctrl+] p` 搜索/关注代理；`Ctrl+] c` 查看状态来源、模型调用与诊断导出预览。导出需手动保存，这些功能不新增模型请求。见[使用说明](./docs/reference.zh.md#本地活动与证据)。
-
-`Ctrl+]` 后按 `d` 打开故障诊断与主会话 TPS 详情。设置 → 模型增强中的「测试连接」（`t`）检查三个模型档位，只发送固定测试消息并计入调用预算。性能测量见[报告](./docs/performance-20261024.md)。
-
-| Date       | Summary of Changes |
-|------------|--------------------|
-| 2026-05-22 | 补充 Windows 用户当前 branch 下载、self-check、运行流程，并加入 WSL 截图。 |
-| 2026-05-22 | 将 Windows 默认启动策略切换为 WSL-only，并标注 native PowerShell HUD 暂未支持。 |
-| 2026-05-22 | 记录 Windows 显式启动模式参数与 Bash installer 依赖诊断提示。 |
-| 2026-05-21 | 更新 Windows PowerShell、cmd 与 WSL 双入口行为说明。 |
-
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
   <a href="./README.zh.md"><img src="https://img.shields.io/badge/lang-中文-red.svg" alt="中文"></a>
@@ -63,7 +48,8 @@ cd codex-hud
 codex
 ```
 
-### Windows 当前 branch（默认 WSL）
+<details>
+<summary><b>Windows（默认 WSL）</b>：安装、自检与 PowerShell / cmd 命令</summary>
 
 当前 branch 在 Windows 上只把 WSL HUD 作为受支持的 HUD 运行时。PowerShell 和 cmd 只是启动 shell；HUD 本身会在 Ubuntu WSL 的 Bash + tmux 中运行。
 
@@ -100,7 +86,7 @@ codex
 - `codex-hud-wsl` 是显式 WSL 完整 HUD 命令。
 - `cmd.exe` 用户会获得托管 `.cmd` shim，并通过同一套 PowerShell entrypoint 启动。
 
-### 管理命令
+**管理命令**
 
 首次安装后，以下命令自动加入 shell：
 
@@ -109,6 +95,39 @@ codex
 | `codex-hud-sync` | 重新构建并刷新当前 checkout 的别名 |
 | `codex-hud-upgrade` | 拉取最新代码后重新构建 |
 | `codex-hud-uninstall` | 移除别名并停止 HUD 会话 |
+
+**Windows WSL 默认入口说明（2026-05-22）**
+
+Windows 当前默认只使用 WSL HUD 启动路径：
+
+- `codex`：默认 Windows 入口；直接启动 WSL HUD，WSL HUD 不可用时才降级为普通 Windows `codex` CLI。
+- `codex --wsl ...`：显式使用 WSL HUD，并在转发给 Codex CLI 前移除 wrapper 参数。
+- legacy native-mode 请求：native PowerShell HUD 暂未支持，会 fail fast 并提示使用 WSL HUD。
+- `codex-hud-wsl`：显式 WSL 完整 HUD 模式（Ubuntu + Bash + tmux）。
+- `cmd.exe`：安装后会获得托管 `.cmd` shim，实际调用同一套 PowerShell entrypoint，并使用 `ExecutionPolicy Bypass`。
+
+PowerShell 安装方式：
+
+```powershell
+git clone https://github.com/CartmanFatass/codex-hud.git
+cd codex-hud
+.\bin\codex-hud-install.ps1
+```
+
+说明：`codex-hud-install.ps1` 会写入 PowerShell profile 管理块，生成 cmd shim，并提供以下命令映射：
+
+- `codex`
+- `codex-resume`
+- `codex-hud-wsl`
+- `codex-hud-sync`
+- `codex-hud-upgrade`
+- `codex-hud-uninstall`
+
+安装脚本会在 Windows 上准备 Node.js 与 Codex CLI；Windows 默认 HUD 路径只使用 WSL，因此默认不再安装 native tmux。在 WSL 中会通过 root 或 passwordless `sudo` 准备 `tmux`、Node.js LTS、`npm` 和 `@openai/codex`。如果 WSL 权限不足，会 fail fast 并输出可在 WSL 内手动执行的命令。
+
+Linux/macOS/Git Bash 的 `install.sh` 也会对缺失依赖 fail fast，并输出精确检查项与安装指导。关键检查包括 `command -v node`、`node --version`、`command -v npm`、`npm --version`、`command -v tmux` 与 `tmux -V`。
+
+</details>
 
 ### 字体
 
@@ -173,11 +192,11 @@ CODEX_HUD_DENSITY=focus codex
 
 ## 开发面板
 
-`F12` 在右侧打开面板，光标仍留在 Codex。`Shift+F12` 打开并把光标移进面板。
+新启动默认使用底部单行缩小模式。`F12` 在右侧打开面板，光标仍留在 Codex；`Shift+F12` 打开并把光标移进面板；设置 `CODEX_HUD_TREE=1` 可改为启动时展开。
 
-**未打开弹出页面时，面板把普通输入交给 Codex。** 每条面板命令都是**前缀键 `Ctrl+]`，再按一个键**：`Ctrl+]` `,` 打开设置，`Ctrl+]` `?` 打开帮助，`Ctrl+]` `b` 暂停简报（完整列表见[参考文档](./docs/reference.zh.md#按键)和帮助里的“快捷键”一节）。光标在 Codex 窗格还是在面板里，前缀都有效；`Ctrl+]` `j` `j` `j` 下移三行，因为移动类按键在半秒内可以不再按前缀连按。需要面板的命令会先把面板打开。不带前缀输入的一切都交给 Codex：光标在面板里时（`Shift+F12` 或点击之后），按键和粘贴原样转给 Codex 窗格，粘贴仍是一次括号粘贴，光标随之回到 Codex。设置、帮助、活动中心和证据页面接收自己的导航按键；查找页还接收查询文字。用 `Esc` 或返回按钮关闭页面后，恢复普通输入转发。鼠标用法不变。
+**未打开弹出页面时，面板把普通输入交给 Codex。** 每条面板命令都是**前缀键 `Ctrl+\`，再按一个键**：`Ctrl+\` `,` 打开设置，`Ctrl+\` `?` 打开帮助，`Ctrl+\` `b` 暂停简报（完整列表见[参考文档](./docs/reference.zh.md#按键)和帮助里的“快捷键”一节）。光标在 Codex 窗格还是在面板里，前缀都有效；`Ctrl+\` `j` `j` `j` 下移三行，因为移动类按键在半秒内可以不再按前缀连按。需要面板的命令会先把面板打开。不带前缀输入的一切都交给 Codex：光标在面板里时（`Shift+F12` 或点击之后），按键和粘贴原样转给 Codex 窗格，粘贴仍是一次括号粘贴，光标随之回到 Codex。设置、帮助、活动中心和证据页面接收自己的导航按键；查找页还接收查询文字。用 `Esc` 或返回按钮关闭页面后，恢复普通输入转发。鼠标用法不变。
 
-连按两次 `Ctrl+]` 会把 `Ctrl+]` 本身发给光标所在的窗格。Codex 0.160 把 `Ctrl+]` 绑定为 *Skip Question*（跳过提问），现在要按 `Ctrl+]` `Ctrl+]`。想把 `Ctrl+]` 留给 Codex，可在 设置 → 输入 →「前缀键」 选择 `Ctrl+\`（Codex 0.160 没有任何绑定用它；`Ctrl+G` 是它的外部编辑器，`Alt+]` 在终端里是转义序列的开头，所以都不提供）。前缀是 HUD 自己 tmux 会话里的一张按键表：服务器的 root 表和 `Ctrl+B` 前缀表都不会被改动。改了前缀，保存它的面板会立刻重新安装；本版本之前启动的会话要重新启动后才换成新按键。
+连按两次 `Ctrl+\` 会把 `Ctrl+\` 本身发给光标所在的窗格。全新安装时前缀默认为 `Ctrl+\`，原因是 Codex 0.160 把 `Ctrl+]` 绑定为 *Skip Question*（跳过提问），而 Codex 0.160 没有任何绑定使用 `Ctrl+\`。在此改动之前保存、且没有写前缀的设置文件会保留 `Ctrl+]`。可在 设置 → 输入 →「前缀键」 中在两者之间切换（`Ctrl+G` 是 Codex 的外部编辑器，`Alt+]` 在终端里是转义序列的开头，所以都不提供）。前缀为 `Ctrl+]` 时，Codex 的跳过提问要按 `Ctrl+]` `Ctrl+]`。前缀是 HUD 自己 tmux 会话里的一张按键表：服务器的 root 表和 `Ctrl+B` 前缀表都不会被改动。改了前缀，保存它的面板会立刻重新安装；本版本之前启动的会话要重新启动后才换成新按键。
 
 面板默认显示卡片；时间线、改动和详情按需打开。焦点标题和选中行高亮，状态颜色集中在图标上：
 
@@ -191,7 +210,7 @@ CODEX_HUD_DENSITY=focus codex
 **面板排布**（设置 → 面板 →「面板排布」）决定各区域怎样分用面板：
 
 - **叠放**（默认）：所有打开的区域同时显示，如上。
-- **标签页**：像浏览器一次显示一个网页那样，一次只显示一个区域，占满控制栏和状态卡之间的全部高度。每个区域在控制栏上都有标签，点一下就切换到那个区域，和 `Ctrl+]` `1`–`4` 一样；`Ctrl+]` `Tab` 切到下一个。标签已经写了区域的名字，区域标题就只写计数和行范围。这种排布下不放大也不关闭区域；切回叠放时，各区域原来的打开、关闭状态不变。
+- **标签页**：像浏览器一次显示一个网页那样，一次只显示一个区域，占满控制栏和状态卡之间的全部高度。每个区域在控制栏上都有标签，点一下就切换到那个区域，和 `Ctrl+\` `1`–`4` 一样；`Ctrl+\` `Tab` 切到下一个。标签已经写了区域的名字，区域标题就只写计数和行范围。这种排布下不放大也不关闭区域；切回叠放时，各区域原来的打开、关闭状态不变。
 
 **两种布局**（设置 → 面板 →「布局」）：**卡片**（rich，默认）给每个可见的主会话 agent 同样的可组合卡片，活跃和空闲都使用同一规则，不再展开/收起。设置 →「卡片」独立控制每项内容，包括最新 AI 总结及子 agent 的一句话总结；子 agent 默认显示活跃及重要任务，名称和状态始终保留。「子 agent 数量统计」可单独隐藏卡片底部的角色计数，不影响子任务行和总结。点击只选中，Enter 或空格打开详情。**紧凑**（compact）是一棵树，每个 agent 和子任务一行，下面是简报、回顾和 agent 日志。两种布局的计数口径相同，状态卡、状态栏和 `codex-hud --json` 也一样：主会话启动的 agent、它们的子任务和守护评审分开计数。
 
@@ -203,7 +222,11 @@ CODEX_HUD_DENSITY=focus codex
 
 <img src="./docs/fig/looks.zh.png" width="414" alt="五种外观：tab、band、tile、frame 和 pill">
 
-底部的**状态卡**在面板打开时承载状态栏的字段，「完整」档还显示主会话的简报；`Ctrl+]` `r` 在三档之间切换。
+底部的**状态卡**在面板打开时承载状态栏的字段，「完整」档还显示主会话的简报；`Ctrl+\` `r` 在三档之间切换。
+
+新增本地活动与证据入口：`Ctrl+\ u` 查看收件箱、未查看变化和历史；`Ctrl+\ p` 搜索/关注代理；`Ctrl+\ c` 查看状态来源、模型调用与诊断导出预览。导出需手动保存，这些功能不新增模型请求。见[使用说明](./docs/reference.zh.md#本地活动与证据)。
+
+`Ctrl+\` 后按 `d` 打开故障诊断与主会话 TPS 详情。设置 → 模型增强中的「测试连接」（`t`）检查三个模型档位，只发送固定测试消息并计入调用预算。性能测量见[报告](./docs/performance-20261024.md)。
 
 其余内容见 **[参考文档](./docs/reference.zh.md)**：各区域和两种布局的完整说明、控制栏、外观与图标集、状态卡、全部按键和鼠标操作、会话切换、时间线、agent 日志、详情区域、设置、模型增强、背景图和输出速度。
 
@@ -236,7 +259,7 @@ codex-hud brief --dry-run    # 打印简报此刻会发送的内容
 
 ## 配置
 
-大部分偏好在上方主导航的「设置」Tab（也可按 `Ctrl+]` `,`）里修改，保存到 `$CODEX_HOME/hud-settings.json`；`CODEX_HUD_DENSITY`、`CODEX_HUD_THEME`、`CODEX_HUD_LOOK` 等环境变量设定默认值，已保存的偏好优先于它们。全部环境变量、提醒，以及 HUD 从 `config.toml` 读取的内容，见[参考文档](./docs/reference.zh.md#配置)。
+大部分偏好在上方主导航的「设置」Tab（也可按 `Ctrl+\` `,`）里修改，保存到 `$CODEX_HOME/hud-settings.json`；`CODEX_HUD_DENSITY`、`CODEX_HUD_THEME`、`CODEX_HUD_LOOK` 等环境变量设定默认值，已保存的偏好优先于它们。全部环境变量、提醒，以及 HUD 从 `config.toml` 读取的内容，见[参考文档](./docs/reference.zh.md#配置)。
 
 有修改的设置草稿经返回/Esc、导航或会离开设置的前缀命令退出时，会询问**保存并离开 / 放弃修改 / 继续编辑**（默认）。点击当前设置 Tab 保留草稿；保存失败保留草稿和确认页供重试，没有修改则立即离开。不拦截 F12 替换窗格或进程终止。**重置本组**（设置页内 `r`）只重置当前组；**重置偏好**（Reset all）只处理设置页明确管理的已知偏好，不清空连接密钥或整个文件。模型增强/全部重置会关闭生成并暂停模型，保留后端、API 密钥/地址、模型档位/统一覆盖/推理选项、每小时调用上限和背景图资源。重置只准备草稿，仍需保存，见[设置](./docs/reference.zh.md#设置)。
 
@@ -289,6 +312,15 @@ npm run test:integration       # Shell 测试：包装脚本、tmux 开关、安
 | 2026-02-09 | 修复 resize 后主 pane 焦点漂移；优化鼠标滚动默认行为 |
 | 2026-02-09 | 更新会话复用默认策略与滚动配置 |
 
+文档修改记录：
+
+| Date       | Summary of Changes |
+|------------|--------------------|
+| 2026-05-22 | 补充 Windows 用户当前 branch 下载、self-check、运行流程，并加入 WSL 截图。 |
+| 2026-05-22 | 将 Windows 默认启动策略切换为 WSL-only，并标注 native PowerShell HUD 暂未支持。 |
+| 2026-05-22 | 记录 Windows 显式启动模式参数与 Bash installer 依赖诊断提示。 |
+| 2026-05-21 | 更新 Windows PowerShell、cmd 与 WSL 双入口行为说明。 |
+
 ## 许可证
 
 MIT
@@ -296,34 +328,3 @@ MIT
 ## 致谢
 
 灵感来源于 Jarrod Watts 的 [claude-hud](https://github.com/jarrodwatts/claude-hud)。为 [OpenAI Codex CLI](https://github.com/openai/codex) 构建。
-
-## Windows WSL 默认入口说明（2026-05-22）
-
-Windows 当前默认只使用 WSL HUD 启动路径：
-
-- `codex`：默认 Windows 入口；直接启动 WSL HUD，WSL HUD 不可用时才降级为普通 Windows `codex` CLI。
-- `codex --wsl ...`：显式使用 WSL HUD，并在转发给 Codex CLI 前移除 wrapper 参数。
-- legacy native-mode 请求：native PowerShell HUD 暂未支持，会 fail fast 并提示使用 WSL HUD。
-- `codex-hud-wsl`：显式 WSL 完整 HUD 模式（Ubuntu + Bash + tmux）。
-- `cmd.exe`：安装后会获得托管 `.cmd` shim，实际调用同一套 PowerShell entrypoint，并使用 `ExecutionPolicy Bypass`。
-
-PowerShell 安装方式：
-
-```powershell
-git clone https://github.com/CartmanFatass/codex-hud.git
-cd codex-hud
-.\bin\codex-hud-install.ps1
-```
-
-说明：`codex-hud-install.ps1` 会写入 PowerShell profile 管理块，生成 cmd shim，并提供以下命令映射：
-
-- `codex`
-- `codex-resume`
-- `codex-hud-wsl`
-- `codex-hud-sync`
-- `codex-hud-upgrade`
-- `codex-hud-uninstall`
-
-安装脚本会在 Windows 上准备 Node.js 与 Codex CLI；Windows 默认 HUD 路径只使用 WSL，因此默认不再安装 native tmux。在 WSL 中会通过 root 或 passwordless `sudo` 准备 `tmux`、Node.js LTS、`npm` 和 `@openai/codex`。如果 WSL 权限不足，会 fail fast 并输出可在 WSL 内手动执行的命令。
-
-Linux/macOS/Git Bash 的 `install.sh` 也会对缺失依赖 fail fast，并输出精确检查项与安装指导。关键检查包括 `command -v node`、`node --version`、`command -v npm`、`npm --version`、`command -v tmux` 与 `tmux -V`。

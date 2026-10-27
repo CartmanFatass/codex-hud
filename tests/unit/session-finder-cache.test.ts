@@ -115,3 +115,23 @@ test('a bound thread is found in the archive when the live tree does not have it
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('recent sessions: this directory\'s root sessions, the newest written first, subagents and other directories left out', async () => {
+  const { recentSessions } = await import('../../src/collectors/session-finder.js');
+  const home = mkdtempSync(join(tmpdir(), 'hud-recent-'));
+  try {
+    withEnv({ CODEX_HOME: home, CODEX_SESSIONS_PATH: undefined }, () => {
+      const older = rollout(home, FIRST);
+      const newer = rollout(home, SECOND);
+      utimesSync(older, new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+      utimesSync(newer, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+      const agent = rollout(home, '019d0000-0000-7000-8000-000000000003');
+      writeFileSync(agent, `${JSON.stringify({ type: 'session_meta', payload: { id: '019d0000-0000-7000-8000-000000000003', cwd: home, parent_thread_id: FIRST, thread_source: 'subagent' } })}\n`);
+      const elsewhere = rollout(home, '019d0000-0000-7000-8000-000000000004');
+      writeFileSync(elsewhere, `${JSON.stringify({ type: 'session_meta', payload: { id: '019d0000-0000-7000-8000-000000000004', cwd: join(home, 'other') } })}\n`);
+      assert.deepEqual(recentSessions(home).map((s) => s.sessionId), [SECOND, FIRST]);
+      assert.deepEqual(recentSessions(home, 1).map((s) => s.sessionId), [SECOND], 'at most the limit');
+      assert.deepEqual(recentSessions(undefined), [], 'no directory, no list');
+    });
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});

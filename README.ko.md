@@ -1,11 +1,5 @@
 > **참고:** 이 한국어 번역은 요약본이며 최신 내용이 반영되지 않았을 수 있습니다. 전체 문서는 [README.md](./README.md)(영어)를 참조하세요.
 
-## Modification History
-
-| Date       | Summary of Changes |
-|------------|--------------------|
-| 2026-05-22 | Windows 사용자를 위한 current branch 다운로드, self-check, WSL 실행 절차와 스크린샷을 추가. |
-
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
   <a href="./README.zh.md"><img src="https://img.shields.io/badge/lang-中文-red.svg" alt="中文"></a>
@@ -56,7 +50,8 @@ cd codex-hud
 codex
 ```
 
-### Windows current branch (WSL 기본값)
+<details>
+<summary><b>Windows (WSL 기본값)</b>: 설치, self-check, PowerShell / cmd 명령어</summary>
 
 이 branch에서 Windows의 지원 HUD runtime은 WSL입니다. PowerShell과 cmd는 launcher shell로 사용되며, HUD 자체는 Ubuntu WSL의 Bash + tmux 안에서 실행됩니다.
 
@@ -93,7 +88,7 @@ Notes:
 - `codex-hud-wsl`은 Ubuntu WSL에서 전체 HUD를 실행하는 명시적 명령입니다.
 - `cmd.exe` 사용자는 동일한 PowerShell entrypoint를 호출하는 관리형 `.cmd` shim을 받습니다.
 
-### 관리 명령어
+**관리 명령어**
 
 첫 설치 후 다음 명령어가 셸에 추가됩니다:
 
@@ -102,6 +97,8 @@ Notes:
 | `codex-hud-sync` | 현재 체크아웃을 다시 빌드하고 별칭 갱신 |
 | `codex-hud-upgrade` | 최신 변경 사항을 풀한 후 다시 빌드 |
 | `codex-hud-uninstall` | 별칭을 제거하고 HUD 세션 중지 |
+
+</details>
 
 ## HUD에 무엇이 표시되나요?
 
@@ -219,6 +216,12 @@ node dist/index.js             # HUD 직접 실행
 | 2026-04-09 | HUD 세션을 tmux 패인에 바인딩; reasoning effort 표시 |
 | 2026-02-09 | 리사이즈 후 메인 패인 포커스 수정; 마우스 스크롤 기본값 개선 |
 | 2026-02-09 | 세션 연결 기본값 및 스크롤백 설정 업데이트 |
+
+문서 변경 이력:
+
+| Date       | Summary of Changes |
+|------------|--------------------|
+| 2026-05-22 | Windows 사용자를 위한 current branch 다운로드, self-check, WSL 실행 절차와 스크린샷을 추가. |
 
 ## 라이선스
 

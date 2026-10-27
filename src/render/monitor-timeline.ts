@@ -36,6 +36,14 @@ export const TIMELINE_HOURS: readonly number[] = [1, 3, 6, 12, 24];
 export const TIMELINE_STEP = 20;
 /** The earlier row, as an item: no agent's id holds a NUL. */
 export const TIMELINE_EARLIER = '\0earlier';
+
+/** An agent entry's rows, as an item: the agent's id, a NUL, the entry's, so each entry is a cursor stop of its own. */
+export const timelineItem = (agent: string, entry: string): string => `${agent}\0${entry}`;
+/** The agent a timeline item opens; none for the earlier row. */
+export function timelineAgent(item: string | null | undefined): string | undefined {
+  const at = item ? item.indexOf('\0') : -1;
+  return at > 0 ? item!.slice(0, at) : undefined;
+}
 /** The fewest entries shown, however old, before the rest fold into the earlier row. */
 const MIN_SHOWN = 8;
 /** Lines under an entry: an L1's newest result, an important L2's, what a running L1 said it would do. */
@@ -102,6 +110,8 @@ interface Entry {
   cause?: string;
   /** Its rows' key: the event's id, the newest one where it folds several. */
   id: string;
+  /** The agent it is about, in the tree: its rows are an item that opens it in the Inspector. */
+  agent?: string;
   /** What makes two of the main session's entries one, "×2". */
   fold: string;
   count: number;
@@ -186,7 +196,8 @@ function agentEntry(event: WorkbenchEvent, input: MonitorData, dirs: Directions,
   if (node && level === 2 && (stage === 'running' || (stage !== 'failed' && !isImportant(node, input.agentLog?.get(node.id), roles)))) return null;
   const l1 = node ? dirs.family.get(node.id) : undefined;
   const dir = event.serves ?? (l1 ? dirs.serves.get(l1) ?? l1 : undefined);
-  const paint = dir ? dirs.paint(dir) : event.agentId ? agentPaint(event.agentId) : plain;
+  // Names: their colour only where agent colours are on names.
+  const paint = dir ? dirs.name(dir) : event.agentId ? agentPaint(event.agentId) : plain;
   const name = (of: SubagentTreeNode) => monitorText(agentTitle(of, input.state.labelAsName).name);
   const called = paint(node ? name(node) : monitorText(event.subject ?? ''));
   const lead = event.serves && event.serves !== l1 ? dirs.node.get(event.serves)?.node : undefined;
@@ -224,6 +235,7 @@ function agentEntry(event: WorkbenchEvent, input: MonitorData, dirs: Directions,
   return {
     at: event.at, level, dir, glyph: words ? '' : glyphPaint(glyph), text, target: lead ? colors.dim(' → ') + paint(name(lead)) : '',
     right, summary, lines, cause: event.cause, id: event.id, fold: event.id, count: 1, live: stage === 'running',
+    ...(node ? { agent: node.id } : {}),
   };
 }
 
@@ -305,13 +317,15 @@ export function timelineRows(input: MonitorData, width: number, now: number): Mo
   // An entry's first row, `first` before its words in `room` columns; under it, after `hang`, what it returned and a failure's cause.
   const push = (entry: Entry, first: string, hang: string, room: number) => {
     const key = `entry:${entry.id}`;
+    // An agent's entry is an item: the cursor stops on it, Enter or a click opens the agent.
+    const item = entry.agent ? { item: timelineItem(entry.agent, entry.id) } : {};
     const words = `${named(entry, room - (entry.right ? visualLength(entry.right) + 1 : 0))}${entry.count > 1 ? colors.dim(` ×${entry.count}`) : ''}`;
-    rows.push({ text: truncateAnsi(first + pair(words, entry.right, Math.max(1, room)), width), key });
+    rows.push({ text: truncateAnsi(first + pair(words, entry.right, Math.max(1, room)), width), key, ...item });
     const under = Math.max(1, width - visualLength(hang) - 2);
-    for (const line of underLines(entry, under)) rows.push({ text: truncateAnsi(`${hang}  ${colors.dim(line)}`, width), key });
+    for (const line of underLines(entry, under)) rows.push({ text: truncateAnsi(`${hang}  ${colors.dim(line)}`, width), key, ...item });
     // A model-written reading of a failure, marked as such.
     if (entry.cause) flowLines(monitorText(entry.cause), under)
-      .forEach((line, i) => rows.push({ text: truncateAnsi(`${hang}${i ? '  ' : `${colors.dim('~')} `}${line}`, width), key }));
+      .forEach((line, i) => rows.push({ text: truncateAnsi(`${hang}${i ? '  ' : `${colors.dim('~')} `}${line}`, width), key, ...item }));
   };
   const glyphed = (entry: Entry, otherwise = '') => entry.glyph ? `${entry.glyph} ` : otherwise;
   if (style === 'lanes') {

@@ -22,6 +22,7 @@ import { getApprovalPolicyDisplayValue } from '../../collectors/codex-config.js'
 import { displayConfig, iconSet, type Density, type GlyphMode } from '../hud-config.js';
 import { formatCountdown, formatCredits, quotaState, readQuotaWindows } from '../quota.js';
 import { formatElapsedShort } from '../subagent-chip.js';
+import { idleFor } from '../monitor-labels.js';
 import type { BarModule } from './engine.js';
 
 export const MODULE_PRIORITY = {
@@ -141,8 +142,8 @@ function identityModule(data: HudData, glyphs: GlyphMode): BarModule {
 /**
  * What the session is doing.
  *
- * Idle, interrupted and failed are a single mark: there is nothing else to
- * say. A working turn is the one state a reader wants detail about, so the
+ * Interrupted and failed are a single mark: there is nothing else to say.
+ * Idle adds how long it has waited on the person, from a minute on. A working turn is the one state a reader wants detail about, so the
  * widest form names the running tool and how long the turn has been going.
  * Both halves are omitted when the evidence for them is missing rather than
  * guessed at, and the narrow forms fall back to the mark alone.
@@ -163,8 +164,10 @@ function activityModule(data: HudData, words: boolean, nowMs: number): BarModule
   const mark = paint(words ? label : glyph);
 
   if (status !== 'working') {
+    // Idle, how long the session has waited on the person since its turn finished.
+    const idle = status === 'idle' ? idleFor(data.activity, nowMs) : '';
     return { id: 'activity', priority: MODULE_PRIORITY.activity, group: 'who',
-      variants: { full: mark, min: mark } };
+      variants: idle ? { full: `${mark} ${colors.dim(words ? idle : `idle ${idle}`)}`, short: `${mark} ${colors.dim(idle)}`, min: mark } : { full: mark, min: mark } };
   }
 
   const running = [...(data.toolActivity?.recentCalls ?? [])].reverse().find((call) => call.status === 'running');

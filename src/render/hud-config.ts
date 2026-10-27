@@ -30,7 +30,17 @@ export interface HudDisplayConfig {
   look: LookName;
   motion: MotionMode;
   context: ContextMode;
+  /**
+   * Where an agent's colour shows (its direction's on the timeline and the
+   * cards, its own in the Inspector): on its name and its marks (`name`, the
+   * default), on the marks alone, the rails and lanes, the names in the
+   * text colour (`mark`), or nowhere (`off`).
+   */
+  agentColors: AgentColorMode;
 }
+
+export type AgentColorMode = 'name' | 'mark' | 'off';
+export const AGENT_COLOR_MODES: readonly AgentColorMode[] = ['name', 'mark', 'off'];
 
 const DENSITIES: Density[] = ['focus', 'balanced', 'full'];
 const THEMES: ThemeName[] = ['terminal', 'mocha', 'latte', 'titanium', 'none'];
@@ -61,6 +71,7 @@ export function resolveDisplayConfig(env: NodeJS.ProcessEnv = process.env): HudD
     look: pick(env.CODEX_HUD_LOOK, [...LOOKS], 'tab'),
     motion: env.CODEX_HUD_REDUCED_MOTION === '1' ? 'reduced' : 'full',
     context: pick(env.CODEX_HUD_CONTEXT, ['used', 'remaining'], 'used'),
+    agentColors: 'name',
   };
 }
 

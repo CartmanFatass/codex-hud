@@ -283,6 +283,13 @@ export interface TokenUsageInfo {
   model_context_window?: number;
 }
 
+/** Tokens spent in all, as a rollout's cumulative report has them: cached input is part of input. */
+export interface TokenSpent {
+  input: number;
+  cached: number;
+  output: number;
+}
+
 export interface TokenUsage {
   input_tokens?: number;
   cached_input_tokens?: number;
@@ -460,6 +467,8 @@ export interface SubagentTreeNode {
   contextUsage?: ContextUsage;
   /** This agent's output rate, from its rollout's reports, as the main session's is taken. */
   outputRate?: TokenRateSnapshot;
+  /** What this agent has spent over its life, from its rollout's newest cumulative report. */
+  tokensSpent?: TokenSpent;
   /** Latest observed turn start, distinct from agent creation and traffic. */
   turnStartedAt?: Date;
   id: string;

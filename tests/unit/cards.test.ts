@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, type MonitorState, type MonitorFrame } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput, monitorItemAt, HELP_TABS, type MonitorState, type MonitorFrame } from '../../src/render/monitor.js';
 import { agentTitle, KIND_GLYPHS } from '../../src/render/agent-title.js';
 import { hangLines, clockText, agentCard, cardSummaryTargets } from '../../src/render/cards.js';
 import { inspectorRows } from '../../src/render/monitor-inspector.js';
@@ -257,7 +257,7 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   assert.equal(focused.focus, 'agents');
   assert.equal(focused.modes.agents, 'open', '1 opens the cards, and focuses them');
   assert.equal(handleMonitorInput(focused, key('agents'), { tree: tree([named]), frame }).state.modes.agents, 'closed', 'and closes them again');
-  const help = (style: 'rich' | 'compact') => plain(renderMonitor({ tree: tree([]), state: { ...rich(), style, help: true }, width: 70, height: 80, nowMs: now })).join('\n');
+  const help = (style: 'rich' | 'compact') => HELP_TABS.map(helpTab => plain(renderMonitor({ tree: tree([]), state: { ...rich(), style, help: true, helpTab }, width: 70, height: 80, nowMs: now })).join('\n')).join('\n');
   assert.doesNotMatch(help('rich'), /open \/ close card/);
   assert.match(help('rich'), /Click a card: select/);
   assert.match(help('rich'), /Click its name: select; double-click switches/);
@@ -267,7 +267,7 @@ test('rich: the summary heads the view with the linger switch; hidden agents hav
   assert.match(help('rich'), /⌕ research ⚗ experiment ⚒ fix/);
   assert.doesNotMatch(help('compact'), /open \/ close card/);
   const previous = setLanguage('zh');
-  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true }, width: 70, height: 80, nowMs: now })).join('\n'), /⌕ 调研/); }
+  try { assert.match(plain(renderMonitor({ tree: tree([]), state: { ...rich(), help: true, helpTab: 'legend' }, width: 70, height: 80, nowMs: now })).join('\n'), /⌕ 调研/); }
   finally { setLanguage(previous); }
 });
 

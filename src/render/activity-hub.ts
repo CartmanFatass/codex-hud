@@ -2,18 +2,20 @@
 import type { ActivityAgent, ActivityEvent, ActivityReceipt, ActivityView } from '../collectors/activity-journal.js';
 import { searchActivityAgents } from '../collectors/activity-journal.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-import { theme, visualLength } from './colors.js';
-import { fit, monitorText } from './monitor-text.js';
+import { theme, colors, visualLength, truncateAnsi } from './colors.js';
+import { fit, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 
-export type ActivityHubTab = 'inbox' | 'updates' | 'find' | 'history';
+export type ActivityHubTab = 'inbox' | 'updates' | 'find' | 'history' | 'sessions';
+/** A recent session of this directory, for the Sessions tab: read from disk by the parent, never resumed by the HUD. */
+export interface RecentSessionRow { id: string; modifiedAt: number; title?: string; current?: boolean }
 export interface ActivityHubState { tab: ActivityHubTab; selected: number; query: string; querying: boolean; replayId?: string }
 export type ActivityHubAction = {type:'close'} | {type:'target';agentId:string}
   | {type:'read';eventId:string;value:boolean} | {type:'snooze';eventId:string;until:number}
   | {type:'pin';agentId:string;value:boolean} | {type:'viewed';receipt:ActivityReceipt};
 export interface ActivityHubRow {
-  id: string; kind:'event'|'agent'|'snapshot'; text:string; detail?:string;
-  agentId?:string; eventId?:string; snapshotId?:string; read?:boolean; pinned?:boolean; y?:number;
+  id: string; kind:'event'|'agent'|'snapshot'|'session'; text:string; detail?:string;
+  agentId?:string; eventId?:string; snapshotId?:string; sessionId?:string; read?:boolean; pinned?:boolean; y?:number;
 }
 type ControlAction = ActivityHubAction | {type:'tab';tab:ActivityHubTab} | {type:'row';index:number} | {type:'back'} | {type:'query'};
 export interface ActivityHubControl { x:number; y:number; width:number; action:ControlAction; label:string }
@@ -21,8 +23,44 @@ export interface ActivityHubFrame {
   lines:string[]; rows:ActivityHubRow[]; controls:ActivityHubControl[]; state:ActivityHubState;
   receipt:ActivityReceipt; nowMs:number;
 }
-const TABS: readonly ActivityHubTab[]=['inbox','updates','find','history'];
-const TAB_LABELS: Record<ActivityHubTab,string>={inbox:'Inbox',updates:'Since viewed',find:'Find',history:'History'};
+// Sessions sits before History, so ← from the Inbox still reaches History.
+const TABS: readonly ActivityHubTab[]=['inbox','updates','find','sessions','history'];
+const TAB_LABELS: Record<ActivityHubTab,string>={inbox:'Inbox',updates:'Since viewed',find:'Find',history:'History',sessions:'Sessions'};
+/** A session's age as the panel writes ages: 42s, 12m, 3h, 2d. */
+function ago(at:number,now:number):string {
+  const s=Math.max(0,Math.floor((now-at)/1000));
+  return s<60 ? `${s}s` : s<3600 ? `${Math.floor(s/60)}m` : s<2*86_400 ? `${Math.floor(s/3600)}h` : `${Math.floor(s/86_400)}d`;
+}
+/**
+ * A session's row, `room` wide: when it was last written, how long ago, its
+ * title (or its id's head) and whether it is this one. Short of room the
+ * date goes, then the title is cut; the age and the mark stay whole.
+ */
+function sessionRows(sessions:readonly RecentSessionRow[],now:number,room:number):ActivityHubRow[] {
+  return sessions.map(s=>{
+    const when=new Date(s.modifiedAt).toISOString().replace('T',' ').slice(5,16);
+    const name=s.title ? monitorText(s.title) : s.id.slice(0,8);
+    const head=[t('{age} ago',{age:ago(s.modifiedAt,now)})];
+    const mark=s.current ? [t('this session')] : [];
+    const join=(parts:string[])=>parts.join(' · ');
+    let text=join([when,...head,name,...mark]);
+    if(visualLength(text)>room) text=join([...head,name,...mark]);
+    if(visualLength(text)>room) {
+      const left=room-visualLength(join([...head,'',...mark]));
+      text=join([...head,left>1 ? truncateAnsi(name,left) : '…',...mark]);
+    }
+    // The command, for the person to run where they choose: the HUD never runs it.
+    return {id:`session:${s.id}`,kind:'session' as const,sessionId:s.id,text,detail:`codex resume ${s.id}`};
+  });
+}
+
+/** The resume command, `width` wide, whole: the id on lines of its own when the line cannot hold it, never cut. */
+function commandLines(id:string,width:number):string[] {
+  if(visualLength(`$ codex resume ${id}`)<=width) return [`${colors.dim('$')} ${theme.accent(`codex resume ${id}`)}`];
+  const room=Math.max(1,width-2); const lines=[`${colors.dim('$')} ${theme.accent('codex resume')}`];
+  for(let i=0;i<id.length;i+=room) lines.push(`  ${theme.accent(id.slice(i,i+room))}`);
+  return lines;
+}
 const EVENT_LABELS: Record<ActivityEvent['kind'],string>={approval:'Approval needed',failed:'Agent failed',completed:'Agent completed',
   'tool-failed':'Tool failed',health:'Health problem',mismatch:'State mismatch',git:'Git changed',summary:'Model summary changed',recovered:'Recovered'};
 export function initialActivityHubState(tab:ActivityHubTab='inbox'):ActivityHubState {
@@ -37,7 +75,8 @@ function eventRow(e:ActivityEvent,agents:readonly ActivityAgent[],pins:readonly 
     text:`${t(EVENT_LABELS[e.kind])}${name ? ` · ${monitorText(name)}` : ''}${source}${status}`,
     detail:e.summary ? `${t('Model-written')}: ${monitorText(e.summary)}` : e.paths?.length ? e.paths.map(p=>monitorText(p)).join(' · ') : undefined};
 }
-function rowsFor(view:ActivityView,state:ActivityHubState,now:number):ActivityHubRow[] {
+function rowsFor(view:ActivityView,state:ActivityHubState,now:number,sessions:readonly RecentSessionRow[],width:number):ActivityHubRow[] {
+  if(state.tab==='sessions') return sessionRows(sessions,now,Math.max(1,width-2));
   if(state.tab==='find') return searchActivityAgents(view,state.query).map(a=>({id:a.id,kind:'agent',agentId:a.id,pinned:view.pinnedIds.includes(a.id),
     text:`${view.pinnedIds.includes(a.id) ? `${t('Pinned')} · ` : ''}${monitorText(a.name)} · ${t(a.status)}`,
     detail:[a.role,a.agentPath].filter(Boolean).map(v=>monitorText(v!)).join(' · ')}));
@@ -58,10 +97,13 @@ function rowsFor(view:ActivityView,state:ActivityHubState,now:number):ActivityHu
   return events.slice().reverse().map(e=>eventRow(e,view.agents,view.pinnedIds,now));
 }
 
-/** `receipt` includes only events on this actual frame. Opening, painting and closing perform no writes. */
-export function renderActivityHub(view:ActivityView,state:ActivityHubState,width:number,height:number,nowMs:number):ActivityHubFrame {
+/**
+ * `receipt` includes only events on this actual frame. Opening, painting and closing perform no writes.
+ * `sessions` are this directory's recent sessions, for the Sessions tab; the parent reads them only while it is open.
+ */
+export function renderActivityHub(view:ActivityView,state:ActivityHubState,width:number,height:number,nowMs:number,sessions:readonly RecentSessionRow[]=[]):ActivityHubFrame {
   width=Math.max(0,Math.floor(width)); height=Math.max(0,Math.floor(height));
-  const rows=rowsFor(view,state,nowMs); const selected=Math.max(0,Math.min(state.selected,rows.length-1));
+  const rows=rowsFor(view,state,nowMs,sessions,width); const selected=Math.max(0,Math.min(state.selected,rows.length-1));
   state={...state,selected};
   const lines:string[]=[]; const controls:ActivityHubControl[]=[];
   const push=(text:string)=>{if(lines.length<height) lines.push(text);};
@@ -97,6 +139,7 @@ export function renderActivityHub(view:ActivityView,state:ActivityHubState,width
     push(theme.strong(t('Historical observation')));
     buttons([button(t('Back'),{type:'back'})]);
   }
+  if(state.tab==='sessions') for(const line of flowLines(t(rows.length ? 'Started here; run the command to resume one' : 'No session started here in the last 7 days'),Math.max(1,width))) push(colors.dim(line));
   if(view.persistence==='pending') push(theme.warning(t('Activity save pending')));
   const selectedRow=rows[selected];
   const actionLabels=[...(selectedRow?.snapshotId ? [t('Replay')] : []),...(selectedRow?.agentId ? [t('Inspect')] : []),
@@ -109,7 +152,9 @@ export function renderActivityHub(view:ActivityView,state:ActivityHubState,width
     if(actionWidth && actionWidth+size>width) { actionRows++; actionWidth=0; }
     actionWidth+=size;
   }
-  const detailRows=selectedRow?.detail && height-lines.length-actionRows>=3 ? 1 : 0;
+  // A session's detail is its resume command, whole on as many lines as it takes; another row's, one line.
+  const detailLines=selectedRow?.sessionId ? commandLines(selectedRow.sessionId,width) : selectedRow?.detail ? [selectedRow.detail] : [];
+  const detailRows=detailLines.length && height-lines.length-actionRows>=detailLines.length+(selectedRow?.sessionId ? 1 : 2) ? detailLines.length : 0;
   const rowRoom=Math.max(0,height-lines.length-Math.min(actionRows,Math.max(0,height-lines.length-1))-detailRows);
   const start=Math.max(0,Math.min(selected-Math.floor(rowRoom/2),rows.length-rowRoom));
   const visible=rows.slice(start,start+rowRoom);
@@ -132,7 +177,7 @@ export function renderActivityHub(view:ActivityView,state:ActivityHubState,width
   actions.push(button(t('Close'),{type:'close'}));
   // Multiple actions remain reachable at narrow widths; scroll the rows rather than hiding controls.
   // The last line shows the selected row's primary actions; all actions also have keyboard equivalents.
-  if(detailRows && row?.detail) push(row.detail);
+  if(detailRows) for(const line of detailLines) push(line);
   buttons(actions);
   while(lines.length<height) lines.push('');
   return {lines:lines.map(line=>fit(line,width)),rows,controls,state,receipt,nowMs};

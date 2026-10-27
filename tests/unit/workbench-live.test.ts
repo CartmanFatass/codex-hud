@@ -127,6 +127,9 @@ try:
  wait_for('⌂')
  send(b'?')
  wait_for('Shortcuts')
+ # The legend is the help's third page: Tab twice, then its end.
+ send(b'\t\t')
+ wait_for('evidence')
  send(b'G')
  wait_for('ultra')
  send(b'\x1b')

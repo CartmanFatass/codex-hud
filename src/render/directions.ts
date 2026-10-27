@@ -14,6 +14,7 @@ import type { AgentLogEntry } from '../collectors/agent-log.js';
 import { eachThread } from '../collectors/subagent-tree.js';
 import { isGuardian } from './panel-state.js';
 import { palette, type Paint } from './palette.js';
+import { displayConfig } from './hud-config.js';
 import { isLive, finishedAt } from './monitor-labels.js';
 
 /** Fewest messages, both ways, that make an L1 another's helper. */
@@ -28,8 +29,10 @@ export interface Directions {
   node: ReadonlyMap<string, { node: SubagentTreeNode; level: number }>;
   /** Agent ids by task path (`/root/a/b`), for a message's sender. */
   byPath: ReadonlyMap<string, string>;
-  /** The colour of the direction an agent is in; none for the main session or an unknown id. */
+  /** The colour of the direction an agent is in, for its marks (rails, lanes); none for the main session, an unknown id or agent colours off. */
   paint(id?: string): Paint;
+  /** The same colour for an agent's name: none unless agent colours are on names. */
+  name(id?: string): Paint;
 }
 
 /**
@@ -109,9 +112,12 @@ export function directions(tree: SubagentTree): Directions {
     family, serves, node, byPath,
     paint(id?: string): Paint {
       const l1 = id ? family.get(id) : undefined;
-      if (!l1) return plain;
+      if (!l1 || displayConfig().agentColors === 'off') return plain;
       const at = index.get(serves.get(l1) ?? l1);
       return at === undefined ? plain : colours[at];
+    },
+    name(id?: string): Paint {
+      return displayConfig().agentColors === 'name' ? value.paint(id) : plain;
     },
   };
   memo = { tree, theme: palette().name, value };

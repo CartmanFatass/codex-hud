@@ -456,6 +456,21 @@ export async function findRolloutsInDaysYielding(
 }
 
 /**
+ * The root sessions started in `cwd` over the last `days`, the most recently
+ * written first, at most `limit`: for the activity hub's Sessions tab, which
+ * names them and the command that resumes one. Subagents' rollouts are left
+ * out; each file's first line is read once (its `session_meta`).
+ */
+export function recentSessions(cwd: string | undefined, limit = 8, days = 7): SessionFile[] {
+  const target = normalizePath(cwd);
+  if (!target || !fs.existsSync(getSessionsDir())) return [];
+  return findRolloutsInDays(days)
+    .filter((r) => peekRolloutIsRoot(r.path) && peekRolloutCwd(r.path) === target)
+    .sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime())
+    .slice(0, Math.max(0, limit));
+}
+
+/**
  * Find the most recent rollout file
  * Searches backwards from today's date
  */

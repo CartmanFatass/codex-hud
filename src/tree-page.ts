@@ -1,6 +1,7 @@
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import { navigateSession } from './utils/session-navigation.js';
-import { defaultSettings, saveSettings, briefingScope, type HudSettings } from './settings.js';
+import { defaultSettings, saveSettings, briefingScope, settingsPath, type HudSettings } from './settings.js';
+import { homedir } from 'node:os';
 import { runtimeSettings, applyDisplaySettings, withDisplaySettings } from './settings-runtime.js';
 import { treeWidthKeeper } from './utils/pane-width.js';
 import { frameDiff } from './render/frame-diff.js';
@@ -9,7 +10,7 @@ import { renderSettingsConfirmation, handleSettingsConfirmation, type SettingsCo
 import { spawn, execFile, execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { SessionFinder, findRolloutsInDaysYielding } from './collectors/session-finder.js';
+import { SessionFinder, findRolloutsInDaysYielding, recentSessions } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
 import { buildSubagentTreeYielding, uniquePickerLabel, useTreeScanStore, flushTreeScans } from './collectors/subagent-tree.js';
 import { TreeScanStore } from './collectors/tree-scan-store.js';
@@ -28,7 +29,7 @@ import { SmallModel } from './collectors/small-model.js';
 import { ModelProbe } from './collectors/model-probe.js';
 import { hudProblems, diagnosticLines } from './render/hud-diagnostics.js';
 import { ActivityJournal } from './collectors/activity-journal.js';
-import { initialActivityHubState, renderActivityHub, handleActivityHubInput, type ActivityHubState, type ActivityHubFrame } from './render/activity-hub.js';
+import { initialActivityHubState, renderActivityHub, handleActivityHubInput, type ActivityHubState, type ActivityHubFrame, type RecentSessionRow } from './render/activity-hub.js';
 import { initialObservabilityState, renderObservabilityPage, handleObservabilityInput, type ObservabilityState, type ObservabilityFrame } from './render/observability-page.js';
 import { createDiagnosticExportPreview, saveDiagnosticExport, type DiagnosticExportPreview } from './diagnostics/diagnostic-export.js';
 import { captureRuntimeIdentity } from './diagnostics/runtime-identity.js';
@@ -64,6 +65,12 @@ import type { SubagentTree, SubagentTreeNode } from './types.js';
 const AGENT_CONTEXT_INTERVAL_MS = 3000;
 // This identifies the entry file observed at startup, not files replaced later.
 const runtimeIdentity = captureRuntimeIdentity({entryFile:new URL(import.meta.url)});
+
+/** A path as people write it: the home directory as `~`. */
+function shortPath(file: string): string {
+  const home = homedir();
+  return home && (file === home || file.startsWith(home+'/')) ? '~'+file.slice(home.length) : file;
+}
 
 function walkNodes(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
   for (const node of nodes) { visit(node); walkNodes(node.children, visit); }
@@ -195,6 +202,8 @@ async function runLivePage(): Promise<void> {
   let lastClickSwitch: {id: string; at: number} | undefined;
   let navigationMessage: string | null = null;
   let tree: SubagentTree = {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+  // The root the tree was last built for: until then an empty tree is not news.
+  let treeBuiltFor: string | null = null;
   let main: RolloutParseResult | null = null;
   // Size/mtime/inode as of the last parse: this page runs its own parser over
   // the same rollout as the HUD, so it re-reads nothing while the file is still.
@@ -334,12 +343,31 @@ async function runLivePage(): Promise<void> {
   // The panel's top as a draft of the settings would draw it.
   const previewTop = (draft: HudSettings, width: number) => withDisplaySettings(draft,() =>
     panelTop({tree,brief:settings.briefing === 'off' ? undefined : {paused:settings.briefingPaused}},{...state,tabbed:draft.paneLayout === 'tabs'},width));
+  // This directory's recent sessions, read only while the activity hub's Sessions tab is open, at most every ten seconds.
+  let sessionsRead: {at:number;cwd:string;rows:RecentSessionRow[]} | null = null;
+  const sessionList = (): RecentSessionRow[] => {
+    const cwd = main?.session?.cwd || HUD_CWD;
+    const now = Date.now();
+    if (!sessionsRead || sessionsRead.cwd !== cwd || now-sessionsRead.at >= 10_000) {
+      let rows: RecentSessionRow[] = [];
+      try {
+        rows = recentSessions(cwd).map(file => {
+          // A title a model wrote earlier, read from its file: nothing is asked for here.
+          const title = recaps.loadTitle(file.sessionId)?.title;
+          return {id:file.sessionId,modifiedAt:file.modifiedAt.getTime(),...(title ? {title} : {}),...(file.sessionId === tree.rootId ? {current:true} : {})};
+        });
+      } catch { /* An unreadable sessions directory lists nothing. */ }
+      sessionsRead = {at:now,cwd,rows};
+    }
+    return sessionsRead.rows;
+  };
   const render = () => {
     if (closed) return;
     const output = time('render',() => {
       let lines: string[];
       if (activityHub) {
-        activityFrame = renderActivityHub(journal.view(),activityHub,process.stdout.columns || 30,process.stdout.rows || 24,Date.now());
+        activityFrame = renderActivityHub(journal.view(),activityHub,process.stdout.columns || 30,process.stdout.rows || 24,Date.now(),
+          activityHub.tab === 'sessions' ? sessionList() : []);
         activityHub = activityFrame.state;
         lines = activityFrame.lines;
       } else if (observability) {
@@ -353,7 +381,7 @@ async function runLivePage(): Promise<void> {
       } else if (settingsPage) {
         // Key roles offers the roles the subtasks have now.
         settingsFrame = renderSettingsPage({...settingsPage,roles:subtaskRoles(tree)},process.stdout.columns || 30,process.stdout.rows || 24,
-          {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage(),probe:probe.current()},previewTop,
+          {state:hudStatus.health.current(),modelCalls:settings.briefing === 'off' ? undefined : model.usage(),probe:probe.current(),settingsFile:shortPath(settingsPath())},previewTop,
           controlBar(state,{settingsActive:true,expired:0,brief:settings.briefing === 'off' ? undefined : {paused:settings.briefingPaused}},process.stdout.columns || 30));
         settingsPage = settingsFrame.state;
         lines = settingsFrame.lines;
@@ -366,7 +394,7 @@ async function runLivePage(): Promise<void> {
       const nowMs = Date.now();
       const hud = currentHud();
       const agentLogs = logsIn(agentLog.snapshot(),resolveLanguage(settings.language),settings.briefing !== 'off' || settings.agentLog);
-      frame = renderMonitor({tree,state,git,worktrees,diff,error,nowMs,hud,notice:navigationMessage || hudProblems(hud,nowMs,t)[0],loading:!collected,art:drawArt,prefix:prefixName(settings.prefixKey),
+      frame = renderMonitor({tree,state,git,worktrees,diff,error,nowMs,hud,notice:navigationMessage || hudProblems(hud,nowMs,t)[0],loading:!collected || treeBuiltFor !== tree.rootId,art:drawArt,prefix:prefixName(settings.prefixKey),
         brief:settings.briefing === 'off' ? undefined : {...(briefCommand() === 'off' ? {} : briefer.current()),paused:settings.briefingPaused},
         agentLog:agentLogs,
         progress:progress.state(),progressContext:{backendOn:settings.briefing !== 'off',paused:settings.briefingPaused,enabled:settings.agentProgress,
@@ -405,6 +433,8 @@ async function runLivePage(): Promise<void> {
     walkNodes(tree.nodes, node => { ageAt(finishedAt(node)); ageAt(node.startedAt); ageAt(node.turnStartedAt); ageAt(node.lastEventAt); ageAt(node.statusAt); });
     ageAt(data?.session?.startTime);
     ageAt(data?.sessionStart);
+    // How long it has been idle, on the bar and the status card.
+    if (activity?.state === 'idle') ageAt(activity.updatedAt);
     for (const window of [data?.rateLimits?.primary, data?.rateLimits?.secondary]) {
       if (!window) continue;
       const target = resolveResetTime(window, now);
@@ -443,6 +473,7 @@ async function runLivePage(): Promise<void> {
       const tokens = agentContext.get(node.id);
       node.contextUsage = tokens?.usage;
       node.outputRate = tokens?.rate;
+      node.tokensSpent = tokens?.spent;
     });
   };
   /**
@@ -479,7 +510,7 @@ async function runLivePage(): Promise<void> {
         agentContextReadAt.set(id,now);
         const tokens = await readAgentTokens(path);
         if (closed) return;
-        if (tokens.usage || tokens.rate) agentContext.set(id,tokens); else agentContext.delete(id);
+        if (tokens.usage || tokens.rate || tokens.spent) agentContext.set(id,tokens); else agentContext.delete(id);
         changed = true;
       }
       // Entries for agents no longer in the tree would otherwise accumulate.
@@ -575,6 +606,7 @@ async function runLivePage(): Promise<void> {
       if (session) priority.add(session.path);
       const listed = rootId ? await timeAsync('tree.list', () => findRolloutsInDaysYielding(3, priority)) : undefined;
       tree = rootId ? await timeAsync('tree.build',()=>buildSubagentTreeYielding(rootId,main?.subagents ?? [],3,Date.now(),listed)) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
+      treeBuiltFor = rootId;
       markActivitySourceSuccess('tree');
       applyAgentContext();
       jobs.apply(tree,switches(),resolveLanguage(settings.language));

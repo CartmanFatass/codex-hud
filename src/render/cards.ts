@@ -9,7 +9,7 @@ import { progressReason } from '../collectors/progress-summary.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
 import { isGuardian, type PanelRow } from './panel-state.js';
 import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
-import { renderModelEffortToken } from './model-glyphs.js';
+import { fitModelEffortToken } from './model-glyphs.js';
 import { displayConfig, iconSet } from './hud-config.js';
 import { t, language } from './i18n.js';
 import { palette } from './palette.js';
@@ -17,9 +17,10 @@ import { agentTitle, type AgentTitle } from './agent-title.js';
 import {
   type MonitorData, type MonitorState, type MonitorRow, type RowControl,
   monitorText, plainText, flowLines, pair, age, agoText, nodeStatus, iconic, briefSaid, isLive, isQuiet, turnClock, squeeze, finishedAt,
-  summaryRow, guardianChip, meterRow, listedAgents, paneShown, type EdgeMeter,
+  summaryRow, emptyAgentsRows, guardianChip, meterRow, listedAgents, paneShown, type EdgeMeter,
   MODEL_LOG_KINDS, FRESH_FINISH_MS, agentRate, rateText,
 } from './monitor.js';
+import { helpLines } from './monitor-text.js';
 import { directions, subtasks, reviewsUnder, talk, isImportant, rolePrefix, TALK_MIN } from './directions.js';
 
 /** The fewest columns a subtask's digest or cause starts with beside its name; less, it starts on the next line. */
@@ -313,7 +314,7 @@ function relationLine(node: SubagentTreeNode, input: MonitorData, state: Monitor
     return '';
   };
   return leads(node) ? list(ranked(other => !leads(other)),'⇄ ',other => colors.dim(name(other)))
-    : list(ranked(leads),'→ ',other => dirs.paint(other.id)(name(other)));
+    : list(ranked(leads),'→ ',other => dirs.name(other.id)(name(other)));
 }
 
 /** What a running agent is doing this moment, its open tool call, labelled as the brief labels "now". */
@@ -383,7 +384,7 @@ function kidLines(kid: SubagentTreeNode, input: MonitorData, state: MonitorState
   const said = v.cardSubagentSummary && raw ? cardSentence(raw) : '';
   const room = Math.max(1,width-visualLength(head)-(when ? visualLength(when)+1 : 0));
   const name = squeeze(agentTitle(kid,v.cardLabel && state.labelAsName).name,room);
-  const named = directions(input.tree).paint(kid.id)(name);
+  const named = directions(input.tree).name(kid.id)(name);
   const indent = visualLength(head);
   const beside = room-visualLength(name)-1;
   const rest = Math.max(1,width-indent);
@@ -439,11 +440,12 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   const [topCorner,bottomCorner] = state.cardCorners === 'round' ? ['╭','╰'] : ['┌','└'];
 
   const corner = selected ? theme.accent('›') : paint(topCorner);
-  const token = !v.cardModel || w < BADGE_MIN ? '' : renderModelEffortToken(node.model ? monitorText(node.model) : undefined, node.effort ? monitorText(node.effort) : undefined, {
-    mode: w < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs,
-  });
-  const badge = token ? truncateAnsi(token,Math.max(2,Math.floor(w/4))) : '';
-  const head = `${corner} ${st.paint(st.icon)} ${v.cardLabel && title.icon ? colors.dim(title.icon)+' ' : ''}`;
+  // The widest whole form that fits a quarter of the card; never a cut one.
+  const badge = !v.cardModel || w < BADGE_MIN ? '' : fitModelEffortToken(node.model ? monitorText(node.model) : undefined, node.effort ? monitorText(node.effort) : undefined,
+    Math.max(2,Math.floor(w/4)), w < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs);
+  // With agent colours on the marks alone, the work kind's glyph carries the direction's colour the name gave up.
+  const kindPaint = displayConfig().agentColors === 'mark' ? directions(input.tree).paint(node.id) : colors.dim;
+  const head = `${corner} ${st.paint(st.icon)} ${v.cardLabel && title.icon ? kindPaint(title.icon)+' ' : ''}`;
   const chip = v.cardReviews ? guardianChip(reviewsUnder(node)) : '';
   // Identity survives: optional fields give way before squeezing the name.
   let tails = [chip,badge].filter(Boolean);
@@ -454,7 +456,7 @@ export function agentCard(row: PanelRow, input: MonitorData, state: MonitorState
   const dashes = Math.max(0,w-visualLength(head)-visualLength(name)-1-visualLength(tail));
   const link = input.linkNames !== false;
   const shownName = link ? colors.underline(name) : name;
-  const named = (old || row.context) && !selected ? colors.dim(shownName) : theme.bold(directions(input.tree).paint(node.id)(shownName));
+  const named = (old || row.context) && !selected ? colors.dim(shownName) : theme.bold(directions(input.tree).name(node.id)(shownName));
   const top = truncateAnsi(`${head}${named} ${paint('─'.repeat(dashes))}${tail}`,w);
   const nameAt = Math.min(w,visualLength(head));
   const nameControl: RowControl[] = link ? [{kind:'switch',item:node.id,x:nameAt,width:Math.max(0,Math.min(visualLength(name),w-nameAt))}] : [];
@@ -613,7 +615,15 @@ export function richRows(input: MonitorData, state: MonitorState, width: number,
     }
     rows.push(...drawn.rows);
   }
-  // No agent to show: no line saying so. The counts above, the bar's +N and
-  // the status card already do.
+  // Agents put away or filtered out: no line saying so. The counts above,
+  // the bar's +N and the status card already do. None at all: one line.
+  rows.push(...emptyAgentsRows(input,width));
+  // Summaries on the cards need a backend. With none, no summary is written
+  // (stored ones stay), so a closing line says why, once, after the last
+  // card: it takes no row a card could use.
+  if (shown.length && visibility(state).cardSummary && input.progressContext?.backendOn === false) {
+    if (spaced) rows.push({text:''});
+    rows.push(...helpLines(t('~ No model backend, so no new summaries: Settings → LLM'),Math.max(1,width-1)).map(line=>({text:` ${colors.dim(line)}`})));
+  }
   return rows;
 }

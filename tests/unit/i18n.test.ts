@@ -76,7 +76,8 @@ test('the panel speaks Chinese and keeps its width at every size', () => {
   const english = stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 30, height: 20, nowMs: now }).lines.join('\n'));
   assert.match(english.split('\n')[0], /Settings.*\? *$/);
   const wide = inChinese(() => stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 100, height: 20, nowMs: now }).lines[0]));
-  assert.match(wide, /^ +⌂ 主会话 .*⚙ 设置 +\? 帮助 +$/, wide);
+  // An agent selected in its list: the bar's Switch, in words where there is room.
+  assert.match(wide, /^ +⌂ 主会话 .*⚙ 设置 +⇢ 切换 +\? 帮助 +$/, wide);
   assert.match(english, / ✓1 done {2}▸1 run/);
 });
 

@@ -12,6 +12,9 @@ import { useDisplayFixture } from '../fixtures/display.js';
 useDisplayFixture();
 
 const FULL_HEIGHT = SETTING_ROWS.length+14;
+/** The index of a row; and of another row in its section, to open that section without selecting the row itself. */
+const rowOf=(key:string)=>SETTING_ROWS.findIndex(row=>row.key===key);
+const besideRow=(key:string)=>{const at=rowOf(key);const group=SETTING_ROWS[at].group;return SETTING_ROWS.findIndex((row,i)=>row.group===group&&i!==at);};
 
 test('settings keyboard and mouse edit a draft, with explicit save/back actions',()=>{
   let state = {draft:defaultSettings(),selected:0,offset:0,message:''};
@@ -65,13 +68,22 @@ test('settings read in sections, values aligned on the right and written for peo
   const draft={...defaultSettings(),finishedLingerMs:0};
   const frame=renderSettingsPage({draft,selected:0,offset:0,message:''},30,FULL_HEIGHT);
   const text=frame.lines.map(line=>stripAnsi(line).trimEnd());
-  const groups=text.filter(line=>line.startsWith('── ')).map(line=>line.replace(/^── (.*?) ─*$/,'$1'));
-  assert.deepEqual(groups,['Display','Panel','Agents','Cards','LLM','Status bar','Input']);
-  const line=(key:string)=>text[frame.rows.indexOf(SETTING_ROWS.findIndex(row=>row.key===key))];
+  // The selected row's section open under its heading, every other one folded to a line of its own.
+  const sections=text.flatMap(line=>{
+    const open=/^── ▾ (.*?) ─*$/.exec(line); if(open) return [open[1]];
+    const folded=/^ {3}▸ (\S+(?: bar)?)/.exec(line); return folded ? [folded[1]] : [];
+  });
+  assert.deepEqual(sections,['Display','Panel','Agents','Cards','LLM','Status bar','Input']);
+  assert.equal(text.filter(line=>line.startsWith('── ▾')).length,1,'one section open');
+  // A row is read with its section open and another row of it selected.
+  const line=(key:string)=>{
+    const f=renderSettingsPage({draft,selected:besideRow(key),offset:0,message:''},30,FULL_HEIGHT);
+    return stripAnsi(f.lines[f.rows.indexOf(rowOf(key))]).trimEnd();
+  };
   assert.match(line('refreshMs'),/Refresh +1s$/);
   assert.match(line('treeWidth'),/Width +48 cols$/);
   assert.match(line('finishedLingerMs'),/Hide finished +never$/);
-  assert.match(line('theme'),/^› +Theme +‹ terminal ›$/, 'the selected value shows it can be changed');
+  assert.match(text[frame.rows.indexOf(rowOf('theme'))],/^› +Theme +‹ terminal ›$/, 'the selected value shows it can be changed');
   assert.equal(text.at(-2),'Colours of bar and panel');
   // A row over several settings says what they make together.
   assert.match(line('agentLabels'),/Agent names +as name$/);
@@ -80,12 +92,57 @@ test('settings read in sections, values aligned on the right and written for peo
   assert.match(line('agentProgress'),/Card progress +on$/);
   assert.match(line('briefingMs'),/Brief pace +5m · 15m$/);
   assert.match(line('notify'),/Notifications +off$/);
-  // Each value ends in the same column.
-  const ends=frame.rows.flatMap((row,y)=>row===null?[]:[text[y].length]);
-  assert.equal(new Set(ends).size,1);
+  // Each value ends in the same column, the folded sections' summaries too.
+  const cards=renderSettingsPage({draft,selected:rowOf('cardLabel'),offset:0,message:''},30,FULL_HEIGHT);
+  const cardText=cards.lines.map(line=>stripAnsi(line).trimEnd());
+  const ends=cards.rows.flatMap((row,y)=>row===null||row===rowOf('cardLabel')?[]:[cardText[y].length]);
+  const folded=(cards.groups??[]).flatMap((first,y)=>first===null?[]:[cardText[y].length]);
+  assert.ok(ends.length>5&&folded.length===6);
+  assert.equal(new Set([...ends,...folded]).size,1);
   for (const width of [16,20,24,30,45,70]) {
     const any=renderSettingsPage({draft,selected:SETTING_ROWS.length-1,offset:0,message:''},width,14);
     assert.ok(any.lines.every(line=>visualLength(line)<=width),`width ${width}`);
+  }
+});
+
+test('folded sections: a click opens one at its first row without changing a value; PgUp/PgDn step by section; values summarise it',()=>{
+  const draft={...defaultSettings(),theme:'mocha' as const};
+  let state:SettingsPageState={draft,original:{...draft},selected:0,offset:0,message:''};
+  let frame=renderSettingsPage(state,48,24);
+  const text=()=>frame.lines.map(line=>stripAnsi(line));
+  const y=text().findIndex(line=>/▸ Cards/.test(line));
+  assert.ok(y>0);
+  assert.equal(frame.groups?.[y],rowOf('cardPreset'));
+  assert.equal(frame.rows[y],null,'a folded line is not a setting');
+  assert.match(text()[y],/monitor · live \+ important *$/,'its summary');
+  const opened=handleSettingsInput(state,{type:'mouse',button:'left',x:6,y},frame).state;
+  assert.equal(opened.selected,rowOf('cardPreset'));
+  assert.deepEqual(opened.draft,state.draft,'opening changes nothing');
+  frame=renderSettingsPage(opened,48,24);
+  assert.ok(text().some(line=>/── ▾ Cards/.test(line)));
+  assert.ok(text().some(line=>/▸ Display +mocha · Tab row · Unicode/.test(line)),'the folded Display says its values');
+  // PgDn: the first row of the next section; PgUp: the first row of this one, then the one before.
+  const key=(k:string)=>{state=handleSettingsInput(state,{type:'key',key:k},frame).state;return SETTING_ROWS[state.selected];};
+  state={...state,selected:rowOf('theme')};
+  assert.equal(key('page-down').key,'language');
+  assert.equal(key('page-down').group,'Agents');
+  state={...state,selected:rowOf('cardRelations')};
+  assert.equal(key('page-up').key,'cardPreset');
+  assert.equal(key('page-up').group,'Agents');
+  state={...state,selected:rowOf('refreshMs')};
+  assert.equal(key('page-down').key,'refreshMs','the last section stays');
+  // ↓ walks the rows in order, into the next section, which opens.
+  state={...state,selected:rowOf('motion')};
+  assert.equal(key('down').key,'language');
+  frame=renderSettingsPage(state,48,24);
+  assert.ok(text().some(line=>/── ▾ Panel/.test(line)));
+  // An unsaved row marks its folded section.
+  const dirty=renderSettingsPage({...state,draft:{...state.draft,density:'full'}},48,24).lines.map(line=>stripAnsi(line));
+  assert.ok(dirty.some(line=>/^ \* ▸ Status bar/.test(line)),dirty.join('\n'));
+  // Short of room a summary drops whole values, never cuts one.
+  for (const width of [16,20,24,32]) {
+    const narrow=renderSettingsPage({...state,selected:0},width,24).lines.map(line=>stripAnsi(line));
+    for (const line of narrow.filter(line=>/^ . ▸ /.test(line))) assert.doesNotMatch(line,/…/,`${width}: ${line}`);
   }
 });
 
@@ -132,20 +189,23 @@ test('every model feature sits in the LLM group, and the calls made today show u
 
 test('wide values use the available space, with changed values in the accent and a stable help column',()=>{
   const draft={...defaultSettings(),density:'full' as const,treeWidth:0};
-  const frame=renderSettingsPage({draft,selected:1,offset:0,message:''},90,FULL_HEIGHT);
-  const text=frame.lines.map(line=>stripAnsi(line).trimEnd());
-  const y=(key:string)=>frame.rows.indexOf(SETTING_ROWS.findIndex(row=>row.key===key));
-  const valueAt=(key:string,value:string)=>text[y(key)].indexOf(value);
+  // Each row read with its section open.
+  const open=(key:string)=>{
+    const frame=renderSettingsPage({draft,selected:besideRow(key),offset:0,message:''},90,FULL_HEIGHT);
+    assert.ok(frame.lines.every(line=>visualLength(line)<=90));
+    const y=frame.rows.indexOf(rowOf(key));
+    return {plain:stripAnsi(frame.lines[y]).trimEnd(),painted:frame.lines[y]};
+  };
+  const valueAt=(key:string,value:string)=>open(key).plain.indexOf(value);
   assert.equal(valueAt('density','full')+4,valueAt('refreshMs','1s')+2,'values align at the right edge of their area');
   assert.ok(valueAt('density','full')>50,'values use the widened pane, not just the label column');
-  assert.match(text[y('density')],/full +How much the bar/);
-  assert.equal(text[y('density')].indexOf('How'),text[y('refreshMs')].indexOf('How'),'the hints line up');
-  assert.ok(frame.lines[y('density')].includes(theme.accent('full')),'not the default: accent');
-  assert.ok(!frame.lines[y('refreshMs')].includes(theme.accent('1s')),'the default: plain');
-  assert.match(text[y('treeWidth')],/Width +auto/,'0 is the panel\'s own choice');
-  assert.match(text[y('art')],/Picture /);
-  assert.match(text[y('agentLog')],/Agent log /);
-  assert.ok(frame.lines.every(line=>visualLength(line)<=90));
+  assert.match(open('density').plain,/full +How much the bar/);
+  assert.equal(open('density').plain.indexOf('How'),open('refreshMs').plain.indexOf('How'),'the hints line up');
+  assert.ok(open('density').painted.includes(theme.accent('full')),'not the default: accent');
+  assert.ok(!open('refreshMs').painted.includes(theme.accent('1s')),'the default: plain');
+  assert.match(open('treeWidth').plain,/Width +auto/,'0 is the panel\'s own choice');
+  assert.match(open('art').plain,/Picture /);
+  assert.match(open('agentLog').plain,/Agent log /);
   // Below 70 columns no hints.
   const mid=renderSettingsPage({draft,selected:1,offset:0,message:''},60,FULL_HEIGHT).lines.map(line=>stripAnsi(line).trimEnd());
   assert.ok(!mid.some(line=>line.includes('How much the bar shows')&&line.includes('full')));
@@ -153,14 +213,15 @@ test('wide values use the available space, with changed values in the accent and
 
 test('with no backend the model rows step back under a note, still selectable; with one they come forward',()=>{
   const row=(key:string)=>SETTING_ROWS.findIndex(entry=>entry.key===key);
-  const off=renderSettingsPage({draft:{...defaultSettings(),briefing:'off'},selected:0,offset:0,message:''},90,FULL_HEIGHT);
+  const off=renderSettingsPage({draft:{...defaultSettings(),briefing:'off'},selected:row('briefingPaused'),offset:0,message:''},90,FULL_HEIGHT);
   const text=off.lines.map(line=>stripAnsi(line).trimEnd());
   const backend=off.rows.indexOf(row('briefing'));
   assert.equal(text[backend+1].trim(),'takes effect with a backend');
   assert.equal(off.rows[backend+1],null,'the note is not a setting');
   const digest=off.rows.indexOf(row('resultDigest'));
   assert.ok(off.lines[digest].includes(colors.dim('Result digest')),'a model row is dim');
-  assert.ok(!off.lines[off.rows.indexOf(row('panelStyle'))].includes(colors.dim('Layout')));
+  const panel=renderSettingsPage({draft:{...defaultSettings(),briefing:'off'},selected:row('language'),offset:0,message:''},90,FULL_HEIGHT);
+  assert.ok(!panel.lines[panel.rows.indexOf(row('panelStyle'))].includes(colors.dim('Layout')));
   const on=renderSettingsPage({draft:{...defaultSettings(),briefing:'api'},selected:row('resultDigest'),offset:0,message:''},90,FULL_HEIGHT);
   assert.ok(!on.lines.map(line=>stripAnsi(line).trimEnd()).some(line=>line.includes('takes effect with a backend')));
   assert.ok(!on.lines[on.rows.indexOf(row('briefingMs'))].includes(colors.dim('Brief pace')));
@@ -168,7 +229,7 @@ test('with no backend the model rows step back under a note, still selectable; w
   assert.ok(off.lines[off.rows.indexOf(row('agentLabels'))].includes(colors.dim('Agent names')));
   assert.ok(!on.lines[on.rows.indexOf(row('agentLabels'))].includes(colors.dim('Agent names')));
   // The pace paces the brief and the change summary, so it waits only on all of them.
-  const none=renderSettingsPage({draft:{...defaultSettings(),briefing:'api',briefAgents:false,briefMain:false,changeSummary:false},selected:0,offset:0,message:''},90,FULL_HEIGHT);
+  const none=renderSettingsPage({draft:{...defaultSettings(),briefing:'api',briefAgents:false,briefMain:false,changeSummary:false},selected:row('briefing'),offset:0,message:''},90,FULL_HEIGHT);
   assert.ok(none.lines[none.rows.indexOf(row('briefingMs'))].includes(colors.dim('Brief pace')));
 });
 
@@ -280,8 +341,9 @@ test('periodic briefs, main recap, progress generation and card display toggle i
   assert.deepEqual(state.original,original,'original and credential fields survive draft edits');
   const frame=renderSettingsPage(state,90,FULL_HEIGHT);
   for (const key of ['briefAgents','briefMain','agentProgress','cardLabel','cardSummary']) {
-    const row=SETTING_ROWS.findIndex(entry=>entry.key===key);
-    assert.match(stripAnsi(frame.lines[frame.rows.indexOf(row)]),/\*/);
+    const open=renderSettingsPage({...state,selected:besideRow(key)},90,FULL_HEIGHT);
+    assert.match(stripAnsi(open.lines[open.rows.indexOf(rowOf(key))]),/\*/);
+    assert.ok(!stripAnsi(open.lines.join('\n')).includes('synthetic-only-key'));
   }
   assert.ok(!stripAnsi(frame.lines.join('\n')).includes('synthetic-only-key'));
   assert.ok(!stripAnsi(frame.lines.join('\n')).includes('https://synthetic.invalid/v1'));
@@ -663,4 +725,39 @@ test('header resets have distinct labels and hit maps; narrow widths retain Back
       }
     }
   } finally {setLanguage(previous);}
+});
+
+test('Backend selected says which file and keys hold the connection, never the key itself',()=>{
+  const selected = SETTING_ROWS.findIndex(row => row.key === 'briefing');
+  const file = '~/.codex/hud-settings.json';
+  const page = (draft: HudSettings, width = 48, settingsFile: string | null = file) =>
+    renderSettingsPage({draft,selected,offset:0,message:''},width,24,{state:undefined,settingsFile:settingsFile ?? undefined});
+  const text = (frame: ReturnType<typeof page>) => frame.lines.map(stripAnsi).join(' ').replace(/\s+/g,' ');
+  const api = {...defaultSettings(),briefing:'api' as const,briefingApiKey:'sk-SECRET-123',briefingApiBase:'http://127.0.0.1:4000/v1'};
+  for (const width of [24,32,40,48,56,80]) {
+    const frame = page(api,width);
+    for (const line of frame.lines) assert.equal(visualLength(line),width,`${width}: ${stripAnsi(line)}`);
+    const all = text(frame);
+    // A path wider than the page wraps inside itself.
+    assert.ok(all.replace(/ /g,'').includes('Connection:edit~/.codex/hud-settings.json'),`${width}: ${all}`);
+    assert.match(all,/briefingApiBase: set/);
+    assert.doesNotMatch(all,/127\.0\.0\.1/,'nor the endpoint');
+    assert.match(all,/briefingApiKey: set/);
+    assert.doesNotMatch(all,/SECRET/,'the key is never shown');
+    assert.match(all,/briefingApiLiteModel/);
+  }
+  assert.match(text(page({...api,briefingApiKey:'',briefingApiBase:''})),/briefingApiBase: empty, uses OpenAI .*briefingApiKey: empty, uses CODEX_HUD_BRIEF_API_KEY/);
+  assert.match(text(page(defaultSettings())),/For api, set the connection in ~\/\.codex\/hud-settings\.json/);
+  assert.doesNotMatch(text(page(defaultSettings())),/briefingApiKey/,'off: one line, where');
+  assert.match(text(page({...defaultSettings(),briefing:'agy'})),/AGY runs the agy command/);
+  // Another row selected, or no file given: none of it.
+  assert.doesNotMatch(text(renderSettingsPage({draft:api,selected:0,offset:0,message:''},48,24,{state:undefined,settingsFile:file})),/hud-settings/);
+  assert.doesNotMatch(text(page(api,48,null)),/hud-settings/);
+  // The rows keep their click map: the list shrinks by the lines added, it does not overlap them.
+  const frame = page(api,48);
+  const listed = frame.rows.filter(row => row !== null);
+  assert.ok(listed.includes(selected),'Backend stays in view');
+  setLanguage('zh');
+  try { assert.match(text(page(api,48)),/连接配置：编辑 ~\/\.codex\/hud-settings\.json/); }
+  finally { setLanguage('en'); }
 });
