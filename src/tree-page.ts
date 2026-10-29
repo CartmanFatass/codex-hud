@@ -31,6 +31,8 @@ import { hudProblems, diagnosticLines } from './render/hud-diagnostics.js';
 import { ActivityJournal } from './collectors/activity-journal.js';
 import { initialActivityHubState, renderActivityHub, handleActivityHubInput, type ActivityHubState, type ActivityHubFrame, type RecentSessionRow } from './render/activity-hub.js';
 import { initialObservabilityState, renderObservabilityPage, handleObservabilityInput, type ObservabilityState, type ObservabilityFrame } from './render/observability-page.js';
+import { UsageAnalytics } from './collectors/usage-analytics.js';
+import { initialUsagePageState, renderUsagePage, handleUsageInput, type UsagePageState, type UsageFrame } from './render/usage-page.js';
 import { createDiagnosticExportPreview, saveDiagnosticExport, type DiagnosticExportPreview } from './diagnostics/diagnostic-export.js';
 import { captureRuntimeIdentity } from './diagnostics/runtime-identity.js';
 import { modelTelemetryLines } from './render/model-telemetry.js';
@@ -190,6 +192,10 @@ async function runLivePage(): Promise<void> {
   let activityFrame: ActivityHubFrame | undefined;
   let observability: ObservabilityState | null = null;
   let observabilityFrame: ObservabilityFrame | undefined;
+  let usagePage: UsagePageState | null = null;
+  let usageFrame: UsageFrame | undefined;
+  const usageAnalytics = new UsageAnalytics({codexHome:getCodexHome(),onChange:()=>render()});
+  const refreshUsage = () => { void usageAnalytics.refresh().catch(()=>{}); };
   let exportPreview: DiagnosticExportPreview | undefined;
   let telemetry: ModelTelemetrySummary | undefined;
   let settingsPage: SettingsPageState | null = null;
@@ -250,7 +256,7 @@ async function runLivePage(): Promise<void> {
     const now = Date.now();
     const language = resolveLanguage(settings.language);
     progress.update({tree,
-      targets:state.style === 'rich' && paneShown(state,'agents') && !state.help && !settingsPage && !activityHub && !observability
+      targets:state.style === 'rich' && paneShown(state,'agents') && !state.help && !settingsPage && !activityHub && !observability && !usagePage
         ? progressTargets(tree,cardSummaryTargets({tree,agentLog:logsIn(agentLog.snapshot(),language)},state,now)) : new Set(),
       on:settings.briefing !== 'off' && settings.agentProgress && !settings.briefingPaused,
       offReason:settings.briefing === 'off' ? 'off' : settings.briefingPaused ? 'paused' : 'progress-disabled',
@@ -365,7 +371,15 @@ async function runLivePage(): Promise<void> {
     if (closed) return;
     const output = time('render',() => {
       let lines: string[];
-      if (activityHub) {
+      if (usagePage) {
+        const query={period:usagePage.period,nowMs:Date.now(),...(usagePage.scope==='task' ? {rootId:tree.rootId || '\0unbound'} : {})};
+        const snapshot=usageAnalytics.snapshot(query);
+        const shown=usagePage.scope==='task' && !tree.rootId ? {...snapshot,status:'unavailable' as const,message:t('No current task is bound'),
+          totals:{...snapshot.totals,input:null,cachedInput:null,output:null,reasoningOutput:null,total:null}} : snapshot;
+        usageFrame=renderUsagePage(usagePage,shown,process.stdout.columns || 30,process.stdout.rows || 24);
+        usagePage=usageFrame.state;
+        lines=usageFrame.lines;
+      } else if (activityHub) {
         activityFrame = renderActivityHub(journal.view(),activityHub,process.stdout.columns || 30,process.stdout.rows || 24,Date.now(),
           activityHub.tab === 'sessions' ? sessionList() : []);
         activityHub = activityFrame.state;
@@ -423,7 +437,7 @@ async function runLivePage(): Promise<void> {
     const data = hudStatus.current();
     const activity = data?.activity;
     const anchor = activity?.state === 'working' ? activity.turnStartedAt?.getTime() : undefined;
-    if (settingsPage || activityHub || observability) return nextRepaintDelay(now, anchor);
+    if (settingsPage || activityHub || observability || usagePage) return nextRepaintDelay(now, anchor);
     let live = activity?.state === 'working';
     if (!live) walkNodes(tree.nodes, node => { if (node.status === 'running' || node.status === 'starting') live = true; });
     if (live) return nextRepaintDelay(now, anchor);
@@ -687,6 +701,7 @@ async function runLivePage(): Promise<void> {
     briefer.stop();
     jobs.stop();
     progress.stop();
+    usageAnalytics.close();
     model.cancelAll();
     probe.cancel();
     agentLog.flush();
@@ -772,7 +787,7 @@ async function runLivePage(): Promise<void> {
   };
   const dispatch = (inputs: WorkbenchInput[]) => {
     if (inputs.length) void collect(true);
-    const overlayBefore = Boolean(settingsPage || state.help || activityHub || observability);
+    const overlayBefore = Boolean(settingsPage || state.help || activityHub || observability || usagePage);
     // What goes to Codex, in order, sent once the whole read is through.
     const forward: ForwardItem[] = [];
     for (let input of inputs) {
@@ -798,11 +813,18 @@ async function runLivePage(): Promise<void> {
         // may have changed the pane width and therefore every tab's hit span.
         input = {type:'key',key:destination}; panelInput = true;
       }
-      if (activityHub || observability) {
+      if (activityHub || observability || usagePage) {
         if (input.type === 'command') {
           const key = overlayKey(input.command,'help');
           if (key) input = {type:'key',key};
-          else { activityHub=null; observability=null; exportPreview=undefined; }
+          else { activityHub=null; observability=null; usagePage=null; exportPreview=undefined; }
+        }
+        if (usagePage && usageFrame) {
+          const result=handleUsageInput(usagePage,input,usageFrame);
+          usagePage=result.state;
+          if (result.action==='close') { usagePage=null;focusMain(); }
+          else if (result.action==='refresh') refreshUsage();
+          updateProgress();render();continue;
         }
         if (activityHub && activityFrame) {
           const tab = activityHub.tab;
@@ -861,10 +883,12 @@ async function runLivePage(): Promise<void> {
         if (input.type === 'paste') continue;
         if (input.key === 'close') input = {type:'key',key:'escape'};
       }
-      if (input.type === 'key' && ['activity-hub','find-agent','observability'].includes(input.key)) {
+      if (input.type === 'key' && ['activity-hub','find-agent','observability','usage'].includes(input.key)) {
         if (settingsPage && !requestSettingsLeave(input.key)) { render();continue; }
         state={...state,help:false};
-        if (input.key === 'observability') { sampleTelemetry();observability=initialObservabilityState();activityHub=null; }
+        usagePage=null;
+        if (input.key === 'usage') { usagePage=initialUsagePageState();activityHub=null;observability=null;refreshUsage(); }
+        else if (input.key === 'observability') { sampleTelemetry();observability=initialObservabilityState();activityHub=null; }
         else { observeActivity();activityHub=initialActivityHubState(input.key==='find-agent'?'find':'inbox');observability=null; }
         exportPreview=undefined;focusPanel();updateProgress();render();continue;
       }
@@ -875,7 +899,7 @@ async function runLivePage(): Promise<void> {
         if (hit) {
           if (hit.kind === 'settings') continue;
           const destination = hit.kind === 'tab' ? hit.pane
-            : ({main:'main',help:'help',brief:'brief-toggle',older:'show-all'} as Record<string,string>)[hit.kind];
+            : ({main:'main',help:'help',brief:'brief-toggle',older:'show-all',usage:'usage','activity-hub':'activity-hub',observability:'observability'} as Record<string,string>)[hit.kind];
           if (!destination) continue;
           if (!requestSettingsLeave(destination)) {render();continue;}
           input = {type:'key',key:destination};
@@ -936,6 +960,12 @@ async function runLivePage(): Promise<void> {
       if (result.action?.type === 'observability') {
         sampleTelemetry();observability=initialObservabilityState();activityHub=null;exportPreview=undefined;focusPanel();
       }
+      if (result.action?.type === 'usage') {
+        usagePage=initialUsagePageState();activityHub=null;observability=null;exportPreview=undefined;focusPanel();refreshUsage();
+      }
+      if (result.action?.type === 'activity-hub') {
+        observeActivity();activityHub=initialActivityHubState();observability=null;usagePage=null;exportPreview=undefined;focusPanel();
+      }
       if (result.action?.type === 'pick' && input.type === 'mouse') {
         const id = result.action.id;
         const at = Date.now();
@@ -965,7 +995,7 @@ async function runLivePage(): Promise<void> {
     }
     if (forward.length) void forwarder.send(forward);
     if (!settingsPage) probe.cancel();
-    if (!closed && !overlayBefore && (settingsPage || state.help || activityHub || observability)) focusPanel();
+    if (!closed && !overlayBefore && (settingsPage || state.help || activityHub || observability || usagePage)) focusPanel();
   };
   /** A command that opened the panel (bin/codex-hud-toggle --command): run once, after the first read. */
   const initialCommand = process.env.CODEX_HUD_INITIAL_COMMAND;
@@ -1004,6 +1034,7 @@ async function runLivePage(): Promise<void> {
     armCollect();
     scheduleRepaint();
     timers.push(setInterval(()=>void refreshGit(),3000));
+    timers.push(setInterval(()=>{if(usagePage)refreshUsage();},30_000));
   });
 }
 

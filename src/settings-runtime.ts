@@ -1,6 +1,11 @@
 import { existsSync } from 'node:fs';
 import { loadSettings, defaultSettings, settingsPath, type HudSettings } from './settings.js';
 import { resolveDisplayConfig, setDisplayConfig } from './render/hud-config.js';
+/** Explicit Settings choice only; saved custom preferences never migrate silently. */
+export function quietOverviewSettings(settings:HudSettings):HudSettings {
+  return {...settings,look:'quiet',theme:settings.theme==='none'?'none':'teal',icons:'text',
+    agentColors:'off',panelStyle:'compact',paneLayout:'tabs',statusCard:'status',agentLog:false};
+}
 export function runtimeSettings():HudSettings {
   const settings = existsSync(settingsPath()) ? loadSettings() : {...defaultSettings(),...resolveDisplayConfig()};
   if (!existsSync(settingsPath())) {

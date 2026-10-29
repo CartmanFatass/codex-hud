@@ -108,6 +108,23 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
   for (const row of visibleRows(input.tree.nodes,state.tree,now)) {
     const node = row.node;
     const status = nodeStatus(node,now);
+    if (displayConfig().look==='quiet') {
+      const selected=node.id===state.tree.selectedId;
+      const indent=visualLength(row.prefix)>Math.floor(width/4)?'… ':row.prefix;
+      const prefix=`${selected?'›':' '} ${colors.dim(indent)}${row.collapsed&&row.hasChildren?'+ ':''}`;
+      const label=t(node.status==='running'?'run':node.status==='starting'?'start':node.status==='completed'?'done':node.status==='error'?'error':'unknown');
+      const right=status.paint(label);
+      const room=Math.max(1,width-visualLength(prefix)-visualLength(right)-2);
+      const line=pair(prefix+truncateAnsi(monitorText(shownName(node,state.labelAsName)),room),right,width);
+      result.push({text:selected?theme.selectedBand(fit(line,width)):line,item:node.id,key:`row:${node.id}`});
+      if(selected) {
+        const detail=[node.model?monitorText(node.model):'',node.effort?monitorText(node.effort):'',turnClock(node,now)].filter(Boolean).join(' · ');
+        if(detail) result.push({text:'   '+colors.dim(truncateAnsi(detail,Math.max(1,width-3))),item:node.id,key:`row:${node.id}`});
+        const summary=briefLine(input.agentLog?.get(node.id)??[]);
+        if(summary) result.push({text:'   '+colors.dim(truncateAnsi(summary,Math.max(1,width-3))),item:node.id,key:`row:${node.id}`});
+      }
+      continue;
+    }
     const branch = visualLength(row.prefix) > Math.floor(width/4) ? '… ' : row.prefix;
     const prefix = `${node.id === state.tree.selectedId ? theme.accent('›') : ' '}${colors.dim(branch)}${row.collapsed && row.hasChildren ? '+' : ''}${status.paint(status.icon)} `;
     // A finished parent kept only to show whose child a live agent is recedes,
@@ -428,5 +445,9 @@ export function briefRule(brief: NonNullable<MonitorData['brief']>, width: numbe
  */
 export function agentsView(input: MonitorData, state: MonitorState, width: number, now: number, spaced: boolean): MonitorRow[] {
   if (state.style === 'rich') return richRows(input,state,width,now,spaced);
+  // Quiet keeps one overview: the selected row's short note and the main
+  // recap. Per-agent task/log blocks remain available in the Inspector.
+  if(displayConfig().look==='quiet')return [...agentRows(input,state,width,now),
+    ...briefRows({...input,agentLog:undefined},state,width,now,spaced)];
   return [...agentRows(input,state,width,now),...briefRows(input,state,width,now,spaced)];
 }

@@ -107,7 +107,8 @@ test('every look fits the bar to the column, at every width, in both languages a
                 for (const width of WIDTHS) {
                   const bar = controlBar(s, input, width);
                   const framed = lk === 'frame' && width >= 20;
-                  assert.equal(bar.lines.length, framed ? 2 : 1, `${lang} ${lk} ${icons} ${width}`);
+                  if(lk==='quiet')assert.ok(bar.lines.length>=3,`${lang} ${lk} ${icons} ${width}: labelled groups wrap`);
+                  else assert.equal(bar.lines.length, framed ? 2 : 1, `${lang} ${lk} ${icons} ${width}`);
                   for (const line of bar.lines) {
                     assert.equal(visualLength(line), width, `${lang} ${lk} ${icons} ${width}: "${stripAnsi(line)}"`);
                     assert.doesNotMatch(stripAnsi(line), KEY_LETTERS, `${lang} ${lk} ${icons} ${width}`);
@@ -174,7 +175,8 @@ test('a click anywhere on the bar is a button: each owns its face and half the g
           const order = [...bar.controls].sort((a, b) => a.y - b.y || a.x - b.x).map(key);
           const tabs = ['tab:agents', 'tab:timeline', 'tab:changes', 'tab:details', 'settings'];
           const actions = ['brief', 'older', 'help'];
-          const all = lk === 'frame' ? ['main', ...actions, ...tabs] : ['main', ...tabs, ...actions];
+          const all = lk==='quiet'?['tab:agents','usage','activity-hub','tab:timeline','tab:changes','tab:details','main','settings','observability','help','brief','older']
+            : lk === 'frame' ? ['main', ...actions, ...tabs] : ['main', ...tabs, ...actions];
           assert.deepEqual(order, all.filter((k) => order.includes(k)), `${lk} ${icons} ${width}`);
           if (width >= 48) assert.deepEqual(order, all, `${lk} ${icons} ${width}: every button`);
         }
@@ -289,6 +291,7 @@ test('Settings is labelled navigation at useful widths, with one non-pane click 
             withConfig({ look: lk, icons, theme: skin }, () => {
               const focusedText = (face: string) => {
                 const painted = skin === 'none' ? `[${face}]`
+                  : lk === 'quiet' ? theme.accent(theme.bold(`[${face}]`))
                   : lk === 'band' ? theme.bold(theme.accent(face))
                   : lk === 'pill' ? `${theme.tabEdge('')}${theme.tab(theme.bold(face))}${theme.tabEdge('')}`
                   : theme.tab(theme.bold(` ${face} `));
@@ -304,7 +307,8 @@ test('Settings is labelled navigation at useful widths, with one non-pane click 
                     assert.equal(settings.length, 1, `${context}: no duplicate Settings action`);
                     const c = settings[0];
                     assert.equal(c.pane, undefined, `${context}: Settings is not a MonitorPane`);
-                    assert.equal(c.y, lk === 'frame' ? 1 : 0, `${context}: on the navigation row`);
+                    if(lk==='quiet')assert.ok(c.y>=2&&c.y<=5,`${context}: on the tools navigation row`);
+                    else assert.equal(c.y, lk === 'frame' ? 1 : 0, `${context}: on the navigation row`);
                     const own = columns(stripAnsi(bar.lines[c.y]), c.x, c.width);
                     assert.ok(own.includes(label), `${context}: entire label belongs to its click span: ${own}`);
                     for (const line of bar.lines) {
@@ -328,7 +332,7 @@ test('Settings is labelled navigation at useful widths, with one non-pane click 
                         assert.ok(!bar.lines[tab.y].includes(focusedText(own.trim())), `${context}: no ordinary focused tab`);
                       }
                     }
-                    const order = bar.controls.filter(c => c.y === (lk === 'frame' ? 1 : 0)).map(key);
+                    const order = bar.controls.filter(control => control.y === c.y).map(key);
                     const before = order.slice(0, order.indexOf('settings'));
                     assert.ok(before.every(k => k === 'main' || k.startsWith('tab:')), `${context}: after ordinary tabs, before actions`);
                   }

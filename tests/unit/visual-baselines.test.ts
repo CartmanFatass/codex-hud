@@ -25,7 +25,7 @@ import {
 // This is a textual terminal-cell regression, NOT a font/pixel screenshot test.
 const GOLDEN = join(REPO_ROOT, 'tests/fixtures/visual-baselines.json');
 const UPDATE_COMMAND = 'npm run build:test && CODEX_HUD_UPDATE_VISUAL_BASELINES=1 node --test dist-test/tests/unit/visual-baselines.test.js';
-const BASELINE_LIMIT = 600 * 1024;
+const BASELINE_LIMIT = 850 * 1024;
 const scenes = visualCases();
 
 function assertDimensions(lines: readonly string[], scene: Pick<VisualCase, 'name' | 'width' | 'height'>) {
@@ -240,7 +240,7 @@ test('visual baselines: fixed-time EN/ZH textual frames match reviewed goldens',
   const actual = generateVisualBaseline();
   for (const scene of scenes) assertDimensions(actual.frames[scene.name].lines, scene);
   const json = JSON.stringify(actual, null, 1) + '\n';
-  assert.ok(Buffer.byteLength(json) <= BASELINE_LIMIT, `Human-readable golden must stay <=600 KiB, got ${Buffer.byteLength(json)} bytes`);
+  assert.ok(Buffer.byteLength(json) <= BASELINE_LIMIT, `Human-readable golden must stay <=850 KiB with Quiet and Usage scenes, got ${Buffer.byteLength(json)} bytes`);
   if (updating) {
     writeFileSync(GOLDEN, json, 'utf8');
     context.diagnostic(`Updated ${scenes.length} synthetic textual frames (${Buffer.byteLength(json)} bytes). Review git diff -- tests/fixtures/visual-baselines.json`);

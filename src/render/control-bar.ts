@@ -346,7 +346,46 @@ function spans(placed: Placed[], y: number, from: number, to: number): MonitorCo
 
 export function controlBar(state: MonitorState, input: BarInput, width: number): Bar {
   if (width <= 0) return { lines: [''], controls: [] };
+  if (look(width) === 'quiet') return quietBar(state,input,width);
   return look(width) === 'frame' ? frameBar(state, input, width) : rowBar(state, input, width);
+}
+
+/** A reading order instead of competing icon chips: overview, detail, tools. */
+function quietBar(state: MonitorState,input: BarInput,width: number): Bar {
+  const lines:string[]=[],controls:MonitorControl[]=[];
+  const fit=(line:string)=>{const cut=truncateAnsi(line,width);return cut+' '.repeat(Math.max(0,width-visualLength(cut)));};
+  const tab=(pane:MonitorPane,label:string):Spec=>({kind:'tab',pane,glyph:'',word:t(label),short:t(label),
+    state:!input.settingsActive && state.focus===pane?'focused':'open'});
+  const button=(kind:Spec['kind'],label:string,active=false):Spec=>({kind,glyph:'',word:t(label),short:t(label),state:active?'focused':'button'});
+  const groups=[
+    [tab('agents','Overview'),button('usage','Usage'),button('activity-hub','Activity')],
+    [tab('timeline','Timeline'),tab('changes','Changes'),tab('details','Inspector')],
+    [button('main','Main'),button('settings','Settings',input.settingsActive),button('observability','Evidence'),button('help','Help')],
+  ];
+  const actions:Spec[]=[];
+  if(state.tree.selectedId) actions.push(button('open-session','Switch'));
+  if(input.brief) actions.push(button('brief',input.brief.paused?'Resume':'Pause'));
+  if(input.expired) actions.push(button('older',state.tree.showAll?'Hide older':'Show older'));
+  if(state.keys) actions.push(button('keys','Keys here'));
+  if(actions.length)groups.push(actions);
+  for(const group of groups) {
+    let row='';
+    for(const spec of group) {
+      const label=truncateAnsi(spec.state==='focused'?`[${spec.word}]`:spec.word,width);
+      if(row && visualLength(row)+2+visualLength(label)>width){lines.push(fit(row));row='';}
+      if(row)row+='  ';
+      controls.push({kind:spec.kind,...(spec.pane?{pane:spec.pane}:{}),x:visualLength(row),y:lines.length,width:visualLength(label)});
+      row+=spec.state==='focused'?theme.accent(theme.bold(label)):spec.kind==='tab'?theme.value(label):colors.dim(label);
+    }
+    if(row)lines.push(fit(row));
+  }
+  const targets=controls.map((control,i)=>{
+    const previous=controls[i-1],next=controls[i+1];
+    const start=previous?.y===control.y?Math.ceil((previous.x+previous.width+control.x)/2):0;
+    const end=next?.y===control.y?Math.ceil((control.x+control.width+next.x)/2):width;
+    return {...control,x:start,width:end-start};
+  });
+  return {lines,controls:targets};
 }
 
 /** The main session's button alone, for a bar too narrow for anything else. */

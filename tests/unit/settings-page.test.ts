@@ -242,7 +242,7 @@ test('a row the panel\'s top shows previews it from the draft, above its help; t
   const draft={...defaultSettings(),look:'pill' as const};
   const frame=renderSettingsPage({draft,selected:row('look'),offset:0,message:''},40,30,undefined,preview);
   const text=frame.lines.map(line=>stripAnsi(line).trimEnd());
-  assert.deepEqual(text.slice(-5),[`── Preview ${'─'.repeat(29)}`,'bar pill 40','title','Bar and pane titles; sets their icons','↑↓ select  ←→ change']);
+  assert.deepEqual(text.slice(-5),[`── Preview ${'─'.repeat(29)}`,'bar pill 40','title','Quiet overview sets teal, compact tabs …','↑↓ select  ←→ change']);
   assert.deepEqual(seen,['pill'],'drawn from the draft');
   assert.equal(frame.lines.length,30);
   assert.equal(frame.rowCount,30-3-3,'the list gives the preview its rows');

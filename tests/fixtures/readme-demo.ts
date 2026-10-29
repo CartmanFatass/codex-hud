@@ -279,7 +279,7 @@ function demo(lang: Language): Demo {
   return { tree, log, timeline, worktrees, git, hud, recap };
 }
 
-const ICONS: Record<LookName, 'unicode' | 'emoji' | 'nerd'> = { tab: 'unicode', band: 'unicode', tile: 'emoji', frame: 'unicode', pill: 'nerd' };
+const ICONS: Record<LookName, 'unicode' | 'emoji' | 'nerd' | 'text'> = { tab: 'unicode', band: 'unicode', tile: 'emoji', frame: 'unicode', pill: 'nerd',quiet:'text' };
 
 /**
  * The panel at `width`×`height`: the cards with the timeline under them, a
@@ -287,7 +287,7 @@ const ICONS: Record<LookName, 'unicode' | 'emoji' | 'nerd'> = { tab: 'unicode', 
  * timeline in one of its styles.
  */
 function panel(lang: Language, look: LookName, width: number, height: number, scene: 'agents' | 'diff' | 'changes' | TimelineStyle,
-  icons: 'unicode' | 'emoji' | 'nerd' = ICONS[look]): string[] {
+  icons: 'unicode' | 'emoji' | 'nerd' | 'text' = ICONS[look]): string[] {
   setLanguage(lang);
   setDisplayConfig({ theme: 'terminal', glyphs: 'glyph', density: 'balanced', motion: 'reduced', look, icons });
   const d = demo(lang);

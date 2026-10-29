@@ -17,6 +17,9 @@ import { renderSettingsPage, SETTING_ROWS, LOOK_ICONS, type SettingsPageState } 
 import { statusCard, sessionState } from '../../src/render/status-block.js';
 import { renderSettingsConfirmation, type SettingsConfirmationState } from '../../src/render/settings-confirmation.js';
 import { FIXED_NOW, at, makeContextUsage, makeHudData, node, treeOf } from './hud-data.js';
+import { quietOverviewSettings } from '../../src/settings-runtime.js';
+import { initialUsagePageState, renderUsagePage, type UsageTab } from '../../src/render/usage-page.js';
+import { usageSnapshot } from './usage-data.js';
 
 export const VISUAL_NOW = FIXED_NOW.getTime();
 export const VISUAL_WIDTHS = [32, 40, 48, 56, 80] as const;
@@ -32,7 +35,9 @@ export interface VisualCase {
   look: LookName;
   width: number;
   height: number;
-  kind: 'panel' | 'settings' | 'saved-width' | 'confirmation' | 'inspector';
+  kind: 'panel' | 'settings' | 'saved-width' | 'confirmation' | 'inspector' | 'usage';
+  usageTab?:UsageTab;
+  usageStatus?:'partial'|'unavailable';
   preset: CardPreset;
   progressPhase?: 'queued' | 'running' | 'off' | 'paused';
   saveError?: boolean;
@@ -41,10 +46,11 @@ export interface VisualGolden { width: number; height: number; lines: string[] }
 export interface VisualBaseline { version: 1; frames: Record<string, VisualGolden> }
 
 export function visualSettings(scene: Pick<VisualCase, 'language' | 'look' | 'preset' | 'width'>): HudSettings {
-  return applyCardPreset({ ...defaultSettings(), language: scene.language, look: scene.look,
+  const settings:HudSettings=applyCardPreset<HudSettings>({ ...defaultSettings(), language: scene.language, look: scene.look,
     icons: LOOK_ICONS[scene.look], glyphs: 'text', theme: 'terminal', motion: 'reduced',
     treeWidth: scene.width, panelStyle: 'rich', finishedLingerMs: 0, statusCard: 'full',
     briefing: 'api', briefMain: true, importantRoles: 'implementer,scout' }, scene.preset);
+  return scene.look==='quiet'?quietOverviewSettings(settings):settings;
 }
 
 export function withVisualDisplay<T>(scene: Pick<VisualCase, 'language' | 'look'>, draw: () => T): T {
@@ -157,6 +163,12 @@ export function renderVisualInspector(scene: VisualCase) {
 
 export function renderVisualCase(scene: VisualCase) {
   switch (scene.kind) {
+    case 'usage': {
+      const snapshot=usageSnapshot();
+      if(scene.usageStatus)Object.assign(snapshot,{status:scene.usageStatus,daily:[],tasks:[],models:[],efforts:[],roles:[],
+        totals:{input:null,cachedInput:null,output:null,reasoningOutput:null,total:null,events:0,threads:0}});
+      return renderUsagePage({...initialUsagePageState(),tab:scene.usageTab??'overview'},snapshot,scene.width,scene.height);
+    }
     case 'panel': return renderVisualPanel(scene);
     case 'confirmation': return renderVisualConfirmation(scene);
     case 'inspector': return renderVisualInspector(scene);
@@ -180,6 +192,10 @@ export function visualCases(): VisualCase[] {
     kind: 'saved-width', language, look, preset: 'progress', width: 56, height: MENU_HEIGHT,
   });
   for (const language of VISUAL_LANGUAGES) {
+    for(const width of VISUAL_WIDTHS)for(const usageTab of ['overview','tasks','models','efforts','roles'] as const)cases.push({
+      name:`usage/${language}/${usageTab}/${width}x${PANEL_HEIGHT}`,kind:'usage',usageTab,language,look:'quiet',preset:'minimal',width,height:PANEL_HEIGHT});
+    for(const usageStatus of ['partial','unavailable'] as const)for(const usageTab of ['overview','tasks','models'] as const)cases.push({
+      name:`usage/${language}/${usageStatus}-empty/${usageTab}/32x${PANEL_HEIGHT}`,kind:'usage',usageTab,usageStatus,language,look:'quiet',preset:'minimal',width:32,height:PANEL_HEIGHT});
     for (const width of [16, 24, 40, 56]) cases.push({
       name: `confirmation/${language}/cancel/${width}x${MENU_HEIGHT}`,
       kind: 'confirmation', language, look: 'tab', preset: 'monitor', width, height: MENU_HEIGHT,

@@ -11,6 +11,10 @@ import { defaultSettings } from '../../src/settings.js';
 import { SETTING_ROWS } from '../../src/render/settings-page.js';
 import type { AgentLogEntry } from '../../src/collectors/agent-log.js';
 import type { AgentStage, SubagentStatus, SubagentTree, SubagentTreeNode } from '../../src/types.js';
+import { useDisplayFixture } from '../fixtures/display.js';
+
+// Colour assertions need an explicit palette, independent of the caller's terminal.
+useDisplayFixture({ theme: 'terminal' });
 
 const NOW = Date.parse('2026-10-05T10:00:00Z');
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000);

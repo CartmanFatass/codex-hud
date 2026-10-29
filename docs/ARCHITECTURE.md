@@ -1053,3 +1053,33 @@ descendants as quiet. Panel input uses an epoch so a force during an awaited
 scan cannot be lost to that scan's completion. The bar's native watcher wakes
 collection; the periodic tick remains its fallback. The yielding scanner has
 within-file checkpoints; a single JSON.parse is still atomic.
+
+### Native usage and Quiet overview
+
+`collectors/usage-analytics.ts` and `usage-records.ts` own historical token
+accounting, independently of the live `RolloutParser`. `usage-types.ts` is the
+boundary: query snapshots contain totals, daily buckets, task trees,
+model/effort/role groups and evidence coverage. `render/usage-page.ts` is pure;
+it consumes a memory snapshot and returns rows, controls and navigation state.
+
+`tree-page.ts` opens Usage as an independent overlay. On entry and at a
+throttled cadence while open, it requests asynchronous refresh without awaiting
+it in `collectNow` or rendering. The service single-flights work and yields while
+reading history; shutdown suppresses late callbacks. No toktrack subprocess,
+price fetch, provider polling or model request is involved.
+
+The index lives privately under `$CODEX_HOME/hud/usage-index/` and caches derived
+metadata and counters, not conversation text. Native `sessions` and
+`archived_sessions` remain read-only. The index accelerates existing sources;
+it is not an archival backup after source deletion. Source-read and accounting
+gaps remain visible rather than being converted to zero. A home is a source,
+not proof of a single subscription account. See the
+[architecture and acceptance plan](./native-usage-ui-plan.md) for fork ownership,
+deduplication and cumulative-baseline limits.
+
+Quiet overview is a selectable presentation, not a migration of saved user
+preferences. It adds labeled multirow navigation and a compact agent overview
+while retaining Inspector, changes and timeline access. The legacy monitor pane
+set remains unchanged. Both presentation and Usage must satisfy the existing
+column-width, input ownership, no-color and localization rules. See
+[usage and activation instructions](./native-usage.md).

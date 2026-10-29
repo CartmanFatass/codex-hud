@@ -9,6 +9,7 @@ import { age, TIMELINE_STYLES, TIMELINE_HOURS, type MonitorControl } from './mon
 import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
 import { PANEL_WIDTHS } from '../utils/pane-width.js';
 import { LOOKS, AGENT_COLOR_MODES, type IconMode, type LookName } from './hud-config.js';
+import { quietOverviewSettings } from '../settings-runtime.js';
 import type { ModelProbeState } from '../collectors/model-probe.js';
 import { monitorText } from './monitor-text.js';
 
@@ -44,9 +45,9 @@ export interface SettingRow {
 const seconds = (value: SettingValue) => `${Number(value) / 1000}s`;
 const minutes = (value: SettingValue) => Number(value) === 0 ? 'never' : `${Number(value) / 60_000}m`;
 /** Each look's name as the page says it. */
-const LOOK_WORDS: Record<LookName,string> = {tab:'Tab row',band:'Status band',tile:'Emoji tiles',frame:'Frame',pill:'Pills'};
+const LOOK_WORDS: Record<LookName,string> = {tab:'Tab row',band:'Status band',tile:'Emoji tiles',frame:'Frame',pill:'Pills',quiet:'Quiet overview'};
 /** The icons each look was drawn with: picking a look puts them on, and Icons can change them after. */
-export const LOOK_ICONS: Record<LookName,IconMode> = {tab:'unicode',band:'unicode',tile:'emoji',frame:'unicode',pill:'nerd'};
+export const LOOK_ICONS: Record<LookName,IconMode> = {tab:'unicode',band:'unicode',tile:'emoji',frame:'unicode',pill:'nerd',quiet:'text'};
 const ICON_WORDS: Record<IconMode,string> = {unicode:'Unicode',nerd:'Nerd Font',emoji:'Emoji',text:'text'};
 
 /** The brief's paces: how soon on news that matters, and how often at most on routine news. */
@@ -57,8 +58,8 @@ const NOTIFY_WORDS: Record<string,string> = {off:'off',tmux:'tmux',desktop:'tmux
 
 /** Settings in contiguous sections; display-only card switches stay separate from model generators. */
 export const SETTING_ROWS: readonly SettingRow[] = [
-  {key:'theme',group:'Display',label:'Theme',short:'Theme',values:['terminal','titanium','mocha','latte','none'],help:'Colours of bar and panel'},
-  {key:'look',group:'Display',label:'Look',short:'Look',values:LOOKS,help:'Bar and pane titles; sets their icons',
+  {key:'theme',group:'Display',label:'Theme',short:'Theme',values:['terminal','titanium','mocha','latte','teal','none'],help:'Colours of bar and panel'},
+  {key:'look',group:'Display',label:'Look',short:'Look',values:LOOKS,help:'Quiet overview sets teal, compact tabs and status; other looks set icons',
     format:value => LOOK_WORDS[value as LookName] ?? String(value)},
   {key:'icons',group:'Display',label:'Icons',short:'Icons',values:['unicode','nerd','emoji','text'],help:'Icons, or words (text); Nerd Font needs it',
     format:value => ICON_WORDS[value as IconMode] ?? String(value)},
@@ -605,6 +606,7 @@ export function handleSettingsInput(state:SettingsPageState,input:WorkbenchInput
     next.draft = withRowValue(next.draft,row,value);
     // A look comes with the icons it was drawn with.
     if (row.key === 'look') next.draft.icons = LOOK_ICONS[value as LookName];
+    if (row.key === 'look' && value === 'quiet') next.draft=quietOverviewSettings(next.draft);
     next.message = '';
   }
   return {state:next};
