@@ -2,7 +2,7 @@
 
 Native historical usage and the new Quiet overview appearance are described in
 [Native usage and Quiet overview](./native-usage.md#english). Open Usage with
-the HUD prefix then `w`; activate the appearance in Settings → Display → Look.
+the menu or HUD prefix then `w`; prefix then `4` opens details without a menu tab. Activate the appearance in Settings → Display → Look.
 
 The details behind the [README](../README.md): the panel part by part, every key, the settings and the model features, the machine-readable state, and the configuration. [中文](./reference.zh.md)
 

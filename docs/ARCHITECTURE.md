@@ -1059,7 +1059,7 @@ within-file checkpoints; a single JSON.parse is still atomic.
 `collectors/usage-analytics.ts` and `usage-records.ts` own historical token
 accounting, independently of the live `RolloutParser`. `usage-types.ts` is the
 boundary: query snapshots contain totals, daily buckets, task trees,
-model/effort/role groups and evidence coverage. `render/usage-page.ts` is pure;
+model/effort/role/project groups, per-request costs and evidence coverage. `render/usage-page.ts` is pure;
 it consumes a memory snapshot and returns rows, controls and navigation state.
 
 `tree-page.ts` opens Usage as an independent overlay. On entry and at a
@@ -1083,3 +1083,16 @@ while retaining Inspector, changes and timeline access. The legacy monitor pane
 set remains unchanged. Both presentation and Usage must satisfy the existing
 column-width, input ownership, no-color and localization rules. See
 [usage and activation instructions](./native-usage.md).
+
+The Usage dashboard ports toktrack `a6353d3` pricing and TUI primitives.
+`usage-pricing.ts` reads the reference's local pricing cache/custom TOML or the
+MIT-attributed offline table, then prices each deduplicated request before
+aggregation. Tiers never operate on a period's token sum. Pricing generation
+and usage generation publish together. Fast tiers and projects are retained
+in the allowlisted numeric index (version 3); model/project/effort/role
+drill-down is included in snapshot memo keys. `usage-theme.ts` retains the
+reference's palette, five-part colour order and largest-remainder allocation.
+The overview uses cost/tokens/hit, composition, ranking and an eighth-block
+column chart, with `m`/`v`/Enter/Esc navigation. A conformance test invokes an
+installed toktrack only against private synthetic logs and prices; the HUD
+runtime neither invokes toktrack nor polls a price provider.

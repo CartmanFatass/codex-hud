@@ -372,11 +372,12 @@ async function runLivePage(): Promise<void> {
     const output = time('render',() => {
       let lines: string[];
       if (usagePage) {
-        const query={period:usagePage.period,nowMs:Date.now(),...(usagePage.scope==='task' ? {rootId:tree.rootId || '\0unbound'} : {})};
+        const query={period:usagePage.period,nowMs:Date.now(),filter:usagePage.filter,enhancedTitles:switches().agentLabels,...(usagePage.scope==='task' ? {rootId:tree.rootId || '\0unbound'} : {})};
         const snapshot=usageAnalytics.snapshot(query);
         const shown=usagePage.scope==='task' && !tree.rootId ? {...snapshot,status:'unavailable' as const,message:t('No current task is bound'),
           totals:{...snapshot.totals,input:null,cachedInput:null,output:null,reasoningOutput:null,total:null}} : snapshot;
-        usageFrame=renderUsagePage(usagePage,shown,process.stdout.columns || 30,process.stdout.rows || 24);
+        usageFrame=renderUsagePage(usagePage,shown,process.stdout.columns || 30,process.stdout.rows || 24,
+          controlBar(state,{usageActive:true,expired:0,brief:settings.briefing === 'off' ? undefined : {paused:settings.briefingPaused}},process.stdout.columns || 30));
         usagePage=usageFrame.state;
         lines=usageFrame.lines;
       } else if (activityHub) {
@@ -812,6 +813,16 @@ async function runLivePage(): Promise<void> {
         // Preserve the destination by key, not old mouse coordinates: Save
         // may have changed the pane width and therefore every tab's hit span.
         input = {type:'key',key:destination}; panelInput = true;
+      }
+      if (usagePage && input.type === 'command' && input.command === 'pane-4') input={type:'key',key:'details'};
+      if (usagePage && usageFrame && input.type === 'mouse' && input.button === 'left') {
+        const {x,y}=input;
+        const hit=usageFrame.navigationControls.find(c=>c.y===y && x>=c.x && x<c.x+c.width);
+        if(hit){
+          if(hit.kind==='usage')continue;
+          const key=hit.kind==='tab'?hit.pane:({main:'main',settings:'settings',help:'help',brief:'brief-toggle',older:'show-all','open-session':'open-session','activity-hub':'activity-hub',observability:'observability',keys:'keys'} as Record<string,string>)[hit.kind];
+          if(key){usagePage=null;input={type:'key',key};panelInput=true;}
+        }
       }
       if (activityHub || observability || usagePage) {
         if (input.type === 'command') {

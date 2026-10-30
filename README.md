@@ -7,7 +7,7 @@
 
 # Codex HUD
 
-Native historical usage is available with the HUD prefix then `w`. Select
+The Usage menu (or HUD prefix then `w`) opens toktrack-style native usage and cost analytics. Select
 **Quiet overview** in Settings → Display → Look for the new compact presentation.
 See [usage, controls and accounting limits](./docs/native-usage.md#english).
 

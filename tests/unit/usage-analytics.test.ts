@@ -5,6 +5,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { UsageAnalytics } from '../../src/collectors/usage-analytics.js';
+import { UsagePricing } from '../../src/collectors/usage-pricing.js';
 
 process.env.TZ = 'America/Los_Angeles';
 const at = (day: number, hour = 12, minute = 0, second = 0): string => new Date(2026, 9, day, hour, minute, second).toISOString();
@@ -32,7 +33,7 @@ async function fixture(t: TestContext) {
       await fs.writeFile(file, entries.map(e => typeof e === 'string' ? e : JSON.stringify(e)).join('\n') + (finalNewline ? '\n' : ''));
       return file;
     },
-    analytics(onChange?: () => void) { const a = new UsageAnalytics({ codexHome: home, onChange }); instances.push(a); return a; },
+    analytics(onChange?: () => void) { const a = new UsageAnalytics({ codexHome: home, onChange, pricing:new UsagePricing({table:{}}) }); instances.push(a); return a; },
   };
 }
 
@@ -58,7 +59,8 @@ test('native subsets are not double counted and context/quota meters are ignored
   const a = f.analytics(); await a.refresh();
   const s = a.snapshot({ period: 'today', nowMs: now });
   assert.equal(s.status, 'ready');
-  assert.deepEqual(s.totals, { input: 150, cachedInput: 75, output: 30, reasoningOutput: 15, total: 180, events: 2, threads: 1 });
+  assert.deepEqual(s.totals, { input: 150, cachedInput: 75, output: 30, reasoningOutput: 15, total: 180, events: 2, threads: 1,
+    cost:{usd:null,pricedEvents:0,unpricedEvents:2} });
   assert.equal(s.models[0].key, 'model-a');
   assert.equal(s.efforts[0].key, 'high');
 });
@@ -303,7 +305,10 @@ test('unchanged source files are reused across restarts; corrupt private indexes
   assert.equal((await fs.readFile(index, 'utf8')).includes('SYNTHETIC_SECRET_PROMPT'), false);
   const original = fsSync.createReadStream;
   let reads = 0;
-  fsSync.createReadStream = ((...args: Parameters<typeof original>) => { reads++; return original(...args); }) as typeof original;
+  fsSync.createReadStream = ((...args: Parameters<typeof original>) => {
+    if (String(args[0]).startsWith(path.join(f.home, 'sessions') + path.sep)) reads++;
+    return original(...args);
+  }) as typeof original;
   syncBuiltinESMExports();
   try {
     const second = f.analytics(); await second.refresh();
@@ -551,4 +556,61 @@ test('identical duplicate role, model and effort labels stay ready without infla
   assert.equal(s.roles[0].key, 'worker');
   assert.equal(s.models[0].key, 'model-a');
   assert.equal(s.efforts[0].key, 'high');
+});
+
+test('request costs, Fast settings, projects and drill-down filters share one deduplicated generation',async t=>{
+  const f=await fixture(t);
+  const pricing=new UsagePricing({table:{'gpt-5.5':{input_cost_per_token:2e-6,output_cost_per_token:10e-6,cache_read_input_token_cost:.1e-6}}});
+  await f.write('sessions/root.jsonl',[meta('root',29,{cwd:'/synthetic/one'}),context('gpt-5.5','high'),report(100),
+    {type:'event_msg',timestamp:at(29,12,0,1),payload:{type:'thread_settings_applied',thread_settings:{service_tier:'priority'}}},report(200,100,29,2),
+    {type:'event_msg',timestamp:at(29,12,0,3),payload:{type:'thread_settings_applied',thread_settings:{}}},report(300,100,29,4)]);
+  const a=new UsageAnalytics({codexHome:f.home,pricing});t.after(()=>a.close());await a.refresh();
+  const s=a.snapshot({period:'today',nowMs:now});
+  const normal=pricing.quote('gpt-5.5',[100,50,20,10,120]).usd!;
+  assert.ok(Math.abs(s.totals.cost!.usd!-normal*4.5)<1e-12);
+  assert.equal(s.totals.cost!.pricedEvents,3);
+  assert.deepEqual(s.models.map(m=>m.key).sort(),['gpt-5.5','gpt-5.5:fast']);
+  assert.equal(s.projects?.[0].key,'/synthetic/one');
+  assert.ok(Math.abs(s.tasks[0].self.cost!.usd!-s.totals.cost!.usd!)<1e-12);
+  const filtered=a.snapshot({period:'all',nowMs:now,filter:{by:'model',key:'gpt-5.5:fast'}});
+  assert.equal(filtered.totals.events,1);assert.equal(filtered.totals.cost!.usd,normal*2.5);
+  assert.equal(filtered.range.startMs,new Date(2026,9,29).getTime());
+  assert.equal(a.snapshot({period:'today',nowMs:now,filter:{by:'project',key:'/missing'}}).totals.cost,undefined);
+});
+
+test('previous-period cost compares equivalent priced requests and a price refresh reprices unchanged native history',async t=>{
+  const f=await fixture(t),cacheFile=path.join(f.home,'prices.json');
+  const rates={input_cost_per_token:2e-6,output_cost_per_token:10e-6,cache_read_input_token_cost:.1e-6};
+  await fs.writeFile(cacheFile,JSON.stringify({models:{'gpt-fixture':rates}}));
+  await f.write('sessions/root.jsonl',[meta('root',28),context('gpt-fixture','high',28),report(100,100,28),context('gpt-fixture','high'),report(300,200,29)]);
+  const a=new UsageAnalytics({codexHome:f.home,pricing:new UsagePricing({cacheFile,customFile:path.join(f.home,'absent.toml')})});t.after(()=>a.close());await a.refresh();
+  const before=a.snapshot({period:'today',nowMs:now});assert.ok(Math.abs(before.comparison!.costChangePct!-100)<1e-10);
+  assert.equal(before.comparison!.previous.events,1);
+  const oldCost=before.totals.cost!.usd!,revision=before.pricing!.revision;
+  await fs.writeFile(cacheFile,JSON.stringify({models:{'gpt-fixture':{...rates,input_cost_per_token:4e-6}}}));await a.refresh();
+  const after=a.snapshot({period:'today',nowMs:now});assert.notEqual(after.pricing!.revision,revision);
+  assert.ok(after.totals.cost!.usd!>oldCost);assert.equal(after.totals.total,before.totals.total);
+});
+
+test('task names reuse native and enhanced titles, follow renames, and do not affect accounting', async t => {
+  const f = await fixture(t);
+  await f.write('sessions/root.jsonl', [meta('root', 29, {cwd:'/work/dashboard'}), report(100)]);
+  await f.write('session_index.jsonl', [{id:'root',thread_name:'Native task title'}, 'malformed']);
+  const a = f.analytics(); await a.refresh();
+  const query = {period:'today' as const,nowMs:now};
+  const native = a.snapshot(query);
+  assert.equal(native.tasks[0].title, 'Native task title');
+  assert.equal(native.tasks[0].project, '/work/dashboard');
+  await f.write('hud/recaps/root.title.json', [JSON.stringify({sessionId:'root',title:'AI enhanced task title',source:'prompt',at:now})], false);
+  await a.refresh();
+  assert.equal(a.snapshot({...query,enhancedTitles:true}).tasks[0].title, 'AI enhanced task title');
+  assert.equal(a.snapshot(query).tasks[0].title, 'Native task title');
+  assert.deepEqual(a.snapshot({...query,enhancedTitles:true}).totals, native.totals);
+  await f.write('session_index.jsonl', [{id:'root',thread_name:'Renamed native title'}]);
+  await a.refresh();
+  assert.equal(a.snapshot(query).tasks[0].title, 'Renamed native title');
+  await fs.unlink(path.join(f.home, 'session_index.jsonl'));
+  await a.refresh();
+  assert.equal(a.snapshot(query).tasks[0].title, undefined);
+  assert.equal(a.snapshot(query).status, native.status);
 });

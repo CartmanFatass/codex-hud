@@ -153,7 +153,8 @@ finally:
   try {
     const entry = fileURLToPath(new URL('../../src/tree-page.js',import.meta.url));
     const result = await exec('python3',['-c',script,process.execPath,entry],{
-      env:{...process.env,CODEX_HUD_CWD:repo,CODEX_SESSIONS_PATH:sessions,CODEX_HOME:dir,CODEX_HUD_SETTINGS_PATH:path.join(dir,'hud-settings.json'),CODEX_HUD_MAIN_PANE:'',CODEX_HUD_SESSION_START:'',CODEX_HUD_TOGGLE_CMD:'',TERM:'xterm-256color'},
+      // This PTY owns its input: never resolve a real pane from the host's tmux session.
+      env:{...process.env,TMUX:'',TMUX_PANE:'',CODEX_HUD_CWD:repo,CODEX_SESSIONS_PATH:sessions,CODEX_HOME:dir,CODEX_HUD_SETTINGS_PATH:path.join(dir,'hud-settings.json'),CODEX_HUD_MAIN_PANE:'',CODEX_HUD_SESSION_START:'',CODEX_HUD_TOGGLE_CMD:'',TERM:'xterm-256color'},
       encoding:'utf8',timeout:30000,
     });
     assert.match(result.stdout,/PTY monitor flow passed/);

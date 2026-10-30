@@ -6,16 +6,20 @@ import { setImmediate as yieldImmediate } from 'node:timers/promises';
 import type { UsageBucket, UsageQuery, UsageSnapshot, UsageTask, UsageTotals } from '../usage-types.js';
 import { object, parseUsageFile, validUsageFile } from './usage-records.js';
 import type { Counts, UsageFile, UsageObservation } from './usage-records.js';
+import { UsagePricing, type UsageCost } from './usage-pricing.js';
+import { parseStoredTitle } from './recap.js';
+import { createInterface } from 'node:readline';
 
-const INDEX_VERSION = 2;
+const INDEX_VERSION = 3;
 const fields = ['input', 'cachedInput', 'output', 'reasoningOutput', 'total'] as const;
 type Coverage = UsageSnapshot['coverage'];
 type CachedFile = { signature: string; parsed: UsageFile };
 type Event = { at: number; owner: string; root: string | null; model: string | null;
-  effort: string | null; role: string | null; counts: Counts };
+  effort: string | null; role: string | null; project: string | null; counts: Counts; cost: UsageCost };
 type Row = { day: string; owner: string; root: string | null; model: string | null;
-  effort: string | null; role: string | null; totals: UsageTotals; maxAt: number; minAt: number; events: Event[] };
+  effort: string | null; role: string | null; project: string | null; totals: UsageTotals; maxAt: number; minAt: number; events: Event[] };
 type Generation = { rows: Row[]; boundaries: number[]; coverage: Coverage; updatedAtMs: number;
+  taskTitles: Map<string, { native?: string; enhanced?: string }>;
   sourceAvailable: boolean; incomplete: boolean; retainedFiles: number };
 type Accumulator = { totals: UsageTotals; threads: Set<string> };
 
@@ -32,7 +36,7 @@ const dayOf = (at: number): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-function addCounts(acc: Accumulator, counts: Counts, owner: string, events = 1): void {
+function addCounts(acc: Accumulator, counts: Counts, owner: string, events = 1, cost?: UsageCost): void {
   for (let i = 0; i < fields.length; i++) {
     const value = counts[i];
     if (value === null) continue;
@@ -46,6 +50,13 @@ function addCounts(acc: Accumulator, counts: Counts, owner: string, events = 1):
       bad.add(i);
     }
   }
+  if(cost){
+    const kept=acc.totals.cost??{usd:null,pricedEvents:0,unpricedEvents:0};
+    const sum=(kept.usd??0)+(cost.usd??0);
+    kept.usd=kept.usd===null&&cost.usd===null?null:Number.isFinite(sum)?sum:null;
+    kept.pricedEvents+=cost.pricedEvents;kept.unpricedEvents+=cost.unpricedEvents;
+    acc.totals.cost=kept;
+  }
   acc.totals.events += events;
   acc.threads.add(owner);
   acc.totals.threads = acc.threads.size;
@@ -53,8 +64,8 @@ function addCounts(acc: Accumulator, counts: Counts, owner: string, events = 1):
 
 const countsOf = (totals: UsageTotals): Counts => fields.map(f => totals[f]) as Counts;
 function addRow(acc: Accumulator, row: Row, now: number): void {
-  if (row.maxAt <= now) addCounts(acc, countsOf(row.totals), row.owner, row.totals.events);
-  else for (const event of row.events) if (event.at <= now) addCounts(acc, event.counts, event.owner);
+  if (row.maxAt <= now) addCounts(acc, countsOf(row.totals), row.owner, row.totals.events, row.totals.cost);
+  else for (const event of row.events) if (event.at <= now) addCounts(acc, event.counts, event.owner, 1, event.cost);
 }
 
 /**
@@ -72,8 +83,10 @@ export class UsageAnalytics {
   private closed = false;
   private failure = false;
   private snapshots = new Map<string, UsageSnapshot>();
+  private pricing: UsagePricing;
 
-  constructor(options: { codexHome: string; onChange?: () => void }) {
+  constructor(options: { codexHome: string; onChange?: () => void; pricing?: UsagePricing }) {
+    this.pricing=options.pricing??new UsagePricing();
     this.codexHome = path.resolve(options.codexHome);
     this.indexDir = path.join(this.codexHome, 'hud', 'usage-index');
     this.onChange = options.onChange;
@@ -101,6 +114,9 @@ export class UsageAnalytics {
     start.setDate(start.getDate() - (query.period === '30d' ? 29 : query.period === '7d' ? 6 : 0));
     const range = { startMs: start.getTime(), endMs, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
     const gen = this.generation;
+    if(query.period==='all'&&gen?.rows.length){
+      const first=gen.boundaries[0]??endMs;start.setTime(first);start.setHours(0,0,0,0);range.startMs=start.getTime();
+    }
     const source = { codexHome: this.codexHome, label: 'sessions + archived_sessions' };
     if (!gen) return { status: this.failure ? 'unavailable' : 'loading', updatedAtMs: null, range, source,
       totals: emptyTotals(), daily: [], models: [], efforts: [], roles: [], tasks: [], coverage: emptyCoverage(),
@@ -114,15 +130,21 @@ export class UsageAnalytics {
       if (gen.boundaries[middle] <= endMs) low = middle + 1;
       else high = middle;
     }
-    const key = JSON.stringify([range.startMs, query.rootId ?? null, low, this.failure]);
+    const key = JSON.stringify([range.startMs, query.rootId ?? null, low, this.failure, query.filter ?? null, query.enhancedTitles ?? false]);
     const cached = this.snapshots.get(key);
     if (cached) return { ...cached, range };
     const totals = accumulator();
+    const previous = accumulator();
+    const previousEndMs=range.startMs-1;
+    const previousStart=new Date(range.startMs);
+    previousStart.setDate(previousStart.getDate()-(query.period==='30d'?30:query.period==='7d'?7:1));
+    const previousStartDay=dayOf(previousStart.getTime());
     const days = new Map<string, Accumulator>();
     const models = new Map<string | null, Accumulator>();
     const efforts = new Map<string | null, Accumulator>();
     const roles = new Map<string | null, Accumulator>();
-    const tasks = new Map<string, { self: Accumulator; descendants: Accumulator; total: Accumulator }>();
+    const projects = new Map<string | null, Accumulator>();
+    const tasks = new Map<string, { self: Accumulator; descendants: Accumulator; total: Accumulator; project: string | null; firstAtMs: number; rootProject: boolean }>();
     const startDay = dayOf(range.startMs);
     const endDay = dayOf(endMs);
     const addBucket = <K>(map: Map<K, Accumulator>, key: K, row: Row): void => {
@@ -131,16 +153,24 @@ export class UsageAnalytics {
       addRow(acc, row, endMs);
     };
     for (const row of gen.rows) {
-      if (row.day < startDay || row.day > endDay || row.minAt > endMs) continue;
       if (query.rootId && row.root !== query.rootId) continue;
+      if (query.filter && row[query.filter.by] !== query.filter.key) continue;
+      if(query.period!=='all'&&row.day>=previousStartDay&&row.day<startDay)addRow(previous,row,previousEndMs);
+      if (row.day < startDay || row.day > endDay || row.minAt > endMs) continue;
       addRow(totals, row, endMs);
       addBucket(days, row.day, row);
       addBucket(models, row.model, row);
       addBucket(efforts, row.effort, row);
       addBucket(roles, row.role, row);
+      addBucket(projects, row.project, row);
       if (row.root !== null) {
         let task = tasks.get(row.root);
-        if (!task) { task = { self: accumulator(), descendants: accumulator(), total: accumulator() }; tasks.set(row.root, task); }
+        if (!task) { task = { self: accumulator(), descendants: accumulator(), total: accumulator(), project: row.project,
+          firstAtMs: row.minAt, rootProject: row.owner === row.root && row.project !== null }; tasks.set(row.root, task); }
+        task.firstAtMs = Math.min(task.firstAtMs, row.minAt);
+        if (row.project && (!task.project || (!task.rootProject && row.owner === row.root))) {
+          task.project = row.project; task.rootProject = row.owner === row.root;
+        }
         addRow(task.total, row, endMs);
         addRow(row.owner === row.root ? task.self : task.descendants, row, endMs);
       }
@@ -148,13 +178,19 @@ export class UsageAnalytics {
     const buckets = (map: Map<string | null, Accumulator>): UsageBucket[] => Array.from(map, ([key, a]) => ({ key, totals: a.totals }))
       .sort((a, b) => (b.totals.total ?? -1) - (a.totals.total ?? -1) || (a.key ?? '').localeCompare(b.key ?? ''));
     const daily: UsageSnapshot['daily'] = [];
-    const cursor = new Date(range.startMs);
-    while (cursor.getTime() <= endMs) {
-      const day = dayOf(cursor.getTime());
-      daily.push({ day, totals: days.get(day)?.totals ?? emptyTotals() });
-      cursor.setDate(cursor.getDate() + 1);
+    if(query.period==='all'){
+      for(const [day,acc] of [...days].sort(([a],[b])=>a.localeCompare(b)))daily.push({day,totals:acc.totals});
+    }else{
+      const cursor = new Date(range.startMs);
+      while (cursor.getTime() <= endMs) {
+        const day = dayOf(cursor.getTime());
+        daily.push({ day, totals: days.get(day)?.totals ?? emptyTotals() });
+        cursor.setDate(cursor.getDate() + 1);
+      }
     }
     const taskList: UsageTask[] = Array.from(tasks, ([rootId, task]) => ({ rootId,
+      title: (query.enhancedTitles ? gen.taskTitles.get(rootId)?.enhanced : undefined) ?? gen.taskTitles.get(rootId)?.native,
+      project: task.project, firstAtMs: task.firstAtMs,
       self: task.self.totals, descendants: task.descendants.totals, total: task.total.totals }))
       .sort((a, b) => (b.total.total ?? -1) - (a.total.total ?? -1) || a.rootId.localeCompare(b.rootId));
     const incomplete = gen.incomplete || this.failure || overflows.has(totals.totals);
@@ -162,7 +198,12 @@ export class UsageAnalytics {
     const snapshot: UsageSnapshot = {
       status: available ? (incomplete ? 'partial' : 'ready') : 'unavailable',
       updatedAtMs: gen.updatedAtMs, range, source, totals: totals.totals, daily,
-      models: buckets(models), efforts: buckets(efforts), roles: buckets(roles), tasks: taskList,
+      models: buckets(models), efforts: buckets(efforts), roles: buckets(roles), projects: buckets(projects), tasks: taskList,
+      ...(query.period!=='all'?{comparison:{previous:previous.totals,costChangePct:!gen.incomplete&&!this.failure&&!previous.totals.cost?.unpricedEvents&&!totals.totals.cost?.unpricedEvents
+        &&previous.totals.cost?.usd&&totals.totals.cost?.usd!==null&&totals.totals.cost?.usd!==undefined
+        ?(totals.totals.cost.usd/previous.totals.cost.usd-1)*100:null}}:{}),
+      pricing:{source:this.pricing.source,revision:this.pricing.revision,updatedAtMs:this.pricing.updatedAtMs,
+        rates:Object.fromEntries([...models.keys()].filter((key):key is string=>key!==null).map(key=>[key,this.pricing.list(key)]))},
       coverage: { ...gen.coverage },
       ...(!available ? { message: gen.sourceAvailable ? 'No attributable native usage events in this range.' : 'Native session directories are unavailable.' }
         : gen.retainedFiles > 0 ? { message: 'Includes retained index evidence from temporarily unreadable sources.' }
@@ -175,6 +216,8 @@ export class UsageAnalytics {
   }
 
   private async collect(): Promise<void> {
+    const pricing=this.pricing.fresh();
+    await pricing.load();
     const coverage = emptyCoverage();
     const paths: string[] = [];
     const inaccessible: string[] = [];
@@ -239,14 +282,46 @@ export class UsageAnalytics {
       }
     }
     if (this.closed) return;
-    const built = await this.buildRows(next, coverage);
+    const built = await this.buildRows(next, coverage, pricing);
+    const taskTitles = await this.readTaskTitles(new Set(built.rows.flatMap(row => row.root ? [row.root] : [])));
     if (this.closed) return;
     this.files = next;
-    this.generation = { rows: built.rows, boundaries: built.boundaries, coverage, updatedAtMs: Date.now(), sourceAvailable, retainedFiles,
+    this.pricing=pricing;
+    this.generation = { rows: built.rows, boundaries: built.boundaries, taskTitles, coverage, updatedAtMs: Date.now(), sourceAvailable, retainedFiles,
       incomplete: built.incomplete || coverage.filesUnreadable > 0 || coverage.malformedLines > 0
         || coverage.unresolvedParents > 0 || coverage.ambiguousEvents > 0 };
     this.failure = false;
     this.snapshots.clear();
+  }
+
+  /** Display metadata stays outside the numeric rollout cache; renames refresh without reparsing history. */
+  private async readTaskTitles(roots: Set<string>): Promise<Generation['taskTitles']> {
+    const titles: Generation['taskTitles'] = new Map();
+    const input = createReadStream(path.join(this.codexHome, 'session_index.jsonl'), { encoding: 'utf8' });
+    const lines = createInterface({ input, crlfDelay: Infinity });
+    input.on('error', () => lines.close());
+    try {
+      for await (const line of lines) {
+        if (this.closed) break;
+        try {
+          const row = object(JSON.parse(line));
+          if (typeof row.id === 'string' && roots.has(row.id) && typeof row.thread_name === 'string'
+            && row.thread_name.trim() && row.thread_name.trim() !== row.id) {
+            titles.set(row.id, { native: row.thread_name.replace(/\s+/g, ' ').trim().slice(0, 160) });
+          }
+        } catch { /* A malformed title cannot change numeric usage coverage. */ }
+      }
+    } catch { /* Titles are optional. */ }
+    finally { lines.close(); input.destroy(); }
+    for (const id of roots) {
+      if (this.closed) break;
+      if (!/^[A-Za-z0-9-]{1,128}$/.test(id)) continue;
+      try {
+        const stored = parseStoredTitle(JSON.parse(await fs.readFile(path.join(this.codexHome, 'hud', 'recaps', `${id}.title.json`), 'utf8')));
+        if (stored?.sessionId === id && stored.title !== id) titles.set(id, { ...titles.get(id), enhanced: stored.title });
+      } catch { /* Missing AI titles fall back to native names. No model work is scheduled here. */ }
+    }
+    return titles;
   }
 
   /** Prefix integrity needs a read, but only the appended tail needs JSON parsing. */
@@ -297,7 +372,7 @@ export class UsageAnalytics {
     finally { await fs.unlink(temporary).catch(() => {}); }
   }
 
-  private async buildRows(files: Map<string, CachedFile>, coverage: Coverage): Promise<{ rows: Row[]; boundaries: number[]; incomplete: boolean }> {
+  private async buildRows(files: Map<string, CachedFile>, coverage: Coverage, pricing: UsagePricing): Promise<{ rows: Row[]; boundaries: number[]; incomplete: boolean }> {
     const owners = new Map<string, { parent: string | null; hint: string | null; role: string | null; roleConflict: boolean;
       observations: UsageObservation[]; conflict: boolean }>();
     for (const { parsed } of files.values()) {
@@ -351,7 +426,7 @@ export class UsageAnalytics {
       if (this.closed) break;
       const ordered = owner.observations.sort((a, b) => a.at - b.at
         || Number(a.attributable) - Number(b.attributable) || (a.total?.[4] ?? 0) - (b.total?.[4] ?? 0));
-      const unique = new Map<string, { observation: UsageObservation; modelConflict: boolean; effortConflict: boolean }>();
+      const unique = new Map<string, { observation: UsageObservation; modelConflict: boolean; effortConflict: boolean; projectConflict: boolean; providerConflict: boolean; fastConflict: boolean }>();
       // Reconcile the labels of all copies before building rows. Counting the
       // first copy immediately would let directory order decide its dimensions.
       for (let i = 0; i < ordered.length; i++) {
@@ -360,18 +435,21 @@ export class UsageAnalytics {
         const identity = JSON.stringify([observation.at, observation.total, observation.last, observation.attributable]);
         const duplicate = unique.get(identity);
         if (!duplicate) {
-          unique.set(identity, { observation: { ...observation }, modelConflict: false, effortConflict: false });
+          unique.set(identity, { observation: { ...observation }, modelConflict: false, effortConflict: false, projectConflict:false, providerConflict:false, fastConflict:false });
           continue;
         }
-        for (const dimension of ['model', 'effort'] as const) {
-          const flag = dimension === 'model' ? 'modelConflict' : 'effortConflict';
+        for (const dimension of ['model', 'effort', 'project', 'provider'] as const) {
+          const flag = `${dimension}Conflict` as const;
           if (duplicate[flag]) continue;
           const previous = duplicate.observation[dimension];
           const incoming = observation[dimension];
-          if (previous !== null && incoming !== null && previous !== incoming) {
+          if (previous != null && incoming != null && previous !== incoming) {
             duplicate[flag] = true;
             duplicate.observation[dimension] = null;
-          } else duplicate.observation[dimension] ??= incoming;
+          } else duplicate.observation[dimension] ??= incoming ?? null;
+        }
+        if(!duplicate.fastConflict && (duplicate.observation.fast??false)!==(observation.fast??false)){
+          duplicate.fastConflict=true;duplicate.observation.fast=null;
         }
       }
       const observations = [...unique.values()];
@@ -381,8 +459,8 @@ export class UsageAnalytics {
       let previousAttributable = false;
       for (let i = 0; i < observations.length; i++) {
         if (i % 128 === 0) { await yieldImmediate(); if (this.closed) break; }
-        const { observation, modelConflict, effortConflict } = observations[i];
-        if (modelConflict || effortConflict) coverage.ambiguousEvents++;
+        const { observation, modelConflict, effortConflict, projectConflict, providerConflict, fastConflict } = observations[i];
+        if (modelConflict || effortConflict || projectConflict || providerConflict || fastConflict) coverage.ambiguousEvents++;
         const { total, last } = observation;
         if (!observation.attributable) {
           if (total) { previous = total; previousAttributable = false; previousLast = null; lastReport = null; }
@@ -412,16 +490,19 @@ export class UsageAnalytics {
         if (!last && used.every(n => n === null || n === 0)) continue;
         if (!total) coverage.ambiguousEvents++;
         if (used.some(n => n === null)) incomplete = true;
-        const event: Event = { at: observation.at, owner: id, root: rootOf(id), model: observation.model,
-          effort: observation.effort, role: owner.role, counts: used };
+        const model=observation.model===null?null:observation.model+(observation.fast?':fast':'')
+          +(observation.provider&&observation.provider!=='openai'?'::'+observation.provider:'');
+        const cost=observation.fast===null?{usd:null,pricedEvents:0,unpricedEvents:1}:pricing.quote(model,used,observation.fast??false,observation.provider);
+        const event: Event = { at: observation.at, owner: id, root: rootOf(id), model,
+          effort: observation.effort, role: owner.role, project:observation.project??null, counts: used, cost };
         boundaries.add(event.at);
         const day = dayOf(event.at);
-        const key = JSON.stringify([day, id, event.model, event.effort, event.role]);
+        const key = JSON.stringify([day, id, event.model, event.effort, event.role, event.project]);
         let row = rows.get(key);
         if (!row) { row = { day, owner: id, root: event.root, model: event.model, effort: event.effort,
-          role: event.role, totals: emptyTotals(), maxAt: event.at, minAt: event.at, events: [] }; rows.set(key, row); }
+          role: event.role, project:event.project, totals: emptyTotals(), maxAt: event.at, minAt: event.at, events: [] }; rows.set(key, row); }
         const acc = { totals: row.totals, threads: new Set([id]) };
-        addCounts(acc, event.counts, id);
+        addCounts(acc, event.counts, id, 1, event.cost);
         row.maxAt = Math.max(row.maxAt, event.at);
         row.minAt = Math.min(row.minAt, event.at);
         row.events.push(event);

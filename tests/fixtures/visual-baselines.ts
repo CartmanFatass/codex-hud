@@ -167,7 +167,8 @@ export function renderVisualCase(scene: VisualCase) {
       const snapshot=usageSnapshot();
       if(scene.usageStatus)Object.assign(snapshot,{status:scene.usageStatus,daily:[],tasks:[],models:[],efforts:[],roles:[],
         totals:{input:null,cachedInput:null,output:null,reasoningOutput:null,total:null,events:0,threads:0}});
-      return renderUsagePage({...initialUsagePageState(),tab:scene.usageTab??'overview'},snapshot,scene.width,scene.height);
+      return renderUsagePage({...initialUsagePageState(),tab:scene.usageTab??'overview'},snapshot,scene.width,scene.height,
+        controlBar(visualState(visualSettings(scene)),{expired:0,usageActive:true},scene.width));
     }
     case 'panel': return renderVisualPanel(scene);
     case 'confirmation': return renderVisualConfirmation(scene);

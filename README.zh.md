@@ -7,7 +7,7 @@
 
 # Codex HUD
 
-HUD 前缀键后按 `w` 打开原生历史用量；在「设置 → 显示 → 外观」选择并保存
+菜单栏「用量」或 HUD 前缀键后按 `w` 打开 toktrack 风格历史用量与费用；在「设置 → 显示 → 外观」选择并保存
 **简洁总览**，启用新的紧凑界面。参见[使用方法与统计边界](./docs/native-usage.md#中文)。
 
 [OpenAI Codex CLI](https://github.com/openai/codex) 的实时状态栏 HUD。轻量、零配置、在 tmux 中运行。

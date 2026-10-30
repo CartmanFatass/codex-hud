@@ -7,12 +7,18 @@ export interface UsageObservation {
   at: number;
   model: string | null;
   effort: string | null;
+  project?: string | null;
+  provider?: string | null;
+  fast?: boolean | null;
   total: Counts | null;
   last: Counts | null;
   /** Inherited/uncertain counters can establish a baseline, never a charge. */
   attributable: boolean;
 }
 interface ParserState {
+  project: string | null;
+  provider: string | null;
+  fast: boolean;
   owner: string | null;
   parent: string | null;
   rootHint: string | null;
@@ -68,7 +74,7 @@ function counts(value: unknown): Counts | null {
 /** Only allowlisted numeric evidence is retained; prompts/tool output never enter the index. */
 export async function parseUsageFile(file: string, closed: () => boolean,
   resume?: { parsed: UsageFile; digest: string }): Promise<UsageFile> {
-  const initial: ParserState = { owner: null, parent: null, rootHint: null, role: null,
+  const initial: ParserState = { project: null, provider: null, fast: false, owner: null, parent: null, rootHint: null, role: null,
     ownerAt: null, model: null, effort: null, foreign: false, ownerTurn: null };
   const checkpoint = resume?.parsed.cursor;
   const state: ParserState = checkpoint ? { ...checkpoint } : initial;
@@ -100,6 +106,8 @@ export async function parseUsageFile(file: string, closed: () => boolean,
         const started = Date.parse(typeof payload.timestamp === 'string' ? payload.timestamp : '');
         state.ownerAt = Number.isFinite(started) ? started : at;
         state.model = textValue(payload.model) ?? textValue(spawn.model);
+        state.project = textValue(payload.cwd);
+        state.provider = textValue(payload.model_provider);
         state.effort = textValue(payload.effort) ?? textValue(spawn.effort);
       } else if (id && id !== state.owner) {
         state.foreign = true;
@@ -125,7 +133,16 @@ export async function parseUsageFile(file: string, closed: () => boolean,
           (state.ownerTurn !== null && textValue(payload.turn_id) === state.ownerTurn))) state.foreign = false;
       if (!state.foreign) {
         state.model = textValue(payload.model);
+        state.project = textValue(payload.cwd) ?? state.project;
+        state.provider = textValue(payload.model_provider) ?? state.provider;
         state.effort = textValue(payload.effort) ?? textValue(object(payload.reasoning).effort);
+      }
+      return;
+    }
+    if (record.type === 'event_msg' && payload.type === 'thread_settings_applied') {
+      if (!state.foreign) {
+        const tier=object(payload.thread_settings).service_tier;
+        state.fast=tier==='priority'||tier==='fast';
       }
       return;
     }
@@ -149,7 +166,9 @@ export async function parseUsageFile(file: string, closed: () => boolean,
     const attributable = !inherited && !ambiguous;
     if (!attributable && !total) return;
     result.observations.push({ at, model: attributable ? state.model : null,
-      effort: attributable ? state.effort : null, total, last: attributable ? last : null, attributable });
+      effort: attributable ? state.effort : null, project: attributable ? state.project : null,
+      provider: attributable ? state.provider : null, fast: attributable ? state.fast : false,
+      total, last: attributable ? last : null, attributable });
   };
   // Bound a single line as well as each stream chunk. Oversize prompt lines do
   // not allocate an unbounded JSON string or delay input for a whole file.
@@ -211,7 +230,7 @@ export function validUsageFile(value: unknown): value is UsageFile {
     && n.every(c => c === null || count(c) !== null));
   const c = object(v.cursor);
   return only(v, ['owner', 'parent', 'rootHint', 'role', 'observations', 'malformed', 'ambiguous', 'bytes', 'digest', 'cursor'])
-    && only(c, ['owner', 'parent', 'rootHint', 'role', 'ownerAt', 'model', 'effort', 'foreign', 'ownerTurn',
+    && only(c, ['owner', 'parent', 'rootHint', 'role', 'ownerAt', 'model', 'effort', 'foreign', 'ownerTurn', 'project', 'provider', 'fast',
       'offset', 'observations', 'malformed', 'ambiguous'])
     && nullableText(v.owner) && nullableText(v.parent) && nullableText(v.rootHint) && nullableText(v.role)
     && count(v.malformed) !== null && count(v.ambiguous) !== null && Array.isArray(v.observations)
@@ -221,11 +240,14 @@ export function validUsageFile(value: unknown): value is UsageFile {
     && count(c.malformed) !== null && count(c.ambiguous) !== null
     && nullableText(c.owner) && nullableText(c.parent) && nullableText(c.rootHint) && nullableText(c.role)
     && nullableText(c.model) && nullableText(c.effort) && nullableText(c.ownerTurn)
+    && nullableText(c.project) && nullableText(c.provider) && typeof c.fast === 'boolean'
     && typeof c.foreign === 'boolean' && (c.ownerAt === null || (typeof c.ownerAt === 'number' && Number.isFinite(c.ownerAt)))
     && v.observations.every((entry: unknown) => {
       const e = object(entry);
-      return only(e, ['at', 'model', 'effort', 'total', 'last', 'attributable'])
+      return only(e, ['at', 'model', 'effort', 'total', 'last', 'attributable', 'project', 'provider', 'fast'])
         && typeof e.at === 'number' && Number.isFinite(e.at) && nullableText(e.model) && nullableText(e.effort)
+        && (e.project === undefined || nullableText(e.project)) && (e.provider === undefined || nullableText(e.provider))
+        && (e.fast === undefined || e.fast === null || typeof e.fast === 'boolean')
         && typeof e.attributable === 'boolean' && validCounts(e.total) && validCounts(e.last) && (e.total !== null || e.last !== null);
     });
 }

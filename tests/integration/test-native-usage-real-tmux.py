@@ -20,6 +20,12 @@ with tempfile.TemporaryDirectory(prefix='hud-native-usage-') as temporary:
     socket = str(work / 'tmux.sock')
     env = {k: v for k, v in os.environ.items() if not k.startswith(('CODEX', 'HERDR', 'TMUX'))}
     env.update(HOME=str(work), SHELL='/bin/bash', TERM='xterm-256color', LC_ALL='C.UTF-8')
+    pricing = work / '.toktrack'
+    pricing.mkdir()
+    fixture_rates = {'input_cost_per_token': .002, 'output_cost_per_token': .01,
+                     'cache_read_input_token_cost': .0001}
+    (pricing / 'pricing.json').write_text(json.dumps({'fetched_at': 2000000000,
+        'models': {'gpt-fixture-main': fixture_rates, 'gpt-fixture-child': fixture_rates}}))
     now = datetime.datetime.now().astimezone()
     day = work / 'sessions' / now.strftime('%Y/%m/%d')
     day.mkdir(parents=True)
@@ -53,6 +59,7 @@ with tempfile.TemporaryDirectory(prefix='hud-native-usage-') as temporary:
     root_log = create_log(ids[0], 1000, 100)
     create_log(ids[1], 200, 20, parent=ids[0])
     other_log = create_log(ids[2], 700, 70, other=True)
+    (work / 'session_index.jsonl').write_text(json.dumps({'id':ids[0], 'thread_name':'Improve usage task names'}) + '\n')
     # A second, archived copy of the same thread must not inflate native usage.
     archive = work / 'archived_sessions'
     archive.mkdir()
@@ -99,8 +106,8 @@ with tempfile.TemporaryDirectory(prefix='hud-native-usage-') as temporary:
 
     def open_panel(language, width, no_color):
         settings = work / 'hud-settings.json'
-        settings.write_text(json.dumps({'briefing': 'off', 'language': language, 'look': 'quiet',
-            'theme': 'none' if no_color else 'teal', 'icons': 'text', 'panelStyle': 'compact',
+        settings.write_text(json.dumps({'briefing': 'off', 'language': language, 'look': 'pill',
+            'theme': 'none' if no_color else 'teal', 'icons': 'unicode', 'panelStyle': 'compact',
             'paneLayout': 'tabs', 'statusCard': 'status', 'agentColors': 'off', 'agentLog': False,
             'treeWidth': width, 'refreshMs': 250}))
         cmd = shlex.join(['env', f'CODEX_HOME={work}', f'CODEX_HUD_CWD={work}',
@@ -119,18 +126,41 @@ with tempfile.TemporaryDirectory(prefix='hud-native-usage-') as temporary:
         tmux('set-option', '-t', 'usage-acceptance', '@codex_hud_main_pane', main)
         panel = open_panel('en', 48, False)
         wait_for(lambda s: 'usage-fixture' in s, 'synthetic child not shown')
-        capture('quiet-en-48')
+        capture('menu-en-48')
         command('settings')
-        wait_for(lambda s: '[Save]' in s and 'Usage' in s, 'settings/Quiet navigation not ready')
+        wait_for(lambda s: '[Save]' in s and 'Usage' in s, 'settings/menu navigation not ready')
         click_label('Usage')
-        wait_for(lambda s: 'Codex usage' in s and '2,090' in s, 'global total or archived-copy dedup incorrect')
+        wait_for(lambda s: 'OVERVIEW' in s and '2.1K' in s, 'global total or archived-copy dedup incorrect')
+        assert '$3.90*' in screen(), 'reference-style request pricing missing from overview'
         capture('usage-en-48')
+        tmux('send-keys', '-t', panel, '-l', 'm')
+        wait_for(lambda s: 'COST TREND' in s, 'm did not switch to cost measure')
+        tmux('send-keys', '-t', panel, '-l', 'v')
+        wait_for(lambda s: 'PROJECTS' in s, 'v did not group projects')
+        tmux('send-keys', '-t', panel, 'Enter')
+        wait_for(lambda s: '1.3K' in s and '$2.46*' in s, 'project drill-down changed cost attribution')
+        tmux('send-keys', '-t', panel, 'Escape')
+        wait_for(lambda s: '2.1K' in s and '$3.90*' in s, 'Esc did not restore original grouping')
+        tmux('send-keys', '-t', panel, '-l', 'vvv')
+        wait_for(lambda s: 'MODELS' in s, 'group cycle did not return to models')
+        tmux('send-keys', '-t', panel, '-l', 'm')
+        wait_for(lambda s: 'USAGE TREND' in s, 'm did not restore tokens')
+        click_label('Settings')
+        wait_for(lambda s: '[Save]' in s, 'Usage menu could not navigate to Settings')
+        click_label('Usage')
+        wait_for(lambda s: 'USAGE TREND' in s, 'Settings menu did not return to Usage')
+        command('pane-4')
+        wait_for(lambda s: 'EXACT COUNTS' in s and '2,090' in s, 'prefix 4 did not open exact details')
+        tmux('send-keys', '-t', panel, 'Escape')
+        wait_for(lambda s: 'USAGE TREND' in s, 'Esc did not restore usage overview')
         tmux('send-keys', '-t', panel, '-l', 's')
-        wait_for(lambda s: 'Current task' in s and '1,320' in s, 'current task scope incorrect')
+        wait_for(lambda s: '[Task]' in s and '1.3K' in s, 'current task scope incorrect')
         tmux('send-keys', '-t', panel, 'Tab')
-        wait_for(lambda s: 'Self' in s and '1,100' in s and '220' in s, 'self/descendant attribution absent')
+        wait_for(lambda s: 'Self' in s and '1.1K' in s and '220' in s, 'self/descendant attribution absent')
+        assert 'Improve usage task names' in screen(), 'readable task title absent'
+        assert ids[0] not in screen(), 'task view exposed a thread ID'
         tmux('send-keys', '-t', panel, 'Tab')
-        wait_for(lambda s: 'gpt-fixture-main' in s, 'model grouping absent')
+        wait_for(lambda s: 'GPT-fixture Main' in s, 'model grouping absent')
         tmux('send-keys', '-t', panel, '-l', 'f')
         wait_for(lambda s: '[7 days]' in s, 'period navigation absent')
         # Appended native events update without restarting the page or losing scope.
@@ -143,19 +173,19 @@ with tempfile.TemporaryDirectory(prefix='hud-native-usage-') as temporary:
                 'total_token_usage': new_tokens, 'last_token_usage': last}}, -1))
         tmux('send-keys', '-t', panel, 'Left', 'Left')
         tmux('send-keys', '-t', panel, '-l', 'r')
-        wait_for(lambda s: '1,430' in s and 'Current task' in s, 'incremental refresh lost query or count')
+        wait_for(lambda s: '1.4K' in s and '[Task]' in s, 'incremental refresh lost query or count')
         assert not input_log.read_bytes(), 'Usage input leaked into main pane'
         tmux('send-keys', '-t', panel, 'Escape')
         wait_for(lambda s: 'Codex usage' not in s and 'usage-fixture' in s, 'Esc did not return to sidebar')
         tmux('kill-pane', '-t', panel)
         panel = open_panel('zh', 32, True)
         wait_for(lambda s: 'usage-fixture' in s, 'narrow Chinese sidebar not ready')
-        capture('quiet-zh-32')
+        capture('menu-zh-32')
         command('usage')
-        wait_for(lambda s: '用量' in s and '2,200' in s, 'Chinese/narrow persisted index display incorrect')
+        wait_for(lambda s: '用量' in s and '2.2K' in s, 'Chinese/narrow persisted index display incorrect')
         capture('usage-zh-32')
         tmux('send-keys', '-t', panel, '-l', 's')
-        wait_for(lambda s: '1,430' in s, 'narrow current-task scope incorrect')
+        wait_for(lambda s: '1.4K' in s, 'narrow current-task scope incorrect')
         tmux('send-keys', '-t', panel, 'Tab', 'Tab', 'Tab', 'Tab', 'PageDown', 'Home')
         assert not input_log.read_bytes(), 'Chinese navigation leaked into main pane'
         tmux('send-keys', '-t', panel, 'Escape')
@@ -165,6 +195,6 @@ with tempfile.TemporaryDirectory(prefix='hud-native-usage-') as temporary:
         while time.monotonic() < deadline and b'NORMAL_INPUT' not in input_log.read_bytes():
             time.sleep(.05)
         assert b'NORMAL_INPUT' in input_log.read_bytes(), 'normal input forwarding not restored'
-        print('PASS: native Usage EN/ZH, quiet 48/32 columns, archive dedup, task/model/period views, incremental refresh, restart, input isolation')
+        print('PASS: native Usage EN/ZH, pill menu 48/32 columns, icons and prefix-4 details, archive dedup, task/model/period views, incremental refresh, restart, input isolation')
     finally:
         subprocess.run([TMUX, '-S', socket, 'kill-server'], capture_output=True)

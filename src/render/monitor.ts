@@ -327,6 +327,8 @@ function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = t
     ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
       '{p} ,  settings  {p} ?  help','{p} b  pause / resume models','{p} a  show / hide older',
       '{p} d  HUD diagnostics and TPS details',
+      '{p} 4  Inspector / usage details',
+      'Usage: m tokens / cost · v group · Enter drill down',
       '{p} u  inbox, updates and history',
       '{p} p  find and pin agents',
       '{p} c  sources, model calls and export',

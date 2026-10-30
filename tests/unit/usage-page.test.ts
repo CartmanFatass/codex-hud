@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialUsagePageState,renderUsagePage,handleUsageInput,usageNumber,type UsageTab } from '../../src/render/usage-page.js';
+import { initialUsagePageState,renderUsagePage,handleUsageInput,usageNumber,usageModelName,type UsageTab } from '../../src/render/usage-page.js';
 import { usageSnapshot } from '../fixtures/usage-data.js';
 import { setLanguage,t } from '../../src/render/i18n.js';
 import { setDisplayConfig } from '../../src/render/hud-config.js';
@@ -35,34 +35,33 @@ test('Usage fits EN/ZH, no-colour and teal, every view and narrow panel width; c
     } finally {setLanguage(old);}
   }
 });
-test('Usage renders exact counters, subset labels, scope totals, source and coverage without inventing unknown values',()=>{
+test('toktrack dashboard shows price, tokens, hit, composition, shared ranking and a vertical trend',()=>{
   const state=initialUsagePageState(),snapshot=usageSnapshot();
-  snapshot.totals.reasoningOutput=null;
   const text=stripAnsi(renderUsagePage(state,snapshot,56,60).lines.join('\n'));
-  assert.match(text,/Total tokens\s+1,320/);
-  assert.match(text,/Cached input \(part of input\)\s+240/);
-  assert.match(text,/Reasoning \(part of output\)\s+Unknown/);
-  assert.match(text,/Source: sessions \+ archived_sessions/);
-  assert.match(text,/UTC range: 10-28 00:00 → 10-28 18:00/);
-  assert.match(text,/As of: 10-28 18:00 UTC/);
-  assert.match(text,/\/synthetic\/codex-home/);
-  assert.equal(usageNumber(null),'Unknown');assert.equal(usageNumber(0),'0');
-  const tasks=stripAnsi(renderUsagePage({...state,tab:'tasks'},snapshot,48,50).lines.join('\n'));
-  assert.match(tasks,/Self\s+1,100/);assert.match(tasks,/Descendants\s+220/);assert.match(tasks,/Task total\s+1,320/);
-  const partial=stripAnsi(renderUsagePage(state,{...snapshot,status:'partial',message:'Known usage subtotal; local evidence has gaps.'},48,50).lines.join('\n'));
-  assert.match(partial,/Partial history/);assert.match(partial,/Known usage subtotal/);
-  const unavailable=stripAnsi(renderUsagePage(state,{...snapshot,status:'unavailable',totals:{...snapshot.totals,total:null}},48,50).lines.join('\n'));
-  assert.match(unavailable,/Local usage unavailable/);assert.match(unavailable,/Total tokens\s+Unknown/);
+  assert.match(text,/OVERVIEW/);assert.match(text,/Cost\s+\$1\.32\*/);assert.match(text,/Tokens\s+1\.3K/);
+  assert.match(text,/Cache hit\s+20%/);assert.match(text,/TOKEN MIX/);assert.match(text,/MODELS/);assert.match(text,/USAGE TREND/);
+  assert.match(text,/█/);assert.doesNotMatch(text,/Source:|Coverage|part of input|subscription bill/);
+  for(const [n,expected] of [[0,'0'],[999,'999'],[1000,'1.0K'],[12800,'12.8K'],[12800000,'12.8M'],[1200000000,'1.2B']] as const)assert.equal(usageNumber(n),expected);
+  assert.equal(usageNumber(null),'Unknown');
+  const detail=handleUsageInput(state,{type:'key',key:'details'},renderUsagePage(state,snapshot,56,40)).state;
+  assert.equal(detail.details,true);
+  const exact=stripAnsi(renderUsagePage(detail,snapshot,56,60).lines.join('\n'));
+  assert.match(exact,/Total tokens\s+1,320/);assert.match(exact,/Cached input \(part of input\)\s+240/);
+  assert.match(exact,/Source: sessions \+ archived_sessions/);assert.match(exact,/\/synthetic\/codex-home/);assert.match(exact,/COVERAGE/);
+  const back=handleUsageInput(detail,{type:'key',key:'escape'},renderUsagePage(detail,snapshot,56,40));
+  assert.equal(back.state.details,false);assert.equal(back.action,undefined);
+  const tasks=stripAnsi(renderUsagePage({...state,tab:'tasks'},snapshot,48,40).lines.join('\n'));
+  assert.match(tasks,/Self\s+1\.1K/);assert.match(tasks,/Descendants\s+220/);assert.match(tasks,/Task total\s+1\.3K/);assert.match(tasks,/\$1\.32/);
 });
 test('Usage keyboard, mouse and wheel reach all periods, scopes and views; paste and unrelated keys stay owned',()=>{
   let state=initialUsagePageState();
   const draw=()=>renderUsagePage(state,usageSnapshot(),32,24);
   const key=(key:string)=>{state=handleUsageInput(state,{type:'key',key},draw()).state;};
-  for(const period of ['7d','30d','today']){key('filter');assert.equal(state.period,period);}
+  for(const period of ['7d','30d','all','today']){key('filter');assert.equal(state.period,period);}
   key('sort');assert.equal(state.scope,'task');key('sort');assert.equal(state.scope,'all');
   for(const tab of [...TABS.slice(1),TABS[0]]){key('tab');assert.equal(state.tab,tab);}
   key('left');assert.equal(state.tab,'roles');
-  key('end');assert.ok(state.scroll>0);key('home');assert.equal(state.scroll,0);
+  state={...state,details:true};key('end');assert.ok(state.scroll>0);key('home');state={...state,details:false};assert.equal(state.scroll,0);
   let frame=draw();
   for(const c of frame.controls) {
     const result=handleUsageInput(state,{type:'mouse',button:'left',x:c.x,y:c.y},frame);
@@ -72,7 +71,8 @@ test('Usage keyboard, mouse and wheel reach all periods, scopes and views; paste
     if(c.kind==='period')assert.equal(result.state.period,'7d');
     if(c.kind==='scope')assert.equal(result.state.scope,'task');
   }
-  assert.ok(handleUsageInput(state,{type:'mouse',button:'wheel-down',x:0,y:10},frame).state.scroll>0);
+  const longFrame=renderUsagePage({...state,details:true},usageSnapshot(),32,24);
+  assert.ok(handleUsageInput({...state,details:true},{type:'mouse',button:'wheel-down',x:0,y:10},longFrame).state.scroll>0);
   assert.equal(handleUsageInput(state,{type:'key',key:'escape'},frame).action,'close');
   assert.equal(handleUsageInput(state,{type:'key',key:'close'},frame).action,'close');
   assert.equal(handleUsageInput(state,{type:'key',key:'reset'},frame).action,'refresh');
@@ -91,7 +91,8 @@ test('Usage selected view has a non-colour marker in EN/ZH at sidebar widths',()
       const active=frame.controls.find(c=>c.kind===tab)!;
       const label=stripAnsi(frame.lines[active.y]).slice(active.x,active.x+active.width);
       // EN uses one cell per character; CJK assertions inspect the whole row.
-      assert.ok(frame.lines[active.y].includes(`[› ${t({overview:'Overview',tasks:'Tasks',models:'Models',efforts:'Effort',roles:'Roles'}[tab])}]`));
+      assert.ok(frame.lines[active.y].includes('[› '));
+      assert.ok(frame.controls.some(c=>c.kind===tab));
       assert.equal(frame.lines.filter(line=>line.includes('[› ')).length,1);
       if(language==='en')assert.ok(label.startsWith('[› '));
       frame.lines.forEach(line=>assert.equal(line,stripAnsi(line)));
@@ -172,4 +173,77 @@ test('Quiet overview keeps labelled navigation and a compact selection with Insp
     assert.doesNotMatch(text,/[┌╭].*Parser/,'compact rows do not wrap each agent in a card');
     assert.equal(handleMonitorInput(frame.state,{type:'key',key:'enter'},{tree,frame}).state.focus,'details');
   }
+});
+
+test('Usage is labelled menu navigation in every look; Inspector is reached through its command',()=>{
+  for(const look of ['tab','band','tile','frame','pill','quiet'] as const)for(const language of ['en','zh'] as const)for(const width of [24,32,40,48,80]){
+    const old=setLanguage(language);
+    try{
+      setDisplayConfig({look,icons:'unicode'});
+      const state=initialMonitorState();
+      const navigation=controlBar(state,{expired:0,usageActive:true},width);
+      const usage=navigation.controls.find(c=>c.kind==='usage');assert.ok(usage,`${look}/${language}/${width}`);
+      assert.ok(navigation.lines[usage.y].includes(t('Usage')));
+      assert.ok(!navigation.controls.some(c=>c.kind==='tab'&&c.pane==='details'));
+      const frame=renderUsagePage(initialUsagePageState(),usageSnapshot(),width,48,navigation);
+      assert.ok(frame.navigationControls.some(c=>c.kind==='usage'));
+      assert.ok(!frame.controls.some(c=>String(c.kind)==='details'));
+      const detail=handleUsageInput(frame.state,{type:'key',key:monitorKey('pane-4')},frame);
+      assert.equal(detail.state.details,true);
+      const main=renderMonitor({tree:treeOf([]),state,width,height:48});
+      assert.equal(handleMonitorInput(state,{type:'key',key:monitorKey('pane-4')},{tree:treeOf([]),frame:main}).state.focus,'details');
+    }finally{setLanguage(old);}
+  }
+});
+
+test('sidebar keeps shared toktrack bands, compact category controls and no duplicate title',()=>{
+  for(const language of ['en','zh'] as const)for(const width of [32,40,48]){
+    const previous=setLanguage(language);
+    try{
+      setDisplayConfig({look:'pill',icons:'unicode',theme:'none'});
+      const navigation=controlBar({...initialMonitorState(),tabbed:true},{expired:0,usageActive:true},width);
+      const frame=renderUsagePage(initialUsagePageState(),usageSnapshot(),width,44,navigation);
+      const tabs=frame.controls.filter(c=>TABS.includes(c.kind as UsageTab));
+      assert.equal(new Set(tabs.map(c=>c.y)).size,1);
+      assert.ok(frame.lines.every(line=>visualLength(line)===width));
+      assert.ok(!frame.lines.some(line=>line.includes('Codex '+t('Usage'))));
+      const text=frame.lines.join('\n');assert.ok(text.includes(t('Token mix').toUpperCase()));
+      assert.ok(text.includes(t('Usage trend').toUpperCase()));
+    }finally{setLanguage(previous);}
+  }
+});
+
+test('toktrack measures, grouping, selection and drill-down preserve the query and have mouse equivalents',()=>{
+  const snapshot=usageSnapshot();let state=initialUsagePageState();
+  const frame=()=>renderUsagePage(state,snapshot,40,44);
+  state=handleUsageInput(state,{type:'key',key:'main'},frame()).state;
+  assert.equal(state.measure,'cost');assert.match(stripAnsi(frame().lines.join('\n')),/\$1\.32/);
+  const measure=frame().controls.find(c=>c.kind==='measure')!;
+  state=handleUsageInput(state,{type:'mouse',button:'left',x:measure.x,y:measure.y},frame()).state;
+  assert.equal(state.measure,'tokens');
+  state=handleUsageInput(state,{type:'key',key:'detail-toggle'},frame()).state;
+  assert.equal(state.group,'projects');assert.ok(frame().lines.join('\n').includes('/synthetic/project'));
+  state=handleUsageInput(state,{type:'key',key:'enter'},frame()).state;
+  assert.deepEqual(state.filter,{by:'project',key:'/synthetic/project'});
+  const back=handleUsageInput(state,{type:'key',key:'escape'},frame());
+  assert.equal(back.action,undefined);assert.equal(back.state.filter,undefined);
+});
+
+test('model names follow toktrack display names while provider and Fast identities remain in raw keys',()=>{
+  assert.equal(usageModelName('gpt-6-1-sol:fast::openai'),'GPT-6.1 Sol · Fast');
+  assert.equal(usageModelName('gpt-6.1-terra'),'GPT-6.1 Terra');
+  assert.equal(usageModelName('o4-mini'),'o4 Mini');
+  assert.equal(usageModelName('custom-model'),'custom-model');
+});
+
+test('task headings use readable titles or project and date, never thread IDs',()=>{
+  const snapshot=usageSnapshot(),state={...initialUsagePageState(),tab:'tasks' as const};
+  const draw=()=>stripAnsi(renderUsagePage(state,snapshot,48,40).lines.join('\n'));
+  assert.match(draw(),/Improve usage dashboard/);
+  assert.doesNotMatch(draw(),/synthetic-root/);
+  snapshot.tasks[0].title=undefined;
+  assert.match(draw(),/project · 2026-10-28/);
+  assert.doesNotMatch(draw(),/synthetic-root/);
+  snapshot.tasks[0].project=undefined;snapshot.tasks[0].firstAtMs=undefined;
+  assert.match(draw(),/Task/);assert.doesNotMatch(draw(),/synthetic-root/);
 });
