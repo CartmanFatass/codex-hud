@@ -10,7 +10,7 @@ import { renderSettingsConfirmation, handleSettingsConfirmation, type SettingsCo
 import { spawn, execFile, execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { SessionFinder, findRolloutsInDaysYielding, recentSessions } from './collectors/session-finder.js';
+import { SessionFinder, findRolloutsInDaysYielding, treeLookbackDays, recentSessions } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
 import { buildSubagentTreeYielding, uniquePickerLabel, useTreeScanStore, flushTreeScans } from './collectors/subagent-tree.js';
 import { TreeScanStore } from './collectors/tree-scan-store.js';
@@ -619,7 +619,8 @@ async function runLivePage(): Promise<void> {
       // The root is not a card node, but its new spawn charges must be read
       // on this tick too, rather than waiting for the quiet-file budget.
       if (session) priority.add(session.path);
-      const listed = rootId ? await timeAsync('tree.list', () => findRolloutsInDaysYielding(3, priority)) : undefined;
+      const listed = rootId ? await timeAsync('tree.list', () => findRolloutsInDaysYielding(
+        treeLookbackDays(rootId, 3, main?.subagents?.map(agent => agent.id)), priority)) : undefined;
       tree = rootId ? await timeAsync('tree.build',()=>buildSubagentTreeYielding(rootId,main?.subagents ?? [],3,Date.now(),listed)) : {rootId:'',nodes:[],totalCount:0,updatedAt:new Date()};
       treeBuiltFor = rootId;
       markActivitySourceSuccess('tree');

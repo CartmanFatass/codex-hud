@@ -193,6 +193,10 @@ sources, in order:
    This is the only source that sees `/resume`. It needs `node:sqlite`
    (Node 22 or later), reads only, and fails quietly. The thread found is
    mapped to its root with `rootThreadOf`.
+   Timing is anchored only by explicit `codex_tui::app::startup` rows:
+   retained activity after startup logs are pruned cannot identify a connection.
+   Every ten seconds the binding rechecks the pane's PID and process start time;
+   a replacement or reused PID clears the connection, log cursor and thread.
 2. **Shell snapshot scan.** Looks for files named
    `shell_snapshots/<threadId>.<nanos>.<ext>` created after launch (with 15 s
    of slack) from the same tmux server.
@@ -249,7 +253,11 @@ The bar renders `HudData`, and so does the panel's status card. The panel passes
 
 ### 4.4 The agent tree (`collectors/subagent-tree.ts`)
 
-`buildSubagentTree` scans the last three days of rollouts. For each one it
+`buildSubagentTree` scans at least the last three days, extending back to the
+current root's creation directory. If its rollout is missing, known child
+rollouts determine the older boundary. This also works after a HUD restart,
+without an existing in-memory tree. Priority paths remain eligible outside
+the date window. For each rollout it
 reads only the first line, up to 1 MB. From those lines it builds a parent
 map and the tree under the current root thread. The panel lists those files
 with `findRolloutsInDaysYielding` and passes the list in: that path stats new

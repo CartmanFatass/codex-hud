@@ -155,6 +155,8 @@ test('two TUIs on their own connections do not cross, whichever logged first', {
   const { dir, file } = scratch();
   try {
     database(file, [
+      // An older TUI repainting nearby is not a third startup to rank.
+      { ts: 999, nanos: 900_000_000, target: 'codex_tui::app', body: 'redraw', uuid: 'pid:300:aa' },
       ...tuiStart(100, 1000, 100_000_000),
       // The second TUI's first row comes before the first one's request:
       // "the request nearest after" alone would give it connection 5.
@@ -207,6 +209,45 @@ test('a missing database, another schema or an empty log say nothing', { skip },
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('pruned startup logs cannot pair retained activity with another TUI startup', { skip }, () => {
+  const { dir, file } = scratch();
+  try {
+    database(file, [
+      { ts: 10000, target: 'codex_app_server::outgoing_message',
+        body: 'app-server event: item/agentMessage/delta targeted_connections=1', uuid: 'pid:100:aa' },
+      ...tuiStart(200, 10001, 0),
+      started(22, OTHER, 10002, 0),
+    ]);
+    assert.equal(resolveDaemonThread(file, { pid: 100, since: 100 }), null);
+    assert.equal(resolveDaemonThread(file, { pid: 200, since: 10000 }), OTHER);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('pane process replacement and PID reuse invalidate a cached thread even without new log bytes', { skip }, () => {
+  const { dir, file } = scratch();
+  try {
+    database(file, [
+      ...tuiStart(100, 1000, 0), started(11, FRESH, 1001, 0),
+      ...tuiStart(200, 2000, 0), started(22, OTHER, 2001, 0),
+    ]);
+    let now = 1_000_000;
+    let pid: number | null = 100;
+    let start = 999;
+    const binding = new DaemonBinding(dir, '%16', null, {
+      now: () => now, findPid: () => pid, started: () => start,
+    });
+    assert.equal(binding.threadId(), FRESH);
+    pid = 200; start = 1999; now += 10_000;
+    assert.equal(binding.threadId(), OTHER, 'same database signature cannot bypass process checks');
+    start = 3000; now += 10_000;
+    assert.equal(binding.threadId(), null, 'a reused PID without startup evidence is not the old process');
+    pid = null; now += 10_000;
+    assert.equal(binding.threadId(), null);
+    pid = 100; start = 999; now += 10_000;
+    assert.equal(binding.threadId(), FRESH, 'a later process can bind again');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('the binding reads the log again only when it changed, and at most every two seconds', { skip }, () => {

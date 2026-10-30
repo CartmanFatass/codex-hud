@@ -10,9 +10,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { findRolloutsInDays, findRolloutsInDaysYielding, resetRolloutStatCache } from '../../src/collectors/session-finder.js';
+import { findRolloutsInDays, findRolloutsInDaysYielding, resetRolloutStatCache, treeLookbackDays } from '../../src/collectors/session-finder.js';
 import { NO_GIT, sameGit } from '../../src/collectors/hud-status.js';
-import { buildSubagentTree, resetSubagentLinkCache } from '../../src/collectors/subagent-tree.js';
+import { buildSubagentTree, buildSubagentTreeYielding, resetSubagentLinkCache } from '../../src/collectors/subagent-tree.js';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -51,6 +51,42 @@ test('sameGit treats the placeholder and a missing repo as their own values', ()
   assert.equal(sameGit(NO_GIT, { ...NO_GIT, branch: 'main', isGitRepo: true }), false);
   assert.equal(sameGit({ ...NO_GIT, repo: '' }, { ...NO_GIT }), true);
   assert.equal(sameGit({ ...NO_GIT, repo: 'demo' }, NO_GIT), false);
+});
+
+test('cold and warm trees retain old live descendants, and priority paths survive the date window', async () => {
+  await withSessions(async root => {
+    const past = new Date(); past.setDate(past.getDate() - 5);
+    const day = path.join(root, String(past.getFullYear()), pad(past.getMonth() + 1), pad(past.getDate()));
+    fs.mkdirSync(day, { recursive: true });
+    const rootId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01';
+    const childId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee02';
+    const nestedId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee03';
+    const meta = (id: string, parent_thread_id?: string) => JSON.stringify({ type: 'session_meta',
+      payload: { id, parent_thread_id, timestamp: past.toISOString() } }) + '\n';
+    const event = (type: string) => JSON.stringify({ type: 'event_msg', timestamp: new Date().toISOString(), payload: { type } }) + '\n';
+    rollout(day, rootId, meta(rootId));
+    const child = rollout(day, childId, meta(childId, rootId) + event('task_started'));
+    rollout(day, nestedId, meta(nestedId, childId) + event('task_started'));
+    const known = [{ id: childId, name: 'child', status: 'completed' as const, lastActivityAt: past }];
+    assert.equal(treeLookbackDays(rootId), 5);
+    for (let pass = 0; pass < 2; pass++) {
+      resetSubagentLinkCache();
+      const sync = buildSubagentTree(rootId, known);
+      assert.equal(sync.nodes[0].status, 'running');
+      assert.equal(sync.nodes[0].children[0].status, 'running');
+      const listed = await findRolloutsInDaysYielding(treeLookbackDays(rootId), new Set([child]));
+      const panel = await buildSubagentTreeYielding(rootId, known, 3, Date.now(), listed);
+      assert.equal(panel.nodes[0].status, 'running');
+      assert.equal(panel.nodes[0].children[0].id, nestedId);
+    }
+    const priority = await findRolloutsInDaysYielding(3, new Set([child]));
+    assert.ok(priority.some(file => file.path === child));
+    fs.appendFileSync(child, event('task_complete'));
+    assert.equal(buildSubagentTree(rootId, known).nodes[0].status, 'completed');
+    // If only the parent's metadata is lost, its known children still determine the horizon.
+    fs.rmSync(path.join(day, `rollout-2026-10-14T00-00-00-${rootId}.jsonl`));
+    assert.equal(treeLookbackDays(rootId, 3, [childId]), 5);
+  });
 });
 
 

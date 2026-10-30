@@ -346,6 +346,37 @@ export function findRolloutsInDays(maxDaysBack: number = DEFAULT_LOOKBACK_DAYS):
   return rollouts;
 }
 
+const treeOriginPaths = new Map<string, string>();
+const treeOriginMisses = new Map<string, number>();
+
+/** A live tree spans its root's lifetime, not just the most recent date directories. */
+export function treeLookbackDays(rootId: string, minimum = 3, knownIds: readonly string[] = []): number {
+  const sessions = getSessionsDir();
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const age = (id: string): number | undefined => {
+    const key = JSON.stringify([sessions, id]);
+    let file = treeOriginPaths.get(key);
+    if (file && !fs.existsSync(file)) { treeOriginPaths.delete(key); file = undefined; }
+    if (!file) {
+      if ((treeOriginMisses.get(key) ?? -Infinity) > now.getTime() - FALLBACK_RESCAN_MS) return;
+      file = findRolloutPathBySessionIdInRoot(sessions, id) ?? undefined;
+      if (!file) { cachePut(treeOriginMisses, key, now.getTime()); return; }
+      cachePut(treeOriginPaths, key, file);
+      treeOriginMisses.delete(key);
+    }
+    // Read the directory date rather than interpreting the filename in a timezone.
+    const relative = path.relative(sessions, file).split(path.sep);
+    const [year, month, day] = relative.slice(0, 3).map(Number);
+    if (relative.length !== 4 || !year || !month || !day) return;
+    return Math.max(0, Math.ceil((today - Date.UTC(year, month - 1, day)) / 86_400_000));
+  };
+  const rootAge = age(rootId);
+  if (rootAge !== undefined) return Math.max(minimum, rootAge);
+  // A missing root rollout must not hide known children with surviving files.
+  return knownIds.reduce((days, id) => Math.max(days, age(id) ?? 0), minimum);
+}
+
 interface StatMemo {
   size: number;
   mtimeMs: number;
@@ -403,6 +434,14 @@ export async function findRolloutsInDaysYielding(
   }
   const listedPaths = new Set(listed.map(entry => entry.path));
   const prefix = sessionsDir.endsWith(path.sep) ? sessionsDir : sessionsDir + path.sep;
+  // Priority paths may predate the date window (for example across midnight).
+  for (const file of priority) {
+    if (!file.startsWith(prefix) || listedPaths.has(file)) continue;
+    const parsed = parseRolloutFilename(path.basename(file));
+    if (!parsed) continue;
+    listed.push({ path: file, ...parsed });
+    listedPaths.add(file);
+  }
   for (const key of rolloutStatCache.keys()) {
     if (key.startsWith(prefix) && !listedPaths.has(key)) rolloutStatCache.delete(key);
   }

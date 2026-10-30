@@ -100,12 +100,13 @@ export interface Connection {
 const num = (value: unknown) => (typeof value === 'number' ? value : Number(value));
 const text = (value: unknown) => (typeof value === 'string' ? value : '');
 
-/** The TUI's first row at or after `since`, or null when it logged none. */
+/** Only startup evidence can anchor timing. Retained activity after log pruning cannot. */
 function firstRow(db: Database, q: ResolveQuery): Stamp | null {
   const prefix = `pid:${q.pid}:`;
   const rows = db
     .prepare(
       `SELECT ts, ts_nanos FROM logs WHERE thread_id IS NULL AND process_uuid >= ? AND process_uuid < ?
+       AND target = 'codex_tui::app::startup'
        AND ts >= ? AND ts <= ? ORDER BY ts, ts_nanos LIMIT 1`
     )
     .all(prefix, `pid:${q.pid};`, Math.floor(q.since), q.until ?? Number.MAX_SAFE_INTEGER);
@@ -149,7 +150,7 @@ export function findConnection(db: Database, q: ResolveQuery): Connection | null
   const tuis = db
     .prepare(
       `SELECT process_uuid, ts, ts_nanos FROM logs WHERE ts >= ? AND ts <= ? AND thread_id IS NULL
-       AND target LIKE 'codex_tui::%' ORDER BY ts, ts_nanos, id LIMIT ${ROW_LIMIT * 5}`
+       AND target = 'codex_tui::app::startup' ORDER BY ts, ts_nanos, id LIMIT ${ROW_LIMIT * 5}`
     )
     .all(from.ts - STARTUP_WINDOW_S, end);
   const starts = new Map<string, Stamp>();
@@ -293,7 +294,7 @@ export function processStart(pid: number): number | null {
 
 /** Least time between two reads of the log. */
 const CHECK_MS = 2000;
-/** Least time between two looks for the pane's TUI while there is none. */
+/** Recheck identity even while bound: a pane can replace its Codex process. */
 const PID_RETRY_MS = 10_000;
 
 /**
@@ -304,6 +305,7 @@ const PID_RETRY_MS = 10_000;
 export class DaemonBinding {
   private readonly dbPath: string;
   private pid: number | null = null;
+  private pidStarted: number | null = null;
   private lastPidLook = -Infinity;
   private lastCheck = -Infinity;
   private signature = '';
@@ -342,19 +344,28 @@ export class DaemonBinding {
     this.lastCheck = now;
     const Db = sqliteDatabase();
     if (!Db) return null;
+    if (now - this.lastPidLook >= PID_RETRY_MS) {
+      this.lastPidLook = now;
+      const pid = this.findPid(this.pane);
+      const started = pid === null ? null : this.started(pid);
+      if (pid !== this.pid || started !== this.pidStarted) {
+        this.connection = null;
+        this.lastId = 0;
+        this.thread = null;
+        this.signature = '';
+      }
+      this.pid = pid;
+      this.pidStarted = started;
+    }
+    if (this.pid === null) return null;
     const signature = this.stat();
     if (!signature) return (this.thread = null);
     if (signature === this.signature && this.connection) return this.thread;
-    if (this.pid === null && now - this.lastPidLook >= PID_RETRY_MS) {
-      this.lastPidLook = now;
-      this.pid = this.findPid(this.pane);
-    }
-    if (this.pid === null) return null;
     let db: Database | null = null;
     try {
       db = new Db(this.dbPath, { readOnly: true, timeout: 200 });
       if (!this.connection) {
-        const started = this.started(this.pid);
+        const started = this.pidStarted;
         const since = started !== null ? started - 2 : (this.startMs ?? now) / 1000 - 300;
         this.connection = findConnection(db, { pid: this.pid, since });
         if (!this.connection) return null;

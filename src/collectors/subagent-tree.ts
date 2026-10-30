@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { sessionParentId } from '../utils/session-parent.js';
-import { findRolloutsInDays, type SessionFile } from './session-finder.js';
+import { findRolloutsInDays, treeLookbackDays, type SessionFile } from './session-finder.js';
 import type { AgentAction, AgentStage, SubagentInfo, SubagentStatus, SubagentTree, SubagentTreeNode } from '../types.js';
 
 // session_meta is the first line and never changes on append, so each rollout
@@ -871,7 +871,7 @@ function* buildTreeSteps(
   const known = new Map(knownSubagents.map((agent) => [agent.id, agent]));
   const links = new Map<string, SessionLink>();
 
-  const files = listed ?? findRolloutsInDays(maxDaysBack);
+  const files = listed ?? findRolloutsInDays(treeLookbackDays(rootId, maxDaysBack, knownSubagents.map(agent => agent.id)));
   const seen = new Set<string>();
   // Same-signature rewrites are invisible to stat; force a re-read of entries
   // whose content has not been verified recently, oldest verification first,
