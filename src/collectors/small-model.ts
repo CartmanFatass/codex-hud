@@ -283,7 +283,7 @@ function httpClassification(status: number, json: unknown): ModelFailureClassifi
   const marker = `${error?.code ?? ''} ${error?.type ?? ''} ${error?.message ?? ''}`;
   if (status === 401 || status === 403) return 'auth';
   if (status === 429) return 'rate-limit';
-  if (status === 404 || /model[_ -]?(not[_ -]?found|unavailable)|unknown model|model.*does not exist/i.test(marker)) return 'model-not-found';
+  if (status === 404 || /model[_ -]?(not[_ -]?found|unavailable)|unknown model|invalid model name|model.*does not exist/i.test(marker)) return 'model-not-found';
   if (status === 408 || status === 504) return 'timeout';
   return status >= 500 ? 'server' : 'invalid-response';
 }

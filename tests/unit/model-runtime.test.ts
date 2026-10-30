@@ -280,7 +280,9 @@ test('output limits are bounded and change cache identity; timeouts and diagnost
 test('backend failure classifications distinguish authentication, model, throttle, timeout, server and invalid replies', async () => {
   for (const [status, body, classification] of [
     [401, '{}', 'auth'], [403, '{}', 'auth'], [404, '{}', 'model-not-found'],
-    [400, '{"error":{"code":"model_not_found"}}', 'model-not-found'], [429, '{}', 'rate-limit'],
+    [400, '{"error":{"code":"model_not_found"}}', 'model-not-found'],
+    [400, '{"error":{"message":"/chat/completions: Invalid model name passed in model=synthetic-retired. Call `/v1/models` to view available models for your key."}}', 'model-not-found'],
+    [429, '{}', 'rate-limit'],
     [408, '{}', 'timeout'], [504, '{}', 'timeout'], [503, '{}', 'server'], [400, '{}', 'invalid-response'],
     [200, 'not JSON', 'invalid-response'],
   ] as const) {
