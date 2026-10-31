@@ -9,6 +9,7 @@ dist/
 .idea/
 .kiro/
 .serena/
+.omp/
 *.swp
 *.swo
 *~
