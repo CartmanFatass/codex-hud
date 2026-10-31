@@ -200,7 +200,7 @@ const isText = (max: number) => (value: unknown): boolean =>
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusline: isBoolean,
   density: oneOf('focus', 'balanced', 'full'),
-  theme: oneOf('terminal', 'mocha', 'latte', 'titanium', 'teal', 'none'),
+  theme: oneOf('terminal', 'mocha', 'latte', 'titanium', 'none'),
   glyphs: oneOf('glyph', 'text', 'both'),
   motion: oneOf('full', 'reduced'),
   context: oneOf('used', 'remaining'),

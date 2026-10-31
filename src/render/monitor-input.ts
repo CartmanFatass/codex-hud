@@ -98,8 +98,6 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if(control?.kind==='open-session') return next.tree.selectedId?result({type:'switch',id:next.tree.selectedId}):result();
     if(control?.kind==='settings') return result({type:'settings'});
     if(control?.kind==='observability') return result({type:'observability'});
-    if(control?.kind==='usage') return result({type:'usage'});
-    if(control?.kind==='activity-hub') return result({type:'activity-hub'});
     if(control?.kind==='help'){next.help=true;next.helpScroll=0;return result();}
     // The held keys' chip hands them back to Codex, as Esc does.
     if(control?.kind==='keys'){next.keys=false;return result();}
@@ -169,11 +167,6 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     }
   }
   if(key==='settings')return result({type:'settings'});
-  // Settings navigation turns a clean mouse click into a key intent here;
-  // dirty-draft confirmation replays the same intent through the page router.
-  if(key==='usage')return result({type:'usage'});
-  if(key==='activity-hub')return result({type:'activity-hub'});
-  if(key==='observability')return result({type:'observability'});
   if(key==='diagnostics') {
     next.preview='diagnostics';next=openPane(next,'details');next.scroll.details=0;
     return result();

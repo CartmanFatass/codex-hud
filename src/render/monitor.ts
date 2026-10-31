@@ -140,7 +140,7 @@ export interface MonitorControl {
    * `older` shows or hides what the linger window put away; `help` opens
    * the keys.
    */
-  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'help-tab' | 'brief' | 'level' | 'log' | 'switch' | 'zoom' | 'observability' | 'usage' | 'activity-hub' | 'keys' | 'open-session';
+  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'help-tab' | 'brief' | 'level' | 'log' | 'switch' | 'zoom' | 'observability' | 'keys' | 'open-session';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
@@ -220,7 +220,7 @@ export interface MonitorContext {
 export interface MonitorOutcome {
   state: MonitorState;
   close: boolean;
-  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'pick'; id:string} | {type:'brief-toggle'} | {type:'status-level'} | {type:'observability'} | {type:'usage'} | {type:'activity-hub'};
+  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'pick'; id:string} | {type:'brief-toggle'} | {type:'status-level'} | {type:'observability'};
 }
 
 export function initialMonitorState(): MonitorState {
@@ -327,12 +327,9 @@ function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = t
     ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
       '{p} ,  settings  {p} ?  help','{p} b  pause / resume models','{p} a  show / hide older',
       '{p} d  HUD diagnostics and TPS details',
-      '{p} 4  Inspector / usage details',
-      'Usage: m tokens / cost · v group · Enter drill down',
       '{p} u  inbox, updates and history',
       '{p} p  find and pin agents',
       '{p} c  sources, model calls and export',
-      '{p} w  local Codex usage',
       '{p} m  main session  {p} o  switch to selected',
       // The tabs layout shows one pane at a time: nothing to close or zoom.
       ...(tabbed ? ['{p} 1–4  show a pane  {p} Tab  next'] : ['{p} 1–4  open / close a pane  {p} Tab  next','{p} x  close pane']),
@@ -341,8 +338,7 @@ function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = t
       'Timeline: ↑ ↓ an agent\'s entry, Enter inspects',
       ...(rich ? [] : ['{p} h l  fold / unfold agent']),'{p} f  filter  {p} s  order',
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
-      '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex',
-      'Usage: Tab views · f period · s scope · r refresh'].map(line=>t(line,p)),
+      '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex'].map(line=>t(line,p)),
     head('Buttons, top row','mouse'),
     // With icons on, what each icon is; with words, the words say it.
     ...(iconSet() !== 'text' ? [t('{icon} main session',{icon:icon('main')}),

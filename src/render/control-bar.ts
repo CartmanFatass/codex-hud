@@ -23,8 +23,7 @@
  * the focused tab is in brackets and a closed pane has no tab. In the tabs
  * layout every pane has a tab, the one shown focused.
  *
- * Usage and Settings are navigation tabs (not panes). Inspector is opened by
- * the prefix + 4 shortcut rather than a menu tab. Settings keeps its localized word
+ * Settings is a navigation tab (not a pane). It keeps its localized word
  * at widths of 24 or more, then a compact label; its icon gives way first.
  * While Settings is active none of the ordinary pane tabs is focused.
  * Other words come and go with the width as omp's tabs do: every tab's word where
@@ -57,7 +56,6 @@ export interface BarInput {
   expired: number;
   /** Settings is the active navigation tab while its modal is open. */
   settingsActive?: boolean;
-  usageActive?: boolean;
 }
 
 type IconName = MonitorPane | 'main' | 'pause' | 'resume' | 'show' | 'hide' | 'settings' | 'help' | 'keys' | 'open';
@@ -199,13 +197,12 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
   const zh = language() === 'zh';
   // With icons off the main session's button is an arrow and a word: a word alone would read as a tab.
   const arrow = iconSet() === 'text' ? '← ' : '';
-  const main: Spec = { kind: 'main', glyph: icon('main'), word: `${arrow}${t('Main')}`, short: width < 32 && arrow ? arrow.trim() : `${arrow}${zh ? '主' : 'Main'}`, state: 'button' };
+  const main: Spec = { kind: 'main', glyph: icon('main'), word: `${arrow}${t('Main')}`, short: `${arrow}${zh ? '主' : 'Main'}`, state: 'button' };
   const tabs: Spec[] = [];
   for (const id of MONITOR_PANES) {
-    if (id === 'details') continue;
     // In the tabs layout every pane has a tab: none is closed.
     const mode = state.tabbed ? 'open' : state.modes[id];
-    const focused = !input.settingsActive && !input.usageActive && id === state.focus && mode === 'open';
+    const focused = !input.settingsActive && id === state.focus && mode === 'open';
     // With no colour a tab cannot say closed; only the panes there are get one.
     if (mode === 'closed' && (keep < 4 || palette().name === 'none')) continue;
     if ((!focused && keep < 1) || keep < 0) continue;
@@ -213,7 +210,6 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
   }
   // Settings is navigation, not a pane and not a right-hand action. Its word
   // survives the pane tabs' fitting levels; even the narrow fallback is labelled.
-  if(width >= 24) tabs.push({ kind: 'usage', glyph: iconSet()==='text'?'':'▥', word: t('Usage'), short: t('Usage'), state: input.usageActive ? 'focused' : 'open' });
   const settingsWord = t('Settings');
   const settingsLabel = width >= 24 ? settingsWord : truncateAnsi(settingsWord, zh ? 3 : 4).replace(/…$/u, '');
   tabs.push({ kind: 'settings', glyph: icon('settings'), word: settingsLabel, short: settingsLabel, state: input.settingsActive ? 'focused' : 'open' });
@@ -283,7 +279,7 @@ function hasWord(level: Level, spec: Spec, olderWords = false): boolean {
   if (spec.kind === 'older') return olderWords;
   // The held keys' word outlasts the closed tabs' and the other actions', as an alert would.
   if (spec.kind === 'keys') return level !== 'focus' && level !== 'none';
-  if (spec.kind === 'settings' || spec.kind === 'usage') return true;
+  if (spec.kind === 'settings') return true;
   if (spec.kind !== 'tab') return level === 'every';
   if (level === 'every' || level === 'all' || level === 'named') return true;
   if (level === 'open') return spec.state !== 'closed';
@@ -293,7 +289,7 @@ function hasWord(level: Level, spec: Spec, olderWords = false): boolean {
 /** Whether a button keeps its icon at a level: every one but the tabs the `named` level gives a word alone. */
 function hasIcon(level: Level, spec: Spec): boolean {
   // Settings gives up its icon before its label, including the last fitting level.
-  if ((spec.kind === 'settings' || spec.kind === 'usage') && (level === 'focus' || level === 'none')) return false;
+  if (spec.kind === 'settings' && (level === 'focus' || level === 'none')) return false;
   return level !== 'named' || (spec.kind !== 'tab' && spec.kind !== 'settings') || spec.state === 'focused';
 }
 
@@ -350,46 +346,7 @@ function spans(placed: Placed[], y: number, from: number, to: number): MonitorCo
 
 export function controlBar(state: MonitorState, input: BarInput, width: number): Bar {
   if (width <= 0) return { lines: [''], controls: [] };
-  if (look(width) === 'quiet') return quietBar(state,input,width);
   return look(width) === 'frame' ? frameBar(state, input, width) : rowBar(state, input, width);
-}
-
-/** A reading order instead of competing icon chips: overview, detail, tools. */
-function quietBar(state: MonitorState,input: BarInput,width: number): Bar {
-  const lines:string[]=[],controls:MonitorControl[]=[];
-  const fit=(line:string)=>{const cut=truncateAnsi(line,width);return cut+' '.repeat(Math.max(0,width-visualLength(cut)));};
-  const tab=(pane:MonitorPane,label:string):Spec=>({kind:'tab',pane,glyph:'',word:t(label),short:t(label),
-    state:!input.settingsActive && !input.usageActive && state.focus===pane?'focused':'open'});
-  const button=(kind:Spec['kind'],label:string,active=false):Spec=>({kind,glyph:'',word:t(label),short:t(label),state:active?'focused':'button'});
-  const groups=[
-    [tab('agents','Overview'),button('usage','Usage',input.usageActive),button('activity-hub','Activity')],
-    [tab('timeline','Timeline'),tab('changes','Changes')],
-    [button('main','Main'),button('settings','Settings',input.settingsActive),button('observability','Evidence'),button('help','Help')],
-  ];
-  const actions:Spec[]=[];
-  if(state.tree.selectedId) actions.push(button('open-session','Switch'));
-  if(input.brief) actions.push(button('brief',input.brief.paused?'Resume':'Pause'));
-  if(input.expired) actions.push(button('older',state.tree.showAll?'Hide older':'Show older'));
-  if(state.keys) actions.push(button('keys','Keys here'));
-  if(actions.length)groups.push(actions);
-  for(const group of groups) {
-    let row='';
-    for(const spec of group) {
-      const label=truncateAnsi(spec.state==='focused'?`[${spec.word}]`:spec.word,width);
-      if(row && visualLength(row)+2+visualLength(label)>width){lines.push(fit(row));row='';}
-      if(row)row+='  ';
-      controls.push({kind:spec.kind,...(spec.pane?{pane:spec.pane}:{}),x:visualLength(row),y:lines.length,width:visualLength(label)});
-      row+=spec.state==='focused'?theme.accent(theme.bold(label)):spec.kind==='tab'?theme.value(label):colors.dim(label);
-    }
-    if(row)lines.push(fit(row));
-  }
-  const targets=controls.map((control,i)=>{
-    const previous=controls[i-1],next=controls[i+1];
-    const start=previous?.y===control.y?Math.ceil((previous.x+previous.width+control.x)/2):0;
-    const end=next?.y===control.y?Math.ceil((control.x+control.width+next.x)/2):width;
-    return {...control,x:start,width:end-start};
-  });
-  return {lines,controls:targets};
 }
 
 /** The main session's button alone, for a bar too narrow for anything else. */
@@ -438,7 +395,7 @@ function layRow(style: LookName, set: Specs, level: Level, gap: number, width: n
   const rightWidth = (band ? 1 : 0) + sum(actions, between) + 1;
   const spare = width - leftWidth - rightWidth;
   // The band's rule needs two columns to read as one; elsewhere the actions stand further off than a tab's gap.
-  if (spare < (band ? (width < 32 ? 1 : 2) : gap + 1)) return null;
+  if (spare < (band ? 2 : gap + 1)) return null;
 
   const placed: Placed[] = [];
   let x = 1;

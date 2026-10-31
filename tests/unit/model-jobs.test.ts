@@ -119,24 +119,19 @@ test('an approval description that judges the command is not a description', () 
   assert.match(approvalSystemPrompt('en'), /Never judge it/);
 });
 
-test('a finished agent is digested once from its whole final answer, into its log, and the brief uses the digest', { timeout: 5000 }, async (t: TestContext) => {
+test('a finished agent is digested once from its whole final answer, into its log, and the brief uses the digest', async (t: TestContext) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-jobs-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const rollout = path.join(dir, 'agent.jsonl');
   fs.writeFileSync(rollout, `${answer(`Long report ${'w'.repeat(1000)} and the conclusion at the end`, now - 60_000)}\n`);
   const { model, asked } = fakeModel(() => ({ ok: true, text: '{"conclusion":"Cache race found","basis":"read cache.ts","caveats":"not run"}' }));
   const log = new AgentLog();
-  let digestLanded!: () => void;
-  const firstDigest = new Promise<void>(resolve => { digestLanded = resolve; });
-  const jobs = new ModelJobs({ model, log, onChange: () => {
-    if (log.latest('a', new Set(['digest']))) digestLanded();
-  } });
+  const jobs = new ModelJobs({ model, log });
   const done = node('a', 'auditor', 'completed', { rolloutPath: rollout, statusAt: new Date(now - 30_000), turnStartedAt: new Date(now - 120_000),
     lastReport: { text: 'Long report www', kind: 'reply', at: new Date(now - 60_000) } });
   const agents = tree([done]);
   jobs.update(input(agents));
-  // Wait for the asynchronous file read and result, not a fixed wall-clock guess.
-  await firstDigest;
+  await settle();
   assert.equal(asked.length, 1);
   assert.equal(asked[0].feature, 'digest');
   assert.match(asked[0].prompt, /conclusion at the end/, 'the tail of the answer is sent');

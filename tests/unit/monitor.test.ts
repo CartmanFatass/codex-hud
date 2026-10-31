@@ -320,7 +320,7 @@ test('the tabs layout: one pane at a time, the bar\'s tabs and 1–4 switch it, 
   let frame=draw(start,45);const ctx=()=>({tree,worktrees,frame});
   assert.deepEqual(frame.panes.map(p=>p.id),['agents'],'only the pane shown');
   const tab=(pane:string)=>frame.controls.find(c=>c.kind==='tab'&&c.pane===pane)!;
-  assert.deepEqual(frame.controls.filter(c=>c.kind==='tab').map(c=>c.pane),['agents','timeline','changes'],'top-level pages have tabs; Inspector uses the prefix command');
+  assert.deepEqual(frame.controls.filter(c=>c.kind==='tab').map(c=>c.pane),['agents','timeline','changes','details'],'every pane has a tab');
   // A click on a tab the stacked layout has closed shows that pane, and opens nothing.
   let next=handleMonitorInput(frame.state,mouse(tab('changes').x,0),ctx()).state;
   assert.equal(next.focus,'changes');assert.deepEqual(next.modes,start.modes,'nothing to save');

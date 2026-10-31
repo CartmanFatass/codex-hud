@@ -7,7 +7,7 @@
  */
 
 export type Density = 'focus' | 'balanced' | 'full';
-export type ThemeName = 'terminal' | 'mocha' | 'latte' | 'titanium' | 'teal' | 'none';
+export type ThemeName = 'terminal' | 'mocha' | 'latte' | 'titanium' | 'none';
 export type GlyphMode = 'glyph' | 'text' | 'both';
 export type MotionMode = 'full' | 'reduced';
 export type ContextMode = 'used' | 'remaining';
@@ -17,11 +17,10 @@ export type IconMode = 'unicode' | 'nerd' | 'emoji' | 'text';
  * How the panel draws its control bar and its panes' titles, after omp: its
  * settings tab row (`tab`), its status band (`band`), emoji tiles (`tile`),
  * its rounded settings frame around the whole panel (`frame`), or pills
- * (`pill`). Quiet adds labelled navigation and a selected-row overview;
- * Settings applies its compact preset only when explicitly selected.
+ * (`pill`). What the panel shows is the same in every look.
  */
-export type LookName = 'tab' | 'band' | 'tile' | 'frame' | 'pill' | 'quiet';
-export const LOOKS: readonly LookName[] = ['tab', 'band', 'tile', 'frame', 'pill', 'quiet'];
+export type LookName = 'tab' | 'band' | 'tile' | 'frame' | 'pill';
+export const LOOKS: readonly LookName[] = ['tab', 'band', 'tile', 'frame', 'pill'];
 
 export interface HudDisplayConfig {
   density: Density;
@@ -44,7 +43,7 @@ export type AgentColorMode = 'name' | 'mark' | 'off';
 export const AGENT_COLOR_MODES: readonly AgentColorMode[] = ['name', 'mark', 'off'];
 
 const DENSITIES: Density[] = ['focus', 'balanced', 'full'];
-const THEMES: ThemeName[] = ['terminal', 'mocha', 'latte', 'titanium', 'teal', 'none'];
+const THEMES: ThemeName[] = ['terminal', 'mocha', 'latte', 'titanium', 'none'];
 const GLYPH_MODES: GlyphMode[] = ['glyph', 'text', 'both'];
 
 function pick<T extends string>(raw: string | undefined, allowed: T[], fallback: T): T {

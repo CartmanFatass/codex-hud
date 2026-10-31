@@ -257,17 +257,6 @@ const TITANIUM: Palette = {
   chipEdge: rgb('#3A424E'),
 };
 
-/** Quiet overview keeps colour for navigation and state, with subdued rules. */
-const TEAL: Palette = {
-  ...TITANIUM,name:'teal',
-  accent:rgb('#5CC8B8'),info:rgb('#5CC8B8'),
-  success:rgb('#8BBF9B'),warning:rgb('#D7B77D'),danger:rgb('#DC8585'),
-  muted:rgb('#929DA8'),frame:rgb('#35424A'),
-  model:rgb('#B5BFC7'),branch:rgb('#B5BFC7'),
-  tab:highlight('48;2;32;63;62;38;2;221;239;234'),tabEdge:rgb('#203F3E'),
-  selectedBand:surface('#203331'),band:surface('#1F272C'),bar:surface('#1F272C'),
-};
-
 const NONE: Palette = {
   name: 'none',
   text: identity,
@@ -301,7 +290,6 @@ const PALETTES: Record<ThemeName, Palette> = {
   mocha: MOCHA,
   latte: LATTE,
   titanium: TITANIUM,
-  teal: TEAL,
   none: NONE,
 };
 

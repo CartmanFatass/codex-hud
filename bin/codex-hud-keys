@@ -69,7 +69,6 @@ bind_command 0 d diagnostics
 bind_command 0 u activity
 bind_command 0 p find-agent
 bind_command 0 c observability
-bind_command 0 w usage
 bind_command 0 '?' help
 bind_command 0 r level
 bind_command 0 1 pane-1

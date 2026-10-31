@@ -7,10 +7,6 @@
 
 # Codex HUD
 
-The Usage menu (or HUD prefix then `w`) opens toktrack-style native usage and cost analytics. Select
-**Quiet overview** in Settings → Display → Look for the new compact presentation.
-See [usage, controls and accounting limits](./docs/native-usage.md#english).
-
 Real-time statusline HUD for [OpenAI Codex CLI](https://github.com/openai/codex). Lightweight, zero-config, works inside tmux.
 
 > Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud) for Claude Code.

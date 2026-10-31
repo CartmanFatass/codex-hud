@@ -1,9 +1,5 @@
 # Codex HUD reference
 
-Native historical usage and the new Quiet overview appearance are described in
-[Native usage and Quiet overview](./native-usage.md#english). Open Usage with
-the menu or HUD prefix then `w`; prefix then `4` opens details without a menu tab. Activate the appearance in Settings → Display → Look.
-
 The details behind the [README](../README.md): the panel part by part, every key, the settings and the model features, the machine-readable state, and the configuration. [中文](./reference.zh.md)
 
 - [The panel](#the-panel): [Panes](#panes) · [Layouts](#layouts) · [The control bar](#the-control-bar) · [Looks and icons](#looks-and-icons) · [The status card](#the-status-card) · [Scrolling and selection](#scrolling-and-selection) · [Keys](#keys) · [Switching sessions](#switching-sessions) · [Agents in the list](#agents-in-the-list) · [Timeline](#timeline) · [Agent log](#agent-log) · [Inspector and Changes](#inspector-and-changes) · [Settings](#settings) · [Card settings](#card-settings) · [LLM](#llm) · [Picture](#picture)
