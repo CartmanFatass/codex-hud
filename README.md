@@ -148,58 +148,67 @@ The files come from one pinned commit of [romkatv/powerlevel10k-media](https://g
 
 ## What's on the HUD?
 
-One line, pinned to the bottom of the terminal. Related fields sit two
-spaces apart, a dimmed `│` divides one group from the next, and the session
-timer and the key hint are held against the right edge:
+One line, pinned to the bottom of the terminal, read left to right without
+gaps: what the session runs on, then the main session now, then the notice
+zone, which takes the columns left. What Codex loaded sits at the right edge.
+A dimmed `│` divides the fields:
 
 ```
-▸ Edit: src/types.ts · 1m20s  ☀● Astra  codex-hud git:(main * ↑2) │ Agents 1 run · 1 ok  Ctx ████▎░░░░░ 42% (114.2K/272K)  ◷~00m │ 2/5  Q61%            30m
+gpt-5.6-astra xhigh │ ━━━━━╸──── 152.3K/272K │ parser-kit main*↑2 │ 7d 61% │ ▸  3:21 │  42 tok/s │ Agents 4▸ 4✓ │ Tasks 2/5 │ Edit src/tokenizer.ts                             MCP 2  skills 9  hooks 1
 ```
 
-When something needs you, it takes the front of the line:
+When something needs you, it leads the notice zone; what just happened
+follows it:
 
 ```
-! 1 tool · 1 agent failed │ ▸ Edit: src/types.ts · 1m20s  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m │ 2/5  Q61%           30m
+gpt-5.6-astra xhigh │ ━━━━━╸──── 152.3K/272K │ parser-kit main*↑2 │ 7d 61% │ ▸  3:21 │  42 tok/s │ Agents 3▸ 4✓ 1✗ │ Tasks 2/5 │  ✗ 1 agent · 1 subtask failed   ✓ streaming_docs finished · 12s ago
 ```
 
 | Field | Means |
 |-------|-------|
-| `!` | Something the HUD actually observed went wrong: a tool that reported failure, an agent, subtask or guardian review that ended in error (the failures as one phrase, `1 tool · 1 agent failed`), a usage window that reported itself full with no credits behind it |
-| `▸ Edit: src/types.ts · 1m20s` | What this turn is doing: the running tool, what it is working on, and how long the turn has taken. A narrow pane keeps the mark and the elapsed time, then the mark alone |
-| `☀● 5.6astra` | Model version, family and effort. Text mode spells `5.6astra·high`; glyphs stay `☀●`. The `?` legend keeps the family name (`☀ Astra`). Effort: `○` low, `◐` medium, `◕` high, `●` xhigh, `◆` max, `✦` ultra |
-| `codex-hud git:(main * ↑2)` | Project, branch, uncommitted changes, ahead/behind. Started in a folder that holds the repository rather than inside it, the bar names the repository the session works in: `shenlun › Learn-to-Write git:(main *)` |
-| `Agents 1 run · 1 ok · 1 fail` | The agents the main session started, by outcome, as the panel's title counts them (one runs while a subtask of it does); a failed subtask or review is an alert. Finished and failed are separate numbers, and an agent with no observed state is counted as `?`, never as running |
-| `Ctx 42% (114.2K/272K)` | How full the context window is, to an eighth of a column. `↻2` counts compactions |
-| `◷~00m` | Minutes since the last model usage, as a prompt-cache reminder. It warns at 25 minutes and stops counting at `30m+` |
-| `2/5` | Steps completed in the current plan |
-| `Q61%` | Share of the account's usage window spent. This is quota, not task progress; `↺1h23m` is the wait for the next reset. A full window with credits behind it adds the balance, `credits 31.8K`. At its widest the field adds `out in ~40m`: a straight-line projection of when the window runs out at its recent rate, shown only when readings span five minutes or more, use is rising, and the projection falls before the reset |
-| `84K` | Tokens spent this session |
+| `gpt-5.6-astra xhigh` | The model by its name, and its reasoning effort, dim |
+| `━━━━━╸──── 152.3K/272K` | The context the last request held, against the model's whole window, as Codex reported them. The meter and the numbers stay plain below 70%, turn yellow past 70% and red past 85% |
+| `parser-kit main*↑2` | The repository the session works in, its branch, uncommitted changes, ahead/behind |
+| `7d 61%` | The account's usage, one reading: the tightest window. Once that window is spent and credits carry the account on, the balance stands in its place, `credits 6.8K`; spent with no credits, it reads `7d 100%` in red |
+| `▸  3:21` | The session's state: while it works, the turn's clock; idle, `✓ idle` |
+| `42 tok/s` | The main session's output rate, a whole number. A turn that has not been sampled yet, and an idle session, keep the last rate, dim |
+| `Agents 4▸ 4✓` | The agents the main session started: running, finished, failed (`1✗`), as the panel's title counts them |
+| `Tasks 2/5` | Steps completed in the plan Codex wrote, when it wrote one |
+| `✗ 1 agent · 1 subtask failed` | Something that needs you: an approval waiting (`! approval needed 2m`, with how long it has waited), or a tool, agent, subtask or guardian review that failed, said as one phrase |
+| `✓ streaming_docs finished · 12s ago` | The notice zone. For a minute, in colour, what just happened: an agent finished or failed, a turn ended (`✓ turn done in 12:48`), the account went on to its credits. Then, while Codex works, the tool at work and what it works on (`Edit src/tokenizer.ts`, or the command a script runs); idle, the last notice, dim, with how long ago |
+| `MCP 2  skills 9  hooks 1` | MCP servers in `config.toml`, the skills Codex can load here (its home's, the bundled ones, `~/.agents/skills` and the repository's), and the handlers in `hooks.json` |
 
 A field appears only when there is real data behind it. A missing quota
-snapshot means no quota field, not a bar reading zero.
+snapshot means no quota field, not a reading of zero.
+
+The bar holds still while the session runs: the clock and the rate keep their
+columns whatever their length, and the notice zone keeps the same share of
+the line whatever it says, so nothing before it moves.
 
 Clicking the bar acts on the field under the cursor: the alert and the agent
-counts open the panel and hand it the keyboard, the meters
+counts open the panel and hand it the keyboard, the context, quota and plan
 open it and leave the cursor in Codex, and anywhere else toggles the panel as
 the whole bar used to.
 
 ### When the pane is narrow
 
-Fields shorten before any of them disappears, the least important one
-disappears first, and an alert is never dropped. At 40 columns, with a failure
-on screen:
+The right cluster leaves first, then the effort and the context meter; then
+the notice zone gives up its share and takes only what is left, and the
+agents' label, the branch and the clock go; then fields go, the least
+important first. An alert is never dropped. At 40 columns, with a failure on
+screen:
 
 ```
-!2 │ ▸  ☀  main* │ 1▸1✗  Ctx 42%  ◷~00m
+gpt-5.6-astra │ 152.3K/272K │ ▸ │  ✗
 ```
 
 ### Density presets
 
 | Preset | Shows |
 |--------|-------|
-| `focus` | Alerts, model, project, agents, context |
-| `balanced` (default) | Focus, plus plan progress, quota, output speed and the session timer |
-| `full` | Everything, including tokens, approval/sandbox and the session id |
+| `focus` | Alerts, the notice zone, state, model, context, repository |
+| `balanced` (default) | Focus, plus usage, output rate, agents, plan progress, and MCP, skills and hooks |
+| `full` | Everything, plus approval/sandbox, the session's tokens and its id |
 
 ```bash
 CODEX_HUD_DENSITY=focus codex

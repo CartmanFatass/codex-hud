@@ -39,6 +39,8 @@ export function readCodexConfig(): CodexConfig {
       approval_policy: parsed.approval_policy as string | undefined,
       sandbox_mode: parsed.sandbox_mode as string | undefined,
       mcp_servers: parseMcpServers(parsed.mcp_servers),
+      hooks_enabled: typeof (parsed.features as Record<string, unknown> | undefined)?.hooks === 'boolean'
+        ? (parsed.features as Record<string, boolean>).hooks : undefined,
     };
   } catch (error) {
     // Return empty config on error

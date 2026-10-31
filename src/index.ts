@@ -26,6 +26,7 @@ import { renderToStdout, cleanupRenderer, currentStatusBar } from './render/inde
 import { colors } from './render/colors.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
+import { BarNoticeTracker } from './collectors/bar-notices.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
 import type { RolloutParseResult } from './collectors/rollout.js';
 import type { HudData } from './types.js';
@@ -76,6 +77,7 @@ const sessionFinder = new SessionFinder(HUD_CWD_REAL, (session) => {
 // Off unless CODEX_HUD_NOTIFY=1. Codex notifies on its own, and two pop-ups
 // for one event is worse than none.
 const notifier = new Notifier(resolveNotifierOptions());
+const notices = new BarNoticeTracker();
 
 // The same tick that draws the bar also publishes what it drew, so a click,
 // a script or another pane can read the state the reader is looking at.
@@ -199,6 +201,7 @@ async function mainLoop(): Promise<void> {
         journal = rootId ? new ActivityJournal({codexHome:getCodexHome(),rootId}) : undefined;
       }
       journal?.observe(scopedActivityObservation(rootId,rootId,{tree:data.subagentTree,data}));
+      data.notices = notices.observe(data, Date.now());
       renderToStdout(data, HUD_PANE_HEIGHT);
       // Notifications and the state file run on the collection tick, not on
       // the repaint a status refresh triggers.

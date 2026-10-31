@@ -73,14 +73,6 @@ test('while it works the state is the tool, its target and the clock, with the o
   assert.equal(statusCard({ ...idle, stale: true }, now)!.tone, 'stale');
 });
 
-test('the cache reminder shows only in the minutes before it lapses, as a warning', () => {
-  const at = Date.parse('2026-03-01T12:00:00Z');
-  const data = makeHudData({ tokenUsageAt: new Date(at) });
-  assert.equal(statusCard(data, at + 40 * 60_000)!.cache, '');
-  assert.equal(statusCard(data, at + 27 * 60_000)!.cache, theme.warning('◷~27m'));
-  assert.equal(statusCard(data, at + 3 * 60_000)!.cache, '');
-});
-
 test('main TPS remains visible at panel widths and distinguishes old samples from live ones', () => {
   const now = Date.parse('2026-03-01T12:00:00Z');
   const data = makeHudData({
@@ -145,7 +137,7 @@ const card = (extra: Partial<StatusCard> = {}): StatusCard => ({
   tone: 'idle', alerts: ['! one'], state: '✓', rate: '', tasks: '', model: '☀◆', age: '2h',
   context: { percent: 40, tail: '246K' }, place: 'repo · main *', project: 'repo', branch: '· main *',
   quota: { percent: 61, window: '5h', spent: '', text: '5h 61%' },
-  others: '', forecast: '', reset: '↺1h', cache: '', ...extra,
+  others: '', forecast: '', reset: '↺1h', ...extra,
 });
 
 test('the band carries the context meter, the corner row the quota meter with its reset', () => {

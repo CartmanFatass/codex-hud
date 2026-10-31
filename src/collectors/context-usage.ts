@@ -87,5 +87,7 @@ export function buildContextUsage(
     cachedTokens: lastUsage.cached_input_tokens ?? 0,
     compactCount: compactCount ?? 0,
     lastCompactTime: lastCompactTime ?? undefined,
+    inContext: tokensInContext,
+    window: contextWindow,
   };
 }

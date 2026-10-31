@@ -517,14 +517,46 @@ Call chain:
 
 - an `id`;
 - a `priority`, from `MODULE_PRIORITY`;
-- an optional `group` (`who`, `load`, `usage` or `meta`);
-- an optional `pinned` flag;
+- an optional `group` (neighbours in one group are joined by two spaces, the
+  rest by a dim ` │ `);
+- an optional `align`: unset for the leading cluster, `fill`, or `right`;
+- an optional `pinned` flag (never hidden), `optional` flag (may leave in the
+  shortening pass), `flex` flag (fill zone only: cut to the room left),
+  `shrink` order (from `SHRINK`) and `reserve` (columns per variant);
 - `variants`: `full`, `short` and `min`.
 
-**Fitting.** `fitModules` works on the module with the lowest priority first.
-It shortens it to the next variant, then drops it, and only as a last resort
-truncates. It returns the `segments` it placed, and the snapshot saves them so
-a click on the bar can be mapped to a field (`utils/click-map.ts`).
+**Clusters.** The leading cluster: what the session runs on (model and
+effort, context against the whole window, repository, usage) and the main
+session now (state and clock, rate, agents, plan). The fill zone follows it
+with no gap: the alert, then the notice zone. The trailing cluster is what
+Codex loaded (MCP, skills, hooks; in `full`, approval/sandbox, tokens, session
+id), pushed to the last column; the slack sits before it.
+
+**Notices.** `collectors/bar-notices.ts` `BarNoticeTracker` compares each
+collection with the last (in `index.ts` `mainLoop`) and keeps what changed in
+`HudData.notices`, newest first: an L1 agent finished or failed, a turn ended,
+the account went on to credits. A session's first collection only sets the
+baseline, except that a session found idle gets its turn's end from the
+activity's own time. `noticeModule` shows the newest in colour for
+`NOTICE_FRESH_MS`; then, while working, the running call as `name target`
+(`actionText` reads the command out of an `exec` script); else the newest
+notice, dim.
+
+**Fitting.** `fitModules` shortens before it hides and hides the lowest
+priority first, truncating only as a last resort. A module with a `shrink`
+order takes its turns among the hides instead, which is how the right cluster,
+the effort, the meter, the notice zone's claim, the agents' label, the branch
+and the clock go in that order. A `flex` module asks for a fixed `FLEX_WANT`
+columns in its first form, whatever its words, and for none in its last; in
+both it is cut to the room the fixed fields leave, and left out under
+`FLEX_MIN`. The engine returns the `segments` it placed, and the snapshot
+saves them so a click on the bar can be mapped to a field
+(`utils/click-map.ts`).
+
+**Holding still.** Fields whose words change every second (the clock, the
+rate) `reserve` their columns: the text is padded, so the fit and every
+neighbour stay put. The notice zone's fixed claim does the same for it. A field
+with nothing to say takes no columns; it comes and goes rarely.
 
 **Density.** `DENSITY_MODULES` sets which modules each density preset may show at all.
 

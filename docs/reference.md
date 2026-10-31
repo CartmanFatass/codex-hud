@@ -64,7 +64,7 @@ pill    ⌂ ▦ Agents  ≣ Timeline  ±  ◫  ⚙ Settings      ǁ ⊕1 ?
 - **frame** (Frame; Unicode icons): a rounded frame round the whole panel. The main session is the title on its top edge, with the actions at that edge's right end; the tabs are the row under it; each pane's title is an edge across the frame (`├─ ± Changes ──────────── 4 files ─┤`), its rows between the frame's sides (the left one in the accent beside the focused pane), and the status card's corner closes it (`╰─ … ─╯`). Under 20 columns it is drawn as tab.
 - **pill** (Pills; Nerd Font icons): the focused tab is a pill with rounded ends; the panes' titles are pills, the focused pane's in the tab colour, the rest on a chip.
 
-**Icons** (Settings → Display → Icons, or `CODEX_HUD_ICONS`) picks the set: `unicode` (the glyphs above), `nerd` ([Nerd Font](https://www.nerdfonts.com/) icons: a home `U+F015`, a robot `U+F06A9`, a history clock `U+F1DA`, a diff `U+F440`, an info circle `U+F05A`, pause / play `U+F04C` / `U+F04B`, an eye and a struck eye `U+F06E` / `U+F070`, a cog `U+F013`, a question circle `U+F059`), `emoji` (the panes as 🤖 🕘 📝 🔍, two columns each, the actions keeping their Unicode glyphs), or `text`: the buttons are words alone (`← Main`, `Agents Timeline Changes Inspect`, `Pause models`, `+1 older`, `Settings Help`), shortened where narrow (`Ag Tl Ch In`, `Pause`); set to text, the panel's other marks are words too (the status card's Needs, Goal, Now, Done, `12d ago`, the bar's `Cache`). Model label (`glyphs`) is the model badge's alone: its text value writes the model and effort as words and leaves the icons as they are. The Unicode and Nerd Font icons and the pills' rounded ends are drawn by MesloLGS NF (see [Font](../README.md#font)).
+**Icons** (Settings → Display → Icons, or `CODEX_HUD_ICONS`) picks the set: `unicode` (the glyphs above), `nerd` ([Nerd Font](https://www.nerdfonts.com/) icons: a home `U+F015`, a robot `U+F06A9`, a history clock `U+F1DA`, a diff `U+F440`, an info circle `U+F05A`, pause / play `U+F04C` / `U+F04B`, an eye and a struck eye `U+F06E` / `U+F070`, a cog `U+F013`, a question circle `U+F059`), `emoji` (the panes as 🤖 🕘 📝 🔍, two columns each, the actions keeping their Unicode glyphs), or `text`: the buttons are words alone (`← Main`, `Agents Timeline Changes Inspect`, `Pause models`, `+1 older`, `Settings Help`), shortened where narrow (`Ag Tl Ch In`, `Pause`); set to text, the panel's other marks are words too (the status card's Needs, Goal, Now, Done, `12d ago`, the bottom bar's `Working` and `Idle`). Model label (`glyphs`) is the panel's model badge's alone: its text value writes the model and effort as words and leaves the icons as they are. The bottom bar always names the model in words. The Unicode and Nerd Font icons and the pills' rounded ends are drawn by MesloLGS NF (see [Font](../README.md#font)).
 
 ### The status card
 
@@ -81,9 +81,9 @@ pill    ⌂ ▦ Agents  ≣ Timeline  ±  ◫  ⚙ Settings      ǁ ⊕1 ?
 ╰─ parser-kit · main * ↑2 7d ───────────────────────────99% ↺4d18h
 ```
 
-- **The band**, on its own background across the width: the session's state (while it works, the running tool and its target, the turn's clock and `~N tok/s`; idle, how long it has waited on you since the turn finished, from a minute on: `✓ Idle 12m`, as the bottom bar's activity says `✓ idle 12m`), the model badge and the session's age; the context meter, the percentage where the fill ends and the window size at the tail (a `┃` tick marks the auto-compact point when `config.toml` sets `model_auto_compact_token_limit`); then, wherever a brief is configured, its state (`~3m` for the recap's age, then in words: writing…, failed, paused). A click anywhere on the band steps the level, as `r`.
+- **The band**, on its own background across the width: the session's state (while it works, the running tool and its target, the turn's clock and `~N tok/s`; idle, how long it has waited on you since the turn finished, from a minute on: `✓ Idle 12m`; the bottom bar's notice zone says when the turn ended, `✓ turn done in 12:48 · 12m ago`), the model badge and the session's age; the context meter, the percentage where the fill ends and the window size at the tail (a `┃` tick marks the auto-compact point when `config.toml` sets `model_auto_compact_token_limit`); then, wherever a brief is configured, its state (`~3m` for the recap's age, then in words: writing…, failed, paused). A click anywhere on the band steps the level, as `r`.
 - **The body** hangs off a left gutter (`│`) in the main session's state colour: dim idle, info working, error failed, warning stale or needing you (an approval, a failed tool, agent, subtask or review, a recap that needs you).
-- **The corner** (`╰─`): where the session works (the project in bold, `› repo` when it differs, `· branch`); the quota meter for the tightest window, labelled `7d` and read `99%` (a full window with credits behind it reads the balance instead, `credits 31.8K`, and is not marked `!`: Codex goes on, on credits); the reset countdown; and the prompt-cache reminder, only in the five minutes before the cache lapses, in the warning colour.
+- **The corner** (`╰─`): where the session works (the project in bold, `› repo` when it differs, `· branch`); the quota meter for the tightest window, labelled `7d` and read `99%` (a full window with credits behind it reads the balance instead, `credits 31.8K`, and is not marked `!`: Codex goes on, on credits); and the reset countdown.
 - Meters fill in the info colour, warning past 70 %, error past 85 %, over a dim track.
 - Short of room, the band drops the rate, the tasks, the age, the window size, the model and the brief's state, then the meter shrinks to its percentage; the corner drops other windows, the branch, the window, the repo and the forecast, then its meter and the reset. The state and the percentages go last. Under 24 columns there is no card. At 32 columns or fewer the card draws as min, and the saved level comes back when the panel is wider. A saved full stays full in shorter windows too, as far as the height permits; changing agent card contents does not change its level.
 
@@ -396,7 +396,7 @@ Panel → Picture draws a picture in the panel's empty space: braille dots, dots
 
 ## Output throughput
 
-The default bar shows `Out ~42.1 tok/s` when enough output-token samples exist.
+The bottom bar shows the main session's rate as a whole number, `42 tok/s`, once enough output-token samples exist: bright while the running turn has a sample of its own, and otherwise the last turn's, dim and unchanged. The panel's status band writes `~42 tok/s`.
 Selected-agent details show that agent's estimate; expand with `v` to see the sample interval.
 The estimate follows the **wallclock** convention: measured **output** tokens divided by
 elapsed time in the current turn, including initial latency (TTFT) and generation stalls,
@@ -411,8 +411,8 @@ If the prior counter is missing, the estimate waits for two cumulative reports a
 their measured interval. A first report's last-call usage may repeat the previous turn, so it
 is never used to invent a turn-start counter.
 Repeated unchanged counters do not dilute or refresh a reading.
-A new turn excludes the preceding idle gap. After 10 seconds without a new sample, `last ~42.1 tok/s`
-retains the previous reading. Context usage and compaction counts stay in the bar; the workbench has no Ctx trend.
+A new turn excludes the preceding idle gap. After 10 seconds without a new sample, the panel's
+`last ~42.1 tok/s` retains the previous reading. Context usage stays in the bar; the workbench has no Ctx trend.
 
 ## Machine-readable state
 
@@ -464,17 +464,17 @@ happens. Another successful read alone does not rewrite the file, so
 | `CODEX_HUD_ICONS` | `unicode` | The panel's icons (`unicode` / `nerd` / `emoji` / `text`) |
 | `CODEX_HUD_GLYPHS` | `both` | Model badge style (`glyph` / `text` / `both`) |
 | `CODEX_HUD_STATUSLINE` | `1` | Bottom bar enabled by default; `0` disables for new HUD sessions, overriding Settings → Bar on launch |
-| `CODEX_HUD_CONTEXT` | `used` | Context percentage: `used` or `remaining`; also available in Settings |
+| `CODEX_HUD_CONTEXT` | `used` | The panel's context percentage: `used` or `remaining`; also available in Settings. The bottom bar reads tokens |
 | `CODEX_HUD_POSITION` | `bottom` | HUD pane position (`top` / `bottom`) |
 | `CODEX_HUD_HEIGHT` | `1` | HUD height in lines |
 | `CODEX_HUD_MOUSE` | `1` | Enable mouse/trackpad scrolling |
 | `CODEX_HUD_SKIP_FONTS` | unset | `1`: the installers leave the MesloLGS NF font out |
 
-Status glyphs use semantic colors: cyan `▸` working, green `✓` turn complete, yellow `■` interrupted, red `✗` failed. Yellow `?` means collection failed; `Ctx~` marks the last context measurement while awaiting a new turn's or compaction's token report. Silence does not turn a working session idle.
+Status glyphs use semantic colors: cyan `▸` working, green `✓` turn complete, yellow `■` interrupted, red `✗` failed. Yellow `?` means collection failed. Silence does not turn a working session idle.
 
-The same line includes a cache reminder: `◷~08m` means about eight minutes since the latest model usage report, advancing once per elapsed minute. It turns yellow at 25 minutes and red as `◷~30m+` at 30; a new usage report restarts the clock. This is a 30-minute reminder window, not server-confirmed cache validity or expiry (`~` means estimated). Collection failures use `?`; missing samples hide the field. All density presets include it, with warnings retained at narrow widths. Text mode shows `Cache ~25m`.
+The bottom bar reads left to right without gaps. First, what the session runs on: the model and its effort (`gpt-5.6-astra xhigh`), a meter and the context the last request held against the model's whole window, as Codex reported them (`━━━━╸───── 149.1K/380K`, no baseline taken off; plain below 70%, yellow past 70%, red past 85%), the repository and its branch (`codex-hud main*↑2`), and the account's usage as one reading, the tightest window (`7d 38%`), or, once that window is spent and credits carry the account on, the balance alone (`credits 6.8K`). Then the main session now: its state and the turn's clock (`▸ 12:58`; idle, `✓ idle`), its output rate, its agents (`Agents 1▸ 1✓`) and its plan (`Tasks 2/5`). Then the notice zone, which takes the columns left: an alert that needs you first (an approval waiting, or a failed tool, agent, subtask or review, on the danger colour); then, for a minute and in colour, what just happened (`✓ explorer finished · 12s ago`, `✗ explorer failed`, `✓ turn done in 12:48`, `◆ window spent, on credits now`); after that, while Codex works, the tool at work and what it works on (`exec_command npm test`, or the command a script runs), and, idle, the last notice, dim, with how long ago. At the right edge, what Codex loaded: MCP servers, skills and hooks (`MCP 2  skills 10  hooks 1`). The clock and the rate keep their columns whatever their length, and the notice zone the same share of the line whatever it says, so nothing before it moves while the session runs. Narrow, the right cluster leaves first, then the effort and the context meter; then the notice zone gives up its share and takes only what is left, and the agents' label, the branch and the clock go. There is no prompt-cache reminder: Codex keeps the cache.
 
-Context percentages follow [Codex 0.154's calculation](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/protocol/src/protocol.rs#L2258), subtracting the fixed 12K baseline from both the latest context usage and the window. `Ctx 20%` equals native `80% context left`; the displayed token pair uses the same adjusted window. Custom windows <=12K retain a raw-window fallback. Cumulative session tokens never measure context fill.
+The panel's context percentages follow [Codex 0.154's calculation](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/protocol/src/protocol.rs#L2258), subtracting the fixed 12K baseline from both the latest context usage and the window, so `20%` there equals native `80% context left`. Custom windows <=12K retain a raw-window fallback. Cumulative session tokens never measure context fill.
 
 ```bash
 CODEX_HUD_STATUSLINE=0 codex

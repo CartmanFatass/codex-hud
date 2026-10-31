@@ -277,7 +277,7 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
     // Narrow, the branch goes first, then the window's name, then the repository.
     frame.lines[y] = fitRow(width, `${rule('╰─')} `, framed ? ` ${theme.frame('─╯')}` : '',
       [['project', card.project || card.place], ['repo', card.repo ?? ''], ['branch', card.branch ?? ''], ['window', quota?.window ?? '']],
-      [['others', card.others], ['spent', quota?.spent ?? ''], ['forecast', card.forecast], ['reset', card.reset], ['cache', card.cache]],
+      [['others', card.others], ['spent', quota?.spent ?? ''], ['forecast', card.forecast], ['reset', card.reset]],
       quota ? { percent: quota.percent, ...(quota.label ? { label: quota.label } : {}) } : undefined, ['others', 'branch', 'window', 'repo', 'forecast', 'bar', 'reset', 'label'], squeezePlace,
       // A quota meter shorter than this reads as a tick mark, not a meter: the place gives way first.
       QUOTA_BAR);

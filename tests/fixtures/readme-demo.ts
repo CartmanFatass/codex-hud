@@ -315,14 +315,18 @@ function panel(lang: Language, look: LookName, width: number, height: number, sc
   return renderMonitor({ ...input, state: renderMonitor({ ...input, state: inspected, diff: DIFF }).state, diff: DIFF }).lines;
 }
 
-/** The status bar, working; `alert` keeps the failed agent that takes the front of the line. */
+/** The status bar, working; `alert` keeps the failed agent that takes the front of the line and says, in the notice zone, that another just finished. */
 function bar(width: number, alert: boolean): string {
   setLanguage('en');
   setDisplayConfig({ theme: 'terminal', glyphs: 'both', density: 'balanced', motion: 'reduced' });
   const { hud } = demo('en');
   const calm = (status: SubagentStatus): SubagentStatus => status === 'error' ? 'running' : status;
   const calmed = (node: SubagentTreeNode): SubagentTreeNode => ({ ...node, status: calm(node.status), children: node.children.map(calmed) });
-  const shown = alert ? hud : { ...hud, subagents: hud.subagents!.map(a => ({ ...a, status: calm(a.status) })),
+  const loaded = { ...hud, project: { ...hud.project, skillsCount: 9, hooksCount: 1 },
+    outputRate: hud.outputRate ?? { tokensPerSecond: 42.4, sampleMs: 4000, sampledAt: new Date(NOW - 1000) } };
+  const finished = hud.subagentTree!.nodes.find(node => node.status === 'completed');
+  const noticed = { ...loaded, notices: [{ kind: 'agent-done' as const, subject: finished?.name ?? 'explorer', at: new Date(NOW - 12_000) }] };
+  const shown = alert ? noticed : { ...loaded, subagents: hud.subagents!.map(a => ({ ...a, status: calm(a.status) })),
     subagentTree: { ...hud.subagentTree!, nodes: hud.subagentTree!.nodes.map(calmed) } };
   return fitModules(buildBarModules(shown, { nowMs: NOW, barWidth: 10 }), { width, separator: theme.separator(' │ '), groupSeparator: '  ' }).line;
 }
@@ -372,8 +376,10 @@ try {
     console.log(`--- looks, 40 ${columns}, ${lang}\n${LOOKS.map(look => plain(panel(lang, look, 40, 50, 'agents', look === 'pill' ? 'unicode' : ICONS[look]), look === 'frame' ? 2 : 1)
       .map((line, i) => `${(i ? '' : look).padEnd(6)} ${line}`).join('\n')).join('\n')}`);
   }
-  write('bar-120', [bar(120, false)]);
-  write('bar-120-alert', [bar(120, true)]);
+  write('bar-200', [bar(200, false)]);
+  write('bar-200-alert', [bar(200, true)]);
+  console.log('--- bar, en');
+  for (const [width, alert] of [[200, false], [200, true], [120, true], [40, true]] as const) console.log(stripAnsi(bar(width, alert)));
 } finally {
   setDisplayConfig(previous);
   setLanguage(previousLanguage);

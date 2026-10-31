@@ -56,6 +56,8 @@ export interface Palette {
   selectedBand: Paint;
   chip: Paint;
   tab: Paint;
+  /** The bar's alert badge: dark bold text on the danger colour, for what needs the person now. */
+  alert: Paint;
   /**
    * A meter's unfilled part, clearly darker than the frame's rules so the
    * fill reads against it, and its scale (the window size, the reset) and
@@ -147,6 +149,7 @@ const TERMINAL: Palette = {
   selectedBand: highlight('48;5;237'),
   chip: highlight('48;5;238'),
   tab: highlight('48;5;31;97'),
+  alert: highlight('1;7;31'),
   track: ansi256(239),
   // Steel blue: a scale, not a state, so neither the info blue nor a grey.
   tick: ansi256(67),
@@ -178,6 +181,7 @@ const MOCHA: Palette = {
   selectedBand: surface('#45475A'),
   chip: surface('#45475A'),
   tab: highlight('48;2;137;180;250;38;2;30;30;46'),
+  alert: highlight('1;48;2;243;139;168;38;2;17;17;27'),
   track: rgb('#585B70'),
   tick: rgb('#89B4FA'),
   frame: rgb('#6C7086'),
@@ -209,6 +213,7 @@ const LATTE: Palette = {
   selectedBand: surface('#CCD0DA'),
   chip: surface('#CCD0DA'),
   tab: highlight('48;2;30;102;245;38;2;239;241;245'),
+  alert: highlight('1;48;2;210;15;57;38;2;239;241;245'),
   track: rgb('#BCC0CC'),
   tick: rgb('#209FB5'),
   frame: rgb('#9CA0B0'),
@@ -250,6 +255,7 @@ const TITANIUM: Palette = {
   selectedBand: surface('#2E3540'),
   chip: surface('#3A424E'),
   tab: highlight('48;2;0;130;179;38;2;232;236;244'),
+  alert: highlight('1;48;2;255;71;87;38;2;15;15;17'),
   track: rgb('#343B46'),
   tick: rgb('#6583A3'),
   frame: rgb('#454C59'),
@@ -278,6 +284,7 @@ const NONE: Palette = {
   selectedBand: identity,
   chip: identity,
   tab: identity,
+  alert: identity,
   track: identity,
   tick: identity,
   frame: identity,

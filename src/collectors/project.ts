@@ -7,6 +7,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ProjectInfo, CodexConfig } from '../types.js';
 import { getMcpServerCount } from './codex-config.js';
+import { getCodexHome } from '../utils/codex-path.js';
+import * as os from 'os';
 
 const AGENTS_MD_FILENAMES = [
   'AGENTS.md',
@@ -167,6 +169,72 @@ export function detectWorkMode(): 'development' | 'production' | 'unknown' {
 }
 
 /**
+ * The folders from cwd up to its repository's root, nearest first. A `.git`
+ * counts only with a HEAD inside (or as a worktree's file): an empty `.git`
+ * folder in a home directory is not a repository. Without a root, cwd alone.
+ */
+function repoFolders(cwd: string): string[] {
+  const folders: string[] = [];
+  for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+    folders.push(dir);
+    const git = path.join(dir, '.git');
+    try {
+      if (fs.statSync(git).isFile() || fs.existsSync(path.join(git, 'HEAD'))) return folders;
+    } catch { /* no .git here */ }
+    if (path.dirname(dir) === dir) return [path.resolve(cwd)];
+  }
+}
+
+/**
+ * Skills Codex can load in cwd, each name once: its home's skills and the
+ * bundled `.system` ones, the user's `~/.agents/skills`, and `.agents/skills`
+ * and `.codex/skills` from cwd up to the repository root. A skill is a folder
+ * with a SKILL.md. Null when no skills folder could be read at all.
+ */
+export function countSkills(cwd: string, codexHome: string = getCodexHome(), home: string = os.homedir()): number | null {
+  const roots = [path.join(codexHome, 'skills'), path.join(codexHome, 'skills', '.system'), path.join(home, '.agents', 'skills'),
+    ...repoFolders(cwd).flatMap((dir) => [path.join(dir, '.agents', 'skills'), path.join(dir, '.codex', 'skills')])];
+  const names = new Set<string>();
+  let read = false;
+  for (const root of [...new Set(roots)]) {
+    let entries: string[];
+    try { entries = fs.readdirSync(root); } catch { continue; }
+    read = true;
+    for (const name of entries) {
+      if (!name.startsWith('.') && fs.existsSync(path.join(root, name, 'SKILL.md'))) names.add(name);
+    }
+  }
+  return read ? names.size : null;
+}
+
+/**
+ * Hook handlers in the hooks.json files Codex reads: its home's and the
+ * repository's `.codex/hooks.json`. Each event holds groups and each group its
+ * handlers; the handlers are counted. Null when neither file could be read.
+ */
+export function countHooks(cwd: string, codexHome: string = getCodexHome()): number | null {
+  const root = repoFolders(cwd).at(-1) ?? cwd;
+  const files = [...new Set([path.join(codexHome, 'hooks.json'), path.join(root, '.codex', 'hooks.json')])];
+  let total = 0;
+  let read = false;
+  for (const file of files) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { continue; }
+    read = true;
+    const events = (parsed as { hooks?: unknown })?.hooks;
+    if (!events || typeof events !== 'object') continue;
+    for (const groups of Object.values(events as Record<string, unknown>)) {
+      if (!Array.isArray(groups)) continue;
+      for (const group of groups) {
+        const handlers = (group as { hooks?: unknown })?.hooks;
+        if (Array.isArray(handlers)) total += handlers.length;
+      }
+    }
+  }
+  return read ? total : null;
+}
+
+/**
  * Collect all project information
  * Phase 3: Extended with additional file counts and Codex-specific module status
  */
@@ -192,6 +260,8 @@ export function collectProjectInfo(cwd?: string, config?: CodexConfig): ProjectI
     mcpCount,
     configsCount,
     extensionsCount: mcpCount,  // MCP servers are treated as extensions
+    skillsCount: countSkills(workDir),
+    hooksCount: config?.hooks_enabled === false ? 0 : countHooks(workDir),
     workMode,
   };
 }

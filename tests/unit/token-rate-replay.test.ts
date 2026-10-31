@@ -25,7 +25,7 @@ test('real rollout timestamps determine output speed across full replay, polling
     assert.equal(next?.outputRate?.tokensPerSecond,100,'idle gap is excluded at new turn');
     const modules = buildBarModules(makeHudData({outputRate:next?.outputRate}),{density:'balanced',nowMs:base+140000});
     const rate = modules.find(module => module.id==='speed');
-    assert.match(stripAnsi(rate?.variants.full ?? ''), /last ~100\.0 tok\/s/);
+    assert.equal(stripAnsi(rate?.variants.full ?? ''), '100 tok/s', 'a whole number, the last turn\'s');
     const other = path.join(dir,'other.jsonl'); fs.writeFileSync(other,event(120,usage(1)));
     parser.setRolloutPath(other);
     assert.equal((await parser.parse())?.outputRate,undefined,'session switching clears rate');

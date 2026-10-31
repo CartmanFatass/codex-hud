@@ -31,12 +31,13 @@ test('the bar and the status card say how long the session has been idle', () =>
   const data = { ...makeHudData(), activity: idle(12) };
   const activity = (words: boolean) => buildBarModules(data, { nowMs: now, words }).find(module => module.id === 'activity')!.variants;
   const glyphs = activity(false);
-  assert.equal(stripAnsi(glyphs.full!), '✓ idle 12m');
-  assert.equal(stripAnsi(glyphs.short!), '✓ 12m');
-  assert.equal(stripAnsi(glyphs.min!), '✓');
-  assert.equal(stripAnsi(activity(true).full!), 'Idle 12m');
-  const fresh = buildBarModules({ ...data, activity: idle(0.2) }, { nowMs: now }).find(module => module.id === 'activity')!.variants;
-  assert.equal(stripAnsi(fresh.full!), '✓', 'just finished: the mark alone');
+  // The state says idle; how long is the notice zone's, beside the turn that ended.
+  assert.equal(stripAnsi(glyphs.full!), '✓ idle');
+  assert.equal(stripAnsi(glyphs.short!), '✓');
+  assert.equal(stripAnsi(activity(true).full!), 'Idle');
+  const ended = { ...data, notices: [{ kind: 'turn-done' as const, at: new Date(now - 720_000), durationMs: 768_000 }] };
+  const notice = buildBarModules(ended, { nowMs: now }).find(module => module.id === 'notice')!.variants;
+  assert.equal(stripAnsi(notice.full!), '✓ turn done in 12:48 · 12m ago');
   assert.equal(stripAnsi(statusCard(data, now)!.state), '✓ Idle 12m');
   const previous = setLanguage('zh');
   try { assert.equal(stripAnsi(statusCard(data, now)!.state), '✓ 空闲 12m'); } finally { setLanguage(previous); }

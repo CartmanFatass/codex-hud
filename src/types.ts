@@ -28,6 +28,8 @@ export interface CodexConfig {
   approval_policy?: string;
   sandbox_mode?: string;
   mcp_servers?: Record<string, McpServerConfig>;
+  /** `[features] hooks`, when the config sets it: hooks.json runs only with it on. */
+  hooks_enabled?: boolean;
 }
 
 export interface McpServerConfig {
@@ -75,6 +77,10 @@ export interface ProjectInfo {
   // Codex-specific module status
   configsCount: number;         // Active configuration files
   extensionsCount: number;      // Loaded extensions/plugins
+  /** Skills Codex can load here: the user's, the bundled ones and the repository's. Null when unread. */
+  skillsCount?: number | null;
+  /** Hook handlers in the hooks.json files Codex reads. Null when unread. */
+  hooksCount?: number | null;
   workMode: 'development' | 'production' | 'unknown';  // Current work mode
 }
 
@@ -92,6 +98,9 @@ export interface ContextUsage {
   // Compact tracking
   compactCount: number;
   lastCompactTime?: Date;
+  /** What the last request held, and the model's whole window, as Codex reported them: no baseline taken off. */
+  inContext?: number;
+  window?: number;
 }
 
 // ============================================================================
@@ -571,7 +580,19 @@ export interface SessionInfo {
 // Complete HUD Data
 // ============================================================================
 
+/** Something that just happened in the main session, for the bar's notice zone. */
+export interface BarNotice {
+  kind: 'agent-done' | 'agent-failed' | 'turn-done' | 'credits';
+  /** The agent's name, for the agent notices. */
+  subject?: string;
+  /** How long the turn took, for a turn that finished. */
+  durationMs?: number;
+  at: Date;
+}
+
 export interface HudData {
+  /** What just happened, newest first, as the bar process saw it change (`collectors/bar-notices.ts`). */
+  notices?: BarNotice[];
   /** Safe model lifecycle facts; never includes credentials, endpoints or prompts. */
   modelHealth?: {
     queued: number;

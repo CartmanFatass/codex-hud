@@ -9,7 +9,7 @@ import { renderHud } from '../../src/render/header.js';
 import { stripAnsi } from '../../src/render/colors.js';
 import { makeHudData } from '../fixtures/hud-data.js';
 
-test('Ctx retains the latest usage through idle polls and partial token updates', async () => {
+test('the context retains the latest usage through idle polls and partial token updates', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-context-retention-'));
   const file = path.join(dir, 'rollout.jsonl');
   const event = (payload: Record<string, unknown>) => JSON.stringify({
@@ -38,7 +38,7 @@ test('Ctx retains the latest usage through idle polls and partial token updates'
     const retained = await context();
     assert.deepEqual(retained, initial, 'partial token reports keep the last known usage');
     const line = stripAnsi(renderHud(makeHudData({ contextUsage: retained }), { width: 200, showDetails: false })[0]);
-    assert.match(line, /Ctx.*20%/);
+    assert.match(line, / 50K\/200K /, 'the bar reads what the request held against the whole window');
 
     const replay = await parseRolloutFile(file);
     assert.deepEqual(buildContextUsage(replay.result.tokenUsage ?? undefined, 0, null), initial,

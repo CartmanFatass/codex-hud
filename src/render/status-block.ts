@@ -12,8 +12,7 @@
  * Band: the session's state (while it works, the tool, the turn's clock and
  * the output rate), the model's badge and the session's age, then the
  * context meter with its window size. Corner row: where it works, the quota
- * meter, the reset countdown and, only in the minutes before it lapses, the
- * prompt-cache reminder. This module hands the monitor the parts; the
+ * meter and the reset countdown. This module hands the monitor the parts; the
  * monitor fits them to the row, dropping the least wanted first. Every value
  * is read the way the bar reads it; a field with no data is left out rather
  * than shown as zero. The agents' counts are the panel's own job.
@@ -26,7 +25,7 @@ import { formatTokenCount } from './lines/activity-line.js';
 import { formatCountdown, formatCredits, quotaState, readQuotaWindows } from './quota.js';
 import { formatElapsedShort } from './subagent-chip.js';
 import { formatTokenRate } from '../collectors/token-rate.js';
-import { displayConfig, iconSet } from './hud-config.js';
+import { displayConfig } from './hud-config.js';
 import { age, type EdgeMeter } from './monitor.js';
 import { idleFor } from './monitor-labels.js';
 import { t } from './i18n.js';
@@ -76,8 +75,6 @@ export interface StatusCard {
   others: string;
   forecast: string;
   reset: string;
-  /** The prompt-cache reminder, only in the minutes before it lapses: the rest of the time there is nothing to act on. */
-  cache: string;
 }
 
 const SESSION_STATES = {
@@ -116,20 +113,6 @@ export function sessionState(data: HudData | null, nowMs: number = Date.now()): 
   // says what the glyph means.
   const words = `${paint(t(word))}${clock ? ` ${clock}` : ''}`;
   return { text: `${paint(glyph)} ${words}`, short: words, attention: false, failed };
-}
-
-/**
- * The prompt-cache reminder as the card shows it. The bar paints it red once
- * thirty minutes have passed, but on a card that stays open through a long
- * idle session that is most of the time, and nothing is left to act on: the
- * card shows it only in the minutes before it lapses (25–29m), as a warning.
- */
-function cacheReminder(data: HudData, nowMs: number): string {
-  const sampledAt = data.tokenUsageAt?.getTime();
-  if (sampledAt === undefined || !Number.isFinite(sampledAt) || !Number.isFinite(nowMs)) return '';
-  const minutes = Math.max(0, Math.floor((nowMs - sampledAt) / 60_000));
-  if (minutes < 25 || minutes >= 30) return '';
-  return theme.warning(`${iconSet() === 'text' ? 'Cache ' : '◷'}${data.stale ? '?' : '~'}${String(minutes).padStart(2, '0')}m`);
 }
 
 export function statusCard(data: HudData | null, nowMs: number = Date.now()): StatusCard | null {
@@ -233,5 +216,5 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
   const tone: StatusTone = status === 'error' ? 'error' : alerts.length ? 'needs' : status === 'stale' ? 'stale'
     : status === 'working' ? 'working' : 'idle';
   return { tone, busy: status === 'working', alerts: alertRows, state, rate, tasks, model, age: shownAge, context, place, project, repo, branch,
-    quota, others, forecast, reset, cache: cacheReminder(data, nowMs) };
+    quota, others, forecast, reset };
 }

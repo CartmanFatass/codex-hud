@@ -87,7 +87,8 @@ test('the bar, the project line and the snapshot all name the repository', () =>
   data.project = { ...data.project, projectName: 'shenlun' };
   data.git = { ...data.git, isGitRepo: true, branch: 'main', isDirty: true, repo: 'Learn-to-Write' };
   const project = buildBarModules(data, { nowMs: FIXED_NOW.getTime(), density: 'full' }).find(module => module.id === 'project')!;
-  assert.equal(stripAnsi(project.variants.full!), 'shenlun › Learn-to-Write git:(main * ↑2)');
+  // The bar names the repository itself; the project line keeps the folder it sits in.
+  assert.equal(stripAnsi(project.variants.full!), 'Learn-to-Write main*↑2');
   assert.equal(stripAnsi(project.variants.short!), 'Learn-to-Write main*');
   assert.match(stripAnsi(renderProjectLine(data)), /^shenlun › Learn-to-Write git:\(main \* ↑2\) /);
   const snapshot = buildSnapshot(data, { width: 80, segments: [] }, FIXED_NOW.getTime());
@@ -97,7 +98,7 @@ test('the bar, the project line and the snapshot all name the repository', () =>
   delete data.git.repo;
   data.project = { ...data.project, projectName: 'codex-hud' };
   const plain = buildBarModules(data, { nowMs: FIXED_NOW.getTime(), density: 'full' }).find(module => module.id === 'project')!;
-  assert.equal(stripAnsi(plain.variants.full!), 'codex-hud git:(main * ↑2)');
+  assert.equal(stripAnsi(plain.variants.full!), 'codex-hud main*↑2');
   assert.equal(buildSnapshot(data, { width: 80, segments: [] }, FIXED_NOW.getTime()).project.repo, undefined);
 });
 

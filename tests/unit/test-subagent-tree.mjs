@@ -549,11 +549,9 @@ try {
   ).map(stripAnsi);
   assert.equal(headerOnly.length, 1, 'no subagents should keep a single header row');
   // No token report and no quota snapshot, so neither field is on the bar:
-  // absent rather than a meter reading zero. The model is a badge, not a slug.
-  assert.doesNotMatch(headerOnly[0], /Ctx|Quota|Q\d/);
-  assert.doesNotMatch(headerOnly[0], /gpt-5\.3-codex-spark/);
-  assert.doesNotMatch(headerOnly[0], /\b(xhigh|high|medium|low)\b/);
-  assert.match(headerOnly[0], /5\.3spark/, 'the versioned family stands in for the slug');
+  // absent rather than a meter reading zero. The bar names the model as Codex does.
+  assert.doesNotMatch(headerOnly[0], /Ctx|Quota|Q\d|\d+%/);
+  assert.match(headerOnly[0], /^gpt-5\.3-codex-spark │ tmp\b/);
 } finally {
   if (originalHome === undefined) {
     delete process.env.CODEX_HOME;

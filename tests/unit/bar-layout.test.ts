@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import { fitModules, type BarModule } from '../../src/render/layout/engine.js';
 import { buildBarModules } from '../../src/render/layout/bar-modules.js';
-import { renderHud } from '../../src/render/header.js';
+import { fitStatusBar, renderHud } from '../../src/render/header.js';
 import { stripAnsi, visualWidth } from '../../src/render/colors.js';
 import { setDisplayConfig } from '../../src/render/hud-config.js';
 import { DEFAULT_LAYOUT } from '../../src/types.js';
@@ -107,23 +107,6 @@ test('a right-aligned cluster ends at the last column, and gives that up before 
   assert.equal(visualWidth(tight.line), 14);
 });
 
-test('the session timer counts days once hours stop meaning anything', () => {
-  const data = makeHudData();
-  const started = data.session!.startTime.getTime();
-  const timer = (elapsedMs: number) =>
-    stripAnsi(
-      buildBarModules(data, { nowMs: started + elapsedMs, density: 'full' })
-        .find((module) => module.id === 'timer')!.variants.short!
-    );
-  const hour = 3_600_000;
-  assert.equal(timer(45_000), '45s');
-  assert.equal(timer(90_000), '1m');
-  assert.equal(timer(3 * hour), '3h0m');
-  assert.equal(timer(27 * hour + 10 * 60_000), '1d3h');
-  assert.equal(timer(9 * 24 * hour + 23 * hour), '9d23h');
-  assert.equal(timer(10 * 24 * hour), '10d');
-});
-
 test('the bar spends no column on a key hint', () => {
   for (const density of ['focus', 'balanced', 'full'] as const) {
     const modules = buildBarModules(makeHudData(), { density });
@@ -137,10 +120,10 @@ test('the alert survives every pane width', () => {
   // rather than an inference from silence.
   const data = makeHudData();
   for (let width = 6; width <= 200; width += 1) {
-    const lines = renderHud(data, { width, showDetails: false, layout: { ...DEFAULT_LAYOUT, mode: 'compact' } });
-    const text = stripAnsi(lines[0]);
-    assert.ok(text.includes('!'), `width ${width} lost the alert: ${JSON.stringify(text)}`);
-    assert.ok(visualWidth(lines[0]) <= width, `width ${width} overflowed`);
+    const fit = fitStatusBar(data, { ...DEFAULT_LAYOUT, mode: 'compact' }, width);
+    assert.ok(fit.kept.includes('attention'), `width ${width} lost the alert: ${JSON.stringify(stripAnsi(fit.line))}`);
+    assert.ok(stripAnsi(fit.line).includes('✗'), `width ${width} lost the failure mark`);
+    assert.ok(visualWidth(fit.line) <= width, `width ${width} overflowed`);
   }
 });
 
@@ -177,7 +160,7 @@ test('a pending approval is the alert the narrow bar keeps', () => {
     stripAnsi(
       buildBarModules({ ...data, pendingApproval: { kind, since: FIXED_NOW } }, { nowMs: FIXED_NOW.getTime() })
         .find((module) => module.id === 'attention')!.variants.short!
-    );
+    ).trim();
   assert.equal(label('patch'), '! patch approval needed');
   assert.equal(label('input'), '! input needed');
 });
@@ -232,26 +215,65 @@ test('themes repaint without changing the text', () => {
   }
 });
 
-test('model badges can be read as words instead of symbols', () => {
+test('the bar names the model and its effort in words, whatever the badge setting', () => {
   const data = makeHudData();
-  const previous = setDisplayConfig({ glyphs: 'text' });
-  try {
-    const text = stripAnsi(
-      renderHud(data, { width: 160, showDetails: false, layout: { ...DEFAULT_LAYOUT, mode: 'compact' } })[0]
-    );
-    assert.ok(text.includes('5.6astra'), `expected a versioned model name: ${text}`);
-    assert.ok(!text.includes('☀'), 'text mode should not print the symbol');
-  } finally {
-    setDisplayConfig(previous);
+  for (const glyphs of ['glyph', 'both', 'text'] as const) {
+    const previous = setDisplayConfig({ glyphs });
+    try {
+      const text = stripAnsi(
+        renderHud(data, { width: 200, showDetails: false, layout: { ...DEFAULT_LAYOUT, mode: 'compact' } })[0]
+      );
+      assert.ok(text.startsWith('gpt-5.6-astra xhigh │ '), `${glyphs}: ${text}`);
+      assert.ok(!text.includes('☀'), `${glyphs}: the bar prints no symbol for the model`);
+    } finally {
+      setDisplayConfig(previous);
+    }
   }
 });
 
-test('quota and context keep their own labels', () => {
-  const data = makeHudData();
-  const text = stripAnsi(
-    renderHud(data, { width: 200, showDetails: false, layout: { ...DEFAULT_LAYOUT, mode: 'compact' } })[0]
-  );
-  assert.ok(/Ctx/.test(text), 'context should be labelled Ctx');
-  assert.ok(/Q(uota)?/.test(text), 'the rate-limit window should be labelled as quota');
-  assert.ok(!/\bPlan\b/.test(text), 'Plan must no longer name the rate-limit window');
+test('the bar reads without gaps up to the notice zone, and what Codex loaded sits at the right edge', () => {
+  const calm = makeHudData({ project: { ...makeHudData().project, skillsCount: 10, hooksCount: 1 },
+    subagentTree: makeSubagentTree([{ id: 'a1', name: 'explorer', status: 'running', startedAt: FIXED_NOW, model: 'gpt-5.6-astra', effort: 'high' }]),
+    activity: { state: 'working', updatedAt: FIXED_NOW, turnStartedAt: FIXED_NOW },
+    outputRate: { tokensPerSecond: 57.3, sampleMs: 4000, sampledAt: FIXED_NOW } });
+  const fit = fitStatusBar(calm, { ...DEFAULT_LAYOUT, mode: 'compact' }, 200);
+  assert.deepEqual(fit.kept, ['identity', 'context', 'project', 'quota', 'activity', 'speed', 'agents', 'tasks', 'notice', 'config']);
+  const text = stripAnsi(fit.line);
+  assert.match(text, /^gpt-5\.6-astra xhigh │ ━+─+ 114\.2K\/272K │ codex-hud main\*↑2 │ 5h 61% │ ▸ +\S+ │  57 tok\/s │ Agents 1▸ │ Tasks 2\/5 │ Edit src\/types\.ts {3,}MCP 2  skills 10  hooks 1$/);
+  assert.ok(!/Ctx|Q61|\bPlan\b|◷/.test(text), text);
+  assert.equal(visualWidth(fit.line), 200);
+
+  // An alert takes the zone's front, and the tool at work keeps what room is left.
+  const alert = stripAnsi(fitStatusBar(makeHudData({ activity: calm.activity }), { ...DEFAULT_LAYOUT, mode: 'compact' }, 170).line);
+  assert.match(alert, /│ Tasks 2\/5 │  ✗ [^│]*failed {3}Edit src\/types\.ts/);
+  // The zone keeps its room before what Codex loaded keeps its place.
+  const noticed = makeHudData({ activity: calm.activity, project: calm.project, outputRate: calm.outputRate,
+    notices: [{ kind: 'agent-done', subject: 'streaming_docs', at: new Date(FIXED_NOW.getTime() - 12_000) }] });
+  const roomy = fitModules(buildBarModules(noticed, { nowMs: FIXED_NOW.getTime(), density: 'balanced' }), { width: 200, separator: ' │ ', groupSeparator: '  ' });
+  assert.ok(!roomy.kept.includes('config'), roomy.kept.join(' '));
+  assert.match(stripAnsi(roomy.line), /failed {3}✓ streaming_docs finished · 12s ago$/);
+});
+
+test('fields that change while the session runs keep their columns', () => {
+  const start = FIXED_NOW.getTime();
+  const frame = (seconds: number, tool: string | null, rate: number) => {
+    const now = start + seconds * 1000;
+    const data = makeHudData({
+      activity: { state: 'working', updatedAt: new Date(now), turnStartedAt: new Date(start) },
+      outputRate: { tokensPerSecond: rate, sampleMs: 4000, sampledAt: new Date(now - 1000) },
+      toolActivity: { ...makeHudData().toolActivity!, recentCalls: tool ? [{ id: 't', name: tool, target: 'src/render/header.ts', status: 'running', timestamp: new Date(now) }] : [] },
+      // Before the turn's first call, the zone tells how the last turn went.
+      notices: [{ kind: 'turn-done', durationMs: 90_000, at: new Date(start - 600_000) }],
+    });
+    const fit = fitModules(buildBarModules(data, { nowMs: now }), { width: 170, separator: ' │ ', groupSeparator: '  ' });
+    return { levels: fit.levels, columns: fit.segments.map((segment) => [segment.id, segment.x]) };
+  };
+  const first = frame(55, 'Edit', 9.8);
+  for (const later of [frame(61, 'exec_command', 103.6), frame(125, null, 57.3), frame(601, 'apply_patch', 8), frame(3605, 'Read', 140.2)]) {
+    const { notice: _later, ...laterLevels } = later.levels;
+    const { notice: _first, ...firstLevels } = first.levels;
+    assert.deepEqual(laterLevels, firstLevels);
+    // The notice zone changes with the tool; every field before it, and the right cluster, stays put.
+    assert.deepEqual(later.columns.filter(([id]) => id !== 'notice'), first.columns.filter(([id]) => id !== 'notice'));
+  }
 });

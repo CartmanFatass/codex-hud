@@ -263,14 +263,12 @@ test('a pending approval says how long it has waited, in the bar\'s widest form,
   assert.equal(buildSnapshot(makeHudData({ pendingApproval: undefined }), { width: 0, segments: [] }, nowMs).approvalSince, undefined);
 });
 
-test('a quota forecast shows on the bar\'s widest quota form and the card, marked as an estimate, and in the snapshot', () => {
+test('a quota forecast shows on the card, marked as an estimate, and in the snapshot; the bar keeps one reading', () => {
   const nowMs = FIXED_NOW.getTime();
   const plain = makeHudData();
   const projected = makeHudData({ quotaForecast: { window: 'primary', exhaustAt: new Date(nowMs + 40 * 60_000), percent: 70, windowMinutes: 300 } });
   const module = (data: typeof plain) => buildBarModules(data, { nowMs }).find(m => m.id === 'quota')!;
-  assert.match(stripAnsi(module(projected).variants.full!), /out in ~40m/);
-  assert.equal(module(projected).variants.short, module(plain).variants.short, 'narrower forms unchanged');
-  assert.doesNotMatch(stripAnsi(module(plain).variants.full!), /out in/);
+  assert.equal(module(projected).variants.full, module(plain).variants.full, 'the bar\'s quota is one reading');
   assert.match(stripAnsi(statusCard(projected, nowMs)!.forecast), /out ~40m/);
   assert.deepEqual(buildSnapshot(projected, { width: 0, segments: [] }, nowMs).quotaForecast,
     { window: 'primary', exhaustAt: new Date(nowMs + 40 * 60_000).toISOString(), percent: 70, windowMinutes: 300 });

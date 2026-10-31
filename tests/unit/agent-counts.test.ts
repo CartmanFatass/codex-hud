@@ -72,13 +72,13 @@ test('the title row, the status card, the bar, notifications and the snapshot sa
 
   // The bar's Agents field counts the agents; the rest is in its alert.
   const bar = buildBarModules(data, { nowMs: NOW, barWidth: 10 });
-  assert.equal(stripAnsi(bar.find((module) => module.id === 'agents')!.variants.full!), 'Agents 2 run · 1 fail');
+  assert.equal(stripAnsi(bar.find((module) => module.id === 'agents')!.variants.full!), 'Agents 2▸ 1✗');
   const alert = bar.find((module) => module.id === 'attention')!.variants;
-  assert.deepEqual([alert.full, alert.short, alert.min].map((text) => stripAnsi(text!)), ['! 1 agent · 1 subtask · 1 review failed', '! 1 agent · 1 subtask · 1 review failed', '!']);
+  assert.deepEqual([alert.full, alert.short, alert.min].map((text) => stripAnsi(text!).trim()), ['✗ 1 agent · 1 subtask · 1 review failed', '✗ 1 agent · 1 subtask · 1 review failed', '✗']);
   // An approval and the failures: two phrases, the approval first with its wait.
   const asking = makeHudData({ ...quiet, subagentTree: session(), pendingApproval: { kind: 'exec', since: new Date(NOW - 90_000) } as never });
   const both = buildBarModules(asking, { nowMs: NOW, barWidth: 10 }).find((module) => module.id === 'attention')!.variants;
-  assert.deepEqual([both.full, both.short, both.min].map((text) => stripAnsi(text!)), ['! approval needed 1m · 1 agent · 1 subtask · 1 review failed', '! approval needed', '!2']);
+  assert.deepEqual([both.full, both.short, both.min].map((text) => stripAnsi(text!).trim()), ['✗ approval needed 1m · 1 agent · 1 subtask · 1 review failed', '✗ approval needed', '✗2']);
   assert.equal(stripAnsi(statusCard(asking, NOW)!.alerts[0]), '! approval needed 1m · 1 agent · 1 subtask · 1 review failed');
 
   // The snapshot gives the three counts and says what each thread is.

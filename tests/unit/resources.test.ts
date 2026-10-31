@@ -62,20 +62,20 @@ test('an elapsed reset is reported as due, not as restored', () => {
   assert.equal(windows[0].percent, 96, 'the last reported figure stands until a new snapshot arrives');
 });
 
-test('the quota field carries the countdown and never invents a reset', () => {
+test('the quota field is one reading, the tightest window, and never invents a reset', () => {
   const quotaOf = (data: ReturnType<typeof makeHudData>) =>
     stripAnsi(
       buildBarModules(data, { nowMs: NOW }).find((module) => module.id === 'quota')?.variants.full ?? ''
     );
 
-  assert.match(quotaOf(makeHudData()), /resets in 1h23m/);
+  assert.equal(quotaOf(makeHudData()), '5h 61%', 'the 5h window at 61% is tighter than the 7d at 23%');
+  assert.equal(quotaOf(makeHudData({ rateLimits: { primary: { used_percent: 12, window_minutes: 300 }, secondary: { used_percent: 81, window_minutes: 10080 } } })), '7d 81%');
 
   const overdue = makeHudData({
     rateLimits: { primary: { used_percent: 88, window_minutes: 300, resets_at: Math.floor(at(-60).getTime() / 1000) } },
   });
   const text = quotaOf(overdue);
-  assert.match(text, /reset due/);
-  assert.match(text, /88%/, 'the last reported figure stands');
+  assert.equal(text, '5h 88%', 'the last reported figure stands');
   assert.doesNotMatch(text, /100%|0%/, 'a passed reset time must not be turned into a fresh window');
 });
 
@@ -94,13 +94,13 @@ test('a full window with credits behind it reads the balance and is not a stop',
   assert.equal(card.quota?.label, 'credits 31.8K', 'the full bar says 100%; the reading says what is left');
   assert.equal(card.quota?.spent, '');
   assert.equal(stripAnsi(card.quota!.text), '7d credits 31.8K');
-  assert.match(quotaOf(paying), /7d 100% · credits 31\.8K · resets in 1h/);
+  assert.equal(quotaOf(paying), 'credits 31.8K', 'the spent window gives its place to the balance');
 
   const broke = full({ has_credits: false, unlimited: false, balance: '0' });
   assert.ok(kinds(broke).includes('quota-exhausted'));
   assert.equal(statusCard(broke, NOW)!.quota?.label, undefined);
   assert.equal(stripAnsi(statusCard(broke, NOW)!.quota!.text), '7d 100%!');
-  assert.doesNotMatch(quotaOf(broke), /credits/);
+  assert.equal(quotaOf(broke), '7d 100%');
 
   // Cut off by Codex's own word: credits or not, it is a stop.
   const cut = full({ has_credits: true, balance: '50' }, 'primary');
@@ -109,18 +109,20 @@ test('a full window with credits behind it reads the balance and is not a stop',
   // Below full, the balance is no news: the window still has room.
   const partial = makeHudData({ rateLimits: { primary: { used_percent: 60, window_minutes: 300 }, credits: { has_credits: true, balance: '100' } } });
   assert.equal(statusCard(partial, NOW)!.quota?.label, undefined);
-  assert.doesNotMatch(quotaOf(partial), /credits/);
+  assert.equal(quotaOf(partial), '5h 60%');
 
   assert.equal(formatCredits({ unlimited: true }), '∞');
   assert.equal(formatCredits({ unlimited: false, balance: 204.94 }), '205');
   assert.equal(readCredits({ credits: { has_credits: true, balance: 'n/a' } }), null, 'a balance that is not a number says nothing');
 });
 
-test('the bar keeps the quota label when it has to shorten it', () => {
-  const text = stripAnsi(
-    renderHud(makeHudData(), { width: 180, showDetails: false, layout: { ...DEFAULT_LAYOUT, mode: 'compact' } })[0]
-  );
-  assert.match(text, /Q5h 61%/);
+test('the bar names the quota window it reads', () => {
+  for (const width of [120, 180]) {
+    const text = stripAnsi(
+      renderHud(makeHudData(), { width, showDetails: false, layout: { ...DEFAULT_LAYOUT, mode: 'compact' } })[0]
+    );
+    assert.match(text, / 5h 61% /, `${width}: ${text}`);
+  }
 });
 
 test('the sparkline keeps a fixed scale so flat reads as flat', () => {
