@@ -13,7 +13,7 @@
 
 | 阶段 | 交付物 | 状态 |
 |---|---|---|
-| A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 进行中：A1 契约 01–04 v0.3（按 Oracle C01–C14 修订）主审通过；A2 契约 05–07 v0.1 主审通过；A3 五份探针与 daemon 补测主审通过；A8 第二轮修复后复核中；前端信息设计 v1.0 定稿（`docs/design/`）；下一步 Oracle 第 2 次咨询（数据层字段归属），再 A4 |
+| A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 进行中：A1 契约01–04与A2契约05–07既有修订主审通过；A3五份探针与daemon补测主审通过；A8已于 `8fdf4cf` 接受；Oracle consult 2裁决位于 `45e7d4d`，正在应用D01–D13；下一步同步设计§7，再A4 |
 | B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 待开工 |
 | C pi 与 Jev 后端 | pi 适配器与 `hud pi`、resume 实测、Jev 后端与 JobRef、pi 的 MCP 加载 | |
 | D cc 完整与 statusline | cc 原生子代理、checkpoint 与采集租约、`hud statusline`、对照清单与基准、三道门切换 | |
@@ -62,11 +62,13 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | 事项 | 权威工作包 | 消费者 |
 |---|---|---|
 | 身份回填与关系状态迁移 | B5（握手）+ B2 的 reconciler | B9 只投影，不写 |
-| 五维状态归并与真值表 | B16 | B10 渲染、B6 status |
+| 五维状态归并、语义stateKey/stateSince/basis与终态谓词 | B16（边沿/纯函数）+ B12（同一ObservationCommit持久发布） | B10完整驻留渲染、B6最终status；不得各自判状态/另造存储 |
 | 模型材料入口与外发授权 | B17（实现）+ A2 契约 07 | 所有模型功能 |
 | 采集一致性（checkpoint 一致提交、租约接管、旧持有者失效） | B12 | D2 完整版、D3 statusline |
 | 执行协议（幂等、槽、对账表） | A1 契约 02 → B2 / B4 | B6、B14 |
-| 可见模式托管方案 | A8 探针 → A1 契约 04 → B3b | B7、B11 |
+| 可见模式托管方案 | A8已接受关键证据 → 契约04前台约束 → B3b生产验收 | B7、B11 |
+| 逐run启动上下文 / ledgerId / 内部只读访问 | 契约02/06 → B2（存储），B4（启动/本地resume） | B18导出、HUD投影；repoId不授身份 |
+| 版本化本地委派元数据导出 | 契约07 → B18（producer），B11集成CLI | toktrack等consumer独立，不阻A4/A9/B15；本地白名单不授B17模型外发权 |
 
 ## 4. 工作包
 
@@ -77,11 +79,11 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | A1 | **P0 契约，分两批交付、共同审定**：第一批 ①调用者登记与绑定凭据（CallerId、OwnerKey、claim、握手状态机、核验范围、失效规则）②执行协议（幂等键范围与参数摘要、意图 + 槽同事务、`uncertain` 进入与对账表、禁止重试清单）；第二批 ③link / run / report 生命周期（两个状态机、每 SessionRef 单运行互斥、wait 游标与 runId 固定、resume 允许条件、转交）④运行托管（hud-run 职责、日志与退出回执格式、取消序列、心跳与 `uncertain`、父断连策略、方案甲 / 乙的接口留位） | `docs/contracts/01-identity.md`、`02-execution.md`（第一批）；`03-lifecycle.md`、`04-supervision.md`（第二批）；每份含数据模型、不变量、状态机、失败案例、测试清单；账本 schema v1 的 SQL 附在 02 | 每批 REV 评审通过后才写下一批；两批合起来由 ORCH 与 REV 共同审定一致性；ARCH 复核在 A9 | CORE（max） | L | 第二批依赖第一批定稿；04 的可见模式部分等 A8 结论 |
 | A2 | **P1 契约**：⑤能力矩阵与宿主（支持组合、locator 校验、降级边界、argv / shell 两种启动契约）⑥观测（指标口径表、reader 预算、checkpoint 一致提交、采集租约接管）⑦外发与兼容（目的 × 接收方授权、snapshot / checkpoint / ledger 版本、旧命令与 `--json` 兼容 facade） | `docs/contracts/05-capabilities.md`、`06-observation.md`、`07-outbound-compat.md` | REV 评审通过；定稿需引用 A3 / A8 的结论（daemon 路径、env 可达性、可见托管方案） | CORE | M | A1 第一批；定稿依赖 A3、A8 |
 | A3 | **探针**：Codex 的 MCP 服务器由 TUI 还是 daemon 启动、env 与 `_meta` 可达性；两个 Codex home 同 cwd 的会话隔离；`herdr tab create --env` 是否到达 pane 的 shell、agent 进程、MCP 服务器；pi `--session` resume 是续写还是新文件；cc 的 MCP 服务器 env 内容 | `docs/probes/*.md`：方法、原始观测（脱敏）、结论、对契约的影响；脚本放 `tests/probes/` | 每份探针有可重跑脚本；结论被 A1 / A2 引用 | ORD（升级规则适用） | M | 无，可与 A1 并行 |
-| A4 | **核心类型、契约fixture与A9最小原型**：类型/合成fixture覆盖会话/运行/报告/状态；另做隔离的真实临时SQLite+合成进程原型，覆盖身份连续性、幂等/崩溃切点、选定scope恢复的关键反例，不合入B生产实现 | src/core/types/*.ts、tests/fixtures/contracts/、tests/unit/contracts.test.ts；隔离原型与证据放tmp/tasks/A4/ | npm test全绿、合成数据；fixture证明类型/规格，原型给A9关键机制可行性证据，不能宣称B生产恢复已验收；最小三组包见A9/概念§16 | CORE | M | A2定稿（含A3已评审/A8关键接受证据） |
+| A4 | **核心类型、契约fixture与A9最小原型**：会话/运行/报告/五维状态及stateKey/stateSince/basis、WorkspaceContext/逐run冻结位置、ControlInitiator/local_user鉴权重放、ActionDescriptor、独立costUsd Metric、显示身份联合/freshness.state/launch_failed/共享终态谓词、双域快照戳、export v1类型/golden；另做隔离真实临时SQLite+合成进程，覆盖身份连续性、幂等/崩溃切点、scope恢复，不合入B生产代码 | src/core/types/*.ts、tests/fixtures/contracts/、tests/unit/contracts.test.ts；隔离原型/证据tmp/tasks/A4/ | npm test全绿/合成数据；01–07新增A9反例含重启/缺历史/截止、同名intent绑定、worktree/clone/copy、包装改cwd/路径消失、ledger-b+观测-a；原型不宣称B生产恢复通过，三阻断组见A9/概念§16，consumer字段清单非前置 | CORE | M | A2定稿（含A3已评审/A8关键证据于8fdf4cf接受及本次D01–D13类型边界） |
 | A5 | **三接口与假实现**：`RegistryProvider`、`HostAdapter`、`RunControl`、`HarnessAdapter`；`tests/fakes/` | 接口文件 + 假实现 + 用假实现跑的核心用例 | 核心套件无 Herdr 可跑 | CORE | S | A4 |
 | A6 | **Codex facade**：`src/harness/codex/` 用现有 `SessionFinder` / `RolloutParser` / `subagent-tree` 实现 `HarnessAdapter`，不搬目录；`linkEvidence` 提取；`SCAN_VERSION` +1；snapshot v3 字段草案（加法） | facade 模块 + 现有调用点改走 facade | 现有 1038 + 47 测试与视觉基线全绿；`--json` 旧字段不变 | CORE | M | A4、A5 |
 | A7 | **测试基建**：`npm run test:core`（无 Herdr，`HUD_HOME` 临时目录）、`npm run test:herdr`（仅 Herdr 套件）、CI 脚本、fixture 脱敏检查 | `package.json` 脚本、`tests/run-core.sh`、`.github/workflows` | 两套件各自可单独跑 | ORD | S | A5 |
-| A8 | **hud-run 可见模式探针**：在 Herdr pane 里分别试方案甲（hud-run 用 `$SHELL -ic` 包住 `codex` 函数）与方案乙（harness 直接起、hud-run 作 sidecar 记录），验证 Herdr agent 检测、herdr-context 包装、TTY 直通、退出回执是否正常 | `docs/probes/hud-run-visible.md`，含两方案的对照表 | 结论写进 04-supervision 并决定 B3b 走哪条 | ORD | S | A3（复用其 env / 进程树方法） |
+| A8 | **hud-run可见模式探针**：已于8fdf4cf接受A8-fixB2关键证据，采用修订甲；同agent/session状态、实际context命令、父launcher退出后TTY前台输入/收尾；乙非MVP受管后端 | docs/probes/hud-run-visible.md，保留版本/形态、后台负对照和监督死亡故障语义 | 只限pane shell等待hud-run前台作业、harness为核验前台消费者；不把A8-fixB2混称工程WP B2或生产pass，真实父MCP故障矩阵/取消/复用/性能归B3b/B14 | ORD | S | A3（复用env/进程树方法）；关键证据已接受，A9仍待放行 |
 | A9 | **阶段B门禁，第一级验收**：审七契约、支持/拒绝范围、fixture和A4最小SQLite/合成进程原型、已接受A3/A8关键证据，采纳后冻结类型/schema v1；不要求B生产代码先完成 | docs/reviews/<date>-pro-contracts.md | 三组阻断无P0：身份（唯一source/session、配置claim、fork/旧claim/原生子拒绝、切换失效/MCP重启连续）；执行（真实SQLite并发同键一次提交、异参/原子意图槽/重键重放/崩溃不重发）；恢复（甲的A8接受证据、活成员/取消未确认持槽、无旧receipt Q可达或缺证、恢复无执行权）。daemon-present/共享正向非前置；其余项可带条件 | ORCH + ARCH | S | A1–A8的A阶段产物；生产矩阵另在B14 |
 
 ### 阶段 B：MVP 纵向切片 cc → Codex
@@ -91,25 +93,26 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | WP | 内容 | 产出 | 验收 | 角色 | 规模 | 依赖 |
 |---|---|---|---|---|---|---|
 | B1 | **hud-mcp 骨架**：stdio 服务器、工具注册、`delegate.json` 加载与校验、调用者登记（pid / ppid / procStart / harness 推断 / `HERDR_PANE_ID`）、SessionRef 解析器（cc sessions 文件、Codex pane 绑定、pi cmdline） | `packages/hud-mcp/` | cc 与 Codex 能加载并列出工具，登记行正确（pi 的加载在 C1） | CORE | M | A9 |
-| B2 | **账本**：`node:sqlite`、WAL、`user_version`、事务助手、幂等表、事件表与游标、租约表、`hud link list/show/export`、只读访问层给 HUD | `packages/hud-mcp/src/ledger/`、`src/core/ledger-read.ts` | 并发写单测（两个进程同时 spawn）；幂等同键同参 / 同键异参 | CORE | L | A1 |
+| B2 | **账本**：node:sqlite、WAL/user_version、事务助手、幂等/事件/游标、02运行槽、逐run不可变launch_cwd/nullable workspace_snapshot与project_origin、workspace.captured、私有单行ledgerId；hud link list/show及内部只读访问层，公开export归B18；collect租约仅06/B12观测存储，browser表留C4 | packages/hud-mcp/src/ledger/、src/core/ledger-read.ts | 并发双进程spawn/同键同参与异参；冻结启动上下文、一次快照捕获/事件、digest排除Git结果与写者时间、ledgerId初始化/恢复不变；只读层不承诺外部SQL接口 | CORE | L | A1（全部B另受A9门禁） |
 | B3a | **hud-run 托管核心**：进程组、shell / argv 两种启动、headless 路径、日志、心跳、退出回执、取消序列、`orphan_policy`、`hud run status/logs/cancel/reconcile` | `bin/hud-run`、`src/core/run/` | 进程级单测：正常退出、被杀、托管自身死亡后对账、取消三段式、重复启动被槽拒绝 | CORE | L | A1 |
 | B3b | **hud-run可见终端集成**：实现Oracle修订方案甲、TTY直通、真实harness PGID/完整scope控制、Herdr检测/context；原生退出结果可未知，shell status分列；乙managed与PTY延期 | src/core/run/visible-*.ts + tmux集成测试 | 生产验证scope结束/活成员阻终结、整组取消不退单PID、实例复用/短命/重启；父MCP断连continue仍前台可输入/收尾；supervisor死交互中断、uncertain持槽、禁自动input/focus/fg/恢复/resume，Q不依赖死人receipt；原型不是生产pass，性能依06 | CORE | M（A8后重估） | A9、A8关键证据接受、B3a |
-| B4 | **spawn / resume 与 Codex 后端档案**：模板（launch / headless / resume / resumeHeadless）、claim 生成与注入、首条 prompt 组装、意图先行事务、headless 路径、tmux 可见路径 | hud-mcp 工具 + `delegate.json` 示例 | 仅证实未执行（启动前失败、有退出回执且无子进程）才 `failed`，其余一律 `uncertain` 进入对账；超时不改状态；同 OwnerKey 同 request_key 重试返回原结果 | CORE | M | B1、B2、B3a |
+| B4 | **spawn/resume与Codex档案**：四种模板、每轮claim注入/首条prompt、意图/槽、headless/tmux可见；逐run冻结启动目录/显式来源，事务外有界workspace捕获；01本地管理resume的typed initiator/actor审计、request-key/expected-run/mode及02重放顺序 | hud-mcp工具/同一受信CLI事务入口 + delegate.json示例 | 仅N证明未执行才failed，其余未知uncertain对账，超时不改状态；同owner/key重放原结果，local先鉴别再重放、新意图重验expected-run/全部门禁，不伪造旧父MCP；Git不入accepted热路径，未知不重启 | CORE | M | B1、B2、B3a |
 | B5 | **握手**：`delegate_whoami`（env claim 自动 / 参数 claim）、单次有效与 TTL、fork 复制 claim 被拒、`pending → claimed → bound`、`delegate_report` 绑定 runId | 工具实现 + 单测 | fork 场景单测；无 env 的 claim 路径单测 | CORE | M | B4 |
-| B6 | **wait / status / cancel**：事件长轮询（≤120 s，游标）、状态聚合（关系、运行、报告、心跳、对账结果）、取消经 hud-run（父 pane 自动提示按 Oracle 延期） | 工具实现 + 单测 | 超时不改状态；旧 run 迟报不满足新等待；status 的状态字段来自 B16 归并器 | CORE | M | B2、B3a |
+| B6 | **wait/status/cancel**：≤120s事件游标、ledger关系/运行/报告/权限同读快照与观测双戳组合、取消经hud-run；最终status消费B16单一状态/连续性与终态谓词，父pane自动提示延期 | 工具实现 + 单测 | 超时不改状态；旧run迟报/摘要不补新轮；可先做ledger子集，最终验收等B16（其持久发布依B12），status/wait不采集/Git/reconcile/发布summary | CORE | M | B2、B3a、B16 |
 | B7 | **Herdr 集成层**：`integrations/herdr/{registry,host,run-control}`、`herdr api schema` 版本校验、tab 可见布局、`--env` 注入、就绪探测、`sendInput` 经 `agent prompt`、降级边界（仅预检失败回退）、Herdr 套件 | 模块 + `tests/herdr/` | `HUD_HERDR=0` 时核心全部可用；schema 不符降级并记诊断；只有预检失败（启动确实未发生）才回退 | CORE | M | A5、B3b |
 | B8 | **cc 最小适配器**：绑定（stdin > 注册表 > sessions 文件 > 候选）、预算 reader（类型白名单、`api-request-blob` 跳过、usage 按 message.id 去重、compact 边界）、`linkEvidence` 提取（`mcp__hud__delegate_*` 工具结果、首条用户消息）、`children` 占位 | `src/harness/claude/` + fixture | 100 MB 合成 transcript 增量 tick 预算内；coverage 标记正确 | CORE | L | A4、A6 |
 | B9 | **HUD 链接解析**：读账本、约定范围核验（签发时间窗、harness 一致、唯一匹配）、冲突与候选、树投影（delegated 节点、经 Codex facade 读孙辈、深度 / 节点 / I/O 预算、visited） | `src/core/link/` | 单测：晚到、重复、冲突、fork、循环、关闭后保留 | CORE | M | B2、B8 |
-| B10 | **渲染**：delegated / headless 行（模式、run 序号、状态）、"日志 / 打开"动作、Inspector "链接" 与 "运行" 节、bar `delegated` 模块、冲突行、顶部父标识、中英文案 | `src/render/` 改动 + 视觉基线更新 | 视觉基线审阅；规则 §8 清单；只消费 B16 的归并结果，不自己判状态 | FE | M | B9、B16 |
-| B11 | **启动器**：`hud claude`（档案、argv / shell、`--resume`）、`hud run …`、最小 `hud panel`（在当前 Herdr tab split 开面板，只为验收场景）、`codex-hud` 兼容入口 | `bin/hud` + 文档 | tmux 集成测试：`hud claude -- claude` 起 bar 与 panel | CORE | M | B7、B10 |
-| B12 | **最小采集一致性**：`collect:<session>` 租约、过期接管、旧持有者失效（接管后旧持有者的写入被拒）、checkpoint 与摘要的最小一致提交（同一事务 / 原子重命名）、多消费者只读已提交摘要 | `src/core/collect-lease.ts`、`src/core/checkpoint.ts` | panel + statusline 并发单测；接管后旧持有者写入被拒；崩溃点注入后摘要与 checkpoint 不会一个新一个旧 | CORE | M | B2 |
+| B10 | **渲染**：delegated/headless、intent稳定显示键与绑定后选择映射、日志/Open、Inspector链接/运行、bar delegated/冲突/父标识/中英；Resume/Reconcile按ActionDescriptor仅显示复制 | src/render/ + 视觉基线 | 规则§8/视觉审阅；只消费B16的freshness.state/stateKey/stateSince/basis/共享终态谓词，完整驻留读取等B12→B16发布；不按图标折历史，不在HUD起控制CLI | FE | M | B9、B16（完整连续性依B12） |
+| B11 | **启动器**：hud claude档案/argv/shell/resume、hud run管理入口（含local_user resume完整参数与明确HUD_HOME安全复制命令）、B18版本化export CLI分派、最小hud panel、codex-hud兼容入口 | bin/hud + 文档 | tmux集成hud claude起bar/panel；管理resume只走B4既有writer/重验，不伪造父context，未验证能力不提供虚假命令；export不依赖HUD/B16/B17运行 | CORE | M | B4、B7、B10、B18 |
+| B12 | **最小采集一致性**：collect:<SessionRef>租约/接管/旧代失效；checkpoint/parserState/summary/StateContinuity/notices及observationStamp同一ObservationCommit原子发布，B16复用不另造存储 | src/core/collect-lease.ts、src/core/checkpoint.ts | 并发panel/statusline、崩溃点无新旧混配、旧代迟写拒绝；stateKey/stateSince/basis重启续已知连续性、缺口不伪造；零逐tick年龄写/ledger显示列 | CORE | M | B2 |
 | B13 | **skill 与角色模板**：`herdr-delegate-codex` 改为 `delegate_spawn / wait / status / cancel`；角色模板加 whoami / report 与旧问题通道；`delegate.json` 初版 | skill 文件 + `docs/delegate.example.json` | 用新 skill 跑一次真实委派 | ORD | S | B6 |
-| B14 | **第二级生产验收与能力矩阵**：Herdr可见cc→Codex、headless→结束后可见resume、活跃resume拒绝、HUD_HERDR=0、tmux首次可见/headless resume；在生产B2/B3/B4/B5重复A9关键身份/幂等/恢复反例，补全部声明能力及06基准 | tests/integration/scenario-*.sh、tests/human/*.md、docs/capability-matrix.md与账本/进程/receipt日志 | 每格脚本/日志及版本快照，未测标未验证；核验输入落点、nullable native退出/独立shell状态、完整scope取消/恢复与无重复启动；性能和accepted→started/bound分计；不把B14反列为A9前置 | ORD + HUI | M | B4、B5、B11、B12、B13、B16、B17 |
-| B16 | **五维状态归并器**：activity / pendingReason / lastTurnOutcome / liveness / freshness 的归并规则与真值表（含 Herdr 事实与 transcript 事实冲突、心跳停但回执未到、关闭后保留），输出给渲染与 status 的单一结构 | `src/core/status/merge.ts`、`docs/contracts/06` 附录真值表、fixture | 真值表每行一个用例；B10 / B6 不再各自判状态 | CORE | M | B2、B8 |
+| B14 | **第二级生产验收与能力矩阵**：Herdr可见cc→Codex、headless后可见resume、活跃拒绝、HUD_HERDR=0/tmux；生产重验A9身份/幂等/恢复反例及全部声明能力/06基准；B18 producer快照、双source、晚绑定、两轮resume、handover、空值/隐私回归 | tests/integration/scenario-*.sh、tests/human/*.md、docs/capability-matrix.md及ledger/进程/receipt日志 | 逐格日志/版本，未测未验证；输入落点、nullable native/独立shell状态、完整scope取消/真实父MCP故障及无重复启动；性能/accepted→started/bound分计；导出行数/字节/墙钟/读事务寿命实测；toktrack消费端非A9/B15前置 | ORD + HUI | M | B4、B5、B11、B12、B13、B16、B17、B18 |
+| B16 | **唯一五维归并器**：activity/pendingReason/lastTurnOutcome/liveness/freshness.state，语义优先/launch_failed/isRunTerminal、stateKey/stateSince/basis与episode连续性、双域stamp兼容、notice；B12持久发布共用ObservationCommit | src/core/status/merge.ts、契约06附录真值表、fixture | 每行fixture；重读/重启/新run/新episode/时钟截止/历史缺口一致，证据年龄另算；B10/B6不自判。可先纯归并，持久连续性与最终消费须等B12，不把部分实现当最终验收 | CORE | M | B2、B8、B12 |
 | B17 | **统一模型材料入口**：所有模型功能（摘要、委派摘要、未来 Jev 路由）取材料只走一个入口；按 source 的外发授权；新来源默认不外发；负向测试 | `src/core/materials/`、`tests/unit/materials.test.ts` | 负向测试：未授权来源的任何文本不出现在外发 payload；迁移后新来源默认拒绝 | CORE | M | A2（契约 07）、B8 |
+| B18 | **版本化本地委派导出**：07独立v1只读一致快照、ledgerId命名空间/逐run记录/完整SessionRef与nullable端点、scope/coverage、元数据白名单、--paths local、稳定排序/兼容；不依赖B16/B17/HUD运行 | 按需查询/序列化模块 + A4 golden与producer回归；CLI由B11集成 | 上限10000 run/16MiB/1000ms软预算，超限显式失败、完整JSON备妥才输出；记录行数/字节/墙钟/读事务寿命，不初始化/迁移/采集/Git/reconcile，不新增JSONL writer/daemon/后台全库同步；toktrack独立接入 | CORE | S | A9、B2 |
 | B15 | **阶段评审**：MVP 演示材料 + 账本导出 + 场景日志 + 能力矩阵送 ARCH | `docs/reviews/<date>-pro-mvp.md` | 无阻断项 | ORCH + ARCH | S | B14 |
 
-可并行（A9 之后）：B2 ∥ B3a ∥ B8；B3b 等 A8；B7 ∥ B9 ∥ B16 ∥ B17；B12 随时。B10 → B11 串行；B13 在 B6 后。规模标注"探针后重估"的（B3b、C4）在对应探针结论出来后由 ORCH 改规模。
+可并行（A9之后）：B2 ∥ B3a ∥ B8；B2后B12 ∥ B18，B18不等B16/B17；B7/B9/B17可按各自输入推进。B16纯逻辑可先做，最终连续性须B12，B6最终status须B16；B10→B11串行且B11集成B4/B18。B13在B6后；toktrack consumer不作为任何producer或A9/B15前置。规模标注"探针后重估"的（B3b、C4）在对应探针结论出来后由 ORCH 改规模。
 
 ### 阶段 C：pi 与 Jev 后端
 
@@ -118,8 +121,8 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | C1 | pi 适配器（绑定、reader、口径、`custom` 事件）+ `hud pi` + pi 的 MCP 加载 | CORE | L | B15 |
 | C2 | cc / pi 的 resume 模板实测与能力矩阵更新；新文件归同一 SessionRef 的处理 | ORD | M | C1 |
 | C3 | `herdr-delegate`（pi）改调 MCP；pi 角色模板 | ORD | S | C1 |
-| C4 | Jev 后端：浏览器实例租约（generation）、key / send / wait、`uncertain` 对账、needs_human、混用规则检查 | CORE | M（探针后重估） | B15 |
-| C5 | JobRef 节点渲染与卡片 | FE | S | C4 |
+| C4 | Jev后端：定稿浏览器租约契约/DDL，真实resource/holder/generation、key/send/wait、uncertain对账、needs_human/混用；holderLabel?:string从lease owner/job在同一读取投影派生，无可公开显示名则省略，不另存所有权 | CORE | M（探针后重估） | B15 |
+| C5 | JobRef节点渲染/卡片，消费C4派生holderLabel；改名只变显示，label不参与资源判等/generation/释放，needs_human/未知继续持有 | FE | S | C4 |
 | C6 | 验收：三 harness + Jev 同树；Jev sent → answered 与 needs_human 两场景（needs_human 的登录 / 验证码留给用户，不交 HUI） | ORD + HUI | M | C1–C5 |
 
 ### 阶段 D：cc 完整与 statusline
@@ -155,14 +158,17 @@ F1 Jev 路由（CORE + ARCH）、F2 pi footer（ORD）、F3 Herdr 事件订阅�
   A1 第一批(01,02) ─ A1 第二批(03,04) ─┐
   A3 ─ A8 ──────────────────────────┼─ A2 定稿 ─ A4（类型/fixture+最小原型） ─ A5 ─┬─ A6 ─┐
                                     │                    └─ A7 ─┴─ A9（契约冻结 = 阶段 B 门禁）
-阶段 B（全部在 A9 之后）
-  B1 ─ B2 ─┬─ B3a ─┬─ B4 ─ B5 ───────────────┐
-           │       ├─ B3b(等 A8) ─ B7 ───────┤
-           │       └─ B6 ─ B13 ──────────────┤
-           ├─ B8 ─┬─ B9 ──┐                  ├─ B14 ─ B15（MVP）
-           │      ├─ B16 ─┴─ B10 ─ B11 ──────┤
-           │      └─ B17 ────────────────────┤
-           └─ B12 ───────────────────────────┘
+阶段 B（全部在 A9 之后；+ 表示共同依赖）
+  B1 + B2 + B3a ── B4 ── B5
+  B3a ── B3b ── B7
+  B2 ── B12 ──┐
+  B2 + B8 ────┴─ B16
+  B2 + B3a + B16 ── B6 ── B13
+  B2 + B8 ── B9；B9 + B16 ── B10
+  B2 ── B18（不等 B16/B17，consumer 独立）
+  B4 + B7 + B10 + B18 ── B11
+  B8 ── B17
+  B4 + B5 + B11 + B12 + B13 + B16 + B17 + B18 ── B14 ── B15（MVP）
 阶段 C
   C1 ─ C2 ─ C3 ─┐
   C4 ─ C5 ──────┴─ C6
@@ -172,11 +178,11 @@ F1 Jev 路由（CORE + ARCH）、F2 pi footer（ORD）、F3 Herdr 事件订阅�
 E、F 按需
 ```
 
-图只是示意，§4 每行的"依赖"列是权威。里程碑：M1 契约冻结（A9）；M2 MVP（B15）；M3 三后端同树（C6）；M4 statusline 切换（D6，含 D5 的两周观察）。
+图只是示意，§4每行依赖列为权威；最终验收依赖为B6→B16→B12，B10完整驻留消费同受约束。B18只依A9+B2，由B11集成，B14含producer回归；B17仅模型材料/外发，不接管本地export、repoId或状态持续时间，两份白名单不混成全局授权。里程碑：M1 契约冻结（A9）；M2 MVP（B15）；M3 三后端同树（C6）；M4 statusline 切换（D6，含 D5 的两周观察）。
 
 两级门禁的解释以本段与修订后的A4/A9/B3b/B14为准：A9前不合入B生产实现，但A阶段需要隔离的可执行事务规格、真实临时SQLite与最小合成进程原型，不能只审纸面fixture。A9不依赖B3/B4/B5/B14先通过；这些WP在冻结后对生产实现重验关键反例、完成声明的能力矩阵与06性能验收。§6“fixture不证明真实进程恢复”仍成立；A9的原型是另一份可行性证据，不替代生产验收。§4旧A1行中的甲/乙接口留位不构成实现两套后端的要求，B3b只实现Oracle修订甲。
 
-证据状态：A3五份探针已评审（01列出版本/模式），spoof已完成且有界；daemon补测见docs/probes/codex-daemon.md，仅CLI0.166/daemon0.163在场默认direct-stdio，非共享能力/非A9前置。A8首轮拒绝，A8-fixB1局部进展，A8-fixB2的TTY父退出、实际context命令及同agent/session状态仍待接受；这里的fixB1/B2不是阶段B的WP B1/B2。预算、唤醒与启动延迟口径归06。
+当前证据状态：A3五份探针已评审、spoof完成且有界；daemon补测仅CLI0.166/daemon0.163在场默认direct-stdio，非共享支持/A9前置。A8首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后的TTY前台输入/收尾；只限所测版本及pane shell等待hud-run的前台形态，后台形态负对照失败，supervisor死为已记录中断语义。A8-fixB2不等于工程WP B2或生产取消/复用/性能/真实父MCP故障矩阵已通过。D01–D13类型/边界及A4新增A9 fixture纳入本次契约收口，不构成A9放行；三阻断组不变。预算/唤醒/启动延迟归06，本地export归B18、toktrack接入独立；只承诺逐run有来源的启动位置/已确认边/可选declared来源，不承诺自动归属任意/tmp副本。
 
 ## 6. 测试与验收策略
 

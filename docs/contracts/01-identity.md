@@ -1,16 +1,18 @@
 # 01：调用者登记与绑定凭据
 
-- 版本：`v0.3 draft`（2026-11-01；Oracle C01–C14 修订）。
+- 版本：`v0.4 draft`（2026-11-01；Oracle C01–C14、D01–D13 修订）。
 - 状态：A1 第一批草案；不是阶段 B 的冻结基线。A9 需同时审查不变量、失败案例、测试结果与探针原始证据。
 - depends-on：[概念方案 v2.3](../universal-hud-concept.md) §4、§6.6、§6.7、§15–16；[工程计划 v1.1](../universal-hud-engineering-plan.md) §3–4、§6；[第三轮评审](../reviews/2026-11-01-chatgpt-pro-v22-plan.md) §3①②；[02 执行协议](./02-execution.md) 的事务与 schema。
 - 证据快照：A3 五份探针已评审；[Oracle 裁决](../reviews/2026-11-01-astra-contracts.md) §3 批准版本受限的组合身份路径，不把字段存在单独当作授权。A9 尚未放行。
 
 [A3 Codex](../probes/codex-mcp-launch.md)：CLI 0.166.0、daemon absent 下 TUI/exec 各自直接启动 stdio MCP；配置 env 可达，普通 shell HUD_* 不继承。有界 spoof 已完成：伪造值只进 `params.arguments`，真正 `params._meta` 仍匹配 rollout；不外推未来版本/传输。[双 home](../probes/codex-dual-home.md)要求 source 隔离；[cc 2.1.305](../probes/cc-mcp-env.md)证实环境与 sessions pid/procStart 匹配、metadata 无 session；[Herdr 0.9.5](../probes/herdr-env.md)仅覆盖 Codex tab-root/pi split；[pi 1.4.0](../probes/pi-resume.md)的 --session 续文件、--fork 新 ID，不等于完整 resume 能力已验收。
 
-[daemon 补测](../probes/codex-daemon.md)仅覆盖 CLI 0.166 / managed app-server 0.163 在场时的默认 direct-stdio 启动；未证明共享连接，脚本 exit=2、后续授权清理不能算整项 pass。daemon-present 正向不是 A9 前置。可见模式依 [04](./04-supervision.md) 选择修订甲：[A8](../probes/hud-run-visible.md)首轮被拒，fixB1 是局部进展，fixB2 的 TTY 父退出、实际 context 命令、同 agent/session 状态证据仍待接受。
+[daemon 补测](../probes/codex-daemon.md)仅覆盖 CLI 0.166 / managed app-server 0.163 在场时的默认 direct-stdio 启动；未证明共享连接，脚本 exit=2、后续授权清理不能算整项 pass。daemon-present 正向不是 A9 前置。可见模式依 [04](./04-supervision.md) 选择修订甲：[A8](../probes/hud-run-visible.md)首轮被拒；A8-fixB2 的同 agent/session 状态、实际 context 命令及父 launcher 退出后的 TTY 输入/收尾关键证据已于 `8fdf4cf` 接受。接受范围仅为所测版本与 hud-run 为 pane 前台作业的形态；完整生产取消/复用/故障矩阵仍归 B。
 
 
 本文中的“必须”是待实现、待验证的协议要求，不是已经通过的运行保证。只使用合成身份举例。账本唯一写者家族为 `hud-mcp`、`hud-run`、reconciler；初始登记、意图和证据可以由前两者写入，身份回填、generation 失效和关系状态迁移统一经 reconciler 的事务入口。HUD 只读账本并投影，不替它们执行绑定。
+
+[Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
 ## 数据模型
 
@@ -27,6 +29,8 @@
 | `RunBinding` | 某次运行的会话、启动实例与宿主 occupant；在 schema 中由 `runs`、`child_bindings` 和 evidence 组合表示。Herdr locator 带 server/workspace/tab/pane，tmux locator 带 server 实例/session/pane | HUD 自己的 pane 不是被观察 pane |
 | `OwnerKey` | 从本次调用选定的当前 context 派生：已证实会话为 `json_array('session', session_ref)`；仅未绑定 dedicated 可用 `json_array('proc', process_key, generation)`。shared 不取得 MVP 操作权限。已绑定 SessionRef 跨 MCP 重启和同会话 resume 保持逻辑所有者 | 不把 caller_id/context_id 放进幂等键，不另建可随意赋值的所有者身份 |
 
+工作位置按 [06「WorkspaceContext 与项目归属」](./06-observation.md#workspacecontext-与项目归属)定义：`cwd`、`worktreeRoot`、显示名 `worktree`、本机 `repoId` 与显式 `projectOrigin` 均不授予身份。repoId 不参与 SourceId/SessionRef/OwnerKey 判等；同仓库的两个 harness home 仍是不同 source。cwd 未知为 null，不能填 HUD 目录；同名、父子关系、相同 remote 或普通目录副本均不能证明同项目/同工作树。外部消费者必须按 harness + 规范存储根重建 SourceId，以完整 SessionRef join；Claude agentId 进入 threadId，缺 source 不能猜 home。
+
 `caller_contexts.generation` 是调用上下文的代次；`RunBinding.binding_generation` 是目标会话本轮运行绑定的代次，分别校验。首次运行先以 provisional 目标分配 binding_generation；resume / predecessor 根据已有会话最后代次递增，与意图同事务。`child_bindings` 记录物理 caller、context/generation 和目标绑定代次的关联。MCP/模型传来的 generation 只是请求值，不能覆盖可信来源或当前账本值。
 
 专属 context_key 固定 stdio。物理连接不等于唯一逻辑来源：原生 subagent、同进程换会话也可能复用 MCP。每次调用先验证当前逻辑来源，再选择 context；缺失、冲突、原生子来源不可辨时返回 identity_source_missing/identity_unverified，不沿用上次 root，不回退 proc OwnerKey，不查幂等或执行工具。cc 的根 env/sessions 文件单独不足以区分原生子；支持档案须提供经验证的根调用隔离，或把本次可信 toolUseId 精确关联到当前根公开调用记录；关联缺失/落入子 agentId 即拒绝根授权。此拒绝规则也覆盖持有根 claim 的子调用。
@@ -34,6 +38,14 @@
 MVP dedicated 根连接收到可辨的原生 thread/agentId 子调用也只拒绝该调用，不选择根 context，不将其当根会话切换而递增代次；根的后续调用仍须逐次核验当前来源。原生子与真正的根会话切换必须能区分，否则该路径无委派授权。
 
 可信当前来源证实切换会话/occupant 时，reconciler 关闭旧 context/scope/alias，撤销旧授权，generation+1；PID/start/boot 改变则建新 ProcessKey。MCP 重启产生新 CallerId/context，但须证明同一真实 harness、当前 SessionRef 与未关闭代次，OwnerKey 才连续。不能只靠进程 ancestry/env 声称调用来自根。
+
+### OwnerKey / 授权边界：本地管理 resume
+
+控制发起类型为 `ControlInitiator = {kind:'mcp',callerId,contextId,contextGeneration} | {kind:'local_user',uid,invocationId,representedOwner:OwnerKey}`。MCP 沿用上述逐调用当前来源门禁。窄例外仅是同一 OS 用户对其私有 HUD_HOME/ledger 显式执行本地管理 resume：入口核验当前 UID、目录/账本所有权及私有路径，代表该 link 已登记的现有逻辑 owner，不转移关系所有权。representedOwner 只能从已证实的 `parent_ref` 派生，不能从参数自报 OwnerKey、历史父 context 或进程 ancestry 冒充当前父调用。
+
+意图事务的 accepted 事件保存 `actor.kind=mcp|local_user`；local_user 记录 UID、本地 invocation ID 和被代表的 OwnerKey，供执行票据登记/提交时按该类型重验。CLI 的 `launch_call_id` 标为本地调用（如 `local:<invocationId>`），不存在父 MCP tool_result，不能走下表父 transcript 工具结果核验来伪造它；独立启动/子握手证据仍全部适用。父 ref 未确认、跨 owner predecessor、local report、未定义的 local spawn 不在例外内。MCP 参数 `admin` 不能进入 local_user 分支；UID/CLI 来源不是人类证明，同 UID 脚本不由此协议隔离。
+
+CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02，全部 resume 门禁归03，受信管理入口归04。读取能力注明主体：MCP status 按父 owner，本地 HUD 按 local_user；两者共用门禁函数，`resumable`/`allowedActions` 仅提示，不能当授权凭据（T-01-38、39）。
 
 
 ### claim 与证据
@@ -66,7 +78,7 @@ MVP dedicated 根连接收到可辨的原生 thread/agentId 子调用也只拒�
 | I-01-3 | claim 首次兑换必须未过期、未撤销且 run/source/启动实例/目标代次相符；claim 只升 claimed，同主体重复不重复消费 | DB+TX；T-01-8、9、10 |
 | I-01-4 | 常规 bound 必须具备已登记 caller、有效 claim 声明、唯一实际 SessionRef、独立证据；相同祖先的多会话无法区分时不得 bound。fork 先兑换也无所有权 | TX+E；T-01-11、12、13 |
 | I-01-5 | transcript 只能核验既有 ledger link/run；仅确认或否定，不能创建 link/run，不能单独提供独立身份。缺 ref 的唯一合格匹配只由 reconciler 回填并记录 bound_by 与 evidence | TX；T-01-14、15、16 |
-| I-01-6 | parent 操作取本调用 OwnerKey，等于关系当前所有者才允许 resume/cancel；report 只能来自目标 run 当前且未失效的 MCP child binding。知识型 claim/linkId 不授予权限 | TX；T-01-17、18、19 |
+| I-01-6 | MCP parent 操作取本调用 OwnerKey，等于关系当前所有者才允许 resume/cancel；本地管理 resume 仅按上述 local_user 窄例外代表既有 owner，其他门禁不变。report 只能来自目标 run 当前且未失效的 MCP child binding。知识型 claim/linkId 不授予权限 | TX；T-01-17、18、19、38、39 |
 | I-01-7 | 同一 child 只有一个当前 owner/父边；MVP predecessor 仅同 owner、真实 ref、空槽且无冲突；跨 owner 一律 unsupported。转交原子、旧 link 历史化，fork 只候选 | DB+TX；T-01-20–22；02 T-02-18；03 T-03-20 |
 | I-01-8 | HUD 永不写 ledger；caller 注册不直接推导关系绑定；身份回填、冲突、失效/代次变更和关系迁移经 reconciler 提交并附事件 | TX；T-01-15、23 |
 | I-01-9 | dedicated 仅在 bound 级证据后单向 proc→session；同代唯一。归并事务原子重键幂等记录、保留原范围审计与原 outcome；换代关闭 alias，冲突整体拒绝。正常只查当前 canonical key | DB+TX；T-01-24–26；02 T-02-4、5 |
@@ -201,5 +213,7 @@ MVP dedicated 根连接收到可辨的原生 thread/agentId 子调用也只拒�
 | T-01-35 (A9 fixture) | 一个 MCP 接到共享 A/B、可辨原生子或不可辨来源；即使带根 env/session/claim → MVP unsupported/identity_source_missing，零 owner/幂等查询/报告授权；子调用不授成根、不使根换代 |
 | T-01-36 (A9 fixture) | 当前 session 切换/generation+1，旧代、缺来源或 prompt 声称旧 root → 旧授权先撤销，不复用缓存；没有可观测切换路径的档案拒绝 |
 | T-01-37 (A9 fixture) | resume/handover 关系已child-a，新轮解析child-b，或合法同a的新消息 → 前者拒改links.child_ref/runs.target_ref、run uncertain/b仅候选；后者可本轮绑定，link不回pending |
+| T-01-38 (A9 fixture) | 同用户/私有账本/已确认parent_ref的local resume，与错UID/非私有路径/父未确认/参数admin四组 → 仅首项可代表已登记owner；actor记录local_user/UID/invocation/owner，零伪造CallerId/父tool_result |
+| T-01-39 (A9 fixture) | local report/spawn/跨owner predecessor、把另一主体allowedActions当凭据、旧父context失效 → 均不由例外放行；合法local resume按typed initiator重验，不依赖旧context仍活，原parent/link归属不变 |
 
 A9 最小身份包：cc→Codex 唯一 source/session、claim 配置运输、fork/旧 claim 不授权、同进程切换失效、MCP 重启 OwnerKey 连续、共享/不可辨来源拒绝；尚不支持的 daemon/无 MCP 只验拒绝。T-01-4、5、27、33 用最小原型与 A3 关键证据补齐，其余 A9 项可用规格/fixture；生产集成与完整能力矩阵归 B，不要求全部 B 先于 A9。

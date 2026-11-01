@@ -6,7 +6,7 @@
 - v2.1 加三项决定：Herdr 集成做成独立层、委派同时支持可见与 headless 两种模式、支持 resume。
 - v2.2 吸收 ChatGPT Pro 的评审（[reviews/2026-11-01-chatgpt-pro-universal-hud-v21.md](./reviews/2026-11-01-chatgpt-pro-universal-hud-v21.md)）：五个返工项与八个抉择点全部采纳。核心变化：绑定握手取代"linkId 共现即身份"；账本改为 SQLite 事务存储；关系、运行、报告分开建模；每次运行有独立的托管进程；Jev 按浏览器实例加锁；P0 契约进阶段 A。
 
-本轮按 [Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14 收窄 MVP；A9 仍未放行，生产实现/能力验收在 B。调研底稿见 [universal-hud-plan.md](./universal-hud-plan.md)，决策日志 §15，当前证据与两级门禁 §16。
+本轮按 [Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14 收窄 MVP，并按 [consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、动作与本地导出；A9 仍未放行，生产实现/能力验收在 B。调研底稿见 [universal-hud-plan.md](./universal-hud-plan.md)，决策日志 §15，当前证据与两级门禁 §16。
 
 ## 0. 一句话
 
@@ -76,7 +76,7 @@ Jacob 的日常是多 harness 编排：cc 当编排者，后端交 Codex impleme
 | `DelegationLink` | 父子关系，有独立 id 和生命周期 | §6.6 |
 | `Run` | 关系下的一次运行实例：模式、宿主位置、托管进程、退出回执 | `runId`、`linkId`、`mode`、`state`、`locator`、`supervisorPid`、`exit?` |
 | `Report` | 子在某次运行里提交的结果 | `reportId`、`runId`、`status`、`summary`、`path` |
-| 节点 | 树上的一行 = 一个 `SessionRef` 或 `JobRef` | `origin` 是关系的属性；同一会话可以既是某关系的 delegated child，又有自己的 L1 / subtask / review |
+| 节点 | 树上一行的显示身份为 `session(ref) \| delegationIntent(linkId) \| job(ref)`（Job留C），即§6.5/契约06的DisplayNodeIdentity；不是新的授权身份 | 未绑定意图以稳定linkId关联currentRun，不伪造ref、不计已确认session；绑定后合并真实节点。`origin`是关系属性；同一会话可既是delegated child又有自己的L1/subtask/review |
 | L1 / subtask / review | 沿用 codex-hud | |
 | 宿主 | bar / panel 画在哪：tmux pane、herdr pane、cc statusline、pi footer | |
 
@@ -171,10 +171,10 @@ interface HarnessAdapter {
 ```ts
 interface Metric<T> { value: T | null; source: string; asOf: number; quality: 'reported' | 'estimated' | 'unknown' }
 interface SessionEvidence {
-  ref: SessionRef; cwd; startedAt; version;
+  ref: SessionRef; cwd: string | null; cwdSource: string; cwdAsOf: number; startedAt; version;
   model: Metric<{ id; provider?; effort? }>;          // 实际观测到的，不是配置
   context: Metric<{ used; window; afterCompaction?: boolean }>;
-  spent: Metric<{ input; output; cacheRead?; cacheWrite?; reasoning?; costUsd? }>;  // 仅本节点
+  spent: { tokens: Metric<TokenUsage>; costUsd: Metric<number> }; // 两项独立，costUsd必有，未知value=null；仅本节点
   activity: ActivityState;                             // §6.8
   action?: AgentAction;                                // 当前打开的工具调用
   reports: Report[];                                   // 公开报告，白名单提取
@@ -186,7 +186,9 @@ interface SessionEvidence {
 }
 ```
 
-Git、项目配置、宿主健康、布局留在公共服务与视图组装层，不是 reader 的职责。跨节点合计只在口径与覆盖已知时进行；未知不当 0，记录的零成本不宣称免费。
+Git、项目配置、宿主健康、布局留在公共逻辑与视图组装层，不是 reader 的职责，不新增常驻服务。reader只提供实际读到的cwd及来源/时间，未知为null，不填HUD目录。组装层的`WorkspaceContext`按契约06包含`cwd,worktreeRoot,worktree?,gitCommonDir,repoId,projectOrigin`和来源/捕获时间/缺失原因：worktree仅显示名，工作树判等用有效规范根，cwd差异独立比较；根未知只说明目录不同。repoId为`SHA256(UTF8(canonicalJSON(['git-common-dir-v1',realpath(gitCommonDir)])))`，identityKind=git-common-dir-v1、scope=local，不等于SourceId/跨clone或跨机器项目UUID；同remote的两个clone不同组，普通副本无声明仍unknown。`projectOrigin={repoId,basis:'declared',declaredAt}|null`另记声明主体，不替代物理repoId/证明同仓库。
+
+Git只用缓存，冷缺失由已有启动/采集流程每新目录/失效代次最多2子进程、200ms软预算，超时终止并留原因；不入写事务/MCP accepted热路径/paint/statusline，不每tick重探或加watcher。跨节点合计以完整SessionRef去重，带knownCount/missingCount、coverage/quality；同口径非负已报告成本部分和才可作下界，混估计则estimated且非严格下界。costUsd未知给独立Metric的null/unknown和明确缺失来源，tokens已知不补美元，Flow credits单位分开；有效零保留0/reported，不宣称免费。旧v2兼容例外归07。
 
 **用量口径（每个适配器内定义并测试）：**
 
@@ -202,15 +204,15 @@ Git、项目配置、宿主健康、布局留在公共服务与视图组装层�
 关系在存储中独立于树，树是投影。节点字段在 `SubagentTreeNode` 上加：
 
 ```ts
-ref: SessionRef | JobRef;
-harness: 'codex' | 'claude' | 'pi' | 'jev';
+identity: DisplayNodeIdentity; // session(ref) | delegationIntent(linkId) | 未来 job(ref)
+harness?: 'codex' | 'claude' | 'pi' | 'jev'; // 仅有真实ref时的身份；意图中的预期后端另列
 links: { asChild?: DelegationLink; asParent: DelegationLink[] };
 run?: { runId; mode; state; locator?; exit? };      // 当前或最后一次运行
 host?: { paneId?; tabId?; label?; occupantMatches: boolean };
 candidates?: LinkCandidate[];          // 未确认的推断，只在 Inspector 显示
 ```
 
-构树规则：visited 集合防自环与祖先回环；同一 ref 只出现一次；总节点预算 200，每 tick I/O 预算 8 MiB，活跃与可见节点优先；不可见历史节点保留身份与最后状态并标"未加载"。`agentCounts` 的 active / blocked / done 按 §6.8 的投影算。
+`DisplayNodeIdentity`由06定义。未绑定的已登记委派以稳定linkId显示键关联currentRun，不伪造sessionId/source，不因label/cwd相同合并，不计入已确认session数；不是新增授权身份或账本运行种类。首次绑定由B9合并到真实ref，保持选择映射、单父边与去重；未绑定意图从ledger事件派生时间，不造collect租约。构树仍以visited防环，同一真实ref只出现一次，总预算200/8MiB，未装载历史保留限额内身份/最后状态。状态字段用B16的freshness.state/stateKey/stateSince/stateSinceBasis及共享isRunTerminal；`run.failed`为launch_failed/non_execution，failed报告但run.running及cancelling仍非终态，不能按图标折历史。计数口径由共享投影提供，视觉交前端。
 
 ### 6.6 委派 MCP（`packages/hud-mcp`）与运行托管（`hud-run`）
 
@@ -238,6 +240,8 @@ candidates?: LinkCandidate[];          // 未确认的推断，只在 Inspector 
 - **幂等。** 当前 canonical OwnerKey×request_key。同参重放原结果，异参拒绝。bound证据后的 proc→session 归并同事务原子重键、保留 origin_owner_key/归并事件审计，digest/link/run/outcome不变；同键异参或异结果整体拒绝，不双写或扫描关闭alias。
 - **意图与槽同事务。** link/run starting/claim/幂等/槽/accepted事件原子；首次明确新会话才用 provisional:<runId>，ref晚到原子换槽。真实槽冲突双方uncertain/保留占有，阻断该ref进一步操作，不假装撤回已发动作。resume/predecessor只用真实ref。
 - **单次执行与对账。** 唯一supervisor消费票据、先submitting再一次提交；未知不重发/重领票据。终结只用02的唯一R-02表：正式scope回执R、可信未执行N、无旧writer receipt也可达的Q。原harness不再执行、完整scope无活workload、所有可能launcher（含中间shell）封口/死亡且无矛盾才终结；原生结果可NULL。report/UI done/心跳过期/关pane不放槽，手动reconcile仍须证据。
+- **逐run启动上下文。** spawn/resume/handover意图冻结非空规范`runs.launch_cwd`及nullable`project_origin`；nullable`workspace_snapshot`只由有效缓存随意图记录或已有run写者一次有界启动采集NULL→首次捕获，并同事务记workspace.captured。声明与Git快照分列，超时/非Git可留原因；不重启harness。后续observed cwd不覆盖历史，幂等含launch cwd/显式originRepoId而不含Git结果、显示名或写者时间。库私有ledger_metadata初始化一次ledgerId，重启/同库恢复保留，独立库新生成。
+- **本地导出。** B18在MVP按需提供独立`hud link export --json --schema-version 1`，逐run启动位置（cwdBasis=launch）、已确认委派边及可选declared来源，范围/版本/隐私归07；路径仅`--paths local`，默认元数据，完整ref join，不对外承诺内部SQL/view/JSONL。toktrack消费端独立，不阻A4/A9/B15，不承诺任意/tmp副本自动归主仓库；不新增后台同步/逐tick导出。
 - **轻量。** 外部读/hash/宿主CLI/发现进程均在写事务外，事务内重验当前context/版本/槽；短锁等待与总响应预算归06。接受延迟与started/bound延迟分计；status只读，不新增常驻恢复/通知服务或按秒全量对账。
 
 关系、运行、报告分开；已证实关系resume不回pending，每run的runHandshake由claim/binding推导。MVP同owner换任务用predecessor，旧边历史化、唯一当前父边；不承诺恰好一次或外部动作必达。
@@ -266,7 +270,7 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 
 #### 6.6.4 运行托管：`hud-run`
 
-每run一个托管进程；headless直接起目标无TTY、stdin brief或关闭；可见采用Oracle修订方案甲：hud-run进入pane交互shell，shell档案用-ic保留函数/context，harness在经核验前台PGID，supervisor不读TTY。argv逐参数spawn；可选已验证包装链最后exec外部可执行文件不另立架构，exec codex函数不证明直接子进程。完整managed shell仅经验证单次前台启动，任意shell文本不自动支持。
+每run一个托管进程；headless直接起目标无TTY、stdin brief或关闭；可见采用Oracle修订方案甲：hud-run是pane shell正在等待的前台作业，shell档案用-ic保留函数/context，harness为经核验的终端前台消费者/PGID，supervisor不读TTY；不能用`sh -c '<hud-run> &'`后台形态替代。argv逐参数spawn；可选已验证包装链最后exec外部可执行文件不另立架构，exec codex函数不证明直接子进程。完整managed shell仅经验证单次前台启动，任意shell文本不自动支持。
 
 - meta只保留稳定启动身份/范围，局部shell/leader退出事实入evidence，最终exit.json一次fsync/rename原子提交，再幂等导入ledger并按02终结。正常scope无活workload+原harness结束+所有launcher封口可ended/cancelled，原生结果未知为NULL；shell0/130/137单列，不填runs.exit_code。
 - 每5s仅一次runs心跳CAS，不周期复制meta/events/evidence；空闲阻塞，用退出/取消/恢复事件检查范围，禁原型200ms扫组常驻生产。Z单列为已终止，S/T/D仍活；范围外普通工具只诊断，确证原harness/同SessionRef旧写者仍活须阻复用。
@@ -274,13 +278,14 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 - 父MCP/launcher退出默认continue，须单独验证子仍有TTY前台、输入、最终收尾；parent.offline事件带seq/since/冻结策略，不推子退出。stop也按完整取消/对账。vendor daemon stop称stopped不证明全部vendor启动进程已退出，参见[补测](./probes/codex-daemon.md)。
 - **supervisor死亡意味着本轮交互中断。** 甲已观察前台回shell、输入落shell与tty-input挂起；立刻/失联确认后uncertain、持槽、交互不可用，禁止自动input/focus/fg、恢复wrapper、透明接管或resume副本。可读诊断，旧scope确证结束并对账后才能新开。缺旧writer receipt仍可由恢复器记录Q，不能要求死人补文件。
 
-乙sidecar不作MVP managed后端：缺完整结束/取消/启动封口能力，不只是缺码；保留探针反证，不能甲提交未知后自动切乙。自有PTY/tee/透明重接管延期。A8首轮拒绝，fixB1局部证据支持选择甲，fixB2仍需主审接受；A9最小机制证据与B生产验收分开（§16/04）。RunHandle固定run/locator/代次，status只读，cancel鉴权；input/focus还须occupant/交互能力核验。
+乙sidecar不作MVP managed后端：缺完整结束/取消/启动封口能力；保留探针反证，不能甲提交未知后自动切乙。自有PTY/tee/透明重接管延期。A8首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受，限所测版本及前台形态，后台形态保留负对照；A9最小机制证据与B生产验收分开（§16/04），A8-fixB2不是工程WP B2。RunHandle固定run/locator/代次，status只读，cancel鉴权；input/focus还须occupant/交互能力核验。
 
 
 #### 6.6.5 等待、resume 与双模式
 
 - **wait。** 有界长轮询，按 `events.seq` 游标返回；按 linkId 等待时进入即解析当前 runId 并固定，之后的新运行不满足这次等待；实际取请求值/协议上限120s/客户端实测工具timeout减正余量的最小值（05），缺可信timeout只即时返回。通知是hint、游标是事实；按run合并heartbeat/WAL唤醒，漏通知在必要截止复读。超时/断线不取消/失败，返回同run/正确游标；父pane自动提示延期。
 - **resume。** 允许条件：MVP关系处于 `bound` / `reported`（`closed`重开延期v1.1），调用者的 `OwnerKey` 是关系所有者，且该子 `SessionRef` 的运行槽空闲（`uncertain` 占槽，先对账）；同一任务（brief 不变或追加 prompt）才复用 linkId 并追加 runId，旧 claim 撤销。按后端档案的 resume 模板：Codex `codex resume <id>` / `codex exec resume <id>`，cc `claude --resume <id>` / `claude -p --resume <id>`，pi `pi --session <id>`（headless 加 `-p`）。
+- **本地管理与HUD动作。** 01新增同OS用户/私有HUD_HOME的local_user resume窄入口，代表已确认parent_ref的现有owner且不转移归属；actor审计UID/invocation/representedOwner，不伪造父MCP。实际命令含安全引用HUD_HOME、`--request-key`、`--expected-run`、`--mode`；先鉴别再按02同键同参重放，新意图才重验expected-run和全部resume门禁。MVP HUD的R只显示/复制03 ActionDescriptor，不起控制CLI；重复复制保留同一意图key、目标固定，入口未验证只给诊断/原父途径。未来直接调用另立可选能力，固定操作/目标/模式显式确认、可信argv执行时重验，响应未知不换key自动重试；绘制/通知/重连/uncertain不触发动作，已有writer内部恢复照04。
 - **同owner换任务 = 转交；跨owner延期。** MVP仅当前同OwnerKey、真实ref、空槽/无冲突时，`delegate_spawn{predecessor: linkId}` 对同一个子会话原子建立新关系；跨owner一律unsupported。新关系成为该子会话**当前唯一的所有者与树上唯一的父边**，旧关系变为历史（`state = handed_over`），Inspector 显示谱系。不支持把 predecessor 当作"新会话的谱系"：fork 出新会话在 v1 不建关系，只作候选。
 - **双模式。** `visible` 在 Herdr 内是 tab 或 split，在 Herdr 外是 tmux pane；`headless` 由 hud-run 直接起进程。两种模式在 Herdr 内同时可用，同一父可混用。headless 运行**只在 HUD 呈现**，不在 Herdr 登记；活跃时树上的动作是"看日志"，结束后才是"以可见模式 resume"。
 - **能力矩阵。** 阶段 B 验证并写入文档的组合：Codex × {Herdr tab 可见, tmux 可见, headless, 结束后 resume（可见 / headless）}；split 布局、cc / pi 的 resume、活跃中的模式切换在后续阶段补。矩阵之外的组合返回"不支持"，不猜。
@@ -319,9 +324,11 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 | `pendingReason` | none / approval / question / needs_human | transcript 的审批 / 问题记录；Jev 的 NEEDS_HUMAN；注册表 `blocked` |
 | `lastTurnOutcome` | none / completed / failed / interrupted | transcript 的 turn 结束事件；`reports`；`runs.exit_code` |
 | `liveness` | alive / gone / unknown | 托管心跳 / 注册表 / 进程；进程存在只证明存在 |
-| `freshness` | 证据事件时间与观测时间分开；来源失联标 `stale` | |
+| `freshness` | `{state:fresh\|stale\|unknown,...来源时间/截止/错误明细}`，消费者比较freshness.state；缺来源unknown | B16选择来源并定义总体state，事件时间与观测时间分开 |
 
 合并规则：注册表回答"当前交互是否 busy / blocked"，不覆盖明确的 turn failure；Herdr `done` 被查看后变 `idle` 是正常现象，用 `completion_seq` 识别完成观测；`unknown` 回退到有效文件证据；旧 transcript 里永不闭合的工具调用不推断 running 超过一个阈值；父 idle 而子 working 显示"idle，1 child working"。notice 只由 `pendingReason` 从 none 变为其他、`lastTurnOutcome` 变为 failed、新 `reports` 行、运行进入 `uncertain` 触发，切 tab 不触发。归并器是独立模块（计划书 B16），完整真值表是它的单测，契约 03 / 06 只定义维度与来源优先级。
+
+06拥有语义状态`stateKey/stateSince/stateSinceBasis`：B16按语义及必要原因/episode选择边沿，不含视觉桶；新run/新待决周期重置，重读/心跳/usage/语言/排序不重置。已证事件用event，首次看到用observed，无可靠时间/连续性为null/unknown；随B12同一ObservationCommit持久，重启可恢复可证连续性，丢历史不假装持续。状态驻留以nowMs派生，uncertain/stale的证据年龄另用lastEvidenceAt/心跳，零逐tick写。ledger asOfSeq仅本次快照高水位（无库null、空库0），独立observationStamp记录实际输入run/ref/代次/序号；旧run摘要不得补当前run，无跨库原子保证，status/wait不触发采集/Git/reconcile/摘要发布。
 
 ### 6.9 注册表接口
 
@@ -377,7 +384,7 @@ delegate.json                            后端档案
 | 浏览器 `browser:<cdp_url>` | 阶段C的账本扩展 | 任务 answered / failed 并对账后释放；needs_human 期间持有；失联不释放 |
 | 采集 `collect:<session>` | 观测存储 | 按代次接管：新持有者 generation +1 并写入；旧持有者的迟写（generation 落后）被拒绝；过期可接管 |
 
-心跳与内容更新时间分开，不用 mtime 代表存活。版本分别管理：public snapshot v3、checkpoint schema、ledger `user_version`、`SCAN_VERSION`。旧 `$CODEX_HOME/hud/` 在阶段 A–D 保持可读，不自动迁移。
+心跳与内容更新时间分开，不用mtime代表存活。五个版本域独立：public snapshot v3、checkpoint schema、ledger `user_version`、`SCAN_VERSION`、本地delegation export v1；内部编号相同不表示兼容，export不改旧--json。旧 `$CODEX_HOME/hud/` 在阶段A–D保持可读、不自动迁移。
 
 ### 6.12 Herdr 集成层（独立）
 
@@ -444,6 +451,7 @@ hud statusline --harness claude     # cc statusLine 命令
 hud panel [--harness X --session ID]
 hud link list|show|export|revoke    # 账本
 hud run status|logs|cancel|reconcile <runId>
+hud run resume <linkId> --request-key <key> --expected-run <runId> --mode <visible|headless> # 显式HUD_HOME；01本地管理入口
 hud --json / --self-check / --kill
 codex-hud …  ≡ hud codex …（兼容 facade，旧默认行为保留到阶段 E）
 ```
@@ -468,7 +476,7 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 ## 10. UX
 
 - **Bar**：模块 `delegated`，按后端计数 `⧉ ✳2 ⌬1 π1 ◎1`；notice 触发规则见 §6.8。
-- **Agents 列表**：树行前缀 harness 图标；delegated 行显示标签、运行模式与状态；headless 活跃行的动作是"日志"，结束行是"打开"（可见模式 resume）；Jev 行显示 provider 与产物；冲突行显示"⚠ 两条记录"；可见行回车 / 点击 = 校验 occupant 后聚焦，Herdr 外灰显。
+- **Agents 列表**：树行前缀harness图标；delegated行显示标签、运行模式与状态；headless活跃行看日志，满足门禁的结束行显示/复制可见resume命令（MVP copy-only）；Jev行显示provider/产物，冲突单列；可见行回车/点击按interaction/occupant门禁聚焦。Resume/Reconcile的类型化动作与固定目标归03，前端不维护另一套迁移规则。
 - **卡片**：pi 多一行 cost；cc 显示 `agentType` 与 `description`；Jev 显示 key、provider、产物路径；delegated 卡片显示 run 序号与退出码；Codex 照旧。
 - **Inspector**：新节"链接"（关系状态机、握手方式、核验结果、时间）、"运行"（runs、托管心跳、日志路径）、"疑似"；新节"覆盖"（reader coverage、跳过的记录）。
 - **顶部**：被外包方视角显示"父：<harness> <name>（<pane>）"，父未确认时显示"父：未确认（caller …）"。
@@ -497,7 +505,7 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 | 阶段 | 交付 | 验收 |
 |---|---|---|
 | **A 契约、探针与 facade** | P0 契约写成 `docs/contracts/`：调用者登记与绑定凭据、spawn / resume 的幂等与事务与 `uncertain` 对账、link / run / report 生命周期与运行互斥与 wait 游标、进程托管 / 取消 / 退出记录 / 父断连；P1 契约：后端能力矩阵与宿主校验与降级边界、观测口径与 reader 预算与采集租约与 checkpoint 提交、外发授权与 schema 版本与旧格式兼容。探针报告 `docs/probes/`：Codex MCP 进程父子与 env、多会话隔离、Herdr env 传递、pi resume 落盘。TS 类型 + 契约 fixture；三个接口与假实现；Codex 经 facade 实现 `HarnessAdapter`，不搬目录；ledger schema v1；snapshot v3 草案；旧命令与默认行为不变 | 现有测试与视觉基线全绿；核心套件在无 Herdr 环境下跑通；契约 fixture 单测：cc 根与子代理共 sessionId、cc 重复 usage、pi compaction / cache_warm、双 home、同 pane 换会话、同一关系两次运行、并发重试、启动中断、旧 run 迟报 |
-| **B MVP 纵向切片：cc → Codex** | `packages/hud-mcp`：调用者登记、账本、七个 MVP 工具（spawn / resume / wait / status / cancel / whoami / report）；`hud-run` 托管进程；Codex 后端档案（launch / headless / resume 模板）；核心宿主（tmux 可见 + headless）；`integrations/herdr/` 三职责实现（tab 可见、注册表、输入 / 就绪）；cc 绑定与最低限度 reader（身份、模型、上下文、活动、`linkEvidence`）；最小采集租约（多消费者）；树显示 delegated Codex 节点及其原生孙辈，headless 行的"日志 / 打开"；Inspector 链接与运行节；`hud claude`（tmux 宿主）与 `--resume`；最小 `hud panel` 入口（验收场景需要）；`herdr-delegate-codex` 改调 MCP；子代理角色模板加 whoami / report；能力矩阵文档 | 真实场景一：cc 在 Herdr 里可见模式启 Codex implementer，握手到 `bound`，树正确、状态随运行变化、关 tab 后历史保留。真实场景二：headless 启 Codex 子会话，结束后可见模式 resume，同一节点两次运行；活跃时 resume 被拒。`HUD_HERDR=0` 下场景二照样通过。并发重试、启动中断、旧 run 迟报、fork 复制 claim 的单测；MCP 在 cc 与 Codex 两侧都能加载 |
+| **B MVP 纵向切片：cc → Codex** | `packages/hud-mcp`：调用者登记、账本、七个 MVP 工具（spawn / resume / wait / status / cancel / whoami / report）；`hud-run` 托管进程；Codex 后端档案（launch / headless / resume 模板）；核心宿主（tmux 可见 + headless）；`integrations/herdr/` 三职责实现（tab 可见、注册表、输入 / 就绪）；cc 绑定与最低限度 reader（身份、模型、上下文、活动、`linkEvidence`）；最小采集租约（多消费者）；树显示 delegated Codex 节点及其原生孙辈，headless 行的"日志 / 打开"；Inspector 链接与运行节；`hud claude`（tmux 宿主）与 `--resume`；最小 `hud panel` 入口（验收场景需要）；`herdr-delegate-codex` 改调 MCP；子代理角色模板加 whoami / report；能力矩阵文档；B18版本化本地委派元数据导出（producer属MVP，consumer独立） | 真实场景一：cc 在 Herdr 里可见模式启 Codex implementer，握手到 `bound`，树正确、状态随运行变化、关 tab 后历史保留。真实场景二：headless 启 Codex 子会话，结束后可见模式 resume，同一节点两次运行；活跃时 resume 被拒。`HUD_HERDR=0` 下场景二照样通过。并发重试、启动中断、旧 run 迟报、fork 复制 claim 的单测；MCP 在 cc 与 Codex 两侧都能加载 |
 | **C pi 与 Jev 后端** | pi adapter + `hud pi`；cc 与 pi 的 resume 模板与实测；`herdr-delegate` 改调 MCP；Jev 后端（浏览器实例锁、key / send / wait、`uncertain` 对账、needs_human）+ JobRef 节点；pi 的 MCP 加载 | 三 harness + Jev 节点同树；pi cost 与 compaction 口径单测；pi / cc resume 真实场景；Jev 节点 sent → answered 与 needs_human 两个真实场景 |
 | **D cc 完整与 statusline** | cc 原生子代理、后台任务、todo 投影；reader checkpoint + 完整采集租约；`hud statusline`（stdin 优先）；性能基准（冷启动、增量、超大单行、无结尾换行、重写、宽树、多消费者）；功能对照清单；`--install` / `--restore` | §9.3 三道门：清单 + 基准 → opt-in 观察期 → 可回滚切换 |
 | **E 整理** | `hud panel`（herdr 宿主）完整版；Codex 目录搬迁（可选）；改名、`HUD_*`、迁移工具；v1.1 工具（list / close / send / ask、资源）；文档、i18n、README | 迁移往返测试；旧命令退役公告 |
@@ -575,7 +583,9 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 
 ## 16. 评审状态与下一次评审
 
-v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md)的14项修订约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成，不能再称尚未评审/未做spoof；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场的direct-stdio有限证据（脚本exit=2、后续授权清理不改成pass），不是共享正向支持或A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝、fixB1局部进展、fixB2的TTY父退出/context实际命令/同agent状态仍待接受。
+v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
+
+A4补类型/nullability/所有权/双域快照戳与合成fixture：stateKey/stateSince/basis连续性、WorkspaceContext及逐run冻结位置、local_user发起/重放与ActionDescriptor、export v1 golden、独立costUsd Metric、显示身份联合/freshness.state/launch_failed/共享终态谓词；反例清单见01–07各A9标签。同证据重启不重置、无DB变化越stale截止、历史缺口/新episode、两同名intent绑定、同仓库worktree/同remote clone/普通与声明副本、包装改cwd/路径消失、ledger run-b+观测run-a等都只作规格/fixture，不提前合入B产品代码。外部consumer字段清单不重阻A4/A9；B18 producer为MVP、toktrack接入独立。B6最终status依B16，B16连续性发布依B12，同一ObservationCommit供B10完整驻留读取；可先做纯归并/ledger子集，不当最终验收。
 
 **两级门禁：** A9审支持范围、可执行事务/状态规格与fixture、最小真实SQLite/合成进程原型及关键A3/A8可行性证据；A阶段可做隔离原型，不提前合入B生产实现。B3/B4/B5/B14对生产实现重验关键反例和完整能力矩阵。各契约每条测试标A9（fixture/prototype）、B、C或v1.1；延期正向流程/DDL/测试移出MVP，不把全部B验收列为A9前置。
 

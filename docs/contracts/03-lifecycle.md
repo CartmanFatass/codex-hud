@@ -1,9 +1,9 @@
 # 03：关系、运行、报告与转交生命周期
 
-- 版本：`v0.3 draft`（2026-11-01；Oracle C01–C14 修订）。
+- 版本：`v0.4 draft`（2026-11-01；Oracle C01–C14、D01–D13 修订）。
 - 状态：A1 第二批草案，待主审与四契约一致性确认；A9 前不作为阶段 B 的冻结基线。
 - depends-on：[01 身份](./01-identity.md)、[02 执行协议](./02-execution.md)、[04 托管](./04-supervision.md)；[概念方案](../universal-hud-concept.md) §6.6、§6.10–11、§15–16；[工程计划](../universal-hud-engineering-plan.md) A1/B3a/B3b/B4/B6。
-- 证据快照：[Oracle](../reviews/2026-11-01-astra-contracts.md)已裁决修订甲，终结可无原生退出结果；[A8](../probes/hud-run-visible.md)首轮拒绝、fixB1 局部进展、fixB2 尚待接受。A3 五份探针已评审，版本/模式与有界 spoof 边界见01；[daemon 补测](../probes/codex-daemon.md)仅证明 CLI 0.166 / daemon 0.163 在场时默认 direct-stdio，不是共享支持，也非 A9 前置。A9 审规格/最小原型，生产矩阵在 B。
+- 证据快照：[Oracle](../reviews/2026-11-01-astra-contracts.md)已裁决修订甲，终结可无原生退出结果；[A8](../probes/hud-run-visible.md)首轮拒绝；A8-fixB2 关键证据已于 `8fdf4cf` 接受（同 agent/session、实际 context、父 launcher 退出后的 TTY 输入/收尾；限前台 hud-run 形态），不等于 B 生产矩阵通过。A3 五份探针已评审，版本/模式与有界 spoof 边界见01；[daemon 补测](../probes/codex-daemon.md)仅证明 CLI 0.166 / daemon 0.163 在场时默认 direct-stdio，不是共享支持，也非 A9 前置。A9 审规格/最小原型，生产矩阵在 B。
 
 
 本文只规定可验证的记录与权限，不保证外部任务一定执行或完成。账本写者仅 hud-mcp、hud-run、reconciler；所有身份/关系/运行迁移走 reconciler 事务入口。HUD 读已提交账本，消费 B16 的五维状态结果，不自判完成，不写账本。
@@ -12,6 +12,8 @@
 
 Oracle 已追认 provisional、同 owner predecessor、逐轮 runHandshake 等核心不变量；修改项以其 C01–C14 为准，不再把旧编排者方案当待实现协议。§15 决策日志保留，跨契约/范围新分叉仍交编排者/Oracle。
 
+
+[Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
 ## 数据模型
 
@@ -45,7 +47,7 @@ OwnerKey 是稳定逻辑身份，不是 MCP/context_id；每次工具调用仍�
 | I-03-10 | 同 owner predecessor 的旧新 link/run/claim/槽/幂等/事件同事务；接受后启动未知不回滚关系或重发，历史前驱不能再次使用 | DB+TX；T-03-18、19 |
 | I-03-11 | MVP close 无内部/公开执行入口，返回 unsupported，不取消/关闭 surface/改关系；取消和运行终结独立按02/04，历史保留 | TX；T-03-26 |
 | I-03-12 | closed 保留历史/未来语义，MVP 不产生 close 或重开；failed/revoked/handed_over 不 resume。旧 locator 不匹配新 occupant 时不供当前宿主状态/控制 | TX；T-03-6、19、30 |
-| I-03-13 | HUD 仅投影已提交关系/运行/报告与 B16 状态，历史边不当第二父边；活跃 headless 只看日志，结束后才可请求有权限的 resume | TX；T-03-30、31 |
+| I-03-13 | HUD 仅投影已提交关系/运行/报告与 B16 状态，历史边不当第二父边；MVP Resume/Reconcile仅复制类型化固定目标命令，活跃 headless 只看日志，运行终态由共享谓词判定；ledger/观测各自加戳 | TX；T-03-30、31、34–37 |
 | I-03-14 | 正常 spawn+wait，无手工协议；相关事件/必要截止唤醒，按客户端 timeout 留余量短等；status 索引快照只读，短锁等待/accepted及started分计，预算归06 | TX+E；T-03-17、32、33 |
 
 ## 状态机
@@ -88,21 +90,42 @@ delegate_report 的 runId 先定位原 link，不能从 caller 的“当前 link
 
 ### status 与 HUD 可读投影
 
-delegate_status(linkId) 在同一读快照返回 link、最大已提交 run_seq 的 currentRun、runHandshake、latestReportForRun、reconciliation、interaction、resumable+reason、statusProjection、asOfSeq；runId 形式固定历史 run 并给 isCurrent。只读已提交事实，不触发恢复写；HUD 消费此投影，不复制授权或状态归并算法。所有时刻为毫秒 epoch，未知为 null/unknown，年龄以消费者 nowMs 计算。
+delegate_status(linkId) 在同一 ledger 读快照返回 link、最大已提交 run_seq 的 currentRun、runHandshake、latestReportForRun、reconciliation、interaction、带适用主体的 resumable+reason/allowedActions、asOfSeq；runId 形式固定历史 run 并给 isCurrent。statusProjection 的缓存观测来自06独立存储，附 observationStamp，不能声称与 ledger 跨库原子。asOfSeq 只指 ledger events 高水位；HUD 无 ledger 为 null，已打开且无事件的空库才为0。只读已提交事实，不触发采集、Git、恢复/reconcile 写；HUD 消费同一纯 B16 投影，不复制授权或归并算法。所有新时刻为毫秒 epoch，未知为 null/unknown，年龄以消费者 nowMs 计算。
+
+`observationStamp={seqDomain,commitSeq,inputLedgerSeq,ref,runId?,bindingGeneration?,sourceGeneration}` 记录摘要生成时实际输入（纯原生 inputLedgerSeq 可 null），不能贴当前高水位冒充新摘要。组合先核对 ref、当前 run、绑定/来源代次；旧 run/不相容代次的当前观测 unavailable/stale 并给 reason，旧摘要只作历史，不能借旧 completed/failed、stateSince 或 cwd 补当前轮。无关 run 导致全局 seq 增长不使所有摘要失效，应比较相关实体身份/版本。即时结合 ledger 与缓存也只调用纯 B16、保留两套戳，连续性不足按06给 null/unknown；读路径不发布 summary。events.seq、commitSeq、NoticeEvent 各域 seq 不互比或混作 wait 游标（T-03-36）。
 
 | 字段组（对应设计§7） | 数据层保证 / 来源 |
 |---|---|
 | link / runHandshake | link 的 state/label/role/backend/parent_ref/child_ref/current_owner/predecessor/closed_at/brief_path/task_digest；bound_by 来自已验证关系证据，capabilities 为当前 MCP 能力或 none。runHandshake 独立给 state+reason，由本 run binding/claim 推导，不另存 |
 | currentRun / exit / logs | runId/run_seq/mode/supervision_strategy/state/launch_phase/locator/started_at/ended_at/cancel_requested_at/isCurrent；heartbeat={at,quality}，ageMs 可派生。exit={code,signal,source,reason,coverage} 仅原生 harness 结果，未知 null；shell_status/shell_signal 单列来源，正常 scope ended 不要求 code。日志路径/捕获覆盖由04 |
 | latestReportForRun / reportHistory | {status,summary,path,created_at,report_id} 只取指定 run；历史按 run 分页给 count 与最近一条，不拿旧轮 completed 补新轮。索引/读取预算归06 |
-| statusProjection | B16 提供 activity/pendingReason/lastTurnOutcome/liveness/freshness，以及 asOfSeq、asOf、observedAt、lastEvidenceAt、stale时lastKnownActivity。字段来源时间与观测时间分开；数值口径归06，03不再实现归并真值表 |
+| statusProjection | 06/B16 唯一提供 activity/pendingReason/lastTurnOutcome/liveness、`freshness.state` 与来源明细、stateKey/stateSince/stateSinceBasis、共享运行终态谓词 `isRunTerminal`；带 ledger-only asOfSeq、独立 observationStamp、asOf/observedAt/lastEvidenceAt、stale时lastKnownActivity。状态驻留与证据年龄分开，连续性随ObservationCommit发布；03只引用，不从events最大时间重建 |
 | conflict / candidates | 明确 conflict={count,recordIds[],since}，由未解决冲突及证据投影，不能只吞成 unknown；候选含证据种类、asOf/observedAt，独立于确定父边，不读候选正文。普通未知不是 conflict |
 | host / parent | host.occupantMatches=true/false/null、locator valid/stale/unknown 与核验时刻；不匹配不供当前宿主状态/控制。父 harness/名称/liveness、经验证 pane label 或 null，未确认时 caller 短形只诊断。parent.offline 的 since/seq 与冻结 orphan_policy 来自04，不推子结束 |
-| reconciliation / resumable | uncertain 给 cause、evidenceIds[]、missing[]、observedAt、允许入口（如 hud run reconcile <runId>）；cause 从02采用的证据/原因派生，至少区分 supervisor_dead、scope_unknown、resume_ref_mismatch、clock_anomaly，也可为 supervisor_stale/submission_unknown/cancel_unconfirmed/identity_conflict/scope_conflict/provisional_conflict/launch_timeout/unknown；缺证不伪造终态。统一门禁投影 resumable:boolean+reason；未知身份/owner、busy/uncertain、冲突、能力未验、任务不符均false；closed为false/deferred。执行控制时仍重新鉴权/重验槽 |
+| reconciliation / resumable | uncertain 给 cause、evidenceIds[]、missing[]、observedAt、类型化允许入口 ActionDescriptor；cause 从02采用的证据/原因派生，至少区分 supervisor_dead、scope_unknown、resume_ref_mismatch、clock_anomaly，也可为 supervisor_stale/submission_unknown/cancel_unconfirmed/identity_conflict/scope_conflict/provisional_conflict/launch_timeout/unknown；缺证不伪造终态。统一门禁投影 resumable:boolean+reason+subject（mcp 当前父owner或local_user）；未知身份/owner、busy/uncertain、冲突、能力未验、任务不符均false；closed为false/deferred。执行控制时仍重新鉴权/重验槽 |
 | interaction / parentOffline | interaction={focus:boolean,input:boolean,resume:boolean}，按已知能力/occupant/前台可交互性和统一门禁派生，未知为false。uncertain/未决冲突，尤其 supervisor_dead，三项均false；resume还须resumable=true。parentOffline={since,seq,orphanPolicy}或null由parent.offline事件投影，和reconciliation.cause为独立字段；父MCP离线continue本身不禁用仍经核验可用的子交互。不新增持久状态，HUD不从心跳重建这些判断 |
-| tree / notices | ≤200 节点、无环/重复 ref，depth 明确，handed_over 只历史不成第二父边；超预算 loaded=false/保留最后身份状态，coverage/Metric归06。report.received、run.uncertain、conflict/解决、parent.offline 等账本事件给 seq/created_at/runId；pendingReason变化及lastTurnOutcome=failed的观测通知由06/B16给相同时间/游标语义，HUD不为通知写ledger |
+| tree / notices | 显示身份按06的 session(ref) / delegationIntent(linkId) / 未来job(ref)联合类型；未绑定意图以linkId稳定键关联currentRun，不伪造ref、不计已确认session；绑定后B9合并并保留选择映射。≤200 节点、无环/重复 ref，depth 明确，handed_over 只历史不成第二父边；超预算 loaded=false，coverage/Metric归06。report.received、run.uncertain、conflict/解决、parent.offline等账本事件给seq/created_at/runId；观测通知由06/B16分域发布，HUD不为通知写ledger |
 
 03可提供上表关系/运行/报告字段；Metric quality、coverage/skipped、廉价变更信号与 statusline 入口预算归06。MVP 无 MCP 的正向能力、closed 重开和 Jev job 投影是 Oracle 明确延期的设计数据缺口，不能用占位 pass 填充。只读展示字段不授予控制/模型外发权限。
+
+MVP 的 `R` 只显示并复制命令，不 spawn 控制 CLI。按钮/Inspector 共用下面的 `ActionDescriptor`；命令只从经验证的结构化目标和受信 CLI 模板安全引用生成，report/label/日志/任意字符串不是命令来源。Open/focus 仍按 interaction/occupant 门禁，不借其进程能力执行 resume/reconcile（T-03-34）：
+
+```ts
+type ActionDescriptor = {
+  linkId: string; runId: string; reason: string;
+  subject: 'local_user'; delivery: 'copy_only'; hudHome: string;
+  displayCommand: string;
+} & (
+  | {operation:'resume'; expectedRun:string; mode:'visible'|'headless'; requestKey:string}
+  | {operation:'reconcile'}
+);
+```
+
+runId/expectedRun 固定为选定目标，状态改变不能替换操作/选另一 run。一次复制形成一份意图，同一待处理意图重复复制保留 requestKey；实际 resume 命令含安全引用的明确 HUD_HOME、linkId、`--request-key`、`--expected-run`、`--mode`。短命令只是缩写。本地入口未实现/未验证时不提供号称可用的裸命令，只给诊断及原父 delegate_resume 途径。reconcile 按 run+证据指纹幂等导入，不增加强制结束/清槽开关。
+
+未来 HUD 直接调用另立可选能力：用户显式按键后确认界面固定显示操作/目标/模式，再确认；用可信 executable+argv，不执行 displayCommand shell 字符串。执行仍走原 writer/reconciler，重新鉴权并重验 owner/本地权限、当前目标、槽、能力、冲突与任务摘要；状态不符拒绝，不另选 run。resume 响应未知只查/重放同 key，不生成新 key 自动重试。绘制、通知、重连、进入 uncertain 或定时器都不得触发这些 HUD 动作；04 已批准的写者内部恢复触发保持。
+
+运行终态只由02的 ended/failed/cancelled 经06共享 `isRunTerminal` 判定；run.failed 为 non_execution，B16 分类 `launch_failed` 带原因，不能伪造 lastTurnOutcome=failed。completed/failed 报告、失败图标、cancelling 都不单独构成运行终态；历史折叠/时钟不能按图标判结束（T-03-35）。
 
 
 ### wait 游标与 runId 固定
@@ -116,6 +139,8 @@ delegate_status(linkId) 在同一读快照返回 link、最大已提交 run_seq 
 ### resume 与 handover 事务
 
 resume 在 02 的 OwnerKey×request_key 幂等查找之后，事务校验全部 I-03-5；验证首轮 task identity、该 backend/source 的受支持 resume 模板与模式。通过才为同一 link 分配新 run_seq/runId/expected_generation、撤销旧 claim/current child_binding、写本轮 call/correlation 锚点（原生消息ID可晚到）并占实际槽。MVP closed 重开 unsupported；活跃 headless 不能通过“打开”隐式启动可见副本。
+
+本地管理 resume 仅按01的 ControlInitiator/local_user 例外代表已登记 parent_ref 的逻辑 owner，不换 parent/link 归属。先鉴别管理主体、派生 canonical owner、查02幂等，同键同参先重放；新意图才校验 `--expected-run` 仍等于 currentRun，及 current_owner、bound/reported、同任务、真实 child、空槽、无冲突、受支持档案/模式等全部条件。逐 run 固定 launch_cwd/project_origin，新 claim/代次与相同意图事务不变；accepted审计记录actor.kind=local_user/UID/invocation/representedOwner。票据登记/提交按该类型重验，不使用已离线父 context 冒充 MCP；launch_call_id标本地来源（T-03-37）。
 
 同 owner handover 复用的是 child SessionRef，新建任务 link/run；旧 link 当前、槽空/无冲突、无自环/祖先环，图预算耗尽即拒绝。事务外读取材料、事务内重验，旧 link handed_over/current_owner=0、撤销旧 claim/binding，新 link bound/current_owner=1、新 run/claim/真实槽/幂等/事件同事务；失败整体回滚。接受后外部启动失败不撤销历史转交，新 run 按02取证，不重发（T-03-18、19）。
 
@@ -169,6 +194,10 @@ HUD只读关系/运行/报告与上述投影；uncertain提供缺证及对账入
 | T-03-20 (A9 fixture) | 跨owner有/无自报凭证、非owner知道linkId/claim → unsupported，无签发/消费/新运行/控制权限 |
 | T-03-26 (A9 fixture) | 各关系/运行状态请求close、内部close入口或close重试 → MVP均unsupported，零取消/surface关闭/关系迁移，运行终结仍只按02 |
 | T-03-30 (B) | 历史closed/revoked/handed_over和新occupant → 唯一当前父边，历史不复活；host未知、resumable=false+reason、候选/冲突显式，时间毫秒epoch |
-| T-03-31 (B) | status同读快照给link/runHandshake/currentRun、最新本轮报告/按轮历史、B16时间/conflict、候选、parentOffline、uncertain cause/缺证/入口、resumable+reason/interaction；四类cause可区分，supervisor_dead三项交互均false，父离线continue不独自禁用正常子交互；HUD只读，≤200节点/无环/历史边不成双父 |
+| T-03-31 (B) | status同ledger读快照给link/runHandshake/currentRun/本轮报告及权限，缓存观测带独立stamp；B16时间/conflict、候选、parentOffline、uncertain cause/缺证/ActionDescriptor、resumable+reason+subject/interaction完整；supervisor_dead三项交互均false，父离线continue不独自禁用正常子交互；HUD只读，≤200节点/无环/历史边不成双父 |
 | T-03-32 (B) | 正常仅spawn+wait → 自动运输/登记/托管/报告同run；spawn/resume/cancel快速返回持久accepted，started/bound另计；短锁等待/事务外I/O依06基准，不要求用户补协议 |
 | T-03-33 (B) | 无事件、重复/漏通知、每心跳WAL、真正stale、短wait截止 → 合并/按run过滤、零全体waiter重查或按秒扫proc；现有写者仅真失联取证；通知seq/created_at与返回游标正确 |
+| T-03-34 (A9 fixture) | 复制resume/reconcile、重复按键、选中后currentRun变化、恶意label/report命令文本 → 仅安全模板复制，固定目标/操作及同一requestKey，无HUD控制进程/自动重试；入口未验证只诊断/原父途径 |
+| T-03-35 (A9 fixture) | 无报告且N成立的run.failed、failed报告但run.running、run.cancelling → launch_failed/non_execution且终态、任务失败但运行非终态、取消中仍非终态；不按图标折历史 |
+| T-03-36 (A9 fixture) | ledger currentRun=b、观测commit仍a；另无关run提高high-water、无库/空库 → b事实+有原因的缺失观测，不混a报告/stateSince/cwd；无关seq不全失效，asOfSeq分别null/0，游标分域且零读路径写 |
+| T-03-37 (A9 fixture) | local resume同键重放、旧expectedRun新key、MCP admin参数/父ref未确认、旧父context离线 → 按01/02先鉴别再重放；新意图拒旧目标/非例外；合法管理主体按typed权限重验，全部I-03-5不放宽 |

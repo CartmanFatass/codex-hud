@@ -1,12 +1,14 @@
 # 04：hud-run 托管、回执与恢复证据
 
-- 版本：`v0.3 draft`（2026-11-01；Oracle C01–C14 修订）。
+- 版本：`v0.4 draft`（2026-11-01；Oracle C01–C14、D01–D13 修订）。
 - 状态：A1 第二批草案；数据格式与证据生产要求待主审/A9，未宣称已实现进程协议。
 - depends-on：[01 身份](./01-identity.md)、[02 执行协议/唯一对账表](./02-execution.md)、[03 生命周期](./03-lifecycle.md)；[概念方案](../universal-hud-concept.md) §6.6.4–6、§6.10–11、§15–16；[工程计划](../universal-hud-engineering-plan.md) B3a/B3b/B4/B6。
-- 证据快照：[Oracle §4–5](../reviews/2026-11-01-astra-contracts.md)选择修订方案甲。[A8](../probes/hud-run-visible.md)首轮拒绝，fixB1 的 scope 无活成员与交互故障是局部进展；fixB2 的父退出 TTY、实际 context 命令、同 agent/session 的 ready/working/完成仍待接受，不能写整项 pass。A3 五份探针已评审，Codex 0.166 主身份路径及有界 spoof 见01。[daemon 补测](../probes/codex-daemon.md)覆盖 CLI 0.166 / managed app-server 0.163 在场的默认 direct-stdio；不证明共享调度，不是 A9 前置。
+- 证据快照：[Oracle §4–5](../reviews/2026-11-01-astra-contracts.md)选择修订方案甲。[A8](../probes/hud-run-visible.md)首轮拒绝；A8-fixB2 的同 agent/session 状态、实际 context 命令及父 launcher 退出后 TTY 前台输入/收尾关键证据已于 `8fdf4cf` 接受。仅覆盖所测版本与 pane 前台 hud-run 形态，后台形态为负对照；不等于 B 的生产取消/复用/性能/真实父 MCP 故障矩阵通过。A3 五份探针已评审，Codex 0.166 主身份路径及有界 spoof 见01。[daemon 补测](../probes/codex-daemon.md)覆盖 CLI 0.166 / managed app-server 0.163 在场的默认 direct-stdio；不证明共享调度，不是 A9 前置。
 
 本契约不承诺恰好一次或所有后代/外部动作均停止。保留唯一 supervisor、单次执行票据、真实实例核验与证据驱动终结；HUD 只读。G13/G14要求空闲阻塞等待、不新增常驻 reconciler/sidecar/通知服务；所有性能、进程数/RSS、逻辑写入/实际 I/O 与 accepted→started/bound 的计量预算统一归 [06](./06-observation.md)。这里只规定生命周期和证据，不决定呈现。
 
+
+[Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
 ## 数据模型
 
@@ -15,6 +17,8 @@
 每个活跃 run 一个独立 supervisor；hud-mcp 随实际加载它的 harness 起停。shell 档案另计必要启动 shell；若维持范围实例确需 helper，须单列进程/RSS、寿命随 run、不获得第二份执行权；不强制 gate/helper/RUN 消息拓扑。终态收尾后退出；仅剩无法控制/取证的 uncertain 历史时保存末次事实后退出，不为历史槽永远心跳。恢复观察器按需取证后退出，不变 launcher（T-04-38、39）。
 
 启动输入 `{runId, mode, launch:argv|shell, cwd, source_id, profile_digest, stdin, orphan_policy}` 加私有票据/claim；MVP strategy 为 headless 或 visible wrapper，scope_kind 仅 pgid。argv 逐参数直接 spawn，不能让 hud-run 自己 exec 掉却承诺保存回执；shell 用已解析绝对 $SHELL -ic <text>，不把 argv 拼 shell/猜 executable。完整 managed shell 档案必须是已验证的单次前台 harness 启动，任意延迟/循环/后台脚本不自动支持；中间 shell 也是可能继续提交的 launcher（T-04-1、2、19、21）。
+
+启动 cwd 必须等于02意图事务已冻结的 `runs.launch_cwd`；spawn/resume/handover 逐 run 保存，不按执行时 CLI/callers.cwd 重算。meta 只可携带 `launch_cwd` 及随意图固定的 `project_origin` 等稳定启动信息；Git 位置快照由已有 run 写者依06预算在事务外采集、NULL→首次 workspace_snapshot 与 workspace.captured 事件同事务提交，不把实时 workspace/Git 状态复制进 meta。包装链实际改变 cwd 时只在06 observed workspace留有来源的新观察，不能覆盖启动历史（T-04-40）。
 
 Codex 每轮使用档案服务器名，构造 argv/TOML 叶子覆盖 `-c mcp_servers.<name>.env.HUD_CLAIM=...`，同样注入 HUD_RUN/HUD_LINK/HUD_HOME；保留用户 command/args、其他 env/server。不得使用 mcp_servers={} 或整表覆盖。resume 新 claim 同样重新注入；source 从档案与核验过的实际 harness home/存储根确定，不从 MCP 缺失的 CODEX_HOME 猜。初始化仅登记/保存材料；首次合格 tools/call 的 params._meta 与启动/source/精确 header 一致才绑定，参数 `_meta` 不授身份。正常 env 不强制 prompt 明文 claim/transcript 扫描；运输/身份 fallback 与 unsupported 列表只引用01（T-04-2、32）。
 
@@ -53,7 +57,7 @@ stdout/stderr为单writer追加原始字节，offset/bytes按字节，不因resu
 
 | 编号 | 可检查断言 | 层 / 测试 |
 |---|---|---|
-| I-04-1 | argv/shell契约互斥、source/home与档案一致；shell leader与实际harness独立记录，只有确证同实例才等同 | TX+E；T-04-1–4 |
+| I-04-1 | argv/shell契约互斥、source/home与档案一致；启动cwd用逐run冻结值，meta只稳定上下文；shell leader与实际harness独立记录，只有确证同实例才等同 | TX+E；T-04-1–4、40 |
 | I-04-2 | strategy/kind意图固定，唯一核验真实harness/PGID后scope_ref一次写入冻结；不缩范围。普通范围外工具仅诊断，原harness/同SessionRef旧写者仍活则阻复用 | DB+TX+E；T-04-5–7、23、30、37 |
 | I-04-3 | 文件身份/版本/权限固定；只有票据赢家单写meta/log/exit；receipt先原子落盘再幂等导入，恢复不重启、不截断 | TX+E；T-04-8、9、14、15 |
 | I-04-4 | scope结束与原生结果分离，exit_code仅有来源harness结果；shell status分列，shell137/HUP不冒充native。最终exit只提交一次，局部事实留evidence | TX+E；T-04-3、9、10、12、13 |
@@ -65,7 +69,7 @@ stdout/stderr为单writer追加原始字节，offset/bytes按字节，不因resu
 | I-04-10 | 默认continue独立托管；stop只在确证父上下文/物理实例失联后使用接受时策略取消；不把父离线/unknown当子结束 | TX+E；T-04-27、28 |
 | I-04-11 | hud-run写字段白名单；身份回填/状态/槽迁移统一reconciler，HUD只读。恢复观察器不给新执行权 | TX；T-04-14、25、29 |
 | I-04-12 | MVP可见采用修订甲；父MCP断连continue单独验收。supervisor死即交互中断/uncertain/持槽，禁自动input/focus/fg/wrapper恢复/resume；正常scope结束不因native未知变uncertain | TX+E；T-04-30–33、36 |
-| I-04-13 | RunHandle固定run/locator/绑定代次；status只读，cancel经鉴权意图，input/focus可选且重验occupant，不通过控制动作resume副本 | TX；T-04-29、34 |
+| I-04-13 | RunHandle固定run/locator/绑定代次；status只读，cancel经鉴权意图，input/focus可选且重验occupant；HUD管理动作copy-only，本地resume按typed initiator/幂等/expected-run门禁，不通过控制动作resume副本 | TX；T-04-29、34、41 |
 | I-04-14 | 运行心跳不作TTL放槽；browser还需answered/failed+对账，needs_human继续持有；collect只属06观测存储 | TX；T-04-35 |
 | I-04-15 | 无新常驻服务；空闲阻塞、5s心跳一次runs CAS，不周期复制event/evidence/meta。发现有截止，生产禁100/200ms扫组；恢复按启动/重连/事件/wait必要截止/显式请求触发，预算归06 | TX+E；T-04-38、39 |
 
@@ -73,7 +77,7 @@ stdout/stderr为单writer追加原始字节，offset/bytes按字节，不因resu
 
 ### 单次提交与围栏
 
-1. 完整意图/槽提交后，hud-run经继承私有pipe/受保护输入取得票据/launch材料，不放可读日志/meta。短事务重验ticket hash、launch_digest、slot、context/代次/取消/冲突/围栏，CAS reserved+无supervisor→armed+本实例/H。输家不碰赢家文件，零backend调用。
+1. 完整意图/槽提交后，hud-run经继承私有pipe/受保护输入取得票据/launch材料，不放可读日志/meta。短事务重验ticket hash、launch_digest、slot、类型化发起权限（MCP当前context/代次或01本地管理主体）、取消/冲突/围栏，CAS reserved+无supervisor→armed+本实例/H。输家不碰赢家文件，零backend调用。
 2. 唯一supervisor先提交submitting再调用一次spawn/宿主动作；不要求独立gate/RUN或额外观察器。命令成功的精确回执才submitted，未知不重发。真正harness/PGID核验后一次固定scope；短命/发现崩溃scope未知则持槽取证，不把shell组填入，不授恢复者执行权。
 3. 提交前取消/拒绝以持久fence及确证未提交/无workload形成N；已许可/响应未知只能取证，不因DB改字段倒推从未执行。终结前，所有可能再提交者（含中间shell）须封口或死亡。直接单次spawn可由原supervisor状态/死亡与内核等待取证；确需helper/私有通道的实现也须证明同样结果，不增加第二份执行权。
 
@@ -117,15 +121,17 @@ orphan_policy随意图冻结。continue默认：父MCP物理实例确实退出/�
 
 hud-run允许：CAS消费/登记票据和启动阶段、scope/leader原始证据、自己的心跳、取消步骤ack、私有文件；reconciler负责证据校验、context/身份回填、关系与run状态迁移、槽释放和事件的原子提交。hud-run可调用同一reconciler入口，不能私有UPDATE state绕过R-02；HUD绝不补写丢失回执/槽，collect不属于hud-run。
 
+MVP HUD 的 Resume/Reconcile 仅消费03 `ActionDescriptor` 显示/复制，不启动控制 CLI；Open/focus 不携带此执行权。受信本地管理入口复用既有 writer/reconciler：cancel/reconcile沿既有权限，新增的 resume 只按01 local_user 窄例外、02幂等顺序与03全部门禁。CLI 形态 `hud run resume <linkId> --request-key <key> --expected-run <runId> --mode <visible|headless>`；实际复制命令还含安全引用的显式 HUD_HOME。记录 actor.kind=local_user、UID/invocation/representedOwner 和本地 launch_call_id，不造父 CallerId/context/tool_result；票据登记及单次提交按原意图的 typed initiator 重验。reconcile仅按run/证据指纹幂等取证，不强制放槽；未来直接调用条件/重试边界只引用03（T-04-41）。
+
 `RunHandle={runId, locator, bindingGeneration, status(), cancel(grace?), sendInput?(text), focus?()}`。status只读已提交状态、心跳、scope/leader/harness/receipt覆盖及证据，并提供03的reconciliation.cause和interaction三项能力，不做隐式reconcile写。cause区分supervisor_dead、scope_unknown、resume_ref_mismatch、clock_anomaly等已有原因；监督故障三项均false，与父调用通道离线的parentOffline分开。cancel经上述鉴权意图。sendInput由宿主队列或v1.1入口实现，headless未定义就unsupported；focus由HostAdapter实现，先检查server/locator与occupant代次。supervisor死亡/失联或可见交互不可用时input/focus禁用；输入/聚焦不等于取消、不能隐式resume；历史locator不匹配只返回stale_locator（T-04-29、34）。
 
 ### 可见模式：修订方案甲
 
-MVP选择wrapper甲：hud-run被输入pane交互shell，shell档案用-ic保留函数/context，supervisor不读TTY、harness保持正确前台组，scope必须发现并核验真实harness PGID。HostAdapter管理surface/就绪/输入/焦点，supervisor供进程证据；命令已发未知不fallback再起。正常结束按scope证据产R，shell状态与native结果分离，native未知不使正常结束一律uncertain。直接argv/最后一步exec绝对可执行文件仅作经验证包装链的可选简化；exec codex函数不证明成为直接子进程，也不强迫改用户函数。
+MVP选择wrapper甲：hud-run被输入pane交互shell，必须是 pane shell 正在等待的前台作业；shell档案用-ic保留函数/context，supervisor不读TTY，harness须为经核验的终端前台消费者，scope发现并核验真实harness PGID。不能以 `sh -c '<hud-run> &'` 后台形态替代，TTY stand-in负对照已显示输入落shell/SIGTTIN。HostAdapter管理surface/就绪/输入/焦点，supervisor供进程证据；命令已发未知不fallback再起。正常结束按scope证据产R，shell状态与native结果分离，native未知不使正常结束一律uncertain。直接argv/最后一步exec绝对可执行文件仅作经验证包装链的可选简化；exec codex函数不证明成为直接子进程，也不强迫改用户函数。
 
 父MCP/launcher断连默认continue与supervisor死亡是不同事件。supervisor死后甲的交互中断：已记录前台回到shell、输入落shell与suspended (tty input)；不虚构采样已看到T。立刻/失联确认后uncertain、持槽、interaction unavailable；停止自动input/focus，禁自动fg、重建wrapper、透明接管、resume副本。用户可读诊断；旧scope结束并按02对账后才可新一轮（T-04-36）。
 
-A9仅需选定机制的关键可行性与失败分支：fixB1的五组无活成员/结果来源分离是证据，仍需主审接受；fixB2补同agent/session ready/working/完成、一次Codex实际执行合成命令的允许context、父实例确实退出后TTY前台/输入/最终收尾。无需强求Herdr没有的字面idle状态、daemon-present命令执行或完整B能力矩阵。生产安全整组取消、leader先死/组仍活、PID/PGID复用、短命启动/重启、tmux/resume和性能仍由B3a/B3b/B14验证，不把原型200ms扫组/1s心跳搬入产品。
+A9仅需选定机制的关键可行性与失败分支：A8-fixB2 已于 `8fdf4cf` 接受，补齐同agent/session状态、Codex实际执行合成context命令、父launcher退出后TTY前台/输入/最终收尾；A8-fixB1的scope观测与监督死亡故障语义继续保留。这里的A8-fixB2不是工程WP B2，也不证明真实父MCP全部故障矩阵通过。无需强求Herdr没有的字面idle状态、daemon-present命令执行或完整B能力矩阵。生产安全整组取消、leader先死/组仍活、PID/PGID复用、短命启动/重启、tmux/resume、真实父MCP断连与性能仍由B3a/B3b/B14验证，不把原型200ms扫组/1s心跳搬入产品。
 
 ### Deferred（后续能力）
 
@@ -183,7 +189,7 @@ A9仅需选定机制的关键可行性与失败分支：fixB1的五组无活成�
 | T-04-27 (B) | 父MCP真实退出，continue/stop两配置，再模拟仅caller stale → continue继续；stop生成预授权取消并待确认；stale不触发误杀或放槽 |
 | T-04-28 (B) | 新MCP同OwnerKey重放、父仅stale、vendor stop称stopped但记录updater活 → 原run无重发/stale不误杀/不据vendor响应放槽；不扩大信号权限 |
 | T-04-29 (B) | hud-run原始UPDATE state、HUD试补回执/放槽、status触发写、恢复观察器写meta → 白名单/只读拒绝；正确reconciler迁移state+槽+event原子 |
-| T-04-30 (A9 prototype) | A8已选甲的关键scope结束/活成员反例/监督故障证据与B2的TTY父退出、实际context命令、同agent状态 → 主审逐项接受或列缺口；不把原型当生产R或强求完整B矩阵 |
+| T-04-30 (A9 prototype) | A8已选甲的scope/监督故障及已于8fdf4cf接受的A8-fixB2 TTY父launcher退出、实际context命令、同agent/session状态 → 核对已保存证据及版本/前台形态边界；不把原型当生产R/真实父MCP完整故障矩阵 |
 | T-04-31 (A9 fixture) | MVP请求乙sidecar managed/甲提交未知自动回退乙 → unsupported/禁止回退，零第二dispatch、零伪造scope终结；只保留探针材料 |
 | T-04-32 (A9 fixture) | Codex每轮叶子env注入/保留用户配置/HUD_HOME与source、首合格tools/call才有session、参数伪造/来源冲突、resume新claim → 运输与身份各自核验，fallback只01范围，无重启动作 |
 | T-04-33 (A9 fixture) | A8原型200ms扫组/1s心跳/旧reason、exec codex函数、native未知 → 不能照搬生产/推直接子或native信号；正式5s/30s，正常scope结束仍可ended |
@@ -193,3 +199,5 @@ A9仅需选定机制的关键可行性与失败分支：fixB1的五组无活成�
 | T-04-37 (B) | shell另建harness组，提交后发现前/写scope前崩溃与随后同实例核验成功 → 未知scope禁信号/R/Q，不重发；成功仅NULL→真实scope一次，SQL拒后改 |
 | T-04-38 (B) | 合成空闲run多个心跳与退出/取消事件 → 每间隔一次runs UPDATE，零周期event/evidence/meta/组扫描；阻塞CPU与真实I/O计量归06，启动有截止采样不变常驻200ms扫描 |
 | T-04-39 (B) | hud-mcp启动/重连发现遗留receipt或无receipt旧run、wait必要截止、相关事件/显式reconcile、无写者历史 → 有预算幂等导入/按02采Q或列缺证，无新执行权；status只读/通知合并，历史不养常驻observer |
+| T-04-40 (A9 fixture) | shell包装改变实际cwd、resume时CLI所在目录变化、路径事后消失 → 启动输入/meta仍取该run冻结launch_cwd/origin；新观察有来源且不改ledger历史，不在事务/热路径跑Git |
+| T-04-41 (A9 fixture) | HUD R/重复复制/不可信report字符串、本地resume缺request-key/expected-run/mode、旧父context离线 → 仅安全固定目标复制；缺参拒绝，合法local_user经原writer typed重验，零伪造父工具结果/自动恢复动作 |

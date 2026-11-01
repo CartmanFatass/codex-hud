@@ -1,10 +1,12 @@
 # 05：能力矩阵、宿主与启动档案
 
-- 版本：`v0.1 draft`（2026-11-01；A2）。以下是待实现的契约，不是能力验收报告。
+- 版本：`v0.2 draft`（2026-11-01；A2 + Oracle D01–D13）。以下是待实现的契约，不是能力验收报告。
 - depends-on：[01 身份](./01-identity.md)「SessionRef resolver 的证据边界」、I-01-1、I-01-4；[02 执行](./02-execution.md)「意图、执行权与外部提交」、I-02-1–3；[03 生命周期](./03-lifecycle.md)「resume 与 handover 事务」「wait 游标与 runId 固定」；[04 托管](./04-supervision.md)「运行、启动输入和范围」「取消与父断连」；[06 观测](./06-observation.md)；[概念 v2.3](../universal-hud-concept.md) §6.3、§6.9–12、§7、§9.1；[计划 v1.1](../universal-hud-engineering-plan.md) A2/B4/B7/B11/B14。
-- 裁决优先：[Oracle](../reviews/2026-11-01-astra-contracts.md) C05、C06、C10–14。01–04 正在并行修订；其旧「Codex env claim 不可用」「甲乙待选」「A3 尚未评审」等文字不覆盖本裁决。身份、执行权、槽与终结规则仍由 01–04 拥有，本文不另设状态表。
+- 裁决优先：[Oracle consult 1](../reviews/2026-11-01-astra-contracts.md) C05、C06、C10–14 及 consult 2 D01–D13；01–04 已同步候选契约。A8 关键证据于 `8fdf4cf` 接受，仍不等于产品能力格 verified；身份、执行权、槽与终结规则由01–04拥有，本文不另设状态表。
 
 本契约不承诺恰好一次（exactly-once）；提交结果与恢复判定只引用02。
+
+[Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
 ## 数据模型
 
@@ -23,7 +25,7 @@
 | E-05-3 | [A3 P3](../probes/herdr-env.md)，`0a318ac81fcf` | Herdr 0.9.5：Codex tab-root、pi 1.4.0 split 的 shell/agent env 可达；pi MCP 可达，Codex MCP 须配置注入。交叉布局未测 |
 | E-05-4 | [A3 P5](../probes/cc-mcp-env.md)，`e225f76bae7f` | Claude Code 2.1.305 的 -p 直接起 MCP、env 继承、sessions 文件 pid/procStart 匹配；逐调用 metadata 无 session id。未证明原生子调用可与根隔离 |
 | E-05-5 | [A3 P4](../probes/pi-resume.md)，`e30a4932377e` | pi 1.4.0 -p 的 --session id/path 追加原文件/原 id，--fork 新文件/新 id；不等于 hud-mcp resume 能力已验收 |
-| E-05-6 | [A8/B1](../probes/hud-run-visible.md)，`b8aca7a9759e` | CLI 0.166.0、Herdr 0.9.5、zsh/WSL2：首轮不通过；B1 的正常退出/kill/pane-close/cancel 有 PGID 无活成员观测，原生结果未知；supervisor 死后前台回 shell、输入中断。Oracle 部分接受其方向；B2 的真实 TTY 父退出、执行命令 context、同 agent/session 状态观测仍缺 |
+| E-05-6 | [A8 / A8-fixB2](../probes/hud-run-visible.md)，`8ecb4751d6d0` | CLI 0.166.0、Herdr 0.9.5、zsh/WSL2：首轮不通过；修订甲的关键证据已于8fdf4cf接受，同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾已补齐。只限hud-run为pane shell等待的前台作业，后台形态失败；正常scope原生结果仍可未知，supervisor死亡为交互中断故障语义。不是工程WP B2或产品取消/复用/真实父MCP完整矩阵的pass |
 | E-05-7 | [daemon 补测](../probes/codex-daemon.md)，`15031757f199` | CLI 0.166.0 + managed app-server 0.163.0 在场的默认路径仍各起直接 MCP；dotted env 多键保留，HUD_CLAIM 键可见、精确字节未测。脚本 exit=2、事后获授权清理；最终安全分支仅 bash -n，未重跑。补测尚不在 Oracle 已接受快照内；强制 daemon/shared/resume/fork 未测 |
 
 E-05-1 的新版报告含补测链接，不把链接新增内容追认为原 A3 主审结论。E-05-7 不能改写为「所有 daemon-present 已支持」；daemon 存活本身也不证明 MCP 共享。A9 审查所声明窄路径的可行性与拒绝分支，不要求启动用户 daemon；生产矩阵归 B14。
@@ -48,6 +50,10 @@ host=none 只与 headless 配对。表中的组合项必须展开后独立留证
 ### LaunchProfile 与两种启动契约
 
 档案最少包含 `name,harness,source{root,label},launch,headless,resume,resumeHeadless,host,env,mcpServerName,claimTransport,clientToolTimeoutMs,responseMarginMs,orphan_policy`；命令模板各自是 `{argv: string[]}` 或 `{shell: string, shellPath: absolute}`，只能选一种。缺所需模板或有效 source 就拒绝，不猜 executable/home。档案、已解析命令形态及非秘密配置指纹进入 02 的参数摘要；明文 claim 不进入指纹输入日志或公开导出。
+
+准备阶段解析本轮实际启动的规范绝对 cwd 与请求显式 originRepoId，随02意图逐run冻结为 launch_cwd/project_origin；resume不按后来CLI目录重算。Git元数据只读有效缓存，冷缺失由已有启动/采集流程依06每代≤2子进程/200ms软预算取得，不入写事务/MCP accepted热路径/paint；未知不挡正常委派。后端包装改变实际cwd时提供06带来源的observed workspace，不覆盖历史启动快照（T-05-17）。
+
+控制边界引用03/04：MVP HUD仅显示/复制类型化ActionDescriptor，Open/focus只按interaction/occupant能力。复制resume须有已实现/已验证的01 local_user入口、明确HUD_HOME及request-key/expected-run/mode，按02重放/03全门禁；未来直接调用需单独能力与显式确认/固定目标/执行时重验，不由宿主能spawn推定支持（T-05-18）。
 
 | 档案规则 | launch / headless / resume 模板要求 |
 |---|---|
@@ -89,9 +95,9 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 | 编号 | 断言 | 测试 |
 |---|---|---|
 | I-05-1 | 支持声明绑定完整能力键、版本、档案和已接受证据；未测格始终 unverified，未声明能力不猜 | T-05-1、2 |
-| I-05-2 | argv/shell 互斥，source 显式且核验；shell 单次启动形态经验证，不能把任意文本升级为受管能力 | T-05-3、6 |
+| I-05-2 | argv/shell 互斥，source 显式且核验；逐run启动位置冻结，Git不进热路径；shell 单次前台启动形态经验证，不能把任意文本升级为受管能力 | T-05-3、6、17 |
 | I-05-3 | Codex 按服务器名仅注入四个 HUD 叶子键，保留其余配置；HUD_HOME 到 MCP、resume 新 claim，运输不等于身份 | T-05-4、5 |
-| I-05-4 | locator 每次控制前校验实例/代次/occupant，未知拒绝控制；历史与当前宿主分离 | T-05-7、8 |
+| I-05-4 | locator 每次控制前校验实例/代次/occupant，未知拒绝控制；历史与当前宿主分离；HUD管理copy-only，入口/主体/固定目标及未来直接调用门禁引用01–04 | T-05-7、8、18 |
 | I-05-5 | 只有预检证明命令从未提交才可选 fallback；任何 dispatch 已发/结果未知都交 02 对账，不再启动 | T-05-9、10 |
 | I-05-6 | 可见托管采用修订后的甲，原生结果可未知；父断连 continue 与 supervisor 死亡分开验收，乙无 MVP managed 能力 | T-05-11、12 |
 | I-05-7 | 有效 wait 含客户端余量且≤120 s；短等/断线保持原 run/游标，无取消或终结副作用 | T-05-13、14 |
@@ -132,9 +138,11 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 | T-05-8 | A9 | 假 Host/Registry/RunControl、Herdr schema 不符/不可达、HUD_HERDR=0 → 核心路径可用，诊断明确，预检未发命令才可选默认 |
 | T-05-9 | B | dispatch 前预检失败与已发后超时/断连两组 → 前者可明确选择最终核心档案，后者仅原 run 对账；合成提交计数不增加 |
 | T-05-10 | A9 | fallback 改参数摘要、同 key 原 accepted 重放 → 遵守 I-02-1，不能以宿主切换修改原结果或再提交 |
-| T-05-11 | A9 | 复用 A8 已接受 B1 证据与合成 supervisor-death 反例 → 甲组终止方向、原生结果未知、交互中断边界明确；乙 managed 请求拒绝；不声称 B2 已过 |
+| T-05-11 | A9 | 复用已于8fdf4cf接受的A8-fixB2关键证据与supervisor-death反例 → 同agent/session、实际context命令、父launcher退出后TTY输入/收尾及前台形态边界明确；后台负对照/原生结果未知/监督中断保留，乙managed拒绝；不据此声称工程WP B2或B生产能力已过 |
 | T-05-12 | B | 真 TTY 下父 MCP/launcher 退出且 continue → 子同一实例仍前台可输入、正常结束可收尾；另 supervisor 死亡按 04 故障分支处理 |
 | T-05-13 | A9 | 请求120000、客户端60000、余量2000；再缺 timeout/预算不足 → 最多58000或立即返回，同 run/正确 nextSeq，无 ledger 写；计时含响应余量 |
 | T-05-14 | B | 各受支持客户端实测 timeout/尾延迟；短 wait 多次、断开重连且 link 新轮出现 → 始终原 run/游标，零 cancel/failed 副作用 |
 | T-05-15 | C | pi/cc 与各布局/模式/resume 的版本匹配验证；pi --fork 反例 → 逐格留证，不继承 Codex 或 tab 的 pass；fork 不作 resume |
 | T-05-16 | v1.1 | 新增 shared 正向/no-MCP 正向/后续布局前 → 先补 01 的独立来源/拒绝反例和逐格证据，未实现阶段仍拒绝 |
+| T-05-17 | A9 | shell包装改cwd、CLI换目录后resume、Git冷缓存/超时 → 每run冻结实际启动输入与显式origin，观察位置另存；Git不在热路径/写事务，缺失有原因且不重启 |
+| T-05-18 | A9 | 宿主可起进程但HUD R仅复制、local入口未验证、目标换run、恶意label → 无控制CLI启动或虚构可用resume命令；能力/固定目标按03/04，已验证入口命令参数完整 |

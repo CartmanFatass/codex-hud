@@ -1,8 +1,10 @@
 # 06：观测口径、采集一致性与运行预算
 
-- 版本：`v0.1 draft`（2026-11-01；A2）。预算是验收要求，本批没有运行性能测试或声明已经达标。
+- 版本：`v0.2 draft`（2026-11-01；A2 + Oracle D01–D13）。预算是验收要求，本批没有运行性能测试或声明已经达标。
 - depends-on：[01 身份](./01-identity.md) I-01-1、I-01-8；[02 执行](./02-execution.md) I-02-8–10 与唯一 R-02 对账表；[03 生命周期](./03-lifecycle.md)「报告与 status」「wait 游标与 runId 固定」；[04 托管](./04-supervision.md)「心跳、supervisor死亡与恢复」、I-04-15；[05 能力](./05-capabilities.md)「宿主、定位与 timeout」；[07 外发与兼容](./07-outbound-compat.md)；[概念 v2.3](../universal-hud-concept.md) G13/G14、§6.3–5、§6.8–12、§7、§9.3；[计划](../universal-hud-engineering-plan.md) B8/B12/B16/D2–D4。
 - [Oracle](../reviews/2026-11-01-astra-contracts.md) §2、C07、C11–13 是成本与恢复边界的依据；不复写 02 对账真值表。[信息设计](../design/hud-information-design.md) §7 是数据消费者要求；本文不决定标记、布局、计数桶或交互。其原生退出结果假设以 Oracle 的 nullable 结果为准。
+
+[Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
 ## 数据模型
 
@@ -25,6 +27,26 @@
 
 spent 只含本节点；合计须单位、口径、coverage 相容且无重复 ref，否则标部分合计/未知。usage 去重集合、压缩标记、工具等待配对与速率基线都是 checkpoint 的恢复状态，不能只持久化 offset。
 
+新观测类型按指标分别包装：`spent={tokens:Metric<TokenUsage>,costUsd:Metric<number>}`，其中 TokenUsage 包含 input/output 与可选 cacheRead/cacheWrite/reasoning；`costUsd` 必有，缺价格/成本口径时为 `{value:null,quality:'unknown',source:<明确来源及缺失原因>,asOf:<确认缺失时刻>}`。tokens已知不使costUsd变reported，设计中的costUsd:null指其value，不另存裸字段。有效零保留0/reported；未知价格不按tokens换算美元，Flow credits保持另一单位，不给ledger加cost列。树级合计按完整SessionRef去重，携带 knownCount/missingCount、coverage与quality；只有同口径非负已报告成本部分和才可作该口径下界，混入估计必须estimated且不声称严格下界。旧v2缺省/零例外留07（T-06-22）。
+
+### WorkspaceContext 与项目归属
+
+| 字段 | 语义 |
+|---|---|
+| `cwd: string \| null` | 已定位会话的工作目录，已知时为绝对路径；未知为null，不能填HUD自己的cwd或候选目录。附来源与时间，不是每条shell工具命令各自临时cd。 |
+| `worktreeRoot: string \| null` | 该cwd对应的checkout顶层目录，规范化绝对路径；无工作树、不可读或未取得证据时null。 |
+| `worktree?: string` | 可选显示名，来自明确label或工作树根显示短名；不承诺Git有独立永久公开名称，不把branch当身份。 |
+| `gitCommonDir: string \| null` | 解析后的Git common directory的realpath，私有本地证据；相对结果按Git返回语义解析，不拼.git或用dirname反推主工作树。 |
+| `repoId: string \| null` | `SHA256(UTF8(canonicalJSON(['git-common-dir-v1', realpath(gitCommonDir)])))`；标明`identityKind=git-common-dir-v1`、`scope=local`。仅本机仓库位置分组键，不是跨机器/clone/搬迁永久项目UUID。 |
+| `projectOrigin: {repoId, basis: declared, declaredAt} \| null` | 临时副本等场景的显式来源声明；接受时另记声明主体，不替换物理repoId，不升级为经Git证明同仓库。 |
+| 来源与时间 | 保存cwd来源、Git捕获时刻与缺失原因，不把旧header cwd写成刚核验的当前进程cwd。 |
+
+来源/时间的类型位置为 `cwdSource:string,cwdAsOf:number,gitCapturedAt:number|null,gitMissingReason:string|null`；无cwd时cwdSource解释缺失，cwdAsOf是确认缺失时刻。Git捕获完成（含非Git/超时）记录gitCapturedAt及原因，尚未采集时为null。`identityKind:'git-common-dir-v1',scope:'local'`描述repoId算法/范围。`RunWorkspaceSnapshot`白名单仅含上述Git字段（worktreeRoot/worktree/gitCommonDir/repoId/identityKind/scope）及来源/时间；launch_cwd和project_origin分别按02保存，快照不混入正文、remote或其他自由字段。observed WorkspaceContext是后续带来源的位置，不能覆盖逐run启动历史。
+
+Git/项目解析属于共享workspace元数据逻辑，reader只供确实读到的cwd及来源；不新增常驻服务。工作树判等用有效规范根路径，cwd差异独立比较规范cwd；根未知时只能说目录不同，不声称不同工作树，未知不代表相同、同名不代表同目录。repoId与SourceId完全独立，同仓库的双home不合并ref/owner/授权/采集存储。同remote的两个clone仍为不同本地仓库；remote URL/hash、父子关系、目录名/内容相似不证明项目来源。无Git临时副本没有显式声明则unknown，toktrack可保留自己的推断与置信来源，HUD不作确定背书。
+
+Git不入写事务、MCP accepted热路径、HUD paint或statusline，热路径只读缓存；冷缺失由已有启动/采集流程补齐。每个新工作目录或失效代次最多一次发现工作，最多2次Git子进程、总软预算200ms，超时终止子进程并记unavailable；未知不挡委派、不重启harness。重复tick不再调用Git；明确cwd/工作树元数据变化或显式刷新使缓存失效，复用已有提示，不新增每节点watcher、repo发现daemon/全盘扫描或内容hash。预算待B实测，不是硬实时保证（T-06-23、24）。
+
 ### Reader、coverage 与树
 
 每次 reader 调用默认最多 4 MiB、2000 条、软时间 20 ms，先到者停止并保存可恢复游标。单条记录最多 1 MiB；时间预算包含解码/解析/归并，单次 JSON.parse 不可抢占，超时仍要记录实测，不声称硬实时。类型来自完整合法 JSON 的 type，不能依赖首键/行首正则。已知非公开类型（cc api-request-blob、thinking、reasoning、pi 图片等）不提取材料；超大记录安全跳过，不能识别其完整类型时记 oversize_unknown 与 gap，不猜作已知类型。未完成尾行最多保留 1 MiB，超限进入有界丢弃至换行状态，不无限扩 Buffer。
@@ -35,9 +57,11 @@ spent 只含本节点；合计须单位、口径、coverage 相容且无重复 r
 
 树采集每 tick 共用 8 MiB 文件 I/O、≤200 个节点、跨 harness 展开深度预算默认 4；各 reader 还受自己的预算约束。visited 以完整 SessionRef/JobRef 去重、防自环/祖先环；只用 adapter.children 提供原生拓扑和账本当前关系。预算外节点只保留限额内的身份/最后状态并置 loaded=false，不递归偷读；已知但未装载的数量/continuation 单列，不声称整棵大树已收全。历史 handed_over 关系不是第二父边，候选不进入确定树或已验证计数；解析权限与候选范围引用 01。
 
+显示节点身份为 `DisplayNodeIdentity = {kind:'session',ref:SessionRef} | {kind:'delegationIntent',linkId:string} | {kind:'job',ref:JobRef}`（job留C）。未绑定的已登记委派用稳定linkId显示键并关联currentRun，不伪造sessionId/source，不按label/cwd合并，不计入已确认session数；这不是新的授权身份或第三类账本运行。首次绑定由B9以真实ref合并，保留原选择键到新ref的映射、单父边与去重。intent仅从ledger link/run事件派生，不为其伪造collect:<SessionRef>租约（T-06-25）。
+
 ### B16 的五维输入与消费者字段
 
-输入证据统一携带 `{ref,runId?,bindingGeneration?,sourceGeneration,origin,eventAt,observedAt,lastSuccessfulReadAt,seq?,evidenceId?,validity,reason?}`。origin 为 registry/transcript/supervisor/report/job；validity 区分当前且匹配、stale、unknown、矛盾。失联不改原事件时间，进程存在只证明存在。registry 的 server、occupant、completion_seq 和来源时钟必须可见，不能把 shell idle 当 harness idle。
+会话输入证据统一携带 `{ref,runId?,bindingGeneration?,sourceGeneration,origin,eventAt,observedAt,lastSuccessfulReadAt,seq?,evidenceId?,validity,reason?}`；intent分支以DisplayNodeIdentity/linkId和currentRun及ledger事件提供，无ref/虚构采集代次。origin 为 registry/transcript/supervisor/report/job；validity 区分当前且匹配、stale、unknown、矛盾。失联不改原事件时间，进程存在只证明存在。registry 的 server、occupant、completion_seq 和来源时钟必须可见，不能把 shell idle 当 harness idle。
 
 | 维度 | 输入值与所需证据（最终归并归 B16） |
 |---|---|
@@ -45,13 +69,25 @@ spent 只含本节点；合计须单位、口径、coverage 相容且无重复 r
 | pendingReason | none / approval / question / needs_human；公开审批/问题的打开与解决 ID/时间，registry blocked，Jev NEEDS_HUMAN；缺记录不能伪造 resolved |
 | lastTurnOutcome | none / completed / failed / interrupted；明确 turn 结束事件、固定 run 的报告、04 有来源的退出结果；缺原生退出码保持 null，不从 shellStatus 推任务结果 |
 | liveness | alive / gone / unknown；04 心跳/ScopeCheck、匹配进程实例或 registry 可见性；跨 PID 域、读失败/缺心跳分别保留原因，不自行释放运行槽 |
-| freshness | 每来源的 lastEvidenceAt / observedAt / lastSuccessfulReadAt / error / deadline / clockAnomaly；匹配 04 心跳边界与 registry 缓存信息；陈旧来源保留 lastKnownActivity，成功重复读取不伪造新活动 |
+| freshness | `{state:fresh\|stale\|unknown,...来源明细}`；每来源lastEvidenceAt/observedAt/lastSuccessfulReadAt/error/deadline/clockAnomaly，匹配04心跳边界与registry缓存；陈旧来源保留lastKnownActivity，重复读取不伪造新活动 |
 
 B16 使用概念 §6.8 的来源职责：当前交互优先采用匹配且新鲜的 registry，明确失败不能被它覆盖；unknown 可回有效文件证据。冲突组合与最终 projection/notice 真值表只有本文件附录槽的 B16 一份，B6/B10 不另判。
 
-消费者 `ObservationView` 提供 `statusProjection{activity,pendingReason,lastTurnOutcome,liveness,freshness,asOfSeq,asOf,observedAt,lastEvidenceAt,lastKnownActivity?}`、`conflict{count,recordIds[],since}|null`、各 Metric、Coverage、loaded、depth、evidenceStamp。asOf 为所采纳事实边界，observedAt 为观察时间；所有新时间为毫秒 epoch。conflict 显式来自已记录矛盾及其证据，不能以 unknown 代替；这是未决冲突摘要，不在 06 裁定谁赢。
+B16明确列出每维所选来源及总体freshness所需的来源集合；被有效fallback替代的旧来源不冒充当前来源。所需来源缺失/身份不匹配/时钟不可判时总体state=unknown；否则任一所需来源越过其有效截止为stale，均有效为fresh。缺来源不是fresh；消费者只比较`freshness.state`，不拿明细对象与stale比较。截止由nowMs参与纯投影计算，即使无DB变化也可变化，不触发读路径写入。
 
-关系相关字段由 [03「报告与 status」](./03-lifecycle.md#报告与-status)及[「status 与 HUD 可读投影」](./03-lifecycle.md#status-与-hud-可读投影)供应：link、runHandshake、currentRun/isCurrent、latestReportForRun/按轮历史、parent.offline 与 orphan_policy、uncertain 的 reconciliation{evidenceIds,missing,allowedActions}、resumable+reason；host/occupant 由 05/04 供应。06 在同一次观测摘要引用它们，保留 asOfSeq 与缺失原因，不因 link.state 推测本轮绑定、拿旧轮报告补新轮或自行实现 resume 门禁。候选只保存有界种类/时间/指纹，字段不足标 unavailable；候选正文不作为默认补齐来源。Jev 的 JobRef/租约投影留 C。
+唯一语义分类与设计§3.3的优先关系对齐：冲突 > uncertain（区分supervisor_dead等原因）> 待决/blocked > 失败（含launch_failed）> interrupted/cancelling/cancelled > stale/缺证 > working > starting/未确认意图 > 退出/报告 > idle > unknown。这是B16语义与原因选择，视觉映射归前端；不另在A4/B6/B10维护分类。`run.state=failed`依据02是non_execution，输出`launch_failed`及采用的原因，不借lastTurnOutcome=failed伪造一轮模型执行。共享谓词`isRunTerminal(run) = run.state ∈ {ended,failed,cancelled}`只表示运行终态；投影字段`isRunTerminal:boolean|null`在无受管run时为null，不猜原生会话终态；completed/failed报告、图标或cancelling不构成运行终态。原生session与未来job的历史资格各按相应事实，不能套用图标判定（T-06-26）。
+
+消费者 `ObservationView` 提供DisplayNodeIdentity、`statusProjection{activity,pendingReason,lastTurnOutcome,liveness,freshness,stateKey,stateSince,stateSinceBasis,isRunTerminal,asOfSeq,observationStamp,asOf,observedAt,lastEvidenceAt,lastKnownActivity?}`、`conflict{count,recordIds[],since}|null`、各Metric、WorkspaceContext、Coverage、loaded、depth、evidenceStamp。asOf为所采纳事实边界，observedAt为观察时间；所有新时间为毫秒epoch。conflict显式来自已记录矛盾及证据，不能以unknown代替；06不裁定谁赢。
+
+`asOfSeq:number|null`仅为本次ledger快照events高水位，无ledger为null、已打开空ledger才为0。`observationStamp={seqDomain,commitSeq,inputLedgerSeq,ref,runId?,bindingGeneration?,sourceGeneration}`为实际采用的观测输入/发布戳（纯原生inputLedgerSeq可null；intent无观测commit时stamp=null）。不把当前ledger高水位贴到旧摘要。组合前核对ref/当前run/绑定及来源代次，旧轮/不相容代次的当前观测unavailable/stale并给原因，旧摘要只作历史；不能挪用旧报告/stateSince/cwd。只因无关run增长ledgerSeq不失效全部摘要。ledger与观测各自一致，没有跨库原子承诺/协调器；即时组合也只用同一纯B16，保留两套输入戳，连续性不足给unknown且不在status/wait中采集/Git/reconcile或发布摘要。ledger events.seq、观测commitSeq、NoticeEvent.seqDomain内seq不跨域比较（T-06-29）。
+
+状态持续时间唯一类型为 `stateKey:string,stateSince:number|null,stateSinceBasis:'event'|'observed'|'unknown'`。stateKey包含所选语义及必要原因（approval/question/supervisor_dead/launch_failed等），不含图标/颜色/翻译/宽度/排序桶。stateSince为当前语义状态连续区间起点：新run、已证实的新episode或所选语义改变才重置；报告重读/心跳/usage增长/折叠/语言变化/父因子孙改变排序桶均不重置。同图标的新approval/失败episode不沿用旧时间。
+
+连续性记录`StateContinuity={ruleVersion,nodeIdentity,runId?,bindingGeneration?,sourceGeneration,episodeAnchor,stateKey,stateSince,stateSinceBasis}`；episodeAnchor来自待决ID/turn ID/采用事件等。可定位进入事件且连续性可证用事件时间/event；只有首次看到状态的证据用首次观测时间/observed；时间或连续性不可知为null/unknown。时间截止stale用来源的确定截止边界（04心跳严格>30000ms，等于仍fresh），不取paint时刻。uncertain/stale时钟的证据年龄仍用lastEvidenceAt/heartbeat，不能用stateSince代替；时钟倒退标clockAnomaly，不刷新时间掩盖。
+
+重启读取已提交连续性记录，能有界续读的源从checkpoint接续。同证据/同commit的两个消费者得到同结果；停采可能漏registry瞬变、sourceGeneration/规则版本变化或历史缺口时，先以可证明事件重建，否则新observed起点或unknown，不假装一直连续。未绑定intent的pending/claimed/run状态直接用相应link/run事件起点，首次绑定若能证明同区间可沿用。恢复已知时间不承诺恢复从未观测到的事件；首次基线不补虚假完成通知（T-06-27、28）。
+
+关系相关字段由 [03「报告与 status」](./03-lifecycle.md#报告与-status)及[「status 与 HUD 可读投影」](./03-lifecycle.md#status-与-hud-可读投影)供应：link、runHandshake、currentRun/isCurrent、latestReportForRun/按轮历史、parent.offline/orphan_policy、reconciliation与ActionDescriptor、带主体的resumable+reason；host/occupant由05/04供应。06引用它们时保留实际inputLedgerSeq/实体代次与缺失原因，不因link.state猜本轮绑定或自实现resume门禁。候选只保存有界种类/时间/指纹，字段不足unavailable，不读候选正文补齐。未来C阶段Job租约的`holderLabel?:string`由C4从真实lease owner/job在同一读取投影派生，C5消费；无可公开匹配显示名则省略。它不参与身份/互斥/generation/释放，改名只更新投影，不提前造browser表/正向MVP样例（T-06-30）。
 
 `NoticeEvent={seq,seqDomain,created_at,ref,runId?,kind,inputStamp,sourceEventSeq?}`：B16 根据 pendingReason 从 none 进入待决、明确 failed、新报告、进入 uncertain 生成边沿；按 inputStamp/report_id 去重，初次读取不是重复完成。ledger 事实保留 sourceEventSeq；派生通知随观测一致提交获得该观测域递增 seq（域含 source/视角），不伪造 ledger events.seq，不跨域比较游标。created_at 是事件时刻或注明的首次观测时刻；切 tab/重绘不生成通知。parent.offline 消费 04 的持久事件，不由一次 registry 超时编造。
 
@@ -59,7 +95,9 @@ B16 使用概念 §6.8 的来源职责：当前交互优先采用匹配且新鲜
 
 `CollectLease={resource:collect:<SessionRef>,holder,generation,expires_at}` 存在 `$HUD_HOME/sources/<sourceId>/` 的观测存储，绝不放入 ledger leases。generation 持久单调，释放保留下界，不删除后从 1 重来。它只授权采集 checkpoint/summary/notice 写入，不授权启动/终结 run 或释放槽；三类资源的另外两类引用 I-02-10。
 
-逻辑提交 `ObservationCommit={ref,sourceGeneration,leaseGeneration,commitSeq,checkpoint,summary,notices}`。checkpoint 的 offset/parserState 和由它导出的摘要/notice 必须同时可见。可采用独立观测 SQLite 的一个短事务，或不可变 bundle + 一个原子发布指针；不能把 checkpoints/*.json 与 summaries/*.json 两次 rename 冒充一次提交。保留概念路径时两者必须解析同一个 commitSeq/bundle，不准消费者各自取「最新文件」。布局/点击状态另在 instances/，不参与解析进度。
+逻辑提交 `ObservationCommit={ref,sourceGeneration,leaseGeneration,seqDomain,commitSeq,observationStamp,checkpoint,summary,continuity,notices}`；stamp中的ref/sourceGeneration/commitSeq必须与本commit一致，inputLedgerSeq/runId/bindingGeneration为实际使用的输入。checkpoint offset/parserState、summary（含stateKey/stateSince/stateSinceBasis）、StateContinuity及notice同时可见。B12负责持久发布、B16负责唯一边沿逻辑，共用本提交，不各造存储。可采用独立观测SQLite短事务，或不可变bundle+一个原子发布指针；两次rename不能冒充原子。保留概念路径时checkpoint/summary解析同一commitSeq/bundle，不各取最新。布局/点击状态另在instances/。
+
+仅状态边沿或原有内容变化才提交，持collect lease的采集器仍是唯一观测写者；年龄以nowMs计算，重绘/status/wait零观测或ledger写入。不能每次读全量events找stateSince或每tick写年龄；读路径跨截止可纯重投影，需持久的新边沿由已有采集器在相同ObservationCommit发布。
 
 接管与发布必须共用同一原子 CAS/互斥边界：写入时同时重验 holder/generation/有效期、ref/sourceGeneration 与前一 commitSeq，再发布。文件方案的「查 lease → 放锁 → rename」不合格，旧持有者不得覆盖新指针；SQLite 方案也不能在事务外做一次 lease 检查后盲写。准备文件/解析在边界之外，提交内只校验与发布必要元数据；同一边界串行化接管。目录 0700/文件 0600，临时文件完整写/fsync 后再发布，必要目录 fsync；崩溃留下的未发布 bundle 不被读取。
 
@@ -76,6 +114,12 @@ B16 使用概念 §6.8 的来源职责：当前交互优先采用匹配且新鲜
 | I-06-7 | 热路径、进程、逻辑写入、CPU 与冷启动逐预算测量；不把 accepted 延迟当启动延迟 | T-06-11–16 |
 | I-06-8 | 通知是 hint、游标是事实；有界复读、心跳提示合并、不新增服务；status 只读 | T-06-17、18 |
 | I-06-9 | HUD 用廉价变更信号与已提交摘要；statusline 数据入口≤20ms，stdin 优先、失败可退现有摘要/缺失 | T-06-19、20 |
+| I-06-10 | spent.tokens/costUsd各自Metric，成本未知null、有效零保留；完整ref去重合计带缺失/coverage/quality，估计不作严格下界 | T-06-22 |
+| I-06-11 | WorkspaceContext位置/显示名/本地repoId/declared来源分离，Git≤2子进程/200ms软预算且不入热路径/事务，逐run启动历史不改写 | T-06-23、24 |
+| I-06-12 | 显示身份联合类型、freshness.state、launch_failed与共享终态谓词统一；intent不伪造授权/ref/采集租约 | T-06-25、26 |
+| I-06-13 | stateSince表示语义episode连续起点，随同ObservationCommit持久；重启/重复读取不重置、缺证不伪造、证据年龄另算、零逐tick写 | T-06-27、28 |
+| I-06-14 | ledger与观测分域加戳，组合重验实体/代次；旧run摘要不混当前，无跨库原子或读路径写入 | T-06-29 |
+| I-06-15 | C4 holderLabel只派生读取，不参与所有权/释放，不扩MVP schema/正向能力 | T-06-30 |
 
 ## 状态机
 
@@ -159,7 +203,16 @@ stdin 的 session/model/context/cost 永远优先，摘要不覆盖它。廉价�
 | T-06-19 | B | 同连接data_version不变/改变、重开连接、自身写、只有时钟变 → 查询缓存正确失效，心跳不全树重建，年龄仍更新；不轮询全表 |
 | T-06-20 | B | D3摘要命中/≤50索引fallback/缺失/超时/lease忙+stdin冲突 → 数据入口≤20ms、完整p95≤150ms，partial/unavailable准确、stdin优先，无树/正文扫描或模型调用 |
 | T-06-21 | C | pi compaction、cache_warm、assistant cost和Flow preview/确认值 → 交互usage不混compaction/cache_warm，单位/quality明确，无token假零 |
+| T-06-22 | A9 | tokens已知但cost未知、有效零成本、部分已报告/混estimated合计、重复完整ref → costUsd必有独立Metric且unknown.value=null；零为0/reported，合计带knownCount/missingCount/coverage/quality，估计不冒充下界，credits不换美元 |
+| T-06-23 | A9 | 同仓库两个worktree、同remote两个clone、无Git临时副本、显式copy来源、同名不同路径 → 前者同repoId不同规范根；clone不同repoId；副本unknown/declared不升级物理身份；根缺失只说明cwd不同 |
+| T-06-24 | A9 | Git缓存命中/冷缺失/超时/明确失效，旧header cwd/包装链改变实际cwd/历史路径消失 → 来源/捕获时间/原因准确、launch不被覆盖且历史可导出；每代≤2子进程/200ms软预算规格、无重复tick/Git热路径/新增watcher；真实成本在B验 |
+| T-06-25 | A9 | 两个同名未绑定link、首次绑定真实ref、同cwd/重复父边 → 独立intent键关联各currentRun、不计已确认session；B9合并不双节点/双父并保持选择映射，无假ref/collect租约 |
+| T-06-26 | A9 | 缺来源/过截止freshness、无报告N成立的failed、failed报告但run.running、run.cancelling → freshness.state为unknown/stale，launch_failed/non_execution带原因且终态，后两者不按图标终结/折历史 |
+| T-06-27 | A9 | 同证据重读/重启/两个消费者同commit、心跳/usage/语言/折叠/父排序变化、新run/新待决ID或失败episode → 前组stateKey/stateSince/basis稳定，后组新起点；event/observed/unknown各有证据且首次基线无假完成通知 |
+| T-06-28 | A9 | DB不变仅越过30000/30001ms心跳截止、停采漏registry瞬变、源/规则换代/历史缺口/时钟倒退 → 纯投影fresh→stale取确定截止，缺连续性重建或observed/unknown、clockAnomaly明确，证据年龄另算，零每tick/status写 |
+| T-06-29 | A9 | ledger已run-b/观测仍run-a、绑定或来源代次错配、无关run seq增长、无库/空库 → b账本事实+有原因缺观测，旧report/stateSince/cwd不混入；实际inputLedgerSeq与独立seqDomain保留，无关增长不全失效，asOfSeq=null/0，不混wait游标 |
+| T-06-30 | C | C4同一lease/job读取取得可公开显示名、无名/改名/needs_human/结果未知 → holderLabel可选派生/省略，真实holder/generation/释放不变，名字变化不新增所有权副本 |
 
 ## 附录：B16 唯一真值表的填入位置
 
-本槽由 B16 在 A9 后实现时填写，不是 A2 留下的另一张状态表。每行必须列输入证据/当前性/双时间/冲突、五维输出及 notice 边沿，并有对应 fixture；至少覆盖 registry/transcript 矛盾、done→idle completion_seq、未闭合工具的陈旧证据、心跳停而receipt未到、原生结果未知但scope已结束、父idle子working、旧轮迟报、关闭后历史保留。运行终结仍引用02，resume门禁仍引用03。
+本槽由B16在A9后实现时填写，遵守上文唯一语义优先关系，不另建状态分类。每行列输入证据/当前性/双时间/冲突、五维输出（freshness.state及所选来源）、stateKey/stateSince/basis/episode锚点、isRunTerminal与notice边沿，并有fixture；至少覆盖registry/transcript矛盾、done→idle completion_seq、旧未闭合工具、心跳截止但receipt未到、native未知的scope结束、父idle子working、旧轮迟报/摘要、launch_failed、failed报告仍running、cancelling、两同名intent绑定、重启/缺历史/规则换代连续性。B16可先做纯归并，但连续性最终发布依B12同一ObservationCommit；B6最终status与B10完整驻留消费均等该验收。运行终结仍引用02，resume门禁仍引用03。

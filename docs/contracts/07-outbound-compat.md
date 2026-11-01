@@ -1,8 +1,10 @@
 # 07：材料外发、版本与兼容 facade
 
-- 版本：`v0.1 draft`（2026-11-01；A2）。外发与 v3 是待实现规格，不把现有单 Codex 代码写成已通过通用来源隔离。
+- 版本：`v0.2 draft`（2026-11-01；A2 + Oracle D01–D13）。外发与 v3 是待实现规格，不把现有单 Codex 代码写成已通过通用来源隔离。
 - depends-on：[01 身份](./01-identity.md) I-01-1、I-01-6、I-01-8；[02 执行](./02-execution.md)「ledger schema v1」、I-02-14；[03 生命周期](./03-lifecycle.md)「报告与 status」；[04 托管](./04-supervision.md)「文件、字段与原子提交」；[05 能力](./05-capabilities.md)；[06 观测](./06-observation.md)；[概念 v2.3](../universal-hud-concept.md) G8/G9、§6.11、§9、§11–12；[计划](../universal-hud-engineering-plan.md) A6/B17/D2/E；[Oracle](../reviews/2026-11-01-astra-contracts.md) C04、C11、C13。
 - 只规定材料/存储/命令的边界；信息呈现由 [Fable 设计](../design/hud-information-design.md) 决定。新通用数据时间为毫秒 epoch，旧 --json v2 的既有 ISO 格式是显式兼容边界。
+
+[Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
 ## 数据模型
 
@@ -48,18 +50,44 @@ recipient 是已解析的具体目标身份：API 包含 backend/provider、规�
 
 现状依据（只读）：[SmallModel](../../src/collectors/small-model.ts) 的 submit 是 transport/队列/缓存入口，当前 ModelRequest 无 source/grant provenance；[briefing](../../src/collectors/briefing.ts)、[model-jobs](../../src/collectors/model-jobs.ts)、[progress-summary](../../src/collectors/progress-summary.ts)、[model-probe](../../src/collectors/model-probe.ts) 各自取料。B17 必须把全部功能及 repair/cache 路径纳入，不只包住 brief。现有 [隐私清单](../ARCHITECTURE.md#54-privacy-by-setting) 与 [reference](../reference.md#llm) 的字段/大小边界继续适用；新增材料要登记在清单，不扩大旧权限。
 
-### 四套独立版本
+### 五套独立版本
 
 | 版本域 | 本批基线 / 目标 | 兼容/未知版本处理 |
 |---|---|---|
 | public snapshot | [snapshot.ts](../../src/snapshot.ts) 当前 SNAPSHOT_VERSION=2；A6 起草加法 v3，E才切换新的默认出口并公告v2退役 | v2 facade 保留原格式；v3在独立出口/路径显式选择，不以同名v2文件写v3；未知主版本拒绝解码或标unavailable，不猜字段 |
 | checkpoint schema | 06 新 ReaderCheckpoint 的 schemaVersion 从候选1起；另记 readerVersion/sourceGeneration/leaseGeneration/commitSeq | parser语义变化须新reader版本/缓存失效，结构不兼容升schema；旧reader不覆盖较新checkpoint，至多只读旧摘要/明确缺失；受控重建也要采集租约和一致提交 |
 | ledger | 02 的 PRAGMA user_version=1 是A9待冻结的SQL schema；HUD只读 | 0由写者在受控初始化/迁移路径处理；已知版本正常，更高版本拒写，不回退JSON控制或自动降级；HUD未知版本不能执行迁移，可拒绝投影并给诊断 |
+| delegation export | B18 的 `hud-delegation-export` / schemaVersion=1，本地委派元数据协议 | 与ledger user_version、public snapshot/旧--json v2、checkpoint、scan独立；同主版本只加可选字段，破坏性变化升导出主版本；未知主版本/缺必需字段拒解码 |
 | SCAN_VERSION | [tree-scan-store.ts](../../src/collectors/tree-scan-store.ts) 当前3；A6因新增读取语义+1 | 内部可重建缓存，不是public snapshot版本。任何树扫描解释/提取字段变化都bump；版本不匹配忽略该缓存并预算内重建，不删用户state/日志/模型授权 |
 
 public v3 与内部 scan v3 恰好数字相同不表示兼容。版本检查先于读写；旧新进程不得争写同一格式/路径，checkpoint和summary即使有schema标签仍须06同一次提交。ledger的迁移仅在短事务检查版本，备份/文件准备在事务外；schema冲突不通过重新发外部动作解决。Jev jobs/browser存储和grant/close完整协议按Oracle C04延期，不为v3草案提前冻结不可达DDL。
 
-v3 的加法槽为 `universal`：`rootRef,sourceId,asOfSeq,asOf,observedAt,coverage,tree{nodes,counts,continuation?},notices`；每node含ref/harness/depth/loaded、06 Metric/五维projection/conflict、03关系/本轮run/报告/候选/parent/reconciliation/resumable、05 host定位结果。新字段时间统一ms epoch，旧字段保持原单位/格式，不能给同名字段改单位。这里是B16/B10/D3共同消费的数据槽，最终类型由A4/A6按本契约落地；counts只用其口径，不能改旧agents为跨harness计数。statusline廉价摘要从同一已提交观测生成，读取边界按06；不写第二套全树snapshot生成器。
+v3 的加法槽为 `universal`：`rootRef,sourceId,asOfSeq,observationStamp,asOf,observedAt,coverage,tree{nodes,counts,continuation?},notices`；每node含06 `DisplayNodeIdentity`（session(ref) / delegationIntent(linkId) / 未来job(ref)）、depth/loaded、分别包装的`spent.tokens`与必有`spent.costUsd:Metric<number>`、WorkspaceContext、五维projection（`freshness.state`）、stateKey/stateSince/stateSinceBasis、isRunTerminal/conflict及各自observationStamp，03关系/本轮run/报告/候选/parent/reconciliation/带主体resumable/ActionDescriptor，05 host定位结果。intent不用假ref、不计已确认session，绑定由B9合并；launch_failed是未执行失败，不冒充turn失败，终态不按图标判。Job holderLabel仅为C4读取派生槽，不提前冻结browser DDL。
+
+asOfSeq只指ledger快照高水位（无库null、已打开空库0），observationStamp按06保存实际`{seqDomain,commitSeq,inputLedgerSeq,ref,runId?,bindingGeneration?,sourceGeneration}`，不把当前ledgerSeq贴成缓存生成序号；跨run/代次不兼容给缺失/stale，旧stateSince/cwd/报告不混当前，无关seq增长不全失效。ledger/观测/notice序号分域，v3不是跨库原子或wait/CDC游标。新字段时间ms epoch，v2单位/缺省不变；counts不改变旧agents口径。A4/A6落类型，B16/B10/D3共用，statusline从同一已提交观测廉价读取（06），不另建全树生成器。
+
+### 本地委派元数据导出 v1
+
+MVP由B18提供按需只读 `hud link export --json --schema-version 1 [--paths local]`；可显式限定link范围，默认整个ledger。它独立于旧`codex-hud --json` v2及通用snapshot v3，不公开受支持的SQLite表/view/事件JSONL，不需要HUD正在运行或B16/B17。A4先冻结以下类型与合成golden fixture，生产producer在A9+B2后；toktrack consumer/未到的字段清单不阻A4/A9/B15。
+
+| 层 / 字段 | v1 必需类型与语义 |
+|---|---|
+| envelope | `format:'hud-delegation-export',schemaVersion:1,ledgerId:string,asOfSeq:number,exportedAt:number,scope,coverage,paths,records[]`；`scope:{kind:'all'}\|{kind:'links',linkIds:string[]}`明确范围，`coverage:{state:'complete',recordCount:number}`说明成功快照覆盖与条数，paths为`none\|local`。asOfSeq为同次ledger事件高水位（空库0），不是增量游标；exportedAt是ms epoch。 |
+| 每run一条record | `linkId:string,runId:string,runSeq:number,linkState,runState,isCurrentRun:boolean,currentOwner:boolean,predecessor:string\|null,hasUnresolvedConflict:boolean`。同link多run不创造多条逻辑父边；枚举沿02/03，冲突不可藏在unknown。 |
+| 端点 | `parentRef:SessionRef\|null,childRef:SessionRef\|null`，对象完整`{harness,sourceId,sessionId,threadId}`，threadId无值一律null。只取该关系/该run可证的ledger端点/目标，不把旧run端点套新轮；尚未绑定的预期harness/source只能另作可选提示，不包装伪SessionRef。 |
+| 绑定信息 | `relationshipConfirmed:boolean,bindingReason:string\|null,runHandshake:{state:pending\|claimed\|bound,reason:string\|null}`分别解释关系确认、本轮握手与缺失原因。resume时关系可已确认而本轮pending；历史、未确认与冲突用上述标志区分，不能因预期目标等于旧child就声称本轮握手bound。 |
+| 启动位置 | `cwdBasis:'launch',cwdCapturedAt:number,workspaceSnapshot:object\|null,projectOrigin:{repoId,basis:'declared',declaredAt}\|null`；cwdCapturedAt为该run意图固定启动目录的时刻（created_at）。workspaceSnapshot仅选06快照的repoId/identityKind/scope及cwdSource/cwdAsOf/gitCapturedAt/gitMissingReason；NULL表示尚未捕获。`launchCwd:string`及快照的`worktreeRoot:string\|null`仅paths=local时输出，none模式省略而非伪造未知。不是导出时当前Git/observed workspace；projectOrigin不替代物理repoId。 |
+| 运行时间 | `createdAt:number,startedAt:number\|null,endedAt:number\|null`，全部ms epoch。endedAt是04确认终结观测时刻，不是精确内核退出时间；failed的startedAt可null。 |
+
+ledgerId来自02初始化一次的私有元数据行，重启/同库备份恢复保留、独立新库新生成；外部键为`(ledgerId,linkId)`和`(ledgerId,runId)`，不用HUD_HOME绝对路径作命名空间。一次read-only连接/读事务取得已提交rows与high-water，以linkId/runSeq稳定排序；不继承200显示节点截断。无库/未知存储版本/权限失败明确unavailable或错误（非零退出），不初始化/迁移/采集/跑Git/transcript/reconciler，不输出成功空全集。
+
+v1是完整所选范围快照，按稳定键upsert；暂不提供`--afterSeq`、JSONL双写、增量订阅或跨命令一致分页。行会回填/迁移，events high-water不等于已定义的行变更协议。必需字段缺失/未知主版本拒解码；同版本仅加可选字段，消费者忽略未知可选字段，未知状态保守处理，绝不当bound/ended。ledger user_version或public snapshot升级不能悄改发布v1单位/空值/身份语义。
+
+默认只用显式元数据白名单序列化：ID、枚举、时间、仓库分组键及声明来源；bindingReason/握手reason/Git缺失原因与来源标识仅用白名单协议代码，不复制任意诊断/任务文本。不`SELECT *`；无brief/report正文或摘要、prompt、原始events/evidence payload、日志、claim、环境、凭据、transcript路径及自由label。绝对cwd/worktreeRoot仅显式`--paths local`面向本用户本地consumer；source root、gitCommonDir、brief/report/log路径不属于v1必要字段，paths=local也不顺带输出。repoId/sourceId hash是关联键，不是匿名化保证。stdout不自动永久落盘；显式导出保存选项才创建0600私有文件，公共fixture仅合成路径/ID。此本地出口无需B17模型许可，也不授远端/模型/遥测/同步外发权；后续外发仍逐来源/目的/接收方授权，不能称CLI结果已脱敏可公开。
+
+consumer以01完整SessionRef join，source按harness+规范存储根规则匹配，Claude agentId进入threadId；仅harness+sessionId、cwd/mtime/pane不足消歧，缺SourceId不猜home。经确认且无未决冲突的当前父边可优先于同一关系推断；null端点、pending/claimed、冲突不能升级确定边，handed_over/revoked保留历史而非第二当前父边。旧run端点/cwd/时间不能自动套新run，ledger不覆盖transcript实际用量口径。coverage仅说明查询范围内HUD委派记录完整，无记录不证明没有原生子/手工/前HUD历史；toktrack继续自己的推断并保留冲突/来源强度，不能用较新推断静默抹掉争议，projectOrigin始终declared。交接只承诺有来源的逐run启动位置、已确认边、可选显式项目来源，不承诺自动把任意`/tmp`副本归主仓库。
+
+G13上限：默认最多10000条run记录、16MiB编码JSON、读取/组装1000ms软预算，任一超限显式失败，不以漏历史的成功全集替代；明确link范围可缩请求，大规模一致分页有需求时另定。完整JSON准备好才输出，消费者仅在退出成功且coverage完整时替换对应范围缓存。B18记录真实行数/编码字节/墙钟与读事务寿命，行及high-water取得后尽早结束读事务，在固定输入上组装；软预算不是硬实时保证。导出不随heartbeat/paint自动跑，不新增守护进程/后台全库同步/第二writer（T-07-20–26）。
 
 ### 旧命令与 --json v2 的冻结边界
 
@@ -95,10 +123,14 @@ SnapshotWriter继续原子写0600、仅事实变化且最多1次/s；成功读/�
 | I-07-2 | 新来源及delegated正文默认不取料/不外发；父/旧Codex授权不扩展，私有/未知类型永不成为材料 | T-07-2、4 |
 | I-07-3 | 所有生成/repair/cache均经B17唯一入口；provenance取并集、队列发送与缓存回写复验，不从派生摘要洗来源 | T-07-5、6、7 |
 | I-07-4 | 授权具体实际recipient；off零网络、scope/开关/预算独立；旧brief开关不能覆盖其他目的 | T-07-3、8、9 |
-| I-07-5 | public/checkpoint/ledger/scan版本独立；未知版本不盲写/自动降级；HUD不迁移ledger | T-07-10、11 |
+| I-07-5 | public/checkpoint/ledger/scan/delegation-export五版本独立；未知版本不盲写/自动降级；HUD不迁移ledger | T-07-10、11、26 |
 | I-07-6 | v3加法与v2出口隔离，旧字段/类型/缺失/时间/计数语义不变；新投影ms epoch | T-07-12、13 |
 | I-07-7 | 旧命令参数、session+home选择、--json只读及错误/退出行为保留 | T-07-14、15 |
 | I-07-8 | A–D旧状态可读不自动迁；E按source分别迁设置/材料/外发/预算，不合并授权或改用户harness设置 | T-07-16、17 |
+| I-07-9 | export v1单次只读一致ledger快照、ledgerId命名空间、逐run/端点空值/稳定排序及完整scope独立于HUD显示截断，不公开内部表或冒充CDC | T-07-20、21、24、25 |
+| I-07-10 | 本地导出仅元数据白名单、路径显式opt-in，不继承/授予B17模型外发许可，hash不保证匿名 | T-07-22 |
+| I-07-11 | consumer完整SessionRef join，当前confirmed无冲突边才优先；未确认/历史/declared/coverage不升级强度，旧run不混新轮 | T-07-23、24 |
+| I-07-12 | v3消费06联合身份/独立成本Metric/语义时钟与终态/双域快照戳，未知不改v2兼容例外，C holder只留派生槽 | T-07-27 |
 
 ## 状态机
 
@@ -153,3 +185,11 @@ E的显式迁移为 `inspect → preview per-source mapping → write new privat
 | T-07-17 | B | A–D兼容读取与旧settings未知键过滤、授权文件坏/无、旧缓存无provenance → 不自动迁移/删除/扩权，不把未持久化grant当allow |
 | T-07-18 | C | Jev各provider/account合成任务、同源未授权材料、显式付费确认/浏览器资源 → 材料授权、执行许可/预算/资源分别验，不因job存在默认外发 |
 | T-07-19 | v1.1 | F远程routing建议与auto fixture → routing目标未授权时零请求；有建议许可仍无auto执行权，原Codex摘要许可不补齐 |
+| T-07-20 | A9 | export合成golden覆盖完整envelope、双source、threadId缺失、nullable端点/时间、逐run稳定排序 → ledgerId/link/run键唯一，scope/coverage/paths明确，空ledger asOfSeq=0，不受200节点限制 |
+| T-07-21 | A9 | 读快照期间并发新run/回填、高水位增长、无库/未知schema/权限拒绝 → rows+asOfSeq同ledger快照，明确失败而非成功空全集，零初始化/迁移/Git/采集/reconcile |
+| T-07-22 | A9 | 合成秘密/正文/label/所有路径哨兵，默认与paths=local、stdout/显式保存 → 只协议白名单；仅local含launchCwd/worktreeRoot，其余路径/正文始终不出；保存0600，无自动落盘/B17许可借用或外发授权 |
+| T-07-23 | A9 | 同sessionId双home、Claude原生agentId、缺SourceId、同cwd/pane/mtime → 只完整ref精确join，不猜home/root；coverage无记录不否定其他委派来源 |
+| T-07-24 | A9 | 晚绑定、同link两次resume、handover/revoked、冲突/pending、显式copy来源、路径消失 → 逐run启动历史仍导出，当前确认边与握手pending区分、历史不成第二父边，旧run不套新轮，推断冲突/declared强度保留，不覆盖用量 |
+| T-07-25 | A9 | 10000/10001条、16MiB边界/超限、1000ms软预算超限、缩小link范围/组装失败 → 边界内可成功，超限明确失败且无成功截断全集；完整JSON备妥才输出，consumer成功且coverage完整才替换范围缓存，真实读事务寿命另记（B18实测） |
+| T-07-26 | A9 | 缺必需字段/未知export主版本/同版本未知可选字段/未知状态，ledger或snapshot版本变化 → 拒解码/忽略可选/保守状态；五域独立，v1单位/空值/身份不悄改，asOfSeq不是afterSeq或分页保证 |
+| T-07-27 | A9 | v3 intent/session/job槽、tokens已知成本未知、launch_failed/failed报告仍running、ledger-b+观测-a → 身份/Metric/freshness.state/stateSince/basis/isRunTerminal与双域stamp按06，不造session/成本/连续性/跨库原子，旧v2缺省/时间仍兼容 |
