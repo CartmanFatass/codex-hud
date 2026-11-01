@@ -68,7 +68,7 @@ Jacob 的日常是多 harness 编排：cc 当编排者，后端交 Codex impleme
 | `SourceId` | 已解析的存储根：`realpath(CODEX_HOME)`、`CLAUDE_CONFIG_DIR`、pi 的 session 目录。显示名来自启动档案（如 `codex@account2`） | hash + label |
 | `SessionRef` | 逻辑会话。路径是定位信息，不是身份 | `harness`、`source`、`sessionId`、`threadId?`（cc 原生子代理 = `agentId`；Codex 线程各有自己的 sessionId） |
 | `JobRef` | 一次 Jev 任务 | `kind: 'jev'`、`provider`、`account?`、`key` |
-| `CallerId` | 一个 hud-mcp 实例。MCP 可能被 harness 重启，所以它不是所有者 | `pid`、`ppid`、`procStart`、`harness`、`sessionRef?`、`boundBy?`、`generation` |
+| `CallerId` | 一个 hud-mcp 物理实例。MCP 可能被 harness 重启，所以它不是所有者。身份绑定在其下的 `caller_contexts` 上：专属 stdio 实例恰好一个 context，共享实例按可信逐调用来源分 context（契约 01） | `pid`、`ppid`、`procStart`、`harness`；每个 context：`sessionRef?`、`boundBy?`、`generation` |
 | `OwnerKey` | 持久的逻辑所有者，幂等与所有权校验的范围：已绑定时 = 父 `SessionRef`；未绑定时 = harness 进程身份（`ppid + procStart`）。MCP 重启后不变 | 派生字段，不单独存 |
 | `RunBinding` | HUD 观察到的进程实例与它当前承载的会话 | `bindingId`、`ref`、`pid?`、`procStart?`、`herdr?{server, workspace, tab, pane, agentName}`、`tmux?{session, pane}`、`generation`、`evidence[]` |
 | `DelegationLink` | 父子关系，有独立 id 和生命周期 | §6.6 |
@@ -526,7 +526,7 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 - MCP 同步调用：`delegate_wait` 有界长轮询；长等待配合后台 `herdr agent wait` 或循环。
 - 外部动作非恰好一次：意图记录 + 托管进程 + 对账；`uncertain` 不重试。
 - Herdr 之外：外包状态来自托管进程与文件；跳转不可用；headless 档案要单独测试。
-- 子代理没加载 hud-mcp：关系停在 `pending`，transcript 核验可把它推进到 `bound`，但没有 whoami / report。
+- 子代理没加载 hud-mcp：关系停在 `pending`；只有 hud-run 启动回执（pid + procStart）、把该进程映射到唯一 SessionRef 的可信会话证据、transcript 里本次运行启动消息的 linkId + claim 指纹三项同时成立，reconciler 才把它推到 `bound`（`bound_by = receipt+transcript`，claim 未兑换），且没有 whoami / report；缺一项最多是候选（§6.6.3）。
 - Jev 浏览器串行与 NEEDS_HUMAN：按实例持锁；人工介入进 notice；CLI 与 hud-mcp 不同时段混用。
 - 替换 claude-hud 的功能缺口：三道门，缺一不切；故障标准先写。
 - 重构范围：A 只加 facade、契约与探针；搬目录放到 E。
@@ -569,6 +569,11 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 | 2026-11-01 | daemon 代启 MCP 且无可信会话来源的路径标不支持 | Pro 第三轮 §3① |
 | 2026-11-01 | 状态归并器（B16）与材料入口（B17）作为独立实现工作包 | Pro 第三轮 §4 |
 | 2026-11-01 | v2.3 为阶段 A 开工基线；阶段 B 实施基线在 A9 按不变量、失败用例、探针证据放行 | Pro 第三轮 §1 |
+| 2026-11-01 | 首次 spawn 尚无子 SessionRef 时，运行槽以 `provisional:<runId>` 占位，只允许全新会话；身份解析后同事务换成真实 ref，真实 ref 已被占则双方进 `uncertain`、都不启动 / 续跑；resume 与 predecessor 必须带实际 SessionRef | 编排者（A1 提问），A9 复核 |
+| 2026-11-01 | 未绑定父的 OwnerKey（ppid + procStart）在绑定证实后经 `owner_aliases` 单向归并到 SessionRef 范围；一个 proc 范围每代次至多映射一个会话；代次 +1 时 alias 关闭；归并冲突一律拒绝、不启动 | 编排者（A1 提问），A9 复核 |
+| 2026-11-01 | 无 hud-mcp 的子：pending → bound 只凭启动回执 + 可信会话证据 + 启动消息的 transcript 核验三项同时成立，由 reconciler 写；缺一项最多候选；§14 对应条目按 §6.6.3 收紧 | 编排者（A1 提问），A9 复核 |
+| 2026-11-01 | `predecessor` 转交只在调用者 OwnerKey 等于旧关系所有者时允许；跨所有者转交需旧所有者签发、reconciler 核验的凭证（格式归契约 03），定义前返回 unsupported；知道 linkId 不构成授权 | 编排者（A1 提问），A9 复核 |
+| 2026-11-01 | 调用者身份拆为物理 `CallerId` + `caller_contexts`：每个 context 各有 SessionRef 绑定与代次；专属 stdio 实例恰好一个 context；共享（daemon）实例的 context 只由可信逐调用来源建立，无此来源则能力标不支持，但模型与 schema v1 不变 | 编排者（A1 主审发现），A9 复核 |
 
 ## 16. 评审状态与下一次评审
 
