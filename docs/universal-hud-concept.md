@@ -570,7 +570,8 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 | 2026-11-01 | 新增 G13 轻量与快、G14 清晰可视化与低摩擦协作；性能与正确性同级，契约 06 写定预算，基准超预算即缺陷 | Jacob |
 | 2026-11-01 | 后端设计与架构交 Oracle（Codex `gpt-6-astra` effort max）裁决；Pro 只在关键节点（A9、B15 或 Oracle 上送）。此前编排者在 A1 中做的裁决（本表标"编排者"的各行）连同契约 01–04 与探针结论打包送 Oracle 追认或推翻 | Jacob |
 | 2026-11-01 | Oracle 第 1 次裁决（[reviews/2026-11-01-astra-contracts.md](./reviews/2026-11-01-astra-contracts.md)）：Codex 身份主路径 = 每轮 `-c mcp_servers.hud.env.*` 注入 claim + 逐调用 `_meta` + 启动实例 / source 核验；daemon-present 不是 A9 前置；可见模式采用修订后的方案甲（原生退出结果可未知，supervisor 死亡即交互中断、`uncertain`、持槽），方案乙不作 MVP 受管后端，PTY 方案推迟；A9 改为两级门禁（A9 审规格 + 最小合成进程原型 + A3/A8 可行性证据，生产验收在 B）；契约必改 14 项 C01–C14 | Oracle（Codex gpt-6-astra max） |
-| 2026-11-01 | 账本的委派边（调用方 / 子会话、各 run 的 cwd 与工作树根）将作为 toktrack 追踪调度关系与项目归属的可选权威来源；toktrack 继续以 transcript / git 推断兜底。对外读取接口（版本化只读导出，倾向 `hud link export --json`，不让外部直接读 `ledger.sqlite`）、字段与隐私范围待 Oracle 裁决，toktrack 侧适配在 B2 之后 | Jacob；待 Oracle |
+| 2026-11-01 | 账本的委派边（调用方 / 子会话、各 run 的 cwd 与工作树根）将作为 toktrack 追踪调度关系与项目归属的可选权威来源；toktrack 继续以 transcript / git 推断兜底。对外读取接口（版本化只读导出，倾向 `hud link export --json`，不让外部直接读 `ledger.sqlite`）、字段与隐私范围待 Oracle 裁决，toktrack 侧适配在 B2 之后 | Jacob；Oracle 第 2 次修改：版本化只读 `hud link export --json` v1（一致快照、`ledgerId` 命名空间、路径须 `--paths local` 显式开启、仅元数据），生产导出器为 B18（MVP 内、独立于 toktrack 消费端）；不承诺自动认出任意临时副本（D06–D08） |
+| 2026-11-01 | Oracle 第 2 次裁决（[reviews/2026-11-01-astra-consult2.md](./reviews/2026-11-01-astra-consult2.md)）：`stateSince` 由 06 定义、B16 计算、随观测提交持久（零逐 tick ledger 写）；工作位置分 `cwd` / `worktreeRoot` / 显示名 `worktree` / 本机 `repoId`（git common dir）/ 显式 `projectOrigin`，`runs.launch_cwd` 逐 run 冻结，Git 不进热路径；HUD 的 Resume / Reconcile 在 MVP 只显示并复制命令，另定窄的本地管理 resume 入口（`--request-key`、`--expected-run`）；`costUsd` 为必有 nullable Metric；`holderLabel` 留 C4；A4 补未确认委派显示键、`freshness.state`、`launch_failed`、跨存储快照戳；必改 13 项 D01–D13 | Oracle（Codex gpt-6-astra max） |
 
 ## 16. 评审状态与下一次评审
 
