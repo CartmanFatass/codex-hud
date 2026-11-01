@@ -27,7 +27,7 @@
 
 ### 0.3 假设（详见 §9）
 
-A1 B16 对每个节点给出完整五维投影和 `asOfSeq`；A2 归并器把"两条记录"作为独立标志而不是猜一个状态；A3 可见运行用修订后的方案甲（Oracle 裁决 `docs/reviews/2026-11-01-astra-contracts.md` §4）：运行结束可由已核验的进程组为空证实，但 harness 的原生退出结果通常未知（null），shell status 只是独立诊断，永不当退出码；方案乙不是 MVP 受管后端，不在假设里；A4 已裁决（Oracle2 D04）：MVP 的 Resume / Reconcile 只显示并复制契约 03 `ActionDescriptor.displayCommand`，不起控制进程，直接调用是将来的可选能力；A5 面板宽度 32–56（Codex ≥ 41），bar 80–200，statusline 80–200；A6 现有键位 `h`/`l`/`a`/`f`/`s`/`r`/`v` 可复用；A7 MVP 范围按 Oracle 裁决与契约 v0.3：同 owner 的 `predecessor` 转交留在 MVP；跨 owner 转交凭证、`closed` 链接重开、no-MCP `observe_only` 绑定、shared-daemon context 推到 v1.1，Jev 作业在阶段 C——本稿保留这些设计并就地标注，B10 不实现 v1.1 的部分。
+A1 B16 对每个节点给出完整五维投影和 `asOfSeq`；A2 归并器把"两条记录"作为独立标志而不是猜一个状态；A3 可见运行用修订后的方案甲（Oracle 裁决 `docs/reviews/2026-11-01-astra-contracts.md` §4）：运行结束可由已核验的进程组为空证实，但 harness 的原生退出结果通常未知（null），shell status 只是独立诊断，永不当退出码；取消已接受而先后未知的完整结束是 `ended` 加 `terminalNote = cancel_timing_unknown`（Oracle3 E02），不是 uncertain、不持槽；方案乙不是 MVP 受管后端，不在假设里；A4 已裁决（Oracle2 D04）：MVP 的 Resume / Reconcile 只显示并复制契约 03 `ActionDescriptor.displayCommand`，不起控制进程，直接调用是将来的可选能力；A5 面板宽度 32–56（Codex ≥ 41），bar 80–200，statusline 80–200；A6 现有键位 `h`/`l`/`a`/`f`/`s`/`r`/`v` 可复用；A7 MVP 范围按 Oracle 裁决与契约 v0.3：同 owner 的 `predecessor` 转交留在 MVP；跨 owner 转交凭证、`closed` 链接重开、no-MCP `observe_only` 绑定、shared-daemon context 推到 v1.1，Jev 作业在阶段 C——本稿保留这些设计并就地标注，B10 不实现 v1.1 的部分；A8 普通会话（没有 ledger / MCP / run 也要能显示）按契约 05 以 `SessionBinding` 绑定、`SurfaceLocator` 定位，受管运行字段只在 `managed`（Oracle3 E06）；三种代次——宿主的 `occupantGeneration`、受管 run 的 `bindingGeneration`、reader 的 `sourceGeneration`——互不代用（Oracle3 E01 / E06）。
 
 ## 1. 信息清单与层级
 
@@ -52,14 +52,14 @@ A1 B16 对每个节点给出完整五维投影和 `asOfSeq`；A2 归并器把"�
 | 模式 visible / headless | `runs.mode` | T1 | 名字后缀 `⊟`（仅 headless）；比截断名字先丢 |
 | Jev provider（阶段 C） | `jobs.provider` | T1 | 占徽章位：`chatgpt / gemini / aistudio / flow` |
 | 角色 role | `links` 意图 | T2 / T3 | 卡片第一行 `implementer · pane 4 · bound 12m` |
-| 宿主 pane / tab | `host.label`，`occupantMatches` | T2 / T3 | `pane 4`；occupant 不匹配时不写 pane（不猜） |
+| 宿主 pane / tab | `host.label`，`occupantMatches`（普通会话用 `SurfaceLocator`，受管 run 用 `HostLocator`，核验口径相同） | T2 / T3 | `pane 4`；occupant 不匹配或 `occupantGeneration` 未知时不写 pane（不猜，null 不等于 null） |
 | run 序号 | `runs.run_seq` | T2（> 1 时）/ T3 | `run 2` |
 | 花费（pi 的 cost，Flow 的 credits） | `evidence.spent.costUsd`，jobs | T2 / T3 | `$0.12`、`12cr` |
 | 树级累计花费 | 06 树级合计：`spent.costUsd` 按完整 SessionRef 去重求和，带 `knownCount / missingCount / coverage / quality` | T1（汇总行）/ T3（根 Inspector 写 `3 of 5 nodes`） | 全部已知且 reported → `$3.40`；有缺失且已知部分全是 reported → `≥$0.12`（同口径下界）；混入 estimated → `~$0.12`（不是下界）；credits 另算，不换美元 |
 | 工作目录 / 工作树 | 06 `WorkspaceContext {cwd, worktreeRoot, worktree?, repoId, projectOrigin, cwdSource, cwdAsOf, gitCapturedAt, gitMissingReason}` | T2（与父的 `worktreeRoot` 不同时）/ T3 | 委派行 `in fix-cjk`（`worktree` 显示名，否则 `worktreeRoot` 的 basename）；判等只看规范化 `worktreeRoot`，根未知时退到比较规范 cwd（只说目录不同），cwd 也未知写 `in ?`——未知不等于相同；`projectOrigin` 只是声明，Inspector 标 `declared` |
 | 最近报告 | `latestReportForRun` | T2 一行 / T3 全部 | `✓ Docs synced; …`（摘要经 `monitorText`） |
 | 待决原因文本 | transcript / Jev | T2 / T3 | `⚑ approval: run npm run test:visual?` |
-| 运行结束 / 退出 | `runs.state = ended`（已核验进程组为空）；`exit.json` 的 `exit_code` / `signal` 可为 null（可见运行通常未知）、`reason`、`coverage`；shell status 是独立诊断 | 结束 T0（标记）；退出结果 T2（仅已知且非零 / 信号时）/ T3；shell status 仅 `▾ More` | `exit 1`、`signal TERM` 只在有来源时出现；未知时焦点行写 `exit unknown`，不写 0 |
+| 运行结束 / 退出 | `runs.state = ended`（已核验进程组为空）；`exit.json` 的 `exit_code` / `signal` 可为 null（可见运行通常未知）、`reason`、`coverage`；shell status 是独立诊断；`terminalNote`（`cancel_timing_unknown` / null）是终态分类时的证据缺口说明 | 结束 T0（标记）；退出结果 T2（仅已知且非零 / 信号时）/ T3；shell status 仅 `▾ More`；`terminalNote` T3（微卡第 2 行 / Inspector 一句话） | `exit 1`、`signal TERM` 只在有来源时出现；未知时焦点行写 `exit unknown`，不写 0；`cancel timing unknown` 是安静的说明，不是 trouble |
 | 心跳 | `runs.heartbeat_at` | T2（stale 时年龄）/ T3 | `heartbeat stale 2m14s` |
 | 链接状态与握手 | `link.state`、`runHandshake`、`bound_by`、`capabilities`（MVP 只有 `mcp`；`observe_only` 自动绑定是 v1.1，MVP 只显示未确认身份） | T2（非 bound 时一个词）/ T3 | `handshake claimed`；Inspector 画状态机 |
 | 父离线 | `parentOffline {since, seq, orphanPolicy}`（由 parent.offline 事件投影） | T0（顶部父行）/ T3 | `↑ parent ✳ main · offline 3m · continue` |
@@ -71,7 +71,7 @@ A1 B16 对每个节点给出完整五维投影和 `asOfSeq`；A2 归并器把"�
 | 覆盖 / 未加载 | `coverage`，树预算 | T2 词 `not loaded` / T3 | |
 | 日志路径 | `~/.hud/runs/<runId>/` | T3 + `Log` 动作 | 路径缩成 `~`，`▾ More` 显示完整 |
 | brief 路径、task digest | links | T3 More | 只显示 basename 和 digest 前 8 位 |
-| link_id / run_id / child_ref / generation / supervisor pid / `asOfSeq` / `observationStamp` / `stateSinceBasis` / `cwdSource` | ledger、06 投影 | T3 More | ledger 戳与观测戳分开写，不互相比较 |
+| link_id / run_id / child_ref / 三种代次（宿主 `occupantGeneration`、受管 run 的 `bindingGeneration`、reader 的 `sourceGeneration`）/ supervisor pid / `asOfSeq` / `observationStamp` / `stateSinceBasis` / `cwdSource` | ledger、05 / 06 投影 | T3 More | ledger 戳与观测戳分开写，不互相比较；三种代次各自单列、不互相代用，缺的写 `—` 不写 0 |
 | claim、票据、credential hash、request_key、params_digest、cdp_url、parent_owner_key、heartbeat_seq/mono、原始 transcript 文本、用户 home 的绝对路径 | | T4 | 永不显示；路径一律 `~` |
 
 bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain / conflict / stale 四种警示；`notice` 新增"收到报告 / 运行 uncertain / 待决原因变化"三种通知；`agents` 计数覆盖整棵树。其它模块不变。
@@ -88,7 +88,7 @@ bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain 
 | (d) 10+ 并发 | 同 (c)；警示优先显示，全形警示取最新触发的一条 | 手风琴：卡片总行数超过视口（或兄弟 > 5）时，先把 `✓ ■` 卡、再把未选中的 `▸ ·` 卡折成一行（= compact 行），`⚑ ? ⚠ !` 卡和选中卡保持展开；按子树有效桶排序：⚑ ! ⚠ ? → ▸ · → ✓ ■；完成桶折成一行 `✓ 5 done · …` | `a` 展开完成桶；`n` / `N` 跳到下一个 / 上一个 trouble 节点；`f` 过滤 attention；活跃行超过 30 行时时钟改分钟粒度 |
 | (e) trouble | `attention` 徽章：`⚑ review-tests approval`（最新触发的一条）；多个时 `⚑1 ?1 ⚠1` | trouble 行丢徽章与计量线，换成状态词和驻留时长；排在最前，最新卡住的在最上 | 微卡给原因和缺失项；Inspector 给证据、对账命令 |
 | (f) headless | 无差别 | 名后 `⊟`；无 pane 字段；控制条动作 `Log` | 结束后动作变 `Resume`（通过门禁时）；Inspector 显示 `resumable` 与否 |
-| (g) 已完成 / 历史 | 完成 60 秒内进 notice：`✓ docs-sync reported` | 行变暗并带收尾事实（`reported 8m`、`ended`（无报告）、`failed`、`cancelled`、阶段 C 的 `answered → file`）；3 分钟后收进 `⊕N` | `a` 显示；`not loaded` 行只保留身份与最后状态；`closed` 与重开是 v1.1 |
+| (g) 已完成 / 历史 | 完成 60 秒内进 notice：`✓ docs-sync reported` | 行变暗并带收尾事实（`reported 8m`、`ended`（无报告）、`failed`、`cancelled`（仅取消先于结束已证明；先后未知是 `ended` 加安静说明）、阶段 C 的 `answered → file`）；3 分钟后收进 `⊕N` | `a` 显示；`not loaded` 行只保留身份与最后状态；`closed` 与重开是 v1.1 |
 
 折叠的触发只有三种：**宽度**（§4.2 的丢弃顺序）、**数量**（卡片总行数超过视口或兄弟 > 5 → 手风琴折叠，§3.5；终态项 3 分钟 → `⊕N`；兄弟 > 12 → 完成桶立刻折叠）、**深度**（> 4）。折叠永远带子孙计数，不吞掉深处的求救。展开用现有键加三个新键：`a`（收起的终态项）、`h`/`l`（折叠 / 展开子树）、`Enter`/`v`（Inspector）、`r`（状态卡层级）、`f`（过滤，新增 `attention` 档）；新键 `n` / `N`（下一个 / 上一个 trouble 节点，保留树形上下文）、`L`（日志）、`R`（Resume / Reconcile，§3.7）。
 
@@ -104,7 +104,7 @@ bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain 
 
 兄弟节点按**子树有效桶**排序：一个节点的桶 = 自身的桶与所有未收起子孙的桶中最靠前的那个（`⚑ ! ⚠ ?`（要人看）→ `▸ ·`（活着）→ `✓ ■`（结束））。于是 `✓` 的父节点底下还有 `⚑` 或 `▸` 的子孙时，整棵子树排在前面，也绝不会被收进 `⊕N`。trouble 桶内按进入该状态的时间倒序（最新卡住的在最上面），其它桶按创建顺序（`s` 键切换为纯创建顺序，与今天一致）。只有节点换桶时才重排，重排与整秒重绘同步，选中跟着节点走而不是跟着行号走；刚换桶的节点前 3 秒状态词和时钟加粗，帮眼睛找到"谁刚动了"。换桶、驻留和加粗都以 06 的 `stateKey` / `stateSince`（语义状态的 episode）为准，不以图标为准：同一个 `⚑` 下新一轮 approval 是新的 episode，时间重新计。
 
-历史资格不看图标：委派节点以共享谓词 `isRunTerminal`（run `ended / failed / cancelled`；completed 报告、`cancelling`、图标都不算结束）为准，原生子代理按其原生完成事实，根会话不收起。符合条件的行（`✓ ! ■`）一视同仁：3 分钟后收进 `⊕N`，计数仍算，bar 的 `attention` 不再为它们亮——失败是历史事实，不是当前待办。当前待办只有 `⚑ ? ⚠`：它们一直排在前面直到条件消失，bar 的全形警示永远是其中最新触发的一条，旧警示盖不住新警示。
+历史资格不看图标：委派节点以共享谓词 `isRunTerminal`（run `ended / failed / cancelled`；completed 报告、`cancelling`、图标都不算结束；取消先后未知的完整结束是 `ended`，照样算）为准，普通会话（无受管 run 投影，`managed = null`，§7 #7）与原生子代理按其原生退出 / 完成事实，根会话不收起。符合条件的行（`✓ ! ■`）一视同仁：3 分钟后收进 `⊕N`，计数仍算，bar 的 `attention` 不再为它们亮——失败是历史事实，不是当前待办。当前待办只有 `⚑ ? ⚠`：它们一直排在前面直到条件消失，bar 的全形警示永远是其中最新触发的一条，旧警示盖不住新警示。
 
 ### 3.3 五维状态 → 一个标记
 
@@ -114,14 +114,14 @@ bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain 
 |---|---|---|---|---|
 | 1 | 冲突标志（同一 ref 两条记录） | `⚠` | warning | `two records` |
 | 2a | `run.state = uncertain` 且 `reconciliation.cause = supervisor_dead`（托管进程死亡已证实；甲下前台回到 shell、harness 被挂起） | `?` | warning | `supervisor lost`；Open / 输入 / Resume 一律不可用，`⇢` 只有 Reconcile |
-| 2b | 其它 `run.state = uncertain`（scope 无法查询、resume 解析到别的 ref、时钟异常……），或 `job.state = uncertain`（阶段 C） | `?` | warning | `uncertain` |
+| 2b | 其它 `run.state = uncertain`（scope 无法查询、resume 解析到别的 ref、时钟异常、取消已发但结束未证实……），或 `job.state = uncertain`（阶段 C）。结束已证实（完整 R / Q）而取消先后未知**不是** uncertain：那是第 9 条的 `ended` 加 `terminalNote` | `?` | warning | `uncertain` |
 | 3 | `pendingReason ≠ none`，或报告 status = blocked | `⚑` | alert（加粗；面板上唯一的"现在要人"色） | `approval` / `question` / `needs human` / `blocked` |
 | 4 | `lastTurnOutcome = failed`，或报告 status = failed，或有来源的原生退出结果为非零 / 信号（通常只有 headless argv 启动或 exec 直连路径才有；shell status 永不算），或 `run.state = failed`（02 的 non_execution，`stateKey = launch_failed`：从未执行，不是模型跑失败），或 `job.state = failed`（阶段 C） | `!` | danger | `failed`（焦点行在已知时加 `exit 1`）；launch_failed 写 `launch failed`，焦点行给采用的原因 |
-| 5 | `lastTurnOutcome = interrupted`，或 run `cancelling` / `cancelled`，或报告 status = interrupted | `■` | warning，60 s 后 muted | `interrupted` / `cancelling` / `cancelled` |
+| 5 | `lastTurnOutcome = interrupted`，或 run `cancelling`（取消已接受、结束未证实，槽仍占），或 run `cancelled`（只有已接受的取消**先于结束已证明**才是这个终态；取消意图、发过信号、`cancel_requested_at < ended_at` 都不算证明），或报告 status = interrupted | `■` | warning，60 s 后 muted | `interrupted` / `cancelling` / `cancelled` |
 | 6 | `freshness.state = stale`（任一所需来源越过确定截止，心跳严格 > 30000 ms；supervisor 死亡未被证实、run 仍 running），或 `freshness.state = unknown`（所需来源缺失、身份不匹配或时钟不可判），或 `liveness = unknown` 且 `activity = unknown`；只比较 `freshness.state`，不看明细 | `?` | muted | `stale` / `unknown`；时钟列显示 `lastEvidenceAt` / 心跳年龄 |
 | 7 | `activity = working`，或 `job.state ∈ {sent, waiting}` | `▸` | info | 无 |
 | 8 | run `starting`，或 link `pending / claimed` 且无活动，或 `job.state = key_persisted`（阶段 C） | `·` | muted | `starting`；作业等租约时 `browser queue (held by ask-pro-1)` |
-| 9 | `isRunTerminal = true`（run `ended`——已核验进程组为空——或 `cancelled`；`failed` 已被第 4 条接走）、`liveness = gone` 或 `activity = exited`：委派节点有 completed 报告 → `✓`；没有报告 → `■`（muted），不看退出码，因为原生退出结果通常是 null；根会话或原生节点退出 → `■ exited`（warning） | `✓` / `■` | success / muted | 历史行 `reported` / `ended`；焦点行 `ended · no report · exit unknown` |
+| 9 | `isRunTerminal = true`（run `ended`——已核验进程组为空，包括取消已接受但先后未知的结束，这时 `terminalNote = cancel_timing_unknown`——或 `cancelled`；`failed` 已被第 4 条接走）、`liveness = gone` 或 `activity = exited`：委派节点有 completed 报告 → `✓`；没有报告 → `■`（muted），不看退出码，因为原生退出结果通常是 null；`terminalNote` 只在焦点行 / 微卡加一句 `cancel timing unknown`，不换图标、不进 trouble、不要求对账；没有受管 run 投影的普通会话（`managed = null`）没有 `isRunTerminal`，和根会话、原生节点一样退出即 `■ exited`（warning） | `✓` / `■` | success / muted | 历史行 `reported` / `ended`；焦点行 `ended · no report · exit unknown`，有说明时 `ended · cancel timing unknown` |
 | 10 | `activity ∈ {idle, waiting_input}`，`pendingReason = none`：根会话或原生节点 → `✓`（今天的语义）；委派节点没有 completed 报告 → `·`（活着、空闲、没交差；绿色 `✓` 只给交了差的） | `✓` / `·` | success / muted | 无 / `idle`（微卡给报告摘要或最近动作） |
 | 11 | 其它 | `?` | muted | `unknown` |
 
@@ -131,7 +131,7 @@ bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain 
 
 stale 的含义只有一个：来源失联（心跳超 30 s、注册表不可达、文件不可读），由 B16 判定。模型长时间思考不是 stale，是现有的 quiet（时钟 5 分钟后转 warning）。stale 行不画最后已知的 `▸`（那是猜），焦点行和 Inspector 写"最后已知 working，45 s 前"。
 
-三种"不知道"分开画：`? stale`（muted）是健康运行上的心跳延迟或来源失联，等一等就好；`? uncertain`（warning）是运行状态需要对账；`? supervisor lost`（warning）是甲下托管进程已死、终端回到 shell、harness 挂起的本轮监督故障——槽仍被占，HUD 不聚焦、不送输入、不自动 resume，只给诊断和 Reconcile。对委派节点，`✓` 只来自 completed 报告；运行结束是事实，退出结果是另一回事，两者都不能代替报告。
+三种"不知道"分开画：`? stale`（muted）是健康运行上的心跳延迟或来源失联，等一等就好；`? uncertain`（warning）是运行状态需要对账；`? supervisor lost`（warning）是甲下托管进程已死、终端回到 shell、harness 挂起的本轮监督故障——槽仍被占，HUD 不聚焦、不送输入、不自动 resume，只给诊断和 Reconcile。对委派节点，`✓` 只来自 completed 报告；运行结束是事实，退出结果是另一回事，两者都不能代替报告。取消先后未知不是第四种"不知道"：结束已被完整 R / Q 证实时 run 是 `ended`，槽已释放，`terminalNote = cancel_timing_unknown` 只是一句安静的说明（契约 02 R-02-3、契约 03 terminalNote），不是 `reconciliation.cause`，不灰按钮、不给 Reconcile；迟到的时序证据也不会把 `ended` 翻成 `cancelled`，HUD 不等它。
 
 分类本身是 B16 的唯一函数（契约 06「唯一语义分类」，优先顺序与本表一致），输出 `stateKey`（语义加原因：approval / question / supervisor_dead / launch_failed…）；本表只是它到图标、颜色、词的映射，前端不另维护分类，也不把图标反推成状态。
 
@@ -193,6 +193,7 @@ col 2…     深度 d ≥ 1：(d-1) 个「│ 」+「├ 」/「└ 」；未证
 | 已结束且已报告（`reported`），`resumable = true`（`subject = local_user`）且 `interaction.resume = true` | ↻ Resume（`R`） | 复制 `ActionDescriptor.displayCommand`（缩写 `hud run resume <linkId> --request-key … --expected-run … --mode …`，Inspector 同一行），回显 `✓ Copied`。直接调用是将来的可选能力：显式按键 → 固定目标确认 → 可信 executable + argv，不执行 shell 字符串，写者重验。`closed` 链接重开是 v1.1 |
 | `uncertain`（含 `supervisor lost`）/ `⚠` | ↻ Reconcile（`R`） | 同上，`operation: reconcile`（缩写 `hud run reconcile <runId>`，按 run + 证据指纹幂等导入）；`supervisor lost` 时这是唯一可用的动作 |
 | 根会话 | Switch（`⌂`） | 今天的行为 |
+| 普通会话（`managed = null`，无受管 run） | ⇢ Open（`o`，仅 `interaction.focus = true`） | 经校验的宿主 focus 能力可用；永远没有 `↻`——`SessionBinding` 或一个 pane locator 不构成 resume / cancel / report 权限，HUD 也不为它伪造 runId |
 
 HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run ended，也不把 run ended 当作任务完成（那要看报告）。
 
@@ -447,7 +448,7 @@ uncertain 的 Inspector（控制条略；`⇢` 的词是 Reconcile）：
 | ▾ More                                         |
 ```
 
-这里 link 是 `bound`（关系早已证实）而 run 2 的 `runHandshake` 是 `claimed`：两者分开写，正是契约 03 I-03-3 的区别。`reconcile:` 一行是缩写，`R` 复制的是 `ActionDescriptor.displayCommand` 全文（含 HUD_HOME）；本地入口未验证时这一行改写诊断，不写命令。`▾ More` 展开 link_id、run_id、child_ref、generation、evidence id 列表与完整路径。
+这里 link 是 `bound`（关系早已证实）而 run 2 的 `runHandshake` 是 `claimed`：两者分开写，正是契约 03 I-03-3 的区别。`reconcile:` 一行是缩写，`R` 复制的是 `ActionDescriptor.displayCommand` 全文（含 HUD_HOME）；本地入口未验证时这一行改写诊断，不写命令。`▾ More` 展开 link_id、run_id、child_ref、三种代次（宿主的 `occupantGeneration`、受管 run 的 `bindingGeneration`、reader 的 `sourceGeneration`，各自一行，缺的写 `—`，从不互相借值或比较）、每轮 run 的 `operation`（spawn / resume / handover，接受时固定）、evidence id 列表与完整路径。
 
 `supervisor lost`（可见运行 `impl-d`）的 Inspector 头几行——与上面的区别是原因、交互不可用的明示和灰掉的 Open：
 
@@ -500,7 +501,7 @@ bar 上的对应警示：`⚑ ask-pro needs human`（一个时）、`⚑1 ?3 ⚠
 | └ ■ ⌬ t-old · ended · not loaded             2d|
 ```
 
-历史行一律 muted；时钟是结束年龄；名字后面是最有信息量的收尾事实：有报告摘要就按格截断显示摘要（`✓` 和 `!` 都是，一排 `· reported` 什么都说不了），只有报告没有摘要写 `reported`，没有报告写 `ended`（微卡第 2 行 `ended · no report · exit unknown`）；有来源的退出结果（`exit 1`）进微卡，不占行；`ask-pro` 行是阶段 C 的作业历史，显示产物名；`not loaded` 行只有身份和最后状态，Enter 打开的 Inspector 写 `history not loaded (budget)`。`closed` 与重开是 v1.1，MVP 的历史里不会出现；同 owner 转交留下的 `handed_over` 旧链接会出现，但只在后继节点的 Inspector 里作 `predecessor` 历史，不单独成行。
+历史行一律 muted；时钟是结束年龄；名字后面是最有信息量的收尾事实：有报告摘要就按格截断显示摘要（`✓` 和 `!` 都是，一排 `· reported` 什么都说不了），只有报告没有摘要写 `reported`，没有报告写 `ended`（微卡第 2 行 `ended · no report · exit unknown`）；取消已接受但先后未知的结束仍是 `ended`，微卡第 2 行多一句 `cancel timing unknown`（Inspector 同一句，来自 `terminalNote`），`bench · cancelled` 这样的行只在取消先于结束已证明时出现；有来源的退出结果（`exit 1`）进微卡，不占行；`ask-pro` 行是阶段 C 的作业历史，显示产物名；`not loaded` 行只有身份和最后状态，Enter 打开的 Inspector 写 `history not loaded (budget)`。`closed` 与重开是 v1.1，MVP 的历史里不会出现；同 owner 转交留下的 `handed_over` 旧链接会出现，但只在后继节点的 Inspector 里作 `predecessor` 历史，不单独成行。
 
 ### 4.11 Inspector（委派 Codex 子会话，健康）
 
@@ -632,7 +633,7 @@ harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再�
 | failed / launch failed / interrupted / cancelling / cancelled / exited / ended / closed | 失败 / 启动失败 / 已中断 / 取消中 / 已取消 / 已退出 / 已结束 / 已关闭 |
 | answered / sent / waiting / browser queue | 已回答 / 已发送 / 等待中 / 等浏览器 |
 | two records / not loaded / offline / unconfirmed | 两条记录 / 未加载 / 离线 / 未确认 |
-| supervisor lost / no report / exit unknown / Copy command | 托管中断 / 无报告 / 退出未知 / 复制命令 |
+| supervisor lost / no report / exit unknown / cancel timing unknown / Copy command | 托管中断 / 无报告 / 退出未知 / 取消先后未知 / 复制命令 |
 | handshake · claimed · bound · reported | 握手 · 已声明 · 已绑定 · 已报告 |
 | parent / pane / headless / run / worker(s) / job(s) / put away | 父 / 窗格 / 无界面 / 轮 / 委派 / 作业 / 已收起 |
 | Link / Run / Reports / Candidates / Coverage / Job | 链接 / 运行 / 报告 / 疑似 / 覆盖 / 作业 |
@@ -661,9 +662,9 @@ harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再�
 | 2 | 冲突标志：`conflict: {count, recordIds[], since}`，归并器不猜状态 | 契约 03 conflict / candidates（v0.3 已满足）；B16 |
 | 3 | `link`：`state`、`label`、`role`、`backend`、`parent_ref`、`child_ref`、`current_owner`、`bound_by`、`capabilities`（MVP 只有 `mcp`）、`brief_path`（basename 用）、`task_digest`、`predecessor`（同 owner 转交，MVP 就有）；`closed_at` 在 MVP 恒空（不产 closed），`observe_only` 绑定是 v1.1，`capabilities` 为当前 MCP 能力或 `none` | 契约 03 link / runHandshake（v0.3 已满足）；Oracle C03 / C04 |
 | 4 | `runHandshake`（pending / claimed / bound + reason），与 `link.state` 分开 | 契约 03 |
-| 5 | `currentRun`：`runId`、`run_seq`、`mode`、`supervision_strategy`（MVP：headless / wrapper 甲）、`state`、`launch_phase`、`locator`（pane / tab / label）、`started_at`、`ended_at`、`cancel_requested_at`、`heartbeat {at, quality}`（ageMs 由 HUD 用 nowMs 派生）、`exit {code\|null, signal\|null, source, reason, coverage}`、日志路径、`isCurrent`。`state = ended` 只凭已核验的进程组为空成立，不依赖退出码；`exit.code` 只表示有来源的原生结果，shell 结果另给 `shell_status` / `shell_signal`（诊断，HUD 只放 `▾ More`） | 契约 03 currentRun / exit / logs（v0.3 已满足）；契约 04；Oracle C07 / C09 |
+| 5 | `currentRun`（只有 `managed` 非 null 的节点才有，见 #7）：`runId`、`run_seq`、`operation`（spawn / resume / handover，接受时固定，不由当前关系反推）、`mode`、`supervision_strategy`（MVP：headless / wrapper 甲）、`state`、`launch_phase`、`locator`（受管 `HostLocator`：pane / tab / label 加真实 runId / bindingGeneration）、`started_at`、`ended_at`、`cancel_requested_at`、`heartbeat {at, quality}`（ageMs 由 HUD 用 nowMs 派生）、`exit {code\|null, signal\|null, source, reason, coverage}`、`terminalNote`（`cancel_timing_unknown` \| null，读所返回 run 的终态事件 payload；不是 `reconciliation.cause`、不阻断、不新增列）、日志路径、`isCurrent`。`state = ended` 只凭已核验的进程组为空成立，不依赖退出码，取消已接受而先后未知时仍是 `ended` 并附说明，`cancelled` 要求取消先于结束已证明；`exit.code` 只表示有来源的原生结果，shell 结果另给 `shell_status` / `shell_signal`（诊断，HUD 只放 `▾ More`） | 契约 03 currentRun / exit / logs / terminalNote（已满足）；契约 02 R-02-2 / R-02-3 / runs.operation；契约 04；Oracle C07 / C09；Oracle3 E02 / E05 |
 | 6 | `latestReportForRun {status, summary, path, created_at, report_id}` 与 `reportHistory`（按 run 分页，count 与最近一条） | 契约 03 latestReportForRun / reportHistory（v0.3 已满足） |
-| 7 | `host.occupantMatches`（true / false / null）、locator `valid / stale / unknown` 与核验时刻；不匹配时不给宿主字段 | 契约 03 host / parent（v0.3 已满足） |
+| 7 | **已满足（契约 05「会话观测绑定与受管绑定」「宿主、定位与 timeout」）**：普通会话（没有 ledger / MCP / run 也要能显示）通过 `SessionBinding {harness, occupantGeneration, sessionRef（完整 SessionRef，非 null，否则 bind 返回 null）, managed: RunBinding \| null}` 绑定；supervisor、childBinding、runId、bindingGeneration 只从 `managed` 读，`managed = null` 表示本次没有可确认相符的受管运行投影（不证明从未受管）——这种节点只有观测五维和宿主定位，没有运行字段（#4–#6、#9–#11），HUD 不为它画 `ended` / `reported`、不给 `↻`；ledger 若另有指向它的 link / run 而本次无法确认相符，只在 Inspector 以既有诊断 / 冲突投影解释（#2、#8），不凭同 cwd、同 pane 或裸 sessionId 补关联。宿主定位：普通会话用 `SurfaceLocator`（Herdr server / workspace / tab / pane 或 tmux server / session / pane、ProcessStamp、独立的 `occupantGeneration: number \| null`，不含 runId / bindingGeneration），受管 run 用 `HostLocator` / `RunHandle`（真实 runId / bindingGeneration）；两种 locator 都只是待核验快照，`LocatorCheck` 给 `valid / stale / unknown`、`host.occupantMatches`（true / false / null）、`foregroundInteractive` 与核验时刻，null == null 不算匹配，不匹配或未知时不给宿主字段、不开放控制 | 契约 05 SessionBinding / SurfaceLocator / I-05-4；契约 03 host / parent（v0.3 已满足）；Oracle3 E06 |
 | 8 | `candidates[]`（证据种类、时间），只供 Inspector | 概念 §6.5 |
 | 9 | 父离线：`parentOffline {since, seq, orphanPolicy}` 或 null，由 parent.offline 事件投影 | 契约 03 interaction / parentOffline（v0.3 已满足）；契约 04 orphan |
 | 10 | uncertain 的 `reconciliation {cause, evidenceIds[], missing[], observedAt, 允许入口}`，允许入口是类型化 `ActionDescriptor`（`displayCommand` 由受信模板安全生成；report / label / 日志不是命令来源） | 契约 03 reconciliation / ActionDescriptor（已满足）；契约 02 R-02；Oracle2 D04 |
@@ -674,12 +675,12 @@ harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再�
 | 15 | 通知事件带 `seq` 与 `created_at`：报告到达、进入 uncertain、冲突 / 解决、父离线（账本事件，ledger seq 域）；`pendingReason` 变化与 `lastTurnOutcome=failed` 的观测通知带 `seqDomain` 内的 seq（观测域），两域的 seq 不互相比较，首次建立基线不补发假的完成通知 | 契约 03 tree / notices；契约 06 NoticeEvent（已满足）；Oracle2 D12 |
 | 16 | 变更信号：`PRAGMA data_version` 可用，或一个 bump 文件，HUD 不按秒查表 | 契约 06（预算） |
 | 17 | statusline 的廉价入口：机读状态文件的通用版（含树计数与直接子节点的标记级字段），或 ≤ 20 ms 的索引查询 | D3；契约 06 |
-| 18 | **已满足（契约 03 tree / notices；契约 06 DisplayNodeIdentity / B16）**：节点身份 `{kind: session, ref} \| {kind: delegationIntent, linkId} \| {kind: job, ref}`（job 留 C），未绑定意图用稳定 linkId 显示键并挂 currentRun；≤ 200 节点、无环 / 无重复 ref、depth 明确、`handed_over` 只作历史、超预算 `loaded=false`；`freshness.state ∈ fresh \| stale \| unknown`；`run.state = failed` 投影为 `launch_failed`（non_execution，带采用的原因）；终态只用共享 `isRunTerminal`（ended / failed / cancelled；无受管 run 时 null），报告 / 图标 / `cancelling` 不算终态、不折历史 | 契约 03；契约 06；Oracle2 D11 |
+| 18 | **已满足（契约 03 tree / notices；契约 06 DisplayNodeIdentity / B16）**：节点身份 `{kind: session, ref} \| {kind: delegationIntent, linkId} \| {kind: job, ref}`（job 留 C），未绑定意图用稳定 linkId 显示键并挂 currentRun；≤ 200 节点、无环 / 无重复 ref、depth 明确、`handed_over` 只作历史、超预算 `loaded=false`；`freshness.state ∈ fresh \| stale \| unknown`；`run.state = failed` 投影为 `launch_failed`（non_execution，带采用的原因）；终态只用共享 `isRunTerminal`（ended / failed / cancelled，含附 `terminalNote` 的 ended；`managed = null` 的普通会话为 null），报告 / 图标 / `cancelling` 不算终态、不折历史 | 契约 03；契约 06；Oracle2 D11 |
 | 19 | 时间一律毫秒 epoch，年龄由 HUD 用 `nowMs` 计算；`asOf`（采纳的事实边界）与 `observedAt`（观察时间）分开；ledger 的 `asOfSeq` 与观测的 `observationStamp` 分域，没有跨存储原子性或协调器 | 契约 03 / 06（已满足）；Oracle2 D12 |
 | 20 | 被委派方视角：父的 harness、名、liveness、经验证的 pane label 或 null，未确认时 caller 短形只作诊断 | 契约 03 host / parent（v0.3 已满足）；契约 01 CallerId |
 | 21 | **已满足（契约 03 v0.3）**：`reconciliation.cause` 枚举（至少区分 `supervisor_dead`、`scope_unknown`、`resume_ref_mismatch`、`clock_anomaly`，可再细分 `supervisor_stale` 等）和显式的 `interaction {focus, input, resume}`（未知为 false；uncertain / 未决冲突、尤其 `supervisor_dead` 三项均 false，resume 还须 `resumable=true`）；HUD 据此灰掉 Open、只留 Reconcile，不自行从心跳推断 | 契约 03 reconciliation / interaction；Oracle §4 |
 | 22 | **已满足（契约 03 v0.3）**：`parentOffline` 与 `reconciliation.cause` 是独立字段；父 MCP 离线 continue 本身不禁用仍经核验可用的子交互，只有 `supervisor_dead` 这类 cause 才让 `interaction` 三项为 false | 契约 03 interaction / parentOffline；Oracle §4 |
-| 23 | **已满足（契约 06「B16 的五维输入与消费者字段」/ ObservationCommit）**：`stateKey: string`、`stateSince: number \| null`、`stateSinceBasis: event \| observed \| unknown`，随 `ObservationCommit` 持久发布，`StateContinuity {ruleVersion, nodeIdentity, runId?, bindingGeneration?, sourceGeneration, episodeAnchor, …}` 保证重启后连续；`stateKey` 是语义状态加原因（approval / question / supervisor_dead / launch_failed…），不含图标、颜色或排序桶；新 run、新 episode 或语义变化才重置，报告重读 / 心跳 / usage / 折叠 / 语言 / 父换桶不重置。HUD 用它算驻留、3 秒加粗、trouble 桶内倒序；证据年龄另取 `lastEvidenceAt` / heartbeat；`clockAnomaly` 显式，不靠刷新时间掩盖；basis unknown 时时钟留空 | 契约 06 B16 / ObservationCommit；契约 03 status；Oracle2 D01 |
+| 23 | **已满足（契约 06「B16 的五维输入与消费者字段」/ ObservationCommit）**：`stateKey: string`、`stateSince: number \| null`、`stateSinceBasis: event \| observed \| unknown`，随 `ObservationCommit` 持久发布，`StateContinuity` 是按 `nodeIdentity` 判别的联合——公共字段 `{ruleVersion, episodeAnchor, stateKey, stateSince, stateSinceBasis, bindingGeneration?}`，session 分支 `{nodeIdentity: {kind: session, ref}, sourceGeneration（真实 reader 代次，必填）, runId?}`，delegationIntent 分支 `{nodeIdentity: {kind: delegationIntent, linkId}, runId（必填，对应本快照 currentRun）}` 且**没有** ref / sourceGeneration（不填 0、null，也不借 bindingGeneration）——保证重启后连续；intent 首次绑定为 session 时只有 link → 真实 ref、同一 run、同一 episode 的证据齐备才沿用原 ledger 进入时间，否则按 observed / unknown 起新区间（时钟相应显示 `~` 或留空），绑定后的 session 记录带自己的真实 `sourceGeneration`；`stateKey` 是语义状态加原因（approval / question / supervisor_dead / launch_failed…），不含图标、颜色或排序桶；新 run、新 episode 或语义变化才重置，报告重读 / 心跳 / usage / 折叠 / 语言 / 父换桶不重置。HUD 用它算驻留、3 秒加粗、trouble 桶内倒序；证据年龄另取 `lastEvidenceAt` / heartbeat；`clockAnomaly` 显式，不靠刷新时间掩盖；basis unknown 时时钟留空 | 契约 06 B16 / StateContinuity 联合 / ObservationCommit；契约 03 status；Oracle2 D01；Oracle3 E01 |
 | 24 | **已满足（契约 06「WorkspaceContext 与项目归属」）**：`cwd`、`worktreeRoot`、`worktree?`、`gitCommonDir`、`repoId`（`identityKind = git-common-dir-v1`，`scope = local`，本机分组键而非永久项目 UUID）、`projectOrigin {repoId, basis: declared, declaredAt}`、`cwdSource / cwdAsOf / gitCapturedAt / gitMissingReason`；与逐 run 冻结的 `runs.launch_cwd / workspace_snapshot / project_origin`（契约 02 启动上下文）分开。HUD 以规范化 `worktreeRoot` 判等，根未知时只比较规范 cwd、只说目录不同，未知不当相同、同名不当同目录；`projectOrigin` 只显示为声明，不当物理同仓库；Git 解析不进 paint / statusline 热路径 | 契约 06 WorkspaceContext；契约 02 launch context；Oracle2 D02 / D03 |
 
 ## 8. 开放问题与假设
