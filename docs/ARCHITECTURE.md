@@ -1093,3 +1093,65 @@ descendants as quiet. Panel input uses an epoch so a force during an awaited
 scan cannot be lost to that scan's completion. The bar's native watcher wakes
 collection; the periodic tick remains its fallback. The yielding scanner has
 within-file checkpoints; a single JSON.parse is still atomic.
+
+### Codex adapter facade
+
+`harness/codex/index.ts` implements the core `HarnessAdapter` without moving the
+existing collectors. It resolves only an explicit, existing profile source root
+and verifies an effective `CODEX_HOME` against that root. Sources use the core
+`makeSourceId`; reads and native-tree listings stay within the selected source.
+`SessionFinder.candidates` supplies the strict facade's cwd candidates, while
+its existing pane/daemon check remains available for the matching ambient source.
+Strict candidates retain quiet older roots rather than filtering by HUD startup.
+An ambiguous candidate set returns null. A unique current registry observation
+also supports selection without a host locator. A selected ordinary session has a full
+`SessionRef`, nullable process/occupant observations and no invented managed run.
+The bar, panel and dry-run call sites keep their existing finder/parser paths:
+their newest-cwd selection is a different policy from strict facade binding.
+
+`open` defers I/O to a serialized `read`. The opt-in rollout scanner stops at the
+first byte, record or soft time budget (defaults 4 MiB, 2000 records and 20 ms).
+It retains up to 1 MiB of undecoded tail bytes, or discards an oversized record
+until its newline, recording an `oversize_unknown` gap. Gaps survive EOF. A
+complete final JSON record without a newline still follows the legacy convention.
+Legacy parser calls use their original read path. Read statistics include actual
+bytes, records and elapsed read/assembly time; a parse or optional SQLite read is
+not preemptible. Truncation, changed file identity and observed compaction advance
+reader source generation independently of host/run generations.
+
+The facade returns observation and checkpoint together in memory. A Codex
+checkpoint contains the generic byte/tail/gap state plus the complete native
+parser summary, open calls, token-rate baseline and wait union. Metric-specific
+source-event clocks survive checkpoints; unrelated public replies do not refresh
+model, context or cumulative-token timestamps. Reset lineage clears those clocks.
+Baseline-adjusted context metrics are labelled estimated with their method source. Its native payload
+uses Node's V8 serializer, checked against the recorded V8 runtime before restore;
+a mismatched runtime/version is rejected, never silently advanced. This is not a
+new checkpoint store or an implementation of B12's fenced atomic publication.
+
+`children` passes a source-scoped listing to `buildSubagentTreeYielding` and returns
+only its direct native children. Readers expose the latest explicitly collected
+children references, without rescanning a tree during every budgeted read. An
+empty native list before collection does not prove absence of children. Quota,
+goals and plan/todos are typed `caps.codex` projections of the existing collectors;
+public reports reuse their existing channel whitelist. Dollars stay unknown when
+only tokens were reported. B16 still owns authoritative combined state/continuity;
+the facade supplies transcript activity and leaves run terminality, liveness and
+observation commit stamps unknown until those authorities provide them.
+
+The tree scan now saves bounded hud-mcp link-result evidence and pending function
+call IDs (100 each), so `SCAN_VERSION` is 4. Both the scanner and reader match exact
+`response_item` function calls/outputs for spawn, resume and whoami, retaining only
+link/run IDs, exact call/message anchors and event timestamps. The scanner knows
+the standard `hud`/`hud-mcp` aliases; the reader uses the profile's server name.
+Neither extracts claims from arguments or arbitrary shell output, creates links,
+or authorizes a binding. The reconciler must still check the existing run, source,
+independent identity, issuance window and uniqueness required by contracts 01/03.
+Old scan versions are ignored and rebuilt; user state is not migrated or deleted.
+
+`core/interfaces/session-evidence.ts` adds native evidence beside A5, reusing a
+single `ObservationView`. `core/interfaces/snapshot-v3.ts` is only the additive
+public v3 type draft: the `universal` slots reuse core identities, metrics,
+workspace, status, lifecycle and observation stamps. Any future v3 outlet must be
+selected explicitly and use a separate path. `snapshot.ts`, its version 2 writer
+and the existing `--json` path retain their fields, units and output bytes.

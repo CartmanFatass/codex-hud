@@ -20,7 +20,7 @@ import { writePrivateFile } from './small-model.js';
  * agent-stages.ts `applyLedgerEntry`. A change to either bumps this, so
  * scans saved under the old reading are read again.
  */
-export const SCAN_VERSION = 3;
+export const SCAN_VERSION = 4;
 
 /** Only a scan this far into its file is worth keeping: a shorter one is read again in no time. */
 export const SAVE_MIN_BYTES = 256 * 1024;
@@ -67,7 +67,10 @@ export class TreeScanStore {
   private flushedAt: number;
 
   /** `readOnly`: saved scans are used, none is written or removed (the brief's dry run). */
-  constructor(private readonly dir: string, private readonly options: { readOnly?: boolean; now?: number } = {}) {
+  constructor(
+    private readonly dir: string,
+    private readonly options: { readOnly?: boolean; now?: number } = {}
+  ) {
     this.flushedAt = options.now ?? Date.now();
     if (!options.readOnly) this.prune(this.flushedAt);
   }
@@ -80,9 +83,19 @@ export class TreeScanStore {
   load(rollout: string): SavedScan | undefined {
     try {
       const saved = JSON.parse(fs.readFileSync(this.file(rollout), 'utf8')) as Partial<SavedScan> | null;
-      if (!saved || saved.version !== SCAN_VERSION || saved.path !== rollout || typeof saved.id !== 'string'
-        || typeof saved.offset !== 'number' || !Number.isSafeInteger(saved.offset) || saved.offset < 0
-        || typeof saved.print !== 'string' || !saved.fields || typeof saved.fields !== 'object') return undefined;
+      if (
+        !saved ||
+        saved.version !== SCAN_VERSION ||
+        saved.path !== rollout ||
+        typeof saved.id !== 'string' ||
+        typeof saved.offset !== 'number' ||
+        !Number.isSafeInteger(saved.offset) ||
+        saved.offset < 0 ||
+        typeof saved.print !== 'string' ||
+        !saved.fields ||
+        typeof saved.fields !== 'object'
+      )
+        return undefined;
       return saved as SavedScan;
     } catch {
       return undefined;
@@ -93,7 +106,11 @@ export class TreeScanStore {
   used(rollout: string, now = Date.now()): void {
     if (this.options.readOnly) return;
     const at = new Date(now);
-    try { fs.utimesSync(this.file(rollout), at, at); } catch { /* gone: saved again once the scan moves on */ }
+    try {
+      fs.utimesSync(this.file(rollout), at, at);
+    } catch {
+      /* gone: saved again once the scan moves on */
+    }
   }
 
   /** `rollout`'s scan moved on: `take` gives it as it stands when the writes go out. */
@@ -122,11 +139,19 @@ export class TreeScanStore {
 
   private prune(now: number): void {
     let names: string[];
-    try { names = fs.readdirSync(this.dir); } catch { return; }
+    try {
+      names = fs.readdirSync(this.dir);
+    } catch {
+      return;
+    }
     for (const name of names) {
       if (!name.endsWith('.json')) continue;
       const file = path.join(this.dir, name);
-      try { if (fs.statSync(file).mtimeMs < now - KEEP_MS) fs.unlinkSync(file); } catch { /* gone already */ }
+      try {
+        if (fs.statSync(file).mtimeMs < now - KEEP_MS) fs.unlinkSync(file);
+      } catch {
+        /* gone already */
+      }
     }
   }
 }

@@ -32,6 +32,11 @@ export class TokenRateTracker {
   private toolsLastAtMs: number | undefined;
   private excludedMs = 0;
 
+  /** The generic reader baseline accompanies the complete native checkpoint. */
+  checkpointBaseline(): { outputTokens: number; measuredAt: number } | null {
+    return this.baseline ? { outputTokens: this.baseline.total, measuredAt: this.baseline.atMs } : null;
+  }
+
   clone(): TokenRateTracker {
     const copy = new TokenRateTracker();
     copy.baseline = this.baseline && { ...this.baseline };
@@ -47,10 +52,14 @@ export class TokenRateTracker {
 
   observe(totalOutputTokens: number, at: Date): void {
     const atMs = at.getTime();
-    if (!validTotal(totalOutputTokens) || !Number.isFinite(atMs) ||
-        (this.lastAtMs !== undefined && (atMs < this.lastAtMs ||
-          (atMs === this.lastAtMs && this.lastTotal !== undefined))) ||
-        (this.toolsLastAtMs !== undefined && atMs < this.toolsLastAtMs)) return;
+    if (
+      !validTotal(totalOutputTokens) ||
+      !Number.isFinite(atMs) ||
+      (this.lastAtMs !== undefined &&
+        (atMs < this.lastAtMs || (atMs === this.lastAtMs && this.lastTotal !== undefined))) ||
+      (this.toolsLastAtMs !== undefined && atMs < this.toolsLastAtMs)
+    )
+      return;
 
     // Quota-only/duplicate reports are not another model call. Do not dilute
     // the rate with time elapsed since the exact same cumulative usage.
@@ -74,7 +83,7 @@ export class TokenRateTracker {
     const sampleMs = atMs - this.baseline.atMs - this.excludedMs;
     if (sampleMs <= 0) return;
     this.latest = {
-      tokensPerSecond: (totalOutputTokens - this.baseline.total) * 1000 / sampleMs,
+      tokensPerSecond: ((totalOutputTokens - this.baseline.total) * 1000) / sampleMs,
       sampleMs,
       sampledAt: new Date(atMs),
     };
@@ -82,8 +91,12 @@ export class TokenRateTracker {
 
   startTurn(at: Date): void {
     const atMs = at.getTime();
-    if (!Number.isFinite(atMs) || (this.lastAtMs !== undefined && atMs <= this.lastAtMs) ||
-        (this.toolsLastAtMs !== undefined && atMs < this.toolsLastAtMs)) return;
+    if (
+      !Number.isFinite(atMs) ||
+      (this.lastAtMs !== undefined && atMs <= this.lastAtMs) ||
+      (this.toolsLastAtMs !== undefined && atMs < this.toolsLastAtMs)
+    )
+      return;
     this.lastAtMs = atMs;
     this.baseline = this.lastTotal === undefined ? undefined : { total: this.lastTotal, atMs };
     this.tools.clear();
@@ -112,8 +125,11 @@ export class TokenRateTracker {
   }
 
   private validToolTime(atMs: number): boolean {
-    return Number.isFinite(atMs) && (this.lastAtMs === undefined || atMs >= this.lastAtMs) &&
-      (this.toolsLastAtMs === undefined || atMs >= this.toolsLastAtMs);
+    return (
+      Number.isFinite(atMs) &&
+      (this.lastAtMs === undefined || atMs >= this.lastAtMs) &&
+      (this.toolsLastAtMs === undefined || atMs >= this.toolsLastAtMs)
+    );
   }
 
   reset(): void {
@@ -127,7 +143,9 @@ export class TokenRateTracker {
     this.excludedMs = 0;
   }
 
-  get snapshot(): TokenRateSnapshot | undefined { return this.latest; }
+  get snapshot(): TokenRateSnapshot | undefined {
+    return this.latest;
+  }
 }
 
 /** Shared evidence handling keeps the full parser and agent tail reader aligned. */
@@ -144,16 +162,26 @@ export function observeTokenRateRecord(tracker: TokenRateTracker, row: RolloutLi
     if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
       const id = payload.call_id ?? payload.id;
       if (id) tracker.startTool(id, at);
-    } else if ((payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') && payload.call_id) {
+    } else if (
+      (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') &&
+      payload.call_id
+    ) {
       tracker.endTool(payload.call_id, at);
     }
   }
 }
 
 export function formatTokenRate(snapshot: TokenRateSnapshot | undefined, nowMs = Date.now()): string | null {
-  if (!snapshot || !Number.isFinite(snapshot.tokensPerSecond) || snapshot.tokensPerSecond < 0 ||
-      !Number.isFinite(snapshot.sampleMs) || snapshot.sampleMs <= 0 ||
-      !Number.isFinite(snapshot.sampledAt.getTime()) || !Number.isFinite(nowMs)) return null;
+  if (
+    !snapshot ||
+    !Number.isFinite(snapshot.tokensPerSecond) ||
+    snapshot.tokensPerSecond < 0 ||
+    !Number.isFinite(snapshot.sampleMs) ||
+    snapshot.sampleMs <= 0 ||
+    !Number.isFinite(snapshot.sampledAt.getTime()) ||
+    !Number.isFinite(nowMs)
+  )
+    return null;
   const prefix = nowMs - snapshot.sampledAt.getTime() >= STALE_MS ? 'last ' : '';
   return `${prefix}~${snapshot.tokensPerSecond.toFixed(1)} tok/s`;
 }

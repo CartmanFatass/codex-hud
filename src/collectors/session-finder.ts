@@ -151,7 +151,11 @@ function readRolloutMeta(filePath: string): RolloutMeta | null {
     const threadSource = entry.payload.thread_source;
     const isRoot = !parentId && threadSource !== 'subagent';
     const sessionId = entry.payload.session_id;
-    const rootId = isRoot ? undefined : sessionId && sessionId !== entry.payload.id ? sessionId : parentId ?? undefined;
+    const rootId = isRoot
+      ? undefined
+      : sessionId && sessionId !== entry.payload.id
+        ? sessionId
+        : (parentId ?? undefined);
     return {
       cwd: normalizePath(entry.payload.cwd),
       isRoot,
@@ -176,9 +180,7 @@ function peekRolloutIsRoot(filePath: string): boolean {
  */
 function parseRolloutFilename(filename: string): { timestamp: Date; sessionId: string } | null {
   // Match pattern: rollout-2026-01-15T17-47-44-019bc10d-c89d-7352-935c-76b351384357.jsonl
-  const match = filename.match(
-    /^rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-([a-f0-9-]+)\.jsonl$/
-  );
+  const match = filename.match(/^rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-([a-f0-9-]+)\.jsonl$/);
 
   if (!match) {
     return null;
@@ -326,8 +328,10 @@ function findRolloutsInDir(dirPath: string): SessionFile[] {
 /**
  * Find all rollout files within the last N days
  */
-export function findRolloutsInDays(maxDaysBack: number = DEFAULT_LOOKBACK_DAYS): SessionFile[] {
-  const sessionsDir = getSessionsDir();
+export function findRolloutsInDays(
+  maxDaysBack: number = DEFAULT_LOOKBACK_DAYS,
+  sessionsDir = getSessionsDir()
+): SessionFile[] {
   const now = new Date();
   const rollouts: SessionFile[] = [];
 
@@ -357,11 +361,17 @@ export function treeLookbackDays(rootId: string, minimum = 3, knownIds: readonly
   const age = (id: string): number | undefined => {
     const key = JSON.stringify([sessions, id]);
     let file = treeOriginPaths.get(key);
-    if (file && !fs.existsSync(file)) { treeOriginPaths.delete(key); file = undefined; }
+    if (file && !fs.existsSync(file)) {
+      treeOriginPaths.delete(key);
+      file = undefined;
+    }
     if (!file) {
       if ((treeOriginMisses.get(key) ?? -Infinity) > now.getTime() - FALLBACK_RESCAN_MS) return;
       file = findRolloutPathBySessionIdInRoot(sessions, id) ?? undefined;
-      if (!file) { cachePut(treeOriginMisses, key, now.getTime()); return; }
+      if (!file) {
+        cachePut(treeOriginMisses, key, now.getTime());
+        return;
+      }
       cachePut(treeOriginPaths, key, file);
       treeOriginMisses.delete(key);
     }
@@ -403,9 +413,15 @@ function rolloutFile(entry: DirListing['entries'][number], size: number, modifie
   return { path: entry.path, sessionId: entry.sessionId, timestamp: entry.timestamp, size, modifiedAt, ino };
 }
 
-function rememberStat(entry: DirListing['entries'][number], stats: fs.Stats, previous: StatMemo | undefined): SessionFile {
+function rememberStat(
+  entry: DirListing['entries'][number],
+  stats: fs.Stats,
+  previous: StatMemo | undefined
+): SessionFile {
   const ino = stats.ino > 0 ? stats.ino : undefined;
-  const grew = Boolean(previous && (stats.size !== previous.size || stats.mtimeMs !== previous.mtimeMs || ino !== previous.ino));
+  const grew = Boolean(
+    previous && (stats.size !== previous.size || stats.mtimeMs !== previous.mtimeMs || ino !== previous.ino)
+  );
   rolloutStatCache.set(entry.path, { size: stats.size, mtimeMs: stats.mtimeMs, modifiedAt: stats.mtime, ino, grew });
   return rolloutFile(entry, stats.size, stats.mtime, ino);
 }
@@ -419,7 +435,7 @@ function rememberStat(entry: DirListing['entries'][number], stats: fs.Stats, pre
  */
 export async function findRolloutsInDaysYielding(
   maxDaysBack: number = DEFAULT_LOOKBACK_DAYS,
-  priority: ReadonlySet<string> = new Set(),
+  priority: ReadonlySet<string> = new Set()
 ): Promise<SessionFile[]> {
   const sessionsDir = getSessionsDir();
   const now = new Date();
@@ -432,7 +448,7 @@ export async function findRolloutsInDaysYielding(
     const day = date.getDate().toString().padStart(2, '0');
     listed.push(...listRollouts(path.join(sessionsDir, year, month, day)));
   }
-  const listedPaths = new Set(listed.map(entry => entry.path));
+  const listedPaths = new Set(listed.map((entry) => entry.path));
   const prefix = sessionsDir.endsWith(path.sep) ? sessionsDir : sessionsDir + path.sep;
   // Priority paths may predate the date window (for example across midnight).
   for (const file of priority) {
@@ -455,7 +471,10 @@ export async function findRolloutsInDaysYielding(
     }
   }
 
-  const yieldNow = () => new Promise<void>(resolve => { setImmediate(resolve); });
+  const yieldNow = () =>
+    new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
   const statOne = async (entry: DirListing['entries'][number]): Promise<SessionFile | null> => {
     try {
       const stats = fs.statSync(entry.path);
@@ -486,7 +505,7 @@ export async function findRolloutsInDaysYielding(
       const entry = quiet[(quietCursor + i) % quiet.length];
       const file = await statOne(entry);
       if (!file) continue;
-      const at = results.findIndex(item => item.path === entry.path);
+      const at = results.findIndex((item) => item.path === entry.path);
       if (at >= 0) results[at] = file;
     }
     quietCursor = (quietCursor + count) % quiet.length;
@@ -538,14 +557,13 @@ export function findMostRecentRollout(
 
     const dayDir = path.join(sessionsDir, year, month, day);
     const rolloutsInDay = findRolloutsInDir(dayDir);
-    
+
     let sessions = rolloutsInDay.filter((r) => peekRolloutIsRoot(r.path));
     if (normalizedTarget) {
-      sessions = sessions.filter(r => peekRolloutCwd(r.path) === normalizedTarget);
+      sessions = sessions.filter((r) => peekRolloutCwd(r.path) === normalizedTarget);
     }
-    
+
     allSessions = allSessions.concat(sessions);
-    
   }
 
   if (allSessions.length === 0) {
@@ -609,7 +627,7 @@ export async function findActiveSession(targetCwd?: string): Promise<string | nu
   if (active.length > 0) {
     return active[0].path;
   }
-  
+
   const recent = findMostRecentRollout(DEFAULT_LOOKBACK_DAYS, targetCwd);
   return recent?.path ?? null;
 }
@@ -617,10 +635,7 @@ export async function findActiveSession(targetCwd?: string): Promise<string | nu
 /**
  * Find a rollout file by session ID
  */
-export function findRolloutBySessionId(
-  sessionId: string,
-  maxDaysBack: number = 7
-): SessionFile | null {
+export function findRolloutBySessionId(sessionId: string, maxDaysBack: number = 7): SessionFile | null {
   const sessionsDir = getSessionsDir();
 
   if (!fs.existsSync(sessionsDir)) {
@@ -685,9 +700,7 @@ function readSnapshotBinding(filePath: string): SnapshotBinding | null {
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     const tmux = content.match(/(?:^|\n)(?:export\s+)?TMUX=(?:'([^']*)'|"([^"]*)"|([^\n]+))/);
-    const match = content.match(
-      /(?:^|\n)(?:export\s+)?TMUX_PANE=(?:'([^']*)'|"([^"]*)"|([^\n]+))/
-    );
+    const match = content.match(/(?:^|\n)(?:export\s+)?TMUX_PANE=(?:'([^']*)'|"([^"]*)"|([^\n]+))/);
     const pane = match?.[1] ?? match?.[2] ?? match?.[3];
     return cachePut(snapshotBindingCache, filePath, {
       server: tmux?.[1] ?? tmux?.[2] ?? tmux?.[3] ?? null,
@@ -734,9 +747,10 @@ function findThreadIdForPane(mainPaneId: string, launchTime: Date | null): strin
   } catch {
     return null;
   }
-  const key = signature === null
-    ? null
-    : JSON.stringify([snapshotsDir, signature, mainPaneId, launchTime?.getTime() ?? null, process.env.TMUX ?? null]);
+  const key =
+    signature === null
+      ? null
+      : JSON.stringify([snapshotsDir, signature, mainPaneId, launchTime?.getTime() ?? null, process.env.TMUX ?? null]);
   if (key !== null && paneScanCache?.key === key) {
     return paneScanCache.threadId;
   }
@@ -786,7 +800,7 @@ function scanSnapshotsForPane(snapshotsDir: string, mainPaneId: string, launchTi
   return matches[0]?.threadId ?? null;
 }
 
-function findRolloutPathBySessionIdInRoot(rootDir: string, sessionId: string): string | null {
+export function findRolloutPathBySessionIdInRoot(rootDir: string, sessionId: string): string | null {
   if (!fs.existsSync(rootDir)) {
     return null;
   }
@@ -814,11 +828,7 @@ function findRolloutPathBySessionIdInRoot(rootDir: string, sessionId: string): s
         continue;
       }
 
-      if (
-        entry.isFile &&
-        entry.name.startsWith('rollout-') &&
-        entry.name.endsWith(expectedSuffix)
-      ) {
+      if (entry.isFile && entry.name.startsWith('rollout-') && entry.name.endsWith(expectedSuffix)) {
         return fullPath;
       }
     }
@@ -875,8 +885,9 @@ function rootThreadOf(threadId: string): string {
 function findSessionByThreadId(sessionId: string): SessionFile | null {
   const codexHome = getCodexHome();
   // The archive is only walked when the live tree does not have the file.
-  const found = findRolloutPathBySessionIdInRoot(path.join(codexHome, 'sessions'), sessionId)
-    ?? findRolloutPathBySessionIdInRoot(path.join(codexHome, ARCHIVED_SESSIONS_SUBDIR), sessionId);
+  const found =
+    findRolloutPathBySessionIdInRoot(path.join(codexHome, 'sessions'), sessionId) ??
+    findRolloutPathBySessionIdInRoot(path.join(codexHome, ARCHIVED_SESSIONS_SUBDIR), sessionId);
 
   return buildSessionFile(found ?? '');
 }
@@ -1024,7 +1035,8 @@ export class SessionFinder {
       // the older Codex's word for it.
       this.daemon ??= new DaemonBinding(getCodexHome(), mainPaneId, this.targetStartTime?.getTime() ?? null);
       const daemonThread = this.daemon.threadId();
-      const threadId = (daemonThread && rootThreadOf(daemonThread)) || findThreadIdForPane(mainPaneId, this.targetStartTime);
+      const threadId =
+        (daemonThread && rootThreadOf(daemonThread)) || findThreadIdForPane(mainPaneId, this.targetStartTime);
       if (threadId) {
         if (this.currentSession?.sessionId === threadId) {
           const kept = this.refreshCurrentSession();
@@ -1054,6 +1066,24 @@ export class SessionFinder {
     }
 
     return this.adoptSession(fallback, fallback.sessionId);
+  }
+
+  /** Source-scoped candidates for the strict observational facade; unlike check, never picks by newest mtime. */
+  candidates(sessionsDir: string): SessionFile[] {
+    const sourceRoot = fs.realpathSync(path.dirname(sessionsDir)) + path.sep;
+    const cwd = normalizePath(this.targetCwd);
+    if (!cwd) return [];
+    return findRolloutsInDays(DEFAULT_LOOKBACK_DAYS, sessionsDir).filter((file) => {
+      try {
+        return (
+          fs.realpathSync(file.path).startsWith(sourceRoot) &&
+          peekRolloutIsRoot(file.path) &&
+          peekRolloutCwd(file.path) === cwd
+        );
+      } catch {
+        return false;
+      }
+    });
   }
 
   /**

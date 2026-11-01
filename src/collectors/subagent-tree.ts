@@ -1,3 +1,4 @@
+import { observeLinkEvidence, validLinkScanState, type LinkScanState } from '../harness/codex/link-evidence.js';
 import { taskText } from '../utils/task-text.js';
 import { extractAgentReport, type AgentReport } from './agent-report.js';
 import { applyLedgerEntry, currentAction, newLedger, type AgentLedger } from './agent-stages.js';
@@ -11,7 +12,14 @@ import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { sessionParentId } from '../utils/session-parent.js';
 import { findRolloutsInDays, treeLookbackDays, type SessionFile } from './session-finder.js';
-import type { AgentAction, AgentStage, SubagentInfo, SubagentStatus, SubagentTree, SubagentTreeNode } from '../types.js';
+import type {
+  AgentAction,
+  AgentStage,
+  SubagentInfo,
+  SubagentStatus,
+  SubagentTree,
+  SubagentTreeNode,
+} from '../types.js';
 
 // session_meta is the first line and never changes on append, so each rollout
 // only needs to be read once. Cache entries re-validate by stat signature and
@@ -60,7 +68,7 @@ export function resetSubagentLinkCache(): void {
   linkCache.clear();
 }
 
-interface SessionLink extends AgentIdentity {
+interface SessionLink extends AgentIdentity, LinkScanState {
   /** The session_meta bytes (as read by readFirstLine), independent of append. */
   headerPrint?: string;
   lastReport?: AgentReport;
@@ -148,23 +156,28 @@ function nonEmpty(value: unknown): string | undefined {
 
 function identityFromMeta(payload: Record<string, unknown>): AgentIdentity {
   const source = payload.source;
-  const subagent = source && typeof source === 'object'
-    ? (source as { subagent?: { other?: unknown; thread_spawn?: Record<string, unknown> } }).subagent
-    : undefined;
+  const subagent =
+    source && typeof source === 'object'
+      ? (source as { subagent?: { other?: unknown; thread_spawn?: Record<string, unknown> } }).subagent
+      : undefined;
   const spawn = subagent?.thread_spawn;
   const threadSource = nonEmpty(payload.thread_source);
   return {
     agentPath: nonEmpty(payload.agent_path) ?? nonEmpty(spawn?.agent_path),
     nickname: nonEmpty(payload.agent_nickname) ?? nonEmpty(spawn?.agent_nickname),
     role: nonEmpty(payload.agent_role) ?? nonEmpty(spawn?.agent_role),
-    kind: nonEmpty(subagent?.other)
-      ?? (threadSource?.endsWith('_review') ? threadSource.slice(0, -'_review'.length) || undefined : undefined),
+    kind:
+      nonEmpty(subagent?.other) ??
+      (threadSource?.endsWith('_review') ? threadSource.slice(0, -'_review'.length) || undefined : undefined),
   };
 }
 
 /** `/root/audit/code_paths` → `code_paths`: the tree already shows the rest. */
 export function agentPathLeaf(agentPath: string | undefined): string | undefined {
-  return agentPath?.split(/[\\/]+/).filter(Boolean).at(-1);
+  return agentPath
+    ?.split(/[\\/]+/)
+    .filter(Boolean)
+    .at(-1);
 }
 
 /** Task name first, then nickname, role, and what kind of thread it is. */
@@ -215,9 +228,11 @@ function spawnFromSource(source: unknown): { model?: string; effort?: string } |
   if (!source || typeof source !== 'object') {
     return undefined;
   }
-  const spawn = (source as {
-    subagent?: { thread_spawn?: Record<string, unknown> };
-  }).subagent?.thread_spawn;
+  const spawn = (
+    source as {
+      subagent?: { thread_spawn?: Record<string, unknown> };
+    }
+  ).subagent?.thread_spawn;
   if (!spawn) {
     return undefined;
   }
@@ -228,8 +243,9 @@ function spawnFromSource(source: unknown): { model?: string; effort?: string } |
 }
 
 function modelEffortFromPayload(payload: Record<string, unknown>): { model?: string; effort?: string } {
-  const settings = (payload.collaboration_mode as { settings?: Record<string, unknown> } | undefined)?.settings
-    ?? (payload.thread_settings as Record<string, unknown> | undefined);
+  const settings =
+    (payload.collaboration_mode as { settings?: Record<string, unknown> } | undefined)?.settings ??
+    (payload.thread_settings as Record<string, unknown> | undefined);
   const modelCandidates = [payload.model, settings?.model];
   const effortCandidates = [payload.effort, payload.reasoning_effort, settings?.effort, settings?.reasoning_effort];
   const model = modelCandidates.find((value): value is string => typeof value === 'string' && value.length > 0);
@@ -237,7 +253,20 @@ function modelEffortFromPayload(payload: Record<string, unknown>): { model?: str
   return { model, effort };
 }
 
-type RolloutFields = Pick<SessionLink, 'model' | 'effort' | 'status' | 'statusAt' | 'turnStartedAt' | 'task' | 'lastReport' | 'preface' | 'charges'>;
+type RolloutFields = Pick<
+  SessionLink,
+  | 'model'
+  | 'effort'
+  | 'status'
+  | 'statusAt'
+  | 'turnStartedAt'
+  | 'task'
+  | 'lastReport'
+  | 'preface'
+  | 'charges'
+  | 'pendingHudCalls'
+  | 'linkEvidence'
+>;
 
 const PREFACE_LIMIT = 1500;
 
@@ -267,7 +296,11 @@ function messageText(content: unknown): string | undefined {
   const parts = content.flatMap((part) => {
     if (!part || typeof part !== 'object') return [];
     const record = part as { type?: unknown; text?: unknown };
-    if ((record.type !== 'input_text' && record.type !== 'output_text' && record.type !== 'text') || typeof record.text !== 'string') return [];
+    if (
+      (record.type !== 'input_text' && record.type !== 'output_text' && record.type !== 'text') ||
+      typeof record.text !== 'string'
+    )
+      return [];
     return [record.text];
   });
   return parts.length ? parts.join('\n') : undefined;
@@ -284,6 +317,7 @@ function applyRolloutLine(line: string, into: RolloutFields, ledger?: AgentLedge
     if (!entry.payload) {
       return;
     }
+    observeLinkEvidence(entry, into);
     if (ledger) applyLedgerEntry(entry, ledger);
     const report = extractAgentReport(entry);
     if (report && (!into.lastReport || report.at >= into.lastReport.at)) into.lastReport = report;
@@ -295,14 +329,19 @@ function applyRolloutLine(line: string, into: RolloutFields, ledger?: AgentLedge
       }
       // Reuse the public-report boundary: private/unknown assistant channels
       // must never become a charge sent to the labels or progress model.
-      if (joined && (entry.payload.role === 'user' || (entry.payload.role === 'assistant' && report))) rememberPreface(into, joined);
+      if (joined && (entry.payload.role === 'user' || (entry.payload.role === 'assistant' && report)))
+        rememberPreface(into, joined);
     }
     if (entry.type === 'event_msg') {
       const type = entry.payload.type;
       const item = entry.payload.item;
       if (type === 'item_completed' && item && typeof item === 'object') {
         const activity = item as { type?: unknown; kind?: unknown; agent_thread_id?: unknown };
-        if (activity.type === 'SubAgentActivity' && activity.kind === 'started' && typeof activity.agent_thread_id === 'string') {
+        if (
+          activity.type === 'SubAgentActivity' &&
+          activity.kind === 'started' &&
+          typeof activity.agent_thread_id === 'string'
+        ) {
           snapshotCharge(into, activity.agent_thread_id);
         }
       }
@@ -312,9 +351,12 @@ function applyRolloutLine(line: string, into: RolloutFields, ledger?: AgentLedge
       }
       // An aborted turn (user interrupt) is over: the agent is idle, not
       // still running, and not failed.
-      const status = type === 'task_started' || type === 'turn_started' ? 'running'
-        : type === 'task_complete' || type === 'turn_complete' || type === 'turn_aborted' ? 'completed'
-          : undefined;
+      const status =
+        type === 'task_started' || type === 'turn_started'
+          ? 'running'
+          : type === 'task_complete' || type === 'turn_complete' || type === 'turn_aborted'
+            ? 'completed'
+            : undefined;
       const time = entry.timestamp ? new Date(entry.timestamp) : undefined;
       if (status && time && Number.isFinite(time.getTime())) {
         into.status = status;
@@ -346,14 +388,17 @@ function* scanRolloutFields(
   startOffset: number,
   source: Pick<CachedLink, 'size' | 'ino' | 'mtimeMs' | 'contextPrint'> & { headerPrint?: string },
   ledger?: AgentLedger,
-  seed?: Pick<SessionLink, 'preface' | 'charges'>,
+  seed?: Pick<SessionLink, 'preface' | 'charges' | 'pendingHudCalls' | 'linkEvidence'>
 ): Generator<void, RolloutFields & { endOffset: number }> {
   const { size: observedSize, ino: observedIno, mtimeMs: observedMtimeMs } = source;
   const fd = fs.openSync(filePath, 'r');
   try {
     const before = fs.fstatSync(fd);
-    if (before.size < observedSize || (observedIno !== undefined && before.ino !== observedIno)
-      || (before.size === observedSize && before.mtime.getTime() !== observedMtimeMs)) {
+    if (
+      before.size < observedSize ||
+      (observedIno !== undefined && before.ino !== observedIno) ||
+      (before.size === observedSize && before.mtime.getTime() !== observedMtimeMs)
+    ) {
       throw new Error('Rollout changed before its scan');
     }
     if (startOffset > 0 && scanPrint(filePath, startOffset) !== source.contextPrint) {
@@ -367,6 +412,8 @@ function* scanRolloutFields(
     let lines = 0;
     const fields: RolloutFields & { endOffset: number } = {
       endOffset: offset,
+      pendingHudCalls: { ...seed?.pendingHudCalls },
+      linkEvidence: [...(seed?.linkEvidence ?? [])],
       ...(seed?.preface ? { preface: seed.preface } : {}),
       ...(seed?.charges ? { charges: { ...seed.charges } } : {}),
     };
@@ -400,16 +447,25 @@ function* scanRolloutFields(
       yield;
     }
     const after = fs.statSync(filePath);
-    if (after.ino !== before.ino || after.dev !== before.dev || after.size < observedSize
-      || (after.size === before.size && after.mtimeMs !== before.mtimeMs)) {
+    if (
+      after.ino !== before.ino ||
+      after.dev !== before.dev ||
+      after.size < observedSize ||
+      (after.size === before.size && after.mtimeMs !== before.mtimeMs)
+    ) {
       throw new Error('Rollout changed during its scan');
     }
     // Size growth is not proof of append: a writer may truncate and regrow
     // this very inode between checkpoints. If the generation changed, compare
     // every byte consumed (including an incomplete last line) with the same
     // bounded region as it now stands. Never commit an old prefix/new suffix.
-    if (before.size !== observedSize || before.mtime.getTime() !== observedMtimeMs
-      || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
+    if (
+      before.size !== observedSize ||
+      before.mtime.getTime() !== observedMtimeMs ||
+      after.size !== before.size ||
+      after.mtimeMs !== before.mtimeMs ||
+      after.ctimeMs !== before.ctimeMs
+    ) {
       const verified = createHash('sha256');
       let verifyOffset = Math.max(0, startOffset);
       while (verifyOffset < observedSize) {
@@ -419,16 +475,23 @@ function* scanRolloutFields(
         verifyOffset += read;
         yield;
       }
-      if (verified.digest('hex') !== consumed.digest('hex')
-        || (startOffset > 0 && scanPrint(filePath, startOffset) !== source.contextPrint)
-        || (source.headerPrint !== undefined && headerPrint(readFirstLine(filePath)) !== source.headerPrint)) {
+      if (
+        verified.digest('hex') !== consumed.digest('hex') ||
+        (startOffset > 0 && scanPrint(filePath, startOffset) !== source.contextPrint) ||
+        (source.headerPrint !== undefined && headerPrint(readFirstLine(filePath)) !== source.headerPrint)
+      ) {
         throw new Error('Rollout changed during its scan');
       }
       const final = fs.statSync(filePath);
       // A second source change while verifying is uncertain, even if it might
       // be append. Retry from a fresh listing instead of chasing a live writer.
-      if (final.ino !== after.ino || final.dev !== after.dev || final.size !== after.size
-        || final.mtimeMs !== after.mtimeMs || final.ctimeMs !== after.ctimeMs) {
+      if (
+        final.ino !== after.ino ||
+        final.dev !== after.dev ||
+        final.size !== after.size ||
+        final.mtimeMs !== after.mtimeMs ||
+        final.ctimeMs !== after.ctimeMs
+      ) {
         throw new Error('Rollout changed during its scan');
       }
     }
@@ -442,11 +505,17 @@ function* scanRolloutFields(
 }
 
 /** What a node carries of its ledger: copies, so a later scan never changes a tree already built. */
-function ledgerFields(ledger: AgentLedger | undefined): Pick<SubagentTreeNode, 'stages' | 'stageCount' | 'action' | 'peers'> {
+function ledgerFields(
+  ledger: AgentLedger | undefined
+): Pick<SubagentTreeNode, 'stages' | 'stageCount' | 'action' | 'peers'> {
   if (!ledger || (!ledger.count && !ledger.peers.size && !ledger.open.size)) return {};
   const action = currentAction(ledger);
   return {
-    stages: ledger.stages.map(stage => ({ ...stage, ...(stage.by ? { by: { ...stage.by } } : {}), ...(stage.peers ? { peers: { ...stage.peers } } : {}) })),
+    stages: ledger.stages.map((stage) => ({
+      ...stage,
+      ...(stage.by ? { by: { ...stage.by } } : {}),
+      ...(stage.peers ? { peers: { ...stage.peers } } : {}),
+    })),
     stageCount: ledger.count,
     ...(action ? { action: { ...action } } : {}),
     ...(ledger.peers.size ? { peers: Object.fromEntries(ledger.peers) } : {}),
@@ -467,15 +536,28 @@ function* refreshRolloutFields(link: SessionLink): Generator<void, void> {
   const ledger = cached.link.ledger ? structuredClone(cached.link.ledger) : newLedger();
   let extra: RolloutFields & { endOffset: number };
   try {
-    extra = yield* scanRolloutFields(link.path, start, {
-      size: cached.size, ino: cached.ino, mtimeMs: cached.mtimeMs,
-      contextPrint: cached.contextPrint, headerPrint: link.headerPrint,
-    }, ledger, start > 0 ? link : undefined);
+    extra = yield* scanRolloutFields(
+      link.path,
+      start,
+      {
+        size: cached.size,
+        ino: cached.ino,
+        mtimeMs: cached.mtimeMs,
+        contextPrint: cached.contextPrint,
+        headerPrint: link.headerPrint,
+      },
+      ledger,
+      start > 0 ? link : undefined
+    );
     if (linkCache.get(link.path) !== cached) throw new Error('Rollout cache changed during its scan');
   } catch (error) {
     if (linkCache.get(link.path) === cached) linkCache.delete(link.path);
     throw error;
   }
+  link.pendingHudCalls = extra.pendingHudCalls;
+  link.linkEvidence = extra.linkEvidence;
+  cached.link.pendingHudCalls = extra.pendingHudCalls;
+  cached.link.linkEvidence = extra.linkEvidence;
   link.ledger = ledger;
   cached.link.ledger = ledger;
   if (extra.model) {
@@ -500,14 +582,16 @@ function* refreshRolloutFields(link: SessionLink): Generator<void, void> {
     link.charges = extra.charges;
     cached.link.charges = extra.charges;
   }
-  if (extra.lastReport && (!link.lastReport || extra.lastReport.at >= link.lastReport.at)) link.lastReport = extra.lastReport;
+  if (extra.lastReport && (!link.lastReport || extra.lastReport.at >= link.lastReport.at))
+    link.lastReport = extra.lastReport;
   if (extra.endOffset === cached.contextOffset) return;
   cached.contextOffset = extra.endOffset;
   cached.contextPrint = scanPrint(link.path, extra.endOffset);
   if (extra.endOffset >= SAVE_MIN_BYTES) scanStore?.mark(link.path, () => savedScan(link.path));
 }
 
-const iso = (date: Date | undefined): string | undefined => date && Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+const iso = (date: Date | undefined): string | undefined =>
+  date && Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 
 /** The scan of `filePath` as it stands, to be saved: what was read, how far, and the bytes it ended on. */
 function savedScan(filePath: string): SavedScan | undefined {
@@ -516,28 +600,48 @@ function savedScan(filePath: string): SavedScan | undefined {
   if (!cached || !link || cached.contextOffset < SAVE_MIN_BYTES || !cached.contextPrint) return undefined;
   const ledger = link.ledger;
   return {
-    version: SCAN_VERSION, path: filePath, id: link.id, ...(cached.ino !== undefined ? { ino: cached.ino } : {}),
-    offset: cached.contextOffset, print: cached.contextPrint,
+    version: SCAN_VERSION,
+    path: filePath,
+    id: link.id,
+    ...(cached.ino !== undefined ? { ino: cached.ino } : {}),
+    offset: cached.contextOffset,
+    print: cached.contextPrint,
     fields: {
-      model: link.model, effort: link.effort, status: link.status, statusAt: iso(link.statusAt), turnStartedAt: iso(link.turnStartedAt),
-      task: link.task, lastReport: link.lastReport ? { ...link.lastReport, at: iso(link.lastReport.at) } : undefined,
+      pendingHudCalls: link.pendingHudCalls,
+      linkEvidence: link.linkEvidence,
+      model: link.model,
+      effort: link.effort,
+      status: link.status,
+      statusAt: iso(link.statusAt),
+      turnStartedAt: iso(link.turnStartedAt),
+      task: link.task,
+      lastReport: link.lastReport ? { ...link.lastReport, at: iso(link.lastReport.at) } : undefined,
       ...(link.preface ? { preface: link.preface } : {}),
       ...(link.charges ? { charges: link.charges } : {}),
     },
-    ...(ledger ? { ledger: {
-      stages: ledger.stages.map((stage) => ({ ...stage, startedAt: iso(stage.startedAt), endedAt: iso(stage.endedAt) })),
-      count: ledger.count,
-      open: [...ledger.open].map(([id, action]) => [id, { ...action, at: iso(action.at) }]),
-      peers: [...ledger.peers],
-      ...(ledger.pending ? { pending: ledger.pending } : {}),
-    } } : {}),
+    ...(ledger
+      ? {
+          ledger: {
+            stages: ledger.stages.map((stage) => ({
+              ...stage,
+              startedAt: iso(stage.startedAt),
+              endedAt: iso(stage.endedAt),
+            })),
+            count: ledger.count,
+            open: [...ledger.open].map(([id, action]) => [id, { ...action, at: iso(action.at) }]),
+            peers: [...ledger.peers],
+            ...(ledger.pending ? { pending: ledger.pending } : {}),
+          },
+        }
+      : {}),
   };
 }
 
 const STATUSES = new Set<string>(['starting', 'running', 'completed', 'error', 'unknown']);
 const STAGE_STATUSES = new Set<string>(['running', 'done', 'aborted', 'failed']);
 const isText = (value: unknown): value is string => typeof value === 'string';
-const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const dateOf = (value: unknown): Date | undefined => {
   if (!isText(value)) return undefined;
   const date = new Date(value);
@@ -545,10 +649,15 @@ const dateOf = (value: unknown): Date | undefined => {
 };
 /** An optional field: absent, or what `read` makes of it; null when it is there and does not read. */
 const optional = <T>(value: unknown, read: (value: unknown) => T | undefined): T | undefined | null =>
-  value === undefined ? undefined : read(value) ?? null;
-const header = (value: unknown) => isRecord(value) && isText(value.type) && isText(value.sender) ? { type: value.type, sender: value.sender } : undefined;
-const counts = (value: unknown) => isRecord(value) && Object.values(value).every((n) => typeof n === 'number')
-  ? value as Record<string, number> : undefined;
+  value === undefined ? undefined : (read(value) ?? null);
+const header = (value: unknown) =>
+  isRecord(value) && isText(value.type) && isText(value.sender)
+    ? { type: value.type, sender: value.sender }
+    : undefined;
+const counts = (value: unknown) =>
+  isRecord(value) && Object.values(value).every((n) => typeof n === 'number')
+    ? (value as Record<string, number>)
+    : undefined;
 
 /**
  * A saved scan put back on `link`, the fields and the ledger, when every part
@@ -556,20 +665,38 @@ const counts = (value: unknown) => isRecord(value) && Object.values(value).every
  */
 function restoreScan(saved: SavedScan, link: SessionLink): boolean {
   const f = saved.fields;
+  const links = { pendingHudCalls: f.pendingHudCalls, linkEvidence: f.linkEvidence } as LinkScanState;
+  if (!validLinkScanState(links)) return false;
   const statusAt = optional(f.statusAt, dateOf);
   const turnStartedAt = optional(f.turnStartedAt, dateOf);
   const report = optional(f.lastReport, (value) => {
     const at = isRecord(value) ? dateOf(value.at) : undefined;
-    return isRecord(value) && at && isText(value.text) && (value.kind === 'message' || value.kind === 'update' || value.kind === 'reply')
-      ? { text: value.text, at, kind: value.kind } as AgentReport : undefined;
+    return isRecord(value) &&
+      at &&
+      isText(value.text) &&
+      (value.kind === 'message' || value.kind === 'update' || value.kind === 'reply')
+      ? ({ text: value.text, at, kind: value.kind } as AgentReport)
+      : undefined;
   });
-  if ([f.model, f.effort, f.task].some((value) => value !== undefined && !isText(value))
-    || (f.status !== undefined && !(isText(f.status) && STATUSES.has(f.status)))
-    || statusAt === null || turnStartedAt === null || report === null) return false;
+  if (
+    [f.model, f.effort, f.task].some((value) => value !== undefined && !isText(value)) ||
+    (f.status !== undefined && !(isText(f.status) && STATUSES.has(f.status))) ||
+    statusAt === null ||
+    turnStartedAt === null ||
+    report === null
+  )
+    return false;
   let ledger: AgentLedger | undefined;
   if (saved.ledger !== undefined) {
     const raw = saved.ledger;
-    if (!isRecord(raw) || !Array.isArray(raw.stages) || typeof raw.count !== 'number' || !Array.isArray(raw.open) || !Array.isArray(raw.peers)) return false;
+    if (
+      !isRecord(raw) ||
+      !Array.isArray(raw.stages) ||
+      typeof raw.count !== 'number' ||
+      !Array.isArray(raw.open) ||
+      !Array.isArray(raw.peers)
+    )
+      return false;
     const stages: AgentStage[] = [];
     for (const value of raw.stages) {
       const startedAt = isRecord(value) ? dateOf(value.startedAt) : undefined;
@@ -577,11 +704,22 @@ function restoreScan(saved: SavedScan, link: SessionLink): boolean {
       const endedAt = optional(value.endedAt, dateOf);
       const by = optional(value.by, header);
       const peers = optional(value.peers, counts);
-      if (endedAt === null || by === null || peers === null || [value.turnId, value.intent, value.result].some((text) => text !== undefined && !isText(text))) return false;
+      if (
+        endedAt === null ||
+        by === null ||
+        peers === null ||
+        [value.turnId, value.intent, value.result].some((text) => text !== undefined && !isText(text))
+      )
+        return false;
       stages.push({
-        startedAt, status: value.status as AgentStage['status'],
-        ...(isText(value.turnId) ? { turnId: value.turnId } : {}), ...(endedAt ? { endedAt } : {}), ...(by ? { by } : {}),
-        ...(isText(value.intent) ? { intent: value.intent } : {}), ...(isText(value.result) ? { result: value.result } : {}), ...(peers ? { peers } : {}),
+        startedAt,
+        status: value.status as AgentStage['status'],
+        ...(isText(value.turnId) ? { turnId: value.turnId } : {}),
+        ...(endedAt ? { endedAt } : {}),
+        ...(by ? { by } : {}),
+        ...(isText(value.intent) ? { intent: value.intent } : {}),
+        ...(isText(value.result) ? { result: value.result } : {}),
+        ...(peers ? { peers } : {}),
       });
     }
     const open = new Map<string, AgentAction>();
@@ -600,6 +738,8 @@ function restoreScan(saved: SavedScan, link: SessionLink): boolean {
     if (pending === null) return false;
     ledger = { stages, count: raw.count, open, peers, ...(pending ? { pending } : {}) };
   }
+  link.pendingHudCalls = links.pendingHudCalls;
+  link.linkEvidence = links.linkEvidence;
   if (isText(f.model)) link.model = f.model;
   if (isText(f.effort)) link.effort = f.effort;
   if (isText(f.status)) link.status = f.status as SubagentStatus;
@@ -609,13 +749,17 @@ function restoreScan(saved: SavedScan, link: SessionLink): boolean {
   if (f.preface !== undefined && !isText(f.preface)) return false;
   if (f.charges !== undefined && (!isRecord(f.charges) || !Object.values(f.charges).every(isText))) return false;
   if (isText(f.preface)) link.preface = f.preface;
-  if (isRecord(f.charges)) link.charges = Object.fromEntries(Object.entries(f.charges).filter((entry): entry is [string, string] => isText(entry[1])));
+  if (isRecord(f.charges))
+    link.charges = Object.fromEntries(
+      Object.entries(f.charges).filter((entry): entry is [string, string] => isText(entry[1]))
+    );
   link.lastReport = report;
   link.ledger = ledger;
   return true;
 }
 
-const headerPrint = (line: string | null): string | undefined => line === null ? undefined : createHash('sha256').update(line).digest('hex');
+const headerPrint = (line: string | null): string | undefined =>
+  line === null ? undefined : createHash('sha256').update(line).digest('hex');
 
 function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null {
   try {
@@ -645,9 +789,10 @@ function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null
     const identity = identityFromMeta(entry.payload as Record<string, unknown>);
     const spawn = spawnFromSource(entry.payload.source);
     const payloadModel = typeof entry.payload.model === 'string' ? entry.payload.model : undefined;
-    const payloadEffort = typeof (entry.payload as { effort?: unknown }).effort === 'string'
-      ? (entry.payload as { effort?: string }).effort
-      : undefined;
+    const payloadEffort =
+      typeof (entry.payload as { effort?: unknown }).effort === 'string'
+        ? (entry.payload as { effort?: string }).effort
+        : undefined;
     return {
       ...identity,
       headerPrint: headerPrint(firstLine),
@@ -668,8 +813,7 @@ function peekSessionLink(filePath: string, modifiedAt: Date): SessionLink | null
 function resolveStatus(known: SubagentInfo | undefined, link: SessionLink | undefined): SubagentStatus {
   // Compare event timestamps, never file mtime: model settings and other
   // writes after completion do not mean the agent has started another turn.
-  if (link?.status && (!known || !known.lastActivityAt ||
-      (link.statusAt && link.statusAt >= known.lastActivityAt))) {
+  if (link?.status && (!known || !known.lastActivityAt || (link.statusAt && link.statusAt >= known.lastActivityAt))) {
     return link.status;
   }
   if (known) {
@@ -827,7 +971,7 @@ export function buildSubagentTree(
   maxDaysBack: number = 3,
   nowMs: number = Date.now(),
   /** Rollouts already listed. Passed by the panel so this build does not scan again. */
-  listed?: SessionFile[],
+  listed?: SessionFile[]
 ): SubagentTree {
   const work = buildTreeSteps(rootId, knownSubagents, maxDaysBack, nowMs, listed);
   let step = work.next();
@@ -846,14 +990,14 @@ export async function buildSubagentTreeYielding(
   knownSubagents: SubagentInfo[] = [],
   maxDaysBack: number = 3,
   nowMs: number = Date.now(),
-  listed?: SessionFile[],
+  listed?: SessionFile[]
 ): Promise<SubagentTree> {
   const work = buildTreeSteps(rootId, knownSubagents, maxDaysBack, nowMs, listed);
   let deadline = performance.now() + 4;
   let step = work.next();
   while (!step.done) {
     if (performance.now() >= deadline) {
-      await new Promise<void>(resolve => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
       deadline = performance.now() + 4;
     }
     step = work.next();
@@ -866,12 +1010,20 @@ function* buildTreeSteps(
   knownSubagents: SubagentInfo[],
   maxDaysBack: number,
   nowMs: number,
-  listed?: SessionFile[],
+  listed?: SessionFile[]
 ): Generator<void, SubagentTree> {
   const known = new Map(knownSubagents.map((agent) => [agent.id, agent]));
   const links = new Map<string, SessionLink>();
 
-  const files = listed ?? findRolloutsInDays(treeLookbackDays(rootId, maxDaysBack, knownSubagents.map(agent => agent.id)));
+  const files =
+    listed ??
+    findRolloutsInDays(
+      treeLookbackDays(
+        rootId,
+        maxDaysBack,
+        knownSubagents.map((agent) => agent.id)
+      )
+    );
   const seen = new Set<string>();
   // Same-signature rewrites are invisible to stat; force a re-read of entries
   // whose content has not been verified recently, oldest verification first,
@@ -900,19 +1052,19 @@ function* buildTreeSteps(
 
     const unchanged = Boolean(
       cached &&
-        cached.size === file.size &&
-        cached.mtimeMs === modifiedMs &&
-        (cached.ino === undefined || file.ino === undefined || cached.ino === file.ino)
+      cached.size === file.size &&
+      cached.mtimeMs === modifiedMs &&
+      (cached.ino === undefined || file.ino === undefined || cached.ino === file.ino)
     );
     // Append-only growth keeps the first line intact, so the cached metadata
     // stays valid. Anything else (shrink, same-size rewrite with a newer
     // mtime, inode replacement, or a previously failed peek) re-peeks.
     const appended = Boolean(
       cached &&
-        cached.link &&
-        cached.size < file.size &&
-        cached.mtimeMs <= modifiedMs &&
-        (cached.ino === undefined || file.ino === undefined || cached.ino === file.ino)
+      cached.link &&
+      cached.size < file.size &&
+      cached.mtimeMs <= modifiedMs &&
+      (cached.ino === undefined || file.ino === undefined || cached.ino === file.ino)
     );
     const revalidate = revalidatePaths.has(file.path);
 
@@ -936,8 +1088,14 @@ function* buildTreeSteps(
       // A revalidation that finds the same thread, the file as it was or
       // grown, and the bytes the scan ended on unchanged keeps the scan: a
       // growing rollout is not read again from its first byte.
-      const keepContext = Boolean(revalidate && previous?.link && link && link.id === previous.link.id && (unchanged || appended)
-        && scanPrint(file.path, previous.contextOffset) === (previous.contextPrint ?? ''));
+      const keepContext = Boolean(
+        revalidate &&
+        previous?.link &&
+        link &&
+        link.id === previous.link.id &&
+        (unchanged || appended) &&
+        scanPrint(file.path, previous.contextOffset) === (previous.contextPrint ?? '')
+      );
       let contextOffset = 0;
       let contextPrint: string | undefined;
       if (keepContext && previous?.link && link) {
@@ -947,6 +1105,8 @@ function* buildTreeSteps(
         link.statusAt = previous.link.statusAt;
         link.turnStartedAt = previous.link.turnStartedAt;
         link.task = previous.link.task;
+        link.pendingHudCalls = previous.link.pendingHudCalls;
+        link.linkEvidence = previous.link.linkEvidence;
         link.preface = previous.link.preface;
         link.charges = previous.link.charges;
         link.lastReport = previous.link.lastReport;
@@ -957,9 +1117,14 @@ function* buildTreeSteps(
         // First sight in this process: an earlier one's scan, while it still
         // describes the file.
         const saved = scanStore.load(file.path);
-        if (saved && saved.id === link.id && saved.offset <= file.size
-          && (saved.ino === undefined || file.ino === undefined || saved.ino === file.ino)
-          && scanPrint(file.path, saved.offset) === saved.print && restoreScan(saved, link)) {
+        if (
+          saved &&
+          saved.id === link.id &&
+          saved.offset <= file.size &&
+          (saved.ino === undefined || file.ino === undefined || saved.ino === file.ino) &&
+          scanPrint(file.path, saved.offset) === saved.print &&
+          restoreScan(saved, link)
+        ) {
           contextOffset = saved.offset;
           contextPrint = saved.print;
           scanStore.used(file.path, nowMs);
@@ -1057,8 +1222,10 @@ function* buildTreeSteps(
       ...ledgerFields(link?.ledger),
       task: taskText(link?.task) ?? taskText(knownAgent?.task),
       charge: parent?.charges?.[id],
-      statusAt: knownAgent?.lastActivityAt && (!link?.statusAt || knownAgent.lastActivityAt > link.statusAt)
-        ? knownAgent.lastActivityAt : link?.statusAt,
+      statusAt:
+        knownAgent?.lastActivityAt && (!link?.statusAt || knownAgent.lastActivityAt > link.statusAt)
+          ? knownAgent.lastActivityAt
+          : link?.statusAt,
       // Child turn_context is the live model/effort; spawn events are fallback.
       model: link?.model ?? knownAgent?.model,
       effort: link?.effort ?? knownAgent?.effort,
@@ -1109,7 +1276,10 @@ export type ThreadKind = 'agent' | 'subtask' | 'review';
  * main session started), a subtask (a thread under an agent, at any depth)
  * or a review (a guardian approval review, wherever it sits).
  */
-export function eachThread(nodes: readonly SubagentTreeNode[], visit: (node: SubagentTreeNode, kind: ThreadKind) => void): void {
+export function eachThread(
+  nodes: readonly SubagentTreeNode[],
+  visit: (node: SubagentTreeNode, kind: ThreadKind) => void
+): void {
   const walk = (node: SubagentTreeNode, top: boolean): void => {
     visit(node, node.kind === 'guardian' ? 'review' : top ? 'agent' : 'subtask');
     for (const child of node.children) walk(child, false);
@@ -1118,14 +1288,24 @@ export function eachThread(nodes: readonly SubagentTreeNode[], visit: (node: Sub
 }
 
 /** Threads by how they stand: active (running or starting), finished, failed, or with no observed state. */
-export interface StatusCounts { total: number; active: number; completed: number; failed: number; unknown: number }
+export interface StatusCounts {
+  total: number;
+  active: number;
+  completed: number;
+  failed: number;
+  unknown: number;
+}
 
 /**
  * The counts the panel's title row, the status card's alerts, the bar,
  * notifications and the JSON snapshot all give, so they agree: the agents,
  * one active while it or a subtask under it is; their subtasks; the reviews.
  */
-export interface AgentCounts { agents: StatusCounts; subtasks: StatusCounts; reviews: StatusCounts }
+export interface AgentCounts {
+  agents: StatusCounts;
+  subtasks: StatusCounts;
+  reviews: StatusCounts;
+}
 
 const isActive = (node: SubagentTreeNode): boolean => node.status === 'running' || node.status === 'starting';
 const busyBelow = (node: SubagentTreeNode): boolean =>

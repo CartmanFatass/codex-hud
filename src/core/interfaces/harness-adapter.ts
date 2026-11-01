@@ -1,3 +1,4 @@
+import type { SessionEvidence } from './session-evidence.js';
 import type { LaunchProfile } from '../types/capabilities.js';
 import type { Harness, SessionRef, SourceId } from '../types/identity.js';
 import type { ObservationView, ReaderCheckpoint } from '../types/observation.js';
@@ -27,6 +28,10 @@ export interface ReaderBudget {
 export interface ReaderResult {
   observation: ObservationView;
   checkpoint: ReaderCheckpoint;
+  /** Optional native additions; observation is the same object, not a second state projection. */
+  evidence?: SessionEvidence;
+  /** Actual read/assembly work; elapsedMs is measured, the time budget is soft. */
+  stats?: { bytesRead: number; recordsRead: number; elapsedMs: number };
 }
 
 export interface SessionReader {

@@ -1,3 +1,7 @@
+import { serialize, deserialize } from 'node:v8';
+import { initialParserState } from '../core/observation.js';
+import type { ReaderBudget } from '../core/interfaces/harness-adapter.js';
+import type { ReaderParserState } from '../core/types/observation.js';
 import { taskText, looksAutomatic } from '../utils/task-text.js';
 import { extractAgentReport } from './agent-report.js';
 import { TokenRateTracker, observeTokenRateRecord, type TokenRateSnapshot } from './token-rate.js';
@@ -32,7 +36,10 @@ import type {
 
 /** Approval summaries are pasted into the bar, so they carry no controls. */
 function plainText(text: string, limit: number): string {
-  const clean = text.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const clean = text
+    .replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
 }
 
@@ -45,9 +52,7 @@ function plainText(text: string, limit: number): string {
 function approvalFromEvent(payload: EventMsgPayload, timestamp: Date): PendingApproval {
   const callId = typeof payload.call_id === 'string' && payload.call_id ? payload.call_id : undefined;
   if (payload.type === 'apply_patch_approval_request') {
-    const files = payload.changes && typeof payload.changes === 'object'
-      ? Object.keys(payload.changes).length
-      : 0;
+    const files = payload.changes && typeof payload.changes === 'object' ? Object.keys(payload.changes).length : 0;
     return {
       kind: 'patch',
       callId,
@@ -57,7 +62,7 @@ function approvalFromEvent(payload: EventMsgPayload, timestamp: Date): PendingAp
   }
   if (payload.type === 'request_user_input') {
     const first = payload.questions?.[0];
-    const text = typeof first === 'string' ? first : first?.header ?? first?.question;
+    const text = typeof first === 'string' ? first : (first?.header ?? first?.question);
     return {
       kind: 'input',
       callId,
@@ -127,15 +132,12 @@ function effortFromState(state: unknown): string | undefined {
   return typeof effort === 'string' && effort.length > 0 ? effort : undefined;
 }
 
-function applyCollabAgentItem(
-  subagents: Map<string, SubagentInfo>,
-  item: CollabAgentItem,
-  timestamp: Date
-): void {
+function applyCollabAgentItem(subagents: Map<string, SubagentInfo>, item: CollabAgentItem, timestamp: Date): void {
   const agents = item.receiver_agents ?? [];
-  const ids = agents.length > 0
-    ? agents.map((agent) => agent.thread_id).filter((id): id is string => Boolean(id))
-    : (item.receiver_thread_ids ?? []).filter(Boolean);
+  const ids =
+    agents.length > 0
+      ? agents.map((agent) => agent.thread_id).filter((id): id is string => Boolean(id))
+      : (item.receiver_thread_ids ?? []).filter(Boolean);
 
   for (const id of ids) {
     const listed = agents.find((agent) => agent.thread_id === id);
@@ -187,10 +189,7 @@ function mergeSubagents(previous: SubagentInfo[] | undefined, next: SubagentInfo
   return [...merged.values()];
 }
 
-function mergeRateLimits(
-  previous: RateLimitSnapshot | null,
-  next: RateLimitSnapshot | null
-): RateLimitSnapshot | null {
+function mergeRateLimits(previous: RateLimitSnapshot | null, next: RateLimitSnapshot | null): RateLimitSnapshot | null {
   if (!next) {
     return previous;
   }
@@ -225,7 +224,14 @@ function cloneSessionInfo(session: SessionInfo | null | undefined): SessionInfo 
  * only: a quiet stretch is not an event, and neither is a guess.
  */
 export interface SessionEvent {
-  kind: 'approval-requested' | 'approval-answered' | 'compacted' | 'quota' | 'turn-finished' | 'turn-interrupted' | 'turn-failed';
+  kind:
+    | 'approval-requested'
+    | 'approval-answered'
+    | 'compacted'
+    | 'quota'
+    | 'turn-finished'
+    | 'turn-interrupted'
+    | 'turn-failed';
   at: Date;
   /** What was asked for approval, or a finished turn's answer (its head). */
   text?: string;
@@ -256,13 +262,18 @@ export function appendBounded<T>(older: readonly T[], newer: readonly T[], limit
 
 function resetTime(window: { resets_at?: number | string; resets_in_seconds?: number }, at: number): Date | undefined {
   const raw = window.resets_at;
-  if (typeof raw === 'string') { const parsed = new Date(raw); return Number.isNaN(parsed.getTime()) ? undefined : parsed; }
+  if (typeof raw === 'string') {
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
   if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
     if (raw < 1_000_000_000) return new Date(at + raw * 1000);
     return new Date(raw > 1_000_000_000_000 ? raw : raw * 1000);
   }
   const seconds = window.resets_in_seconds;
-  return typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 ? new Date(at + seconds * 1000) : undefined;
+  return typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0
+    ? new Date(at + seconds * 1000)
+    : undefined;
 }
 
 /** Public entries of the main conversation kept for the recap. */
@@ -282,8 +293,11 @@ export interface TranscriptEntry {
 }
 
 /** The newest `TRANSCRIPT_LIMIT` entries, and when the newest one let go was written. */
-export function appendTranscript(older: readonly TranscriptEntry[], newer: readonly TranscriptEntry[],
-  droppedAt?: Date): { entries: TranscriptEntry[]; droppedAt?: Date } {
+export function appendTranscript(
+  older: readonly TranscriptEntry[],
+  newer: readonly TranscriptEntry[],
+  droppedAt?: Date
+): { entries: TranscriptEntry[]; droppedAt?: Date } {
   const all = [...older, ...newer];
   const cut = Math.max(0, all.length - TRANSCRIPT_LIMIT);
   let dropped = droppedAt;
@@ -296,10 +310,15 @@ function transcriptEntry(entry: RolloutLine, timestamp: Date): TranscriptEntry |
   const payload = entry.payload as ResponseItemPayload & { content?: unknown };
   if (entry.type !== 'response_item' || payload.type !== 'message') return undefined;
   if (payload.role === 'user' && Array.isArray(payload.content)) {
-    const raw = payload.content.map(part => {
-      const block = part as { type?: unknown; text?: unknown } | null;
-      return block && (block.type === 'input_text' || block.type === 'text') && typeof block.text === 'string' ? block.text : '';
-    }).filter(Boolean).join('\n');
+    const raw = payload.content
+      .map((part) => {
+        const block = part as { type?: unknown; text?: unknown } | null;
+        return block && (block.type === 'input_text' || block.type === 'text') && typeof block.text === 'string'
+          ? block.text
+          : '';
+      })
+      .filter(Boolean)
+      .join('\n');
     const text = taskText(raw);
     return text ? { role: 'user', kind: 'prompt', text, at: timestamp } : undefined;
   }
@@ -358,19 +377,42 @@ export interface RolloutParseResult {
   quotaSamples: QuotaSample[];
 }
 
+/** Optional facade-only scanner state; legacy callers retain their existing read path. */
+export interface RolloutReadOptions {
+  budget: ReaderBudget;
+  state: ReaderParserState;
+  onRecord?: (entry: RolloutLine) => void;
+  onReset?: () => void;
+}
+
+export interface RolloutReadStats {
+  state: ReaderParserState;
+  bytesRead: number;
+  recordsRead: number;
+  remainingBytes: number;
+  elapsedMs: number;
+  resetReason?: 'truncated' | 'file_changed';
+}
+
+export interface RolloutParserCheckpoint {
+  version: 1;
+  /** Runtime-specific codec version is checked before decoding. */
+  runtime: string;
+  offset: number;
+  fileIdentity?: string;
+  payload: string;
+}
+
 export interface RolloutParseOutput {
   result: RolloutParseResult;
   newOffset: number;
   runningCalls: Map<string, ToolCall>;
   wasTruncated: boolean;
+  readStats?: RolloutReadStats;
   fileIdentity?: string;
 }
 
-export function computeNextOffset(
-  startOffset: number,
-  bytesRead: number,
-  latestSize: number
-): number {
+export function computeNextOffset(startOffset: number, bytesRead: number, latestSize: number): number {
   return Math.min(latestSize, startOffset + bytesRead);
 }
 
@@ -378,8 +420,12 @@ function parseToolArguments(raw: string | undefined): Record<string, unknown> | 
   if (!raw) return undefined;
   try {
     const parsed: unknown = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
-  } catch { return undefined; }
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function toolResult(output: unknown): { success?: boolean; exitCode?: number; output?: string } {
@@ -401,10 +447,16 @@ function toolResult(output: unknown): { success?: boolean; exitCode?: number; ou
       if (data.length <= 128000) {
         try {
           const parsed: unknown = JSON.parse(data);
-          if (parsed && typeof parsed === 'object') { visit(parsed, depth + 1); return; }
-        } catch { /* Plain tool output. */ }
+          if (parsed && typeof parsed === 'object') {
+            visit(parsed, depth + 1);
+            return;
+          }
+        } catch {
+          /* Plain tool output. */
+        }
       }
-      for (const match of data.matchAll(/(?:Process exited with code|Exit code:)\s*(-?\d+)/gi)) recordExit(Number(match[1]));
+      for (const match of data.matchAll(/(?:Process exited with code|Exit code:)\s*(-?\d+)/gi))
+        recordExit(Number(match[1]));
       text = (text ? `${text}\n${data}` : data).slice(-8000);
     } else if (Array.isArray(data)) {
       for (const item of data) visit(item, depth + 1);
@@ -413,11 +465,15 @@ function toolResult(output: unknown): { success?: boolean; exitCode?: number; ou
       if (record.success === false || record.isError === true) success = false;
       else if (record.success === true && success === undefined) success = true;
       recordExit(record.exit_code ?? record.exitCode);
-      if (record.type === 'text' || record.type === 'input_text' || record.type === 'output_text') visit(record.text, depth + 1);
+      if (record.type === 'text' || record.type === 'input_text' || record.type === 'output_text')
+        visit(record.text, depth + 1);
       else {
         for (const [key, value] of Object.entries(record)) {
-          if (['output', 'content', 'content_items'].includes(key) ||
-              (!record.type && value && typeof value === 'object')) visit(value, depth + 1);
+          if (
+            ['output', 'content', 'content_items'].includes(key) ||
+            (!record.type && value && typeof value === 'object')
+          )
+            visit(value, depth + 1);
         }
       }
     }
@@ -509,7 +565,8 @@ export async function parseRolloutFile(
   previousIdentity?: string,
   initialPendingApproval: PendingApproval | null = null,
   /** The last quota reading before this batch, so a crossing at its start is seen. */
-  initialQuota: Partial<Record<'primary' | 'secondary', number>> = {}
+  initialQuota: Partial<Record<'primary' | 'secondary', number>> = {},
+  options?: RolloutReadOptions
 ): Promise<RolloutParseOutput> {
   const toolActivity: ToolActivity = {
     recentCalls: [],
@@ -542,7 +599,9 @@ export async function parseRolloutFile(
   let events: SessionEvent[] = [];
   let quotaSamples: QuotaSample[] = [];
   let lastQuota = { ...initialQuota };
-  const event = (value: SessionEvent) => { events = appendBounded(events, [value], SESSION_EVENT_LIMIT); };
+  const event = (value: SessionEvent) => {
+    events = appendBounded(events, [value], SESSION_EVENT_LIMIT);
+  };
   /** Note a quota reading; a crossing needs a reading below the threshold first. */
   const noteQuota = (limits: RateLimitSnapshot | null | undefined, timestamp: Date) => {
     for (const name of ['primary', 'secondary'] as const) {
@@ -552,14 +611,32 @@ export async function parseRolloutFile(
       const before = lastQuota[name];
       for (const threshold of QUOTA_THRESHOLDS) {
         if (before !== undefined && before < threshold && percent >= threshold) {
-          event({ kind: 'quota', at: timestamp, threshold, text: name,
-            ...(typeof window.window_minutes === 'number' ? { windowMinutes: window.window_minutes } : {}) });
+          event({
+            kind: 'quota',
+            at: timestamp,
+            threshold,
+            text: name,
+            ...(typeof window.window_minutes === 'number' ? { windowMinutes: window.window_minutes } : {}),
+          });
         }
       }
       lastQuota = { ...lastQuota, [name]: percent };
-      quotaSamples = appendBounded(quotaSamples, [{ window: name, at: timestamp, percent,
-        ...(typeof window.window_minutes === 'number' ? { windowMinutes: window.window_minutes } : {}),
-        ...(() => { const resetsAt = resetTime(window, timestamp.getTime()); return resetsAt ? { resetsAt } : {}; })() }], QUOTA_SAMPLE_LIMIT);
+      quotaSamples = appendBounded(
+        quotaSamples,
+        [
+          {
+            window: name,
+            at: timestamp,
+            percent,
+            ...(typeof window.window_minutes === 'number' ? { windowMinutes: window.window_minutes } : {}),
+            ...(() => {
+              const resetsAt = resetTime(window, timestamp.getTime());
+              return resetsAt ? { resetsAt } : {};
+            })(),
+          },
+        ],
+        QUOTA_SAMPLE_LIMIT
+      );
     }
   };
   let activity: SessionActivity | undefined;
@@ -581,6 +658,7 @@ export async function parseRolloutFile(
     }
   };
 
+  const readStarted = performance.now();
   // Open once: rename/unlink after open cannot invalidate an end-of-read stat.
   // Read a bounded snapshot; bytes appended meanwhile belong to the next poll.
   const handle = await fs.promises.open(rolloutPath, 'r');
@@ -588,21 +666,22 @@ export async function parseRolloutFile(
     const stats = await handle.stat();
     const fileIdentity = `${stats.dev}:${stats.ino}`;
     const fileSize = stats.size;
-    const wasTruncated = fromOffset > fileSize ||
-      (previousIdentity !== undefined && previousIdentity !== fileIdentity);
+    const wasTruncated = fromOffset > fileSize || (previousIdentity !== undefined && previousIdentity !== fileIdentity);
     const startOffset = wasTruncated ? 0 : fromOffset;
     if (wasTruncated) {
       rateTracker.reset();
       runningCalls.clear();
       session = null;
       pendingApproval = null;
+      options?.onReset?.();
     }
-    const processLine = (line: string) => {
-      if (!line.trim()) return;
+    const processLine = (line: string): boolean => {
+      if (!line.trim()) return true;
 
       try {
         const entry = JSON.parse(line) as RolloutLine;
         const timestamp = new Date(entry.timestamp);
+        options?.onRecord?.(entry);
 
         // Shared with the agent tail reader, including overlapping tool waits.
         observeTokenRateRecord(rateTracker, entry);
@@ -636,9 +715,7 @@ export async function parseRolloutFile(
           const payload = entry.payload as TurnContextPayload;
           const contextModel = payload.model ?? payload.collaboration_mode?.settings?.model;
           const reasoningEffort =
-            payload.effort ??
-            payload.reasoning_effort ??
-            payload.collaboration_mode?.settings?.reasoning_effort;
+            payload.effort ?? payload.reasoning_effort ?? payload.collaboration_mode?.settings?.reasoning_effort;
           const approvalPolicy = payload.approval_policy;
           const sandboxMode = payload.sandbox_policy?.type;
           const collaborationMode = payload.collaboration_mode?.mode;
@@ -689,21 +766,25 @@ export async function parseRolloutFile(
               timestamp,
               status: 'running',
               target: extractToolTarget(payload.name, payload.arguments),
-              arguments: payload.type === 'custom_tool_call' && typeof payload.input === 'string'
-                ? { code: payload.input } : parseToolArguments(payload.arguments),
+              arguments:
+                payload.type === 'custom_tool_call' && typeof payload.input === 'string'
+                  ? { code: payload.input }
+                  : parseToolArguments(payload.arguments),
             };
 
             runningCalls.set(toolCall.id, toolCall);
             toolActivity.totalCalls++;
-            toolActivity.callsByType[payload.name] =
-              (toolActivity.callsByType[payload.name] ?? 0) + 1;
+            toolActivity.callsByType[payload.name] = (toolActivity.callsByType[payload.name] ?? 0) + 1;
 
             // Add to recent calls (will update status when completed)
             toolActivity.recentCalls.push(toolCall);
             if (toolActivity.recentCalls.length > maxRecentCalls) {
               toolActivity.recentCalls.shift();
             }
-          } else if ((payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') && payload.call_id) {
+          } else if (
+            (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') &&
+            payload.call_id
+          ) {
             // Tool call completed
             lastToolActivityTime = timestamp;
             // A result for the call is proof the approval was answered.
@@ -719,9 +800,7 @@ export async function parseRolloutFile(
               runningCalls.delete(payload.call_id);
 
               // Update in recentCalls array
-              const idx = toolActivity.recentCalls.findIndex(
-                (c) => c.id === payload.call_id
-              );
+              const idx = toolActivity.recentCalls.findIndex((c) => c.id === payload.call_id);
               if (idx >= 0) {
                 toolActivity.recentCalls[idx] = runningCall;
               } else {
@@ -736,10 +815,16 @@ export async function parseRolloutFile(
           }
           const spoken = payload.type === 'message' ? transcriptEntry(entry, timestamp) : undefined;
           if (spoken) {
-            ({ entries: transcript, droppedAt: transcriptDroppedAt } = appendTranscript(transcript, [spoken], transcriptDroppedAt));
+            ({ entries: transcript, droppedAt: transcriptDroppedAt } = appendTranscript(
+              transcript,
+              [spoken],
+              transcriptDroppedAt
+            ));
             // A message a tool put in the user's place is not a new request.
-            if (spoken.role === 'user') { firstUserMessage ??= spoken; if (!looksAutomatic(spoken.text)) lastUserMessageAt = spoken.at; }
-            else if (spoken.kind === 'reply') lastReplyAt = spoken.at;
+            if (spoken.role === 'user') {
+              firstUserMessage ??= spoken;
+              if (!looksAutomatic(spoken.text)) lastUserMessageAt = spoken.at;
+            } else if (spoken.kind === 'reply') lastReplyAt = spoken.at;
           }
         } else if (entry.type === 'event_msg') {
           const payload = entry.payload as EventMsgPayload;
@@ -748,10 +833,21 @@ export async function parseRolloutFile(
           } else if (payload.type === 'task_complete' || payload.type === 'turn_complete') {
             activity = { ...activity, state: 'idle', updatedAt: timestamp };
             // What the turn told the person, at its head: the timeline's line for it.
-            const said = typeof payload.last_agent_message === 'string' ? payload.last_agent_message.replace(/\s+/g, ' ').trim() : '';
-            event({ kind: 'turn-finished', at: timestamp, ...(said ? { text: Array.from(said).slice(0, TURN_TEXT_CHARS).join('') } : {}) });
+            const said =
+              typeof payload.last_agent_message === 'string'
+                ? payload.last_agent_message.replace(/\s+/g, ' ').trim()
+                : '';
+            event({
+              kind: 'turn-finished',
+              at: timestamp,
+              ...(said ? { text: Array.from(said).slice(0, TURN_TEXT_CHARS).join('') } : {}),
+            });
           } else if (payload.type === 'turn_aborted' || payload.type === 'task_failed') {
-            activity = { ...activity, state: payload.type === 'turn_aborted' ? 'interrupted' : 'error', updatedAt: timestamp };
+            activity = {
+              ...activity,
+              state: payload.type === 'turn_aborted' ? 'interrupted' : 'error',
+              updatedAt: timestamp,
+            };
             event({ kind: payload.type === 'turn_aborted' ? 'turn-interrupted' : 'turn-failed', at: timestamp });
           }
 
@@ -769,14 +865,20 @@ export async function parseRolloutFile(
 
           // A turn that ended is no longer waiting on anyone, however it
           // ended. A command that started is the answer to its own request.
-          if (payload.type === 'task_complete' || payload.type === 'turn_complete' ||
-              payload.type === 'turn_aborted' || payload.type === 'task_failed') {
+          if (
+            payload.type === 'task_complete' ||
+            payload.type === 'turn_complete' ||
+            payload.type === 'turn_aborted' ||
+            payload.type === 'task_failed'
+          ) {
             pendingApproval = null;
           } else if (payload.type === 'exec_command_begin' || payload.type === 'exec_command_end') {
             clearApprovalFor(payload.call_id, timestamp);
-          } else if (payload.type === 'exec_approval_request' ||
-                     payload.type === 'apply_patch_approval_request' ||
-                     payload.type === 'request_user_input') {
+          } else if (
+            payload.type === 'exec_approval_request' ||
+            payload.type === 'apply_patch_approval_request' ||
+            payload.type === 'request_user_input'
+          ) {
             pendingApproval = approvalFromEvent(payload, timestamp);
             event({ kind: 'approval-requested', at: timestamp, text: pendingApproval.summary });
           }
@@ -837,44 +939,201 @@ export async function parseRolloutFile(
         }
 
         toolActivity.lastUpdateTime = timestamp;
+        return true;
       } catch {
-        // Skip malformed lines
+        // Legacy callers skip malformed records; the facade records a coverage gap.
+        return false;
       }
     };
 
     let committedOffset = startOffset;
-    let position = startOffset;
-    let pending: Buffer = Buffer.alloc(0);
-    const buffer = Buffer.alloc(64 * 1024);
-    while (position < fileSize) {
-      const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, fileSize - position), position);
-      if (!bytesRead) break;
-      position += bytesRead;
-      pending = Buffer.concat([pending, buffer.subarray(0, bytesRead)]);
-      let start = 0;
-      let newline: number;
-      while ((newline = pending.indexOf(10, start)) !== -1) {
-        processLine(pending.subarray(start, newline).toString('utf8'));
-        committedOffset += newline - start + 1;
-        start = newline + 1;
+    let readStats: RolloutReadStats | undefined;
+    if (options) {
+      const { maxBytes, maxRecords, budgetMs } = options.budget;
+      if ([maxBytes, maxRecords, budgetMs].some((value) => !Number.isSafeInteger(value) || value < 0)) {
+        throw new Error('invalid_reader_budget');
       }
-      pending = pending.subarray(start);
-    }
-    // Support complete records without a final newline, but never consume a
-    // partial JSON record (including a split UTF-8 codepoint).
-    if (pending.length) {
-      try {
-        JSON.parse(pending.toString('utf8'));
-        processLine(pending.toString('utf8'));
-        committedOffset += pending.length;
-      } catch { /* Retry this tail from the last complete record next time. */ }
+      const previousState = wasTruncated ? initialParserState() : options.state;
+      // Copy byte storage through Buffer, not structuredClone(number[]): a near-limit
+      // tail must not spend every future soft budget cloning before it can advance.
+      const state: ReaderParserState = {
+        ...previousState,
+        pendingBytes: [],
+        gaps: [...previousState.gaps],
+        skipped: { ...previousState.skipped },
+      };
+      let pending = Buffer.from(previousState.pendingBytes);
+      const buffer = Buffer.alloc(Math.min(64 * 1024, Math.max(1, maxBytes)));
+      let recordsRead = 0;
+      let bytesReadTotal = 0;
+      let fetchedBytes = 0;
+      const skip = (reason: string) => {
+        state.skipped[reason] = (state.skipped[reason] ?? 0) + 1;
+        if (!state.gaps.includes(reason)) state.gaps.push(reason);
+      };
+      const line = (bytes: Buffer) => {
+        try {
+          const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+          if (text.trim()) {
+            const entry = JSON.parse(text);
+            if (
+              !entry ||
+              typeof entry !== 'object' ||
+              !['session_meta', 'turn_context', 'response_item', 'event_msg'].includes(entry.type)
+            ) {
+              skip('unknown_type');
+            } else if (
+              entry.type === 'response_item' &&
+              ['reasoning', 'thinking', 'image'].includes(entry.payload?.type)
+            ) {
+              const kind = entry.payload.type as string;
+              state.skipped[kind] = (state.skipped[kind] ?? 0) + 1;
+            } else if (
+              !entry.payload ||
+              typeof entry.payload !== 'object' ||
+              Array.isArray(entry.payload) ||
+              !Number.isFinite(Date.parse(entry.timestamp)) ||
+              !processLine(text)
+            )
+              skip('malformed_record');
+          }
+        } catch {
+          skip('invalid_json');
+        }
+      };
+      while (
+        committedOffset < fileSize &&
+        bytesReadTotal < maxBytes &&
+        recordsRead < maxRecords &&
+        performance.now() - readStarted < budgetMs
+      ) {
+        // Never fetch bytes beyond the caller's budget. Unprocessed chunk bytes are reread next time.
+        const { bytesRead } = await handle.read(
+          buffer,
+          0,
+          Math.min(buffer.length, fileSize - committedOffset, maxBytes - bytesReadTotal),
+          committedOffset
+        );
+        if (!bytesRead) break;
+        fetchedBytes += bytesRead;
+        let start = 0;
+        while (start < bytesRead && recordsRead < maxRecords && performance.now() - readStarted < budgetMs) {
+          const newline = buffer.subarray(0, bytesRead).indexOf(10, start);
+          const end = newline < 0 ? bytesRead : newline;
+          const piece = buffer.subarray(start, end);
+          if (!state.discardingOversize) {
+            if (pending.length + piece.length > 1024 * 1024) {
+              pending = Buffer.alloc(0);
+              state.discardingOversize = true;
+              skip('oversize_unknown');
+            } else pending = Buffer.concat([pending, piece]);
+          }
+          const consumed = end - start + (newline < 0 ? 0 : 1);
+          committedOffset += consumed;
+          bytesReadTotal += consumed;
+          start += consumed;
+          if (newline >= 0) {
+            if (!state.discardingOversize) line(pending);
+            state.discardingOversize = false;
+            pending = Buffer.alloc(0);
+            recordsRead++;
+          }
+        }
+      }
+      // Preserve the legacy complete, newline-free record convention, only at the fixed EOF.
+      if (
+        committedOffset === fileSize &&
+        maxBytes > 0 &&
+        pending.length &&
+        recordsRead < maxRecords &&
+        performance.now() - readStarted < budgetMs
+      ) {
+        try {
+          JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(pending));
+          line(pending);
+          pending = Buffer.alloc(0);
+          recordsRead++;
+        } catch {
+          /* Incomplete bytes survive in the checkpoint. */
+        }
+      }
+      state.pendingBytes = [...pending];
+      readStats = {
+        state,
+        bytesRead: fetchedBytes,
+        recordsRead,
+        remainingBytes: fileSize - committedOffset,
+        elapsedMs: performance.now() - readStarted,
+        ...(wasTruncated
+          ? {
+              resetReason:
+                previousIdentity !== undefined && previousIdentity !== fileIdentity
+                  ? ('file_changed' as const)
+                  : ('truncated' as const),
+            }
+          : {}),
+      };
+    } else {
+      let position = startOffset;
+      let pending: Buffer = Buffer.alloc(0);
+      const buffer = Buffer.alloc(64 * 1024);
+      while (position < fileSize) {
+        const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, fileSize - position), position);
+        if (!bytesRead) break;
+        position += bytesRead;
+        pending = Buffer.concat([pending, buffer.subarray(0, bytesRead)]);
+        let start = 0;
+        let newline: number;
+        while ((newline = pending.indexOf(10, start)) !== -1) {
+          processLine(pending.subarray(start, newline).toString('utf8'));
+          committedOffset += newline - start + 1;
+          start = newline + 1;
+        }
+        pending = pending.subarray(start);
+      }
+      // Support complete records without a final newline, but never consume a
+      // partial JSON record (including a split UTF-8 codepoint).
+      if (pending.length) {
+        try {
+          JSON.parse(pending.toString('utf8'));
+          processLine(pending.toString('utf8'));
+          committedOffset += pending.length;
+        } catch {
+          /* Retry this tail from the last complete record next time. */
+        }
+      }
     }
     return {
-      result: { session, activity, tokenUsageAt, toolActivity, planProgress, tokenUsage, outputRate: rateTracker.snapshot,
-        rateLimits, pendingApproval, subagents: [...subagents.values()], compactCount, lastCompactTime,
-        lastToolActivityTime, lastAssistantMessageTime, lastEventTime, workDirs,
-        transcript, transcriptDroppedAt, firstUserMessage, lastUserMessageAt, lastReplyAt, events, quotaSamples },
-      newOffset: committedOffset, runningCalls, wasTruncated, fileIdentity,
+      result: {
+        session,
+        activity,
+        tokenUsageAt,
+        toolActivity,
+        planProgress,
+        tokenUsage,
+        outputRate: rateTracker.snapshot,
+        rateLimits,
+        pendingApproval,
+        subagents: [...subagents.values()],
+        compactCount,
+        lastCompactTime,
+        lastToolActivityTime,
+        lastAssistantMessageTime,
+        lastEventTime,
+        workDirs,
+        transcript,
+        transcriptDroppedAt,
+        firstUserMessage,
+        lastUserMessageAt,
+        lastReplyAt,
+        events,
+        quotaSamples,
+      },
+      newOffset: committedOffset,
+      runningCalls,
+      wasTruncated,
+      fileIdentity,
+      readStats,
     };
   } finally {
     await handle.close();
@@ -900,6 +1159,7 @@ export class RolloutParser {
   private generation = 0;
   private fileIdentity?: string;
   private needsReplay = false;
+  private readStats?: RolloutReadStats;
 
   constructor(private maxRecentCalls: number = 10) {}
 
@@ -924,37 +1184,45 @@ export class RolloutParser {
   /**
    * Parse the rollout file, reading only new content since last parse
    */
-  async parse(): Promise<RolloutParseResult | null> {
-    return timeAsync('rollout.parse', () => this.parseNow());
+  async parse(options?: RolloutReadOptions): Promise<RolloutParseResult | null> {
+    return timeAsync('rollout.parse', () => this.parseNow(options));
   }
 
-  private async parseNow(): Promise<RolloutParseResult | null> {
+  private async parseNow(options?: RolloutReadOptions): Promise<RolloutParseResult | null> {
     if (!this.rolloutPath) {
       return null;
     }
 
     const generation = this.generation;
     const replay = this.needsReplay;
+    if (replay && options) {
+      options.onReset?.();
+      options = { ...options, state: initialParserState() };
+    }
     // A failed or superseded read may not mutate the published snapshot.
     const tracker = replay ? new TokenRateTracker() : this.rateTracker.clone();
-    const calls = replay ? new Map<string, ToolCall>() : new Map([...this.runningCalls].map(([id, call]) => [id, { ...call }]));
-    const { result, newOffset, runningCalls, wasTruncated, fileIdentity } = await parseRolloutFile(
+    const calls = replay
+      ? new Map<string, ToolCall>()
+      : new Map([...this.runningCalls].map(([id, call]) => [id, { ...call }]));
+    const { result, newOffset, runningCalls, wasTruncated, fileIdentity, readStats } = await parseRolloutFile(
       this.rolloutPath,
       replay ? 0 : this.lastOffset,
       this.maxRecentCalls,
       calls,
-      replay ? null : this.cachedResult?.session ?? null,
+      replay ? null : (this.cachedResult?.session ?? null),
       tracker,
       this.fileIdentity,
-      replay ? null : this.cachedResult?.pendingApproval ?? null,
-      replay ? {} : lastQuotaReadings(this.cachedResult?.quotaSamples ?? [])
-    ).catch(error => {
+      replay ? null : (this.cachedResult?.pendingApproval ?? null),
+      replay ? {} : lastQuotaReadings(this.cachedResult?.quotaSamples ?? []),
+      options
+    ).catch((error) => {
       if (generation === this.generation) this.needsReplay = true;
       throw error;
     });
 
     if (generation !== this.generation) return this.cachedResult;
     this.needsReplay = false;
+    this.readStats = readStats;
     this.rateTracker = tracker;
     this.fileIdentity = fileIdentity;
     this.lastOffset = newOffset;
@@ -968,18 +1236,12 @@ export class RolloutParser {
     if (this.cachedResult) {
       // Merge tool activity
       result.toolActivity.totalCalls += this.cachedResult.toolActivity.totalCalls;
-      for (const [type, count] of Object.entries(
-        this.cachedResult.toolActivity.callsByType
-      )) {
-        result.toolActivity.callsByType[type] =
-          (result.toolActivity.callsByType[type] ?? 0) + count;
+      for (const [type, count] of Object.entries(this.cachedResult.toolActivity.callsByType)) {
+        result.toolActivity.callsByType[type] = (result.toolActivity.callsByType[type] ?? 0) + count;
       }
 
       // Prepend cached recent calls, then trim
-      const allCalls = [
-        ...this.cachedResult.toolActivity.recentCalls,
-        ...result.toolActivity.recentCalls,
-      ];
+      const allCalls = [...this.cachedResult.toolActivity.recentCalls, ...result.toolActivity.recentCalls];
       const deduped: ToolCall[] = [];
       const seen = new Set<string>();
       for (let i = allCalls.length - 1; i >= 0; i--) {
@@ -1022,8 +1284,11 @@ export class RolloutParser {
       // cache, so the buffer starts over with the file.
       const cachedDrop = this.cachedResult.transcriptDroppedAt;
       const batchDrop = result.transcriptDroppedAt;
-      const merged = appendTranscript(this.cachedResult.transcript, result.transcript,
-        cachedDrop && (!batchDrop || cachedDrop > batchDrop) ? cachedDrop : batchDrop);
+      const merged = appendTranscript(
+        this.cachedResult.transcript,
+        result.transcript,
+        cachedDrop && (!batchDrop || cachedDrop > batchDrop) ? cachedDrop : batchDrop
+      );
       result.transcript = merged.entries;
       result.transcriptDroppedAt = merged.droppedAt;
       result.firstUserMessage = this.cachedResult.firstUserMessage ?? result.firstUserMessage;
@@ -1035,6 +1300,67 @@ export class RolloutParser {
 
     this.cachedResult = result;
     return result;
+  }
+
+  /** Export cursor and every merge/rate/tool state together; the facade adds the full ref. */
+  exportCheckpoint(): RolloutParserCheckpoint {
+    return {
+      version: 1,
+      runtime: process.versions.v8,
+      offset: this.lastOffset,
+      fileIdentity: this.fileIdentity,
+      payload: serialize({
+        cachedResult: this.cachedResult,
+        runningCalls: this.runningCalls,
+        rateTracker: this.rateTracker,
+        // Byte/tail state travels once in the enclosing ReaderCheckpoint. Native
+        // recovery needs the summary/rate/calls, not a second megabyte-sized byte array.
+        readStats: this.readStats
+          ? { ...this.readStats, state: { ...this.readStats.state, pendingBytes: [] } }
+          : undefined,
+        needsReplay: this.needsReplay,
+      }).toString('base64'),
+    };
+  }
+
+  restoreCheckpoint(checkpoint: RolloutParserCheckpoint): void {
+    if (
+      checkpoint.version !== 1 ||
+      checkpoint.runtime !== process.versions.v8 ||
+      !Number.isSafeInteger(checkpoint.offset) ||
+      checkpoint.offset < 0
+    )
+      throw new Error('unsupported_rollout_checkpoint');
+    const saved = deserialize(Buffer.from(checkpoint.payload, 'base64'));
+    if (!saved || !(saved.runningCalls instanceof Map) || !saved.rateTracker)
+      throw new Error('invalid_rollout_checkpoint');
+    this.cachedResult = saved.cachedResult;
+    this.runningCalls = saved.runningCalls;
+    this.rateTracker = Object.assign(new TokenRateTracker(), saved.rateTracker);
+    this.readStats = saved.readStats;
+    this.needsReplay = saved.needsReplay;
+    this.lastOffset = checkpoint.offset;
+    this.fileIdentity = checkpoint.fileIdentity;
+  }
+
+  getOpenCalls(): ToolCall[] {
+    return [...this.runningCalls.values()].map((call) => ({ ...call }));
+  }
+
+  getReadStats(): RolloutReadStats | undefined {
+    return this.readStats;
+  }
+
+  getRateBaseline(): ReaderParserState['rateBaseline'] {
+    return this.rateTracker.checkpointBaseline();
+  }
+
+  getOpenToolWaits(): ReaderParserState['openToolWaits'] {
+    return [...this.runningCalls].map(([id, call]) => ({
+      id,
+      startedAt: call.timestamp.getTime(),
+      lastActivityAt: call.timestamp.getTime(),
+    }));
   }
 
   /**
