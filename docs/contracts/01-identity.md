@@ -1,15 +1,15 @@
 # 01：调用者登记与绑定凭据
 
-- 版本：`v0.1 draft`（2026-11-01）。
+- 版本：`v0.2 draft`（2026-11-01；A1 第二批一致性修订）。
 - 状态：A1 第一批草案；不是阶段 B 的冻结基线。A9 需同时审查不变量、失败案例、测试结果与探针原始证据。
 - depends-on：[概念方案 v2.3](../universal-hud-concept.md) §4、§6.6、§6.7、§15–16；[工程计划 v1.1](../universal-hud-engineering-plan.md) §3–4、§6；[第三轮评审](../reviews/2026-11-01-chatgpt-pro-v22-plan.md) §3①②；[02 执行协议](./02-execution.md) 的事务与 schema。
-- 开放项：**待 A3 探针**：Codex MCP 的启动者、实例与会话的基数、env / `_meta` 的可达性和可信性；Herdr env 的三跳；cc MCP env；pi resume 的文件连续性。**待 A8 探针**：可见方案乙能否提供启动回执。跨所有者转交凭证的格式与生命周期留给契约 03；本批返回 `unsupported`。
+- 开放项：A3 初步证据仍待可信性/覆盖复核；甲暂定，**待 A8 第二轮**，中间shell退出不是R，保留乙缺回执分支。跨所有者凭证内部格式见 [03](./03-lifecycle.md)，公开入口推迟v1.1；MVP跨所有者仍unsupported。新轮握手不改既有child_ref。
 
 开放项补充：**A3 初步结论（2026-11-01，探针已完成、尚未评审）**。下列仅归档初步观测，仍待 A3 评审及可信来源边界复核；保留下文所有成立/不成立分支，不据此宣布 A9 或能力验证通过。
 
-- [Codex MCP 探针](../probes/codex-mcp-launch.md)：codex-cli 0.166 的 MCP 为 TUI / codex exec 直接子进程，每会话一个实例，没有 daemon 参与；shell 的 HUD_* / HERDR_* 不到 MCP，只有 mcp_servers.<name>.env 表额外传入。tools/call 的 `_meta` 观测到 x-codex-turn-metadata.session_id/thread_id/turn_id 及 sessionId/threadId；字段存在不替代其可信性和当前代次的核验。
+- [Codex MCP 探针](../probes/codex-mcp-launch.md)：codex-cli 0.166 的 MCP 为 TUI / exec 直接子进程、每会话一个实例；测量时共享 daemon absent，daemon-present 未测，条件门不撤销。shell HUD_* / HERDR_* 不到 MCP，只有配置 env 表额外传入。观测 `_meta.sessionId`、`_meta["x-codex-turn-metadata"].session_id` 匹配 rollout，但来源 **trust unverified**，无证据排除模型提供/覆盖，因此目前不作授权来源；其他字段也不因存在而可信。
 - [cc MCP 探针](../probes/cc-mcp-env.md)：MCP 是 claude 直接子进程，继承完整环境（包括 CLAUDE_CODE_SESSION_ID），sessions/<ppid>.json 的 pid/procStart 匹配；该版本 `_meta` 没有 session id。
-- [Herdr env 探针](../probes/herdr-env.md)：tab create --env 到 pane shell 与 agent 进程，继续到 pi MCP，但不到 Codex MCP；不能把前两跳成功解释成第三跳普遍成功。
+- [Herdr env 探针](../probes/herdr-env.md)：只测 Codex tab-root 与 pi split；该范围内 env 到 shell/agent，pi MCP 可达、Codex MCP 不可达。不外推其他布局/harness，保留未成立分支。
 - [pi resume 探针](../probes/pi-resume.md)：pi 1.4.0 的 --session <id|path> 追加同一文件，--fork 新建文件；[双 home 探针](../probes/codex-dual-home.md) 初步确认两个 Codex home 隔离，仅 cwd 的键会混淆。文件连续性及隔离的初步结果不撤销未成立分支的拒绝规则。
 
 本文中的“必须”是待实现、待验证的协议要求，不是已经通过的运行保证。只使用合成身份举例。账本唯一写者家族为 `hud-mcp`、`hud-run`、reconciler；初始登记、意图和证据可以由前两者写入，身份回填、generation 失效和关系状态迁移统一经 reconciler 的事务入口。HUD 只读账本并投影，不替它们执行绑定。
@@ -64,12 +64,13 @@
 | I-01-4 | 常规 bound 必须具备已登记 caller、有效 claim 声明、唯一实际 SessionRef、独立证据；相同祖先的多会话无法区分时不得 bound。fork 先兑换也无所有权 | TX+E；T-01-11、12、13 |
 | I-01-5 | transcript 只能核验既有 ledger link/run；仅确认或否定，不能创建 link/run，不能单独提供独立身份。缺 ref 的唯一合格匹配只由 reconciler 回填并记录 bound_by 与 evidence | TX；T-01-14、15、16 |
 | I-01-6 | parent 操作取本调用 OwnerKey，等于关系当前所有者才允许 resume/cancel；report 只能来自目标 run 当前且未失效的 MCP child binding。知识型 claim/linkId 不授予权限 | TX；T-01-17、18、19 |
-| I-01-7 | 同一 child SessionRef 只有一个当前 owner / 父边；predecessor 先确认旧 owner 与调用者相同且槽空闲，再原子转交，旧 link handed_over 保留历史。fork 新会话只作候选 | DB+TX；T-01-20、21、22；02 T-02-18 |
+| I-01-7 | 同一child只有一个当前owner/父边；MVP predecessor只同owner/空槽。v1.1跨owner须03的显式凭证校验与单次消费；无能力/未验证仍unsupported。转交原子、旧link历史，fork只候选 | DB+TX；T-01-20–22；02 T-02-18；03 T-03-20–25 |
 | I-01-8 | HUD 永不写 ledger；caller 注册不直接推导关系绑定；身份回填、冲突、失效/代次变更和关系迁移经 reconciler 提交并附事件 | TX；T-01-15、23 |
 | I-01-9 | owner_aliases 只给 dedicated 单向归并 proc→session；先有 bound 级证据，每 proc/generation 最多一个目标；归并同时建立 session 范围的原结果副本。换代关闭 alias，历史保留；冲突拒绝、不启动、记事件。shared 不建立或使用 proc alias | DB+TX；T-01-24–26、35；02 T-02-4、5 |
 | I-01-10 | 共享 daemon 无可信逐调用来源时：父不登记为可操作 caller，子仅可记录无授权 claimed；prompt claim 不能替代逐调用身份 | TX+E；T-01-27、28 |
 | I-01-11 | 无子 MCP 的观察路径仅在启动回执 + 可信唯一进程→SessionRef + 限定启动消息三证齐全时 pending→bound；claim 保持未兑换，bound_by=receipt+transcript，能力 observe_only；无 whoami/report 权限 | TX+E；T-01-29、30、31 |
 | I-01-12 | 一个物理 CallerId 可有多个 shared context，但相同 context_key 只能一代当前；专属只有一个当前 context。shared context 必须有可信唯一 SessionRef，禁止 proc scope；跨 context 报告/权限不混用，缺可信来源的调用无授权 | DB+TX+E；T-01-35、36；02 T-02-27 |
+| I-01-13 | resume/handover 的本轮 child 只能等于关系既有 child_ref；runHandshake 独立于 link.state。新文件/fork无连续性证据不得改旧ref，run uncertain、最多候选 | DB+TX；T-01-37；03 T-03-5、8、9 |
 
 ### owner_aliases 的建立与关闭
 
@@ -79,7 +80,7 @@
 
 ### 常规握手与失效
 
-关系状态与 run 状态分离；下表只拥有 pending/claimed/bound 的身份部分。reported/closed/handed_over 的完整生命周期归 03；运行迁移归 02。所有身份迁移都写事件，条件不满足时保持原状态并记录原因。
+关系状态与 run 状态分离；下表的初次 pending/claimed/bound 不因 resume 重演为关系回退。每轮 runHandshake=pending/claimed/bound 由该 run 的 claim/binding 推导，不是 runs.state；完整关系生命周期归03，运行迁移归02。
 
 | 起点 → 终点 | 前置条件 / 原子动作 | 对应不变量 / 测试 |
 |---|---|---|
@@ -90,7 +91,7 @@
 | fork claimed → 原启动主体 bound | 原启动主体持本轮 claim 且提交独立启动/会话证明；reconciler 核验 source、代次、精确启动实例，撤销旧未绑定声明，事件保留 fork 候选，再绑定原主体。不能接管一个已有有效独立证据的 bound；矛盾证据停止归属 | I-01-4；T-01-11、12、13 |
 | bound → bound | MCP 重启的新 CallerId 先建立当前 context：dedicated 证实同 ProcessKey/代次，shared 重新证实 SessionRef/可信来源代次，再重建 child_binding；旧 binding 留历史，不重新消费 claim | I-01-2、3、6、12；T-01-4、10、18、35 |
 | 当前授权 → 失效 | 发现会话/occupant 改变：关闭对应 context，撤销 binding/claim，context generation+1；dedicated 同步关闭旧 scope/alias、新 scope generation+1，进程实例改变则建新 ProcessKey。shared 不影响其他 context；历史不重写 | I-01-2、9、12；T-01-5–7、26、36 |
-| resume 的旧 run → 新 run pending | 02 确认旧槽已释放与 owner 相符；同 link 新 runId、新 binding_generation、新本轮消息/call id、新 claim，旧 claim 撤销，不复用旧 child_binding | I-01-2、3、6；T-01-7、19 |
+| resume：同 link → bound；新 run starting/握手pending | 02 槽空闲/owner/同任务门禁全部满足；新 run/代次/消息/claim，撤销旧 claim/binding。closed→bound 清当前 closed_at但保留close事件；新握手必须匹配既有child_ref，handover同样约束 | I-01-2、3、6、13；T-01-7、19、37 |
 
 ### transcript 核验的封闭范围
 
@@ -130,11 +131,11 @@
 | F-01-4 | fork 先兑换或复制同一祖先链；无独立会话证据不得 bound；原主体可证据接管 | I-01-4 | T-01-11–13 |
 | F-01-5 | transcript 多匹配、超窗、旧 resume prompt、单独 linkId 共现；不建关系，冲突不选最近 | I-01-5 | T-01-14–16、19 |
 | F-01-6 | 非 owner 取消/resume、非子 report、旧 run 迟报；拒绝授权，报告不满足新运行 | I-01-6 | T-01-17–19 |
-| F-01-7 | 转交时槽非空、跨 owner、回环或试图让旧新关系同时当父；拒绝且旧历史保留 | I-01-7 | T-01-20–22 |
+| F-01-7 | 转交槽非空、MVP跨owner/凭证未验证、回环或双父；拒绝且旧历史保留 | I-01-7 | T-01-20–22；03 T-03-20–25 |
 | F-01-8 | claim 建 alias、同代映射两 session、同键异参归并；拒绝归并并事件化，不启动 | I-01-8、9 | T-01-23–26 |
 | F-01-9 | 共享 daemon、env 缺失、继承 stale pane 被当作 session；父无登记，子无授权 | I-01-10、2 | T-01-27、28、32、33 |
 | F-01-10 | 无 MCP，缺启动回执/可信映射/本轮唯一消息任一项，或持复制消息的 fork | I-01-11 | T-01-29–31 |
-| F-01-11 | pi resume 新文件没有可信连续性；不把新 id 猜成旧 ref | I-01-1、2 | T-01-34 |
+| F-01-11 | pi resume 新文件或fork没有可信连续性；不把新 id 猜成旧 ref，不改已知关系 | I-01-1、2、13 | T-01-34、37 |
 | F-01-12 | shared A/B 交错、A 换代、一次调用缺可信来源或用 prompt 指向 B → 各自隔离；缺来源拒绝、不沿用上次 context | I-01-2、9、12 | T-01-35、36 |
 
 ## 测试清单
@@ -163,7 +164,7 @@
 | T-01-18 | 当前 bound 子提交本 run report、未绑定子/别的 child/stale generation 提交 → 仅首项入 reports；重启后的新 CallerId 必须先重建当前 binding |
 | T-01-19 | run-a 迟报，run-b 已开始，旧启动消息匹配 run-a → 只可归 run-a 的审计历史，不能新授 run-b 权限或满足 run-b wait |
 | T-01-20 | 同 owner、实际 child ref、槽空闲的 predecessor → 新 link 唯一 current_owner，旧 link handed_over；历史 Inspector 仍能读旧关系 |
-| T-01-21 | predecessor 对应 uncertain 占槽，或调用者换 owner → 分别 slot_busy / unsupported，旧父边不变，零启动 |
+| T-01-21 | predecessor uncertain占槽，或MVP调用者换owner/未来凭证未验证 → slot_busy / unsupported，旧父边不变，零启动；v1.1内部合法凭证另见03测试 |
 | T-01-22 | 新父=child 或为 child 后代；重复绑定同 child → 回环拒绝；唯一 current_owner 索引阻止双父，闭 pane 不删除历史 |
 | T-01-23 | HUD、hud-mcp 原始观察、hud-run 原始回执各触发身份回填 → 只有 reconciler 事务产生迁移事件；HUD 账本连接始终只读 |
 | T-01-24 | 当前 proc scope 仅 claimed 后试建 alias，再补独立 bound 证据 → 首次拒绝，第二次单向 proc→session 成功，OwnerKey 派生为 session |
@@ -179,5 +180,6 @@
 | T-01-34 (P/A3) | pi resume 续文件、新文件有可信连续性、新文件无映射三组 → 前两组同 ref/新 run，第三组候选且 resume 未验证，不自动合并 |
 | T-01-35 (P/A3) | 同一物理 MCP 同时服务可信通道 A/B，交错 whoami/report/spawn/同 request_key → 两个当前 context，OwnerKey 分别 session-a/b，无 proc alias；无互相失效/跨 report，SQL 外键可表示两者 |
 | T-01-36 | A context 的可信来源确认切换/generation+1；A 旧代调用、缺可信来源调用、prompt 声称 B 三组 → A 旧权限拒绝、无来源不选 context、prompt 不改变选择；B 代次/授权不变 |
+| T-01-37 | resume/handover 关系已child-a，新轮解析child-b，或合法同a的新消息 → 前者拒改links.child_ref/runs.target_ref、run uncertain/b仅候选；后者可本轮绑定，link不回pending |
 
 A9 的 identity gate 至少需要 T-01-4–6、27–28、32–34 的实际证据，并复核 no-MCP/A8 分支；fixture 通过只说明合成输入下的规则一致。

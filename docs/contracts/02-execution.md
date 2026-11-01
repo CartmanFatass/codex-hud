@@ -1,11 +1,13 @@
 # 02：执行协议与 ledger schema v1
 
-- 版本：`v0.1 draft`（2026-11-01）。
+- 版本：`v0.2 draft`（2026-11-01；A1 第二批一致性修订）。
 - 状态：A1 第一批草案；A9 通过不变量、失败案例、进程实证与探针后才可冻结，不能以“意见已采纳”代替验收。
 - depends-on：[01 身份](./01-identity.md)；[概念方案 v2.3](../universal-hud-concept.md) §6.6、§6.11、§15–16；[工程计划 v1.1](../universal-hud-engineering-plan.md) §3–4、§6；[第三轮评审](../reviews/2026-11-01-chatgpt-pro-v22-plan.md) §3②、§6。03 拥有完整 link/run/report 生命周期，04 拥有 supervisor 实现和回执格式；它们必须遵守本协议的证据门槛。
-- 开放项：**待 A3 探针**：Codex MCP 实例/会话隔离及 env / `_meta`、Herdr 三跳 env、cc MCP env、pi resume 文件连续性，分别采用 01 的成立/不成立分支。**待 A8 探针**：可见包装/sidecar；缺启动或退出证据时保留 pending/uncertain，不预先宣称支持。跨 OwnerKey predecessor 转交返回 unsupported，授权凭证格式与生命周期留给 03。
+- 开放项：A3初步证据仍待复核，01双分支保留；甲暂定，**待 A8 第二轮**，scope必须核验harness PGID，不能用supervisor/shell组替代，shell退出不是R；乙已发任务uncertain，见04。跨OwnerKey内部凭证见03，公开入口留v1.1，MVP仍unsupported。schema v1尚未冻结，只补必要字段。
 
 开放项补充：**A3 初步结论（探针已完成、尚未评审）**：[Codex 0.166](../probes/codex-mcp-launch.md) 观测为 TUI/exec 直接启动每会话一个 MCP，shell HUD_* / HERDR_* 不到 MCP，仅配置 env 表传入，逐调用 `_meta` 有 session/thread/turn 字段；[cc](../probes/cc-mcp-env.md) 直接子进程继承含 CLAUDE_CODE_SESSION_ID 的环境，pid/procStart 匹配，`_meta` 无 session id；[Herdr](../probes/herdr-env.md) env 到 shell/agent 及 pi MCP，不到 Codex MCP；[pi](../probes/pi-resume.md) --session 追加同文件、--fork 新文件；[双 home](../probes/codex-dual-home.md) 隔离，cwd-only 会混淆。当前只作为开放项证据索引；全部双分支、caller_contexts 模型、DDL、状态与证据门槛保持，仍待评审和 A9 实证，未把 `_meta` 字段存在等同于可信来源已证明。
+
+A3 复核边界：`_meta.sessionId` / `_meta["x-codex-turn-metadata"].session_id` 来源 trust unverified，目前不作授权来源；Codex全部测量在daemon absent下，daemon-present未测；Herdr只覆盖Codex tab-root/pi split的env，不外推其他组合。
 
 本协议不承诺恰好一次，也不提供 exactly-once 保证或“外部动作必达”的保证。账本的目标是记录一致、意图可见、同一实际 SessionRef 的运行槽不重复占用；外部动作是否发生、是否结束只能凭回执和对账证据判定。以下规则是实现要求，不表示本批已经验证真实 harness 的行为。
 
@@ -23,6 +25,7 @@
 | `evidence / events` | evidence 是待校验/已校验的证据元数据；events.seq 是提交后持久游标。证据 ID 存在不代表外部事实真实，必须经 reconciler 校验来源、实例、代次、内容范围 |
 | `jobs / leases` | Jev 的 external_key 与浏览器实例锁；与 SessionRef 运行槽分开。leases 行保留 generation 历史下界，释放不删除行 |
 | `reports` | run/link、提交者及 child_binding 固定；结果报告不证明进程退出，不能释放槽 |
+| 生命周期/托管补充 | links.task_digest/owner_epoch/close intent、handover_grants（内部v1.1）；runs.supervision_strategy/scope_kind在意图创建时固定，scope_ref在唯一核验harness后由NULL写入并固定；submission_fenced_at永久封口。heartbeat_at/seq/mono以一次runs UPDATE更新，事件才固化H证据，避免周期写放大。task_digest持久保存同任务判据，不能从opaque params_digest反解；已知ref不可被新轮覆盖；编排者裁决与§15行追溯见03 |
 
 时间为 UTC Unix 毫秒。process_start 是可比较的进程实例标识（实现可保存启动 tick/域的字符串），不使用 PID 数字替代。locator/evidence/outcome 是经过字段白名单的 JSON，ledger 不保存完整 prompt、命令正文、claim 明文或密钥；只存必要路径、hash 与协议元数据。brief/reportPath 必须是绝对路径。真实命令及本轮消息的生成和运输由 04/后端负责，ledger 只保留指纹和调用锚点。
 
@@ -54,12 +57,13 @@
 | I-02-6 | failed 只表示已证明未执行；已执行且退出码非零是 ended 并保留失败结果，不伪装成可重试的未执行 | TX+E；T-02-12、14 |
 | I-02-7 | cancel 接受后先 cancelling；只有确认该运行已退出才 cancelled，无法确认则 cancelling/uncertain；关闭 pane、发送信号成功、report 都不构成退出 | TX+E；T-02-15、16 |
 | I-02-8 | 对账只按 R-02 表的证据迁移；回执、心跳、进程组、预检记录须匹配 run/源/实例/代次；缺证不补退出码、不释放槽、不盲重试 | TX+E；T-02-12–17 |
-| I-02-9 | 只有 hud-mcp/hud-run/reconciler 写 ledger；初始意图外的身份回填与状态迁移经 reconciler，hud-run 追加证据/心跳，HUD 只读。state+槽释放+事件同事务 | TX；T-02-6、17、25 |
+| I-02-9 | 只有 hud-mcp/hud-run/reconciler 写 ledger；初始意图外的身份回填与状态迁移经 reconciler，hud-run按事件追加证据、周期只用一次runs CAS写H元组，HUD只读。state+槽释放+事件同事务 | DB+TX；T-02-6、17、25、29 |
 | I-02-10 | run slot 仅确认结束后释放，含 provisional；browser 租约仅 answered/failed 且对账后释放，needs_human/失联继续持有；collect 在观测存储按代次接管，绝不放进 ledger leases | DB+TX+E；T-02-10、20–23 |
-| I-02-11 | predecessor=同 owner 对同一实际会话的原子转交；槽空闲才允许；旧 link handed_over，唯一当前 owner/父边；跨 owner unsupported | DB+TX；T-02-18 |
+| I-02-11 | predecessor原子转交同一实际会话，空槽/无close才允许，旧link历史、唯一当前owner/父边；MVP跨owner unsupported，v1.1仅03凭证验证/消费分支例外 | DB+TX；T-02-18；03 T-03-20–25 |
 | I-02-12 | wait(linkId) 入场固定 runId；游标只读已提交事件；旧 run 迟报不满足新 wait；超时返回当前状态/原游标，不制造终态 | DB+TX；T-02-19 |
 | I-02-13 | 父 MCP 断连不代表子结束；默认 orphan_policy=continue，stop 也经取消与退出证明；活跃 headless 只看日志，不启动可见副本 | TX+E；T-02-16、24 |
 | I-02-14 | schema v1 可在 node:sqlite 空库执行；连接启用 foreign_keys、WAL、busy_timeout；更高 user_version 拒绝写，JSON 仅导出，不作为控制存储 | DB+TX；T-02-25、26 |
+| I-02-15 | resume/handover保留既有child与目标ref；本轮解析不同ref只写冲突/候选并uncertain，禁止覆盖旧ref。scope/fence按04固定，范围外逃逸不算同scope矛盾 | DB+TX+E；T-02-28；03 T-03-8、9；04 T-04-5–7 |
 
 ## 状态机
 
@@ -67,10 +71,10 @@
 
 初始 link.pending/run.starting 是创建记录；其余关系/运行迁移均调用 reconciler 事务入口。hud-run 可在同一进程中调用该入口，但不得自己用另一套规则改 state。
 
-1. **准备**：验证 owner、能力、source、路径和摘要；resume 要求 link 为 bound/reported/closed、仍为 current_owner、当前所有者相符、child_ref 明确、无槽且无未解决冲突；predecessor 还要求旧 link 仍为 current_owner 且其 owner 同 caller，不能从已 handed_over 的历史关系再次转交。可见能力未证实就返回 unsupported，不试着启动后猜。
-2. **原子意图**：`BEGIN IMMEDIATE`；完成幂等查找，冻结 parent context/generation；首次 spawn 建 link，resume 复用 link，handover 把旧 link 变 handed_over 并令新 link 成唯一 current_owner；session 操作插入 run.starting、未 armed claim、幂等 accepted outcome、slot 和事件；commit 后才可能产生外部动作。Jev 不建 session claim，以 browser lease 替代 session slot，并先持久化 external_key。
+1. **准备**：验证owner、能力、source、路径/摘要；resume要求bound/reported/closed、current_owner、同owner/同任务、实际child、空槽、无冲突/close。predecessor要求旧link仍当前，MVP同owner；v1.1才可用03的已验证目标绑定grant。无公开能力/未验证跨owner仍unsupported，不从handed_over历史再转交。
+2. **原子意图**：BEGIN IMMEDIATE中完成幂等查找并冻结context；首次spawn建pending link，resume保留同link并设bound（清当前close字段，历史留事件），handover旧link handed_over/epoch+1、新link直接bound于已知child；v1.1的grant消费也在此事务。新run starting/握手pending、claim、幂等、slot/events同事务；commit后才外部提交。Jev无session claim，用browser lease/job key替代。
 3. **登记执行者**：意图持有者只向 hud-run 交付一份随机执行票据。supervisor 在事务里校验自己持有该槽/票据（Jev 则校验 browser holder+generation）、run 仍 starting、launch_phase=reserved 且无 supervisor，CAS 消费票据并登记 pid+procStart、心跳、启动回执锚点；session run 的 claim 此时 arm。第二个执行者 CAS 失败必须退出，不得调用 backend。票据或 claim 的明文不写 ledger。
-4. **提交前围栏**：supervisor 在同一写事务重验槽、owner 授权快照未撤销、无冲突/取消、启动实例和 launch_phase；写 `submitting` 后才调用外部启动接口。从此即使没有响应也不能重发。成功证据写 `submitted`；崩溃窗口保持 uncertain。原始票据重传、MCP 重启不产生新的执行权。reserved/armed 阶段若要证明未执行，须先事务写 `never_submitted`，使迟到执行者的 CAS/提交检查失败，再提供可靠无子进程证据。
+4. **提交前围栏**：supervisor事务重验占有/授权快照/实例、无冲突/取消且submission_fenced_at=NULL，写submitting后仅放一次RUN许可；响应未知不重发。成功证据写submitted，崩溃窗口uncertain。持久submission_fenced_at与04的gate seal/dead-peer证明阻止后续提交；reserved/armed证明未执行先写never_submitted再证无workload，已发许可不能用围栏倒推未执行。
 5. **绑定与槽迁移**：新会话尚未知时仅占 provisional；只能用明确“创建新会话”的 launch 模板，不得隐式 resume/attach 已有 session。01 身份证据解析 ref 后，以 BEGIN IMMEDIATE 检查真实槽并原子把 provisional 换为实际槽、写 child_binding/child_ref 与绑定事件。若目标已占槽，保留原 provisional 和原实际槽，两 run 都写 uncertain、冲突事件；任何执行者在之后的提交检查都失败。若旧进程已运行，此规则不声称能撤回已发生的动作；不得续跑/另起，先对账或经授权取消。该冲突在解决前同样阻断该 ref 的新操作。
 6. **结束**：reconciler 校验证据后同事务写 ended/failed/cancelled、terminal_evidence_id/ended_at/可知的 exit_code、释放槽、撤销本轮 claim、发事件。没证据就继续占槽；初始 provisional 也无过期释放。观察型子绑定不影响槽规则。
 
@@ -80,11 +84,11 @@
 
 适用状态集合 `A={starting,running,cancelling,uncertain}`，终态集合 `Z={ended,failed,cancelled}`。下表按编号从上到下命中第一行；`*` 表示任意值，最后一行覆盖所有未列组合，因而每个 state×evidence 都有结果。每次迁移附采用/拒绝的 evidence ID 和事件；外部旧实例/错 generation 的证据先丢到审计，不参与当前判断。
 
-- `R`：经验证的本轮退出回执，覆盖全部受管进程的结束；如果回执只覆盖 leader，还必须有可信“受管子进程/进程组均已结束”的对账证明才构成 R。包括退出时刻、已知退出码或信号；不能用文件存在代替校验。
-- `G=alive/gone/unknown`：在正确 PID 域、boot/启动实例、pgid/受管子进程范围上的检查。仅 `/proc/<pid>` 缺失、跨域不可见、EPERM 均不能推出 gone。gone 还需已围栏禁止迟到提交；没有退出回执时不得推测退出码。
+- `R`：04的正式scope级退出回执；默认是经harnessPid/start核验的harness PGID，不是supervisor/中间shell组。该组空+提交围栏+leader回执才可终结；可选独占/禁迁出cgroup覆盖换组后代。shell-only退出不是R，shell状态与harness native signal分开，不凭137推SIGKILL。
+- `G=alive/gone/unknown`：检查正确PID域/boot/实例的已声明scope；gone需04的组级空与围栏（已启动时有leader退出回执）。仅单PID缺失、跨域、EPERM不能gone。sidecar的leader-alive只是诊断，owned scope缺失时正式Gunknown，不能配自身H误命中R-02-5。主动逃逸的leader后代不在默认PGID范围，可继续存在/不受取消覆盖，不阻本运行终结、不授执行权；可检测时只记诊断，不作X。无法证明范围/组空则unknown。
 - `H=fresh/stale/unknown`：匹配 supervisor 实例的心跳；每 5 s 记录，`now-heartbeat_at>30000` 为 stale，等于 30000 仍 fresh；没有心跳用创建时刻检测启动挂起。stale 是失联观测，不是结束证明。
 - `N`：不可变预检/启动失败记录证明“命令从未提交”，启动阶段已围栏为 never_submitted，且没有启动/退出子进程的相反证据，G=gone。supervisor 自己的失败回执只有明确证明未启动 harness 且无子进程时才满足 N。
-- `Q`：无 R，但有可信已执行/已启动记录、G=gone、迟到提交已围栏；这是“已结束、退出结果未知”的对账证明，不是“看不见 PID”。
+- `Q`：无正式scope R，但持久启动证据、原leader退出receipt、正确scope的Ggone与封口证明齐全；恢复器提交复合证据，不补写原writer退出回执，run退出结果保留NULL。只有PID消失或sidecar观察不够，见04生产表。
 - `C`：取消请求已鉴权且在实际退出前被接受；若 R 证明退出先于取消，请求返回 already_ended，不改成 cancelled。
 - `X`：同实例证据矛盾，包括 R 但 G=alive、N 但有 submitted/child 记录、两个 SessionRef/启动实例争用，或 provisional 冲突未解决。只看实际矛盾，陈旧心跳本身不与 R 冲突。
 
@@ -96,7 +100,7 @@
 | R-02-3 | A | X=false，R 或 Q，C=false / 退出早于取消 | ended；释放槽；非零 exit_code 仍为 ended，失败结果另记 | T-02-14、15 |
 | R-02-4 | A | X=false，N=true，无已执行证据 | failed（non_execution）；释放槽；原请求重放仍返回原记录，重新执行必须是显式新意图 | T-02-12、14 |
 | R-02-4a | starting | X=false，launch_phase=reserved，票据未消费且 supervisor/heartbeat 均为空，创建后≤30 s，意图与占有完整（session 槽或 browser 租约）且无取消；正常等待 supervisor 登记 | 保持 starting，不要求不存在的 supervisor/child 存活证明；只允许原票据一次登记。窗口后无证明走 R-02-9，不能重发票据 | T-02-8、11 |
-| R-02-5 | A | 无结束/未执行证明，supervisor 未被确认死亡，H=fresh 且 G=alive，已核验本轮子进程启动；C=true/false | cancelling / running；均持槽。已确认死亡不匹配本行，必须走 R-02-6；不重启 harness | T-02-13、16 |
+| R-02-5 | A | 无结束/未执行证明，supervisor 未被确认死亡，H=fresh 且 G=alive（已核验本轮范围，非sidecar的leader-alive诊断；04 T-04-31），已核验本轮子进程启动；C=true/false | cancelling / running；均持槽。已确认死亡不匹配本行，必须走 R-02-6；不重启 harness | T-02-13、16 |
 | R-02-6 | A | 无上述证明，supervisor 死亡或 H=stale（包括 G=alive） | uncertain；持槽；探查/记录组存活，不释放，不把 child 活着当成新 supervisor 的执行权 | T-02-13 |
 | R-02-7 | starting | launch_phase=reserved/armed，持票据的执行者实例有效、启动观测≤30 s，尚未提交且无取消/矛盾 | 保持 starting；仅原执行者可继续一次提交。纯启动心跳不能推 running | T-02-8、11 |
 | R-02-8 | cancelling | 无终结证明，取消通道/匹配 supervisor 仍有效，未触发失联或矛盾 | 保持 cancelling；可以继续同一次取消序列，不释放槽 | T-02-16 |
@@ -117,7 +121,7 @@ wait 的 linkId 在进入时解析并固定当前 runId；afterSeq 只推进到�
 | D-02-1 | run 为 uncertain、提交/启动响应丢失、MCP 在外部启动后回写前死亡 | 原 run 对账，不能换 key 自动起副本；T-02-3、11–13 |
 | D-02-2 | supervisor 失联/死亡但组仍活，或无可靠终结证据 | 观察、经授权取消、对账；槽继续持有；T-02-13、16 |
 | D-02-3 | 槽非空、provisional 冲突、活跃 headless 被请求“打开” | 仅日志/聚焦已验证 occupant；不 resume/开可见副本；T-02-9、18、24 |
-| D-02-4 | 相同 key 异参、alias 合并冲突、身份未证实、旧 generation、跨 owner 操作 | 返回错误和事件，先解决冲突/授权，不为错误自动换 key；T-02-2、4、5 |
+| D-02-4 | 相同key异参、alias冲突、身份未证实、旧generation、无权限跨owner操作 | 错误/事件，先解决冲突/授权，不自动换key；T-02-2、4、5；03 T-03-20–25 |
 | D-02-5 | Herdr 等宿主已收到命令后超时或断连 | 对账原 locator/run；只有可靠预检证明未提交且 N 成立，才允许用户提出明确新意图/选择核心宿主；T-02-11、14 |
 | D-02-6 | Jev send 结果未知、sent/waiting/needs_human、已存在 external_key | 只 status/reconcile；同 key 永不第二次 send；回答/失败并对账前不释放 browser；T-02-20–22 |
 | D-02-7 | cancelling 未确认退出、父断连、report 或 UI done/关 pane | 继续取消/对账，不能把呈现/报告当结束；T-02-15、16、24 |
@@ -134,7 +138,7 @@ wait 的 linkId 在进入时解析并固定当前 runId；afterSeq 只推进到�
 |---|---|---|---|
 | F-02-1 | 并发同键、同键异参、MCP 重启换 CallerId、alias 归并冲突 → 重放或拒绝，零重复提交 | I-02-1 | T-02-1–5 |
 | F-02-2 | 在事务每个写点或 commit 后崩溃 → 全回滚或完整意图，不能半槽/无意图启动 | I-02-2、3 | T-02-6–8 |
-| F-02-3 | 未知 ref 的首次 spawn 解析到已占槽 ref；provisional 失联 → 双 uncertain，两个槽不释放 | I-02-4、10 | T-02-9、10 |
+| F-02-3 | 首次spawn解析到占槽ref/provisional失联，或后续轮解析不同child → 冲突uncertain，保留占有，不改既有ref | I-02-4、10、15 | T-02-9、10、28 |
 | F-02-4 | host 已发命令但超时；预检日志不证明未提交；launch 后写回前崩溃 → uncertain，不 fallback 再启动 | I-02-5、6、8 | T-02-11、12、14 |
 | F-02-5 | 心跳停>30 s、组仍活/未知/可靠 gone；退出回执与活组矛盾 → 按表迁移，不猜退出码 | I-02-5、8 | T-02-13、14、17 |
 | F-02-6 | 取消已发送但未退出、PID 重用、取消与退出竞态 → cancelling/uncertain 或已结束；不提前释放 | I-02-7、8 | T-02-15、16 |
@@ -165,11 +169,11 @@ wait 的 linkId 在进入时解析并固定当前 runId；afterSeq 只推进到�
 | T-02-11 | request/wait/host 超时分别发生在提交前/已提交后 → timeout 自身不改状态；收到提交不明证据后 reconciler uncertain，绝不 fallback；R-02-7 有效启动仍 starting |
 | T-02-12 (P) | preflight 证明 never_submitted+提交围栏+G=gone，与仅日志报错/只有 supervisor 非零退出两组对比 → 前者 failed，后者 uncertain；命令执行后回写前崩溃=uncertain 且计数不再增加 |
 | T-02-13 (P) | H 分别30000/30001 ms，G分别alive/gone/unknown，与R/N/Q、supervisor已确认死亡组合做表驱动测试 → 严格命中R-02首行；fresh+活子组但supervisor确认死亡=uncertain；仅未确认死亡且fresh+活组/已启动可running，fresh心跳单独不够 |
-| T-02-14 | R+退出码0/7、N、Q无退出码、仅PID消失、预检无围栏 → 依次 ended/ended/failed/ended(NULL)/uncertain/uncertain；R 只涵盖leader且子仍活为冲突，不释放 |
+| T-02-14 | scope R+退出码0/7、N、Q无run退出码、仅PID消失、预检无围栏 → ended/ended/failed/ended(NULL)/uncertain/uncertain；leader-only且组内子活不终结，伪称scope complete才X；PGID外逃逸只诊断 |
 | T-02-15 (P) | cancel 接受后组退出；信号后仍活；退出先于取消；cancel 后无退出回执但 Q 可证 → cancelled/保持 cancelling或uncertain/already_ended保持ended/cancelled(NULL)，槽只在确认后释放 |
 | T-02-16 (P) | SIGINT→grace→TERM→KILL、组未死/取消通道断、PID被复用、orphan_policy=stop → 重验实例，不能向新PID发信号，不凭信号成功终结；stop也必须走同表 |
 | T-02-17 | 错run/错source/旧实例回执，R+G=alive，N+submitted，重复终态证据，新同实例矛盾 → 旧证据仅审计、矛盾uncertain、终态重放不重复事件/释放；新矛盾留阻断conflict，需显式解决后才能新操作 |
-| T-02-18 | 同owner两个predecessor并发，实际槽空闲/uncertain占槽/跨owner三组 → 仅一个新current_owner且旧handed_over / slot_busy / unsupported；新owner/旧关系不能凭linkId控制其他关系 |
+| T-02-18 | 同owner两个predecessor并发，槽空闲/uncertain占槽/MVP跨owner三组 → 一个新current_owner且旧handed_over / slot_busy / unsupported；v1.1凭证分支见03；旧linkId不授新控制权 |
 | T-02-19 | wait(linkId,afterSeq) 入场run-a，期间追加run-b、a迟报、超时 → 只看固定a；wait(b)不由a报告满足；未返回事件不推进游标，超时不写ledger |
 | T-02-20 | Jev send前持久external_key后崩溃，或send响应未知，再用同key/新request_key/不同账号尝试 → 只status/reconcile，send计数≤1，不绕过browser实例锁 |
 | T-02-21 | 同cdp_url两账号并发，needs_human、sent/waiting、expires_at已过、本地runner取消/死亡 → 后者均不释放browser；只有answered/failed且已对账才能清holder，新获取generation+1 |
@@ -179,6 +183,8 @@ wait 的 linkId 在进入时解析并固定当前 runId；afterSeq 只推进到�
 | T-02-25 | node:sqlite空库执行DDL；foreign_keys=ON下造孤儿run/report、双current_owner、双slot、双alias、非法state/collect lease、无终态证据或活跃槽删除；HUD readOnly连接试写 → 逐项拒绝；合法历史可导出JSON |
 | T-02-26 | user_version=0/1/2，WAL与busy_timeout初始化、锁竞争重试事务而不重发外部命令 → 0迁移、1正常、2拒写；DB忙时无部分意图、无JSON控制回退 |
 | T-02-27 | 单一 shared CallerId 下 context-a/b 交错同 request_key、不同 params，A generation+1、缺可信来源、自报B三组 → 原A/B分别独立幂等结果；旧A/缺源拒绝且B不受影响；report外键同时锚定caller/context/generation |
+| T-02-28 | 已child-a/target-a的resume或handover本轮解析b、SQL覆盖已知ref、发现前改strategy/kind或发现后缩scope四组 → 拒改既有ref/策略/范围，run uncertain/b仅候选；合法同ref握手不回退关系pending；scope_ref可从NULL单次写入核验结果 |
+| T-02-29 | 未登记supervisor却写heartbeat、缺seq/mono、合法单次UPDATE、错producer/已终态CAS → 前两者CHECK拒绝，合法元组一次更新可返回取消字段，错producer或已终态零修改；结构检查不代替04/06运行成本基准 |
 
 A9 的 execution/recovery gate 必须包括 T-02-3 的跨 MCP 重启实证、T-02-6–17 的崩溃/恢复证据，及 01 对应探针；本批 DDL 执行检查不能替代它们。
 
@@ -317,10 +323,12 @@ CREATE TABLE links (
   parent_ref TEXT REFERENCES sessions(session_ref),
   child_ref TEXT REFERENCES sessions(session_ref),
   current_owner INTEGER NOT NULL DEFAULT 0 CHECK (current_owner IN (0, 1)),
+  owner_epoch INTEGER NOT NULL DEFAULT 1 CHECK (owner_epoch >= 1),
   backend TEXT NOT NULL,
   role TEXT NOT NULL,
   label TEXT,
   brief_path TEXT NOT NULL CHECK (substr(brief_path, 1, 1) = '/'),
+  task_digest TEXT NOT NULL CHECK (length(task_digest) = 64 AND task_digest NOT GLOB '*[^0-9a-f]*'),
   report_path TEXT CHECK (report_path IS NULL OR substr(report_path, 1, 1) = '/'),
   predecessor TEXT UNIQUE REFERENCES links(link_id),
   routing TEXT CHECK (routing IS NULL OR json_valid(routing)),
@@ -328,14 +336,31 @@ CREATE TABLE links (
   claimed_at INTEGER,
   bound_at INTEGER,
   closed_at INTEGER,
+  close_request_id TEXT UNIQUE,
+  close_requested_at INTEGER,
+  close_run_id TEXT,
   CHECK (parent_ref IS NULL OR child_ref IS NULL OR parent_ref <> child_ref),
   CHECK (predecessor IS NULL OR predecessor <> link_id),
   CHECK (current_owner = 0 OR (child_ref IS NOT NULL AND state NOT IN ('handed_over', 'failed', 'revoked'))),
+  CHECK ((close_request_id IS NULL AND close_requested_at IS NULL AND close_run_id IS NULL)
+    OR (close_request_id IS NOT NULL AND close_requested_at IS NOT NULL AND close_run_id IS NOT NULL)),
+  CHECK (state <> 'closed' OR closed_at IS NOT NULL),
   FOREIGN KEY (parent_context_id, parent_context_generation, parent_caller)
-    REFERENCES caller_contexts(context_id, generation, caller_id)
+    REFERENCES caller_contexts(context_id, generation, caller_id),
+  FOREIGN KEY (close_run_id, link_id) REFERENCES runs(run_id, link_id)
 ) STRICT;
 CREATE UNIQUE INDEX links_current_child ON links(child_ref) WHERE current_owner = 1;
 CREATE INDEX links_parent ON links(parent_ref);
+CREATE TRIGGER links_keep_child BEFORE UPDATE OF child_ref ON links
+WHEN OLD.child_ref IS NOT NULL AND NEW.child_ref IS NOT OLD.child_ref
+BEGIN
+  SELECT RAISE(ABORT, 'known child ref cannot be replaced');
+END;
+CREATE TRIGGER links_epoch_monotonic BEFORE UPDATE OF owner_epoch ON links
+WHEN NEW.owner_epoch < OLD.owner_epoch
+BEGIN
+  SELECT RAISE(ABORT, 'owner epoch cannot decrease');
+END;
 
 CREATE TABLE runs (
   run_id TEXT PRIMARY KEY NOT NULL,
@@ -348,6 +373,10 @@ CREATE TABLE runs (
   harness TEXT,
   expected_generation INTEGER NOT NULL CHECK (expected_generation >= 1),
   mode TEXT NOT NULL CHECK (mode IN ('visible', 'headless')),
+  supervision_strategy TEXT NOT NULL DEFAULT 'headless' CHECK (supervision_strategy IN ('headless', 'wrapper', 'sidecar')),
+  scope_kind TEXT NOT NULL DEFAULT 'pgid' CHECK (scope_kind IN ('pgid', 'cgroup')),
+  scope_ref TEXT CHECK (scope_ref IS NULL OR (json_valid(scope_ref) AND json_type(scope_ref) = 'object'
+    AND json_extract(scope_ref, '$.scope_kind') IS scope_kind)),
   state TEXT NOT NULL CHECK (state IN ('starting', 'running', 'cancelling', 'uncertain', 'ended', 'failed', 'cancelled')),
   locator TEXT CHECK (locator IS NULL OR json_valid(locator)),
   launch_token_hash TEXT NOT NULL UNIQUE CHECK (length(launch_token_hash) = 64 AND launch_token_hash NOT GLOB '*[^0-9a-f]*'),
@@ -358,7 +387,10 @@ CREATE TABLE runs (
   supervisor_pid INTEGER CHECK (supervisor_pid > 0),
   supervisor_proc_start TEXT,
   heartbeat_at INTEGER,
+  heartbeat_seq INTEGER NOT NULL DEFAULT 0 CHECK (heartbeat_seq >= 0),
+  heartbeat_mono_ms INTEGER CHECK (heartbeat_mono_ms >= 0),
   cancel_requested_at INTEGER,
+  submission_fenced_at INTEGER,
   created_at INTEGER NOT NULL,
   started_at INTEGER,
   ended_at INTEGER,
@@ -370,10 +402,15 @@ CREATE TABLE runs (
   UNIQUE (run_id, expected_generation),
   CHECK ((supervisor_pid IS NULL AND supervisor_proc_start IS NULL)
     OR (supervisor_pid IS NOT NULL AND supervisor_proc_start IS NOT NULL AND length(supervisor_proc_start) > 0)),
+  CHECK ((heartbeat_at IS NULL AND heartbeat_seq = 0 AND heartbeat_mono_ms IS NULL)
+    OR (supervisor_pid IS NOT NULL AND heartbeat_at IS NOT NULL AND heartbeat_seq >= 1 AND heartbeat_mono_ms IS NOT NULL)),
   CHECK ((target_kind = 'session' AND operation <> 'jev' AND source_id IS NOT NULL AND harness IS NOT NULL)
     OR (target_kind = 'job' AND operation = 'jev' AND target_session_ref IS NULL AND source_id IS NULL AND harness IS NULL)),
   CHECK (operation NOT IN ('resume', 'handover') OR target_session_ref IS NOT NULL),
-  CHECK ((state IN ('ended', 'failed', 'cancelled') AND ended_at IS NOT NULL AND terminal_evidence_id IS NOT NULL)
+  CHECK ((mode = 'headless' AND supervision_strategy = 'headless')
+    OR (mode = 'visible' AND supervision_strategy IN ('wrapper', 'sidecar'))),
+  CHECK ((state IN ('ended', 'failed', 'cancelled') AND ended_at IS NOT NULL
+      AND terminal_evidence_id IS NOT NULL AND submission_fenced_at IS NOT NULL)
     OR (state IN ('starting', 'running', 'cancelling', 'uncertain') AND ended_at IS NULL AND terminal_evidence_id IS NULL AND exit_code IS NULL)),
   CHECK (ended_at IS NULL OR ended_at >= created_at),
   FOREIGN KEY (source_id, harness) REFERENCES sources(source_id, harness),
@@ -382,6 +419,22 @@ CREATE TABLE runs (
 CREATE INDEX runs_link_latest ON runs(link_id, run_seq DESC);
 CREATE INDEX runs_reconcile ON runs(state, heartbeat_at);
 CREATE INDEX runs_target ON runs(target_session_ref);
+CREATE TRIGGER runs_keep_target BEFORE UPDATE OF target_session_ref ON runs
+WHEN OLD.target_session_ref IS NOT NULL AND NEW.target_session_ref IS NOT OLD.target_session_ref
+BEGIN
+  SELECT RAISE(ABORT, 'known target ref cannot be replaced');
+END;
+CREATE TRIGGER runs_keep_scope BEFORE UPDATE OF scope_ref, scope_kind, supervision_strategy ON runs
+WHEN NEW.scope_kind IS NOT OLD.scope_kind OR NEW.supervision_strategy IS NOT OLD.supervision_strategy
+  OR (OLD.scope_ref IS NOT NULL AND NEW.scope_ref IS NOT OLD.scope_ref)
+BEGIN
+  SELECT RAISE(ABORT, 'established supervision scope cannot change');
+END;
+CREATE TRIGGER runs_keep_fence BEFORE UPDATE OF submission_fenced_at ON runs
+WHEN OLD.submission_fenced_at IS NOT NULL AND NEW.submission_fenced_at IS NOT OLD.submission_fenced_at
+BEGIN
+  SELECT RAISE(ABORT, 'submission fence is permanent');
+END;
 
 CREATE TABLE claims (
   run_id TEXT PRIMARY KEY NOT NULL REFERENCES runs(run_id),
@@ -487,6 +540,54 @@ CREATE TABLE idempotency (
   CHECK (run_id IS NULL OR link_id IS NOT NULL),
   FOREIGN KEY (run_id, link_id) REFERENCES runs(run_id, link_id)
 ) STRICT;
+
+CREATE TABLE handover_grants (
+  grant_id TEXT PRIMARY KEY NOT NULL,
+  credential_hash TEXT NOT NULL UNIQUE CHECK (length(credential_hash) = 64 AND credential_hash NOT GLOB '*[^0-9a-f]*'),
+  link_id TEXT NOT NULL REFERENCES links(link_id),
+  child_ref TEXT NOT NULL REFERENCES sessions(session_ref),
+  issuer_owner_key TEXT NOT NULL CHECK (json_valid(issuer_owner_key) AND json_type(issuer_owner_key) = 'array'
+    AND json_array_length(issuer_owner_key) = 2 AND json_extract(issuer_owner_key, '$[0]') IS 'session'
+    AND json_type(issuer_owner_key, '$[1]') IS 'text'),
+  owner_epoch INTEGER NOT NULL CHECK (owner_epoch >= 1),
+  target_owner_key TEXT NOT NULL CHECK (json_valid(target_owner_key) AND json_type(target_owner_key) = 'array'
+    AND json_array_length(target_owner_key) = 2 AND json_extract(target_owner_key, '$[0]') IS 'session'
+    AND json_type(target_owner_key, '$[1]') IS 'text'),
+  issuer_context_id TEXT NOT NULL,
+  issuer_context_generation INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'issued' CHECK (state IN ('issued', 'consumed', 'revoked')),
+  issued_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL CHECK (expires_at > issued_at AND expires_at <= issued_at + 1800000),
+  consumed_at INTEGER,
+  consumed_link_id TEXT UNIQUE REFERENCES links(link_id),
+  consumed_run_id TEXT UNIQUE,
+  revoked_at INTEGER,
+  CHECK (issuer_owner_key <> target_owner_key),
+  CHECK (consumed_link_id IS NULL OR consumed_link_id <> link_id),
+  CHECK ((state = 'issued' AND consumed_at IS NULL AND consumed_link_id IS NULL AND consumed_run_id IS NULL AND revoked_at IS NULL)
+    OR (state = 'consumed' AND consumed_at IS NOT NULL AND consumed_link_id IS NOT NULL AND consumed_run_id IS NOT NULL AND revoked_at IS NULL)
+    OR (state = 'revoked' AND revoked_at IS NOT NULL AND consumed_at IS NULL AND consumed_link_id IS NULL AND consumed_run_id IS NULL)),
+  FOREIGN KEY (issuer_context_id, issuer_context_generation) REFERENCES caller_contexts(context_id, generation),
+  FOREIGN KEY (consumed_run_id, consumed_link_id) REFERENCES runs(run_id, link_id)
+) STRICT;
+CREATE INDEX handover_grants_link ON handover_grants(link_id, owner_epoch, state);
+CREATE TRIGGER handover_grants_bound_fields BEFORE UPDATE ON handover_grants
+WHEN NEW.grant_id IS NOT OLD.grant_id OR NEW.credential_hash IS NOT OLD.credential_hash
+  OR NEW.link_id IS NOT OLD.link_id OR NEW.child_ref IS NOT OLD.child_ref
+  OR NEW.issuer_owner_key IS NOT OLD.issuer_owner_key OR NEW.owner_epoch IS NOT OLD.owner_epoch
+  OR NEW.target_owner_key IS NOT OLD.target_owner_key OR NEW.issuer_context_id IS NOT OLD.issuer_context_id
+  OR NEW.issuer_context_generation IS NOT OLD.issuer_context_generation
+  OR NEW.issued_at IS NOT OLD.issued_at OR NEW.expires_at IS NOT OLD.expires_at
+BEGIN
+  SELECT RAISE(ABORT, 'handover grant binding is immutable');
+END;
+CREATE TRIGGER handover_grants_final BEFORE UPDATE ON handover_grants
+WHEN OLD.state IN ('consumed', 'revoked') AND (NEW.state IS NOT OLD.state
+  OR NEW.consumed_at IS NOT OLD.consumed_at OR NEW.consumed_link_id IS NOT OLD.consumed_link_id
+  OR NEW.consumed_run_id IS NOT OLD.consumed_run_id OR NEW.revoked_at IS NOT OLD.revoked_at)
+BEGIN
+  SELECT RAISE(ABORT, 'handover grant cannot be reopened');
+END;
 
 CREATE TABLE slots (
   slot_key TEXT PRIMARY KEY NOT NULL,

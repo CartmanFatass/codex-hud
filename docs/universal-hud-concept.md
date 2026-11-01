@@ -578,7 +578,9 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 | 2026-11-01 | 调用者身份拆为物理 `CallerId` + `caller_contexts`：每个 context 各有 SessionRef 绑定与代次；专属 stdio 实例恰好一个 context；共享（daemon）实例的 context 只由可信逐调用来源建立，无此来源则能力标不支持，但模型与 schema v1 不变 | 编排者（A1 主审发现），A9 复核 |
 | 2026-11-01 | 受管范围默认 = 经核验的 harness 进程组（headless 由 hud-run 建组；可见方案甲里交互 shell 的作业控制会另建组，须发现并核验 harness pgid + pid + 启动时间，信号前重验；A8 评审）：该组空 + 票据围栏 + 回执即可终结，shell 退出状态本身不是回执；setsid / 重父化逃逸的后代不在受管范围，不阻止终结、不授予执行权，可检测时记诊断事件；回执记 `scope_kind`（pgid / cgroup），环境提供独占 cgroup 时覆盖逃逸后代；sidecar 只有 leader 级回执 | 编排者（A1 第二批提问），A9 复核 |
 | 2026-11-01 | 跨所有者转交凭证：256-bit 不透明 nonce、账本只存 hash、旧所有者签发、绑定旧 link / 子会话 / 所有者代次 + 目标 OwnerKey + 过期、reconciler 在转交事务中单次消费；契约 03 只定内部接口，公开工具（grant / revoke、spawn 参数）推迟到 v1.1，此前跨所有者转交不支持 | 编排者（A1 第二批提问），A9 复核 |
+| 2026-11-01 | 关系状态只表达已证实的父子身份，resume 不回退 `pending`；每轮握手是 run 级投影（`runHandshake`）；resume / handover 的新一轮必须绑定到关系已记录的 child SessionRef，不同则该 run 进 `uncertain`、不改写 child_ref；`closed → bound` 重开须满足槽空闲与所有者校验，保留 close 历史 | 编排者（A1 第二批提问），待 Oracle 复核 |
 | 2026-11-01 | 新增 G13 轻量与快、G14 清晰可视化与低摩擦协作；性能与正确性同级，契约 06 写定预算，基准超预算即缺陷 | Jacob |
+| 2026-11-01 | 后端设计与架构交 Oracle（Codex `gpt-6-astra` effort max）裁决；Pro 只在关键节点（A9、B15 或 Oracle 上送）。此前编排者在 A1 中做的裁决（本表标"编排者"的各行）连同契约 01–04 与探针结论打包送 Oracle 追认或推翻 | Jacob |
 
 ## 16. 评审状态与下一次评审
 
