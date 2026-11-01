@@ -77,12 +77,12 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | A1 | **P0 契约，分两批交付、共同审定**：第一批 ①调用者登记与绑定凭据（CallerId、OwnerKey、claim、握手状态机、核验范围、失效规则）②执行协议（幂等键范围与参数摘要、意图 + 槽同事务、`uncertain` 进入与对账表、禁止重试清单）；第二批 ③link / run / report 生命周期（两个状态机、每 SessionRef 单运行互斥、wait 游标与 runId 固定、resume 允许条件、转交）④运行托管（hud-run 职责、日志与退出回执格式、取消序列、心跳与 `uncertain`、父断连策略、方案甲 / 乙的接口留位） | `docs/contracts/01-identity.md`、`02-execution.md`（第一批）；`03-lifecycle.md`、`04-supervision.md`（第二批）；每份含数据模型、不变量、状态机、失败案例、测试清单；账本 schema v1 的 SQL 附在 02 | 每批 REV 评审通过后才写下一批；两批合起来由 ORCH 与 REV 共同审定一致性；ARCH 复核在 A9 | CORE（max） | L | 第二批依赖第一批定稿；04 的可见模式部分等 A8 结论 |
 | A2 | **P1 契约**：⑤能力矩阵与宿主（支持组合、locator 校验、降级边界、argv / shell 两种启动契约）⑥观测（指标口径表、reader 预算、checkpoint 一致提交、采集租约接管）⑦外发与兼容（目的 × 接收方授权、snapshot / checkpoint / ledger 版本、旧命令与 `--json` 兼容 facade） | `docs/contracts/05-capabilities.md`、`06-observation.md`、`07-outbound-compat.md` | REV 评审通过；定稿需引用 A3 / A8 的结论（daemon 路径、env 可达性、可见托管方案） | CORE | M | A1 第一批；定稿依赖 A3、A8 |
 | A3 | **探针**：Codex 的 MCP 服务器由 TUI 还是 daemon 启动、env 与 `_meta` 可达性；两个 Codex home 同 cwd 的会话隔离；`herdr tab create --env` 是否到达 pane 的 shell、agent 进程、MCP 服务器；pi `--session` resume 是续写还是新文件；cc 的 MCP 服务器 env 内容 | `docs/probes/*.md`：方法、原始观测（脱敏）、结论、对契约的影响；脚本放 `tests/probes/` | 每份探针有可重跑脚本；结论被 A1 / A2 引用 | ORD（升级规则适用） | M | 无，可与 A1 并行 |
-| A4 | **核心类型与契约 fixture**：`SourceId`、`SessionRef`、`JobRef`、`CallerId`、`RunBinding`、`Link`、`Run`、`Report`、`Metric`、`SessionEvidence`、`ActivityState`；合成 fixture 覆盖 cc 共享 sessionId、cc 重复 usage、pi compaction / cache_warm、双 home、同 pane 换会话、同一关系两次运行、并发重试、启动中断、旧 run 迟报 | `src/core/types/*.ts`、`tests/fixtures/contracts/`、`tests/unit/contracts.test.ts` | `npm test` 全绿；fixture 只用合成数据；fixture 只证明类型与状态机在合成输入下的行为，不证明真实进程恢复（那是 B3a / B4 / B14 的事） | CORE | M | A2 定稿（含 A3 / A8 结论） |
+| A4 | **核心类型、契约fixture与A9最小原型**：类型/合成fixture覆盖会话/运行/报告/状态；另做隔离的真实临时SQLite+合成进程原型，覆盖身份连续性、幂等/崩溃切点、选定scope恢复的关键反例，不合入B生产实现 | src/core/types/*.ts、tests/fixtures/contracts/、tests/unit/contracts.test.ts；隔离原型与证据放tmp/tasks/A4/ | npm test全绿、合成数据；fixture证明类型/规格，原型给A9关键机制可行性证据，不能宣称B生产恢复已验收；最小三组包见A9/概念§16 | CORE | M | A2定稿（含A3已评审/A8关键接受证据） |
 | A5 | **三接口与假实现**：`RegistryProvider`、`HostAdapter`、`RunControl`、`HarnessAdapter`；`tests/fakes/` | 接口文件 + 假实现 + 用假实现跑的核心用例 | 核心套件无 Herdr 可跑 | CORE | S | A4 |
 | A6 | **Codex facade**：`src/harness/codex/` 用现有 `SessionFinder` / `RolloutParser` / `subagent-tree` 实现 `HarnessAdapter`，不搬目录；`linkEvidence` 提取；`SCAN_VERSION` +1；snapshot v3 字段草案（加法） | facade 模块 + 现有调用点改走 facade | 现有 1038 + 47 测试与视觉基线全绿；`--json` 旧字段不变 | CORE | M | A4、A5 |
 | A7 | **测试基建**：`npm run test:core`（无 Herdr，`HUD_HOME` 临时目录）、`npm run test:herdr`（仅 Herdr 套件）、CI 脚本、fixture 脱敏检查 | `package.json` 脚本、`tests/run-core.sh`、`.github/workflows` | 两套件各自可单独跑 | ORD | S | A5 |
 | A8 | **hud-run 可见模式探针**：在 Herdr pane 里分别试方案甲（hud-run 用 `$SHELL -ic` 包住 `codex` 函数）与方案乙（harness 直接起、hud-run 作 sidecar 记录），验证 Herdr agent 检测、herdr-context 包装、TTY 直通、退出回执是否正常 | `docs/probes/hud-run-visible.md`，含两方案的对照表 | 结论写进 04-supervision 并决定 B3b 走哪条 | ORD | S | A3（复用其 env / 进程树方法） |
-| A9 | **阶段评审（阶段 B 的门禁）**：汇总七份契约、六份探针与 fixture 送 ARCH；采纳后冻结类型与 schema v1 | `docs/reviews/<date>-pro-contracts.md` | 三项阻断项无 P0：身份回填与握手、幂等 / 执行协议、运行恢复与对账；其余项可带条件通过 | ORCH + ARCH | S | A1–A8 |
+| A9 | **阶段B门禁，第一级验收**：审七契约、支持/拒绝范围、fixture和A4最小SQLite/合成进程原型、已接受A3/A8关键证据，采纳后冻结类型/schema v1；不要求B生产代码先完成 | docs/reviews/<date>-pro-contracts.md | 三组阻断无P0：身份（唯一source/session、配置claim、fork/旧claim/原生子拒绝、切换失效/MCP重启连续）；执行（真实SQLite并发同键一次提交、异参/原子意图槽/重键重放/崩溃不重发）；恢复（甲的A8接受证据、活成员/取消未确认持槽、无旧receipt Q可达或缺证、恢复无执行权）。daemon-present/共享正向非前置；其余项可带条件 | ORCH + ARCH | S | A1–A8的A阶段产物；生产矩阵另在B14 |
 
 ### 阶段 B：MVP 纵向切片 cc → Codex
 
@@ -93,7 +93,7 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B1 | **hud-mcp 骨架**：stdio 服务器、工具注册、`delegate.json` 加载与校验、调用者登记（pid / ppid / procStart / harness 推断 / `HERDR_PANE_ID`）、SessionRef 解析器（cc sessions 文件、Codex pane 绑定、pi cmdline） | `packages/hud-mcp/` | cc 与 Codex 能加载并列出工具，登记行正确（pi 的加载在 C1） | CORE | M | A9 |
 | B2 | **账本**：`node:sqlite`、WAL、`user_version`、事务助手、幂等表、事件表与游标、租约表、`hud link list/show/export`、只读访问层给 HUD | `packages/hud-mcp/src/ledger/`、`src/core/ledger-read.ts` | 并发写单测（两个进程同时 spawn）；幂等同键同参 / 同键异参 | CORE | L | A1 |
 | B3a | **hud-run 托管核心**：进程组、shell / argv 两种启动、headless 路径、日志、心跳、退出回执、取消序列、`orphan_policy`、`hud run status/logs/cancel/reconcile` | `bin/hud-run`、`src/core/run/` | 进程级单测：正常退出、被杀、托管自身死亡后对账、取消三段式、重复启动被槽拒绝 | CORE | L | A1 |
-| B3b | **hud-run 可见终端集成**：按 A8 结论实现方案甲（包装）或方案乙（sidecar），TTY 直通、Herdr 检测与 herdr-context 保持、可见模式下的退出回执 | `src/core/run/visible-*.ts` + tmux 集成测试 | tmux 里起一个可见 Codex 并拿到退出回执；Herdr `agent list` 仍识别该 pane | CORE | M（A8 后重估） | A8、B3a |
+| B3b | **hud-run可见终端集成**：实现Oracle修订方案甲、TTY直通、真实harness PGID/完整scope控制、Herdr检测/context；原生退出结果可未知，shell status分列；乙managed与PTY延期 | src/core/run/visible-*.ts + tmux集成测试 | 生产验证scope结束/活成员阻终结、整组取消不退单PID、实例复用/短命/重启；父MCP断连continue仍前台可输入/收尾；supervisor死交互中断、uncertain持槽、禁自动input/focus/fg/恢复/resume，Q不依赖死人receipt；原型不是生产pass，性能依06 | CORE | M（A8后重估） | A9、A8关键证据接受、B3a |
 | B4 | **spawn / resume 与 Codex 后端档案**：模板（launch / headless / resume / resumeHeadless）、claim 生成与注入、首条 prompt 组装、意图先行事务、headless 路径、tmux 可见路径 | hud-mcp 工具 + `delegate.json` 示例 | 仅证实未执行（启动前失败、有退出回执且无子进程）才 `failed`，其余一律 `uncertain` 进入对账；超时不改状态；同 OwnerKey 同 request_key 重试返回原结果 | CORE | M | B1、B2、B3a |
 | B5 | **握手**：`delegate_whoami`（env claim 自动 / 参数 claim）、单次有效与 TTL、fork 复制 claim 被拒、`pending → claimed → bound`、`delegate_report` 绑定 runId | 工具实现 + 单测 | fork 场景单测；无 env 的 claim 路径单测 | CORE | M | B4 |
 | B6 | **wait / status / cancel**：事件长轮询（≤120 s，游标）、状态聚合（关系、运行、报告、心跳、对账结果）、取消经 hud-run、可选父 pane 提示 | 工具实现 + 单测 | 超时不改状态；旧 run 迟报不满足新等待；status 的状态字段来自 B16 归并器 | CORE | M | B2、B3a |
@@ -104,7 +104,7 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B11 | **启动器**：`hud claude`（档案、argv / shell、`--resume`）、`hud run …`、最小 `hud panel`（在当前 Herdr tab split 开面板，只为验收场景）、`codex-hud` 兼容入口 | `bin/hud` + 文档 | tmux 集成测试：`hud claude -- claude` 起 bar 与 panel | CORE | M | B7、B10 |
 | B12 | **最小采集一致性**：`collect:<session>` 租约、过期接管、旧持有者失效（接管后旧持有者的写入被拒）、checkpoint 与摘要的最小一致提交（同一事务 / 原子重命名）、多消费者只读已提交摘要 | `src/core/collect-lease.ts`、`src/core/checkpoint.ts` | panel + statusline 并发单测；接管后旧持有者写入被拒；崩溃点注入后摘要与 checkpoint 不会一个新一个旧 | CORE | M | B2 |
 | B13 | **skill 与角色模板**：`herdr-delegate-codex` 改为 `delegate_spawn / wait / status / cancel`；角色模板加 whoami / report 与旧问题通道；`delegate.json` 初版 | skill 文件 + `docs/delegate.example.json` | 用新 skill 跑一次真实委派 | ORD | S | B6 |
-| B14 | **验收场景与能力矩阵**：真实场景一（Herdr 可见模式 cc → Codex implementer）、场景二（headless → 结束后可见 resume；活跃时 resume 被拒）、`HUD_HERDR=0` 重跑场景二、tmux 首次可见启动、headless resume；`docs/capability-matrix.md` 逐格验证；Codex 信任对话框等人机步骤由 HUI 脚本处理 | `tests/integration/scenario-*.sh`、`tests/human/*.md`、矩阵文档 | 每个矩阵格有对应脚本与日志；未测的格标"未验证"，不标支持；身份、输入落点、退出、重复运行由脚本对账本 / 进程 / 回执核验 | ORD + HUI | M | B4、B5、B11、B12、B13、B16、B17 |
+| B14 | **第二级生产验收与能力矩阵**：Herdr可见cc→Codex、headless→结束后可见resume、活跃resume拒绝、HUD_HERDR=0、tmux首次可见/headless resume；在生产B2/B3/B4/B5重复A9关键身份/幂等/恢复反例，补全部声明能力及06基准 | tests/integration/scenario-*.sh、tests/human/*.md、docs/capability-matrix.md与账本/进程/receipt日志 | 每格脚本/日志及版本快照，未测标未验证；核验输入落点、nullable native退出/独立shell状态、完整scope取消/恢复与无重复启动；性能和accepted→started/bound分计；不把B14反列为A9前置 | ORD + HUI | M | B4、B5、B11、B12、B13、B16、B17 |
 | B16 | **五维状态归并器**：activity / pendingReason / lastTurnOutcome / liveness / freshness 的归并规则与真值表（含 Herdr 事实与 transcript 事实冲突、心跳停但回执未到、关闭后保留），输出给渲染与 status 的单一结构 | `src/core/status/merge.ts`、`docs/contracts/06` 附录真值表、fixture | 真值表每行一个用例；B10 / B6 不再各自判状态 | CORE | M | B2、B8 |
 | B17 | **统一模型材料入口**：所有模型功能（摘要、委派摘要、未来 Jev 路由）取材料只走一个入口；按 source 的外发授权；新来源默认不外发；负向测试 | `src/core/materials/`、`tests/unit/materials.test.ts` | 负向测试：未授权来源的任何文本不出现在外发 payload；迁移后新来源默认拒绝 | CORE | M | A2（契约 07）、B8 |
 | B15 | **阶段评审**：MVP 演示材料 + 账本导出 + 场景日志 + 能力矩阵送 ARCH | `docs/reviews/<date>-pro-mvp.md` | 无阻断项 | ORCH + ARCH | S | B14 |
@@ -153,7 +153,7 @@ F1 Jev 路由（CORE + ARCH）、F2 pi footer（ORD）、F3 Herdr 事件订阅�
 ```
 阶段 A
   A1 第一批(01,02) ─ A1 第二批(03,04) ─┐
-  A3 ─ A8 ──────────────────────────┼─ A2 定稿 ─ A4 ─ A5 ─┬─ A6 ─┐
+  A3 ─ A8 ──────────────────────────┼─ A2 定稿 ─ A4（类型/fixture+最小原型） ─ A5 ─┬─ A6 ─┐
                                     │                    └─ A7 ─┴─ A9（契约冻结 = 阶段 B 门禁）
 阶段 B（全部在 A9 之后）
   B1 ─ B2 ─┬─ B3a ─┬─ B4 ─ B5 ───────────────┐
@@ -173,6 +173,10 @@ E、F 按需
 ```
 
 图只是示意，§4 每行的"依赖"列是权威。里程碑：M1 契约冻结（A9）；M2 MVP（B15）；M3 三后端同树（C6）；M4 statusline 切换（D6，含 D5 的两周观察）。
+
+两级门禁的解释以本段与修订后的A4/A9/B3b/B14为准：A9前不合入B生产实现，但A阶段需要隔离的可执行事务规格、真实临时SQLite与最小合成进程原型，不能只审纸面fixture。A9不依赖B3/B4/B5/B14先通过；这些WP在冻结后对生产实现重验关键反例、完成声明的能力矩阵与06性能验收。§6“fixture不证明真实进程恢复”仍成立；A9的原型是另一份可行性证据，不替代生产验收。§4旧A1行中的甲/乙接口留位不构成实现两套后端的要求，B3b只实现Oracle修订甲。
+
+证据状态：A3五份探针已评审（01列出版本/模式），spoof已完成且有界；daemon补测见docs/probes/codex-daemon.md，仅CLI0.166/daemon0.163在场默认direct-stdio，非共享能力/非A9前置。A8首轮拒绝，A8-fixB1局部进展，A8-fixB2的TTY父退出、实际context命令及同agent/session状态仍待接受；这里的fixB1/B2不是阶段B的WP B1/B2。预算、唤醒与启动延迟口径归06。
 
 ## 6. 测试与验收策略
 

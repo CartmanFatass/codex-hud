@@ -1,220 +1,195 @@
 # 04：hud-run 托管、回执与恢复证据
 
-- 版本：`v0.1 draft`（2026-11-01）。
+- 版本：`v0.3 draft`（2026-11-01；Oracle C01–C14 修订）。
 - 状态：A1 第二批草案；数据格式与证据生产要求待主审/A9，未宣称已实现进程协议。
 - depends-on：[01 身份](./01-identity.md)、[02 执行协议/唯一对账表](./02-execution.md)、[03 生命周期](./03-lifecycle.md)；[概念方案](../universal-hud-concept.md) §6.6.4–6、§6.10–11、§15–16；[工程计划](../universal-hud-engineering-plan.md) B3a/B3b/B4/B6。
-- 开放项：甲仅暂定，**待 A8 第二轮**；[A8初步报告](../probes/hud-run-visible.md)的12/12推荐已被评审要求收窄，shell退出不证明harness组结束。保留甲乙接口，乙不据pane消失终结。A3仍初步：Codex metadata trust unverified、daemon-present未测、Herdr env仅Codex tab-root/pi split；cgroup只作可选强能力，不假定WSL2可用。
+- 证据快照：[Oracle §4–5](../reviews/2026-11-01-astra-contracts.md)选择修订方案甲。[A8](../probes/hud-run-visible.md)首轮拒绝，fixB1 的 scope 无活成员与交互故障是局部进展；fixB2 的父退出 TTY、实际 context 命令、同 agent/session 的 ready/working/完成仍待接受，不能写整项 pass。A3 五份探针已评审，Codex 0.166 主身份路径及有界 spoof 见01。[daemon 补测](../probes/codex-daemon.md)覆盖 CLI 0.166 / managed app-server 0.163 在场的默认 direct-stdio；不证明共享调度，不是 A9 前置。
 
-本契约不承诺恰好一次，也不承诺所有后代或外部动作都会停止。执行票据只允许单次执行权消费，目标是否启动/结束由证据证明。默认受管范围是本轮进程组；主动逃逸的后代可能继续，见下文范围边界。HUD 只读 ledger，hud-run 不承担全局调度器或新常驻服务。
+本契约不承诺恰好一次或所有后代/外部动作均停止。保留唯一 supervisor、单次执行票据、真实实例核验与证据驱动终结；HUD 只读。G13/G14要求空闲阻塞等待、不新增常驻 reconciler/sidecar/通知服务；所有性能、进程数/RSS、逻辑写入/实际 I/O 与 accepted→started/bound 的计量预算统一归 [06](./06-observation.md)。这里只规定生命周期和证据，不决定呈现。
 
-范围/凭证等为**编排者裁决**，追溯至概念§15「受管范围默认」「跨所有者转交凭证」及03裁决表；待Oracle ARCH复核，可推翻，Pro仅关键里程碑/A9。甲仍待A8第二轮，不因性能目标放宽组空或实例围栏。G13/G14要求成本按事件计：优先现成wait/SIGCHLD/稳定句柄和回执；有足够证据就不再全量扫描。06拥有性能预算，初始目标为非wait MCP p95<50ms、冷启动<200ms、hud-run空闲CPU≈0/每心跳间隔一次账本写、HUD增量tick<50ms；本批只定义验证项，不宣称达标。HUD接口仅给只读字段/状态与能力门，展示方案归后续Fable设计agent。
 
 ## 数据模型
 
 ### 运行、启动输入和范围
 
-每个活跃 run 一个独立 supervisor，以 runId 固定目录、票据、locator、scope、日志、心跳和取消。hud-mcp由harness持有/回收，不另建常驻reconciler服务。优先用supervisor本身的状态/私有fd与内核等待能力；只有维持实例围栏确有需要时才用本轮launch gate/group-control helper，生命周期随run，不能为每种证据再建观察进程。helper不获得第二份执行权。终态回执/证据提交后supervisor退出；若只剩无法证实的历史uncertain且无活跃受管控制，记录末次部分事实后退出，不为槽或历史行永远心跳。父MCP断连不销毁仍活跃的supervisor；恢复观察器按需调用后退出，只追加证据，不变成新launcher（T-04-38、39）。
+每个活跃 run 一个独立 supervisor；hud-mcp 随实际加载它的 harness 起停。shell 档案另计必要启动 shell；若维持范围实例确需 helper，须单列进程/RSS、寿命随 run、不获得第二份执行权；不强制 gate/helper/RUN 消息拓扑。终态收尾后退出；仅剩无法控制/取证的 uncertain 历史时保存末次事实后退出，不为历史槽永远心跳。恢复观察器按需取证后退出，不变 launcher（T-04-38、39）。
 
-启动输入为 `{runId, mode, launch: argv|shell, cwd, source_id, profile_digest, stdin, orphan_policy, visible_strategy, scope_kind}` 加私有通道运输的执行票据/claim。argv 是非空字符串数组、逐参数直接执行；shell 是一个明确文本，用已解析的绝对 `$SHELL -ic <text>`，不把 argv 拼回 shell，也不从 shell 文本猜 executable。stdin=headless brief（读一次后 EOF）或 closed；visible 为当前 TTY。有效 home/source 必须与账本档案一致；shell 函数实际切到别的 home 时不能继续用旧 source 授权/绑定（T-04-1、2）。
+启动输入 `{runId, mode, launch:argv|shell, cwd, source_id, profile_digest, stdin, orphan_policy}` 加私有票据/claim；MVP strategy 为 headless 或 visible wrapper，scope_kind 仅 pgid。argv 逐参数直接 spawn，不能让 hud-run 自己 exec 掉却承诺保存回执；shell 用已解析绝对 $SHELL -ic <text>，不把 argv 拼 shell/猜 executable。完整 managed shell 档案必须是已验证的单次前台 harness 启动，任意延迟/循环/后台脚本不自动支持；中间 shell 也是可能继续提交的 launcher（T-04-1、2、19、21）。
 
-`ProcessStamp={pid:positive integer, proc_start:decimal string, boot_id:string, pid_domain:string}`；proc_start 是本 PID 域的内核启动 tick，不用 PID 数字、mtime 或 ISO 时间替代。`command_leader` 是实际被等待的直接命令（shell 模式可能是中间 shell），`harness` 是目标 harness 的独立 stamp。只有确证同一 pid+start 才可令两者相同。shell receipt 必须同时给出 `harnessPid/harnessPidStart`（无法唯一发现时明确 null/unknown，不能编造）；binding 不接受拿 shell PID 冒充 harness。唯一发现需已知启动祖先链、档案和 session/locator 交叉证据；进程名或第一个匹配进程不足（T-04-3、4）。
+Codex 每轮使用档案服务器名，构造 argv/TOML 叶子覆盖 `-c mcp_servers.<name>.env.HUD_CLAIM=...`，同样注入 HUD_RUN/HUD_LINK/HUD_HOME；保留用户 command/args、其他 env/server。不得使用 mcp_servers={} 或整表覆盖。resume 新 claim 同样重新注入；source 从档案与核验过的实际 harness home/存储根确定，不从 MCP 缺失的 CODEX_HOME 猜。初始化仅登记/保存材料；首次合格 tools/call 的 params._meta 与启动/source/精确 header 一致才绑定，参数 `_meta` 不授身份。正常 env 不强制 prompt 明文 claim/transcript 扫描；运输/身份 fallback 与 unsupported 列表只引用01（T-04-2、32）。
 
-| scope_kind | scope 的精确定义及结束证明 | 不覆盖的情况 |
-|---|---|---|
-| pgid（默认） | 本轮启动建立并记录的实际 workload PGID，必要的 session id、boot/PID 域、组实例及 leader stamp 同时固定；visible 取目标前台 job 的 PGID，不能拿后台 supervisor/中间 shell 的 PGID代替。可信组空检查+提交围栏+leader 回执可给 R/G=gone/Q | leader 的主动逃逸后代（setsid/daemonize/进入别的组）不在此范围，可继续存在、不受取消信号覆盖、不阻止本运行终结，且不获得执行权 |
-| cgroup（可选） | 环境提供独占 run cgroup、稳定 id/代次、完整成员可读且 workload 禁止迁出；后代继承此范围，setsid/换组仍覆盖。provider 输出不可迁出/独占能力与空组证据 | 不能验证独占/禁止迁出、读取失败或能力丢失时为 unknown；不能靠“路径存在”或 cgroup 名字声称更强覆盖 |
+`ProcessStamp={pid,proc_start,boot_id,pid_domain}`；pid 正整数、proc_start 为内核启动 tick 字符串，pid_domain 包含本机身份/PID namespace，ProcessKey 另把 boot 身份编码其中，与01一致。`command_leader` 为实际直接命令（可能中间 shell），`harness` 为独立核验的真实实例；只有证明同 pid/start/boot/域才可相同。启动回执向01投影 harnessPid/harnessPidStart，不能拿 shell 冒充；无法唯一发现为 null/unknown，进程名/第一个匹配不够（T-04-3、4）。
 
-supervision_strategy与scope_kind在意图中固定；实际scope_ref在唯一核验harness PID/start/boot/PID域及PGID后才从NULL写入并冻结，不能预填shell/gate组再替换。提交后尚未发现时G=unknown、禁scope信号/R/Q，按02为uncertain持槽；同一实例后来H+G齐可恢复，不重提命令。范围冻结后不可改为较小范围来取得空组结论；capability 缺失只可在明确未提交的预检阶段拒绝/按调用者明确新意图选默认，不能超时后重启降级。逃逸诊断如 `run.out_of_scope_descendant` 只记录可验证 stamp/source/ref 关联；不能凭相同 cwd/名字给别的进程贴归属。此类范围外事实不是 02 的 X，不重开已终态/阻断 resume；元数据/回执必须显示 scope_kind 和覆盖边界（T-04-5–7、37）。
+scope 是固定的真实 harness workload PGID，连同 sid、boot/PID 域、组实例/leader stamp 固定。visible 用目标前台 job 的组，不能预填后台 supervisor/shell 组。strategy/kind 在意图固定；scope_ref 唯一核验后 NULL→真实范围一次写入，不得事后缩范围。发现有截止，可按事件补证；未知时禁 scope 信号/R/Q，不重发启动，依02持槽取证。短命启动来不及固定范围是 unknown，生产能力需 B 验证（T-04-5–7、37）。
+
+完整 scope 无活 workload 不等于所有 PID 都消失：Z 是已终止未回收，可单列；S/T/D 等仍可能执行，必须持槽。原 harness 不再执行以及所有可能 launcher/控制通道封口或死亡也是结束必要条件，不能凭当前 PGID 空忽略 `sleep; harness` 的 shell。普通 setsid/换组工具后代不扩大默认范围；若确证原 harness 或同 SessionRef 旧写入实例仍在范围外活着，则02冲突阻断终结/复用，不能归为无害诊断。跨 boot 仅同机/全部旧启动通道死亡或封口证实后可证明旧实例终止，不能查询/控制新 boot 的同数字 PGID。
+
 
 ### 文件、字段与原子提交
 
 路径固定为 `$HUD_HOME/runs/<runId>/{meta.json,stdout.log,stderr.log,exit.json}`。runId 仅 `[A-Za-z0-9_-]{1,128}`，HUD_HOME/运行目录是已解析绝对路径；拒绝路径穿越、符号链接替换和不属于当前用户的目录。目录 0700，文件 0600；已有目录只在 ledger/run/实例均相符时读恢复，不截断、不复用旧 run 的日志。只有成功取得票据的本轮 writer 写 meta/log/exit，失败竞争者不碰它们（T-04-8、9）。
 
-下列是完整字段约定，JSON 键 snake_case；`harnessPid/harnessPidStart` 特为 01 的启动回执保留 camelCase 键。未知量是 null，不能用 0、空串或猜测值。时刻为 UTC Unix 毫秒，非 ISO 字符串；时长由同 boot 的单调钟相减。所有 hash 为 SHA-256 小写 64 hex。未知 schema_version 拒绝作授权/终态证据。
+文件 schema_version=1，未知版本拒作授权/终态证据；时刻毫秒 epoch、时长同 boot 单调钟，未知 null 而非0/空串。仅票据赢家单写，哈希均 SHA-256 小写64hex。
 
-`meta.json` 必填字段：
-
-| 字段 | 类型/允许值 |
+| 文件 / 内容 | 必要字段与更新规则 |
 |---|---|
-| schema_version, revision | 分别恒 1、从 1 严格递增整数 |
-| run_id, link_id, source_id, target_session_ref, binding_generation | 对应 ledger；source/ref 可按 job/未绑定状态为 null，代次≥1 |
-| mode, visible_strategy, scope_kind | visible/headless；headless 时 null，可见 wrapper/sidecar；pgid/cgroup |
-| supervisor, command_leader, harnessPid, harnessPidStart | supervisor 为 ProcessStamp；leader 为 stamp或null；harness 两字段同时有值或同时null，其 boot/PID域同受核验启动链 |
-| scope | null（尚未建立/sidecar无法拥有）或下述 ScopeDescriptor；不能把候选前台组当已拥有scope |
-| launch_digest, profile_digest, launch_call_id, launch_message_id, launch_phase | 对应指纹/本轮锚点/02阶段；无命令/prompt/claim/票据明文 |
-| stdin_mode, capture | brief/closed/tty；capture={stdout: file/tty_passthrough/pty_merged/unavailable, stderr: file/tty_passthrough/merged_into_stdout/unavailable} |
-| parent_owner_key, parent_context_id, parent_context_generation, orphan_policy | 接受意图时的授权/策略快照；continue默认或stop；不是让子自报替换父身份 |
-| created_at, updated_at, heartbeat_at, heartbeat_seq, heartbeat_mono_ms | 毫秒时刻；首次心跳前后三项可null/0/null，之后seq递增、mono属于supervisor同boot；meta仅在启动/协议事件刷新时保存快照，实时心跳以runs同名字段为准，不每5s重写meta |
-| leader_receipt, submission_fence | 下述 LeaderReceipt或null；围栏为null或{event_seq, at, ack}，ack为never_armed/gate_sealed/control_peer_dead |
+| meta.json | schema_version、run_id/link_id/source_id/binding_generation、mode/supervision_strategy、supervisor/command_leader/harness 的 ProcessStamp或null、scope、launch_digest/profile_digest、launch_call_id、HUD自生成launch_correlation_id、created_at、stdin_mode/capture。只保存稳定启动身份/范围；初始尚未知的实例/scope核验后一次补齐，身份不覆盖。原生 launch_message_id 可晚到，存在ledger/evidence，不强制meta更新；不复制实时state/H、局部退出或取消进度 |
+| scope | `{scope_id,scope_kind:'pgid',pid_domain,boot_id,pgid,sid,group_leader}`；scope_id绑定run/boot/组实例，不是可重用数字PGID。scope未知为null，已知后冻结 |
+| 部分 evidence | shell/leader退出、supervisor HUP、启动/封口、范围成员与Z、取消步骤等白名单事实及时追加到ledger evidence；含subject/process/source、asOf/observed_at。部分退出不写临时版本 exit.json |
+| exit.json（最终一次） | schema_version、receipt_id、run_id/link_id/source_id/binding_generation、mode/strategy、supervisor/command_leader/harness、scope（N可null）、coverage:scope或not_submitted、created_at/started_at/ended_at/recorded_at/duration_ms、native_exit、shell_exit、reason、scope_check、submission_fence、cancel_request_seq、logs。身份/范围匹配meta及ledger；无revision/渐进升级协议 |
 
-`ScopeDescriptor={scope_id:string, scope_kind:pgid|cgroup, pid_domain:string, boot_id:string, pgid:integer|null, sid:integer|null, group_leader:ProcessStamp|null, cgroup:null|{id:string,generation:integer,path:absolute,exclusive:true,migration_blocked:true}}`。pgid 模式 pgid/sid/group_leader 必填、cgroup=null；cgroup 模式其 cgroup 必填。scope_id 绑定 run、范围实例与 boot/域，不能只编码可重用的数字 PGID/路径。
+`ExitObservation={process,subject:command_leader|harness,observed_at,exit_code,signal,status_source,evidence_id}`。native_exit 只允许 subject=harness、来源 wait_status/trusted_harness_result，code/signal恰一非null；无法直接 wait/无可信原生结果时 native_exit=null。shell_exit 单列真实 shell code/signal与来源，不把0/130/137推harness结果；supervisor HUP也只是其自身 evidence。原 harness 已结束的证明可以没有任何已保存的退出结果，部分观察不复制成原生结果（T-04-10、12、13）。
 
-`LeaderReceipt={process:ProcessStamp, subject:command_leader|harness, exited_at:ms, exit_code:integer|null, signal:string|null, status_source:wait_status|trusted_exit_confirmation, status_quality:known|unknown}`。leader字段subject=command_leader，harness_exit字段subject=harness；known时code/signal恰一非null，signal须真实wait/受信内核状态；unknown时两者null但须确证退出。shell137不换算SIGKILL，harness信号只凭其自身可靠来源（T-04-10）。
+`ScopeCheck={scope_id,checked_at,result:alive|gone|unknown,visibility:complete|partial,member_evidence_ids,zombie_evidence_ids,launcher_seal_evidence_ids,harness_termination_evidence_ids}`。gone须正确boot/域/固定实例完整无活 workload、原harness不执行、全部launcher/通道封口或确证死亡；无需leader receipt。可以是可信完整成员枚举且只剩Z，不能只要求kill(-pgid,0)=ESRCH；仅单PID不见/EPERM/可见性不全/复用不可辨都unknown。跨boot按上文同机证据单独判断，不能把新boot成员当旧scope。所有本轮控制helper也必须已封口且无workload能力，不能靠排除可工作的成员凑空组（T-04-11、24）。
 
-`ScopeCheck={scope_id, checked_at:ms, result:alive|gone|unknown, source:owned_pgid_probe|exclusive_cgroup, visibility:complete|partial, fence_event_seq:integer|null, evidence_id:string}`。G=gone 需 complete：pgid 为已记录正确 PID 域的本轮组，已收到 leader 退出、启动/控制 gate 封口，并得到组级空的内核检查（例如对该受控组的存在探测明确 ESRCH）；不是单 PID 消失或任意 kill 错误。EPERM/跨域/无法区分复用/可见性不完整均 unknown。正常组内 helper 也须退出或有明确无 workload、封口退出确认，再验证组空；只见 leader 退出而组还有子进程是 alive（T-04-11）。
+submission_fence引用持久event_seq/at与封口proof_ids；DB时间戳本身不能证明活着/暂停的launcher不再能启动。reason为 scope_ended（原生结果未知）、normal_exit/nonzero_exit/signal_exit（需native来源）、cancel_confirmed（已接受取消+可信结束时序）、preflight_failure（仅N）。ended_at是确认无活workload/未执行的观测时刻，不伪称内核实际退出瞬间；N的duration=0，不能求同boot时长则null。
 
-`exit.json` 必填字段：
+meta/final exit用同目录O_EXCL/O_NOFOLLOW临时文件，写完整UTF-8 JSON→fsync(file)→atomic rename→fsync(dir)。最终exit一次不可变提交；同run/receipt重复同hash幂等导入，异hash冲突，半文件忽略。不要求死supervisor曾写leader/exit receipt；恢复由reconciler记Q，不续写其meta/exit。先落最终receipt再幂等导入evidence，最后按02同事务写终态/槽/claim/events；文件落盘而DB未提交不导致重执行（T-04-9、14）。
 
-| 字段 | 类型/约束 |
-|---|---|
-| schema_version, receipt_id, revision, run_id, link_id, mode, visible_strategy | 1、唯一opaque ID、递增revision及对应meta身份 |
-| scope_kind, scope_id, coverage | pgid/cgroup、已知scope id或null；scope/leader/supervisor/not_submitted |
-| supervisor, command_leader, harnessPid, harnessPidStart | meta里的实例快照；不能把shell和harness合并；即使已退出也保留原stamp |
-| created_at, started_at, ended_at, recorded_at, duration_ms | created_at=meta.created_at；started_at为首个可信命令启动观测或null；scope级ended_at为确证组空的观测时刻，部分receipt为其明确subject的退出观测时刻，非精确的内核实际退出瞬间；recorded_at是本revision写入时刻。duration_ms为同boot从可信启动到结束观测的单调差，不能求时为null，N无执行为0 |
-| leader_exit, harness_exit, supervisor_signal | leader为LeaderReceipt或null；harness为同格式且subject=harness的受信结果或null；supervisor_signal仅 supervisor实际收到的信号或null |
-| reason | normal_exit/nonzero_exit/signal_exit/cancel_confirmed/supervisor_hup/preflight_failure/unknown |
-| scope_check, submission_fence, cancel_request_seq, logs | ScopeCheck或null、围栏或null、已接受取消事件seq或null；logs={stdout:{bytes:integer,capture:string},stderr:{bytes:integer,capture:string}} |
+stdout/stderr为单writer追加原始字节，offset/bytes按字节，不因resume/恢复截断。headless捕获file，brief读一次EOF或stdin关闭；visible TTY直通、不读取输入，capture=tty_passthrough/unavailable，空日志不证明无输出。日志可能含正文，只在本地私有文件，不默认进ledger/模型；公开fixture合成字节。PTY采集未在MVP提供（T-04-15）。
 
-reason是事实分类：normal/nonzero/signal分别需相应subject状态，cancel_confirmed须取消意图+scope结束；supervisor_hup只说明supervisor收到HUP，不冒充harness信号，preflight_failure只指N。coverage=scope且匹配全范围/围栏/leader且无X才R；其他coverage、未知scope、单独HUP/137或文件存在不升级R。receipt_id在该run稳定，revision递增；evidence_id按run/receipt/revision/hash区分，同revision异hash冲突，旧证据保留（T-04-9、10、12–14）。
-
-meta/exit 使用同目录唯一 O_EXCL/O_NOFOLLOW 临时文件，写完整 UTF-8 JSON→fsync(file)→atomic rename→fsync(dir)。exit 的 leader级版本可在后来补齐scope证据后由原writer升revision；既有事实不得改写，旧指纹/证据保留。崩溃后的临时/半文件忽略，不补零退出码。先落盘正式 receipt，再追加/校验 ledger evidence，最后 reconciler 用 02 的终结事务写 state/退出字段/槽/claim/events；文件与SQLite不是一个事务，文件已落而ledger未提交时可按指纹幂等导入，不能因此再执行（T-04-9、14）。
-
-stdout/stderr 是单writer追加的原始字节文件，不是JSONL，offset/bytes按字节；不因下一次run或恢复而截断。headless捕获file；visible默认TTY直通，日志可为空且 capture=tty_passthrough/unavailable，空文件不表示“无输出”。只有通过测试的PTY tee才可采集；流已合并必须标pty_merged/merged_into_stdout，不伪称分离stderr。日志是本地私有输出，可能含正文，不进ledger/模型默认材料；公开fixture只用合成字节（T-04-15）。
 
 ## 不变量
 
 | 编号 | 可检查断言 | 层 / 测试 |
 |---|---|---|
 | I-04-1 | argv/shell契约互斥、source/home与档案一致；shell leader与实际harness独立记录，只有确证同实例才等同 | TX+E；T-04-1–4 |
-| I-04-2 | strategy/kind在意图固定，scope_ref仅在唯一核验harness后由NULL写入并冻结；默认是harness PGID，绝不是supervisor/中间shell组，每步信号重验scope；逃逸后代只诊断，cgroup需独占/禁迁出证明，禁止事后缩范围 | DB+TX+E；T-04-5–7、23、30、37 |
+| I-04-2 | strategy/kind意图固定，唯一核验真实harness/PGID后scope_ref一次写入冻结；不缩范围。普通范围外工具仅诊断，原harness/同SessionRef旧写者仍活则阻复用 | DB+TX+E；T-04-5–7、23、30、37 |
 | I-04-3 | 文件身份/版本/权限固定；只有票据赢家单写meta/log/exit；receipt先原子落盘再幂等导入，恢复不重启、不截断 | TX+E；T-04-8、9、14、15 |
-| I-04-4 | 退出码/信号有明确subject与来源，shell137不是harness SIGKILL，supervisor HUP不是child退出；leader级不冒充scope级R | TX+E；T-04-3、10、12、13 |
-| I-04-5 | R/G/N/Q只按下面生产表；组级gone含正确域、范围实例、leader与围栏，不等同单PID缺失；未发现scope不得发scope信号/产R/Q，不能生产时保持unknown/uncertain | TX+E；T-04-11–14、23–25、37 |
+| I-04-4 | scope结束与原生结果分离，exit_code仅有来源harness结果；shell status分列，shell137/HUP不冒充native。最终exit只提交一次，局部事实留evidence | TX+E；T-04-3、9、10、12、13 |
+| I-04-5 | 02是唯一对账真值表；R/Q结束需正确boot/域/范围无活workload、原harness不执行、所有launcher封口，无leader receipt也可Q；缺证unknown/uncertain | TX+E；T-04-11–14、24、25、37 |
 | I-04-6 | 每5s写本实例心跳；>30000ms stale、=30000仍fresh；心跳只证明托管活性，不证明child启动或结束；确认死亡优先于残留fresh | TX+E；T-04-16、17 |
-| I-04-7 | 票据hash只可由一次CAS消费；不管MCP重启/第二supervisor/恢复，都不重置阶段。先提交submitting再一次RUN许可，许可丢失不重发 | DB+TX+E；T-04-18–20 |
-| I-04-8 | N先持久围栏再证明未提交/无workload；submitting后的响应不明不叫N；R/Q结束还需封口迟到提交 | TX+E；T-04-20、21、24 |
-| I-04-9 | 取消每步鉴权和实例围栏，INT→默认10s→TERM→2s→KILL，信号成功不终结；只R/Q后cancelled，失联/复用不冒险给别的组发信号 | TX+E；T-04-22、23、26 |
+| I-04-7 | 一次CAS消费票据，唯一supervisor先submitting再一次spawn/提交；恢复/MCP重启不重置票据/阶段，不强制gate/helper拓扑 | DB+TX+E；T-04-18–20 |
+| I-04-8 | 永久围栏禁止未来提交；N须真正未提交与全部启动者封口/死亡，submitting未知不得当N。中间shell/暂停launcher也需封口证据 | TX+E；T-04-19–21、24 |
+| I-04-9 | 取消须覆盖整个scope且每步核验实例；INT→10s→TERM→2s→KILL，信号成功不终结。无安全整组控制就cancel_unconfirmed，不降成单PID，不杀复用组 | TX+E；T-04-22、23、26 |
 | I-04-10 | 默认continue独立托管；stop只在确证父上下文/物理实例失联后使用接受时策略取消；不把父离线/unknown当子结束 | TX+E；T-04-27、28 |
 | I-04-11 | hud-run写字段白名单；身份回填/状态/槽迁移统一reconciler，HUD只读。恢复观察器不给新执行权 | TX；T-04-14、25、29 |
-| I-04-12 | 甲暂定待A8第二轮，shell-only回执不是R、supervisor死后不假定仍有前台/input；乙不能生产scope R/Ggone/Q，已发任务不能靠乙自动终结 | TX+E；T-04-30–33、36 |
+| I-04-12 | MVP可见采用修订甲；父MCP断连continue单独验收。supervisor死即交互中断/uncertain/持槽，禁自动input/focus/fg/wrapper恢复/resume；正常scope结束不因native未知变uncertain | TX+E；T-04-30–33、36 |
 | I-04-13 | RunHandle固定run/locator/绑定代次；status只读，cancel经鉴权意图，input/focus可选且重验occupant，不通过控制动作resume副本 | TX；T-04-29、34 |
 | I-04-14 | 运行心跳不作TTL放槽；browser还需answered/failed+对账，needs_human继续持有；collect只属06观测存储 | TX；T-04-35 |
-| I-04-15 | 不新增常驻服务，hud-run/helper仅本轮活跃执行/收尾；空闲阻塞等待，5s心跳仅一次runs CAS UPDATE，不另写证据/事件/meta；退出/组空/对账按事件或请求，禁每秒/proc扫描循环 | TX+E；T-04-38、39 |
+| I-04-15 | 无新常驻服务；空闲阻塞、5s心跳一次runs CAS，不周期复制event/evidence/meta。发现有截止，生产禁100/200ms扫组；恢复按启动/重连/事件/wait必要截止/显式请求触发，预算归06 | TX+E；T-04-38、39 |
 
 ## 状态机
 
-### 票据、launch gate与围栏
+### 单次提交与围栏
 
-1. 02 已提交完整意图和占有，run=starting/phase=reserved。hud-run 经继承的私有pipe/受保护临时输入取得随机票据及launch材料；不把票据放argv、可读日志或meta。BEGIN IMMEDIATE 校验hash、launch_digest、run/slot holder（Jev browser代次）、无提交围栏/取消/冲突，CAS `reserved + supervisor=NULL → armed + pid/start/heartbeat`。只赢家可开文件、创建launch gate/组；输家退出并留非敏感拒绝事件，零backend调用（T-04-18）。
-2. 对headless/wrapper，在armed建立受控gate，记录其控制通道/实例证据；helper在私有通道等待RUN，断管默认不启动。scope_ref保持NULL：gate/shell的预启动组不是实际harness组，不要求尚不存在的harness PID。此完整托管适配器必须具有启动后唯一发现/核验的路径；已知不支持时在未提交阶段拒绝，不猜scope。乙使用下述一次dispatch gate，不要求拥有harness组。
-3. 发RUN前同一事务重验票据消费实例、占有、授权快照/代次、无fence/取消/冲突，写submitting后再发一次许可。gate只接受一份许可且不接受重放。headless/wrapper记录command启动回执后写submitted，再唯一核验实际harness/PGID；reconciler在scope_ref仍NULL且实例匹配时写入完整scope与事件，原hud-run随后同步meta。这不是替换已有scope，也不发第二RUN。此headless/wrapper路径scope未核验时Gunknown，禁止scope信号/R/Q及身份绑定。短命进程或发现窗口崩溃只能保留已有局部证据、uncertain持槽。commit到RUN、RUN到回执之间任一断点均可能未执行或已执行；未知不重发许可或重建gate（T-04-19、20、37）。
-4. `submission_fenced_at` 单调设置，只阻止未来提交，不声称已发出的许可没有执行。reserved/armed可CAS变never_submitted，sealed gate/无票据消费证明+组空才N。已submitting/submitted时只能sealed/dead-control-peer确认后阻止后续许可；缺child结束证据仍uncertain。控制通道已死而组仍活不产生新launcher（T-04-21）。
+1. 完整意图/槽提交后，hud-run经继承私有pipe/受保护输入取得票据/launch材料，不放可读日志/meta。短事务重验ticket hash、launch_digest、slot、context/代次/取消/冲突/围栏，CAS reserved+无supervisor→armed+本实例/H。输家不碰赢家文件，零backend调用。
+2. 唯一supervisor先提交submitting再调用一次spawn/宿主动作；不要求独立gate/RUN或额外观察器。命令成功的精确回执才submitted，未知不重发。真正harness/PGID核验后一次固定scope；短命/发现崩溃scope未知则持槽取证，不把shell组填入，不授恢复者执行权。
+3. 提交前取消/拒绝以持久fence及确证未提交/无workload形成N；已许可/响应未知只能取证，不因DB改字段倒推从未执行。终结前，所有可能再提交者（含中间shell）须封口或死亡。直接单次spawn可由原supervisor状态/死亡与内核等待取证；确需helper/私有通道的实现也须证明同样结果，不增加第二份执行权。
 
-乙保留相同票据CAS、submitting-before-RUN与永久围栏，gate只允许HostAdapter一次dispatch既定harness命令，不在harness组内创建helper。可靠dispatch ack可记submitted，未知仍submitting；二者都不证明子进程启动/退出，不重发。乙的scope_ref保持NULL，可记录有来源的leader身份/存活诊断与可得的部分回执，不能填成owned scope或产R/Ggone/Q；leader-alive不是R-02-5要求的已核验范围G。提交后正式G=unknown，自己的Hfresh加leader-alive也按R-02-9保持uncertain，R-02-5不可达。身份仍须独立满足01全部条件，leader诊断/dispatch ack不替代启动回执或会话证据；拿不到01启动证据时关系保持pending/claimed，不能凭claim补成bound。只有dispatch前确证从未提交且gate围栏生效才可N；取消记录意图，不能向候选组发scope信号或假称完成（T-04-31）。
+before-supervisor的reserved正常窗口仍用02 R-02-4a；超窗只uncertain/对账，不能自动取回票据。04只规定证据生产，不另列state×evidence真值表，所有迁移/优先级唯一引用02。
 
-before-supervisor的正常reserved窗口仍用R-02-4a：意图完整、无取消/冲突且age≤30s保持starting；不得让普通reconciler tick抢先拒绝合法登记。超窗仅uncertain/对账，不自动取回票据。消费次数=1可以测试，不等于目标一定被启动。
+### R / G / H / N / Q 的证据生产
 
-### R / G / H / N / Q 的生产与可达行
+- R：原hud-run最终scope receipt，校验run/source/代次/boot/域与ScopeCheck/全部封口证据；native_exit允许null。只有leader/shell/supervisor事实不产R；scope宣称结束却仍有活成员/原harness/未封口launcher则X。
+- G：本机可信完整范围检查，区分活成员与Z；固定scope/原harness/全部launcher封口满足02才gone。组未知、错域/复用或部分可见则unknown，不用单PID缺失代替。
+- H：下文一次runs CAS的真实producer元组；只证明监督活性。按事件取采用快照，不周期追加evidence，不由恢复者续死人心跳。
+- N：可信未执行事实+永久围栏+全部可能启动者不可再提交+无workload；未知提交响应/只有失败日志不够。reserved无消费者可在事务围栏后证明，不能把armed暂停者当封口。
+- Q：supervisor被SIGKILL且没有leader/exit receipt也可达；恢复器用持久可信启动/固定scope、原harness已终止、完整无活workload、所有launcher封口/死亡及无矛盾，写scope_reconciled复合evidence，未知native结果终结。不重写死writer文件/补码；仅PID/pane消失或人工按钮不够。已确证同机跨boot按旧实例证明，不能去控制新boot同数字组。
 
-| 类 | 正向生产证据与验证 | 失败/不能生产时 | 可达02行 / 测试 |
-|---|---|---|---|
-| R | 原hud-run的正式scope receipt：本run/boot/域/代次、实际leader回执、组级gone/cgroup空、提交围栏；scope已结束且无X。shell code与harness signal分别留来源 | 只有leader或supervisor receipt、scope未知、组仍活、半文件均不是R；宣称scope complete却G alive为X | R-02-2/3；T-04-10–14 |
-| G | alive为本scope内匹配实例；gone为已拥有scope的组级空证明+围栏（已启动时另有leader回执），或N的未建立workload证明；cgroup用已验证独占禁迁出的空成员事实 | EPERM、错域/复用、只有PID缺失、视图不全、sidecar候选scope→unknown。范围外逃逸只诊断，不算X | R-02-5/6/9；T-04-5–7、11 |
-| H | runs上固定supervisor匹配pid/start的一次5s UPDATE保存heartbeat_at/seq/mono；seq/mono与UTC校验，事件对账时才按需固化所采用快照/producer，不每tick追加证据 | 未来/回退时钟异常或错实例心跳为unknown；恢复者不能替死人续，stale不是结束 | R-02-4a/5/6/7；T-04-16、17、38 |
-| N | reserved无消费者，或armed的gate确证未放RUN：先CAS写never_submitted/fence，记录拒绝后续提交的eventseq、gate ack/未创建事实与Ggone。trusted helper运行不算目标harness已执行 | 无日志≠未执行；已发host命令/submitting后结果不明、scope未知或RUN在途不能N | R-02-4；T-04-20、21 |
-| Q | 原正式scope receipt未完成/丢失，但已持久启动证据、独立原leader退出receipt和恢复器的正确scope空/封口证明齐全；恢复器不补写原writer的exit.json，提交复合对账证据，run退出结果记NULL，原leader细节仅留有来源的观察 | 只见supervisor/leader PID消失、无leader退出receipt、sidecar观测均不够；不得据NULL推测0或137 | R-02-2/3；T-04-14、24、25 |
-
-这里的scope只覆盖编排者已决定的边界；Ggone不是“机器上没有任何可能继续动作的后代”。Q可以由恢复观察器生产，但不能单独把残留的leader状态升级为harness信号/全范围原始回执。N/R/Q齐备按R-02优先顺序迁移；冲突X走R-02-1；其余“什么也证明不了”走R-02-9，人工reconcile也不能强行释放槽。
 
 ### 心跳、supervisor死亡与恢复
 
-登记执行者的同一事务写首个heartbeat_at/seq/mono及启动meta。之后每5000ms仅一次`UPDATE runs SET heartbeat_at=?,heartbeat_seq=heartbeat_seq+1,heartbeat_mono_ms=? WHERE run_id=? AND supervisor_pid=? AND supervisor_proc_start=? AND heartbeat_seq=? AND state IN ('starting','running','cancelling','uncertain') RETURNING cancel_requested_at`；CAS不匹配即停止冒充写者。定时器不追加heartbeat evidence/events、不重写/fsync meta；取消可由私有通道唤醒，返回的已接受取消字段也无需额外轮询读。退出/冲突/对账等实际事件才固化需要的心跳快照，meta在相应协议事件刷新。观察器不续写旧supervisor。UTC负差/与同boot单调钟显著矛盾时一次记录clock_anomaly并unknown/uncertain，不通过给旧事件盖新时间续命（T-04-16、38）。
+登记执行者的短事务写首个heartbeat_at/seq/mono；文件I/O在事务外写启动meta。之后每5000ms仅一次`UPDATE runs SET heartbeat_at=?,heartbeat_seq=heartbeat_seq+1,heartbeat_mono_ms=? WHERE run_id=? AND supervisor_pid=? AND supervisor_proc_start=? AND heartbeat_seq=? AND state IN ('starting','running','cancelling','uncertain') RETURNING cancel_requested_at`；CAS不匹配即停止冒充写者。定时器不追加heartbeat evidence/events、不重写/fsync meta；取消可由私有通道唤醒，返回的已接受取消字段也无需额外轮询读。退出/冲突/对账等实际事件才固化需要的心跳快照，meta不作为运行状态副本，只有稳定启动身份/范围首次补齐时更新。观察器不续写旧supervisor。UTC负差/与同boot单调钟显著矛盾时一次记录clock_anomaly并unknown/uncertain，不通过给旧事件盖新时间续命（T-04-16、38）。
 
-supervisor通过wait/SIGCHLD、已验证的稳定进程句柄/控制通道退出事件获知结束，不用/proc扫描循环。组空检查只在退出事件、取消阶段或对账时做一次必要检查；组仍活时等待可得的成员/控制事件，不能靠高频扫组求完成。缺事件能力只能保留unknown/按需对账，不能虚报R（T-04-11、38）。
+supervisor通过wait/SIGCHLD、已验证的稳定进程句柄/控制通道退出事件获知结束，不用/proc扫描循环。范围检查仅在有截止的启动发现、退出事件、取消阶段或有预算恢复时做必要检查；组仍活时等待可得的成员/控制事件，不能靠高频扫组求完成。缺事件能力只能保留unknown/按需对账，不能虚报R（T-04-11、38）。
 
-status只读已提交证据，不触发对账写入。实际运行事件、显式reconcile请求或已核实的stale-heartbeat事件在现有写者内调用reconciler，不设每秒/固定周期对账器。必要stale截止只读复核最新H；H仍fresh就延后，确已>30000ms或进程退出事件证实supervisor死亡/替换，且无更高优先R/N/Q，才uncertain。fresh残留心跳不覆盖已确认死亡。对照scope查G，child活着继续占槽；同一原实例恢复H+G才可R-02-5。新观察器不能领票据/重写supervisor实例；无写者时HUD可显示stale投影，不能自己补迁移。scope无法查询保持unknown，返回证据与可执行对账入口，不让正常调用者手工驱动每个阶段（T-04-17、25、29、39）。
+status只读快照，不触发写。现有hud-mcp启动/重连、相关运行事件、wait必要截止、显式hud run reconcile触发有预算恢复：遗留完整receipt按指纹幂等导入，无receipt旧run按02同表采集Q/N或缺证。文件/提交提示只作hint，按run过滤与合并heartbeat/WAL噪声，不让每心跳唤醒所有waiter全量复查；漏通知在必要截止复读，预算归06。
+
+stale截止先只读最新H；仍fresh延后，确stale或内核退出证实supervisor死/替换、且无更高R/N/Q，才由reconciler记uncertain/持槽。确认死亡优先残留fresh，活child不授新票据。无活写者时HUD可给stale/uncertain投影，不能声称后台已自动终结；无常驻恢复服务/按秒全量扫组（T-04-17、25、29、39）。
+
 
 ### 取消与父断连
 
-RunHandle.cancel 先由reconciler检查当前owner/context或受信本地管理权限/已接受的orphan_policy，写cancel_requested_at/cancelling/事件；这里的本地管理入口限定同用户私有HUD_HOME与写者实现，不接受模型自报“admin”。hud-run读取取消意图后，先封口启动，执行SIGINT→grace（默认10000ms，允许0–60000）→SIGTERM→termGrace（固定2000ms）→SIGKILL；宽限从实际发出/确认步骤时开始，不从网络请求超时算。每阶段先检查是否已有R/Q/N，已终态不再发信号（T-04-22）。
+RunHandle.cancel 先由reconciler检查当前owner/context或受信本地管理权限/已接受的orphan_policy，短事务写cancel_requested_at/cancelling/accepted事件并返回，完整取消时延另计；这里的本地管理入口限定同用户私有HUD_HOME与写者实现，不接受模型自报“admin”。hud-run读取取消意图后，先封口启动，执行SIGINT→grace（默认10000ms，允许0–60000）→SIGTERM→termGrace（固定2000ms）→SIGKILL；宽限从实际发出/确认步骤时开始，不从网络请求超时算。每阶段先检查是否已有R/Q/N，已终态不再发信号（T-04-22）。
 
-组信号必须经绑定本轮实例的ScopeControl，每步重验harnessPid/start、当前PGID/域及scope实例；若leader已退，须有仍保持该组实例的等强控制句柄，不能借复用PID定位。可行接口实现是已安排在目标组内的可信anchor经继承私有通道响应、向自己的组发信号；anchor不提前退出/离组/接第二RUN。SIGKILL杀anchor后只观察，不补发到相同数字；通道丢失且无等强句柄返回cancel_unconfirmed/uncertain，无数字PGID回退。visible建立此能力仍需测试，不能向后台shell/supervisor或新occupant发信号（T-04-23）。
+ScopeControl必须安全覆盖本轮整个PGID及仍可能再启动的launcher，逐步重验正确boot/域/范围实例。直接leader已退仍需等强稳定控制证据防PGID复用，不能盲发数字；共享supervisor组不能悄悄退为单harness PID。实现可隔离workload组或提供经验证的完整控制机制，不强制某anchor/helper拓扑。失去安全整组控制只返回cancel_unconfirmed/uncertain并持槽；helper若需要，寿命/RSS计入06，改变exec链/TTY路径只补验受影响的context/输入行（T-04-23）。
+
 
 信号已发、shell退出、TTY Ctrl-C、supervisor收到HUP不是取消完成；只按R-02-2的R/Q才cancelled；N证明目标从未提交则按R-02-4 failed。先退出后到达的cancel返回already_ended；已接受取消但无法结束继续cancelling/uncertain。重复cancel不重置grace时钟、不重发已确认步骤；步骤以eventseq与ack记录，崩溃后无ack只对账，不盲发旧scope（T-04-26）。
 
-cgroup模式的ScopeControl必须覆盖该独占范围全部成员及其后代，不能仅给一个PGID发信号：provider须提供具有实例围栏的INT/TERM/KILL能力（或明确返回不能确认），KILL后仍验证空范围。无此能力不退回较小PGID假称取消成功；保持cancelling/uncertain，不减小已选scope。PGID内anchor只是默认模式的可行实现，不作为cgroup能力证明（T-04-6、23）。
+orphan_policy随意图冻结。continue默认：父MCP物理实例确实退出/可信父context关闭时写parent.offline事件，含runId、父context/代次、since（毫秒epoch）、冻结策略，seq/created_at随事件投影；这只是父调用通道离线，不证明父session/子scope退出。继续保有TTY的子前台/输入/最终收尾须独立验收；非TTY后台sleep不足。stop在确证断连后以预授权策略产生取消意图，走同一完整范围序列；caller stale/Herdr unknown不触发误杀。新MCP同OwnerKey重放旧run，不撤回已接受取消/起副本（T-04-27、28）。
 
-orphan_policy随意图冻结。continue为默认：父MCP退出、关父pane、换context只记录parent.offline/失效，supervisor继续；stop只在确证其父物理实例退出/可信上下文关闭后用预授权策略创建取消意图，走同一序列。caller轮询过期/Herdr unknown不是确证断连；shared A关闭不影响B的委派。新MCP同OwnerKey重放请求仍命中旧run，不能用“父复活”撤回已接受取消或起新副本（T-04-27、28）。
+[daemon 补测](../probes/codex-daemon.md)的vendor stop返回stopped后updater仍活，故vendor停止响应不是所有vendor启动进程已退出的证明。仍按已记录实例/声明范围核验；普通范围外vendor进程不自动扩大本轮范围/信号权限，已证实同会话旧写者继续阻复用。
+
 
 ### 写者与RunHandle
 
 hud-run允许：CAS消费/登记票据和启动阶段、scope/leader原始证据、自己的心跳、取消步骤ack、私有文件；reconciler负责证据校验、context/身份回填、关系与run状态迁移、槽释放和事件的原子提交。hud-run可调用同一reconciler入口，不能私有UPDATE state绕过R-02；HUD绝不补写丢失回执/槽，collect不属于hud-run。
 
-`RunHandle={runId, locator, bindingGeneration, status(), cancel(grace?), sendInput?(text), focus?()}`。status只读已提交状态、心跳、scope/leader/harness/receipt覆盖及证据，不做隐式reconcile写；cancel经上述鉴权意图。sendInput由宿主队列或v1.1入口实现，headless未定义就unsupported；focus由HostAdapter实现，先检查server/locator与occupant代次。输入/聚焦不等于取消、不能隐式resume；历史locator不匹配只返回stale_locator（T-04-29、34）。
+`RunHandle={runId, locator, bindingGeneration, status(), cancel(grace?), sendInput?(text), focus?()}`。status只读已提交状态、心跳、scope/leader/harness/receipt覆盖及证据，并提供03的reconciliation.cause和interaction三项能力，不做隐式reconcile写。cause区分supervisor_dead、scope_unknown、resume_ref_mismatch、clock_anomaly等已有原因；监督故障三项均false，与父调用通道离线的parentOffline分开。cancel经上述鉴权意图。sendInput由宿主队列或v1.1入口实现，headless未定义就unsupported；focus由HostAdapter实现，先检查server/locator与occupant代次。supervisor死亡/失联或可见交互不可用时input/focus禁用；输入/聚焦不等于取消、不能隐式resume；历史locator不匹配只返回stale_locator（T-04-29、34）。
 
-### 可见模式接口：甲暂定，待 A8 第二轮
+### 可见模式：修订方案甲
 
-本节是可独立修订的接口槽，选择状态**wrapper仅暂定，待 A8 第二轮**，不采纳原12/12无条件通过结论。两候选共有 `startVisible(runIntent,ticket,launchSpec)→RunHandle`、`observe(runId)→{H,G,receipts,coverage}`；HostAdapter负责表面/就绪/输入/焦点，supervisor负责进程证据。命令已发超时不回退再起。
+MVP选择wrapper甲：hud-run被输入pane交互shell，shell档案用-ic保留函数/context，supervisor不读TTY、harness保持正确前台组，scope必须发现并核验真实harness PGID。HostAdapter管理surface/就绪/输入/焦点，supervisor供进程证据；命令已发未知不fallback再起。正常结束按scope证据产R，shell状态与native结果分离，native未知不使正常结束一律uncertain。直接argv/最后一步exec绝对可执行文件仅作经验证包装链的可选简化；exec codex函数不证明成为直接子进程，也不强迫改用户函数。
 
-| 候选 | 启动、TTY与数据接口 | 证据能力 / 不可达行 |
-|---|---|---|
-| 甲 wrapper | hud-run命令被输入目标pane交互shell；supervisor不读TTY输入，保持正确前后台job control，目标harness在前台。shell模式用 -ic 保留函数/herdr-context；记录实际harnessPid/start与前台PGID，不能用child shell PID/后台supervisor组替代。TTY直通日志如实标覆盖；如增加PTY/anchor桥，必须重验输入/resize/检测 | 实现拥有正确scope/control时可产H/G/R/N/Q，覆盖R-02全部相应行；leader只涵盖shell、scope/控制句柄缺失时不能终结，退unknown/uncertain。原型未验证的完整scope仍是B3b验收项 |
-| 乙 sidecar | 相同票据只允许HostAdapter沿当前路径dispatch一次，旁路仅观察确切locator；scope_ref=NULL，无父子wait权限/受控scope，不注入假退出码，不读错pane。若目标未发命令，可在受信提交前围栏证明N；已发后只观察 | 可产自身H与leader级alive/unknown诊断，不能把leader-alive当正式范围G；提交后G=unknown，R-02-5不可达。当前不能产scope R/Ggone/Q，故R-02-2/3也不可达；只有可靠预提交N才可R-02-4。已发任务R-02-9 uncertain并持槽；不能把leader观测/人工按钮当R/Q |
+父MCP/launcher断连默认continue与supervisor死亡是不同事件。supervisor死后甲的交互中断：已记录前台回到shell、输入落shell与suspended (tty input)；不虚构采样已看到T。立刻/失联确认后uncertain、持槽、interaction unavailable；停止自动input/focus，禁自动fg、重建wrapper、透明接管、resume副本。用户可读诊断；旧scope结束并按02对账后才可新一轮（T-04-36）。
 
-[A8初步报告](../probes/hud-run-visible.md)经首轮复核的边界：甲正常harness在不同于supervisor的前台组；函数/正常输入/resize有局部证据，但shell退出、137、HUP均未证明harness组空。wrapper配置出现不证明daemon执行命令收到正确context；父退出仅非TTY后台命令证据，agent-list完整idle/working和supervisor死后前台/input归属仍待第二轮。乙在Herdr0.9.5无exit code/signal，已发任务不能靠乙终结。不能外推tmux/完整exec TUI或最终anchor/PTY桥已测。
+A9仅需选定机制的关键可行性与失败分支：fixB1的五组无活成员/结果来源分离是证据，仍需主审接受；fixB2补同agent/session ready/working/完成、一次Codex实际执行合成命令的允许context、父实例确实退出后TTY前台/输入/最终收尾。无需强求Herdr没有的字面idle状态、daemon-present命令执行或完整B能力矩阵。生产安全整组取消、leader先死/组仍活、PID/PGID复用、短命启动/重启、tmux/resume和性能仍由B3a/B3b/B14验证，不把原型200ms扫组/1s心跳搬入产品。
 
-必须保留：shell child与harness两stamp、shell status与native signal分离，exec --version不代表完整TUI；pane close的supervisor HUP仅部分回执，harness组空才R。supervisor SIGKILL后无回执/心跳停，即使PID仍活也可能已由外层shell抢回前台，不能宣称TUI可继续交互/发送输入；先核验终端foreground owner，未证实则禁input/focus、uncertain持槽，不自动恢复前台或resume副本。正式实现用5s/30s及本文reason，不照搬原型1s与旧枚举（T-04-30–33、36）。
+### Deferred（后续能力）
 
-A3约束同样留双分支：[Codex MCP](../probes/codex-mcp-launch.md)初步显示仅配置env表进入MCP，默认使用本轮消息参数claim；若未来实证env可达再用env路径。配置env注入如启用必须安全合并既有条目并避免记录claim明文，不作为唯一办法。`_meta.sessionId`、`_meta["x-codex-turn-metadata"].session_id`只观测存在/匹配rollout，来源不可覆盖性未验证，不作授权来源；daemon absent测量不支持外推daemon-present，01的条件门保留。[cc](../probes/cc-mcp-env.md)初步full env/pid匹配仍逐实例核验；[Herdr](../probes/herdr-env.md)只覆盖Codex tab-root与pi split的env，第三跳按harness分别判断，不宣称所有布局可达（T-04-32）。
+乙sidecar保留探针材料，不提供MVP managed执行/正向dispatch；它尚无完整范围结束、取消及启动封口通道，MVP请求unsupported，不能在甲未知时自动改走乙。cgroup provider、跨机器/PID域主动控制、所有后代永不逃逸、自有PTY/tee、透明重接管推迟；本版只声明本机已验证PGID范围，其他域unknown。正向流程/DDL/用例不在本版冻结。
+
 
 ## 失败案例
 
 | 编号 | 场景 / 预期 | 不变量 | 测试 |
 |---|---|---|---|
 | F-04-1 | argv拼shell、函数切home、shell PID冒充harness → 拒绝/身份unknown，不建错绑定 | I-04-1 | T-04-1–4 |
-| F-04-2 | leader已退但组内子活、范围外后代逃逸、cgroup能力假设 → 分别持槽/诊断不阻终结/unknown，不混scope | I-04-2、5 | T-04-5–7、11 |
+| F-04-2 | leader退/组内子活、普通范围外工具、范围外原harness或同会话旧写者活 → 持槽/仅诊断/冲突阻复用，其他PID域unknown | I-04-2、5 | T-04-5–7、11 |
 | F-04-3 | 文件半写/旧run覆盖/赢家输家并发/receipt落盘后ledger崩溃 → 忽略半证据，幂等导入，零重执行 | I-04-3 | T-04-8、9、14 |
 | F-04-4 | shell137、supervisor HUP、只有leader回执 → 保留subject/nullsignal，不升级scope R | I-04-4 | T-04-10、12、13 |
 | F-04-5 | fresh残留心跳但supervisor已死、时钟异常、假续心跳 → uncertain，child活也不授新票据 | I-04-6、11 | T-04-16、17、25 |
-| F-04-6 | 同票据二supervisor、RUN响应丢失、发现窗口崩溃、preflight无围栏 → 输家退出/uncertain，scope未证实不信号/终结，绝不重放启动 | I-04-2、5、7、8 | T-04-18–21、37 |
-| F-04-7 | 信号成功组仍活、PGID复用、control anchor死亡、取消竞态 → cancelling/uncertain或已终态，不杀错组 | I-04-9 | T-04-22、23、26 |
-| F-04-8 | 父断连/重启、shared单context关闭、caller仅stale → 只按快照策略，不把它当子结束 | I-04-10 | T-04-27、28 |
-| F-04-9 | 乙 pane消失/有码假设，甲额外PTY未验证，metadata来源未证实 → 标能力缺失/待评审，不盲支持 | I-04-12 | T-04-30–33 |
+| F-04-6 | 同票据二supervisor、提交未知、发现窗口崩溃、暂停shell仍可未来启动 → 输家零动作或uncertain，缺scope不信号/终结，不重发 | I-04-2、5、7、8 | T-04-18–21、37 |
+| F-04-7 | 信号成功组仍活、PGID复用、整组控制丢失 → cancelling/uncertain或已有终态，禁止单PID回退/杀错组 | I-04-9 | T-04-22、23、26 |
+| F-04-8 | 父MCP断连/重启、仅caller stale、vendor stop仍留updater → 按快照策略/完整scope证据，不把父或vendor状态当结束 | I-04-5、10 | T-04-27、28 |
+| F-04-9 | 请求乙managed或未验证transport，甲监督故障仍自动输入/恢复 → unsupported或uncertain持槽/禁交互，不伪称支持 | I-04-12 | T-04-30–33、36 |
 | F-04-10 | 旧locator输入、HUD补回执、浏览器needs_human或collect混用 → 拒绝控制/只读/继续对应租约规则 | I-04-11、13、14 | T-04-29、34、35 |
 | F-04-11 | 每秒扫proc/组、每tick追加证据/改meta、终态后留常驻observer → 违反G13；只留必要事件证据/一次心跳写，结束后退出，槽仍按02 | I-04-15 | T-04-38、39 |
 
 ## 测试清单
 
-P为B3a/B3b/B14合成真实进程测试；格式/真值表由A4 fixture覆盖。本批不把规格或A8原型截图当最终进程恢复实证，不运行付费harness测试。
+每项标A9 fixture（规格/表驱动输入）、A9 prototype（最小合成进程与已选A8关键证据）或B（B3a/B3b/B14生产验收）。只02拥有对账真值表，04验证证据来源。原型机制证明不等于生产实现通过，截图/模型自述不替代进程证据；本批不运行付费harness。
 
 | 编号 | 输入 → 预期状态断言 |
 |---|---|
-| T-04-1 (P) | 含空格/引号/元字符的argv与显式shell函数两组 → argv不经shell解释；shell仅按明确文本 -ic，拒绝双模式/空argv，相同launch_digest可复核 |
-| T-04-2 | profile source-a但函数实际home-b，stdin brief/closed/tty三组 → 来源错配不授权绑定；stdin模式明确、brief后EOF，双home不合并 |
-| T-04-3 (P) | shell→harness两个不同pid/start，与直接argv/已验证exec同pid组 → receipt分别保存两个身份；只有确证同实例才复制leader结果给harness |
-| T-04-4 | 多候选harness、进程名字相同、短命harness漏观察 → harnessPid/start=null/unknown，不猜第一个或shell；正常候选唯一+启动证据才可供01绑定 |
-| T-04-5 (P) | PGID内子进程继续与setsid/换组的leader后代继续两组 → 前者leader退出仍无R/持槽；后者组空/leader/fence齐可终结并仅记录可证逃逸诊断，无新执行权 |
-| T-04-6 | 请求cgroup但无独占/禁迁出能力；另完整能力且后代setsid → 前者提交前unsupported不盲降级，后者仍覆盖后代，scope未空不终结 |
-| T-04-7 | 运行中尝试改scope_kind/小scope或同cwd孤儿猜归属 → 拒绝变更、不伪造逃逸；有效范围外诊断不作X/不阻resume |
-| T-04-8 | runId穿越/符号链接/外部用户目录、同目录不同run或票据输家 → 拒绝写入/覆盖；合法目录0700文件0600 |
-| T-04-9 | JSON临时/半写/同revision异hash、完整rename前后注入崩溃 → 只读取完整匹配版本，冲突拒绝；旧日志不截断 |
-| T-04-10 (P) | shell正常exit137、harness实际SIGKILL但shell返回137、直接wait到harness SIGKILL → 前两组code137/signalnull且不伪称harness signal；最后native signal可记录SIGKILL/codeNULL |
-| T-04-11 (P) | leader退/组尚活、完整正确组ESRCH+leader+fence、单PID缺失/EPERM/跨域三组 → G alive/gone/unknown；只有第二组可完整scope终结 |
-| T-04-12 | 只收到supervisor SIGHUP、child仍活，与scope结束回执两组 → 前者coverage supervisor/不是R，后者才可R；HUP不复制为harness signal |
-| T-04-13 | leader-only receipt、scope完整receipt但同scope G alive、错boot/代次 → 分别不终结/X uncertain/仅审计；文件存在不等于R |
-| T-04-14 | exit.json完整落盘但ledger提交前崩溃、重复导入、只有leader evidence但可补Q三组 → 同指纹一次采用、零再执行；Q按02终结并run exit_codeNULL |
-| T-04-15 | 合成UTF-8/二进制块追加、visible直通空日志、PTY合流 → byte offset精确；空文件capture如实，merged不伪造stderr来源 |
-| T-04-16 | heartbeat每5000ms，30000/30001边界、clock负差/错seq/旧producer → fresh/stale精确，异常unknown；恢复器不能更新死supervisor心跳 |
-| T-04-17 (P) | supervisor死亡但残留fresh心跳、harness仍活；未登记reserved在0/30000/30001ms → 前者uncertain持槽，正常窗口starting，超窗uncertain不重发 |
-| T-04-18 (P) | 两supervisor同ticket CAS；错hash/launch_digest/slot holder → 单赢家登记/写文件/启动，输家零backend调用且不改赢家文件 |
-| T-04-19 (P) | armed建gate后死、submitting commit后RUN前死、RUN后回执前死 → 只在真实证据齐时N/R/Q，否则uncertain；不重建gate/重发RUN |
-| T-04-20 | gate重复RUN、MCP重启重传票据、恢复进程改phase回reserved → 拒绝重复，单个许可调用上界1；不能据此断言目标必执行 |
-| T-04-21 | reserved/armed先CAS never_submitted并封口，再迟到执行者；另已submitting响应不明 → 前者N且零晚启动，后者不得N/failed，维持uncertain |
-| T-04-22 (P) | cancel接受、INT/10s/TERM/2s/KILL，步骤间已R/Q终结 → 按实际时间阶梯，终态后无信号；只发信号不改cancelled |
-| T-04-23 (P) | 每步前后模拟anchor/PGID复用、control pipe关闭/错误scope → 无破坏信号给新组；不能安全绑定则cancel_unconfirmed/uncertain，无数字PID回退 |
-| T-04-24 | 无正式R但保留原leader退出receipt+启动证据+正确scope空/封口，与仅PID消失两组 → Q ended/cancelled(NULL) / uncertain，恢复者不补退出码 |
-| T-04-25 (P) | supervisor SIGKILL、scope活/未知/可证空+leader receipt各组，恢复观察器尝试续心跳/领票据 → 仅合法证据迁移；观察器写证据但无新launcher身份 |
-| T-04-26 | 重复cancel重试、取消先于退出/退出先于取消、ack丢失 → grace不重置，R/Q后才cancelled或already_ended，旧信号不盲重发 |
-| T-04-27 (P) | 父MCP真实退出，continue/stop两配置，再模拟仅caller stale → continue继续；stop生成预授权取消并待确认；stale不触发误杀或放槽 |
-| T-04-28 | shared父A context关闭、B仍有效；新MCP同owner重放 → 仅A委派按策略处理，B无变化；重放原run，不撤销已接受取消/重复启动 |
-| T-04-29 | hud-run原始UPDATE state、HUD试补回执/放槽、status触发写、恢复观察器写meta → 白名单/只读拒绝；正确reconciler迁移state+槽+event原子 |
-| T-04-30 (P/A8) | 甲新实现跑检测/context/函数/前台PGID/input/Ctrl-C/resize/quit/kill/pane-close/parent-exit/supervisor-death全矩阵 → 实例/输入落点/回执/心跳逐项脚本对账，prototype通过不替代新实现 |
-| T-04-31 | 乙同票据竞争dispatch、Hfresh+leader alive、正常退出/pane关闭/parent退出/sidecar死 → 原票据只允许一次dispatch，scope_ref仍NULL；leader诊断不当范围G，正式Gunknown且已发任务uncertain持槽，R-02-2/3/5不可达，无scope信号或伪造R/Q；未发时完整围栏N仍可达 |
-| T-04-32 | Codex shell env缺失、配置env/本轮参数claim、_meta只存在但trust unverified、daemon-present未测、Herdr未测布局 → 不拿metadata或三跳外推授权；保留unsupported/待验证分支 |
-| T-04-33 | A8原型1s心跳/旧reason、shell137/真实harness signal未知、exec仅--version → 正式格式用5s/30s及本文枚举；不把原型exit.json直接当最终R，完整exec TUI仍未验证 |
-| T-04-34 | 历史locator/新occupant、headless无input能力、合法focus/input请求 → 分别stale_locator/unsupported/交HostAdapter，零隐式resume，不绕输入队列 |
-| T-04-35 | run heartbeat stale、Jev needs_human/本地runner退出、collect过期 → run槽不因TTL释放，browser继续持有待结果对账，collect仅06按代次接管 |
-| T-04-36 (P/A8) | supervisor SIGKILL后外层shell返回、harness PID仍活但前台归属未知/改变；另向supervisor发INT/TERM/HUP → 前者input/focus拒绝且uncertain持槽，不把PID活等同可交互；后者仅对核验harness组发信号，shell-only退出不终结，待第二轮证据 |
-| T-04-37 (P) | armed→一次RUN→shell另建harness组，分别在发现前/核验后写scope前崩溃；另同实例后来发现成功 → kind/strategy始终固定，未核验scope_ref=NULL、Gunknown/uncertain持槽且零scope信号/R/Q；恢复不重发RUN、不把shell组填入；成功后仅一次NULL→真实scope、H+Galive按02恢复running，SQL拒绝后续改范围 |
-| T-04-38 (P) | 合成空闲run跨10个心跳间隔，再注入退出/取消事件并记录SQL/唤醒/系统调用 → 定时路径每间隔恰一runs UPDATE、零evidence/event/meta写、零proc/组扫描循环，空闲CPU≈0由06基准；退出事件才做必要组空检查并落回执 |
-| T-04-39 (P) | 正常spawn+wait、harness退出、run终结或只剩无活跃控制的uncertain历史、stale截止H仍fresh/确stale四组 → 生命周期自动推进无需调用者手工登记；hud-mcp随harness退出、hud-run/helper收尾后退出，历史/槽保留；只真stale/请求/运行事件对账，无全局常驻timer服务 |
+| T-04-1 (B) | 含空格/引号/元字符的argv与显式shell函数两组 → argv不经shell解释；shell仅按明确文本 -ic，拒绝双模式/空argv，相同launch_digest可复核 |
+| T-04-2 (A9 fixture) | profile source-a但函数实际home-b，stdin brief/closed/tty三组 → 来源错配不授权绑定；stdin模式明确、brief后EOF，双home不合并 |
+| T-04-3 (A9 prototype) | shell→harness两个不同stamp，与已验证直接argv/exec同实例 → 独立保存；只有真实native来源才可给runs.exit_code，不强求shell路径native结果 |
+| T-04-4 (A9 fixture) | 多候选harness、进程名字相同、短命harness漏观察 → harnessPid/start=null/unknown，不猜第一个或shell；正常候选唯一+启动证据才可供01绑定 |
+| T-04-5 (A9 prototype) | leader已退但组内S/T/D子活、只剩Z、普通setsid工具、原harness/同会话写者逃组仍活 → 阻终结/封口等证据齐可结束/仅诊断/冲突阻复用 |
+| T-04-6 (A9 fixture) | 请求延期cgroup/跨域控制 → 提交前unsupported/unknown，零外部动作；不得运行中缩成较小scope取空组 |
+| T-04-7 (A9 fixture) | 运行中改scope或同cwd孤儿猜归属 → 拒变/不伪造；仅已证实普通范围外工具可诊断，确证旧harness/会话写者须冲突阻断 |
+| T-04-8 (A9 fixture) | runId穿越/符号链接/外部用户目录、同目录不同run或票据输家 → 拒绝写入/覆盖；合法目录0700文件0600 |
+| T-04-9 (A9 fixture) | 临时/半文件、最终同receipt异hash、rename前后崩溃 → 只完整一次最终exit可导入，异hash冲突；局部事实只evidence，无revision升级，日志不截断 |
+| T-04-10 (B) | shell状态0/130/137且native不可得，与直接wait真实harness信号 → 前者native null/shell分列，scope证据齐仍ended；后者可记录native signal/source |
+| T-04-11 (B) | 固定scope完整检查有S/T/D、仅Z或空且原harness终止/所有launcher封口、仅PID缺失/EPERM/不可见域 → G alive/gone/unknown，vendor stopped不能替代 |
+| T-04-12 (A9 fixture) | 仅supervisor HUP或shell退出、child仍活 → 只evidence、不产最终exit/R；另完整scope证据齐才最终receipt |
+| T-04-13 (A9 fixture) | 部分leader观察、scope宣称结束却活成员/未封口shell、错boot/代次证据 → 不终结/X uncertain/仅审计；同机跨boot证明旧scope结束不查询新boot数字PGID |
+| T-04-14 (A9 fixture) | 最终exit落盘DB前崩溃/重复导入、无exit却可Q → 同指纹一次采用、零重执行；Q原生结果NULL，不续写原writer文件 |
+| T-04-15 (A9 fixture) | 合成UTF-8/二进制追加、visible直通空日志 → 字节offset精确/捕获覆盖如实，零PTY采集承诺；日志私有不默认送模型 |
+| T-04-16 (A9 fixture) | heartbeat每5000ms，30000/30001边界、clock负差/错seq/旧producer → fresh/stale精确，异常unknown；恢复器不能更新死supervisor心跳 |
+| T-04-17 (B) | supervisor死亡但残留fresh心跳、harness仍活；未登记reserved在0/30000/30001ms → 前者uncertain持槽，正常窗口starting，超窗uncertain不重发 |
+| T-04-18 (B) | 两supervisor同ticket CAS；错hash/launch_digest/slot holder → 单赢家登记/写文件/启动，输家零backend调用且不改赢家文件 |
+| T-04-19 (A9 prototype) | armed后死、submitting commit后spawn前死、spawn后回写前死；中间shell暂停且可能稍后启动 → 证据齐才N/R/Q，否则uncertain；不强制gate/不重发，活launcher阻终结 |
+| T-04-20 (A9 fixture) | 同票据重复提交、MCP重启重传、恢复改phase到reserved → 拒绝/动作上界1；直接单次spawn无需额外分发服务，不能断言目标必执行 |
+| T-04-21 (A9 prototype) | reserved/armed永久fence+确证launcher封口/死亡+无workload，再迟到登记；另submitting未知 → 前者N/零迟到提交，后者非N；DB围栏不把已获许可暂停shell变封口 |
+| T-04-22 (B) | cancel接受、INT/10s/TERM/2s/KILL，步骤间已R/Q终结 → 按实际时间阶梯，终态后无信号；只发信号不改cancelled |
+| T-04-23 (B) | leader先退、PGID复用、整组控制通道丢失、与supervisor共享组 → 有效稳定控制才整scope取消，否则cancel_unconfirmed/持槽；零单PID降级/错组信号 |
+| T-04-24 (A9 prototype) | supervisor死且没有任何leader/exit receipt，可信scope/原harness终止/所有launcher封口/完整无活成员 → Q ended或cancelled(NULL)；缺任一项uncertain，不要求死人补receipt |
+| T-04-25 (A9 prototype) | supervisor SIGKILL后scope活/未知/证实空，或同机跨boot；恢复尝试续H/领票据/写exit → 按02取证/列缺项，恢复无新执行权且不冒充旧writer |
+| T-04-26 (B) | 重复cancel重试、取消先于退出/退出先于取消、ack丢失 → grace不重置，R/Q后才cancelled或already_ended，旧信号不盲重发 |
+| T-04-27 (B) | 父MCP真实退出，continue/stop两配置，再模拟仅caller stale → continue继续；stop生成预授权取消并待确认；stale不触发误杀或放槽 |
+| T-04-28 (B) | 新MCP同OwnerKey重放、父仅stale、vendor stop称stopped但记录updater活 → 原run无重发/stale不误杀/不据vendor响应放槽；不扩大信号权限 |
+| T-04-29 (B) | hud-run原始UPDATE state、HUD试补回执/放槽、status触发写、恢复观察器写meta → 白名单/只读拒绝；正确reconciler迁移state+槽+event原子 |
+| T-04-30 (A9 prototype) | A8已选甲的关键scope结束/活成员反例/监督故障证据与B2的TTY父退出、实际context命令、同agent状态 → 主审逐项接受或列缺口；不把原型当生产R或强求完整B矩阵 |
+| T-04-31 (A9 fixture) | MVP请求乙sidecar managed/甲提交未知自动回退乙 → unsupported/禁止回退，零第二dispatch、零伪造scope终结；只保留探针材料 |
+| T-04-32 (A9 fixture) | Codex每轮叶子env注入/保留用户配置/HUD_HOME与source、首合格tools/call才有session、参数伪造/来源冲突、resume新claim → 运输与身份各自核验，fallback只01范围，无重启动作 |
+| T-04-33 (A9 fixture) | A8原型200ms扫组/1s心跳/旧reason、exec codex函数、native未知 → 不能照搬生产/推直接子或native信号；正式5s/30s，正常scope结束仍可ended |
+| T-04-34 (B) | 历史locator/新occupant、headless无input能力、合法focus/input请求 → 分别stale_locator/unsupported/交HostAdapter，零隐式resume，不绕输入队列 |
+| T-04-35 (A9 fixture) | run heartbeat stale、Jev needs_human/本地runner退出、collect过期 → run槽不因TTL释放，browser继续持有待结果对账，collect仅06按代次接管 |
+| T-04-36 (A9 prototype) | 甲supervisor SIGKILL，前台回shell/输入落shell/无receipt且PID仍活 → 交互中断/uncertain持槽，cause=supervisor_dead、interaction={focus:false,input:false,resume:false}；禁自动fg/wrapper恢复。独立父MCP退出continue仅投影parentOffline，不伪造supervisor_dead，另验TTY可用及交互能力 |
+| T-04-37 (B) | shell另建harness组，提交后发现前/写scope前崩溃与随后同实例核验成功 → 未知scope禁信号/R/Q，不重发；成功仅NULL→真实scope一次，SQL拒后改 |
+| T-04-38 (B) | 合成空闲run多个心跳与退出/取消事件 → 每间隔一次runs UPDATE，零周期event/evidence/meta/组扫描；阻塞CPU与真实I/O计量归06，启动有截止采样不变常驻200ms扫描 |
+| T-04-39 (B) | hud-mcp启动/重连发现遗留receipt或无receipt旧run、wait必要截止、相关事件/显式reconcile、无写者历史 → 有预算幂等导入/按02采Q或列缺证，无新执行权；status只读/通知合并，历史不养常驻observer |
