@@ -27,7 +27,7 @@
 
 ### 0.3 假设（详见 §9）
 
-A1 B16 对每个节点给出完整五维投影和 `asOfSeq`；A2 归并器把"两条记录"作为独立标志而不是猜一个状态；A3 可见运行用修订后的方案甲（Oracle 裁决 `docs/reviews/2026-11-01-astra-contracts.md` §4）：运行结束可由已核验的进程组为空证实，但 harness 的原生退出结果通常未知（null），shell status 只是独立诊断，永不当退出码；方案乙不是 MVP 受管后端，不在假设里；A4 HUD 直接调用 `hud run resume/reconcile` 这类受信入口是待 Oracle 裁决的架构问题，裁决前默认只显示并复制命令；A5 面板宽度 32–56（Codex ≥ 41），bar 80–200，statusline 80–200；A6 现有键位 `h`/`l`/`a`/`f`/`s`/`r`/`v` 可复用；A7 MVP 范围按 Oracle 裁决：跨 owner 转交凭证、`closed` 链接重开、no-MCP `observe_only` 绑定、shared-daemon context 推到 v1.1，Jev 作业在阶段 C——本稿保留这些设计并就地标注，B10 不实现它们。
+A1 B16 对每个节点给出完整五维投影和 `asOfSeq`；A2 归并器把"两条记录"作为独立标志而不是猜一个状态；A3 可见运行用修订后的方案甲（Oracle 裁决 `docs/reviews/2026-11-01-astra-contracts.md` §4）：运行结束可由已核验的进程组为空证实，但 harness 的原生退出结果通常未知（null），shell status 只是独立诊断，永不当退出码；方案乙不是 MVP 受管后端，不在假设里；A4 HUD 直接调用 `hud run resume/reconcile` 这类受信入口是待 Oracle 裁决的架构问题，裁决前默认只显示并复制命令；A5 面板宽度 32–56（Codex ≥ 41），bar 80–200，statusline 80–200；A6 现有键位 `h`/`l`/`a`/`f`/`s`/`r`/`v` 可复用；A7 MVP 范围按 Oracle 裁决与契约 v0.3：同 owner 的 `predecessor` 转交留在 MVP；跨 owner 转交凭证、`closed` 链接重开、no-MCP `observe_only` 绑定、shared-daemon context 推到 v1.1，Jev 作业在阶段 C——本稿保留这些设计并就地标注，B10 不实现 v1.1 的部分。
 
 ## 1. 信息清单与层级
 
@@ -62,7 +62,7 @@ A1 B16 对每个节点给出完整五维投影和 `asOfSeq`；A2 归并器把"�
 | 运行结束 / 退出 | `runs.state = ended`（已核验进程组为空）；`exit.json` 的 `exit_code` / `signal` 可为 null（可见运行通常未知）、`reason`、`coverage`；shell status 是独立诊断 | 结束 T0（标记）；退出结果 T2（仅已知且非零 / 信号时）/ T3；shell status 仅 `▾ More` | `exit 1`、`signal TERM` 只在有来源时出现；未知时焦点行写 `exit unknown`，不写 0 |
 | 心跳 | `runs.heartbeat_at` | T2（stale 时年龄）/ T3 | `heartbeat stale 2m14s` |
 | 链接状态与握手 | `link.state`、`runHandshake`、`bound_by`、`capabilities`（MVP 只有 `mcp`；`observe_only` 自动绑定是 v1.1，MVP 只显示未确认身份） | T2（非 bound 时一个词）/ T3 | `handshake claimed`；Inspector 画状态机 |
-| 父离线 | `parent.offline` 事件、`orphan_policy` | T0（顶部父行）/ T3 | `↑ parent ✳ main · offline 3m · continue` |
+| 父离线 | `parentOffline {since, seq, orphanPolicy}`（由 parent.offline 事件投影） | T0（顶部父行）/ T3 | `↑ parent ✳ main · offline 3m · continue` |
 | 冲突 | 归并器冲突标志 + events | T0 `⚠ · two records` / T3 两条记录 | 不归属任一方 |
 | 候选（疑似） | `candidates[]` | T3 only | 不进树、不进计数、不进 bar |
 | 当前动作 / 工具 | `evidence.action` | T2 | 卡片 `▸ npm test -- parser` |
@@ -174,7 +174,7 @@ col 2…     深度 d ≥ 1：(d-1) 个「│ 」+「├ 」/「└ 」；未证
 
 ### 3.6 边：深度与跨 harness
 
-缩进 + `│ ├ └` 画已证实的边（link `bound / reported / closed`）；`┊` 画未证实的边（`pending / claimed`，此时名字是 brief 里的 label，节点标记按 §3.3 第 8 条）。`handed_over` 的旧边不画，只在后继节点 Inspector 的"Link"节写 `predecessor`（跨 owner 转交是 v1.1，MVP 不会出现这种边）。跨 harness 的边与同 harness 的边画法相同——harness 标记本身已经说明边跨了 harness，再加样式反而多一个要学的符号。
+缩进 + `│ ├ └` 画已证实的边（link `bound / reported / closed`）；`┊` 画未证实的边（`pending / claimed`，此时名字是 brief 里的 label，节点标记按 §3.3 第 8 条）。`handed_over` 的旧边不画，只在后继节点 Inspector 的"Link"节写 `predecessor`：同 owner 的转交（改任务用新 link）在 MVP 里就会出现，旧 link `handed_over / current_owner=0`，新 link 是唯一当前父边；跨 owner 转交是 v1.1。跨 harness 的边与同 harness 的边画法相同——harness 标记本身已经说明边跨了 harness，再加样式反而多一个要学的符号。
 
 ### 3.7 动作在哪
 
@@ -183,10 +183,10 @@ col 2…     深度 d ≥ 1：(d-1) 个「│ 」+「├ 」/「└ 」；未证
 | 选中行 | 按钮 / 键 | 做什么 |
 |---|---|---|
 | 原生 Codex 子代理 | ⇢ Switch（`o`） | 今天的切换 |
-| 可见委派，run 非 uncertain，`occupantMatches` 为真，宿主可控（Herdr / tmux） | ⇢ Open（`o`） | 聚焦那个 pane / tab |
-| 可见委派，occupant 不匹配、宿主不可控或 run uncertain（含 `supervisor lost`） | ⇢ Open（灰） | 不可用；Inspector 写原因 |
+| `interaction.focus = true`（可见委派、occupant 已核验、宿主可控 Herdr / tmux） | ⇢ Open（`o`） | 聚焦那个 pane / tab |
+| `interaction.focus = false`（occupant 不匹配、宿主不可控、run uncertain 含 `supervisor lost`） | ⇢ Open（灰） | 不可用；Inspector 写原因；HUD 只读这个字段，不自己从心跳推断 |
 | 活跃 headless | ⇢ Log（`L`） | 新 pane 里 `tail -f` 日志；无宿主时显示路径 |
-| 已结束且已报告（`reported`），通过 resume 门禁 | ↻ Resume（`R`） | 默认：显示并复制 `hud run resume <linkId>`（Inspector 同一行），回显 `✓ Copied`。HUD 直接调用受信入口是待 Oracle 裁决的开放问题，裁决前不实现；若裁决允许，`R` 之后还要按 Enter 确认。`closed` 链接重开是 v1.1 |
+| 已结束且已报告（`reported`），`resumable = true` 且 `interaction.resume = true` | ↻ Resume（`R`） | 默认：显示并复制 `hud run resume <linkId>`（Inspector 同一行），回显 `✓ Copied`。HUD 直接调用受信入口是待 Oracle 裁决的开放问题，裁决前不实现；若裁决允许，`R` 之后还要按 Enter 确认。`closed` 链接重开是 v1.1 |
 | `uncertain`（含 `supervisor lost`）/ `⚠` | ↻ Reconcile（`R`） | 同上，`hud run reconcile <runId>`；`supervisor lost` 时这是唯一可用的动作 |
 | 根会话 | Switch（`⌂`） | 今天的行为 |
 
@@ -496,7 +496,7 @@ bar 上的对应警示：`⚑ ask-pro needs human`（一个时）、`⚑1 ?3 ⚠
 | └ ■ ⌬ t-old · ended · not loaded             2d|
 ```
 
-历史行一律 muted；时钟是结束年龄；名字后面是最有信息量的收尾事实：有报告摘要就按格截断显示摘要（`✓` 和 `!` 都是，一排 `· reported` 什么都说不了），只有报告没有摘要写 `reported`，没有报告写 `ended`（微卡第 2 行 `ended · no report · exit unknown`）；有来源的退出结果（`exit 1`）进微卡，不占行；`ask-pro` 行是阶段 C 的作业历史，显示产物名；`not loaded` 行只有身份和最后状态，Enter 打开的 Inspector 写 `history not loaded (budget)`。`closed` 与重开、`handed_over` 的旧链接是 v1.1，MVP 的历史里不会出现。
+历史行一律 muted；时钟是结束年龄；名字后面是最有信息量的收尾事实：有报告摘要就按格截断显示摘要（`✓` 和 `!` 都是，一排 `· reported` 什么都说不了），只有报告没有摘要写 `reported`，没有报告写 `ended`（微卡第 2 行 `ended · no report · exit unknown`）；有来源的退出结果（`exit 1`）进微卡，不占行；`ask-pro` 行是阶段 C 的作业历史，显示产物名；`not loaded` 行只有身份和最后状态，Enter 打开的 Inspector 写 `history not loaded (budget)`。`closed` 与重开是 v1.1，MVP 的历史里不会出现；同 owner 转交留下的 `handed_over` 旧链接会出现，但只在后继节点的 Inspector 里作 `predecessor` 历史，不单独成行。
 
 ### 4.11 Inspector（委派 Codex 子会话，健康）
 
@@ -653,28 +653,28 @@ harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再�
 
 | # | 需要 | 对照 |
 |---|---|---|
-| 1 | 每个节点的 `statusProjection`：`activity / pendingReason / lastTurnOutcome / liveness / freshness`，附 `asOfSeq`、`observedAt`、`lastEvidenceAt`（stale 年龄用）、stale 时的 `lastKnownActivity` | B16；契约 03 delegate_status |
-| 2 | 冲突标志：`conflict: {count, recordIds[], since}`，归并器不猜状态 | B16；契约 02 冲突事件 |
-| 3 | `link`：`state`、`label`、`role`、`backend`、`parent_ref`、`child_ref`、`current_owner`、`bound_by`、`capabilities`（MVP 只有 `mcp`）、`brief_path`（basename 用）、`task_digest`；`predecessor`、`closed_at`、`observe_only` 绑定是 v1.1 字段，MVP 可为空 | 契约 03 Link；Oracle C03 / C04 |
+| 1 | 每个节点的 `statusProjection`：`activity / pendingReason / lastTurnOutcome / liveness / freshness`，附 `asOfSeq`、`asOf`、`observedAt`、`lastEvidenceAt`（stale 年龄用）、stale 时的 `lastKnownActivity` | B16；契约 03 statusProjection（v0.3 已列出全部字段） |
+| 2 | 冲突标志：`conflict: {count, recordIds[], since}`，归并器不猜状态 | 契约 03 conflict / candidates（v0.3 已满足）；B16 |
+| 3 | `link`：`state`、`label`、`role`、`backend`、`parent_ref`、`child_ref`、`current_owner`、`bound_by`、`capabilities`（MVP 只有 `mcp`）、`brief_path`（basename 用）、`task_digest`、`predecessor`（同 owner 转交，MVP 就有）；`closed_at` 在 MVP 恒空（不产 closed），`observe_only` 绑定是 v1.1，`capabilities` 为当前 MCP 能力或 `none` | 契约 03 link / runHandshake（v0.3 已满足）；Oracle C03 / C04 |
 | 4 | `runHandshake`（pending / claimed / bound + reason），与 `link.state` 分开 | 契约 03 |
-| 5 | `currentRun`：`runId`、`run_seq`、`mode`、`supervision_strategy`（MVP：headless / wrapper 甲）、`state`、`launch_phase`、`locator`（pane / tab / label）、`started_at`、`ended_at`、`cancel_requested_at`、`heartbeat {at, ageMs, fresh\|stale\|unknown}`、`exit {code\|null, signal\|null, reason, coverage}`、日志路径、`isCurrent`。`state = ended` 只凭已核验的进程组为空成立，不依赖退出码；`exit.code` 只表示有来源的原生结果，shell status 另给 `shellStatus`（诊断，HUD 只放 `▾ More`） | 契约 03 Run；契约 04 exit.json / 心跳；Oracle C07 / C09 |
-| 6 | `latestReportForRun {status, summary, path, created_at, report_id}`，加该 link 的报告历史（按 run 分组，只给计数和最近一条） | 契约 03 Report |
-| 7 | `host.occupantMatches` 与 locator 是否仍有效；不匹配时不给宿主字段 | 契约 03 HUD 可读投影 |
+| 5 | `currentRun`：`runId`、`run_seq`、`mode`、`supervision_strategy`（MVP：headless / wrapper 甲）、`state`、`launch_phase`、`locator`（pane / tab / label）、`started_at`、`ended_at`、`cancel_requested_at`、`heartbeat {at, quality}`（ageMs 由 HUD 用 nowMs 派生）、`exit {code\|null, signal\|null, source, reason, coverage}`、日志路径、`isCurrent`。`state = ended` 只凭已核验的进程组为空成立，不依赖退出码；`exit.code` 只表示有来源的原生结果，shell 结果另给 `shell_status` / `shell_signal`（诊断，HUD 只放 `▾ More`） | 契约 03 currentRun / exit / logs（v0.3 已满足）；契约 04；Oracle C07 / C09 |
+| 6 | `latestReportForRun {status, summary, path, created_at, report_id}` 与 `reportHistory`（按 run 分页，count 与最近一条） | 契约 03 latestReportForRun / reportHistory（v0.3 已满足） |
+| 7 | `host.occupantMatches`（true / false / null）、locator `valid / stale / unknown` 与核验时刻；不匹配时不给宿主字段 | 契约 03 host / parent（v0.3 已满足） |
 | 8 | `candidates[]`（证据种类、时间），只供 Inspector | 概念 §6.5 |
-| 9 | 父离线：`parent.offline {since}` 事件与冻结的 `orphan_policy` | 契约 04 orphan |
-| 10 | uncertain 的 `reconciliation`：`evidenceIds[]`、`missing[]`、允许的对账入口（含可显示的命令字符串） | 契约 02 R-02；契约 03 |
-| 11 | 已报告链接的 resume 门禁结果：`resumable: boolean, reason`，HUD 不复制门禁；`closed` 重开的门禁是 v1.1 | 契约 03 I-03-5 / I-03-12 |
+| 9 | 父离线：`parentOffline {since, seq, orphanPolicy}` 或 null，由 parent.offline 事件投影 | 契约 03 interaction / parentOffline（v0.3 已满足）；契约 04 orphan |
+| 10 | uncertain 的 `reconciliation {cause, evidenceIds[], missing[], observedAt, 允许入口}`，入口含可显示的命令字符串（如 `hud run reconcile <runId>`） | 契约 03 reconciliation / resumable（v0.3 已满足）；契约 02 R-02 |
+| 11 | 统一门禁投影 `resumable: boolean` + `reason`，HUD 不复制门禁；`closed` 为 false / deferred（重开是 v1.1） | 契约 03 reconciliation / resumable（v0.3 已满足） |
 | 12 | Jev（阶段 C，不阻塞 cc→Codex）：`jobs.state`、`provider`、`account` 显示名、`external_key` 短形、`result_path`（answered 后）、租约 `{kind: 'browser', held: boolean, queued: boolean, holderLabel?}`（排队时写 `browser queue (held by ask-pro-1)`）、Flow credits | 契约 02 jobs / leases；C5 |
 | 13 | 每节点 `Metric`：model、effort、context {used, window}、spent {tokens, costUsd}，带 `quality`（estimated 时 HUD 加 `~`）；没有成本口径的后端明确给 `costUsd: null`，树级求和才能标 `≥` | 概念 §6.4 |
 | 14 | `coverage (complete / partial / catching_up)` + `skipped` 计数；树预算外节点的 `loaded=false` 与最后状态 | 概念 §6.5 |
-| 15 | 通知事件带 `seq` 与 `created_at`：`pendingReason` 变化、报告到达、进入 uncertain、`lastTurnOutcome=failed` | 概念 §6.8 |
+| 15 | 通知事件带 `seq` 与 `created_at`：报告到达、进入 uncertain、冲突 / 解决、父离线（账本事件）；`pendingReason` 变化与 `lastTurnOutcome=failed` 的观测通知用相同的时间 / 游标语义 | 契约 03 tree / notices（账本事件已满足）；06 / B16 给观测通知 |
 | 16 | 变更信号：`PRAGMA data_version` 可用，或一个 bump 文件，HUD 不按秒查表 | 契约 06（预算） |
 | 17 | statusline 的廉价入口：机读状态文件的通用版（含树计数与直接子节点的标记级字段），或 ≤ 20 ms 的索引查询 | D3；契约 06 |
-| 18 | 树保证：≤ 200 节点、无环、`handed_over` 边标为历史而非第二父边、深度字段 | 概念 §6.5；契约 03 I-03-8 |
+| 18 | 树保证：≤ 200 节点、无环 / 无重复 ref、depth 明确、`handed_over` 只作历史不成第二父边、超预算 `loaded=false` 并保留最后身份状态 | 契约 03 tree / notices（v0.3 已满足）；概念 §6.5 |
 | 19 | 时间一律毫秒 epoch，年龄由 HUD 用 `nowMs` 计算 | 全部 |
-| 20 | 被委派方视角：父的 harness、名、pane 标签、父 liveness、caller 短形（未确认时） | 契约 01 CallerId；03 |
-| 21 | uncertain 的原因枚举 `reconciliation.cause`（至少 `supervisor_dead`、`scope_unknown`、`resume_ref_mismatch`、`clock_anomaly`）和显式的 `interaction: {focus: false, input: false, resume: false}`；HUD 据此灰掉 Open、只留 Reconcile，不自行从心跳推断 | 契约 04 supervisor 死亡 / 对账；Oracle §4 |
-| 22 | "父 MCP 断连"（`parent.offline`，子照常可用）与"supervisor 死亡"（run uncertain）是两种事件、两个字段，不合并成一个标志 | 契约 04 orphan；Oracle §4 |
+| 20 | 被委派方视角：父的 harness、名、liveness、经验证的 pane label 或 null，未确认时 caller 短形只作诊断 | 契约 03 host / parent（v0.3 已满足）；契约 01 CallerId |
+| 21 | **已满足（契约 03 v0.3）**：`reconciliation.cause` 枚举（至少区分 `supervisor_dead`、`scope_unknown`、`resume_ref_mismatch`、`clock_anomaly`，可再细分 `supervisor_stale` 等）和显式的 `interaction {focus, input, resume}`（未知为 false；uncertain / 未决冲突、尤其 `supervisor_dead` 三项均 false，resume 还须 `resumable=true`）；HUD 据此灰掉 Open、只留 Reconcile，不自行从心跳推断 | 契约 03 reconciliation / interaction；Oracle §4 |
+| 22 | **已满足（契约 03 v0.3）**：`parentOffline` 与 `reconciliation.cause` 是独立字段；父 MCP 离线 continue 本身不禁用仍经核验可用的子交互，只有 `supervisor_dead` 这类 cause 才让 `interaction` 三项为 false | 契约 03 interaction / parentOffline；Oracle §4 |
 | 23 | 每节点 `stateSince`：进入当前投影标记（桶）的时刻，B16 在标记变化时更新；驻留时长、3 秒加粗、trouble 桶内倒序都靠它 | B16；契约 03 events.seq / created_at |
 | 24 | 每节点 `cwd`（已有）和可选的 git `worktree` 名；HUD 只在与父不同时显示 | 概念 §6.4 SessionEvidence |
 
