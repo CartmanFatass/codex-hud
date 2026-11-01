@@ -37,6 +37,8 @@ Jacob 的日常是多 harness 编排：cc 当编排者，后端交 Codex impleme
 | G10 | **Herdr 集成独立**：核心不 import Herdr；Herdr 只经注册表、宿主、运行控制三个接口进入，可整体关闭；无 Herdr 时核心功能全部可用 | 核心套件在无 Herdr、用假实现的环境下全绿；`HUD_HERDR=0` 集成测试 |
 | G11 | **双模式与受约束的 resume**：每次委派可选可见或 headless；每次运行有托管进程、退出回执和取消；resume 只在该子会话没有活跃运行时允许；支持的组合以能力矩阵为准，不承诺"任意" | 真实场景：headless 起 Codex 子会话，结束后以可见模式 resume，同一节点两次运行；活跃时 resume 被拒绝 |
 | G12 | **执行协议可恢复**：spawn / resume 在一个事务里提交意图并占运行槽，只有占到槽的执行者启动；结果不明标 `uncertain`，按"证据 → 允许迁移"表对账，禁止盲重试；幂等键以持久所有者为范围并带参数摘要，MCP 重启不绕开 | 并发重试、启动中断、MCP 重启后重试、旧 run 迟报四类测试 |
+| G13 | **轻量与快**（Jacob，2026-11-01：与正确性同级的考量）：不引入常驻服务（hud-mcp 随 harness 起停，hud-run 每运行一个且只在运行期间存在）；热路径（bar / panel tick、statusline、非 wait 的 MCP 工具调用）有预算；托管与对账的开销按次计而不是按秒轮询；正确性机制若有代价，先选成本低的证据（进程组、回执文件）再选重的 | 契约 06 写定预算（初始目标：非 wait 工具调用 p95 < 50 ms，hud-mcp 冷启动 < 200 ms，hud-run 空闲 CPU ≈ 0 且只按心跳间隔写一次，HUD 增量 tick < 50 ms）；B 阶段与 D4 基准核实，超预算即缺陷 |
+| G14 | **清晰的子代理可视化与低摩擦协作**：用户一眼看清谁在为谁干活、处于什么状态、卡在哪；编排者委派一次 = 一次 `delegate_spawn` + `delegate_wait`，不再手写 herdr / pi-role / codex 配方 | B14 场景；B13 后 skill 只剩"调 MCP、验报告" |
 
 **非目标（v1 不做）：** 不改任何 harness 的行为；不做调度器或任务队列（agent-coop 已有）；不替代 Herdr；不做 Windows 原生；不做跨机器；不预建"任意 harness 插件平台"或事件总线；不保证"所有会话都能以任意模式 resume"。
 
@@ -574,6 +576,9 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 | 2026-11-01 | 无 hud-mcp 的子：pending → bound 只凭启动回执 + 可信会话证据 + 启动消息的 transcript 核验三项同时成立，由 reconciler 写；缺一项最多候选；§14 对应条目按 §6.6.3 收紧 | 编排者（A1 提问），A9 复核 |
 | 2026-11-01 | `predecessor` 转交只在调用者 OwnerKey 等于旧关系所有者时允许；跨所有者转交需旧所有者签发、reconciler 核验的凭证（格式归契约 03），定义前返回 unsupported；知道 linkId 不构成授权 | 编排者（A1 提问），A9 复核 |
 | 2026-11-01 | 调用者身份拆为物理 `CallerId` + `caller_contexts`：每个 context 各有 SessionRef 绑定与代次；专属 stdio 实例恰好一个 context；共享（daemon）实例的 context 只由可信逐调用来源建立，无此来源则能力标不支持，但模型与 schema v1 不变 | 编排者（A1 主审发现），A9 复核 |
+| 2026-11-01 | 受管范围默认 = 经核验的 harness 进程组（headless 由 hud-run 建组；可见方案甲里交互 shell 的作业控制会另建组，须发现并核验 harness pgid + pid + 启动时间，信号前重验；A8 评审）：该组空 + 票据围栏 + 回执即可终结，shell 退出状态本身不是回执；setsid / 重父化逃逸的后代不在受管范围，不阻止终结、不授予执行权，可检测时记诊断事件；回执记 `scope_kind`（pgid / cgroup），环境提供独占 cgroup 时覆盖逃逸后代；sidecar 只有 leader 级回执 | 编排者（A1 第二批提问），A9 复核 |
+| 2026-11-01 | 跨所有者转交凭证：256-bit 不透明 nonce、账本只存 hash、旧所有者签发、绑定旧 link / 子会话 / 所有者代次 + 目标 OwnerKey + 过期、reconciler 在转交事务中单次消费；契约 03 只定内部接口，公开工具（grant / revoke、spawn 参数）推迟到 v1.1，此前跨所有者转交不支持 | 编排者（A1 第二批提问），A9 复核 |
+| 2026-11-01 | 新增 G13 轻量与快、G14 清晰可视化与低摩擦协作；性能与正确性同级，契约 06 写定预算，基准超预算即缺陷 | Jacob |
 
 ## 16. 评审状态与下一次评审
 

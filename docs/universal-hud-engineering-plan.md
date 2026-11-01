@@ -13,7 +13,7 @@
 
 | 阶段 | 交付物 | 状态 |
 |---|---|---|
-| A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 进行中：A1 第一批（01、02）v0.1 主审通过；A3 待主审；A8、A1 第二批进行中 |
+| A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 进行中：A1 第一批（01、02）v0.1 主审通过；A3 主审通过（五份探针）；A8 第二轮修复中（首轮评审：方案甲证据不足）；A1 第二批进行中 |
 | B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 待开工 |
 | C pi 与 Jev 后端 | pi 适配器与 `hud pi`、resume 实测、Jev 后端与 JobRef、pi 的 MCP 加载 | |
 | D cc 完整与 statusline | cc 原生子代理、checkpoint 与采集租约、`hud statusline`、对照清单与基准、三道门切换 | |
