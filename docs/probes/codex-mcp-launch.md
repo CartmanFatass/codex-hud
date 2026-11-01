@@ -114,3 +114,5 @@ rollout id（rollout-…-01a1986b-93b1….jsonl 的 session_meta.payload.id）= 
 - **概念 §6.6.3「daemon 代启 MCP 的 Codex」**：本机 0.166 的观测只覆盖 **daemon 缺席**——TUI / exec 直接启动 MCP，daemon 不参与。**daemon 在场的当前版本行为未测量**（不能启动用户 daemon），因此不能说该分支不需要触发；概念 §6.6.3 的**条件支持门继续保留**：若 daemon 代启且没有可信的逐调用会话来源，该路径标为不支持，不用 prompt claim 冒充会话识别。`_meta` 的字段存在不等于可信来源（上一条）。
 - **契约 05（能力矩阵）**：Codex MCP 服务器的环境里没有 `CODEX_HOME`，服务器无法从自身环境判断 home；home 必须从 ppid 链上的 Codex 进程环境或 `_meta`/rollout 路径解析（见 P2）。
 - **契约 04（运行托管）**：可见/headless 启动模板若需要把 claim 交给 Codex 的 hud-mcp，必须在 argv 上注入 `-c mcp_servers.hud.env=…`，不能只依赖 `hud-run` 的进程环境；这也意味着 `hud-run` 需要知道 hud-mcp 的服务器名并合并用户已有的 env 表。
+
+另见 [daemon 在场补测](codex-daemon.md)（CLI 0.166 + managed app-server 0.163，含 dotted env 与清理限制）。
