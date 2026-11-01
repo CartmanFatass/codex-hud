@@ -571,16 +571,17 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 | 2026-11-01 | daemon 代启 MCP 且无可信会话来源的路径标不支持 | Pro 第三轮 §3① |
 | 2026-11-01 | 状态归并器（B16）与材料入口（B17）作为独立实现工作包 | Pro 第三轮 §4 |
 | 2026-11-01 | v2.3 为阶段 A 开工基线；阶段 B 实施基线在 A9 按不变量、失败用例、探针证据放行 | Pro 第三轮 §1 |
-| 2026-11-01 | 首次 spawn 尚无子 SessionRef 时，运行槽以 `provisional:<runId>` 占位，只允许全新会话；身份解析后同事务换成真实 ref，真实 ref 已被占则双方进 `uncertain`、都不启动 / 续跑；resume 与 predecessor 必须带实际 SessionRef | 编排者（A1 提问），A9 复核 |
-| 2026-11-01 | 未绑定父的 OwnerKey（ppid + procStart）在绑定证实后经 `owner_aliases` 单向归并到 SessionRef 范围；一个 proc 范围每代次至多映射一个会话；代次 +1 时 alias 关闭；归并冲突一律拒绝、不启动 | 编排者（A1 提问），A9 复核 |
-| 2026-11-01 | 无 hud-mcp 的子：pending → bound 只凭启动回执 + 可信会话证据 + 启动消息的 transcript 核验三项同时成立，由 reconciler 写；缺一项最多候选；§14 对应条目按 §6.6.3 收紧 | 编排者（A1 提问），A9 复核 |
-| 2026-11-01 | `predecessor` 转交只在调用者 OwnerKey 等于旧关系所有者时允许；跨所有者转交需旧所有者签发、reconciler 核验的凭证（格式归契约 03），定义前返回 unsupported；知道 linkId 不构成授权 | 编排者（A1 提问），A9 复核 |
-| 2026-11-01 | 调用者身份拆为物理 `CallerId` + `caller_contexts`：每个 context 各有 SessionRef 绑定与代次；专属 stdio 实例恰好一个 context；共享（daemon）实例的 context 只由可信逐调用来源建立，无此来源则能力标不支持，但模型与 schema v1 不变 | 编排者（A1 主审发现），A9 复核 |
-| 2026-11-01 | 受管范围默认 = 经核验的 harness 进程组（headless 由 hud-run 建组；可见方案甲里交互 shell 的作业控制会另建组，须发现并核验 harness pgid + pid + 启动时间，信号前重验；A8 评审）：该组空 + 票据围栏 + 回执即可终结，shell 退出状态本身不是回执；setsid / 重父化逃逸的后代不在受管范围，不阻止终结、不授予执行权，可检测时记诊断事件；回执记 `scope_kind`（pgid / cgroup），环境提供独占 cgroup 时覆盖逃逸后代；sidecar 只有 leader 级回执 | 编排者（A1 第二批提问），A9 复核 |
-| 2026-11-01 | 跨所有者转交凭证：256-bit 不透明 nonce、账本只存 hash、旧所有者签发、绑定旧 link / 子会话 / 所有者代次 + 目标 OwnerKey + 过期、reconciler 在转交事务中单次消费；契约 03 只定内部接口，公开工具（grant / revoke、spawn 参数）推迟到 v1.1，此前跨所有者转交不支持 | 编排者（A1 第二批提问），A9 复核 |
-| 2026-11-01 | 关系状态只表达已证实的父子身份，resume 不回退 `pending`；每轮握手是 run 级投影（`runHandshake`）；resume / handover 的新一轮必须绑定到关系已记录的 child SessionRef，不同则该 run 进 `uncertain`、不改写 child_ref；`closed → bound` 重开须满足槽空闲与所有者校验，保留 close 历史 | 编排者（A1 第二批提问），待 Oracle 复核 |
+| 2026-11-01 | 首次 spawn 尚无子 SessionRef 时，运行槽以 `provisional:<runId>` 占位，只允许全新会话；身份解析后同事务换成真实 ref，真实 ref 已被占则双方进 `uncertain`、都不启动 / 续跑；resume 与 predecessor 必须带实际 SessionRef | 编排者（A1 提问），A9 复核；Oracle 追认 |
+| 2026-11-01 | 未绑定父的 OwnerKey（ppid + procStart）在绑定证实后经 `owner_aliases` 单向归并到 SessionRef 范围；一个 proc 范围每代次至多映射一个会话；代次 +1 时 alias 关闭；归并冲突一律拒绝、不启动 | 编排者（A1 提问），A9 复核；Oracle 修改：原子重键到 canonical session 范围 + 审计，不双写（C01） |
+| 2026-11-01 | 无 hud-mcp 的子：pending → bound 只凭启动回执 + 可信会话证据 + 启动消息的 transcript 核验三项同时成立，由 reconciler 写；缺一项最多候选；§14 对应条目按 §6.6.3 收紧 | 编排者（A1 提问），A9 复核；Oracle 修改：三证正向绑定推迟到 v1.1；MVP 只展示未确认身份、拒绝授权（C03） |
+| 2026-11-01 | `predecessor` 转交只在调用者 OwnerKey 等于旧关系所有者时允许；跨所有者转交需旧所有者签发、reconciler 核验的凭证（格式归契约 03），定义前返回 unsupported；知道 linkId 不构成授权 | 编排者（A1 提问），A9 复核；Oracle 追认 |
+| 2026-11-01 | 调用者身份拆为物理 `CallerId` + `caller_contexts`：每个 context 各有 SessionRef 绑定与代次；专属 stdio 实例恰好一个 context；共享（daemon）实例的 context 只由可信逐调用来源建立，无此来源则能力标不支持，但模型与 schema v1 不变 | 编排者（A1 主审发现），A9 复核；Oracle 修改：保留物理 / 逻辑分离；MVP 只实现经验证的直接 stdio，共享正向调度推迟；原生子调用不得冒充根（C02） |
+| 2026-11-01 | 受管范围默认 = 经核验的 harness 进程组（headless 由 hud-run 建组；可见方案甲里交互 shell 的作业控制会另建组，须发现并核验 harness pgid + pid + 启动时间，信号前重验；A8 评审）：该组空 + 票据围栏 + 回执即可终结，shell 退出状态本身不是回执；setsid / 重父化逃逸的后代不在受管范围，不阻止终结、不授予执行权，可检测时记诊断事件；回执记 `scope_kind`（pgid / cgroup），环境提供独占 cgroup 时覆盖逃逸后代；sidecar 只有 leader 级回执 | 编排者（A1 第二批提问），A9 复核；Oracle 修改：Q 不要求已死 supervisor 的回执；scope 无活 workload + 原 harness 结束 + 启动者封口即可终结，退出结果可为空（C07、C08） |
+| 2026-11-01 | 跨所有者转交凭证：256-bit 不透明 nonce、账本只存 hash、旧所有者签发、绑定旧 link / 子会话 / 所有者代次 + 目标 OwnerKey + 过期、reconciler 在转交事务中单次消费；契约 03 只定内部接口，公开工具（grant / revoke、spawn 参数）推迟到 v1.1，此前跨所有者转交不支持 | 编排者（A1 第二批提问），A9 复核；Oracle 推翻分期：grant 协议、实现与 DDL 整体移到 v1.1，MVP 只拒绝跨所有者（C04） |
+| 2026-11-01 | 关系状态只表达已证实的父子身份，resume 不回退 `pending`；每轮握手是 run 级投影（`runHandshake`）；resume / handover 的新一轮必须绑定到关系已记录的 child SessionRef，不同则该 run 进 `uncertain`、不改写 child_ref；`closed → bound` 重开须满足槽空闲与所有者校验，保留 close 历史 | 编排者（A1 第二批提问），待 Oracle 复核；Oracle 追认；`runHandshake` 由 binding / claim 推导、不另存；closed 重开语义留 v1.1 规格 |
 | 2026-11-01 | 新增 G13 轻量与快、G14 清晰可视化与低摩擦协作；性能与正确性同级，契约 06 写定预算，基准超预算即缺陷 | Jacob |
 | 2026-11-01 | 后端设计与架构交 Oracle（Codex `gpt-6-astra` effort max）裁决；Pro 只在关键节点（A9、B15 或 Oracle 上送）。此前编排者在 A1 中做的裁决（本表标"编排者"的各行）连同契约 01–04 与探针结论打包送 Oracle 追认或推翻 | Jacob |
+| 2026-11-01 | Oracle 第 1 次裁决（[reviews/2026-11-01-astra-contracts.md](./reviews/2026-11-01-astra-contracts.md)）：Codex 身份主路径 = 每轮 `-c mcp_servers.hud.env.*` 注入 claim + 逐调用 `_meta` + 启动实例 / source 核验；daemon-present 不是 A9 前置；可见模式采用修订后的方案甲（原生退出结果可未知，supervisor 死亡即交互中断、`uncertain`、持槽），方案乙不作 MVP 受管后端，PTY 方案推迟；A9 改为两级门禁（A9 审规格 + 最小合成进程原型 + A3/A8 可行性证据，生产验收在 B）；契约必改 14 项 C01–C14 | Oracle（Codex gpt-6-astra max） |
 
 ## 16. 评审状态与下一次评审
 

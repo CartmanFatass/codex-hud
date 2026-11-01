@@ -10,7 +10,8 @@
 | 关键节点评审：阶段边界（A9、B15）、Oracle 判断为超出其范围或需要更高一级裁决的分叉 | **ChatGPT Pro**（经 jev-ask） | skill `jev-ask`：简短 prompt 文件 + 一个附件（相关文档合并成一个 .md）；答案归档到 `docs/reviews/<date>-pro-<topic>.md` |
 | 评审（每个变更一个主审） | **Codex reviewer**，`gpt-6.1-sol`，effort **max** | skill `herdr-delegate-codex` 的 reviewer 流程；hud-mcp 可用后改调 `delegate_spawn{role: reviewer}`。Codex implementer 自带的 reviewer 子代理也用 sol max，并且就是该变更的主审 |
 | 核心任务：契约、账本、hud-mcp、hud-run、各 harness 适配器、链接解析、状态模型、reader、Herdr 集成层、启动器 | **Codex implementer**，`gpt-6.1-sol`，effort high（契约类任务提到 max） | skill `herdr-delegate-codex`；brief 里写明 Subagent plan（tier S / M / L） |
-| 普通任务：探针脚本、测试基建、fixture、基准脚本、skill 与文档更新、改名、i18n 文案搬运 | **pi implementer**（DeepSeek V4.1 Flash，pi-roles） | skill `herdr-delegate`；评审仍由 Codex reviewer sol max 做 |
+| 普通任务（明确型）：目标、方法、产出与验收都已写明的任务，如按评审意见修复、按既定方法补测、fixture、测试基建、基准脚本、skill 与文档更新、改名、i18n 文案搬运 | **pi implementer**（DeepSeek V4.1 Flash，pi-roles），每段一个新 pi、短段 | skill `herdr-delegate`；评审仍由 Codex reviewer sol max 做 |
+| 开放型任务：需要自己设计方法或从观察下结论的任务，如新探针、原型、调研 | **Codex implementer**，`gpt-6.1-sol` | skill `herdr-delegate-codex`；brief 要求结论只覆盖实测配置 |
 | 前端设计决策：信息展示、可视化设计、bar / panel / Inspector / statusline 的布局与信息层级 | **Claude Code 子代理，Fable（`model: fable`，effort max）**，由它决定（Jacob，2026-11-01） | Agent 工具，`model: "fable"`、`effort: "max"`；输入：概念方案 §10 UX、相关契约的投影字段、现有渲染与视觉基线；产出设计文档（放 `docs/design/`），作为前端实现的输入 |
 | 前端实现：按已定设计写渲染、布局、文案、视觉基线 | **Claude Code 子代理 `frontend-implementer`**（sonnet，xhigh） | Agent 工具，`subagent_type: frontend-implementer`，传 brief 路径；设计以 Fable 的设计文档为准 |
 | 需要人类互动的测试：对话框、真实输入、Windows Terminal 视觉验收 | **Hermes**（Windows computer use，grok-4.7，一次性运行） | 脚本先摆好状态，再给 Hermes 一个任务文件；证据以其 usage JSON 与截图为准。参照 ux / JevFocus 项目的做法 |
@@ -24,6 +25,9 @@
 - 设计分叉怎么走（Jacob，2026-11-01）：后端的设计与架构交 **Oracle（Codex Astra Max）**；编排者不自行裁决跨契约、不变量或范围的分叉：实现者写下默认方案并标"待 ARCH 裁决"，继续不受影响的部分；编排者把同一时段的分叉攒成一份问题包送 Oracle，只暂停受影响的工作包。**Pro 是更高一级**，只在关键节点（阶段边界 A9 / B15，或 Oracle 认为需要上送的分叉）使用。可逆的实现选择（内部结构、命名、先做哪个用例）由 CORE 自己定并在报告里写明理由，编排者验收时复核。
 
 ## 分类规则
+
+- 给 pi 的任务切成短段（一个里程碑），每段一个新 pi，做完即关；不在一个 pi 会话里串多个任务（Jacob，2026-11-01）。
+- 并行度按情况提高：所有权不重叠的段可同时开，各自写明独占路径；共享文件的段串行。
 
 - 碰到契约、账本、身份、状态模型、reader、hud-run、Herdr 层、启动器中任何一个 → 核心任务。
 - 信息展示与可视化的设计决策 → Fable max 子代理；按定稿设计改渲染、文案、视觉基线 → 前端实现。
