@@ -103,7 +103,7 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B8 | **cc 最小适配器**：绑定（stdin > 注册表 > sessions 文件 > 候选）、预算 reader（类型白名单、`api-request-blob` 跳过、usage 按 message.id 去重、compact 边界）、`linkEvidence` 提取（`mcp__hud__delegate_*` 工具结果、首条用户消息）、`children` 占位 | `src/harness/claude/` + fixture | 100 MB 合成 transcript 增量 tick 预算内；coverage 标记正确 | CORE | L | A4、A6 |
 | B9 | **HUD 链接解析**：读账本、约定范围核验（签发时间窗、harness 一致、唯一匹配）、冲突与候选、树投影（delegated 节点、经 Codex facade 读孙辈、深度 / 节点 / I/O 预算、visited） | `src/core/link/` | 单测：晚到、重复、冲突、fork、循环、关闭后保留 | CORE | M | B2、B8 |
 | B10 | **渲染**：delegated/headless、intent稳定显示键与绑定后选择映射、日志/Open、Inspector链接/运行、bar delegated/冲突/父标识/中英；Resume/Reconcile按ActionDescriptor仅显示复制 | src/render/ + 视觉基线 | 规则§8/视觉审阅；只消费B16的freshness.state/stateKey/stateSince/basis/共享终态谓词，完整驻留读取等B12→B16发布；不按图标折历史，不在HUD起控制CLI | FE | M | B9、B16（完整连续性依B12） |
-| B11 | **启动器**：hud claude档案/argv/shell/resume、hud run管理入口（含local_user resume完整参数与明确HUD_HOME安全复制命令）、B18版本化export CLI分派、最小hud panel、codex-hud兼容入口 | bin/hud + 文档 | tmux集成hud claude起bar/panel；管理resume只走B4既有writer/重验，不伪造父context，未验证能力不提供虚假命令；export不依赖HUD/B16/B17运行 | CORE | M | B4、B7、B10、B18 |
+| B11 | **启动器**：hud claude档案/argv/shell/resume、hud run管理入口（含local_user resume完整参数与明确HUD_HOME安全复制命令）、B18版本化export CLI分派、最小hud panel、codex-hud兼容入口 | bin/hud + 文档 | tmux集成hud claude起bar/panel；管理resume只走B4既有writer/重验，不伪造父context，未验证能力不提供虚假命令；export不依赖HUD/B16/B17运行 | CORE | M | 管理/导出 CLI：B4、B18；panel 集成：B7、B10 |
 | B12 | **最小采集一致性**：collect:<SessionRef>租约/接管/旧代失效；checkpoint/parserState/summary/StateContinuity/notices及observationStamp同一ObservationCommit原子发布，B16复用不另造存储 | src/core/collect-lease.ts、src/core/checkpoint.ts | 并发panel/statusline、崩溃点无新旧混配、旧代迟写拒绝；stateKey/stateSince/basis重启续已知连续性、缺口不伪造；零逐tick年龄写/ledger显示列 | CORE | M | B2 |
 | B13 | **skill 与角色模板**：`herdr-delegate-codex` 改为 `delegate_spawn / wait / status / cancel`；角色模板加 whoami / report 与旧问题通道；`delegate.json` 初版 | skill 文件 + `docs/delegate.example.json` | 用新 skill 跑一次真实委派 | ORD | S | B6 |
 | B14 | **第二级生产验收与能力矩阵**：Herdr可见cc→Codex、headless后可见resume、活跃拒绝、HUD_HERDR=0/tmux；生产重验A9身份/幂等/恢复反例及全部声明能力/06基准；B18 producer快照、双source、晚绑定、两轮resume、handover、空值/隐私回归 | tests/integration/scenario-*.sh、tests/human/*.md、docs/capability-matrix.md及ledger/进程/receipt日志 | 逐格日志/版本，未测未验证；输入落点、nullable native/独立shell状态、完整scope取消/真实父MCP故障及无重复启动；性能/accepted→started/bound分计；导出行数/字节/墙钟/读事务寿命实测；toktrack消费端非A9/B15前置 | ORD + HUI | M | B4、B5、B11、B12、B13、B16、B17、B18 |
@@ -111,6 +111,22 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B17 | **统一模型材料入口**：所有模型功能（摘要、委派摘要、未来 Jev 路由）取材料只走一个入口；按 source 的外发授权；新来源默认不外发；负向测试 | `src/core/materials/`、`tests/unit/materials.test.ts` | 负向测试：未授权来源的任何文本不出现在外发 payload；迁移后新来源默认拒绝 | CORE | M | A2（契约 07）、B8 |
 | B18 | **版本化本地委派导出**：07独立v1只读一致快照、ledgerId命名空间/逐run记录/完整SessionRef与nullable端点、scope/coverage、元数据白名单、--paths local、稳定排序/兼容；不依赖B16/B17/HUD运行 | 按需查询/序列化模块 + A4 golden与producer回归；CLI由B11集成 | 上限10000 run/16MiB/1000ms软预算，超限显式失败、完整JSON备妥才输出；记录行数/字节/墙钟/读事务寿命，不初始化/迁移/采集/Git/reconcile，不新增JSONL writer/daemon/后台全库同步；toktrack独立接入 | CORE | S | A9、B2 |
 | B15 | **阶段评审**：MVP 演示材料 + 账本导出 + 场景日志 + 能力矩阵送 ARCH | `docs/reviews/<date>-pro-mvp.md` | 无阻断项 | ORCH + ARCH | S | B14 |
+
+**A9 带条件放行的 B 内条件**（[reviews/2026-11-01-chatgpt-pro-a9-gate.md](./reviews/2026-11-01-chatgpt-pro-a9-gate.md) §2/§4/§6；各列入对应 WP 验收，B14 生产重验）：
+
+| WP | 条件 |
+|---|---|
+| B1 / B5 | 真实调用来源：根与原生子共用 MCP、调用记录晚写/重复/缺失、同进程换会话与旧 spawn/report 并发、新旧 MCP 同时绑定；不可辨时拒绝，不沿用根身份、不退回 proc 权限。按精确 callId 有界定位，不逐调用扫描全文。B1 明确各入口实际支持的 Node 版本（`package.json` 现为 ≥18，`node:sqlite` 需 ≥22.5） |
+| B2 / B4 | 事务外取证后被写锁阻塞、另一写者先取消/终结/导入冲突：旧对账提交前重验状态、代次与相关证据版本，不覆盖新事实；原型事务代码不直接移植 |
+| B3a / B3b | scope 故障矩阵：扫描中成员 fork/退组、leader 先死而组内仍活、核验与发信号之间 PID/PGID 复用、scope 固定前崩溃、真实父 MCP 死亡与 supervisor 死亡对 TTY 的不同影响；一次 /proc 枚举不自动等于完整范围，控制证据不足保守拒绝 |
+| B4 | brief 有字节上限，hash 与实际投递用同一份输入；接受后 brief 被替换/删除时的输入一致性；"事务外读取"仍计入 50 ms |
+| B12 / B16 | 共用一个 ObservationCommit；观测存储本期只实现 SQLite 或 bundle 中的一种；旧租约持有者迟写与原子发布；不另起状态归并或后台恢复服务 |
+| B16 / B10 | 全 tick 共享总 deadline 与公平续读（continuation），不让每 reader 20 ms × 节点数累加 |
+| B17 | 撤权后的队列、repair、缓存路径不再外发 |
+| B18 | 一致快照与导出预算（已在行内） |
+| B14 | 空闲 CPU 除每 run 指标外报告 R=10 的总增量与 RSS；accepted 快不掩盖 started/bound 长时间未达 |
+
+开工顺序（A9 Pro 门禁评审 §7 采纳）：第一批 B1 ∥ B2 ∥ B3a ∥ B8，B1 的真实调用来源验证最先回答（Claude 根调用能否可靠识别；不能则收窄档案或改取证方案）。随后先做 B4/B5 的 headless 闭环（接受→启动→绑定→报告→取消/无 receipt 恢复），同时起性能基准与故障测试，再推进 B3b/B7 可见模式。B2 后尽早 B12→B16→B6，让状态、连续性与 wait 共用同一事实；B9/B10 随后集成。B18 只依 A9+B2 独立并行；B17 在任何新来源进入模型材料前完成。B11 拆依赖：管理/导出 CLI 随 B4/B18 交付，panel 集成等 B7/B10。B14 的测试随每个闭环落地，最后汇总矩阵，不把生产反例全部留到阶段末。
 
 可并行（A9之后）：B2 ∥ B3a ∥ B8；B2后B12 ∥ B18，B18不等B16/B17；B7/B9/B17可按各自输入推进。B16纯逻辑可先做，最终连续性须B12，B6最终status须B16；B10→B11串行且B11集成B4/B18。B13在B6后；toktrack consumer不作为任何producer或A9/B15前置。规模标注"探针后重估"的（B3b、C4）在对应探针结论出来后由 ORCH 改规模。
 
