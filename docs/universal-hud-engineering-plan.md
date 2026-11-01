@@ -13,7 +13,7 @@
 
 | 阶段 | 交付物 | 状态 |
 |---|---|---|
-| A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 进行中：A1 第一批（01、02）v0.1 主审通过；A3 主审通过（五份探针）；A8 第二轮修复中（首轮评审：方案甲证据不足）；A1 第二批进行中 |
+| A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 进行中：A1 契约 01–04 v0.3（按 Oracle C01–C14 修订）主审通过；A2 契约 05–07 v0.1 主审通过；A3 五份探针与 daemon 补测主审通过；A8 第二轮修复后复核中；前端信息设计 v1.0 定稿（`docs/design/`）；下一步 Oracle 第 2 次咨询（数据层字段归属），再 A4 |
 | B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 待开工 |
 | C pi 与 Jev 后端 | pi 适配器与 `hud pi`、resume 实测、Jev 后端与 JobRef、pi 的 MCP 加载 | |
 | D cc 完整与 statusline | cc 原生子代理、checkpoint 与采集租约、`hud statusline`、对照清单与基准、三道门切换 | |
@@ -96,7 +96,7 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B3b | **hud-run可见终端集成**：实现Oracle修订方案甲、TTY直通、真实harness PGID/完整scope控制、Herdr检测/context；原生退出结果可未知，shell status分列；乙managed与PTY延期 | src/core/run/visible-*.ts + tmux集成测试 | 生产验证scope结束/活成员阻终结、整组取消不退单PID、实例复用/短命/重启；父MCP断连continue仍前台可输入/收尾；supervisor死交互中断、uncertain持槽、禁自动input/focus/fg/恢复/resume，Q不依赖死人receipt；原型不是生产pass，性能依06 | CORE | M（A8后重估） | A9、A8关键证据接受、B3a |
 | B4 | **spawn / resume 与 Codex 后端档案**：模板（launch / headless / resume / resumeHeadless）、claim 生成与注入、首条 prompt 组装、意图先行事务、headless 路径、tmux 可见路径 | hud-mcp 工具 + `delegate.json` 示例 | 仅证实未执行（启动前失败、有退出回执且无子进程）才 `failed`，其余一律 `uncertain` 进入对账；超时不改状态；同 OwnerKey 同 request_key 重试返回原结果 | CORE | M | B1、B2、B3a |
 | B5 | **握手**：`delegate_whoami`（env claim 自动 / 参数 claim）、单次有效与 TTL、fork 复制 claim 被拒、`pending → claimed → bound`、`delegate_report` 绑定 runId | 工具实现 + 单测 | fork 场景单测；无 env 的 claim 路径单测 | CORE | M | B4 |
-| B6 | **wait / status / cancel**：事件长轮询（≤120 s，游标）、状态聚合（关系、运行、报告、心跳、对账结果）、取消经 hud-run、可选父 pane 提示 | 工具实现 + 单测 | 超时不改状态；旧 run 迟报不满足新等待；status 的状态字段来自 B16 归并器 | CORE | M | B2、B3a |
+| B6 | **wait / status / cancel**：事件长轮询（≤120 s，游标）、状态聚合（关系、运行、报告、心跳、对账结果）、取消经 hud-run（父 pane 自动提示按 Oracle 延期） | 工具实现 + 单测 | 超时不改状态；旧 run 迟报不满足新等待；status 的状态字段来自 B16 归并器 | CORE | M | B2、B3a |
 | B7 | **Herdr 集成层**：`integrations/herdr/{registry,host,run-control}`、`herdr api schema` 版本校验、tab 可见布局、`--env` 注入、就绪探测、`sendInput` 经 `agent prompt`、降级边界（仅预检失败回退）、Herdr 套件 | 模块 + `tests/herdr/` | `HUD_HERDR=0` 时核心全部可用；schema 不符降级并记诊断；只有预检失败（启动确实未发生）才回退 | CORE | M | A5、B3b |
 | B8 | **cc 最小适配器**：绑定（stdin > 注册表 > sessions 文件 > 候选）、预算 reader（类型白名单、`api-request-blob` 跳过、usage 按 message.id 去重、compact 边界）、`linkEvidence` 提取（`mcp__hud__delegate_*` 工具结果、首条用户消息）、`children` 占位 | `src/harness/claude/` + fixture | 100 MB 合成 transcript 增量 tick 预算内；coverage 标记正确 | CORE | L | A4、A6 |
 | B9 | **HUD 链接解析**：读账本、约定范围核验（签发时间窗、harness 一致、唯一匹配）、冲突与候选、树投影（delegated 节点、经 Codex facade 读孙辈、深度 / 节点 / I/O 预算、visited） | `src/core/link/` | 单测：晚到、重复、冲突、fork、循环、关闭后保留 | CORE | M | B2、B8 |
@@ -210,7 +210,7 @@ E、F 按需
 | 风险 | 影响 | 缓解 | 负责 |
 |---|---|---|---|
 | Codex 由 daemon 启动 MCP，env 不可达 | 握手只剩 prompt claim 路径 | A3 探针先定型；契约 01 写两条路径 | CORE |
-| hud-run 包住 harness 破坏 Herdr 检测或 herdr-context 包装 | 可见模式不可用 | A8 原型探针；备选：可见模式不包，只用 sidecar 记录 | ORD → CORE |
+| hud-run 包住 harness 破坏 Herdr 检测或 herdr-context 包装 | 可见模式不可用 | A8 原型探针；已裁决（Oracle 第 1 次）：修订方案甲，hud-run 须为 pane 前台作业；方案乙（sidecar）不作 MVP 受管后端 | ORD → CORE |
 | cc transcript 体积 | tick 超预算 | 预算 reader、类型跳过、coverage；B8 基准 | CORE |
 | 账本并发写丢更新 | 关系错乱 | SQLite 事务 + 幂等；B2 并发单测 | CORE |
 | pi imp 质量不稳 | 普通任务返工 | 升级规则：两轮评审仍有 blocker 即转 CORE | ORCH |
