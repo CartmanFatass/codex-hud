@@ -19,7 +19,7 @@ const HOSTILE: Array<[string, Partial<HudData>]> = [
     project: {
       ...makeHudData().project,
       projectName: 'a-really-long-project-name-that-will-not-fit-anywhere-near-a-narrow-pane',
-      cwd: '/home/fires/' + 'nested/'.repeat(20) + 'leaf',
+      cwd: '/synthetic/home/dev/' + 'nested/'.repeat(20) + 'leaf',
     },
   }],
   ['emoji branch', { git: { ...makeHudData().git, branch: 'feature/🔥-hot-path-🚀-rewrite' } }],

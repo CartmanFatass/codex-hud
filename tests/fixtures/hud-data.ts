@@ -196,7 +196,7 @@ export function makeHudData(overrides: Partial<HudData> = {}): HudData {
       untracked: 2,
     },
     project: {
-      cwd: '/home/fires/codex/codex-hud',
+      cwd: '/synthetic/home/dev/codex/codex-hud',
       projectName: 'codex-hud',
       agentsMdCount: 1,
       hasCodexDir: true,
@@ -210,9 +210,9 @@ export function makeHudData(overrides: Partial<HudData> = {}): HudData {
     sessionStart: at(-1800),
     session: {
       id: 'root-session-id-0123456789',
-      rolloutPath: '/home/fires/.codex/sessions/2026/03/01/rollout-root.jsonl',
+      rolloutPath: '/synthetic/home/dev/.codex/sessions/2026/03/01/rollout-root.jsonl',
       startTime: at(-1800),
-      cwd: '/home/fires/codex/codex-hud',
+      cwd: '/synthetic/home/dev/codex/codex-hud',
       cliVersion: '0.52.0',
       model: 'gpt-5.6-astra',
       reasoningEffort: 'xhigh',

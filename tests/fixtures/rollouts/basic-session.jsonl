@@ -1,4 +1,4 @@
-{"timestamp":"2026-03-01T11:30:00.000Z","type":"session_meta","payload":{"id":"root-session-id-0123456789","timestamp":"2026-03-01T11:30:00.000Z","cwd":"/home/fires/codex/codex-hud","originator":"codex_cli_rs","cli_version":"0.52.0","model_provider":"openai","git":{"branch":"main","commit_hash":"9a1bb93"}}}
+{"timestamp":"2026-03-01T11:30:00.000Z","type":"session_meta","payload":{"id":"root-session-id-0123456789","timestamp":"2026-03-01T11:30:00.000Z","cwd":"/synthetic/home/dev/codex/codex-hud","originator":"codex_cli_rs","cli_version":"0.52.0","model_provider":"openai","git":{"branch":"main","commit_hash":"9a1bb93"}}}
 {"timestamp":"2026-03-01T11:30:01.000Z","type":"turn_context","payload":{"model":"gpt-5.6-astra","effort":"xhigh","approval_policy":"on-request","sandbox_policy":{"type":"workspace-write"},"collaboration_mode":{"mode":"default"}}}
 {"timestamp":"2026-03-01T11:30:02.000Z","type":"event_msg","payload":{"type":"turn_started","model_context_window":272000}}
 {"timestamp":"2026-03-01T11:30:05.000Z","type":"response_item","payload":{"type":"function_call","name":"Read","id":"call_1","arguments":"{\"file_path\":\"src/render/header.ts\"}"}}
