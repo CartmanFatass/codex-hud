@@ -1,5 +1,5 @@
 import type { SessionRef } from './identity.js';
-import type { RunState } from './execution.js';
+import type { RunOperation, RunState } from './execution.js';
 import type { LinkState } from './lifecycle.js';
 import type {
   ObservationStamp,
@@ -80,21 +80,35 @@ export interface UniversalSnapshotV3 {
 export type ExportPaths = 'none' | 'local';
 export type ExportScope = { kind: 'all' } | { kind: 'links'; linkIds: string[] };
 
+export type BindingReasonCode =
+  | 'identity_source_missing'
+  | 'identity_unverified'
+  | 'identity_conflict'
+  | 'resume_ref_mismatch'
+  | 'unsupported'
+  | 'unavailable'
+  | 'unknown';
+export type HandshakeReasonCode =
+  BindingReasonCode | 'claim_missing' | 'claim_revoked' | 'claim_expired' | 'claim_conflict' | 'stale_binding';
+export type GitMissingReasonCode = 'not_git' | 'timeout' | 'unavailable' | 'unknown';
+export type CwdSourceCode = 'launch' | 'registry' | 'transcript' | 'supervisor';
+
 export interface ExportWorkspaceSnapshot {
   repoId: string | null;
   identityKind: 'git-common-dir-v1';
   scope: 'local';
   /** Only protocol source codes, otherwise null; never arbitrary diagnostic text. */
-  cwdSource: string | null;
+  cwdSource: CwdSourceCode | null;
   cwdAsOf: number;
   gitCapturedAt: number | null;
-  gitMissingReason: string | null;
+  gitMissingReason: GitMissingReasonCode | null;
 }
 
 export interface DelegationExportRecord {
   linkId: string;
   runId: string;
   runSeq: number;
+  operation: RunOperation;
   linkState: LinkState | 'unknown';
   runState: RunState | 'unknown';
   isCurrentRun: boolean;
@@ -104,8 +118,8 @@ export interface DelegationExportRecord {
   parentRef: SessionRef | null;
   childRef: SessionRef | null;
   relationshipConfirmed: boolean;
-  bindingReason: string | null;
-  runHandshake: { state: 'pending' | 'claimed' | 'bound' | 'unknown'; reason: string | null };
+  bindingReason: BindingReasonCode | null;
+  runHandshake: { state: 'pending' | 'claimed' | 'bound' | 'unknown'; reason: HandshakeReasonCode | null };
   cwdBasis: 'launch';
   cwdCapturedAt: number;
   workspaceSnapshot: ExportWorkspaceSnapshot | null;
@@ -134,7 +148,12 @@ export type DelegationExportV1 = ExportEnvelope &
   ({ paths: 'none'; records: DelegationExportRecord[] } | { paths: 'local'; records: DelegationExportLocalRecord[] });
 
 /** Explicit ledger read projection. No raw row/table serialization is accepted. */
-export interface ExportInputRecord extends Omit<DelegationExportRecord, 'workspaceSnapshot'> {
+export interface ExportInputRecord extends Omit<
+  DelegationExportRecord,
+  'workspaceSnapshot' | 'bindingReason' | 'runHandshake'
+> {
+  bindingReason: string | null;
+  runHandshake: { state: DelegationExportRecord['runHandshake']['state']; reason: string | null };
   launchCwd: string;
   workspaceSnapshot: RunWorkspaceSnapshot | null;
 }

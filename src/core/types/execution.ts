@@ -10,6 +10,7 @@ export type LaunchPhase = 'reserved' | 'armed' | 'submitting' | 'submitted' | 'n
 export type OrphanPolicy = 'continue' | 'stop';
 export type SupervisionStrategy = 'headless' | 'wrapper';
 export type ExitSource = 'wait_status' | 'trusted_harness_result';
+export type TerminalNote = 'cancel_timing_unknown' | null;
 
 export interface Run {
   runId: string;
@@ -173,6 +174,7 @@ export interface ReconcileDecision {
   evidenceIds: string[];
   auditEvidenceIds: string[];
   cause: ReconciliationCause | null;
+  terminalNote: TerminalNote;
   exitCode: number | null;
   exitSignal: string | null;
   exitSource: ExitSource | null;

@@ -1,6 +1,10 @@
 import { sameSessionRef } from './identity.js';
 import type { SessionRef } from './types/identity.js';
 import type {
+  BindingReasonCode,
+  HandshakeReasonCode,
+  GitMissingReasonCode,
+  CwdSourceCode,
   DelegationExportLocalRecord,
   DelegationExportRecord,
   DelegationExportV1,
@@ -33,39 +37,27 @@ const LINK_STATES = new Set(['pending', 'claimed', 'bound', 'reported', 'handed_
 const RUN_STATES = new Set(['starting', 'running', 'cancelling', 'ended', 'failed', 'cancelled', 'uncertain']);
 const HANDSHAKE_STATES = new Set(['pending', 'claimed', 'bound']);
 
-// 待 ARCH 裁决: vocabulary is not fully frozen; retain contract codes and suppress other diagnostics.
-const EXPORT_REASON_CODES = new Set([
+// Export v1 vocabularies are closed independently of internal diagnostics (E03).
+const BINDING_REASON_CODES = new Set<BindingReasonCode>([
   'identity_source_missing',
   'identity_unverified',
-  'supervisor_dead',
-  'scope_unknown',
-  'resume_ref_mismatch',
-  'clock_anomaly',
-  'supervisor_stale',
-  'submission_unknown',
-  'cancel_unconfirmed',
   'identity_conflict',
-  'scope_conflict',
-  'provisional_conflict',
-  'launch_timeout',
-  'unknown',
+  'resume_ref_mismatch',
   'unsupported',
-  'capability_unverified',
-  'timeout_configuration_unverified',
-  'lease_time_unknown',
-  'oversize_unknown',
   'unavailable',
-  'not_submitted',
+  'unknown',
 ]);
-const EXPORT_SOURCE_CODES = new Set([
-  'launch',
-  'registry',
-  'transcript',
-  'supervisor',
-  'report',
-  'job',
-  'observed-time',
+const HANDSHAKE_REASON_CODES = new Set<HandshakeReasonCode>([
+  ...BINDING_REASON_CODES,
+  'claim_missing',
+  'claim_revoked',
+  'claim_expired',
+  'claim_conflict',
+  'stale_binding',
 ]);
+const GIT_MISSING_REASON_CODES = new Set<GitMissingReasonCode>(['not_git', 'timeout', 'unavailable', 'unknown']);
+const CWD_SOURCE_CODES = new Set<CwdSourceCode>(['launch', 'registry', 'transcript', 'supervisor']);
+const OPERATIONS = new Set(['spawn', 'resume', 'handover']);
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -76,8 +68,10 @@ const identifier = (value: unknown): value is string =>
 const nullableTime = (value: unknown): value is number | null => value === null || integer(value);
 const absolutePath = (value: unknown): value is string =>
   typeof value === 'string' && value.startsWith('/') && !value.includes('\0');
-const code = (value: unknown, whitelist: ReadonlySet<string>): string | null =>
-  typeof value === 'string' && whitelist.has(value) ? value : null;
+function code<T extends string>(value: unknown, whitelist: ReadonlySet<T>): T | null {
+  for (const allowed of whitelist) if (value === allowed) return allowed;
+  return null;
+}
 const state = (value: unknown, known: ReadonlySet<string>): string =>
   typeof value === 'string' && known.has(value) ? value : 'unknown';
 
@@ -226,10 +220,10 @@ function decodeWorkspace(
       repoId: value.repoId as string | null,
       identityKind: 'git-common-dir-v1',
       scope: 'local',
-      cwdSource: code(value.cwdSource, EXPORT_SOURCE_CODES),
+      cwdSource: code(value.cwdSource, CWD_SOURCE_CODES),
       cwdAsOf: value.cwdAsOf,
       gitCapturedAt: value.gitCapturedAt,
-      gitMissingReason: code(value.gitMissingReason, EXPORT_REASON_CODES),
+      gitMissingReason: code(value.gitMissingReason, GIT_MISSING_REASON_CODES),
       ...(paths === 'local' ? { worktreeRoot: value.worktreeRoot as string | null } : {}),
     },
   };
@@ -245,6 +239,8 @@ function decodeRecord(
     !identifier(value.runId) ||
     !integer(value.runSeq) ||
     value.runSeq < 1 ||
+    typeof value.operation !== 'string' ||
+    !OPERATIONS.has(value.operation) ||
     typeof value.linkState !== 'string' ||
     typeof value.runState !== 'string' ||
     typeof value.isCurrentRun !== 'boolean' ||
@@ -285,6 +281,7 @@ function decodeRecord(
     linkId: value.linkId,
     runId: value.runId,
     runSeq: value.runSeq,
+    operation: value.operation as DelegationExportRecord['operation'],
     linkState: state(value.linkState, LINK_STATES) as DelegationExportRecord['linkState'],
     runState: state(value.runState, RUN_STATES) as DelegationExportRecord['runState'],
     isCurrentRun: value.isCurrentRun,
@@ -294,10 +291,10 @@ function decodeRecord(
     parentRef: parent.value,
     childRef: child.value,
     relationshipConfirmed: value.relationshipConfirmed,
-    bindingReason: code(value.bindingReason, EXPORT_REASON_CODES),
+    bindingReason: code(value.bindingReason, BINDING_REASON_CODES),
     runHandshake: {
       state: state(value.runHandshake.state, HANDSHAKE_STATES) as DelegationExportRecord['runHandshake']['state'],
-      reason: code(value.runHandshake.reason, EXPORT_REASON_CODES),
+      reason: code(value.runHandshake.reason, HANDSHAKE_REASON_CODES),
     },
     cwdBasis: 'launch',
     cwdCapturedAt: value.cwdCapturedAt,
@@ -394,6 +391,7 @@ function whitelistInputRecord(record: ExportInputRecord, paths: ExportPaths): un
     linkId: record.linkId,
     runId: record.runId,
     runSeq: record.runSeq,
+    operation: record.operation,
     linkState: record.linkState,
     runState: record.runState,
     isCurrentRun: record.isCurrentRun,
@@ -403,8 +401,11 @@ function whitelistInputRecord(record: ExportInputRecord, paths: ExportPaths): un
     parentRef: record.parentRef,
     childRef: record.childRef,
     relationshipConfirmed: record.relationshipConfirmed,
-    bindingReason: code(record.bindingReason, EXPORT_REASON_CODES),
-    runHandshake: { state: record.runHandshake.state, reason: code(record.runHandshake.reason, EXPORT_REASON_CODES) },
+    bindingReason: code(record.bindingReason, BINDING_REASON_CODES),
+    runHandshake: {
+      state: record.runHandshake.state,
+      reason: code(record.runHandshake.reason, HANDSHAKE_REASON_CODES),
+    },
     cwdBasis: record.cwdBasis,
     cwdCapturedAt: record.cwdCapturedAt,
     workspaceSnapshot:
@@ -414,10 +415,10 @@ function whitelistInputRecord(record: ExportInputRecord, paths: ExportPaths): un
             repoId: workspace.repoId,
             identityKind: workspace.identityKind,
             scope: workspace.scope,
-            cwdSource: code(workspace.cwdSource, EXPORT_SOURCE_CODES),
+            cwdSource: code(workspace.cwdSource, CWD_SOURCE_CODES),
             cwdAsOf: workspace.cwdAsOf,
             gitCapturedAt: workspace.gitCapturedAt,
-            gitMissingReason: code(workspace.gitMissingReason, EXPORT_REASON_CODES),
+            gitMissingReason: code(workspace.gitMissingReason, GIT_MISSING_REASON_CODES),
             ...(paths === 'local' ? { worktreeRoot: workspace.worktreeRoot } : {}),
           },
     projectOrigin:

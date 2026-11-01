@@ -6,6 +6,8 @@
 
 [Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
+[Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
+
 ## 数据模型
 
 ### 三个独立的范围
@@ -73,11 +75,38 @@ MVP由B18提供按需只读 `hud link export --json --schema-version 1 [--paths 
 | 层 / 字段 | v1 必需类型与语义 |
 |---|---|
 | envelope | `format:'hud-delegation-export',schemaVersion:1,ledgerId:string,asOfSeq:number,exportedAt:number,scope,coverage,paths,records[]`；`scope:{kind:'all'}\|{kind:'links',linkIds:string[]}`明确范围，`coverage:{state:'complete',recordCount:number}`说明成功快照覆盖与条数，paths为`none\|local`。asOfSeq为同次ledger事件高水位（空库0），不是增量游标；exportedAt是ms epoch。 |
-| 每run一条record | `linkId:string,runId:string,runSeq:number,linkState,runState,isCurrentRun:boolean,currentOwner:boolean,predecessor:string\|null,hasUnresolvedConflict:boolean`。同link多run不创造多条逻辑父边；枚举沿02/03，冲突不可藏在unknown。 |
+| 每run一条record | `linkId:string,runId:string,runSeq:number,operation:spawn\|resume\|handover,linkState,runState,isCurrentRun:boolean,currentOwner:boolean,predecessor:string\|null,hasUnresolvedConflict:boolean`。同link多run不创造多条逻辑父边；枚举沿02/03，冲突不可藏在unknown。 |
 | 端点 | `parentRef:SessionRef\|null,childRef:SessionRef\|null`，对象完整`{harness,sourceId,sessionId,threadId}`，threadId无值一律null。只取该关系/该run可证的ledger端点/目标，不把旧run端点套新轮；尚未绑定的预期harness/source只能另作可选提示，不包装伪SessionRef。 |
-| 绑定信息 | `relationshipConfirmed:boolean,bindingReason:string\|null,runHandshake:{state:pending\|claimed\|bound,reason:string\|null}`分别解释关系确认、本轮握手与缺失原因。resume时关系可已确认而本轮pending；历史、未确认与冲突用上述标志区分，不能因预期目标等于旧child就声称本轮握手bound。 |
+| 绑定信息 | `relationshipConfirmed:boolean,bindingReason:BindingReasonCode\|null,runHandshake:{state:pending\|claimed\|bound,reason:HandshakeReasonCode\|null}`分别解释关系确认、本轮握手与缺失原因。resume时关系可已确认而本轮pending；历史、未确认与冲突用上述标志区分，不能因预期目标等于旧child就声称本轮握手bound。 |
 | 启动位置 | `cwdBasis:'launch',cwdCapturedAt:number,workspaceSnapshot:object\|null,projectOrigin:{repoId,basis:'declared',declaredAt}\|null`；cwdCapturedAt为该run意图固定启动目录的时刻（created_at）。workspaceSnapshot仅选06快照的repoId/identityKind/scope及cwdSource/cwdAsOf/gitCapturedAt/gitMissingReason；NULL表示尚未捕获。`launchCwd:string`及快照的`worktreeRoot:string\|null`仅paths=local时输出，none模式省略而非伪造未知。不是导出时当前Git/observed workspace；projectOrigin不替代物理repoId。 |
 | 运行时间 | `createdAt:number,startedAt:number\|null,endedAt:number\|null`，全部ms epoch。endedAt是04确认终结观测时刻，不是精确内核退出时间；failed的startedAt可null。 |
+
+#### v1 来源与原因代码
+
+| 类型 / 字段 | v1 的全部非 null 值 |
+|---|---|
+| BindingReasonCode；`bindingReason` | `identity_source_missing`, `identity_unverified`, `identity_conflict`, `resume_ref_mismatch`, `unsupported`, `unavailable`, `unknown` |
+| HandshakeReasonCode；`runHandshake.reason` | 上述 BindingReasonCode 的全部值，加 `claim_missing`, `claim_revoked`, `claim_expired`, `claim_conflict`, `stale_binding` |
+| GitMissingReasonCode；`workspaceSnapshot.gitMissingReason` | `not_git`, `timeout`, `unavailable`, `unknown` |
+| CwdSourceCode；`workspaceSnapshot.cwdSource` | `launch`, `registry`, `transcript`, `supervisor` |
+
+代码含义：
+
+- identity_source_missing 指缺可信当前来源；identity_unverified 指独立身份尚未证实；identity_conflict 指身份证据矛盾；resume_ref_mismatch 指新轮解析结果不符既有目标。unsupported 指该绑定路径未开放；unavailable 指所需读取/能力当前不可得；unknown 指生产者明确知道原因未确定。claim_* 与 stale_binding 分别对应命名的凭据/本轮绑定事实，不把报告或运行失败塞进绑定原因。
+- Git 的 not_git 必须是明确确认不属于 Git 工作树，不能由读取错误推断；timeout 是捕获预算耗尽；其他无法取得 Git 元数据的失败归 unavailable，明确原因未知可用 unknown。成功取得所需元数据时 gitMissingReason=null；尚未捕获继续用既有 workspaceSnapshot/gitCapturedAt 的空值表达，不新增 not_checked 状态。
+- launch 指冻结启动输入的规范目录；registry/transcript/supervisor 指启动快照实际采用的对应可信位置来源，仍保留原 cwdAsOf。命中缓存保留其原来源，不把 cache 当新来源。它们不允许在导出时取当前位置覆盖历史。`observed-time` 是时间口径标记，不能单独当位置来源；report/job 不进入本次启动快照来源表。
+
+上述字段为对应 Code 类型或 null，键均必需；workspaceSnapshot=null 时不要求其内部键。内部 WorkspaceProvenance.cwdSource 保留现有 string 类型，本条只规定 export v1 的 nullable 边界。白名单值逐字、区分大小写匹配，不从自由文本截取、猜测或拼接协议代码；不认识的字符串输出 null，绝不复制原文，不能因它看起来像路径或含某个代码而放行。null 统一表示“此出口没有可提供的已知协议代码”，既可能无适用原因，也可能内部原因不可公开/无法映射；它不证明成功、已绑定或来源可信。明确的 unknown 代码与 null 不强行互换。
+
+serializer 和 decoder 使用同一组按字段词表。decoder 对必需键缺失或非 string/null 拒绝；未知字符串正规化为 null，保留其他独立状态/冲突事实。paths 模式只控制指定路径字段，不改变上述 null 语义。v1 词表和既有值的含义冻结；不要借新增内部诊断代码悄悄扩展出口。若将来另版扩词，旧 decoder 的 null 退化必须仍然安全。
+
+每条 record 必有 `operation:'spawn'|'resume'|'handover'`，直接投影该 run 接受时固定的 runs.operation，不由当前 linkState/predecessor/owner 反推。spawn 表示创建全新会话的意图，不能隐式 attach/resume；resume 表示同任务 link 对既有 child 的新一轮；handover 表示通过 predecessor 对既有 child 建立新任务 link 的首轮。handover link 的后续续跑仍为 operation=resume。此字段与 visible/headless 的呈现 mode 无关。
+
+operation 描述接受的意图，不单独证明外部动作已执行或身份已绑定。原始启动关系只能由 spawn 记录自身可证的 childRef、已独立确认的关系及无身份冲突的启动证据支持；pending/null/failed(non_execution) 不能因 operation=spawn 升级为确认起源。spawn 的 childRef 不得从后来另一轮的预期目标补造。历史 claim/binding 因正常 resume 被撤销不抹掉此前已确认的启动事实；不能要求旧轮现在仍有报告权限才承认其历史。
+
+currentOwner 表示本次快照中该 link 是否仍拥有当前关系，不表示它创建了整个原生会话，也不表示所有历史用量属于当前任务。predecessor 只表示任务关系的转交；部分 link 范围未包含前驱时保留引用，不猜其祖先。当前确定父边仍按 relationshipConfirmed、端点、状态和冲突判定，与新轮 runHandshake=pending 分开；原始 spawn 转为历史后，不再形成第二条当前父边。
+
+resume/handover 不迁移既有会话在本轮之前的历史用量；createdAt/startedAt/endedAt 不是逐条 token/cost 的归属区间，不能把整日聚合按这些时刻虚拆。即使确认最初 spawn，ledger 也只提供启动/关系来源，不替代 transcript 的实际用量及 consumer 的明确统计规则。身份、物理 workspace、declared 项目来源仍按 D02/D07 分开。MVP 仍只支持同 owner handover，本条不开放跨 owner 转交。
 
 ledgerId来自02初始化一次的私有元数据行，重启/同库备份恢复保留、独立新库新生成；外部键为`(ledgerId,linkId)`和`(ledgerId,runId)`，不用HUD_HOME绝对路径作命名空间。一次read-only连接/读事务取得已提交rows与high-water，以linkId/runSeq稳定排序；不继承200显示节点截断。无库/未知存储版本/权限失败明确unavailable或错误（非零退出），不初始化/迁移/采集/跑Git/transcript/reconciler，不输出成功空全集。
 
@@ -128,8 +157,8 @@ SnapshotWriter继续原子写0600、仅事实变化且最多1次/s；成功读/�
 | I-07-7 | 旧命令参数、session+home选择、--json只读及错误/退出行为保留 | T-07-14、15 |
 | I-07-8 | A–D旧状态可读不自动迁；E按source分别迁设置/材料/外发/预算，不合并授权或改用户harness设置 | T-07-16、17 |
 | I-07-9 | export v1单次只读一致ledger快照、ledgerId命名空间、逐run/端点空值/稳定排序及完整scope独立于HUD显示截断，不公开内部表或冒充CDC | T-07-20、21、24、25 |
-| I-07-10 | 本地导出仅元数据白名单、路径显式opt-in，不继承/授予B17模型外发许可，hash不保证匿名 | T-07-22 |
-| I-07-11 | consumer完整SessionRef join，当前confirmed无冲突边才优先；未确认/历史/declared/coverage不升级强度，旧run不混新轮 | T-07-23、24 |
+| I-07-10 | 本地导出仅元数据白名单与显式路径；binding/handshake/Git原因/cwd来源分别用四张封闭代码表，键必需、值Code或null、未知字符串→null、缺键或非string/null拒解码；内外类型分离，不授B17外发权 | T-07-22、26 |
+| I-07-11 | 每run必有固定operation，缺失/非法拒解码；完整ref join、当前确认边与原始spawn启动历史分开，currentOwner/predecessor不证明整会话起源或用量归属；未确认/冲突/历史/declared/coverage不升级强度，resume/handover不迁旧用量 | T-07-20、23、24、26 |
 | I-07-12 | v3消费06联合身份/独立成本Metric/语义时钟与终态/双域快照戳，未知不改v2兼容例外，C holder只留派生槽 | T-07-27 |
 
 ## 状态机
@@ -185,11 +214,11 @@ E的显式迁移为 `inspect → preview per-source mapping → write new privat
 | T-07-17 | B | A–D兼容读取与旧settings未知键过滤、授权文件坏/无、旧缓存无provenance → 不自动迁移/删除/扩权，不把未持久化grant当allow |
 | T-07-18 | C | Jev各provider/account合成任务、同源未授权材料、显式付费确认/浏览器资源 → 材料授权、执行许可/预算/资源分别验，不因job存在默认外发 |
 | T-07-19 | v1.1 | F远程routing建议与auto fixture → routing目标未授权时零请求；有建议许可仍无auto执行权，原Codex摘要许可不补齐 |
-| T-07-20 | A9 | export合成golden覆盖完整envelope、双source、threadId缺失、nullable端点/时间、逐run稳定排序 → ledgerId/link/run键唯一，scope/coverage/paths明确，空ledger asOfSeq=0，不受200节点限制 |
+| T-07-20 | A9 | 合成golden覆盖完整envelope/必需operation、双source/threadId/null端点时间、逐run稳定排序；首spawn/同link两次resume/handover首轮及其后resume、失败未绑定spawn → 精确枚举与ledger键，scope/coverage/paths完整，不受200显示节点限制 |
 | T-07-21 | A9 | 读快照期间并发新run/回填、高水位增长、无库/未知schema/权限拒绝 → rows+asOfSeq同ledger快照，明确失败而非成功空全集，零初始化/迁移/Git/采集/reconcile |
-| T-07-22 | A9 | 合成秘密/正文/label/所有路径哨兵，默认与paths=local、stdout/显式保存 → 只协议白名单；仅local含launchCwd/worktreeRoot，其余路径/正文始终不出；保存0600，无自动落盘/B17许可借用或外发授权 |
+| T-07-22 | A9 | 隐私哨兵与paths两模式保留；四张代码表逐允许值（含claim_*、stale_binding、timeout/not_git）、跨字段误用/大小写/free-text→null，显式null保留、不截取拼接；只local含launchCwd/worktreeRoot，其余路径/正文始终不出，无B17许可借用 |
 | T-07-23 | A9 | 同sessionId双home、Claude原生agentId、缺SourceId、同cwd/pane/mtime → 只完整ref精确join，不猜home/root；coverage无记录不否定其他委派来源 |
-| T-07-24 | A9 | 晚绑定、同link两次resume、handover/revoked、冲突/pending、显式copy来源、路径消失 → 逐run启动历史仍导出，当前确认边与握手pending区分、历史不成第二父边，旧run不套新轮，推断冲突/declared强度保留，不覆盖用量 |
+| T-07-24 | A9 | spawn转历史、同link两次resume、handover新link及后续resume、仅导出后继link、失败未绑定spawn → operation直接保留且前驱引用不补猜祖先；当前确认父边独立新轮pending，旧spawn不成第二边；历史claim正常撤销不抹已确认启动，pending/null/non_execution不伪造起源；不按逐run时间虚拆日成本或搬旧用量 |
 | T-07-25 | A9 | 10000/10001条、16MiB边界/超限、1000ms软预算超限、缩小link范围/组装失败 → 边界内可成功，超限明确失败且无成功截断全集；完整JSON备妥才输出，consumer成功且coverage完整才替换范围缓存，真实读事务寿命另记（B18实测） |
-| T-07-26 | A9 | 缺必需字段/未知export主版本/同版本未知可选字段/未知状态，ledger或snapshot版本变化 → 拒解码/忽略可选/保守状态；五域独立，v1单位/空值/身份不悄改，asOfSeq不是afterSeq或分页保证 |
+| T-07-26 | A9 | 缺必需字段/缺或非法operation/未知export主版本拒解码；四表字段键必需，null可用、未知字符串正规化null、非string/null拒绝，两paths模式一致；workspace=null无需内部键；未知可选字段忽略/状态保守，五版本域独立且不默认spawn |
 | T-07-27 | A9 | v3 intent/session/job槽、tokens已知成本未知、launch_failed/failed报告仍running、ledger-b+观测-a → 身份/Metric/freshness.state/stateSince/basis/isRunTerminal与双域stamp按06，不造session/成本/连续性/跨库原子，旧v2缺省/时间仍兼容 |

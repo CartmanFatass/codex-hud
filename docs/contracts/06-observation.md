@@ -6,6 +6,8 @@
 
 [Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
+[Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
+
 ## 数据模型
 
 ### Metric 与时间
@@ -41,6 +43,8 @@ spent 只含本节点；合计须单位、口径、coverage 相容且无重复 r
 | `projectOrigin: {repoId, basis: declared, declaredAt} \| null` | 临时副本等场景的显式来源声明；接受时另记声明主体，不替换物理repoId，不升级为经Git证明同仓库。 |
 | 来源与时间 | 保存cwd来源、Git捕获时刻与缺失原因，不把旧header cwd写成刚核验的当前进程cwd。 |
 
+07「v1 来源与原因代码」另定 export v1 的 nullable CwdSourceCode/GitMissingReasonCode，内部 WorkspaceProvenance.cwdSource 仍为 string，不为导出收窄内部诊断。
+
 来源/时间的类型位置为 `cwdSource:string,cwdAsOf:number,gitCapturedAt:number|null,gitMissingReason:string|null`；无cwd时cwdSource解释缺失，cwdAsOf是确认缺失时刻。Git捕获完成（含非Git/超时）记录gitCapturedAt及原因，尚未采集时为null。`identityKind:'git-common-dir-v1',scope:'local'`描述repoId算法/范围。`RunWorkspaceSnapshot`白名单仅含上述Git字段（worktreeRoot/worktree/gitCommonDir/repoId/identityKind/scope）及来源/时间；launch_cwd和project_origin分别按02保存，快照不混入正文、remote或其他自由字段。observed WorkspaceContext是后续带来源的位置，不能覆盖逐run启动历史。
 
 Git/项目解析属于共享workspace元数据逻辑，reader只供确实读到的cwd及来源；不新增常驻服务。工作树判等用有效规范根路径，cwd差异独立比较规范cwd；根未知时只能说目录不同，不声称不同工作树，未知不代表相同、同名不代表同目录。repoId与SourceId完全独立，同仓库的双home不合并ref/owner/授权/采集存储。同remote的两个clone仍为不同本地仓库；remote URL/hash、父子关系、目录名/内容相似不证明项目来源。无Git临时副本没有显式声明则unknown，toktrack可保留自己的推断与置信来源，HUD不作确定背书。
@@ -61,7 +65,9 @@ Git不入写事务、MCP accepted热路径、HUD paint或statusline，热路径�
 
 ### B16 的五维输入与消费者字段
 
-会话输入证据统一携带 `{ref,runId?,bindingGeneration?,sourceGeneration,origin,eventAt,observedAt,lastSuccessfulReadAt,seq?,evidenceId?,validity,reason?}`；intent分支以DisplayNodeIdentity/linkId和currentRun及ledger事件提供，无ref/虚构采集代次。origin 为 registry/transcript/supervisor/report/job；validity 区分当前且匹配、stale、unknown、矛盾。失联不改原事件时间，进程存在只证明存在。registry 的 server、occupant、completion_seq 和来源时钟必须可见，不能把 shell idle 当 harness idle。
+MVP 的 ObservationEvidence 区分具有 ref 的 session 证据与 `origin:'ledger'`、具有 nodeIdentity 的 delegationIntent 证据；StateContinuity 按 nodeIdentity 判别。session 使用完整 SessionRef 和真实 sourceGeneration；无受管 run 时 runId/bindingGeneration 可缺省。delegationIntent 使用 `{kind:'delegationIntent',linkId}` 和当前运行标识（ObservationEvidence.currentRunId、StateContinuity.runId）；不得包含 ref/sourceGeneration，不建立 collect 租约或伪 ObservationCommit。这两个运行字段必须对应本次 ledger 快照的 currentRun，绑定代次如携带则取该 run 的真实值。
+
+origin为registry/transcript/supervisor/report/job，intent为ledger；validity区分current/stale/unknown/conflict。保留eventAt/observedAt/lastSuccessfulReadAt及seq/evidenceId/reason；registry仍提供server/occupant/completion_seq/来源时钟，进程存在只证明存在。
 
 | 维度 | 输入值与所需证据（最终归并归 B16） |
 |---|---|
@@ -83,7 +89,24 @@ B16明确列出每维所选来源及总体freshness所需的来源集合；被�
 
 状态持续时间唯一类型为 `stateKey:string,stateSince:number|null,stateSinceBasis:'event'|'observed'|'unknown'`。stateKey包含所选语义及必要原因（approval/question/supervisor_dead/launch_failed等），不含图标/颜色/翻译/宽度/排序桶。stateSince为当前语义状态连续区间起点：新run、已证实的新episode或所选语义改变才重置；报告重读/心跳/usage增长/折叠/语言变化/父因子孙改变排序桶均不重置。同图标的新approval/失败episode不沿用旧时间。
 
-连续性记录`StateContinuity={ruleVersion,nodeIdentity,runId?,bindingGeneration?,sourceGeneration,episodeAnchor,stateKey,stateSince,stateSinceBasis}`；episodeAnchor来自待决ID/turn ID/采用事件等。可定位进入事件且连续性可证用事件时间/event；只有首次看到状态的证据用首次观测时间/observed；时间或连续性不可知为null/unknown。时间截止stale用来源的确定截止边界（04心跳严格>30000ms，等于仍fresh），不取paint时刻。uncertain/stale时钟的证据年龄仍用lastEvidenceAt/heartbeat，不能用stateSince代替；时钟倒退标clockAnomaly，不刷新时间掩盖。
+StateContinuity 是按 nodeIdentity 判别的联合：
+
+```ts
+type StateContinuity = {
+  ruleVersion: string; episodeAnchor: string | null; stateKey: string;
+  stateSince: number | null; stateSinceBasis: 'event' | 'observed' | 'unknown';
+  bindingGeneration?: number;
+} & (
+  | { nodeIdentity: {kind:'session'; ref:SessionRef}; sourceGeneration:number; runId?:string }
+  | { nodeIdentity: {kind:'delegationIntent'; linkId:string}; runId:string; ref?:never; sourceGeneration?:never }
+);
+```
+
+StateContinuity 的公共字段仍为 ruleVersion、episodeAnchor、stateKey、stateSince、stateSinceBasis；sourceGeneration 仅在 session 分支必填。intent 用 linkId、runId、规则版本和 ledger 事件锚点判断连续区间。ledger 的 asOfSeq 用于快照一致性，不冒充 sourceGeneration，也不因无关事件增长而重置区间。
+
+intent 首次绑定为 session 时，选择键合并本身不证明连续性。只有 link→真实 ref、同一 run 和同一 episode 的证据齐备，才可采用原 ledger 进入事件的时间；session 记录随后携带自己的真实 sourceGeneration。不能复制一个虚构代次或仅因 stateKey 相同延续时间。证据不足按既有 observed/unknown 规则处理。Job 连续性留 C 阶段，不由本条推定其拥有 SessionRef 采集租约。
+
+可定位进入事件且连续性可证用事件时间/event；只有首次看到状态的证据用首次观测时间/observed；时间或连续性不可知为null/unknown。时间截止stale用来源的确定截止边界（04心跳严格>30000ms，等于仍fresh），不取paint时刻。uncertain/stale时钟的证据年龄仍用lastEvidenceAt/heartbeat，不能用stateSince代替；时钟倒退标clockAnomaly，不刷新时间掩盖。
 
 重启读取已提交连续性记录，能有界续读的源从checkpoint接续。同证据/同commit的两个消费者得到同结果；停采可能漏registry瞬变、sourceGeneration/规则版本变化或历史缺口时，先以可证明事件重建，否则新observed起点或unknown，不假装一直连续。未绑定intent的pending/claimed/run状态直接用相应link/run事件起点，首次绑定若能证明同区间可沿用。恢复已知时间不承诺恢复从未观测到的事件；首次基线不补虚假完成通知（T-06-27、28）。
 
@@ -94,6 +117,8 @@ B16明确列出每维所选来源及总体freshness所需的来源集合；被�
 ### checkpoint 一致提交与 collect lease
 
 `CollectLease={resource:collect:<SessionRef>,holder,generation,expires_at}` 存在 `$HUD_HOME/sources/<sourceId>/` 的观测存储，绝不放入 ledger leases。generation 持久单调，释放保留下界，不删除后从 1 重来。它只授权采集 checkpoint/summary/notice 写入，不授权启动/终结 run 或释放槽；三类资源的另外两类引用 I-02-10。
+
+ObservationCommit与collect lease只针对真实session及真实sourceGeneration；intent从本次ledger currentRun及事件投影，不建立伪commit/租约。Job连续性留C，不据此推定SessionRef采集租约。
 
 逻辑提交 `ObservationCommit={ref,sourceGeneration,leaseGeneration,seqDomain,commitSeq,observationStamp,checkpoint,summary,continuity,notices}`；stamp中的ref/sourceGeneration/commitSeq必须与本commit一致，inputLedgerSeq/runId/bindingGeneration为实际使用的输入。checkpoint offset/parserState、summary（含stateKey/stateSince/stateSinceBasis）、StateContinuity及notice同时可见。B12负责持久发布、B16负责唯一边沿逻辑，共用本提交，不各造存储。可采用独立观测SQLite短事务，或不可变bundle+一个原子发布指针；两次rename不能冒充原子。保留概念路径时checkpoint/summary解析同一commitSeq/bundle，不各取最新。布局/点击状态另在instances/。
 
@@ -116,8 +141,8 @@ B16明确列出每维所选来源及总体freshness所需的来源集合；被�
 | I-06-9 | HUD 用廉价变更信号与已提交摘要；statusline 数据入口≤20ms，stdin 优先、失败可退现有摘要/缺失 | T-06-19、20 |
 | I-06-10 | spent.tokens/costUsd各自Metric，成本未知null、有效零保留；完整ref去重合计带缺失/coverage/quality，估计不作严格下界 | T-06-22 |
 | I-06-11 | WorkspaceContext位置/显示名/本地repoId/declared来源分离，Git≤2子进程/200ms软预算且不入热路径/事务，逐run启动历史不改写 | T-06-23、24 |
-| I-06-12 | 显示身份联合类型、freshness.state、launch_failed与共享终态谓词统一；intent不伪造授权/ref/采集租约 | T-06-25、26 |
-| I-06-13 | stateSince表示语义episode连续起点，随同ObservationCommit持久；重启/重复读取不重置、缺证不伪造、证据年龄另算、零逐tick写 | T-06-27、28 |
+| I-06-12 | session使用完整ref与真实sourceGeneration；ledger intent必有nodeIdentity/currentRunId，StateContinuity.runId必有且对应本快照currentRun，禁止ref/sourceGeneration/collect租约或伪ObservationCommit；绑定不凭选择键制造连续性；其余freshness/终态语义统一 | T-06-25、26 |
+| I-06-13 | stateSince是语义episode连续起点；session按真实读取谱系，intent按linkId/current run/规则/ledger事件锚点，asOfSeq增长不冒代次；同link换run重置，绑定须有link→ref/同run/同episode证据，缺证observed/unknown；session连续性随ObservationCommit发布，零逐tick写 | T-06-27、28 |
 | I-06-14 | ledger与观测分域加戳，组合重验实体/代次；旧run摘要不混当前，无跨库原子或读路径写入 | T-06-29 |
 | I-06-15 | C4 holderLabel只派生读取，不参与所有权/释放，不扩MVP schema/正向能力 | T-06-30 |
 
@@ -206,10 +231,10 @@ stdin 的 session/model/context/cost 永远优先，摘要不覆盖它。廉价�
 | T-06-22 | A9 | tokens已知但cost未知、有效零成本、部分已报告/混estimated合计、重复完整ref → costUsd必有独立Metric且unknown.value=null；零为0/reported，合计带knownCount/missingCount/coverage/quality，估计不冒充下界，credits不换美元 |
 | T-06-23 | A9 | 同仓库两个worktree、同remote两个clone、无Git临时副本、显式copy来源、同名不同路径 → 前者同repoId不同规范根；clone不同repoId；副本unknown/declared不升级物理身份；根缺失只说明cwd不同 |
 | T-06-24 | A9 | Git缓存命中/冷缺失/超时/明确失效，旧header cwd/包装链改变实际cwd/历史路径消失 → 来源/捕获时间/原因准确、launch不被覆盖且历史可导出；每代≤2子进程/200ms软预算规格、无重复tick/Git热路径/新增watcher；真实成本在B验 |
-| T-06-25 | A9 | 两个同名未绑定link、首次绑定真实ref、同cwd/重复父边 → 独立intent键关联各currentRun、不计已确认session；B9合并不双节点/双父并保持选择映射，无假ref/collect租约 |
+| T-06-25 | A9 | 两个同名intent各关联本快照currentRun，ledger证据无ref/sourceGeneration，StateContinuity intent缺runId或伪sourceGeneration拒类型；不计已确认session、不造collect租约/ObservationCommit；B9绑定合并保选择映射，无双节点/双父 |
 | T-06-26 | A9 | 缺来源/过截止freshness、无报告N成立的failed、failed报告但run.running、run.cancelling → freshness.state为unknown/stale，launch_failed/non_execution带原因且终态，后两者不按图标终结/折历史 |
-| T-06-27 | A9 | 同证据重读/重启/两个消费者同commit、心跳/usage/语言/折叠/父排序变化、新run/新待决ID或失败episode → 前组stateKey/stateSince/basis稳定，后组新起点；event/observed/unknown各有证据且首次基线无假完成通知 |
-| T-06-28 | A9 | DB不变仅越过30000/30001ms心跳截止、停采漏registry瞬变、源/规则换代/历史缺口/时钟倒退 → 纯投影fresh→stale取确定截止，缺连续性重建或observed/unknown、clockAnomaly明确，证据年龄另算，零每tick/status写 |
+| T-06-27 | A9 | 重读/重启/两个消费者同commit/心跳usage语言排序变化不重置；同link换run/新待决或失败episode必重置；intent绑定session有同run/episode映射证明才可取原ledger起点，session有自己的真实sourceGeneration；选择键合并或stateKey相同不足，无证据取observed/unknown，无假完成通知 |
+| T-06-28 | A9 | 无DB变化跨30000/30001心跳截止纯投影fresh→stale；停采瞬变/源或规则换代/历史缺口/时钟倒退按observed/unknown，不沿用假连续；intent同link新run重置，绑定缺同episode证明不继承时间；不借asOfSeq/bindingGeneration制造sourceGeneration，证据年龄另算，零逐tick/status写 |
 | T-06-29 | A9 | ledger已run-b/观测仍run-a、绑定或来源代次错配、无关run seq增长、无库/空库 → b账本事实+有原因缺观测，旧report/stateSince/cwd不混入；实际inputLedgerSeq与独立seqDomain保留，无关增长不全失效，asOfSeq=null/0，不混wait游标 |
 | T-06-30 | C | C4同一lease/job读取取得可公开显示名、无名/改名/needs_human/结果未知 → holderLabel可选派生/省略，真实holder/generation/释放不变，名字变化不新增所有权副本 |
 

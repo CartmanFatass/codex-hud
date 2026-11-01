@@ -10,6 +10,8 @@
 
 [Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
+[Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
+
 ## 数据模型
 
 ### 运行、启动输入和范围
@@ -30,6 +32,8 @@ scope 是固定的真实 harness workload PGID，连同 sid、boot/PID 域、组
 
 
 ### 文件、字段与原子提交
+
+事实时间统一依02「证据归一与事实时序」：scope 的 asOf=checked_at，R=最终终结证明 ended_at，Q/N=复合证明边界，H=producer heartbeat_at；recorded_at/validated_at/导入events.seq不能补先后。run.ended_at可能是较晚对账观测时间，增量读取须带 terminal_evidence_id 指向的已核验终结边界/结果和未解决冲突，不能借commit时刻抹掉反证。
 
 路径固定为 `$HUD_HOME/runs/<runId>/{meta.json,stdout.log,stderr.log,exit.json}`。runId 仅 `[A-Za-z0-9_-]{1,128}`，HUD_HOME/运行目录是已解析绝对路径；拒绝路径穿越、符号链接替换和不属于当前用户的目录。目录 0700，文件 0600；已有目录只在 ledger/run/实例均相符时读恢复，不截断、不复用旧 run 的日志。只有成功取得票据的本轮 writer 写 meta/log/exit，失败竞争者不碰它们（T-04-8、9）。
 
@@ -85,6 +89,8 @@ before-supervisor的reserved正常窗口仍用02 R-02-4a；超窗只uncertain/�
 
 ### R / G / H / N / Q 的证据生产
 
+证据按02「证据归一与事实时序」核验实例/代次及时间来源，先约简可变scope/H；不可逆R/Q/N、死亡/启动事实和未解决冲突不统一取最新。旧alive晚导入不否定后来终结；终结后alive反证不能由unknown/gone静默清除，同刻缺证不伪造X。
+
 - R：原hud-run最终scope receipt，校验run/source/代次/boot/域与ScopeCheck/全部封口证据；native_exit允许null。只有leader/shell/supervisor事实不产R；scope宣称结束却仍有活成员/原harness/未封口launcher则X。
 - G：本机可信完整范围检查，区分活成员与Z；固定scope/原harness/全部launcher封口满足02才gone。组未知、错域/复用或部分可见则unknown，不用单PID缺失代替。
 - H：下文一次runs CAS的真实producer元组；只证明监督活性。按事件取采用快照，不周期追加evidence，不由恢复者续死人心跳。
@@ -110,7 +116,7 @@ RunHandle.cancel 先由reconciler检查当前owner/context或受信本地管理�
 ScopeControl必须安全覆盖本轮整个PGID及仍可能再启动的launcher，逐步重验正确boot/域/范围实例。直接leader已退仍需等强稳定控制证据防PGID复用，不能盲发数字；共享supervisor组不能悄悄退为单harness PID。实现可隔离workload组或提供经验证的完整控制机制，不强制某anchor/helper拓扑。失去安全整组控制只返回cancel_unconfirmed/uncertain并持槽；helper若需要，寿命/RSS计入06，改变exec链/TTY路径只补验受影响的context/输入行（T-04-23）。
 
 
-信号已发、shell退出、TTY Ctrl-C、supervisor收到HUP不是取消完成；只按R-02-2的R/Q才cancelled；N证明目标从未提交则按R-02-4 failed。先退出后到达的cancel返回already_ended；已接受取消但无法结束继续cancelling/uncertain。重复cancel不重置grace时钟、不重发已确认步骤；步骤以eventseq与ack记录，崩溃后无ack只对账，不盲发旧scope（T-04-26）。
+信号已发、shell退出、TTY Ctrl-C、supervisor收到HUP不是取消完成。取消接受与chronology分开：完整R/Q且无X，仅before_exit正向证明才按R-02-2 cancelled；after_exit已证明才解释already_ended；缺失/unknown按R-02-3 ended、释放槽并存terminalNote=cancel_timing_unknown，不声称confirmed/already_ended。before/after两个有效互斥证明为X；unknown本身不是冲突。未证R/Q/N仍cancelling/uncertain持槽，历史通道失败不否定后来完整证明；N仍按R-02-4 failed。terminalNote只保存在既有终态事件并按03投影，不为说明重写一次不可变exit.json的reason；R-02-0保留原结束决定与说明，迟到时序只审计。重复cancel不重置grace时钟、不重发已确认步骤；步骤以eventseq与ack记录，崩溃后无ack只对账，不盲发旧scope（T-04-26）。
 
 orphan_policy随意图冻结。continue默认：父MCP物理实例确实退出/可信父context关闭时写parent.offline事件，含runId、父context/代次、since（毫秒epoch）、冻结策略，seq/created_at随事件投影；这只是父调用通道离线，不证明父session/子scope退出。继续保有TTY的子前台/输入/最终收尾须独立验收；非TTY后台sleep不足。stop在确证断连后以预授权策略产生取消意图，走同一完整范围序列；caller stale/Herdr unknown不触发误杀。新MCP同OwnerKey重放旧run，不撤回已接受取消/起副本（T-04-27、28）。
 
@@ -183,9 +189,9 @@ A9仅需选定机制的关键可行性与失败分支：A8-fixB2 已于 `8fdf4cf
 | T-04-21 (A9 prototype) | reserved/armed永久fence+确证launcher封口/死亡+无workload，再迟到登记；另submitting未知 → 前者N/零迟到提交，后者非N；DB围栏不把已获许可暂停shell变封口 |
 | T-04-22 (B) | cancel接受、INT/10s/TERM/2s/KILL，步骤间已R/Q终结 → 按实际时间阶梯，终态后无信号；只发信号不改cancelled |
 | T-04-23 (B) | leader先退、PGID复用、整组控制通道丢失、与supervisor共享组 → 有效稳定控制才整scope取消，否则cancel_unconfirmed/持槽；零单PID降级/错组信号 |
-| T-04-24 (A9 prototype) | supervisor死且没有任何leader/exit receipt，可信scope/原harness终止/所有launcher封口/完整无活成员 → Q ended或cancelled(NULL)；缺任一项uncertain，不要求死人补receipt |
+| T-04-24 (A9 prototype) | 无旧leader/exit receipt，启动记录固定scope、正确boot/域完整无活workload、原harness不执行、全launcher封口/死亡且无X→Q；无取消ended、已证before_exit cancelled(NULL)、取消时序未知ended+cancel_timing_unknown并释放；逐项缺任一条件仍uncertain/持槽，恢复不补死writer文件 |
 | T-04-25 (A9 prototype) | supervisor SIGKILL后scope活/未知/证实空，或同机跨boot；恢复尝试续H/领票据/写exit → 按02取证/列缺项，恢复无新执行权且不冒充旧writer |
-| T-04-26 (B) | 重复cancel重试、取消先于退出/退出先于取消、ack丢失 → grace不重置，R/Q后才cancelled或already_ended，旧信号不盲重发 |
+| T-04-26 (B) | 取消与退出/导入竞态、重复cancel、无ack崩溃：仅before_exit+完整R/Q为cancelled，after_exit为already_ended解释；完整R/Q但unknown→ended+说明/释放，无confirmed/already_ended；before/after互斥为X，缺结束证据持槽；重复不重置grace，迟到证明不重写终态/exit.json或重发完成 |
 | T-04-27 (B) | 父MCP真实退出，continue/stop两配置，再模拟仅caller stale → continue继续；stop生成预授权取消并待确认；stale不触发误杀或放槽 |
 | T-04-28 (B) | 新MCP同OwnerKey重放、父仅stale、vendor stop称stopped但记录updater活 → 原run无重发/stale不误杀/不据vendor响应放槽；不扩大信号权限 |
 | T-04-29 (B) | hud-run原始UPDATE state、HUD试补回执/放槽、status触发写、恢复观察器写meta → 白名单/只读拒绝；正确reconciler迁移state+槽+event原子 |

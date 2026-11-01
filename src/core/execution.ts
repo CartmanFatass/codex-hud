@@ -12,6 +12,7 @@ import type {
   Run,
   RunOperation,
   RunSlot,
+  TerminalNote,
 } from './types/execution.js';
 import type { ProjectOrigin, RunWorkspaceSnapshot } from './types/observation.js';
 import type { ProcessStamp } from './types/supervision.js';
@@ -34,12 +35,19 @@ export function reconcileRun(
   run: Run,
   evidence: readonly ReconcileEvidence[],
   nowMs: number,
-  ownership: { slotHeld: boolean; ticketConsumed: boolean } = {
+  ownership: {
+    slotHeld: boolean;
+    ticketConsumed: boolean;
+    /** Verified terminal_evidence_id basis, including earlier adopted proofs and unresolved conflicts. */
+    terminalBasis?: { evidence: readonly ReconcileEvidence[]; terminalNote: TerminalNote };
+  } = {
     slotHeld: true,
     ticketConsumed: run.launchPhase !== 'reserved',
   }
 ): ReconcileDecision {
-  const matched = evidence.filter(
+  const terminal = isRunTerminal(run);
+  const inputs = [...(terminal ? (ownership.terminalBasis?.evidence ?? []) : []), ...evidence];
+  const matched = inputs.filter(
     (entry) =>
       entry.validation === 'accepted' &&
       entry.runId === run.runId &&
@@ -47,16 +55,11 @@ export function reconcileRun(
       entry.bindingGeneration === run.expectedGeneration &&
       sameStamp(entry.supervisor, run.supervisor)
   );
-  // 待 ARCH 裁决: reduce append-only observations by validated fact time, not discovery time.
+  // Reduce mutable observations by validated fact time, never discovery/commit time (E04).
   // Scope checks use checked_at; R uses ended_at; Q/N use their composite proof asOf.
   const usableFactTime = (asOf: number | null): asOf is number =>
     asOf !== null && Number.isFinite(asOf) && asOf >= 0 && Number.isFinite(nowMs) && asOf <= nowMs;
   const hasFactTime = (entry: ReconcileEvidence): boolean => usableFactTime(entry.asOf);
-  const terminal = isRunTerminal(run);
-  const persistedTerminalBoundary =
-    terminal && run.terminalEvidenceId !== null && run.submissionFencedAt !== null && usableFactTime(run.endedAt)
-      ? run.endedAt
-      : null;
   const completionEntries = matched.filter(
     (entry) => entry.fact.kind === 'receipt' || entry.fact.kind === 'scope_reconciled'
   );
@@ -68,10 +71,7 @@ export function reconcileRun(
       entry.fact.launchersSealed
   );
   const datedCompletionEntries = fullCompletionEntries.filter(hasFactTime);
-  const completionBoundaries = [
-    ...datedCompletionEntries.map((entry) => entry.asOf!),
-    ...(persistedTerminalBoundary === null ? [] : [persistedTerminalBoundary]),
-  ];
+  const completionBoundaries = datedCompletionEntries.map((entry) => entry.asOf!);
   const scopeEntries = matched.filter((entry) => entry.fact.kind === 'scope');
   const undatedScopes = scopeEntries.filter((entry) => !hasFactTime(entry));
   const datedScopes = scopeEntries.filter(hasFactTime);
@@ -83,7 +83,25 @@ export function reconcileRun(
       entry.fact.state === 'alive' &&
       completionBoundaries.some((boundary) => entry.asOf! >= boundary)
   );
-  const scopeTiesConflict = new Set(latestScopes.map((entry) => canonicalJson(entry.fact))).size > 1;
+  // A substantive tie is an unresolved conflict, even after a newer mutable observation or receipt.
+  const scopeStatesByTime = new Map<number, Set<'alive' | 'gone'>>();
+  for (const entry of datedScopes) {
+    const fact = entry.fact;
+    if (
+      fact.kind === 'scope' &&
+      (fact.state === 'alive' ||
+        (fact.state === 'gone' && fact.complete && fact.harnessTerminated && fact.launchersSealed))
+    ) {
+      const states = scopeStatesByTime.get(entry.asOf!) ?? new Set<'alive' | 'gone'>();
+      states.add(fact.state);
+      scopeStatesByTime.set(entry.asOf!, states);
+    }
+  }
+  const conflictingScopeTimes = new Set(
+    [...scopeStatesByTime].filter(([, states]) => states.size > 1).map(([asOf]) => asOf)
+  );
+  const scopeTiesConflict = conflictingScopeTimes.size > 0;
+  const tiedScopes = datedScopes.filter((entry) => conflictingScopeTimes.has(entry.asOf!));
   const completionConflict = completionEntries.some(
     (entry) =>
       (entry.fact.kind === 'receipt' || entry.fact.kind === 'scope_reconciled') &&
@@ -96,7 +114,7 @@ export function reconcileRun(
     completionBoundaries.length > 0 &&
     undatedScopes.some((entry) => entry.fact.kind === 'scope' && entry.fact.state === 'alive');
   const scopeTimeUnknown = undatedScopes.length > 0 && completionBoundaries.length === 0;
-  const currentScopes = new Set([...latestScopes, ...undatedScopes, ...aliveAfterCompletion]);
+  const currentScopes = new Set([...latestScopes, ...undatedScopes, ...aliveAfterCompletion, ...tiedScopes]);
   const heartbeatEntries = matched.filter((entry) => entry.fact.kind === 'heartbeat');
   const heartbeatTimeUnknown = heartbeatEntries.some((entry) => !hasFactTime(entry));
   const latestHeartbeatAt = Math.max(...heartbeatEntries.filter(hasFactTime).map((entry) => entry.asOf!));
@@ -105,12 +123,14 @@ export function reconcileRun(
       ? currentScopes.has(entry)
       : entry.fact.kind !== 'heartbeat' || !hasFactTime(entry) || entry.asOf === latestHeartbeatAt
   );
-  const auditEvidenceIds = evidence.filter((entry) => !current.includes(entry)).map((entry) => entry.evidenceId);
+  const auditEvidenceIds = inputs.filter((entry) => !current.includes(entry)).map((entry) => entry.evidenceId);
   const facts = current.map((entry) => entry.fact);
   const scoped = facts.filter((fact) => fact.kind === 'scope');
-  const alive = !scopeTimeUnknown && scoped.some((fact) => fact.state === 'alive');
+  const scopeUnknown =
+    scopeTimeUnknown || latestScopes.some((entry) => entry.fact.kind === 'scope' && entry.fact.state === 'unknown');
+  const alive = !scopeUnknown && scoped.some((fact) => fact.state === 'alive');
   const gone =
-    !scopeTimeUnknown &&
+    !scopeUnknown &&
     !alive &&
     scoped.some((fact) => fact.state === 'gone' && fact.complete && fact.harnessTerminated && fact.launchersSealed);
   const knownNativeResults = datedCompletionEntries.flatMap((entry) =>
@@ -164,10 +184,15 @@ export function reconcileRun(
   const launches = facts.filter((fact) => fact.kind === 'launch');
   const started = launches.some((fact) => fact.childStarted);
   const conflict = facts.find((fact) => fact.kind === 'conflict');
+  const cancelAccepted = run.cancelRequestedAt !== null;
+  const cancelChronologies = new Set(
+    facts.flatMap((fact) => (fact.kind === 'cancel' && fact.chronology !== 'unknown' ? [fact.chronology] : []))
+  );
   const persistedExecutionConflict =
     terminal && (run.state === 'failed' ? fullCompletionEntries.length > 0 || started : neverSubmitted !== undefined);
   const contradictory =
     conflict !== undefined ||
+    (cancelAccepted && cancelChronologies.size > 1) ||
     nativeConflict ||
     aliveAfterCompletion.length > 0 ||
     scopeTiesConflict ||
@@ -178,7 +203,8 @@ export function reconcileRun(
     row: string,
     state: Run['state'],
     cause: ReconciliationCause | null = null,
-    block = !isRunTerminal({ state })
+    block = !isRunTerminal({ state }),
+    terminalNote: TerminalNote = null
   ): ReconcileDecision => {
     const native = validCompletion?.nativeExit;
     return {
@@ -190,6 +216,7 @@ export function reconcileRun(
       evidenceIds: current.map((entry) => entry.evidenceId),
       auditEvidenceIds,
       cause,
+      terminalNote: terminal ? (ownership.terminalBasis?.terminalNote ?? null) : terminalNote,
       exitCode: isRunTerminal(run)
         ? run.exitCode
         : state === 'ended' || state === 'cancelled'
@@ -212,7 +239,7 @@ export function reconcileRun(
       liveTimeUnknown ||
       completionTimeUnknown ||
       neverSubmittedTimeUnknown ||
-      (persistedTerminalBoundary === null &&
+      (completionBoundaries.length === 0 &&
         scopeEntries.some((entry) => entry.fact.kind === 'scope' && entry.fact.state === 'alive'));
     const timeCause =
       matched.some(
@@ -235,15 +262,16 @@ export function reconcileRun(
       'uncertain',
       matched.some((entry) => entry.asOf !== null && entry.asOf > nowMs) ? 'clock_anomaly' : 'scope_unknown'
     );
-  const cancelAccepted = run.cancelRequestedAt !== null;
-  const timing = facts.find((fact) => fact.kind === 'cancel');
   if (validCompletion) {
-    // 待 ARCH 裁决: accepted cancel with unknown exit chronology cannot invent C=false.
-    if (cancelAccepted && (timing?.chronology === undefined || timing.chronology === 'unknown'))
-      return decide('R-02-9', 'uncertain', 'cancel_unconfirmed');
-    return timing?.chronology === 'before_exit' && cancelAccepted
+    return cancelAccepted && cancelChronologies.has('before_exit')
       ? decide('R-02-2', 'cancelled')
-      : decide('R-02-3', 'ended');
+      : decide(
+          'R-02-3',
+          'ended',
+          null,
+          false,
+          cancelAccepted && cancelChronologies.size === 0 ? 'cancel_timing_unknown' : null
+        );
   }
   if (neverSubmitted && gone) return decide('R-02-4', 'failed');
   const age = nowMs - run.createdAt;

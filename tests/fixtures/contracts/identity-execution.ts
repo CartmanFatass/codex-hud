@@ -1102,6 +1102,59 @@ export const identityExecutionCases: Record<string, () => void> = {
       assert.equal(tied.row, 'R-02-1');
       assert.equal(tied.releaseSlot, false);
     }
+    const laterReceipt = fixtureReconcileEvidence(receipt().fact, {
+      evidenceId: 'receipt-after-scope-conflict',
+      asOf: FIXTURE_NOW + 1000,
+    });
+    const newerGone = { ...goneAtSameTime, evidenceId: 'gone-after-scope-conflict', asOf: FIXTURE_NOW + 2000 };
+    for (const newer of [laterReceipt, laterUnknown, newerGone]) {
+      for (const history of [
+        [oldAlive, goneAtSameTime, newer],
+        [newer, goneAtSameTime, oldAlive],
+      ]) {
+        const unresolved = reconcileRun(fixtureRun(), [...history, launchStarted()], FIXTURE_NOW + 4000);
+        assert.equal(unresolved.row, 'R-02-1');
+        assert.equal(unresolved.cause, 'scope_conflict');
+        assert.equal(unresolved.releaseSlot, false);
+        assert.equal(unresolved.blockNewOperations, true);
+        assert.ok(unresolved.evidenceIds.includes(oldAlive.evidenceId));
+        assert.ok(unresolved.evidenceIds.includes(goneAtSameTime.evidenceId));
+      }
+    }
+    const terminalReplay = reconcileRun(
+      fixtureEndedRun({ terminalEvidenceId: laterReceipt.evidenceId, endedAt: FIXTURE_NOW + 3000 }),
+      [newerGone, laterUnknown],
+      FIXTURE_NOW + 4000,
+      {
+        slotHeld: false,
+        ticketConsumed: true,
+        terminalBasis: { evidence: [oldAlive, goneAtSameTime, laterReceipt], terminalNote: null },
+      }
+    );
+    assert.equal(terminalReplay.row, 'R-02-0');
+    assert.equal(terminalReplay.state, 'ended');
+    assert.equal(terminalReplay.cause, 'scope_conflict');
+    assert.equal(terminalReplay.blockNewOperations, true);
+    assert.equal(terminalReplay.releaseSlot, false);
+    assert.equal(terminalReplay.emitTransition, false);
+    // Same-time missing evidence yields unknown G, without manufacturing a substantive conflict (E04).
+    for (const known of [oldAlive, goneAtSameTime]) {
+      const unknown = { ...laterUnknown, asOf: FIXTURE_NOW };
+      for (const history of [
+        [known, unknown],
+        [unknown, known],
+      ]) {
+        const tied = reconcileRun(fixtureRun(), [...history, launchStarted()], FIXTURE_NOW + 4000);
+        assert.equal(tied.state, 'uncertain');
+        assert.notEqual(tied.row, 'R-02-1');
+        assert.equal(tied.cause, 'scope_unknown');
+        assert.equal(tied.releaseSlot, false);
+      }
+    }
+    assert.equal(
+      reconcileRun(fixtureRun(), [receipt(), { ...laterUnknown, asOf: FIXTURE_NOW }], FIXTURE_NOW + 4000).state,
+      'ended'
+    );
     const missingTime = fixtureReconcileEvidence(laterUnknown.fact, { evidenceId: 'scope-time-unknown', asOf: null });
     assert.equal(
       reconcileRun(fixtureRun(), [oldAlive, missingTime, launchStarted()], FIXTURE_NOW + 4000).state,
@@ -1164,7 +1217,54 @@ export const identityExecutionCases: Record<string, () => void> = {
       assert.equal(reconcileRun(run, [], FIXTURE_NOW).state, age <= 30000 ? 'starting' : 'uncertain');
     }
     const cancelled = fixtureRun({ cancelRequestedAt: FIXTURE_NOW - 1 });
-    assert.equal(reconcileRun(cancelled, [receipt()], FIXTURE_NOW).state, 'uncertain');
+    for (const kind of ['receipt', 'scope_reconciled'] as const) {
+      for (const timing of [[], [fixtureReconcileEvidence({ kind: 'cancel', chronology: 'unknown' })]]) {
+        const ended = reconcileRun(cancelled, [receipt(kind), ...timing], FIXTURE_NOW);
+        assert.equal(ended.row, 'R-02-3');
+        assert.equal(ended.state, 'ended');
+        assert.equal(ended.releaseSlot, true);
+        assert.equal(ended.blockNewOperations, false);
+        assert.equal(ended.cause, null);
+        assert.equal(ended.terminalNote, 'cancel_timing_unknown');
+      }
+      const unknown = fixtureReconcileEvidence({ kind: 'cancel', chronology: 'unknown' });
+      const before = fixtureReconcileEvidence({ kind: 'cancel', chronology: 'before_exit' });
+      const after = fixtureReconcileEvidence({ kind: 'cancel', chronology: 'after_exit' });
+      for (const timing of [
+        [unknown, before],
+        [before, unknown],
+        [unknown, after],
+        [after, unknown],
+      ]) {
+        const result = reconcileRun(cancelled, [receipt(kind), ...timing], FIXTURE_NOW);
+        assert.equal(result.state, timing.includes(before) ? 'cancelled' : 'ended');
+        assert.equal(result.terminalNote, null);
+        assert.equal(result.releaseSlot, true);
+      }
+      for (const timing of [
+        [before, after],
+        [after, before],
+      ]) {
+        const result = reconcileRun(cancelled, [receipt(kind), ...timing], FIXTURE_NOW);
+        assert.equal(result.row, 'R-02-1');
+        assert.equal(result.releaseSlot, false);
+        assert.equal(result.terminalNote, null);
+      }
+    }
+    // A failed historical control channel does not invalidate a later complete termination proof.
+    assert.equal(
+      reconcileRun(
+        cancelled,
+        [receipt(), fixtureReconcileEvidence({ kind: 'cancel_channel', valid: false })],
+        FIXTURE_NOW
+      ).state,
+      'ended'
+    );
+    for (const facts of [[scopeAlive(), launchStarted()], []]) {
+      const active = reconcileRun(cancelled, facts, FIXTURE_NOW);
+      assert.equal(active.releaseSlot, false);
+      assert.equal(active.terminalNote, null);
+    }
     assert.equal(
       reconcileRun(
         cancelled,
@@ -1331,15 +1431,20 @@ export const identityExecutionCases: Record<string, () => void> = {
     assert.equal(contradicted.state, 'ended');
     assert.equal(contradicted.blockNewOperations, true);
     assert.equal(contradicted.cause, 'scope_conflict');
-    // Incremental reconciliation does not need the original terminal receipt again.
+    // Incremental callers load the verified terminal basis, never substitute the import/commit time.
     const savedTerminal = fixtureEndedRun();
+    const terminalBasis = {
+      evidence: [{ ...receipt(), evidenceId: savedTerminal.terminalEvidenceId! }],
+      terminalNote: null,
+    };
+    const ownership = { slotHeld: false, ticketConsumed: true, terminalBasis };
     for (const offset of [-1, 0, 1000]) {
       const incrementalAlive = fixtureReconcileEvidence(scopeAlive().fact, {
         evidenceId: `incremental-alive-${offset}`,
         asOf: FIXTURE_NOW + offset,
         observedAt: FIXTURE_NOW + 1500,
       });
-      const result = reconcileRun(savedTerminal, [incrementalAlive], FIXTURE_NOW + 2000);
+      const result = reconcileRun(savedTerminal, [incrementalAlive], FIXTURE_NOW + 2000, ownership);
       assert.equal(result.row, 'R-02-0');
       assert.equal(result.state, 'ended');
       assert.equal(result.blockNewOperations, offset >= 0);
@@ -1348,9 +1453,30 @@ export const identityExecutionCases: Record<string, () => void> = {
       assert.equal(result.releaseSlot, false);
       if (offset < 0) {
         assert.deepEqual(result.auditEvidenceIds, [incrementalAlive.evidenceId]);
-        assert.deepEqual(result.evidenceIds, []);
+        assert.deepEqual(result.evidenceIds, [savedTerminal.terminalEvidenceId]);
       }
     }
+    const delayedCommit = fixtureEndedRun({ endedAt: FIXTURE_NOW + 4500, terminalEvidenceId: laterEnd.evidenceId });
+    const delayedOwnership = {
+      ...ownership,
+      terminalBasis: { evidence: [laterEnd], terminalNote: 'cancel_timing_unknown' as const },
+    };
+    const incremental = reconcileRun(delayedCommit, [laterAlive], FIXTURE_NOW + 5000, delayedOwnership);
+    assert.equal(incremental.state, 'ended');
+    assert.equal(incremental.blockNewOperations, true);
+    assert.equal(incremental.cause, 'scope_conflict');
+    assert.equal(incremental.terminalNote, 'cancel_timing_unknown');
+    assert.equal(incremental.releaseSlot, false);
+    const replayed = reconcileRun(
+      delayedCommit,
+      [fixtureReconcileEvidence({ kind: 'cancel', chronology: 'before_exit' })],
+      FIXTURE_NOW + 5000,
+      delayedOwnership
+    );
+    assert.equal(replayed.state, 'ended');
+    assert.equal(replayed.terminalNote, 'cancel_timing_unknown');
+    assert.equal(replayed.emitTransition, false);
+    assert.equal(reconcileRun(delayedCommit, [laterAlive], FIXTURE_NOW + 5000).blockNewOperations, true);
     for (const asOf of [null, -1, NaN, FIXTURE_NOW + 2001]) {
       const incomparableAlive = fixtureReconcileEvidence(scopeAlive().fact, { asOf });
       const result = reconcileRun(savedTerminal, [incomparableAlive], FIXTURE_NOW + 2000);

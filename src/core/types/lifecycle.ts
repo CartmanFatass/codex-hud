@@ -1,6 +1,6 @@
 import type { JsonObject } from '../canonical.js';
 import type { Claim, ChildBinding, CallerId, ControlInitiator, OwnerKey, SessionRef } from './identity.js';
-import type { LedgerEvent, OrphanPolicy, ReconciliationCause, Run, RunMode } from './execution.js';
+import type { LedgerEvent, OrphanPolicy, ReconciliationCause, Run, RunMode, TerminalNote } from './execution.js';
 import type { ObservationStamp, StatusProjection } from './observation.js';
 
 export type LinkState = 'pending' | 'claimed' | 'bound' | 'reported' | 'closed' | 'failed' | 'revoked' | 'handed_over';
@@ -83,6 +83,8 @@ export interface Reconciliation {
 export interface LifecycleStatus {
   link: Link;
   currentRun: Run | null;
+  /** Whitelisted terminal-event note for the returned run; never a reconciliation blocker. */
+  terminalNote: TerminalNote;
   runHandshake: RunHandshake;
   latestReportForRun: Report | null;
   reconciliation: Reconciliation | null;

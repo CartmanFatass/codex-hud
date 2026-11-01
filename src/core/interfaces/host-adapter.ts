@@ -1,13 +1,12 @@
 import type { HostKind, HostLayout, LaunchCommand, LocatorCheck } from '../types/capabilities.js';
-import type { Harness, SessionRef } from '../types/identity.js';
+import type { Harness, RunBinding, SessionRef } from '../types/identity.js';
 import type { SurfaceLocator } from './session-binding.js';
 
 /** Concept §6.10; contract 05: retain occupant generation; a managed run is optional. */
 export interface SurfaceOptions {
-  runId?: string;
-  bindingGeneration: number;
   cwd: string;
   env: Readonly<Record<string, string>>;
+  managed: Pick<RunBinding, 'runId' | 'bindingGeneration'> | null;
 }
 
 export interface HostAdapter {

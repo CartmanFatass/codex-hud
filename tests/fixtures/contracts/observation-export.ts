@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as TOML from '@iarna/toml';
 import { digest } from '../../../src/core/canonical.js';
-import { makeSourceId, sessionRefKey } from '../../../src/core/identity.js';
+import { makeSourceId, sessionOwnerKey, sessionRefKey } from '../../../src/core/identity.js';
 import { captureWorkspace, updateRun } from '../../../src/core/execution.js';
 import { createActionDescriptor, effectiveWaitMs } from '../../../src/core/lifecycle.js';
 import {
@@ -244,6 +244,7 @@ function record(patch: Partial<ExportInputRecord> = {}): ExportInputRecord {
     linkId: 'synthetic-link-a',
     runId: 'synthetic-run-a1',
     runSeq: 1,
+    operation: 'spawn',
     linkState: 'bound',
     runState: 'ended',
     isCurrentRun: true,
@@ -292,6 +293,7 @@ export function goldenExportInput(): ExportInputSnapshot {
       }),
       record({
         runId: 'synthetic-run-a3',
+        operation: 'resume',
         runSeq: 3,
         runState: 'starting',
         runHandshake: { state: 'pending', reason: null },
@@ -304,6 +306,7 @@ export function goldenExportInput(): ExportInputSnapshot {
       record({ isCurrentRun: false }),
       record({
         runId: 'synthetic-run-a2',
+        operation: 'resume',
         runSeq: 2,
         isCurrentRun: false,
         launchCwd: '/synthetic/launch-a2',
@@ -322,6 +325,34 @@ export function goldenExportInput(): ExportInputSnapshot {
         projectOrigin: { repoId: localRepoId('/synthetic/origin/.git'), basis: 'declared', declaredAt: NOW },
         launchCwd: '/synthetic/disappeared-copy',
         workspaceSnapshot: null,
+      }),
+      record({
+        linkId: 'synthetic-link-d',
+        runId: 'synthetic-run-d1',
+        operation: 'handover',
+        predecessor: 'synthetic-link-c',
+        childRef: OTHER_HOME,
+        parentRef: { ...ROOT, threadId: 'synthetic-agent-a' },
+        isCurrentRun: false,
+        launchCwd: '/synthetic/launch-d1',
+        cwdCapturedAt: NOW + 4000,
+        createdAt: NOW + 4000,
+        startedAt: NOW + 4100,
+        endedAt: NOW + 4900,
+      }),
+      record({
+        linkId: 'synthetic-link-d',
+        runId: 'synthetic-run-d2',
+        runSeq: 2,
+        operation: 'resume',
+        predecessor: 'synthetic-link-c',
+        childRef: OTHER_HOME,
+        parentRef: { ...ROOT, threadId: 'synthetic-agent-a' },
+        launchCwd: '/synthetic/launch-d2',
+        cwdCapturedAt: NOW + 6000,
+        createdAt: NOW + 6000,
+        startedAt: NOW + 6100,
+        endedAt: NOW + 6900,
       }),
     ],
   };
@@ -1005,6 +1036,25 @@ export const observationExportCases: Record<string, () => void> = {
       },
       null
     );
+    type IntentContinuity = Extract<StateContinuity, { sourceGeneration?: never }>;
+    // @ts-expect-error An intent always identifies the current ledger run.
+    const missingRun: IntentContinuity = {
+      ruleVersion: 'v1',
+      nodeIdentity: a,
+      episodeAnchor: null,
+      stateKey: 'starting',
+      stateSince: null,
+      stateSinceBasis: 'unknown',
+    };
+    void missingRun;
+    const fakeGeneration: IntentContinuity = {
+      ...intent,
+      nodeIdentity: a,
+      runId: 'synthetic-run-a',
+      // @ts-expect-error Intent cannot borrow or invent a reader sourceGeneration.
+      sourceGeneration: 0,
+    };
+    void fakeGeneration;
     assert.equal('sourceGeneration' in intent, false);
     assert.equal(intent.stateSince, NOW);
     assert.throws(() => collectResource(a as unknown as SessionRef));
@@ -1048,6 +1098,33 @@ export const observationExportCases: Record<string, () => void> = {
       'observed'
     );
     assert.equal(resolveStateContinuity({ ...input, continuity: 'unknown' }, null).stateSince, null);
+    const intentInput = {
+      ruleVersion: 'synthetic-rule-v1',
+      nodeIdentity: { kind: 'delegationIntent' as const, linkId: 'synthetic-link-a' },
+      runId: 'synthetic-run-a',
+      episodeAnchor: 'synthetic-enter-event',
+      stateKey: 'starting',
+      eventAt: NOW,
+      observedAt: NOW + 100,
+      continuity: 'proven' as const,
+    };
+    const intent = resolveStateContinuity(intentInput, null);
+    assert.equal(resolveStateContinuity({ ...intentInput, eventAt: NOW + 500 }, intent).stateSince, NOW);
+    assert.equal(
+      resolveStateContinuity({ ...intentInput, runId: 'synthetic-run-b', eventAt: NOW + 500 }, intent).stateSince,
+      NOW + 500
+    );
+    // The caller supplies independently validated link→ref/same-run/same-episode evidence.
+    const boundInput = { ...intentInput, nodeIdentity: { kind: 'session' as const, ref: CHILD }, sourceGeneration: 23 };
+    const bound = resolveStateContinuity(boundInput, intent);
+    assert.equal(bound.stateSince, NOW);
+    assert.equal(bound.sourceGeneration, 23);
+    const unproven = resolveStateContinuity(
+      { ...boundInput, continuity: 'first_observation', observedAt: NOW + 600 },
+      intent
+    );
+    assert.equal(unproven.stateSince, NOW + 600);
+    assert.equal(unproven.stateSinceBasis, 'observed');
     assert.deepEqual(
       noticeBaseline(null, { status: 'completed' }, () => ['completed']),
       []
@@ -1075,6 +1152,34 @@ export const observationExportCases: Record<string, () => void> = {
     assert.equal(anomaly.state, 'unknown');
     assert.equal(projectFreshness([{ ...source, deadlineAt: NaN }], ['supervisor'], NOW).state, 'unknown');
     assert.equal(resolveStateContinuity({ ...input, clockAnomaly: true }, previous).stateSince, null);
+    const intentInput = {
+      ruleVersion: 'synthetic-rule-v1',
+      nodeIdentity: { kind: 'delegationIntent' as const, linkId: 'synthetic-link-a' },
+      runId: 'synthetic-run-a',
+      episodeAnchor: 'synthetic-enter-event',
+      stateKey: 'starting',
+      eventAt: NOW,
+      observedAt: NOW + 100,
+      continuity: 'proven' as const,
+    };
+    const intent = resolveStateContinuity(intentInput, null);
+    const nextRun = resolveStateContinuity(
+      {
+        ...intentInput,
+        runId: 'synthetic-run-b',
+        eventAt: null,
+        observedAt: NOW + 200,
+        continuity: 'first_observation',
+      },
+      intent
+    );
+    assert.equal(nextRun.stateSince, NOW + 200);
+    assert.equal('sourceGeneration' in nextRun, false);
+    const noEpisodeProof = resolveStateContinuity(
+      { ...intentInput, nodeIdentity: { kind: 'session', ref: CHILD }, sourceGeneration: 23, continuity: 'unknown' },
+      intent
+    );
+    assert.equal(noEpisodeProof.stateSince, null);
     assert.equal(source.lastEvidenceAt, NOW);
   },
   'T-06-29': () => {
@@ -1177,13 +1282,21 @@ export const observationExportCases: Record<string, () => void> = {
         ['synthetic-link-a', 3],
         ['synthetic-link-b', 1],
         ['synthetic-link-c', 1],
+        ['synthetic-link-d', 1],
+        ['synthetic-link-d', 2],
       ]
     );
-    assert.equal(new Set(result.envelope.records.map((row) => `${result.envelope.ledgerId}:${row.runId}`)).size, 5);
+    assert.equal(new Set(result.envelope.records.map((row) => `${result.envelope.ledgerId}:${row.runId}`)).size, 7);
     assert.equal(result.envelope.records[3].parentRef, null);
     assert.equal(result.envelope.records[3].linkState, 'failed');
     assert.equal(result.envelope.records[3].currentOwner, false);
     assert.equal(result.envelope.records[3].startedAt, null);
+    assert.deepEqual(
+      result.envelope.records.map((row) => row.operation),
+      ['spawn', 'resume', 'resume', 'spawn', 'spawn', 'handover', 'resume']
+    );
+    assert.equal(result.envelope.records[3].childRef, null);
+    assert.equal(result.envelope.records[3].relationshipConfirmed, false);
     assert.equal(result.envelope.records[0].childRef?.threadId, null);
     assert.equal(result.envelope.records[4].parentRef?.threadId, 'synthetic-agent-a');
     assert.notEqual(result.envelope.records[0].childRef?.sourceId, result.envelope.records[4].childRef?.sourceId);
@@ -1238,6 +1351,76 @@ export const observationExportCases: Record<string, () => void> = {
         'deny'
       );
     }
+    const binding = [
+      'identity_source_missing',
+      'identity_unverified',
+      'identity_conflict',
+      'resume_ref_mismatch',
+      'unsupported',
+      'unavailable',
+      'unknown',
+    ];
+    const handshake = [
+      ...binding,
+      'claim_missing',
+      'claim_revoked',
+      'claim_expired',
+      'claim_conflict',
+      'stale_binding',
+    ];
+    const git = ['not_git', 'timeout', 'unavailable', 'unknown'];
+    const cwd = ['launch', 'registry', 'transcript', 'supervisor'];
+    for (const paths of ['none', 'local'] as const) {
+      for (const [field, allowed] of [
+        ['bindingReason', binding],
+        ['handshake', handshake],
+        ['gitMissingReason', git],
+        ['cwdSource', cwd],
+      ] as const) {
+        for (const value of [
+          ...allowed,
+          null,
+          'claim_missing/free text',
+          'UNKNOWN',
+          '/synthetic/private',
+          'supervisor_dead',
+          'report',
+          'observed-time',
+          'claim_conflict',
+          'timeout',
+          'not_git',
+        ]) {
+          const base = record();
+          const row =
+            field === 'bindingReason'
+              ? { ...base, bindingReason: value }
+              : field === 'handshake'
+                ? { ...base, runHandshake: { ...base.runHandshake, reason: value } }
+                : { ...base, workspaceSnapshot: { ...base.workspaceSnapshot!, [field]: value } };
+          const result = serialized({ ...goldenExportInput(), records: [row], paths }).envelope.records[0];
+          const actual =
+            field === 'bindingReason'
+              ? result.bindingReason
+              : field === 'handshake'
+                ? result.runHandshake.reason
+                : result.workspaceSnapshot![field];
+          const expected = value !== null && (allowed as readonly string[]).includes(value) ? value : null;
+          assert.equal(actual, expected, `${paths}/${field}/${value}`);
+          // Feed the same internal string to the decoder: its normalization matches the encoder.
+          const raw = structuredClone(result) as unknown as Record<string, unknown>;
+          if (field === 'bindingReason') raw.bindingReason = value;
+          else if (field === 'handshake') (raw.runHandshake as Record<string, unknown>).reason = value;
+          else (raw.workspaceSnapshot as Record<string, unknown>)[field] = value;
+          const envelope = {
+            ...serialized({ ...goldenExportInput(), records: [base], paths }).envelope,
+            records: [raw],
+          };
+          const decoded = decodeDelegationExport(envelope);
+          assert.equal(decoded.ok, true);
+          if (decoded.ok) assert.deepEqual(decoded.value.records[0], result);
+        }
+      }
+    }
   },
   'T-07-23': () => {
     assert.equal(exactExportRefJoin(CHILD, { ...CHILD }), true);
@@ -1279,6 +1462,38 @@ export const observationExportCases: Record<string, () => void> = {
     assert.equal(runs[2].startedAt, null);
     assert.equal(runs[2].endedAt, null);
     assert.equal(isDefiniteCurrentParent(output.records[4]), false);
+    assert.deepEqual(
+      runs.map((row) => row.operation),
+      ['spawn', 'resume', 'resume']
+    );
+    assert.equal(isDefiniteCurrentParent(runs[0]), false, 'original spawn is history, not another current edge');
+    const successor = output.records.filter((row) => row.linkId === 'synthetic-link-d');
+    assert.deepEqual(
+      successor.map((row) => row.operation),
+      ['handover', 'resume']
+    );
+    assert.ok(successor.every((row) => row.predecessor === 'synthetic-link-c'));
+    const predecessor = output.records.find((row) => row.linkId === 'synthetic-link-c')!;
+    const chain = [predecessor, ...successor];
+    for (const [index, row] of chain.entries()) {
+      assert.equal(sessionOwnerKey(row.parentRef!), sessionOwnerKey(predecessor.parentRef!));
+      assert.equal(exactExportRefJoin(row.childRef, predecessor.childRef), true);
+      assert.equal(row.cwdCapturedAt, row.createdAt);
+      assert.ok(row.createdAt < row.startedAt! && row.startedAt! < row.endedAt!);
+      if (index > 0)
+        assert.ok(chain[index - 1].endedAt! < row.createdAt, 'handover/resume follows the previous terminal run');
+    }
+    assert.equal(isDefiniteCurrentParent(successor[0]), false);
+    assert.equal(isDefiniteCurrentParent(successor[1]), true);
+    const onlySuccessor = serialized({
+      ...input,
+      scope: { kind: 'links', linkIds: ['synthetic-link-d'] },
+      records: input.records.filter((row) => row.linkId === 'synthetic-link-d'),
+    }).envelope;
+    assert.equal(onlySuccessor.records.length, 2);
+    assert.ok(onlySuccessor.records.every((row) => row.predecessor === 'synthetic-link-c'));
+    assert.equal('originalOwner' in successor[1], false);
+    assert.equal('usage' in successor[1], false);
     const base = serialized({ ...input, records: [record()] }).envelope.records[0];
     assert.equal(isDefiniteCurrentParent(base), true);
     for (const patch of [
@@ -1373,6 +1588,29 @@ export const observationExportCases: Record<string, () => void> = {
         decodeDelegationExport({ ...envelope, records: [missing], coverage: { state: 'complete', recordCount: 1 } }).ok,
         false,
         field
+      );
+    }
+    for (const paths of ['none', 'local'] as const) {
+      const one = serialized({ ...goldenExportInput(), records: [record()], paths }).envelope;
+      for (const field of ['bindingReason', 'reason', 'cwdSource', 'gitMissingReason']) {
+        for (const value of [undefined, 4, false, {}, []]) {
+          const raw = structuredClone(one) as unknown as { records: Record<string, unknown>[] };
+          const row = raw.records[0];
+          const target =
+            field === 'bindingReason' ? row : field === 'reason' ? row.runHandshake : row.workspaceSnapshot;
+          if (value === undefined) delete (target as Record<string, unknown>)[field];
+          else (target as Record<string, unknown>)[field] = value;
+          assert.equal(decodeDelegationExport(raw).ok, false, `${paths}/${field}/${value}`);
+        }
+      }
+      for (const operation of [undefined, null, 'unknown', 'SPAWN', 0]) {
+        const row = { ...one.records[0], operation };
+        if (operation === undefined) delete row.operation;
+        assert.equal(decodeDelegationExport({ ...one, records: [row] }).ok, false);
+      }
+      assert.equal(
+        decodeDelegationExport({ ...one, records: [{ ...one.records[0], workspaceSnapshot: null }] }).ok,
+        true
       );
     }
     assert.equal(decodeDelegationExport({ ...envelope, schemaVersion: 2 }).ok, false);

@@ -486,9 +486,11 @@ await suite.test(
       cancel(f, item.accepted.runId);
       writeReceipt(f, item.accepted, item.scope);
       const observed = await recover(suite, f, item.accepted.runId);
-      assert.equal(observed.state, 'uncertain');
-      assert.ok(observed.missing.includes('cancel_exit_order'));
-      held(f, item.accepted.runId);
+      assert.equal(observed.state, 'ended');
+      assert.equal(observed.terminalNote, 'cancel_timing_unknown');
+      assert.equal(observed.cancelResult, null);
+      assert.equal(observed.missing.includes('cancel_exit_order'), false);
+      released(f, item.accepted.runId, 'ended');
       detail.push({ timing: 'scope ended but sourced ordering omitted', observed });
       f.db.close();
     }
@@ -509,16 +511,24 @@ await suite.test(
         .get(item.accepted.runId);
       assert.equal(JSON.parse(afterAcceptance.payload).group.result, 'gone');
       const withoutReceipt = await recover(suite, f, item.accepted.runId);
-      assert.equal(withoutReceipt.state, 'uncertain');
+      assert.equal(withoutReceipt.state, 'ended');
       assert.equal(withoutReceipt.cancelBeforeExit, false);
-      held(f, item.accepted.runId);
+      assert.equal(withoutReceipt.terminalNote, 'cancel_timing_unknown');
+      assert.equal(withoutReceipt.cancelResult, null);
+      released(f, item.accepted.runId, 'ended');
       const lateWaitObservation = await nativeReceipt(suite, f, item, 0);
       assert.equal(
         lateWaitObservation.state,
-        'uncertain',
-        'a delayed wait observation after acceptance cannot prove C'
+        'ended',
+        'a delayed wait observation retains the original terminal classification'
       );
-      held(f, item.accepted.runId);
+      assert.equal(lateWaitObservation.terminalNote, 'cancel_timing_unknown');
+      assert.equal(lateWaitObservation.cancelResult, null);
+      released(f, item.accepted.runId, 'ended');
+      assert.equal(
+        f.db.prepare("SELECT count(*) AS n FROM events WHERE run_id=? AND kind='run.ended'").get(item.accepted.runId).n,
+        1
+      );
       detail.push({
         timing: 'real SQLite writer lock held until actual child death before cancel acceptance',
         actualDeath,

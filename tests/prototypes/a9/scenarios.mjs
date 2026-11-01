@@ -368,6 +368,31 @@ export async function qProofs(suite, detail, cancelled = false) {
   assert.equal(countSubmissions(f.directory), 1);
   detail.push({ noLeaderOrExitReceipt: true, complete, submissions: 1 });
   f.db.close();
+  // No post-acceptance live observation or sourced earlier end: Q still releases (E02/T-04-24).
+  if (cancelled) {
+    const unknown = suite.fixture('q-cancel-order-unknown');
+    const pending = await launched(suite, unknown);
+    await pending.supervisor.stop();
+    await killStamp(pending.stamp);
+    cancel(unknown, pending.accepted.runId);
+    const ended = await recover(suite, unknown, pending.accepted.runId);
+    assert.equal(ended.basis, 'Q');
+    assert.equal(ended.terminalNote, 'cancel_timing_unknown');
+    assert.equal(ended.cancelResult, null);
+    assert.equal(ended.cancelBeforeExit, false);
+    released(unknown, pending.accepted.runId, 'ended');
+    const repeated = await recover(suite, unknown, pending.accepted.runId);
+    assert.equal(repeated.state, 'ended');
+    assert.equal(repeated.terminalNote, 'cancel_timing_unknown');
+    assert.equal(
+      unknown.db
+        .prepare("SELECT count(*) AS n FROM events WHERE run_id=? AND kind='run.ended'")
+        .get(pending.accepted.runId).n,
+      1
+    );
+    detail.push({ timing: 'receiptless Q with unknown cancel chronology', ended, repeated });
+    unknown.db.close();
+  }
   for (const missing of [
     'scope',
     'launch_record',

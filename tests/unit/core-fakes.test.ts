@@ -41,27 +41,29 @@ const LOCATOR: HostLocator = {
   session: 'synthetic-session',
   pane: '%1',
   runId: 'run-a',
-  bindingGeneration: 1,
+  bindingGeneration: 17,
   process: FIXTURE_SUPERVISOR,
 };
 const BINDING: RunBinding = {
   runId: 'run-a',
   sessionRef: REF,
-  bindingGeneration: 1,
+  bindingGeneration: 17,
   supervisor: FIXTURE_SUPERVISOR,
   harness: { ...FIXTURE_SUPERVISOR, pid: 121 },
-  occupantGeneration: 1,
+  occupantGeneration: 29,
   childBinding: null,
 };
 const SESSION_BINDING: SessionBinding = {
   sessionRef: REF,
-  bindingGeneration: 1,
-  supervisor: null,
   harness: BINDING.harness,
-  occupantGeneration: 1,
+  occupantGeneration: 29,
   managed: null,
 };
-const { runId: _managedRunId, ...SURFACE }: { runId: string } & SurfaceLocator = LOCATOR;
+const { runId: _managedRunId, bindingGeneration: _managedBindingGeneration, ...location } = LOCATOR;
+const SURFACE: SurfaceLocator = { ...location, occupantGeneration: 29 };
+// @ts-expect-error A resolved observation always has a complete SessionRef.
+const invalidSessionRef: SessionBinding['sessionRef'] = null;
+void invalidSessionRef;
 const CONTEXT: BindContext = {
   sourceId: REF.sourceId,
   explicitSession: REF,
@@ -130,7 +132,7 @@ function readerResult(ref: SessionRef = REF): ReaderResult {
       ref,
       fileId: { dev: 1, inode: 2 },
       offset: 123,
-      sourceGeneration: 1,
+      sourceGeneration: 7,
       parserState: initialParserState(),
     },
   };
@@ -140,6 +142,7 @@ function lifecycle(run: Run): LifecycleStatus {
   return {
     link: fixtureLink(),
     currentRun: run,
+    terminalNote: null,
     runHandshake: { state: 'bound', reason: null },
     latestReportForRun: null,
     reconciliation: null,
@@ -166,24 +169,28 @@ test('empty optional registry still supports binding, reading and a core session
   registry.getScript.responses.push(null);
   registry.sessionOfScript.responses.push(null);
   const provider: RegistryProvider = registry;
-  assert.equal(await provider.get(LOCATOR), null);
-  assert.equal(await provider.sessionOf(LOCATOR), null);
+  assert.equal(await provider.get(SURFACE), null);
+  assert.equal(await provider.sessionOf(SURFACE), null);
 
   const fake = new FakeHarnessAdapter('codex');
   const reader = new FakeSessionReader();
   const result = readerResult();
   fake.resolveSourceScript.responses.push(REF.sourceId);
-  fake.bindScript.responses.push(SESSION_BINDING);
+  const observedOnly: SessionBinding = { sessionRef: REF, harness: null, occupantGeneration: null, managed: null };
+  fake.bindScript.responses.push(observedOnly);
   fake.childrenScript.responses.push([]);
   reader.readScript.responses.push(result);
   fake.readers.set(sessionRefKey(REF), reader);
   const harness: HarnessAdapter = fake;
   const sourceId = await harness.resolveSource(PROFILE, {});
-  const bound = await harness.bind({ ...CONTEXT, sourceId, registry: await provider.list() });
+  const bound = await harness.bind({ ...CONTEXT, sourceId, locator: null, registry: await provider.list() });
   assert.ok(bound?.sessionRef);
   assert.equal('runId' in bound, false);
   assert.equal(bound.managed, null);
-  assert.equal('runId' in fake.bindScript.calls[0][0].locator!, false);
+  assert.equal(fake.bindScript.calls[0][0].locator, null);
+  assert.equal(bound.harness, null);
+  assert.equal(bound.occupantGeneration, null);
+  for (const field of ['bindingGeneration', 'supervisor', 'childBinding']) assert.equal(field in bound, false);
   const read = await harness.open(bound.sessionRef).read();
   const key = displayNodeKey(read.observation.nodeIdentity);
   const tree = planTree(
@@ -264,7 +271,9 @@ test('06 T-06-6: cached unmanaged registry records retain validity, generation a
     assert.equal(evidence.lastSuccessfulReadAt, NOW);
     assert.equal(evidence.value.sourceClockAt, NOW - 1000);
     assert.equal(evidence.sourceGeneration, 7);
-    assert.equal('runId' in entry.locator!, false);
+    for (const field of ['runId', 'bindingGeneration', 'supervisor']) assert.equal(field in entry.locator!, false);
+    assert.equal(entry.locator!.occupantGeneration, 29);
+    assert.notEqual(entry.binding!.occupantGeneration, evidence.sourceGeneration);
     assert.equal(entry.binding?.managed, null);
   }
   assert.deepEqual(await provider.get(SURFACE), cached);
@@ -279,7 +288,7 @@ test('06 T-06-6: cached unmanaged registry records retain validity, generation a
   host.locateScript.responses.push(SURFACE);
   assert.deepEqual(
     await host.openSurface('pane', {
-      bindingGeneration: 1,
+      managed: null,
       cwd: '/synthetic/repo',
       env: {},
     }),
@@ -318,7 +327,7 @@ test('valid, stale and unknown locator occupants drive the core interaction poli
   fake.focusScript.responses.push(undefined);
   fake.sendKeysScript.responses.push(undefined);
   for (const [index, expected] of [true, false, false].entries()) {
-    const check = await host.checkLocator(LOCATOR);
+    const check = await host.checkLocator(SURFACE);
     const interaction = interactionPolicy({
       run: fixtureRun({ mode: 'visible' }),
       unresolvedConflict: false,
@@ -329,11 +338,11 @@ test('valid, stale and unknown locator occupants drive the core interaction poli
       resumable: false,
     });
     assert.deepEqual(interaction, { focus: expected, input: expected, resume: false }, checks[index].state);
-    if (interaction.focus) await host.focus(LOCATOR);
-    if (interaction.input) await host.sendKeys(LOCATOR, ['synthetic-input']);
+    if (interaction.focus) await host.focus(SURFACE);
+    if (interaction.input) await host.sendKeys(SURFACE, ['synthetic-input']);
   }
-  assert.deepEqual(fake.focusScript.calls, [[LOCATOR]]);
-  assert.deepEqual(fake.sendKeysScript.calls, [[LOCATOR, ['synthetic-input']]]);
+  assert.deepEqual(fake.focusScript.calls, [[SURFACE]]);
+  assert.deepEqual(fake.sendKeysScript.calls, [[SURFACE, ['synthetic-input']]]);
 });
 
 test('lost supervisor refuses RunControl input even with a matching visible occupant', async () => {
@@ -380,16 +389,15 @@ test('05 T-05-8: absent or unavailable optional host selects a verified tmux fak
     const host: HostAdapter = fallback;
     const command = launchProfileUsable(PROFILE, 'spawn', 'visible').command;
     assert.ok(command);
-    fallback.openSurfaceScript.responses.push(LOCATOR);
+    fallback.openSurfaceScript.responses.push(SURFACE);
     fallback.runInSurfaceScript.responses.push(undefined);
     const locator = await host.openSurface('pane', {
-      runId: 'run-a',
-      bindingGeneration: 1,
+      managed: { runId: BINDING.runId, bindingGeneration: BINDING.bindingGeneration },
       cwd: '/synthetic/repo',
       env: PROFILE.env,
     });
     await host.runInSurface(locator, command);
-    assert.deepEqual(fallback.runInSurfaceScript.calls, [[LOCATOR, PROFILE.launch]]);
+    assert.deepEqual(fallback.runInSurfaceScript.calls, [[SURFACE, PROFILE.launch]]);
     assert.deepEqual(optional.openSurfaceScript.calls, []);
     assert.deepEqual(optional.runInSurfaceScript.calls, []);
     assert.deepEqual(planHostSelection({ ...params, dispatchMayHaveOccurred: true }), {
@@ -435,7 +443,7 @@ test('bind/open/children feed an intent-to-session merge with native topology an
   const refKey = displayNodeKey({ kind: 'session', ref: REF });
   const nativeKey = displayNodeKey({ kind: 'session', ref: native });
   const fake = new FakeHarnessAdapter('codex');
-  fake.bindScript.responses.push(null, { ...SESSION_BINDING, supervisor: BINDING.supervisor, managed: BINDING });
+  fake.bindScript.responses.push(null, { ...SESSION_BINDING, managed: BINDING });
   assert.equal(await fake.bind({ ...CONTEXT, explicitSession: null }), null);
   const reader = new FakeSessionReader();
   const result = readerResult();
@@ -446,6 +454,11 @@ test('bind/open/children feed an intent-to-session merge with native topology an
   const bound = await harness.bind(CONTEXT);
   assert.ok(bound?.sessionRef);
   assert.deepEqual(bound.managed, BINDING);
+  assert.equal(bound.managed?.bindingGeneration, 17);
+  assert.deepEqual(bound.managed?.supervisor, BINDING.supervisor);
+  assert.equal(bound.occupantGeneration, 29);
+  assert.notEqual(bound.managed?.bindingGeneration, bound.occupantGeneration);
+  assert.equal('supervisor' in bound, false);
   const read = await harness
     .open(bound.sessionRef, result.checkpoint)
     .read({ maxBytes: 4096, maxRecords: 20, budgetMs: 5 });

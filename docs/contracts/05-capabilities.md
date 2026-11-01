@@ -8,7 +8,39 @@
 
 [Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
+[Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
+
 ## 数据模型
+
+### 会话观测绑定与受管绑定
+
+普通已知session不要求ledger/MCP/run；受管RunBinding必须有真实runId/bindingGeneration，字段不放宽。
+
+```ts
+type SessionBinding = Pick<RunBinding, 'harness' | 'occupantGeneration'> & {
+  sessionRef: SessionRef;
+  managed: RunBinding | null;
+};
+
+type ToSurfaceLocator<T> = T extends HostLocator
+  ? Omit<T, 'runId' | 'bindingGeneration'> & {
+      occupantGeneration: number | null;
+    }
+  : never;
+type SurfaceLocator = ToSurfaceLocator<HostLocator>;
+
+type SurfaceOptions = {
+  cwd: string;
+  env: Readonly<Record<string, string>>;
+  managed: Pick<RunBinding, 'runId' | 'bindingGeneration'> | null;
+};
+```
+
+SessionBinding 顶层只保存观察字段；supervisor、childBinding、runId、bindingGeneration 只从 managed 读取，避免嵌套/顶层两份运行事实。managed=null 表示本次未附有可确认相符的受管运行投影，不证明该会话从未受管。managed 非 null 必须来自实际 ledger/run 证据，sessionRef 与外层完整判等，实例/占用证据和所选 run 的当前性相容；正常 resume 必须选择对应的新 run，不把旧绑定当当前轮。无法确认这种关联时保留普通 session 观察、managed=null，并在既有诊断/冲突投影解释，不凭相同 cwd、pane 或裸 sessionId 补关联。RunBinding.sessionRef 尚空的受管意图继续由既有 intent/run 投影表示，不能塞进这个已解析 session 结果。
+
+occupantGeneration 是相应宿主/server 实例下的占用观察代次；确认换 occupant 才失效旧关联并更新代次。未知为 null，无宿主时也可为 null；不填默认 0/1，不从 ledger bindingGeneration、reader sourceGeneration 或 collect lease generation 借值。server 重启或观察连续性丢失须重新核验，不能让相同数字续接旧 occupant。它是现有宿主/注册表观察的元数据，不要求新建全局代次分配器或常驻服务。
+
+SurfaceOptions.managed 是可选语义、显式 nullable 的受管启动上下文：无受管 run 时传 null；有已接受的 run 时一并提供其真实 runId/bindingGeneration。它不是执行票据，也不要求在打开 surface 前已经完成子握手。占用代次由宿主观察产生，不能要求普通调用者制造一个受管 bindingGeneration 来打开 pane。
 
 ### 能力格与证据快照
 
@@ -82,7 +114,9 @@ host=none 只与 headless 配对。表中的组合项必须展开后独立留证
 
 RegistryProvider、HostAdapter、RunControl 按概念 §6.9–12 接入。核心只依赖接口；Herdr 实现仅在 HERDR_ENV=1 且 HUD_HERDR≠0 时装载，schema/CLI/socket 版本在集成层预检、缓存并限预算。无 Herdr 用空注册表、tmux 或 headless；headless 不在 Herdr 登记假 agent。共享 Herdr 缓存按 server 隔离、默认 3 s，不为每个消费者另起轮询进程。
 
-`LocatorCheck` 返回 `valid | stale | unknown`、`occupantMatches: true | false | null`、核验时间和证据。Herdr locator 包含 server/workspace/tab/pane；tmux 包含 server 实例/session/pane；均关联 run/binding generation 与 04 ProcessStamp。操作前重验 server、对象、当前 occupant 与前台可交互性；传输错误是 unknown，不是对象已不存在。旧 locator 仍作历史定位，宿主状态不套给新 occupant；focus/input 能力与 resume 权限分开，引用 I-04-13。
+普通 surface 使用 SurfaceLocator，保留 Herdr 的 server/workspace/tab/pane 或 tmux 的 server/session/pane、实际可得的 ProcessStamp 及独立 occupantGeneration，不含受管 run 身份。受管路径仍使用原 HostLocator/RunHandle 的真实 runId/bindingGeneration；从 surface 组合受管 locator 时须另取实际 run 的上下文并重验关联，不能把 occupantGeneration 改名或复制成 bindingGeneration。两类 locator 都是定位与待核验快照，不是控制许可。LocatorCheck 保持 valid/stale/unknown、occupantMatches 和 foregroundInteractive；未知代次/实例不因 null==null 被判匹配，操作前必须取得足够的当前占用证据，不能确认则拒绝该控制。普通 session 的读取不因此被禁止。
+
+普通 session 可以使用经校验的宿主 focus/navigation 等已声明能力，但不能因 SessionBinding 或一个 pane locator 获得 delegate_report/resume/cancel 权限，也不能为调用 RunControl 伪造 runId。受管动作仍按01–04鉴权、校验槽与固定目标；观察 resolver 不建立 claim、childBinding、确定委派父边或新执行权。
 
 `delegate_wait` 的协议上限是 120000 ms，实际每次使用：
 
@@ -97,7 +131,7 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 | I-05-1 | 支持声明绑定完整能力键、版本、档案和已接受证据；未测格始终 unverified，未声明能力不猜 | T-05-1、2 |
 | I-05-2 | argv/shell 互斥，source 显式且核验；逐run启动位置冻结，Git不进热路径；shell 单次前台启动形态经验证，不能把任意文本升级为受管能力 | T-05-3、6、17 |
 | I-05-3 | Codex 按服务器名仅注入四个 HUD 叶子键，保留其余配置；HUD_HOME 到 MCP、resume 新 claim，运输不等于身份 | T-05-4、5 |
-| I-05-4 | locator 每次控制前校验实例/代次/occupant，未知拒绝控制；历史与当前宿主分离；HUD管理copy-only，入口/主体/固定目标及未来直接调用门禁引用01–04 | T-05-7、8、18 |
+| I-05-4 | 观测SessionBinding非null必有完整ref，无可靠唯一选择返回null；普通SurfaceLocator用独立nullable occupantGeneration，无假run/受管代次；managed仅真实相符当前run，ref/实例不符不升级关联；控制前校验实例/occupant，未知拒绝但可有预算读取，管理copy-only与权限仍依01–04 | T-05-7、8、18 |
 | I-05-5 | 只有预检证明命令从未提交才可选 fallback；任何 dispatch 已发/结果未知都交 02 对账，不再启动 | T-05-9、10 |
 | I-05-6 | 可见托管采用修订后的甲，原生结果可未知；父断连 continue 与 supervisor 死亡分开验收，乙无 MVP managed 能力 | T-05-11、12 |
 | I-05-7 | 有效 wait 含客户端余量且≤120 s；短等/断线保持原 run/游标，无取消或终结副作用 | T-05-13、14 |
@@ -135,7 +169,7 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 | T-05-5 | B | TUI/exec 的 launch 与两个 resume 模板分别启 MCP → 每轮新 claim/同 HUD_HOME/同 source，其他配置保留；验证 01 握手，不把旧凭据带到新 run |
 | T-05-6 | B | 两 home 同 cwd、函数实际 home 与档案错配、完整 exec 包装链 → source 错配拒绝；仅实测同实例才认 harness 是直接子进程 |
 | T-05-7 | B | pane 数值复用/server 更换/未知 occupant/前台回 shell → 控制均拒绝，关系历史不变；新 occupant 不收到按键/焦点 |
-| T-05-8 | A9 | 假 Host/Registry/RunControl、Herdr schema 不符/不可达、HUD_HERDR=0 → 核心路径可用，诊断明确，预检未发命令才可选默认 |
+| T-05-8 | A9 | 假Host/Registry/RunControl、Herdr不可用/禁用仍核心可用，未提交才fallback；无ledger/MCP/PID/宿主的完整已知ref可bind/open，普通surface无runId/bindingGeneration/supervisor、SurfaceOptions.managed=null；null ref结果拒类型、歧义返回null，binding/occupant/source代次取不同合成值；managed与外层完整ref/实例/当前轮不符不升级关联，stale/unknown occupant无控制（含null不作匹配）；scripted fake不是A6/B真实核验证据 |
 | T-05-9 | B | dispatch 前预检失败与已发后超时/断连两组 → 前者可明确选择最终核心档案，后者仅原 run 对账；合成提交计数不增加 |
 | T-05-10 | A9 | fallback 改参数摘要、同 key 原 accepted 重放 → 遵守 I-02-1，不能以宿主切换修改原结果或再提交 |
 | T-05-11 | A9 | 复用已于8fdf4cf接受的A8-fixB2关键证据与supervisor-death反例 → 同agent/session、实际context命令、父launcher退出后TTY输入/收尾及前台形态边界明确；后台负对照/原生结果未知/监督中断保留，乙managed拒绝；不据此声称工程WP B2或B生产能力已过 |

@@ -624,6 +624,12 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
   let state = run.state;
   let basis = null;
   let cancelResult = null;
+  const savedTerminal = db
+    .prepare(
+      "SELECT payload FROM events WHERE run_id=? AND kind IN ('run.ended','run.cancelled','run.failed') ORDER BY seq LIMIT 1"
+    )
+    .get(runId);
+  let terminalNote = savedTerminal ? (JSON.parse(savedTerminal.payload).terminalNote ?? null) : null;
   if (!['ended', 'failed', 'cancelled'].includes(state)) {
     if (
       escaped ||
@@ -632,10 +638,18 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
     )
       state = 'uncertain';
     else if (validR || Q) {
-      if (run.cancel_requested_at && exitBeforeCancel === cancelBeforeExit) state = 'uncertain';
+      if (run.cancel_requested_at && exitBeforeCancel && cancelBeforeExit) state = 'uncertain';
       else {
         state = run.cancel_requested_at && cancelBeforeExit ? 'cancelled' : 'ended';
-        cancelResult = run.cancel_requested_at ? (exitBeforeCancel ? 'already_ended' : 'confirmed') : null;
+        cancelResult = run.cancel_requested_at
+          ? exitBeforeCancel
+            ? 'already_ended'
+            : cancelBeforeExit
+              ? 'confirmed'
+              : null
+          : null;
+        terminalNote =
+          run.cancel_requested_at && !exitBeforeCancel && !cancelBeforeExit ? 'cancel_timing_unknown' : null;
         basis = validR ? 'R' : 'Q';
       }
     } else if (N) {
@@ -673,6 +687,7 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
     Q,
     N,
     cancelResult,
+    terminalNote,
     exitBeforeCancel,
     cancelBeforeExit,
     missing: [
@@ -682,7 +697,7 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
       !rosterComplete && 'complete_launcher_roster',
       !launchersSealed && 'launcher_seal',
       group.result === 'unknown' && 'complete_visibility',
-      (validR || Q) && run.cancel_requested_at && exitBeforeCancel === cancelBeforeExit && 'cancel_exit_order',
+      (validR || Q) && run.cancel_requested_at && exitBeforeCancel && cancelBeforeExit && 'cancel_exit_conflict',
     ].filter(Boolean),
     interaction: {
       focus: !supervisorDead && state === 'running',
@@ -724,7 +739,7 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
       await checkpoint('terminal_claim');
       db.prepare('DELETE FROM slots WHERE run_id=?').run(runId);
       await checkpoint('terminal_slot');
-      event(db, `run.${state}`, runId, { basis });
+      event(db, `run.${state}`, runId, { basis, terminalNote });
       await checkpoint('terminal_event');
     } else if (state !== run.state) {
       db.prepare('UPDATE runs SET state=? WHERE run_id=?').run(state, runId);

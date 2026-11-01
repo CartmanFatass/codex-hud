@@ -171,7 +171,6 @@ export type StateSinceBasis = 'event' | 'observed' | 'unknown';
 
 export type StateContinuity = {
   ruleVersion: string;
-  runId?: string;
   bindingGeneration?: number;
   episodeAnchor: string | null;
   stateKey: string;
@@ -180,11 +179,13 @@ export type StateContinuity = {
 } & (
   | {
       nodeIdentity: Extract<DisplayNodeIdentity, { kind: 'session' | 'job' }>;
+      runId?: string;
       sourceGeneration: number;
     }
   | {
-      // 待 ARCH 裁决: ledger-only intent has no fabricated source generation.
       nodeIdentity: Extract<DisplayNodeIdentity, { kind: 'delegationIntent' }>;
+      runId: string;
+      ref?: never;
       sourceGeneration?: never;
     }
 );

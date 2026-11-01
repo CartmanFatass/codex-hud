@@ -72,7 +72,8 @@ Jacob 的日常是多 harness 编排：cc 当编排者，后端交 Codex impleme
 | `JobRef` | 一次 Jev 任务 | `kind: 'jev'`、`provider`、`account?`、`key` |
 | `CallerId` | 一个 hud-mcp 物理实例。MCP 可能被 harness 重启，所以它不是所有者。身份绑定在其下的 `caller_contexts` 上：MVP 经验证的专属 stdio 恰好一个当前 context；共享正向调度延期，原生子或来源缺失不得沿用根身份（契约 01） | `pid`、`ppid`、`procStart`、`harness`；每个 context：`sessionRef?`、`boundBy?`、`generation` |
 | `OwnerKey` | 持久的逻辑所有者，幂等与所有权校验的范围：已绑定时 = 父 `SessionRef`；未绑定但逻辑来源可辨时 = harness 进程身份（含机器/boot/PID 域、pid、procStart 与 generation）。MCP 重启后不变 | 派生字段，不单独存 |
-| `RunBinding` | HUD 观察到的进程实例与它当前承载的会话 | `bindingId`、`ref`、`pid?`、`procStart?`、`herdr?{server, workspace, tab, pane, agentName}`、`tmux?{session, pane}`、`generation`、`evidence[]` |
+| `SessionBinding` | 已选择的完整SessionRef与可取得的进程/宿主占用观察；不要求ledger、hud-mcp、run或childBinding；不是持久身份、父子边或授权凭据 | `sessionRef`、`harness`、独立nullable `occupantGeneration`、`managed:RunBinding|null` |
+| `RunBinding` | A4受管run读取投影，由ledger/已核验运行证据供应，不通过观察候选制造 | 真实`runId`、该run的`bindingGeneration`必有，`sessionRef/childBinding`未绑定可空；supervisor等运行事实只从SessionBinding.managed读取 |
 | `DelegationLink` | 父子关系，有独立 id 和生命周期 | §6.6 |
 | `Run` | 关系下的一次运行实例：模式、宿主位置、托管进程、退出回执 | `runId`、`linkId`、`mode`、`state`、`locator`、`supervisorPid`、`exit?` |
 | `Report` | 子在某次运行里提交的结果 | `reportId`、`runId`、`status`、`summary`、`path` |
@@ -80,7 +81,7 @@ Jacob 的日常是多 harness 编排：cc 当编排者，后端交 Codex impleme
 | L1 / subtask / review | 沿用 codex-hud | |
 | 宿主 | bar / panel 画在哪：tmux pane、herdr pane、cc statusline、pi footer | |
 
-HUD 自己所在的 pane 与被观察的 pane 永远分开记录。一个 pane 先后承载不同会话时，`RunBinding.generation` 递增，旧关系不套到新 occupant。
+HUD 自己所在的 pane 与被观察的 pane 永远分开记录。一个 pane 先后承载不同会话时，相应宿主/server实例的 `occupantGeneration` 更新，旧关联先失效，不把旧关系套到新occupant；未知/无宿主可null，server重启/观察断续须重新核验，不从受管bindingGeneration或reader sourceGeneration借值。
 
 ## 5. 证据盘点
 
@@ -149,12 +150,14 @@ interface HarnessAdapter {
   id: 'codex' | 'claude' | 'pi';
   glyph: string;
   resolveSource(profile: LaunchProfile, env): SourceId;
-  bind(ctx: BindContext): Promise<RunBinding | null>;      // 明确 > 注册表 > 候选；歧义不绑
+  bind(ctx: BindContext): Promise<SessionBinding | null>;      // 明确 > 注册表 > 候选；歧义不绑
   open(ref: SessionRef, checkpoint?: ReaderCheckpoint): SessionReader;
   children(ref: SessionRef): Promise<SessionRef[]>;         // 原生子代理；拓扑权威只有这一处
   capabilities: Partial<{ navigate(ref): Promise<void>; quota; goals; plan; todos }>;
 }
 ```
+
+bind 只解析被观察的会话；非 null 结果必有完整、来源明确的 SessionRef。没有可靠唯一选择时返回 null，不返回一个 sessionRef=null 的“成功绑定”。已知 ref 但没有 PID/宿主证据仍可进行有预算的文件读取，harness/occupantGeneration 可为 null。显式目标、注册表和 PID/cmdline 的观察选择顺序不变，但这不是01的 caller/claim 授权 resolver，也不允许以 cwd/时间候选授予委派权限。来源时间、有效性与证据强度沿用既有 ObservationEvidence/RegistryEvidence，不因返回 SessionBinding 升级为授权事实。
 
 `BindContext`：显式传入的 session（statusline stdin、`--session`）、注册表记录、pane 进程树、cwd、HUD 启动时间。**优先级：调用方明确给的 > 注册表（Herdr 或 harness 自带）> PID / cmdline > 候选（cwd / 时间 / 最新文件）**；候选有歧义就不绑定，恢复旧会话不要求文件创建于 HUD 启动之后。
 
@@ -226,7 +229,7 @@ candidates?: LinkCandidate[];          // 未确认的推断，只在 Inspector 
 | `delegate_resume` | 父 | ✔（Codex）/ C（cc、pi） | `{linkId, mode, prompt?, request_key}` → 校验调用者是该关系的所有者；该子会话的运行槽空闲时追加一次运行，否则拒绝并返回占槽运行的状态；旧 claim 撤销，新 claim 只对这次运行有效 |
 | `delegate_wait` | 父 | ✔ | `{linkId \| runId, afterSeq?, until?: [...], timeoutMs ≤ 120000（实际不超过客户端超时减正余量）}` → 有界长轮询；按 linkId 等待时**进入即解析并固定 runId**，不跟随后来的运行；返回游标之后的事件与当前状态；超时不改变任何状态 |
 | `delegate_status` | 父 | ✔ | `{linkId \| runId}` → 关系、运行、最新报告、托管心跳、`uncertain` 的对账证据与允许的迁移 |
-| `delegate_cancel` | 父 | ✔ | `{runId, grace?}` → 校验所有者、持久接受取消意图即返回；hud-run 异步封口启动者并取消整个 scope，**只有确认退出后**才 cancelled，否则 cancelling/uncertain 或 cancel_unconfirmed |
+| `delegate_cancel` | 父 | ✔ | `{runId, grace?}` → 校验所有者、持久接受取消意图即返回；hud-run 异步封口启动者并取消整个 scope，完整R/Q且已证明取消before_exit才cancelled；结束已证明但时序未知为ended+terminalNote=cancel_timing_unknown并释放槽；未证结束仍cancelling/uncertain或cancel_unconfirmed，after_exit已证明才解释already_ended |
 | `delegate_whoami` | 子 | ✔ | `{claim?}` → 用启动时注入的 claim（env 或本次运行启动消息里的）完成握手，返回自己的 link、run、brief、report 路径、父定位；同一绑定重复调用幂等成功 |
 | `delegate_report` | 子 | ✔ | `{runId, status, summary, reportPath?}` → **只接受该 run 的已绑定子**提交；写 `reports`，发事件 |
 | `delegate_list` / `delegate_close` | 父 | v1.1 | 列出本调用者的关系；关闭 = 取消活跃运行 + 关 surface + `closed` |
@@ -338,9 +341,9 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 
 ```ts
 interface HostAdapter {                       // 画面与焦点
-  openSurface(layout, opts): Promise<PaneLocator>;    // tab / split / tmux pane；可注入 env
+  openSurface(layout, opts: SurfaceOptions): Promise<SurfaceLocator>;    // tab / split / tmux pane；可注入 env
   runInSurface(locator, commandText): Promise<void>;  // 把 hud-run 命令敲进该 pane 的交互 shell
-  locate(ref | runId): Promise<PaneLocator | null>;
+  locate(ref | runId): Promise<SurfaceLocator | null>;
   focus(locator): Promise<void>;              // 先校验 occupant
   sendKeys(locator, keys): Promise<void>;
   attachIdentity(harness): void;              // HERDR_AGENT=<harness>，不再硬编码 codex
@@ -350,6 +353,8 @@ interface RunControl {                        // 核心，基于 RunHandle 与�
   sendInput?(runId, text);                    // 由宿主或 v1.1 工具提供
 }
 ```
+
+普通宿主/注册表定位统一使用05定义的 `SurfaceLocator`，保留宿主地址、实际可得ProcessStamp及独立nullable occupantGeneration，不含runId/bindingGeneration。`SurfaceOptions={cwd,env,managed:Pick<RunBinding,'runId'|'bindingGeneration'>|null}`：普通调用显式managed=null；已接受受管run提供真实上下文，不要求提前完成子握手。未知occupant/实例不因null==null匹配，stale/unknown拒控制但不阻已知session有预算读取。普通focus/navigation按已声明且校验能力；SessionBinding/locator不授report/resume/cancel权限。RunControl只接真实run，受管HostLocator/RunHandle必填字段不放宽。
 
 | 宿主 | bar | panel |
 |---|---|---|
@@ -392,7 +397,7 @@ delegate.json                            后端档案
 
 | 职责 | 核心接口 | 核心默认实现 | `integrations/herdr/` 实现 |
 |---|---|---|---|
-| 注册表 | `RegistryProvider`：`list()`、`get(locator)`、`sessionOf(locator)` | 空；cc 自带注册表由适配器提供 | `herdr agent list / get` 轮询缓存 |
+| 注册表 | `RegistryProvider`：`list()`、`get(locator:SurfaceLocator)`、`sessionOf(locator:SurfaceLocator)`；记录使用SessionBinding及SurfaceLocator | 空；cc 自带注册表由适配器提供 | `herdr agent list / get` 轮询缓存 |
 | 宿主 | `HostAdapter`（§6.10） | tmux | `herdr tab create --env` / `pane split` / `pane run` / `agent focus`；`HERDR_AGENT=<harness>` |
 | 运行控制贡献 | `RunControl.sendInput`、就绪探测 | 无输入通道；就绪靠托管心跳与 transcript | `herdr agent prompt`、`agent wait --until` 作为就绪与输入的实现 |
 
@@ -416,7 +421,7 @@ delegate.json                            后端档案
 - usage 按 `message.id` 去重；上下文窗口来自 stdin 的 `context_window` 或模型表。
 - 原生子代理：`subagents/*.meta.json` 为节点，`toolUseId` 对上父的 `Agent` 调用；`.jsonl` 用同一 reader；`finished` 缺失不等于完成。后台 Bash 任务作为 action。
 - `linkEvidence`：`mcp__hud__delegate_*` 的 `tool_result` 与首条用户消息。
-- resume：`claude --resume <id>` 续写同一 transcript（headless：`claude -p --resume <id>`）；绑定不要求文件创建于 HUD 启动之后，`RunBinding.generation` 递增。
+- resume：`claude --resume <id>` 续写同一 transcript（headless：`claude -p --resume <id>`）；绑定不要求文件创建于 HUD 启动之后，普通观察不递增受管代次；真实受管resume的bindingGeneration按01/02分配，reader sourceGeneration按06读取谱系变化，宿主占用变化独立核验occupantGeneration，三者不得代用或共用计数器。
 
 ### 7.3 pi
 - 绑定：pane 进程 cmdline（`--session-dir`、`--session`、`--role`）> 注册表记录 > 候选。
