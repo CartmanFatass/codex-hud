@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeProcessKey, makeSourceId, sessionRefKey } from '../../src/core/identity.js';
 import { taskDigest } from '../../src/core/lifecycle.js';
+import { deriveProcessDomain } from '../../src/core/process-domain.js';
 import { openLedger } from '../../src/ledger/ledger.js';
 import { acceptIntent } from '../../src/ledger/intents.js';
 import { beginSubmission, markSubmitted, recordScope, registerSupervisor } from '../../src/ledger/supervisor.js';
@@ -16,19 +17,19 @@ import type { Registration } from '../../packages/hud-mcp/src/registry.js';
 import type { ProcessInfo, ProcessReaderPort } from '../../packages/hud-mcp/src/process.js';
 
 export const hashClaim = (claim: string) => createHash('sha256').update(claim).digest('hex');
-export async function handshakeFixture(distinctRunDomain = false) {
+export async function handshakeFixture() {
   const root = mkdtempSync(join(tmpdir(), 'hud-b45-handshake-'));
   const ledger = await openLedger(join(root, 'ledger.sqlite'));
   const sourceId = makeSourceId('codex', root);
   const source = { sourceId, harness: 'codex' as const, rootPath: root, label: 'Synthetic handshake' };
   let at = 1020;
   const now = () => at;
-  const domain = {
+  const domainInputs = {
+    machineId: 'synthetic-machine',
     bootId: 'synthetic-boot',
-    pidDomain: 'synthetic-domain',
-    claudePidDomain: 'synthetic-claude-domain',
-    runPidDomain: distinctRunDomain ? 'synthetic-run-machine-pidns' : 'synthetic-domain',
+    pidNamespace: 'synthetic-pid-ns',
   };
+  const domain = deriveProcessDomain(domainInputs);
   const processes = new Map<number, ProcessInfo>();
   const reader: ProcessReaderPort = {
     domain: () => domain,
@@ -307,6 +308,7 @@ export async function handshakeFixture(distinctRunDomain = false) {
     ledger,
     root,
     reader,
+    domainInputs,
     source,
     child,
     parent,

@@ -1,5 +1,11 @@
 import { closeSync, constants, openSync, readSync, readlinkSync, realpathSync } from 'node:fs';
 import { basename } from 'node:path';
+import {
+  deriveProcessDomain,
+  readProcessDomainInputs,
+  type ProcessDomainInputs,
+} from '../../../../src/core/process-domain.js';
+import type { CallerPidDomain, ClaudeRegistryPidDomain } from '../../../../src/core/types/identity.js';
 import { hash, type HookConfig } from './record.js';
 
 function bounded(path: string, max: number): string {
@@ -47,6 +53,15 @@ function hookStart(bootStartMs: number) {
   const after = Number(process.hrtime.bigint()) / 1e6;
   return bootStartToMonotonic(bootStartMs, uptime, before, after);
 }
+/** The hook's only domain construction: shared derivation plus chain-namespace agreement. */
+export function verifiedLaunchDomain(
+  inputs: ProcessDomainInputs,
+  chainNamespace: string
+): { pidDomain: CallerPidDomain; claudePidDomain: ClaudeRegistryPidDomain } {
+  if (inputs.pidNamespace !== chainNamespace) throw new Error('Wrong Claude source/domain');
+  const domain = deriveProcessDomain(inputs);
+  return { pidDomain: domain.pidDomain, claudePidDomain: domain.claudePidDomain };
+}
 /** Env/config locate the source; live ancestry, executable and instance prove it. */
 export function verifyLaunch(config: HookConfig, startPid = process.pid) {
   const first = proc(startPid);
@@ -73,23 +88,27 @@ export function verifyLaunch(config: HookConfig, startPid = process.pid) {
       if (['HOME', 'CLAUDE_CONFIG_DIR'].includes(item.slice(0, at))) env[item.slice(0, at)] = item.slice(at + 1);
     }
     const root = realpathSync(env.CLAUDE_CONFIG_DIR || `${env.HOME}/.claude`);
-    const machine = bounded('/etc/machine-id', 128).trim();
-    const bootId = bounded('/proc/sys/kernel/random/boot_id', 128).trim();
-    if (root !== config.sourceRoot || !machine || !bootId || chain.some((p) => p.namespace !== first.namespace))
+    if (root !== config.sourceRoot || chain.some((p) => p.namespace !== first.namespace))
       throw new Error('Wrong Claude source/domain');
+    let inputs: ProcessDomainInputs;
+    try {
+      inputs = readProcessDomainInputs();
+    } catch {
+      throw new Error('Wrong Claude source/domain');
+    }
+    const domain = verifiedLaunchDomain(inputs, first.namespace);
     for (const entry of chain) {
       const after = proc(entry.pid);
       if (after.start !== entry.start || after.ppid !== entry.ppid) throw new Error('Launch chain changed');
     }
     const sourceId = hash(['claude', root]);
-    const pidDomain = JSON.stringify(['linux', machine, bootId, current.namespace]);
     return {
-      processKey: JSON.stringify(['claude', sourceId, pidDomain, current.pid, current.start]),
+      processKey: JSON.stringify(['claude', sourceId, domain.pidDomain, current.pid, current.start]),
       sourceId,
-      bootId,
+      bootId: inputs.bootId,
       harnessPid: current.pid,
       harnessStart: current.start,
-      claudePidDomain: `linux:${machine}:${current.namespace}`,
+      claudePidDomain: domain.claudePidDomain,
       ...hookStart(Number(chain[chain.length - 2].start) * (1000 / config.clockTicksPerSecond)),
     };
   }

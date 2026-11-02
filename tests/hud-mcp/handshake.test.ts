@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
+import { deriveProcessDomain } from '../../src/core/process-domain.js';
+import type { ProcessDomainView, RunPidDomain } from '../../src/core/types/identity.js';
 import { HandshakeService } from '../../packages/hud-mcp/src/handshake.js';
 import { handshakeFixture } from '../unit/b45-handshake-fixture.js';
 const skip = ledgerRuntimeSupported() ? false : 'Ledger requires Node 22 >=22.13 or >=24';
@@ -188,7 +190,7 @@ test(
   'B45 identity ProcessKey and run stamp keep their distinct domain encodings on the same host',
   { skip },
   async () => {
-    const f = await handshakeFixture(true);
+    const f = await handshakeFixture();
     try {
       await f.startup();
       assert.notEqual(f.reader.domain().pidDomain, f.meta.harness!.pid_domain);
@@ -202,7 +204,10 @@ test(
       assert.equal((await service.whoami({}, f.child.authority)).ok, true);
       const wrongNamespace = {
         get: f.reader.get,
-        domain: () => ({ ...f.reader.domain(), runPidDomain: 'other-machine-pidns' }),
+        domain: () => ({
+          ...f.reader.domain(),
+          runPidDomain: deriveProcessDomain({ ...f.domainInputs, pidNamespace: 'other-pid-ns' }).runPidDomain,
+        }),
       };
       await assert.rejects(
         new HandshakeService({
@@ -219,3 +224,37 @@ test(
     }
   }
 );
+
+test('BID1 handshake refuses a missing run domain and never accepts the caller form', { skip }, async () => {
+  const f = await handshakeFixture();
+  try {
+    await f.startup();
+    const service = (domain: () => ProcessDomainView) =>
+      new HandshakeService({
+        ledger: f.ledger,
+        registration: f.child.registration,
+        reader: { get: f.reader.get, domain },
+        env: { HUD_CLAIM: f.claim },
+        now: f.now,
+      });
+    // Explicitly unavailable is a refusal, not a fallback to the caller JSON domain.
+    await assert.rejects(
+      service(() => ({ ...f.reader.domain(), runPidDomain: null })).whoami({}, f.child.authority),
+      /run_domain_unavailable/
+    );
+    // A caller-form string in the run slot is a cross-representation mismatch.
+    await assert.rejects(
+      service(() => ({
+        ...f.reader.domain(),
+        runPidDomain: f.reader.domain().pidDomain as unknown as RunPidDomain,
+      })).whoami({}, f.child.authority),
+      /claim_anchor_mismatch/
+    );
+    assert.equal(
+      f.ledger.snapshot((tx) => tx.get('SELECT state FROM claims')?.state),
+      'armed'
+    );
+  } finally {
+    await f.close();
+  }
+});

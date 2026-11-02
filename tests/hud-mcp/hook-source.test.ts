@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { ReadOnlyScopeSnapshot, type ScopeSnapshot } from '../../src/core/ledger-scope-read.js';
+import { deriveProcessDomain } from '../../src/core/process-domain.js';
 import { openLedger } from '../../src/ledger/ledger.js';
 import { launchProfileDigest } from '../../src/core/capabilities.js';
 import { makeRecord } from '../../packages/hud-mcp/src/hook/command.js';
@@ -59,7 +60,12 @@ function fixture() {
     clockTicksPerSecond: 100,
   };
   const sourceId = hash(['claude', root]);
-  const processKey = JSON.stringify(['claude', sourceId, 'synthetic-boot-domain', process.pid, '100']);
+  const domain = deriveProcessDomain({
+    machineId: 'synthetic-machine',
+    bootId: 'synthetic-boot',
+    pidNamespace: 'synthetic-pid-ns',
+  });
+  const processKey = JSON.stringify(['claude', sourceId, domain.pidDomain, process.pid, '100']);
   let premise: ScopeSnapshot = {
     kind: 'no_current',
     processKey,
@@ -74,7 +80,7 @@ function fixture() {
     bootId: 'synthetic-boot',
     harnessPid: process.pid,
     harnessStart: '100',
-    claudePidDomain: 'synthetic-domain',
+    claudePidDomain: domain.claudePidDomain,
     hookStartMonoMs: Number(process.hrtime.bigint()) / 1e6 - 10,
     hookStartUncertaintyMs: 10,
   };
@@ -102,6 +108,7 @@ function fixture() {
     root,
     config,
     sourceId,
+    domain,
     processKey,
     scopes,
     launch,
@@ -312,7 +319,7 @@ test(
           1,
           'claude',
           f.sourceId,
-          'synthetic-boot-domain',
+          f.domain.pidDomain,
           process.pid,
           '100',
           null,
@@ -409,11 +416,7 @@ test('resolver uses genuine metadata and returns the captured premise without po
     };
     const reader: ProcessReaderPort = {
       get: (pid) => structuredClone(pid === self.pid ? self : parent),
-      domain: () => ({
-        bootId: f.launch.bootId,
-        pidDomain: 'synthetic-boot-domain',
-        claudePidDomain: f.launch.claudePidDomain,
-      }),
+      domain: () => f.domain,
     };
     const registration: Registration = {
       caller: {

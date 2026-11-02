@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { readFileSync, readlinkSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProcessScope, ProcessStamp } from '../types/supervision.js';
+import { readProcessDomain } from '../process-domain.js';
 import { RUN_NODE_FLAGS } from './runtime.js';
 
 export interface ProcRecord {
@@ -12,20 +12,24 @@ export interface ProcRecord {
   sid: number;
 }
 
+export interface RunProcessDomainOptions {
+  /** Test seam; production uses /etc/machine-id. The run path always follows a final symlink. */
+  readonly machineIdPath?: string;
+}
+
 let domain: { boot_id: string; pid_domain: string } | undefined;
-export function currentDomain(): { boot_id: string; pid_domain: string } {
-  if (process.platform !== 'linux') throw new Error('hud-run requires Linux process evidence');
+export function currentDomain(options?: RunProcessDomainOptions): { boot_id: string; pid_domain: string } {
+  if (options?.machineIdPath !== undefined) {
+    const view = readProcessDomain({ machineIdPolicy: 'follow', machineIdPath: options.machineIdPath });
+    return { boot_id: view.bootId, pid_domain: view.runPidDomain };
+  }
   if (!domain) {
-    // A procfs mounted for an ancestor PID namespace cannot identify our numeric
-    // PIDs. Do not label observations from that mount as the current domain.
-    if (Number(readFileSync('/proc/self/stat', 'utf8').split(' ', 1)[0]) !== process.pid) {
-      throw new Error('procfs does not expose the current PID namespace');
-    }
-    const machine = readFileSync('/etc/machine-id', 'utf8').trim();
-    domain = {
-      boot_id: readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(),
-      pid_domain: `${createHash('sha256').update(machine).digest('hex')}:${readlinkSync('/proc/self/ns/pid')}`,
-    };
+    // Consult 5 G08: the shared reader validates procfs, machine and boot evidence
+    // once; currentDomain stays the single Run-stamp production entry. The run
+    // producer historically followed a final /etc/machine-id symlink, so it opts
+    // into the follow policy while MCP and the hook keep no-follow.
+    const view = readProcessDomain({ machineIdPolicy: 'follow' });
+    domain = { boot_id: view.bootId, pid_domain: view.runPidDomain };
   }
   return { ...domain };
 }
