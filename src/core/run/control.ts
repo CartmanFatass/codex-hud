@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { closeSync } from 'node:fs';
+import { LedgerBusyError } from '../../ledger/transaction.js';
+import { closeSync, writeSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import type { RunControl } from '../interfaces/run-control.js';
 import { digest } from '../canonical.js';
@@ -346,6 +347,7 @@ export class HeadlessRunControl implements RunControl {
       let seq = 1,
         stopping = false,
         heartbeatBusy = false,
+        heartbeatUnavailable = false,
         parentGone = false,
         writerLost = false,
         discoveryFinished = false,
@@ -435,35 +437,54 @@ export class HeadlessRunControl implements RunControl {
         heartbeatBusy = true;
         void this.port
           .heartbeat(id, self, seq, performance.now())
-          .then(async (result) => {
-            if (!result) {
-              writerLost = true;
-              stopping = true;
-              clearInterval(heartbeat);
-              return;
+          .then(
+            async (result) => {
+              if (!result) {
+                writerLost = true;
+                stopping = true;
+                clearInterval(heartbeat);
+                return;
+              }
+              heartbeatUnavailable = false;
+              seq = result.seq;
+              const wall = Date.now(),
+                mono = performance.now();
+              if (
+                !clockAnomalyRecorded &&
+                (wall < previousWall || Math.abs(wall - previousWall - (mono - previousMono)) > 1000)
+              ) {
+                clockAnomalyRecorded = true;
+                await this.port.raw(id, self, 'clock.anomaly', {
+                  wallDeltaMs: wall - previousWall,
+                  monoDeltaMs: Math.round(mono - previousMono),
+                });
+                await this.reconcile(id);
+              }
+              previousWall = wall;
+              previousMono = mono;
+              if (result.cancel) wake();
+              if (options.parent && !parentGone && processState(options.parent.process) === 'dead') {
+                parentGone = true;
+                void this.parentOffline(id, options.parent, self).catch(() => {});
+              }
+            },
+            (error: unknown) => {
+              // Only the uncommitted heartbeat call may defer to the next normal
+              // tick. Null/CAS failure and postcommit observation errors still fence.
+              if (!(error instanceof LedgerBusyError)) throw error;
+              if (!heartbeatUnavailable) {
+                heartbeatUnavailable = true;
+                try {
+                  writeSync(
+                    2,
+                    'hud-run: heartbeat publication unavailable (ledger_busy); last committed heartbeat retained\n'
+                  );
+                } catch {
+                  // A closed diagnostic stream cannot revoke supervision authority.
+                }
+              }
             }
-            seq = result.seq;
-            const wall = Date.now(),
-              mono = performance.now();
-            if (
-              !clockAnomalyRecorded &&
-              (wall < previousWall || Math.abs(wall - previousWall - (mono - previousMono)) > 1000)
-            ) {
-              clockAnomalyRecorded = true;
-              await this.port.raw(id, self, 'clock.anomaly', {
-                wallDeltaMs: wall - previousWall,
-                monoDeltaMs: Math.round(mono - previousMono),
-              });
-              await this.reconcile(id);
-            }
-            previousWall = wall;
-            previousMono = mono;
-            if (result.cancel) wake();
-            if (options.parent && !parentGone && processState(options.parent.process) === 'dead') {
-              parentGone = true;
-              void this.parentOffline(id, options.parent, self).catch(() => {});
-            }
-          })
+          )
           .catch(() => {
             writerLost = true;
             stopping = true;
