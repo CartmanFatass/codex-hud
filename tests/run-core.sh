@@ -35,6 +35,7 @@ done < <(
   {
     printf '%s\n' dist-test/tests/unit/contracts.test.js
     compgen -G 'dist-test/tests/unit/core-*.test.js' || true
+    compgen -G 'dist-test/tests/unit/ledger-*.test.js' || true
     compgen -G 'dist-test/tests/unit/codex-facade.test.js' || true
   } | sort -u
 )
