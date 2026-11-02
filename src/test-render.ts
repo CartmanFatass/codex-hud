@@ -37,18 +37,21 @@ function createMockData(options: {
   const { tokenPercent = 0, hasGit = false, isDirty = false, hasToolActivity = false, toolCount = 0 } = options;
 
   // Calculate token values based on percentage
-  const contextWindow = 200000;  // 200K context window
+  const contextWindow = 200000; // 200K context window
   const used = Math.floor(contextWindow * (tokenPercent / 100));
-  
-  const contextUsage: ContextUsage | undefined = tokenPercent > 0 ? {
-    used,
-    total: contextWindow,
-    percent: tokenPercent,
-    inputTokens: Math.floor(used * 0.7),
-    outputTokens: Math.floor(used * 0.3),
-    cachedTokens: Math.floor(used * 0.2),
-    compactCount: 0,  // No compactions in test data
-  } : undefined;
+
+  const contextUsage: ContextUsage | undefined =
+    tokenPercent > 0
+      ? {
+          used,
+          total: contextWindow,
+          percent: tokenPercent,
+          inputTokens: Math.floor(used * 0.7),
+          outputTokens: Math.floor(used * 0.3),
+          cachedTokens: Math.floor(used * 0.2),
+          compactCount: 0, // No compactions in test data
+        }
+      : undefined;
 
   // Create tool activity if requested
   let toolActivity: ToolActivity | undefined;
@@ -56,7 +59,7 @@ function createMockData(options: {
     const toolTypes = ['Read', 'Bash', 'Edit', 'Write', 'Grep'];
     const recentCalls: ToolCall[] = [];
     const callsByType: Record<string, number> = {};
-    
+
     for (let i = 0; i < Math.min(toolCount, 5); i++) {
       const toolName = toolTypes[i % toolTypes.length];
       callsByType[toolName] = (callsByType[toolName] || 0) + 1;
@@ -69,7 +72,7 @@ function createMockData(options: {
         target: `/path/to/file-${i}.ts`,
       });
     }
-    
+
     toolActivity = {
       recentCalls,
       totalCalls: toolCount,
@@ -85,8 +88,8 @@ function createMockData(options: {
       approval_policy: 'on-request',
       sandbox_mode: 'workspace-write',
       mcp_servers: {
-        'context7': { enabled: true },
-        'playwright': { enabled: true },
+        context7: { enabled: true },
+        playwright: { enabled: true },
       },
     },
     git: {
@@ -112,7 +115,7 @@ function createMockData(options: {
       extensionsCount: 2,
       workMode: 'development',
     },
-    sessionStart: new Date(Date.now() - 12 * 60 * 1000),  // 12 minutes ago
+    sessionStart: new Date(Date.now() - 12 * 60 * 1000), // 12 minutes ago
     contextUsage,
     toolActivity,
   };
@@ -123,7 +126,7 @@ function createMockData(options: {
  */
 function runTestCase(name: string, data: HudData): void {
   divider(name);
-  
+
   const options: RenderOptions = {
     width: 120,
     showDetails: true,
@@ -134,16 +137,16 @@ function runTestCase(name: string, data: HudData): void {
       barWidth: 12,
     },
   };
-  
+
   const lines = renderHud(data, options);
-  
+
   console.log('Rendered output:');
   console.log('');
   for (const line of lines) {
     console.log(line);
   }
   console.log('');
-  
+
   log('Lines rendered', lines.length.toString());
 }
 
@@ -169,20 +172,26 @@ runTestCase('TEST 7: Git Branch (clean)', createMockData({ tokenPercent: 45, has
 runTestCase('TEST 8: Git Branch (dirty)', createMockData({ tokenPercent: 45, hasGit: true, isDirty: true }));
 
 // Test 9: Tool activity
-runTestCase('TEST 9: Tool Activity (5 calls)', createMockData({ 
-  tokenPercent: 60, 
-  hasGit: true, 
-  isDirty: true, 
-  hasToolActivity: true, 
-  toolCount: 5 
-}));
+runTestCase(
+  'TEST 9: Tool Activity (5 calls)',
+  createMockData({
+    tokenPercent: 60,
+    hasGit: true,
+    isDirty: true,
+    hasToolActivity: true,
+    toolCount: 5,
+  })
+);
 
-runTestCase('TEST 10: Full Display (all features)', createMockData({ 
-  tokenPercent: 78, 
-  hasGit: true, 
-  isDirty: true, 
-  hasToolActivity: true, 
-  toolCount: 25 
-}));
+runTestCase(
+  'TEST 10: Full Display (all features)',
+  createMockData({
+    tokenPercent: 78,
+    hasGit: true,
+    isDirty: true,
+    hasToolActivity: true,
+    toolCount: 25,
+  })
+);
 
 console.log(`\n${GREEN}All tests completed!${RESET}\n`);

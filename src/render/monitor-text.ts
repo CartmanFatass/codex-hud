@@ -3,10 +3,17 @@ import { visualLength, truncateAnsi } from './colors.js';
 
 /** External strings are escaped before width calculation or painting. */
 export function monitorText(text: string): string {
-  return text.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, ch => {
+  return text.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, (ch) => {
     const cp = ch.charCodeAt(0);
-    return ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t'
-      : cp > 255 ? `\\u${cp.toString(16).padStart(4,'0')}` : `\\x${cp.toString(16).padStart(2,'0')}`;
+    return ch === '\n'
+      ? '\\n'
+      : ch === '\r'
+        ? '\\r'
+        : ch === '\t'
+          ? '\\t'
+          : cp > 255
+            ? `\\u${cp.toString(16).padStart(4, '0')}`
+            : `\\x${cp.toString(16).padStart(2, '0')}`;
   });
 }
 
@@ -19,42 +26,53 @@ export function monitorText(text: string): string {
  */
 export function plainText(text: string): string {
   return text
-    .replace(/\[([^\]\n]+)\]\([^)\s]*\)/g,'$1')
-    .replace(/\*\*([^*\n]+?)\*\*/g,'$1')
-    .replace(/__([^_\n]+?)__/g,'$1')
-    .replace(/`+/g,'')
-    .replace(/(^|\s)#{1,6}(?=\s)/g,'$1')
-    .replace(/\b[0-9a-f]{40}\b/g,hash=>hash.slice(0,7));
+    .replace(/\[([^\]\n]+)\]\([^)\s]*\)/g, '$1')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '$1')
+    .replace(/__([^_\n]+?)__/g, '$1')
+    .replace(/`+/g, '')
+    .replace(/(^|\s)#{1,6}(?=\s)/g, '$1')
+    .replace(/\b[0-9a-f]{40}\b/g, (hash) => hash.slice(0, 7));
 }
 export function fit(text: string, width: number): string {
-  const clipped = truncateAnsi(text, Math.max(0,width));
-  return clipped + ' '.repeat(Math.max(0,width-visualLength(clipped)));
+  const clipped = truncateAnsi(text, Math.max(0, width));
+  return clipped + ' '.repeat(Math.max(0, width - visualLength(clipped)));
 }
 export function pair(left: string, right: string, width: number): string {
-  if (!right) return truncateAnsi(left,width);
+  if (!right) return truncateAnsi(left, width);
   const rightWidth = visualLength(right);
-  if (rightWidth >= width) return truncateAnsi(right,width);
-  return fit(left,width-rightWidth-1)+' '+right;
+  if (rightWidth >= width) return truncateAnsi(right, width);
+  return fit(left, width - rightWidth - 1) + ' ' + right;
 }
 
 export function wrapped(text: string, width: number): string[] {
   if (width < 1) return [];
-  const lines: string[] = []; let line = '';
+  const lines: string[] = [];
+  let line = '';
   for (const char of monitorText(text)) {
-    if (visualLength(line+char) > width && line) { lines.push(line); line=''; }
+    if (visualLength(line + char) > width && line) {
+      lines.push(line);
+      line = '';
+    }
     line += char;
   }
   lines.push(line);
-  return lines.map(s => truncateAnsi(s,width));
+  return lines.map((s) => truncateAnsi(s, width));
 }
 export function helpLines(text: string, width: number): string[] {
-  const lines: string[]=[];let line='';
-  for(const word of text.split(/\s+/)){
-    if(line&&visualLength(line+' '+word)>width){lines.push(line);line='';}
-    if(visualLength(word)>width){if(line)lines.push(line);lines.push(...wrapped(word,width));line='';}
-    else line+=(line?' ':'')+word;
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.split(/\s+/)) {
+    if (line && visualLength(line + ' ' + word) > width) {
+      lines.push(line);
+      line = '';
+    }
+    if (visualLength(word) > width) {
+      if (line) lines.push(line);
+      lines.push(...wrapped(word, width));
+      line = '';
+    } else line += (line ? ' ' : '') + word;
   }
-  if(line)lines.push(line);
+  if (line) lines.push(line);
   return lines;
 }
 
@@ -64,13 +82,14 @@ export function helpLines(text: string, width: number): string[] {
  * inside a Latin word. A word longer than a line is split anyway. Takes
  * sanitized text.
  */
-const graphemes = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined,{granularity:'grapheme'}) : null;
+const graphemes =
+  typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
 /** What a line may break between: runs of ASCII, spaces, and each character of other text. */
 function flowTokens(text: string): string[] {
   const tokens: string[] = [];
   for (const run of text.match(/[\x21-\x7e]+|\s+|[^\s\x21-\x7e]+/gu) ?? []) {
     if (/^[\s\x21-\x7e]/u.test(run)) tokens.push(run);
-    else if (graphemes) for (const {segment} of graphemes.segment(run)) tokens.push(segment);
+    else if (graphemes) for (const { segment } of graphemes.segment(run)) tokens.push(segment);
     else tokens.push(...run);
   }
   return tokens;
@@ -88,34 +107,46 @@ export function flowLines(text: string, width: number): string[] {
   // The line's words, each with the space before it: a word moved down takes its space, and loses it there.
   let parts: string[] = [];
   const used = () => visualLength(parts.join(''));
-  const add = (piece: string) => { parts.push(parts.length ? piece : piece.trimStart()); };
-  const push = () => { lines.push(parts.join('').trimEnd()); parts = []; };
+  const add = (piece: string) => {
+    parts.push(parts.length ? piece : piece.trimStart());
+  };
+  const push = () => {
+    lines.push(parts.join('').trimEnd());
+    parts = [];
+  };
   let space = false;
   for (const token of flowTokens(text)) {
-    if (/^\s+$/.test(token)) { space = parts.length > 0; continue; }
-    const piece = (space ? ' ' : '')+token;
+    if (/^\s+$/.test(token)) {
+      space = parts.length > 0;
+      continue;
+    }
+    const piece = (space ? ' ' : '') + token;
     space = false;
     if (visualLength(token) > width) {
-      [...token].forEach((char,i) => {
-        const bit = i ? char : piece.slice(0,piece.length-token.length)+char;
-        if (parts.length && used()+visualLength(bit) > width) push();
+      [...token].forEach((char, i) => {
+        const bit = i ? char : piece.slice(0, piece.length - token.length) + char;
+        if (parts.length && used() + visualLength(bit) > width) push();
         add(bit);
       });
       continue;
     }
-    if (parts.length && used()+visualLength(piece) > width) {
+    if (parts.length && used() + visualLength(piece) > width) {
       let carried: string[] = [];
-      const room = (moved: string[]) => visualLength((moved.join('')+piece).trimStart()) <= width;
+      const room = (moved: string[]) => visualLength((moved.join('') + piece).trimStart()) <= width;
       if (CLOSING.test(token)) {
         // Down with the mark goes the word before it, and any marks just before that word.
         const take: string[] = [];
-        while (parts.length-take.length > 1) {
-          take.unshift(parts[parts.length-1-take.length]);
+        while (parts.length - take.length > 1) {
+          take.unshift(parts[parts.length - 1 - take.length]);
           if (!CLOSING.test(take[0].trimStart())) break;
         }
-        if (take.length && !CLOSING.test(take[0].trimStart()) && room(take)) { carried = take; parts.length -= take.length; }
+        if (take.length && !CLOSING.test(take[0].trimStart()) && room(take)) {
+          carried = take;
+          parts.length -= take.length;
+        }
       }
-      while (parts.length > 1 && OPENING.test(parts.at(-1)!.trim()) && room([parts.at(-1)!,...carried])) carried.unshift(parts.pop()!);
+      while (parts.length > 1 && OPENING.test(parts.at(-1)!.trim()) && room([parts.at(-1)!, ...carried]))
+        carried.unshift(parts.pop()!);
       push();
       for (const moved of carried) add(moved);
     }
@@ -125,14 +156,21 @@ export function flowLines(text: string, width: number): string[] {
   // A last line of one Chinese character, its closing marks aside, reads as
   // a stray: the character before it comes down with it.
   if (lines.length > 1) {
-    const split = (line: string) => graphemes ? [...graphemes.segment(line)].map(part=>part.segment) : [...line];
+    const split = (line: string) => (graphemes ? [...graphemes.segment(line)].map((part) => part.segment) : [...line]);
     const last = split(lines.at(-1)!);
     const before = split(lines.at(-2)!);
-    const bare = last.filter(char=>!CLOSING.test(char));
-    const lone = (char: string | undefined) => char !== undefined && !/^[\x00-\x7f]/.test(char) && !CLOSING.test(char) && !OPENING.test(char);
-    if (bare.length === 1 && lone(bare[0]) && before.length > 2 && lone(before.at(-1)) && visualLength(before.at(-1)!+lines.at(-1)!) <= width) {
-      lines[lines.length-1] = before.at(-1)!+lines.at(-1)!;
-      lines[lines.length-2] = before.slice(0,-1).join('').trimEnd();
+    const bare = last.filter((char) => !CLOSING.test(char));
+    const lone = (char: string | undefined) =>
+      char !== undefined && !/^[\x00-\x7f]/.test(char) && !CLOSING.test(char) && !OPENING.test(char);
+    if (
+      bare.length === 1 &&
+      lone(bare[0]) &&
+      before.length > 2 &&
+      lone(before.at(-1)) &&
+      visualLength(before.at(-1)! + lines.at(-1)!) <= width
+    ) {
+      lines[lines.length - 1] = before.at(-1)! + lines.at(-1)!;
+      lines[lines.length - 2] = before.slice(0, -1).join('').trimEnd();
     }
   }
   return lines;
@@ -145,14 +183,17 @@ export function flowLines(text: string, width: number): string[] {
  */
 export function squeeze(text: string, width: number): string {
   if (visualLength(text) <= width) return text;
-  if (width < 4) return truncateAnsi(text,width);
+  if (width < 4) return truncateAnsi(text, width);
   const chars = [...text];
   let head = '';
-  for (const ch of chars) { if (visualLength(head+ch) > Math.ceil((width-1)*0.6)) break; head += ch; }
+  for (const ch of chars) {
+    if (visualLength(head + ch) > Math.ceil((width - 1) * 0.6)) break;
+    head += ch;
+  }
   let tail = '';
-  for (let i = chars.length-1; i >= 0; i--) {
-    if (visualLength(head)+1+visualLength(chars[i]+tail) > width) break;
-    tail = chars[i]+tail;
+  for (let i = chars.length - 1; i >= 0; i--) {
+    if (visualLength(head) + 1 + visualLength(chars[i] + tail) > width) break;
+    tail = chars[i] + tail;
   }
   return `${head}…${tail}`;
 }
@@ -167,14 +208,15 @@ export function squeeze(text: string, width: number): string {
 export function diffRows(line: string, width: number): string[] {
   if (width < 1) return [];
   let expanded = '';
-  for (const char of line) expanded += char === '\t' ? ' '.repeat(4-Math.max(0,visualLength(expanded)-1)%4) : char;
+  for (const char of line)
+    expanded += char === '\t' ? ' '.repeat(4 - (Math.max(0, visualLength(expanded) - 1) % 4)) : char;
   const text = monitorText(expanded);
-  return breakRows(text,width,width >= 12 ? '  ' : '',1+Math.max(0,text.slice(1).search(/\S/)));
+  return breakRows(text, width, width >= 12 ? '  ' : '', 1 + Math.max(0, text.slice(1).search(/\S/)));
 }
 
 /** A path in rows `width` wide, broken after a slash where it can be, as a folder is a word. Takes raw text. */
 export function pathRows(path: string, width: number): string[] {
-  return width < 1 ? [] : breakRows(monitorText(path),width,'',0,true);
+  return width < 1 ? [] : breakRows(monitorText(path), width, '', 0, true);
 }
 
 /**
@@ -191,23 +233,33 @@ function breakRows(text: string, width: number, hang: string, from: number, path
   const rows: string[] = [];
   let rest = text;
   while (rest) {
-    const room = rows.length ? width-hang.length : width;
-    if (visualLength(rest) <= room) { rows.push((rows.length ? hang : '')+rest); break; }
+    const room = rows.length ? width - hang.length : width;
+    if (visualLength(rest) <= room) {
+      rows.push((rows.length ? hang : '') + rest);
+      break;
+    }
     const chars = [...rest];
     const past = rows.length ? 0 : from;
-    let used = 0, at = 0, fits = 0, best = 0;
+    let used = 0,
+      at = 0,
+      fits = 0,
+      best = 0;
     for (let k = 0; k < chars.length; k++) {
       const char = chars[k];
       const cols = visualLength(char);
-      if (used+cols > room) break;
-      used += cols; at += char.length; fits = at;
-      const next = chars[k+1];
-      const opens = /[([{]/.test(char) && k > 0 && /\S/.test(chars[k-1]);
-      const ends = path ? char === '/' : /[\s,;:)\]}/.=&|-]/.test(char) || opens || wide(char) || /\s/.test(next ?? '') || wide(next);
+      if (used + cols > room) break;
+      used += cols;
+      at += char.length;
+      fits = at;
+      const next = chars[k + 1];
+      const opens = /[([{]/.test(char) && k > 0 && /\S/.test(chars[k - 1]);
+      const ends = path
+        ? char === '/'
+        : /[\s,;:)\]}/.=&|-]/.test(char) || opens || wide(char) || /\s/.test(next ?? '') || wide(next);
       if (at > past && ends) best = at;
     }
     const cut = best || fits || (chars[0]?.length ?? 1);
-    rows.push((rows.length ? hang : '')+rest.slice(0,cut).trimEnd());
+    rows.push((rows.length ? hang : '') + rest.slice(0, cut).trimEnd());
     rest = rest.slice(cut).trimStart();
   }
   return rows;

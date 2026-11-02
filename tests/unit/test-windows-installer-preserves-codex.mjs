@@ -29,8 +29,8 @@ assert.match(
   'Windows setup should validate and preserve an existing Codex CLI'
 );
 assert.ok(
-  windowsSetup.groups.body.indexOf('Get-RealCodexCommand')
-    < windowsSetup.groups.body.indexOf("@('install', '-g', '@openai/codex@latest')"),
+  windowsSetup.groups.body.indexOf('Get-RealCodexCommand') <
+    windowsSetup.groups.body.indexOf("@('install', '-g', '@openai/codex@latest')"),
   'Windows setup should check for Codex before attempting installation'
 );
 
@@ -42,7 +42,8 @@ assert.match(
   'WSL setup should preserve a working Codex CLI and install it only when missing'
 );
 
-const warning = '> **Warning:** Windows installation has not been validated on a native Windows host; back up your existing Codex installation before running it.';
+const warning =
+  '> **Warning:** Windows installation has not been validated on a native Windows host; back up your existing Codex installation before running it.';
 assert.equal(
   readme.split(warning).length - 1,
   1,

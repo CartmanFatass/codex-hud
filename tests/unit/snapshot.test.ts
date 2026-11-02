@@ -67,11 +67,17 @@ test('the snapshot reports what the fixture actually holds', () => {
   assert.equal(snapshot.context?.percent, 42);
   assert.equal(snapshot.context?.total, 272000);
   assert.equal(snapshot.tokens?.total, 84000);
-  assert.deepEqual(snapshot.quota.map((window) => window.label), ['5h', '7d']);
+  assert.deepEqual(
+    snapshot.quota.map((window) => window.label),
+    ['5h', '7d']
+  );
   assert.equal(snapshot.quota[0].percent, 61);
   assert.equal(snapshot.agents.active, 1);
   assert.equal(snapshot.agents.failed, 1);
-  assert.deepEqual(snapshot.agents.nodes.map((node) => node.name), ['explorer', 'reviewer', '代码审查员']);
+  assert.deepEqual(
+    snapshot.agents.nodes.map((node) => node.name),
+    ['explorer', 'reviewer', '代码审查员']
+  );
   assert.ok(snapshot.attention.some((item) => item.kind === 'agent-error' && item.severity === 'error'));
 });
 
@@ -85,7 +91,17 @@ test('a field with no data is absent, not zero', () => {
     subagentTree: undefined,
     subagents: [],
     toolActivity: undefined,
-    git: { branch: null, isDirty: false, isGitRepo: false, ahead: 0, behind: 0, modified: 0, added: 0, deleted: 0, untracked: 0 },
+    git: {
+      branch: null,
+      isDirty: false,
+      isGitRepo: false,
+      ahead: 0,
+      behind: 0,
+      modified: 0,
+      added: 0,
+      deleted: 0,
+      untracked: 0,
+    },
   });
   const snapshot = buildSnapshot(empty, barAt(80, empty), NOW);
 
@@ -117,7 +133,11 @@ test('each segment names the columns its own text occupies on the line', () => {
     const plain = stripAnsi(fit.line);
     const snapshot = buildSnapshot(data, { width, segments: fit.segments }, NOW);
 
-    assert.deepEqual(snapshot.bar.segments.map((s) => s.id), fit.kept, 'segments follow the kept order');
+    assert.deepEqual(
+      snapshot.bar.segments.map((s) => s.id),
+      fit.kept,
+      'segments follow the kept order'
+    );
     assert.equal(snapshot.bar.width, width);
 
     for (const segment of snapshot.bar.segments) {
@@ -140,10 +160,7 @@ test('each segment names the columns its own text occupies on the line', () => {
     for (let i = 1; i < snapshot.bar.segments.length; i++) {
       const previous = snapshot.bar.segments[i - 1];
       const current = snapshot.bar.segments[i];
-      assert.ok(
-        current.x >= previous.x + previous.width,
-        `${previous.id} and ${current.id} overlap at width ${width}`
-      );
+      assert.ok(current.x >= previous.x + previous.width, `${previous.id} and ${current.id} overlap at width ${width}`);
     }
     assert.ok(visualLength(fit.line) <= width);
   }

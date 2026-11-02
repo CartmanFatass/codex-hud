@@ -17,7 +17,12 @@ test('CJK and emoji count as two columns, combining marks as zero', () => {
 });
 
 test('truncation never exceeds the budget, even mid wide character', () => {
-  for (const text of ['代码审查员在工作', 'plain ascii text here', '🔥🔥🔥🔥🔥', colors.green('绿色') + colors.red('红色')]) {
+  for (const text of [
+    '代码审查员在工作',
+    'plain ascii text here',
+    '🔥🔥🔥🔥🔥',
+    colors.green('绿色') + colors.red('红色'),
+  ]) {
     for (let width = 1; width <= 12; width++) {
       const clipped = truncateAnsi(text, width);
       assert.ok(

@@ -11,9 +11,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import type { SessionInfo } from '../types.js';
 
-export type RuntimeSessionState = Partial<
-  Pick<SessionInfo, 'approvalPolicy' | 'sandboxMode' | 'collaborationMode'>
->;
+export type RuntimeSessionState = Partial<Pick<SessionInfo, 'approvalPolicy' | 'sandboxMode' | 'collaborationMode'>>;
 
 const ANSI_ESCAPE_REGEX =
   // eslint-disable-next-line no-control-regex
@@ -173,8 +171,7 @@ export class PaneRuntimeStateCollector {
     }
 
     const capture =
-      (this.captureFilePath ? readTailFromFile(this.captureFilePath) : null) ??
-      this.capturePane(this.mainPaneId);
+      (this.captureFilePath ? readTailFromFile(this.captureFilePath) : null) ?? this.capturePane(this.mainPaneId);
     if (!capture) {
       return Object.keys(this.cachedState).length > 0 ? { ...this.cachedState } : null;
     }

@@ -61,7 +61,10 @@ const MAX_LABEL_CHARS = 32;
 export const AGENT_LOG_KEEP_MS = 30 * 86_400_000;
 
 function walk(nodes: SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
-  for (const node of nodes) { visit(node); walk(node.children, visit); }
+  for (const node of nodes) {
+    visit(node);
+    walk(node.children, visit);
+  }
 }
 
 function time(at: Date | undefined): number | undefined {
@@ -82,7 +85,8 @@ export function observedEntries(node: SubagentTreeNode): AgentLogEntry[] {
   if (node.status === 'error' && ended !== undefined) entries.push({ at: ended, kind: 'failed', text: '' });
   const report = node.lastReport;
   const reportAt = time(report?.at);
-  if (report && reportAt !== undefined && report.text.trim()) entries.push({ at: reportAt, kind: 'report', text: report.text });
+  if (report && reportAt !== undefined && report.text.trim())
+    entries.push({ at: reportAt, kind: 'report', text: report.text });
   return entries;
 }
 
@@ -92,14 +96,25 @@ function key(entry: AgentLogEntry): string {
 
 function clean(entry: AgentLogEntry): AgentLogEntry {
   const text = entry.text.replace(/\s+/g, ' ').trim();
-  const label = typeof entry.label === 'string' ? entry.label.replace(/\s+/g, ' ').trim().slice(0, MAX_LABEL_CHARS) : '';
-  return { at: entry.at, kind: entry.kind, text: text.length > MAX_TEXT_CHARS ? `${text.slice(0, MAX_TEXT_CHARS)}…` : text,
-    ...(typeof entry.generatedAt === 'number' && Number.isFinite(entry.generatedAt) && entry.generatedAt >= 0 ? { generatedAt: entry.generatedAt } : {}),
-    ...(typeof entry.coverageAt === 'number' && Number.isFinite(entry.coverageAt) && entry.coverageAt >= 0 ? { coverageAt: entry.coverageAt } : {}),
+  const label =
+    typeof entry.label === 'string' ? entry.label.replace(/\s+/g, ' ').trim().slice(0, MAX_LABEL_CHARS) : '';
+  return {
+    at: entry.at,
+    kind: entry.kind,
+    text: text.length > MAX_TEXT_CHARS ? `${text.slice(0, MAX_TEXT_CHARS)}…` : text,
+    ...(typeof entry.generatedAt === 'number' && Number.isFinite(entry.generatedAt) && entry.generatedAt >= 0
+      ? { generatedAt: entry.generatedAt }
+      : {}),
+    ...(typeof entry.coverageAt === 'number' && Number.isFinite(entry.coverageAt) && entry.coverageAt >= 0
+      ? { coverageAt: entry.coverageAt }
+      : {}),
     ...(entry.attention ? { attention: true } : {}),
     ...(entry.lang === 'en' || entry.lang === 'zh' ? { lang: entry.lang } : {}),
     ...(label ? { label } : {}),
-    ...(label && entry.taskKind && (AGENT_TASK_KINDS as readonly string[]).includes(entry.taskKind) ? { taskKind: entry.taskKind } : {}) };
+    ...(label && entry.taskKind && (AGENT_TASK_KINDS as readonly string[]).includes(entry.taskKind)
+      ? { taskKind: entry.taskKind }
+      : {}),
+  };
 }
 
 /**
@@ -121,7 +136,11 @@ export function inLanguage(entry: AgentLogEntry, language: Language): boolean {
  * another language is left out until it is written again in this one, so a
  * card never mixes the two. Observed entries stay.
  */
-export function logsIn(logs: ReadonlyMap<string, readonly AgentLogEntry[]>, language: Language, observed = true): Map<string, readonly AgentLogEntry[]> {
+export function logsIn(
+  logs: ReadonlyMap<string, readonly AgentLogEntry[]>,
+  language: Language,
+  observed = true
+): Map<string, readonly AgentLogEntry[]> {
   const out = new Map<string, readonly AgentLogEntry[]>();
   for (const [id, list] of logs) {
     const visible = (entry: AgentLogEntry) => inLanguage(entry, language) && (observed || MODEL_KINDS.has(entry.kind));
@@ -142,14 +161,21 @@ export function appendEntries(list: AgentLogEntry[], added: readonly AgentLogEnt
     // The model saying the same thing again is not a new entry: the one
     // already there moves up to now, so the log does not fill with copies
     // and the note still counts as newer than what it was written about.
-    const same = entry.kind === 'note' ? [...list].reverse().find(item => item.kind === 'note') : undefined;
+    const same = entry.kind === 'note' ? [...list].reverse().find((item) => item.kind === 'note') : undefined;
     if (same && same.text === entry.text && same.lang === entry.lang && entry.at >= same.at) {
       same.at = entry.at;
-      if (entry.generatedAt !== undefined) same.generatedAt = entry.generatedAt; else delete same.generatedAt;
-      if (entry.coverageAt !== undefined) same.coverageAt = entry.coverageAt; else delete same.coverageAt;
-      if (entry.attention) same.attention = true; else delete same.attention;
+      if (entry.generatedAt !== undefined) same.generatedAt = entry.generatedAt;
+      else delete same.generatedAt;
+      if (entry.coverageAt !== undefined) same.coverageAt = entry.coverageAt;
+      else delete same.coverageAt;
+      if (entry.attention) same.attention = true;
+      else delete same.attention;
       // The same note may come with a new name for what the agent is on.
-      if (entry.label) { same.label = entry.label; if (entry.taskKind) same.taskKind = entry.taskKind; else delete same.taskKind; }
+      if (entry.label) {
+        same.label = entry.label;
+        if (entry.taskKind) same.taskKind = entry.taskKind;
+        else delete same.taskKind;
+      }
     } else list.push(entry);
     changed = true;
   }
@@ -166,8 +192,17 @@ function parseLog(raw: unknown, rootId: string): Map<string, AgentLogEntry[]> {
   for (const [id, list] of Object.entries(value.agents as Record<string, unknown>)) {
     if (!Array.isArray(list)) continue;
     const entries: AgentLogEntry[] = [];
-    appendEntries(entries, list.filter((entry): entry is AgentLogEntry => Boolean(entry) && typeof entry.at === 'number'
-      && typeof entry.kind === 'string' && KINDS.has(entry.kind) && typeof entry.text === 'string'));
+    appendEntries(
+      entries,
+      list.filter(
+        (entry): entry is AgentLogEntry =>
+          Boolean(entry) &&
+          typeof entry.at === 'number' &&
+          typeof entry.kind === 'string' &&
+          KINDS.has(entry.kind) &&
+          typeof entry.text === 'string'
+      )
+    );
     if (entries.length) logs.set(id, entries);
   }
   return logs;
@@ -179,7 +214,10 @@ export class AgentLog {
   private dirty = false;
 
   /** `dir` null keeps the log in memory only. */
-  constructor(private readonly dir: string | null = null, private readonly clock: () => number = Date.now) {}
+  constructor(
+    private readonly dir: string | null = null,
+    private readonly clock: () => number = Date.now
+  ) {}
 
   private file(rootId: string): string | null {
     return this.dir && /^[A-Za-z0-9-]{1,128}$/.test(rootId) ? path.join(this.dir, `${rootId}.json`) : null;
@@ -193,14 +231,20 @@ export class AgentLog {
     this.logs = new Map();
     const file = this.file(rootId);
     if (!file) return;
-    try { this.logs = parseLog(JSON.parse(fs.readFileSync(file, 'utf8')), rootId); } catch { /* none yet */ }
+    try {
+      this.logs = parseLog(JSON.parse(fs.readFileSync(file, 'utf8')), rootId);
+    } catch {
+      /* none yet */
+    }
   }
 
   /** Record what the tree shows. True when an entry was added. */
   observe(tree: SubagentTree): boolean {
     this.attach(tree.rootId);
     let changed = false;
-    walk(tree.nodes, node => { if (this.add(node.id, observedEntries(node))) changed = true; });
+    walk(tree.nodes, (node) => {
+      if (this.add(node.id, observedEntries(node))) changed = true;
+    });
     return changed;
   }
 
@@ -232,7 +276,8 @@ export class AgentLog {
   /** The newest entry of a kind, for "is there news since the last note"; with a language, the newest a model wrote in it. */
   latest(id: string, kinds: ReadonlySet<AgentLogKind>, language?: Language): AgentLogEntry | undefined {
     const list = this.logs.get(id) ?? [];
-    for (let i = list.length - 1; i >= 0; i--) if (kinds.has(list[i].kind) && (!language || inLanguage(list[i], language))) return list[i];
+    for (let i = list.length - 1; i >= 0; i--)
+      if (kinds.has(list[i].kind) && (!language || inLanguage(list[i], language))) return list[i];
     return undefined;
   }
 
@@ -241,7 +286,8 @@ export class AgentLog {
     const list = this.logs.get(id) ?? [];
     for (let i = list.length - 1; i >= 0; i--) {
       const entry = list[i];
-      if (entry.kind === 'note' && entry.label && entryLanguage(entry) === language) return { name: entry.label, ...(entry.taskKind ? { kind: entry.taskKind } : {}) };
+      if (entry.kind === 'note' && entry.label && entryLanguage(entry) === language)
+        return { name: entry.label, ...(entry.taskKind ? { kind: entry.taskKind } : {}) };
     }
     return undefined;
   }
@@ -255,18 +301,28 @@ export class AgentLog {
     try {
       writePrivateFile(file, `${JSON.stringify({ rootId: this.rootId, agents: Object.fromEntries(this.logs) })}\n`);
       this.prune();
-    } catch { /* kept in memory; written next time */ }
+    } catch {
+      /* kept in memory; written next time */
+    }
   }
 
   private prune(): void {
     if (!this.dir) return;
     const cutoff = this.clock() - AGENT_LOG_KEEP_MS;
     let names: string[];
-    try { names = fs.readdirSync(this.dir); } catch { return; }
+    try {
+      names = fs.readdirSync(this.dir);
+    } catch {
+      return;
+    }
     for (const name of names) {
       if (!name.endsWith('.json')) continue;
       const file = path.join(this.dir, name);
-      try { if (fs.statSync(file).mtimeMs < cutoff) fs.unlinkSync(file); } catch { /* gone already */ }
+      try {
+        if (fs.statSync(file).mtimeMs < cutoff) fs.unlinkSync(file);
+      } catch {
+        /* gone already */
+      }
     }
   }
 }

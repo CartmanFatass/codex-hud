@@ -14,10 +14,7 @@ import { colors, theme, visualLength, truncateAnsi, padEnd } from './colors.js';
 import { buildBarModules } from './layout/bar-modules.js';
 import { fitModules, type FitResult } from './layout/engine.js';
 import { renderSubagentChip } from './subagent-chip.js';
-import {
-  collectActiveTreeLineages,
-  type SubagentTreeEntry,
-} from '../collectors/subagent-tree.js';
+import { collectActiveTreeLineages, type SubagentTreeEntry } from '../collectors/subagent-tree.js';
 
 /**
  * The single status line.
@@ -88,11 +85,17 @@ function renderActiveTreeRows(tree: SubagentTree | undefined, width: number): st
 
     const rows: string[] = [rootLine];
     rows.push(
-      cells.map((cell) => padEnd(cell.entryLine, cell.cellWidth)).join(sliceGap).replace(/\s+$/, '')
+      cells
+        .map((cell) => padEnd(cell.entryLine, cell.cellWidth))
+        .join(sliceGap)
+        .replace(/\s+$/, '')
     );
     if (cells.some((cell) => cell.hasChildren)) {
       rows.push(
-        cells.map((cell) => padEnd(cell.childRow, cell.cellWidth)).join(sliceGap).replace(/\s+$/, '')
+        cells
+          .map((cell) => padEnd(cell.childRow, cell.cellWidth))
+          .join(sliceGap)
+          .replace(/\s+$/, '')
       );
     }
     return { rows, width: Math.max(1, ...rows.map(visualLength)) };
@@ -116,9 +119,7 @@ function renderActiveTreeRows(tree: SubagentTree | undefined, width: number): st
   }
 
   // Overflow: flow every level flat and hard-truncate to the pane width.
-  const levelLines: string[][] = [
-    lineages.map((lineage) => renderTreeEntry(lineage.root)),
-  ];
+  const levelLines: string[][] = [lineages.map((lineage) => renderTreeEntry(lineage.root))];
   const level2 = lineages.flatMap((lineage) => lineage.slices.map((slice) => renderTreeEntry(slice.entry)));
   if (level2.length > 0) {
     levelLines.push(level2);
@@ -129,9 +130,7 @@ function renderActiveTreeRows(tree: SubagentTree | undefined, width: number): st
   if (level3.length > 0) {
     levelLines.push(level3);
   }
-  return levelLines.map((entries) =>
-    truncateAnsi(entries.join(' '.repeat(TREE_ENTRY_GAP)), width)
-  );
+  return levelLines.map((entries) => truncateAnsi(entries.join(' '.repeat(TREE_ENTRY_GAP)), width));
 }
 
 /**
@@ -150,6 +149,6 @@ export function renderHud(data: HudData, options: RenderOptions): string[] {
   if (layout.mode === 'compact') {
     return renderCompactLayout(data, layout, options.width);
   }
-  
+
   return renderExpandedLayout(data, layout, options.width);
 }

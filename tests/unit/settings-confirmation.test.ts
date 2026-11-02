@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderSettingsConfirmation, handleSettingsConfirmation, type SettingsConfirmationState } from '../../src/render/settings-confirmation.js';
+import {
+  renderSettingsConfirmation,
+  handleSettingsConfirmation,
+  type SettingsConfirmationState,
+} from '../../src/render/settings-confirmation.js';
 import { stripAnsi, visualLength } from '../../src/render/colors.js';
 import { setLanguage } from '../../src/render/i18n.js';
 
@@ -11,15 +15,27 @@ const draw = (state = initial, width = 48, height = 20, navRows = 1) =>
 test('unsaved confirmation defaults to staying, owns clicks, and offers three explicit decisions', () => {
   const frame = draw();
   assert.match(stripAnsi(frame.lines.join('\n')), /Unsaved settings/);
-  assert.deepEqual(frame.controls.map(c => c.choice), ['save', 'discard', 'cancel']);
+  assert.deepEqual(
+    frame.controls.map((c) => c.choice),
+    ['save', 'discard', 'cancel']
+  );
   assert.equal(handleSettingsConfirmation(initial, { type: 'key', key: 'enter' }, frame).action, 'cancel');
   assert.equal(handleSettingsConfirmation(initial, { type: 'key', key: 'escape' }, frame).action, 'cancel');
-  assert.equal(handleSettingsConfirmation(initial, { type: 'mouse', button: 'left', x: 2, y: 0 }, frame).action, undefined,
-    'underlying navigation cannot bypass confirmation');
-  assert.equal(handleSettingsConfirmation(initial, { type: 'paste', text: 'do not submit me' }, frame).action, undefined);
+  assert.equal(
+    handleSettingsConfirmation(initial, { type: 'mouse', button: 'left', x: 2, y: 0 }, frame).action,
+    undefined,
+    'underlying navigation cannot bypass confirmation'
+  );
+  assert.equal(
+    handleSettingsConfirmation(initial, { type: 'paste', text: 'do not submit me' }, frame).action,
+    undefined
+  );
   for (const control of frame.controls) {
     for (const x of [control.x, control.x + control.width - 1]) {
-      assert.equal(handleSettingsConfirmation(initial, { type: 'mouse', button: 'left', x, y: control.y }, frame).action, control.choice);
+      assert.equal(
+        handleSettingsConfirmation(initial, { type: 'mouse', button: 'left', x, y: control.y }, frame).action,
+        control.choice
+      );
     }
   }
 });
@@ -46,12 +62,17 @@ test('confirmation fits CJK/ANSI and tiny terminals, retaining the selected safe
       for (const height of [0, 1, 4, 8, 20]) {
         const frame = draw(initial, width, height);
         assert.equal(frame.lines.length, height);
-        assert.ok(frame.lines.every(line => visualLength(line) === width), `${width}x${height}`);
-        assert.ok(frame.controls.every(c => c.y >= 0 && c.y < height && c.x + c.width <= width));
-        if (frame.controls.length) assert.ok(frame.controls.some(c => c.choice === 'cancel'));
+        assert.ok(
+          frame.lines.every((line) => visualLength(line) === width),
+          `${width}x${height}`
+        );
+        assert.ok(frame.controls.every((c) => c.y >= 0 && c.y < height && c.x + c.width <= width));
+        if (frame.controls.length) assert.ok(frame.controls.some((c) => c.choice === 'cancel'));
       }
     }
-  } finally { setLanguage(previous); }
+  } finally {
+    setLanguage(previous);
+  }
 });
 
 test('a save error is rendered safely and does not imply leaving or losing the choice', () => {

@@ -4,7 +4,9 @@ import type { ToolCall } from '../types.js';
 import type { PaneId, PaneRect, WorkbenchState } from './workbench-state.js';
 
 export const FILE_LIST_MIN_CONTENT_WIDTH = 36;
-export function panePadding(width: number): number { return width >= 6 ? 1 : 0; }
+export function panePadding(width: number): number {
+  return width >= 6 ? 1 : 0;
+}
 export function paneContentWidth(width: number): number {
   return Math.max(0, width - 2 - 2 * panePadding(width));
 }
@@ -12,22 +14,22 @@ export function summaryOnly(width: number): boolean {
   return paneContentWidth(width) < FILE_LIST_MIN_CONTENT_WIDTH;
 }
 export function canPreviewDiff(panes: PaneRect[]): boolean {
-  return panes.some(pane => pane.id === 'details' && pane.height > 2 && !summaryOnly(pane.width));
+  return panes.some((pane) => pane.id === 'details' && pane.height > 2 && !summaryOnly(pane.width));
 }
 
 /** Screen lines are not list indices: cards can occupy two lines; summaries none. */
 export function paneItemAt(pane: PaneRect, x: number, y: number): number | undefined {
   const pad = panePadding(pane.width);
-  if (x < pane.x + 1 + pad || x >= pane.x + pane.width - 1 - pad ||
-      y <= pane.y || y >= pane.y + pane.height - 1) return undefined;
+  if (x < pane.x + 1 + pad || x >= pane.x + pane.width - 1 - pad || y <= pane.y || y >= pane.y + pane.height - 1)
+    return undefined;
   const line = pane.offset + y - pane.y - 1;
   if (line < 0 || line >= pane.contentLength) return undefined;
-  return pane.rowItems ? pane.rowItems[line] ?? undefined : line;
+  return pane.rowItems ? (pane.rowItems[line] ?? undefined) : line;
 }
 export function panePageSize(pane?: PaneRect): number {
   const lines = Math.max(1, (pane?.height ?? 5) - 2);
   if (!pane?.rowItems || pane.summary) return lines;
-  const items = pane.rowItems.slice(pane.offset, pane.offset + lines).filter(item => item !== null);
+  const items = pane.rowItems.slice(pane.offset, pane.offset + lines).filter((item) => item !== null);
   return Math.max(1, new Set(items).size);
 }
 
@@ -36,17 +38,21 @@ export function workspaceCounts(git: GitChanges) {
   const changed = (status: string) => status !== ' ' && status !== '.' && status !== '?';
   return {
     files: git.files.length,
-    staged: git.files.filter(file => !file.conflict && changed(file.index)).length,
-    unstaged: git.files.filter(file => !file.conflict && changed(file.worktree)).length,
-    untracked: git.files.filter(file => file.index === '?' && file.worktree === '?').length,
-    conflicts: git.files.filter(file => file.conflict).length,
-    binary: git.files.filter(file => file.binary).length,
+    staged: git.files.filter((file) => !file.conflict && changed(file.index)).length,
+    unstaged: git.files.filter((file) => !file.conflict && changed(file.worktree)).length,
+    untracked: git.files.filter((file) => file.index === '?' && file.worktree === '?').length,
+    conflicts: git.files.filter((file) => file.conflict).length,
+    binary: git.files.filter((file) => file.binary).length,
   };
 }
 /** Keep native spawn/Git stderr out of the HUD even if a caller stored it. */
 export function gitFailureNotice(error?: string | null): string | undefined {
   if (!error) return undefined;
-  if (/command failed:|spawn git|execfile |git --no-optional-locks|\bgit\b.*-c |fatal:|not a git repository|enoent|etimedout/i.test(error)) {
+  if (
+    /command failed:|spawn git|execfile |git --no-optional-locks|\bgit\b.*-c |fatal:|not a git repository|enoent|etimedout/i.test(
+      error
+    )
+  ) {
     return 'Git could not complete the request';
   }
   return error;
@@ -60,7 +66,10 @@ export function workspaceSummary(git?: GitChanges | null): string[] {
   return [
     ...(git.error ? ['Git incomplete'] : []),
     ...(count.conflicts ? [`! ${count.conflicts} conflict${count.conflicts === 1 ? '' : 's'}`] : []),
-    `${count.files} files`, `${count.staged} staged`, `${count.unstaged} unstaged`, `${count.untracked} untracked`,
+    `${count.files} files`,
+    `${count.staged} staged`,
+    `${count.unstaged} unstaged`,
+    `${count.untracked} untracked`,
   ];
 }
 
@@ -73,16 +82,29 @@ export function toolResult(call: ToolCall): string {
 }
 export function toolCommand(call: ToolCall, expanded = false): string {
   const args = call.arguments;
-  const explicit = typeof args?.cmd === 'string' ? args.cmd : typeof args?.command === 'string' ? args.command : undefined;
+  const explicit =
+    typeof args?.cmd === 'string' ? args.cmd : typeof args?.command === 'string' ? args.command : undefined;
   if (explicit) return explicit;
   if (typeof args?.code === 'string') return expanded ? args.code : `${call.name} · inline code`;
   return call.target ?? call.name;
 }
 
-export function layoutWorkbench(width: number, height: number, state: WorkbenchState, agentCount: number, summaryRows = 4): PaneRect[] {
+export function layoutWorkbench(
+  width: number,
+  height: number,
+  state: WorkbenchState,
+  agentCount: number,
+  summaryRows = 4
+): PaneRect[] {
   const available = Math.max(0, height - 2);
   const make = (id: PaneId, x: number, y: number, w: number, h: number): PaneRect => ({
-    id, x, y, width: w, height: h, offset: 0, contentLength: 0,
+    id,
+    x,
+    y,
+    width: w,
+    height: h,
+    offset: 0,
+    contentLength: 0,
     summary: id === 'changes' && summaryOnly(w),
   });
   if (width <= 0 || !available) return [];
@@ -90,7 +112,7 @@ export function layoutWorkbench(width: number, height: number, state: WorkbenchS
     return [make(state.focus, 0, 1, width, state.collapsed[state.focus] ? 1 : available)];
   }
   const stack = (ids: PaneId[], x: number, w: number): PaneRect[] => {
-    const sizes = ids.map(id => state.collapsed[id] ? 1 : 3);
+    const sizes = ids.map((id) => (state.collapsed[id] ? 1 : 3));
     let remaining = available - sizes.reduce((sum, n) => sum + n, 0);
     const card = paneContentWidth(w) >= 16 ? 2 : 1;
     const target: Record<PaneId, number> = {
@@ -110,23 +132,32 @@ export function layoutWorkbench(width: number, height: number, state: WorkbenchS
     for (const id of ['agents', 'details', 'changes', 'activity'] as PaneId[]) {
       const index = ids.indexOf(id);
       if (index < 0 || state.collapsed[id]) continue;
-      const extra = Math.min(remaining, Math.max(0,minimum[id]-sizes[index]));
-      sizes[index] += extra; remaining -= extra;
+      const extra = Math.min(remaining, Math.max(0, minimum[id] - sizes[index]));
+      sizes[index] += extra;
+      remaining -= extra;
     }
     while (remaining > 0) {
       let grew = false;
       for (let i = 0; i < ids.length && remaining > 0; i++) {
         if (!state.collapsed[ids[i]] && sizes[i] < target[ids[i]]) {
-          sizes[i]++; remaining--; grew = true;
+          sizes[i]++;
+          remaining--;
+          grew = true;
         }
       }
       if (!grew) break;
     }
-    const flexible = ids.map((id, i) => ({id, i})).filter(({id}) => !state.collapsed[id] && (id === 'agents' || id === 'details'));
-    const fill = flexible.length ? flexible : ids.map((id, i) => ({id, i})).filter(({id}) => !state.collapsed[id]);
+    const flexible = ids
+      .map((id, i) => ({ id, i }))
+      .filter(({ id }) => !state.collapsed[id] && (id === 'agents' || id === 'details'));
+    const fill = flexible.length ? flexible : ids.map((id, i) => ({ id, i })).filter(({ id }) => !state.collapsed[id]);
     for (let i = 0; remaining > 0 && fill.length; i++, remaining--) sizes[fill[i % fill.length].i]++;
     let y = 1;
-    return ids.map((id, i) => { const pane = make(id, x, y, w, sizes[i]); y += sizes[i]; return pane; });
+    return ids.map((id, i) => {
+      const pane = make(id, x, y, w, sizes[i]);
+      y += sizes[i];
+      return pane;
+    });
   };
   if (width >= 70) {
     const left = Math.min(40, Math.floor((width - 1) * 0.38));

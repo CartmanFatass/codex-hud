@@ -41,10 +41,7 @@ export function baselineAdjustedUsedTokens(tokensInContext: number, contextWindo
   return Math.min(contextWindow - baseline, used);
 }
 
-export function percentOfContextWindowRemaining(
-  tokensInContext: number,
-  contextWindow: number
-): number {
+export function percentOfContextWindowRemaining(tokensInContext: number, contextWindow: number): number {
   if (contextWindow <= 0) {
     return 0;
   }
@@ -69,8 +66,13 @@ export function buildContextUsage(
   const contextWindow = tokenUsage.model_context_window ?? 0;
   const lastUsage = tokenUsage.last_token_usage;
 
-  if (!Number.isFinite(contextWindow) || contextWindow <= 0 || !lastUsage ||
-      typeof lastUsage.total_tokens !== 'number' || !Number.isFinite(lastUsage.total_tokens)) {
+  if (
+    !Number.isFinite(contextWindow) ||
+    contextWindow <= 0 ||
+    !lastUsage ||
+    typeof lastUsage.total_tokens !== 'number' ||
+    !Number.isFinite(lastUsage.total_tokens)
+  ) {
     return undefined;
   }
 

@@ -30,7 +30,16 @@ import { performance } from 'node:perf_hooks';
 import { t, type Language } from '../render/i18n.js';
 import { wrongLanguage } from './reply-language.js';
 import { ModelRuntimeStore } from './model-runtime-store.js';
-import { boundedTelemetry, summarizeModelTelemetry, telemetryFeature, telemetryFailure, TELEMETRY_RECORD_LIMIT, type ModelTelemetryRecord, type ModelTelemetrySummary, type TelemetryFeature } from './model-telemetry.js';
+import {
+  boundedTelemetry,
+  summarizeModelTelemetry,
+  telemetryFeature,
+  telemetryFailure,
+  TELEMETRY_RECORD_LIMIT,
+  type ModelTelemetryRecord,
+  type ModelTelemetrySummary,
+  type TelemetryFeature,
+} from './model-telemetry.js';
 
 export type ModelBackend = 'off' | 'agy' | 'api';
 /** Thinking levels; agy and `api` take the subset they know. */
@@ -80,23 +89,41 @@ export interface ModelRequest {
 }
 
 export type ModelPriority = 'interactive' | 'visible' | 'background';
-export type ModelFailureClassification = 'auth' | 'model-not-found' | 'rate-limit' | 'timeout' | 'network' | 'server' | 'invalid-response' | 'output-limit';
+export type ModelFailureClassification =
+  'auth' | 'model-not-found' | 'rate-limit' | 'timeout' | 'network' | 'server' | 'invalid-response' | 'output-limit';
 const FAILURE_LABELS: Record<ModelFailureClassification, string> = {
-  auth: 'Authentication failed', 'model-not-found': 'Model not found', 'rate-limit': 'Rate limited',
-  timeout: 'Request timed out', network: 'Connection failed', server: 'Service unavailable',
-  'invalid-response': 'Invalid response', 'output-limit': 'Output limit reached',
+  auth: 'Authentication failed',
+  'model-not-found': 'Model not found',
+  'rate-limit': 'Rate limited',
+  timeout: 'Request timed out',
+  network: 'Connection failed',
+  server: 'Service unavailable',
+  'invalid-response': 'Invalid response',
+  'output-limit': 'Output limit reached',
 };
 
 export interface ModelDiagnostics {
   queued: number;
   running?: { feature: string; startedAt: number };
   lastSuccessAt?: number;
-  lastFailure?: { classification?: ModelFailureClassification; reason?: 'hourly-cap' | 'runtime-unavailable'; at: number; feature: string };
+  lastFailure?: {
+    classification?: ModelFailureClassification;
+    reason?: 'hourly-cap' | 'runtime-unavailable';
+    at: number;
+    feature: string;
+  };
 }
 
 export type ModelResult =
   | { ok: true; text: string; cached?: boolean }
-  | { ok: false; error: string; refused?: boolean; cancelled?: boolean; reason?: 'hourly-cap' | 'runtime-unavailable'; classification?: ModelFailureClassification };
+  | {
+      ok: false;
+      error: string;
+      refused?: boolean;
+      cancelled?: boolean;
+      reason?: 'hourly-cap' | 'runtime-unavailable';
+      classification?: ModelFailureClassification;
+    };
 
 export type ModelStatus = 'queued' | 'running' | 'settled';
 
@@ -128,7 +155,12 @@ const AGY_MODEL_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high'];
 const AGY_EFFORTS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 /** `reasoning_effort` values OpenAI-compatible servers know, by our level. */
 const API_EFFORTS: Partial<Record<ThinkingLevel, string>> = {
-  off: 'none', minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh',
+  off: 'none',
+  minimal: 'minimal',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
 };
 
 const TIMEOUT_MS = 90_000;
@@ -143,7 +175,9 @@ const CACHE_LIMIT = 200;
 const OPENAI_BASE = 'https://api.openai.com/v1';
 export type ApiModelTier = 'lite' | 'low' | 'medium';
 export const DEFAULT_API_MODELS: Readonly<Record<ApiModelTier, string>> = {
-  lite: 'gemini-3.5-flash-lite', low: 'gemini-3.8-flash-low', medium: 'gemini-3.8-flash-medium',
+  lite: 'gemini-3.5-flash-lite',
+  low: 'gemini-3.8-flash-low',
+  medium: 'gemini-3.8-flash-medium',
 };
 
 export function apiModelTier(feature: string): ApiModelTier {
@@ -153,8 +187,11 @@ export function apiModelTier(feature: string): ApiModelTier {
 }
 
 /** The program and arguments for one request. No shell is involved. */
-export function modelCommand(backend: 'agy', request: Pick<ModelRequest, 'system' | 'prompt' | 'thinking'>,
-  env: NodeJS.ProcessEnv = process.env): { file: string; args: string[] } {
+export function modelCommand(
+  backend: 'agy',
+  request: Pick<ModelRequest, 'system' | 'prompt' | 'thinking'>,
+  env: NodeJS.ProcessEnv = process.env
+): { file: string; args: string[] } {
   const override = env.CODEX_HUD_BRIEF_MODEL?.trim();
   const thinking = request.thinking ?? DEFAULT_THINKING;
   // agy has no system prompt flag; the instructions lead the prompt instead.
@@ -165,9 +202,21 @@ export function modelCommand(backend: 'agy', request: Pick<ModelRequest, 'system
   let effort: string | undefined;
   if (!override && AGY_MODEL_LEVELS.includes(thinking)) model = `${AGY_MODEL_FAMILY}-${thinking}`;
   else if (AGY_EFFORTS.includes(thinking) && (override || thinking !== DEFAULT_THINKING)) effort = thinking;
-  return { file: 'agy', args: ['-p', `${request.system}\n\n${request.prompt}`, '--model', model,
-    ...(effort ? ['--effort', effort] : []),
-    '--output-format', 'text', '--print-timeout', '80s', '--disable-slash-commands'] };
+  return {
+    file: 'agy',
+    args: [
+      '-p',
+      `${request.system}\n\n${request.prompt}`,
+      '--model',
+      model,
+      ...(effort ? ['--effort', effort] : []),
+      '--output-format',
+      'text',
+      '--print-timeout',
+      '80s',
+      '--disable-slash-commands',
+    ],
+  };
 }
 
 /**
@@ -178,29 +227,42 @@ export function modelCommand(backend: 'agy', request: Pick<ModelRequest, 'system
  * compatible server accepts are sent, plus `reasoning_effort` when the
  * endpoint is marked as taking it.
  */
-export function modelHttpRequest(api: ModelApi, request: Pick<ModelRequest, 'feature' | 'system' | 'prompt' | 'thinking' | 'maxOutputTokens'>,
-  env: NodeJS.ProcessEnv = process.env): { url: string; headers: Record<string, string>; body: string } | { error: string } {
+export function modelHttpRequest(
+  api: ModelApi,
+  request: Pick<ModelRequest, 'feature' | 'system' | 'prompt' | 'thinking' | 'maxOutputTokens'>,
+  env: NodeJS.ProcessEnv = process.env
+): { url: string; headers: Record<string, string>; body: string } | { error: string } {
   const base = (api.base.trim() || OPENAI_BASE).replace(/\/+$/, '');
   const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
   let official = false;
   try {
     const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return { error: 'api: invalid endpoint' };
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password)
+      return { error: 'api: invalid endpoint' };
     official = parsed.origin === 'https://api.openai.com';
-  } catch { return { error: 'api: invalid endpoint' }; }
+  } catch {
+    return { error: 'api: invalid endpoint' };
+  }
   const tier = apiModelTier(request.feature);
-  const model = env.CODEX_HUD_BRIEF_MODEL?.trim() || api.model.trim()
-    || api.models?.[tier]?.trim() || DEFAULT_API_MODELS[tier];
+  const model =
+    env.CODEX_HUD_BRIEF_MODEL?.trim() || api.model.trim() || api.models?.[tier]?.trim() || DEFAULT_API_MODELS[tier];
   // An endpoint-specific HUD key is deliberate. Never leak OPENAI_API_KEY to a custom origin.
-  const key = api.key.trim() || env.CODEX_HUD_BRIEF_API_KEY?.trim() || (official ? env.OPENAI_API_KEY?.trim() : '') || '';
+  const key =
+    api.key.trim() || env.CODEX_HUD_BRIEF_API_KEY?.trim() || (official ? env.OPENAI_API_KEY?.trim() : '') || '';
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (key) headers.authorization = `Bearer ${key}`;
   const effort = api.reasoning ? API_EFFORTS[request.thinking ?? DEFAULT_THINKING] : undefined;
   const maxTokens = outputTokens(request.maxOutputTokens);
-  const body = JSON.stringify({ model, stream: false, ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}), ...(effort ? { reasoning_effort: effort } : {}), messages: [
-    { role: 'system', content: request.system },
-    { role: 'user', content: request.prompt },
-  ] });
+  const body = JSON.stringify({
+    model,
+    stream: false,
+    ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
+    ...(effort ? { reasoning_effort: effort } : {}),
+    messages: [
+      { role: 'system', content: request.system },
+      { role: 'user', content: request.prompt },
+    ],
+  });
   return { url, headers, body };
 }
 
@@ -209,7 +271,9 @@ export function completionText(json: unknown): string | null {
   const content = (json as { choices?: Array<{ message?: { content?: unknown } }> })?.choices?.[0]?.message?.content;
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    const text = content.map(part => typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : '').join('');
+    const text = content
+      .map((part) => (typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : ''))
+      .join('');
     return text || null;
   }
   return null;
@@ -217,17 +281,36 @@ export function completionText(json: unknown): string | null {
 
 /** Colour codes and runs of blank lines out; the text itself as written. */
 export function cleanOutput(raw: string): string {
-  return raw.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').split('\n').map(line => line.trimEnd())
-    .filter((line, i, all) => line || (i > 0 && all[i - 1])).join('\n').trim();
+  return raw
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line, i, all) => line || (i > 0 && all[i - 1]))
+    .join('\n')
+    .trim();
 }
 
 /**
  * The cache key of a request: everything that shapes the answer, so a
  * changed prompt, instruction or level is a different question.
  */
-export function requestDigest(request: ModelRequest, route?: { backend: ModelBackend; endpoint?: string; model?: string; reasoning?: boolean }): string {
-  return createHash('sha256').update(JSON.stringify([request.feature, request.cacheKey ?? '', request.thinking ?? DEFAULT_THINKING,
-    request.system, request.prompt, route ?? null, ...(outputTokens(request.maxOutputTokens) !== undefined ? [outputTokens(request.maxOutputTokens)] : [])])).digest('hex');
+export function requestDigest(
+  request: ModelRequest,
+  route?: { backend: ModelBackend; endpoint?: string; model?: string; reasoning?: boolean }
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        request.feature,
+        request.cacheKey ?? '',
+        request.thinking ?? DEFAULT_THINKING,
+        request.system,
+        request.prompt,
+        route ?? null,
+        ...(outputTokens(request.maxOutputTokens) !== undefined ? [outputTokens(request.maxOutputTokens)] : []),
+      ])
+    )
+    .digest('hex');
 }
 
 /** Whether a reply is one the request can take: in its language, when it names one. */
@@ -259,7 +342,11 @@ export function writePrivateFile(file: string, content: string): void {
     fs.writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temporary, file);
   } finally {
-    try { fs.unlinkSync(temporary); } catch { /* Renamed, or the write itself failed. */ }
+    try {
+      fs.unlinkSync(temporary);
+    } catch {
+      /* Renamed, or the write itself failed. */
+    }
   }
 }
 
@@ -268,12 +355,19 @@ function outputTokens(value?: number): number | undefined {
 }
 
 function timeoutMs(request: ModelRequest): number {
-  return Number.isFinite(request.timeoutMs) ? Math.max(100, Math.min(TIMEOUT_MS, Math.floor(request.timeoutMs!))) : TIMEOUT_MS;
+  return Number.isFinite(request.timeoutMs)
+    ? Math.max(100, Math.min(TIMEOUT_MS, Math.floor(request.timeoutMs!)))
+    : TIMEOUT_MS;
 }
 
 function requestPriority(request: ModelRequest): number {
-  const priority = request.priority ?? (['approval', 'probe'].includes(request.feature) ? 'interactive'
-    : request.feature === 'progress' ? 'visible' : 'background');
+  const priority =
+    request.priority ??
+    (['approval', 'probe'].includes(request.feature)
+      ? 'interactive'
+      : request.feature === 'progress'
+        ? 'visible'
+        : 'background');
   return { interactive: 0, visible: 1, background: 2 }[priority];
 }
 
@@ -283,7 +377,11 @@ function httpClassification(status: number, json: unknown): ModelFailureClassifi
   const marker = `${error?.code ?? ''} ${error?.type ?? ''} ${error?.message ?? ''}`;
   if (status === 401 || status === 403) return 'auth';
   if (status === 429) return 'rate-limit';
-  if (status === 404 || /model[_ -]?(not[_ -]?found|unavailable)|unknown model|invalid model name|model.*does not exist/i.test(marker)) return 'model-not-found';
+  if (
+    status === 404 ||
+    /model[_ -]?(not[_ -]?found|unavailable)|unknown model|invalid model name|model.*does not exist/i.test(marker)
+  )
+    return 'model-not-found';
   if (status === 408 || status === 504) return 'timeout';
   return status >= 500 ? 'server' : 'invalid-response';
 }
@@ -355,7 +453,8 @@ export class SmallModel {
     if (backend !== this.backend || JSON.stringify(api) !== JSON.stringify(this.api)) this.cancelAll();
     this.backend = backend;
     this.api = api;
-    if (patch.hourlyCap !== undefined && Number.isFinite(patch.hourlyCap) && patch.hourlyCap > 0) this.cap = Math.floor(patch.hourlyCap);
+    if (patch.hourlyCap !== undefined && Number.isFinite(patch.hourlyCap) && patch.hourlyCap > 0)
+      this.cap = Math.floor(patch.hourlyCap);
   }
 
   usage(now: number = this.clock()): ModelUsage {
@@ -364,10 +463,16 @@ export class SmallModel {
   }
 
   diagnostics(): ModelDiagnostics {
-    return { queued: this.queue.filter(job => !job.settled).length + (this.active?.status === 'queued' && !this.active.settled ? 1 : 0),
-      ...(this.active?.startedAt !== undefined && !this.active.settled ? { running: { feature: this.active.request.feature, startedAt: this.active.startedAt } } : {}),
+    return {
+      queued:
+        this.queue.filter((job) => !job.settled).length +
+        (this.active?.status === 'queued' && !this.active.settled ? 1 : 0),
+      ...(this.active?.startedAt !== undefined && !this.active.settled
+        ? { running: { feature: this.active.request.feature, startedAt: this.active.startedAt } }
+        : {}),
       ...(this.lastSuccessAt !== undefined ? { lastSuccessAt: this.lastSuccessAt } : {}),
-      ...(this.lastFailure ? { lastFailure: { ...this.lastFailure } } : {}) };
+      ...(this.lastFailure ? { lastFailure: { ...this.lastFailure } } : {}),
+    };
   }
 
   /**
@@ -380,30 +485,56 @@ export class SmallModel {
   telemetry(now: number = this.clock()): ModelTelemetrySummary {
     let shared: ModelTelemetryRecord[] = [];
     if (this.telemetryStore) {
-      try { shared = this.telemetryStore.telemetry(); } catch { this.telemetryUnavailable = true; }
+      try {
+        shared = this.telemetryStore.telemetry();
+      } catch {
+        this.telemetryUnavailable = true;
+      }
     }
-    return summarizeModelTelemetry([...shared, ...this.telemetryRecords], now,
-      !this.store ? 'memory' : this.telemetryUnavailable ? 'unavailable' : this.telemetrySaving ? 'pending' : 'shared');
+    return summarizeModelTelemetry(
+      [...shared, ...this.telemetryRecords],
+      now,
+      !this.store ? 'memory' : this.telemetryUnavailable ? 'unavailable' : this.telemetrySaving ? 'pending' : 'shared'
+    );
   }
 
   /** Optional shutdown/test barrier; never sends model traffic or retries failures. */
   async flushTelemetry(): Promise<void> {
-    do { await this.telemetryWrites; } while (this.telemetrySaving);
+    do {
+      await this.telemetryWrites;
+    } while (this.telemetrySaving);
   }
 
   private recordTelemetry(job: Job, result?: ModelResult): void {
     const now = this.clock();
-    const outcome = !result ? 'pending' : result.ok ? result.cached ? 'cache' : 'success'
-      : result.cancelled ? 'cancelled' : result.reason === 'hourly-cap' ? 'limited'
-      : result.refused ? 'refused' : 'failure';
-    const record: ModelTelemetryRecord = { id: job.id, feature: telemetryFeature(job.request.telemetryFeature ?? job.request.feature), at: job.queuedAt,
-      outcome, durationMs: result && job.dispatchedAt !== undefined && now >= job.dispatchedAt ? now - job.dispatchedAt : null,
-      failure: result && !result.ok && !result.cancelled ? telemetryFailure(result.classification ?? result.reason) : null };
+    const outcome = !result
+      ? 'pending'
+      : result.ok
+        ? result.cached
+          ? 'cache'
+          : 'success'
+        : result.cancelled
+          ? 'cancelled'
+          : result.reason === 'hourly-cap'
+            ? 'limited'
+            : result.refused
+              ? 'refused'
+              : 'failure';
+    const record: ModelTelemetryRecord = {
+      id: job.id,
+      feature: telemetryFeature(job.request.telemetryFeature ?? job.request.feature),
+      at: job.queuedAt,
+      outcome,
+      durationMs: result && job.dispatchedAt !== undefined && now >= job.dispatchedAt ? now - job.dispatchedAt : null,
+      failure:
+        result && !result.ok && !result.cancelled ? telemetryFailure(result.classification ?? result.reason) : null,
+    };
     this.telemetryRecords = boundedTelemetry([...this.telemetryRecords, record], now);
     // Accounting must never delay settlement, change request ordering or cause a retry.
     if (this.telemetryStore && result) {
       this.telemetryDirty.set(record.id, record);
-      while (this.telemetryDirty.size > TELEMETRY_RECORD_LIMIT) this.telemetryDirty.delete(this.telemetryDirty.keys().next().value!);
+      while (this.telemetryDirty.size > TELEMETRY_RECORD_LIMIT)
+        this.telemetryDirty.delete(this.telemetryDirty.keys().next().value!);
       if (!this.telemetrySaving) {
         this.telemetrySaving = true;
         // Coalesce a burst into bounded batches; no unbounded promise chain.
@@ -412,17 +543,26 @@ export class SmallModel {
             while (this.telemetryDirty.size) {
               const records = [...this.telemetryDirty.values()];
               this.telemetryDirty.clear();
-              try { await this.telemetryStore!.recordTelemetryBatch(records, this.clock()); }
-              catch { this.telemetryUnavailable = true; }
+              try {
+                await this.telemetryStore!.recordTelemetryBatch(records, this.clock());
+              } catch {
+                this.telemetryUnavailable = true;
+              }
             }
-          } finally { this.telemetrySaving = false; }
+          } finally {
+            this.telemetrySaving = false;
+          }
         });
       }
     }
   }
 
   private changed(): void {
-    try { this.options.onChange?.(); } catch { /* Observers cannot strand work. */ }
+    try {
+      this.options.onChange?.();
+    } catch {
+      /* Observers cannot strand work. */
+    }
   }
 
   /** Queue a request. It starts at once when nothing else is in flight. */
@@ -434,21 +574,48 @@ export class SmallModel {
     const env = { ...(this.options.env ?? process.env) };
     const http = backend === 'api' ? modelHttpRequest(this.api, request, env) : undefined;
     const command = backend === 'agy' ? modelCommand('agy', request, env) : undefined;
-    const route = { backend, endpoint: http && !('error' in http) ? http.url : '',
-      model: http && !('error' in http) ? JSON.parse(http.body).model as string : command?.args[command.args.indexOf('--model') + 1],
-      reasoning: backend === 'api' && !!this.api.reasoning };
+    const route = {
+      backend,
+      endpoint: http && !('error' in http) ? http.url : '',
+      model:
+        http && !('error' in http)
+          ? (JSON.parse(http.body).model as string)
+          : command?.args[command.args.indexOf('--model') + 1],
+      reasoning: backend === 'api' && !!this.api.reasoning,
+    };
     const digest = request.cacheKey !== undefined ? requestDigest(request, route) : null;
     let job!: Job;
-    const result = new Promise<ModelResult>(resolve => {
-      job = { request, backend, http, command, digest, id: randomUUID(), queuedAt: this.clock(), order: this.nextOrder++, settled: false, status: 'queued', listeners: new Set(), resolve: value => {
-        if (!job.settled) { job.settled = true; this.recordTelemetry(job, value); this.setStatus(job, 'settled'); resolve(value); }
-      } };
+    const result = new Promise<ModelResult>((resolve) => {
+      job = {
+        request,
+        backend,
+        http,
+        command,
+        digest,
+        id: randomUUID(),
+        queuedAt: this.clock(),
+        order: this.nextOrder++,
+        settled: false,
+        status: 'queued',
+        listeners: new Set(),
+        resolve: (value) => {
+          if (!job.settled) {
+            job.settled = true;
+            this.recordTelemetry(job, value);
+            this.setStatus(job, 'settled');
+            resolve(value);
+          }
+        },
+      };
     });
     this.recordTelemetry(job);
     this.reloadCache();
     let hit = digest ? this.cache.get(digest) : undefined;
     // An answer cached in the wrong language is no answer: dropped, and asked again.
-    if (hit && !acceptable(request, hit.text)) { this.cache.delete(digest!); hit = undefined; }
+    if (hit && !acceptable(request, hit.text)) {
+      this.cache.delete(digest!);
+      hit = undefined;
+    }
     if (backend === 'off') {
       job.resolve({ ok: false, error: 'model backend off', refused: true });
     } else if (hit) {
@@ -461,9 +628,18 @@ export class SmallModel {
     }
     return {
       result,
-      get status() { return job.status; },
-      get generatedAt() { return job.generatedAt; },
-      subscribe: listener => { job.listeners.add(listener); return () => { job.listeners.delete(listener); }; },
+      get status() {
+        return job.status;
+      },
+      get generatedAt() {
+        return job.generatedAt;
+      },
+      subscribe: (listener) => {
+        job.listeners.add(listener);
+        return () => {
+          job.listeners.delete(listener);
+        };
+      },
       cancel: () => {
         if (job.settled) return;
         const at = this.queue.indexOf(job);
@@ -495,7 +671,11 @@ export class SmallModel {
     job.status = status;
     this.changed();
     for (const listener of job.listeners) {
-      try { listener(); } catch { /* Observers must not strand a queue slot or its result. */ }
+      try {
+        listener();
+      } catch {
+        /* Observers must not strand a queue slot or its result. */
+      }
     }
   }
 
@@ -505,10 +685,15 @@ export class SmallModel {
     this.wakeTimer = undefined;
     if (!this.queue.length) return;
     const readyAt = performance.now();
-    const eligible = this.queue.map((job, index) => ({ job, index })).filter(({ job }) => (job.retryAt ?? 0) <= readyAt);
+    const eligible = this.queue
+      .map((job, index) => ({ job, index }))
+      .filter(({ job }) => (job.retryAt ?? 0) <= readyAt);
     if (!eligible.length) {
-      const delay = Math.max(1, Math.min(...this.queue.map(job => job.retryAt!)) - readyAt);
-      this.wakeTimer = setTimeout(() => { this.wakeTimer = undefined; this.pump(); }, delay);
+      const delay = Math.max(1, Math.min(...this.queue.map((job) => job.retryAt!)) - readyAt);
+      this.wakeTimer = setTimeout(() => {
+        this.wakeTimer = undefined;
+        this.pump();
+      }, delay);
       return;
     }
     // Bound overtaking by both age and dispatch count. A steady stream of
@@ -517,7 +702,8 @@ export class SmallModel {
     let index = oldest.index;
     if (this.clock() - oldest.job.queuedAt < STARVATION_MS && this.priorityBurst < PRIORITY_BURST) {
       for (const candidate of eligible) {
-        if (requestPriority(candidate.job.request) < requestPriority(this.queue[index].request)) index = candidate.index;
+        if (requestPriority(candidate.job.request) < requestPriority(this.queue[index].request))
+          index = candidate.index;
       }
     }
     this.priorityBurst = index === oldest.index ? 0 : this.priorityBurst + 1;
@@ -526,27 +712,44 @@ export class SmallModel {
     // Disk coordination can wait for another panel. It becomes running only
     // once this process has a reservation and is about to send.
     if (!this.store) this.markRunning(job);
-    void this.run(job).catch((): ModelResult => ({ ok: false, error: 'model shared state unavailable', refused: true, reason: 'runtime-unavailable' })).then(outcome => {
-      if (outcome === WAITING_FOR_PEER) {
-        if (!job.settled) {
-          job.retryAt = performance.now() + 35;
-          this.queue.push(job);
-          this.queue.sort((a, b) => a.order - b.order);
+    void this.run(job)
+      .catch((): ModelResult => ({
+        ok: false,
+        error: 'model shared state unavailable',
+        refused: true,
+        reason: 'runtime-unavailable',
+      }))
+      .then((outcome) => {
+        if (outcome === WAITING_FOR_PEER) {
+          if (!job.settled) {
+            job.retryAt = performance.now() + 35;
+            this.queue.push(job);
+            this.queue.sort((a, b) => a.order - b.order);
+          }
+          if (this.active === job) this.active = null;
+          this.pump();
+          return;
         }
-        if (this.active === job) this.active = null;
-        this.pump();
-        return;
-      }
-      if (outcome.ok && job.generatedAt === undefined) job.generatedAt = this.clock();
-      if (!job.settled) {
-        if (outcome.ok) {
-          this.lastSuccessAt = job.generatedAt;
-          if (job.digest) this.remember(job.digest, outcome.text, job.generatedAt!);
-        } else if (!outcome.cancelled) this.lastFailure = { classification: outcome.classification, reason: outcome.reason, at: this.clock(), feature: job.request.feature };
-      }
-      job.resolve(outcome);
-      if (this.active === job) { this.active = null; this.changed(); this.pump(); }
-    });
+        if (outcome.ok && job.generatedAt === undefined) job.generatedAt = this.clock();
+        if (!job.settled) {
+          if (outcome.ok) {
+            this.lastSuccessAt = job.generatedAt;
+            if (job.digest) this.remember(job.digest, outcome.text, job.generatedAt!);
+          } else if (!outcome.cancelled)
+            this.lastFailure = {
+              classification: outcome.classification,
+              reason: outcome.reason,
+              at: this.clock(),
+              feature: job.request.feature,
+            };
+        }
+        job.resolve(outcome);
+        if (this.active === job) {
+          this.active = null;
+          this.changed();
+          this.pump();
+        }
+      });
   }
 
   private markRunning(job: Job): void {
@@ -555,7 +758,12 @@ export class SmallModel {
   }
 
   private capResult(): ModelResult {
-    return { ok: false, error: t('Model call cap reached ({n} per hour)', { n: this.cap }), refused: true, reason: 'hourly-cap' };
+    return {
+      ok: false,
+      error: t('Model call cap reached ({n} per hour)', { n: this.cap }),
+      refused: true,
+      reason: 'hourly-cap',
+    };
   }
 
   private async run(job: Job): Promise<ModelResult | typeof WAITING_FOR_PEER> {
@@ -565,7 +773,14 @@ export class SmallModel {
     const http = job.http;
     if (http && 'error' in http) return { ok: false, error: http.error, classification: 'invalid-response' };
     if (this.store) {
-      const reservation = await this.store.reserve(job.digest, job.id, this.cap, this.clock, () => job.settled, text => acceptable(job.request, text));
+      const reservation = await this.store.reserve(
+        job.digest,
+        job.id,
+        this.cap,
+        this.clock,
+        () => job.settled,
+        (text) => acceptable(job.request, text)
+      );
       if (job.settled) {
         if (reservation.kind === 'reserved' && job.digest) await this.store.finish(job.digest, job.id);
         return { ok: false, error: 'cancelled', cancelled: true };
@@ -588,7 +803,10 @@ export class SmallModel {
       const now = this.clock();
       if (job.digest) {
         const hit = this.cache.get(job.digest);
-        if (hit && acceptable(job.request, hit.text)) { job.generatedAt = hit.at; return { ok: true, text: hit.text, cached: true }; }
+        if (hit && acceptable(job.request, hit.text)) {
+          job.generatedAt = hit.at;
+          return { ok: true, text: hit.text, cached: true };
+        }
         if (hit) this.cache.delete(job.digest);
       }
       if (callsWithin(this.calls, now, HOUR_MS) >= this.cap) return this.capResult();
@@ -601,7 +819,8 @@ export class SmallModel {
         ? this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>)
         : this.spawn(job, job.command!));
       // Written in another language than asked: a failure, never cached, never shown as if it obeyed.
-      if (outcome.ok && !acceptable(job.request, outcome.text)) outcome = { ok: false, error: t('Reply not in the panel language'), classification: 'invalid-response' };
+      if (outcome.ok && !acceptable(job.request, outcome.text))
+        outcome = { ok: false, error: t('Reply not in the panel language'), classification: 'invalid-response' };
       if (outcome.ok) job.generatedAt = this.clock();
     } catch {
       outcome = { ok: false, error: 'model request failed', classification: 'network' };
@@ -610,13 +829,18 @@ export class SmallModel {
     }
     if (this.store && job.digest) {
       // Cancellation holds the claim until the underlying transport settles.
-      await this.store.finish(job.digest, job.id, outcome.ok && !job.settled ? { text: outcome.text, at: job.generatedAt! } : undefined, () => !job.settled);
+      await this.store.finish(
+        job.digest,
+        job.id,
+        outcome.ok && !job.settled ? { text: outcome.text, at: job.generatedAt! } : undefined,
+        () => !job.settled
+      );
     }
     return outcome;
   }
 
   private spawn(job: Job, { file, args }: { file: string; args: string[] }): Promise<ModelResult> {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       let child: ChildProcess;
       try {
         child = spawn(file, args, { cwd: os.tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] });
@@ -631,10 +855,15 @@ export class SmallModel {
       };
       job.stop = stop;
       let out = '';
-      child.stdout?.on('data', (chunk: Buffer) => { if (out.length < MAX_OUTPUT_BYTES) out += chunk.toString('utf8'); });
+      child.stdout?.on('data', (chunk: Buffer) => {
+        if (out.length < MAX_OUTPUT_BYTES) out += chunk.toString('utf8');
+      });
       child.stderr?.resume();
       let timedOut = false;
-      const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs(job.request));
+      const timer = setTimeout(() => {
+        timedOut = true;
+        stop();
+      }, timeoutMs(job.request));
       let settled = false;
       const done = (message: string | null) => {
         if (settled) return;
@@ -642,37 +871,81 @@ export class SmallModel {
         clearTimeout(timer);
         clearTimeout(killTimer);
         const text = cleanOutput(out);
-        resolve(!timedOut && message === null && text ? { ok: true, text } : { ok: false, error: timedOut ? `${file} timed out` : message ?? `${file} returned nothing`, classification: timedOut ? 'timeout' : message === null ? 'invalid-response' : 'network' });
+        resolve(
+          !timedOut && message === null && text
+            ? { ok: true, text }
+            : {
+                ok: false,
+                error: timedOut ? `${file} timed out` : (message ?? `${file} returned nothing`),
+                classification: timedOut ? 'timeout' : message === null ? 'invalid-response' : 'network',
+              }
+        );
       };
-      child.on('error', error => done((error as NodeJS.ErrnoException).code === 'ENOENT' ? `${file} not found` : `${file}: connection failed`));
-      child.on('close', (code, signal) => done(code === 0 ? null
-        : signal ? `${file} stopped (${signal})` : `${file} exit ${code}`));
+      child.on('error', (error) =>
+        done((error as NodeJS.ErrnoException).code === 'ENOENT' ? `${file} not found` : `${file}: connection failed`)
+      );
+      child.on('close', (code, signal) =>
+        done(code === 0 ? null : signal ? `${file} stopped (${signal})` : `${file} exit ${code}`)
+      );
     });
   }
 
-  private async request(job: Job, { url, headers, body }: { url: string; headers: Record<string, string>; body: string }): Promise<ModelResult> {
+  private async request(
+    job: Job,
+    { url, headers, body }: { url: string; headers: Record<string, string>; body: string }
+  ): Promise<ModelResult> {
     const abort = new AbortController();
     job.stop = () => abort.abort();
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; abort.abort(); }, timeoutMs(job.request));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      abort.abort();
+    }, timeoutMs(job.request));
     try {
       // Do not forward credentials or session material through endpoint redirects.
-      const response = await (this.options.fetch ?? fetch)(url, { method: 'POST', headers, body, signal: abort.signal, redirect: 'error' });
+      const response = await (this.options.fetch ?? fetch)(url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: abort.signal,
+        redirect: 'error',
+      });
       const raw = (await response.text()).slice(0, MAX_OUTPUT_BYTES);
       if (timedOut) return { ok: false, error: 'api stopped', classification: 'timeout' };
       let json: unknown = null;
-      try { json = JSON.parse(raw); } catch { /* reported below */ }
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        /* reported below */
+      }
       if (!response.ok) {
         const classification = httpClassification(response.status, json);
-        return { ok: false, error: `api HTTP ${response.status}: ${t(FAILURE_LABELS[classification])}`, classification };
+        return {
+          ok: false,
+          error: `api HTTP ${response.status}: ${t(FAILURE_LABELS[classification])}`,
+          classification,
+        };
       }
       const text = cleanOutput(completionText(json) ?? '');
-      if (!text && (json as { choices?: Array<{ finish_reason?: unknown }> } | null)?.choices?.[0]?.finish_reason === 'length') {
+      if (
+        !text &&
+        (json as { choices?: Array<{ finish_reason?: unknown }> } | null)?.choices?.[0]?.finish_reason === 'length'
+      ) {
         return { ok: false, error: 'api output limit reached', classification: 'output-limit' };
       }
-      return text ? { ok: true, text } : { ok: false, error: json === null ? 'api: reply is not JSON' : 'api returned nothing', classification: 'invalid-response' };
+      return text
+        ? { ok: true, text }
+        : {
+            ok: false,
+            error: json === null ? 'api: reply is not JSON' : 'api returned nothing',
+            classification: 'invalid-response',
+          };
     } catch {
-      return { ok: false, error: abort.signal.aborted ? 'api stopped' : 'api: connection failed', classification: timedOut ? 'timeout' : 'network' };
+      return {
+        ok: false,
+        error: abort.signal.aborted ? 'api stopped' : 'api: connection failed',
+        classification: timedOut ? 'timeout' : 'network',
+      };
     } finally {
       clearTimeout(timer);
     }
@@ -680,12 +953,20 @@ export class SmallModel {
 
   private reloadCache(): void {
     if (!this.store) return;
-    try { this.cache = this.store.cache(); } catch { /* Dispatch fails closed if shared state remains unavailable. */ }
+    try {
+      this.cache = this.store.cache();
+    } catch {
+      /* Dispatch fails closed if shared state remains unavailable. */
+    }
   }
 
   private reloadCalls(): void {
     if (!this.store) return;
-    try { this.calls = this.store.calls(); } catch { /* Last known usage only; dispatch still fails closed. */ }
+    try {
+      this.calls = this.store.calls();
+    } catch {
+      /* Last known usage only; dispatch still fails closed. */
+    }
   }
 
   private remember(digest: string, text: string, generatedAt: number): void {

@@ -30,7 +30,9 @@ test('every key keeps its exact bytes: letters, arrows, Ctrl, Alt, and a charact
   assert.deepEqual(d.push(Buffer.from('j')), [{ type: 'key', key: 'down', raw: 'j' }]);
   // Removing the old card shortcut leaves bare e as ordinary forwarded bytes.
   assert.deepEqual(d.push(Buffer.from('e')), [{ type: 'key', key: '', raw: 'e' }]);
-  assert.deepEqual(forwardCalls('%3', [{ kind: 'keys', text: 'e' }]), [{ args: ['send-keys', '-t', '%3', '-H', '65', ';', 'select-pane', '-t', '%3'] }]);
+  assert.deepEqual(forwardCalls('%3', [{ kind: 'keys', text: 'e' }]), [
+    { args: ['send-keys', '-t', '%3', '-H', '65', ';', 'select-pane', '-t', '%3'] },
+  ]);
   // Focus reports are not keys.
   assert.deepEqual(d.push(Buffer.from('\x1b[I\x1b[O')), []);
   assert.deepEqual(d.push(Buffer.from('\x1b')), []);

@@ -58,35 +58,53 @@ const GUTTER = TIME + 1;
 
 type Paint = (s: string) => string;
 type Stage = NonNullable<WorkbenchEvent['stage']>;
-const plain: Paint = s => s;
+const plain: Paint = (s) => s;
 
 const STAGE_GLYPHS: Record<Stage, [string, Paint]> = {
-  running: ['▸', theme.info], done: ['✓', theme.success], failed: ['✗', theme.error], aborted: ['◌', theme.warning],
+  running: ['▸', theme.info],
+  done: ['✓', theme.success],
+  failed: ['✗', theme.error],
+  aborted: ['◌', theme.warning],
 };
 const STAGE_WORDS: Record<Stage, string> = {
-  running: '{agent} started', done: '{agent} finished', failed: '{agent} failed', aborted: '{agent} stopped',
+  running: '{agent} started',
+  done: '{agent} finished',
+  failed: '{agent} failed',
+  aborted: '{agent} stopped',
 };
 
 /** A timeline event in the reader's words. Facts as recorded; nothing inferred. */
 export function timelineText(event: WorkbenchEvent): string {
   const subject = event.subject ? monitorText(event.subject) : '';
   switch (event.kind) {
-    case 'approval-requested': return subject ? t('Approval asked: {what}', { what: subject }) : t('Approval asked');
-    case 'approval-answered': return t('Approval answered');
-    case 'compacted': return t('Context compacted');
+    case 'approval-requested':
+      return subject ? t('Approval asked: {what}', { what: subject }) : t('Approval asked');
+    case 'approval-answered':
+      return t('Approval answered');
+    case 'compacted':
+      return t('Context compacted');
     case 'quota': {
       const window = formatWindowLabel(event.windowMinutes);
       return t('Quota past {n}%', { n: event.threshold ?? '?' }) + (window ? ` (${window})` : '');
     }
-    case 'turn-finished': return t('Turn finished');
-    case 'turn-interrupted': return t('Turn interrupted');
-    case 'turn-failed': return t('Turn failed');
-    case 'agent-started': return t('{agent} started', { agent: subject });
-    case 'agent-finished': return t('{agent} finished', { agent: subject });
-    case 'agent-failed': return t('{agent} failed', { agent: subject });
-    case 'agent-stage': return t(STAGE_WORDS[event.stage ?? 'done'], { agent: subject });
-    case 'tool-failed': return t('Tool failed: {what}', { what: subject });
-    default: return monitorText(event.title);
+    case 'turn-finished':
+      return t('Turn finished');
+    case 'turn-interrupted':
+      return t('Turn interrupted');
+    case 'turn-failed':
+      return t('Turn failed');
+    case 'agent-started':
+      return t('{agent} started', { agent: subject });
+    case 'agent-finished':
+      return t('{agent} finished', { agent: subject });
+    case 'agent-failed':
+      return t('{agent} failed', { agent: subject });
+    case 'agent-stage':
+      return t(STAGE_WORDS[event.stage ?? 'done'], { agent: subject });
+    case 'tool-failed':
+      return t('Tool failed: {what}', { what: subject });
+    default:
+      return monitorText(event.title);
   }
 }
 
@@ -139,7 +157,11 @@ function timelineEntries(input: MonitorData, now: number): Entry[] {
     if (event.kind === 'agent-finished' || event.kind === 'agent-failed') finishes.set(event.agentId, event);
     else if (event.kind === 'agent-started') {
       const end = finishes.get(event.agentId);
-      if (end) { paired.add(event); startOf.set(end, event); finishes.delete(event.agentId); }
+      if (end) {
+        paired.add(event);
+        startOf.set(end, event);
+        finishes.delete(event.agentId);
+      }
     }
   }
   // A failure the log saw at a stage's end is that stage's: one entry, failed, with the log's cause.
@@ -147,9 +169,18 @@ function timelineEntries(input: MonitorData, now: number): Entry[] {
   const merged = new Set<WorkbenchEvent>();
   for (const event of events) {
     if (event.kind !== 'agent-failed' || !event.agentId) continue;
-    const stage = events.find(other => other.kind === 'agent-stage' && other.agentId === event.agentId && other.stage !== 'running'
-      && !failure.has(other) && Math.abs(other.at.getTime() - event.at.getTime()) <= FAILURE_SLACK_MS);
-    if (stage) { failure.set(stage, event); merged.add(event); }
+    const stage = events.find(
+      (other) =>
+        other.kind === 'agent-stage' &&
+        other.agentId === event.agentId &&
+        other.stage !== 'running' &&
+        !failure.has(other) &&
+        Math.abs(other.at.getTime() - event.at.getTime()) <= FAILURE_SLACK_MS
+    );
+    if (stage) {
+      failure.set(stage, event);
+      merged.add(event);
+    }
   }
   // When each L1's subtasks, at any depth, ended, to count those a stage of it saw finish.
   const ends = new Map<string, Array<{ at: number; failed: boolean }>>();
@@ -167,35 +198,73 @@ function timelineEntries(input: MonitorData, now: number): Entry[] {
   // An agent's newest ended stage says what it returned; its earlier ones are a line each.
   const told = new Set<string>();
   for (const event of events) {
-    if (event.kind === 'agent-stage' || event.kind === 'agent-started' || event.kind === 'agent-finished' || event.kind === 'agent-failed') {
+    if (
+      event.kind === 'agent-stage' ||
+      event.kind === 'agent-started' ||
+      event.kind === 'agent-finished' ||
+      event.kind === 'agent-failed'
+    ) {
       if (paired.has(event) || merged.has(event)) continue;
       const log = failure.get(event);
-      const entry = agentEntry(log ? { ...event, stage: 'failed', cause: event.cause ?? log.cause } : event, input, dirs, roles, startOf.get(event), ends, told, now, words);
+      const entry = agentEntry(
+        log ? { ...event, stage: 'failed', cause: event.cause ?? log.cause } : event,
+        input,
+        dirs,
+        roles,
+        startOf.get(event),
+        ends,
+        told,
+        now,
+        words
+      );
       if (entry) out.push(entry);
       continue;
     }
     const entry = mainEntry(event, words);
     const last = out.at(-1);
     // The same event again, with nothing between and nothing written about it: one entry.
-    if (last && last.level === 0 && last.fold === entry.fold && !last.cause && !entry.cause) { last.count++; continue; }
+    if (last && last.level === 0 && last.fold === entry.fold && !last.cause && !entry.cause) {
+      last.count++;
+      continue;
+    }
     out.push(entry);
   }
   return out;
 }
 
-function agentEntry(event: WorkbenchEvent, input: MonitorData, dirs: Directions, roles: ReadonlySet<string>, start: WorkbenchEvent | undefined,
-  ends: ReadonlyMap<string, ReadonlyArray<{ at: number; failed: boolean }>>, told: Set<string>, now: number, words: boolean): Entry | null {
-  const stage: Stage = event.kind === 'agent-stage' ? event.stage ?? 'done' : event.kind === 'agent-started' ? 'running'
-    : event.kind === 'agent-failed' ? 'failed' : 'done';
+function agentEntry(
+  event: WorkbenchEvent,
+  input: MonitorData,
+  dirs: Directions,
+  roles: ReadonlySet<string>,
+  start: WorkbenchEvent | undefined,
+  ends: ReadonlyMap<string, ReadonlyArray<{ at: number; failed: boolean }>>,
+  told: Set<string>,
+  now: number,
+  words: boolean
+): Entry | null {
+  const stage: Stage =
+    event.kind === 'agent-stage'
+      ? (event.stage ?? 'done')
+      : event.kind === 'agent-started'
+        ? 'running'
+        : event.kind === 'agent-failed'
+          ? 'failed'
+          : 'done';
   const hit = event.agentId ? dirs.node.get(event.agentId) : undefined;
   const node = hit?.node;
   // A guardian review's comings and goings are the ◈ chip's; its failure stays.
   if (node && isGuardian(node) && stage !== 'failed') return null;
   const level: 1 | 2 = !hit || hit.level === 0 ? 1 : 2;
   // Of the L2s, only those that matter, at their end.
-  if (node && level === 2 && (stage === 'running' || (stage !== 'failed' && !isImportant(node, input.agentLog?.get(node.id), roles)))) return null;
+  if (
+    node &&
+    level === 2 &&
+    (stage === 'running' || (stage !== 'failed' && !isImportant(node, input.agentLog?.get(node.id), roles)))
+  )
+    return null;
   const l1 = node ? dirs.family.get(node.id) : undefined;
-  const dir = event.serves ?? (l1 ? dirs.serves.get(l1) ?? l1 : undefined);
+  const dir = event.serves ?? (l1 ? (dirs.serves.get(l1) ?? l1) : undefined);
   // Names: their colour only where agent colours are on names.
   const paint = dir ? dirs.name(dir) : event.agentId ? agentPaint(event.agentId) : plain;
   const name = (of: SubagentTreeNode) => monitorText(agentTitle(of, input.state.labelAsName).name);
@@ -205,12 +274,19 @@ function agentEntry(event: WorkbenchEvent, input: MonitorData, dirs: Directions,
   const began = event.startedAt ?? start?.at ?? (stage === 'running' ? event.at : undefined);
   // How long it took; running, its clock face: the time column already says when it started.
   let right = '';
-  if (began) right = stage === 'running' ? theme.info(clockFace(now - began.getTime())) : colors.dim(age(began, event.at.getTime()));
+  if (began)
+    right =
+      stage === 'running' ? theme.info(clockFace(now - began.getTime())) : colors.dim(age(began, event.at.getTime()));
   if (level === 1 && began && node) {
     // The subtasks that finished while the stage ran.
     const until = stage === 'running' ? now : event.at.getTime();
-    let ok = 0, bad = 0;
-    for (const end of ends.get(node.id) ?? []) if (end.at >= began.getTime() && end.at <= until) { if (end.failed) bad++; else ok++; }
+    let ok = 0,
+      bad = 0;
+    for (const end of ends.get(node.id) ?? [])
+      if (end.at >= began.getTime() && end.at <= until) {
+        if (end.failed) bad++;
+        else ok++;
+      }
     const finished = [ok ? colors.dim(`✓${ok}`) : '', bad ? theme.error(`✗${bad}`) : ''].filter(Boolean).join(' ');
     if (finished) right = right ? `${finished} ${right}` : finished;
   }
@@ -218,10 +294,16 @@ function agentEntry(event: WorkbenchEvent, input: MonitorData, dirs: Directions,
   let lines = 0;
   if (stage === 'running') {
     // What it said it would do, in its own words.
-    if (level === 1 && event.intent) { summary = flat(event.intent); lines = INTENT_LINES; }
+    if (level === 1 && event.intent) {
+      summary = flat(event.intent);
+      lines = INTENT_LINES;
+    }
   } else {
     const id = node?.id ?? event.agentId ?? '';
-    if (!told.has(id) && event.summary) { summary = flat(event.summary); lines = level === 1 ? L1_LINES : L2_LINES; }
+    if (!told.has(id) && event.summary) {
+      summary = flat(event.summary);
+      lines = level === 1 ? L1_LINES : L2_LINES;
+    }
     told.add(id);
   }
   const [glyph, glyphPaint] = STAGE_GLYPHS[stage];
@@ -233,8 +315,20 @@ function agentEntry(event: WorkbenchEvent, input: MonitorData, dirs: Directions,
     text = `${before ? word(before) : ''}${text}${after ? word(after) : ''}`;
   }
   return {
-    at: event.at, level, dir, glyph: words ? '' : glyphPaint(glyph), text, target: lead ? colors.dim(' → ') + paint(name(lead)) : '',
-    right, summary, lines, cause: event.cause, id: event.id, fold: event.id, count: 1, live: stage === 'running',
+    at: event.at,
+    level,
+    dir,
+    glyph: words ? '' : glyphPaint(glyph),
+    text,
+    target: lead ? colors.dim(' → ') + paint(name(lead)) : '',
+    right,
+    summary,
+    lines,
+    cause: event.cause,
+    id: event.id,
+    fold: event.id,
+    count: 1,
+    live: stage === 'running',
     ...(node ? { agent: node.id } : {}),
   };
 }
@@ -247,21 +341,56 @@ function mainEntry(event: WorkbenchEvent, words: boolean): Entry {
       // The head of what the turn told the person; the words alone where it said nothing.
       const said = flat(event.summary ?? '');
       glyph = colors.dim('⏎');
-      text = said ? (words ? `${colors.dim(`${t('Turn finished')}:`)} ` : '') + theme.value(said) : colors.dim(t('Turn finished'));
+      text = said
+        ? (words ? `${colors.dim(`${t('Turn finished')}:`)} ` : '') + theme.value(said)
+        : colors.dim(t('Turn finished'));
       break;
     }
-    case 'turn-interrupted': glyph = theme.warning('⏎'); text = colors.dim(t('Turn interrupted')); break;
-    case 'turn-failed': glyph = theme.error('⏎'); text = theme.error(t('Turn failed')); break;
-    case 'approval-requested': glyph = theme.warning('⚑'); text = theme.warning(timelineText(event)); break;
-    case 'approval-answered': glyph = colors.dim('⚑'); text = colors.dim(t('Approval answered')); break;
-    case 'compacted': glyph = colors.dim('⇣'); text = colors.dim(t('Context compacted')); break;
-    case 'quota': glyph = theme.warning('◔'); text = theme.warning(timelineText(event)); break;
-    case 'tool-failed': glyph = theme.error('✗'); text = words ? theme.error(timelineText(event)) : monitorText(event.subject ?? ''); break;
-    default: text = event.status === 'error' ? theme.error(monitorText(event.title)) : monitorText(event.title);
+    case 'turn-interrupted':
+      glyph = theme.warning('⏎');
+      text = colors.dim(t('Turn interrupted'));
+      break;
+    case 'turn-failed':
+      glyph = theme.error('⏎');
+      text = theme.error(t('Turn failed'));
+      break;
+    case 'approval-requested':
+      glyph = theme.warning('⚑');
+      text = theme.warning(timelineText(event));
+      break;
+    case 'approval-answered':
+      glyph = colors.dim('⚑');
+      text = colors.dim(t('Approval answered'));
+      break;
+    case 'compacted':
+      glyph = colors.dim('⇣');
+      text = colors.dim(t('Context compacted'));
+      break;
+    case 'quota':
+      glyph = theme.warning('◔');
+      text = theme.warning(timelineText(event));
+      break;
+    case 'tool-failed':
+      glyph = theme.error('✗');
+      text = words ? theme.error(timelineText(event)) : monitorText(event.subject ?? '');
+      break;
+    default:
+      text = event.status === 'error' ? theme.error(monitorText(event.title)) : monitorText(event.title);
   }
   return {
-    at: event.at, level: 0, glyph: words ? '' : glyph, text, target: '', right: '', summary: '', lines: 0, cause: event.cause,
-    id: event.id, fold: `${event.kind ?? ''}|${stripAnsi(text)}|${event.status}`, count: 1, live: false,
+    at: event.at,
+    level: 0,
+    glyph: words ? '' : glyph,
+    text,
+    target: '',
+    right: '',
+    summary: '',
+    lines: 0,
+    cause: event.cause,
+    id: event.id,
+    fold: `${event.kind ?? ''}|${stripAnsi(text)}|${event.status}`,
+    count: 1,
+    live: false,
   };
 }
 
@@ -272,9 +401,9 @@ function mainEntry(event: WorkbenchEvent, words: boolean): Entry {
  */
 function windowed(all: readonly Entry[], hours: number, more: number, now: number): { shown: Entry[]; hidden: number } {
   const cutoff = now - hours * 3_600_000;
-  const recent = all.filter(entry => entry.at.getTime() >= cutoff).length;
+  const recent = all.filter((entry) => entry.at.getTime() >= cutoff).length;
   const take = Math.max(MIN_SHOWN, recent) + Math.max(0, more);
-  const shown = [...all.slice(0, take), ...all.slice(take).filter(entry => entry.live)];
+  const shown = [...all.slice(0, take), ...all.slice(take).filter((entry) => entry.live)];
   return { shown, hidden: all.length - shown.length };
 }
 
@@ -322,20 +451,27 @@ export function timelineRows(input: MonitorData, width: number, now: number): Mo
     const words = `${named(entry, room - (entry.right ? visualLength(entry.right) + 1 : 0))}${entry.count > 1 ? colors.dim(` ×${entry.count}`) : ''}`;
     rows.push({ text: truncateAnsi(first + pair(words, entry.right, Math.max(1, room)), width), key, ...item });
     const under = Math.max(1, width - visualLength(hang) - 2);
-    for (const line of underLines(entry, under)) rows.push({ text: truncateAnsi(`${hang}  ${colors.dim(line)}`, width), key, ...item });
+    for (const line of underLines(entry, under))
+      rows.push({ text: truncateAnsi(`${hang}  ${colors.dim(line)}`, width), key, ...item });
     // A model-written reading of a failure, marked as such.
-    if (entry.cause) flowLines(monitorText(entry.cause), under)
-      .forEach((line, i) => rows.push({ text: truncateAnsi(`${hang}${i ? '  ' : `${colors.dim('~')} `}${line}`, width), key, ...item }));
+    if (entry.cause)
+      flowLines(monitorText(entry.cause), under).forEach((line, i) =>
+        rows.push({ text: truncateAnsi(`${hang}${i ? '  ' : `${colors.dim('~')} `}${line}`, width), key, ...item })
+      );
   };
-  const glyphed = (entry: Entry, otherwise = '') => entry.glyph ? `${entry.glyph} ` : otherwise;
+  const glyphed = (entry: Entry, otherwise = '') => (entry.glyph ? `${entry.glyph} ` : otherwise);
   if (style === 'lanes') {
     // The main session's axis, then a lane for each direction with subtasks or
     // still at work, as many as fit, in the order they come into view; a
     // direction still at work runs from the top.
     const max = width >= 48 ? 4 : 3;
-    const laned = (dir: string) => { const node = dirs.node.get(dir)?.node; return Boolean(node && (subtasks(node).length || isLive(node))); };
+    const laned = (dir: string) => {
+      const node = dirs.node.get(dir)?.node;
+      return Boolean(node && (subtasks(node).length || isLive(node)));
+    };
     const lanes: string[] = [];
-    for (const entry of shown) if (entry.dir && laned(entry.dir) && !lanes.includes(entry.dir) && lanes.length < max) lanes.push(entry.dir);
+    for (const entry of shown)
+      if (entry.dir && laned(entry.dir) && !lanes.includes(entry.dir) && lanes.length < max) lanes.push(entry.dir);
     const span = new Map<string, [number, number]>();
     shown.forEach((entry, i) => {
       if (!entry.dir || !lanes.includes(entry.dir)) return;
@@ -349,7 +485,7 @@ export function timelineRows(input: MonitorData, width: number, now: number): Mo
     }
     const graph = (i: number, entry: Entry | null) => {
       const axis = entry && entry.level === 0 ? entry.glyph || colors.dim('•') : colors.dim('│');
-      const cells = lanes.map(lane => {
+      const cells = lanes.map((lane) => {
         if (entry && entry.dir === lane && entry.level > 0) return entry.glyph || dirs.paint(lane)('•');
         const [top, bottom] = span.get(lane) ?? [-1, -1];
         return i >= top && i <= bottom && !(entry === null && i === bottom) ? dirs.paint(lane)('│') : ' ';
@@ -369,9 +505,12 @@ export function timelineRows(input: MonitorData, width: number, now: number): Mo
     for (const entry of shown) {
       const paint = dirs.paint(entry.dir);
       const rail = colors.dim('│');
-      const [lead, hang] = entry.level === 0 ? [glyphed(entry, `${rail} `), `${rail} `]
-        : entry.level === 1 ? [`${paint('├─')}${glyphed(entry, ' ')}`, `${rail}  `]
-          : [`${rail} ${paint('╰')}${glyphed(entry, ' ')}`, `${rail}    `];
+      const [lead, hang] =
+        entry.level === 0
+          ? [glyphed(entry, `${rail} `), `${rail} `]
+          : entry.level === 1
+            ? [`${paint('├─')}${glyphed(entry, ' ')}`, `${rail}  `]
+            : [`${rail} ${paint('╰')}${glyphed(entry, ' ')}`, `${rail}    `];
       push(entry, `${when(entry)}${lead}`, `${blank}${hang}`, width - GUTTER - visualLength(lead));
     }
   } else {
@@ -382,11 +521,15 @@ export function timelineRows(input: MonitorData, width: number, now: number): Mo
       push(entry, `${when(entry)}${lead}`, `${blank}${indent}`, width - GUTTER - visualLength(lead));
     }
   }
-  if (hidden) rows.push({ item: TIMELINE_EARLIER, text: truncateAnsi(`${blank}${colors.dim(`▸ ${t('{n} earlier', { n: hidden })}`)}`, width) });
+  if (hidden)
+    rows.push({
+      item: TIMELINE_EARLIER,
+      text: truncateAnsi(`${blank}${colors.dim(`▸ ${t('{n} earlier', { n: hidden })}`)}`, width),
+    });
   return rows;
 }
 
 /** How many entries the pane's rows show, for its title. */
 export function timelineCount(rows: readonly MonitorRow[]): number {
-  return new Set(rows.flatMap(row => row.key?.startsWith('entry:') ? [row.key] : [])).size;
+  return new Set(rows.flatMap((row) => (row.key?.startsWith('entry:') ? [row.key] : []))).size;
 }

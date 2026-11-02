@@ -31,9 +31,11 @@ assert.equal(
   stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium', { mode: 'both' })),
   `${MODEL_GLYPHS.astra}${EFFORT_GLYPHS.medium} 6astra`
 );
-assert.equal(stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium')),
+assert.equal(
+  stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium')),
   stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium', { mode: 'both' })),
-  'both is the default');
+  'both is the default'
+);
 assert.equal(stripAnsi(renderModelEffortToken('gpt-6-astra', 'medium', { mode: 'text' })), '6astra·medium');
 assert.equal(stripAnsi(renderModelEffortToken('gpt-6.1-sol', 'max', { mode: 'text' })), '6.1sol·max');
 assert.equal(stripAnsi(renderModelEffortToken('gpt-6-sol', 'max', { mode: 'text' })), '6sol·max');

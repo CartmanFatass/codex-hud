@@ -39,20 +39,53 @@ export const PROBES_PER_REFRESH = 4;
 export const WORKTREE_STALE_MS = 30_000;
 
 /** All invocations have bounded output/time, no shell, no lazy object fetch. */
-export const worktreeGit: WorktreeGit = (cwd, args) => new Promise((yes, no) => {
-  const env = {...process.env};
-  // A process launched from another Git operation must not redirect these reads.
-  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_NAMESPACE', 'GIT_EXTERNAL_DIFF']) delete env[key];
-  execFile('git', ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'color.ui=false',
-    '-c', 'core.quotePath=true', ...args], {
-    cwd, encoding: 'utf8', shell: false, timeout: 5000, maxBuffer: 1024 * 1024,
-    windowsHide: true,
-    env: {...env, LC_ALL:'C', GIT_OPTIONAL_LOCKS:'0', GIT_NO_LAZY_FETCH:'1', GIT_LITERAL_PATHSPECS:'1', GIT_TERMINAL_PROMPT:'0'},
-  }, (error, stdout) => error ? no(error) : yes(stdout));
-});
+export const worktreeGit: WorktreeGit = (cwd, args) =>
+  new Promise((yes, no) => {
+    const env = { ...process.env };
+    // A process launched from another Git operation must not redirect these reads.
+    for (const key of [
+      'GIT_DIR',
+      'GIT_WORK_TREE',
+      'GIT_INDEX_FILE',
+      'GIT_COMMON_DIR',
+      'GIT_NAMESPACE',
+      'GIT_EXTERNAL_DIFF',
+    ])
+      delete env[key];
+    execFile(
+      'git',
+      [
+        '--no-optional-locks',
+        '-c',
+        'core.fsmonitor=false',
+        '-c',
+        'color.ui=false',
+        '-c',
+        'core.quotePath=true',
+        ...args,
+      ],
+      {
+        cwd,
+        encoding: 'utf8',
+        shell: false,
+        timeout: 5000,
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+        env: {
+          ...env,
+          LC_ALL: 'C',
+          GIT_OPTIONAL_LOCKS: '0',
+          GIT_NO_LAZY_FETCH: '1',
+          GIT_LITERAL_PATHSPECS: '1',
+          GIT_TERMINAL_PROMPT: '0',
+        },
+      },
+      (error, stdout) => (error ? no(error) : yes(stdout))
+    );
+  });
 
 function failure(error: unknown): string {
-  const err = error as {code?: string | number; killed?: boolean; message?: string; stderr?: string};
+  const err = error as { code?: string | number; killed?: boolean; message?: string; stderr?: string };
   if (err?.code === 'ENOENT') return 'Git or worktree path unavailable';
   if (err?.killed || err?.code === 'ETIMEDOUT') return 'Git timed out';
   if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'Git output limit reached';
@@ -69,13 +102,17 @@ export function parseWorktreeList(text: string): WorktreeInfo[] {
   const result: WorktreeInfo[] = [];
   let entry: WorktreeInfo | undefined;
   for (const field of text.split('\0')) {
-    if (!field) { if (entry) result.push(entry); entry = undefined; continue; }
+    if (!field) {
+      if (entry) result.push(entry);
+      entry = undefined;
+      continue;
+    }
     const space = field.indexOf(' ');
     const key = space < 0 ? field : field.slice(0, space);
     const value = space < 0 ? '' : field.slice(space + 1);
     if (key === 'worktree') {
       if (entry || !value) throw new Error('Invalid worktree list');
-      entry = {path:value, branch:null, bare:false, detached:false};
+      entry = { path: value, branch: null, bare: false, detached: false };
     } else if (entry) {
       if (key === 'HEAD') entry.head = value;
       else if (key === 'branch') entry.branch = value.replace(/^refs\/heads\//, '');
@@ -91,7 +128,16 @@ export function parseWorktreeList(text: string): WorktreeInfo[] {
 /** Porcelain v2 -z; a rename's extra source record must not be counted as a file. */
 export function parseWorktreeStatus(text: string): WorktreeStatus {
   if (text && !text.endsWith('\0')) throw new Error('Incomplete worktree status');
-  const out: WorktreeStatus = {changed:0, staged:0, unstaged:0, untracked:0, conflicts:0, ahead:null, behind:null, branch:null};
+  const out: WorktreeStatus = {
+    changed: 0,
+    staged: 0,
+    unstaged: 0,
+    untracked: 0,
+    conflicts: 0,
+    ahead: null,
+    behind: null,
+    branch: null,
+  };
   const records = text.split('\0');
   for (let i = 0; i < records.length; i++) {
     const row = records[i];
@@ -104,10 +150,16 @@ export function parseWorktreeStatus(text: string): WorktreeStatus {
     if (row.startsWith('# branch.ab ')) {
       const pair = /^# branch.ab \+(\d+) -(\d+)$/.exec(row);
       if (!pair) throw new Error('Invalid branch status');
-      out.ahead = Number(pair[1]); out.behind = Number(pair[2]); continue;
+      out.ahead = Number(pair[1]);
+      out.behind = Number(pair[2]);
+      continue;
     }
     if (row.startsWith('# ')) continue;
-    if (row.startsWith('? ')) { out.changed++; out.untracked++; continue; }
+    if (row.startsWith('? ')) {
+      out.changed++;
+      out.untracked++;
+      continue;
+    }
     if (!/^[12u] [A-Z.]{2} /.test(row)) throw new Error('Unknown status record');
     out.changed++;
     if (row[0] === 'u') out.conflicts++;
@@ -122,15 +174,32 @@ export function parseWorktreeStatus(text: string): WorktreeStatus {
 
 async function neutralizeFilters(run: WorktreeGit, cwd: string): Promise<string[]> {
   let text: string;
-  try { text = await run(cwd, ['config', '--null', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|process|required)$']); }
-  catch (error) { if ((error as {code?: number}).code === 1) return []; throw error; }
+  try {
+    text = await run(cwd, [
+      'config',
+      '--null',
+      '--name-only',
+      '--get-regexp',
+      '^filter\\..*\\.(clean|process|required)$',
+    ]);
+  } catch (error) {
+    if ((error as { code?: number }).code === 1) return [];
+    throw error;
+  }
   const names = new Set<string>();
   for (const key of text.split('\0').filter(Boolean)) {
     const match = /^filter\.([\s\S]+)\.(?:clean|process|required)$/.exec(key);
     if (!match || match[1].includes('=')) throw new Error('Unsafe filter configuration');
     names.add(match[1]);
   }
-  return [...names].flatMap(name => ['-c', `filter.${name}.clean=`, '-c', `filter.${name}.process=`, '-c', `filter.${name}.required=false`]);
+  return [...names].flatMap((name) => [
+    '-c',
+    `filter.${name}.clean=`,
+    '-c',
+    `filter.${name}.process=`,
+    '-c',
+    `filter.${name}.required=false`,
+  ]);
 }
 
 /** Only explicit settings/env or verified session/launch cwd are candidates. No log scraping. */
@@ -141,7 +210,14 @@ export function parseSubjects(text: string): Map<string, string> {
     const at = record.indexOf('\x1f');
     if (at < 0) continue;
     const sha = record.slice(0, at).trim();
-    if (/^[0-9a-f]{40,64}$/.test(sha)) out.set(sha, record.slice(at + 1).replace(/\s+/g, ' ').trim());
+    if (/^[0-9a-f]{40,64}$/.test(sha))
+      out.set(
+        sha,
+        record
+          .slice(at + 1)
+          .replace(/\s+/g, ' ')
+          .trim()
+      );
   }
   return out;
 }
@@ -149,7 +225,7 @@ export function parseSubjects(text: string): Map<string, string> {
 export function worktreeSources(launchCwd: string, sessionCwd?: string, configuredRoot = '', envRoot = ''): string[] {
   const explicit = envRoot || configuredRoot;
   if (explicit) return [resolve(launchCwd, explicit)]; // Invalid explicit roots never silently fall back.
-  return [...new Set([sessionCwd, launchCwd].filter((x): x is string => Boolean(x)).map(x => resolve(launchCwd, x)))];
+  return [...new Set([sessionCwd, launchCwd].filter((x): x is string => Boolean(x)).map((x) => resolve(launchCwd, x)))];
 }
 
 /** A bounded round-robin probe keeps big repositories from blocking the renderer. */
@@ -160,11 +236,16 @@ export class WorktreeCollector {
   private source: string | null = null;
   private cursor = 0;
   private inFlight?: Promise<WorktreesSnapshot>;
-  constructor(private readonly run: WorktreeGit = worktreeGit, private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly run: WorktreeGit = worktreeGit,
+    private readonly now: () => number = Date.now
+  ) {}
 
   refresh(candidates: string[]): Promise<WorktreesSnapshot> {
     if (this.inFlight) return this.inFlight;
-    this.inFlight = this.collect(candidates).finally(() => { this.inFlight = undefined; });
+    this.inFlight = this.collect(candidates).finally(() => {
+      this.inFlight = undefined;
+    });
     return this.inFlight;
   }
   private async collect(candidates: string[]): Promise<WorktreesSnapshot> {
@@ -175,46 +256,74 @@ export class WorktreeCollector {
       try {
         entries = parseWorktreeList(await this.run(candidate, ['worktree', 'list', '--porcelain', '-z']));
         if (!entries.length) throw new Error('Empty worktree list');
-        source = candidate; break;
-      } catch (err) { error = failure(err); }
+        source = candidate;
+        break;
+      } catch (err) {
+        error = failure(err);
+      }
     }
     if (!source) {
-      this.cache.clear(); this.source = null; this.cursor = 0;
-      return {sourcePath:null, entries:[], error, updatedAt:this.now()};
+      this.cache.clear();
+      this.source = null;
+      this.cursor = 0;
+      return { sourcePath: null, entries: [], error, updatedAt: this.now() };
     }
-    if (source !== this.source) { this.cache.clear(); this.cursor = 0; this.source = source; }
+    if (source !== this.source) {
+      this.cache.clear();
+      this.cursor = 0;
+      this.source = source;
+    }
     const truncated = entries.length > WORKTREE_LIMIT;
-    entries = entries.slice(0, WORKTREE_LIMIT).map(entry => {
+    entries = entries.slice(0, WORKTREE_LIMIT).map((entry) => {
       const old = this.cache.get(entry.path);
       // A metadata change invalidates old branch/clean status immediately.
-      return old && old.head === entry.head && old.branch === entry.branch && old.bare === entry.bare &&
-        old.locked === entry.locked && old.prunable === entry.prunable
-        ? {...entry, status:old.status, observedAt:old.observedAt, error:old.error} : entry;
+      return old &&
+        old.head === entry.head &&
+        old.branch === entry.branch &&
+        old.bare === entry.bare &&
+        old.locked === entry.locked &&
+        old.prunable === entry.prunable
+        ? { ...entry, status: old.status, observedAt: old.observedAt, error: old.error }
+        : entry;
     });
-    const readable = entries.filter(entry => !entry.bare && entry.prunable === undefined);
+    const readable = entries.filter((entry) => !entry.bare && entry.prunable === undefined);
     const count = Math.min(PROBES_PER_REFRESH, readable.length);
-    const selected = Array.from({length:count}, (_, i) => readable[(this.cursor+i) % readable.length]);
-    this.cursor = readable.length ? (this.cursor+count) % readable.length : 0;
+    const selected = Array.from({ length: count }, (_, i) => readable[(this.cursor + i) % readable.length]);
+    this.cursor = readable.length ? (this.cursor + count) % readable.length : 0;
     const probe = async (entry: WorktreeInfo) => {
       try {
         const overrides = await neutralizeFilters(this.run, entry.path);
-        const text = await this.run(entry.path, [...overrides, '-c', 'status.renames=true', 'status',
-          '--porcelain=v2', '--branch', '-z', '--untracked-files=normal', '--ignore-submodules=all']);
+        const text = await this.run(entry.path, [
+          ...overrides,
+          '-c',
+          'status.renames=true',
+          'status',
+          '--porcelain=v2',
+          '--branch',
+          '-z',
+          '--untracked-files=normal',
+          '--ignore-submodules=all',
+        ]);
         entry.status = parseWorktreeStatus(text);
         // Prefer the branch reported by this status read, not an earlier list snapshot.
         entry.branch = entry.status.branch;
-        entry.observedAt = this.now(); entry.error = undefined;
-      } catch (err) { entry.status = undefined; entry.observedAt = undefined; entry.error = failure(err); }
+        entry.observedAt = this.now();
+        entry.error = undefined;
+      } catch (err) {
+        entry.status = undefined;
+        entry.observedAt = undefined;
+        entry.error = failure(err);
+      }
     };
     // Never more than two simultaneous Git processes; no unbounded fan-out.
-    for (let i = 0; i < selected.length; i += 2) await Promise.all(selected.slice(i,i+2).map(probe));
+    for (let i = 0; i < selected.length; i += 2) await Promise.all(selected.slice(i, i + 2).map(probe));
     await this.readSubjects(source, entries);
     for (const entry of entries) {
       const subject = entry.head ? this.subjects.get(entry.head) : undefined;
       if (subject) entry.subject = subject;
     }
-    this.cache = new Map(entries.map(entry => [entry.path, {...entry}]));
-    return {sourcePath:source, entries, updatedAt:this.now(), truncated};
+    this.cache = new Map(entries.map((entry) => [entry.path, { ...entry }]));
+    return { sourcePath: source, entries, updatedAt: this.now(), truncated };
   }
   /**
    * The subjects of the HEADs not read yet, in one `git log` for all of them
@@ -222,14 +331,27 @@ export class WorktreeCollector {
    * read is remembered as such, not retried every refresh.
    */
   private async readSubjects(source: string, entries: WorktreeInfo[]): Promise<void> {
-    const heads = new Set(entries.flatMap(entry => entry.head && /^[0-9a-f]{40,64}$/.test(entry.head) ? [entry.head] : []));
+    const heads = new Set(
+      entries.flatMap((entry) => (entry.head && /^[0-9a-f]{40,64}$/.test(entry.head) ? [entry.head] : []))
+    );
     for (const head of this.subjects.keys()) if (!heads.has(head)) this.subjects.delete(head);
-    const wanted = [...heads].filter(head => !this.subjects.has(head));
+    const wanted = [...heads].filter((head) => !this.subjects.has(head));
     if (!wanted.length) return;
     let read = new Map<string, string>();
     try {
-      read = parseSubjects(await this.run(source, ['log', '--no-walk=unsorted', '--no-show-signature', '-z', '--format=%H%x1f%s', ...wanted]));
-    } catch { /* no subjects this time: the list does without */ }
+      read = parseSubjects(
+        await this.run(source, [
+          'log',
+          '--no-walk=unsorted',
+          '--no-show-signature',
+          '-z',
+          '--format=%H%x1f%s',
+          ...wanted,
+        ])
+      );
+    } catch {
+      /* no subjects this time: the list does without */
+    }
     for (const head of wanted) this.subjects.set(head, read.get(head) ?? null);
   }
 }

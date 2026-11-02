@@ -39,13 +39,23 @@ test('a stage summary keeps count, average, p95 and max', () => {
 });
 
 test('a profile line names the time, process, stage and numbers', () => {
-  const line = formatProfileLine(AT, 'panel', 42, 'rollout.parse', { count: 10, avgMs: 0.123, p95Ms: 1.5, maxMs: 12.34 });
+  const line = formatProfileLine(AT, 'panel', 42, 'rollout.parse', {
+    count: 10,
+    avgMs: 0.123,
+    p95Ms: 1.5,
+    maxMs: 12.34,
+  });
   assert.equal(line, '2026-10-04T10:00:00.000Z panel pid=42 rollout.parse n=10 avg=0.12ms p95=1.50ms max=12.3ms');
 });
 
 test('the recorder flushes one line per stage that ran, then starts a new window', () => {
   const written: string[][] = [];
-  const recorder = new ProfileRecorder('bar', (lines) => written.push(lines), () => AT, 7);
+  const recorder = new ProfileRecorder(
+    'bar',
+    (lines) => written.push(lines),
+    () => AT,
+    7
+  );
   recorder.record('session.find', 2);
   recorder.record('render', 1);
   recorder.record('session.find', 4);
@@ -61,23 +71,50 @@ test('the recorder flushes one line per stage that ran, then starts a new window
 });
 
 test('a sink that throws does not reach the caller', () => {
-  const recorder = new ProfileRecorder('bar', () => { throw new Error('disk full'); }, () => AT);
+  const recorder = new ProfileRecorder(
+    'bar',
+    () => {
+      throw new Error('disk full');
+    },
+    () => AT
+  );
   recorder.record('tick', 1);
   assert.equal(recorder.flush().length, 1);
 });
 
 test('time and timeAsync pass results and errors through, recording only when on', async () => {
   useProfileRecorder(null);
-  assert.equal(time('x', () => 5), 5);
+  assert.equal(
+    time('x', () => 5),
+    5
+  );
   assert.equal(await timeAsync('x', async () => 6), 6);
 
-  const recorder = new ProfileRecorder('test', () => {}, () => AT);
+  const recorder = new ProfileRecorder(
+    'test',
+    () => {},
+    () => AT
+  );
   useProfileRecorder(recorder);
   try {
-    assert.equal(time('sync', () => 1), 1);
-    assert.throws(() => time('sync', () => { throw new Error('boom'); }), /boom/);
+    assert.equal(
+      time('sync', () => 1),
+      1
+    );
+    assert.throws(
+      () =>
+        time('sync', () => {
+          throw new Error('boom');
+        }),
+      /boom/
+    );
     assert.equal(await timeAsync('async', async () => 2), 2);
-    await assert.rejects(timeAsync('async', async () => { throw new Error('late'); }), /late/);
+    await assert.rejects(
+      timeAsync('async', async () => {
+        throw new Error('late');
+      }),
+      /late/
+    );
     const lines = recorder.flush();
     assert.equal(lines.length, 2);
     assert.match(lines[0], / async n=2 /, 'a failed call still took time');
@@ -94,10 +131,14 @@ test('profiling stays off unless CODEX_HUD_PROFILE is 1, and writes no file then
   try {
     assert.equal(startProfiling('bar', {}), false);
     assert.equal(startProfiling('bar', { CODEX_HUD_PROFILE: '0' }), false);
-    assert.equal(time('x', () => 1), 1);
+    assert.equal(
+      time('x', () => 1),
+      1
+    );
     assert.equal(existsSync(join(home, 'hud')), false);
   } finally {
-    if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous;
+    if (previous === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previous;
     rmSync(home, { recursive: true, force: true });
   }
 });
@@ -117,10 +158,15 @@ test('on, the samples land in the HUD folder of the Codex home, never on stdout'
     assert.equal(lines.length, 1);
     assert.match(lines[0], /^\S+Z bar pid=\d+ tick n=2 avg=\S+ms p95=\S+ms max=\S+ms$/);
     assert.equal(statSync(file).mode & 0o777, 0o600);
-    assert.equal(time('tick', () => 3), 3, 'stopped means off again');
+    assert.equal(
+      time('tick', () => 3),
+      3,
+      'stopped means off again'
+    );
   } finally {
     stopProfiling();
-    if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous;
+    if (previous === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previous;
     rmSync(home, { recursive: true, force: true });
   }
 });

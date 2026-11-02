@@ -52,12 +52,28 @@ test('hooks count the handlers in each hooks.json, and an unreadable file says n
   fs.writeFileSync(path.join(codexHome, 'hooks.json'), '{ not json');
   assert.equal(countHooks(repo, codexHome), null);
 
-  fs.writeFileSync(path.join(codexHome, 'hooks.json'), JSON.stringify({ hooks: {
-    SessionStart: [{ hooks: [{ type: 'command', command: 'a' }] }],
-    PreToolUse: [{ matcher: 'shell', hooks: [{ type: 'command', command: 'b' }, { type: 'command', command: 'c' }] }],
-  } }));
+  fs.writeFileSync(
+    path.join(codexHome, 'hooks.json'),
+    JSON.stringify({
+      hooks: {
+        SessionStart: [{ hooks: [{ type: 'command', command: 'a' }] }],
+        PreToolUse: [
+          {
+            matcher: 'shell',
+            hooks: [
+              { type: 'command', command: 'b' },
+              { type: 'command', command: 'c' },
+            ],
+          },
+        ],
+      },
+    })
+  );
   assert.equal(countHooks(repo, codexHome), 3);
   fs.mkdirSync(path.join(repo, '.codex'), { recursive: true });
-  fs.writeFileSync(path.join(repo, '.codex', 'hooks.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'd' }] }] } }));
+  fs.writeFileSync(
+    path.join(repo, '.codex', 'hooks.json'),
+    JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'd' }] }] } })
+  );
   assert.equal(countHooks(repo, codexHome), 4);
 });

@@ -39,8 +39,10 @@ function envOr(value: string | undefined, setting: boolean | undefined): boolean
   return (value ?? '').trim() ? truthy(value) : setting === true;
 }
 
-export function resolveNotifierOptions(env: NodeJS.ProcessEnv = process.env,
-  settings: { notify?: boolean; notifyDesktop?: boolean } = {}): Omit<NotifierOptions, 'deliver'> {
+export function resolveNotifierOptions(
+  env: NodeJS.ProcessEnv = process.env,
+  settings: { notify?: boolean; notifyDesktop?: boolean } = {}
+): Omit<NotifierOptions, 'deliver'> {
   const seconds = Number(env.CODEX_HUD_NOTIFY_COOLDOWN ?? '');
   return {
     enabled: envOr(env.CODEX_HUD_NOTIFY, settings.notify),
@@ -143,11 +145,7 @@ export class Notifier {
    * events that were actually sent, which is what the tests assert on.
    */
   update(data: HudData, nowMs: number = Date.now()): NotifyEvent[] {
-    const candidates = [
-      ...this.approvalEvents(data),
-      ...this.attentionEvents(data, nowMs),
-      ...this.agentEvents(data),
-    ];
+    const candidates = [...this.approvalEvents(data), ...this.attentionEvents(data, nowMs), ...this.agentEvents(data)];
     if (!this.options.enabled) {
       // Still advance the agent baseline, so enabling mid-session does not
       // immediately replay everything that already happened.
@@ -192,9 +190,12 @@ export class Notifier {
     if (!pending) {
       return [];
     }
-    const label = pending.kind === 'patch' ? 'patch approval needed'
-      : pending.kind === 'input' ? 'input needed'
-      : 'approval needed';
+    const label =
+      pending.kind === 'patch'
+        ? 'patch approval needed'
+        : pending.kind === 'input'
+          ? 'input needed'
+          : 'approval needed';
     return [
       {
         kind: 'approval',

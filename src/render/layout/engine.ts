@@ -165,7 +165,12 @@ function asked(candidate: Candidate, claims: boolean): number {
  * separator, and the trailing cluster after a gap. Without `claims`, what
  * the fixed fields alone need, leaving the flexible ones the rest.
  */
-function totalWidth(candidates: Candidate[], separatorWidth: number, groupSeparatorWidth: number, claims = true): number {
+function totalWidth(
+  candidates: Candidate[],
+  separatorWidth: number,
+  groupSeparatorWidth: number,
+  claims = true
+): number {
   const parts = clusters(candidates.filter((candidate) => !candidate.dropped));
   let total = clusterWidth(parts.left, separatorWidth, groupSeparatorWidth);
   let previous = parts.left.at(-1);
@@ -175,7 +180,8 @@ function totalWidth(candidates: Candidate[], separatorWidth: number, groupSepara
     total += (previous ? (sameGroup(previous, candidate) ? groupSeparatorWidth : separatorWidth) : 0) + width;
     previous = candidate;
   }
-  if (parts.right.length > 0) total += (total > 0 ? CLUSTER_GAP : 0) + clusterWidth(parts.right, separatorWidth, groupSeparatorWidth);
+  if (parts.right.length > 0)
+    total += (total > 0 ? CLUSTER_GAP : 0) + clusterWidth(parts.right, separatorWidth, groupSeparatorWidth);
   return total;
 }
 
@@ -196,8 +202,10 @@ function nextStep(candidates: Candidate[]): { candidate: Candidate; hide: boolea
   for (const candidate of candidates) {
     if (candidate.dropped) continue;
     const optional = candidate.module.optional && !candidate.module.pinned;
-    if ((candidate.levelIndex < candidate.levels.length - 1 || optional) &&
-        (!shorten || shortenOrder(candidate) < shortenOrder(shorten))) {
+    if (
+      (candidate.levelIndex < candidate.levels.length - 1 || optional) &&
+      (!shorten || shortenOrder(candidate) < shortenOrder(shorten))
+    ) {
       shorten = candidate;
     }
     if (!candidate.module.pinned && (!hide || candidate.module.priority < hide.module.priority)) {
@@ -235,7 +243,8 @@ export function fitModules(
 
   const live = candidates.filter((candidate) => !candidate.dropped);
   const parts = clusters(live);
-  const between = (left: Candidate, right: Candidate) => (sameGroup(left, right) ? groupSeparatorWidth : separatorWidth);
+  const between = (left: Candidate, right: Candidate) =>
+    sameGroup(left, right) ? groupSeparatorWidth : separatorWidth;
 
   /**
    * The fill zone as it will be drawn: its fixed fields, then each flexible
@@ -247,7 +256,10 @@ export function fitModules(
   let spare = room;
   for (const candidate of parts.fill) {
     const text = currentText(candidate);
-    if (!candidate.module.flex) { fill.push({ candidate, text }); continue; }
+    if (!candidate.module.flex) {
+      fill.push({ candidate, text });
+      continue;
+    }
     const previous = fill.at(-1)?.candidate ?? parts.left.at(-1);
     const lead = previous ? between(previous, candidate) : 0;
     if (spare - lead < FLEX_MIN) continue;
@@ -265,7 +277,11 @@ export function fitModules(
    * the rendered line keeps the columns exact through colour and wide glyphs.
    * The segment is the text itself; a reserve's padding is no field to click.
    */
-  const lay = (items: Array<{ candidate: Candidate; text: string }>, from: number, after?: Candidate): { text: string; segments: BarSegment[]; end: number } => {
+  const lay = (
+    items: Array<{ candidate: Candidate; text: string }>,
+    from: number,
+    after?: Candidate
+  ): { text: string; segments: BarSegment[]; end: number } => {
     let out = '';
     let x = from;
     const segments: BarSegment[] = [];
@@ -276,8 +292,12 @@ export function fitModules(
         out += sep;
         x += visualLength(sep);
       }
-      segments.push({ id: candidate.module.id, level: level(candidate), x,
-        width: Math.min(visualLength(text), visualLength(rawText(candidate))) });
+      segments.push({
+        id: candidate.module.id,
+        level: level(candidate),
+        x,
+        width: Math.min(visualLength(text), visualLength(rawText(candidate))),
+      });
       out += text;
       x += visualLength(text);
       previous = candidate;
@@ -302,7 +322,11 @@ export function fitModules(
     const gap = rw > 0 && used > 0 ? ' '.repeat(CLUSTER_GAP) : '';
     line = truncateAnsi(left.text + middle.text + gap + right.text, options.width);
     const shift = used + gap.length;
-    segments = [...left.segments, ...middle.segments, ...right.segments.map((segment) => ({ ...segment, x: segment.x + shift }))]
+    segments = [
+      ...left.segments,
+      ...middle.segments,
+      ...right.segments.map((segment) => ({ ...segment, x: segment.x + shift })),
+    ]
       .filter((segment) => segment.x < options.width)
       .map((segment) => ({ ...segment, width: Math.min(segment.width, options.width - segment.x) }));
   } else {
@@ -310,15 +334,17 @@ export function fitModules(
     // last column. Only slack is spent, so the line never grows past the pane.
     const rx = options.width - rw;
     line = left.text + middle.text + (rw > 0 ? ' '.repeat(rx - used) + right.text : '');
-    segments = [...left.segments, ...middle.segments, ...right.segments.map((segment) => ({ ...segment, x: segment.x + rx }))];
+    segments = [
+      ...left.segments,
+      ...middle.segments,
+      ...right.segments.map((segment) => ({ ...segment, x: segment.x + rx })),
+    ];
   }
 
   return {
     line,
     kept: shown.map((candidate) => candidate.module.id),
-    levels: Object.fromEntries(
-      shown.map((candidate) => [candidate.module.id, candidate.levels[candidate.levelIndex]])
-    ),
+    levels: Object.fromEntries(shown.map((candidate) => [candidate.module.id, candidate.levels[candidate.levelIndex]])),
     segments,
     clipped,
   };

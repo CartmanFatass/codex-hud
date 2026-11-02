@@ -15,7 +15,10 @@ import type { SubagentStatus, SubagentTreeNode } from '../../src/types.js';
 
 const NOW = FIXED_NOW.getTime();
 const quiet = { toolActivity: undefined, rateLimits: undefined, contextUsage: undefined, pendingApproval: undefined };
-const review = (id: string, status: SubagentStatus, depth = 1): SubagentTreeNode => ({ ...node(id, 'guardian', status, { depth }), kind: 'guardian' });
+const review = (id: string, status: SubagentStatus, depth = 1): SubagentTreeNode => ({
+  ...node(id, 'guardian', status, { depth }),
+  kind: 'guardian',
+});
 
 /**
  * One of each failure: an agent the main session started, a subtask under a
@@ -24,15 +27,19 @@ const review = (id: string, status: SubagentStatus, depth = 1): SubagentTreeNode
  */
 function session(lead: SubagentStatus = 'running', impl: SubagentStatus = 'running') {
   return treeOf([
-    node('a1', 'parser_lead', lead, { children: [
-      node('a1s1', 'impl_a', 'completed', { depth: 2 }),
-      node('a1s2', 'scout_a', 'error', { depth: 2 }),
-      review('a1g1', 'completed', 2),
-    ] }),
+    node('a1', 'parser_lead', lead, {
+      children: [
+        node('a1s1', 'impl_a', 'completed', { depth: 2 }),
+        node('a1s2', 'scout_a', 'error', { depth: 2 }),
+        review('a1g1', 'completed', 2),
+      ],
+    }),
     node('a2', 'bench_lead', 'error'),
-    node('a3', 'docs_lead', 'completed', { children: [
-      node('a3s1', 'impl_b', impl, { depth: 2, children: [node('a3s1x', 'helper', 'completed', { depth: 3 })] }),
-    ] }),
+    node('a3', 'docs_lead', 'completed', {
+      children: [
+        node('a3s1', 'impl_b', impl, { depth: 2, children: [node('a3s1x', 'helper', 'completed', { depth: 3 })] }),
+      ],
+    }),
     review('g1', 'error'),
     review('g2', 'running'),
   ]);
@@ -51,11 +58,14 @@ test('the title row, the status card, the bar, notifications and the snapshot sa
 
   // The alerts: each failure under its own name.
   const failures = collectAttention(data, NOW).filter((item) => item.kind.endsWith('-error'));
-  assert.deepEqual(failures.map((item) => [item.kind, item.label, item.detail]), [
-    ['agent-error', '1 agent failed', 'bench_lead'],
-    ['subtask-error', '1 subtask failed', 'scout_a'],
-    ['review-error', '1 review failed', 'guardian'],
-  ]);
+  assert.deepEqual(
+    failures.map((item) => [item.kind, item.label, item.detail]),
+    [
+      ['agent-error', '1 agent failed', 'bench_lead'],
+      ['subtask-error', '1 subtask failed', 'scout_a'],
+      ['review-error', '1 review failed', 'guardian'],
+    ]
+  );
   // Said as one phrase, on the card and the bar alike.
   assert.equal(stripAnsi(statusCard(data, NOW)!.alerts[0]), '! 1 agent · 1 subtask · 1 review failed');
 
@@ -66,7 +76,11 @@ test('the title row, the status card, the bar, notifications and the snapshot sa
     return frame.lines[frame.panes[0].y];
   };
   for (const style of ['rich', 'compact'] as const) {
-    assert.equal(stripAnsi(title(style)).trimEnd(), ' ▦ Agents  !1 failed  ▸2 run  ◈3 reviews  · 4 subtasks, 1 failed', style);
+    assert.equal(
+      stripAnsi(title(style)).trimEnd(),
+      ' ▦ Agents  !1 failed  ▸2 run  ◈3 reviews  · 4 subtasks, 1 failed',
+      style
+    );
     assert.ok(title(style).includes(theme.error('◈3')), `${style}: a failed review paints the chip`);
   }
 
@@ -74,41 +88,86 @@ test('the title row, the status card, the bar, notifications and the snapshot sa
   const bar = buildBarModules(data, { nowMs: NOW, barWidth: 10 });
   assert.equal(stripAnsi(bar.find((module) => module.id === 'agents')!.variants.full!), 'Agents 2▸ 1✗');
   const alert = bar.find((module) => module.id === 'attention')!.variants;
-  assert.deepEqual([alert.full, alert.short, alert.min].map((text) => stripAnsi(text!).trim()), ['✗ 1 agent · 1 subtask · 1 review failed', '✗ 1 agent · 1 subtask · 1 review failed', '✗']);
+  assert.deepEqual(
+    [alert.full, alert.short, alert.min].map((text) => stripAnsi(text!).trim()),
+    ['✗ 1 agent · 1 subtask · 1 review failed', '✗ 1 agent · 1 subtask · 1 review failed', '✗']
+  );
   // An approval and the failures: two phrases, the approval first with its wait.
-  const asking = makeHudData({ ...quiet, subagentTree: session(), pendingApproval: { kind: 'exec', since: new Date(NOW - 90_000) } as never });
-  const both = buildBarModules(asking, { nowMs: NOW, barWidth: 10 }).find((module) => module.id === 'attention')!.variants;
-  assert.deepEqual([both.full, both.short, both.min].map((text) => stripAnsi(text!).trim()), ['✗ approval needed 1m · 1 agent · 1 subtask · 1 review failed', '✗ approval needed', '✗2']);
-  assert.equal(stripAnsi(statusCard(asking, NOW)!.alerts[0]), '! approval needed 1m · 1 agent · 1 subtask · 1 review failed');
+  const asking = makeHudData({
+    ...quiet,
+    subagentTree: session(),
+    pendingApproval: { kind: 'exec', since: new Date(NOW - 90_000) } as never,
+  });
+  const both = buildBarModules(asking, { nowMs: NOW, barWidth: 10 }).find(
+    (module) => module.id === 'attention'
+  )!.variants;
+  assert.deepEqual(
+    [both.full, both.short, both.min].map((text) => stripAnsi(text!).trim()),
+    ['✗ approval needed 1m · 1 agent · 1 subtask · 1 review failed', '✗ approval needed', '✗2']
+  );
+  assert.equal(
+    stripAnsi(statusCard(asking, NOW)!.alerts[0]),
+    '! approval needed 1m · 1 agent · 1 subtask · 1 review failed'
+  );
 
   // The snapshot gives the three counts and says what each thread is.
   const snapshot = buildSnapshot(data, { width: 120, segments: [] }, NOW);
-  assert.deepEqual({ ...snapshot.agents, nodes: undefined }, {
-    active: 2, completed: 0, failed: 1, unknown: 0,
-    subtasks: { active: 1, completed: 2, failed: 1, unknown: 0 },
-    reviews: { active: 1, completed: 1, failed: 1, unknown: 0 },
-    nodes: undefined,
-  });
-  assert.deepEqual(snapshot.agents.nodes.map((entry) => `${entry.name}:${entry.kind}`), [
-    'parser_lead:agent', 'impl_a:subtask', 'scout_a:subtask', 'guardian:review', 'bench_lead:agent',
-    'docs_lead:agent', 'impl_b:subtask', 'helper:subtask', 'guardian:review', 'guardian:review',
-  ]);
+  assert.deepEqual(
+    { ...snapshot.agents, nodes: undefined },
+    {
+      active: 2,
+      completed: 0,
+      failed: 1,
+      unknown: 0,
+      subtasks: { active: 1, completed: 2, failed: 1, unknown: 0 },
+      reviews: { active: 1, completed: 1, failed: 1, unknown: 0 },
+      nodes: undefined,
+    }
+  );
+  assert.deepEqual(
+    snapshot.agents.nodes.map((entry) => `${entry.name}:${entry.kind}`),
+    [
+      'parser_lead:agent',
+      'impl_a:subtask',
+      'scout_a:subtask',
+      'guardian:review',
+      'bench_lead:agent',
+      'docs_lead:agent',
+      'impl_b:subtask',
+      'helper:subtask',
+      'guardian:review',
+      'guardian:review',
+    ]
+  );
 
   // Notifications: the agents finishing, and the failures as one alert.
   const sent: NotifyEvent[] = [];
   const notifier = new Notifier({ enabled: true, cooldownMs: 60_000, deliver: (event) => sent.push(event) });
   notifier.update(data, NOW);
   notifier.update(makeHudData({ ...quiet, subagentTree: session('completed', 'completed') }), NOW + 1000);
-  assert.deepEqual(sent.map((event) => event.message), ['1 agent · 1 subtask · 1 review failed', '2 agents finished, 1 failed']);
+  assert.deepEqual(
+    sent.map((event) => event.message),
+    ['1 agent · 1 subtask · 1 review failed', '2 agents finished, 1 failed']
+  );
 });
 
 test('short of room, the title row gives up the name, the words, where its rows are, then the subtasks, each back where what it made room for does not fit', () => {
-  const many = treeOf(Array.from({ length: 12 }, (_, i) => node(`a${i}`, `lead_${i}`, i === 0 ? 'error' : 'running', { children: [
-    node(`a${i}s`, `impl_${i}`, i === 1 ? 'error' : 'completed', { depth: 2 }),
-  ] })));
+  const many = treeOf(
+    Array.from({ length: 12 }, (_, i) =>
+      node(`a${i}`, `lead_${i}`, i === 0 ? 'error' : 'running', {
+        children: [node(`a${i}s`, `impl_${i}`, i === 1 ? 'error' : 'completed', { depth: 2 })],
+      })
+    )
+  );
   for (const style of ['rich', 'compact'] as const) {
     const title = (width: number) => {
-      const frame = renderMonitor({ tree: many, state: { ...initialMonitorState(), style }, width, height: 24, nowMs: NOW });
+      const frame = renderMonitor({
+        tree: many,
+        state: { ...initialMonitorState(), style },
+        width,
+        height: 24,
+        nowMs: NOW,
+      });
       return stripAnsi(frame.lines[frame.panes[0].y]).trimEnd();
     };
     assert.match(title(56), /^ ▦ Agents {2}!1 ▸11 {2}· 12 subtasks, 1 failed +1–22\/\d+$/, style);
@@ -120,7 +179,9 @@ test('short of room, the title row gives up the name, the words, where its rows 
 
 test('in the tabs layout too, and on the settings page, the title takes a shorter form rather than cut one', () => {
   const kids = (i: number, n: number, failed: boolean) =>
-    Array.from({ length: n }, (_, k) => node(`a${i}s${k}`, `impl_${i}_${k}`, failed && k === 0 ? 'error' : 'completed', { depth: 2 }));
+    Array.from({ length: n }, (_, k) =>
+      node(`a${i}s${k}`, `impl_${i}_${k}`, failed && k === 0 ? 'error' : 'completed', { depth: 2 })
+    );
   const tree = treeOf([
     node('a0', 'lead_0', 'error'),
     ...[1, 2, 3].map((i) => node(`a${i}`, `lead_${i}`, 'completed', { children: kids(i, 2, false) })),
@@ -132,22 +193,30 @@ test('in the tabs layout too, and on the settings page, the title takes a shorte
       setLanguage(language);
       for (const look of ['tab', 'band', 'tile', 'frame', 'pill'] as const) {
         setDisplayConfig({ look });
-        for (const tabbed of [true, false]) for (const style of ['rich', 'compact'] as const) for (const width of [32, 40, 48, 56]) {
-          const state = { ...initialMonitorState(), style, tabbed };
-          const frame = renderMonitor({ tree, state, width, height: 24, nowMs: NOW });
-          const title = stripAnsi(frame.lines[frame.panes[0].y]);
-          const preview = stripAnsi(panelTop({ tree }, { ...state, focus: 'agents' }, width)[2]);
-          const where = `${language} ${look} ${tabbed ? 'tabs' : 'stacked'} ${style} ${width}`;
-          assert.doesNotMatch(title, /…/, `${where}: "${title}"`);
-          assert.doesNotMatch(preview, /…/, `${where}, preview: "${preview}"`);
-          assert.match(title, /!1/, where);
-        }
+        for (const tabbed of [true, false])
+          for (const style of ['rich', 'compact'] as const)
+            for (const width of [32, 40, 48, 56]) {
+              const state = { ...initialMonitorState(), style, tabbed };
+              const frame = renderMonitor({ tree, state, width, height: 24, nowMs: NOW });
+              const title = stripAnsi(frame.lines[frame.panes[0].y]);
+              const preview = stripAnsi(panelTop({ tree }, { ...state, focus: 'agents' }, width)[2]);
+              const where = `${language} ${look} ${tabbed ? 'tabs' : 'stacked'} ${style} ${width}`;
+              assert.doesNotMatch(title, /…/, `${where}: "${title}"`);
+              assert.doesNotMatch(preview, /…/, `${where}, preview: "${preview}"`);
+              assert.match(title, /!1/, where);
+            }
       }
     }
     setLanguage('en');
     setDisplayConfig({ look: 'tab' });
     const tabs = (style: 'rich' | 'compact', width: number) => {
-      const frame = renderMonitor({ tree, state: { ...initialMonitorState(), style, tabbed: true }, width, height: 24, nowMs: NOW });
+      const frame = renderMonitor({
+        tree,
+        state: { ...initialMonitorState(), style, tabbed: true },
+        width,
+        height: 24,
+        nowMs: NOW,
+      });
       return stripAnsi(frame.lines[frame.panes[0].y]).trimEnd();
     };
     assert.equal(tabs('compact', 48), ' !1 ✓3 ▸3  · 10 subtasks, 1 failed');
@@ -165,7 +234,11 @@ test('the alerts and the title row in Chinese', () => {
     assert.equal(stripAnsi(statusCard(data, NOW)!.alerts[0]), '! 1 个 agent · 1 个子任务 · 1 个评审 失败');
     const two = makeHudData({ ...quiet, subagentTree: treeOf([node('a', 'a', 'error'), node('b', 'b', 'error')]) });
     assert.equal(stripAnsi(statusCard(two, NOW)!.alerts[0]), '! 2 个 agent 失败');
-    const state = { ...initialMonitorState(), style: 'rich' as const, tree: { ...initialMonitorState().tree, showAll: true } };
+    const state = {
+      ...initialMonitorState(),
+      style: 'rich' as const,
+      tree: { ...initialMonitorState().tree, showAll: true },
+    };
     const frame = renderMonitor({ tree: session(), state, width: 80, height: 40, nowMs: NOW });
     assert.match(stripAnsi(frame.lines[frame.panes[0].y]), /!1 失败 {2}▸2 运行 {2}◈3 评审 {2}· 4 子任务，1 失败/);
   } finally {

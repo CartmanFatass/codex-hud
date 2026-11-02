@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -26,7 +36,7 @@ function commit(root: string): void {
   git(root, 'commit', '-m', 'fixture');
 }
 
-test('returns an empty result outside a repository', async t => {
+test('returns an empty result outside a repository', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'hud-no-git-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const result = await collectGitChanges(root);
@@ -41,29 +51,55 @@ function execError(message: string, extra: Record<string, unknown> = {}): Error 
 
 test('Git failures become short notices, never the failed command or raw stderr', () => {
   const command = 'Command failed: git --no-optional-locks -c core.fsmonitor=false rev-parse --show-toplevel';
-  assert.equal(describeGitFailure(execError(`${command}\nfatal: not a git repository (or any of the parent directories): .git`, {
-    code: 128, cmd: command, stderr: 'fatal: not a git repository (or any of the parent directories): .git\n',
-  })), 'No Git repository');
+  assert.equal(
+    describeGitFailure(
+      execError(`${command}\nfatal: not a git repository (or any of the parent directories): .git`, {
+        code: 128,
+        cmd: command,
+        stderr: 'fatal: not a git repository (or any of the parent directories): .git\n',
+      })
+    ),
+    'No Git repository'
+  );
   assert.equal(describeGitFailure(execError('spawn git ENOENT', { code: 'ENOENT' })), 'Git is not installed');
   // A path deleted since the status read is not a missing git.
-  assert.equal(describeGitFailure(execError("ENOENT: no such file or directory, lstat 'gone'", { code: 'ENOENT', syscall: 'lstat' })), 'No longer on disk');
-  assert.equal(describeGitFailure(execError('spawn git ETIMEDOUT', { code: 'ETIMEDOUT', killed: true })), 'Git timed out');
-  assert.equal(describeGitFailure(execError('Cannot safely disable configured Git filter')), 'Git filters could not be disabled safely');
-  assert.equal(describeGitFailure(execError('Command failed: git diff --numstat', {
-    code: 128, stderr: 'error: unable to read tree 0123456789abcdef\n',
-  })), 'Git objects are missing');
+  assert.equal(
+    describeGitFailure(
+      execError("ENOENT: no such file or directory, lstat 'gone'", { code: 'ENOENT', syscall: 'lstat' })
+    ),
+    'No longer on disk'
+  );
+  assert.equal(
+    describeGitFailure(execError('spawn git ETIMEDOUT', { code: 'ETIMEDOUT', killed: true })),
+    'Git timed out'
+  );
+  assert.equal(
+    describeGitFailure(execError('Cannot safely disable configured Git filter')),
+    'Git filters could not be disabled safely'
+  );
+  assert.equal(
+    describeGitFailure(
+      execError('Command failed: git diff --numstat', {
+        code: 128,
+        stderr: 'error: unable to read tree 0123456789abcdef\n',
+      })
+    ),
+    'Git objects are missing'
+  );
   const fallback = describeGitFailure(execError(`${command}\nsome unrecognized git diagnostic`, { cmd: command }));
   assert.equal(fallback, 'Git could not complete the request');
   for (const notice of [
     describeGitFailure(execError('spawn git ENOENT', { code: 'ENOENT' })),
-    describeGitFailure(execError(`${command}\nfatal: not a git repository`, { cmd: command, stderr: 'fatal: not a git repository' })),
+    describeGitFailure(
+      execError(`${command}\nfatal: not a git repository`, { cmd: command, stderr: 'fatal: not a git repository' })
+    ),
     fallback,
   ]) {
     assert.doesNotMatch(notice, /Command failed|git --no-optional-locks|rev-parse|spawn git|ENOENT|fatal:/);
   }
 });
 
-test('collects both index and worktree counts and previews without changing the index', async t => {
+test('collects both index and worktree counts and previews without changing the index', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'file.txt'), 'base\n');
   writeFileSync(join(root, 'deleted.txt'), 'gone\n');
@@ -79,12 +115,12 @@ test('collects both index and worktree counts and previews without changing the 
   assert.equal(result.branch, 'main');
   assert.equal(result.ahead, 0);
   assert.equal(result.behind, 0);
-  const file = result.files.find(file => file.path === 'file.txt')!;
+  const file = result.files.find((file) => file.path === 'file.txt')!;
   assert.equal(file.index, 'M');
   assert.equal(file.worktree, 'M');
   assert.equal(file.added, 2);
   assert.equal(file.removed, 0);
-  assert.equal(result.files.find(file => file.path === 'deleted.txt')?.removed, 1);
+  assert.equal(result.files.find((file) => file.path === 'deleted.txt')?.removed, 1);
   const preview = (await readGitDiff(root, file)).join('\n');
   assert.match(preview, /Staged/);
   assert.match(preview, /Unstaged/);
@@ -94,7 +130,7 @@ test('collects both index and worktree counts and previews without changing the 
   assert.equal(git(root, 'status', '--porcelain=v1', '-z'), beforeStatus);
 });
 
-test('preserves unusual renamed paths and treats pathspec characters literally', async t => {
+test('preserves unusual renamed paths and treats pathspec characters literally', async (t) => {
   const root = repository(t);
   const previousPath = 'old\tname\n.txt';
   const path = 'new [x] \n\u001bname.txt';
@@ -107,7 +143,7 @@ test('preserves unusual renamed paths and treats pathspec characters literally',
   writeFileSync(join(root, path), 'one\ntwo\nthree\nadded\nworking\n');
   writeFileSync(join(root, 'new x other.txt'), 'unrelated change\n');
   const result = await collectGitChanges(root);
-  const file = result.files.find(file => file.path === path)!;
+  const file = result.files.find((file) => file.path === path)!;
   assert.equal(file.previousPath, previousPath);
   assert.equal(file.index, 'R');
   assert.equal(file.added, 2);
@@ -118,13 +154,13 @@ test('preserves unusual renamed paths and treats pathspec characters literally',
   assert.doesNotMatch(preview, /\u001b/);
 });
 
-test('previews untracked text in an unborn repository and bounds and escapes output', async t => {
+test('previews untracked text in an unborn repository and bounds and escapes output', async (t) => {
   const root = repository(t);
   const path = '--new\nfile.txt';
   writeFileSync(join(root, path), '\u001b[2J\u0007unsafe\rtext\n' + 'line\n'.repeat(700));
   const result = await collectGitChanges(root);
   assert.equal(result.branch, 'main');
-  const file = result.files.find(file => file.path === path)!;
+  const file = result.files.find((file) => file.path === path)!;
   assert.equal(file.index, '?');
   assert.equal(file.worktree, '?');
   const preview = await readGitDiff(root, file);
@@ -135,7 +171,7 @@ test('previews untracked text in an unborn repository and bounds and escapes out
   assert.match(preview.join('\n'), /truncat/i);
 });
 
-test('lists an untracked directory as one entry and, inspected, the files in it', async t => {
+test('lists an untracked directory as one entry and, inspected, the files in it', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'tracked.txt'), 'base\n');
   commit(root);
@@ -149,18 +185,18 @@ test('lists an untracked directory as one entry and, inspected, the files in it'
   git(join(root, 'nested'), 'init', '-q');
   writeFileSync(join(root, 'nested', 'n.txt'), 'n\n');
   const result = await collectGitChanges(root);
-  assert.deepEqual(result.files.map(file => file.path).sort(), ['.gitignore', 'nested/', 'out/']);
-  const out = result.files.find(file => file.path === 'out/')!;
+  assert.deepEqual(result.files.map((file) => file.path).sort(), ['.gitignore', 'nested/', 'out/']);
+  const out = result.files.find((file) => file.path === 'out/')!;
   assert.equal(out.index, '?');
   assert.deepEqual(await readGitDiff(root, out), ['Untracked', '2 files', 'a.txt', 'deep/b.txt']);
-  const nested = result.files.find(file => file.path === 'nested/')!;
+  const nested = result.files.find((file) => file.path === 'nested/')!;
   assert.deepEqual(await readGitDiff(root, nested), ['Untracked', '[Preview unavailable: a repository of its own]']);
   // Gone since the status read: said so, not blamed on git.
   rmSync(join(root, 'out'), { recursive: true });
   assert.deepEqual(await readGitDiff(root, out), ['[Preview unavailable: No longer on disk]']);
 });
 
-test('reports binary changes and does not follow untracked symlinks', async t => {
+test('reports binary changes and does not follow untracked symlinks', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'binary'), Buffer.from([0, 1, 2]));
   commit(root);
@@ -171,20 +207,20 @@ test('reports binary changes and does not follow untracked symlinks', async t =>
   writeFileSync(join(outside, 'secret'), 'secret-content');
   symlinkSync(join(outside, 'secret'), join(root, 'link'));
   const result = await collectGitChanges(root);
-  const binary = result.files.find(file => file.path === 'binary')!;
+  const binary = result.files.find((file) => file.path === 'binary')!;
   assert.equal(binary.binary, true);
   assert.equal(binary.added, null);
   assert.equal(binary.removed, null);
   assert.match((await readGitDiff(root, binary)).join('\n'), /binary/i);
-  const untracked = result.files.find(file => file.path === 'untracked-binary')!;
+  const untracked = result.files.find((file) => file.path === 'untracked-binary')!;
   assert.match((await readGitDiff(root, untracked)).join('\n'), /binary/i);
-  const link = result.files.find(file => file.path === 'link')!;
+  const link = result.files.find((file) => file.path === 'link')!;
   const preview = (await readGitDiff(root, link)).join('\n');
   assert.match(preview, /symlink/i);
   assert.doesNotMatch(preview, /secret-content/);
 });
 
-test('marks merge conflicts and shows their worktree diff', async t => {
+test('marks merge conflicts and shows their worktree diff', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'conflict.txt'), 'base\n');
   commit(root);
@@ -196,14 +232,14 @@ test('marks merge conflicts and shows their worktree diff', async t => {
   commit(root);
   assert.throws(() => git(root, 'merge', 'other'));
   const result = await collectGitChanges(root);
-  const file = result.files.find(file => file.path === 'conflict.txt')!;
+  const file = result.files.find((file) => file.path === 'conflict.txt')!;
   assert.equal(file.conflict, true);
   assert.equal(file.index, 'U');
   assert.equal(file.worktree, 'U');
   assert.match((await readGitDiff(root, file)).join('\n'), /Unstaged/);
 });
 
-test('collects local upstream divergence and handles detached HEAD', async t => {
+test('collects local upstream divergence and handles detached HEAD', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'base'), 'base\n');
   commit(root);
@@ -222,7 +258,7 @@ test('collects local upstream divergence and handles detached HEAD', async t => 
   assert.equal((await collectGitChanges(root)).branch, null);
 });
 
-test('shows staged additions before the first commit', async t => {
+test('shows staged additions before the first commit', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'new.txt'), 'new\n');
   git(root, 'add', '--', 'new.txt');
@@ -233,7 +269,7 @@ test('shows staged additions before the first commit', async t => {
   assert.match((await readGitDiff(root, result.files[0])).join('\n'), /\+new/);
 });
 
-test('does not execute configured external diff or text conversion commands', async t => {
+test('does not execute configured external diff or text conversion commands', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'file.txt'), 'base\n');
   writeFileSync(join(root, '.gitattributes'), '*.txt diff=unsafe\n');
@@ -250,14 +286,18 @@ test('does not execute configured external diff or text conversion commands', as
 
 for (const driver of ['clean', 'process']) {
   for (const operation of ['collect', 'preview']) {
-    test(`${operation} suppresses configured ${driver} filters without changing configuration`, async t => {
+    test(`${operation} suppresses configured ${driver} filters without changing configuration`, async (t) => {
       const root = repository(t);
       writeFileSync(join(root, 'file.txt'), 'base\n');
       writeFileSync(join(root, '.gitattributes'), '*.txt filter=unsafe.Name\n');
       commit(root);
       writeFileSync(join(root, 'file.txt'), 'changed\n');
-      git(root, 'config', `filter.unsafe.Name.${driver}`,
-        driver === 'clean' ? 'echo invoked > FILTER_EXECUTED\ncat' : 'echo invoked > FILTER_EXECUTED\nexit 1');
+      git(
+        root,
+        'config',
+        `filter.unsafe.Name.${driver}`,
+        driver === 'clean' ? 'echo invoked > FILTER_EXECUTED\ncat' : 'echo invoked > FILTER_EXECUTED\nexit 1'
+      );
       git(root, 'config', 'filter.unsafe.Name.required', 'true');
       const beforeConfig = readFileSync(join(root, '.git/config'));
       const beforeIndex = readFileSync(join(root, '.git/index'));
@@ -265,10 +305,16 @@ for (const driver of ['clean', 'process']) {
         const result = await collectGitChanges(root);
         assert.equal(existsSync(join(root, 'FILTER_EXECUTED')), false);
         assert.equal(result.error, undefined);
-        assert.equal(result.files.find(file => file.path === 'file.txt')?.added, 1);
+        assert.equal(result.files.find((file) => file.path === 'file.txt')?.added, 1);
       } else {
         const preview = await readGitDiff(root, {
-          path: 'file.txt', index: ' ', worktree: 'M', added: 1, removed: 1, binary: false, conflict: false,
+          path: 'file.txt',
+          index: ' ',
+          worktree: 'M',
+          added: 1,
+          removed: 1,
+          binary: false,
+          conflict: false,
         });
         assert.equal(existsSync(join(root, 'FILTER_EXECUTED')), false);
         assert.match(preview.join('\n'), /\+changed/);
@@ -279,7 +325,7 @@ for (const driver of ['clean', 'process']) {
   }
 }
 
-test('fails closed when filter names cannot be expressed as Git command overrides', async t => {
+test('fails closed when filter names cannot be expressed as Git command overrides', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'file.txt'), 'base\n');
   writeFileSync(join(root, '.gitattributes'), '*.txt filter=unsafe=name\n');
@@ -290,13 +336,19 @@ test('fails closed when filter names cannot be expressed as Git command override
   assert.equal(existsSync(join(root, 'FILTER_EXECUTED')), false);
   assert.equal(result.error, 'Git filters could not be disabled safely');
   const preview = await readGitDiff(root, {
-    path: 'file.txt', index: ' ', worktree: 'M', added: 1, removed: 1, binary: false, conflict: false,
+    path: 'file.txt',
+    index: ' ',
+    worktree: 'M',
+    added: 1,
+    removed: 1,
+    binary: false,
+    conflict: false,
   });
   assert.equal(existsSync(join(root, 'FILTER_EXECUTED')), false);
   assert.match(preview.join('\n'), /unavailable/i);
 });
 
-test('does not traverse submodules with configured worktree filters', async t => {
+test('does not traverse submodules with configured worktree filters', async (t) => {
   const root = repository(t);
   const nested = join(root, 'nested');
   mkdirSync(nested);
@@ -315,13 +367,19 @@ test('does not traverse submodules with configured worktree filters', async t =>
   assert.equal(result.error, undefined);
   assert.deepEqual(result.files, []);
   await readGitDiff(root, {
-    path: 'nested', index: ' ', worktree: 'M', added: null, removed: null, binary: false, conflict: false,
+    path: 'nested',
+    index: ' ',
+    worktree: 'M',
+    added: null,
+    removed: null,
+    binary: false,
+    conflict: false,
   });
   assert.equal(existsSync(join(nested, 'FILTER_EXECUTED')), false);
 });
 
 for (const operation of ['collect', 'preview']) {
-  test(`${operation} does not fetch missing partial-clone blobs or write object packs`, async t => {
+  test(`${operation} does not fetch missing partial-clone blobs or write object packs`, async (t) => {
     const origin = repository(t);
     writeFileSync(join(origin, 'file.txt'), 'base\n');
     commit(origin);
@@ -333,9 +391,15 @@ for (const operation of ['collect', 'preview']) {
     git(root, 'read-tree', 'HEAD');
     writeFileSync(join(root, 'file.txt'), 'changed\n');
     const packDirectory = join(root, '.git/objects/pack');
-    const snapshot = () => readdirSync(packDirectory).sort().map(name => ({
-      name, hash: createHash('sha256').update(readFileSync(join(packDirectory, name))).digest('hex'),
-    }));
+    const snapshot = () =>
+      readdirSync(packDirectory)
+        .sort()
+        .map((name) => ({
+          name,
+          hash: createHash('sha256')
+            .update(readFileSync(join(packDirectory, name)))
+            .digest('hex'),
+        }));
     const beforePacks = snapshot();
     const beforeIndex = readFileSync(join(root, '.git/index'));
     if (operation === 'collect') {
@@ -343,13 +407,19 @@ for (const operation of ['collect', 'preview']) {
       assert.deepEqual(snapshot(), beforePacks);
       assert.ok(result.error, 'missing objects should report unavailable statistics');
       assert.doesNotMatch(result.error ?? '', /Command failed|git --no-optional-locks|fatal:|error:/);
-      const file = result.files.find(file => file.path === 'file.txt');
+      const file = result.files.find((file) => file.path === 'file.txt');
       assert.ok(file);
       assert.equal(file.added, null);
       assert.equal(file.removed, null);
     } else {
       const preview = await readGitDiff(root, {
-        path: 'file.txt', index: ' ', worktree: 'M', added: null, removed: null, binary: false, conflict: false,
+        path: 'file.txt',
+        index: ' ',
+        worktree: 'M',
+        added: null,
+        removed: null,
+        binary: false,
+        conflict: false,
       });
       assert.deepEqual(snapshot(), beforePacks);
       assert.match(preview.join('\n'), /unavailable/i);
@@ -358,7 +428,7 @@ for (const operation of ['collect', 'preview']) {
   });
 }
 
-test('returns bounded previews for huge tracked changes', async t => {
+test('returns bounded previews for huge tracked changes', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'large'), 'base\n');
   commit(root);
@@ -370,7 +440,7 @@ test('returns bounded previews for huge tracked changes', async t => {
   assert.ok(preview.join('\n').length < 10000);
 });
 
-test('retains both diff sections when the staged patch exceeds the line budget', async t => {
+test('retains both diff sections when the staged patch exceeds the line budget', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'large'), 'base\n');
   commit(root);
@@ -385,13 +455,21 @@ test('retains both diff sections when the staged patch exceeds the line budget',
   assert.match(preview.join('\n'), /\+working/);
 });
 
-test('rejects paths outside the repository and parent symlink traversal', async t => {
+test('rejects paths outside the repository and parent symlink traversal', async (t) => {
   const root = repository(t);
   const outside = mkdtempSync(join(tmpdir(), 'hud-outside-'));
   t.after(() => rmSync(outside, { recursive: true, force: true }));
   writeFileSync(join(outside, 'secret'), 'secret-content');
   symlinkSync(outside, join(root, 'dir'));
-  const file = { path: 'dir/secret', index: '?', worktree: '?', added: null, removed: null, binary: false, conflict: false };
+  const file = {
+    path: 'dir/secret',
+    index: '?',
+    worktree: '?',
+    added: null,
+    removed: null,
+    binary: false,
+    conflict: false,
+  };
   for (const path of ['dir/secret', '../secret', join(outside, 'secret'), 'dir/']) {
     const preview = (await readGitDiff(root, { ...file, path })).join('\n');
     assert.match(preview, /unavailable/i);

@@ -29,13 +29,13 @@ function workspace(t: TestContext) {
   return { base, repo };
 }
 
-test('a folder inside a repository is described as before', t => {
+test('a folder inside a repository is described as before', (t) => {
   const { repo } = workspace(t);
   const learn = repo('Learn-to-Write');
   assert.deepEqual(resolveGitTarget([join(learn, 'src')]), { dir: join(learn, 'src') });
 });
 
-test('a session above its repository is described by the repository it works in', t => {
+test('a session above its repository is described by the repository it works in', (t) => {
   const { base, repo } = workspace(t);
   const learn = repo('Learn-to-Write');
   const other = repo('archive');
@@ -47,16 +47,19 @@ test('a session above its repository is described by the repository it works in'
   // A linked worktree's .git is a file pointing at the real git directory.
   mkdirSync(join(base, 'linked'));
   writeFileSync(join(base, 'linked', '.git'), `gitdir: ${join(learn, '.git')}\n`);
-  assert.deepEqual(resolveGitTarget([base], [join(base, 'linked')]), { dir: join(base, 'linked'), subRepo: join(base, 'linked') });
+  assert.deepEqual(resolveGitTarget([base], [join(base, 'linked')]), {
+    dir: join(base, 'linked'),
+    subRepo: join(base, 'linked'),
+  });
 });
 
-test('another project read for reference is not the session repository', t => {
+test('another project read for reference is not the session repository', (t) => {
   const { base } = workspace(t);
   const elsewhere = workspace(t).repo('reference');
   assert.equal(resolveGitTarget([base], [join(elsewhere, 'src')]), null);
 });
 
-test('before anything has run, a lone repository in the folder is the one', t => {
+test('before anything has run, a lone repository in the folder is the one', (t) => {
   const { base, repo } = workspace(t);
   const learn = repo('Learn-to-Write');
   assert.deepEqual(resolveGitTarget([base]), { dir: learn, subRepo: learn });
@@ -65,20 +68,28 @@ test('before anything has run, a lone repository in the folder is the one', t =>
   assert.equal(resolveGitTarget([undefined]), null);
 });
 
-test('the rollout keeps where commands ran and files changed, newest last', async t => {
+test('the rollout keeps where commands ran and files changed, newest last', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'hud-work-dirs-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const file = join(dir, 'rollout.jsonl');
-  const row = (payload: object) => JSON.stringify({ timestamp: FIXED_NOW.toISOString(), type: 'event_msg', payload }) + '\n';
+  const row = (payload: object) =>
+    JSON.stringify({ timestamp: FIXED_NOW.toISOString(), type: 'event_msg', payload }) + '\n';
   const command = (cwd: string) => row({ type: 'item_completed', item: { type: 'CommandExecution', cwd } });
-  writeFileSync(file, JSON.stringify({ timestamp: FIXED_NOW.toISOString(), type: 'session_meta', payload: { id: 's', cwd: '/w' } }) + '\n');
+  writeFileSync(
+    file,
+    JSON.stringify({ timestamp: FIXED_NOW.toISOString(), type: 'session_meta', payload: { id: 's', cwd: '/w' } }) + '\n'
+  );
   appendFileSync(file, command(pathToFileURL('/w/Learn-to-Write').href) + command('file:///w'));
   const parser = new RolloutParser();
   parser.setRolloutPath(file);
   assert.deepEqual((await parser.parse())?.workDirs, ['/w/Learn-to-Write', '/w']);
   // Incremental: the next batch moves an old directory to the newest end.
-  appendFileSync(file, row({ type: 'item_completed', item: { type: 'FileChange', changes: { '/w/Learn-to-Write/tools/a.py': {} } } })
-    + command('relative/is/ignored') + row({ type: 'exec_command_begin', cwd: '/w/Learn-to-Write' }));
+  appendFileSync(
+    file,
+    row({ type: 'item_completed', item: { type: 'FileChange', changes: { '/w/Learn-to-Write/tools/a.py': {} } } }) +
+      command('relative/is/ignored') +
+      row({ type: 'exec_command_begin', cwd: '/w/Learn-to-Write' })
+  );
   assert.deepEqual((await parser.parse())?.workDirs, ['/w', '/w/Learn-to-Write/tools', '/w/Learn-to-Write']);
 });
 
@@ -86,7 +97,9 @@ test('the bar, the project line and the snapshot all name the repository', () =>
   const data = makeHudData();
   data.project = { ...data.project, projectName: 'shenlun' };
   data.git = { ...data.git, isGitRepo: true, branch: 'main', isDirty: true, repo: 'Learn-to-Write' };
-  const project = buildBarModules(data, { nowMs: FIXED_NOW.getTime(), density: 'full' }).find(module => module.id === 'project')!;
+  const project = buildBarModules(data, { nowMs: FIXED_NOW.getTime(), density: 'full' }).find(
+    (module) => module.id === 'project'
+  )!;
   // The bar names the repository itself; the project line keeps the folder it sits in.
   assert.equal(stripAnsi(project.variants.full!), 'Learn-to-Write main*↑2');
   assert.equal(stripAnsi(project.variants.short!), 'Learn-to-Write main*');
@@ -97,12 +110,14 @@ test('the bar, the project line and the snapshot all name the repository', () =>
   // A folder that is itself the repository reads exactly as it always did.
   delete data.git.repo;
   data.project = { ...data.project, projectName: 'codex-hud' };
-  const plain = buildBarModules(data, { nowMs: FIXED_NOW.getTime(), density: 'full' }).find(module => module.id === 'project')!;
+  const plain = buildBarModules(data, { nowMs: FIXED_NOW.getTime(), density: 'full' }).find(
+    (module) => module.id === 'project'
+  )!;
   assert.equal(stripAnsi(plain.variants.full!), 'codex-hud main*↑2');
   assert.equal(buildSnapshot(data, { width: 80, segments: [] }, FIXED_NOW.getTime()).project.repo, undefined);
 });
 
-test('the answer is reused until the evidence changes or it grows old', t => {
+test('the answer is reused until the evidence changes or it grows old', (t) => {
   const { base, repo } = workspace(t);
   const learn = repo('Learn-to-Write');
   let now = 0;
@@ -111,7 +126,11 @@ test('the answer is reused until the evidence changes or it grows old', t => {
   repo('archive');
   now = 29_000;
   assert.equal(cache.resolve([base])?.dir, learn, 'same inputs, still fresh: no disk access');
-  assert.equal(cache.resolve([base], [join(base, 'archive', 'src')])?.dir, join(base, 'archive'), 'new evidence: worked out again');
+  assert.equal(
+    cache.resolve([base], [join(base, 'archive', 'src')])?.dir,
+    join(base, 'archive'),
+    'new evidence: worked out again'
+  );
   now = 60_000;
   assert.equal(cache.resolve([base]), null, 'too old: worked out again, and two repos means no guess');
 });

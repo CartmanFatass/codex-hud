@@ -9,7 +9,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { formatCountdown, formatCredits, quotaState, readCredits, readQuotaWindows, resolveResetTime } from '../../src/render/quota.js';
+import {
+  formatCountdown,
+  formatCredits,
+  quotaState,
+  readCredits,
+  readQuotaWindows,
+  resolveResetTime,
+} from '../../src/render/quota.js';
 import { statusCard } from '../../src/render/status-block.js';
 import { sparkline } from '../../src/render/sparkline.js';
 import { SampleHistory } from '../../src/collectors/history.js';
@@ -22,15 +29,7 @@ import { buildBarModules } from '../../src/render/layout/bar-modules.js';
 import { stripAnsi } from '../../src/render/colors.js';
 import { DEFAULT_LAYOUT } from '../../src/types.js';
 import type { NotifyEvent } from '../../src/notify.js';
-import {
-  FIXED_NOW,
-  at,
-  makeHudData,
-  makeContextUsage,
-  makeNestedTree,
-  node,
-  treeOf,
-} from '../fixtures/hud-data.js';
+import { FIXED_NOW, at, makeHudData, makeContextUsage, makeNestedTree, node, treeOf } from '../fixtures/hud-data.js';
 
 const NOW = FIXED_NOW.getTime();
 
@@ -64,12 +63,20 @@ test('an elapsed reset is reported as due, not as restored', () => {
 
 test('the quota field is one reading, the tightest window, and never invents a reset', () => {
   const quotaOf = (data: ReturnType<typeof makeHudData>) =>
-    stripAnsi(
-      buildBarModules(data, { nowMs: NOW }).find((module) => module.id === 'quota')?.variants.full ?? ''
-    );
+    stripAnsi(buildBarModules(data, { nowMs: NOW }).find((module) => module.id === 'quota')?.variants.full ?? '');
 
   assert.equal(quotaOf(makeHudData()), '5h 61%', 'the 5h window at 61% is tighter than the 7d at 23%');
-  assert.equal(quotaOf(makeHudData({ rateLimits: { primary: { used_percent: 12, window_minutes: 300 }, secondary: { used_percent: 81, window_minutes: 10080 } } })), '7d 81%');
+  assert.equal(
+    quotaOf(
+      makeHudData({
+        rateLimits: {
+          primary: { used_percent: 12, window_minutes: 300 },
+          secondary: { used_percent: 81, window_minutes: 10080 },
+        },
+      })
+    ),
+    '7d 81%'
+  );
 
   const overdue = makeHudData({
     rateLimits: { primary: { used_percent: 88, window_minutes: 300, resets_at: Math.floor(at(-60).getTime() / 1000) } },
@@ -80,9 +87,17 @@ test('the quota field is one reading, the tightest window, and never invents a r
 });
 
 test('a full window with credits behind it reads the balance and is not a stop', () => {
-  const full = (credits: { has_credits?: boolean; unlimited?: boolean; balance?: string } | null, reached: string | null = null) => makeHudData({
-    rateLimits: { primary: { used_percent: 100, window_minutes: 10080, resets_at: Math.floor(at(3600).getTime() / 1000) }, credits, rate_limit_reached_type: reached },
-  });
+  const full = (
+    credits: { has_credits?: boolean; unlimited?: boolean; balance?: string } | null,
+    reached: string | null = null
+  ) =>
+    makeHudData({
+      rateLimits: {
+        primary: { used_percent: 100, window_minutes: 10080, resets_at: Math.floor(at(3600).getTime() / 1000) },
+        credits,
+        rate_limit_reached_type: reached,
+      },
+    });
   const kinds = (data: ReturnType<typeof makeHudData>) => collectAttention(data, NOW).map((item) => item.kind);
   const quotaOf = (data: ReturnType<typeof makeHudData>) =>
     stripAnsi(buildBarModules(data, { nowMs: NOW }).find((module) => module.id === 'quota')?.variants.full ?? '');
@@ -107,13 +122,19 @@ test('a full window with credits behind it reads the balance and is not a stop',
   assert.deepEqual(quotaState(cut.rateLimits, readQuotaWindows(cut.rateLimits, NOW)), { spent: true, credits: null });
 
   // Below full, the balance is no news: the window still has room.
-  const partial = makeHudData({ rateLimits: { primary: { used_percent: 60, window_minutes: 300 }, credits: { has_credits: true, balance: '100' } } });
+  const partial = makeHudData({
+    rateLimits: { primary: { used_percent: 60, window_minutes: 300 }, credits: { has_credits: true, balance: '100' } },
+  });
   assert.equal(statusCard(partial, NOW)!.quota?.label, undefined);
   assert.equal(quotaOf(partial), '5h 60%');
 
   assert.equal(formatCredits({ unlimited: true }), '∞');
   assert.equal(formatCredits({ unlimited: false, balance: 204.94 }), '205');
-  assert.equal(readCredits({ credits: { has_credits: true, balance: 'n/a' } }), null, 'a balance that is not a number says nothing');
+  assert.equal(
+    readCredits({ credits: { has_credits: true, balance: 'n/a' } }),
+    null,
+    'a balance that is not a number says nothing'
+  );
 });
 
 test('the bar names the quota window it reads', () => {
@@ -148,7 +169,9 @@ test('the panel labels the window its trend covers', () => {
     maxWidth: 40,
     nowMs: NOW,
     contextUsage: makeContextUsage(42),
-    rateLimits: { primary: { used_percent: 61, window_minutes: 300, resets_at: Math.floor(at(4980).getTime() / 1000) } },
+    rateLimits: {
+      primary: { used_percent: 61, window_minutes: 300, resets_at: Math.floor(at(4980).getTime() / 1000) },
+    },
     contextHistory: [30, 35, 40, 42],
     contextHistoryMs: 180_000,
   });
@@ -184,11 +207,7 @@ test('several agents finishing at once become one message', () => {
 
   const running = makeHudData({
     ...quiet,
-    subagentTree: treeOf([
-      node('a1', 'one', 'running'),
-      node('a2', 'two', 'running'),
-      node('a3', 'three', 'running'),
-    ]),
+    subagentTree: treeOf([node('a1', 'one', 'running'), node('a2', 'two', 'running'), node('a3', 'three', 'running')]),
   });
   const finished = makeHudData({
     ...quiet,
@@ -221,10 +240,7 @@ test('under tmux the sequences are wrapped in passthrough with every ESC doubled
   );
   // Unwrapping is exactly un-doubling, which is what tmux does to the payload.
   const payload = wrapped.slice('\x1bPtmux;'.length, -'\x1b\\'.length);
-  assert.equal(
-    payload.split('\x1b\x1b').join('\x1b'),
-    desktopNotificationSequence('build finished', { tmux: false })
-  );
+  assert.equal(payload.split('\x1b\x1b').join('\x1b'), desktopNotificationSequence('build finished', { tmux: false }));
 });
 
 test('notification text cannot close the sequence and run the rest as commands', () => {

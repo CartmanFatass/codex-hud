@@ -36,7 +36,14 @@ import type { RolloutParseResult } from './rollout.js';
 import { entryLanguage, type AgentLog, type AgentLogEntry, type AgentLogKind } from './agent-log.js';
 import type { RecapStore } from './recap.js';
 import { writePrivateFile, type ModelHandle, type SmallModel } from './small-model.js';
-import { AGENT_TASK_KINDS, type AgentStage, type AgentTaskKind, type PendingApproval, type SubagentTree, type SubagentTreeNode } from '../types.js';
+import {
+  AGENT_TASK_KINDS,
+  type AgentStage,
+  type AgentTaskKind,
+  type PendingApproval,
+  type SubagentTree,
+  type SubagentTreeNode,
+} from '../types.js';
 import { RESULT_RAW_CHARS } from './agent-stages.js';
 
 export interface JobSwitches {
@@ -47,7 +54,13 @@ export interface JobSwitches {
   approvalDescription: boolean;
 }
 
-export const NO_JOBS: JobSwitches = { resultDigest: false, agentLabels: false, failureCause: false, changeSummary: false, approvalDescription: false };
+export const NO_JOBS: JobSwitches = {
+  resultDigest: false,
+  agentLabels: false,
+  failureCause: false,
+  changeSummary: false,
+  approvalDescription: false,
+};
 
 /** The most of a final answer sent for a digest; a longer one keeps its head and its tail. */
 export const DIGEST_INPUT_CHARS = 8000;
@@ -82,7 +95,12 @@ function flat(text: string): string {
 
 function clip(text: string, max: number): string {
   const chars = Array.from(flat(text));
-  return chars.length > max ? `${chars.slice(0, max - 1).join('').trimEnd()}…` : chars.join('');
+  return chars.length > max
+    ? `${chars
+        .slice(0, max - 1)
+        .join('')
+        .trimEnd()}…`
+    : chars.join('');
 }
 
 /** A text cut to `max` characters, keeping its head and its tail, the cut marked. */
@@ -100,14 +118,20 @@ export function tail(text: string, max: number): string {
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function* entries(jsonl: string): Generator<{ entry: Record<string, unknown>; payload: Record<string, unknown> }> {
   for (const line of jsonl.split('\n')) {
     if (!line.trim()) continue;
     let raw: unknown;
-    try { raw = JSON.parse(line); } catch { continue; }
+    try {
+      raw = JSON.parse(line);
+    } catch {
+      continue;
+    }
     const entry = record(raw);
     const payload = record(entry?.payload);
     if (entry && payload) yield { entry, payload };
@@ -122,16 +146,28 @@ function* entries(jsonl: string): Generator<{ entry: Record<string, unknown>; pa
 export function finalAnswer(jsonl: string): { text: string; at: Date } | null {
   let found: { text: string; at: Date } | null = null;
   for (const { entry, payload } of entries(jsonl)) {
-    if (entry.type !== 'response_item' || payload.type !== 'message' || payload.role !== 'assistant' || !Array.isArray(payload.content)) continue;
+    if (
+      entry.type !== 'response_item' ||
+      payload.type !== 'message' ||
+      payload.role !== 'assistant' ||
+      !Array.isArray(payload.content)
+    )
+      continue;
     const final = payload.phase === 'final_answer' || payload.channel === 'final';
     if (!final) continue;
     if (payload.channel !== undefined && payload.channel !== null && payload.channel !== 'final') continue;
     const at = typeof entry.timestamp === 'string' ? new Date(entry.timestamp) : null;
     if (!at || !Number.isFinite(at.getTime())) continue;
-    const text = payload.content.map(part => {
-      const block = record(part);
-      return block && (block.type === 'output_text' || block.type === 'text') && typeof block.text === 'string' ? block.text : '';
-    }).filter(Boolean).join('\n').trim();
+    const text = payload.content
+      .map((part) => {
+        const block = record(part);
+        return block && (block.type === 'output_text' || block.type === 'text') && typeof block.text === 'string'
+          ? block.text
+          : '';
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim();
     if (text) found = { text, at };
   }
   return found;
@@ -142,14 +178,26 @@ const ERROR_EVENTS: ReadonlySet<string> = new Set(['error', 'stream_error', 'tas
 function outputText(value: unknown, depth = 0): string {
   if (depth > 4) return '';
   if (typeof value === 'string') {
-    try { const parsed: unknown = JSON.parse(value); if (parsed && typeof parsed === 'object') return outputText(parsed, depth + 1); } catch { /* plain text */ }
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') return outputText(parsed, depth + 1);
+    } catch {
+      /* plain text */
+    }
     return value;
   }
-  if (Array.isArray(value)) return value.map(item => outputText(item, depth + 1)).filter(Boolean).join('\n');
+  if (Array.isArray(value))
+    return value
+      .map((item) => outputText(item, depth + 1))
+      .filter(Boolean)
+      .join('\n');
   const object = record(value);
   if (!object) return '';
   if (typeof object.text === 'string') return object.text;
-  return ['output', 'content', 'stderr', 'stdout'].map(key => outputText(object[key], depth + 1)).filter(Boolean).join('\n');
+  return ['output', 'content', 'stderr', 'stdout']
+    .map((key) => outputText(object[key], depth + 1))
+    .filter(Boolean)
+    .join('\n');
 }
 
 /**
@@ -162,12 +210,19 @@ export function errorMaterial(jsonl: string): string | null {
   let failedOutput: string | null = null;
   for (const { entry, payload } of entries(jsonl)) {
     if (entry.type === 'event_msg' && typeof payload.type === 'string' && ERROR_EVENTS.has(payload.type)) {
-      const message = [payload.message, payload.reason, payload.error].find(value => typeof value === 'string' && value.trim());
+      const message = [payload.message, payload.reason, payload.error].find(
+        (value) => typeof value === 'string' && value.trim()
+      );
       if (typeof message === 'string') errors.push(message.trim());
-    } else if (entry.type === 'response_item' && (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output')) {
+    } else if (
+      entry.type === 'response_item' &&
+      (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output')
+    ) {
       const text = outputText(payload.output);
-      const codes = [...text.matchAll(/(?:Process exited with code|Exit code:)\s*(-?\d+)/gi)].map(match => Number(match[1]));
-      const failed = codes.some(code => code !== 0) || record(payload.output)?.success === false;
+      const codes = [...text.matchAll(/(?:Process exited with code|Exit code:)\s*(-?\d+)/gi)].map((match) =>
+        Number(match[1])
+      );
+      const failed = codes.some((code) => code !== 0) || record(payload.output)?.success === false;
       if (failed && text.trim()) failedOutput = text.trim();
     }
   }
@@ -180,7 +235,11 @@ function replyObject(text: string): Record<string, unknown> | null {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) return null;
-  try { return record(JSON.parse(text.slice(start, end + 1))) ?? null; } catch { return null; }
+  try {
+    return record(JSON.parse(text.slice(start, end + 1))) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function stringField(value: unknown, max: number): string | undefined {
@@ -225,15 +284,21 @@ export function parseDigest(text: string): ResultDigest | null {
 
 /** A digest as one log entry's text: "conclusion · basis · caveats", with the labels given. */
 export function digestText(digest: ResultDigest, labels: { basis: string; caveats: string }): string {
-  return [digest.conclusion, ...(digest.basis ? [`${labels.basis} ${digest.basis}`] : []),
-    ...(digest.caveats ? [`${labels.caveats} ${digest.caveats}`] : [])].join(' · ');
+  return [
+    digest.conclusion,
+    ...(digest.basis ? [`${labels.basis} ${digest.basis}`] : []),
+    ...(digest.caveats ? [`${labels.caveats} ${digest.caveats}`] : []),
+  ].join(' · ');
 }
 
 // ---------------------------------------------------------------- labels and title
 
 /** The cache key of one label: the source text and the language it is written in. */
 export function labelKey(task: string, language: Language): string {
-  return createHash('sha256').update(`${language}\n${flat(task)}`).digest('hex').slice(0, 32);
+  return createHash('sha256')
+    .update(`${language}\n${flat(task)}`)
+    .digest('hex')
+    .slice(0, 32);
 }
 
 /** Plaintext worth naming an agent from. A sealed payload is not. */
@@ -277,11 +342,14 @@ export function labelsPrompt(tasks: readonly string[]): string {
 }
 
 /** A label as the reply and the cache hold it: the kind of work and a short name. */
-export interface AgentLabel { kind: AgentTaskKind; name: string }
+export interface AgentLabel {
+  kind: AgentTaskKind;
+  name: string;
+}
 
 function labelKind(value: unknown): AgentTaskKind {
   const kind = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return (AGENT_TASK_KINDS as readonly string[]).includes(kind) ? kind as AgentTaskKind : 'other';
+  return (AGENT_TASK_KINDS as readonly string[]).includes(kind) ? (kind as AgentTaskKind) : 'other';
 }
 
 /**
@@ -292,9 +360,15 @@ function labelKind(value: unknown): AgentTaskKind {
 export function readLabel(value: unknown): AgentLabel | null {
   const raw = typeof value === 'string' ? value : record(value)?.name;
   if (typeof raw !== 'string') return null;
-  const clean = flat(raw).replace(/^\d+[.)]\s*/, '').replace(/^["'“”「」]+|["'“”「」。.]+$/g, '').trim();
+  const clean = flat(raw)
+    .replace(/^\d+[.)]\s*/, '')
+    .replace(/^["'“”「」]+|["'“”「」。.]+$/g, '')
+    .trim();
   if (!clean) return null;
-  return { kind: typeof value === 'string' ? 'other' : labelKind(record(value)?.kind), name: clip(clean, MAX_LABEL_CHARS) };
+  return {
+    kind: typeof value === 'string' ? 'other' : labelKind(record(value)?.kind),
+    name: clip(clean, MAX_LABEL_CHARS),
+  };
 }
 
 /** One label per task, in order; null where the reply gave none usable. */
@@ -341,7 +415,10 @@ export function causePrompt(what: string, output: string): string {
 
 /** The first non-empty line of a reply, clipped; null when there is none. */
 export function oneLine(text: string, max = MAX_LINE_CHARS): string | null {
-  const line = text.split('\n').map(part => part.trim()).find(Boolean);
+  const line = text
+    .split('\n')
+    .map((part) => part.trim())
+    .find(Boolean);
   return line ? clip(line.replace(/^["“]|["”]$/g, ''), max) : null;
 }
 
@@ -360,7 +437,11 @@ export function changeSystemPrompt(language: Language = 'zh'): string {
 /** A per-file stat line: status, path and line counts when git gave them. */
 function statLine(file: GitChangedFile): string {
   const status = file.conflict ? 'UU' : `${file.index}${file.worktree}`;
-  const counts = file.binary ? ' binary' : file.added !== null || file.removed !== null ? ` +${file.added ?? 0} -${file.removed ?? 0}` : '';
+  const counts = file.binary
+    ? ' binary'
+    : file.added !== null || file.removed !== null
+      ? ` +${file.added ?? 0} -${file.removed ?? 0}`
+      : '';
   return `${status} ${file.previousPath ? `${file.previousPath} -> ` : ''}${file.path}${counts}`;
 }
 
@@ -368,18 +449,24 @@ function statLine(file: GitChangedFile): string {
 export function changeSummaryInput(files: readonly GitChangedFile[], hunks: string): string {
   const stat = files.slice(0, CHANGE_STAT_FILES).map(statLine);
   if (files.length > stat.length) stat.push(`(${files.length - stat.length} more files)`);
-  const body = hunks.length > CHANGE_HUNK_CHARS ? `${hunks.slice(0, CHANGE_HUNK_CHARS)}\n[… more hunks omitted …]` : hunks;
+  const body =
+    hunks.length > CHANGE_HUNK_CHARS ? `${hunks.slice(0, CHANGE_HUNK_CHARS)}\n[… more hunks omitted …]` : hunks;
   return `<diff>\n${stat.join('\n')}\n\n${body.trim()}\n</diff>`;
 }
 
 /** What identifies the diff's state: which files changed, and by how much. */
 export function changeFingerprint(files: readonly GitChangedFile[]): string {
-  return JSON.stringify(files.map(file => [file.path, file.index, file.worktree, file.added, file.removed]));
+  return JSON.stringify(files.map((file) => [file.path, file.index, file.worktree, file.added, file.removed]));
 }
 
 /** Up to two non-empty lines of a reply, clipped. */
 export function twoLines(text: string): string[] {
-  return text.split('\n').map(line => line.trim().replace(/^[-*•]\s*/, '')).filter(Boolean).slice(0, 2).map(line => clip(line, MAX_LINE_CHARS));
+  return text
+    .split('\n')
+    .map((line) => line.trim().replace(/^[-*•]\s*/, ''))
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((line) => clip(line, MAX_LINE_CHARS));
 }
 
 // ---------------------------------------------------------------- approval
@@ -398,7 +485,8 @@ export function approvalPrompt(command: string): string {
   return `<command>\n${tail(command, 2000)}\n</command>`;
 }
 
-const VERDICT = /\b(safe|unsafe|safely|harmless|dangerous|risky|risk|malicious|benign|should (?:not )?(?:approve|deny|refuse))\b|安全|危险|风险|无害|恶意|建议(?:批准|拒绝)/i;
+const VERDICT =
+  /\b(safe|unsafe|safely|harmless|dangerous|risky|risk|malicious|benign|should (?:not )?(?:approve|deny|refuse))\b|安全|危险|风险|无害|恶意|建议(?:批准|拒绝)/i;
 
 /** A reply that judges the command rather than describing it is not shown. */
 export function isVerdict(text: string): boolean {
@@ -412,7 +500,10 @@ export function approvalKey(approval: PendingApproval): string {
 // ---------------------------------------------------------------- the jobs
 
 function walk(nodes: readonly SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
-  for (const node of nodes) { visit(node); walk(node.children, visit); }
+  for (const node of nodes) {
+    visit(node);
+    walk(node.children, visit);
+  }
 }
 
 async function readTail(file: string): Promise<string> {
@@ -424,7 +515,9 @@ async function readTail(file: string): Promise<string> {
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
     const text = buffer.subarray(0, bytesRead).toString('utf8');
     return start > 0 ? text.slice(text.indexOf('\n') + 1) : text;
-  } finally { await handle.close(); }
+  } finally {
+    await handle.close();
+  }
 }
 
 const DIGEST_KINDS: ReadonlySet<AgentLogKind> = new Set(['digest']);
@@ -505,17 +598,28 @@ export class ModelJobs {
     return failedAt === undefined || now - failedAt >= RETRY_MS;
   }
 
-  private ask(key: string, now: number, request: Parameters<SmallModel['submit']>[0], land: (text: string) => boolean, fail?: () => void): void {
+  private ask(
+    key: string,
+    now: number,
+    request: Parameters<SmallModel['submit']>[0],
+    land: (text: string) => boolean,
+    fail?: () => void
+  ): void {
     const generation = this.generation;
     this.running.add(key);
     const handle = this.model.submit(request);
     this.handles.add(handle);
-    void handle.result.then(result => {
+    void handle.result.then((result) => {
       this.handles.delete(handle);
       if (generation !== this.generation) return;
       if (!this.running.delete(key)) return;
-      if (result.ok && land(result.text)) { this.failed.delete(key); this.onChange(); }
-      else if (!(!result.ok && result.cancelled)) { this.failed.set(key, now); fail?.(); }
+      if (result.ok && land(result.text)) {
+        this.failed.delete(key);
+        this.onChange();
+      } else if (!(!result.ok && result.cancelled)) {
+        this.failed.set(key, now);
+        fail?.();
+      }
     });
   }
 
@@ -527,15 +631,24 @@ export class ModelJobs {
     try {
       const raw = record(JSON.parse(fs.readFileSync(file, 'utf8')));
       // Entries written before labels had a kind are bare strings: read as kind `other`.
-      for (const [key, value] of Object.entries(record(raw?.labels) ?? {})) { const label = readLabel(value); if (label) this.labels.set(key, label); }
-    } catch { /* No labels yet. */ }
+      for (const [key, value] of Object.entries(record(raw?.labels) ?? {})) {
+        const label = readLabel(value);
+        if (label) this.labels.set(key, label);
+      }
+    } catch {
+      /* No labels yet. */
+    }
   }
 
   private saveLabels(): void {
     const file = this.options.labelsFile;
     while (this.labels.size > LABEL_STORE_LIMIT) this.labels.delete(this.labels.keys().next().value as string);
     if (!file) return;
-    try { writePrivateFile(file, `${JSON.stringify({ labels: Object.fromEntries(this.labels) })}\n`); } catch { /* Kept in memory. */ }
+    try {
+      writePrivateFile(file, `${JSON.stringify({ labels: Object.fromEntries(this.labels) })}\n`);
+    } catch {
+      /* Kept in memory. */
+    }
   }
 
   /**
@@ -544,17 +657,22 @@ export class ModelJobs {
    */
   apply(tree: SubagentTree, switches: JobSwitches, language: Language): void {
     if (switches.agentLabels) this.loadLabels();
-    walk(tree.nodes, node => {
+    walk(tree.nodes, (node) => {
       // The name for what it was given, once that label has arrived; until
       // then, what the brief last called the work it is on.
       const source = switches.agentLabels ? labelSource(node) : undefined;
       const fromSource = source ? this.labels.get(labelKey(source, language)) : undefined;
       const noted = switches.agentLabels ? this.log.label(node.id, language) : undefined;
-      const label = fromSource ?? (noted ? { name: noted.name, kind: noted.kind ?? 'other' as AgentTaskKind } : undefined);
-      if (label && label.name !== node.name) node.label = label.name; else delete node.label;
-      if (label && label.kind !== 'other') node.taskKind = label.kind; else delete node.taskKind;
-      const digest = switches.resultDigest && node.status === 'completed' ? this.currentDigest(node, language) : undefined;
-      if (digest) node.digest = digest.text; else delete node.digest;
+      const label =
+        fromSource ?? (noted ? { name: noted.name, kind: noted.kind ?? ('other' as AgentTaskKind) } : undefined);
+      if (label && label.name !== node.name) node.label = label.name;
+      else delete node.label;
+      if (label && label.kind !== 'other') node.taskKind = label.kind;
+      else delete node.taskKind;
+      const digest =
+        switches.resultDigest && node.status === 'completed' ? this.currentDigest(node, language) : undefined;
+      if (digest) node.digest = digest.text;
+      else delete node.digest;
     });
   }
 
@@ -584,13 +702,17 @@ export class ModelJobs {
       this.failed.clear();
     }
     // Causes already written to the log are the timeline's as well.
-    if (input.switches.failureCause) walk(input.tree.nodes, node => {
-      const cause = this.log.latest(node.id, CAUSE_KINDS, input.language);
-      if (cause) this.causes.set(`agent:${node.id}:failed:${cause.at}`, cause.text);
-    });
+    if (input.switches.failureCause)
+      walk(input.tree.nodes, (node) => {
+        const cause = this.log.latest(node.id, CAUSE_KINDS, input.language);
+        if (cause) this.causes.set(`agent:${node.id}:failed:${cause.at}`, cause.text);
+      });
     if (!input.on) return;
     if (input.switches.resultDigest) this.digests(input);
-    if (input.switches.agentLabels) { this.labelJobs(input); this.titleJob(input); }
+    if (input.switches.agentLabels) {
+      this.labelJobs(input);
+      this.titleJob(input);
+    }
     if (input.switches.failureCause) this.causeJobs(input);
     if (input.switches.approvalDescription) this.approvalJob(input);
   }
@@ -602,10 +724,13 @@ export class ModelJobs {
   }
 
   private digests(input: JobsInput): void {
-    walk(input.tree.nodes, node => {
-      const stage = node.stages?.filter(stage => stage.status !== 'running').at(-1);
+    walk(input.tree.nodes, (node) => {
+      const stage = node.stages?.filter((stage) => stage.status !== 'running').at(-1);
       // The ledger has the answer: no rollout read, and no second digest of it.
-      if (stage?.result && stage.endedAt) { this.stageDigest(node, stage, input); return; }
+      if (stage?.result && stage.endedAt) {
+        this.stageDigest(node, stage, input);
+        return;
+      }
       if (node.status !== 'completed' || !node.rolloutPath || this.currentDigest(node, input.language)) return;
       const finished = (node.statusAt ?? node.lastEventAt)?.getTime() ?? 0;
       if (node.id !== input.inspected && input.now - finished > DIGEST_RECENT_MS) return;
@@ -614,24 +739,48 @@ export class ModelJobs {
       const file = node.rolloutPath;
       const generation = this.generation;
       this.running.add(key);
-      this.read(file).then(text => {
-        if (generation !== this.generation || !this.running.has(key)) return;
-        this.running.delete(key);
-        const answer = finalAnswer(text);
-        // No final answer recorded: nothing to digest, and nothing guessed.
-        if (!answer) { this.failed.set(key, input.now); return; }
-        this.ask(key, input.now, { feature: 'digest', language: input.language, system: digestSystemPrompt(input.language), prompt: digestPrompt(answer.text),
-          cacheKey: `${file}:${answer.at.getTime()}:${input.language}` }, reply => {
-          const digest = parseDigest(reply);
-          if (!digest) return false;
-          this.log.add(node.id, [{ at: answer.at.getTime(), kind: 'digest', text: digestText(digest, input.digestLabels), lang: input.language }]);
-          this.log.flush();
-          return true;
-        });
-      }, () => {
-        if (generation !== this.generation) return;
-        this.running.delete(key); this.failed.set(key, input.now);
-      });
+      this.read(file).then(
+        (text) => {
+          if (generation !== this.generation || !this.running.has(key)) return;
+          this.running.delete(key);
+          const answer = finalAnswer(text);
+          // No final answer recorded: nothing to digest, and nothing guessed.
+          if (!answer) {
+            this.failed.set(key, input.now);
+            return;
+          }
+          this.ask(
+            key,
+            input.now,
+            {
+              feature: 'digest',
+              language: input.language,
+              system: digestSystemPrompt(input.language),
+              prompt: digestPrompt(answer.text),
+              cacheKey: `${file}:${answer.at.getTime()}:${input.language}`,
+            },
+            (reply) => {
+              const digest = parseDigest(reply);
+              if (!digest) return false;
+              this.log.add(node.id, [
+                {
+                  at: answer.at.getTime(),
+                  kind: 'digest',
+                  text: digestText(digest, input.digestLabels),
+                  lang: input.language,
+                },
+              ]);
+              this.log.flush();
+              return true;
+            }
+          );
+        },
+        () => {
+          if (generation !== this.generation) return;
+          this.running.delete(key);
+          this.failed.set(key, input.now);
+        }
+      );
     });
   }
 
@@ -647,24 +796,47 @@ export class ModelJobs {
     const end = stage.endedAt!.getTime();
     if (node.id !== input.inspected && input.now - end > DIGEST_RECENT_MS) return;
     const from = stage.startedAt.getTime();
-    if (this.log.entries(node.id).some(entry => entry.kind === 'digest' && entry.at >= from && entry.at <= end + 5000 && entryLanguage(entry) === input.language)) return;
+    if (
+      this.log
+        .entries(node.id)
+        .some(
+          (entry) =>
+            entry.kind === 'digest' &&
+            entry.at >= from &&
+            entry.at <= end + 5000 &&
+            entryLanguage(entry) === input.language
+        )
+    )
+      return;
     const key = `digest:${node.id}:${end}`;
     if (!this.due(key, input.now) || this.inFlight('digest:') >= MAX_IN_FLIGHT) return;
-    this.ask(key, input.now, { feature: 'digest', language: input.language, system: digestSystemPrompt(input.language), prompt: digestPrompt(result),
-      cacheKey: `${createHash('sha256').update(result).digest('hex').slice(0, 32)}:${input.language}` }, reply => {
-      const digest = parseDigest(reply);
-      if (!digest) return false;
-      this.log.add(node.id, [{ at: end, kind: 'digest', text: digestText(digest, input.digestLabels), lang: input.language }]);
-      this.log.flush();
-      return true;
-    });
+    this.ask(
+      key,
+      input.now,
+      {
+        feature: 'digest',
+        language: input.language,
+        system: digestSystemPrompt(input.language),
+        prompt: digestPrompt(result),
+        cacheKey: `${createHash('sha256').update(result).digest('hex').slice(0, 32)}:${input.language}`,
+      },
+      (reply) => {
+        const digest = parseDigest(reply);
+        if (!digest) return false;
+        this.log.add(node.id, [
+          { at: end, kind: 'digest', text: digestText(digest, input.digestLabels), lang: input.language },
+        ]);
+        this.log.flush();
+        return true;
+      }
+    );
   }
 
   private labelJobs(input: JobsInput): void {
     this.loadLabels();
     if (this.inFlight('labels:')) return;
     const pending = new Map<string, string>();
-    walk(input.tree.nodes, node => {
+    walk(input.tree.nodes, (node) => {
       const source = labelSource(node);
       if (!source || pending.size >= LABEL_BATCH) return;
       const key = labelKey(source, input.language);
@@ -673,15 +845,34 @@ export class ModelJobs {
     if (!pending.size) return;
     const keys = [...pending.keys()];
     const batch = `labels:${keys.join(',')}`;
-    this.ask(batch, input.now, { feature: 'labels', language: input.language, system: labelsSystemPrompt(input.language), prompt: labelsPrompt([...pending.values()]),
-      cacheKey: keys.join(',') }, reply => {
-      const labels = parseLabels(reply, keys.length);
-      let got = false;
-      // A task the reply gave no label for is not asked about again soon.
-      keys.forEach((key, i) => { const label = labels[i]; if (label) { this.labels.set(key, label); got = true; } else this.failed.set(`label:${key}`, input.now); });
-      if (got) this.saveLabels();
-      return got;
-    }, () => { for (const key of keys) this.failed.set(`label:${key}`, input.now); });
+    this.ask(
+      batch,
+      input.now,
+      {
+        feature: 'labels',
+        language: input.language,
+        system: labelsSystemPrompt(input.language),
+        prompt: labelsPrompt([...pending.values()]),
+        cacheKey: keys.join(','),
+      },
+      (reply) => {
+        const labels = parseLabels(reply, keys.length);
+        let got = false;
+        // A task the reply gave no label for is not asked about again soon.
+        keys.forEach((key, i) => {
+          const label = labels[i];
+          if (label) {
+            this.labels.set(key, label);
+            got = true;
+          } else this.failed.set(`label:${key}`, input.now);
+        });
+        if (got) this.saveLabels();
+        return got;
+      },
+      () => {
+        for (const key of keys) this.failed.set(`label:${key}`, input.now);
+      }
+    );
   }
 
   private titleJob(input: JobsInput): void {
@@ -691,29 +882,55 @@ export class ModelJobs {
     if (this.title?.sessionId !== sessionId) {
       // A title in the other language is written again, as a label would be.
       const stored = store.loadTitle(sessionId);
-      const same = stored && (stored.language ?? (/[\u3400-\u9fff]/.test(stored.title) ? 'zh' : 'en')) === input.language;
+      const same =
+        stored && (stored.language ?? (/[\u3400-\u9fff]/.test(stored.title) ? 'zh' : 'en')) === input.language;
       this.title = stored && same ? { sessionId, title: stored.title } : { sessionId, title: '' };
     }
     if (input.recapGoal) {
       // The recap already says what the session is for: no call.
       const title = titleFromGoal(input.recapGoal);
-      if (title && title !== this.title.title) { this.title = { sessionId, title }; this.saveTitle(store, sessionId, title, 'recap', input.now, input.language); }
+      if (title && title !== this.title.title) {
+        this.title = { sessionId, title };
+        this.saveTitle(store, sessionId, title, 'recap', input.now, input.language);
+      }
       return;
     }
     const first = input.main?.firstUserMessage?.text;
     const key = `title:${sessionId}`;
     if (this.title.title || !first || !this.due(key, input.now)) return;
-    this.ask(key, input.now, { feature: 'title', language: input.language, system: titleSystemPrompt(input.language), prompt: titlePrompt(first), cacheKey: `${sessionId}:${input.language}` }, reply => {
-      const title = oneLine(reply, 40);
-      if (!title || this.title?.sessionId !== sessionId || this.title.title) return Boolean(title);
-      this.title = { sessionId, title };
-      this.saveTitle(store, sessionId, title, 'prompt', input.now, input.language);
-      return true;
-    });
+    this.ask(
+      key,
+      input.now,
+      {
+        feature: 'title',
+        language: input.language,
+        system: titleSystemPrompt(input.language),
+        prompt: titlePrompt(first),
+        cacheKey: `${sessionId}:${input.language}`,
+      },
+      (reply) => {
+        const title = oneLine(reply, 40);
+        if (!title || this.title?.sessionId !== sessionId || this.title.title) return Boolean(title);
+        this.title = { sessionId, title };
+        this.saveTitle(store, sessionId, title, 'prompt', input.now, input.language);
+        return true;
+      }
+    );
   }
 
-  private saveTitle(store: RecapStore, sessionId: string, title: string, source: 'recap' | 'prompt', now: number, language: Language): void {
-    try { store.saveTitle({ sessionId, title, source, at: now, language }); } catch { /* The bar goes on without it. */ }
+  private saveTitle(
+    store: RecapStore,
+    sessionId: string,
+    title: string,
+    source: 'recap' | 'prompt',
+    now: number,
+    language: Language
+  ): void {
+    try {
+      store.saveTitle({ sessionId, title, source, at: now, language });
+    } catch {
+      /* The bar goes on without it. */
+    }
   }
 
   private causeJobs(input: JobsInput): void {
@@ -721,17 +938,35 @@ export class ModelJobs {
       if (call.status !== 'error' || !call.output) continue;
       const id = `tool:${call.id}`;
       const at = call.timestamp.getTime() + (call.duration ?? 0);
-      if (this.causes.has(id) || input.now - at > CAUSE_RECENT_MS || !this.due(id, input.now) || this.inFlight('tool:') + this.inFlight('agent:') >= MAX_IN_FLIGHT) continue;
+      if (
+        this.causes.has(id) ||
+        input.now - at > CAUSE_RECENT_MS ||
+        !this.due(id, input.now) ||
+        this.inFlight('tool:') + this.inFlight('agent:') >= MAX_IN_FLIGHT
+      )
+        continue;
       const args = call.arguments ?? {};
-      const command = [args.cmd, args.command, args.code].find(value => typeof value === 'string') as string | undefined;
+      const command = [args.cmd, args.command, args.code].find((value) => typeof value === 'string') as
+        string | undefined;
       const what = `Tool ${call.name}${command ? `: ${command}` : call.target ? `: ${call.target}` : ''}${call.exitCode !== undefined ? ` (exit code ${call.exitCode})` : ''}`;
-      this.ask(id, input.now, { feature: 'cause', language: input.language, system: causeSystemPrompt(input.language), prompt: causePrompt(what, call.output), cacheKey: `${id}:${input.language}` }, reply => {
-        const cause = oneLine(reply);
-        if (cause) this.causes.set(id, cause);
-        return Boolean(cause);
-      });
+      this.ask(
+        id,
+        input.now,
+        {
+          feature: 'cause',
+          language: input.language,
+          system: causeSystemPrompt(input.language),
+          prompt: causePrompt(what, call.output),
+          cacheKey: `${id}:${input.language}`,
+        },
+        (reply) => {
+          const cause = oneLine(reply);
+          if (cause) this.causes.set(id, cause);
+          return Boolean(cause);
+        }
+      );
     }
-    walk(input.tree.nodes, node => {
+    walk(input.tree.nodes, (node) => {
       const at = node.statusAt?.getTime();
       if (node.status !== 'error' || at === undefined || !node.rolloutPath) return;
       const id = `agent:${node.id}:failed:${at}`;
@@ -740,25 +975,42 @@ export class ModelJobs {
       const file = node.rolloutPath;
       const generation = this.generation;
       this.running.add(id);
-      this.read(file).then(text => {
-        if (generation !== this.generation || !this.running.has(id)) return;
-        this.running.delete(id);
-        const material = errorMaterial(text);
-        // The rollout recorded no error to read: nothing is sent, nothing guessed.
-        if (!material) { this.failed.set(id, input.now); return; }
-        this.ask(id, input.now, { feature: 'cause', language: input.language, system: causeSystemPrompt(input.language),
-          prompt: causePrompt(`Subagent ${node.name}${node.task ? `, task: ${node.task}` : ''}`, material), cacheKey: `${file}:${at}:${input.language}` }, reply => {
-          const cause = oneLine(reply);
-          if (!cause) return false;
-          this.causes.set(id, cause);
-          this.log.add(node.id, [{ at, kind: 'cause', text: cause, lang: input.language }]);
-          this.log.flush();
-          return true;
-        });
-      }, () => {
-        if (generation !== this.generation) return;
-        this.running.delete(id); this.failed.set(id, input.now);
-      });
+      this.read(file).then(
+        (text) => {
+          if (generation !== this.generation || !this.running.has(id)) return;
+          this.running.delete(id);
+          const material = errorMaterial(text);
+          // The rollout recorded no error to read: nothing is sent, nothing guessed.
+          if (!material) {
+            this.failed.set(id, input.now);
+            return;
+          }
+          this.ask(
+            id,
+            input.now,
+            {
+              feature: 'cause',
+              language: input.language,
+              system: causeSystemPrompt(input.language),
+              prompt: causePrompt(`Subagent ${node.name}${node.task ? `, task: ${node.task}` : ''}`, material),
+              cacheKey: `${file}:${at}:${input.language}`,
+            },
+            (reply) => {
+              const cause = oneLine(reply);
+              if (!cause) return false;
+              this.causes.set(id, cause);
+              this.log.add(node.id, [{ at, kind: 'cause', text: cause, lang: input.language }]);
+              this.log.flush();
+              return true;
+            }
+          );
+        },
+        () => {
+          if (generation !== this.generation) return;
+          this.running.delete(id);
+          this.failed.set(id, input.now);
+        }
+      );
     });
   }
 
@@ -767,14 +1019,24 @@ export class ModelJobs {
     if (!pending || pending.kind !== 'exec' || !pending.command) return;
     const key = `approval:${approvalKey(pending)}`;
     if (this.approval?.key === key || !this.due(key, input.now)) return;
-    this.ask(key, input.now, { feature: 'approval', language: input.language, system: approvalSystemPrompt(input.language), prompt: approvalPrompt(pending.command),
-      cacheKey: `${createHash('sha256').update(pending.command).digest('hex').slice(0, 32)}:${input.language}` }, reply => {
-      const text = oneLine(reply);
-      // A judgement in place of a description is not shown at all.
-      if (!text || isVerdict(text)) return false;
-      this.approval = { key, text };
-      return true;
-    });
+    this.ask(
+      key,
+      input.now,
+      {
+        feature: 'approval',
+        language: input.language,
+        system: approvalSystemPrompt(input.language),
+        prompt: approvalPrompt(pending.command),
+        cacheKey: `${createHash('sha256').update(pending.command).digest('hex').slice(0, 32)}:${input.language}`,
+      },
+      (reply) => {
+        const text = oneLine(reply);
+        // A judgement in place of a description is not shown at all.
+        if (!text || isVerdict(text)) return false;
+        this.approval = { key, text };
+        return true;
+      }
+    );
   }
 
   /**
@@ -783,7 +1045,10 @@ export class ModelJobs {
    * caller says so). The previous summary stays, with its age, until the
    * next one lands.
    */
-  updateChanges(git: GitChanges | null, input: { on: boolean; enabled: boolean; open: boolean; floorMs: number; language: Language; now: number }): void {
+  updateChanges(
+    git: GitChanges | null,
+    input: { on: boolean; enabled: boolean; open: boolean; floorMs: number; language: Language; now: number }
+  ): void {
     if (!input.enabled || !input.on || !input.open || !git?.root || !git.files.length) return;
     const fingerprint = changeFingerprint(git.files);
     if (this.change?.root === git.root && this.change.fingerprint === fingerprint) return;
@@ -797,25 +1062,44 @@ export class ModelJobs {
     const readHunks = this.options.readHunks;
     if (!readHunks) return;
     this.running.add(key);
-    readHunks(root).then(hunks => {
-      if (generation !== this.generation || !this.running.has(key)) return;
-      this.running.delete(key);
-      this.ask(key, input.now, { feature: 'changes', language: input.language, system: changeSystemPrompt(input.language), prompt: changeSummaryInput(files, hunks), cacheKey: `${root}:${input.language}` }, reply => {
-        const lines = twoLines(reply);
-        if (!lines.length) return false;
-        this.change = { root, fingerprint, lines, at: Date.now() };
-        return true;
-      });
-    }, () => {
-      if (generation !== this.generation) return;
-      this.running.delete(key); this.failed.set(key, input.now);
-    });
+    readHunks(root).then(
+      (hunks) => {
+        if (generation !== this.generation || !this.running.has(key)) return;
+        this.running.delete(key);
+        this.ask(
+          key,
+          input.now,
+          {
+            feature: 'changes',
+            language: input.language,
+            system: changeSystemPrompt(input.language),
+            prompt: changeSummaryInput(files, hunks),
+            cacheKey: `${root}:${input.language}`,
+          },
+          (reply) => {
+            const lines = twoLines(reply);
+            if (!lines.length) return false;
+            this.change = { root, fingerprint, lines, at: Date.now() };
+            return true;
+          }
+        );
+      },
+      () => {
+        if (generation !== this.generation) return;
+        this.running.delete(key);
+        this.failed.set(key, input.now);
+      }
+    );
   }
 
   /** The summary for this repository, while it has changes. */
   changeNote(git: GitChanges | null): { lines: string[]; at: number; current: boolean } | undefined {
     if (!this.change || !git?.root || git.root !== this.change.root || !git.files.length) return undefined;
-    return { lines: this.change.lines, at: this.change.at, current: this.change.fingerprint === changeFingerprint(git.files) };
+    return {
+      lines: this.change.lines,
+      at: this.change.at,
+      current: this.change.fingerprint === changeFingerprint(git.files),
+    };
   }
 
   /** The description of the approval pending now, if one has arrived for it. */
@@ -825,6 +1109,9 @@ export class ModelJobs {
 
   /** The timeline with the causes known so far on their events. */
   withCauses<T extends { id: string; cause?: string }>(events: readonly T[]): T[] {
-    return events.map(event => { const cause = this.causes.get(event.id); return cause && event.cause !== cause ? { ...event, cause } : event; });
+    return events.map((event) => {
+      const cause = this.causes.get(event.id);
+      return cause && event.cause !== cause ? { ...event, cause } : event;
+    });
   }
 }

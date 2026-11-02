@@ -31,7 +31,9 @@ class FakePane implements NavigationAdapter {
   sent: string[] = [];
   ids = [root, child];
   names: Record<string, string> = {};
-  name(i: number): string { return i === 0 ? 'Main [default]' : this.names[this.ids[i]] ?? (i === 1 ? '/root/worker' : `/root/worker_${i}`); }
+  name(i: number): string {
+    return i === 0 ? 'Main [default]' : (this.names[this.ids[i]] ?? (i === 1 ? '/root/worker' : `/root/worker_${i}`));
+  }
   private rows(): string[] {
     const names = this.ids.map((id, i) => `${this.dot}${this.name(i)}${this.current === id ? ' (current)' : ''}`);
     const column = Math.max(...names.map((name, i) => `› ${i + 1}. `.length + name.length)) + 2;
@@ -40,7 +42,8 @@ class FakePane implements NavigationAdapter {
       const head = `${this.selected === i ? '›' : ' '} ${i + 1}. ${names[i]}`;
       const id = this.ids[i];
       if (this.width < 63) lines.push(head);
-      else if (this.width < 80) lines.push(`${head.padEnd(column)}${id.slice(0, 24)}`, `${' '.repeat(column)}${id.slice(24)}`);
+      else if (this.width < 80)
+        lines.push(`${head.padEnd(column)}${id.slice(0, 24)}`, `${' '.repeat(column)}${id.slice(24)}`);
       else lines.push(`${head.padEnd(column)}${id}`);
     }
     return lines;
@@ -52,14 +55,26 @@ class FakePane implements NavigationAdapter {
   }
   async readPane(): Promise<NavigationPane> {
     const composer = `\x1b[1m${this.prompt}\x1b[0m ${this.draft || `\x1b[2m${this.placeholder}\x1b[0m`}`;
-    const capture = this.picker ? ['Transcript', '  Subagents', '  Select an agent to watch. alt+← previous, alt+→ next.', '',
-      this.top > 0 ? '↑' : '', ...this.rows(), this.top + this.visible < this.ids.length ? '↓' : '', `  ${this.footer}`].join('\n')
+    const capture = this.picker
+      ? [
+          'Transcript',
+          '  Subagents',
+          '  Select an agent to watch. alt+← previous, alt+→ next.',
+          '',
+          this.top > 0 ? '↑' : '',
+          ...this.rows(),
+          this.top + this.visible < this.ids.length ? '↓' : '',
+          `  ${this.footer}`,
+        ].join('\n')
       : `Transcript\n${composer}\n\n  ? for shortcuts`;
     return { capture, cursorX: 2 + this.draft.length, cursorY: 1, command: this.command, inMode: this.inMode };
   }
   async sendKeys(_pane: string, keys: string[], literal = false): Promise<void> {
     this.sent.push(...keys);
-    if (literal) { this.draft += keys.join(''); return; }
+    if (literal) {
+      this.draft += keys.join('');
+      return;
+    }
     const last = this.ids.length - 1;
     for (const key of keys) {
       if (key === 'Enter' && this.picker) {
@@ -67,7 +82,10 @@ class FakePane implements NavigationAdapter {
         this.picker = false;
         this.draft = this.current === child ? this.targetDraft : '';
       } else if (key === 'Enter' && this.draft === '/subagents') {
-        this.picker = true; this.draft = ''; this.top = 0; this.show(Math.max(0, this.ids.indexOf(this.current)));
+        this.picker = true;
+        this.draft = '';
+        this.top = 0;
+        this.show(Math.max(0, this.ids.indexOf(this.current)));
       } else if (key === 'Escape' && this.picker) this.picker = false;
       else if (key === 'Home' && this.picker) this.show(0);
       else if (key === 'PageDown' && this.picker) this.show(Math.min(last, this.selected + this.visible));
@@ -75,7 +93,9 @@ class FakePane implements NavigationAdapter {
       else if (key === 'Up' && this.picker) this.show(this.selected === 0 ? last : this.selected - 1);
     }
   }
-  async focusPane(): Promise<void> { this.focused = true; }
+  async focusPane(): Promise<void> {
+    this.focused = true;
+  }
   async wait(_ms: number): Promise<void> {}
 }
 
@@ -87,7 +107,7 @@ test('switches exact agent UUID and returns to main through the verified picker'
   assert.equal(pane.focused, true);
   assert.equal((await navigateSession('%1', root, pane)).ok, true);
   assert.equal(pane.current, root);
-  assert.ok(!pane.sent.some(key => ['C-c', 'C-u', 'C-k'].includes(key)));
+  assert.ok(!pane.sent.some((key) => ['C-c', 'C-u', 'C-k'].includes(key)));
 });
 
 test('the picker Codex 0.154 drew, with its older footer and no status dot, still works', async () => {
@@ -107,7 +127,10 @@ test('preserves existing drafts and refuses unknown panes or copy mode', async (
     const result = await navigateSession('%1', child, pane);
     assert.equal(result.ok, false);
     assert.equal(pane.sent.length, 0);
-    if (kind === 'draft') { assert.match(result.message, /draft|composer/i); assert.equal(pane.draft, 'keep this unsent'); }
+    if (kind === 'draft') {
+      assert.match(result.message, /draft|composer/i);
+      assert.equal(pane.draft, 'keep this unsent');
+    }
   }
 });
 
@@ -115,7 +138,7 @@ test('does not confuse a draft at cursor start with the dim empty placeholder', 
   const pane = new FakePane();
   pane.draft = 'Ask a question';
   const read = pane.readPane.bind(pane);
-  pane.readPane = async () => ({...await read(), cursorX: 2});
+  pane.readPane = async () => ({ ...(await read()), cursorX: 2 });
   assert.equal((await navigateSession('%1', child, pane)).ok, false);
   assert.equal(pane.sent.length, 0);
 });
@@ -173,7 +196,7 @@ test('with neither ids on screen nor a name to go by, a narrow pane refuses inst
   assert.match(result.message, /narrow/);
   assert.equal(pane.current, root);
   assert.equal(pane.picker, false);
-  assert.equal(pane.sent.filter(key => key === 'Enter').length, 1, 'only the Enter that opened the picker');
+  assert.equal(pane.sent.filter((key) => key === 'Enter').length, 1, 'only the Enter that opened the picker');
 });
 
 test('two rows printing the same name are never told apart by guesswork', async () => {
@@ -194,7 +217,13 @@ test('a name Codex wrapped over two lines is read back whole', async () => {
   const read = pane.readPane.bind(pane);
   pane.readPane = async () => {
     const snapshot = await read();
-    return {...snapshot, capture: snapshot.capture.replace('/root/analyze_2022_enforcement', '/root/\n       analyze_2022_enforceme\n       nt')};
+    return {
+      ...snapshot,
+      capture: snapshot.capture.replace(
+        '/root/analyze_2022_enforcement',
+        '/root/\n       analyze_2022_enforceme\n       nt'
+      ),
+    };
   };
   assert.equal((await navigateSession('%1', { id: child, label: '/root/analyze_2022_enforcement' }, pane)).ok, true);
   assert.equal(pane.current, child);
@@ -202,13 +231,13 @@ test('a name Codex wrapped over two lines is read back whole', async () => {
 
 test('agents below the fold are reached a page at a time, never by wrapping around', async () => {
   const pane = new FakePane();
-  pane.ids = Array.from({length: 31}, (_, i) => `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`);
+  pane.ids = Array.from({ length: 31 }, (_, i) => `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`);
   pane.current = pane.ids[0];
   assert.equal((await navigateSession('%1', pane.ids[26], pane)).ok, true);
   assert.equal(pane.current, pane.ids[26]);
   // Four pages reach the last row; the target is then on screen, a few rows up.
-  assert.equal(pane.sent.filter(key => key === 'PageDown').length, 4);
-  assert.ok(pane.sent.filter(key => key === 'Down' || key === 'Up').length < 8);
+  assert.equal(pane.sent.filter((key) => key === 'PageDown').length, 4);
+  assert.ok(pane.sent.filter((key) => key === 'Down' || key === 'Up').length < 8);
   // An agent that is not in the list ends the search at the last row.
   const before = pane.sent.length;
   assert.equal((await navigateSession('%1', absent, pane)).ok, false);
@@ -225,7 +254,7 @@ test('reports delivery without claiming confirmation when the final view is unob
   assert.equal(result.confirmed, false);
   assert.match(result.message, /requested/i);
   assert.equal(pane.current, root);
-  assert.equal(pane.sent.filter(key=>key==='/subagents').length,1);
+  assert.equal(pane.sent.filter((key) => key === '/subagents').length, 1);
 });
 
 test('a restored target draft remains intact without reopening the picker', async () => {
@@ -237,12 +266,16 @@ test('a restored target draft remains intact without reopening the picker', asyn
   assert.equal(pane.current, child);
   assert.equal(pane.draft, 'target draft');
   assert.match(result.message, /requested/i);
-  assert.equal(pane.sent.filter(key=>key==='/subagents').length,1);
+  assert.equal(pane.sent.filter((key) => key === '/subagents').length, 1);
 });
 
 test('invalid identifiers and missing tmux bindings never send keys', async () => {
   const pane = new FakePane();
-  for (const [target, id] of [[undefined, child], ['%1;other', child], ['%1', '/quit\n']]) {
+  for (const [target, id] of [
+    [undefined, child],
+    ['%1;other', child],
+    ['%1', '/quit\n'],
+  ]) {
     assert.equal((await navigateSession(target, id!, pane)).ok, false);
   }
   assert.equal(pane.sent.length, 0);
@@ -250,7 +283,13 @@ test('invalid identifiers and missing tmux bindings never send keys', async () =
 
 test('a popup replacing the expected composer receives no command', async () => {
   const pane = new FakePane();
-  pane.readPane = async () => ({capture: 'Approve command?\n› 1. Yes\n  2. No', cursorX:2, cursorY:1, command:'codex', inMode:false});
+  pane.readPane = async () => ({
+    capture: 'Approve command?\n› 1. Yes\n  2. No',
+    cursorX: 2,
+    cursorY: 1,
+    command: 'codex',
+    inMode: false,
+  });
   assert.equal((await navigateSession('%1', child, pane)).ok, false);
   assert.equal(pane.sent.length, 0);
 });
@@ -260,7 +299,10 @@ test('indented picker rows still select only the exact UUID', async () => {
   const read = pane.readPane.bind(pane);
   pane.readPane = async () => {
     const snapshot = await read();
-    return {...snapshot, capture: pane.picker ? snapshot.capture.replace(/^([› ]) (\d+)\./gm, '  $1 $2.') : snapshot.capture};
+    return {
+      ...snapshot,
+      capture: pane.picker ? snapshot.capture.replace(/^([› ]) (\d+)\./gm, '  $1 $2.') : snapshot.capture,
+    };
   };
   assert.equal((await navigateSession('%1', child, pane)).ok, true);
   assert.equal(pane.current, child);
@@ -272,57 +314,69 @@ test('allows native paste-burst suppression to expire before submitting the comm
   const send = pane.sendKeys.bind(pane);
   pane.sendKeys = async (target, keys, literal) => {
     if (literal) burstAge = 0;
-    if (!literal && keys.includes('Enter') && !pane.picker && burstAge < 120) { pane.draft += '\n'; return; }
+    if (!literal && keys.includes('Enter') && !pane.picker && burstAge < 120) {
+      pane.draft += '\n';
+      return;
+    }
     await send(target, keys, literal);
   };
-  pane.wait = async (ms: number) => { burstAge += ms; };
+  pane.wait = async (ms: number) => {
+    burstAge += ms;
+  };
   assert.equal((await navigateSession('%1', child, pane)).ok, true);
   assert.equal(pane.current, child);
 });
 
 test('switching opens the picker once and batches movement to a visible exact target', async () => {
   const pane = new FakePane();
-  pane.ids = Array.from({length:12},(_,i)=>`00000000-0000-0000-0000-${String(i+1).padStart(12,'0')}`);
+  pane.ids = Array.from({ length: 12 }, (_, i) => `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`);
   pane.visible = 12;
-  pane.current=pane.ids[8];
-  const batches:string[][]=[];
-  const send=pane.sendKeys.bind(pane);
-  pane.sendKeys=async(target,keys,literal)=>{batches.push(keys);await send(target,keys,literal);};
-  assert.equal((await navigateSession('%1',pane.ids[11],pane)).ok,true);
-  assert.equal(pane.current,pane.ids[11]);
-  assert.equal(pane.sent.filter(key=>key==='/subagents').length,1,'no verification popup after switching');
-  assert.ok(!pane.sent.includes('Home'),'do not reset selection before a visible target');
-  assert.ok(batches.some(keys=>keys.length===3 && keys.every(key=>key==='Down')),'visible movement is one batch');
+  pane.current = pane.ids[8];
+  const batches: string[][] = [];
+  const send = pane.sendKeys.bind(pane);
+  pane.sendKeys = async (target, keys, literal) => {
+    batches.push(keys);
+    await send(target, keys, literal);
+  };
+  assert.equal((await navigateSession('%1', pane.ids[11], pane)).ok, true);
+  assert.equal(pane.current, pane.ids[11]);
+  assert.equal(pane.sent.filter((key) => key === '/subagents').length, 1, 'no verification popup after switching');
+  assert.ok(!pane.sent.includes('Home'), 'do not reset selection before a visible target');
+  assert.ok(
+    batches.some((keys) => keys.length === 3 && keys.every((key) => key === 'Down')),
+    'visible movement is one batch'
+  );
 });
-test('clicking the current agent closes the picker without walking the list',async()=>{
-  const pane=new FakePane();pane.current=child;
-  assert.equal((await navigateSession('%1',child,pane)).ok,true);
+test('clicking the current agent closes the picker without walking the list', async () => {
+  const pane = new FakePane();
+  pane.current = child;
+  assert.equal((await navigateSession('%1', child, pane)).ok, true);
   assert.ok(!pane.sent.includes('Home') && !pane.sent.includes('Down'));
 });
 
-test('a batch disrupted by a picker refresh never submits the wrong agent',async()=>{
-  const pane=new FakePane();
-  pane.ids=[root,child,absent];
-  const send=pane.sendKeys.bind(pane);
-  pane.sendKeys=async(target,keys,literal)=>{
-    await send(target,keys,literal);
-    if (keys.length===2 && keys.every(key=>key==='Down')) pane.selected=1;
+test('a batch disrupted by a picker refresh never submits the wrong agent', async () => {
+  const pane = new FakePane();
+  pane.ids = [root, child, absent];
+  const send = pane.sendKeys.bind(pane);
+  pane.sendKeys = async (target, keys, literal) => {
+    await send(target, keys, literal);
+    if (keys.length === 2 && keys.every((key) => key === 'Down')) pane.selected = 1;
   };
-  const result=await navigateSession('%1',absent,pane);
-  assert.equal(result.ok,false);
-  assert.equal(pane.current,root);
-  assert.equal(pane.sent.filter(key=>key==='Enter').length,1,'only opens picker; never submits wrong row');
+  const result = await navigateSession('%1', absent, pane);
+  assert.equal(result.ok, false);
+  assert.equal(pane.current, root);
+  assert.equal(pane.sent.filter((key) => key === 'Enter').length, 1, 'only opens picker; never submits wrong row');
 });
-test('a switch request with a picker that stays open is reported as a failure',async()=>{
-  const pane=new FakePane();
-  const send=pane.sendKeys.bind(pane);
-  pane.sendKeys=async(target,keys,literal)=>{
-    if(pane.picker && keys.includes('Enter')) return;
-    await send(target,keys,literal);
+test('a switch request with a picker that stays open is reported as a failure', async () => {
+  const pane = new FakePane();
+  const send = pane.sendKeys.bind(pane);
+  pane.sendKeys = async (target, keys, literal) => {
+    if (pane.picker && keys.includes('Enter')) return;
+    await send(target, keys, literal);
   };
-  const result=await navigateSession('%1',child,pane);
-  assert.equal(result.ok,false);
-  assert.match(result.message,/did not close/);
-  assert.equal(pane.current,root);
-  assert.equal(pane.sent.filter(key=>key==='/subagents').length,1);
+  const result = await navigateSession('%1', child, pane);
+  assert.equal(result.ok, false);
+  assert.match(result.message, /did not close/);
+  assert.equal(pane.current, root);
+  assert.equal(pane.sent.filter((key) => key === '/subagents').length, 1);
 });

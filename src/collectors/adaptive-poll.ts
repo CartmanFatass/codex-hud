@@ -21,8 +21,12 @@ export interface AdaptivePollObservation {
 }
 
 export function createAdaptivePollState(baseIntervalMs: number, maxIdleIntervalMs = 5000): AdaptivePollState {
-  if (!Number.isFinite(baseIntervalMs) || baseIntervalMs <= 0
-    || !Number.isFinite(maxIdleIntervalMs) || maxIdleIntervalMs <= 0) {
+  if (
+    !Number.isFinite(baseIntervalMs) ||
+    baseIntervalMs <= 0 ||
+    !Number.isFinite(maxIdleIntervalMs) ||
+    maxIdleIntervalMs <= 0
+  ) {
     throw new RangeError('Collection intervals must be finite and positive');
   }
   return {
@@ -41,18 +45,27 @@ export function adaptivePollDue(state: AdaptivePollState, scopeKey: string, nowM
 
 /** User input and explicit refresh invalidate the idle history immediately. */
 export function forceAdaptivePoll(state: AdaptivePollState): AdaptivePollState {
-  return { ...state, intervalMs: state.baseIntervalMs, nextDueAt: Number.NEGATIVE_INFINITY, stablePolls: 0, fingerprint: undefined };
+  return {
+    ...state,
+    intervalMs: state.baseIntervalMs,
+    nextDueAt: Number.NEGATIVE_INFINITY,
+    stablePolls: 0,
+    fingerprint: undefined,
+  };
 }
 
 /** Pure transition: failures and uncertain evidence always retry at base cadence. */
 export function recordAdaptivePoll(state: AdaptivePollState, observation: AdaptivePollObservation): AdaptivePollState {
   const quiet = observation.succeeded && observation.activity === 'quiet' && Boolean(observation.fingerprint);
-  const stablePolls = quiet && state.scopeKey === observation.scopeKey && state.fingerprint === observation.fingerprint
-    ? Math.min(32, state.stablePolls + 1) : 0;
+  const stablePolls =
+    quiet && state.scopeKey === observation.scopeKey && state.fingerprint === observation.fingerprint
+      ? Math.min(32, state.stablePolls + 1)
+      : 0;
   // Establish a baseline and two unchanged quiet observations before backing off.
-  const intervalMs = stablePolls >= 2
-    ? Math.min(state.maxIdleIntervalMs, state.baseIntervalMs * 2 ** (stablePolls - 1))
-    : state.baseIntervalMs;
+  const intervalMs =
+    stablePolls >= 2
+      ? Math.min(state.maxIdleIntervalMs, state.baseIntervalMs * 2 ** (stablePolls - 1))
+      : state.baseIntervalMs;
   return {
     ...state,
     scopeKey: observation.scopeKey,

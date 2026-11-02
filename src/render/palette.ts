@@ -107,7 +107,7 @@ function rgbBold(hex: string): Paint {
 // each reset, so coloured status/model symbols don't punch holes in selection.
 function highlight(code: string): Paint {
   const start = `${ESC}${code}m`;
-  return text => start + text.replaceAll(RESET, RESET + start) + RESET;
+  return (text) => start + text.replaceAll(RESET, RESET + start) + RESET;
 }
 
 /** A background in exact colour, kept across the resets inside it. */

@@ -115,9 +115,7 @@ export function buildSnapshot(
   nowMs: number = Date.now()
 ): HudSnapshot {
   const counts = agentCounts(data.subagentTree?.nodes ?? []);
-  const running = [...(data.toolActivity?.recentCalls ?? [])]
-    .reverse()
-    .find((call) => call.status === 'running');
+  const running = [...(data.toolActivity?.recentCalls ?? [])].reverse().find((call) => call.status === 'running');
   const usage = data.tokenUsage?.total_token_usage ?? data.tokenUsage?.last_token_usage;
 
   const snapshot: HudSnapshot = {
@@ -163,8 +161,20 @@ export function buildSnapshot(
   const session = data.session;
   if (data.bridgeHealth) snapshot.bridgeHealth = data.bridgeHealth;
   const rate = data.outputRate;
-  if (rate && Number.isFinite(rate.tokensPerSecond) && rate.tokensPerSecond >= 0 && Number.isFinite(rate.sampleMs) && rate.sampleMs > 0 && iso(rate.sampledAt))
-    snapshot.outputRate = { estimated: true, tokensPerSecond: rate.tokensPerSecond, sampleMs: rate.sampleMs, sampledAt: rate.sampledAt.toISOString() };
+  if (
+    rate &&
+    Number.isFinite(rate.tokensPerSecond) &&
+    rate.tokensPerSecond >= 0 &&
+    Number.isFinite(rate.sampleMs) &&
+    rate.sampleMs > 0 &&
+    iso(rate.sampledAt)
+  )
+    snapshot.outputRate = {
+      estimated: true,
+      tokensPerSecond: rate.tokensPerSecond,
+      sampleMs: rate.sampleMs,
+      sampledAt: rate.sampledAt.toISOString(),
+    };
   if (session) {
     snapshot.session = {
       id: session.id,
@@ -208,8 +218,12 @@ export function buildSnapshot(
   const forecast = data.quotaForecast;
   const exhaustAt = iso(forecast?.exhaustAt);
   if (forecast && exhaustAt) {
-    snapshot.quotaForecast = { window: forecast.window, exhaustAt, percent: forecast.percent,
-      ...(forecast.windowMinutes !== undefined ? { windowMinutes: forecast.windowMinutes } : {}) };
+    snapshot.quotaForecast = {
+      window: forecast.window,
+      exhaustAt,
+      percent: forecast.percent,
+      ...(forecast.windowMinutes !== undefined ? { windowMinutes: forecast.windowMinutes } : {}),
+    };
   }
   // A time rather than a running count, so the file only changes when the facts do.
   const approvalSince = iso(data.pendingApproval?.since);
@@ -325,6 +339,8 @@ export class SnapshotWriter {
       const current = fs.statSync(this.file);
       if (current.dev !== ownedFile.dev || current.ino !== ownedFile.ino) return;
       fs.unlinkSync(this.file);
-    } catch { /* Already gone, or no longer readable. */ }
+    } catch {
+      /* Already gone, or no longer readable. */
+    }
   }
 }

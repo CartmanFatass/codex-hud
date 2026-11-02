@@ -46,10 +46,18 @@ export const NO_GIT: GitStatus = {
 
 /** True when a git refresh would draw the same status the last frame already has. */
 export function sameGit(a: GitStatus, b: GitStatus): boolean {
-  return a.branch === b.branch && (a.repo ?? '') === (b.repo ?? '') && a.isDirty === b.isDirty
-    && a.isGitRepo === b.isGitRepo && a.ahead === b.ahead && a.behind === b.behind
-    && a.modified === b.modified && a.added === b.added && a.deleted === b.deleted
-    && a.untracked === b.untracked;
+  return (
+    a.branch === b.branch &&
+    (a.repo ?? '') === (b.repo ?? '') &&
+    a.isDirty === b.isDirty &&
+    a.isGitRepo === b.isGitRepo &&
+    a.ahead === b.ahead &&
+    a.behind === b.behind &&
+    a.modified === b.modified &&
+    a.added === b.added &&
+    a.deleted === b.deleted &&
+    a.untracked === b.untracked
+  );
 }
 
 export interface HudStatusInput {
@@ -92,8 +100,11 @@ export class HudStatus {
    * `configMaxAgeMs` re-reads the Codex config on a timer, for a caller with
    * no file watcher to call `invalidateConfig`.
    */
-  constructor(private readonly cwd: string, private readonly onChange: () => void = () => {},
-    private readonly configMaxAgeMs = Infinity) {}
+  constructor(
+    private readonly cwd: string,
+    private readonly onChange: () => void = () => {},
+    private readonly configMaxAgeMs = Infinity
+  ) {}
 
   /** The Codex config file changed; read it again on the next build. */
   invalidateConfig(): void {
@@ -122,11 +133,17 @@ export class HudStatus {
     }
 
     // Matches Codex's "context window left", from last_token_usage.
-    const contextUsage = buildContextUsage(rollout?.tokenUsage ?? undefined, rollout?.compactCount, rollout?.lastCompactTime);
+    const contextUsage = buildContextUsage(
+      rollout?.tokenUsage ?? undefined,
+      rollout?.compactCount,
+      rollout?.lastCompactTime
+    );
     const rootId = rollout?.session?.id ?? sessionId ?? '';
-    const subagentTree = tree ?? (rootId
-      ? time('tree.build', () => buildSubagentTree(rootId, rollout?.subagents ?? []))
-      : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() });
+    const subagentTree =
+      tree ??
+      (rootId
+        ? time('tree.build', () => buildSubagentTree(rootId, rollout?.subagents ?? []))
+        : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() });
     const health = this.health.current();
     const forecast = quotaForecast(rollout?.quotaSamples ?? [], now);
     const sessionTitle = this.sessionTitle(rootId, now);
@@ -161,7 +178,10 @@ export class HudStatus {
 
   private sessionTitle(id: string, now: number): string | undefined {
     const dir = this.titleDir;
-    if (!dir || !id) { this.title = null; return undefined; }
+    if (!dir || !id) {
+      this.title = null;
+      return undefined;
+    }
     if (this.title?.dir !== dir || this.title.id !== id || now - this.title.at >= TITLE_REFRESH_MS) {
       this.title = { dir, id, at: now, text: readSessionTitle(dir, id)?.title };
     }
@@ -175,10 +195,15 @@ export class HudStatus {
       .then(async () => {
         // Not always the launch folder: a session started above its repository
         // is described by the repository it works in (see git-root.ts).
-        const target = this.gitTargets.resolve([this.last?.session?.cwd ?? rollout?.session?.cwd, this.cwd], rollout?.workDirs);
+        const target = this.gitTargets.resolve(
+          [this.last?.session?.cwd ?? rollout?.session?.cwd, this.cwd],
+          rollout?.workDirs
+        );
         if (!target) return { ...NO_GIT };
         const collected = await timeAsync('git', () => collectGitStatus(target.dir));
-        return target.subRepo && collected.isGitRepo ? { ...collected, repo: path.basename(target.subRepo) } : collected;
+        return target.subRepo && collected.isGitRepo
+          ? { ...collected, repo: path.basename(target.subRepo) }
+          : collected;
       })
       .then((status) => {
         const same = sameGit(this.git, status);

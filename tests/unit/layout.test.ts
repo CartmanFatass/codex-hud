@@ -15,13 +15,16 @@ import { makeHudData, TEST_WIDTHS } from '../fixtures/hud-data.js';
 const HOSTILE: Array<[string, Partial<HudData>]> = [
   ['baseline', {}],
   ['cjk project name', { project: { ...makeHudData().project, projectName: '代码审查工具集合' } }],
-  ['very long path', {
-    project: {
-      ...makeHudData().project,
-      projectName: 'a-really-long-project-name-that-will-not-fit-anywhere-near-a-narrow-pane',
-      cwd: '/synthetic/home/dev/' + 'nested/'.repeat(20) + 'leaf',
+  [
+    'very long path',
+    {
+      project: {
+        ...makeHudData().project,
+        projectName: 'a-really-long-project-name-that-will-not-fit-anywhere-near-a-narrow-pane',
+        cwd: '/synthetic/home/dev/' + 'nested/'.repeat(20) + 'leaf',
+      },
     },
-  }],
+  ],
   ['emoji branch', { git: { ...makeHudData().git, branch: 'feature/🔥-hot-path-🚀-rewrite' } }],
   ['no session yet', { session: undefined, contextUsage: undefined, tokenUsage: undefined, rateLimits: undefined }],
 ];
@@ -41,10 +44,7 @@ for (const mode of ['compact', 'expanded'] as LayoutMode[]) {
             visualWidth(line) <= width,
             `${label} at ${width} columns produced ${visualWidth(line)}: ${JSON.stringify(stripAnsi(line))}`
           );
-          assert.ok(
-            !stripAnsi(line).includes('\x1b'),
-            `${label} at ${width} columns leaked an escape sequence`
-          );
+          assert.ok(!stripAnsi(line).includes('\x1b'), `${label} at ${width} columns leaked an escape sequence`);
         }
       }
     });

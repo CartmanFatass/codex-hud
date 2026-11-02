@@ -10,7 +10,9 @@ test('rate uses output counter deltas and observation timestamps', () => {
   assert.equal(tracker.snapshot ?? null, null);
   tracker.observe(10_421, at(10));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 42.1, sampleMs: 10_000, sampledAt: at(10),
+    tokensPerSecond: 42.1,
+    sampleMs: 10_000,
+    sampledAt: at(10),
   });
   tracker.observe(10_600, at(20));
   assert.equal(tracker.snapshot?.tokensPerSecond, 30);
@@ -40,11 +42,15 @@ test('turn starts exclude idle time and preserve the previous estimate until mea
   assert.deepEqual(tracker.snapshot, measured);
   tracker.observe(325, at(100.5));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 50, sampleMs: 500, sampledAt: at(100.5),
+    tokensPerSecond: 50,
+    sampleMs: 500,
+    sampledAt: at(100.5),
   });
   tracker.observe(400, at(102));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 50, sampleMs: 2000, sampledAt: at(102),
+    tokensPerSecond: 50,
+    sampleMs: 2000,
+    sampledAt: at(102),
   });
 });
 
@@ -75,7 +81,9 @@ test('counter rollback discards the old estimate and establishes a new baseline'
   assert.equal(tracker.snapshot ?? null, null);
   tracker.observe(60, at(25));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 10, sampleMs: 5000, sampledAt: at(25),
+    tokensPerSecond: 10,
+    sampleMs: 5000,
+    sampledAt: at(25),
   });
 });
 
@@ -102,7 +110,9 @@ test('duplicate or older timestamps cannot change the counter or turn baseline',
   tracker.startTurn(at(10));
   tracker.observe(500, at(20));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 20, sampleMs: 20_000, sampledAt: at(20),
+    tokensPerSecond: 20,
+    sampleMs: 20_000,
+    sampledAt: at(20),
   });
 });
 
@@ -137,7 +147,9 @@ test('positive subsecond wall time is measurable without smoothing or a speed ca
   tracker.observe(0, at(0));
   tracker.observe(100, at(0.001));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 100_000, sampleMs: 1, sampledAt: at(0.001),
+    tokensPerSecond: 100_000,
+    sampleMs: 1,
+    sampledAt: at(0.001),
   });
   assert.equal(formatTokenRate(tracker.snapshot, at(0.001).getTime()), '~100000.0 tok/s');
 });
@@ -150,7 +162,9 @@ test('the whole measured turn contributes, rather than only the last 30 seconds'
   tracker.observe(1200, at(30));
   tracker.observe(1300, at(40));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 32.5, sampleMs: 40_000, sampledAt: at(40),
+    tokensPerSecond: 32.5,
+    sampleMs: 40_000,
+    sampledAt: at(40),
   });
 });
 
@@ -159,7 +173,9 @@ test('sparse observations report their actual interval instead of inventing a 30
   tracker.observe(100, at(0));
   tracker.observe(700, at(60));
   assert.deepEqual(tracker.snapshot, {
-    tokensPerSecond: 10, sampleMs: 60_000, sampledAt: at(60),
+    tokensPerSecond: 10,
+    sampleMs: 60_000,
+    sampledAt: at(60),
   });
 });
 
@@ -174,7 +190,10 @@ test('dense observations still yield an estimate after enough elapsed time', () 
 
 test('formatter omits missing or invalid estimates', () => {
   assert.equal(formatTokenRate(undefined), null);
-  assert.equal(formatTokenRate({ tokensPerSecond: 0, sampleMs: 1000, sampledAt: at(0) }, at(0).getTime()), '~0.0 tok/s');
+  assert.equal(
+    formatTokenRate({ tokensPerSecond: 0, sampleMs: 1000, sampledAt: at(0) }, at(0).getTime()),
+    '~0.0 tok/s'
+  );
   for (const tokensPerSecond of [-1, NaN, Infinity]) {
     assert.equal(formatTokenRate({ tokensPerSecond, sampleMs: 1000, sampledAt: at(0) }), null);
   }

@@ -11,7 +11,10 @@ test('model summaries retain only one Chinese or English sentence', () => {
 });
 
 test('digest evidence and caveats stay off the card sentence', () => {
-  assert.equal(summarySentence('\nSynthetic result is valid\nBasis: unit tests\nCaveats: no benchmark'), 'Synthetic result is valid');
+  assert.equal(
+    summarySentence('\nSynthetic result is valid\nBasis: unit tests\nCaveats: no benchmark'),
+    'Synthetic result is valid'
+  );
   assert.equal(summarySentence('- Reading tests. Extra work.'), 'Reading tests.');
   assert.equal(summarySentence('1. Checking synthetic evidence. Still running.'), 'Checking synthetic evidence.');
   assert.equal(summarySentence(' \n\t'), '');

@@ -39,9 +39,15 @@ function settle(home: string, at: Date): void {
 
 function withEnv<T>(env: Record<string, string | undefined>, run: () => T): T {
   const saved = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
-  for (const [key, value] of Object.entries(env)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
-  try { return run(); } finally {
-    for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  for (const [key, value] of Object.entries(env))
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  try {
+    return run();
+  } finally {
+    for (const [key, value] of Object.entries(saved))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
   }
 }
 
@@ -116,7 +122,7 @@ test('a bound thread is found in the archive when the live tree does not have it
   }
 });
 
-test('recent sessions: this directory\'s root sessions, the newest written first, subagents and other directories left out', async () => {
+test("recent sessions: this directory's root sessions, the newest written first, subagents and other directories left out", async () => {
   const { recentSessions } = await import('../../src/collectors/session-finder.js');
   const home = mkdtempSync(join(tmpdir(), 'hud-recent-'));
   try {
@@ -126,12 +132,27 @@ test('recent sessions: this directory\'s root sessions, the newest written first
       utimesSync(older, new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
       utimesSync(newer, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
       const agent = rollout(home, '019d0000-0000-7000-8000-000000000003');
-      writeFileSync(agent, `${JSON.stringify({ type: 'session_meta', payload: { id: '019d0000-0000-7000-8000-000000000003', cwd: home, parent_thread_id: FIRST, thread_source: 'subagent' } })}\n`);
+      writeFileSync(
+        agent,
+        `${JSON.stringify({ type: 'session_meta', payload: { id: '019d0000-0000-7000-8000-000000000003', cwd: home, parent_thread_id: FIRST, thread_source: 'subagent' } })}\n`
+      );
       const elsewhere = rollout(home, '019d0000-0000-7000-8000-000000000004');
-      writeFileSync(elsewhere, `${JSON.stringify({ type: 'session_meta', payload: { id: '019d0000-0000-7000-8000-000000000004', cwd: join(home, 'other') } })}\n`);
-      assert.deepEqual(recentSessions(home).map((s) => s.sessionId), [SECOND, FIRST]);
-      assert.deepEqual(recentSessions(home, 1).map((s) => s.sessionId), [SECOND], 'at most the limit');
+      writeFileSync(
+        elsewhere,
+        `${JSON.stringify({ type: 'session_meta', payload: { id: '019d0000-0000-7000-8000-000000000004', cwd: join(home, 'other') } })}\n`
+      );
+      assert.deepEqual(
+        recentSessions(home).map((s) => s.sessionId),
+        [SECOND, FIRST]
+      );
+      assert.deepEqual(
+        recentSessions(home, 1).map((s) => s.sessionId),
+        [SECOND],
+        'at most the limit'
+      );
       assert.deepEqual(recentSessions(undefined), [], 'no directory, no list');
     });
-  } finally { rmSync(home, { recursive: true, force: true }); }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });

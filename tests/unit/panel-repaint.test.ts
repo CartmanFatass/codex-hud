@@ -8,7 +8,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { initialMonitorState, msUntilAgeChanges, msUntilCountdownChanges, nextRepaintDelay, renderMonitor } from '../../src/render/monitor.js';
+import {
+  initialMonitorState,
+  msUntilAgeChanges,
+  msUntilCountdownChanges,
+  nextRepaintDelay,
+  renderMonitor,
+} from '../../src/render/monitor.js';
 import { statusCard } from '../../src/render/status-block.js';
 import { setDisplayConfig, displayConfig } from '../../src/render/hud-config.js';
 import { makeHudData, makeSubagentTree, FIXED_NOW, at } from '../fixtures/hud-data.js';
@@ -40,10 +46,15 @@ test('nothing in the panel changes within a second, even with live traffic and f
     const data = makeHudData({ activity: { state: 'working', updatedAt: at(-1), turnStartedAt } });
     // An agent talking to the main session right now: the bar animates this.
     const tree = makeSubagentTree();
-    const draw = (nowMs: number) => renderMonitor({
-      tree, state: initialMonitorState(), width: 32, height: 30, nowMs,
-      status: () => statusCard(data, nowMs),
-    }).lines.join('\n');
+    const draw = (nowMs: number) =>
+      renderMonitor({
+        tree,
+        state: initialMonitorState(),
+        width: 32,
+        height: 30,
+        nowMs,
+        status: () => statusCard(data, nowMs),
+      }).lines.join('\n');
     // From just after one turn of the turn clock to just before the next.
     const first = NOW + 720;
     for (const step of [0, 250, 500, 750, 950]) assert.equal(draw(first + step), draw(first), `+${step}ms`);

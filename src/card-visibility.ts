@@ -18,7 +18,20 @@ export interface CardVisibility {
 }
 
 export function defaultCardVisibility(): CardVisibility {
-  return { cardLabel: true, cardOriginalName: false, cardSummary: true, cardRelations: true,
-    cardAction: true, cardSubagents: true, cardSubagentSummary: true, cardSubagentScope: 'important',
-    cardRoleCounts: true, cardModel: true, cardReviews: true, cardClock: true, cardRate: true, cardContext: true };
+  return {
+    cardLabel: true,
+    cardOriginalName: false,
+    cardSummary: true,
+    cardRelations: true,
+    cardAction: true,
+    cardSubagents: true,
+    cardSubagentSummary: true,
+    cardSubagentScope: 'important',
+    cardRoleCounts: true,
+    cardModel: true,
+    cardReviews: true,
+    cardClock: true,
+    cardRate: true,
+    cardContext: true,
+  };
 }

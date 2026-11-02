@@ -25,17 +25,64 @@ test('missing settings keep display defaults and hide optional tasks and activit
   withSettingsFile((file) => {
     assert.deepEqual(loadSettings(), {
       ...defaultCardVisibility(),
-      density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used', agentColors: 'name',
-      statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
-      details: true, refreshMs: 1000, treeWidth: 48, finishedLingerMs: 180_000,
-      agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
-      timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
-      worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
-      briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-      briefingApiLiteModel: 'gemini-3.5-flash-lite', briefingApiLowModel: 'gemini-3.8-flash-low', briefingApiMediumModel: 'gemini-3.8-flash-medium',
-      briefAgents: true, briefMain: false, agentProgress: true, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, cardCorners: 'square', notify: false, notifyDesktop: false,
-      resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
-      art: 'off', artImage: '', prefixKey: 'C-\\', icons: 'unicode', look: 'tab', paneLayout: 'stack',
+      density: 'balanced',
+      theme: 'terminal',
+      glyphs: 'both',
+      motion: 'full',
+      context: 'used',
+      agentColors: 'name',
+      statusline: true,
+      sort: 'active',
+      mouse: true,
+      tasks: false,
+      changes: true,
+      activity: false,
+      details: true,
+      refreshMs: 1000,
+      treeWidth: 48,
+      finishedLingerMs: 180_000,
+      agentsPane: 'open',
+      changesPane: 'closed',
+      detailsPane: 'closed',
+      timelinePane: 'closed',
+      panelStyle: 'rich',
+      timelineStyle: 'rail',
+      timelineHours: 3,
+      importantRoles: '',
+      worktreeRoot: '',
+      briefing: 'off',
+      briefingMs: 300_000,
+      briefingPaused: false,
+      language: 'auto',
+      briefingApiBase: '',
+      briefingApiModel: '',
+      briefingApiKey: '',
+      briefingApiReasoning: false,
+      briefingApiLiteModel: 'gemini-3.5-flash-lite',
+      briefingApiLowModel: 'gemini-3.8-flash-low',
+      briefingApiMediumModel: 'gemini-3.8-flash-medium',
+      briefAgents: true,
+      briefMain: false,
+      agentProgress: true,
+      recapFloorMs: 900_000,
+      statusCard: 'full',
+      modelCallsPerHour: 60,
+      agentLog: false,
+      cardCorners: 'square',
+      notify: false,
+      notifyDesktop: false,
+      resultDigest: false,
+      agentLabels: true,
+      labelAsName: true,
+      failureCause: false,
+      changeSummary: false,
+      approvalDescription: false,
+      art: 'off',
+      artImage: '',
+      prefixKey: 'C-\\',
+      icons: 'unicode',
+      look: 'tab',
+      paneLayout: 'stack',
     });
     assert.equal(fs.existsSync(file), false, 'reading defaults does not create files');
     const changed = defaultSettings();
@@ -45,7 +92,7 @@ test('missing settings keep display defaults and hide optional tasks and activit
 });
 
 test('status bar and context display preferences persist and validate', () => {
-  withSettingsFile(file => {
+  withSettingsFile((file) => {
     assert.equal(loadSettings().statusline, true);
     saveSettings({ statusline: false, context: 'remaining' });
     assert.equal(loadSettings().statusline, false);
@@ -58,30 +105,107 @@ test('status bar and context display preferences persist and validate', () => {
 
 test('load validates known settings without importing unknown or invalid values', () => {
   withSettingsFile((file) => {
-    fs.writeFileSync(file, JSON.stringify({
-      density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used',
-      statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
-      details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0, unknown: 'ignored',
-    }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        density: 'focus',
+        theme: 'latte',
+        glyphs: 'text',
+        motion: 'reduced',
+        context: 'used',
+        statusline: true,
+        sort: 'created',
+        mouse: false,
+        tasks: true,
+        changes: false,
+        activity: true,
+        details: false,
+        refreshMs: 250,
+        treeWidth: 40,
+        finishedLingerMs: 0,
+        unknown: 'ignored',
+      })
+    );
     assert.deepEqual(loadSettings(), {
       ...defaultCardVisibility(),
-      density: 'focus', theme: 'latte', glyphs: 'text', motion: 'reduced', context: 'used', agentColors: 'name',
-      statusline: true, sort: 'created', mouse: false, tasks: true, changes: false, activity: true,
-      details: false, refreshMs: 250, treeWidth: 40, finishedLingerMs: 0,
-      agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
-      timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
-      worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
-      briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-      briefingApiLiteModel: 'gemini-3.5-flash-lite', briefingApiLowModel: 'gemini-3.8-flash-low', briefingApiMediumModel: 'gemini-3.8-flash-medium',
-      briefAgents: true, briefMain: false, agentProgress: true, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60, agentLog: false, cardCorners: 'square', notify: false, notifyDesktop: false,
-      resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
-      art: 'off', artImage: '', prefixKey: 'C-]', icons: 'unicode', look: 'tab', paneLayout: 'stack',
+      density: 'focus',
+      theme: 'latte',
+      glyphs: 'text',
+      motion: 'reduced',
+      context: 'used',
+      agentColors: 'name',
+      statusline: true,
+      sort: 'created',
+      mouse: false,
+      tasks: true,
+      changes: false,
+      activity: true,
+      details: false,
+      refreshMs: 250,
+      treeWidth: 40,
+      finishedLingerMs: 0,
+      agentsPane: 'open',
+      changesPane: 'closed',
+      detailsPane: 'closed',
+      timelinePane: 'closed',
+      panelStyle: 'rich',
+      timelineStyle: 'rail',
+      timelineHours: 3,
+      importantRoles: '',
+      worktreeRoot: '',
+      briefing: 'off',
+      briefingMs: 300_000,
+      briefingPaused: false,
+      language: 'auto',
+      briefingApiBase: '',
+      briefingApiModel: '',
+      briefingApiKey: '',
+      briefingApiReasoning: false,
+      briefingApiLiteModel: 'gemini-3.5-flash-lite',
+      briefingApiLowModel: 'gemini-3.8-flash-low',
+      briefingApiMediumModel: 'gemini-3.8-flash-medium',
+      briefAgents: true,
+      briefMain: false,
+      agentProgress: true,
+      recapFloorMs: 900_000,
+      statusCard: 'full',
+      modelCallsPerHour: 60,
+      agentLog: false,
+      cardCorners: 'square',
+      notify: false,
+      notifyDesktop: false,
+      resultDigest: false,
+      agentLabels: true,
+      labelAsName: true,
+      failureCause: false,
+      changeSummary: false,
+      approvalDescription: false,
+      art: 'off',
+      artImage: '',
+      prefixKey: 'C-]',
+      icons: 'unicode',
+      look: 'tab',
+      paneLayout: 'stack',
     });
-    fs.writeFileSync(file, JSON.stringify({
-      density: 'huge', theme: {}, glyphs: null, motion: 'none', sort: 'recent',
-      mouse: 'false', tasks: 1, changes: null, activity: [], details: {},
-      refreshMs: 99, treeWidth: 15, finishedLingerMs: 5, unknown: true,
-    }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        density: 'huge',
+        theme: {},
+        glyphs: null,
+        motion: 'none',
+        sort: 'recent',
+        mouse: 'false',
+        tasks: 1,
+        changes: null,
+        activity: [],
+        details: {},
+        refreshMs: 99,
+        treeWidth: 15,
+        finishedLingerMs: 5,
+        unknown: true,
+      })
+    );
     // A file saved before Ctrl+\\ was the default keeps Ctrl+].
     assert.deepEqual(loadSettings(), { ...defaultSettings(), prefixKey: 'C-]' });
   });
@@ -89,10 +213,18 @@ test('load validates known settings without importing unknown or invalid values'
 
 test('monitor pane modes and worktreeRoot validate independently of legacy panel booleans', () => {
   withSettingsFile((file) => {
-    fs.writeFileSync(file, JSON.stringify({
-      agentsPane: 'closed', timelinePane: 'folded', changesPane: 'open', detailsPane: 'open',
-      worktreeRoot: '/repo', details: true, changes: false,
-    }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        agentsPane: 'closed',
+        timelinePane: 'folded',
+        changesPane: 'open',
+        detailsPane: 'open',
+        worktreeRoot: '/repo',
+        details: true,
+        changes: false,
+      })
+    );
     const loaded = loadSettings();
     assert.equal(loaded.agentsPane, 'closed');
     assert.equal(loaded.timelinePane, 'closed', 'folded, from an earlier version, is closed');
@@ -101,10 +233,16 @@ test('monitor pane modes and worktreeRoot validate independently of legacy panel
     assert.equal(loaded.worktreeRoot, '/repo');
     assert.equal(loaded.details, true);
     assert.equal(loaded.changes, false);
-    fs.writeFileSync(file, JSON.stringify({
-      agentsPane: 'hidden', timelinePane: 1, changesPane: null, detailsPane: {},
-      worktreeRoot: 'x\0y',
-    }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        agentsPane: 'hidden',
+        timelinePane: 1,
+        changesPane: null,
+        detailsPane: {},
+        worktreeRoot: 'x\0y',
+      })
+    );
     const invalid = loadSettings();
     assert.equal(invalid.agentsPane, 'open');
     assert.equal(invalid.timelinePane, 'closed');
@@ -114,11 +252,17 @@ test('monitor pane modes and worktreeRoot validate independently of legacy panel
   });
 });
 
-test('the timeline\'s style, window and roles keep to what the panel draws', () => {
+test("the timeline's style, window and roles keep to what the panel draws", () => {
   withSettingsFile((file) => {
-    fs.writeFileSync(file, JSON.stringify({ timelineStyle: 'lanes', timelineHours: 12, importantRoles: 'reviewer, critic' }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ timelineStyle: 'lanes', timelineHours: 12, importantRoles: 'reviewer, critic' })
+    );
     const loaded = loadSettings();
-    assert.deepEqual([loaded.timelineStyle, loaded.timelineHours, loaded.importantRoles], ['lanes', 12, 'reviewer, critic']);
+    assert.deepEqual(
+      [loaded.timelineStyle, loaded.timelineHours, loaded.importantRoles],
+      ['lanes', 12, 'reviewer, critic']
+    );
     fs.writeFileSync(file, JSON.stringify({ timelineStyle: 'zigzag', timelineHours: 2, importantRoles: 'a\nb' }));
     const invalid = loadSettings();
     assert.deepEqual([invalid.timelineStyle, invalid.timelineHours, invalid.importantRoles], ['rail', 3, '']);
@@ -166,7 +310,11 @@ test('save ignores invalid patches and strips unknown fields from existing files
   withSettingsFile((file) => {
     fs.writeFileSync(file, JSON.stringify({ refreshMs: 500, theme: 'latte', extra: true }));
     const saved = saveSettings({
-      theme: 'wrong', refreshMs: Infinity, treeWidth: NaN, mouse: 'no', injected: true,
+      theme: 'wrong',
+      refreshMs: Infinity,
+      treeWidth: NaN,
+      mouse: 'no',
+      injected: true,
     } as unknown as Partial<HudSettings>);
     assert.equal(saved.theme, 'latte');
     assert.equal(saved.refreshMs, 500);
@@ -209,10 +357,13 @@ test('nonobject JSON cannot become settings and oversized files are rejected', (
 });
 
 test('legacy OMP settings migrate to API deterministically and task models validate', () => {
-  withSettingsFile(file => {
+  withSettingsFile((file) => {
     assert.equal(defaultSettings().briefing, 'off');
     assert.equal(defaultSettings().briefingApiBase, '');
-    fs.writeFileSync(file, JSON.stringify({ briefing: 'omp', briefingApiModel: 'legacy-override', briefingApiLiteModel: 'custom-lite' }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ briefing: 'omp', briefingApiModel: 'legacy-override', briefingApiLiteModel: 'custom-lite' })
+    );
     const loaded = loadSettings();
     assert.equal(loaded.briefing, 'api');
     assert.equal(loaded.briefingApiModel, 'legacy-override');
@@ -223,48 +374,73 @@ test('legacy OMP settings migrate to API deterministically and task models valid
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).briefing, 'api');
     assert.equal(saved.briefingApiLowModel, 'custom-low');
     assert.equal(saved.briefingApiMediumModel, 'custom-medium');
-    const invalid = saveSettings({ briefingApiLiteModel: 'bad\nmodel', briefingApiLowModel: 'x'.repeat(201), briefingApiMediumModel: 42 } as unknown as Partial<HudSettings>);
+    const invalid = saveSettings({
+      briefingApiLiteModel: 'bad\nmodel',
+      briefingApiLowModel: 'x'.repeat(201),
+      briefingApiMediumModel: 42,
+    } as unknown as Partial<HudSettings>);
     assert.equal(invalid.briefingApiLiteModel, 'custom-lite');
     assert.equal(invalid.briefingApiLowModel, 'custom-low');
     assert.equal(invalid.briefingApiMediumModel, 'custom-medium');
   });
 });
 
-
 test('flat card visibility and progress defaults validate independently; legacy notes are ignored', () => {
-  withSettingsFile(file => {
+  withSettingsFile((file) => {
     const cards = defaultCardVisibility();
     const defaults = defaultSettings();
-    for (const [key,value] of Object.entries(cards)) assert.equal(defaults[key as keyof HudSettings],value,key);
-    assert.equal(defaults.agentProgress,true);
-    const booleanKeys = Object.keys(cards).filter(key => key !== 'cardSubagentScope') as Array<keyof HudSettings>;
-    assert.equal(booleanKeys.length,13);
-    const toggled = Object.fromEntries(booleanKeys.map(key => [key,!defaults[key]]));
-    fs.writeFileSync(file,JSON.stringify({...toggled,cardSubagentScope:'all',agentProgress:false,briefAgents:true,cardNotes:5}));
+    for (const [key, value] of Object.entries(cards)) assert.equal(defaults[key as keyof HudSettings], value, key);
+    assert.equal(defaults.agentProgress, true);
+    const booleanKeys = Object.keys(cards).filter((key) => key !== 'cardSubagentScope') as Array<keyof HudSettings>;
+    assert.equal(booleanKeys.length, 13);
+    const toggled = Object.fromEntries(booleanKeys.map((key) => [key, !defaults[key]]));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ ...toggled, cardSubagentScope: 'all', agentProgress: false, briefAgents: true, cardNotes: 5 })
+    );
     const loaded = loadSettings();
-    for (const key of booleanKeys) assert.equal(loaded[key],toggled[key],key);
-    assert.equal(loaded.cardSubagentScope,'all');
-    assert.equal(loaded.agentProgress,false);
-    assert.equal(loaded.briefAgents,true);
-    assert.equal('cardNotes' in loaded,false);
-    fs.writeFileSync(file,JSON.stringify({...Object.fromEntries(booleanKeys.map(key => [key,'off'])),cardSubagentScope:'finished',agentProgress:1}));
-    assert.deepEqual(loadSettings(),{...defaults,prefixKey:'C-]'},'a file without a prefix keeps the old default');
-    for (const scope of ['live','important','all'] as const) assert.equal(saveSettings({cardSubagentScope:scope}).cardSubagentScope,scope);
-    assert.equal(saveSettings({briefAgents:false,agentProgress:true}).agentProgress,true);
-    assert.equal(loadSettings().briefAgents,false);
-    assert.equal('cardNotes' in JSON.parse(fs.readFileSync(file,'utf8')),false);
+    for (const key of booleanKeys) assert.equal(loaded[key], toggled[key], key);
+    assert.equal(loaded.cardSubagentScope, 'all');
+    assert.equal(loaded.agentProgress, false);
+    assert.equal(loaded.briefAgents, true);
+    assert.equal('cardNotes' in loaded, false);
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        ...Object.fromEntries(booleanKeys.map((key) => [key, 'off'])),
+        cardSubagentScope: 'finished',
+        agentProgress: 1,
+      })
+    );
+    assert.deepEqual(
+      loadSettings(),
+      { ...defaults, prefixKey: 'C-]' },
+      'a file without a prefix keeps the old default'
+    );
+    for (const scope of ['live', 'important', 'all'] as const)
+      assert.equal(saveSettings({ cardSubagentScope: scope }).cardSubagentScope, scope);
+    assert.equal(saveSettings({ briefAgents: false, agentProgress: true }).agentProgress, true);
+    assert.equal(loadSettings().briefAgents, false);
+    assert.equal('cardNotes' in JSON.parse(fs.readFileSync(file, 'utf8')), false);
   });
 });
 
 test('saving display preferences retains synthetic API credentials and task routing', () => {
-  withSettingsFile(file => {
-    const credentials = {briefingApiKey:'synthetic-test-secret',briefingApiBase:'https://synthetic.invalid/v1',
-      briefingApiModel:'synthetic-model',briefingApiLiteModel:'synthetic-lite',briefingApiLowModel:'synthetic-low',briefingApiMediumModel:'synthetic-medium',briefingApiReasoning:true};
+  withSettingsFile((file) => {
+    const credentials = {
+      briefingApiKey: 'synthetic-test-secret',
+      briefingApiBase: 'https://synthetic.invalid/v1',
+      briefingApiModel: 'synthetic-model',
+      briefingApiLiteModel: 'synthetic-lite',
+      briefingApiLowModel: 'synthetic-low',
+      briefingApiMediumModel: 'synthetic-medium',
+      briefingApiReasoning: true,
+    };
     saveSettings(credentials);
-    const saved = saveSettings({cardLabel:false,cardSummary:false,briefAgents:false,agentProgress:true});
-    for (const [key,value] of Object.entries(credentials)) assert.equal(saved[key as keyof HudSettings],value,key);
-    assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),saved);
-    assert.deepEqual(loadSettings(),saved);
+    const saved = saveSettings({ cardLabel: false, cardSummary: false, briefAgents: false, agentProgress: true });
+    for (const [key, value] of Object.entries(credentials)) assert.equal(saved[key as keyof HudSettings], value, key);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), saved);
+    assert.deepEqual(loadSettings(), saved);
   });
 });
 

@@ -83,11 +83,13 @@ function args(raw: unknown): Record<string, unknown> {
   if (typeof raw !== 'string') return {};
   try {
     const parsed: unknown = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-  } catch { return {}; }
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
-const text = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value : undefined;
+const text = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() ? value : undefined);
 
 /**
  * What a tool call is doing, in a few words: the command a shell call runs
@@ -96,7 +98,10 @@ const text = (value: unknown): string | undefined => typeof value === 'string' &
  */
 export function actionText(name: string, raw: unknown): string {
   const given = args(raw);
-  const command = text(given.cmd) ?? text(given.command) ?? (Array.isArray(given.command) ? given.command.filter(part => typeof part === 'string').join(' ') : undefined);
+  const command =
+    text(given.cmd) ??
+    text(given.command) ??
+    (Array.isArray(given.command) ? given.command.filter((part) => typeof part === 'string').join(' ') : undefined);
   if (command) return clip(command, 200);
   if (typeof raw === 'string' && !raw.trimStart().startsWith('{')) {
     // A script (the `exec` tool): the first command it runs, else the first
@@ -105,10 +110,17 @@ export function actionText(name: string, raw: unknown): string {
     if (quoted) return clip(quoted[2].replace(/\\[nt]/g, ' ').replace(/\\([\s\S])/g, '$1'), 200);
     const tool = /\btools\.(\w+)\s*\(/.exec(raw);
     if (tool) return tool[1];
-    const first = raw.split('\n').map(line => line.trim()).find(line => line && !line.startsWith('//'));
+    const first = raw
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line && !line.startsWith('//'));
     if (first) return clip(first, 200);
   }
-  if (name === 'spawn_agent') return [text(given.task_name), text(given.agent_type) && `(${given.agent_type as string})`].filter(Boolean).join(' ') || name;
+  if (name === 'spawn_agent')
+    return (
+      [text(given.task_name), text(given.agent_type) && `(${given.agent_type as string})`].filter(Boolean).join(' ') ||
+      name
+    );
   const target = text(given.target);
   if (target) return `→ ${target}`;
   return name;
@@ -121,7 +133,10 @@ function current(ledger: AgentLedger): AgentStage | undefined {
 
 function startStage(ledger: AgentLedger, at: Date, turnId: string | undefined): AgentStage {
   const stage: AgentStage = { startedAt: at, status: 'running', ...(turnId ? { turnId } : {}) };
-  if (ledger.pending) { stage.by = ledger.pending; ledger.pending = undefined; }
+  if (ledger.pending) {
+    stage.by = ledger.pending;
+    ledger.pending = undefined;
+  }
   ledger.stages.push(stage);
   ledger.count++;
   if (ledger.stages.length > STAGES_KEPT) ledger.stages.splice(0, ledger.stages.length - STAGES_KEPT);
@@ -150,15 +165,26 @@ export function applyLedgerEntry(entry: Entry, ledger: AgentLedger): void {
       const open = current(ledger);
       // A turn that started again without ending is the same stage, read twice.
       if (open && turnId && open.turnId === turnId) return;
-      if (open) { open.status = 'aborted'; open.endedAt = at; }
+      if (open) {
+        open.status = 'aborted';
+        open.endedAt = at;
+      }
       startStage(ledger, at, turnId);
       settle(ledger);
-    } else if (kind === 'task_complete' || kind === 'turn_complete' || kind === 'turn_aborted' || kind === 'task_failed') {
+    } else if (
+      kind === 'task_complete' ||
+      kind === 'turn_complete' ||
+      kind === 'turn_aborted' ||
+      kind === 'task_failed'
+    ) {
       let stage = current(ledger);
       if (stage && turnId && stage.turnId && stage.turnId !== turnId) stage = undefined;
       // An end with no start read (the rollout begins mid-turn): a stage of its own, its start from the record when it has one.
       if (!stage) {
-        const started = typeof payload.started_at === 'number' && Number.isFinite(payload.started_at) ? new Date(payload.started_at * 1000) : at;
+        const started =
+          typeof payload.started_at === 'number' && Number.isFinite(payload.started_at)
+            ? new Date(payload.started_at * 1000)
+            : at;
         stage = startStage(ledger, started, turnId);
       }
       stage.endedAt = at;
@@ -172,7 +198,7 @@ export function applyLedgerEntry(entry: Entry, ledger: AgentLedger): void {
   if (entry.type !== 'response_item') return;
   if (kind === 'agent_message') {
     // From another agent: only the header is plain text.
-    const first = Array.isArray(payload.content) ? payload.content[0] as { text?: unknown } | undefined : undefined;
+    const first = Array.isArray(payload.content) ? (payload.content[0] as { text?: unknown } | undefined) : undefined;
     const header = typeof first?.text === 'string' ? HEADER.exec(first.text) : null;
     const sender = header?.[2] ?? text(payload.author);
     if (!sender) return;
@@ -190,13 +216,22 @@ export function applyLedgerEntry(entry: Entry, ledger: AgentLedger): void {
     const stage = current(ledger);
     if (!stage || stage.intent) return;
     const said = Array.isArray(payload.content)
-      ? payload.content.map(part => typeof (part as { text?: unknown })?.text === 'string' ? (part as { text: string }).text : '').join(' ') : '';
+      ? payload.content
+          .map((part) =>
+            typeof (part as { text?: unknown })?.text === 'string' ? (part as { text: string }).text : ''
+          )
+          .join(' ')
+      : '';
     if (said.trim()) stage.intent = clip(said, STAGE_INTENT_CHARS);
     return;
   }
   if ((kind === 'function_call' || kind === 'custom_tool_call') && typeof payload.call_id === 'string' && at) {
     const name = text(payload.name) ?? 'tool';
-    ledger.open.set(payload.call_id, { name, text: actionText(name, kind === 'custom_tool_call' ? payload.input : payload.arguments), at });
+    ledger.open.set(payload.call_id, {
+      name,
+      text: actionText(name, kind === 'custom_tool_call' ? payload.input : payload.arguments),
+      at,
+    });
     if (ledger.open.size > OPEN_CALLS) ledger.open.delete(ledger.open.keys().next().value!);
     return;
   }

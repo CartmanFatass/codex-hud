@@ -5,7 +5,13 @@ import { TreeWidthKeeper, panelWidth } from '../../src/utils/pane-width.js';
 function keeper(requested = 0) {
   const window = { width: 120 as number | null };
   const resizes: number[] = [];
-  const keep = new TreeWidthKeeper(async () => window.width, async (width) => { resizes.push(width); }, () => requested);
+  const keep = new TreeWidthKeeper(
+    async () => window.width,
+    async (width) => {
+      resizes.push(width);
+    },
+    () => requested
+  );
   return { window, resizes, keep };
 }
 
@@ -34,7 +40,13 @@ test('a saved width applies at once, and follows the window after that', async (
   let requested = 0;
   const window = { width: 160 as number | null };
   const resizes: number[] = [];
-  const keep = new TreeWidthKeeper(async () => window.width, async (width) => { resizes.push(width); }, () => requested);
+  const keep = new TreeWidthKeeper(
+    async () => window.width,
+    async (width) => {
+      resizes.push(width);
+    },
+    () => requested
+  );
   await keep.apply();
   requested = 45;
   await keep.apply();

@@ -32,21 +32,21 @@ function truncateTarget(target: string, maxLen: number = 20): string {
  */
 function groupToolCalls(calls: ToolCall[]): Array<{ name: string; count: number; status: 'completed' | 'error' }> {
   const groups: Array<{ name: string; count: number; status: 'completed' | 'error' }> = [];
-  
+
   // Only look at completed/error calls for grouping
-  const finishedCalls = calls.filter(c => c.status === 'completed' || c.status === 'error');
-  
+  const finishedCalls = calls.filter((c) => c.status === 'completed' || c.status === 'error');
+
   for (const call of finishedCalls) {
     const last = groups[groups.length - 1];
     const status = call.status === 'error' ? 'error' : 'completed';
-    
+
     if (last && last.name === call.name && last.status === status) {
       last.count++;
     } else {
       groups.push({ name: call.name, count: 1, status });
     }
   }
-  
+
   return groups;
 }
 
@@ -58,43 +58,43 @@ export function renderToolsLine(toolActivity: ToolActivity | undefined): string 
   if (!toolActivity || toolActivity.recentCalls.length === 0) {
     return null;
   }
-  
+
   const parts: string[] = [];
-  
+
   // Currently running tool (if any)
-  const running = toolActivity.recentCalls.filter(c => c.status === 'running');
+  const running = toolActivity.recentCalls.filter((c) => c.status === 'running');
   if (running.length > 0) {
     const current = running[running.length - 1];
     const spinner = getSpinnerFrame();
     const targetStr = current.target ? `: ${truncateTarget(current.target)}` : '';
     parts.push(theme.toolRunning(`${spinner} ${current.name}${targetStr}`));
   }
-  
+
   // Group completed calls
   const groups = groupToolCalls(toolActivity.recentCalls);
-  
+
   // Render grouped calls (limit to last 5 groups)
   const recentGroups = groups.slice(-5);
   for (const group of recentGroups) {
     const icon = group.status === 'error' ? icons.cross : icons.check;
     const colorFn = group.status === 'error' ? theme.error : theme.success;
-    
+
     if (group.count > 1) {
       parts.push(colorFn(`${icon} ${group.name} ${icons.multiply}${group.count}`));
     } else {
       parts.push(colorFn(`${icon} ${group.name}`));
     }
   }
-  
+
   // Show total if more calls exist
   if (toolActivity.totalCalls > toolActivity.recentCalls.length) {
     parts.push(colors.dim(`(${toolActivity.totalCalls} total)`));
   }
-  
+
   if (parts.length === 0) {
     return null;
   }
-  
+
   return parts.join(` ${colors.dim(icons.bar)} `);
 }
 
@@ -106,35 +106,35 @@ export function renderTodosLine(planProgress: PlanProgress | undefined): string 
   if (!planProgress) {
     return null;
   }
-  
+
   const parts: string[] = [];
-  
+
   // Overall progress (if steps exist)
   if (planProgress.totalSteps > 0) {
     const { completedSteps, totalSteps } = planProgress;
     parts.push(theme.planProgress(`${icons.plan} ${completedSteps}/${totalSteps}`));
   }
-  
+
   // Current step (if in progress)
-  const inProgressSteps = planProgress.steps.filter(s => s.status === 'in_progress');
+  const inProgressSteps = planProgress.steps.filter((s) => s.status === 'in_progress');
   if (inProgressSteps.length > 0) {
     const current = inProgressSteps[0];
     const spinner = getSpinnerFrame();
     const stepText = truncate(current.step, 30);
     parts.push(theme.planStepInProgress(`${spinner} ${stepText}`));
   }
-  
+
   // Recent completed steps (last 2)
-  const completedSteps = planProgress.steps.filter(s => s.status === 'completed').slice(-2);
+  const completedSteps = planProgress.steps.filter((s) => s.status === 'completed').slice(-2);
   for (const step of completedSteps) {
     const stepText = truncate(step.step, 20);
     parts.push(theme.planStepCompleted(`${icons.check} ${stepText}`));
   }
-  
+
   if (parts.length === 0) {
     return null;
   }
-  
+
   return parts.join(` ${colors.dim(icons.bar)} `);
 }
 
@@ -162,10 +162,10 @@ function renderContextProgressBar(percent: number, width: number = 10): string {
   const clamped = Math.max(0, Math.min(100, percent));
   const filled = Math.round((clamped / 100) * width);
   const empty = width - filled;
-  
+
   const filledChar = '█';
   const emptyChar = '░';
-  
+
   let colorFn: (s: string) => string;
   if (clamped >= 85) {
     colorFn = theme.error;
@@ -174,10 +174,10 @@ function renderContextProgressBar(percent: number, width: number = 10): string {
   } else {
     colorFn = theme.success;
   }
-  
+
   const filledStr = filledChar.repeat(filled);
   const emptyStr = emptyChar.repeat(empty);
-  
+
   return colorFn(filledStr) + colors.dim(emptyStr);
 }
 
@@ -207,15 +207,14 @@ function formatWindowLabel(minutes?: number): string {
 function renderRateWindow(usedPercent: number, windowMinutes?: number, barWidth: number = 8): string {
   const percent = Math.max(0, Math.min(100, Math.round(usedPercent)));
   const bar = renderContextProgressBar(percent, barWidth);
-  const percentDisplay = percent >= 85
-    ? theme.error(`${percent}%`)
-    : percent >= 70
-      ? theme.warning(`${percent}%`)
-      : theme.success(`${percent}%`);
+  const percentDisplay =
+    percent >= 85
+      ? theme.error(`${percent}%`)
+      : percent >= 70
+        ? theme.warning(`${percent}%`)
+        : theme.success(`${percent}%`);
   const windowLabel = formatWindowLabel(windowMinutes);
-  return windowLabel
-    ? `${bar} ${percentDisplay} ${colors.dim(windowLabel)}`
-    : `${bar} ${percentDisplay}`;
+  return windowLabel ? `${bar} ${percentDisplay} ${colors.dim(windowLabel)}` : `${bar} ${percentDisplay}`;
 }
 
 /**
@@ -229,9 +228,8 @@ export function renderQuotaLine(data: HudData): string | null {
     return null;
   }
 
-  const windows = [limits.primary, limits.secondary].filter(
-    (window): window is NonNullable<typeof window> =>
-      Boolean(window && typeof window.used_percent === 'number')
+  const windows = [limits.primary, limits.secondary].filter((window): window is NonNullable<typeof window> =>
+    Boolean(window && typeof window.used_percent === 'number')
   );
 
   if (windows.length === 0) {
@@ -254,17 +252,15 @@ export function renderTokenLine(data: HudData): string | null {
   const cached = usage.cached_input_tokens ?? 0;
   const cacheRate = input > 0 ? Math.round((cached / input) * 100) : null;
   const totalLabel = theme.tokenCount(`Tokens: ${formatTokenCount(usage.total_tokens ?? 0)}`);
-  return cacheRate === null
-    ? totalLabel
-    : `${totalLabel} ${colors.dim(`(cache ${cacheRate}%)`)}`;
+  return cacheRate === null ? totalLabel : `${totalLabel} ${colors.dim(`(cache ${cacheRate}%)`)}`;
 }
 
 export function renderSessionDetailLine(data: HudData): string | null {
   const parts: string[] = [];
-  
+
   // Always show session info if we have a session
   const session = data.session;
-  
+
   // Show working directory
   const cwd = session?.cwd || data.project.cwd;
   if (cwd) {
@@ -309,12 +305,12 @@ export function collectActivityLines(data: HudData): string[] {
   if (toolsLine) {
     lines.push(toolsLine);
   }
-  
+
   // Todos/plan line
   const todosLine = renderTodosLine(data.planProgress);
   if (todosLine) {
     lines.push(todosLine);
   }
-  
+
   return lines;
 }

@@ -22,7 +22,9 @@ const METERS: Array<[string, (percent: number, width: number) => string]> = [
 
 /** Columns that are not the empty cell: whole blocks plus any partial one. */
 function filledColumns(bar: string): number {
-  return stripAnsi(bar).split('').filter((char) => char !== '░').length;
+  return stripAnsi(bar)
+    .split('')
+    .filter((char) => char !== '░').length;
 }
 
 test('a meter is exactly as wide as it was asked to be', () => {
@@ -31,11 +33,7 @@ test('a meter is exactly as wide as it was asked to be', () => {
     for (const [name, meter] of METERS) {
       for (const width of WIDTHS) {
         for (let percent = 0; percent <= 100; percent++) {
-          assert.equal(
-            visualWidth(meter(percent, width)),
-            width,
-            `${name} at ${percent}% in ${width} columns`
-          );
+          assert.equal(visualWidth(meter(percent, width)), width, `${name} at ${percent}% in ${width} columns`);
         }
       }
     }

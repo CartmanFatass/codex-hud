@@ -21,26 +21,28 @@ export function getConfigPath(): string {
  */
 export function readCodexConfig(): CodexConfig {
   const configPath = getConfigPath();
-  
+
   try {
     if (!fs.existsSync(configPath)) {
       return {};
     }
-    
+
     const content = fs.readFileSync(configPath, 'utf-8');
     const parsed = TOML.parse(content) as Record<string, unknown>;
-    
+
     return {
       model: parsed.model as string | undefined,
       model_reasoning_effort: parsed.model_reasoning_effort as string | undefined,
       model_provider: parsed.model_provider as string | undefined,
-      model_auto_compact_token_limit: typeof parsed.model_auto_compact_token_limit === 'number'
-        ? parsed.model_auto_compact_token_limit : undefined,
+      model_auto_compact_token_limit:
+        typeof parsed.model_auto_compact_token_limit === 'number' ? parsed.model_auto_compact_token_limit : undefined,
       approval_policy: parsed.approval_policy as string | undefined,
       sandbox_mode: parsed.sandbox_mode as string | undefined,
       mcp_servers: parseMcpServers(parsed.mcp_servers),
-      hooks_enabled: typeof (parsed.features as Record<string, unknown> | undefined)?.hooks === 'boolean'
-        ? (parsed.features as Record<string, boolean>).hooks : undefined,
+      hooks_enabled:
+        typeof (parsed.features as Record<string, unknown> | undefined)?.hooks === 'boolean'
+          ? (parsed.features as Record<string, boolean>).hooks
+          : undefined,
     };
   } catch (error) {
     // Return empty config on error
@@ -52,15 +54,13 @@ export function readCodexConfig(): CodexConfig {
 /**
  * Parse MCP servers configuration
  */
-function parseMcpServers(
-  raw: unknown
-): Record<string, McpServerConfig> | undefined {
+function parseMcpServers(raw: unknown): Record<string, McpServerConfig> | undefined {
   if (!raw || typeof raw !== 'object') {
     return undefined;
   }
-  
+
   const servers: Record<string, McpServerConfig> = {};
-  
+
   for (const [name, config] of Object.entries(raw as Record<string, unknown>)) {
     if (config && typeof config === 'object') {
       const serverConfig = config as Record<string, unknown>;
@@ -71,7 +71,7 @@ function parseMcpServers(
       };
     }
   }
-  
+
   return Object.keys(servers).length > 0 ? servers : undefined;
 }
 
@@ -97,7 +97,7 @@ export function getModelDisplayName(config: CodexConfig): string {
  */
 export function getMcpServerCount(config: CodexConfig): number {
   if (!config.mcp_servers) return 0;
-  return Object.values(config.mcp_servers).filter(s => s.enabled !== false).length;
+  return Object.values(config.mcp_servers).filter((s) => s.enabled !== false).length;
 }
 
 /**

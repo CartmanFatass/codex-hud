@@ -115,22 +115,28 @@ try {
   const lunaId = '01a00bd0-0000-4000-8000-000000000006';
   const lunaPath = writeRollout(home, { id: lunaId, parentId: root, nickname: 'LunaScout' });
   const writeContext = (payload) => {
-    fs.appendFileSync(lunaPath, `${JSON.stringify({
-      timestamp: new Date().toISOString(),
-      type: 'turn_context',
-      payload,
-    })}\n`);
+    fs.appendFileSync(
+      lunaPath,
+      `${JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: 'turn_context',
+        payload,
+      })}\n`
+    );
   };
   writeContext({
     model: 'gpt-6-astra',
     effort: 'low',
     collaboration_mode: { mode: 'default', settings: { model: 'gpt-6-astra', reasoning_effort: 'low' } },
   });
-  fs.appendFileSync(lunaPath, `${JSON.stringify({
-    timestamp: new Date().toISOString(),
-    type: 'event_msg',
-    payload: { type: 'thread_settings_applied', thread_settings: { model: 'gpt-5.6-luna' } },
-  })}\n`);
+  fs.appendFileSync(
+    lunaPath,
+    `${JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type: 'event_msg',
+      payload: { type: 'thread_settings_applied', thread_settings: { model: 'gpt-5.6-luna' } },
+    })}\n`
+  );
   writeContext({
     model: 'gpt-5.6-luna',
     effort: 'medium',
@@ -148,7 +154,9 @@ try {
   });
   const lunaUpdated = buildSubagentTree(root, [], 3, Date.now()).nodes.find((node) => node.name === 'LunaScout');
   assert.equal(lunaUpdated?.effort, 'xhigh', 'appended turn_context should refresh effort without a full re-peek');
-  const lunaHead = panelLines(withLuna).map(stripAnsi).find((line) => line.includes('LunaScout'));
+  const lunaHead = panelLines(withLuna)
+    .map(stripAnsi)
+    .find((line) => line.includes('LunaScout'));
   assert.ok(lunaHead, 'the agent reaches the panel');
   assert.match(lunaHead, new RegExp(MODEL_GLYPHS.luna), 'the badge carries the luna family glyph');
   assert.match(lunaHead, new RegExp(EFFORT_GLYPHS.medium), 'and the medium effort glyph');
@@ -219,14 +227,19 @@ try {
   // a link-only agent is `unknown` and therefore not shown.
   const loneTree = buildSubagentTree(loneRoot, [], 3, Date.now());
   process.env.CODEX_HOME = home;
-  const soloLine = panelLines(loneTree).map(stripAnsi).find((line) => line.includes('Solo'));
+  const soloLine = panelLines(loneTree)
+    .map(stripAnsi)
+    .find((line) => line.includes('Solo'));
   assert.ok(soloLine, 'a lone agent still reaches the panel');
   assert.ok(soloLine.length < 40, `a lone agent row ends at its chip, got ${soloLine.length} chars`);
 
   // Fresh main<->agent traffic pulses the chip with the animated ⇄/⇆ marker.
-  const commTree = buildSubagentTree(root, [
-    { id: child, name: 'Gauss', status: 'running', lastActivityAt: new Date() },
-  ], 3, Date.now());
+  const commTree = buildSubagentTree(
+    root,
+    [{ id: child, name: 'Gauss', status: 'running', lastActivityAt: new Date() }],
+    3,
+    Date.now()
+  );
   const commRow = renderHud(hudDataFor(commTree), { width: 160, showDetails: true }).map(stripAnsi);
   const commLine = commRow[1] ?? '';
   const marker = commLine.match(/[⇄⇆]/)?.[0];
@@ -283,21 +296,25 @@ try {
   // identically — the grandchild aligns inside its immediate parent's slice.
   const structA = {
     rootId: 'r',
-    nodes: [mk('a1', 'A', 'running', [
-      mk('b', 'B', 'running', [mk('x', 'X', 'running')]),
-      mk('c', 'C', 'running'),
-      mk('d', 'D', 'running'),
-    ])],
+    nodes: [
+      mk('a1', 'A', 'running', [
+        mk('b', 'B', 'running', [mk('x', 'X', 'running')]),
+        mk('c', 'C', 'running'),
+        mk('d', 'D', 'running'),
+      ]),
+    ],
     totalCount: 5,
     updatedAt: new Date(),
   };
   const structB = {
     rootId: 'r',
-    nodes: [mk('a1', 'A', 'running', [
-      mk('b', 'B', 'running'),
-      mk('c', 'C', 'running', [mk('x', 'X', 'running')]),
-      mk('d', 'D', 'running'),
-    ])],
+    nodes: [
+      mk('a1', 'A', 'running', [
+        mk('b', 'B', 'running'),
+        mk('c', 'C', 'running', [mk('x', 'X', 'running')]),
+        mk('d', 'D', 'running'),
+      ]),
+    ],
     totalCount: 5,
     updatedAt: new Date(),
   };
@@ -309,14 +326,8 @@ try {
   assert.ok(xRowA && xRowB, 'both structures show X');
   const parentBAt = rowsA[2].indexOf('B');
   const parentCAt = rowsB[2].indexOf('C');
-  assert.ok(
-    Math.abs(xRowA.indexOf('X') - parentBAt) <= 4,
-    "X sits inside B's slice in structure A"
-  );
-  assert.ok(
-    Math.abs(xRowB.indexOf('X') - parentCAt) <= 4,
-    "X sits inside C's slice in structure B"
-  );
+  assert.ok(Math.abs(xRowA.indexOf('X') - parentBAt) <= 4, "X sits inside B's slice in structure A");
+  assert.ok(Math.abs(xRowB.indexOf('X') - parentCAt) <= 4, "X sits inside C's slice in structure B");
 
   // The panel: anchored at the main session, every agent present, nested ones
   // under their parent, and no narrative. The full set of shape assertions
@@ -360,9 +371,7 @@ try {
       `panel line must fit the pane width (${visualLength(line)} > ${narrowWidth}): ${line}`
     );
   }
-  const cjkTree = buildSubagentTree(root, [
-    { id: child, name: '中文测试昵称', status: 'running' },
-  ], 3, Date.now());
+  const cjkTree = buildSubagentTree(root, [{ id: child, name: '中文测试昵称', status: 'running' }], 3, Date.now());
   const cjkPanel = panelLines(cjkTree, 20).map(visualLength);
   for (const width of cjkPanel) {
     assert.ok(width <= 20, `CJK panel line must fit 20 columns, got ${width}`);
@@ -388,11 +397,7 @@ try {
   };
   fs.writeFileSync(childPath, `${JSON.stringify(renamed)}\n`);
   const afterTruncate = buildSubagentTree(root, [], 3, Date.now());
-  assert.equal(
-    afterTruncate.nodes[0].name,
-    'Renamed',
-    'a shrunk rollout file must be re-peeked'
-  );
+  assert.equal(afterTruncate.nodes[0].name, 'Renamed', 'a shrunk rollout file must be re-peeked');
   resetSubagentLinkCache();
 
   // Negative cache: a first peek that fails (empty or incomplete first line)
@@ -504,16 +509,8 @@ try {
   assert.equal(firstBatch?.subagents[0]?.model, 'gpt-5.3', 'spawn batch carries model');
   fs.appendFileSync(mergePath, `${collabEvent('wait')}\n`);
   const secondBatch = await parser.parse();
-  assert.equal(
-    secondBatch?.subagents[0]?.model,
-    'gpt-5.3',
-    'model must survive incremental batches'
-  );
-  assert.equal(
-    secondBatch?.subagents[0]?.effort,
-    'xhigh',
-    'effort must survive incremental batches'
-  );
+  assert.equal(secondBatch?.subagents[0]?.model, 'gpt-5.3', 'model must survive incremental batches');
+  assert.equal(secondBatch?.subagents[0]?.effort, 'xhigh', 'effort must survive incremental batches');
 
   const headerOnly = renderHud(
     {

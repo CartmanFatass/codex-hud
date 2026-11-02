@@ -14,21 +14,35 @@ async function fixture(run: (file: string, parser: RolloutParser) => Promise<voi
   const file = path.join(dir, 'rollout.jsonl');
   const parser = new RolloutParser();
   parser.setRolloutPath(file);
-  try { await run(file, parser); }
-  finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  try {
+    await run(file, parser);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 test('custom calls retain source and match array output by call_id across polling', async () => {
   await fixture(async (file, parser) => {
     const source = 'text(await tools.exec_command({cmd:"npm test && npm run build"}));';
-    fs.writeFileSync(file, entry(0, { type: 'custom_tool_call', id: 'item-1', call_id: 'call-1', name: 'exec', input: source }));
+    fs.writeFileSync(
+      file,
+      entry(0, { type: 'custom_tool_call', id: 'item-1', call_id: 'call-1', name: 'exec', input: source })
+    );
     const started = (await parser.parse())!.toolActivity.recentCalls[0];
     assert.equal(started?.id, 'call-1');
     assert.equal(started.arguments?.code, source);
     assert.equal(started.status, 'running');
-    fs.appendFileSync(file, entry(2, { type: 'custom_tool_call_output', call_id: 'call-1', output: [
-      { type: 'input_text', text: 'Script completed' }, { type: 'input_text', text: 'Output retained' },
-    ] }));
+    fs.appendFileSync(
+      file,
+      entry(2, {
+        type: 'custom_tool_call_output',
+        call_id: 'call-1',
+        output: [
+          { type: 'input_text', text: 'Script completed' },
+          { type: 'input_text', text: 'Output retained' },
+        ],
+      })
+    );
     const result = (await parser.parse())!;
     assert.equal(result.toolActivity.totalCalls, 1);
     const finished = result.toolActivity.recentCalls[0];
@@ -43,13 +57,39 @@ test('custom output detects explicit failures in nested structured text blocks',
   await fixture(async (file, parser) => {
     const cases = [
       { output: [{ type: 'text', text: JSON.stringify({ exit_code: 2, output: 'test failed' }) }], exitCode: 2 },
-      { output: [{ type: 'text', text: JSON.stringify({ result: { value: { exit_code: 3, output: 'build failed' } } }) }], exitCode: 3 },
-      { output: [{ type: 'text', text: JSON.stringify({ isError: true, content: 'tool failed' }) }], exitCode: undefined },
-      { output: [{ type: 'text', text: 'Process exited with code 1\ntest failed' }, { type: 'text', text: 'Exit code: 0' }], exitCode: 1 },
+      {
+        output: [
+          { type: 'text', text: JSON.stringify({ result: { value: { exit_code: 3, output: 'build failed' } } }) },
+        ],
+        exitCode: 3,
+      },
+      {
+        output: [{ type: 'text', text: JSON.stringify({ isError: true, content: 'tool failed' }) }],
+        exitCode: undefined,
+      },
+      {
+        output: [
+          { type: 'text', text: 'Process exited with code 1\ntest failed' },
+          { type: 'text', text: 'Exit code: 0' },
+        ],
+        exitCode: 1,
+      },
     ];
-    fs.writeFileSync(file, cases.map((sample, i) => entry(i * 2, {
-      type: 'custom_tool_call', id: `item-${i}`, call_id: `call-${i}`, name: 'exec', input: 'npm test',
-    }) + entry(i * 2 + 1, { type: 'custom_tool_call_output', call_id: `call-${i}`, output: sample.output })).join(''));
+    fs.writeFileSync(
+      file,
+      cases
+        .map(
+          (sample, i) =>
+            entry(i * 2, {
+              type: 'custom_tool_call',
+              id: `item-${i}`,
+              call_id: `call-${i}`,
+              name: 'exec',
+              input: 'npm test',
+            }) + entry(i * 2 + 1, { type: 'custom_tool_call_output', call_id: `call-${i}`, output: sample.output })
+        )
+        .join('')
+    );
     const calls = (await parser.parse())!.toolActivity.recentCalls;
     assert.equal(calls.length, cases.length);
     calls.forEach((call, i) => {
@@ -63,11 +103,18 @@ test('custom output detects explicit failures in nested structured text blocks',
 
 test('output is bounded and binary blocks do not turn into text', async () => {
   await fixture(async (file, parser) => {
-    fs.writeFileSync(file, entry(0, { type: 'custom_tool_call', call_id: 'call', name: 'exec', input: 'npm run build' }) +
-      entry(1, { type: 'custom_tool_call_output', call_id: 'call', output: [
-        { type: 'image', data: 'do not display this' },
-        { type: 'text', text: 'x'.repeat(10000) + '\nExit code: 0' },
-      ] }));
+    fs.writeFileSync(
+      file,
+      entry(0, { type: 'custom_tool_call', call_id: 'call', name: 'exec', input: 'npm run build' }) +
+        entry(1, {
+          type: 'custom_tool_call_output',
+          call_id: 'call',
+          output: [
+            { type: 'image', data: 'do not display this' },
+            { type: 'text', text: 'x'.repeat(10000) + '\nExit code: 0' },
+          ],
+        })
+    );
     const call = (await parser.parse())!.toolActivity.recentCalls[0];
     assert.equal(call?.resultSuccess, true);
     assert.equal(call.output?.length, 8000);
@@ -77,8 +124,16 @@ test('output is bounded and binary blocks do not turn into text', async () => {
 
 test('ordinary function calls also correlate results with call_id before item id', async () => {
   await fixture(async (file, parser) => {
-    fs.writeFileSync(file, entry(0, { type: 'function_call', id: 'item', call_id: 'call', name: 'exec_command', arguments: '{"cmd":"npm test"}' }) +
-      entry(1, { type: 'function_call_output', call_id: 'call', output: '{"exit_code":0,"output":"passed"}' }));
+    fs.writeFileSync(
+      file,
+      entry(0, {
+        type: 'function_call',
+        id: 'item',
+        call_id: 'call',
+        name: 'exec_command',
+        arguments: '{"cmd":"npm test"}',
+      }) + entry(1, { type: 'function_call_output', call_id: 'call', output: '{"exit_code":0,"output":"passed"}' })
+    );
     const call = (await parser.parse())!.toolActivity.recentCalls[0];
     assert.equal(call.id, 'call');
     assert.equal(call.status, 'completed');

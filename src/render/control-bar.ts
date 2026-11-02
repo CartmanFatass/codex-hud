@@ -121,10 +121,14 @@ export const EMOJI_ICONS: Record<IconName, string> = {
 /** The icon the panel draws for `name`, or '' with icons off. */
 export function icon(name: IconName): string {
   switch (iconSet()) {
-    case 'nerd': return ICONS[name];
-    case 'unicode': return UNICODE_ICONS[name];
-    case 'emoji': return EMOJI_ICONS[name];
-    default: return '';
+    case 'nerd':
+      return ICONS[name];
+    case 'unicode':
+      return UNICODE_ICONS[name];
+    case 'emoji':
+      return EMOJI_ICONS[name];
+    default:
+      return '';
   }
 }
 
@@ -197,7 +201,13 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
   const zh = language() === 'zh';
   // With icons off the main session's button is an arrow and a word: a word alone would read as a tab.
   const arrow = iconSet() === 'text' ? '← ' : '';
-  const main: Spec = { kind: 'main', glyph: icon('main'), word: `${arrow}${t('Main')}`, short: `${arrow}${zh ? '主' : 'Main'}`, state: 'button' };
+  const main: Spec = {
+    kind: 'main',
+    glyph: icon('main'),
+    word: `${arrow}${t('Main')}`,
+    short: `${arrow}${zh ? '主' : 'Main'}`,
+    state: 'button',
+  };
   const tabs: Spec[] = [];
   for (const id of MONITOR_PANES) {
     // In the tabs layout every pane has a tab: none is closed.
@@ -206,21 +216,44 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
     // With no colour a tab cannot say closed; only the panes there are get one.
     if (mode === 'closed' && (keep < 4 || palette().name === 'none')) continue;
     if ((!focused && keep < 1) || keep < 0) continue;
-    tabs.push({ kind: 'tab', pane: id, glyph: icon(id), word: names(id).tab, short: names(id).short, state: focused ? 'focused' : mode });
+    tabs.push({
+      kind: 'tab',
+      pane: id,
+      glyph: icon(id),
+      word: names(id).tab,
+      short: names(id).short,
+      state: focused ? 'focused' : mode,
+    });
   }
   // Settings is navigation, not a pane and not a right-hand action. Its word
   // survives the pane tabs' fitting levels; even the narrow fallback is labelled.
   const settingsWord = t('Settings');
   const settingsLabel = width >= 24 ? settingsWord : truncateAnsi(settingsWord, zh ? 3 : 4).replace(/…$/u, '');
-  tabs.push({ kind: 'settings', glyph: icon('settings'), word: settingsLabel, short: settingsLabel, state: input.settingsActive ? 'focused' : 'open' });
+  tabs.push({
+    kind: 'settings',
+    glyph: icon('settings'),
+    word: settingsLabel,
+    short: settingsLabel,
+    state: input.settingsActive ? 'focused' : 'open',
+  });
   const actions: Spec[] = [];
   // Keys held in the panel: nothing typed reaches Codex until Esc or a click
   // here hands them back, so the bar says so for as long as it lasts, and
   // never gives the chip up for room.
-  if (state.keys) actions.push({ kind: 'keys', glyph: icon('keys'), word: t('Keys here'), short: t('Keys'), state: 'button', accent: true });
+  if (state.keys)
+    actions.push({
+      kind: 'keys',
+      glyph: icon('keys'),
+      word: t('Keys here'),
+      short: t('Keys'),
+      state: 'button',
+      accent: true,
+    });
   // An agent selected, in its list or its Inspector: switching Codex to it, as `o` does, is a click away.
-  const switchable = state.tree.selectedId && (state.focus === 'agents' || (state.focus === 'details' && state.preview === 'agent'));
-  if (switchable && !input.settingsActive && keep >= 2) actions.push({ kind: 'open-session', glyph: icon('open'), word: t('Switch'), short: '⇢', state: 'button' });
+  const switchable =
+    state.tree.selectedId && (state.focus === 'agents' || (state.focus === 'details' && state.preview === 'agent'));
+  if (switchable && !input.settingsActive && keep >= 2)
+    actions.push({ kind: 'open-session', glyph: icon('open'), word: t('Switch'), short: '⇢', state: 'button' });
   if (input.brief && keep >= 2) {
     const paused = Boolean(input.brief.paused);
     actions.push({
@@ -340,7 +373,13 @@ function spans(placed: Placed[], y: number, from: number, to: number): MonitorCo
     const next = placed[i + 1];
     const start = prev ? Math.ceil((prev.x + prev.width + p.x) / 2) : from;
     const end = next ? Math.ceil((p.x + p.width + next.x) / 2) : to;
-    return { kind: p.spec.kind, ...(p.spec.pane ? { pane: p.spec.pane } : {}), x: start, y, width: Math.max(1, end - start) };
+    return {
+      kind: p.spec.kind,
+      ...(p.spec.pane ? { pane: p.spec.pane } : {}),
+      x: start,
+      y,
+      width: Math.max(1, end - start),
+    };
   });
 }
 
@@ -352,7 +391,10 @@ export function controlBar(state: MonitorState, input: BarInput, width: number):
 /** The main session's button alone, for a bar too narrow for anything else. */
 function mainOnly(width: number): Bar {
   const text = truncateAnsi(` ${icon('main') || '←'}`, width);
-  return { lines: [text + ' '.repeat(Math.max(0, width - visualLength(text)))], controls: [{ kind: 'main', x: 0, y: 0, width }] };
+  return {
+    lines: [text + ' '.repeat(Math.max(0, width - visualLength(text)))],
+    controls: [{ kind: 'main', x: 0, y: 0, width }],
+  };
 }
 
 /** The one-row bar of the tab, band, tile and pill looks. */
@@ -365,7 +407,9 @@ function rowBar(state: MonitorState, input: BarInput, width: number): Bar {
       if (level === 'every' && keep < 4) continue;
       if (level === 'named' && !state.tabbed) continue;
       // The older button's words first. When they do not fit, the same row with the icon alone.
-      const laid = layRow(style, set, level, gap, width, true) ?? (input.expired ? layRow(style, set, level, gap, width, false) : null);
+      const laid =
+        layRow(style, set, level, gap, width, true) ??
+        (input.expired ? layRow(style, set, level, gap, width, false) : null);
       if (laid) return laid;
     }
   }
@@ -378,11 +422,19 @@ function rowBar(state: MonitorState, input: BarInput, width: number): Bar {
  * two groups sit on the band and the spare columns are the accent's rule.
  * Null when it does not fit.
  */
-function layRow(style: LookName, set: Specs, level: Level, gap: number, width: number, olderWords: boolean): Bar | null {
+function layRow(
+  style: LookName,
+  set: Specs,
+  level: Level,
+  gap: number,
+  width: number,
+  olderWords: boolean
+): Bar | null {
   // A tab with no surface of its own needs two columns to the next tab for its word to stand apart.
   if (style === 'band' && gap < 2 && level !== 'none' && palette().name !== 'none') return null;
   const roomy = gap >= 2;
-  const make = (spec: Spec) => paint(style, face(spec, hasWord(level, spec, olderWords), hasIcon(level, spec)), spec.state, spec.accent, roomy);
+  const make = (spec: Spec) =>
+    paint(style, face(spec, hasWord(level, spec, olderWords), hasIcon(level, spec)), spec.state, spec.accent, roomy);
   const band = style === 'band';
   const main = make(set.main);
   const tabs = set.tabs.map(make);
@@ -390,7 +442,8 @@ function layRow(style: LookName, set: Specs, level: Level, gap: number, width: n
   const between = level === 'every' ? 2 : 1;
   // The main session's button stands a column from the tabs, as far as they are apart once it has its word.
   const lead = level === 'every' ? gap : 1;
-  const sum = (texts: string[], sep: number) => texts.reduce((n, text) => n + visualLength(text), 0) + sep * Math.max(0, texts.length - 1);
+  const sum = (texts: string[], sep: number) =>
+    texts.reduce((n, text) => n + visualLength(text), 0) + sep * Math.max(0, texts.length - 1);
   const leftWidth = 1 + visualLength(main) + (tabs.length ? lead + sum(tabs, gap) : 0) + (band ? 1 : 0);
   const rightWidth = (band ? 1 : 0) + sum(actions, between) + 1;
   const spare = width - leftWidth - rightWidth;
@@ -425,7 +478,9 @@ function layRow(style: LookName, set: Specs, level: Level, gap: number, width: n
     right += text;
   });
   right += ' ';
-  const line = band ? theme.band(left) + theme.accent('─'.repeat(spare)) + theme.band(right) : left + ' '.repeat(spare) + right;
+  const line = band
+    ? theme.band(left) + theme.accent('─'.repeat(spare)) + theme.band(right)
+    : left + ' '.repeat(spare) + right;
   return { lines: [line], controls: spans(placed, 0, 0, width) };
 }
 
@@ -446,7 +501,14 @@ function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
     // The older button tries its words, then the icon alone when those do not fit.
     const titles = [...new Set([face(set.main, true), face(set.main, false), set.main.glyph || '←'])];
     for (const olderWords of [true, false]) {
-      const actions = set.actions.map((spec) => paint('frame', face(spec, (spec.kind === 'older' || spec.kind === 'keys') && olderWords), spec.state, spec.accent));
+      const actions = set.actions.map((spec) =>
+        paint(
+          'frame',
+          face(spec, (spec.kind === 'older' || spec.kind === 'keys') && olderWords),
+          spec.state,
+          spec.accent
+        )
+      );
       const actionsWidth = actions.reduce((n, text) => n + visualLength(text), 0) + Math.max(0, actions.length - 1);
       for (const name of titles) {
         const title = theme.bold(theme.accent(` ${name} `));
@@ -468,7 +530,9 @@ function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
     // The tabs, a column in from the frame's left side, ending a column short of its right.
     for (const [level, gap] of OPTIONS) {
       if (level === 'every' || (level === 'named' && !state.tabbed)) continue;
-      const tabs = set.tabs.map((spec) => paint('frame', face(spec, hasWord(level, spec), hasIcon(level, spec)), spec.state));
+      const tabs = set.tabs.map((spec) =>
+        paint('frame', face(spec, hasWord(level, spec), hasIcon(level, spec)), spec.state)
+      );
       const used = tabs.reduce((n, text) => n + visualLength(text), 0) + gap * Math.max(0, tabs.length - 1);
       if (used > width - 4) continue;
       const placed: Placed[] = [];
@@ -543,7 +607,14 @@ export function paneHead(id: MonitorPane, width: number, o: HeadOptions): string
   return headRow(style, titles.at(-1)!, counts(false, false), bare, width, true)!;
 }
 
-function headRow(style: LookName, title: string, counts: string, o: HeadOptions, width: number, cut: boolean): string | null {
+function headRow(
+  style: LookName,
+  title: string,
+  counts: string,
+  o: HeadOptions,
+  width: number,
+  cut: boolean
+): string | null {
   const bare = palette().name === 'none';
   const right = o.right ?? '';
   const strong = (text: string) => theme.bold(o.focused ? theme.accent(text) : theme.value(text));
@@ -561,8 +632,9 @@ function headRow(style: LookName, title: string, counts: string, o: HeadOptions,
   else head = style === 'band' && o.zoomed ? theme.bold(title) : strong(title);
   // With no title and nothing after it, a rule runs on from the frame's edge (or the row's first column).
   const bareRow = !head && !counts;
-  const lead = style === 'frame' ? bareRow ? theme.frame('├') : `${theme.frame('├─')} ` : bareRow && style === 'tile' ? '' : ' ';
-  const info = counts ? `${head ? style === 'tab' || style === 'band' ? '  ' : ' ' : ''}${counts}` : '';
+  const lead =
+    style === 'frame' ? (bareRow ? theme.frame('├') : `${theme.frame('├─')} `) : bareRow && style === 'tile' ? '' : ' ';
+  const info = counts ? `${head ? (style === 'tab' || style === 'band' ? '  ' : ' ') : ''}${counts}` : '';
   // The rule's looks draw a rule across to the right end; the others leave the columns blank.
   const ruled = style === 'tile' || style === 'frame';
   const close = style === 'frame' ? theme.frame(right ? ' ─┤' : '─┤') : ' ';

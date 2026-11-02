@@ -12,13 +12,7 @@ import { eachThread, type ThreadKind } from '../collectors/subagent-tree.js';
 import { quotaState, readQuotaWindows } from './quota.js';
 
 export type AttentionKind =
-  | 'approval'
-  | 'tool-error'
-  | 'agent-error'
-  | 'subtask-error'
-  | 'review-error'
-  | 'quota-exhausted'
-  | 'context-critical';
+  'approval' | 'tool-error' | 'agent-error' | 'subtask-error' | 'review-error' | 'quota-exhausted' | 'context-critical';
 
 export interface AttentionItem {
   kind: AttentionKind;

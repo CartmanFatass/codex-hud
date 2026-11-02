@@ -17,10 +17,10 @@ export const PANEL_WIDTHS: readonly number[] = [NARROW_WIDTH, 40, 48, 56];
  * and Codex keeps at least 41 columns. bin/codex-hud-toggle and bin/codex-hud
  * open the pane at that width before this takes over.
  */
-export function panelWidth(requested:number,windowWidth:number):number {
+export function panelWidth(requested: number, windowWidth: number): number {
   const desired = requested > 0 ? requested : DEFAULT_WIDTH;
-  const max = windowWidth-41 >= 10 ? windowWidth-41 : Math.floor(windowWidth/3);
-  return Math.max(1,Math.min(max,Math.max(16,desired)));
+  const max = windowWidth - 41 >= 10 ? windowWidth - 41 : Math.floor(windowWidth / 3);
+  return Math.max(1, Math.min(max, Math.max(16, desired)));
 }
 
 /**
@@ -39,7 +39,7 @@ export class TreeWidthKeeper {
   constructor(
     private readonly readWindowWidth: () => Promise<number | null>,
     private readonly resize: (paneWidth: number) => Promise<void>,
-    private readonly requested: () => number,
+    private readonly requested: () => number
   ) {}
   /** Size the pane now: at startup, and when a new width is saved. */
   async apply(): Promise<void> {
@@ -57,16 +57,21 @@ export class TreeWidthKeeper {
   }
 }
 
-async function tmuxWindowWidth(pane:string):Promise<number|null> {
-  const {stdout} = await exec('tmux',['display-message','-p','-t',pane,'#{window_width}'],{timeout:2000});
+async function tmuxWindowWidth(pane: string): Promise<number | null> {
+  const { stdout } = await exec('tmux', ['display-message', '-p', '-t', pane, '#{window_width}'], { timeout: 2000 });
   const width = Number(stdout.trim());
   return Number.isInteger(width) && width >= 1 ? width : null;
 }
 
 /** The keeper for this process's own pane, or null outside a HUD tree pane. */
-export function treeWidthKeeper(requested:()=>number):TreeWidthKeeper|null {
+export function treeWidthKeeper(requested: () => number): TreeWidthKeeper | null {
   const pane = process.env.TMUX_PANE;
   if (!pane || !/^%\d+$/.test(pane) || !process.env.CODEX_HUD_MAIN_PANE) return null;
-  return new TreeWidthKeeper(()=>tmuxWindowWidth(pane),
-    async width=>{await exec('tmux',['resize-pane','-t',pane,'-x',String(width)],{timeout:2000});},requested);
+  return new TreeWidthKeeper(
+    () => tmuxWindowWidth(pane),
+    async (width) => {
+      await exec('tmux', ['resize-pane', '-t', pane, '-x', String(width)], { timeout: 2000 });
+    },
+    requested
+  );
 }

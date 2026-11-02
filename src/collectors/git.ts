@@ -159,8 +159,16 @@ function runGit(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       'git',
-      ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'color.ui=false',
-        '-c', 'core.quotePath=true', ...args],
+      [
+        '--no-optional-locks',
+        '-c',
+        'core.fsmonitor=false',
+        '-c',
+        'color.ui=false',
+        '-c',
+        'core.quotePath=true',
+        ...args,
+      ],
       {
         cwd,
         encoding: 'utf8',
@@ -272,11 +280,7 @@ async function fileStamp(file: string): Promise<string> {
  * commits, `git add`), HEAD (checkout), the current branch ref and packed-refs
  * (commits, resets), the upstream ref and FETCH_HEAD (fetch/pull).
  */
-async function metadataSignature(
-  dirs: GitDirs,
-  branch: string | null,
-  upstream: string | null
-): Promise<string> {
+async function metadataSignature(dirs: GitDirs, branch: string | null, upstream: string | null): Promise<string> {
   const files = [
     path.join(dirs.gitDir, 'index'),
     path.join(dirs.gitDir, 'HEAD'),

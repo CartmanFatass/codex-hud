@@ -18,17 +18,36 @@ const MAX_SIDE = 240;
 const TIMEOUT_MS = 15_000;
 
 export async function loadArtImage(file: string): Promise<ArtBitmap> {
-  const { stdout: probe } = await exec('ffprobe', ['-v', 'error', '-select_streams', 'v:0',
-    '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', '--', file], { timeout: TIMEOUT_MS });
+  const { stdout: probe } = await exec(
+    'ffprobe',
+    ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', '--', file],
+    { timeout: TIMEOUT_MS }
+  );
   const [w, h] = probe.trim().split('x').map(Number);
   if (!(w > 0 && h > 0)) throw new Error('not an image');
   const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
   const width = Math.max(1, Math.round(w * scale));
   const height = Math.max(1, Math.round(h * scale));
   // `file:` keeps a path that looks like a protocol or an option a path.
-  const { stdout } = await exec('ffmpeg', ['-v', 'error', '-i', `file:${file}`, '-frames:v', '1',
-    '-vf', `scale=${width}:${height}:flags=area`, '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'],
-  { timeout: TIMEOUT_MS, encoding: 'buffer', maxBuffer: MAX_SIDE * MAX_SIDE * 4 + 1024 });
+  const { stdout } = await exec(
+    'ffmpeg',
+    [
+      '-v',
+      'error',
+      '-i',
+      `file:${file}`,
+      '-frames:v',
+      '1',
+      '-vf',
+      `scale=${width}:${height}:flags=area`,
+      '-f',
+      'rawvideo',
+      '-pix_fmt',
+      'rgba',
+      '-',
+    ],
+    { timeout: TIMEOUT_MS, encoding: 'buffer', maxBuffer: MAX_SIDE * MAX_SIDE * 4 + 1024 }
+  );
   if (stdout.length !== width * height * 4) throw new Error('image decode was cut short');
   return { width, height, data: new Uint8Array(stdout.buffer, stdout.byteOffset, stdout.length) };
 }

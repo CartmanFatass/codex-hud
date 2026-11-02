@@ -134,11 +134,7 @@ try {
     const finder = new SessionFinder(cwd);
     const resolved = finder.check();
     assert.ok(resolved, 'expected a pane-bound session to resolve');
-    assert.equal(
-      resolved.path,
-      boundRollout,
-      'pane-bound shell snapshot should override the newest unrelated rollout'
-    );
+    assert.equal(resolved.path, boundRollout, 'pane-bound shell snapshot should override the newest unrelated rollout');
   }
 
   {

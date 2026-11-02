@@ -55,12 +55,17 @@ test('a missing tool result never freezes the denominator or inflates later outp
 test('a tail without a prior counter waits for an actual delta instead of counting previous-turn output', () => {
   const tracker = new TokenRateTracker();
   tracker.startTurn(at(100));
-  observeTokenRateRecord(tracker, { timestamp: at(101).toISOString(), type: 'event_msg', payload: {
-    type: 'token_count', info: {
-      total_token_usage: { output_tokens: 1000 },
-      last_token_usage: { output_tokens: 100 }, // Repeats the previous turn.
+  observeTokenRateRecord(tracker, {
+    timestamp: at(101).toISOString(),
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: {
+        total_token_usage: { output_tokens: 1000 },
+        last_token_usage: { output_tokens: 100 }, // Repeats the previous turn.
+      },
     },
-  } });
+  });
   assert.equal(tracker.snapshot ?? null, null, 'no guessed historical baseline');
   tracker.observe(1100, at(110));
   assert.equal(tracker.snapshot?.sampleMs, 9000);
@@ -111,10 +116,13 @@ test('invalid/backwards tool times and a zero model-time denominator cannot prod
 test('main and agent readers use the same wall proxy across incremental reads, tool formats, replay and rotation', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hud-wall-rate-'));
   const file = path.join(dir, 'rollout.jsonl');
-  const row = (seconds: number, type: string, payload: object) => JSON.stringify({ timestamp: at(seconds).toISOString(), type, payload }) + '\n';
-  const usage = (seconds: number, total: number, last: number) => row(seconds, 'event_msg', {
-    type: 'token_count', info: { total_token_usage: { output_tokens: total }, last_token_usage: { output_tokens: last } },
-  });
+  const row = (seconds: number, type: string, payload: object) =>
+    JSON.stringify({ timestamp: at(seconds).toISOString(), type, payload }) + '\n';
+  const usage = (seconds: number, total: number, last: number) =>
+    row(seconds, 'event_msg', {
+      type: 'token_count',
+      info: { total_token_usage: { output_tokens: total }, last_token_usage: { output_tokens: last } },
+    });
   const parser = new RolloutParser();
   parser.setRolloutPath(file);
   resetAgentContextCache();
@@ -127,14 +135,27 @@ test('main and agent readers use the same wall proxy across incremental reads, t
     return main;
   };
   try {
-    await fs.writeFile(file, usage(-1, 50_000, 100) + row(0, 'event_msg', { type: 'task_started' }) + usage(10, 50_100, 100) +
-      row(10, 'response_item', { type: 'function_call', call_id: 'a', name: 'exec_command' }) +
-      row(15, 'response_item', { type: 'custom_tool_call', call_id: 'b', name: 'exec' }));
+    await fs.writeFile(
+      file,
+      usage(-1, 50_000, 100) +
+        row(0, 'event_msg', { type: 'task_started' }) +
+        usage(10, 50_100, 100) +
+        row(10, 'response_item', { type: 'function_call', call_id: 'a', name: 'exec_command' }) +
+        row(15, 'response_item', { type: 'custom_tool_call', call_id: 'b', name: 'exec' })
+    );
     const initial = await compare(10, 10_000);
-    await fs.appendFile(file, row(40, 'response_item', { type: 'function_call_output', call_id: 'a' }) +
-      row(110, 'response_item', { type: 'custom_tool_call_output', call_id: 'b' }) + usage(120, 50_400, 300));
+    await fs.appendFile(
+      file,
+      row(40, 'response_item', { type: 'function_call_output', call_id: 'a' }) +
+        row(110, 'response_item', { type: 'custom_tool_call_output', call_id: 'b' }) +
+        usage(120, 50_400, 300)
+    );
     const measured = await compare(20, 20_000);
-    assert.deepEqual(initial, { tokensPerSecond: 10, sampleMs: 10_000, sampledAt: at(10) }, 'published snapshot is immutable');
+    assert.deepEqual(
+      initial,
+      { tokensPerSecond: 10, sampleMs: 10_000, sampledAt: at(10) },
+      'published snapshot is immutable'
+    );
     await fs.appendFile(file, usage(150, 50_400, 300));
     assert.deepEqual(await compare(20, 20_000), measured, 'duplicate report retains freshness');
     assert.deepEqual((await parser.fullParse())?.outputRate, measured);

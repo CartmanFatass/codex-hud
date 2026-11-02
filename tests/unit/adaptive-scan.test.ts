@@ -5,43 +5,84 @@ import fsMutable from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { buildSubagentTree, buildSubagentTreeYielding, flushTreeScans, resetSubagentLinkCache, useTreeScanStore } from '../../src/collectors/subagent-tree.js';
+import {
+  buildSubagentTree,
+  buildSubagentTreeYielding,
+  flushTreeScans,
+  resetSubagentLinkCache,
+  useTreeScanStore,
+} from '../../src/collectors/subagent-tree.js';
 import { TreeScanStore, SCAN_VERSION } from '../../src/collectors/tree-scan-store.js';
 import type { SessionFile } from '../../src/collectors/session-finder.js';
 
 const now = Date.parse('2026-10-25T12:00:00Z');
 const line = (value: unknown) => `${JSON.stringify(value)}\n`;
-const event = (type: string, payload: Record<string, unknown> = {}) => line({ timestamp: new Date(now).toISOString(), type: 'event_msg', payload: { type, ...payload } });
-const meta = (id: string, parent_thread_id?: string) => line({ type: 'session_meta', payload: { id, parent_thread_id, agent_path: `/root/${id}` } });
-const filler = line({ type: 'response_item', payload: { type: 'reasoning', encrypted_content: 'x'.repeat(1000) } }).repeat(10_000);
+const event = (type: string, payload: Record<string, unknown> = {}) =>
+  line({ timestamp: new Date(now).toISOString(), type: 'event_msg', payload: { type, ...payload } });
+const meta = (id: string, parent_thread_id?: string) =>
+  line({ type: 'session_meta', payload: { id, parent_thread_id, agent_path: `/root/${id}` } });
+const filler = line({
+  type: 'response_item',
+  payload: { type: 'reasoning', encrypted_content: 'x'.repeat(1000) },
+}).repeat(10_000);
 
 function fixture(t: { after: (fn: () => void) => void }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-adaptive-scan-'));
   resetSubagentLinkCache();
   useTreeScanStore(undefined);
-  t.after(() => { useTreeScanStore(undefined); resetSubagentLinkCache(); fs.rmSync(dir, { recursive: true, force: true }); });
+  t.after(() => {
+    useTreeScanStore(undefined);
+    resetSubagentLinkCache();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   const file = path.join(dir, 'child.jsonl');
   const root = path.join(dir, 'root.jsonl');
   const unicode = '多字节🙂'.repeat(30_000);
-  fs.writeFileSync(root, meta('root')
-    + line({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Please check parser bytes.' }] } })
-    + event('item_completed', { item: { type: 'SubAgentActivity', kind: 'started', agent_thread_id: 'child' } }));
-  const completed = meta('child', 'root') + event('task_started', { turn_id: 'first' }) + filler
-    + '\nmalformed JSON\n'
-    + line({ type: 'turn_context', payload: { model: 'unicode-first', effort: '超高🙂', padding: unicode } })
-    + line({ type: 'turn_context', payload: { model: 'test-model' } })
-    + event('task_complete', { turn_id: 'first', last_agent_message: 'Unicode résumé 多字节🙂 accepted.' });
+  fs.writeFileSync(
+    root,
+    meta('root') +
+      line({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'Please check parser bytes.' }],
+        },
+      }) +
+      event('item_completed', { item: { type: 'SubAgentActivity', kind: 'started', agent_thread_id: 'child' } })
+  );
+  const completed =
+    meta('child', 'root') +
+    event('task_started', { turn_id: 'first' }) +
+    filler +
+    '\nmalformed JSON\n' +
+    line({ type: 'turn_context', payload: { model: 'unicode-first', effort: '超高🙂', padding: unicode } }) +
+    line({ type: 'turn_context', payload: { model: 'test-model' } }) +
+    event('task_complete', { turn_id: 'first', last_agent_message: 'Unicode résumé 多字节🙂 accepted.' });
   const partial = event('task_started', { turn_id: 'second' });
   fs.writeFileSync(file, completed + partial.slice(0, -9));
-  const listed = (): SessionFile[] => [root, file].map(filePath => {
-    const stat = fs.statSync(filePath);
-    return { path: filePath, sessionId: filePath === root ? 'root' : 'child', timestamp: new Date(now), size: stat.size, modifiedAt: stat.mtime, ino: stat.ino };
-  });
+  const listed = (): SessionFile[] =>
+    [root, file].map((filePath) => {
+      const stat = fs.statSync(filePath);
+      return {
+        path: filePath,
+        sessionId: filePath === root ? 'root' : 'child',
+        timestamp: new Date(now),
+        size: stat.size,
+        modifiedAt: stat.mtime,
+        ino: stat.ino,
+      };
+    });
   return { dir, file, root, listed, completedBytes: Buffer.byteLength(completed), partial };
 }
 
 /** Inject a writer only after this rollout's scan has consumed an old prefix. */
-function changeDuringScan(t: { after: (fn: () => void) => void }, file: string, change: () => void, duringVerification?: () => void): () => boolean {
+function changeDuringScan(
+  t: { after: (fn: () => void) => void },
+  file: string,
+  change: () => void,
+  duringVerification?: () => void
+): () => boolean {
   const identity = fs.statSync(file);
   const read = fsMutable.readSync;
   let queued = false;
@@ -53,7 +94,10 @@ function changeDuringScan(t: { after: (fn: () => void) => void }, file: string, 
       const stat = fs.fstatSync(args[0] as number);
       if (stat.ino === identity.ino && stat.dev === identity.dev) {
         queued = true;
-        setImmediate(() => { change(); changed = true; });
+        setImmediate(() => {
+          change();
+          changed = true;
+        });
       }
     }
     if (changed && !verificationQueued && duringVerification && args[4] === 0) {
@@ -66,7 +110,10 @@ function changeDuringScan(t: { after: (fn: () => void) => void }, file: string, 
     return bytes;
   }) as typeof fsMutable.readSync;
   syncBuiltinESMExports();
-  t.after(() => { fsMutable.readSync = read; syncBuiltinESMExports(); });
+  t.after(() => {
+    fsMutable.readSync = read;
+    syncBuiltinESMExports();
+  });
   return () => changed;
 }
 
@@ -83,7 +130,10 @@ function changeBeforeScan(t: { after: (fn: () => void) => void }, file: string, 
     return Reflect.apply(open, fsMutable, args) as number;
   }) as typeof fsMutable.openSync;
   syncBuiltinESMExports();
-  t.after(() => { fsMutable.openSync = open; syncBuiltinESMExports(); });
+  t.after(() => {
+    fsMutable.openSync = open;
+    syncBuiltinESMExports();
+  });
   return () => changed;
 }
 
@@ -106,7 +156,12 @@ test('within-file yielding preserves tree, ledger, saved bytes, unicode and part
   const asyncStore = new TreeScanStore(path.join(s.dir, 'async'));
   useTreeScanStore(asyncStore);
   let inputServiced = false;
-  const input = new Promise<void>(resolve => setImmediate(() => { inputServiced = true; resolve(); }));
+  const input = new Promise<void>((resolve) =>
+    setImmediate(() => {
+      inputServiced = true;
+      resolve();
+    })
+  );
   const actual = await buildSubagentTreeYielding('root', [], 3, now, s.listed());
   assert.equal(inputServiced, true, 'queued input runs before this single large rollout finishes');
   await input;
@@ -122,13 +177,22 @@ test('within-file yielding preserves tree, ledger, saved bytes, unicode and part
   flushTreeScans();
   resetSubagentLinkCache();
   useTreeScanStore(new TreeScanStore(path.join(s.dir, 'async')));
-  assert.deepEqual(await buildSubagentTreeYielding('root', [], 3, now + 100, s.listed()), resumed, 'saved-cache restart preserves the resumed state');
+  assert.deepEqual(
+    await buildSubagentTreeYielding('root', [], 3, now + 100, s.listed()),
+    resumed,
+    'saved-cache restart preserves the resumed state'
+  );
 });
 
 test('an append during a yield is deferred to the next observed snapshot', async (t) => {
   const s = fixture(t);
   const listed = s.listed();
-  const append = new Promise<void>(resolve => setImmediate(() => { fs.appendFileSync(s.file, s.partial.slice(-9)); resolve(); }));
+  const append = new Promise<void>((resolve) =>
+    setImmediate(() => {
+      fs.appendFileSync(s.file, s.partial.slice(-9));
+      resolve();
+    })
+  );
   const before = await buildSubagentTreeYielding('root', [], 3, now, listed);
   await append;
   assert.equal(before.nodes[0].status, 'completed');
@@ -140,8 +204,16 @@ test('an append during a yield is deferred to the next observed snapshot', async
 test('replacement while scanning is rejected without publishing a mixed ledger and recovers on next collection', async (t) => {
   const s = fixture(t);
   const replacement = path.join(s.dir, 'replacement.jsonl');
-  fs.writeFileSync(replacement, meta('child', 'root') + event('task_complete', { last_agent_message: 'Replacement only.' }));
-  const replace = new Promise<void>(resolve => setImmediate(() => { fs.renameSync(replacement, s.file); resolve(); }));
+  fs.writeFileSync(
+    replacement,
+    meta('child', 'root') + event('task_complete', { last_agent_message: 'Replacement only.' })
+  );
+  const replace = new Promise<void>((resolve) =>
+    setImmediate(() => {
+      fs.renameSync(replacement, s.file);
+      resolve();
+    })
+  );
   await assert.rejects(buildSubagentTreeYielding('root', [], 3, now, s.listed()), /Rollout changed/);
   await replace;
   const recovered = await buildSubagentTreeYielding('root', [], 3, now + 100, s.listed());
@@ -151,10 +223,12 @@ test('replacement while scanning is rejected without publishing a mixed ledger a
 
 test('in-place truncation during a yield discards the staged scan and retries from the new source', async (t) => {
   const s = fixture(t);
-  const truncate = new Promise<void>(resolve => setImmediate(() => {
-    fs.writeFileSync(s.file, meta('child', 'root') + event('task_started', { turn_id: 'replacement' }));
-    resolve();
-  }));
+  const truncate = new Promise<void>((resolve) =>
+    setImmediate(() => {
+      fs.writeFileSync(s.file, meta('child', 'root') + event('task_started', { turn_id: 'replacement' }));
+      resolve();
+    })
+  );
   await assert.rejects(buildSubagentTreeYielding('root', [], 3, now, s.listed()), /Rollout changed/);
   await truncate;
   const recovered = await buildSubagentTreeYielding('root', [], 3, now + 100, s.listed());
@@ -178,8 +252,12 @@ test('a same-sized rewrite after listing is rejected before mixing source versio
 test('a same-inode truncate-and-regrow past the snapshot during yielding cannot publish mixed generations', async (t) => {
   const s = fixture(t);
   const before = fs.statSync(s.file);
-  const regenerated = meta('child', 'root') + event('task_started', { turn_id: 'newer' }) + filler + filler
-    + event('task_complete', { turn_id: 'newer', last_agent_message: 'Only the regenerated turn.' });
+  const regenerated =
+    meta('child', 'root') +
+    event('task_started', { turn_id: 'newer' }) +
+    filler +
+    filler +
+    event('task_complete', { turn_id: 'newer', last_agent_message: 'Only the regenerated turn.' });
   const changed = changeDuringScan(t, s.file, () => fs.writeFileSync(s.file, regenerated));
   await assert.rejects(buildSubagentTreeYielding('root', [], 3, now, s.listed()), /Rollout changed/);
   assert.equal(changed(), true);
@@ -220,9 +298,15 @@ test('larger same-inode regeneration before scanning cannot combine stale metada
 test('a second write during cooperative prefix verification is uncertain and retries from a fresh listing', async (t) => {
   const s = fixture(t);
   let wroteDuringVerification = false;
-  changeDuringScan(t, s.file,
+  changeDuringScan(
+    t,
+    s.file,
     () => fs.appendFileSync(s.file, s.partial.slice(-9)),
-    () => { fs.appendFileSync(s.file, event('task_complete', { turn_id: 'second' })); wroteDuringVerification = true; });
+    () => {
+      fs.appendFileSync(s.file, event('task_complete', { turn_id: 'second' }));
+      wroteDuringVerification = true;
+    }
+  );
   await assert.rejects(buildSubagentTreeYielding('root', [], 3, now, s.listed()), /Rollout changed/);
   assert.equal(wroteDuringVerification, true);
   const recovered = await buildSubagentTreeYielding('root', [], 3, now + 100, s.listed());

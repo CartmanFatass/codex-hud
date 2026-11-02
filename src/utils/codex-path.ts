@@ -70,9 +70,7 @@ export function getSessionsDir(): string {
   if (process.env.CODEX_SESSIONS_PATH) {
     const overridePath = resolveExistingDirectory(process.env.CODEX_SESSIONS_PATH);
     if (!overridePath) {
-      throw new Error(
-        `CODEX_SESSIONS_PATH (${process.env.CODEX_SESSIONS_PATH}) does not exist or is not a directory.`
-      );
+      throw new Error(`CODEX_SESSIONS_PATH (${process.env.CODEX_SESSIONS_PATH}) does not exist or is not a directory.`);
     }
     return overridePath;
   }

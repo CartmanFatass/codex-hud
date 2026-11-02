@@ -34,12 +34,19 @@ export function slope(points: ReadonlyArray<{ t: number; p: number }>): number |
   const mp = points.reduce((sum, point) => sum + point.p, 0) / points.length;
   let num = 0;
   let den = 0;
-  for (const point of points) { num += (point.t - mt) * (point.p - mp); den += (point.t - mt) ** 2; }
+  for (const point of points) {
+    num += (point.t - mt) * (point.p - mp);
+    den += (point.t - mt) ** 2;
+  }
   return den > 0 ? num / den : null;
 }
 
-function forecastWindow(samples: readonly QuotaSample[], window: 'primary' | 'secondary', now: number): QuotaForecast | null {
-  const own = samples.filter(sample => sample.window === window);
+function forecastWindow(
+  samples: readonly QuotaSample[],
+  window: 'primary' | 'secondary',
+  now: number
+): QuotaForecast | null {
+  const own = samples.filter((sample) => sample.window === window);
   const last = own.at(-1);
   if (!last?.resetsAt) return null;
   const reset = last.resetsAt.getTime();
@@ -52,17 +59,30 @@ function forecastWindow(samples: readonly QuotaSample[], window: 'primary' | 'se
     period.unshift(sample);
   }
   const first = period[0];
-  if (!first || last.at.getTime() - first.at.getTime() < FORECAST_MIN_SPAN_MS || last.percent <= first.percent || last.percent >= 100) return null;
-  const rate = slope(period.map(sample => ({ t: sample.at.getTime(), p: sample.percent })));
+  if (
+    !first ||
+    last.at.getTime() - first.at.getTime() < FORECAST_MIN_SPAN_MS ||
+    last.percent <= first.percent ||
+    last.percent >= 100
+  )
+    return null;
+  const rate = slope(period.map((sample) => ({ t: sample.at.getTime(), p: sample.percent })));
   if (rate === null || rate <= 0) return null;
   const exhaustAt = last.at.getTime() + (100 - last.percent) / rate;
   // Past already, or after the reset: no claim to make.
   if (exhaustAt <= now || exhaustAt >= reset) return null;
-  return { window, exhaustAt: new Date(exhaustAt), percent: last.percent, ...(last.windowMinutes !== undefined ? { windowMinutes: last.windowMinutes } : {}) };
+  return {
+    window,
+    exhaustAt: new Date(exhaustAt),
+    percent: last.percent,
+    ...(last.windowMinutes !== undefined ? { windowMinutes: last.windowMinutes } : {}),
+  };
 }
 
 /** The window that runs out first, if any is projected to before it resets. */
 export function quotaForecast(samples: readonly QuotaSample[], now: number = Date.now()): QuotaForecast | null {
-  const found = (['primary', 'secondary'] as const).map(window => forecastWindow(samples, window, now)).filter((value): value is QuotaForecast => value !== null);
+  const found = (['primary', 'secondary'] as const)
+    .map((window) => forecastWindow(samples, window, now))
+    .filter((value): value is QuotaForecast => value !== null);
   return found.sort((a, b) => a.exhaustAt.getTime() - b.exhaustAt.getTime())[0] ?? null;
 }

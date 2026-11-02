@@ -8,29 +8,51 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 import { fileURLToPath } from 'node:url';
 
-const hasPython = process.platform !== 'win32' && spawnSync('python3',['--version']).status === 0;
-test('live PTY: navigation, diff, zoom, resize, wheel and terminal cleanup', {skip: !hasPython}, async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(),'hud-workbench-pty-'));
-  const repo = path.join(dir,'repo'); fs.mkdirSync(repo);
-  const git = (...args: string[]) => exec('git',args,{cwd:repo});
-  await git('init','-b','main'); await git('config','user.name','HUD test'); await git('config','user.email','hud@example.invalid');
-  fs.writeFileSync(path.join(repo,'sample.ts'),'before\n'); await git('add','sample.ts'); await git('commit','-m','initial');
+const hasPython = process.platform !== 'win32' && spawnSync('python3', ['--version']).status === 0;
+test('live PTY: navigation, diff, zoom, resize, wheel and terminal cleanup', { skip: !hasPython }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-workbench-pty-'));
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(repo);
+  const git = (...args: string[]) => exec('git', args, { cwd: repo });
+  await git('init', '-b', 'main');
+  await git('config', 'user.name', 'HUD test');
+  await git('config', 'user.email', 'hud@example.invalid');
+  fs.writeFileSync(path.join(repo, 'sample.ts'), 'before\n');
+  await git('add', 'sample.ts');
+  await git('commit', '-m', 'initial');
   // A second worktree: the changes list then heads its files with the two.
-  await git('worktree','add','-b','docs',path.join(dir,'docs'));
-  fs.writeFileSync(path.join(repo,'sample.ts'),'after\n');
+  await git('worktree', 'add', '-b', 'docs', path.join(dir, 'docs'));
+  fs.writeFileSync(path.join(repo, 'sample.ts'), 'after\n');
   const now = new Date();
-  const sessions = path.join(dir,'sessions');
-  const day = path.join(sessions,String(now.getFullYear()),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0'));
-  fs.mkdirSync(day,{recursive:true});
-  const line = (type: string, payload: object, offset=0) => JSON.stringify({timestamp:new Date(now.getTime()+offset).toISOString(),type,payload})+'\n';
-  const file = (id: string) => path.join(day,`rollout-${now.toISOString().slice(0,10)}T00-00-00-${id}.jsonl`);
-  fs.writeFileSync(file('aaaa'),line('session_meta',{id:'root',cwd:repo,timestamp:now.toISOString()})+
-    line('event_msg',{type:'plan_update',plan:[{step:'Verify workbench',status:'in_progress'}]}));
-  for (let i=0;i<14;i++) fs.writeFileSync(file(`bb${i.toString(16).padStart(2,'0')}`),
-    line('session_meta',{id:`agent-${i.toString().padStart(2,'0')}`,cwd:repo,parent_thread_id:'root',timestamp:now.toISOString()})+
-    line('event_msg',{type:'task_started'})+
-    line('event_msg',{type:'agent_message',message:`FOUND_THE_CAUSE_${i}`},50)+
-    line('turn_context',{model:'gpt-test',effort:'high'}));
+  const sessions = path.join(dir, 'sessions');
+  const day = path.join(
+    sessions,
+    String(now.getFullYear()),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0')
+  );
+  fs.mkdirSync(day, { recursive: true });
+  const line = (type: string, payload: object, offset = 0) =>
+    JSON.stringify({ timestamp: new Date(now.getTime() + offset).toISOString(), type, payload }) + '\n';
+  const file = (id: string) => path.join(day, `rollout-${now.toISOString().slice(0, 10)}T00-00-00-${id}.jsonl`);
+  fs.writeFileSync(
+    file('aaaa'),
+    line('session_meta', { id: 'root', cwd: repo, timestamp: now.toISOString() }) +
+      line('event_msg', { type: 'plan_update', plan: [{ step: 'Verify workbench', status: 'in_progress' }] })
+  );
+  for (let i = 0; i < 14; i++)
+    fs.writeFileSync(
+      file(`bb${i.toString(16).padStart(2, '0')}`),
+      line('session_meta', {
+        id: `agent-${i.toString().padStart(2, '0')}`,
+        cwd: repo,
+        parent_thread_id: 'root',
+        timestamp: now.toISOString(),
+      }) +
+        line('event_msg', { type: 'task_started' }) +
+        line('event_msg', { type: 'agent_message', message: `FOUND_THE_CAUSE_${i}` }, 50) +
+        line('turn_context', { model: 'gpt-test', effort: 'high' })
+    );
   const script = String.raw`
 import os, pty, subprocess, fcntl, termios, struct, select, time, signal, re, sys
 master, slave = pty.openpty()
@@ -151,12 +173,25 @@ finally:
  os.close(master)
 `;
   try {
-    const entry = fileURLToPath(new URL('../../src/tree-page.js',import.meta.url));
-    const result = await exec('python3',['-c',script,process.execPath,entry],{
-      env:{...process.env,CODEX_HUD_CWD:repo,CODEX_SESSIONS_PATH:sessions,CODEX_HOME:dir,CODEX_HUD_SETTINGS_PATH:path.join(dir,'hud-settings.json'),CODEX_HUD_MAIN_PANE:'',CODEX_HUD_SESSION_START:'',CODEX_HUD_TOGGLE_CMD:'',TERM:'xterm-256color'},
-      encoding:'utf8',timeout:30000,
+    const entry = fileURLToPath(new URL('../../src/tree-page.js', import.meta.url));
+    const result = await exec('python3', ['-c', script, process.execPath, entry], {
+      env: {
+        ...process.env,
+        CODEX_HUD_CWD: repo,
+        CODEX_SESSIONS_PATH: sessions,
+        CODEX_HOME: dir,
+        CODEX_HUD_SETTINGS_PATH: path.join(dir, 'hud-settings.json'),
+        CODEX_HUD_MAIN_PANE: '',
+        CODEX_HUD_SESSION_START: '',
+        CODEX_HUD_TOGGLE_CMD: '',
+        TERM: 'xterm-256color',
+      },
+      encoding: 'utf8',
+      timeout: 30000,
     });
-    assert.match(result.stdout,/PTY monitor flow passed/);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'hud-settings.json'),'utf8')).theme,'titanium');
-  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+    assert.match(result.stdout, /PTY monitor flow passed/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'hud-settings.json'), 'utf8')).theme, 'titanium');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

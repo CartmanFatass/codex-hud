@@ -15,21 +15,62 @@ export type WorkbenchInput =
   | { type: 'command'; command: PanelCommand };
 
 const KEYS: Record<string, string> = {
-  j: 'down', k: 'up', h: 'left', l: 'right', g: 'home', G: 'end',
-  '\t': 'tab', '\r': 'enter', '\n': 'enter', ' ': 'enter',
-  q: 'close', Q: 'close', '\x03': 'close', '\x04': 'close',
-  a: 'show-all', v: 'detail-toggle', r: 'reset', ',': 'settings', m: 'main', o: 'open-session', f: 'filter', '/': 'filter', s: 'sort', z: 'zoom', '?': 'help', b: 'brief-toggle',
+  j: 'down',
+  k: 'up',
+  h: 'left',
+  l: 'right',
+  g: 'home',
+  G: 'end',
+  '\t': 'tab',
+  '\r': 'enter',
+  '\n': 'enter',
+  ' ': 'enter',
+  q: 'close',
+  Q: 'close',
+  '\x03': 'close',
+  '\x04': 'close',
+  a: 'show-all',
+  v: 'detail-toggle',
+  r: 'reset',
+  ',': 'settings',
+  m: 'main',
+  o: 'open-session',
+  f: 'filter',
+  '/': 'filter',
+  s: 'sort',
+  z: 'zoom',
+  '?': 'help',
+  b: 'brief-toggle',
   x: 'pane-close',
   d: 'diagnostics',
-  '[': 'previous-tab', ']': 'next-tab', t: 'next-tab',
-  '1': 'agents', '2': 'details', '3': 'changes', '4': 'activity',
+  '[': 'previous-tab',
+  ']': 'next-tab',
+  t: 'next-tab',
+  '1': 'agents',
+  '2': 'details',
+  '3': 'changes',
+  '4': 'activity',
 };
 const ESCAPES: Record<string, string> = {
-  '\x1b[A': 'up', '\x1b[B': 'down', '\x1b[C': 'right', '\x1b[D': 'left',
-  '\x1bOA': 'up', '\x1bOB': 'down', '\x1bOC': 'right', '\x1bOD': 'left',
-  '\x1b[Z': 'shift-tab', '\x1b[5~': 'page-up', '\x1b[6~': 'page-down',
-  '\x1b[H': 'home', '\x1b[F': 'end', '\x1bOH': 'home', '\x1bOF': 'end',
-  '\x1b[1~': 'home', '\x1b[4~': 'end', '\x1b[7~': 'home', '\x1b[8~': 'end',
+  '\x1b[A': 'up',
+  '\x1b[B': 'down',
+  '\x1b[C': 'right',
+  '\x1b[D': 'left',
+  '\x1bOA': 'up',
+  '\x1bOB': 'down',
+  '\x1bOC': 'right',
+  '\x1bOD': 'left',
+  '\x1b[Z': 'shift-tab',
+  '\x1b[5~': 'page-up',
+  '\x1b[6~': 'page-down',
+  '\x1b[H': 'home',
+  '\x1b[F': 'end',
+  '\x1bOH': 'home',
+  '\x1bOF': 'end',
+  '\x1b[1~': 'home',
+  '\x1b[4~': 'end',
+  '\x1b[7~': 'home',
+  '\x1b[8~': 'end',
 };
 const PASTE_START = '\x1b[200~';
 const PASTE_END = '\x1b[201~';
@@ -54,7 +95,10 @@ export class WorkbenchInputDecoder {
   private paste = '';
   private readonly utf8 = new StringDecoder('utf8');
   private readonly forward: boolean;
-  constructor(private readonly profile: 'workbench' | 'monitor' = 'workbench', options: DecoderOptions = {}) {
+  constructor(
+    private readonly profile: 'workbench' | 'monitor' = 'workbench',
+    options: DecoderOptions = {}
+  ) {
     this.forward = options.forward ?? false;
   }
   push(chunk: Buffer): WorkbenchInput[] {
@@ -90,8 +134,12 @@ export class WorkbenchInputDecoder {
       }
       if (this.pending[0] !== '\x1b') {
         const ch = String.fromCodePoint(this.pending.codePointAt(0) ?? 0);
-        const name = this.profile === 'monitor' && ch === '2' ? 'timeline'
-          : this.profile === 'monitor' && ch === '4' ? 'details' : KEYS[ch];
+        const name =
+          this.profile === 'monitor' && ch === '2'
+            ? 'timeline'
+            : this.profile === 'monitor' && ch === '4'
+              ? 'details'
+              : KEYS[ch];
         this.pending = this.pending.slice(ch.length);
         key(name, ch);
         continue;
@@ -112,7 +160,7 @@ export class WorkbenchInputDecoder {
       const mouse = this.pending.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
       if (mouse) {
         const code = Number(mouse[1]);
-        const button = (code & 64) ? ((code & 1) ? 'wheel-down' : 'wheel-up') : (code & 3) === 0 ? 'left' : null;
+        const button = code & 64 ? (code & 1 ? 'wheel-down' : 'wheel-up') : (code & 3) === 0 ? 'left' : null;
         if (button && mouse[4] === 'M' && !(code & 32)) {
           inputs.push({ type: 'mouse', button, x: Number(mouse[2]) - 1, y: Number(mouse[3]) - 1 });
         }

@@ -13,12 +13,22 @@ test('active sorting keeps active descendants under their completed parent', () 
   parent.children[1].startedAt = new Date(start.getTime() + 1000);
   const state = { ...initialPanelState(), sort: 'active' as const };
   const rows = visibleRows([done, run, parent], state);
-  assert.deepEqual(rows.map(row => row.node.id), ['parent', 'child', 'old', 'run', 'done']);
+  assert.deepEqual(
+    rows.map((row) => row.node.id),
+    ['parent', 'child', 'old', 'run', 'done']
+  );
   assert.equal(rows[1].parentId, 'parent');
-  assert.deepEqual(parent.children.map(child => child.id), ['old', 'child'], 'sorting must not mutate the collected tree');
+  assert.deepEqual(
+    parent.children.map((child) => child.id),
+    ['old', 'child'],
+    'sorting must not mutate the collected tree'
+  );
   run.lastEventAt = new Date(start.getTime() + 999999);
-  assert.deepEqual(visibleRows([done, run, parent], state).map(row => row.node.id), rows.map(row => row.node.id),
-    'ordinary traffic must not reshuffle the list');
+  assert.deepEqual(
+    visibleRows([done, run, parent], state).map((row) => row.node.id),
+    rows.map((row) => row.node.id),
+    'ordinary traffic must not reshuffle the list'
+  );
 });
 
 test('creation order is deterministic even when file discovery order changes', () => {
@@ -27,7 +37,10 @@ test('creation order is deterministic even when file discovery order changes', (
   a.startedAt = start;
   b.startedAt = new Date(start.getTime() + 1000);
   const state = { ...initialPanelState(), sort: 'created' as const };
-  assert.deepEqual(visibleRows([b, a], state).map(row => row.node.id), ['a', 'b']);
+  assert.deepEqual(
+    visibleRows([b, a], state).map((row) => row.node.id),
+    ['a', 'b']
+  );
 });
 
 test('a follow-up turn brings an older agent ahead of a newer sibling', () => {
@@ -37,5 +50,8 @@ test('a follow-up turn brings an older agent ahead of a newer sibling', () => {
   newer.startedAt = new Date(start.getTime() + 1000);
   older.turnStartedAt = new Date(start.getTime() + 2000);
   const state = { ...initialPanelState(), sort: 'active' as const };
-  assert.deepEqual(visibleRows([newer, older], state).map(row => row.node.id), ['older', 'newer']);
+  assert.deepEqual(
+    visibleRows([newer, older], state).map((row) => row.node.id),
+    ['older', 'newer']
+  );
 });

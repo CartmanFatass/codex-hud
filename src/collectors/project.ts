@@ -10,17 +10,9 @@ import { getMcpServerCount } from './codex-config.js';
 import { getCodexHome } from '../utils/codex-path.js';
 import * as os from 'os';
 
-const AGENTS_MD_FILENAMES = [
-  'AGENTS.md',
-  'agents.md',
-  'CODEX.md',
-  'codex.md',
-];
+const AGENTS_MD_FILENAMES = ['AGENTS.md', 'agents.md', 'CODEX.md', 'codex.md'];
 
-const INSTRUCTIONS_MD_FILENAMES = [
-  'INSTRUCTIONS.md',
-  'instructions.md',
-];
+const INSTRUCTIONS_MD_FILENAMES = ['INSTRUCTIONS.md', 'instructions.md'];
 
 /**
  * Get the project name from the current directory
@@ -39,11 +31,11 @@ function countFilesInTree(cwd: string, filenames: string[], checkCodexDir: boole
   let count = 0;
   let currentDir = cwd;
   const visited = new Set<string>();
-  
+
   // Walk up the directory tree
   while (currentDir && !visited.has(currentDir)) {
     visited.add(currentDir);
-    
+
     // Check for files in current directory
     for (const filename of filenames) {
       const filePath = path.join(currentDir, filename);
@@ -52,7 +44,7 @@ function countFilesInTree(cwd: string, filenames: string[], checkCodexDir: boole
         break; // Only count one per directory
       }
     }
-    
+
     // Check in .codex subdirectory too
     if (checkCodexDir) {
       const codexDir = path.join(currentDir, '.codex');
@@ -66,20 +58,20 @@ function countFilesInTree(cwd: string, filenames: string[], checkCodexDir: boole
         }
       }
     }
-    
+
     // Stop at git root or filesystem root
     const gitDir = path.join(currentDir, '.git');
     if (fs.existsSync(gitDir)) {
       break;
     }
-    
+
     const parent = path.dirname(currentDir);
     if (parent === currentDir) {
       break; // Reached filesystem root
     }
     currentDir = parent;
   }
-  
+
   return count;
 }
 
@@ -103,14 +95,14 @@ export function countInstructionsMdFiles(cwd: string): number {
  */
 export function countRulesFiles(cwd: string): number {
   const rulesDir = path.join(cwd, '.codex', 'rules');
-  
+
   if (!fs.existsSync(rulesDir) || !fs.statSync(rulesDir).isDirectory()) {
     return 0;
   }
-  
+
   try {
     const files = fs.readdirSync(rulesDir);
-    return files.filter(f => f.endsWith('.md')).length;
+    return files.filter((f) => f.endsWith('.md')).length;
   } catch {
     return 0;
   }
@@ -130,19 +122,14 @@ export function hasCodexDir(cwd: string): boolean {
  */
 export function countConfigFiles(cwd: string): number {
   const codexDir = path.join(cwd, '.codex');
-  
+
   if (!fs.existsSync(codexDir) || !fs.statSync(codexDir).isDirectory()) {
     return 0;
   }
-  
+
   try {
     const files = fs.readdirSync(codexDir);
-    return files.filter(f => 
-      f.endsWith('.toml') || 
-      f.endsWith('.json') ||
-      f === 'config' ||
-      f === 'settings'
-    ).length;
+    return files.filter((f) => f.endsWith('.toml') || f.endsWith('.json') || f === 'config' || f === 'settings').length;
   } catch {
     return 0;
   }
@@ -156,14 +143,14 @@ export function detectWorkMode(): 'development' | 'production' | 'unknown' {
   // Check environment variables
   const nodeEnv = process.env.NODE_ENV?.toLowerCase();
   const codexEnv = process.env.CODEX_ENV?.toLowerCase();
-  
+
   if (codexEnv === 'production' || nodeEnv === 'production') {
     return 'production';
   }
   if (codexEnv === 'development' || nodeEnv === 'development') {
     return 'development';
   }
-  
+
   // Default to development if not specified
   return 'development';
 }
@@ -180,7 +167,9 @@ function repoFolders(cwd: string): string[] {
     const git = path.join(dir, '.git');
     try {
       if (fs.statSync(git).isFile() || fs.existsSync(path.join(git, 'HEAD'))) return folders;
-    } catch { /* no .git here */ }
+    } catch {
+      /* no .git here */
+    }
     if (path.dirname(dir) === dir) return [path.resolve(cwd)];
   }
 }
@@ -191,14 +180,26 @@ function repoFolders(cwd: string): string[] {
  * and `.codex/skills` from cwd up to the repository root. A skill is a folder
  * with a SKILL.md. Null when no skills folder could be read at all.
  */
-export function countSkills(cwd: string, codexHome: string = getCodexHome(), home: string = os.homedir()): number | null {
-  const roots = [path.join(codexHome, 'skills'), path.join(codexHome, 'skills', '.system'), path.join(home, '.agents', 'skills'),
-    ...repoFolders(cwd).flatMap((dir) => [path.join(dir, '.agents', 'skills'), path.join(dir, '.codex', 'skills')])];
+export function countSkills(
+  cwd: string,
+  codexHome: string = getCodexHome(),
+  home: string = os.homedir()
+): number | null {
+  const roots = [
+    path.join(codexHome, 'skills'),
+    path.join(codexHome, 'skills', '.system'),
+    path.join(home, '.agents', 'skills'),
+    ...repoFolders(cwd).flatMap((dir) => [path.join(dir, '.agents', 'skills'), path.join(dir, '.codex', 'skills')]),
+  ];
   const names = new Set<string>();
   let read = false;
   for (const root of [...new Set(roots)]) {
     let entries: string[];
-    try { entries = fs.readdirSync(root); } catch { continue; }
+    try {
+      entries = fs.readdirSync(root);
+    } catch {
+      continue;
+    }
     read = true;
     for (const name of entries) {
       if (!name.startsWith('.') && fs.existsSync(path.join(root, name, 'SKILL.md'))) names.add(name);
@@ -219,7 +220,11 @@ export function countHooks(cwd: string, codexHome: string = getCodexHome()): num
   let read = false;
   for (const file of files) {
     let parsed: unknown;
-    try { parsed = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { continue; }
+    try {
+      parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      continue;
+    }
     read = true;
     const events = (parsed as { hooks?: unknown })?.hooks;
     if (!events || typeof events !== 'object') continue;
@@ -240,16 +245,16 @@ export function countHooks(cwd: string, codexHome: string = getCodexHome()): num
  */
 export function collectProjectInfo(cwd?: string, config?: CodexConfig): ProjectInfo {
   const workDir = cwd || process.cwd();
-  
+
   // Count config files in .codex directory
   const configsCount = countConfigFiles(workDir);
-  
+
   // Detect work mode from environment or config
   const workMode = detectWorkMode();
-  
+
   // Count extensions (MCP servers count as extensions)
   const mcpCount = config ? getMcpServerCount(config) : 0;
-  
+
   return {
     cwd: workDir,
     projectName: getProjectName(workDir),
@@ -259,7 +264,7 @@ export function collectProjectInfo(cwd?: string, config?: CodexConfig): ProjectI
     rulesCount: countRulesFiles(workDir),
     mcpCount,
     configsCount,
-    extensionsCount: mcpCount,  // MCP servers are treated as extensions
+    extensionsCount: mcpCount, // MCP servers are treated as extensions
     skillsCount: countSkills(workDir),
     hooksCount: config?.hooks_enabled === false ? 0 : countHooks(workDir),
     workMode,
@@ -274,7 +279,7 @@ export function formatProjectPath(cwd: string, maxLength: number = 30): string {
   if (cwd.length <= maxLength) {
     return cwd;
   }
-  
+
   // Try to shorten by using ~ for home directory
   const home = process.env.HOME || '';
   if (home && cwd.startsWith(home)) {
@@ -285,7 +290,7 @@ export function formatProjectPath(cwd: string, maxLength: number = 30): string {
     // Still too long, truncate from the left
     return '…' + shortened.slice(-(maxLength - 1));
   }
-  
+
   // Truncate from the left
   return '…' + cwd.slice(-(maxLength - 1));
 }

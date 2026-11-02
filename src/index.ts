@@ -16,7 +16,12 @@ import { TreeScanStore } from './collectors/tree-scan-store.js';
 import { RolloutParser } from './collectors/rollout.js';
 import { createParseQueue } from './utils/parse-queue.js';
 import { fileSignature } from './utils/file-signature.js';
-import { createAdaptivePollState, adaptivePollDue, forceAdaptivePoll, recordAdaptivePoll } from './collectors/adaptive-poll.js';
+import {
+  createAdaptivePollState,
+  adaptivePollDue,
+  forceAdaptivePoll,
+  recordAdaptivePoll,
+} from './collectors/adaptive-poll.js';
 import { collectionObservation } from './utils/collection-observation.js';
 import { ActivityJournal } from './collectors/activity-journal.js';
 import { scopedActivityObservation } from './utils/activity-observation.js';
@@ -35,7 +40,10 @@ import type { HudData } from './types.js';
 const REFRESH_INTERVAL = 1000;
 let adaptive = createAdaptivePollState(REFRESH_INTERVAL);
 let collectionEpoch = 0;
-const wakeCollection = () => { adaptive = forceAdaptivePoll(adaptive); collectionEpoch++; };
+const wakeCollection = () => {
+  adaptive = forceAdaptivePoll(adaptive);
+  collectionEpoch++;
+};
 
 // Current working directory for the HUD
 const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
@@ -60,19 +68,23 @@ const HUD_SESSION_START = (() => {
 let isRunning = true;
 
 // Phase 2: Session and rollout tracking
-const sessionFinder = new SessionFinder(HUD_CWD_REAL, (session) => {
-  wakeCollection();
-  // When session changes, update rollout path
-  resetRolloutSignature();
-  if (session) {
-    rolloutParser.setRolloutPath(session.path);
-    hudFileWatcher.setRolloutPath(session.path);
-    return;
-  }
+const sessionFinder = new SessionFinder(
+  HUD_CWD_REAL,
+  (session) => {
+    wakeCollection();
+    // When session changes, update rollout path
+    resetRolloutSignature();
+    if (session) {
+      rolloutParser.setRolloutPath(session.path);
+      hudFileWatcher.setRolloutPath(session.path);
+      return;
+    }
 
-  rolloutParser.setRolloutPath(null);
-  hudFileWatcher.setRolloutPath(null);
-}, HUD_SESSION_START);
+    rolloutParser.setRolloutPath(null);
+    hudFileWatcher.setRolloutPath(null);
+  },
+  HUD_SESSION_START
+);
 
 // Off unless CODEX_HUD_NOTIFY=1. Codex notifies on its own, and two pop-ups
 // for one event is worse than none.
@@ -85,8 +97,7 @@ const snapshotWriter = new SnapshotWriter();
 
 const rolloutParser = new RolloutParser(10);
 const hudFileWatcher = new HudFileWatcher();
-const paneRuntimeStateCollector =
-  process.platform === 'win32' ? new PaneRuntimeStateCollector() : null;
+const paneRuntimeStateCollector = process.platform === 'win32' ? new PaneRuntimeStateCollector() : null;
 
 // Cached data that gets updated by watchers
 let cachedHudData: HudData | null = null;
@@ -143,7 +154,9 @@ async function collectData(): Promise<HudData> {
     notifier.configure(resolveNotifierOptions(process.env, settings));
     // The panel writes the session title beside the recap when the labels feature is on.
     hudStatus.titleDir = settings.agentLabels && settings.briefing !== 'off' ? path.join(getHudHome(), 'recaps') : null;
-  } catch { /* Keep last valid display settings. */ }
+  } catch {
+    /* Keep last valid display settings. */
+  }
   if (configNeedsRefresh) {
     hudStatus.invalidateConfig();
     configNeedsRefresh = false;
@@ -153,7 +166,12 @@ async function collectData(): Promise<HudData> {
   let session = sessionFinder.getCurrentSession();
   let stale = false;
   const health = hudStatus.health;
-  try { session = sessionFinder.check(); } catch (error) { stale = true; health.fail('session', error); }
+  try {
+    session = sessionFinder.check();
+  } catch (error) {
+    stale = true;
+    health.fail('session', error);
+  }
 
   // Re-parse the current rollout only when the file actually moved. The parser
   // is incremental, but reaching that conclusion still costs an open, a read
@@ -162,10 +180,18 @@ async function collectData(): Promise<HudData> {
   // missed (always, on Windows, where watches are unreliable).
   let rolloutData = rolloutParser.getCached();
   if (session) {
-    try { rolloutData = await parseRolloutIfChanged(session.path); } catch (error) { stale = true; health.fail('rollout', error); }
+    try {
+      rolloutData = await parseRolloutIfChanged(session.path);
+    } catch (error) {
+      stale = true;
+      health.fail('rollout', error);
+    }
   }
   // Keep lookup success distinct from an actual bound Codex session.
-  if (!stale) { health.bind(Boolean(session)); health.read(); }
+  if (!stale) {
+    health.bind(Boolean(session));
+    health.read();
+  }
 
   const hudData = hudStatus.build({
     rollout: rolloutData,
@@ -191,16 +217,20 @@ async function mainLoop(): Promise<void> {
 
   await timeAsync('tick', async () => {
     const scopeKey = sessionFinder.getCurrentSession()?.sessionId ?? '';
-    if (!adaptivePollDue(adaptive, scopeKey, Date.now())) { repaintCached(); return; }
+    if (!adaptivePollDue(adaptive, scopeKey, Date.now())) {
+      repaintCached();
+      return;
+    }
     const epoch = collectionEpoch;
     try {
       const data = await collectData();
       const rootId = data.session?.id ?? data.subagentTree?.rootId ?? '';
       if (rootId !== journalRoot) {
-        journal?.flush(); journalRoot = rootId;
-        journal = rootId ? new ActivityJournal({codexHome:getCodexHome(),rootId}) : undefined;
+        journal?.flush();
+        journalRoot = rootId;
+        journal = rootId ? new ActivityJournal({ codexHome: getCodexHome(), rootId }) : undefined;
       }
-      journal?.observe(scopedActivityObservation(rootId,rootId,{tree:data.subagentTree,data}));
+      journal?.observe(scopedActivityObservation(rootId, rootId, { tree: data.subagentTree, data }));
       data.notices = notices.observe(data, Date.now());
       renderToStdout(data, HUD_PANE_HEIGHT);
       // Notifications and the state file run on the collection tick, not on
@@ -211,10 +241,13 @@ async function mainLoop(): Promise<void> {
       } catch {
         // A state file nobody can write is not a reason to stop drawing.
       }
-      if (epoch === collectionEpoch) adaptive = recordAdaptivePoll(adaptive, {
-        scopeKey: data.session?.id ?? '', nowMs: Date.now(), ...collectionObservation(data, data.subagentTree),
-        succeeded: !data.stale && data.health?.sessionBound === true,
-      });
+      if (epoch === collectionEpoch)
+        adaptive = recordAdaptivePoll(adaptive, {
+          scopeKey: data.session?.id ?? '',
+          nowMs: Date.now(),
+          ...collectionObservation(data, data.subagentTree),
+          succeeded: !data.stale && data.health?.sessionBound === true,
+        });
     } catch (error) {
       wakeCollection();
       hudStatus.health.fail('status', error);
@@ -320,7 +353,9 @@ async function main(): Promise<void> {
     try {
       const session = sessionFinder.check();
       if (session) void parseRolloutIfChanged(session.path).catch(() => {});
-    } catch { /* The next collection displays a failed read without an unhandled rejection. */ }
+    } catch {
+      /* The next collection displays a failed read without an unhandled rejection. */
+    }
   });
 
   hudFileWatcher.start();

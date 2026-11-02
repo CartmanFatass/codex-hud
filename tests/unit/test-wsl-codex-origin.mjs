@@ -10,13 +10,9 @@ const installer = fs.readFileSync(path.join(rootDir, 'bin/codex-hud-install.ps1'
 const wslScript = installer.match(/\$script\s*=\s*@'\r?\n(?<body>[\s\S]*?)\r?\n'@/)?.groups?.body;
 assert.ok(wslScript, 'installer should contain the WSL provisioning script');
 
-const pathResolver = wslScript.match(
-  /resolve_native_wsl_path\(\)\s*\{(?<body>[\s\S]*?)\n\}/
-);
+const pathResolver = wslScript.match(/resolve_native_wsl_path\(\)\s*\{(?<body>[\s\S]*?)\n\}/);
 assert.ok(pathResolver?.groups?.body, 'WSL setup should define native path ownership resolution');
-const resolver = wslScript.match(
-  /resolve_native_wsl_command\(\)\s*\{(?<body>[\s\S]*?)\n\}/
-);
+const resolver = wslScript.match(/resolve_native_wsl_command\(\)\s*\{(?<body>[\s\S]*?)\n\}/);
 assert.ok(resolver?.groups?.body, 'WSL setup should define shared native command resolution');
 
 const resolverFunction = `resolve_native_wsl_path() {${pathResolver.groups.body}\n}
@@ -27,23 +23,17 @@ function bashLiteral(value) {
 }
 
 function runResolver(commandName, candidates) {
-  const typeOutput = candidates
-    .map(({ commandPath }) => `    printf '%s\\n' ${bashLiteral(commandPath)}`)
-    .join('\n');
+  const typeOutput = candidates.map(({ commandPath }) => `    printf '%s\\n' ${bashLiteral(commandPath)}`).join('\n');
   const readlinkCases = candidates
     .map(({ commandPath, realPath }) => {
-      const action = realPath === null
-        ? 'return 1'
-        : `printf '%s\\n' ${bashLiteral(realPath)}`;
+      const action = realPath === null ? 'return 1' : `printf '%s\\n' ${bashLiteral(realPath)}`;
       return `        ${bashLiteral(commandPath)}) ${action} ;;`;
     })
     .join('\n');
   const wslpathCases = candidates
     .filter(({ realPath }) => realPath !== null)
     .map(({ realPath, windowsPath }) => {
-      const action = windowsPath === null
-        ? 'return 1'
-        : `printf '%s\\n' ${bashLiteral(windowsPath)}`;
+      const action = windowsPath === null ? 'return 1' : `printf '%s\\n' ${bashLiteral(windowsPath)}`;
       return `        ${bashLiteral(realPath)}) ${action} ;;`;
     })
     .join('\n');
@@ -221,15 +211,27 @@ assert.doesNotMatch(invalidNativeCodex.stdout, /npm-target:/, 'invalid existing 
 
 const rootInstall = runCodexFlow({ existingCodex: false, codexExit: 0, useSudo: false });
 assert.equal(rootInstall.status, 0, 'root installation should complete through native npm');
-assert.match(rootInstall.stdout, /npm-target:\/native\/npm-wrapper/, 'root installation should invoke the validated npm wrapper');
-assert.match(rootInstall.stdout, /npm-args:install -g --prefix \/usr\/local @openai\/codex@latest/, 'root installation should pin the WSL-owned global prefix');
+assert.match(
+  rootInstall.stdout,
+  /npm-target:\/native\/npm-wrapper/,
+  'root installation should invoke the validated npm wrapper'
+);
+assert.match(
+  rootInstall.stdout,
+  /npm-args:install -g --prefix \/usr\/local @openai\/codex@latest/,
+  'root installation should pin the WSL-owned global prefix'
+);
 assert.match(rootInstall.stdout, /npm-calls:1/, 'root installation should invoke npm exactly once');
 
 const sudoInstall = runCodexFlow({ existingCodex: false, codexExit: 0, useSudo: true });
 assert.equal(sudoInstall.status, 0, 'sudo installation should complete through native npm');
 assert.match(sudoInstall.stdout, /sudo-target:\/usr\/bin\/env/, 'sudo should receive the absolute native env path');
 assert.match(sudoInstall.stdout, /npm-target:\/native\/npm-wrapper/, 'sudo should invoke the validated npm wrapper');
-assert.match(sudoInstall.stdout, /npm-args:install -g --prefix \/usr\/local @openai\/codex@latest/, 'sudo installation should pin the WSL-owned global prefix');
+assert.match(
+  sudoInstall.stdout,
+  /npm-args:install -g --prefix \/usr\/local @openai\/codex@latest/,
+  'sudo installation should pin the WSL-owned global prefix'
+);
 assert.match(sudoInstall.stdout, /npm-calls:1/, 'sudo installation should invoke npm exactly once');
 
 assert.match(

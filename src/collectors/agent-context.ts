@@ -83,8 +83,13 @@ function scan(entry: CacheEntry, text: string): void {
   const lines = (entry.rest + text).split('\n');
   entry.rest = lines.pop() ?? '';
   for (const line of lines) {
-    if (!line.includes('"token_count"') && !line.includes('"task_started"') && !line.includes('"turn_started"') &&
-        !line.includes('"function_call') && !line.includes('"custom_tool_call')) {
+    if (
+      !line.includes('"token_count"') &&
+      !line.includes('"task_started"') &&
+      !line.includes('"turn_started"') &&
+      !line.includes('"function_call') &&
+      !line.includes('"custom_tool_call')
+    ) {
       continue;
     }
     let row: RolloutLine;
@@ -114,7 +119,14 @@ function scan(entry: CacheEntry, text: string): void {
   }
 }
 
-const fresh = (signature: string, ino: number): CacheEntry => ({ signature, ino, offset: 0, rest: '', tracker: new TokenRateTracker(), reading: {} });
+const fresh = (signature: string, ino: number): CacheEntry => ({
+  signature,
+  ino,
+  offset: 0,
+  rest: '',
+  tracker: new TokenRateTracker(),
+  reading: {},
+});
 
 /**
  * One agent's context fill and output rate, from its rollout. Cached by the
@@ -159,14 +171,20 @@ export async function readAgentTokens(rolloutPath: string): Promise<AgentTokens>
   // No compaction count: counting them needs the whole file, which is what
   // this reader exists to avoid. Nothing displays an agent's compactions, so
   // nothing reads the zero that stands in for it.
-  const usage = entry.lastUsage && entry.window
-    ? buildContextUsage({ last_token_usage: entry.lastUsage, model_context_window: entry.window }, undefined, undefined)
-    : undefined;
+  const usage =
+    entry.lastUsage && entry.window
+      ? buildContextUsage(
+          { last_token_usage: entry.lastUsage, model_context_window: entry.window },
+          undefined,
+          undefined
+        )
+      : undefined;
   const rate = entry.tracker.snapshot;
   const total = entry.totalUsage;
-  const spent: TokenSpent | undefined = total && (total.input_tokens || total.output_tokens)
-    ? { input: total.input_tokens ?? 0, cached: total.cached_input_tokens ?? 0, output: total.output_tokens ?? 0 }
-    : undefined;
+  const spent: TokenSpent | undefined =
+    total && (total.input_tokens || total.output_tokens)
+      ? { input: total.input_tokens ?? 0, cached: total.cached_input_tokens ?? 0, output: total.output_tokens ?? 0 }
+      : undefined;
   entry.reading = { ...(usage ? { usage } : {}), ...(rate ? { rate } : {}), ...(spent ? { spent } : {}) };
   if (signature !== null) {
     cache.set(rolloutPath, entry);

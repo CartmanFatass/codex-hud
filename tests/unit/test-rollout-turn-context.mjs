@@ -55,48 +55,20 @@ const rolloutPath = writeRollout([
 const { result } = await parseRolloutFile(rolloutPath, 0, 5);
 
 assert.equal(result.session?.model, 'gpt-5.4', 'turn_context should populate session model');
-assert.equal(
-  result.session?.reasoningEffort,
-  'xhigh',
-  'turn_context should populate session reasoning effort'
-);
+assert.equal(result.session?.reasoningEffort, 'xhigh', 'turn_context should populate session reasoning effort');
 assert.equal(result.session?.approvalPolicy, 'never', 'turn_context should populate approval policy');
-assert.equal(
-  result.session?.sandboxMode,
-  'danger-full-access',
-  'turn_context should populate sandbox mode'
-);
-assert.equal(
-  result.session?.collaborationMode,
-  'plan',
-  'turn_context should populate collaboration mode'
-);
+assert.equal(result.session?.sandboxMode, 'danger-full-access', 'turn_context should populate sandbox mode');
+assert.equal(result.session?.collaborationMode, 'plan', 'turn_context should populate collaboration mode');
 
 const parser = new RolloutParser(5);
 parser.setRolloutPath(rolloutPath);
 const parserResult = await parser.parse();
 
 assert.equal(parserResult?.session?.model, 'gpt-5.4', 'stateful parser should keep session model');
-assert.equal(
-  parserResult?.session?.reasoningEffort,
-  'xhigh',
-  'stateful parser should keep session reasoning effort'
-);
-assert.equal(
-  parserResult?.session?.approvalPolicy,
-  'never',
-  'stateful parser should keep approval policy'
-);
-assert.equal(
-  parserResult?.session?.sandboxMode,
-  'danger-full-access',
-  'stateful parser should keep sandbox mode'
-);
-assert.equal(
-  parserResult?.session?.collaborationMode,
-  'plan',
-  'stateful parser should keep collaboration mode'
-);
+assert.equal(parserResult?.session?.reasoningEffort, 'xhigh', 'stateful parser should keep session reasoning effort');
+assert.equal(parserResult?.session?.approvalPolicy, 'never', 'stateful parser should keep approval policy');
+assert.equal(parserResult?.session?.sandboxMode, 'danger-full-access', 'stateful parser should keep sandbox mode');
+assert.equal(parserResult?.session?.collaborationMode, 'plan', 'stateful parser should keep collaboration mode');
 
 const rolloutWithRunningCall = writeRollout([
   {

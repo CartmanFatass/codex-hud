@@ -10,7 +10,12 @@ import { runtimeSettings } from './settings-runtime.js';
 import { getCodexHome, getHudHome } from './utils/codex-path.js';
 
 const file = process.argv[2];
-const result = await dryRunText({ cwd: process.env.CODEX_HUD_CWD || process.cwd(), settings: runtimeSettings(), codexHome: getCodexHome(), hudHome: getHudHome() });
+const result = await dryRunText({
+  cwd: process.env.CODEX_HUD_CWD || process.cwd(),
+  settings: runtimeSettings(),
+  codexHome: getCodexHome(),
+  hudHome: getHudHome(),
+});
 if ('error' in result) {
   process.stderr.write(`codex-hud brief: ${result.error}\n`);
   process.exitCode = 1;

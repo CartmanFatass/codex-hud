@@ -20,7 +20,7 @@ export function iconic(): boolean {
 }
 /** How long ago, as the panel says it: "12d" where icons stand in for words, else "12d ago". */
 export function agoText(at: Date | undefined, now: number): string {
-  return iconic() ? age(at,now) : t('{age} ago',{age:age(at,now)});
+  return iconic() ? age(at, now) : t('{age} ago', { age: age(at, now) });
 }
 /**
  * Seconds, minutes, hours or days since `at`, the coarsest unit that is not
@@ -30,9 +30,14 @@ export function agoText(at: Date | undefined, now: number): string {
  */
 export function age(at: Date | undefined, now: number): string {
   if (!at || !Number.isFinite(at.getTime())) return '?';
-  const seconds = Math.max(0, Math.floor((now-at.getTime())/1000));
-  return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds/60)}m`
-    : seconds < 2*86_400 ? `${Math.floor(seconds/3600)}h` : `${Math.floor(seconds/86_400)}d`;
+  const seconds = Math.max(0, Math.floor((now - at.getTime()) / 1000));
+  return seconds < 60
+    ? `${seconds}s`
+    : seconds < 3600
+      ? `${Math.floor(seconds / 60)}m`
+      : seconds < 2 * 86_400
+        ? `${Math.floor(seconds / 3600)}h`
+        : `${Math.floor(seconds / 86_400)}d`;
 }
 
 /**
@@ -48,13 +53,21 @@ export function idleFor(activity: SessionActivity | undefined, now: number, stal
   return age(activity.updatedAt, now);
 }
 
-export function nodeStatus(node: SubagentTreeNode, now: number): {icon:string; label:string; paint:(s:string)=>string} {
+export function nodeStatus(
+  node: SubagentTreeNode,
+  now: number
+): { icon: string; label: string; paint: (s: string) => string } {
   switch (node.status) {
-    case 'running': return {icon:'▸',label:node.turnStartedAt ? age(node.turnStartedAt,now) : 'run',paint:theme.info};
-    case 'starting': return {icon:'·',label:'start',paint:theme.info};
-    case 'completed': return {icon:'✓',label:'done',paint:theme.success};
-    case 'error': return {icon:'!',label:'error',paint:theme.error};
-    default: return {icon:'?',label:'unknown',paint:colors.dim};
+    case 'running':
+      return { icon: '▸', label: node.turnStartedAt ? age(node.turnStartedAt, now) : 'run', paint: theme.info };
+    case 'starting':
+      return { icon: '·', label: 'start', paint: theme.info };
+    case 'completed':
+      return { icon: '✓', label: 'done', paint: theme.success };
+    case 'error':
+      return { icon: '!', label: 'error', paint: theme.error };
+    default:
+      return { icon: '?', label: 'unknown', paint: colors.dim };
   }
 }
 
@@ -63,7 +76,7 @@ export function worktreeLabel(entry: WorktreeInfo, now: number): string {
   if (entry.prunable !== undefined) return 'prunable';
   if (entry.error) return 'unreadable';
   if (!entry.status || entry.observedAt === undefined) return '?';
-  if (now-entry.observedAt > 30_000) return 'stale';
+  if (now - entry.observedAt > 30_000) return 'stale';
   if (entry.status.conflicts) return `!${entry.status.conflicts}`;
   return entry.status.changed ? `${entry.status.changed} mod` : 'clean';
 }
@@ -76,10 +89,10 @@ export const UNTRACKED_ROW = '\0untracked';
 /** A worktree's row in the changes list, as an item: its path behind a NUL, so no file's path is one. */
 const WORKTREE_ROW = '\0worktree:';
 export function worktreeItem(path: string): string {
-  return WORKTREE_ROW+path;
+  return WORKTREE_ROW + path;
 }
 /** Whether the changes list heads its files with the worktrees: only where there is more than one to choose from. */
-export function listsWorktrees(snapshot: {entries: readonly unknown[]} | null | undefined): boolean {
+export function listsWorktrees(snapshot: { entries: readonly unknown[] } | null | undefined): boolean {
   return (snapshot?.entries.length ?? 0) > 1;
 }
 /** The worktree a changes item is the row of, or undefined for a file's. */
@@ -96,16 +109,26 @@ export function changeLetter(file: GitChangedFile): string {
   if (file.conflict) return theme.error('!');
   const set = (code: string) => code !== ' ' && code !== '.';
   const code = set(file.index) && file.index !== 'M' ? file.index : set(file.worktree) ? file.worktree : file.index;
-  return (code === 'A' ? theme.success : code === 'D' ? theme.error : code === 'R' || code === 'C' ? theme.info : theme.warning)(code);
+  return (
+    code === 'A'
+      ? theme.success
+      : code === 'D'
+        ? theme.error
+        : code === 'R' || code === 'C'
+          ? theme.info
+          : theme.warning
+  )(code);
 }
 /** The lines a changed file adds and removes, "+12 −3", a side with none left out. */
 export function lineCounts(file: GitChangedFile): string {
-  return [file.added ? theme.success(`+${file.added}`) : '',file.removed ? theme.error(`−${file.removed}`) : ''].filter(Boolean).join(' ');
+  return [file.added ? theme.success(`+${file.added}`) : '', file.removed ? theme.error(`−${file.removed}`) : '']
+    .filter(Boolean)
+    .join(' ');
 }
 /** A worktree label in the reader's language; the label itself stays a stable code. */
 export function worktreeLabelText(label: string): string {
   const changed = label.match(/^(\d+) mod$/);
-  return changed ? t('{n} mod',{n:changed[1]}) : label.startsWith('!') ? label : t(label);
+  return changed ? t('{n} mod', { n: changed[1] }) : label.startsWith('!') ? label : t(label);
 }
 /** A directory name that is an id, not a name: hex of 7 or more characters, or a UUID. */
 export const ID_NAME = /^(?:[0-9a-f]{7,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
@@ -118,7 +141,7 @@ export const ID_NAME = /^(?:[0-9a-f]{7,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 export function worktreeName(entry: WorktreeInfo): string {
   if (entry.branch) return entry.branch;
   const parts = entry.path.split(/[\\/]+/).filter(Boolean);
-  for (let i = parts.length-1; i >= 0; i--) if (!ID_NAME.test(parts[i]) && parts[i] !== '.git') return parts[i];
+  for (let i = parts.length - 1; i >= 0; i--) if (!ID_NAME.test(parts[i]) && parts[i] !== '.git') return parts[i];
   return t(entry.bare ? 'bare' : 'detached');
 }
 /**
@@ -127,12 +150,12 @@ export function worktreeName(entry: WorktreeInfo): string {
  * the main worktree itself.
  */
 export function worktreePlace(entry: WorktreeInfo, root: string | undefined): string {
-  const path = entry.path.replace(/[\\/]+$/,'');
-  const base = root?.replace(/[\\/]+$/,'');
-  const relative = base && path.startsWith(base+'/') ? path.slice(base.length+1) : base === path ? '' : path;
+  const path = entry.path.replace(/[\\/]+$/, '');
+  const base = root?.replace(/[\\/]+$/, '');
+  const relative = base && path.startsWith(base + '/') ? path.slice(base.length + 1) : base === path ? '' : path;
   const parts = relative.split(/[\\/]+/).filter(Boolean);
-  const id = parts.findIndex(part => ID_NAME.test(part));
-  return id < 0 ? parts.join('/') : [...parts.slice(0,id),'…'].join('/');
+  const id = parts.findIndex((part) => ID_NAME.test(part));
+  return id < 0 ? parts.join('/') : [...parts.slice(0, id), '…'].join('/');
 }
 
 /**
@@ -143,7 +166,11 @@ export function worktreePlace(entry: WorktreeInfo, root: string | undefined): st
  * one column wide in CJK terminals too, and none is an effort glyph.
  */
 export const TURN_CLOCKS: ReadonlyArray<readonly [number, string]> = [
-  [60_000,'◌'],[900_000,'◷'],[1_800_000,'◶'],[2_700_000,'◵'],[3_600_000,'◴'],
+  [60_000, '◌'],
+  [900_000, '◷'],
+  [1_800_000, '◶'],
+  [2_700_000, '◵'],
+  [3_600_000, '◴'],
 ];
 export const TURN_CLOCK_LONG = '◉';
 
@@ -157,7 +184,7 @@ export function isLive(node: SubagentTreeNode): boolean {
 }
 export function isQuiet(node: SubagentTreeNode, now: number): boolean {
   const at = node.lastEventAt?.getTime();
-  return isLive(node) && at !== undefined && Number.isFinite(at) && now-at > QUIET_MS;
+  return isLive(node) && at !== undefined && Number.isFinite(at) && now - at > QUIET_MS;
 }
 /**
  * How long an agent's output rate stands after its newest token report.
@@ -173,10 +200,17 @@ export const RATE_FRESH_MS = 3 * 60_000;
  */
 export function agentRate(node: SubagentTreeNode, now: number): number | undefined {
   const rate = node.outputRate;
-  if (!rate || !isLive(node) || isQuiet(node,now) || !Number.isFinite(rate.tokensPerSecond) || rate.tokensPerSecond < 0) return undefined;
+  if (
+    !rate ||
+    !isLive(node) ||
+    isQuiet(node, now) ||
+    !Number.isFinite(rate.tokensPerSecond) ||
+    rate.tokensPerSecond < 0
+  )
+    return undefined;
   const at = rate.sampledAt.getTime();
   const turn = node.turnStartedAt?.getTime();
-  if (!Number.isFinite(at) || now-at >= RATE_FRESH_MS || (turn !== undefined && at < turn)) return undefined;
+  if (!Number.isFinite(at) || now - at >= RATE_FRESH_MS || (turn !== undefined && at < turn)) return undefined;
   // "~0 tok/s" says no more than the clock does: it is waiting on a tool.
   return rate.tokensPerSecond < 0.5 ? undefined : rate.tokensPerSecond;
 }
@@ -188,12 +222,12 @@ export function turnClock(node: SubagentTreeNode, now: number): string {
   if (!isLive(node)) return '';
   const start = (node.turnStartedAt ?? node.startedAt)?.getTime();
   if (start === undefined || !Number.isFinite(start)) return '';
-  const glyph = clockFace(now-start);
-  return isQuiet(node,now) ? theme.warning(glyph) : theme.info(glyph);
+  const glyph = clockFace(now - start);
+  return isQuiet(node, now) ? theme.warning(glyph) : theme.info(glyph);
 }
 /** The clock face for a run `elapsed` ms long. */
 export function clockFace(elapsed: number): string {
-  return TURN_CLOCKS.find(([limit]) => Math.max(0,elapsed) < limit)?.[1] ?? TURN_CLOCK_LONG;
+  return TURN_CLOCKS.find(([limit]) => Math.max(0, elapsed) < limit)?.[1] ?? TURN_CLOCK_LONG;
 }
 
 /** Past a clock's boundary, so the repaint lands after its second has turned. */
@@ -221,10 +255,14 @@ export function msUntilAgeChanges(at: number, nowMs: number): number {
   const elapsed = Math.max(0, nowMs - at);
   const seconds = Math.floor(elapsed / 1000);
   // The same steps age() uses: seconds, then minutes, hours, and days past two.
-  const boundary = seconds < 60 ? (seconds + 1) * 1000
-    : seconds < 3600 ? (Math.floor(seconds / 60) + 1) * 60_000
-    : seconds < 2 * 86_400 ? (Math.floor(seconds / 3600) + 1) * 3_600_000
-    : (Math.floor(seconds / 86_400) + 1) * 86_400_000;
+  const boundary =
+    seconds < 60
+      ? (seconds + 1) * 1000
+      : seconds < 3600
+        ? (Math.floor(seconds / 60) + 1) * 60_000
+        : seconds < 2 * 86_400
+          ? (Math.floor(seconds / 3600) + 1) * 3_600_000
+          : (Math.floor(seconds / 86_400) + 1) * 86_400_000;
   return Math.max(1, boundary - elapsed) + REPAINT_SLACK_MS;
 }
 
@@ -253,16 +291,16 @@ export function finishedAt(node: SubagentTreeNode): Date | undefined {
  * colours are on names.
  */
 export function agentPaint(id: string): (s: string) => string {
-  if (displayConfig().agentColors !== 'name') return s => s;
+  if (displayConfig().agentColors !== 'name') return (s) => s;
   const colours = palette().agents;
   let hash = 0;
-  for (const ch of id) hash = (hash*31+ch.charCodeAt(0)) >>> 0;
-  return colours[hash%colours.length];
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return colours[hash % colours.length];
 }
 
 /** When something written once was written: no seconds ticking, days for an old one. */
 export function writtenAge(at: number, now: number): string {
-  const seconds = Math.max(0,Math.floor((now-at)/1000));
+  const seconds = Math.max(0, Math.floor((now - at) / 1000));
   if (seconds < 60) return t('just now');
-  return t('{age} ago',{age:age(new Date(at),now)});
+  return t('{age} ago', { age: age(new Date(at), now) });
 }

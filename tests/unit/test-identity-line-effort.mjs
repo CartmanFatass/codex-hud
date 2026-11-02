@@ -61,16 +61,8 @@ const sessionDriven = stripAnsi(
   )
 );
 
-assert.match(
-  sessionDriven,
-  /5\.4/,
-  'identity line should prefer the current session model over config defaults'
-);
-assert.match(
-  sessionDriven,
-  /●/,
-  'identity line should prefer the current session effort over config defaults'
-);
+assert.match(sessionDriven, /5\.4/, 'identity line should prefer the current session model over config defaults');
+assert.match(sessionDriven, /●/, 'identity line should prefer the current session effort over config defaults');
 assert.doesNotMatch(sessionDriven, /xhigh/, 'effort is a glyph, not the word xhigh');
 
 const configDriven = stripAnsi(renderIdentityLine(baseData, layout));

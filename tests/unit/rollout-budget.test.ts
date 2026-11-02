@@ -10,9 +10,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { findRolloutsInDays, findRolloutsInDaysYielding, resetRolloutStatCache, treeLookbackDays } from '../../src/collectors/session-finder.js';
+import {
+  findRolloutsInDays,
+  findRolloutsInDaysYielding,
+  resetRolloutStatCache,
+  treeLookbackDays,
+} from '../../src/collectors/session-finder.js';
 import { NO_GIT, sameGit } from '../../src/collectors/hud-status.js';
-import { buildSubagentTree, buildSubagentTreeYielding, resetSubagentLinkCache } from '../../src/collectors/subagent-tree.js';
+import {
+  buildSubagentTree,
+  buildSubagentTreeYielding,
+  resetSubagentLinkCache,
+} from '../../src/collectors/subagent-tree.js';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -54,16 +63,18 @@ test('sameGit treats the placeholder and a missing repo as their own values', ()
 });
 
 test('cold and warm trees retain old live descendants, and priority paths survive the date window', async () => {
-  await withSessions(async root => {
-    const past = new Date(); past.setDate(past.getDate() - 5);
+  await withSessions(async (root) => {
+    const past = new Date();
+    past.setDate(past.getDate() - 5);
     const day = path.join(root, String(past.getFullYear()), pad(past.getMonth() + 1), pad(past.getDate()));
     fs.mkdirSync(day, { recursive: true });
     const rootId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01';
     const childId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee02';
     const nestedId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee03';
-    const meta = (id: string, parent_thread_id?: string) => JSON.stringify({ type: 'session_meta',
-      payload: { id, parent_thread_id, timestamp: past.toISOString() } }) + '\n';
-    const event = (type: string) => JSON.stringify({ type: 'event_msg', timestamp: new Date().toISOString(), payload: { type } }) + '\n';
+    const meta = (id: string, parent_thread_id?: string) =>
+      JSON.stringify({ type: 'session_meta', payload: { id, parent_thread_id, timestamp: past.toISOString() } }) + '\n';
+    const event = (type: string) =>
+      JSON.stringify({ type: 'event_msg', timestamp: new Date().toISOString(), payload: { type } }) + '\n';
     rollout(day, rootId, meta(rootId));
     const child = rollout(day, childId, meta(childId, rootId) + event('task_started'));
     rollout(day, nestedId, meta(nestedId, childId) + event('task_started'));
@@ -80,7 +91,7 @@ test('cold and warm trees retain old live descendants, and priority paths surviv
       assert.equal(panel.nodes[0].children[0].id, nestedId);
     }
     const priority = await findRolloutsInDaysYielding(3, new Set([child]));
-    assert.ok(priority.some(file => file.path === child));
+    assert.ok(priority.some((file) => file.path === child));
     fs.appendFileSync(child, event('task_complete'));
     assert.equal(buildSubagentTree(rootId, known).nodes[0].status, 'completed');
     // If only the parent's metadata is lost, its known children still determine the horizon.
@@ -89,36 +100,45 @@ test('cold and warm trees retain old live descendants, and priority paths surviv
   });
 });
 
-
 test('the yielding finder restats two quiet files, the sync finder ignores that cache, and an empty list does not scan', async () => {
   await withSessions(async (root) => {
     const dir = dayDir(root);
     const body = '{"type":"session_meta"}\n';
     const extra = 'x'.repeat(40);
-    const ids = ['aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee1', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee2',
-      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee3', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee4',
-      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee5'];
-    const files = ids.map(id => rollout(dir, id, body));
+    const ids = [
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee1',
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee2',
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee3',
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee4',
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee5',
+    ];
+    const files = ids.map((id) => rollout(dir, id, body));
     const first = await findRolloutsInDaysYielding(0);
     assert.equal(first.length, 5);
-    assert.ok(first.every(file => file.size === Buffer.byteLength(body)));
+    assert.ok(first.every((file) => file.size === Buffer.byteLength(body)));
     for (const file of files) fs.appendFileSync(file, extra);
     const fresh = findRolloutsInDays(0);
-    assert.ok(fresh.every(file => file.size === Buffer.byteLength(body + extra)), 'the sync list stats every file');
+    assert.ok(
+      fresh.every((file) => file.size === Buffer.byteLength(body + extra)),
+      'the sync list stats every file'
+    );
     const second = await findRolloutsInDaysYielding(0);
-    const grown = second.filter(file => file.size === Buffer.byteLength(body + extra));
+    const grown = second.filter((file) => file.size === Buffer.byteLength(body + extra));
     assert.equal(grown.length, 2);
-    const stale = second.find(file => file.size === Buffer.byteLength(body));
+    const stale = second.find((file) => file.size === Buffer.byteLength(body));
     assert.ok(stale);
     const priority = await findRolloutsInDaysYielding(0, new Set([stale.path]));
-    assert.equal(priority.find(file => file.path === stale.path)?.size, Buffer.byteLength(body + extra));
+    assert.equal(priority.find((file) => file.path === stale.path)?.size, Buffer.byteLength(body + extra));
     const created = rollout(dir, 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee6', body);
     const third = await findRolloutsInDaysYielding(0);
-    assert.ok(third.some(file => file.path === created));
+    assert.ok(third.some((file) => file.path === created));
 
     const now = new Date();
     const child = path.join(dir, 'rollout-2026-10-14T00-00-01-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee10.jsonl');
-    fs.writeFileSync(child, `${JSON.stringify({ type: 'session_meta', payload: { id: 'child', parent_thread_id: 'root', timestamp: now.toISOString() } })}\n`);
+    fs.writeFileSync(
+      child,
+      `${JSON.stringify({ type: 'session_meta', payload: { id: 'child', parent_thread_id: 'root', timestamp: now.toISOString() } })}\n`
+    );
     resetSubagentLinkCache();
     assert.equal(buildSubagentTree('root', [], 3, now.getTime(), []).nodes.length, 0);
     resetSubagentLinkCache();

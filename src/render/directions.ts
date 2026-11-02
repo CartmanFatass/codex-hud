@@ -41,23 +41,27 @@ export interface Directions {
  */
 export function subtasks(node: SubagentTreeNode): SubagentTreeNode[] {
   const found: SubagentTreeNode[] = [];
-  eachThread(node.children, (thread, kind) => { if (kind !== 'review') found.push(thread); });
+  eachThread(node.children, (thread, kind) => {
+    if (kind !== 'review') found.push(thread);
+  });
   return found.sort((a, b) => (a.startedAt?.getTime() ?? 0) - (b.startedAt?.getTime() ?? 0));
 }
 
 /** The guardian reviews under an L1, at any depth, in the tree's order. */
 export function reviewsUnder(node: SubagentTreeNode): SubagentTreeNode[] {
   const found: SubagentTreeNode[] = [];
-  eachThread(node.children, (thread, kind) => { if (kind === 'review') found.push(thread); });
+  eachThread(node.children, (thread, kind) => {
+    if (kind === 'review') found.push(thread);
+  });
   return found;
 }
 
 /** Messages two agents exchanged over the session, both ways, as each one's rollout counted what it was sent. */
 export function talk(a: SubagentTreeNode, b: SubagentTreeNode): number {
-  return (a.agentPath ? b.peers?.[a.agentPath] ?? 0 : 0) + (b.agentPath ? a.peers?.[b.agentPath] ?? 0 : 0);
+  return (a.agentPath ? (b.peers?.[a.agentPath] ?? 0) : 0) + (b.agentPath ? (a.peers?.[b.agentPath] ?? 0) : 0);
 }
 
-const plain: Paint = text => text;
+const plain: Paint = (text) => text;
 let memo: { tree: SubagentTree; theme: string; value: Directions } | undefined;
 
 /**
@@ -82,8 +86,8 @@ export function directions(tree: SubagentTree): Directions {
     }
   };
   walk(tree.nodes, 0);
-  const l1s = tree.nodes.filter(n => !isGuardian(n));
-  const leads = l1s.filter(n => subtasks(n).length);
+  const l1s = tree.nodes.filter((n) => !isGuardian(n));
+  const leads = l1s.filter((n) => subtasks(n).length);
   const serves = new Map<string, string>();
   for (const helper of l1s) {
     if (subtasks(helper).length) continue;
@@ -91,25 +95,35 @@ export function directions(tree: SubagentTree): Directions {
     let most = TALK_MIN - 1;
     for (const lead of leads) {
       const count = talk(helper, lead);
-      if (count > most) { most = count; best = lead; }
+      if (count > most) {
+        most = count;
+        best = lead;
+      }
     }
     if (best) serves.set(helper.id, best.id);
   }
   const started = (n: SubagentTreeNode) => n.startedAt?.getTime() ?? 0;
   // A direction is at work while its L1 or any subtask is; then until the last of them finished.
-  const ended = (n: SubagentTreeNode) => isLive(n) || subtasks(n).some(isLive) ? Infinity
-    : Math.max(finishedAt(n)?.getTime() ?? started(n), ...subtasks(n).map(kid => finishedAt(kid)?.getTime() ?? 0));
+  const ended = (n: SubagentTreeNode) =>
+    isLive(n) || subtasks(n).some(isLive)
+      ? Infinity
+      : Math.max(finishedAt(n)?.getTime() ?? started(n), ...subtasks(n).map((kid) => finishedAt(kid)?.getTime() ?? 0));
   const colours = palette().directions;
   const index = new Map<string, number>();
   const placed: SubagentTreeNode[] = [];
-  for (const n of l1s.filter(n => !serves.has(n.id)).sort((a, b) => started(a) - started(b) || a.id.localeCompare(b.id))) {
+  for (const n of l1s
+    .filter((n) => !serves.has(n.id))
+    .sort((a, b) => started(a) - started(b) || a.id.localeCompare(b.id))) {
     const uses = new Array<number>(colours.length).fill(0);
     for (const other of placed) if (ended(other) > started(n)) uses[index.get(other.id)!]++;
     index.set(n.id, uses.indexOf(Math.min(...uses)));
     placed.push(n);
   }
   const value: Directions = {
-    family, serves, node, byPath,
+    family,
+    serves,
+    node,
+    byPath,
     paint(id?: string): Paint {
       const l1 = id ? family.get(id) : undefined;
       if (!l1 || displayConfig().agentColors === 'off') return plain;
@@ -142,7 +156,10 @@ export function stageServes(dirs: Directions, id: string, stage: AgentStage): st
   let most = 0;
   for (const [path, count] of Object.entries(stage.peers ?? {})) {
     const other = lead(path);
-    if (other && count > most) { most = count; best = other; }
+    if (other && count > most) {
+      most = count;
+      best = other;
+    }
   }
   return best ?? dirs.serves.get(id);
 }
@@ -151,8 +168,8 @@ export function stageServes(dirs: Directions, id: string, stage: AgentStage): st
 export function tally(kids: readonly SubagentTreeNode[]): { running: number; failed: number; done: number } {
   return {
     running: kids.filter(isLive).length,
-    failed: kids.filter(kid => kid.status === 'error').length,
-    done: kids.filter(kid => kid.status === 'completed').length,
+    failed: kids.filter((kid) => kid.status === 'error').length,
+    done: kids.filter((kid) => kid.status === 'completed').length,
   };
 }
 
@@ -163,13 +180,17 @@ export function tally(kids: readonly SubagentTreeNode[]): { running: number; fai
  * its end after a dash: `critic` names `team-platform-critic`, as the cards,
  * leaving a shared prefix out, may say it.
  */
-export function isImportant(node: SubagentTreeNode, log: readonly AgentLogEntry[] | undefined, roles: ReadonlySet<string>): boolean {
+export function isImportant(
+  node: SubagentTreeNode,
+  log: readonly AgentLogEntry[] | undefined,
+  roles: ReadonlySet<string>
+): boolean {
   const role = node.role;
-  const named = Boolean(role && [...roles].some(name => role === name || role.endsWith(`-${name}`)));
+  const named = Boolean(role && [...roles].some((name) => role === name || role.endsWith(`-${name}`)));
   return node.status === 'error' || named || Boolean(log?.at(-1)?.attention);
 }
 
-let prefixMemo: {tree: SubagentTree; prefix: string} | undefined;
+let prefixMemo: { tree: SubagentTree; prefix: string } | undefined;
 /**
  * The first part of a role's name every role with one shares: `team-` of
  * `team-implementer` and `team-reviewer`, which the cards leave out. Read over
@@ -178,12 +199,17 @@ let prefixMemo: {tree: SubagentTree; prefix: string} | undefined;
 export function rolePrefix(tree: SubagentTree): string {
   if (prefixMemo?.tree === tree) return prefixMemo.prefix;
   const roles = new Set<string>();
-  const walk = (nodes: readonly SubagentTreeNode[]) => { for (const node of nodes) { if (node.role?.includes('-')) roles.add(node.role); walk(node.children); } };
+  const walk = (nodes: readonly SubagentTreeNode[]) => {
+    for (const node of nodes) {
+      if (node.role?.includes('-')) roles.add(node.role);
+      walk(node.children);
+    }
+  };
   walk(tree.nodes);
-  const [first,...rest] = [...roles];
-  const head = first ? first.slice(0,first.indexOf('-')+1) : '';
-  const prefix = rest.length && rest.every(role => role.startsWith(head)) ? head : '';
-  prefixMemo = {tree,prefix};
+  const [first, ...rest] = [...roles];
+  const head = first ? first.slice(0, first.indexOf('-') + 1) : '';
+  const prefix = rest.length && rest.every((role) => role.startsWith(head)) ? head : '';
+  prefixMemo = { tree, prefix };
   return prefix;
 }
 
@@ -209,5 +235,10 @@ export function subtaskRoles(tree: SubagentTree): string[] {
 
 /** The roles named in the setting: a comma list, spaces ignored. */
 export function roleSet(text: string | undefined): ReadonlySet<string> {
-  return new Set((text ?? '').split(',').map(role => role.trim()).filter(Boolean));
+  return new Set(
+    (text ?? '')
+      .split(',')
+      .map((role) => role.trim())
+      .filter(Boolean)
+  );
 }

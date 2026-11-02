@@ -15,16 +15,8 @@ const directParse = parsePaneRuntimeStateFromCapture(`
 `);
 
 assert.equal(directParse.approvalPolicy, 'never', 'Full Access should map to approval never');
-assert.equal(
-  directParse.sandboxMode,
-  'danger-full-access',
-  'Full Access should map to danger-full-access'
-);
-assert.equal(
-  directParse.collaborationMode,
-  'default',
-  'switch-to-Plan hint should mean the current mode is default'
-);
+assert.equal(directParse.sandboxMode, 'danger-full-access', 'Full Access should map to danger-full-access');
+assert.equal(directParse.collaborationMode, 'default', 'switch-to-Plan hint should mean the current mode is default');
 
 const footerParse = parsePaneRuntimeStateFromCapture(`
   gpt-5.4 high · ~\\Documents\\GitHub\\codex-hud    Plan mode (shift+tab to cycle
@@ -49,11 +41,7 @@ assert.equal(
   'workspace-write',
   'parser should use the latest sandbox update in the capture tail'
 );
-assert.equal(
-  latestStateParse.collaborationMode,
-  'plan',
-  'parser should use the latest mode hint in the capture tail'
-);
+assert.equal(latestStateParse.collaborationMode, 'plan', 'parser should use the latest mode hint in the capture tail');
 
 let captureIndex = 0;
 const captures = [

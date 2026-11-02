@@ -61,11 +61,7 @@ function countVariants(summary: SubagentSummary): string[] {
   const minimal: string[] = [colors.dim(`${summary.active}${icons.running}`)];
   if (summary.failed > 0) minimal.push(theme.error(`${summary.failed}${icons.cross}`));
 
-  return [
-    words.join(colors.dim(' · ')),
-    symbols.join(' '),
-    minimal.join(' '),
-  ];
+  return [words.join(colors.dim(' · ')), symbols.join(' '), minimal.join(' ')];
 }
 
 /**
@@ -74,11 +70,7 @@ function countVariants(summary: SubagentSummary): string[] {
  */
 function renderPanelHeader(rootId: string, summary: SubagentSummary, maxWidth: number): string {
   const shortId = rootId.length > 8 ? rootId.slice(0, 8) : rootId;
-  const lefts = [
-    theme.info(`main · ${shortId}`),
-    theme.info(`main·${shortId.slice(0, 4)}`),
-    theme.info('main'),
-  ];
+  const lefts = [theme.info(`main · ${shortId}`), theme.info(`main·${shortId.slice(0, 4)}`), theme.info('main')];
   const rights = countVariants(summary);
 
   // Counts first: the session label may shrink to keep a failure count on
@@ -121,11 +113,7 @@ const STATUS_WORDS: Record<SubagentTreeNode['status'], string> = {
   unknown: 'no events seen',
 };
 
-export function renderDirectoryTree(
-  nodes: SubagentTreeNode[],
-  prefix = '',
-  maxWidth?: number
-): string[] {
+export function renderDirectoryTree(nodes: SubagentTreeNode[], prefix = '', maxWidth?: number): string[] {
   const lines: string[] = [];
   nodes.forEach((node, index) => {
     const isLast = index === nodes.length - 1;
@@ -186,8 +174,9 @@ function treeView(input: PanelInput, rows: PanelRow[]): string[] {
 
 function detailView(input: PanelInput, rows: PanelRow[]): string[] {
   const nowMs = input.nowMs ?? Date.now();
-  const selected = rows.find((row) => row.node.id === input.state.selectedId)?.node
-    ?? findNode(input.tree.nodes, input.state.selectedId);
+  const selected =
+    rows.find((row) => row.node.id === input.state.selectedId)?.node ??
+    findNode(input.tree.nodes, input.state.selectedId);
   if (!selected) {
     return [colors.dim('esc back'), colors.dim('agent is gone')];
   }
@@ -206,7 +195,7 @@ function detailView(input: PanelInput, rows: PanelRow[]): string[] {
 
   const family = selected.model ? modelFamilyOf(selected.model) : null;
   if (selected.model || selected.effort) {
-    const label = family ? `${MODEL_GLYPHS[family]} ${MODEL_LABELS[family]}` : selected.model ?? '';
+    const label = family ? `${MODEL_GLYPHS[family]} ${MODEL_LABELS[family]}` : (selected.model ?? '');
     lines.push(theme.model(label) + (selected.effort ? colors.dim(`·${selected.effort}`) : ''));
   }
   if (selected.model && family) {
@@ -262,7 +251,8 @@ function sessionView(input: PanelInput): string[] {
     lines.push(theme.value(`Tasks ${plan.completedSteps}/${plan.totalSteps}`));
     for (const step of plan.steps) {
       const mark = step.status === 'completed' ? icons.check : step.status === 'in_progress' ? icons.running : '·';
-      const paint = step.status === 'completed' ? theme.success : step.status === 'in_progress' ? theme.accent : colors.dim;
+      const paint =
+        step.status === 'completed' ? theme.success : step.status === 'in_progress' ? theme.accent : colors.dim;
       lines.push(paint(`${mark} ${step.step}`));
     }
   } else {
@@ -306,7 +296,9 @@ function resourceLines(input: PanelInput): string[] {
 
   lines.push(colors.dim('─ context ─'));
   if (usage) {
-    lines.push(`${theme.value(`${usage.percent}%`)} ${colors.dim(`${formatCount(usage.used)}/${formatCount(usage.total)}`)}`);
+    lines.push(
+      `${theme.value(`${usage.percent}%`)} ${colors.dim(`${formatCount(usage.used)}/${formatCount(usage.total)}`)}`
+    );
     const history = input.contextHistory ?? [];
     if (history.length >= 2) {
       const spanMs = input.contextHistoryMs ?? 0;

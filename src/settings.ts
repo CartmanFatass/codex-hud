@@ -164,26 +164,74 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
 }
 
 /** What the brief covers, from its two switches; null when neither is on. */
-export function briefingScope(settings: Pick<HudSettings, 'briefAgents' | 'briefMain'>): 'agents' | 'main' | 'both' | null {
-  return settings.briefAgents ? settings.briefMain ? 'both' : 'agents' : settings.briefMain ? 'main' : null;
+export function briefingScope(
+  settings: Pick<HudSettings, 'briefAgents' | 'briefMain'>
+): 'agents' | 'main' | 'both' | null {
+  return settings.briefAgents ? (settings.briefMain ? 'both' : 'agents') : settings.briefMain ? 'main' : null;
 }
 
 /** Built-in defaults; callers apply environment or runtime display overrides. */
 export function defaultSettings(): HudSettings {
   return {
     ...defaultCardVisibility(),
-    density: 'balanced', theme: 'terminal', glyphs: 'both', motion: 'full', context: 'used', agentColors: 'name', look: 'tab', paneLayout: 'stack',
-    statusline: true, sort: 'active', mouse: true, tasks: false, changes: true, activity: false,
-    details: true, refreshMs: 1000, treeWidth: 48, finishedLingerMs: 180_000,
-    agentsPane: 'open', changesPane: 'closed', detailsPane: 'closed', timelinePane: 'closed', panelStyle: 'rich',
-    timelineStyle: 'rail', timelineHours: 3, importantRoles: '',
-    worktreeRoot: '', briefing: 'off', briefingMs: 300_000, briefingPaused: false, language: 'auto',
-    briefingApiBase: '', briefingApiModel: '', briefingApiKey: '', briefingApiReasoning: false,
-    briefingApiLiteModel: 'gemini-3.5-flash-lite', briefingApiLowModel: 'gemini-3.8-flash-low', briefingApiMediumModel: 'gemini-3.8-flash-medium',
-    briefAgents: true, briefMain: false, agentProgress: true, recapFloorMs: 900_000, statusCard: 'full', modelCallsPerHour: 60,
-    agentLog: false, cardCorners: 'square', notify: false, notifyDesktop: false,
-    resultDigest: false, agentLabels: true, labelAsName: true, failureCause: false, changeSummary: false, approvalDescription: false,
-    art: 'off', artImage: '', prefixKey: 'C-\\', icons: 'unicode',
+    density: 'balanced',
+    theme: 'terminal',
+    glyphs: 'both',
+    motion: 'full',
+    context: 'used',
+    agentColors: 'name',
+    look: 'tab',
+    paneLayout: 'stack',
+    statusline: true,
+    sort: 'active',
+    mouse: true,
+    tasks: false,
+    changes: true,
+    activity: false,
+    details: true,
+    refreshMs: 1000,
+    treeWidth: 48,
+    finishedLingerMs: 180_000,
+    agentsPane: 'open',
+    changesPane: 'closed',
+    detailsPane: 'closed',
+    timelinePane: 'closed',
+    panelStyle: 'rich',
+    timelineStyle: 'rail',
+    timelineHours: 3,
+    importantRoles: '',
+    worktreeRoot: '',
+    briefing: 'off',
+    briefingMs: 300_000,
+    briefingPaused: false,
+    language: 'auto',
+    briefingApiBase: '',
+    briefingApiModel: '',
+    briefingApiKey: '',
+    briefingApiReasoning: false,
+    briefingApiLiteModel: 'gemini-3.5-flash-lite',
+    briefingApiLowModel: 'gemini-3.8-flash-low',
+    briefingApiMediumModel: 'gemini-3.8-flash-medium',
+    briefAgents: true,
+    briefMain: false,
+    agentProgress: true,
+    recapFloorMs: 900_000,
+    statusCard: 'full',
+    modelCallsPerHour: 60,
+    agentLog: false,
+    cardCorners: 'square',
+    notify: false,
+    notifyDesktop: false,
+    resultDigest: false,
+    agentLabels: true,
+    labelAsName: true,
+    failureCause: false,
+    changeSummary: false,
+    approvalDescription: false,
+    art: 'off',
+    artImage: '',
+    prefixKey: 'C-\\',
+    icons: 'unicode',
   };
 }
 
@@ -191,11 +239,15 @@ const MAX_SETTINGS_BYTES = 65_536;
 const isBoolean = (value: unknown): boolean => typeof value === 'boolean';
 const isIntegerBetween = (value: unknown, min: number, max: number): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
-const oneOf = (...allowed: string[]) => (value: unknown): boolean =>
-  typeof value === 'string' && allowed.includes(value);
+const oneOf =
+  (...allowed: string[]) =>
+  (value: unknown): boolean =>
+    typeof value === 'string' && allowed.includes(value);
 
-const isText = (max: number) => (value: unknown): boolean =>
-  typeof value === 'string' && value.length <= max && !/[\0\r\n]/.test(value);
+const isText =
+  (max: number) =>
+  (value: unknown): boolean =>
+    typeof value === 'string' && value.length <= max && !/[\0\r\n]/.test(value);
 
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusline: isBoolean,
@@ -206,8 +258,11 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   context: oneOf('used', 'remaining'),
   agentColors: oneOf('name', 'mark', 'off'),
   sort: oneOf('active', 'created'),
-  mouse: isBoolean, tasks: isBoolean, changes: isBoolean,
-  activity: isBoolean, details: isBoolean,
+  mouse: isBoolean,
+  tasks: isBoolean,
+  changes: isBoolean,
+  activity: isBoolean,
+  details: isBoolean,
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   finishedLingerMs: (value) => value === 0 || isIntegerBetween(value, 10_000, 86_400_000),
@@ -221,7 +276,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   panelStyle: oneOf('rich', 'compact'),
   paneLayout: oneOf('stack', 'tabs'),
   look: oneOf(...LOOKS),
-  worktreeRoot: value => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
+  worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   briefing: oneOf('off', 'agy', 'api'),
   briefingMs: (value) => isIntegerBetween(value, 30_000, 3_600_000),
   briefingPaused: isBoolean,
@@ -338,7 +393,11 @@ export function saveSettings(patch: Partial<HudSettings>): HudSettings {
     fs.writeFileSync(temporary, `${JSON.stringify(settings, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temporary, file);
   } finally {
-    try { fs.unlinkSync(temporary); } catch { /* Renamed successfully, or cleanup failed after the original error. */ }
+    try {
+      fs.unlinkSync(temporary);
+    } catch {
+      /* Renamed successfully, or cleanup failed after the original error. */
+    }
   }
   return settings;
 }

@@ -22,13 +22,15 @@ import {
 const HASH = '0000000000000000000000000000000000000000';
 
 test('clean tracked branch reports ahead and behind', () => {
-  const parsed = parseGitStatusPorcelainV2([
-    '# branch.oid 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d',
-    '# branch.head main',
-    '# branch.upstream origin/main',
-    '# branch.ab +2 -3',
-    '',
-  ].join('\n'));
+  const parsed = parseGitStatusPorcelainV2(
+    [
+      '# branch.oid 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d',
+      '# branch.head main',
+      '# branch.upstream origin/main',
+      '# branch.ab +2 -3',
+      '',
+    ].join('\n')
+  );
 
   assert.equal(parsed.branch, 'main');
   assert.equal(parsed.detached, false);
@@ -43,21 +45,23 @@ test('clean tracked branch reports ahead and behind', () => {
 });
 
 test('staged, unstaged, renamed and untracked entries are counted', () => {
-  const parsed = parseGitStatusPorcelainV2([
-    '# branch.oid 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d',
-    '# branch.head feature/counts',
-    '# branch.upstream origin/feature/counts',
-    '# branch.ab +0 -0',
-    `1 M. N... 100644 100644 100644 ${HASH} ${HASH} src/staged.ts`,
-    `1 .M N... 100644 100644 100644 ${HASH} ${HASH} src/unstaged.ts`,
-    `1 A. N... 000000 100644 100644 ${HASH} ${HASH} src/new.ts`,
-    `1 .D N... 100644 100644 000000 ${HASH} ${HASH} src/gone.ts`,
-    `2 R. N... 100644 100644 100644 ${HASH} ${HASH} R100 src/after.ts\tsrc/before.ts`,
-    `u UU N... 100644 100644 100644 100644 ${HASH} ${HASH} ${HASH} src/conflict.ts`,
-    '? notes.txt',
-    '? build/',
-    '',
-  ].join('\n'));
+  const parsed = parseGitStatusPorcelainV2(
+    [
+      '# branch.oid 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d',
+      '# branch.head feature/counts',
+      '# branch.upstream origin/feature/counts',
+      '# branch.ab +0 -0',
+      `1 M. N... 100644 100644 100644 ${HASH} ${HASH} src/staged.ts`,
+      `1 .M N... 100644 100644 100644 ${HASH} ${HASH} src/unstaged.ts`,
+      `1 A. N... 000000 100644 100644 ${HASH} ${HASH} src/new.ts`,
+      `1 .D N... 100644 100644 000000 ${HASH} ${HASH} src/gone.ts`,
+      `2 R. N... 100644 100644 100644 ${HASH} ${HASH} R100 src/after.ts\tsrc/before.ts`,
+      `u UU N... 100644 100644 100644 100644 ${HASH} ${HASH} ${HASH} src/conflict.ts`,
+      '? notes.txt',
+      '? build/',
+      '',
+    ].join('\n')
+  );
 
   assert.equal(parsed.branch, 'feature/counts');
   assert.equal(parsed.isDirty, true);
@@ -72,12 +76,14 @@ test('staged, unstaged, renamed and untracked entries are counted', () => {
 });
 
 test('detached HEAD reports no branch and keeps the commit id', () => {
-  const parsed = parseGitStatusPorcelainV2([
-    '# branch.oid 9f1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192',
-    '# branch.head (detached)',
-    `1 .M N... 100644 100644 100644 ${HASH} ${HASH} src/edited.ts`,
-    '',
-  ].join('\n'));
+  const parsed = parseGitStatusPorcelainV2(
+    [
+      '# branch.oid 9f1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192',
+      '# branch.head (detached)',
+      `1 .M N... 100644 100644 100644 ${HASH} ${HASH} src/edited.ts`,
+      '',
+    ].join('\n')
+  );
 
   assert.equal(parsed.detached, true);
   assert.equal(parsed.branch, null);
@@ -88,11 +94,9 @@ test('detached HEAD reports no branch and keeps the commit id', () => {
 });
 
 test('a branch without an upstream has no ab header and stays at zero', () => {
-  const parsed = parseGitStatusPorcelainV2([
-    '# branch.oid 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d',
-    '# branch.head solo',
-    '',
-  ].join('\n'));
+  const parsed = parseGitStatusPorcelainV2(
+    ['# branch.oid 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d', '# branch.head solo', ''].join('\n')
+  );
 
   assert.equal(parsed.branch, 'solo');
   assert.equal(parsed.upstream, null);
@@ -102,11 +106,7 @@ test('a branch without an upstream has no ab header and stays at zero', () => {
 });
 
 test('an unborn branch reports its name and no commit id', () => {
-  const parsed = parseGitStatusPorcelainV2([
-    '# branch.oid (initial)',
-    '# branch.head main',
-    '',
-  ].join('\n'));
+  const parsed = parseGitStatusPorcelainV2(['# branch.oid (initial)', '# branch.head main', ''].join('\n'));
 
   assert.equal(parsed.branch, 'main');
   assert.equal(parsed.oid, null);
@@ -129,7 +129,7 @@ function repository(t: { after(fn: () => void): void }): string {
   return root;
 }
 
-test('a directory outside a repository reports no repository', async t => {
+test('a directory outside a repository reports no repository', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'hud-git-none-'));
   t.after(() => {
     resetGitStatusCache();
@@ -144,7 +144,7 @@ test('a directory outside a repository reports no repository', async t => {
   assert.equal(formatGitStatus(status), '');
 });
 
-test('a real repository reports its branch, dirt and counts', async t => {
+test('a real repository reports its branch, dirt and counts', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'tracked.txt'), 'one\n');
   git(root, 'add', '--all');
@@ -168,7 +168,7 @@ test('a real repository reports its branch, dirt and counts', async t => {
   assert.equal(formatGitStatus(dirty), 'git:(main) ●');
 });
 
-test('a detached HEAD falls back to the short commit id', async t => {
+test('a detached HEAD falls back to the short commit id', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'tracked.txt'), 'one\n');
   git(root, 'add', '--all');
@@ -182,7 +182,7 @@ test('a detached HEAD falls back to the short commit id', async t => {
   assert.equal(status.branch, head.slice(0, 7));
 });
 
-test('a detached HEAD on a tagged commit reports the tag', async t => {
+test('a detached HEAD on a tagged commit reports the tag', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'tracked.txt'), 'one\n');
   git(root, 'add', '--all');
@@ -195,7 +195,7 @@ test('a detached HEAD on a tagged commit reports the tag', async t => {
   assert.equal(status.branch, 'tag:v1.2.3');
 });
 
-test('an unchanged repository is answered from cache without running git', async t => {
+test('an unchanged repository is answered from cache without running git', async (t) => {
   const root = repository(t);
   writeFileSync(join(root, 'tracked.txt'), 'one\n');
   git(root, 'add', '--all');

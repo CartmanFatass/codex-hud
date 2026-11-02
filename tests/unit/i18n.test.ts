@@ -17,14 +17,32 @@ useDisplayFixture();
 
 const now = Date.parse('2026-10-01T10:00:00Z');
 const root = '00000000-0000-4000-8000-000000000001';
-const node = (id: string, name: string, status: SubagentTreeNode['status']): SubagentTreeNode =>
-  ({ id, name, status, depth: 1, children: [], turnStartedAt: new Date(now - 30_000), lastEventAt: new Date(now - 1000) });
-const tree: SubagentTree = { rootId: root, totalCount: 2, updatedAt: new Date(now),
-  nodes: [node('00000000-0000-4000-8000-000000000002', 'Hegel', 'running'), node('00000000-0000-4000-8000-000000000003', 'Pasteur', 'completed')] };
+const node = (id: string, name: string, status: SubagentTreeNode['status']): SubagentTreeNode => ({
+  id,
+  name,
+  status,
+  depth: 1,
+  children: [],
+  turnStartedAt: new Date(now - 30_000),
+  lastEventAt: new Date(now - 1000),
+});
+const tree: SubagentTree = {
+  rootId: root,
+  totalCount: 2,
+  updatedAt: new Date(now),
+  nodes: [
+    node('00000000-0000-4000-8000-000000000002', 'Hegel', 'running'),
+    node('00000000-0000-4000-8000-000000000003', 'Pasteur', 'completed'),
+  ],
+};
 
 function inChinese<T>(run: () => T): T {
   const previous = setLanguage('zh');
-  try { return run(); } finally { setLanguage(previous); }
+  try {
+    return run();
+  } finally {
+    setLanguage(previous);
+  }
 }
 
 test('auto follows a zh locale, and an explicit choice wins over the locale', () => {
@@ -73,9 +91,13 @@ test('the panel speaks Chinese and keeps its width at every size', () => {
     assert.doesNotMatch(text.split('\n')[0], /主会话|帮助/);
     assert.doesNotMatch(text, /Main session|run\b|done\b/);
   }
-  const english = stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 30, height: 20, nowMs: now }).lines.join('\n'));
+  const english = stripAnsi(
+    renderMonitor({ tree, state: initialMonitorState(), width: 30, height: 20, nowMs: now }).lines.join('\n')
+  );
   assert.match(english.split('\n')[0], /Settings.*\? *$/);
-  const wide = inChinese(() => stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 100, height: 20, nowMs: now }).lines[0]));
+  const wide = inChinese(() =>
+    stripAnsi(renderMonitor({ tree, state: initialMonitorState(), width: 100, height: 20, nowMs: now }).lines[0])
+  );
   // An agent selected in its list: the bar's Switch, in words where there is room.
   assert.match(wide, /^ +⌂ 主会话 .*⚙ 设置 +⇢ 切换 +\? 帮助 +$/, wide);
   assert.match(english, / ✓1 done {2}▸1 run/);
@@ -83,7 +105,7 @@ test('the panel speaks Chinese and keeps its width at every size', () => {
 
 test('the settings page lays Chinese labels out by display width', () => {
   const draft = { ...defaultSettings(), language: 'zh' as const };
-  const selected = SETTING_ROWS.findIndex(row => row.key === 'language');
+  const selected = SETTING_ROWS.findIndex((row) => row.key === 'language');
   assert.ok(selected >= 0, 'a Language row exists');
   for (const width of [18, 24, 32, 48]) {
     const frame = inChinese(() => renderSettingsPage({ draft, selected, offset: 0, message: '' }, width, 40));
@@ -105,17 +127,21 @@ test('the brief is asked for in the panel language, and a switch asks again', as
   assert.equal(agy.args[agy.args.indexOf('-p') + 1], `${briefSystemPrompt('en')}\n\nx`);
 
   const prompts: string[] = [];
-  const model = new SmallModel({ env: {}, fetch: (async (_url, init) => {
-  const body = JSON.parse(String(init?.body));
-  prompts.push(body.messages[0].content);
-  return new Response(JSON.stringify({ choices: [{ message: { content: '{"agents":[]}' } }] }));
-  }) as typeof fetch });
+  const model = new SmallModel({
+    env: {},
+    fetch: (async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      prompts.push(body.messages[0].content);
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"agents":[]}' } }] }));
+    }) as typeof fetch,
+  });
   model.configure({ api: { base: '', model: 'test-model', key: '' } });
   const briefer = new Briefer(() => {}, { model });
-  const settle = () => new Promise<void>(resolve => {
-    const poll = () => briefer.current().running ? setTimeout(poll, 10) : resolve();
-    poll();
-  });
+  const settle = () =>
+    new Promise<void>((resolve) => {
+      const poll = () => (briefer.current().running ? setTimeout(poll, 10) : resolve());
+      poll();
+    });
   briefer.update(tree, 'api', 60_000, 'zh', now);
   await settle();
   briefer.update(tree, 'api', 60_000, 'zh', now + 120_000);

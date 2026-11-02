@@ -71,17 +71,17 @@ export interface ProjectInfo {
   agentsMdCount: number;
   hasCodexDir: boolean;
   // Extended config counts
-  instructionsMdCount: number;  // .codex/INSTRUCTIONS.md
-  rulesCount: number;           // .codex/rules/*.md
-  mcpCount: number;             // From config
+  instructionsMdCount: number; // .codex/INSTRUCTIONS.md
+  rulesCount: number; // .codex/rules/*.md
+  mcpCount: number; // From config
   // Codex-specific module status
-  configsCount: number;         // Active configuration files
-  extensionsCount: number;      // Loaded extensions/plugins
+  configsCount: number; // Active configuration files
+  extensionsCount: number; // Loaded extensions/plugins
   /** Skills Codex can load here: the user's, the bundled ones and the repository's. Null when unread. */
   skillsCount?: number | null;
   /** Hook handlers in the hooks.json files Codex reads. Null when unread. */
   hooksCount?: number | null;
-  workMode: 'development' | 'production' | 'unknown';  // Current work mode
+  workMode: 'development' | 'production' | 'unknown'; // Current work mode
 }
 
 // ============================================================================
@@ -124,8 +124,8 @@ export interface LayoutConfig {
   showGitStatus?: boolean;
   showToolActivity?: boolean;
   showPlanProgress?: boolean;
-  showContextBreakdown?: boolean;  // Show token breakdown when usage >= 85%
-  barWidth?: number;               // Width of context progress bar
+  showContextBreakdown?: boolean; // Show token breakdown when usage >= 85%
+  barWidth?: number; // Width of context progress bar
   contextBarWidth?: number;
 }
 
@@ -139,11 +139,7 @@ export interface RolloutLine {
   payload: RolloutPayload;
 }
 
-export type RolloutPayload =
-  | SessionMetaPayload
-  | ResponseItemPayload
-  | EventMsgPayload
-  | TurnContextPayload;
+export type RolloutPayload = SessionMetaPayload | ResponseItemPayload | EventMsgPayload | TurnContextPayload;
 
 export interface SessionMetaPayload {
   id: string;
@@ -390,7 +386,7 @@ export type AgentStatus = 'running' | 'completed' | 'error';
 
 export interface AgentCall {
   id: string;
-  type: string;        // e.g., 'explore', 'librarian', 'oracle'
+  type: string; // e.g., 'explore', 'librarian', 'oracle'
   description: string;
   timestamp: Date;
   status: AgentStatus;
@@ -424,7 +420,7 @@ export interface SubagentInfo {
 
 /** What sort of work a task is, as the labels job reads it; `other` has no glyph. */
 export const AGENT_TASK_KINDS = ['research', 'experiment', 'fix', 'review', 'writing', 'summary', 'other'] as const;
-export type AgentTaskKind = typeof AGENT_TASK_KINDS[number];
+export type AgentTaskKind = (typeof AGENT_TASK_KINDS)[number];
 
 /**
  * One turn of an agent, from what started it to its final answer, as its
@@ -619,11 +615,11 @@ export interface HudData {
   git: GitStatus;
   project: ProjectInfo;
   sessionStart: Date;
-  
+
   // Session and rollout data
   session?: SessionInfo;
   runtimeSession?: Partial<SessionInfo>;
-  
+
   /** A recorded approval request that nothing has answered yet. */
   pendingApproval?: PendingApproval;
   /** The session's title, from the recap's goal or its first prompt, model-written; only when the labels feature is on. */
@@ -634,7 +630,7 @@ export interface HudData {
   tokenUsage?: TokenUsageInfo;
   rateLimits?: RateLimitSnapshot;
   subagents?: SubagentInfo[];
-  
+
   // Activity tracking
   toolActivity?: ToolActivity;
   agentActivity?: AgentActivity;

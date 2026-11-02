@@ -29,7 +29,11 @@ function statusBar(width: number): string {
 // The monitor fixture from tests/unit/monitor.test.ts.
 const monitorNow = Date.parse('2026-09-16T10:00:00Z');
 const agent = (id: string, name: string, status: SubagentTreeNode['status']): SubagentTreeNode => ({
-  id, name, status, depth: 1, children: [],
+  id,
+  name,
+  status,
+  depth: 1,
+  children: [],
   startedAt: new Date(monitorNow - 120_000),
   turnStartedAt: new Date(monitorNow - 30_000),
   lastEventAt: new Date(monitorNow - 1000),
@@ -45,12 +49,34 @@ const monitorTree: SubagentTree = {
   updatedAt: new Date(monitorNow),
 };
 const monitorWorktrees: WorktreesSnapshot = {
-  sourcePath: '/demo', updatedAt: monitorNow,
+  sourcePath: '/demo',
+  updatedAt: monitorNow,
   entries: [
-    { path: '/demo/main', branch: 'main', bare: false, detached: false, observedAt: monitorNow,
-      status: { changed: 3, staged: 1, unstaged: 2, untracked: 0, conflicts: 0, branch: 'main', ahead: 0, behind: 0 } },
-    { path: '/demo/docs', branch: 'docs', bare: false, detached: false, observedAt: monitorNow,
-      status: { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicts: 0, branch: 'docs', ahead: null, behind: null } },
+    {
+      path: '/demo/main',
+      branch: 'main',
+      bare: false,
+      detached: false,
+      observedAt: monitorNow,
+      status: { changed: 3, staged: 1, unstaged: 2, untracked: 0, conflicts: 0, branch: 'main', ahead: 0, behind: 0 },
+    },
+    {
+      path: '/demo/docs',
+      branch: 'docs',
+      bare: false,
+      detached: false,
+      observedAt: monitorNow,
+      status: {
+        changed: 0,
+        staged: 0,
+        unstaged: 0,
+        untracked: 0,
+        conflicts: 0,
+        branch: 'docs',
+        ahead: null,
+        behind: null,
+      },
+    },
   ],
 };
 
@@ -65,8 +91,12 @@ try {
   for (const width of barWidths.length ? [] : [16, 20]) {
     console.log(`\n--- monitor ${width}x24 ---`);
     const frame = renderMonitor({
-      tree: monitorTree, worktrees: monitorWorktrees,
-      state: initialMonitorState(), width, height: 24, nowMs: monitorNow,
+      tree: monitorTree,
+      worktrees: monitorWorktrees,
+      state: initialMonitorState(),
+      width,
+      height: 24,
+      nowMs: monitorNow,
     });
     for (const line of frame.lines) {
       console.log(stripAnsi(line).replace(/\s+$/, ''));

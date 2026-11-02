@@ -19,7 +19,14 @@ import { controlBar, paneHead, icon, look, type CountsText } from './control-bar
 import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
-import { TURN_CLOCKS, TURN_CLOCK_LONG, isUntracked, UNTRACKED_ROW, listsWorktrees, worktreeOfItem } from './monitor-labels.js';
+import {
+  TURN_CLOCKS,
+  TURN_CLOCK_LONG,
+  isUntracked,
+  UNTRACKED_ROW,
+  listsWorktrees,
+  worktreeOfItem,
+} from './monitor-labels.js';
 import { paneRows, agentsView, putAwayCount, summaryRow } from './monitor-panes.js';
 import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
 import { roleSet } from './directions.js';
@@ -27,17 +34,54 @@ import { roleSet } from './directions.js';
 // The panel is drawn by the modules beside this one; what they export is
 // exported here too, so a caller imports the monitor from one place.
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
-export { iconic, agoText, age, nodeStatus, worktreeLabel, worktreeName, worktreePlace, TURN_CLOCKS, QUIET_MS, FRESH_FINISH_MS,
-  isLive, isQuiet, turnClock, nextRepaintDelay, msUntilAgeChanges, msUntilCountdownChanges, finishedAt, agentPaint, writtenAge, agentRate, rateText, RATE_FRESH_MS } from './monitor-labels.js';
+export {
+  iconic,
+  agoText,
+  age,
+  nodeStatus,
+  worktreeLabel,
+  worktreeName,
+  worktreePlace,
+  TURN_CLOCKS,
+  QUIET_MS,
+  FRESH_FINISH_MS,
+  isLive,
+  isQuiet,
+  turnClock,
+  nextRepaintDelay,
+  msUntilAgeChanges,
+  msUntilCountdownChanges,
+  finishedAt,
+  agentPaint,
+  writtenAge,
+  agentRate,
+  rateText,
+  RATE_FRESH_MS,
+} from './monitor-labels.js';
 export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type EdgeMeter } from './monitor-meter.js';
-export { summaryRow, emptyAgentsRows, guardianChip, changeCounts, shownPaths, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
-export { timelineText, TIMELINE_STYLES, TIMELINE_HOURS, TIMELINE_STEP, TIMELINE_EARLIER, type TimelineStyle } from './monitor-timeline.js';
+export {
+  summaryRow,
+  emptyAgentsRows,
+  guardianChip,
+  changeCounts,
+  shownPaths,
+  briefSaid,
+  briefRuleRow,
+  briefRule,
+} from './monitor-panes.js';
+export {
+  timelineText,
+  TIMELINE_STYLES,
+  TIMELINE_HOURS,
+  TIMELINE_STEP,
+  TIMELINE_EARLIER,
+  type TimelineStyle,
+} from './monitor-timeline.js';
 export { MODEL_LOG_KINDS } from './monitor-inspector.js';
 export { clickTab, monitorRowAt, monitorItemAt, canMonitorDiff, handleMonitorInput } from './monitor-input.js';
 
-
 export const MONITOR_PANES = ['agents', 'timeline', 'changes', 'details'] as const;
-export type MonitorPane = typeof MONITOR_PANES[number];
+export type MonitorPane = (typeof MONITOR_PANES)[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
@@ -78,7 +122,7 @@ export interface MonitorState {
    * arriving above does not move what the reader is looking at; `offset` is
    * the scroll it was taken at, so a scroll since then is not undone.
    */
-  anchor?: {key: string; delta: number; offset: number};
+  anchor?: { key: string; delta: number; offset: number };
   /** How much the status card shows; absent is `full`. The panel sets it from settings. */
   statusLevel?: StatusLevel;
   /** Keys stay in the panel. Esc clears it and returns them to Codex. */
@@ -110,17 +154,30 @@ export interface MonitorState {
 }
 export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
-export interface RowControl { kind: MonitorControl['kind']; item?: string; x: number; width: number }
+export interface RowControl {
+  kind: MonitorControl['kind'];
+  item?: string;
+  x: number;
+  width: number;
+}
 /**
  * `item` is what a click selects. `key` names the block a row belongs to, so a scrolled view can
  * keep its place; `controls` are click targets on the row.
  */
-export interface MonitorRow { text: string; item?: string; key?: string; controls?: RowControl[];
+export interface MonitorRow {
+  text: string;
+  item?: string;
+  key?: string;
+  controls?: RowControl[];
   /** On the agents' heading: its counts in each form, for the title row to say as much as fits. */
-  counts?: CountsText }
+  counts?: CountsText;
+}
 export interface MonitorRect {
   id: MonitorPane;
-  x: number; y: number; width: number; height: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   offset: number;
   contentLength: number;
   rows: MonitorRow[];
@@ -140,22 +197,45 @@ export interface MonitorControl {
    * `older` shows or hides what the linger window put away; `help` opens
    * the keys.
    */
-  kind: 'main' | 'settings' | 'tab' | 'older' | 'help' | 'help-tab' | 'brief' | 'level' | 'log' | 'switch' | 'zoom' | 'observability' | 'keys' | 'open-session';
+  kind:
+    | 'main'
+    | 'settings'
+    | 'tab'
+    | 'older'
+    | 'help'
+    | 'help-tab'
+    | 'brief'
+    | 'level'
+    | 'log'
+    | 'switch'
+    | 'zoom'
+    | 'observability'
+    | 'keys'
+    | 'open-session';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
-  x: number; y: number; width: number;
+  x: number;
+  y: number;
+  width: number;
 }
-export interface MonitorFrame { lines: string[]; panes: MonitorRect[]; controls: MonitorControl[]; state: MonitorState; helpPage?: {count:number; total:number};
+export interface MonitorFrame {
+  lines: string[];
+  panes: MonitorRect[];
+  controls: MonitorControl[];
+  state: MonitorState;
+  helpPage?: { count: number; total: number };
   /** The status card's place and its brief's scroll, for the wheel. */
-  statusCard?: FootInfo }
+  statusCard?: FootInfo;
+}
 export interface MonitorData {
   hud?: HudData;
   tree: SubagentTree;
   /** The tmux prefix as the help writes it ("Ctrl+\"). */
   prefix?: string;
   state: MonitorState;
-  width: number; height: number;
+  width: number;
+  height: number;
   git?: GitChanges | null;
   worktrees?: WorktreesSnapshot | null;
   diff?: string[];
@@ -165,7 +245,7 @@ export interface MonitorData {
   /**
    * The brief, when one is configured; `paused` puts the model calls on hold.
    */
-  brief?: Brief & {paused?: boolean};
+  brief?: Brief & { paused?: boolean };
   /**
    * The status bar's fields for the card at the foot of the panel (while the
    * panel is open it replaces the bar), as parts the monitor fits to the
@@ -179,13 +259,13 @@ export interface MonitorData {
   agentLog?: ReadonlyMap<string, readonly AgentLogEntry[]>;
   /** Per-agent progress request state, collected without rendering I/O. */
   progress?: ReadonlyMap<string, ProgressState>;
-   progressContext?: ProgressContext;
+  progressContext?: ProgressContext;
   /**
    * What the main session is doing, as the status card words it, for the
    * card's one-line form; `attention` while it waits on the person, `failed`
    * while a tool or agent has failed.
    */
-  session?: (nowMs: number) => {text: string; short?: string; attention: boolean; failed?: boolean} | null;
+  session?: (nowMs: number) => { text: string; short?: string; attention: boolean; failed?: boolean } | null;
   /** The session's observed events, newest first, for the Timeline pane. */
   timeline?: readonly WorkbenchEvent[];
   /**
@@ -193,7 +273,7 @@ export interface MonitorData {
    * command in plain words, and what the current diff does (`current` false
    * once the diff has moved on since it was written).
    */
-  notes?: {approval?: string; changes?: {lines: string[]; at: number; current: boolean}};
+  notes?: { approval?: string; changes?: { lines: string[]; at: number; current: boolean } };
   /** The session has not been read yet: an empty tree is not news. */
   loading?: boolean;
   /**
@@ -220,27 +300,57 @@ export interface MonitorContext {
 export interface MonitorOutcome {
   state: MonitorState;
   close: boolean;
-  action?: {type:'settings'} | {type:'switch'; id:string} | {type:'pick'; id:string} | {type:'brief-toggle'} | {type:'status-level'} | {type:'observability'};
+  action?:
+    | { type: 'settings' }
+    | { type: 'switch'; id: string }
+    | { type: 'pick'; id: string }
+    | { type: 'brief-toggle' }
+    | { type: 'status-level' }
+    | { type: 'observability' };
 }
 
 export function initialMonitorState(): MonitorState {
-  return {tree:{...initialPanelState(),sort:'active'}, focus:'agents',
-    modes:{agents:'open',timeline:'closed',changes:'closed',details:'closed'},
-    scroll:{agents:0,timeline:0,changes:0,details:0}, selectedWorktree:null,selectedFile:null,
-    preview:'agent',help:false,zoom:false,helpScroll:0,expanded:false};
+  return {
+    tree: { ...initialPanelState(), sort: 'active' },
+    focus: 'agents',
+    modes: { agents: 'open', timeline: 'closed', changes: 'closed', details: 'closed' },
+    scroll: { agents: 0, timeline: 0, changes: 0, details: 0 },
+    selectedWorktree: null,
+    selectedFile: null,
+    preview: 'agent',
+    help: false,
+    zoom: false,
+    helpScroll: 0,
+    expanded: false,
+  };
 }
 /** Agents is the page itself: always there, whatever an older settings file says. */
 export function monitorModes(settings: HudSettings): MonitorModes {
-  return {agents:settings.agentsPane, timeline:settings.timelinePane, changes:settings.changesPane, details:settings.detailsPane};
+  return {
+    agents: settings.agentsPane,
+    timeline: settings.timelinePane,
+    changes: settings.changesPane,
+    details: settings.detailsPane,
+  };
 }
 /** What the settings say about how the panel shows things, as its state. */
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
   const cardVisibility = defaultCardVisibility();
-  const copy = <K extends keyof CardVisibility>(key: K) => { cardVisibility[key] = settings[key]; };
+  const copy = <K extends keyof CardVisibility>(key: K) => {
+    cardVisibility[key] = settings[key];
+  };
   (Object.keys(cardVisibility) as Array<keyof CardVisibility>).forEach(copy);
-  return {tabbed:settings.paneLayout === 'tabs', style:settings.panelStyle, statusLevel:settings.statusCard, labelAsName:settings.labelAsName,
-    timelineStyle:settings.timelineStyle, timelineHours:settings.timelineHours, importantRoles:roleSet(settings.importantRoles),
-    cardCorners:settings.cardCorners, cardVisibility};
+  return {
+    tabbed: settings.paneLayout === 'tabs',
+    style: settings.panelStyle,
+    statusLevel: settings.statusCard,
+    labelAsName: settings.labelAsName,
+    timelineStyle: settings.timelineStyle,
+    timelineHours: settings.timelineHours,
+    importantRoles: roleSet(settings.importantRoles),
+    cardCorners: settings.cardCorners,
+    cardVisibility,
+  };
 }
 /**
  * The agents the agents view lists, in its order: in rich style the L1s
@@ -249,10 +359,15 @@ export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
  */
 export function listedAgents(nodes: SubagentTree['nodes'], state: MonitorState, nowMs: number): PanelRow[] {
   const rows = visibleRows(nodes, state.tree, nowMs);
-  return state.style === 'rich' ? rows.filter(row => row.depth === 0) : rows;
+  return state.style === 'rich' ? rows.filter((row) => row.depth === 0) : rows;
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
-  return {agentsPane:state.modes.agents, timelinePane:state.modes.timeline, changesPane:state.modes.changes, detailsPane:state.modes.details};
+  return {
+    agentsPane: state.modes.agents,
+    timelinePane: state.modes.timeline,
+    changesPane: state.modes.changes,
+    detailsPane: state.modes.details,
+  };
 }
 /**
  * The changes' cursor: the row it was on while that row is listed (a
@@ -260,31 +375,56 @@ export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
  * into it, else the first file. Only the reader puts it on a worktree's row:
  * the files of a worktree just listed are still being read.
  */
-function fileSelection(state: MonitorState, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null): string | null {
+function fileSelection(
+  state: MonitorState,
+  git?: GitChanges | null,
+  worktrees?: WorktreesSnapshot | null
+): string | null {
   const on = worktreeOfItem(state.selectedFile);
-  if (on !== undefined && listsWorktrees(worktrees) && worktrees!.entries.some(w => w.path === on)) return state.selectedFile;
+  if (on !== undefined && listsWorktrees(worktrees) && worktrees!.entries.some((w) => w.path === on))
+    return state.selectedFile;
   const files = git?.files ?? [];
   const folded = files.some(isUntracked);
   if (state.selectedFile === UNTRACKED_ROW && folded) return UNTRACKED_ROW;
-  const file = files.find(f => f.path === state.selectedFile);
+  const file = files.find((f) => f.path === state.selectedFile);
   if (file) return isUntracked(file) && !state.untrackedOpen ? UNTRACKED_ROW : file.path;
-  return files.find(f => !isUntracked(f))?.path ?? (folded ? UNTRACKED_ROW : null);
+  return files.find((f) => !isUntracked(f))?.path ?? (folded ? UNTRACKED_ROW : null);
 }
-export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: GitChanges | null, worktrees?: WorktreesSnapshot | null, nowMs: number = Date.now()): MonitorState {
+export function reconcileMonitor(
+  state: MonitorState,
+  tree: SubagentTree,
+  git?: GitChanges | null,
+  worktrees?: WorktreesSnapshot | null,
+  nowMs: number = Date.now()
+): MonitorState {
   const rows = listedAgents(tree.nodes, state, nowMs);
   const selected = reconcileSelection(state.tree, tree.nodes, rows);
   const entries = worktrees?.entries ?? [];
-  const selectedWorktree = entries.some(w => w.path === state.selectedWorktree) ? state.selectedWorktree
-    : entries.find(w => !w.bare && w.prunable === undefined)?.path ?? entries[0]?.path ?? null;
-  const selectedFile = fileSelection(state,git,worktrees);
+  const selectedWorktree = entries.some((w) => w.path === state.selectedWorktree)
+    ? state.selectedWorktree
+    : (entries.find((w) => !w.bare && w.prunable === undefined)?.path ?? entries[0]?.path ?? null);
+  const selectedFile = fileSelection(state, git, worktrees);
   // In the tabs layout any pane can be the one shown, whatever the stacked layout left closed.
-  const focus = state.tabbed || state.modes[state.focus] !== 'closed' ? state.focus : MONITOR_PANES.find(id => state.modes[id] !== 'closed') ?? 'agents';
-  const changed = selected.selectedId !== state.tree.selectedId || selectedWorktree !== state.selectedWorktree || selectedFile !== state.selectedFile;
+  const focus =
+    state.tabbed || state.modes[state.focus] !== 'closed'
+      ? state.focus
+      : (MONITOR_PANES.find((id) => state.modes[id] !== 'closed') ?? 'agents');
+  const changed =
+    selected.selectedId !== state.tree.selectedId ||
+    selectedWorktree !== state.selectedWorktree ||
+    selectedFile !== state.selectedFile;
   // A selection the panel made for itself (the first agent, or a stand-in
   // for one that left) is not the reader moving: the view stays put.
   const revealed = selected.selectedId !== state.tree.selectedId ? selected.selectedId : state.revealed;
-  return {...state, tree:selected, selectedWorktree, selectedFile, focus, revealed,
-    scroll:{...state.scroll,details:changed ? 0 : state.scroll.details}};
+  return {
+    ...state,
+    tree: selected,
+    selectedWorktree,
+    selectedFile,
+    focus,
+    revealed,
+    scroll: { ...state.scroll, details: changed ? 0 : state.scroll.details },
+  };
 }
 
 /**
@@ -295,17 +435,25 @@ export function reconcileMonitor(state: MonitorState, tree: SubagentTree, git?: 
  * blank row under it, as a tall panel parts its sections, so every look is
  * three rows and the page holds still while the looks are stepped through.
  */
-export function panelTop(input: Pick<MonitorData,'tree'|'brief'|'nowMs'>, state: MonitorState, width: number): string[] {
+export function panelTop(
+  input: Pick<MonitorData, 'tree' | 'brief' | 'nowMs'>,
+  state: MonitorState,
+  width: number
+): string[] {
   const now = input.nowMs ?? Date.now();
-  const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
+  const bar = controlBar(state, { brief: input.brief, expired: putAwayCount(input.tree.nodes, state, now) }, width);
   const info = state.focus === 'agents' ? summaryRow(input).row.counts : undefined;
-  return [...bar.lines,...(bar.lines.length < 2 ? [''] : []),paneHead(state.focus,width,{focused:true,zoomed:false,named:!state.tabbed,info})];
+  return [
+    ...bar.lines,
+    ...(bar.lines.length < 2 ? [''] : []),
+    paneHead(state.focus, width, { focused: true, zoomed: false, named: !state.tabbed, info }),
+  ];
 }
 
 /** The help's pages, in order: one at a time, a tab each on its top row. */
-export const HELP_TABS = ['keys','mouse','legend'] as const;
-export type HelpTab = typeof HELP_TABS[number];
-const HELP_TAB_WORDS: Record<HelpTab,string> = {keys:'Keys',mouse:'Mouse',legend:'Legend'};
+export const HELP_TABS = ['keys', 'mouse', 'legend'] as const;
+export type HelpTab = (typeof HELP_TABS)[number];
+const HELP_TAB_WORDS: Record<HelpTab, string> = { keys: 'Keys', mouse: 'Mouse', legend: 'Legend' };
 
 /** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
 const DENSE_BELOW = 12;
@@ -319,47 +467,105 @@ const HELP_KEY_COLUMN = 12;
  * panel is the panel's), the buttons, the mouse, then the legend. `prefix`
  * is the prefix as people write it, "Ctrl+\".
  */
-function helpText(rich: boolean, prefix: string, tabbed = false, cardSummary = true): Array<string | {head: string; tab: HelpTab}> {
-  const p = {p:prefix};
-  const head = (text: string, tab: HelpTab = 'keys') => ({head:t(text,p),tab});
+function helpText(
+  rich: boolean,
+  prefix: string,
+  tabbed = false,
+  cardSummary = true
+): Array<string | { head: string; tab: HelpTab }> {
+  const p = { p: prefix };
+  const head = (text: string, tab: HelpTab = 'keys') => ({ head: t(text, p), tab });
   return [
     head('Shortcuts: {p}, then a key'),
-    ...['Keys typed in the panel go to Codex','F12  panel on / off  Shift+F12  into it',
-      '{p} ,  settings  {p} ?  help','{p} b  pause / resume models','{p} a  show / hide older',
+    ...[
+      'Keys typed in the panel go to Codex',
+      'F12  panel on / off  Shift+F12  into it',
+      '{p} ,  settings  {p} ?  help',
+      '{p} b  pause / resume models',
+      '{p} a  show / hide older',
       '{p} d  HUD diagnostics and TPS details',
       '{p} u  inbox, updates and history',
       '{p} p  find and pin agents',
       '{p} c  sources, model calls and export',
       '{p} m  main session  {p} o  switch to selected',
       // The tabs layout shows one pane at a time: nothing to close or zoom.
-      ...(tabbed ? ['{p} 1–4  show a pane  {p} Tab  next'] : ['{p} 1–4  open / close a pane  {p} Tab  next','{p} x  close pane']),
-      '{p} j k ↑ ↓  select, repeats','{p} PgUp PgDn  scroll  {p} g G  first / last',
+      ...(tabbed
+        ? ['{p} 1–4  show a pane  {p} Tab  next']
+        : ['{p} 1–4  open / close a pane  {p} Tab  next', '{p} x  close pane']),
+      '{p} j k ↑ ↓  select, repeats',
+      '{p} PgUp PgDn  scroll  {p} g G  first / last',
       tabbed ? '{p} Enter / Space / v  inspect' : '{p} Enter / Space / v  inspect  {p} z  zoom',
-      'Timeline: ↑ ↓ an agent\'s entry, Enter inspects',
-      ...(rich ? [] : ['{p} h l  fold / unfold agent']),'{p} f  filter  {p} s  order',
+      "Timeline: ↑ ↓ an agent's entry, Enter inspects",
+      ...(rich ? [] : ['{p} h l  fold / unfold agent']),
+      '{p} f  filter  {p} s  order',
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
-      '{p} Esc  back  {p} q  close panel','{p} {p}  {p} itself, to Codex'].map(line=>t(line,p)),
-    head('Buttons, top row','mouse'),
+      '{p} Esc  back  {p} q  close panel',
+      '{p} {p}  {p} itself, to Codex',
+    ].map((line) => t(line, p)),
+    head('Buttons, top row', 'mouse'),
     // With icons on, what each icon is; with words, the words say it.
-    ...(iconSet() !== 'text' ? [t('{icon} main session',{icon:icon('main')}),
-      t('{icons} the panes, as titled',{icons:MONITOR_PANES.map(id=>icon(id)).join(' ')}),
-      t('{pause} / {resume} pause / resume models',{pause:icon('pause'),resume:icon('resume')}),
-      t('{show} show older  {hide} hide them',{show:icon('show'),hide:icon('hide')}),
-      t('{settings} settings  {help} help',{settings:icon('settings'),help:icon('help')}),
-      t('{keys} keys stay in the panel: click it or Esc',{keys:icon('keys')}),
-      t('{open} switch Codex to the selected agent',{open:icon('open')})] : []),
-    t(tabbed ? 'Click a pane\'s tab: show it' : 'Click a pane\'s button: open or close it'),
-    head('Mouse','mouse'),
-    ...[...(rich ? ['Click a card: select','Click its name: select; double-click switches','A subtask line selects it','Click a blank row: keys stay here','Esc: keys back to Codex','Wheel over the card: its brief'] : ['Click agent: inspect; double-click switches','Click a log line: inspect','Click a blank row: keys stay here','Esc: keys back to Codex']),
+    ...(iconSet() !== 'text'
+      ? [
+          t('{icon} main session', { icon: icon('main') }),
+          t('{icons} the panes, as titled', { icons: MONITOR_PANES.map((id) => icon(id)).join(' ') }),
+          t('{pause} / {resume} pause / resume models', { pause: icon('pause'), resume: icon('resume') }),
+          t('{show} show older  {hide} hide them', { show: icon('show'), hide: icon('hide') }),
+          t('{settings} settings  {help} help', { settings: icon('settings'), help: icon('help') }),
+          t('{keys} keys stay in the panel: click it or Esc', { keys: icon('keys') }),
+          t('{open} switch Codex to the selected agent', { open: icon('open') }),
+        ]
+      : []),
+    t(tabbed ? "Click a pane's tab: show it" : "Click a pane's button: open or close it"),
+    head('Mouse', 'mouse'),
+    ...[
+      ...(rich
+        ? [
+            'Click a card: select',
+            'Click its name: select; double-click switches',
+            'A subtask line selects it',
+            'Click a blank row: keys stay here',
+            'Esc: keys back to Codex',
+            'Wheel over the card: its brief',
+          ]
+        : [
+            'Click agent: inspect; double-click switches',
+            'Click a log line: inspect',
+            'Click a blank row: keys stay here',
+            'Esc: keys back to Codex',
+          ]),
       'Click an agent on the timeline: inspect',
-      ...(tabbed ? [] : ["Click a pane's title: zoom / restore"]),"Click the card's band: its level",'PgUp/PgDn or wheel scroll'].map(line=>t(line)),
-    head('Legend','legend'),
-    ...['1 Cards  2 Timeline','3 Changes  4 Inspector','✓ = turn completed','? = no status evidence','! = needs a look',
-      '⌕ research  ⚗ experiment  ⚒ fix','◈ review  ✎ writing  ∑ summary'].map(line=>t(line)),
-    t('{clocks} turn <1m, the quarter hour, 1h+',{clocks:TURN_CLOCKS.map(([,glyph])=>glyph).join('')+TURN_CLOCK_LONG}),
+      ...(tabbed ? [] : ["Click a pane's title: zoom / restore"]),
+      "Click the card's band: its level",
+      'PgUp/PgDn or wheel scroll',
+    ].map((line) => t(line)),
+    head('Legend', 'legend'),
+    ...[
+      '1 Cards  2 Timeline',
+      '3 Changes  4 Inspector',
+      '✓ = turn completed',
+      '? = no status evidence',
+      '! = needs a look',
+      '⌕ research  ⚗ experiment  ⚒ fix',
+      '◈ review  ✎ writing  ∑ summary',
+    ].map((line) => t(line)),
+    t('{clocks} turn <1m, the quarter hour, 1h+', {
+      clocks: TURN_CLOCKS.map(([, glyph]) => glyph).join('') + TURN_CLOCK_LONG,
+    }),
     ...(rich && cardSummary ? [t('Latest note: written by a model')] : []),
-    ...['~ = written by a model','Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve',
-      'status card gutter colour = main session state','┃ = auto-compact point','◈N = guardian reviews  +N = folded agents','Timeline: ⏎ turn finished  ×N in a row','yellow clock = quiet 5m+','──56%── = context or quota used, the % at the fill','meter: blue, yellow past 70%, red past 85%','dim name = done 1m+ ago','mod = changed files','stale = >30s since read'].map(line=>t(line)),
+    ...[
+      '~ = written by a model',
+      'Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve',
+      'status card gutter colour = main session state',
+      '┃ = auto-compact point',
+      '◈N = guardian reviews  +N = folded agents',
+      'Timeline: ⏎ turn finished  ×N in a row',
+      'yellow clock = quiet 5m+',
+      '──56%── = context or quota used, the % at the fill',
+      'meter: blue, yellow past 70%, red past 85%',
+      'dim name = done 1m+ ago',
+      'mod = changed files',
+      'stale = >30s since read',
+    ].map((line) => t(line)),
     ...stripAnsi(modelLegend()).split('\n'),
   ];
 }
@@ -370,136 +576,173 @@ export function paneShown(state: MonitorState, id: MonitorPane): boolean {
 }
 
 export function renderMonitor(input: MonitorData): MonitorFrame {
-  const width = Math.max(0,Math.floor(input.width)); const height = Math.max(0,Math.floor(input.height));
-  const state = reconcileMonitor(input.state,input.tree,input.git,input.worktrees,input.nowMs ?? Date.now());
-  const frame: MonitorFrame = {lines:[],panes:[],controls:[],state};
+  const width = Math.max(0, Math.floor(input.width));
+  const height = Math.max(0, Math.floor(input.height));
+  const state = reconcileMonitor(input.state, input.tree, input.git, input.worktrees, input.nowMs ?? Date.now());
+  const frame: MonitorFrame = { lines: [], panes: [], controls: [], state };
   if (!width || !height) return frame;
   if (state.help) {
     // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
     // An entry is a key, two spaces, what it does: "{p} {p}  {p} itself" is
     // one. A line of two shortcuts is split between them, never inside one.
     const prefix = input.prefix ?? 'Ctrl+\\';
-    const keyStart = new RegExp(`  (?=(?:${prefix.replace(/[\\^$.*+?()[\]{}|]/g,'\\$&')}|Shift\\+F12) )`);
+    const keyStart = new RegExp(`  (?=(?:${prefix.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}|Shift\\+F12) )`);
     const split = (line: string) => {
       const out: string[] = [];
       for (const part of line.split(keyStart)) {
-        if (out.length && !out[out.length-1].includes('  ')) out[out.length-1] += `  ${part}`;
+        if (out.length && !out[out.length - 1].includes('  ')) out[out.length - 1] += `  ${part}`;
         else out.push(part);
       }
       return out;
     };
-    const entries = (line: string) => visualLength(line) <= width ? [line] : split(line);
-    const text = helpText(state.style === 'rich',prefix,Boolean(state.tabbed),state.cardVisibility?.cardSummary ?? defaultCardVisibility().cardSummary);
+    const entries = (line: string) => (visualLength(line) <= width ? [line] : split(line));
+    const text = helpText(
+      state.style === 'rich',
+      prefix,
+      Boolean(state.tabbed),
+      state.cardVisibility?.cardSummary ?? defaultCardVisibility().cardSummary
+    );
     // The shortcuts, up to the second heading, are a table: each key without
     // the prefix its heading names, in a column, and what it does beside it,
     // wrapped under itself. A line with no key is a sentence.
-    const shortcuts = Math.max(1,text.findIndex((line,i)=>i > 0 && typeof line !== 'string'));
+    const shortcuts = Math.max(
+      1,
+      text.findIndex((line, i) => i > 0 && typeof line !== 'string')
+    );
     const keyed = (entry: string) => {
-      const bare = entry.startsWith(`${prefix} `) ? entry.slice(prefix.length+1) : entry;
+      const bare = entry.startsWith(`${prefix} `) ? entry.slice(prefix.length + 1) : entry;
       const at = bare.indexOf('  ');
-      return at > 0 ? {key:bare.slice(0,at),does:bare.slice(at+2)} : null;
+      return at > 0 ? { key: bare.slice(0, at), does: bare.slice(at + 2) } : null;
     };
-    const keys = text.slice(0,shortcuts).flatMap(line=>typeof line === 'string' ? split(line).flatMap(entry=>keyed(entry) ?? []) : []);
-    const column = Math.min(HELP_KEY_COLUMN,Math.max(1,...keys.map(entry=>visualLength(entry.key))));
+    const keys = text
+      .slice(0, shortcuts)
+      .flatMap((line) => (typeof line === 'string' ? split(line).flatMap((entry) => keyed(entry) ?? []) : []));
+    const column = Math.min(HELP_KEY_COLUMN, Math.max(1, ...keys.map((entry) => visualLength(entry.key))));
     // One page at a time: the lines under the headings of the chosen tab.
-    const page: HelpTab = HELP_TABS.includes(state.helpTab as HelpTab) ? state.helpTab as HelpTab : 'keys';
+    const page: HelpTab = HELP_TABS.includes(state.helpTab as HelpTab) ? (state.helpTab as HelpTab) : 'keys';
     let tab: HelpTab = 'keys';
     let first = true;
-    const help = text.flatMap((line,i) => {
+    const help = text.flatMap((line, i) => {
       if (typeof line !== 'string') tab = line.tab;
       if (tab !== page) return [];
       // A blank line parts the sections of a page.
       // The legend's page is its one section: its tab names it already.
       if (typeof line !== 'string' && line.tab === 'legend') return [];
-      if (typeof line !== 'string') { const gap = first ? [] : ['']; first = false; return [...gap,...helpLines(line.head,width).map(text=>theme.accent(text))]; }
-      if (i >= shortcuts) return entries(line).flatMap(entry=>helpLines(entry,width));
-      return split(line).flatMap(entry => {
+      if (typeof line !== 'string') {
+        const gap = first ? [] : [''];
+        first = false;
+        return [...gap, ...helpLines(line.head, width).map((text) => theme.accent(text))];
+      }
+      if (i >= shortcuts) return entries(line).flatMap((entry) => helpLines(entry, width));
+      return split(line).flatMap((entry) => {
         const shortcut = keyed(entry);
-        if (!shortcut) return helpLines(entry,width);
-        const key = shortcut.key+' '.repeat(Math.max(0,column-visualLength(shortcut.key)));
-        const hang = visualLength(key)+2;
+        if (!shortcut) return helpLines(entry, width);
+        const key = shortcut.key + ' '.repeat(Math.max(0, column - visualLength(shortcut.key)));
+        const hang = visualLength(key) + 2;
         // A column too narrow to read beside: what it does goes under the key.
-        if (width-hang < 6) return [theme.value(shortcut.key),...helpLines(shortcut.does,Math.max(1,width-2)).map(does=>`  ${does}`)];
-        return helpLines(shortcut.does,Math.max(1,width-hang)).map((does,j)=>j ? ' '.repeat(hang)+does : `${theme.value(key)}  ${does}`);
+        if (width - hang < 6)
+          return [
+            theme.value(shortcut.key),
+            ...helpLines(shortcut.does, Math.max(1, width - 2)).map((does) => `  ${does}`),
+          ];
+        return helpLines(shortcut.does, Math.max(1, width - hang)).map((does, j) =>
+          j ? ' '.repeat(hang) + does : `${theme.value(key)}  ${does}`
+        );
       });
     });
     // A modal: its keys are real while it is open, and its way out is a button.
     // Its pages are tabs beside the title, or on a row of their own where they do not fit.
     const back = t('[Back]');
-    frame.controls.push({kind:'help',x:0,y:0,width:visualLength(back)});
+    frame.controls.push({ kind: 'help', x: 0, y: 0, width: visualLength(back) });
     const title = `${colors.dim(back)} ${theme.accent(t('Help'))}`;
-    const faces = HELP_TABS.map(id => {
+    const faces = HELP_TABS.map((id) => {
       const word = t(HELP_TAB_WORDS[id]);
-      const text = id !== page ? colors.dim(` ${word} `) : palette().name === 'none' ? `[${word}]` : theme.tab(theme.bold(` ${word} `));
-      return {id,text};
+      const text =
+        id !== page
+          ? colors.dim(` ${word} `)
+          : palette().name === 'none'
+            ? `[${word}]`
+            : theme.tab(theme.bold(` ${word} `));
+      return { id, text };
     });
-    const tabsWidth = faces.reduce((n,face)=>n+visualLength(face.text),0)+faces.length-1;
-    const beside = visualLength(title)+2+tabsWidth <= width;
-    const header = beside ? [title+'  '] : [title,''];
+    const tabsWidth = faces.reduce((n, face) => n + visualLength(face.text), 0) + faces.length - 1;
+    const beside = visualLength(title) + 2 + tabsWidth <= width;
+    const header = beside ? [title + '  '] : [title, ''];
     const y0 = beside ? 0 : 1;
     if (beside || tabsWidth <= width) {
       let x = visualLength(header[y0]);
       for (const face of faces) {
-        frame.controls.push({kind:'help-tab',item:face.id,x,y:y0,width:visualLength(face.text)});
-        header[y0] += face.text+' ';
-        x += visualLength(face.text)+1;
+        frame.controls.push({ kind: 'help-tab', item: face.id, x, y: y0, width: visualLength(face.text) });
+        header[y0] += face.text + ' ';
+        x += visualLength(face.text) + 1;
       }
     } else {
       // Too narrow for every tab: the page shown between the steps to the one before and after.
       const at = HELP_TABS.indexOf(page);
-      const before = HELP_TABS[(at+HELP_TABS.length-1)%HELP_TABS.length];
-      const after = HELP_TABS[(at+1)%HELP_TABS.length];
+      const before = HELP_TABS[(at + HELP_TABS.length - 1) % HELP_TABS.length];
+      const after = HELP_TABS[(at + 1) % HELP_TABS.length];
       const word = faces[at].text;
       header[1] = `${colors.dim('‹')} ${word} ${colors.dim('›')}`;
-      frame.controls.push({kind:'help-tab',item:before,x:0,y:1,width:1});
-      frame.controls.push({kind:'help-tab',item:after,x:visualLength(header[1])-1,y:1,width:1});
+      frame.controls.push({ kind: 'help-tab', item: before, x: 0, y: 1, width: 1 });
+      frame.controls.push({ kind: 'help-tab', item: after, x: visualLength(header[1]) - 1, y: 1, width: 1 });
     }
-    const count = Math.max(0,height-header.length-1);
-    state.helpScroll = Math.max(0,Math.min(state.helpScroll??0,Math.max(0,help.length-count)));
-    frame.helpPage = {count,total:help.length};
-    frame.lines = [...header,...help.slice(state.helpScroll,state.helpScroll+count)];
-    while(frame.lines.length<height-1)frame.lines.push('');
-    if(height>1)frame.lines.push(colors.dim(`↕ ${state.helpScroll+1}/${help.length}`));
-    frame.lines = frame.lines.slice(0,height).map(line=>truncateAnsi(line,width));return frame;
+    const count = Math.max(0, height - header.length - 1);
+    state.helpScroll = Math.max(0, Math.min(state.helpScroll ?? 0, Math.max(0, help.length - count)));
+    frame.helpPage = { count, total: help.length };
+    frame.lines = [...header, ...help.slice(state.helpScroll, state.helpScroll + count)];
+    while (frame.lines.length < height - 1) frame.lines.push('');
+    if (height > 1) frame.lines.push(colors.dim(`↕ ${state.helpScroll + 1}/${help.length}`));
+    frame.lines = frame.lines.slice(0, height).map((line) => truncateAnsi(line, width));
+    return frame;
   }
   // A pane is drawn as the status card is: a title naming it, then its rows
   // behind a gutter on the left only. Under 24 columns the gutter is its rule
   // alone, without the space after it. In the frame look the rows sit
   // between the frame's sides instead, `cw` wide, and the side is the gutter.
   const framed = look(width) === 'frame';
-  const cw = framed ? width-4 : width;
-  const gutter = framed ? '' : width>=24 ? '│ ' : '│';
-  const inner = Math.max(0,cw-gutter.length);
+  const cw = framed ? width - 4 : width;
+  const gutter = framed ? '' : width >= 24 ? '│ ' : '│';
+  const inner = Math.max(0, cw - gutter.length);
   const now = input.nowMs ?? Date.now();
   const notice = input.notice || input.error;
-  const noticeRows = notice && height >= 6 ? wrapped(notice,Math.max(1,cw-2)).slice(0,2) : [];
+  const noticeRows = notice && height >= 6 ? wrapped(notice, Math.max(1, cw - 2)).slice(0, 2) : [];
   // The status card takes the foot, at the level chosen, at most about a
   // third of the panel; it replaces the key hint's own line.
-  let footPlan = planFoot(input,state,width,height,now,noticeRows.length);
+  let footPlan = planFoot(input, state, width, height, now, noticeRows.length);
   let footRows = footPlan.rows;
   // Every control the panel has is on its first rows; nothing else is a button.
-  const bar = controlBar(state,{brief:input.brief,expired:putAwayCount(input.tree.nodes,state,now)},width);
-  const top = Math.min(height,bar.lines.length);
-  let budget = Math.max(0,height-top-footRows-noticeRows.length);
+  const bar = controlBar(state, { brief: input.brief, expired: putAwayCount(input.tree.nodes, state, now) }, width);
+  const top = Math.min(height, bar.lines.length);
+  let budget = Math.max(0, height - top - footRows - noticeRows.length);
   // A closed pane takes no row at all; in the tabs layout only the one shown
   // has rows, all of them, and there is nothing to zoom.
   const zoom = state.zoom && !state.tabbed;
-  const ids = state.tabbed ? [state.focus] : MONITOR_PANES.filter(id=>state.modes[id] !== 'closed' && (!zoom || id===state.focus));
+  const ids = state.tabbed
+    ? [state.focus]
+    : MONITOR_PANES.filter((id) => state.modes[id] !== 'closed' && (!zoom || id === state.focus));
   // Where the panel is tall enough a blank row parts its sections: under the
   // bar, between two panes and above the status card. Not in the frame look,
   // whose edges part them already, and never at a pane's expense: short of
   // a title and a row for each pane besides, there are none.
-  const footed = footRows+noticeRows.length > 0;
-  let gaps = !framed && height >= PARTED_FROM && ids.length ? ids.length+(footed ? 1 : 0) : 0;
-  if (budget-gaps < 2*ids.length) gaps = 0;
+  const footed = footRows + noticeRows.length > 0;
+  let gaps = !framed && height >= PARTED_FROM && ids.length ? ids.length + (footed ? 1 : 0) : 0;
+  if (budget - gaps < 2 * ids.length) gaps = 0;
   budget -= gaps;
   // Agents has no band of its own: its summary line, pinned at its top, is
   // painted as one. The other panes have a band row above their rows.
-  const edgeOf = (id: MonitorPane) => id === 'agents' ? 0 : 1;
-  const content = new Map(ids.map(id=>[id,id === 'agents' ? agentsView(input,state,cw,now,true) : paneRows(id,input,state,inner,now)]));
-  const sizes = new Map<MonitorPane,number>();
-  for (const id of ids) { sizes.set(id,budget>0?1:0); if (budget>0) budget--; }
-  const order = [state.focus,...ids.filter(id=>id!==state.focus)].filter(id=>ids.includes(id));
+  const edgeOf = (id: MonitorPane) => (id === 'agents' ? 0 : 1);
+  const content = new Map(
+    ids.map((id) => [
+      id,
+      id === 'agents' ? agentsView(input, state, cw, now, true) : paneRows(id, input, state, inner, now),
+    ])
+  );
+  const sizes = new Map<MonitorPane, number>();
+  for (const id of ids) {
+    sizes.set(id, budget > 0 ? 1 : 0);
+    if (budget > 0) budget--;
+  }
+  const order = [state.focus, ...ids.filter((id) => id !== state.focus)].filter((id) => ids.includes(id));
   while (budget > 0) {
     let grew = false;
     for (const id of order) {
@@ -507,90 +750,140 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       const rows = content.get(id)?.length ?? 0;
       const target = zoom ? height : rows + edgeOf(id);
       const size = sizes.get(id) ?? 0;
-      if (size && size < target) { sizes.set(id,size+1);budget--;grew=true; }
+      if (size && size < target) {
+        sizes.set(id, size + 1);
+        budget--;
+        grew = true;
+      }
     }
     if (!grew) break;
   }
   // Rows no pane has a use for are the status card's, as far as its brief fills them.
   if (budget > 0 && footRows && state.style !== 'rich') {
-    footPlan = planFoot(input,state,width,height,now,noticeRows.length,footRows+budget);
-    budget += footRows-footPlan.rows;
+    footPlan = planFoot(input, state, width, height, now, noticeRows.length, footRows + budget);
+    budget += footRows - footPlan.rows;
     footRows = footPlan.rows;
   }
   // What is left goes to the inspector when it has focus, else to the agents
   // view, where it is the room the art may use. Small worktree lists stay compact.
-  const fillable = order.filter(id => (sizes.get(id) ?? 0) > 0);
-  const fill = state.focus==='details'&&fillable.includes('details') ? 'details' : fillable.includes('agents') ? 'agents' : fillable[0];
-  if(fill){sizes.set(fill,(sizes.get(fill)??0)+budget);budget=0;}
+  const fillable = order.filter((id) => (sizes.get(id) ?? 0) > 0);
+  const fill =
+    state.focus === 'details' && fillable.includes('details')
+      ? 'details'
+      : fillable.includes('agents')
+        ? 'agents'
+        : fillable[0];
+  if (fill) {
+    sizes.set(fill, (sizes.get(fill) ?? 0) + budget);
+    budget = 0;
+  }
   // Spacing gives way to scrolling, not the other way round, except where the
   // view is so short that blank lines would hide most of what it could show.
   const agentsHeight = sizes.get('agents') ?? 0;
   if (ids.includes('agents') && agentsHeight < DENSE_BELOW && (content.get('agents')?.length ?? 0) > agentsHeight)
-    content.set('agents',agentsView(input,state,cw,now,false));
+    content.set('agents', agentsView(input, state, cw, now, false));
   // In the frame look a row no pane draws on is blank between the frame's sides, `cw` wide.
-  frame.lines = Array.from({length:height},()=>fit('',cw));
-  bar.lines.slice(0,top).forEach((line,i)=>{frame.lines[i]=fit(line,width);});
-  frame.controls.push(...bar.controls.filter(control=>control.y<top));
+  frame.lines = Array.from({ length: height }, () => fit('', cw));
+  bar.lines.slice(0, top).forEach((line, i) => {
+    frame.lines[i] = fit(line, width);
+  });
+  frame.controls.push(...bar.controls.filter((control) => control.y < top));
   // The rows that are titles: in the frame look they are its edges, not rows between its sides.
   const titles = new Set<number>();
-  let y = top+(gaps ? 1 : 0);
+  let y = top + (gaps ? 1 : 0);
   for (const id of ids) {
-    const h = sizes.get(id) ?? 0; if (!h) continue;
+    const h = sizes.get(id) ?? 0;
+    if (!h) continue;
     // The blank row after the pane before (the last one's is above the card).
-    if (gaps && y > top+1) y++;
+    if (gaps && y > top + 1) y++;
     const rows = content.get(id) ?? [];
-    const focused = id===state.focus;
+    const focused = id === state.focus;
     const zoomed = zoom && focused;
     if (id === 'agents') {
       // Its title, then the counts the summary row has; where its rows are on the right.
       // In the tabs layout the tab above names the pane: its title is its counts and where its rows are.
-      drawAgentsView(frame,state,rows,y,cw,h,(counts,range)=>paneHead(id,width,{info:counts,right:range && colors.dim(range),focused,zoomed,named:!state.tabbed}),framed ? 2 : 0);
+      drawAgentsView(
+        frame,
+        state,
+        rows,
+        y,
+        cw,
+        h,
+        (counts, range) =>
+          paneHead(id, width, {
+            info: counts,
+            right: range && colors.dim(range),
+            focused,
+            zoomed,
+            named: !state.tabbed,
+          }),
+        framed ? 2 : 0
+      );
       if (rows.length) titles.add(y);
-      y += h; continue;
+      y += h;
+      continue;
     }
     const edge = edgeOf(id);
-    const count = Math.max(0,h-edge);
-    let offset = Math.max(0,Math.min(state.scroll[id],Math.max(0,rows.length-count)));
-    const selected = id==='changes'?state.selectedFile:id==='timeline'?state.timelineCursor ?? null:null;
-    const index = selected ? rows.findIndex(row=>row.item===selected) : -1;
-    if (index>=0 && count>0) { if(index<offset)offset=index;else if(index>=offset+count)offset=index-count+1; }
-    state.scroll[id]=offset;
-    const pane = {id,x:framed ? 2 : 0,y,width:cw,height:h,rows,offset,contentLength:rows.length,edge,pinned:0}; frame.panes.push(pane);
+    const count = Math.max(0, h - edge);
+    let offset = Math.max(0, Math.min(state.scroll[id], Math.max(0, rows.length - count)));
+    const selected = id === 'changes' ? state.selectedFile : id === 'timeline' ? (state.timelineCursor ?? null) : null;
+    const index = selected ? rows.findIndex((row) => row.item === selected) : -1;
+    if (index >= 0 && count > 0) {
+      if (index < offset) offset = index;
+      else if (index >= offset + count) offset = index - count + 1;
+    }
+    state.scroll[id] = offset;
+    const pane = {
+      id,
+      x: framed ? 2 : 0,
+      y,
+      width: cw,
+      height: h,
+      rows,
+      offset,
+      contentLength: rows.length,
+      edge,
+      pinned: 0,
+    };
+    frame.panes.push(pane);
     // The title: the pane's icon and name on the left, where its rows are or
     // how many there are on the right, as the look draws it; a click anywhere
     // on it zooms or restores the pane.
-    const range = rows.length>count&&count ? `${offset+1}–${Math.min(rows.length,offset+count)}/${rows.length}` : '';
-    const total = id==='changes' ? input.git?.files.length ?? 0 : id==='timeline' ? timelineCount(rows) : 0;
-    const right = range || (total ? t(id==='changes'?'{n} files':'{n} events',{n:total}) : '');
-    frame.lines[y] = paneHead(id,width,{right:right && colors.dim(right),focused,zoomed,named:!state.tabbed});
+    const range =
+      rows.length > count && count ? `${offset + 1}–${Math.min(rows.length, offset + count)}/${rows.length}` : '';
+    const total = id === 'changes' ? (input.git?.files.length ?? 0) : id === 'timeline' ? timelineCount(rows) : 0;
+    const right = range || (total ? t(id === 'changes' ? '{n} files' : '{n} events', { n: total }) : '');
+    frame.lines[y] = paneHead(id, width, { right: right && colors.dim(right), focused, zoomed, named: !state.tabbed });
     titles.add(y);
-    frame.controls.push({kind:'zoom',pane:id,x:0,y,width});
+    frame.controls.push({ kind: 'zoom', pane: id, x: 0, y, width });
     // The gutter in the pane's state colour: the accent where the keys go.
     const rule = focused ? theme.accent : colors.dim;
-    for(let i=0;i<count;i++) {
-      const row=rows[offset+i];
-      const clipped=truncateAnsi(row?.text??'',inner);
+    for (let i = 0; i < count; i++) {
+      const row = rows[offset + i];
+      const clipped = truncateAnsi(row?.text ?? '', inner);
       // The highlight covers the row's words, not the blank run after them:
       // a selected short name should not paint a bar across the pane.
-      const highlight=row?.item&&row.item===selected&&focused;
-      const body=(highlight?theme.selected(clipped):clipped)+' '.repeat(Math.max(0,inner-visualLength(clipped)));
-      frame.lines[y+1+i]=truncateAnsi(rule(gutter)+body,cw);
+      const highlight = row?.item && row.item === selected && focused;
+      const body =
+        (highlight ? theme.selected(clipped) : clipped) + ' '.repeat(Math.max(0, inner - visualLength(clipped)));
+      frame.lines[y + 1 + i] = truncateAnsi(rule(gutter) + body, cw);
     }
-    y+=h;
+    y += h;
   }
-  const foot = height-footRows;
-  if(input.art) placeArt(frame.lines,foot-noticeRows.length,cw,input.art,top);
-  for(let i=0;i<noticeRows.length;i++) frame.lines[foot-noticeRows.length+i]=theme.warning(fit(noticeRows[i],cw));
+  const foot = height - footRows;
+  if (input.art) placeArt(frame.lines, foot - noticeRows.length, cw, input.art, top);
+  for (let i = 0; i < noticeRows.length; i++)
+    frame.lines[foot - noticeRows.length + i] = theme.warning(fit(noticeRows[i], cw));
   if (framed) {
     // Between the frame's sides: the left one in the accent beside the pane the keys go to.
-    const shown = frame.panes.find(pane=>pane.id===state.focus);
+    const shown = frame.panes.find((pane) => pane.id === state.focus);
     for (let row = top; row < foot; row++) {
       if (titles.has(row)) continue;
-      const side = shown && row >= shown.y && row < shown.y+shown.height ? theme.accent : theme.frame;
-      frame.lines[row] = `${side('│')} ${fit(frame.lines[row],cw)} ${theme.frame('│')}`;
+      const side = shown && row >= shown.y && row < shown.y + shown.height ? theme.accent : theme.frame;
+      frame.lines[row] = `${side('│')} ${fit(frame.lines[row], cw)} ${theme.frame('│')}`;
     }
   }
-  footPlan.draw(frame,foot);
+  footPlan.draw(frame, foot);
   return frame;
 }
 
@@ -602,13 +895,15 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
  */
 function placeArt(lines: string[], end: number, width: number, art: NonNullable<MonitorData['art']>, first = 1): void {
   let start = end;
-  while (start > first && stripAnsi(lines[start-1]).trim() === '') start--;
-  const rows = end-start-2;
+  while (start > first && stripAnsi(lines[start - 1]).trim() === '') start--;
+  const rows = end - start - 2;
   if (rows <= 0 || width < 8) return;
-  const drawing = art(width-2,rows);
+  const drawing = art(width - 2, rows);
   if (!drawing?.length) return;
   const cols = Math.max(...drawing.map(visualLength));
-  const left = ' '.repeat(Math.max(0,Math.floor((width-cols)/2)));
-  const top = start+1+Math.floor((rows-drawing.length)/2);
-  drawing.forEach((line,i)=>{lines[top+i]=fit(left+line,width);});
+  const left = ' '.repeat(Math.max(0, Math.floor((width - cols) / 2)));
+  const top = start + 1 + Math.floor((rows - drawing.length) / 2);
+  drawing.forEach((line, i) => {
+    lines[top + i] = fit(left + line, width);
+  });
 }

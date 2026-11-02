@@ -23,7 +23,7 @@ export const colors = {
   magenta: (text: string) => `${ESC}35m${text}${RESET}`,
   cyan: (text: string) => `${ESC}36m${text}${RESET}`,
   white: (text: string) => `${ESC}37m${text}${RESET}`,
-  
+
   // Bright colors
   brightBlack: (text: string) => `${ESC}90m${text}${RESET}`,
   brightRed: (text: string) => `${ESC}91m${text}${RESET}`,
@@ -33,7 +33,7 @@ export const colors = {
   brightMagenta: (text: string) => `${ESC}95m${text}${RESET}`,
   brightCyan: (text: string) => `${ESC}96m${text}${RESET}`,
   brightWhite: (text: string) => `${ESC}97m${text}${RESET}`,
-  
+
   // Semantic colors. `dim` is the muted role, not a hard-coded attribute:
   // the terminal palette maps it back to the ANSI dim attribute.
   dim: (text: string) => palette().muted(text),
@@ -142,7 +142,7 @@ export const icons = {
   added: '+',
   deleted: '✘',
   untracked: '?',
-  
+
   // Activity
   check: '✓',
   cross: '✗',
@@ -150,7 +150,7 @@ export const icons = {
   starting: '·',
   unknown: '?',
   spinner: ['▸', '▹', '▸', '▹'],
-  
+
   // Info. Monochrome symbols only: an emoji is two columns wide in some
   // terminals and one in others, and a variation selector makes it worse.
   clock: '◴',
@@ -162,8 +162,8 @@ export const icons = {
   arrow: '→',
   bullet: '▸',
   multiply: '×',
-  refresh: '↻',  // For compact count indicator
-  
+  refresh: '↻', // For compact count indicator
+
   // Separators
   pipe: '|',
   bar: '│',

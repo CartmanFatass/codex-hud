@@ -54,7 +54,10 @@ const BAND_BAR = 8;
  * The brief with rows to spare, the roomiest that fits first: every done
  * item and four lines a value, then every done item.
  */
-const ROOMY: readonly BriefShape[] = [{ fieldLines: 4, doneShown: Infinity }, { fieldLines: 2, doneShown: Infinity }];
+const ROOMY: readonly BriefShape[] = [
+  { fieldLines: 4, doneShown: Infinity },
+  { fieldLines: 2, doneShown: Infinity },
+];
 
 /**
  * The level as drawn: absent is `full`, and compact has no `full` of its own.
@@ -74,7 +77,13 @@ export function nextLevel(state: MonitorState, height = Number.POSITIVE_INFINITY
 }
 
 /** Where the card sits, for the wheel: the whole card scrolls its brief. */
-export interface FootInfo { y: number; height: number; brief: number; total: number; offset: number }
+export interface FootInfo {
+  y: number;
+  height: number;
+  brief: number;
+  total: number;
+  offset: number;
+}
 
 export interface FootPlan {
   rows: number;
@@ -92,11 +101,24 @@ type Pieces = Array<[string, string]>;
  * and `label` the meter itself. At the last the left text is cut, beside
  * the meter's reading and the reset.
  */
-function fitRow(width: number, lead: string, trail: string, left: Pieces, right: Pieces, meter: EdgeMeter | undefined, drops: string[],
-  shorten: (text: string, room: number) => string = truncateAnsi, minBar = METER_MIN): string {
+function fitRow(
+  width: number,
+  lead: string,
+  trail: string,
+  left: Pieces,
+  right: Pieces,
+  meter: EdgeMeter | undefined,
+  drops: string[],
+  shorten: (text: string, room: number) => string = truncateAnsi,
+  minBar = METER_MIN
+): string {
   const gone = new Set<string>();
   const attempt = (cut: boolean): string | null => {
-    const join = (pieces: Pieces) => pieces.filter(([key, text]) => !gone.has(key) && text).map(([, text]) => text).join(' ');
+    const join = (pieces: Pieces) =>
+      pieces
+        .filter(([key, text]) => !gone.has(key) && text)
+        .map(([, text]) => text)
+        .join(' ');
     const rightText = join(right);
     const shown = !meter || gone.has('label') ? undefined : gone.has('tail') ? { ...meter, tail: undefined } : meter;
     let leftText = join(left);
@@ -110,7 +132,13 @@ function fitRow(width: number, lead: string, trail: string, left: Pieces, right:
     const before = lead + (leftText ? `${leftText} ` : '');
     // A meter whose reading does not fit draws as track alone: the reading
     // goes only when the label is dropped on purpose, never by squeezing.
-    if (!cut && shown && width - visualLength(before) - visualLength(after) < visualLength(shown.label ?? `${Math.round(shown.percent)}%`) + visualLength(shown.mark ?? '')) return null;
+    if (
+      !cut &&
+      shown &&
+      width - visualLength(before) - visualLength(after) <
+        visualLength(shown.label ?? `${Math.round(shown.percent)}%`) + visualLength(shown.mark ?? '')
+    )
+      return null;
     return meterRow(width, before, after, shown, !cut && !gone.has('bar') ? minBar : 0, !cut);
   };
   for (const key of ['', ...drops]) {
@@ -119,7 +147,8 @@ function fitRow(width: number, lead: string, trail: string, left: Pieces, right:
     if (found !== null) return found;
   }
   // Cut, the row keeps the meter's reading and the reset beside what is left of the left text.
-  gone.delete('label'); gone.delete('reset');
+  gone.delete('label');
+  gone.delete('reset');
   return attempt(true) ?? truncateAnsi(lead, width);
 }
 
@@ -145,17 +174,20 @@ function briefState(input: MonitorData, now: number): string {
  * rest follow them, in view by scrolling.
  */
 function briefRows(fields: BriefField[], room: number): string[] {
-  const all = fields.flatMap(field => field.lines);
+  const all = fields.flatMap((field) => field.lines);
   if (all.length <= room) return all;
   const keep = new Set<BriefField>();
   let used = 0;
   for (const id of BRIEF_KEEP) {
-    for (const field of fields.filter(field => field.id === id)) {
+    for (const field of fields.filter((field) => field.id === id)) {
       if (used + field.lines.length > room - 1 && keep.size) continue;
-      keep.add(field); used += field.lines.length;
+      keep.add(field);
+      used += field.lines.length;
     }
   }
-  return [...fields.filter(field => keep.has(field)), ...fields.filter(field => !keep.has(field))].flatMap(field => field.lines);
+  return [...fields.filter((field) => keep.has(field)), ...fields.filter((field) => !keep.has(field))].flatMap(
+    (field) => field.lines
+  );
 }
 
 /**
@@ -163,7 +195,15 @@ function briefRows(fields: BriefField[], room: number): string[] {
  * when the panes above leave some: then it may grow past its third, as far
  * as its brief fills them.
  */
-export function planFoot(input: MonitorData, state: MonitorState, width: number, height: number, now: number, notices: number, unused = 0): FootPlan {
+export function planFoot(
+  input: MonitorData,
+  state: MonitorState,
+  width: number,
+  height: number,
+  now: number,
+  notices: number,
+  unused = 0
+): FootPlan {
   // The narrow preset has no room for the card's rows. The saved level is left
   // as it is, so widening the pane brings it back.
   let level = shownLevel(state, height);
@@ -174,9 +214,15 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
   const framed = look(width) === 'frame';
   // Under 24 columns the card would cost more than it holds, and with nothing
   // to say it is not drawn: the foot is the panel's. The keys are the bar's.
-  const hint: FootPlan = framed && height > 2
-    ? { rows: 1, draw(frame, foot) { frame.lines[foot] = theme.frame(`╰${'─'.repeat(Math.max(0, width - 2))}╯`); } }
-    : { rows: 0, draw() {} };
+  const hint: FootPlan =
+    framed && height > 2
+      ? {
+          rows: 1,
+          draw(frame, foot) {
+            frame.lines[foot] = theme.frame(`╰${'─'.repeat(Math.max(0, width - 2))}╯`);
+          },
+        }
+      : { rows: 0, draw() {} };
   if (width < 24) return hint;
   const session = input.session?.(now) ?? null;
   const card = input.status?.(now) ?? null;
@@ -192,35 +238,46 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
     const plain = stripAnsi(line);
     const start = input.hud && rate ? plain.indexOf(rate) : -1;
     if (start >= 0) {
-      const x = visualLength(plain.slice(0,start));
+      const x = visualLength(plain.slice(0, start));
       const size = visualLength(rate);
-      if (x > 0) frame.controls.push({kind:'level',x:0,y,width:x});
-      frame.controls.push({kind:'observability',x,y,width:size});
-      if (x+size < width) frame.controls.push({kind:'level',x:x+size,y,width:width-x-size});
+      if (x > 0) frame.controls.push({ kind: 'level', x: 0, y, width: x });
+      frame.controls.push({ kind: 'observability', x, y, width: size });
+      if (x + size < width) frame.controls.push({ kind: 'level', x: x + size, y, width: width - x - size });
       return;
     }
     frame.controls.push({ kind: 'level', x: 0, y, width });
   };
   // The band's ends: a column of band each side, or the frame's edge.
-  const edge = (open: string, close: string) => framed ? [`${theme.frame(open)} `, ` ${theme.frame(close)}`] : [' ', ' '];
+  const edge = (open: string, close: string) =>
+    framed ? [`${theme.frame(open)} `, ` ${theme.frame(close)}`] : [' ', ' '];
   const meter = card?.context;
   // The brief's state, wherever a brief is configured: data, not a switch.
   const said = briefState(input, now);
-  const tone: StatusTone = card?.tone === 'error' ? 'error' : needs || session?.attention || session?.failed ? 'needs' : card?.tone ?? 'idle';
+  const tone: StatusTone =
+    card?.tone === 'error'
+      ? 'error'
+      : needs || session?.attention || session?.failed
+        ? 'needs'
+        : (card?.tone ?? 'idle');
   // The state's glyph says it in copied text and without colour: needing the
   // person is "!", which leads a working state and stands in for an idle one.
   // A failure alone is marked in the error colour, as the alert row paints it.
   const flagged = tone === 'needs' && card?.tone !== 'error';
   const flag = (session?.failed && !needs && !session.attention ? theme.error : theme.warning)('!');
   const busy = card?.busy ?? card?.tone === 'working';
-  const stateText = !card ? session?.text ?? '' : flagged ? (busy ? `${flag} ${card.state}` : flag) : card.state;
+  const stateText = !card ? (session?.text ?? '') : flagged ? (busy ? `${flag} ${card.state}` : flag) : card.state;
   const left = (state: string): Pieces => {
     const rate = card?.rate ?? '';
     // Reserve the rate and context reading even with a long tool/target or text model badge.
     const readingWidth = meter ? visualLength(meter.label ?? `${meter.percent}%`) + visualLength(meter.mark ?? '') : 1;
     const room = width - visualLength(rate) - readingWidth - (framed ? 6 : 2) - 3;
-    return [['state', rate ? truncateAnsi(state, Math.max(1, room)) : state], ['rate', rate], ['tasks', card?.tasks ?? ''],
-      ['model', card?.model ?? ''], ['age', card?.age ?? '']];
+    return [
+      ['state', rate ? truncateAnsi(state, Math.max(1, room)) : state],
+      ['rate', rate],
+      ['tasks', card?.tasks ?? ''],
+      ['model', card?.model ?? ''],
+      ['age', card?.age ?? ''],
+    ];
   };
 
   // The bar's rows: two in the frame look.
@@ -235,23 +292,46 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
     // Alone on its row, the meter says which it is: beside the quota's
     // reading two bare percentages read alike. The word outlasts the bar.
     const named: Pieces = [...left(shown), ['ctx', meter ? colors.dim(t('Ctx')) : '']];
-    return { rows: 1, draw(frame, foot) {
-      band(frame, foot, fitRow(width, lead, trail, named, [['brief', said], ['quota', card?.quota?.text ?? '']], meter,
-        ['tasks', 'age', 'tail', 'model', 'brief', 'bar', 'ctx', 'quota', 'rate', 'label'], truncateAnsi, BAND_BAR));
-      frame.statusCard = { y: foot, height: 1, brief: 0, total: 0, offset: 0 };
-    } };
+    return {
+      rows: 1,
+      draw(frame, foot) {
+        band(
+          frame,
+          foot,
+          fitRow(
+            width,
+            lead,
+            trail,
+            named,
+            [
+              ['brief', said],
+              ['quota', card?.quota?.text ?? ''],
+            ],
+            meter,
+            ['tasks', 'age', 'tail', 'model', 'brief', 'bar', 'ctx', 'quota', 'rate', 'label'],
+            truncateAnsi,
+            BAND_BAR
+          )
+        );
+        frame.statusCard = { y: foot, height: 1, brief: 0, total: 0, offset: 0 };
+      },
+    };
   }
 
   const inner = width - (framed ? 4 : 2);
   const rule = tonePaint(tone);
   const alerts = card.alerts.slice(0, Math.max(0, cap - 2));
   const room = cap - 2 - alerts.length;
-  const roomy = level === 'full' && cap > fair ? ROOMY.map(shape => briefFields(input, inner, shape))
-    .find(fields => fields.reduce((sum, field) => sum + field.lines.length, 0) <= room) : undefined;
-  const fields = level !== 'full' ? [] : roomy ?? briefFields(input, inner);
+  const roomy =
+    level === 'full' && cap > fair
+      ? ROOMY.map((shape) => briefFields(input, inner, shape)).find(
+          (fields) => fields.reduce((sum, field) => sum + field.lines.length, 0) <= room
+        )
+      : undefined;
+  const fields = level !== 'full' ? [] : (roomy ?? briefFields(input, inner));
   const lines0 = briefRows(fields, Math.max(0, room));
   // Paused, the brief stays for reference but steps back.
-  const lines = brief?.paused ? lines0.map(line => colors.dim(stripAnsi(line))) : lines0;
+  const lines = brief?.paused ? lines0.map((line) => colors.dim(stripAnsi(line))) : lines0;
   // Cut, the brief needs room for a line of it beside the line saying so.
   const section = lines.length > 0 && room >= 1 && (lines.length <= room || room >= 2);
   const overflow = section && lines.length > room;
@@ -259,30 +339,72 @@ export function planFoot(input: MonitorData, state: MonitorState, width: number,
   const offset = overflow ? Math.max(0, Math.min(state.statusScroll ?? 0, lines.length - shown)) : 0;
   state.statusScroll = offset;
   const rows = 2 + alerts.length + shown + (overflow ? 1 : 0);
-  return { rows, draw(frame, foot) {
-    const [lead, trail] = edge('├─', '─┤');
-    band(frame, foot, fitRow(width, lead, trail, left(stateText), [['brief', said]], meter,
-      ['tasks', 'age', 'tail', 'model', 'brief', 'bar', 'rate', 'label'], truncateAnsi, BAND_BAR));
-    let y = foot + 1;
-    // A gutter on the left only: the text gets the column a right border would
-    // take. In the frame look the gutter is the frame's side, and the other side closes the row.
-    const row = (text: string) => { frame.lines[y++] = rule('│ ') + fit(text, inner) + (framed ? ` ${theme.frame('│')}` : ''); };
-    for (const alert of alerts) row(alert);
-    for (const line of lines.slice(offset, offset + shown)) row(line);
-    if (overflow) {
-      const below = lines.length - offset - shown;
-      row(colors.dim(below ? (offset ? t('↑ {a}  ↓ {n} more lines', { a: offset, n: below }) : t('↓ {n} more lines', { n: below })) : t('↑ {n} more lines', { n: offset })));
-    }
-    const quota = card.quota;
-    // Narrow, the branch goes first, then the window's name, then the repository.
-    frame.lines[y] = fitRow(width, `${rule('╰─')} `, framed ? ` ${theme.frame('─╯')}` : '',
-      [['project', card.project || card.place], ['repo', card.repo ?? ''], ['branch', card.branch ?? ''], ['window', quota?.window ?? '']],
-      [['others', card.others], ['spent', quota?.spent ?? ''], ['forecast', card.forecast], ['reset', card.reset]],
-      quota ? { percent: quota.percent, ...(quota.label ? { label: quota.label } : {}) } : undefined, ['others', 'branch', 'window', 'repo', 'forecast', 'bar', 'reset', 'label'], squeezePlace,
-      // A quota meter shorter than this reads as a tick mark, not a meter: the place gives way first.
-      QUOTA_BAR);
-    frame.statusCard = { y: foot, height: rows, brief: shown, total: lines.length, offset };
-  } };
+  return {
+    rows,
+    draw(frame, foot) {
+      const [lead, trail] = edge('├─', '─┤');
+      band(
+        frame,
+        foot,
+        fitRow(
+          width,
+          lead,
+          trail,
+          left(stateText),
+          [['brief', said]],
+          meter,
+          ['tasks', 'age', 'tail', 'model', 'brief', 'bar', 'rate', 'label'],
+          truncateAnsi,
+          BAND_BAR
+        )
+      );
+      let y = foot + 1;
+      // A gutter on the left only: the text gets the column a right border would
+      // take. In the frame look the gutter is the frame's side, and the other side closes the row.
+      const row = (text: string) => {
+        frame.lines[y++] = rule('│ ') + fit(text, inner) + (framed ? ` ${theme.frame('│')}` : '');
+      };
+      for (const alert of alerts) row(alert);
+      for (const line of lines.slice(offset, offset + shown)) row(line);
+      if (overflow) {
+        const below = lines.length - offset - shown;
+        row(
+          colors.dim(
+            below
+              ? offset
+                ? t('↑ {a}  ↓ {n} more lines', { a: offset, n: below })
+                : t('↓ {n} more lines', { n: below })
+              : t('↑ {n} more lines', { n: offset })
+          )
+        );
+      }
+      const quota = card.quota;
+      // Narrow, the branch goes first, then the window's name, then the repository.
+      frame.lines[y] = fitRow(
+        width,
+        `${rule('╰─')} `,
+        framed ? ` ${theme.frame('─╯')}` : '',
+        [
+          ['project', card.project || card.place],
+          ['repo', card.repo ?? ''],
+          ['branch', card.branch ?? ''],
+          ['window', quota?.window ?? ''],
+        ],
+        [
+          ['others', card.others],
+          ['spent', quota?.spent ?? ''],
+          ['forecast', card.forecast],
+          ['reset', card.reset],
+        ],
+        quota ? { percent: quota.percent, ...(quota.label ? { label: quota.label } : {}) } : undefined,
+        ['others', 'branch', 'window', 'repo', 'forecast', 'bar', 'reset', 'label'],
+        squeezePlace,
+        // A quota meter shorter than this reads as a tick mark, not a meter: the place gives way first.
+        QUOTA_BAR
+      );
+      frame.statusCard = { y: foot, height: rows, brief: shown, total: lines.length, offset };
+    },
+  };
 }
 
 /** The place cut in the middle, its colours given up: the ends say which project and branch. */

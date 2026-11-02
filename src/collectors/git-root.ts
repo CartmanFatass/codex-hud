@@ -66,8 +66,8 @@ function soleChildRepo(base: string): string | null {
   }
   if (entries.length > CHILD_SCAN_LIMIT) return null;
   const repos = entries
-    .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
-    .map(entry => path.join(base, entry.name))
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map((entry) => path.join(base, entry.name))
     .filter(hasGit);
   return repos.length === 1 ? repos[0] : null;
 }
@@ -81,14 +81,19 @@ function soleChildRepo(base: string): string | null {
  *    session has run anything.
  * Null when none applies; the bar then shows no git section.
  */
-export function resolveGitTarget(folders: ReadonlyArray<string | undefined>, workDirs: readonly string[] = []): GitTarget | null {
-  const bases = [...new Set(folders.filter((folder): folder is string => !!folder).map(folder => path.resolve(folder)))];
+export function resolveGitTarget(
+  folders: ReadonlyArray<string | undefined>,
+  workDirs: readonly string[] = []
+): GitTarget | null {
+  const bases = [
+    ...new Set(folders.filter((folder): folder is string => !!folder).map((folder) => path.resolve(folder))),
+  ];
   for (const base of bases) {
     if (repoRootOf(base)) return { dir: base };
   }
   for (let i = workDirs.length - 1; i >= 0; i--) {
     const dir = path.resolve(workDirs[i]);
-    const base = bases.find(folder => within(folder, dir));
+    const base = bases.find((folder) => within(folder, dir));
     if (!base) continue;
     const repo = repoRootOf(dir);
     if (repo && within(base, repo)) return { dir: repo, subRepo: repo };
@@ -109,7 +114,10 @@ export class GitTargetCache {
   private key = '';
   private at = -Infinity;
   private value: GitTarget | null = null;
-  constructor(private readonly ttlMs = 30_000, private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly ttlMs = 30_000,
+    private readonly now: () => number = Date.now
+  ) {}
   resolve(folders: ReadonlyArray<string | undefined>, workDirs: readonly string[] = []): GitTarget | null {
     const key = JSON.stringify([folders, workDirs]);
     const now = this.now();

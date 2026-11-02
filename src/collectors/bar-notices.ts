@@ -62,8 +62,13 @@ export class BarNoticeTracker {
         const ended = fresh ? data.activity?.updatedAt : at;
         const started = data.activity?.turnStartedAt ?? this.turnStartedAt;
         if (ended) {
-          found.push({ kind: 'turn-done', at: ended,
-            ...(started && started.getTime() <= ended.getTime() ? { durationMs: ended.getTime() - started.getTime() } : {}) });
+          found.push({
+            kind: 'turn-done',
+            at: ended,
+            ...(started && started.getTime() <= ended.getTime()
+              ? { durationMs: ended.getTime() - started.getTime() }
+              : {}),
+          });
         }
       }
       this.working = working;

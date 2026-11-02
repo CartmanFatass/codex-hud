@@ -57,10 +57,7 @@ test('an unreadable or unrecognised snapshot is a plain toggle, not an error', (
   assert.equal(clickActionFromSnapshot('{"bar":{}}', 4), 'toggle');
   assert.equal(clickActionFromSnapshot('{"bar":{"segments":"nope"}}', 4), 'toggle');
   assert.equal(clickActionFromSnapshot('{"bar":{"segments":[{"id":5,"x":0,"width":9}]}}', 4), 'toggle');
-  assert.equal(
-    clickActionFromSnapshot('{"bar":{"segments":[{"id":"agents","x":0,"width":9}]}}', 4),
-    'open-focus'
-  );
+  assert.equal(clickActionFromSnapshot('{"bar":{"segments":[{"id":"agents","x":0,"width":9}]}}', 4), 'open-focus');
 });
 
 test('a real snapshot maps its own columns back to its own fields', () => {

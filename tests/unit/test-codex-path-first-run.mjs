@@ -16,11 +16,7 @@ try {
   process.env.CODEX_HOME = missingHome;
   delete process.env.CODEX_SESSIONS_PATH;
 
-  assert.equal(
-    getCodexHome(),
-    missingHome,
-    'explicit CODEX_HOME should be usable before Codex creates the directory'
-  );
+  assert.equal(getCodexHome(), missingHome, 'explicit CODEX_HOME should be usable before Codex creates the directory');
   assert.equal(
     getSessionsDir(),
     path.join(missingHome, 'sessions'),

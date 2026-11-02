@@ -116,10 +116,7 @@ function limitLines(lines: string[], maxLines: number): string[] {
 
   const limited = lines.slice(0, maxLines);
   const truncatedCount = lines.length - maxLines;
-  const moreText =
-    truncatedCount === 1
-      ? '…1 more line hidden'
-      : `…${truncatedCount} more lines hidden`;
+  const moreText = truncatedCount === 1 ? '…1 more line hidden' : `…${truncatedCount} more lines hidden`;
   const indicator = colors.dim(moreText);
   limited[limited.length - 1] = `${limited[limited.length - 1]} ${indicator}`;
   return limited;
@@ -138,7 +135,7 @@ function truncateLines(lines: string[], width: number): string[] {
 function createDefaultLayout(width: number, height: number): LayoutConfig {
   // Compact is the 1-line bar used when there are no active subagent rows.
   const mode: LayoutMode = height <= 1 ? 'compact' : 'expanded';
-  
+
   return {
     mode,
     showSeparators: true,
@@ -176,24 +173,24 @@ function writeLine(text: string): void {
 export function render(data: HudData): void {
   const width = getTerminalWidth();
   const height = getTerminalHeight();
-  
+
   const layout = createDefaultLayout(width, height);
   const options: RenderOptions = {
     width,
     showDetails: height >= 2,
     layout,
   };
-  
+
   const maxLines = Math.max(1, height);
   const lines = truncateLines(limitLines(renderHud(data, options), maxLines), width);
-  
+
   // Move cursor to home position and render
   process.stdout.write(CURSOR_HOME);
-  
+
   for (const line of lines) {
     writeLine(line);
   }
-  
+
   // Clear any remaining lines from previous render
   const remainingLines = maxLines - lines.length;
   for (let i = 0; i < remainingLines; i++) {
@@ -208,10 +205,10 @@ export function render(data: HudData): void {
 export function initRenderer(): void {
   // Hide cursor
   process.stdout.write(HIDE_CURSOR);
-  
+
   // Clear screen
   process.stdout.write(CLEAR_SCREEN + CURSOR_HOME);
-  
+
   // Handle resize
   process.stdout.on('resize', () => {
     // A non-TTY stdout never fires this, so the one-shot tmux answer only
@@ -230,7 +227,7 @@ export function initRenderer(): void {
 export function cleanupRenderer(): void {
   // Show cursor
   process.stdout.write(SHOW_CURSOR);
-  
+
   // Clear screen
   process.stdout.write(CLEAR_SCREEN + CURSOR_HOME);
 }
@@ -242,13 +239,13 @@ export function cleanupRenderer(): void {
 export function renderSingleLine(data: HudData): string {
   const width = getTerminalWidth();
   const layout = createDefaultLayout(width, 1);
-  
+
   const options: RenderOptions = {
     width,
     showDetails: false,
     layout,
   };
-  
+
   const lines = renderHud(data, options);
   return truncateAnsi(lines[0] || '', width);
 }
@@ -263,7 +260,10 @@ export function renderToStdout(data: HudData, heightOverride?: number): void {
 }
 
 /** The frame to draw, or null when it is the one already on screen. */
-function composeStdoutFrame(data: HudData, heightOverride?: number): { lines: string[]; maxLines: number; isFirstRender: boolean } | null {
+function composeStdoutFrame(
+  data: HudData,
+  heightOverride?: number
+): { lines: string[]; maxLines: number; isFirstRender: boolean } | null {
   const width = getTerminalWidth();
   const height = Math.max(1, heightOverride ?? 1);
   const layout = createDefaultLayout(width, height);
@@ -288,10 +288,19 @@ function composeStdoutFrame(data: HudData, heightOverride?: number): { lines: st
   return { lines, maxLines, isFirstRender };
 }
 
-function writeStdoutFrame({ lines, maxLines, isFirstRender }: { lines: string[]; maxLines: number; isFirstRender: boolean }): void {
+function writeStdoutFrame({
+  lines,
+  maxLines,
+  isFirstRender,
+}: {
+  lines: string[];
+  maxLines: number;
+  isFirstRender: boolean;
+}): void {
   const clearScrollback = process.env.CODEX_HUD_CLEAR_SCROLLBACK === '1';
   // Clear once on first render so the top line reliably appears in new panes.
-  const clearPrefix = (isFirstRender && clearScrollback ? CLEAR_SCROLLBACK : '') + (isFirstRender ? CLEAR_SCREEN : '') + CURSOR_HOME;
+  const clearPrefix =
+    (isFirstRender && clearScrollback ? CLEAR_SCROLLBACK : '') + (isFirstRender ? CLEAR_SCREEN : '') + CURSOR_HOME;
   process.stdout.write(clearPrefix);
 
   const totalLines = Math.max(lines.length, maxLines);

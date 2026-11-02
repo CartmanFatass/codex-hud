@@ -22,23 +22,38 @@ test('idle time: from a minute on, only while idle, as ages are written', () => 
   assert.equal(idleFor(idle(12), now), '12m');
   assert.equal(idleFor(idle(150), now), '2h');
   assert.equal(idleFor(idle(12), now, true), '', 'a stale reading says nothing of it');
-  assert.equal(idleFor({ state: 'working', updatedAt: new Date(now - 720_000), turnStartedAt: new Date(now - 720_000) }, now), '');
-  assert.equal(idleFor({ state: 'interrupted', updatedAt: new Date(now - 720_000) }, now), '', 'interrupted is marked on its own');
+  assert.equal(
+    idleFor({ state: 'working', updatedAt: new Date(now - 720_000), turnStartedAt: new Date(now - 720_000) }, now),
+    ''
+  );
+  assert.equal(
+    idleFor({ state: 'interrupted', updatedAt: new Date(now - 720_000) }, now),
+    '',
+    'interrupted is marked on its own'
+  );
   assert.equal(idleFor(undefined, now), '');
 });
 
 test('the bar and the status card say how long the session has been idle', () => {
   const data = { ...makeHudData(), activity: idle(12) };
-  const activity = (words: boolean) => buildBarModules(data, { nowMs: now, words }).find(module => module.id === 'activity')!.variants;
+  const activity = (words: boolean) =>
+    buildBarModules(data, { nowMs: now, words }).find((module) => module.id === 'activity')!.variants;
   const glyphs = activity(false);
   // The state says idle; how long is the notice zone's, beside the turn that ended.
   assert.equal(stripAnsi(glyphs.full!), '✓ idle');
   assert.equal(stripAnsi(glyphs.short!), '✓');
   assert.equal(stripAnsi(activity(true).full!), 'Idle');
-  const ended = { ...data, notices: [{ kind: 'turn-done' as const, at: new Date(now - 720_000), durationMs: 768_000 }] };
-  const notice = buildBarModules(ended, { nowMs: now }).find(module => module.id === 'notice')!.variants;
+  const ended = {
+    ...data,
+    notices: [{ kind: 'turn-done' as const, at: new Date(now - 720_000), durationMs: 768_000 }],
+  };
+  const notice = buildBarModules(ended, { nowMs: now }).find((module) => module.id === 'notice')!.variants;
   assert.equal(stripAnsi(notice.full!), '✓ turn done in 12:48 · 12m ago');
   assert.equal(stripAnsi(statusCard(data, now)!.state), '✓ Idle 12m');
   const previous = setLanguage('zh');
-  try { assert.equal(stripAnsi(statusCard(data, now)!.state), '✓ 空闲 12m'); } finally { setLanguage(previous); }
+  try {
+    assert.equal(stripAnsi(statusCard(data, now)!.state), '✓ 空闲 12m');
+  } finally {
+    setLanguage(previous);
+  }
 });

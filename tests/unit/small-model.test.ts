@@ -3,7 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { SmallModel, modelCommand, modelHttpRequest, callsToday, callsWithin, requestDigest, DEFAULT_API_MODELS, type ModelApi } from '../../src/collectors/small-model.js';
+import {
+  SmallModel,
+  modelCommand,
+  modelHttpRequest,
+  callsToday,
+  callsWithin,
+  requestDigest,
+  DEFAULT_API_MODELS,
+  type ModelApi,
+} from '../../src/collectors/small-model.js';
 
 const now = Date.parse('2026-10-01T10:00:00Z');
 const api: ModelApi = { base: 'http://synthetic.invalid/v1', model: '', key: '' };
@@ -16,13 +25,14 @@ function http(config: ModelApi = api, request = question, env: NodeJS.ProcessEnv
 }
 function deferredFetch() {
   const pending: Array<{ url: string; init: RequestInit; resolve: (response: Response) => void }> = [];
-  const fetcher = ((url: string, init: RequestInit) => new Promise<Response>((resolve, reject) => {
-    pending.push({ url: String(url), init, resolve });
-    init.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
-  })) as typeof fetch;
+  const fetcher = ((url: string, init: RequestInit) =>
+    new Promise<Response>((resolve, reject) => {
+      pending.push({ url: String(url), init, resolve });
+      init.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    })) as typeof fetch;
   return { pending, fetcher };
 }
-const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 test('AGY retains named effort models and explicit override flags without a shell', () => {
   const low = modelCommand('agy', question, {});
@@ -41,26 +51,55 @@ test('AGY retains named effort models and explicit override flags without a shel
 });
 
 test('API task routes, configurable tier models, and global overrides', () => {
-  for (const [tier, features] of Object.entries({ lite: ['labels', 'title', 'approval'], low: ['progress', 'brief', 'digest', 'changes', 'unknown'], medium: ['recap', 'cause'] })) {
+  for (const [tier, features] of Object.entries({
+    lite: ['labels', 'title', 'approval'],
+    low: ['progress', 'brief', 'digest', 'changes', 'unknown'],
+    medium: ['recap', 'cause'],
+  })) {
     for (const feature of features) {
-      assert.equal(JSON.parse(http(api, { ...question, feature }).body).model, DEFAULT_API_MODELS[tier as keyof typeof DEFAULT_API_MODELS]);
-      assert.equal(JSON.parse(http({ ...api, models: { lite: 'L', low: 'W', medium: 'M' } }, { ...question, feature }).body).model, { lite: 'L', low: 'W', medium: 'M' }[tier]);
+      assert.equal(
+        JSON.parse(http(api, { ...question, feature }).body).model,
+        DEFAULT_API_MODELS[tier as keyof typeof DEFAULT_API_MODELS]
+      );
+      assert.equal(
+        JSON.parse(http({ ...api, models: { lite: 'L', low: 'W', medium: 'M' } }, { ...question, feature }).body).model,
+        { lite: 'L', low: 'W', medium: 'M' }[tier]
+      );
       assert.equal(JSON.parse(http({ ...api, model: 'global' }, { ...question, feature }).body).model, 'global');
-      assert.equal(JSON.parse(http({ ...api, model: 'global' }, { ...question, feature }, { CODEX_HUD_BRIEF_MODEL: 'environment' }).body).model, 'environment');
+      assert.equal(
+        JSON.parse(
+          http({ ...api, model: 'global' }, { ...question, feature }, { CODEX_HUD_BRIEF_MODEL: 'environment' }).body
+        ).model,
+        'environment'
+      );
     }
   }
   assert.equal(http({ ...api, base: '' }).url, 'https://api.openai.com/v1/chat/completions');
-  assert.equal(http({ ...api, base: 'http://synthetic.invalid/v1/chat/completions/' }).url, api.base + '/chat/completions');
+  assert.equal(
+    http({ ...api, base: 'http://synthetic.invalid/v1/chat/completions/' }).url,
+    api.base + '/chat/completions'
+  );
 });
 
 test('custom endpoints never receive the general OpenAI key; deliberate HUD keys still work', () => {
   const env = { OPENAI_API_KEY: 'synthetic-openai-key' };
-  for (const base of [api.base, 'https://api.openai.com.evil.invalid/v1', 'http://api.openai.com/v1', 'https://api.openai.com:8443/v1']) {
+  for (const base of [
+    api.base,
+    'https://api.openai.com.evil.invalid/v1',
+    'http://api.openai.com/v1',
+    'https://api.openai.com:8443/v1',
+  ]) {
     assert.equal(http({ ...api, base }, question, env).headers.authorization, undefined);
   }
   assert.equal(http({ ...api, base: '' }, question, env).headers.authorization, 'Bearer synthetic-openai-key');
-  assert.equal(http(api, question, { ...env, CODEX_HUD_BRIEF_API_KEY: 'synthetic-hud-key' }).headers.authorization, 'Bearer synthetic-hud-key');
-  assert.equal(http({ ...api, key: 'synthetic-explicit-key' }, question, env).headers.authorization, 'Bearer synthetic-explicit-key');
+  assert.equal(
+    http(api, question, { ...env, CODEX_HUD_BRIEF_API_KEY: 'synthetic-hud-key' }).headers.authorization,
+    'Bearer synthetic-hud-key'
+  );
+  assert.equal(
+    http({ ...api, key: 'synthetic-explicit-key' }, question, env).headers.authorization,
+    'Bearer synthetic-explicit-key'
+  );
   assert.ok('error' in modelHttpRequest({ ...api, base: 'not a URL' }, question, env));
   assert.ok('error' in modelHttpRequest({ ...api, base: 'https://user:pass@api.openai.com/v1' }, question, env));
 });
@@ -77,7 +116,8 @@ test('reasoning_effort is opt-in and unknown efforts are omitted', () => {
 
 test('call counts: last hour and since midnight', () => {
   assert.equal(callsWithin([now - 7200_000, now - 3000_000, now - 60_000, now], now, 3600_000), 3);
-  const midnight = new Date(now); midnight.setHours(0, 0, 0, 0);
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
   assert.equal(callsToday([midnight.getTime() - 1, midnight.getTime(), now], now), 2);
 });
 
@@ -101,7 +141,8 @@ test('single flight, queued cancellation, active cancellation, and cancelAll', a
   const fourth = model.submit(question);
   const fifth = model.submit(question);
   model.cancelAll();
-  for (const job of [fourth, fifth]) assert.deepEqual(await job.result, { ok: false, error: 'cancelled', cancelled: true });
+  for (const job of [fourth, fifth])
+    assert.deepEqual(await job.result, { ok: false, error: 'cancelled', cancelled: true });
   assert.equal(model.usage().lastHour, 3);
 });
 
@@ -112,10 +153,19 @@ test('cancelled active fetch holds its slot until stopping finishes, also across
     let finishNext!: () => void;
     const fetcher = ((_url: string, init: RequestInit) => {
       calls++;
-      if (calls === 1) return new Promise<Response>((_resolve, reject) => {
-        init.signal?.addEventListener('abort', () => { completeStop = () => reject(new Error('stopped')); }, { once: true });
+      if (calls === 1)
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener(
+            'abort',
+            () => {
+              completeStop = () => reject(new Error('stopped'));
+            },
+            { once: true }
+          );
+        });
+      return new Promise<Response>((resolve) => {
+        finishNext = () => resolve(reply());
       });
-      return new Promise<Response>(resolve => { finishNext = () => resolve(reply()); });
     }) as typeof fetch;
     const model = new SmallModel({ env: {}, fetch: fetcher });
     model.configure({ backend: 'api', api });
@@ -147,7 +197,10 @@ test('API redirects are refused and reflected credentials are removed from error
     model.configure({ backend: 'api', api: { ...api, key } });
     const result = await model.submit(question).result;
     assert.ok(!result.ok);
-    if (!result.ok) { assert.ok(!result.error.includes(key)); assert.match(result.error, /Authentication failed|connection failed/); }
+    if (!result.ok) {
+      assert.ok(!result.error.includes(key));
+      assert.match(result.error, /Authentication failed|connection failed/);
+    }
   }
 });
 
@@ -160,13 +213,17 @@ test('freeze request, route, and environment at submission; configure cancels ch
   const first = model.submit(question);
   const request = { ...question, prompt: 'queued' };
   const second = model.submit(request);
-  env.CODEX_HUD_BRIEF_MODEL = 'new'; request.prompt = 'mutated'; config.models.lite = 'mutated';
-  pending[0].resolve(reply()); await first.result;
+  env.CODEX_HUD_BRIEF_MODEL = 'new';
+  request.prompt = 'mutated';
+  config.models.lite = 'mutated';
+  pending[0].resolve(reply());
+  await first.result;
   assert.equal(JSON.parse(String(pending[1].init.body)).model, 'old');
   assert.equal(JSON.parse(String(pending[1].init.body)).messages[1].content, 'queued');
   const queued = model.submit(question);
   model.configure({ api: { ...api, base: 'http://other.invalid/v1' } });
-  for (const job of [second, queued]) assert.deepEqual(await job.result, { ok: false, error: 'cancelled', cancelled: true });
+  for (const job of [second, queued])
+    assert.deepEqual(await job.result, { ok: false, error: 'cancelled', cancelled: true });
   assert.equal(pending[1].init.signal?.aborted, true);
   const next = model.submit(question);
   await tick();
@@ -178,8 +235,12 @@ test('freeze request, route, and environment at submission; configure cancels ch
 
 test('cap, free cache, restart persistence, private files, and cache endpoint/model/thinking/feature identity', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-model-cache-'));
-  let calls = 0; let clock = now;
-  const fetcher = (async () => { calls++; return reply(); }) as typeof fetch;
+  let calls = 0;
+  let clock = now;
+  const fetcher = (async () => {
+    calls++;
+    return reply();
+  }) as typeof fetch;
   try {
     const model = new SmallModel({ dir, env: {}, fetch: fetcher, clock: () => clock });
     model.configure({ backend: 'api', api, hourlyCap: 2 });
@@ -192,14 +253,23 @@ test('cap, free cache, restart persistence, private files, and cache endpoint/mo
     assert.ok(!refused.ok && refused.refused && /cap reached \(2 per hour\)/.test(refused.error));
     clock += 3600_001;
     assert.equal((await model.submit({ ...question, prompt: 'three' }).result).ok, true);
-    for (const name of ['cache.json', 'calls.json']) assert.equal(fs.statSync(path.join(dir, name)).mode & 0o777, 0o600);
+    for (const name of ['cache.json', 'calls.json'])
+      assert.equal(fs.statSync(path.join(dir, name)).mode & 0o777, 0o600);
     const restarted = new SmallModel({ dir, env: {}, fetch: fetcher, clock: () => clock });
     restarted.configure({ backend: 'api', api, hourlyCap: 100 });
     assert.deepEqual(await restarted.submit(request).result, { ok: true, text: 'answer', cached: true });
     assert.equal(restarted.usage().lastHour, 1);
     restarted.configure({ api: { ...api, key: 'different-synthetic-secret' } });
-    assert.deepEqual(await restarted.submit(request).result, { ok: true, text: 'answer', cached: true }, 'secrets are not cache identity');
-    for (const config of [{ ...api, base: 'http://other.invalid/v1' }, { ...api, model: 'another-model' }, { ...api, reasoning: true }]) {
+    assert.deepEqual(
+      await restarted.submit(request).result,
+      { ok: true, text: 'answer', cached: true },
+      'secrets are not cache identity'
+    );
+    for (const config of [
+      { ...api, base: 'http://other.invalid/v1' },
+      { ...api, model: 'another-model' },
+      { ...api, reasoning: true },
+    ]) {
       restarted.configure({ api: config });
       assert.deepEqual(await restarted.submit(request).result, { ok: true, text: 'answer' });
     }
@@ -210,19 +280,39 @@ test('cap, free cache, restart persistence, private files, and cache endpoint/mo
     const off = await restarted.submit(request).result;
     assert.ok(!off.ok && off.refused);
     assert.notEqual(requestDigest(request), requestDigest({ ...request, prompt: 'other' }));
-    assert.notEqual(requestDigest(request, { backend: 'api', model: 'm' }), requestDigest(request, { backend: 'agy', model: 'm' }));
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    assert.notEqual(
+      requestDigest(request, { backend: 'api', model: 'm' }),
+      requestDigest(request, { backend: 'agy', model: 'm' })
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('off and invalid configuration do not call fetch or spend budget; HTTP, transport, malformed and empty errors', async () => {
   let calls = 0;
-  const model = new SmallModel({ env: {}, fetch: (async () => { calls++; return reply(); }) as typeof fetch });
+  const model = new SmallModel({
+    env: {},
+    fetch: (async () => {
+      calls++;
+      return reply();
+    }) as typeof fetch,
+  });
   assert.ok(!(await model.submit(question).result).ok);
   model.configure({ backend: 'api', api: { ...api, base: 'invalid' } });
-  assert.deepEqual(await model.submit(question).result, { ok: false, error: 'api: invalid endpoint', classification: 'invalid-response' });
-  assert.equal(calls, 0); assert.equal(model.usage().lastHour, 0);
+  assert.deepEqual(await model.submit(question).result, {
+    ok: false,
+    error: 'api: invalid endpoint',
+    classification: 'invalid-response',
+  });
+  assert.equal(calls, 0);
+  assert.equal(model.usage().lastHour, 0);
   for (const [response, expected, classification] of [
-    [new Response('{"error":{"message":"synthetic error"}}', { status: 429 }), 'api HTTP 429: Rate limited', 'rate-limit'],
+    [
+      new Response('{"error":{"message":"synthetic error"}}', { status: 429 }),
+      'api HTTP 429: Rate limited',
+      'rate-limit',
+    ],
     [new Response('not JSON'), 'api: reply is not JSON', 'invalid-response'],
     [new Response('{}'), 'api returned nothing', 'invalid-response'],
   ] as const) {
@@ -230,9 +320,18 @@ test('off and invalid configuration do not call fetch or spend budget; HTTP, tra
     failing.configure({ backend: 'api', api });
     assert.deepEqual(await failing.submit(question).result, { ok: false, error: expected, classification });
   }
-  const failing = new SmallModel({ env: {}, fetch: (async () => { throw new Error('synthetic connection error'); }) as typeof fetch });
+  const failing = new SmallModel({
+    env: {},
+    fetch: (async () => {
+      throw new Error('synthetic connection error');
+    }) as typeof fetch,
+  });
   failing.configure({ backend: 'api', api });
-  assert.deepEqual(await failing.submit(question).result, { ok: false, error: 'api: connection failed', classification: 'network' });
+  assert.deepEqual(await failing.submit(question).result, {
+    ok: false,
+    error: 'api: connection failed',
+    classification: 'network',
+  });
   await tick();
 });
 
@@ -240,7 +339,7 @@ test('public handle lifecycle notifies queued-to-running, holds cancellation slo
   let clock = now;
   const pending: Array<(response: Response) => void> = [];
   // Deliberately ignores abort: cancelling must not open a second network slot.
-  const fetcher = (() => new Promise<Response>(resolve => pending.push(resolve))) as typeof fetch;
+  const fetcher = (() => new Promise<Response>((resolve) => pending.push(resolve))) as typeof fetch;
   const model = new SmallModel({ env: {}, fetch: fetcher, clock: () => clock });
   model.configure({ backend: 'api', api });
   const first = model.submit(question);
@@ -248,7 +347,9 @@ test('public handle lifecycle notifies queued-to-running, holds cancellation slo
   assert.equal(first.status, 'running');
   assert.equal(second.status, 'queued');
   const transitions: string[] = [];
-  second.subscribe(() => { throw new Error('Synthetic broken observer'); });
+  second.subscribe(() => {
+    throw new Error('Synthetic broken observer');
+  });
   const unsubscribe = second.subscribe(() => transitions.push(second.status));
   first.cancel();
   assert.equal(first.status, 'settled');
@@ -271,5 +372,5 @@ test('public handle lifecycle notifies queued-to-running, holds cancellation slo
   assert.equal(cached.generatedAt, now + 1234);
   assert.equal((await cached.result).ok, true);
   assert.equal(pending.length, 2);
-  assert.deepEqual(Object.keys(second).sort(), ['cancel','generatedAt','result','status','subscribe']);
+  assert.deepEqual(Object.keys(second).sort(), ['cancel', 'generatedAt', 'result', 'status', 'subscribe']);
 });

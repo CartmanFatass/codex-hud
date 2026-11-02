@@ -36,10 +36,18 @@ export function codexGoal(codexHome: string, threadId: string, now: number = Dat
       try {
         const row = db.prepare('SELECT objective, status FROM thread_goals WHERE thread_id = ?').all(threadId)[0];
         const objective = typeof row?.objective === 'string' ? row.objective.replace(/\s+/g, ' ').trim() : '';
-        if (objective) goal = { objective: objective.slice(0, OBJECTIVE_CHARS), status: typeof row?.status === 'string' ? row.status : '' };
-      } finally { db.close(); }
+        if (objective)
+          goal = {
+            objective: objective.slice(0, OBJECTIVE_CHARS),
+            status: typeof row?.status === 'string' ? row.status : '',
+          };
+      } finally {
+        db.close();
+      }
     }
-  } catch { goal = null; }
+  } catch {
+    goal = null;
+  }
   memo = { file, thread: threadId, at: now, goal };
   return goal;
 }

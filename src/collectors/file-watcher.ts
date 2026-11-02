@@ -24,7 +24,10 @@ export class FileWatcher {
   private watcher: FSWatcher | null = null;
   private callbacks: FileChangeCallback[] = [];
 
-  constructor(private paths: string[], private options: { usePolling?: boolean } = {}) {}
+  constructor(
+    private paths: string[],
+    private options: { usePolling?: boolean } = {}
+  ) {}
 
   /**
    * Start watching files

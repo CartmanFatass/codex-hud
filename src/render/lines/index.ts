@@ -12,9 +12,9 @@ export { renderProjectLine } from './project-line.js';
 export { renderEnvironmentLine, renderEnvironmentCompact } from './environment-line.js';
 export { renderUsageLine } from './usage-line.js';
 export { renderSessionLine } from './session-line.js';
-export { 
-  renderToolsLine, 
-  renderTodosLine, 
+export {
+  renderToolsLine,
+  renderTodosLine,
   renderTokenLine,
   renderQuotaLine,
   renderSessionDetailLine,

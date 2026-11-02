@@ -35,16 +35,16 @@ function formatDuration(startTime: Date): string {
  */
 function renderCompactEnvironment(data: HudData): string {
   const parts: string[] = [];
-  
+
   if (data.project.agentsMdCount > 0) {
     parts.push(`${data.project.agentsMdCount} AGENTS.md`);
   }
-  
+
   const mcpCount = getMcpServerCount(data.config);
   if (mcpCount > 0) {
     parts.push(`${mcpCount} MCPs`);
   }
-  
+
   return parts.length > 0 ? colors.dim(parts.join(', ')) : '';
 }
 
@@ -55,25 +55,25 @@ function renderCompactEnvironment(data: HudData): string {
 export function renderSessionLine(data: HudData, layout: LayoutConfig): string {
   const sep = ` ${colors.dim(icons.bar)} `;
   const parts: string[] = [];
-  
+
   // Identity (model + context bar)
   parts.push(renderIdentityLine(data, layout));
-  
+
   // Project and git
   parts.push(renderProjectLine(data));
-  
+
   // Compact environment info
   const envInfo = renderCompactEnvironment(data);
   if (envInfo) {
     parts.push(envInfo);
   }
-  
+
   // Duration
   if (layout.showDuration) {
     const startTime = data.session?.startTime ?? data.sessionStart;
     const duration = formatDuration(startTime);
     parts.push(colors.dim(`${icons.clock} ${duration}`));
   }
-  
+
   return parts.join(sep);
 }

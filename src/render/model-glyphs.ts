@@ -60,7 +60,11 @@ export function versionedModelLabel(model?: string | null): string {
   if (!raw) return '';
   const family = classifyModelFamily(raw);
   if (!family) return shortModelLabel(raw);
-  const version = raw.toLowerCase().replace(/^gpt-/, '').match(/^\d+(?:\.\d+)?/)?.[0] ?? '';
+  const version =
+    raw
+      .toLowerCase()
+      .replace(/^gpt-/, '')
+      .match(/^\d+(?:\.\d+)?/)?.[0] ?? '';
   return version ? `${version}${family}` : family;
 }
 
@@ -96,7 +100,7 @@ export function renderModelEffortToken(
   const mode = options.mode ?? displayConfig().glyphs;
   const family = classifyModelFamily(model);
   const effortKey = (effort ?? '').trim().toLowerCase();
-  const effortGlyph = effortKey ? EFFORT_GLYPHS[effortKey] ?? '' : '';
+  const effortGlyph = effortKey ? (EFFORT_GLYPHS[effortKey] ?? '') : '';
 
   // Unknown models have no symbol to show, so they read as text in every mode.
   const familyGlyph = family ? MODEL_GLYPHS[family] : '';
@@ -139,11 +143,18 @@ export function renderModelEffortToken(
  * Text gives up the effort, then itself (no glyph where words were asked
  * for); both gives way to the glyphs; '' when nothing fits.
  */
-export function fitModelEffortToken(model: string | undefined, effort: string | undefined, max: number, mode: ModelTokenOptions['mode'] = displayConfig().glyphs): string {
-  const forms = mode === 'text' ? ['text','text-bare'] : mode === 'glyph' ? ['glyph'] : ['both','glyph'];
+export function fitModelEffortToken(
+  model: string | undefined,
+  effort: string | undefined,
+  max: number,
+  mode: ModelTokenOptions['mode'] = displayConfig().glyphs
+): string {
+  const forms = mode === 'text' ? ['text', 'text-bare'] : mode === 'glyph' ? ['glyph'] : ['both', 'glyph'];
   for (const form of forms) {
-    const token = form === 'text-bare' ? renderModelEffortToken(model, undefined, { mode: 'text' })
-      : renderModelEffortToken(model, effort, { mode: form as ModelTokenOptions['mode'] });
+    const token =
+      form === 'text-bare'
+        ? renderModelEffortToken(model, undefined, { mode: 'text' })
+        : renderModelEffortToken(model, effort, { mode: form as ModelTokenOptions['mode'] });
     if (token && visualLength(token) <= max) return token;
   }
   return '';

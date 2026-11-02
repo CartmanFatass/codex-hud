@@ -34,7 +34,8 @@ const ECHOED = new Set(['agent', 'id', 'path']);
 function strings(value: unknown, out: string[]): void {
   if (typeof value === 'string') out.push(value);
   else if (Array.isArray(value)) for (const item of value) strings(item, out);
-  else if (value && typeof value === 'object') for (const [key, item] of Object.entries(value)) if (!ECHOED.has(key)) strings(item, out);
+  else if (value && typeof value === 'object')
+    for (const [key, item] of Object.entries(value)) if (!ECHOED.has(key)) strings(item, out);
 }
 
 /** The words of a reply a person reads: a JSON reply's string values (fenced or not), else the whole text; code, paths and URLs out. */
@@ -49,7 +50,9 @@ export function replyWords(text: string): string {
       strings(JSON.parse(candidate) as unknown, found);
       words = found.join('\n');
       break;
-    } catch { /* Not JSON: the next candidate, or the text as it is. */ }
+    } catch {
+      /* Not JSON: the next candidate, or the text as it is. */
+    }
   }
   return words
     .replace(/```[\s\S]*?```/g, ' ')
@@ -64,7 +67,8 @@ export function wrongLanguage(text: string, language: Language): boolean {
   const han = count(words, HAN);
   const other = count(words, KANA_HANGUL);
   const latin = count(words, LATIN);
-  if (language === 'zh') return (other >= 4 && other >= 0.2 * (han + other)) || (han === 0 && other === 0 && latin >= 24);
+  if (language === 'zh')
+    return (other >= 4 && other >= 0.2 * (han + other)) || (han === 0 && other === 0 && latin >= 24);
   const cjk = han + other;
   return cjk >= 6 && cjk >= 0.3 * (cjk + latin);
 }

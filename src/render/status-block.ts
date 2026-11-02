@@ -37,7 +37,13 @@ import { t } from './i18n.js';
 export type StatusTone = 'idle' | 'working' | 'error' | 'stale' | 'needs';
 /** The frame's colour for a tone; the meters keep their own. */
 export function tonePaint(tone: StatusTone): (s: string) => string {
-  return tone === 'working' ? theme.info : tone === 'error' ? theme.error : tone === 'stale' || tone === 'needs' ? theme.warning : colors.dim;
+  return tone === 'working'
+    ? theme.info
+    : tone === 'error'
+      ? theme.error
+      : tone === 'stale' || tone === 'needs'
+        ? theme.warning
+        : colors.dim;
 }
 
 export interface StatusCard {
@@ -70,7 +76,7 @@ export interface StatusCard {
    * alone for the one-line card ("7d 99%"). A full window with credits behind
    * it reads the balance instead ("credits 31.8K"), with no mark.
    */
-  quota?: EdgeMeter & {window: string; spent: string; text: string};
+  quota?: EdgeMeter & { window: string; spent: string; text: string };
   /** The other window's reading, a projection of running out, and the soonest reset (in the tick colour). */
   others: string;
   forecast: string;
@@ -93,7 +99,10 @@ const SESSION_STATES = {
  * an agent has failed. Null when nothing has
  * been read. `short` is the same without its glyph, for a tight line.
  */
-export function sessionState(data: HudData | null, nowMs: number = Date.now()): { text: string; short: string; attention: boolean; failed: boolean } | null {
+export function sessionState(
+  data: HudData | null,
+  nowMs: number = Date.now()
+): { text: string; short: string; attention: boolean; failed: boolean } | null {
   if (!data) return null;
   const items = collectAttention(data, nowMs);
   const waiting = items.find((item) => item.kind === 'approval');
@@ -121,14 +130,17 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
 
   // Alerts the edges do not already carry: a full quota is marked on the
   // quota meter, a nearly full context is coloured on its own.
-  const alerts = collectAttention(data, nowMs).filter((item) => item.kind !== 'quota-exhausted' && item.kind !== 'context-critical');
+  const alerts = collectAttention(data, nowMs).filter(
+    (item) => item.kind !== 'quota-exhausted' && item.kind !== 'context-critical'
+  );
   const paintAlert = alerts.some((item) => item.severity === 'error') ? theme.error : theme.warning;
-  const alertRows = alerts.length
-    ? [paintAlert(`! ${alertParts(alerts, nowMs, t).join(' · ')}`)]
-    : [];
+  const alertRows = alerts.length ? [paintAlert(`! ${alertParts(alerts, nowMs, t).join(' · ')}`)] : [];
 
-  const model = renderModelEffortToken(data.session?.model ?? data.config.model,
-    data.session?.reasoningEffort ?? data.config.model_reasoning_effort, { mode: glyphs === 'text' ? 'text' : 'glyph' });
+  const model = renderModelEffortToken(
+    data.session?.model ?? data.config.model,
+    data.session?.reasoningEffort ?? data.config.model_reasoning_effort,
+    { mode: glyphs === 'text' ? 'text' : 'glyph' }
+  );
   const start = data.session?.startTime ?? data.sessionStart;
   const shownAge = start ? colors.dim(age(start, nowMs)) : '';
 
@@ -146,7 +158,8 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
       const running = [...(data.toolActivity?.recentCalls ?? [])].reverse().find((call) => call.status === 'running');
       const started = data.activity?.turnStartedAt;
       // The tool and the turn's clock say it is working; with no tool, the word does.
-      const doing = running ? theme.value(running.name) + (running.target ? colors.dim(`: ${truncate(running.target, 20)}`) : '')
+      const doing = running
+        ? theme.value(running.name) + (running.target ? colors.dim(`: ${truncate(running.target, 20)}`) : '')
         : t(word);
       const clock = started ? formatElapsedShort(started, nowMs) : '';
       state = [paint(glyph), doing, clock ? colors.dim(doing ? `· ${clock}` : clock) : ''].filter(Boolean).join(' ');
@@ -157,8 +170,10 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
 
   const reading = formatTokenRate(data.outputRate, nowMs);
   if (reading) {
-    const previous = status !== 'working' || reading.startsWith('last ') ||
-      (data.outputRate!.sampledAt.getTime() < (data.activity?.turnStartedAt?.getTime() ?? 0));
+    const previous =
+      status !== 'working' ||
+      reading.startsWith('last ') ||
+      data.outputRate!.sampledAt.getTime() < (data.activity?.turnStartedAt?.getTime() ?? 0);
     const value = reading.replace(/^last /, '').replace(/(\.\d)? tok\/s$/, ' tok/s');
     rate = colors.dim(`· ${previous ? t('last {rate}', { rate: value }) : value}`);
   }
@@ -168,7 +183,10 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
   // The project is the card's identity: bold, as the band's mock has it.
   const project = theme.bold(theme.projectName(data.project.projectName));
   const repo = git.repo ? `${colors.dim('› ')}${theme.projectName(git.repo)}` : '';
-  const branch = git.isGitRepo && git.branch ? `${colors.dim('· ')}${theme.gitBranch(`${git.branch}${git.isDirty ? ` ${icons.dirty}` : ''}`)}${sync ? colors.dim(` ${sync}`) : ''}` : '';
+  const branch =
+    git.isGitRepo && git.branch
+      ? `${colors.dim('· ')}${theme.gitBranch(`${git.branch}${git.isDirty ? ` ${icons.dirty}` : ''}`)}${sync ? colors.dim(` ${sync}`) : ''}`
+      : '';
   const place = [project, repo, branch].filter(Boolean).join(' ');
 
   let context: EdgeMeter | undefined;
@@ -176,15 +194,21 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
   if (usage && usage.total > 0) {
     const newer = Math.max(data.activity?.turnStartedAt?.getTime() ?? 0, usage.lastCompactTime?.getTime() ?? 0);
     const pending = data.stale || (newer > 0 && (data.tokenUsageAt?.getTime() ?? 0) < newer);
-    const shown = displayConfig().context === 'remaining' ? t('{n}% left', { n: 100 - usage.percent }) : `${usage.percent}%`;
+    const shown =
+      displayConfig().context === 'remaining' ? t('{n}% left', { n: 100 - usage.percent }) : `${usage.percent}%`;
     const compacted = usage.compactCount > 0 ? ` ${icons.refresh}${usage.compactCount}` : '';
     // The auto-compact point only where Codex's config names it: its default
     // depends on the model and is not written anywhere the HUD reads.
     const limit = data.config.model_auto_compact_token_limit;
-    context = { percent: usage.percent, label: shown, ...(pending ? { mark: colors.dim('~') } : {}),
+    context = {
+      percent: usage.percent,
+      label: shown,
+      ...(pending ? { mark: colors.dim('~') } : {}),
       // The window's size, whole thousands: the meter is the reading, the tail only names its scale.
-      tail: (usage.total >= 1_000_000 ? formatTokenCount(usage.total) : `${Math.round(usage.total / 1000)}K`) + compacted,
-      ...(limit && limit > 0 && limit < usage.total ? { tick: (limit / usage.total) * 100 } : {}) };
+      tail:
+        (usage.total >= 1_000_000 ? formatTokenCount(usage.total) : `${Math.round(usage.total / 1000)}K`) + compacted,
+      ...(limit && limit > 0 && limit < usage.total ? { tick: (limit / usage.total) * 100 } : {}),
+    };
   }
 
   let quota: StatusCard['quota'];
@@ -202,19 +226,53 @@ export function statusCard(data: HudData | null, nowMs: number = Date.now()): St
     const label = credits ? t('credits {n}', { n: formatCredits(credits) }) : undefined;
     const text = `${window ? window + ' ' : ''}${getMeterColor(worst.percent)(label ?? `${worst.percent}%`)}${mark}`;
     quota = { percent: worst.percent, ...(label ? { label } : {}), window, spent: mark, text };
-    others = windows.filter((window) => window !== worst)
-      .map((window) => `${window.label ? colors.dim(window.label) + ' ' : ''}${getMeterColor(window.percent)(`${window.percent}%`)}`).join(' ');
-    const soonest = windows.filter((window) => window.resetsAt && !window.resetDue)
+    others = windows
+      .filter((window) => window !== worst)
+      .map(
+        (window) =>
+          `${window.label ? colors.dim(window.label) + ' ' : ''}${getMeterColor(window.percent)(`${window.percent}%`)}`
+      )
+      .join(' ');
+    const soonest = windows
+      .filter((window) => window.resetsAt && !window.resetDue)
       .sort((a, b) => a.resetsAt!.getTime() - b.resetsAt!.getTime())[0];
     // The reset is the quota meter's scale, as the window size is the context's: the tick colour.
-    reset = soonest ? theme.tick(`↺${formatCountdown(soonest.resetsAt!, nowMs)}`)
-      : windows.some((window) => window.resetDue) ? colors.dim(t('reset due')) : '';
+    reset = soonest
+      ? theme.tick(`↺${formatCountdown(soonest.resetsAt!, nowMs)}`)
+      : windows.some((window) => window.resetDue)
+        ? colors.dim(t('reset due'))
+        : '';
     const projected = data.quotaForecast;
     forecast = projected ? theme.warning(t('out ~{d}', { d: formatCountdown(projected.exhaustAt, nowMs) })) : '';
   }
 
-  const tone: StatusTone = status === 'error' ? 'error' : alerts.length ? 'needs' : status === 'stale' ? 'stale'
-    : status === 'working' ? 'working' : 'idle';
-  return { tone, busy: status === 'working', alerts: alertRows, state, rate, tasks, model, age: shownAge, context, place, project, repo, branch,
-    quota, others, forecast, reset };
+  const tone: StatusTone =
+    status === 'error'
+      ? 'error'
+      : alerts.length
+        ? 'needs'
+        : status === 'stale'
+          ? 'stale'
+          : status === 'working'
+            ? 'working'
+            : 'idle';
+  return {
+    tone,
+    busy: status === 'working',
+    alerts: alertRows,
+    state,
+    rate,
+    tasks,
+    model,
+    age: shownAge,
+    context,
+    place,
+    project,
+    repo,
+    branch,
+    quota,
+    others,
+    forecast,
+    reset,
+  };
 }

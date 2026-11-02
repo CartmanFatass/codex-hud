@@ -7,5 +7,7 @@ export function useDisplayFixture(config: Partial<HudDisplayConfig> = {}): void 
   beforeEach(() => {
     previous = setDisplayConfig({ ...resolveDisplayConfig({}), ...config });
   });
-  afterEach(() => { setDisplayConfig(previous); });
+  afterEach(() => {
+    setDisplayConfig(previous);
+  });
 }

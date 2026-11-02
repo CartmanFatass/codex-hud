@@ -23,7 +23,13 @@ import { monitorText } from './monitor.js';
  * effort, status or clock glyph (≡ is Terra's, so a summary is ∑).
  */
 export const KIND_GLYPHS: Readonly<Record<AgentTaskKind, string>> = {
-  research: '⌕', experiment: '⚗', fix: '⚒', review: '◈', writing: '✎', summary: '∑', other: '',
+  research: '⌕',
+  experiment: '⚗',
+  fix: '⚒',
+  review: '◈',
+  writing: '✎',
+  summary: '∑',
+  other: '',
 };
 
 export interface AgentTitle {
@@ -54,10 +60,20 @@ export function agentTitle(node: SubagentTreeNode, labelAsName = false): AgentTi
   const text = node.task?.replace(/\s+/g, ' ').trim();
   if (labelAsName && labelled(node)) {
     // The label is the name; under it, the task, not the label again.
-    return { ...(icon ? { icon } : {}), name: monitorText(node.label!), ...(text ? { task: monitorText(text) } : {}), renamed: false,
-      original: monitorText(node.name) };
+    return {
+      ...(icon ? { icon } : {}),
+      name: monitorText(node.label!),
+      ...(text ? { task: monitorText(text) } : {}),
+      renamed: false,
+      original: monitorText(node.name),
+    };
   }
   const renamed = labelled(node);
   const task = renamed ? node.label! : text;
-  return { ...(icon ? { icon } : {}), name: monitorText(node.name), ...(task ? { task: monitorText(task) } : {}), renamed };
+  return {
+    ...(icon ? { icon } : {}),
+    name: monitorText(node.name),
+    ...(task ? { task: monitorText(task) } : {}),
+    renamed,
+  };
 }

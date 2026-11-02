@@ -59,9 +59,7 @@ export function clickActionFromSnapshot(json: string, x: number): ClickAction {
     return clickAction(
       segments.filter(
         (segment): segment is ClickSegment =>
-          typeof segment?.id === 'string' &&
-          Number.isFinite(segment?.x) &&
-          Number.isFinite(segment?.width)
+          typeof segment?.id === 'string' && Number.isFinite(segment?.x) && Number.isFinite(segment?.width)
       ),
       x
     );

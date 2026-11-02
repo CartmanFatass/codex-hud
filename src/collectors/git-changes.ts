@@ -29,37 +29,52 @@ const MAX_PREVIEW_LINES = 500;
 
 function git(cwd: string, args: string[], preview = false): Promise<string> {
   return new Promise((resolveOutput, reject) => {
-    execFile('git', ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'color.ui=false',
-      '-c', 'core.quotePath=true', ...args], {
-      cwd,
-      encoding: 'utf8',
-      timeout: 5000,
-      maxBuffer: preview ? MAX_PREVIEW_BYTES : MAX_OUTPUT,
-      windowsHide: true,
-      env: {
-        ...process.env,
-        GIT_OPTIONAL_LOCKS: '0',
-        GIT_LITERAL_PATHSPECS: '1',
-        GIT_TERMINAL_PROMPT: '0',
-        GIT_NO_LAZY_FETCH: '1',
+    execFile(
+      'git',
+      [
+        '--no-optional-locks',
+        '-c',
+        'core.fsmonitor=false',
+        '-c',
+        'color.ui=false',
+        '-c',
+        'core.quotePath=true',
+        ...args,
+      ],
+      {
+        cwd,
+        encoding: 'utf8',
+        timeout: 5000,
+        maxBuffer: preview ? MAX_PREVIEW_BYTES : MAX_OUTPUT,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          GIT_OPTIONAL_LOCKS: '0',
+          GIT_LITERAL_PATHSPECS: '1',
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_NO_LAZY_FETCH: '1',
+        },
       },
-    }, (error, stdout) => {
-      if (error) {
-        if (preview && error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' && stdout) {
-          resolveOutput(`${stdout}\n[Preview truncated]`);
+      (error, stdout) => {
+        if (error) {
+          if (preview && error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' && stdout) {
+            resolveOutput(`${stdout}\n[Preview truncated]`);
+          } else {
+            reject(error);
+          }
         } else {
-          reject(error);
+          resolveOutput(stdout);
         }
-      } else {
-        resolveOutput(stdout);
       }
-    });
+    );
   });
 }
 
 function safeText(text: string): string {
-  return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g,
-    character => `\\x${character.charCodeAt(0).toString(16).padStart(2, '0')}`);
+  return text.replace(
+    /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g,
+    (character) => `\\x${character.charCodeAt(0).toString(16).padStart(2, '0')}`
+  );
 }
 
 type ExecFailure = Error & {
@@ -94,7 +109,9 @@ export function describeGitFailure(error: unknown): string {
   if (isNotAGitRepository(error)) return 'No Git repository';
   if (/permission denied|eacces|eperm/i.test(text)) return 'Git could not read the repository';
   if (/index\.lock|unable to create .*\.lock/i.test(text)) return 'Git is locked by another process';
-  if (/bad object|missing blob|missing object|unable to read [0-9a-f]{4,}|unable to read tree|could not read/i.test(text)) {
+  if (
+    /bad object|missing blob|missing object|unable to read [0-9a-f]{4,}|unable to read tree|could not read/i.test(text)
+  ) {
     return 'Git objects are missing';
   }
   if (/corrupt|broken repository/i.test(text)) return 'Git repository is damaged';
@@ -108,7 +125,13 @@ async function filterOverrides(cwd: string): Promise<string[]> {
   try {
     // Config discovery does not inspect worktree content or invoke filter drivers.
     // Name-only, NUL-delimited output also handles multiline command values safely.
-    output = await git(cwd, ['config', '--null', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|process|required)$']);
+    output = await git(cwd, [
+      'config',
+      '--null',
+      '--name-only',
+      '--get-regexp',
+      '^filter\\..*\\.(clean|process|required)$',
+    ]);
   } catch (error) {
     if ((error as { code?: number }).code === 1) return []; // No matching configuration.
     throw error;
@@ -121,8 +144,13 @@ async function filterOverrides(cwd: string): Promise<string[]> {
     if (!match || match[1].includes('=')) throw new Error('Cannot safely disable configured Git filter');
     names.add(match[1]);
   }
-  return [...names].flatMap(name => [
-    '-c', `filter.${name}.clean=`, '-c', `filter.${name}.process=`, '-c', `filter.${name}.required=false`,
+  return [...names].flatMap((name) => [
+    '-c',
+    `filter.${name}.clean=`,
+    '-c',
+    `filter.${name}.process=`,
+    '-c',
+    `filter.${name}.required=false`,
   ]);
 }
 
@@ -158,8 +186,17 @@ export async function collectGitChanges(cwd: string): Promise<GitChanges> {
     // An untracked directory is one entry, "out/", as `git status` lists it:
     // thousands of generated files one by one would bury the edits. What is
     // in it is the Inspector's to list.
-    const output = await git(result.root, [...overrides, '-c', 'status.renames=true', 'status', '--porcelain=v2',
-      '--branch', '-z', '--untracked-files=normal', '--ignore-submodules=all']);
+    const output = await git(result.root, [
+      ...overrides,
+      '-c',
+      'status.renames=true',
+      'status',
+      '--porcelain=v2',
+      '--branch',
+      '-z',
+      '--untracked-files=normal',
+      '--ignore-submodules=all',
+    ]);
     const records = output.split('\0');
     for (let i = 0; i < records.length; i++) {
       const record = records[i];
@@ -192,7 +229,7 @@ export async function collectGitChanges(cwd: string): Promise<GitChanges> {
         result.files.push(file);
       }
     }
-    const files = new Map(result.files.map(file => [file.path, file]));
+    const files = new Map(result.files.map((file) => [file.path, file]));
     const stats = await Promise.allSettled([
       git(result.root, [...overrides, 'diff', ...DIFF_OPTIONS, '--numstat', '-z', '--cached']),
       git(result.root, [...overrides, 'diff', ...DIFF_OPTIONS, '--numstat', '-z']),
@@ -201,7 +238,7 @@ export async function collectGitChanges(cwd: string): Promise<GitChanges> {
       if (stat.status === 'fulfilled') addNumstat(stat.value, files);
       else result.error = describeGitFailure(stat.reason);
     }
-    if (stats.some(stat => stat.status === 'rejected')) {
+    if (stats.some((stat) => stat.status === 'rejected')) {
       // A partial result must not present missing-object or timeout failures as zero changes.
       for (const file of result.files) {
         file.added = null;
@@ -248,9 +285,12 @@ async function untrackedPreview(root: string, path: string): Promise<string> {
  * repository of its own lists as itself, and git does not look inside it.
  */
 async function untrackedListing(root: string, path: string): Promise<string> {
-  if (!contained(await realpath(root), await realpath(resolve(root, path)))) return '[Preview unavailable: path leaves repository]';
-  const listed = (await git(root, ['ls-files', '--others', '--exclude-standard', '-z', '--', path])).split('\0').filter(Boolean);
-  const files = listed.filter(file => file !== path && file.startsWith(path)).map(file => file.slice(path.length));
+  if (!contained(await realpath(root), await realpath(resolve(root, path))))
+    return '[Preview unavailable: path leaves repository]';
+  const listed = (await git(root, ['ls-files', '--others', '--exclude-standard', '-z', '--', path]))
+    .split('\0')
+    .filter(Boolean);
+  const files = listed.filter((file) => file !== path && file.startsWith(path)).map((file) => file.slice(path.length));
   if (!files.length && listed.length) return '[Preview unavailable: a repository of its own]';
   return [`${files.length} ${files.length === 1 ? 'file' : 'files'}`, ...files].join('\n');
 }
@@ -266,12 +306,14 @@ export async function readDiffHunks(root: string): Promise<string> {
     git(root, [...overrides, 'diff', ...DIFF_OPTIONS, '--unified=1', '--cached'], true),
     git(root, [...overrides, 'diff', ...DIFF_OPTIONS, '--unified=1'], true),
   ]);
-  return safeText([staged.trim() && `Staged\n${staged}`, unstaged.trim() && `Unstaged\n${unstaged}`].filter(Boolean).join('\n'));
+  return safeText(
+    [staged.trim() && `Staged\n${staged}`, unstaged.trim() && `Unstaged\n${unstaged}`].filter(Boolean).join('\n')
+  );
 }
 
 export async function readGitDiff(root: string, file: GitChangedFile): Promise<string[]> {
   const paths = file.previousPath ? [file.path, file.previousPath] : [file.path];
-  if (paths.some(path => !path || isAbsolute(path) || !contained(resolve(root), resolve(root, path)))) {
+  if (paths.some((path) => !path || isAbsolute(path) || !contained(resolve(root), resolve(root, path)))) {
     return ['[Preview unavailable: invalid repository path]'];
   }
   const sections: string[] = [];
@@ -283,7 +325,9 @@ export async function readGitDiff(root: string, file: GitChangedFile): Promise<s
     } else {
       const overrides = await filterOverrides(root);
       if (file.index !== ' ' && file.index !== '.') {
-        sections.push(`Staged\n${await git(root, [...overrides, 'diff', ...DIFF_OPTIONS, '--cached', '--', ...paths], true)}`);
+        sections.push(
+          `Staged\n${await git(root, [...overrides, 'diff', ...DIFF_OPTIONS, '--cached', '--', ...paths], true)}`
+        );
       }
       if (file.worktree !== ' ' && file.worktree !== '.') {
         sections.push(`Unstaged\n${await git(root, [...overrides, 'diff', ...DIFF_OPTIONS, '--', ...paths], true)}`);
@@ -294,9 +338,10 @@ export async function readGitDiff(root: string, file: GitChangedFile): Promise<s
   }
   // Reserve room for every section so a large staged patch cannot hide worktree edits.
   const budget = Math.floor(MAX_PREVIEW_LINES / Math.max(1, sections.length));
-  return sections.flatMap(section => {
-    const lines = safeText(section).split('\n').map(line =>
-      line.length > 2000 ? `${line.slice(0, 2000)} [Line truncated]` : line);
+  return sections.flatMap((section) => {
+    const lines = safeText(section)
+      .split('\n')
+      .map((line) => (line.length > 2000 ? `${line.slice(0, 2000)} [Line truncated]` : line));
     return lines.length > budget ? [...lines.slice(0, budget - 1), '[Preview truncated]'] : lines;
   });
 }

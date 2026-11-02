@@ -7,9 +7,7 @@ const testDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(testDir, '../..');
 const common = fs.readFileSync(path.join(rootDir, 'bin/windows/common.ps1'), 'utf8');
 
-const resolver = common.match(
-  /function Get-RealCodexCommand\s*\{(?<body>[\s\S]*?)\r?\n\}\s*$/
-);
+const resolver = common.match(/function Get-RealCodexCommand\s*\{(?<body>[\s\S]*?)\r?\n\}\s*$/);
 assert.ok(resolver?.groups?.body, 'common.ps1 should define Get-RealCodexCommand');
 
 const body = resolver.groups.body;

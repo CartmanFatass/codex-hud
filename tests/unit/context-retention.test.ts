@@ -12,13 +12,24 @@ import { makeHudData } from '../fixtures/hud-data.js';
 test('the context retains the latest usage through idle polls and partial token updates', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-context-retention-'));
   const file = path.join(dir, 'rollout.jsonl');
-  const event = (payload: Record<string, unknown>) => JSON.stringify({
-    timestamp: new Date().toISOString(), type: 'event_msg', payload,
-  }) + '\n';
+  const event = (payload: Record<string, unknown>) =>
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type: 'event_msg',
+      payload,
+    }) + '\n';
   const usage = { total_tokens: 50000, input_tokens: 49000, output_tokens: 1000 };
-  fs.writeFileSync(file, event({ type: 'token_count', info: {
-    model_context_window: 200000, last_token_usage: usage, total_token_usage: usage,
-  } }));
+  fs.writeFileSync(
+    file,
+    event({
+      type: 'token_count',
+      info: {
+        model_context_window: 200000,
+        last_token_usage: usage,
+        total_token_usage: usage,
+      },
+    })
+  );
   const parser = new RolloutParser();
   parser.setRolloutPath(file);
   const context = async () => {
@@ -41,8 +52,11 @@ test('the context retains the latest usage through idle polls and partial token 
     assert.match(line, / 50K\/200K /, 'the bar reads what the request held against the whole window');
 
     const replay = await parseRolloutFile(file);
-    assert.deepEqual(buildContextUsage(replay.result.tokenUsage ?? undefined, 0, null), initial,
-      'a full replay retains usage exactly like incremental polling');
+    assert.deepEqual(
+      buildContextUsage(replay.result.tokenUsage ?? undefined, 0, null),
+      initial,
+      'a full replay retains usage exactly like incremental polling'
+    );
 
     fs.appendFileSync(file, event({ type: 'token_count', info: { last_token_usage: { total_tokens: 10000 } } }));
     assert.equal((await context())?.used, 0, 'new measurements replace old usage, including decreases');
@@ -58,28 +72,47 @@ test('the context retains the latest usage through idle polls and partial token 
 test('plan progress remains visible after tool-only or idle updates', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-plan-retention-'));
   const file = path.join(dir, 'rollout.jsonl');
-  const event = (payload: Record<string, unknown>) => JSON.stringify({timestamp: new Date().toISOString(), type:'event_msg', payload}) + '\n';
+  const event = (payload: Record<string, unknown>) =>
+    JSON.stringify({ timestamp: new Date().toISOString(), type: 'event_msg', payload }) + '\n';
   try {
-    fs.writeFileSync(file, event({type:'plan_update', plan:[{step:'Run checks',status:'in_progress'}]}));
-    const parser = new RolloutParser(); parser.setRolloutPath(file);
+    fs.writeFileSync(file, event({ type: 'plan_update', plan: [{ step: 'Run checks', status: 'in_progress' }] }));
+    const parser = new RolloutParser();
+    parser.setRolloutPath(file);
     const first = await parser.parse();
     assert.equal(first?.planProgress?.totalSteps, 1);
-    fs.appendFileSync(file, event({type:'token_count',info:null}));
+    fs.appendFileSync(file, event({ type: 'token_count', info: null }));
     assert.deepEqual((await parser.parse())?.planProgress, first?.planProgress);
     assert.deepEqual((await parser.parse())?.planProgress, first?.planProgress);
-  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('check commands retain arguments and report nonzero exit codes as failures', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-command-results-'));
   const file = path.join(dir, 'rollout.jsonl');
-  const event = (payload: Record<string, unknown>) => JSON.stringify({timestamp:new Date().toISOString(), type:'response_item',payload}) + '\n';
+  const event = (payload: Record<string, unknown>) =>
+    JSON.stringify({ timestamp: new Date().toISOString(), type: 'response_item', payload }) + '\n';
   try {
-    fs.writeFileSync(file, event({type:'function_call',name:'exec_command',call_id:'check',arguments:JSON.stringify({cmd:'npm test'})}) +
-      event({type:'function_call_output',call_id:'check',output:JSON.stringify({exit_code:1,output:'1 failing test'})}));
+    fs.writeFileSync(
+      file,
+      event({
+        type: 'function_call',
+        name: 'exec_command',
+        call_id: 'check',
+        arguments: JSON.stringify({ cmd: 'npm test' }),
+      }) +
+        event({
+          type: 'function_call_output',
+          call_id: 'check',
+          output: JSON.stringify({ exit_code: 1, output: '1 failing test' }),
+        })
+    );
     const result = (await parseRolloutFile(file)).result;
     const call = result.toolActivity.recentCalls[0];
     assert.equal(call.arguments?.cmd, 'npm test');
     assert.equal(call.status, 'error');
-  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

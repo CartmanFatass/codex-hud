@@ -55,22 +55,38 @@ export async function dryRunText(options: DryRunOptions): Promise<{ text: string
   log.observe(tree);
   // The digests already written stand in for answers, as in the panel once a backend is chosen.
   // Nothing is asked for: apply only reads, and the model is never configured (off, no cache).
-  new ModelJobs({ model: new SmallModel(), log }).apply(tree, { ...NO_JOBS, resultDigest: settings.resultDigest }, language);
+  new ModelJobs({ model: new SmallModel(), log }).apply(
+    tree,
+    { ...NO_JOBS, resultDigest: settings.resultDigest },
+    language
+  );
   const chosen = briefingScope(settings);
   const scope = chosen ?? 'agents';
   const recap = scope !== 'agents' ? new RecapStore(path.join(options.hudHome, 'recaps')).load(rootId) : null;
   // As the panel sends it: what a model wrote in another language is not handed back.
   const logs = logsIn(log.snapshot(), language);
   const same = recap?.language === language;
-  const material = briefMaterial(tree, { scope, language, main, recap, logs, labels: settings.agentLabels,
-    roles: roleSet(settings.importantRoles), goal: scope !== 'agents' ? codexGoal(options.codexHome, rootId, now) : null,
-    since: (same ? recap?.at : undefined) ?? lastNoteAt(tree, logs), overall: same ? recap?.overall : undefined, now });
+  const material = briefMaterial(tree, {
+    scope,
+    language,
+    main,
+    recap,
+    logs,
+    labels: settings.agentLabels,
+    roles: roleSet(settings.importantRoles),
+    goal: scope !== 'agents' ? codexGoal(options.codexHome, rootId, now) : null,
+    since: (same ? recap?.at : undefined) ?? lastNoteAt(tree, logs),
+    overall: same ? recap?.overall : undefined,
+    now,
+  });
   if (!material) return { error: 'Nothing to brief yet: no agents, and nothing said in the main session' };
   const { system, prompt } = material.write();
   const notes = [
     `# codex-hud brief --dry-run: what the panel would send now. Nothing was sent.`,
     `# session ${rootId}, scope ${scope}, language ${language}, backend ${settings.briefing}`,
-    ...(settings.briefing === 'off' ? ['# The brief is off in Settings: this is what it would send once a backend is chosen.'] : []),
+    ...(settings.briefing === 'off'
+      ? ['# The brief is off in Settings: this is what it would send once a backend is chosen.']
+      : []),
     ...(chosen ? [] : ['# Neither Agents brief nor Main recap is on in Settings: shown with Agents brief.']),
     `# instructions ${kb(system)}, material ${kb(prompt)}, ${kb(system + prompt)} in all (budget ${REPORT_BYTES / 1024} KB)`,
   ];

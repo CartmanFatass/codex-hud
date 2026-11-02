@@ -78,9 +78,8 @@ export function isExpired(node: SubagentTreeNode, state: PanelState, nowMs: numb
   if (node.status !== 'completed' && node.status !== 'unknown') {
     return false;
   }
-  const settled = node.status === 'completed'
-    ? node.statusAt ?? node.lastEventAt
-    : node.lastEventAt ?? node.statusAt;
+  const settled =
+    node.status === 'completed' ? (node.statusAt ?? node.lastEventAt) : (node.lastEventAt ?? node.statusAt);
   const at = settled?.getTime();
   return at === undefined || !Number.isFinite(at) || nowMs - at > state.lingerMs;
 }
@@ -101,8 +100,11 @@ function folded(node: SubagentTreeNode): boolean {
 /** The guardian reviews directly under `nodes`, whether one is running now, and how many failed. */
 export function guardianCount(nodes: readonly SubagentTreeNode[]): { count: number; running: boolean; failed: number } {
   const guardians = nodes.filter(isGuardian);
-  return { count: guardians.length, running: guardians.some(node => node.status === 'running' || node.status === 'starting'),
-    failed: guardians.filter(node => node.status === 'error').length };
+  return {
+    count: guardians.length,
+    running: guardians.some((node) => node.status === 'running' || node.status === 'starting'),
+    failed: guardians.filter((node) => node.status === 'error').length,
+  };
 }
 
 function ownMatch(node: SubagentTreeNode, state: PanelState, nowMs: number): boolean {
@@ -133,7 +135,7 @@ function orderedSiblings(nodes: SubagentTreeNode[], mode: PanelState['sort']): S
   const priority = (node: SubagentTreeNode): { rank: number; started: number } => {
     const active = node.status === 'running' || node.status === 'starting';
     let rank = active ? 0 : node.status === 'error' ? 1 : node.status === 'unknown' ? 2 : 3;
-    let started = active ? (node.turnStartedAt ?? node.startedAt)?.getTime() ?? 0 : 0;
+    let started = active ? ((node.turnStartedAt ?? node.startedAt)?.getTime() ?? 0) : 0;
     for (const child of node.children) {
       const sub = priority(child);
       rank = Math.min(rank, sub.rank);
@@ -141,7 +143,7 @@ function orderedSiblings(nodes: SubagentTreeNode[], mode: PanelState['sort']): S
     }
     return { rank, started };
   };
-  const ranks = new Map(nodes.map(node => [node.id, priority(node)]));
+  const ranks = new Map(nodes.map((node) => [node.id, priority(node)]));
   return [...nodes].sort((a, b) => {
     if (mode === 'active') {
       const aa = ranks.get(a.id)!;
@@ -165,7 +167,10 @@ export function visibleRows(nodes: SubagentTreeNode[], state: PanelState, nowMs:
   const rows: PanelRow[] = [];
 
   const walk = (items: SubagentTreeNode[], depth: number, prefix: string, parentId: string | null): void => {
-    const shown = orderedSiblings(items.filter((node) => subtreeMatches(node, state, nowMs)), state.sort);
+    const shown = orderedSiblings(
+      items.filter((node) => subtreeMatches(node, state, nowMs)),
+      state.sort
+    );
     shown.forEach((node, index) => {
       const isLast = index === shown.length - 1;
       const branch = depth === 0 ? '' : isLast ? '└─ ' : '├─ ';
@@ -209,11 +214,7 @@ function containsId(nodes: SubagentTreeNode[], id: string): boolean {
  * selection, so toggling a filter back restores what the reader was looking
  * at. Only an agent that has left the tree entirely gives it up.
  */
-export function reconcileSelection(
-  state: PanelState,
-  nodes: SubagentTreeNode[],
-  rows: PanelRow[]
-): PanelState {
+export function reconcileSelection(state: PanelState, nodes: SubagentTreeNode[], rows: PanelRow[]): PanelState {
   if (state.selectedId && containsId(nodes, state.selectedId)) {
     return state;
   }

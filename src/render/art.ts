@@ -29,9 +29,18 @@ export interface ArtBitmap {
 export const MIN_ART_ROWS = 6;
 const MAX_ART_ROWS = 28;
 const RAMP = ' .:-=+*#%@';
-const BRAILLE_BITS = [[0x01, 0x08], [0x02, 0x10], [0x04, 0x20], [0x40, 0x80]];
+const BRAILLE_BITS = [
+  [0x01, 0x08],
+  [0x02, 0x10],
+  [0x04, 0x20],
+  [0x40, 0x80],
+];
 
-interface Prepared { lum: Float32Array; alpha: Float32Array; threshold: number }
+interface Prepared {
+  lum: Float32Array;
+  alpha: Float32Array;
+  threshold: number;
+}
 const prepared = new WeakMap<ArtBitmap, Prepared>();
 const drawn = new WeakMap<ArtBitmap, Map<string, string[]>>();
 
@@ -46,7 +55,7 @@ function prepare(bitmap: ArtBitmap): Prepared {
     const [r, g, b, a] = bitmap.data.subarray(i * 4, i * 4 + 4);
     alpha[i] = a / 255;
     // Transparent reads as white: background.
-    lum[i] = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 * alpha[i] + (1 - alpha[i]);
+    lum[i] = ((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255) * alpha[i] + (1 - alpha[i]);
     if (alpha[i] > 0.5) histogram[Math.round(lum[i] * 255)]++;
   }
   // Halfway between the dark population's mean and the split, rather than at
@@ -65,7 +74,11 @@ function otsu(histogram: number[]): { split: number; meanBelow: number } {
   if (!total) return { split: 127, meanBelow: 127 };
   let sum = 0;
   for (let i = 0; i < 256; i++) sum += i * histogram[i];
-  let below = 0, sumBelow = 0, best = -1, split = 127, splitMean = 127;
+  let below = 0,
+    sumBelow = 0,
+    best = -1,
+    split = 127,
+    splitMean = 127;
   for (let i = 0; i < 256; i++) {
     below += histogram[i];
     if (!below || below === total) continue;
@@ -73,7 +86,11 @@ function otsu(histogram: number[]): { split: number; meanBelow: number } {
     const meanBelow = sumBelow / below;
     const meanAbove = (sum - sumBelow) / (total - below);
     const between = below * (total - below) * (meanBelow - meanAbove) ** 2;
-    if (between > best) { best = between; split = i; splitMean = meanBelow; }
+    if (between > best) {
+      best = between;
+      split = i;
+      splitMean = meanBelow;
+    }
   }
   return { split, meanBelow: splitMean };
 }
@@ -92,19 +109,41 @@ export function artSize(bitmap: ArtBitmap, maxCols: number, maxRows: number): { 
 }
 
 /** Average of the bitmap over a box in its own pixels, with the dark pixels' colour. */
-function sample(bitmap: ArtBitmap, p: Prepared, x0: number, y0: number, x1: number, y1: number): { lum: number; dark: number; rgb: [number, number, number] | null } {
-  const xa = Math.max(0, Math.floor(x0)), xb = Math.min(bitmap.width, Math.max(xa + 1, Math.ceil(x1)));
-  const ya = Math.max(0, Math.floor(y0)), yb = Math.min(bitmap.height, Math.max(ya + 1, Math.ceil(y1)));
-  let lum = 0, count = 0, dark = 0, r = 0, g = 0, b = 0;
-  for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
-    const i = y * bitmap.width + x;
-    lum += p.lum[i]; count++;
-    if (p.lum[i] < p.threshold && p.alpha[i] > 0.5) {
-      dark++;
-      r += bitmap.data[i * 4]; g += bitmap.data[i * 4 + 1]; b += bitmap.data[i * 4 + 2];
+function sample(
+  bitmap: ArtBitmap,
+  p: Prepared,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number
+): { lum: number; dark: number; rgb: [number, number, number] | null } {
+  const xa = Math.max(0, Math.floor(x0)),
+    xb = Math.min(bitmap.width, Math.max(xa + 1, Math.ceil(x1)));
+  const ya = Math.max(0, Math.floor(y0)),
+    yb = Math.min(bitmap.height, Math.max(ya + 1, Math.ceil(y1)));
+  let lum = 0,
+    count = 0,
+    dark = 0,
+    r = 0,
+    g = 0,
+    b = 0;
+  for (let y = ya; y < yb; y++)
+    for (let x = xa; x < xb; x++) {
+      const i = y * bitmap.width + x;
+      lum += p.lum[i];
+      count++;
+      if (p.lum[i] < p.threshold && p.alpha[i] > 0.5) {
+        dark++;
+        r += bitmap.data[i * 4];
+        g += bitmap.data[i * 4 + 1];
+        b += bitmap.data[i * 4 + 2];
+      }
     }
-  }
-  return { lum: count ? lum / count : 1, dark: count ? dark / count : 0, rgb: dark ? [r / dark, g / dark, b / dark] : null };
+  return {
+    lum: count ? lum / count : 1,
+    dark: count ? dark / count : 0,
+    rgb: dark ? [r / dark, g / dark, b / dark] : null,
+  };
 }
 
 /**
@@ -122,13 +161,17 @@ function visible([r, g, b]: [number, number, number]): string {
 export function renderArt(bitmap: ArtBitmap, style: Exclude<ArtStyle, 'off'>, cols: number, rows: number): string[] {
   const key = `${style}:${cols}x${rows}`;
   let cache = drawn.get(bitmap);
-  if (!cache) { cache = new Map(); drawn.set(bitmap, cache); }
+  if (!cache) {
+    cache = new Map();
+    drawn.set(bitmap, cache);
+  }
   const hit = cache.get(key);
   if (hit) return hit;
   const p = prepare(bitmap);
   const lines: string[] = [];
   if (style === 'ascii') {
-    const cw = bitmap.width / cols, ch = bitmap.height / rows;
+    const cw = bitmap.width / cols,
+      ch = bitmap.height / rows;
     for (let row = 0; row < rows; row++) {
       let line = '';
       for (let col = 0; col < cols; col++) {
@@ -140,16 +183,19 @@ export function renderArt(bitmap: ArtBitmap, style: Exclude<ArtStyle, 'off'>, co
       lines.push(colors.dim(line.replace(/\s+$/, '')));
     }
   } else {
-    const dw = bitmap.width / (cols * 2), dh = bitmap.height / (rows * 4);
+    const dw = bitmap.width / (cols * 2),
+      dh = bitmap.height / (rows * 4);
     for (let row = 0; row < rows; row++) {
       let line = '';
       let pending = '';
       for (let col = 0; col < cols; col++) {
         let bits = 0;
-        for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 2; dx++) {
-          const x = col * 2 + dx, y = row * 4 + dy;
-          if (sample(bitmap, p, x * dw, y * dh, (x + 1) * dw, (y + 1) * dh).dark >= 0.5) bits |= BRAILLE_BITS[dy][dx];
-        }
+        for (let dy = 0; dy < 4; dy++)
+          for (let dx = 0; dx < 2; dx++) {
+            const x = col * 2 + dx,
+              y = row * 4 + dy;
+            if (sample(bitmap, p, x * dw, y * dh, (x + 1) * dw, (y + 1) * dh).dark >= 0.5) bits |= BRAILLE_BITS[dy][dx];
+          }
         // A blank braille cell is drawn as a space, so a terminal that lacks
         // the glyph shows nothing there rather than a box.
         const glyph = bits ? String.fromCharCode(0x2800 + bits) : ' ';
@@ -157,7 +203,10 @@ export function renderArt(bitmap: ArtBitmap, style: Exclude<ArtStyle, 'off'>, co
           const { rgb } = sample(bitmap, p, col * 2 * dw, row * 4 * dh, (col + 1) * 2 * dw, (row + 1) * 4 * dh);
           line += pending + (rgb ? `${visible(rgb)}${glyph}\x1b[39m` : glyph);
           pending = '';
-        } else if (bits) { line += pending + glyph; pending = ''; } else pending += ' ';
+        } else if (bits) {
+          line += pending + glyph;
+          pending = '';
+        } else pending += ' ';
       }
       lines.push(style === 'color' ? line : colors.dim(line));
     }

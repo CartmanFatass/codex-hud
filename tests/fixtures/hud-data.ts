@@ -19,7 +19,6 @@ import type {
   TokenUsageInfo,
 } from '../../src/types.js';
 
-
 export const FIXED_NOW = new Date('2026-03-01T12:00:00.000Z');
 
 export function at(offsetSeconds: number): Date {
@@ -100,9 +99,33 @@ export function makeToolActivity(): ToolActivity {
 
 export function makeSubagents(): SubagentInfo[] {
   return [
-    { id: 'agent-aaa1', name: 'explorer', status: 'running', startedAt: at(-300), model: 'gpt-5.6-astra', effort: 'high', lastActivityAt: at(-3) },
-    { id: 'agent-bbb2', name: 'reviewer', status: 'completed', startedAt: at(-600), model: 'gpt-5.6-sol', effort: 'medium', lastActivityAt: at(-120) },
-    { id: 'agent-ccc3', name: '代码审查员', status: 'error', startedAt: at(-500), model: 'gpt-5.6-luna', effort: 'low', lastActivityAt: at(-200) },
+    {
+      id: 'agent-aaa1',
+      name: 'explorer',
+      status: 'running',
+      startedAt: at(-300),
+      model: 'gpt-5.6-astra',
+      effort: 'high',
+      lastActivityAt: at(-3),
+    },
+    {
+      id: 'agent-bbb2',
+      name: 'reviewer',
+      status: 'completed',
+      startedAt: at(-600),
+      model: 'gpt-5.6-sol',
+      effort: 'medium',
+      lastActivityAt: at(-120),
+    },
+    {
+      id: 'agent-ccc3',
+      name: '代码审查员',
+      status: 'error',
+      startedAt: at(-500),
+      model: 'gpt-5.6-luna',
+      effort: 'low',
+      lastActivityAt: at(-200),
+    },
   ];
 }
 
@@ -132,8 +155,7 @@ export function node(
 }
 
 export function treeOf(nodes: SubagentTreeNode[], rootId = 'root-session-id'): SubagentTree {
-  const count = (items: SubagentTreeNode[]): number =>
-    items.reduce((sum, item) => sum + 1 + count(item.children), 0);
+  const count = (items: SubagentTreeNode[]): number => items.reduce((sum, item) => sum + 1 + count(item.children), 0);
   return { rootId, nodes, totalCount: count(nodes), updatedAt: FIXED_NOW };
 }
 

@@ -14,13 +14,9 @@ import { buildContextUsage } from '../../collectors/context-usage.js';
  * Render the identity line
  * Format: ☀◐ █████░░░░░ 45%
  */
-export function renderIdentityLine(
-  data: HudData,
-  layout: LayoutConfig,
-  options: { maxWidth?: number } = {}
-): string {
+export function renderIdentityLine(data: HudData, layout: LayoutConfig, options: { maxWidth?: number } = {}): string {
   const parts: string[] = [];
-  
+
   const modelName = data.session?.model ?? getModelDisplayName(data.config);
   const reasoningEffort = data.session?.reasoningEffort ?? data.config.model_reasoning_effort;
   const identityToken = renderModelEffortToken(modelName, reasoningEffort);
@@ -52,7 +48,7 @@ export function renderIdentityLine(
   if (contextDisplay) {
     parts.push(contextDisplay);
   }
-  
+
   const line = parts.join(' ');
   return maxWidth ? truncateAnsi(line, maxWidth) : line;
 }

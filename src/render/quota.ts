@@ -83,10 +83,7 @@ export function formatCountdown(target: Date, nowMs: number): string {
   return `${seconds}s`;
 }
 
-export function readQuotaWindows(
-  limits: RateLimitSnapshot | undefined | null,
-  nowMs: number
-): QuotaWindow[] {
+export function readQuotaWindows(limits: RateLimitSnapshot | undefined | null, nowMs: number): QuotaWindow[] {
   if (!limits) {
     return [];
   }
@@ -134,7 +131,10 @@ export function formatCredits(credits: QuotaCredits): string {
  * cut the account off, or a window is full with no credits behind it;
  * `credits` when a window is full and the credits carry on.
  */
-export function quotaState(limits: RateLimitSnapshot | undefined | null, windows: readonly QuotaWindow[]): {spent: boolean; credits: QuotaCredits | null} {
+export function quotaState(
+  limits: RateLimitSnapshot | undefined | null,
+  windows: readonly QuotaWindow[]
+): { spent: boolean; credits: QuotaCredits | null } {
   const reached = Boolean(limits?.rate_limit_reached_type);
   const full = windows.some((window) => window.percent >= 100);
   const credits = full && !reached ? readCredits(limits) : null;

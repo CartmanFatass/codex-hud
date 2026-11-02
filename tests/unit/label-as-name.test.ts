@@ -123,7 +123,7 @@ test("cards and rows show the label in the name's place; closed, no task line un
 });
 
 test('an opened card and the Inspector keep the name Codex prints', () => {
-  const opened = draw(state(true, {cardVisibility:{cardOriginalName:true}}));
+  const opened = draw(state(true, { cardVisibility: { cardOriginalName: true } }));
   assert.ok(
     opened.some((line) => line.trimEnd() === '│ name cache_cleanup_reviewer'),
     opened.join('\n')
@@ -199,15 +199,29 @@ test("a finished row's brief line, under its label", () => {
   assert.equal(lines[at + 1].trimEnd(), '│ socket 检查改为 stat()');
 });
 
- test('card label visibility is local: Codex names for L1 and child, smart names remain in other views', () => {
-  const child = agent(8,'original_child',{depth:2,label:'smart_child',taskKind:'review'});
-  const lead = {...labelled,children:[child]};
+test('card label visibility is local: Codex names for L1 and child, smart names remain in other views', () => {
+  const child = agent(8, 'original_child', { depth: 2, label: 'smart_child', taskKind: 'review' });
+  const lead = { ...labelled, children: [child] };
   const agents = tree([lead]);
-  const frame = renderMonitor({tree:agents,state:state(true,{cardVisibility:{cardLabel:false,cardOriginalName:true}}),width:56,height:44,nowMs:now});
+  const frame = renderMonitor({
+    tree: agents,
+    state: state(true, { cardVisibility: { cardLabel: false, cardOriginalName: true } }),
+    width: 56,
+    height: 44,
+    nowMs: now,
+  });
   const text = frame.lines.map(stripAnsi).join('\n');
   assert.ok(text.includes('cache_cleanup_reviewer') && text.includes('original_child'));
-  assert.ok(!/缓存清理复核|smart_child|name cache_cleanup/.test(text),text);
-  assert.equal(agentTitle(lead,true).name,'缓存清理复核');
-  const compact = renderMonitor({tree:agents,state:{...frame.state,style:'compact'},width:56,height:44,nowMs:now}).lines.map(stripAnsi).join('\n');
+  assert.ok(!/缓存清理复核|smart_child|name cache_cleanup/.test(text), text);
+  assert.equal(agentTitle(lead, true).name, '缓存清理复核');
+  const compact = renderMonitor({
+    tree: agents,
+    state: { ...frame.state, style: 'compact' },
+    width: 56,
+    height: 44,
+    nowMs: now,
+  })
+    .lines.map(stripAnsi)
+    .join('\n');
   assert.ok(compact.includes('缓存清理复核'));
- });
+});

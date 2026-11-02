@@ -39,17 +39,26 @@ test('an agent with no observed events is neither running nor done', () => {
 test('collapsing a branch hides its descendants', () => {
   const tree = makeNestedTree();
   const open = visibleRows(tree.nodes, stateWith());
-  assert.deepEqual(open.map((row) => row.node.id), ['a1', 'a1b1', 'a1b2', 'a1b2c1', 'a2', 'a3']);
+  assert.deepEqual(
+    open.map((row) => row.node.id),
+    ['a1', 'a1b1', 'a1b2', 'a1b2c1', 'a2', 'a3']
+  );
 
   const folded = visibleRows(tree.nodes, stateWith({ collapsed: new Set(['a1']) }));
-  assert.deepEqual(folded.map((row) => row.node.id), ['a1', 'a2', 'a3']);
+  assert.deepEqual(
+    folded.map((row) => row.node.id),
+    ['a1', 'a2', 'a3']
+  );
 });
 
 test('a filter keeps the ancestors that locate a match', () => {
   const tree = makeNestedTree();
   const rows = visibleRows(tree.nodes, stateWith({ filter: 'failed' }));
 
-  assert.deepEqual(rows.map((row) => row.node.id), ['a1', 'a1b2']);
+  assert.deepEqual(
+    rows.map((row) => row.node.id),
+    ['a1', 'a1b2']
+  );
   assert.equal(rows[0].context, true, 'the parent is shown only as context');
   assert.equal(rows[1].context, false, 'the failing agent is the match');
 });

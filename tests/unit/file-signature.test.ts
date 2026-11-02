@@ -17,7 +17,7 @@ function workspace(t: { after(fn: () => void): void }): string {
   return root;
 }
 
-test('an append changes the signature', t => {
+test('an append changes the signature', (t) => {
   const file = join(workspace(t), 'rollout.jsonl');
   writeFileSync(file, 'one\n');
   const before = fileSignature(file);
@@ -27,13 +27,13 @@ test('an append changes the signature', t => {
   assert.notEqual(fileSignature(file), before);
 });
 
-test('a still file keeps the same signature', t => {
+test('a still file keeps the same signature', (t) => {
   const file = join(workspace(t), 'rollout.jsonl');
   writeFileSync(file, 'one\n');
   assert.equal(fileSignature(file), fileSignature(file));
 });
 
-test('a rename-over of identical content still changes the signature', t => {
+test('a rename-over of identical content still changes the signature', (t) => {
   const root = workspace(t);
   const file = join(root, 'rollout.jsonl');
   const replacement = join(root, 'replacement.jsonl');
@@ -47,6 +47,6 @@ test('a rename-over of identical content still changes the signature', t => {
   assert.notEqual(fileSignature(file), before);
 });
 
-test('a missing file has no signature', t => {
+test('a missing file has no signature', (t) => {
   assert.equal(fileSignature(join(workspace(t), 'absent.jsonl')), null);
 });

@@ -155,8 +155,20 @@ const runtimeOverridesSessionLine = stripAnsi(
 assert.match(runtimeOverridesSessionLine, /mode: plan/, 'runtime state should override stale rollout mode');
 assert.match(runtimeOverridesSessionLine, /Approval: auto/, 'runtime state should override stale rollout approval');
 assert.match(runtimeOverridesSessionLine, /Sandbox: DANGER/, 'runtime state should override stale rollout sandbox');
-assert.doesNotMatch(runtimeOverridesSessionLine, /mode: default/, 'stale rollout mode should not win over runtime state');
-assert.doesNotMatch(runtimeOverridesSessionLine, /Approval: on-req/, 'stale rollout approval should not win over runtime state');
-assert.doesNotMatch(runtimeOverridesSessionLine, /Sandbox: ws-write/, 'stale rollout sandbox should not win over runtime state');
+assert.doesNotMatch(
+  runtimeOverridesSessionLine,
+  /mode: default/,
+  'stale rollout mode should not win over runtime state'
+);
+assert.doesNotMatch(
+  runtimeOverridesSessionLine,
+  /Approval: on-req/,
+  'stale rollout approval should not win over runtime state'
+);
+assert.doesNotMatch(
+  runtimeOverridesSessionLine,
+  /Sandbox: ws-write/,
+  'stale rollout sandbox should not win over runtime state'
+);
 
 console.log('test-environment-line-runtime-state: PASS');

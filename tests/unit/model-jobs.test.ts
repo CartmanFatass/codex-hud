@@ -5,9 +5,32 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  ModelJobs, NO_JOBS, headTail, tail, finalAnswer, errorMaterial, digestPrompt, parseDigest, digestText, labelKey, labelSource, labelsPrompt,
-  parseLabels, labelsSystemPrompt, titleFromGoal, oneLine, changeSummaryInput, changeFingerprint, twoLines, isVerdict, approvalSystemPrompt,
-  DIGEST_INPUT_CHARS, CHANGE_HUNK_CHARS, RETRY_MS, type JobSwitches, type JobsInput,
+  ModelJobs,
+  NO_JOBS,
+  headTail,
+  tail,
+  finalAnswer,
+  errorMaterial,
+  digestPrompt,
+  parseDigest,
+  digestText,
+  labelKey,
+  labelSource,
+  labelsPrompt,
+  parseLabels,
+  labelsSystemPrompt,
+  titleFromGoal,
+  oneLine,
+  changeSummaryInput,
+  changeFingerprint,
+  twoLines,
+  isVerdict,
+  approvalSystemPrompt,
+  DIGEST_INPUT_CHARS,
+  CHANGE_HUNK_CHARS,
+  RETRY_MS,
+  type JobSwitches,
+  type JobsInput,
 } from '../../src/collectors/model-jobs.js';
 import { AgentLog } from '../../src/collectors/agent-log.js';
 import { RESULT_RAW_CHARS } from '../../src/collectors/agent-stages.js';
@@ -24,26 +47,64 @@ import { makeHudData, FIXED_NOW } from '../fixtures/hud-data.js';
 
 const now = Date.parse('2026-10-01T10:00:00Z');
 const iso = (ms: number) => new Date(ms).toISOString();
-const node = (id: string, name: string, status: SubagentTreeNode['status'], extra: Partial<SubagentTreeNode> = {}): SubagentTreeNode =>
-  ({ id, name, status, depth: 1, children: [], ...extra });
-const tree = (nodes: SubagentTreeNode[], rootId = 'root-1'): SubagentTree => ({ rootId, nodes, totalCount: nodes.length, updatedAt: new Date(now) });
+const node = (
+  id: string,
+  name: string,
+  status: SubagentTreeNode['status'],
+  extra: Partial<SubagentTreeNode> = {}
+): SubagentTreeNode => ({ id, name, status, depth: 1, children: [], ...extra });
+const tree = (nodes: SubagentTreeNode[], rootId = 'root-1'): SubagentTree => ({
+  rootId,
+  nodes,
+  totalCount: nodes.length,
+  updatedAt: new Date(now),
+});
 const line = (value: unknown) => JSON.stringify(value);
-const answer = (text: string, at: number, extra: Record<string, unknown> = {}) => line({ timestamp: iso(at), type: 'response_item',
-  payload: { type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text }], ...extra } });
+const answer = (text: string, at: number, extra: Record<string, unknown> = {}) =>
+  line({
+    timestamp: iso(at),
+    type: 'response_item',
+    payload: {
+      type: 'message',
+      role: 'assistant',
+      phase: 'final_answer',
+      content: [{ type: 'output_text', text }],
+      ...extra,
+    },
+  });
 
 /** A fake model: answers by feature, records every request. Never a real call. */
 function fakeModel(reply: (request: ModelRequest) => ModelResult): { model: SmallModel; asked: ModelRequest[] } {
   const asked: ModelRequest[] = [];
   const model = {
     configure() {},
-    submit(request: ModelRequest) { asked.push(request); return { result: Promise.resolve(reply(request)), cancel() {} }; },
+    submit(request: ModelRequest) {
+      asked.push(request);
+      return { result: Promise.resolve(reply(request)), cancel() {} };
+    },
   } as unknown as SmallModel;
   return { model, asked };
 }
-const settle = async () => { for (let i = 0; i < 3; i++) await new Promise(resolve => setTimeout(resolve, 15)); };
-const all: JobSwitches = { resultDigest: true, agentLabels: true, failureCause: true, changeSummary: true, approvalDescription: true };
-const input = (t: SubagentTree, extra: Partial<JobsInput> = {}): JobsInput => ({ tree: t, main: null, switches: all, language: 'en', on: true,
-  digestLabels: { basis: 'Basis:', caveats: 'Caveats:' }, now, ...extra });
+const settle = async () => {
+  for (let i = 0; i < 3; i++) await new Promise((resolve) => setTimeout(resolve, 15));
+};
+const all: JobSwitches = {
+  resultDigest: true,
+  agentLabels: true,
+  failureCause: true,
+  changeSummary: true,
+  approvalDescription: true,
+};
+const input = (t: SubagentTree, extra: Partial<JobsInput> = {}): JobsInput => ({
+  tree: t,
+  main: null,
+  switches: all,
+  language: 'en',
+  on: true,
+  digestLabels: { basis: 'Basis:', caveats: 'Caveats:' },
+  now,
+  ...extra,
+});
 
 test('a long text keeps its head and its tail, the cut marked; a short one is left alone', () => {
   assert.equal(headTail('short', 100), 'short');
@@ -58,7 +119,16 @@ test('a long text keeps its head and its tail, the cut marked; a short one is le
 test('the final answer is the newest public final one, whole; commentary and other channels are not it', () => {
   const text = [
     answer('first answer', now - 5000),
-    line({ timestamp: iso(now - 4000), type: 'response_item', payload: { type: 'message', role: 'assistant', phase: 'commentary', content: [{ type: 'output_text', text: 'thinking aloud' }] } }),
+    line({
+      timestamp: iso(now - 4000),
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        phase: 'commentary',
+        content: [{ type: 'output_text', text: 'thinking aloud' }],
+      },
+    }),
     answer('secret', now - 3000, { channel: 'analysis' }),
     answer(`Long\nanswer ${'y'.repeat(900)} END`, now - 2000),
     'not json',
@@ -70,25 +140,52 @@ test('the final answer is the newest public final one, whole; commentary and oth
 });
 
 test('error material: the error events when there are any, else the last failed tool output; nothing recorded, nothing sent', () => {
-  const failedTool = line({ timestamp: iso(now), type: 'response_item', payload: { type: 'function_call_output', output: 'npm ERR! missing script\nProcess exited with code 1' } });
-  const okTool = line({ timestamp: iso(now), type: 'response_item', payload: { type: 'function_call_output', output: 'fine\nProcess exited with code 0' } });
+  const failedTool = line({
+    timestamp: iso(now),
+    type: 'response_item',
+    payload: { type: 'function_call_output', output: 'npm ERR! missing script\nProcess exited with code 1' },
+  });
+  const okTool = line({
+    timestamp: iso(now),
+    type: 'response_item',
+    payload: { type: 'function_call_output', output: 'fine\nProcess exited with code 0' },
+  });
   assert.match(errorMaterial([okTool, failedTool].join('\n')) ?? '', /missing script/);
   assert.equal(errorMaterial(okTool), null);
-  const error = line({ timestamp: iso(now), type: 'event_msg', payload: { type: 'error', message: 'stream disconnected' } });
+  const error = line({
+    timestamp: iso(now),
+    type: 'event_msg',
+    payload: { type: 'error', message: 'stream disconnected' },
+  });
   assert.equal(errorMaterial([failedTool, error].join('\n')), 'stream disconnected');
 });
 
 test('replies are read strictly: a digest needs a conclusion, labels go by position, lines are clipped', () => {
-  assert.deepEqual(parseDigest('```json\n{"conclusion":"Parser fixed","basis":"tests pass","caveats":""}\n```'), { conclusion: 'Parser fixed', basis: 'tests pass' });
+  assert.deepEqual(parseDigest('```json\n{"conclusion":"Parser fixed","basis":"tests pass","caveats":""}\n```'), {
+    conclusion: 'Parser fixed',
+    basis: 'tests pass',
+  });
   assert.equal(parseDigest('{"basis":"x"}'), null);
   assert.equal(parseDigest('no json'), null);
-  assert.equal(digestText({ conclusion: 'A', basis: 'B', caveats: 'C' }, { basis: 'Basis:', caveats: 'Caveats:' }), 'A · Basis: B · Caveats: C');
+  assert.equal(
+    digestText({ conclusion: 'A', basis: 'B', caveats: 'C' }, { basis: 'Basis:', caveats: 'Caveats:' }),
+    'A · Basis: B · Caveats: C'
+  );
   // The reply shape: a kind of work and a name per task.
-  assert.deepEqual(parseLabels('{"labels":[{"kind":"research","name":"1. Audit paths"},{"kind":"fix","name":""},{"kind":"Review","name":"“缓存测试”。"}]}', 4),
-    [{ kind: 'research', name: 'Audit paths' }, null, { kind: 'review', name: '缓存测试' }, null]);
+  assert.deepEqual(
+    parseLabels(
+      '{"labels":[{"kind":"research","name":"1. Audit paths"},{"kind":"fix","name":""},{"kind":"Review","name":"“缓存测试”。"}]}',
+      4
+    ),
+    [{ kind: 'research', name: 'Audit paths' }, null, { kind: 'review', name: '缓存测试' }, null]
+  );
   // An unknown or missing kind is `other`; the earlier shape, bare strings, still reads, as `other`.
-  assert.deepEqual(parseLabels('{"labels":[{"kind":"poetry","name":"Odes"},{"name":"No kind"},"Old shape",3]}', 4),
-    [{ kind: 'other', name: 'Odes' }, { kind: 'other', name: 'No kind' }, { kind: 'other', name: 'Old shape' }, null]);
+  assert.deepEqual(parseLabels('{"labels":[{"kind":"poetry","name":"Odes"},{"name":"No kind"},"Old shape",3]}', 4), [
+    { kind: 'other', name: 'Odes' },
+    { kind: 'other', name: 'No kind' },
+    { kind: 'other', name: 'Old shape' },
+    null,
+  ]);
   assert.match(labelsSystemPrompt('en'), /"kind": string, "name": string/);
   assert.match(labelsSystemPrompt('en'), /research, experiment, fix, review, writing, summary, other/);
   assert.match(labelsPrompt(['one', 'two']), /<tasks>\n1\. one\n2\. two\n<\/tasks>/);
@@ -97,7 +194,10 @@ test('replies are read strictly: a digest needs a conclusion, labels go by posit
   assert.equal(oneLine('\n  "Missing npm script"\nmore'), 'Missing npm script');
   assert.equal(oneLine('  \n '), null);
   assert.deepEqual(twoLines('- one\n\n* two\nthree'), ['one', 'two']);
-  assert.equal(titleFromGoal('Fix the flaky cache test in the parser and its retry loop as well'), 'Fix the flaky cache test in the parser…');
+  assert.equal(
+    titleFromGoal('Fix the flaky cache test in the parser and its retry loop as well'),
+    'Fix the flaky cache test in the parser…'
+  );
 });
 
 test('the change summary sends the stat of every file and hunks up to a bound; untracked files by name only', () => {
@@ -123,12 +223,22 @@ test('a finished agent is digested once from its whole final answer, into its lo
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-jobs-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const rollout = path.join(dir, 'agent.jsonl');
-  fs.writeFileSync(rollout, `${answer(`Long report ${'w'.repeat(1000)} and the conclusion at the end`, now - 60_000)}\n`);
-  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"conclusion":"Cache race found","basis":"read cache.ts","caveats":"not run"}' }));
+  fs.writeFileSync(
+    rollout,
+    `${answer(`Long report ${'w'.repeat(1000)} and the conclusion at the end`, now - 60_000)}\n`
+  );
+  const { model, asked } = fakeModel(() => ({
+    ok: true,
+    text: '{"conclusion":"Cache race found","basis":"read cache.ts","caveats":"not run"}',
+  }));
   const log = new AgentLog();
   const jobs = new ModelJobs({ model, log });
-  const done = node('a', 'auditor', 'completed', { rolloutPath: rollout, statusAt: new Date(now - 30_000), turnStartedAt: new Date(now - 120_000),
-    lastReport: { text: 'Long report www', kind: 'reply', at: new Date(now - 60_000) } });
+  const done = node('a', 'auditor', 'completed', {
+    rolloutPath: rollout,
+    statusAt: new Date(now - 30_000),
+    turnStartedAt: new Date(now - 120_000),
+    lastReport: { text: 'Long report www', kind: 'reply', at: new Date(now - 60_000) },
+  });
   const agents = tree([done]);
   jobs.update(input(agents));
   await settle();
@@ -136,14 +246,19 @@ test('a finished agent is digested once from its whole final answer, into its lo
   assert.equal(asked[0].feature, 'digest');
   assert.match(asked[0].prompt, /conclusion at the end/, 'the tail of the answer is sent');
   assert.equal(asked[0].cacheKey, `${rollout}:${now - 60_000}:en`);
-  assert.equal(log.latest('a', new Set(['digest']))?.text, 'Cache race found · Basis: read cache.ts · Caveats: not run');
+  assert.equal(
+    log.latest('a', new Set(['digest']))?.text,
+    'Cache race found · Basis: read cache.ts · Caveats: not run'
+  );
   jobs.update(input(agents));
   await settle();
   assert.equal(asked.length, 1, 'once per finish');
 
   jobs.apply(agents, all, 'en');
   assert.equal(done.digest, 'Cache race found · Basis: read cache.ts · Caveats: not run');
-  const material = (t: SubagentTree) => briefMaterial(t, { scope: 'agents', language: 'en', main: null, recap: null, since: null, now })?.write().prompt ?? '';
+  const material = (t: SubagentTree) =>
+    briefMaterial(t, { scope: 'agents', language: 'en', main: null, recap: null, since: null, now })?.write().prompt ??
+    '';
   assert.match(material(agents), /result digest \(model-written from its final answer\): Cache race found/);
   assert.doesNotMatch(material(agents), /latest update/);
   jobs.apply(agents, NO_JOBS, 'en');
@@ -159,33 +274,70 @@ test('a finished agent is digested once from its whole final answer, into its lo
   assert.equal(asked.length, 2, 'unless it is inspected');
 });
 
-test('a stage\'s answer is digested from the ledger: a finished agent\'s last one, and a long one while a lead works on', async () => {
-  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"conclusion":"Recovery rewritten","basis":"3 tests","caveats":""}' }));
+test("a stage's answer is digested from the ledger: a finished agent's last one, and a long one while a lead works on", async () => {
+  const { model, asked } = fakeModel(() => ({
+    ok: true,
+    text: '{"conclusion":"Recovery rewritten","basis":"3 tests","caveats":""}',
+  }));
   const log = new AgentLog();
   const reads: string[] = [];
-  const jobs = new ModelJobs({ model, log, read: async file => { reads.push(file); return ''; } });
+  const jobs = new ModelJobs({
+    model,
+    log,
+    read: async (file) => {
+      reads.push(file);
+      return '';
+    },
+  });
   const long = `Head ${'w'.repeat(RESULT_RAW_CHARS)} tail`;
-  const ended = (start: number, end: number, result: string) => ({ startedAt: new Date(now - start), endedAt: new Date(now - end), status: 'done' as const, result });
+  const ended = (start: number, end: number, result: string) => ({
+    startedAt: new Date(now - start),
+    endedAt: new Date(now - end),
+    status: 'done' as const,
+    result,
+  });
   const running = (start: number) => ({ startedAt: new Date(now - start), status: 'running' as const });
-  const helper = node('k', 'helper', 'running', { depth: 2, rolloutPath: '/x/k.jsonl', stages: [ended(500_000, 400_000, long), running(400_000)] });
-  const lead = node('lead', 'lead', 'running', { rolloutPath: '/x/lead.jsonl', stages: [ended(600_000, 300_000, long), running(300_000)], children: [helper] });
-  const brief = node('brief', 'brief', 'running', { rolloutPath: '/x/brief.jsonl', stages: [ended(600_000, 300_000, 'A short answer.'), running(300_000)] });
-  const done = node('done', 'done', 'completed', { rolloutPath: '/x/done.jsonl', statusAt: new Date(now - 60_000), turnStartedAt: new Date(now - 120_000),
-    stages: [ended(120_000, 60_000, 'Short final answer.')] });
+  const helper = node('k', 'helper', 'running', {
+    depth: 2,
+    rolloutPath: '/x/k.jsonl',
+    stages: [ended(500_000, 400_000, long), running(400_000)],
+  });
+  const lead = node('lead', 'lead', 'running', {
+    rolloutPath: '/x/lead.jsonl',
+    stages: [ended(600_000, 300_000, long), running(300_000)],
+    children: [helper],
+  });
+  const brief = node('brief', 'brief', 'running', {
+    rolloutPath: '/x/brief.jsonl',
+    stages: [ended(600_000, 300_000, 'A short answer.'), running(300_000)],
+  });
+  const done = node('done', 'done', 'completed', {
+    rolloutPath: '/x/done.jsonl',
+    statusAt: new Date(now - 60_000),
+    turnStartedAt: new Date(now - 120_000),
+    stages: [ended(120_000, 60_000, 'Short final answer.')],
+  });
   const agents = tree([lead, brief, done]);
   jobs.update(input(agents));
   await settle();
   assert.deepEqual(reads, [], 'the ledger has the answers: no rollout read');
-  assert.deepEqual(asked.map(request => request.prompt.includes('Head') ? 'lead' : 'done'), ['lead', 'done'],
-    'not a short answer, nor a subtask\'s, while the agent works on');
+  assert.deepEqual(
+    asked.map((request) => (request.prompt.includes('Head') ? 'lead' : 'done')),
+    ['lead', 'done'],
+    "not a short answer, nor a subtask's, while the agent works on"
+  );
   assert.equal(asked[0].cacheKey, `${createHash('sha256').update(long).digest('hex').slice(0, 32)}:en`);
-  assert.deepEqual(log.entries('lead').map(entry => [entry.kind, entry.at]), [['digest', now - 300_000]], 'kept at the stage\'s end');
+  assert.deepEqual(
+    log.entries('lead').map((entry) => [entry.kind, entry.at]),
+    [['digest', now - 300_000]],
+    "kept at the stage's end"
+  );
   jobs.update(input(agents));
   await settle();
   assert.equal(asked.length, 2, 'once per stage');
   jobs.apply(agents, all, 'en');
   assert.equal(done.digest, 'Recovery rewritten · Basis: 3 tests');
-  assert.equal(lead.digest, undefined, 'a stage before the running one is not the agent\'s digest');
+  assert.equal(lead.digest, undefined, "a stage before the running one is not the agent's digest");
 });
 
 test('nothing is asked with the backend off or paused, or with every switch off', async () => {
@@ -202,7 +354,10 @@ test('labels are batched, kept per task text, survive a new panel, and never sta
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-labels-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'labels.json');
-  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"labels":[{"kind":"review","name":"Code path audit"},{"kind":"other","name":"Cache tests"}]}' }));
+  const { model, asked } = fakeModel(() => ({
+    ok: true,
+    text: '{"labels":[{"kind":"review","name":"Code path audit"},{"kind":"other","name":"Cache tests"}]}',
+  }));
   const jobs = new ModelJobs({ model, log: new AgentLog(), labelsFile: file });
   const a = node('a', 'audit_code_paths', 'running', { task: 'Audit the code paths' });
   const b = node('b', 'cache_tests', 'running', { task: 'Write the cache tests' });
@@ -241,7 +396,10 @@ test('labels are batched, kept per task text, survive a new panel, and never sta
 });
 
 test('a label from the text written before the agent was created wins; the brief fills in until then; a sealed task asks nothing', async () => {
-  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"labels":[{"kind":"review","name":"Code path audit"}]}' }));
+  const { model, asked } = fakeModel(() => ({
+    ok: true,
+    text: '{"labels":[{"kind":"review","name":"Code path audit"}]}',
+  }));
   const log = new AgentLog();
   const jobs = new ModelJobs({ model, log });
   // Codex 0.162 sends a task to an agent encrypted: the tree has no task text for it.
@@ -252,28 +410,36 @@ test('a label from the text written before the agent was created wins; the brief
   await settle();
   assert.equal(asked.length, 1);
   assert.doesNotMatch(asked[0].prompt, /worker_one/, 'no task, nothing to label from');
-  log.add('h', [{ at: now, kind: 'note', text: 'Reading the cache module', lang: 'en', label: 'Cache audit', taskKind: 'research' }]);
+  log.add('h', [
+    { at: now, kind: 'note', text: 'Reading the cache module', lang: 'en', label: 'Cache audit', taskKind: 'research' },
+  ]);
   log.add('p', [{ at: now, kind: 'note', text: '正在核对路径', lang: 'zh', label: '路径核对' }]);
   jobs.apply(agents, all, 'en');
   assert.deepEqual([hidden.label, hidden.taskKind], ['Cache audit', 'research'], 'the brief named it');
-  assert.equal(plain.label, 'Code path audit', 'a name in the other language is not shown: the task\'s is');
+  assert.equal(plain.label, 'Code path audit', "a name in the other language is not shown: the task's is");
   jobs.apply(agents, all, 'zh');
   assert.deepEqual([hidden.label, plain.label, plain.taskKind], [undefined, '路径核对', undefined]);
   log.add('p', [{ at: now + 1000, kind: 'note', text: 'Auditing the paths', lang: 'en', label: 'Path audit' }]);
   jobs.apply(agents, all, 'en');
-  assert.equal(plain.label, 'Code path audit', 'the name from what it was given wins over the brief\'s current note');
+  assert.equal(plain.label, 'Code path audit', "the name from what it was given wins over the brief's current note");
   jobs.apply(agents, { ...all, agentLabels: false }, 'en');
   assert.deepEqual([hidden.label, plain.label], [undefined, undefined]);
 });
 
 test('a label is asked from the plaintext written before the spawn, not a sealed task, and it wins over the brief', async () => {
   assert.match(labelsSystemPrompt('en'), /before that subagent was created/);
-  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"labels":[{"kind":"writing","name":"Session binding"}]}' }));
+  const { model, asked } = fakeModel(() => ({
+    ok: true,
+    text: '{"labels":[{"kind":"writing","name":"Session binding"}]}',
+  }));
   const log = new AgentLog();
   const jobs = new ModelJobs({ model, log });
   const sealed = node('s', 'sealed', 'running', { task: 'gAAAAAtoken' });
   const charged = node('q', 'binder', 'running', {
-    task: 'gAAAAAtoken', charge: 'Bind the session before the first send', agentPath: '/root/binder', role: 'oracle',
+    task: 'gAAAAAtoken',
+    charge: 'Bind the session before the first send',
+    agentPath: '/root/binder',
+    role: 'oracle',
   });
   const agents = tree([sealed, charged]);
   assert.equal(labelSource(sealed), undefined);
@@ -310,7 +476,10 @@ test('the session title comes from the recap goal with no call, else once from t
   const store = new RecapStore(dir);
   const { model, asked } = fakeModel(() => ({ ok: true, text: 'Parser cache fix\n' }));
   const jobs = new ModelJobs({ model, log: new AgentLog(), titles: store });
-  const main = { firstUserMessage: { role: 'user', kind: 'prompt', text: 'Please fix the parser cache', at: new Date(now) }, toolActivity: { recentCalls: [] } } as unknown as RolloutParseResult;
+  const main = {
+    firstUserMessage: { role: 'user', kind: 'prompt', text: 'Please fix the parser cache', at: new Date(now) },
+    toolActivity: { recentCalls: [] },
+  } as unknown as RolloutParseResult;
   const session = tree([], 'aaaa-1111');
   const labels = { ...NO_JOBS, agentLabels: true };
   jobs.update(input(session, { main, switches: labels }));
@@ -326,24 +495,41 @@ test('the session title comes from the recap goal with no call, else once from t
   assert.equal(asked.length, 1, 'once');
   jobs.update(input(session, { main, switches: labels, recapGoal: 'Make the cache test reliable' }));
   await settle();
-  assert.equal(asked.length, 1, 'a recap\'s goal costs no call');
-  assert.deepEqual([readSessionTitle(dir, 'aaaa-1111')?.title, readSessionTitle(dir, 'aaaa-1111')?.source], ['Make the cache test reliable', 'recap']);
+  assert.equal(asked.length, 1, "a recap's goal costs no call");
+  assert.deepEqual(
+    [readSessionTitle(dir, 'aaaa-1111')?.title, readSessionTitle(dir, 'aaaa-1111')?.source],
+    ['Make the cache test reliable', 'recap']
+  );
   assert.equal(readSessionTitle(dir, '../etc'), null);
   assert.equal(parseStoredTitle({ sessionId: 'x', title: ' ', source: 'recap', at: 1 }), null);
 });
 
-test('failure causes: a failed tool call and a failed agent, once each, on the timeline and in the agent\'s log', async (t: TestContext) => {
+test("failure causes: a failed tool call and a failed agent, once each, on the timeline and in the agent's log", async (t: TestContext) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-cause-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const rollout = path.join(dir, 'agent.jsonl');
-  fs.writeFileSync(rollout, `${line({ timestamp: iso(now), type: 'event_msg', payload: { type: 'error', message: 'context window exceeded' } })}\n`);
+  fs.writeFileSync(
+    rollout,
+    `${line({ timestamp: iso(now), type: 'event_msg', payload: { type: 'error', message: 'context window exceeded' } })}\n`
+  );
   const quiet = path.join(dir, 'quiet.jsonl');
   fs.writeFileSync(quiet, `${answer('done', now)}\n`);
-  const { model, asked } = fakeModel(request => ({ ok: true, text: request.prompt.includes('npm') ? 'The npm script "lint" does not exist' : 'Ran out of context' }));
+  const { model, asked } = fakeModel((request) => ({
+    ok: true,
+    text: request.prompt.includes('npm') ? 'The npm script "lint" does not exist' : 'Ran out of context',
+  }));
   const log = new AgentLog();
   const jobs = new ModelJobs({ model, log });
-  const call = { id: 'call-1', name: 'exec_command', status: 'error', timestamp: new Date(now - 5000), duration: 1000, exitCode: 1,
-    arguments: { cmd: 'npm run lint' }, output: 'npm ERR! Missing script: "lint"' };
+  const call = {
+    id: 'call-1',
+    name: 'exec_command',
+    status: 'error',
+    timestamp: new Date(now - 5000),
+    duration: 1000,
+    exitCode: 1,
+    arguments: { cmd: 'npm run lint' },
+    output: 'npm ERR! Missing script: "lint"',
+  };
   const main = { toolActivity: { recentCalls: [call] } } as unknown as RolloutParseResult;
   const failed = node('a', 'worker', 'error', { rolloutPath: rollout, statusAt: new Date(now - 2000) });
   const silent = node('b', 'other', 'error', { rolloutPath: quiet, statusAt: new Date(now - 2000) });
@@ -351,24 +537,51 @@ test('failure causes: a failed tool call and a failed agent, once each, on the t
   const causes = { ...NO_JOBS, failureCause: true };
   jobs.update(input(agents, { main, switches: causes }));
   await settle();
-  assert.deepEqual(asked.map(r => r.feature), ['cause', 'cause'], 'the agent with no recorded error is not asked about');
+  assert.deepEqual(
+    asked.map((r) => r.feature),
+    ['cause', 'cause'],
+    'the agent with no recorded error is not asked about'
+  );
   assert.match(asked[0].prompt, /npm run lint \(exit code 1\)/);
-  const timeline = jobs.withCauses<{ id: string; cause?: string }>([{ id: 'tool:call-1' }, { id: `agent:a:failed:${now - 2000}` }, { id: 'other' }]);
-  assert.deepEqual(timeline.map(e => e.cause), ['The npm script "lint" does not exist', 'Ran out of context', undefined]);
+  const timeline = jobs.withCauses<{ id: string; cause?: string }>([
+    { id: 'tool:call-1' },
+    { id: `agent:a:failed:${now - 2000}` },
+    { id: 'other' },
+  ]);
+  assert.deepEqual(
+    timeline.map((e) => e.cause),
+    ['The npm script "lint" does not exist', 'Ran out of context', undefined]
+  );
   assert.equal(log.latest('a', new Set(['cause']))?.text, 'Ran out of context');
   jobs.update(input(agents, { main, switches: causes }));
   await settle();
   assert.equal(asked.length, 2, 'once per failure');
   const reopened = new ModelJobs({ model, log });
-  reopened.update(input(agents, { main: { toolActivity: { recentCalls: [] } } as unknown as RolloutParseResult, switches: causes, on: false }));
-  assert.equal(reopened.withCauses<{ id: string; cause?: string }>([{ id: `agent:a:failed:${now - 2000}` }])[0].cause, 'Ran out of context', 'from the log, with no call');
+  reopened.update(
+    input(agents, {
+      main: { toolActivity: { recentCalls: [] } } as unknown as RolloutParseResult,
+      switches: causes,
+      on: false,
+    })
+  );
+  assert.equal(
+    reopened.withCauses<{ id: string; cause?: string }>([{ id: `agent:a:failed:${now - 2000}` }])[0].cause,
+    'Ran out of context',
+    'from the log, with no call'
+  );
 });
 
 test('the approval description is for the pending command only, and a verdict is dropped', async () => {
   let reply = 'Removes the dist folder and rebuilds it.';
   const { model, asked } = fakeModel(() => ({ ok: true, text: reply }));
   const jobs = new ModelJobs({ model, log: new AgentLog() });
-  const pending = { kind: 'exec' as const, callId: 'c1', since: new Date(now), summary: 'rm -rf dist', command: 'rm -rf dist && npm run build' };
+  const pending = {
+    kind: 'exec' as const,
+    callId: 'c1',
+    since: new Date(now),
+    summary: 'rm -rf dist',
+    command: 'rm -rf dist && npm run build',
+  };
   const main = { pendingApproval: pending, toolActivity: { recentCalls: [] } } as unknown as RolloutParseResult;
   const only = { ...NO_JOBS, approvalDescription: true };
   jobs.update(input(tree([]), { main, switches: only }));
@@ -386,10 +599,28 @@ test('the approval description is for the pending command only, and a verdict is
 });
 
 test('the change summary waits for the pane, for a changed diff and for the floor period', async () => {
-  const { model, asked } = fakeModel(() => ({ ok: true, text: 'Adds a retry to the cache reader.\nUpdates its test.\nThird line dropped.' }));
+  const { model, asked } = fakeModel(() => ({
+    ok: true,
+    text: 'Adds a retry to the cache reader.\nUpdates its test.\nThird line dropped.',
+  }));
   const hunks: string[] = [];
-  const jobs = new ModelJobs({ model, log: new AgentLog(), readHunks: async root => { hunks.push(root); return '@@ -1 +1 @@\n-a\n+b'; } });
-  const file: GitChangedFile = { path: 'src/cache.ts', index: ' ', worktree: 'M', added: 1, removed: 1, binary: false, conflict: false };
+  const jobs = new ModelJobs({
+    model,
+    log: new AgentLog(),
+    readHunks: async (root) => {
+      hunks.push(root);
+      return '@@ -1 +1 @@\n-a\n+b';
+    },
+  });
+  const file: GitChangedFile = {
+    path: 'src/cache.ts',
+    index: ' ',
+    worktree: 'M',
+    added: 1,
+    removed: 1,
+    binary: false,
+    conflict: false,
+  };
   const git: GitChanges = { root: '/repo', branch: 'main', ahead: 0, behind: 0, files: [file] };
   const opts = { on: true, enabled: true, open: true, floorMs: 900_000, language: 'en' as const, now };
   jobs.updateChanges(git, { ...opts, open: false });
@@ -399,7 +630,11 @@ test('the change summary waits for the pane, for a changed diff and for the floo
   await settle();
   assert.equal(asked.length, 1);
   assert.match(asked[0].prompt, / M src\/cache\.ts \+1 -1/);
-  assert.deepEqual(jobs.changeNote(git), { lines: ['Adds a retry to the cache reader.', 'Updates its test.'], at: jobs.changeNote(git)!.at, current: true });
+  assert.deepEqual(jobs.changeNote(git), {
+    lines: ['Adds a retry to the cache reader.', 'Updates its test.'],
+    at: jobs.changeNote(git)!.at,
+    current: true,
+  });
   jobs.updateChanges(git, { ...opts, now: now + 1000 });
   await settle();
   assert.equal(asked.length, 1, 'the same diff');
@@ -420,68 +655,144 @@ test('digest prompts quote the answer as data', () => {
 });
 
 test('the panel marks each model reading: approval words, the change summary, the digest and cause in the Inspector', () => {
-  const done = node('00000000-0000-4000-8000-000000000001', 'audit_code_paths', 'completed', { label: 'Code path audit', statusAt: new Date(now - 60_000) });
+  const done = node('00000000-0000-4000-8000-000000000001', 'audit_code_paths', 'completed', {
+    label: 'Code path audit',
+    statusAt: new Date(now - 60_000),
+  });
   const agents = tree([done]);
-  const log = new Map([[done.id, [{ at: now - 60_000, kind: 'finished' as const, text: '' },
-    { at: now - 61_000, kind: 'digest' as const, text: 'Cache race found · Basis: read cache.ts' }]]]);
+  const log = new Map([
+    [
+      done.id,
+      [
+        { at: now - 60_000, kind: 'finished' as const, text: '' },
+        { at: now - 61_000, kind: 'digest' as const, text: 'Cache race found · Basis: read cache.ts' },
+      ],
+    ],
+  ]);
   const base = initialMonitorState();
-  const frame = renderMonitor({ tree: agents, state: base, width: 40, height: 30, nowMs: now, brief: {}, agentLog: log,
-    notes: { approval: 'Removes the dist folder.' } });
+  const frame = renderMonitor({
+    tree: agents,
+    state: base,
+    width: 40,
+    height: 30,
+    nowMs: now,
+    brief: {},
+    agentLog: log,
+    notes: { approval: 'Removes the dist folder.' },
+  });
   const lines = frame.lines.map(stripAnsi);
-  const at = lines.findIndex(text => text.includes('⚑ ~ Removes the dist folder.'));
+  const at = lines.findIndex((text) => text.includes('⚑ ~ Removes the dist folder.'));
   assert.ok(at > 0, lines.join('\n'));
-  assert.ok(frame.lines[at].includes(theme.warning('⚑')), 'its label in the warning colour, the model\'s mark kept');
+  assert.ok(frame.lines[at].includes(theme.warning('⚑')), "its label in the warning colour, the model's mark kept");
   // The tree row and the log header keep Codex's name; the label is what the agent is for, under the header.
-  const row = lines.findIndex(text => /^›✓ audit_code_paths/.test(text));
+  const row = lines.findIndex((text) => /^›✓ audit_code_paths/.test(text));
   assert.ok(row > 0, lines.join('\n'));
-  const header = lines.findIndex(text => /^ ✓ audit_code_paths/.test(text));
+  const header = lines.findIndex((text) => /^ ✓ audit_code_paths/.test(text));
   assert.ok(header > row, 'the log header names the agent as Codex does');
   assert.equal(lines[header + 1].trimEnd(), '   Code path audit');
 
-  const inspect = { ...base, modes: { ...base.modes, details: 'open' as const }, preview: 'agent' as const, tree: { ...base.tree, selectedId: done.id } };
-  const shown = renderMonitor({ tree: agents, state: inspect, width: 40, height: 40, nowMs: now, agentLog: log }).lines.map(stripAnsi).join('\n');
-  assert.match(shown, /│ audit_code_paths *\n│ label Code path audit/, 'labels off as names: the Inspector heads with the name Codex prints, the label under it');
-  const named = renderMonitor({ tree: agents, state: { ...inspect, labelAsName: true }, width: 40, height: 40, nowMs: now, agentLog: log }).lines.map(stripAnsi).join('\n');
-  assert.match(named, /│ Code path audit *\n│ name audit_code_paths/, 'labels as names: the label heads it, the name Codex prints under it');
+  const inspect = {
+    ...base,
+    modes: { ...base.modes, details: 'open' as const },
+    preview: 'agent' as const,
+    tree: { ...base.tree, selectedId: done.id },
+  };
+  const shown = renderMonitor({ tree: agents, state: inspect, width: 40, height: 40, nowMs: now, agentLog: log })
+    .lines.map(stripAnsi)
+    .join('\n');
+  assert.match(
+    shown,
+    /│ audit_code_paths *\n│ label Code path audit/,
+    'labels off as names: the Inspector heads with the name Codex prints, the label under it'
+  );
+  const named = renderMonitor({
+    tree: agents,
+    state: { ...inspect, labelAsName: true },
+    width: 40,
+    height: 40,
+    nowMs: now,
+    agentLog: log,
+  })
+    .lines.map(stripAnsi)
+    .join('\n');
+  assert.match(
+    named,
+    /│ Code path audit *\n│ name audit_code_paths/,
+    'labels as names: the label heads it, the name Codex prints under it'
+  );
   assert.match(shown, /~ Result digest · 1m ago/);
   assert.match(shown, /Basis: read cache\.ts/);
 
   const changes = { ...base, modes: { ...base.modes, changes: 'open' as const } };
-  const git: GitChanges = { root: '/repo', branch: 'main', ahead: 0, behind: 0,
-    files: [{ path: 'src/cache.ts', index: ' ', worktree: 'M', added: 1, removed: 1, binary: false, conflict: false }] };
-  const pane = renderMonitor({ tree: agents, state: changes, git, width: 40, height: 30, nowMs: now,
-    notes: { changes: { lines: ['Adds a retry to the cache reader.'], at: now - 120_000, current: false } } }).lines.map(stripAnsi).join('\n');
+  const git: GitChanges = {
+    root: '/repo',
+    branch: 'main',
+    ahead: 0,
+    behind: 0,
+    files: [{ path: 'src/cache.ts', index: ' ', worktree: 'M', added: 1, removed: 1, binary: false, conflict: false }],
+  };
+  const pane = renderMonitor({
+    tree: agents,
+    state: changes,
+    git,
+    width: 40,
+    height: 30,
+    nowMs: now,
+    notes: { changes: { lines: ['Adds a retry to the cache reader.'], at: now - 120_000, current: false } },
+  })
+    .lines.map(stripAnsi)
+    .join('\n');
   assert.match(pane, /~ Adds a retry to the cache reader\./);
   assert.match(pane.replace(/\s*│\s*/g, ' ').replace(/\s+/g, ' '), /written 2m ago, before the latest edits/);
 });
 
 test('the bar shows the session title at its widest reading only, the id beside it', () => {
   const data = { ...makeHudData(), sessionTitle: 'Parser cache fix' };
-  const session = buildBarModules(data, { density: 'full', nowMs: FIXED_NOW.getTime() }).find(module => module.id === 'session');
+  const session = buildBarModules(data, { density: 'full', nowMs: FIXED_NOW.getTime() }).find(
+    (module) => module.id === 'session'
+  );
   assert.equal(stripAnsi(session?.variants.full ?? ''), 'Parser cache fix · root-ses');
   assert.equal(stripAnsi(session?.variants.short ?? ''), 'root-ses');
-  const plain = buildBarModules(makeHudData(), { density: 'full', nowMs: FIXED_NOW.getTime() }).find(module => module.id === 'session');
+  const plain = buildBarModules(makeHudData(), { density: 'full', nowMs: FIXED_NOW.getTime() }).find(
+    (module) => module.id === 'session'
+  );
   assert.equal(stripAnsi(plain?.variants.full ?? ''), 'Session: root-ses');
 });
 
 test('late replies from a previous language cannot replace or consume a restarted approval job', async () => {
-  for (const oldResult of [{ok:true,text:'Old English description'}, {ok:false,error:'cancelled',cancelled:true}] as ModelResult[]) {
+  for (const oldResult of [
+    { ok: true, text: 'Old English description' },
+    { ok: false, error: 'cancelled', cancelled: true },
+  ] as ModelResult[]) {
     const pending: Array<(result: ModelResult) => void> = [];
-    const model = {submit() {
-      return {result:new Promise<ModelResult>(resolve=>{pending.push(resolve);}),cancel() {}};
-    }} as unknown as SmallModel;
-    const jobs = new ModelJobs({model,log:new AgentLog()});
-    const approval = {kind:'exec' as const,callId:'language-race',since:new Date(now),command:'printf synthetic',summary:'synthetic'};
-    const main = {pendingApproval:approval,toolActivity:{recentCalls:[]}} as unknown as RolloutParseResult;
-    const options = {main,switches:{...NO_JOBS,approvalDescription:true}};
-    jobs.update(input(tree([]),options));
-    jobs.update(input(tree([]),{...options,language:'zh'}));
+    const model = {
+      submit() {
+        return {
+          result: new Promise<ModelResult>((resolve) => {
+            pending.push(resolve);
+          }),
+          cancel() {},
+        };
+      },
+    } as unknown as SmallModel;
+    const jobs = new ModelJobs({ model, log: new AgentLog() });
+    const approval = {
+      kind: 'exec' as const,
+      callId: 'language-race',
+      since: new Date(now),
+      command: 'printf synthetic',
+      summary: 'synthetic',
+    };
+    const main = { pendingApproval: approval, toolActivity: { recentCalls: [] } } as unknown as RolloutParseResult;
+    const options = { main, switches: { ...NO_JOBS, approvalDescription: true } };
+    jobs.update(input(tree([]), options));
+    jobs.update(input(tree([]), { ...options, language: 'zh' }));
     pending[0](oldResult);
     await settle();
-    assert.equal(jobs.approvalNote(approval),undefined,'the previous language never returns to the display');
-    pending[1]({ok:true,text:'输出合成文本'});
+    assert.equal(jobs.approvalNote(approval), undefined, 'the previous language never returns to the display');
+    pending[1]({ ok: true, text: '输出合成文本' });
     await settle();
-    assert.equal(jobs.approvalNote(approval),'输出合成文本','the new request still owns its completion');
+    assert.equal(jobs.approvalNote(approval), '输出合成文本', 'the new request still owns its completion');
     jobs.stop();
   }
 });
@@ -489,18 +800,30 @@ test('late replies from a previous language cannot replace or consume a restarte
 test('a rollout read completed after a language restart cannot revive its obsolete digest', async () => {
   const reads: Array<(text: string) => void> = [];
   const log = new AgentLog();
-  const {model,asked} = fakeModel(()=>({ok:true,text:'{"conclusion":"当前结果"}'}));
-  const jobs = new ModelJobs({model,log,read:()=>new Promise<string>(resolve=>{reads.push(resolve);})});
-  const done = node('language-digest','worker','completed',{rolloutPath:'/synthetic/agent.jsonl',statusAt:new Date(now)});
-  const options = {switches:{...NO_JOBS,resultDigest:true}};
-  jobs.update(input(tree([done]),options));
-  jobs.update(input(tree([done]),{...options,language:'zh'}));
-  reads[0](answer('Obsolete answer',now));
+  const { model, asked } = fakeModel(() => ({ ok: true, text: '{"conclusion":"当前结果"}' }));
+  const jobs = new ModelJobs({
+    model,
+    log,
+    read: () =>
+      new Promise<string>((resolve) => {
+        reads.push(resolve);
+      }),
+  });
+  const done = node('language-digest', 'worker', 'completed', {
+    rolloutPath: '/synthetic/agent.jsonl',
+    statusAt: new Date(now),
+  });
+  const options = { switches: { ...NO_JOBS, resultDigest: true } };
+  jobs.update(input(tree([done]), options));
+  jobs.update(input(tree([done]), { ...options, language: 'zh' }));
+  reads[0](answer('Obsolete answer', now));
   await settle();
-  assert.equal(asked.length,0,'an obsolete disk read sends nothing');
-  reads[1](answer('当前答案',now));
+  assert.equal(asked.length, 0, 'an obsolete disk read sends nothing');
+  reads[1](answer('当前答案', now));
   await settle();
-  assert.deepEqual(log.entries(done.id).map(entry=>({kind:entry.kind,lang:entry.lang,text:entry.text})),
-    [{kind:'digest',lang:'zh',text:'当前结果'}]);
+  assert.deepEqual(
+    log.entries(done.id).map((entry) => ({ kind: entry.kind, lang: entry.lang, text: entry.text })),
+    [{ kind: 'digest', lang: 'zh', text: '当前结果' }]
+  );
   jobs.stop();
 });

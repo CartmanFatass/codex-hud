@@ -77,7 +77,19 @@ const SHRINK = {
  */
 const DENSITY_MODULES: Record<Density, ReadonlyArray<keyof typeof MODULE_PRIORITY>> = {
   focus: ['attention', 'notice', 'activity', 'identity', 'context', 'project'],
-  balanced: ['attention', 'notice', 'activity', 'identity', 'context', 'project', 'quota', 'speed', 'agents', 'tasks', 'config'],
+  balanced: [
+    'attention',
+    'notice',
+    'activity',
+    'identity',
+    'context',
+    'project',
+    'quota',
+    'speed',
+    'agents',
+    'tasks',
+    'config',
+  ],
   full: Object.keys(MODULE_PRIORITY) as Array<keyof typeof MODULE_PRIORITY>,
 };
 
@@ -105,11 +117,24 @@ export function turnClock(startTime: Date, nowMs: number): string {
 }
 
 /** What the person has to act on: an approval waiting, or something that failed. The bar's numbers already turn red for a full context or a spent quota. */
-const BAR_ALERTS = new Set<AttentionItem['kind']>(['approval', 'tool-error', 'agent-error', 'subtask-error', 'review-error']);
+const BAR_ALERTS = new Set<AttentionItem['kind']>([
+  'approval',
+  'tool-error',
+  'agent-error',
+  'subtask-error',
+  'review-error',
+]);
 
 function attentionModule(data: HudData, nowMs: number): BarModule {
   const items = collectAttention(data, nowMs).filter((item) => BAR_ALERTS.has(item.kind));
-  const base = { id: 'attention', priority: MODULE_PRIORITY.attention, shrink: SHRINK.attention, group: 'notice', align: 'fill' as const, pinned: true };
+  const base = {
+    id: 'attention',
+    priority: MODULE_PRIORITY.attention,
+    shrink: SHRINK.attention,
+    group: 'notice',
+    align: 'fill' as const,
+    pinned: true,
+  };
   if (items.length === 0) {
     return { ...base, variants: {} };
   }
@@ -150,8 +175,13 @@ function identityModule(data: HudData): BarModule {
  * are the mark and its word. The tool at work is the notice zone's.
  */
 function activityModule(data: HudData, words: boolean, nowMs: number): BarModule {
-  const base = { id: 'activity', priority: MODULE_PRIORITY.activity, shrink: SHRINK.activity, group: 'state',
-    reserve: { full: words ? STATE_COLUMNS + 6 : STATE_COLUMNS } };
+  const base = {
+    id: 'activity',
+    priority: MODULE_PRIORITY.activity,
+    shrink: SHRINK.activity,
+    group: 'state',
+    reserve: { full: words ? STATE_COLUMNS + 6 : STATE_COLUMNS },
+  };
   const problem = hudProblems(data, nowMs)[0];
   if (problem) return { ...base, variants: { full: theme.warning(`! ${problem}`), short: theme.warning('! HUD') } };
   const status = data.stale ? 'stale' : data.activity?.state;
@@ -165,7 +195,16 @@ function activityModule(data: HudData, words: boolean, nowMs: number): BarModule
   }[status] as [string, string, (text: string) => string];
   const mark = paint(words ? label : glyph);
   if (status !== 'working') {
-    return { ...base, variants: { full: words || status === 'idle' ? `${mark}${words ? '' : ` ${colors.dim('idle')}`}` : `${mark} ${colors.dim(label)}`, short: mark } };
+    return {
+      ...base,
+      variants: {
+        full:
+          words || status === 'idle'
+            ? `${mark}${words ? '' : ` ${colors.dim('idle')}`}`
+            : `${mark} ${colors.dim(label)}`,
+        short: mark,
+      },
+    };
   }
   const turnStartedAt = data.activity?.turnStartedAt;
   const clock = turnStartedAt ? theme.value(padStart(turnClock(turnStartedAt, nowMs), 5)) : '';
@@ -178,11 +217,17 @@ function noticeText(notice: BarNotice, nowMs: number, fresh: boolean): string {
   const [mark, paint, words] = {
     'agent-done': ['✓', theme.success, `${notice.subject ?? 'agent'} finished`],
     'agent-failed': [icons.cross, theme.error, `${notice.subject ?? 'agent'} failed`],
-    'turn-done': ['✓', theme.success, `turn done${notice.durationMs !== undefined ? ` in ${turnClock(new Date(0), notice.durationMs)}` : ''}`],
+    'turn-done': [
+      '✓',
+      theme.success,
+      `turn done${notice.durationMs !== undefined ? ` in ${turnClock(new Date(0), notice.durationMs)}` : ''}`,
+    ],
     credits: ['◆', theme.warning, 'window spent, on credits now'],
   }[notice.kind] as [string, (text: string) => string, string];
   const clean = words.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
-  return fresh ? `${paint(mark)} ${theme.value(clean)}${ago}` : colors.dim(`${mark} ${clean} · ${age(notice.at, nowMs)} ago`);
+  return fresh
+    ? `${paint(mark)} ${theme.value(clean)}${ago}`
+    : colors.dim(`${mark} ${clean} · ${age(notice.at, nowMs)} ago`);
 }
 
 /**
@@ -214,8 +259,15 @@ function noticeLine(data: HudData, nowMs: number): string {
  */
 function noticeModule(data: HudData, nowMs: number): BarModule {
   const text = noticeLine(data, nowMs);
-  return { id: 'notice', priority: MODULE_PRIORITY.notice, shrink: SHRINK.notice, group: 'notice', align: 'fill', flex: true,
-    variants: { full: text, min: text } };
+  return {
+    id: 'notice',
+    priority: MODULE_PRIORITY.notice,
+    shrink: SHRINK.notice,
+    group: 'notice',
+    align: 'fill',
+    flex: true,
+    variants: { full: text, min: text },
+  };
 }
 
 /**
@@ -235,7 +287,9 @@ function contextModule(data: HudData, cells: number): BarModule {
   const numbers = `${paint(padStart(formatTokenCount(used), 6))}${colors.dim(`/${formatTokenCount(window)}`)}`;
   const halves = percent > 0 ? Math.max(1, Math.round((percent / 100) * cells * 2)) : 0;
   const fill = '━'.repeat(Math.floor(halves / 2)) + (halves % 2 ? '╸' : '');
-  const meter = (percent >= METER_WARN ? getContextColor(percent) : theme.tick)(fill) + theme.track('─'.repeat(Math.max(0, cells - visualLength(fill))));
+  const meter =
+    (percent >= METER_WARN ? getContextColor(percent) : theme.tick)(fill) +
+    theme.track('─'.repeat(Math.max(0, cells - visualLength(fill))));
   return {
     id: 'context',
     priority: MODULE_PRIORITY.context,
@@ -280,9 +334,10 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
   }
   const tightest = windows.reduce((a, b) => (b.percent > a.percent ? b : a));
   const { credits } = quotaState(data.rateLimits, windows);
-  const text = tightest.percent >= 100 && credits
-    ? `${colors.dim('credits')} ${theme.value(formatCredits(credits))}`
-    : `${tightest.label ? `${colors.dim(tightest.label)} ` : ''}${signal(tightest.percent)(`${tightest.percent}%`)}`;
+  const text =
+    tightest.percent >= 100 && credits
+      ? `${colors.dim('credits')} ${theme.value(formatCredits(credits))}`
+      : `${tightest.label ? `${colors.dim(tightest.label)} ` : ''}${signal(tightest.percent)(`${tightest.percent}%`)}`;
   return { ...base, variants: { full: text } };
 }
 
@@ -294,13 +349,23 @@ function quotaModule(data: HudData, nowMs: number): BarModule {
 function speedModule(data: HudData): BarModule {
   const base = { id: 'speed', priority: MODULE_PRIORITY.speed, group: 'speed', reserve: { full: RATE_COLUMNS } };
   const rate = data.outputRate;
-  if (!rate || !Number.isFinite(rate.tokensPerSecond) || rate.tokensPerSecond < 0 || !Number.isFinite(rate.sampledAt.getTime())) {
+  if (
+    !rate ||
+    !Number.isFinite(rate.tokensPerSecond) ||
+    rate.tokensPerSecond < 0 ||
+    !Number.isFinite(rate.sampledAt.getTime())
+  ) {
     return { ...base, variants: {} };
   }
-  const fresh = !data.stale && data.activity?.state === 'working' &&
+  const fresh =
+    !data.stale &&
+    data.activity?.state === 'working' &&
     rate.sampledAt.getTime() >= (data.activity.turnStartedAt?.getTime() ?? 0);
   const value = padStart(String(Math.round(rate.tokensPerSecond)), 3);
-  return { ...base, variants: { full: fresh ? `${theme.value(value)} ${colors.dim('tok/s')}` : colors.dim(`${value} tok/s`) } };
+  return {
+    ...base,
+    variants: { full: fresh ? `${theme.value(value)} ${colors.dim('tok/s')}` : colors.dim(`${value} tok/s`) },
+  };
 }
 
 function agentsModule(data: HudData): BarModule {
@@ -325,25 +390,51 @@ function tasksModule(data: HudData): BarModule {
     // No structured plan means no progress to show. Nothing is invented here.
     return { ...base, variants: {} };
   }
-  return { ...base, variants: { full: `${colors.dim('Tasks')} ${theme.value(`${plan.completedSteps}/${plan.totalSteps}`)}` } };
+  return {
+    ...base,
+    variants: { full: `${colors.dim('Tasks')} ${theme.value(`${plan.completedSteps}/${plan.totalSteps}`)}` },
+  };
 }
 
 /** What Codex loaded here: MCP servers, skills and hooks, each only when there is one. */
 function configModule(data: HudData): BarModule {
-  const parts = ([['MCP', data.project.mcpCount], ['skills', data.project.skillsCount], ['hooks', data.project.hooksCount]] as const)
+  const parts = (
+    [
+      ['MCP', data.project.mcpCount],
+      ['skills', data.project.skillsCount],
+      ['hooks', data.project.hooksCount],
+    ] as const
+  )
     .filter(([, count]) => typeof count === 'number' && count > 0)
     .map(([label, count]) => `${colors.dim(label)} ${theme.value(String(count))}`);
-  return { id: 'config', priority: MODULE_PRIORITY.config, shrink: SHRINK.config, optional: true, group: 'meta', align: 'right',
-    variants: parts.length ? { full: parts.join('  ') } : {} };
+  return {
+    id: 'config',
+    priority: MODULE_PRIORITY.config,
+    shrink: SHRINK.config,
+    optional: true,
+    group: 'meta',
+    align: 'right',
+    variants: parts.length ? { full: parts.join('  ') } : {},
+  };
 }
 
 function tokensModule(data: HudData): BarModule {
   const usage = data.tokenUsage?.total_token_usage ?? data.tokenUsage?.last_token_usage;
-  const base = { id: 'tokens', priority: MODULE_PRIORITY.tokens, shrink: SHRINK.tokens, optional: true, group: 'meta', align: 'right' as const };
+  const base = {
+    id: 'tokens',
+    priority: MODULE_PRIORITY.tokens,
+    shrink: SHRINK.tokens,
+    optional: true,
+    group: 'meta',
+    align: 'right' as const,
+  };
   if (!usage) {
     return { ...base, variants: {} };
   }
-  return { ...base, variants: { full: `${colors.dim('Tokens')} ${theme.tokenCount(formatTokenCount(usage.total_tokens ?? 0))}` } };
+  return {
+    ...base,
+    variants: { full: `${colors.dim('Tokens')} ${theme.tokenCount(formatTokenCount(usage.total_tokens ?? 0))}` },
+  };
 }
 function environmentModule(data: HudData): BarModule {
   const approval = getApprovalPolicyDisplayValue(
@@ -355,9 +446,19 @@ function environmentModule(data: HudData): BarModule {
   // The sandbox names are long and the dangerous one must stay recognisable
   // even in the abbreviated form.
   const shortSandbox = (value: string): string =>
-    value === 'danger-full-access' ? 'DANGER' : value === 'workspace-write' ? 'ws-write' : value === 'read-only' ? 'ro' : value;
+    value === 'danger-full-access'
+      ? 'DANGER'
+      : value === 'workspace-write'
+        ? 'ws-write'
+        : value === 'read-only'
+          ? 'ro'
+          : value;
   const paintSandbox = (value: string): string =>
-    value === 'danger-full-access' ? theme.error('DANGER') : value === 'workspace-write' ? theme.warning('ws-write') : theme.info(value);
+    value === 'danger-full-access'
+      ? theme.error('DANGER')
+      : value === 'workspace-write'
+        ? theme.warning('ws-write')
+        : theme.info(value);
 
   const parts: string[] = [];
   if (mode && mode !== 'default') {
@@ -393,7 +494,15 @@ function environmentModule(data: HudData): BarModule {
 function sessionModule(data: HudData): BarModule {
   const id = data.session?.id;
   if (!id) {
-    return { id: 'session', priority: MODULE_PRIORITY.session, shrink: SHRINK.session, optional: true, group: 'meta', align: 'right', variants: {} };
+    return {
+      id: 'session',
+      priority: MODULE_PRIORITY.session,
+      shrink: SHRINK.session,
+      optional: true,
+      group: 'meta',
+      align: 'right',
+      variants: {},
+    };
   }
   const shortId = id.length > 8 ? id.slice(0, 8) : id;
   // A model-written title, when the labels feature wrote one: the widest
