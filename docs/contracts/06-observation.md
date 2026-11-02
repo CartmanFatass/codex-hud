@@ -10,6 +10,8 @@
 
 冻结后生效版本：`A9 + consult4-2026-11-01`。[Oracle consult 4](../reviews/2026-11-01-astra-consult4.md) 的下列增补保留此前裁决、schema v1 与 B 生产验收边界；checkpoint 隐私与恢复修补不得推迟到 D2。（consult 4 增补，F01）（consult 4 增补，F02）（consult 4 增补，F09）（consult 4 增补，F10）（consult 4 增补，F11）
 
+（F08 Pro 裁决增补）[F08 Pro 裁决](../reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md) 仅替代 consult 4 F08 对显式 `claude_pre_tool_use_v1` 档案的联合成本门槛；下文落入 P-06-4/5、T-06-14/16 与测量协议。MCP 内部及其他预算不放宽，G13仍为硬门禁，预算批准不等于生产实现达标。
+
 ## 数据模型
 
 ### Metric 与时间
@@ -195,8 +197,8 @@ stdin 的 session/model/context/cost 永远优先，摘要不覆盖它。廉价�
 | P-06-1 | H 个实际加载 harness → H 个 MCP；R 个活跃 run → R 个 hud-run；shell 档案的必要启动 shell 另计；默认零独立 reconciler/sidecar/通知服务 | 记录进程树、每类数量/RSS；必要 scope helper 单列理由/数量/寿命/RSS，随 run 收尾退出。终态或只剩无控制能力的 uncertain 历史不养 observer |
 | P-06-2 | 5s 心跳仅一次 runs CAS UPDATE；稳态协议心跳速率 R/5 logical UPDATE/s，R=10 时2次/s | 单列启动/终结事件写、collect lease/内容写、日志字节、SQLite WAL/实际磁盘 I/O。心跳不各写 event/evidence/meta/exit；正常 status/wait 零写，不更新 last_seen |
 | P-06-3 | 空闲阻塞；正常存活期零 100/200ms /proc 全扫/扫组循环；仅启动期有截止采样、退出/取消/恢复事件做必要检查 | trace 记录检查次数与触发原因。空闲 hud-run+其 helper 的 user+sys CPU，默认验收解释「≈0」为每 run 平均<1%单核；采样300s（≥60心跳），不含 harness/模型工作，另报总系统增量；超标是缺陷 |
-| P-06-4 | 非 wait MCP p95 <50ms（含 status/spawn/resume/cancel/whoami/report 的成功与拒绝） | 从完整 tools/call 到响应序列化/flush，含验证/摘要准备、DB 等待/commit；spawn/resume 返回 durable accepted+starting，cancel 返回 durable 取消意图，不等 TUI ready/绑定/12s序列。每工具分别测，不能只靠快拒绝达标 |
-| P-06-5 | 实时同步 SQLite 等待短且受响应总预算限制；busy_timeout≤10ms，重试含退避累计墙钟≤20ms并扣剩余响应预算 | BEGIN IMMEDIATE 内无文件读取/摘要计算/宿主 CLI/进程发现/网络等外部 I/O；事务内重验 context/版本/槽。预算耗尽且未提交时 busy/未接受；已提交响应未知按 02 重放，不再提交外部动作。长锁压测单列 busy 数/尾延迟 |
+| P-06-4 | 非 wait MCP 内部 p95 <50ms不变；仅显式 `claude_pre_tool_use_v1` 档案另验同次调用联合 p95 <150ms。status/spawn/resume/cancel/whoami/report逐工具、成功/拒绝/busy分别验收（F08 Pro 裁决增补） | MCP内部从完整 tools/call 到响应序列化/flush，含验证/摘要准备、DB等待/commit；联合从必需hook最外层冷进程启动至同次响应flush，含缓存首用、取证发布、harness调度间隙、完整授权、DB等待/commit及序列化，不能把前置工作移出成本。spawn/resume返回durable accepted+starting，cancel返回durable取消意图，不等TUI ready/绑定/12s序列。计时误差取保守上界，不相加独立分位数或仅靠快拒绝达标；wait沿用原等待预算、前置成本单列（F08 Pro 裁决增补） |
+| P-06-5 | B5授权与事务总墙钟≤30ms（含DB等待及commit）；单次busy_timeout≤10ms，所有等锁/重试/退避累计≤20ms，20ms包含在30ms内，并受MCP内部与联合预算剩余时间约束（F08 Pro 裁决增补） | BEGIN IMMEDIATE内无文件读取/摘要计算/宿主CLI/进程发现/网络等外部I/O，事务内重验捕获的context/版本/槽前提。预算耗尽且未提交才返回busy/未接受；已提交不得报未接受，响应未知按02原幂等结果恢复、不再提交外部动作。同步commit超时记预算缺陷，不声称可硬抢占；长锁压测单列busy数/尾延迟（F08 Pro 裁决增补） |
 | P-06-6 | MCP 冷启动<200ms | 从创建新 MCP 进程到可正确回答 initialize，包含 Node/模块加载/必要存储打开；不加载整个 HUD/reader/Herdr 模块图。tools/list/首次工具延迟另测，不能以延迟初始化隐藏成本 |
 | P-06-7 | HUD 增量 tick<50ms；reader 软20ms，树≤200/8MiB | 从增量 collect 入口到一致摘要发布及本次数据组装/渲染/paint enqueue 结束，含 I/O 等待/调度；两入口分别测。所有重读/预取/签名/恢复 I/O 都扣本 slice/全 tick；最大合法 1 MiB 记录含 LF 为 1 MiB+1 字节（含 CR），另计实际签名成本，不足返回 record_needs_larger_slice/minimumBytes/partial。B16/B10 共用总 deadline、公平安排足量恢复 slice，不相加各 reader 20ms。冷追赶单列，不把等待下一 tick 的空闲算进去或把慢增量移成「冷」（consult 4 增补，F10） |
 | P-06-8 | statusline 廉价数据入口≤20ms；完整 statusline p95≤150ms | 前者按上节独立测（含摘要命中/索引 fallback/缺失）；后者包含冷进程、stdin、采集竞争及输出，D3/D4 验收，故障/空输出按概念 §9.3 门禁，本文不决定视觉 |
@@ -204,7 +206,11 @@ stdin 的 session/model/context/cost 永远优先，摘要不覆盖它。廉价�
 
 最低可重跑基准：记录 CPU型号/vCPU与quota、内存、磁盘/文件系统（本地/跨挂载）、OS/kernel/WSL、Node/SQLite/harness/host版本、HUD revision/profile、样本/原始计时、并发与数据量。没有这些信息的数字不能作验收证据。
 
-使用临时 HUD_HOME/source、固定合成100MiB历史；增量分0/1/2000条、含≤1MiB单条、200节点/深度4、多消费者 panel+statusline（D再加watch）。MCP 按 H/R=1/1、2/10 并发运行，含心跳交错/锁竞争；相同数据跑有/无Herdr。非wait每工具每组合预热50次后≥1000次，报告成功/拒绝/busy数及p50/p95/p99/max；空闲CPU/写入≥300s，排除起止事件后核对60个心跳边界，日志吞吐另外测。
+（F08 Pro 裁决增补）显式Claude hook档案的原始证据须绑定具体Claude版本、helper实现修订、完整非秘密profile指纹及同次调用关联键。联合与MCP内部计时来自同一次调用，不用hook p95+MCP p95推联合p95。用单调钟并记录计时误差/跨进程时钟关联；无法直接覆盖最外层冷启动或响应flush的采样须用可解释的保守上界，不能用写记录至handler的领先量、hook热启动、not_implemented或skeleton快拒绝代替完整授权/真事务。缓存首用纳入，不借预热删除该成本；delegate_wait保留03/05的等待预算，前置成本与实际等待/响应分别报告，不套用非wait的150/50ms门槛。
+
+使用临时 HUD_HOME/source、固定合成100MiB历史；增量分0/1/2000条、含≤1MiB单条、200节点/深度4、多消费者 panel+statusline（D再加watch）。MCP 按 H/R=1/1、2/10 并发运行，含心跳交错/锁竞争；相同数据跑有/无Herdr。非wait每工具每组合预热50次后≥1000次，成功/拒绝/busy分别报n及p50/p95/p99/max并逐项验收P-06-4/5，显式Claude hook档案联合与MCP内部同测、不能混合结果掩盖慢成功；空闲CPU/写入≥300s，排除起止事件后核对60个心跳边界，日志吞吐另外测。（F08 Pro 裁决增补）
+
+（F08 Pro 裁决增补）B14最终档案另收≥200次真实联合调用，跨≥10次harness启动、每个声明路径≥20次，逐工具/成功/拒绝/busy分报n及p50/p95/p99/max；合成数据不混入真实样本，缺格不授verified。B4真实Claude发起spawn/resume须durable accepted、保留既有hooks/配置、精确claim/HUD_HOME、零重复提交并同验150/50ms；B5按01保留F06/F07全部反例与30/10/20ms分项计时，子调用零根授权、旧来源零新提交、claim零重复消费、合法新根仍可用。仅七个HUD工具匹配、按次冷启动、有界读写、无新增常驻服务/轮询的G13要求保留；hook进程数/写入量单列，不改P-06-1/3/9。
 
 冷启动每形态≥100个新进程，说明 OS页缓存冷热；增量每组合≥1000 tick，statusline 每入口≥1000次。冷启动/增量tick的<200/<50按所声明工作负载的逐样本上限检查，另报p50/p95/p99/max与超预算次数；不得只报平均或删异常值。started/bound/ready 用≥30个合成进程启动样本统计同样分位和缺失数，真实 harness 逐能力格样本量另报；未有样本标未测。B先做最小基准，D4扩展到超大行/无换行/重写/宽树/多消费者；任何 helper/包装链变化只重验受影响预算与TTY/context行。以上不是本批硬件实测结果。
 
@@ -240,9 +246,9 @@ stdin 的 session/model/context/cost 永远优先，摘要不覆盖它。廉价�
 | T-06-11 | B | H/R=1/1、2/10的进程树/RSS及终态、无控制uncertain历史 → 数量按P-06-1、helper收尾退出，零常驻恢复/通知服务 |
 | T-06-12 | B | 稳态300s/10run，SQL与文件写trace → 心跳2 logical UPDATE/s，零周期event/evidence/meta/exit复制；status/wait零写，观测/日志/磁盘写单列 |
 | T-06-13 | B | 空闲300s与启动/退出/取消/恢复事件trace → CPU与检查频率达P-06-3，零稳态100/200ms扫组，采样有截止 |
-| T-06-14 | B | 每非wait工具≥1000次，锁占用/并发/已提交响应丢失 → p95<50ms，busy短退、无外部I/O占写事务，accepted/started分开，无重复提交 |
+| T-06-14 | B | H/R=1/1、2/10每非wait工具/组合预热50次后≥1000次，含锁占用/并发/缓存首用/已提交响应丢失 → 每工具成功/拒绝/busy各自n及p50/p95/p99/max，MCP内部p95<50ms；显式Claude hook档案同次联合p95<150ms，覆盖最外层冷启动至flush全部成本、保守上界且不相加独立分位数。B5授权与事务≤30ms含commit，单次busy_timeout≤10ms，所有等锁/重试/退避累计≤20ms且包含在30ms及剩余双预算内；耗尽且未提交才busy，已提交超时仍恢复原结果、不报未接受、同步commit超时记预算缺陷而非可硬抢占。无外部I/O占写事务，accepted/started分开，零重复提交（F08 Pro 裁决增补） |
 | T-06-15 | B | ≥100个冷MCP + 首次tools/list/call + ≥30启动样本 → 冷启动<200ms，延迟/缺失分开记录，未测能力不报pass |
-| T-06-16 | B | 最小B基准及D4的200节点、增量/冷追赶、宽树/多消费者 → P-06-7/8/9和完整测量元数据齐全，慢样本不隐藏 |
+| T-06-16 | B | 最小B基准及D4的200节点、增量/冷追赶、宽树/多消费者 → P-06-7/8/9和完整测量元数据齐全，慢样本不隐藏；B14最终显式Claude hook档案另有≥200次真实联合调用、跨≥10次harness启动、每声明路径≥20次，逐工具/结果n及p50/p95/p99/max和Claude版本/helper修订/profile指纹齐全，同次验150/50ms，合成不混入、缺格不授verified；wait沿用原等待预算且前置成本单列，300s资源与accepted→started/bound/ready分计保留，G13零新增常驻服务/轮询（F08 Pro 裁决增补） |
 | T-06-17 | A9 | 提示重复/丢失/注册间隙、短wait截止、原run后新轮 → 有界复读、同run/游标，不依赖通知保证或新服务 |
 | T-06-18 | B | 10run心跳风暴、多waiter、启动重连发现receipt/无receipt历史 → coalesced high-water检查，无逐waiter心跳重查/全量对账，status只读；按02幂等导入/取证 |
 | T-06-19 | B | 同连接data_version不变/改变、重开连接、自身写、只有时钟变 → 查询缓存正确失效，心跳不全树重建，年龄仍更新；不轮询全表 |
