@@ -14,7 +14,7 @@
 | 阶段 | 交付物 | 状态 |
 |---|---|---|
 | A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 已完成，**A9 带条件放行，契约 01–07 与 schema v1 冻结**：契约（Oracle 三次裁决 C/D/E 与 A9-fix 已落实）、A3/A8 探针、前端信息设计 v1.0、A4 核心类型与契约 fixture、隔离 A9 原型 23/23、A5 四接口与假实现、A6 Codex facade、A7 测试基建；Pro 评审见 reviews/2026-11-01-chatgpt-pro-a9-gate.md |
-| B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 进行中：第一批 B1/B2/B3a/B8 已合入；Oracle 第 4 次裁决已落实（O4APPLY）；B1b Claude hook 来源已合入（成本按 F08 Pro 裁决另立 150 ms 联合预算）；BINT1 账本接线已合入（hud-run 与 hud-mcp 走真实账本、执行票据授权、trusted_local 管理）；第二批：B12（采集租约与 ObservationCommit 存储；大 checkpoint 成本待 ARCH）、B18（委派导出 v1 producer）、F08 契约增补已合入；B45（B4+B5 headless 闭环）进行中 |
+| B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 进行中：第一批 B1/B2/B3a/B8 已合入；Oracle 第 4 次裁决已落实（O4APPLY）；B1b Claude hook 来源已合入（成本按 F08 Pro 裁决另立 150 ms 联合预算）；BINT1 账本接线已合入（hud-run 与 hud-mcp 走真实账本、执行票据授权、trusted_local 管理）；第二批：B12（采集租约与 ObservationCommit 存储；大 checkpoint 成本待 ARCH）、B18（委派导出 v1 producer）、F08 契约增补已合入；B45（B4+B5 headless 闭环：spawn/resume、授权、claim 握手，真实 Codex/Claude→Codex 闭环通过；能力格仍 unverified 待 B14）已合入，第二批完成；Oracle 第 5 次裁决（R1–R6）进行中 |
 | C pi 与 Jev 后端 | pi 适配器与 `hud pi`、resume 实测、Jev 后端与 JobRef、pi 的 MCP 加载 | |
 | D cc 完整与 statusline | cc 原生子代理、checkpoint 与采集租约、`hud statusline`、对照清单与基准、三道门切换 | |
 | E 整理 | herdr 宿主完整版、改名与迁移、v1.1 工具、文档 | |
