@@ -5,9 +5,9 @@ import { LinuxProcessReader } from './process.js';
 import { FileCallerRegistry, MemoryCallerRegistry, registerCaller } from './registry.js';
 import { createLedgerCallerRegistry } from './ledger-registry.js';
 import { SessionRefResolver } from './resolvers.js';
-import { HudMcpServer, serveStdio } from './server.js';
+import { HudMcpServer, serveStdioProcess } from './server.js';
 import { LedgerCallerRegistry } from './ledger-registry.js';
-import { scopeSnapshot } from '../../../src/ledger/call-context.js';
+import { ReadOnlyScopeSnapshot } from '../../../src/core/ledger-scope-read.js';
 import { DelegationService } from './delegation.js';
 import { createShippedCodexCapabilityVerifier } from '../../../src/core/launch/index.js';
 import { readHookConfig, selectsClaudeHook } from './hook/record.js';
@@ -50,9 +50,7 @@ const registration = await registerCaller({
   nowMs: Date.now(),
 });
 const scopes =
-  registry instanceof LedgerCallerRegistry
-    ? { read: (key: string) => registry.ledger.snapshot((tx) => scopeSnapshot(tx, registry.ledger.ledgerId, key)) }
-    : undefined;
+  registry instanceof LedgerCallerRegistry ? new ReadOnlyScopeSnapshot(join(home, 'ledger.sqlite')) : undefined;
 const hookConfig = process.env.HUD_CLAUDE_HOOK_CONFIG;
 const hook =
   profile && selectsClaudeHook(profile) && hookConfig && scopes
@@ -85,9 +83,13 @@ const bodies =
         hudRunPath: fileURLToPath(new URL('../../../../../../bin/hud-run', import.meta.url)),
       })
     : undefined;
-await serveStdio(
-  new HudMcpServer(new SessionRefResolver(registration, reader, profile, undefined, hook, scopes), bodies),
-  process.stdin,
-  process.stdout
-);
-if (registry instanceof LedgerCallerRegistry) await registry.ledger.close();
+const server = new HudMcpServer(new SessionRefResolver(registration, reader, profile, undefined, hook, scopes), bodies);
+let discardPendingOutput = false;
+try {
+  ({ discardPendingOutput } = await serveStdioProcess(server));
+} finally {
+  bodies?.close();
+  if (registry instanceof LedgerCallerRegistry) await registry.ledger.close();
+}
+// All owned stores/waiters are closed; an unread native stdout WriteWrap must not retain the process.
+if (discardPendingOutput) process.exit(0);

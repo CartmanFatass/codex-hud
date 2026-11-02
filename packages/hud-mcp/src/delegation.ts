@@ -19,6 +19,11 @@ import { readProcess } from '../../../src/core/run/process.js';
 import { PrivateLedgerGate } from '../../../src/ledger/local-manager.js';
 import { LedgerBusyError } from '../../../src/ledger/transaction.js';
 import { digest } from '../../../src/core/canonical.js';
+import { ReadControlService } from './read-control.js';
+import type { LedgerTransaction } from '../../../src/ledger/transaction.js';
+import type { WaitRequest } from '../../../src/core/types/lifecycle.js';
+import { sameSessionRef } from '../../../src/core/identity.js';
+import type { SubscribeWait } from '../../../src/core/wait/index.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 type McpAuthority = Extract<IntentAuthority, { kind: 'mcp' }>;
@@ -37,19 +42,84 @@ export interface DelegationOptions {
   executableIdentity?: import('../../../src/core/launch/fingerprint.js').ExecutableIdentity;
   /** Trusted dependency for owned-process tests. Never selected by tool/config input. */
   launch?: typeof launchPreparedRun;
+  /** Trusted client/version/profile timeout proof; numeric config alone is insufficient. */
+  waitTimeoutVerified?: boolean;
+  subscribeWait?: SubscribeWait;
 }
 
 /** Composition for production tools; every call receives a freshly verified source. */
 export class DelegationService {
-  constructor(private readonly options: DelegationOptions) {}
+  private readonly reads: ReadControlService;
+  constructor(private readonly options: DelegationOptions) {
+    this.reads = new ReadControlService(options.ledger, options.home, options.subscribeWait);
+  }
+  close(): void {
+    this.reads.close();
+  }
+  private readAuthority(tx: LedgerTransaction, source: Extract<CallResolution, { ok: true }>): McpAuthority {
+    if (!source.scopePremise || !this.options.registration) throw new Error('identity_unverified');
+    const context = tx.get(
+      "SELECT context_id,generation FROM caller_contexts WHERE caller_id=? AND context_key='stdio' AND process_key=? AND closed_at IS NULL",
+      this.options.registration.caller.callerId,
+      source.processKey
+    );
+    if (!context) throw new Error('stale_context');
+    const captured = readContext(tx, String(context.context_id), Number(context.generation));
+    if (
+      captured.kind !== 'dedicated' ||
+      captured.procGeneration === null ||
+      !captured.sessionRef ||
+      !sameSessionRef(captured.sessionRef, source.sessionRef)
+    )
+      throw new Error('stale_context');
+    return {
+      kind: 'mcp',
+      contextId: captured.contextId,
+      generation: captured.generation,
+      scopePremise: source.scopePremise,
+      evidence: {
+        physicalCallerVerified: true,
+        pidDomainVisible: true,
+        profileObservesSessionSwitch: true,
+        topology: 'direct_stdio',
+        logicalSource: 'root',
+        processKey: source.processKey,
+        procGeneration: captured.procGeneration,
+        sessionRef: source.sessionRef,
+      },
+    };
+  }
   async invoke(
     source: Extract<CallResolution, { ok: true }>,
     tool: string,
     args: DelegationArguments,
-    started = performance.now()
+    started = performance.now(),
+    signal?: AbortSignal
   ): Promise<unknown> {
     if (!source.scopePremise) throw new Error('identity_unverified');
     if (!this.options.registration || !this.options.reader) throw new Error('local_entry_only');
+    if (tool === 'delegate_status')
+      return this.reads.status(args as unknown as Parameters<ReadControlService['status']>[0], (tx) =>
+        this.readAuthority(tx, source)
+      );
+    if (tool === 'delegate_wait') {
+      const profile = this.options.config.profiles.find(
+        (p) =>
+          p.harness === this.options.registration!.caller.harness &&
+          p.source.root === this.options.registration!.source?.rootPath
+      );
+      return this.reads.wait(
+        args as WaitRequest,
+        (tx) => this.readAuthority(tx, source),
+        {
+          clientToolTimeoutMs: profile?.clientToolTimeoutMs ?? null,
+          responseMarginMs: profile?.responseMarginMs ?? null,
+          verified: this.options.waitTimeoutVerified === true,
+          started,
+        },
+        signal
+      );
+    }
     const handshake = new HandshakeService({
       ledger: this.options.ledger,
       registration: this.options.registration,
@@ -71,6 +141,11 @@ export class DelegationService {
       Math.min(20, Math.max(0, deadline - performance.now()))
     );
     const budget = { deadline, lockBudgetMs: Math.max(0, 20 - (performance.now() - started)) };
+    if (tool === 'delegate_cancel')
+      return this.reads.cancel(String(args.runId), args.grace === undefined ? 10000 : Number(args.grace), authority, {
+        deadline,
+        lockDeadline: started + 20,
+      });
     if (tool === 'delegate_whoami') return handshake.whoami(args as { claim?: string }, authority, budget);
     if (tool === 'delegate_report')
       return handshake.report(args as unknown as Parameters<HandshakeService['report']>[0], authority, budget);
