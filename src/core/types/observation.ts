@@ -1,6 +1,6 @@
 import type { RecoveryIndexHandoff } from './checkpoint.js';
 import type { SessionRef } from './identity.js';
-import type { Run, RunState } from './execution.js';
+import type { Run, RunState, TerminalNote, Termination, ReconciliationCause } from './execution.js';
 import type { Report, RunHandshake } from './lifecycle.js';
 
 export type Metric<T> = {
@@ -299,6 +299,8 @@ export interface ObservationCommit {
 }
 
 export interface RunExecutionProjection {
+  terminal?: { note: TerminalNote; termination: Termination | null } | null;
+  reconciliation?: { cause: ReconciliationCause; missing: string[] } | null;
   isRunTerminal: boolean | null;
   execution: 'non_execution' | 'managed' | 'unmanaged';
   launchFailure: { stateKey: 'launch_failed'; reason: string | null } | null;
