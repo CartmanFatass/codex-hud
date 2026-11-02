@@ -620,7 +620,11 @@ return `capability_unverified`; earlier input/target refusals retain their own
 reason codes. Executable discovery or a configuration flag does not
 grant a capability. Standalone Claude launch creates no managed run or parent
 context. Panel/host integration, delegated Claude resume and `hud pi` follow in
-later packages. There is no `hud cache` command in this release.
+later packages. `hud cache show [--json]` is read-only: it prints the
+`HUD_HOME/cache.json` v2 snapshot that hud-mcp loads once at startup, with its
+validation result. A missing file is a valid empty snapshot (exit 0); an invalid
+file prints its detail code (exit 2) while hud-mcp still starts and reports empty
+advice. `hud cache --help` needs no HUD_HOME. `hud cache report` follows in v1.1.
 
 Management uses an existing absolute, canonical, private `HUD_HOME` owned by the
 current uid (default `~/.hud`); symlinks, unsafe permissions and missing stores are
@@ -631,6 +635,7 @@ hud run status RUN [--json]
 hud run cancel RUN [--grace MS] [--json]
 hud run reconcile RUN [--json]
 hud run resume LINK --request-key KEY --expected-run RUN --mode headless|visible [--prompt TEXT] [--json]
+hud cache show [--json]
 ```
 
 Status opens SQLite read-only. Cancel and reconcile use the existing trusted-local

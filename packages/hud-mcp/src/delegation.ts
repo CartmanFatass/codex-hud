@@ -19,7 +19,8 @@ import { readProcess } from '../../../src/core/run/process.js';
 import { PrivateLedgerGate } from '../../../src/ledger/local-manager.js';
 import { LedgerBusyError } from '../../../src/ledger/transaction.js';
 import { digest } from '../../../src/core/canonical.js';
-import { ReadControlService } from './read-control.js';
+import { ReadControlService, withCacheAdvice, type CacheAdviceSource } from './read-control.js';
+import { emptyCacheConfig, type CacheConfigLoad } from '../../../src/core/cache-config.js';
 import type { LedgerTransaction } from '../../../src/ledger/transaction.js';
 import type { WaitRequest } from '../../../src/core/types/lifecycle.js';
 import { sameSessionRef } from '../../../src/core/identity.js';
@@ -45,16 +46,44 @@ export interface DelegationOptions {
   /** Trusted client/version/profile timeout proof; numeric config alone is insufficient. */
   waitTimeoutVerified?: boolean;
   subscribeWait?: SubscribeWait;
+  /** `<HUD_HOME>/cache.json` loaded once at process start; absent means an empty snapshot. */
+  cache?: CacheConfigLoad;
 }
 
 /** Composition for production tools; every call receives a freshly verified source. */
 export class DelegationService {
   private readonly reads: ReadControlService;
+  private readonly cache: CacheAdviceSource;
   constructor(private readonly options: DelegationOptions) {
-    this.reads = new ReadControlService(options.ledger, options.home, options.subscribeWait, {}, options.config.limits);
+    this.cache = {
+      load: options.cache ?? { ok: true, snapshot: emptyCacheConfig(), path: '', origin: 'missing' },
+      harness: options.registration?.caller.harness ?? 'unknown',
+      model: (backend, role) => options.config.profiles.find((p) => p.name === backend)?.roles?.[role]?.model ?? null,
+    };
+    this.reads = new ReadControlService(
+      options.ledger,
+      options.home,
+      options.subscribeWait,
+      {},
+      options.config.limits,
+      this.cache
+    );
   }
   close(): void {
     this.reads.close();
+  }
+  /**
+   * Add advice to a sanitized structured failure at the server boundary, where
+   * thrown expected refusals (`capability_unverified`, `slot_busy`, …) become
+   * `{ok:false, code}`. The code and every other field stay exactly as built;
+   * only `delegate_spawn` carries advice. The declared role is the only model
+   * source available before a link exists.
+   */
+  decorateFailure(tool: string, args: Record<string, unknown>, outcome: { ok: false; code: string }): unknown {
+    if (tool !== 'delegate_spawn') return outcome;
+    const backend = typeof args.backend === 'string' ? args.backend : '';
+    const role = typeof args.role === 'string' ? args.role : '';
+    return withCacheAdvice(outcome, this.cache, backend, role);
   }
   private readAuthority(tx: LedgerTransaction, source: Extract<CallResolution, { ok: true }>): McpAuthority {
     if (!source.scopePremise || !this.options.registration) throw new Error('identity_unverified');
@@ -352,13 +381,17 @@ export class DelegationService {
       gate ? () => gate.check() : undefined,
       config.limits
     );
+    // Advice is a pure lookup over the startup snapshot, merged over any advice the
+    // outcome already carries (B19's `wake`); `delegate_resume` keeps its old shape.
+    const withAdvice = (outcome: object) =>
+      operation === 'spawn' ? withCacheAdvice(outcome, this.cache, profile.name, link.role) : outcome;
     if (
       result.outcome &&
       typeof result.outcome === 'object' &&
       !Array.isArray(result.outcome) &&
       result.outcome.code === 'concurrency_limit'
     )
-      return result.outcome;
+      return withAdvice(result.outcome);
     if (!result.replayed) {
       // Do not await private-pipe backpressure after commit. This closure owns
       // the sole ticket delivery; replay never schedules it again.
@@ -370,7 +403,7 @@ export class DelegationService {
         }
       })();
     }
-    return { ok: true, ...(result.outcome as object) };
+    return withAdvice({ ok: true, ...(result.outcome as object) });
   }
   /** Trusted B11 function entry; arguments cannot select an MCP or management actor. */
   async resumeLocal(args: LocalResumeRequest): Promise<unknown> {

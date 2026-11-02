@@ -14,8 +14,12 @@ import { readHookConfig, selectsClaudeHook } from './hook/record.js';
 import { fileURLToPath } from 'node:url';
 import { openLedger } from '../../../src/ledger/ledger.js';
 import { shippedManifest, verifiedClientTimeout } from '../../../src/cli/capability.js';
+import { loadCacheConfig } from '../../../src/core/cache-config.js';
 const home = process.env.HUD_HOME;
 if (!home || !isAbsolute(home)) throw new Error('HUD_HOME must name an absolute private HUD directory');
+// Loaded once per process: advice is a pure lookup, so a change takes effect in the next session.
+// An invalid file never stops startup; every advice field stays empty and carries the detail code.
+const cache = loadCacheConfig(home);
 const file = join(home, 'delegate.json');
 const config = existsSync(file) ? loadDelegateConfig(file) : validateDelegateConfig({ version: 1, profiles: [] });
 const profileName = process.env.HUD_MCP_PROFILE;
@@ -96,6 +100,7 @@ const bodies =
         reader,
         capability,
         waitTimeoutVerified,
+        cache,
         hudRunPath: fileURLToPath(new URL('../../../../../../bin/hud-run', import.meta.url)),
       })
     : undefined;
