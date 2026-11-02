@@ -11,6 +11,16 @@ its rewritten JSON I/O is not a SQLite heartbeat budget measurement. Registratio
 consumes the original execution ticket once. No helper gets separate execution
 authority. Recovery observes the original run without replaying launches/signals.
 
+A bounded, uncommitted heartbeat `ledger_busy` keeps the existing control loop
+alive. It retains the committed heartbeat timestamp/sequence, so its real age can
+become stale, and reports publication unavailable once per consecutive busy
+period on stderr. The next existing five-second tick tries again; no new retry
+loop, timer, heartbeat event or fabricated liveness is added. A failed writer CAS
+or another authority/error condition retains the existing fail-closed behavior.
+Committed heartbeats are not reclassified when a later observation fails. A
+bounded final-import failure preserves any immutable receipt for the existing
+explicit reconciler; it does not launch a new writer or retry terminal imports.
+
 `start` reads one bounded protected JSON object from stdin:
 `{input,ticket,briefBase64?,env?,managedShellVerified?,parent?}`. The ticket is
 absent from argv, metadata and logs. Trusted composition supplies
