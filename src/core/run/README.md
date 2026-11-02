@@ -1,8 +1,9 @@
-# Headless run supervision
+# Run supervision
 
 `bin/hud-run` loads `dist/core/run/cli.js`. Build first. Linux with matching
 procfs/PID namespaces and Node 22.x >=22.13 or >=24 is required (23 unsupported).
-The bar's Node floor is unchanged. Visible mode belongs to B3b.
+The bar's Node floor is unchanged. Both headless and the visible wrapper path use
+the existing ticket, artifacts, heartbeat and reconciler interfaces.
 
 The CLI uses the real private ledger in `HUD_HOME`. `HUD_RUN_PORT_MODULE` is an
 explicit trusted integration/test adapter. `tests/run/file-port.mjs` is test-only;
@@ -123,3 +124,118 @@ harness argv/NODE_OPTIONS. The leader/auxiliaries are shell processes with no HU
 V8 flags. B14 still owns formal B45/MCP H/R profiles, real ledger/WAL, >=60 heartbeat
 boundaries and capability/version/performance acceptance. File-fake idle results
 and this implementation do not promote capabilities.
+
+
+## Visible wrapper (revised 甲)
+
+The pane's interactive shell must launch hud-run as its foreground job and wait
+for it. The supervisor never reads the terminal. Visible launch uses
+`hud-run start --launch-fd 3`, with a private pipe/socket or owned 0600 regular
+file inherited on descriptor 3. The bounded JSON is the same protected start
+object, with `input.mode="visible"`, `input.stdin="tty"`, and the trusted addition
+`visible: {expectedExecutable: "/absolute/resolved/harness-binary"}`. Descriptor 0
+stays the terminal; descriptors below 3, terminal descriptors, foreign or public
+launch descriptors are refused. The ticket is never put in argv or environment.
+`start` on a terminal without this descriptor refuses without reading stdin.
+
+For example, the host's foreground shell can execute
+`/absolute/node /absolute/bin/hud-run start --launch-fd 3 3< /private/launch.json`.
+The host owns creation and removal of that private launch channel. There is no
+new public command for preparing tickets. The optional profile fields are
+`strategy: "wrapper"`, `capture: "tty_passthrough"`, `dispatch: "fresh"`, and an
+absolute `shellPath` for argv profiles. Sidecar, PTY capture and unknown dispatch
+requests return unsupported before registration, without fallback or a second
+start. A failed discovery does not give a new ticket.
+
+Shell launch still requires `managedShellVerified: true`, meaning the trusted
+profile has verified one foreground workload and no delayed/background/repeated
+submission. It runs the explicit absolute shell with `-ic` and the original text.
+Functions and context wrappers remain shell functions. An argv profile runs
+`$SHELL -ic '"$@"' hud-visible <argv...>` (or its explicit `visible.shellPath`),
+passing arguments as positional parameters rather than interpolating shell text.
+No arbitrary shell program is inferred to be a verified managed profile.
+
+Before registration, procfs and `isatty(0)` must show hud-run leading the
+terminal's foreground group (PID = PGID = foreground PGID). Membership alone
+does not prove foreground-job provenance. Noninteractive wrappers that put
+hud-run in the background while retaining `/dev/tty` and surviving briefly are
+refused, as are foreground wrappers that keep their own group leader. Only the
+documented direct foreground job is admitted; there is no inferred wrapper proof.
+Background `hud-run &` and `sh -c '<hud-run> &'` are refused.
+The interactive child shell inherits the terminal and creates the foreground
+harness job. Discovery requires a live unique foreground group leader with the
+trusted expected `/proc/<pid>/exe`, matching TTY/SID, ancestry reaching the full
+command-shell stamp, and a rechecked start/boot/PID-domain stamp. It excludes the
+supervisor's group. Shared-group/direct-exec or nonleader profiles remain unknown;
+there is no single-PID control fallback. The profile must name the actual binary
+(interpreter for a script); process names, first matches and a shell status are
+never harness identity. `identifyHarness` remains the headless composition seam;
+visible uses the separate foreground/executable proof described here.
+
+Discovery reads the terminal foreground PGID directly, without enumerating global
+procfs or choosing among process names. Startup has at most three observations,
+five seconds apart, with child
+exit waking it immediately. It ends after ten seconds even if no candidate exists.
+After discovery there is no group polling or scope watcher. The existing five
+second heartbeat remains the only idle timer. A shell exit triggers the scope
+proof; a surviving member prevents R. Without further member events the original
+writer records its last facts and exits, leaving explicit reconciliation to prove
+Q later. Z-only groups remain conservative under the existing shared proof:
+`proveGroupGone` is unchanged and requires kernel group absence. The startup
+observation cannot release the slot as Q ahead of the original writer's R.
+
+Metadata/receipt record wrapper mode, independent command shell and harness stamps,
+the fixed PGID/SID/leader scope, and `tty_passthrough` capture. Empty log files do
+not mean the harness produced no output. The original shell's real Node child
+wait result supplies `shell_exit`; `GroupExit` remains `native_unknown`, so the
+harness's `native_exit` is null and a complete normal receipt says `scope_ended`.
+Shell 137 is never turned into a harness SIGKILL result. Cancellation classification
+still belongs to the existing R-02 reconciler and accepted chronology.
+
+Visible cancellation accepts and preserves the existing authenticated intent but
+currently refuses delivery, recording `cancel.unconfirmed` and an unacknowledged
+INT step. Even a matching live group has no approved stable delivery capability.
+No INT, TERM or KILL reaches a numeric PGID or single PID through this path; no
+graces/escalation timer starts after refusal. Duplicate requests retain the
+original intent and do not repeat the attempted step. The run continues to hold
+its slot until independent scope R/Q is available. A later normal end with no
+proven cancellation chronology remains ended, with cancel_timing_unknown.
+Supervisor-directed INT/TERM/HUP accepts cancellation through the same local
+entry and likewise refuses forwarding. TTY Ctrl-C and terminal-generated HUP
+remain operating-system signals to the foreground group.
+
+**待 ARCH 裁决:** procfs verify followed by group kill has an unbounded kernel
+scheduling/reuse window; synchronous JavaScript does not make delivery atomic.
+Until ARCH approves a stable delivery mechanism/topology, visible group control
+is unavailable rather than enabled with this weaker guarantee. No native helper
+or new dependency is authorised in this task. A future approved mechanism must
+cover the whole fixed scope, refuse reuse, and pass the TTY/context/fault matrix
+plus INT → 10 seconds → TERM → 2 seconds → KILL tests. The existing headless
+immutable in-group sender and cancellation ladder remain unchanged.
+
+`visibleHostContext(env)` exports HERDR_* values and workspace/tab/pane IDs for a
+HostAdapter to consume. It performs no surface, readiness, input or focus actions;
+all environment values are passed through to the user's shell. The supervisor
+never creates or operates Herdr surfaces. Parent physical-instance loss uses the
+existing `parent.offline` fact and frozen continue/stop policy. With continue the
+harness remains foreground and interactive. Supervisor death stops heartbeats;
+reconcile returns uncertain, holds the slot and exposes no interaction. There is
+no automatic input, focus, fg, wrapper reconstruction, takeover or resume. The
+existing independent Q proof can finish the run without an exit receipt and does
+not rewrite the dead writer's files.
+
+**待 ARCH 裁决:** the existing ledger raw whitelist has no carrier for the
+supervisor's own directed signal/HUP observation. New ledger kinds are outside
+this task's authority. The handler accepts cancellation but does not pretend this
+is `command.exited`, mutate stable metadata or add receipt fields. Persisting that
+partial fact would require an explicitly approved supervisor-signal raw kind (or
+a future versioned artifact field). Host context remains exported in-process data.
+
+Terminal validation uses only private tmux sockets and mkdtemp TMUX_TMPDIR/HUD_HOME,
+with synthetic terminal consumers and a fake HostAdapter. Run
+`node --test tests/run/visible-terminal.mjs` after both builds. The suite also
+includes real SQLite R/Q tests. Set `HUD_VISIBLE_IDLE=1` and select the test name
+`real SQLite R=1 idle` for the 60-second idle sample. Every terminal test kills its
+private server, verifies its original process stamps disappeared, and removes its
+exact temporary root. `HUD_VISIBLE_AUDIT=/absolute/path` optionally records those
+owned roots/sockets/stamps and completed cleanup for an external audit.

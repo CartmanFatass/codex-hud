@@ -16,6 +16,7 @@ import type { ReconcileEvidence, ReconcileFact } from '../types/execution.js';
 import type { FinalExitReceipt, ProcessStamp, RunLaunchInput, RunMeta } from '../types/supervision.js';
 import type { LocalManager, RunFactPort, RunSnapshot, CancelIntent } from './port.js';
 import { RunArtifacts } from './artifacts.js';
+import { launchVisible, preflightVisible, type VisibleProfile, type VisibleProcess } from './visible-process.js';
 import {
   launchGroup,
   preflightGroupLaunch,
@@ -31,6 +32,8 @@ export interface StartOptions {
   brief?: Buffer;
   env?: NodeJS.ProcessEnv;
   managedShellVerified?: boolean;
+  /** Trusted single-foreground profile; carried with the protected launch ticket. */
+  visible?: VisibleProfile;
   parent?: { process: ProcessStamp; contextId: string; generation: number };
   /** B4 profile/source verifier; process names/first candidates are never sufficient. */
   identifyHarness?: (command: ProcessStamp) => Promise<ProcessStamp | null>;
@@ -53,12 +56,20 @@ export function codexClaimArgs(
 function validateStart(options: StartOptions): string[] {
   const { input } = options,
     launch = input.launch;
-  if (input.mode !== 'headless' || !['brief', 'closed'].includes(input.stdin))
+  if (input.mode === 'visible') {
+    if (input.stdin !== 'tty') throw new Error('unsupported_visible_input');
+    preflightVisible(options.visible);
+  } else if (input.mode !== 'headless' || !['brief', 'closed'].includes(input.stdin))
     throw new Error('unsupported_headless_input');
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.runId) || !isAbsolute(input.cwd)) throw new Error('invalid_launch');
   if ('argv' in launch && launch.argv && !('shell' in launch)) {
     if (!launch.argv.length || launch.argv.some((x) => typeof x !== 'string' || x.includes('\0')) || !launch.argv[0])
       throw new Error('invalid_argv');
+    if (input.mode === 'visible') {
+      const shell = options.visible?.shellPath ?? options.env?.SHELL ?? process.env.SHELL;
+      if (!shell || !isAbsolute(shell)) throw new Error('unsupported_visible_shell');
+      return [shell, '-ic', '"$@"', 'hud-visible', ...launch.argv];
+    }
     return [...launch.argv];
   }
   if (
@@ -113,6 +124,10 @@ export class HeadlessRunControl implements RunControl {
     return this.status(runId);
   }
   async reconcile(runId: string) {
+    return this.observe(runId, true);
+  }
+  /** The original writer must commit R before its own exit event can produce Q. */
+  private async observe(runId: string, allowEnd: boolean) {
     await this.port.authorizeManager(runId, this.actor, 'reconcile');
     // Retry a bounded stale snapshot; never overwrite facts committed while probing.
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -171,11 +186,17 @@ export class HeadlessRunControl implements RunControl {
             processState(m.scope.group_leader) === 'dead' &&
             m.command_leader !== null &&
             processState(m.command_leader) === 'dead';
-          const state = gone ? 'gone' : check.result;
+          const state = gone && allowEnd ? 'gone' : check.result;
           observations.push(
-            fact(s, { kind: 'scope', state, complete: gone, harnessTerminated: harnessDead, launchersSealed: sealed })
+            fact(s, {
+              kind: 'scope',
+              state,
+              complete: gone && allowEnd,
+              harnessTerminated: harnessDead,
+              launchersSealed: sealed,
+            })
           );
-          if (gone)
+          if (gone && allowEnd)
             observations.push(
               fact(s, {
                 kind: 'scope_reconciled',
@@ -192,7 +213,7 @@ export class HeadlessRunControl implements RunControl {
           } catch {
             /* absent/untrusted files do not grant authority */
           }
-          if (receipt) {
+          if (receipt && allowEnd) {
             const accepted = inspectReceipt(
               { final: true, complete: true, fingerprint: digest(receipt), receipt },
               m,
@@ -233,13 +254,15 @@ export class HeadlessRunControl implements RunControl {
     const argv = validateStart(options),
       { input } = options,
       id = input.runId;
-    if (this.groupLauncher === launchGroup) preflightGroupLaunch(argv);
+    const visible = input.mode === 'visible';
+    if (!visible && this.groupLauncher === launchGroup) preflightGroupLaunch(argv);
     const before = await this.port.read(id);
     if (
       before.run.launchCwd !== input.cwd ||
       before.run.sourceId !== input.sourceId ||
       before.run.orphanPolicy !== input.orphanPolicy ||
-      before.run.mode !== input.mode
+      before.run.mode !== input.mode ||
+      before.run.supervisionStrategy !== (visible ? 'wrapper' : 'headless')
     )
       throw new Error('frozen_launch_mismatch');
     const self = readProcess(process.pid)?.stamp;
@@ -261,8 +284,8 @@ export class HeadlessRunControl implements RunControl {
       link_id: r.linkId,
       source_id: r.sourceId,
       binding_generation: r.expectedGeneration,
-      mode: 'headless',
-      supervision_strategy: 'headless',
+      mode: input.mode,
+      supervision_strategy: visible ? 'wrapper' : 'headless',
       supervisor: self,
       command_leader: null,
       harness: null,
@@ -273,7 +296,7 @@ export class HeadlessRunControl implements RunControl {
       launch_correlation_id: r.launchCorrelationId,
       created_at: r.createdAt,
       stdin_mode: input.stdin,
-      capture: 'file',
+      capture: visible ? 'tty_passthrough' : 'file',
       launch_cwd: r.launchCwd,
       project_origin: r.projectOrigin,
     };
@@ -286,7 +309,7 @@ export class HeadlessRunControl implements RunControl {
       discoveryFinished = false,
       clockAnomalyRecorded = false,
       cancelTask: Promise<void> | null = null;
-    let group: Awaited<ReturnType<typeof launchGroup>> | null = null;
+    let group: Awaited<ReturnType<typeof launchGroup>> | VisibleProcess | null = null;
     const startedMono = performance.now();
     let previousWall = Date.now(),
       previousMono = startedMono;
@@ -317,8 +340,11 @@ export class HeadlessRunControl implements RunControl {
         }
         const ack = await group.signal(signal);
         await this.port.raw(id, self, 'cancel.step', { requestSeq: intent.seq, signal, ack });
-        if (!ack && signal !== 'SIGKILL') {
-          await this.port.raw(id, self, 'cancel.unconfirmed', { requestSeq: intent.seq });
+        if (!ack && (visible || signal !== 'SIGKILL')) {
+          await this.port.raw(id, self, 'cancel.unconfirmed', {
+            requestSeq: intent.seq,
+            ...(visible ? { reason: 'visible_scope_control_unavailable' } : {}),
+          });
           return;
         }
         if (signal === 'SIGINT' && ack && meta.harness && processState(meta.harness) === 'alive') {
@@ -395,20 +421,45 @@ export class HeadlessRunControl implements RunControl {
           heartbeatBusy = false;
         });
     }, HEARTBEAT_INTERVAL_MS);
+    const signalHandlers = new Map<NodeJS.Signals, () => void>();
+    if (visible)
+      for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+        const handler = () => {
+          void (async () => {
+            // 待 ARCH 裁决: supervisor-directed signal/HUP has no authorised raw
+            // carrier. Persisting this partial fact needs a new whitelist kind;
+            // do not mislabel it as command.exited or mutate stable metadata.
+            void signal;
+            await this.port.acceptCancel(id, this.actor, 10_000);
+            wake();
+          })().catch(() => {});
+        };
+        signalHandlers.set(signal, handler);
+        process.on(signal, handler);
+      }
     try {
       await this.port.phase(id, self, 'submitting');
-      group = await this.groupLauncher({
-        runId: id,
-        argv,
-        cwd: input.cwd,
-        env: options.env,
-        stdin: input.stdin === 'brief' ? (options.brief ?? Buffer.alloc(0)) : null,
-        stdoutFd: logs.stdout,
-        stderrFd: logs.stderr,
-      });
+      group = visible
+        ? await launchVisible({
+            runId: id,
+            shellPath: argv[0],
+            shellArgs: argv.slice(1),
+            cwd: input.cwd,
+            env: options.env,
+            profile: options.visible!,
+          })
+        : await this.groupLauncher({
+            runId: id,
+            argv,
+            cwd: input.cwd,
+            env: options.env,
+            stdin: input.stdin === 'brief' ? (options.brief ?? Buffer.alloc(0)) : null,
+            stdoutFd: logs.stdout,
+            stderrFd: logs.stderr,
+          });
       await this.port.phase(id, self, 'submitted');
-      let harness: ProcessStamp | null = null;
-      if (group.command) {
+      let harness: ProcessStamp | null = visible ? (group as VisibleProcess).harness : null;
+      if (!visible && group.command) {
         harness = options.identifyHarness
           ? await options.identifyHarness(group.command)
           : 'argv' in input.launch
@@ -434,22 +485,27 @@ export class HeadlessRunControl implements RunControl {
         command: group.command,
         scope: meta.scope,
       });
-      await this.reconcile(id);
+      await this.observe(id, !visible);
       wake();
       const exited = await group.exited;
       if (writerLost) return;
+      const shellWait = visible ? (group as VisibleProcess).shellExit : null;
       await this.port.raw(id, self, 'command.exited', {
         command: meta.command_leader,
-        code: exited.code,
-        signal: exited.signal,
-        observedAt: exited.at,
+        code: shellWait ? shellWait.exit_code : exited.code,
+        signal: shellWait ? shellWait.signal : exited.signal,
+        observedAt: shellWait?.observed_at ?? exited.at,
       });
       stopping = true;
       clearInterval(heartbeat);
       if (
         meta.scope &&
         meta.harness &&
-        proveGroupGone(meta.scope, meta.harness, [group.helper, ...(meta.command_leader ? [meta.command_leader] : [])])
+        proveGroupGone(meta.scope, meta.harness, [
+          ...(visible ? [meta.scope.group_leader] : []),
+          group.helper,
+          ...(meta.command_leader ? [meta.command_leader] : []),
+        ])
       ) {
         const at = Date.now(),
           proof = randomUUID(),
@@ -476,8 +532,8 @@ export class HeadlessRunControl implements RunControl {
           link_id: r.linkId,
           source_id: r.sourceId,
           binding_generation: r.expectedGeneration,
-          mode: 'headless',
-          strategy: 'headless',
+          mode: input.mode,
+          strategy: visible ? 'wrapper' : 'headless',
           supervisor: self,
           command_leader: meta.command_leader,
           harness: meta.harness,
@@ -489,12 +545,13 @@ export class HeadlessRunControl implements RunControl {
           recorded_at: at,
           duration_ms: Math.round(performance.now() - startedMono),
           native_exit: native,
-          shell_exit:
-            'shell' in input.launch &&
-            exited.source === 'verified_wait' &&
-            meta.command_leader &&
-            sameProcessStamp(meta.command_leader, exited.subject) &&
-            (exited.code !== null || exited.signal !== null)
+          shell_exit: visible
+            ? (group as VisibleProcess).shellExit
+            : 'shell' in input.launch &&
+                exited.source === 'verified_wait' &&
+                meta.command_leader &&
+                sameProcessStamp(meta.command_leader, exited.subject) &&
+                (exited.code !== null || exited.signal !== null)
               ? {
                   process: meta.command_leader,
                   subject: 'command_leader',
@@ -524,7 +581,7 @@ export class HeadlessRunControl implements RunControl {
           },
           submission_fence: { event_seq: fenceSeq, at, proof_ids: [proof] },
           cancel_request_seq: s.events.find((e) => e.kind === 'cancel.accepted')?.seq ?? null,
-          logs: { stdout: 'stdout.log', stderr: 'stderr.log', capture: 'file' },
+          logs: { stdout: 'stdout.log', stderr: 'stderr.log', capture: visible ? 'tty_passthrough' : 'file' },
         };
         const invalid = receiptEligibility(receipt);
         if (invalid) throw new Error(invalid);
@@ -537,6 +594,7 @@ export class HeadlessRunControl implements RunControl {
       clearInterval(heartbeat);
       this.active.delete(id);
       group?.close();
+      for (const [signal, handler] of signalHandlers) process.off(signal, handler);
       closeSync(logs.stdout);
       closeSync(logs.stderr);
     }
