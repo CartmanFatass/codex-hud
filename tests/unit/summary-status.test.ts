@@ -1,3 +1,4 @@
+import { SyntheticModel as SmallModel } from './b17-fixture.test.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,7 +10,6 @@ import {
   type ProgressState,
   type ProgressContext,
 } from '../../src/collectors/progress-summary.js';
-import { SmallModel } from '../../src/collectors/small-model.js';
 import { AgentLog, appendEntries, type AgentLogEntry } from '../../src/collectors/agent-log.js';
 import { inspectorRows } from '../../src/render/monitor-inspector.js';
 import { agentCard, richRows } from '../../src/render/cards.js';

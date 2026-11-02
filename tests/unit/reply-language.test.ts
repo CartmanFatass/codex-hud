@@ -1,3 +1,4 @@
+import { SyntheticModel as SmallModel, syntheticRuntimeFile } from './b17-fixture.test.js';
 /**
  * A model's reply in another language than asked is a failure, never cached
  * and never shown as if it obeyed: Japanese for Chinese, Chinese for
@@ -9,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { wrongLanguage, replyWords } from '../../src/collectors/reply-language.js';
-import { SmallModel, type ModelApi } from '../../src/collectors/small-model.js';
+import { type ModelApi } from '../../src/collectors/small-model.js';
 
 test('the language test: by share, on the words a person reads', () => {
   // Chinese asked.
@@ -88,7 +89,7 @@ test('a reply in another language fails as an invalid response, is not cached, a
     answer = '{"note":"キャッシュ"}';
     assert.equal((await model.submit({ feature: 'probe', system: 's', prompt: 'other' }).result).ok, true);
     // An answer cached before the check, in the wrong language, is dropped and asked again.
-    const cacheFile = path.join(dir, 'cache.json');
+    const cacheFile = syntheticRuntimeFile(dir, 'cache.json');
     const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8')) as Record<string, { text: string; at: number }>;
     for (const entry of Object.values(cached)) entry.text = '{"note":"最新の変更をプルしました"}';
     fs.writeFileSync(cacheFile, JSON.stringify(cached), { mode: 0o600 });

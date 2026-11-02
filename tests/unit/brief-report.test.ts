@@ -1,3 +1,4 @@
+import { authorizedSyntheticPreview } from './b17-fixture.test.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -393,6 +394,7 @@ function fakeModel(replies: string[]): { model: SmallModel; asked: ModelRequest[
   const model = {
     configure() {},
     submit(request: ModelRequest) {
+      request = authorizedSyntheticPreview(request);
       asked.push(request);
       const text = replies[Math.min(asked.length - 1, replies.length - 1)];
       return { result: Promise.resolve({ ok: true as const, text }), cancel() {} };

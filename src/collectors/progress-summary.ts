@@ -1,3 +1,4 @@
+import { legacyRequest, legacyTreeSubjects, materialRequest, recordStamp } from '../core/materials/request.js';
 /** On-demand notes about live agents, from bounded public observations only. */
 import { createHash } from 'node:crypto';
 import type { Language } from '../render/i18n.js';
@@ -70,6 +71,7 @@ export function progressReason(node: SubagentTreeNode, context: ProgressContext)
 }
 export interface ProgressSummaryInput {
   tree: SubagentTree;
+  rootRolloutPath?: string;
   targets: ReadonlySet<string>;
   /** Backend enabled and not paused. Off/pause cancels even queued work. */
   on: boolean;
@@ -119,11 +121,11 @@ export function progressSystemPrompt(language: Language): string {
 interface Material {
   identity: string;
   fingerprint: string;
-  prompt: string;
+  prompt: () => string;
   evidenceAt: number;
 }
 /** Only reports in this turn, the current public stage intent, and an open tool call supply progress evidence. */
-function material(node: SubagentTreeNode, log: AgentLog): Material | null {
+function material(node: SubagentTreeNode, log: AgentLog, includeCharge = false): Material | null {
   const stage = node.stages?.at(-1);
   const current = stage?.status === 'running' ? stage : undefined;
   const turn = Math.max(ms(node.turnStartedAt), ms(current?.startedAt), ms(node.startedAt));
@@ -164,7 +166,7 @@ function material(node: SubagentTreeNode, log: AgentLog): Material | null {
     statusAt: ms(node.statusAt),
     latestObservedStatus: status ? { kind: status.kind, at: status.at } : undefined,
     task: plaintext(node.task, PROGRESS_CAPS.task),
-    charge: plaintext(node.charge, PROGRESS_CAPS.charge),
+    charge: includeCharge ? plaintext(node.charge, PROGRESS_CAPS.charge) : undefined,
     stage: current
       ? {
           turnId: plaintext(current.turnId, PROGRESS_CAPS.turnId),
@@ -188,11 +190,14 @@ function material(node: SubagentTreeNode, log: AgentLog): Material | null {
   };
   const json = JSON.stringify(data);
   return {
-    prompt: `<observations>\n${json}\n</observations>`,
-    identity: createHash('sha256')
-      .update(JSON.stringify([turn, current?.turnId ?? '', node.task ?? '', node.charge ?? '']))
-      .digest('hex'),
-    fingerprint: createHash('sha256').update(json).digest('hex'),
+    prompt: () => `<observations>\n${json}\n</observations>`,
+    identity: JSON.stringify([
+      turn,
+      current?.turnId ?? '',
+      plaintext(node.task, PROGRESS_CAPS.task) ?? '',
+      includeCharge ? (plaintext(node.charge, PROGRESS_CAPS.charge) ?? '') : '',
+    ]),
+    fingerprint: json,
     evidenceAt: Math.max(
       turn,
       ms(node.statusAt),
@@ -203,9 +208,64 @@ function material(node: SubagentTreeNode, log: AgentLog): Material | null {
   };
 }
 
+interface ProgressSchedule {
+  identity: string;
+  fingerprint: string;
+  node: SubagentTreeNode;
+}
+function progressSchedule(node: SubagentTreeNode, log: AgentLog): ProgressSchedule | null {
+  const identityMetadata = (subject: SubagentTreeNode) => {
+    const identity = subject as unknown as { ref?: unknown; origin?: unknown; sourceId?: unknown; harness?: unknown };
+    return [
+      subject.id,
+      subject.rolloutPath,
+      identity.ref,
+      identity.origin,
+      identity.sourceId,
+      identity.harness,
+      Object.hasOwn(subject, 'ref'),
+      Object.hasOwn(subject, 'sourceId'),
+      Object.hasOwn(subject, 'harness'),
+    ];
+  };
+  const stage = node.stages?.at(-1);
+  const current = stage?.status === 'running' ? stage : undefined;
+  const turn = Math.max(ms(node.turnStartedAt), ms(current?.startedAt), ms(node.startedAt));
+  const reports = log.entries(node.id).filter((entry) => entry.kind === 'report' && entry.at >= turn);
+  const latest = node.lastReport && ms(node.lastReport.at) >= turn ? node.lastReport : undefined;
+  const action = node.action && ms(node.action.at) >= turn ? node.action : undefined;
+  if (!reports.length && !latest && !(current && Object.hasOwn(current, 'intent')) && !action) return null;
+  const descendants: unknown[] = [];
+  eachThread(node.children, (child) => descendants.push([identityMetadata(child), child.status]));
+  return {
+    node,
+    identity: JSON.stringify([turn, current?.turnId ?? '', identityMetadata(node)]),
+    fingerprint: JSON.stringify([
+      recordStamp(node),
+      turn,
+      current?.turnId ?? '',
+      node.status,
+      ms(node.statusAt),
+      reports.map((entry) => [entry.at, recordStamp(entry)]),
+      ms(latest?.at),
+      recordStamp(latest),
+      ms(action?.at),
+      recordStamp(action),
+      recordStamp(current),
+      descendants,
+    ]),
+  };
+}
+
 interface Work {
   identity: string;
   fingerprint: string;
+  materialFingerprint?: string;
+  materialIdentity?: string;
+  pendingMaterialIdentity?: string;
+  pendingIncludesCharge?: boolean;
+  checkedSchedule?: string;
+  validation?: Promise<void>;
   done?: string;
   lastStart?: number;
   failedAt?: number;
@@ -261,7 +321,7 @@ export class ProgressSummarizer {
       this.language = input.language;
     }
     this.log.attach(input.tree.rootId);
-    const wanted = new Map<string, Material>();
+    const wanted = new Map<string, ProgressSchedule>();
     this.states.clear();
     eachThread(input.tree.nodes, (node) => {
       const reason: ProgressReason | undefined = !input.on
@@ -271,7 +331,7 @@ export class ProgressSummarizer {
           : !isLive(node)
             ? 'not-live'
             : undefined;
-      const snapshot = reason ? null : material(node, this.log);
+      const snapshot = reason ? null : progressSchedule(node, this.log);
       if (snapshot) wanted.set(node.id, snapshot);
       else this.states.set(node.id, { running: false, phase: 'blocked', reason: reason ?? 'no-evidence' });
     });
@@ -287,6 +347,7 @@ export class ProgressSummarizer {
       }
       work.fingerprint = snapshot.fingerprint;
       if (work.handle) {
+        this.validatePending(id, work, snapshot, input);
         this.publish(id, work);
         continue;
       }
@@ -315,6 +376,54 @@ export class ProgressSummarizer {
     }
   }
 
+  private validatePending(id: string, work: Work, snapshot: ProgressSchedule, input: ProgressSummaryInput): void {
+    if (work.checkedSchedule === snapshot.fingerprint) return;
+    work.checkedSchedule = snapshot.fingerprint;
+    const allSubjects = legacyTreeSubjects(input.tree, input.rootRolloutPath);
+    const self = allSubjects.find((subject) => subject.sessionId === id);
+    const contributors = new Set([id]);
+    eachThread(snapshot.node.children, (child) => contributors.add(child.id));
+    const parent = allSubjects.find((subject) => subject.sessionId === self?.parentSessionId);
+    const subjects = allSubjects.filter(
+      (subject) => contributors.has(subject.sessionId) || (work.pendingIncludesCharge && subject === parent)
+    );
+    const generationRoot = this.rootId;
+    const finish = (allowed: boolean) => {
+      if (
+        !work.handle ||
+        this.work.get(id) !== work ||
+        this.rootId !== generationRoot ||
+        this.language !== input.language
+      )
+        return;
+      if (!allowed) {
+        this.cancel(work);
+        const replacement: Work = { identity: snapshot.identity, fingerprint: snapshot.fingerprint };
+        this.work.set(id, replacement);
+        this.ask(id, replacement, snapshot, input);
+        return;
+      }
+      const current = material(snapshot.node, this.log, work.pendingIncludesCharge);
+      if (!current || work.pendingMaterialIdentity === undefined || current.identity === work.pendingMaterialIdentity)
+        return;
+      this.cancel(work);
+      const replacement: Work = { identity: snapshot.identity, fingerprint: snapshot.fingerprint };
+      this.work.set(id, replacement);
+      this.ask(id, replacement, snapshot, input);
+    };
+    try {
+      if (work.pendingIncludesCharge && !parent) {
+        finish(false);
+        return;
+      }
+      const checked = this.model.inspectLegacyMaterials(subjects, 'progress');
+      if (typeof checked === 'boolean') finish(checked);
+      else work.validation = checked.then(finish, () => finish(false));
+    } catch {
+      finish(false);
+    }
+  }
+
   private publish(id: string, work: Work, reason?: ProgressReason, retryAt?: number): void {
     const phase = work.handle
       ? work.handle.status === 'queued'
@@ -338,21 +447,51 @@ export class ProgressSummarizer {
     });
   }
 
-  private ask(id: string, work: Work, snapshot: Material, input: ProgressSummaryInput): void {
+  private ask(id: string, work: Work, snapshot: ProgressSchedule, input: ProgressSummaryInput): void {
     const root = this.rootId;
     const language = input.language;
     work.lastStart = input.now;
     delete work.error;
     delete work.reason;
     delete work.failedAt;
-    const handle = this.model.submit({
-      feature: 'progress',
-      thinking: 'low',
-      language,
-      system: progressSystemPrompt(language),
-      prompt: snapshot.prompt,
-      cacheKey: `progress-sentence-v2:${root}:${id}:${language}:${snapshot.identity}:${snapshot.fingerprint}`,
+    const contributors = new Set<string>();
+    eachThread(input.tree.nodes, (node) => {
+      if (node.id !== id) return;
+      contributors.add(node.id);
+      eachThread(node.children, (child) => contributors.add(child.id));
     });
+    const allSubjects = legacyTreeSubjects(input.tree, input.rootRolloutPath);
+    const self = allSubjects.find((subject) => subject.sessionId === id);
+    const parent = allSubjects.find((subject) => subject.sessionId === self?.parentSessionId);
+    const subjects = allSubjects.filter((subject) => contributors.has(subject.sessionId));
+    let built: Material | null = null;
+    const planned = materialRequest('progress', {
+      purpose: 'progress',
+      legacy: subjects,
+      legacyOptional: parent ? [parent] : [],
+      compose: (plannedEnvelope) => {
+        const admittedParent =
+          !!parent &&
+          plannedEnvelope?.fragments.some((fragment) =>
+            fragment.provenance.some((p) => p.ref.sessionId === parent.sessionId)
+          );
+        work.pendingIncludesCharge = admittedParent;
+        built = material(snapshot.node, this.log, admittedParent);
+        work.pendingMaterialIdentity = built?.identity;
+        work.checkedSchedule = snapshot.fingerprint;
+        if (!built || (built.fingerprint === work.materialFingerprint && built.identity === work.materialIdentity))
+          return { feature: 'progress', system: '', prompt: '', materialUnchanged: true };
+        return {
+          feature: 'progress',
+          thinking: 'low',
+          language,
+          system: progressSystemPrompt(language),
+          prompt: built.prompt(),
+          cacheKey: `progress-sentence-v2:${root}:${id}:${language}:${createHash('sha256').update(built.identity).digest('hex')}:${createHash('sha256').update(built.fingerprint).digest('hex')}`,
+        };
+      },
+    });
+    const handle = this.model.submit(planned);
     work.handle = handle;
     // A queue transition repaints without waiting for the next collection tick.
     work.unsubscribe = handle.subscribe?.(() => {
@@ -376,7 +515,8 @@ export class ProgressSummarizer {
       this.onChange();
     };
     void handle.result.then(
-      (result) => {
+      async (result) => {
+        if (work.validation) await work.validation;
         // New public updates in the same turn must not starve a slow request.
         // Its note covers the old snapshot; a later refresh can cover new evidence.
         if (
@@ -387,6 +527,12 @@ export class ProgressSummarizer {
         )
           return;
         clearHandle();
+        if (!result.ok && result.unchanged) {
+          work.done = snapshot.fingerprint;
+          this.publish(id, work, built ? undefined : 'no-evidence');
+          this.onChange();
+          return;
+        }
         if (!result.ok) {
           if (result.cancelled) {
             this.publish(id, work);
@@ -394,6 +540,7 @@ export class ProgressSummarizer {
           } else fail(result.reason === 'hourly-cap' ? 'hourly-cap' : 'retry');
           return;
         }
+        if (handle.isAuthorized && !handle.isAuthorized()) return;
         const text = summarySentence(result.text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ''), PROGRESS_NOTE_CHARS);
         if (!text) {
           fail();
@@ -403,7 +550,7 @@ export class ProgressSummarizer {
           .entries(id)
           .find(
             (entry) =>
-              entry.kind === 'note' && entry.lang === language && entry.text === text && entry.at >= snapshot.evidenceAt
+              entry.kind === 'note' && entry.lang === language && entry.text === text && entry.at >= built!.evidenceAt
           );
         // A cache hit's generation time is the original generation, not the time of reuse.
         const generatedAt = handle.generatedAt;
@@ -424,6 +571,8 @@ export class ProgressSummarizer {
         work.coverageAt = covered ? covered.coverageAt : input.now;
         work.generatedAt = covered?.generatedAt ?? generatedAt;
         work.done = snapshot.fingerprint;
+        work.materialFingerprint = built?.fingerprint;
+        work.materialIdentity = built?.identity;
         delete work.failedAt;
         delete work.error;
         delete work.reason;

@@ -345,6 +345,7 @@ async function runLivePage(): Promise<void> {
     const language = resolveLanguage(settings.language);
     progress.update({
       tree,
+      rootRolloutPath: main?.session?.rolloutPath,
       targets:
         state.style === 'rich' &&
         paneShown(state, 'agents') &&

@@ -1,10 +1,10 @@
+import { SyntheticModel as SmallModel, syntheticRuntimeFile } from './b17-fixture.test.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  SmallModel,
   modelCommand,
   modelHttpRequest,
   callsToday,
@@ -254,7 +254,7 @@ test('cap, free cache, restart persistence, private files, and cache endpoint/mo
     clock += 3600_001;
     assert.equal((await model.submit({ ...question, prompt: 'three' }).result).ok, true);
     for (const name of ['cache.json', 'calls.json'])
-      assert.equal(fs.statSync(path.join(dir, name)).mode & 0o777, 0o600);
+      assert.equal(fs.statSync(syntheticRuntimeFile(dir, name)).mode & 0o777, 0o600);
     const restarted = new SmallModel({ dir, env: {}, fetch: fetcher, clock: () => clock });
     restarted.configure({ backend: 'api', api, hourlyCap: 100 });
     assert.deepEqual(await restarted.submit(request).result, { ok: true, text: 'answer', cached: true });

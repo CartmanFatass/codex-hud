@@ -1,3 +1,4 @@
+import { authorizedSyntheticPreview } from './b17-fixture.test.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AgentLog } from '../../src/collectors/agent-log.js';
@@ -30,7 +31,17 @@ function tree(nodes = [node()], rootId = 'root'): SubagentTree {
 class FakeModel {
   requests: Array<{ request: ModelRequest; finish: (result: ModelResult) => void; cancelled: boolean }> = [];
   cache = new Map<string, string>();
+  inspectLegacyMaterials(_subjects: unknown, purpose: string) {
+    authorizedSyntheticPreview({ feature: purpose, system: '', prompt: '' });
+    return true;
+  }
   submit(request: ModelRequest) {
+    request = authorizedSyntheticPreview(request);
+    if (request.materialUnchanged)
+      return {
+        result: Promise.resolve({ ok: false as const, error: 'unchanged', unchanged: true as const }),
+        cancel() {},
+      };
     let finish!: (result: ModelResult) => void;
     const result = new Promise<ModelResult>((resolve) => {
       finish = resolve;
@@ -67,7 +78,7 @@ function setup() {
     targets: ReadonlySet<string> = new Set(['lead'])
   ) => {
     log.observe(t);
-    summary.update({ tree: t, now, on, language, targets });
+    summary.update({ tree: t, rootRolloutPath: '/synthetic/root.jsonl', now, on, language, targets });
   };
   return { model, log, summary, update };
 }

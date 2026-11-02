@@ -28,6 +28,8 @@ import {
   type SubagentTree,
   type SubagentTreeNode,
 } from '../types.js';
+import { LegacyRecapScopes } from '../core/materials/legacy-scopes.js';
+import { legacyRequest, legacyTreeSubjects, recordStamp } from '../core/materials/request.js';
 import type { Language } from '../render/i18n.js';
 import {
   SmallModel,
@@ -932,6 +934,44 @@ function agentsByName(tree: SubagentTree): Map<string, SubagentTreeNode> {
   return byName;
 }
 
+function briefingSchedule(tree: SubagentTree, options: BriefOptions): { fast: string; floor: string } {
+  const fast: unknown[] = [];
+  const floor: unknown[] = [];
+  walk(tree.nodes, (node) => {
+    const stage = node.stages?.at(-1);
+    fast.push([
+      node.id,
+      node.status,
+      node.statusAt?.getTime(),
+      node.stageCount,
+      stage?.status,
+      stage?.endedAt?.getTime(),
+    ]);
+    floor.push([
+      node.id,
+      node.lastReport?.at.getTime(),
+      node.action?.at.getTime(),
+      recordStamp(node.lastReport),
+      recordStamp(node.action),
+      recordStamp(stage),
+      node.lastEventAt?.getTime(),
+    ]);
+  });
+  const main = options.main;
+  fast.push([
+    recordStamp(options.goal),
+    main?.lastUserMessageAt?.getTime(),
+    main?.lastReplyAt?.getTime(),
+    main?.activity?.state !== 'working' ? main?.activity?.updatedAt.getTime() : null,
+    main?.compactCount,
+    main?.pendingApproval?.callId,
+    main?.pendingApproval?.since.getTime(),
+    main?.planProgress?.steps.map((step) => step.status),
+  ]);
+  floor.push([recordStamp(main), main?.lastEventTime?.getTime(), recordStamp(options.goal)]);
+  return { fast: JSON.stringify([options.language, options.scope, fast]), floor: JSON.stringify(floor) };
+}
+
 export interface BrieferOptions {
   /** The shared small-model service; a private, memory-only one by default. */
   model?: SmallModel;
@@ -951,9 +991,11 @@ export class Briefer {
   private lastStart = 0;
   private lastFingerprint = '';
   private lastFloorFingerprint = '';
+  private lastSchedule = { fast: '', floor: '' };
   /** When the material of the last brief that landed was read: news is what came after. */
   private coveredAt: number | null = null;
   private rootId = '';
+  private rootPath: string | undefined;
   private language: Language | null = null;
   private scope: BriefingScope = 'agents';
   private command: BriefingCommand = 'off';
@@ -963,6 +1005,7 @@ export class Briefer {
   readonly model: SmallModel;
   private readonly store: RecapStore | null;
   private readonly log: AgentLog | null;
+  private readonly recapScopes: LegacyRecapScopes;
 
   constructor(
     private readonly onChange: () => void,
@@ -971,6 +1014,7 @@ export class Briefer {
     this.model = options.model ?? new SmallModel();
     this.store = options.store ?? null;
     this.log = options.log ?? null;
+    this.recapScopes = this.model.recapScopes ?? new LegacyRecapScopes();
   }
 
   /** Where `api` briefs go; read from settings at start and on every save. */
@@ -1009,6 +1053,7 @@ export class Briefer {
     paused = false,
     context?: BriefingContext
   ): void {
+    this.rootPath = context?.main?.session?.rolloutPath;
     if (tree.rootId !== this.rootId) {
       // Another session's brief would describe the wrong agents.
       this.rootId = tree.rootId;
@@ -1066,18 +1111,8 @@ export class Briefer {
         // fingerprint names the scope and language, so a change of either
         // still asks. The agents' notes are in their log; the line on them
         // as a whole comes back with the recap.
-        if (!this.handle && stored.fingerprint !== undefined) {
-          this.lastFingerprint = stored.fingerprint;
-          this.lastFloorFingerprint = stored.floorFingerprint ?? '';
-          this.lastStart = Math.max(this.lastStart, Math.min(stored.at, now));
-          // Its line on the agents only in the language it is still in: a recap
-          // in the other one is the next run's to translate, not to show.
-          if (stored.language === language) {
-            this.coveredAt ??= stored.at;
-            if (stored.overall && !this.brief.overall)
-              this.brief = { ...this.brief, overall: stored.overall, structured: true, at: stored.at };
-          }
-        }
+        if (scope === 'both' && stored.language === language && stored.overall && !this.brief.overall)
+          this.brief = { ...this.brief, overall: stored.overall, structured: true, at: stored.at };
         this.onChange();
       }
     }
@@ -1090,59 +1125,124 @@ export class Briefer {
     }
     if (this.busy() || now - this.lastStart < intervalMs) return;
     // What a model wrote in the other language is neither shown nor handed back as the previous brief.
-    const snapshot = this.log?.snapshot();
-    const logs = snapshot ? logsIn(snapshot, language) : undefined;
-    const material = briefMaterial(tree, {
+    const materialOptions: BriefOptions = {
       scope,
       language,
       main: context?.main ?? null,
       recap: this.recap,
-      logs,
       roles: context?.importantRoles,
       goal: context?.goal,
       labels: context?.labels,
-      since: this.coveredAt ?? lastNoteAt(tree, logs),
-      overall: this.brief.overall,
+      since: null,
       now,
-    });
-    if (!material) return;
+    };
+    const schedule = briefingSchedule(tree, materialOptions);
     const floorDue =
-      material.floorFingerprint !== this.lastFloorFingerprint &&
+      schedule.floor !== this.lastSchedule.floor &&
       now - this.lastStart >= Math.max(context?.floorMs ?? DEFAULT_FLOOR_MS, intervalMs);
-    if (material.fingerprint === this.lastFingerprint && !floorDue) return;
-    this.start(material, now, tree);
+    if (schedule.fast === this.lastSchedule.fast && !floorDue) return;
+    this.start(now, tree, materialOptions, schedule, intervalMs, context?.floorMs ?? DEFAULT_FLOOR_MS);
   }
 
-  private start(material: BriefMaterial, now: number, tree: SubagentTree): void {
+  private start(
+    now: number,
+    tree: SubagentTree,
+    materialOptions: BriefOptions,
+    schedule: { fast: string; floor: string },
+    intervalMs: number,
+    floorMs: number
+  ): void {
+    const previousStart = this.lastStart;
     this.lastStart = now;
-    this.lastFingerprint = material.fingerprint;
-    this.lastFloorFingerprint = material.floorFingerprint;
+    this.lastSchedule = schedule;
     const request = {
-      feature: material.feature,
-      newestAt: material.newestAt,
-      fingerprint: material.fingerprint,
-      floorFingerprint: material.floorFingerprint,
-      ...material.write(),
+      feature: materialOptions.scope === 'agents' ? 'brief' : 'recap',
+      newestAt: null as number | null,
+      fingerprint: '',
+      floorFingerprint: '',
     };
     const language = this.language ?? 'zh';
-    const handle = this.model.submit({
-      feature: request.feature,
-      system: request.system,
-      prompt: request.prompt,
-      thinking: 'low',
-      language,
+    const subjects = legacyTreeSubjects(tree, this.scope !== 'agents' ? this.rootPath : undefined);
+    const root = subjects.find((subject) => subject.sessionId === tree.rootId);
+    if (root) {
+      const expectedId = root.sessionId;
+      const expectedPath = root.rolloutPath;
+      root.current = () =>
+        tree.rootId === expectedId &&
+        materialOptions.main?.session?.id === expectedId &&
+        materialOptions.main.session.rolloutPath === expectedPath;
+    }
+    let written: ReturnType<BriefMaterial['write']>;
+    const planned = legacyRequest(request.feature, subjects, () => {
+      const snapshot = this.log?.snapshot();
+      const logs = snapshot ? logsIn(snapshot, language) : undefined;
+      const actualOptions = {
+        ...materialOptions,
+        logs,
+        since: this.coveredAt ?? lastNoteAt(tree, logs),
+        overall: this.brief.overall,
+      };
+      const previous = actualOptions.recap;
+      const approvedOptions =
+        this.scope === 'main'
+          ? {
+              ...actualOptions,
+              recap: previous && this.recapScopes.fitsMain(previous) ? previous : null,
+              overall: undefined,
+            }
+          : actualOptions;
+      const approvedMaterial = briefMaterial(tree, approvedOptions);
+      if (!approvedMaterial) return { feature: request.feature, system: '', prompt: '', materialUnchanged: true };
+      request.newestAt = approvedMaterial.newestAt;
+      request.fingerprint = approvedMaterial.fingerprint;
+      request.floorFingerprint = approvedMaterial.floorFingerprint;
+      const floorDue =
+        approvedMaterial.floorFingerprint !== this.lastFloorFingerprint &&
+        now - previousStart >= Math.max(floorMs, intervalMs);
+      if (approvedMaterial.fingerprint === this.lastFingerprint && !floorDue) {
+        this.lastStart = previousStart;
+        return { feature: request.feature, system: '', prompt: '', materialUnchanged: true };
+      }
+      this.lastFingerprint = approvedMaterial.fingerprint;
+      this.lastFloorFingerprint = approvedMaterial.floorFingerprint;
+      if (
+        this.scope === 'main' &&
+        previous &&
+        approvedOptions.recap === previous &&
+        approvedMaterial.fingerprint === previous.fingerprint &&
+        approvedMaterial.floorFingerprint === previous.floorFingerprint
+      ) {
+        this.lastStart = Math.max(previousStart, Math.min(previous.at, now));
+        this.coveredAt ??= previous.at;
+        return { feature: request.feature, system: '', prompt: '', materialUnchanged: true };
+      }
+      if (
+        this.scope === 'both' &&
+        previous &&
+        approvedMaterial.fingerprint === previous.fingerprint &&
+        approvedMaterial.floorFingerprint === previous.floorFingerprint
+      ) {
+        this.lastStart = Math.max(previousStart, Math.min(previous.at, now));
+        this.coveredAt ??= previous.at;
+        return { feature: request.feature, system: '', prompt: '', materialUnchanged: true };
+      }
+      written = approvedMaterial.write();
+      return { feature: request.feature, ...written, thinking: 'low', language };
     });
+    if (this.scope === 'both') planned.materials!.legacyPurposes = ['brief', 'recap'];
+    const handle = this.model.submit(planned);
     this.handle = handle;
     this.brief = { ...this.brief, running: true };
     this.onChange();
     const rootId = this.rootId;
     const scope = this.scope;
     const land = (text: string, parsed: NonNullable<ReturnType<typeof parseBrief>>) => {
-      const { main, ...brief } = parsed;
+      const { main, ...agentBrief } = parsed;
+      const brief = scope === 'main' ? { items: [] } : agentBrief;
       this.addNotes(tree, brief.items, language);
       this.coveredAt = now;
       // A reply with no line on the whole keeps the previous one.
-      const overall = brief.overall ?? this.brief.overall;
+      const overall = scope === 'main' ? undefined : (agentBrief.overall ?? this.brief.overall);
       this.brief = {
         text,
         ...brief,
@@ -1157,7 +1257,7 @@ export class Briefer {
         this.recap = {
           ...main,
           at: Date.now(),
-          coveredUntil: request.newestAt ?? this.recap?.coveredUntil ?? 0,
+          coveredUntil: request.newestAt ?? (scope === 'main' ? 0 : (this.recap?.coveredUntil ?? 0)),
           sessionId: rootId,
           language,
           fingerprint: request.fingerprint,
@@ -1165,6 +1265,7 @@ export class Briefer {
           ...(overall ? { overall } : {}),
         };
         try {
+          this.recapScopes.save(this.recap, scope === 'main' ? 'main' : 'broad');
           this.store?.save(this.recap);
         } catch {
           /* shown all the same; saved next time */
@@ -1175,6 +1276,16 @@ export class Briefer {
     void handle.result.then((result) => {
       // Stopped, paused or replaced meanwhile: nothing here is wanted any more.
       if (this.handle !== handle) return;
+      if (!result.ok && result.unchanged) {
+        this.handle = null;
+        this.brief = { ...this.brief, running: false };
+        this.onChange();
+        return;
+      }
+      if (result.ok && handle.isAuthorized && !handle.isAuthorized()) {
+        this.stop();
+        return;
+      }
       // A run cancelled by a settings change is no failure: it wrote nothing,
       // and its material is asked about again once the interval has passed.
       if (!result.ok && result.cancelled) {
@@ -1194,16 +1305,27 @@ export class Briefer {
       }
       // Not the JSON asked for: asked once more to put it right, the same
       // instructions with the reply; then the last brief stays.
-      const repair = this.model.submit({
-        feature: request.feature,
-        system: request.system,
-        prompt: repairPrompt(result.text),
-        thinking: 'low',
-        language,
-      });
+      const repairPlan = legacyRequest(
+        request.feature,
+        subjects,
+        () => ({
+          feature: request.feature,
+          system: written.system,
+          prompt: repairPrompt(result.text),
+          thinking: 'low',
+          language,
+        }),
+        handle.materials
+      );
+      repairPlan.materials!.legacyPurposes = planned.materials?.legacyPurposes;
+      const repair = this.model.submit(repairPlan);
       this.handle = repair;
       void repair.result.then((again) => {
         if (this.handle !== repair) return;
+        if (again.ok && repair.isAuthorized && !repair.isAuthorized()) {
+          this.stop();
+          return;
+        }
         if (!again.ok && again.cancelled) {
           this.stop();
           this.onChange();
@@ -1259,6 +1381,7 @@ export class Briefer {
       // The run that was cut short wrote nothing: its material is still news.
       this.lastFingerprint = '';
       this.lastFloorFingerprint = '';
+      this.lastSchedule = { fast: '', floor: '' };
     }
     this.brief = { ...this.brief, running: false };
   }
@@ -1268,6 +1391,7 @@ export class Briefer {
     // Let the same material be tried again once the interval has passed.
     this.lastFingerprint = '';
     this.lastFloorFingerprint = '';
+    this.lastSchedule = { fast: '', floor: '' };
     this.brief = { ...this.brief, running: false, error: message };
     this.onChange();
   }

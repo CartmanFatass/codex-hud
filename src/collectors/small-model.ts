@@ -18,9 +18,11 @@
  *   owner shows, never silently dropped. Calls are logged (timestamps only)
  *   so the cap and "calls today" hold across panel restarts.
  *
- * Nothing here decides what is sent: each feature builds its own material
- * and has its own switch.
+ * Feature formatters run only after the materials entry grants their public
+ * observations. Queue dispatch, cache consumption and write-back revalidate it.
  */
+import { sessionRefKey } from '../core/identity.js';
+import { outboundDecision } from '../core/export.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -30,6 +32,26 @@ import { performance } from 'node:perf_hooks';
 import { t, type Language } from '../render/i18n.js';
 import { wrongLanguage } from './reply-language.js';
 import { ModelRuntimeStore } from './model-runtime-store.js';
+import {
+  buildMaterials,
+  isEnvelope,
+  revalidateMaterials,
+  fingerprint,
+  markLegacy,
+  type MaterialAuthority,
+  type MaterialEnvelope,
+  type ResolvedRecipient,
+} from '../core/materials/index.js';
+import { legacyRequest, type LegacySubject, type MaterialPlan } from '../core/materials/request.js';
+import { MaterialCache } from '../core/materials/cache.js';
+import {
+  resolveRecipient,
+  bindResolvedRecipient,
+  CliRecipientBinding,
+  type MaterialRoute,
+} from '../core/materials/recipient.js';
+import { LegacyRecapScopes } from '../core/materials/legacy-scopes.js';
+import { LegacyCodexBridge } from '../core/materials/legacy.js';
 import {
   boundedTelemetry,
   summarizeModelTelemetry,
@@ -60,6 +82,12 @@ export interface ModelApi {
 }
 
 export interface ModelRequest {
+  /** Public observations are selected before any prompt or cache identity is constructed. */
+  materials?: MaterialPlan;
+  /** Only the authorized legacy feature-cache adapter may supply this local reply. */
+  legacyCachedText?: string;
+  /** An authorized scope check found no new material; no transport or cache mutation. */
+  materialUnchanged?: true;
   /** Who is asking; selects an API model route, but is never sent. */
   feature: string;
   /** Optional allowlisted accounting group; never affects routing, payload or cache identity. */
@@ -121,6 +149,7 @@ export type ModelResult =
       error: string;
       refused?: boolean;
       cancelled?: boolean;
+      unchanged?: true;
       reason?: 'hourly-cap' | 'runtime-unavailable';
       classification?: ModelFailureClassification;
     };
@@ -131,10 +160,20 @@ export interface ModelHandle {
   /** Public lifecycle only: never exposes a prompt, endpoint or credential. */
   readonly status: ModelStatus;
   readonly generatedAt?: number;
+  readonly materials?: MaterialEnvelope;
+  isAuthorized?(): boolean;
   subscribe(listener: () => void): () => void;
   result: Promise<ModelResult>;
   /** Drop the request: a waiting one never runs, a running one is stopped. */
   cancel(): void;
+}
+
+function privateMaterialHandle(handle: ModelHandle): ModelHandle {
+  for (const key of ['materials', 'isAuthorized']) {
+    const descriptor = Object.getOwnPropertyDescriptor(handle, key);
+    if (descriptor) Object.defineProperty(handle, key, { ...descriptor, enumerable: false });
+  }
+  return handle;
 }
 
 export interface ModelUsage {
@@ -388,7 +427,14 @@ function httpClassification(status: number, json: unknown): ModelFailureClassifi
 
 interface Job {
   request: ModelRequest;
+  envelope?: MaterialEnvelope;
+  authority?: MaterialAuthority;
+  recipient?: ResolvedRecipient;
+  legacy?: boolean;
+  probe?: boolean;
   backend: ModelBackend;
+  env?: NodeJS.ProcessEnv;
+  store?: ModelRuntimeStore | null;
   command?: ReturnType<typeof modelCommand>;
   http?: ReturnType<typeof modelHttpRequest>;
   digest: string | null;
@@ -415,6 +461,12 @@ export interface SmallModelOptions {
   clock?: () => number;
   /** Safe lifecycle notification; callers can read diagnostics() and repaint. */
   onChange?: () => void;
+  /** Injected by source-aware composition; missing scope/policy never means allow. */
+  materials?: MaterialAuthority;
+  /** Account identity is explicit and never derived from credentials. */
+  account?: string;
+  trustedProfile?: string;
+  resolveRecipient?: (route: MaterialRoute) => ResolvedRecipient | null;
 }
 
 export class SmallModel {
@@ -422,6 +474,7 @@ export class SmallModel {
   private api: ModelApi = { base: '', model: '', key: '' };
   private cap = DEFAULT_HOURLY_CAP;
   private readonly queue: Job[] = [];
+  private readonly preflights = new Set<ModelHandle>();
   private active: Job | null = null;
   private cache = new Map<string, { text: string; at: number }>();
   private calls: number[] = [];
@@ -431,8 +484,15 @@ export class SmallModel {
   private lastSuccessAt?: number;
   private lastFailure?: ModelDiagnostics['lastFailure'];
   private readonly store: ModelRuntimeStore | null;
+  private readonly materialStore: ModelRuntimeStore | null;
   private readonly telemetryStore: ModelRuntimeStore | null;
   private readonly dir: string | null;
+  private readonly materialCache: MaterialCache;
+  private readonly legacyBridge: LegacyCodexBridge;
+  private readonly cliRecipient = new CliRecipientBinding();
+  /** Sensitive values are compared privately, never fingerprinted, persisted or reported. */
+  private readonly apiCredentials = new Map<string, string | undefined>();
+  readonly recapScopes: LegacyRecapScopes;
   private readonly clock: () => number;
   private telemetryRecords: ModelTelemetryRecord[] = [];
   private telemetryWrites: Promise<void> = Promise.resolve();
@@ -443,16 +503,81 @@ export class SmallModel {
   constructor(private readonly options: SmallModelOptions = {}) {
     this.dir = options.dir ?? null;
     this.clock = options.clock ?? Date.now;
+    this.materialCache = new MaterialCache(this.dir);
+    this.recapScopes = new LegacyRecapScopes(this.dir ? path.join(this.dir, 'materials-v1', 'recap-scopes') : null);
+    this.legacyBridge = new LegacyCodexBridge(
+      this.dir,
+      options.env ?? process.env,
+      () => ({
+        route: this.route('brief'),
+        credential: (() => {
+          if (this.backend !== 'api') return undefined;
+          const http = modelHttpRequest(
+            this.api,
+            { feature: 'brief', system: '', prompt: '' },
+            options.env ?? process.env
+          );
+          return 'error' in http ? undefined : http.headers.authorization;
+        })(),
+        matches: (raw) => {
+          if (raw.briefing !== this.backend) return false;
+          if (this.backend === 'agy') return true;
+          const configured = {
+            base: typeof raw.briefingApiBase === 'string' ? raw.briefingApiBase : '',
+            model: typeof raw.briefingApiModel === 'string' ? raw.briefingApiModel : '',
+            key: typeof raw.briefingApiKey === 'string' ? raw.briefingApiKey : '',
+          };
+          const expected = modelHttpRequest(
+            configured,
+            { feature: 'brief', system: '', prompt: '' },
+            options.env ?? process.env
+          );
+          const actual = modelHttpRequest(
+            this.api,
+            { feature: 'brief', system: '', prompt: '' },
+            options.env ?? process.env
+          );
+          return (
+            !('error' in expected) &&
+            !('error' in actual) &&
+            expected.url === actual.url &&
+            expected.headers.authorization === actual.headers.authorization
+          );
+        },
+      }),
+      this.cliRecipient
+    );
     this.store = this.dir ? new ModelRuntimeStore(this.dir) : null;
+    this.materialStore = this.dir
+      ? new ModelRuntimeStore(this.dir, path.join(this.dir, 'materials-v1', 'replies'))
+      : null;
     this.telemetryStore = this.dir ? new ModelRuntimeStore(path.join(this.dir, 'telemetry')) : null;
   }
 
   configure(patch: { backend?: ModelBackend; api?: ModelApi; hourlyCap?: number }): void {
     const backend = patch.backend ?? this.backend;
     const api = patch.api ? { ...patch.api, models: patch.api.models ? { ...patch.api.models } : undefined } : this.api;
-    if (backend !== this.backend || JSON.stringify(api) !== JSON.stringify(this.api)) this.cancelAll();
+    const changed = backend !== this.backend || JSON.stringify(api) !== JSON.stringify(this.api);
+    if (changed) this.cancelAll();
     this.backend = backend;
     this.api = api;
+    if (changed && backend === 'agy') this.cliRecipient.capture(this.options.env ?? process.env);
+    if (changed && backend === 'api' && this.options.account && !this.options.resolveRecipient) {
+      try {
+        this.recipient(this.route('brief'));
+      } catch {
+        /* Unknown connection cannot establish a baseline. */
+      }
+    }
+    // Panel composition calls configure at startup/settings save, outside collection/paint.
+    if (
+      changed &&
+      backend !== 'off' &&
+      !this.options.materials &&
+      !this.options.account &&
+      !this.options.resolveRecipient
+    )
+      this.legacyBridge.observeConfiguration();
     if (patch.hourlyCap !== undefined && Number.isFinite(patch.hourlyCap) && patch.hourlyCap > 0)
       this.cap = Math.floor(patch.hourlyCap);
   }
@@ -565,29 +690,486 @@ export class SmallModel {
     }
   }
 
-  /** Queue a request. It starts at once when nothing else is in flight. */
-  submit(request: ModelRequest): ModelHandle {
-    // Resolve everything now, including environment overrides and credentials: queued work
-    // must not silently change destinations when its settings or environment change.
-    request = { ...request };
-    const backend = this.backend;
-    const env = { ...(this.options.env ?? process.env) };
-    const http = backend === 'api' ? modelHttpRequest(this.api, request, env) : undefined;
-    const command = backend === 'agy' ? modelCommand('agy', request, env) : undefined;
-    const route = {
-      backend,
+  private route(feature: string, env: NodeJS.ProcessEnv = this.options.env ?? process.env): MaterialRoute {
+    const empty = { feature, system: '', prompt: '' };
+    const http = this.backend === 'api' ? modelHttpRequest(this.api, empty, env) : undefined;
+    const command = this.backend === 'agy' ? modelCommand('agy', empty, env) : undefined;
+    return {
+      backend: this.backend,
       endpoint: http && !('error' in http) ? http.url : '',
       model:
         http && !('error' in http)
           ? (JSON.parse(http.body).model as string)
           : command?.args[command.args.indexOf('--model') + 1],
-      reasoning: backend === 'api' && !!this.api.reasoning,
+      reasoning: this.backend === 'api' && !!this.api.reasoning,
     };
-    const digest = request.cacheKey !== undefined ? requestDigest(request, route) : null;
+  }
+  private recipient(route: MaterialRoute): ResolvedRecipient | null {
+    const resolved = this.options.resolveRecipient
+      ? bindResolvedRecipient(route, this.options.resolveRecipient(route))
+      : resolveRecipient(route, this.options.account, this.options.trustedProfile);
+    if (route.backend === 'agy') return this.cliRecipient.bind(resolved, this.options.env ?? process.env);
+    if (route.backend === 'api' && resolved && !this.options.resolveRecipient) {
+      const http = modelHttpRequest(
+        this.api,
+        { feature: 'brief', system: '', prompt: '' },
+        this.options.env ?? process.env
+      );
+      if ('error' in http) return null;
+      const credential = http.headers.authorization;
+      if (this.apiCredentials.has(resolved.recipientId)) {
+        if (this.apiCredentials.get(resolved.recipientId) !== credential) return null;
+      } else this.apiCredentials.set(resolved.recipientId, credential);
+    }
+    return resolved;
+  }
+  private hasExplicitRecipient(): boolean {
+    return (
+      this.options.account !== undefined ||
+      this.options.trustedProfile !== undefined ||
+      this.options.resolveRecipient !== undefined
+    );
+  }
+
+  private prepare(
+    plan: MaterialPlan | undefined,
+    route: MaterialRoute,
+    authority: MaterialAuthority | undefined,
+    recipient: ResolvedRecipient | null,
+    feature: string
+  ): {
+    envelope: MaterialEnvelope;
+    authority: MaterialAuthority;
+    recipient: ResolvedRecipient;
+    request: ModelRequest;
+    legacy: boolean;
+  } | null {
+    if (!plan) return null;
+    if (plan.probe) {
+      const target = resolveRecipient(route, 'explicit-synthetic-probe');
+      if (!target || route.backend !== 'api') return null;
+      const sourceId = fingerprint('hud-synthetic-probe-v1');
+      const probeAuthority: MaterialAuthority = {
+        scope: (source) =>
+          source === sourceId
+            ? { revision: 0, local: true, allows: (p, purpose) => p.field === 'probe' && purpose === 'probe' }
+            : null,
+        policy: (source) => ({
+          schemaVersion: 1,
+          sourceId: source,
+          revision: 0,
+          grants: [
+            {
+              purpose: 'probe',
+              recipientId: target.recipientId,
+              decision: 'allow',
+              grantedAt: 0,
+            },
+          ],
+        }),
+      };
+      const probe = buildMaterials({
+        purpose: 'probe',
+        resolvedRecipient: target,
+        authority: probeAuthority,
+        subjects: [
+          {
+            ref: { sourceId, harness: 'codex', sessionId: 'synthetic-probe', threadId: null },
+            origin: 'native',
+            field: 'probe',
+            kind: 'public_text',
+            recordFingerprint: fingerprint('synthetic-probe'),
+            read: () => 'Reply with OK.',
+          },
+        ],
+        limits: { maxBytes: 100 },
+      });
+      if (!isEnvelope(probe)) return null;
+      return {
+        envelope: probe,
+        authority: probeAuthority,
+        recipient: target,
+        legacy: false,
+        request: {
+          feature,
+          system: 'This is a connectivity check. Return only OK.',
+          prompt: 'Reply with OK.',
+          priority: 'interactive',
+          maxOutputTokens: 256,
+          timeoutMs: 15000,
+          telemetryFeature: 'probe',
+        },
+      };
+    }
+    let subjects = plan.subjects;
+    let legacy = false;
+    let requiredRefs: string[] = [];
+    if (plan.legacy && !subjects) {
+      if (this.hasExplicitRecipient() && !recipient) return null;
+      const view = this.legacyBridge.prepare(plan, route);
+      if (!view) return null;
+      subjects = view.subjects;
+      requiredRefs = view.requiredRefs;
+      recipient ??= view.recipient;
+      if (authority) {
+        const explicit = authority;
+        authority = {
+          scope: (sourceId) => {
+            const current = explicit.scope(sourceId);
+            const compatible = view.authority.scope(sourceId);
+            return current?.local && compatible?.local
+              ? {
+                  revision: current.revision,
+                  local: true,
+                  allows: (p, purpose) => current.allows(p, purpose) && compatible.allows(p, purpose),
+                }
+              : null;
+          },
+          policy: (sourceId) =>
+            outboundDecision(view.authority.policy(sourceId), {
+              sourceId,
+              purpose: plan.purpose,
+              recipientId: view.recipient.recipientId,
+            }) === 'allow'
+              ? explicit.policy(sourceId)
+              : null,
+        };
+      } else authority = view.authority;
+      legacy = true;
+    }
+    if (!authority || !recipient || !subjects) return null;
+    if (legacy) markLegacy(null, authority);
+    const decision = buildMaterials({
+      subjects,
+      purpose: plan.purpose,
+      resolvedRecipient: recipient,
+      authority,
+      limits: { maxBytes: plan.maxBytes ?? 65536 },
+      allowPartial: plan.legacyOptional?.length ? true : plan.allowPartial,
+    });
+    if (!isEnvelope(decision) || !revalidateMaterials(decision, authority, recipient)) return null;
+    const admittedRefs = new Set(
+      decision.fragments.flatMap((fragment) => fragment.provenance.map((p) => sessionRefKey(p.ref)))
+    );
+    if (requiredRefs.some((ref) => !admittedRefs.has(ref))) return null;
+    if (legacy) markLegacy(decision, authority);
+    if (plan.inherited && !revalidateMaterials(plan.inherited, authority, recipient)) return null;
+    const request = plan.compose(decision);
+    if (legacy || plan.inherited) {
+      // The formatted aggregate (and repair/translation) inherits the COMPLETE union.
+      const parents = plan.inherited ? [decision, plan.inherited] : [decision];
+      const aggregate = buildMaterials({
+        subjects: parents.map((parent) => ({
+          ref: parent.fragments[0].provenance[0].ref,
+          origin: parent.fragments[0].provenance[0].origin,
+          field: plan.purpose,
+          kind: 'derived' as const,
+          derived: parent,
+          recordFingerprint: parent.fingerprint,
+          read: () => JSON.stringify([request.system, request.prompt, request.cacheKey ?? '']),
+        })),
+        purpose: plan.purpose,
+        resolvedRecipient: recipient,
+        authority,
+        limits: { maxBytes: 262144 },
+      });
+      if (!isEnvelope(aggregate)) return null;
+      if (legacy) markLegacy(aggregate, authority);
+      return { envelope: aggregate, authority, recipient, request, legacy };
+    }
+    return { envelope: decision, authority, recipient, request, legacy };
+  }
+  private authorizationFailure(): ModelResult {
+    return { ok: false, error: 'requires_authorization', refused: true, cancelled: true };
+  }
+  private authorized(job: Job): boolean {
+    try {
+      if (job.backend === 'api' && job.http && !('error' in job.http)) {
+        const current = modelHttpRequest(
+          this.api,
+          { feature: job.request.feature, system: '', prompt: '' },
+          this.options.env ?? process.env
+        );
+        if ('error' in current || current.headers.authorization !== job.http.headers.authorization) return false;
+      }
+      const route = this.route(job.request.feature);
+      const recipient = job.probe
+        ? resolveRecipient(route, 'explicit-synthetic-probe')
+        : job.legacy && !this.hasExplicitRecipient()
+          ? this.legacyBridge.recipient(route)
+          : this.recipient(route);
+      return !!job.envelope && !!job.authority && revalidateMaterials(job.envelope, job.authority, recipient);
+    } catch {
+      return false;
+    }
+  }
+  private cacheAllowed(job: Job, text: string, at: number): boolean {
+    return !!job.envelope && (job.legacy === true || this.materialCache.has(job.digest!, job.envelope, text, at));
+  }
+
+  /** Off-tick permission check for local asynchronous extraction; transport still rechecks the captured subjects. */
+  inspectLegacyMaterials(
+    subjects: readonly LegacySubject[],
+    purpose: import('../core/types/export.js').OutboundPurpose
+  ): boolean | Promise<boolean> {
+    return new Promise((resolve) =>
+      setImmediate(() => {
+        if (this.backend === 'off') {
+          resolve(false);
+          return;
+        }
+        try {
+          const route = this.route(purpose === 'label' ? 'labels' : purpose);
+          const plan = legacyRequest(purpose === 'label' ? 'labels' : purpose, subjects, () => ({
+            feature: purpose,
+            system: '',
+            prompt: '',
+          })).materials!;
+          resolve(!!this.prepare(plan, route, this.options.materials, this.recipient(route), purpose));
+        } catch {
+          resolve(false);
+        }
+      })
+    );
+  }
+  inspectLocalLegacy(subjects: readonly LegacySubject[]): boolean | Promise<boolean> {
+    return new Promise((resolve) =>
+      setImmediate(() => {
+        try {
+          if (!this.historicalDisplaySubjects(subjects)) {
+            resolve(false);
+            return;
+          }
+          const identified = this.legacyBridge.identifyNative(subjects, 'brief');
+          resolve(
+            !!identified &&
+              identified.every(
+                (subject) =>
+                  !this.options.materials || this.options.materials.scope(subject.ref.sourceId)?.local === true
+              )
+          );
+        } catch {
+          resolve(false);
+        }
+      })
+    );
+  }
+  /** Display-only legacy cache access uses local scope, including with backend off; it creates no material grant. */
+  readLegacyLabels<T>(
+    subjects: readonly LegacySubject[],
+    file: string,
+    consume: (admitted?: ReadonlySet<string>) => T,
+    optionalSubjects: readonly LegacySubject[] = []
+  ): T | null | Promise<T | null> {
+    return new Promise((resolve) =>
+      setImmediate(() => {
+        try {
+          if (!this.historicalDisplaySubjects(subjects)) {
+            resolve(null);
+            return;
+          }
+          const identified = this.legacyBridge.identifyNative(subjects, 'label');
+          if (
+            !identified ||
+            !this.legacyBridge.localLabelFile(file) ||
+            identified.some(
+              (subject) => this.options.materials && this.options.materials.scope(subject.ref.sourceId)?.local !== true
+            )
+          ) {
+            resolve(null);
+            return;
+          }
+          const admitted = new Set(identified.map((subject) => subject.ref.sessionId));
+          for (const optional of optionalSubjects) {
+            if (!this.historicalDisplaySubjects([optional])) continue;
+            const proven = this.legacyBridge.identifyNative([optional], 'label');
+            if (
+              proven?.every(
+                (subject) =>
+                  !this.options.materials || this.options.materials.scope(subject.ref.sourceId)?.local === true
+              )
+            )
+              admitted.add(optional.sessionId);
+          }
+          resolve(consume(admitted));
+        } catch {
+          resolve(null);
+        }
+      })
+    );
+  }
+
+  private historicalDisplaySubjects(subjects: readonly LegacySubject[]): boolean {
+    return subjects.every(
+      (subject) =>
+        !subject.ref &&
+        !subject.universal &&
+        subject.origin === undefined &&
+        (!subject.chargeFor ||
+          (!subject.chargeFor.ref && !subject.chargeFor.universal && subject.chargeFor.origin === undefined))
+    );
+  }
+
+  /** Queue a request. It starts at once when nothing else is in flight. */
+  submit(request: ModelRequest): ModelHandle {
+    if (!request.materials?.legacy || this.backend === 'off') return this.submitNow(request);
+    // Legacy proof touches the original home. Schedule it outside the collection/paint turn.
+    let inner: ModelHandle | undefined;
+    let cancelled = false;
+    let resolve!: (result: ModelResult) => void;
+    const listeners = new Set<() => void>();
+    const routeSnapshot = JSON.stringify(this.route(request.feature));
+    const env = this.options.env ?? process.env;
+    const sourceContext = JSON.stringify([
+      env.CODEX_HOME,
+      env.CODEX_SESSIONS_PATH,
+      env.CODEX_HUD_SETTINGS_PATH,
+      env.HUD_HOME,
+      env.PATH,
+    ]);
+    const emptyHttp =
+      this.backend === 'api'
+        ? modelHttpRequest(this.api, { feature: request.feature, system: '', prompt: '' }, env)
+        : undefined;
+    const credential = emptyHttp && !('error' in emptyHttp) ? emptyHttp.headers.authorization : undefined;
+    const result = new Promise<ModelResult>((done) => {
+      resolve = done;
+    });
+    setImmediate(() => {
+      this.preflights.delete(handle);
+      if (cancelled) return;
+      const currentHttp =
+        this.backend === 'api'
+          ? modelHttpRequest(this.api, { feature: request.feature, system: '', prompt: '' }, env)
+          : undefined;
+      const currentCredential =
+        currentHttp && !('error' in currentHttp) ? currentHttp.headers.authorization : undefined;
+      if (
+        routeSnapshot !== JSON.stringify(this.route(request.feature)) ||
+        credential !== currentCredential ||
+        sourceContext !==
+          JSON.stringify([env.CODEX_HOME, env.CODEX_SESSIONS_PATH, env.CODEX_HUD_SETTINGS_PATH, env.HUD_HOME, env.PATH])
+      ) {
+        resolve(this.authorizationFailure());
+        return;
+      }
+      const changed = () => {
+        for (const listener of listeners) {
+          try {
+            listener();
+          } catch {
+            /* Observer only. */
+          }
+        }
+      };
+      try {
+        inner = this.submitNow(request);
+        inner.subscribe(changed);
+        inner.result.then(resolve);
+        changed();
+      } catch {
+        resolve(this.authorizationFailure());
+      }
+    });
+    const handle: ModelHandle = {
+      result,
+      get status() {
+        return inner?.status ?? (cancelled ? 'settled' : 'queued');
+      },
+      get generatedAt() {
+        return inner?.generatedAt;
+      },
+      get materials() {
+        return inner?.materials;
+      },
+      isAuthorized: () => inner?.isAuthorized?.() === true,
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      cancel() {
+        cancelled = true;
+        if (inner) inner.cancel();
+        else resolve({ ok: false, error: 'cancelled', cancelled: true });
+      },
+    };
+    this.preflights.add(handle);
+    return privateMaterialHandle(handle);
+  }
+
+  private submitNow(request: ModelRequest): ModelHandle {
+    // Resolve the route with EMPTY material. Authorization precedes all formatting and hashing.
+    const backend = this.backend;
+    const env = { ...(this.options.env ?? process.env) };
+    let route = this.route(request.feature, env);
+    const plan = request.materials;
+    let envelope: MaterialEnvelope | undefined;
+    let authority = plan?.authority ?? this.options.materials;
+    let recipient: ResolvedRecipient | null = null;
+    try {
+      if (backend !== 'off') recipient = this.recipient(route);
+    } catch {
+      /* Unknown target denies. */
+    }
+    let refusal: ModelResult | undefined;
+    let legacy = false;
+    if (backend === 'off') refusal = { ok: false, error: 'model backend off', refused: true };
+    else if (route.backend === 'api' && !route.endpoint)
+      refusal = {
+        ok: false,
+        error: 'api: invalid endpoint',
+        classification: 'invalid-response',
+      };
+    else {
+      let prepared: ReturnType<SmallModel['prepare']> = null;
+      try {
+        prepared = this.prepare(plan, route, authority, recipient, request.feature);
+      } catch {
+        /* Invalid adapters deny. */
+      }
+      if (prepared) {
+        envelope = prepared.envelope;
+        authority = prepared.authority;
+        recipient = prepared.recipient;
+        legacy = prepared.legacy;
+        request = { ...prepared.request, materials: undefined };
+      } else refusal = { ok: false, error: 'requires_authorization', refused: true };
+    }
+    // Denied getters are never evaluated, including prompt/system/cacheKey.
+    if (refusal) request = { feature: request.feature, system: '', prompt: '' };
+    const http = !refusal && backend === 'api' ? modelHttpRequest(this.api, request, env) : undefined;
+    const command = !refusal && backend === 'agy' ? modelCommand('agy', request, env) : undefined;
+    if (command) command.file = this.cliRecipient.executable() ?? command.file;
+    if (!refusal)
+      route = {
+        ...route,
+        model:
+          http && !('error' in http)
+            ? (JSON.parse(http.body).model as string)
+            : command?.args[command.args.indexOf('--model') + 1],
+      };
+    const digest =
+      !refusal && request.cacheKey !== undefined
+        ? requestDigest(
+            request,
+            legacy
+              ? route
+              : ({ ...route, materialDomain: envelope!.cacheDomain, language: request.language } as typeof route)
+          )
+        : null;
     let job!: Job;
     const result = new Promise<ModelResult>((resolve) => {
       job = {
         request,
+        envelope,
+        authority,
+        recipient: recipient ?? undefined,
+        legacy,
+        probe: plan?.probe,
+        env,
+        store: legacy ? this.store : this.materialStore,
         backend,
         http,
         command,
@@ -609,15 +1191,20 @@ export class SmallModel {
       };
     });
     this.recordTelemetry(job);
-    this.reloadCache();
+    if (!refusal) this.reloadCache(legacy);
     let hit = digest ? this.cache.get(digest) : undefined;
+    if (hit && (!this.authorized(job) || !this.cacheAllowed(job, hit.text, hit.at))) hit = undefined;
     // An answer cached in the wrong language is no answer: dropped, and asked again.
     if (hit && !acceptable(request, hit.text)) {
       this.cache.delete(digest!);
       hit = undefined;
     }
-    if (backend === 'off') {
-      job.resolve({ ok: false, error: 'model backend off', refused: true });
+    if (refusal) {
+      job.resolve(refusal);
+    } else if (request.materialUnchanged) {
+      job.resolve({ ok: false, error: 'unchanged', unchanged: true });
+    } else if (legacy && request.legacyCachedText !== undefined) {
+      job.resolve({ ok: true, text: request.legacyCachedText, cached: true });
     } else if (hit) {
       job.generatedAt = hit.at;
       job.resolve({ ok: true, text: hit.text, cached: true });
@@ -626,7 +1213,7 @@ export class SmallModel {
       this.changed();
       this.pump();
     }
-    return {
+    return privateMaterialHandle({
       result,
       get status() {
         return job.status;
@@ -634,6 +1221,10 @@ export class SmallModel {
       get generatedAt() {
         return job.generatedAt;
       },
+      get materials() {
+        return job.envelope;
+      },
+      isAuthorized: () => this.authorized(job),
       subscribe: (listener) => {
         job.listeners.add(listener);
         return () => {
@@ -650,11 +1241,13 @@ export class SmallModel {
         // Abort is asynchronous. Keep the active slot until run() settles,
         // otherwise a replacement can overlap a fetch/subprocess still stopping.
       },
-    };
+    });
   }
 
   /** Cancel everything, waiting and running: the panel is closing. */
   cancelAll(): void {
+    for (const handle of this.preflights) handle.cancel();
+    this.preflights.clear();
     for (const job of [...this.queue, ...(this.active ? [this.active] : [])]) {
       job.stop?.();
       job.resolve({ ok: false, error: 'cancelled', cancelled: true });
@@ -730,11 +1323,15 @@ export class SmallModel {
           this.pump();
           return;
         }
+        if (outcome.ok && !this.authorized(job)) outcome = this.authorizationFailure();
         if (outcome.ok && job.generatedAt === undefined) job.generatedAt = this.clock();
         if (!job.settled) {
           if (outcome.ok) {
             this.lastSuccessAt = job.generatedAt;
-            if (job.digest) this.remember(job.digest, outcome.text, job.generatedAt!);
+            if (job.digest) {
+              if (!this.store) this.materialCache.remember(job.digest, job.envelope!, outcome.text, job.generatedAt!);
+              this.remember(job.digest, outcome.text, job.generatedAt!);
+            }
           } else if (!outcome.cancelled)
             this.lastFailure = {
               classification: outcome.classification,
@@ -768,24 +1365,31 @@ export class SmallModel {
 
   private async run(job: Job): Promise<ModelResult | typeof WAITING_FOR_PEER> {
     if (job.settled) return { ok: false, error: 'cancelled', cancelled: true };
+    if (!this.authorized(job)) return this.authorizationFailure();
     const backend = job.backend;
+    const store = job.store;
     if (backend === 'off') return { ok: false, error: 'model backend off', refused: true };
     const http = job.http;
     if (http && 'error' in http) return { ok: false, error: http.error, classification: 'invalid-response' };
-    if (this.store) {
-      const reservation = await this.store.reserve(
+    if (store) {
+      const reservation = await store.reserve(
         job.digest,
         job.id,
         this.cap,
         this.clock,
-        () => job.settled,
+        () => job.settled || !this.authorized(job),
         (text) => acceptable(job.request, text)
       );
       if (job.settled) {
-        if (reservation.kind === 'reserved' && job.digest) await this.store.finish(job.digest, job.id);
+        if (reservation.kind === 'reserved' && job.digest) await store.finish(job.digest, job.id);
         return { ok: false, error: 'cancelled', cancelled: true };
       }
+      if (!this.authorized(job)) {
+        if (reservation.kind === 'reserved' && job.digest) await store.finish(job.digest, job.id);
+        return this.authorizationFailure();
+      }
       if (reservation.kind === 'cached') {
+        if (!this.cacheAllowed(job, reservation.entry.text, reservation.entry.at)) return this.authorizationFailure();
         job.generatedAt = reservation.entry.at;
         return { ok: true, text: reservation.entry.text, cached: true };
       }
@@ -795,7 +1399,7 @@ export class SmallModel {
       if (reservation.kind === 'waiting') return WAITING_FOR_PEER;
       this.markRunning(job);
       if (job.settled) {
-        if (job.digest) await this.store.finish(job.digest, job.id);
+        if (job.digest) await store.finish(job.digest, job.id);
         return { ok: false, error: 'cancelled', cancelled: true };
       }
     } else {
@@ -803,7 +1407,7 @@ export class SmallModel {
       const now = this.clock();
       if (job.digest) {
         const hit = this.cache.get(job.digest);
-        if (hit && acceptable(job.request, hit.text)) {
+        if (hit && this.cacheAllowed(job, hit.text, hit.at) && acceptable(job.request, hit.text)) {
           job.generatedAt = hit.at;
           return { ok: true, text: hit.text, cached: true };
         }
@@ -811,6 +1415,11 @@ export class SmallModel {
       }
       if (callsWithin(this.calls, now, HOUR_MS) >= this.cap) return this.capResult();
       this.calls.push(now);
+    }
+    // Includes queue wait, peer coordination and synchronous lifecycle callbacks.
+    if (!this.authorized(job)) {
+      if (store && job.digest) await store.finish(job.digest, job.id);
+      return this.authorizationFailure();
     }
     let outcome: ModelResult;
     job.dispatchedAt = this.clock();
@@ -821,19 +1430,24 @@ export class SmallModel {
       // Written in another language than asked: a failure, never cached, never shown as if it obeyed.
       if (outcome.ok && !acceptable(job.request, outcome.text))
         outcome = { ok: false, error: t('Reply not in the panel language'), classification: 'invalid-response' };
+      if (outcome.ok && !this.authorized(job)) outcome = this.authorizationFailure();
       if (outcome.ok) job.generatedAt = this.clock();
     } catch {
       outcome = { ok: false, error: 'model request failed', classification: 'network' };
     } finally {
       job.stop = undefined;
     }
-    if (this.store && job.digest) {
+    if (store && job.digest) {
       // Cancellation holds the claim until the underlying transport settles.
-      await this.store.finish(
+      await store.finish(
         job.digest,
         job.id,
         outcome.ok && !job.settled ? { text: outcome.text, at: job.generatedAt! } : undefined,
-        () => !job.settled
+        () => {
+          if (job.settled || !this.authorized(job)) return false;
+          this.materialCache.remember(job.digest!, job.envelope!, outcome.ok ? outcome.text : '', job.generatedAt!);
+          return true;
+        }
       );
     }
     return outcome;
@@ -843,7 +1457,7 @@ export class SmallModel {
     return new Promise((resolve) => {
       let child: ChildProcess;
       try {
-        child = spawn(file, args, { cwd: os.tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] });
+        child = spawn(file, args, { cwd: os.tmpdir(), env: job.env, stdio: ['ignore', 'pipe', 'pipe'] });
       } catch {
         resolve({ ok: false, error: `${file}: connection failed`, classification: 'network' });
         return;
@@ -951,10 +1565,11 @@ export class SmallModel {
     }
   }
 
-  private reloadCache(): void {
-    if (!this.store) return;
+  private reloadCache(legacy: boolean): void {
+    const store = legacy ? this.store : this.materialStore;
+    if (!store) return;
     try {
-      this.cache = this.store.cache();
+      this.cache = store.cache();
     } catch {
       /* Dispatch fails closed if shared state remains unavailable. */
     }

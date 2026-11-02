@@ -1,3 +1,4 @@
+import { SyntheticModel as SmallModel } from './b17-fixture.test.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,7 +7,6 @@ import path from 'node:path';
 import { t, setLanguage, resolveLanguage } from '../../src/render/i18n.js';
 import { initialMonitorState, renderMonitor } from '../../src/render/monitor.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../src/render/settings-page.js';
-import { SmallModel } from '../../src/collectors/small-model.js';
 import { Briefer, briefingCommand, briefSystemPrompt } from '../../src/collectors/briefing.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
 import { stripAnsi, visualLength } from '../../src/render/colors.js';

@@ -1,7 +1,7 @@
+import { SyntheticModel as SmallModel } from './b17-fixture.test.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { SmallModel } from '../../src/collectors/small-model.js';
 import {
   Briefer,
   briefingCommand,
@@ -582,7 +582,7 @@ test('a Briefer on an api endpoint reads the reply and reports a safe classifica
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as { port: number }).port;
   try {
-    const briefer = new Briefer(() => {});
+    const briefer = new Briefer(() => {}, { model: new SmallModel({ env: {} }) });
     briefer.configureApi({ base: `http://127.0.0.1:${port}/v1`, model: 'local-model', key: 'sk-test' });
     const settle = () =>
       new Promise<void>((resolve) => {
