@@ -214,6 +214,7 @@ export class DelegationService {
     if (!profile) throw new Error('backend_not_found');
     const preparation = await prepareCodexLaunch({
       profile,
+      retireRecoveryMs: config.wake?.recoveryMs,
       operation: handover ? 'resume' : operation,
       mode: args.mode as 'headless' | 'visible',
       cwd: handover ? String(args.cwd) : (previous?.run.launchCwd ?? String(args.cwd)),

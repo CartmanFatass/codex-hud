@@ -2,6 +2,7 @@ import type { RunControl } from '../interfaces/run-control.js';
 import type { LedgerEvent, ReconcileDecision, ReconcileEvidence, Run } from '../types/execution.js';
 import type { LifecycleStatus } from '../types/lifecycle.js';
 import type { ProcessStamp, RunMeta, FinalExitReceipt } from '../types/supervision.js';
+import type { RetireRequest } from '../../ledger/notify-events.js';
 
 export interface RunSnapshot {
   revision: number;
@@ -11,9 +12,20 @@ export interface RunSnapshot {
   meta: RunMeta | null;
   receipt: FinalExitReceipt | null;
   claimSupervisor: { pid: number; proc_start: string } | null;
-  claimState: 'issued' | 'armed' | 'revoked';
+  claimState: 'issued' | 'armed' | 'redeemed' | 'revoked' | 'expired';
   slotHeld: boolean;
+  /** Unresolved X includes relation and prior same-session evidence. */
+  controlConflict?: boolean;
   status: LifecycleStatus;
+  /** One ledger read snapshot: current assignment, including link-wide intents. */
+  retirement?: {
+    assignment: string;
+    authorityValid: boolean;
+    currentRunId: string;
+    reportSeq: number | null;
+    intentSeq: number;
+    intentAt: number | null;
+  };
 }
 /** Created by the trusted entry point, never by model-supplied tool arguments.
  * 待 ARCH 裁决: local cancel/reconcile uses contract 04's manager boundary;
@@ -39,10 +51,21 @@ export interface HeartbeatResult {
  */
 export interface RunFactPort {
   read(runId: string): Promise<RunSnapshot>;
+  /** Only the original headless writer; CAS the retained eligibility snapshot. */
+  requestRetirement?(
+    runId: string,
+    supervisor: ProcessStamp,
+    revision: number,
+    request: RetireRequest
+  ): Promise<CancelIntent | null>;
   authorizeManager(runId: string, actor: LocalManager, operation: 'reconcile'): Promise<void>;
   register(runId: string, ticket: string, launchDigest: string, supervisor: ProcessStamp): Promise<void>;
   phase(runId: string, supervisor: ProcessStamp, phase: 'submitting' | 'submitted'): Promise<void>;
-  startup(runId: string, supervisor: ProcessStamp, meta: RunMeta): Promise<void>;
+  startup(
+    runId: string,
+    supervisor: ProcessStamp,
+    meta: RunMeta
+  ): Promise<{ startedAt: number; monoMs: number } | void>;
   heartbeat(
     runId: string,
     supervisor: ProcessStamp,
