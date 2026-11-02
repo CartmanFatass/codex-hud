@@ -1,14 +1,9 @@
 import type { SessionRef } from './identity.js';
 import type { RunOperation, RunState } from './execution.js';
 import type { LinkState } from './lifecycle.js';
-import type {
-  ObservationStamp,
-  ObservationView,
-  ProjectOrigin,
-  RunWorkspaceSnapshot,
-  Coverage,
-  NoticeEvent,
-} from './observation.js';
+import type { ProjectOrigin, RunWorkspaceSnapshot, Coverage } from './observation.js';
+
+export type { UniversalSnapshotV3, UniversalSnapshotNode } from '../interfaces/snapshot-v3.js';
 
 export type OutboundPurpose =
   | 'brief'
@@ -57,25 +52,6 @@ export interface MaterialEnvelope {
 }
 
 export type VersionDomain = 'public_snapshot' | 'checkpoint' | 'ledger' | 'delegation_export' | 'scan';
-
-export interface UniversalSnapshotV3 {
-  version: 3;
-  universal: {
-    rootRef: SessionRef;
-    sourceId: string;
-    asOfSeq: number | null;
-    observationStamp: ObservationStamp | null;
-    asOf: number | null;
-    observedAt: number;
-    coverage: Coverage;
-    tree: {
-      nodes: ObservationView[];
-      counts: { confirmedSessions: number; delegationIntents: number; jobs: number };
-      continuation?: string[];
-    };
-    notices: NoticeEvent[];
-  };
-}
 
 export type ExportPaths = 'none' | 'local';
 export type ExportScope = { kind: 'all' } | { kind: 'links'; linkIds: string[] };

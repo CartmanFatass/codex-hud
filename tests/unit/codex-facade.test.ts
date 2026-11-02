@@ -22,6 +22,8 @@ import {
 import type { LaunchProfile } from '../../src/core/types/capabilities.js';
 import type { BindContext, ReaderResult, SessionReader } from '../../src/core/interfaces/harness-adapter.js';
 import type { SessionRef } from '../../src/core/types/identity.js';
+import type { UniversalSnapshotV3 } from '../../src/core/interfaces/snapshot-v3.js';
+import { fixtureUniversalSnapshotV3 } from '../fixtures/contracts/observation-export.js';
 import {
   ROOT,
   CHILD,
@@ -95,6 +97,17 @@ async function drain(reader: SessionReader): Promise<ReaderResult> {
   }
   throw new Error('reader did not catch up');
 }
+
+test('A6 observation fits the shared nullable-root v3 fixture and full node shape', async (t) => {
+  const f = await fixture(t);
+  const read = await drain(f.adapter.open(f.ref));
+  const snapshot: UniversalSnapshotV3 = fixtureUniversalSnapshotV3(read.observation);
+  assert.equal(snapshot.universal.rootRef, null);
+  assert.deepEqual(snapshot.universal.tree.counts, { confirmedSessions: 1, delegationIntents: 1, jobs: 0 });
+  const node = snapshot.universal.tree.nodes[0];
+  assert.deepEqual(node.nodeIdentity, { kind: 'session', ref: f.ref });
+  assert.deepEqual([node.parent, node.links, node.candidates, node.host, node.actions], [null, [], [], null, []]);
+});
 
 test('Codex source is explicit and verified; binding needs a unique full ref, with no managed identity', async (t) => {
   const f = await fixture(t);

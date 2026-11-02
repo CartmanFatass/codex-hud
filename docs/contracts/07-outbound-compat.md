@@ -64,6 +64,8 @@ recipient 是已解析的具体目标身份：API 包含 backend/provider、规�
 
 public v3 与内部 scan v3 恰好数字相同不表示兼容。版本检查先于读写；旧新进程不得争写同一格式/路径，checkpoint和summary即使有schema标签仍须06同一次提交。ledger的迁移仅在短事务检查版本，备份/文件准备在事务外；schema冲突不通过重新发外部动作解决。Jev jobs/browser存储和grant/close完整协议按Oracle C04延期，不为v3草案提前冻结不可达DDL。
 
+v3 只有一份权威类型：`src/core/interfaces/snapshot-v3.ts` 的 `UniversalSnapshotV3`/`UniversalSnapshotNode`，`src/core/types/export.ts` 仅 re-export；A4/A6 共用同一 fixture。`rootRef:SessionRef|null`（未绑定根为 null），`tree.counts={confirmedSessions:number,delegationIntents:number,jobs:number}`，计数分别为已确认 session、未绑定 delegationIntent、未来 job。完整 node 在06 ObservationView上必有 `parent,links,candidates,host,actions`（parent/host可null，集合可空），不另起较窄节点形状。
+
 v3 的加法槽为 `universal`：`rootRef,sourceId,asOfSeq,observationStamp,asOf,observedAt,coverage,tree{nodes,counts,continuation?},notices`；每node含06 `DisplayNodeIdentity`（session(ref) / delegationIntent(linkId) / 未来job(ref)）、depth/loaded、分别包装的`spent.tokens`与必有`spent.costUsd:Metric<number>`、WorkspaceContext、五维projection（`freshness.state`）、stateKey/stateSince/stateSinceBasis、isRunTerminal/conflict及各自observationStamp，03关系/本轮run/报告/候选/parent/reconciliation/带主体resumable/ActionDescriptor，05 host定位结果。intent不用假ref、不计已确认session，绑定由B9合并；launch_failed是未执行失败，不冒充turn失败，终态不按图标判。Job holderLabel仅为C4读取派生槽，不提前冻结browser DDL。
 
 asOfSeq只指ledger快照高水位（无库null、已打开空库0），observationStamp按06保存实际`{seqDomain,commitSeq,inputLedgerSeq,ref,runId?,bindingGeneration?,sourceGeneration}`，不把当前ledgerSeq贴成缓存生成序号；跨run/代次不兼容给缺失/stale，旧stateSince/cwd/报告不混当前，无关seq增长不全失效。ledger/观测/notice序号分域，v3不是跨库原子或wait/CDC游标。新字段时间ms epoch，v2单位/缺省不变；counts不改变旧agents口径。A4/A6落类型，B16/B10/D3共用，statusline从同一已提交观测廉价读取（06），不另建全树生成器。
@@ -221,4 +223,4 @@ E的显式迁移为 `inspect → preview per-source mapping → write new privat
 | T-07-24 | A9 | spawn转历史、同link两次resume、handover新link及后续resume、仅导出后继link、失败未绑定spawn → operation直接保留且前驱引用不补猜祖先；当前确认父边独立新轮pending，旧spawn不成第二边；历史claim正常撤销不抹已确认启动，pending/null/non_execution不伪造起源；不按逐run时间虚拆日成本或搬旧用量 |
 | T-07-25 | A9 | 10000/10001条、16MiB边界/超限、1000ms软预算超限、缩小link范围/组装失败 → 边界内可成功，超限明确失败且无成功截断全集；完整JSON备妥才输出，consumer成功且coverage完整才替换范围缓存，真实读事务寿命另记（B18实测） |
 | T-07-26 | A9 | 缺必需字段/缺或非法operation/未知export主版本拒解码；四表字段键必需，null可用、未知字符串正规化null、非string/null拒绝，两paths模式一致；workspace=null无需内部键；未知可选字段忽略/状态保守，五版本域独立且不默认spawn |
-| T-07-27 | A9 | v3 intent/session/job槽、tokens已知成本未知、launch_failed/failed报告仍running、ledger-b+观测-a → 身份/Metric/freshness.state/stateSince/basis/isRunTerminal与双域stamp按06，不造session/成本/连续性/跨库原子，旧v2缺省/时间仍兼容 |
+| T-07-27 | A9 | 两个import路径共用同一v3 fixture、nullable rootRef、confirmedSessions/delegationIntents/jobs计数、完整node的parent/links/candidates/host/actions；v3 intent/session/job槽、tokens已知成本未知、launch_failed/failed报告仍running、ledger-b+观测-a → 身份/Metric/freshness.state/stateSince/basis/isRunTerminal与双域stamp按06，不造session/成本/连续性/跨库原子，旧v2缺省/时间仍兼容 |

@@ -5,6 +5,7 @@ import {
   accept,
   arm,
   begin,
+  boot,
   assert,
   context,
   current,
@@ -20,6 +21,7 @@ import {
   json,
   live,
   mergeOwner,
+  metaPath,
   newCaller,
   observationClock,
   now,
@@ -29,6 +31,7 @@ import {
   receiptPath,
   reconcile,
   registerProcess,
+  registeredSupervisor,
   sameInstance,
   scopeOf,
   session,
@@ -61,10 +64,19 @@ process.on('disconnect', () => {
 
 async function supervise() {
   if (!(await arm(db, options.runId, options.ticket, self))) return { won: false };
+  await checkpoint('registered_before_meta', { stamp: self });
+  mkdirSync(join(home, 'runs', options.runId), { recursive: true, mode: 0o700 });
+  writeFileSync(
+    metaPath(options.runId),
+    json({ supervisor: registeredSupervisor(db, db.prepare('SELECT * FROM runs WHERE run_id=?').get(options.runId)) }),
+    { mode: 0o600 }
+  );
   if (options.exitAfterArmed != null) process.exit(options.exitAfterArmed);
   await checkpoint('armed');
-  db.prepare("UPDATE runs SET launch_phase='submitting' WHERE run_id=? AND submission_fenced_at IS NULL").run(
-    options.runId
+  tx(db, () =>
+    db
+      .prepare("UPDATE runs SET launch_phase='submitting' WHERE run_id=? AND submission_fenced_at IS NULL")
+      .run(options.runId)
   );
   await checkpoint('submitting');
   const target = new Peer('workload', { detached: true, directory: options.directory });
@@ -80,7 +92,7 @@ async function supervise() {
     if (options.omitProof !== 'launch_record') evidence(db, 'launch_receipt', proof, options.runId);
   });
   await checkpoint('after_spawn', { harness: ready.stamp });
-  db.prepare("UPDATE runs SET launch_phase='submitted' WHERE run_id=?").run(options.runId);
+  tx(db, () => db.prepare("UPDATE runs SET launch_phase='submitted' WHERE run_id=?").run(options.runId));
   send({ type: 'submitted', stamp: ready.stamp, scope });
   return { won: true, harness: ready.stamp, scope };
 }
@@ -144,6 +156,11 @@ function whoami(params) {
     const run = db.prepare('SELECT * FROM runs WHERE run_id=?').get(runId);
     const credential = db.prepare('SELECT * FROM claims WHERE run_id=?').get(runId);
     assert.ok(run && credential && credential.claim_hash === hash(claim || ''), 'claim_invalid');
+    const supervisor = registeredSupervisor(db, run);
+    assert.ok(
+      supervisor && supervisor.boot_id === boot && supervisor.pid_domain === domain,
+      'supervisor_instance_unknown'
+    );
     const binding = db.prepare('SELECT * FROM child_bindings WHERE run_id=? AND is_current=1').get(runId);
     const record = JSON.parse(readFileSync(options.record, 'utf8'));
     const launch = db
@@ -229,7 +246,7 @@ if (mode === 'harness') {
     calls: {},
   };
   const save = () => {
-    record.ref = session(db, origin, record.sessionId);
+    record.ref = tx(db, () => session(db, origin, record.sessionId));
     writeFileSync(
       join(origin.root, `${record.sessionId}.json`),
       json({ sessionId: record.sessionId, sourceId: origin.sourceId }),
@@ -288,26 +305,28 @@ async function handle(message) {
     if (message.action === 'whoami') return whoami(message.params || {});
     const ctx = identity(message.params);
     if (message.action === 'report') {
-      const binding = db
-        .prepare(
-          'SELECT * FROM child_bindings WHERE run_id=? AND caller_context_id=? AND context_generation=? AND is_current=1'
-        )
-        .get(message.runId, ctx.context_id, ctx.generation);
-      assert.ok(binding, 'report_unauthorized');
-      db.prepare(`INSERT INTO reports VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(
-        id(),
-        message.runId,
-        message.linkId,
-        binding.binding_id,
-        callerId,
-        ctx.context_id,
-        ctx.generation,
-        'completed',
-        'synthetic',
-        null,
-        now()
-      );
-      return { reported: true };
+      return tx(db, () => {
+        const binding = db
+          .prepare(
+            'SELECT * FROM child_bindings WHERE run_id=? AND caller_context_id=? AND context_generation=? AND is_current=1'
+          )
+          .get(message.runId, ctx.context_id, ctx.generation);
+        assert.ok(binding, 'report_unauthorized');
+        db.prepare(`INSERT INTO reports VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(
+          id(),
+          message.runId,
+          message.linkId,
+          binding.binding_id,
+          callerId,
+          ctx.context_id,
+          ctx.generation,
+          'completed',
+          'synthetic',
+          null,
+          now()
+        );
+        return { reported: true };
+      });
     }
     if (message.action === 'resume') {
       current(db, message.oldContext || ctx);

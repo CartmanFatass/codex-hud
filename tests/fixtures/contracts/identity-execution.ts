@@ -1283,6 +1283,81 @@ export const identityExecutionCases: Record<string, () => void> = {
     );
   },
   'T-02-17': () => {
+    const nRun = fixtureRun({ state: 'starting', launchPhase: 'armed' });
+    const n = { ...neverSubmitted(), evidenceId: 'N@20', asOf: FIXTURE_NOW + 20, observedAt: FIXTURE_NOW + 90 };
+    const gone20 = { ...scopeGone(), evidenceId: 'gone@20', asOf: FIXTURE_NOW + 20 };
+    const alive30 = { ...scopeAlive(), evidenceId: 'alive@30', asOf: FIXTURE_NOW + 30 };
+    const gone40 = { ...scopeGone(), evidenceId: 'gone@40', asOf: FIXTURE_NOW + 40 };
+    const unsealed30 = fixtureReconcileEvidence(
+      { kind: 'never_submitted', permanentFence: true, launchersSealed: false, noExecution: true },
+      { evidenceId: 'unsealed-launcher@30', asOf: FIXTURE_NOW + 30 }
+    );
+    const scopeUnsealed30 = fixtureReconcileEvidence(
+      { kind: 'scope', state: 'gone', complete: true, harnessTerminated: true, launchersSealed: false },
+      { evidenceId: 'scope-unsealed-launcher@30', asOf: FIXTURE_NOW + 30 }
+    );
+    for (const counter of [alive30, { ...alive30, asOf: n.asOf }, unsealed30, scopeUnsealed30]) {
+      for (const history of [
+        [n, gone20, counter, gone40],
+        [gone40, counter, gone20, n],
+        [counter, n, gone40, gone20],
+      ]) {
+        const decision = reconcileRun(nRun, history, FIXTURE_NOW + 100);
+        assert.equal(decision.row, 'R-02-1');
+        assert.equal(decision.state, 'uncertain');
+        assert.equal(decision.cause, 'scope_conflict');
+        assert.equal(decision.releaseSlot, false);
+        assert.equal(decision.blockNewOperations, true);
+        assert.ok(decision.evidenceIds.includes(counter.evidenceId));
+        assert.ok(!decision.auditEvidenceIds.includes(counter.evidenceId));
+      }
+    }
+    const failed = fixtureEndedRun({
+      state: 'failed',
+      launchPhase: 'never_submitted',
+      terminalEvidenceId: n.evidenceId,
+      endedAt: FIXTURE_NOW + 90,
+    });
+    const nBasis = { evidence: [n, gone20], terminalNote: null };
+    for (const offset of [-1, 0, 10]) {
+      const counter = { ...alive30, asOf: n.asOf + offset };
+      const decision = reconcileRun(failed, [counter, gone40], FIXTURE_NOW + 100, {
+        slotHeld: false,
+        ticketConsumed: true,
+        terminalBasis: nBasis,
+      });
+      assert.equal(decision.state, 'failed');
+      assert.equal(decision.blockNewOperations, offset >= 0);
+      assert.equal(decision.cause, offset >= 0 ? 'scope_conflict' : null);
+      assert.equal(decision.releaseSlot, false);
+      assert.equal(decision.emitTransition, false);
+    }
+    const savedX = fixtureReconcileEvidence(
+      { kind: 'conflict', cause: 'scope_conflict' },
+      {
+        evidenceId: 'durable-N-conflict',
+        asOf: FIXTURE_NOW + 30,
+      }
+    );
+    for (const counter of [alive30, unsealed30, scopeUnsealed30]) {
+      for (const asOf of [null, -1, NaN, FIXTURE_NOW + 101]) {
+        const unknownTime = reconcileRun(nRun, [n, gone20, { ...counter, asOf }, gone40], FIXTURE_NOW + 100);
+        assert.equal(unknownTime.state, 'uncertain');
+        assert.equal(unknownTime.releaseSlot, false);
+        assert.equal(unknownTime.blockNewOperations, true);
+      }
+    }
+    const stillBlocked = reconcileRun(failed, [gone40], FIXTURE_NOW + 100, {
+      slotHeld: false,
+      ticketConsumed: true,
+      terminalBasis: { ...nBasis, evidence: [...nBasis.evidence, savedX] },
+    });
+    assert.equal(stillBlocked.blockNewOperations, true);
+    assert.equal(stillBlocked.cause, 'scope_conflict');
+    assert.equal(stillBlocked.emitTransition, false);
+    assert.equal(reconcileRun(nRun, [n, gone20, savedX, gone40], FIXTURE_NOW + 100).releaseSlot, false);
+    // Strictly earlier activity is historical; a later read failure alone does not invent X.
+    assert.equal(reconcileRun(nRun, [n, gone20, { ...alive30, asOf: n.asOf - 1 }], FIXTURE_NOW + 100).state, 'failed');
     const oldAlive = fixtureReconcileEvidence(scopeAlive().fact, {
       evidenceId: 'old-alive',
       asOf: FIXTURE_NOW,

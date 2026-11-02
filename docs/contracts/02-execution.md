@@ -62,7 +62,7 @@
 | I-02-5 | starting/running/cancelling 出现提交结果不明、托管失联或证据冲突即 uncertain；正常 reserved 意图在未登记 supervisor 的有界窗口保持 starting，已确认 supervisor 死亡优先于残留 fresh 心跳；uncertain 保留槽；API/等待超时不改状态 | TX+E；T-02-8、11–13、19 |
 | I-02-6 | failed 只表示已证明未执行；已执行且退出码非零是 ended 并保留失败结果，不伪装成可重试的未执行 | TX+E；T-02-12、14 |
 | I-02-7 | cancel 接受与退出 chronology 分离；R/Q 且无 X 时 before_exit 才 cancelled，未知为 ended+cancel_timing_unknown、释放槽；after_exit 才解释 already_ended；未证结束仍持槽 | TX+E；T-02-13、15、16 |
-| I-02-8 | 对账先按下文证据归一与事实时序再命中 R-02；实例/代次/事实时间须可验证，保留不可逆证明、未解决冲突及增量 terminal basis，不以导入/commit 时间消除反证；缺证不补码/盲重试 | TX+E；T-02-12–17 |
+| I-02-8 | 对账先按下文证据归一与事实时序再命中 R-02；实例/代次/事实时间须可验证，保留不可逆证明、未解决冲突及增量 terminal basis，不以导入/commit 时间消除反证；缺证不补码/盲重试 | TX+E；T-02-12–17、35 |
 | I-02-9 | 只有 hud-mcp/hud-run/reconciler 写 ledger；初始意图外的身份回填与状态迁移经 reconciler，hud-run按事件追加证据、周期只用一次runs CAS写H元组，HUD只读。state+槽释放+事件同事务 | DB+TX；T-02-6、17、25、29 |
 | I-02-10 | 运行槽无 TTL，只凭确认终结释放；browser 等结果且对账才释放，collect 只在06观测存储换代接管，三者不得混用；后两类的阶段边界见下文 | TX+E；T-02-10、20、23 |
 | I-02-11 | predecessor 原子转交同一实际 child，同 owner、空槽/无冲突、唯一当前父边，旧 link 历史化；MVP 跨 owner 一律 unsupported | DB+TX；T-02-18；03 T-03-20 |
@@ -80,7 +80,7 @@
 
 1. **准备**：事务外核验档案/source、路径/摘要与能力；MVP resume 仅 bound/reported、current_owner、同 owner/同任务、真实 child、空槽/无冲突；predecessor 仅旧 link 当前且同 owner。事务内重验快照，不从历史 handed_over 重新转交。
 2. **原子意图**：幂等查找后新建 pending link 或保留 resume 的既有关系；同 owner handover 把旧 link 历史化、新 link 对同 child bound。新 run starting/握手 pending、claim、幂等、槽、accepted 事件同事务。返回持久 accepted/starting，不等 ready/模型/完整绑定；accepted→started/bound 延迟另依06计量。
-3. **登记执行者**：仅交付一份随机票据；唯一 supervisor 校验 slot/ticket、starting/reserved、类型化发起权限（MCP 当前 context 或01的 local_user）、无取消/冲突/围栏，CAS 消费票据、登记 ProcessStamp/H 并 arm claim。竞争失败者零 backend 调用；恢复不重领票据，不取得执行权。
+3. **登记执行者**：仅交付一份随机票据；唯一 supervisor 校验 slot/ticket、starting/reserved、类型化发起权限（MCP 当前 context 或01的 local_user）、无取消/冲突/围栏，CAS 消费票据、登记 ProcessStamp/H 并 arm claim，同事务追加唯一且不可变的 `supervisor.registered` 事件。事件以 run_id/link_id 锚定，payload 为 `{sourceId,bindingGeneration,supervisor:{pid,proc_start,boot_id,pid_domain}}`；与 runs/claims 的 pid/start 及目标代次一致，包含的四字段来自登记时已核验实例。恢复以此提交记录为权威；meta 在事务外写且仅作副本，事件缺失/不完整/矛盾时保持 unknown，禁止用当前 boot/域补齐。复用既有 events，不增表/列或周期事件（04 T-04-42、43）。竞争失败者零 backend 调用；恢复不重领票据，不取得执行权。
 4. **单次提交与封口**：原 supervisor 重验意图/授权/范围能力，先持久 submitting 再调用一次 spawn/宿主提交；成功证据才 submitted，未知不重发。协议只规定单次执行与可证封口，不强制独立 gate、RUN 消息或 helper 拓扑。持久 submission_fenced_at 禁止未来提交；判断结束/未执行还须证实所有可能再产生工作的 launcher/控制通道已封口或死亡。中间 shell 的延迟/循环/后台分支同样是 launcher；任意 shell 文本不自动获得 managed 能力，支持档案仅经验证的单次前台启动。
 5. **绑定与槽迁移**：首次全新会话才占 provisional，不隐式 attach/resume。01 证实 ref 后原子换真实槽/写 binding/父边；若真实 ref 已占槽，两 run uncertain、各自槽保留，并以该 ref 阻断新操作。已发生的启动不能撤回；后续提交检查失败，先对账/授权取消。
 6. **结束**：reconciler 按唯一 R-02 表同事务写终态/terminal_evidence/ended_at、撤销 claim、释放槽并发事件。exit_code/exit_signal 只来自带 subject=harness 与明确来源的原生结果；未知均 NULL，shell_status/shell_signal 单列。无 MCP 身份绑定不阻独立运行终结。
@@ -94,22 +94,23 @@ launch_phase 为 reserved→armed→submitting→submitted；确证未执行且�
 
 先核验 evidence 的 run/source/绑定代次、supervisor、boot/PID 域及固定 scope；错实例、错代次、未接受证据仅审计。再形成带 `asOf:number|null` 的归一事实。scope 的 asOf 来自 ScopeCheck.checked_at；R 来自最终回执的终结证明时间 ended_at；Q/N 来自复合证明所确立的事实边界；H 来自该 producer 的 heartbeat_at，seq/单调钟用于核验当前性。observedAt/recorded_at/validated_at/events.seq 不能替代事实时间，也不能因发现晚而取得事实优先级。asOf 及其来源可存既有 evidence.payload，不要求新增 SQL 列。
 
-只有经核验可比较的时间才可用于先后关系；缺失、无效、未来时间或时钟异常不能用导入时间补序。必要时保留 unknown/clock_anomaly 并拒绝据此释放槽。相同时间不是任意选一条的许可：alive 与已证明 gone 等互斥实质事实为 X；unknown 与一个已知观察同刻但无法再定序时，当前 G 取 unknown，不凭缺证制造 X。独立完整 R/Q 仍可按下述不可逆证明规则采用。
+只有经核验可比较的时间才可用于先后关系；缺失、无效、未来时间或时钟异常不能用导入时间补序。必要时保留 unknown/clock_anomaly 并拒绝据此释放槽。相同时间不是任意选一条的许可：alive 与已证明 gone 等互斥实质事实为 X；unknown 与一个已知观察同刻但无法再定序时，当前 G 取 unknown，不凭缺证制造 X。独立完整 R/Q/N 仍可按下述不可逆证明规则采用。
 
-同一事实主体的 scope/H 观察先按有效 asOf 约简，再进入唯一 R-02 首条命中表。新的 scope unknown 替代更早的当前活性判断，不能退回旧 alive 以满足 R-02-5；H 同样不能因旧心跳晚导入而恢复 fresh。严格早于有效终结证明的普通 alive 观察是历史，不再否定后来结束，原 evidence 保留在审计中。
+同一事实主体的 scope/H 观察先按有效 asOf 约简，再进入唯一 R-02 首条命中表。新的 scope unknown 替代更早的当前活性判断，不能退回旧 alive 以满足 R-02-5；H 同样不能因旧心跳晚导入而恢复 fresh。严格早于有效 R/Q/N 证明的普通 alive 观察是历史，不再否定后来结束，原 evidence 保留在审计中。
 
-R/Q/N 的不可逆证明、已证实 supervisor 死亡、已提交/已启动事实和未解决冲突不是可以统一“取最新一条”的快照。完整 R/Q 成立后，同实例在该证明时刻或之后仍 alive/可提交的证据构成 X；随后一个 unknown、gone 或另一份回执不能静默删除这个冲突。按既有 conflict_resolved 规则显式解决。未知原生退出结果不与有来源的已知结果矛盾；两个互斥的已知原生结果仍是冲突，不按到达顺序取一份。
+R/Q/N 的不可逆证明、已证实 supervisor 死亡、已提交/已启动事实和未解决冲突不是可以统一“取最新一条”的快照。完整 R/Q/N 成立后，目标 workload 或同实例的未封口 launcher 在该证明事实时刻或之后仍 alive/可提交的反证必须归一为持久 X；N 不因其 non_execution 分类而例外。随后一个 unknown、gone 或另一份回执不能静默删除这个冲突。按既有 conflict_resolved 规则显式解决。未知原生退出结果不与有来源的已知结果矛盾；两个互斥的已知原生结果仍是冲突，不按到达顺序取一份。
 
-一次后来的不可读/unknown 不单独否定已成立且封口的 R/Q；但不能忽略已存在的同实例反证或无法排除的时序冲突。既有终态按 R-02-0 不重开，新的矛盾继续阻断该 ref 新操作。增量调用也必须带入已存终态的证明边界/结果及未解决冲突，不能只拿新 evidence 判断“没有冲突”；terminal_evidence_id 指向的证据是该基准。需要多个证明时保留其必要边界及引用，不能用较晚导入/对账时刻覆盖较早已采用的终结证明。runs.ended_at 只有确实保存相同证明边界时才可充当这一快捷输入。
+一次后来的不可读/unknown 不单独否定已成立且封口的 R/Q/N；但不能忽略已存在的同实例反证或无法排除的时序冲突。既有终态按 R-02-0 不重开，新的矛盾继续阻断该 ref 新操作。增量调用也必须带入已存终态的证明边界/结果及未解决冲突，不能只拿新 evidence 判断“没有冲突”；terminal_evidence_id 指向的证据是该基准。需要多个证明时保留其必要边界及引用，不能用较晚导入/对账时刻覆盖较早已采用的终结证明。runs.ended_at 只有确实保存相同证明边界时才可充当这一快捷输入。
 
 最小反例：
 
 | 已接受事实 | 结果 |
 |---|---|
 | alive@10，完整 R/Q@20；alive 到 90 才导入 | alive 留审计，R/Q 可终结；导入顺序无关 |
-| R/Q@20，alive@30，随后 unknown@40 或 gone@50 | X 继续存在；未终态 uncertain/持槽，已终态不重开但阻断新操作 |
+| R/Q/N@20，alive@30，随后 unknown@40 或 gone@50 | X 继续存在；未终态 uncertain/持槽，已终态不重开但阻断新操作 |
+| N@20，gone@20，alive@30，gone@40（包括乱序导入） | 持久 X；活跃 run uncertain/持槽/禁新操作。已 failed 后增量收到反证时不重开、不重新占槽/发完成，但持续阻断新操作，后续 gone 不解除 X |
 | alive@10，unknown@20，无 R/Q/N | G=unknown，不能借旧 alive 回 running |
-| 已成立 R/Q@20，随后只有读取 unknown@30，无反证 | 保留 R/Q 的结束事实；取消分类按 E02 |
+| 已成立 R/Q/N@20，随后只有读取 unknown@30，无反证 | 保留不可逆证明；R/Q 的取消分类按 E02，N 仍须满足 R-02-4 |
 | alive 与结束证明同刻，或关键活性证据无法与证明定序 | 不以 ID、数组位置或 observedAt 选赢家；冲突/缺证按表阻断 |
 
 适用状态集合 `A={starting,running,cancelling,uncertain}`，终态集合 `Z={ended,failed,cancelled}`。下表按编号从上到下命中第一行；`*` 表示任意值，最后一行覆盖所有未列组合，因而每个 state×evidence 都有结果。每次迁移附采用/拒绝的 evidence ID 和事件；外部旧实例/错 generation 的证据先丢到审计，不参与当前判断。
@@ -120,16 +121,16 @@ R/Q/N 的不可逆证明、已证实 supervisor 死亡、已提交/已启动事�
 - `N`：可信记录证明未提交目标工作，永久围栏已提交、全部可能 launcher 不再能提交且无相反启动证据，G=gone。预检日志、暂停的 supervisor 或一个失败 shell status 单独不足。
 - `Q`：无正式 R（包括 supervisor SIGKILL、从未留下 leader/exit receipt），但持久可信启动记录固定 scope，全部 launcher/通道封口或确证死亡、原 harness 实例不执行、正确 boot/PID 域完整无活 workload、无 X。reconciler 写复合证据，以未知原生退出结果终结，不补写死人 exit.json；部分有来源观察保留 evidence。
 - `C`：取消已鉴权接受，与 chronology=before_exit/after_exit/unknown 分开；unknown 不等于 false。before_exit 须有可信正向证明；cancel_requested_at < ended_at、发过信号或晚到回执均不足。互斥已知证明同时有效且未解决构成 X。
-- `X`：同实例的结束声明与活 workload/未封口 launcher 冲突、N 与已提交/启动冲突、SessionRef/实例争用、provisional 冲突，或确证范围外原 harness/同会话旧写者仍活；旧实例证据仅审计，陈旧 H 本身不否定完整 R/Q。
+- `X`：同实例的结束声明与活 workload/未封口 launcher 冲突、N 与已提交/启动或其事实时刻及之后的目标 workload/未封口 launcher 冲突（后续 gone/unknown 不清除）、SessionRef/实例争用、provisional 冲突，或确证范围外原 harness/同会话旧写者仍活；旧实例证据仅审计，陈旧 H 本身不否定完整 R/Q。
 
 
 | 行 | 当前状态 | 证据组合 / 前置条件 | 唯一允许的结果与槽动作 | 测试 |
 |---|---|---|---|---|
-| R-02-0 | Z | 匹配的重复回执，或旧实例/旧 run 证据 | 保持终态，不重开、不重发；错误实例仅审计。若出现新的同实例矛盾，记 conflict 并阻断该 ref 新操作，需人工对账，不能自动覆盖旧终态 | T-02-17 |
-| R-02-1 | A | X=true，其他任意 | uncertain；持槽，禁止提交/续跑；人工 hud run reconcile | T-02-9、13、17 |
+| R-02-0 | Z | 匹配的重复回执，或旧实例/旧 run 证据 | 保持终态，不重开、不重发；错误实例仅审计。若出现新的同实例矛盾（含 failed 的 N 反证），记持久 conflict 并阻断该 ref 新操作，需人工对账，不能自动覆盖旧终态 | T-02-17 |
+| R-02-1 | A | X=true（含 R/Q/N 的持久反证），其他任意 | uncertain；持槽，禁止提交/续跑；人工 hud run reconcile | T-02-9、13、17 |
 | R-02-2 | A | X=false，完整 R 或 Q，取消已接受且 before_exit 已证明 | cancelled；终态事务释放槽，原生结果仍可 NULL | T-02-15 |
 | R-02-3 | A | X=false，完整 R 或 Q，未满足 R-02-2 | ended；终态事务释放槽。取消已接受而时序未知附 cancel_timing_unknown；仅已证明 after_exit 才附 already_ended 取消解释；非零退出仍 ended | T-02-13、14、15 |
-| R-02-4 | A | X=false，N=true，无已执行证据 | failed（non_execution）；释放槽；原请求重放仍返回原记录，重新执行必须是显式新意图 | T-02-12、14 |
+| R-02-4 | A | X=false，N=true，无已执行证据，且无该 N 事实时刻及之后的目标 workload/未封口 launcher 反证 | failed（non_execution）；释放槽；原请求重放仍返回原记录，重新执行必须是显式新意图 | T-02-12、14 |
 | R-02-4a | starting | X=false，launch_phase=reserved，票据未消费且 supervisor/heartbeat 均为空，创建后≤30 s，意图与运行槽占有完整且无取消；正常等待 supervisor 登记 | 保持 starting，不要求不存在的 supervisor/child 存活证明；只允许原票据一次登记。窗口后无证明走 R-02-9，不能重发票据 | T-02-8、11 |
 | R-02-5 | A | 无结束/未执行证明，supervisor 未被确认死亡，H=fresh 且 G=alive（已核验本轮范围），已核验本轮子进程启动；取消已接受/未接受 | cancelling / running；均持槽。已确认死亡不匹配本行，必须走 R-02-6；不重启 harness | T-02-13、16 |
 | R-02-6 | A | 无上述证明，supervisor 死亡或 H=stale（包括 G=alive） | uncertain；持槽；探查/记录组存活，不释放，不把 child 活着当成新 supervisor 的执行权 | T-02-13 |
@@ -214,7 +215,7 @@ C4 的未来 `holderLabel?: string` 由实际 lease owner/job 身份在同一读
 | T-02-14 (A9 prototype) | R 有来源 native code0/7、R 无 native 但 shell0/137、N、Q 无任何旧 writer receipt → ended/ended/ended(NULL)/failed/ended(NULL)；S/T/D 成员阻终结、Z-only可终结；跨 boot 不查旧PGID，范围外原harness/旧写者仍活则阻复用 |
 | T-02-15 (A9 prototype) | 取消接受后确证仍活再结束→cancelled；信号后仍活→cancelling/uncertain持槽；已证明exit早于cancel→ended/already_ended；完整R/Q但时序未知（含实际SQLite写锁使退出先于接受、无可用时序证明）→ended+cancel_timing_unknown、释放，绝不伪造confirmed/already_ended；缺任一结束条件仍持槽 |
 | T-02-16 (B) | SIGINT→grace→TERM→KILL、组未死/取消通道断、PID被复用、orphan_policy=stop → 重验实例，不能向新PID发信号，不凭信号成功终结；stop也必须走同表 |
-| T-02-17 (A9 fixture) | 错run/source/实例仅审计；倒序导入/旧alive/晚alive后unknown或gone/缺失无效事实时间/native已知冲突按归一规则；已存proof@20于90导入后仅收到alive@30仍X，不能用ended_at=90遮蔽；既有终态不重开/重发/重占槽，保留原terminalNote，未解决冲突须显式解决 |
+| T-02-17 (A9 fixture) | 错run/source/实例仅审计；倒序导入/旧alive/晚alive后unknown或gone/缺失无效事实时间/native已知冲突按归一规则；已存R/Q/N proof@20于90导入后仅收到alive@30仍X，不能用ended_at=90遮蔽；N@20+gone@20+alive@30+gone@40、同刻反证、未封口launcher、乱序/已failed后增量与持久X后新gone均阻断，早于N的普通活性仅审计；既有终态不重开/重发/重占槽，保留原terminalNote，未解决冲突须显式解决 |
 | T-02-18 (A9 fixture) | 同 owner 并发 predecessor、busy/uncertain槽、跨 owner → 唯一新父边 / slot_busy / unsupported；旧 linkId 不授新控制权 |
 | T-02-19 (A9 fixture) | wait 入场run-a，期间run-b/旧报告/通知丢失/客户端超时较短 → 只看a与实际返回游标，按有效上限留余量续等；超时/断线不写终态或取消 |
 | T-02-20 (A9 fixture) | C 前调用 Jev/browser 正向操作 → unsupported、零 send/运行意图；规格核对 browser 的失联/needs_human/TTL不释放语义，正向存储/用例不属 A9 |
@@ -230,6 +231,7 @@ C4 的未来 `holderLabel?: string` 由实际 lease owner/job 身份在同一读
 | T-02-32 (A9 fixture) | ledger初始化、第二行/替换/删除、重启/同库备份恢复、独立新库 → 单行ledgerId不变，独立新库不同；对外键以ledgerId命名空间隔离 |
 | T-02-33 (A9 fixture) | 相同请求缓存命中/未命中、Git结果/显示名/采集时间/declaredAt改变 → 同digest/重放；修改launch cwd或显式originRepoId → 异参拒绝；路径消失不改已存启动历史 |
 | T-02-34 (A9 fixture) | 合法local resume同key同参重放但currentRun已变化、旧expectedRun换新key、mode/expectedRun异参 → 首项返回原结果，后两组拒绝；新意图全部门禁及typed actor重验，零旧父MCP伪装 |
+| T-02-35 (A9 prototype) | 真实临时SQLite保存N@20+gone@20+alive@30+gone@40及倒序导入 → uncertain/持槽/持久X；已failed后导入合成目标的真实活性，再gone → 原终态/完成事件/已释放槽不重写，持久冲突继续阻断新操作 |
 
 A9 最小执行包：真实临时 SQLite + 合成进程验证同键并发单次提交、异参拒绝、意图/槽原子、归并重放、意图 commit 后/提交前后/回写前崩溃均不重发（T-02-1、3–6、8、12）。恢复包包括已选可见机制 A8 接受证据、正常 scope 结束、活成员阻终结、取消未确认持槽、supervisor 死后无旧 receipt 的 Q 可达或列明缺证、恢复无新执行权（T-02-14、15；04 T-04-24、25、30）。其他 A9 fixture 审规格，不要求全部 B 先完成；生产实现与完整矩阵在 B3/B4/B5/B14 验收。
 

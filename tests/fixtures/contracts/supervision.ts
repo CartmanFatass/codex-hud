@@ -27,12 +27,14 @@ import {
   leaseReleasePolicy,
   nativeExit,
   receiptEligibility,
+  registeredSupervisor,
   resolveHarness,
   sameProcessStamp,
   scopeUpdateAllowed,
   stdinPlan,
   submissionAllowed,
   supervisionSupport,
+  supervisorRegistrationEvent,
   validateRunDirectory,
 } from '../../../src/core/supervision.js';
 import type {
@@ -42,7 +44,7 @@ import type {
   RunMeta,
   ScopeFacts,
 } from '../../../src/core/types/supervision.js';
-import type { IdempotencyRecord, ReconcileEvidence } from '../../../src/core/types/execution.js';
+import type { IdempotencyRecord, LedgerEvent, ReconcileEvidence } from '../../../src/core/types/execution.js';
 import { fixtureCallEvidence, fixtureContext, fixtureLink, fixtureRun } from './identity-execution.js';
 
 const NOW = 1_700_000_000_000;
@@ -680,6 +682,52 @@ export const supervisionCases: Record<string, () => void> = {
       }),
       false
     );
+  },
+  'T-04-43': () => {
+    const run = fixtureRun({ supervisor: null, heartbeatAt: null, heartbeatSeq: 0, heartbeatMonoMs: null });
+    const record: LedgerEvent = { ...supervisorRegistrationEvent(run, SUPERVISOR, NOW), seq: 1 };
+    const committed = JSON.parse(JSON.stringify(record)) as LedgerEvent;
+    // Registration survived, meta never did. Only the committed event supplies the historical instance.
+    assert.deepEqual(registeredSupervisor(run, [committed]), SUPERVISOR);
+    assert.equal(registeredSupervisor(run, []), null);
+    const current = { ...SUPERVISOR, boot_id: 'synthetic-boot-b', pid_domain: 'synthetic-other-domain' };
+    const historical = registeredSupervisor(run, [committed]);
+    assert.equal(sameProcessStamp(historical, current), false);
+    assert.throws(
+      () => updateRun(fixtureRun({ supervisor: SUPERVISOR }), { supervisor: current }),
+      /supervisor_instance_immutable/
+    );
+    assert.equal(
+      heartbeatUpdateAllowed({
+        producer: current,
+        registeredSupervisor: historical,
+        expectedSeq: 1,
+        storedSeq: 1,
+        terminal: false,
+        recoveryObserver: false,
+      }),
+      false
+    );
+    assert.equal(checkScope(scopeFacts({ visibleDomain: false, matchingBoot: false })).result, 'unknown');
+    for (const payload of [
+      { ...record.payload, sourceId: OTHER_SOURCE },
+      { ...record.payload, bindingGeneration: 2 },
+      { ...record.payload, supervisor: { pid: SUPERVISOR.pid, proc_start: SUPERVISOR.proc_start } },
+      { ...record.payload, supervisor: { ...SUPERVISOR, boot_id: '' } },
+      { ...record.payload, supervisor: { ...SUPERVISOR, pid_domain: '' } },
+    ])
+      assert.equal(registeredSupervisor(run, [{ ...record, payload }]), null);
+    assert.equal(
+      registeredSupervisor(run, [
+        record,
+        { ...record, seq: 2, payload: { ...record.payload, supervisor: { ...current } } },
+      ]),
+      null
+    );
+    const copy = registeredSupervisor(run, [record])!;
+    copy.boot_id = 'synthetic-mutated-copy';
+    assert.deepEqual(registeredSupervisor(run, [record]), SUPERVISOR);
+    assert.throws(() => supervisorRegistrationEvent(run, { ...SUPERVISOR, pid_domain: '' }, NOW), /invalid_supervisor/);
   },
 };
 

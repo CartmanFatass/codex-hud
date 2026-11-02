@@ -17,7 +17,7 @@ const lines = ['identity', 'execution', 'recovery'].flatMap((group) =>
 const actual = lines.flatMap((line) => /^(PASS|FAIL) (T-\d+-\d+) /.exec(line)?.[2] || []).sort();
 const failed = lines.filter((line) => /^FAIL T-/.test(line)).length;
 try {
-  assert.equal(expected.length, 21);
+  assert.equal(expected.length, 23);
   assert.deepEqual(actual, expected);
   console.log(`COUNT contract=${expected.length} printed=${actual.length} unique=${new Set(actual).size} equal=true`);
   console.log(`SUMMARY total=${actual.length} pass=${actual.length - failed} fail=${failed}`);

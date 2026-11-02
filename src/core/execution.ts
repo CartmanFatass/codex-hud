@@ -71,17 +71,26 @@ export function reconcileRun(
       entry.fact.launchersSealed
   );
   const datedCompletionEntries = fullCompletionEntries.filter(hasFactTime);
-  const completionBoundaries = datedCompletionEntries.map((entry) => entry.asOf!);
+  const neverSubmittedEntries = matched.filter(
+    ({ fact }) => fact.kind === 'never_submitted' && fact.permanentFence && fact.launchersSealed && fact.noExecution
+  );
+  const neverSubmitted = neverSubmittedEntries.find(hasFactTime)?.fact;
+  const neverSubmittedTimeUnknown = neverSubmittedEntries.some((entry) => !hasFactTime(entry));
+  // N is irreversible too: later mutable observations cannot erase its counter-evidence.
+  const proofBoundaries = [...datedCompletionEntries, ...neverSubmittedEntries.filter(hasFactTime)].map(
+    (entry) => entry.asOf!
+  );
   const scopeEntries = matched.filter((entry) => entry.fact.kind === 'scope');
   const undatedScopes = scopeEntries.filter((entry) => !hasFactTime(entry));
   const datedScopes = scopeEntries.filter(hasFactTime);
-  const scopeBoundary = Math.max(...datedScopes.map((entry) => entry.asOf!), ...completionBoundaries);
+  const scopeBoundary = Math.max(...datedScopes.map((entry) => entry.asOf!), ...proofBoundaries);
   const latestScopes = datedScopes.filter((entry) => entry.asOf === scopeBoundary);
-  const aliveAfterCompletion = datedScopes.filter(
-    (entry) =>
-      entry.fact.kind === 'scope' &&
-      entry.fact.state === 'alive' &&
-      completionBoundaries.some((boundary) => entry.asOf! >= boundary)
+  const isScopeCounter = (entry: ReconcileEvidence): boolean =>
+    entry.fact.kind === 'scope' &&
+    (entry.fact.state === 'alive' ||
+      (entry.fact.state !== 'unknown' && entry.fact.complete && !entry.fact.launchersSealed));
+  const scopeCounterEvidence = datedScopes.filter(
+    (entry) => isScopeCounter(entry) && proofBoundaries.some((boundary) => entry.asOf! >= boundary)
   );
   // A substantive tie is an unresolved conflict, even after a newer mutable observation or receipt.
   const scopeStatesByTime = new Map<number, Set<'alive' | 'gone'>>();
@@ -102,19 +111,22 @@ export function reconcileRun(
   );
   const scopeTiesConflict = conflictingScopeTimes.size > 0;
   const tiedScopes = datedScopes.filter((entry) => conflictingScopeTimes.has(entry.asOf!));
-  const completionConflict = completionEntries.some(
+  const proofCounters = matched.filter(
     (entry) =>
-      (entry.fact.kind === 'receipt' || entry.fact.kind === 'scope_reconciled') &&
-      (!entry.fact.launchersSealed || !entry.fact.harnessTerminated) &&
-      hasFactTime(entry) &&
-      completionBoundaries.some((boundary) => entry.asOf! >= boundary)
+      (entry.fact.kind === 'receipt' ||
+        entry.fact.kind === 'scope_reconciled' ||
+        entry.fact.kind === 'never_submitted') &&
+      (!entry.fact.launchersSealed || ('harnessTerminated' in entry.fact && !entry.fact.harnessTerminated))
+  );
+  const proofConflict = proofCounters.some(
+    (entry) => hasFactTime(entry) && proofBoundaries.some((boundary) => entry.asOf! >= boundary)
   );
   const completionTimeUnknown = fullCompletionEntries.some((entry) => !hasFactTime(entry));
   const liveTimeUnknown =
-    completionBoundaries.length > 0 &&
-    undatedScopes.some((entry) => entry.fact.kind === 'scope' && entry.fact.state === 'alive');
-  const scopeTimeUnknown = undatedScopes.length > 0 && completionBoundaries.length === 0;
-  const currentScopes = new Set([...latestScopes, ...undatedScopes, ...aliveAfterCompletion, ...tiedScopes]);
+    proofBoundaries.length > 0 &&
+    (undatedScopes.some(isScopeCounter) || proofCounters.some((entry) => !hasFactTime(entry)));
+  const scopeTimeUnknown = undatedScopes.length > 0 && proofBoundaries.length === 0;
+  const currentScopes = new Set([...latestScopes, ...undatedScopes, ...scopeCounterEvidence, ...tiedScopes]);
   const heartbeatEntries = matched.filter((entry) => entry.fact.kind === 'heartbeat');
   const heartbeatTimeUnknown = heartbeatEntries.some((entry) => !hasFactTime(entry));
   const latestHeartbeatAt = Math.max(...heartbeatEntries.filter(hasFactTime).map((entry) => entry.asOf!));
@@ -176,11 +188,6 @@ export function reconcileRun(
     (validCompletionEntry.fact.kind === 'receipt' || validCompletionEntry.fact.kind === 'scope_reconciled')
       ? validCompletionEntry.fact
       : undefined;
-  const neverSubmittedEntries = current.filter(
-    ({ fact }) => fact.kind === 'never_submitted' && fact.permanentFence && fact.launchersSealed && fact.noExecution
-  );
-  const neverSubmitted = neverSubmittedEntries.find(hasFactTime)?.fact;
-  const neverSubmittedTimeUnknown = neverSubmittedEntries.some((entry) => !hasFactTime(entry));
   const launches = facts.filter((fact) => fact.kind === 'launch');
   const started = launches.some((fact) => fact.childStarted);
   const conflict = facts.find((fact) => fact.kind === 'conflict');
@@ -194,9 +201,9 @@ export function reconcileRun(
     conflict !== undefined ||
     (cancelAccepted && cancelChronologies.size > 1) ||
     nativeConflict ||
-    aliveAfterCompletion.length > 0 ||
+    scopeCounterEvidence.length > 0 ||
     scopeTiesConflict ||
-    completionConflict ||
+    proofConflict ||
     persistedExecutionConflict ||
     (neverSubmitted !== undefined && (started || run.launchPhase === 'submitted' || validCompletion !== undefined));
   const decide = (
@@ -239,7 +246,7 @@ export function reconcileRun(
       liveTimeUnknown ||
       completionTimeUnknown ||
       neverSubmittedTimeUnknown ||
-      (completionBoundaries.length === 0 &&
+      (proofBoundaries.length === 0 &&
         scopeEntries.some((entry) => entry.fact.kind === 'scope' && entry.fact.state === 'alive'));
     const timeCause =
       matched.some(
@@ -466,6 +473,8 @@ export function planSlotMigration(
 
 export function updateRun(run: Run, patch: Partial<Run>): Run {
   const next = { ...run, ...patch };
+  if (run.supervisor !== null && !sameStamp(run.supervisor, next.supervisor))
+    throw new TypeError('supervisor_instance_immutable');
   requireCanonicalAbsolutePath(next.launchCwd);
   if (next.launchCwd !== run.launchCwd || canonicalJson(next.projectOrigin) !== canonicalJson(run.projectOrigin))
     throw new TypeError('launch_context_immutable');

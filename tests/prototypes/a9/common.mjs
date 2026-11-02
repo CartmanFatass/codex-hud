@@ -70,7 +70,13 @@ export function sameInstance(a, b) {
 export const live = (processState) => processState != null && !['Z', 'X'].includes(processState.state);
 export function signal(stamp, name) {
   if (!sameInstance(stamp, stat(stamp.pid))) return false;
-  process.kill(stamp.pid, name);
+  try {
+    process.kill(stamp.pid, name);
+  } catch (error) {
+    // The instance can exit between the stamp check and the signal.
+    if (error.code === 'ESRCH') return false;
+    throw error;
+  }
   return true;
 }
 
@@ -159,8 +165,8 @@ export function insert(db, table, row) {
     .run(...Object.values(row));
 }
 
-export function event(db, kind, runId = null, payload = {}) {
-  return insert(db, 'events', { kind, run_id: runId, payload: json(payload), at: now() });
+export function event(db, kind, runId = null, payload = {}, linkId = null) {
+  return insert(db, 'events', { kind, run_id: runId, link_id: linkId, payload: json(payload), at: now() });
 }
 
 export function evidence(db, kind, payload, runId = null) {
@@ -457,6 +463,8 @@ export async function accept(db, ctx, origin, requestKey, params, checkpoint = a
 }
 
 export function arm(db, runId, ticket, stamp) {
+  stamp = processStamp(stamp);
+  assert.ok(stamp, 'full supervisor ProcessStamp required');
   return tx(db, () => {
     const run = db.prepare('SELECT * FROM runs WHERE run_id=?').get(runId);
     const slot = db.prepare('SELECT * FROM slots WHERE run_id=?').get(runId);
@@ -482,16 +490,71 @@ export function arm(db, runId, ticket, stamp) {
       stamp.proc_start,
       runId
     );
+    event(
+      db,
+      'supervisor.registered',
+      runId,
+      {
+        sourceId: run.source_id,
+        bindingGeneration: run.expected_generation,
+        supervisor: stamp,
+      },
+      run.link_id
+    );
     return true;
   });
 }
 
+function processStamp(value) {
+  if (
+    !value ||
+    !Number.isSafeInteger(value.pid) ||
+    value.pid < 1 ||
+    typeof value.proc_start !== 'string' ||
+    !/^\d+$/.test(value.proc_start) ||
+    typeof value.boot_id !== 'string' ||
+    !value.boot_id ||
+    typeof value.pid_domain !== 'string' ||
+    !value.pid_domain
+  )
+    return null;
+  const { pid, proc_start, boot_id, pid_domain } = value;
+  return { pid, proc_start, boot_id, pid_domain };
+}
+
+// The committed registration event is authoritative, including when meta was never written.
+export function registeredSupervisor(db, run) {
+  const rows = db.prepare("SELECT * FROM events WHERE run_id=? AND kind='supervisor.registered'").all(run.run_id);
+  if (rows.length !== 1 || rows[0].link_id !== run.link_id) return null;
+  let payload;
+  try {
+    payload = JSON.parse(rows[0].payload);
+  } catch {
+    return null;
+  }
+  const stamp = processStamp(payload.supervisor);
+  const claim = db.prepare('SELECT * FROM claims WHERE run_id=?').get(run.run_id);
+  if (
+    payload.sourceId !== run.source_id ||
+    payload.bindingGeneration !== run.expected_generation ||
+    !stamp ||
+    stamp.pid !== run.supervisor_pid ||
+    stamp.proc_start !== run.supervisor_proc_start ||
+    stamp.pid !== claim?.supervisor_pid ||
+    stamp.proc_start !== claim?.supervisor_proc_start
+  )
+    return null;
+  return stamp;
+}
+
+export const metaPath = (runId) => join(home, 'runs', runId, 'meta.json');
+
 export function scopeOf(stamp) {
   return {
     scope_kind: 'pgid',
-    scope_id: hash([stamp.pid, stamp.proc_start, boot]),
-    boot_id: boot,
-    pid_domain: domain,
+    scope_id: hash([stamp.pid, stamp.proc_start, stamp.boot_id]),
+    boot_id: stamp.boot_id,
+    pid_domain: stamp.pid_domain,
     pgid: stamp.pgid,
     sid: stamp.sid,
     group_leader: stamp,
@@ -535,11 +598,13 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
   const run = db.prepare('SELECT * FROM runs WHERE run_id=?').get(runId);
   const scope = run.scope_ref ? JSON.parse(run.scope_ref) : null;
   const group = inspectScope(scope, options);
-  const supervisor = run.supervisor_pid
-    ? { pid: run.supervisor_pid, proc_start: run.supervisor_proc_start, boot_id: boot, pid_domain: domain }
-    : null;
+  const supervisor = registeredSupervisor(db, run);
+  const supervisorUnknown =
+    !!run.supervisor_pid && (!supervisor || supervisor.boot_id !== boot || supervisor.pid_domain !== domain);
   const supervisorDead =
-    !!supervisor && (!sameInstance(supervisor, stat(supervisor.pid)) || !live(stat(supervisor.pid)));
+    !!supervisor &&
+    !supervisorUnknown &&
+    (!sameInstance(supervisor, stat(supervisor.pid)) || !live(stat(supervisor.pid)));
   const launchProof = db
     .prepare("SELECT * FROM evidence WHERE run_id=? AND kind='launch_receipt' AND validation='accepted'")
     .get(runId);
@@ -575,16 +640,59 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
     R.sourceId === run.source_id &&
     R.generation === run.expected_generation &&
     R.scopeId === scope?.scope_id;
-  const complete = !!launchProof && !!scope && group.result === 'gone' && harnessGone && launchersSealed && !escaped;
+  const complete =
+    !!launchProof &&
+    !!scope &&
+    group.result === 'gone' &&
+    harnessGone &&
+    launchersSealed &&
+    !escaped &&
+    !supervisorUnknown;
   const N =
     run.launch_phase !== 'submitting' &&
     run.launch_phase !== 'submitted' &&
     !!run.submission_fenced_at &&
     !launchProof &&
+    !supervisorUnknown &&
+    group.result !== 'alive' &&
     (!supervisor || supervisorDead) &&
     !options.unproven;
   const Q = complete && !receiptMatches;
   const validR = complete && receiptMatches;
+  const asOf = now();
+  const accepted = db.prepare("SELECT * FROM evidence WHERE run_id=? AND validation='accepted'").all(runId);
+  const matching = accepted
+    .map((entry) => ({ ...entry, fact: JSON.parse(entry.payload) }))
+    .filter(
+      ({ fact }) =>
+        fact.sourceId === run.source_id &&
+        fact.bindingGeneration === run.expected_generation &&
+        ((fact.supervisor === null && supervisor === null) || sameInstance(fact.supervisor, supervisor))
+    );
+  const nProofs = matching.filter(
+    ({ kind, fact }) =>
+      kind === 'never_submitted' && fact.N === true && Number.isFinite(fact.asOf) && fact.asOf >= 0 && fact.asOf <= asOf
+  );
+  const unsealedLauncher =
+    rosterComplete &&
+    proof.launchers.some(
+      (launcher) =>
+        sameInstance(launcher, stat(launcher.pid)) &&
+        live(stat(launcher.pid)) &&
+        !(proof.sealed || []).some((sealed) => sameInstance(sealed, launcher))
+    );
+  const nCounters = matching.filter(
+    ({ kind, fact }) =>
+      kind === 'group_check' &&
+      (fact.group?.result === 'alive' || fact.launcherUnsealed === true) &&
+      Number.isFinite(fact.asOf) &&
+      fact.asOf <= asOf &&
+      nProofs.some(({ fact: n }) => fact.asOf >= n.asOf)
+  );
+  const savedConflict = accepted.some((entry) => entry.kind === 'conflict');
+  const nConflict =
+    nProofs.length > 0 && (nCounters.length > 0 || !!launchProof || group.result === 'alive' || unsealedLauncher);
+  const X = savedConflict || nConflict;
   const cancelEvent = db
     .prepare("SELECT seq,payload FROM events WHERE run_id=? AND kind='cancel.accepted' ORDER BY seq LIMIT 1")
     .get(runId);
@@ -632,6 +740,8 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
   let terminalNote = savedTerminal ? (JSON.parse(savedTerminal.payload).terminalNote ?? null) : null;
   if (!['ended', 'failed', 'cancelled'].includes(state)) {
     if (
+      X ||
+      supervisorUnknown ||
       escaped ||
       (R && (!receiptMatches || !complete)) ||
       (group.result === 'gone' && launchProof && !launchersSealed)
@@ -676,6 +786,13 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
     else if (state !== 'cancelling') state = 'uncertain';
   }
   const observation = {
+    asOf,
+    sourceId: run.source_id,
+    bindingGeneration: run.expected_generation,
+    supervisor,
+    supervisorUnknown,
+    X,
+    blockNewOperations: X || supervisorUnknown || !['ended', 'failed', 'cancelled'].includes(state),
     state,
     basis,
     group,
@@ -692,6 +809,7 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
     cancelBeforeExit,
     missing: [
       !scope && 'scope',
+      supervisorUnknown && 'supervisor_stamp',
       !launchProof && 'launch_record',
       !harnessGone && 'harness_termination',
       !rosterComplete && 'complete_launcher_roster',
@@ -704,10 +822,30 @@ export async function reconcile(db, runId, options = {}, checkpoint = async () =
       input: !supervisorDead && state === 'running',
       resume: false,
     },
-    cause: supervisorDead && !basis ? 'supervisor_dead' : null,
+    cause: X
+      ? 'scope_conflict'
+      : supervisorUnknown
+        ? 'scope_unknown'
+        : supervisorDead && !basis
+          ? 'supervisor_dead'
+          : null,
   };
   begin(db);
   try {
+    if (nConflict && !savedConflict) {
+      const conflictId = evidence(
+        db,
+        'conflict',
+        {
+          cause: 'scope_conflict',
+          proofIds: nProofs.map((entry) => entry.evidence_id),
+          counterEvidenceIds: nCounters.map((entry) => entry.evidence_id),
+          observation,
+        },
+        runId
+      );
+      event(db, 'run.conflict', runId, { conflictId, cause: 'scope_conflict' });
+    }
     if (basis) {
       const proofId = evidence(
         db,

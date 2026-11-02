@@ -93,6 +93,7 @@ test('T-04-33', () => supervisionCases['T-04-33']());
 test('T-04-35', () => supervisionCases['T-04-35']());
 test('T-04-40', () => supervisionCases['T-04-40']());
 test('T-04-41', () => supervisionCases['T-04-41']());
+test('T-04-43', () => supervisionCases['T-04-43']());
 test('T-05-1', () => observationExportCases['T-05-1']());
 test('T-05-3', () => observationExportCases['T-05-3']());
 test('T-05-4', () => observationExportCases['T-05-4']());

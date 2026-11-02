@@ -1,6 +1,6 @@
 import { posix } from 'node:path';
 import type { SourceId } from './types/identity.js';
-import type { LaunchPhase } from './types/execution.js';
+import type { LaunchPhase, LedgerEvent, Run } from './types/execution.js';
 import type {
   ExitObservation,
   FinalExitReceipt,
@@ -25,6 +25,56 @@ export function sameProcessStamp(a: ProcessStamp | null, b: ProcessStamp | null)
     a.boot_id === b.boot_id &&
     a.pid_domain === b.pid_domain
   );
+}
+
+function isProcessStamp(value: unknown): value is ProcessStamp {
+  if (value === null || typeof value !== 'object') return false;
+  const stamp = value as Partial<ProcessStamp>;
+  return (
+    Number.isSafeInteger(stamp.pid) &&
+    stamp.pid! > 0 &&
+    typeof stamp.proc_start === 'string' &&
+    /^\d+$/.test(stamp.proc_start) &&
+    typeof stamp.boot_id === 'string' &&
+    stamp.boot_id.length > 0 &&
+    typeof stamp.pid_domain === 'string' &&
+    stamp.pid_domain.length > 0
+  );
+}
+
+type RegistrationRun = Pick<Run, 'runId' | 'linkId' | 'sourceId' | 'expectedGeneration'>;
+
+/** Commit with ticket consumption, armed claim and first H; meta is only a later copy. */
+export function supervisorRegistrationEvent(
+  run: RegistrationRun,
+  supervisor: ProcessStamp,
+  at: number
+): Omit<LedgerEvent, 'seq'> {
+  if (!isProcessStamp(supervisor) || !Number.isFinite(at) || at < 0)
+    throw new TypeError('invalid_supervisor_registration');
+  return {
+    runId: run.runId,
+    linkId: run.linkId,
+    kind: 'supervisor.registered',
+    payload: { sourceId: run.sourceId, bindingGeneration: run.expectedGeneration, supervisor: { ...supervisor } },
+    at,
+  };
+}
+
+/** Read committed ledger events only. Missing, incomplete or competing registrations stay unknown. */
+export function registeredSupervisor(run: RegistrationRun, events: readonly LedgerEvent[]): ProcessStamp | null {
+  const records = events.filter((event) => event.runId === run.runId && event.kind === 'supervisor.registered');
+  if (records.length !== 1) return null;
+  const record = records[0];
+  const stamp = record.payload.supervisor;
+  if (
+    record.linkId !== run.linkId ||
+    record.payload.sourceId !== run.sourceId ||
+    record.payload.bindingGeneration !== run.expectedGeneration ||
+    !isProcessStamp(stamp)
+  )
+    return null;
+  return { pid: stamp.pid, proc_start: stamp.proc_start, boot_id: stamp.boot_id, pid_domain: stamp.pid_domain };
 }
 
 /** Names, ancestry overlap and candidate order never select an instance. */

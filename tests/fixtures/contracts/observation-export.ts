@@ -69,6 +69,7 @@ import type {
   OutboundPolicy,
   UniversalSnapshotV3,
 } from '../../../src/core/types/export.js';
+import type { UniversalSnapshotV3 as AuthoritativeSnapshotV3 } from '../../../src/core/interfaces/snapshot-v3.js';
 import { fixtureRun } from './identity-execution.js';
 
 const NOW = 1_700_000_000_000;
@@ -236,6 +237,41 @@ function view(): ObservationView {
     depth: 0,
     evidenceStamp: 'synthetic-evidence-a',
   };
+}
+
+/** Shared by contract 07 and the A6 facade: both public import paths describe these same full nodes. */
+export function fixtureUniversalSnapshotV3(session: ObservationView = view()): UniversalSnapshotV3 {
+  const fullSession = { ...session, parent: null, links: [], candidates: [], host: null, actions: [] };
+  const intent = {
+    ...fullSession,
+    nodeIdentity: { kind: 'delegationIntent' as const, linkId: 'synthetic-intent-a' },
+    currentRun: fixtureRun(),
+    linkId: 'synthetic-intent-a',
+    workspace: null,
+    statusProjection: {
+      ...session.statusProjection,
+      stateKey: 'starting',
+      stateSince: NOW,
+      stateSinceBasis: 'event' as const,
+      observationStamp: null,
+    },
+  };
+  const snapshot: AuthoritativeSnapshotV3 = {
+    version: 3,
+    universal: {
+      rootRef: null,
+      sourceId: ROOT.sourceId,
+      asOfSeq: 50,
+      observationStamp: session.statusProjection.observationStamp,
+      asOf: NOW,
+      observedAt: NOW,
+      coverage: session.coverage,
+      tree: { nodes: [fullSession, intent], counts: { confirmedSessions: 1, delegationIntents: 1, jobs: 0 } },
+      notices: [],
+    },
+  };
+  const publicType: UniversalSnapshotV3 = snapshot;
+  return publicType;
 }
 
 function record(patch: Partial<ExportInputRecord> = {}): ExportInputRecord {
@@ -1653,34 +1689,17 @@ export const observationExportCases: Record<string, () => void> = {
   },
   'T-07-27': () => {
     const session = view();
-    const intent: ObservationView = {
-      ...session,
-      nodeIdentity: { kind: 'delegationIntent', linkId: 'synthetic-intent-a' },
-      currentRun: fixtureRun(),
-      linkId: 'synthetic-intent-a',
-      workspace: null,
-      statusProjection: {
-        ...session.statusProjection,
-        stateKey: 'starting',
-        stateSince: NOW,
-        stateSinceBasis: 'event',
-        observationStamp: null,
-      },
-    };
-    const snapshot: UniversalSnapshotV3 = {
-      version: 3,
-      universal: {
-        rootRef: ROOT,
-        sourceId: ROOT.sourceId,
-        asOfSeq: 50,
-        observationStamp: session.statusProjection.observationStamp,
-        asOf: NOW,
-        observedAt: NOW,
-        coverage: session.coverage,
-        tree: { nodes: [session, intent], counts: { confirmedSessions: 1, delegationIntents: 1, jobs: 0 } },
-        notices: [],
-      },
-    };
+    const snapshot: AuthoritativeSnapshotV3 = fixtureUniversalSnapshotV3(session);
+    const intent = snapshot.universal.tree.nodes[1];
+    assert.equal(snapshot.universal.rootRef, null);
+    const rooted: UniversalSnapshotV3 = { ...snapshot, universal: { ...snapshot.universal, rootRef: ROOT } };
+    assert.deepEqual(rooted.universal.rootRef, ROOT);
+    assert.deepEqual(snapshot.universal.tree.counts, { confirmedSessions: 1, delegationIntents: 1, jobs: 0 });
+    for (const node of snapshot.universal.tree.nodes) {
+      assert.equal(node.parent, null);
+      assert.equal(node.host, null);
+      for (const field of ['links', 'candidates', 'actions'] as const) assert.deepEqual(node[field], []);
+    }
     assert.equal(snapshot.universal.tree.nodes[1].nodeIdentity.kind, 'delegationIntent');
     assert.equal('ref' in intent.nodeIdentity, false);
     assert.equal(snapshot.universal.tree.nodes[0].spent.costUsd.value, null);

@@ -1,8 +1,8 @@
 # A4b: isolated A9 SQLite / process prototype
 
 - Date: 2026-11-01. Node v24.22.1, SQLite 3.53.4, Linux x64.
-- Result after Oracle consult 3 E01–E06 application: **21/21 tagged prototype IDs PASS on two independent runs**. This is A9 feasibility evidence, not A9 approval or B production acceptance.
-- Scope: the `A9 prototype` rows in contracts [01](../contracts/01-identity.md), [02](../contracts/02-execution.md), and [04](../contracts/04-supervision.md): 4 identity + 9 execution + 8 supervision entries.
+- Result after A9FIX: **23/23 tagged prototype IDs PASS on two independent runs** (the prior Oracle consult 3 baseline was 21/21). This is A9 feasibility evidence, not A9 approval or B production acceptance.
+- Scope: the `A9 prototype` rows in contracts [01](../contracts/01-identity.md), [02](../contracts/02-execution.md), and [04](../contracts/04-supervision.md): 4 identity + 10 execution + 9 supervision entries.
 
 ## Method
 
@@ -38,6 +38,23 @@ SUMMARY total=21 pass=21 fail=0
 ```
 
 The count check parses the contract table rows and the actual PASS/FAIL lines, compares the complete sorted ID lists, and rejects duplicates or missing IDs.
+
+## A9FIX freeze corrections
+
+The two final runs of the revised prototype both printed:
+
+```text
+COUNT contract=23 printed=23 unique=23 equal=true
+SUMMARY total=23 pass=23 fail=0
+```
+
+- R1: [`tmp/tasks/A4b/run-McbIwWgi`](../../tmp/tasks/A4b/run-McbIwWgi/); aggregate [`prototypes-1.log`](../../tmp/tasks/A9FIX/prototypes-1.log).
+- R2: [`tmp/tasks/A4b/run-R4UBXjal`](../../tmp/tasks/A4b/run-R4UBXjal/); aggregate [`prototypes-2.log`](../../tmp/tasks/A9FIX/prototypes-2.log).
+- New T-02-35 saves N@20 + gone@20 + alive@30 + gone@40 in actual SQLite, including reversed import order. The run remains uncertain, retains its slot, and saves a conflict evidence record. An incremental case first reaches failed/N, then imports a real synthetic target's live scope check, and later gone. The original terminal state and single completion event remain; the durable X continues to block new operations without reacquiring the released slot.
+- New T-04-42 SIGKILLs the supervisor after registration commits and before meta is written. One registration transaction saves the immutable full ProcessStamp in the existing supervisor.registered event together with armed runs/claims and the first heartbeat. Recovery reads that event, confirms the dead instance, holds the slot until N is proved, and never resubmits. Missing registration remains unknown. A labelled cross-domain counterexample deliberately preserves the same local pid/start with a different historical boot/PID domain; recovery keeps the historical values and returns unknown, rather than filling the current domain or declaring the old instance dead.
+- Registration adds one event per run; it adds no periodic write or background mechanism. Schema v1 is byte-for-byte unchanged: 16 tables and the same SQL SHA-256 shown above. The compact meta copy in this prototype does not claim to implement the full production file/fsync protocol.
+
+The independent direct core reducer reproduction changed from R-02-4/failed/releaseSlot=true/blockNewOperations=false (alive@30 audited) to R-02-1/uncertain/releaseSlot=false/blockNewOperations=true/cause=scope_conflict (alive@30 retained). Actual before/after JSON is in [`repro-before.log`](../../tmp/tasks/A9FIX/repro-before.log) and [`repro-after.log`](../../tmp/tasks/A9FIX/repro-after.log). Contract T-02-17 also covers equal-time/unsealed-launcher counter-evidence, invalid fact times, delayed imports and terminal incremental reads. T-04-43 checks the event carrier and cross-domain identity without requiring meta. These are A9 feasibility/contract checks; the existing B concurrency, scope-control and actual harness limits below still apply.
 
 ## Oracle consult 3 targeted before / after
 

@@ -17,7 +17,7 @@ export interface UniversalSnapshotV3 {
     coverage: Coverage;
     tree: {
       nodes: UniversalSnapshotNode[];
-      counts: { confirmedSessions: number; intents: number; jobs: number };
+      counts: { confirmedSessions: number; delegationIntents: number; jobs: number };
       continuation?: string[];
     };
     notices: NoticeEvent[];

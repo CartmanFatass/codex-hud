@@ -21,6 +21,8 @@ import {
   sessionOwner,
   signal,
   snapshot,
+  inspectScope,
+  scopeOf,
   stat,
   Suite,
   tx,
@@ -72,7 +74,7 @@ await suite.test(
     assert.equal(left.linkId, right.linkId);
     assert.equal(left.state, right.state);
     assert.ok(right.busyRetries > 0, 'second OS process encountered SQLite lock contention');
-    assert.deepEqual(snapshot(f.db), { links: 1, runs: 1, claims: 1, idempotency: 1, slots: 1, events: 1 });
+    assert.deepEqual(snapshot(f.db), { links: 1, runs: 1, claims: 1, idempotency: 1, slots: 1, events: 2 });
     assert.equal(countSubmissions(f.directory), 1);
     await assert.rejects(() => spawn(h, f, 'race-key', { control: { mode: 'visible' } }, 'b'), /idempotency_conflict/);
     assert.equal(countSubmissions(f.directory), 1);
@@ -382,6 +384,71 @@ await suite.test(
     assert.equal(countSubmissions(f.directory), 1);
     assert.equal(arm(f.db, item.accepted.runId, item.accepted.ticket, stat(process.pid)), false);
     detail.push({ afterCommandBeforeWriteback: true, submissions: 1 });
+    f.db.close();
+  }
+);
+
+await suite.test(
+  'T-02-35',
+  'N counter-evidence survives out-of-order imports, terminal incremental reads and later gone',
+  async (detail) => {
+    for (const reversed of [false, true]) {
+      const f = suite.fixture(`n-counter-${reversed}`);
+      const accepted = await newIntent(f);
+      fence(f, accepted.runId);
+      const identity = { sourceId: f.origin.sourceId, bindingGeneration: 1, supervisor: null };
+      const facts = [
+        ['never_submitted', { ...identity, N: true, basis: 'N', asOf: 20 }],
+        ['group_check', { ...identity, asOf: 20, group: { result: 'gone' } }],
+        ['group_check', { ...identity, asOf: 30, group: { result: 'alive' } }],
+        ['group_check', { ...identity, asOf: 40, group: { result: 'gone' } }],
+      ];
+      tx(f.db, () => {
+        for (const [kind, fact] of reversed ? facts.reverse() : facts) evidence(f.db, kind, fact, accepted.runId);
+      });
+      const observed = await recover(suite, f, accepted.runId);
+      assert.equal(observed.state, 'uncertain');
+      assert.equal(observed.X, true);
+      assert.equal(observed.blockNewOperations, true);
+      held(f, accepted.runId);
+      const repeated = await recover(suite, f, accepted.runId);
+      assert.equal(repeated.X, true);
+      assert.equal(
+        f.db.prepare("SELECT count(*) AS n FROM evidence WHERE run_id=? AND kind='conflict'").get(accepted.runId).n,
+        1
+      );
+      detail.push({ reversed, observed, repeated, slot: 'held' });
+      f.db.close();
+    }
+    const f = suite.fixture('n-terminal-counter');
+    const accepted = await newIntent(f);
+    fence(f, accepted.runId);
+    const failed = await recover(suite, f, accepted.runId);
+    released(f, accepted.runId, 'failed');
+    const target = suite.peer('workload', { detached: true });
+    const ready = await target.wait('ready');
+    const scope = scopeOf(ready.stamp);
+    const identity = { sourceId: f.origin.sourceId, bindingGeneration: 1, supervisor: null };
+    const alive = { ...identity, asOf: now(), group: inspectScope(scope) };
+    assert.equal(alive.group.result, 'alive');
+    tx(f.db, () => evidence(f.db, 'group_check', alive, accepted.runId));
+    const conflicted = await recover(suite, f, accepted.runId);
+    assert.equal(conflicted.state, 'failed');
+    assert.equal(conflicted.X, true);
+    assert.equal(conflicted.blockNewOperations, true);
+    await target.stop();
+    tx(f.db, () =>
+      evidence(f.db, 'group_check', { ...identity, asOf: now(), group: inspectScope(scope) }, accepted.runId)
+    );
+    const laterGone = await recover(suite, f, accepted.runId);
+    assert.equal(laterGone.X, true);
+    assert.equal(laterGone.blockNewOperations, true);
+    released(f, accepted.runId, 'failed');
+    assert.equal(
+      f.db.prepare("SELECT count(*) AS n FROM events WHERE run_id=? AND kind='run.failed'").get(accepted.runId).n,
+      1
+    );
+    detail.push({ failed, conflicted, laterGone, completionEvents: 1, slot: 'not reacquired' });
     f.db.close();
   }
 );

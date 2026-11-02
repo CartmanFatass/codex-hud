@@ -13,9 +13,11 @@ import {
   json,
   live,
   meta,
+  metaPath,
   now,
   readFileSync,
   receiptPath,
+  registeredSupervisor,
   sameInstance,
   signal,
   stat,
@@ -26,6 +28,7 @@ import {
 import {
   attachScope,
   crashMatrix,
+  fence,
   held,
   killStamp,
   launched,
@@ -305,6 +308,69 @@ await suite.test(
       rejectedActions: ['heartbeat', 'ticket', 'exit', 'submit'],
     });
     f.db.close();
+  }
+);
+
+await suite.test(
+  'T-04-42',
+  'atomic full supervisor stamp survives registration-before-meta SIGKILL; missing and cross-domain stay unknown',
+  async (detail) => {
+    const f = suite.fixture('registration-before-meta');
+    const item = await launched(suite, f, 'registered_before_meta');
+    assert.equal(existsSync(metaPath(item.accepted.runId)), false);
+    assert.equal((await item.supervisor.stop()).signal, 'SIGKILL');
+    const run = f.db.prepare('SELECT * FROM runs WHERE run_id=?').get(item.accepted.runId);
+    const stamp = registeredSupervisor(f.db, run);
+    const { pid, proc_start, boot_id, pid_domain } = item.stamp;
+    assert.deepEqual(stamp, { pid, proc_start, boot_id, pid_domain });
+    assert.equal(run.launch_phase, 'armed');
+    assert.equal(run.heartbeat_seq, 1);
+    assert.notEqual(run.heartbeat_at, null);
+    assert.equal(f.db.prepare('SELECT state FROM claims WHERE run_id=?').get(run.run_id).state, 'armed');
+    const beforeFence = await recover(suite, f, run.run_id);
+    assert.equal(beforeFence.supervisorDead, true);
+    assert.equal(beforeFence.state, 'uncertain');
+    held(f, run.run_id);
+    fence(f, run.run_id);
+    assert.equal((await recover(suite, f, run.run_id)).basis, 'N');
+    assert.equal(countSubmissions(f.directory), 0);
+    assert.equal(arm(f.db, run.run_id, item.accepted.ticket, stat(process.pid)), false);
+    detail.push({ cut: 'after registration commit, before meta', stamp, beforeFence, submissions: 0 });
+    f.db.close();
+    for (const kind of ['missing', 'cross-domain']) {
+      const g = suite.fixture(`registration-${kind}`);
+      const accepted = await newIntent(g);
+      const current = stat(process.pid);
+      const historical = { ...current, boot_id: 'synthetic-foreign-boot', pid_domain: 'synthetic-foreign-pid-domain' };
+      if (kind === 'cross-domain') {
+        assert.equal(arm(g.db, accepted.runId, accepted.ticket, historical), true);
+      } else {
+        // A legacy/incomplete record deliberately lacks the authoritative registration event.
+        tx(g.db, () => {
+          g.db
+            .prepare(
+              "UPDATE runs SET supervisor_pid=?,supervisor_proc_start=?,launch_phase='armed',heartbeat_at=?,heartbeat_seq=1,heartbeat_mono_ms=0 WHERE run_id=?"
+            )
+            .run(current.pid, current.proc_start, now(), accepted.runId);
+          g.db
+            .prepare("UPDATE claims SET state='armed',supervisor_pid=?,supervisor_proc_start=? WHERE run_id=?")
+            .run(current.pid, current.proc_start, accepted.runId);
+        });
+      }
+      fence(g, accepted.runId);
+      const row = g.db.prepare('SELECT * FROM runs WHERE run_id=?').get(accepted.runId);
+      const recovered = registeredSupervisor(g.db, row);
+      assert.equal(kind === 'missing' ? recovered === null : recovered.pid_domain === historical.pid_domain, true);
+      const observed = await recover(suite, g, accepted.runId);
+      assert.equal(observed.supervisorUnknown, true);
+      assert.equal(observed.supervisorDead, false);
+      assert.equal(observed.N, false);
+      assert.equal(observed.state, 'uncertain');
+      assert.equal(observed.blockNewOperations, true);
+      held(g, accepted.runId);
+      detail.push({ kind, matchingLocalPidAndStart: true, recovered, observed });
+      g.db.close();
+    }
   }
 );
 

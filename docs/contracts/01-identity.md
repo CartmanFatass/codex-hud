@@ -50,7 +50,7 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 
 ### claim 与证据
 
-`claims` 每个 run 一行：随机至少 256 bit 的 claim 经本轮启动配置/env 运输；仅运输 fallback 才在本轮消息中传入；账本只存 SHA-256 `claim_hash`。`issued_at` 起 TTL 为 30 分钟，`now >= expires_at` 拒绝首次兑换。它绑定 `run_id`、预期 source、`expected_generation`（目标绑定代次）、启动实例 `(supervisor_pid, supervisor_proc_start)`，以及本轮 `launch_call_id / launch_correlation_id`；原生 `launch_message_id` 可为空并在精确证据到达后后填。启动实例尚未登记时为 `issued`，不能兑换；hud-run 取得 02 的执行权并登记实例后才变为 `armed`，再交给子进程。
+`claims` 每个 run 一行：随机至少 256 bit 的 claim 经本轮启动配置/env 运输；仅运输 fallback 才在本轮消息中传入；账本只存 SHA-256 `claim_hash`。`issued_at` 起 TTL 为 30 分钟，`now >= expires_at` 拒绝首次兑换。它绑定 `run_id`、预期 source、`expected_generation`（目标绑定代次）、启动实例的完整 `ProcessStamp={pid,proc_start,boot_id,pid_domain}`（04），以及本轮 `launch_call_id / launch_correlation_id`；原生 `launch_message_id` 可为空并在精确证据到达后后填。启动实例尚未登记时为 `issued`，不能兑换；hud-run 取得 02 的执行权并登记实例后才变为 `armed`，再交给子进程。登记、arm claim、首心跳与不可变 `supervisor.registered` 事件同事务；完整 stamp 由该事件的白名单 payload 持久保存，runs/claims 的 pid/start 仅为一致性校验投影。恢复及 claim 核验以该事件为权威，缺失/不完整/矛盾保持 unknown，不能从当前 boot/PID 域或较晚 meta 补历史实例（04 T-04-42、43）。
 
 兑换主体是 `(caller_context, context_generation, child SessionRef 如已知, run_id, binding_generation)`，不是 MCP PID；claims 保存声明时的 context 外键。重启后的新专属 context 必须证实同一 ProcessKey/代次、当前逻辑来源与 SessionRef，再由 reconciler 重建授权并保留旧声明事件，不能凭新 context_id 再兑一次。`redeemed` 只表示凭据已被一个主体声明；fork 声明不授予 report 或父权限。重复 whoami 先检查当前绑定：同一逻辑主体、同 run 同代且未撤销时幂等返回，即使后来 TTL 已过也不再次兑换；未绑定的过期声明不能继续升级。不同主体普通兑换返回 claim_conflict；仅独立证据接管事务可替换未绑定声明。
 
