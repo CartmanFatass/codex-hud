@@ -49,6 +49,10 @@ export interface CapabilityCell {
   incomplete: string[];
 }
 
+/** Consult 5 G04: the sole shipped manifest v1 shape; loading never promotes a cell. */
+export type CapabilityManifestV1 =
+  { version: 1; hudRevision: null; cells: [] } | { version: 1; hudRevision: string; cells: CapabilityCell[] };
+
 /** Each template selects exactly one execution contract. */
 export type LaunchCommand =
   { argv: string[]; shell?: never; shellPath?: never } | { shell: string; shellPath: string; argv?: never };

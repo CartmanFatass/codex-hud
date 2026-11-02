@@ -71,6 +71,28 @@ export interface ExitObservation {
   evidence_id: string;
 }
 
+/**
+ * Consult 5 G01: B3a-R1's shared replacement for run/process.ts's legacy GroupExit.
+ * Only verified_wait can supply native proof, after its full subject stamp is
+ * matched to the independently verified harness. A shell's encoded wait status
+ * is not this proof. Scope completion is independent of native result availability.
+ */
+export type GroupExit =
+  | {
+      source: 'verified_wait';
+      subject: ProcessStamp;
+      code: number | null;
+      signal: string | null;
+      at: number;
+    }
+  | {
+      source: 'native_unknown';
+      subject: null;
+      code: null;
+      signal: null;
+      at: number;
+    };
+
 export interface ScopeCheck {
   scope_id: string;
   checked_at: number;

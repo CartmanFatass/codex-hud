@@ -67,6 +67,15 @@ export interface Coverage {
   reason?: string;
 }
 
+/** Consult 5 G11: recovery/index preparation progress is not a larger-record byte request. */
+export type ReaderContinuation =
+  | { kind: 'record_needs_larger_slice'; minimumBytes: number }
+  | {
+      kind: 'recovery_catching_up';
+      coverage: Coverage & { state: 'catching_up' };
+      minimumBytes?: never;
+    };
+
 export interface ReaderParserState {
   /** Schema-v1 compatibility field; durable checkpoints always contain []. Raw tails are live-reader-only. */
   pendingBytes: number[];

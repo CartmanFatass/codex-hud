@@ -18,6 +18,8 @@
 
 （F08 Pro 裁决增补）依 [F08 Pro 裁决](../reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md) §4 补齐下文 Oracle consult 4 Q4/F06 的 resolver 正文；F07 与 I-01-2/10/12 保持原义。该档案的成本门槛改依 06 P-06-4/5 与 05 能力证据，不由预算修订追认身份或生产能力已验证。
 
+冻结后增补版本：`A9 + consult4 + F08-Pro + consult5-2026-11-02`。本轮依 [Oracle consult 5](../reviews/2026-11-02-astra-consult5.md) 增补，保留此前 C/D/E、consult 4 F01–F11、F08 Pro 与 A9-fix；ledger schema v1 不变，不授予尚未验收的生产能力。（consult 5 增补，G08）
+
 ## 数据模型
 
 ### 身份、实例与定位
@@ -26,12 +28,24 @@
 |---|---|---|
 | `SourceId` | 固定顺序 JSON 数组 `[harness, realpath(配置/存储根)]` 的 UTF-8 SHA-256 小写十六进制；`sources` 同时保存 harness、绝对根路径和显示 label。根无法解析时拒绝建立授权身份 | cwd、账号显示名、相对路径 |
 | `SessionRef` | `(harness, source_id, session_id, thread_id?)`；SQL 编码为 `json_array(harness, source_id, session_id, nullif(thread_id, ''))`。cc 根 `thread_id=''`，原生子为 `agentId`；Codex 每个线程使用自己的 `session_id` | transcript 路径、pane、PID、tmux session 名 |
-| `ProcessKey` | 专属 stdio 的 harness `(harness, source_id, pid_domain, harness_pid, harness_proc_start)` 固定顺序 JSON 数组；pid_domain 必含机器 boot_id 与 PID namespace 身份，与 04 ProcessStamp 对齐；harness_pid 是经核验启动链上的真实 harness。不能取共享 daemon 冒充 TUI | 仅 PID、进程名字、继承的 pane env |
+| `ProcessKey` | 专属 stdio 的 harness `(harness, source_id, pid_domain, harness_pid, harness_proc_start)` 固定顺序 JSON 数组；pid_domain 必含机器 boot_id 与 PID namespace 身份，与 04 ProcessStamp 对齐；harness_pid 是经核验启动链上的真实 harness。不能取共享 daemon 冒充 TUI；（consult 5 增补，G08）与 04 对齐的是机器/boot/PID namespace 事实，不要求两种 pid_domain 字符串相等；既有 Caller 域编码保持不变 | 仅 PID、进程名字、继承的 pane env |
 | `CallerId` | 每个物理 MCP 实例新生成的 opaque id；仅记录 MCP 的 pid/proc_start、实际父进程 ppid/parent_proc_start、harness/source 提示、登记瞬间物理 MCP 自己的真实绝对 cwd、env_pane、时间。cwd 无法取得时拒绝登记并返回 cwd_unavailable，不填 HUD_HOME、父进程目录或空字符串。共享实例仍只有一个 CallerId，实际父进程可以是 daemon（consult 4 增补，F04） | CallerId、物理父进程及提示字段本身不授予会话身份 |
 | `caller_contexts` | 物理 CallerId 下的隔离调用上下文，`(context_id,generation)` 保留历史，含 context_key、kind、SessionRef、证据与关闭时刻。MVP dedicated 恰好一个当前 stdio context，连接到 ProcessKey/proc_generation；shared 仅保留类型/表的扩展位置，MVP 不建立可操作 shared context | claim、prompt、自报 session 参数不能选择或创建 shared context |
 | `caller_scopes` | 专属 stdio 的 `(process_key, generation)`；同一 ProcessKey 只有一行未关闭。保存本代已证实 ref/证据；dedicated context 的 generation=proc_generation，MCP 重启复用尚未关闭的同一代。shared context 不使用此表或 proc alias | 新 MCP PID 不能触发专属会话换代 |
 | `RunBinding` | 某次运行的会话、启动实例与宿主 occupant；在 schema 中由 `runs`、`child_bindings` 和 evidence 组合表示。Herdr locator 带 server/workspace/tab/pane，tmux locator 带 server 实例/session/pane | HUD 自己的 pane 不是被观察 pane |
 | `OwnerKey` | 从本次调用选定的当前 context 派生：已证实会话为 `json_array('session', session_ref)`；仅未绑定 dedicated 可用 `json_array('proc', process_key, generation)`。shared 不取得 MVP 操作权限。已绑定 SessionRef 跨 MCP 重启和同会话 resume 保持逻辑所有者 | 不把 caller_id/context_id 放进幂等键，不另建可随意赋值的所有者身份 |
+
+（consult 5 增补，G08）ProcessKey、Run ProcessStamp 与 Claude 原生 registry 使用三种用途隔离的域类型；`src/core/process-domain.ts` 是共享轻量派生入口，MCP、hook、hud-run 从同一组已验证且非空的 machineId/bootId/pidNamespace 输入派生。以下保持本期已有字节，不对已持久化身份重键：
+
+| 用途 | 保持的 pid_domain 编码 | 唯一允许的比较 |
+|---|---|---|
+| Caller / ProcessKey | `JSON.stringify(['linux', machineId, bootId, pidNamespace])` | 同类 Caller 域及完整 ProcessKey；boot 已在域内（consult 5 增补，G08） |
+| Run / ProcessStamp | `SHA256(UTF8(trim(machineId)))` 的小写 hex + `':' + pidNamespace` | 同类 Run 域，并同时核对独立 boot_id、pid、proc_start（consult 5 增补，G08） |
+| Claude 原生 registry | `'linux:' + machineId + ':' + pidNamespace` | 仅此版本原生文件的适配核验，不充当 Caller 或 Run 域（consult 5 增补，G08） |
+
+（consult 5 增补，G08）采样须验证 procfs 可用于本进程的数字 PID、machineId/bootId 非空且 namespace 一致；不可见或矛盾保持 unknown/refusal。同一调用不把两个独立来源的 boot/namespace 任意拼接。ProcessReaderPort 的 runPidDomain 必须单独给出或明确 unavailable，禁止 `runPidDomain ?? pidDomain` 及其他跨表示 fallback；hook 不为派生域而加载 run/reader/ledger 整个模块图。currentDomain() 仍产生 Run 域，resolvers/handshake/call-context 只比较对应 Caller 域；持久 ProcessKey 不能解析后冒充重新核验的 ProcessStamp。
+
+（consult 5 增补，G08）supervisor.registered、meta、receipt、ProcessKey 原字节保留，禁止以当前 boot/domain 回填、归一化重写或添加 owner alias。raw machine-id 仍只属私有身份材料，不进入 export v1；散列也不是匿名化保证。改成 hashed ProcessKey 必须另立版本化身份迁移，本轮延期；BID1 实现共享派生及回退移除。
 
 （consult 4 增补，F04）`callers.cwd` 仅是物理 MCP 的诊断提示，不是 harness/session 的工作目录、SourceId 或调用权限证据；A4 `Caller.cwd:string` 和 02 的 `callers.cwd TEXT NOT NULL` 保持不变。会话 SessionEvidence/WorkspaceContext 的 cwd 无证据时仍为 null，不得用 callers.cwd 自动补空。06 禁止填 HUD 自己 cwd 的约束针对会话 workspace。
 
@@ -223,7 +237,7 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 | T-01-3 (B) | ref 不变，仅改 transcript 路径/Herdr workspace locator → ref 不变；旧 occupant 跳转校验失败时无宿主状态，不改父边 |
 | T-01-4 (A9 prototype) | 专属 harness 存活、MCP 重启 → CallerId/context 改变，boot/ProcessKey/当前 SessionRef/代次及 OwnerKey 连续；02 T-02-3 命中原记录；B2/B5 补同源同根双 MCP 并发首绑/重绑，共用未关闭代次、无重复兑换，CAS 失败要求新调用而非凭旧证据盲重试（consult 4 增补，F07） |
 | T-01-5 (A9 prototype) | 同 pane 同 PID 先 session-a 后 /clear 到 b，procStart 不变 → a 代关闭、generation+1、旧 report/resume 授权拒绝；a link 仍指 a；合格新根来源须匹配当前 sessions 并以捕获旧代次 CAS，同 PID/start/MCP 下旧 spawn/report 取证后等锁遇换代提交失败，过时 receipt 不倒切，合法新根仍可用（consult 4 增补，F07） |
-| T-01-6 (A9 fixture) | pane 被替换或同数值 PID 不同 procStart；另给不可见 PID 域 → 新 ProcessKey/occupant，不复用旧授权；不可见域只标 unknown；另 MCP 真实绝对 cwd 登记成功，但会话 cwd 无证据仍 null；process.cwd() 不可取时 cwd_unavailable 拒登记，不填 HUD_HOME/父目录/空串（consult 4 增补，F04） |
+| T-01-6 (A9 fixture) | pane 被替换或同数值 PID 不同 procStart；另给不可见 PID 域 → 新 ProcessKey/occupant，不复用旧授权；不可见域只标 unknown；另 MCP 真实绝对 cwd 登记成功，但会话 cwd 无证据仍 null；process.cwd() 不可取时 cwd_unavailable 拒登记，不填 HUD_HOME/父目录/空串（consult 4 增补，F04）；（consult 5 增补，G08）BID1 定向覆盖三个生产者同输入一致、hook/MCP 一致、boot 或 namespace 改变、机器输入缺失/矛盾、同 pid/start 异域均不混用；类型检查拒绝 Caller/Run/Claude registry 跨用途比较，保留既有持久字节 |
 | T-01-7 (A9 fixture) | 已确认结束的 run-a resume → 同 link、新 run-b 和 binding_generation，本轮 call/message id、新 claim；旧 claim revoked；run-a binding 不参与 run-b 授权 |
 | T-01-8 (A9 fixture) | claim 尚 issued、或 now=expires_at、或 source/run/launch instance/目标代次逐项错配 → 首兑拒绝，关系不 bound，记录具体错误 |
 | T-01-9 (A9 fixture) | 已 armed 且当前时刻在 TTL 内，字段全部匹配 → 一次兑换 claimed；now=expires_at-1 可兑换，now=expires_at 不可兑换 |

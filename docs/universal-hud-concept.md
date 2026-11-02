@@ -170,6 +170,10 @@ bind 只解析被观察的会话；非 null 结果必有完整、来源明确的
 - 截断、inode/设备变化、已检测改写/边界签名失配、压缩/分支变化明确 reset/sourceGeneration，旧锚点/摘要/transient 不接新谱系。append-only-between-observed-resets 与有界首/末已消费记录签名只给有限检测，保留 append_only_assumed_bounded_signatures 诊断；不保证任意内部历史未变，complete 仅此模型下固定输入边界覆盖，不作调用授权。（consult 4 增补，F11）
 - 返回可序列化 `ReaderCheckpoint`：`fileId{dev, inode}`、`offset`、`schemaVersion`、`readerVersion`、`sourceGeneration` 与完整记录边界的恢复元数据；offset/状态/摘要/连续性/notices 同一次提交。语义改变 bump readerVersion，旧 raw-tail 缓存按07持采集租约受控失效/重建、重置连续性并删除/替换旧缓存/未发布 bundle，不仅清字节沿旧offset；公共结构不兼容另升 checkpoint schema，不改 ledger v1。（consult 4 增补，F09）
 
+（consult 5 增补，G09）reader 生产端提取显式版本化 compact recovery DTO，热路径 inline 实际编码≤256KiB，不先序列化整显示缓存/公开长参数再删除。必要精确增长集合（Codex/Claude 去重/配对/时钟）在同source观测SQLite增量索引按ref/sourceGeneration/恢复版本隔离，引用含内容身份/边界，本slice变更与观测同事务；按需键/有界页恢复，不截断必要ID/未闭合调用/pending或近似计数。异常oversize保前完整提交/gap，合法大记录须前进；旧V8按06有界兼容/07受控重建，旧public/--json v2字段口径保留。
+
+（consult 5 增补，G11）recovery_catching_up 表示分批恢复索引/准备进度并带明确coverage；只有恢复字节确不足才用record_needs_larger_slice/minimumBytes。全tick逐样本<50ms包含提取、prepare/witness/编码/hash/索引/SQLite等待commit及paint enqueue；共享deadline/8MiB、公平完整记录边界续读，不把重复验证/恢复改称cold或无前进重做。
+
 ### 6.4 `SessionEvidence`（收窄后的共同观测摘要）
 
 ```ts
@@ -235,7 +239,7 @@ candidates?: LinkCandidate[];          // 未确认的推断，只在 Inspector 
 | 工具 | 谁调 | MVP | 做什么 |
 |---|---|---|---|
 | `delegate_spawn` | 父 | ✔ | `{backend, role, brief, cwd, name?, model?, effort?, mode: visible\|headless, layout?: tab\|split, predecessor?: linkId, request_key}` → 同事务持久接受意图与运行槽后返回 `{linkId, runId, state:starting, locator?}`，异步单次启动；`request_key` 以 `OwnerKey` 为范围 |
-| `delegate_resume` | 父 | ✔（Codex）/ C（cc、pi） | `{linkId, mode, prompt?, request_key}` → 校验调用者是该关系的所有者；该子会话的运行槽空闲时追加一次运行，否则拒绝并返回占槽运行的状态；旧 claim 撤销，新 claim 只对这次运行有效 |
+| `delegate_resume` | 父 | ✔（Codex）/ C（cc、pi） | `{linkId, mode, prompt?, request_key}` → 校验调用者是该关系的所有者；该子会话的运行槽空闲时追加一次运行，否则拒绝并返回占槽运行的状态；旧 claim 撤销，新 claim 只对这次运行有效；（consult 5 增补，G03）另接受可选 expectedRun?:RunId，提供时入参数摘要并作新意图 currentRun CAS；先权限核验、再同参重放、最后新意图门禁；缺省兼容、本地仍必填 |
 | `delegate_wait` | 父 | ✔ | `{linkId \| runId, afterSeq?, until?: [...], timeoutMs ≤ 120000（实际不超过客户端超时减正余量）}` → 有界长轮询；按 linkId 等待时**进入即解析并固定 runId**，不跟随后来的运行；返回游标之后的事件与当前状态；超时不改变任何状态 |
 | `delegate_status` | 父 | ✔ | `{linkId \| runId}` → 关系、运行、最新报告、托管心跳、`uncertain` 的对账证据与允许的迁移 |
 | `delegate_cancel` | 父 | ✔ | `{runId, grace?}` → 校验所有者、持久接受取消意图即返回；hud-run 异步封口启动者并取消整个 scope，完整R/Q且已证明取消before_exit才cancelled；结束已证明但时序未知为ended+terminalNote=cancel_timing_unknown并释放槽；未证结束仍cancelling/uncertain或cancel_unconfirmed，after_exit已证明才解释already_ended |
@@ -244,6 +248,8 @@ candidates?: LinkCandidate[];          // 未确认的推断，只在 Inspector 
 | `delegate_list` / `delegate_close` | 父 | v1.1 | 列出本调用者的关系；关闭 = 取消活跃运行 + 关 surface + `closed` |
 | `delegate_send` / `delegate_ask` | 父 / 子 | v1.1 | 输入通道。实现前保留 `herdr agent prompt` 作为明确的旧通道 |
 | 资源 `hud://links`、`hud://tree` | 任何 | v1.1 | 让任何 agent 查看关系与树 |
+
+（consult 5 增补，G03）MCP resume 的 expectedRun 仅在实际提供时入 params_digest，缺省保留 params_version=1 旧编码，不把后来查到的 currentRun 补摘要。当前权限/捕获来源前提 → OwnerKey×request_key 原结果重放 → 新意图 expectedRun/槽/能力门禁；同参重放即使新轮已出现仍返回原 run，同键改 expectedRun 冲突。仅无原结果时与事务 currentRun 比较，不符 expected_run_mismatch 且零新run/claim/slot/外部提交；缺省不钉住先前 status，preparation 的runSeq/ref/绑定代次/档案仍重验。复用 A4 resumeGate/prepareResume，不新增状态机。本地 --expected-run 继续必填；B13 模板基于 status/wait 决定续跑默认携所见 runId，mismatch 重读后重新决定，禁自动换key/expectedRun连续重试（02/03）。
 
 #### 6.6.2 账本：`~/.hud/ledger.sqlite`
 
@@ -280,6 +286,8 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 所有者操作取本次有效OwnerKey；report只接受本run当前有效MCP子绑定，旧轮迟报不满足新轮。A3已评审的有限结果及[daemon补测](./probes/codex-daemon.md)不支持外推共享调度；daemon-present不为A9前置。无MCP仅未确认展示，不凭三证自动绑定，未来最低三证门槛保留在01的deferred说明。
 
 
+（consult 5 增补，G08）Caller/ProcessKey、Run ProcessStamp、Claude registry 三用途共用轻量 process-domain 派生且保既有字节：Caller为包含boot的JSON域，Run为machine-id散列+namespace并比较独立boot_id，Claude registry保原生字符串仅作适配。域类型不跨比较，不用runPidDomain回退Caller；同组已核验机器/boot/namespace缺失或矛盾保持unknown/refusal，已持久stamp/键不以当前值回填/重键。完整编码及BID1职责见01/02/04。
+
 #### 6.6.4 运行托管：`hud-run`
 
 每run一个托管进程；headless直接起目标无TTY、stdin brief或关闭；可见采用Oracle修订方案甲：hud-run是pane shell正在等待的前台作业，shell档案用-ic保留函数/context，harness为经核验的终端前台消费者/PGID，supervisor不读TTY；不能用`sh -c '<hud-run> &'`后台形态替代。argv逐参数spawn；可选已验证包装链最后exec外部可执行文件不另立架构，exec codex函数不证明直接子进程。完整managed shell仅经验证单次前台启动，任意shell文本不自动支持。
@@ -293,6 +301,8 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 乙sidecar不作MVP managed后端：缺完整结束/取消/启动封口能力；保留探针反证，不能甲提交未知后自动切乙。自有PTY/tee/透明重接管延期。A8首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受，限所测版本及前台形态，后台形态保留负对照；A9最小机制证据与B生产验收分开（§16/04），A8-fixB2不是工程WP B2。RunHandle固定run/locator/代次，status只读，cancel鉴权；input/focus还须occupant/交互能力核验。
 
 
+（consult 5 增补，G01）headless 必要helper优先轻量、随run存活且保持不能移组的真实session/group leader，本组leader核验后发整组信号；固定控制词表、无eval、受保护输入只消费一次且EOF不可重开，stdin/控制通道分离，argv/cwd/导出函数/dotted env/PWD保持。GroupExit来源区分verified_wait/native_unknown，精确harness stamp才投影native；shell137不推harness信号，无合法shell投影也为null，完整R/Q仍scope_ended并按02分类，既有精确来源保留。现Node helper保留到B3a-R1环境/封口/取消/组实例验收；可移动reader/decoy方案不采用，visible仍修订甲。B14按06 G02正式B45/真实B2、300s/两种H/R和同环境资源/启动/故障对照，不以sh原型数值放行。
+
 #### 6.6.5 等待、resume 与双模式
 
 - **wait。** 有界长轮询，按 `events.seq` 游标返回；按 linkId 等待时进入即解析当前 runId 并固定，之后的新运行不满足这次等待；实际取请求值/协议上限120s/客户端实测工具timeout减正余量的最小值（05），缺可信timeout只即时返回。通知是hint、游标是事实；按run合并heartbeat/WAL唤醒，漏通知在必要截止复读。超时/断线不取消/失败，返回同run/正确游标；父pane自动提示延期。
@@ -305,6 +315,8 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 #### 6.6.6 后端档案 `~/.hud/delegate.json`
 
 （consult 4 增补，F03）delegate.json v1 顶层固定 `{version:1,profiles:LaunchProfile[]}`，profile.name 唯一；未知版本、未知键和不合格类型拒绝，文件≤256 KiB、profiles≤128 等字段有界校验沿05。每 profile 包含 MCP 服务器名、已验证客户端 tool timeout/响应余量、source、argv/shell 启动、headless/resume/resumeHeadless、宿主/布局、env、claimTransport、orphan_policy；可选 `roles:Record<string,{model:string,effort?:string}>` 仅数据，不是可执行模板/额外调度器。role/model/effort 解析后的实际值和非秘密档案指纹进入02参数摘要，缺角色映射只用明确配置/请求值，不猜模型。资源约束不在本期格式，不静默接收后忽略。DelegateConfig/角色映射的权威定义收敛到 src/core/types/capabilities.ts，B1/B4/B11/B13 共用；唯一附加可选键 callSource 及 Claude-only 限制按 consult4 F06（B1b）。配置本身（含 managedShellVerified:true 或选择 callSource）不授 verified 能力；两个 skill 的配方改用此配置，仍须独立能力证据。
+
+（consult 5 增补，G04）与delegate.json分开的受信随代码发布 CapabilityManifestV1 在core共享类型唯一声明，≤256KiB/128cells，初始空manifest未验证；完整键/source/profile/executable/拓扑/versions及受检HUD构建标识匹配，构建/发布提供不可变hudRevision而非环境/用户输入或自包含SHA循环。启动预检有界取证复用，版本占位/动态shell实际目标不可证均unverified；product五项+accepted review+空incomplete+06/A9/B14门槛才晋级，Claude父/hook双预算不漏。B14受信test-only verifier仅收证，评审后制发布manifest，不开放生产绕过（05）。
 
 #### 6.6.7 Jev 后端
 
@@ -401,6 +413,16 @@ delegate.json                            后端档案
 | 采集 `collect:<session>` | 观测存储 | 按代次接管：新持有者 generation +1 并写入；旧持有者的迟写（generation 落后）被拒绝；过期可接管 |
 
 心跳与内容更新时间分开，不用mtime代表存活。五个版本域独立：public snapshot v3、checkpoint schema、ledger `user_version`、`SCAN_VERSION`、本地delegation export v1；内部编号相同不表示兼容，export不改旧--json。旧 `$CODEX_HOME/hud/` 在阶段A–D保持可读、不自动迁移。
+
+（consult 5 增补，G05）B12/B16共用checkpoint.ts的ObservationBoundary/ObservationBoundaryWitness/ObservationCandidate及checkpointBoundary/witnessObservationBoundary，同ReaderResult捕获边界后唯一归并；witness只是可信一致性断言/防错摘要，不授真实性/写入/执行权，细则归06。
+
+（consult 5 增补，G06）collect写权仅同一ObservationStore实例成功acquire(g+1)后取得，readLease/重开/同holder不继承；每次写与接管同事务验租约/来源/previousCommitSeq。默认15s TTL、≥5s续约及sampled high-water/last_now不变；倒退/不可判只读，不保证跳钟后真实15s接管，不逐tick持久写钟，正常release再close/崩溃重新竞争，不授运行槽权。
+
+（consult 5 增补，G10）上列checkpoint/summary/lease路径是概念职责划分，本期物理发布选同source观测SQLite：不可变checkpoint/精确索引/current projection引用在同一fenced事务构成一个ObservationCommit。prepareCheckpoint生成可信opaque内容身份及边界，publishPrepared每次重验lease/CAS；readProjection只读已提交summary/continuity/notices/stamp及checkpoint身份边界，不解码recovery/跑reader；readRecovery仅采集恢复且同commit。summary-only/no-op复用已验证不可变内容，不重建/hash全历史/反复deserialize，不贴当前ledgerSeq到旧摘要；兼容readCurrent不进status/wait/paint热路径，回收沿受控发布/重建无后台GC。
+
+（consult 5 增补，G11）reader语义bump readerVersion，结构不兼容升对应checkpoint/观测私有格式并拒旧writer；持lease受控替换旧缓存、重置不可证连续性且保sourceGeneration/gap，禁止删payload沿旧offset。ledger v1/export v1/public/旧--json版本独立；三路径no-op/summary-only/新checkpoint及大参数/长期ID/多消费者全链预算与定向崩溃/lease/通知证据归06/07及B14，不放宽tick。
+
+（consult 5 增补，G07）B11本地export只消费既有core/export-query.ts的queryDelegationExport私有metadata-only入口，B2底层/B18受限投影共同维护schema回归；native readOnly/busy_timeout=0/单快照rows+high-water，尽早结束事务后在复制输入编码，完整JSON备妥再输出。无需搬模块/broad reader/公开SQL，不等B16/B6/B17；07的10000runs/16MiB/1000ms及隐私/历史端点边界保留。
 
 ### 6.12 Herdr 集成层（独立）
 

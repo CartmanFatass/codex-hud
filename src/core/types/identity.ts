@@ -7,6 +7,28 @@ export type CallerId = string;
 export type OwnerKey = string;
 export type ProcessKey = string;
 
+declare const pidDomainPurpose: unique symbol;
+/** Consult 5 G08: caller JSON encoding, including boot identity; compare only within this purpose. */
+export type CallerPidDomain = string & { readonly [pidDomainPurpose]: 'caller' };
+/** Consult 5 G08: run hash/namespace encoding; independently compare boot_id, pid and proc_start too. */
+export type RunPidDomain = string & { readonly [pidDomainPurpose]: 'run' };
+/** Consult 5 G08: native Claude registry encoding, restricted to that adapter's verification. */
+export type ClaudeRegistryPidDomain = string & { readonly [pidDomainPurpose]: 'claude_registry' };
+
+/**
+ * Consult 5 G08: typed view for BID1's common validated machine/boot/namespace
+ * derivation. BID1 wires producers and checked conversions; legacy serialized
+ * CallerScope/ProcessStamp fields remain readable strings without rewriting
+ * their persisted bytes. Missing run-domain evidence is explicit, never a caller
+ * domain fallback. The nominal tags do not themselves validate OS evidence.
+ */
+export interface ProcessDomainView {
+  readonly bootId: string;
+  readonly pidDomain: CallerPidDomain;
+  readonly runPidDomain: RunPidDomain | null;
+  readonly claudePidDomain: ClaudeRegistryPidDomain;
+}
+
 export interface Source {
   sourceId: SourceId;
   harness: Harness;

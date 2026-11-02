@@ -1,7 +1,7 @@
 import type { SessionEvidence } from './session-evidence.js';
 import type { LaunchProfile } from '../types/capabilities.js';
 import type { Harness, SessionRef, SourceId } from '../types/identity.js';
-import type { ObservationView, ReaderCheckpoint } from '../types/observation.js';
+import type { ObservationView, ReaderCheckpoint, ReaderContinuation } from '../types/observation.js';
 import type { ProcessStamp } from '../types/supervision.js';
 import type { RegistryRecord } from './registry-provider.js';
 import type { SessionBinding, SurfaceLocator } from './session-binding.js';
@@ -32,8 +32,8 @@ export interface ReaderResult {
   evidence?: SessionEvidence;
   /** Actual read/assembly work; elapsedMs is measured, the time budget is soft. */
   stats?: { bytesRead: number; recordsRead: number; elapsedMs: number };
-  /** Recovery needs a full record plus this reader's required delimiter/signature I/O. */
-  continuation?: { kind: 'record_needs_larger_slice'; minimumBytes: number };
+  /** Consult 5 G11: distinguish record-byte needs from bounded recovery progress and its coverage. */
+  continuation?: ReaderContinuation;
 }
 
 export interface SessionReader {

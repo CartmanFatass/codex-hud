@@ -10,7 +10,7 @@ import { acceptIntent, currentAuthority } from '../../../src/ledger/intents.js';
 import type { Ledger } from '../../../src/ledger/ledger.js';
 import { readContext, readLink, readRun } from '../../../src/ledger/records.js';
 import type { IntentAuthority } from '../../../src/ledger/types.js';
-import type { Link } from '../../../src/core/types/lifecycle.js';
+import type { Link, LocalResumeRequest, McpResumeRequest } from '../../../src/core/types/lifecycle.js';
 import type { Claim } from '../../../src/core/types/identity.js';
 import type { Run } from '../../../src/core/types/execution.js';
 import { taskDigest } from '../../../src/core/lifecycle.js';
@@ -22,6 +22,8 @@ import { digest } from '../../../src/core/canonical.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 type McpAuthority = Extract<IntentAuthority, { kind: 'mcp' }>;
+/** Consult 5 G03: shared request fields only; schema/digest/CAS behavior is B45-R2. */
+type DelegationArguments = Record<string, unknown> & Pick<McpResumeRequest, 'expectedRun'>;
 export interface DelegationOptions {
   ledger: Ledger;
   home: string;
@@ -43,7 +45,7 @@ export class DelegationService {
   async invoke(
     source: Extract<CallResolution, { ok: true }>,
     tool: string,
-    args: Record<string, unknown>,
+    args: DelegationArguments,
     started = performance.now()
   ): Promise<unknown> {
     if (!source.scopePremise) throw new Error('identity_unverified');
@@ -83,7 +85,7 @@ export class DelegationService {
   }
   private async accept(
     operation: 'spawn' | 'resume',
-    args: Record<string, unknown>,
+    args: DelegationArguments,
     authority: IntentAuthority,
     deadline: number,
     gate?: PrivateLedgerGate
@@ -284,13 +286,7 @@ export class DelegationService {
     return { ok: true, ...(result.outcome as object) };
   }
   /** Trusted B11 function entry; arguments cannot select an MCP or management actor. */
-  async resumeLocal(args: {
-    linkId: string;
-    request_key: string;
-    expectedRun: string;
-    mode: 'headless' | 'visible';
-    prompt?: string;
-  }): Promise<unknown> {
+  async resumeLocal(args: LocalResumeRequest): Promise<unknown> {
     if (!args.request_key || !args.expectedRun || !args.mode) throw new Error('local_resume_parameters_required');
     const gate = new PrivateLedgerGate(this.options.home);
     gate.check();

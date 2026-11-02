@@ -17,6 +17,8 @@ Oracle 已追认 provisional、同 owner predecessor、逐轮 runHandshake 等�
 
 [Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
 
+冻结后增补版本：`A9 + consult4 + F08-Pro + consult5-2026-11-02`。本轮依 [Oracle consult 5](../reviews/2026-11-02-astra-consult5.md) 增补，保留此前 C/D/E、consult 4 F01–F11、F08 Pro 与 A9-fix；ledger schema v1 不变，不授予尚未验收的生产能力。（consult 5 增补，G03）
+
 ## 数据模型
 
 | 对象 | 字段、身份及本契约的含义 |
@@ -41,7 +43,7 @@ OwnerKey 是稳定逻辑身份，不是 MCP/context_id；每次工具调用仍�
 | I-03-2 | 运行迁移仅用 02 的 R-02 表；report、关 pane、父退出、心跳过期都不能自行释放槽；uncertain 仍占实际或 provisional 槽 | TX+E；T-03-3、4、13 |
 | I-03-3 | 已证实关系的 resume 不回退 pending：MVP bound/reported→bound，同 link 新 run starting/握手 pending；旧报告/运行历史保留，closed 重开延期 | TX；T-03-5、6 |
 | I-03-4 | resume/handover 新握手只能绑定既有 child_ref；解析成别的 ref 不改 links.child_ref/runs.target_session_ref，run uncertain、最多候选；同 SessionRef 的可信文件连续性不能由路径猜测 | DB+TX；T-03-8、9；01 T-01-37 |
-| I-03-5 | resume 须 current_owner、bound/reported、同任务/正确 owner、真实 child、空槽/无未决冲突；旧 claim/binding 撤销，新 run/claim/代次/correlation 独立，原生消息 ID 可晚到 | TX；T-03-5–9 |
+| I-03-5 | resume 须 current_owner、bound/reported、同任务/正确 owner、真实 child、空槽/无未决冲突；旧 claim/binding 撤销，新 run/claim/代次/correlation 独立，原生消息 ID 可晚到；（consult 5 增补，G03）新意图 supplied expectedRun 与事务 currentRun 作 CAS；重放次序归 02，MCP 可省略、本地必填，旧准备前提仍重验 | TX；T-03-5–9 |
 | I-03-6 | report 只接受本 run 当前有效 MCP binding/context/generation；无 MCP、旧撤销绑定不授权。旧轮报告/拒绝事件不改变新 run/握手，不满足新 wait | DB+TX；T-03-10–12 |
 | I-03-7 | wait 入场原子解析并固定 runId，按该 run 的已提交 seq 读取；游标只到实际返回的最后事件；超时不写状态，不因新 run/其他 link 事件返回成功 | DB+TX；T-03-14–17 |
 | I-03-8 | predecessor 是同一个实际 child 的转交：旧 link handed_over/current_owner=0、新 link bound/current_owner=1、新 run starting 在一个意图事务；唯一当前父边，旧 link 只保留历史，无环 | DB+TX；T-03-18、19 |
@@ -147,6 +149,8 @@ runId/expectedRun 固定为选定目标，状态改变不能替换操作/选另�
 
 resume 在 02 的 OwnerKey×request_key 幂等查找之后，事务校验全部 I-03-5；验证首轮 task identity、该 backend/source 的受支持 resume 模板与模式。通过才为同一 link 分配新 run_seq/runId/expected_generation、撤销旧 claim/current child_binding、写本轮 call/correlation 锚点（原生消息ID可晚到）并占实际槽。MVP closed 重开 unsupported；活跃 headless 不能通过“打开”隐式启动可见副本。
 
+（consult 5 增补，G03）MCP `delegate_resume` 接受可选 expectedRun?:RunId，实际提供才纳入 02 params_digest；缺省保持旧 params_version=1 编码并由事务取 currentRun。先校验本次当前权限及已捕获来源前提，再查 OwnerKey×request_key；同参重放先于新意图 expectedRun、槽与能力门禁，不能因后来 currentRun 改变拒绝原结果。仅无记录时比较 supplied expectedRun 与事务内 currentRun，不符 expected_run_mismatch，零新 run/claim/slot/外部提交；本地仍必填。缺省不授权重用过时 preparation：runSeq、目标 ref、绑定代次、档案前提仍须重验，沿用 A4 resumeGate/prepareResume，不另建状态机。B13 基于 status/wait 决定续跑时默认携带所见 runId；mismatch 必须重读并重新决定，禁止自动换 key/expectedRun 连续重试。
+
 本地管理 resume 仅按01的 ControlInitiator/local_user 例外代表已登记 parent_ref 的逻辑 owner，不换 parent/link 归属。先鉴别管理主体、派生 canonical owner、查02幂等，同键同参先重放；新意图才校验 `--expected-run` 仍等于 currentRun，及 current_owner、bound/reported、同任务、真实 child、空槽、无冲突、受支持档案/模式等全部条件。逐 run 固定 launch_cwd/project_origin，新 claim/代次与相同意图事务不变；accepted审计记录actor.kind=local_user/UID/invocation/representedOwner。票据登记/提交按该类型重验，不使用已离线父 context 冒充 MCP；launch_call_id标本地来源（T-03-37）。
 
 同 owner handover 复用的是 child SessionRef，新建任务 link/run；旧 link 当前、槽空/无冲突、无自环/祖先环，图预算耗尽即拒绝。事务外读取材料、事务内重验，旧 link handed_over/current_owner=0、撤销旧 claim/binding，新 link bound/current_owner=1、新 run/claim/真实槽/幂等/事件同事务；失败整体回滚。接受后外部启动失败不撤销历史转交，新 run 按02取证，不重发（T-03-18、19）。
@@ -207,4 +211,4 @@ HUD只读关系/运行/报告与上述投影；uncertain提供缺证及对账入
 | T-03-34 (A9 fixture) | 复制resume/reconcile、重复按键、选中后currentRun变化、恶意label/report命令文本 → 仅安全模板复制，固定目标/操作及同一requestKey，无HUD控制进程/自动重试；入口未验证只诊断/原父途径 |
 | T-03-35 (A9 fixture) | 无报告且N成立的run.failed、failed报告但run.running、run.cancelling → launch_failed/non_execution且终态、任务失败但运行非终态、取消中仍非终态；不按图标折历史 |
 | T-03-36 (A9 fixture) | ledger currentRun=b、观测commit仍a；另无关run提高high-water、无库/空库 → b事实+有原因的缺失观测，不混a报告/stateSince/cwd；无关seq不全失效，asOfSeq分别null/0，游标分域且零读路径写 |
-| T-03-37 (A9 fixture) | local resume同键重放、旧expectedRun新key、MCP admin参数/父ref未确认、旧父context离线 → 按01/02先鉴别再重放；新意图拒旧目标/非例外；合法管理主体按typed权限重验，全部I-03-5不放宽 |
+| T-03-37 (A9 fixture) | local resume同键重放、旧expectedRun新key、MCP admin参数/父ref未确认、旧父context离线 → 按01/02先鉴别再重放；新意图拒旧目标/非例外；合法管理主体按typed权限重验，全部I-03-5不放宽；（consult 5 增补，G03）B45-R2 补 MCP 指定/缺省两支；旧键在新轮出现后重放，同键改 expectedRun 冲突；同旧 run 不同 key 竞争最多一轮，竞争轮已结束也拒旧 expectedRun，缺省兼容/local 必填；B13 mismatch 重读后重新决定，零自动换 key/目标重试 |

@@ -10,6 +10,8 @@
 
 冻结后生效版本：`A9 + consult4-2026-11-01`。以下引用 [Oracle consult 4](../reviews/2026-11-01-astra-consult4.md) 的位置来源及 checkpoint 增补；此前裁决、export v1 词表和 ledger schema v1 保留。（consult 4 增补，F02）（consult 4 增补，F09）
 
+冻结后增补版本：`A9 + consult4 + F08-Pro + consult5-2026-11-02`。本轮依 [Oracle consult 5](../reviews/2026-11-02-astra-consult5.md) 增补，保留此前 C/D/E、consult 4 F01–F11、F08 Pro 与 A9-fix；ledger schema v1 不变，不授予尚未验收的生产能力。（consult 5 增补，G07）（consult 5 增补，G09）（consult 5 增补，G11）
+
 ## 数据模型
 
 ### 三个独立的范围
@@ -68,6 +70,10 @@ public v3 与内部 scan v3 恰好数字相同不表示兼容。版本检查先�
 
 （consult 4 增补，F09）06 的 durable 语义变化必须递增受影响 readerVersion，含 A4 helper、A6 facade/底层 RolloutParser 和受影响的 Claude 锚点缓存；旧 raw-tail checkpoint 不直接续用、不只删除字节后保留旧 offset。最小处理为 collect lease 围栏内受控失效/重建该 source 缓存，显式重置连续性，并以同一 ObservationCommit 发布一致 checkpoint/summary/continuity/notices；含 raw tail 的旧缓存和未发布 bundle 在此受控缓存更新中删除/替换，不只标无效后永久保留原件。raw bytes 不得藏入其他 adapter extension、持久 token/parser state、日志、临时 bundle 或 binary/base64/V8 payload；普通 offset 回到最后完整记录边界，超大行仅存可跨 slice/重启前进的 discarding/丢弃游标，EOF 不完整行仍 partial/incomplete_tail。公共 checkpoint 结构若不兼容则另升 checkpoint schema，不能借 ledger schema v1 掩盖；ledger DDL/user_version 不变，不启动全库迁移服务，D2 完整迁移框架仍延期。
 
+（consult 5 增补，G09）checkpoint 恢复优化采用显式版本化 compact DTO，热路径 inline recovery 实际编码≤256 KiB；必要的增长精确集合转同 source 观测 SQLite 内按 ref/sourceGeneration/恢复版本隔离的增量索引，内容身份/边界随 checkpoint 引用且同事务发布。完整公开参数/代码/长输出与任意显示/材料缓存对象图不进 hot recovery，不截断必要去重ID/未闭合调用/时钟/pending；保旧 public snapshot/--json v2 字段口径。仍支持的旧 V8 仅走06 G05有界兼容/受控重建，不将可deserialize视为安全。
+
+（consult 5 增补，G11）reader 语义改变 bump readerVersion；结构不兼容同步升级相应 checkpoint/内部观测私有格式并拒绝旧写者，ledger user_version=1、export v1、public snapshot/旧 --json 版本均不联动。由持 collect lease 的受控缓存重建切换旧 reader，清除/替换旧缓存、重置不可证连续性、保正确 sourceGeneration/显式 gap；不能删 payload 后沿旧 offset 当迁移。若改观测SQLite布局，独立处理私有格式/旧writer围栏，不新增通用在线迁移服务。新布局补前后提交崩溃、旧writer迟写、内容复用但lease失效、projection/recovery同commit及丢通知/重复读notice不重发；复用未受影响A9/B12证据，预算不放宽。
+
 v3 只有一份权威类型：`src/core/interfaces/snapshot-v3.ts` 的 `UniversalSnapshotV3`/`UniversalSnapshotNode`，`src/core/types/export.ts` 仅 re-export；A4/A6 共用同一 fixture。`rootRef:SessionRef|null`（未绑定根为 null），`tree.counts={confirmedSessions:number,delegationIntents:number,jobs:number}`，计数分别为已确认 session、未绑定 delegationIntent、未来 job。完整 node 在06 ObservationView上必有 `parent,links,candidates,host,actions`（parent/host可null，集合可空），不另起较窄节点形状。
 
 v3 的加法槽为 `universal`：`rootRef,sourceId,asOfSeq,observationStamp,asOf,observedAt,coverage,tree{nodes,counts,continuation?},notices`；每node含06 `DisplayNodeIdentity`（session(ref) / delegationIntent(linkId) / 未来job(ref)）、depth/loaded、分别包装的`spent.tokens`与必有`spent.costUsd:Metric<number>`、WorkspaceContext、五维projection（`freshness.state`）、stateKey/stateSince/stateSinceBasis、isRunTerminal/conflict及各自observationStamp，03关系/本轮run/报告/候选/parent/reconciliation/带主体resumable/ActionDescriptor，05 host定位结果。intent不用假ref、不计已确认session，绑定由B9合并；launch_failed是未执行失败，不冒充turn失败，终态不按图标判。Job holderLabel仅为C4读取派生槽，不提前冻结browser DDL。
@@ -77,6 +83,18 @@ asOfSeq只指ledger快照高水位（无库null、已打开空库0），observat
 ### 本地委派元数据导出 v1
 
 MVP由B18提供按需只读 `hud link export --json --schema-version 1 [--paths local]`；可显式限定link范围，默认整个ledger。它独立于旧`codex-hud --json` v2及通用snapshot v3，不公开受支持的SQLite表/view/事件JSONL，不需要HUD正在运行或B16/B17。A4先冻结以下类型与合成golden fixture，生产producer在A9+B2后；toktrack consumer/未到的字段清单不阻A4/A9/B15。
+
+（consult 5 增补，G07）B11 的唯一查询入口保持 `src/core/export-query.ts` 私有 metadata-only 投影，不为了目录整理搬模块、套 broad LedgerReader/ORM 或公开 SQL；B2 拥有底层 schema/读取语义，B18 拥有受限投影/export v1，后续 schema 变化共同维护回归。B11 只消费函数，不自己拼 SQL；签名原样：
+
+```ts
+queryDelegationExport(hudHome, {
+  schemaVersion: 1,
+  paths?: 'none' | 'local',
+  scope?: { kind: 'all' } | { kind: 'links'; linkIds: string[] }
+}): Promise<ExportResult<ExportQueryValue>>
+```
+
+（consult 5 增补，G07）使用 native readOnly、无迁移/初始化、busy_timeout=0、单读事务取 rows 与全局high-water，尽早结束事务，在复制的固定输入上组装/编码，完整JSON准备好才输出；10000runs/16MiB/1000ms软预算不变，超限无成功文档。不加载 claim 明文、任意event/evidence payload/正文再交serializer清理；历史绑定与逐轮端点仍按本文，不以当前report权限删除历史事实。B11 export可直接接线，不等B16/B6/B17或B2搬模块；B14复用producer证据，只补真实接线改变的断言。
 
 | 层 / 字段 | v1 必需类型与语义 |
 |---|---|
@@ -160,12 +178,12 @@ SnapshotWriter继续原子写0600、仅事实变化且最多1次/s；成功读/�
 | I-07-2 | 新来源及delegated正文默认不取料/不外发；父/旧Codex授权不扩展，私有/未知类型永不成为材料 | T-07-2、4 |
 | I-07-3 | 所有生成/repair/cache均经B17唯一入口；provenance取并集、队列发送与缓存回写复验，不从派生摘要洗来源 | T-07-5、6、7 |
 | I-07-4 | 授权具体实际recipient；off零网络、scope/开关/预算独立；旧brief开关不能覆盖其他目的 | T-07-3、8、9 |
-| I-07-5 | public/checkpoint/ledger/scan/delegation-export五版本独立；未知版本不盲写/自动降级；HUD不迁移ledger；raw-tail durable 语义变更须 bump readerVersion，旧缓存按06受控重建/连续性重置并删除或替换旧 raw-tail 缓存/未发布 bundle，不仅清数组沿旧offset（consult 4 增补，F09） | T-07-10、11、26 |
+| I-07-5 | public/checkpoint/ledger/scan/delegation-export五版本独立；未知版本不盲写/自动降级；HUD不迁移ledger；raw-tail durable 语义变更须 bump readerVersion，旧缓存按06受控重建/连续性重置并删除或替换旧 raw-tail 缓存/未发布 bundle，不仅清数组沿旧offset（consult 4 增补，F09）；（consult 5 增补，G09）compact DTO/≤256KiB inline及同库精确增长索引引用版本化，不截断必要状态，旧V8有界兼容/重建；（consult 5 增补，G11）reader语义/不兼容checkpoint和观测私有布局分别升版拒旧writer，持lease受控重建保谱系/gap，不删payload沿旧offset，ledger/export/public版本不联动 | T-07-10、11、26 |
 | I-07-6 | v3加法与v2出口隔离，旧字段/类型/缺失/时间/计数语义不变；新投影ms epoch | T-07-12、13 |
 | I-07-7 | 旧命令参数、session+home选择、--json只读及错误/退出行为保留 | T-07-14、15 |
 | I-07-8 | A–D旧状态可读不自动迁；E按source分别迁设置/材料/外发/预算，不合并授权或改用户harness设置 | T-07-16、17 |
-| I-07-9 | export v1单次只读一致ledger快照、ledgerId命名空间、逐run/端点空值/稳定排序及完整scope独立于HUD显示截断，不公开内部表或冒充CDC | T-07-20、21、24、25 |
-| I-07-10 | 本地导出仅元数据白名单与显式路径；binding/handshake/Git原因/cwd来源分别用四张封闭代码表，键必需、值Code或null、未知字符串→null、缺键或非string/null拒解码；内外类型分离，不授B17外发权；SessionEvidence 的 transcript 显式映射既有 transcript 位置代码，内部自由诊断不猜测/扩词表、不授身份或覆盖启动历史（consult 4 增补，F02） | T-07-22、26 |
+| I-07-9 | export v1单次只读一致ledger快照、ledgerId命名空间、逐run/端点空值/稳定排序及完整scope独立于HUD显示截断，不公开内部表或冒充CDC；（consult 5 增补，G07）B11只调用queryDelegationExport；B2底层/B18受限投影共同守schema回归，native readOnly/busy_timeout=0/单快照/先结束事务后编码，不公开SQL或另建broad reader | T-07-20、21、24、25 |
+| I-07-10 | 本地导出仅元数据白名单与显式路径；binding/handshake/Git原因/cwd来源分别用四张封闭代码表，键必需、值Code或null、未知字符串→null、缺键或非string/null拒解码；内外类型分离，不授B17外发权；SessionEvidence 的 transcript 显式映射既有 transcript 位置代码，内部自由诊断不猜测/扩词表、不授身份或覆盖启动历史（consult 4 增补，F02）；（consult 5 增补，G07）metadata-only SQL在读取端限制，禁止先取claims明文/任意payload/正文再清理 | T-07-22、26 |
 | I-07-11 | 每run必有固定operation，缺失/非法拒解码；完整ref join、当前确认边与原始spawn启动历史分开，currentOwner/predecessor不证明整会话起源或用量归属；未确认/冲突/历史/declared/coverage不升级强度，resume/handover不迁旧用量 | T-07-20、23、24、26 |
 | I-07-12 | v3消费06联合身份/独立成本Metric/语义时钟与终态/双域快照戳，未知不改v2兼容例外，C holder只留派生槽 | T-07-27 |
 
@@ -212,8 +230,8 @@ E的显式迁移为 `inspect → preview per-source mapping → write new privat
 | T-07-7 | B | 入队后撤销、改recipient/env route、迟回/重试 → 发送前/写缓存前复验，不向新目标发旧材料、不换服务绕过deny |
 | T-07-8 | B | API实际endpoint/base path/账号切换、agy档案指向远端、未知CLI目标 → 精确recipient授权或拒绝，密钥不成为许可，redirect继续拒绝 |
 | T-07-9 | B | backend off、paused、briefAgents off但progress/jobs开、Cards preset/reset、explicit probe → off零调用；其他开关各按目的门禁，显示设置不增权限，paused probe只合成 |
-| T-07-10 | A9 | snapshot2/3、scan3/后继、checkpoint未知版本、ledger0/1/更高版本 → 各版本域独立，未知不盲写、不JSON回退，HUD无迁移权限；raw-tail 旧 checkpoint 即使 schemaVersion 已知也不得直接续用/仅清数组沿旧offset，readerVersion 失配由持采集租约入口受控重建而非 ledger 迁移（consult 4 增补，F09） |
-| T-07-11 | B | 变更scan提取语义与checkpoint parser版本、旧新writer共存 → bump/隔离路径，旧缓存不误用，较新checkpoint不覆写，06一致提交仍有效；对 raw-tail durable 语义递增 readerVersion、明确连续性重置，collect lease 围栏内删除/替换含 raw tail 的旧缓存及未发布 bundle，不永久保留原件；A4/A6/RolloutParser/B8 序列化均无敏感哨兵或嵌套原始尾字节，offset/摘要/时钟同完整边界，结构不兼容另升 checkpoint schema、ledger v1 不变（consult 4 增补，F09） |
+| T-07-10 | A9 | snapshot2/3、scan3/后继、checkpoint未知版本、ledger0/1/更高版本 → 各版本域独立，未知不盲写、不JSON回退，HUD无迁移权限；raw-tail 旧 checkpoint 即使 schemaVersion 已知也不得直接续用/仅清数组沿旧offset，readerVersion 失配由持采集租约入口受控重建而非 ledger 迁移（consult 4 增补，F09）；（consult 5 增补，G09）compact DTO及精确索引引用版本独立，旧V8有界兼容/拒绝未知，≤256KiB资源边界不改public v2字段/口径 |
+| T-07-11 | B | 变更scan提取语义与checkpoint parser版本、旧新writer共存 → bump/隔离路径，旧缓存不误用，较新checkpoint不覆写，06一致提交仍有效；对 raw-tail durable 语义递增 readerVersion、明确连续性重置，collect lease 围栏内删除/替换含 raw tail 的旧缓存及未发布 bundle，不永久保留原件；A4/A6/RolloutParser/B8 序列化均无敏感哨兵或嵌套原始尾字节，offset/摘要/时钟同完整边界，结构不兼容另升 checkpoint schema、ledger v1 不变（consult 4 增补，F09）；（consult 5 增补，G11）新reader/不兼容checkpoint/观测SQLite私有布局有各自版本和旧writer围栏；受控重建保谱系/gap、不删payload沿旧offset；新布局崩溃/迟写/失效lease复用/投影恢复同commit/通知去重定向补验，ledger v1/export v1/public版本不联动 |
 | T-07-12 | B | Codex既有synthetic snapshot fixture逐字段比较，含subtasks/reviews/node kind/空数组/缺值/token兼容零/nullable数据/完整bridgeHealth → v2值、枚举、布尔与number类型、语义不变，v3扩展独立 |
 | T-07-13 | B | v3 universal使用ms epoch；旧updatedAt/approvalSince/速率样本/health的ISO字符串与bridgeHealth.lastSuccessAtMs=1700000000000的number并存；另panel空segments、bar→panel原子交接 → 逐字段保留类型/单位，旧writer不删新文件、时钟不强制写 |
 | T-07-14 | B | 旧help/self-check/list/kill、attach/new-session/--透传、裸brief与dry-run[FILE] → 原参数/副作用与退出语义保留，dry-run无模型调用且不冒称全目的预览 |
@@ -222,11 +240,11 @@ E的显式迁移为 `inspect → preview per-source mapping → write new privat
 | T-07-17 | B | A–D兼容读取与旧settings未知键过滤、授权文件坏/无、旧缓存无provenance → 不自动迁移/删除/扩权，不把未持久化grant当allow |
 | T-07-18 | C | Jev各provider/account合成任务、同源未授权材料、显式付费确认/浏览器资源 → 材料授权、执行许可/预算/资源分别验，不因job存在默认外发 |
 | T-07-19 | v1.1 | F远程routing建议与auto fixture → routing目标未授权时零请求；有建议许可仍无auto执行权，原Codex摘要许可不补齐 |
-| T-07-20 | A9 | 合成golden覆盖完整envelope/必需operation、双source/threadId/null端点时间、逐run稳定排序；首spawn/同link两次resume/handover首轮及其后resume、失败未绑定spawn → 精确枚举与ledger键，scope/coverage/paths完整，不受200显示节点限制 |
-| T-07-21 | A9 | 读快照期间并发新run/回填、高水位增长、无库/未知schema/权限拒绝 → rows+asOfSeq同ledger快照，明确失败而非成功空全集，零初始化/迁移/Git/采集/reconcile |
-| T-07-22 | A9 | 隐私哨兵与paths两模式保留；四张代码表逐允许值（含claim_*、stale_binding、timeout/not_git）、跨字段误用/大小写/free-text→null，显式null保留、不截取拼接；只local含launchCwd/worktreeRoot，其余路径/正文始终不出，无B17许可借用；合格 SessionEvidence transcript 位置明确映射既有 transcript，不从 claude.transcript.cwd 自由文本猜代码，未知映射 null、不增加词表值（consult 4 增补，F02） |
-| T-07-23 | A9 | 同sessionId双home、Claude原生agentId、缺SourceId、同cwd/pane/mtime → 只完整ref精确join，不猜home/root；coverage无记录不否定其他委派来源 |
-| T-07-24 | A9 | spawn转历史、同link两次resume、handover新link及后续resume、仅导出后继link、失败未绑定spawn → operation直接保留且前驱引用不补猜祖先；当前确认父边独立新轮pending，旧spawn不成第二边；历史claim正常撤销不抹已确认启动，pending/null/non_execution不伪造起源；不按逐run时间虚拆日成本或搬旧用量 |
-| T-07-25 | A9 | 10000/10001条、16MiB边界/超限、1000ms软预算超限、缩小link范围/组装失败 → 边界内可成功，超限明确失败且无成功截断全集；完整JSON备妥才输出，consumer成功且coverage完整才替换范围缓存，真实读事务寿命另记（B18实测） |
-| T-07-26 | A9 | 缺必需字段/缺或非法operation/未知export主版本拒解码；四表字段键必需，null可用、未知字符串正规化null、非string/null拒绝，两paths模式一致；workspace=null无需内部键；未知可选字段忽略/状态保守，五版本域独立且不默认spawn |
+| T-07-20 | A9 | 合成golden覆盖完整envelope/必需operation、双source/threadId/null端点时间、逐run稳定排序；首spawn/同link两次resume/handover首轮及其后resume、失败未绑定spawn → 精确枚举与ledger键，scope/coverage/paths完整，不受200显示节点限制；（consult 5 增补，G07）B11真实CLI接线只消费既有queryDelegationExport成功值，逐run稳定输出与producer golden保持，不需B16/B17或新ORM |
+| T-07-21 | A9 | 读快照期间并发新run/回填、高水位增长、无库/未知schema/权限拒绝 → rows+asOfSeq同ledger快照，明确失败而非成功空全集，零初始化/迁移/Git/采集/reconcile；（consult 5 增补，G07）native readOnly、busy_timeout=0、单事务rows/high-water；B2 schema/B18受限投影回归共同维护，B11不拼SQL，不迁移初始化/要求搬模块 |
+| T-07-22 | A9 | 隐私哨兵与paths两模式保留；四张代码表逐允许值（含claim_*、stale_binding、timeout/not_git）、跨字段误用/大小写/free-text→null，显式null保留、不截取拼接；只local含launchCwd/worktreeRoot，其余路径/正文始终不出，无B17许可借用；合格 SessionEvidence transcript 位置明确映射既有 transcript，不从 claude.transcript.cwd 自由文本猜代码，未知映射 null、不增加词表值（consult 4 增补，F02）；（consult 5 增补，G07）SQL投影不先载入claim明文/任意event/evidence正文或payload再清理，完整JSON备妥后才输出 |
+| T-07-23 | A9 | 同sessionId双home、Claude原生agentId、缺SourceId、同cwd/pane/mtime → 只完整ref精确join，不猜home/root；coverage无记录不否定其他委派来源；（consult 5 增补，G07）B11接线保完整ref/source/thread判等，不以导出consumer需要扩读取到正文或当前进程事实 |
+| T-07-24 | A9 | spawn转历史、同link两次resume、handover新link及后续resume、仅导出后继link、失败未绑定spawn → operation直接保留且前驱引用不补猜祖先；当前确认父边独立新轮pending，旧spawn不成第二边；历史claim正常撤销不抹已确认启动，pending/null/non_execution不伪造起源；不按逐run时间虚拆日成本或搬旧用量；（consult 5 增补，G07）历史绑定按该轮证据，旧claim/current report权限撤销不删除已确认历史；逐轮端点不挪用当前值 |
+| T-07-25 | A9 | 10000/10001条、16MiB边界/超限、1000ms软预算超限、缩小link范围/组装失败 → 边界内可成功，超限明确失败且无成功截断全集；完整JSON备妥才输出，consumer成功且coverage完整才替换范围缓存，真实读事务寿命另记（B18实测）；（consult 5 增补，G07）单快照复制rows后尽早结束事务，在固定输入组装/编码，真实行数/字节/总墙钟/事务寿命记录；超额无成功文档，10000/16MiB/1000ms不变 |
+| T-07-26 | A9 | 缺必需字段/缺或非法operation/未知export主版本拒解码；四表字段键必需，null可用、未知字符串正规化null、非string/null拒绝，两paths模式一致；workspace=null无需内部键；未知可选字段忽略/状态保守，五版本域独立且不默认spawn；（consult 5 增补，G07）queryDelegationExport签名/export v1不变，不公开SQL接口；复用B18未变证据，只补真实B11接线变化，不与checkpoint私有格式联动 |
 | T-07-27 | A9 | 两个import路径共用同一v3 fixture、nullable rootRef、confirmedSessions/delegationIntents/jobs计数、完整node的parent/links/candidates/host/actions；v3 intent/session/job槽、tokens已知成本未知、launch_failed/failed报告仍running、ledger-b+观测-a → 身份/Metric/freshness.state/stateSince/basis/isRunTerminal与双域stamp按06，不造session/成本/连续性/跨库原子，旧v2缺省/时间仍兼容 |
