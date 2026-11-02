@@ -73,6 +73,11 @@ const answer = (text: string, at: number, extra: Record<string, unknown> = {}) =
     },
   });
 
+/** Work a test can see in flight, as the fake model and the counting reader report it. */
+const work = { reads: 0, calls: 0 }; // a rollout read, a model call not yet answered
+/** The longest a test waits for its jobs: a hang fails with a message instead of flaking. */
+const SETTLE_TIMEOUT_MS = 2000;
+
 /** A fake model: answers by feature, records every request. Never a real call. */
 function fakeModel(reply: (request: ModelRequest) => ModelResult): { model: SmallModel; asked: ModelRequest[] } {
   const asked: ModelRequest[] = [];
@@ -80,13 +85,62 @@ function fakeModel(reply: (request: ModelRequest) => ModelResult): { model: Smal
     configure() {},
     submit(request: ModelRequest) {
       asked.push(request);
-      return { result: Promise.resolve(reply(request)), cancel() {} };
+      work.calls++;
+      const result = Promise.resolve(reply(request));
+      void result.then(
+        () => work.calls--,
+        () => work.calls--
+      );
+      return { result, cancel() {} };
     },
   } as unknown as SmallModel;
   return { model, asked };
 }
-const settle = async () => {
-  for (let i = 0; i < 3; i++) await new Promise((resolve) => setTimeout(resolve, 15));
+/**
+ * A rollout reader that counts its read: the fixtures are far below the tail
+ * the jobs read, so the whole file is their tail. A test that lets the jobs do
+ * real I/O must pass this (or count its own reader), or `settle` may return
+ * before the read has finished; a test of the production reader instead waits
+ * with `until` for the reading it expects.
+ */
+const readRollout = async (file: string): Promise<string> => {
+  work.reads++;
+  try {
+    return await fs.promises.readFile(file, 'utf8');
+  } finally {
+    work.reads--;
+  }
+};
+const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+/**
+ * Wait until the work the last `update` started has finished: every read done,
+ * every model call answered and its reply landed, and nothing new started from
+ * them. Two quiet ticks in a row, so a chain that starts more work is seen; the
+ * deadline turns a hang into a failure that names what is still in flight.
+ */
+const settle = async (): Promise<void> => {
+  const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+  let quiet = 0;
+  while (quiet < 2) {
+    if (Date.now() > deadline)
+      assert.fail(
+        `the jobs did not settle in ${SETTLE_TIMEOUT_MS} ms: ${work.reads} read(s) and ${work.calls} call(s) in flight`
+      );
+    await tick();
+    quiet = work.reads === 0 && work.calls === 0 ? quiet + 1 : 0;
+  }
+};
+/**
+ * Wait until `done` holds, yielding to the event loop until the deadline: for
+ * work the counters cannot see, such as the production reader's own file read.
+ * A hang fails naming what was awaited instead of flaking.
+ */
+const until = async (done: () => boolean, what: string): Promise<void> => {
+  const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+  while (!done()) {
+    if (Date.now() > deadline) assert.fail(`the jobs did not ${what} in ${SETTLE_TIMEOUT_MS} ms`);
+    await tick();
+  }
 };
 const all: JobSwitches = {
   resultDigest: true,
@@ -232,7 +286,7 @@ test('a finished agent is digested once from its whole final answer, into its lo
     text: '{"conclusion":"Cache race found","basis":"read cache.ts","caveats":"not run"}',
   }));
   const log = new AgentLog();
-  const jobs = new ModelJobs({ model, log });
+  const jobs = new ModelJobs({ model, log, read: readRollout });
   const done = node('a', 'auditor', 'completed', {
     rolloutPath: rollout,
     statusAt: new Date(now - 30_000),
@@ -272,6 +326,38 @@ test('a finished agent is digested once from its whole final answer, into its lo
   jobs.update(input(tree([old]), { inspected: 'b' }));
   await settle();
   assert.equal(asked.length, 2, 'unless it is inspected');
+});
+
+test('the production reader reads a small rollout from disk: no injected read, and the digest lands', async (t: TestContext) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-tail-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const rollout = path.join(dir, 'agent.jsonl');
+  fs.writeFileSync(
+    rollout,
+    `${answer('Read from the file by the jobs themselves, conclusion at the end', now - 90_000)}\n`
+  );
+  const { model, asked } = fakeModel(() => ({
+    ok: true,
+    text: '{"conclusion":"Disk reader works","basis":"the production tail read","caveats":""}',
+  }));
+  const log = new AgentLog();
+  // No `read`: the jobs use production `readTail`, which opens the file itself.
+  const jobs = new ModelJobs({ model, log });
+  const done = node('disk', 'auditor', 'completed', {
+    rolloutPath: rollout,
+    statusAt: new Date(now - 30_000),
+    turnStartedAt: new Date(now - 120_000),
+  });
+  const agents = tree([done]);
+  jobs.update(input(agents));
+  await until(() => log.latest('disk', new Set(['digest'])) !== undefined, 'digest a rollout read from disk');
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].feature, 'digest');
+  assert.match(asked[0].prompt, /conclusion at the end/, 'the tail of the answer is sent');
+  assert.equal(asked[0].cacheKey, `${rollout}:${now - 90_000}:en`);
+  assert.equal(log.latest('disk', new Set(['digest']))?.text, 'Disk reader works · Basis: the production tail read');
+  jobs.apply(agents, all, 'en');
+  assert.equal(done.digest, 'Disk reader works · Basis: the production tail read');
 });
 
 test("a stage's answer is digested from the ledger: a finished agent's last one, and a long one while a lead works on", async () => {
@@ -519,7 +605,7 @@ test("failure causes: a failed tool call and a failed agent, once each, on the t
     text: request.prompt.includes('npm') ? 'The npm script "lint" does not exist' : 'Ran out of context',
   }));
   const log = new AgentLog();
-  const jobs = new ModelJobs({ model, log });
+  const jobs = new ModelJobs({ model, log, read: readRollout });
   const call = {
     id: 'call-1',
     name: 'exec_command',
@@ -569,6 +655,36 @@ test("failure causes: a failed tool call and a failed agent, once each, on the t
     'Ran out of context',
     'from the log, with no call'
   );
+});
+
+test('above the tail limit the production reader keeps the last MiB: an old error event is not read as the cause', async (t: TestContext) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-tail-cut-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const rollout = path.join(dir, 'long.jsonl');
+  const early = line({
+    timestamp: iso(now - 120_000),
+    type: 'event_msg',
+    payload: { type: 'error', message: 'EARLY-ERROR-OUTSIDE-THE-TAIL' },
+  });
+  const late = line({
+    timestamp: iso(now - 1000),
+    type: 'response_item',
+    payload: { type: 'function_call_output', output: 'no such file: synthetic\nProcess exited with code 1' },
+  });
+  // The filler line pushes the early error out of the 1 MiB tail the reader keeps.
+  fs.writeFileSync(rollout, `${early}\n${'x'.repeat(1024 * 1024 + 200_000)}\n${late}\n`);
+  const { model, asked } = fakeModel(() => ({ ok: true, text: 'Missing synthetic input' }));
+  // No `read`: the jobs use production `readTail`, which cuts the file to its tail.
+  const jobs = new ModelJobs({ model, log: new AgentLog() });
+  const failed = node('cut', 'worker', 'error', { rolloutPath: rollout, statusAt: new Date(now - 2000) });
+  jobs.update(input(tree([failed]), { switches: { ...NO_JOBS, failureCause: true } }));
+  const event = () => jobs.withCauses<{ id: string; cause?: string }>([{ id: `agent:cut:failed:${now - 2000}` }])[0];
+  await until(() => event().cause !== undefined, 'name the cause of a long rollout');
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].feature, 'cause');
+  assert.match(asked[0].prompt, /no such file: synthetic/, 'the failed tool output inside the tail is read');
+  assert.doesNotMatch(asked[0].prompt, /EARLY-ERROR-OUTSIDE-THE-TAIL/, 'the error event beyond the tail is not');
+  assert.equal(event().cause, 'Missing synthetic input');
 });
 
 test('the approval description is for the pending command only, and a verdict is dropped', async () => {
@@ -804,6 +920,7 @@ test('a rollout read completed after a language restart cannot revive its obsole
   const jobs = new ModelJobs({
     model,
     log,
+    // Held open on purpose and resolved by the test: not counted as work in flight.
     read: () =>
       new Promise<string>((resolve) => {
         reads.push(resolve);
