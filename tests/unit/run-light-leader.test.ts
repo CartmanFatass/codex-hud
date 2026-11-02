@@ -1,3 +1,4 @@
+import { launchNodeGroup } from '../run/native-group.js';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
@@ -14,7 +15,6 @@ import {
   encodeGroupEnvironment,
   launchGroup,
   launchShellGroup,
-  launchNodeGroup,
   preflightGroupEnvironment,
   processState,
   inspectGroup,

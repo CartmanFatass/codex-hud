@@ -75,7 +75,16 @@ try {
       .filter(Boolean)
       .map(Number)
       .filter((pid) => pid !== r.snapshot.meta.command_leader.pid)
-      .map((pid) => ({ pid, stat: stat(pid) })),
+      .map((pid) => ({
+        pid,
+        role:
+          Number(
+            readFileSync(`/proc/${r.snapshot.meta.command_leader.pid}/stat`, 'utf8').split(') ').at(-1).split(/\s+/)[1]
+          ) === pid
+            ? 'waiter'
+            : 'forwarder',
+        stat: stat(pid),
+      })),
     heartbeat: r.snapshot.run.heartbeatSeq,
     events: r.snapshot.events.length,
   }));
@@ -84,11 +93,12 @@ try {
     const s = JSON.parse(readFileSync(join(r.home, 'facts.json'), 'utf8')).snapshot;
     const sup = stat(r.child.pid),
       helper = stat(r.snapshot.meta.scope.group_leader.pid);
-    const shells = before[i].shells.map(({ pid, stat: previous }) => {
+    const shells = before[i].shells.map(({ pid, role, stat: previous }) => {
       const current = stat(pid);
       if (current.start !== previous.start) throw new Error('owned auxiliary shell changed instance');
       return {
         ...current,
+        role,
         userTicks: current.userTicks - previous.userTicks,
         systemTicks: current.systemTicks - previous.systemTicks,
         ticks: current.ticks - previous.ticks,

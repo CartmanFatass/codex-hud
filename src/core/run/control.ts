@@ -13,7 +13,13 @@ import {
   scopeUpdateAllowed,
 } from '../supervision.js';
 import type { ReconcileEvidence, ReconcileFact } from '../types/execution.js';
-import type { FinalExitReceipt, ProcessStamp, RunLaunchInput, RunMeta } from '../types/supervision.js';
+import type {
+  FinalExitReceipt,
+  ProcessStamp,
+  RunLaunchInput,
+  RunMeta,
+  SupervisorSignalFact,
+} from '../types/supervision.js';
 import type { LocalManager, RunFactPort, RunSnapshot, CancelIntent } from './port.js';
 import { RunArtifacts } from './artifacts.js';
 import { launchVisible, preflightVisible, type VisibleProfile, type VisibleProcess } from './visible-process.js';
@@ -249,6 +255,38 @@ export class HeadlessRunControl implements RunControl {
   logs(runId: string, stream: 'stdout' | 'stderr', offset = 0, limit = 65_536) {
     return RunArtifacts.open(this.hudHome, runId).readLog(stream, offset, limit);
   }
+  /** A partial observation by the original writer, independent of cancellation. */
+  private supervisorSignals(runId: string, supervisor: ProcessStamp, wake: () => void): () => Promise<void> {
+    const pending = new Map<NodeJS.Signals, Promise<void>>();
+    const handlers = new Map<NodeJS.Signals, () => void>();
+    for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+      const handler = () => {
+        if (pending.has(signal)) return; // Coalesce only this signal while its writes are in flight.
+        const observedAt = Date.now();
+        const task = Promise.all([
+          // A failed fact leaves a gap; it neither prevents cancellation nor supplies exit evidence.
+          this.port
+            .raw(runId, supervisor, 'supervisor.signal', { signal, observedAt } satisfies SupervisorSignalFact)
+            .catch(() => {}),
+          this.port
+            .acceptCancel(runId, this.actor, 10_000)
+            .then((intent) => {
+              if (intent) wake();
+            })
+            .catch(() => {}),
+        ])
+          .then(() => {})
+          .finally(() => pending.delete(signal));
+        pending.set(signal, task);
+      };
+      handlers.set(signal, handler);
+      process.on(signal, handler);
+    }
+    return async () => {
+      for (const [signal, handler] of handlers) process.off(signal, handler);
+      await Promise.allSettled([...pending.values()]);
+    };
+  }
   /** Exactly one invocation in the supervisor process; call only with a committed intent. */
   async start(options: StartOptions): Promise<void> {
     const argv = validateStart(options),
@@ -268,335 +306,335 @@ export class HeadlessRunControl implements RunControl {
     const self = readProcess(process.pid)?.stamp;
     if (!self) throw new Error('supervisor_stamp_unavailable');
     await this.port.register(id, options.ticket, launchDigest(input), self);
+    let signalWake = () => {};
+    let logFds: { stdout: number; stderr: number } | null = null;
+    const closeSignals = this.supervisorSignals(id, self, () => signalWake());
     try {
-      await options.afterRegistered?.();
-    } catch {
-      // A best-effort workspace capture cannot revoke an accepted execution
-      // ticket or prevent its sole launch. A missing snapshot remains unknown.
-    }
-    const artifacts = RunArtifacts.create(this.hudHome, id),
-      logs = artifacts.openLogs();
-    const initial = await this.port.read(id),
-      r = initial.run;
-    let meta: RunMeta = {
-      schema_version: 1,
-      run_id: id,
-      link_id: r.linkId,
-      source_id: r.sourceId,
-      binding_generation: r.expectedGeneration,
-      mode: input.mode,
-      supervision_strategy: visible ? 'wrapper' : 'headless',
-      supervisor: self,
-      command_leader: null,
-      harness: null,
-      scope: null,
-      launch_digest: r.launchDigest,
-      profile_digest: input.profileDigest,
-      launch_call_id: r.launchCallId,
-      launch_correlation_id: r.launchCorrelationId,
-      created_at: r.createdAt,
-      stdin_mode: input.stdin,
-      capture: visible ? 'tty_passthrough' : 'file',
-      launch_cwd: r.launchCwd,
-      project_origin: r.projectOrigin,
-    };
-    artifacts.writeMeta(meta);
-    let seq = 1,
-      stopping = false,
-      heartbeatBusy = false,
-      parentGone = false,
-      writerLost = false,
-      discoveryFinished = false,
-      clockAnomalyRecorded = false,
-      cancelTask: Promise<void> | null = null;
-    let group: Awaited<ReturnType<typeof launchGroup>> | VisibleProcess | null = null;
-    const startedMono = performance.now();
-    let previousWall = Date.now(),
-      previousMono = startedMono;
-    const handleCancel = async (intent: CancelIntent) => {
-      if (!group?.scope || !meta.scope || !meta.harness || meta.scope.scope_id !== group.scope.scope_id) {
-        await this.port.raw(id, self, 'cancel.unconfirmed', { requestSeq: intent.seq, reason: 'scope_unknown' });
-        return;
+      try {
+        await options.afterRegistered?.();
+      } catch {
+        // A best-effort workspace capture cannot revoke an accepted execution
+        // ticket or prevent its sole launch. A missing snapshot remains unknown.
       }
-      for (const [signal, delay] of [
-        ['SIGINT', intent.graceMs],
-        ['SIGTERM', 2000],
-        ['SIGKILL', 0],
-      ] as const) {
-        if (stopping || isRunTerminal((await this.port.read(id)).run)) return;
-        const currentHarness = readProcess(meta.harness.pid);
-        if (
-          currentHarness &&
-          sameProcessStamp(currentHarness.stamp, meta.harness) &&
-          processState(meta.harness) === 'alive' &&
-          (currentHarness.pgid !== meta.scope.pgid || currentHarness.sid !== meta.scope.sid)
-        ) {
-          await this.port.raw(id, self, 'cancel.unconfirmed', {
-            requestSeq: intent.seq,
-            reason: 'escaped_original_harness',
-          });
-          await this.reconcile(id);
+      const artifacts = RunArtifacts.create(this.hudHome, id),
+        logs = (logFds = artifacts.openLogs());
+      const initial = await this.port.read(id),
+        r = initial.run;
+      let meta: RunMeta = {
+        schema_version: 1,
+        run_id: id,
+        link_id: r.linkId,
+        source_id: r.sourceId,
+        binding_generation: r.expectedGeneration,
+        mode: input.mode,
+        supervision_strategy: visible ? 'wrapper' : 'headless',
+        supervisor: self,
+        command_leader: null,
+        harness: null,
+        scope: null,
+        launch_digest: r.launchDigest,
+        profile_digest: input.profileDigest,
+        launch_call_id: r.launchCallId,
+        launch_correlation_id: r.launchCorrelationId,
+        created_at: r.createdAt,
+        stdin_mode: input.stdin,
+        capture: visible ? 'tty_passthrough' : 'file',
+        launch_cwd: r.launchCwd,
+        project_origin: r.projectOrigin,
+      };
+      artifacts.writeMeta(meta);
+      let seq = 1,
+        stopping = false,
+        heartbeatBusy = false,
+        parentGone = false,
+        writerLost = false,
+        discoveryFinished = false,
+        clockAnomalyRecorded = false,
+        cancelTask: Promise<void> | null = null;
+      let group: Awaited<ReturnType<typeof launchGroup>> | VisibleProcess | null = null;
+      const startedMono = performance.now();
+      let previousWall = Date.now(),
+        previousMono = startedMono;
+      const handleCancel = async (intent: CancelIntent) => {
+        if (!group?.scope || !meta.scope || !meta.harness || meta.scope.scope_id !== group.scope.scope_id) {
+          await this.port.raw(id, self, 'cancel.unconfirmed', { requestSeq: intent.seq, reason: 'scope_unknown' });
           return;
         }
-        const ack = await group.signal(signal);
-        await this.port.raw(id, self, 'cancel.step', { requestSeq: intent.seq, signal, ack });
-        if (!ack && (visible || signal !== 'SIGKILL')) {
-          await this.port.raw(id, self, 'cancel.unconfirmed', {
-            requestSeq: intent.seq,
-            ...(visible ? { reason: 'visible_scope_control_unavailable' } : {}),
-          });
-          return;
-        }
-        if (signal === 'SIGINT' && ack && meta.harness && processState(meta.harness) === 'alive') {
-          const s = await this.port.read(id);
-          await this.port.reconcile(
-            id,
-            s.revision,
-            [fact(s, { kind: 'cancel', chronology: 'before_exit' })],
-            Date.now()
-          );
-        }
-        if (delay)
-          await new Promise<void>((resolve) => {
-            const timer = setTimeout(resolve, delay);
-            group!.exited.then(() => {
-              clearTimeout(timer);
-              resolve();
+        for (const [signal, delay] of [
+          ['SIGINT', intent.graceMs],
+          ['SIGTERM', 2000],
+          ['SIGKILL', 0],
+        ] as const) {
+          if (stopping || isRunTerminal((await this.port.read(id)).run)) return;
+          const currentHarness = readProcess(meta.harness.pid);
+          if (
+            currentHarness &&
+            sameProcessStamp(currentHarness.stamp, meta.harness) &&
+            processState(meta.harness) === 'alive' &&
+            (currentHarness.pgid !== meta.scope.pgid || currentHarness.sid !== meta.scope.sid)
+          ) {
+            await this.port.raw(id, self, 'cancel.unconfirmed', {
+              requestSeq: intent.seq,
+              reason: 'escaped_original_harness',
             });
-          });
-      }
-    };
-    const wake = () => {
-      if (cancelTask || stopping || !discoveryFinished) return;
-      cancelTask = (async () => {
-        const s = await this.port.read(id);
-        const e = s.events.find((e) => e.kind === 'cancel.accepted');
-        if (e) await handleCancel({ seq: e.seq, at: e.at, graceMs: Number(e.payload.graceMs) });
-        else cancelTask = null;
-      })().catch(async (e) => {
-        await this.port.raw(id, self, 'cancel.unconfirmed', { reason: String(e) });
-      });
-    };
-    this.active.set(id, wake);
-    const heartbeat = setInterval(() => {
-      if (heartbeatBusy || stopping) return;
-      heartbeatBusy = true;
-      void this.port
-        .heartbeat(id, self, seq, performance.now())
-        .then(async (result) => {
-          if (!result) {
+            await this.reconcile(id);
+            return;
+          }
+          const ack = await group.signal(signal);
+          await this.port.raw(id, self, 'cancel.step', { requestSeq: intent.seq, signal, ack });
+          if (!ack && (visible || signal !== 'SIGKILL')) {
+            await this.port.raw(id, self, 'cancel.unconfirmed', {
+              requestSeq: intent.seq,
+              ...(visible ? { reason: 'visible_scope_control_unavailable' } : {}),
+            });
+            return;
+          }
+          if (signal === 'SIGINT' && ack && meta.harness && processState(meta.harness) === 'alive') {
+            const s = await this.port.read(id);
+            await this.port.reconcile(
+              id,
+              s.revision,
+              [fact(s, { kind: 'cancel', chronology: 'before_exit' })],
+              Date.now()
+            );
+          }
+          if (delay)
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, delay);
+              group!.exited.then(() => {
+                clearTimeout(timer);
+                resolve();
+              });
+            });
+        }
+      };
+      const wake = () => {
+        if (cancelTask || stopping || !discoveryFinished) return;
+        cancelTask = (async () => {
+          const s = await this.port.read(id);
+          const e = s.events.find((e) => e.kind === 'cancel.accepted');
+          if (e) await handleCancel({ seq: e.seq, at: e.at, graceMs: Number(e.payload.graceMs) });
+          else cancelTask = null;
+        })().catch(async (e) => {
+          await this.port.raw(id, self, 'cancel.unconfirmed', { reason: String(e) });
+        });
+      };
+      this.active.set(id, wake);
+      signalWake = wake;
+      const heartbeat = setInterval(() => {
+        if (heartbeatBusy || stopping) return;
+        heartbeatBusy = true;
+        void this.port
+          .heartbeat(id, self, seq, performance.now())
+          .then(async (result) => {
+            if (!result) {
+              writerLost = true;
+              stopping = true;
+              clearInterval(heartbeat);
+              return;
+            }
+            seq = result.seq;
+            const wall = Date.now(),
+              mono = performance.now();
+            if (
+              !clockAnomalyRecorded &&
+              (wall < previousWall || Math.abs(wall - previousWall - (mono - previousMono)) > 1000)
+            ) {
+              clockAnomalyRecorded = true;
+              await this.port.raw(id, self, 'clock.anomaly', {
+                wallDeltaMs: wall - previousWall,
+                monoDeltaMs: Math.round(mono - previousMono),
+              });
+              await this.reconcile(id);
+            }
+            previousWall = wall;
+            previousMono = mono;
+            if (result.cancel) wake();
+            if (options.parent && !parentGone && processState(options.parent.process) === 'dead') {
+              parentGone = true;
+              void this.parentOffline(id, options.parent, self).catch(() => {});
+            }
+          })
+          .catch(() => {
             writerLost = true;
             stopping = true;
             clearInterval(heartbeat);
-            return;
-          }
-          seq = result.seq;
-          const wall = Date.now(),
-            mono = performance.now();
-          if (
-            !clockAnomalyRecorded &&
-            (wall < previousWall || Math.abs(wall - previousWall - (mono - previousMono)) > 1000)
-          ) {
-            clockAnomalyRecorded = true;
-            await this.port.raw(id, self, 'clock.anomaly', {
-              wallDeltaMs: wall - previousWall,
-              monoDeltaMs: Math.round(mono - previousMono),
-            });
-            await this.reconcile(id);
-          }
-          previousWall = wall;
-          previousMono = mono;
-          if (result.cancel) wake();
-          if (options.parent && !parentGone && processState(options.parent.process) === 'dead') {
-            parentGone = true;
-            void this.parentOffline(id, options.parent, self).catch(() => {});
-          }
-        })
-        .catch(() => {
-          writerLost = true;
-          stopping = true;
-          clearInterval(heartbeat);
-        })
-        .finally(() => {
-          heartbeatBusy = false;
-        });
-    }, HEARTBEAT_INTERVAL_MS);
-    const signalHandlers = new Map<NodeJS.Signals, () => void>();
-    if (visible)
-      for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
-        const handler = () => {
-          void (async () => {
-            // 待 ARCH 裁决: supervisor-directed signal/HUP has no authorised raw
-            // carrier. Persisting this partial fact needs a new whitelist kind;
-            // do not mislabel it as command.exited or mutate stable metadata.
-            void signal;
-            await this.port.acceptCancel(id, this.actor, 10_000);
-            wake();
-          })().catch(() => {});
-        };
-        signalHandlers.set(signal, handler);
-        process.on(signal, handler);
-      }
-    try {
-      await this.port.phase(id, self, 'submitting');
-      group = visible
-        ? await launchVisible({
-            runId: id,
-            shellPath: argv[0],
-            shellArgs: argv.slice(1),
-            cwd: input.cwd,
-            env: options.env,
-            profile: options.visible!,
           })
-        : await this.groupLauncher({
-            runId: id,
-            argv,
-            cwd: input.cwd,
-            env: options.env,
-            stdin: input.stdin === 'brief' ? (options.brief ?? Buffer.alloc(0)) : null,
-            stdoutFd: logs.stdout,
-            stderrFd: logs.stderr,
+          .finally(() => {
+            heartbeatBusy = false;
           });
-      await this.port.phase(id, self, 'submitted');
-      let harness: ProcessStamp | null = visible ? (group as VisibleProcess).harness : null;
-      if (!visible && group.command) {
-        harness = options.identifyHarness
-          ? await options.identifyHarness(group.command)
-          : 'argv' in input.launch
-            ? group.command
-            : null;
-      }
-      if (harness && group.scope) {
-        const actual = readProcess(harness.pid);
-        if (
-          !actual ||
-          !sameProcessStamp(actual.stamp, harness) ||
-          actual.pgid !== group.scope.pgid ||
-          actual.sid !== group.scope.sid
-        )
-          harness = null;
-      }
-      meta = { ...meta, command_leader: group.command, harness, scope: harness ? group.scope : null };
-      await this.port.startup(id, self, meta);
-      artifacts.writeMeta(meta);
-      discoveryFinished = true;
-      await this.port.raw(id, self, 'launch.sealed', {
-        helper: group.helper,
-        command: group.command,
-        scope: meta.scope,
-      });
-      await this.observe(id, !visible);
-      wake();
-      const exited = await group.exited;
-      if (writerLost) return;
-      const shellWait = visible ? (group as VisibleProcess).shellExit : null;
-      await this.port.raw(id, self, 'command.exited', {
-        command: meta.command_leader,
-        code: shellWait ? shellWait.exit_code : exited.code,
-        signal: shellWait ? shellWait.signal : exited.signal,
-        observedAt: shellWait?.observed_at ?? exited.at,
-      });
-      stopping = true;
-      clearInterval(heartbeat);
-      if (
-        meta.scope &&
-        meta.harness &&
-        proveGroupGone(meta.scope, meta.harness, [
-          ...(visible ? [meta.scope.group_leader] : []),
-          group.helper,
-          ...(meta.command_leader ? [meta.command_leader] : []),
-        ])
-      ) {
-        const at = Date.now(),
-          proof = randomUUID(),
-          s = await this.port.read(id);
-        const fenceSeq = await this.port.raw(id, self, 'submission.fenced', { proof_ids: [proof] });
-        const native =
-          exited.source === 'verified_wait' &&
-          sameProcessStamp(meta.harness, exited.subject) &&
-          (exited.code !== null || exited.signal !== null)
-            ? {
-                process: meta.harness,
-                subject: 'harness' as const,
-                observed_at: exited.at,
-                exit_code: exited.code,
-                signal: exited.signal,
-                status_source: 'wait_status' as const,
-                evidence_id: randomUUID(),
-              }
-            : null;
-        const receipt: FinalExitReceipt = {
-          schema_version: 1,
-          receipt_id: randomUUID(),
-          run_id: id,
-          link_id: r.linkId,
-          source_id: r.sourceId,
-          binding_generation: r.expectedGeneration,
-          mode: input.mode,
-          strategy: visible ? 'wrapper' : 'headless',
-          supervisor: self,
-          command_leader: meta.command_leader,
-          harness: meta.harness,
+      }, HEARTBEAT_INTERVAL_MS);
+      try {
+        await this.port.phase(id, self, 'submitting');
+        group = visible
+          ? await launchVisible({
+              runId: id,
+              shellPath: argv[0],
+              shellArgs: argv.slice(1),
+              cwd: input.cwd,
+              env: options.env,
+              profile: options.visible!,
+            })
+          : await this.groupLauncher({
+              runId: id,
+              argv,
+              cwd: input.cwd,
+              env: options.env,
+              stdin: input.stdin === 'brief' ? (options.brief ?? Buffer.alloc(0)) : null,
+              stdoutFd: logs.stdout,
+              stderrFd: logs.stderr,
+            });
+        await this.port.phase(id, self, 'submitted');
+        let harness: ProcessStamp | null = visible ? (group as VisibleProcess).harness : null;
+        if (!visible && group.command) {
+          harness = options.identifyHarness
+            ? await options.identifyHarness(group.command)
+            : 'argv' in input.launch
+              ? group.command
+              : null;
+        }
+        if (harness && group.scope) {
+          const actual = readProcess(harness.pid);
+          if (
+            !actual ||
+            !sameProcessStamp(actual.stamp, harness) ||
+            actual.pgid !== group.scope.pgid ||
+            actual.sid !== group.scope.sid
+          )
+            harness = null;
+        }
+        meta = { ...meta, command_leader: group.command, harness, scope: harness ? group.scope : null };
+        await this.port.startup(id, self, meta);
+        artifacts.writeMeta(meta);
+        discoveryFinished = true;
+        await this.port.raw(id, self, 'launch.sealed', {
+          helper: group.helper,
+          command: group.command,
           scope: meta.scope,
-          coverage: 'scope',
-          created_at: r.createdAt,
-          started_at: s.run.startedAt,
-          ended_at: at,
-          recorded_at: at,
-          duration_ms: Math.round(performance.now() - startedMono),
-          native_exit: native,
-          shell_exit: visible
-            ? (group as VisibleProcess).shellExit
-            : 'shell' in input.launch &&
-                exited.source === 'verified_wait' &&
-                meta.command_leader &&
-                sameProcessStamp(meta.command_leader, exited.subject) &&
-                (exited.code !== null || exited.signal !== null)
+        });
+        await this.observe(id, !visible);
+        wake();
+        const exited = await group.exited;
+        if (writerLost) return;
+        const shellWait = visible ? (group as VisibleProcess).shellExit : null;
+        await this.port.raw(id, self, 'command.exited', {
+          command: meta.command_leader,
+          code: shellWait ? shellWait.exit_code : exited.code,
+          signal: shellWait ? shellWait.signal : exited.signal,
+          observedAt: shellWait?.observed_at ?? exited.at,
+        });
+        stopping = true;
+        clearInterval(heartbeat);
+        if (
+          meta.scope &&
+          meta.harness &&
+          proveGroupGone(meta.scope, meta.harness, [
+            ...(visible ? [meta.scope.group_leader] : []),
+            group.helper,
+            ...(meta.command_leader ? [meta.command_leader] : []),
+          ])
+        ) {
+          const at = Date.now(),
+            proof = randomUUID(),
+            s = await this.port.read(id);
+          const fenceSeq = await this.port.raw(id, self, 'submission.fenced', { proof_ids: [proof] });
+          const native =
+            exited.source === 'verified_wait' &&
+            sameProcessStamp(meta.harness, exited.subject) &&
+            (exited.code !== null || exited.signal !== null)
               ? {
-                  process: meta.command_leader,
-                  subject: 'command_leader',
+                  process: meta.harness,
+                  subject: 'harness' as const,
                   observed_at: exited.at,
                   exit_code: exited.code,
                   signal: exited.signal,
-                  status_source: 'wait_status',
+                  status_source: 'wait_status' as const,
                   evidence_id: randomUUID(),
                 }
-              : null,
-          reason: native?.signal
-            ? 'signal_exit'
-            : native?.exit_code === 0
-              ? 'normal_exit'
-              : native
-                ? 'nonzero_exit'
-                : 'scope_ended',
-          scope_check: {
-            scope_id: meta.scope.scope_id,
-            checked_at: at,
-            result: 'gone',
-            visibility: 'complete',
-            member_evidence_ids: [],
-            zombie_evidence_ids: [],
-            launcher_seal_evidence_ids: [proof],
-            harness_termination_evidence_ids: [proof],
-          },
-          submission_fence: { event_seq: fenceSeq, at, proof_ids: [proof] },
-          cancel_request_seq: s.events.find((e) => e.kind === 'cancel.accepted')?.seq ?? null,
-          logs: { stdout: 'stdout.log', stderr: 'stderr.log', capture: visible ? 'tty_passthrough' : 'file' },
-        };
-        const invalid = receiptEligibility(receipt);
-        if (invalid) throw new Error(invalid);
-        artifacts.commitExit(receipt);
-        await this.port.receipt(id, self, receipt);
+              : null;
+          const receipt: FinalExitReceipt = {
+            schema_version: 1,
+            receipt_id: randomUUID(),
+            run_id: id,
+            link_id: r.linkId,
+            source_id: r.sourceId,
+            binding_generation: r.expectedGeneration,
+            mode: input.mode,
+            strategy: visible ? 'wrapper' : 'headless',
+            supervisor: self,
+            command_leader: meta.command_leader,
+            harness: meta.harness,
+            scope: meta.scope,
+            coverage: 'scope',
+            created_at: r.createdAt,
+            started_at: s.run.startedAt,
+            ended_at: at,
+            recorded_at: at,
+            duration_ms: Math.round(performance.now() - startedMono),
+            native_exit: native,
+            shell_exit: visible
+              ? (group as VisibleProcess).shellExit
+              : 'shell' in input.launch &&
+                  exited.source === 'verified_wait' &&
+                  meta.command_leader &&
+                  sameProcessStamp(meta.command_leader, exited.subject) &&
+                  (exited.code !== null || exited.signal !== null)
+                ? {
+                    process: meta.command_leader,
+                    subject: 'command_leader',
+                    observed_at: exited.at,
+                    exit_code: exited.code,
+                    signal: exited.signal,
+                    status_source: 'wait_status',
+                    evidence_id: randomUUID(),
+                  }
+                : null,
+            reason: native?.signal
+              ? 'signal_exit'
+              : native?.exit_code === 0
+                ? 'normal_exit'
+                : native
+                  ? 'nonzero_exit'
+                  : 'scope_ended',
+            scope_check: {
+              scope_id: meta.scope.scope_id,
+              checked_at: at,
+              result: 'gone',
+              visibility: 'complete',
+              member_evidence_ids: [],
+              zombie_evidence_ids: [],
+              launcher_seal_evidence_ids: [proof],
+              harness_termination_evidence_ids: [proof],
+            },
+            submission_fence: { event_seq: fenceSeq, at, proof_ids: [proof] },
+            cancel_request_seq: s.events.find((e) => e.kind === 'cancel.accepted')?.seq ?? null,
+            logs: { stdout: 'stdout.log', stderr: 'stderr.log', capture: visible ? 'tty_passthrough' : 'file' },
+          };
+          const invalid = receiptEligibility(receipt);
+          if (invalid) throw new Error(invalid);
+          artifacts.commitExit(receipt);
+          await this.port.receipt(id, self, receipt);
+        }
+        await this.reconcile(id);
+      } finally {
+        stopping = true;
+        clearInterval(heartbeat);
+        this.active.delete(id);
+        group?.close();
       }
-      await this.reconcile(id);
     } finally {
-      stopping = true;
-      clearInterval(heartbeat);
-      this.active.delete(id);
-      group?.close();
-      for (const [signal, handler] of signalHandlers) process.off(signal, handler);
-      closeSync(logs.stdout);
-      closeSync(logs.stderr);
+      signalWake = () => {};
+      try {
+        await closeSignals();
+      } finally {
+        if (logFds) {
+          try {
+            closeSync(logFds.stdout);
+          } finally {
+            closeSync(logFds.stderr);
+          }
+        }
+      }
     }
   }
   /** Trusted physical-parent exit/context closure notification; stale is not this event. */

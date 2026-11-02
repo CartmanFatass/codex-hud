@@ -14,6 +14,7 @@ export function requireRunWriter(tx: LedgerTransaction, runId: string, producer:
 }
 const rawKeys: Record<string, string[]> = {
   'launch.sealed': ['helper', 'command', 'scope'],
+  'supervisor.signal': ['signal', 'observedAt'],
   'command.exited': ['command', 'code', 'signal', 'observedAt'],
   'submission.fenced': ['proof_ids'],
   'cancel.step': ['requestSeq', 'signal', 'ack'],
@@ -32,9 +33,19 @@ export async function appendRunFact(
   const copy = JSON.parse(canonicalJson(payload));
   if (!rawKeys[kind] || Object.keys(copy).some((key) => !rawKeys[kind].includes(key)))
     throw new Error('raw_kind_forbidden');
+  if (
+    kind === 'supervisor.signal' &&
+    (!['SIGHUP', 'SIGINT', 'SIGTERM'].includes(copy.signal) ||
+      !Number.isSafeInteger(copy.observedAt) ||
+      copy.observedAt < 0 ||
+      copy.observedAt > Date.now())
+  )
+    throw new Error('supervisor_signal_invalid');
   return ledger.transaction((tx) => {
     const run = requireRunWriter(tx, runId, producer);
-    if (isRunTerminal(run)) throw new Error('writer_terminal');
+    // H07 observations may race the terminal import while the original start()
+    // writer drains its callbacks. They cannot change state or reopen execution.
+    if (isRunTerminal(run) && kind !== 'supervisor.signal') throw new Error('writer_terminal');
     if (kind === 'parent.offline') {
       const { actor } = acceptedActor(tx, runId);
       if (

@@ -1,3 +1,4 @@
+import { launchNodeGroup } from '../run/native-group.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -7,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { HeadlessRunControl, codexClaimArgs } from '../../src/core/run/control.js';
 import { MemoryRunFactPort, FileRunFactPort } from '../../src/core/run/fake-port.js';
-import { launchNodeGroup, readProcess, processState } from '../../src/core/run/process.js';
+import { readProcess, processState } from '../../src/core/run/process.js';
 import { RunArtifacts } from '../../src/core/run/artifacts.js';
 import { seedRun } from '../run/fixtures.js';
 import type { RunControl } from '../../src/core/interfaces/run-control.js';

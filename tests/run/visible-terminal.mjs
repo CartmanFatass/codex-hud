@@ -53,7 +53,7 @@ function create(options = {}) {
     HOME: home,
     SHELL: options.shellPath ?? '/bin/bash',
     HUD_HOME: home,
-    HUD_RUN_PORT_MODULE: resolve('tests/run/file-port.mjs'),
+    HUD_RUN_PORT_MODULE: resolve(options.supervisorPort ?? 'tests/run/file-port.mjs'),
   });
   const tmux = (...args) => {
     const result = spawnSync('/usr/bin/tmux', ['-L', socket, ...args], { env, encoding: 'utf8', timeout: 5000 });
@@ -115,7 +115,7 @@ function create(options = {}) {
   data.seed.snapshot.run.launchDigest = launchDigest(payload.input);
   writeFileSync(join(home, 'facts.json'), JSON.stringify(data.seed), { mode: 0o600 });
   writeFileSync(join(home, 'launch.json'), JSON.stringify(payload), { mode: 0o600 });
-  const command = `${options.realLedger ? '/usr/bin/env -u HUD_RUN_PORT_MODULE ' : ''}${quote(process.execPath)} ${quote(join(repo, 'bin/hud-run'))} start ${options.omitFd ? '' : `--launch-fd 3 3<${quote(join(home, 'launch.json'))}`}  2>${quote(join(home, 'errors'))}`;
+  const command = `${options.realLedger && !options.supervisorPort ? '/usr/bin/env -u HUD_RUN_PORT_MODULE ' : ''}${quote(process.execPath)} ${quote(join(repo, 'bin/hud-run'))} start ${options.omitFd ? '' : `--launch-fd 3 3<${quote(join(home, 'launch.json'))}`}  2>${quote(join(home, 'errors'))}`;
   const launch = () =>
     tmux(
       'send-keys',
@@ -678,6 +678,25 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'])
         const current = await s.port.read(s.data.input.runId);
         return current.events.some((event) => event.kind === 'cancel.unconfirmed') && current;
       });
+      const facts = snapshot.events.filter((e) => e.kind === 'supervisor.signal');
+      assert.equal(facts.length, 1);
+      assert.equal(facts[0].payload.signal, signal);
+      assert.ok(Number.isSafeInteger(facts[0].payload.observedAt));
+      assert.ok(facts[0].payload.observedAt <= facts[0].at);
+      assert.equal(
+        snapshot.events.some((e) => e.kind === 'command.exited'),
+        false
+      );
+      const stableMeta = readFileSync(join(s.home, 'runs', s.data.input.runId, 'meta.json'), 'utf8');
+      process.kill(meta.supervisor.pid, signal);
+      await until(
+        async () =>
+          (await s.port.read(s.data.input.runId)).events.filter((e) => e.kind === 'supervisor.signal').length === 2
+      );
+      const duplicate = await s.port.read(s.data.input.runId);
+      assert.equal(duplicate.events.filter((e) => e.kind === 'cancel.accepted').length, 1);
+      assert.equal(duplicate.events.filter((e) => e.kind === 'cancel.step').length, 1);
+      assert.equal(readFileSync(join(s.home, 'runs', s.data.input.runId, 'meta.json'), 'utf8'), stableMeta);
       assert.equal(processState(meta.harness), 'alive');
       assert.equal(readProcess(meta.harness.pid).foregroundPgid, meta.scope.pgid);
       assert.equal(snapshot.slotHeld, true);
@@ -729,3 +748,37 @@ for (const background of ['foreground-wrapper', 'job-control-tty'])
       await s.cleanup();
     }
   });
+
+test('visible H07 HUP during terminal import records only supervisor receipt with normal ended scope', async () => {
+  const s = await realFixture({ supervisorPort: 'tests/run/b3h-terminal-port.mjs' });
+  try {
+    s.launch();
+    const meta = await s.ready();
+    s.input('quit');
+    await until(() => existsSync(join(s.home, 'terminal-import')));
+    assert.equal(processState(meta.harness), 'dead');
+    process.kill(meta.supervisor.pid, 'SIGHUP');
+    const partial = await until(async () => {
+      const snapshot = await s.port.read(s.data.input.runId);
+      return snapshot.events.some((e) => e.kind === 'supervisor.signal') && snapshot;
+    });
+    assert.equal(partial.receipt, null);
+    assert.equal(partial.slotHeld, true);
+    assert.equal(
+      partial.events.some((e) => e.kind === 'cancel.step'),
+      false
+    );
+    writeFileSync(join(s.home, 'release-import'), '', { mode: 0o600 });
+    const final = await s.ended();
+    assert.equal(final.run.state, 'ended');
+    assert.equal(final.receipt.reason, 'scope_ended');
+    assert.equal(final.receipt.native_exit, null);
+    assert.equal(final.receipt.shell_exit.exit_code, 0);
+    assert.equal(final.events.filter((e) => e.kind === 'supervisor.signal').length, 1);
+    assert.equal(final.slotHeld, false);
+    await until(() => processState(meta.supervisor) === 'dead');
+  } finally {
+    writeFileSync(join(s.home, 'release-import'), '', { mode: 0o600 });
+    await s.cleanup();
+  }
+});

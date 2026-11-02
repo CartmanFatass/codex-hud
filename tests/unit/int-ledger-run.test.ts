@@ -1,3 +1,4 @@
+import { launchNodeGroup } from '../run/native-group.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtempSync, chmodSync, readFileSync, existsSync, symlinkSync, unlinkSync, renameSync } from 'node:fs';
@@ -6,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
 import { HeadlessRunControl } from '../../src/core/run/control.js';
-import { launchNodeGroup, readProcess } from '../../src/core/run/process.js';
+import { readProcess } from '../../src/core/run/process.js';
 import { createRunFactPort } from '../../src/core/run/ledger-port.js';
 import { PrivateLedgerGate } from '../../src/ledger/local-manager.js';
 const skip = ledgerRuntimeSupported() ? false : 'Integration requires Node 22 >=22.13 or >=24';
