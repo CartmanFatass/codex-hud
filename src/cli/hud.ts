@@ -1,6 +1,7 @@
 import { EXPORT_HELP, EXPORT_USAGE, linkExport, type HudIO } from './link-export.js';
 import { CliError, privateHome } from './runtime.js';
 import { RUN_HELP, RUN_USAGE, runCommand } from './run.js';
+import { CACHE_HELP, CACHE_USAGE, cacheCommand } from './cache.js';
 import { CLAUDE_HELP, claudeCommand, codexCommand } from './launcher.js';
 
 function writeStdout(text: string): Promise<void> {
@@ -45,6 +46,18 @@ export async function main(
         return 0;
       }
       return await runCommand(args.slice(1), privateHome(io.env), io);
+    }
+    if (args[0] === 'cache') {
+      // Help must work without reading or validating HUD_HOME.
+      if (args.length === 2 && args[1] === '--help') {
+        await io.stdout(CACHE_HELP);
+        return 0;
+      }
+      if (args.length === 3 && args[1] === 'show' && args[2] === '--help') {
+        await io.stdout(`Usage: ${CACHE_USAGE}\n`);
+        return 0;
+      }
+      return await cacheCommand(args.slice(1), privateHome(io.env), io);
     }
     if (args[0] === 'claude') {
       if (args.length === 2 && args[1] === '--help') {

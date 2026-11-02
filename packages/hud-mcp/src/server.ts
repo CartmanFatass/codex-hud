@@ -31,6 +31,8 @@ export class HudMcpServer {
         started: number,
         signal?: AbortSignal
       ): Promise<unknown>;
+      /** Adds tool-owned fields to a sanitized structured failure; its code and fields stay as built. */
+      decorateFailure?(tool: string, args: Record<string, unknown>, outcome: { ok: false; code: string }): unknown;
     }
   ) {}
   async handle(value: unknown): Promise<unknown | null> {
@@ -76,6 +78,13 @@ export class HudMcpServer {
         if (this.requests.size >= 32) return error(id, -32000, 'Server busy');
         const controller = new AbortController();
         this.requests.set(id, controller);
+        const args = (params.arguments ?? {}) as Record<string, unknown>;
+        // Every structured failure passes here, including thrown expected refusals;
+        // only the body's own decorator may add fields, never change the code.
+        const failure = (code: string) => {
+          const refusal = { ok: false as const, code };
+          return this.bodies?.decorateFailure?.(definition.name, args, refusal) ?? refusal;
+        };
         let outcome: unknown;
         try {
           if (this.stopped) throw new Error('server_shutdown');
@@ -84,18 +93,12 @@ export class HudMcpServer {
           controller.signal.throwIfAborted();
           outcome = resolution.ok
             ? this.bodies
-              ? await this.bodies.invoke(
-                  resolution,
-                  definition.name,
-                  (params.arguments ?? {}) as Record<string, unknown>,
-                  started,
-                  controller.signal
-                )
+              ? await this.bodies.invoke(resolution, definition.name, args, started, controller.signal)
               : { ok: false, code: 'not_implemented', tool: definition.name }
-            : { ok: false, code: resolution.code };
+            : failure(resolution.code);
         } catch (error) {
           // A committed intent is returned by its body even if subsequent dispatch fails.
-          outcome = { ok: false, code: outcomeCode(error) };
+          outcome = failure(outcomeCode(error));
         } finally {
           this.requests.delete(id);
         }

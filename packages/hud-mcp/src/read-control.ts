@@ -29,6 +29,67 @@ import type { ReconcileEvidence } from '../../../src/core/types/execution.js';
 import type { WaitRequest, WaitUntil } from '../../../src/core/types/lifecycle.js';
 import type { SessionRef } from '../../../src/core/types/identity.js';
 import type { ObservationProjection } from '../../../src/core/types/checkpoint.js';
+import {
+  adviceFor,
+  emptyCacheConfig,
+  type CacheAdvice,
+  type CacheConfigErrorCode,
+  type CacheConfigLoad,
+} from '../../../src/core/cache-config.js';
+
+/**
+ * The `<HUD_HOME>/cache.json` snapshot loaded once at hud-mcp start, plus the
+ * facts this process already verified. `adviceFor` does no I/O, so a change to
+ * the file takes effect in the next session.
+ */
+export interface CacheAdviceSource {
+  load: CacheConfigLoad;
+  /** The caller's verified harness; never a tool argument. */
+  harness: string;
+  /** The target profile's declared model for the target role, else null. */
+  model: (backend: string, role: string) => string | null;
+}
+
+/** `advice` as the tools carry it: the pure lookup plus the load failure, when there is one. */
+export type CacheAdviceResult = CacheAdvice & { configError?: CacheConfigErrorCode };
+
+/**
+ * A pure lookup over the startup snapshot. An invalid file is not a reason to
+ * refuse a tool call: every config-derived field stays null, warming stays off,
+ * and `configError` carries the validator's detail code.
+ */
+export function cacheAdvice(source: CacheAdviceSource, backend: string, role: string): CacheAdviceResult {
+  const query = { harness: source.harness, auth: 'unknown', model: source.model(backend, role) };
+  if (!source.load.ok) return { ...adviceFor(emptyCacheConfig(), query), configError: source.load.detail };
+  return { ...adviceFor(source.load.snapshot, query) };
+}
+
+/**
+ * Add the cache lookup to a result at the point it is composed. An `advice`
+ * object already present is merged, never replaced: B19 adds `advice.wake` in
+ * these same files, and the cache fields must not drop a key this package does
+ * not own. Only `advice` is touched; every other field and code is unchanged.
+ */
+export function withCacheAdvice<T extends object>(
+  outcome: T,
+  source: CacheAdviceSource,
+  backend: string,
+  role: string
+): T & { advice: CacheAdviceResult } {
+  const existing = (outcome as { advice?: unknown }).advice;
+  const kept =
+    typeof existing === 'object' && existing !== null && !Array.isArray(existing)
+      ? (existing as Record<string, unknown>)
+      : {};
+  return { ...outcome, advice: { ...kept, ...cacheAdvice(source, backend, role) } };
+}
+
+/** Empty advice for a process that was composed without a cache snapshot. */
+const NO_CACHE_ADVICE: CacheAdviceSource = {
+  load: { ok: true, snapshot: emptyCacheConfig(), path: '', origin: 'missing' },
+  harness: 'unknown',
+  model: () => null,
+};
 
 function requireCancel(tx: LedgerTransaction, link: DelegationRead['link'], authority: IntentAuthority): void {
   requireParentControl(link);
@@ -45,7 +106,8 @@ export class ReadControlService {
     private readonly subscribe: SubscribeWait = hintSubscription(home),
     /** Trusted observation seam for controlled OS-visibility/race tests; never tool input. */
     private readonly probes: { supervisorState?: typeof processState } = {},
-    private readonly limits: CapacityLimits = {}
+    private readonly limits: CapacityLimits = {},
+    private readonly cache: CacheAdviceSource = NO_CACHE_ADVICE
   ) {}
   close(): void {
     for (const store of this.stores.values()) store.close();
@@ -110,15 +172,16 @@ export class ReadControlService {
     };
   }
   async status(target: DelegationTarget, authority: (tx: LedgerTransaction) => IntentAuthority) {
+    const snapshot = await this.ledger.readSnapshot((tx) => {
+      const snapshot = readDelegationIn(tx, target, authority(tx));
+      const { active, limit, occupants } = readCapacity(tx, linkOwner(tx, snapshot.link), this.limits);
+      return { ...snapshot, capacity: { active, limit, occupants } };
+    });
+    // Composed after the read, so an `advice` already projected into the snapshot
+    // (B19's `wake`) is merged instead of replaced. The lookup itself does no I/O.
     return {
       ok: true,
-      ...(await this.compose(
-        await this.ledger.readSnapshot((tx) => {
-          const snapshot = readDelegationIn(tx, target, authority(tx));
-          const { active, limit, occupants } = readCapacity(tx, linkOwner(tx, snapshot.link), this.limits);
-          return { ...snapshot, capacity: { active, limit, occupants } };
-        })
-      )),
+      ...withCacheAdvice(await this.compose(snapshot), this.cache, snapshot.link.backend, snapshot.link.role),
     };
   }
   async wait(
