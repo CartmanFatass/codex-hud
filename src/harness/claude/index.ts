@@ -90,4 +90,21 @@ export class ClaudeAdapter implements HarnessAdapter {
     this.source(ref);
     return [];
   }
+
+  async collectTopology(ref: SessionRef, _budget: import('../../core/interfaces/harness-adapter.js').ReaderBudget) {
+    this.source(ref);
+    return {
+      children: [],
+      loaded: false,
+      bytesRead: 0,
+      recordsRead: 0,
+      coverage: {
+        state: 'partial' as const,
+        skipped: {},
+        gaps: ['native_topology_unavailable'],
+        loaded: false,
+        reason: 'native_topology_unavailable',
+      },
+    };
+  }
 }
