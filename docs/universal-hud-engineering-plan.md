@@ -47,7 +47,7 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | ORACLE | Codex `gpt-6-astra`，effort max（herdr tab，一次性只读咨询） | 后端设计与架构：设计分叉、契约定稿前评审、实现中的架构问题（Jacob，2026-11-01） |
 | ARCH | ChatGPT Pro（经 jev-ask） | 更高一级，只在关键节点：阶段边界评审（A9、B15）与 Oracle 上送的分叉 |
 | REV | Codex reviewer，gpt-6.1-sol，effort **max** | 每个变更一个主审：首评与修复复核同一人，通过绑定最终 diff（规则见 delegation.md） |
-| CORE | Codex implementer，gpt-6.1-sol，effort max（2026-11-02 起） | 核心任务：契约、账本、hud-mcp、hud-run、适配器、链接解析、状态模型、reader、Herdr 层 |
+| CORE | Codex implementer，gpt-6.1-sol，effort high；主审与验收为 Oracle 子代理（gpt-6-astra max） | 核心任务：契约、账本、hud-mcp、hud-run、适配器、链接解析、状态模型、reader、Herdr 层 |
 | ORD | pi implementer（DeepSeek V4.1 Flash，pi-roles） | 普通任务：探针脚本、测试基建、fixture、skill 与文档更新、基准脚本、改名。表现不佳即升级到 CORE |
 | FED | Claude Code 子代理，Fable（`model: fable`，effort max） | 前端设计决策：信息展示、可视化、bar / panel / Inspector / statusline 的布局与信息层级，由它决定，产出 `docs/design/`（Jacob，2026-11-01） |
 | FE | Claude Code 子代理 `frontend-implementer`（sonnet，xhigh） | bar / panel / Inspector / statusline 的渲染与文案 |
