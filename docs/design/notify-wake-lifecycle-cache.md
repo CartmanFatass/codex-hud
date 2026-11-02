@@ -74,7 +74,9 @@ Legend as v1; "our TUIs" = Codex launched through `bin/codex-with-herdr-context`
 
 ### 3.1 The guarantee, stated narrowly
 
-While the parent process and its delivery worker are alive (the parent's hud-mcp for Codex/pi, the armed `hud run wait` for Claude), every committed wake-worthy event is rediscovered within `wake.recoveryMs` (default 30 000, the heartbeat stale boundary) and at most two native delivery attempts are made for it; native scheduling and transport (idle pickup ≤ ~10 s on Codex 0.166, next sampling on Claude, `followUp` on pi) decide when a model turn starts. When no worker is alive, events stay in the ledger and are read on the parent's next explicit `delegate_status`/`delegate_wait` or the user's action. Delivery is duplicate-tolerant; handling is idempotent (§3.7).
+While parent and worker live, eligible registrations make fair progress by one pending-event page (≤200 rows) per recovery allowance; hints may use the next available allowance early. Full backlog recovery scales with its page count. Native scheduling still determines turn start. At most two irrevocably charged native attempt slots can cover an event; a crash may consume a slot without a send. Retry after an unknown requires continuous observed parent-call silence; inherited unknowns without that proof stay unconfirmed. After the bounded terminal tail `max(5 min,10*recoveryMs)` and known pending work drains, later lost-hint reports are read on the next hint or explicit parent call. No exactly-once or parent-consumption guarantee is made.
+
+*(B19 amendment, 2026-11-02, replaces the earlier text; see contracts 02 A1 and 06 A6.)*
 
 ### 3.2 Components and who does what
 
@@ -105,14 +107,11 @@ wake.revoked payload (link): { registrationSeq, reason: 'generation_changed'|'se
 
 ### 3.4 Drain algorithm (parent's hud-mcp)
 
-1. Trigger: a hint event (filename matches one of the owner's runs, or `filename` is null → treat as a hint), the recovery timer (armed only while the owner has non-terminal runs; `unref`'d; cleared otherwise), or process start (janitor pass).
-2. Read in one snapshot: active registrations, their pending events, the owner's current generation, and whether this process has an in-flight `delegate_wait` whose fixed run and cursor cover the pending events.
-3. Coalesce per registration: one message listing `{runId, kind, seq}` for every pending event and `throughSeq = max(seq)`; never one send per event.
-4. If an in-flight `delegate_wait` in this process will return the events, record `wake.delivered{result:'wait_return', throughSeq}` when that wait returns and send nothing (the parent is mid-turn and about to read them).
-5. Otherwise call the adapter (bounded as in §3.2). Results: `accepted` → `wake.delivered{accepted, throughSeq, attempt}`; `rejected{reason}` → `wake.delivered{rejected}` + `wake.revoked{adapter_rejected}` (nothing more to try on this path); `unknown` (timeout after a queue command may have committed; socket write without reply) → `wake.delivered{unknown, attempt:1}`; a second attempt after `recoveryMs` **only if** no call from the parent has arrived meanwhile; then `wake.delivered{unknown, attempt:2, exhausted:true}` and `delegate_status` shows `wake.state='unconfirmed'`. Never a third attempt.
-6. Write `wake.delivered` in a short transaction *after* the adapter returns; unlink `hints/<runId>.<seq>` for `seq ≤ throughSeq`. A late sender recreating a hint for a terminal, already-delivered run is unlinked on the next drain (the ledger says delivered). Janitor at start: one `readdir`, unlink hints of terminal runs older than 1 h.
+Use one watcher and one unref'd scheduler in the parent's hud-mcp. Startup, hints, recovery, and page continuation share the per-registration read allowance. In one snapshot validate the latest registration, owner generation and target, derive its fixed pending page or exact retry interval, and inspect actual wait coverage. Coalesce that page per registration and preserve a fixed high-water across continuation. Charge an available attempt slot in a short transaction before transport; recheck sender fences immediately before invoking it. Refine accepted/rejected afterward; rejected also revokes. Unknown retains its fixed retry identity and never becomes a parent's consumed page. Charge attempt 2 only after recovery delay and proven continuous silence; never invoke a charged slot twice or issue attempt 3. Record wait_return only for actual successful wait coverage. Unlink only hints within ledger-accounted coverage, never unread later pages. Maintain the bounded terminal tail and explicit late-report degradation in 06 A6. Keep the timer only while registrations are eligible or known work must settle.
 
 For Claude registrations steps 3–5 are skipped (the waiter delivers by exiting); the drainer still runs steps 1, 2 and 6 as janitor and records nothing.
+
+*(B19 amendment, 2026-11-02, replaces the earlier text; see contracts 02 A1 and 06 A6.)*
 
 ### 3.5 `hud run wait` contract
 
@@ -158,7 +157,9 @@ Codex queue text and pi `content` are the same ≤ 512-byte line as `--notify`, 
 
 ### 3.10 Performance rules (child-side and parent-side hud-mcp)
 
-No synchronous subprocess start, directory scan or hashing on any non-wait response path; the hint touch is the only post-commit I/O a writer does. The drainer runs outside tool responses, one adapter in flight, bounded output, kill + reap on timeout, ledger writes in short transactions after transport. Budgets added to 06 (A6): drainer ≤ 1 indexed read per active registration per `recoveryMs`, zero when the owner has no non-terminal runs; waiter ≤ 1 per armed wait; adapter helper ≤ 1 per hud-mcp, lifetime ≤ 2 s. B14 measures non-wait p95 **during** concurrent spawns, reports, reconciliation and a deliberately slow/failing adapter (T-06-14 extension). SQLite WAL admits one writer at a time; the capacity count (§4.9) is one indexed read inside a transaction whose 30 ms budget (P-06-5) already includes lock waits; it adds no new budget claim.
+No adapter runs inside tool responses or transactions. All pending-page reads count against one ≤200-row indexed page per registration per recoveryMs, including hint and continuation triggers. Registration metadata and short reservation/outcome transaction queries are separately measured; they cannot hide an unbounded pending scan. Hint touch remains exclusive-create plus close after commit; no directory scan/hash/subprocess enters non-wait responses. Helpers remain ≤1 in flight per hud-mcp, ≤2 s, ≤4 KiB output and kill+reap on timeout/shutdown. Parent binding is checked every 30 s and every call. Concurrent non-wait p95 <50 ms and F08 transaction budgets remain unchanged. B19 reports active/terminal-tail/fully-suspended/no-registration page reads and timers separately.
+
+*(B19 amendment, 2026-11-02, replaces the earlier text; see contracts 02 A1 and 06 A6.)*
 
 ## 4. Lifecycle and retirement
 

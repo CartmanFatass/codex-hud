@@ -298,6 +298,12 @@ stdin 的 session/model/context/cost 永远优先，摘要不覆盖它。廉价�
 
 （NOTIFY 增补，A6）跨进程 sanctioned hint 仅空文件 `$HUD_HOME/hints/<runId>.<seq>`，提交 writer 在事务成功后、事务外 open(O_CREAT|O_EXCL)+close（≤1ms），不读登记/起adapter；runId/seq 合法、私有目录权限。每 waiting process 一个 fs.watch；snapshot→subscribe→snapshot→wait 关注册竞态，提示重复/丢失不推进父游标，必要截止或上述有界 drainer 复读恢复。parent-side hud-mcp 清理提示、启动时 janitor；waiter 零写且不删 hint，终态导入后也 touch。pending 由当前未撤销登记及该 link 的 wake-worthy 事件 seq>其最新 wake.delivered.throughSeq 在同一快照、每页≤200派生，最多两次原生投递尝试；适配器不占事务/工具响应，未知结果不伪称已消费。
 
+（B19 增补，2026-11-02，修订 A6 的恢复预算与终态尾窗；原文为批准文本）
+
+All triggers (startup, hint, recovery, continuation) share a strict allowance of at most one ascending indexed pending-event page of at most 200 rows per registration per `wake.recoveryMs`. Hints use an available allowance immediately or coalesce until the next permitted read; immediate continuation does not create a new allowance. Required bounded registration/transaction fence metadata queries are measured separately and cannot conceal pending-event scans. Recovery guarantees progress of the next page within an allowance, with full backlog recovery proportional to page count and fair scheduling, rather than every event of an unbounded backlog within one interval. Only inspected contiguous coverage advances scheduling; hint filenames, global high-water marks and unread pages never advance a parent's cursor or delivered coverage.
+
+A current, valid, unrevoked delegated registration is recovery-eligible while any of its runs is non-terminal, it has known unresolved/undelivered wake work, or its latest run ended within `max(300000,10*configured recoveryMs)` milliseconds. Startup includes terminal registrations inside that tail and known pending deliveries. A terminal-tail expiry performs its permitted final recovery page before suspending and preserves known pending pages/in-flight outcomes/retry decisions. Beyond the bounded tail and after known work drains, lost-hint recovery of a later post-terminal report degrades to its next hint or explicit delegate_status/delegate_wait; such a report remains admissible and is not treated as link closure. No timer or recovery page reads remain when no registration is eligible. A hint or explicit parent read may reactivate a suspended valid registration. Hints remain non-authoritative, best effort, and post-commit only. Janitor at startup unlinks only terminal-run hints older than one hour; waiter never deletes hints.
+
 ## 失败案例
 
 | 编号 | 场景 / 预期 | 不变量 | 测试 |
