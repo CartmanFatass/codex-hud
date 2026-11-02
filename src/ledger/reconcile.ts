@@ -2,6 +2,7 @@ import { canonicalJson, digest, type JsonObject } from '../core/canonical.js';
 import { isRunTerminal, reconcileRun, updateRun } from '../core/execution.js';
 import { advanceLink } from '../core/lifecycle.js';
 import type { ReconcileDecision, ReconcileEvidence } from '../core/types/execution.js';
+import type { FinalExitReceipt } from '../core/types/supervision.js';
 import { authorizeControl } from '../core/lifecycle.js';
 import type { Ledger } from './ledger.js';
 import { currentAuthority, hasEvidenceConflict, linkOwner, requireParentControl } from './intents.js';
@@ -72,7 +73,7 @@ function versionRows(tx: LedgerTransaction, runId: string): object {
     ),
   };
 }
-function snapshotInTransaction(tx: LedgerTransaction, runId: string): ReconcileSnapshot {
+export function snapshotInTransaction(tx: LedgerTransaction, runId: string): ReconcileSnapshot {
   const run = readRun(tx, runId);
   const terminal = [...readEvents(tx, runId)].reverse().find((event) => event.kind === 'run.terminal');
   return {
@@ -186,7 +187,8 @@ export async function commitReconcile(
   ledger: Ledger,
   expected: ReconcileSnapshot,
   supplied: readonly ValidatedEvidence[],
-  nowMs: number
+  nowMs: number,
+  gate?: (tx: LedgerTransaction) => void
 ): Promise<{ committed: false; reason: 'stale_snapshot' } | { committed: true; decision: ReconcileDecision }> {
   const runId = expected.run.runId;
   const expectedVersion = expected.version;
@@ -195,6 +197,7 @@ export async function commitReconcile(
   return ledger.transaction((tx) => {
     if (canonicalJson(versionRows(tx, runId)) !== expectedVersion)
       return { committed: false as const, reason: 'stale_snapshot' as const };
+    gate?.(tx);
     const projected = tx.get('SELECT supervisor_pid FROM runs WHERE run_id=?', runId);
     if (projected?.supervisor_pid !== null && readRun(tx, runId).supervisor === null)
       throw new Error('supervisor_registration_unknown');
@@ -229,13 +232,20 @@ export async function commitReconcile(
       ticketConsumed: current.run.launchPhase !== 'reserved',
       terminalBasis: { evidence: facts, terminalNote: current.terminalNote },
     });
-    if (isRunTerminal(current.run)) {
+    const receipt = readEvents(tx, runId).find((event) => event.kind === 'exit.receipt')?.payload.receipt as unknown as
+      FinalExitReceipt | undefined;
+    const shell = receipt?.shell_exit;
+    {
       const previous = tx.get(
         "SELECT payload FROM events WHERE run_id=? AND kind='run.reconciliation' ORDER BY seq DESC LIMIT 1",
         runId
       );
       const wasBlocked = previous ? JSON.parse(String(previous.payload)).blockNewOperations === true : false;
-      if (wasBlocked !== decision.blockNewOperations)
+      const previousState = [...readEvents(tx, runId)]
+        .reverse()
+        .find((event) => ['run.state', 'run.terminal', 'run.reconciliation'].includes(event.kind));
+      const causeChanged = !decision.emitTransition && (previousState?.payload.cause ?? null) !== decision.cause;
+      if (wasBlocked !== decision.blockNewOperations || causeChanged)
         insertRecord(tx, 'events', {
           runId,
           linkId: current.link.linkId,
@@ -283,7 +293,7 @@ export async function commitReconcile(
         exitSource: decision.exitSource,
       });
       tx.run(
-        `UPDATE runs SET state=?,ended_at=?,terminal_evidence_id=?,submission_fenced_at=?,exit_code=?,exit_signal=?,exit_source=? WHERE run_id=?`,
+        `UPDATE runs SET state=?,ended_at=?,terminal_evidence_id=?,submission_fenced_at=?,exit_code=?,exit_signal=?,exit_source=?,shell_status=?,shell_signal=? WHERE run_id=?`,
         next.state,
         next.endedAt,
         next.terminalEvidenceId,
@@ -291,6 +301,8 @@ export async function commitReconcile(
         next.exitCode,
         next.exitSignal,
         next.exitSource,
+        terminal ? (shell?.exit_code ?? current.run.shellStatus) : null,
+        terminal ? (shell?.signal ?? current.run.shellSignal) : null,
         runId
       );
       if (terminal) {
@@ -320,6 +332,14 @@ export async function commitReconcile(
         },
         at: nowMs,
       });
+    }
+    if (isRunTerminal(current.run) && receipt) {
+      tx.run(
+        'UPDATE runs SET shell_status=?,shell_signal=? WHERE run_id=?',
+        shell?.exit_code ?? null,
+        shell?.signal ?? null,
+        runId
+      );
     }
     return { committed: true as const, decision };
   });

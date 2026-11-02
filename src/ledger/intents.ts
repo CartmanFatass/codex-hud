@@ -108,6 +108,7 @@ export function hasConflict(tx: LedgerTransaction, linkId: string, ref: string |
     tx.get(
       `SELECT e.seq FROM events e JOIN runs r ON r.run_id=e.run_id
     WHERE e.kind='run.reconciliation' AND json_extract(e.payload,'$.blockNewOperations')=1
+      AND r.state IN ('ended','failed','cancelled')
       AND (r.link_id=? OR r.target_session_ref=?)
       AND e.seq=(SELECT max(latest.seq) FROM events latest WHERE latest.run_id=e.run_id AND latest.kind='run.reconciliation') LIMIT 1`,
       linkId,

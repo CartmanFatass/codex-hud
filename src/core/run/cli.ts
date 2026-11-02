@@ -4,32 +4,39 @@ import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { HeadlessRunControl, type StartOptions } from './control.js';
 import type { RunPortModule } from './port.js';
+import { createRunFactPort } from './ledger-port.js';
+import { PrivateLedgerGate } from '../../ledger/local-manager.js';
+import { requireLedgerRuntime } from '../../ledger/runtime.js';
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
-  const [major, minor] = process.versions.node.split('.').map(Number);
-  if (major < 22 || (major === 22 && minor < 5))
-    throw new Error('hud-run requires Node >= 22.5 for its ledger integration');
+  requireLedgerRuntime();
   if (args[0] === '--help') {
     process.stdout.write(
-      'hud-run <start|status|logs|cancel|reconcile> [runId] [--grace ms] [--stderr] [--offset bytes]\nSet private HUD_HOME and HUD_RUN_PORT_MODULE (B2 adapter exporting createRunFactPort). start reads protected JSON from stdin.\n'
+      'hud-run <start|status|logs|cancel|reconcile> [runId] [--grace ms] [--stderr] [--offset bytes]\nSet private HUD_HOME containing ledger.sqlite. start reads protected JSON from stdin. HUD_RUN_PORT_MODULE selects an explicit trusted test/integration adapter.\n'
     );
     return;
   }
   const home = process.env.HUD_HOME,
     module = process.env.HUD_RUN_PORT_MODULE;
-  if (!home || !isAbsolute(home) || !module || !isAbsolute(module))
-    throw new Error('HUD_HOME and HUD_RUN_PORT_MODULE must be absolute; ledger adapter not configured');
+  if (!home || !isAbsolute(home) || (module && !isAbsolute(module)))
+    throw new Error('HUD_HOME and any HUD_RUN_PORT_MODULE must be absolute');
   const st = lstatSync(home);
   if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== process.getuid!() || st.mode & 0o077)
     throw new Error('HUD_HOME must be a private directory owned by this uid');
   // The trusted integration adapter authenticates the manager and ledger paths.
-  const adapter = (await import(pathToFileURL(module).href)) as RunPortModule;
+  const adapter: RunPortModule = module
+    ? ((await import(pathToFileURL(module).href)) as RunPortModule)
+    : { createRunFactPort };
   if (typeof adapter.createRunFactPort !== 'function') throw new Error('invalid RunFactPort adapter');
-  const control = new HeadlessRunControl(await adapter.createRunFactPort(home), home, {
-    kind: 'trusted_local',
-    uid: process.getuid!(),
-    invocationId: randomUUID(),
-  });
+  const port = await adapter.createRunFactPort(home);
+  const actor = module
+    ? ({
+        kind: 'trusted_local',
+        uid: process.getuid!(),
+        invocationId: randomUUID(),
+      } as const)
+    : new PrivateLedgerGate(home).actor();
+  const control = new HeadlessRunControl(port, home, actor);
   const [command, id, ...flags] = args;
   const numeric = (flag: string, fallback: number) => {
     const pos = flags.indexOf(flag);
