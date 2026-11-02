@@ -1,3 +1,4 @@
+import type { RecoveryIndexHandoff } from './checkpoint.js';
 import type { SessionRef } from './identity.js';
 import type { Run, RunState } from './execution.js';
 import type { Report, RunHandshake } from './lifecycle.js';
@@ -95,6 +96,8 @@ export interface ReaderParserState {
 }
 
 export interface ReaderCheckpoint {
+  /** Optional live index handoff; preparation stores only its validated immutable reference. */
+  recoveryIndex?: RecoveryIndexHandoff;
   schemaVersion: 1;
   readerVersion: string;
   ref: SessionRef;

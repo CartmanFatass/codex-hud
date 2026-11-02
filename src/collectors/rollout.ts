@@ -1,4 +1,25 @@
-import { serialize, deserialize } from 'node:v8';
+import { RecoveryIndexOverlay } from '../core/checkpoint.js';
+import {
+  isRecoveryIndexFailure,
+  RecoveryMap,
+  RecoverySet,
+  RecoveryCalls,
+  recoveryArray,
+  recoveryCounts,
+} from '../harness/codex/recovery-index.js';
+import {
+  compactPlan,
+  compactToolCall,
+  encodeRecoveryToolCall,
+  decodeRecoveryToolCall,
+  metadataToWire,
+  metadataFromWire,
+  validateRolloutRecovery,
+  type RateRecovery,
+  type RolloutRecovery,
+  type PlanMaterialMissing,
+} from '../harness/codex/recovery.js';
+export { validateRolloutRecovery, validateCodexRecoveryIndexEntry } from '../harness/codex/recovery.js';
 import { initialParserState } from '../core/observation.js';
 import type { ReaderBudget } from '../core/interfaces/harness-adapter.js';
 import type { ReaderParserState } from '../core/types/observation.js';
@@ -389,7 +410,10 @@ export interface RolloutReadOptions {
   budget: ReaderBudget;
   state: ReaderParserState;
   onRecord?: (entry: RolloutLine) => void;
-  onReset?: () => void;
+  onReset?: () => RecoveryIndexOverlay | void;
+  /** Reader-local slice transaction; never exported. */
+  recoveryIndex?: RecoveryIndexOverlay;
+  onParsed?: () => void;
   /** Internal live storage; never part of an exported checkpoint. */
   transient?: RolloutTransient;
   previousStat?: { size: number; mtimeMs: number; ctimeMs: number };
@@ -406,14 +430,7 @@ export interface RolloutReadStats {
   resetReason?: 'truncated' | 'file_changed';
 }
 
-export interface RolloutParserCheckpoint {
-  version: 2;
-  /** Runtime-specific codec version is checked before decoding. */
-  runtime: string;
-  offset: number;
-  fileIdentity?: string;
-  payload: string;
-}
+export type RolloutParserCheckpoint = RolloutRecovery;
 
 /** An opaque reader-local key: incomplete source bytes are only in this WeakMap. */
 export class RolloutTransient {}
@@ -704,20 +721,32 @@ export async function parseRolloutFile(
       (previousIdentity !== undefined && previousIdentity !== fileIdentity);
     const startOffset = wasTruncated ? 0 : fromOffset;
     if (wasTruncated) {
+      options?.onReset?.();
       rateTracker.reset();
       runningCalls.clear();
       session = null;
       pendingApproval = null;
-      options?.onReset?.();
     }
     const processLine = (line: string): boolean => {
       if (!line.trim()) return true;
-
+      let entry: RolloutLine;
       try {
-        const entry = JSON.parse(line) as RolloutLine;
-        const timestamp = new Date(entry.timestamp);
-        options?.onRecord?.(entry);
-
+        entry = JSON.parse(line) as RolloutLine;
+      } catch {
+        return false;
+      }
+      if (
+        !entry ||
+        typeof entry !== 'object' ||
+        !entry.payload ||
+        typeof entry.payload !== 'object' ||
+        Array.isArray(entry.payload)
+      )
+        return false;
+      const timestamp = new Date(entry.timestamp);
+      // Callback/index failures are operational failures, never malformed source data.
+      options?.onRecord?.(entry);
+      try {
         // Shared with the agent tail reader, including overlapping tool waits.
         observeTokenRateRecord(rateTracker, entry);
         // Process based on entry type
@@ -976,8 +1005,9 @@ export async function parseRolloutFile(
 
         toolActivity.lastUpdateTime = timestamp;
         return true;
-      } catch {
-        // Legacy callers skip malformed records; the facade records a coverage gap.
+      } catch (error) {
+        if (isRecoveryIndexFailure(error) || !(error instanceof TypeError)) throw error;
+        // Invalid known payload shapes retain the existing malformed-record behavior.
         return false;
       }
     };
@@ -1026,33 +1056,37 @@ export async function parseRolloutFile(
         if (!state.gaps.includes(reason)) state.gaps.push(reason);
       };
       const line = (bytes: Buffer) => {
+        let text: string;
+        let entry: unknown;
         try {
-          const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-          if (text.trim()) {
-            const entry = JSON.parse(text);
-            if (
-              !entry ||
-              typeof entry !== 'object' ||
-              !['session_meta', 'turn_context', 'response_item', 'event_msg'].includes(entry.type)
-            ) {
-              skip('unknown_type');
-            } else if (
-              entry.type === 'response_item' &&
-              ['api-request-blob', 'reasoning', 'thinking', 'image'].includes(entry.payload?.type)
-            ) {
-              const kind = entry.payload.type as string;
-              state.skipped[kind] = (state.skipped[kind] ?? 0) + 1;
-            } else if (
-              !entry.payload ||
-              typeof entry.payload !== 'object' ||
-              Array.isArray(entry.payload) ||
-              !Number.isFinite(Date.parse(entry.timestamp)) ||
-              !processLine(text)
-            )
-              skip('malformed_record');
-          }
+          text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+          if (!text.trim()) return;
+          entry = JSON.parse(text);
         } catch {
           skip('invalid_json');
+          return;
+        }
+        const value = entry as { type?: string; timestamp?: string; payload?: { type?: string } } | null;
+        if (
+          !value ||
+          typeof value !== 'object' ||
+          !['session_meta', 'turn_context', 'response_item', 'event_msg'].includes(value.type ?? '')
+        ) {
+          skip('unknown_type');
+        } else if (
+          value.type === 'response_item' &&
+          ['api-request-blob', 'reasoning', 'thinking', 'image'].includes(value.payload?.type ?? '')
+        ) {
+          const kind = value.payload!.type!;
+          state.skipped[kind] = (state.skipped[kind] ?? 0) + 1;
+        } else if (
+          !value.payload ||
+          typeof value.payload !== 'object' ||
+          Array.isArray(value.payload) ||
+          !Number.isFinite(Date.parse(value.timestamp ?? '')) ||
+          !processLine(text)
+        ) {
+          skip('malformed_record');
         }
       };
       while (position < fileSize && fetchedBytes < maxBytes && recordsRead < maxRecords && canConsume()) {
@@ -1103,14 +1137,18 @@ export async function parseRolloutFile(
         recordsRead < maxRecords &&
         (recordsRead === 0 || !timeExhausted)
       ) {
+        let complete = false;
         try {
           JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(pending));
+          complete = true;
+        } catch {
+          /* An incomplete tail is reread from the committed boundary after restart. */
+        }
+        if (complete) {
           line(pending);
           pending = Buffer.alloc(0);
           committedOffset = position;
           recordsRead++;
-        } catch {
-          /* An incomplete tail is reread from the committed boundary after restart. */
         }
       }
       state.tailBytesSeen = pending.length;
@@ -1176,12 +1214,16 @@ export async function parseRolloutFile(
       // Support complete records without a final newline, but never consume a
       // partial JSON record (including a split UTF-8 codepoint).
       if (pending.length) {
+        let complete = false;
         try {
           JSON.parse(pending.toString('utf8'));
-          processLine(pending.toString('utf8'));
-          committedOffset += pending.length;
+          complete = true;
         } catch {
           /* Retry this tail from the last complete record next time. */
+        }
+        if (complete) {
+          processLine(pending.toString('utf8'));
+          committedOffset += pending.length;
         }
       }
     }
@@ -1232,6 +1274,29 @@ function lastQuotaReadings(samples: readonly QuotaSample[]): Partial<Record<'pri
 /**
  * Rollout parser with state tracking for incremental updates
  */
+interface NativeRateState extends Omit<RateRecovery, 'latest'> {
+  latest?: TokenRateSnapshot;
+  tools: Set<string>;
+}
+function rateToRecovery(t: NativeRateState): RateRecovery {
+  return metadataToWire({
+    baseline: t.baseline,
+    lastTotal: t.lastTotal,
+    lastAtMs: t.lastAtMs,
+    latest: t.latest,
+    toolsStartedAtMs: t.toolsStartedAtMs,
+    toolsLastAtMs: t.toolsLastAtMs,
+    excludedMs: t.excludedMs,
+  });
+}
+function cloneRateTracker(tracker: TokenRateTracker, index?: RecoveryIndexOverlay): TokenRateTracker {
+  const native = tracker as unknown as NativeRateState;
+  if (!(native.tools instanceof RecoverySet)) return tracker.clone();
+  return Object.assign(new TokenRateTracker(), metadataFromWire<NativeRateState>(rateToRecovery(native) as never), {
+    tools: native.tools.fork(index),
+  });
+}
+
 export class RolloutParser {
   private rolloutPath: string | null = null;
   private lastOffset: number = 0;
@@ -1243,6 +1308,10 @@ export class RolloutParser {
   private needsReplay = false;
   private readStats?: RolloutReadStats;
   #transient = new RolloutTransient();
+  private recoveryIndex?: RecoveryIndexOverlay;
+  private recoverySubagents?: RecoveryMap<SubagentInfo>;
+  private recoveryTypes?: RecoveryMap<number>;
+  private recoveryMaterialMissing?: PlanMaterialMissing;
 
   constructor(private maxRecentCalls: number = 10) {}
 
@@ -1260,6 +1329,10 @@ export class RolloutParser {
     this.rolloutPath = path;
     this.lastOffset = 0;
     this.readStats = undefined;
+    this.recoveryMaterialMissing = undefined;
+    this.recoveryIndex = undefined;
+    this.recoveryTypes = undefined;
+    this.recoverySubagents = undefined;
     this.#transient = new RolloutTransient();
     this.cachedResult = null;
     this.runningCalls = new Map();
@@ -1270,7 +1343,32 @@ export class RolloutParser {
    * Parse the rollout file, reading only new content since last parse
    */
   async parse(options?: RolloutReadOptions): Promise<RolloutParseResult | null> {
-    return timeAsync('rollout.parse', () => this.parseNow(options));
+    const generation = this.generation;
+    const prior = {
+      cachedResult: this.cachedResult,
+      runningCalls: this.runningCalls,
+      rateTracker: this.rateTracker,
+      lastOffset: this.lastOffset,
+      fileIdentity: this.fileIdentity,
+      needsReplay: this.needsReplay,
+      readStats: this.readStats,
+      recoveryIndex: this.recoveryIndex,
+      recoveryTypes: this.recoveryTypes,
+      recoverySubagents: this.recoverySubagents,
+      recoveryMaterialMissing: this.recoveryMaterialMissing,
+    };
+    try {
+      return await timeAsync('rollout.parse', () => this.parseNow(options));
+    } catch (error) {
+      if (generation === this.generation) {
+        Object.assign(this, prior);
+        // Legacy reads have no durable file-stat witness, so a failed read must recheck the whole file.
+        if (!this.recoveryIndex) this.needsReplay = true;
+        // A completed read may have refreshed the live-only tail before metadata assembly failed.
+        this.#transient = new RolloutTransient();
+      }
+      throw error;
+    }
   }
 
   private async parseNow(options?: RolloutReadOptions): Promise<RolloutParseResult | null> {
@@ -1282,14 +1380,35 @@ export class RolloutParser {
     const replay = this.needsReplay;
     if (replay && options) {
       this.#transient = new RolloutTransient();
-      options.onReset?.();
       options = { ...options, state: initialParserState() };
     }
     // A failed or superseded read may not mutate the published snapshot.
-    const tracker = replay ? new TokenRateTracker() : this.rateTracker.clone();
-    const calls = replay
-      ? new Map<string, ToolCall>()
-      : new Map([...this.runningCalls].map(([id, call]) => [id, { ...call }]));
+    const tracker = cloneRateTracker(this.rateTracker, options?.recoveryIndex);
+    const calls =
+      this.runningCalls instanceof RecoveryMap
+        ? this.runningCalls.fork(options?.recoveryIndex)
+        : replay
+          ? new Map<string, ToolCall>()
+          : new Map([...this.runningCalls].map(([id, call]) => [id, { ...call }]));
+    // Exact historical collections also stage in the slice overlay; prior snapshots remain usable on error.
+    this.recoveryTypes = this.recoveryTypes?.fork(options?.recoveryIndex);
+    this.recoverySubagents = this.recoverySubagents?.fork(options?.recoveryIndex);
+    const reset = () => {
+      const nextIndex = options?.onReset?.();
+      if (nextIndex) {
+        this.recoveryIndex = nextIndex;
+        if (calls instanceof RecoveryMap) calls.resetIndex(nextIndex);
+        const tools = (tracker as unknown as NativeRateState).tools;
+        if (tools instanceof RecoverySet) tools.map.resetIndex(nextIndex);
+        this.recoveryTypes?.resetIndex(nextIndex);
+        this.recoverySubagents?.resetIndex(nextIndex);
+      }
+    };
+    if (replay) {
+      reset();
+      tracker.reset();
+      calls.clear();
+    }
     const { result, newOffset, runningCalls, wasTruncated, fileIdentity, readStats } = await parseRolloutFile(
       this.rolloutPath,
       replay ? 0 : this.lastOffset,
@@ -1301,12 +1420,14 @@ export class RolloutParser {
       replay ? null : (this.cachedResult?.pendingApproval ?? null),
       replay ? {} : lastQuotaReadings(this.cachedResult?.quotaSamples ?? []),
       options
-        ? { ...options, transient: this.#transient, previousStat: replay ? undefined : this.readStats?.fileStat }
+        ? {
+            ...options,
+            onReset: reset,
+            transient: this.#transient,
+            previousStat: replay ? undefined : this.readStats?.fileStat,
+          }
         : undefined
-    ).catch((error) => {
-      if (generation === this.generation) this.needsReplay = true;
-      throw error;
-    });
+    );
 
     if (generation !== this.generation) return this.cachedResult;
     this.needsReplay = false;
@@ -1314,12 +1435,16 @@ export class RolloutParser {
     this.rateTracker = tracker;
     this.fileIdentity = fileIdentity;
     this.lastOffset = newOffset;
-    this.runningCalls = runningCalls;
+    this.runningCalls = runningCalls instanceof RecoveryMap ? runningCalls.commit() : runningCalls;
+    const tools = (tracker as unknown as NativeRateState).tools;
+    if (tools instanceof RecoverySet) (tracker as unknown as NativeRateState).tools = tools.commit();
 
     if (wasTruncated || replay) {
+      this.recoveryMaterialMissing = undefined;
       this.cachedResult = null;
     }
 
+    if (result.planProgress) this.recoveryMaterialMissing = undefined;
     // Merge with cached result for session info and accumulated stats
     if (this.cachedResult) {
       // No completed record means no new event clock, including zero-byte and tail-only slices.
@@ -1327,9 +1452,10 @@ export class RolloutParser {
         result.toolActivity.lastUpdateTime = this.cachedResult.toolActivity.lastUpdateTime;
       // Merge tool activity
       result.toolActivity.totalCalls += this.cachedResult.toolActivity.totalCalls;
-      for (const [type, count] of Object.entries(this.cachedResult.toolActivity.callsByType)) {
-        result.toolActivity.callsByType[type] = (result.toolActivity.callsByType[type] ?? 0) + count;
-      }
+      if (!this.recoveryTypes)
+        for (const [type, count] of Object.entries(this.cachedResult.toolActivity.callsByType)) {
+          result.toolActivity.callsByType[type] = (result.toolActivity.callsByType[type] ?? 0) + count;
+        }
 
       // Prepend cached recent calls, then trim
       const allCalls = [...this.cachedResult.toolActivity.recentCalls, ...result.toolActivity.recentCalls];
@@ -1361,7 +1487,7 @@ export class RolloutParser {
       // `pendingApproval` is not merged here: it was handed to the parse as
       // its starting state, so the batch already saw whether anything in it
       // answered the outstanding request.
-      result.subagents = mergeSubagents(this.cachedResult.subagents, result.subagents);
+      if (!this.recoverySubagents) result.subagents = mergeSubagents(this.cachedResult.subagents, result.subagents);
       result.activity ??= this.cachedResult.activity;
       if (result.activity && !result.activity.turnStartedAt && this.cachedResult.activity?.turnStartedAt) {
         result.activity = { ...result.activity, turnStartedAt: this.cachedResult.activity.turnStartedAt };
@@ -1389,51 +1515,198 @@ export class RolloutParser {
       result.quotaSamples = appendBounded(this.cachedResult.quotaSamples, result.quotaSamples, QUOTA_SAMPLE_LIMIT);
     }
 
+    if (this.recoveryTypes && this.recoverySubagents) {
+      if (wasTruncated || replay) {
+        this.recoveryTypes.clear();
+        this.recoverySubagents.clear();
+      }
+      for (const [name, count] of Object.entries(result.toolActivity.callsByType))
+        this.recoveryTypes.set(name, (this.recoveryTypes.get(name) ?? 0) + count);
+      for (const agent of result.subagents) {
+        const previous = this.recoverySubagents.get(agent.id);
+        this.recoverySubagents.set(agent.id, mergeSubagents(previous ? [previous] : [], [agent])[0]);
+      }
+      this.recoveryTypes = this.recoveryTypes.commit();
+      this.recoverySubagents = this.recoverySubagents.commit();
+      result.toolActivity.callsByType = recoveryCounts(this.recoveryTypes);
+      result.subagents = recoveryArray(this.recoverySubagents);
+    }
+    options?.onParsed?.();
     this.cachedResult = result;
     return result;
   }
 
-  /** Export cursor and every merge/rate/tool state together; the facade adds the full ref. */
+  /** Facade recovery uses keyed exact state; legacy collectors keep their live Map/Set. */
+  configureRecoveryIndex(
+    index: RecoveryIndexOverlay,
+    runningCount = 0,
+    rateToolsCount = 0,
+    runningTail: string | null = null,
+    subagentCount = 0,
+    typeCount = 0
+  ): void {
+    this.recoveryIndex = index;
+    this.recoverySubagents = new RecoveryMap(
+      index,
+      'codex.subagents',
+      subagentCount,
+      (agent) => JSON.stringify(metadataToWire(agent)),
+      (raw) => metadataFromWire<SubagentInfo>(JSON.parse(raw))
+    );
+    this.recoveryTypes = new RecoveryMap(
+      index,
+      'codex.tool-types',
+      typeCount,
+      JSON.stringify,
+      (raw) => JSON.parse(raw) as number
+    );
+    this.runningCalls = new RecoveryCalls(
+      index,
+      runningCount,
+      encodeRecoveryToolCall,
+      decodeRecoveryToolCall,
+      runningTail,
+      undefined,
+      undefined,
+      (call) => ({ ...call })
+    );
+    (this.rateTracker as unknown as NativeRateState).tools = new RecoverySet(
+      new RecoveryMap(index, 'codex.rate-tools', rateToolsCount, JSON.stringify, (raw) => {
+        if (JSON.parse(raw) !== true) throw new Error('invalid_rollout_checkpoint');
+        return true;
+      })
+    );
+  }
+
+  commitRecoveryIndex(index: RecoveryIndexOverlay): void {
+    this.recoveryIndex = index;
+    if (this.runningCalls instanceof RecoveryMap) this.runningCalls.useIndex(index);
+    const tools = (this.rateTracker as unknown as NativeRateState).tools;
+    if (tools instanceof RecoverySet) tools.map.useIndex(index);
+    this.recoveryTypes?.useIndex(index);
+    this.recoverySubagents?.useIndex(index);
+  }
+
+  /** Produce recovery metadata directly: full arguments/output never enter this graph. */
   exportCheckpoint(): RolloutParserCheckpoint {
+    const r = this.cachedResult;
+    const t = this.rateTracker as unknown as NativeRateState;
+    const plan = compactPlan(r?.planProgress ?? null);
+    const cached = r
+      ? {
+          activity: r.activity,
+          tokenUsageAt: r.tokenUsageAt,
+          outputRate: r.outputRate,
+          session: r.session,
+          toolActivity: {
+            recentCalls: r.toolActivity.recentCalls.map(compactToolCall),
+            totalCalls: r.toolActivity.totalCalls,
+            callsByType: this.recoveryTypes ? {} : r.toolActivity.callsByType,
+            lastUpdateTime: r.toolActivity.lastUpdateTime,
+          },
+          planProgress: plan.plan,
+          tokenUsage: r.tokenUsage,
+          rateLimits: r.rateLimits,
+          pendingApproval: r.pendingApproval,
+          subagents: this.recoverySubagents ? [] : r.subagents,
+          compactCount: r.compactCount,
+          lastCompactTime: r.lastCompactTime,
+          lastToolActivityTime: r.lastToolActivityTime,
+          lastAssistantMessageTime: r.lastAssistantMessageTime,
+          lastEventTime: r.lastEventTime,
+          workDirs: r.workDirs,
+          transcript: r.transcript,
+          transcriptDroppedAt: r.transcriptDroppedAt,
+          firstUserMessage: r.firstUserMessage,
+          lastUserMessageAt: r.lastUserMessageAt,
+          lastReplyAt: r.lastReplyAt,
+          events: r.events,
+          quotaSamples: r.quotaSamples,
+        }
+      : null;
     return {
-      version: 2,
-      runtime: process.versions.v8,
+      version: 3,
       offset: this.lastOffset,
       fileIdentity: this.fileIdentity,
-      payload: serialize({
-        cachedResult: this.cachedResult,
-        runningCalls: this.runningCalls,
-        rateTracker: this.rateTracker,
-        // The summary and cursor describe completed records only; raw tail bytes
-        // exist exclusively in the live reader WeakMap, never in this payload.
-        readStats: this.readStats
-          ? { ...this.readStats, state: { ...this.readStats.state, pendingBytes: [] } }
-          : undefined,
+      state: {
+        cachedResult: metadataToWire(cached),
+        rateTracker: rateToRecovery(t),
+        runningCount: this.runningCalls.size,
+        rateToolsCount: t.tools.size,
+        subagentCount: this.recoverySubagents?.size ?? 0,
+        typeCount: this.recoveryTypes?.size ?? 0,
+        runningTail:
+          this.runningCalls instanceof RecoveryCalls
+            ? this.runningCalls.tail
+            : ([...this.runningCalls.keys()].at(-1) ?? null),
+        ...(this.readStats
+          ? {
+              readStats: {
+                ...this.readStats,
+                bytesRead: 0,
+                recordsRead: 0,
+                elapsedMs: 0,
+                state: {
+                  ...this.readStats.state,
+                  pendingBytes: [],
+                  openToolWaits: [],
+                  usageMessageIds: [],
+                },
+              },
+            }
+          : {}),
         needsReplay: this.needsReplay,
-      }).toString('base64'),
+        ...(plan.missing || this.recoveryMaterialMissing
+          ? { materialMissing: plan.missing ?? this.recoveryMaterialMissing }
+          : {}),
+      },
     };
   }
 
   restoreCheckpoint(checkpoint: RolloutParserCheckpoint): void {
+    if (checkpoint.version !== 3) throw new Error('unsupported_rollout_checkpoint');
+    validateRolloutRecovery(checkpoint);
     if (
-      checkpoint.version !== 2 ||
-      checkpoint.runtime !== process.versions.v8 ||
-      !Number.isSafeInteger(checkpoint.offset) ||
-      checkpoint.offset < 0
+      !this.recoveryIndex &&
+      (checkpoint.state.runningCount ||
+        checkpoint.state.rateToolsCount ||
+        checkpoint.state.typeCount ||
+        checkpoint.state.subagentCount)
     )
-      throw new Error('unsupported_rollout_checkpoint');
-    const saved = deserialize(Buffer.from(checkpoint.payload, 'base64'));
-    if (!saved || !(saved.runningCalls instanceof Map) || !saved.rateTracker)
-      throw new Error('invalid_rollout_checkpoint');
-    if (saved.readStats?.state.pendingBytes.length) throw new Error('invalid_rollout_checkpoint');
+      throw new Error('missing_codex_recovery_index');
+    if (this.recoveryIndex)
+      this.configureRecoveryIndex(
+        this.recoveryIndex,
+        checkpoint.state.runningCount,
+        checkpoint.state.rateToolsCount,
+        checkpoint.state.runningTail,
+        checkpoint.state.subagentCount,
+        checkpoint.state.typeCount
+      );
+    const saved = checkpoint.state;
+    this.recoveryMaterialMissing = saved.materialMissing ? { ...saved.materialMissing } : undefined;
     this.#transient = new RolloutTransient();
-    this.cachedResult = saved.cachedResult;
-    this.runningCalls = saved.runningCalls;
-    this.rateTracker = Object.assign(new TokenRateTracker(), saved.rateTracker);
-    this.readStats = saved.readStats;
+    this.cachedResult = metadataFromWire<RolloutParseResult | null>(saved.cachedResult);
+    if (this.cachedResult && this.recoverySubagents && this.recoveryTypes) {
+      this.cachedResult.subagents = recoveryArray(this.recoverySubagents);
+      this.cachedResult.toolActivity.callsByType = recoveryCounts(this.recoveryTypes);
+    }
+    const tools = (this.rateTracker as unknown as NativeRateState).tools;
+    this.rateTracker = Object.assign(
+      new TokenRateTracker(),
+      metadataFromWire<NativeRateState>(saved.rateTracker as never),
+      { tools }
+    );
+    this.readStats = saved.readStats ? structuredClone(saved.readStats) : undefined;
     this.needsReplay = saved.needsReplay;
     this.lastOffset = checkpoint.offset;
     this.fileIdentity = checkpoint.fileIdentity;
+  }
+
+  getLatestOpenCall(): ToolCall | undefined {
+    const call =
+      this.runningCalls instanceof RecoveryCalls ? this.runningCalls.latest() : [...this.runningCalls.values()].at(-1);
+    return call ? { ...call } : undefined;
   }
 
   getOpenCalls(): ToolCall[] {

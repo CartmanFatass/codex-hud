@@ -9,6 +9,7 @@ import type {
   NativeReport,
 } from '../../core/interfaces/session-evidence.js';
 import type { SessionRef } from '../../core/types/identity.js';
+import type { RecoveryIndexEntry } from '../../core/types/checkpoint.js';
 import type {
   Metric,
   ObservationEvidence,
@@ -18,10 +19,16 @@ import type {
   Coverage,
 } from '../../core/types/observation.js';
 import { initialParserState } from '../../core/observation.js';
+import { RecoveryIndexOverlay, attachRecoveryIndex } from '../../core/checkpoint.js';
 import { sameSessionRef, validateSessionRef } from '../../core/identity.js';
 import { LAUNCH_MESSAGE_PREFIX, parseLaunchMessage } from '../../core/launch/message.js';
 
-export const CLAUDE_READER_VERSION = 'claude-reader-3';
+export const CLAUDE_READER_VERSION = 'claude-reader-4';
+export const CLAUDE_RECOVERY_VERSION = 'claude-recovery-1';
+const USAGE_IDS = 'claude.usageMessageIds';
+const FACT_CLOCKS = 'claude.factClocks';
+const OPEN_WAITS = 'claude.openToolWaits';
+const PENDING_CALLS = 'claude.pendingHudCalls';
 export const DEFAULT_READER_BUDGET: Readonly<ReaderBudget> = {
   maxBytes: 4 * 1024 * 1024,
   maxRecords: 2000,
@@ -30,6 +37,7 @@ export const DEFAULT_READER_BUDGET: Readonly<ReaderBudget> = {
 export const MAX_RECORD_BYTES = 1024 * 1024;
 const HISTORY_LIMIT = 100;
 const CHUNK_BYTES = 32 * 1024;
+const REPORT_RECOVERY_BYTES = 1024;
 
 export interface ClaudeStatusline {
   session_id: string;
@@ -58,6 +66,7 @@ interface RawFact {
   value: { kind: string; [key: string]: unknown };
 }
 interface Snapshot {
+  recoveryVersion: typeof CLAUDE_RECOVERY_VERSION;
   targetSize: number;
   tailBytesSeen: number;
   boundarySignature: { offset: number; length: number; sha256: string } | null;
@@ -88,6 +97,7 @@ interface Snapshot {
   pendingHudCalls: Record<string, string>;
   links: CachedLinkEvidence[];
   reports: NativeReport[];
+  reportsTruncated?: true;
   facts: RawFact[];
 }
 export interface ClaudeCheckpoint extends ReaderCheckpoint {
@@ -113,7 +123,46 @@ export interface ClaudeReaderOptions {
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const identifier = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 256;
 const count = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+/** Exact metadata only; both uncommitted JSON handoffs and trusted preparation use this guard. */
+export function validateClaudeRecoveryIndexEntry(entry: RecoveryIndexEntry): void {
+  const invalid = (): never => {
+    throw new Error('invalid_claude_recovery_index_entry');
+  };
+  if (
+    !entry ||
+    ![USAGE_IDS, FACT_CLOCKS, OPEN_WAITS, PENDING_CALLS].includes(entry.namespace) ||
+    typeof entry.key !== 'string' ||
+    entry.key.length === 0 ||
+    entry.key.length > (entry.namespace === FACT_CLOCKS ? 1024 : 256)
+  )
+    invalid();
+  if (entry.value === null) return;
+  if (typeof entry.value !== 'string') invalid();
+  let value: unknown;
+  try {
+    value = JSON.parse(entry.value);
+  } catch {
+    invalid();
+  }
+  switch (entry.namespace) {
+    case USAGE_IDS:
+      if (value !== true) invalid();
+      break;
+    case FACT_CLOCKS:
+      if (!count(value)) invalid();
+      break;
+    case PENDING_CALLS:
+      if (!identifier(value)) invalid();
+      break;
+    case OPEN_WAITS:
+      if (!object(value) || Object.keys(value).length !== 2 || !count(value.startedAt) || !count(value.lastActivityAt))
+        invalid();
+      break;
+  }
+}
+
 const emptySnapshot = (): Snapshot => ({
+  recoveryVersion: CLAUDE_RECOVERY_VERSION,
   targetSize: 0,
   tailBytesSeen: 0,
   boundarySignature: null,
@@ -146,6 +195,21 @@ const emptySnapshot = (): Snapshot => ({
   reports: [],
   facts: [],
 });
+/** Keep saved display material byte bounded, including JSON escaping and UTF-8 expansion. */
+function reportExcerpt(text: string): string {
+  if (Buffer.byteLength(JSON.stringify(text)) <= REPORT_RECOVERY_BYTES) return text;
+  const limit = REPORT_RECOVERY_BYTES - Buffer.byteLength(JSON.stringify('…'));
+  let bytes = 0;
+  let excerpt = '';
+  for (const character of text) {
+    const encoded = Buffer.byteLength(JSON.stringify(character)) - 2;
+    if (bytes + encoded > limit) break;
+    excerpt += character;
+    bytes += encoded;
+  }
+  return excerpt + '…';
+}
+
 function skip(state: ReaderParserState, reason: string, gap = false): void {
   state.skipped[reason] = (state.skipped[reason] ?? 0) + 1;
   if (gap && !state.gaps.includes(reason)) state.gaps.push(reason);
@@ -186,8 +250,7 @@ function observe(
   row: unknown,
   state: ReaderParserState,
   snapshot: Snapshot,
-  ids: Set<string>,
-  clocks: Map<string, number>,
+  index: RecoveryIndexOverlay,
   options: ClaudeReaderOptions,
   end: number
 ): boolean {
@@ -215,23 +278,14 @@ function observe(
   const eventTime = typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : NaN;
   const observedTime = !Number.isFinite(eventTime);
   const messageKey = `${identifier(row.uuid) ? row.uuid : `byte:${end}`}:${type === 'user' ? 'user_message' : 'assistant_message'}`;
-  const firstAt = clocks.get(messageKey);
+  const storedAt = index.get(FACT_CLOCKS, messageKey);
+  const firstAt = storedAt === undefined ? undefined : Number(storedAt);
   const at = observedTime ? (firstAt ?? Date.now()) : eventTime;
   const nativeId = identifier(row.uuid) ? row.uuid : `byte:${end}`;
   const fact = (kind: string, extra: Record<string, unknown> = {}) => {
     const key = `${nativeId}:${kind}${typeof extra.callId === 'string' ? `:${extra.callId}` : ''}`;
-    if (clocks.has(key)) return;
-    clocks.set(key, at);
-    Object.defineProperty(snapshot.factClocks, key, {
-      value: at,
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    });
-    if (Object.keys(snapshot.factClocks).length >= 128) {
-      snapshot.factClockPages.push(Object.freeze(snapshot.factClocks));
-      snapshot.factClocks = {};
-    }
+    if (index.has(FACT_CLOCKS, key)) return;
+    index.set(FACT_CLOCKS, key, JSON.stringify(at));
     snapshot.facts.push({ id: key, eventAt: at, observedTime, value: { kind, ...extra } });
     if (snapshot.facts.length > HISTORY_LIMIT) snapshot.facts.shift();
     snapshot.lastEvidenceAt = at;
@@ -243,6 +297,9 @@ function observe(
     }
     if (state.compactBoundary === nativeId) return false;
     state.compactBoundary = nativeId;
+    // Only live metadata is enumerated; historical dedup IDs and clocks remain lazy.
+    for (const namespace of [OPEN_WAITS, PENDING_CALLS])
+      for (const [key] of index.entries(namespace)) index.delete(namespace, key);
     state.openToolWaits = [];
     state.rateBaseline = null;
     snapshot.contextUsed = null;
@@ -287,9 +344,8 @@ function observe(
       const u = message.usage;
       if (!identifier(message.id) || !count(u.input_tokens) || !count(u.output_tokens))
         skip(state, 'malformed_usage', true);
-      else if (!ids.has(message.id)) {
-        ids.add(message.id);
-        state.usageMessageIds.push(message.id);
+      else if (!index.has(USAGE_IDS, message.id)) {
+        index.set(USAGE_IDS, message.id, 'true');
         const usage = {
           input: u.input_tokens,
           output: u.output_tokens,
@@ -354,19 +410,8 @@ function observe(
           (tool) => block.name === `mcp__${server}__${tool}`
         )
       );
-      if (allowed) {
-        Object.defineProperty(snapshot.pendingHudCalls, block.id, {
-          value: block.name,
-          enumerable: true,
-          configurable: true,
-          writable: true,
-        });
-        snapshot.pendingHudCalls = Object.fromEntries(Object.entries(snapshot.pendingHudCalls).slice(-HISTORY_LIMIT));
-      }
-      state.openToolWaits = [
-        ...state.openToolWaits.filter((w) => w.id !== block.id),
-        { id: block.id, startedAt: at, lastActivityAt: at },
-      ].slice(-HISTORY_LIMIT);
+      if (allowed) index.set(PENDING_CALLS, block.id, JSON.stringify(block.name));
+      index.set(OPEN_WAITS, block.id, JSON.stringify({ startedAt: at, lastActivityAt: at }));
       fact('tool_started', { callId: block.id, tool: block.name });
     } else if (block.type === 'tool_result' && identifier(block.tool_use_id)) {
       publicMessage = true;
@@ -381,9 +426,10 @@ function observe(
   return false;
 
   function finish(id: string, content: unknown, error: boolean): void {
-    state.openToolWaits = state.openToolWaits.filter((w) => w.id !== id);
-    const tool = Object.hasOwn(snapshot.pendingHudCalls, id) ? snapshot.pendingHudCalls[id] : null;
-    delete snapshot.pendingHudCalls[id];
+    index.delete(OPEN_WAITS, id);
+    const storedTool = index.get(PENDING_CALLS, id);
+    const tool: string | null = storedTool === undefined ? null : JSON.parse(storedTool);
+    index.delete(PENDING_CALLS, id);
     fact('tool_finished', { callId: id, isError: error });
     const result = !error && tool ? resultObject(content) : null;
     if (!result || !tool) return;
@@ -587,22 +633,24 @@ function validCheckpoint(cp: ClaudeCheckpoint, ref: SessionRef): boolean {
     typeof p.discardingOversize === 'boolean' &&
     (!p.discardingOversize || p.pendingBytes.length === 0) &&
     Array.isArray(p.usageMessageIds) &&
-    p.usageMessageIds.every(identifier) &&
+    p.usageMessageIds.length === 0 &&
     Array.isArray(p.openToolWaits) &&
-    p.openToolWaits.length <= HISTORY_LIMIT &&
+    p.openToolWaits.length === 0 &&
     p.openToolWaits.every((w) => object(w) && identifier(w.id) && count(w.startedAt) && count(w.lastActivityAt)) &&
     (p.compactBoundary === null || identifier(p.compactBoundary)) &&
     Array.isArray(p.gaps) &&
     p.gaps.every(identifier) &&
     object(p.skipped) &&
     Object.values(p.skipped).every(count) &&
+    s.recoveryVersion === CLAUDE_RECOVERY_VERSION &&
     typeof s.tailAtEof === 'boolean' &&
     Array.isArray(s.factClockPages) &&
+    s.factClockPages.length === 0 &&
     s.factClockPages.every(
       (page) => object(page) && Object.keys(page).length <= 128 && Object.values(page).every(count)
     ) &&
     object(s.factClocks) &&
-    Object.keys(s.factClocks).length < 128 &&
+    Object.keys(s.factClocks).length === 0 &&
     Object.values(s.factClocks).every(count) &&
     (s.fileStat === null ||
       (object(s.fileStat) &&
@@ -617,7 +665,7 @@ function validCheckpoint(cp: ClaudeCheckpoint, ref: SessionRef): boolean {
     (s.cwd === null || (typeof s.cwd === 'string' && path.isAbsolute(s.cwd))) &&
     (s.usage === null || (object(s.usage) && count(s.usage.input) && count(s.usage.output))) &&
     object(s.pendingHudCalls) &&
-    Object.entries(s.pendingHudCalls).length <= HISTORY_LIMIT &&
+    Object.entries(s.pendingHudCalls).length === 0 &&
     Object.entries(s.pendingHudCalls).every(([k, v]) => identifier(k) && identifier(v)) &&
     Array.isArray(s.links) &&
     s.links.length <= HISTORY_LIMIT &&
@@ -651,7 +699,14 @@ function validCheckpoint(cp: ClaudeCheckpoint, ref: SessionRef): boolean {
     }) &&
     Array.isArray(s.reports) &&
     s.reports.length <= 20 &&
-    s.reports.every((r) => object(r) && typeof r.text === 'string' && r.text.length <= 4096 && count(r.at)) &&
+    (s.reportsTruncated === undefined || s.reportsTruncated === true) &&
+    s.reports.every(
+      (r) =>
+        object(r) &&
+        typeof r.text === 'string' &&
+        Buffer.byteLength(JSON.stringify(r.text)) <= REPORT_RECOVERY_BYTES &&
+        count(r.at)
+    ) &&
     Array.isArray(s.facts) &&
     s.facts.length <= HISTORY_LIMIT &&
     s.facts.every(
@@ -678,7 +733,12 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
         options.statusline.cost ?? null,
       ])
     : null;
-  let current = checkpoint ? (structuredClone(checkpoint) as ClaudeCheckpoint) : undefined;
+  // Runtime lookups are intentionally nonenumerable and must survive the JSON-state clone.
+  const handoff = checkpoint?.recoveryIndex;
+  for (const entry of handoff?.delta.entries ?? []) validateClaudeRecoveryIndexEntry(entry);
+  let index = new RecoveryIndexOverlay(CLAUDE_RECOVERY_VERSION, handoff);
+  const inline = checkpoint ? (({ recoveryIndex: _index, ...value }) => value)(checkpoint) : undefined;
+  let current = inline ? (structuredClone(inline) as ClaudeCheckpoint) : undefined;
   if (current) {
     let valid = false;
     try {
@@ -686,20 +746,30 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
     } catch {
       /* Corrupt persisted checkpoint. */
     }
-    if (!valid) throw new Error('unsupported_claude_checkpoint');
+    if (!valid || !handoff) throw new Error('unsupported_claude_checkpoint');
   }
-  let ids = new Set(current?.parserState.usageMessageIds ?? []);
-  const clocks = new Map<string, number>();
-  for (const page of current?.claude.factClockPages ?? []) {
-    Object.freeze(page);
-    for (const [key, at] of Object.entries(page)) clocks.set(key, at);
+  let pendingReset: { reason: NonNullable<ReaderCheckpoint['resetReason']>; generation: number } | undefined =
+    current?.resetReason &&
+    (!handoff?.delta.base || handoff.delta.base.boundary.sourceGeneration !== current.sourceGeneration)
+      ? { reason: current.resetReason, generation: current.sourceGeneration }
+      : undefined;
+  function markCompaction(cp: ClaudeCheckpoint): void {
+    cp.sourceGeneration++;
+    // A physical reset authorizes the fresh index lineage until publication.
+    // Later compaction has its own parser boundary and must not erase that provenance.
+    const reason = pendingReset?.reason ?? 'compaction';
+    cp.resetReason = reason;
+    pendingReset = { reason, generation: cp.sourceGeneration };
   }
-  for (const [key, at] of Object.entries(current?.claude.factClocks ?? {})) clocks.set(key, at);
+  const reportExcerpts = new WeakMap<NativeReport, string>();
   let transient: { offset: number; position: number; pending: Buffer } | undefined;
   let restoredTail = !!checkpoint && (current?.claude.tailBytesSeen ?? 0) > 0;
   let queue: Promise<unknown> = Promise.resolve();
-  function read(requested: ClaudeReaderBudget = DEFAULT_READER_BUDGET): ClaudeReaderResult {
-    const started = performance.now();
+  function readSlice(requested: ClaudeReaderBudget, started: number): ClaudeReaderResult {
+    if (current) {
+      if (pendingReset?.generation === current.sourceGeneration) current.resetReason = pendingReset.reason;
+      else delete current.resetReason;
+    }
     const { maxBytes, maxRecords, budgetMs, deadlineMs } = requested;
     if (
       ![maxBytes, maxRecords].every((n) => Number.isSafeInteger(n) && n >= 0) ||
@@ -810,11 +880,11 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
             sourceGeneration: generation,
             ...(resetReason ? { resetReason } : {}),
           };
-          ids = new Set();
-          clocks.clear();
+          pendingReset = resetReason ? { reason: resetReason, generation } : undefined;
+          index = new RecoveryIndexOverlay(CLAUDE_RECOVERY_VERSION);
           transient = undefined;
           restoredTail = false;
-        } else delete current.resetReason;
+        }
         const cp = current;
         const p = cp.parserState;
         const s = cp.claude;
@@ -905,9 +975,8 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
                   recordsRead++;
                   if (line.trim()) {
                     try {
-                      if (observe(JSON.parse(line), p, s, ids, clocks, options, readPosition)) {
-                        cp.sourceGeneration++;
-                        cp.resetReason = 'compaction';
+                      if (observe(JSON.parse(line), p, s, index, options, readPosition)) {
+                        markCompaction(cp);
                       }
                     } catch (error) {
                       if (error instanceof SyntaxError) skip(p, 'malformed_record', true);
@@ -926,9 +995,8 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
             if (recordsRead < recordLimit && (canConsume() || (positiveSlice && recordsRead === 0))) {
               try {
                 const row: unknown = JSON.parse(pending.toString('utf8'));
-                if (observe(row, p, s, ids, clocks, options, readPosition)) {
-                  cp.sourceGeneration++;
-                  cp.resetReason = 'compaction';
+                if (observe(row, p, s, index, options, readPosition)) {
+                  markCompaction(cp);
                 }
                 commitBoundary(readPosition, pending, pending);
                 pending = Buffer.alloc(0);
@@ -957,6 +1025,17 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
         prepared.observation.coverage.state = needsLarger ? 'partial' : 'catching_up';
         prepared.observation.coverage.reason = needsLarger ? 'record_needs_larger_slice' : 'budget_exhausted';
       }
+      // Display excerpts are independent of exact parser metadata and the live public reports.
+      const savedReports = s.reports.map((report) => {
+        let text = reportExcerpts.get(report);
+        if (text === undefined) {
+          text = reportExcerpt(report.text);
+          reportExcerpts.set(report, text);
+        }
+        return { ...report, text };
+      });
+      const reportsTruncated =
+        s.reportsTruncated === true || savedReports.some((report, i) => report.text !== s.reports[i].text);
       // Clone only the JSON state, not entire file buffers; returned checkpoints cannot mutate this reader.
       const saved: ClaudeCheckpoint = {
         ...cp,
@@ -973,6 +1052,8 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
         },
         claude: {
           ...s,
+          // Successful read time belongs to the live projection, not durable parser identity.
+          lastSuccessfulReadAt: null,
           fileStat: s.fileStat ? { ...s.fileStat } : null,
           boundarySignature: s.boundarySignature ? { ...s.boundarySignature } : null,
           firstRecordSignature: s.firstRecordSignature ? { ...s.firstRecordSignature } : null,
@@ -982,7 +1063,8 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
           usage: s.usage ? { ...s.usage } : null,
           pendingHudCalls: { ...s.pendingHudCalls },
           links: s.links.map((l) => ({ ...l })),
-          reports: s.reports.map((r) => ({ ...r })),
+          reports: savedReports,
+          ...(reportsTruncated ? { reportsTruncated: true as const } : {}),
           facts: s.facts.map((f) => ({ ...f, value: { ...f.value } })),
         },
       };
@@ -999,6 +1081,34 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
     } finally {
       if (fd !== null) fs.closeSync(fd);
       if (measuredStats) measuredStats.elapsedMs = performance.now() - started;
+    }
+  }
+  function read(requested: ClaudeReaderBudget = DEFAULT_READER_BUDGET): ClaudeReaderResult {
+    const started = performance.now();
+    const previous = { current, index, transient, restoredTail, pendingReset };
+    // Lazy index reads can fail after earlier records changed usage or compaction state.
+    // Stage the small inline state and touched keys together until I/O and assembly finish.
+    current = current ? structuredClone(current) : undefined;
+    index = index.fork();
+    try {
+      const result = readSlice(requested, started);
+      index = index.commit();
+      const { sourceGeneration, resetReason } = result.checkpoint;
+      attachRecoveryIndex(result.checkpoint, index, (lookup) => {
+        if (
+          resetReason &&
+          pendingReset?.generation === sourceGeneration &&
+          pendingReset.reason === resetReason &&
+          lookup.reference.boundary.sourceGeneration === sourceGeneration
+        )
+          pendingReset = undefined;
+      });
+      result.recoveryIndex = result.checkpoint.recoveryIndex;
+      if (result.stats) result.stats.elapsedMs = performance.now() - started;
+      return result;
+    } catch (error) {
+      ({ current, index, transient, restoredTail, pendingReset } = previous);
+      throw error;
     }
   }
   return {

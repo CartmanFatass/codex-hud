@@ -1,14 +1,23 @@
 import { collectResource } from './observation.js';
-import type { CollectLease } from './types/observation.js';
+import type { CollectLease, Coverage } from './types/observation.js';
 import type { SessionRef } from './types/identity.js';
 
 export const COLLECT_LEASE_TTL_MS = 15_000;
 export const COLLECT_RENEW_INTERVAL_MS = 5_000;
 
 export class ObservationStoreError extends Error {
+  readonly coverage?: Coverage;
   constructor(readonly code: string) {
     super(code);
     this.name = 'ObservationStoreError';
+    if (code === 'checkpoint_state_oversize')
+      this.coverage = {
+        state: 'partial',
+        loaded: true,
+        skipped: {},
+        gaps: [code],
+        reason: code,
+      };
   }
 }
 

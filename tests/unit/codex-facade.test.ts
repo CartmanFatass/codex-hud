@@ -4,15 +4,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { deserialize } from 'node:v8';
-import { CodexAdapter, type CodexCheckpoint } from '../../src/harness/codex/index.js';
-import {
-  observeLinkEvidence,
-  LINK_EVIDENCE_LIMIT,
-  PENDING_HUD_CALL_LIMIT,
-  type LinkScanState,
-} from '../../src/harness/codex/link-evidence.js';
+import { CodexAdapter, CODEX_RECOVERY_VERSION, type CodexCheckpoint } from '../../src/harness/codex/index.js';
+import { observeLinkEvidence, LINK_EVIDENCE_LIMIT, type LinkScanState } from '../../src/harness/codex/link-evidence.js';
 import { RolloutParser } from '../../src/collectors/rollout.js';
+import { RecoveryIndexOverlay } from '../../src/core/checkpoint.js';
 import { TreeScanStore, SCAN_VERSION, SAVE_MIN_BYTES } from '../../src/collectors/tree-scan-store.js';
 import {
   buildSubagentTreeYielding,
@@ -191,7 +186,12 @@ test('budgeted parser checkpoints restore exact merge/tool/rate state after JSON
     result = await reader.read({ maxBytes: 4096, maxRecords: 1, budgetMs: TEST_BUDGET.budgetMs });
   }
   const checkpoint = JSON.parse(JSON.stringify(result.checkpoint)) as CodexCheckpoint;
-  assert.equal(checkpoint.parserState.openToolWaits[0].id, 'spawn-call');
+  assert.deepEqual(checkpoint.parserState.openToolWaits, []);
+  assert.ok(
+    checkpoint.recoveryIndex?.delta.entries.some(
+      (entry) => entry.namespace === 'codex.running' && entry.key === 'spawn-call'
+    )
+  );
   const restored = await drain(f.adapter.open(f.ref, checkpoint));
   const legacy = new RolloutParser();
   legacy.setRolloutPath(f.file);
@@ -306,7 +306,7 @@ test('link evidence requires an exact hud-mcp call/output pair, bounds state and
   }
   assert.equal((state.linkEvidence as unknown[] | undefined)?.length, LINK_EVIDENCE_LIMIT);
   for (let n = 0; n < 105; n++) observeLinkEvidence(JSON.parse(call(`pending-${n}`)), state);
-  assert.equal(Object.keys(state.pendingHudCalls!).length, PENDING_HUD_CALL_LIMIT);
+  assert.equal(Object.keys(state.pendingHudCalls!).length, 105);
   assert.ok(!JSON.stringify(state).includes('DO_NOT_RETAIN'));
 });
 
@@ -503,7 +503,7 @@ test('checkpoint restore preserves token-rate tool-wait union and concurrent rea
     reader.read({ maxBytes: 4096, maxRecords: 2, budgetMs: TEST_BUDGET.budgetMs }),
   ]);
   assert.ok(b.checkpoint.offset > a.checkpoint.offset);
-  assert.equal(b.checkpoint.parserState.openToolWaits[0].id, 'spawn-call');
+  assert.equal((b.checkpoint as CodexCheckpoint).codex.rollout.state.runningTail, 'spawn-call');
   assert.equal(b.checkpoint.parserState.rateBaseline?.outputTokens, 100);
   const restored = await drain(f.adapter.open(f.ref, JSON.parse(JSON.stringify(b.checkpoint))));
   const parser = new RolloutParser();
@@ -511,6 +511,9 @@ test('checkpoint restore preserves token-rate tool-wait union and concurrent rea
   await parser.parse();
   const resumeParser = new RolloutParser();
   resumeParser.setRolloutPath(f.file);
+  resumeParser.configureRecoveryIndex(
+    new RecoveryIndexOverlay(CODEX_RECOVERY_VERSION, restored.checkpoint.recoveryIndex)
+  );
   resumeParser.restoreCheckpoint((restored.checkpoint as CodexCheckpoint).codex.rollout);
   assert.deepEqual(resumeParser.getCached()?.outputRate, parser.getCached()?.outputRate);
   assert.equal(restored.stats?.recordsRead, 2);
@@ -660,7 +663,7 @@ test('current action uses open calls after the bounded recent-call history evict
   const f = await fixture(t, lines);
   const result = await drain(f.adapter.open(f.ref));
   assert.equal(result.evidence?.action?.id, 'long-open');
-  assert.equal(result.checkpoint.parserState.openToolWaits[0].id, 'long-open');
+  assert.equal((result.checkpoint as CodexCheckpoint).codex.rollout.state.runningTail, 'long-open');
 });
 
 test('source-scoped candidates and native topology exclude rollout symlinks escaping the source', async (t) => {
@@ -844,7 +847,7 @@ test('drain bounds every await and rejects late terminal responses', async (t) =
 
 function assertPrivateCheckpoint(result: ReaderResult, sentinel: string) {
   const checkpoint = result.checkpoint as CodexCheckpoint;
-  const native = deserialize(Buffer.from(checkpoint.codex.rollout.payload, 'base64'));
+  const native = checkpoint.codex.rollout.state;
   for (const artifact of [result, native]) {
     assert.ok(!JSON.stringify(artifact).includes(sentinel), 'source sentinel never reaches serializable state');
   }
@@ -1013,8 +1016,7 @@ test('F09/F10 no-content budgeted rereads preserve the nested checkpoint event c
   const first = await drain(reader);
   const clock = (result: ReaderResult) => {
     const cp = result.checkpoint as CodexCheckpoint;
-    const saved = deserialize(Buffer.from(cp.codex.rollout.payload, 'base64'));
-    return saved.cachedResult.toolActivity.lastUpdateTime.getTime();
+    return cp.codex.rollout.state.cachedResult!.toolActivity.lastUpdateTime;
   };
   assert.equal(clock(first), TIME + 7000);
   const zero = await reader.read({ ...TEST_BUDGET, maxBytes: 0 });
