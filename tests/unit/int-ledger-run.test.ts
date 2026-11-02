@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
 import { HeadlessRunControl } from '../../src/core/run/control.js';
-import { readProcess } from '../../src/core/run/process.js';
+import { launchNodeGroup, readProcess } from '../../src/core/run/process.js';
 import { createRunFactPort } from '../../src/core/run/ledger-port.js';
 import { PrivateLedgerGate } from '../../src/ledger/local-manager.js';
 const skip = ledgerRuntimeSupported() ? false : 'Integration requires Node 22 >=22.13 or >=24';
@@ -26,7 +26,10 @@ test('int accepted intent to real CLI registration/submission/receipt/reconcile 
     const s = await f.port.read(f.input.runId);
     assert.equal(s.run.state, 'ended');
     assert.equal(s.slotHeld, false);
-    assert.equal(s.run.exitCode, 7);
+    assert.equal(s.run.exitCode, null);
+    assert.equal(s.receipt?.native_exit, null);
+    assert.equal(s.receipt?.shell_exit, null);
+    assert.equal(s.receipt?.reason, 'scope_ended');
     assert.equal(s.claimState, 'revoked');
     assert.equal(s.run.launchPhase, 'submitted');
     assert.ok(s.receipt);
@@ -191,7 +194,7 @@ test('int shell receipt projects shell 137 while native status stays unknown', {
     home
   );
   try {
-    const control = new HeadlessRunControl(f.port, f.home, new PrivateLedgerGate(f.home).actor());
+    const control = new HeadlessRunControl(f.port, f.home, new PrivateLedgerGate(f.home).actor(), launchNodeGroup);
     await control.start({
       input: f.input,
       ticket: f.ticket,
@@ -456,7 +459,7 @@ test(
       home
     );
     try {
-      const control = new HeadlessRunControl(f.port, f.home, new PrivateLedgerGate(f.home).actor());
+      const control = new HeadlessRunControl(f.port, f.home, new PrivateLedgerGate(f.home).actor(), launchNodeGroup);
       const receipt = f.port.receipt.bind(f.port);
       f.port.receipt = async () => {
         throw new Error('synthetic-crash-after-file');
@@ -724,7 +727,7 @@ test(
     const f = await fixture([process.execPath, '-e', 'setTimeout(()=>process.exit(7),250)']);
     const { spawn } = await import('node:child_process');
     try {
-      const control = new HeadlessRunControl(f.port, f.home, new PrivateLedgerGate(f.home).actor());
+      const control = new HeadlessRunControl(f.port, f.home, new PrivateLedgerGate(f.home).actor(), launchNodeGroup);
       f.port.receipt = async () => {
         throw new Error('synthetic-receipt-cut');
       };
@@ -838,7 +841,8 @@ test(
     const { fixture, cli } = await helpers();
     const f = await fixture([process.execPath, '-e', 'setTimeout(()=>process.exit(7),250)']);
     try {
-      assert.equal((await cli(f, ['start'], { input: f.input, ticket: f.ticket }).done).code, 0);
+      const control = new HeadlessRunControl(f.port, f.home, new PrivateLedgerGate(f.home).actor(), launchNodeGroup);
+      await control.start({ input: f.input, ticket: f.ticket });
       const { commitReconcile, readReconcileSnapshot } = await import('../../src/ledger/reconcile.js');
       const { digest } = await import('../../src/core/canonical.js');
       const id = f.input.runId,
@@ -906,3 +910,42 @@ test(
     }
   }
 );
+
+test('int sourced compatibility waiter preserves exact native exit 7 on the real ledger', { skip }, async () => {
+  const { fixture } = await helpers();
+  const f = await fixture([process.execPath, '-e', 'setTimeout(()=>process.exit(7),250)']);
+  try {
+    const control = new HeadlessRunControl(f.port, f.home, new PrivateLedgerGate(f.home).actor(), launchNodeGroup);
+    await control.start({ input: f.input, ticket: f.ticket });
+    const s = await f.port.read(f.input.runId);
+    assert.equal(s.run.exitCode, 7);
+    assert.equal(s.receipt.native_exit.exit_code, 7);
+    assert.equal(s.receipt.native_exit.status_source, 'wait_status');
+    assert.equal(s.run.state, 'ended');
+    assert.equal(s.slotHeld, false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('int equals-executable refusal spends no ticket and changes no run, claim or ledger rows', { skip }, async () => {
+  const { fixture } = await helpers();
+  const f = await fixture(['/synthetic/executable=assignment']);
+  try {
+    const before = f.ledger.db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      .all()
+      .map((r: any) => r.name);
+    const snapshot = () => before.map((name: string) => [name, f.ledger.db.prepare(`SELECT * FROM "${name}"`).all()]);
+    const original = snapshot();
+    const control = new HeadlessRunControl(f.port, f.home, new PrivateLedgerGate(f.home).actor());
+    await assert.rejects(
+      () => control.start({ input: f.input, ticket: f.ticket }),
+      /headless_executable_assignment_unsupported/
+    );
+    assert.deepEqual(snapshot(), original);
+    assert.equal(existsSync(join(f.home, 'runs')), false);
+  } finally {
+    await f.cleanup();
+  }
+});
