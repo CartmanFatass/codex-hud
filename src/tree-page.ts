@@ -1,3 +1,7 @@
+import { performance } from 'node:perf_hooks';
+import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
+import { initialParserState } from './core/observation.js';
+import type { DelegationViewModel } from './core/link/view-model.js';
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import { navigateSession } from './utils/session-navigation.js';
 import { defaultSettings, saveSettings, briefingScope, settingsPath, type HudSettings } from './settings.js';
@@ -242,6 +246,8 @@ function requestEnsureSingle(): void {
 
 async function runLivePage(): Promise<void> {
   startProfiling('panel');
+  const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
+  let delegation: DelegationViewModel | null = null;
   // Opened again, the panel reads only what each rollout gained since it last saved its scan.
   useTreeScanStore(new TreeScanStore(path.join(getHudHome(), 'scan')));
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
@@ -885,20 +891,24 @@ async function runLivePage(): Promise<void> {
       adaptive = recordAdaptivePoll(adaptive, {
         scopeKey: collectionScope(),
         nowMs: Date.now(),
-        ...collectionObservation(currentHud(), tree),
+        ...withDelegationObservation(collectionObservation(currentHud(), tree), delegation),
         succeeded: !currentHud()?.stale && !error && currentHud()?.health?.sessionBound === true,
       });
     else if (!closed) void collect(true);
   };
   const collectNow = async () => {
     collecting = true;
+    const delegationDeadline = performance.now() + 40;
     let session: ReturnType<typeof finder.check> = null;
     let stale = false;
     // Where a failure happened, for the health row.
     let stage: HealthSource = 'session';
     try {
       session = finder.check();
+      delegation = delegationCollector ? await delegationCollector.tick(session?.sessionId, delegationDeadline) : null;
       stage = 'rollout';
+      const rootReadStarted = performance.now();
+      const priorRootStats = parser.getReadStats();
       parser.setRolloutPath(session?.path ?? null);
       if (!session) {
         main = null;
@@ -911,7 +921,20 @@ async function runLivePage(): Promise<void> {
         } else {
           lastParsedRollout = signature;
           try {
-            main = await parser.parse();
+            main = await parser.parse(
+              delegation
+                ? {
+                    budget: {
+                      maxBytes: 4 * 1024 * 1024,
+                      maxRecords: 2000,
+                      budgetMs: Math.max(0, Math.min(20, Math.floor(delegationDeadline - performance.now()))),
+                    },
+                    state: parser.getReadStats()?.state ?? initialParserState(),
+                  }
+                : undefined
+            );
+            if (delegation && ((parser.getReadStats()?.remainingBytes ?? 0) > 0 || parser.getReadStats()?.continuation))
+              lastParsedRollout = null;
           } catch (err) {
             // A failed read is not "already parsed"; let the next tick retry.
             lastParsedRollout = null;
@@ -919,6 +942,13 @@ async function runLivePage(): Promise<void> {
           }
         }
       }
+      const rootStats = parser.getReadStats();
+      if (delegation && rootStats && rootStats !== priorRootStats)
+        delegationCollector?.collector.chargeAdditionalRead(
+          rootStats.bytesRead,
+          rootStats.recordsRead,
+          performance.now() - rootReadStarted
+        );
       hudStatus.health.bind(Boolean(session));
       hudStatus.health.read();
       stage = 'tree';
@@ -946,23 +976,25 @@ async function runLivePage(): Promise<void> {
       // The root is not a card node, but its new spawn charges must be read
       // on this tick too, rather than waiting for the quiet-file budget.
       if (session) priority.add(session.path);
-      const listed = rootId
-        ? await timeAsync('tree.list', () =>
-            findRolloutsInDaysYielding(
-              treeLookbackDays(
-                rootId,
-                3,
-                main?.subagents?.map((agent) => agent.id)
-              ),
-              priority
+      const listed =
+        rootId && !delegation
+          ? await timeAsync('tree.list', () =>
+              findRolloutsInDaysYielding(
+                treeLookbackDays(
+                  rootId,
+                  3,
+                  main?.subagents?.map((agent) => agent.id)
+                ),
+                priority
+              )
             )
-          )
-        : undefined;
-      tree = rootId
-        ? await timeAsync('tree.build', () =>
-            buildSubagentTreeYielding(rootId, main?.subagents ?? [], 3, Date.now(), listed)
-          )
-        : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
+          : undefined;
+      tree =
+        rootId && !delegation
+          ? await timeAsync('tree.build', () =>
+              buildSubagentTreeYielding(rootId, main?.subagents ?? [], 3, Date.now(), listed)
+            )
+          : { rootId, nodes: [], totalCount: 0, updatedAt: new Date() };
       treeBuiltFor = rootId;
       markActivitySourceSuccess('tree');
       applyAgentContext();
@@ -987,7 +1019,14 @@ async function runLivePage(): Promise<void> {
     }
     let built: ReturnType<HudStatus['build']> | null = null;
     try {
+      const delegationMs = delegationCollector?.collector.stats().totalMs ?? 0;
+      if (delegationMs > 50)
+        hudStatus.health.fail(
+          'tree',
+          delegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms'
+        );
       built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree });
+      if (delegationCollector) Object.assign(built, { delegation });
       markActivitySourceSuccess('status');
     } catch (err) {
       hudStatus.health.fail('status', err); /* The foot keeps its last good rows. */
@@ -1097,6 +1136,7 @@ async function runLivePage(): Promise<void> {
   const finish = (user = false) => {
     if (closed) return;
     closed = true;
+    delegationCollector?.close();
     briefer.stop();
     jobs.stop();
     progress.stop();

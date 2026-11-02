@@ -1,3 +1,10 @@
+import {
+  CAPACITY_STATES,
+  capacityLimits,
+  countCapacity,
+  type CapacityLimits,
+  type CapacityOccupant,
+} from '../core/capacity.js';
 import { canonicalJson, requireCanonicalAbsolutePath } from '../core/canonical.js';
 import { performance } from 'node:perf_hooks';
 import {
@@ -467,25 +474,8 @@ class CapacityRefusal extends Error {
     super('concurrency_limit');
   }
 }
-export interface CapacityLimits {
-  maxActiveRuns?: number;
-  maxActiveRunsPerOwner?: number;
-}
-export const DEFAULT_CAPACITY_LIMITS = Object.freeze({ maxActiveRuns: 6, maxActiveRunsPerOwner: 4 });
-export interface CapacityOccupant {
-  runId: string;
-  linkId: string;
-  state: 'starting' | 'running' | 'cancelling' | 'uncertain';
-  since: number;
-  holder: 'self' | 'other';
-  retireEta: number | null;
-}
-export function capacityLimits(limits: CapacityLimits = {}) {
-  const resolved = { ...DEFAULT_CAPACITY_LIMITS, ...limits };
-  if (Object.values(resolved).some((v) => !Number.isSafeInteger(v) || v < 1))
-    throw new TypeError('invalid_capacity_limits');
-  return resolved;
-}
+export { capacityLimits, countCapacity, DEFAULT_CAPACITY_LIMITS } from '../core/capacity.js';
+export type { CapacityLimits, CapacityOccupant } from '../core/capacity.js';
 /** One indexed read, used inside acceptance or the existing status snapshot. */
 export function readCapacity(tx: LedgerTransaction, ownerKey: string, limits: CapacityLimits = {}) {
   const resolved = capacityLimits(limits);
@@ -495,8 +485,9 @@ export function readCapacity(tx: LedgerTransaction, ownerKey: string, limits: Ca
     coalesce(l.parent_ref,c.session_ref) AS parent_ref,c.process_key,c.proc_generation
     FROM runs r JOIN links l ON l.link_id=r.link_id
     JOIN caller_contexts c ON c.context_id=l.parent_context_id AND c.generation=l.parent_context_generation
-    WHERE r.state IN ('starting','running','cancelling','uncertain')
-    ORDER BY r.created_at,r.run_id`
+    WHERE r.state IN (${CAPACITY_STATES.map(() => '?').join(',')})
+    ORDER BY r.created_at,r.run_id`,
+      ...CAPACITY_STATES
     )
     .map((row) => {
       const owner =
@@ -512,14 +503,5 @@ export function readCapacity(tx: LedgerTransaction, ownerKey: string, limits: Ca
         retireEta: null,
       };
     });
-  const self = occupants.filter((o) => o.holder === 'self');
-  const ownerFull = self.length >= resolved.maxActiveRunsPerOwner;
-  return {
-    active: ownerFull ? self.length : occupants.length,
-    limit: ownerFull ? resolved.maxActiveRunsPerOwner : resolved.maxActiveRuns,
-    occupants: ownerFull ? self : occupants,
-    full: ownerFull || occupants.length >= resolved.maxActiveRuns,
-    retryAdvisable:
-      !ownerFull && occupants.some((o) => o.holder === 'other') && !occupants.some((o) => o.state === 'uncertain'),
-  };
+  return countCapacity(occupants, resolved);
 }

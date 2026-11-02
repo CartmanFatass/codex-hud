@@ -44,6 +44,14 @@ export interface SessionReader {
   read(budget?: ReaderBudget): Promise<ReaderResult>;
 }
 
+export interface NativeTopologyResult {
+  children: readonly SessionRef[];
+  loaded: boolean;
+  coverage: import('../types/observation.js').Coverage;
+  bytesRead: number;
+  recordsRead: number;
+}
+
 export interface HarnessAdapter {
   readonly id: Harness;
   readonly glyph: string;
@@ -55,6 +63,8 @@ export interface HarnessAdapter {
   open(ref: SessionRef, checkpoint?: ReaderCheckpoint): SessionReader;
   /** Concept §6.3/§6.5: sole native topology authority, returning full session identities. */
   children(ref: SessionRef): Promise<SessionRef[]>;
+  /** Optional metered authority used by the shared HUD tick; absent means unknown. */
+  collectTopology?(ref: SessionRef, budget: ReaderBudget): Promise<NativeTopologyResult>;
   readonly capabilities: {
     /** Concept §6.10: optional harness-native navigation; absent capabilities must not be guessed. */
     navigate?: (ref: SessionRef) => Promise<void>;

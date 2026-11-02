@@ -1,0 +1,550 @@
+import { performance } from 'node:perf_hooks';
+import { canonicalJson } from '../canonical.js';
+import { capacityProjection } from '../capacity.js';
+import type { LinkLedgerReader, LinkLedgerRead } from '../link-ledger-read.js';
+import { displayNodeKey, projectFreshness } from '../observation.js';
+import { mergeStatus, STATUS_RULE_VERSION, type MergeResult, type LedgerStatusFact } from '../status/merge.js';
+import type { DisplayNodeIdentity } from '../types/observation.js';
+import type { SessionRef } from '../types/identity.js';
+import type { ReaderBudget } from '../interfaces/harness-adapter.js';
+import type { LaunchMessageLinkEvidence } from '../interfaces/session-evidence.js';
+import { wakeProjection } from '../wake/projection.js';
+import { projectLinkTree, linkStatusInput } from './index.js';
+import { planLinkRead } from './read-plan.js';
+import { reconcileDescriptor } from './actions.js';
+import type { LoadedLimits } from './limits.js';
+import type { CollectedLinkHost, CollectedLinkSession, LinkTreeProjection } from './types.js';
+import type { DelegationViewModel, DelegationNodeDetails } from './view-model.js';
+
+export interface LinkCollectionPort {
+  /** Stable evidence retained from previous ticks, with zero current-tick charges. */
+  begin?(deadline: number): void;
+  sessions(): readonly CollectedLinkSession[];
+  /** Metadata-only invalidation. No body/topology reads on this call. */
+  pending(ref: SessionRef): 'session' | 'native_topology' | null;
+  collect(
+    ref: SessionRef,
+    kind: 'session' | 'native_topology',
+    budget: ReaderBudget
+  ): Promise<CollectedLinkSession | null>;
+  takeUnattributedIO?(): { bytesRead: number; recordsRead: number };
+  lineageCurrent?(ref: SessionRef): boolean;
+  minimumBytes?: ReadonlyMap<string, number>;
+}
+export interface LinkTickInput {
+  roots: readonly DisplayNodeIdentity[];
+  ledgerUnavailableReason?: string;
+  sessions?: readonly CollectedLinkSession[];
+  hosts?: readonly CollectedLinkHost[];
+  nowMs?: number;
+  /** The caller's shared collection deadline, including earlier collection work. */
+  deadline?: number;
+  budget?: { maxNodes?: number; maxBytes?: number; maxCrossHarnessDepth?: number };
+}
+export interface LinkTickStats {
+  totalMs: number;
+  b9Ms: number;
+  wiringMs: number;
+  bytesRead: number;
+  recordsRead: number;
+  projected: boolean;
+  ledgerReads: number;
+  highWaterChecks: number;
+  immediateMerges: number;
+}
+
+/** One retained read-only data path for both entry points. Creation/opening belongs to startup. */
+export class LinkTickCollector {
+  private ledger: LinkLedgerRead;
+  private ledgerToken = '';
+  private launchKey = '';
+  private memoKey = '';
+  private tree: LinkTreeProjection | null = null;
+  private view: DelegationViewModel | null = null;
+  private lastAvailableView: DelegationViewModel | null = null;
+  private lastAvailableScope = '';
+  private nextFreshnessAt = Infinity;
+  private freshnessClock = -Infinity;
+  private freshnessView: DelegationViewModel | null = null;
+  private selectionMap: Record<string, string> = {};
+  private cursor: string | undefined;
+  private mergeCursor: string | undefined;
+  private immediate = new Map<string, { key: string; result: MergeResult }>();
+  private lastStats: LinkTickStats = {
+    totalMs: 0,
+    b9Ms: 0,
+    wiringMs: 0,
+    bytesRead: 0,
+    recordsRead: 0,
+    projected: false,
+    ledgerReads: 0,
+    highWaterChecks: 0,
+    immediateMerges: 0,
+  };
+  constructor(
+    private reader: LinkLedgerReader,
+    private readonly home: string,
+    private readonly limits: LoadedLimits,
+    private readonly port?: LinkCollectionPort
+  ) {
+    this.ledger = { state: 'degraded', snapshot: null, reason: 'ledger_initializing' };
+  }
+  /** Explicit lifecycle operation; invoke outside an incremental tick, after an identity change only. */
+  replaceReader(reader: LinkLedgerReader): void {
+    this.reader.close();
+    this.reader = reader;
+    this.ledgerToken = '';
+    this.memoKey = '';
+    this.immediate.clear();
+    this.selectionMap = {};
+    this.ledger = { state: 'degraded', snapshot: null, reason: 'ledger_initializing' };
+  }
+  chargeAdditionalRead(bytesRead: number, recordsRead: number, elapsedMs: number): void {
+    this.lastStats = {
+      ...this.lastStats,
+      bytesRead: this.lastStats.bytesRead + bytesRead,
+      recordsRead: this.lastStats.recordsRead + recordsRead,
+      totalMs: this.lastStats.totalMs + elapsedMs,
+      wiringMs: this.lastStats.wiringMs + elapsedMs,
+    };
+  }
+  stats(): Readonly<LinkTickStats> {
+    return this.lastStats;
+  }
+  current(): DelegationViewModel | null {
+    return this.view;
+  }
+  close(): void {
+    this.reader.close();
+  }
+
+  private availableFreshness(view: DelegationViewModel, nowMs: number): DelegationViewModel {
+    if (view === this.freshnessView && nowMs >= this.freshnessClock && nowMs < this.nextFreshnessAt) return view;
+    this.freshnessClock = nowMs;
+    this.nextFreshnessAt = Infinity;
+    let changed = false;
+    const details: Record<string, DelegationNodeDetails> = {};
+    for (const [key, detail] of Object.entries(view.details)) {
+      const original = view.tree.nodes.find((node) => node.key === key)?.observation?.statusProjection;
+      if (detail.statusSource !== 'committed' || !original) {
+        details[key] = detail;
+        continue;
+      }
+      const freshness = projectFreshness(original.freshness.sources, original.freshness.requiredSourceIds, nowMs);
+      for (const source of original.freshness.sources)
+        if (source.deadlineAt !== null && source.deadlineAt >= nowMs)
+          this.nextFreshnessAt = Math.min(this.nextFreshnessAt, source.deadlineAt + 1);
+      if (
+        detail.status?.freshness.state === freshness.state &&
+        detail.status.freshness.reason === freshness.reason &&
+        detail.status.freshness.staleSince === freshness.staleSince &&
+        detail.status.freshness.clockAnomaly === freshness.clockAnomaly
+      )
+        details[key] = detail;
+      else {
+        details[key] = { ...detail, status: { ...original, freshness } };
+        changed = true;
+      }
+    }
+    this.freshnessView = changed ? { ...view, details } : view;
+    return this.freshnessView;
+  }
+
+  async tick(input: LinkTickInput): Promise<DelegationViewModel | null> {
+    const started = performance.now();
+    const nowMs = input.nowMs ?? Date.now();
+    const deadline = Math.min(input.deadline ?? started + 40, started + 40);
+    const maxBytes = Math.min(8 * 1024 * 1024, input.budget?.maxBytes ?? 8 * 1024 * 1024);
+    const stats: LinkTickStats = {
+      totalMs: 0,
+      b9Ms: 0,
+      wiringMs: 0,
+      bytesRead: 0,
+      recordsRead: 0,
+      projected: false,
+      ledgerReads: 0,
+      highWaterChecks: 0,
+      immediateMerges: 0,
+    };
+    const finish = () => {
+      stats.totalMs = performance.now() - started;
+      stats.wiringMs = Math.max(0, stats.totalMs - stats.b9Ms);
+      this.lastStats = stats;
+      if (this.view && this.ledger.state === 'available') {
+        this.lastAvailableView = this.view;
+        this.lastAvailableScope = JSON.stringify([input.roots, input.budget ?? {}]);
+      }
+      return this.view;
+    };
+    let retained = [...(input.sessions ?? this.port?.sessions() ?? [])];
+    const messages = retained.flatMap((s) =>
+      s.evidence.linkEvidence.filter((e): e is LaunchMessageLinkEvidence => e.kind === 'launch_message')
+    );
+    const launches = canonicalJson(messages);
+    let b9Start = performance.now();
+    const token = input.ledgerUnavailableReason ?? this.reader.changeToken();
+    if (!input.ledgerUnavailableReason) stats.highWaterChecks++;
+    if (token !== this.ledgerToken || launches !== this.launchKey || this.ledger.state === 'degraded') {
+      this.ledger = input.ledgerUnavailableReason
+        ? { state: 'degraded', snapshot: null, reason: input.ledgerUnavailableReason }
+        : this.reader.read(messages);
+      if (!input.ledgerUnavailableReason) stats.ledgerReads++;
+      this.ledgerToken = token;
+      this.launchKey = launches;
+    }
+    stats.b9Ms += performance.now() - b9Start;
+    if (
+      this.ledger.state === 'degraded' &&
+      this.ledger.reason === 'ledger_busy' &&
+      this.lastAvailableView &&
+      this.lastAvailableScope === JSON.stringify([input.roots, input.budget ?? {}])
+    ) {
+      const prior = this.lastAvailableView;
+      const tree = {
+        ...prior.tree,
+        ledger: { ...prior.tree.ledger, state: 'degraded' as const, reason: 'ledger_busy' },
+        coverage: {
+          ...prior.tree.coverage,
+          state: 'partial' as const,
+          reason: 'ledger_busy',
+          gaps: [...new Set([...prior.tree.coverage.gaps, 'ledger_busy'])],
+        },
+        nodes: prior.tree.nodes.map((node) => ({
+          ...node,
+          host: node.host ? { ...node.host, state: 'unknown' as const, currentState: null } : null,
+        })),
+        relations: prior.tree.relations.map((relation) => ({
+          ...relation,
+          host: { ...relation.host, state: 'unknown' as const, currentState: null },
+        })),
+      };
+      this.view = this.availableFreshness(
+        {
+          ...prior,
+          tree,
+          capacity: null,
+          details: Object.fromEntries(
+            Object.entries(prior.details).map(([key, detail]) => [
+              key,
+              { ...detail, wake: null, wakeUnavailableReason: 'ledger_busy', reconcile: null },
+            ])
+          ),
+        },
+        nowMs
+      );
+      this.memoKey = '';
+      return finish();
+    }
+    if (this.ledger.state === 'available' && !this.ledger.snapshot.links.length) {
+      this.view = null;
+      return finish();
+    }
+    this.port?.begin?.(deadline);
+    retained = [...(input.sessions ?? this.port?.sessions() ?? [])];
+    const unique = new Map(retained.map((s) => [displayNodeKey({ kind: 'session', ref: s.evidence.ref }), s]));
+    // Scheduling metadata only. planLinkRead remains the single grant authority, including the retained fair cursor.
+    if (this.port && performance.now() < deadline) {
+      const refs = new Map<string, SessionRef>();
+      const add = (ref: SessionRef | null) => {
+        if (ref) refs.set(displayNodeKey({ kind: 'session', ref }), ref);
+      };
+      for (const root of input.roots) if (root.kind === 'session') add(root.ref);
+      for (const node of this.tree?.nodes ?? [])
+        if (node.identity.kind === 'session' && node.crossHarnessDepth <= (input.budget?.maxCrossHarnessDepth ?? 4))
+          add(node.identity.ref);
+      const eligible = [...refs].slice(0, Math.min(200, input.budget?.maxNodes ?? 200)).flatMap(([key, ref]) => {
+        const kind = this.port!.pending(ref);
+        return kind
+          ? [
+              {
+                key,
+                identity: { kind: 'session' as const, ref },
+                reason: kind === 'session' ? ('unloaded' as const) : ('native_topology' as const),
+              },
+            ]
+          : [];
+      });
+      const charged = retained.reduce((sum, s) => sum + s.bytesRead + (s.topology?.bytesRead ?? 0), 0);
+      const schedulingTree = {
+        ...this.tree,
+        nodes: eligible.map((e) => ({ key: e.key })),
+        continuation: eligible,
+        io: { remainingBytes: Math.max(0, maxBytes - charged), exceeded: charged > maxBytes },
+      } as LinkTreeProjection;
+      const plan = planLinkRead(schedulingTree, {
+        remainingMs: Math.max(0, Math.floor(deadline - performance.now())),
+        afterKey: this.cursor,
+        minimumBytes: this.port.minimumBytes,
+      });
+      if (plan.target) {
+        this.cursor = plan.nextCursor;
+        const read = await this.port.collect(plan.target.ref, plan.target.kind, plan.budget);
+        if (read) {
+          const previous = unique.get(plan.target.key);
+          unique.set(plan.target.key, {
+            ...read,
+            bytesRead: read.bytesRead + (previous?.bytesRead ?? 0),
+            recordsRead: read.recordsRead + (previous?.recordsRead ?? 0),
+            ...(read.topology
+              ? {
+                  topology: {
+                    ...read.topology,
+                    bytesRead: read.topology.bytesRead + (previous?.topology?.bytesRead ?? 0),
+                    recordsRead: read.topology.recordsRead + (previous?.topology?.recordsRead ?? 0),
+                  },
+                }
+              : {}),
+          });
+        }
+        // Source-scoped topology discovery may update other envelopes without re-reading them.
+        for (const envelope of this.port.sessions()) {
+          const key = displayNodeKey({ kind: 'session', ref: envelope.evidence.ref });
+          if (key === plan.target.key) continue;
+          const previous = unique.get(key);
+          unique.set(key, {
+            ...envelope,
+            bytesRead: previous?.bytesRead ?? 0,
+            recordsRead: previous?.recordsRead ?? 0,
+            ...(envelope.topology
+              ? {
+                  topology: {
+                    ...envelope.topology,
+                    bytesRead: previous?.topology?.bytesRead ?? 0,
+                    recordsRead: previous?.topology?.recordsRead ?? 0,
+                  },
+                }
+              : {}),
+          });
+        }
+      }
+    }
+    const sessions = [...unique.values()];
+    const extraIO = this.port?.takeUnattributedIO?.() ?? { bytesRead: 0, recordsRead: 0 };
+    stats.bytesRead = extraIO.bytesRead + sessions.reduce((n, s) => n + s.bytesRead + (s.topology?.bytesRead ?? 0), 0);
+    stats.recordsRead =
+      extraIO.recordsRead + sessions.reduce((n, s) => n + s.recordsRead + (s.topology?.recordsRead ?? 0), 0);
+    const ledgerKey =
+      this.ledger.state === 'available'
+        ? [this.ledger.snapshot.ledgerId, this.ledger.snapshot.asOfSeq, this.ledgerToken]
+        : [this.ledger.reason];
+    const keyOf = () =>
+      JSON.stringify([
+        ledgerKey,
+        sessions.map((s) => [
+          s.evidence.ref,
+          s.sourceGeneration,
+          s.loaded,
+          s.linkEvidenceCurrent,
+          s.evidence.observation.evidenceStamp,
+          s.evidence.observation.statusProjection.observationStamp,
+          s.evidence.observation.coverage,
+          s.topology
+            ? [s.topology.sourceGeneration, s.topology.children, s.topology.loaded, s.topology.coverage]
+            : null,
+        ]),
+        input.hosts ?? [],
+        input.roots,
+        input.budget ?? {},
+        this.selectionMap,
+      ]);
+    const memo = keyOf();
+    if (memo !== this.memoKey) {
+      b9Start = performance.now();
+      this.tree = projectLinkTree({
+        ledger: this.ledger,
+        roots: input.roots,
+        sessions,
+        hosts: input.hosts,
+        nowMs,
+        budget: input.budget,
+        selectionMap: this.selectionMap,
+      });
+      this.tree.io = {
+        ...this.tree.io,
+        bytesRead: stats.bytesRead,
+        recordsRead: stats.recordsRead,
+        remainingBytes: Math.max(0, maxBytes - stats.bytesRead),
+        exceeded: stats.bytesRead > maxBytes,
+      };
+      stats.b9Ms += performance.now() - b9Start;
+      stats.projected = true;
+      this.selectionMap = this.tree.selectionMap;
+      this.memoKey = keyOf();
+      this.view = {
+        tree: this.tree,
+        capacity:
+          this.ledger.state === 'available'
+            ? capacityProjection(
+                this.ledger.snapshot.runs,
+                this.ledger.snapshot.links,
+                input.roots.find(
+                  (root): root is Extract<DisplayNodeIdentity, { kind: 'session' }> => root.kind === 'session'
+                )?.ref ?? null,
+                this.limits.limits
+              )
+            : null,
+        limits: this.limits,
+        details: {},
+        pendingStatus: 0,
+      };
+    }
+    if (!this.view || !this.tree) return finish();
+    if (!stats.projected && this.view.pendingStatus === 0) {
+      this.view = this.availableFreshness(this.view, nowMs);
+      return finish();
+    }
+    const details: Record<string, DelegationNodeDetails> = {};
+    const snapshot = this.ledger.state === 'available' ? this.ledger.snapshot : null;
+    const events = snapshot?.events ?? [];
+    const reports = new Map<string, typeof snapshot extends null ? never : NonNullable<typeof snapshot>['reports']>();
+    const reportsById = new Map(snapshot?.reports.map((r) => [r.reportId, r]));
+    for (const event of events)
+      if (event.kind === 'report.received' && typeof event.payload.reportId === 'string') {
+        const report = reportsById.get(event.payload.reportId);
+        if (report && report.runId === event.runId && report.linkId === event.linkId) {
+          const list = reports.get(report.runId) ?? [];
+          list.push(report);
+          reports.set(report.runId, list);
+        }
+      }
+    const mergeStarted = performance.now();
+    let pendingStatus = 0;
+    const previousMergeIndex = this.tree.nodes.findIndex((node) => node.key === this.mergeCursor);
+    const mergeNodes = [
+      ...this.tree.nodes.slice(previousMergeIndex + 1),
+      ...this.tree.nodes.slice(0, previousMergeIndex + 1),
+    ];
+    for (const node of mergeNodes) {
+      const run = node.currentRun;
+      const history = run ? (reports.get(run.runId) ?? []) : [];
+      let status = node.observation?.statusProjection.observationStamp ? node.observation.statusProjection : null;
+      let statusSource: DelegationNodeDetails['statusSource'] = status ? 'committed' : 'unavailable';
+      if (
+        !status &&
+        run &&
+        (node.identity.kind === 'delegationIntent' ||
+          (node.identity.kind === 'session' &&
+            unique.has(node.key) &&
+            this.port?.lineageCurrent?.(node.identity.ref) !== false))
+      ) {
+        const sourceGeneration = unique.get(node.key)?.sourceGeneration;
+        const cacheKey = canonicalJson([
+          node.key,
+          run.runId,
+          this.tree.ledger.asOfSeq,
+          sourceGeneration ?? null,
+          run.expectedGeneration,
+          node.lastObservation?.evidenceStamp ?? null,
+          node.conflict,
+        ]);
+        let cached = this.immediate.get(node.key);
+        if (
+          cached?.key !== cacheKey &&
+          stats.immediateMerges < 20 &&
+          performance.now() - mergeStarted < 5 &&
+          performance.now() < deadline
+        ) {
+          const facts: LedgerStatusFact[] = [
+            {
+              id: `run:${run.runId}`,
+              value: {
+                run: {
+                  runId: run.runId,
+                  state: run.state,
+                  reason: node.execution.reconciliation?.cause ?? node.execution.launchFailure?.reason,
+                },
+              },
+              eventAt: run.cancelRequestedAt ?? run.endedAt ?? run.startedAt ?? run.createdAt,
+              observedAt: nowMs,
+              deadlineAt: null,
+            },
+          ];
+          const report = history.at(-1);
+          if (report) {
+            const event = events.find(
+              (e) =>
+                e.kind === 'report.received' &&
+                e.payload.reportId === report.reportId &&
+                e.runId === run.runId &&
+                e.linkId === run.linkId
+            )!;
+            facts.push({
+              id: `report:${report.reportId}`,
+              value: { report },
+              seq: event.seq,
+              eventAt: report.createdAt,
+              observedAt: nowMs,
+              deadlineAt: null,
+            });
+          }
+          const result = mergeStatus(
+            {
+              ...linkStatusInput(this.tree, node.key),
+              target:
+                node.identity.kind === 'delegationIntent'
+                  ? { nodeIdentity: node.identity, runId: run.runId }
+                  : {
+                      nodeIdentity: node.identity as Extract<DisplayNodeIdentity, { kind: 'session' }>,
+                      sourceGeneration: sourceGeneration!,
+                      runId: run.runId,
+                      bindingGeneration: run.expectedGeneration,
+                    },
+              sources: [],
+              ledgerFacts: facts,
+              observationStamp: null,
+              history: { continuity: cached ? 'proven' : 'unknown' },
+            },
+            cached?.result.continuity ?? null,
+            STATUS_RULE_VERSION,
+            nowMs
+          );
+          cached = { key: cacheKey, result };
+          this.immediate.set(node.key, cached);
+          stats.immediateMerges++;
+          this.mergeCursor = node.key;
+        }
+        if (cached?.key === cacheKey) {
+          status = cached.result.projection;
+          statusSource = 'ledger';
+        } else pendingStatus++;
+      }
+      const relation = this.tree.relations.find(
+        (r) => node.links.includes(r.link.linkId) && r.currentRun?.runId === run?.runId
+      );
+      const wakeState =
+        relation && this.ledger.state === 'available' ? this.ledger.wakeStates?.get(relation.link.linkId) : undefined;
+      let reconcile = null;
+      if (run && (run.state === 'uncertain' || node.conflict || node.execution.reconciliation)) {
+        try {
+          reconcile = reconcileDescriptor(this.home, run.linkId, run.runId);
+        } catch {}
+      }
+      details[node.key] = {
+        status,
+        statusSource,
+        latestReportForRun: history.at(-1) ?? null,
+        reportHistory: history,
+        parentOffline: relation?.parentOffline ?? null,
+        wake:
+          wakeState === undefined
+            ? null
+            : {
+                ...wakeProjection(wakeState, this.home, run?.runId ?? '', 0).wake,
+                attempts:
+                  this.ledger.state === 'available'
+                    ? (this.ledger.wakeAttempts?.get(relation!.link.linkId) ?? null)
+                    : null,
+              },
+        wakeUnavailableReason: wakeState === undefined && relation ? 'wake_validation_unavailable' : null,
+        observationUnavailableReason: status ? null : 'committed_observation_unavailable',
+        reconcile,
+        resumable: { resumable: false, reason: 'capability_unverified', subject: 'local_user' },
+      };
+    }
+    for (const key of this.immediate.keys()) if (!details[key]) this.immediate.delete(key);
+    this.view = { ...this.view, details, pendingStatus };
+    this.nextFreshnessAt = -Infinity;
+    this.view = this.availableFreshness(this.view, nowMs);
+    return finish();
+  }
+}

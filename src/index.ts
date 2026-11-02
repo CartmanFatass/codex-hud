@@ -1,3 +1,8 @@
+import { performance } from 'node:perf_hooks';
+import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
+import { initialParserState } from './core/observation.js';
+import type { ReaderBudget } from './core/interfaces/harness-adapter.js';
+import type { HudDelegationData } from './core/link/view-model.js';
 /**
  * Codex HUD - Main entry point
  * Phase 3: Redesigned with claude-hud style rendering
@@ -100,11 +105,19 @@ const hudFileWatcher = new HudFileWatcher();
 const paneRuntimeStateCollector = process.platform === 'win32' ? new PaneRuntimeStateCollector() : null;
 
 // Cached data that gets updated by watchers
-let cachedHudData: HudData | null = null;
+let cachedHudData: (HudData & HudDelegationData) | null = null;
 let journal: ActivityJournal | undefined;
 let journalRoot = '';
 let configNeedsRefresh = false;
-const parseRolloutSafely = createParseQueue(() => rolloutParser.parse());
+let delegationCollector: HudDelegationCollector | null = null;
+let delegationParseBudget: ReaderBudget | null = null;
+const parseRolloutSafely = createParseQueue(() =>
+  rolloutParser.parse(
+    delegationParseBudget
+      ? { budget: delegationParseBudget, state: rolloutParser.getReadStats()?.state ?? initialParserState() }
+      : undefined
+  )
+);
 
 // Size/mtime/inode of the rollout as of the last parse. Reset when the session
 // changes, since the parser starts a new file from offset 0.
@@ -128,7 +141,13 @@ async function parseRolloutIfChanged(rolloutPath: string): Promise<RolloutParseR
   // signature different afterwards, so the next tick parses again.
   lastParsedRollout = signature;
   try {
-    return await parseRolloutSafely();
+    const parsed = await parseRolloutSafely();
+    if (
+      delegationParseBudget &&
+      ((rolloutParser.getReadStats()?.remainingBytes ?? 0) > 0 || rolloutParser.getReadStats()?.continuation)
+    )
+      lastParsedRollout = null;
+    return parsed;
   } catch (error) {
     // A failed read must not be remembered as "already parsed", or the tick
     // would stop retrying until the file happened to change again.
@@ -145,7 +164,8 @@ const hudStatus = new HudStatus(HUD_CWD, () => repaintCached());
 /**
  * Collect all HUD data including async rollout parsing
  */
-async function collectData(): Promise<HudData> {
+async function collectData(): Promise<HudData & HudDelegationData> {
+  const delegationDeadline = performance.now() + 40;
   try {
     const settings = runtimeSettings();
     applyDisplaySettings(settings);
@@ -173,12 +193,25 @@ async function collectData(): Promise<HudData> {
     health.fail('session', error);
   }
 
+  const delegation = delegationCollector
+    ? await delegationCollector.tick(session?.sessionId, delegationDeadline)
+    : null;
+  delegationParseBudget = delegation
+    ? {
+        maxBytes: 4 * 1024 * 1024,
+        maxRecords: 2000,
+        budgetMs: Math.max(0, Math.min(20, Math.floor(delegationDeadline - performance.now()))),
+      }
+    : null;
+
   // Re-parse the current rollout only when the file actually moved. The parser
   // is incremental, but reaching that conclusion still costs an open, a read
   // and a close of a file that grows to tens of megabytes; one stat answers
   // the same question. The tick remains the fallback when a watcher event is
   // missed (always, on Windows, where watches are unreliable).
   let rolloutData = rolloutParser.getCached();
+  const rootReadStarted = performance.now();
+  const priorRootStats = rolloutParser.getReadStats();
   if (session) {
     try {
       rolloutData = await parseRolloutIfChanged(session.path);
@@ -187,18 +220,32 @@ async function collectData(): Promise<HudData> {
       health.fail('rollout', error);
     }
   }
+  const rootStats = rolloutParser.getReadStats();
+  if (delegation && rootStats && rootStats !== priorRootStats)
+    delegationCollector?.collector.chargeAdditionalRead(
+      rootStats.bytesRead,
+      rootStats.recordsRead,
+      performance.now() - rootReadStarted
+    );
   // Keep lookup success distinct from an actual bound Codex session.
   if (!stale) {
     health.bind(Boolean(session));
     health.read();
   }
 
+  const delegationMs = delegationCollector?.collector.stats().totalMs ?? 0;
+  if (delegationMs > 50)
+    health.fail('tree', delegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms');
   const hudData = hudStatus.build({
     rollout: rolloutData,
     sessionId: session?.sessionId,
     stale,
     runtimeSession: paneRuntimeStateCollector?.collect() ?? undefined,
+    ...(delegation
+      ? { tree: { rootId: session?.sessionId ?? '', nodes: [], totalCount: 0, updatedAt: new Date() } }
+      : {}),
   });
+  if (delegationCollector) Object.assign(hudData, { delegation });
   cachedHudData = hudData;
   return hudData;
 }
@@ -245,7 +292,7 @@ async function mainLoop(): Promise<void> {
         adaptive = recordAdaptivePoll(adaptive, {
           scopeKey: data.session?.id ?? '',
           nowMs: Date.now(),
-          ...collectionObservation(data, data.subagentTree),
+          ...withDelegationObservation(collectionObservation(data, data.subagentTree), data.delegation),
           succeeded: !data.stale && data.health?.sessionBound === true,
         });
     } catch (error) {
@@ -275,6 +322,7 @@ function repaintCached(): void {
  */
 function shutdown(): void {
   isRunning = false;
+  delegationCollector?.close();
 
   // A snapshot of a HUD that is no longer running would read as live.
   snapshotWriter.remove();
@@ -334,6 +382,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
   process.on('SIGHUP', shutdown);
   startProfiling('bar');
+  delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
   // Started again, the bar reads only what each rollout gained since it last saved its scan.
   useTreeScanStore(new TreeScanStore(path.join(getHudHome(), 'scan')));
 
@@ -352,7 +401,8 @@ async function main(): Promise<void> {
     wakeCollection();
     try {
       const session = sessionFinder.check();
-      if (session) void parseRolloutIfChanged(session.path).catch(() => {});
+      if (session && !delegationCollector?.collector.current())
+        void parseRolloutIfChanged(session.path).catch(() => {});
     } catch {
       /* The next collection displays a failed read without an unhandled rejection. */
     }

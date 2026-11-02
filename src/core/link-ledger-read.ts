@@ -1,3 +1,5 @@
+import { readLinkWakeStates } from './link/wake-read.js';
+import type { RegistrationState } from './wake/projection.js';
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import { LedgerReadError } from './ledger-read.js';
 import type { LedgerReadClaim, LedgerReadRun, LedgerReadScope, LedgerReadSnapshot } from './ledger-read.js';
@@ -40,10 +42,14 @@ export type LinkLedgerRead =
       claimChecks: ClaimFingerprintCheck[];
       conflictTargets: ReadonlyMap<string, SessionRef>;
       reason: null;
+      wakeStates?: ReadonlyMap<string, RegistrationState | null>;
+      wakeAttempts?: ReadonlyMap<string, number | null>;
     }
   | { state: 'degraded'; snapshot: null; reason: string };
 
 export interface LinkLedgerReader {
+  /** Cheap read-only invalidation signal; contains no decoded ledger rows. */
+  changeToken(): string;
   /** One consistent snapshot per tick. Opening belongs to startup, outside the tick. */
   read(launchMessages?: readonly LaunchMessageLinkEvidence[]): LinkLedgerRead;
   close(): void;
@@ -76,6 +82,14 @@ export async function openLinkLedgerReader(path: string, scope?: LedgerReadScope
     reason = readReason(error);
   }
   return {
+    changeToken: () => {
+      if (!db) return reason;
+      try {
+        return `data_version:${String(db.prepare('PRAGMA data_version').get()?.data_version)}`;
+      } catch (error) {
+        return readReason(error);
+      }
+    },
     read: (launchMessages = []) => {
       if (!db) return { state: 'degraded', snapshot: null, reason };
       let active = false;
@@ -244,10 +258,19 @@ export async function openLinkLedgerReader(path: string, scope?: LedgerReadScope
             });
           }
         }
+        const wake = readLinkWakeStates(snapshot, (sql, ...values) => db!.prepare(sql).get(...values));
         db.exec('COMMIT');
         active = false;
         decodedRows = nextDecodedRows;
-        return { state: 'available', snapshot, claimChecks, conflictTargets, reason: null };
+        return {
+          state: 'available',
+          snapshot,
+          claimChecks,
+          conflictTargets,
+          reason: null,
+          wakeStates: wake.states,
+          wakeAttempts: wake.attempts,
+        };
       } catch (error) {
         if (active) {
           try {

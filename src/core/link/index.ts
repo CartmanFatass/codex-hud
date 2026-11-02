@@ -4,6 +4,7 @@ import { displayNodeKey, runExecutionProjection } from '../observation.js';
 import type { LedgerReadRun, LedgerReadSnapshot } from '../ledger-read.js';
 import type { MergeInput } from '../status/merge.js';
 import type { DisplayNodeIdentity, ObservationView } from '../types/observation.js';
+import { linkExecution } from './execution.js';
 import { linkTreeBudget } from './budget.js';
 import { combineConflicts, ledgerConflicts } from './conflicts.js';
 import { projectLinkHost } from './host.js';
@@ -360,7 +361,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
       observation,
       lastObservation: session?.evidence.observation ?? null,
       currentRun: run,
-      execution: runExecutionProjection(run),
+      execution: linkExecution(run, snapshot.events),
       conflict: nodeConflicts.get(item.key) ?? null,
       links: nodeRelations.map((relation) => relation.link.linkId),
       host: currentRelation?.host ?? null,

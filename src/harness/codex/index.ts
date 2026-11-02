@@ -30,6 +30,7 @@ import { buildSubagentTreeYielding } from '../../collectors/subagent-tree.js';
 import { buildContextUsage } from '../../collectors/context-usage.js';
 import { codexGoal } from '../../collectors/codex-goal.js';
 import { observeLinkEvidence, validLinkScanState, type LinkScanState } from './link-evidence.js';
+import { MeteredCodexTopology } from '../../core/link/native-topology.js';
 
 export const CODEX_READER_VERSION = 'codex-facade-4';
 export const CODEX_RECOVERY_VERSION = 'codex-recovery-3';
@@ -97,10 +98,14 @@ export class CodexAdapter implements HarnessAdapter {
   readonly capabilities = {};
   private sources = new Map<SourceId, SourceConfig>();
   private native = new Map<string, SessionRef[]>();
+  private topologies = new Map<SourceId, MeteredCodexTopology>();
   /** Per-reader ceiling. Production keeps DEFAULT_READER_BUDGET; tests inject a larger slice. */
   private readonly readerBudget: Readonly<ReaderBudget>;
 
-  constructor(readerBudget: Readonly<ReaderBudget> = DEFAULT_READER_BUDGET) {
+  constructor(
+    readerBudget: Readonly<ReaderBudget> = DEFAULT_READER_BUDGET,
+    private readonly metered = false
+  ) {
     this.readerBudget = { ...readerBudget };
   }
 
@@ -113,6 +118,7 @@ export class CodexAdapter implements HarnessAdapter {
     const sourceId = makeSourceId('codex', root);
     const serverNames = [...new Set([...(this.sources.get(sourceId)?.serverNames ?? []), profile.mcpServerName])];
     this.sources.set(sourceId, { root, serverNames });
+    if (this.metered && !this.topologies.has(sourceId)) this.topologies.set(sourceId, new MeteredCodexTopology(root));
     return sourceId;
   }
 
@@ -125,6 +131,13 @@ export class CodexAdapter implements HarnessAdapter {
 
   private rollout(ref: SessionRef): string {
     const { root } = this.source(ref);
+    if (this.metered) {
+      const file = this.topologies.get(ref.sourceId)?.file(ref);
+      if (!file) throw new Error('codex_rollout_discovery_pending');
+      const real = fs.realpathSync(file);
+      if (real !== file || !real.startsWith(`${root}${path.sep}`)) throw new Error('codex_rollout_outside_source');
+      return real;
+    }
     const file =
       findRolloutPathBySessionIdInRoot(path.join(root, 'sessions'), ref.sessionId) ??
       findRolloutPathBySessionIdInRoot(path.join(root, 'archived_sessions'), ref.sessionId);
@@ -408,6 +421,32 @@ export class CodexAdapter implements HarnessAdapter {
     const refs = tree.nodes.map((node) => ({ ...ref, sessionId: node.id }));
     this.native.set(sessionRefKey(ref), refs);
     return structuredClone(refs);
+  }
+
+  collectionState(ref: SessionRef, checkChanges = true, deadline = performance.now() + 2) {
+    this.source(ref);
+    const topology = this.topologies.get(ref.sourceId);
+    if (checkChanges) topology?.pollMetadata(deadline, 32, ref);
+    const dirty = topology?.changed() ?? true;
+    return { file: topology?.file(ref) ?? null, topologyToken: topology?.token() ?? 0, topologyDirty: dirty };
+  }
+
+  invalidateTopology(ref: SessionRef): void {
+    this.topologies.get(ref.sourceId)?.invalidateSession(ref);
+  }
+
+  async collectTopology(ref: SessionRef, budget: ReaderBudget) {
+    const source = this.source(ref);
+    let topology = this.topologies.get(ref.sourceId);
+    if (!topology) {
+      topology = new MeteredCodexTopology(source.root);
+      this.topologies.set(ref.sourceId, topology);
+    }
+    return topology.collect(ref, budget);
+  }
+
+  closeCollection(): void {
+    for (const topology of this.topologies.values()) topology.close();
   }
 
   private evidence(

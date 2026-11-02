@@ -1,3 +1,4 @@
+import { parseLimits } from '../../../src/core/link/limits.js';
 import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { validateLaunchCommand } from '../../../src/core/capabilities.js';
@@ -43,7 +44,11 @@ export function validateDelegateConfig(value: unknown): DelegateConfig {
   value = structuredClone(value);
   if (!object(value)) bad();
   keys(value, ['version', 'profiles'], ['limits', 'wake']);
-  value.limits = defaults(value.limits, { maxActiveRuns: 6, maxActiveRunsPerOwner: 4 }, 1, Number.MAX_SAFE_INTEGER);
+  try {
+    value.limits = parseLimits(value.limits);
+  } catch {
+    bad();
+  }
   value.wake = defaults(value.wake, { recoveryMs: 30000 }, 1, 2147483647);
   if (value.version !== 1 || !Array.isArray(value.profiles) || value.profiles.length > 128) bad();
   const names = new Set<string>();
