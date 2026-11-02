@@ -4,14 +4,25 @@ import { performance } from 'node:perf_hooks';
 import { digest } from '../../../src/core/canonical.js';
 import { makeProcessKey, makeSourceId } from '../../../src/core/identity.js';
 import type { SessionRef } from '../../../src/core/types/identity.js';
+import type { ScopeSnapshot } from '../../../src/core/ledger-scope-read.js';
 import type { DelegateProfile } from './config.js';
 import { Refusal } from './errors.js';
 import { object, readBounded, readJson } from './io.js';
 import type { Registration } from './registry.js';
 import { actualSourceRoot, findHarness, type ProcessInfo, type ProcessReaderPort } from './process.js';
+import { consumeHookRecord, type ClaudeHookSourceOptions } from './hook/resolve.js';
+import { CLAUDE_VERSION, IMPLEMENTATION, hookProfileFingerprint, selectsClaudeHook } from './hook/record.js';
+import { readlinkSync } from 'node:fs';
 
 export type CallResolution =
-  | { ok: true; callId: string; sessionRef: SessionRef; processKey: string; evidenceDigest: string }
+  | {
+      ok: true;
+      callId: string;
+      sessionRef: SessionRef;
+      processKey: string;
+      evidenceDigest: string;
+      scopePremise?: ScopeSnapshot;
+    }
   | { ok: false; code: 'identity_source_missing' | 'identity_unverified' | 'unsupported' | 'stale_context' };
 export interface CurrentCallSourcePort {
   resolve(meta: unknown, toolName: string): Promise<CallResolution>;
@@ -138,7 +149,8 @@ export class SessionRefResolver implements CurrentCallSourcePort {
     private readonly registration: Registration,
     private readonly reader: ProcessReaderPort,
     private readonly profile: DelegateProfile | null,
-    private readonly locator: SessionRecordLocatorPort = new BoundedSessionLocator()
+    private readonly locator: SessionRecordLocatorPort = new BoundedSessionLocator(),
+    private readonly claudeHook?: ClaudeHookSourceOptions
   ) {}
   async resolve(meta: unknown, toolName: string): Promise<CallResolution> {
     const deny = (code: Exclude<CallResolution, { ok: true }>['code']): CallResolution => ({ ok: false, code });
@@ -175,6 +187,53 @@ export class SessionRefResolver implements CurrentCallSourcePort {
       if (source.harness === 'claude') {
         callId = typeof meta['claudecode/toolUseId'] === 'string' ? meta['claudecode/toolUseId'] : '';
         if (!callId || callId.length > 256) return deny('identity_source_missing');
+        if (selectsClaudeHook(this.profile)) {
+          const hook = this.claudeHook;
+          if (
+            !hook ||
+            hook.config.implementation !== IMPLEMENTATION ||
+            hook.config.claudeVersion !== CLAUDE_VERSION ||
+            hook.config.profileFingerprint !== hookProfileFingerprint(this.profile) ||
+            hook.config.sourceRoot !== source.rootPath ||
+            hook.config.serverName !== this.profile.mcpServerName
+          )
+            return deny('unsupported');
+          // The launch profile pins an executable whose version was checked by the launcher.
+          // Config/env alone never proves that the actual ancestor is this executable.
+          if (readlinkSync(`/proc/${harnessPid}/exe`) !== hook.config.claudeExecutable) return deny('unsupported');
+          const evidence = consumeHookRecord(hook, {
+            processKey,
+            sourceId: source.sourceId,
+            bootId: domain.bootId,
+            callId,
+            toolName: `mcp__${this.profile.mcpServerName}__${toolName}`,
+          });
+          const record = readJson(join(source.rootPath, 'sessions', `${harnessPid}.json`));
+          if (
+            !object(record) ||
+            record.pid !== harnessPid ||
+            record.procStart !== harnessProcStart ||
+            record.pidDomain !== domain.claudePidDomain ||
+            typeof record.sessionId !== 'string' ||
+            !uuid.test(record.sessionId) ||
+            typeof record.cwd !== 'string'
+          )
+            return deny('identity_unverified');
+          if (evidence.record.sessionId !== record.sessionId) return deny('identity_unverified');
+          if (
+            this.reader.get(harnessPid).procStart !== harnessProcStart ||
+            this.reader.get(caller.pid).procStart !== caller.procStart
+          )
+            return deny('identity_unverified');
+          return {
+            ok: true,
+            callId,
+            sessionRef: { harness: 'claude', sourceId: source.sourceId, sessionId: record.sessionId, threadId: null },
+            processKey,
+            evidenceDigest: evidence.record.fingerprint,
+            scopePremise: evidence.premise,
+          };
+        }
         const record = readJson(join(source.rootPath, 'sessions', `${harnessPid}.json`));
         if (
           !object(record) ||
@@ -197,8 +256,8 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         if (matches.length === 0) return deny('identity_source_missing');
         if (matches.length !== 1 || matches[0].agentId !== null || matches[0].sessionId !== record.sessionId)
           return deny('identity_unverified');
-        // 待 ARCH 裁决: B1 real runs do not establish a pre-execution root-call profile.
-        // Even an observed record is diagnostic until ARCH accepts an evidence path.
+        // Legacy direct/transcript profiles remain unverified under F06.
+        // Only the explicit synchronous hook path above supplies source evidence.
         return deny('unsupported');
       } else if (source.harness === 'codex') {
         const turn = meta['x-codex-turn-metadata'];
