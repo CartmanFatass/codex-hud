@@ -1,0 +1,140 @@
+{
+  "protocol": 22,
+  "schema_version": 1,
+  "schemas": {
+    "request": {
+      "oneOf": [
+        {
+          "properties": {
+            "method": {
+              "const": "ping",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PingParams"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "session.snapshot",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/EmptyParams"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "tab.create",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/TabCreateParams"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "agent.prompt",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/AgentPromptParams"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.split",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneSplitParams"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.layout",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneLayoutParams"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.process_info",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneProcessInfoParams"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.get",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneTarget"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.send_input",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneSendInputParams"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.close",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneTarget"
+            }
+          },
+          "required": ["method", "params"],
+          "type": "object"
+        }
+      ]
+    }
+  }
+}

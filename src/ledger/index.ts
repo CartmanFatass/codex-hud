@@ -16,3 +16,4 @@ export {
 } from './supervisor.js';
 export { captureRunWorkspace } from './workspace.js';
 export type { PreparedIntent, IntentAuthority, IntentResult, ReconcileSnapshot, ValidatedEvidence } from './types.js';
+export { recordRunLocator } from './locator.js';

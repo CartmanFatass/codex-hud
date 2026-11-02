@@ -1,24 +1,13 @@
 #!/usr/bin/env bash
-# Herdr-only suite. These tests need a live Herdr session, so the suite skips
-# outside one. Test files are *.test.mjs / *.test.js in this directory.
+# No live-instance mutations: fake transport + a newly spawned private server only.
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-
-if [[ "${HERDR_ENV:-}" != "1" ]]; then
-  echo "skipping Herdr suite: HERDR_ENV is not 1"
-  exit 0
+npm run build
+npm run build:test
+node --test dist-test/tests/unit/b7-*.test.js
+if command -v herdr >/dev/null 2>&1 && [[ "$(uname -s)" == Linux ]]; then
+  node --test tests/herdr/*.test.mjs
+else
+  echo 'private Herdr process tests skipped: Linux and Herdr 0.9.5 required'
 fi
-
-shopt -s nullglob
-test_files=(tests/herdr/*.test.mjs tests/herdr/*.test.js)
-shopt -u nullglob
-
-if (( ${#test_files[@]} == 0 )); then
-  echo "no Herdr tests yet"
-  exit 0
-fi
-
-echo "Herdr tests: ${test_files[*]}"
-node --test "${test_files[@]}"
