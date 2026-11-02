@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+import('../dist/core/run/cli.js').then(({ main }) => main()).catch((error) => {
+  process.stderr.write(`hud-run: ${error.message}\n`);
+  process.exitCode = 1;
+});
