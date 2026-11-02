@@ -1,3 +1,4 @@
+import { launchNodeGroup } from '../run/native-group.js';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { spawn, spawnSync } from 'node:child_process';
@@ -11,7 +12,6 @@ import {
   currentDomain,
   inspectGroup,
   launchGroup,
-  launchNodeGroup,
   processState,
   proveGroupGone,
   readProcess,
@@ -257,14 +257,10 @@ test(
   'crash/disconnect before scope fixation seals unsubmitted helper with zero command spawn',
   { skip: !linux },
   async () => {
-    const helper = spawn(
-      process.execPath,
-      [fileURLToPath(new URL('../../src/core/run/group-helper.js', import.meta.url))],
-      {
-        detached: true,
-        stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-      }
-    );
+    const helper = spawn(process.execPath, [fileURLToPath(new URL('../run/group-helper.js', import.meta.url))], {
+      detached: true,
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+    });
     const [ready] = await once(helper, 'message');
     assert.equal(ready.type, 'ready');
     const exited = once(helper, 'exit');
@@ -276,15 +272,11 @@ test(
 
 test('private helper accepts exactly one submission and refuses a second launch', { skip: !linux }, async (t) => {
   const fixture = setup(t);
-  const helper = spawn(
-    process.execPath,
-    [fileURLToPath(new URL('../../src/core/run/group-helper.js', import.meta.url))],
-    {
-      detached: true,
-      cwd: fixture.dir,
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-    }
-  );
+  const helper = spawn(process.execPath, [fileURLToPath(new URL('../run/group-helper.js', import.meta.url))], {
+    detached: true,
+    cwd: fixture.dir,
+    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+  });
   t.after(() => {
     if (helper.exitCode === null && helper.signalCode === null) helper.kill('SIGKILL');
   });

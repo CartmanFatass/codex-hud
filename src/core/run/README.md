@@ -96,12 +96,14 @@ Oversized entries/reference programs or kernel E2BIG explicitly refuse with
 `headless_environment_too_large`; data is never truncated. The existing Node string
 API retains its UTF-8 conversion; no raw non-UTF-8 argv interface was added.
 
-**待 ARCH 裁决:** argv[0] containing '=' is provisionally refused as
+The actual GNU env command operand (`argv[0]` or the managed shell executable)
+containing '=' is unsupported and refused as
 `headless_executable_assignment_unsupported` before registration, dispatch or
 spending a ticket. GNU env otherwise treats that executable as an assignment.
-This deviates from the generic argv contract. ARCH options are explicit refusal,
-Node only for this case, or coreutils supporting `--argv0`. No production fallback
-or unapproved dependency/version requirement was selected.
+This is the H04 support boundary. Ordinary arguments/environment values containing
+'=' and explicitly selected managed shell text remain supported. Callers stop on
+this error; no automatic shell conversion, Node fallback or dependency/version
+increase is selected.
 
 Shared `GroupExit` distinguishes verified_wait/native_unknown. The default returns
 native_unknown with null code/signal. `GroupProcess.shellDiagnostic` records only
@@ -110,9 +112,10 @@ encoded status. It never becomes harness exit_code or another shell's
 ExitObservation. Complete scope end can have both native_exit/shell_exit null,
 reason scope_ended. Exit137/SIGKILL may both diagnose137 without being conflated.
 
-`launchNodeGroup`/`group-helper.ts` are compatibility code retained through this
-package's acceptance, then due for removal; no user backend switch exists. The
-trusted constructor launcher seam keeps exact native tests. Only verified_wait
+`tests/run/native-group.ts` and `tests/run/group-helper.ts` are test-only
+fixtures producing real ChildProcess wait evidence. Production source/entrypoints
+neither import nor select them; a source-graph regression enforces this boundary.
+The trusted constructor launcher seam keeps exact native tests. Only verified_wait
 whose subject fully matches the independently verified harness projects native_exit.
 A verified wait for an actual managed shell can separately project shell_exit.
 Exact 0/3/137 and SIGKILL/SIGTERM, actual shell137 and mismatch-refusal assertions
@@ -224,12 +227,13 @@ no automatic input, focus, fg, wrapper reconstruction, takeover or resume. The
 existing independent Q proof can finish the run without an exit receipt and does
 not rewrite the dead writer's files.
 
-**待 ARCH 裁决:** the existing ledger raw whitelist has no carrier for the
-supervisor's own directed signal/HUP observation. New ledger kinds are outside
-this task's authority. The handler accepts cancellation but does not pretend this
-is `command.exited`, mutate stable metadata or add receipt fields. Persisting that
-partial fact would require an explicitly approved supervisor-signal raw kind (or
-a future versioned artifact field). Host context remains exported in-process data.
+H07 adds the narrow `supervisor.signal` raw fact in both supervision modes. Its
+only payload fields are `signal` (SIGHUP/SIGINT/SIGTERM) and the handler's epoch
+`observedAt`; its subject is the full registered supervisor stamp checked by the
+ledger writer. It proves no sender, harness delivery, command exit or cancellation
+chronology. The independent cancellation flow continues; duplicate in-flight
+signals may coalesce without restarting the ladder. Failed writes leave a gap.
+Stable metadata and exit receipt schemas are unchanged.
 
 Terminal validation uses only private tmux sockets and mkdtemp TMUX_TMPDIR/HUD_HOME,
 with synthetic terminal consumers and a fake HostAdapter. Run

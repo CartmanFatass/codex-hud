@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readProcess, sameStamp, type GroupExit } from './process.js';
-import type { ProcessScope, ProcessStamp } from '../types/supervision.js';
+import { readProcess, sameStamp, type GroupExit } from '../../src/core/run/process.js';
+import type { ProcessScope, ProcessStamp } from '../../src/core/types/supervision.js';
 
 /** One run, one IPC submission, no idle timers and no scope enumeration. */
 const self = readProcess(process.pid);
