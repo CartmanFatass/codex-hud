@@ -20,6 +20,9 @@ import type {
 
 export { isRunTerminal } from '../execution.js';
 
+/** H09–H13 policy version; collectors and immediate read-only consumers share this value. */
+export const STATUS_RULE_VERSION = 'b16-v2';
+
 export type Dimension = 'activity' | 'pendingReason' | 'lastTurnOutcome' | 'liveness';
 export type SemanticClass =
   | 'conflict'
@@ -174,6 +177,37 @@ const eventIdentity = (source: FactSource): string => {
     : JSON.stringify([e.origin, source.id, e.evidenceId ?? null, e.eventAt ?? e.observedAt]);
 };
 const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const compareCandidates = (a: Candidate<unknown>, b: Candidate<unknown>) =>
+  a.rank - b.rank || (b.eventAt ?? -1) - (a.eventAt ?? -1) || compareText(a.source.id, b.source.id);
+
+/** Evaluate only activity over already eligible facts; never re-read at a historical clock. */
+function activityCandidate(s: FactSource, at: number, after = false): Candidate<Activity> | null {
+  const e = s.evidence,
+    f = e.value,
+    tool = f.openTool;
+  let value = f.registry?.activity ?? f.activity;
+  let eventAt = e.eventAt;
+  if (tool) {
+    if (
+      timeValid(tool.startedAt) &&
+      timeValid(tool.deadlineAt) &&
+      tool.startedAt <= at &&
+      (at < tool.deadlineAt || (at === tool.deadlineAt && !after))
+    ) {
+      value = 'working';
+      eventAt = tool.startedAt;
+    } else if (value === 'working' || value === undefined) value = 'unknown';
+  }
+  return value === undefined || value === 'unknown'
+    ? null
+    : {
+        value,
+        source: s,
+        eventAt,
+        episode: f.episodes?.activity ?? null,
+        rank: e.origin === 'registry' ? 0 : e.origin === 'transcript' ? 1 : 2,
+      };
+}
 
 /** The sole semantic order; no visual glyph, colour, sorting bucket or child state. */
 function classify(
@@ -291,11 +325,7 @@ export function mergeStatus(
         ? timeValid(heartbeat) && timeValid(source.deadlineAt)
           ? Math.min(heartbeat + 30000, source.deadlineAt)
           : null
-        : e.value.openTool
-          ? e.value.openTool.deadlineAt === null || source.deadlineAt === null
-            ? null
-            : Math.min(e.value.openTool.deadlineAt, source.deadlineAt)
-          : source.deadlineAt;
+        : source.deadlineAt;
     freshnessSources.push({
       id: source.id,
       validity: reason ? 'unknown' : e.validity,
@@ -383,19 +413,8 @@ export function mergeStatus(
     const e = s.evidence,
       f = e.value;
     const registry = f.registry;
-    let activity = registry?.activity ?? f.activity;
-    if (f.openTool) {
-      if (timeValid(f.openTool.deadlineAt) && nowMs <= f.openTool.deadlineAt) activity = 'working';
-      else if (activity === 'working' || activity === undefined) activity = 'unknown';
-    }
-    if (activity !== 'unknown')
-      add(
-        'activity',
-        activity,
-        s,
-        e.origin === 'registry' ? 0 : e.origin === 'transcript' ? 1 : 2,
-        f.openTool?.startedAt ?? e.eventAt
-      );
+    const activity = activityCandidate(s, nowMs);
+    if (activity) candidates.activity.push(activity);
     const pending = registry?.pendingReason ?? f.pendingReason;
     add(
       'pendingReason',
@@ -443,11 +462,21 @@ export function mergeStatus(
             resolved.value === 'none' &&
             proof &&
             active.episode !== null &&
+            active.episode.length > 0 &&
             proof.episodeAnchor === active.episode &&
             timeValid(active.eventAt) &&
             timeValid(proof.eventAt) &&
             proof.eventAt >= active.eventAt &&
-            proof.eventAt <= nowMs
+            timeValid(resolved.source.evidence.eventAt) &&
+            timeValid(resolved.source.evidence.observedAt) &&
+            timeValid(resolved.source.evidence.lastSuccessfulReadAt) &&
+            proof.eventAt <=
+              Math.min(
+                nowMs,
+                resolved.source.evidence.eventAt,
+                resolved.source.evidence.observedAt,
+                resolved.source.evidence.lastSuccessfulReadAt
+              )
           );
         });
         // Keep the actual proof dependencies even when another request remains open.
@@ -477,7 +506,7 @@ export function mergeStatus(
           a.rank - b.rank ||
           compareText(a.source.id, b.source.id)
         );
-      return a.rank - b.rank || (b.eventAt ?? -1) - (a.eventAt ?? -1) || compareText(a.source.id, b.source.id);
+      return compareCandidates(a, b);
     });
     return list[0] ?? null;
   }
@@ -492,7 +521,8 @@ export function mergeStatus(
     liveness: live?.source.id ?? null,
   };
   const required = new Set([...(input.requiredSourceIds ?? []), ...resolutionSources]);
-  for (const id of Object.values(selectedSources)) if (id) required.add(id);
+  for (const id of [selectedSources.pendingReason, selectedSources.lastTurnOutcome, selectedSources.liveness])
+    if (id) required.add(id);
   if (runSource) required.add(runSource.id);
   if (stampReason) required.add('missing:observation');
   if (!live && run && !isRunTerminal(run) && run.state !== 'starting') {
@@ -500,16 +530,6 @@ export function mergeStatus(
       (s) => s.evidence.value.heartbeatAt !== undefined || s.evidence.value.liveness !== undefined
     );
     required.add(heartbeat?.id ?? 'missing:liveness');
-  }
-  if (!activity && !run) {
-    const last = matching.find(
-      (s) => s.evidence.value.activity || s.evidence.value.registry || s.evidence.value.openTool
-    );
-    required.add(
-      last?.id ??
-        sources.find((s) => s.evidence.value.activity || s.evidence.value.registry || s.evidence.value.openTool)?.id ??
-        'missing:activity'
-    );
   }
   if (!live && !run) {
     const last = matching.find((s) => s.evidence.value.liveness || s.evidence.value.heartbeatAt !== undefined);
@@ -519,24 +539,22 @@ export function mergeStatus(
         'missing:liveness'
     );
   }
+  const independentRequired = new Set(required);
+  function requireActivity(ids: Set<string>, selected: Candidate<Activity> | null) {
+    if (selected) ids.add(selected.source.id);
+    else if (!run) {
+      const hasActivity = (s: FactSource) =>
+        s.evidence.value.activity || s.evidence.value.registry || s.evidence.value.openTool;
+      ids.add(matching.find(hasActivity)?.id ?? sources.find(hasActivity)?.id ?? 'missing:activity');
+    }
+  }
+  requireActivity(required, activity);
   let freshness = projectFreshness(freshnessSources, [...required].sort(compareText), nowMs);
   let conflict = input.conflict ? structuredClone(input.conflict) : null;
   const explicit = matching.filter((s) => s.evidence.validity === 'conflict');
-  // Policy row C01: preserve a current registry/transcript contradiction explicitly.
-  const r = current.find(
-    (s) =>
-      s.evidence.origin === 'registry' && s.evidence.value.registry && s.evidence.value.registry.activity !== 'unknown'
-  );
-  const t = current.find(
-    (s) =>
-      s.evidence.origin === 'transcript' &&
-      s.evidence.value.activity &&
-      s.evidence.value.activity !== 'unknown' &&
-      !s.evidence.value.openTool
-  );
-  const disagreement =
-    r && t && r.evidence.value.registry && r.evidence.value.registry.activity !== t.evidence.value.activity;
-  const contradictory = [...explicit, ...(disagreement ? [r!, t!] : [])];
+  // Ordinary registry/transcript lag is not a contradiction (H09). Only explicit
+  // same-subject contradictory evidence can enter the highest-priority class.
+  const contradictory = explicit;
   if (contradictory.length) {
     const recordIds = [
       ...new Set([...(conflict?.recordIds ?? []), ...contradictory.map((s) => s.evidence.evidenceId ?? s.id)]),
@@ -581,6 +599,70 @@ export function mergeStatus(
     dims.freshness = freshness;
   }
   const [semanticClass, reason] = classify(dims, run, report, conflict, unconfirmedIntent);
+  // H10: find the last effective withdrawal, including a chain of overlapping tools.
+  // Other dimensions stay fixed; freshness still follows the selected dependencies.
+  let toolBoundary: { at: number; source: FactSource } | null = null;
+  const expiredTools = current.filter((s) => {
+    const tool = s.evidence.value.openTool;
+    return (
+      tool &&
+      timeValid(tool.startedAt) &&
+      timeValid(tool.deadlineAt) &&
+      tool.startedAt <= tool.deadlineAt &&
+      tool.deadlineAt < nowMs
+    );
+  });
+  if (expiredTools.length) {
+    function intervalAt(at: number, after: boolean) {
+      const selected =
+        current
+          .map((s) => activityCandidate(s, at, after))
+          .filter((c): c is Candidate<Activity> => c !== null)
+          .concat(candidates.activity.filter((c) => !current.includes(c.source)))
+          .sort(compareCandidates)[0] ?? null;
+      const ids = new Set(independentRequired);
+      requireActivity(ids, selected);
+      const hypothetical = {
+        ...dims,
+        activity: selected?.value ?? ('unknown' as Activity),
+        freshness: projectFreshness(freshnessSources, [...ids].sort(compareText), nowMs),
+      };
+      const [available, why] = classify(
+        { ...hypothetical, freshness: { ...hypothetical.freshness, state: 'fresh' } },
+        run,
+        report,
+        conflict,
+        unconfirmedIntent
+      );
+      if (
+        reportSource &&
+        ((available === 'pending' && why === 'blocked') ||
+          (available === 'exited' && why === 'reported') ||
+          (available === 'interrupted' &&
+            why === 'interrupted' &&
+            report?.status === 'interrupted' &&
+            outcome?.value !== 'interrupted'))
+      ) {
+        ids.add(reportSource.id);
+        hypothetical.freshness = projectFreshness(freshnessSources, [...ids].sort(compareText), nowMs);
+      }
+      const [kind, whySelected] = classify(hypothetical, run, report, conflict, unconfirmedIntent);
+      return {
+        key: `${kind}:${whySelected}`,
+        anchor: kind === 'working' || kind === 'idle' ? (selected?.episode ?? null) : null,
+      };
+    }
+    const actual = intervalAt(nowMs, false);
+    const compatible = (a: ReturnType<typeof intervalAt>, b: ReturnType<typeof intervalAt>) =>
+      a.key === b.key && (a.anchor === null || b.anchor === null || a.anchor === b.anchor);
+    for (const source of expiredTools) {
+      const at = source.evidence.value.openTool!.deadlineAt!;
+      const before = intervalAt(at, false),
+        after = intervalAt(at, true);
+      if (!compatible(before, after) && compatible(after, actual) && (!toolBoundary || at > toolBoundary.at))
+        toolBoundary = { at, source };
+    }
+  }
   const stateKey = reason === 'launch_failed' ? 'launch_failed' : `${semanticClass}:${reason}`;
   let entering: Candidate<unknown> | null =
     semanticClass === 'pending'
@@ -625,7 +707,17 @@ export function mergeStatus(
   }
   // A closure proves interruption even if a newer activity event supplies the resumed start,
   // or the previous duration was unknown. Sampling need not publish the opening in between.
-  let resumedAfterPrior = false;
+  let resumedAfterPrior =
+    !!toolBoundary && !!previous && (previous.stateSince === null || toolBoundary.at > previous.stateSince);
+  if (toolBoundary && (!entering || entering.eventAt === null || toolBoundary.at >= entering.eventAt))
+    entering = {
+      value: semanticClass,
+      rank: 0,
+      episode: null,
+      ...entering,
+      source: entering?.source ?? toolBoundary.source,
+      eventAt: toolBoundary.at,
+    };
   let resolutionBoundary: number | null = null;
   const resolution = pending?.source.evidence.value.pendingResolution;
   if (
@@ -636,7 +728,7 @@ export function mergeStatus(
     timeValid(pending.eventAt)
   ) {
     resolutionBoundary = pending.eventAt;
-    resumedAfterPrior = !!previous && (previous.stateSince === null || pending.eventAt > previous.stateSince);
+    resumedAfterPrior ||= !!previous && (previous.stateSince === null || pending.eventAt > previous.stateSince);
     if (!entering || entering.eventAt === null || pending.eventAt >= entering.eventAt)
       entering = {
         value: semanticClass,
@@ -724,7 +816,7 @@ export function mergeStatus(
   const observedAt = maxTime(used.map((s) => s.evidence.observedAt)) ?? nowMs;
   let eventAt =
     semanticClass === 'stale'
-      ? maxTime([freshness.staleSince, resolutionBoundary, recoveryBoundary])
+      ? maxTime([freshness.staleSince, toolBoundary?.at, resolutionBoundary, recoveryBoundary])
       : semanticClass === 'conflict'
         ? conflict!.since
         : observedRecoveryBoundary === null
@@ -788,6 +880,7 @@ export function mergeStatus(
     : unprovenBinding || ((input.history.gap || lineageChanged) && !input.history.rebuildFromEvent)
       ? 'first_observation'
       : input.history.continuity;
+  const semanticObservedAt = observedRecoveryBoundary ?? observedAt;
   const continuity = resolveStateContinuity(
     {
       ...target,
@@ -795,7 +888,14 @@ export function mergeStatus(
       episodeAnchor,
       stateKey,
       eventAt,
-      observedAt: observedRecoveryBoundary ?? observedAt,
+      // An old successful read cannot be the first observation of semantics that
+      // only become applicable after a later deadline or an observed recovery.
+      observedAt:
+        (continuityMode === 'first_observation' || observedRecoveryBoundary !== null) &&
+        toolBoundary &&
+        toolBoundary.at > semanticObservedAt
+          ? nowMs
+          : semanticObservedAt,
       continuity: continuityMode,
       historicalGap: input.history.gap,
       clockAnomaly: freshness.clockAnomaly,
