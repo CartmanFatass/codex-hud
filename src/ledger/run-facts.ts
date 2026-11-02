@@ -1,7 +1,7 @@
 import { canonicalJson, digest } from '../core/canonical.js';
 import { isRunTerminal } from '../core/execution.js';
 import { inspectReceipt, sameProcessStamp } from '../core/supervision.js';
-import { validateRetireRequest } from './notify-events.js';
+import { recordWakeRevoked, validateRetireRequest } from './notify-events.js';
 import type {
   Termination,
   TerminalNote,
@@ -65,8 +65,30 @@ export async function appendRunFact(
       )
         throw new Error('parent_mismatch');
     }
-    insertRecord(tx, 'events', { runId, linkId: run.linkId, kind, payload: copy, at: Date.now() });
-    return Number(tx.get('SELECT last_insert_rowid() AS seq')!.seq);
+    const at = Date.now();
+    insertRecord(tx, 'events', { runId, linkId: run.linkId, kind, payload: copy, at });
+    const seq = Number(tx.get('SELECT last_insert_rowid() AS seq')!.seq);
+    if (kind === 'parent.offline') {
+      const registrations = tx.all(
+        `SELECT e.seq FROM events e WHERE e.link_id=? AND e.kind='wake.registered'
+          AND json_extract(e.payload,'$.contextGeneration')=?
+          AND NOT EXISTS (SELECT 1 FROM events r WHERE r.link_id=e.link_id AND r.kind='wake.revoked'
+            AND json_extract(r.payload,'$.registrationSeq')=e.seq)`,
+        run.linkId,
+        copy.generation
+      );
+      for (const registration of registrations)
+        recordWakeRevoked(
+          tx,
+          run.linkId,
+          {
+            registrationSeq: Number(registration.seq),
+            reason: 'parent_offline',
+          },
+          at
+        );
+    }
+    return seq;
   });
 }
 export async function recordRunReceipt(

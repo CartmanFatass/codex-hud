@@ -21,6 +21,8 @@ export interface HandshakeServiceOptions {
   ledger: Ledger;
   registration: Registration;
   reader: ProcessReaderPort;
+  /** Verified private HUD_HOME supplied by the server, never model arguments. */
+  home?: string;
   env?: Readonly<Record<string, string | undefined>>;
   now?: () => number;
 }
@@ -155,6 +157,6 @@ export class HandshakeService {
   }
   async report(args: ChildReportInput, authority: ChildAuthority, budget?: ChildWriteBudget) {
     if (this.env.HUD_RUN && this.env.HUD_RUN !== args.runId) throw new Error('stale_binding');
-    return commitChildReport(this.options.ledger, args, authority, this.now(), budget);
+    return commitChildReport(this.options.ledger, args, authority, this.now(), budget, this.options.home);
   }
 }

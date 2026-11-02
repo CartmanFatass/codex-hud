@@ -158,17 +158,31 @@ test('delegate_status and delegate_spawn carry the §5.2 advice from the startup
   const status = (await delegation.invoke(f.source(), 'delegate_status', { runId: 'run-a' })) as {
     advice: unknown;
   };
-  assert.deepEqual(status.advice, MATCHED_ADVICE);
-  assert.equal('wake' in (status.advice as object), false);
+  assert.deepEqual(status.advice, { ...MATCHED_ADVICE, wake: { adapter: 'none', state: 'none' } });
+  assert.equal('wake' in (status.advice as object), true);
 
   const spawn = (await delegation.invoke(f.source(), 'delegate_spawn', f.args)) as {
     status: string;
     advice: unknown;
   };
   assert.equal(spawn.status, 'accepted');
-  assert.deepEqual(spawn.advice, MATCHED_ADVICE);
+  assert.deepEqual(spawn.advice, { ...MATCHED_ADVICE, wake: { adapter: 'none', state: 'none' } });
   assert.deepEqual(await delegation.invoke(f.source(), 'delegate_spawn', f.args), spawn);
   assert.equal(f.launches.length, 1);
+});
+
+test('B19 merge: one real status and spawn response retain cache keys and advice.wake', async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.root, 'cache.json'), wildcardCache);
+  const delegation = service(f.options, loadCacheConfig(f.root));
+  t.after(() => delegation.close());
+  const spawned = (await delegation.invoke(f.source(), 'delegate_spawn', f.args)) as { runId: string; advice: unknown };
+  const status = (await delegation.invoke(f.source(), 'delegate_status', { runId: spawned.runId })) as {
+    advice: unknown;
+  };
+  for (const response of [spawned, status]) {
+    assert.deepEqual(response.advice, { ...MATCHED_ADVICE, wake: { adapter: 'none', state: 'none' } });
+  }
 });
 
 test('the checked-in §5.2 file never guesses an auth label for a codex caller', async (t) => {
@@ -182,7 +196,7 @@ test('the checked-in §5.2 file never guesses an auth label for a codex caller',
     advice: unknown;
   };
   // The §5.2 codex entry lists `chatgpt`; `unknown` must not be promoted to it.
-  assert.deepEqual(status.advice, EMPTY_ADVICE);
+  assert.deepEqual(status.advice, { ...EMPTY_ADVICE, wake: { adapter: 'none', state: 'none' } });
 });
 
 test('a missing cache.json is a valid empty snapshot with empty advice', async (t) => {
@@ -194,9 +208,9 @@ test('a missing cache.json is a valid empty snapshot with empty advice', async (
   const status = (await delegation.invoke(f.source(), 'delegate_status', { runId: 'run-a' })) as {
     advice: unknown;
   };
-  assert.deepEqual(status.advice, EMPTY_ADVICE);
+  assert.deepEqual(status.advice, { ...EMPTY_ADVICE, wake: { adapter: 'none', state: 'none' } });
   const spawn = (await delegation.invoke(f.source(), 'delegate_spawn', f.args)) as { advice: unknown };
-  assert.deepEqual(spawn.advice, EMPTY_ADVICE);
+  assert.deepEqual(spawn.advice, { ...EMPTY_ADVICE, wake: { adapter: 'none', state: 'none' } });
 });
 
 test('an invalid cache.json still serves status and spawn with configError and empty advice', async (t) => {
@@ -210,13 +224,13 @@ test('an invalid cache.json still serves status and spawn with configError and e
   const status = (await delegation.invoke(f.source(), 'delegate_status', { runId: 'run-a' })) as {
     advice: unknown;
   };
-  assert.deepEqual(status.advice, expected);
+  assert.deepEqual(status.advice, { ...expected, wake: { adapter: 'none', state: 'none' } });
   const spawn = (await delegation.invoke(f.source(), 'delegate_spawn', f.args)) as {
     status: string;
     advice: unknown;
   };
   assert.equal(spawn.status, 'accepted');
-  assert.deepEqual(spawn.advice, expected);
+  assert.deepEqual(spawn.advice, { ...expected, wake: { adapter: 'none', state: 'none' } });
 });
 
 test('status and every spawn outcome perform no cache file access after startup', async (t) => {
@@ -471,7 +485,7 @@ test('status and every spawn outcome perform no cache file access after startup'
     const status = (await delegation.invoke(f.source(), 'delegate_status', { runId: 'run-a' })) as {
       advice: unknown;
     };
-    assert.deepEqual(status.advice, MATCHED_ADVICE);
+    assert.deepEqual(status.advice, { ...MATCHED_ADVICE, wake: { adapter: 'none', state: 'none' } });
     noCacheAccess('status');
 
     const accepted = (await delegation.invoke(f.source(), 'delegate_spawn', f.args)) as {
@@ -479,7 +493,7 @@ test('status and every spawn outcome perform no cache file access after startup'
       advice: unknown;
     };
     assert.equal(accepted.status, 'accepted');
-    assert.deepEqual(accepted.advice, MATCHED_ADVICE);
+    assert.deepEqual(accepted.advice, { ...MATCHED_ADVICE, wake: { adapter: 'none', state: 'none' } });
     noCacheAccess('accepted spawn');
 
     const replay = (await delegation.invoke(f.source(), 'delegate_spawn', f.args)) as {
@@ -503,7 +517,7 @@ test('status and every spawn outcome perform no cache file access after startup'
     const third = (await delegation.invoke(f.source(), 'delegate_status', { runId: 'run-a' })) as {
       advice: unknown;
     };
-    assert.deepEqual(third.advice, MATCHED_ADVICE);
+    assert.deepEqual(third.advice, { ...MATCHED_ADVICE, wake: { adapter: 'none', state: 'none' } });
     noCacheAccess('status after on-disk change');
 
     // Sensitivity: the review injected `fs.existsSync(pathToFileURL(cachePath))`
@@ -513,7 +527,7 @@ test('status and every spawn outcome perform no cache file access after startup'
     const probe = (await delegation.invoke(f.source(), 'delegate_status', { runId: 'run-a' })) as {
       advice: unknown;
     };
-    assert.deepEqual(probe.advice, MATCHED_ADVICE);
+    assert.deepEqual(probe.advice, { ...MATCHED_ADVICE, wake: { adapter: 'none', state: 'none' } });
     fs.existsSync(pathToFileURL(cachePath));
     assert.throws(() => noCacheAccess('sensitivity probe'), /sensitivity probe accessed the cache file after startup/);
   } finally {
@@ -558,7 +572,7 @@ test('status and spawn merge the cache advice over an existing advice object', a
     runId: string;
     advice: unknown;
   };
-  assert.equal('wake' in (accepted.advice as object), false);
+  assert.deepEqual(accepted.advice, { ...MATCHED_ADVICE, wake });
   await f.ledger.transaction((tx) => {
     const row = tx.get("SELECT outcome FROM idempotency WHERE request_key='synthetic-request'")!;
     const outcome = JSON.parse(String(row.outcome)) as object;

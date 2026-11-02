@@ -24,6 +24,7 @@ export class HudMcpServer {
   constructor(
     private readonly source: CurrentCallSourcePort,
     private readonly bodies?: {
+      parentCall?(): void;
       invoke(
         source: Extract<CallResolution, { ok: true }>,
         tool: string,
@@ -33,10 +34,14 @@ export class HudMcpServer {
       ): Promise<unknown>;
       /** Adds tool-owned fields to a sanitized structured failure; its code and fields stay as built. */
       decorateFailure?(tool: string, args: Record<string, unknown>, outcome: { ok: false; code: string }): unknown;
-    }
+    },
+    private readonly parentAlive: () => boolean = () => true
   ) {}
   async handle(value: unknown): Promise<unknown | null> {
     const error = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0', id, error: { code, message } });
+    if (!this.parentAlive()) this.shutdown();
+    if (this.stopped)
+      return object(value) && value.id !== undefined ? error(value.id, -32000, 'server_shutdown') : null;
     if (
       !object(value) ||
       value.jsonrpc !== '2.0' ||
@@ -51,6 +56,7 @@ export class HudMcpServer {
       return null;
     }
     if (value.id === undefined) return null;
+    this.bodies?.parentCall?.();
     const id = value.id;
     const params = object(value.params) ? value.params : {};
     const reply = (result: unknown) => ({ jsonrpc: '2.0', id, result });
@@ -208,7 +214,10 @@ export async function serveStdio(server: HudMcpServer, input: Readable, output: 
  * If a native stdout write remains blocked, the entry MUST exit after closing
  * its stores; destroying Node's special stdout stream alone cannot cancel it.
  */
-export async function serveStdioProcess(server: HudMcpServer): Promise<{ discardPendingOutput: boolean }> {
+export async function serveStdioProcess(
+  server: HudMcpServer,
+  parentAlive: () => boolean = () => true
+): Promise<{ discardPendingOutput: boolean }> {
   let discardPendingOutput = false;
   const stop = () => {
     server.shutdown();
@@ -218,10 +227,18 @@ export async function serveStdioProcess(server: HudMcpServer): Promise<{ discard
   process.on('SIGTERM', stop);
   process.on('SIGHUP', stop);
   process.stdout.on('error', outputError);
+  server.shutdownSignal.addEventListener('abort', stop, { once: true });
+  const lifecycle = setInterval(() => {
+    if (!parentAlive()) stop();
+  }, 30000);
+  lifecycle.unref();
   try {
+    if (!parentAlive()) stop();
     await serveStdio(server, process.stdin, process.stdout);
   } finally {
     server.shutdown();
+    clearInterval(lifecycle);
+    server.shutdownSignal.removeEventListener('abort', stop);
     process.off('SIGTERM', stop);
     process.off('SIGHUP', stop);
     // A blocked native stdout WriteWrap can keep Node alive after every waiter
