@@ -14,7 +14,7 @@
 | 阶段 | 交付物 | 状态 |
 |---|---|---|
 | A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 已完成，**A9 带条件放行，契约 01–07 与 schema v1 冻结**：契约（Oracle 三次裁决 C/D/E 与 A9-fix 已落实）、A3/A8 探针、前端信息设计 v1.0、A4 核心类型与契约 fixture、隔离 A9 原型 23/23、A5 四接口与假实现、A6 Codex facade、A7 测试基建；Pro 评审见 reviews/2026-11-01-chatgpt-pro-a9-gate.md |
-| B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 进行中：第一批 B1 ∥ B2 ∥ B3a ∥ B8（各自 git worktree，跨包依赖经端口，批后由 ORCH 集成） |
+| B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 进行中：第一批 B1/B2/B3a/B8 已合入；Oracle 第 4 次裁决已落实（O4APPLY）；B1b Claude hook 来源已合入（成本按 F08 Pro 裁决另立 150 ms 联合预算）；BINT1 账本接线进行中 |
 | C pi 与 Jev 后端 | pi 适配器与 `hud pi`、resume 实测、Jev 后端与 JobRef、pi 的 MCP 加载 | |
 | D cc 完整与 statusline | cc 原生子代理、checkpoint 与采集租约、`hud statusline`、对照清单与基准、三道门切换 | |
 | E 整理 | herdr 宿主完整版、改名与迁移、v1.1 工具、文档 | |
@@ -112,11 +112,11 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B18 | **版本化本地委派导出**：07独立v1只读一致快照、ledgerId命名空间/逐run记录/完整SessionRef与nullable端点、scope/coverage、元数据白名单、--paths local、稳定排序/兼容；不依赖B16/B17/HUD运行 | 按需查询/序列化模块 + A4 golden与producer回归；CLI由B11集成 | 上限10000 run/16MiB/1000ms软预算，超限显式失败、完整JSON备妥才输出；记录行数/字节/墙钟/读事务寿命，不初始化/迁移/采集/Git/reconcile，不新增JSONL writer/daemon/后台全库同步；toktrack独立接入 | CORE | S | A9、B2 |
 | B15 | **阶段评审**：MVP 演示材料 + 账本导出 + 场景日志 + 能力矩阵送 ARCH | `docs/reviews/<date>-pro-mvp.md` | 无阻断项 | ORCH + ARCH | S | B14 |
 
-**A9 带条件放行的 B 内条件**（[reviews/2026-11-01-chatgpt-pro-a9-gate.md](./reviews/2026-11-01-chatgpt-pro-a9-gate.md) §2/§4/§6；各列入对应 WP 验收，B14 生产重验）：
+**A9 带条件放行的 B 内条件**（[reviews/2026-11-01-chatgpt-pro-a9-gate.md](./reviews/2026-11-01-chatgpt-pro-a9-gate.md) §2/§4/§6，F08 行见 [reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md](./reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md)；各列入对应 WP 验收，B14 生产重验）：
 
 | WP | 条件 |
 |---|---|
-| B1 / B5 | 真实调用来源：根与原生子共用 MCP、调用记录晚写/重复/缺失、同进程换会话与旧 spawn/report 并发、新旧 MCP 同时绑定；不可辨时拒绝，不沿用根身份、不退回 proc 权限。按精确 callId 有界定位，不逐调用扫描全文。B1 明确各入口实际支持的 Node 版本（`package.json` 现为 ≥18，`node:sqlite` 需 ≥22.5） |
+| B1 / B5 | 真实调用来源：根与原生子共用 MCP、调用记录晚写/重复/缺失、同进程换会话与旧 spawn/report 并发、新旧 MCP 同时绑定；不可辨时拒绝，不沿用根身份、不退回 proc 权限。按精确 callId 有界定位，不逐调用扫描全文。B1 明确各入口实际支持的 Node 版本（已定：bar ≥ 18；账本、hud-mcp 与 hook 需 Node 22.x ≥ 22.13 或 ≥ 24，不支持 23） |
 | B2 / B4 | 事务外取证后被写锁阻塞、另一写者先取消/终结/导入冲突：旧对账提交前重验状态、代次与相关证据版本，不覆盖新事实；原型事务代码不直接移植 |
 | B3a / B3b | scope 故障矩阵：扫描中成员 fork/退组、leader 先死而组内仍活、核验与发信号之间 PID/PGID 复用、scope 固定前崩溃、真实父 MCP 死亡与 supervisor 死亡对 TTY 的不同影响；一次 /proc 枚举不自动等于完整范围，控制证据不足保守拒绝 |
 | B4 | brief 有字节上限，hash 与实际投递用同一份输入；接受后 brief 被替换/删除时的输入一致性；"事务外读取"仍计入 50 ms |
@@ -125,6 +125,7 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B17 | 撤权后的队列、repair、缓存路径不再外发 |
 | B18 | 一致快照与导出预算（已在行内） |
 | B14 | 空闲 CPU 除每 run 指标外报告 R=10 的总增量与 RSS；accepted 快不掩盖 started/bound 长时间未达 |
+| B4 / B5 / B11 / B14（F08，Pro 裁决） | 显式 `claude_pre_tool_use_v1` 档案：联合 p95 < 150 ms（必需 hook 冷进程启动至同次响应 flush，含授权、DB 等待/commit），MCP 内部 p95 < 50 ms，逐工具、成功/拒绝/busy 分计，计时取保守上界；B5 授权与事务 ≤ 30 ms，单次 busy_timeout ≤ 10 ms，累计等锁/重试 ≤ 20 ms，耗尽且未提交才返回 busy。B4：真实 Claude 发起 spawn/resume 返回 durable accepted，保留既有 hooks/配置，零重复提交，双预算同测；B11：`hud claude` 按档案经 `--settings` 注入 hook。B5：F06/F07 全部反例。B14：每工具/组合 ≥ 1000 次（H/R=1/1 与 2/10），另收 ≥ 200 次真实联合调用、跨 ≥ 10 次 harness 启动、每声明路径 ≥ 20 次，报 n 与 p50/p95/p99/max，合成不混入，缺格不授 verified；B15 仍须真实 Claude→Codex 闭环 |
 
 开工顺序（A9 Pro 门禁评审 §7 采纳）：第一批 B1 ∥ B2 ∥ B3a ∥ B8，B1 的真实调用来源验证最先回答（Claude 根调用能否可靠识别；不能则收窄档案或改取证方案）。随后先做 B4/B5 的 headless 闭环（接受→启动→绑定→报告→取消/无 receipt 恢复），同时起性能基准与故障测试，再推进 B3b/B7 可见模式。B2 后尽早 B12→B16→B6，让状态、连续性与 wait 共用同一事实；B9/B10 随后集成。B18 只依 A9+B2 独立并行；B17 在任何新来源进入模型材料前完成。B11 拆依赖：管理/导出 CLI 随 B4/B18 交付，panel 集成等 B7/B10。B14 的测试随每个闭环落地，最后汇总矩阵，不把生产反例全部留到阶段末。
 

@@ -1,5 +1,7 @@
 # Oracle consult 4: phase B batch 1 forks
 
+> **Superseded in part (2026-11-01):** the cost gate of F08 for the explicit `claude_pre_tool_use_v1` profile was decided by ChatGPT Pro, see [2026-11-01-chatgpt-pro-f08-hook-budget.md](./2026-11-01-chatgpt-pro-f08-hook-budget.md) (joint p95 < 150 ms; MCP-internal < 50 ms; authorization + DB ≤ 30 ms). The rest of this ruling stands.
+
 Codex gpt-6-astra, effort max, read-only, 2026-11-01, baseline `24c50fb`. Brief: Claude call source (B1 probes), four type/authority gaps (B1, B3a, B8), raw tails at rest (B8). Verbatim answer below; F01–F11 are the required changes.
 
 ---
