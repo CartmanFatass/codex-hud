@@ -57,12 +57,15 @@ export class HandshakeService {
       throw new Error('claim_anchor_mismatch');
     const stamp = meta.harness;
     const domain = reader.domain();
+    // Consult 5 G08: a Run stamp compares only with the Run form. A missing form is
+    // unavailable, never the caller JSON domain and never a persisted ProcessKey.
+    if (domain.runPidDomain === null) throw new Error('run_domain_unavailable');
     const self = reader.get(registration.caller.pid);
     const harness = reader.get(stamp.pid);
     const root = actualSourceRoot(harness, run.harness);
     if (
       stamp.boot_id !== domain.bootId ||
-      stamp.pid_domain !== (domain.runPidDomain ?? domain.pidDomain) ||
+      stamp.pid_domain !== domain.runPidDomain ||
       stamp.pid !== registration.harnessPid ||
       stamp.proc_start !== registration.harnessProcStart ||
       harness.procStart !== stamp.proc_start ||

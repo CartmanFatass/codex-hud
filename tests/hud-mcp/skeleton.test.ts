@@ -18,6 +18,7 @@ import { SessionRefResolver, exactClaudeCallRecords, resolvePiSession } from '..
 import { HudMcpServer } from '../../packages/hud-mcp/src/server.js';
 import { TOOLS } from '../../packages/hud-mcp/src/tools.js';
 import { makeSourceId } from '../../src/core/identity.js';
+import { deriveProcessDomain } from '../../src/core/process-domain.js';
 import { Refusal } from '../../packages/hud-mcp/src/errors.js';
 
 const fixture = () => {
@@ -70,11 +71,11 @@ class Processes implements ProcessReaderPort {
     return structuredClone(p);
   }
   domain() {
-    return {
+    return deriveProcessDomain({
+      machineId: 'synthetic-machine',
       bootId: 'synthetic-boot',
-      pidDomain: 'synthetic-machine:synthetic-boot:synthetic-pidns',
-      claudePidDomain: 'linux:synthetic:pid:[synthetic]',
-    };
+      pidNamespace: 'pid:[synthetic]',
+    });
   }
 }
 const id = '01900000-0000-7000-8000-000000000001';
