@@ -491,3 +491,138 @@ test('B16 restart preserves event aliases when the same open episode gains an ID
   assert.equal(enriched.committed.noticeState!.noticeSeq, 1);
   assert.equal(enriched.committed.continuity.stateSince, 3100);
 });
+
+test('H09–H13 policy rows restore exact committed intervals and bounded dedup from SQLite', { skip }, async (t) => {
+  for (const id of ['C01', 'C04', 'C21', 'C30', 'C33', 'C46']) {
+    const row = steps(id);
+    const f = await setup(t, row[0]);
+    for (const step of row) publish(f.writer, step);
+    const before = f.store.readProjection(f.ref)!;
+    f.store.release(f.ref, f.lease);
+    f.store.close();
+    const store = await f.open();
+    const writer = new StatusWriter(store, f.ref, store.acquire(f.ref, `synthetic-${id}-restart`));
+    const again = publish(writer, row.at(-1)!);
+    assert.deepEqual(again.notices, [], id);
+    assert.equal(again.committed.continuity.stateSince, before.continuity.stateSince, id);
+    assert.equal(again.committed.continuity.stateSinceBasis, before.continuity.stateSinceBasis, id);
+    assert.deepEqual(again.committed.noticeState, before.noticeState, id);
+    assert.ok(again.committed.noticeState!.inputStamps.length <= 3);
+    assert.ok(again.committed.noticeState!.eventStamps!.length <= 3);
+    const recovery = store.readRecovery(again.committed, { maxBytes: 256 * 1024, maxRecords: 2000, budgetMs: 20 });
+    assert.ok(recovery && 'checkpoint' in recovery, id);
+    assert.equal(recovery.checkpoint.offset, 10, id);
+  }
+});
+
+test(
+  'H11 recovered report cursor emits only new reports, even across rule upgrade and failed publication',
+  { skip },
+  async (t) => {
+    const base = steps('C21')[0];
+    const f = await setup(t, base);
+    const initial = publish(f.writer, { ...base, ruleVersion: 'b16-v1' });
+    assert.deepEqual(initial.notices, []);
+    assert.equal(initial.committed.noticeState!.reportSeq, 11);
+    // Rule changes re-baseline continuity, without rebuilding identical native recovery
+    // or discarding the successfully committed report cursor.
+    const token = f.writer.prepare(reading(base), nativeSources(base), base.input.target);
+    const upgraded = f.writer.publish(token, external(base), 'b16-v2', 4000);
+    assert.equal(upgraded.committed.continuity.ruleVersion, 'b16-v2');
+    assert.equal(upgraded.committed.continuity.stateSince, 3600);
+    assert.equal(upgraded.committed.continuity.stateSinceBasis, 'observed');
+    assert.deepEqual(upgraded.notices, []);
+    assert.equal(
+      upgraded.committed.checkpointIdentity.contentIdentity,
+      initial.committed.checkpointIdentity.contentIdentity
+    );
+    const next = structuredClone(base);
+    next.input.asOfSeq = 12;
+    const report = next.input.ledgerFacts!.find((s) => s.value.report)!;
+    report.seq = 12;
+    report.value.report!.reportId = 'synthetic-unconsumed-after-restart';
+    report.value.report!.createdAt = report.eventAt = report.observedAt = 3900;
+    f.store.release(f.ref, f.lease);
+    f.store.close();
+    const store = await f.open();
+    const writer = new StatusWriter(store, f.ref, store.acquire(f.ref, 'synthetic-cursor-restart'));
+    const publishPrepared = store.publishPrepared.bind(store);
+    store.publishPrepared = () => {
+      throw new Error('synthetic-before-publication');
+    };
+    assert.throws(() => publish(writer, next), /synthetic-before-publication/);
+    assert.equal(store.readProjection(f.ref)!.noticeState!.reportSeq, 11);
+    store.publishPrepared = publishPrepared;
+    const accepted = publish(writer, next);
+    assert.deepEqual(
+      accepted.notices.map((n) => [n.kind, n.sourceEventSeq]),
+      [['report', 12]]
+    );
+    assert.equal(accepted.committed.noticeState!.reportSeq, 12);
+    assert.deepEqual(publish(writer, next).notices, []);
+    // B16 owns no parent delegate_wait cursor: its only ledger-domain cursor is
+    // noticeState.reportSeq, and the caller's original snapshot facts stay intact.
+    assert.equal(base.input.asOfSeq, 11);
+    assert.equal(base.input.ledgerFacts!.find((s) => s.value.report)!.seq, 11);
+  }
+);
+
+test('H10 a retained reading publishes deadline withdrawal without rebuilding native recovery', { skip }, async (t) => {
+  const step = steps('C04')[0];
+  const f = await setup(t, step);
+  const token = f.writer.prepare(reading(step), nativeSources(step), step.input.target);
+  const working = f.writer.publish(token, external(step), step.ruleVersion, 2000);
+  assert.equal(working.committed.summary.statusProjection.stateKey, 'working:working');
+  const expired = f.writer.publish(token, external(step), step.ruleVersion, 4000);
+  assert.equal(expired.publication.changed, true);
+  assert.equal(expired.committed.summary.statusProjection.stateKey, 'unknown:insufficient_evidence');
+  assert.equal(expired.committed.continuity.stateSince, 2000);
+  assert.equal(expired.committed.continuity.stateSinceBasis, 'event');
+  assert.equal(
+    expired.committed.checkpointIdentity.contentIdentity,
+    working.committed.checkpointIdentity.contentIdentity
+  );
+  assert.deepEqual(expired.notices, []);
+  const again = f.writer.publish(token, external(step), step.ruleVersion, 4500);
+  assert.equal(again.publication.changed, false);
+  assert.deepEqual(again.committed.observationStamp, expired.committed.observationStamp);
+  assert.deepEqual(again.notices, []);
+});
+
+test('H10 rule upgrade and stale recovery establish stable observed intervals across restart', { skip }, async (t) => {
+  for (const cause of ['rule', 'stale']) {
+    const step = steps('C04')[0];
+    step.input.sources[0].evidence.value.openTool!.deadlineAt = 3000;
+    if (cause === 'stale') {
+      step.input.requiredSourceIds = ['missing:prior'];
+      step.input.history.continuity = 'unknown';
+    }
+    const f = await setup(t, step);
+    const token = f.writer.prepare(reading(step), nativeSources(step), step.input.target);
+    const old = f.writer.publish(token, external(step), cause === 'rule' ? 'b16-v1' : 'b16-v2', 2000);
+    assert.equal(old.committed.continuity.stateSince, cause === 'rule' ? 100 : null);
+    assert.equal(old.committed.continuity.stateSinceBasis, cause === 'rule' ? 'event' : 'unknown');
+    delete step.input.requiredSourceIds;
+    step.input.history.continuity = 'proven';
+    const upgraded = f.writer.publish(token, external(step), 'b16-v2', 4000);
+    assert.equal(upgraded.committed.continuity.stateSince, 4000);
+    assert.equal(upgraded.committed.continuity.stateSinceBasis, 'observed');
+    assert.equal(
+      upgraded.committed.checkpointIdentity.contentIdentity,
+      old.committed.checkpointIdentity.contentIdentity
+    );
+    assert.deepEqual(upgraded.notices, []);
+    const reread = f.writer.publish(token, external(step), 'b16-v2', 4500);
+    assert.equal(reread.publication.changed, false);
+    assert.equal(reread.committed.continuity.stateSince, 4000);
+    assert.equal(reread.committed.continuity.stateSinceBasis, 'observed');
+    f.store.release(f.ref, f.lease);
+    f.store.close();
+    const store = await f.open();
+    const writer = new StatusWriter(store, f.ref, store.acquire(f.ref, `synthetic-${cause}-restart`));
+    const restored = publish(writer, step);
+    assert.equal(restored.committed.continuity.stateSince, 4000);
+    assert.equal(restored.committed.continuity.stateSinceBasis, 'observed');
+    assert.deepEqual(restored.notices, []);
+  }
+});

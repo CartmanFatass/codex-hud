@@ -98,8 +98,8 @@
         }
       },
       "expected": {
-        "semanticClass": "conflict",
-        "reason": "contradictory_evidence",
+        "semanticClass": "working",
+        "reason": "working",
         "projection": {
           "activity": "working",
           "pendingReason": "none",
@@ -109,7 +109,7 @@
             "state": "fresh",
             "requiredSourceIds": ["registry", "transcript"]
           },
-          "stateKey": "conflict:contradictory_evidence",
+          "stateKey": "working:working",
           "stateSince": 1000,
           "stateSinceBasis": "event",
           "isRunTerminal": null,
@@ -140,15 +140,10 @@
           "liveness": "transcript"
         },
         "notices": [],
-        "conflict": {
-          "count": 2,
-          "recordIds": ["registry:fact", "transcript:fact"],
-          "since": 1000
-        }
+        "conflict": null
       },
       "nowMs": 4000,
-      "ruleVersion": "b16-v1"
+      "ruleVersion": "b16-v2"
     }
-  ],
-  "architectureDecisionPending": "待 ARCH 裁决：记录冲突；替代为仅采用 registry 当前交互而不新增冲突。"
+  ]
 }

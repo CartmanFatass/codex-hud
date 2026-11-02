@@ -70,18 +70,18 @@
         }
       },
       "expected": {
-        "semanticClass": "stale",
-        "reason": "source_deadline_exceeded",
+        "semanticClass": "unknown",
+        "reason": "insufficient_evidence",
         "projection": {
           "activity": "unknown",
           "pendingReason": "none",
           "lastTurnOutcome": "none",
-          "liveness": "unknown",
+          "liveness": "alive",
           "freshness": {
-            "state": "stale",
+            "state": "fresh",
             "requiredSourceIds": ["transcript"]
           },
-          "stateKey": "stale:source_deadline_exceeded",
+          "stateKey": "unknown:insufficient_evidence",
           "stateSince": 2000,
           "stateSinceBasis": "event",
           "isRunTerminal": null,
@@ -107,16 +107,15 @@
         },
         "selectedSources": {
           "activity": null,
-          "pendingReason": null,
-          "lastTurnOutcome": null,
-          "liveness": null
+          "pendingReason": "transcript",
+          "lastTurnOutcome": "transcript",
+          "liveness": "transcript"
         },
         "notices": [],
         "conflict": null
       },
       "nowMs": 4000,
-      "ruleVersion": "b16-v1"
+      "ruleVersion": "b16-v2"
     }
-  ],
-  "architectureDecisionPending": "待 ARCH 裁决：超过工具截止后撤回 working 且所需来源 stale；替代为仅撤回工具活动、保留独立来源新鲜度。"
+  ]
 }

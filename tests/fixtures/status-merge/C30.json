@@ -150,8 +150,7 @@
         "conflict": null
       },
       "nowMs": 4000,
-      "ruleVersion": "b16-v1"
+      "ruleVersion": "b16-v2"
     }
-  ],
-  "architectureDecisionPending": "待 ARCH 裁决：blocked 报告映射为 pendingReason=needs_human；替代为保留 none（或显式 transcript 请求）而只用 blocked 语义。"
+  ]
 }

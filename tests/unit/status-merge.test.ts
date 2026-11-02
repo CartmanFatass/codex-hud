@@ -3,7 +3,13 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import test from 'node:test';
-import { mergeStatus, isRunTerminal, type MergeInput, type MergeResult } from '../../src/core/status/merge.js';
+import {
+  mergeStatus,
+  isRunTerminal,
+  type MergeInput,
+  type MergeResult,
+  STATUS_RULE_VERSION,
+} from '../../src/core/status/merge.js';
 import { checkpointBoundary, witnessObservationBoundary } from '../../src/core/checkpoint.js';
 import { initialParserState } from '../../src/core/observation.js';
 import type { ObservationView } from '../../src/core/types/observation.js';
@@ -210,7 +216,7 @@ test('new run, proven episode and semantic class reset while rereads do not', ()
 });
 
 test('missing sources, wrong identity and unusable source clocks cannot become fresh', () => {
-  for (const kind of ['missing', 'ref', 'binding', 'generation', 'deadline', 'clock', 'toolDeadline']) {
+  for (const kind of ['missing', 'ref', 'binding', 'generation', 'deadline', 'clock']) {
     const step = fixture('C14').steps[0];
     const source = step.input.sources[0];
     switch (kind) {
@@ -231,9 +237,6 @@ test('missing sources, wrong identity and unusable source clocks cannot become f
         break;
       case 'clock':
         source.clockAnomaly = true;
-        break;
-      case 'toolDeadline':
-        source.evidence.value.openTool = { id: 'tool', startedAt: 1, lastActivityAt: 1, deadlineAt: null };
         break;
     }
     assert.equal(runStep(step).projection.freshness.state, 'unknown', kind);
@@ -387,4 +390,444 @@ test('10,000 representative pure merges microbenchmark', (t) => {
       max: samples.at(-1),
     })
   );
+});
+
+test('H09 registry activity responsibility preserves transcript pending/outcome and explicit conflicts', () => {
+  for (const pending of ['none', 'approval', 'question'] as const) {
+    for (const outcome of ['none', 'failed', 'interrupted'] as const) {
+      const step = fixture('C01').steps[0];
+      const transcript = step.input.sources.find((s) => s.id === 'transcript')!;
+      transcript.evidence.value.pendingReason = pending;
+      transcript.evidence.value.lastTurnOutcome = outcome;
+      const result = runStep(step);
+      assert.equal(result.projection.activity, 'working');
+      assert.equal(result.selectedSources.activity, 'registry');
+      assert.equal(result.projection.pendingReason, pending);
+      assert.equal(result.projection.lastTurnOutcome, outcome);
+      assert.equal(result.conflict, null);
+      assert.equal(
+        result.semanticClass,
+        pending !== 'none'
+          ? 'pending'
+          : outcome === 'failed'
+            ? 'failed'
+            : outcome === 'interrupted'
+              ? 'interrupted'
+              : 'working'
+      );
+      step.input.conflict = { count: 1, recordIds: ['explicit-contradiction'], since: 1500 };
+      assert.equal(runStep(step).semanticClass, 'conflict');
+      delete step.input.conflict;
+      transcript.evidence.validity = 'conflict';
+      assert.equal(runStep(step).semanticClass, 'conflict');
+      // Contradictions from a different session are not evidence about this subject.
+      if (transcript.evidence.origin !== 'ledger') transcript.evidence.ref.sessionId = 'foreign';
+      assert.equal(runStep(step).conflict, null);
+    }
+  }
+});
+
+test('H10 tool expiry preserves independent pending, outcome, liveness and source deadline', () => {
+  for (const pending of ['none', 'approval', 'question'] as const) {
+    for (const outcome of ['none', 'completed', 'failed', 'interrupted'] as const) {
+      const step = fixture('C04').steps[0];
+      const source = step.input.sources[0];
+      source.evidence.value.pendingReason = pending;
+      source.evidence.value.lastTurnOutcome = outcome;
+      const result = runStep(step);
+      assert.equal(result.projection.activity, 'unknown');
+      assert.equal(result.projection.pendingReason, pending);
+      assert.equal(result.projection.lastTurnOutcome, outcome);
+      assert.equal(result.projection.liveness, 'alive');
+      assert.equal(result.projection.freshness.state, 'fresh');
+      assert.equal(result.projection.freshness.sources[0].deadlineAt, 90000);
+      assert.deepEqual(result.projection.freshness.requiredSourceIds, ['transcript']);
+      assert.equal(result.projection.isRunTerminal, null);
+      assert.deepEqual(result.notices, []);
+    }
+  }
+  const step = fixture('C04').steps[0];
+  const source = step.input.sources[0];
+  const atDeadline = mergeStatus(step.input, null, step.ruleVersion, 2000);
+  assert.equal(atDeadline.projection.activity, 'working');
+  const expired = runStep(step, atDeadline);
+  assert.equal(expired.projection.stateSince, 2000);
+  assert.equal(expired.projection.stateSinceBasis, 'event');
+  assert.deepEqual(runStep(step, expired).projection, expired.projection);
+  source.deadlineAt = 2500;
+  const stale = runStep(step);
+  assert.equal(stale.projection.freshness.state, 'stale');
+  assert.equal(stale.projection.stateSince, 2500);
+  source.deadlineAt = 90000;
+  delete source.evidence.value.liveness;
+  const noLive = runStep(step);
+  assert.equal(noLive.projection.liveness, 'unknown');
+  assert.equal(noLive.projection.freshness.state, 'unknown');
+  assert.ok(noLive.projection.freshness.requiredSourceIds.includes('missing:liveness'));
+  const registry = fixture('C01').steps[0].input.sources.find((s) => s.id === 'registry')!;
+  step.input.sources = [source, registry];
+  source.evidence.value.liveness = 'alive';
+  const fallback = runStep(step);
+  assert.equal(fallback.projection.activity, 'working');
+  assert.equal(fallback.projection.stateSince, 1000);
+  assert.equal(fallback.selectedSources.activity, 'registry');
+  assert.equal(fallback.conflict, null);
+});
+
+test('H13 resolution requires full source identity and a trusted outer time boundary', () => {
+  const row = fixture('C54');
+  const previous = runStep(row.steps[1]);
+  const mutations: Record<string, (s: MergeInput['sources'][number]) => void> = {
+    wrongAnchor: (s) => {
+      s.evidence.value.pendingResolution!.episodeAnchor = 'different';
+    },
+    anonymous: (s) => {
+      s.evidence.value.pendingResolution!.episodeAnchor = '';
+    },
+    beforeOpening: (s) => {
+      s.evidence.value.pendingResolution!.eventAt = 2999;
+    },
+    afterNow: (s) => {
+      s.evidence.value.pendingResolution!.eventAt = 4001;
+    },
+    afterEvent: (s) => {
+      s.evidence.eventAt = 3800;
+    },
+    afterObservation: (s) => {
+      s.evidence.observedAt = 3800;
+    },
+    afterRead: (s) => {
+      s.evidence.lastSuccessfulReadAt = 3800;
+    },
+    missingEvent: (s) => {
+      s.evidence.eventAt = null;
+    },
+    negativeObservation: (s) => {
+      s.evidence.observedAt = -1;
+    },
+    invalidOuterEvent: (s) => {
+      s.evidence.eventAt = NaN;
+    },
+    negativeRead: (s) => {
+      s.evidence.lastSuccessfulReadAt = -1;
+    },
+    missingRead: (s) => {
+      s.evidence.lastSuccessfulReadAt = null;
+    },
+    invalidTime: (s) => {
+      s.evidence.value.pendingResolution!.eventAt = NaN;
+    },
+    expired: (s) => {
+      s.deadlineAt = 3800;
+    },
+    stale: (s) => {
+      s.evidence.validity = 'stale';
+    },
+    unknown: (s) => {
+      s.evidence.validity = 'unknown';
+    },
+    anomaly: (s) => {
+      s.clockAnomaly = true;
+    },
+    foreignRef: (s) => {
+      if (s.evidence.origin !== 'ledger') s.evidence.ref.sessionId = 'foreign';
+    },
+    foreignRun: (s) => {
+      if (s.evidence.origin !== 'ledger') s.evidence.runId = 'foreign';
+    },
+    foreignBinding: (s) => {
+      if (s.evidence.origin !== 'ledger') s.evidence.bindingGeneration = 99;
+    },
+    foreignGeneration: (s) => {
+      if (s.evidence.origin !== 'ledger') s.evidence.sourceGeneration = 99;
+    },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const step = structuredClone(row.steps[2]);
+    mutate(step.input.sources.find((s) => s.id === 'resolution')!);
+    const result = runStep(step, previous);
+    assert.equal(result.projection.pendingReason, 'approval', name);
+    assert.equal(result.projection.stateSince, 3000, name);
+    assert.deepEqual(result.notices, [], name);
+  }
+  const anonymous = structuredClone(row.steps[2]);
+  anonymous.input.sources.find((s) => s.id === 'registry')!.evidence.value.episodes!.pendingReason = '';
+  anonymous.input.sources.find((s) => s.id === 'resolution')!.evidence.value.pendingResolution!.episodeAnchor = '';
+  assert.equal(
+    runStep(anonymous, previous).projection.pendingReason,
+    'approval',
+    'empty anchors cannot identify an episode'
+  );
+  const tied = structuredClone(row.steps[2]);
+  const proof = tied.input.sources.find((s) => s.id === 'resolution')!;
+  proof.evidence.value.pendingResolution!.eventAt = 3000;
+  assert.equal(runStep(tied, previous).projection.pendingReason, 'none', 'explicit same-episode tie is legal');
+  delete proof.evidence.value.pendingResolution;
+  assert.equal(runStep(tied, previous).projection.pendingReason, 'approval', 'a generic none cannot resolve a tie');
+});
+
+test('H09–H13 six policy fixtures assert every required public output', () => {
+  for (const id of ['C01', 'C04', 'C21', 'C30', 'C33', 'C46']) {
+    for (const step of fixture(id).steps) {
+      assert.equal(step.ruleVersion, STATUS_RULE_VERSION);
+      const projection = step.expected.projection as Record<string, unknown>;
+      for (const field of [
+        'activity',
+        'pendingReason',
+        'lastTurnOutcome',
+        'liveness',
+        'freshness',
+        'stateKey',
+        'stateSince',
+        'stateSinceBasis',
+        'isRunTerminal',
+        'observationStamp',
+      ])
+        assert.ok(Object.hasOwn(projection, field), `${id}.${field}`);
+      assert.ok(Object.hasOwn(step.expected, 'notices'), id);
+      assert.deepEqual(step.input.noticeState, undefined);
+    }
+  }
+});
+
+test('H12 latest blocked report remains independent of other requests, outcomes and run terminality', () => {
+  for (const outcome of ['none', 'completed', 'failed', 'interrupted'] as const) {
+    for (const state of ['running', 'cancelling', 'ended'] as const) {
+      const step = fixture('C30').steps[0];
+      const native = step.input.sources[0];
+      native.evidence.value.lastTurnOutcome = outcome;
+      native.evidence.value.pendingReason = 'approval';
+      native.evidence.value.episodes = { pendingReason: 'approval:independent' };
+      const run = step.input.ledgerFacts!.find((s) => s.value.run)!;
+      run.value.run!.state = state;
+      const resolution = structuredClone(native);
+      resolution.id = 'resolution';
+      resolution.evidence.eventAt = resolution.evidence.observedAt = resolution.evidence.lastSuccessfulReadAt = 3900;
+      resolution.evidence.value = {
+        pendingReason: 'none',
+        pendingResolution: { episodeAnchor: 'approval:independent', eventAt: 3900 },
+      };
+      step.input.sources = [native, resolution];
+      const result = runStep(step);
+      assert.equal(result.projection.pendingReason, 'needs_human');
+      assert.equal(result.projection.lastTurnOutcome, outcome);
+      assert.equal(result.projection.stateKey, 'pending:blocked');
+      assert.equal(result.projection.stateSince, 3200);
+      assert.equal(result.projection.isRunTerminal, state === 'ended');
+      assert.equal(result.selectedSources.pendingReason, 'ledger:report');
+      assert.ok(result.projection.freshness.requiredSourceIds.includes('resolution'));
+      assert.deepEqual(result.notices, []);
+      const replacement = structuredClone(step.input.ledgerFacts!.find((s) => s.value.report)!);
+      replacement.id = 'ledger:new-report';
+      replacement.seq = 12;
+      replacement.eventAt = replacement.observedAt = 3950;
+      replacement.value.report = {
+        ...replacement.value.report!,
+        reportId: 'replacement',
+        status: 'completed',
+        createdAt: 3950,
+      };
+      step.input.asOfSeq = 12;
+      step.input.ledgerFacts = [...step.input.ledgerFacts!, replacement];
+      const replaced = runStep(step, result);
+      assert.equal(replaced.projection.pendingReason, 'none');
+      assert.notEqual(replaced.projection.stateKey, 'pending:blocked');
+      assert.equal(replaced.projection.isRunTerminal, state === 'ended');
+      assert.deepEqual(
+        replaced.notices.map((n) => [n.kind, n.sourceEventSeq]),
+        [['report', 12]]
+      );
+    }
+  }
+});
+
+test('H10 withdrawal starts only the semantic interval actually interrupted by tool activity', () => {
+  const step = fixture('C21').steps[0];
+  const native = step.input.sources[0];
+  native.evidence.value.activity = 'working';
+  native.evidence.value.openTool = { id: 'expired', startedAt: 1000, lastActivityAt: 1000, deadlineAt: 3700 };
+  const result = runStep(step);
+  assert.equal(result.projection.stateKey, 'exited:reported');
+  assert.equal(result.projection.stateSince, 3700, 'completed report was hidden by working until expiry');
+  assert.equal(result.projection.stateSinceBasis, 'event');
+  assert.equal(runStep(step, result).projection.stateSince, 3700);
+  // A higher-priority failure or blocked report was never interrupted by working.
+  const report = step.input.ledgerFacts!.find((s) => s.value.report)!;
+  report.value.report!.status = 'failed';
+  assert.equal(runStep(step).projection.stateSince, 3200);
+  report.value.report!.status = 'blocked';
+  assert.equal(runStep(step).projection.stateSince, 3200);
+  report.value.report!.status = 'completed';
+  const registry = fixture('C01').steps[0].input.sources.find((s) => s.id === 'registry')!;
+  if (registry.evidence.origin !== 'ledger') {
+    registry.evidence.runId = step.input.target.runId;
+    registry.evidence.bindingGeneration = step.input.target.bindingGeneration;
+  }
+  registry.evidence.value.registry!.activity = 'idle';
+  step.input.sources = [native, registry];
+  const registryWins = runStep(step);
+  assert.equal(registryWins.projection.stateKey, 'exited:reported');
+  assert.equal(registryWins.projection.stateSince, 3200, 'registry idle already displaced the lower-ranked tool');
+});
+
+test('H10 overlapping tools use the last effective withdrawal and compatible episode selection', () => {
+  function toolSource(
+    id: string,
+    origin: 'registry' | 'transcript' | 'job',
+    deadlineAt: number,
+    episode: string | null = null
+  ) {
+    const source = fixture('C04').steps[0].input.sources[0];
+    source.id = id;
+    if (source.evidence.origin !== 'ledger') source.evidence.origin = origin;
+    source.evidence.eventAt = 1000;
+    source.evidence.observedAt = source.evidence.lastSuccessfulReadAt = 1000;
+    source.evidence.value.episodes = episode ? { activity: episode } : {};
+    source.evidence.value.openTool!.deadlineAt = deadlineAt;
+    return source;
+  }
+  function idleSource() {
+    const source = fixture('C14').steps[0].input.sources[0];
+    source.id = 'fallback';
+    if (source.evidence.origin !== 'ledger') source.evidence.origin = 'job';
+    source.evidence.value.episodes = { activity: 'idle:fallback' };
+    return source;
+  }
+  for (const otherDeadline of [3000, 2000]) {
+    const step = fixture('C04').steps[0];
+    step.input.sources = [
+      toolSource('registry', 'registry', 2000),
+      toolSource('transcript', 'transcript', otherDeadline),
+      idleSource(),
+    ];
+    const result = runStep(step);
+    assert.equal(result.projection.stateKey, 'idle:idle');
+    assert.equal(result.projection.stateSince, otherDeadline);
+    assert.equal(result.projection.stateSinceBasis, 'event');
+    assert.deepEqual(result.projection.freshness.requiredSourceIds, ['fallback', 'transcript']);
+    assert.deepEqual(runStep(step, result).notices, []);
+    assert.equal(runStep(step, result).projection.stateSince, otherDeadline);
+  }
+  const step = fixture('C04').steps[0];
+  const idle = idleSource();
+  if (idle.evidence.origin !== 'ledger') idle.evidence.origin = 'transcript';
+  step.input.sources = [toolSource('registry', 'registry', 2000), idle, toolSource('unused-job', 'job', 3500)];
+  assert.equal(runStep(step).projection.stateSince, 2000, 'a never-selected later tool cannot move the interval');
+  const active = toolSource('registry', 'registry', 3000, 'working:first');
+  const replacement = toolSource('replacement', 'transcript', 90000, 'working:second');
+  step.input.sources = [active, replacement];
+  const changedEpisode = runStep(step);
+  assert.equal(changedEpisode.projection.stateKey, 'working:working');
+  assert.equal(changedEpisode.projection.stateSince, 3000);
+  assert.equal(changedEpisode.continuity.episodeAnchor, 'working:second');
+  replacement.evidence.value.episodes = { activity: 'working:first' };
+  const sameEpisode = runStep(step);
+  assert.equal(sameEpisode.projection.stateSince, 100, 'a compatible working fallback keeps its entering event');
+  delete active.evidence.value.openTool;
+  active.evidence.value.activity = 'idle';
+  active.evidence.value.episodes = { activity: 'idle:prior' };
+  replacement.evidence.value.openTool!.deadlineAt = 3500;
+  assert.equal(runStep(step).projection.stateSince, 1000, 'a higher-ranked idle fact already won');
+});
+
+test('H10 a same-key return after an unsampled tool interval does not keep the earlier start', () => {
+  const row = fixture('C21');
+  const base = row.steps[0];
+  const first = runStep(base);
+  const step = structuredClone(base);
+  const native = step.input.sources[0];
+  native.evidence.value.activity = 'working';
+  native.evidence.value.openTool = { id: 'intervening', startedAt: 3300, lastActivityAt: 3400, deadlineAt: 3700 };
+  const resumed = runStep(step, first);
+  assert.equal(resumed.projection.stateKey, first.projection.stateKey);
+  assert.equal(resumed.projection.stateSince, 3700);
+  assert.deepEqual(resumed.notices, []);
+  assert.equal(runStep(step, resumed).projection.stateSince, 3700);
+  const report = step.input.ledgerFacts!.find((s) => s.value.report)!;
+  report.value.report!.createdAt = report.eventAt = report.observedAt = 3900;
+  const laterEvent = runStep(step, first);
+  assert.equal(laterEvent.projection.stateSince, 3900, 'a later entering event still records the interruption');
+  assert.equal(runStep(step, laterEvent).projection.stateSince, 3900);
+});
+
+test('H10 a stale report newly required after withdrawal starts stale semantics at the withdrawal', () => {
+  const step = fixture('C21').steps[0];
+  const native = step.input.sources[0];
+  native.evidence.value.activity = 'working';
+  native.evidence.value.lastTurnOutcome = 'completed';
+  native.evidence.value.openTool = { id: 'tool', startedAt: 1000, lastActivityAt: 1000, deadlineAt: 3700 };
+  const report = step.input.ledgerFacts!.find((s) => s.value.report)!;
+  report.deadlineAt = 3600;
+  const result = runStep(step);
+  assert.equal(result.projection.stateKey, 'stale:source_deadline_exceeded');
+  assert.equal(result.projection.stateSince, 3700);
+  assert.equal(result.projection.freshness.state, 'stale');
+  assert.ok(result.projection.freshness.requiredSourceIds.includes('ledger:report'));
+  assert.equal(result.projection.lastTurnOutcome, 'completed');
+});
+
+test('H10 rebaseline after a tool deadline uses the first semantic observation and stays stable', () => {
+  for (const cause of ['rule', 'generation', 'gap', 'first_observation'] as const) {
+    const before = fixture('C04').steps[0];
+    before.input.sources[0].evidence.value.openTool!.deadlineAt = 3000;
+    before.nowMs = 2000;
+    before.ruleVersion = cause === 'rule' ? 'b16-v1' : STATUS_RULE_VERSION;
+    const previous = runStep(before);
+    assert.equal(previous.projection.stateKey, 'working:working');
+    const step = structuredClone(before);
+    step.ruleVersion = STATUS_RULE_VERSION;
+    step.nowMs = 4000;
+    if (cause === 'generation') {
+      step.input.target.sourceGeneration = 2;
+      step.input.observationStamp!.sourceGeneration = 2;
+      for (const source of step.input.sources)
+        if (source.evidence.origin !== 'ledger') source.evidence.sourceGeneration = 2;
+    }
+    if (cause === 'gap') step.input.history.gap = true;
+    if (cause === 'first_observation') step.input.history.continuity = 'first_observation';
+    const baseline = runStep(step, previous);
+    assert.equal(baseline.projection.stateKey, 'unknown:insufficient_evidence', cause);
+    assert.equal(baseline.projection.stateSince, 4000, cause);
+    assert.equal(baseline.projection.stateSinceBasis, 'observed', cause);
+    assert.equal(runStep(step, baseline).projection.stateSince, 4000, cause);
+    // Once the collector can prove continuation from this new baseline, time
+    // advances without changing the committed observed interval.
+    const continued = structuredClone(step);
+    continued.nowMs = 4500;
+    continued.input.history = { continuity: 'proven' };
+    const again = runStep(continued, baseline);
+    assert.equal(again.projection.stateSince, 4000, cause);
+    assert.equal(again.projection.stateSinceBasis, 'observed', cause);
+    assert.deepEqual(again.notices, [], cause);
+    step.input.history = { continuity: 'proven', rebuildFromEvent: true, ...(cause === 'gap' ? { gap: true } : {}) };
+    const rebuilt = runStep(step, previous);
+    assert.equal(rebuilt.projection.stateSince, 3000, cause);
+    assert.equal(rebuilt.projection.stateSinceBasis, 'event', cause);
+  }
+});
+
+test('H10 stale recovery cannot reuse a pre-deadline observation under either the same or a new rule', () => {
+  for (const priorRule of ['b16-v1', STATUS_RULE_VERSION]) {
+    const before = fixture('C04').steps[0];
+    before.input.sources[0].evidence.value.openTool!.deadlineAt = 3000;
+    before.ruleVersion = priorRule;
+    before.nowMs = 2000;
+    before.input.requiredSourceIds = ['missing:prior'];
+    before.input.history.continuity = 'unknown';
+    const prior = runStep(before);
+    assert.equal(prior.projection.stateSince, null);
+    const next = structuredClone(before);
+    next.ruleVersion = STATUS_RULE_VERSION;
+    next.nowMs = 4000;
+    next.input.history.continuity = 'proven';
+    delete next.input.requiredSourceIds;
+    const result = runStep(next, prior);
+    assert.equal(result.projection.stateSince, 4000, priorRule);
+    assert.equal(result.projection.stateSinceBasis, 'observed', priorRule);
+    assert.equal(runStep(next, result).projection.stateSince, 4000, priorRule);
+    next.input.history.rebuildFromEvent = true;
+    const rebuilt = runStep(next, prior);
+    assert.equal(rebuilt.projection.stateSince, 3000, priorRule);
+    assert.equal(rebuilt.projection.stateSinceBasis, 'event', priorRule);
+  }
 });

@@ -109,8 +109,7 @@
         "conflict": null
       },
       "nowMs": 4000,
-      "ruleVersion": "b16-v1"
+      "ruleVersion": "b16-v2"
     }
-  ],
-  "architectureDecisionPending": "待 ARCH 裁决：首次基线抑制 pending/failed/uncertain；替代为首次已知状态也通知。"
+  ]
 }
