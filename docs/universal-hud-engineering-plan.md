@@ -14,7 +14,7 @@
 | 阶段 | 交付物 | 状态 |
 |---|---|---|
 | A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 已完成，**A9 带条件放行，契约 01–07 与 schema v1 冻结**：契约（Oracle 三次裁决 C/D/E 与 A9-fix 已落实）、A3/A8 探针、前端信息设计 v1.0、A4 核心类型与契约 fixture、隔离 A9 原型 23/23、A5 四接口与假实现、A6 Codex facade、A7 测试基建；Pro 评审见 reviews/2026-11-01-chatgpt-pro-a9-gate.md |
-| B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 进行中：第一批 B1/B2/B3a/B8 已合入；Oracle 第 4 次裁决已落实（O4APPLY）；B1b Claude hook 来源已合入（成本按 F08 Pro 裁决另立 150 ms 联合预算）；BINT1 账本接线已合入（hud-run 与 hud-mcp 走真实账本、执行票据授权、trusted_local 管理）；第二批：B12（采集租约与 ObservationCommit 存储；大 checkpoint 成本待 ARCH）、B18（委派导出 v1 producer）、F08 契约增补已合入；B45（B4+B5 headless 闭环：spawn/resume、授权、claim 握手，真实 Codex/Claude→Codex 闭环通过；能力格仍 unverified 待 B14）已合入，第二批完成；Oracle 第 5 次裁决（R1–R6）进行中 |
+| B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 进行中：第一批 B1/B2/B3a/B8 已合入；Oracle 第 4 次裁决已落实（O4APPLY）；B1b Claude hook 来源已合入（成本按 F08 Pro 裁决另立 150 ms 联合预算）；BINT1 账本接线已合入（hud-run 与 hud-mcp 走真实账本、执行票据授权、trusted_local 管理）；第二批：B12（采集租约与 ObservationCommit 存储；大 checkpoint 成本待 ARCH）、B18（委派导出 v1 producer）、F08 契约增补已合入；B45（B4+B5 headless 闭环：spawn/resume、授权、claim 握手，真实 Codex/Claude→Codex 闭环通过；能力格仍 unverified 待 B14）已合入，第二批完成；Oracle 第 5 次裁决 G01–G11 已落实到契约与类型（O5APPLY）；第三批进行中：B12R、BID1、B45-R2 |
 | C pi 与 Jev 后端 | pi 适配器与 `hud pi`、resume 实测、Jev 后端与 JobRef、pi 的 MCP 加载 | |
 | D cc 完整与 statusline | cc 原生子代理、checkpoint 与采集租约、`hud statusline`、对照清单与基准、三道门切换 | |
 | E 整理 | herdr 宿主完整版、改名与迁移、v1.1 工具、文档 | |
@@ -112,8 +112,8 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B18 | **版本化本地委派导出**：07独立v1只读一致快照、ledgerId命名空间/逐run记录/完整SessionRef与nullable端点、scope/coverage、元数据白名单、--paths local、稳定排序/兼容；不依赖B16/B17/HUD运行 | 按需查询/序列化模块 + A4 golden与producer回归；CLI由B11集成 | 上限10000 run/16MiB/1000ms软预算，超限显式失败、完整JSON备妥才输出；记录行数/字节/墙钟/读事务寿命，不初始化/迁移/采集/Git/reconcile，不新增JSONL writer/daemon/后台全库同步；toktrack独立接入 | CORE | S | A9、B2 |
 | O5APPLY | **Oracle 第 5 次裁决契约落实**：G01–G11 全部契约/概念文字与共享类型（CapabilityManifestV1、prepared checkpoint/projection 类型、GroupExit 来源判别、process-domain 类型边界），标注「consult 5 增补，G0x」 | 契约 01–07、概念 §6、`src/core/types/**` | 契约检查器/SQL v1 不变/覆盖率 100%；每个 G 可追溯 | CORE | S | 无 |
 | B12R | **紧凑 recovery 与观测存储复用**（G09–G11）：Codex/Claude reader 版本化 recovery DTO（inline ≤256 KiB）、增长集合同库增量索引、prepareCheckpoint/publishPrepared/readProjection/readRecovery、不可变 checkpoint 复用、受控重建 | readers、`src/core/checkpoint.ts`、`observation-store.ts` | 大公开参数/重复 ID/100 MiB 历史下 no-op 不重做全量验证；三条路径分测；不截断必要状态 | CORE | M | O5APPLY、B12 |
-| BID1 | **共享 pid_domain 派生**（G08）：`src/core/process-domain.ts`，三用途分离，MCP/hook/run 共用，去掉 runPidDomain 回退 | 模块 + 测试 | 三生产者同输入一致、跨表示比较拒绝、旧字节不变、hook 成本重验 | CORE | S | O5APPLY |
-| B45-R2 | **MCP resume 可选 expectedRun**（G03）：工具 schema、摘要、权限→重放→CAS 顺序 | hud-mcp/ledger 改动 + 测试 | 旧键重放、同键异 expectedRun 冲突、竞争最多一个新意图、缺省兼容 | CORE | S | O5APPLY |
+| BID1 | **共享 pid_domain 派生**（G08）：`src/core/process-domain.ts`，三用途分离，MCP/hook/run 共用，去掉 runPidDomain 回退 | 模块 + 测试 | 三生产者同输入一致、跨表示比较拒绝、旧字节不变、hook 成本重验 | ORD（按裁决修复：pi，外部 sol max 主审） | S | O5APPLY |
+| B45-R2 | **MCP resume 可选 expectedRun**（G03）：工具 schema、摘要、权限→重放→CAS 顺序 | hud-mcp/ledger 改动 + 测试 | 旧键重放、同键异 expectedRun 冲突、竞争最多一个新意图、缺省兼容 | ORD（按裁决修复：pi，外部 sol max 主审） | S | O5APPLY |
 | B3a-R1 | **轻量 headless helper**（G01）：不可移组的 session-leading leader、GroupExit 来源判别、native_unknown、环境/取消/封口不退化 | `src/core/run/**` + 进程测试 | G02 口径同环境对照；137/SIGKILL、退组、EOF、INT/TERM/KILL 定向重验；不过则保留 Node helper 带证据回报 | CORE | M | O5APPLY、BID1 |
 | B15 | **阶段评审**：MVP 演示材料 + 账本导出 + 场景日志 + 能力矩阵送 ARCH | `docs/reviews/<date>-pro-mvp.md` | 无阻断项 | ORCH + ARCH | S | B14 |
 
