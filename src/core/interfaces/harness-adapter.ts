@@ -1,3 +1,4 @@
+import type { RecoveryIndexHandoff } from '../types/checkpoint.js';
 import type { SessionEvidence } from './session-evidence.js';
 import type { LaunchProfile } from '../types/capabilities.js';
 import type { Harness, SessionRef, SourceId } from '../types/identity.js';
@@ -26,6 +27,8 @@ export interface ReaderBudget {
 
 /** Minimal A5 transport; native concept §6.4 payloads are additive A6 work. */
 export interface ReaderResult {
+  /** Same reader-produced index handoff as checkpoint.recoveryIndex, when present. */
+  recoveryIndex?: RecoveryIndexHandoff;
   observation: ObservationView;
   checkpoint: ReaderCheckpoint;
   /** Optional native additions; observation is the same object, not a second state projection. */

@@ -15,6 +15,9 @@ import type { SessionRef, SourceId } from '../../core/types/identity.js';
 import type { Coverage, Metric, ObservationView, ReaderCheckpoint } from '../../core/types/observation.js';
 import { makeSourceId, sameSessionRef, sessionRefKey, validateSessionRef } from '../../core/identity.js';
 import { initialParserState, makeMetric, projectFreshness } from '../../core/observation.js';
+import { RecoveryIndexOverlay, attachRecoveryIndex } from '../../core/checkpoint.js';
+import { RecoveryMap } from './recovery-index.js';
+import { validateRolloutRecovery } from './recovery.js';
 import {
   SessionFinder,
   findRolloutPathBySessionIdInRoot,
@@ -28,16 +31,17 @@ import { buildContextUsage } from '../../collectors/context-usage.js';
 import { codexGoal } from '../../collectors/codex-goal.js';
 import { observeLinkEvidence, validLinkScanState, type LinkScanState } from './link-evidence.js';
 
-export const CODEX_READER_VERSION = 'codex-facade-3';
+export const CODEX_READER_VERSION = 'codex-facade-4';
+export const CODEX_RECOVERY_VERSION = 'codex-recovery-3';
 export const DEFAULT_READER_BUDGET: Readonly<ReaderBudget> = {
   maxBytes: 4 * 1024 * 1024,
   maxRecords: 2000,
   budgetMs: 20,
 };
 
-/** A6 native checkpoint extension. JSON round trips preserve its runtime-checked binary parser payload. */
+/** Structured recovery plus an exact source-local index; never a native object graph. */
 export interface CodexCheckpoint extends ReaderCheckpoint {
-  codex: { rollout: RolloutParserCheckpoint; links: LinkScanState; clocks: MetricClocks };
+  codex: { rollout: RolloutParserCheckpoint; links: LinkScanState; clocks: MetricClocks; pendingHudCount: number };
 }
 interface MetricClocks {
   modelAt?: number;
@@ -194,7 +198,9 @@ export class CodexAdapter implements HarnessAdapter {
     const ref = structuredClone(target);
     this.source(ref);
     const parser = new RolloutParser();
-    let current = checkpoint ? (structuredClone(checkpoint) as CodexCheckpoint) : undefined;
+    let index = new RecoveryIndexOverlay(CODEX_RECOVERY_VERSION, checkpoint?.recoveryIndex);
+    const { recoveryIndex: _handoff, ...inlineCheckpoint } = checkpoint ?? {};
+    let current = checkpoint ? (structuredClone(inlineCheckpoint) as CodexCheckpoint) : undefined;
     if (
       current &&
       (current.schemaVersion !== 1 ||
@@ -202,6 +208,9 @@ export class CodexAdapter implements HarnessAdapter {
         !sameSessionRef(current.ref, ref) ||
         !current.codex ||
         !validLinkScanState(current.codex.links) ||
+        current.codex.links.pendingHudCalls !== undefined ||
+        !Number.isSafeInteger(current.codex.pendingHudCount) ||
+        current.codex.pendingHudCount < 0 ||
         current.offset !== current.codex.rollout.offset ||
         current.codex.rollout.fileIdentity !== `${current.fileId.dev}:${current.fileId.inode}` ||
         !Number.isSafeInteger(current.sourceGeneration) ||
@@ -213,6 +222,22 @@ export class CodexAdapter implements HarnessAdapter {
     ) {
       throw new Error('unsupported_codex_checkpoint');
     }
+    if (current) {
+      validateRolloutRecovery(current.codex.rollout);
+      if (!checkpoint?.recoveryIndex) throw new Error('missing_codex_recovery_index');
+    }
+    let pendingHud = new RecoveryMap<string>(
+      index,
+      'codex.hud-pending',
+      current?.codex.pendingHudCount ?? 0,
+      JSON.stringify,
+      (raw) => JSON.parse(raw) as string
+    );
+    let pendingReset =
+      current?.resetReason &&
+      checkpoint?.recoveryIndex?.delta.base?.boundary.sourceGeneration !== current.sourceGeneration
+        ? { sourceGeneration: current.sourceGeneration, reason: current.resetReason }
+        : undefined;
     const cap = this.readerBudget;
     let initialized = false;
     let queue: Promise<unknown> = Promise.resolve();
@@ -226,20 +251,33 @@ export class CodexAdapter implements HarnessAdapter {
       budget.budgetMs = Math.min(budget.budgetMs, cap.budgetMs);
       if (!initialized) {
         parser.setRolloutPath(this.rollout(ref));
+        parser.configureRecoveryIndex(index);
         if (current) parser.restoreCheckpoint(current.codex.rollout);
         initialized = true;
       }
+      let sliceIndex = index.fork();
+      const nextPendingHud = pendingHud.fork(sliceIndex);
+      let parsedPendingHud = nextPendingHud;
+      let latestOpenCall: ReturnType<RolloutParser['getLatestOpenCall']>;
       let links = structuredClone(current?.codex.links ?? {});
       let clocks: MetricClocks = structuredClone(current?.codex.clocks ?? {});
       const result = await parser.parse({
         budget,
         state: current?.parserState ?? initialParserState(),
+        recoveryIndex: sliceIndex,
+        onParsed: () => {
+          parsedPendingHud = nextPendingHud.commit();
+          latestOpenCall = parser.getLatestOpenCall();
+        },
         onReset: () => {
           links = {};
           clocks = {};
+          sliceIndex = new RecoveryIndexOverlay(CODEX_RECOVERY_VERSION);
+          nextPendingHud.resetIndex(sliceIndex);
+          return sliceIndex;
         },
         onRecord: (entry) => {
-          observeLinkEvidence(entry, links, this.source(ref).serverNames);
+          observeLinkEvidence(entry, links, this.source(ref).serverNames, nextPendingHud);
           const eventAt = Date.parse(entry.timestamp);
           if (!Number.isFinite(eventAt)) return;
           if (entry.type === 'turn_context') {
@@ -275,29 +313,36 @@ export class CodexAdapter implements HarnessAdapter {
       });
       if (!result || (result.session && result.session.id !== ref.sessionId)) throw new Error('codex_session_mismatch');
       const stats = parser.getReadStats()!;
-      const saved = parser.exportCheckpoint();
-      const [dev, inode] = saved.fileIdentity!.split(':').map(Number);
       const state = stats.state;
-      state.openToolWaits = parser.getOpenToolWaits();
+      // Exact waits live once in codex.running; this generic compatibility array stays bounded.
+      state.openToolWaits = [];
       state.rateBaseline = parser.getRateBaseline();
       const compaction = finiteTime(result.lastCompactTime);
       const newCompaction = compaction !== null && state.compactBoundary !== String(compaction);
       state.compactBoundary = compaction === null ? null : String(compaction);
+      const saved = parser.exportCheckpoint();
+      const [dev, inode] = saved.fileIdentity!.split(':').map(Number);
       const previousGeneration = current?.sourceGeneration ?? 1;
+      const sourceGeneration = previousGeneration + (stats.resetReason || newCompaction ? 1 : 0);
+      if (stats.resetReason || newCompaction)
+        pendingReset = {
+          sourceGeneration,
+          // A later semantic compaction cannot erase the unpublished physical reset witness.
+          reason:
+            stats.resetReason ??
+            (pendingReset?.reason !== 'compaction' ? pendingReset?.reason : undefined) ??
+            'compaction',
+        };
       current = {
         schemaVersion: 1,
         readerVersion: CODEX_READER_VERSION,
         ref,
         fileId: { dev, inode },
         offset: saved.offset,
-        sourceGeneration: previousGeneration + (stats.resetReason || newCompaction ? 1 : 0),
+        sourceGeneration,
         parserState: state,
-        codex: { rollout: saved, links, clocks },
-        ...(stats.resetReason
-          ? { resetReason: stats.resetReason }
-          : newCompaction
-            ? { resetReason: 'compaction' as const }
-            : {}),
+        codex: { rollout: saved, links, clocks, pendingHudCount: parsedPendingHud.size },
+        ...(pendingReset ? { resetReason: pendingReset.reason } : {}),
       };
       const coverage: Coverage = {
         state: stats.continuation
@@ -318,12 +363,19 @@ export class CodexAdapter implements HarnessAdapter {
             : {}),
       };
       const now = Date.now();
-      const evidence = this.evidence(ref, result, coverage, now, links, clocks, parser.getOpenCalls());
+      const evidence = this.evidence(ref, result, coverage, now, links, clocks, latestOpenCall);
       // Soft budget includes parsing and assembly; a JSON.parse/SQLite call cannot be preempted.
       stats.elapsedMs = performance.now() - started;
+      index = sliceIndex.commit();
+      parser.commitRecoveryIndex(index);
+      pendingHud = parsedPendingHud;
+      pendingHud.useIndex(index);
+      const publishedReset = pendingReset;
       return {
         observation: evidence.observation,
-        checkpoint: structuredClone(current),
+        checkpoint: attachRecoveryIndex(structuredClone(current), index, () => {
+          if (publishedReset && pendingReset === publishedReset) pendingReset = undefined;
+        }),
         evidence,
         ...(stats.continuation ? { continuation: stats.continuation } : {}),
         stats: { bytesRead: stats.bytesRead, recordsRead: stats.recordsRead, elapsedMs: stats.elapsedMs },
@@ -365,7 +417,7 @@ export class CodexAdapter implements HarnessAdapter {
     now: number,
     links: LinkScanState,
     clocks: MetricClocks,
-    openCalls: ReturnType<RolloutParser['getOpenCalls']>
+    running: ReturnType<RolloutParser['getLatestOpenCall']>
   ): SessionEvidence {
     const at = finiteTime(result.lastEventTime);
     const metric = <T>(
@@ -483,7 +535,6 @@ export class CodexAdapter implements HarnessAdapter {
       }
     }
     const goal = codexGoal(this.source(ref).root, ref.sessionId, now);
-    const running = openCalls.at(-1);
     return {
       ref,
       observation,

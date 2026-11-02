@@ -1,6 +1,7 @@
 import type { ToolResultLinkEvidence } from '../../core/interfaces/session-evidence.js';
 
 export const LINK_EVIDENCE_LIMIT = 100;
+/** @deprecated Unresolved pairs have no truncation limit; kept for old importers only. */
 export const PENDING_HUD_CALL_LIMIT = 100;
 export type NativeLinkEvidence = Omit<ToolResultLinkEvidence, 'ref'>;
 export interface LinkScanState {
@@ -34,7 +35,8 @@ function resultObject(value: unknown, depth = 0): Record<string, unknown> | null
 export function observeLinkEvidence(
   entry: { type?: string; timestamp?: string; payload?: unknown },
   into: LinkScanState,
-  serverNames: readonly string[] = ['hud', 'hud-mcp']
+  serverNames: readonly string[] = ['hud', 'hud-mcp'],
+  pending?: Map<string, string>
 ): void {
   if (entry.type !== 'response_item' || !record(entry.payload)) return;
   const p = entry.payload;
@@ -43,15 +45,27 @@ export function observeLinkEvidence(
       ['delegate_spawn', 'delegate_resume', 'delegate_whoami'].some((tool) => p.name === `mcp__${server}__${tool}`)
     );
     if (!allowed) return;
-    into.pendingHudCalls = Object.fromEntries(
-      [...Object.entries(into.pendingHudCalls ?? {}), [p.call_id, p.name]].slice(-PENDING_HUD_CALL_LIMIT)
-    );
+    if (pending) pending.set(p.call_id, p.name);
+    else {
+      into.pendingHudCalls ??= Object.create(null) as Record<string, string>;
+      Object.defineProperty(into.pendingHudCalls, p.call_id, {
+        value: p.name,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
+    }
     return;
   }
   if (p.type !== 'function_call_output' || !text(p.call_id)) return;
-  const tool = into.pendingHudCalls?.[p.call_id];
-  if (!tool || !Object.hasOwn(into.pendingHudCalls!, p.call_id)) return;
-  delete into.pendingHudCalls![p.call_id];
+  const tool = pending
+    ? pending.get(p.call_id)
+    : Object.hasOwn(into.pendingHudCalls ?? {}, p.call_id)
+      ? into.pendingHudCalls![p.call_id]
+      : undefined;
+  if (!tool) return;
+  if (pending) pending.delete(p.call_id);
+  else delete into.pendingHudCalls![p.call_id];
   const value = resultObject(p.output);
   const eventAt = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN;
   if (!value || !Number.isFinite(eventAt)) return;
@@ -76,7 +90,6 @@ export function validLinkScanState(value: LinkScanState): boolean {
   if (
     value.pendingHudCalls !== undefined &&
     (!record(value.pendingHudCalls) ||
-      Object.keys(value.pendingHudCalls).length > PENDING_HUD_CALL_LIMIT ||
       !Object.entries(value.pendingHudCalls).every(([id, tool]) => text(id) && text(tool)))
   )
     return false;

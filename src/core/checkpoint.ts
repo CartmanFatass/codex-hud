@@ -1,8 +1,19 @@
+import { validateRolloutRecovery, validateCodexRecoveryIndexEntry } from '../harness/codex/recovery.js';
+import { validateClaudeRecoveryIndexEntry } from '../harness/claude/reader.js';
 import { DefaultDeserializer, serialize } from 'node:v8';
 import { canonicalJson, digest } from './canonical.js';
 import { sameSessionRef } from './identity.js';
 import { observationCommitValid } from './observation.js';
 import { ObservationStoreError } from './collect-lease.js';
+import type {
+  CheckpointPreparation,
+  PreparedCheckpoint,
+  CheckpointIdentity,
+  RecoveryIndexDelta,
+  RecoveryIndexHandoff,
+  RecoveryIndexReference,
+  CheckpointFormat,
+} from './types/checkpoint.js';
 import type { SessionRef } from './types/identity.js';
 import type { ObservationCommit, ObservationView, ReaderCheckpoint } from './types/observation.js';
 
@@ -28,9 +39,7 @@ export interface ObservationCandidate {
   rebuildFromReaderVersion?: string;
 }
 
-// 待 ARCH 裁决: legal multi-MiB native checkpoints exceed the full-tick budget.
-// Validation/hashing currently runs on every publish attempt, including no-ops;
-// B16 must not interpret the measured small-commit cost as a universal tick bound.
+export const MAX_INLINE_RECOVERY_BYTES = 256 * 1024;
 export const MAX_OBSERVATION_BYTES = 16 * 1024 * 1024;
 const fail = (reason = 'invalid_observation_structure'): never => {
   throw new ObservationStoreError(reason);
@@ -360,6 +369,8 @@ const launchLink = object({
 const signature = nullable(object({ offset: uint, length: uint, sha256: str }));
 const fileStat = object({ size: uint, mtimeMs: num, ctimeMs: num });
 const claude = object({
+  recoveryVersion: optional(literal('claude-recovery-1')),
+  reportsTruncated: optional(literal(true)),
   targetSize: uint,
   tailBytesSeen: uint,
   boundarySignature: signature,
@@ -626,6 +637,9 @@ function validateCheckpoint(cp: ReaderCheckpoint): unknown {
     sourceGeneration: uint,
     parserState,
     resetReason: optional(literal('truncated', 'file_changed', 'compaction', 'branch_changed')),
+    recoveryIndex: optional((v) => {
+      record(v);
+    }),
     codex: optional((v) => {
       if (cp.ref.harness !== 'codex') fail();
       record(v);
@@ -652,6 +666,40 @@ function validateCheckpoint(cp: ReaderCheckpoint): unknown {
   }
   if (!extensions.codex) return undefined;
   const c = extensions.codex;
+  const candidateRollout = record(c.rollout);
+  if (candidateRollout.version === 3) {
+    if (cp.readerVersion !== 'codex-facade-4') fail('unsupported_reader_version');
+    object({
+      rollout: validateRolloutRecovery,
+      links: object({ pendingHudCalls: optional(dict(str)), linkEvidence: optional(array(nativeLink)) }),
+      clocks: object({
+        modelAt: optional(num),
+        effortAt: optional(num),
+        contextAt: optional(num),
+        usageKey: optional(str),
+        usageAt: optional(num),
+      }),
+      pendingHudCount: uint,
+    })(c);
+    if (
+      candidateRollout.offset !== cp.offset ||
+      candidateRollout.fileIdentity !== `${cp.fileId.dev}:${cp.fileId.inode}`
+    )
+      fail('observation_boundary_mismatch');
+    const native = c.rollout as import('../harness/codex/recovery.js').RolloutRecovery;
+    const nativeState = native.state.readStats?.state;
+    if (
+      !nativeState ||
+      nativeState.discardingOversize !== p.discardingOversize ||
+      nativeState.discardOffset !== p.discardOffset ||
+      nativeState.tailBytesSeen !== p.tailBytesSeen ||
+      nativeState.tailAtEof !== p.tailAtEof ||
+      p.openToolWaits.length !== 0 ||
+      p.usageMessageIds.length !== 0
+    )
+      fail('observation_boundary_mismatch');
+    return undefined;
+  }
   object({
     rollout: object({
       version: literal(2),
@@ -734,7 +782,7 @@ export function witnessObservationBoundary(
   };
 }
 
-function validateCommit(commit: ObservationCommit): unknown {
+function validateCommit(commit: ObservationCommit, checkpointValidated = false): unknown {
   object({
     ref,
     sourceGeneration: uint,
@@ -748,7 +796,7 @@ function validateCommit(commit: ObservationCommit): unknown {
     notices: array(notice),
   })(commit);
   if (!commit.seqDomain || commit.commitSeq < 1 || commit.leaseGeneration < 1) fail();
-  const decoded = validateCheckpoint(commit.checkpoint);
+  const decoded = checkpointValidated ? undefined : validateCheckpoint(commit.checkpoint);
   if (!observationCommitValid(commit)) fail('observation_boundary_mismatch');
   if ((commit.continuity.stateSinceBasis === 'unknown') !== (commit.continuity.stateSince === null)) fail();
   const p = commit.checkpoint.parserState;
@@ -785,7 +833,7 @@ function contentDigest(commit: ObservationCommit, decoded: unknown): string {
     if (metric?.quality === 'unknown') delete metric.asOf;
   }
   if (content.checkpoint.claude) delete content.checkpoint.claude.lastSuccessfulReadAt;
-  if (content.checkpoint.codex) {
+  if (content.checkpoint.codex && decoded !== undefined) {
     const native = decoded as Record<string, any>;
     // Keep the native bytes themselves in the commit, but fingerprint their stable parsed content.
     const stats = { ...native.readStats };
@@ -805,12 +853,38 @@ function contentDigest(commit: ObservationCommit, decoded: unknown): string {
   return digest(content);
 }
 
+/** JSON arrays have no extension slots: otherwise canonical encoding could hide named/raw state. */
+function requireJsonArrayProperties(value: unknown, ancestors = new Set<object>()): void {
+  if (!value || typeof value !== 'object') return;
+  if (ancestors.has(value)) fail('invalid_observation_structure');
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      if (
+        Object.getOwnPropertySymbols(value).length ||
+        Object.getOwnPropertyNames(value).some(
+          (key) => key !== 'length' && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length)
+        )
+      )
+        fail('raw_tail_refused');
+    }
+    for (const key of Object.keys(value)) {
+      const property = Object.getOwnPropertyDescriptor(value, key)!;
+      if (!('value' in property)) fail('invalid_observation_structure');
+      requireJsonArrayProperties(property.value, ancestors);
+    }
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
 export function prepareObservationCandidate(input: ObservationCandidate): {
   commit: ObservationCommit;
   body: string;
   contentDigest: string;
 } {
   // canonicalJson rejects getters, class instances, cycles and binary before any disk write.
+  requireJsonArrayProperties(input);
   const wire = canonicalJson(input);
   if (Buffer.byteLength(wire) > MAX_OBSERVATION_BYTES) fail('observation_too_large');
   const candidate = JSON.parse(wire) as ObservationCandidate;
@@ -856,4 +930,367 @@ export function decodePublishedCommit(body: string, expectedRef: SessionRef): Ob
   validateCommit(commit);
   if (!sameSessionRef(commit.ref, expectedRef)) fail('observation_boundary_mismatch');
   return commit;
+}
+
+/** An exact read-through overlay. Historical keys stay in SQLite; only this slice's mutations are copied. */
+export class RecoveryIndexOverlay {
+  private lookup: import('./types/checkpoint.js').RecoveryIndexLookup | undefined;
+  private changes = new Map<string, Map<string, string | null>>();
+  private parent: RecoveryIndexOverlay | undefined;
+  constructor(
+    readonly recoveryVersion: string,
+    handoff?: import('./types/checkpoint.js').RecoveryIndexHandoff
+  ) {
+    if (handoff && handoff.delta.recoveryVersion !== recoveryVersion) fail('recovery_version_mismatch');
+    this.lookup = handoff?.lookup;
+    if (handoff?.delta.base && !this.lookup) fail('recovery_lookup_required');
+    for (const entry of handoff?.delta.entries ?? []) this.put(entry.namespace, entry.key, entry.value);
+  }
+  private put(namespace: string, key: string, value: string | null): void {
+    let space = this.changes.get(namespace);
+    if (!space) this.changes.set(namespace, (space = new Map()));
+    space.set(key, value);
+  }
+  get(namespace: string, key: string): string | undefined {
+    const space = this.changes.get(namespace);
+    if (space?.has(key)) return space.get(key) ?? undefined;
+    return this.parent ? this.parent.get(namespace, key) : this.lookup?.get(namespace, key);
+  }
+  has(namespace: string, key: string): boolean {
+    return this.get(namespace, key) !== undefined;
+  }
+  set(namespace: string, key: string, value: string): void {
+    if (this.get(namespace, key) !== value) this.put(namespace, key, value);
+  }
+  delete(namespace: string, key: string): void {
+    if (this.has(namespace, key)) this.put(namespace, key, null);
+  }
+  *entries(namespace: string): IterableIterator<[string, string]> {
+    const local = this.changes.get(namespace);
+    let after: string | null = null;
+    if (this.parent) {
+      for (const [key, value] of this.parent.entries(namespace)) if (!local?.has(key)) yield [key, value];
+    } else if (this.lookup) {
+      while (true) {
+        const page = this.lookup.page(namespace, after, 128);
+        for (const entry of page) {
+          if (!local?.has(entry.key) && entry.value !== null) yield [entry.key, entry.value];
+        }
+        if (page.length < 128) break;
+        after = page[page.length - 1].key;
+      }
+    }
+    for (const [key, value] of local ?? []) if (value !== null) yield [key, value];
+  }
+  /** A slice stages only touched keys. Discard the fork on error; no undo I/O or history copy. */
+  fork(): RecoveryIndexOverlay {
+    const fork = new RecoveryIndexOverlay(this.recoveryVersion);
+    fork.parent = this;
+    return fork;
+  }
+  /** Adopt a successful slice without lookups; metadata writes still wait for fenced publication. */
+  commit(): RecoveryIndexOverlay {
+    if (!this.parent) return this;
+    for (const [namespace, entries] of this.changes) {
+      for (const [key, value] of entries) this.parent.put(namespace, key, value);
+    }
+    return this.parent;
+  }
+  snapshot(
+    onCommitted?: (lookup: import('./types/checkpoint.js').RecoveryIndexLookup) => void
+  ): import('./types/checkpoint.js').RecoveryIndexHandoff {
+    if (this.parent) fail('uncommitted_recovery_slice');
+    const entries = Object.freeze(
+      [...this.changes].flatMap(([namespace, values]) =>
+        [...values].map(([key, value]) => Object.freeze({ namespace, key, value }))
+      )
+    );
+    const handoff: import('./types/checkpoint.js').RecoveryIndexHandoff = {
+      delta: Object.freeze({ recoveryVersion: this.recoveryVersion, base: this.lookup?.reference ?? null, entries }),
+    };
+    Object.defineProperties(handoff, {
+      lookup: { value: this.lookup },
+      committed: {
+        value: (lookup: import('./types/checkpoint.js').RecoveryIndexLookup) => {
+          for (const entry of entries) {
+            const space = this.changes.get(entry.namespace);
+            if (space?.get(entry.key) === entry.value) space.delete(entry.key);
+            if (space?.size === 0) this.changes.delete(entry.namespace);
+          }
+          this.lookup = lookup;
+          onCommitted?.(lookup);
+        },
+      },
+    });
+    return Object.freeze(handoff);
+  }
+}
+
+export function attachRecoveryIndex<T extends ReaderCheckpoint>(
+  checkpoint: T,
+  index: RecoveryIndexOverlay,
+  onCommitted?: (lookup: import('./types/checkpoint.js').RecoveryIndexLookup) => void
+): T {
+  checkpoint.recoveryIndex = index.snapshot(onCommitted);
+  return checkpoint;
+}
+
+export interface PreparedCheckpointData {
+  readonly checkpoint: ReaderCheckpoint;
+  readonly body: string;
+  readonly identity: CheckpointIdentity;
+  readonly delta: RecoveryIndexDelta | null;
+  readonly handoff: RecoveryIndexHandoff | undefined;
+}
+const preparedCheckpoints = new WeakMap<object, PreparedCheckpointData>();
+
+function freezeDeep<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    for (const child of Object.values(value)) freezeDeep(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+export function checkpointFormat(checkpoint: ReaderCheckpoint): CheckpointFormat {
+  const c = checkpoint as ReaderCheckpoint & { codex?: { rollout: { version: number } } };
+  if (c.codex?.rollout.version === 2) return { name: 'codex-v8', version: 2, runtime: process.versions.v8 };
+  if (c.codex?.rollout.version === 3) return { name: 'codex-recovery', version: 3, runtime: null };
+  if (checkpoint.readerVersion === 'claude-reader-4') return { name: 'claude-recovery', version: 1, runtime: null };
+  return { name: 'reader-json', version: 1, runtime: null };
+}
+
+/** Called by the source-local store after validating every base reference against its immutable index. */
+export function prepareCheckpoint(input: CheckpointPreparation): PreparedCheckpoint {
+  const handoff = input.checkpoint.recoveryIndex;
+  const { recoveryIndex: _index, ...inline } = input.checkpoint;
+  requireJsonArrayProperties(inline);
+  const wire = canonicalJson(inline);
+  if (Buffer.byteLength(wire) > MAX_INLINE_RECOVERY_BYTES) fail('checkpoint_state_oversize');
+  const checkpoint = JSON.parse(wire) as ReaderCheckpoint;
+  const decoded = validateCheckpoint(checkpoint);
+  if (['codex-facade-4', 'claude-reader-4'].includes(checkpoint.readerVersion) && !handoff)
+    fail('recovery_index_required');
+  const captured = checkpointBoundary(checkpoint);
+  if (digest(captured) !== digest(input.boundary) || digest(input.format) !== digest(checkpointFormat(checkpoint)))
+    fail('observation_boundary_mismatch');
+  if (decoded !== undefined) {
+    (checkpoint as ReaderCheckpoint & { codex: { rollout: { payload: string } } }).codex.rollout.payload =
+      serialize(decoded).toString('base64');
+  }
+  const delta = handoff ? (JSON.parse(canonicalJson(handoff.delta)) as RecoveryIndexDelta) : null;
+  const references = JSON.parse(canonicalJson(input.recoveryReferences)) as RecoveryIndexReference[];
+  if (delta) {
+    object({ recoveryVersion: str, base: nullable((v) => record(v)), entries: array((v) => record(v)) })(delta);
+    if (!delta.recoveryVersion || delta.recoveryVersion.length > 128 || !Array.isArray(delta.entries))
+      fail('invalid_recovery_index');
+    const seen = new Set<string>();
+    for (const entry of delta.entries) {
+      object({ namespace: str, key: str, value: nullable(str) })(entry);
+      if (!entry.namespace || entry.namespace.length > 128 || !entry.key || entry.key.length > 4096)
+        fail('invalid_recovery_index');
+      if (checkpoint.ref.harness === 'claude') validateClaudeRecoveryIndexEntry(entry);
+      if (
+        checkpoint.ref.harness === 'codex' &&
+        (checkpoint as ReaderCheckpoint & { codex?: { rollout: { version: number } } }).codex?.rollout.version === 3
+      )
+        validateCodexRecoveryIndexEntry(entry);
+      const key = canonicalJson([entry.namespace, entry.key]);
+      if (seen.has(key)) fail('invalid_recovery_index');
+      seen.add(key);
+      // Index values are structured metadata, never an opaque binary parser graph.
+      if (entry.value !== null) {
+        if (Buffer.byteLength(entry.value) > MAX_INLINE_RECOVERY_BYTES) fail('checkpoint_state_oversize');
+        let value: unknown;
+        try {
+          value = JSON.parse(entry.value);
+        } catch {
+          fail('invalid_recovery_index');
+        }
+        publicJson(value);
+      }
+    }
+    if (references.length && (references.length !== 1 || digest(references[0]) !== digest(delta.base)))
+      fail('invalid_recovery_reference');
+    if (delta.base) {
+      object({ indexId: str, recoveryVersion: str, contentIdentity: str, boundary })(delta.base);
+      if (
+        !sameSessionRef(delta.base.boundary.ref, captured.ref) ||
+        delta.base.recoveryVersion !== delta.recoveryVersion ||
+        delta.base.boundary.readerVersion !== captured.readerVersion ||
+        delta.base.boundary.sourceGeneration > captured.sourceGeneration ||
+        digest(delta.base.boundary.fileId) !== digest(captured.fileId) ||
+        delta.base.boundary.offset > captured.offset
+      )
+        fail('invalid_recovery_reference');
+    }
+    if (
+      (checkpoint.readerVersion === 'codex-facade-4' && delta.recoveryVersion !== 'codex-recovery-3') ||
+      (checkpoint.readerVersion === 'claude-reader-4' && delta.recoveryVersion !== 'claude-recovery-1')
+    )
+      fail('recovery_version_mismatch');
+    references.length = 0;
+    if (delta.entries.length === 0 && delta.base && digest(delta.base.boundary) === digest(captured)) {
+      references.push(delta.base);
+    } else {
+      const contentIdentity = digest({
+        base: delta.base?.contentIdentity ?? null,
+        entries: delta.entries,
+        boundary: captured,
+        recoveryVersion: delta.recoveryVersion,
+      }) as CheckpointIdentity['contentIdentity'];
+      references.push({
+        indexId: contentIdentity,
+        recoveryVersion: delta.recoveryVersion,
+        contentIdentity,
+        boundary: captured,
+      });
+    }
+  } else if (references.length) fail('recovery_delta_required');
+  const body = canonicalJson(checkpoint);
+  if (Buffer.byteLength(body) > MAX_INLINE_RECOVERY_BYTES) fail('checkpoint_state_oversize');
+  const identity: CheckpointIdentity = freezeDeep({
+    ...captured,
+    format: JSON.parse(canonicalJson(input.format)),
+    contentIdentity: digest({
+      checkpoint,
+      format: input.format,
+      recoveryReferences: references,
+    }) as CheckpointIdentity['contentIdentity'],
+    recoveryReferences: references,
+  });
+  const token = Object.freeze({ identity }) as unknown as PreparedCheckpoint;
+  preparedCheckpoints.set(
+    token,
+    Object.freeze({ checkpoint: freezeDeep(checkpoint), body, identity, delta: freezeDeep(delta), handoff })
+  );
+  return token;
+}
+
+export function preparedCheckpointData(token: PreparedCheckpoint): PreparedCheckpointData {
+  const data = preparedCheckpoints.get(token);
+  if (!data) fail('invalid_prepared_checkpoint');
+  return data!;
+}
+
+export function witnessPreparedObservationBoundary(
+  checkpoint: PreparedCheckpoint,
+  summaryValue: ObservationView,
+  summaryBoundary: ObservationBoundary
+): ObservationBoundaryWitness {
+  const data = preparedCheckpointData(checkpoint);
+  return {
+    checkpointBoundary: checkpointBoundary(data.checkpoint),
+    summaryBoundary: structuredClone(summaryBoundary),
+    checkpointDigest: data.identity.contentIdentity,
+    summaryDigest: digest(summaryValue),
+  };
+}
+
+/** Validate only the changing projection; recovery was already detached and validated by preparation. */
+export function prepareProjectionCandidate(
+  input: import('./interfaces/observation-store.js').PreparedObservationCandidate
+): {
+  commit: Omit<ObservationCommit, 'checkpoint'>;
+  body: string;
+  contentDigest: string;
+  data: PreparedCheckpointData;
+  previousCommitSeq: number;
+  rebuildFromReaderVersion?: string;
+} {
+  const data = preparedCheckpointData(input.checkpoint);
+  const wire = canonicalJson({
+    commit: input.commit,
+    previousCommitSeq: input.previousCommitSeq,
+    boundary: input.boundary,
+    ...(input.rebuildFromReaderVersion === undefined
+      ? {}
+      : { rebuildFromReaderVersion: input.rebuildFromReaderVersion }),
+  });
+  if (Buffer.byteLength(wire) > MAX_OBSERVATION_BYTES) fail('observation_too_large');
+  const candidate = JSON.parse(wire) as Omit<ObservationCandidate, 'commit'> & {
+    commit: Omit<ObservationCommit, 'checkpoint'>;
+  };
+  const full = { ...candidate.commit, checkpoint: data.checkpoint };
+  validateCommit(full, true);
+  if (
+    full.commitSeq !== candidate.previousCommitSeq + 1 ||
+    digest(checkpointBoundary(data.checkpoint)) !== digest(candidate.boundary.checkpointBoundary) ||
+    digest(candidate.boundary.checkpointBoundary) !== digest(candidate.boundary.summaryBoundary) ||
+    data.identity.contentIdentity !== candidate.boundary.checkpointDigest ||
+    digest(full.summary) !== candidate.boundary.summaryDigest
+  )
+    fail('observation_boundary_mismatch');
+  const projection = { ...candidate.commit, checkpointIdentity: data.identity };
+  const body = canonicalJson(projection);
+  // Reuse existing semantic no-op rules on a projection-sized object, with the trusted content identity as the key.
+  // No checkpoint is scanned on this path. The small synthetic shell carries only content identity.
+  const shell = { ...full, checkpoint: { identity: data.identity.contentIdentity } } as unknown as ObservationCommit;
+  return {
+    commit: candidate.commit,
+    body,
+    contentDigest: contentDigest(shell, undefined),
+    data,
+    previousCommitSeq: candidate.previousCommitSeq,
+    ...(candidate.rebuildFromReaderVersion === undefined
+      ? {}
+      : { rebuildFromReaderVersion: candidate.rebuildFromReaderVersion }),
+  };
+}
+
+/** Recovery decoding is collector-only and bounded; verify durable bytes against their prepared identity. */
+export function decodeCheckpointBody(body: string, identity: CheckpointIdentity): ReaderCheckpoint {
+  if (Buffer.byteLength(body) > MAX_INLINE_RECOVERY_BYTES) fail('checkpoint_state_oversize');
+  let checkpoint: ReaderCheckpoint;
+  try {
+    checkpoint = JSON.parse(body) as ReaderCheckpoint;
+  } catch {
+    return fail('invalid_checkpoint_json');
+  }
+  validateCheckpoint(checkpoint);
+  const { format, contentIdentity, recoveryReferences, ...captured } = identity;
+  if (
+    digest(checkpointBoundary(checkpoint)) !== digest(captured) ||
+    digest(checkpointFormat(checkpoint)) !== digest(format) ||
+    digest({ checkpoint, format, recoveryReferences }) !== contentIdentity
+  )
+    fail('invalid_checkpoint_identity');
+  return checkpoint;
+}
+
+/** Validate the projection envelope independently; recovery content is never selected or decoded here. */
+export function decodeProjectionBody(
+  body: string,
+  expectedRef: SessionRef
+): import('./types/checkpoint.js').ObservationProjection {
+  if (Buffer.byteLength(body) > MAX_OBSERVATION_BYTES) fail('observation_too_large');
+  const value = JSON.parse(body) as import('./types/checkpoint.js').ObservationProjection;
+  const { checkpointIdentity, ...commit } = value;
+  object({
+    ...{ ref, readerVersion: str, sourceGeneration: uint, fileId, offset: uint },
+    format: object({ name: str, version: uint, runtime: nullable(str) }),
+    contentIdentity: str,
+    recoveryReferences: array(object({ indexId: str, recoveryVersion: str, contentIdentity: str, boundary })),
+  })(checkpointIdentity);
+  if (!sameSessionRef(value.ref, expectedRef)) fail('observation_boundary_mismatch');
+  const cp = {
+    schemaVersion: 1 as const,
+    readerVersion: checkpointIdentity.readerVersion,
+    ref: checkpointIdentity.ref,
+    fileId: checkpointIdentity.fileId,
+    offset: checkpointIdentity.offset,
+    sourceGeneration: checkpointIdentity.sourceGeneration,
+    parserState: {
+      pendingBytes: [],
+      discardingOversize: false,
+      usageMessageIds: [],
+      compactBoundary: null,
+      openToolWaits: [],
+      rateBaseline: null,
+      gaps: [],
+      skipped: {},
+    },
+  };
+  validateCommit({ ...commit, notices: [...commit.notices], checkpoint: cp }, true);
+  return value;
 }

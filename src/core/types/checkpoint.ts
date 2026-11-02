@@ -85,3 +85,32 @@ export interface ObservationRecovery {
   readonly checkpoint: ReaderCheckpoint;
   readonly recoveryReferences: readonly RecoveryIndexReference[];
 }
+
+/** Exact source-local metadata only. A null value deletes a key; values are JSON metadata. */
+export interface RecoveryIndexEntry {
+  readonly namespace: string;
+  readonly key: string;
+  readonly value: string | null;
+}
+
+/** Reader-produced changes since the immutable base; preparation validates and detaches them. */
+export interface RecoveryIndexDelta {
+  readonly recoveryVersion: string;
+  readonly base: RecoveryIndexReference | null;
+  readonly entries: readonly RecoveryIndexEntry[];
+}
+
+/** Collector-only, exact-key and bounded-page reads pinned to one immutable snapshot. */
+export interface RecoveryIndexLookup {
+  readonly reference: RecoveryIndexReference;
+  get(namespace: string, key: string): string | undefined;
+  page(namespace: string, after: string | null, limit: number): readonly RecoveryIndexEntry[];
+}
+
+/** Optional live handoff; never encoded into a durable checkpoint. */
+export interface RecoveryIndexHandoff {
+  readonly delta: RecoveryIndexDelta;
+  readonly lookup?: RecoveryIndexLookup;
+  /** Publication acknowledgement retires only the entries captured in this delta. */
+  committed?(lookup: RecoveryIndexLookup): void;
+}

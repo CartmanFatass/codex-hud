@@ -377,7 +377,7 @@ test(
     const legacy = commit();
     legacy.checkpoint.parserState.pendingBytes = [...Buffer.from('SYNTHETIC_LEGACY_RAW_TAIL')];
     Object.assign(legacy.checkpoint, { oldRawCache: 'SYNTHETIC_LEGACY_RAW_TAIL' });
-    db.prepare('UPDATE observation_current SET body=?').run(JSON.stringify(legacy));
+    db.prepare('UPDATE checkpoint_blobs SET body=?').run(JSON.stringify(legacy.checkpoint));
     db.close();
     assert.equal(fs.readFileSync(store.databasePath).includes(Buffer.from('SYNTHETIC_LEGACY_RAW_TAIL')), true);
     assert.throws(() => store.readCurrent(REF));
@@ -531,7 +531,7 @@ function readerCommit(checkpoint: ReaderCheckpoint, observation: ObservationView
 }
 
 test(
-  'B12 real Codex V8/base64 and Claude typed checkpoints publish/restart without an incomplete private tail; nested native payloads refused',
+  'B12 compact Codex/Claude checkpoints restart without private tails; bounded legacy V8 rejects hidden state',
   { skip },
   async (t) => {
     for (const kind of ['codex', 'claude'] as const) {
@@ -543,16 +543,13 @@ test(
       const c = readerCommit(read.checkpoint, read.observation);
       store.publish(candidate(c), lease);
       const saved = store.readCurrent(c.ref)!;
-      if (kind === 'codex') {
-        const savedCheckpoint = saved.checkpoint as CodexCheckpoint;
-        const inputCheckpoint = c.checkpoint as CodexCheckpoint;
-        assert.deepEqual(
-          deserialize(Buffer.from(savedCheckpoint.codex.rollout.payload, 'base64')),
-          deserialize(Buffer.from(inputCheckpoint.codex.rollout.payload, 'base64'))
-        );
-        savedCheckpoint.codex.rollout.payload = inputCheckpoint.codex.rollout.payload;
-      }
-      assert.deepEqual(saved, c);
+      const withoutIndex = (value: ObservationCommit) => {
+        const copy = structuredClone(value);
+        delete copy.checkpoint.recoveryIndex;
+        return copy;
+      };
+      assert.deepEqual(withoutIndex(saved), withoutIndex(c));
+      assert.ok(saved.checkpoint.recoveryIndex?.lookup);
       assert.equal(fs.readFileSync(store.databasePath).includes(Buffer.from('SYNTHETIC_INCOMPLETE_TAIL')), false);
       const repeat = await read.next();
       const unchanged = readerCommit(repeat.checkpoint, repeat.observation);
@@ -564,8 +561,43 @@ test(
         dirty.commitSeq = 2;
         dirty.observationStamp.commitSeq = 2;
         dirty.summary.statusProjection.observationStamp = dirty.observationStamp;
-        const native = dirty.checkpoint as CodexCheckpoint;
-        const decoded = deserialize(Buffer.from(native.codex.rollout.payload, 'base64'));
+        // Known v2 remains a bounded compatibility path; exercise every malformed-wire regression there.
+        const native = dirty.checkpoint as ReaderCheckpoint & {
+          codex: {
+            rollout: { version: number; runtime: string; offset: number; fileIdentity: string; payload: string };
+            links: {};
+            clocks: {};
+          };
+        };
+        delete native.recoveryIndex;
+        native.readerVersion = 'codex-facade-3';
+        const decoded = {
+          cachedResult: null,
+          runningCalls: new Map(),
+          rateTracker: { tools: new Set(), excludedMs: 0 },
+          readStats: {
+            state: structuredClone(dirty.checkpoint.parserState),
+            bytesRead: 0,
+            recordsRead: 0,
+            remainingBytes: 0,
+            elapsedMs: 0,
+            fileStat: { size: dirty.checkpoint.offset, mtimeMs: 0, ctimeMs: 0 },
+          },
+          needsReplay: false,
+        } as Record<string, any>;
+        native.codex = {
+          rollout: {
+            version: 2,
+            runtime: process.versions.v8,
+            offset: native.offset,
+            fileIdentity: `${native.fileId.dev}:${native.fileId.inode}`,
+            payload: serialize(decoded).toString('base64'),
+          },
+          links: {},
+          clocks: {},
+        };
+        // Successful compatibility validation still only persists decoded/validated values.
+        prepareObservationCandidate(candidate(dirty));
         const originalPayload = native.codex.rollout.payload;
         native.codex.rollout.payload = Buffer.concat([
           Buffer.from(originalPayload, 'base64'),
@@ -584,7 +616,7 @@ test(
         Buffer.from('review-call').copy(duplicateWire, duplicateKeyOffset);
         assert.equal(deserialize(duplicateWire).runningCalls.size, 1);
         native.codex.rollout.payload = duplicateWire.toString('base64');
-        const normalized = prepareObservationCandidate(candidate(dirty)).commit.checkpoint as CodexCheckpoint;
+        const normalized = prepareObservationCandidate(candidate(dirty)).commit.checkpoint as typeof native;
         assert.equal(
           Buffer.from(normalized.codex.rollout.payload, 'base64').includes(
             Buffer.from('SYNTHETIC_DUPLICATE_PRIVATE_TAIL')
