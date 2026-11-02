@@ -4,7 +4,7 @@ Date: 2026-10-04 · Branch: `hud-enhancements` (on top of `1eb5ede`)
 
 Rounds 1–3 are implemented (`2026-10-04-panel-redesign{,-2,-3}.md`). The user
 looked at their live panel and asked for the changes below. Their screenshot
-is `/mnt/c/Users/fires/OneDrive/图片/hud.png`: about 36 columns wide, with
+is `/mnt/c/Users/user/Pictures/hud.png`: about 36 columns wide, with
 the worktrees, changes, inspector and timeline panes open. Look at it
 first. The user approved this direction.
 
@@ -75,12 +75,12 @@ name.
 
 ## 3. Worktrees by name, not by hash
 
-Data in the user's repo (`git -C /home/fires/atlas-wsl worktree list`):
+Data in the user's repo (`git -C /home/user/demo-repo worktree list`):
 
 ```
-/home/fires/atlas-wsl                                                             2a8bdfd43 [main]
-/home/fires/atlas-wsl/.git/atlas-launch-sources/912d078ebb934b7b8d1a2cd31cc06082  c01e0d563 (detached HEAD) locked
-/home/fires/atlas-wsl/.git/atlas-launch-sources/9c66524d1f824b6281dd3ac169fe8dde  6e5986ea4 (detached HEAD) locked
+/home/user/demo-repo                                                             2a8bdfd43 [main]
+/home/user/demo-repo/.git/atlas-launch-sources/912d078ebb934b7b8d1a2cd31cc06082  c01e0d563 (detached HEAD) locked
+/home/user/demo-repo/.git/atlas-launch-sources/9c66524d1f824b6281dd3ac169fe8dde  6e5986ea4 (detached HEAD) locked
 ```
 
 Today these render as `Ldetached` with the 32-hex directory under it. The
@@ -147,14 +147,14 @@ example `atlas-launch-sources   干净 · 锁定`. Not as a glued `L`.
   - Never change anything on the user's default tmux server: only
     read-only queries there.
   - Never write into `~/.codex`, `~/.codex-account2` or
-    `/home/fires/atlas-wsl`. Read-only `git` queries against atlas-wsl are
+    `/home/user/demo-repo`. Read-only `git` queries against demo-repo are
     fine, and needed for part 3.
   - Every harness launch puts `$S/fakebin` (and `$S/tmuxbin` when going
     through `bin/codex-hud`) first on `PATH`.
   - Afterwards: kill the test tmux servers, and leave no stray `sleep 900`.
 - **Paths.** `$S` =
-  `/tmp/claude-1000/-home-fires-codex-codex-hud/c4a91d06-e869-4633-8cf6-9b018adb87bc/scratchpad`.
-  Harness: `$S/launch.sh`, `$S/ch2` (cwd `/home/fires/atlas-wsl`, which has
+  `<scratchpad>`.
+  Harness: `$S/launch.sh`, `$S/ch2` (cwd `/home/user/demo-repo`, which has
   the three worktrees above), `$S/mkrun.py`, `$S/tmuxw`, and the PNG
   pipeline (`$S/prev/ansi2html.py` plus the Chrome under
   `~/.omp/puppeteer/…`).
@@ -162,7 +162,7 @@ example `atlas-launch-sources   干净 · 锁定`. Not as a glued `L`.
 ## 5. Live check (required)
 
 Reproduce the user's screenshot.
-- Use `ch2` in `/home/fires/atlas-wsl` at **36×60**, and again at 32 and 56
+- Use `ch2` in `/home/user/demo-repo` at **36×60**, and again at 32 and 56
   columns.
 - Open the worktrees, changes, inspector and timeline panes, as in
   `hud.png`.
@@ -181,7 +181,7 @@ Show each of these:
 6. The key-hint scan test passing.
 
 Copy the 36-column full-panel PNG to
-`/mnt/c/Users/fires/OneDrive/图片/hud-r4-panel.png`, next to the user's
+`/mnt/c/Users/user/Pictures/hud-r4-panel.png`, next to the user's
 `hud.png`, for a side-by-side comparison.
 
 ## Final report
@@ -201,7 +201,7 @@ The user rejected the one-character CJK abbreviations (卡 树 改 详 时) as
 rendered Unicode symbols.
 
 **Their terminal font is a Nerd Font.** Windows Terminal uses `MesloLGS NF`;
-the files are under `/mnt/c/Users/fires/AppData/Local/Microsoft/Windows/Fonts/`,
+the files are under `/mnt/c/Users/user/AppData/Local/Microsoft/Windows/Fonts/`,
 and a copy is at `$S/meslo.ttf`. Its icon ranges include:
 - Font Awesome `f000–f2e0`;
 - Octicons `f400–f4a9`;
@@ -357,7 +357,7 @@ columns.**
 - PNGs of the bar at 32, 36, 44 and 56 columns, in both `unicode` (default)
   and `nerd`. Render with `$S/meslo.ttf`, which also covers the Unicode
   glyphs, so the PNG matches the user's terminal.
-- Compare against the user's `/mnt/c/Users/fires/OneDrive/图片/hud.png`.
+- Compare against the user's `/mnt/c/Users/user/Pictures/hud.png`.
   The bar must read clearly larger and better spaced.
 - Copy the 36-column default (`unicode`) bar and panel to
   `OneDrive/图片/hud-r4-panel.png`, and the `nerd` variant to
@@ -367,7 +367,7 @@ columns.**
 
 ## Amendment D: panes as bands, open/closed only, title click zooms (user request)
 
-The user's screenshot is `/mnt/c/Users/fires/OneDrive/图片/hud2.png`. It is
+The user's screenshot is `/mnt/c/Users/user/Pictures/hud2.png`. It is
 still the round-3 build, so its leftover hashes and placeholder lines are
 already handled above. What it newly shows:
 - The panes (工作树 / 改动 / 详情 / 时间线) are full boxes, with a numbered

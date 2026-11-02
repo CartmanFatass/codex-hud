@@ -13,7 +13,7 @@ final report.
 - `$S/prev/mock2.py` writes `$S/prev/preview2.ansi`, rendered as
   `$S/prev/preview2.png`. Read the script: it is the exact spec for the
   colours, glyphs and order.
-- `$S` = `/tmp/claude-1000/-home-fires-codex-codex-hud/c4a91d06-e869-4633-8cf6-9b018adb87bc/scratchpad`.
+- `$S` = `<scratchpad>`.
 - An older 90-column variant is `$S/prev/mock.py`.
 
 **Real panel widths are 32–56 columns, about 44 rows high.**
@@ -39,7 +39,7 @@ like this:
 │ ▸ 本轮改动已合并并发布，无待办任务，等待新的需求
 │ ✓ 整理两个 CI 失败与下一步排查记录
 │   提交 release 说明并推送到 main 分支 +2
-╰─ atlas-wsl · main * 7d ──────────99% ↺113h
+╰─ demo-repo · main * 7d ──────────99% ↺113h
 ```
 
 **The band row (top).**
@@ -217,7 +217,7 @@ tabs of closed panes, then `a+N`. `←`, `?` and `,` stay.
 ## 5. Bind the HUD to a resumed conversation
 
 **Bug, seen live 2026-10-04 at 21:19.**
-1. The user started `codexH` in `/home/fires/atlas-wsl`; the panel started
+1. The user started `codexH` in `/home/user/demo-repo`; the panel started
    at 21:16:58.
 2. In that TUI they ran `/resume` on the old conversation
    `01a0ef2b-a391-7693-a748-60e24be246ae` (rollout from 2026-09-29, also
@@ -400,5 +400,5 @@ not deliberate.
 4. The resolver's output.
 5. The decisions made, and anything not done, with the reason.
 
-Also copy the three most telling PNGs to `/mnt/c/Users/fires/OneDrive/图片/`
+Also copy the three most telling PNGs to `/mnt/c/Users/user/Pictures/`
 as `hud-r2-*.png`, so the user can open them.

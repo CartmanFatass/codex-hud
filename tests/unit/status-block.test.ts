@@ -280,13 +280,13 @@ test('a crowded row drops the age, the tail and the model before the bar; the co
   assert.match(one(30), /^ ✓ ☀◆ Ctx ─+40%─+ 5h 61% $/, one(30));
   assert.match(one(28), /^ ✓ Ctx ─+40%─+ 5h 61% $/, 'then the model');
   assert.match(one(24), /^ ✓ Ctx ─+40%─+ 5h 61% $/, 'the model goes before the bar and the name');
-  assert.match(draw(56, { project: 'atlas-wsl' }).at(-1)!, /^╰─ atlas-wsl · main \* 5h ─+61%─+ ↺1h$/);
+  assert.match(draw(56, { project: 'demo-repo' }).at(-1)!, /^╰─ demo-repo · main \* 5h ─+61%─+ ↺1h$/);
   assert.match(
-    draw(40, { project: 'atlas-wsl' }).at(-1)!,
-    /^╰─ atlas-wsl 5h ─+61%─+ ↺1h$/,
+    draw(40, { project: 'demo-repo' }).at(-1)!,
+    /^╰─ demo-repo 5h ─+61%─+ ↺1h$/,
     'at 40 the branch goes first'
   );
-  assert.match(draw(33, { project: 'atlas-wsl' }).at(-1)!, /^╰─ atlas-wsl ─+61%─+ ↺1h$/, 'then the window');
+  assert.match(draw(33, { project: 'demo-repo' }).at(-1)!, /^╰─ demo-repo ─+61%─+ ↺1h$/, 'then the window');
   const long = draw(33, { project: 'a-very-long-project-name-indeed', branch: '' }).at(-1)!;
   assert.equal(visualLength(long), 33);
   assert.match(long, /^╰─ a-very.*….* 61% ↺1h$/, long);

@@ -19,7 +19,8 @@ import { readProcess } from '../../../src/core/run/process.js';
 import { PrivateLedgerGate } from '../../../src/ledger/local-manager.js';
 import { LedgerBusyError } from '../../../src/ledger/transaction.js';
 import { digest } from '../../../src/core/canonical.js';
-import { ReadControlService } from './read-control.js';
+import { ReadControlService, withCacheAdvice, type CacheAdviceSource } from './read-control.js';
+import { emptyCacheConfig, type CacheConfigLoad } from '../../../src/core/cache-config.js';
 import type { LedgerTransaction } from '../../../src/ledger/transaction.js';
 import type { WaitRequest } from '../../../src/core/types/lifecycle.js';
 import { sameSessionRef } from '../../../src/core/identity.js';
@@ -55,12 +56,15 @@ export interface DelegationOptions {
   subscribeWait?: SubscribeWait;
   /** Verified direct parent binary, captured at startup; never selected by a tool argument. */
   wakeExecutable?: string;
+  /** `<HUD_HOME>/cache.json` loaded once at process start; absent means an empty snapshot. */
+  cache?: CacheConfigLoad;
 }
 
 /** Composition for production tools; every call receives a freshly verified source. */
 export class DelegationService {
   private readonly reads: ReadControlService;
   private readonly wakes?: WakeDrainer;
+  private readonly cache: CacheAdviceSource;
   constructor(private readonly options: DelegationOptions) {
     mkdirSync(hintDirectory(options.home), { recursive: true, mode: 0o700 });
     const physical = options.registration;
@@ -88,12 +92,18 @@ export class DelegationService {
         adapters: new WakeAdapters({ codexExecutable: options.wakeExecutable }),
       });
     }
+    this.cache = {
+      load: options.cache ?? { ok: true, snapshot: emptyCacheConfig(), path: '', origin: 'missing' },
+      harness: options.registration?.caller.harness ?? 'unknown',
+      model: (backend, role) => options.config.profiles.find((p) => p.name === backend)?.roles?.[role]?.model ?? null,
+    };
     this.reads = new ReadControlService(
       options.ledger,
       options.home,
       options.subscribeWait,
       {},
       options.config.limits,
+      this.cache,
       this.wakes
     );
   }
@@ -103,6 +113,19 @@ export class DelegationService {
   }
   parentCall(): void {
     this.wakes?.parentCall();
+  }
+  /**
+   * Add advice to a sanitized structured failure at the server boundary, where
+   * thrown expected refusals (`capability_unverified`, `slot_busy`, …) become
+   * `{ok:false, code}`. The code and every other field stay exactly as built;
+   * only `delegate_spawn` carries advice. The declared role is the only model
+   * source available before a link exists.
+   */
+  decorateFailure(tool: string, args: Record<string, unknown>, outcome: { ok: false; code: string }): unknown {
+    if (tool !== 'delegate_spawn') return outcome;
+    const backend = typeof args.backend === 'string' ? args.backend : '';
+    const role = typeof args.role === 'string' ? args.role : '';
+    return withCacheAdvice(outcome, this.cache, backend, role);
   }
   private readAuthority(tx: LedgerTransaction, source: Extract<CallResolution, { ok: true }>): McpAuthority {
     if (!source.scopePremise || !this.options.registration) throw new Error('identity_unverified');
@@ -235,6 +258,7 @@ export class DelegationService {
     if (!profile) throw new Error('backend_not_found');
     const preparation = await prepareCodexLaunch({
       profile,
+      retireRecoveryMs: config.wake?.recoveryMs,
       operation: handover ? 'resume' : operation,
       mode: args.mode as 'headless' | 'visible',
       cwd: handover ? String(args.cwd) : (previous?.run.launchCwd ?? String(args.cwd)),
@@ -419,13 +443,17 @@ export class DelegationService {
           }
         : undefined
     );
+    // Advice is a pure lookup over the startup snapshot, merged over any advice the
+    // outcome already carries (B19's `wake`); `delegate_resume` keeps its old shape.
+    const withAdvice = (outcome: object) =>
+      operation === 'spawn' ? withCacheAdvice(outcome, this.cache, profile.name, link.role) : outcome;
     if (
       result.outcome &&
       typeof result.outcome === 'object' &&
       !Array.isArray(result.outcome) &&
       result.outcome.code === 'concurrency_limit'
     )
-      return result.outcome;
+      return withAdvice(result.outcome);
     if (!result.replayed) {
       this.wakes?.request();
       // Do not await private-pipe backpressure after commit. This closure owns
@@ -456,7 +484,7 @@ export class DelegationService {
         /* Optional advice must never turn a committed acceptance into a refusal. */
       }
     }
-    return { ok: true, ...(result.outcome as object), ...wake };
+    return withAdvice({ ok: true, ...(result.outcome as object), ...wake });
   }
   /** Trusted B11 function entry; arguments cannot select an MCP or management actor. */
   async resumeLocal(args: LocalResumeRequest): Promise<unknown> {

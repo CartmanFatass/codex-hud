@@ -10,6 +10,7 @@ export const EXPORT_HELP = `${EXPORT_USAGE}
        hud [link [export]] --help
        hud claude --help
        hud run --help
+       hud cache show [--json]
        hud codex [ARG ...]          Existing codex-hud compatibility launcher
 
 Export a complete, read-only snapshot of local delegation metadata to stdout.

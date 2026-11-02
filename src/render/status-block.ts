@@ -7,7 +7,7 @@
  *
  *   ▕ ✓ ★◕ 41s ──────────56%──────────────246K ~3m ▏   band, on its own background
  *   │ ! 等待批准                                          alerts, only when there are any
- *   ╰─ atlas-wsl · main * 7d ──────────99% ↺113h
+ *   ╰─ demo-repo · main * 7d ──────────99% ↺113h
  *
  * Band: the session's state (while it works, the tool, the turn's clock and
  * the output rate), the model's badge and the session's age, then the

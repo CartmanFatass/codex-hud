@@ -32,7 +32,7 @@ meter:
 
 We adopt the idea: **a card's border is its meter.**
 
-## Today's numbers (captured live at 90×42, atlas-wsl session, brief on)
+## Today's numbers (captured live at 90×42, demo-repo session, brief on)
 
 - The status card takes 20 rows: 2 edges, 4 status rows, an inner rule, and
   13 brief rows that carry only 4 facts.
@@ -88,11 +88,11 @@ full (brief on) — about 6 rows instead of 20
 │ 现在   本轮改动已合并并发布，无待办任务，等待新的需求                                      │
 │ 已完成 ✓ 整理两个 CI 失败与下一步排查记录                                                  │
 │        ✓ 提交 release 说明并推送到 main 分支  +2                                           │
-╰─ atlas-wsl · main * 7d 99%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─ ↺114h ◷~30m+ ─╯
+╰─ demo-repo · main * 7d 99%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─ ↺114h ◷~30m+ ─╯
 
 status — 2 rows instead of 6
 ╭─ ▸ exec: npm test · 2m10s · 36 tok/s 56%━━━━━━━━━━━━━━━━━━━━━━────────────┃─246K  , ? ─╮
-╰─ atlas-wsl · main * 7d 99%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─ ↺114h ◷~30m+ ─╯
+╰─ demo-repo · main * 7d 99%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─ ↺114h ◷~30m+ ─╯
 
 min — 1 row
 ╶─ ✓ 空闲 ☀◆ 5d5h 56%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━───────────────────┃─246K  7d 99% , ? ─╴
@@ -360,7 +360,7 @@ needed).
 
 ## F. Live check (required)
 
-Scratchpad: `/tmp/claude-1000/-home-fires-codex-codex-hud/c4a91d06-e869-4633-8cf6-9b018adb87bc/scratchpad`
+Scratchpad: `<scratchpad>`
 (called `$S` below). It already contains these:
 
 - `$S/tmuxw`: a tmux wrapper bound to the `-L hudui` server. Pass it as
@@ -368,12 +368,12 @@ Scratchpad: `/tmp/claude-1000/-home-fires-codex-codex-hud/c4a91d06-e869-4633-8cf
 - `$S/ch`: a throwaway `CODEX_HOME` holding the shenlun 2026-09-21 session
   (14 subagents, 5 of them guardians). The session sits under
   `sessions/2026/10/04/`, because the tree only scans 3 days back. Its cwd
-  is `/home/fires/shenlun`. Briefing is off. Press `a` to show the older
+  is `/home/user/notes-repo`. Briefing is off. Press `a` to show the older
   agents.
-- `$S/ch2`: a throwaway `CODEX_HOME` holding the atlas-wsl session, with 38
+- `$S/ch2`: a throwaway `CODEX_HOME` holding the demo-repo session, with 38
   subagents symlinked read-only from `~/.codex/sessions`, the recap,
   agent-log and model-cache copied from `~/.codex/hud`, and `briefing: omp`.
-  Its cwd is `/home/fires/atlas-wsl`. The 173 MB main rollout needs about
+  Its cwd is `/home/user/demo-repo`. The 173 MB main rollout needs about
   30–60 s to load.
 - `$S/fakebin/omp` and `$S/fakebin/agy`: each runs `sleep 900`, so that no
   model is ever called. The brief then shows "writing…" over the cached
@@ -395,9 +395,9 @@ Launch:
 
 ```bash
 tmux -L hudui new-session -d -s p -x 90 -y 42 \
-  "cd /home/fires/atlas-wsl && exec env PATH=$S/fakebin:\$PATH CODEX_HOME=$S/ch2 \
-   CODEX_HUD_CWD=/home/fires/atlas-wsl CODEX_HUD_TMUX_BIN=$S/tmuxw \
-   node /home/fires/codex/codex-hud/dist/tree-page.js"
+  "cd /home/user/demo-repo && exec env PATH=$S/fakebin:\$PATH CODEX_HOME=$S/ch2 \
+   CODEX_HUD_CWD=/home/user/demo-repo CODEX_HUD_TMUX_BIN=$S/tmuxw \
+   node /home/user/codex-hud/dist/tree-page.js"
 tmux -L hudui capture-pane -p -t p      # plain text
 tmux -L hudui capture-pane -e -p -t p   # with colours, to check the dimming/meter colours
 ```

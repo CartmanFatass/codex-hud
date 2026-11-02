@@ -1,14 +1,17 @@
-import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import { canonicalJson, digest } from '../canonical.js';
 import { isRunTerminal } from '../execution.js';
 import { deriveRunHandshake, latestReportForRun, resumeGate } from '../lifecycle.js';
 import { projectFreshness } from '../observation.js';
 import { inspectReceipt, sameProcessStamp } from '../supervision.js';
 import type { ReconcileEvidence } from '../types/execution.js';
-import type { ReconciliationCause } from '../types/execution.js';
+import type { ReconciliationCause, Run } from '../types/execution.js';
 import type { ChildBinding, Claim } from '../types/identity.js';
-import type { Report } from '../types/lifecycle.js';
+import type { Report, Link } from '../types/lifecycle.js';
 import type { FinalExitReceipt, ProcessStamp, RunMeta } from '../types/supervision.js';
+import { recordRetireRequested, type RetireRequest } from '../../ledger/notify-events.js';
+import type { LedgerTransaction, SqlRow } from '../../ledger/transaction.js';
 import { openLedger, type Ledger } from '../../ledger/ledger.js';
 import { PrivateLedgerGate } from '../../ledger/local-manager.js';
 import { commitCompared, commitReconcile } from '../../ledger/reconcile.js';
@@ -34,10 +37,65 @@ function cancelFrom(events: RunSnapshot['events']): CancelIntent | null {
   return e ? { seq: e.seq, at: e.at, graceMs: Number(e.payload.graceMs ?? 10000) } : null;
 }
 
+function retirementAuthority(tx: LedgerTransaction, run: Run, link: Link, suppliedClaim?: SqlRow) {
+  const claim = suppliedClaim ?? tx.get('SELECT * FROM claims WHERE run_id=?', run.runId)!;
+  const childAuthority = tx.all(
+    `SELECT b.binding_id,b.binding_generation,b.is_current,b.revoked_at,
+        c.context_id,c.generation,c.closed_at,c.process_key,c.proc_generation,c.session_ref AS context_ref,
+        s.closed_at AS scope_closed_at,s.session_ref AS scope_ref,s.generation AS scope_generation,
+        a.caller_id,a.retired_at
+        FROM child_bindings b JOIN caller_contexts c ON c.context_id=b.caller_context_id AND c.generation=b.context_generation
+        JOIN callers a ON a.caller_id=b.caller_id
+        LEFT JOIN caller_scopes s ON s.process_key=c.process_key AND s.generation=c.proc_generation
+        WHERE b.run_id=? ORDER BY b.binding_id`,
+    run.runId
+  );
+  const parentAuthority = tx.get(
+    `SELECT c.context_id,c.generation,c.closed_at,c.process_key,c.proc_generation,
+        c.session_ref,s.closed_at AS scope_closed_at,s.session_ref AS scope_ref,a.retired_at
+        FROM caller_contexts c JOIN callers a ON a.caller_id=c.caller_id
+        LEFT JOIN caller_scopes s ON s.process_key=c.process_key AND s.generation=c.proc_generation
+        WHERE c.context_id=? AND c.generation=?`,
+    link.parentContextId,
+    link.parentContextGeneration
+  );
+  const valid =
+    ['armed', 'redeemed'].includes(String(claim.state)) &&
+    claim.expected_generation === run.expectedGeneration &&
+    claim.supervisor_pid === run.supervisor?.pid &&
+    claim.supervisor_proc_start === run.supervisor?.proc_start &&
+    (childAuthority.length === 0 ||
+      childAuthority.some(
+        (row) =>
+          row.is_current === 1 &&
+          row.revoked_at === null &&
+          row.closed_at === null &&
+          row.retired_at === null &&
+          (row.process_key === null || (row.scope_generation !== null && row.scope_closed_at === null))
+      ));
+  const conflict = hasConflict(tx, run.linkId, refValue(run.targetSessionRef));
+  return {
+    valid: valid && !conflict,
+    conflict,
+    childAuthority,
+    parentAuthority: parentAuthority ?? null,
+    claim: {
+      state: claim.state,
+      generation: claim.expected_generation,
+      supervisorPid: claim.supervisor_pid,
+      supervisorStart: claim.supervisor_proc_start,
+      redeemedContext: claim.redeemed_context_id,
+      redeemedGeneration: claim.redeemed_generation,
+      redeemedRef: claim.redeemed_session_ref,
+    },
+  };
+}
 /** Production adapter. Numeric revisions are opaque handles to the exact pre-probe B2 snapshot. */
 export class LedgerRunFactPort implements RunFactPort {
   private revision = 0;
   private snapshots = new Map<number, ReconcileSnapshot>();
+  private startupMeta = new Map<string, RunMeta>();
+  private retirementEnds = new Map<string, ReconcileEvidence>();
   private managers = new Map<string, LocalManager>();
   private registrations = new Map<string, SupervisorRegistration>();
   private heartbeats = new Map<
@@ -120,8 +178,33 @@ export class LedgerRunFactPort implements RunFactPort {
         unresolvedConflict: hasConflict(tx, run.linkId, refValue(run.targetSessionRef)),
         capabilityVerified: false,
       });
+      const latestIntent = tx.get(
+        "SELECT seq,at FROM events WHERE link_id=? AND kind='intent.accepted' ORDER BY seq DESC LIMIT 1",
+        run.linkId
+      );
+      const premises = retirementAuthority(tx, run, expected.link, claim);
       const result: RunSnapshot = {
         revision: 0,
+        controlConflict: premises.conflict,
+        retirement: {
+          authorityValid: premises.valid,
+          currentRunId: latestRunId,
+          reportSeq: committedReports.sort((a, b) => b.seq - a.seq)[0]?.seq ?? null,
+          intentSeq: Number(latestIntent?.seq ?? 0),
+          intentAt: latestIntent ? Number(latestIntent.at) : null,
+          assignment: digest({
+            currentRunId: latestRunId,
+            generation: run.expectedGeneration,
+            supervisor: run.supervisor,
+            scope: run.scopeRef,
+            link: expected.link,
+            premises,
+            work: tx.all(
+              "SELECT seq FROM events WHERE link_id=? AND kind IN ('intent.accepted','report.received','supervisor.registered') ORDER BY seq",
+              run.linkId
+            ),
+          }),
+        },
         run,
         events,
         facts: expected.evidence.flatMap((e) =>
@@ -185,6 +268,62 @@ export class LedgerRunFactPort implements RunFactPort {
     if (this.snapshots.size > 32) this.snapshots.delete(this.snapshots.keys().next().value!);
     return result;
   }
+  async requestRetirement(runId: string, supervisor: ProcessStamp, revision: number, request: RetireRequest) {
+    this.originalWriter(runId, supervisor);
+    const expected = this.snapshots.get(revision);
+    this.snapshots.delete(revision);
+    if (!expected || expected.run.runId !== runId) return null;
+    // If natural completion wins before intent, retain an actual complete Q
+    // observation from BEFORE the request. Later import time is not that proof.
+    const meta = this.startupMeta.get(runId);
+    const goneAt =
+      meta?.scope &&
+      meta.harness &&
+      meta.command_leader &&
+      proveGroupGone(meta.scope, meta.harness, [meta.scope.group_leader, meta.command_leader])
+        ? Date.now()
+        : null;
+    if (goneAt !== null) await delay(2);
+    const result = await commitCompared(this.ledger, expected, (tx, current) => {
+      this.gate.check();
+      const run = requireRunWriter(tx, runId, supervisor);
+      const latest = tx.get('SELECT run_id FROM runs WHERE link_id=? ORDER BY run_seq DESC LIMIT 1', run.linkId);
+      if (
+        run.mode !== 'headless' ||
+        isRunTerminal(run) ||
+        run.cancelRequestedAt !== null ||
+        latest?.run_id !== runId ||
+        run.state === 'uncertain' ||
+        !run.scopeRef ||
+        !sameProcessStamp(run.supervisor, supervisor)
+      )
+        return null;
+      if (!retirementAuthority(tx, run, current.link).valid) return null;
+      const at = Date.now();
+      const seq = recordRetireRequested(tx, runId, request, at);
+      return { seq, at, graceMs: request.graceMs };
+    });
+    const intent = result.committed ? result.result : null;
+    if (intent && goneAt !== null)
+      this.retirementEnds.set(runId, {
+        evidenceId: randomUUID(),
+        runId,
+        sourceId: expected.run.sourceId,
+        bindingGeneration: expected.run.expectedGeneration,
+        supervisor: expected.run.supervisor,
+        validation: 'accepted',
+        asOf: goneAt,
+        observedAt: goneAt,
+        fact: {
+          kind: 'scope_reconciled',
+          complete: true,
+          harnessTerminated: true,
+          launchersSealed: true,
+          nativeExit: null,
+        },
+      });
+    return intent;
+  }
   async authorizeManager(runId: string, actor: LocalManager, operation: 'reconcile') {
     if (operation !== 'reconcile') throw new Error('unsupported_management_operation');
     const copy = structuredClone(actor);
@@ -242,7 +381,10 @@ export class LedgerRunFactPort implements RunFactPort {
   }
   async startup(runId: string, supervisor: ProcessStamp, meta: RunMeta) {
     this.originalWriter(runId, supervisor);
-    await recordScope(this.ledger, runId, supervisor, meta.scope, Date.now(), meta);
+    const boundary = { startedAt: Date.now(), monoMs: performance.now() };
+    await recordScope(this.ledger, runId, supervisor, meta.scope, boundary.startedAt, meta);
+    this.startupMeta.set(runId, structuredClone(meta));
+    return boundary;
   }
   async heartbeat(runId: string, supervisor: ProcessStamp, expectedSeq: number, monoMs: number) {
     const h = this.heartbeats.get(runId),
@@ -328,9 +470,11 @@ export class LedgerRunFactPort implements RunFactPort {
         );
       if (!gone) throw new Error('scope_proof_invalid');
     };
+    const observedEnd = this.retirementEnds.get(runId);
+    const observationsWithEnd = observedEnd ? [...observations, observedEnd] : observations;
     let supplied: ValidatedEvidence[];
     try {
-      supplied = observations.map((fact) => {
+      supplied = observationsWithEnd.map((fact) => {
         const value = fact.fact;
         const storedBoundary =
           (value.kind === 'heartbeat' && value.at === expected.run.heartbeatAt && fact.asOf === value.at) ||
@@ -474,6 +618,7 @@ export class LedgerRunFactPort implements RunFactPort {
       this.ledger.busyBudgetMs,
       this.gate.home
     );
+    if (result.committed) this.retirementEnds.delete(runId);
     return result.committed ? result.decision : null;
   }
 }
