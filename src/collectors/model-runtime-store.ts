@@ -88,7 +88,10 @@ const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 15));
  */
 export class ModelRuntimeStore {
   private readonly lockDir: string;
-  constructor(private readonly dir: string) {
+  constructor(
+    private readonly dir: string,
+    private readonly cacheDir: string = dir
+  ) {
     this.lockDir = path.join(dir, '.coordination');
   }
 
@@ -195,7 +198,7 @@ export class ModelRuntimeStore {
   }
 
   cache(): Map<string, CachedModelReply> {
-    const value = read(path.join(this.dir, 'cache.json'));
+    const value = read(path.join(this.cacheDir, 'cache.json'));
     if (value === undefined) return new Map();
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('model cache unavailable');
     const entries = Object.entries(value).filter(
@@ -249,7 +252,7 @@ export class ModelRuntimeStore {
         if (hit && (!accept || accept(hit.text))) return { kind: 'cached', entry: hit };
         if (hit) {
           cache.delete(digest);
-          atomicWrite(path.join(this.dir, 'cache.json'), Object.fromEntries(cache));
+          atomicWrite(path.join(this.cacheDir, 'cache.json'), Object.fromEntries(cache));
         }
       }
       const claims = this.claims();
@@ -312,7 +315,7 @@ export class ModelRuntimeStore {
           // Keep disk order oldest first. Stable ties then retain newly
           // completed entries even when several calls share a clock tick.
           const newest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at).slice(-CACHE_LIMIT);
-          atomicWrite(path.join(this.dir, 'cache.json'), Object.fromEntries(newest));
+          atomicWrite(path.join(this.cacheDir, 'cache.json'), Object.fromEntries(newest));
         }
         delete claims[digest];
         atomicWrite(path.join(this.dir, 'claims.json'), claims);

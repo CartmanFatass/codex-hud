@@ -1,3 +1,4 @@
+import { materialRequest } from '../core/materials/request.js';
 import { createHash } from 'node:crypto';
 import type { HudSettings } from '../settings.js';
 import {
@@ -122,11 +123,17 @@ export class ModelProbe {
       const start = Date.now();
       this.value.rows[i].status = 'running';
       this.onChange();
-      const handle = (this.handle = model.submit({
-        ...question,
-        feature: ROUTES[i].feature,
-        telemetryFeature: 'probe',
-      }));
+      const handle = (this.handle = model.submit(
+        materialRequest(ROUTES[i].feature, {
+          purpose: 'probe',
+          probe: true,
+          compose: () => ({
+            ...question,
+            feature: ROUTES[i].feature,
+            telemetryFeature: 'probe',
+          }),
+        })
+      ));
       const result: ModelResult = await handle.result;
       if (generation !== this.generation) return;
       this.value.rows[i] = {

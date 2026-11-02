@@ -1,3 +1,4 @@
+import { authorizedSyntheticPreview } from './b17-fixture.test.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -83,7 +84,30 @@ function fakeModel(reply: (request: ModelRequest) => ModelResult): { model: Smal
   const asked: ModelRequest[] = [];
   const model = {
     configure() {},
+    inspectLocalLegacy(_subjects: unknown) {
+      authorizedSyntheticPreview({ feature: 'labels', system: '', prompt: '' });
+      return true;
+    },
+    inspectLegacyMaterials(_subjects: unknown, purpose: string) {
+      authorizedSyntheticPreview({ feature: purpose === 'label' ? 'labels' : purpose, system: '', prompt: '' });
+      return true;
+    },
+    readLegacyLabels(_subjects: unknown, _file: string, consume: () => unknown) {
+      authorizedSyntheticPreview({ feature: 'labels', system: '', prompt: '' });
+      return consume();
+    },
     submit(request: ModelRequest) {
+      request = authorizedSyntheticPreview(request);
+      if (request.materialUnchanged)
+        return {
+          result: Promise.resolve({ ok: false as const, error: 'unchanged', unchanged: true as const }),
+          cancel() {},
+        };
+      if (request.legacyCachedText !== undefined)
+        return {
+          result: Promise.resolve({ ok: true as const, text: request.legacyCachedText, cached: true }),
+          cancel() {},
+        };
       asked.push(request);
       work.calls++;
       const result = Promise.resolve(reply(request));

@@ -1,3 +1,5 @@
+import type { MaterialEnvelope } from '../core/materials/index.js';
+import { legacyRequest, legacyTreeSubjects, recordStamp, type LegacySubject } from '../core/materials/request.js';
 /**
  * The small model's other jobs, each behind its own switch in the LLM group
  * of the settings page and each sending only what its help line says:
@@ -561,6 +563,16 @@ export class ModelJobs {
   private readonly read: (file: string) => Promise<string>;
   private labels = new Map<string, AgentLabel>();
   private labelsLoaded = false;
+  private readonly displayLabels = new Map<string, { label: AgentLabel; binding: string; language: Language }>();
+  private readonly localViews = new Set<string>();
+  private readonly localViewPending = new Set<string>();
+  private readonly localHydrations = new Map<string, number>();
+  private readonly localHydrationPending = new Set<string>();
+  private localDisplayContext = '';
+  private localDisplayEpoch = 0;
+  private localBindings = new Set<string>();
+  private readonly namedSubjects = new Map<string, { source: string; language: Language; schedule?: string }>();
+  private labelCursor = 0;
   /** Work started and not finished, by key, so a tick never asks twice. */
   private readonly running = new Set<string>();
   /** Work that failed, by key, with when: retried after `RETRY_MS`. */
@@ -572,6 +584,7 @@ export class ModelJobs {
   private changeAskedAt = 0;
   private title: { sessionId: string; title: string } | null = null;
   private rootId = '';
+  private materialSubjects: LegacySubject[] = [];
   /** The language the in-memory readings (causes, approval, change summary) were written in. */
   private language: Language | null = null;
   /** Invalidates both model replies and disk reads across stop/restart. */
@@ -598,21 +611,174 @@ export class ModelJobs {
     return failedAt === undefined || now - failedAt >= RETRY_MS;
   }
 
+  private inspectRead(
+    subjects: readonly LegacySubject[],
+    purpose: 'digest' | 'cause' | 'changes',
+    generation: number,
+    key: string,
+    read: () => void
+  ): void {
+    const land = (allowed: boolean) => {
+      if (generation !== this.generation || !this.running.has(key)) return;
+      if (allowed) read();
+      else {
+        this.running.delete(key);
+        this.failed.set(key, Date.now());
+      }
+    };
+    try {
+      const result = this.model.inspectLegacyMaterials(subjects, purpose);
+      if (typeof result === 'boolean') land(result);
+      else void result.then(land, () => land(false));
+    } catch {
+      land(false);
+    }
+  }
+  private displayBinding(tree: SubagentTree, node: SubagentTreeNode): string {
+    return JSON.stringify([
+      tree.rootId,
+      node.id,
+      node.rolloutPath,
+      (node as unknown as { ref?: unknown }).ref,
+      (node as unknown as { origin?: unknown }).origin,
+      (node as unknown as { sourceId?: unknown }).sourceId,
+      (node as unknown as { harness?: unknown }).harness,
+      Object.hasOwn(node, 'ref'),
+      node.turnStartedAt?.getTime(),
+      node.stageCount,
+    ]);
+  }
+  private labelContributors(
+    node: SubagentTreeNode,
+    selected: readonly LegacySubject[]
+  ): { required: LegacySubject[]; optional: LegacySubject[]; parent?: string } {
+    const child = selected.find((subject) => subject.sessionId === node.id);
+    if (!child) return { required: [{ sessionId: node.id }], optional: [] };
+    if (!Object.hasOwn(node, 'charge')) return { required: [child], optional: [] };
+    const parent = selected.find((subject) => subject.sessionId === child.parentSessionId);
+    const owner: LegacySubject | undefined = parent
+      ? {
+          ...parent,
+          current: () => (!parent.current || parent.current()) && (!child.current || child.current()),
+          chargeFor: {
+            sessionId: child.sessionId,
+            ref: child.ref ? { ...child.ref } : undefined,
+            origin: child.origin,
+            universal: child.universal,
+            parentSessionId: child.parentSessionId,
+          },
+        }
+      : undefined;
+    return child.rolloutPath
+      ? { required: [child], optional: owner ? [owner] : [], parent: parent?.sessionId }
+      : {
+          required: [owner ?? { sessionId: child.parentSessionId ?? '' }],
+          optional: [],
+          parent: child.parentSessionId,
+        };
+  }
+  private hydrateDisplayLabels(tree: SubagentTree, language: Language): void {
+    const file = this.options.labelsFile;
+    if (!file) return;
+    const selected = legacyTreeSubjects(
+      tree,
+      this.materialSubjects.find((subject) => subject.sessionId === tree.rootId)?.rolloutPath
+    );
+    walk(tree.nodes, (node) => {
+      const binding = this.displayBinding(tree, node);
+      const key = JSON.stringify([binding, language]);
+      const stamp = recordStamp(node);
+      const epoch = this.localDisplayEpoch;
+      if (this.localHydrations.get(key) === stamp || this.localHydrationPending.has(key)) return;
+      this.localHydrationPending.add(key);
+      const contributors = this.labelContributors(node, selected);
+      const consume = (admitted?: ReadonlySet<string>) => {
+        if (epoch !== this.localDisplayEpoch || !this.localBindings.has(binding)) return false;
+        this.displayLabels.delete(node.id);
+        const parentOnly = Object.hasOwn(node, 'charge') && !node.rolloutPath;
+        const chargeAllowed = parentOnly || (!!contributors.parent && admitted?.has(contributors.parent));
+        const charge = chargeAllowed ? usableCharge(node.charge) : undefined;
+        const where = charge ? [node.agentPath, node.role].filter(Boolean).join(' ') : '';
+        const source = charge
+          ? where
+            ? `${where} ${charge}`
+            : charge
+          : parentOnly
+            ? undefined
+            : usableCharge(node.task);
+        if (!source) return true;
+        const raw = record(JSON.parse(fs.readFileSync(file, 'utf8')));
+        const cached = readLabel(record(raw?.labels)?.[labelKey(source, language)]);
+        if (cached) this.displayLabels.set(node.id, { label: cached, binding, language });
+        return true;
+      };
+      try {
+        const result = this.model.readLegacyLabels(contributors.required, file, consume, contributors.optional);
+        if (result && typeof (result as Promise<unknown>).then === 'function')
+          void (result as Promise<unknown>).then(
+            (allowed) => {
+              if (epoch !== this.localDisplayEpoch) return;
+              this.localHydrationPending.delete(key);
+              if (allowed === true && this.localBindings.has(binding)) {
+                this.localHydrations.set(key, stamp);
+                this.onChange();
+              }
+            },
+            () => {
+              if (epoch === this.localDisplayEpoch) this.localHydrationPending.delete(key);
+            }
+          );
+        else {
+          this.localHydrationPending.delete(key);
+          if (result === true) this.localHydrations.set(key, stamp);
+        }
+      } catch {
+        this.localHydrationPending.delete(key);
+        /* Local display remains unknown. */
+      }
+    });
+  }
+
+  private nodeSubjects(id: string): LegacySubject[] {
+    return this.materialSubjects.filter((subject) => subject.sessionId === id);
+  }
+  private rootSubjects(): LegacySubject[] {
+    return this.nodeSubjects(this.rootId);
+  }
+
   private ask(
     key: string,
     now: number,
-    request: Parameters<SmallModel['submit']>[0],
+    request: (envelope?: MaterialEnvelope) => Parameters<SmallModel['submit']>[0],
+    subjects: readonly LegacySubject[],
     land: (text: string) => boolean,
-    fail?: () => void
+    fail?: () => void,
+    optionalSubjects: readonly LegacySubject[] = []
   ): void {
     const generation = this.generation;
     this.running.add(key);
-    const handle = this.model.submit(request);
+    // Contributors are captured by the caller before any asynchronous read; absence never becomes a root grant.
+    const feature = key.startsWith('labels:')
+      ? 'labels'
+      : key.startsWith('digest:')
+        ? 'digest'
+        : key.startsWith('title:')
+          ? 'title'
+          : key.startsWith('approval:')
+            ? 'approval'
+            : key.startsWith('changes:')
+              ? 'changes'
+              : 'cause';
+    const planned = legacyRequest(feature, subjects, request);
+    if (optionalSubjects.length) planned.materials!.legacyOptional = optionalSubjects;
+    const handle = this.model.submit(planned);
     this.handles.add(handle);
     void handle.result.then((result) => {
       this.handles.delete(handle);
       if (generation !== this.generation) return;
       if (!this.running.delete(key)) return;
+      if (!result.ok && result.unchanged) return;
+      if (result.ok && handle.isAuthorized && !handle.isAuthorized()) return;
       if (result.ok && land(result.text)) {
         this.failed.delete(key);
         this.onChange();
@@ -655,14 +821,76 @@ export class ModelJobs {
    * Put what the jobs know onto a freshly built tree: each agent's label, its
    * kind of work and its current digest. Run on every tree build; it never calls the model.
    */
+  private resetLocalDisplay(rootId: string): void {
+    const context = rootId;
+    if (context !== this.localDisplayContext) {
+      this.localDisplayContext = context;
+      this.localDisplayEpoch++;
+      this.localHydrations.clear();
+      this.localHydrationPending.clear();
+      this.localViews.clear();
+      this.localViewPending.clear();
+      this.displayLabels.clear();
+    }
+  }
+
   apply(tree: SubagentTree, switches: JobSwitches, language: Language): void {
-    if (switches.agentLabels) this.loadLabels();
+    this.resetLocalDisplay(tree.rootId);
+    const bindings = new Set<string>();
+    const hydrationKeys = new Set<string>();
     walk(tree.nodes, (node) => {
+      const binding = this.displayBinding(tree, node);
+      bindings.add(binding);
+      hydrationKeys.add(JSON.stringify([binding, language]));
+    });
+    this.localBindings = bindings;
+    for (const key of this.localHydrations.keys()) if (!hydrationKeys.has(key)) this.localHydrations.delete(key);
+    for (const key of this.localViews) if (!bindings.has(key)) this.localViews.delete(key);
+    for (const [id, value] of this.displayLabels) if (!bindings.has(value.binding)) this.displayLabels.delete(id);
+    const epoch = this.localDisplayEpoch;
+    if (switches.agentLabels) this.hydrateDisplayLabels(tree, language);
+    const localSubjects = legacyTreeSubjects(tree);
+    walk(tree.nodes, (node) => {
+      const binding = this.displayBinding(tree, node);
+      if (!this.localViews.has(binding) && !this.localViewPending.has(binding)) {
+        this.localViewPending.add(binding);
+        const verdict = this.model.inspectLocalLegacy(localSubjects.filter((subject) => subject.sessionId === node.id));
+        if (typeof verdict === 'boolean') {
+          this.localViewPending.delete(binding);
+          if (verdict) this.localViews.add(binding);
+        } else
+          void verdict.then(
+            (allowed) => {
+              if (epoch !== this.localDisplayEpoch) return;
+              this.localViewPending.delete(binding);
+              if (allowed && this.localBindings.has(binding)) {
+                this.localViews.add(binding);
+                this.onChange();
+              }
+            },
+            () => {
+              if (epoch === this.localDisplayEpoch) this.localViewPending.delete(binding);
+            }
+          );
+      }
       // The name for what it was given, once that label has arrived; until
       // then, what the brief last called the work it is on.
-      const source = switches.agentLabels ? labelSource(node) : undefined;
-      const fromSource = source ? this.labels.get(labelKey(source, language)) : undefined;
-      const noted = switches.agentLabels ? this.log.label(node.id, language) : undefined;
+      const cached = switches.agentLabels ? this.displayLabels.get(node.id) : undefined;
+      const fromSource =
+        cached?.language === language && cached.binding === this.displayBinding(tree, node) ? cached.label : undefined;
+      const identity = node as SubagentTreeNode & {
+        ref?: unknown;
+        origin?: unknown;
+        sourceId?: unknown;
+        harness?: unknown;
+      };
+      const historical =
+        this.localViews.has(binding) &&
+        !identity.ref &&
+        identity.origin === undefined &&
+        !identity.sourceId &&
+        !identity.harness;
+      const noted = switches.agentLabels && historical ? this.log.label(node.id, language) : undefined;
       const label =
         fromSource ?? (noted ? { name: noted.name, kind: noted.kind ?? ('other' as AgentTaskKind) } : undefined);
       if (label && label.name !== node.name) node.label = label.name;
@@ -670,7 +898,9 @@ export class ModelJobs {
       if (label && label.kind !== 'other') node.taskKind = label.kind;
       else delete node.taskKind;
       const digest =
-        switches.resultDigest && node.status === 'completed' ? this.currentDigest(node, language) : undefined;
+        switches.resultDigest && this.localViews.has(binding) && node.status === 'completed'
+          ? this.currentDigest(node, language)
+          : undefined;
       if (digest) node.digest = digest.text;
       else delete node.digest;
     });
@@ -685,6 +915,17 @@ export class ModelJobs {
 
   /** Start whatever is due. Cheap when nothing is: no reads, no calls. */
   update(input: JobsInput): void {
+    this.resetLocalDisplay(input.tree.rootId);
+    this.materialSubjects = legacyTreeSubjects(input.tree, input.main?.session?.rolloutPath);
+    const root = this.materialSubjects.find((subject) => subject.sessionId === input.tree.rootId);
+    if (root) {
+      const expectedId = root.sessionId;
+      const expectedPath = root.rolloutPath;
+      root.current = () =>
+        input.tree.rootId === expectedId &&
+        input.main?.session?.id === expectedId &&
+        input.main.session.rolloutPath === expectedPath;
+    }
     if (input.tree.rootId !== this.rootId || input.language !== this.language) {
       // Another session's readings, or ones in the other language, are not
       // shown: they are asked for again. Work still in flight would land
@@ -693,6 +934,7 @@ export class ModelJobs {
       this.stop();
       this.rootId = input.tree.rootId;
       this.language = input.language;
+      this.labelCursor = 0;
       this.causes.clear();
       this.approval = null;
       this.change = null;
@@ -704,8 +946,20 @@ export class ModelJobs {
     // Causes already written to the log are the timeline's as well.
     if (input.switches.failureCause)
       walk(input.tree.nodes, (node) => {
-        const cause = this.log.latest(node.id, CAUSE_KINDS, input.language);
-        if (cause) this.causes.set(`agent:${node.id}:failed:${cause.at}`, cause.text);
+        const binding = this.displayBinding(input.tree, node);
+        const generation = this.generation;
+        const observe = (allowed: boolean) => {
+          if (!allowed || generation !== this.generation) return;
+          this.localViews.add(binding);
+          const cause = this.log.latest(node.id, CAUSE_KINDS, input.language);
+          if (cause) this.causes.set(`agent:${node.id}:failed:${cause.at}`, cause.text);
+        };
+        if (this.localViews.has(binding)) observe(true);
+        else {
+          const allowed = this.model.inspectLocalLegacy(this.nodeSubjects(node.id));
+          if (typeof allowed === 'boolean') observe(allowed);
+          else void allowed.then(observe, () => {});
+        }
       });
     if (!input.on) return;
     if (input.switches.resultDigest) this.digests(input);
@@ -727,60 +981,68 @@ export class ModelJobs {
     walk(input.tree.nodes, (node) => {
       const stage = node.stages?.filter((stage) => stage.status !== 'running').at(-1);
       // The ledger has the answer: no rollout read, and no second digest of it.
-      if (stage?.result && stage.endedAt) {
+      if (stage && Object.hasOwn(stage, 'result') && stage.endedAt) {
         this.stageDigest(node, stage, input);
         return;
       }
-      if (node.status !== 'completed' || !node.rolloutPath || this.currentDigest(node, input.language)) return;
+      if (node.status !== 'completed' || !node.rolloutPath) return;
       const finished = (node.statusAt ?? node.lastEventAt)?.getTime() ?? 0;
       if (node.id !== input.inspected && input.now - finished > DIGEST_RECENT_MS) return;
       const key = `digest:${node.id}:${finished}`;
       if (!this.due(key, input.now) || this.inFlight('digest:') >= MAX_IN_FLIGHT) return;
       const file = node.rolloutPath;
+      const subjects = this.nodeSubjects(node.id);
       const generation = this.generation;
       this.running.add(key);
-      this.read(file).then(
-        (text) => {
-          if (generation !== this.generation || !this.running.has(key)) return;
+      this.inspectRead(subjects, 'digest', generation, key, () => {
+        if (this.currentDigest(node, input.language)) {
           this.running.delete(key);
-          const answer = finalAnswer(text);
-          // No final answer recorded: nothing to digest, and nothing guessed.
-          if (!answer) {
-            this.failed.set(key, input.now);
-            return;
-          }
-          this.ask(
-            key,
-            input.now,
-            {
-              feature: 'digest',
-              language: input.language,
-              system: digestSystemPrompt(input.language),
-              prompt: digestPrompt(answer.text),
-              cacheKey: `${file}:${answer.at.getTime()}:${input.language}`,
-            },
-            (reply) => {
-              const digest = parseDigest(reply);
-              if (!digest) return false;
-              this.log.add(node.id, [
-                {
-                  at: answer.at.getTime(),
-                  kind: 'digest',
-                  text: digestText(digest, input.digestLabels),
-                  lang: input.language,
-                },
-              ]);
-              this.log.flush();
-              return true;
-            }
-          );
-        },
-        () => {
-          if (generation !== this.generation) return;
-          this.running.delete(key);
-          this.failed.set(key, input.now);
+          return;
         }
-      );
+        this.read(file).then(
+          (text) => {
+            if (generation !== this.generation || !this.running.has(key)) return;
+            this.running.delete(key);
+            const answer = finalAnswer(text);
+            // No final answer recorded: nothing to digest, and nothing guessed.
+            if (!answer) {
+              this.failed.set(key, input.now);
+              return;
+            }
+            this.ask(
+              key,
+              input.now,
+              () => ({
+                feature: 'digest',
+                language: input.language,
+                system: digestSystemPrompt(input.language),
+                prompt: digestPrompt(answer.text),
+                cacheKey: `${file}:${answer.at.getTime()}:${input.language}`,
+              }),
+              subjects,
+              (reply) => {
+                const digest = parseDigest(reply);
+                if (!digest) return false;
+                this.log.add(node.id, [
+                  {
+                    at: answer.at.getTime(),
+                    kind: 'digest',
+                    text: digestText(digest, input.digestLabels),
+                    lang: input.language,
+                  },
+                ]);
+                this.log.flush();
+                return true;
+              }
+            );
+          },
+          () => {
+            if (generation !== this.generation) return;
+            this.running.delete(key);
+            this.failed.set(key, input.now);
+          }
+        );
+      });
     });
   }
 
@@ -791,35 +1053,40 @@ export class ModelJobs {
    * send whole. Kept in the log at the stage's end.
    */
   private stageDigest(node: SubagentTreeNode, stage: AgentStage, input: JobsInput): void {
-    const result = stage.result!;
-    if (node.status !== 'completed' && !(input.tree.nodes.includes(node) && result.length > RESULT_RAW_CHARS)) return;
+    if (node.status !== 'completed' && !input.tree.nodes.includes(node)) return;
     const end = stage.endedAt!.getTime();
     if (node.id !== input.inspected && input.now - end > DIGEST_RECENT_MS) return;
     const from = stage.startedAt.getTime();
-    if (
-      this.log
-        .entries(node.id)
-        .some(
-          (entry) =>
-            entry.kind === 'digest' &&
-            entry.at >= from &&
-            entry.at <= end + 5000 &&
-            entryLanguage(entry) === input.language
-        )
-    )
-      return;
     const key = `digest:${node.id}:${end}`;
     if (!this.due(key, input.now) || this.inFlight('digest:') >= MAX_IN_FLIGHT) return;
     this.ask(
       key,
       input.now,
-      {
-        feature: 'digest',
-        language: input.language,
-        system: digestSystemPrompt(input.language),
-        prompt: digestPrompt(result),
-        cacheKey: `${createHash('sha256').update(result).digest('hex').slice(0, 32)}:${input.language}`,
+      () => {
+        if (
+          this.log
+            .entries(node.id)
+            .some(
+              (entry) =>
+                entry.kind === 'digest' &&
+                entry.at >= from &&
+                entry.at <= end + 5000 &&
+                entryLanguage(entry) === input.language
+            )
+        )
+          return { feature: 'digest', system: '', prompt: '', materialUnchanged: true };
+        const result = stage.result;
+        if (!result || (node.status !== 'completed' && result.length <= RESULT_RAW_CHARS))
+          return { feature: 'digest', system: '', prompt: '', materialUnchanged: true };
+        return {
+          feature: 'digest',
+          language: input.language,
+          system: digestSystemPrompt(input.language),
+          prompt: digestPrompt(result),
+          cacheKey: `${createHash('sha256').update(result).digest('hex').slice(0, 32)}:${input.language}`,
+        };
       },
+      this.nodeSubjects(node.id),
       (reply) => {
         const digest = parseDigest(reply);
         if (!digest) return false;
@@ -833,32 +1100,109 @@ export class ModelJobs {
   }
 
   private labelJobs(input: JobsInput): void {
-    this.loadLabels();
     if (this.inFlight('labels:')) return;
-    const pending = new Map<string, string>();
+    const pending: SubagentTreeNode[] = [];
+    const labelSubjects: LegacySubject[] = [];
+    const optionalSubjects: LegacySubject[] = [];
+    const chargeParents = new Map<string, string | undefined>();
+    const candidates: SubagentTreeNode[] = [];
     walk(input.tree.nodes, (node) => {
-      const source = labelSource(node);
-      if (!source || pending.size >= LABEL_BATCH) return;
-      const key = labelKey(source, input.language);
-      if (!this.labels.has(key) && this.due(`label:${key}`, input.now)) pending.set(key, source);
+      if (Object.hasOwn(node, 'charge') || Object.hasOwn(node, 'task')) candidates.push(node);
     });
-    if (!pending.size) return;
-    const keys = [...pending.keys()];
-    const batch = `labels:${keys.join(',')}`;
+    const start = this.labelCursor % (candidates.length || 1);
+    for (let visited = 0; visited < candidates.length && pending.length < LABEL_BATCH; visited++) {
+      const index = (start + visited) % candidates.length;
+      const node = candidates[index];
+      this.labelCursor = index + 1;
+      const schedule = JSON.stringify([
+        this.displayBinding(input.tree, node),
+        recordStamp(node),
+        recordStamp(node.stages?.at(-1)),
+      ]);
+      const done = this.namedSubjects.get(node.id) as
+        { source: string; language: Language; schedule?: string } | undefined;
+      if (done?.language === input.language && done.schedule === schedule) continue;
+      pending.push(node);
+      const contributors = this.labelContributors(node, this.materialSubjects);
+      labelSubjects.push(...contributors.required);
+      optionalSubjects.push(...contributors.optional);
+      chargeParents.set(node.id, contributors.parent);
+    }
+    if (!pending.length) return;
+    const batch = `labels:${input.language}:${pending.map((node) => node.id).join(',')}`;
+    if (!this.due(batch, input.now)) return;
+    let keys: string[] = [];
+    const sources = new Map<string, { source: string; node: SubagentTreeNode }>();
     this.ask(
       batch,
       input.now,
-      {
-        feature: 'labels',
-        language: input.language,
-        system: labelsSystemPrompt(input.language),
-        prompt: labelsPrompt([...pending.values()]),
-        cacheKey: keys.join(','),
+      (envelope) => {
+        this.loadLabels();
+        const missing = new Map<string, string>();
+        for (const node of pending) {
+          // Parent-only permits cover charge, never an unverified child's fallback task.
+          const onlyParent = Object.hasOwn(node, 'charge') && !node.rolloutPath;
+          const parent = chargeParents.get(node.id);
+          const parentAdmitted =
+            onlyParent ||
+            (!!parent &&
+              envelope?.fragments.some((fragment) => fragment.provenance.some((p) => p.ref.sessionId === parent)));
+          const charge = parentAdmitted ? usableCharge(node.charge) : undefined;
+          const source = charge
+            ? (() => {
+                const where = [node.agentPath, node.role].filter(Boolean).join(' ');
+                return where ? `${where} ${charge}` : charge;
+              })()
+            : onlyParent
+              ? undefined
+              : usableCharge(node.task);
+          if (!source) {
+            this.namedSubjects.set(node.id, {
+              source: '',
+              language: input.language,
+              schedule: JSON.stringify([
+                this.displayBinding(input.tree, node),
+                recordStamp(node),
+                recordStamp(node.stages?.at(-1)),
+              ]),
+            });
+            continue;
+          }
+          const key = labelKey(source, input.language);
+          sources.set(node.id, { source, node });
+          const label = this.labels.get(key);
+          if (label) {
+            this.displayLabels.set(node.id, {
+              label,
+              binding: this.displayBinding(input.tree, node),
+              language: input.language,
+            });
+            this.namedSubjects.set(node.id, {
+              source,
+              language: input.language,
+              schedule: JSON.stringify([
+                this.displayBinding(input.tree, node),
+                recordStamp(node),
+                recordStamp(node.stages?.at(-1)),
+              ]),
+            });
+          } else if (this.due(`label:${key}`, input.now)) missing.set(key, source);
+        }
+        keys = [...missing.keys()];
+        return {
+          feature: 'labels',
+          language: input.language,
+          system: labelsSystemPrompt(input.language),
+          prompt: labelsPrompt([...missing.values()]),
+          cacheKey: keys.join(','),
+          ...(keys.length ? {} : { legacyCachedText: '{"labels":[]}' }),
+        };
       },
+      labelSubjects,
       (reply) => {
+        if (!keys.length) return true;
         const labels = parseLabels(reply, keys.length);
         let got = false;
-        // A task the reply gave no label for is not asked about again soon.
         keys.forEach((key, i) => {
           const label = labels[i];
           if (label) {
@@ -866,12 +1210,31 @@ export class ModelJobs {
             got = true;
           } else this.failed.set(`label:${key}`, input.now);
         });
+        for (const [id, { source, node }] of sources) {
+          const label = this.labels.get(labelKey(source, input.language));
+          if (!label) continue;
+          this.displayLabels.set(id, {
+            label,
+            binding: this.displayBinding(input.tree, node),
+            language: input.language,
+          });
+          this.namedSubjects.set(id, {
+            source,
+            language: input.language,
+            schedule: JSON.stringify([
+              this.displayBinding(input.tree, node),
+              recordStamp(node),
+              recordStamp(node.stages?.at(-1)),
+            ]),
+          });
+        }
         if (got) this.saveLabels();
         return got;
       },
       () => {
         for (const key of keys) this.failed.set(`label:${key}`, input.now);
-      }
+      },
+      optionalSubjects
     );
   }
 
@@ -879,40 +1242,42 @@ export class ModelJobs {
     const sessionId = input.tree.rootId;
     const store = this.options.titles;
     if (!sessionId || !store) return;
-    if (this.title?.sessionId !== sessionId) {
-      // A title in the other language is written again, as a label would be.
-      const stored = store.loadTitle(sessionId);
-      const same =
-        stored && (stored.language ?? (/[\u3400-\u9fff]/.test(stored.title) ? 'zh' : 'en')) === input.language;
-      this.title = stored && same ? { sessionId, title: stored.title } : { sessionId, title: '' };
-    }
-    if (input.recapGoal) {
-      // The recap already says what the session is for: no call.
-      const title = titleFromGoal(input.recapGoal);
-      if (title && title !== this.title.title) {
-        this.title = { sessionId, title };
-        this.saveTitle(store, sessionId, title, 'recap', input.now, input.language);
-      }
-      return;
-    }
-    const first = input.main?.firstUserMessage?.text;
     const key = `title:${sessionId}`;
-    if (this.title.title || !first || !this.due(key, input.now)) return;
+    if (!this.due(key, input.now)) return;
+    let fromRecap = false;
     this.ask(
       key,
       input.now,
-      {
-        feature: 'title',
-        language: input.language,
-        system: titleSystemPrompt(input.language),
-        prompt: titlePrompt(first),
-        cacheKey: `${sessionId}:${input.language}`,
+      () => {
+        if (this.title?.sessionId !== sessionId) {
+          const stored = store.loadTitle(sessionId);
+          const same =
+            stored && (stored.language ?? (/[\u3400-\u9fff]/.test(stored.title) ? 'zh' : 'en')) === input.language;
+          this.title = stored && same ? { sessionId, title: stored.title } : { sessionId, title: '' };
+        }
+        if (input.recapGoal) {
+          fromRecap = true;
+          return { feature: 'title', system: '', prompt: '', legacyCachedText: titleFromGoal(input.recapGoal) };
+        }
+        if (this.title.title) return { feature: 'title', system: '', prompt: '', legacyCachedText: this.title.title };
+        const first = input.main?.firstUserMessage;
+        if (!first) return { feature: 'title', system: '', prompt: '', materialUnchanged: true };
+        return {
+          feature: 'title',
+          language: input.language,
+          system: titleSystemPrompt(input.language),
+          prompt: titlePrompt(first.text),
+          cacheKey: `${sessionId}:${input.language}`,
+        };
       },
+      this.rootSubjects(),
       (reply) => {
         const title = oneLine(reply, 40);
-        if (!title || this.title?.sessionId !== sessionId || this.title.title) return Boolean(title);
-        this.title = { sessionId, title };
-        this.saveTitle(store, sessionId, title, 'prompt', input.now, input.language);
+        if (!title || this.title?.sessionId !== sessionId) return Boolean(title);
+        if (this.title.title !== title) {
+          this.title = { sessionId, title };
+          this.saveTitle(store, sessionId, title, fromRecap ? 'recap' : 'prompt', input.now, input.language);
+        }
         return true;
       }
     );
@@ -935,7 +1300,7 @@ export class ModelJobs {
 
   private causeJobs(input: JobsInput): void {
     for (const call of input.main?.toolActivity.recentCalls ?? []) {
-      if (call.status !== 'error' || !call.output) continue;
+      if (call.status !== 'error' || !Object.hasOwn(call, 'output')) continue;
       const id = `tool:${call.id}`;
       const at = call.timestamp.getTime() + (call.duration ?? 0);
       if (
@@ -945,20 +1310,25 @@ export class ModelJobs {
         this.inFlight('tool:') + this.inFlight('agent:') >= MAX_IN_FLIGHT
       )
         continue;
-      const args = call.arguments ?? {};
-      const command = [args.cmd, args.command, args.code].find((value) => typeof value === 'string') as
-        string | undefined;
-      const what = `Tool ${call.name}${command ? `: ${command}` : call.target ? `: ${call.target}` : ''}${call.exitCode !== undefined ? ` (exit code ${call.exitCode})` : ''}`;
+      const subjects = this.rootSubjects();
       this.ask(
         id,
         input.now,
-        {
-          feature: 'cause',
-          language: input.language,
-          system: causeSystemPrompt(input.language),
-          prompt: causePrompt(what, call.output),
-          cacheKey: `${id}:${input.language}`,
+        () => {
+          const args = call.arguments ?? {};
+          const command = [args.cmd, args.command, args.code].find((value) => typeof value === 'string') as
+            string | undefined;
+          const what = `Tool ${call.name}${command ? `: ${command}` : call.target ? `: ${call.target}` : ''}${call.exitCode !== undefined ? ` (exit code ${call.exitCode})` : ''}`;
+          if (!call.output) return { feature: 'cause', system: '', prompt: '', materialUnchanged: true };
+          return {
+            feature: 'cause',
+            language: input.language,
+            system: causeSystemPrompt(input.language),
+            prompt: causePrompt(what, call.output!),
+            cacheKey: `${id}:${input.language}`,
+          };
         },
+        subjects,
         (reply) => {
           const cause = oneLine(reply);
           if (cause) this.causes.set(id, cause);
@@ -973,62 +1343,67 @@ export class ModelJobs {
       if (this.causes.has(id) || (node.id !== input.inspected && input.now - at > CAUSE_RECENT_MS)) return;
       if (!this.due(id, input.now) || this.inFlight('tool:') + this.inFlight('agent:') >= MAX_IN_FLIGHT) return;
       const file = node.rolloutPath;
+      const subjects = this.nodeSubjects(node.id);
       const generation = this.generation;
       this.running.add(id);
-      this.read(file).then(
-        (text) => {
-          if (generation !== this.generation || !this.running.has(id)) return;
-          this.running.delete(id);
-          const material = errorMaterial(text);
-          // The rollout recorded no error to read: nothing is sent, nothing guessed.
-          if (!material) {
-            this.failed.set(id, input.now);
-            return;
-          }
-          this.ask(
-            id,
-            input.now,
-            {
-              feature: 'cause',
-              language: input.language,
-              system: causeSystemPrompt(input.language),
-              prompt: causePrompt(`Subagent ${node.name}${node.task ? `, task: ${node.task}` : ''}`, material),
-              cacheKey: `${file}:${at}:${input.language}`,
-            },
-            (reply) => {
-              const cause = oneLine(reply);
-              if (!cause) return false;
-              this.causes.set(id, cause);
-              this.log.add(node.id, [{ at, kind: 'cause', text: cause, lang: input.language }]);
-              this.log.flush();
-              return true;
+      this.inspectRead(subjects, 'cause', generation, id, () => {
+        this.read(file).then(
+          (text) => {
+            if (generation !== this.generation || !this.running.has(id)) return;
+            this.running.delete(id);
+            const material = errorMaterial(text);
+            // The rollout recorded no error to read: nothing is sent, nothing guessed.
+            if (!material) {
+              this.failed.set(id, input.now);
+              return;
             }
-          );
-        },
-        () => {
-          if (generation !== this.generation) return;
-          this.running.delete(id);
-          this.failed.set(id, input.now);
-        }
-      );
+            this.ask(
+              id,
+              input.now,
+              () => ({
+                feature: 'cause',
+                language: input.language,
+                system: causeSystemPrompt(input.language),
+                prompt: causePrompt(`Subagent ${node.name}${node.task ? `, task: ${node.task}` : ''}`, material),
+                cacheKey: `${file}:${at}:${input.language}`,
+              }),
+              subjects,
+              (reply) => {
+                const cause = oneLine(reply);
+                if (!cause) return false;
+                this.causes.set(id, cause);
+                this.log.add(node.id, [{ at, kind: 'cause', text: cause, lang: input.language }]);
+                this.log.flush();
+                return true;
+              }
+            );
+          },
+          () => {
+            if (generation !== this.generation) return;
+            this.running.delete(id);
+            this.failed.set(id, input.now);
+          }
+        );
+      });
     });
   }
 
   private approvalJob(input: JobsInput): void {
     const pending = input.main?.pendingApproval;
-    if (!pending || pending.kind !== 'exec' || !pending.command) return;
+    if (!pending || pending.kind !== 'exec' || !Object.hasOwn(pending, 'command')) return;
     const key = `approval:${approvalKey(pending)}`;
     if (this.approval?.key === key || !this.due(key, input.now)) return;
     this.ask(
       key,
       input.now,
-      {
+      () => ({
         feature: 'approval',
         language: input.language,
         system: approvalSystemPrompt(input.language),
-        prompt: approvalPrompt(pending.command),
-        cacheKey: `${createHash('sha256').update(pending.command).digest('hex').slice(0, 32)}:${input.language}`,
-      },
+        prompt: approvalPrompt(pending.command!),
+        cacheKey: `${createHash('sha256').update(pending.command!).digest('hex').slice(0, 32)}:${input.language}`,
+      }),
+      this.rootSubjects(),
       (reply) => {
         const text = oneLine(reply);
         // A judgement in place of a description is not shown at all.
@@ -1050,46 +1425,57 @@ export class ModelJobs {
     input: { on: boolean; enabled: boolean; open: boolean; floorMs: number; language: Language; now: number }
   ): void {
     if (!input.enabled || !input.on || !input.open || !git?.root || !git.files.length) return;
-    const fingerprint = changeFingerprint(git.files);
-    if (this.change?.root === git.root && this.change.fingerprint === fingerprint) return;
+    const schedule = JSON.stringify(
+      git.files.map((file) => [file.index, file.worktree, file.added, file.removed, recordStamp(file)])
+    );
     if (this.changeAskedAt && input.now - this.changeAskedAt < input.floorMs) return;
-    const key = `changes:${git.root}:${fingerprint}`;
+    const key = `changes:${git.root}:${schedule}`;
+    let fingerprint = '';
     if (this.inFlight('changes:') || !this.due(key, input.now)) return;
     this.changeAskedAt = input.now;
     const root = git.root;
+    const subjects = this.rootSubjects();
     const files = git.files;
     const generation = this.generation;
     const readHunks = this.options.readHunks;
     if (!readHunks) return;
     this.running.add(key);
-    readHunks(root).then(
-      (hunks) => {
-        if (generation !== this.generation || !this.running.has(key)) return;
-        this.running.delete(key);
-        this.ask(
-          key,
-          input.now,
-          {
-            feature: 'changes',
-            language: input.language,
-            system: changeSystemPrompt(input.language),
-            prompt: changeSummaryInput(files, hunks),
-            cacheKey: `${root}:${input.language}`,
-          },
-          (reply) => {
-            const lines = twoLines(reply);
-            if (!lines.length) return false;
-            this.change = { root, fingerprint, lines, at: Date.now() };
-            return true;
-          }
-        );
-      },
-      () => {
-        if (generation !== this.generation) return;
-        this.running.delete(key);
-        this.failed.set(key, input.now);
-      }
-    );
+    this.inspectRead(subjects, 'changes', generation, key, () => {
+      readHunks(root).then(
+        (hunks) => {
+          if (generation !== this.generation || !this.running.has(key)) return;
+          this.running.delete(key);
+          this.ask(
+            key,
+            input.now,
+            () => {
+              fingerprint = changeFingerprint(files);
+              if (this.change?.root === root && this.change.fingerprint === fingerprint)
+                return { feature: 'changes', system: '', prompt: '', materialUnchanged: true };
+              return {
+                feature: 'changes',
+                language: input.language,
+                system: changeSystemPrompt(input.language),
+                prompt: changeSummaryInput(files, hunks),
+                cacheKey: `${root}:${input.language}`,
+              };
+            },
+            subjects,
+            (reply) => {
+              const lines = twoLines(reply);
+              if (!lines.length) return false;
+              this.change = { root, fingerprint, lines, at: Date.now() };
+              return true;
+            }
+          );
+        },
+        () => {
+          if (generation !== this.generation) return;
+          this.running.delete(key);
+          this.failed.set(key, input.now);
+        }
+      );
+    });
   }
 
   /** The summary for this repository, while it has changes. */

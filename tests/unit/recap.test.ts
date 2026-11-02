@@ -1,3 +1,4 @@
+import { authorizedSyntheticPreview, syntheticRecapScopes } from './b17-fixture.test.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -302,8 +303,15 @@ test('recaps are kept per session, 0600, written whole, and pruned after 30 days
 function fakeModel(reply: string): { model: SmallModel; asked: ModelRequest[] } {
   const asked: ModelRequest[] = [];
   const model = {
+    recapScopes: syntheticRecapScopes,
     configure() {},
     submit(request: ModelRequest) {
+      request = authorizedSyntheticPreview(request);
+      if (request.materialUnchanged)
+        return {
+          result: Promise.resolve({ ok: false as const, error: 'unchanged', unchanged: true as const }),
+          cancel() {},
+        };
       asked.push(request);
       return { result: Promise.resolve({ ok: true as const, text: reply }), cancel() {} };
     },

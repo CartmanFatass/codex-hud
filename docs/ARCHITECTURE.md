@@ -451,6 +451,14 @@ command ("safe", "should approve") instead of describing it.
 | `changeSummary` | diff stat and hunks (≤6000) |
 | `approvalDescription` | the command (≤2000) |
 
+All outbound features pass through `core/materials`: source/ref/origin scope and
+purpose/recipient grants are checked before request text or model cache keys are
+built, and again at queue dispatch and cache publication. General replies and
+provenance live under `model-cache/materials-v1/`, sharing the original call budget
+and coordination. Original Codex caches/notes have a restricted compatibility
+scope; unknown recap ancestry cannot be reused as main-only material. No input
+fields or size limits are added by this boundary.
+
 Reasoning and other private channels are never read for any of these.
 Pre-create charge collection uses the same public channel/phase boundary as
 agent reports and accepts only public text blocks. Private or unknown

@@ -1,10 +1,11 @@
+import { SyntheticModel as SmallModel } from './b17-fixture.test.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { SmallModel, modelHttpRequest, requestDigest } from '../../src/collectors/small-model.js';
+import { modelHttpRequest, requestDigest } from '../../src/collectors/small-model.js';
 import { ModelRuntimeStore } from '../../src/collectors/model-runtime-store.js';
 import {
   boundedTelemetry,

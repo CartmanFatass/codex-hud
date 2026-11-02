@@ -1,3 +1,4 @@
+import { SyntheticModel as SmallModel, syntheticRuntimeFile } from './b17-fixture.test.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -6,18 +7,18 @@ import * as path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
-import { SmallModel, modelHttpRequest, requestDigest, type ModelResult } from '../../src/collectors/small-model.js';
+import { modelHttpRequest, requestDigest, type ModelResult } from '../../src/collectors/small-model.js';
 
 const question = { feature: 'labels', system: 'Synthetic test instructions', prompt: 'Synthetic test input' };
 const api = { base: 'http://synthetic.invalid/v1', model: '', key: '' };
 const reply = () => new Response(JSON.stringify({ choices: [{ message: { content: 'Synthetic answer' } }] }));
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'hud-model-runtime-'));
-const moduleUrl = new URL('../../src/collectors/small-model.js', import.meta.url).href;
+const moduleUrl = new URL('./b17-fixture.test.js', import.meta.url).href;
 
 // Real child processes share only the synthetic endpoint and private state directory.
 const childScript = `
-import { SmallModel } from ${JSON.stringify(moduleUrl)};
+import { SyntheticModel as SmallModel } from ${JSON.stringify(moduleUrl)};
 const [dir, base, key] = process.argv.slice(1);
 const model = new SmallModel({ dir, env: {} });
 model.configure({ backend: 'api', api: { base, model: '', key: '' }, hourlyCap: Number(process.env.SYNTHETIC_MODEL_CAP) });
@@ -132,9 +133,9 @@ test('real processes atomically reserve the shared hourly budget without losing 
     );
     assert.equal(service.calls(), 3);
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'calls.json'), 'utf8')).length, 3);
-    assert.equal(Object.keys(JSON.parse(fs.readFileSync(path.join(dir, 'cache.json'), 'utf8'))).length, 3);
+    assert.equal(Object.keys(JSON.parse(fs.readFileSync(syntheticRuntimeFile(dir, 'cache.json'), 'utf8'))).length, 3);
     for (const name of ['calls.json', 'cache.json', 'claims.json'])
-      assert.equal(fs.statSync(path.join(dir, name)).mode & 0o777, 0o600);
+      assert.equal(fs.statSync(syntheticRuntimeFile(dir, name)).mode & 0o777, 0o600);
     assert.equal(fs.statSync(path.join(dir, '.coordination')).mode & 0o777, 0o700);
   } finally {
     await stop(workers.map((value) => value.child));
@@ -160,7 +161,7 @@ test('independent concurrent cache writes merge and a live panel reloads another
     workers.forEach((value) => value.send('go'));
     const results = await Promise.all(workers.map((value) => value.event('result')));
     assert.ok(results.every((value) => value.result?.ok));
-    assert.equal(Object.keys(JSON.parse(fs.readFileSync(path.join(dir, 'cache.json'), 'utf8'))).length, 6);
+    assert.equal(Object.keys(JSON.parse(fs.readFileSync(syntheticRuntimeFile(dir, 'cache.json'), 'utf8'))).length, 6);
     for (let index = 0; index < workers.length; index++) {
       const result = await reader.submit({ ...question, cacheKey: `synthetic-${index}` }).result;
       assert.ok(result.ok && result.cached);
@@ -478,7 +479,7 @@ test('failed cache commit abandons its live owner claim so a later request can r
     dir,
     env: {},
     fetch: (async () => {
-      if (++calls === 1) fs.mkdirSync(path.join(dir, 'cache.json'));
+      if (++calls === 1) fs.mkdirSync(syntheticRuntimeFile(dir, 'cache.json'));
       return reply();
     }) as typeof fetch,
   });
@@ -489,7 +490,7 @@ test('failed cache commit abandons its live owner claim so a later request can r
     assert.ok(!first.ok && first.reason === 'runtime-unavailable');
     assert.equal(model.diagnostics().lastFailure?.reason, 'runtime-unavailable');
     assert.deepEqual(fs.readdirSync(path.join(dir, '.coordination')), []);
-    fs.rmdirSync(path.join(dir, 'cache.json'));
+    fs.rmdirSync(syntheticRuntimeFile(dir, 'cache.json'));
     assert.ok((await model.submit(request).result).ok);
     assert.equal(calls, 2);
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'claims.json'), 'utf8')), {});
@@ -665,7 +666,7 @@ test('cache limit retains the newest completions when generation timestamps tie'
     const oldest = await model.submit({ ...question, cacheKey: 'synthetic-cache-0' }).result;
     assert.ok(oldest.ok && !oldest.cached);
     assert.equal(calls, 202);
-    assert.equal(Object.keys(JSON.parse(fs.readFileSync(path.join(dir, 'cache.json'), 'utf8'))).length, 200);
+    assert.equal(Object.keys(JSON.parse(fs.readFileSync(syntheticRuntimeFile(dir, 'cache.json'), 'utf8'))).length, 200);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
