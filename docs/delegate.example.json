@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "limits": { "maxActiveRuns": 6, "maxActiveRunsPerOwner": 4 },
+  "wake": { "recoveryMs": 30000 },
+  "profiles": [
+    {
+      "name": "codex-implementer",
+      "harness": "codex",
+      "source": { "root": "/tmp/synthetic-codex-home", "label": "Synthetic Codex home" },
+      "launch": { "argv": ["codex"] },
+      "headless": { "argv": ["codex", "exec", "-"] },
+      "resume": { "argv": ["codex", "resume", "{{sessionId}}"] },
+      "resumeHeadless": { "argv": ["codex", "exec", "resume", "{{sessionId}}", "-"] },
+      "host": { "kind": "none", "layout": "none" },
+      "env": { "CODEX_HOME": "/tmp/synthetic-codex-home" },
+      "mcpServerName": "hud",
+      "claimTransport": "config_env",
+      "clientToolTimeoutMs": 60000,
+      "responseMarginMs": 2000,
+      "orphan_policy": "continue",
+      "managedShellVerified": false,
+      "roles": { "implementer": { "model": "synthetic-codex-model", "effort": "high" } },
+      "retire": {
+        "afterReportMs": 600000,
+        "reviewerAfterReportMs": 120000,
+        "idleMs": 3600000,
+        "blockedWaitMs": 3600000,
+        "maxRunMs": 14400000
+      }
+    },
+    {
+      "name": "codex-reviewer",
+      "harness": "codex",
+      "source": { "root": "/tmp/synthetic-codex-home", "label": "Synthetic Codex home" },
+      "launch": { "argv": ["codex"] },
+      "headless": { "argv": ["codex", "exec", "-"] },
+      "resume": { "argv": ["codex", "resume", "{{sessionId}}"] },
+      "resumeHeadless": { "argv": ["codex", "exec", "resume", "{{sessionId}}", "-"] },
+      "host": { "kind": "none", "layout": "none" },
+      "env": { "CODEX_HOME": "/tmp/synthetic-codex-home" },
+      "mcpServerName": "hud",
+      "claimTransport": "config_env",
+      "clientToolTimeoutMs": 60000,
+      "responseMarginMs": 2000,
+      "orphan_policy": "continue",
+      "managedShellVerified": false,
+      "roles": { "reviewer": { "model": "synthetic-codex-review-model", "effort": "max" } },
+      "retire": {
+        "afterReportMs": 600000,
+        "reviewerAfterReportMs": 120000,
+        "idleMs": 3600000,
+        "blockedWaitMs": 3600000,
+        "maxRunMs": 14400000
+      }
+    }
+  ]
+}

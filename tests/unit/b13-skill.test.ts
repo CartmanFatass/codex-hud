@@ -1,0 +1,250 @@
+import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { test, type TestContext } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { loadDelegateConfig, RETIRE_DEFAULTS } from '../../packages/hud-mcp/src/config.js';
+import { TOOLS } from '../../packages/hud-mcp/src/tools.js';
+
+const repo = new URL('../../../', import.meta.url);
+const read = (path: string) => readFileSync(new URL(path, repo), 'utf8');
+
+const PARENT = 'integrations/skills/hud-delegate/SKILL.md';
+const IMPLEMENTER = 'integrations/skills/hud-delegate/roles/implementer.md';
+const REVIEWER = 'integrations/skills/hud-delegate/roles/reviewer.md';
+const HANDOFF = 'integrations/skills/hud-handoff/SKILL.md';
+
+/** The skill documents that name delegate tools. */
+const SKILL_FILES = [PARENT, IMPLEMENTER, REVIEWER, HANDOFF];
+
+/** Design §6: sections mandatory and in this order. */
+const HANDOFF_SECTIONS = [
+  '# Handoff: <slug>',
+  '## Task (what the successor must deliver; acceptance commands)',
+  '## State: done / in progress / not started (file paths; tests green; verified vs assumed)',
+  '## Decisions made and why (bullets; cite docs/contract sections, not chat)',
+  '## Open questions and known risks',
+  '## Outstanding delegations (linkId/runId, state, what the successor may only *observe*; resolved before handoff unless listed here)',
+  '## Next steps (ordered; command and expected result)',
+  "## Pointers (files to read first; report paths; the handoff's own path)",
+  '## Content rule: actual task state the successor needs; no secrets or credentials; no transcript excerpts beyond what the task needs;',
+];
+
+const TOOL_NAMES = new Set(TOOLS.map((tool) => tool.name));
+const SCHEMA_KEYS = new Map(
+  TOOLS.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema.properties as Record<string, unknown>))])
+);
+const ARGUMENT_KEYS = new Set([...SCHEMA_KEYS.values()].flatMap((keys) => [...keys]));
+
+/**
+ * Complete identifiers, case-sensitive. A valid lowercase prefix of a misspelled name must not
+ * pass, and a call whose name is invalid must still be parsed so its arguments are checked.
+ */
+const TOOL_MENTION = /\bdelegate_[A-Za-z0-9_]+/g;
+const TOOL_CALL = /\b(delegate_[A-Za-z0-9_]+)\{/g;
+
+interface Coverage {
+  names: number;
+  calls: number;
+  keys: number;
+}
+interface Call {
+  tool: string;
+  keys: string[];
+}
+interface Scan {
+  names: string[];
+  calls: Call[];
+  keys: string[];
+}
+
+/**
+ * Drift floor per document: a document that loses its tool names, calls or argument keys fails
+ * here instead of passing with zero matches. Every floor is above zero on purpose.
+ */
+const MINIMUM = new Map<string, Coverage>([
+  [PARENT, { names: 14, calls: 8, keys: 26 }],
+  [IMPLEMENTER, { names: 7, calls: 3, keys: 10 }],
+  [REVIEWER, { names: 5, calls: 2, keys: 7 }],
+  [HANDOFF, { names: 2, calls: 1, keys: 4 }],
+]);
+
+/** Splits a `delegate_x{...}` body on top-level commas and keeps the leading identifier of each part. */
+function topLevelKeys(body: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const character of body) {
+    if (character === '{' || character === '[') depth++;
+    else if (character === '}' || character === ']') depth--;
+    if (character === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  parts.push(current);
+  return parts
+    .map((part) => /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(part)?.[1])
+    .filter((key): key is string => key !== undefined);
+}
+
+/** `delegate_x{key, key: value, …}` mentions, with brace matching so nested values stay one mention. */
+function braceCalls(text: string): Call[] {
+  const calls: Call[] = [];
+  const start = new RegExp(TOOL_CALL.source, 'g');
+  for (let match = start.exec(text); match; match = start.exec(text)) {
+    let depth = 0;
+    let end = -1;
+    for (let index = match.index + match[0].length - 1; index < text.length; index++) {
+      if (text[index] === '{') depth++;
+      else if (text[index] === '}' && --depth === 0) {
+        end = index;
+        break;
+      }
+    }
+    if (end < 0) continue;
+    calls.push({ tool: match[1], keys: topLevelKeys(text.slice(match.index + match[0].length, end)) });
+    start.lastIndex = end + 1;
+  }
+  return calls;
+}
+
+/** JSON blocks in the skill documents are tool calls: `{"tool": "delegate_x", "arguments": {...}}`. */
+function jsonCalls(text: string): Call[] {
+  return [...text.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => {
+    const value = JSON.parse(match[1]) as { tool?: unknown; arguments?: unknown };
+    assert.ok(typeof value.tool === 'string', 'a JSON block in the skill documents must name its tool');
+    assert.ok(
+      value.arguments !== null && typeof value.arguments === 'object' && !Array.isArray(value.arguments),
+      'a JSON block in the skill documents must carry an arguments object'
+    );
+    return { tool: value.tool, keys: Object.keys(value.arguments as Record<string, unknown>) };
+  });
+}
+
+function scanDocument(text: string): Scan {
+  const names = [...text.matchAll(new RegExp(TOOL_MENTION.source, 'g'))].map((match) => match[0]);
+  const calls = [...braceCalls(text), ...jsonCalls(text)];
+  return { names, calls, keys: calls.flatMap((call) => call.keys) };
+}
+
+/** Fails on an unknown tool, an unknown argument key, or a document that names too little to check. */
+function checkDocument(name: string, text: string, minimum: Coverage): void {
+  const scan = scanDocument(text);
+  for (const tool of scan.names) assert.ok(TOOL_NAMES.has(tool), `${name} names an unknown tool: ${tool}`);
+  for (const call of scan.calls) {
+    assert.ok(TOOL_NAMES.has(call.tool), `${name} calls an unknown tool: ${call.tool}`);
+    const keys = SCHEMA_KEYS.get(call.tool)!;
+    for (const key of call.keys) assert.ok(keys.has(key), `${name} names an unknown ${call.tool} argument: ${key}`);
+  }
+  for (const field of ['names', 'calls', 'keys'] as const)
+    assert.ok(
+      scan[field].length >= minimum[field] && minimum[field] > 0,
+      `${name} has ${scan[field].length} extracted ${field}, expected at least ${minimum[field]} (never zero)`
+    );
+}
+
+/** Fenced blocks are templates or JSON, not prose; strip them before reading inline code spans. */
+const stripFences = (text: string) => text.replace(/```[\s\S]*?```/g, '');
+const INLINE_CODE = /`([^`\n]+)`/g;
+/** Lowercase snake_case only: argument keys, refusal codes, reason strings. */
+const SNAKE_CASE = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/;
+
+/**
+ * Lowercase snake_case tokens the documents may use that the MCP does not return as a refusal code.
+ * `run_in_background`: the Claude Code background-task option.
+ * `stale_generation`: `hud run wait` exit code (src/cli/run-wait.ts:96).
+ * `visible_scope_control_unavailable`: cancel result reason (packages/hud-mcp/src/read-control.ts:385).
+ */
+const NON_REFUSAL_TOKENS = new Set(['run_in_background', 'stale_generation', 'visible_scope_control_unavailable']);
+
+/** The wake adapter names `advice.wake.adapter` can carry, read from their source of truth. */
+function shippedWakeAdapters(): Set<string> {
+  const body = /adapter: ((?:'[^']+'\s*\|?\s*)+);/.exec(read('src/ledger/notify-events.ts'))?.[1];
+  assert.ok(body, 'the wake adapter names could not be read from src/ledger/notify-events.ts');
+  const adapters = new Set([...body.matchAll(/'([^']+)'/g)].map((match) => match[1]));
+  assert.equal(adapters.size, 4, `the wake adapter list parsed to ${adapters.size} names, not the shipped four`);
+  return adapters;
+}
+
+/** The model-facing whitelist from the shipped `outcomeCode`, read from its source of truth. */
+function shippedRefusalCodes(): Set<string> {
+  const body = /const outcomeCodes = new Set\(\[([\s\S]*?)\]\)/.exec(read('packages/hud-mcp/src/errors.ts'))?.[1];
+  assert.ok(body, 'the model-facing error whitelist could not be read from packages/hud-mcp/src/errors.ts');
+  const codes = new Set([...body.matchAll(/'([^']+)'/g)].map((match) => match[1]));
+  // Capacity is an outcome, not a thrown error (src/ledger/intents.ts:237).
+  codes.add('concurrency_limit');
+  assert.ok(codes.size >= 40, `the shipped error set parsed to ${codes.size} codes, which is too few to trust`);
+  return codes;
+}
+
+test('B13 docs/delegate.example.json loads through the shipped delegate.json validator', (t: TestContext) => {
+  const file = fileURLToPath(new URL('docs/delegate.example.json', repo));
+  const example = JSON.parse(readFileSync(file, 'utf8')) as { profiles: { source: { root: string } }[] };
+  // The production loader requires every source root to exist as a directory. The
+  // example names synthetic roots; create exactly those and remove only what this test made.
+  const created: string[] = [];
+  for (const profile of example.profiles) {
+    const root = profile.source.root;
+    assert.match(root, /^\/tmp\/synthetic-[a-z0-9-]+$/, 'example source roots stay synthetic');
+    if (existsSync(root)) continue;
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    created.push(root);
+  }
+  t.after(() => {
+    for (const root of created) rmSync(root, { recursive: true, force: true });
+  });
+  const config = loadDelegateConfig(file);
+  assert.equal(config.version, 1);
+  assert.deepEqual(config.profiles.map((profile) => profile.name).sort(), ['codex-implementer', 'codex-reviewer']);
+  for (const profile of config.profiles) {
+    assert.equal(profile.harness, 'codex');
+    assert.ok(profile.headless, `${profile.name} needs a headless template`);
+    assert.deepEqual(profile.retire, { ...RETIRE_DEFAULTS });
+  }
+});
+
+test('B13 skill documents name only shipped delegate tools and argument keys', () => {
+  for (const path of SKILL_FILES) checkDocument(path, read(path), MINIMUM.get(path)!);
+});
+
+test('B13 scanner rejects suffix typos, case typos, key typos and empty documents', () => {
+  const parent = read(PARENT);
+  const minimum = MINIMUM.get(PARENT)!;
+  const suffix = parent.replaceAll('delegate_wait', 'delegate_waitX');
+  assert.notEqual(suffix, parent, 'the parent skill must mention delegate_wait for this control');
+  assert.throws(() => checkDocument('suffix typo', suffix, minimum), /unknown tool/);
+  const casing = parent.replaceAll('delegate_wait', 'delegate_Wait');
+  assert.notEqual(casing, parent, 'the parent skill must mention delegate_wait for this control');
+  assert.throws(() => checkDocument('case typo', casing, minimum), /unknown tool/);
+  const key = parent.replaceAll('afterSeq', 'afterSeqX');
+  assert.notEqual(key, parent, 'the parent skill must mention afterSeq for this control');
+  assert.throws(() => checkDocument('key typo', key, minimum), /unknown delegate_wait argument/);
+  assert.throws(() => checkDocument('empty parent', '', minimum), /expected at least/);
+});
+
+test('B13 skill documents name only refusal codes the shipped MCP returns', () => {
+  const codes = shippedRefusalCodes();
+  const adapters = shippedWakeAdapters();
+  for (const path of SKILL_FILES) {
+    for (const match of stripFences(read(path)).matchAll(INLINE_CODE)) {
+      const token = match[1];
+      if (!SNAKE_CASE.test(token) || TOOL_NAMES.has(token)) continue;
+      assert.ok(
+        codes.has(token) || adapters.has(token) || ARGUMENT_KEYS.has(token) || NON_REFUSAL_TOKENS.has(token),
+        `${path} names a code or key the shipped MCP does not return: ${token}`
+      );
+    }
+  }
+});
+
+test('B13 hud-handoff skill carries the design §6 sections in order', () => {
+  const text = read(HANDOFF);
+  let cursor = -1;
+  for (const section of HANDOFF_SECTIONS) {
+    const at = text.indexOf(section, cursor + 1);
+    assert.ok(at > cursor, `hud-handoff skill is missing this section, or has it out of order: ${section}`);
+    cursor = at;
+  }
+});
