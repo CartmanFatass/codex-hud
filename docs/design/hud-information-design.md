@@ -1,8 +1,10 @@
-# 通用 HUD 信息与视觉设计（v1.1，2026-11-02）
+# 通用 HUD 信息与视觉设计（v1.2，2026-11-02）
 
 本稿是 FED1 的决定文档：HUD 在每种情境下显示什么、显示多少、怎样组织、用什么样子。它约束 B10（委派渲染）、D3（statusline 外观）、C5（Jev 行）和 B16 归并器要交付的投影字段。概念文档 §10 的 UX 笔记被本稿取代，差异列在 §0.2；外部设计意见（Gemini Argon）的逐条处理在 §9。所有示例数据都是合成的。
 
 v1.1 是对 v1.0（2026-11-01）的增量：吸收 2026-11-02 的裁决（可见取消在 MVP 不可交付、完成后的可见代理由用户关 pane、运行槽上限 6 / 4、退役证据三分、唤醒状态、全 tick 预算）与 B9 / B16 已合入代码的实际投影形状，使 B10 可以不再提设计问题。改动清单在 §0.4；被改写的 v1.0 文字已就地替换，不留矛盾。
+
+v1.2（同日）是对 v1.1 的增量：B10b 第 1 段（呈现核心、bar、statusline）实现后的 12 条设计问题裁决与样例修正，以及原生子代理的 `native {title, kind}`（§7 #33）。改动清单在 §0.5；被改写的 v1.1 文字同样就地替换。
 
 读者先读概念 §2（G13、G14）、§6.5、§6.8，契约 03 的"HUD 可读投影"一段（含 H06 与 Pro 2026-11-02 的可见取消原句、NOTIFY A7），契约 04「Policy retirement」，`docs/design/notify-wake-lifecycle-cache.md` §3.8 / §4.4 / §4.9，`src/core/link/types.ts`（B9 投影）与 `src/core/status/merge.ts`（B16 语义类），以及 `docs/reference.md` 里今天的面板。
 
@@ -19,13 +21,13 @@ v1.1 是对 v1.0（2026-11-01）的增量：吸收 2026-11-02 的裁决（可见
 
 | 概念 §10 | 本稿决定 | 理由 |
 |---|---|---|
-| bar 新模块 `delegated`，按后端计数 `⧉ ✳2 ⌬1 π1 ◎1` | 不加模块。`agents` 模块按状态计数所有树节点（不分 harness）；仅在 full 密度且宽度 ≥ 160 时附带后端计数 `· ⌬2 π1 ◎1` | 用户先关心"几个在干活、几个要我"，不是后端分布；bar 一行寸土寸金，新模块会挤掉 context/notice |
+| bar 新模块 `delegated`，按后端计数 `⧉ ✳2 ⌬1 π1 ◎1` | 不加模块。`agents` 模块按标记计数视角根以外的所有树节点（含原生子代理、作业和已收进 `⊕N` 的历史），顺序固定 `▸ · ⚑ ? ⚠ ✗ ✓`，只写非零；汇总行同一写法、同一顺序；statusline 的 `⧉` 只计委派子会话与作业；仅在 full 密度且宽度 ≥ 160 时附带后端计数 `· ⌬2 π1 ◎1` | 用户先关心"几个在干活、几个要我"，不是后端分布；bar 一行寸土寸金，新模块会挤掉 context/notice |
 | headless 行动作"日志"、结束行"打开"写在行上 | 行上不写动作词。动作只在控制条的 `⇢` 按钮（词随选中行变：Switch / Open / Log / Resume / Reconcile）和 Inspector 头部 | 现有规则：面板的每个控件都在控制条上，卡片不画控件 |
 | 冲突行"⚠ 两条记录" | 保留，作为 8 个状态标记之一 | 记录不一致与"HUD 不知道"（`?`）是不同的求助 |
 | 卡片显示 run 序号与退出码 | 只在 `run_seq > 1` 时显示 `run N`；只在有来源且非零 / 信号的原生退出结果时显示 `exit N` / `signal TERM`（可见运行通常没有，见 §3.3） | 第一轮的 `run 1`、正常的 `exit 0` 是噪音；shell status 不是退出码 |
 | Inspector 新节"链接 / 运行 / 疑似 / 覆盖" | 保留，另加"报告"节；顺序：事实 → 链接 → 运行 → 报告 → 疑似 → 覆盖 → 原有长文本节 → More | 委派节点打开 Inspector 多半是为了看关系和运行 |
 | 顶部"父：…"行 | 保留；只在视角根有 `links.asChild` 时出现，一行，格式见 §4.6 | |
-| 汇总行计数写法 `✓1 ▸1` | 改成 bar 的写法 `1▸ 1✓`（数字在前） | 同一产品两种写法；bar 更显眼，以它为准。基线需更新 |
+| 汇总行计数写法 `✓1 ▸1` | 改成 bar 的写法 `1▸ 1✓`（数字在前，顺序 `▸ · ⚑ ? ⚠ ✗ ✓`） | 同一产品两种写法；bar 更显眼，以它为准。基线需更新 |
 
 ### 0.3 假设（详见 §9）
 
@@ -45,6 +47,18 @@ A1 B16 对每个节点给出完整五维投影和 `asOfSeq`；A2 归并器把"�
 10. 性能：全 tick p99 < 50 ms、max < 200 ms（契约 06「增量 tick 验收」）；B9 投影只在账本高水位 / 采集输入变化时重算，渲染有自己的份额表（§6）。
 11. 关闭 §8 开放问题 3、10、13、14；新增 18–21。
 12. 用词表新增（§5.5）；`⚑` 的两个新用法进图例。
+
+### 0.5 v1.2 的改动（2026-11-02）
+
+B10b 第 1 段（`src/render/delegation/*`，bar 与 statusline 钩子）实现后的裁决（设计问题 1–12，记录在 B10b 的任务目录）：
+
+1. 计数：所有表面一个顺序 `▸ · ⚑ ? ⚠ ✗ ✓`，只写非零；bar 与汇总行计视角根以外的全部节点（含原生、作业、已收起的历史），statusline 的 `⧉` 只计委派；计数里失败写 `✗`，树行与 statusline 项写 `!`（§0.2、§3.3、§4.4、§4.5、§4.7、§4.8、§4.10、§4.13）。
+2. bar 警示：恰好一条节点级警示用全形，多条用计数；有委派树时 attention 的两步缩短与 `agents` 模块优先级调整，80 列仍有计数；后端计数的 shrink 序 9；bar 自己的树失败警示不再单独亮；notice 不重复全形警示已点名的节点；`✗` 亮到行收起为止；通知是无状态的 60 秒窗口（§2、§3.2、§4.1）。
+3. 行：时钟列固定 7 格，≤ 39 列状态词（含 `close pane`）让位；丢弃顺序 `⊟` → 状态词 → 名字，状态词丢掉后 `⊟` 可恢复；两词状态先丢第二个词；`? · not loaded` 在活着桶、不亮 bar；原生 idle 的 `✓` 视为完成（§3.3、§3.4、§4.5、§4.13）。
+4. statusline：阶梯加"丢 trouble 项状态词"一步；trouble 计数顺序 `⚑ ? ⚠ ✗`；`+N` 余项按计数写法；冲突节点是一项（§4.12）。
+5. 颜色：`⚑` 是 danger 色加粗，与 `!` 以字重和符号区分；"黄色只剩要我处理"的说法撤回（§5.2、§9 #5）。
+6. 原生子代理：B9 节点新增 `native {title, kind}`，行名与 kind 图标由它来（§3.4、§7 #33）；用词表加 `idle / 空闲`（§5.5）。
+7. 样例修正：§4.1 (d)、§4.5 32 列、§4.8 冲突行 `┊`、§4.13 32 列、§4.12 80 列；样例只约束委派字段，非委派字段由现有引擎决定（§4.1）。
 
 ## 1. 信息清单与层级
 
@@ -106,9 +120,9 @@ bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain 
 |---|---|---|---|
 | (a) 单个代理 | 今天的 bar；`agents` 模块不出现（没有子节点时本来就不画） | 一张卡片或一行；无 harness 标记 | 无 |
 | (b) 几个原生子代理 | `Agents 1▸ 1✓` | 今天的卡片：子代理是卡片内子行 | 完成子行 3 分钟后收进 `⊕N`，`a` 显示 |
-| (c) 跨 harness 树 | `Agents 3▸ 1⚑ 1✓`；≥ 160 列附 `· ⌬2 π1 ◎1` | 出现 harness 标记；委派子会话各自成卡（缩进 2 格），Jev 作业一张 3 行小卡（阶段 C）；原生子代理仍是子行 | 深度上限 4；超过的子树折叠成 `+3 (1⚑ 2▸)`（带子孙计数），`l` 展开为平铺 `↳` 行 |
-| (d) 10+ 并发 | 同 (c)；警示优先显示，全形警示取最新触发的一条；槽满时附 `⚑ slots 6/6` | 手风琴：卡片总行数超过视口（或兄弟 > 5）时，先把 `✓ ■` 卡、再把未选中的 `▸ ·` 卡折成一行（= compact 行），`⚑ ? ⚠ !` 卡和选中卡保持展开；按子树有效桶排序：⚑ ! ⚠ ? → ▸ ·（含 `■ cancelling`、`✓ close pane`）→ ✓ ■；完成桶折成一行 `✓ 9 done · …`；非终态受管运行全局 ≤ 6、每 owner ≤ 4（契约 02 A3），所以"10+ 并发"只能来自嵌套、原生子代理和已结束的历史，汇总行满时加 `slots 6/6` | `a` 展开完成桶；`n` / `N` 跳到下一个 / 上一个 trouble 节点；`f` 过滤 attention；活跃行超过 30 行时时钟改分钟粒度 |
-| (e) trouble | `attention` 徽章：`⚑ review-tests approval`（最新触发的一条）；多个时 `⚑1 ?1 ⚠1` | trouble 行丢徽章与计量线，换成状态词和驻留时长；排在最前，最新卡住的在最上（子树冒泡的也按子孙的时间） | 微卡给原因和缺失项；Inspector 给证据、对账命令、冲突记录 |
+| (c) 跨 harness 树 | `Agents 3▸ 1⚑ 2✓`；≥ 160 列附 `· ⌬2 π1 ◎1` | 出现 harness 标记；委派子会话各自成卡（缩进 2 格），Jev 作业一张 3 行小卡（阶段 C）；原生子代理仍是子行 | 深度上限 4；超过的子树折叠成 `+3 (1⚑ 2▸)`（带子孙计数），`l` 展开为平铺 `↳` 行 |
+| (d) 10+ 并发 | 同 (c)；警示优先显示；只有一条节点级警示时用全形，多条时用计数（§4.1）；槽满时附 `⚑ slots 6/6` | 手风琴：卡片总行数超过视口（或兄弟 > 5）时，先把 `✓ ■` 卡、再把未选中的 `▸ ·` 卡折成一行（= compact 行），`⚑ ? ⚠ !` 卡和选中卡保持展开；按子树有效桶排序：⚑ ! ⚠ ? → ▸ ·（含 `■ cancelling`、`✓ close pane`）→ ✓ ■；完成桶折成一行 `✓ 9 done · …`；非终态受管运行全局 ≤ 6、每 owner ≤ 4（契约 02 A3），所以"10+ 并发"只能来自嵌套、原生子代理和已结束的历史，汇总行满时加 `slots 6/6` | `a` 展开完成桶；`n` / `N` 跳到下一个 / 上一个 trouble 节点；`f` 过滤 attention；活跃行超过 30 行时时钟改分钟粒度 |
+| (e) trouble | `attention` 徽章：只有一条时 `⚑ review-tests approval`；多条时计数 `⚑1 ?1 ⚠1`（顺序 `⚑ ? ⚠ ✗`） | trouble 行丢徽章与计量线，换成状态词和驻留时长；排在最前，最新卡住的在最上（子树冒泡的也按子孙的时间） | 微卡给原因和缺失项；Inspector 给证据、对账命令、冲突记录 |
 | (f) headless | 无差别 | 名后 `⊟`；无 pane 字段；控制条动作 `Log` | 结束后 `↻ Resume` 只在 `resumable = true` 且本地入口已验证时复制命令，MVP 里写诊断；Inspector 显示 `resumable` 与否；报告后由 hud-run 按冻结政策退役，HUD 不提示、不计时 |
 | (g) 已完成 / 历史 | 完成 60 秒内进 notice：`✓ docs-sync reported`；无报告结束 `■ bench ended · no report` | 行变暗并带收尾事实（`reported 8m`、`ended`（无报告，`requestedCause` 为 runtime / idle / blocked / orphan 时带原因词）、`failed`、`cancelled`（仅取消先于结束已证明；先后未知是 `ended` 加安静说明）、阶段 C 的 `answered → file`）；3 分钟后收进 `⊕N` | `a` 显示；终态的 `not loaded` 行照常画，Inspector 标 `not loaded`；`closed` 与重开是 v1.1 |
 | (h) 可见运行的收尾（v1.1） | 警示 `⚑ impl-parser stop in pane`（最新触发）；通知 `✓ docs-sync reported · close its pane`；槽满 `⚑ slots 6/6` | `⚑ · stop in pane` 行 + 契约原句卡片；`✓ · close pane` 行（`!` 行保留 `failed`，提示进委派行）；都在活着桶尾、不收起、占槽 | 不折叠、不设计时器；用户在 pane 内处理，HUD 不送输入、不关 pane；运行终结后转入 (g) |
@@ -129,7 +143,7 @@ bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain 
 
 兄弟节点按**子树有效桶**排序：一个节点的桶 = 自身的桶与所有未收起子孙的桶中最靠前的那个（`⚑ ! ⚠ ?`（要人看）→ `▸ ·`（活着；v1.1 起含 headless 的 `■ cancelling` 与报告后仍活的可见代理 `✓ / ! · close pane`）→ `✓ ■`（结束：`isRunTerminal = true`，或无受管 run 的节点按原生退出））。于是 `✓` 的父节点底下还有 `⚑` 或 `▸` 的子孙时，整棵子树排在前面，也绝不会被收进 `⊕N`。trouble 桶内按进入该状态的时间倒序（最新卡住的在最上面）；桶由子孙冒泡而来时，排序时间也取那个子孙的，所以深处刚卡住的也会浮到最上面（§4.8 的 `impl-a` 就是这样）；其它桶按创建顺序（`s` 键切换为纯创建顺序，与今天一致）。活着桶内 `▸ ·` 在前、`■ cancelling` 与 `close pane` 行在后。只有节点换桶时才重排，重排与整秒重绘同步，选中跟着节点走而不是跟着行号走；刚换桶的节点前 3 秒状态词和时钟加粗，帮眼睛找到"谁刚动了"。换桶、驻留和加粗都以 06 的 `stateKey` / `stateSince`（语义状态的 episode）为准，不以图标为准：同一个 `⚑` 下新一轮 approval 是新的 episode，时间重新计。
 
-历史资格不看图标：委派节点以共享谓词 `isRunTerminal`（run `ended / failed / cancelled`；completed 报告、`cancelling`、图标都不算结束；取消先后未知的完整结束是 `ended`，照样算）为准，普通会话（无受管 run 投影，`managed = null`，§7 #7）与原生子代理按其原生退出 / 完成事实，根会话不收起。符合条件的行（`✓ ! ■`）一视同仁：3 分钟后收进 `⊕N`，计数仍算，bar 的 `attention` 不再为它们亮——失败是历史事实，不是当前待办。当前待办只有 `⚑ ? ⚠`：它们一直排在前面直到条件消失，bar 的全形警示永远是其中最新触发的一条，旧警示盖不住新警示。
+历史资格不看图标：委派节点以共享谓词 `isRunTerminal`（run `ended / failed / cancelled`；completed 报告、`cancelling`、图标都不算结束；取消先后未知的完整结束是 `ended`，照样算）为准，普通会话（无受管 run 投影，`managed = null`，§7 #7）与原生子代理按其原生退出 / 完成事实，根会话不收起。符合条件的行（`✓ ! ■`）一视同仁：3 分钟后收进 `⊕N`，计数仍算，bar 的 `attention` 不再为它们亮——失败是历史事实，不是当前待办。当前待办只有 `⚑ ? ⚠`：它们一直排在前面直到条件消失；bar 只有一条节点级警示时用它的全形，多条时用计数，各类计数的顺序固定（§4.1）；通知（notice）取最新的一条。
 
 （v1.1）两类"标记像结束、事实是活着"的行——headless 的 `■ cancelling`（阶梯在飞，≤ grace + 2 s + reap）和报告后仍活的可见代理 `✓ / ! · close pane`（槽仍占，等用户关 pane）——不是终态：排在活着桶尾，永不收进 `⊕N`；bar 的计数按标记记作 `■` / `✓` / `!`。排序按事实、计数按标记，不一致之处只有这两类，而且都是暂时的；v1.0 把 `■ cancelling` 排进结束桶是错的，已改。
 
@@ -151,10 +165,10 @@ bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain 
 | 8 | run `starting`，或 link `pending / claimed` 且无活动，或 `job.state = key_persisted`（阶段 C） | `·` | muted | `starting`；作业等租约时 `browser queue (held by ask-pro-1)` |
 | 9a | `isRunTerminal = true`（run `ended`——已核验进程组为空，包括取消已接受但先后未知的结束（`terminalNote = cancel_timing_unknown`）和退役后先后未知的结束（`retire_timing_unknown`）——或 `cancelled`；`failed` 已被第 4 条接走）、`liveness = gone` 或 `activity = exited`：委派节点有 completed 报告 → `✓`；没有报告 → `■`，不看退出码，因为原生退出结果通常是 null；`terminalNote` 只在焦点行 / 微卡加一句 `cancel timing unknown` / `retire timing unknown`，不换图标、不进 trouble、不要求对账；`termination` 三项只在 Inspector（§4.10）；没有受管 run 投影的普通会话（`managed = null`）没有 `isRunTerminal`，和根会话、原生节点一样退出即 `■ exited`（warning） | `✓` / `■` | success / warning，都在 60 s 后 muted（§5.2 同一条规则；v1.0 把无报告的 `■` 立即 muted 是不一致的，已统一） | 历史行 `reported` / `ended`；无报告且 `requestedCause ∈ {runtime_limit, retire_idle, retire_blocked_wait, orphan_policy}` 时 `ended · runtime limit` / `idle limit` / `blocked limit` / `parent gone`；焦点行 `ended · no report · runtime limit · exit unknown`，有说明时再加 `cancel timing unknown` / `retire timing unknown` |
 | 9b | （v1.1）`isRunTerminal = false`、本轮 `latestReportForRun.status ∈ {completed, failed}`（B16 `exited:reported` 或第 4 条的 `failed`）：**可见**运行 → 完成后等用户在 pane 内关闭，槽仍占；**headless** → 等 hud-run 按冻结政策退役（通常 ≤ 10 / 2 分钟），HUD 不提示 | `✓` / `!` | success / danger（`✓` 60 s 后 muted；`close pane` 词保持 text 色） | 可见：`✓` 行词 `close pane`，`!` 行保留 `failed`、提示进委派行 `writer · pane 5 · reported 8m · close pane`；headless：`reported`（照常）；两者都在活着桶尾、不收起（§3.2）。用户在 pane 里继续用一个已报告的可见代理时，B16 按 `activity = working` 给 `working`，行就是普通的 `▸`，提示只在它空闲下来（`exited:reported`）后出现；槽从头到尾都占着，根 Inspector 的 Slots 节照列 |
-| 10 | `activity ∈ {idle, waiting_input}`，`pendingReason = none`：根会话或原生节点 → `✓`（今天的语义）；委派节点没有 completed 报告 → `·`（活着、空闲、没交差；绿色 `✓` 只给交了差的） | `✓` / `·` | success / muted | 无 / `idle`（微卡给报告摘要或最近动作） |
+| 10 | `activity ∈ {idle, waiting_input}`，`pendingReason = none`：根会话或原生节点 → `✓`（今天的语义）；委派节点没有 completed 报告 → `·`（活着、空闲、没交差；绿色 `✓` 只给交了差的） | `✓` / `·` | success / muted | 无 / `idle`（微卡给报告摘要或最近动作）；原生节点的 `✓` 视为完成：3 分钟后收进 `⊕N`（§3.2） |
 | 11 | 其它 | `?` | muted | `unknown` |
 
-计数：working = `▸`；alive-not-working = `·`（starting / idle）；blocked = `⚑`（含 `stop in pane`）；trouble = `? ⚠ !`；done = `✓ ■`（含 `close pane` 的 `✓` 与 headless `cancelling` 的 `■`——计数按标记，排序按事实，§3.2）。`agentCounts` 和 bar 都用这些桶，汇总行只写非零的。冲突节点按去重后的 `childKey` 计 `⚠`，不按关系条数。
+计数：working = `▸`；alive-not-working = `·`（starting / idle）；blocked = `⚑`（含 `stop in pane`）；trouble = `? ⚠ !`；done = `✓ ■`（含 `close pane` 的 `✓` 与 headless `cancelling` 的 `■`——计数按标记，排序按事实，§3.2）。`agentCounts` 和 bar 都用这些桶，汇总行只写非零的。顺序固定 `▸ · ⚑ ? ⚠ ✗ ✓`；计数（bar、汇总行、statusline 第一行与 `+N` 余项）里失败写 `✗`，树行与 statusline 第二行的项写 `!`（§5.1）；已收进 `⊕N` 的节点照计；`? · not loaded` 按标记计入 `?`，不亮 bar。冲突节点按去重后的 `childKey` 计 `⚠`，不按关系条数。
 
 "父 idle、子 working"：根的父行是 `✓`，不加词；汇总行的 `N▸` 和父卡片的计数行（`2 working · 1 done`）说明子在干活，而排序按子树有效桶把它留在前面（§3.2）。
 
@@ -173,7 +187,7 @@ col 1      选中 ›（否则空格）
 col 2…     深度 d ≥ 1：(d-1) 个「│ 」+「├ 」/「└ 」；未证实的边用「┊ 」
 +1         状态标记（§3.3）
 +1         空格
-+1         图标位：会话 / 作业 = harness 标记（跨 harness 树）；原生子代理 = kind 图标（⌕ ⚗ ⚒ ◈ ✎ ∑）；单 harness 树 = kind 图标或空
++1         图标位：会话 / 作业 = harness 标记（跨 harness 树）；原生子代理 = kind 图标（⌕ ⚗ ⚒ ◈ ✎ ∑，来自 B9 `native.kind`，§7 #33；缺席时留空）；图标位在跨 harness 树或任一行有 kind 图标时存在，否则整列省略
 +1         空格
 名字字段    label；headless 后缀「 ⊟」；trouble 行再接「 · 状态词」；至少 8 格，用 … 截断
 ≥1         间隙
@@ -182,14 +196,14 @@ col 2…     深度 d ≥ 1：(d-1) 个「│ 」+「├ 」/「└ 」；未证
 
 规则：
 
-- 时钟列永远是最后 7 格，含义随标记变：`▸` 轮时钟 `◷12m04s`；`⚑ ! ⚠` 卡在该状态的驻留时长（`10s` 和 `15m` 一眼分开）；`?` 最近证据 / 心跳年龄；`✓ ■ ·` 结束或进入该状态的年龄。没有时钟的行留空而不是画 `—`。驻留时长来自 06 持久发布的 `stateSince`：`stateSinceBasis = event` 画 `10s`，`observed`（只知道首次看到这个状态的时间）画 `~10s`，`unknown` 或 null 留空——不用重绘时间编一个年龄；`?` 行的年龄永远取 `lastEvidenceAt` / 心跳，不用 `stateSince` 代替；时钟倒退（`clockAnomaly`）留空并在 Inspector 写明。
+- 时钟列永远是最后 7 格，含义随标记变：`▸` 轮时钟 `◷12m04s`；`⚑ ! ⚠` 卡在该状态的驻留时长（`10s` 和 `15m` 一眼分开）；`?` 最近证据 / 心跳年龄；`✓ ■ ·` 结束或进入该状态的年龄。没有时钟的行留空而不是画 `—`。驻留时长来自 06 持久发布的 `stateSince`：`stateSinceBasis = event` 画 `10s`，`observed`（只知道首次看到这个状态的时间）画 `~10s`，`unknown` 或 null 留空——不用重绘时间编一个年龄；`?` 行的年龄永远取 `lastEvidenceAt` / 心跳，不用 `stateSince` 代替；时钟倒退（`clockAnomaly`）留空并在 Inspector 写明。32–39 列时字段放不下名字加状态词的，状态词让位（含 `close pane`），时钟列不缩。
 - 徽章只在会话 / 作业行上；原生子代理行只有时钟（模型与父不同时才有徽章）。
-- trouble 行（§3.3 第 1–6、8 条，`⚑` 行也在内）无条件丢徽章和计量线，保留状态词和时钟；这是"先丢字段"的具体应用。≤ 39 列时名字保底 8 格优先于状态词：先丢状态词，最后才截名字。
+- trouble 行（§3.3 第 1–6、8 条，`⚑` 行也在内）无条件丢徽章和计量线，保留状态词和时钟；这是"先丢字段"的具体应用。≤ 39 列：先丢 `⊟`，再丢状态词，最后才截名字；状态词丢掉后 `⊟` 放得下就恢复。40 列起：保留状态词，名字截到 ≥ 8 格；两词状态（`ended · runtime limit`）仍放不下时先丢第二个词，再截第一个。
 - 终态行（`✓ ! ■`）用报告摘要代替徽章和计量线：`✓ ⌬ docs-sync · Synced two reference…`（muted，按格截断）；只有报告没有摘要写 `reported`，没有报告写 `ended`；摘要不足 12 格就不显示。
 - 深度 > 4 的行画在深度 4 的位置，前缀 `↳`；折叠的子树写 `+3 (1⚑ 2▸)`，< 40 列写 `+3⚑`。
 - 选中的行下面是一张两行微卡：第 1 行委派行（`reviewer · ⊟ headless · $0.12 · 2m`，与父的 `worktreeRoot` 不同时加 `in fix-cjk`，§1 的工作树行；可见代理报告后仍活时加 `· close pane`），第 2 行按优先级取一条——可见取消短句（`⚑ Still running — stop this run in its pane`；< 40 列用 `⚑ running · stop in pane`）> 待决 / 故障原因（含缺失项，如 `? uncertain: scope unknown · no receipt · slot held`）> 最近报告摘要（含 `exit 1` 这类有来源的退出事实；终态无报告时 `ended · no report · runtime limit · exit unknown`）> 当前动作 > 模型写的 brief。没有委派行的节点（根、原生子代理）只有第 2 行。这样看一眼就知道它在哪、卡在什么上，不必为此打开 Inspector。
-- （v1.1）`✓ · close pane` 行：提示词占状态词位（`close pane` / `请关窗格`），报告摘要只在右侧仍有 ≥ 12 格时跟在后面；`!` 行保留 `failed`，提示只进委派行。`⚑ · stop in pane` 行是 trouble 行，按 trouble 规则丢徽章和计量线，时钟是取消意图接受以来的驻留（`stateSince`，basis `event`）。
-- （v1.1）`loaded = false` 的节点：账本已知终态的（`execution.isRunTerminal = true`、有本轮报告）照常画历史行，只在 Inspector 写 `history not loaded (budget)`；非终态的画 `? · not loaded`（muted），时钟留空；两者都不画 `lastObservation` 的旧标记——旧摘要只作历史，不冒充当前。B9 没有返回的节点（`continuation[]`、`counts.omitted`）没有行，只进汇总行的 `N not loaded` 与根 Inspector 的 Coverage 节。
+- （v1.1）`✓ · close pane` 行：提示词占状态词位（`close pane` / `请关窗格`），报告摘要只在右侧仍有 ≥ 12 格时跟在后面，≤ 39 列放不下时与其它状态词同样让位（§4.13 32 列）；`!` 行保留 `failed`，提示只进委派行。`⚑ · stop in pane` 行是 trouble 行，按 trouble 规则丢徽章和计量线，时钟是取消意图接受以来的驻留（`stateSince`，basis `event`）。
+- （v1.1）`loaded = false` 的节点：账本已知终态的（`execution.isRunTerminal = true`、有本轮报告）照常画历史行，只在 Inspector 写 `history not loaded (budget)`；非终态的画 `? · not loaded`（muted），时钟留空，排在活着桶、按创建顺序，不亮 bar，按标记计入 `?`；两者都不画 `lastObservation` 的旧标记——旧摘要只作历史，不冒充当前。B9 没有返回的节点（`continuation[]`、`counts.omitted`）没有行，只进汇总行的 `N not loaded` 与根 Inspector 的 Coverage 节。
 - （v1.1）`⚠` 行的名字：各当前关系的 `link.label` 一致时用它，否则用会话短形（`codex:51aa`，同 §4.6 的 caller 短形）；不从任一条记录猜角色，徽章与计量线按 trouble 规则丢；时钟 `~6m` 是 `conflict.since` 的年龄，永远带 `~`（`since` 是多条记录里最早的，基准混合）。
 - （v1.1）intent 行（`identity.kind = delegationIntent`、`edge = intent`）：`┊` 边、名字 = 该关系的 `link.label`、标记由纯 B16 只凭账本事实算（run `starting` → `·`，`uncertain` → `?`，`failed` → `! launch failed`），没有徽章、计量线和心跳；绑定后 B9 的 `selectionMap` 把旧 intent 键映射到真实 ref 键，B10 每 tick 把自己保留的映射回传 `LinkTreeInput.selectionMap`（B9 会把链式映射压平），选中、展开与微卡状态都经映射查找，行缓存键换了但排序键仍是 `link.createdAt`，所以行不跳。
 
@@ -240,20 +254,20 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 
 ### 4.1 bar（一行，英文）
 
-模块与优先级沿用 `MODULE_PRIORITY`；`agents` 计数覆盖整棵树；`attention` 新增四种警示（v1.1 六种）；`notice` 新增三种通知（v1.1 六种）。警示优先级：节点级 `⚑`（要人：approval / question / needs human / `stop in pane`，取最新触发的一条）> 常驻 `⚑ slots 6/6`（仅槽满时；全形 `⚑ slots 6/6 · 2 to close · 1 to reconcile`，短形 `⚑ slots 6/6`，最窄 `⚑ 6/6`；"to close"是报告后仍活的可见代理数，"to reconcile"是 uncertain 占用者数）> `✗`（失败）> `⚠`（冲突）> `?`（uncertain）> stale；一个警示用全形，多个用短形。槽满不是节点，不进 `1⚑` 的计数。
+模块与优先级沿用 `MODULE_PRIORITY`；`agents` 计数覆盖整棵树；`attention` 新增四种警示（v1.1 六种）；`notice` 新增三种通知（v1.1 六种）。警示优先级：节点级 `⚑`（要人：approval / question / needs human / `stop in pane`）> 常驻 `⚑ slots 6/6`（仅槽满时；全形 `⚑ slots 6/6 · 2 to close · 1 to reconcile`，短形 `⚑ slots 6/6`，最窄 `⚑ 6/6`；"to close"是报告后仍活的可见代理数，"to reconcile"是 uncertain 占用者数）> `✗`（失败）> `⚠`（冲突）> `?`（uncertain）> stale；恰好一条节点级警示时用全形，多条时用计数（`⚑1 ?3 ⚠1`，顺序 `⚑ ? ⚠ ✗`），常驻槽满警示接在其后。槽满不是节点，不进 `1⚑` 的计数。有委派树时 bar 自己的树失败警示（agent-error / subtask-error / review-error）不再单独亮——它们是树里的 `!` 节点；审批与工具错误仍是 bar 自己的。notice 区不重复全形警示已点名的节点。
 
 ```
 200 列（full）：
-⚑ review-tests approval │ fable-5.1 high │ ━━━━╸───── 112.3K/272K │ parser-kit main*↑2 │ 7d 61% │ ▸ 3:10 │ 38 tok/s │ Agents 3▸ 1⚑ 1✓ · ⌬2 π1 ◎1 │ Tasks 2/5 │ Edit src/parser.ts │ MCP 2 skills 9
+⚑ review-tests approval │ fable-5.1 high │ ━━━━╸───── 112.3K/272K │ parser-kit main*↑2 │ 7d 61% │ ▸ 3:10 │ 38 tok/s │ Agents 3▸ 1⚑ 2✓ · ⌬2 π1 ◎1 │ Tasks 2/5 │ Edit src/parser.ts │ MCP 2 skills 9
 
 120 列（balanced）：
-⚑ review-tests approval │ fable-5.1 │ ━━━━╸───── 112.3K/272K │ parser-kit main* │ ▸ 3:10 │ Agents 3▸ 1⚑ 1✓ │ Tasks 2/5
+⚑ review-tests approval │ fable-5.1 │ ━━━━╸───── 112.3K/272K │ parser-kit main* │ ▸ 3:10 │ Agents 3▸ 1⚑ 2✓ │ Tasks 2/5
 
 80 列（focus）：
-⚑ 1 approval │ fable-5.1 │ ━━━╸── 41% │ parser-kit │ ▸ 3:10 │ 3▸ 1⚑ 1✓
+⚑ 1 approval │ fable-5.1 │ ━━━╸── 41% │ parser-kit │ ▸ 3:10 │ 3▸ 1⚑ 2✓
 ```
 
-丢弃顺序照旧 `SHRINK`：右簇 → effort → 计量线缩成百分比 → notice 内容 → `Agents` 标签 → 分支 → 时钟。新增两条：后端计数 `· ⌬2 π1 ◎1` 在右簇之前丢；`attention` 从全形退到 `⚑ 1 approval` 再到 `⚑1`，永不丢。
+样例里非委派字段（quota、速率、分支、计量线、右簇）的取舍由现有引擎决定，样例只约束委派字段（警示形、计数与顺序、后端计数、通知）；review-pass 已完成仍计，所以 (c) 是 `2✓`。丢弃顺序照旧 `SHRINK`：右簇 → effort → 计量线缩成百分比 → notice 内容 → `Agents` 标签 → 分支 → 时钟。新增三条：后端计数 `· ⌬2 π1 ◎1` 在右簇之前丢（引擎 shrink 序 9，右簇第一步是 10，`Agents` 标签仍在 56）；`attention` 从全形退到 `⚑ 1 approval` 再到 `⚑1`，永不丢——有委派树时这两步的序是 85 / 87：全形→短形在 quota（86）被隐藏之前，短形→最窄在其后、仍先于 `agents` 被隐藏；有委派树时 `agents` 模块优先级 87（高于 quota、速率、Tasks，低于 project），80 列仍有计数。无委派树时一切照旧。
 
 （v1.1）情境 (h)（§4.13）的 bar——可见取消意图是节点级 `⚑`，槽满是常驻 `⚑`：
 
@@ -264,11 +278,14 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 80 列：
 ⚑ 1 stop in pane │ fable-5.1 │ ━━━╸── 41% │ parser-kit │ ▸ 9:12 │ 2▸ 1⚑ 1✓
 
-120 列，没有节点级警示但槽满（情境 (d)）：
-⚑ slots 6/6 · 1 to reconcile │ fable-5.1 │ ━━━━╸───── 98.1K/272K │ parser-kit main* │ ▸ 8:02 │ Agents 3▸ 1· 1⚑ 1? 9✓ │ Tasks 4/9
+120 列，情境 (d)：两条节点级警示（t-07 `⚑`、t-11 `?`）用计数，其后常驻槽满：
+⚑1 ?1 · ⚑ slots 6/6 · 1 to reconcile │ fable-5.1 │ ━━━━╸───── 98.1K/272K │ parser-kit main* │ ▸ 8:02 │ Agents 3▸ 1· 1⚑ 1? 9✓ │ Tasks 4/9
+
+120 列，没有节点级警示但槽满（(d) 的变体：t-07 已批准、t-11 已对账，六个槽仍占）：
+⚑ slots 6/6 │ fable-5.1 │ ━━━━╸───── 98.1K/272K │ parser-kit main* │ ▸ 8:02 │ Agents 5▸ 1· 9✓ │ Tasks 4/9
 ```
 
-通知（60 秒）：`✓ docs-sync reported` · `! lint-fix failed` · `? impl-b uncertain` · `⚑ review-tests approval`；（v1.1）`⚑ impl-parser still running · stop in its pane`（取消意图被接受时一次，不重复）· `✓ docs-sync reported · close its pane`（可见代理报告到达时，代替普通的 `reported` 通知）· `■ bench ended · no report`（无报告的结束）。切 tab 不触发；槽满不是通知，是常驻警示。
+通知（60 秒）：`✓ docs-sync reported` · `! lint-fix failed` · `? impl-b uncertain` · `⚑ review-tests approval`；（v1.1）`⚑ impl-parser still running · stop in its pane`（取消意图被接受时一次，不重复）· `✓ docs-sync reported · close its pane`（可见代理报告到达时，代替普通的 `reported` 通知）· `■ bench ended · no report`（无报告的结束）。切 tab 不触发；槽满不是通知，是常驻警示。通知是对投影的 60 秒窗口、不记状态：重启后一分钟内会再说一次；没有已知时间的事件不通知；`⚑ … approval` 这类通知只在 bar 警示处于计数形时出现（全形已点名的节点不重复）。`✗` 失败警示亮到该行收进 `⊕N` 为止（3 分钟）。
 
 ### 4.2 面板树：宽度预算
 
@@ -297,7 +314,7 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 
 ### 4.4 情境 (b)：几个原生子代理
 
-与今天的 `panel/en/tab/monitor/48x32` 基线相同：子代理是卡片内子行，`!` 失败子行排前，`◷` 轮时钟，计数行 `1 implementer · 1 scout`。唯一变化是汇总行写法 `1✓ 1▸ · 2 subtasks, 1 failed · ~42 tok/s`（数字在前）。
+与今天的 `panel/en/tab/monitor/48x32` 基线相同：子代理是卡片内子行，`!` 失败子行排前，`◷` 轮时钟，计数行 `1 implementer · 1 scout`。唯一变化是汇总行写法 `1▸ 1✓ · 2 subtasks, 1 failed · ~42 tok/s`（数字在前，顺序 `▸ · ⚑ ? ⚠ ✗ ✓`）。
 
 ### 4.5 情境 (c)：跨 harness 树
 
@@ -307,7 +324,7 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 
 ```
 | ⌂  ▦ Agents    ≣   ±   ◫   ⚙ Settings    ⇢ ǁ ? |
-| ▦  1⚑ 3▸ 1✓ · 3 workers, 1 job · ≥$0.12        |
+| ▦  3▸ 1⚑ 2✓ · 3 workers, 1 job · ≥$0.12        |
 |› ▸ ✳ main ─────────────────────── 5.1fable·high|
 |│ Coordinating parser work; waiting on workers. |
 |│ ▸ delegate_wait impl-parser                   |
@@ -337,7 +354,7 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 **48 列 compact（同一场景，`review-tests` 被选中，下面是两行微卡）：**
 
 ```
-| ▦  1⚑ 3▸ 1✓ · 3 workers, 1 job · ≥$0.12        |
+| ▦  3▸ 1⚑ 2✓ · 3 workers, 1 job · ≥$0.12        |
 |  ▸ ✳ main            5.1fable·high ━━╸─  ◷3m10s|
 | ├ ▸ ⌬ impl-parser     6.1sol·xhigh ━━━╸ ◷12m04s|
 | │ ├ ▸ ⌕ scout 中文 boundaries            ◷1m00s|
@@ -354,18 +371,18 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 **32 列 compact：**
 
 ```
-| ▦ 1⚑ 3▸ 1✓ · ≥$0.12            |
+| ▦ 3▸ 1⚑ 2✓ · ≥$0.12            |
 |› ▸ ✳ main           ━━╸─ ◷3m10s|
 |│ Coordinating parser work; wa… |
 | ├ ▸ ⌬ impl-parser  ━━━╸ ◷12m04s|
 | │ ├ ▸ ⌕ scout 中文 bou…  ◷1m00s|
 | │ └ ✓ ◈ review-pass          3m|
-| ├ ⚑ π review-tests          10s|
+| ├ ⚑ π review-tests ⊟        10s|
 | ├ ▸ ◎ ask-pro                4m|
 | └ ✓ ⌬ docs-sync              2m|
 ```
 
-32 列：徽章全丢；根被选中，它没有委派行，微卡只有一行 brief；`review-tests` 的 `⊟` 和状态词比截断名字先丢，`⚑` 和驻留时长 `10s` 仍在；`scout 中文 boundaries` 截到 15 格；完成行的报告摘要没有 12 格余地就不显示。
+32 列：徽章全丢；根被选中，它没有委派行，微卡只有一行 brief；`review-tests` 的状态词比截断名字先丢，丢掉后 `⊟` 放得下所以恢复，`⚑` 和驻留时长 `10s` 仍在；`scout 中文 boundaries` 截到 15 格；完成行的报告摘要没有 12 格余地就不显示。
 
 **80 列 rich 的一张委派卡：**
 
@@ -408,7 +425,7 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 （v1.1）运行槽上限让"15 个并发"只能长这样：非终态受管运行全局 6 个——`main` 自己占满每 owner 的 4 个（t-07、t-11、t-01、t-09），t-01 又委派了 t-12、t-13——其余 9 个已结束；原生子代理不占槽，这里略去。v1.0 的版本有 10 个非终态运行挂在一个 owner 下，按契约 02 A3 不可能出现，已改。
 
 ```
-| ▦  1⚑ 3▸ 1· 1? 9✓ · slots 6/6 · ≥$1.80         |
+| ▦  3▸ 1· 1⚑ 1? 9✓ · slots 6/6 · ≥$1.80         |
 |› ▸ ✳ main            5.1fable·high ━━╸─  ◷8m02s|
 | ├ ⚑ π t-07 ⊟ · approval                     10s|
 | ├ ? ⌬ t-11 ⊟ · uncertain                    14m|
@@ -419,12 +436,12 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 | └ ✓ 9 done · t-02 t-03 t-04 t-05 t-06 …      ⊕9|
 ```
 
-规则：compact 布局下全部是行；rich 布局下按 §3.5 的手风琴折叠（下图）；trouble 桶内最新卡住的在上（t-07 卡了 10 s，排在卡了 14 分钟的 t-11 之上）；汇总行因槽满多了 `slots 6/6`，按 §4.2 的顺序挤掉了 `15 workers`；完成桶折成一行，`a` 展开；活跃行 > 30 时时钟改成 `◷9m` 粒度，整秒重绘停止；超过视口的行不渲染字符串，只保留投影；200 节点预算之外的节点不成行，只进汇总行的 `N not loaded` 和根 Inspector 的 Coverage 节（§3.4）。bar 此时的警示是 `⚑ t-07 approval`，其后常驻 `⚑ slots 6/6 · 1 to reconcile`：t-11 的 uncertain 占着一个槽，只有对账能放，这就是 NOTIFY §4.9 所说的"可见的泄漏"。
+规则：compact 布局下全部是行；rich 布局下按 §3.5 的手风琴折叠（下图）；trouble 桶内最新卡住的在上（t-07 卡了 10 s，排在卡了 14 分钟的 t-11 之上）；汇总行因槽满多了 `slots 6/6`，按 §4.2 的顺序挤掉了 `15 workers`；完成桶折成一行，`a` 展开；活跃行 > 30 时时钟改成 `◷9m` 粒度，整秒重绘停止；超过视口的行不渲染字符串，只保留投影；200 节点预算之外的节点不成行，只进汇总行的 `N not loaded` 和根 Inspector 的 Coverage 节（§3.4）。bar 此时的警示是 `⚑1 ?1 · ⚑ slots 6/6 · 1 to reconcile`（两条节点级警示用计数，§4.1）：t-11 的 uncertain 占着一个槽，只有对账能放，这就是 NOTIFY §4.9 所说的"可见的泄漏"。
 
 同一场景的 rich 手风琴（视口放不下这么多卡：`✓ ■` 和未选中的 `▸ ·` 卡折成行，`⚑ ?` 卡和选中卡展开；t-11 的委派行多了 `slot held`，Inspector 给对账命令）：
 
 ```
-| ▦  1⚑ 3▸ 1· 1? 9✓ · slots 6/6 · ≥$1.80         |
+| ▦  3▸ 1· 1⚑ 1? 9✓ · slots 6/6 · ≥$1.80         |
 |─ ▸ ✳ main            5.1fable·high ━━╸─  ◷8m02s|
 |  › ⚑ π t-07 ─────────────────────── 6.1sol·high|
 |  │ reviewer · ⊟ headless · $0.04 · 10s         |
@@ -446,11 +463,11 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 compact 总览（根已退出；五个工人分两个 owner——`main` 占满自己的 4 个槽，`impl-a` 又委派了 `rev-a`——各有一种麻烦，一个正常；Jev 作业不占槽；全局 5/6，没满）：
 
 ```
-| ▦  1⚑ 3? 1⚠ 1▸ · 5 workers, 1 job              |
+| ▦  1▸ 1⚑ 3? 1⚠ · 5 workers, 1 job              |
 |› ■ ✳ main · exited    5.1fable·high ━━╸─     3m|
 | ├ ▸ ⌬ impl-a          6.1sol·xhigh ━━╸─  ◷2m10s|
 | │ └ ? π rev-a ⊟ · stale                     48s|
-| ├ ⚠ ⌬ impl-c · conflict                     ~6m|
+| ┊ ⚠ ⌬ impl-c · conflict                     ~6m|
 | ├ ? ⌬ impl-d · supervisor lost               7m|
 | ├ ⚑ ◎ ask-pro · needs human                  9m|
 | └ ? ⌬ impl-b ⊟ · uncertain                  14m|
@@ -528,7 +545,7 @@ uncertain 的 Inspector（控制条略；`⇢` 的词是 Reconcile）：
 
 每条记录一行：`recordIds` 里的 id（`link:…` / `native:…` / evidence id）、该关系的父（harness 标记 + 名字或 caller 短形）、该关系的 run 与状态；最多 5 条，更多写 `+N more`，`truncation.conflictRecords > 0` 时再加 `+N not listed`。
 
-bar 上的对应警示：`⚑ ask-pro needs human`（一个时）、`⚑1 ?3 ⚠1`（多个时）、`⚑1`（最窄）；`supervisor lost` 在 `?` 里计数，notice 用整句 `? impl-d supervisor lost`。
+bar 上的对应警示：这里有五条，所以是计数 `⚑1 ?3 ⚠1`（最窄 `⚑1`）；只有一条时才是全形 `⚑ ask-pro needs human`；`supervisor lost` 在 `?` 里计数，notice 用整句 `? impl-d supervisor lost`。
 
 ### 4.9 情境 (f)：headless
 
@@ -551,7 +568,7 @@ bar 上的对应警示：`⚑ ask-pro needs human`（一个时）、`⚑1 ?3 ⚠
 默认（完成项已收起）：
 
 ```
-| ▦  1▸ · 1 worker · 6 put away                  |
+| ▦  1▸ 1✗ 6✓ · 1 worker · 7 put away            |
 |› ▸ ✳ main            5.1fable·high ━━╸─  ◷1m20s|
 | └ ▸ ⌬ impl-parser     6.1sol·xhigh ━━━╸ ◷12m04s|
 ```
@@ -653,7 +670,7 @@ bar 上的对应警示：`⚑ ask-pro needs human`（一个时）、`⚑1 ?3 ⚠
 ```
 80 列：
 fable-5.1 ━━━━╸───── 41% │ parser-kit │ $1.24 │ ▸ Edit parser.ts │ ⧉ 2▸ 1⚑ 1✓
-⧉ ⚑ π review-tests approval 10s · ▸ ⌬ impl-parser 12m · ▸ ◎ ask-pro 4m
+⧉ ⚑ π review-tests approval 10s · ▸ ⌬ impl-parser 12m · ▸ ◎ ask-pro 4m · +1✓
 
 120 列：
 fable-5.1 high ━━━━╸───── 112.3K/272K │ parser-kit main*↑2 │ $1.24 · 38 tok/s · 12m │ ▸ Edit src/parser.ts │ ⧉ 2▸ 1⚑ 1✓
@@ -662,7 +679,7 @@ fable-5.1 high ━━━━╸───── 112.3K/272K │ parser-kit main*�
 200 列：第一行加 Tasks、usage window 与 MCP/skills 计数；第二行同 120 列并带每项的 pane / 模式，`+N` 展开到 5 项。
 ```
 
-第二行的项按 §3.2 的桶排序（trouble 最新在前），每项 `标记 harness 名 [词] 年龄`，年龄语义同 §3.4；宽度不够时先丢 pane / 模式，再丢年龄，再把活跃项收成 `+N▸`，trouble 项最后才缩成计数；整行放不下就只留第一行的计数。数据来源见 §6.9。（v1.1）词表与行相同：`⚑ ⌬ impl-parser stop in pane 2m`、`✓ ⌬ docs-sync close pane 8m`（close pane 项按活着桶排在 `▸` 之后，不收进 `+N`）；槽满时第一行末尾的计数后附 `· 6/6`（`⧉ 2▸ 1⚑ 1✓ · 6/6`），不另起项；statusline 不画 termination、wake 和冲突记录。
+第二行的项按 §3.2 的桶排序（trouble 最新在前），每项 `标记 harness 名 [词] 年龄`，年龄语义同 §3.4；宽度不够时先丢 pane / 模式，再丢年龄，再把活跃项收成 `+N▸`，再丢 trouble 项的状态词（保留标记、harness、名字），trouble 项最后才缩成计数（顺序 `⚑ ? ⚠ ✗`）；`+N` 余项按第一行的计数写法（`+1✗ +5✓`，`■` 计入 `✓`）；冲突节点在第二行是一项 `⚠ ⌬ impl-c conflict ~6m`（按 childKey 去重），statusline 不画的是冲突记录（Inspector 的逐条列表）；`stop in pane` / `close pane` 项后不再重复 pane 标签；整行放不下就只留第一行的计数。数据来源见 §6.9。（v1.1）词表与行相同：`⚑ ⌬ impl-parser stop in pane 2m`、`✓ ⌬ docs-sync close pane 8m`（close pane 项按活着桶排在 `▸` 之后，不收进 `+N`）；槽满时第一行末尾的计数后附 `· 6/6`（`⧉ 2▸ 1⚑ 1✓ · 6/6`），不另起项；statusline 不画 termination、wake 和冲突记录。
 
 ### 4.13 情境 (h)：可见运行的收尾——取消意图与关 pane（v1.1）
 
@@ -672,7 +689,7 @@ fable-5.1 high ━━━━╸───── 112.3K/272K │ parser-kit main*�
 
 ```
 | ⌂  ▦ Agents    ≣   ±   ◫   ⚙ Settings    ⇢ ǁ ? |
-| ▦  1⚑ 2▸ 1✓ · 3 workers · ≥$0.08               |
+| ▦  2▸ 1⚑ 1✓ · 3 workers · ≥$0.08               |
 |┌ ▸ ✳ main ─────────────────────── 5.1fable·high|
 |│ Coordinating parser work; waiting on workers. |
 |│ ▸ delegate_wait review-tests                  |
@@ -699,7 +716,7 @@ fable-5.1 high ━━━━╸───── 112.3K/272K │ parser-kit main*�
 **48 列 compact（同一场景，`impl-parser` 被选中）：**
 
 ```
-| ▦  1⚑ 2▸ 1✓ · 3 workers · ≥$0.08               |
+| ▦  2▸ 1⚑ 1✓ · 3 workers · ≥$0.08               |
 |  ▸ ✳ main            5.1fable·high ━━╸─  ◷9m12s|
 |›├ ⚑ ⌬ impl-parser · stop in pane             2m|
 |│ │  implementer · pane 4 · bound 14m           |
@@ -713,16 +730,16 @@ fable-5.1 high ━━━━╸───── 112.3K/272K │ parser-kit main*�
 **32 列 compact：**
 
 ```
-| ▦ 1⚑ 2▸ 1✓ · ≥$0.08            |
+| ▦ 2▸ 1⚑ 1✓ · ≥$0.08            |
 |  ▸ ✳ main           ━━╸─ ◷9m12s|
 |›├ ⚑ ⌬ impl-parser            2m|
 |│ │  implementer · pane 4 · 14m |
 |│ │  ⚑ running · stop in pane   |
 | ├ ▸ π review-tests  ━╸── ◷3m40s|
-| └ ✓ ⌬ docs-sync · close pane 8m|
+| └ ✓ ⌬ docs-sync              8m|
 ```
 
-32 列：`stop in pane` 作为状态词比截断名字先丢（≤ 39 列的规则），`⚑` 与驻留 `2m` 仍在，微卡第 2 行换成最短形 `⚑ running · stop in pane`；`close pane` 在名字之后仍放得下，所以保留。bar 与 statusline 见 §4.1、§4.12。
+32 列：`stop in pane` 作为状态词比截断名字先丢（≤ 39 列的规则），`⚑` 与驻留 `2m` 仍在，微卡第 2 行换成最短形 `⚑ running · stop in pane`；时钟列固定 7 格，`close pane` 在 32 列放不下，按 ≤ 39 列规则让位，40 列起恢复；statusline 永远保留它。bar 与 statusline 见 §4.1、§4.12。
 
 `docs-sync` 的 Inspector `── Run ──` 这时写 `run 1 · visible · running · reported 8m · slot held until the run ends`，下一行 `completed · close this pane`（已完成，请关闭此 pane）；用户在 pane 里退出 harness 后，hud-run 核验进程组为空，run 变 `ended`，行转入情境 (g)。如果用户销毁了 pane 而不是退出 harness，可能出现 `? supervisor lost`（§4.8）——HUD 不替用户选路线，B13 的技能文档写各 harness 已测试的手动停止路线。
 
@@ -749,7 +766,7 @@ fable-5.1 high ━━━━╸───── 112.3K/272K │ parser-kit main*�
 | `▸` | info |
 | `✓` | success；结束 60 s 后 muted（`FRESH_FINISH_MS`） |
 | `!` | danger（红只给失败和 ≥ 85% 的计量线） |
-| `⚑` | alert（加粗）：面板上唯一的"现在要人"色，与 bar 的警示徽章同源；黄色只剩下"要我处理"一个意思 |
+| `⚑` | alert = danger 色加粗（与 bar 警示徽章同一色源，徽章本身是反白）：红色家族只有两个意思——要人（`⚑` 加粗）与失败（`!` 常规）；黄色（warning）= 不确定 / 冲突 / 中断（`? ⚠ ■`） |
 | `⚠`、uncertain / supervisor lost 的 `?` | warning |
 | `■` | warning；发生 60 s 后 muted（与 `✓` 同一条 `FRESH_FINISH_MS` 规则；v1.1 起无报告的 `■ ended` 也一样，不再立即 muted） |
 | `⚑ stop in pane`（v1.1）的标记、行词、卡头 | alert（加粗），与其它 `⚑` 同；待决行里的契约原句本身是 text 色，只有行首的 `⚑` 是 alert |
@@ -808,7 +825,7 @@ harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再�
 
 | EN | ZH |
 |---|---|
-| starting / uncertain / stale / unknown | 启动中 / 未确定 / 过期 / 未知 |
+| starting / idle / uncertain / stale / unknown | 启动中 / 空闲 / 未确定 / 过期 / 未知 |
 | approval / question / needs human / blocked | 审批 / 提问 / 需要人 / 受阻 |
 | failed / launch failed / interrupted / cancelling / cancelled / exited / ended / closed | 失败 / 启动失败 / 已中断 / 取消中 / 已取消 / 已退出 / 已结束 / 已关闭 |
 | answered / sent / waiting / browser queue | 已回答 / 已发送 / 等待中 / 等浏览器 |
@@ -894,6 +911,7 @@ harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再�
 | 30 | **（v1.1，已满足）intent 的即时归并输入**：`linkStatusInput(tree, key)` 给 `{asOfSeq, link, conflict}`，B10 补 `target {nodeIdentity: {kind: delegationIntent, linkId}, runId}`、`ledgerFacts [{run: {runId, state, reason}}]`、`history.continuity` 后调用纯 `mergeStatus`；无 sourceGeneration、无 ref（Oracle3 E01）；结果不发布、不发通知 | B9 `linkStatusInput`；B16 `MergeInput`；契约 06 StateContinuity |
 | 31 | **（v1.1，已满足）读路径的 `delegate.json` 与 B9 reader 的打开**：`openLinkLedgerReader(path, scope?)` 只在启动时打开，HUD 读整个账本（不传 `linkIds` scope），否则容量计数会少算；`read()` 每 tick 至多一次 | B9 report；§6 #13 |
 | 32 | **（v1.1，需新增）Reconcile 的受信模板**：core 导出 `reconcileDescriptor(hudHome, linkId, runId): ActionDescriptor`（`operation: reconcile`、`displayCommand` 带安全引用的 HUD_HOME），与 B11 `hud run reconcile` 的实际 argv 一致；在它存在之前 `↻ Reconcile` 与 `↻ Resume` 一样只写诊断，Inspector 的 `reconcile:` 行写 `hud run reconcile <runId>`（缩写，标 `not copyable yet`） | 契约 03 ActionDescriptor；契约 04 F05；B11 |
+| 33 | **（v1.2，需新增）原生子代理的名与类**：B9 `LinkTreeNode` 上附 `native: {title: string \| null, kind: AgentTaskKind \| null} \| null`（仅 `edge = native` 非 null）：`title` = Codex 的 `agentDisplayName`（agentPath 叶 → nickname → role → kind）/ cc 的 `description`；`kind` = 现有 `AgentTaskKind`（`research \| experiment \| fix \| review \| writing \| summary \| other`），cc 的 `agentType` 由采集器映射到同一枚举、未知为 `other`；由 B9 从观测的原生列表填入（采集器已算出 `AgentIdentity`，不新增 I/O），或 `ObservationView.native` 透传、B9 原样复制。没有它时原生行只剩会话短形（`codex:51aa`），不可用。B10 行名 = `native.title`，缺席退到会话短形；图标位 = `KIND_GLYPHS[kind]`（`other` 留空）；`◈N` chip = `kind = review` 的原生数 | `src/collectors/subagent-tree.ts` `AgentIdentity`；`src/render/agent-title.ts` `KIND_GLYPHS`；§3.4 图标位；§4.5 cc 原生子行；（编排 2026-11-02：本期 Claude 原生拓扑不可用，cc 的 title/kind 随 Claude 原生拓扑延后，见集成记录 B10C） |
 
 ## 8. 开放问题与假设
 
@@ -931,7 +949,7 @@ harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再�
 | 2 | 折叠子树冒泡子孙计数 `+3 (1⚑ 2▸)` | 采纳 | §2、§3.4；< 40 列 `+3⚑` |
 | 3 | compact 选中行升级为两行微卡 | 采纳 | §3.4；无委派行的节点仍一行 |
 | 4 | 右端时钟按状态定义：驻留时长 / 证据年龄 / 结束年龄 | 采纳 | §1、§3.4；需要 `stateSince`（§7 #23） |
-| 5 | `⚑` 独立颜色、`■` 60 s 后 muted | 采纳 | `⚑` 用 alert 加粗，黄色只剩"要我处理"（§5.2） |
+| 5 | `⚑` 独立颜色、`■` 60 s 后 muted | 采纳 | `⚑` 用 danger 色加粗，与 `!` 以字重和符号区分（§5.2） |
 | 6 | Ambiguous 宽度：禁 VS16、窄字符默认集或 CSI 列定位 | 改编 | 禁 VS16 采纳；核实宽度表后发现面板本就靠 ambiguous=1 格（box drawing、`·` 都是 A 类），不换默认集；CSI 定位列入 §8 #15 探索项 |
 | 7 | selectedBand 与状态色的对比度 | 采纳 | §5.2 选中行规则 |
 | 8 | 区分交差 `✓` 与存活空闲，`exit 0` 也算交差 | 改编 | 委派节点空闲无报告用 `· idle`（§3.3 第 10 条）；`exit 0` 不采纳——Oracle：可见运行的原生退出结果通常未知，`✓` 只来自报告 |
