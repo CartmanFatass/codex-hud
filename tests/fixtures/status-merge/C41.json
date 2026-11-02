@@ -1,0 +1,163 @@
+{
+  "id": "C41",
+  "title": "starting to non execution failure emits failed edge without model turn",
+  "steps": [
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "delegationIntent",
+            "linkId": "link-one"
+          },
+          "runId": "run-one",
+          "bindingGeneration": 1
+        },
+        "sources": [],
+        "ledgerFacts": [
+          {
+            "id": "ledger:run",
+            "value": {
+              "run": {
+                "runId": "run-one",
+                "state": "starting"
+              },
+              "episodes": {
+                "run": "run-one:starting"
+              }
+            },
+            "eventAt": 1000,
+            "observedAt": 2000,
+            "seq": 9,
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": 9,
+        "observationStamp": null,
+        "history": {
+          "continuity": "proven"
+        }
+      },
+      "expected": {
+        "semanticClass": "starting",
+        "reason": "starting",
+        "projection": {
+          "activity": "unknown",
+          "pendingReason": "none",
+          "lastTurnOutcome": "none",
+          "liveness": "unknown",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["ledger:run"]
+          },
+          "stateKey": "starting:starting",
+          "stateSince": 1000,
+          "stateSinceBasis": "event",
+          "isRunTerminal": false,
+          "asOfSeq": 9,
+          "observationStamp": null,
+          "asOf": 1000,
+          "observedAt": 2000,
+          "lastEvidenceAt": 1000
+        },
+        "continuity": {
+          "episodeAnchor": "run-one:starting"
+        },
+        "selectedSources": {
+          "activity": null,
+          "pendingReason": null,
+          "lastTurnOutcome": null,
+          "liveness": null
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    },
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "delegationIntent",
+            "linkId": "link-one"
+          },
+          "runId": "run-one",
+          "bindingGeneration": 1
+        },
+        "sources": [],
+        "ledgerFacts": [
+          {
+            "id": "ledger:run",
+            "value": {
+              "run": {
+                "runId": "run-one",
+                "state": "failed",
+                "reason": "preflight_refused"
+              },
+              "episodes": {
+                "run": "run-one:failed"
+              }
+            },
+            "eventAt": 3000,
+            "observedAt": 3500,
+            "seq": 10,
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": 10,
+        "observationStamp": null,
+        "history": {
+          "continuity": "proven"
+        }
+      },
+      "expected": {
+        "semanticClass": "failed",
+        "reason": "preflight_refused",
+        "projection": {
+          "activity": "unknown",
+          "pendingReason": "none",
+          "lastTurnOutcome": "none",
+          "liveness": "unknown",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["ledger:run"]
+          },
+          "stateKey": "launch_failed",
+          "stateSince": 3000,
+          "stateSinceBasis": "event",
+          "isRunTerminal": true,
+          "asOfSeq": 10,
+          "observationStamp": null,
+          "asOf": 3000,
+          "observedAt": 3500,
+          "lastEvidenceAt": 3000
+        },
+        "continuity": {
+          "episodeAnchor": "run-one:failed"
+        },
+        "selectedSources": {
+          "activity": null,
+          "pendingReason": null,
+          "lastTurnOutcome": null,
+          "liveness": null
+        },
+        "notices": [
+          {
+            "kind": "failed",
+            "created_at": 3000,
+            "sourceEventSeq": 10,
+            "nodeIdentity": {
+              "kind": "delegationIntent",
+              "linkId": "link-one"
+            },
+            "runId": "run-one",
+            "inputStamp": "[\"[\\\"[\\\\\\\"delegationIntent\\\\\\\",\\\\\\\"link-one\\\\\\\"]\\\",\\\"run-one\\\",1]\",\"failed\",\"run-one:failed\"]"
+          }
+        ],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    }
+  ]
+}

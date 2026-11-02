@@ -1,0 +1,678 @@
+{
+  "id": "C70",
+  "title": "approval resolution starts resumed completed report semantics at closure",
+  "steps": [
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1,
+          "runId": "run-b",
+          "bindingGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "transcript",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 1000,
+              "observedAt": 2000,
+              "lastSuccessfulReadAt": 2000,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "activity": "idle",
+                "pendingReason": "none",
+                "lastTurnOutcome": "none",
+                "liveness": "alive",
+                "episodes": {
+                  "activity": "idle:1"
+                }
+              },
+              "runId": "run-b",
+              "bindingGeneration": 1
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": 11,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": 10,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1,
+          "runId": "run-b",
+          "bindingGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        },
+        "ledgerFacts": [
+          {
+            "id": "ledger:run",
+            "value": {
+              "run": {
+                "runId": "run-b",
+                "state": "running"
+              },
+              "episodes": {
+                "run": "run-b:running"
+              }
+            },
+            "eventAt": 3000,
+            "observedAt": 3500,
+            "seq": 10,
+            "deadlineAt": 90000
+          },
+          {
+            "id": "ledger:report",
+            "value": {
+              "report": {
+                "reportId": "baseline-report",
+                "runId": "run-b",
+                "status": "completed",
+                "createdAt": 1500
+              }
+            },
+            "eventAt": 1500,
+            "observedAt": 3600,
+            "seq": 11,
+            "deadlineAt": 90000
+          }
+        ]
+      },
+      "expected": {
+        "semanticClass": "exited",
+        "reason": "reported",
+        "projection": {
+          "activity": "idle",
+          "pendingReason": "none",
+          "lastTurnOutcome": "completed",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["ledger:report", "ledger:run", "transcript"]
+          },
+          "stateKey": "exited:reported",
+          "stateSince": 1500,
+          "stateSinceBasis": "event",
+          "isRunTerminal": false,
+          "asOfSeq": 11,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": 10,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1,
+            "runId": "run-b",
+            "bindingGeneration": 1
+          },
+          "asOf": 3000,
+          "observedAt": 3600,
+          "lastEvidenceAt": 3000
+        },
+        "continuity": {
+          "episodeAnchor": "report:baseline-report"
+        },
+        "selectedSources": {
+          "activity": "transcript",
+          "pendingReason": "transcript",
+          "lastTurnOutcome": "ledger:report",
+          "liveness": "transcript"
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    },
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1,
+          "runId": "run-b",
+          "bindingGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "transcript",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3000,
+              "observedAt": 3000,
+              "lastSuccessfulReadAt": 3000,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "activity": "waiting_input",
+                "pendingReason": "approval",
+                "lastTurnOutcome": "none",
+                "liveness": "alive",
+                "episodes": {
+                  "pendingReason": "approval:1"
+                }
+              },
+              "runId": "run-b",
+              "bindingGeneration": 1
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": 11,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": 10,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1,
+          "runId": "run-b",
+          "bindingGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        },
+        "ledgerFacts": [
+          {
+            "id": "ledger:run",
+            "value": {
+              "run": {
+                "runId": "run-b",
+                "state": "running"
+              },
+              "episodes": {
+                "run": "run-b:running"
+              }
+            },
+            "eventAt": 3000,
+            "observedAt": 3500,
+            "seq": 10,
+            "deadlineAt": 90000
+          },
+          {
+            "id": "ledger:report",
+            "value": {
+              "report": {
+                "reportId": "baseline-report",
+                "runId": "run-b",
+                "status": "completed",
+                "createdAt": 1500
+              }
+            },
+            "eventAt": 1500,
+            "observedAt": 3600,
+            "seq": 11,
+            "deadlineAt": 90000
+          }
+        ]
+      },
+      "expected": {
+        "semanticClass": "pending",
+        "reason": "approval",
+        "projection": {
+          "activity": "waiting_input",
+          "pendingReason": "approval",
+          "lastTurnOutcome": "completed",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["ledger:report", "ledger:run", "transcript"]
+          },
+          "stateKey": "pending:approval",
+          "stateSince": 3000,
+          "stateSinceBasis": "event",
+          "isRunTerminal": false,
+          "asOfSeq": 11,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": 10,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1,
+            "runId": "run-b",
+            "bindingGeneration": 1
+          },
+          "asOf": 3000,
+          "observedAt": 3600,
+          "lastEvidenceAt": 3000
+        },
+        "continuity": {
+          "episodeAnchor": "approval:1"
+        },
+        "selectedSources": {
+          "activity": "transcript",
+          "pendingReason": "transcript",
+          "lastTurnOutcome": "ledger:report",
+          "liveness": "transcript"
+        },
+        "notices": [
+          {
+            "kind": "pending",
+            "created_at": 3000,
+            "nodeIdentity": {
+              "kind": "session",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              }
+            },
+            "runId": "run-b",
+            "inputStamp": "[\"[\\\"[\\\\\\\"session\\\\\\\",\\\\\\\"[\\\\\\\\\\\\\\\"codex\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"synthetic-session\\\\\\\\\\\\\\\",null]\\\\\\\"]\\\",\\\"run-b\\\",1]\",\"pending\",\"approval:1\"]"
+          }
+        ],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    },
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1,
+          "runId": "run-b",
+          "bindingGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "transcript",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3000,
+              "observedAt": 3000,
+              "lastSuccessfulReadAt": 3000,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "activity": "waiting_input",
+                "pendingReason": "approval",
+                "lastTurnOutcome": "none",
+                "liveness": "alive",
+                "episodes": {
+                  "pendingReason": "approval:1"
+                }
+              },
+              "runId": "run-b",
+              "bindingGeneration": 1
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "resolution",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3900,
+              "observedAt": 3900,
+              "lastSuccessfulReadAt": 3900,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "pendingReason": "none",
+                "pendingResolution": {
+                  "episodeAnchor": "approval:1",
+                  "eventAt": 3900
+                }
+              },
+              "runId": "run-b",
+              "bindingGeneration": 1
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": 11,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": 10,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1,
+          "runId": "run-b",
+          "bindingGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        },
+        "ledgerFacts": [
+          {
+            "id": "ledger:run",
+            "value": {
+              "run": {
+                "runId": "run-b",
+                "state": "running"
+              },
+              "episodes": {
+                "run": "run-b:running"
+              }
+            },
+            "eventAt": 3000,
+            "observedAt": 3500,
+            "seq": 10,
+            "deadlineAt": 90000
+          },
+          {
+            "id": "ledger:report",
+            "value": {
+              "report": {
+                "reportId": "baseline-report",
+                "runId": "run-b",
+                "status": "completed",
+                "createdAt": 1500
+              }
+            },
+            "eventAt": 1500,
+            "observedAt": 3600,
+            "seq": 11,
+            "deadlineAt": 90000
+          }
+        ]
+      },
+      "expected": {
+        "semanticClass": "exited",
+        "reason": "reported",
+        "projection": {
+          "activity": "waiting_input",
+          "pendingReason": "none",
+          "lastTurnOutcome": "completed",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["ledger:report", "ledger:run", "resolution", "transcript"]
+          },
+          "stateKey": "exited:reported",
+          "stateSince": 3900,
+          "stateSinceBasis": "event",
+          "isRunTerminal": false,
+          "asOfSeq": 11,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": 10,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1,
+            "runId": "run-b",
+            "bindingGeneration": 1
+          },
+          "asOf": 3900,
+          "observedAt": 3900,
+          "lastEvidenceAt": 3900
+        },
+        "continuity": {
+          "episodeAnchor": "report:baseline-report"
+        },
+        "selectedSources": {
+          "activity": "transcript",
+          "pendingReason": "resolution",
+          "lastTurnOutcome": "ledger:report",
+          "liveness": "transcript"
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    },
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1,
+          "runId": "run-b",
+          "bindingGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "transcript",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3000,
+              "observedAt": 3000,
+              "lastSuccessfulReadAt": 3000,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "activity": "waiting_input",
+                "pendingReason": "approval",
+                "lastTurnOutcome": "none",
+                "liveness": "alive",
+                "episodes": {
+                  "pendingReason": "approval:1"
+                }
+              },
+              "runId": "run-b",
+              "bindingGeneration": 1
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "resolution",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3900,
+              "observedAt": 3900,
+              "lastSuccessfulReadAt": 3900,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "pendingReason": "none",
+                "pendingResolution": {
+                  "episodeAnchor": "approval:1",
+                  "eventAt": 3900
+                }
+              },
+              "runId": "run-b",
+              "bindingGeneration": 1
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": 11,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": 10,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1,
+          "runId": "run-b",
+          "bindingGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        },
+        "ledgerFacts": [
+          {
+            "id": "ledger:run",
+            "value": {
+              "run": {
+                "runId": "run-b",
+                "state": "running"
+              },
+              "episodes": {
+                "run": "run-b:running"
+              }
+            },
+            "eventAt": 3000,
+            "observedAt": 3500,
+            "seq": 10,
+            "deadlineAt": 90000
+          },
+          {
+            "id": "ledger:report",
+            "value": {
+              "report": {
+                "reportId": "baseline-report",
+                "runId": "run-b",
+                "status": "completed",
+                "createdAt": 1500
+              }
+            },
+            "eventAt": 1500,
+            "observedAt": 3600,
+            "seq": 11,
+            "deadlineAt": 90000
+          }
+        ]
+      },
+      "expected": {
+        "semanticClass": "exited",
+        "reason": "reported",
+        "projection": {
+          "activity": "waiting_input",
+          "pendingReason": "none",
+          "lastTurnOutcome": "completed",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["ledger:report", "ledger:run", "resolution", "transcript"]
+          },
+          "stateKey": "exited:reported",
+          "stateSince": 3900,
+          "stateSinceBasis": "event",
+          "isRunTerminal": false,
+          "asOfSeq": 11,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": 10,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1,
+            "runId": "run-b",
+            "bindingGeneration": 1
+          },
+          "asOf": 3900,
+          "observedAt": 3900,
+          "lastEvidenceAt": 3900
+        },
+        "continuity": {
+          "episodeAnchor": "report:baseline-report"
+        },
+        "selectedSources": {
+          "activity": "transcript",
+          "pendingReason": "resolution",
+          "lastTurnOutcome": "ledger:report",
+          "liveness": "transcript"
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    }
+  ]
+}
