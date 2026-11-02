@@ -110,6 +110,11 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B16 | **唯一五维归并器**：activity/pendingReason/lastTurnOutcome/liveness/freshness.state，语义优先/launch_failed/isRunTerminal、stateKey/stateSince/basis与episode连续性、双域stamp兼容、notice；B12持久发布共用ObservationCommit | src/core/status/merge.ts、契约06附录真值表、fixture | 每行fixture；重读/重启/新run/新episode/时钟截止/历史缺口一致，证据年龄另算；B10/B6不自判。可先纯归并，持久连续性与最终消费须等B12，不把部分实现当最终验收 | CORE | M | B2、B8、B12 |
 | B17 | **统一模型材料入口**：所有模型功能（摘要、委派摘要、未来 Jev 路由）取材料只走一个入口；按 source 的外发授权；新来源默认不外发；负向测试 | `src/core/materials/`、`tests/unit/materials.test.ts` | 负向测试：未授权来源的任何文本不出现在外发 payload；迁移后新来源默认拒绝 | CORE | M | A2（契约 07）、B8 |
 | B18 | **版本化本地委派导出**：07独立v1只读一致快照、ledgerId命名空间/逐run记录/完整SessionRef与nullable端点、scope/coverage、元数据白名单、--paths local、稳定排序/兼容；不依赖B16/B17/HUD运行 | 按需查询/序列化模块 + A4 golden与producer回归；CLI由B11集成 | 上限10000 run/16MiB/1000ms软预算，超限显式失败、完整JSON备妥才输出；记录行数/字节/墙钟/读事务寿命，不初始化/迁移/采集/Git/reconcile，不新增JSONL writer/daemon/后台全库同步；toktrack独立接入 | CORE | S | A9、B2 |
+| O5APPLY | **Oracle 第 5 次裁决契约落实**：G01–G11 全部契约/概念文字与共享类型（CapabilityManifestV1、prepared checkpoint/projection 类型、GroupExit 来源判别、process-domain 类型边界），标注「consult 5 增补，G0x」 | 契约 01–07、概念 §6、`src/core/types/**` | 契约检查器/SQL v1 不变/覆盖率 100%；每个 G 可追溯 | CORE | S | 无 |
+| B12R | **紧凑 recovery 与观测存储复用**（G09–G11）：Codex/Claude reader 版本化 recovery DTO（inline ≤256 KiB）、增长集合同库增量索引、prepareCheckpoint/publishPrepared/readProjection/readRecovery、不可变 checkpoint 复用、受控重建 | readers、`src/core/checkpoint.ts`、`observation-store.ts` | 大公开参数/重复 ID/100 MiB 历史下 no-op 不重做全量验证；三条路径分测；不截断必要状态 | CORE | M | O5APPLY、B12 |
+| BID1 | **共享 pid_domain 派生**（G08）：`src/core/process-domain.ts`，三用途分离，MCP/hook/run 共用，去掉 runPidDomain 回退 | 模块 + 测试 | 三生产者同输入一致、跨表示比较拒绝、旧字节不变、hook 成本重验 | CORE | S | O5APPLY |
+| B45-R2 | **MCP resume 可选 expectedRun**（G03）：工具 schema、摘要、权限→重放→CAS 顺序 | hud-mcp/ledger 改动 + 测试 | 旧键重放、同键异 expectedRun 冲突、竞争最多一个新意图、缺省兼容 | CORE | S | O5APPLY |
+| B3a-R1 | **轻量 headless helper**（G01）：不可移组的 session-leading leader、GroupExit 来源判别、native_unknown、环境/取消/封口不退化 | `src/core/run/**` + 进程测试 | G02 口径同环境对照；137/SIGKILL、退组、EOF、INT/TERM/KILL 定向重验；不过则保留 Node helper 带证据回报 | CORE | M | O5APPLY、BID1 |
 | B15 | **阶段评审**：MVP 演示材料 + 账本导出 + 场景日志 + 能力矩阵送 ARCH | `docs/reviews/<date>-pro-mvp.md` | 无阻断项 | ORCH + ARCH | S | B14 |
 
 **A9 带条件放行的 B 内条件**（[reviews/2026-11-01-chatgpt-pro-a9-gate.md](./reviews/2026-11-01-chatgpt-pro-a9-gate.md) §2/§4/§6，F08 行见 [reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md](./reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md)；各列入对应 WP 验收，B14 生产重验）：
@@ -126,6 +131,7 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | B18 | 一致快照与导出预算（已在行内） |
 | B14 | 空闲 CPU 除每 run 指标外报告 R=10 的总增量与 RSS；accepted 快不掩盖 started/bound 长时间未达 |
 | B4 / B5 / B11 / B14（F08，Pro 裁决） | 显式 `claude_pre_tool_use_v1` 档案：联合 p95 < 150 ms（必需 hook 冷进程启动至同次响应 flush，含授权、DB 等待/commit），MCP 内部 p95 < 50 ms，逐工具、成功/拒绝/busy 分计，计时取保守上界；B5 授权与事务 ≤ 30 ms，单次 busy_timeout ≤ 10 ms，累计等锁/重试 ≤ 20 ms，耗尽且未提交才返回 busy。B4：真实 Claude 发起 spawn/resume 返回 durable accepted，保留既有 hooks/配置，零重复提交，双预算同测；B11：`hud claude` 按档案经 `--settings` 注入 hook。B5：F06/F07 全部反例。B14：每工具/组合 ≥ 1000 次（H/R=1/1 与 2/10），另收 ≥ 200 次真实联合调用、跨 ≥ 10 次 harness 启动、每声明路径 ≥ 20 次，报 n 与 p50/p95/p99/max，合成不混入，缺格不授 verified；B15 仍须真实 Claude→Codex 闭环 |
+| B16 / B6 / B10 / B11 / B14（Oracle 第 5 次，G05–G11） | B16 纯归并可先做，持久恢复与全 tick 最终验收待 B12R；B6 观测组合用 readProjection；P-06-7 为逐样本上限；B13 模板携带所见 runId（G03）；能力格仅经 review/B14 生成发布 manifest（G04） |
 
 开工顺序（A9 Pro 门禁评审 §7 采纳）：第一批 B1 ∥ B2 ∥ B3a ∥ B8，B1 的真实调用来源验证最先回答（Claude 根调用能否可靠识别；不能则收窄档案或改取证方案）。随后先做 B4/B5 的 headless 闭环（接受→启动→绑定→报告→取消/无 receipt 恢复），同时起性能基准与故障测试，再推进 B3b/B7 可见模式。B2 后尽早 B12→B16→B6，让状态、连续性与 wait 共用同一事实；B9/B10 随后集成。B18 只依 A9+B2 独立并行；B17 在任何新来源进入模型材料前完成。B11 拆依赖：管理/导出 CLI 随 B4/B18 交付，panel 集成等 B7/B10。B14 的测试随每个闭环落地，最后汇总矩阵，不把生产反例全部留到阶段末。
 
