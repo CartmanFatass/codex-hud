@@ -14,6 +14,8 @@
 
 冻结后生效版本：`A9 + consult4-2026-11-01`。以下增补保留 C/D/E 与 A9-fix，ledger schema v1/DDL 不变；F07 仅冻结事务规则，生产接线归 B2/B5。（consult 4 增补，F03）（consult 4 增补，F04）（consult 4 增补，F07）
 
+冻结后增补版本：`A9 + consult4 + F08-Pro + consult5-2026-11-02`。本轮依 [Oracle consult 5](../reviews/2026-11-02-astra-consult5.md) 增补，保留此前 C/D/E、consult 4 F01–F11、F08 Pro 与 A9-fix；ledger schema v1 不变，不授予尚未验收的生产能力。（consult 5 增补，G03）（consult 5 增补，G08）
+
 ## 数据模型
 
 | 对象 | 必要语义 |
@@ -32,11 +34,15 @@
 
 时间为 UTC Unix 毫秒。process_start 为内核启动 tick 字符串，pid_domain 含机器/boot/PID namespace 身份，与04 ProcessStamp一致，不使用 PID 数字替代。locator/evidence/outcome 是经过字段白名单的 JSON，ledger 不保存完整 prompt、命令正文、claim 明文或密钥；只存必要路径、hash 与协议元数据。brief/reportPath 必须是绝对路径。真实命令及本轮消息的生成和运输由 04/后端负责，ledger 只保留指纹和调用锚点。
 
+（consult 5 增补，G08）上文 pid_domain 与 04 的一致性指完整实例事实，编码/比较边界按 01「身份、实例与定位」的三用途表：Caller/ProcessKey 的 JSON 域、Run 的 hash+namespace 域加独立 boot_id、Claude registry 的原生域各自比较。BID1 共用派生函数；既有 scopes、OwnerKey、幂等历史及完整 stamp 不重键、不回填当前域，不以跨表示 fallback 判断同一实例。
+
 `launch_cwd` 是本轮实际交给启动器的规范绝对路径，spawn/resume/handover 意图事务逐 run 固定；不是 callers.cwd，resume 也不能按后来 CLI 的 cwd 重算。`project_origin` 是06的 `{repoId,basis:'declared',declaredAt}` 或 NULL，请求显式 originRepoId 接受时补声明主体审计/declaredAt，随意图冻结，与物理 repoId 分离。`workspace_snapshot` 是06定义的白名单启动 Git/来源快照或 NULL：有效缓存可随意图写入，冷缺失由该 run 的已有写者在一次有界启动采集后 NULL→首次快照补齐，同事务写 `workspace.captured`（runId、来源/捕获时间/缺失原因）。若意图已有缓存快照，也在该事务记录此事件；声明来源与快照分列，不相互阻断捕获。超时/非 Git/路径不可读可作为有原因的首次快照；不重启 harness、不覆盖历史。后续实际 cwd 不同只写06 observed workspace。导出只读 ledger 启动快照（`cwdBasis=launch`），不现场跑 Git/读 transcript 或用今天目录改历史。JSON CHECK 只校验形状，白名单/规范化/事件同事务由 TX 保证（T-02-30–33）。
 
 ### 幂等参数与查询顺序
 
 `request_key` 是必填、区分大小写的 1–256 字符 opaque 字符串。对操作名和参数做版本化规范化：对象键递归排序，数组保留顺序，区分 null 与缺省，采用契约定义的默认值，拒绝未知字段和非有限数字；字符串不做 Unicode 归一化。`params_digest = SHA256(UTF8(canonical JSON))`。摘要覆盖 operation、backend/profile/source、role/model/effort、mode/layout、规范 `launch_cwd`（请求 cwd 经解析后的固定值）、请求显式 `originRepoId`、brief/report 路径、brief 内容 hash、resume 的 linkId/prompt hash（本地入口另含 expectedRun）、predecessor、显式授权/资源参数和解析后的后端档案指纹；不含 request_key、caller_id、MCP PID、当前时间、随机 runId/claim、写者追加的 declaredAt、易变 Git 探测结果、显示名或采集时间。缓存命中/缺失不改变同一控制请求的摘要。同样的文件路径但内容或档案已改变算不同参数，返回冲突，不偷偷重跑。规范化版本由 `params_version` 固定为 1。
+
+（consult 5 增补，G03）`delegate_resume` 新增 `expectedRun?:RunId`，必须验证其 RunId 形状。上文“本地入口另含 expectedRun”现扩展为：MCP/local 仅在调用者实际提供时把 expectedRun 纳入 params_digest；MCP 缺省保留原 params_version=1 的参数规范化字节，不从准备快照或后来查询到的 currentRun 补值。“缺省”与“明确提供”是不同参数，本地 `--expected-run` 仍必填。
 
 （consult 4 增补，F03）参数摘要中的 role/model/effort 是按 05 的 delegate.json v1 envelope/可选 roles 映射和本次明确请求解析后的实际值，连同非秘密档案指纹纳入 params_version=1 的规范化输入；角色名称不代替实际 model/effort，缺映射不能猜模型。配置解析成功不授予已验证能力；资源约束不在本期格式，不可先静默忽略再生成同参摘要（05 I-05-1/2；T-02-2）。
 
@@ -47,6 +53,8 @@
 1. 从本次已核验的当前 context 派生 canonical OwnerKey：已绑定 session；仅逻辑来源可辨且尚未绑定的 dedicated 用本代 proc。共享/缺来源/旧代先拒绝，不沿用连接上次身份。
 2. 仅用 `(canonical owner_key, request_key)` 索引查询；params_version/digest 不符即 idempotency_conflict。同参只返回原 linkId/runId/outcome，动态状态另作 current 投影；uncertain 也不重新提交。
 3. 无记录才校验并建立完整新意图。proc→session 归并是01的单独原子事务：核对两范围全部键；同键异参或异 link/run/outcome 整体回滚拒绝；完全相同结果合为一行。将旧行 UPDATE 重键到 session，origin_owner_key/原参数/结果/at 不变，写归并事件与 alias/context/parent_ref 后一起提交。
+
+（consult 5 增补，G03）顺序固定为当前权限/捕获来源前提核验 → canonical OwnerKey×request_key 重放 → 新意图 CAS 与槽/能力门禁。同参旧结果在新轮已出现后仍先重放原 run/outcome；同键改 expectedRun 是 idempotency_conflict。仅无原结果时，所给 expectedRun 须等于事务内 currentRun，否则 expected_run_mismatch，零新 run/claim/slot/外部提交。省略只表示沿用事务选当前 run 的旧语义，不表示钉住先前 status 的轮次；仍重验 preparation→transaction 的 runSeq、目标 ref、绑定代次及档案前提，不能把旧准备材料贴到任意新 run。复用 A4 resumeGate/prepareResume，不新增 resume 状态机。
 
 本地管理 resume 先按01鉴别 local_user 并从已确认 parent_ref 派生 canonical OwnerKey，再按相同索引查幂等；`--request-key`、`--expected-run`、`--mode` 必填，expectedRun/mode 进入摘要。同键同参先重放原结果；只有无记录的新意图才要求 expectedRun 仍是 currentRun，并重验03全部门禁。旧复制命令即使另换 key 也不能越过已发生的新一轮。accepted 事件保存类型化 actor；登记/提交执行票据核对该意图的 MCP 当前权限或 local_user 管理权限，不能强求已失效的旧父 context 来冒充本地发起者（T-02-34）。
 
@@ -61,7 +69,7 @@
 
 | 编号 | 可检查的断言 | 层 / 测试 |
 |---|---|---|
-| I-02-1 | canonical OwnerKey×request_key 持久幂等，同参重放、异参拒绝；MCP 重启不绕过。归并原子重键且原 outcome 不变，原范围可审计；不复制结果或扫描关闭 alias；查幂等前先锁内重验本调用捕获的 scope generation/证据版本/context/目标 run/binding，过时拒绝且不重贴代次（consult 4 增补，F07） | DB+TX+E；T-02-1–5、27 |
+| I-02-1 | canonical OwnerKey×request_key 持久幂等，同参重放、异参拒绝；MCP 重启不绕过。归并原子重键且原 outcome 不变，原范围可审计；不复制结果或扫描关闭 alias；查幂等前先锁内重验本调用捕获的 scope generation/证据版本/context/目标 run/binding，过时拒绝且不重贴代次（consult 4 增补，F07）；（consult 5 增补，G03）当前授权及来源前提仍先于幂等；同参重放先于新意图 expectedRun/槽/能力门禁，旧 run 已非 current 也返回原结果 | DB+TX+E；T-02-1–5、27 |
 | I-02-2 | 已接受操作的 link/run(starting)/claim/idempotency/slot 与 typed actor 的 accepted 事件同事务；resume 复用 link 新增 run，失败不留部分意图；逐 run launch_cwd/project_origin 冻结，workspace只首次捕获；事务外才启动/Git采集 | DB+TX；T-02-6、7、30、31、32、34 |
 | I-02-3 | 每实际 SessionRef 一个槽、每 run 一个槽；仅持槽且成功消费本轮执行票据的执行者能提交命令；不能因 MCP 重启或超时重发票据 | DB+TX+E；T-02-7、8 |
 | I-02-4 | provisional 只给全新会话首次 spawn；resume/predecessor 必须有真实 ref。身份解析后同事务换真实槽；冲突时两 run 都 uncertain、保留各自槽、停止进一步启动/续跑，等待对账 | DB+TX；T-02-9、10 |
@@ -76,7 +84,7 @@
 | I-02-13 | 父 MCP 断连不代表子结束；默认 orphan_policy=continue，stop 也经取消与退出证明；活跃 headless 只看日志，不启动可见副本 | TX+E；T-02-16、24 |
 | I-02-14 | schema v1 可在 node:sqlite 空库执行；连接启用 foreign_keys、WAL 与短 busy 等待，总重试预算归06；更高 user_version 拒写，JSON 只导出 | DB+TX；T-02-25、26 |
 | I-02-15 | 新轮不得覆盖已知 child/target 或缩范围；结束与原生结果分离。普通范围外工具仅诊断，已证实原 harness/同 SessionRef 旧写者仍活则是阻断冲突；不得复用 | DB+TX+E；T-02-14、28；03 T-03-8、9；04 T-04-5–7 |
-| I-02-16 | ledgerId 单行初始化/不可变，独立新库不同；params_digest 含launch_cwd/显式originRepoId/本地expectedRun，不含Git结果/declaredAt/显示名/捕获时间；公开导出归07/B18 | DB+TX；T-02-30–34 |
+| I-02-16 | ledgerId 单行初始化/不可变，独立新库不同；params_digest 含launch_cwd/显式originRepoId/本地expectedRun，不含Git结果/declaredAt/显示名/捕获时间；公开导出归07/B18；（consult 5 增补，G03）expectedRun 在 MCP/local 实际提供时才入摘要；缺省编码及 params_version=1 不变，本地仍必填；新意图 CAS 不符零新 run/claim/slot/提交 | DB+TX；T-02-30–34 |
 
 ## 状态机
 
@@ -236,7 +244,7 @@ C4 的未来 `holderLabel?: string` 由实际 lease owner/job 身份在同一读
 | T-02-31 (A9 fixture) | NULL workspace首次捕获/已捕获再改或清空/已有project_origin再补快照 → 仅首次补齐成功，workspace.captured同事务；origin不变，超时/非Git原因可保留，不重启harness |
 | T-02-32 (A9 fixture) | ledger初始化、第二行/替换/删除、重启/同库备份恢复、独立新库 → 单行ledgerId不变，独立新库不同；对外键以ledgerId命名空间隔离 |
 | T-02-33 (A9 fixture) | 相同请求缓存命中/未命中、Git结果/显示名/采集时间/declaredAt改变 → 同digest/重放；修改launch cwd或显式originRepoId → 异参拒绝；路径消失不改已存启动历史 |
-| T-02-34 (A9 fixture) | 合法local resume同key同参重放但currentRun已变化、旧expectedRun换新key、mode/expectedRun异参 → 首项返回原结果，后两组拒绝；新意图全部门禁及typed actor重验，零旧父MCP伪装 |
+| T-02-34 (A9 fixture) | 合法local resume同key同参重放但currentRun已变化、旧expectedRun换新key、mode/expectedRun异参 → 首项返回原结果，后两组拒绝；新意图全部门禁及typed actor重验，零旧父MCP伪装；（consult 5 增补，G03）B45-R2 补 MCP 可选参数：新轮出现后旧键仍重放原 run；同键改变 expectedRun 冲突；两调用者先读同 run、不同 key 竞争最多一个新意图；另一轮已启动并结束后旧 expectedRun 新 key 仍 expected_run_mismatch 且零 run/claim/slot/外部提交；缺省旧编码兼容、本地必填及 preparation 前提重验保留 |
 | T-02-35 (A9 prototype) | 真实临时SQLite保存N@20+gone@20+alive@30+gone@40及倒序导入 → uncertain/持槽/持久X；已failed后导入合成目标的真实活性，再gone → 原终态/完成事件/已释放槽不重写，持久冲突继续阻断新操作 |
 
 A9 最小执行包：真实临时 SQLite + 合成进程验证同键并发单次提交、异参拒绝、意图/槽原子、归并重放、意图 commit 后/提交前后/回写前崩溃均不重发（T-02-1、3–6、8、12）。恢复包包括已选可见机制 A8 接受证据、正常 scope 结束、活成员阻终结、取消未确认持槽、supervisor 死后无旧 receipt 的 Q 可达或列明缺证、恢复无新执行权（T-02-14、15；04 T-04-24、25、30）。其他 A9 fixture 审规格，不要求全部 B 先完成；生产实现与完整矩阵在 B3/B4/B5/B14 验收。

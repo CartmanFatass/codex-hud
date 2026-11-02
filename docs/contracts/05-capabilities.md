@@ -12,6 +12,8 @@
 
 冻结后生效版本：`A9 + consult4-2026-11-01`。配置形状增补依据 [Oracle consult 4 F03](../reviews/2026-11-01-astra-consult4.md#f03冻结最小配置-envelope)；此前裁决与能力格的独立验收要求保留，不改 ledger schema v1。（consult 4 增补，F03）
 
+冻结后增补版本：`A9 + consult4 + F08-Pro + consult5-2026-11-02`。本轮依 [Oracle consult 5](../reviews/2026-11-02-astra-consult5.md) 增补，保留此前 C/D/E、consult 4 F01–F11、F08 Pro 与 A9-fix；ledger schema v1 不变，不授予尚未验收的生产能力。（consult 5 增补，G01）（consult 5 增补，G04）
+
 ## 数据模型
 
 ### 会话观测绑定与受管绑定
@@ -49,6 +51,22 @@ SurfaceOptions.managed 是可选语义、显式 nullable 的受管启动上下�
 `CapabilityCell` 的键为 `(harness, profileDigest, hostKind, layout, mode, operation, resumeFrom?)`。operation 为首次 launch/spawn 或 resume；resumeFrom 为上一轮 visible/headless。一次验收只覆盖一个完整键。`support = verified | unverified | unsupported`；只有 verified 可向调用者宣称「支持」。unverified 是未验证，运行前返回 capability_unverified；unsupported 是明确超出当前范围，返回 unsupported。不得把计划排期或 CLI 返回成功当 verified。
 
 每格保存 `versions{hudRevision,harness,host,shell,node,platform,kernel,mcpClient}`、实际启动拓扑/source、档案指纹、`evidence{script,report,reportSha256,artifactDigest,observedAt,reviewStatus}`、逐项结果及未完成项。observedAt 为毫秒 epoch；原始产物不入公开仓库。缺版本、脚本/日志、身份/输入/范围/回执核验或主审接受记录时，不升级为 verified。升级 harness、host、包装链、服务器配置或 resume 模板后，受影响格回到 unverified；其他格不自动失效或升级。
+
+（consult 5 增补，G04）能力格随受信代码/发布组合携带，唯一共享 envelope 为 `src/core/types/capabilities.ts` 的 CapabilityManifestV1，启动能力加载器消费同一类型；不是 delegate.json、HUD_HOME 或模型参数可指定/覆写的证据文件：
+
+```ts
+type CapabilityManifestV1 =
+  | { version: 1; hudRevision: null; cells: [] }
+  | { version: 1; hudRevision: string; cells: CapabilityCell[] };
+```
+
+（consult 5 增补，G04）manifest 文件≤256 KiB、cells≤128；未知版本、错误结构、重复完整键、缺失/矛盾证据不能选出 verified。null revision 仅配空的未验证 manifest；文件可列 unverified/unsupported，加载不晋级。envelope、cell.versions 与运行中的受信 HUD 构建标识一致；完整 key/sourceId/profileFingerprint、实际 executable/version、拓扑及整个 versions 元组必须匹配。仅既定类型化占位可表示 run 动态值，实际执行值仍入意图摘要，不通配 source/固定配置/shell 实际解析目标。
+
+（consult 5 增补，G04）hudRevision 是构建/发布组合层给出的受检可执行构建不可变标识，不接受模型参数、delegate.json 或任意环境覆盖。不能要求 manifest 含自己的最终 Git SHA 形成循环；可绑定受检代码构建摘要，manifest/report 摘要另存。可能影响该格的代码/helper/档案/版本变化均使受影响格回 unverified。unverified/unknown 占位字符串不是版本证明；host/shell=none 仅拓扑确实不适用时合法。B11/发布组合在启动预检中有界获取可信 executable/version/runtime 并复用，不在每次 acceptance 跑 --version；动态 shell/function 的实际目标无法证明则仍 unverified。
+
+（consult 5 增补，G04）晋级同时要求五项 product 结果、accepted review、空 incomplete、适用 06 预算及 A9/B14 条件；仅五项 passed 不证明性能。Claude 父路径覆盖实际 Claude/hook/helper/档案和 F08 双预算，不能只写目标 Codex 版本。B14 可由受信测试组合注入显式 test-only verifier 取证，再经评审生成发布 manifest；测试注入不成为生产参数，不绕过普通请求 capability_unverified。初始空文件、B45 真实闭环及本次裁决都不自行晋级，只放行实际覆盖的格。
+
+（consult 5 增补，G01）headless 能力证据必须覆盖 04 的不可移组轻量 session/group leader、受保护输入单次提交/EOF 封口、用户环境与整组取消，以及 verified_wait/native_unknown 两支；无可信 native 结果不影响完整 scope 结束，已有精确来源断言仍保留。B3a-R1 替代验收前保留当前 Node helper，B6 helper 相关取消能力及 B14 headless 格不得升 verified；资源/故障证据按 06 G02，不能用原型 sh 的约 2 MiB 或旧 60s/file-fake 代替。
 
 本批读取的证据如下，SHA-256 以前 12 位定位报告快照；它们是局部事实，不是托管产品格的 pass：
 
@@ -138,7 +156,7 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 
 | 编号 | 断言 | 测试 |
 |---|---|---|
-| I-05-1 | 支持声明绑定完整能力键、版本、档案和已接受证据；未测格始终 unverified，未声明能力不猜；delegate.json 解析成功、callSource 选择或 managedShellVerified:true 都不自证能力，仍按完整版本/档案/已接受证据验收（consult 4 增补，F03）；显式 Claude hook 档案还须绑定 Claude 版本、helper 修订、profile 指纹及06联合<150ms/MCP内部<50ms双预算证据，缺格不授 verified，相关变更使受影响格退回 unverified（F08 Pro 裁决增补） | T-05-1、2 |
+| I-05-1 | 支持声明绑定完整能力键、版本、档案和已接受证据；未测格始终 unverified，未声明能力不猜；delegate.json 解析成功、callSource 选择或 managedShellVerified:true 都不自证能力，仍按完整版本/档案/已接受证据验收（consult 4 增补，F03）；显式 Claude hook 档案还须绑定 Claude 版本、helper 修订、profile 指纹及06联合<150ms/MCP内部<50ms双预算证据，缺格不授 verified，相关变更使受影响格退回 unverified（F08 Pro 裁决增补）；（consult 5 增补，G04）共享 CapabilityManifestV1 与受信构建/预检版本完整匹配；≤256KiB/128cells、无重复完整键；晋级还需 product 五项/accepted review/空 incomplete/06 与 A9/B14 门槛，test-only verifier 不开放为生产参数 | T-05-1、2 |
 | I-05-2 | argv/shell 互斥，source 显式且核验；逐run启动位置冻结，Git不进热路径；shell 单次前台启动形态经验证，不能把任意文本升级为受管能力；v1 envelope/严格键/类型/唯一名称/文件及 profile 上限必须校验，可选 roles 仅数据，实际 model/effort 入 02 digest，缺映射不猜，资源约束键拒绝（consult 4 增补，F03） | T-05-3、6、17 |
 | I-05-3 | Codex 按服务器名仅注入四个 HUD 叶子键，保留其余配置；HUD_HOME 到 MCP、resume 新 claim，运输不等于身份 | T-05-4、5 |
 | I-05-4 | 观测SessionBinding非null必有完整ref，无可靠唯一选择返回null；普通SurfaceLocator用独立nullable occupantGeneration，无假run/受管代次；managed仅真实相符当前run，ref/实例不符不升级关联；控制前校验实例/occupant，未知拒绝但可有预算读取，管理copy-only与权限仍依01–04 | T-05-7、8、18 |
@@ -172,8 +190,8 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 
 | 编号 | Gate | 输入 → 断言 |
 |---|---|---|
-| T-05-1 | A9 | 只有 CLI 成功/单跳 env/计划排期，缺版本或日志/接受记录 → 无 verified 格；矩阵默认 unverified；合法 v1 envelope/roles 或 managedShellVerified:true 仍不授 verified；未知版本/键、错类型、重复 name、文件>256 KiB 或 profiles>128 均拒绝（consult 4 增补，F03）；显式 callSource 但缺 Claude 版本/helper 修订/profile 指纹或双预算已接受证据，仍 unverified，历史 hook/skeleton/not_implemented 数值不补齐；新增断言在B重验，不追认A9已执行（F08 Pro 裁决增补） |
-| T-05-2 | B | 每个 Codex 产品格逐一验身份、输入落点、退出/槽与不重复提交；改 harness/profile/host 版本仅使受影响格未验证；保留原证据快照；显式 Claude 来源档案逐格绑定 Claude 版本/helper 修订/profile 指纹及06双预算证据，改其中任一项使受影响格退回unverified；真实Claude的spawn/resume须durable accepted、保留hooks/配置及精确claim/HUD_HOME、零重复提交，F06/F07反例通过；B14的≥1000次/组合与另行≥200次真实联合/≥10次启动/每声明路径≥20次及逐工具/结果分布齐全，缺格或只测快拒绝不授verified，B15仍须真实Claude→Codex闭环（F08 Pro 裁决增补） |
+| T-05-1 | A9 | 只有 CLI 成功/单跳 env/计划排期，缺版本或日志/接受记录 → 无 verified 格；矩阵默认 unverified；合法 v1 envelope/roles 或 managedShellVerified:true 仍不授 verified；未知版本/键、错类型、重复 name、文件>256 KiB 或 profiles>128 均拒绝（consult 4 增补，F03）；显式 callSource 但缺 Claude 版本/helper 修订/profile 指纹或双预算已接受证据，仍 unverified，历史 hook/skeleton/not_implemented 数值不补齐；新增断言在B重验，不追认A9已执行（F08 Pro 裁决增补）；（consult 5 增补，G04）补 manifest null revision 仅空 cells、错 envelope/cell HUD revision、未知版本/坏结构/重复完整键/矛盾证据、超256KiB或128cells、占位版本、任意环境/用户证据文件覆盖均不选 verified；动态 shell 目标不可证仍 unverified |
+| T-05-2 | B | 每个 Codex 产品格逐一验身份、输入落点、退出/槽与不重复提交；改 harness/profile/host 版本仅使受影响格未验证；保留原证据快照；显式 Claude 来源档案逐格绑定 Claude 版本/helper 修订/profile 指纹及06双预算证据，改其中任一项使受影响格退回unverified；真实Claude的spawn/resume须durable accepted、保留hooks/配置及精确claim/HUD_HOME、零重复提交，F06/F07反例通过；B14的≥1000次/组合与另行≥200次真实联合/≥10次启动/每声明路径≥20次及逐工具/结果分布齐全，缺格或只测快拒绝不授verified，B15仍须真实Claude→Codex闭环（F08 Pro 裁决增补）；（consult 5 增补，G04）补受信构建与完整 key/source/profile/executable/拓扑/versions 元组匹配；代码/helper/版本变更退格；五项 passed 但缺预算/accepted review/空 incomplete 不晋级，可信启动预检结果复用且 acceptance 不跑版本子进程；B14 test-only取证→评审→发布manifest，Claude父版本/双预算全覆盖，生产无注入参数；（consult 5 增补，G01）headless 晋级前验证轻量 leader 的 scope/封口/环境/取消及 native_unknown/verified_wait 正反例，资源/故障按 06 G02，替代未验不放行 |
 | T-05-3 | A9 | 空格、引号、换行、$()、分号参数与显式 shell 两组 → argv 字节不成为代码；双形态/空模板拒绝；shell 延迟/循环不授完整托管能力；roles 只接收 model:string/effort?:string 的有界数据，未知资源约束/模板键和不合格类型拒绝，不静默忽略、不执行角色映射（consult 4 增补，F03） |
 | T-05-4 | A9 | 合成既有 command/args、多 env、其他服务器、安全/timeout 配置，含带点服务器名 → 只改四个 HUD 叶子；参数/TOML 正确；精确 claim/HUD_HOME 字节到探针 MCP，日志无明文 claim |
 | T-05-5 | B | TUI/exec 的 launch 与两个 resume 模板分别启 MCP → 每轮新 claim/同 HUD_HOME/同 source，其他配置保留；验证 01 握手，不把旧凭据带到新 run |

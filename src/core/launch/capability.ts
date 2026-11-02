@@ -2,7 +2,7 @@ import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { capabilityKey, capabilitySupport } from '../capabilities.js';
 import { canonicalJson } from '../canonical.js';
-import type { CapabilityCell, CapabilityKey, CapabilityVersions } from '../types/capabilities.js';
+import type { CapabilityCell, CapabilityKey, CapabilityManifestV1, CapabilityVersions } from '../types/capabilities.js';
 // Importing the data also makes tsc ship it next to the compiled loader.
 import shippedCells from './codex-cells.json' with { type: 'json' };
 
@@ -78,7 +78,8 @@ export function createShippedCodexCapabilityVerifier(options: {
     } finally {
       closeSync(fd);
     }
-    const envelope = JSON.parse(bytes.toString('utf8'));
+    // Consult 5 G04: share the manifest contract; runtime evidence checks remain below.
+    const envelope: CapabilityManifestV1 = JSON.parse(bytes.toString('utf8'));
     if (
       envelope?.version === 1 &&
       typeof options.hudRevision === 'string' &&

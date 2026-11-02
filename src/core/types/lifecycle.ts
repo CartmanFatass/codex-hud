@@ -117,6 +117,23 @@ export interface WaitPage {
   hasMore: boolean;
   asOfSeq: number;
 }
+
+/**
+ * Consult 5 G03: only an explicitly supplied MCP precondition enters params_digest.
+ * Authorization and same-key replay precede the new-intent currentRun comparison;
+ * omission preserves transaction-selected current-run semantics (B45-R2).
+ */
+export type McpResumeRequest = {
+  linkId: string;
+  request_key: string;
+  mode: RunMode;
+  prompt?: string;
+  expectedRun?: string;
+};
+
+/** Consult 5 G03: the trusted local entry continues to require an explicit target. */
+export type LocalResumeRequest = McpResumeRequest & { expectedRun: string };
+
 export interface ResumePlan {
   actor: ControlInitiator;
   ownerKey: OwnerKey;
