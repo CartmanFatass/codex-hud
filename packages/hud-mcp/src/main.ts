@@ -3,6 +3,7 @@ import { join, isAbsolute } from 'node:path';
 import { loadDelegateConfig } from './config.js';
 import { LinuxProcessReader } from './process.js';
 import { FileCallerRegistry, MemoryCallerRegistry, registerCaller } from './registry.js';
+import { createLedgerCallerRegistry } from './ledger-registry.js';
 import { SessionRefResolver } from './resolvers.js';
 import { HudMcpServer, serveStdio } from './server.js';
 const home = process.env.HUD_HOME;
@@ -15,7 +16,11 @@ if (profileName && !profile) throw new Error('HUD_MCP_PROFILE is not present in 
 const reader = new LinuxProcessReader();
 const fakeDirectory = process.env.HUD_MCP_REGISTRY_DIR;
 if (fakeDirectory && !isAbsolute(fakeDirectory)) throw new Error('HUD_MCP_REGISTRY_DIR must be absolute');
-const registry = fakeDirectory ? new FileCallerRegistry(fakeDirectory) : new MemoryCallerRegistry();
+const registry = existsSync(join(home, 'ledger.sqlite'))
+  ? await createLedgerCallerRegistry(home)
+  : fakeDirectory
+    ? new FileCallerRegistry(fakeDirectory)
+    : new MemoryCallerRegistry();
 const registration = await registerCaller({
   reader,
   registry,

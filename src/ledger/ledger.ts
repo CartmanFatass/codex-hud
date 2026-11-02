@@ -67,6 +67,13 @@ export class Ledger {
     }
   }
 
+  /** Queue a consistent read behind writes sharing this connection. No write lock. */
+  readSnapshot<T>(callback: (tx: LedgerTransaction) => T): Promise<T> {
+    const result = this.#tail.then(() => this.snapshot(callback));
+    this.#tail = result.catch(() => {});
+    return result;
+  }
+
   /** SQLite WAL recovery happens on open. Never recreate metadata or reset execution tickets. */
   checkIntegrity(): { integrity: string[]; foreignKeys: object[] } {
     return this.snapshot((tx) => ({
