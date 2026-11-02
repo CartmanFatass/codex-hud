@@ -25,7 +25,9 @@
     "check:fixtures": "bash tests/check-fixtures.sh",
     "check:fixtures:selftest": "bash tests/check-fixtures.selftest.sh",
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write src tests",
-    "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check src tests"
+    "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check src tests",
+    "build:hud-mcp": "node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
+    "test:hud-mcp": "npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js"
   },
   "keywords": [
     "codex",
