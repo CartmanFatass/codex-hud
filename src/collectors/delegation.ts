@@ -32,6 +32,26 @@ function identity(file: string): string | null {
     return null;
   }
 }
+type FileStamp = Pick<fs.Stats, 'dev' | 'ino' | 'size' | 'mtimeMs' | 'ctimeMs'>;
+function fileStamp(file: string): FileStamp | null {
+  try {
+    return fs.statSync(file);
+  } catch {
+    return null;
+  }
+}
+function sameFileStamp(a: FileStamp | null | undefined, b: FileStamp | null | undefined): boolean {
+  return (
+    a === b ||
+    (!!a &&
+      !!b &&
+      a.dev === b.dev &&
+      a.ino === b.ino &&
+      a.size === b.size &&
+      a.mtimeMs === b.mtimeMs &&
+      a.ctimeMs === b.ctimeMs)
+  );
+}
 interface Source {
   adapter: CodexAdapter | ClaudeAdapter;
   root: string;
@@ -41,18 +61,19 @@ interface Source {
   storeDirty: boolean;
 }
 interface Reading {
+  snapshot?: { envelope: CollectedLinkSession; token: number; dirty: boolean; value: CollectedLinkSession };
   file?: string | null;
   checkpoint?: ReaderCheckpoint;
   ref: SessionRef;
   reader?: SessionReader;
   envelope?: CollectedLinkSession;
   raw?: SessionEvidence;
-  signature: string | null;
+  signature: FileStamp | null;
   dirty: boolean;
   caughtUp: boolean;
   topologyToken: number;
   lastGrantedKind?: 'session' | 'native_topology';
-  resetSignature?: string | null;
+  resetSignature?: FileStamp | null;
   resetPending?: boolean;
 }
 function evidenceFromView(ref: SessionRef, observation: ObservationView): SessionEvidence {
@@ -80,6 +101,8 @@ function evidenceFromView(ref: SessionRef, observation: ObservationView): Sessio
 }
 
 class SessionCollection implements LinkCollectionPort {
+  readonly immutableSnapshots = true;
+  private snapshot: readonly CollectedLinkSession[] | null = null;
   private readings = new Map<string, Reading>();
   private sourceChecks = new Map<string, { dirty: boolean; token: number }>();
   readonly minimumBytes = new Map<string, number>();
@@ -87,26 +110,37 @@ class SessionCollection implements LinkCollectionPort {
   private commitCursor: string | undefined;
   private deadline = Infinity;
   constructor(readonly sources: Map<string, Source>) {}
+  invalidateSnapshots(): void {
+    this.snapshot = null;
+    for (const reading of this.readings.values()) reading.snapshot = undefined;
+  }
   begin(deadline: number): void {
     this.deadline = deadline;
     this.charges = { bytesRead: 0, recordsRead: 0 };
     this.sourceChecks.clear();
+    let storesChanged = false;
     for (const source of this.sources.values()) {
       if (!source.store) continue;
       const file = source.store.databasePath;
       const stamp = `${signature(file)}:${signature(file + '-wal')}`;
       source.storeDirty = stamp !== source.storeSignature;
+      storesChanged ||= source.storeDirty;
       source.storeSignature = stamp;
     }
+    if (!storesChanged && !this.pendingCommits.size) return;
+    const storeIdentities = new Map(
+      [...this.sources].map(([id, source]) => [id, source.store ? identity(source.store.databasePath) : null])
+    );
     for (const [key, reading] of this.readings) {
       const source = this.sources.get(reading.ref.sourceId);
       if (!reading.envelope) continue;
-      if (!source?.store || identity(source.store.databasePath) !== source.storeIdentity) {
-        if (reading.envelope.evidence.observation.statusProjection.observationStamp)
+      if (!source?.store || storeIdentities.get(reading.ref.sourceId) !== source.storeIdentity) {
+        if (reading.envelope.loaded && reading.envelope.evidence.observation.statusProjection.observationStamp)
           reading.envelope = { ...reading.envelope, loaded: false };
       }
       if (source?.storeDirty) this.pendingCommits.add(key);
     }
+    if (!this.pendingCommits.size) return;
     const entries = [...this.readings];
     const prior = entries.findIndex(([key]) => key === this.commitCursor);
     const ordered = [...entries.slice(prior + 1), ...entries.slice(0, prior + 1)];
@@ -119,35 +153,52 @@ class SessionCollection implements LinkCollectionPort {
     }
   }
   sessions(): readonly CollectedLinkSession[] {
-    return [...this.readings.values()].flatMap((reading) => {
-      if (!reading.envelope) return [];
+    const states = new Map<string, { topologyDirty: boolean; topologyToken: number }>();
+    let result: CollectedLinkSession[] | null = null;
+    let index = 0;
+    for (const reading of this.readings.values()) {
+      if (!reading.envelope) continue;
       const envelope = reading.envelope;
       let topology = envelope.topology;
       const source = this.sources.get(reading.ref.sourceId);
+      let token = -1,
+        dirty = false;
       if (topology && source?.adapter instanceof CodexAdapter) {
-        const state = source.adapter.collectionState(reading.ref, false);
-        if (state.topologyDirty || state.topologyToken !== reading.topologyToken)
+        let state = states.get(reading.ref.sourceId);
+        if (!state) {
+          state = source.adapter.collectionState(reading.ref, false);
+          states.set(reading.ref.sourceId, state);
+        }
+        token = state.topologyToken;
+        dirty = state.topologyDirty || token !== reading.topologyToken;
+      }
+      let cached = reading.snapshot;
+      if (!cached || cached.envelope !== envelope || cached.token !== token || cached.dirty !== dirty) {
+        if (topology && dirty)
           topology = {
             ...topology,
             loaded: false,
             coverage: { ...topology.coverage, state: 'catching_up', loaded: false, reason: 'native_topology' },
           };
-      }
-      return [
-        {
+        const value = {
           ...envelope,
           bytesRead: 0,
           recordsRead: 0,
           ...(topology ? { topology: { ...topology, bytesRead: 0, recordsRead: 0 } } : {}),
-        },
-      ];
-    });
+        };
+        reading.snapshot = cached = { envelope, token, dirty, value };
+      }
+      if (!result && this.snapshot?.[index] !== cached.value) result = this.snapshot?.slice(0, index) ?? [];
+      result?.push(cached.value);
+      index++;
+    }
+    if (result || this.snapshot?.length !== index) this.snapshot = result ?? this.snapshot?.slice(0, index) ?? [];
+    return this.snapshot!;
   }
-  private reading(ref: SessionRef): Reading {
-    const key = displayNodeKey({ kind: 'session', ref });
+  private reading(ref: SessionRef, key = displayNodeKey({ kind: 'session', ref })): Reading {
     let reading = this.readings.get(key);
     if (!reading) {
-      reading = { ref, signature: null, dirty: true, caughtUp: false, topologyToken: -1 };
+      reading = { ref: { ...ref }, signature: null, dirty: true, caughtUp: false, topologyToken: -1 };
       this.readings.set(key, reading);
     }
     return reading;
@@ -187,30 +238,37 @@ class SessionCollection implements LinkCollectionPort {
       return false;
     }
   }
-  pending(ref: SessionRef): 'session' | 'native_topology' | null {
+  pending(ref: SessionRef, key?: string): 'session' | 'native_topology' | null {
     if (performance.now() >= this.deadline) return null;
     const source = this.sources.get(ref.sourceId);
     if (!source || source.adapter.id !== ref.harness) return null;
-    const reading = this.reading(ref);
+    const reading = this.reading(ref, key);
     if (source.adapter instanceof CodexAdapter) {
       const first = !this.sourceChecks.has(ref.sourceId);
-      const state = source.adapter.collectionState(ref, first, this.deadline);
+      const prior = this.sourceChecks.get(ref.sourceId);
+      // A resolved path remains indexed while this source's catalog epoch is
+      // unchanged. File stat below still checks every visible file each tick.
+      const state =
+        !first && !prior!.dirty && reading.file && reading.topologyToken === prior!.token
+          ? { file: reading.file, topologyDirty: false, topologyToken: prior!.token }
+          : source.adapter.collectionState(ref, first, this.deadline);
       if (first) this.sourceChecks.set(ref.sourceId, { dirty: state.topologyDirty, token: state.topologyToken });
       if (!state.file && reading.envelope && (reading.reader || !state.topologyDirty)) {
         reading.resetPending = true;
-        reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
+        if (reading.envelope.loaded || reading.envelope.linkEvidenceCurrent)
+          reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
       }
       if (state.file) {
-        const current = signature(state.file);
-        if (current !== reading.signature) reading.dirty = true;
-        if (reading.signature && current !== reading.signature) {
-          const old = reading.signature.split(':'),
-            next = current?.split(':');
+        const current = fileStamp(state.file);
+        if (!sameFileStamp(current, reading.signature)) reading.dirty = true;
+        if (reading.signature && !sameFileStamp(current, reading.signature)) {
+          const old = reading.signature;
           if (
-            reading.resetSignature !== current &&
-            (!next || old[0] !== next[0] || old[1] !== next[1] || Number(next[2]) <= Number(old[2]))
+            !sameFileStamp(reading.resetSignature, current) &&
+            (!current || old.dev !== current.dev || old.ino !== current.ino || current.size <= old.size)
           ) {
             source.adapter.invalidateTopology(ref);
+            this.sourceChecks.set(ref.sourceId, { dirty: true, token: -1 });
             reading.topologyToken = -1;
             reading.resetSignature = current;
             reading.resetPending = true;
@@ -240,6 +298,7 @@ class SessionCollection implements LinkCollectionPort {
     const source = this.sources.get(ref.sourceId);
     if (!source) return null;
     const reading = this.reading(ref);
+    ref = reading.ref;
     reading.lastGrantedKind = kind;
     if (kind === 'native_topology') {
       const topology = source.adapter.collectTopology
@@ -287,7 +346,7 @@ class SessionCollection implements LinkCollectionPort {
         }
       }
       reading.reader ??= source.adapter.open(ref, reading.checkpoint);
-      const readSignature = source.adapter instanceof CodexAdapter ? signature(reading.file!) : null;
+      const readSignature = source.adapter instanceof CodexAdapter ? fileStamp(reading.file!) : null;
       const previousGeneration = reading.checkpoint?.sourceGeneration;
       const result = await reading.reader.read(budget);
       if (!result.evidence || !result.stats) return null;
@@ -362,6 +421,7 @@ class SessionCollection implements LinkCollectionPort {
     return charged;
   }
   invalidateSource(sourceId: string): void {
+    this.invalidateSnapshots();
     for (const [key, reading] of this.readings)
       if (reading.ref.sourceId === sourceId) {
         if (reading.envelope?.evidence.observation.statusProjection.observationStamp)

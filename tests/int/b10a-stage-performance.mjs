@@ -47,8 +47,9 @@ const hook = registerHooks({
     );
     inject('// Scheduling metadata only.', mark('retained_envelopes_index') + '// Scheduling metadata only.');
     inject(
-      'const sessions = [...unique.values()];',
-      mark('source_metadata_and_scheduler') + 'const sessions = [...unique.values()];'
+      'const sessions = !didCollect && immutableSnapshots && unique.size === retained.length ? retained : [...unique.values()];',
+      mark('source_metadata_and_scheduler') +
+        'const sessions = !didCollect && immutableSnapshots && unique.size === retained.length ? retained : [...unique.values()];'
     );
     inject('const ledgerKey =', mark('io_accounting') + 'const ledgerKey =');
     inject('const memo = keyOf();', 'const memo = keyOf();\n' + mark('memo_key_compute'));
