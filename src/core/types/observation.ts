@@ -68,9 +68,15 @@ export interface Coverage {
 }
 
 export interface ReaderParserState {
-  /** UTF-8 bytes, including an incomplete code point; never a decoded partial string. */
+  /** Schema-v1 compatibility field; durable checkpoints always contain []. Raw tails are live-reader-only. */
   pendingBytes: number[];
+  /** Uncommitted byte count only; offset and summaries remain at the last complete record. */
+  tailBytesSeen?: number;
+  /** An incomplete fixed-EOF record keeps coverage partial even with empty pendingBytes. */
+  tailAtEof?: boolean;
   discardingOversize: boolean;
+  /** Durable next byte to discard; no oversized record body is retained. */
+  discardOffset?: number | null;
   usageMessageIds: string[];
   compactBoundary: string | null;
   openToolWaits: { id: string; startedAt: number; lastActivityAt: number }[];

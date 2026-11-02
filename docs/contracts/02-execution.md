@@ -12,6 +12,8 @@
 
 [Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
 
+冻结后生效版本：`A9 + consult4-2026-11-01`。以下增补保留 C/D/E 与 A9-fix，ledger schema v1/DDL 不变；F07 仅冻结事务规则，生产接线归 B2/B5。（consult 4 增补，F03）（consult 4 增补，F04）（consult 4 增补，F07）
+
 ## 数据模型
 
 | 对象 | 必要语义 |
@@ -36,7 +38,11 @@
 
 `request_key` 是必填、区分大小写的 1–256 字符 opaque 字符串。对操作名和参数做版本化规范化：对象键递归排序，数组保留顺序，区分 null 与缺省，采用契约定义的默认值，拒绝未知字段和非有限数字；字符串不做 Unicode 归一化。`params_digest = SHA256(UTF8(canonical JSON))`。摘要覆盖 operation、backend/profile/source、role/model/effort、mode/layout、规范 `launch_cwd`（请求 cwd 经解析后的固定值）、请求显式 `originRepoId`、brief/report 路径、brief 内容 hash、resume 的 linkId/prompt hash（本地入口另含 expectedRun）、predecessor、显式授权/资源参数和解析后的后端档案指纹；不含 request_key、caller_id、MCP PID、当前时间、随机 runId/claim、写者追加的 declaredAt、易变 Git 探测结果、显示名或采集时间。缓存命中/缺失不改变同一控制请求的摘要。同样的文件路径但内容或档案已改变算不同参数，返回冲突，不偷偷重跑。规范化版本由 `params_version` 固定为 1。
 
+（consult 4 增补，F03）参数摘要中的 role/model/effort 是按 05 的 delegate.json v1 envelope/可选 roles 映射和本次明确请求解析后的实际值，连同非秘密档案指纹纳入 params_version=1 的规范化输入；角色名称不代替实际 model/effort，缺映射不能猜模型。配置解析成功不授予已验证能力；资源约束不在本期格式，不可先静默忽略再生成同参摘要（05 I-05-1/2；T-02-2）。
+
 路径读取、摘要/hash、宿主 CLI、配置/进程/会话证据采集均在事务外完成；带着版本/指纹进入短 `BEGIN IMMEDIATE`，事务内重验 context 当前逻辑来源/代次、证据版本、owner/槽/冲突。外部 I/O 不占 SQLite 写事务，锁等待与重试受契约 [06](./06-observation.md) 的总响应预算约束；预算耗尽返回 busy/未接受，不提交动作。
+
+（consult 4 增补，F07）本调用的可信来源选择必须携带已捕获的 scope generation、证据版本、context 与目标 run/binding 前提；取得写锁后、查幂等或写入前仍须全部匹配。过时即 stale_context/identity_unverified，不临时重贴新 generation、不凭旧证据盲重试。原生子只拒本调用，不建立 root context、不兑换根 claim、不关闭根 scope/context/alias、不触发根换代；可信根来源变化才由同一 reconciler 事务失效旧范围/授权。跨 MCP 的当前 scope/context 以共享 B2 事务为权威，实例内 currentRef/invalidated 仅诊断；同根 MCP 重启/并发建代保持同 OwnerKey/未关闭代次，CAS 失败可要求新调用。新会话换代后旧实例不能复活旧授权，MCP 物理启动较晚不构成换代。合法旧代已 durable accepted 的意图保留原事实，仍按原票据在登记/提交重验，不抹掉接受或起副本；01 的 Claude /clear、双 MCP 和 Codex 原生子矩阵全部适用。外部取证仍在事务外，不能为修竞态把文件或 /proc I/O 搬入写事务。
 
 1. 从本次已核验的当前 context 派生 canonical OwnerKey：已绑定 session；仅逻辑来源可辨且尚未绑定的 dedicated 用本代 proc。共享/缺来源/旧代先拒绝，不沿用连接上次身份。
 2. 仅用 `(canonical owner_key, request_key)` 索引查询；params_version/digest 不符即 idempotency_conflict。同参只返回原 linkId/runId/outcome，动态状态另作 current 投影；uncertain 也不重新提交。
@@ -55,7 +61,7 @@
 
 | 编号 | 可检查的断言 | 层 / 测试 |
 |---|---|---|
-| I-02-1 | canonical OwnerKey×request_key 持久幂等，同参重放、异参拒绝；MCP 重启不绕过。归并原子重键且原 outcome 不变，原范围可审计；不复制结果或扫描关闭 alias | DB+TX+E；T-02-1–5、27 |
+| I-02-1 | canonical OwnerKey×request_key 持久幂等，同参重放、异参拒绝；MCP 重启不绕过。归并原子重键且原 outcome 不变，原范围可审计；不复制结果或扫描关闭 alias；查幂等前先锁内重验本调用捕获的 scope generation/证据版本/context/目标 run/binding，过时拒绝且不重贴代次（consult 4 增补，F07） | DB+TX+E；T-02-1–5、27 |
 | I-02-2 | 已接受操作的 link/run(starting)/claim/idempotency/slot 与 typed actor 的 accepted 事件同事务；resume 复用 link 新增 run，失败不留部分意图；逐 run launch_cwd/project_origin 冻结，workspace只首次捕获；事务外才启动/Git采集 | DB+TX；T-02-6、7、30、31、32、34 |
 | I-02-3 | 每实际 SessionRef 一个槽、每 run 一个槽；仅持槽且成功消费本轮执行票据的执行者能提交命令；不能因 MCP 重启或超时重发票据 | DB+TX+E；T-02-7、8 |
 | I-02-4 | provisional 只给全新会话首次 spawn；resume/predecessor 必须有真实 ref。身份解析后同事务换真实槽；冲突时两 run 都 uncertain、保留各自槽、停止进一步启动/续跑，等待对账 | DB+TX；T-02-9、10 |
@@ -63,7 +69,7 @@
 | I-02-6 | failed 只表示已证明未执行；已执行且退出码非零是 ended 并保留失败结果，不伪装成可重试的未执行 | TX+E；T-02-12、14 |
 | I-02-7 | cancel 接受与退出 chronology 分离；R/Q 且无 X 时 before_exit 才 cancelled，未知为 ended+cancel_timing_unknown、释放槽；after_exit 才解释 already_ended；未证结束仍持槽 | TX+E；T-02-13、15、16 |
 | I-02-8 | 对账先按下文证据归一与事实时序再命中 R-02；实例/代次/事实时间须可验证，保留不可逆证明、未解决冲突及增量 terminal basis，不以导入/commit 时间消除反证；缺证不补码/盲重试 | TX+E；T-02-12–17、35 |
-| I-02-9 | 只有 hud-mcp/hud-run/reconciler 写 ledger；初始意图外的身份回填与状态迁移经 reconciler，hud-run按事件追加证据、周期只用一次runs CAS写H元组，HUD只读。state+槽释放+事件同事务 | DB+TX；T-02-6、17、25、29 |
+| I-02-9 | 只有 hud-mcp/hud-run/reconciler 写 ledger；初始意图外的身份回填与状态迁移经 reconciler，hud-run按事件追加证据、周期只用一次runs CAS写H元组，HUD只读。state+槽释放+事件同事务；原生子拒绝不改根 scope/context/alias/claim/代次，只有可信根变化才经共享 reconciler 事务失效旧范围及授权（consult 4 增补，F07） | DB+TX；T-02-6、17、25、29 |
 | I-02-10 | 运行槽无 TTL，只凭确认终结释放；browser 等结果且对账才释放，collect 只在06观测存储换代接管，三者不得混用；后两类的阶段边界见下文 | TX+E；T-02-10、20、23 |
 | I-02-11 | predecessor 原子转交同一实际 child，同 owner、空槽/无冲突、唯一当前父边，旧 link 历史化；MVP 跨 owner 一律 unsupported | DB+TX；T-02-18；03 T-03-20 |
 | I-02-12 | wait 入场固定 runId/已提交游标；旧 run 不满足新 wait。有效上限适配客户端实测工具超时并留余量；超时/断线不制造终态或取消 | DB+TX；T-02-19 |
@@ -195,13 +201,13 @@ C4 的未来 `holderLabel?: string` 由实际 lease owner/job 身份在同一读
 
 ## 测试清单
 
-每项标 A9 fixture（规格/表驱动输入）、A9 prototype（真实临时 SQLite + 合成进程）或 B（生产验收）；不表示本批已实现/实跑。B2/B3/B4/B5/B6/B14 重验关键反例与完整能力矩阵。原型使用临时 HUD_HOME/source 和只追加一次计数的合成命令，不调模型；不能只在内存对象模拟互斥。
+每项标 A9 fixture（规格/表驱动输入）、A9 prototype（真实临时 SQLite + 合成进程）或 B（生产验收）；不表示本批已实现/实跑。B2/B3/B4/B5/B6/B14 重验关键反例与完整能力矩阵。原型使用临时 HUD_HOME/source 和只追加一次计数的合成命令，不调模型；不能只在内存对象模拟互斥。consult 4 增补的并发断言由 B2/B5 定向生产重验，不重开或追认原 A9 门禁。（consult 4 增补，F07）
 
 | 编号 | 输入 → 预期断言 |
 |---|---|
-| T-02-1 (A9 prototype) | 两 MCP 同 OwnerKey/key/params 并发 spawn → 一条幂等记录、一个 run/slot、两次回复同 link/run/outcome；合成提交计数=1 |
-| T-02-2 (A9 fixture) | 同 owner/key 修改 operation、brief 内容、mode、prompt 或 profile 指纹 → idempotency_conflict；不同 OwnerKey 同 key 可有独立记录；规范化对象键序不改变 digest |
-| T-02-3 (A9 prototype) | 父 harness/session 保持存活，MCP-a accepted 后退出再启动 MCP-b，新 CallerId 验证同 session OwnerKey，重放相同 key/params → 同原 run/outcome，idempotency 行数不变，提交计数=1；另在外部提交后、返回前杀 MCP 重复一次 |
+| T-02-1 (A9 prototype) | 两 MCP 同 OwnerKey/key/params 并发 spawn → 一条幂等记录、一个 run/slot、两次回复同 link/run/outcome；合成提交计数=1；同源同根双 MCP 并发首次建 scope/context 时共享 B2 CAS，输家可要求新调用，不能各自造“当前根”或重复兑换（consult 4 增补，F07） |
+| T-02-2 (A9 fixture) | 同 owner/key 修改 operation、brief 内容、mode、prompt 或 profile 指纹 → idempotency_conflict；不同 OwnerKey 同 key 可有独立记录；规范化对象键序不改变 digest；05 roles 解析后实际 role/model/effort 与非秘密档案指纹改变即异参，配置键序/等价解析结果仍同参；缺映射不按角色名称猜模型，资源约束未知键拒绝而非忽略（consult 4 增补，F03） |
+| T-02-3 (A9 prototype) | 父 harness/session 保持存活，MCP-a accepted 后退出再启动 MCP-b，新 CallerId 验证同 session OwnerKey，重放相同 key/params → 同原 run/outcome，idempotency 行数不变，提交计数=1；另在外部提交后、返回前杀 MCP 重复一次；并发首绑/重绑共享未关闭代次，换代后旧 MCP 不复活授权；合法旧代已 durable accepted 意图仍保留原 run/票据且登记/提交重验，不伪称未接受/重发（consult 4 增补，F07） |
 | T-02-4 (A9 prototype) | proc 先 accepted，独立 bound 证据归并 → UPDATE 原子重键，结果/at不变、origin_owner_key 留原范围，只一行；MCP 重启/关闭 alias 后同 session 重放同原结果，新代 proc 不借旧范围 |
 | T-02-5 (A9 prototype) | proc/session 两范围同 key 异参，或同参但不同 run/outcome，或同代 alias 双 session → 拒绝整个归并/操作，有 conflict 事件，零新 run/提交，不按时间挑选 |
 | T-02-6 (A9 prototype) | 每个 insert 及 commit 前注入崩溃 → 未提交时 link/run/claim/idempotency/slot/events 全无；提交后全部可见。再模拟 terminal 事务中断 → 不出现“state 已终结但事件/槽提交一半” |
@@ -221,9 +227,9 @@ C4 的未来 `holderLabel?: string` 由实际 lease owner/job 身份在同一读
 | T-02-20 (A9 fixture) | C 前调用 Jev/browser 正向操作 → unsupported、零 send/运行意图；规格核对 browser 的失联/needs_human/TTL不释放语义，正向存储/用例不属 A9 |
 | T-02-23 (A9 fixture) | 运行槽 schema 无 TTL、ledger 无通用 leases；collect 换代后旧 checkpoint 写入拒绝的规格归06，不把观测租约塞进运行槽 |
 | T-02-24 (B) | 父MCP退出或关pane，默认continue，活跃headless请求可见打开，子只提交report → supervisor继续/失联对账，均不据此释放槽，不启动可见副本 |
-| T-02-25 (A9 fixture) | node:sqlite 执行DDL；外键、双当前父/槽/alias、非法状态、终态缺证/活槽删除、native code缺来源、HUD只读写入逐项拒绝；延期表/控制分支不存在 |
-| T-02-26 (B) | user_version=0/1/2、WAL、短 busy等待；真实锁争用达06预算 → busy/未接受、无部分意图/外部动作；重试事务不重发动作。accepted 与 started/bound 时延分列 |
-| T-02-27 (A9 fixture) | 单 MCP 收到共享 A/B、原生子或缺可信来源；自报 B/root 与上次 context 均无效 → MVP 拒绝，零意图/报告/幂等范围复用；context 类型仍可表达物理/逻辑分离 |
+| T-02-25 (A9 fixture) | node:sqlite 执行DDL；外键、双当前父/槽/alias、非法状态、终态缺证/活槽删除、native code缺来源、HUD只读写入逐项拒绝；延期表/控制分支不存在；callers.cwd 非空绝对路径约束仅承载物理 MCP 登记值，取不到真实 cwd 的入口须 cwd_unavailable 拒登记，会话未知 cwd 不用此列补空，不为此改 DDL（consult 4 增补，F04） |
+| T-02-26 (B) | user_version=0/1/2、WAL、短 busy等待；真实锁争用达06预算 → busy/未接受、无部分意图/外部动作；重试事务不重发动作。accepted 与 started/bound 时延分列；来源取证后等锁期间另一 MCP /clear 换代、撤权或目标 run/binding 变化时，旧前提在查幂等/写入前失败，不能重贴新代或覆盖事实，锁内零文件/proc I/O（consult 4 增补，F07） |
+| T-02-27 (A9 fixture) | 单 MCP 收到共享 A/B、原生子或缺可信来源；自报 B/root 与上次 context 均无效 → MVP 拒绝，零意图/报告/幂等范围复用；context 类型仍可表达物理/逻辑分离；根→子→根中子拒绝不改变根 scope/context/alias/claim/generation，Codex 子另起 MCP 仍不投影 root；新旧会话双 MCP 同时绑定、A→B→A 旧来源及旧 spawn/report 等锁后提交均重验捕获前提，旧 receipt 不倒切（consult 4 增补，F07） |
 | T-02-28 (A9 fixture) | 已child-a/target-a的resume或handover本轮解析b、SQL覆盖已知ref、发现前改strategy/kind或发现后缩scope四组 → 拒改既有ref/策略/范围，run uncertain/b仅候选；合法同ref握手不回退关系pending；scope_ref可从NULL单次写入核验结果 |
 | T-02-29 (B) | 未登记supervisor却写heartbeat、缺seq/mono、合法单次UPDATE、错producer/已终态CAS → 前两者CHECK拒绝，合法元组一次更新可返回取消字段，错producer或已终态零修改；结构检查不代替04/06运行成本基准 |
 | T-02-30 (A9 fixture) | launch_cwd缺失/相对路径/后续覆盖，resume采用明确新目录 → SQL拒前三组；新run各自保存规范绝对启动目录，旧run不变，不从callers.cwd反推 |
@@ -239,6 +245,8 @@ A9 最小执行包：真实临时 SQLite + 合成进程验证同键并发单次�
 ## ledger schema v1
 
 下列是空数据库初始化的单个可执行 SQL 块。每个写连接都须重新启用 foreign_keys/busy_timeout；HUD 用 readOnly 连接且不执行初始化。user_version>1 必须在执行迁移前由连接层拒绝。WAL 在文件数据库生效；内存检查库可返回 memory 模式。DB 约束负责结构和唯一性：SessionRef、alias目标、当前父边、当前child_binding、canonical幂等键及原范围审计、运行槽；SQL 不负责验证 /proc、claim hash来源、授权、状态迁移表、alias范围冲突或跨多表事务完整性，这些必须执行上文 TX 校验和测试。FK默认限制删除，历史不级联清除。
+
+（consult 4 增补，F04）下列 `callers.cwd TEXT NOT NULL` 指登记瞬间物理 MCP 自己的真实绝对工作目录（01 CallerId），不是 harness/session 的 WorkspaceContext.cwd、SourceId 或调用授权。process.cwd() 无法取得时入口返回 cwd_unavailable 并拒绝登记，不填 HUD_HOME、父进程目录或空字符串；会话无位置证据仍 null，不能自动用 callers.cwd 补空。A4 Caller.cwd:string 与此 DDL 均保持不变，无 schema v1 迁移。
 
 ```sql
 PRAGMA foreign_keys = ON;

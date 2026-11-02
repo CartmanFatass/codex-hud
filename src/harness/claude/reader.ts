@@ -2,7 +2,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ReaderBudget, ReaderResult, SessionReader } from '../../core/interfaces/harness-adapter.js';
-import type { SessionEvidence, LinkEvidence, NativeReport } from '../../core/interfaces/session-evidence.js';
+import type {
+  SessionEvidence,
+  ToolResultLinkEvidence,
+  LaunchMessageLinkEvidence,
+  NativeReport,
+} from '../../core/interfaces/session-evidence.js';
 import type { SessionRef } from '../../core/types/identity.js';
 import type {
   Metric,
@@ -15,7 +20,7 @@ import type {
 import { initialParserState } from '../../core/observation.js';
 import { sameSessionRef, validateSessionRef } from '../../core/identity.js';
 
-export const CLAUDE_READER_VERSION = 'claude-reader-2';
+export const CLAUDE_READER_VERSION = 'claude-reader-3';
 export const DEFAULT_READER_BUDGET: Readonly<ReaderBudget> = {
   maxBytes: 4 * 1024 * 1024,
   maxRecords: 2000,
@@ -44,11 +49,7 @@ export interface ClaudeStatusline {
 export interface ClaudeReaderBudget extends ReaderBudget {
   deadlineMs?: number;
 }
-export interface LaunchMessageAnchor {
-  nativeMessageId: string;
-  linkId: string;
-  claimFingerprint: string;
-}
+type CachedLinkEvidence = Omit<ToolResultLinkEvidence, 'ref'> | Omit<LaunchMessageLinkEvidence, 'ref'>;
 interface RawFact {
   id: string;
   eventAt: number;
@@ -84,8 +85,7 @@ interface Snapshot {
   usageObservedTime: boolean;
   lastEvidenceAt: number | null;
   pendingHudCalls: Record<string, string>;
-  links: Omit<LinkEvidence, 'ref'>[];
-  launchMessages: LaunchMessageAnchor[];
+  links: CachedLinkEvidence[];
   reports: NativeReport[];
   facts: RawFact[];
 }
@@ -93,15 +93,12 @@ export interface ClaudeCheckpoint extends ReaderCheckpoint {
   claude: Snapshot;
 }
 export interface ClaudeSessionEvidence extends SessionEvidence {
-  // 待 ARCH 裁决: shared LinkEvidence lacks the native launch-message anchor kind (01:119).
-  claude: { launchMessages: LaunchMessageAnchor[]; cwdSource: string | null };
   inputs: ObservationEvidence[];
 }
 export interface ClaudeReaderResult extends ReaderResult {
   evidence: ClaudeSessionEvidence;
   checkpoint: ClaudeCheckpoint;
   inputs: ObservationEvidence[];
-  continuation?: { kind: 'record_needs_larger_slice'; minimumBytes: number };
 }
 export interface ClaudeSessionReader extends SessionReader {
   read(budget?: ClaudeReaderBudget): Promise<ClaudeReaderResult>;
@@ -145,7 +142,6 @@ const emptySnapshot = (): Snapshot => ({
   lastEvidenceAt: null,
   pendingHudCalls: {},
   links: [],
-  launchMessages: [],
   reports: [],
   facts: [],
 });
@@ -171,8 +167,13 @@ function resultObject(value: unknown, depth = 0): Record<string, unknown> | null
   return null;
 }
 /** Provisional fallback only: B4 owns the launch-message format; normal config/env transport has no prompt claim. */
-export function parseFallbackLaunchMessage(text: string, nativeMessageId: string): LaunchMessageAnchor[] {
-  const anchors: LaunchMessageAnchor[] = [];
+export function parseFallbackLaunchMessage(
+  text: string,
+  nativeMessageId: string,
+  eventAt: number
+): Omit<LaunchMessageLinkEvidence, 'ref'>[] {
+  if (!Number.isFinite(eventAt)) return [];
+  const anchors: Omit<LaunchMessageLinkEvidence, 'ref'>[] = [];
   for (const line of text.split('\n')) {
     if (!line.startsWith('[hud-launch] ')) continue;
     try {
@@ -185,9 +186,13 @@ export function parseFallbackLaunchMessage(text: string, nativeMessageId: string
         value.claim.length <= 4096
       ) {
         anchors.push({
+          kind: 'launch_message',
           nativeMessageId,
           linkId: value.linkId,
           claimFingerprint: createHash('sha256').update(value.claim).digest('hex'),
+          eventAt,
+          ...(identifier(value.launchCallId) ? { launchCallId: value.launchCallId } : {}),
+          ...(identifier(value.launchCorrelationId) ? { launchCorrelationId: value.launchCorrelationId } : {}),
         });
       }
     } catch {
@@ -339,15 +344,22 @@ function observe(
       const publicText = block.text;
       publicMessage = true;
       if (type === 'user' && identifier(row.uuid)) {
-        for (const item of parseFallbackLaunchMessage(block.text, row.uuid)) {
-          if (
-            !snapshot.launchMessages.some(
-              (a) => a.nativeMessageId === item.nativeMessageId && a.claimFingerprint === item.claimFingerprint
+        if (observedTime && block.text.split('\n').some((line) => line.startsWith('[hud-launch] ')))
+          skip(state, 'link_event_time_missing', true);
+        else
+          for (const item of parseFallbackLaunchMessage(block.text, row.uuid, eventTime)) {
+            if (
+              !snapshot.links.some(
+                (a) =>
+                  a.kind === 'launch_message' &&
+                  a.nativeMessageId === item.nativeMessageId &&
+                  a.linkId === item.linkId &&
+                  a.claimFingerprint === item.claimFingerprint
+              )
             )
-          )
-            snapshot.launchMessages.push(item);
-          snapshot.launchMessages = snapshot.launchMessages.slice(-HISTORY_LIMIT);
-        }
+              snapshot.links.push(item);
+            snapshot.links = snapshot.links.slice(-HISTORY_LIMIT);
+          }
       }
       // No prompt/claim content enters reports or checkpoints; title/label material belongs to B17.
       if (type === 'assistant' && !snapshot.reports.some((r) => r.text === publicText.slice(0, 4096) && r.at === at))
@@ -399,7 +411,7 @@ function observe(
       skip(state, 'link_event_time_missing', true);
       return;
     }
-    const item: Omit<LinkEvidence, 'ref'> = {
+    const item: Omit<ToolResultLinkEvidence, 'ref'> = {
       kind: 'tool_result',
       tool,
       callId: id,
@@ -412,7 +424,9 @@ function observe(
       ...(identifier(result.launchCallId) ? { launchCallId: result.launchCallId } : {}),
       ...(identifier(result.launchCorrelationId) ? { launchCorrelationId: result.launchCorrelationId } : {}),
     };
-    snapshot.links = [...snapshot.links.filter((e) => e.callId !== id), item].slice(-HISTORY_LIMIT);
+    snapshot.links = [...snapshot.links.filter((e) => e.kind !== 'tool_result' || e.callId !== id), item].slice(
+      -HISTORY_LIMIT
+    );
   }
 }
 
@@ -553,8 +567,7 @@ function evidence(
     ref,
     observation,
     cwd: s.cwd,
-    // 待 ARCH 裁决: shared cwdSource lacks transcript provenance; never mislabel as session_meta.
-    cwdSource: 'unknown',
+    cwdSource: s.cwd === null ? 'unknown' : 'transcript',
     cwdAsOf: s.cwdAt,
     startedAt: s.startedAt,
     version: s.version,
@@ -564,10 +577,6 @@ function evidence(
     native: [],
     linkEvidence: s.links.map((l) => ({ ...l, ref })),
     caps: {},
-    claude: {
-      launchMessages: s.launchMessages.map((a) => ({ ...a })),
-      cwdSource: s.cwd === null ? null : 'claude.transcript.cwd',
-    },
     inputs,
   };
 }
@@ -632,27 +641,34 @@ function validCheckpoint(cp: ClaudeCheckpoint, ref: SessionRef): boolean {
     Object.entries(s.pendingHudCalls).every(([k, v]) => identifier(k) && identifier(v)) &&
     Array.isArray(s.links) &&
     s.links.length <= HISTORY_LIMIT &&
-    s.links.every(
-      (l) =>
-        object(l) &&
-        l.kind === 'tool_result' &&
-        identifier(l.tool) &&
-        identifier(l.callId) &&
-        identifier(l.linkId) &&
-        identifier(l.runId) &&
-        count(l.eventAt)
-    ) &&
-    Array.isArray(s.launchMessages) &&
-    s.launchMessages.length <= HISTORY_LIMIT &&
-    s.launchMessages.every(
-      (a) =>
-        object(a) &&
-        Object.keys(a).every((k) => ['nativeMessageId', 'linkId', 'claimFingerprint'].includes(k)) &&
-        identifier(a.nativeMessageId) &&
-        identifier(a.linkId) &&
-        typeof a.claimFingerprint === 'string' &&
-        /^[a-f0-9]{64}$/.test(a.claimFingerprint)
-    ) &&
+    s.links.every((l) => {
+      if (
+        !object(l) ||
+        !identifier(l.linkId) ||
+        !count(l.eventAt) ||
+        (l.launchCallId !== undefined && !identifier(l.launchCallId)) ||
+        (l.launchCorrelationId !== undefined && !identifier(l.launchCorrelationId))
+      )
+        return false;
+      if (l.kind === 'tool_result') return identifier(l.tool) && identifier(l.callId) && identifier(l.runId);
+      return (
+        l.kind === 'launch_message' &&
+        Object.keys(l).every((k) =>
+          [
+            'kind',
+            'nativeMessageId',
+            'linkId',
+            'claimFingerprint',
+            'eventAt',
+            'launchCallId',
+            'launchCorrelationId',
+          ].includes(k)
+        ) &&
+        identifier(l.nativeMessageId) &&
+        typeof l.claimFingerprint === 'string' &&
+        /^[a-f0-9]{64}$/.test(l.claimFingerprint)
+      );
+    }) &&
     Array.isArray(s.reports) &&
     s.reports.length <= 20 &&
     s.reports.every((r) => object(r) && typeof r.text === 'string' && r.text.length <= 4096 && count(r.at)) &&
@@ -715,8 +731,12 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
     const byteLimit = Math.min(maxBytes, DEFAULT_READER_BUDGET.maxBytes);
     const recordLimit = Math.min(maxRecords, DEFAULT_READER_BUDGET.maxRecords);
     const deadline = Math.min(started + Math.min(budgetMs, DEFAULT_READER_BUDGET.budgetMs), deadlineMs ?? Infinity);
+    const positiveSlice = byteLimit > 0 && recordLimit > 0 && budgetMs > 0 && (deadlineMs ?? Infinity) > started;
     // Leave a small assembly allowance; JSON.parse remains nonpreemptible and overruns are measured.
     const hasTime = () => performance.now() < deadline - 1;
+    let consumptionSteps = 0;
+    // Open/stat/read may exhaust a soft slice. Still consume one bounded part of the available input.
+    const canConsume = () => hasTime() || (positiveSlice && consumptionSteps === 0);
     const placeholder = () => ({
       schemaVersion: 1 as const,
       readerVersion: CLAUDE_READER_VERSION,
@@ -728,8 +748,8 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
       claude: emptySnapshot(),
     });
     // An exhausted shared slice must not enter cold discovery, open, stat, or transcript reads.
-    const file = byteLimit > 0 && recordLimit > 0 && hasTime() ? options.resolveFile(deadline - 1) : null;
-    const fd = file !== null && hasTime() ? fs.openSync(file, 'r') : null;
+    const file = positiveSlice ? options.resolveFile(deadline) : null;
+    const fd = file !== null ? fs.openSync(file, 'r') : null;
     let bytesRead = 0;
     let recordsRead = 0;
     let measuredStats: ClaudeReaderResult['stats'];
@@ -751,20 +771,35 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
           current?.claude.boundarySignature,
         ].filter((sig): sig is NonNullable<typeof sig> => !!sig);
         const distinctSignatures = [...new Map(signatures.map((sig) => [`${sig.offset}:${sig.length}`, sig])).values()];
-        if (
+        const needsSignatureCheck =
           !rewritten &&
           previous &&
-          distinctSignatures.length &&
-          (stat.mtimeMs !== previous.mtimeMs || stat.ctimeMs !== previous.ctimeMs)
-        ) {
-          const requiredBytes = distinctSignatures.reduce((sum, sig) => sum + sig.length, 0);
-          if (byteLimit < requiredBytes) needsLarger = requiredBytes;
+          distinctSignatures.length > 0 &&
+          (stat.mtimeMs !== previous.mtimeMs || stat.ctimeMs !== previous.ctimeMs);
+        const signatureBytes = needsSignatureCheck ? distinctSignatures.reduce((sum, sig) => sum + sig.length, 0) : 0;
+        const knownReset =
+          rewritten ||
+          (current &&
+            (current.fileId.dev !== stat.dev ||
+              current.fileId.inode !== stat.ino ||
+              stat.size < current.claude.targetSize ||
+              stat.size < current.offset));
+        const recoveringTail =
+          !knownReset &&
+          current &&
+          current.claude.tailBytesSeen > 0 &&
+          (restoredTail || !transient || previous?.mtimeMs !== stat.mtimeMs || previous?.ctimeMs !== stat.ctimeMs);
+        if (recoveringTail && current) {
+          const target = current.claude.tailAtEof ? stat.size : current.claude.targetSize;
+          // LF costs one byte beyond the maximum legal record (including any CR).
+          const recordBytes = Math.min(MAX_RECORD_BYTES + 1, Math.max(0, target - current.offset));
+          if (byteLimit < signatureBytes + recordBytes) needsLarger = signatureBytes + recordBytes;
+        }
+        if (!needsLarger && needsSignatureCheck) {
+          if (byteLimit < signatureBytes) needsLarger = signatureBytes;
           else
             for (const sig of distinctSignatures) {
-              if (!hasTime()) {
-                needsLarger = requiredBytes;
-                break;
-              }
+              // At most three bounded signatures; time exhaustion is not a byte-budget continuation.
               const sample = Buffer.allocUnsafe(sig.length);
               const fetched = fs.readSync(fd, sample, 0, sig.length, sig.offset);
               bytesRead += fetched;
@@ -808,126 +843,126 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
           s.statuslineKey = statuslineKey;
           s.statuslineAt = Date.now();
         }
-        if ((s.discardOffset ?? cp.offset) >= s.targetSize || s.tailAtEof) s.targetSize = stat.size;
-        s.tailAtEof = false;
-        const liveTail =
-          transient?.offset === cp.offset && previous?.mtimeMs === stat.mtimeMs && previous?.ctimeMs === stat.ctimeMs
-            ? transient
-            : undefined;
-        let readPosition = s.discardOffset ?? liveTail?.position ?? cp.offset;
-        let pending = liveTail?.pending ?? Buffer.alloc(0);
-        const commitBoundary = (position: number, tail: Buffer, head?: Buffer) => {
-          if (head?.length) {
-            const bytes = head.subarray(0, 512);
-            const signature = {
-              offset: cp.offset,
+        if (!needsLarger) {
+          if ((s.discardOffset ?? cp.offset) >= s.targetSize || s.tailAtEof) s.targetSize = stat.size;
+          s.tailAtEof = false;
+          const liveTail =
+            transient?.offset === cp.offset && previous?.mtimeMs === stat.mtimeMs && previous?.ctimeMs === stat.ctimeMs
+              ? transient
+              : undefined;
+          let readPosition = s.discardOffset ?? liveTail?.position ?? cp.offset;
+          let pending = liveTail?.pending ?? Buffer.alloc(0);
+          const commitBoundary = (position: number, tail: Buffer, head?: Buffer) => {
+            if (head?.length) {
+              const bytes = head.subarray(0, 512);
+              const signature = {
+                offset: cp.offset,
+                length: bytes.length,
+                sha256: createHash('sha256').update(bytes).digest('hex'),
+              };
+              s.firstRecordSignature ??= signature;
+              s.lastRecordHeadSignature = signature;
+            }
+            cp.offset = position;
+            const bytes = tail.subarray(Math.max(0, tail.length - 256));
+            s.boundarySignature = {
+              offset: position - bytes.length,
               length: bytes.length,
               sha256: createHash('sha256').update(bytes).digest('hex'),
             };
-            s.firstRecordSignature ??= signature;
-            s.lastRecordHeadSignature = signature;
-          }
-          cp.offset = position;
-          const bytes = tail.subarray(Math.max(0, tail.length - 256));
-          s.boundarySignature = {
-            offset: position - bytes.length,
-            length: bytes.length,
-            sha256: createHash('sha256').update(bytes).digest('hex'),
           };
-        };
-        const buffer = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, byteLimit));
-        while (
-          !needsLarger &&
-          readPosition < s.targetSize &&
-          bytesRead < byteLimit &&
-          recordsRead < recordLimit &&
-          hasTime()
-        ) {
-          const size = fs.readSync(
-            fd,
-            buffer,
-            0,
-            Math.min(buffer.length, byteLimit - bytesRead, s.targetSize - readPosition),
-            readPosition
-          );
-          if (!size) break;
-          bytesRead += size;
-          let position = 0;
-          while (position < size && recordsRead < recordLimit && hasTime()) {
-            const newline = buffer.subarray(0, size).indexOf(10, position);
-            const end = newline < 0 ? size : newline + 1;
-            const part = buffer.subarray(position, newline < 0 ? size : newline);
-            readPosition += end - position;
-            if (p.discardingOversize) {
-              s.discardOffset = readPosition;
-              if (newline >= 0) {
-                p.discardingOversize = false;
-                s.discardOffset = null;
-                commitBoundary(readPosition, Buffer.concat([part, Buffer.from([10])]));
-                recordsRead++;
+          const buffer = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, byteLimit));
+          while (
+            !needsLarger &&
+            readPosition < s.targetSize &&
+            bytesRead < byteLimit &&
+            recordsRead < recordLimit &&
+            canConsume()
+          ) {
+            const size = fs.readSync(
+              fd,
+              buffer,
+              0,
+              Math.min(buffer.length, byteLimit - bytesRead, s.targetSize - readPosition),
+              readPosition
+            );
+            if (!size) break;
+            bytesRead += size;
+            let position = 0;
+            while (position < size && recordsRead < recordLimit && canConsume()) {
+              const newline = buffer.subarray(0, size).indexOf(10, position);
+              const end = newline < 0 ? size : newline + 1;
+              const part = buffer.subarray(position, newline < 0 ? size : newline);
+              readPosition += end - position;
+              consumptionSteps++;
+              if (p.discardingOversize) {
+                s.discardOffset = readPosition;
+                if (newline >= 0) {
+                  p.discardingOversize = false;
+                  s.discardOffset = null;
+                  commitBoundary(readPosition, Buffer.concat([part, Buffer.from([10])]));
+                  recordsRead++;
+                }
+              } else if (pending.length + part.length > MAX_RECORD_BYTES) {
+                pending = Buffer.alloc(0);
+                skip(p, 'oversize_unknown', true);
+                p.discardingOversize = newline < 0;
+                s.discardOffset = newline < 0 ? readPosition : null;
+                if (newline >= 0) {
+                  commitBoundary(readPosition, Buffer.concat([part, Buffer.from([10])]));
+                  recordsRead++;
+                }
+              } else {
+                pending = pending.length ? Buffer.concat([pending, part]) : Buffer.from(part);
+                if (newline >= 0) {
+                  const line = pending.toString('utf8');
+                  const signatureHead = Buffer.from(pending.subarray(0, 512));
+                  const signatureBytes = Buffer.concat([
+                    pending.subarray(Math.max(0, pending.length - 255)),
+                    Buffer.from([10]),
+                  ]);
+                  pending = Buffer.alloc(0);
+                  recordsRead++;
+                  if (line.trim()) {
+                    try {
+                      if (observe(JSON.parse(line), p, s, ids, clocks, options, readPosition)) {
+                        cp.sourceGeneration++;
+                        cp.resetReason = 'compaction';
+                      }
+                    } catch (error) {
+                      if (error instanceof SyntaxError) skip(p, 'malformed_record', true);
+                      else throw error;
+                    }
+                  }
+                  commitBoundary(readPosition, signatureBytes, signatureHead);
+                }
               }
-            } else if (pending.length + part.length > MAX_RECORD_BYTES) {
-              pending = Buffer.alloc(0);
-              skip(p, 'oversize_unknown', true);
-              p.discardingOversize = newline < 0;
-              s.discardOffset = newline < 0 ? readPosition : null;
-              if (newline >= 0) {
-                commitBoundary(readPosition, Buffer.concat([part, Buffer.from([10])]));
-                recordsRead++;
-              }
-            } else {
-              pending = pending.length ? Buffer.concat([pending, part]) : Buffer.from(part);
-              if (newline >= 0) {
-                const line = pending.toString('utf8');
-                const signatureHead = Buffer.from(pending.subarray(0, 512));
-                const signatureBytes = Buffer.concat([
-                  pending.subarray(Math.max(0, pending.length - 255)),
-                  Buffer.from([10]),
-                ]);
+              position = end;
+            }
+            if (position < size) break;
+          }
+          if (!needsLarger && pending.length && readPosition === s.targetSize) {
+            s.tailAtEof = true;
+            if (recordsRead < recordLimit && (canConsume() || (positiveSlice && recordsRead === 0))) {
+              try {
+                const row: unknown = JSON.parse(pending.toString('utf8'));
+                if (observe(row, p, s, ids, clocks, options, readPosition)) {
+                  cp.sourceGeneration++;
+                  cp.resetReason = 'compaction';
+                }
+                commitBoundary(readPosition, pending, pending);
                 pending = Buffer.alloc(0);
                 recordsRead++;
-                if (line.trim()) {
-                  try {
-                    if (observe(JSON.parse(line), p, s, ids, clocks, options, readPosition)) {
-                      cp.sourceGeneration++;
-                      cp.resetReason = 'compaction';
-                    }
-                  } catch (error) {
-                    if (error instanceof SyntaxError) skip(p, 'malformed_record', true);
-                    else throw error;
-                  }
-                }
-                commitBoundary(readPosition, signatureBytes, signatureHead);
+                s.tailAtEof = false;
+              } catch (error) {
+                if (!(error instanceof SyntaxError)) throw error;
               }
             }
-            position = end;
           }
-          if (position < size) break;
+          s.tailBytesSeen = pending.length;
+          transient = pending.length ? { offset: cp.offset, position: readPosition, pending } : undefined;
+          restoredTail = false;
         }
-        if (!needsLarger && pending.length && readPosition === s.targetSize) {
-          s.tailAtEof = true;
-          if (recordsRead < recordLimit && hasTime()) {
-            try {
-              const row: unknown = JSON.parse(pending.toString('utf8'));
-              if (observe(row, p, s, ids, clocks, options, readPosition)) {
-                cp.sourceGeneration++;
-                cp.resetReason = 'compaction';
-              }
-              commitBoundary(readPosition, pending, pending);
-              pending = Buffer.alloc(0);
-              recordsRead++;
-              s.tailAtEof = false;
-            } catch (error) {
-              if (!(error instanceof SyntaxError)) throw error;
-            }
-          }
-        }
-        s.tailBytesSeen = pending.length;
-        transient = pending.length ? { offset: cp.offset, position: readPosition, pending } : undefined;
-        if (restoredTail && pending.length && readPosition < s.targetSize && bytesRead >= byteLimit)
-          needsLarger = MAX_RECORD_BYTES + 1;
-        restoredTail = false;
-        // 待 ARCH 裁决: Claude deliberately diverges from A4's raw pendingBytes helper.
         // Persist only complete-record offsets / oversized discard cursors, never private or claim tail bytes.
         // An incomplete line is reread from cp.offset on the next slice; its I/O is charged again.
         p.pendingBytes = [];
@@ -967,7 +1002,6 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
           usage: s.usage ? { ...s.usage } : null,
           pendingHudCalls: { ...s.pendingHudCalls },
           links: s.links.map((l) => ({ ...l })),
-          launchMessages: s.launchMessages.map((a) => ({ ...a })),
           reports: s.reports.map((r) => ({ ...r })),
           facts: s.facts.map((f) => ({ ...f, value: { ...f.value } })),
         },

@@ -306,7 +306,7 @@ export function appendTranscript(
 }
 
 /** A main-conversation entry from one rollout record, or nothing. */
-function transcriptEntry(entry: RolloutLine, timestamp: Date): TranscriptEntry | undefined {
+function transcriptEntry(entry: RolloutLine, timestamp: Date, redactLaunch = false): TranscriptEntry | undefined {
   const payload = entry.payload as ResponseItemPayload & { content?: unknown };
   if (entry.type !== 'response_item' || payload.type !== 'message') return undefined;
   if (payload.role === 'user' && Array.isArray(payload.content)) {
@@ -319,7 +319,14 @@ function transcriptEntry(entry: RolloutLine, timestamp: Date): TranscriptEntry |
       })
       .filter(Boolean)
       .join('\n');
-    const text = taskText(raw);
+    // Transport envelopes are extraction inputs, never public task text or checkpoint material.
+    const publicText = redactLaunch
+      ? raw
+          .split('\n')
+          .filter((line) => !line.startsWith('[hud-launch] '))
+          .join('\n')
+      : raw;
+    const text = taskText(publicText);
     return text ? { role: 'user', kind: 'prompt', text, at: timestamp } : undefined;
   }
   if (payload.role === 'assistant') {
@@ -383,6 +390,9 @@ export interface RolloutReadOptions {
   state: ReaderParserState;
   onRecord?: (entry: RolloutLine) => void;
   onReset?: () => void;
+  /** Internal live storage; never part of an exported checkpoint. */
+  transient?: RolloutTransient;
+  previousStat?: { size: number; mtimeMs: number; ctimeMs: number };
 }
 
 export interface RolloutReadStats {
@@ -391,17 +401,33 @@ export interface RolloutReadStats {
   recordsRead: number;
   remainingBytes: number;
   elapsedMs: number;
+  fileStat: { size: number; mtimeMs: number; ctimeMs: number };
+  continuation?: import('../core/interfaces/harness-adapter.js').ReaderResult['continuation'];
   resetReason?: 'truncated' | 'file_changed';
 }
 
 export interface RolloutParserCheckpoint {
-  version: 1;
+  version: 2;
   /** Runtime-specific codec version is checked before decoding. */
   runtime: string;
   offset: number;
   fileIdentity?: string;
   payload: string;
 }
+
+/** An opaque reader-local key: incomplete source bytes are only in this WeakMap. */
+export class RolloutTransient {}
+const rolloutTails = new WeakMap<
+  RolloutTransient,
+  {
+    fileIdentity: string;
+    mtimeMs: number;
+    ctimeMs: number;
+    committedOffset: number;
+    position: number;
+    pending: Buffer;
+  }
+>();
 
 export interface RolloutParseOutput {
   result: RolloutParseResult;
@@ -666,7 +692,16 @@ export async function parseRolloutFile(
     const stats = await handle.stat();
     const fileIdentity = `${stats.dev}:${stats.ino}`;
     const fileSize = stats.size;
-    const wasTruncated = fromOffset > fileSize || (previousIdentity !== undefined && previousIdentity !== fileIdentity);
+    const previousStat = options?.previousStat;
+    const rewritten =
+      !!previousStat &&
+      fileSize === previousStat.size &&
+      (stats.mtimeMs !== previousStat.mtimeMs || stats.ctimeMs !== previousStat.ctimeMs);
+    const wasTruncated =
+      fromOffset > fileSize ||
+      (previousStat !== undefined && fileSize < previousStat.size) ||
+      rewritten ||
+      (previousIdentity !== undefined && previousIdentity !== fileIdentity);
     const startOffset = wasTruncated ? 0 : fromOffset;
     if (wasTruncated) {
       rateTracker.reset();
@@ -813,7 +848,8 @@ export async function parseRolloutFile(
           } else if (payload.type === 'message' && payload.role === 'assistant') {
             lastAssistantMessageTime = timestamp;
           }
-          const spoken = payload.type === 'message' ? transcriptEntry(entry, timestamp) : undefined;
+          const spoken =
+            payload.type === 'message' ? transcriptEntry(entry, timestamp, options !== undefined) : undefined;
           if (spoken) {
             ({ entries: transcript, droppedAt: transcriptDroppedAt } = appendTranscript(
               transcript,
@@ -954,19 +990,37 @@ export async function parseRolloutFile(
         throw new Error('invalid_reader_budget');
       }
       const previousState = wasTruncated ? initialParserState() : options.state;
-      // Copy byte storage through Buffer, not structuredClone(number[]): a near-limit
-      // tail must not spend every future soft budget cloning before it can advance.
+      if (previousState.pendingBytes.length !== 0) throw new Error('unsupported_rollout_checkpoint');
       const state: ReaderParserState = {
         ...previousState,
         pendingBytes: [],
         gaps: [...previousState.gaps],
         skipped: { ...previousState.skipped },
       };
-      let pending = Buffer.from(previousState.pendingBytes);
+      const token = options.transient ?? new RolloutTransient();
+      const oldTail = wasTruncated ? undefined : rolloutTails.get(token);
+      const matches =
+        oldTail?.fileIdentity === fileIdentity &&
+        oldTail.committedOffset === startOffset &&
+        oldTail.mtimeMs === stats.mtimeMs &&
+        oldTail.ctimeMs === stats.ctimeMs &&
+        oldTail.position <= fileSize &&
+        !state.discardingOversize;
+      let pending = matches ? oldTail.pending : Buffer.alloc(0);
+      let position = state.discardingOversize
+        ? (state.discardOffset ?? startOffset)
+        : matches
+          ? oldTail.position
+          : startOffset;
+      if (!Number.isSafeInteger(position) || position < startOffset || position > fileSize)
+        throw new Error('invalid_rollout_checkpoint');
       const buffer = Buffer.alloc(Math.min(64 * 1024, Math.max(1, maxBytes)));
-      let recordsRead = 0;
-      let bytesReadTotal = 0;
-      let fetchedBytes = 0;
+      let recordsRead = 0,
+        fetchedBytes = 0,
+        consumptionSteps = 0;
+      let timeExhausted = false;
+      const hasTime = () => performance.now() - readStarted < budgetMs;
+      const canConsume = () => budgetMs > 0 && (consumptionSteps === 0 || hasTime());
       const skip = (reason: string) => {
         state.skipped[reason] = (state.skipped[reason] ?? 0) + 1;
         if (!state.gaps.includes(reason)) state.gaps.push(reason);
@@ -984,7 +1038,7 @@ export async function parseRolloutFile(
               skip('unknown_type');
             } else if (
               entry.type === 'response_item' &&
-              ['reasoning', 'thinking', 'image'].includes(entry.payload?.type)
+              ['api-request-blob', 'reasoning', 'thinking', 'image'].includes(entry.payload?.type)
             ) {
               const kind = entry.payload.type as string;
               state.skipped[kind] = (state.skipped[kind] ?? 0) + 1;
@@ -1001,23 +1055,19 @@ export async function parseRolloutFile(
           skip('invalid_json');
         }
       };
-      while (
-        committedOffset < fileSize &&
-        bytesReadTotal < maxBytes &&
-        recordsRead < maxRecords &&
-        performance.now() - readStarted < budgetMs
-      ) {
-        // Never fetch bytes beyond the caller's budget. Unprocessed chunk bytes are reread next time.
+      while (position < fileSize && fetchedBytes < maxBytes && recordsRead < maxRecords && canConsume()) {
+        // Charge all fetched bytes, including unprocessed prefetch. Time is a soft limit:
+        // one bounded step must consume fetched data even if open/stat/read exhausted it.
         const { bytesRead } = await handle.read(
           buffer,
           0,
-          Math.min(buffer.length, fileSize - committedOffset, maxBytes - bytesReadTotal),
-          committedOffset
+          Math.min(buffer.length, fileSize - position, maxBytes - fetchedBytes),
+          position
         );
         if (!bytesRead) break;
         fetchedBytes += bytesRead;
         let start = 0;
-        while (start < bytesRead && recordsRead < maxRecords && performance.now() - readStarted < budgetMs) {
+        while (start < bytesRead && recordsRead < maxRecords && canConsume()) {
           const newline = buffer.subarray(0, bytesRead).indexOf(10, start);
           const end = newline < 0 ? bytesRead : newline;
           const piece = buffer.subarray(start, end);
@@ -1029,45 +1079,77 @@ export async function parseRolloutFile(
             } else pending = Buffer.concat([pending, piece]);
           }
           const consumed = end - start + (newline < 0 ? 0 : 1);
-          committedOffset += consumed;
-          bytesReadTotal += consumed;
+          position += consumed;
           start += consumed;
+          consumptionSteps++;
+          if (state.discardingOversize) state.discardOffset = position;
           if (newline >= 0) {
             if (!state.discardingOversize) line(pending);
             state.discardingOversize = false;
+            state.discardOffset = null;
             pending = Buffer.alloc(0);
+            committedOffset = position;
             recordsRead++;
           }
         }
       }
-      // Preserve the legacy complete, newline-free record convention, only at the fixed EOF.
+      timeExhausted = budgetMs > 0 && !hasTime();
+      // A complete newline-free final record is one nonpreemptible record step.
       if (
-        committedOffset === fileSize &&
+        position === fileSize &&
         maxBytes > 0 &&
+        budgetMs > 0 &&
         pending.length &&
         recordsRead < maxRecords &&
-        performance.now() - readStarted < budgetMs
+        (recordsRead === 0 || !timeExhausted)
       ) {
         try {
           JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(pending));
           line(pending);
           pending = Buffer.alloc(0);
+          committedOffset = position;
           recordsRead++;
         } catch {
-          /* Incomplete bytes survive in the checkpoint. */
+          /* An incomplete tail is reread from the committed boundary after restart. */
         }
       }
-      state.pendingBytes = [...pending];
+      state.tailBytesSeen = pending.length;
+      state.tailAtEof = position === fileSize && (pending.length > 0 || state.discardingOversize);
+      rolloutTails.set(token, {
+        fileIdentity,
+        mtimeMs: stats.mtimeMs,
+        ctimeMs: stats.ctimeMs,
+        committedOffset,
+        position,
+        pending,
+      });
+      const needsLarger =
+        pending.length > 0 &&
+        position < fileSize &&
+        fetchedBytes === maxBytes &&
+        maxBytes > 0 &&
+        maxRecords > 0 &&
+        budgetMs > 0 &&
+        !timeExhausted;
       readStats = {
         state,
         bytesRead: fetchedBytes,
         recordsRead,
-        remainingBytes: fileSize - committedOffset,
+        remainingBytes: fileSize - position,
+        fileStat: { size: fileSize, mtimeMs: stats.mtimeMs, ctimeMs: stats.ctimeMs },
         elapsedMs: performance.now() - readStarted,
+        ...(needsLarger
+          ? {
+              continuation: {
+                kind: 'record_needs_larger_slice' as const,
+                minimumBytes: 1024 * 1024 + 1,
+              },
+            }
+          : {}),
         ...(wasTruncated
           ? {
               resetReason:
-                previousIdentity !== undefined && previousIdentity !== fileIdentity
+                (previousIdentity !== undefined && previousIdentity !== fileIdentity) || rewritten
                   ? ('file_changed' as const)
                   : ('truncated' as const),
             }
@@ -1160,6 +1242,7 @@ export class RolloutParser {
   private fileIdentity?: string;
   private needsReplay = false;
   private readStats?: RolloutReadStats;
+  #transient = new RolloutTransient();
 
   constructor(private maxRecentCalls: number = 10) {}
 
@@ -1176,6 +1259,8 @@ export class RolloutParser {
     this.needsReplay = false;
     this.rolloutPath = path;
     this.lastOffset = 0;
+    this.readStats = undefined;
+    this.#transient = new RolloutTransient();
     this.cachedResult = null;
     this.runningCalls = new Map();
     this.rateTracker = new TokenRateTracker();
@@ -1196,6 +1281,7 @@ export class RolloutParser {
     const generation = this.generation;
     const replay = this.needsReplay;
     if (replay && options) {
+      this.#transient = new RolloutTransient();
       options.onReset?.();
       options = { ...options, state: initialParserState() };
     }
@@ -1215,6 +1301,8 @@ export class RolloutParser {
       replay ? null : (this.cachedResult?.pendingApproval ?? null),
       replay ? {} : lastQuotaReadings(this.cachedResult?.quotaSamples ?? []),
       options
+        ? { ...options, transient: this.#transient, previousStat: replay ? undefined : this.readStats?.fileStat }
+        : undefined
     ).catch((error) => {
       if (generation === this.generation) this.needsReplay = true;
       throw error;
@@ -1234,6 +1322,9 @@ export class RolloutParser {
 
     // Merge with cached result for session info and accumulated stats
     if (this.cachedResult) {
+      // No completed record means no new event clock, including zero-byte and tail-only slices.
+      if (options && result.lastEventTime === null)
+        result.toolActivity.lastUpdateTime = this.cachedResult.toolActivity.lastUpdateTime;
       // Merge tool activity
       result.toolActivity.totalCalls += this.cachedResult.toolActivity.totalCalls;
       for (const [type, count] of Object.entries(this.cachedResult.toolActivity.callsByType)) {
@@ -1305,7 +1396,7 @@ export class RolloutParser {
   /** Export cursor and every merge/rate/tool state together; the facade adds the full ref. */
   exportCheckpoint(): RolloutParserCheckpoint {
     return {
-      version: 1,
+      version: 2,
       runtime: process.versions.v8,
       offset: this.lastOffset,
       fileIdentity: this.fileIdentity,
@@ -1313,8 +1404,8 @@ export class RolloutParser {
         cachedResult: this.cachedResult,
         runningCalls: this.runningCalls,
         rateTracker: this.rateTracker,
-        // Byte/tail state travels once in the enclosing ReaderCheckpoint. Native
-        // recovery needs the summary/rate/calls, not a second megabyte-sized byte array.
+        // The summary and cursor describe completed records only; raw tail bytes
+        // exist exclusively in the live reader WeakMap, never in this payload.
         readStats: this.readStats
           ? { ...this.readStats, state: { ...this.readStats.state, pendingBytes: [] } }
           : undefined,
@@ -1325,7 +1416,7 @@ export class RolloutParser {
 
   restoreCheckpoint(checkpoint: RolloutParserCheckpoint): void {
     if (
-      checkpoint.version !== 1 ||
+      checkpoint.version !== 2 ||
       checkpoint.runtime !== process.versions.v8 ||
       !Number.isSafeInteger(checkpoint.offset) ||
       checkpoint.offset < 0
@@ -1334,6 +1425,8 @@ export class RolloutParser {
     const saved = deserialize(Buffer.from(checkpoint.payload, 'base64'));
     if (!saved || !(saved.runningCalls instanceof Map) || !saved.rateTracker)
       throw new Error('invalid_rollout_checkpoint');
+    if (saved.readStats?.state.pendingBytes.length) throw new Error('invalid_rollout_checkpoint');
+    this.#transient = new RolloutTransient();
     this.cachedResult = saved.cachedResult;
     this.runningCalls = saved.runningCalls;
     this.rateTracker = Object.assign(new TokenRateTracker(), saved.rateTracker);

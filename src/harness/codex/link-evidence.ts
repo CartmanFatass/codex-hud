@@ -1,8 +1,8 @@
-import type { LinkEvidence } from '../../core/interfaces/session-evidence.js';
+import type { ToolResultLinkEvidence } from '../../core/interfaces/session-evidence.js';
 
 export const LINK_EVIDENCE_LIMIT = 100;
 export const PENDING_HUD_CALL_LIMIT = 100;
-export type NativeLinkEvidence = Omit<LinkEvidence, 'ref'>;
+export type NativeLinkEvidence = Omit<ToolResultLinkEvidence, 'ref'>;
 export interface LinkScanState {
   pendingHudCalls?: Record<string, string>;
   linkEvidence?: NativeLinkEvidence[];

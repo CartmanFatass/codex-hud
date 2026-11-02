@@ -163,18 +163,21 @@ bind 只解析被观察的会话；非 null 结果必有完整、来源明确的
 
 `SessionReader` 契约：
 
-- 每次调用有预算：字节（默认 4 MiB）、记录数（2000）、时间（软 20 ms）；超预算返回 `coverage: catching_up` 并保留游标。
-- 单记录上限 1 MiB；已知的大记录类型（cc `api-request-blob`）按类型安全跳过；未知的超大记录跳过并记 coverage gap，不无限扩 Buffer。
+- 每次调用有预算：字节（默认 4 MiB）、记录数（2000）、时间（软 20 ms）；一般追赶返回 catching_up 并保留游标，一记录恢复字节不足则按下条返回类型化 continuation/partial。有数据且三项预算为正时，即使 I/O 等待吃完软时间也允许一次受字节/记录 caps 约束的有界消费，零预算不消费、实际超时仍计量。（consult 4 增补，F10）
+- 单记录 maxRecordBytes=1 MiB 按 LF 前全部字节计（含 CRLF 的 CR）；有 LF 的最大合法记录消费 1 MiB+1 字节，无 LF 固定 EOF 完整 JSON 至多 1 MiB，另计实际签名 I/O。所有重读、预取、签名和恢复读取计入 slice/全 tick；预算不足返回共享 ReaderResult 的 `continuation?:{kind:'record_needs_larger_slice',minimumBytes:number}` 与 partial coverage，minimumBytes 覆盖本实现实际所需字节，不隐增预算、不把时间不足误称字节不足。已知私有类型跳过，超大未知行记 gap。（consult 4 增补，F10）
 - 记录分类用完整 JSON 解析后的 `type`，不用行首前缀（cc 常用记录首键是 `parentUuid`）。
-- 未完成尾行保留到上限；截断、inode 变化、压缩边界、分支切换分别处理。
-- 返回 `ReaderCheckpoint`：`fileId{dev, inode}`、`offset`、`schemaVersion`、`sourceGeneration`、恢复所需状态（未闭合工具调用、已见 usage id、压缩标记、速率基线）。offset 与状态同一次提交。
+- 未完成记录 raw tail 仅在单个 live reader 的至多 maxRecordBytes 有界易失缓冲存在，不进 checkpoint/summary/ObservationCommit/日志/临时 bundle/嵌套编码/parser state；pendingBytes 兼容字段恒 []。普通持久 offset/摘要/去重/工具配对/时钟留在最后完整记录边界，重启从 source 重读；超大行只存 discarding 与可推进游标，跨 slice/重启有界丢弃且只计一次 gap。EOF 不完整行仍 partial/incomplete_tail。（consult 4 增补，F09）
+- 截断、inode/设备变化、已检测改写/边界签名失配、压缩/分支变化明确 reset/sourceGeneration，旧锚点/摘要/transient 不接新谱系。append-only-between-observed-resets 与有界首/末已消费记录签名只给有限检测，保留 append_only_assumed_bounded_signatures 诊断；不保证任意内部历史未变，complete 仅此模型下固定输入边界覆盖，不作调用授权。（consult 4 增补，F11）
+- 返回可序列化 `ReaderCheckpoint`：`fileId{dev, inode}`、`offset`、`schemaVersion`、`readerVersion`、`sourceGeneration` 与完整记录边界的恢复元数据；offset/状态/摘要/连续性/notices 同一次提交。语义改变 bump readerVersion，旧 raw-tail 缓存按07持采集租约受控失效/重建、重置连续性并删除/替换旧缓存/未发布 bundle，不仅清字节沿旧offset；公共结构不兼容另升 checkpoint schema，不改 ledger v1。（consult 4 增补，F09）
 
 ### 6.4 `SessionEvidence`（收窄后的共同观测摘要）
 
 ```ts
 interface Metric<T> { value: T | null; source: string; asOf: number; quality: 'reported' | 'estimated' | 'unknown' }
 interface SessionEvidence {
-  ref: SessionRef; cwd: string | null; cwdSource: string; cwdAsOf: number; startedAt; version;
+  ref: SessionRef; cwd: string | null;
+  cwdSource: 'session_meta' | 'transcript' | 'unknown'; // （consult 4 增补，F02）
+  cwdAsOf: number; startedAt; version;
   model: Metric<{ id; provider?; effort? }>;          // 实际观测到的，不是配置
   context: Metric<{ used; window; afterCompaction?: boolean }>;
   spent: { tokens: Metric<TokenUsage>; costUsd: Metric<number> }; // 两项独立，costUsd必有，未知value=null；仅本节点
@@ -188,6 +191,10 @@ interface SessionEvidence {
   caps: { codex?: CodexExtras; claude?: ClaudeExtras; pi?: PiExtras };   // 类型化，不是 Record<string, unknown>
 }
 ```
+
+（consult 4 增补，F01）linkEvidence 为 `ToolResultLinkEvidence | LaunchMessageLinkEvidence` 的共享判别联合，仅是未裁定公开锚点。tool_result 保留原生调用身份；launch_message 有 ref/nativeMessageId/linkId/原 claim 字节的 SHA-256 指纹/eventAt，可选 launchCallId/launchCorrelationId 仅填记录实际提供值，不伪造 runId/tool/callId，不存明文 claim/整条消息/prompt。eventAt 必须是原记录有效事件时间，缺失只作无授权候选，observed-time 不补签发窗；核验条件及写者职责见 §6.7/01。
+
+（consult 4 增补，F02）cwdSource 是 reader 的位置来源类别：Claude 合格 transcript cwd 返回 transcript，未知仍 null/unknown，不伪称 Codex session_meta。事件时间或明确首次观测时间重复读不刷新；位置不授身份、不触发 Git、不覆盖冻结 launch_cwd。claude.transcript.cwd 仅内部诊断，不另立权威；07 只明确映射到已有 transcript 出口代码，未知映射 null、不扩词表。物理 callers.cwd 不补会话未知 cwd（01/02）。
 
 Git、项目配置、宿主健康、布局留在公共逻辑与视图组装层，不是 reader 的职责，不新增常驻服务。reader只提供实际读到的cwd及来源/时间，未知为null，不填HUD目录。组装层的`WorkspaceContext`按契约06包含`cwd,worktreeRoot,worktree?,gitCommonDir,repoId,projectOrigin`和来源/捕获时间/缺失原因：worktree仅显示名，工作树判等用有效规范根，cwd差异独立比较；根未知只说明目录不同。repoId为`SHA256(UTF8(canonicalJSON(['git-common-dir-v1',realpath(gitCommonDir)])))`，identityKind=git-common-dir-v1、scope=local，不等于SourceId/跨clone或跨机器项目UUID；同remote的两个clone不同组，普通副本无声明仍unknown。`projectOrigin={repoId,basis:'declared',declaredAt}|null`另记声明主体，不替代物理repoId/证明同仓库。
 
@@ -216,6 +223,8 @@ candidates?: LinkCandidate[];          // 未确认的推断，只在 Inspector 
 ```
 
 `DisplayNodeIdentity`由06定义。未绑定的已登记委派以稳定linkId显示键关联currentRun，不伪造sessionId/source，不因label/cwd相同合并，不计入已确认session数；不是新增授权身份或账本运行种类。首次绑定由B9合并到真实ref，保持选择映射、单父边与去重；未绑定意图从ledger事件派生时间，不造collect租约。构树仍以visited防环，同一真实ref只出现一次，总预算200/8MiB，未装载历史保留限额内身份/最后状态。状态字段用B16的freshness.state/stateKey/stateSince/stateSinceBasis及共享isRunTerminal；`run.failed`为launch_failed/non_execution，failed报告但run.running及cancelling仍非终态，不能按图标折历史。计数口径由共享投影提供，视觉交前端。
+
+（consult 4 增补，F10）B16/B10 续读共用总 deadline/8 MiB，不能相加每 reader 的20ms；同一 live reader 可保留 transient，本 tick 不足则下个公平轮次给足一条最大合法记录的恢复 slice 并扣共享预算，不每 tick 重建/始终给小碎片造成永久饥饿。时间不足正常让出，完整解析不可抢占、实际超时仍计软预算缺陷。
 
 ### 6.6 委派 MCP（`packages/hud-mcp`）与运行托管（`hud-run`）
 
@@ -295,7 +304,7 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 
 #### 6.6.6 后端档案 `~/.hud/delegate.json`
 
-每个后端：MCP服务器名、已验证客户端tool timeout/响应余量、`source`、启动方式（`shell` 文本或 `argv`）、`headless` 命令、`resume` 与 `resumeHeadless` 模板、角色到模型 / effort 的映射、默认布局、`orphan_policy`、资源约束。两个 skill 里硬编码的配方变成这里的配置，skill 缩成"调 `delegate_spawn`，验证报告"。
+（consult 4 增补，F03）delegate.json v1 顶层固定 `{version:1,profiles:LaunchProfile[]}`，profile.name 唯一；未知版本、未知键和不合格类型拒绝，文件≤256 KiB、profiles≤128 等字段有界校验沿05。每 profile 包含 MCP 服务器名、已验证客户端 tool timeout/响应余量、source、argv/shell 启动、headless/resume/resumeHeadless、宿主/布局、env、claimTransport、orphan_policy；可选 `roles:Record<string,{model:string,effort?:string}>` 仅数据，不是可执行模板/额外调度器。role/model/effort 解析后的实际值和非秘密档案指纹进入02参数摘要，缺角色映射只用明确配置/请求值，不猜模型。资源约束不在本期格式，不静默接收后忽略。DelegateConfig/角色映射的权威定义收敛到 src/core/types/capabilities.ts，B1/B4/B11/B13 共用；唯一附加可选键 callSource 及 Claude-only 限制按 consult4 F06（B1b）。配置本身（含 managedShellVerified:true 或选择 callSource）不授 verified 能力；两个 skill 的配方改用此配置，仍须独立能力证据。
 
 #### 6.6.7 Jev 后端
 
@@ -314,6 +323,8 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 | transcript 的约定范围核验（§6.6.3 第 4 条） | 确认或否定账本身份；缺失的父 / 子引用由 reconciler 填补，HUD 只投影 |
 | 注册表 `agent_session.value`、`HUD_LINK` env、pi `--orchestrator` | 加速与交叉核验 |
 | 父 transcript 的 herdr / pi-role / jev-ask 命令、tab 标签、Jev state 目录里的 key、持相同 claim 的 fork | **只产生候选**，Inspector 单独一组"疑似"，默认不读候选正文 |
+
+（consult 4 增补，F01）LinkEvidence 不是绑定许可。launch_message 核验必须唯一对应已有 link/run 的本轮 claim 指纹、launch_call_id、launch_correlation_id、精确原生消息及原事件时间窗，完整 SessionRef/source 与独立启动/会话证据齐备；不凭首条消息、同 claim 的历史复制或发现时间推本轮，不新增 transcript 建关系路径。B4 冻结 fallback 运输格式/correlation（正常 env 不重复明文），B8 只抽取，B9 限定核验/候选冲突投影；回填/撤权交 B2/B5 reconciler 事务，HUD/B9 读取不成为新写者。
 
 两条互相矛盾的显式记录或两份都匹配的 transcript：显示冲突，停止归属，不按时间取近。pane 当前 occupant 与运行定位不符（`occupantMatches = false`）：关系保留为历史，不显示宿主状态，跳转前再校验。关闭 pane 后关系与最后状态保留。
 

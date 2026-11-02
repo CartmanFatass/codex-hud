@@ -12,6 +12,8 @@
 
 [Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
 
+冻结后生效版本：`A9 + consult4-2026-11-01`。本地管理增补依据 [Oracle consult 4 F05](../reviews/2026-11-01-astra-consult4.md#f05明确本地管理主体及-writer-接线)，此前 C/D/E、A9-fix 和 schema v1 保留；允许 helper 形态不等于生产故障矩阵已验收。（consult 4 增补，F05）
+
 ## 数据模型
 
 ### 运行、启动输入和范围
@@ -71,11 +73,11 @@ stdout/stderr为单writer追加原始字节，offset/bytes按字节，不因resu
 | I-04-6 | 每5s写本实例心跳；>30000ms stale、=30000仍fresh；心跳只证明托管活性，不证明child启动或结束；确认死亡优先于残留fresh | TX+E；T-04-16、17 |
 | I-04-7 | 一次CAS消费票据，完整不可变stamp事件/armed claim/首H同事务，恢复只认事件、缺证unknown且不补当前域；唯一supervisor先submitting再一次spawn/提交；恢复/MCP重启不重置票据/阶段，不强制gate/helper拓扑 | DB+TX+E；T-04-18–20、42、43 |
 | I-04-8 | 永久围栏禁止未来提交；N须真正未提交与全部启动者封口/死亡，submitting未知不得当N。中间shell/暂停launcher也需封口证据 | TX+E；T-04-19–21、24 |
-| I-04-9 | 取消须覆盖整个scope且每步核验实例；INT→10s→TERM→2s→KILL，信号成功不终结。无安全整组控制就cancel_unconfirmed，不降成单PID，不杀复用组 | TX+E；T-04-22、23、26 |
+| I-04-9 | 取消须覆盖整个scope且每步核验实例；INT→10s→TERM→2s→KILL，信号成功不终结。无安全整组控制就cancel_unconfirmed，不降成单PID，不杀复用组；固定 runId 的 trusted_local cancel 须经独立实际 UID/私有 ledger 门禁，未绑定 run 也可管理，重复不重置宽限，helper 形态仍验完整故障矩阵（consult 4 增补，F05） | TX+E；T-04-22、23、26 |
 | I-04-10 | 默认continue独立托管；stop只在确证父上下文/物理实例失联后使用接受时策略取消；不把父离线/unknown当子结束 | TX+E；T-04-27、28 |
-| I-04-11 | hud-run写字段白名单；身份回填/状态/槽迁移统一reconciler，HUD只读。恢复观察器不给新执行权 | TX；T-04-14、25、29 |
+| I-04-11 | hud-run写字段白名单；身份回填/状态/槽迁移统一reconciler，HUD只读。恢复观察器不给新执行权；真实 writer 校验 LocalManager 与私有路径/账本所有权，trusted_local 审计不伪造 owner/父 MCP，reconcile 仅固定 run/证据指纹幂等及版本重验，无强制放槽（consult 4 增补，F05） | TX；T-04-14、25、29 |
 | I-04-12 | MVP可见采用修订甲；父MCP断连continue单独验收。supervisor死即交互中断/uncertain/持槽，禁自动input/focus/fg/wrapper恢复/resume；正常scope结束不因native未知变uncertain | TX+E；T-04-30–33、36 |
-| I-04-13 | RunHandle固定run/locator/绑定代次；status只读，cancel经鉴权意图，input/focus可选且重验occupant；HUD管理动作copy-only，本地resume按typed initiator/幂等/expected-run门禁，不通过控制动作resume副本 | TX；T-04-29、34、41 |
+| I-04-13 | RunHandle固定run/locator/绑定代次；status只读，cancel经鉴权意图，input/focus可选且重验occupant；HUD管理动作copy-only，本地resume按typed initiator/幂等/expected-run门禁，不通过控制动作resume副本；LocalManager cancel/reconcile 与 local_user resume 为独立入口，不要求已确认 parent_ref，不扩大 resume 或关系权限（consult 4 增补，F05） | TX；T-04-29、34、41 |
 | I-04-14 | 运行心跳不作TTL放槽；browser还需answered/failed+对账，needs_human继续持有；collect只属06观测存储 | TX；T-04-35 |
 | I-04-15 | 无新常驻服务；空闲阻塞、5s心跳一次runs CAS，不周期复制event/evidence/meta。发现有截止，生产禁100/200ms扫组；恢复按启动/重连/事件/wait必要截止/显式请求触发，预算归06 | TX+E；T-04-38、39 |
 
@@ -113,7 +115,11 @@ stale截止先只读最新H；仍fresh延后，确stale或内核退出证实supe
 
 ### 取消与父断连
 
-RunHandle.cancel 先由reconciler检查当前owner/context或受信本地管理权限/已接受的orphan_policy，短事务写cancel_requested_at/cancelling/accepted事件并返回，完整取消时延另计；这里的本地管理入口限定同用户私有HUD_HOME与写者实现，不接受模型自报“admin”。hud-run读取取消意图后，先封口启动，执行SIGINT→grace（默认10000ms，允许0–60000）→SIGTERM→termGrace（固定2000ms）→SIGKILL；宽限从实际发出/确认步骤时开始，不从网络请求超时算。每阶段先检查是否已有R/Q/N，已终态不再发信号（T-04-22）。
+（consult 4 增补，F05）RunHandle.cancel 先由 reconciler 检查当前 owner/context、独立 LocalManager 或已接受 orphan_policy；短事务写固定原 run 的 cancel_requested_at/cancelling/accepted 事件并返回，完整取消时延另计。受信本地 cancel/reconcile 的主体是同一 OS 用户对其私有 HUD_HOME/ledger 的管理权限，以 `LocalManager={kind:'trusted_local',uid,invocationId}` 表示；只有核验实际 UID、目录/账本所有权及私有路径的本地入口可构造，真实 writer 必须通过同一管理门禁再次校验，MCP/模型参数不能选择此分支。未完成 parent/child 绑定的 run 也可管理，不要求已确认 parent_ref；它不代表 OwnerKey、不转移 parent/child/owner，仅对固定 runId 的 cancel/reconcile 有效，不授 spawn/resume/report/predecessor 权限。01 authorizeControl 的 local_user 仍仅允许 resume，不能让管理操作继承或放松 resume 的 parentRef/representedOwner 前提。
+
+hud-run读取取消意图后，先封口启动，执行SIGINT→grace（默认10000ms，允许0–60000）→SIGTERM→termGrace（固定2000ms）→SIGKILL；宽限从实际发出/确认步骤时开始，不从网络请求超时算。每阶段先检查是否已有R/Q/N，已终态不再发信号（T-04-22）。
+
+（consult 4 增补，F05）必要的一个 in-group helper 可作为稳定整组控制机制，随 run 收尾，不另起恢复服务；进程数、寿命、CPU、RSS 与启动成本计入 P-06-1/3/9。仍须验证 leader 先退、helper 死亡、PID/PGID 复用、启动未封口和整组信号，有 helper 本身不能替代这些证据。
 
 ScopeControl必须安全覆盖本轮整个PGID及仍可能再启动的launcher，逐步重验正确boot/域/范围实例。直接leader已退仍需等强稳定控制证据防PGID复用，不能盲发数字；共享supervisor组不能悄悄退为单harness PID。实现可隔离workload组或提供经验证的完整控制机制，不强制某anchor/helper拓扑。失去安全整组控制只返回cancel_unconfirmed/uncertain并持槽；helper若需要，寿命/RSS计入06，改变exec链/TTY路径只补验受影响的context/输入行（T-04-23）。
 
@@ -129,7 +135,9 @@ orphan_policy随意图冻结。continue默认：父MCP物理实例确实退出/�
 
 hud-run允许：CAS消费/登记票据和启动阶段、scope/leader原始证据、自己的心跳、取消步骤ack、私有文件；reconciler负责证据校验、context/身份回填、关系与run状态迁移、槽释放和事件的原子提交。hud-run可调用同一reconciler入口，不能私有UPDATE state绕过R-02；HUD绝不补写丢失回执/槽，collect不属于hud-run。
 
-MVP HUD 的 Resume/Reconcile 仅消费03 `ActionDescriptor` 显示/复制，不启动控制 CLI；Open/focus 不携带此执行权。受信本地管理入口复用既有 writer/reconciler：cancel/reconcile沿既有权限，新增的 resume 只按01 local_user 窄例外、02幂等顺序与03全部门禁。CLI 形态 `hud run resume <linkId> --request-key <key> --expected-run <runId> --mode <visible|headless>`；实际复制命令还含安全引用的显式 HUD_HOME。记录 actor.kind=local_user、UID/invocation/representedOwner 和本地 launch_call_id，不造父 CallerId/context/tool_result；票据登记及单次提交按原意图的 typed initiator 重验。reconcile仅按run/证据指纹幂等取证，不强制放槽；未来直接调用条件/重试边界只引用03（T-04-41）。
+（consult 4 增补，F05）本地管理接线保留具名的 LocalManager/authorizeManager/acceptCancel 入口（如 src/core/run/port.ts），与 authorizeControl 的 local_user resume 分开；可共用实际 OS/私有路径核验实现。B2 必须在真实 RunFactPort 闭合 ledger/private-path 所有权验证，不能把收到 trusted_local、uid 数字或调用某函数名当已验证；B3a CLI 对 HUD_HOME 的检查不能替代此 adapter/writer 职责。管理审计使用既有 event 的白名单 payload，记录 `actor.kind=trusted_local`、实际 UID、invocationId、固定 runId/目标 bindingGeneration，不伪造 representedOwner、父 CallerId/context 或 MCP tool_result。cancel 短事务接受原 run 意图，信号仍逐步核验完整范围/实例，重复取消不重置宽限时钟；reconcile 按 run/证据指纹幂等、提交前重验版本，仅按既有 R/N/Q 等规则迁移/释放，不增加 force-release/admin override。
+
+（consult 4 增补，F05）MVP HUD 的 Resume/Reconcile 仅消费03 `ActionDescriptor` 显示/复制，不启动控制 CLI；Open/focus 不携带此执行权。本地 resume 继续仅按01 local_user 窄例外、02幂等顺序与03全部门禁，原 actor 形状不变。CLI 形态 `hud run resume <linkId> --request-key <key> --expected-run <runId> --mode <visible|headless>`；实际复制命令还含安全引用的显式 HUD_HOME。记录 actor.kind=local_user、UID/invocation/representedOwner 和本地 launch_call_id，不造父 CallerId/context/tool_result；票据登记及单次提交按原意图的 typed initiator 重验。未来直接调用条件/重试边界只引用03（T-04-41）。
 
 `RunHandle={runId, locator, bindingGeneration, status(), cancel(grace?), sendInput?(text), focus?()}`。status只读已提交状态、心跳、scope/leader/harness/receipt覆盖及证据，并提供03的reconciliation.cause和interaction三项能力，不做隐式reconcile写。cause区分supervisor_dead、scope_unknown、resume_ref_mismatch、clock_anomaly等已有原因；监督故障三项均false，与父调用通道离线的parentOffline分开。cancel经上述鉴权意图。sendInput由宿主队列或v1.1入口实现，headless未定义就unsupported；focus由HostAdapter实现，先检查server/locator与occupant代次。supervisor死亡/失联或可见交互不可用时input/focus禁用；输入/聚焦不等于取消、不能隐式resume；历史locator不匹配只返回stale_locator（T-04-29、34）。
 
@@ -165,7 +173,7 @@ A9仅需选定机制的关键可行性与失败分支：A8-fixB2 已于 `8fdf4cf
 
 ## 测试清单
 
-每项标A9 fixture（规格/表驱动输入）、A9 prototype（最小合成进程与已选A8关键证据）或B（B3a/B3b/B14生产验收）。只02拥有对账真值表，04验证证据来源。原型机制证明不等于生产实现通过，截图/模型自述不替代进程证据；本批不运行付费harness。
+每项标A9 fixture（规格/表驱动输入）、A9 prototype（最小合成进程与已选A8关键证据）或B（B3a/B3b/B14生产验收）。只02拥有对账真值表，04验证证据来源。原型机制证明不等于生产实现通过，截图/模型自述不替代进程证据；本批不运行付费harness。consult 4 新增的本地管理门禁/接线断言由 B2/B3a 定向生产验收，不追认原 A9 fixture 已证明真实 writer 授权。（consult 4 增补，F05）
 
 | 编号 | 输入 → 预期状态断言 |
 |---|---|
@@ -191,7 +199,7 @@ A9仅需选定机制的关键可行性与失败分支：A8-fixB2 已于 `8fdf4cf
 | T-04-20 (A9 fixture) | 同票据重复提交、MCP重启重传、恢复改phase到reserved → 拒绝/动作上界1；直接单次spawn无需额外分发服务，不能断言目标必执行 |
 | T-04-21 (A9 prototype) | reserved/armed永久fence+确证launcher封口/死亡+无workload，再迟到登记；另submitting未知 → 前者N/零迟到提交，后者非N；DB围栏不把已获许可暂停shell变封口 |
 | T-04-22 (B) | cancel接受、INT/10s/TERM/2s/KILL，步骤间已R/Q终结 → 按实际时间阶梯，终态后无信号；只发信号不改cancelled |
-| T-04-23 (B) | leader先退、PGID复用、整组控制通道丢失、与supervisor共享组 → 有效稳定控制才整scope取消，否则cancel_unconfirmed/持槽；零单PID降级/错组信号 |
+| T-04-23 (B) | leader先退、PGID复用、整组控制通道丢失、与supervisor共享组 → 有效稳定控制才整scope取消，否则cancel_unconfirmed/持槽；零单PID降级/错组信号；必要 in-group helper 死亡或启动未封口同样保守拒绝，leader 先退/完整组信号的证据及 helper 进程数、寿命、CPU/RSS/启动成本归 P-06-1/3/9（consult 4 增补，F05） |
 | T-04-24 (A9 prototype) | 无旧leader/exit receipt，启动记录固定scope、正确boot/域完整无活workload、原harness不执行、全launcher封口/死亡且无X→Q；无取消ended、已证before_exit cancelled(NULL)、取消时序未知ended+cancel_timing_unknown并释放；逐项缺任一条件仍uncertain/持槽，恢复不补死writer文件 |
 | T-04-25 (A9 prototype) | supervisor SIGKILL后scope活/未知/证实空，或同机跨boot；恢复尝试续H/领票据/写exit → 按02取证/列缺项，恢复无新执行权且不冒充旧writer |
 | T-04-26 (B) | 取消与退出/导入竞态、重复cancel、无ack崩溃：仅before_exit+完整R/Q为cancelled，after_exit为already_ended解释；完整R/Q但unknown→ended+说明/释放，无confirmed/already_ended；before/after互斥为X，缺结束证据持槽；重复不重置grace，迟到证明不重写终态/exit.json或重发完成 |
@@ -209,6 +217,6 @@ A9仅需选定机制的关键可行性与失败分支：A8-fixB2 已于 `8fdf4cf
 | T-04-38 (B) | 合成空闲run多个心跳与退出/取消事件 → 每间隔一次runs UPDATE，零周期event/evidence/meta/组扫描；阻塞CPU与真实I/O计量归06，启动有截止采样不变常驻200ms扫描 |
 | T-04-39 (B) | hud-mcp启动/重连发现遗留receipt或无receipt旧run、wait必要截止、相关事件/显式reconcile、无写者历史 → 有预算幂等导入/按02采Q或列缺证，无新执行权；status只读/通知合并，历史不养常驻observer |
 | T-04-40 (A9 fixture) | shell包装改变实际cwd、resume时CLI所在目录变化、路径事后消失 → 启动输入/meta仍取该run冻结launch_cwd/origin；新观察有来源且不改ledger历史，不在事务/热路径跑Git |
-| T-04-41 (A9 fixture) | HUD R/重复复制/不可信report字符串、本地resume缺request-key/expected-run/mode、旧父context离线 → 仅安全固定目标复制；缺参拒绝，合法local_user经原writer typed重验，零伪造父工具结果/自动恢复动作 |
+| T-04-41 (A9 fixture) | HUD R/重复复制/不可信report字符串、本地resume缺request-key/expected-run/mode、旧父context离线 → 仅安全固定目标复制；缺参拒绝，合法local_user经原writer typed重验，零伪造父工具结果/自动恢复动作；未绑定 parent/child 的固定 run 仍可经真实 UID/私有 ledger 所有权核验 cancel/reconcile；伪造 MCP admin/actor、错误 UID/ledger 拒绝；固定旧 run 不影响新 run，重复 cancel 不重置宽限、重复 reconcile 不产生执行权或 force-release。trusted_local 审计含实际 UID/invocationId/runId/目标绑定代次，不伪造 representedOwner/父 CallerId/context/tool_result，原 local_user resume actor 不变（consult 4 增补，F05） |
 | T-04-42 (A9 prototype) | armed/claim/首H/完整stamp事件登记commit后、meta前SIGKILL → 无meta仍按事件恢复确切实例，未重领票据/启动；缺stamp的历史行、同pid/start而boot/PID域不同 → unknown/持槽，不回填当前域、不判断旧实例已死 |
 | T-04-43 (A9 fixture) | 既有supervisor.registered事件承载完整ProcessStamp，无meta恢复；缺事件/四字段缺任一/源或代次错/冲突记录 → unknown；跨域同pid/start不能续H/授控制，返回stamp副本不改历史 |

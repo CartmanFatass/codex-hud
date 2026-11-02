@@ -114,12 +114,11 @@ export class ClaudeTranscriptFiles {
       throw new Error('claude_transcript_outside_source');
     const real = fs.realpathSync(file);
     if (!inside(this.root, real)) throw new Error('claude_transcript_outside_source');
-    checkDeadline(deadline);
     const projects = fs.realpathSync(path.join(this.root, 'projects'));
     if (!inside(projects, real)) throw new Error('claude_transcript_outside_source');
-    checkDeadline(deadline);
     if (!fs.statSync(real).isFile()) throw new Error('claude_transcript_outside_source');
-    checkDeadline(deadline);
+    // Finish this bounded path validation even if metadata I/O consumed the soft slice.
+    // Discovery checks the clock between candidates and keeps its saved cursor.
     return real;
   }
 
@@ -183,7 +182,8 @@ export class ClaudeTranscriptFiles {
         checkDeadline(deadline);
         const real = fs.realpathSync(projects);
         if (!inside(this.root, real)) throw new Error('claude_transcript_outside_source');
-        checkDeadline(deadline);
+        // Complete this initial metadata step and save its cursor before yielding.
+        // Otherwise a slow realpath can prevent discovery from ever being created.
         const entries = fs.readdirSync(projects, { withFileTypes: true });
         discovery = {
           projects: entries

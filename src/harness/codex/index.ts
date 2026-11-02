@@ -28,7 +28,7 @@ import { buildContextUsage } from '../../collectors/context-usage.js';
 import { codexGoal } from '../../collectors/codex-goal.js';
 import { observeLinkEvidence, validLinkScanState, type LinkScanState } from './link-evidence.js';
 
-export const CODEX_READER_VERSION = 'codex-facade-2';
+export const CODEX_READER_VERSION = 'codex-facade-3';
 export const DEFAULT_READER_BUDGET: Readonly<ReaderBudget> = {
   maxBytes: 4 * 1024 * 1024,
   maxRecords: 2000,
@@ -93,6 +93,12 @@ export class CodexAdapter implements HarnessAdapter {
   readonly capabilities = {};
   private sources = new Map<SourceId, SourceConfig>();
   private native = new Map<string, SessionRef[]>();
+  /** Per-reader ceiling. Production keeps DEFAULT_READER_BUDGET; tests inject a larger slice. */
+  private readonly readerBudget: Readonly<ReaderBudget>;
+
+  constructor(readerBudget: Readonly<ReaderBudget> = DEFAULT_READER_BUDGET) {
+    this.readerBudget = { ...readerBudget };
+  }
 
   async resolveSource(profile: LaunchProfile, env: Readonly<Record<string, string | undefined>>): Promise<SourceId> {
     if (profile.harness !== 'codex' || !path.isAbsolute(profile.source.root)) throw new Error('invalid_codex_source');
@@ -200,21 +206,24 @@ export class CodexAdapter implements HarnessAdapter {
         current.codex.rollout.fileIdentity !== `${current.fileId.dev}:${current.fileId.inode}` ||
         !Number.isSafeInteger(current.sourceGeneration) ||
         current.sourceGeneration < 1 ||
-        current.parserState.pendingBytes.length > 1024 * 1024 ||
-        current.parserState.pendingBytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255))
+        current.parserState.pendingBytes.length !== 0 ||
+        (current.parserState.discardingOversize &&
+          (!Number.isSafeInteger(current.parserState.discardOffset) ||
+            current.parserState.discardOffset! < current.offset)))
     ) {
       throw new Error('unsupported_codex_checkpoint');
     }
+    const cap = this.readerBudget;
     let initialized = false;
     let queue: Promise<unknown> = Promise.resolve();
-    const read = async (requested: ReaderBudget = DEFAULT_READER_BUDGET): Promise<ReaderResult> => {
+    const read = async (requested: ReaderBudget = cap): Promise<ReaderResult> => {
       const started = performance.now();
       const budget = { ...requested };
       if (Object.values(budget).some((n) => !Number.isSafeInteger(n) || n < 0))
         throw new Error('invalid_reader_budget');
-      budget.maxBytes = Math.min(budget.maxBytes, DEFAULT_READER_BUDGET.maxBytes);
-      budget.maxRecords = Math.min(budget.maxRecords, DEFAULT_READER_BUDGET.maxRecords);
-      budget.budgetMs = Math.min(budget.budgetMs, DEFAULT_READER_BUDGET.budgetMs);
+      budget.maxBytes = Math.min(budget.maxBytes, cap.maxBytes);
+      budget.maxRecords = Math.min(budget.maxRecords, cap.maxRecords);
+      budget.budgetMs = Math.min(budget.budgetMs, cap.budgetMs);
       if (!initialized) {
         parser.setRolloutPath(this.rollout(ref));
         if (current) parser.restoreCheckpoint(current.codex.rollout);
@@ -291,17 +300,22 @@ export class CodexAdapter implements HarnessAdapter {
             : {}),
       };
       const coverage: Coverage = {
-        state:
-          stats.remainingBytes > 0
+        state: stats.continuation
+          ? 'partial'
+          : stats.remainingBytes > 0
             ? 'catching_up'
-            : state.gaps.length || state.pendingBytes.length || state.discardingOversize
+            : state.gaps.length || state.tailAtEof || state.discardingOversize
               ? 'partial'
               : 'complete',
         skipped: { ...state.skipped },
         gaps: [...state.gaps],
         remainingBytes: stats.remainingBytes,
         loaded: true,
-        ...(state.pendingBytes.length ? { reason: 'incomplete_tail' } : {}),
+        ...(stats.continuation
+          ? { reason: 'record_needs_larger_slice' }
+          : state.tailAtEof
+            ? { reason: 'incomplete_tail' }
+            : {}),
       };
       const now = Date.now();
       const evidence = this.evidence(ref, result, coverage, now, links, clocks, parser.getOpenCalls());
@@ -311,6 +325,7 @@ export class CodexAdapter implements HarnessAdapter {
         observation: evidence.observation,
         checkpoint: structuredClone(current),
         evidence,
+        ...(stats.continuation ? { continuation: stats.continuation } : {}),
         stats: { bytesRead: stats.bytesRead, recordsRead: stats.recordsRead, elapsedMs: stats.elapsedMs },
       };
     };

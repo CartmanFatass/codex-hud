@@ -31,6 +31,7 @@ import {
   planTree,
   projectFreshness,
   readJsonlBytes,
+  JSONL_READER_VERSION,
   resetReaderCheckpoint,
   resolveStateContinuity,
   runExecutionProjection,
@@ -165,7 +166,7 @@ function capability(patch: Partial<CapabilityCell> = {}): CapabilityCell {
 function checkpoint(): ReaderCheckpoint {
   return {
     schemaVersion: 1,
-    readerVersion: 'synthetic-reader-v1',
+    readerVersion: JSONL_READER_VERSION,
     ref: CHILD,
     fileId: { dev: 1, inode: 2 },
     offset: 0,
@@ -685,13 +686,14 @@ export const observationExportCases: Record<string, () => void> = {
       bytes: bytes.subarray(0, split),
       knownEndOffset: bytes.length,
     });
-    assert.equal(first.checkpoint.offset, split);
+    assert.equal(first.checkpoint.offset, 0);
+    assert.deepEqual(first.checkpoint.parserState.pendingBytes, []);
     assert.equal(first.records.length, 0);
     assert.equal(first.coverage.state, 'catching_up');
     const recovered: ReaderCheckpoint = JSON.parse(JSON.stringify(first.checkpoint));
     const second = readJsonlBytes({
       checkpoint: recovered,
-      bytes: bytes.subarray(split),
+      bytes,
       knownEndOffset: bytes.length,
     });
     assert.deepEqual(second.records, [{ type: 'assistant', byteEnd: bytes.length }]);
@@ -701,10 +703,12 @@ export const observationExportCases: Record<string, () => void> = {
     assert.deepEqual(second.checkpoint.parserState.usageMessageIds, initial.parserState.usageMessageIds);
     assert.deepEqual(second.checkpoint.parserState.openToolWaits, initial.parserState.openToolWaits);
     assert.deepEqual(second.checkpoint.parserState.rateBaseline, initial.parserState.rateBaseline);
-    const tail = Buffer.from('{"type":"assistant"}', 'utf8');
+    const tail = Buffer.from('{"type":"assistant"', 'utf8');
     const incomplete = readJsonlBytes({ checkpoint: checkpoint(), bytes: tail, knownEndOffset: tail.length });
     assert.equal(incomplete.coverage.state, 'partial');
-    assert.equal(incomplete.checkpoint.parserState.pendingBytes.length, tail.length);
+    assert.deepEqual(incomplete.checkpoint.parserState.pendingBytes, []);
+    assert.equal(incomplete.checkpoint.offset, 0);
+    assert.equal(incomplete.checkpoint.parserState.tailAtEof, true);
     const giant = Buffer.from(
       `{"synthetic":"${'x'.repeat(1024 * 1024)}","type":"assistant"}\n{"type":"thinking"}\n{"tail":true,"type":"user"}\n`
     );
@@ -737,9 +741,12 @@ export const observationExportCases: Record<string, () => void> = {
       knownEndOffset: bytes.length,
       budget: { maxBytes: 5 },
     });
-    assert.equal(bounded.checkpoint.offset, 5);
-    assert.equal(bounded.coverage.state, 'catching_up');
-    assert.equal(readJsonlBytes({ checkpoint: checkpoint(), bytes, knownEndOffset: 5 }).checkpoint.offset, 5);
+    assert.equal(bounded.checkpoint.offset, 0);
+    assert.equal(bounded.nextReadOffset, 5);
+    assert.equal(bounded.continuation?.kind, 'record_needs_larger_slice');
+    assert.equal(bounded.coverage.state, 'partial');
+    assert.equal(bounded.coverage.reason, 'record_needs_larger_slice');
+    assert.equal(readJsonlBytes({ checkpoint: checkpoint(), bytes, knownEndOffset: 5 }).checkpoint.offset, 0);
     const repeated = Buffer.concat([bytes, bytes]);
     for (const limits of [{ budget: { maxRecords: 1 } }, { elapsedMsAfterRecord: [20] }]) {
       const oneRecord = readJsonlBytes({
@@ -871,6 +878,16 @@ export const observationExportCases: Record<string, () => void> = {
       notices: [],
     };
     assert.equal(observationCommitValid(commit), true);
+    assert.equal(
+      observationCommitValid({
+        ...commit,
+        checkpoint: {
+          ...commit.checkpoint,
+          parserState: { ...commit.checkpoint.parserState, pendingBytes: [...Buffer.from('PRIVATE_TAIL_SENTINEL')] },
+        },
+      }),
+      false
+    );
     assert.equal(
       observationCommitValid({ ...commit, checkpoint: { ...commit.checkpoint, sourceGeneration: 2 } }),
       false

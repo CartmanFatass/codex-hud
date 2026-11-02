@@ -356,25 +356,47 @@ const PUBLIC_RECORD_TYPES = new Set([
 ]);
 const PRIVATE_RECORD_TYPES = new Set(['api-request-blob', 'thinking', 'reasoning', 'image']);
 
-/** Byte-only JSONL scanner. Callers provide elapsed samples; this pure function reads no clock/file. */
+export const JSONL_READER_VERSION = 'jsonl-bytes-2';
+
+/** Opaque live storage. JSON/structuredClone never includes incomplete source bytes. */
+export class JsonlTransient {}
+interface JsonlTransientState {
+  lineage: string;
+  committedOffset: number;
+  position: number;
+  pending: Buffer;
+}
+const jsonlTransients = new WeakMap<JsonlTransient, JsonlTransientState>();
+
+/** Bytes start at byteOffset (the durable cursor by default); elapsed samples follow completed records. */
 export function readJsonlBytes(input: {
   checkpoint: ReaderCheckpoint;
   bytes: Uint8Array;
   knownEndOffset: number;
-  /** Samples count every completed line, including discarded and blank lines. */
+  byteOffset?: number;
+  transient?: JsonlTransient;
   elapsedMsAfterRecord?: readonly number[];
   budget?: { maxBytes?: number; maxRecords?: number; maxRecordBytes?: number; softMs?: number };
 }): {
   checkpoint: ReaderCheckpoint;
   records: { type: string; byteEnd: number }[];
   coverage: import('./types/observation.js').Coverage;
+  transient: JsonlTransient;
+  nextReadOffset: number;
+  continuation?: import('./interfaces/harness-adapter.js').ReaderResult['continuation'];
 } {
   if (input.checkpoint.schemaVersion !== 1) throw new Error('unsupported_checkpoint_schema');
+  if (input.checkpoint.readerVersion !== JSONL_READER_VERSION) throw new Error('unsupported_reader_version');
+  const initial = input.checkpoint;
+  const byteOffset = input.byteOffset ?? initial.parserState.discardOffset ?? initial.offset;
   if (
-    !Number.isSafeInteger(input.checkpoint.offset) ||
-    input.checkpoint.offset < 0 ||
+    !Number.isSafeInteger(initial.offset) ||
+    initial.offset < 0 ||
     !Number.isSafeInteger(input.knownEndOffset) ||
-    input.knownEndOffset < input.checkpoint.offset
+    input.knownEndOffset < initial.offset ||
+    !Number.isSafeInteger(byteOffset) ||
+    byteOffset < initial.offset ||
+    byteOffset > input.knownEndOffset
   )
     throw new Error('reader_reset_required');
   const limit = (value: number | undefined, cap: number, minimum = 0) => {
@@ -386,82 +408,136 @@ export function readJsonlBytes(input: {
   const maxRecords = limit(input.budget?.maxRecords, 2000);
   const maxRecordBytes = limit(input.budget?.maxRecordBytes, 1024 * 1024, 1);
   const softMs = limit(input.budget?.softMs, 20);
-  if (
-    input.checkpoint.parserState.pendingBytes.length > maxRecordBytes ||
-    input.checkpoint.parserState.pendingBytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)
-  )
-    throw new Error('invalid_reader_checkpoint');
+  // Old raw-tail checkpoints must be rebuilt from source, never cleared at an advanced offset.
+  if (initial.parserState.pendingBytes.length !== 0) throw new Error('invalid_reader_checkpoint');
   const parserState: ReaderParserState = {
-    ...input.checkpoint.parserState,
-    pendingBytes: [...input.checkpoint.parserState.pendingBytes],
-    gaps: [...input.checkpoint.parserState.gaps],
-    skipped: { ...input.checkpoint.parserState.skipped },
+    ...initial.parserState,
+    pendingBytes: [],
+    gaps: [...initial.parserState.gaps],
+    skipped: { ...initial.parserState.skipped },
   };
+  const transient = input.transient ?? new JsonlTransient();
+  const lineage = JSON.stringify([initial.ref, initial.fileId, initial.sourceGeneration, initial.readerVersion]);
+  const previous = jsonlTransients.get(transient);
+  const matches =
+    previous?.lineage === lineage &&
+    previous.committedOffset === initial.offset &&
+    previous.position === byteOffset &&
+    !parserState.discardingOversize;
+  if (byteOffset !== initial.offset && !parserState.discardingOversize && !matches)
+    throw new Error('reader_transient_unavailable');
+  let pending = matches ? previous.pending : Buffer.alloc(0);
+  let position = byteOffset,
+    committedOffset = initial.offset,
+    consumed = 0,
+    completeLines = 0;
+  let timeExhausted = false;
   const records: { type: string; byteEnd: number }[] = [];
-  let consumed = 0;
-  let completeLines = 0;
   const skip = (reason: string, gap = false) => {
     parserState.skipped[reason] = (parserState.skipped[reason] ?? 0) + 1;
     if (gap && !parserState.gaps.includes(reason)) parserState.gaps.push(reason);
   };
-  const availableBytes = Math.min(input.bytes.length, maxBytes, input.knownEndOffset - input.checkpoint.offset);
+  const parse = (bytes: Buffer) => {
+    if (!bytes.length) return;
+    try {
+      const line = new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/\r$/, '');
+      if (!line.trim()) return;
+      const value: unknown = JSON.parse(line);
+      const type =
+        value && typeof value === 'object' && !Array.isArray(value) ? (value as { type?: unknown }).type : undefined;
+      if (typeof type !== 'string') skip('unknown_type', true);
+      else if (PRIVATE_RECORD_TYPES.has(type)) skip(type);
+      else if (!PUBLIC_RECORD_TYPES.has(type)) skip('unknown_type', true);
+      else records.push({ type, byteEnd: position });
+    } catch {
+      skip('invalid_json', true);
+    }
+  };
+  const availableBytes = Math.min(input.bytes.length, maxBytes, input.knownEndOffset - position);
   while (consumed < availableBytes && completeLines < maxRecords && softMs > 0) {
-    const byte = input.bytes[consumed++];
-    if (parserState.discardingOversize) {
-      if (byte !== 10) continue;
-      parserState.discardingOversize = false;
-      completeLines++;
-    } else if (byte !== 10) {
-      parserState.pendingBytes.push(byte);
-      if (parserState.pendingBytes.length > maxRecordBytes) {
-        parserState.pendingBytes = [];
+    const newline = input.bytes.subarray(0, availableBytes).indexOf(10, consumed);
+    const end = newline < 0 ? availableBytes : newline;
+    const piece = input.bytes.subarray(consumed, end);
+    if (!parserState.discardingOversize) {
+      if (pending.length + piece.length > maxRecordBytes) {
+        pending = Buffer.alloc(0);
         parserState.discardingOversize = true;
         skip('oversize_unknown', true);
-      }
-      continue;
-    } else {
+      } else pending = Buffer.concat([pending, piece]);
+    }
+    const count = end - consumed + (newline < 0 ? 0 : 1);
+    consumed += count;
+    position += count;
+    if (parserState.discardingOversize) parserState.discardOffset = position;
+    if (newline >= 0) {
+      if (!parserState.discardingOversize) parse(pending);
+      pending = Buffer.alloc(0);
+      parserState.discardingOversize = false;
+      parserState.discardOffset = null;
+      committedOffset = position;
       completeLines++;
-      const lineBytes = Uint8Array.from(parserState.pendingBytes);
-      parserState.pendingBytes = [];
-      if (lineBytes.length > 0) {
-        try {
-          const line = new TextDecoder('utf-8', { fatal: true }).decode(lineBytes).replace(/\r$/, '');
-          if (line.length > 0) {
-            const value: unknown = JSON.parse(line);
-            const type =
-              value && typeof value === 'object' && !Array.isArray(value)
-                ? (value as { type?: unknown }).type
-                : undefined;
-            if (typeof type !== 'string') skip('unknown_type', true);
-            else if (PRIVATE_RECORD_TYPES.has(type)) skip(type);
-            else if (!PUBLIC_RECORD_TYPES.has(type)) skip('unknown_type', true);
-            else records.push({ type, byteEnd: input.checkpoint.offset + consumed });
-          }
-        } catch {
-          skip('invalid_json', true);
-        }
+      const elapsed = input.elapsedMsAfterRecord?.[completeLines - 1];
+      if (elapsed !== undefined && (!Number.isFinite(elapsed) || elapsed >= softMs)) {
+        timeExhausted = true;
+        break;
       }
     }
-    const elapsed = input.elapsedMsAfterRecord?.[completeLines - 1];
-    if (elapsed !== undefined && (!Number.isFinite(elapsed) || elapsed >= softMs)) break;
   }
-  const checkpoint = { ...input.checkpoint, offset: input.checkpoint.offset + consumed, parserState };
-  const remainingBytes = Math.max(0, input.knownEndOffset - checkpoint.offset);
+  // A complete JSON record at this fixed EOF needs no LF; partial JSON/code points stay transient.
+  if (
+    position === input.knownEndOffset &&
+    pending.length &&
+    completeLines < maxRecords &&
+    softMs > 0 &&
+    !timeExhausted
+  ) {
+    try {
+      JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(pending));
+      parse(pending);
+      pending = Buffer.alloc(0);
+      committedOffset = position;
+    } catch {
+      /* Source may append the rest later. */
+    }
+  }
+  parserState.tailBytesSeen = pending.length;
+  parserState.tailAtEof = position === input.knownEndOffset && (pending.length > 0 || parserState.discardingOversize);
+  const checkpoint = { ...initial, offset: committedOffset, parserState };
+  jsonlTransients.set(transient, { lineage, committedOffset, position, pending });
+  const remainingBytes = input.knownEndOffset - position;
+  const needsLarger =
+    pending.length > 0 &&
+    remainingBytes > 0 &&
+    consumed === maxBytes &&
+    maxBytes > 0 &&
+    maxRecords > 0 &&
+    softMs > 0 &&
+    !timeExhausted;
   return {
     checkpoint,
     records,
+    transient,
+    nextReadOffset: position,
+    ...(needsLarger
+      ? { continuation: { kind: 'record_needs_larger_slice' as const, minimumBytes: maxRecordBytes + 1 } }
+      : {}),
     coverage: {
-      state:
-        remainingBytes > 0
+      state: needsLarger
+        ? 'partial'
+        : remainingBytes > 0
           ? 'catching_up'
-          : parserState.gaps.length > 0 || parserState.pendingBytes.length > 0 || parserState.discardingOversize
+          : parserState.gaps.length > 0 || parserState.tailAtEof
             ? 'partial'
             : 'complete',
       skipped: { ...parserState.skipped },
       gaps: [...parserState.gaps],
       remainingBytes,
       loaded: true,
-      ...(parserState.pendingBytes.length > 0 ? { reason: 'incomplete_tail' } : {}),
+      ...(needsLarger
+        ? { reason: 'record_needs_larger_slice' }
+        : parserState.tailAtEof
+          ? { reason: 'incomplete_tail' }
+          : {}),
     },
   };
 }
@@ -513,6 +589,8 @@ export function observationCommitValid(commit: ObservationCommit): boolean {
   const stamp = commit.observationStamp;
   const projection = commit.summary.statusProjection;
   return (
+    Array.isArray(commit.checkpoint.parserState.pendingBytes) &&
+    commit.checkpoint.parserState.pendingBytes.length === 0 &&
     sameSessionRef(commit.ref, stamp.ref) &&
     sameSessionRef(commit.ref, commit.checkpoint.ref) &&
     commit.summary.nodeIdentity.kind === 'session' &&
