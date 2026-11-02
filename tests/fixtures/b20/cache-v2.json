@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "handoffMinTokens": 60000,
+  "entries": [
+    {
+      "match": { "harness": "claude", "auth": "subscription_included" },
+      "configured": {
+        "ttlMs": 3600000,
+        "source": "promptCacheTtl unset = automatic (binary text 2.1.305)"
+      },
+      "documented": {
+        "ttlMs": 3600000,
+        "writeMultiplier": 2.0,
+        "readMultiplier": { "claude-fable-5-1": 0.025, "claude-opus-5-5": 0.05, "default": 0.1 },
+        "lifetimeFrom": "request_start",
+        "source": "code.claude.com prompt-caching; platform docs"
+      },
+      "planningAssumption": null,
+      "warming": "off"
+    },
+    {
+      "match": { "harness": "claude", "auth": "usage_credits|api|bedrock|vertex|foundry" },
+      "documented": {
+        "ttlMs": 300000,
+        "writeMultiplier": 1.25,
+        "readMultiplier": { "default": 0.1 }
+      },
+      "warming": "off"
+    },
+    {
+      "match": { "harness": "codex", "auth": "chatgpt" },
+      "configured": { "ttlMs": null, "source": "0.166 sends no retention option" },
+      "documented": {
+        "ttlMs": null,
+        "note": "API only: GPT-5.6+ >= 30 min at 1.25x write; reads 0.1x (0.05x GPT-6.1 Sol/Terra); ChatGPT backend not covered"
+      },
+      "planningAssumption": { "ttlMs": 300000, "label": "conservative, display only" },
+      "warming": "off"
+    },
+    {
+      "match": { "harness": "pi" },
+      "documented": { "source": "models.json promptCache, best-effort" },
+      "warming": "native"
+    }
+  ]
+}
