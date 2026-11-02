@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "./dist",
+    "declaration": false,
+    "declarationMap": false,
+    "noEmitOnError": true
+  },
+  "include": ["src/**/*.ts", "../../tests/hud-mcp/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}
