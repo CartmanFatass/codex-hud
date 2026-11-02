@@ -33,8 +33,12 @@ import {
   proveGroupGone,
 } from './process.js';
 
+import { retirementAllowed, RetirementScheduler, type RetirementDeadline, type Quiescence } from './retirement.js';
+import { RetirementEvidenceReader } from './retirement-evidence.js';
+import { readFrozenRetirementPolicy, type PolicyRunLaunchInput } from './retirement-policy.js';
+
 export interface StartOptions {
-  input: RunLaunchInput;
+  input: PolicyRunLaunchInput;
   ticket: string;
   brief?: Buffer;
   env?: NodeJS.ProcessEnv;
@@ -46,8 +50,10 @@ export interface StartOptions {
   identifyHarness?: (command: ProcessStamp) => Promise<ProcessStamp | null>;
   /** Existing supervisor's one bounded launch-workspace capture, never the MCP response path. */
   afterRegistered?: () => Promise<void>;
+  /** Trusted composition only; a JSON launch cannot supply an evidence function. */
+  retirementEvidence?: (snapshot: RunSnapshot) => Promise<Quiescence | null>;
 }
-export function launchDigest(input: RunLaunchInput): string {
+export function launchDigest(input: PolicyRunLaunchInput): string {
   return digest(input);
 }
 export function codexClaimArgs(
@@ -59,6 +65,9 @@ export function codexClaimArgs(
     '-c',
     `mcp_servers.${server}.env.${key}=${JSON.stringify(value)}`,
   ]);
+}
+function validGrace(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 60000 ? value : 10000;
 }
 function validateStart(options: StartOptions): string[] {
   const { input } = options,
@@ -290,6 +299,7 @@ export class HeadlessRunControl implements RunControl {
   }
   /** Exactly one invocation in the supervisor process; call only with a committed intent. */
   async start(options: StartOptions): Promise<void> {
+    const policy = readFrozenRetirementPolicy(options.input);
     const argv = validateStart(options),
       { input } = options,
       id = input.runId;
@@ -354,10 +364,37 @@ export class HeadlessRunControl implements RunControl {
         clockAnomalyRecorded = false,
         cancelTask: Promise<void> | null = null;
       let group: Awaited<ReturnType<typeof launchGroup>> | VisibleProcess | null = null;
+      let groupFinished = false;
       const startedMono = performance.now();
       let previousWall = Date.now(),
         previousMono = startedMono;
-      const handleCancel = async (intent: CancelIntent) => {
+      const checkClock = async () => {
+        const wall = Date.now(),
+          mono = performance.now();
+        if (
+          !clockAnomalyRecorded &&
+          (wall < previousWall || Math.abs(wall - previousWall - (mono - previousMono)) > 1000)
+        ) {
+          await this.port.raw(id, self, 'clock.anomaly', {
+            wallDeltaMs: wall - previousWall,
+            monoDeltaMs: Math.round(mono - previousMono),
+          });
+          clockAnomalyRecorded = true;
+        }
+        previousWall = wall;
+        previousMono = mono;
+        return !clockAnomalyRecorded;
+      };
+      let retirement: RetirementScheduler | undefined;
+      const evidenceReader = new RetirementEvidenceReader(this.hudHome);
+      let wakeDelay: (() => void) | undefined;
+      let policyAssignment: string | null = null;
+      let policyDeadline: RetirementDeadline | null = null;
+      let policyRequestSeq: number | null = null;
+      const dispatchedCancels = new Set<number>();
+      const handleCancel = async (initialIntent: CancelIntent) => {
+        let intent = initialIntent;
+        let userRequest = policyRequestSeq !== intent.seq;
         if (!group?.scope || !meta.scope || !meta.harness || meta.scope.scope_id !== group.scope.scope_id) {
           await this.port.raw(id, self, 'cancel.unconfirmed', { requestSeq: intent.seq, reason: 'scope_unknown' });
           return;
@@ -367,7 +404,55 @@ export class HeadlessRunControl implements RunControl {
           ['SIGTERM', 2000],
           ['SIGKILL', 0],
         ] as const) {
-          if (stopping || isRunTerminal((await this.port.read(id)).run)) return;
+          if (stopping || groupFinished) return;
+          // R/Q/N still belongs to the existing reconciler. Scope gone, a
+          // fenced writer, or a completed run never permits another signal.
+          await checkClock();
+          const step = await this.port.read(id);
+          if (
+            isRunTerminal(step.run) ||
+            step.controlConflict ||
+            step.run.state === 'uncertain' ||
+            !sameProcessStamp(step.run.supervisor, self) ||
+            !step.run.scopeRef ||
+            !scopeUpdateAllowed(step.run.scopeRef, meta.scope)
+          )
+            return;
+          if (
+            step.receipt ||
+            step.facts.some(
+              (entry) =>
+                entry.validation === 'accepted' &&
+                entry.runId === id &&
+                entry.bindingGeneration === step.run.expectedGeneration &&
+                sameProcessStamp(entry.supervisor, self) &&
+                (((entry.fact.kind === 'receipt' || entry.fact.kind === 'scope_reconciled') && entry.fact.complete) ||
+                  entry.fact.kind === 'never_submitted')
+            )
+          )
+            return;
+          const accepted = step.events.find((event) => event.kind === 'cancel.accepted');
+          if (!userRequest && accepted) {
+            if (dispatchedCancels.has(accepted.seq)) return;
+            // The explicit user's accepted grace supersedes the pending policy.
+            intent = { seq: accepted.seq, at: accepted.at, graceMs: validGrace(accepted.payload.graceMs) };
+            userRequest = true;
+            dispatchedCancels.add(intent.seq);
+            return handleCancel(intent);
+          }
+          if (!userRequest && step.retirement?.assignment !== policyAssignment) {
+            // A new assignment aborts this action; its own finite max deadline
+            // must remain armed even when the superseded request is audited.
+            setImmediate(() => retirement?.resume());
+            return;
+          }
+          if (
+            proveGroupGone(meta.scope, meta.harness, [
+              meta.scope.group_leader,
+              ...(meta.command_leader ? [meta.command_leader] : []),
+            ])
+          )
+            return;
           const currentHarness = readProcess(meta.harness.pid);
           if (
             currentHarness &&
@@ -382,6 +467,30 @@ export class HeadlessRunControl implements RunControl {
             await this.reconcile(id);
             return;
           }
+          if (
+            !userRequest &&
+            signal === 'SIGINT' &&
+            (!policyDeadline || !(await retirement?.recheck(policyDeadline, step)))
+          ) {
+            setImmediate(() => retirement?.resume());
+            return;
+          }
+          if (!userRequest && signal === 'SIGINT') {
+            // Evidence readers can yield (notably a cold readProjection open).
+            // Close that asynchronous window with one coherent final premise.
+            const send = await this.port.read(id);
+            const user = send.events.find((event) => event.kind === 'cancel.accepted');
+            if (user) {
+              if (dispatchedCancels.has(user.seq)) return;
+              dispatchedCancels.add(user.seq);
+              return handleCancel({ seq: user.seq, at: user.at, graceMs: validGrace(user.payload.graceMs) });
+            }
+            if (!retirementAllowed(send) || send.retirement!.assignment !== policyAssignment) {
+              setImmediate(() => retirement?.resume());
+              return;
+            }
+          }
+          if (stopping || groupFinished) return;
           const ack = await group.signal(signal);
           await this.port.raw(id, self, 'cancel.step', { requestSeq: intent.seq, signal, ack });
           if (!ack && (visible || signal !== 'SIGKILL')) {
@@ -391,7 +500,7 @@ export class HeadlessRunControl implements RunControl {
             });
             return;
           }
-          if (signal === 'SIGINT' && ack && meta.harness && processState(meta.harness) === 'alive') {
+          if (userRequest && signal === 'SIGINT' && ack && meta.harness && processState(meta.harness) === 'alive') {
             const s = await this.port.read(id);
             await this.port.reconcile(
               id,
@@ -400,22 +509,51 @@ export class HeadlessRunControl implements RunControl {
               Date.now()
             );
           }
+          if (!userRequest && signal === 'SIGINT' && ack) {
+            // B21 requires a strictly later *observed* alive fact. Do not infer
+            // it from a successful send or backdate a fast exit.
+            await new Promise<void>((resolve) => setTimeout(resolve, 2));
+            const alive = await this.port.read(id);
+            if (!groupFinished && !stopping && inspectGroup(meta.scope).result === 'alive')
+              await this.port.reconcile(
+                id,
+                alive.revision,
+                [
+                  fact(alive, {
+                    kind: 'scope',
+                    state: 'alive',
+                    complete: false,
+                    harnessTerminated: false,
+                    launchersSealed: false,
+                  }),
+                ],
+                Date.now()
+              );
+          }
           if (delay)
             await new Promise<void>((resolve) => {
-              const timer = setTimeout(resolve, delay);
-              group!.exited.then(() => {
+              const done = () => {
                 clearTimeout(timer);
+                wakeDelay = undefined;
                 resolve();
-              });
+              };
+              const timer = setTimeout(done, delay);
+              // An accepted user request wakes the policy grace immediately.
+              wakeDelay = userRequest ? undefined : done;
+              group!.exited.then(done);
             });
         }
       };
       const wake = () => {
-        if (cancelTask || stopping || !discoveryFinished) return;
+        if (stopping || !discoveryFinished) return;
+        wakeDelay?.();
+        retirement?.refresh();
+        if (cancelTask) return;
         cancelTask = (async () => {
           const s = await this.port.read(id);
           const e = s.events.find((e) => e.kind === 'cancel.accepted');
-          if (e) {
+          if (e && !dispatchedCancels.has(e.seq)) {
+            dispatchedCancels.add(e.seq);
             const graceMs = e.payload.graceMs;
             await handleCancel({
               seq: e.seq,
@@ -425,10 +563,14 @@ export class HeadlessRunControl implements RunControl {
                   ? graceMs
                   : 10000,
             });
-          } else cancelTask = null;
-        })().catch(async (e) => {
-          await this.port.raw(id, self, 'cancel.unconfirmed', { reason: String(e) });
-        });
+          }
+        })()
+          .catch(async (e) => {
+            if (!stopping) await this.port.raw(id, self, 'cancel.unconfirmed', { reason: String(e) });
+          })
+          .finally(() => {
+            cancelTask = null;
+          });
       };
       this.active.set(id, wake);
       signalWake = wake;
@@ -447,21 +589,9 @@ export class HeadlessRunControl implements RunControl {
               }
               heartbeatUnavailable = false;
               seq = result.seq;
-              const wall = Date.now(),
-                mono = performance.now();
-              if (
-                !clockAnomalyRecorded &&
-                (wall < previousWall || Math.abs(wall - previousWall - (mono - previousMono)) > 1000)
-              ) {
-                clockAnomalyRecorded = true;
-                await this.port.raw(id, self, 'clock.anomaly', {
-                  wallDeltaMs: wall - previousWall,
-                  monoDeltaMs: Math.round(mono - previousMono),
-                });
-                await this.reconcile(id);
-              }
-              previousWall = wall;
-              previousMono = mono;
+              const hadAnomaly = clockAnomalyRecorded;
+              await checkClock();
+              if (!hadAnomaly && clockAnomalyRecorded) await this.reconcile(id);
               if (result.cancel) wake();
               if (options.parent && !parentGone && processState(options.parent.process) === 'dead') {
                 parentGone = true;
@@ -514,6 +644,9 @@ export class HeadlessRunControl implements RunControl {
               stdoutFd: logs.stdout,
               stderrFd: logs.stderr,
             });
+        void group.exited.then(() => {
+          groupFinished = true;
+        });
         await this.port.phase(id, self, 'submitted');
         let harness: ProcessStamp | null = visible ? (group as VisibleProcess).harness : null;
         if (!visible && group.command) {
@@ -534,7 +667,7 @@ export class HeadlessRunControl implements RunControl {
             harness = null;
         }
         meta = { ...meta, command_leader: group.command, harness, scope: harness ? group.scope : null };
-        await this.port.startup(id, self, meta);
+        const startupClock = await this.port.startup(id, self, meta);
         artifacts.writeMeta(meta);
         discoveryFinished = true;
         await this.port.raw(id, self, 'launch.sealed', {
@@ -543,8 +676,60 @@ export class HeadlessRunControl implements RunControl {
           scope: meta.scope,
         });
         await this.observe(id, !visible);
+        if (!visible && this.port.requestRetirement && startupClock) {
+          retirement = new RetirementScheduler({
+            home: this.hudHome,
+            runId: id,
+            policy,
+            startClock: startupClock,
+            clockTrusted: checkClock,
+            read: () => this.port.read(id),
+            evidence: (snapshot) =>
+              typeof options.retirementEvidence === 'function'
+                ? options.retirementEvidence(snapshot)
+                : evidenceReader.read(snapshot),
+            retire: async (deadline: RetirementDeadline, snapshot, request) => {
+              if (stopping) return false;
+              if (cancelTask) await cancelTask;
+              if (stopping) return false;
+              const intent = await this.port.requestRetirement!(id, self, snapshot.revision, request);
+              if (!intent) return false;
+              // A canonical user ladder may have started while the request writer
+              // yielded. Preserve its task, steps and original grace.
+              if (stopping || groupFinished || cancelTask) return true;
+              policyAssignment = deadline.assignment;
+              policyDeadline = deadline;
+              policyRequestSeq = intent.seq;
+              cancelTask = handleCancel(intent)
+                .catch(async (error) => {
+                  if (!stopping)
+                    await this.port.raw(id, self, 'cancel.unconfirmed', {
+                      requestSeq: intent.seq,
+                      reason: String(error),
+                    });
+                })
+                .finally(() => {
+                  cancelTask = null;
+                });
+              return true;
+            },
+            cancelled: wake,
+            failed: () => {
+              /* A failed eligibility read grants no signal authority; recovery retries. */
+            },
+          });
+          await retirement.start();
+        }
         wake();
         const exited = await group.exited;
+        // Drain the last acknowledged signal fact before terminal import uses
+        // the same ledger connection. Queued writers have a bounded lock budget.
+        stopping = true;
+        clearInterval(heartbeat);
+        retirement?.close();
+        wakeDelay?.();
+        await cancelTask;
+        await checkClock();
         if (writerLost) return;
         const shellWait = visible ? (group as VisibleProcess).shellExit : null;
         await this.port.raw(id, self, 'command.exited', {
@@ -650,7 +835,11 @@ export class HeadlessRunControl implements RunControl {
         stopping = true;
         clearInterval(heartbeat);
         this.active.delete(id);
+        retirement?.close();
+        evidenceReader.close();
+        wakeDelay?.();
         group?.close();
+        await cancelTask;
       }
     } finally {
       signalWake = () => {};

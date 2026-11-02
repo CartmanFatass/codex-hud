@@ -13,6 +13,7 @@ import {
 } from '../../core/capabilities.js';
 import { digest } from '../../core/canonical.js';
 import { makeSourceId } from '../../core/identity.js';
+import { freezeRetirementPolicy, type PolicyRunLaunchInput } from '../../core/run/retirement-policy.js';
 import { codexClaimArgs, launchDigest, type StartOptions } from '../../core/run/control.js';
 import { snapshotBrief, type BriefSnapshot } from '../../core/launch/brief.js';
 import { formatLaunchMessage } from '../../core/launch/message.js';
@@ -68,6 +69,8 @@ export interface PrepareCodexLaunchOptions {
   briefPath: string;
   prompt?: string;
   role?: string;
+  /** Frozen wake recovery bound, supplied by the trusted config owner. */
+  retireRecoveryMs?: number;
   model?: string;
   effort?: string;
   resumeSessionId?: string;
@@ -269,7 +272,7 @@ export async function prepareCodexLaunch(options: PrepareCodexLaunchOptions): Pr
         brief.bytes(),
         Buffer.from((prompt ? '\n\n' + prompt : '') + instructions + fallback, 'utf8'),
       ]);
-      const input: RunLaunchInput = {
+      const input: PolicyRunLaunchInput = {
         runId: run.runId,
         mode: 'headless',
         launch,
@@ -278,6 +281,7 @@ export async function prepareCodexLaunch(options: PrepareCodexLaunchOptions): Pr
         profileDigest,
         stdin: 'brief',
         orphanPolicy: profile.orphan_policy,
+        retire: freezeRetirementPolicy(profile.retire, role ?? 'implementer', 10_000, options.retireRecoveryMs),
       };
       const payload: PreparedStartPayload = {
         input,
