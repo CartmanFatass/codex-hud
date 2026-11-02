@@ -18,6 +18,7 @@ import {
   preparedCheckpointData,
   prepareProjectionCandidate,
   checkpointFormat,
+  checkpointBoundary,
   decodeCheckpointBody,
   decodeProjectionBody,
 } from './checkpoint.js';
@@ -25,6 +26,7 @@ import type { PreparedObservationCandidate } from './interfaces/observation-stor
 import type { ReaderBudget } from './interfaces/harness-adapter.js';
 import type {
   CheckpointPreparation,
+  CheckpointIdentity,
   PreparedCheckpoint,
   ObservationProjection,
   ObservationRecovery,
@@ -114,7 +116,17 @@ function privateFile(file: string): void {
     throw new ObservationStoreError('observation_file_not_private');
 }
 
-/** One source-local database. Rollback journalling avoids a second durable raw-cache/WAL copy. */
+function verifyWritableSettings(db: DatabaseSync): void {
+  if (
+    Number(db.prepare('PRAGMA synchronous').get()?.synchronous) !== 2 ||
+    Number(db.prepare('PRAGMA secure_delete').get()?.secure_delete) !== 1 ||
+    Number(db.prepare('PRAGMA busy_timeout').get()?.timeout) !== 10 ||
+    Number(db.prepare('PRAGMA wal_autocheckpoint').get()?.wal_autocheckpoint) !== 1000
+  )
+    throw new ObservationStoreError('unsupported_observation_durability');
+}
+
+/** One source-local WAL + FULL database; legacy caches rebuild before the controlled journal switch. */
 export class ObservationStore {
   #closed = false;
   #lastSampledNow = 0;
@@ -125,7 +137,8 @@ export class ObservationStore {
     readonly sourceId: string,
     readonly databasePath: string,
     private readonly readOnly: boolean,
-    private readonly now: () => number
+    private readonly now: () => number,
+    private readonly unsafeRefs = new Set<string>()
   ) {}
 
   #key(ref: SessionRef): string {
@@ -484,6 +497,9 @@ export class ObservationStore {
     const { commit, data } = prepared;
     const checkpoint = data.checkpoint;
     const key = this.#key(commit.ref);
+    // Migration-only guard. Authority and the actual rebuild remain checked by the existing fenced transaction.
+    if (this.unsafeRefs.has(key) && prepared.rebuildFromReaderVersion === undefined)
+      throw new ObservationStoreError('observation_rebuild_required');
     if (commit.leaseGeneration !== lease.generation) throw new ObservationStoreError('lease_fenced');
     let acknowledgement: RecoveryIndexLookup | undefined;
     const result = this.#transaction(() => {
@@ -621,6 +637,7 @@ export class ObservationStore {
         bytes: Buffer.byteLength(prepared.body) + (blob ? 0 : Buffer.byteLength(data.body)),
       };
     });
+    if (result.changed) this.unsafeRefs.delete(key);
     if (acknowledgement && data.handoff?.committed) {
       // Publication already committed. A collector callback cannot turn it into an unaccepted result.
       try {
@@ -674,10 +691,26 @@ export async function openObservationStore(options: ObservationStoreOptions): Pr
     if (fs.existsSync(file + suffix)) privateFile(file + suffix);
   }
   const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(file, { readOnly: options.readOnly ?? false });
+  let db = new DatabaseSync(file, { readOnly: options.readOnly ?? false });
+  let staging = false;
+  const unsafeRefs = new Set<string>();
   try {
     db.exec('PRAGMA busy_timeout=10');
+    if (!options.readOnly) {
+      db.exec('PRAGMA synchronous=FULL; PRAGMA secure_delete=ON');
+      verifyWritableSettings(db);
+      const journal = String(db.prepare('PRAGMA journal_mode').get()?.journal_mode);
+      if (journal !== 'delete' && journal !== 'wal') throw new ObservationStoreError('unsupported_observation_journal');
+      if (journal === 'delete') {
+        // Retain the exclusive lock across COMMIT/VACUUM/mode selection. No other writer
+        // can invalidate qualification, and an active read snapshot makes this return busy.
+        db.exec('PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT');
+        staging = true;
+      }
+    }
     const version = Number(db.prepare('PRAGMA user_version').get()?.user_version);
+    if (!options.readOnly && !staging && version !== 2)
+      throw new ObservationStoreError('observation_wal_rebuild_required');
     if (version !== 2) {
       if (options.readOnly || (version !== 0 && version !== 1))
         throw new ObservationStoreError('unsupported_observation_version');
@@ -703,10 +736,97 @@ export async function openObservationStore(options: ObservationStoreOptions): Pr
         throw error;
       }
     }
+    if (
+      String(db.prepare('PRAGMA journal_mode').get()?.journal_mode) === 'wal' &&
+      db.prepare('SELECT 1 FROM observation_legacy LIMIT 1').get()
+    )
+      throw new ObservationStoreError('observation_wal_rebuild_required');
     if (!options.readOnly) {
-      const mode = db.prepare('PRAGMA journal_mode').get();
-      if (String(mode?.journal_mode) !== 'delete') throw new ObservationStoreError('unsupported_observation_journal');
-      db.exec('PRAGMA synchronous=FULL; PRAGMA secure_delete=ON');
+      if (staging) {
+        // Only live legacy contents require a leased readerVersion rebuild. Unpublished
+        // blobs have no consumer and are removed under the same exclusive maintenance lock.
+        for (const row of db.prepare('SELECT ref FROM observation_legacy').all()) unsafeRefs.add(String(row.ref));
+        for (const row of db
+          .prepare(
+            `SELECT c.ref, c.checkpoint_id, c.projection_body, b.id, b.body, b.identity, b.index_lineage FROM observation_current c
+          LEFT JOIN checkpoint_blobs b ON b.id=c.checkpoint_id`
+          )
+          .all()) {
+          try {
+            const identity = JSON.parse(String(row.identity)) as CheckpointIdentity;
+            const checkpoint = decodeCheckpointBody(String(row.body), identity);
+            if (sessionRefKey(checkpoint.ref) !== row.ref || checkpoint.ref.sourceId !== options.sourceId)
+              throw new ObservationStoreError('observation_source_mismatch');
+            const projection = decodeProjectionBody(String(row.projection_body), checkpoint.ref);
+            if (
+              row.id !== identity.contentIdentity ||
+              row.checkpoint_id !== identity.contentIdentity ||
+              canonicalJson(projection.checkpointIdentity) !== row.identity
+            )
+              throw new ObservationStoreError('invalid_checkpoint_identity');
+            const reference = identity.recoveryReferences[0];
+            if (reference) {
+              const index = db
+                .prepare('SELECT ref, reference, lineage FROM recovery_indexes WHERE id=?')
+                .get(reference.indexId);
+              if (
+                index?.ref !== row.ref ||
+                index?.reference !== canonicalJson(reference) ||
+                index?.lineage !== row.index_lineage
+              )
+                throw new ObservationStoreError('invalid_recovery_reference');
+              checkpoint.recoveryIndex = {
+                delta: { recoveryVersion: reference.recoveryVersion, base: reference, entries: [] },
+              };
+            } else if (row.index_lineage !== null) {
+              throw new ObservationStoreError('invalid_recovery_reference');
+            }
+            // Re-preparation removes duplicate-key / V8 shadow bytes. Merely decoding
+            // a value cannot prove that every byte of the original wire was qualified.
+            const verified = preparedCheckpointData(
+              prepareCheckpoint({
+                checkpoint,
+                boundary: checkpointBoundary(checkpoint),
+                format: checkpointFormat(checkpoint),
+                recoveryReferences: identity.recoveryReferences,
+              })
+            );
+            if (verified.body !== row.body || canonicalJson(verified.identity) !== row.identity)
+              throw new ObservationStoreError('invalid_checkpoint_identity');
+          } catch (error) {
+            if (!(error instanceof SyntaxError || error instanceof TypeError || error instanceof ObservationStoreError))
+              throw error;
+            unsafeRefs.add(String(row.ref));
+          }
+        }
+        if (unsafeRefs.size === 0) {
+          db.exec(`BEGIN IMMEDIATE;
+          DELETE FROM checkpoint_blobs WHERE id NOT IN (SELECT checkpoint_id FROM observation_current);
+          DELETE FROM recovery_entries WHERE lineage NOT IN
+            (SELECT index_lineage FROM checkpoint_blobs WHERE index_lineage IS NOT NULL);
+          DELETE FROM recovery_indexes WHERE lineage NOT IN
+            (SELECT index_lineage FROM checkpoint_blobs WHERE index_lineage IS NOT NULL);
+          COMMIT`);
+          // secure_delete does not scrub historic free pages or WAL copies. Repack the
+          // qualified DELETE database BEFORE WAL can receive any of its pages.
+          db.exec('VACUUM');
+          if (String(db.prepare('PRAGMA journal_mode=WAL').get()?.journal_mode) !== 'wal')
+            throw new ObservationStoreError('unsupported_observation_journal');
+        }
+        // A connection that enters WAL in EXCLUSIVE mode cannot return to NORMAL.
+        // Reopening also ensures maintenance never transfers acquired lease authority.
+        db.close();
+        db = new DatabaseSync(file);
+        db.exec('PRAGMA busy_timeout=10; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON');
+        verifyWritableSettings(db);
+      }
+      const mode = String(db.prepare('PRAGMA journal_mode').get()?.journal_mode);
+      if (mode !== (unsafeRefs.size ? 'delete' : 'wal'))
+        throw new ObservationStoreError('unsupported_observation_journal');
+      // Keep SQLite's 1000-page automatic checkpoint threshold enabled. Reads use short
+      // snapshots; a long external snapshot can pin pages and is measured separately.
+      if (Number(db.prepare('PRAGMA wal_autocheckpoint').get()?.wal_autocheckpoint) !== 1000)
+        throw new ObservationStoreError('unsupported_observation_checkpoint');
       const fd = fs.openSync(directory, 'r');
       try {
         fs.fsyncSync(fd);
@@ -714,7 +834,17 @@ export async function openObservationStore(options: ObservationStoreOptions): Pr
         fs.closeSync(fd);
       }
     }
-    return new ObservationStore(db, options.sourceId, file, options.readOnly ?? false, options.now ?? Date.now);
+    for (const suffix of ['', '-wal', '-shm', '-journal']) {
+      if (fs.existsSync(file + suffix)) privateFile(file + suffix);
+    }
+    return new ObservationStore(
+      db,
+      options.sourceId,
+      file,
+      options.readOnly ?? false,
+      options.now ?? Date.now,
+      unsafeRefs
+    );
   } catch (error) {
     db.close();
     if (error instanceof Error && /database (?:is )?(?:locked|busy)/.test(error.message))

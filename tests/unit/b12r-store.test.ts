@@ -335,8 +335,11 @@ test(
     f.store.close();
     const { DatabaseSync } = await import('node:sqlite');
     const old = new DatabaseSync(path.join(f.root, 'sources', REF.sourceId, 'observation.sqlite'));
-    t.after(() => old.close());
-    old.exec(`DROP TABLE observation_current; DROP TABLE observation_legacy; DROP TABLE checkpoint_blobs;
+    let oldClosed = false;
+    t.after(() => {
+      if (!oldClosed) old.close();
+    });
+    old.exec(`PRAGMA journal_mode=DELETE; DROP TABLE observation_current; DROP TABLE observation_legacy; DROP TABLE checkpoint_blobs;
     DROP TABLE recovery_indexes; DROP TABLE recovery_entries;
     CREATE TABLE observation_current (ref TEXT PRIMARY KEY, commit_seq INTEGER NOT NULL, source_generation INTEGER NOT NULL,
       reader_version TEXT NOT NULL, seq_domain TEXT NOT NULL, content_digest TEXT NOT NULL, body TEXT NOT NULL,
@@ -357,6 +360,22 @@ test(
         JSON.stringify(c.checkpoint.fileId),
         c.checkpoint.offset
       );
+    const other = JSON.parse(
+      JSON.stringify(c).replaceAll('synthetic-session', 'synthetic-other-session')
+    ) as ObservationCommit;
+    old
+      .prepare('INSERT INTO observation_current VALUES(?,?,?,?,?,?,?,?,?)')
+      .run(
+        sessionRefKey(other.ref),
+        1,
+        1,
+        other.checkpoint.readerVersion,
+        other.seqDomain,
+        'legacy-digest',
+        JSON.stringify(other),
+        JSON.stringify(other.checkpoint.fileId),
+        other.checkpoint.offset
+      );
     const oldWriter = old.prepare('INSERT OR REPLACE INTO observation_current VALUES(?,?,?,?,?,?,?,?,?)');
     const modern = await openObservationStore({ hudHome: f.root, sourceId: REF.sourceId, now: () => NOW + 15_000 });
     t.after(() => modern.close());
@@ -364,6 +383,7 @@ test(
     assert.throws(() =>
       oldWriter.run(sessionRefKey(REF), 2, 1, 'synthetic-reader-1', c.seqDomain, 'legacy', '{}', '{}', 10)
     );
+    assert.equal(old.prepare('PRAGMA journal_mode').get()!.journal_mode, 'delete');
     assert.equal(modern.readProjection(REF), null);
     assert.throws(() => modern.readCurrent(REF), /raw_tail_refused/);
     assert.equal(modern.readHead(REF)!.readerVersion, 'synthetic-reader-1');
@@ -392,8 +412,46 @@ test(
       lease
     );
     assert.equal(modern.readProjection(REF)!.sourceGeneration, 2);
+    assert.equal(old.prepare('SELECT count(*) AS n FROM observation_legacy').get()!.n, 1);
+    modern.close();
+    const stillMigrating = await openObservationStore({
+      hudHome: f.root,
+      sourceId: REF.sourceId,
+      now: () => NOW + 15_000,
+    });
+    t.after(() => stillMigrating.close());
+    assert.equal(old.prepare('PRAGMA journal_mode').get()!.journal_mode, 'delete');
+    const otherLease = stillMigrating.acquire(other.ref, 'other-reader');
+    const otherRebuilt = JSON.parse(
+      JSON.stringify(rebuilt).replaceAll('synthetic-session', 'synthetic-other-session')
+    ) as ObservationCommit;
+    otherRebuilt.leaseGeneration = otherLease.generation;
+    const otherToken = stillMigrating.prepareCheckpoint({
+      checkpoint: otherRebuilt.checkpoint,
+      boundary: checkpointBoundary(otherRebuilt.checkpoint),
+      format: checkpointFormat(otherRebuilt.checkpoint),
+      recoveryReferences: [],
+    });
+    stillMigrating.publishPrepared(
+      { ...preparedCandidate(otherRebuilt, otherToken), rebuildFromReaderVersion: 'synthetic-reader-1' },
+      otherLease
+    );
     assert.equal(old.prepare('SELECT count(*) AS n FROM observation_legacy').get()!.n, 0);
-    assert.equal(fs.readFileSync(modern.databasePath).includes(Buffer.from(sentinel)), false);
+    assert.equal(old.prepare('PRAGMA journal_mode').get()!.journal_mode, 'delete');
+    stillMigrating.close();
+    old.close();
+    oldClosed = true;
+    const wal = await openObservationStore({ hudHome: f.root, sourceId: REF.sourceId, now: () => NOW + 15_000 });
+    t.after(() => wal.close());
+    const inspect = new DatabaseSync(wal.databasePath);
+    try {
+      assert.equal(inspect.prepare('PRAGMA journal_mode').get()!.journal_mode, 'wal');
+    } finally {
+      inspect.close();
+    }
+    assert.deepEqual(wal.readCurrent(REF), rebuilt);
+    assert.deepEqual(wal.readCurrent(other.ref), otherRebuilt);
+    assert.equal(fs.readFileSync(wal.databasePath).includes(Buffer.from(sentinel)), false);
   }
 );
 
@@ -652,11 +710,10 @@ test('B12R compatibility readCurrent pins projection and recovery across a compe
       const current = f.store.readCurrent(REF)!;
       assert.equal(current.commitSeq, 1);
       assert.equal(current.checkpoint.offset, 10);
-      assert.ok(competitorError instanceof Error && competitorError.message === 'observation_busy');
+      assert.equal(competitorError, undefined);
     } finally {
       f.store.readProjection = original;
     }
-    writer.publishPrepared(pending, lease);
     assert.equal(f.store.readCurrent(REF)!.commitSeq, 2);
   } finally {
     writer.close();

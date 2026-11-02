@@ -338,7 +338,7 @@ test(
 );
 
 test(
-  'B12 lock budget returns busy without publishing; read consumers get explicit unavailable and zero writes',
+  'B12 WAL lock budget refuses competing publication while read consumers retain old complete commit',
   { skip },
   async (t) => {
     const f = await fixture(t);
@@ -349,13 +349,10 @@ test(
     const blocker = new DatabaseSync(store.databasePath);
     try {
       blocker.exec('BEGIN EXCLUSIVE');
-      for (const action of [
-        () => store.readCurrent(REF),
-        () => store.readHead(REF),
-        () => store.readLease(REF),
-        () => store.publish(candidate(commit(2)), lease),
-      ])
-        assert.throws(action, code('observation_busy'));
+      assert.deepEqual(store.readCurrent(REF), commit());
+      assert.equal(store.readHead(REF)!.commitSeq, 1);
+      assert.deepEqual(store.readLease(REF), lease);
+      assert.throws(() => store.publish(candidate(commit(2)), lease), code('observation_busy'));
     } finally {
       blocker.exec('ROLLBACK');
       blocker.close();
@@ -369,16 +366,21 @@ test(
   { skip },
   async (t) => {
     const f = await fixture(t);
-    const store = await f.open();
-    const lease = store.acquire(REF, 'panel');
-    store.publish(candidate(), lease);
+    const seed = await f.open();
+    const seedLease = seed.acquire(REF, 'panel');
+    seed.publish(candidate(), seedLease);
+    seed.release(REF, seedLease);
+    seed.close();
     const { DatabaseSync } = await import('node:sqlite');
-    const db = new DatabaseSync(store.databasePath);
+    const db = new DatabaseSync(seed.databasePath);
+    db.exec('PRAGMA journal_mode=DELETE');
     const legacy = commit();
     legacy.checkpoint.parserState.pendingBytes = [...Buffer.from('SYNTHETIC_LEGACY_RAW_TAIL')];
     Object.assign(legacy.checkpoint, { oldRawCache: 'SYNTHETIC_LEGACY_RAW_TAIL' });
     db.prepare('UPDATE checkpoint_blobs SET body=?').run(JSON.stringify(legacy.checkpoint));
     db.close();
+    const store = await f.open();
+    const lease = store.acquire(REF, 'rebuild');
     assert.equal(fs.readFileSync(store.databasePath).includes(Buffer.from('SYNTHETIC_LEGACY_RAW_TAIL')), true);
     assert.throws(() => store.readCurrent(REF));
     assert.deepEqual(store.readHead(REF), {
@@ -387,7 +389,7 @@ test(
       readerVersion: 'synthetic-reader-1',
       seqDomain: 'synthetic-observation',
     });
-    const rebuilt = commit(2);
+    const rebuilt = commit(2, lease.generation);
     rebuilt.sourceGeneration = 2;
     rebuilt.observationStamp.sourceGeneration = 2;
     rebuilt.checkpoint.sourceGeneration = 2;
@@ -407,7 +409,7 @@ test(
     store.publish(pending, lease);
     assert.deepEqual(store.readCurrent(REF), rebuilt);
     assert.equal(fs.readFileSync(store.databasePath).includes(Buffer.from('SYNTHETIC_LEGACY_RAW_TAIL')), false);
-    const downgrade = commit(3);
+    const downgrade = commit(3, lease.generation);
     downgrade.sourceGeneration = 2;
     downgrade.checkpoint.sourceGeneration = 2;
     downgrade.observationStamp.sourceGeneration = 2;
@@ -825,18 +827,17 @@ test(
       const point = actor.point(crash);
       void actor.call('publish', { candidate: candidate(large), lease: actorLease, crash });
       await point;
-      const journal = path.join(f.root, 'sources', REF.sourceId, 'observation.sqlite-journal');
+      const journal = path.join(f.root, 'sources', REF.sourceId, 'observation.sqlite-wal');
       if (crash === 'before_commit') {
         assert.ok(fs.statSync(journal).size > 0);
-        assert.deepEqual(
-          [...fs.readFileSync(journal).subarray(0, 8)],
-          [0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7]
-        );
+        assert.deepEqual([...fs.readFileSync(journal).subarray(0, 4)], [0x37, 0x7f, 0x06, 0x82]);
       }
       await actor.kill();
       const reopened = await f.open();
       const current = reopened.readCurrent(REF)!;
       assert.deepEqual(current, crash === 'after_commit' ? large : commit());
+      assert.equal(fs.existsSync(reopened.databasePath + '-journal'), false);
+      reopened.close();
       assert.equal(fs.existsSync(journal), false);
       assert.deepEqual(fs.readdirSync(path.dirname(reopened.databasePath)), ['observation.sqlite']);
     }
