@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import type { Harness } from '../../../src/core/types/identity.js';
 import { readBounded } from './io.js';
 import { Refusal } from './errors.js';
+import { currentDomain } from '../../../src/core/run/process.js';
 export interface ProcessInfo {
   pid: number;
   ppid: number;
@@ -13,7 +14,7 @@ export interface ProcessInfo {
 }
 export interface ProcessReaderPort {
   get(pid: number): ProcessInfo;
-  domain(): { bootId: string; pidDomain: string; claudePidDomain: string };
+  domain(): { bootId: string; pidDomain: string; claudePidDomain: string; runPidDomain?: string };
 }
 export class LinuxProcessReader implements ProcessReaderPort {
   get(pid: number): ProcessInfo {
@@ -33,7 +34,7 @@ export class LinuxProcessReader implements ProcessReaderPort {
     if (!first[19] || first[19] !== second[19] || first[1] !== second[1]) throw new Refusal('registration_unverified');
     return { pid, ppid: Number(first[1]), procStart: first[19], argv, env, pidNamespace };
   }
-  domain(): { bootId: string; pidDomain: string; claudePidDomain: string } {
+  domain(): { bootId: string; pidDomain: string; claudePidDomain: string; runPidDomain: string } {
     const bootId = readBounded('/proc/sys/kernel/random/boot_id', 128, false, true).trim();
     const machineId = readBounded('/etc/machine-id', 128).trim();
     const namespace = readlinkSync('/proc/self/ns/pid');
@@ -42,6 +43,9 @@ export class LinuxProcessReader implements ProcessReaderPort {
       bootId,
       pidDomain: JSON.stringify(['linux', machineId, bootId, namespace]),
       claudePidDomain: `linux:${machineId}:${namespace}`,
+      // ProcessStamp and ProcessKey intentionally use distinct domain encodings.
+      // Use the run writer's producer; never convert a persisted identity string.
+      runPidDomain: currentDomain().pid_domain,
     };
   }
 }

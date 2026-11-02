@@ -19,6 +19,7 @@ import type {
 } from '../../core/types/observation.js';
 import { initialParserState } from '../../core/observation.js';
 import { sameSessionRef, validateSessionRef } from '../../core/identity.js';
+import { LAUNCH_MESSAGE_PREFIX, parseLaunchMessage } from '../../core/launch/message.js';
 
 export const CLAUDE_READER_VERSION = 'claude-reader-3';
 export const DEFAULT_READER_BUDGET: Readonly<ReaderBudget> = {
@@ -166,7 +167,7 @@ function resultObject(value: unknown, depth = 0): Record<string, unknown> | null
   if (value.content) return resultObject(value.content, depth + 1);
   return null;
 }
-/** Provisional fallback only: B4 owns the launch-message format; normal config/env transport has no prompt claim. */
+/** Explicit fallback only; normal config/env transport has no prompt claim. */
 export function parseFallbackLaunchMessage(
   text: string,
   nativeMessageId: string,
@@ -175,29 +176,8 @@ export function parseFallbackLaunchMessage(
   if (!Number.isFinite(eventAt)) return [];
   const anchors: Omit<LaunchMessageLinkEvidence, 'ref'>[] = [];
   for (const line of text.split('\n')) {
-    if (!line.startsWith('[hud-launch] ')) continue;
-    try {
-      const value: unknown = JSON.parse(line.slice(13));
-      if (
-        object(value) &&
-        identifier(value.linkId) &&
-        typeof value.claim === 'string' &&
-        value.claim.length > 0 &&
-        value.claim.length <= 4096
-      ) {
-        anchors.push({
-          kind: 'launch_message',
-          nativeMessageId,
-          linkId: value.linkId,
-          claimFingerprint: createHash('sha256').update(value.claim).digest('hex'),
-          eventAt,
-          ...(identifier(value.launchCallId) ? { launchCallId: value.launchCallId } : {}),
-          ...(identifier(value.launchCorrelationId) ? { launchCorrelationId: value.launchCorrelationId } : {}),
-        });
-      }
-    } catch {
-      /* Invalid fallback envelopes cannot supply anchors. */
-    }
+    const anchor = parseLaunchMessage(line);
+    if (anchor) anchors.push({ kind: 'launch_message', nativeMessageId, ...anchor, eventAt });
   }
   return anchors.slice(-HISTORY_LIMIT);
 }
@@ -344,7 +324,7 @@ function observe(
       const publicText = block.text;
       publicMessage = true;
       if (type === 'user' && identifier(row.uuid)) {
-        if (observedTime && block.text.split('\n').some((line) => line.startsWith('[hud-launch] ')))
+        if (observedTime && block.text.split('\n').some((line) => line.startsWith(LAUNCH_MESSAGE_PREFIX)))
           skip(state, 'link_event_time_missing', true);
         else
           for (const item of parseFallbackLaunchMessage(block.text, row.uuid, eventTime)) {

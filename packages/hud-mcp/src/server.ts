@@ -1,8 +1,7 @@
 import { once } from 'node:events';
 import type { Readable, Writable } from 'node:stream';
 import { object } from './io.js';
-import type { CurrentCallSourcePort } from './resolvers.js';
-import type { StubOutcome } from './errors.js';
+import type { CallResolution, CurrentCallSourcePort } from './resolvers.js';
 import { TOOLS, validateToolArguments } from './tools.js';
 export interface RpcRequest {
   jsonrpc: '2.0';
@@ -11,7 +10,17 @@ export interface RpcRequest {
   params?: unknown;
 }
 export class HudMcpServer {
-  constructor(private readonly source: CurrentCallSourcePort) {}
+  constructor(
+    private readonly source: CurrentCallSourcePort,
+    private readonly bodies?: {
+      invoke(
+        source: Extract<CallResolution, { ok: true }>,
+        tool: string,
+        args: Record<string, unknown>,
+        started: number
+      ): Promise<unknown>;
+    }
+  ) {}
   async handle(value: unknown): Promise<unknown | null> {
     const error = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0', id, error: { code, message } });
     if (
@@ -40,18 +49,41 @@ export class HudMcpServer {
       case 'tools/list':
         return reply({ tools: TOOLS });
       case 'tools/call': {
+        const started = performance.now();
         const definition = TOOLS.find((t) => t.name === params.name);
         if (!definition) return error(id, -32602, 'Unknown tool');
         if (!validateToolArguments(definition, params.arguments === undefined ? {} : params.arguments))
           return error(id, -32602, 'Invalid tool arguments');
         // params.arguments, prompt, claim and env hints cannot select a logical caller.
         const resolution = await this.source.resolve(params._meta, definition.name);
-        const outcome: StubOutcome = resolution.ok
-          ? { ok: false, code: 'not_implemented', tool: definition.name }
-          : { ok: false, code: resolution.code };
+        let outcome: unknown;
+        try {
+          outcome = resolution.ok
+            ? this.bodies
+              ? await this.bodies.invoke(
+                  resolution,
+                  definition.name,
+                  (params.arguments ?? {}) as Record<string, unknown>,
+                  started
+                )
+              : { ok: false, code: 'not_implemented', tool: definition.name }
+            : { ok: false, code: resolution.code };
+        } catch (error) {
+          // Committed acceptance is returned by the body even if the subsequent
+          // launch fails. Only an uncommitted lock exhaustion is a busy result.
+          outcome = {
+            ok: false,
+            code:
+              error instanceof Error && 'code' in error && error.code === 'ledger_busy'
+                ? 'busy'
+                : error instanceof Error
+                  ? error.message
+                  : 'internal_error',
+          };
+        }
         return reply({
           content: [{ type: 'text', text: JSON.stringify(outcome) }],
-          isError: true,
+          isError: object(outcome) && outcome.ok === false,
           structuredContent: outcome,
         });
       }

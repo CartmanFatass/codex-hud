@@ -29,7 +29,7 @@ const target = {
 export const TOOLS: ToolDefinition[] = [
   tool(
     'delegate_spawn',
-    'Accept a delegated run (B1 skeleton; execution not implemented).',
+    'Accept one headless delegated run; retry the same request_key only to replay that intent.',
     {
       backend: string,
       role: string,
@@ -47,7 +47,7 @@ export const TOOLS: ToolDefinition[] = [
   ),
   tool(
     'delegate_resume',
-    'Resume a delegated session (not implemented).',
+    'Accept a new headless run for a bound delegated session.',
     { linkId: string, mode, prompt: { type: 'string' }, request_key: { ...string, maxLength: 256 } },
     ['linkId', 'mode', 'request_key']
   ),
@@ -80,10 +80,15 @@ export const TOOLS: ToolDefinition[] = [
     { runId: string, grace: { type: 'number', minimum: 0 } },
     ['runId']
   ),
-  tool('delegate_whoami', 'Identify this run with a claim (B1 stub; no claim consumed).', { claim: string }, []),
+  tool(
+    'delegate_whoami',
+    'Bind this run using its launch environment claim or parameter fallback.',
+    { claim: string },
+    []
+  ),
   tool(
     'delegate_report',
-    'Submit a report from the current bound child (not implemented).',
+    'Submit a report for the explicitly identified run from its current bound child.',
     {
       runId: string,
       status: { type: 'string', enum: ['completed', 'failed', 'blocked', 'interrupted'] },

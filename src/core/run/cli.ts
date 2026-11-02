@@ -4,7 +4,9 @@ import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { HeadlessRunControl, type StartOptions } from './control.js';
 import type { RunPortModule } from './port.js';
-import { createRunFactPort } from './ledger-port.js';
+import { createRunFactPort, LedgerRunFactPort } from './ledger-port.js';
+import { captureLaunchWorkspace } from '../launch/workspace.js';
+import { captureRunWorkspace } from '../../ledger/workspace.js';
 import { PrivateLedgerGate } from '../../ledger/local-manager.js';
 import { requireLedgerRuntime } from '../../ledger/runtime.js';
 
@@ -56,6 +58,16 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     }
     const input = JSON.parse(Buffer.concat(chunks).toString('utf8')) as StartOptions & { briefBase64?: string };
     if (input.briefBase64 !== undefined) input.brief = Buffer.from(input.briefBase64, 'base64');
+    input.afterRegistered =
+      port instanceof LedgerRunFactPort
+        ? async () => {
+            const run = await port.read(input.input.runId);
+            if (run.run.workspaceSnapshot === null) {
+              const snapshot = await captureLaunchWorkspace(run.run.launchCwd, { cwdAsOf: run.run.createdAt });
+              await captureRunWorkspace(port.ledger, run.run.runId, snapshot, Date.now());
+            }
+          }
+        : undefined;
     await control.start(input);
     return;
   }

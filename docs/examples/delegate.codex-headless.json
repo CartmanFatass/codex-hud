@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "name": "synthetic-codex-headless",
+      "harness": "codex",
+      "source": { "root": "/tmp/synthetic-codex-home", "label": "Synthetic Codex source" },
+      "launch": { "argv": ["codex"] },
+      "headless": { "argv": ["codex", "exec", "-"] },
+      "resume": { "argv": ["codex", "resume", "{{sessionId}}"] },
+      "resumeHeadless": { "argv": ["codex", "exec", "resume", "{{sessionId}}", "-"] },
+      "host": { "kind": "none", "layout": "none" },
+      "env": { "CODEX_HOME": "/tmp/synthetic-codex-home" },
+      "mcpServerName": "synthetic_hud",
+      "claimTransport": "config_env",
+      "clientToolTimeoutMs": 60000,
+      "responseMarginMs": 2000,
+      "orphan_policy": "continue",
+      "managedShellVerified": false,
+      "roles": { "implementer": { "model": "synthetic-model", "effort": "low" } }
+    }
+  ]
+}

@@ -7,7 +7,7 @@ import {
   validateRequestKey,
   validateRun,
 } from '../core/execution.js';
-import { procOwnerKey, selectCallContext, sessionOwnerKey } from '../core/identity.js';
+import { makeSourceId, procOwnerKey, selectCallContext, sessionOwnerKey } from '../core/identity.js';
 import {
   authorizeControl,
   handoverGate,
@@ -35,9 +35,16 @@ import {
 } from './records.js';
 import type { LedgerTransaction } from './transaction.js';
 import type { AcceptedActor, IntentAuthority, IntentResult, PreparedIntent } from './types.js';
+import { requireScopePremise } from './call-context.js';
 
 export function currentAuthority(tx: LedgerTransaction, authority: IntentAuthority): ControlAuthority {
   if (authority.kind === 'local_user') return authority;
+  if (authority.scopePremise)
+    requireScopePremise(
+      tx,
+      String(tx.get('SELECT ledger_id FROM ledger_metadata WHERE singleton=1')!.ledger_id),
+      authority.scopePremise
+    );
   const context = readContext(tx, authority.contextId, authority.generation);
   const scope = tx.get(
     'SELECT closed_at FROM caller_scopes WHERE process_key=? AND generation=?',
@@ -170,13 +177,23 @@ function validateNewIntent(input: PreparedIntent): string {
 }
 
 /** Persist intent, issued claim, execution slot, replay result and actor event atomically. */
-export async function acceptIntent(ledger: Ledger, supplied: PreparedIntent): Promise<IntentResult> {
+export async function acceptIntent(
+  ledger: Ledger,
+  supplied: PreparedIntent,
+  budgetMs = ledger.busyBudgetMs,
+  localCheck?: () => void
+): Promise<IntentResult> {
   // Clone and perform normalization/hashing outside the write transaction, before any await.
   const input = JSON.parse(canonicalJson(supplied)) as PreparedIntent;
   const paramsDigest = validateNewIntent(input);
-  const writeDeadline = performance.now() + ledger.busyBudgetMs;
+  const writeDeadline = performance.now() + Math.min(ledger.busyBudgetMs, budgetMs);
   try {
     return await ledger.transaction((tx) => {
+      if (input.authority.kind === 'local_user') {
+        // Trusted entry points pass the pinned OS/store gate; low-level fixtures
+        // may supply already validated authorities directly.
+        localCheck?.();
+      }
       const authority = currentAuthority(tx, input.authority);
       const existing = tx.get('SELECT * FROM links WHERE link_id=?', input.link.linkId);
       let link = existing ? decodeRecord<Link>(existing) : input.link;
@@ -207,6 +224,19 @@ export async function acceptIntent(ledger: Ledger, supplied: PreparedIntent): Pr
           runId: replay.record.runId,
         };
       if (!input.capabilityVerified) throw new Error('capability_unverified');
+      if (input.targetSource) {
+        const source = input.targetSource;
+        if (
+          source.sourceId !== input.run.sourceId ||
+          source.harness !== input.run.harness ||
+          makeSourceId(source.harness, source.rootPath) !== source.sourceId
+        )
+          throw new Error('source_mismatch');
+        const stored = tx.get('SELECT harness,root_path FROM sources WHERE source_id=?', source.sourceId);
+        if (stored && (stored.harness !== source.harness || stored.root_path !== source.rootPath))
+          throw new Error('source_mismatch');
+        if (!stored) insertRecord(tx, 'sources', source);
+      }
       let run = input.run;
       let claim = input.claim;
       if (run.operation === 'spawn') {
@@ -233,7 +263,11 @@ export async function acceptIntent(ledger: Ledger, supplied: PreparedIntent): Pr
           throw new Error('parent_context_mismatch');
         insertRecord(tx, 'links', link);
       } else if (run.operation === 'resume') {
-        if (!existing || input.params.linkId !== link.linkId || typeof input.params.expectedRun !== 'string')
+        if (
+          !existing ||
+          input.params.linkId !== link.linkId ||
+          (input.authority.kind === 'local_user' && typeof input.params.expectedRun !== 'string')
+        )
           throw new Error('resume_target_required');
         const previousRow = tx.get(
           'SELECT run_id FROM runs WHERE link_id=? ORDER BY run_seq DESC LIMIT 1',
@@ -246,7 +280,7 @@ export async function acceptIntent(ledger: Ledger, supplied: PreparedIntent): Pr
           registeredOwner,
           authority,
           currentRun: previous,
-          expectedRun: input.params.expectedRun,
+          expectedRun: input.authority.kind === 'mcp' ? previous.runId : (input.params.expectedRun as string),
           taskDigest: input.link.taskDigest,
           slotHeld: Boolean(tx.get('SELECT 1 FROM slots WHERE session_ref=?', refValue(link.childRef))),
           unresolvedConflict: hasConflict(tx, link.linkId, refValue(link.childRef)),
@@ -383,10 +417,15 @@ export async function acceptIntent(ledger: Ledger, supplied: PreparedIntent): Pr
           at: run.createdAt,
         });
       return { replayed: false, outcome, linkId: link.linkId, runId: run.runId };
-    });
+    }, budgetMs);
   } catch (error) {
     // A failed intent is entirely rolled back before a separate rejection audit is attempted.
-    if (error instanceof Error && !('code' in error && error.code === 'ledger_busy')) {
+    if (
+      error instanceof Error &&
+      performance.now() < writeDeadline &&
+      !('code' in error && error.code === 'ledger_busy') &&
+      !['stale_context', 'identity_unverified', 'identity_source_missing', 'unauthorized'].includes(error.message)
+    ) {
       await ledger
         .transaction(
           (tx) =>

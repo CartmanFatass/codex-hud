@@ -27,6 +27,8 @@ export interface StartOptions {
   parent?: { process: ProcessStamp; contextId: string; generation: number };
   /** B4 profile/source verifier; process names/first candidates are never sufficient. */
   identifyHarness?: (command: ProcessStamp) => Promise<ProcessStamp | null>;
+  /** Existing supervisor's one bounded launch-workspace capture, never the MCP response path. */
+  afterRegistered?: () => Promise<void>;
 }
 export function launchDigest(input: RunLaunchInput): string {
   return digest(input);
@@ -233,6 +235,12 @@ export class HeadlessRunControl implements RunControl {
     const self = readProcess(process.pid)?.stamp;
     if (!self) throw new Error('supervisor_stamp_unavailable');
     await this.port.register(id, options.ticket, launchDigest(input), self);
+    try {
+      await options.afterRegistered?.();
+    } catch {
+      // A best-effort workspace capture cannot revoke an accepted execution
+      // ticket or prevent its sole launch. A missing snapshot remains unknown.
+    }
     const artifacts = RunArtifacts.create(this.hudHome, id),
       logs = artifacts.openLogs();
     const initial = await this.port.read(id),
@@ -528,7 +536,8 @@ export class HeadlessRunControl implements RunControl {
   ): Promise<void> {
     const s = await this.port.read(runId);
     await this.port.raw(runId, supervisor, 'parent.offline', {
-      ...parent,
+      contextId: parent.contextId,
+      generation: parent.generation,
       since: Date.now(),
       orphanPolicy: s.run.orphanPolicy,
     });
