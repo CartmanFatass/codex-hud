@@ -1,4 +1,5 @@
-import { lstatSync } from 'node:fs';
+import { lstatSync, fstatSync, createReadStream } from 'node:fs';
+import { isatty } from 'node:tty';
 import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -14,7 +15,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   requireLedgerRuntime();
   if (args[0] === '--help') {
     process.stdout.write(
-      'hud-run <start|status|logs|cancel|reconcile> [runId] [--grace ms] [--stderr] [--offset bytes]\nSet private HUD_HOME containing ledger.sqlite. start reads protected JSON from stdin. HUD_RUN_PORT_MODULE selects an explicit trusted test/integration adapter.\n'
+      'hud-run <start|status|logs|cancel|reconcile> [runId] [--grace ms] [--stderr] [--offset bytes]\nSet private HUD_HOME containing ledger.sqlite. start reads protected JSON from stdin (headless) or --launch-fd N (visible, terminal stdin untouched). HUD_RUN_PORT_MODULE selects an explicit trusted test/integration adapter.\n'
     );
     return;
   }
@@ -48,9 +49,19 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     return value;
   };
   if (command === 'start') {
+    const position = args.indexOf('--launch-fd');
+    let launchInput: AsyncIterable<string | Buffer> = process.stdin;
+    if (position >= 0) {
+      const fd = Number(args[position + 1]);
+      if (!Number.isSafeInteger(fd) || fd < 3 || isatty(fd)) throw new Error('invalid_private_launch_fd');
+      const stat = fstatSync(fd);
+      if ((!stat.isFile() && !stat.isFIFO() && !stat.isSocket()) || stat.uid !== process.getuid!() || stat.mode & 0o077)
+        throw new Error('unsafe_private_launch_fd');
+      launchInput = createReadStream('', { fd, autoClose: true });
+    } else if (isatty(0)) throw new Error('visible_start_requires_private_launch_fd');
     const chunks: Buffer[] = [];
     let bytes = 0;
-    for await (const chunk of process.stdin) {
+    for await (const chunk of launchInput) {
       const value = Buffer.from(chunk);
       bytes += value.length;
       if (bytes > 1_048_576) throw new Error('protected launch input too large');

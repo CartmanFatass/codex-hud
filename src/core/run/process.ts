@@ -15,6 +15,9 @@ export interface ProcRecord {
   flags: number;
   pgid: number;
   sid: number;
+  ppid: number;
+  tty: number;
+  foregroundPgid: number;
 }
 
 export interface RunProcessDomainOptions {
@@ -53,6 +56,9 @@ function readRecord(pid: number): ProcRecord {
     flags: Number(fields[6]),
     pgid: Number(fields[2]),
     sid: Number(fields[3]),
+    ppid: Number(fields[1]),
+    tty: Number(fields[4]),
+    foregroundPgid: Number(fields[5]),
   };
 }
 
