@@ -266,7 +266,8 @@ export async function acceptIntent(
         if (
           !existing ||
           input.params.linkId !== link.linkId ||
-          (input.authority.kind === 'local_user' && typeof input.params.expectedRun !== 'string')
+          (input.authority.kind === 'local_user' && typeof input.params.expectedRun !== 'string') ||
+          (input.params.expectedRun !== undefined && typeof input.params.expectedRun !== 'string')
         )
           throw new Error('resume_target_required');
         const previousRow = tx.get(
@@ -280,7 +281,9 @@ export async function acceptIntent(
           registeredOwner,
           authority,
           currentRun: previous,
-          expectedRun: input.authority.kind === 'mcp' ? previous.runId : (input.params.expectedRun as string),
+          // Consult 5 G03: a supplied expectedRun is the new-intent CAS premise; only MCP
+          // omission falls back to the transaction's current run (the pre-B45-R2 behavior).
+          expectedRun: typeof input.params.expectedRun === 'string' ? input.params.expectedRun : previous.runId,
           taskDigest: input.link.taskDigest,
           slotHeld: Boolean(tx.get('SELECT 1 FROM slots WHERE session_ref=?', refValue(link.childRef))),
           unresolvedConflict: hasConflict(tx, link.linkId, refValue(link.childRef)),

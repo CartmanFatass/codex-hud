@@ -6,6 +6,8 @@ export interface ToolDefinition {
   inputSchema: Record<string, unknown>;
 }
 const string = { type: 'string', minLength: 1 };
+/** Run ids are opaque tokens; the shape matches the run-control/artifact names. */
+const runId = { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' };
 const mode = { type: 'string', enum: ['visible', 'headless'] };
 function tool(
   name: string,
@@ -47,8 +49,14 @@ export const TOOLS: ToolDefinition[] = [
   ),
   tool(
     'delegate_resume',
-    'Accept a new headless run for a bound delegated session.',
-    { linkId: string, mode, prompt: { type: 'string' }, request_key: { ...string, maxLength: 256 } },
+    'Accept a new headless run for a bound delegated session; an explicit expectedRun pins the run the caller saw.',
+    {
+      linkId: string,
+      mode,
+      prompt: { type: 'string' },
+      request_key: { ...string, maxLength: 256 },
+      expectedRun: runId,
+    },
     ['linkId', 'mode', 'request_key']
   ),
   tool(
@@ -104,6 +112,7 @@ function valid(value: unknown, schema: Record<string, unknown>): boolean {
       typeof value === 'string' &&
       (schema.minLength === undefined || [...value].length >= (schema.minLength as number)) &&
       (schema.maxLength === undefined || [...value].length <= (schema.maxLength as number)) &&
+      (schema.pattern === undefined || new RegExp(schema.pattern as string).test(value)) &&
       (!Array.isArray(schema.enum) || schema.enum.includes(value))
     );
   if (schema.type === 'integer' || schema.type === 'number')

@@ -92,6 +92,9 @@ export class DelegationService {
   ): Promise<unknown> {
     const { ledger, config, home } = this.options;
     if (args.layout !== undefined) throw new Error('visible_layout_not_in_this_build');
+    // Consult 5 G03: only an explicitly supplied expectedRun is a parameter; omission stays the old encoding.
+    if (operation === 'resume' && args.expectedRun !== undefined && typeof args.expectedRun !== 'string')
+      throw new Error('invalid_run_id');
     const handover = operation === 'spawn' && typeof args.predecessor === 'string';
     const previous = await ledger.readSnapshot((tx) => {
       const allowed = currentAuthority(tx, authority);
@@ -242,7 +245,8 @@ export class DelegationService {
       orphanPolicy: profile.orphan_policy,
       ...(operation === 'resume' ? { linkId, promptHash: preparation.promptHash } : {}),
       ...(handover ? { predecessor: args.predecessor } : {}),
-      ...(authority.kind === 'local_user' ? { expectedRun: args.expectedRun } : {}),
+      // Consult 5 G03: MCP and local both include expectedRun only when the caller actually provided it.
+      ...(typeof args.expectedRun === 'string' ? { expectedRun: args.expectedRun } : {}),
     };
     // Task identity revalidation happens only for a new intent, after replay.
     const proposedLink = {
