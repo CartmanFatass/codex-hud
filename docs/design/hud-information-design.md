@@ -59,6 +59,7 @@ B10b 第 1 段（`src/render/delegation/*`，bar 与 statusline 钩子）实现�
 5. 颜色：`⚑` 是 danger 色加粗，与 `!` 以字重和符号区分；"黄色只剩要我处理"的说法撤回（§5.2、§9 #5）。
 6. 原生子代理：B9 节点新增 `native {title, kind}`，行名与 kind 图标由它来（§3.4、§7 #33）；用词表加 `idle / 空闲`（§5.5）。
 7. 样例修正：§4.1 (d)、§4.5 32 列、§4.8 冲突行 `┊`、§4.13 32 列、§4.12 80 列；样例只约束委派字段，非委派字段由现有引擎决定（§4.1）。
+8. 追加裁决（同日，实现后的四问）：focus 密度在有委派树时含 `agents`；通知去重扩到所有警示类别；槽满警示接在节点级警示之后不带自己的 `⚑`（最窄 `⚑1 6/6`）；计数形的最窄形只留优先级最高一类（§4.1、§4.7）。
 
 ## 1. 信息清单与层级
 
@@ -254,7 +255,7 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 
 ### 4.1 bar（一行，英文）
 
-模块与优先级沿用 `MODULE_PRIORITY`；`agents` 计数覆盖整棵树；`attention` 新增四种警示（v1.1 六种）；`notice` 新增三种通知（v1.1 六种）。警示优先级：节点级 `⚑`（要人：approval / question / needs human / `stop in pane`）> 常驻 `⚑ slots 6/6`（仅槽满时；全形 `⚑ slots 6/6 · 2 to close · 1 to reconcile`，短形 `⚑ slots 6/6`，最窄 `⚑ 6/6`；"to close"是报告后仍活的可见代理数，"to reconcile"是 uncertain 占用者数）> `✗`（失败）> `⚠`（冲突）> `?`（uncertain）> stale；恰好一条节点级警示时用全形，多条时用计数（`⚑1 ?3 ⚠1`，顺序 `⚑ ? ⚠ ✗`），常驻槽满警示接在其后。槽满不是节点，不进 `1⚑` 的计数。有委派树时 bar 自己的树失败警示（agent-error / subtask-error / review-error）不再单独亮——它们是树里的 `!` 节点；审批与工具错误仍是 bar 自己的。notice 区不重复全形警示已点名的节点。
+模块与优先级沿用 `MODULE_PRIORITY`；`agents` 计数覆盖整棵树；`attention` 新增四种警示（v1.1 六种）；`notice` 新增三种通知（v1.1 六种）。警示优先级：节点级 `⚑`（要人：approval / question / needs human / `stop in pane`）> 常驻 `⚑ slots 6/6`（仅槽满时；全形 `⚑ slots 6/6 · 2 to close · 1 to reconcile`，短形 `⚑ slots 6/6`，最窄 `⚑ 6/6`；"to close"是报告后仍活的可见代理数，"to reconcile"是 uncertain 占用者数）> `✗`（失败）> `⚠`（冲突）> `?`（uncertain）> stale；恰好一条节点级警示时用全形，多条时用计数（`⚑1 ?3 ⚠1`，顺序 `⚑ ? ⚠ ✗`），常驻槽满警示接在其后、不再带自己的 `⚑`：`⚑1 ?1 · slots 6/6 · 1 to reconcile`，短形 `⚑ 1 approval · slots 6/6`，最窄 `⚑1 6/6`；计数形的最窄形只留优先级最高一类的计数（`⚑1`；无 `⚑` 时依次 `✗` `⚠` `?`），其余由 `agents` 计数与面板承担（80 列以下在 A5 范围之外）。槽满不是节点，不进 `1⚑` 的计数。有委派树时 bar 自己的树失败警示（agent-error / subtask-error / review-error）不再单独亮——它们是树里的 `!` 节点；审批与工具错误仍是 bar 自己的。notice 区不重复全形警示已点名的节点，不分类别（approval / stop in pane / failed / uncertain）。
 
 ```
 200 列（full）：
@@ -267,7 +268,7 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 ⚑ 1 approval │ fable-5.1 │ ━━━╸── 41% │ parser-kit │ ▸ 3:10 │ 3▸ 1⚑ 2✓
 ```
 
-样例里非委派字段（quota、速率、分支、计量线、右簇）的取舍由现有引擎决定，样例只约束委派字段（警示形、计数与顺序、后端计数、通知）；review-pass 已完成仍计，所以 (c) 是 `2✓`。丢弃顺序照旧 `SHRINK`：右簇 → effort → 计量线缩成百分比 → notice 内容 → `Agents` 标签 → 分支 → 时钟。新增三条：后端计数 `· ⌬2 π1 ◎1` 在右簇之前丢（引擎 shrink 序 9，右簇第一步是 10，`Agents` 标签仍在 56）；`attention` 从全形退到 `⚑ 1 approval` 再到 `⚑1`，永不丢——有委派树时这两步的序是 85 / 87：全形→短形在 quota（86）被隐藏之前，短形→最窄在其后、仍先于 `agents` 被隐藏；有委派树时 `agents` 模块优先级 87（高于 quota、速率、Tasks，低于 project），80 列仍有计数。无委派树时一切照旧。
+样例里非委派字段（quota、速率、分支、计量线、右簇）的取舍由现有引擎决定，样例只约束委派字段（警示形、计数与顺序、后端计数、通知）；review-pass 已完成仍计，所以 (c) 是 `2✓`。丢弃顺序照旧 `SHRINK`：右簇 → effort → 计量线缩成百分比 → notice 内容 → `Agents` 标签 → 分支 → 时钟。新增三条：后端计数 `· ⌬2 π1 ◎1` 在右簇之前丢（引擎 shrink 序 9，右簇第一步是 10，`Agents` 标签仍在 56）；`attention` 从全形退到 `⚑ 1 approval` 再到 `⚑1`，永不丢——有委派树时这两步的序是 85 / 87：全形→短形在 quota（86）被隐藏之前，短形→最窄在其后、仍先于 `agents` 被隐藏；有委派树时 `agents` 模块优先级 87（高于 quota、速率、Tasks，低于 project），80 列仍有计数；focus 密度在有委派树时加入 `agents`（只有计数、无标签，计数为空时照常不画），80 列（focus）样例由此成立。无委派树时一切照旧。
 
 （v1.1）情境 (h)（§4.13）的 bar——可见取消意图是节点级 `⚑`，槽满是常驻 `⚑`：
 
@@ -279,13 +280,13 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 ⚑ 1 stop in pane │ fable-5.1 │ ━━━╸── 41% │ parser-kit │ ▸ 9:12 │ 2▸ 1⚑ 1✓
 
 120 列，情境 (d)：两条节点级警示（t-07 `⚑`、t-11 `?`）用计数，其后常驻槽满：
-⚑1 ?1 · ⚑ slots 6/6 · 1 to reconcile │ fable-5.1 │ ━━━━╸───── 98.1K/272K │ parser-kit main* │ ▸ 8:02 │ Agents 3▸ 1· 1⚑ 1? 9✓ │ Tasks 4/9
+⚑1 ?1 · slots 6/6 · 1 to reconcile │ fable-5.1 │ ━━━━╸───── 98.1K/272K │ parser-kit main* │ ▸ 8:02 │ Agents 3▸ 1· 1⚑ 1? 9✓ │ Tasks 4/9
 
 120 列，没有节点级警示但槽满（(d) 的变体：t-07 已批准、t-11 已对账，六个槽仍占）：
 ⚑ slots 6/6 │ fable-5.1 │ ━━━━╸───── 98.1K/272K │ parser-kit main* │ ▸ 8:02 │ Agents 5▸ 1· 9✓ │ Tasks 4/9
 ```
 
-通知（60 秒）：`✓ docs-sync reported` · `! lint-fix failed` · `? impl-b uncertain` · `⚑ review-tests approval`；（v1.1）`⚑ impl-parser still running · stop in its pane`（取消意图被接受时一次，不重复）· `✓ docs-sync reported · close its pane`（可见代理报告到达时，代替普通的 `reported` 通知）· `■ bench ended · no report`（无报告的结束）。切 tab 不触发；槽满不是通知，是常驻警示。通知是对投影的 60 秒窗口、不记状态：重启后一分钟内会再说一次；没有已知时间的事件不通知；`⚑ … approval` 这类通知只在 bar 警示处于计数形时出现（全形已点名的节点不重复）。`✗` 失败警示亮到该行收进 `⊕N` 为止（3 分钟）。
+通知（60 秒）：`✓ docs-sync reported` · `! lint-fix failed` · `? impl-b uncertain` · `⚑ review-tests approval`；（v1.1）`⚑ impl-parser still running · stop in its pane`（取消意图被接受时一次，不重复）· `✓ docs-sync reported · close its pane`（可见代理报告到达时，代替普通的 `reported` 通知）· `■ bench ended · no report`（无报告的结束）。切 tab 不触发；槽满不是通知，是常驻警示。通知是对投影的 60 秒窗口、不记状态：重启后一分钟内会再说一次；没有已知时间的事件不通知；与警示同源的通知（`⚑ … approval`、`⚑ … still running`、`! … failed`、`? … uncertain`）只在 bar 警示处于计数形时出现（全形已点名的节点不重复）。`✗` 失败警示亮到该行收进 `⊕N` 为止（3 分钟）。
 
 ### 4.2 面板树：宽度预算
 
@@ -436,7 +437,7 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 | └ ✓ 9 done · t-02 t-03 t-04 t-05 t-06 …      ⊕9|
 ```
 
-规则：compact 布局下全部是行；rich 布局下按 §3.5 的手风琴折叠（下图）；trouble 桶内最新卡住的在上（t-07 卡了 10 s，排在卡了 14 分钟的 t-11 之上）；汇总行因槽满多了 `slots 6/6`，按 §4.2 的顺序挤掉了 `15 workers`；完成桶折成一行，`a` 展开；活跃行 > 30 时时钟改成 `◷9m` 粒度，整秒重绘停止；超过视口的行不渲染字符串，只保留投影；200 节点预算之外的节点不成行，只进汇总行的 `N not loaded` 和根 Inspector 的 Coverage 节（§3.4）。bar 此时的警示是 `⚑1 ?1 · ⚑ slots 6/6 · 1 to reconcile`（两条节点级警示用计数，§4.1）：t-11 的 uncertain 占着一个槽，只有对账能放，这就是 NOTIFY §4.9 所说的"可见的泄漏"。
+规则：compact 布局下全部是行；rich 布局下按 §3.5 的手风琴折叠（下图）；trouble 桶内最新卡住的在上（t-07 卡了 10 s，排在卡了 14 分钟的 t-11 之上）；汇总行因槽满多了 `slots 6/6`，按 §4.2 的顺序挤掉了 `15 workers`；完成桶折成一行，`a` 展开；活跃行 > 30 时时钟改成 `◷9m` 粒度，整秒重绘停止；超过视口的行不渲染字符串，只保留投影；200 节点预算之外的节点不成行，只进汇总行的 `N not loaded` 和根 Inspector 的 Coverage 节（§3.4）。bar 此时的警示是 `⚑1 ?1 · slots 6/6 · 1 to reconcile`（两条节点级警示用计数，槽满接在其后不带 `⚑`，§4.1）：t-11 的 uncertain 占着一个槽，只有对账能放，这就是 NOTIFY §4.9 所说的"可见的泄漏"。
 
 同一场景的 rich 手风琴（视口放不下这么多卡：`✓ ■` 和未选中的 `▸ ·` 卡折成行，`⚑ ?` 卡和选中卡展开；t-11 的委派行多了 `slot held`，Inspector 给对账命令）：
 
