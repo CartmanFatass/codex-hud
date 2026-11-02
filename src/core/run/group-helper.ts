@@ -10,6 +10,7 @@ let disconnected = false;
 let scope: ProcessScope | null = null;
 let command: ChildProcess | null = null;
 let fixed = false;
+let subject: ProcessStamp | null = null;
 process.on('SIGINT', () => {});
 process.on('SIGTERM', () => {});
 
@@ -73,11 +74,14 @@ process.on('message', (raw) => {
       command.once('spawn', () => {
         const record = readProcess(command!.pid!);
         fixed = !!record && record.pgid === scope!.pgid && record.sid === scope!.sid;
+        subject = fixed ? record!.stamp : null;
         send({ type: 'started', command: fixed ? record!.stamp : null, scope: fixed ? scope : null });
       });
       command.once('error', () => send({ type: 'failed' }, () => process.exit(1)));
       command.once('exit', (code, signal) => {
-        const exit: GroupExit = { code, signal, at: Date.now() };
+        const exit: GroupExit = subject
+          ? { source: 'verified_wait', subject, code, signal, at: Date.now() }
+          : { source: 'native_unknown', subject: null, code: null, signal: null, at: Date.now() };
         send({ type: 'wait', exit }, () => process.exit(0));
       });
     } catch {

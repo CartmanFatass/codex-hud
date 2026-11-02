@@ -11,6 +11,7 @@ import {
   currentDomain,
   inspectGroup,
   launchGroup,
+  launchNodeGroup,
   processState,
   proveGroupGone,
   readProcess,
@@ -63,8 +64,15 @@ function setup(t: TestContext) {
     dir,
     output,
     extra,
-    async launch(argv: string[], stdin: Buffer | null = null) {
-      const group = await launchGroup({ runId: 'synthetic-run', argv, cwd: dir, stdin, stdoutFd: fd, stderrFd: fd });
+    async launch(argv: string[], stdin: Buffer | null = null, native = false) {
+      const group = await (native ? launchNodeGroup : launchGroup)({
+        runId: 'synthetic-run',
+        argv,
+        cwd: dir,
+        stdin,
+        stdoutFd: fd,
+        stderrFd: fd,
+      });
       groups.push(group);
       return group;
     },
@@ -91,7 +99,8 @@ test('one-shot group launch preserves argv and stdin EOF, waits for helper exit'
       'a b',
       '$(synthetic)',
     ],
-    Buffer.from('brief\n')
+    Buffer.from('brief\n'),
+    true
   );
   assert.ok(group.command);
   assert.ok(group.scope);
@@ -123,7 +132,10 @@ test(
     assert.equal(await group.signal('SIGINT'), true);
     await until(() => readFileSync(fixture.output, 'utf8').includes('INT'));
     assert.equal(await group.signal('SIGTERM'), true);
-    assert.equal((await group.exited).code, 0);
+    const exit = await group.exited;
+    assert.equal(exit.source, 'native_unknown');
+    assert.equal(exit.code, null);
+    assert.equal(group.shellDiagnostic?.status, 0);
     assert.match(readFileSync(fixture.output, 'utf8'), /INT\nTERM/);
     assert.equal(await group.signal('SIGKILL'), false);
   }

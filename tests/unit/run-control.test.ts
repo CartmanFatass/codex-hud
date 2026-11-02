@@ -7,15 +7,15 @@ import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { HeadlessRunControl, codexClaimArgs } from '../../src/core/run/control.js';
 import { MemoryRunFactPort, FileRunFactPort } from '../../src/core/run/fake-port.js';
-import { readProcess, processState } from '../../src/core/run/process.js';
+import { launchNodeGroup, readProcess, processState } from '../../src/core/run/process.js';
 import { RunArtifacts } from '../../src/core/run/artifacts.js';
 import { seedRun } from '../run/fixtures.js';
 import type { RunControl } from '../../src/core/interfaces/run-control.js';
 import type { ProcessStamp } from '../../src/core/types/supervision.js';
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 const cliSkip =
-  nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 5)
-    ? 'hud-run CLI requires Node >=22.5; compatible in-process tests remain enabled'
+  nodeMajor < 22 || nodeMajor === 23 || (nodeMajor === 22 && nodeMinor < 13)
+    ? 'hud-run CLI requires Node 22 >=22.13 or >=24; compatible in-process tests remain enabled'
     : false;
 const local = { kind: 'trusted_local' as const, uid: process.getuid!(), invocationId: 'synthetic-invocation' };
 async function until<T>(fn: () => T | Promise<T>, limit = 8000): Promise<NonNullable<T>> {
@@ -31,7 +31,7 @@ function setup(argv: string[], patch: Parameters<typeof seedRun>[2] = {}) {
   const home = mkdtempSync(join(tmpdir(), 'hud-run-control-'));
   const data = seedRun(home, argv, patch);
   const port = new MemoryRunFactPort(data.seed);
-  const control = new HeadlessRunControl(port, home, local);
+  const control = new HeadlessRunControl(port, home, local, launchNodeGroup);
   return { home, ...data, port, control, cleanup: () => rmSync(home, { recursive: true, force: true }) };
 }
 function cli(home: string, options: unknown) {
@@ -160,7 +160,7 @@ test(
       p.child.kill('SIGKILL');
       await p.done;
       const port = new FileRunFactPort(join(home, 'facts.json')),
-        control = new HeadlessRunControl(port, home, local);
+        control = new HeadlessRunControl(port, home, local, launchNodeGroup);
       assert.equal((await control.reconcile(data.input.runId)).currentRun?.state, 'uncertain');
       assert.equal((await port.read(data.input.runId)).slotHeld, true);
       await sleep(1800);
@@ -503,8 +503,13 @@ for (const point of ['submitted_before_scope', 'cancel_before_ack_commit'])
     child.stdin.end(JSON.stringify({ input: data.input, ticket: data.ticket }));
     let owned: ProcessStamp[] = [];
     try {
-      await until(() => existsSync(ownedFile));
-      const ids = JSON.parse(readFileSync(ownedFile, 'utf8'));
+      const ids = await until(() => {
+        try {
+          return JSON.parse(readFileSync(ownedFile, 'utf8'));
+        } catch {
+          return null;
+        }
+      });
       owned = [readProcess(ids.command)!.stamp, readProcess(ids.helper)!.stamp];
       if (point === 'cancel_before_ack_commit') {
         await until(() => RunArtifacts.open(home, data.input.runId).readLog('stdout', 0).data.toString() === 'one');

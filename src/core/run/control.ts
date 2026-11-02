@@ -16,7 +16,14 @@ import type { ReconcileEvidence, ReconcileFact } from '../types/execution.js';
 import type { FinalExitReceipt, ProcessStamp, RunLaunchInput, RunMeta } from '../types/supervision.js';
 import type { LocalManager, RunFactPort, RunSnapshot, CancelIntent } from './port.js';
 import { RunArtifacts } from './artifacts.js';
-import { launchGroup, readProcess, processState, inspectGroup, proveGroupGone } from './process.js';
+import {
+  launchGroup,
+  preflightGroupLaunch,
+  readProcess,
+  processState,
+  inspectGroup,
+  proveGroupGone,
+} from './process.js';
 
 export interface StartOptions {
   input: RunLaunchInput;
@@ -90,7 +97,9 @@ export class HeadlessRunControl implements RunControl {
   constructor(
     readonly port: RunFactPort,
     readonly hudHome: string,
-    readonly actor: LocalManager
+    readonly actor: LocalManager,
+    /** Trusted composition seam for exact native-wait evidence tests; never CLI input. */
+    private readonly groupLauncher: typeof launchGroup = launchGroup
   ) {
     if (!isAbsolute(hudHome)) throw new Error('absolute_hud_home_required');
   }
@@ -224,6 +233,7 @@ export class HeadlessRunControl implements RunControl {
     const argv = validateStart(options),
       { input } = options,
       id = input.runId;
+    if (this.groupLauncher === launchGroup) preflightGroupLaunch(argv);
     const before = await this.port.read(id);
     if (
       before.run.launchCwd !== input.cwd ||
@@ -387,7 +397,7 @@ export class HeadlessRunControl implements RunControl {
     }, HEARTBEAT_INTERVAL_MS);
     try {
       await this.port.phase(id, self, 'submitting');
-      group = await launchGroup({
+      group = await this.groupLauncher({
         runId: id,
         argv,
         cwd: input.cwd,
@@ -446,9 +456,8 @@ export class HeadlessRunControl implements RunControl {
           s = await this.port.read(id);
         const fenceSeq = await this.port.raw(id, self, 'submission.fenced', { proof_ids: [proof] });
         const native =
-          'argv' in input.launch &&
-          meta.command_leader &&
-          sameProcessStamp(meta.harness, meta.command_leader) &&
+          exited.source === 'verified_wait' &&
+          sameProcessStamp(meta.harness, exited.subject) &&
           (exited.code !== null || exited.signal !== null)
             ? {
                 process: meta.harness,
@@ -481,7 +490,11 @@ export class HeadlessRunControl implements RunControl {
           duration_ms: Math.round(performance.now() - startedMono),
           native_exit: native,
           shell_exit:
-            'shell' in input.launch && meta.command_leader && (exited.code !== null || exited.signal !== null)
+            'shell' in input.launch &&
+            exited.source === 'verified_wait' &&
+            meta.command_leader &&
+            sameProcessStamp(meta.command_leader, exited.subject) &&
+            (exited.code !== null || exited.signal !== null)
               ? {
                   process: meta.command_leader,
                   subject: 'command_leader',

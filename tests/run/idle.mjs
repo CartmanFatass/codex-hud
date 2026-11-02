@@ -6,8 +6,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { seedRun } from '../../dist-test/tests/run/fixtures.js';
 import { RUN_NODE_FLAGS } from '../../dist/core/run/runtime.js';
 const [major, minor] = process.versions.node.split('.').map(Number);
-if (major < 22 || (major === 22 && minor < 5)) {
-  console.log('SKIP: idle CLI measurement requires Node >=22.5');
+if (major < 22 || major === 23 || (major === 22 && minor < 13)) {
+  console.log('SKIP: idle CLI measurement requires Node 22 >=22.13 or >=24');
   process.exit(0);
 }
 const count = Number(process.argv[2] ?? 1),
@@ -19,9 +19,19 @@ function stat(pid) {
     .trim()
     .split(/\s+/);
   const status = readFileSync(`/proc/${pid}/status`, 'utf8');
+  let pssKiB = null;
+  try {
+    pssKiB = Number(/^Pss:\s+(\d+)/m.exec(readFileSync(`/proc/${pid}/smaps_rollup`, 'utf8'))?.[1] ?? 0);
+  } catch {}
+
   const io = readFileSync(`/proc/${pid}/io`, 'utf8');
   return {
+    start: parts[19],
     ticks: Number(parts[11]) + Number(parts[12]),
+    userTicks: Number(parts[11]),
+    systemTicks: Number(parts[12]),
+    peakRssKiB: Number(/^VmHWM:\s+(\d+)/m.exec(status)?.[1] ?? 0),
+    pssKiB,
     rssKiB: Number(/^VmRSS:\s+(\d+)/m.exec(status)?.[1] ?? 0),
     writeBytes: Number(/^write_bytes:\s+(\d+)/m.exec(io)?.[1] ?? 0),
     wchar: Number(/^wchar:\s+(\d+)/m.exec(io)?.[1] ?? 0),
@@ -32,6 +42,7 @@ try {
     const home = mkdtempSync(join(tmpdir(), 'hud-idle-')),
       data = seedRun(home, [process.execPath, '-e', `setTimeout(()=>process.exit(0),${duration + 15000})`]);
     writeFileSync(join(home, 'facts.json'), JSON.stringify(data.seed), { mode: 0o600 });
+    const launchAt = performance.now();
     const child = spawn(process.execPath, [...RUN_NODE_FLAGS, 'bin/hud-run', 'start'], {
       cwd: resolve('.'),
       env: { ...process.env, HUD_HOME: home, HUD_RUN_PORT_MODULE: resolve('tests/run/file-port.mjs') },
@@ -49,11 +60,22 @@ try {
       await sleep(20);
     }
     if (!run.snapshot.meta?.scope) throw new Error(`no scope ${err}`);
+    run.startedMs = performance.now() - launchAt;
   }
   for (const r of runs) r.snapshot = JSON.parse(readFileSync(join(r.home, 'facts.json'), 'utf8')).snapshot;
   const before = runs.map((r) => ({
     supervisor: stat(r.child.pid),
     helper: stat(r.snapshot.meta.scope.group_leader.pid),
+    shells: readFileSync(
+      `/proc/${r.snapshot.meta.scope.group_leader.pid}/task/${r.snapshot.meta.scope.group_leader.pid}/children`,
+      'utf8'
+    )
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(Number)
+      .filter((pid) => pid !== r.snapshot.meta.command_leader.pid)
+      .map((pid) => ({ pid, stat: stat(pid) })),
     heartbeat: r.snapshot.run.heartbeatSeq,
     events: r.snapshot.events.length,
   }));
@@ -62,19 +84,59 @@ try {
     const s = JSON.parse(readFileSync(join(r.home, 'facts.json'), 'utf8')).snapshot;
     const sup = stat(r.child.pid),
       helper = stat(r.snapshot.meta.scope.group_leader.pid);
+    const shells = before[i].shells.map(({ pid, stat: previous }) => {
+      const current = stat(pid);
+      if (current.start !== previous.start) throw new Error('owned auxiliary shell changed instance');
+      return {
+        ...current,
+        userTicks: current.userTicks - previous.userTicks,
+        systemTicks: current.systemTicks - previous.systemTicks,
+        ticks: current.ticks - previous.ticks,
+        writeBytes: current.writeBytes - previous.writeBytes,
+        wchar: current.wchar - previous.wchar,
+      };
+    });
+    const shellTotal = { count: shells.length, processes: shells };
+    for (const key of ['rssKiB', 'peakRssKiB', 'pssKiB', 'userTicks', 'systemTicks', 'ticks'])
+      shellTotal[key] = shells.some((s) => s[key] === null) ? null : shells.reduce((sum, s) => sum + s[key], 0);
     return {
       supervisor: {
+        ...sup,
+        count: 1,
+        userTicks: sup.userTicks - before[i].supervisor.userTicks,
+        systemTicks: sup.systemTicks - before[i].supervisor.systemTicks,
         ticks: sup.ticks - before[i].supervisor.ticks,
         rssKiB: sup.rssKiB,
         writeBytes: sup.writeBytes - before[i].supervisor.writeBytes,
         wchar: sup.wchar - before[i].supervisor.wchar,
       },
-      helper: { ticks: helper.ticks - before[i].helper.ticks, rssKiB: helper.rssKiB },
+      helper: {
+        ...helper,
+        count: 1,
+        userTicks: helper.userTicks - before[i].helper.userTicks,
+        systemTicks: helper.systemTicks - before[i].helper.systemTicks,
+        ticks: helper.ticks - before[i].helper.ticks,
+      },
+      shell: shellTotal,
+      startedMs: r.startedMs,
       heartbeatUpdates: s.run.heartbeatSeq - before[i].heartbeat,
       extraEvents: s.events.length - before[i].events,
     };
   });
-  console.log(JSON.stringify({ runs: count, durationMs: duration, results: result }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        runs: count,
+        durationMs: duration,
+        node: process.versions.node,
+        backend: process.env.HUD_IDLE_LABEL ?? 'current',
+        unit: 'KiB and Linux clock ticks (getconf CLK_TCK)',
+        results: result,
+      },
+      null,
+      2
+    )
+  );
 } finally {
   for (const r of runs) {
     if (r.child.exitCode === null) {

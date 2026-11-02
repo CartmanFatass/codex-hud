@@ -11,8 +11,8 @@ import type { ProcessStamp } from '../../src/core/types/supervision.js';
 import { seedRun } from '../run/fixtures.js';
 const [major, minor] = process.versions.node.split('.').map(Number);
 const skip =
-  process.platform !== 'linux' || major < 22 || (major === 22 && minor < 5)
-    ? 'hud-run executable requires Linux and Node >=22.5'
+  process.platform !== 'linux' || major < 22 || major === 23 || (major === 22 && minor < 13)
+    ? 'hud-run executable requires Linux and Node 22 >=22.13 or >=24'
     : false;
 const inheritedFunction = '() { printf synthetic-ok; }';
 
@@ -65,7 +65,7 @@ for (const flagged of [false, true])
         const supervisorArgv = readFileSync(`/proc/${child.pid}/cmdline`, 'utf8').split('\0');
         for (const flag of RUN_NODE_FLAGS) assert.equal(supervisorArgv.includes(flag), flagged);
         const helperArgv = readFileSync(`/proc/${helper.pid}/cmdline`, 'utf8').split('\0');
-        for (const flag of RUN_NODE_FLAGS) assert.ok(helperArgv.includes(flag));
+        for (const flag of RUN_NODE_FLAGS) assert.equal(helperArgv.includes(flag), false);
         const harnessArgv = readFileSync(`/proc/${command.pid}/cmdline`, 'utf8').split('\0');
         for (const flag of RUN_NODE_FLAGS) assert.equal(harnessArgv.includes(flag), false);
         assert.equal(await exited, 0, errors);
@@ -114,7 +114,9 @@ test(
     try {
       assert.equal(await exited, 0, errors);
       const snap = JSON.parse(readFileSync(join(home, 'facts.json'), 'utf8')).snapshot;
-      assert.equal(snap.run.exitCode, 0, errors);
+      assert.equal(snap.run.exitCode, null, errors);
+      assert.equal(snap.receipt.native_exit, null);
+      assert.equal(snap.receipt.reason, 'scope_ended');
       assert.equal(readFileSync(join(home, 'runs', data.input.runId, 'stdout.log'), 'utf8'), 'synthetic-ok');
     } finally {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
