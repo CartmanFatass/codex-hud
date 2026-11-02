@@ -22,7 +22,9 @@ export interface DelegationNodeDetails {
   latestReportForRun: Report | null;
   reportHistory: readonly Report[];
   parentOffline: ParentOffline | null;
-  wake: (ReturnType<typeof wakeProjection>['wake'] & { attempts: number }) | null;
+  wake: (ReturnType<typeof wakeProjection>['wake'] & { attempts: number | null }) | null;
+  wakeUnavailableReason?: string | null;
+  observationUnavailableReason?: string | null;
   reconcile: ActionDescriptor | null;
   resumable: { resumable: false; reason: 'capability_unverified'; subject: 'local_user' };
 }

@@ -10,6 +10,7 @@
 
 import type { HudData, RenderOptions, LayoutConfig, SubagentTree } from '../types.js';
 import { DEFAULT_LAYOUT } from '../types.js';
+import type { HudDelegationData } from '../core/link/view-model.js';
 import { colors, theme, visualLength, truncateAnsi, padEnd } from './colors.js';
 import { buildBarModules } from './layout/bar-modules.js';
 import { fitModules, type FitResult } from './layout/engine.js';
@@ -23,8 +24,17 @@ import { collectActiveTreeLineages, type SubagentTreeEntry } from '../collectors
  * `fitModules`, which shortens before it hides and keeps an alert on screen
  * after everything else has gone. Nothing here concatenates and clips.
  */
-export function fitStatusBar(data: HudData, layout: LayoutConfig, width: number): FitResult {
-  const modules = buildBarModules(data, { barWidth: layout.barWidth ?? 10 });
+export function fitStatusBar(
+  data: HudData & HudDelegationData,
+  layout: LayoutConfig,
+  width: number,
+  nowMs?: number
+): FitResult {
+  const modules = buildBarModules(data, {
+    barWidth: layout.barWidth ?? 10,
+    width,
+    ...(nowMs === undefined ? {} : { nowMs }),
+  });
   // A dimmed rule between clusters and a plain double space inside one: the
   // bar reads as a few groups rather than a list of equally spaced fields.
   return fitModules(modules, {
@@ -34,11 +44,11 @@ export function fitStatusBar(data: HudData, layout: LayoutConfig, width: number)
   });
 }
 
-function renderStatusHeader(data: HudData, layout: LayoutConfig, width: number): string {
+function renderStatusHeader(data: HudData & HudDelegationData, layout: LayoutConfig, width: number): string {
   return fitStatusBar(data, layout, width).line;
 }
 
-function renderCompactLayout(data: HudData, layout: LayoutConfig, width: number): string[] {
+function renderCompactLayout(data: HudData & HudDelegationData, layout: LayoutConfig, width: number): string[] {
   return [renderStatusHeader(data, layout, width)];
 }
 
@@ -136,14 +146,14 @@ function renderActiveTreeRows(tree: SubagentTree | undefined, width: number): st
 /**
  * Header plus parallel directory trees for top-level subagents.
  */
-function renderExpandedLayout(data: HudData, layout: LayoutConfig, width: number): string[] {
+function renderExpandedLayout(data: HudData & HudDelegationData, layout: LayoutConfig, width: number): string[] {
   return [renderStatusHeader(data, layout, width), ...renderActiveTreeRows(data.subagentTree, width)];
 }
 
 /**
  * Render the full HUD output (all lines)
  */
-export function renderHud(data: HudData, options: RenderOptions): string[] {
+export function renderHud(data: HudData & HudDelegationData, options: RenderOptions): string[] {
   const layout = options.layout ?? DEFAULT_LAYOUT;
 
   if (layout.mode === 'compact') {
