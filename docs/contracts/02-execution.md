@@ -38,6 +38,25 @@
 
 `launch_cwd` 是本轮实际交给启动器的规范绝对路径，spawn/resume/handover 意图事务逐 run 固定；不是 callers.cwd，resume 也不能按后来 CLI 的 cwd 重算。`project_origin` 是06的 `{repoId,basis:'declared',declaredAt}` 或 NULL，请求显式 originRepoId 接受时补声明主体审计/declaredAt，随意图冻结，与物理 repoId 分离。`workspace_snapshot` 是06定义的白名单启动 Git/来源快照或 NULL：有效缓存可随意图写入，冷缺失由该 run 的已有写者在一次有界启动采集后 NULL→首次快照补齐，同事务写 `workspace.captured`（runId、来源/捕获时间/缺失原因）。若意图已有缓存快照，也在该事务记录此事件；声明来源与快照分列，不相互阻断捕获。超时/非 Git/路径不可读可作为有原因的首次快照；不重启 harness、不覆盖历史。后续实际 cwd 不同只写06 observed workspace。导出只读 ledger 启动快照（`cwdBasis=launch`），不现场跑 Git/读 transcript 或用今天目录改历史。JSON CHECK 只校验形状，白名单/规范化/事件同事务由 TX 保证（T-02-30–33）。
 
+（consult 6 增补，H08）runs.locator 承载 01/05 的现有受管 HostLocator，只记录 HostAdapter 核验的固定 runId/bindingGeneration 的首次有效定位；同值重放幂等，未知字段保持未知，冲突不静默覆盖、不改变执行目标。若需 `recordRunLocator` 窄入口，沿用该 run 的受信写者/意图权限和事务前提，不向模型开放任意 locator 写入。未验证环境 ID 仅作进程内提示；缺 server 实例或 occupant 证据仅供诊断，操作前重验，不能借用 bindingGeneration 当 occupantGeneration。
+
+### 增量事件白名单
+
+（consult 6 增补，H07）既有 events 白名单新增 `supervisor.signal`，payload 严格为 `SupervisorSignalFact={signal:'SIGHUP'|'SIGINT'|'SIGTERM',observedAt:number}`；observedAt 是 handler 实际观察的合法毫秒 epoch，非 DB 提交时间。subject 固定为该 run 已登记 supervisor；写入口须匹配 supervisor.registered 的完整 ProcessStamp，并由账本关联 run_id/link_id、校验字段/枚举/时间。只证明 supervisor 收到信号，不证明 sender、harness 收到/退出、scope 终结或取消因果；不用 command.exited/cancel.step 冒充，不改稳定 meta/渐进 exit，不增 signals.jsonl；写入失败保留缺口。具体来源与定向验收归 04，B3b-Facts/B2 实现。
+
+（NOTIFY 增补，A1）既有白名单加法版本为 `events.v1.1`（独立于 ledger user_version=1）；新增以下 kind/白名单 payload，未列自由正文/环境/秘密不接收。wake-worthy 的 report.received（四种 status）、运行终态事件及 run.uncertain 都带所属 link_id；审批/问题注意请求使用 blocked report，不把原生 agent_completed 或进程退出当 report。
+
+| kind / 层 | 白名单 payload / 约束（NOTIFY 增补，A1） |
+|---|---|
+| wake.registered / link | adapter=`claude_background_wait_v1\|codex_queue_v1\|pi_extension_v1\|none`、adapterVersion=1、ownerKey、contextGeneration、parentRef、parentStamp（ProcessStamp 或 null）、target（codexHome/threadId 或 socketPath 或空对象）、none 的 reason；只绑定已验证父目标，不授所有权（NOTIFY 增补，A1） |
+| wake.revoked / link | registrationSeq、reason=`generation_changed\|session_replaced\|parent_offline\|link_closed\|adapter_rejected`（NOTIFY 增补，A1） |
+| wake.delivered / link | registrationSeq、throughSeq、result=`accepted\|rejected\|unknown\|wait_return`；adapter 交付记录含 attempt（1 或 2），rejected 含 reason，第二次 unknown 含 exhausted:true；wait_return 为本进程在途 wait 返回了该页、无需 adapter。记录不证明父端已处理或新 turn 已开始；unknown 仅在 recoveryMs 后且父端尚无新调用时准第二次，rejected 撤销登记，零第三次（NOTIFY 增补，A1） |
+| retire.requested / run+link | cause、rule、actor={kind:'policy'}、deadlineAt、eligibility={reportSeq?,newerWorkChecked:true,quiescence:'observed\|not_required\|unobservable',pendingInput:'none\|unobservable\|policy_override'}、graceMs；原因/语义见 04，不是终结证明（NOTIFY 增补，A1） |
+| surface.created / run+link | locator、occupantGeneration（宿主占用代次）；证明 surface 为本 run 创建，不以地址/绑定代次代替占用证明（NOTIFY 增补，A1） |
+| handoff.recorded / link | sha256、bytes、retained:true、fromLinkId?、fromRunId?；在后继意图事务记录实际投递且保留的 brief 字节，不创建 parent/predecessor/权限；handoffPath 只按 07 的 local 路径规则投影（NOTIFY 增补，A1） |
+
+（NOTIFY 增补，A1）D15 兼容规则：未知 events.kind 对状态推导 opaque，读者不得因未知 kind 失败或改变 run/link 状态；不得以 DDL 未变声称行为兼容。新 terminalNote 在旧读者中映射 null，07 的封闭出口表须同次扩展；B14 验旧 reader 读新增 kind/note 的账本。此白名单是写者规则，不给现有开放 LedgerEvent.kind:string 增加封闭解码假设。
+
 ### 幂等参数与查询顺序
 
 `request_key` 是必填、区分大小写的 1–256 字符 opaque 字符串。对操作名和参数做版本化规范化：对象键递归排序，数组保留顺序，区分 null 与缺省，采用契约定义的默认值，拒绝未知字段和非有限数字；字符串不做 Unicode 归一化。`params_digest = SHA256(UTF8(canonical JSON))`。摘要覆盖 operation、backend/profile/source、role/model/effort、mode/layout、规范 `launch_cwd`（请求 cwd 经解析后的固定值）、请求显式 `originRepoId`、brief/report 路径、brief 内容 hash、resume 的 linkId/prompt hash（本地入口另含 expectedRun）、predecessor、显式授权/资源参数和解析后的后端档案指纹；不含 request_key、caller_id、MCP PID、当前时间、随机 runId/claim、写者追加的 declaredAt、易变 Git 探测结果、显示名或采集时间。缓存命中/缺失不改变同一控制请求的摘要。同样的文件路径但内容或档案已改变算不同参数，返回冲突，不偷偷重跑。规范化版本由 `params_version` 固定为 1。
@@ -62,6 +81,8 @@
 
 
 拒绝事件在有效事务中提交；失败的意图事务先完整回滚，再单独记录拒绝，不留下半个 run/slot。幂等接受记录不覆盖、不自动过期。槽忙的请求可持久化 rejected outcome（无新 run）；同 key 以后仍返回该拒绝，要在槽空闲后提出新请求必须显式换 request_key。这属于新的意图，不是重放旧动作。
+
+（NOTIFY 增补，A3）容量校验在 acceptIntent 的同一 BEGIN IMMEDIATE 内，沿用既有当前授权/捕获来源前提 → canonical OwnerKey×request_key/digest → 同参原结果重放的顺序；已满也先重放。只有新意图才按本 ledger/HUD_HOME 全局及当前 owner 计数 starting/running/cancelling/uncertain，默认 limits.maxActiveRuns=6、maxActiveRunsPerOwner=4，并同事务预留 starting。超限完整回滚，返回 `{ok:false,code:'concurrency_limit',active,limit,occupants:[{runId,linkId,state,since,holder:'self'|'other',retireEta:number|null}],retryAdvisable}`，不存幂等行；这是暂时拒绝，不沿用上文 slot_busy 可持久拒绝规则。所有未终态（包括报告完成但仍活、宽限中的可见子、uncertain）继续占容量及原槽，只有 R-02 证实终结才释放。全为调用者自己的未终态子（嵌套耗尽）或存在 uncertain 需对账时 retryAdvisable=false；等待/取消/内联或对账，不循环重试。此 cap 不限制原生 subagent、shell 子进程、waiter/helper，其预算另计。
 
 ## 不变量
 
@@ -160,6 +181,23 @@ API/host/wait 的超时只返回当时状态，不制造状态迁移；上述 st
 
 `terminalNote:'cancel_timing_unknown'|null` 随既有终态事件的白名单 payload 保存，status 对返回的那个 run 投影此说明。它不是 Reconciliation.cause，不生成待人工解除的阻断，不新增 runs 列。R-02-0 保留既有终态与原结束决定；迟到时序证据只追加说明/审计，不自动 ended→cancelled，不重新占槽或再次发完成事件。未知时序说明描述的是当时分类依据，不能被解释为已证明取消先后。
 
+（NOTIFY 增补，A2）R-02-2 的 cancelled / before_exit 分类仅适用于用户发起的已接受取消和既有 orphan_policy=stop；policy retirement/runtime limit 不命中该行，完整 R/Q 且无 X 时按 R-02-3 ended。R/Q/N 和 X 的证据门槛、N→failed(non_execution)、R-02-0 不变。终态事件白名单新增 `termination`，独立保留任务结果、请求原因、实际结束与归因：
+
+```ts
+type Termination = {
+  outcome: 'completed'|'failed'|'blocked'|'unknown'; // 最新可归属于本 run 的已接受报告；映射见下文
+  requestedCause: 'user_cancel'|'retire_after_report'|'retire_idle'|'retire_blocked_wait'|'runtime_limit'|'orphan_policy'|null;
+  observed: {exitCode:number|null; signal:string|null; escalatedTo:'INT'|'TERM'|'KILL'|null; scopeEvidence:'R'|'Q'|'N'};
+  attribution: 'caused'|'not_caused'|'unknown';
+};
+```
+
+（NOTIFY 增补，A2）termination.outcome 明确按最新可归属于本 run 的已接受报告映射：completed→completed、failed→failed、blocked 或 interrupted→blocked；无报告或报告不可归属于本 run→unknown。Report 自身的 status 保留 interrupted，03 四值枚举不变；只在 termination 归一，运行时映射由 B3/B19 实现。
+
+（NOTIFY 增补，A2）retire.requested 只存意图。scope 在首次信号时仍活且后续结束的合格证明才 attribution=caused；已先自然结束为 not_caused（保留意图审计）；其余 unknown，并附 terminalNote=retire_timing_unknown。terminalNote 的完整内部词表现为 `'cancel_timing_unknown'|'retire_timing_unknown'|null`，只存既有终态事件，不加 runs 列、不回写不可变 exit.json、不将任务 completed/failed/blocked 混为运行终态；旧读者未知 note→null，出口见 07。
+
+（consult 6 增补，H06）当前 visible 合法取消意图可接受而交付不可用；记录 cancel.unconfirmed / visible_scope_control_unavailable，零 INT/TERM/KILL/单 PID 降级/升级计时器。fresh/live 可仍 cancelling，只有命中对应 R-02 条件才 uncertain；后来完整 R/Q 仍按已接受用户取消 chronology 分类，无时序证明的正常结束为 ended+cancel_timing_unknown 并释放，不能因拒信号永久持槽。安全目标对所有模式一致，具体规则见 04。
+
 ### 取消、等待与禁止重试清单
 
 取消只在短事务保存已鉴权意图/accepted 与 cancelling 事件，响应不等待信号阶梯；hud-run 异步封口全部启动者，再对已核验本轮整个 scope 执行 `SIGINT → grace(默认10 s) → SIGTERM → SIGKILL`。每一步重新确认实例与完整范围，不能向复用 PID/PGID 发信号；不能安全控制整组就 cancel_unconfirmed，禁止悄悄缩成单 harness PID。发信号成功不是退出回执；取消通道失败/信号后未知存活且无完整 R/Q/N 时进入 uncertain；历史通道失败不否定后来完整 R/Q，最终按 R-02-2/3/4 分类。默认 orphan_policy=continue；stop 与显式 cancel 使用同一状态机。取消与终态/提交相争时先取得写事务的一方确定围栏，迟到取消不能重写已结束结果。
@@ -219,7 +257,7 @@ C4 的未来 `holderLabel?: string` 由实际 lease owner/job 身份在同一读
 | T-02-4 (A9 prototype) | proc 先 accepted，独立 bound 证据归并 → UPDATE 原子重键，结果/at不变、origin_owner_key 留原范围，只一行；MCP 重启/关闭 alias 后同 session 重放同原结果，新代 proc 不借旧范围 |
 | T-02-5 (A9 prototype) | proc/session 两范围同 key 异参，或同参但不同 run/outcome，或同代 alias 双 session → 拒绝整个归并/操作，有 conflict 事件，零新 run/提交，不按时间挑选 |
 | T-02-6 (A9 prototype) | 每个 insert 及 commit 前注入崩溃 → 未提交时 link/run/claim/idempotency/slot/events 全无；提交后全部可见。再模拟 terminal 事务中断 → 不出现“state 已终结但事件/槽提交一半” |
-| T-02-7 (B) | 不同 key 两进程同时 resume 同 child ref → 仅一 run 占槽并提交，另一 slot_busy；同 run 尝试两槽、同实际 ref 两 run → SQL UNIQUE 拒绝 |
+| T-02-7 (B) | 不同 key 两进程同时 resume 同 child ref → 仅一 run 占槽并提交，另一 slot_busy；同 run 尝试两槽、同实际 ref 两 run → SQL UNIQUE 拒绝；（NOTIFY 增补，A3）并发竞争最后容量仅一新意图；已满同参重放成功，超限无幂等行，嵌套/uncertain 占用完整投影并禁止循环重试 |
 | T-02-8 (A9 prototype) | 意图 commit 后、supervisor 登记前先跑 reconciler（age=0/30000/30001 ms），再两 supervisor 同票据竞争；armed/submitting 各崩溃 → 前两组保持 starting 并可一次登记，超窗无证 uncertain；不得重置票据，never_submitted 围栏后迟到提交=0，纯心跳不升 running |
 | T-02-9 (A9 fixture) | 两 provisional 分别解析到同实际 ref，或一个 provisional 碰已占实际槽 → 第一个迁移原子完成；冲突时两 run uncertain，各槽保留，无进一步启动/resume；即使既有进程仍活也不能宣称动作已撤回 |
 | T-02-10 (A9 fixture) | provisional 无 child_ref 时 heartbeat stale；resume/predecessor 缺真实 ref → 前者 uncertain 且槽保留；后两者拒绝，不能新分 provisional；有可靠终结证明后 provisional 才释放 |
@@ -227,7 +265,7 @@ C4 的未来 `holderLabel?: string` 由实际 lease owner/job 身份在同一读
 | T-02-12 (A9 prototype) | preflight 证明 never_submitted+提交围栏+G=gone，与仅日志报错/只有 supervisor 非零退出两组对比 → 前者 failed，后者 uncertain；命令执行后回写前崩溃=uncertain 且计数不再增加 |
 | T-02-13 (A9 fixture) | H=30000/30001、G=alive/gone/unknown、R/N/Q与supervisor死亡逐行命中；事实时间归一、同刻known+unknown取G=unknown不伪造X，alive+完整gone才X；取消缺失/unknown+R/Q为ended+说明并释放，unknown可由有效已知证明补足且不依数组顺序，before/after互斥为X；无结束证明仍持槽 |
 | T-02-14 (A9 prototype) | R 有来源 native code0/7、R 无 native 但 shell0/137、N、Q 无任何旧 writer receipt → ended/ended/ended(NULL)/failed/ended(NULL)；S/T/D 成员阻终结、Z-only可终结；跨 boot 不查旧PGID，范围外原harness/旧写者仍活则阻复用 |
-| T-02-15 (A9 prototype) | 取消接受后确证仍活再结束→cancelled；信号后仍活→cancelling/uncertain持槽；已证明exit早于cancel→ended/already_ended；完整R/Q但时序未知（含实际SQLite写锁使退出先于接受、无可用时序证明）→ended+cancel_timing_unknown、释放，绝不伪造confirmed/already_ended；缺任一结束条件仍持槽 |
+| T-02-15 (A9 prototype) | 取消接受后确证仍活再结束→cancelled；信号后仍活→cancelling/uncertain持槽；已证明exit早于cancel→ended/already_ended；完整R/Q但时序未知（含实际SQLite写锁使退出先于接受、无可用时序证明）→ended+cancel_timing_unknown、释放，绝不伪造confirmed/already_ended；缺任一结束条件仍持槽；（NOTIFY 增补，A2）用户/orphan stop 取消保原语义；自然退出与 retirement 竞态分别 not_caused/caused/unknown，policy 完整 R/Q 仅 ended，unknown 附 retire_timing_unknown；N 保 failed |
 | T-02-16 (B) | SIGINT→grace→TERM→KILL、组未死/取消通道断、PID被复用、orphan_policy=stop → 重验实例，不能向新PID发信号，不凭信号成功终结；stop也必须走同表 |
 | T-02-17 (A9 fixture) | 错run/source/实例仅审计；倒序导入/旧alive/晚alive后unknown或gone/缺失无效事实时间/native已知冲突按归一规则；已存R/Q/N proof@20于90导入后仅收到alive@30仍X，不能用ended_at=90遮蔽；N@20+gone@20+alive@30+gone@40、同刻反证、未封口launcher、乱序/已failed后增量与持久X后新gone均阻断，早于N的普通活性仅审计；既有终态不重开/重发/重占槽，保留原terminalNote，未解决冲突须显式解决 |
 | T-02-18 (A9 fixture) | 同 owner 并发 predecessor、busy/uncertain槽、跨 owner → 唯一新父边 / slot_busy / unsupported；旧 linkId 不授新控制权 |
@@ -235,7 +273,7 @@ C4 的未来 `holderLabel?: string` 由实际 lease owner/job 身份在同一读
 | T-02-20 (A9 fixture) | C 前调用 Jev/browser 正向操作 → unsupported、零 send/运行意图；规格核对 browser 的失联/needs_human/TTL不释放语义，正向存储/用例不属 A9 |
 | T-02-23 (A9 fixture) | 运行槽 schema 无 TTL、ledger 无通用 leases；collect 换代后旧 checkpoint 写入拒绝的规格归06，不把观测租约塞进运行槽 |
 | T-02-24 (B) | 父MCP退出或关pane，默认continue，活跃headless请求可见打开，子只提交report → supervisor继续/失联对账，均不据此释放槽，不启动可见副本 |
-| T-02-25 (A9 fixture) | node:sqlite 执行DDL；外键、双当前父/槽/alias、非法状态、终态缺证/活槽删除、native code缺来源、HUD只读写入逐项拒绝；延期表/控制分支不存在；callers.cwd 非空绝对路径约束仅承载物理 MCP 登记值，取不到真实 cwd 的入口须 cwd_unavailable 拒登记，会话未知 cwd 不用此列补空，不为此改 DDL（consult 4 增补，F04） |
+| T-02-25 (A9 fixture) | node:sqlite 执行DDL；外键、双当前父/槽/alias、非法状态、终态缺证/活槽删除、native code缺来源、HUD只读写入逐项拒绝；延期表/控制分支不存在；callers.cwd 非空绝对路径约束仅承载物理 MCP 登记值，取不到真实 cwd 的入口须 cwd_unavailable 拒登记，会话未知 cwd 不用此列补空，不为此改 DDL（consult 4 增补，F04）；（NOTIFY 增补，A1）旧 reader 读 events.v1.1 未知 kind 不失败/不改推导，未知 note→null；DDL/user_version=1 原字节保留 |
 | T-02-26 (B) | user_version=0/1/2、WAL、短 busy等待；真实锁争用达06预算 → busy/未接受、无部分意图/外部动作；重试事务不重发动作。accepted 与 started/bound 时延分列；来源取证后等锁期间另一 MCP /clear 换代、撤权或目标 run/binding 变化时，旧前提在查幂等/写入前失败，不能重贴新代或覆盖事实，锁内零文件/proc I/O（consult 4 增补，F07） |
 | T-02-27 (A9 fixture) | 单 MCP 收到共享 A/B、原生子或缺可信来源；自报 B/root 与上次 context 均无效 → MVP 拒绝，零意图/报告/幂等范围复用；context 类型仍可表达物理/逻辑分离；根→子→根中子拒绝不改变根 scope/context/alias/claim/generation，Codex 子另起 MCP 仍不投影 root；新旧会话双 MCP 同时绑定、A→B→A 旧来源及旧 spawn/report 等锁后提交均重验捕获前提，旧 receipt 不倒切（consult 4 增补，F07） |
 | T-02-28 (A9 fixture) | 已child-a/target-a的resume或handover本轮解析b、SQL覆盖已知ref、发现前改strategy/kind或发现后缩scope四组 → 拒改既有ref/策略/范围，run uncertain/b仅候选；合法同ref握手不回退关系pending；scope_ref可从NULL单次写入核验结果 |

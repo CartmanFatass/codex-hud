@@ -10,7 +10,41 @@ export type LaunchPhase = 'reserved' | 'armed' | 'submitting' | 'submitted' | 'n
 export type OrphanPolicy = 'continue' | 'stop';
 export type SupervisionStrategy = 'headless' | 'wrapper';
 export type ExitSource = 'wait_status' | 'trusted_harness_result';
-export type TerminalNote = 'cancel_timing_unknown' | null;
+/** NOTIFY A2 / D15: older readers map unfamiliar notes to null. */
+export type TerminalNote = 'cancel_timing_unknown' | 'retire_timing_unknown' | null;
+
+/** NOTIFY A2: terminal-event metadata, never a new runs column or a task/run state.
+ * Latest accepted report attributable to this run: completed -> completed, failed -> failed,
+ * blocked/interrupted -> blocked; missing or unattributable -> unknown. Report.status stays intact.
+ */
+export interface Termination {
+  outcome: 'completed' | 'failed' | 'blocked' | 'unknown';
+  requestedCause:
+    | 'user_cancel'
+    | 'retire_after_report'
+    | 'retire_idle'
+    | 'retire_blocked_wait'
+    | 'runtime_limit'
+    | 'orphan_policy'
+    | null;
+  observed: {
+    exitCode: number | null;
+    signal: string | null;
+    escalatedTo: 'INT' | 'TERM' | 'KILL' | null;
+    scopeEvidence: 'R' | 'Q' | 'N';
+  };
+  attribution: 'caused' | 'not_caused' | 'unknown';
+}
+
+/** Consult 6 H07 / NOTIFY A1: additive events.v1.1 writer names, not a closed reader enum. */
+export type LedgerExtensionEventKind =
+  | 'supervisor.signal'
+  | 'wake.registered'
+  | 'wake.revoked'
+  | 'wake.delivered'
+  | 'retire.requested'
+  | 'surface.created'
+  | 'handoff.recorded';
 
 export interface Run {
   runId: string;

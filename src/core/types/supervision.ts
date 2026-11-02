@@ -11,6 +11,24 @@ export interface ProcessStamp {
   pid_domain: string;
 }
 
+/** Consult 6 H07: subject is the run's registered supervisor, checked by the writer's full stamp.
+ * observedAt is the handler observation, not commit time. This proves no sender, harness exit,
+ * scope completion or cancellation causality; run/link IDs are resolved by the ledger entry.
+ */
+export interface SupervisorSignalFact {
+  signal: 'SIGHUP' | 'SIGINT' | 'SIGTERM';
+  observedAt: number;
+}
+
+/** Consult 6 H06: accepted intent is independent of delivery and run termination.
+ * Current visible control sends no group/single-PID signal and schedules no escalation.
+ */
+export interface VisibleScopeControlUnavailable {
+  intentAccepted: true;
+  delivery: 'unavailable';
+  reason: 'visible_scope_control_unavailable';
+}
+
 export interface ProcessScope {
   scope_id: string;
   scope_kind: 'pgid';

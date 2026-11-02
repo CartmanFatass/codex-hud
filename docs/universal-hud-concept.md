@@ -303,6 +303,10 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 
 （consult 5 增补，G01）headless 必要helper优先轻量、随run存活且保持不能移组的真实session/group leader，本组leader核验后发整组信号；固定控制词表、无eval、受保护输入只消费一次且EOF不可重开，stdin/控制通道分离，argv/cwd/导出函数/dotted env/PWD保持。GroupExit来源区分verified_wait/native_unknown，精确harness stamp才投影native；shell137不推harness信号，无合法shell投影也为null，完整R/Q仍scope_ended并按02分类，既有精确来源保留。现Node helper保留到B3a-R1环境/封口/取消/组实例验收；可移动reader/decoy方案不采用，visible仍修订甲。B14按06 G02正式B45/真实B2、300s/两种H/R和同环境资源/启动/故障对照，不以sh原型数值放行。
 
+（consult 6 增补，H01）（consult 6 增补，H02）（consult 6 增补，H04）（consult 6 增补，H05）G01 最终生产为唯一轻量 D 拓扑：不可移组 session/group leader 唯一自组信号，forwarder 仅控制/封口，waiter 单次启动/有来源诊断，三类 OS shell 随 run 回收、不新增票据/轮询/后端。功能核验系统 /usr/bin/env 的 -i/-S/--default-signal=INT,QUIT 及 /usr/bin/mkfifo，缺失拒绝；9.4 仅受测版本。Node 兼容后端退出生产，真实精确 wait 测试保留；默认 argv/managed shell 可 native_unknown/native及shell null，完整R/Q可ended。环境只经 environ 运数据，argv仅生成引用/固定程序，单次不递归不重分词、同名变量完整恢复、超限拒绝；逐exec image sentinel审计。实际 command operand 含=在登记/票据消费/dispatch前明确headless_executable_assignment_unsupported，不自动shell/Node fallback。完整故障/资源/能力证据归04/05/06，局部D数字不代B14正式门禁。
+
+（consult 6 增补，H06）（consult 6 增补，H07）visible 同受交付点稳定范围/no-reuse 目标约束，verify→数字PGID不安全。当前合法取消意图可接受，但记录cancel.unconfirmed/visible_scope_control_unavailable，零INT/TERM/KILL/单PID/sendKeys/无ack升级；fresh/live可仍cancelling，独立R/Q/N继续对账，无时序证明结束为ended+cancel_timing_unknown并释放。真TTY及PID=PGID=tpgid仅受信直接前台profile必要条件，固定pane shell等hud-run、真实harness/context/独立shell wait仍须验。正向visible cancel未晋级，B3b-C须先取得Pro成本范围取舍。supervisor.signal只记登记supervisor自身收到HUP/INT/TERM及handler观察时间，完整stamp写者核验，不推sender/harness/终结或取消因果，不造context事件/渐进退出协议（02/04）。
+
 #### 6.6.5 等待、resume 与双模式
 
 - **wait。** 有界长轮询，按 `events.seq` 游标返回；按 linkId 等待时进入即解析当前 runId 并固定，之后的新运行不满足这次等待；实际取请求值/协议上限120s/客户端实测工具timeout减正余量的最小值（05），缺可信timeout只即时返回。通知是hint、游标是事实；按run合并heartbeat/WAL唤醒，漏通知在必要截止复读。超时/断线不取消/失败，返回同run/正确游标；父pane自动提示延期。
@@ -356,6 +360,14 @@ linkId/claim共现不证明会话身份。支持范围按版本/档案/模式及
 
 06拥有语义状态`stateKey/stateSince/stateSinceBasis`：B16按语义及必要原因/episode选择边沿，不含视觉桶；新run/新待决周期重置，重读/心跳/usage/语言/排序不重置。已证事件用event，首次看到用observed，无可靠时间/连续性为null/unknown；随B12同一ObservationCommit持久，重启可恢复可证连续性，丢历史不假装持续。状态驻留以nowMs派生，uncertain/stale的证据年龄另用lastEvidenceAt/心跳，零逐tick写。ledger asOfSeq仅本次快照高水位（无库null、空库0），独立observationStamp记录实际输入run/ref/代次/序号；旧run摘要不得补当前run，无跨库原子保证，status/wait不触发采集/Git/reconcile/摘要发布。
 
+（consult 6 增补，H09）匹配且新鲜registry优先当前activity，transcript失败/待决/历史各维度独立；普通activity差异不自动生最高优先conflict，真正显式同命题互斥证据仍优先。C01为working@registry/working:working，无自动冲突（06）。
+
+（consult 6 增补，H10）工具deadline仅撤回该工具working证明，不推idle/完成，不压低整个来源或独立pending/outcome/liveness新鲜度；不可从同旧working兜回。C04来源D=90000、now4000仍fresh/独立alive，toolD=2000后activity unknown、unknown:insufficient_evidence，语义起点2000/event；来源自己的截止/读取错误/时钟及registry fallback独立。
+
+（consult 6 增补，H11）缺可恢复noticeState/可信边界首次静默基线确认已覆盖report.received序号/active episode，当前问题可见，不补report/pending/failed/uncertain历史通知；成功持久化才确认。已有state重启继续cursor，有界3 episode/3 alias/1report游标/1观测计数器，不保存无界report ID全集；不推进父wait.afterSeq或代表父消费报告。
+
+（consult 6 增补，H12）（consult 6 增补，H13）最新已接受blocked报告独立映射needs_human/pending:blocked，保source/reportId/时间/seq及独立outcome，不制造运行终态/权限或具体真人审批协议。跨源清除必须显式pendingResolution={episodeAnchor,eventAt}及外层真实source/ref/run/绑定/sourceGeneration/有效性/可信时间，同episode且不早于打开/不晚可信边界，毫秒相等本身非因果；单证明不清所有请求，匿名不捏ID。唯一merger判定且保requiredSourceIds/provenance，恢复区间不沿旧起点、重读不通知。B16-P递增ruleVersion，不把旧连续性贴新规则，不无故重建native recovery；详细反例归06。
+
 ### 6.9 注册表接口
 
 核心只认 `RegistryProvider`（§6.12）。Herdr 实现只在 `HERDR_ENV=1` 且 `HUD_HERDR≠0` 时装载，按 Herdr server 共享一个轮询器（默认 3 s），所有 HUD 进程与 hud-mcp 实例读同一份缓存。cc 的 `~/.claude/sessions` 是 harness 自带注册表，由 cc 适配器提供。没有实现时返回空列表，核心照常。事件订阅留到阶段 F。
@@ -387,6 +399,8 @@ interface RunControl {                        // 核心，基于 RunHandle 与�
 | pi footer | 扩展读摘要 | 无 |
 
 原生线程导航是 harness 的可选能力（Codex 经 `/subagents`）；cc / pi 的原生节点只开 Inspector，不发 Codex 指令。
+
+（consult 6 增补，H08）visibleHostContext(env) 只是进程内HostAdapter提示；正式跨重启受管位置复用经核验的HostLocator/runs.locator，固定run/绑定代次首次有效写、同值幂等、冲突不覆盖，未受管用SurfaceLocator。不持久HERDR_*全表、不新造visible.context权威，地址相同不证明occupant，stamp/occupantGeneration/bindingGeneration独立，动作前重验，缺server/占用证据仅诊断（01/02/04/05）。
 
 ### 6.11 存储
 
@@ -423,6 +437,8 @@ delegate.json                            后端档案
 （consult 5 增补，G11）reader语义bump readerVersion，结构不兼容升对应checkpoint/观测私有格式并拒旧writer；持lease受控替换旧缓存、重置不可证连续性且保sourceGeneration/gap，禁止删payload沿旧offset。ledger v1/export v1/public/旧--json版本独立；三路径no-op/summary-only/新checkpoint及大参数/长期ID/多消费者全链预算与定向崩溃/lease/通知证据归06/07及B14，不放宽tick。
 
 （consult 5 增补，G07）B11本地export只消费既有core/export-query.ts的queryDelegationExport私有metadata-only入口，B2底层/B18受限投影共同维护schema回归；native readOnly/busy_timeout=0/单快照rows+high-water，尽早结束事务后在复制输入编码，完整JSON备妥再输出。无需搬模块/broad reader/公开SQL，不等B16/B6/B17；07的10000runs/16MiB/1000ms及隐私/历史端点边界保留。
+
+（consult 6 增补，H03）观测存储下一步仅WAL+FULL有界优化，受控停写/重开切换核验、保私有DB/WAL/SHM及busy上限；checkpoint/恢复索引/summary/continuity/notice-dedup同一fenced持久提交。prepare/witness/SQLite等待COMMIT和路径checkpoint/关闭成本计全tick，提交前不推进摘要/notice/ACK；逐声明样本<50ms不改p95，不降NORMAL/后台扣账/无限WAL或新flusher。旧raw-tail缓存先受控清除重建，secure_delete不保证清旧WAL页。原生盘超限保留并上送Pro；WAL+FULL仍超则停止堆机制、由ORCH携全分布请求预算/持久性/平台取舍，局部API通过不解B14全链门禁（06）。
 
 ### 6.12 Herdr 集成层（独立）
 
