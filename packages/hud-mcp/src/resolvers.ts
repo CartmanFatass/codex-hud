@@ -4,7 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { digest } from '../../../src/core/canonical.js';
 import { makeProcessKey, makeSourceId } from '../../../src/core/identity.js';
 import type { SessionRef } from '../../../src/core/types/identity.js';
-import type { ScopeSnapshot } from '../../../src/core/ledger-scope-read.js';
+import type { ScopeSnapshot, ScopeSnapshotPort } from '../../../src/core/ledger-scope-read.js';
 import type { DelegateProfile } from './config.js';
 import { Refusal } from './errors.js';
 import { object, readBounded, readJson } from './io.js';
@@ -143,18 +143,16 @@ export function resolvePiSession(
 
 /** Reads diagnostic source evidence only. Context/binding transactions remain B2/B5 work. */
 export class SessionRefResolver implements CurrentCallSourcePort {
-  private currentRef: SessionRef | null = null;
-  private invalidated = false;
   constructor(
     private readonly registration: Registration,
     private readonly reader: ProcessReaderPort,
     private readonly profile: DelegateProfile | null,
     private readonly locator: SessionRecordLocatorPort = new BoundedSessionLocator(),
-    private readonly claudeHook?: ClaudeHookSourceOptions
+    private readonly claudeHook?: ClaudeHookSourceOptions,
+    private readonly scopes?: ScopeSnapshotPort
   ) {}
   async resolve(meta: unknown, toolName: string): Promise<CallResolution> {
     const deny = (code: Exclude<CallResolution, { ok: true }>['code']): CallResolution => ({ ok: false, code });
-    if (this.invalidated) return deny('stale_context');
     const { caller, source, harnessPid, harnessProcStart } = this.registration;
     if (!source || !this.profile || harnessPid === null || !object(meta)) return deny('identity_source_missing');
     try {
@@ -182,6 +180,8 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         harnessPid,
         harnessProcStart!
       );
+      // Captured before reading the source. A losing call must obtain fresh evidence.
+      const scopePremise = this.scopes?.read(processKey);
       let callId: string;
       let sessionRef: SessionRef;
       if (source.harness === 'claude') {
@@ -300,19 +300,20 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         if (payload.source === 'exec' && turn.turn_trigger !== 'exec') return deny('identity_unverified');
         sessionRef = { harness: 'codex', sourceId: source.sourceId, sessionId: meta.threadId, threadId: null };
       } else return deny('unsupported');
-      if (this.currentRef && this.currentRef.sessionId !== sessionRef.sessionId) {
-        this.invalidated = true;
-        // Reconciler must close all scopes/contexts/aliases before new generation.
-        return deny('stale_context');
-      }
       // Recheck physical stamps after filesystem evidence; registration alone is no authority.
       if (
         this.reader.get(harnessPid).procStart !== harnessProcStart ||
         this.reader.get(caller.pid).procStart !== caller.procStart
       )
         return deny('identity_unverified');
-      this.currentRef = sessionRef;
-      return { ok: true, callId, sessionRef, processKey, evidenceDigest: digest([callId, sessionRef, processKey]) };
+      return {
+        ok: true,
+        callId,
+        sessionRef,
+        processKey,
+        evidenceDigest: digest([callId, sessionRef, processKey]),
+        scopePremise,
+      };
     } catch {
       return deny('identity_source_missing');
     }

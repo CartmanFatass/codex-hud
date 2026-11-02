@@ -239,19 +239,19 @@ test('missing, conflicting and forged arguments metadata never falls back to rem
     f.cleanup();
   }
 });
-test('same process changes session: old/new overlapping instances cannot restore old local context', async () => {
+test('session switches remain source diagnostics; shared ledger supplies the generation gate', async () => {
   const f = fixture();
   try {
     const { registration, reader, p } = await registered(f.root);
     const loc = locator(f.root);
     const old = new SessionRefResolver(registration, reader, p, loc);
     assert.equal((await old.resolve(meta(), 'delegate_report')).ok, true);
-    assert.deepEqual(await old.resolve(meta(other), 'delegate_whoami'), { ok: false, code: 'stale_context' });
-    assert.deepEqual(await old.resolve(meta(), 'delegate_report'), { ok: false, code: 'stale_context' });
+    assert.equal((await old.resolve(meta(other), 'delegate_whoami')).ok, true);
+    assert.equal((await old.resolve(meta(), 'delegate_report')).ok, true);
     const nextRegistration = { ...registration, caller: { ...registration.caller, callerId: 'synthetic-new-mcp' } };
     const next = new SessionRefResolver(nextRegistration, reader, p, loc);
     assert.equal((await next.resolve(meta(other), 'delegate_whoami')).ok, true);
-    assert.deepEqual(await old.resolve(meta(), 'delegate_report'), { ok: false, code: 'stale_context' });
+    assert.equal((await old.resolve(meta(), 'delegate_report')).ok, true);
     // These are source diagnostics, not distributed context authorization. B2/B5 supply
     // the atomic generation gate before any future body may execute.
   } finally {

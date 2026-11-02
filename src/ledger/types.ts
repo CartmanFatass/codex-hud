@@ -1,16 +1,19 @@
 import type { JsonValue } from '../core/canonical.js';
 import type { CurrentCallEvidence } from '../core/identity.js';
 import type { ControlAuthority } from '../core/lifecycle.js';
-import type { Claim, ControlInitiator } from '../core/types/identity.js';
+import type { Claim, ControlInitiator, Source } from '../core/types/identity.js';
 import type { Evidence, ReconcileEvidence, Run, TerminalNote } from '../core/types/execution.js';
 import type { Link } from '../core/types/lifecycle.js';
+import type { ScopeSnapshot } from '../core/ledger-scope-read.js';
 
 /** Caller verification/probes occur outside SQLite; the stored current generation is reloaded inside. */
 export type IntentAuthority =
-  | { kind: 'mcp'; contextId: string; generation: number; evidence: CurrentCallEvidence }
+  | { kind: 'mcp'; contextId: string; generation: number; evidence: CurrentCallEvidence; scopePremise?: ScopeSnapshot }
   | Extract<ControlAuthority, { kind: 'local_user' }>;
 
 export interface PreparedIntent {
+  /** Explicit captured backend source; added atomically with the first cross-source intent. */
+  targetSource?: Source;
   requestKey: string;
   params: Record<string, unknown>;
   link: Link;

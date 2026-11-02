@@ -3,6 +3,7 @@ import { isRunTerminal } from '../core/execution.js';
 import { inspectReceipt, sameProcessStamp } from '../core/supervision.js';
 import type { FinalExitReceipt, ProcessStamp, RunMeta } from '../core/types/supervision.js';
 import type { Ledger } from './ledger.js';
+import { acceptedActor } from './intents.js';
 import { insertRecord, readRun } from './records.js';
 import type { LedgerTransaction } from './transaction.js';
 
@@ -35,10 +36,11 @@ export async function appendRunFact(
     const run = requireRunWriter(tx, runId, producer);
     if (isRunTerminal(run)) throw new Error('writer_terminal');
     if (kind === 'parent.offline') {
-      const link = tx.get('SELECT parent_context_id,parent_context_generation FROM links WHERE link_id=?', run.linkId);
+      const { actor } = acceptedActor(tx, runId);
       if (
-        copy.contextId !== link?.parent_context_id ||
-        copy.generation !== link?.parent_context_generation ||
+        actor.kind !== 'mcp' ||
+        copy.contextId !== actor.contextId ||
+        copy.generation !== actor.contextGeneration ||
         copy.orphanPolicy !== run.orphanPolicy
       )
         throw new Error('parent_mismatch');
