@@ -1,5 +1,5 @@
 import type { SessionRef } from './identity.js';
-import type { RunOperation, RunState } from './execution.js';
+import type { RunOperation, RunState, TerminalNote } from './execution.js';
 import type { LinkState } from './lifecycle.js';
 import type { ProjectOrigin, RunWorkspaceSnapshot, Coverage } from './observation.js';
 
@@ -68,6 +68,8 @@ export type HandshakeReasonCode =
   BindingReasonCode | 'claim_missing' | 'claim_revoked' | 'claim_expired' | 'claim_conflict' | 'stale_binding';
 export type GitMissingReasonCode = 'not_git' | 'timeout' | 'unavailable' | 'unknown';
 export type CwdSourceCode = 'launch' | 'registry' | 'transcript' | 'supervisor';
+/** NOTIFY A2: optional closed export field; unknown wire strings are decoded as null. */
+export type TerminalNoteCode = Exclude<TerminalNote, null>;
 
 export interface ExportWorkspaceSnapshot {
   repoId: string | null;
@@ -81,6 +83,8 @@ export interface ExportWorkspaceSnapshot {
 }
 
 export interface DelegationExportRecord {
+  /** NOTIFY A2 / D15: additive metadata only; older producers omit it. */
+  terminalNote?: TerminalNoteCode | null;
   linkId: string;
   runId: string;
   runSeq: number;

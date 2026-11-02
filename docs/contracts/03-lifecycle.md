@@ -92,6 +92,12 @@ delegate_report 的 runId 先定位原 link，不能从 caller 的“当前 link
 
 旧轮报告若在其绑定尚有效时先于 resume 事务提交，只写旧 run；resume 后当前摘要按新 run 查询。已撤销旧绑定的迟报拒绝，只记 report.rejected 审计事件，run_id 仍是旧轮，不伪造成合法历史提交。即使报告在旧轮获准，link.reported 的更新也须确认它仍是 currentRun；closed/revoked/handed_over 绝不由迟报重开。
 
+（consult 6 增补，H12）当前 run 按已提交 report.received seq 选出的最新已接受 blocked 报告，是独立待决来源：pendingReason=needs_human、stateKey=pending:blocked，保留 source、reportId、进入时间及 seq。它只表示需要外部处理，不证明具体 approval/question 或必须真人执行的动作，不新增授权协议。明确 failed 等 outcome 仍在自身维度保留；解决另一请求不能顺带清除最新 blocked（06 C56），新当前轮报告按上述 seq 语义取代旧报告。run.state/isRunTerminal/槽/resume 门禁均不变；B6/B10/B13 共用唯一 B16 规则。
+
+（consult 6 增补，H07）03 事件消费白名单新增 supervisor.signal，严格引用 02/04 的 SupervisorSignalFact 和登记 supervisor 完整 stamp 门禁；不把它当 report、command exit、cancel step 或 run_terminal 来满足 wait。
+
+（NOTIFY 增补，A1）事件白名单及 events.v1.1 的 wake.registered/revoked/delivered、retire.requested、surface.created、handoff.recorded 的字段/作用域统一引用 02「增量事件白名单」。D15 要求未知 kind opaque、读取不失败/不变更状态，未知 note→null，07 同次扩展封闭表；新 kind 不自动满足原 fixed-run wait 的 until。wake 是 hint，父端仍用自己的 fixed runId/afterSeq 读页至 hasMore=false；delivery 游标不是父端消费游标，不用 seq−1 回退或声称 exactly-once。
+
 ### status 与 HUD 可读投影
 
 `terminalNote:'cancel_timing_unknown'|null` 随既有终态事件的白名单 payload 保存，status 对返回的那个 run 投影此说明。它不是 Reconciliation.cause，不生成待人工解除的阻断，不新增 runs 列。R-02-0 保留既有终态与原结束决定；迟到时序证据只追加说明/审计，不自动 ended→cancelled，不重新占槽或再次发完成事件。未知时序说明描述的是当时分类依据，不能被解释为已证明取消先后。
@@ -112,6 +118,12 @@ delegate_status(linkId) 在同一 ledger 读快照返回 link、最大已提交 
 | reconciliation / resumable | uncertain 给 cause、evidenceIds[]、missing[]、observedAt、类型化允许入口 ActionDescriptor；cause 从02采用的证据/原因派生，至少区分 supervisor_dead、scope_unknown、resume_ref_mismatch、clock_anomaly，也可为 supervisor_stale/submission_unknown/cancel_unconfirmed/identity_conflict/scope_conflict/provisional_conflict/launch_timeout/unknown；缺证不伪造终态。统一门禁投影 resumable:boolean+reason+subject（mcp 当前父owner或local_user）；未知身份/owner、busy/uncertain、冲突、能力未验、任务不符均false；closed为false/deferred。执行控制时仍重新鉴权/重验槽 |
 | interaction / parentOffline | interaction={focus:boolean,input:boolean,resume:boolean}，按已知能力/occupant/前台可交互性和统一门禁派生，未知为false。uncertain/未决冲突，尤其 supervisor_dead，三项均false；resume还须resumable=true。parentOffline={since,seq,orphanPolicy}或null由parent.offline事件投影，和reconciliation.cause为独立字段；父MCP离线continue本身不禁用仍经核验可用的子交互。不新增持久状态，HUD不从心跳重建这些判断 |
 | tree / notices | 显示身份按06的 session(ref) / delegationIntent(linkId) / 未来job(ref)联合类型；未绑定意图以linkId稳定键关联currentRun，不伪造ref、不计已确认session；绑定后B9合并并保留选择映射。≤200 节点、无环/重复 ref，depth 明确，handed_over 只历史不成第二父边；超预算 loaded=false，coverage/Metric归06。report.received、run.uncertain、conflict/解决、parent.offline等账本事件给seq/created_at/runId；观测通知由06/B16分域发布，HUD不为通知写ledger |
+
+（consult 6 增补，H06）status/cancel 可加法提供 `cancelControl?:{intentAccepted:true,delivery:'unavailable',reason:'visible_scope_control_unavailable'}`，分开表示已接受意图、未交付信号和仍活的 run；缺此投影不推断已交付。当前 visible 禁 INT/TERM/KILL、单 PID/sendKeys 取消和无 ack 升级计时器；fresh/live 仍可 cancelling，之后按 02 对账，不把 accepted 画成已结束。
+
+（NOTIFY 增补，A2）上表 terminalNote 增加 retire_timing_unknown；`termination:Termination|null` 从返回 run 的终态事件白名单读取（02），不是报告 status/运行 state 的替代，也不改 R-02-0。
+
+（NOTIFY 增补，A7）delegate_status 的加法投影：`advice` 为启动时已加载配置/来源快照的纯 lookup（harness/auth/model、configured/documented/planning TTL、provenance、warming:'off'|'native'、wake adapter/state/armCommand?；缺输入为 null，MVP lastQualifyingRequestStartAt/remainingWarmWindowMs 均 null，不猜缓存存活）；`wake.state='registered'|'degraded'|'unconfirmed'|'none'` 来自当前有效登记及交付结果；`capacity={active,limit,occupants}` 沿 02 容量计数；`termination` 沿 02；`continuesFrom` 从 handoff.recorded 投影为 candidate-grade provenance，绝不是 parent/predecessor 或所有权转移。只读且保留原 ledger/观测双戳/授权门禁；HUD warming 默认 off，pi 原生 warming 唯一，缺失配置不伪装实测。
 
 03可提供上表关系/运行/报告字段；Metric quality、coverage/skipped、廉价变更信号与 statusline 入口预算归06。MVP 无 MCP 的正向能力、closed 重开和 Jev job 投影是 Oracle 明确延期的设计数据缺口，不能用占位 pass 填充。只读展示字段不授予控制/模型外发权限。
 
@@ -184,7 +196,7 @@ HUD只读关系/运行/报告与上述投影；uncertain提供缺证及对账入
 | 编号 | 输入 → 预期状态断言 |
 |---|---|
 | T-03-1 (A9 fixture) | 新 spawn/claim/独立证据 → link pending/claimed/bound；无 MCP 即使三证齐仍未确认，无绑定父边；run 无pending枚举 |
-| T-03-2 (A9 fixture) | 当前 run 提交四种 report status，组仍活 → link reported，报告只写该 run；零槽释放/伪造终态 |
+| T-03-2 (A9 fixture) | 当前 run 提交四种 report status，组仍活 → link reported，报告只写该 run；零槽释放/伪造终态；（consult 6 增补，H12）blocked→needs_human/pending:blocked，独立失败 outcome 保留，零 run 终态/槽/权限变化 |
 | T-03-3 (A9 fixture) | fresh 未绑定首轮 N，已绑定后续轮 N，非零 R 三组 → link.failed/run.failed；link仍bound/run.failed；link保持/run.ended(code非零)，均不把任务结果当执行事实 |
 | T-03-4 (A9 fixture) | 身份冲突使 link revoked，但组 alive → 历史保留/当前边撤销，run uncertain或按02继续对账，槽不释放，无新授权 |
 | T-03-5 (A9 fixture) | bound/reported 同任务合法 resume → 同link、新run_seq/run/claim/correlation，link bound、run starting/握手pending，旧claim/binding撤销 |
@@ -205,7 +217,7 @@ HUD只读关系/运行/报告与上述投影；uncertain提供缺证及对账入
 | T-03-20 (A9 fixture) | 跨owner有/无自报凭证、非owner知道linkId/claim → unsupported，无签发/消费/新运行/控制权限 |
 | T-03-26 (A9 fixture) | 各关系/运行状态请求close、内部close入口或close重试 → MVP均unsupported，零取消/surface关闭/关系迁移，运行终结仍只按02 |
 | T-03-30 (B) | 历史closed/revoked/handed_over和新occupant → 唯一当前父边，历史不复活；host未知、resumable=false+reason、候选/冲突显式，时间毫秒epoch |
-| T-03-31 (B) | status同ledger读快照给link/runHandshake/currentRun/本轮报告及权限，缓存观测带独立stamp；B16时间/conflict、候选、parentOffline、uncertain cause/缺证/ActionDescriptor、resumable+reason+subject/interaction完整；supervisor_dead三项交互均false，父离线continue不独自禁用正常子交互；HUD只读，≤200节点/无环/历史边不成双父 |
+| T-03-31 (B) | status同ledger读快照给link/runHandshake/currentRun/本轮报告及权限，缓存观测带独立stamp；B16时间/conflict、候选、parentOffline、uncertain cause/缺证/ActionDescriptor、resumable+reason+subject/interaction完整；supervisor_dead三项交互均false，父离线continue不独自禁用正常子交互；HUD只读，≤200节点/无环/历史边不成双父；（NOTIFY 增补，A7）当前登记/交付结果、容量 occupants、独立 termination/continuesFrom/advice 只读投影，候选谱系零授权 |
 | T-03-32 (B) | 正常仅spawn+wait → 自动运输/登记/托管/报告同run；spawn/resume/cancel快速返回持久accepted，started/bound另计；短锁等待/事务外I/O依06基准，不要求用户补协议 |
 | T-03-33 (B) | 无事件、重复/漏通知、每心跳WAL、真正stale、短wait截止 → 合并/按run过滤、零全体waiter重查或按秒扫proc；现有写者仅真失联取证；通知seq/created_at与返回游标正确 |
 | T-03-34 (A9 fixture) | 复制resume/reconcile、重复按键、选中后currentRun变化、恶意label/report命令文本 → 仅安全模板复制，固定目标/操作及同一requestKey，无HUD控制进程/自动重试；入口未验证只诊断/原父途径 |

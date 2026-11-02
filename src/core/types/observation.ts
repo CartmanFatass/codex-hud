@@ -109,7 +109,11 @@ export interface ReaderCheckpoint {
 }
 
 export type Activity = 'working' | 'waiting_input' | 'idle' | 'exited' | 'unknown';
+/** Consult 6 H12: the latest accepted blocked report is an independent needs_human source.
+ * It grants no control authority and does not resolve another episode or terminate the run.
+ */
 export type PendingReason = 'none' | 'approval' | 'question' | 'needs_human';
+/** Consult 6 H12: explicit outcomes survive independent pending/blocked classification. */
 export type LastTurnOutcome = 'none' | 'completed' | 'failed' | 'interrupted';
 export type Liveness = 'alive' | 'gone' | 'unknown';
 export type EvidenceValidity = 'current' | 'stale' | 'unknown' | 'conflict';

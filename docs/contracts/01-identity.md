@@ -35,6 +35,8 @@
 | `RunBinding` | 某次运行的会话、启动实例与宿主 occupant；在 schema 中由 `runs`、`child_bindings` 和 evidence 组合表示。Herdr locator 带 server/workspace/tab/pane，tmux locator 带 server 实例/session/pane | HUD 自己的 pane 不是被观察 pane |
 | `OwnerKey` | 从本次调用选定的当前 context 派生：已证实会话为 `json_array('session', session_ref)`；仅未绑定 dedicated 可用 `json_array('proc', process_key, generation)`。shared 不取得 MVP 操作权限。已绑定 SessionRef 跨 MCP 重启和同会话 resume 保持逻辑所有者 | 不把 caller_id/context_id 放进幂等键，不另建可随意赋值的所有者身份 |
 
+（consult 6 增补，H08）`visibleHostContext(env)` 只向 HostAdapter 提供进程内提示，不是身份/控制凭据。跨重启的受管宿主位置沿用经 HostAdapter 核验、对应固定 runId/bindingGeneration 的 HostLocator 和 02 runs.locator；未受管 surface 使用 SurfaceLocator。不持久化 HERDR_* 全表，不新增 visible.context 权威事件。Herdr server/workspace/tab/pane、tmux server/session/pane 只定位；process stamp、occupantGeneration、bindingGeneration 各自核验，地址相同不证明 occupant 相同，环境原样传用户 shell 不等于复制进账本。
+
 （consult 5 增补，G08）ProcessKey、Run ProcessStamp 与 Claude 原生 registry 使用三种用途隔离的域类型；`src/core/process-domain.ts` 是共享轻量派生入口，MCP、hook、hud-run 从同一组已验证且非空的 machineId/bootId/pidNamespace 输入派生。以下保持本期已有字节，不对已持久化身份重键：
 
 | 用途 | 保持的 pid_domain 编码 | 唯一允许的比较 |

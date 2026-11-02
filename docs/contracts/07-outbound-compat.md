@@ -144,6 +144,16 @@ consumer以01完整SessionRef join，source按harness+规范存储根规则匹�
 
 G13上限：默认最多10000条run记录、16MiB编码JSON、读取/组装1000ms软预算，任一超限显式失败，不以漏历史的成功全集替代；明确link范围可缩请求，大规模一致分页有需求时另定。完整JSON准备好才输出，消费者仅在退出成功且coverage完整时替换对应范围缓存。B18记录真实行数/编码字节/墙钟与读事务寿命，行及high-water取得后尽早结束读事务，在固定输入上组装；软预算不是硬实时保证。导出不随heartbeat/paint自动跑，不新增守护进程/后台全库同步/第二writer（T-07-20–26）。
 
+（NOTIFY 增补，A1）D15 兼容：events.v1.1 新 kind 对旧 reader 的状态推导 opaque，读取不得失败/变更派生状态；不因 user_version=1 不变而假定事件语义兼容。新 note 在旧 reader/未扩展出口中→null，扩展封闭表与 whitelist 同次进行，B14 验旧构建读取新 ledger；不公开原始 events payload。
+
+（NOTIFY 增补，A2）export v1 可选元数据字段 `terminalNote` 的封闭 `TerminalNoteCode` 表在本次与 02/03 一起明确/扩展，非 null 值仅下表；缺省表示旧 producer，提供时须 string|null，未知 string→null，其他类型拒绝，保持原 v1 必需字段/状态/版本不变，不导出自由诊断。
+
+| 类型 / 字段 | 全部非 null 值（NOTIFY 增补，A2） |
+|---|---|
+| TerminalNoteCode / terminalNote（可选） | cancel_timing_unknown、retire_timing_unknown |
+
+（NOTIFY 增补，A8）`cache-observed` report 仅本地 observation 存储的计数/时间，不是 export/模型材料，不因可本地读取自动授权；owner 已将 hud cache report 延期 v1.1，本期不实现观察型 TTL/暖缓存推断。handoff.recorded 的 `handoffPath` 仅 `--paths local` 可选输出（none 省略），不顺带开放 brief/report/log/source root 或 wake target 的 codexHome/socketPath/threadId 等私有定位。handoff hash/bytes/retained/fromLinkId/fromRunId 仅候选级来源，零隐式子运行接管/新父边/权限；显式 task handoff 仍按既有字节/hash/保留副本及 01–04 所有权规则。
+
 ### 旧命令与 --json v2 的冻结边界
 
 A–D 的 `codex-hud …` facade 保留现有启动默认（新session；显式--attach/原env策略才复用）、参数透传、cwd+effective CODEX_HOME 的session选择。早期命令 --help/--self-check/--kill/--list/--json、brief --dry-run [FILE] 继续工作；只有带 --dry-run 的 brief 被拦截，裸 brief 仍是Codex输入，`--`终止wrapper解析。不得因改名引入新的启动/授权副作用。
@@ -242,9 +252,9 @@ E的显式迁移为 `inspect → preview per-source mapping → write new privat
 | T-07-19 | v1.1 | F远程routing建议与auto fixture → routing目标未授权时零请求；有建议许可仍无auto执行权，原Codex摘要许可不补齐 |
 | T-07-20 | A9 | 合成golden覆盖完整envelope/必需operation、双source/threadId/null端点时间、逐run稳定排序；首spawn/同link两次resume/handover首轮及其后resume、失败未绑定spawn → 精确枚举与ledger键，scope/coverage/paths完整，不受200显示节点限制；（consult 5 增补，G07）B11真实CLI接线只消费既有queryDelegationExport成功值，逐run稳定输出与producer golden保持，不需B16/B17或新ORM |
 | T-07-21 | A9 | 读快照期间并发新run/回填、高水位增长、无库/未知schema/权限拒绝 → rows+asOfSeq同ledger快照，明确失败而非成功空全集，零初始化/迁移/Git/采集/reconcile；（consult 5 增补，G07）native readOnly、busy_timeout=0、单事务rows/high-water；B2 schema/B18受限投影回归共同维护，B11不拼SQL，不迁移初始化/要求搬模块 |
-| T-07-22 | A9 | 隐私哨兵与paths两模式保留；四张代码表逐允许值（含claim_*、stale_binding、timeout/not_git）、跨字段误用/大小写/free-text→null，显式null保留、不截取拼接；只local含launchCwd/worktreeRoot，其余路径/正文始终不出，无B17许可借用；合格 SessionEvidence transcript 位置明确映射既有 transcript，不从 claude.transcript.cwd 自由文本猜代码，未知映射 null、不增加词表值（consult 4 增补，F02）；（consult 5 增补，G07）SQL投影不先载入claim明文/任意event/evidence正文或payload再清理，完整JSON备妥后才输出 |
+| T-07-22 | A9 | 隐私哨兵与paths两模式保留；四张代码表逐允许值（含claim_*、stale_binding、timeout/not_git）、跨字段误用/大小写/free-text→null，显式null保留、不截取拼接；只local含launchCwd/worktreeRoot，其余路径/正文始终不出，无B17许可借用；合格 SessionEvidence transcript 位置明确映射既有 transcript，不从 claude.transcript.cwd 自由文本猜代码，未知映射 null、不增加词表值（consult 4 增补，F02）；（consult 5 增补，G07）SQL投影不先载入claim明文/任意event/evidence正文或payload再清理，完整JSON备妥后才输出；（NOTIFY 增补，A8）cache-observed计数/时间不导出，handoffPath仅local，wake私有定位与正文/凭据不泄出 |
 | T-07-23 | A9 | 同sessionId双home、Claude原生agentId、缺SourceId、同cwd/pane/mtime → 只完整ref精确join，不猜home/root；coverage无记录不否定其他委派来源；（consult 5 增补，G07）B11接线保完整ref/source/thread判等，不以导出consumer需要扩读取到正文或当前进程事实 |
 | T-07-24 | A9 | spawn转历史、同link两次resume、handover新link及后续resume、仅导出后继link、失败未绑定spawn → operation直接保留且前驱引用不补猜祖先；当前确认父边独立新轮pending，旧spawn不成第二边；历史claim正常撤销不抹已确认启动，pending/null/non_execution不伪造起源；不按逐run时间虚拆日成本或搬旧用量；（consult 5 增补，G07）历史绑定按该轮证据，旧claim/current report权限撤销不删除已确认历史；逐轮端点不挪用当前值 |
 | T-07-25 | A9 | 10000/10001条、16MiB边界/超限、1000ms软预算超限、缩小link范围/组装失败 → 边界内可成功，超限明确失败且无成功截断全集；完整JSON备妥才输出，consumer成功且coverage完整才替换范围缓存，真实读事务寿命另记（B18实测）；（consult 5 增补，G07）单快照复制rows后尽早结束事务，在固定输入组装/编码，真实行数/字节/总墙钟/事务寿命记录；超额无成功文档，10000/16MiB/1000ms不变 |
-| T-07-26 | A9 | 缺必需字段/缺或非法operation/未知export主版本拒解码；四表字段键必需，null可用、未知字符串正规化null、非string/null拒绝，两paths模式一致；workspace=null无需内部键；未知可选字段忽略/状态保守，五版本域独立且不默认spawn；（consult 5 增补，G07）queryDelegationExport签名/export v1不变，不公开SQL接口；复用B18未变证据，只补真实B11接线变化，不与checkpoint私有格式联动 |
+| T-07-26 | A9 | 缺必需字段/缺或非法operation/未知export主版本拒解码；四表字段键必需，null可用、未知字符串正规化null、非string/null拒绝，两paths模式一致；workspace=null无需内部键；未知可选字段忽略/状态保守，五版本域独立且不默认spawn；（consult 5 增补，G07）queryDelegationExport签名/export v1不变，不公开SQL接口；复用B18未变证据，只补真实B11接线变化，不与checkpoint私有格式联动；（NOTIFY 增补，A1）未知kind不使旧reader失败/改状态；（NOTIFY 增补，A2）terminalNote可选封闭表两值，未知字符串null/非string-null拒绝，旧reader未知note null |
 | T-07-27 | A9 | 两个import路径共用同一v3 fixture、nullable rootRef、confirmedSessions/delegationIntents/jobs计数、完整node的parent/links/candidates/host/actions；v3 intent/session/job槽、tokens已知成本未知、launch_failed/failed报告仍running、ledger-b+观测-a → 身份/Metric/freshness.state/stateSince/basis/isRunTerminal与双域stamp按06，不造session/成本/连续性/跨库原子，旧v2缺省/时间仍兼容 |

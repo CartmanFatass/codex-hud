@@ -68,6 +68,10 @@ type CapabilityManifestV1 =
 
 （consult 5 增补，G01）headless 能力证据必须覆盖 04 的不可移组轻量 session/group leader、受保护输入单次提交/EOF 封口、用户环境与整组取消，以及 verified_wait/native_unknown 两支；无可信 native 结果不影响完整 scope 结束，已有精确来源断言仍保留。B3a-R1 替代验收前保留当前 Node helper，B6 helper 相关取消能力及 B14 headless 格不得升 verified；资源/故障证据按 06 G02，不能用原型 sh 的约 2 MiB 或旧 60s/file-fake 代替。
 
+（consult 6 增补，H01）H01 现明确 G01：唯一生产轻量执行器，核验系统 /usr/bin/env 的 -i/-S/--default-signal=INT,QUIT 及 /usr/bin/mkfifo 功能、实际版本、冷预检/启动成本并纳入能力证据；9.4 是受测而非通用最低版本。缺失/语义错误拒绝，Node 兼容后端退出生产选择/模块图；精确真实 wait 测试仍保留，默认 argv/managed shell 允许 native_unknown/nullable native/shell，但完整 R/Q 可正常 ended。B14 必须针对最终生产模块图/真实依赖，不将旧 Node fixture 当默认能力。
+
+（consult 6 增补，H06）visible 的 no-reuse 目标与 headless 一致，verify→数字 PGID 同步发送不是稳定交付证据。当前只接受取消意图并投影 visible_scope_control_unavailable/cancel.unconfirmed，零信号/单 PID/sendKeys/升级；安全拒绝 pass 不等于正向 visible cancel 格 verified。受信直接前台档案须真 TTY、PID=PGID=tpgid 和 pane shell 等待 hud-run 的固定拓扑，保 harness/TTY/context/独立 shell wait；A8 历史原型/早期阶梯不授生产权。正向能力补齐按 04 的 B3b-C/Pro 成本范围门槛，不把永久不可取消当完整 MVP。
+
 本批读取的证据如下，SHA-256 以前 12 位定位报告快照；它们是局部事实，不是托管产品格的 pass：
 
 | 编号 | 报告 / 快照 | 有界结论与缺口 |
@@ -123,6 +127,10 @@ host=none 只与 headless 配对。表中的组合项必须展开后独立留证
 | Claude | 继承 env 的直接 stdio 是 E-05-4 局部运输证据；resume 的 --resume 与 -p --resume 留 C 验收，仍走 01 当前来源门禁 |
 | pi | --session id/path 是续跑形态，--fork 不能填 resume 模板。指定 --session-id 可固定新 id，但不代替握手；产品 MCP 加载及 resume 留 C |
 
+（consult 6 增补，H04）档案预检对 headless 实际 GNU env command operand（argv[0]/managed shell executable path）含 `=` 明确返回 headless_executable_assignment_unsupported，在 supervisor 登记/票据消费/dispatch 前拒绝；不改路径、不自动转 shell/Node、不禁止普通参数或环境值中的 `=`。只准独立显式选择且已验证的原 shell 档案，不由该错误 fallback；受影响已承诺产品格的范围取舍上送 Pro。
+
+（NOTIFY 增补，A5）delegate.json version 保持 1（已知键加法，未知键继续拒绝）：顶层可选 `limits:{maxActiveRuns,maxActiveRunsPerOwner}`（默认6/4）和 `wake:{recoveryMs}`（默认30000ms）；profile 可选 `retire:{afterReportMs,reviewerAfterReportMs,idleMs,blockedWaitMs,maxRunMs}`，默认10min/2min/60min/60min/4h，maxRunMs 有限，按 04 冻结/验证资格及截止，配置不自证控制能力。owner 头部决定优先：waitCapMs override 不在 MVP，仍沿本文件原 effectiveWaitMs/120s 规则；不得照提案旧 A5 表加入该键。配置装载/校验和运行政策由后续实现包接线，本包仅冻结文本，不静默接收未实现字段。
+
 ### Codex 每轮配置 env 注入（Oracle C05）
 
 `mcpServerName` 来自已校验档案，必须精确定位用户配置中的 hud-mcp stdio 服务；不是固定字符串 hud，也不从工具前缀猜。按 TOML 键语法编码服务器名（含点/引号的名称必须安全编码或在预检明确拒绝），值用 TOML 字符串编码，再作为独立 argv 参数传递。以下只是合成 argv 的 JSON 表示：
@@ -143,6 +151,8 @@ host=none 只与 headless 配对。表中的组合项必须展开后独立留证
 RegistryProvider、HostAdapter、RunControl 按概念 §6.9–12 接入。核心只依赖接口；Herdr 实现仅在 HERDR_ENV=1 且 HUD_HERDR≠0 时装载，schema/CLI/socket 版本在集成层预检、缓存并限预算。无 Herdr 用空注册表、tmux 或 headless；headless 不在 Herdr 登记假 agent。共享 Herdr 缓存按 server 隔离、默认 3 s，不为每个消费者另起轮询进程。
 
 普通 surface 使用 SurfaceLocator，保留 Herdr 的 server/workspace/tab/pane 或 tmux 的 server/session/pane、实际可得的 ProcessStamp 及独立 occupantGeneration，不含受管 run 身份。受管路径仍使用原 HostLocator/RunHandle 的真实 runId/bindingGeneration；从 surface 组合受管 locator 时须另取实际 run 的上下文并重验关联，不能把 occupantGeneration 改名或复制成 bindingGeneration。两类 locator 都是定位与待核验快照，不是控制许可。LocatorCheck 保持 valid/stale/unknown、occupantMatches 和 foregroundInteractive；未知代次/实例不因 null==null 被判匹配，操作前必须取得足够的当前占用证据，不能确认则拒绝该控制。普通 session 的读取不因此被禁止。
+
+（consult 6 增补，H08）visibleHostContext(env) 只作进程内提示。正式跨重启受管定位由 HostAdapter 核验后接既有 runs.locator/HostLocator，只记录固定 run/绑定代次首次有效位置、同值幂等、冲突拒覆盖；未受管用 SurfaceLocator。process stamp/occupantGeneration/bindingGeneration 分别核验，环境全表不得持久化、不另造 visible.context；继承 ID、相同地址或缺 server 实例不能自动证明 occupant/控制权限，操作前仍 checkLocator。
 
 普通 session 可以使用经校验的宿主 focus/navigation 等已声明能力，但不能因 SessionBinding 或一个 pane locator 获得 delegate_report/resume/cancel 权限，也不能为调用 RunControl 伪造 runId。受管动作仍按01–04鉴权、校验槽与固定目标；观察 resolver 不建立 claim、childBinding、确定委派父边或新执行权。
 
@@ -191,12 +201,12 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 | 编号 | Gate | 输入 → 断言 |
 |---|---|---|
 | T-05-1 | A9 | 只有 CLI 成功/单跳 env/计划排期，缺版本或日志/接受记录 → 无 verified 格；矩阵默认 unverified；合法 v1 envelope/roles 或 managedShellVerified:true 仍不授 verified；未知版本/键、错类型、重复 name、文件>256 KiB 或 profiles>128 均拒绝（consult 4 增补，F03）；显式 callSource 但缺 Claude 版本/helper 修订/profile 指纹或双预算已接受证据，仍 unverified，历史 hook/skeleton/not_implemented 数值不补齐；新增断言在B重验，不追认A9已执行（F08 Pro 裁决增补）；（consult 5 增补，G04）补 manifest null revision 仅空 cells、错 envelope/cell HUD revision、未知版本/坏结构/重复完整键/矛盾证据、超256KiB或128cells、占位版本、任意环境/用户证据文件覆盖均不选 verified；动态 shell 目标不可证仍 unverified |
-| T-05-2 | B | 每个 Codex 产品格逐一验身份、输入落点、退出/槽与不重复提交；改 harness/profile/host 版本仅使受影响格未验证；保留原证据快照；显式 Claude 来源档案逐格绑定 Claude 版本/helper 修订/profile 指纹及06双预算证据，改其中任一项使受影响格退回unverified；真实Claude的spawn/resume须durable accepted、保留hooks/配置及精确claim/HUD_HOME、零重复提交，F06/F07反例通过；B14的≥1000次/组合与另行≥200次真实联合/≥10次启动/每声明路径≥20次及逐工具/结果分布齐全，缺格或只测快拒绝不授verified，B15仍须真实Claude→Codex闭环（F08 Pro 裁决增补）；（consult 5 增补，G04）补受信构建与完整 key/source/profile/executable/拓扑/versions 元组匹配；代码/helper/版本变更退格；五项 passed 但缺预算/accepted review/空 incomplete 不晋级，可信启动预检结果复用且 acceptance 不跑版本子进程；B14 test-only取证→评审→发布manifest，Claude父版本/双预算全覆盖，生产无注入参数；（consult 5 增补，G01）headless 晋级前验证轻量 leader 的 scope/封口/环境/取消及 native_unknown/verified_wait 正反例，资源/故障按 06 G02，替代未验不放行 |
-| T-05-3 | A9 | 空格、引号、换行、$()、分号参数与显式 shell 两组 → argv 字节不成为代码；双形态/空模板拒绝；shell 延迟/循环不授完整托管能力；roles 只接收 model:string/effort?:string 的有界数据，未知资源约束/模板键和不合格类型拒绝，不静默忽略、不执行角色映射（consult 4 增补，F03） |
+| T-05-2 | B | 每个 Codex 产品格逐一验身份、输入落点、退出/槽与不重复提交；改 harness/profile/host 版本仅使受影响格未验证；保留原证据快照；显式 Claude 来源档案逐格绑定 Claude 版本/helper 修订/profile 指纹及06双预算证据，改其中任一项使受影响格退回unverified；真实Claude的spawn/resume须durable accepted、保留hooks/配置及精确claim/HUD_HOME、零重复提交，F06/F07反例通过；B14的≥1000次/组合与另行≥200次真实联合/≥10次启动/每声明路径≥20次及逐工具/结果分布齐全，缺格或只测快拒绝不授verified，B15仍须真实Claude→Codex闭环（F08 Pro 裁决增补）；（consult 5 增补，G04）补受信构建与完整 key/source/profile/executable/拓扑/versions 元组匹配；代码/helper/版本变更退格；五项 passed 但缺预算/accepted review/空 incomplete 不晋级，可信启动预检结果复用且 acceptance 不跑版本子进程；B14 test-only取证→评审→发布manifest，Claude父版本/双预算全覆盖，生产无注入参数；（consult 5 增补，G01）headless 晋级前验证轻量 leader 的 scope/封口/环境/取消及 native_unknown/verified_wait 正反例，资源/故障按 06 G02，替代未验不放行；（consult 6 增补，H01）最终轻量生产模块图/env-mkfifo 功能与实际版本/冷预检成本留证，真实精确 wait fixture 不冒默认生产能力；（consult 6 增补，H06）visible 拒绝不晋级正向 cancel，直接前台 admission/真TTY/context独立验收 |
+| T-05-3 | A9 | 空格、引号、换行、$()、分号参数与显式 shell 两组 → argv 字节不成为代码；双形态/空模板拒绝；shell 延迟/循环不授完整托管能力；roles 只接收 model:string/effort?:string 的有界数据，未知资源约束/模板键和不合格类型拒绝，不静默忽略、不执行角色映射（consult 4 增补，F03）；（consult 6 增补，H04）headless command operand 含 = 的登记前拒绝/零ledger变化，非命令参数不误拒，无自动shell/Node fallback |
 | T-05-4 | A9 | 合成既有 command/args、多 env、其他服务器、安全/timeout 配置，含带点服务器名 → 只改四个 HUD 叶子；参数/TOML 正确；精确 claim/HUD_HOME 字节到探针 MCP，日志无明文 claim |
 | T-05-5 | B | TUI/exec 的 launch 与两个 resume 模板分别启 MCP → 每轮新 claim/同 HUD_HOME/同 source，其他配置保留；验证 01 握手，不把旧凭据带到新 run |
 | T-05-6 | B | 两 home 同 cwd、函数实际 home 与档案错配、完整 exec 包装链 → source 错配拒绝；仅实测同实例才认 harness 是直接子进程 |
-| T-05-7 | B | pane 数值复用/server 更换/未知 occupant/前台回 shell → 控制均拒绝，关系历史不变；新 occupant 不收到按键/焦点 |
+| T-05-7 | B | pane 数值复用/server 更换/未知 occupant/前台回 shell → 控制均拒绝，关系历史不变；新 occupant 不收到按键/焦点；（consult 6 增补，H08）首次核验 locator 同值重放/冲突不覆盖、缺server或占用仅诊断，HERDR_* 全表不入ledger |
 | T-05-8 | A9 | 假Host/Registry/RunControl、Herdr不可用/禁用仍核心可用，未提交才fallback；无ledger/MCP/PID/宿主的完整已知ref可bind/open，普通surface无runId/bindingGeneration/supervisor、SurfaceOptions.managed=null；null ref结果拒类型、歧义返回null，binding/occupant/source代次取不同合成值；managed与外层完整ref/实例/当前轮不符不升级关联，stale/unknown occupant无控制（含null不作匹配）；scripted fake不是A6/B真实核验证据 |
 | T-05-9 | B | dispatch 前预检失败与已发后超时/断连两组 → 前者可明确选择最终核心档案，后者仅原 run 对账；合成提交计数不增加 |
 | T-05-10 | A9 | fallback 改参数摘要、同 key 原 accepted 重放 → 遵守 I-02-1，不能以宿主切换修改原结果或再提交；按 02 T-02-2 核对解析后的实际 role/model/effort 及非秘密档案指纹进入摘要，缺角色映射不猜模型，等价键序不改变实际值（consult 4 增补，F03） |

@@ -1,7 +1,16 @@
 import type { JsonObject } from '../canonical.js';
 import type { Claim, ChildBinding, CallerId, ControlInitiator, OwnerKey, SessionRef } from './identity.js';
-import type { LedgerEvent, OrphanPolicy, ReconciliationCause, Run, RunMode, TerminalNote } from './execution.js';
+import type {
+  LedgerEvent,
+  OrphanPolicy,
+  ReconciliationCause,
+  Run,
+  RunMode,
+  TerminalNote,
+  Termination,
+} from './execution.js';
 import type { ObservationStamp, StatusProjection } from './observation.js';
+import type { VisibleScopeControlUnavailable } from './supervision.js';
 
 export type LinkState = 'pending' | 'claimed' | 'bound' | 'reported' | 'closed' | 'failed' | 'revoked' | 'handed_over';
 export interface Link {
@@ -85,6 +94,10 @@ export interface LifecycleStatus {
   currentRun: Run | null;
   /** Whitelisted terminal-event note for the returned run; never a reconciliation blocker. */
   terminalNote: TerminalNote;
+  /** NOTIFY A2/A7: additive terminal-event projection; absence is a legacy producer. */
+  termination?: Termination | null;
+  /** Consult 6 H06: missing delivery information never proves a signal was delivered. */
+  cancelControl?: VisibleScopeControlUnavailable;
   runHandshake: RunHandshake;
   latestReportForRun: Report | null;
   reconciliation: Reconciliation | null;
