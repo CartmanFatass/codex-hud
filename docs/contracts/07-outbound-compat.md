@@ -8,6 +8,8 @@
 
 [Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
 
+冻结后生效版本：`A9 + consult4-2026-11-01`。以下引用 [Oracle consult 4](../reviews/2026-11-01-astra-consult4.md) 的位置来源及 checkpoint 增补；此前裁决、export v1 词表和 ledger schema v1 保留。（consult 4 增补，F02）（consult 4 增补，F09）
+
 ## 数据模型
 
 ### 三个独立的范围
@@ -57,12 +59,14 @@ recipient 是已解析的具体目标身份：API 包含 backend/provider、规�
 | 版本域 | 本批基线 / 目标 | 兼容/未知版本处理 |
 |---|---|---|
 | public snapshot | [snapshot.ts](../../src/snapshot.ts) 当前 SNAPSHOT_VERSION=2；A6 起草加法 v3，E才切换新的默认出口并公告v2退役 | v2 facade 保留原格式；v3在独立出口/路径显式选择，不以同名v2文件写v3；未知主版本拒绝解码或标unavailable，不猜字段 |
-| checkpoint schema | 06 新 ReaderCheckpoint 的 schemaVersion 从候选1起；另记 readerVersion/sourceGeneration/leaseGeneration/commitSeq | parser语义变化须新reader版本/缓存失效，结构不兼容升schema；旧reader不覆盖较新checkpoint，至多只读旧摘要/明确缺失；受控重建也要采集租约和一致提交 |
+| checkpoint schema | 06 新 ReaderCheckpoint 的 schemaVersion 从候选1起；另记 readerVersion/sourceGeneration/leaseGeneration/commitSeq | parser语义变化须新reader版本/缓存失效，结构不兼容升schema；raw tail 禁止持久化，pendingBytes 兼容字段恒[]、offset/摘要/时钟只到完整记录边界。旧reader不覆盖较新checkpoint，至多只读旧摘要/明确缺失；受控重建也要采集租约和一致提交，旧 raw-tail 缓存不能只清数组仍沿旧 offset 继续（consult 4 增补，F09） |
 | ledger | 02 的 PRAGMA user_version=1 是A9待冻结的SQL schema；HUD只读 | 0由写者在受控初始化/迁移路径处理；已知版本正常，更高版本拒写，不回退JSON控制或自动降级；HUD未知版本不能执行迁移，可拒绝投影并给诊断 |
 | delegation export | B18 的 `hud-delegation-export` / schemaVersion=1，本地委派元数据协议 | 与ledger user_version、public snapshot/旧--json v2、checkpoint、scan独立；同主版本只加可选字段，破坏性变化升导出主版本；未知主版本/缺必需字段拒解码 |
 | SCAN_VERSION | [tree-scan-store.ts](../../src/collectors/tree-scan-store.ts) 当前3；A6因新增读取语义+1 | 内部可重建缓存，不是public snapshot版本。任何树扫描解释/提取字段变化都bump；版本不匹配忽略该缓存并预算内重建，不删用户state/日志/模型授权 |
 
 public v3 与内部 scan v3 恰好数字相同不表示兼容。版本检查先于读写；旧新进程不得争写同一格式/路径，checkpoint和summary即使有schema标签仍须06同一次提交。ledger的迁移仅在短事务检查版本，备份/文件准备在事务外；schema冲突不通过重新发外部动作解决。Jev jobs/browser存储和grant/close完整协议按Oracle C04延期，不为v3草案提前冻结不可达DDL。
+
+（consult 4 增补，F09）06 的 durable 语义变化必须递增受影响 readerVersion，含 A4 helper、A6 facade/底层 RolloutParser 和受影响的 Claude 锚点缓存；旧 raw-tail checkpoint 不直接续用、不只删除字节后保留旧 offset。最小处理为 collect lease 围栏内受控失效/重建该 source 缓存，显式重置连续性，并以同一 ObservationCommit 发布一致 checkpoint/summary/continuity/notices；含 raw tail 的旧缓存和未发布 bundle 在此受控缓存更新中删除/替换，不只标无效后永久保留原件。raw bytes 不得藏入其他 adapter extension、持久 token/parser state、日志、临时 bundle 或 binary/base64/V8 payload；普通 offset 回到最后完整记录边界，超大行仅存可跨 slice/重启前进的 discarding/丢弃游标，EOF 不完整行仍 partial/incomplete_tail。公共 checkpoint 结构若不兼容则另升 checkpoint schema，不能借 ledger schema v1 掩盖；ledger DDL/user_version 不变，不启动全库迁移服务，D2 完整迁移框架仍延期。
 
 v3 只有一份权威类型：`src/core/interfaces/snapshot-v3.ts` 的 `UniversalSnapshotV3`/`UniversalSnapshotNode`，`src/core/types/export.ts` 仅 re-export；A4/A6 共用同一 fixture。`rootRef:SessionRef|null`（未绑定根为 null），`tree.counts={confirmedSessions:number,delegationIntents:number,jobs:number}`，计数分别为已确认 session、未绑定 delegationIntent、未来 job。完整 node 在06 ObservationView上必有 `parent,links,candidates,host,actions`（parent/host可null，集合可空），不另起较窄节点形状。
 
@@ -99,6 +103,8 @@ MVP由B18提供按需只读 `hud link export --json --schema-version 1 [--paths 
 - launch 指冻结启动输入的规范目录；registry/transcript/supervisor 指启动快照实际采用的对应可信位置来源，仍保留原 cwdAsOf。命中缓存保留其原来源，不把 cache 当新来源。它们不允许在导出时取当前位置覆盖历史。`observed-time` 是时间口径标记，不能单独当位置来源；report/job 不进入本次启动快照来源表。
 
 上述字段为对应 Code 类型或 null，键均必需；workspaceSnapshot=null 时不要求其内部键。内部 WorkspaceProvenance.cwdSource 保留现有 string 类型，本条只规定 export v1 的 nullable 边界。白名单值逐字、区分大小写匹配，不从自由文本截取、猜测或拼接协议代码；不认识的字符串输出 null，绝不复制原文，不能因它看起来像路径或含某个代码而放行。null 统一表示“此出口没有可提供的已知协议代码”，既可能无适用原因，也可能内部原因不可公开/无法映射；它不证明成功、已绑定或来源可信。明确的 unknown 代码与 null 不强行互换。
+
+（consult 4 增补，F02）SessionEvidence.cwdSource 新增的 transcript 是 reader 的位置来源类别；当启动快照实际采用该位置证据时，明确映射为本表已有 transcript 代码，不新增出口代码。`claude.transcript.cwd` 等内部诊断字符串不直接复制或猜测映射；其他内部来源仍须各自明确映射，无法映射为 null。位置来源不授身份、不触发 Git、不覆盖冻结 launch_cwd，不把物理 callers.cwd 当会话位置。
 
 serializer 和 decoder 使用同一组按字段词表。decoder 对必需键缺失或非 string/null 拒绝；未知字符串正规化为 null，保留其他独立状态/冲突事实。paths 模式只控制指定路径字段，不改变上述 null 语义。v1 词表和既有值的含义冻结；不要借新增内部诊断代码悄悄扩展出口。若将来另版扩词，旧 decoder 的 null 退化必须仍然安全。
 
@@ -154,12 +160,12 @@ SnapshotWriter继续原子写0600、仅事实变化且最多1次/s；成功读/�
 | I-07-2 | 新来源及delegated正文默认不取料/不外发；父/旧Codex授权不扩展，私有/未知类型永不成为材料 | T-07-2、4 |
 | I-07-3 | 所有生成/repair/cache均经B17唯一入口；provenance取并集、队列发送与缓存回写复验，不从派生摘要洗来源 | T-07-5、6、7 |
 | I-07-4 | 授权具体实际recipient；off零网络、scope/开关/预算独立；旧brief开关不能覆盖其他目的 | T-07-3、8、9 |
-| I-07-5 | public/checkpoint/ledger/scan/delegation-export五版本独立；未知版本不盲写/自动降级；HUD不迁移ledger | T-07-10、11、26 |
+| I-07-5 | public/checkpoint/ledger/scan/delegation-export五版本独立；未知版本不盲写/自动降级；HUD不迁移ledger；raw-tail durable 语义变更须 bump readerVersion，旧缓存按06受控重建/连续性重置并删除或替换旧 raw-tail 缓存/未发布 bundle，不仅清数组沿旧offset（consult 4 增补，F09） | T-07-10、11、26 |
 | I-07-6 | v3加法与v2出口隔离，旧字段/类型/缺失/时间/计数语义不变；新投影ms epoch | T-07-12、13 |
 | I-07-7 | 旧命令参数、session+home选择、--json只读及错误/退出行为保留 | T-07-14、15 |
 | I-07-8 | A–D旧状态可读不自动迁；E按source分别迁设置/材料/外发/预算，不合并授权或改用户harness设置 | T-07-16、17 |
 | I-07-9 | export v1单次只读一致ledger快照、ledgerId命名空间、逐run/端点空值/稳定排序及完整scope独立于HUD显示截断，不公开内部表或冒充CDC | T-07-20、21、24、25 |
-| I-07-10 | 本地导出仅元数据白名单与显式路径；binding/handshake/Git原因/cwd来源分别用四张封闭代码表，键必需、值Code或null、未知字符串→null、缺键或非string/null拒解码；内外类型分离，不授B17外发权 | T-07-22、26 |
+| I-07-10 | 本地导出仅元数据白名单与显式路径；binding/handshake/Git原因/cwd来源分别用四张封闭代码表，键必需、值Code或null、未知字符串→null、缺键或非string/null拒解码；内外类型分离，不授B17外发权；SessionEvidence 的 transcript 显式映射既有 transcript 位置代码，内部自由诊断不猜测/扩词表、不授身份或覆盖启动历史（consult 4 增补，F02） | T-07-22、26 |
 | I-07-11 | 每run必有固定operation，缺失/非法拒解码；完整ref join、当前确认边与原始spawn启动历史分开，currentOwner/predecessor不证明整会话起源或用量归属；未确认/冲突/历史/declared/coverage不升级强度，resume/handover不迁旧用量 | T-07-20、23、24、26 |
 | I-07-12 | v3消费06联合身份/独立成本Metric/语义时钟与终态/双域快照戳，未知不改v2兼容例外，C holder只留派生槽 | T-07-27 |
 
@@ -206,8 +212,8 @@ E的显式迁移为 `inspect → preview per-source mapping → write new privat
 | T-07-7 | B | 入队后撤销、改recipient/env route、迟回/重试 → 发送前/写缓存前复验，不向新目标发旧材料、不换服务绕过deny |
 | T-07-8 | B | API实际endpoint/base path/账号切换、agy档案指向远端、未知CLI目标 → 精确recipient授权或拒绝，密钥不成为许可，redirect继续拒绝 |
 | T-07-9 | B | backend off、paused、briefAgents off但progress/jobs开、Cards preset/reset、explicit probe → off零调用；其他开关各按目的门禁，显示设置不增权限，paused probe只合成 |
-| T-07-10 | A9 | snapshot2/3、scan3/后继、checkpoint未知版本、ledger0/1/更高版本 → 各版本域独立，未知不盲写、不JSON回退，HUD无迁移权限 |
-| T-07-11 | B | 变更scan提取语义与checkpoint parser版本、旧新writer共存 → bump/隔离路径，旧缓存不误用，较新checkpoint不覆写，06一致提交仍有效 |
+| T-07-10 | A9 | snapshot2/3、scan3/后继、checkpoint未知版本、ledger0/1/更高版本 → 各版本域独立，未知不盲写、不JSON回退，HUD无迁移权限；raw-tail 旧 checkpoint 即使 schemaVersion 已知也不得直接续用/仅清数组沿旧offset，readerVersion 失配由持采集租约入口受控重建而非 ledger 迁移（consult 4 增补，F09） |
+| T-07-11 | B | 变更scan提取语义与checkpoint parser版本、旧新writer共存 → bump/隔离路径，旧缓存不误用，较新checkpoint不覆写，06一致提交仍有效；对 raw-tail durable 语义递增 readerVersion、明确连续性重置，collect lease 围栏内删除/替换含 raw tail 的旧缓存及未发布 bundle，不永久保留原件；A4/A6/RolloutParser/B8 序列化均无敏感哨兵或嵌套原始尾字节，offset/摘要/时钟同完整边界，结构不兼容另升 checkpoint schema、ledger v1 不变（consult 4 增补，F09） |
 | T-07-12 | B | Codex既有synthetic snapshot fixture逐字段比较，含subtasks/reviews/node kind/空数组/缺值/token兼容零/nullable数据/完整bridgeHealth → v2值、枚举、布尔与number类型、语义不变，v3扩展独立 |
 | T-07-13 | B | v3 universal使用ms epoch；旧updatedAt/approvalSince/速率样本/health的ISO字符串与bridgeHealth.lastSuccessAtMs=1700000000000的number并存；另panel空segments、bar→panel原子交接 → 逐字段保留类型/单位，旧writer不删新文件、时钟不强制写 |
 | T-07-14 | B | 旧help/self-check/list/kill、attach/new-session/--透传、裸brief与dry-run[FILE] → 原参数/副作用与退出语义保留，dry-run无模型调用且不冒称全目的预览 |
@@ -218,7 +224,7 @@ E的显式迁移为 `inspect → preview per-source mapping → write new privat
 | T-07-19 | v1.1 | F远程routing建议与auto fixture → routing目标未授权时零请求；有建议许可仍无auto执行权，原Codex摘要许可不补齐 |
 | T-07-20 | A9 | 合成golden覆盖完整envelope/必需operation、双source/threadId/null端点时间、逐run稳定排序；首spawn/同link两次resume/handover首轮及其后resume、失败未绑定spawn → 精确枚举与ledger键，scope/coverage/paths完整，不受200显示节点限制 |
 | T-07-21 | A9 | 读快照期间并发新run/回填、高水位增长、无库/未知schema/权限拒绝 → rows+asOfSeq同ledger快照，明确失败而非成功空全集，零初始化/迁移/Git/采集/reconcile |
-| T-07-22 | A9 | 隐私哨兵与paths两模式保留；四张代码表逐允许值（含claim_*、stale_binding、timeout/not_git）、跨字段误用/大小写/free-text→null，显式null保留、不截取拼接；只local含launchCwd/worktreeRoot，其余路径/正文始终不出，无B17许可借用 |
+| T-07-22 | A9 | 隐私哨兵与paths两模式保留；四张代码表逐允许值（含claim_*、stale_binding、timeout/not_git）、跨字段误用/大小写/free-text→null，显式null保留、不截取拼接；只local含launchCwd/worktreeRoot，其余路径/正文始终不出，无B17许可借用；合格 SessionEvidence transcript 位置明确映射既有 transcript，不从 claude.transcript.cwd 自由文本猜代码，未知映射 null、不增加词表值（consult 4 增补，F02） |
 | T-07-23 | A9 | 同sessionId双home、Claude原生agentId、缺SourceId、同cwd/pane/mtime → 只完整ref精确join，不猜home/root；coverage无记录不否定其他委派来源 |
 | T-07-24 | A9 | spawn转历史、同link两次resume、handover新link及后续resume、仅导出后继link、失败未绑定spawn → operation直接保留且前驱引用不补猜祖先；当前确认父边独立新轮pending，旧spawn不成第二边；历史claim正常撤销不抹已确认启动，pending/null/non_execution不伪造起源；不按逐run时间虚拆日成本或搬旧用量 |
 | T-07-25 | A9 | 10000/10001条、16MiB边界/超限、1000ms软预算超限、缩小link范围/组装失败 → 边界内可成功，超限明确失败且无成功截断全集；完整JSON备妥才输出，consumer成功且coverage完整才替换范围缓存，真实读事务寿命另记（B18实测） |

@@ -10,6 +10,8 @@
 
 [Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
 
+冻结后生效版本：`A9 + consult4-2026-11-01`。配置形状增补依据 [Oracle consult 4 F03](../reviews/2026-11-01-astra-consult4.md#f03冻结最小配置-envelope)；此前裁决与能力格的独立验收要求保留，不改 ledger schema v1。（consult 4 增补，F03）
+
 ## 数据模型
 
 ### 会话观测绑定与受管绑定
@@ -83,6 +85,10 @@ host=none 只与 headless 配对。表中的组合项必须展开后独立留证
 
 档案最少包含 `name,harness,source{root,label},launch,headless,resume,resumeHeadless,host,env,mcpServerName,claimTransport,clientToolTimeoutMs,responseMarginMs,orphan_policy`；命令模板各自是 `{argv: string[]}` 或 `{shell: string, shellPath: absolute}`，只能选一种。缺所需模板或有效 source 就拒绝，不猜 executable/home。档案、已解析命令形态及非秘密配置指纹进入 02 的参数摘要；明文 claim 不进入指纹输入日志或公开导出。
 
+（consult 4 增补，F03）delegate.json v1 顶层固定为 `{version:1,profiles:LaunchProfile[]}`，profile.name 唯一；未知版本、未知键及不合格类型拒绝。文件上限 256 KiB、最多 128 个 profile，其他字段也按共享校验器有界验证。每 profile 可选 `roles:Record<string,{model:string,effort?:string}>`；role/model/effort 解析后的实际值和非秘密档案指纹进入 02 参数摘要。角色映射仅为数据，不是可执行模板或额外调度器；缺映射只允许既有明确配置或本次请求给出的值，不按角色名称猜模型。资源约束不在本期格式，不静默接收后忽略。
+
+（consult 4 增补，F03）`DelegateConfig`、LaunchProfile 与角色映射的唯一权威类型位于 `src/core/types/capabilities.ts`，B1 的有界严格校验器及 B4/B11/B13 引用它。`callSource:{kind:'claude_pre_tool_use_v1'}` 是本轮批准的唯一附加可选键，仅对 Claude 合法，机制/能力门禁按 consult 4 F06（B1b）；未设置的既有配置仍可解析，配置本身不授 Claude 授权或任何 verified 能力。即使配置含 managedShellVerified:true，也只是提示，B4 仍核验版本、完整档案与已接受证据。
+
 准备阶段解析本轮实际启动的规范绝对 cwd 与请求显式 originRepoId，随02意图逐run冻结为 launch_cwd/project_origin；resume不按后来CLI目录重算。Git元数据只读有效缓存，冷缺失由已有启动/采集流程依06每代≤2子进程/200ms软预算取得，不入写事务/MCP accepted热路径/paint；未知不挡正常委派。后端包装改变实际cwd时提供06带来源的observed workspace，不覆盖历史启动快照（T-05-17）。
 
 控制边界引用03/04：MVP HUD仅显示/复制类型化ActionDescriptor，Open/focus只按interaction/occupant能力。复制resume须有已实现/已验证的01 local_user入口、明确HUD_HOME及request-key/expected-run/mode，按02重放/03全门禁；未来直接调用需单独能力与显式确认/固定目标/执行时重验，不由宿主能spawn推定支持（T-05-18）。
@@ -128,8 +134,8 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 
 | 编号 | 断言 | 测试 |
 |---|---|---|
-| I-05-1 | 支持声明绑定完整能力键、版本、档案和已接受证据；未测格始终 unverified，未声明能力不猜 | T-05-1、2 |
-| I-05-2 | argv/shell 互斥，source 显式且核验；逐run启动位置冻结，Git不进热路径；shell 单次前台启动形态经验证，不能把任意文本升级为受管能力 | T-05-3、6、17 |
+| I-05-1 | 支持声明绑定完整能力键、版本、档案和已接受证据；未测格始终 unverified，未声明能力不猜；delegate.json 解析成功、callSource 选择或 managedShellVerified:true 都不自证能力，仍按完整版本/档案/已接受证据验收（consult 4 增补，F03） | T-05-1、2 |
+| I-05-2 | argv/shell 互斥，source 显式且核验；逐run启动位置冻结，Git不进热路径；shell 单次前台启动形态经验证，不能把任意文本升级为受管能力；v1 envelope/严格键/类型/唯一名称/文件及 profile 上限必须校验，可选 roles 仅数据，实际 model/effort 入 02 digest，缺映射不猜，资源约束键拒绝（consult 4 增补，F03） | T-05-3、6、17 |
 | I-05-3 | Codex 按服务器名仅注入四个 HUD 叶子键，保留其余配置；HUD_HOME 到 MCP、resume 新 claim，运输不等于身份 | T-05-4、5 |
 | I-05-4 | 观测SessionBinding非null必有完整ref，无可靠唯一选择返回null；普通SurfaceLocator用独立nullable occupantGeneration，无假run/受管代次；managed仅真实相符当前run，ref/实例不符不升级关联；控制前校验实例/occupant，未知拒绝但可有预算读取，管理copy-only与权限仍依01–04 | T-05-7、8、18 |
 | I-05-5 | 只有预检证明命令从未提交才可选 fallback；任何 dispatch 已发/结果未知都交 02 对账，不再启动 | T-05-9、10 |
@@ -162,16 +168,16 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 
 | 编号 | Gate | 输入 → 断言 |
 |---|---|---|
-| T-05-1 | A9 | 只有 CLI 成功/单跳 env/计划排期，缺版本或日志/接受记录 → 无 verified 格；矩阵默认 unverified |
+| T-05-1 | A9 | 只有 CLI 成功/单跳 env/计划排期，缺版本或日志/接受记录 → 无 verified 格；矩阵默认 unverified；合法 v1 envelope/roles 或 managedShellVerified:true 仍不授 verified；未知版本/键、错类型、重复 name、文件>256 KiB 或 profiles>128 均拒绝（consult 4 增补，F03） |
 | T-05-2 | B | 每个 Codex 产品格逐一验身份、输入落点、退出/槽与不重复提交；改 harness/profile/host 版本仅使受影响格未验证；保留原证据快照 |
-| T-05-3 | A9 | 空格、引号、换行、$()、分号参数与显式 shell 两组 → argv 字节不成为代码；双形态/空模板拒绝；shell 延迟/循环不授完整托管能力 |
+| T-05-3 | A9 | 空格、引号、换行、$()、分号参数与显式 shell 两组 → argv 字节不成为代码；双形态/空模板拒绝；shell 延迟/循环不授完整托管能力；roles 只接收 model:string/effort?:string 的有界数据，未知资源约束/模板键和不合格类型拒绝，不静默忽略、不执行角色映射（consult 4 增补，F03） |
 | T-05-4 | A9 | 合成既有 command/args、多 env、其他服务器、安全/timeout 配置，含带点服务器名 → 只改四个 HUD 叶子；参数/TOML 正确；精确 claim/HUD_HOME 字节到探针 MCP，日志无明文 claim |
 | T-05-5 | B | TUI/exec 的 launch 与两个 resume 模板分别启 MCP → 每轮新 claim/同 HUD_HOME/同 source，其他配置保留；验证 01 握手，不把旧凭据带到新 run |
 | T-05-6 | B | 两 home 同 cwd、函数实际 home 与档案错配、完整 exec 包装链 → source 错配拒绝；仅实测同实例才认 harness 是直接子进程 |
 | T-05-7 | B | pane 数值复用/server 更换/未知 occupant/前台回 shell → 控制均拒绝，关系历史不变；新 occupant 不收到按键/焦点 |
 | T-05-8 | A9 | 假Host/Registry/RunControl、Herdr不可用/禁用仍核心可用，未提交才fallback；无ledger/MCP/PID/宿主的完整已知ref可bind/open，普通surface无runId/bindingGeneration/supervisor、SurfaceOptions.managed=null；null ref结果拒类型、歧义返回null，binding/occupant/source代次取不同合成值；managed与外层完整ref/实例/当前轮不符不升级关联，stale/unknown occupant无控制（含null不作匹配）；scripted fake不是A6/B真实核验证据 |
 | T-05-9 | B | dispatch 前预检失败与已发后超时/断连两组 → 前者可明确选择最终核心档案，后者仅原 run 对账；合成提交计数不增加 |
-| T-05-10 | A9 | fallback 改参数摘要、同 key 原 accepted 重放 → 遵守 I-02-1，不能以宿主切换修改原结果或再提交 |
+| T-05-10 | A9 | fallback 改参数摘要、同 key 原 accepted 重放 → 遵守 I-02-1，不能以宿主切换修改原结果或再提交；按 02 T-02-2 核对解析后的实际 role/model/effort 及非秘密档案指纹进入摘要，缺角色映射不猜模型，等价键序不改变实际值（consult 4 增补，F03） |
 | T-05-11 | A9 | 复用已于8fdf4cf接受的A8-fixB2关键证据与supervisor-death反例 → 同agent/session、实际context命令、父launcher退出后TTY输入/收尾及前台形态边界明确；后台负对照/原生结果未知/监督中断保留，乙managed拒绝；不据此声称工程WP B2或B生产能力已过 |
 | T-05-12 | B | 真 TTY 下父 MCP/launcher 退出且 continue → 子同一实例仍前台可输入、正常结束可收尾；另 supervisor 死亡按 04 故障分支处理 |
 | T-05-13 | A9 | 请求120000、客户端60000、余量2000；再缺 timeout/预算不足 → 最多58000或立即返回，同 run/正确 nextSeq，无 ledger 写；计时含响应余量 |

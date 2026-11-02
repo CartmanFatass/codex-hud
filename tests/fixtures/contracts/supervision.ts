@@ -14,6 +14,7 @@ import { codexHudOverrides, injectCodexHudEnv } from '../../../src/core/capabili
 import {
   initialParserState,
   readJsonlBytes,
+  JSONL_READER_VERSION,
   runExecutionProjection,
   selectCurrentObservation,
   workspaceDiscoveryPlan,
@@ -497,7 +498,7 @@ export const supervisionCases: Record<string, () => void> = {
     const parsed = readJsonlBytes({
       checkpoint: {
         schemaVersion: 1,
-        readerVersion: 'synthetic-reader-v1',
+        readerVersion: JSONL_READER_VERSION,
         ref: { harness: 'codex', sourceId: SOURCE, sessionId: 'synthetic-session-a', threadId: null },
         fileId: { dev: 1, inode: 2 },
         offset: 0,
@@ -507,9 +508,10 @@ export const supervisionCases: Record<string, () => void> = {
       bytes: appended,
       knownEndOffset: appended.byteLength,
     });
-    assert.equal(parsed.checkpoint.offset, appended.byteLength);
+    assert.equal(parsed.checkpoint.offset, first.byteLength);
     assert.deepEqual(parsed.records, [{ type: 'message', byteEnd: first.byteLength }]);
-    assert.deepEqual(parsed.checkpoint.parserState.pendingBytes, [...second]);
+    assert.deepEqual(parsed.checkpoint.parserState.pendingBytes, []);
+    assert.equal(parsed.nextReadOffset, appended.byteLength);
     assert.deepEqual(appended.subarray(first.byteLength), second);
     assert.notEqual(first.toString('utf8').length, first.byteLength);
     const value = receipt();

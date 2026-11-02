@@ -32,6 +32,8 @@ export interface ReaderResult {
   evidence?: SessionEvidence;
   /** Actual read/assembly work; elapsedMs is measured, the time budget is soft. */
   stats?: { bytesRead: number; recordsRead: number; elapsedMs: number };
+  /** Recovery needs a full record plus this reader's required delimiter/signature I/O. */
+  continuation?: { kind: 'record_needs_larger_slice'; minimumBytes: number };
 }
 
 export interface SessionReader {

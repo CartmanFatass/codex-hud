@@ -14,6 +14,8 @@
 
 [Oracle consult 2](../reviews/2026-11-01-astra-consult2.md) D01–D13 补齐字段、控制主体与读取边界；本轮仍是 A4/A9 候选契约，不代表 A9 放行或 B 生产能力已验证。
 
+冻结后生效版本：`A9 + consult4-2026-11-01`。下文标记的增补以 [Oracle consult 4](../reviews/2026-11-01-astra-consult4.md) 为准，保留此前 C/D/E 与 A9-fix 裁决；不改 ledger schema v1，也不追认未验收的生产能力。（consult 4 增补，F01）（consult 4 增补，F04）（consult 4 增补，F05）（consult 4 增补，F07）（consult 4 增补，F09）（consult 4 增补，F11）
+
 ## 数据模型
 
 ### 身份、实例与定位
@@ -23,11 +25,13 @@
 | `SourceId` | 固定顺序 JSON 数组 `[harness, realpath(配置/存储根)]` 的 UTF-8 SHA-256 小写十六进制；`sources` 同时保存 harness、绝对根路径和显示 label。根无法解析时拒绝建立授权身份 | cwd、账号显示名、相对路径 |
 | `SessionRef` | `(harness, source_id, session_id, thread_id?)`；SQL 编码为 `json_array(harness, source_id, session_id, nullif(thread_id, ''))`。cc 根 `thread_id=''`，原生子为 `agentId`；Codex 每个线程使用自己的 `session_id` | transcript 路径、pane、PID、tmux session 名 |
 | `ProcessKey` | 专属 stdio 的 harness `(harness, source_id, pid_domain, harness_pid, harness_proc_start)` 固定顺序 JSON 数组；pid_domain 必含机器 boot_id 与 PID namespace 身份，与 04 ProcessStamp 对齐；harness_pid 是经核验启动链上的真实 harness。不能取共享 daemon 冒充 TUI | 仅 PID、进程名字、继承的 pane env |
-| `CallerId` | 每个物理 MCP 实例新生成的 opaque id；仅记录 MCP 的 pid/proc_start、实际父进程 ppid/parent_proc_start、harness/source 提示、cwd、env_pane、时间。共享实例仍只有一个 CallerId，实际父进程可以是 daemon | CallerId、物理父进程及提示字段本身不授予会话身份 |
+| `CallerId` | 每个物理 MCP 实例新生成的 opaque id；仅记录 MCP 的 pid/proc_start、实际父进程 ppid/parent_proc_start、harness/source 提示、登记瞬间物理 MCP 自己的真实绝对 cwd、env_pane、时间。cwd 无法取得时拒绝登记并返回 cwd_unavailable，不填 HUD_HOME、父进程目录或空字符串。共享实例仍只有一个 CallerId，实际父进程可以是 daemon（consult 4 增补，F04） | CallerId、物理父进程及提示字段本身不授予会话身份 |
 | `caller_contexts` | 物理 CallerId 下的隔离调用上下文，`(context_id,generation)` 保留历史，含 context_key、kind、SessionRef、证据与关闭时刻。MVP dedicated 恰好一个当前 stdio context，连接到 ProcessKey/proc_generation；shared 仅保留类型/表的扩展位置，MVP 不建立可操作 shared context | claim、prompt、自报 session 参数不能选择或创建 shared context |
 | `caller_scopes` | 专属 stdio 的 `(process_key, generation)`；同一 ProcessKey 只有一行未关闭。保存本代已证实 ref/证据；dedicated context 的 generation=proc_generation，MCP 重启复用尚未关闭的同一代。shared context 不使用此表或 proc alias | 新 MCP PID 不能触发专属会话换代 |
 | `RunBinding` | 某次运行的会话、启动实例与宿主 occupant；在 schema 中由 `runs`、`child_bindings` 和 evidence 组合表示。Herdr locator 带 server/workspace/tab/pane，tmux locator 带 server 实例/session/pane | HUD 自己的 pane 不是被观察 pane |
 | `OwnerKey` | 从本次调用选定的当前 context 派生：已证实会话为 `json_array('session', session_ref)`；仅未绑定 dedicated 可用 `json_array('proc', process_key, generation)`。shared 不取得 MVP 操作权限。已绑定 SessionRef 跨 MCP 重启和同会话 resume 保持逻辑所有者 | 不把 caller_id/context_id 放进幂等键，不另建可随意赋值的所有者身份 |
+
+（consult 4 增补，F04）`callers.cwd` 仅是物理 MCP 的诊断提示，不是 harness/session 的工作目录、SourceId 或调用权限证据；A4 `Caller.cwd:string` 和 02 的 `callers.cwd TEXT NOT NULL` 保持不变。会话 SessionEvidence/WorkspaceContext 的 cwd 无证据时仍为 null，不得用 callers.cwd 自动补空。06 禁止填 HUD 自己 cwd 的约束针对会话 workspace。
 
 工作位置按 [06「WorkspaceContext 与项目归属」](./06-observation.md#workspacecontext-与项目归属)定义：`cwd`、`worktreeRoot`、显示名 `worktree`、本机 `repoId` 与显式 `projectOrigin` 均不授予身份。repoId 不参与 SourceId/SessionRef/OwnerKey 判等；同仓库的两个 harness home 仍是不同 source。cwd 未知为 null，不能填 HUD 目录；同名、父子关系、相同 remote 或普通目录副本均不能证明同项目/同工作树。外部消费者必须按 harness + 规范存储根重建 SourceId，以完整 SessionRef join；Claude agentId 进入 threadId，缺 source 不能猜 home。
 
@@ -35,9 +39,21 @@
 
 专属 context_key 固定 stdio。物理连接不等于唯一逻辑来源：原生 subagent、同进程换会话也可能复用 MCP。每次调用先验证当前逻辑来源，再选择 context；缺失、冲突、原生子来源不可辨时返回 identity_source_missing/identity_unverified，不沿用上次 root，不回退 proc OwnerKey，不查幂等或执行工具。cc 的根 env/sessions 文件单独不足以区分原生子；支持档案须提供经验证的根调用隔离，或把本次可信 toolUseId 精确关联到当前根公开调用记录；关联缺失/落入子 agentId 即拒绝根授权。此拒绝规则也覆盖持有根 claim 的子调用。
 
-MVP dedicated 根连接收到可辨的原生 thread/agentId 子调用也只拒绝该调用，不选择根 context，不将其当根会话切换而递增代次；根的后续调用仍须逐次核验当前来源。原生子与真正的根会话切换必须能区分，否则该路径无委派授权。
+（consult 4 增补，F07）原生子调用只拒绝本调用，不建立或选择 root context，不兑换根 claim，不关闭根 scope/context/alias，不触发根 generation 变化；根后续调用仍须逐次验证。原生子与可信根来源变化必须能区分，否则拒绝授权。选定本调用来源所依据的 scope generation、证据版本、context 及目标 run/binding 前提，在查询幂等或写入时仍须匹配；过时前提返回 stale_context/identity_unverified，不能重贴新代次。
 
-可信当前来源证实切换会话/occupant 时，reconciler 关闭旧 context/scope/alias，撤销旧授权，generation+1；PID/start/boot 改变则建新 ProcessKey。MCP 重启产生新 CallerId/context，但须证明同一真实 harness、当前 SessionRef 与未关闭代次，OwnerKey 才连续。不能只靠进程 ancestry/env 声称调用来自根。
+（consult 4 增补，F07）只有可信根来源变化才由同一 reconciler 事务关闭旧 scope/context/alias、撤销旧授权并 generation+1；PID/start/boot 改变则建新 ProcessKey。MCP 重启或同源同根两个 MCP 的 CallerId/context 可以不同，但逻辑 OwnerKey 与未关闭 process generation 相同，必须经 B2 共享事务连接/重建，不能各自建立“当前根”或重复兑换。并发首次建代 CAS 失败可拒绝并要求重新取证的新调用，不凭旧证据盲重试。B1 的 currentRef/invalidated 仅是实例内诊断，不是跨实例代次权威，也不能让合法 /clear 后的新根永久不可用。MCP 重启仍须证明同一真实 harness、当前 SessionRef 与未关闭代次；不能只靠进程 ancestry/env 声称调用来自根。
+
+（consult 4 增补，F07）以下规则由 B2/B5 落实事务，B4 接受/票据流程沿用 02；外部取证在写事务外，锁内只重验已捕获前提，不搬入文件或 /proc I/O：
+
+| 情形 | 必须行为（consult 4 增补，F07） |
+|---|---|
+| Claude 根/原生子共享一个 MCP | 按本次合格 hook 的原生 agent 来源区分；子携根 sessionId、transcript_path、env/claim 仍非根。无版本保证、字段矛盾或 agent_id 未读到均不能推定根，拒绝仅影响本调用。（consult 4 增补，F07） |
+| Claude /clear 保持 PID/start/MCP | 新根的合格 hook 与当前 sessions 记录匹配后，以捕获的旧代次为 CAS 前提换代；已进入的旧 spawn/report 提交失败，过时 receipt 不得倒切旧会话。缺当前 registry 或矛盾即拒绝，不轮询等待。（consult 4 增补，F07） |
+| 同源同根两个 MCP / MCP 重启 | 共享 B2 的 scope/current-context 事务，同 OwnerKey/未关闭 process generation；CallerId 不同不另建根，不重复兑换，CAS 失败要求新调用。（consult 4 增补，F07） |
+| 新旧会话 MCP 同时绑定 | 新会话换代已提交后，旧实例所选上下文/旧记录不可复活；物理 MCP 较晚启动不构成换代。合法旧代已 durable accepted 的操作保留原意图，按原票据登记/提交重验，不抹掉接受事实或起副本。（consult 4 增补，F07） |
+| Codex 原生子另起 MCP | 0.166.0 子调用 sessionId 仍为 root，而 threadId/turn.thread_id 指向 child，存在 parent_thread_id/subagent 来源时必须拒绝；单独 MCP 或相同 harness PID 不例外。不得用 rootThreadOf 视图投影授权，根后续调用仍可逐次核验。（consult 4 增补，F07） |
+
+（consult 4 增补，F07）Codex 根正向路径继续要求 genuine metadata 各字段一致、root thread/source 条件、精确 rollout header、实际 source/进程实例及受支持版本；不外推任意版本、daemon/shared 或每线程正向调度。
 
 ### OwnerKey / 授权边界：本地管理 resume
 
@@ -48,6 +64,8 @@ MVP dedicated 根连接收到可辨的原生 thread/agentId 子调用也只拒�
 CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02，全部 resume 门禁归03，受信管理入口归04。读取能力注明主体：MCP status 按父 owner，本地 HUD 按 local_user；两者共用门禁函数，`resumable`/`allowedActions` 仅提示，不能当授权凭据（T-01-38、39）。
 
 
+（consult 4 增补，F05）本地 cancel/reconcile 使用 [04「取消与父断连」「写者与RunHandle」](./04-supervision.md#取消与父断连) 的独立 LocalManager/authorizeManager 门禁；实际 UID、私有 HUD_HOME/ledger 及所有权由本地入口和真实 writer 校验。它针对固定 runId，未绑定 run 也可管理，不要求已确认 parent_ref，不代表 OwnerKey、不转移 parent/child/owner，不授 spawn/resume/report/predecessor 权限。authorizeControl 的 local_user 仍仅允许上述 resume；两入口可共用 OS/私有路径核验，不能把 cancel/reconcile 加进 resume 分支或让 MCP 参数选择管理主体。
+
 ### claim 与证据
 
 `claims` 每个 run 一行：随机至少 256 bit 的 claim 经本轮启动配置/env 运输；仅运输 fallback 才在本轮消息中传入；账本只存 SHA-256 `claim_hash`。`issued_at` 起 TTL 为 30 分钟，`now >= expires_at` 拒绝首次兑换。它绑定 `run_id`、预期 source、`expected_generation`（目标绑定代次）、启动实例的完整 `ProcessStamp={pid,proc_start,boot_id,pid_domain}`（04），以及本轮 `launch_call_id / launch_correlation_id`；原生 `launch_message_id` 可为空并在精确证据到达后后填。启动实例尚未登记时为 `issued`，不能兑换；hud-run 取得 02 的执行权并登记实例后才变为 `armed`，再交给子进程。登记、arm claim、首心跳与不可变 `supervisor.registered` 事件同事务；完整 stamp 由该事件的白名单 payload 持久保存，runs/claims 的 pid/start 仅为一致性校验投影。恢复及 claim 核验以该事件为权威，缺失/不完整/矛盾保持 unknown，不能从当前 boot/PID 域或较晚 meta 补历史实例（04 T-04-42、43）。
@@ -55,6 +73,8 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 兑换主体是 `(caller_context, context_generation, child SessionRef 如已知, run_id, binding_generation)`，不是 MCP PID；claims 保存声明时的 context 外键。重启后的新专属 context 必须证实同一 ProcessKey/代次、当前逻辑来源与 SessionRef，再由 reconciler 重建授权并保留旧声明事件，不能凭新 context_id 再兑一次。`redeemed` 只表示凭据已被一个主体声明；fork 声明不授予 report 或父权限。重复 whoami 先检查当前绑定：同一逻辑主体、同 run 同代且未撤销时幂等返回，即使后来 TTL 已过也不再次兑换；未绑定的过期声明不能继续升级。不同主体普通兑换返回 claim_conflict；仅独立证据接管事务可替换未绑定声明。
 
 `evidence` 保存白名单元数据、原始证据指纹和观测时间，不保存 claim 明文、密钥、完整 prompt 或私有块。启动回执必须指向本轮 hud-run 启动的确切 harness 进程 pid + procStart，并证明其位于 caller 的经核验 ppid 链上；宽泛的共同祖先或仅进程名不够。可信会话证据还必须唯一指向本次调用/运行的 SessionRef，不能以共享进程的祖先关系区分其多个逻辑会话。
+
+（consult 4 增补，F09）evidence 及任何可序列化/持久化的观测产物都不保存未完成记录的原始字节，包括嵌套 binary/base64、日志、临时 bundle、token/parser state。raw tail 只在单个 live reader 的有界易失缓冲中存在；持久 offset、摘要/去重/工具配对/时钟以最后完整记录边界为准，pendingBytes 兼容字段恒为 []，超大行仅存可推进的丢弃元数据。完整要求及旧缓存处置见 06 Reader/ObservationCommit 与 07 checkpoint 版本策略。
 
 ### SessionRef resolver 的证据边界
 
@@ -74,17 +94,17 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 | 编号 | 可检查的断言 | 层 / 对应测试 |
 |---|---|---|
 | I-01-1 | SessionRef 完整判等包含 source 和原生 thread；定位变化不改变逻辑身份。来源、harness、原生 agentId 不一致不得合并 | DB+TX；T-01-1、2、3 |
-| I-01-2 | 每次先核验物理 caller、当前逻辑来源、context/generation 与 boot/PID 域；原生子/来源缺失不能冒充根或回退 proc。MCP 重启 OwnerKey 连续仍须当前性证据；切换先失效旧授权 | TX+E；T-01-4–7、35、36 |
+| I-01-2 | 每次先核验物理 caller、当前逻辑来源、context/generation 与 boot/PID 域；原生子/来源缺失不能冒充根或回退 proc。原生子只拒本调用，不消费根 claim/改变根代次；可信根切换同一事务失效旧 scope/context/alias/授权，MCP 重启/双 MCP 共用 B2 当前代次。查幂等或提交时重验捕获的 scope generation/证据版本/context/目标 run/binding，过时拒绝且不重贴代次（consult 4 增补，F07） | TX+E；T-01-4–7、35、36 |
 | I-01-3 | claim 首次兑换必须未过期、未撤销且 run/source/启动实例/目标代次相符；claim 只升 claimed，同主体重复不重复消费 | DB+TX；T-01-8、9、10 |
 | I-01-4 | 常规 bound 必须具备已登记 caller、有效 claim 声明、唯一实际 SessionRef、独立证据；相同祖先的多会话无法区分时不得 bound。fork 先兑换也无所有权 | TX+E；T-01-11、12、13 |
-| I-01-5 | transcript 只能核验既有 ledger link/run；仅确认或否定，不能创建 link/run，不能单独提供独立身份。缺 ref 的唯一合格匹配只由 reconciler 回填并记录 bound_by 与 evidence | TX；T-01-14、15、16 |
+| I-01-5 | transcript 只能核验既有 ledger link/run；仅确认或否定，不能创建 link/run，不能单独提供独立身份。LinkEvidence 两种分支仅为未裁定锚点，launch_message 须用真实事件时间及精确本轮 claim 指纹/call/correlation/message 唯一匹配，缺 ref 的唯一合格匹配只由 reconciler 回填并记录 bound_by 与 evidence（consult 4 增补，F01） | TX；T-01-14、15、16 |
 | I-01-6 | MCP parent 操作取本调用 OwnerKey，等于关系当前所有者才允许 resume/cancel；本地管理 resume 仅按上述 local_user 窄例外代表既有 owner，其他门禁不变。report 只能来自目标 run 当前且未失效的 MCP child binding。知识型 claim/linkId 不授予权限 | TX；T-01-17、18、19、38、39 |
 | I-01-7 | 同一 child 只有一个当前 owner/父边；MVP predecessor 仅同 owner、真实 ref、空槽且无冲突；跨 owner 一律 unsupported。转交原子、旧 link 历史化，fork 只候选 | DB+TX；T-01-20–22；02 T-02-18；03 T-03-20 |
 | I-01-8 | HUD 永不写 ledger；caller 注册不直接推导关系绑定；身份回填、冲突、失效/代次变更和关系迁移经 reconciler 提交并附事件 | TX；T-01-15、23 |
 | I-01-9 | dedicated 仅在 bound 级证据后单向 proc→session；同代唯一。归并事务原子重键幂等记录、保留原范围审计与原 outcome；换代关闭 alias，冲突整体拒绝。正常只查当前 canonical key | DB+TX；T-01-24–26；02 T-02-4、5 |
-| I-01-10 | MVP 共享/不可辨逻辑来源无可操作 context；父无操作权限，子至多无授权诊断声明，不消费 claim。prompt claim 不补足来源，daemon 在场不自动等于共享 MCP | TX+E；T-01-27、28、35 |
+| I-01-10 | MVP 共享/不可辨逻辑来源无可操作 context；父无操作权限，子至多无授权诊断声明，不消费 claim。prompt claim 不补足来源，daemon 在场不自动等于共享 MCP；可辨原生子只拒本调用，不建 root context、不兑根 claim、不关闭根 scope/alias 或递增根 generation，Codex 子另起 MCP 也不得投影 root（consult 4 增补，F07） | TX+E；T-01-27、28、35 |
 | I-01-11 | MVP 无子 MCP 只展示已登记委派和未确认子身份；不写确定 SessionRef 父边、不准 report/resume。run 可凭独立 R/N/Q 结束，与绑定成功无关 | TX+E；T-01-29–31 |
-| I-01-12 | 保留 CallerId/context 物理与逻辑分离；同 context_key 只能一代当前，专属仅一个当前 stdio context。MVP 拒绝共享调度及缺可信当前来源调用，不复用上次 context | DB+TX；T-01-35、36；02 T-02-27 |
+| I-01-12 | 保留 CallerId/context 物理与逻辑分离；同 context_key 只能一代当前，专属仅一个当前 stdio context。MVP 拒绝共享调度及缺可信当前来源调用，不复用上次 context；跨 MCP 的当前 scope/context 以 B2 事务为权威，旧前提锁内重验失败不得查幂等/写入或复活旧授权，合法旧代已接受意图仍走原票据重验（consult 4 增补，F07） | DB+TX；T-01-35、36；02 T-02-27 |
 | I-01-13 | resume/handover 的本轮 child 只能等于关系既有 child_ref；runHandshake 独立于 link.state。新文件/fork无连续性证据不得改旧ref，run uncertain、最多候选 | DB+TX；T-01-37；03 T-03-5、8、9 |
 
 ### owner_aliases 的建立与关闭
@@ -113,6 +133,10 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 
 ### transcript 核验的封闭范围
 
+（consult 4 增补，F01）`LinkEvidence = ToolResultLinkEvidence | LaunchMessageLinkEvidence` 是公开记录抽取的未裁定锚点，不是绑定许可。tool_result 保持原生调用身份和原字段/语义；launch_message 保持原生消息身份，必有 `kind,ref,nativeMessageId,linkId,claimFingerprint,eventAt`，其中 kind=launch_message，指纹为原 claim 字节的 SHA-256/64 位小写十六进制，eventAt 是原记录有效事件时间。`launchCallId/launchCorrelationId` 仅在该记录确实提供时填写；不为旧接口伪造 runId、tool 或 callId，不保留 claim 明文、整条启动消息或完整 prompt。缺可核验事件时间不产生合格 launch_message，可留无授权候选/缺失原因，不能用 observed-time 补签发窗。
+
+（consult 4 增补，F01）启动消息核验必须唯一对应已有 link/run 的本轮 claim 指纹、launch_call_id、launch_correlation_id 和精确原生消息，并满足下表原事件时间窗、完整 SessionRef/source 与独立启动/会话证据；首条消息、历史复制或发现时间都不能推定本轮。
+
 | 项 | 必须同时满足的条件（I-01-5；T-01-14–16） |
 |---|---|
 | 父侧 | 本次 delegate_spawn/delegate_resume 的 tool_result 中的 linkId、runId；与账本记录的工具调用 ID 一致。父 transcript 的 harness/source 与 caller 相符 |
@@ -120,6 +144,10 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 | 时间 | 以账本 issued_at 为基准，记录事件时间在 `[issued_at-5000, issued_at+600000]` 毫秒闭区间；发现时间可以更晚，但不能拿 mtime/扫描时间替代事件时间。claim 首次兑换 TTL 另行校验 |
 | 匹配 | harness/source 一致、SessionRef 唯一；多份复制 transcript 为 conflict，停止归属，不取最新。不加载候选正文来扩大核验范围 |
 | 写入 | 已有 link/run、独立证据通过才可回填缺 ref 并标 bound_by=transcript；已有 ref 被否定则保留历史、撤销当前授权并标冲突，绝不静默改父 |
+
+（consult 4 增补，F01）B4 定义并冻结本轮 fallback 消息运输格式与 correlation，正常 env 路径不重复传明文 claim；B8 只抽取共享 linkEvidence，B9 只做既有关系的限定核验及候选/冲突投影。身份回填或撤权由 B2/B5 的 reconciler 事务提交，HUD/B9 读取不成为新写者；readerVersion 变化按 07 失效旧锚点缓存，缺 eventAt 的旧锚点不能强转为合格分支。
+
+（consult 4 增补，F11）06 的 append-only 假设与有界签名检查不证明任意历史未变；“未发现改写”不授予 MCP 调用权限，reset 后旧 reader 锚点/摘要不作新谱系当前证据，仍须本节精确本轮核验及独立身份条件。
 
 启动实例或调用 ID 缺失、时间不可验证、非公开块、任意 shell/herdr/jev 命令、标签、HUD_LINK 或 pi orchestrator 的共现均不能扩展此表。当前来源失联只将证据标 stale/unknown；它不证明 session 已退出，不释放 02 的槽。
 
@@ -172,16 +200,16 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 
 ## 测试清单
 
-每项标 A9 fixture（规格/合成输入）、A9 prototype（临时 source/SQLite + 最小合成进程）或 B（生产验收）、C（后续）。A9 原型不是 B 实现；B1/B2/B5/B14 在实现后重验关键反例。这里只列待验断言，不宣称已执行；合成数据，不读用户状态。
+每项标 A9 fixture（规格/合成输入）、A9 prototype（临时 source/SQLite + 最小合成进程）或 B（生产验收）、C（后续）。A9 原型不是 B 实现；B1/B2/B5/B14 在实现后重验关键反例。这里只列待验断言，不宣称已执行；合成数据，不读用户状态。consult 4 新增断言由对应 B 工作包定向生产重验，不追认原 A9 原型已经验证新增档案/事务。（consult 4 增补，F01）（consult 4 增补，F04）（consult 4 增补，F07）
 
 | 编号 | 输入 → 预期状态断言 |
 |---|---|
 | T-01-1 (A9 fixture) | 同 cwd，两个 realpath source，session_id 都是 synthetic-s → 两个不同 SessionRef/OwnerKey；symlink 指同根则同 SourceId |
 | T-01-2 (A9 fixture) | cc root 与 agent-a/agent-b 共 session_id → 三个 ref；三个 SQL 唯一键均可存在，精确重复被拒 |
 | T-01-3 (B) | ref 不变，仅改 transcript 路径/Herdr workspace locator → ref 不变；旧 occupant 跳转校验失败时无宿主状态，不改父边 |
-| T-01-4 (A9 prototype) | 专属 harness 存活、MCP 重启 → CallerId/context 改变，boot/ProcessKey/当前 SessionRef/代次及 OwnerKey 连续；02 T-02-3 命中原记录 |
-| T-01-5 (A9 prototype) | 同 pane 同 PID 先 session-a 后 /clear 到 b，procStart 不变 → a 代关闭、generation+1、旧 report/resume 授权拒绝；a link 仍指 a |
-| T-01-6 (A9 fixture) | pane 被替换或同数值 PID 不同 procStart；另给不可见 PID 域 → 新 ProcessKey/occupant，不复用旧授权；不可见域只标 unknown |
+| T-01-4 (A9 prototype) | 专属 harness 存活、MCP 重启 → CallerId/context 改变，boot/ProcessKey/当前 SessionRef/代次及 OwnerKey 连续；02 T-02-3 命中原记录；B2/B5 补同源同根双 MCP 并发首绑/重绑，共用未关闭代次、无重复兑换，CAS 失败要求新调用而非凭旧证据盲重试（consult 4 增补，F07） |
+| T-01-5 (A9 prototype) | 同 pane 同 PID 先 session-a 后 /clear 到 b，procStart 不变 → a 代关闭、generation+1、旧 report/resume 授权拒绝；a link 仍指 a；合格新根来源须匹配当前 sessions 并以捕获旧代次 CAS，同 PID/start/MCP 下旧 spawn/report 取证后等锁遇换代提交失败，过时 receipt 不倒切，合法新根仍可用（consult 4 增补，F07） |
+| T-01-6 (A9 fixture) | pane 被替换或同数值 PID 不同 procStart；另给不可见 PID 域 → 新 ProcessKey/occupant，不复用旧授权；不可见域只标 unknown；另 MCP 真实绝对 cwd 登记成功，但会话 cwd 无证据仍 null；process.cwd() 不可取时 cwd_unavailable 拒登记，不填 HUD_HOME/父目录/空串（consult 4 增补，F04） |
 | T-01-7 (A9 fixture) | 已确认结束的 run-a resume → 同 link、新 run-b 和 binding_generation，本轮 call/message id、新 claim；旧 claim revoked；run-a binding 不参与 run-b 授权 |
 | T-01-8 (A9 fixture) | claim 尚 issued、或 now=expires_at、或 source/run/launch instance/目标代次逐项错配 → 首兑拒绝，关系不 bound，记录具体错误 |
 | T-01-9 (A9 fixture) | 已 armed 且当前时刻在 TTL 内，字段全部匹配 → 一次兑换 claimed；now=expires_at-1 可兑换，now=expires_at 不可兑换 |
@@ -189,9 +217,9 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 | T-01-11 (A9 fixture) | fork 持复制 claim 先兑、无原启动实例关联 → claimed、无 child_ref/父边/report 权限；fork 新 ref 仅候选 |
 | T-01-12 (A9 fixture) | T-01-11 后原主体提交本轮 claim+独立回执+唯一 session → reconciler 事务接管、原主体 bound、fork 候选；普通第二主体无证据仍 claim_conflict |
 | T-01-13 (A9 fixture) | 两个逻辑 session 共享祖先，或两个互相矛盾的可信证据 → 不按先后选父、不 bound；已有绑定则撤销当前权限、保留冲突和历史 |
-| T-01-14 (A9 fixture) | 事件时间分别为 issued_at-5000、+600000、-5001、+600001，正确 source/harness/call/message → 前两者可核验，后两者拒绝；发现延迟不改变边界 |
-| T-01-15 (A9 fixture) | 既有 link/run 缺 ref，唯一匹配+独立证据 → reconciler 回填 bound_by=transcript；相同材料没有 link/run → 不创建；HUD 只读连接写入被拒 |
-| T-01-16 (A9 fixture) | 双 transcript 匹配、错 harness/source/call id、仅 shell 命令/标签/env/私有块 → conflict 或不合格，零新父边 |
+| T-01-14 (A9 fixture) | 事件时间分别为 issued_at-5000、+600000、-5001、+600001，正确 source/harness/call/message → 前两者可核验，后两者拒绝；发现延迟不改变边界；本轮 resume 的 launch_message 必须带原事件时间/真实消息身份/原 claim 指纹，缺 eventAt 即不合格，不以 observed-time 补窗（consult 4 增补，F01） |
+| T-01-15 (A9 fixture) | 既有 link/run 缺 ref，唯一匹配+独立证据 → reconciler 回填 bound_by=transcript；相同材料没有 link/run → 不创建；HUD 只读连接写入被拒；tool_result/launch_message 均只是锚点，缺独立证据/现存 run 时不绑定，B9 不成为写者（consult 4 增补，F01） |
+| T-01-16 (A9 fixture) | 双 transcript 匹配、错 harness/source/call id、仅 shell 命令/标签/env/私有块 → conflict 或不合格，零新父边；两份复制 launch_message、旧 claim 或错 launch_correlation_id/nativeMessageId 不取最近，缺 runId/tool/callId 不伪造字段以升级锚点（consult 4 增补，F01） |
 | T-01-17 (A9 fixture) | owner-b 知道 owner-a 的 link/runId，调用 resume/cancel/predecessor → 拒绝/unsupported 并记事件，零外部启动/信号 |
 | T-01-18 (B) | 当前 bound 子提交本 run report、未绑定子/别的 child/stale generation 提交 → 仅首项入 reports；重启后的新 CallerId 必须先重建当前 binding |
 | T-01-19 (A9 fixture) | run-a 迟报，run-b 已开始，旧启动消息匹配 run-a → 只可归 run-a 的审计历史，不能新授 run-b 权限或满足 run-b wait |
@@ -202,16 +230,16 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 | T-01-24 (A9 fixture) | 当前 proc scope 仅 claimed 后试建 alias，再补独立 bound 证据 → 首次拒绝，第二次单向 proc→session 成功，OwnerKey 派生为 session |
 | T-01-25 (A9 fixture) | 同 proc/generation 再映射别的 session，或归并同键异参 → 拒绝、不启动、有冲突事件；旧 alias 和结果仍可审计 |
 | T-01-26 (A9 fixture) | 同进程切换 generation+1 → 旧 alias 同事务关闭；新 proc key 不查旧代范围，新绑定只能建立新代 alias |
-| T-01-27 (A9 prototype) | 所测直接 stdio TUI/exec：每轮配置叶子 env（保留既有配置）+ 首次合格 params._meta + 启动/source/header → 唯一 ref；initialize/list 不绑定，参数伪造不替代来源，双 home 无交叉 |
+| T-01-27 (A9 prototype) | 所测直接 stdio TUI/exec：每轮配置叶子 env（保留既有配置）+ 首次合格 params._meta + 启动/source/header → 唯一 ref；initialize/list 不绑定，参数伪造不替代来源，双 home 无交叉；0.166.0 root→child→root 的真实拓扑中，child 即使另起 MCP/同 harness PID，root sessionId 与 child threadId/turn.thread_id、parent_thread_id/subagent 来源仍必须拒绝，零 rootThreadOf 授权，根后续仍可验证（consult 4 增补，F07） |
 | T-01-28 (A9 fixture) | 未验证 daemon 代启/共享来源，模型仅传 prompt claim/arguments._meta/sessionId → 无授权 context，不消费 claim、不建 alias/report/owner；daemon 在场但仍 direct-stdio 不误分 shared |
 | T-01-29 (A9 fixture) | 无 MCP 即使三证齐备 → pending/未确认展示，零确定 SessionRef 父边/child_binding，报告与 resume 拒绝 |
 | T-01-30 (A9 fixture) | 无 MCP 缺任一证据或 fork 复制消息 → 未确认/候选；另有独立 scope R/N/Q 可按02结束 run，不能顺带绑定 |
 | T-01-31 (A9 fixture) | 无 MCP 自报 whoami/report，或后来才加载 MCP → 前者拒绝，后者先正常登记与本轮身份/claim 校验，无观察权限继承 |
 | T-01-32 (A9 fixture) | shell/agent/MCP 三跳分别缺失，Codex 配置 env 可用/不可用 → 按档案叶子注入，确有 MCP 才可本轮消息 fallback；不因换运输通道重发任务 |
-| T-01-33 (A9 prototype) | cc 根 env/session 文件正确但本次 toolUseId 来源缺失/属于原生子；另可证根调用 → 前两组拒绝根权限，只有唯一当前根来源才可操作；env/参数 claim 不减免门槛 |
+| T-01-33 (A9 prototype) | cc 根 env/session 文件正确但本次 toolUseId 来源缺失/属于原生子；另可证根调用 → 前两组拒绝根权限，只有唯一当前根来源才可操作；env/参数 claim 不减免门槛；根→原生子→根共 MCP，子携根 sessionId/transcript_path/env/claim 不授权，不建 root context/消费 claim/关闭 scope/alias/换代；agent_id 缺失或字段矛盾不推定根（consult 4 增补，F07） |
 | T-01-34 (C) | pi resume 续文件、新文件有可信连续性、新文件无映射三组 → 前两组同 ref/新 run，第三组候选且 resume 未验证，不自动合并 |
-| T-01-35 (A9 fixture) | 一个 MCP 接到共享 A/B、可辨原生子或不可辨来源；即使带根 env/session/claim → MVP unsupported/identity_source_missing，零 owner/幂等查询/报告授权；子调用不授成根、不使根换代 |
-| T-01-36 (A9 fixture) | 当前 session 切换/generation+1，旧代、缺来源或 prompt 声称旧 root → 旧授权先撤销，不复用缓存；没有可观测切换路径的档案拒绝 |
+| T-01-35 (A9 fixture) | 一个 MCP 接到共享 A/B、可辨原生子或不可辨来源；即使带根 env/session/claim → MVP unsupported/identity_source_missing，零 owner/幂等查询/报告授权；子调用不授成根、不使根换代；核对根 context/scope/alias、claim 消费与 generation 均不因子拒绝变化，下一根调用仍可逐次核验（consult 4 增补，F07） |
+| T-01-36 (A9 fixture) | 当前 session 切换/generation+1，旧代、缺来源或 prompt 声称旧 root → 旧授权先撤销，不复用缓存；没有可观测切换路径的档案拒绝；新旧 MCP 同时绑定、旧证据 A→B→A 重放及仅物理 MCP 较晚启动不复活旧代；查幂等/写入均重验 scope generation/证据版本/context/目标 run/binding，stale_context/identity_unverified 不重贴代次；合法旧代 durable accepted 意图保留并按原票据重验，不抹接受/起副本（consult 4 增补，F07） |
 | T-01-37 (A9 fixture) | resume/handover 关系已child-a，新轮解析child-b，或合法同a的新消息 → 前者拒改links.child_ref/runs.target_ref、run uncertain/b仅候选；后者可本轮绑定，link不回pending |
 | T-01-38 (A9 fixture) | 同用户/私有账本/已确认parent_ref的local resume，与错UID/非私有路径/父未确认/参数admin四组 → 仅首项可代表已登记owner；actor记录local_user/UID/invocation/owner，零伪造CallerId/父tool_result |
 | T-01-39 (A9 fixture) | local report/spawn/跨owner predecessor、把另一主体allowedActions当凭据、旧父context失效 → 均不由例外放行；合法local resume按typed initiator重验，不依赖旧context仍活，原parent/link归属不变 |

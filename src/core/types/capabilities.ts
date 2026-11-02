@@ -53,6 +53,13 @@ export interface CapabilityCell {
 export type LaunchCommand =
   { argv: string[]; shell?: never; shellPath?: never } | { shell: string; shellPath: string; argv?: never };
 
+export interface DelegateRoleMapping {
+  model: string;
+  effort?: string;
+}
+
+export type DelegateRoles = Record<string, DelegateRoleMapping>;
+
 export interface LaunchProfile {
   name: string;
   harness: Harness;
@@ -68,8 +75,18 @@ export interface LaunchProfile {
   clientToolTimeoutMs: number | null;
   responseMarginMs: number;
   orphan_policy: OrphanPolicy;
-  /** Accepted evidence for a single foreground shell launch, not shell syntax guessing. */
+  /** Configuration hint only; managed shell support still requires separate accepted capability evidence. */
   managedShellVerified: boolean;
+  roles?: DelegateRoles;
+  /** Claude-only mechanism selection; configuration does not verify the capability. */
+  callSource?: { kind: 'claude_pre_tool_use_v1' };
+}
+
+export type DelegateProfile = LaunchProfile;
+
+export interface DelegateConfig {
+  version: 1;
+  profiles: DelegateProfile[];
 }
 
 export interface HudLaunchEnv {

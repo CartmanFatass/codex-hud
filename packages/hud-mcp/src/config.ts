@@ -1,15 +1,11 @@
 import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { validateLaunchCommand } from '../../../src/core/capabilities.js';
-import type { LaunchProfile } from '../../../src/core/types/capabilities.js';
+import type { DelegateConfig } from '../../../src/core/types/capabilities.js';
 import { Refusal } from './errors.js';
 import { object, readJson } from './io.js';
 
-export type DelegateProfile = LaunchProfile & { roles?: Record<string, { model: string; effort?: string }> };
-export interface DelegateConfig {
-  version: 1;
-  profiles: DelegateProfile[];
-}
+export type { DelegateConfig, DelegateProfile } from '../../../src/core/types/capabilities.js';
 const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && !v.includes('\0');
 const integer = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) > 0;
 function keys(o: Record<string, unknown>, required: string[], optional: string[] = []): void {
@@ -55,7 +51,7 @@ export function validateDelegateConfig(value: unknown): DelegateConfig {
         'orphan_policy',
         'managedShellVerified',
       ],
-      ['roles']
+      ['roles', 'callSource']
     );
     if (!text(p.name) || names.has(p.name) || !['claude', 'codex', 'pi'].includes(p.harness as string)) bad();
     names.add(p.name);
@@ -88,6 +84,11 @@ export function validateDelegateConfig(value: unknown): DelegateConfig {
     )
       bad();
     if (!['continue', 'stop'].includes(p.orphan_policy as string) || typeof p.managedShellVerified !== 'boolean') bad();
+    if (p.callSource !== undefined) {
+      if (p.harness !== 'claude' || !object(p.callSource)) bad();
+      keys(p.callSource, ['kind']);
+      if (p.callSource.kind !== 'claude_pre_tool_use_v1') bad();
+    }
     if (p.roles !== undefined) {
       if (!object(p.roles)) bad();
       for (const [role, mapping] of Object.entries(p.roles)) {

@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
+import { deserialize } from 'node:v8';
 import { CodexAdapter, type CodexCheckpoint } from '../../src/harness/codex/index.js';
 import {
   observeLinkEvidence,
@@ -20,7 +21,12 @@ import {
   flushTreeScans,
 } from '../../src/collectors/subagent-tree.js';
 import type { LaunchProfile } from '../../src/core/types/capabilities.js';
-import type { BindContext, ReaderResult, SessionReader } from '../../src/core/interfaces/harness-adapter.js';
+import type {
+  BindContext,
+  ReaderBudget,
+  ReaderResult,
+  SessionReader,
+} from '../../src/core/interfaces/harness-adapter.js';
 import type { SessionRef } from '../../src/core/types/identity.js';
 import type { UniversalSnapshotV3 } from '../../src/core/interfaces/snapshot-v3.js';
 import { fixtureUniversalSnapshotV3 } from '../fixtures/contracts/observation-export.js';
@@ -37,6 +43,19 @@ import {
   initial,
   resumed,
 } from '../fixtures/codex-facade/rollouts.js';
+
+/**
+ * Deterministic reader budget: CodexAdapter caps every read at its constructor budget, so tests
+ * construct adapters with a slice large enough to consume a whole fixture in one read. Progress
+ * then depends on bytes, not on how much CPU a loaded machine gives the 20 ms production slice.
+ */
+const TEST_BUDGET: ReaderBudget = { maxBytes: 4 * 1024 * 1024, maxRecords: 2000, budgetMs: 60_000 };
+const DRAIN_DEADLINE_MS = 180_000;
+const DRAIN_STALL_READS = 3;
+
+function toolResults(result: ReaderResult) {
+  return result.evidence?.linkEvidence.filter((entry) => entry.kind === 'tool_result') ?? [];
+}
 
 function profile(root: string): LaunchProfile {
   return {
@@ -76,7 +95,7 @@ async function fixture(t: test.TestContext, lines = initial) {
   const fileFor = (id: string) => path.join(directory, `rollout-2026-03-01T12-00-00-${id}.jsonl`);
   const file = fileFor(ROOT);
   fs.writeFileSync(file, lines.join('\n') + '\n');
-  const adapter = new CodexAdapter();
+  const adapter = new CodexAdapter(TEST_BUDGET);
   const sourceId = await adapter.resolveSource(profile(root), {});
   const ref: SessionRef = { harness: 'codex', sourceId, sessionId: ROOT, threadId: null };
   const context: BindContext = {
@@ -90,12 +109,46 @@ async function fixture(t: test.TestContext, lines = initial) {
   };
   return { root, file, fileFor, adapter, ref, context };
 }
-async function drain(reader: SessionReader): Promise<ReaderResult> {
-  for (let n = 0; n < 500; n++) {
-    const result = await reader.read();
+async function drain(
+  reader: SessionReader,
+  budget: ReaderBudget = TEST_BUDGET,
+  options: { timeoutMs?: number; now?: () => number } = {}
+): Promise<ReaderResult> {
+  const now = options.now ?? (() => performance.now());
+  const timeoutMs = options.timeoutMs ?? DRAIN_DEADLINE_MS;
+  const deadline = now() + timeoutMs;
+  let previous: ReaderResult | undefined;
+  let stalled = 0;
+  for (;;) {
+    const remaining = deadline - now();
+    if (remaining <= 0) throw new Error('reader did not catch up before deadline');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let result: ReaderResult;
+    try {
+      result = await Promise.race([
+        reader.read(budget),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error('reader did not catch up before deadline')), remaining);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+    // A terminal response that arrives after the deadline must fail too.
+    if (now() >= deadline) throw new Error('reader did not catch up before deadline');
+    if (previous) {
+      assert.ok(result.checkpoint.offset >= previous.checkpoint.offset, 'reader checkpoint offset never regresses');
+      const cursor = (r: ReaderResult) =>
+        r.checkpoint.parserState.discardOffset ?? r.checkpoint.offset + (r.checkpoint.parserState.tailBytesSeen ?? 0);
+      stalled = cursor(result) === cursor(previous) ? stalled + 1 : 0;
+      if (stalled >= DRAIN_STALL_READS)
+        throw new Error(
+          `reader made no progress across ${DRAIN_STALL_READS} reads: ${result.observation.coverage.remainingBytes ?? 'unknown'} bytes remain`
+        );
+    }
     if (result.observation.coverage.state !== 'catching_up') return result;
+    previous = result;
   }
-  throw new Error('reader did not catch up');
 }
 
 test('A6 observation fits the shared nullable-root v3 fixture and full node shape', async (t) => {
@@ -127,12 +180,15 @@ test('Codex source is explicit and verified; binding needs a unique full ref, wi
 test('budgeted parser checkpoints restore exact merge/tool/rate state after JSON round trip', async (t) => {
   const f = await fixture(t);
   const reader = f.adapter.open(f.ref);
-  const first = await reader.read({ maxBytes: 200, maxRecords: 2, budgetMs: 20 });
+  const first = await reader.read({ maxBytes: 200, maxRecords: 2, budgetMs: TEST_BUDGET.budgetMs });
   assert.ok(first.checkpoint.offset <= 200);
-  assert.equal(first.observation.coverage.state, 'catching_up');
+  assert.equal(first.observation.coverage.state, 'partial');
+  assert.equal(first.observation.coverage.reason, 'record_needs_larger_slice');
   let result = first;
+  const actionDeadline = performance.now() + DRAIN_DEADLINE_MS;
   while (result.evidence?.action?.id !== 'spawn-call') {
-    result = await reader.read({ maxBytes: 4096, maxRecords: 1, budgetMs: 20 });
+    assert.ok(performance.now() < actionDeadline, 'action search respects deadline');
+    result = await reader.read({ maxBytes: 4096, maxRecords: 1, budgetMs: TEST_BUDGET.budgetMs });
   }
   const checkpoint = JSON.parse(JSON.stringify(result.checkpoint)) as CodexCheckpoint;
   assert.equal(checkpoint.parserState.openToolWaits[0].id, 'spawn-call');
@@ -170,18 +226,21 @@ test('reader honors record/zero budgets, restores split UTF-8/CRLF, and consumes
   const reader = f.adapter.open(f.ref);
   const zero = await reader.read({ maxBytes: 0, maxRecords: 0, budgetMs: 0 });
   assert.equal(zero.checkpoint.offset, 0);
-  const first = await reader.read({ maxBytes: 4096, maxRecords: 1, budgetMs: 20 });
+  const first = await reader.read({ maxBytes: 4096, maxRecords: 1, budgetMs: TEST_BUDGET.budgetMs });
   assert.equal(first.checkpoint.offset, Buffer.byteLength(meta() + '\r\n'));
   const bytes = Buffer.from(message);
   const splitAt = bytes.indexOf(Buffer.from('合')) + 1;
-  const split = await reader.read({ maxBytes: splitAt, maxRecords: 1, budgetMs: 20 });
-  assert.ok(split.checkpoint.parserState.pendingBytes.length > 0);
+  const split = await reader.read({ maxBytes: splitAt, maxRecords: 1, budgetMs: TEST_BUDGET.budgetMs });
+  assert.deepEqual(split.checkpoint.parserState.pendingBytes, []);
+  assert.equal(split.checkpoint.offset, first.checkpoint.offset);
+  assert.ok(split.checkpoint.parserState.tailBytesSeen! > 0);
+  assert.equal(split.continuation?.kind, 'record_needs_larger_slice');
   const restored = await drain(f.adapter.open(f.ref, JSON.parse(JSON.stringify(split.checkpoint))));
   assert.equal(restored.evidence?.reports[0].text, '合成结果');
   assert.equal(restored.checkpoint.offset, fs.statSync(f.file).size);
   assert.equal(restored.observation.coverage.state, 'complete');
   assert.equal(
-    (await reader.read({ maxBytes: 100, maxRecords: 0, budgetMs: 20 })).checkpoint.offset,
+    (await reader.read({ maxBytes: 100, maxRecords: 0, budgetMs: TEST_BUDGET.budgetMs })).checkpoint.offset,
     split.checkpoint.offset
   );
 });
@@ -193,7 +252,7 @@ test('resumed sessions keep identity and cumulative totals, while forked threads
   fs.appendFileSync(f.file, resumed.join('\n') + '\n');
   const after = await drain(reader);
   assert.deepEqual(after.evidence?.ref, before.evidence?.ref);
-  assert.equal(after.evidence?.linkEvidence[1].runId, 'run-resumed');
+  assert.equal(toolResults(after)[1].runId, 'run-resumed');
   assert.equal(after.observation.spent.tokens.value?.input, 27000);
   assert.equal(after.evidence?.context.value?.used, 4000);
   assert.equal(after.evidence?.context.value?.afterCompaction, true);
@@ -440,8 +499,8 @@ test('checkpoint restore preserves token-rate tool-wait union and concurrent rea
   ]);
   const reader = f.adapter.open(f.ref);
   const [a, b] = await Promise.all([
-    reader.read({ maxBytes: 4096, maxRecords: 2, budgetMs: 20 }),
-    reader.read({ maxBytes: 4096, maxRecords: 2, budgetMs: 20 }),
+    reader.read({ maxBytes: 4096, maxRecords: 2, budgetMs: TEST_BUDGET.budgetMs }),
+    reader.read({ maxBytes: 4096, maxRecords: 2, budgetMs: TEST_BUDGET.budgetMs }),
   ]);
   assert.ok(b.checkpoint.offset > a.checkpoint.offset);
   assert.equal(b.checkpoint.parserState.openToolWaits[0].id, 'spawn-call');
@@ -469,14 +528,14 @@ test('identical session IDs in two explicit sources do not cross-read, and custo
   const first = await drain(a.adapter.open(a.ref));
   const second = await drain(b.adapter.open(b.ref));
   assert.notEqual(a.ref.sourceId, b.ref.sourceId);
-  assert.equal(first.evidence?.linkEvidence[0].runId, 'run-custom');
-  assert.equal(second.evidence?.linkEvidence[0].runId, 'run-other-home');
+  assert.equal(toolResults(first)[0].runId, 'run-custom');
+  assert.equal(toolResults(second)[0].runId, 'run-other-home');
   assert.throws(() => a.adapter.open(b.ref), /unknown_codex_source/);
 });
 
 test('read statistics count fetched chunk bytes separately from the committed record cursor', async (t) => {
   const f = await fixture(t);
-  const result = await f.adapter.open(f.ref).read({ maxBytes: 4096, maxRecords: 1, budgetMs: 20 });
+  const result = await f.adapter.open(f.ref).read({ maxBytes: 4096, maxRecords: 1, budgetMs: TEST_BUDGET.budgetMs });
   assert.equal(result.stats?.bytesRead, fs.statSync(f.file).size);
   assert.equal(result.checkpoint.offset, Buffer.byteLength(initial[0] + '\n'));
   assert.equal(result.stats?.recordsRead, 1);
@@ -622,11 +681,11 @@ test('multiple profiles sharing one source retain every explicitly configured hu
   const source = await f.adapter.resolveSource({ ...profile(f.root), mcpServerName: 'hud_beta' }, {});
   assert.equal(source, f.ref.sourceId);
   const result = await drain(reader);
-  assert.equal(result.evidence?.linkEvidence[0].runId, 'run-alpha');
+  assert.equal(toolResults(result)[0].runId, 'run-alpha');
   fs.appendFileSync(f.file, call('beta', 'mcp__hud_beta__delegate_resume') + '\n' + output('beta', 'run-beta') + '\n');
   const resumed = await drain(reader);
   assert.deepEqual(
-    resumed.evidence?.linkEvidence.map((e) => e.runId),
+    toolResults(resumed).map((e) => e.runId),
     ['run-alpha', 'run-beta']
   );
 });
@@ -646,4 +705,331 @@ test('unknown metrics use the time absence was confirmed, including cost and com
   assert.equal(compacted.evidence?.context.quality, 'unknown');
   assert.ok(compacted.evidence!.context.asOf >= beforeCompactRead);
   assert.ok(compacted.observation.spent.costUsd.asOf >= beforeCompactRead);
+});
+
+test('production-default Codex reads advance despite 30 ms open/stat/read latency', async (t) => {
+  const f = await fixture(t, [meta(), call(), output()]);
+  for (const delayed of ['open', 'stat', 'read'] as const) {
+    const adapter = new CodexAdapter();
+    await adapter.resolveSource(profile(f.root), {});
+    const reader = adapter.open(f.ref);
+    const open = fs.promises.open;
+    const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 30));
+    fs.promises.open = (async (...args: Parameters<typeof fs.promises.open>) => {
+      const handle = await open(...args);
+      if (String(args[0]) !== f.file) return handle;
+      if (delayed === 'open') await pause();
+      else if (delayed === 'stat') {
+        const stat = handle.stat.bind(handle);
+        handle.stat = (async (...statArgs: Parameters<typeof handle.stat>) => {
+          const result = await stat(...statArgs);
+          await pause();
+          return result;
+        }) as typeof handle.stat;
+      } else {
+        const read = handle.read.bind(handle);
+        handle.read = (async (...readArgs: unknown[]) => {
+          const result = await (read as (...args: unknown[]) => Promise<unknown>)(...readArgs);
+          await pause();
+          return result;
+        }) as typeof handle.read;
+      }
+      return handle;
+    }) as typeof open;
+    try {
+      let previous = 0;
+      for (let n = 0; n < 3; n++) {
+        const result = await reader.read({ maxBytes: 4096, maxRecords: 1, budgetMs: 20 });
+        assert.ok(result.checkpoint.offset > previous, `${delayed}: every positive-budget read advances`);
+        assert.equal(result.stats?.recordsRead, 1);
+        assert.ok(result.stats!.bytesRead <= 4096);
+        previous = result.checkpoint.offset;
+      }
+      const stopped = await reader.read({ maxBytes: 4096, maxRecords: 0, budgetMs: 20 });
+      assert.equal(stopped.checkpoint.offset, previous);
+      assert.equal(stopped.stats?.bytesRead, 0);
+    } finally {
+      fs.promises.open = open;
+    }
+  }
+});
+
+test('controlled time slicing consumes one bounded step and preserves byte/record caps', async (t) => {
+  const f = await fixture(t, [meta(), call(), output()]);
+  const adapter = new CodexAdapter();
+  await adapter.resolveSource(profile(f.root), {});
+  let clock = 0;
+  t.mock.method(performance, 'now', () => clock);
+  const open = fs.promises.open;
+  fs.promises.open = (async (...args: Parameters<typeof fs.promises.open>) => {
+    const handle = await open(...args);
+    if (String(args[0]) === f.file) {
+      const read = handle.read.bind(handle);
+      handle.read = (async (...readArgs: unknown[]) => {
+        const result = await (read as (...args: unknown[]) => Promise<unknown>)(...readArgs);
+        clock += 30;
+        return result;
+      }) as typeof handle.read;
+    }
+    return handle;
+  }) as typeof open;
+  try {
+    const reader = adapter.open(f.ref);
+    const first = await reader.read();
+    assert.equal(first.checkpoint.offset, Buffer.byteLength(meta() + '\n'));
+    assert.equal(first.stats?.recordsRead, 1);
+    assert.ok(first.stats!.elapsedMs >= 30);
+    assert.equal(first.observation.coverage.state, 'catching_up');
+    const zero = await reader.read({ maxBytes: 1, maxRecords: 1, budgetMs: 0 });
+    assert.equal(zero.stats?.bytesRead, 0);
+    assert.equal(zero.checkpoint.offset, first.checkpoint.offset);
+    const tiny = await reader.read({ maxBytes: 5, maxRecords: 1, budgetMs: 20 });
+    assert.equal(tiny.stats?.bytesRead, 5);
+    assert.equal(tiny.checkpoint.offset, first.checkpoint.offset);
+    assert.equal(tiny.checkpoint.parserState.tailBytesSeen, 5);
+    assert.equal(tiny.continuation, undefined, 'elapsed time is not a byte-only continuation');
+  } finally {
+    fs.promises.open = open;
+  }
+});
+
+test('drain bounds every await and rejects late terminal responses', async (t) => {
+  const f = await fixture(t, [meta()]);
+  const terminal = await drain(f.adapter.open(f.ref));
+  let clock = 0;
+  await assert.rejects(
+    drain(
+      {
+        read: async () => {
+          clock = 11;
+          return terminal;
+        },
+      },
+      TEST_BUDGET,
+      { timeoutMs: 10, now: () => clock }
+    ),
+    /deadline/
+  );
+  clock = 0;
+  let calls = 0;
+  await assert.rejects(
+    drain(
+      {
+        read: async () => {
+          calls++;
+          clock += 6;
+          const result = structuredClone(terminal);
+          result.observation.coverage.state = calls === 1 ? 'catching_up' : 'complete';
+          return result;
+        },
+      },
+      TEST_BUDGET,
+      { timeoutMs: 10, now: () => clock }
+    ),
+    /deadline/
+  );
+  assert.equal(calls, 2);
+  await assert.rejects(drain({ read: () => new Promise(() => {}) }, TEST_BUDGET, { timeoutMs: 10 }), /deadline/);
+  await assert.rejects(
+    drain({
+      read: async () => {
+        const result = structuredClone(terminal);
+        result.observation.coverage.state = 'catching_up';
+        return result;
+      },
+    }),
+    /made no progress/
+  );
+});
+
+function assertPrivateCheckpoint(result: ReaderResult, sentinel: string) {
+  const checkpoint = result.checkpoint as CodexCheckpoint;
+  const native = deserialize(Buffer.from(checkpoint.codex.rollout.payload, 'base64'));
+  for (const artifact of [result, native]) {
+    assert.ok(!JSON.stringify(artifact).includes(sentinel), 'source sentinel never reaches serializable state');
+  }
+  assert.deepEqual(checkpoint.parserState.pendingBytes, []);
+  assert.equal(checkpoint.offset, checkpoint.codex.rollout.offset);
+}
+
+test('F09/F10 Codex crash cuts recover UTF-8/CRLF, private blobs and fallback claims without raw state', async (t) => {
+  const sentinel = 'CRASH_PRIVATE_SENTINEL';
+  const records = [
+    row('response_item', {
+      type: 'message',
+      role: 'assistant',
+      channel: 'final',
+      content: [{ type: 'output_text', text: '合成结果' }],
+    }),
+    row('response_item', { type: 'api-request-blob', body: sentinel }),
+    row('response_item', {
+      type: 'message',
+      role: 'user',
+      content: [
+        { type: 'input_text', text: '[hud-launch] ' + JSON.stringify({ linkId: 'synthetic-link', claim: sentinel }) },
+      ],
+    }),
+  ];
+  for (const record of records) {
+    const f = await fixture(t, [meta()]);
+    const bytes = Buffer.from(meta() + '\r\n' + record + '\r\n');
+    fs.writeFileSync(f.file, bytes);
+    const firstEnd = Buffer.byteLength(meta() + '\r\n');
+    const cuts = [bytes.length - 1, bytes.length - 8];
+    const unicode = bytes.indexOf(Buffer.from('合'));
+    if (unicode >= 0) cuts.push(unicode + 1);
+    for (const cut of cuts) {
+      const partial = await f.adapter.open(f.ref).read({ ...TEST_BUDGET, maxBytes: cut });
+      assert.equal(partial.checkpoint.offset, firstEnd);
+      assertPrivateCheckpoint(partial, sentinel);
+      assert.equal(partial.evidence?.observation.statusProjection.lastEvidenceAt, TIME);
+      const restored = await drain(f.adapter.open(f.ref, JSON.parse(JSON.stringify(partial.checkpoint))));
+      const whole = await drain(f.adapter.open(f.ref));
+      assert.equal(restored.checkpoint.offset, bytes.length);
+      assert.deepEqual(restored.observation.spent.tokens.value, whole.observation.spent.tokens.value);
+      assert.deepEqual(restored.observation.spent.costUsd.value, whole.observation.spent.costUsd.value);
+      assert.deepEqual(restored.evidence?.reports, whole.evidence?.reports);
+      assertPrivateCheckpoint(restored, sentinel);
+    }
+  }
+});
+
+test('F10 Codex maximum legal record, typed recovery continuation and oversize discard across restarts', async (t) => {
+  const MiB = 1024 * 1024;
+  const f = await fixture(t, [meta()]);
+  const base = row('event_msg', { type: 'synthetic_padding', text: '' });
+  const maximum = base.replace('"text":""', '"text":"' + 'x'.repeat(MiB - Buffer.byteLength(base) - 1) + '"') + '\r\n';
+  assert.equal(Buffer.byteLength(maximum), MiB + 1);
+  fs.appendFileSync(f.file, maximum);
+  const checkpoint = await f.adapter.open(f.ref).read({ ...TEST_BUDGET, maxRecords: 1 });
+  const small = await f.adapter.open(f.ref, checkpoint.checkpoint).read({ ...TEST_BUDGET, maxBytes: 100 });
+  assert.equal(small.checkpoint.offset, checkpoint.checkpoint.offset);
+  assert.equal(small.observation.coverage.state, 'partial');
+  assert.equal(small.observation.coverage.reason, 'record_needs_larger_slice');
+  assert.deepEqual(small.continuation, { kind: 'record_needs_larger_slice', minimumBytes: MiB + 1 });
+  const recovered = await f.adapter.open(f.ref, JSON.parse(JSON.stringify(small.checkpoint))).read({
+    ...TEST_BUDGET,
+    maxBytes: small.continuation!.minimumBytes,
+  });
+  assert.equal(recovered.checkpoint.offset, fs.statSync(f.file).size);
+  assert.equal(recovered.stats?.bytesRead, MiB + 1);
+  assert.equal(recovered.observation.coverage.state, 'complete');
+  fs.appendFileSync(f.file, 'x'.repeat(2 * MiB + 200));
+  let result = await f.adapter.open(f.ref, recovered.checkpoint).read({ ...TEST_BUDGET, maxBytes: MiB + 1 });
+  assert.equal(result.checkpoint.parserState.discardingOversize, true);
+  let cursor = result.checkpoint.parserState.discardOffset!;
+  while (result.observation.coverage.state === 'catching_up') {
+    result = await f.adapter
+      .open(f.ref, JSON.parse(JSON.stringify(result.checkpoint)))
+      .read({ ...TEST_BUDGET, maxBytes: 300000 });
+    assert.ok(result.checkpoint.parserState.discardOffset! > cursor);
+    assert.ok(result.stats!.bytesRead <= 300000);
+    cursor = result.checkpoint.parserState.discardOffset!;
+  }
+  assert.equal(result.observation.coverage.skipped.oversize_unknown, 1);
+  assert.equal(result.observation.coverage.state, 'partial');
+  fs.appendFileSync(f.file, '\n' + row('event_msg', { type: 'task_complete' }, 9000) + '\n');
+  const finished = await drain(f.adapter.open(f.ref, JSON.parse(JSON.stringify(result.checkpoint))));
+  assert.equal(finished.observation.coverage.skipped.oversize_unknown, 1);
+  assert.equal(finished.checkpoint.offset, fs.statSync(f.file).size);
+  assert.equal(finished.checkpoint.parserState.discardingOversize, false);
+});
+
+test('F10 Codex truncation or replacement drops old transient and repeated recovery preserves usage clocks', async (t) => {
+  const f = await fixture(t);
+  const reader = f.adapter.open(f.ref);
+  const whole = await drain(reader);
+  const oldTime = whole.observation.spent.tokens.asOf;
+  fs.appendFileSync(f.file, '{"type":"event_msg","payload":{"private":"OLD_TRANSIENT');
+  const tail = await drain(reader);
+  assert.equal(tail.checkpoint.offset, whole.checkpoint.offset);
+  assert.equal(tail.observation.coverage.reason, 'incomplete_tail');
+  assertPrivateCheckpoint(tail, 'OLD_TRANSIENT');
+  const replay = await drain(f.adapter.open(f.ref, JSON.parse(JSON.stringify(tail.checkpoint))));
+  assert.equal(replay.observation.spent.tokens.asOf, oldTime);
+  fs.writeFileSync(f.file, meta() + '\n' + row('event_msg', { type: 'task_complete' }, 20000) + '\n');
+  const reset = await drain(reader);
+  assert.ok(reset.checkpoint.sourceGeneration > tail.checkpoint.sourceGeneration);
+  assert.equal(reset.evidence?.observation.statusProjection.lastEvidenceAt, TIME + 20000);
+  assert.deepEqual(reset.observation.coverage.gaps, []);
+  assert.equal(reset.observation.spent.tokens.value, null);
+  assertPrivateCheckpoint(reset, 'OLD_TRANSIENT');
+});
+
+test('F10 Codex rereads a replaced growing tail before compaction instead of grafting old bytes', async (t) => {
+  const f = await fixture(t, [meta()]);
+  const prefix = meta() + '\n';
+  const old = row('response_item', {
+    type: 'message',
+    role: 'assistant',
+    channel: 'final',
+    content: [{ type: 'output_text', text: 'OLD_TRANSIENT' }],
+  });
+  fs.appendFileSync(f.file, old.slice(0, -8));
+  const reader = f.adapter.open(f.ref);
+  const partial = await drain(reader);
+  assert.equal(partial.checkpoint.offset, Buffer.byteLength(prefix));
+  assertPrivateCheckpoint(partial, 'OLD_TRANSIENT');
+  const next = row(
+    'response_item',
+    {
+      type: 'message',
+      role: 'assistant',
+      channel: 'final',
+      content: [{ type: 'output_text', text: 'New complete public answer' }],
+    },
+    3000
+  );
+  const replacement = prefix + row('event_msg', { type: 'context_compacted' }, 2000) + '\n' + next + '\n';
+  assert.ok(Buffer.byteLength(replacement) > fs.statSync(f.file).size);
+  fs.writeFileSync(f.file, replacement);
+  const time = fs.statSync(f.file).mtimeMs + 1000;
+  fs.utimesSync(f.file, time / 1000, time / 1000);
+  const result = await drain(reader);
+  assert.equal(result.checkpoint.resetReason, 'compaction');
+  assert.ok(result.checkpoint.sourceGeneration > partial.checkpoint.sourceGeneration);
+  assert.deepEqual(result.observation.coverage.gaps, []);
+  assert.equal(result.evidence?.reports[0].text, 'New complete public answer');
+  assertPrivateCheckpoint(result, 'OLD_TRANSIENT');
+});
+
+test('F10 Codex maximum fixed-EOF JSON consumes 1 MiB without a nonexistent delimiter', async (t) => {
+  const MiB = 1024 * 1024;
+  const base = row('event_msg', { type: 'synthetic_padding', text: '' });
+  const record = base.replace('"text":""', '"text":"' + 'x'.repeat(MiB - Buffer.byteLength(base)) + '"');
+  const f = await fixture(t, [meta()]);
+  fs.appendFileSync(f.file, record);
+  const before = await f.adapter.open(f.ref).read({ ...TEST_BUDGET, maxRecords: 1 });
+  const result = await f.adapter.open(f.ref, before.checkpoint).read({ ...TEST_BUDGET, maxBytes: MiB });
+  assert.equal(result.stats?.bytesRead, MiB);
+  assert.equal(result.stats?.recordsRead, 1);
+  assert.equal(result.checkpoint.offset, fs.statSync(f.file).size);
+  assert.equal(result.observation.coverage.state, 'complete');
+});
+
+test('F09/F10 no-content budgeted rereads preserve the nested checkpoint event clock', async (t) => {
+  const f = await fixture(t);
+  const reader = f.adapter.open(f.ref);
+  const first = await drain(reader);
+  const clock = (result: ReaderResult) => {
+    const cp = result.checkpoint as CodexCheckpoint;
+    const saved = deserialize(Buffer.from(cp.codex.rollout.payload, 'base64'));
+    return saved.cachedResult.toolActivity.lastUpdateTime.getTime();
+  };
+  assert.equal(clock(first), TIME + 7000);
+  const zero = await reader.read({ ...TEST_BUDGET, maxBytes: 0 });
+  assert.equal(zero.stats?.bytesRead, 0);
+  assert.equal(zero.stats?.recordsRead, 0);
+  assert.equal(clock(zero), clock(first));
+  fs.appendFileSync(f.file, '{"type":"event_msg","timestamp":"2026-03-01T12:01:00Z","payload":');
+  const tail = await reader.read(TEST_BUDGET);
+  assert.equal(tail.stats?.recordsRead, 0);
+  assert.equal(tail.checkpoint.offset, first.checkpoint.offset);
+  assert.equal(clock(tail), clock(first));
+  assert.equal(tail.observation.spent.tokens.asOf, first.observation.spent.tokens.asOf);
+  const restored = await f.adapter.open(f.ref, JSON.parse(JSON.stringify(tail.checkpoint))).read(TEST_BUDGET);
+  assert.equal(restored.stats?.recordsRead, 0);
+  assert.equal(restored.checkpoint.offset, first.checkpoint.offset);
+  assert.equal(clock(restored), clock(first));
+  assert.equal(restored.evidence?.observation.statusProjection.lastEvidenceAt, TIME + 7000);
 });

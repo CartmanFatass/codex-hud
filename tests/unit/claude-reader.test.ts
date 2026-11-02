@@ -12,6 +12,8 @@ import {
   SESSION,
   PRIVATE,
   CLAIM,
+  TIME,
+  CWD,
   MiB,
   row,
   user,
@@ -82,6 +84,9 @@ test('Claude usage is deduplicated by message.id and public evidence excludes pr
   assert.equal(result.observation.spent.costUsd.quality, 'unknown');
   assert.strictEqual(result.evidence.observation, result.observation);
   assert.strictEqual(result.inputs, result.evidence.inputs);
+  assert.equal(result.evidence.cwd, CWD);
+  assert.equal(result.evidence.cwdSource, 'transcript');
+  assert.equal(result.evidence.cwdAsOf, TIME + 1100);
   assert.ok(!JSON.stringify(result).includes(PRIVATE));
   assert.ok(result.observation.coverage.skipped['api-request-blob'] >= 1);
   assert.equal(result.observation.coverage.state, 'complete');
@@ -217,9 +222,12 @@ test('Claude only pairs exact configured HUD tool calls with corresponding tool 
   ]);
   const result = await drain(f.reader);
   assert.equal(result.evidence.linkEvidence.length, 1);
-  assert.equal(result.evidence.linkEvidence[0].callId, 'valid');
-  assert.equal(result.evidence.linkEvidence[0].runId, 'run-synthetic');
-  assert.equal(result.evidence.linkEvidence[0].tool, 'mcp__hud__delegate_spawn');
+  const anchor = result.evidence.linkEvidence[0];
+  assert.equal(anchor.kind, 'tool_result');
+  assert.ok(anchor.kind === 'tool_result');
+  assert.equal(anchor.callId, 'valid');
+  assert.equal(anchor.runId, 'run-synthetic');
+  assert.equal(anchor.tool, 'mcp__hud__delegate_spawn');
   assert.ok(!JSON.stringify(result).includes(PRIVATE));
 });
 
@@ -241,29 +249,75 @@ test('Claude accepts public attachment toolUseResult envelopes while skipping ot
   ]);
   const result = await drain(f.reader);
   assert.equal(result.evidence.linkEvidence.length, 1);
-  assert.equal(result.evidence.linkEvidence[0].callId, 'attached');
+  const anchor = result.evidence.linkEvidence[0];
+  assert.ok(anchor.kind === 'tool_result');
+  assert.equal(anchor.callId, 'attached');
   assert.equal(result.evidence.linkEvidence[0].linkId, 'link-attached');
   assert.ok(!JSON.stringify(result).includes(PRIVATE));
 });
 
-test('Claude launch markers are per run and retain only the exact native ID, link and claim fingerprint', async (t) => {
+test('Claude launch markers use shared event-time anchors and retain each resume message', async (t) => {
   const f = fixture(t, [user('A normal first user prompt.'), launch()]);
   const first = await drain(f.reader);
-  assert.deepEqual(first.evidence.claude.launchMessages, [
+  assert.deepEqual(first.evidence.linkEvidence, [
     {
+      kind: 'launch_message',
+      ref: f.ref,
       nativeMessageId: 'synthetic-record-0',
       linkId: 'link-synthetic',
       claimFingerprint: createHash('sha256').update(CLAIM).digest('hex'),
+      eventAt: TIME,
     },
   ]);
-  assert.deepEqual(first.evidence.linkEvidence, []);
+  assert.ok(!('claude' in first.evidence));
   fs.appendFileSync(f.file, launch('link-synthetic', 'synthetic-resume-secret', 8000) + '\n');
   const resumed = await drain(createClaudeReader(f.options, roundtrip(first)));
-  assert.equal(resumed.evidence.claude.launchMessages.length, 2);
-  assert.equal(resumed.evidence.claude.launchMessages[1].nativeMessageId, 'synthetic-record-8000');
+  assert.equal(resumed.evidence.linkEvidence.length, 2);
+  assert.equal(resumed.evidence.linkEvidence[1].nativeMessageId, 'synthetic-record-8000');
+  assert.equal(resumed.evidence.linkEvidence[1].eventAt, TIME + 8000);
   assert.ok(!JSON.stringify(resumed).includes(CLAIM));
   assert.ok(!JSON.stringify(resumed).includes('synthetic-resume-secret'));
-  assert.deepEqual(resumed.evidence.linkEvidence, []);
+});
+
+test('Claude launch anchors require a native event time and preserve copied-message candidates', async (t) => {
+  const missing = JSON.parse(launch('link-missing-time', 'synthetic-missing-time-claim', 4000));
+  delete missing.timestamp;
+  const original = user(
+    '[hud-launch] ' +
+      JSON.stringify({
+        linkId: 'link-synthetic',
+        claim: CLAIM,
+        launchCallId: 'call-synthetic',
+        launchCorrelationId: 'correlation-synthetic',
+      }),
+    5000
+  );
+  const copy = JSON.parse(original);
+  copy.uuid = 'synthetic-copy';
+  const f = fixture(t, [JSON.stringify(missing), original, JSON.stringify(copy)]);
+  const result = await drain(f.reader);
+  assert.equal(result.evidence.linkEvidence.length, 2);
+  assert.equal(result.observation.coverage.skipped.link_event_time_missing, 1);
+  assert.deepEqual(
+    result.evidence.linkEvidence.map((anchor) => anchor.nativeMessageId),
+    ['synthetic-record-5000', 'synthetic-copy']
+  );
+  for (const anchor of result.evidence.linkEvidence) {
+    assert.equal(anchor.kind, 'launch_message');
+    assert.equal(anchor.eventAt, TIME + 5000);
+    assert.equal(anchor.launchCallId, 'call-synthetic');
+    assert.equal(anchor.launchCorrelationId, 'correlation-synthetic');
+    assert.ok(!('runId' in anchor));
+    assert.ok(!('tool' in anchor));
+    assert.ok(!('callId' in anchor));
+  }
+  assert.ok(!JSON.stringify(result).includes(CLAIM));
+  const old = roundtrip(result);
+  old.readerVersion = 'claude-reader-2';
+  assert.throws(() => createClaudeReader(f.options, old), /unsupported_claude_checkpoint/);
+  const malformed = roundtrip(result);
+  delete (malformed.claude.links[0] as Partial<{ eventAt: number }>).eventAt;
+  assert.throws(() => createClaudeReader(f.options, malformed), /unsupported_claude_checkpoint/);
 });
 
 test('Claude fixture generation appends exact byte counts and incremental stats exclude the cold prefix', async (t) => {

@@ -8,6 +8,8 @@
 
 [Oracle consult 3](../reviews/2026-11-01-astra-consult3.md) E01–E06 同步观测绑定、取消分类、事实时序与 export v1；仍是 A9 候选，不代表阶段 B 生产验收。
 
+冻结后生效版本：`A9 + consult4-2026-11-01`。[Oracle consult 4](../reviews/2026-11-01-astra-consult4.md) 的下列增补保留此前裁决、schema v1 与 B 生产验收边界；checkpoint 隐私与恢复修补不得推迟到 D2。（consult 4 增补，F01）（consult 4 增补，F02）（consult 4 增补，F09）（consult 4 增补，F10）（consult 4 增补，F11）
+
 ## 数据模型
 
 ### Metric 与时间
@@ -31,6 +33,10 @@ spent 只含本节点；合计须单位、口径、coverage 相容且无重复 r
 
 新观测类型按指标分别包装：`spent={tokens:Metric<TokenUsage>,costUsd:Metric<number>}`，其中 TokenUsage 包含 input/output 与可选 cacheRead/cacheWrite/reasoning；`costUsd` 必有，缺价格/成本口径时为 `{value:null,quality:'unknown',source:<明确来源及缺失原因>,asOf:<确认缺失时刻>}`。tokens已知不使costUsd变reported，设计中的costUsd:null指其value，不另存裸字段。有效零保留0/reported；未知价格不按tokens换算美元，Flow credits保持另一单位，不给ledger加cost列。树级合计按完整SessionRef去重，携带 knownCount/missingCount、coverage与quality；只有同口径非负已报告成本部分和才可作该口径下界，混入估计必须estimated且不声称严格下界。旧v2缺省/零例外留07（T-06-22）。
 
+### SessionEvidence 的链接观测
+
+（consult 4 增补，F01）SessionEvidence.linkEvidence 使用共享判别联合 `ToolResultLinkEvidence | LaunchMessageLinkEvidence`：tool_result 保留原生调用身份与原字段，launch_message 保留 `ref/nativeMessageId/linkId/claimFingerprint/eventAt`，可选 launchCallId/launchCorrelationId 仅来自确实提供这些字段的原记录。指纹取原 claim 字节的 SHA-256/64 位小写十六进制，不保存明文 claim、整条消息或完整 prompt；不为启动消息伪造 runId/tool/callId。eventAt 必须是原记录有效事件时间，缺失则仅无授权候选/缺失原因，observed-time 不补 01 签发窗。它们都是未裁定锚点，不是绑定许可；启动消息还须唯一匹配既有 link/run 的本轮 claim 指纹/call/correlation/精确消息、原事件时间窗、完整 SessionRef/source 和独立启动/会话证据，不能取首条/历史复制/发现时间代替。B4 冻结 fallback 运输格式与 correlation（正常 env 不重复传明文），B8 只抽取，B9 只限定核验及候选/冲突投影；回填/撤权由 B2/B5 reconciler 事务提交，HUD/B9 读取不成为写者（01 I-01-5、T-01-14–16）。
+
 ### WorkspaceContext 与项目归属
 
 | 字段 | 语义 |
@@ -47,19 +53,31 @@ spent 只含本节点；合计须单位、口径、coverage 相容且无重复 r
 
 来源/时间的类型位置为 `cwdSource:string,cwdAsOf:number,gitCapturedAt:number|null,gitMissingReason:string|null`；无cwd时cwdSource解释缺失，cwdAsOf是确认缺失时刻。Git捕获完成（含非Git/超时）记录gitCapturedAt及原因，尚未采集时为null。`identityKind:'git-common-dir-v1',scope:'local'`描述repoId算法/范围。`RunWorkspaceSnapshot`白名单仅含上述Git字段（worktreeRoot/worktree/gitCommonDir/repoId/identityKind/scope）及来源/时间；launch_cwd和project_origin分别按02保存，快照不混入正文、remote或其他自由字段。observed WorkspaceContext是后续带来源的位置，不能覆盖逐run启动历史。
 
+（consult 4 增补，F02）reader 的 `SessionEvidence.cwdSource` 为 `session_meta | transcript | unknown`；合格 Claude transcript cwd 返回 transcript，未知 cwd 仍 null/unknown，不伪称 Codex session_meta。cwdSource 仅是位置来源类别，不授身份、不触发 Git、不覆盖冻结的 launch_cwd；事件时间或明确首次观测语义沿用本契约，重复读取不刷新。`claude.transcript.cwd` 可保留为内部诊断细节，不另立权威 cwdSource；WorkspaceProvenance 的诊断 string 与 07 的 export v1 词表仍各有边界，新增 transcript 明确映射到既有 transcript 代码，不扩出口词表、不猜字符串。01/02 的 callers.cwd 是另一个物理 MCP 诊断字段，不用于补会话未知 cwd。
+
 Git/项目解析属于共享workspace元数据逻辑，reader只供确实读到的cwd及来源；不新增常驻服务。工作树判等用有效规范根路径，cwd差异独立比较规范cwd；根未知时只能说目录不同，不声称不同工作树，未知不代表相同、同名不代表同目录。repoId与SourceId完全独立，同仓库的双home不合并ref/owner/授权/采集存储。同remote的两个clone仍为不同本地仓库；remote URL/hash、父子关系、目录名/内容相似不证明项目来源。无Git临时副本没有显式声明则unknown，toktrack可保留自己的推断与置信来源，HUD不作确定背书。
 
 Git不入写事务、MCP accepted热路径、HUD paint或statusline，热路径只读缓存；冷缺失由已有启动/采集流程补齐。每个新工作目录或失效代次最多一次发现工作，最多2次Git子进程、总软预算200ms，超时终止子进程并记unavailable；未知不挡委派、不重启harness。重复tick不再调用Git；明确cwd/工作树元数据变化或显式刷新使缓存失效，复用已有提示，不新增每节点watcher、repo发现daemon/全盘扫描或内容hash。预算待B实测，不是硬实时保证（T-06-23、24）。
 
 ### Reader、coverage 与树
 
-每次 reader 调用默认最多 4 MiB、2000 条、软时间 20 ms，先到者停止并保存可恢复游标。单条记录最多 1 MiB；时间预算包含解码/解析/归并，单次 JSON.parse 不可抢占，超时仍要记录实测，不声称硬实时。类型来自完整合法 JSON 的 type，不能依赖首键/行首正则。已知非公开类型（cc api-request-blob、thinking、reasoning、pi 图片等）不提取材料；超大记录安全跳过，不能识别其完整类型时记 oversize_unknown 与 gap，不猜作已知类型。未完成尾行最多保留 1 MiB，超限进入有界丢弃至换行状态，不无限扩 Buffer。
+（consult 4 增补，F10）每次 reader 调用默认最多 4 MiB、2000 条、软时间 20 ms；所有重读、读后未处理的预取、签名及恢复读取都计入本 slice 和全 tick 的 I/O/时间预算。maxRecordBytes=1 MiB 按 LF 前全部字节计，包含 CRLF 的 CR；有 LF 的最大合法记录消费 1 MiB+1 字节，无 LF 的固定 EOF 完整 JSON 至多 1 MiB，还须预留本轮实际需要的签名检查等 I/O。时间包含 I/O 等待/调度、解码/解析/归并；完整记录 JSON.parse 不可抢占，超时记录实测，不承诺硬实时。有可用数据且字节/记录/时间预算均为正时，open/stat/read 等待已吃完软时间仍允许至少一次受字节/记录上限约束的有界消费步骤，保证前进；零预算不消费，实际超时如实计入软预算缺陷。
 
-`ReaderCheckpoint` 至少含 `schemaVersion,readerVersion,ref,fileId{dev,inode},offset,sourceGeneration,parserState`。offset 是已消费字节边界，含 CRLF/UTF-8 的真实字节；未提交尾行/丢弃状态必须可恢复。截断、inode/文件变化、compaction、分支切换各有明确的重置/续读原因，不用 mtime 作为唯一身份。sourceGeneration 是读取谱系，collect lease generation 是写入权；二者不能混用。
+类型来自完整合法 JSON 的 type，不能依赖首键/行首正则。已知非公开类型（cc api-request-blob、thinking、reasoning、pi 图片等）不提取材料；超大记录安全跳过，不能识别其完整类型时记 oversize_unknown 与 gap，不猜作已知类型。
+
+（consult 4 增补，F09）`ReaderCheckpoint` 至少含 `schemaVersion,readerVersion,ref,fileId{dev,inode},offset,sourceGeneration,parserState`。它是可序列化恢复元数据；未完成记录的原始字节只在单个 live reader 中至多 maxRecordBytes 的有界易失 transient buffer 存在，不能进入 checkpoint、ObservationCommit、summary、日志、临时 bundle、嵌套 binary/base64 payload 或持久 token/parser state，也不能改名放进 adapter extension。保留 checkpoint schemaVersion=1 的 pendingBytes 兼容字段时恒为 []，transient buffer 单独且不可序列化。普通未完成记录的持久 offset 留在最后完整记录边界（真实 UTF-8/CRLF 字节），恢复从原 source 重读；摘要、usage 去重、工具配对、事件钟/速率基线同样只反映该已完成边界。超大记录仅存 discarding 标志和可推进的丢弃游标，跨 slice/重启继续丢弃至换行、只计一次 oversize_unknown/gap，不保存正文、不每 tick 从行首重扫。EOF 不完整行仍 partial/incomplete_tail，不能因 pendingBytes=[] 误报 complete。
+
+（consult 4 增补，F10）重启或易失缓冲丢失后，必须有机会在一个 slice 从最后提交边界重读一条最大合法记录。实际剩余字节不足时，共享 `ReaderResult.continuation?:{kind:'record_needs_larger_slice',minimumBytes:number}` 并返回 partial coverage；minimumBytes 覆盖本实现恢复实际需要的记录、界符及签名 I/O，不固定填 1 MiB，也不将软时间耗尽误报为字节不足。不静默增加预算、不提交半行、不忙循环；同一 live reader 可留易失缓冲，足量 slice 到来后继续推进。A4 helper、A6 facade/底层 RolloutParser、B8 共用此类型/语义；各层 offset（含导出 rollout.offset）、摘要/时钟必须是同一提交边界。
+
+截断、inode/文件变化、compaction、分支切换各有明确的重置/续读原因，不用 mtime 作为唯一身份。sourceGeneration 是读取谱系，collect lease generation 是写入权；二者不能混用。
+
+（consult 4 增补，F11）增量 reader 假定两个已观测 reset 之间 source 追加写入。inode/设备变化、缩短、已检测的非增长改写或已消费边界签名失配触发明确 reset/sourceGeneration 变化。有界首/末已消费记录签名只发现覆盖区域变化及部分常见替换，不证明任意历史内部未变；保持这些样本不变的内部改写没有检测保证。诊断保留 append_only_assumed_bounded_signatures 及其限制，coverage.complete 仅表示在此读取模型下覆盖本次固定输入边界，不因此永远 partial。reset 后旧 reader 锚点/摘要/易失缓冲不作新谱系当前证据，也不拼接新文件；01 的精确本轮绑定和独立身份条件仍成立，“未发现改写”不能授权 MCP。来源不再满足此模型时回到 unverified/明确缺口，不引入逐 tick 全前缀重哈希、Merkle 索引或后台校验器。
 
 `Coverage={state:complete|partial|catching_up, skipped, gaps[], remainingBytes?, loaded, reason?}`：complete 仅指本次已知输入边界内所有应解析的公开记录已覆盖，不表示会话全部历史或不存在原生子；catching_up 表示预算尚未追到固定输入边界；partial 表示跳过/不可读/缺历史/分支不明，追上 EOF 也不能清掉已有 gap。skipped 分类型/超大/未知原因计数，排除私有块不保留正文。允许同时 catching_up 且有 gaps，不能靠一个枚举丢失缺口。
 
 树采集每 tick 共用 8 MiB 文件 I/O、≤200 个节点、跨 harness 展开深度预算默认 4；各 reader 还受自己的预算约束。visited 以完整 SessionRef/JobRef 去重、防自环/祖先环；只用 adapter.children 提供原生拓扑和账本当前关系。预算外节点只保留限额内的身份/最后状态并置 loaded=false，不递归偷读；已知但未装载的数量/continuation 单列，不声称整棵大树已收全。历史 handed_over 关系不是第二父边，候选不进入确定树或已验证计数；解析权限与候选范围引用 01。
+
+（consult 4 增补，F10）B16/B10 调度使用共享总 deadline 和 8 MiB I/O，不把各 reader 20 ms 逐节点相加。可在同一 live reader 保留 transient；本 tick 剩余不足时在下一公平轮次安排足够的一条记录 slice，并从共享预算扣除，不能每 tick 重建 reader 或一直给小碎片使合法大记录永久饥饿。剩余时间不足正常让出/续读，完整解析的不可抢占超时仍计量为软预算缺陷，不承诺硬实时。
 
 显示节点身份为 `DisplayNodeIdentity = {kind:'session',ref:SessionRef} | {kind:'delegationIntent',linkId:string} | {kind:'job',ref:JobRef}`（job留C）。未绑定的已登记委派用稳定linkId显示键并关联currentRun，不伪造sessionId/source，不按label/cwd合并，不计入已确认session数；这不是新的授权身份或第三类账本运行。首次绑定由B9以真实ref合并，保留原选择键到新ref的映射、单父边与去重。intent仅从ledger link/run事件派生，不为其伪造collect:<SessionRef>租约（T-06-25）。
 
@@ -122,6 +140,8 @@ ObservationCommit与collect lease只针对真实session及真实sourceGeneration
 
 逻辑提交 `ObservationCommit={ref,sourceGeneration,leaseGeneration,seqDomain,commitSeq,observationStamp,checkpoint,summary,continuity,notices}`；stamp中的ref/sourceGeneration/commitSeq必须与本commit一致，inputLedgerSeq/runId/bindingGeneration为实际使用的输入。checkpoint offset/parserState、summary（含stateKey/stateSince/stateSinceBasis）、StateContinuity及notice同时可见。B12负责持久发布、B16负责唯一边沿逻辑，共用本提交，不各造存储。可采用独立观测SQLite短事务，或不可变bundle+一个原子发布指针；两次rename不能冒充原子。保留概念路径时checkpoint/summary解析同一commitSeq/bundle，不各取最新。布局/点击状态另在instances/。
 
+（consult 4 增补，F09）B12 发布入口拒绝含 raw tail 或提交边界不一致的 checkpoint；不能只在序列化前清 pendingBytes 而保留已跨尾行的 offset。checkpoint/summary/continuity/notices 保持同一完整记录边界，预取/易失状态不进入 bundle/V8 payload。修改 durable 语义必须递增 readerVersion，旧 raw-tail 缓存不能直接续用或只删字节仍保留旧 offset；由 collect lease 围栏按 07 受控 source 缓存失效/重建、重置连续性，并删除/替换含 raw tail 的旧缓存及未发布 bundle，不留永久原件，不改 ledger schema/user_version。
+
 仅状态边沿或原有内容变化才提交，持collect lease的采集器仍是唯一观测写者；年龄以nowMs计算，重绘/status/wait零观测或ledger写入。不能每次读全量events找stateSince或每tick写年龄；读路径跨截止可纯重投影，需持久的新边沿由已有采集器在相同ObservationCommit发布。
 
 接管与发布必须共用同一原子 CAS/互斥边界：写入时同时重验 holder/generation/有效期、ref/sourceGeneration 与前一 commitSeq，再发布。文件方案的「查 lease → 放锁 → rename」不合格，旧持有者不得覆盖新指针；SQLite 方案也不能在事务外做一次 lease 检查后盲写。准备文件/解析在边界之外，提交内只校验与发布必要元数据；同一边界串行化接管。目录 0700/文件 0600，临时文件完整写/fsync 后再发布，必要目录 fsync；崩溃留下的未发布 bundle 不被读取。
@@ -131,16 +151,16 @@ ObservationCommit与collect lease只针对真实session及真实sourceGeneration
 | 编号 | 断言 | 测试 |
 |---|---|---|
 | I-06-1 | Metric 的 source/asOf/quality 可解释；未知不作零、重读不续活动时间，观测时间与事件时间分开 | T-06-1、2、21 |
-| I-06-2 | reader 字节/记录/时间/单条上限和恢复状态有效；超预算/跳过不伪造完整 coverage | T-06-3、4 |
+| I-06-2 | reader 字节/记录/时间/单条上限和恢复状态有效；持久 raw tail 禁止、offset/摘要/时钟同完整记录边界，易失缓冲有界，丢弃游标跨重启前进（consult 4 增补，F09）；最大合法记录重读含 LF/CR/签名实际成本，不足给类型化 continuation/partial、公平续读且不隐增预算（consult 4 增补，F10）；append-only-between-observed-resets 与有限签名保证公开，reset 失效旧谱系，不声称全历史未改，超预算/跳过不伪造完整 coverage（consult 4 增补，F11） | T-06-3、4 |
 | I-06-3 | 树≤200节点、去重无环、I/O有界；未加载/候选/历史边不变成新的确定节点事实 | T-06-5 |
 | I-06-4 | 五维输入、显式冲突、notice 原始边沿/seq 与时间可提供；只消费 B16 唯一归并，关系门禁引用 03 | T-06-6、7 |
-| I-06-5 | checkpoint/parserState/summary/notices 同一 commit；消费者只读完整已发布版本，绝不新旧混配 | T-06-8 |
+| I-06-5 | checkpoint/parserState/summary/continuity/notices 同一 commit 与完整记录边界；B12 拒 raw tail（含隐藏编码/payload）及边界错配，旧缓存按 07 受控重建/清除原始尾字节；消费者只读完整已发布版本，绝不新旧混配（consult 4 增补，F09） | T-06-8 |
 | I-06-6 | collect 可过期换代，接管与发布同一围栏，旧代迟写/续约/释放全部拒绝；它不写 ledger | T-06-9、10 |
 | I-06-7 | 热路径、进程、逻辑写入、CPU 与冷启动逐预算测量；不把 accepted 延迟当启动延迟 | T-06-11–16 |
 | I-06-8 | 通知是 hint、游标是事实；有界复读、心跳提示合并、不新增服务；status 只读 | T-06-17、18 |
 | I-06-9 | HUD 用廉价变更信号与已提交摘要；statusline 数据入口≤20ms，stdin 优先、失败可退现有摘要/缺失 | T-06-19、20 |
 | I-06-10 | spent.tokens/costUsd各自Metric，成本未知null、有效零保留；完整ref去重合计带缺失/coverage/quality，估计不作严格下界 | T-06-22 |
-| I-06-11 | WorkspaceContext位置/显示名/本地repoId/declared来源分离，Git≤2子进程/200ms软预算且不入热路径/事务，逐run启动历史不改写 | T-06-23、24 |
+| I-06-11 | WorkspaceContext位置/显示名/本地repoId/declared来源分离，Git≤2子进程/200ms软预算且不入热路径/事务，逐run启动历史不改写；SessionEvidence.cwdSource 仅 session_meta/transcript/unknown，合格 Claude transcript 不伪称 session_meta，诊断细节不另成权威，位置来源不授身份/触发 Git，不能以 callers.cwd 补未知会话 cwd（consult 4 增补，F02） | T-06-23、24 |
 | I-06-12 | session使用完整ref与真实sourceGeneration；ledger intent必有nodeIdentity/currentRunId，StateContinuity.runId必有且对应本快照currentRun，禁止ref/sourceGeneration/collect租约或伪ObservationCommit；绑定不凭选择键制造连续性；其余freshness/终态语义统一 | T-06-25、26 |
 | I-06-13 | stateSince是语义episode连续起点；session按真实读取谱系，intent按linkId/current run/规则/ledger事件锚点，asOfSeq增长不冒代次；同link换run重置，绑定须有link→ref/同run/同episode证据，缺证observed/unknown；session连续性随ObservationCommit发布，零逐tick写 | T-06-27、28 |
 | I-06-14 | ledger与观测分域加戳，组合重验实体/代次；旧run摘要不混当前，无跨库原子或读路径写入 | T-06-29 |
@@ -178,7 +198,7 @@ stdin 的 session/model/context/cost 永远优先，摘要不覆盖它。廉价�
 | P-06-4 | 非 wait MCP p95 <50ms（含 status/spawn/resume/cancel/whoami/report 的成功与拒绝） | 从完整 tools/call 到响应序列化/flush，含验证/摘要准备、DB 等待/commit；spawn/resume 返回 durable accepted+starting，cancel 返回 durable 取消意图，不等 TUI ready/绑定/12s序列。每工具分别测，不能只靠快拒绝达标 |
 | P-06-5 | 实时同步 SQLite 等待短且受响应总预算限制；busy_timeout≤10ms，重试含退避累计墙钟≤20ms并扣剩余响应预算 | BEGIN IMMEDIATE 内无文件读取/摘要计算/宿主 CLI/进程发现/网络等外部 I/O；事务内重验 context/版本/槽。预算耗尽且未提交时 busy/未接受；已提交响应未知按 02 重放，不再提交外部动作。长锁压测单列 busy 数/尾延迟 |
 | P-06-6 | MCP 冷启动<200ms | 从创建新 MCP 进程到可正确回答 initialize，包含 Node/模块加载/必要存储打开；不加载整个 HUD/reader/Herdr 模块图。tools/list/首次工具延迟另测，不能以延迟初始化隐藏成本 |
-| P-06-7 | HUD 增量 tick<50ms；reader 软20ms，树≤200/8MiB | 从增量 collect 入口到一致摘要发布及本次数据组装/渲染/paint enqueue 结束，含 I/O 等待/调度；两入口分别测。冷追赶单列，不把等待下一 tick 的空闲算进去或把慢增量移成「冷」 |
+| P-06-7 | HUD 增量 tick<50ms；reader 软20ms，树≤200/8MiB | 从增量 collect 入口到一致摘要发布及本次数据组装/渲染/paint enqueue 结束，含 I/O 等待/调度；两入口分别测。所有重读/预取/签名/恢复 I/O 都扣本 slice/全 tick；最大合法 1 MiB 记录含 LF 为 1 MiB+1 字节（含 CR），另计实际签名成本，不足返回 record_needs_larger_slice/minimumBytes/partial。B16/B10 共用总 deadline、公平安排足量恢复 slice，不相加各 reader 20ms。冷追赶单列，不把等待下一 tick 的空闲算进去或把慢增量移成「冷」（consult 4 增补，F10） |
 | P-06-8 | statusline 廉价数据入口≤20ms；完整 statusline p95≤150ms | 前者按上节独立测（含摘要命中/索引 fallback/缺失）；后者包含冷进程、stdin、采集竞争及输出，D3/D4 验收，故障/空输出按概念 §9.3 门禁，本文不决定视觉 |
 | P-06-9 | accepted→started/bound/ready 分开测，不以<50ms承诺完成启动 | 保存 accepted（意图commit）、dispatch、真实 harness started、bound、host-ready 时刻及超时/未达到数；按相同 run 对齐，nullable 时刻明确缺失，不能只统计成功者 |
 
@@ -203,18 +223,18 @@ stdin 的 session/model/context/cost 永远优先，摘要不覆盖它。廉价�
 
 ## 测试清单
 
-以下为待执行规格；A9只验证规格/fixture与最低可行性，B测试最小生产切片，D2–D4仍属B类生产预算扩展，不要求A9先完成生产实现。C/v1.1的未来正向能力不阻MVP。
+以下为待执行规格；A9只验证规格/fixture与最低可行性，B测试最小生产切片，D2–D4仍属B类生产预算扩展，不要求A9先完成生产实现。C/v1.1的未来正向能力不阻MVP。consult 4 的新增恢复/发布断言在 B 的修补包与 B12/B16/B10 定向验证，不追认原 A9 已执行或重开其门禁。（consult 4 增补，F09）（consult 4 增补，F10）（consult 4 增补，F11）
 
 | 编号 | Gate | 输入 → 断言 |
 |---|---|---|
 | T-06-1 | A9 | 有效零、缺值、估计值、同记录重复读、无事件钟 → quality/source/asOf可解释，unknown=null，observedAt不替代活动事件 |
 | T-06-2 | B | Codex累计不增/compact、cc重复message.id/compact_boundary → 去重/重置与checkpoint恢复一致；旧--json口径按07保留 |
-| T-06-3 | B | 100MiB合成transcript，每tick4MiB/2000/20ms软预算，首键非type → 有界推进、coverage/skipped准确；真实耗时纳入预算 |
-| T-06-4 | A9 | CRLF、多字节、无结尾换行、>1MiB行、重写/inode/分支切换与崩溃恢复 → byte offset/state一致，未知大行gap，不无限缓存 |
-| T-06-5 | A9 | 201+节点、自环/祖先环/重复ref、深度>4、已转交旧边 → ≤200/8MiB、有continuation/loaded=false，无第二父边或候选计数 |
+| T-06-3 | B | 100MiB合成transcript，每tick4MiB/2000/20ms软预算，首键非type → 有界推进、coverage/skipped准确；真实耗时纳入预算；重启从提交边界在一 slice 恢复最大合法记录，含 CRLF/LF 与实际签名 I/O；不足给 record_needs_larger_slice/minimumBytes+partial，下一足量 slice 前进且全部 I/O 扣预算。生产默认 reader 延迟 I/O 超20ms、正预算仍至少一次受 caps 约束的消费/offset 前进，零预算不消费；受控 clock 测软时间，耗尽时间不伪称字节不足（consult 4 增补，F10） |
+| T-06-4 | A9 | CRLF、多字节、无结尾换行、>1MiB行、重写/inode/分支切换与崩溃恢复 → byte offset/state一致，未知大行gap，不无限缓存；UTF-8 多字节/CRLF 中间、私有 api-request-blob 中间、fallback claim 中间崩溃，重读提取/usage 去重与完整读相同且所有序列化产物无敏感哨兵，checkpoint pendingBytes=[]，摘要/配对/时钟不越完整边界（consult 4 增补，F09）；最大合法记录计界符/签名，预算不足 continuation→下一足量 slice 前进，超大无换行跨多次重启有界丢弃且只计一次 gap，reset/compaction 不接旧 transient，复读不刷新事件钟（consult 4 增补，F10）；首/末签名失配等触发 reset/sourceGeneration，保持有限样本的内部改写不宣称可检出，诊断公开 append_only_assumed_bounded_signatures，complete 仅本模型固定边界覆盖，旧锚点/摘要失效（consult 4 增补，F11） |
+| T-06-5 | A9 | 201+节点、自环/祖先环/重复ref、深度>4、已转交旧边 → ≤200/8MiB、有continuation/loaded=false，无第二父边或候选计数；B16/B10 共总 deadline/8MiB，多个小 slice 不使合法大记录永久饥饿，下一公平轮次提供足量一记录恢复 slice；不逐 tick 重建 reader/相加20ms，无时间正常续读（consult 4 增补，F10） |
 | T-06-6 | A9 | 五维输入各来源、明确失败与registry交互、Herdr done→idle、心跳停/nullable exit → B16输入带当前性/双时间/显式冲突；未做第二套迁移 |
 | T-06-7 | B | B16每条真值表逐行fixture，report/uncertain/pending/failed边沿重放及重绘 → 唯一投影、notice seq域/时间稳定；03字段缺失有reason、旧轮不补当前轮 |
-| T-06-8 | B | 每个checkpoint/summary准备、发布前后崩溃，消费者并发读 → 只旧commit或完整新commit，offset/state/summary/notice不混配 |
+| T-06-8 | B | 每个checkpoint/summary准备、发布前后崩溃，消费者并发读 → 只旧commit或完整新commit，offset/state/summary/notice不混配；B12 拒含 raw tail/边界错配产物（含 binary/base64/V8 嵌套），持久 pendingBytes=[]，offset/去重/工具配对/时钟与摘要同完整记录边界；按07受控重建并删除/替换含 raw tail 旧缓存/未发布 bundle，原子重置 continuity（consult 4 增补，F09） |
 | T-06-9 | B | 两进程过期接管g→g+1，旧holder暂停于校验与发布之间后恢复 → 旧代写/续约/释放全拒，新摘要不回退；释放再获取不重置generation |
 | T-06-10 | A9 | collect写ledger lease/改run槽、时钟倒退、lease竞争失败 → 禁写ledger/槽；时间未知只读，消费者可用已有已提交摘要 |
 | T-06-11 | B | H/R=1/1、2/10的进程树/RSS及终态、无控制uncertain历史 → 数量按P-06-1、helper收尾退出，零常驻恢复/通知服务 |
@@ -230,7 +250,7 @@ stdin 的 session/model/context/cost 永远优先，摘要不覆盖它。廉价�
 | T-06-21 | C | pi compaction、cache_warm、assistant cost和Flow preview/确认值 → 交互usage不混compaction/cache_warm，单位/quality明确，无token假零 |
 | T-06-22 | A9 | tokens已知但cost未知、有效零成本、部分已报告/混estimated合计、重复完整ref → costUsd必有独立Metric且unknown.value=null；零为0/reported，合计带knownCount/missingCount/coverage/quality，估计不冒充下界，credits不换美元 |
 | T-06-23 | A9 | 同仓库两个worktree、同remote两个clone、无Git临时副本、显式copy来源、同名不同路径 → 前者同repoId不同规范根；clone不同repoId；副本unknown/declared不升级物理身份；根缺失只说明cwd不同 |
-| T-06-24 | A9 | Git缓存命中/冷缺失/超时/明确失效，旧header cwd/包装链改变实际cwd/历史路径消失 → 来源/捕获时间/原因准确、launch不被覆盖且历史可导出；每代≤2子进程/200ms软预算规格、无重复tick/Git热路径/新增watcher；真实成本在B验 |
+| T-06-24 | A9 | Git缓存命中/冷缺失/超时/明确失效，旧header cwd/包装链改变实际cwd/历史路径消失 → 来源/捕获时间/原因准确、launch不被覆盖且历史可导出；每代≤2子进程/200ms软预算规格、无重复tick/Git热路径/新增watcher；真实成本在B验；合格 Claude 文件 cwd 的 SessionEvidence.cwdSource=transcript，缺证=null/unknown，不伪称 session_meta、不用 callers.cwd 补空；事件/首次观测时间复读不刷新，不授身份或覆盖 launch_cwd，07 仅明确映射既有 transcript 代码（consult 4 增补，F02） |
 | T-06-25 | A9 | 两个同名intent各关联本快照currentRun，ledger证据无ref/sourceGeneration，StateContinuity intent缺runId或伪sourceGeneration拒类型；不计已确认session、不造collect租约/ObservationCommit；B9绑定合并保选择映射，无双节点/双父 |
 | T-06-26 | A9 | 缺来源/过截止freshness、无报告N成立的failed、failed报告但run.running、run.cancelling → freshness.state为unknown/stale，launch_failed/non_execution带原因且终态，后两者不按图标终结/折历史 |
 | T-06-27 | A9 | 重读/重启/两个消费者同commit/心跳usage语言排序变化不重置；同link换run/新待决或失败episode必重置；intent绑定session有同run/episode映射证明才可取原ledger起点，session有自己的真实sourceGeneration；选择键合并或stateKey相同不足，无证据取observed/unknown，无假完成通知 |

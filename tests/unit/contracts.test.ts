@@ -127,3 +127,131 @@ test('T-07-24', () => observationExportCases['T-07-24']());
 test('T-07-25', () => observationExportCases['T-07-25']());
 test('T-07-26', () => observationExportCases['T-07-26']());
 test('T-07-27', () => observationExportCases['T-07-27']());
+
+// Consult 4 F09/F10: durable state is metadata only; source bytes belong to a live reader.
+import assert from 'node:assert/strict';
+import {
+  initialParserState,
+  JSONL_READER_VERSION,
+  readJsonlBytes,
+  resetReaderCheckpoint,
+} from '../../src/core/observation.js';
+import type { ReaderCheckpoint } from '../../src/core/types/observation.js';
+const jsonlCheckpoint = (): ReaderCheckpoint => ({
+  schemaVersion: 1,
+  readerVersion: JSONL_READER_VERSION,
+  ref: { harness: 'codex', sourceId: 'e'.repeat(64), sessionId: 'synthetic-recovery', threadId: null },
+  fileId: { dev: 1, inode: 2 },
+  offset: 0,
+  sourceGeneration: 1,
+  parserState: initialParserState(),
+});
+
+test('F09/F10 A4 crash cuts keep UTF-8/CRLF, private blobs and claims out of every serialized artifact', () => {
+  const prefix = Buffer.from('{"type":"user"}\n');
+  for (const [type, content] of [
+    ['assistant', '合成\r\nCRASH_SENTINEL'],
+    ['api-request-blob', 'CRASH_SENTINEL_PRIVATE'],
+    ['user', '[hud-launch] CRASH_SENTINEL_CLAIM'],
+  ]) {
+    const record = Buffer.from(JSON.stringify({ type, content }) + '\r\n');
+    const bytes = Buffer.concat([prefix, record]);
+    const cuts = [prefix.length + record.indexOf(Buffer.from(type)) + 2, bytes.length - 6, bytes.length - 1];
+    const unicode = record.indexOf(Buffer.from('合'));
+    if (unicode >= 0) cuts.push(prefix.length + unicode + 1);
+    for (const cut of cuts) {
+      const first = readJsonlBytes({
+        checkpoint: jsonlCheckpoint(),
+        bytes: bytes.subarray(0, cut),
+        knownEndOffset: bytes.length,
+      });
+      assert.equal(first.checkpoint.offset, prefix.length);
+      assert.deepEqual(first.checkpoint.parserState.pendingBytes, []);
+      assert.ok(!JSON.stringify(first).includes('CRASH_SENTINEL'));
+      assert.ok(!JSON.stringify(first).includes(Buffer.from('CRASH_SENTINEL').toString('base64')));
+      const checkpoint = JSON.parse(JSON.stringify(first.checkpoint));
+      const restored = readJsonlBytes({
+        checkpoint,
+        bytes: bytes.subarray(checkpoint.offset),
+        knownEndOffset: bytes.length,
+      });
+      const full = readJsonlBytes({ checkpoint: jsonlCheckpoint(), bytes, knownEndOffset: bytes.length });
+      assert.deepEqual(restored.records, full.records.slice(1));
+      assert.equal(restored.checkpoint.offset, bytes.length);
+      assert.deepEqual(restored.coverage, full.coverage);
+    }
+  }
+});
+
+test('F10 A4 transient continuation, maximum record, oversize restarts and source resets', () => {
+  const MiB = 1024 * 1024;
+  const base = Buffer.from('{"type":"assistant","text":""}');
+  const maximum = Buffer.from('{"type":"assistant","text":"' + 'x'.repeat(MiB - base.length - 1) + '"}\r\n');
+  assert.equal(maximum.length, MiB + 1, 'CR counts toward maxRecordBytes; LF is additional');
+  const first = readJsonlBytes({
+    checkpoint: jsonlCheckpoint(),
+    bytes: maximum,
+    knownEndOffset: maximum.length,
+    budget: { maxBytes: 128 },
+  });
+  assert.equal(first.checkpoint.offset, 0);
+  assert.equal(first.coverage.state, 'partial');
+  assert.equal(first.coverage.reason, 'record_needs_larger_slice');
+  assert.deepEqual(first.continuation, { kind: 'record_needs_larger_slice', minimumBytes: MiB + 1 });
+  const live = readJsonlBytes({
+    checkpoint: first.checkpoint,
+    transient: first.transient,
+    byteOffset: first.nextReadOffset,
+    bytes: maximum.subarray(first.nextReadOffset),
+    knownEndOffset: maximum.length,
+  });
+  assert.equal(live.checkpoint.offset, maximum.length);
+  const restarted = readJsonlBytes({
+    checkpoint: JSON.parse(JSON.stringify(first.checkpoint)),
+    bytes: maximum,
+    knownEndOffset: maximum.length,
+    budget: { maxBytes: first.continuation!.minimumBytes },
+  });
+  assert.equal(restarted.checkpoint.offset, maximum.length);
+  assert.equal(restarted.coverage.state, 'complete');
+  const huge = Buffer.from('x'.repeat(MiB + 500000));
+  let result = readJsonlBytes({
+    checkpoint: jsonlCheckpoint(),
+    bytes: huge,
+    knownEndOffset: huge.length,
+    budget: { maxBytes: MiB + 2 },
+  });
+  while (result.nextReadOffset < huge.length) {
+    const cp = JSON.parse(JSON.stringify(result.checkpoint));
+    result = readJsonlBytes({
+      checkpoint: cp,
+      bytes: huge.subarray(cp.parserState.discardOffset!),
+      knownEndOffset: huge.length,
+      budget: { maxBytes: 100000 },
+    });
+  }
+  assert.equal(result.coverage.skipped.oversize_unknown, 1);
+  assert.equal(result.coverage.state, 'partial');
+  assert.equal(result.checkpoint.parserState.discardOffset, huge.length);
+  assert.deepEqual(result.checkpoint.parserState.pendingBytes, []);
+  const next = Buffer.from('{"type":"user"}\n');
+  for (const reason of ['file_changed', 'truncated', 'compaction', 'branch_changed'] as const) {
+    const reset = resetReaderCheckpoint(first.checkpoint, { dev: 1, inode: 3 }, 2, reason);
+    const fresh = readJsonlBytes({
+      checkpoint: reset,
+      transient: first.transient,
+      bytes: next,
+      knownEndOffset: next.length,
+    });
+    assert.deepEqual(fresh.records, [{ type: 'user', byteEnd: next.length }]);
+  }
+  assert.throws(
+    () =>
+      readJsonlBytes({
+        checkpoint: { ...jsonlCheckpoint(), readerVersion: 'jsonl-bytes-1' },
+        bytes: next,
+        knownEndOffset: next.length,
+      }),
+    /unsupported_reader_version/
+  );
+});
