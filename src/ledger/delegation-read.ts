@@ -1,3 +1,4 @@
+import { terminalNote, terminationProjection } from './run-facts.js';
 import { registeredSupervisor } from '../core/supervision.js';
 import { isRunTerminal } from '../core/execution.js';
 import { authorizeControl, deriveRunHandshake, resumeGate } from '../core/lifecycle.js';
@@ -103,7 +104,8 @@ export function readDelegationIn(
     isCurrent: latest.runId === run.runId,
     isRunTerminal: isRunTerminal(run),
     slotHeld: !!tx.get('SELECT 1 FROM slots WHERE run_id=?', run.runId),
-    terminalNote: terminal?.payload.terminalNote === 'cancel_timing_unknown' ? 'cancel_timing_unknown' : null,
+    terminalNote: terminalNote(terminal?.payload.terminalNote),
+    termination: terminationProjection(terminal?.payload.termination),
     runHandshake: deriveRunHandshake(run, claim, binding, Date.now()),
     latestReportForRun: reportRow ? decodeRecord<Report>(reportRow) : null,
     reconciliation: cause

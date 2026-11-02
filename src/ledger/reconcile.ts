@@ -1,3 +1,4 @@
+import { terminalNote, finalizeTermination } from './run-facts.js';
 import { canonicalJson, digest, type JsonObject } from '../core/canonical.js';
 import { isRunTerminal, reconcileRun, updateRun } from '../core/execution.js';
 import { advanceLink } from '../core/lifecycle.js';
@@ -82,7 +83,7 @@ export function snapshotInTransaction(tx: LedgerTransaction, runId: string): Rec
     evidence: readEvidence(tx, runId),
     version: canonicalJson(versionRows(tx, runId)),
     asOfSeq: Number(tx.get('SELECT coalesce(max(seq),0) AS seq FROM events')?.seq),
-    terminalNote: terminal?.payload.terminalNote === 'cancel_timing_unknown' ? 'cancel_timing_unknown' : null,
+    terminalNote: terminalNote(terminal?.payload.terminalNote),
   };
 }
 /** Gather this snapshot BEFORE OS/file probes; commit compares all relevant persisted facts again. */
@@ -233,6 +234,10 @@ export async function commitReconcile(
       ticketConsumed: current.run.launchPhase !== 'reserved',
       terminalBasis: { evidence: facts, terminalNote: current.terminalNote },
     });
+    const termination =
+      decision.emitTransition && isRunTerminal({ state: decision.state })
+        ? finalizeTermination(tx, current.run, decision, facts, nowMs)
+        : null;
     const receipt = readEvents(tx, runId).find((event) => event.kind === 'exit.receipt')?.payload.receipt as unknown as
       FinalExitReceipt | undefined;
     const shell = receipt?.shell_exit;
@@ -330,6 +335,7 @@ export async function commitReconcile(
           evidenceIds: decision.evidenceIds,
           cause: decision.cause,
           terminalNote: decision.terminalNote,
+          ...(termination ? { termination: JSON.parse(canonicalJson(termination)) } : {}),
         },
         at: nowMs,
       });

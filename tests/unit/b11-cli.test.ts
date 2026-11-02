@@ -23,6 +23,7 @@ import { claudeCommand, foreground, appendArguments, parseClaude } from '../../s
 import { launchProfileDigest, resolveLaunchCommand, shellQuote } from '../../src/core/capabilities.js';
 import { delegationBenchmarkFixture } from './b45-delegation-fixture.js';
 import { handshakeFixture } from './b45-handshake-fixture.js';
+import { RETIRE_DEFAULTS } from '../../packages/hud-mcp/src/config.js';
 import { DelegationService, type DelegationOptions } from '../../packages/hud-mcp/src/delegation.js';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
 import type { HudIO } from '../../src/cli/link-export.js';
@@ -530,12 +531,18 @@ test(
         overrideIO.value.env.SHELL = '/bin/sh';
         await claudeCommand(override, root, overrideIO.value, {
           verify: async (effective) => {
-            assert.notEqual(launchProfileDigest(effective), launchProfileDigest(profile as LaunchProfile));
+            assert.notEqual(
+              launchProfileDigest(effective),
+              launchProfileDigest({ ...profile, retire: { ...RETIRE_DEFAULTS } } as LaunchProfile)
+            );
             return true;
           },
           launch: async (_command, env) => {
             const hook = JSON.parse(readFileSync(env.HUD_CLAUDE_HOOK_CONFIG!, 'utf8'));
-            assert.equal(hook.profileFingerprint, launchProfileDigest(profile as LaunchProfile));
+            assert.equal(
+              hook.profileFingerprint,
+              launchProfileDigest({ ...profile, retire: { ...RETIRE_DEFAULTS } } as LaunchProfile)
+            );
             return 0;
           },
         });
@@ -570,7 +577,10 @@ test(
             assert.equal(merged.hooks.PreToolUse.length, 2);
             assert.deepEqual(merged.permissions, settings.permissions);
             const hook = JSON.parse(readFileSync(env.HUD_CLAUDE_HOOK_CONFIG!, 'utf8'));
-            assert.equal(hook.profileFingerprint, launchProfileDigest(configured as LaunchProfile));
+            assert.equal(
+              hook.profileFingerprint,
+              launchProfileDigest({ ...configured, retire: { ...RETIRE_DEFAULTS } } as LaunchProfile)
+            );
             return 0;
           },
         });

@@ -3,7 +3,7 @@ import { test, type TestContext } from 'node:test';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { validateDelegateConfig, loadDelegateConfig } from '../../packages/hud-mcp/src/config.js';
+import { validateDelegateConfig, loadDelegateConfig, RETIRE_DEFAULTS } from '../../packages/hud-mcp/src/config.js';
 import type { DelegateConfig, DelegateProfile } from '../../src/core/types/capabilities.js';
 
 function fixture(t: TestContext) {
@@ -41,11 +41,20 @@ test('shared delegate config accepts optional roles and the exact Claude call-so
       },
     ],
   };
-  assert.deepEqual(validateDelegateConfig(config), config);
-  assert.deepEqual(validateDelegateConfig({ version: 1, profiles: [f.profile] }).profiles[0], f.profile);
+  const expected = {
+    ...config,
+    limits: { maxActiveRuns: 6, maxActiveRunsPerOwner: 4 },
+    wake: { recoveryMs: 30000 },
+    profiles: config.profiles.map((p) => ({ ...p, retire: { ...RETIRE_DEFAULTS } })),
+  };
+  assert.deepEqual(validateDelegateConfig(config), expected);
+  assert.deepEqual(validateDelegateConfig({ version: 1, profiles: [f.profile] }).profiles[0], {
+    ...f.profile,
+    retire: { ...RETIRE_DEFAULTS },
+  });
   const file = join(f.root, 'delegate.json');
   writeFileSync(file, JSON.stringify(config));
-  assert.deepEqual(loadDelegateConfig(file), config);
+  assert.deepEqual(loadDelegateConfig(file), expected);
 });
 
 test('call-source selection is Claude-only and rejects unknown keys, kinds and malformed shapes', (t) => {
@@ -83,4 +92,27 @@ test('delegate envelope keeps its version, unique-name, profile-count and file-b
     JSON.stringify({ version: 1, profiles: [{ ...f.profile, env: { SYNTHETIC: 'x'.repeat(262144) } }] })
   );
   assert.throws(() => loadDelegateConfig(file), /configuration_invalid/);
+});
+
+test('config without A5 keys loads exact NOTIFY defaults', (t) => {
+  const f = fixture(t);
+  const file = join(f.root, 'delegate.json');
+  writeFileSync(file, JSON.stringify({ version: 1, profiles: [f.profile] }));
+  assert.deepEqual(loadDelegateConfig(file), {
+    version: 1,
+    profiles: [
+      {
+        ...f.profile,
+        retire: {
+          afterReportMs: 600000,
+          reviewerAfterReportMs: 120000,
+          idleMs: 3600000,
+          blockedWaitMs: 3600000,
+          maxRunMs: 14400000,
+        },
+      },
+    ],
+    limits: { maxActiveRuns: 6, maxActiveRunsPerOwner: 4 },
+    wake: { recoveryMs: 30000 },
+  });
 });

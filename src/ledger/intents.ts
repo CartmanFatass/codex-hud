@@ -22,6 +22,7 @@ import type { Link } from '../core/types/lifecycle.js';
 import type { Ledger } from './ledger.js';
 import {
   decodeRecord,
+  parseRef,
   insertClaim,
   insertRecord,
   insertRun,
@@ -181,11 +182,13 @@ export async function acceptIntent(
   ledger: Ledger,
   supplied: PreparedIntent,
   budgetMs = ledger.busyBudgetMs,
-  localCheck?: () => void
+  localCheck?: () => void,
+  limits: CapacityLimits = {}
 ): Promise<IntentResult> {
   // Clone and perform normalization/hashing outside the write transaction, before any await.
   const input = JSON.parse(canonicalJson(supplied)) as PreparedIntent;
   const paramsDigest = validateNewIntent(input);
+  const resolvedLimits = capacityLimits(limits);
   const writeDeadline = performance.now() + Math.min(ledger.busyBudgetMs, budgetMs);
   try {
     return await ledger.transaction((tx) => {
@@ -223,6 +226,14 @@ export async function acceptIntent(
           linkId: replay.record.linkId,
           runId: replay.record.runId,
         };
+      const { full, retryAdvisable, ...capacity } = readCapacity(tx, allowed.ownerKey, resolvedLimits);
+      if (full)
+        throw new CapacityRefusal({
+          replayed: false,
+          linkId: null,
+          runId: null,
+          outcome: JSON.parse(canonicalJson({ ok: false, code: 'concurrency_limit', ...capacity, retryAdvisable })),
+        });
       if (!input.capabilityVerified) throw new Error('capability_unverified');
       if (input.targetSource) {
         const source = input.targetSource;
@@ -422,6 +433,7 @@ export async function acceptIntent(
       return { replayed: false, outcome, linkId: link.linkId, runId: run.runId };
     }, budgetMs);
   } catch (error) {
+    if (error instanceof CapacityRefusal) return error.result;
     // A failed intent is entirely rolled back before a separate rejection audit is attempted.
     if (
       error instanceof Error &&
@@ -445,4 +457,66 @@ export async function acceptIntent(
     }
     throw error;
   }
+}
+
+class CapacityRefusal extends Error {
+  constructor(readonly result: IntentResult) {
+    super('concurrency_limit');
+  }
+}
+export interface CapacityLimits {
+  maxActiveRuns?: number;
+  maxActiveRunsPerOwner?: number;
+}
+export const DEFAULT_CAPACITY_LIMITS = Object.freeze({ maxActiveRuns: 6, maxActiveRunsPerOwner: 4 });
+export interface CapacityOccupant {
+  runId: string;
+  linkId: string;
+  state: 'starting' | 'running' | 'cancelling' | 'uncertain';
+  since: number;
+  holder: 'self' | 'other';
+  retireEta: number | null;
+}
+export function capacityLimits(limits: CapacityLimits = {}) {
+  const resolved = { ...DEFAULT_CAPACITY_LIMITS, ...limits };
+  if (Object.values(resolved).some((v) => !Number.isSafeInteger(v) || v < 1))
+    throw new TypeError('invalid_capacity_limits');
+  return resolved;
+}
+/** One indexed read, used inside acceptance or the existing status snapshot. */
+export function readCapacity(tx: LedgerTransaction, ownerKey: string, limits: CapacityLimits = {}) {
+  const resolved = capacityLimits(limits);
+  const occupants: CapacityOccupant[] = tx
+    .all(
+      `SELECT r.run_id,r.link_id,r.state,r.created_at,
+    coalesce(l.parent_ref,c.session_ref) AS parent_ref,c.process_key,c.proc_generation
+    FROM runs r JOIN links l ON l.link_id=r.link_id
+    JOIN caller_contexts c ON c.context_id=l.parent_context_id AND c.generation=l.parent_context_generation
+    WHERE r.state IN ('starting','running','cancelling','uncertain')
+    ORDER BY r.created_at,r.run_id`
+    )
+    .map((row) => {
+      const owner =
+        row.parent_ref !== null
+          ? sessionOwnerKey(parseRef(row.parent_ref)!)
+          : procOwnerKey(String(row.process_key), Number(row.proc_generation));
+      return {
+        runId: String(row.run_id),
+        linkId: String(row.link_id),
+        state: row.state as CapacityOccupant['state'],
+        since: Number(row.created_at),
+        holder: owner === ownerKey ? 'self' : 'other',
+        retireEta: null,
+      };
+    });
+  const self = occupants.filter((o) => o.holder === 'self');
+  const ownerFull = self.length >= resolved.maxActiveRunsPerOwner;
+  return {
+    active: ownerFull ? self.length : occupants.length,
+    limit: ownerFull ? resolved.maxActiveRunsPerOwner : resolved.maxActiveRuns,
+    occupants: ownerFull ? self : occupants,
+    full: ownerFull || occupants.length >= resolved.maxActiveRuns,
+    retryAdvisable:
+      !ownerFull && occupants.some((o) => o.holder === 'other') && !occupants.some((o) => o.state === 'uncertain'),
+  };
 }

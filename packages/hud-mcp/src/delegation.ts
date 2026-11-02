@@ -51,7 +51,7 @@ export interface DelegationOptions {
 export class DelegationService {
   private readonly reads: ReadControlService;
   constructor(private readonly options: DelegationOptions) {
-    this.reads = new ReadControlService(options.ledger, options.home, options.subscribeWait);
+    this.reads = new ReadControlService(options.ledger, options.home, options.subscribeWait, {}, options.config.limits);
   }
   close(): void {
     this.reads.close();
@@ -349,8 +349,16 @@ export class DelegationService {
         holder: run.launchTokenHash,
       },
       Math.min(20, Math.max(0, deadline - 10 - performance.now())),
-      gate ? () => gate.check() : undefined
+      gate ? () => gate.check() : undefined,
+      config.limits
     );
+    if (
+      result.outcome &&
+      typeof result.outcome === 'object' &&
+      !Array.isArray(result.outcome) &&
+      result.outcome.code === 'concurrency_limit'
+    )
+      return result.outcome;
     if (!result.replayed) {
       // Do not await private-pipe backpressure after commit. This closure owns
       // the sole ticket delivery; replay never schedules it again.
