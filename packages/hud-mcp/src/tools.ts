@@ -61,7 +61,7 @@ export const TOOLS: ToolDefinition[] = [
   ),
   tool(
     'delegate_wait',
-    'Read events for one fixed run (not implemented).',
+    'Read one cursor page for a fixed run; drain hasMore using returned runId/nextSeq. A verified client deadline enables bounded long polling.',
     {
       linkId: string,
       runId: string,
@@ -77,15 +77,15 @@ export const TOOLS: ToolDefinition[] = [
   ),
   tool(
     'delegate_status',
-    'Read delegated run status (not implemented).',
+    'Read committed lifecycle and cached status with their original independent stamps.',
     { linkId: string, runId: string },
     [],
     target
   ),
   tool(
     'delegate_cancel',
-    'Accept cancellation for a run (not implemented).',
-    { runId: string, grace: { type: 'number', minimum: 0 } },
+    'Record cancellation intent without waiting for exit. Visible scope control remains unavailable.',
+    { runId: string, grace: { type: 'integer', minimum: 0, maximum: 60000 } },
     ['runId']
   ),
   tool(

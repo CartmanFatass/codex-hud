@@ -188,7 +188,8 @@ export async function commitReconcile(
   expected: ReconcileSnapshot,
   supplied: readonly ValidatedEvidence[],
   nowMs: number,
-  gate?: (tx: LedgerTransaction) => void
+  gate?: (tx: LedgerTransaction) => void,
+  budgetMs = ledger.busyBudgetMs
 ): Promise<{ committed: false; reason: 'stale_snapshot' } | { committed: true; decision: ReconcileDecision }> {
   const runId = expected.run.runId;
   const expectedVersion = expected.version;
@@ -342,14 +343,15 @@ export async function commitReconcile(
       );
     }
     return { committed: true as const, decision };
-  });
+  }, budgetMs);
 }
 
 /** Same CAS boundary for identity/import/cancel writers that gathered evidence outside SQLite. */
 export async function commitCompared<T>(
   ledger: Ledger,
   expected: ReconcileSnapshot,
-  callback: (tx: LedgerTransaction, current: ReconcileSnapshot) => T
+  callback: (tx: LedgerTransaction, current: ReconcileSnapshot) => T,
+  budgetMs = ledger.busyBudgetMs
 ): Promise<{ committed: false; reason: 'stale_snapshot' } | { committed: true; result: T }> {
   const runId = expected.run.runId;
   const version = expected.version;
@@ -360,39 +362,56 @@ export async function commitCompared<T>(
     if (result !== null && typeof result === 'object' && 'then' in result)
       throw new TypeError('ledger_transaction_callback_must_be_synchronous');
     return { committed: true as const, result };
-  });
+  }, budgetMs);
 }
 
 export async function requestCancel(
   ledger: Ledger,
   expected: ReconcileSnapshot,
   authority: IntentAuthority,
-  at: number
+  at: number,
+  graceMs = 10000,
+  budgetMs = ledger.busyBudgetMs
 ): Promise<
   | { committed: false; reason: 'stale_snapshot' }
   | { committed: true; result: { accepted: boolean; cancelRequestedAt: number | null } }
 > {
   if (!Number.isSafeInteger(at) || at < 0) throw new TypeError('invalid_cancel_time');
-  return commitCompared(ledger, expected, (tx, current) => {
-    requireParentControl(current.link);
-    const allowed = authorizeControl(
-      'cancel',
-      current.link,
-      linkOwner(tx, current.link),
-      currentAuthority(tx, authority)
-    );
-    if (!allowed.ok) throw new Error(allowed.reason);
-    if (isRunTerminal(current.run)) return { accepted: false, cancelRequestedAt: current.run.cancelRequestedAt };
-    if (current.run.cancelRequestedAt !== null)
-      return { accepted: true, cancelRequestedAt: current.run.cancelRequestedAt };
-    tx.run("UPDATE runs SET cancel_requested_at=?,state='cancelling' WHERE run_id=?", at, current.run.runId);
-    insertRecord(tx, 'events', {
-      runId: current.run.runId,
-      linkId: current.link.linkId,
-      kind: 'cancel.accepted',
-      payload: { actor: allowed.actor },
-      at,
-    });
-    return { accepted: true, cancelRequestedAt: at };
-  });
+  if (!Number.isSafeInteger(graceMs) || graceMs < 0 || graceMs > 60000) throw new TypeError('invalid_grace');
+  return commitCompared(
+    ledger,
+    expected,
+    (tx, current) => {
+      requireParentControl(current.link);
+      const allowed = authorizeControl(
+        'cancel',
+        current.link,
+        linkOwner(tx, current.link),
+        currentAuthority(tx, authority)
+      );
+      if (!allowed.ok) throw new Error(allowed.reason);
+      if (isRunTerminal(current.run)) return { accepted: false, cancelRequestedAt: current.run.cancelRequestedAt };
+      if (current.run.cancelRequestedAt !== null)
+        return { accepted: true, cancelRequestedAt: current.run.cancelRequestedAt };
+      tx.run(
+        "UPDATE runs SET cancel_requested_at=?,state=CASE WHEN state='uncertain' THEN state ELSE 'cancelling' END WHERE run_id=?",
+        at,
+        current.run.runId
+      );
+      insertRecord(tx, 'events', {
+        runId: current.run.runId,
+        linkId: current.link.linkId,
+        kind: 'cancel.accepted',
+        payload: {
+          actor: allowed.actor,
+          runId: current.run.runId,
+          bindingGeneration: current.run.expectedGeneration,
+          graceMs,
+        },
+        at,
+      });
+      return { accepted: true, cancelRequestedAt: at };
+    },
+    budgetMs
+  );
 }

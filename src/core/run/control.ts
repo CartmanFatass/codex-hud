@@ -413,8 +413,17 @@ export class HeadlessRunControl implements RunControl {
         cancelTask = (async () => {
           const s = await this.port.read(id);
           const e = s.events.find((e) => e.kind === 'cancel.accepted');
-          if (e) await handleCancel({ seq: e.seq, at: e.at, graceMs: Number(e.payload.graceMs) });
-          else cancelTask = null;
+          if (e) {
+            const graceMs = e.payload.graceMs;
+            await handleCancel({
+              seq: e.seq,
+              at: e.at,
+              graceMs:
+                typeof graceMs === 'number' && Number.isSafeInteger(graceMs) && graceMs >= 0 && graceMs <= 60000
+                  ? graceMs
+                  : 10000,
+            });
+          } else cancelTask = null;
         })().catch(async (e) => {
           await this.port.raw(id, self, 'cancel.unconfirmed', { reason: String(e) });
         });
