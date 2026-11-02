@@ -235,7 +235,7 @@ Update `README.md` and `README.zh.md`, and the `?` legend:
   - Every harness launch puts `$S/fakebin` first on `PATH`.
   - Afterwards: `tmux -L hudui kill-server`, and no stray `sleep 900`.
 - **Paths.** `$S` =
-  `/tmp/claude-1000/-home-fires-codex-codex-hud/c4a91d06-e869-4633-8cf6-9b018adb87bc/scratchpad`.
+  `<scratchpad>`.
   Harness: `$S/launch.sh`, `$S/ch`, `$S/ch2`, `$S/mkrun.py`, `$S/tmuxw`, and
   the PNG pipeline (`$S/prev/ansi2html.py` plus the Chrome under
   `~/.omp/puppeteer/…`), all from rounds 1 and 2.
@@ -286,7 +286,7 @@ with the user's home and auth.
    one no longer reaches the HUD.
 8. PNGs of the bar at 32, 40 and 56 columns, and the help overlay's
    Shortcuts section. Copy the bar PNG to
-   `/mnt/c/Users/fires/OneDrive/图片/hud-r3-bar.png`.
+   `/mnt/c/Users/user/Pictures/hud-r3-bar.png`.
 
 ## Final report
 

@@ -12,7 +12,7 @@
  *   │ ▸ 本轮改动已合并并发布，无待办任务，等待新的需求
  *   │ ✓ 整理两个 CI 失败与下一步排查记录
  *   │   提交 release 说明并推送到 main 分支 +2
- *   ╰─ atlas-wsl · main * 7d ──────────99% ↺4d17h
+ *   ╰─ demo-repo · main * 7d ──────────99% ↺4d17h
  *
  * - `min`: the band row alone, the quota's reading at its right end, with a
  *   mark when something needs the person; its meter named Ctx, as the
