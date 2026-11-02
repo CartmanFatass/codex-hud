@@ -265,6 +265,21 @@ export interface ObservationView {
   holderLabel?: string;
 }
 
+/** B16: bounded current-identity baseline, atomically published with its projection.
+ * At most one episode stamp and one event alias per pending/failed/uncertain kind (six total).
+ * reportSeq is only a ledger report.received cursor; noticeSeq is only this observation domain.
+ */
+export interface ObservationNoticeState {
+  identityKey: string;
+  pendingReason: PendingReason;
+  lastTurnOutcome: LastTurnOutcome;
+  runState: RunState | null;
+  inputStamps: string[];
+  eventStamps: string[];
+  reportSeq: number | null;
+  noticeSeq: number;
+}
+
 export interface ObservationCommit {
   ref: SessionRef;
   sourceGeneration: number;
@@ -276,6 +291,7 @@ export interface ObservationCommit {
   summary: ObservationView;
   continuity: StateContinuity;
   notices: NoticeEvent[];
+  noticeState?: ObservationNoticeState;
 }
 
 export interface RunExecutionProjection {

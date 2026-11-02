@@ -3,7 +3,7 @@ import { validateClaudeRecoveryIndexEntry } from '../harness/claude/reader.js';
 import { DefaultDeserializer, serialize } from 'node:v8';
 import { canonicalJson, digest } from './canonical.js';
 import { sameSessionRef } from './identity.js';
-import { observationCommitValid } from './observation.js';
+import { displayNodeKey, observationCommitValid } from './observation.js';
 import { ObservationStoreError } from './collect-lease.js';
 import type {
   CheckpointPreparation,
@@ -344,6 +344,39 @@ const notice = object({
   inputStamp: str,
   sourceEventSeq: optional(uint),
 });
+const noticeState: Check = (value) => {
+  object({
+    identityKey: str,
+    pendingReason: literal('none', 'approval', 'question', 'needs_human'),
+    lastTurnOutcome: literal('none', 'completed', 'failed', 'interrupted'),
+    runState: nullable(literal('starting', 'running', 'cancelling', 'uncertain', 'ended', 'failed', 'cancelled')),
+    inputStamps: strings,
+    eventStamps: strings,
+    reportSeq: nullable(uint),
+    noticeSeq: uint,
+  })(value);
+  const state = value as import('./types/observation.js').ObservationNoticeState;
+  if (state.inputStamps.length > 3 || state.eventStamps.length > 3) fail();
+  for (const stamps of [state.inputStamps, state.eventStamps]) {
+    const kinds = new Set<string>();
+    for (const input of stamps) {
+      const parsed = JSON.parse(input);
+      if (
+        !Array.isArray(parsed) ||
+        parsed.length !== 3 ||
+        parsed[0] !== state.identityKey ||
+        !['pending', 'failed', 'uncertain'].includes(parsed[1]) ||
+        typeof parsed[2] !== 'string' ||
+        (parsed[1] === 'pending' && state.pendingReason === 'none') ||
+        (parsed[1] === 'failed' && state.lastTurnOutcome !== 'failed' && state.runState !== 'failed') ||
+        (parsed[1] === 'uncertain' && state.runState !== 'uncertain') ||
+        kinds.has(parsed[1])
+      )
+        fail();
+      kinds.add(parsed[1]);
+    }
+  }
+};
 const boundary = object({ ref, readerVersion: str, sourceGeneration: uint, fileId, offset: uint });
 
 const nativeLink = object({
@@ -794,10 +827,26 @@ function validateCommit(commit: ObservationCommit, checkpointValidated = false):
     summary,
     continuity,
     notices: array(notice),
+    noticeState: optional(noticeState),
   })(commit);
   if (!commit.seqDomain || commit.commitSeq < 1 || commit.leaseGeneration < 1) fail();
   const decoded = checkpointValidated ? undefined : validateCheckpoint(commit.checkpoint);
   if (!observationCommitValid(commit)) fail('observation_boundary_mismatch');
+  if (commit.noticeState) {
+    const state = commit.noticeState;
+    const expectedIdentity = JSON.stringify([
+      displayNodeKey(commit.continuity.nodeIdentity),
+      commit.continuity.runId ?? null,
+      commit.continuity.bindingGeneration ?? null,
+    ]);
+    if (
+      state.identityKey !== expectedIdentity ||
+      state.pendingReason !== commit.summary.statusProjection.pendingReason ||
+      state.lastTurnOutcome !== commit.summary.statusProjection.lastTurnOutcome ||
+      commit.notices.some((event) => event.seq > state.noticeSeq)
+    )
+      fail('observation_notice_state_mismatch');
+  }
   if ((commit.continuity.stateSinceBasis === 'unknown') !== (commit.continuity.stateSince === null)) fail();
   const p = commit.checkpoint.parserState;
   if ((p.tailAtEof || p.discardingOversize || p.gaps.length > 0) && commit.summary.coverage.state === 'complete')

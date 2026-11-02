@@ -1,0 +1,244 @@
+{
+  "id": "C03",
+  "title": "done completionSeq persists after registry idle and reread",
+  "steps": [
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "registry",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 1000,
+              "observedAt": 2000,
+              "lastSuccessfulReadAt": 2000,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": 7,
+                  "sourceClockAt": 1000,
+                  "activity": "idle",
+                  "pendingReason": "none"
+                },
+                "liveness": "alive",
+                "episodes": {
+                  "activity": "idle:registry"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": null,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": null,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        }
+      },
+      "expected": {
+        "semanticClass": "idle",
+        "reason": "idle",
+        "projection": {
+          "activity": "idle",
+          "pendingReason": "none",
+          "lastTurnOutcome": "completed",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["registry"]
+          },
+          "stateKey": "idle:idle",
+          "stateSince": 1000,
+          "stateSinceBasis": "event",
+          "isRunTerminal": null,
+          "asOfSeq": null,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": null,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1
+          },
+          "asOf": 1000,
+          "observedAt": 2000,
+          "lastEvidenceAt": 1000
+        },
+        "continuity": {
+          "episodeAnchor": "idle:registry"
+        },
+        "selectedSources": {
+          "activity": "registry",
+          "pendingReason": "registry",
+          "lastTurnOutcome": "registry",
+          "liveness": "registry"
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    },
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "registry",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 1000,
+              "observedAt": 3500,
+              "lastSuccessfulReadAt": 3500,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": 7,
+                  "sourceClockAt": 1000,
+                  "activity": "idle",
+                  "pendingReason": "none"
+                },
+                "liveness": "alive",
+                "episodes": {
+                  "activity": "idle:registry"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": null,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": null,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        }
+      },
+      "expected": {
+        "semanticClass": "idle",
+        "reason": "idle",
+        "projection": {
+          "activity": "idle",
+          "pendingReason": "none",
+          "lastTurnOutcome": "completed",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["registry"]
+          },
+          "stateKey": "idle:idle",
+          "stateSince": 1000,
+          "stateSinceBasis": "event",
+          "isRunTerminal": null,
+          "asOfSeq": null,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": null,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1
+          },
+          "asOf": 1000,
+          "observedAt": 3500,
+          "lastEvidenceAt": 1000
+        },
+        "continuity": {
+          "episodeAnchor": "idle:registry"
+        },
+        "selectedSources": {
+          "activity": "registry",
+          "pendingReason": "registry",
+          "lastTurnOutcome": "registry",
+          "liveness": "registry"
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    }
+  ]
+}

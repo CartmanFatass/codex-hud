@@ -1,0 +1,1054 @@
+{
+  "id": "C57",
+  "title": "multiple approvals retain every effective resolution dependency",
+  "steps": [
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "transcript",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 1000,
+              "observedAt": 2000,
+              "lastSuccessfulReadAt": 2000,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "activity": "waiting_input",
+                "pendingReason": "none",
+                "lastTurnOutcome": "none",
+                "liveness": "alive",
+                "episodes": {
+                  "activity": "idle:1"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "registry",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 1000,
+              "observedAt": 2000,
+              "lastSuccessfulReadAt": 2000,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 1000,
+                  "activity": "waiting_input",
+                  "pendingReason": "none"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": null,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": null,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        }
+      },
+      "expected": {
+        "semanticClass": "idle",
+        "reason": "idle",
+        "projection": {
+          "activity": "waiting_input",
+          "pendingReason": "none",
+          "lastTurnOutcome": "none",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["registry", "transcript"]
+          },
+          "stateKey": "idle:idle",
+          "stateSince": 1000,
+          "stateSinceBasis": "event",
+          "isRunTerminal": null,
+          "asOfSeq": null,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": null,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1
+          },
+          "asOf": 1000,
+          "observedAt": 2000,
+          "lastEvidenceAt": 1000
+        },
+        "continuity": {
+          "episodeAnchor": null
+        },
+        "selectedSources": {
+          "activity": "registry",
+          "pendingReason": "transcript",
+          "lastTurnOutcome": "transcript",
+          "liveness": "transcript"
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    },
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "transcript",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 1000,
+              "observedAt": 2000,
+              "lastSuccessfulReadAt": 2000,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "activity": "waiting_input",
+                "pendingReason": "none",
+                "lastTurnOutcome": "none",
+                "liveness": "alive",
+                "episodes": {
+                  "activity": "idle:1"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "registry",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3000,
+              "observedAt": 3000,
+              "lastSuccessfulReadAt": 3000,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3000,
+                  "activity": "waiting_input",
+                  "pendingReason": "approval"
+                },
+                "episodes": {
+                  "pendingReason": "approval:registry-1"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": null,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": null,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        }
+      },
+      "expected": {
+        "semanticClass": "pending",
+        "reason": "approval",
+        "projection": {
+          "activity": "waiting_input",
+          "pendingReason": "approval",
+          "lastTurnOutcome": "none",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["registry", "transcript"]
+          },
+          "stateKey": "pending:approval",
+          "stateSince": 3000,
+          "stateSinceBasis": "event",
+          "isRunTerminal": null,
+          "asOfSeq": null,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": null,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1
+          },
+          "asOf": 3000,
+          "observedAt": 3000,
+          "lastEvidenceAt": 3000
+        },
+        "continuity": {
+          "episodeAnchor": "approval:registry-1"
+        },
+        "selectedSources": {
+          "activity": "registry",
+          "pendingReason": "registry",
+          "lastTurnOutcome": "transcript",
+          "liveness": "transcript"
+        },
+        "notices": [
+          {
+            "kind": "pending",
+            "created_at": 3000,
+            "nodeIdentity": {
+              "kind": "session",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              }
+            },
+            "inputStamp": "[\"[\\\"[\\\\\\\"session\\\\\\\",\\\\\\\"[\\\\\\\\\\\\\\\"codex\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"synthetic-session\\\\\\\\\\\\\\\",null]\\\\\\\"]\\\",null,null]\",\"pending\",\"approval:registry-1\"]"
+          }
+        ],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    },
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "transcript",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 1000,
+              "observedAt": 2000,
+              "lastSuccessfulReadAt": 2000,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "activity": "waiting_input",
+                "pendingReason": "none",
+                "lastTurnOutcome": "none",
+                "liveness": "alive",
+                "episodes": {
+                  "activity": "idle:1"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "registry",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3000,
+              "observedAt": 3000,
+              "lastSuccessfulReadAt": 3000,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3000,
+                  "activity": "waiting_input",
+                  "pendingReason": "approval"
+                },
+                "episodes": {
+                  "pendingReason": "approval:registry-1"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "resolution",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3900,
+              "observedAt": 3900,
+              "lastSuccessfulReadAt": 3900,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "pendingReason": "none",
+                "pendingResolution": {
+                  "episodeAnchor": "approval:registry-1",
+                  "eventAt": 3900
+                },
+                "registry": {
+                  "server": "resolution-registry",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3900,
+                  "activity": "unknown",
+                  "pendingReason": "none"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "registry-other",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3500,
+              "observedAt": 3500,
+              "lastSuccessfulReadAt": 3500,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3500,
+                  "activity": "waiting_input",
+                  "pendingReason": "approval"
+                },
+                "episodes": {
+                  "pendingReason": "approval:other"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": null,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": null,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        }
+      },
+      "expected": {
+        "semanticClass": "pending",
+        "reason": "approval",
+        "projection": {
+          "activity": "waiting_input",
+          "pendingReason": "approval",
+          "lastTurnOutcome": "none",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["registry-other", "resolution", "transcript"]
+          },
+          "stateKey": "pending:approval",
+          "stateSince": 3500,
+          "stateSinceBasis": "event",
+          "isRunTerminal": null,
+          "asOfSeq": null,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": null,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1
+          },
+          "asOf": 3900,
+          "observedAt": 3900,
+          "lastEvidenceAt": 3900
+        },
+        "continuity": {
+          "episodeAnchor": "approval:other"
+        },
+        "selectedSources": {
+          "activity": "registry-other",
+          "pendingReason": "registry-other",
+          "lastTurnOutcome": "transcript",
+          "liveness": "transcript"
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    },
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "transcript",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 1000,
+              "observedAt": 2000,
+              "lastSuccessfulReadAt": 2000,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "activity": "waiting_input",
+                "pendingReason": "none",
+                "lastTurnOutcome": "none",
+                "liveness": "alive",
+                "episodes": {
+                  "activity": "idle:1"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "registry",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3000,
+              "observedAt": 3000,
+              "lastSuccessfulReadAt": 3000,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3000,
+                  "activity": "waiting_input",
+                  "pendingReason": "approval"
+                },
+                "episodes": {
+                  "pendingReason": "approval:registry-1"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "resolution",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3900,
+              "observedAt": 3900,
+              "lastSuccessfulReadAt": 3900,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "pendingReason": "none",
+                "pendingResolution": {
+                  "episodeAnchor": "approval:registry-1",
+                  "eventAt": 3900
+                },
+                "registry": {
+                  "server": "resolution-registry",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3900,
+                  "activity": "unknown",
+                  "pendingReason": "none"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "registry-other",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3500,
+              "observedAt": 3500,
+              "lastSuccessfulReadAt": 3500,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3500,
+                  "activity": "waiting_input",
+                  "pendingReason": "approval"
+                },
+                "episodes": {
+                  "pendingReason": "approval:other"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "resolution-other",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3950,
+              "observedAt": 3950,
+              "lastSuccessfulReadAt": 3950,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "pendingReason": "none",
+                "pendingResolution": {
+                  "episodeAnchor": "approval:other",
+                  "eventAt": 3950
+                },
+                "registry": {
+                  "server": "resolution-registry",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3950,
+                  "activity": "unknown",
+                  "pendingReason": "none"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": null,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": null,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        }
+      },
+      "expected": {
+        "semanticClass": "idle",
+        "reason": "idle",
+        "projection": {
+          "activity": "waiting_input",
+          "pendingReason": "none",
+          "lastTurnOutcome": "none",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["registry-other", "resolution", "resolution-other", "transcript"]
+          },
+          "stateKey": "idle:idle",
+          "stateSince": 3950,
+          "stateSinceBasis": "event",
+          "isRunTerminal": null,
+          "asOfSeq": null,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": null,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1
+          },
+          "asOf": 3950,
+          "observedAt": 3950,
+          "lastEvidenceAt": 3950
+        },
+        "continuity": {
+          "episodeAnchor": null
+        },
+        "selectedSources": {
+          "activity": "registry-other",
+          "pendingReason": "resolution-other",
+          "lastTurnOutcome": "transcript",
+          "liveness": "transcript"
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    },
+    {
+      "input": {
+        "target": {
+          "nodeIdentity": {
+            "kind": "session",
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            }
+          },
+          "sourceGeneration": 1
+        },
+        "sources": [
+          {
+            "id": "transcript",
+            "evidence": {
+              "origin": "transcript",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 1000,
+              "observedAt": 2000,
+              "lastSuccessfulReadAt": 2000,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "activity": "waiting_input",
+                "pendingReason": "none",
+                "lastTurnOutcome": "none",
+                "liveness": "alive",
+                "episodes": {
+                  "activity": "idle:1"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "registry",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3000,
+              "observedAt": 3000,
+              "lastSuccessfulReadAt": 3000,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3000,
+                  "activity": "waiting_input",
+                  "pendingReason": "approval"
+                },
+                "episodes": {
+                  "pendingReason": "approval:registry-1"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "resolution",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3900,
+              "observedAt": 3900,
+              "lastSuccessfulReadAt": 3900,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "pendingReason": "none",
+                "pendingResolution": {
+                  "episodeAnchor": "approval:registry-1",
+                  "eventAt": 3900
+                },
+                "registry": {
+                  "server": "resolution-registry",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3900,
+                  "activity": "unknown",
+                  "pendingReason": "none"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "registry-other",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3500,
+              "observedAt": 3500,
+              "lastSuccessfulReadAt": 3500,
+              "evidenceId": "registry:fact",
+              "value": {
+                "registry": {
+                  "server": "synthetic",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3500,
+                  "activity": "waiting_input",
+                  "pendingReason": "approval"
+                },
+                "episodes": {
+                  "pendingReason": "approval:other"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          },
+          {
+            "id": "resolution-other",
+            "evidence": {
+              "origin": "registry",
+              "ref": {
+                "harness": "codex",
+                "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sessionId": "synthetic-session",
+                "threadId": null
+              },
+              "sourceGeneration": 1,
+              "validity": "current",
+              "eventAt": 3950,
+              "observedAt": 3950,
+              "lastSuccessfulReadAt": 3950,
+              "evidenceId": "transcript:fact",
+              "value": {
+                "pendingReason": "none",
+                "pendingResolution": {
+                  "episodeAnchor": "approval:other",
+                  "eventAt": 3950
+                },
+                "registry": {
+                  "server": "resolution-registry",
+                  "occupant": {
+                    "harness": "codex",
+                    "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sessionId": "synthetic-session",
+                    "threadId": null
+                  },
+                  "completionSeq": null,
+                  "sourceClockAt": 3950,
+                  "activity": "unknown",
+                  "pendingReason": "none"
+                }
+              }
+            },
+            "deadlineAt": 90000
+          }
+        ],
+        "asOfSeq": null,
+        "observationStamp": {
+          "seqDomain": "observation:synthetic",
+          "commitSeq": 5,
+          "inputLedgerSeq": null,
+          "ref": {
+            "harness": "codex",
+            "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sessionId": "synthetic-session",
+            "threadId": null
+          },
+          "sourceGeneration": 1
+        },
+        "history": {
+          "continuity": "proven"
+        }
+      },
+      "expected": {
+        "semanticClass": "idle",
+        "reason": "idle",
+        "projection": {
+          "activity": "waiting_input",
+          "pendingReason": "none",
+          "lastTurnOutcome": "none",
+          "liveness": "alive",
+          "freshness": {
+            "state": "fresh",
+            "requiredSourceIds": ["registry-other", "resolution", "resolution-other", "transcript"]
+          },
+          "stateKey": "idle:idle",
+          "stateSince": 3950,
+          "stateSinceBasis": "event",
+          "isRunTerminal": null,
+          "asOfSeq": null,
+          "observationStamp": {
+            "seqDomain": "observation:synthetic",
+            "commitSeq": 5,
+            "inputLedgerSeq": null,
+            "ref": {
+              "harness": "codex",
+              "sourceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sessionId": "synthetic-session",
+              "threadId": null
+            },
+            "sourceGeneration": 1
+          },
+          "asOf": 3950,
+          "observedAt": 3950,
+          "lastEvidenceAt": 3950
+        },
+        "continuity": {
+          "episodeAnchor": null
+        },
+        "selectedSources": {
+          "activity": "registry-other",
+          "pendingReason": "resolution-other",
+          "lastTurnOutcome": "transcript",
+          "liveness": "transcript"
+        },
+        "notices": [],
+        "conflict": null
+      },
+      "nowMs": 4000,
+      "ruleVersion": "b16-v1"
+    }
+  ]
+}
