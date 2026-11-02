@@ -589,3 +589,99 @@ instead of sending without accounting. Approvals and explicit probes precede
 queued visible progress, which precedes background summaries; background requests
 are protected from starvation. In-flight requests are not preempted. Shared-disk
 coordination requires local filesystem atomic rename and coherent directory reads.
+
+### Universal CLI
+
+Build with `npm run build && npm run build:hud-mcp`. Ledger commands require
+Node 22.x ≥22.13 or Node ≥24 (23 is unsupported). `hud codex ...` and
+`hud codex-hud ...` invoke the existing `codex-hud` launcher with the same arguments,
+environment and default bar behavior. The existing `codex-hud` entry is unchanged.
+
+`hud claude --profile NAME` selects a Claude profile from `HUD_HOME/delegate.json`.
+`--resume SESSION` selects its separate native resume template. Explicit
+`--profile NAME -- EXECUTABLE ARG ...` supplies complete literal argv;
+`--profile NAME --shell TEXT` selects shell text, run with the profile's shellPath
+or an explicit absolute `$SHELL`, using `-ic`. These forms cannot be combined or
+replace a resume template. Profile placeholders are substituted per argv element,
+or quoted at declared shell argument boundaries. Explicit overrides are literal.
+`--settings FILE` preserves that object's existing hooks while adding the
+synchronous HUD hook for `claude_pre_tool_use_v1` through a private per-launch
+settings file. User settings files are never rewritten. An argv-embedded
+`--settings VALUE` or `--settings=VALUE` source is snapshotted and merged too;
+multiple sources are refused. The injected flag precedes an argv option
+terminator, preserving subsequent literal prompt bytes. Hook-bearing shell forms
+currently refuse with `shell_hook_target_unverified`: their actual Claude
+executable cannot be inferred from shellPath. Adding settings to shell text is
+also refused when its injection boundary cannot be established.
+
+Launch and resume require matching reviewed product capability evidence. The
+shipped manifest contains no verified cells, so otherwise prepared operations
+return `capability_unverified`; earlier input/target refusals retain their own
+reason codes. Executable discovery or a configuration flag does not
+grant a capability. Standalone Claude launch creates no managed run or parent
+context. Panel/host integration, delegated Claude resume and `hud pi` follow in
+later packages. There is no `hud cache` command in this release.
+
+Management uses an existing absolute, canonical, private `HUD_HOME` owned by the
+current uid (default `~/.hud`); symlinks, unsafe permissions and missing stores are
+refused. It never initializes a ledger. Commands are:
+
+```text
+hud run status RUN [--json]
+hud run cancel RUN [--grace MS] [--json]
+hud run reconcile RUN [--json]
+hud run resume LINK --request-key KEY --expected-run RUN --mode headless|visible [--prompt TEXT] [--json]
+```
+
+Status opens SQLite read-only. Cancel and reconcile use the existing trusted-local
+manager and original writers, including runs whose parent or child is not yet
+bound. Visible cancel accepts intent and returns
+`visible_scope_control_unavailable` / `unconfirmed`; stop that run in its pane.
+Accepted cancellation stays accepted if its optional status refresh fails.
+Resume calls B4's `resumeLocal` with all supplied parameters and derives the real
+local-user actor. It checks owner, task, target, capability and slot again. A stale
+expected run or an active run is refused. An accepted request key replays its
+original result; do not automatically replace the key or target after a mismatch
+or unknown response. No parent MCP context is manufactured.
+
+```text
+hud run wait (RUN | --link LINK) [--after-seq N]
+  [--until report,run_terminal,uncertain] [--owner-generation N]
+  [--timeout-ms MS] [--notify | --json]
+```
+
+Wait is read-only and fixes the run at entry, including across later resume
+rounds. Its total deadline defaults to two hours; a background skill that knows
+its parent is noninteractive can explicitly request 1500000 ms. An independent unreferenced two-second timer
+checks the original parent pid and complete process stamp without reading the
+ledger. Ledger/watch recovery retains its separate 29-second slice.
+Reparenting, parent replacement, or a supplied owner generation becoming stale
+ends the waiter. SIGINT/SIGTERM release its watcher and SQLite connection; they
+do not cancel the run. Lost hints recover at the next bounded read. No database
+transaction stays open while blocked.
+
+Notify is the default and emits one line of at most 512 bytes on a match or
+deadline. It contains identifiers, event classes and a cursor hint, with no report
+body, summary or path. Background-command completion is a hint: the parent must
+call `delegate_wait` with its **own** run/cursor and drain while `hasMore=true`.
+JSON returns one page with cursor/match/deadline fields, minimal current-run
+metadata and `watchUnavailable`; arbitrary event payloads, report bodies, paths
+and credentials are omitted. Continue with the returned `runId` and `nextSeq`,
+rather than re-resolving a link. A deadline is not cancellation.
+
+MCP's wait budget remains separate: without a matching trusted parent/client
+runtime attestation in the shipped G04 manifest, B6 retains its conservative short
+wait and unverified-timeout diagnostic. Numeric settings, a child launch cell,
+and duplicate same-source profiles cannot enable long MCP waits. Release/B14
+must supply actual client-version/deadline evidence and settle the local-initiation
+topology convention before promoting production capabilities.
+
+Management exits 0 on success, 1 on internal or missing-build failure, 2 on invalid
+arguments, 3 on unsafe HUD_HOME, 4 on refusal/missing target or orphan/stale waiter,
+5 on unsupported runtime/schema, 130 on SIGINT and 143 on SIGTERM. Failures print a
+stable reason code without internal paths. See `hud run --help` and
+`hud claude --help` for the current syntax.
+
+`hud link export --json --schema-version 1` retains B18's independent read-only
+metadata export. `--paths local` opts in to local paths; `--link ID` is repeatable.
+Its export-specific exit codes are listed by `hud link export --help`.

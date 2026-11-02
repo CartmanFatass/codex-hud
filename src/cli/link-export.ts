@@ -8,6 +8,9 @@ export const EXPORT_USAGE = 'Usage: hud link export --json --schema-version 1 [-
 
 export const EXPORT_HELP = `${EXPORT_USAGE}
        hud [link [export]] --help
+       hud claude --help
+       hud run --help
+       hud codex [ARG ...]          Existing codex-hud compatibility launcher
 
 Export a complete, read-only snapshot of local delegation metadata to stdout.
 --json and --schema-version 1 are required. --link is repeatable; default: all links.

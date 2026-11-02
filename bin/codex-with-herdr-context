@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pass this client's Herdr context to commands run by Codex's shared daemon."""
+"""Pass this client's Herdr context via -c overrides, keeping its TUI off the shared daemon."""
 import json
 import os
 import sys

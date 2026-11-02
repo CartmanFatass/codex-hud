@@ -13,6 +13,7 @@ import { createShippedCodexCapabilityVerifier } from '../../../src/core/launch/i
 import { readHookConfig, selectsClaudeHook } from './hook/record.js';
 import { fileURLToPath } from 'node:url';
 import { openLedger } from '../../../src/ledger/ledger.js';
+import { shippedManifest, verifiedClientTimeout } from '../../../src/cli/capability.js';
 const home = process.env.HUD_HOME;
 if (!home || !isAbsolute(home)) throw new Error('HUD_HOME must name an absolute private HUD directory');
 const file = join(home, 'delegate.json');
@@ -71,6 +72,20 @@ const capability = createShippedCodexCapabilityVerifier({
     mcpClient: 'unverified',
   },
 });
+// B6 selects timeout numbers by first harness/source match. Never attest a different
+// selected profile, or an ambiguous same-source configuration.
+const timeoutProfiles = config.profiles.filter(
+  (p) => p.harness === registration.caller.harness && p.source.root === registration.source?.rootPath
+);
+const waitTimeoutVerified = verifiedClientTimeout({
+  manifest: shippedManifest(),
+  selected: profile,
+  matchingProfiles: timeoutProfiles,
+  // No complete parent/client runtime attestation is shipped by this composition.
+  // Release/B14 must supply measured startup facts matching T-05-14, not a child's
+  // launch cell, HookConfig version declaration, or arbitrary configured timeout.
+  actual: null,
+});
 const bodies =
   registry instanceof LedgerCallerRegistry
     ? new DelegationService({
@@ -80,6 +95,7 @@ const bodies =
         registration,
         reader,
         capability,
+        waitTimeoutVerified,
         hudRunPath: fileURLToPath(new URL('../../../../../../bin/hud-run', import.meta.url)),
       })
     : undefined;
