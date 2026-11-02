@@ -462,10 +462,18 @@ export class LedgerRunFactPort implements RunFactPort {
         return null;
       throw error;
     }
-    const result = await commitReconcile(this.ledger, expected, supplied, nowMs, (tx) => {
-      this.gate.check(actor);
-      if (importedReceipt) persistRunReceipt(tx, runId, expected.run.supervisor!, importedReceipt);
-    });
+    const result = await commitReconcile(
+      this.ledger,
+      expected,
+      supplied,
+      nowMs,
+      (tx) => {
+        this.gate.check(actor);
+        if (importedReceipt) persistRunReceipt(tx, runId, expected.run.supervisor!, importedReceipt);
+      },
+      this.ledger.busyBudgetMs,
+      this.gate.home
+    );
     return result.committed ? result.decision : null;
   }
 }

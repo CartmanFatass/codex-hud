@@ -4,12 +4,14 @@ import { canonicalJson, digest } from '../core/canonical.js';
 import { isRunTerminal, planSlotMigration } from '../core/execution.js';
 import { redeemClaim, resolveBinding, sameSessionRef, sessionRefKey } from '../core/identity.js';
 import { advanceLink, linkAfterReport, reportPolicy } from '../core/lifecycle.js';
+import { touchHint } from '../core/wait/hints.js';
 import type { CallerContext, ChildBinding, Claim, SessionRef } from '../core/types/identity.js';
 import type { Evidence, Run, RunSlot } from '../core/types/execution.js';
 import type { Link, Report, ReportStatus } from '../core/types/lifecycle.js';
 import type { RunMeta } from '../core/types/supervision.js';
 import type { Ledger } from './ledger.js';
 import { currentAuthority, hasConflict } from './intents.js';
+import { isWakeWorthyEvent } from './notify-events.js';
 import { decodeRecord, insertRecord, readContext, readLink, readRun, refValue } from './records.js';
 import { LedgerBusyError, type LedgerTransaction } from './transaction.js';
 import type { IntentAuthority } from './types.js';
@@ -389,12 +391,14 @@ export async function commitChildReport(
   supplied: ChildReportInput,
   authority: ChildAuthority,
   at: number,
-  budget?: ChildWriteBudget
+  budget?: ChildWriteBudget,
+  home?: string
 ): Promise<{ ok: true; reportId: string; runId: string } | { ok: false; code: string }> {
   const input = structuredClone(supplied),
     auth = structuredClone(authority);
   if (!Number.isSafeInteger(at) || at < 0 || typeof input.summary !== 'string') throw new TypeError('invalid_report');
-  return childTransaction(
+  let hintSeq: number | undefined;
+  const result = await childTransaction(
     ledger,
     (tx) => {
       const selected = selection(tx, auth);
@@ -438,20 +442,24 @@ export async function commitChildReport(
           payload: { reason: code, contextId: context.contextId, generation: context.generation },
           at,
         });
-        return { ok: false, code };
+        return { ok: false as const, code };
       }
       insertRecord(tx, 'reports', report);
       const next = linkAfterReport(link, report, run);
       tx.run('UPDATE links SET state=? WHERE link_id=?', next.state, link.linkId);
-      insertRecord(tx, 'events', {
+      const event = {
         runId: run.runId,
         linkId: link.linkId,
         kind: 'report.received',
         payload: { reportId: report.reportId },
         at,
-      });
-      return { ok: true, reportId: report.reportId, runId: run.runId };
+      };
+      insertRecord(tx, 'events', event);
+      if (isWakeWorthyEvent(event)) hintSeq = Number(tx.get('SELECT last_insert_rowid() AS seq')!.seq);
+      return { ok: true as const, reportId: report.reportId, runId: run.runId };
     },
     budget
   );
+  if (home && hintSeq !== undefined) touchHint(home, input.runId, hintSeq);
+  return result;
 }

@@ -14,6 +14,8 @@ import { readHookConfig, selectsClaudeHook } from './hook/record.js';
 import { fileURLToPath } from 'node:url';
 import { openLedger } from '../../../src/ledger/ledger.js';
 import { shippedManifest, verifiedClientTimeout } from '../../../src/cli/capability.js';
+import { ParentLifetime } from './lifetime.js';
+const lifetime = new ParentLifetime();
 const home = process.env.HUD_HOME;
 if (!home || !isAbsolute(home)) throw new Error('HUD_HOME must name an absolute private HUD directory');
 const file = join(home, 'delegate.json');
@@ -50,6 +52,20 @@ const registration = await registerCaller({
   envPane: process.env.HERDR_PANE_ID ?? null,
   nowMs: Date.now(),
 });
+// The identity registry verified this harness instance and source; use its direct
+// binary rather than PATH, a wrapper, profile overrides, or persisted target text.
+let wakeExecutable: string | undefined;
+if (registration.source?.harness === 'codex' && registration.harnessPid) {
+  try {
+    const before = reader.get(registration.harnessPid);
+    const executable = realpathSync(`/proc/${registration.harnessPid}/exe`);
+    const after = reader.get(registration.harnessPid);
+    if (before.procStart === registration.harnessProcStart && after.procStart === before.procStart)
+      wakeExecutable = executable;
+  } catch {
+    /* Endpoint unavailable is projected as adapter none. */
+  }
+}
 const scopes =
   registry instanceof LedgerCallerRegistry ? new ReadOnlyScopeSnapshot(join(home, 'ledger.sqlite')) : undefined;
 const hookConfig = process.env.HUD_CLAUDE_HOOK_CONFIG;
@@ -96,15 +112,28 @@ const bodies =
         reader,
         capability,
         waitTimeoutVerified,
+        wakeExecutable,
         hudRunPath: fileURLToPath(new URL('../../../../../../bin/hud-run', import.meta.url)),
       })
     : undefined;
-const server = new HudMcpServer(new SessionRefResolver(registration, reader, profile, undefined, hook, scopes), bodies);
+const server = new HudMcpServer(
+  new SessionRefResolver(registration, reader, profile, undefined, hook, scopes),
+  bodies,
+  () => lifetime.alive()
+);
 let discardPendingOutput = false;
+let closing: Promise<void> | undefined;
+server.shutdownSignal.addEventListener(
+  'abort',
+  () => {
+    closing ??= bodies?.close();
+  },
+  { once: true }
+);
 try {
-  ({ discardPendingOutput } = await serveStdioProcess(server));
+  ({ discardPendingOutput } = await serveStdioProcess(server, () => lifetime.alive()));
 } finally {
-  bodies?.close();
+  await (closing ?? bodies?.close());
   if (registry instanceof LedgerCallerRegistry) await registry.ledger.close();
 }
 // All owned stores/waiters are closed; an unread native stdout WriteWrap must not retain the process.

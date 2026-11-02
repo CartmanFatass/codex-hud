@@ -2,11 +2,13 @@ import { terminalNote, finalizeTermination } from './run-facts.js';
 import { canonicalJson, digest, type JsonObject } from '../core/canonical.js';
 import { isRunTerminal, reconcileRun, updateRun } from '../core/execution.js';
 import { advanceLink } from '../core/lifecycle.js';
+import { touchHint } from '../core/wait/hints.js';
 import type { ReconcileDecision, ReconcileEvidence } from '../core/types/execution.js';
 import type { FinalExitReceipt } from '../core/types/supervision.js';
 import { authorizeControl } from '../core/lifecycle.js';
 import type { Ledger } from './ledger.js';
 import { currentAuthority, hasEvidenceConflict, linkOwner, requireParentControl } from './intents.js';
+import { isWakeWorthyEvent } from './notify-events.js';
 import { decodeRecord, insertRecord, readEvidence, readEvents, readLink, readRun, refValue } from './records.js';
 import type { LedgerTransaction } from './transaction.js';
 import type { IntentAuthority, ReconcileSnapshot, ValidatedEvidence } from './types.js';
@@ -190,13 +192,15 @@ export async function commitReconcile(
   supplied: readonly ValidatedEvidence[],
   nowMs: number,
   gate?: (tx: LedgerTransaction) => void,
-  budgetMs = ledger.busyBudgetMs
+  budgetMs = ledger.busyBudgetMs,
+  home?: string
 ): Promise<{ committed: false; reason: 'stale_snapshot' } | { committed: true; decision: ReconcileDecision }> {
   const runId = expected.run.runId;
   const expectedVersion = expected.version;
   const incoming = preparedEvidence(supplied, runId);
   if (!Number.isFinite(nowMs) || nowMs < 0) throw new TypeError('invalid_reconcile_time');
-  return ledger.transaction((tx) => {
+  let hintSeq: number | undefined;
+  const result = await ledger.transaction((tx) => {
     if (canonicalJson(versionRows(tx, runId)) !== expectedVersion)
       return { committed: false as const, reason: 'stale_snapshot' as const };
     gate?.(tx);
@@ -324,7 +328,7 @@ export async function commitReconcile(
           );
         }
       }
-      insertRecord(tx, 'events', {
+      const event = {
         runId,
         linkId: current.link.linkId,
         kind: terminal ? 'run.terminal' : 'run.state',
@@ -338,7 +342,9 @@ export async function commitReconcile(
           ...(termination ? { termination: JSON.parse(canonicalJson(termination)) } : {}),
         },
         at: nowMs,
-      });
+      };
+      insertRecord(tx, 'events', event);
+      if (isWakeWorthyEvent(event)) hintSeq = Number(tx.get('SELECT last_insert_rowid() AS seq')!.seq);
     }
     if (isRunTerminal(current.run) && receipt) {
       tx.run(
@@ -350,6 +356,8 @@ export async function commitReconcile(
     }
     return { committed: true as const, decision };
   }, budgetMs);
+  if (home && hintSeq !== undefined) touchHint(home, runId, hintSeq);
+  return result;
 }
 
 /** Same CAS boundary for identity/import/cancel writers that gathered evidence outside SQLite. */

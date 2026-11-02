@@ -183,7 +183,9 @@ export async function acceptIntent(
   supplied: PreparedIntent,
   budgetMs = ledger.busyBudgetMs,
   localCheck?: () => void,
-  limits: CapacityLimits = {}
+  limits: CapacityLimits = {},
+  /** Trusted synchronous bookkeeping for a fresh intent; shares rollback and lock budget. */
+  onAccepted?: (tx: LedgerTransaction) => void
 ): Promise<IntentResult> {
   // Clone and perform normalization/hashing outside the write transaction, before any await.
   const input = JSON.parse(canonicalJson(supplied)) as PreparedIntent;
@@ -397,6 +399,7 @@ export async function acceptIntent(
       insertRun(tx, run);
       insertClaim(tx, claim);
       insertRecord(tx, 'slots', slot);
+      onAccepted?.(tx);
       const outcome = { status: 'accepted', state: 'starting', linkId: link.linkId, runId: run.runId };
       insertRecord(tx, 'idempotency', {
         ownerKey: allowed.ownerKey,

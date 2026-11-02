@@ -29,6 +29,7 @@ import type { ReconcileEvidence } from '../../../src/core/types/execution.js';
 import type { WaitRequest, WaitUntil } from '../../../src/core/types/lifecycle.js';
 import type { SessionRef } from '../../../src/core/types/identity.js';
 import type { ObservationProjection } from '../../../src/core/types/checkpoint.js';
+import { readWakeState, wakeProjection, type WakeWaitObserver } from './wake-state.js';
 
 function requireCancel(tx: LedgerTransaction, link: DelegationRead['link'], authority: IntentAuthority): void {
   requireParentControl(link);
@@ -45,7 +46,8 @@ export class ReadControlService {
     private readonly subscribe: SubscribeWait = hintSubscription(home),
     /** Trusted observation seam for controlled OS-visibility/race tests; never tool input. */
     private readonly probes: { supervisorState?: typeof processState } = {},
-    private readonly limits: CapacityLimits = {}
+    private readonly limits: CapacityLimits = {},
+    private readonly wakes?: WakeWaitObserver
   ) {}
   close(): void {
     for (const store of this.stores.values()) store.close();
@@ -116,7 +118,16 @@ export class ReadControlService {
         await this.ledger.readSnapshot((tx) => {
           const snapshot = readDelegationIn(tx, target, authority(tx));
           const { active, limit, occupants } = readCapacity(tx, linkOwner(tx, snapshot.link), this.limits);
-          return { ...snapshot, capacity: { active, limit, occupants } };
+          return {
+            ...snapshot,
+            capacity: { active, limit, occupants },
+            ...wakeProjection(
+              readWakeState(tx, snapshot.link),
+              this.home,
+              snapshot.currentRun.runId,
+              snapshot.asOfSeq ?? 0
+            ),
+          };
         })
       )),
     };
@@ -155,49 +166,67 @@ export class ReadControlService {
       timeout.clientToolTimeoutMs === null ? Infinity : Math.max(0, timeout.clientToolTimeoutMs - 2000);
     const base = timeout.verified ? verifiedBudget.effectiveWaitMs : Math.min(requested, 5000, configuredCap);
     const budget = { effectiveWaitMs: Math.max(0, Math.floor(base - elapsed)), reason: verifiedBudget.reason };
-    const result = await waitForRun({
-      timeoutMs: budget.effectiveWaitMs,
-      signal,
-      subscribe: this.subscribe,
-      read: async (runId?: string) =>
-        this.ledger.readSnapshot((tx) => {
-          const status = readDelegationIn(tx, runId ? { runId } : (request as DelegationTarget), authority(tx));
-          const highWaterSeq = status.asOfSeq!;
-          const { events, validReportSeqs } = readDelegationEventsIn(
-            tx,
-            status.currentRun.runId,
-            afterSeq,
-            highWaterSeq
-          );
-          const page = waitPage(
-            {
-              runId: status.currentRun.runId,
+    const token = Symbol('delegate_wait');
+    let opened = false;
+    try {
+      const result = await waitForRun({
+        timeoutMs: budget.effectiveWaitMs,
+        signal,
+        subscribe: this.subscribe,
+        read: async (runId?: string) =>
+          this.ledger.readSnapshot((tx) => {
+            const status = readDelegationIn(tx, runId ? { runId } : (request as DelegationTarget), authority(tx));
+            if (!opened) {
+              this.wakes?.opened(token, status.currentRun.runId, afterSeq, until);
+              opened = true;
+            }
+            const highWaterSeq = status.asOfSeq!;
+            const { events, validReportSeqs } = readDelegationEventsIn(
+              tx,
+              status.currentRun.runId,
               afterSeq,
-              until: until as WaitUntil[],
-              timeoutMs: budget.effectiveWaitMs,
-            },
-            { run: status.currentRun, highWaterSeq, events }
-          );
-          if (page.matched && !until.includes('run_terminal') && !until.includes('uncertain'))
-            page.matched = page.events.some((e) => validReportSeqs.includes(e.seq));
-          else if (until.includes('report')) {
-            const withoutReport = waitPage(
-              { runId: page.runId, afterSeq, until: until.filter((v) => v !== 'report') as WaitUntil[], timeoutMs: 0 },
-              { run: page.current, highWaterSeq, events }
+              highWaterSeq
             );
-            page.matched = withoutReport.matched || page.events.some((e) => validReportSeqs.includes(e.seq));
-          }
-          return { ...page, lifecycle: status };
-        }),
-    });
-    const { lifecycle, ...page } = result;
-    return {
-      ok: true,
-      ...page,
-      status: await this.compose(lifecycle),
-      reason: budget.reason,
-      timeoutVerified: timeout.verified,
-    };
+            const page = waitPage(
+              {
+                runId: status.currentRun.runId,
+                afterSeq,
+                until: until as WaitUntil[],
+                timeoutMs: budget.effectiveWaitMs,
+              },
+              { run: status.currentRun, highWaterSeq, events }
+            );
+            if (page.matched && !until.includes('run_terminal') && !until.includes('uncertain'))
+              page.matched = page.events.some((e) => validReportSeqs.includes(e.seq));
+            else if (until.includes('report')) {
+              const withoutReport = waitPage(
+                {
+                  runId: page.runId,
+                  afterSeq,
+                  until: until.filter((v) => v !== 'report') as WaitUntil[],
+                  timeoutMs: 0,
+                },
+                { run: page.current, highWaterSeq, events }
+              );
+              page.matched = withoutReport.matched || page.events.some((e) => validReportSeqs.includes(e.seq));
+            }
+            return { ...page, lifecycle: status };
+          }),
+      });
+      const { lifecycle, ...page } = result;
+      const status = await this.compose(lifecycle);
+      signal?.throwIfAborted();
+      this.wakes?.returned(token, page.events);
+      return {
+        ok: true,
+        ...page,
+        status,
+        reason: budget.reason,
+        timeoutVerified: timeout.verified,
+      };
+    } finally {
+      this.wakes?.closed(token);
+    }
   }
   async cancel(
     runId: string,
@@ -263,7 +292,8 @@ export class ReadControlService {
             const current = readDelegationIn(tx, { runId }, authority);
             requireCancel(tx, current.link, authority);
           },
-          remaining()
+          remaining(),
+          this.home
         );
         void reconciled;
         continue;

@@ -24,6 +24,14 @@ import type { LedgerTransaction } from '../../../src/ledger/transaction.js';
 import type { WaitRequest } from '../../../src/core/types/lifecycle.js';
 import { sameSessionRef } from '../../../src/core/identity.js';
 import type { SubscribeWait } from '../../../src/core/wait/index.js';
+import { parentWakeRegistration } from './wake-registration.js';
+import { readWakeState, wakeProjection } from './wake-state.js';
+import { recordWakeRegistered } from '../../../src/ledger/notify-events.js';
+import { WakeDrainer } from './wake-drainer.js';
+import { WakeAdapters } from '../../../src/core/wake/adapters.js';
+import { makeProcessKey } from '../../../src/core/identity.js';
+import { mkdirSync } from 'node:fs';
+import { hintDirectory } from '../../../src/core/wait/hints.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 type McpAuthority = Extract<IntentAuthority, { kind: 'mcp' }>;
@@ -45,16 +53,56 @@ export interface DelegationOptions {
   /** Trusted client/version/profile timeout proof; numeric config alone is insufficient. */
   waitTimeoutVerified?: boolean;
   subscribeWait?: SubscribeWait;
+  /** Verified direct parent binary, captured at startup; never selected by a tool argument. */
+  wakeExecutable?: string;
 }
 
 /** Composition for production tools; every call receives a freshly verified source. */
 export class DelegationService {
   private readonly reads: ReadControlService;
+  private readonly wakes?: WakeDrainer;
   constructor(private readonly options: DelegationOptions) {
-    this.reads = new ReadControlService(options.ledger, options.home, options.subscribeWait, {}, options.config.limits);
+    mkdirSync(hintDirectory(options.home), { recursive: true, mode: 0o700 });
+    const physical = options.registration;
+    if (
+      physical?.source &&
+      physical.harnessPid &&
+      physical.harnessProcStart &&
+      options.reader &&
+      (physical.source.harness !== 'codex' || options.wakeExecutable)
+    ) {
+      const stamp = readProcess(physical.harnessPid)?.stamp;
+      this.wakes = new WakeDrainer({
+        ledger: options.ledger,
+        home: options.home,
+        processKey: makeProcessKey(
+          physical.source.harness,
+          physical.source.sourceId,
+          options.reader.domain().pidDomain,
+          physical.harnessPid,
+          physical.harnessProcStart
+        ),
+        parentStamp: stamp?.proc_start === physical.harnessProcStart ? stamp : null,
+        callerId: physical.caller.callerId,
+        recoveryMs: options.config.wake?.recoveryMs,
+        adapters: new WakeAdapters({ codexExecutable: options.wakeExecutable }),
+      });
+    }
+    this.reads = new ReadControlService(
+      options.ledger,
+      options.home,
+      options.subscribeWait,
+      {},
+      options.config.limits,
+      this.wakes
+    );
   }
-  close(): void {
+  async close(): Promise<void> {
     this.reads.close();
+    await this.wakes?.close();
+  }
+  parentCall(): void {
+    this.wakes?.parentCall();
   }
   private readAuthority(tx: LedgerTransaction, source: Extract<CallResolution, { ok: true }>): McpAuthority {
     if (!source.scopePremise || !this.options.registration) throw new Error('identity_unverified');
@@ -97,6 +145,7 @@ export class DelegationService {
     signal?: AbortSignal
   ): Promise<unknown> {
     if (!source.scopePremise) throw new Error('identity_unverified');
+    this.wakes?.parentCall();
     if (!this.options.registration || !this.options.reader) throw new Error('local_entry_only');
     if (tool === 'delegate_status')
       return this.reads.status(args as unknown as Parameters<ReadControlService['status']>[0], (tx) =>
@@ -125,6 +174,7 @@ export class DelegationService {
       registration: this.options.registration,
       reader: this.options.reader,
       env: this.options.env ?? process.env,
+      home: this.options.home,
     });
     const deadline = started + 30;
     if (performance.now() >= deadline) throw new LedgerBusyError();
@@ -328,6 +378,18 @@ export class DelegationService {
       ...link,
       taskDigest: taskDigest(preparation.brief.path, preparation.brief.sha256, backend, run.sourceId, link.role),
     };
+    const physical = this.options.registration;
+    const candidate = physical?.harnessPid ? (readProcess(physical.harnessPid)?.stamp ?? null) : null;
+    const wakeRegistration =
+      authority.kind === 'mcp' && context && physical
+        ? parentWakeRegistration(
+            context,
+            physical,
+            home,
+            candidate?.proc_start === physical.harnessProcStart ? candidate : null,
+            this.options.wakeExecutable
+          )
+        : null;
     if (performance.now() >= deadline) throw new LedgerBusyError();
     const result = await acceptIntent(
       ledger,
@@ -350,7 +412,12 @@ export class DelegationService {
       },
       Math.min(20, Math.max(0, deadline - 10 - performance.now())),
       gate ? () => gate.check() : undefined,
-      config.limits
+      config.limits,
+      wakeRegistration
+        ? (tx) => {
+            recordWakeRegistered(tx, linkId, wakeRegistration, at);
+          }
+        : undefined
     );
     if (
       result.outcome &&
@@ -360,6 +427,7 @@ export class DelegationService {
     )
       return result.outcome;
     if (!result.replayed) {
+      this.wakes?.request();
       // Do not await private-pipe backpressure after commit. This closure owns
       // the sole ticket delivery; replay never schedules it again.
       void (async () => {
@@ -370,7 +438,25 @@ export class DelegationService {
         }
       })();
     }
-    return { ok: true, ...(result.outcome as object) };
+    let wake: ReturnType<typeof wakeProjection> | undefined;
+    if (!result.replayed && wakeRegistration) {
+      wake = wakeProjection(
+        { seq: 0, link: proposedLink, registration: wakeRegistration, valid: true, reason: null, delivery: null },
+        home,
+        runId,
+        0
+      );
+    } else {
+      try {
+        wake = await ledger.readSnapshot((tx) => {
+          const acceptedLink = readLink(tx, result.linkId!);
+          return wakeProjection(readWakeState(tx, acceptedLink), home, result.runId!, 0);
+        });
+      } catch {
+        /* Optional advice must never turn a committed acceptance into a refusal. */
+      }
+    }
+    return { ok: true, ...(result.outcome as object), ...wake };
   }
   /** Trusted B11 function entry; arguments cannot select an MCP or management actor. */
   async resumeLocal(args: LocalResumeRequest): Promise<unknown> {

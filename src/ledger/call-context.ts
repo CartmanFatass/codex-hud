@@ -4,7 +4,10 @@ import { sameSessionRef, sessionRefKey } from '../core/identity.js';
 import type { ScopeSnapshot } from '../core/ledger-scope-read.js';
 import type { CallerContext, CallerScope, SessionRef } from '../core/types/identity.js';
 import type { Ledger } from './ledger.js';
-import { decodeRecord, insertRecord, readContext } from './records.js';
+import { recordWakeRevoked } from './notify-events.js';
+import { decodeRecord, insertRecord, readContext, readLink } from './records.js';
+import { wakeContextBinding } from '../core/wake/binding.js';
+import type { LedgerEvent } from '../core/types/execution.js';
 import type { LedgerTransaction } from './transaction.js';
 import type { IntentAuthority } from './types.js';
 
@@ -74,6 +77,48 @@ export async function authorizeRootCall(
       throw new Error('stale_context');
     const generation = old === null || switching ? input.premise.highWaterGeneration + 1 : old.generation;
     if (switching) {
+      // Revoke every registration bound to this process's closing generation,
+      // including registrations made through another MCP of the same root.
+      const registrations = tx.all(
+        `SELECT e.seq,e.link_id FROM events e
+        JOIN links l ON l.link_id=e.link_id
+        WHERE e.kind='wake.registered' AND l.parent_ref=?
+          AND json_extract(e.payload,'$.contextGeneration')=?
+          AND NOT EXISTS (SELECT 1 FROM events r WHERE r.link_id=e.link_id AND r.kind='wake.revoked'
+            AND json_extract(r.payload,'$.registrationSeq')=e.seq)`,
+        sessionRefKey(old!.sessionRef!),
+        old!.generation
+      );
+      for (const registration of registrations) {
+        const link = readLink(tx, String(registration.link_id));
+        const nextIntent = tx.get(
+          `SELECT * FROM events WHERE link_id=? AND kind='intent.accepted' AND seq>?
+          AND seq<coalesce((SELECT min(seq) FROM events WHERE link_id=? AND kind='wake.registered' AND seq>?),9223372036854775807)
+          ORDER BY seq LIMIT 1`,
+          link.linkId,
+          registration.seq,
+          link.linkId,
+          registration.seq
+        );
+        const binding = wakeContextBinding(link, nextIntent ? decodeRecord<LedgerEvent>(nextIntent) : null);
+        if (!binding) continue;
+        const context = readContext(tx, binding.contextId, binding.generation);
+        if (
+          context.kind !== 'dedicated' ||
+          context.processKey !== input.processKey ||
+          context.procGeneration !== old!.generation
+        )
+          continue;
+        recordWakeRevoked(
+          tx,
+          String(registration.link_id),
+          {
+            registrationSeq: Number(registration.seq),
+            reason: 'generation_changed',
+          },
+          input.at
+        );
+      }
       tx.run(
         'UPDATE caller_scopes SET closed_at=? WHERE process_key=? AND generation=? AND closed_at IS NULL',
         input.at,
