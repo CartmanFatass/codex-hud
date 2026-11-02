@@ -34,6 +34,7 @@
 - 信息展示与可视化的设计决策 → Fable max 子代理；按定稿设计改渲染、文案、视觉基线 → 前端实现。
 - 其余（脚本、文档、fixture、配置）→ 普通任务。
 - 拿不准按核心处理。
+- 一个决定只审一次（Jacob，2026-11-02）：要送 Pro 的问题直接送 Pro，不先过 Oracle，Pro 评审过的内容也不再送 Oracle 复核；Oracle 裁决过的不再送 Pro，除非 Oracle 自己判断超出范围而上送（那时 Oracle 不出裁决）。同一份设计不叠加两级评审。
 - Codex implementer 自调 Oracle（Jacob，2026-11-02）：本 WP 实现中遇到的设计分叉，implementer 直接用子代理问 Oracle，不经编排者另开 tab：`spawn_agent {"task_name": "<WP>_oracle", "fork_turns": "none", "model": "gpt-6-astra", "reasoning_effort": "max", "message": <自足的问题包：分叉、选项、相关契约章节与代码路径、只读、不得再派子代理、答复写入 tmp/tasks/<WP>/oracle-<n>.md>}`。裁决对本 WP 有约束力，记入报告；先拿裁决再写受影响部分，不受影响的部分照常推进。裁决要改所有权以外的契约 / 共享类型时，implementer 停下问编排者；编排者合入时把答复归档到 `docs/reviews/<date>-astra-<WP>.md`，并按需写进 §15。跨 WP 或改 MVP 范围的分叉仍由编排者攒包送 Oracle 或 Pro。
 - 核心 brief 写法（2026-11-02 起）：①把评审者常用的失败场景写进验收，要求真实进程测试（提交前后崩溃、竞态与交错、进程号/PGID 复用、中断后残留进程、重复/乱序事件、并发下的 p95）；②设计分叉在实现前送 Oracle，只暂停受影响部分；③复杂包拆成小里程碑，每个里程碑由主审单独审。
 
