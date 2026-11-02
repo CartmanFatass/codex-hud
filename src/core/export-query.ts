@@ -69,6 +69,11 @@ WITH valid_bindings AS (
 )
 SELECT r.link_id, r.run_id, r.run_seq, r.operation, r.state AS run_state,
   r.created_at, r.started_at, r.ended_at,
+  (SELECT CASE WHEN json_extract(e.payload,'$.terminalNote') IN ('cancel_timing_unknown','retire_timing_unknown')
+    THEN json_extract(e.payload,'$.terminalNote') ELSE NULL END
+    FROM events e WHERE e.run_id=r.run_id AND e.kind='run.terminal' ORDER BY e.seq DESC LIMIT 1) AS terminal_note,
+  (SELECT json_type(e.payload,'$.terminalNote') FROM events e
+    WHERE e.run_id=r.run_id AND e.kind='run.terminal' ORDER BY e.seq DESC LIMIT 1) AS terminal_note_type,
   CASE WHEN :paths='local' THEN r.launch_cwd ELSE NULL END AS launch_cwd,
   CASE WHEN r.workspace_snapshot IS NULL THEN NULL ELSE json_object(
     'repoId',json_extract(r.workspace_snapshot,'$.repoId'),
@@ -146,6 +151,9 @@ function inputRecord(row: Row): ExportInputRecord {
     createdAt: row.created_at as number,
     startedAt: row.started_at as number | null,
     endedAt: row.ended_at as number | null,
+    ...(row.terminal_note_type === null
+      ? {}
+      : { terminalNote: row.terminal_note as ExportInputRecord['terminalNote'] }),
   };
 }
 

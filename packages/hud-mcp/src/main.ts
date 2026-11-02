@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
-import { loadDelegateConfig } from './config.js';
+import { loadDelegateConfig, validateDelegateConfig } from './config.js';
 import { LinuxProcessReader } from './process.js';
 import { FileCallerRegistry, MemoryCallerRegistry, registerCaller } from './registry.js';
 import { createLedgerCallerRegistry } from './ledger-registry.js';
@@ -17,7 +17,7 @@ import { shippedManifest, verifiedClientTimeout } from '../../../src/cli/capabil
 const home = process.env.HUD_HOME;
 if (!home || !isAbsolute(home)) throw new Error('HUD_HOME must name an absolute private HUD directory');
 const file = join(home, 'delegate.json');
-const config = existsSync(file) ? loadDelegateConfig(file) : { version: 1 as const, profiles: [] };
+const config = existsSync(file) ? loadDelegateConfig(file) : validateDelegateConfig({ version: 1, profiles: [] });
 const profileName = process.env.HUD_MCP_PROFILE;
 const profile = config.profiles.find((p) => p.name === profileName) ?? null;
 if (profileName && !profile) throw new Error('HUD_MCP_PROFILE is not present in delegate.json');

@@ -17,3 +17,4 @@ export {
 export { captureRunWorkspace } from './workspace.js';
 export type { PreparedIntent, IntentAuthority, IntentResult, ReconcileSnapshot, ValidatedEvidence } from './types.js';
 export { recordRunLocator } from './locator.js';
+export * from './notify-events.js';

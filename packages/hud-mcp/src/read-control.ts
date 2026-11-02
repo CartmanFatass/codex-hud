@@ -18,7 +18,13 @@ import { randomUUID } from 'node:crypto';
 import { digest } from '../../../src/core/canonical.js';
 import { isRunTerminal } from '../../../src/core/execution.js';
 import { processState } from '../../../src/core/run/process.js';
-import { requireParentControl, currentAuthority, linkOwner } from '../../../src/ledger/intents.js';
+import {
+  requireParentControl,
+  currentAuthority,
+  linkOwner,
+  readCapacity,
+  type CapacityLimits,
+} from '../../../src/ledger/intents.js';
 import type { ReconcileEvidence } from '../../../src/core/types/execution.js';
 import type { WaitRequest, WaitUntil } from '../../../src/core/types/lifecycle.js';
 import type { SessionRef } from '../../../src/core/types/identity.js';
@@ -38,7 +44,8 @@ export class ReadControlService {
     private readonly home: string,
     private readonly subscribe: SubscribeWait = hintSubscription(home),
     /** Trusted observation seam for controlled OS-visibility/race tests; never tool input. */
-    private readonly probes: { supervisorState?: typeof processState } = {}
+    private readonly probes: { supervisorState?: typeof processState } = {},
+    private readonly limits: CapacityLimits = {}
   ) {}
   close(): void {
     for (const store of this.stores.values()) store.close();
@@ -67,7 +74,7 @@ export class ReadControlService {
       return null;
     }
   }
-  private async compose(snapshot: DelegationRead) {
+  private async compose<T extends DelegationRead>(snapshot: T) {
     const run = snapshot.currentRun;
     const ref = run.targetSessionRef ?? (snapshot.isCurrent ? snapshot.link.childRef : null);
     const candidate = ref ? await this.projection(ref) : null;
@@ -105,7 +112,13 @@ export class ReadControlService {
   async status(target: DelegationTarget, authority: (tx: LedgerTransaction) => IntentAuthority) {
     return {
       ok: true,
-      ...(await this.compose(await this.ledger.readSnapshot((tx) => readDelegationIn(tx, target, authority(tx))))),
+      ...(await this.compose(
+        await this.ledger.readSnapshot((tx) => {
+          const snapshot = readDelegationIn(tx, target, authority(tx));
+          const { active, limit, occupants } = readCapacity(tx, linkOwner(tx, snapshot.link), this.limits);
+          return { ...snapshot, capacity: { active, limit, occupants } };
+        })
+      )),
     };
   }
   async wait(

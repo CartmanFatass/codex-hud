@@ -23,11 +23,28 @@ function command(value: unknown, nullable: boolean): void {
   if (!object(value) || !validateLaunchCommand(value)) bad();
   keys(value, Object.hasOwn(value, 'argv') ? ['argv'] : ['shell', 'shellPath']);
 }
+export const RETIRE_DEFAULTS = Object.freeze({
+  afterReportMs: 600000,
+  reviewerAfterReportMs: 120000,
+  idleMs: 3600000,
+  blockedWaitMs: 3600000,
+  maxRunMs: 14400000,
+});
+function defaults(value: unknown, fallback: Record<string, number>, min: number, max: number) {
+  if (value === undefined) return { ...fallback };
+  if (!object(value)) bad();
+  keys(value, [], Object.keys(fallback));
+  for (const item of Object.values(value))
+    if (!Number.isSafeInteger(item) || (item as number) < min || (item as number) > max) bad();
+  return { ...fallback, ...value };
+}
 /** Configuration only; managedShellVerified is not a product capability gate. */
 export function validateDelegateConfig(value: unknown): DelegateConfig {
   value = structuredClone(value);
   if (!object(value)) bad();
-  keys(value, ['version', 'profiles']);
+  keys(value, ['version', 'profiles'], ['limits', 'wake']);
+  value.limits = defaults(value.limits, { maxActiveRuns: 6, maxActiveRunsPerOwner: 4 }, 1, Number.MAX_SAFE_INTEGER);
+  value.wake = defaults(value.wake, { recoveryMs: 30000 }, 1, 2147483647);
   if (value.version !== 1 || !Array.isArray(value.profiles) || value.profiles.length > 128) bad();
   const names = new Set<string>();
   for (const p of value.profiles) {
@@ -51,8 +68,10 @@ export function validateDelegateConfig(value: unknown): DelegateConfig {
         'orphan_policy',
         'managedShellVerified',
       ],
-      ['roles', 'callSource']
+      ['roles', 'callSource', 'retire']
     );
+    p.retire = defaults(p.retire, RETIRE_DEFAULTS, 0, 2147483647);
+    if ((p.retire as Record<string, number>).maxRunMs < 1) bad();
     if (!text(p.name) || names.has(p.name) || !['claude', 'codex', 'pi'].includes(p.harness as string)) bad();
     names.add(p.name);
     if (!object(p.source)) bad();

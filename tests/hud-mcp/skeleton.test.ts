@@ -127,7 +127,21 @@ test('delegate.json valid load, roles, unknown fields, mutually exclusive templa
     const good = { version: 1, profiles: [profile(f.root)] };
     const file = join(f.root, 'delegate.json');
     writeFileSync(file, JSON.stringify(good));
-    assert.deepEqual(loadDelegateConfig(file), good);
+    assert.deepEqual(loadDelegateConfig(file), {
+      ...good,
+      limits: { maxActiveRuns: 6, maxActiveRunsPerOwner: 4 },
+      wake: { recoveryMs: 30000 },
+      profiles: good.profiles.map((p) => ({
+        ...p,
+        retire: {
+          afterReportMs: 600000,
+          reviewerAfterReportMs: 120000,
+          idleMs: 3600000,
+          blockedWaitMs: 3600000,
+          maxRunMs: 14400000,
+        },
+      })),
+    });
     const bad: unknown[] = [
       { ...good, unknown: 1 },
       { version: 2, profiles: [] },

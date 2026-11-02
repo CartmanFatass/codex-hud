@@ -82,6 +82,13 @@ export interface LaunchProfile {
   /** Configuration hint only; managed shell support still requires separate accepted capability evidence. */
   managedShellVerified: boolean;
   roles?: DelegateRoles;
+  retire?: {
+    afterReportMs?: number;
+    reviewerAfterReportMs?: number;
+    idleMs?: number;
+    blockedWaitMs?: number;
+    maxRunMs?: number;
+  };
   /** Claude-only mechanism selection; configuration does not verify the capability. */
   callSource?: { kind: 'claude_pre_tool_use_v1' };
 }
@@ -91,6 +98,8 @@ export type DelegateProfile = LaunchProfile;
 export interface DelegateConfig {
   version: 1;
   profiles: DelegateProfile[];
+  limits?: { maxActiveRuns?: number; maxActiveRunsPerOwner?: number };
+  wake?: { recoveryMs?: number };
 }
 
 export interface HudLaunchEnv {

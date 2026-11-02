@@ -1,6 +1,7 @@
 import { sameSessionRef } from './identity.js';
 import type { SessionRef } from './types/identity.js';
 import type {
+  TerminalNoteCode,
   BindingReasonCode,
   HandshakeReasonCode,
   GitMissingReasonCode,
@@ -57,6 +58,7 @@ const HANDSHAKE_REASON_CODES = new Set<HandshakeReasonCode>([
 ]);
 const GIT_MISSING_REASON_CODES = new Set<GitMissingReasonCode>(['not_git', 'timeout', 'unavailable', 'unknown']);
 const CWD_SOURCE_CODES = new Set<CwdSourceCode>(['launch', 'registry', 'transcript', 'supervisor']);
+const TERMINAL_NOTE_CODES = new Set<TerminalNoteCode>(['cancel_timing_unknown', 'retire_timing_unknown']);
 const OPERATIONS = new Set(['spawn', 'resume', 'handover']);
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -259,6 +261,8 @@ function decodeRecord(
     !nullableTime(value.endedAt)
   )
     return { ok: false, reason: 'invalid_export_record' };
+  if ('terminalNote' in value && value.terminalNote !== null && typeof value.terminalNote !== 'string')
+    return { ok: false, reason: 'invalid_terminal_note' };
   if (value.cwdCapturedAt !== value.createdAt) return { ok: false, reason: 'invalid_cwd_capture_time' };
   const parent = decodeRef(value.parentRef),
     child = decodeRef(value.childRef),
@@ -310,6 +314,7 @@ function decodeRecord(
     createdAt: value.createdAt,
     startedAt: value.startedAt,
     endedAt: value.endedAt,
+    ...(Object.hasOwn(value, 'terminalNote') ? { terminalNote: code(value.terminalNote, TERMINAL_NOTE_CODES) } : {}),
   };
   return {
     ok: true,
@@ -432,6 +437,7 @@ function whitelistInputRecord(record: ExportInputRecord, paths: ExportPaths): un
     createdAt: record.createdAt,
     startedAt: record.startedAt,
     endedAt: record.endedAt,
+    ...(Object.hasOwn(record, 'terminalNote') ? { terminalNote: record.terminalNote } : {}),
     ...(paths === 'local' ? { launchCwd: record.launchCwd } : {}),
   };
 }
