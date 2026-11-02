@@ -14,7 +14,7 @@
 | 阶段 | 交付物 | 状态 |
 |---|---|---|
 | A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 已完成，**A9 带条件放行，契约 01–07 与 schema v1 冻结**：契约（Oracle 三次裁决 C/D/E 与 A9-fix 已落实）、A3/A8 探针、前端信息设计 v1.0、A4 核心类型与契约 fixture、隔离 A9 原型 23/23、A5 四接口与假实现、A6 Codex facade、A7 测试基建；Pro 评审见 reviews/2026-11-01-chatgpt-pro-a9-gate.md |
-| B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 待开工 |
+| B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 进行中：第一批 B1 ∥ B2 ∥ B3a ∥ B8（各自 git worktree，跨包依赖经端口，批后由 ORCH 集成） |
 | C pi 与 Jev 后端 | pi 适配器与 `hud pi`、resume 实测、Jev 后端与 JobRef、pi 的 MCP 加载 | |
 | D cc 完整与 statusline | cc 原生子代理、checkpoint 与采集租约、`hud statusline`、对照清单与基准、三道门切换 | |
 | E 整理 | herdr 宿主完整版、改名与迁移、v1.1 工具、文档 | |
@@ -93,7 +93,7 @@ tests/unit/      现有 + 契约 fixture；tests/herdr/ 单独套件；tests/int
 | WP | 内容 | 产出 | 验收 | 角色 | 规模 | 依赖 |
 |---|---|---|---|---|---|---|
 | B1 | **hud-mcp 骨架**：stdio 服务器、工具注册、`delegate.json` 加载与校验、调用者登记（pid / ppid / procStart / harness 推断 / `HERDR_PANE_ID`）、SessionRef 解析器（cc sessions 文件、Codex pane 绑定、pi cmdline） | `packages/hud-mcp/` | cc 与 Codex 能加载并列出工具，登记行正确（pi 的加载在 C1） | CORE | M | A9 |
-| B2 | **账本**：node:sqlite、WAL/user_version、事务助手、幂等/事件/游标、02运行槽、逐run不可变launch_cwd/nullable workspace_snapshot与project_origin、workspace.captured、私有单行ledgerId；hud link list/show及内部只读访问层，公开export归B18；collect租约仅06/B12观测存储，browser表留C4 | packages/hud-mcp/src/ledger/、src/core/ledger-read.ts | 并发双进程spawn/同键同参与异参；冻结启动上下文、一次快照捕获/事件、digest排除Git结果与写者时间、ledgerId初始化/恢复不变；只读层不承诺外部SQL接口 | CORE | L | A1（全部B另受A9门禁） |
+| B2 | **账本**：node:sqlite、WAL/user_version、事务助手、幂等/事件/游标、02运行槽、逐run不可变launch_cwd/nullable workspace_snapshot与project_origin、workspace.captured、私有单行ledgerId；hud link list/show及内部只读访问层，公开export归B18；collect租约仅06/B12观测存储，browser表留C4 | src/ledger/（hud-mcp、hud-run 与 reconciler 共用的库，B2 开工时由 ORCH 从 packages/hud-mcp/src/ledger/ 移出）、src/core/ledger-read.ts | 并发双进程spawn/同键同参与异参；冻结启动上下文、一次快照捕获/事件、digest排除Git结果与写者时间、ledgerId初始化/恢复不变；只读层不承诺外部SQL接口 | CORE | L | A1（全部B另受A9门禁） |
 | B3a | **hud-run 托管核心**：进程组、shell / argv 两种启动、headless 路径、日志、心跳、退出回执、取消序列、`orphan_policy`、`hud run status/logs/cancel/reconcile` | `bin/hud-run`、`src/core/run/` | 进程级单测：正常退出、被杀、托管自身死亡后对账、取消三段式、重复启动被槽拒绝 | CORE | L | A1 |
 | B3b | **hud-run可见终端集成**：实现Oracle修订方案甲、TTY直通、真实harness PGID/完整scope控制、Herdr检测/context；原生退出结果可未知，shell status分列；乙managed与PTY延期 | src/core/run/visible-*.ts + tmux集成测试 | 生产验证scope结束/活成员阻终结、整组取消不退单PID、实例复用/短命/重启；父MCP断连continue仍前台可输入/收尾；supervisor死交互中断、uncertain持槽、禁自动input/focus/fg/恢复/resume，Q不依赖死人receipt；原型不是生产pass，性能依06 | CORE | M（A8后重估） | A9、A8关键证据接受、B3a |
 | B4 | **spawn/resume与Codex档案**：四种模板、每轮claim注入/首条prompt、意图/槽、headless/tmux可见；逐run冻结启动目录/显式来源，事务外有界workspace捕获；01本地管理resume的typed initiator/actor审计、request-key/expected-run/mode及02重放顺序 | hud-mcp工具/同一受信CLI事务入口 + delegate.json示例 | 仅N证明未执行才failed，其余未知uncertain对账，超时不改状态；同owner/key重放原结果，local先鉴别再重放、新意图重验expected-run/全部门禁，不伪造旧父MCP；Git不入accepted热路径，未知不重启 | CORE | M | B1、B2、B3a |
