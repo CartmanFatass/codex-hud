@@ -12,16 +12,20 @@ import { wakeProjection } from '../wake/projection.js';
 import { projectLinkTree, linkStatusInput } from './index.js';
 import { planLinkRead } from './read-plan.js';
 import { reconcileDescriptor } from './actions.js';
+import { LinkProjectionMemo } from './memo.js';
 import type { LoadedLimits } from './limits.js';
 import type { CollectedLinkHost, CollectedLinkSession, LinkTreeProjection } from './types.js';
 import type { DelegationViewModel, DelegationNodeDetails } from './view-model.js';
 
 export interface LinkCollectionPort {
+  /** Owned snapshots never mutate their memo fields; replace the array on any change. */
+  readonly immutableSnapshots?: boolean;
+  invalidateSnapshots?(): void;
   /** Stable evidence retained from previous ticks, with zero current-tick charges. */
   begin?(deadline: number): void;
   sessions(): readonly CollectedLinkSession[];
   /** Metadata-only invalidation. No body/topology reads on this call. */
-  pending(ref: SessionRef): 'session' | 'native_topology' | null;
+  pending(ref: SessionRef, key?: string): 'session' | 'native_topology' | null;
   collect(
     ref: SessionRef,
     kind: 'session' | 'native_topology',
@@ -58,7 +62,14 @@ export class LinkTickCollector {
   private ledger: LinkLedgerRead;
   private ledgerToken = '';
   private launchKey = '';
-  private memoKey = '';
+  private memoKey = -1;
+  private projectionMemo = new LinkProjectionMemo();
+  private launchSnapshot: readonly CollectedLinkSession[] | null = null;
+  private launchMessages: LaunchMessageLinkEvidence[] = [];
+  private launchFingerprint = '';
+  private indexedSnapshot: readonly CollectedLinkSession[] | null = null;
+  private snapshotIndex = new Map<string, CollectedLinkSession>();
+  private refKeys = new WeakMap<SessionRef, SessionRef & { key: string }>();
   private tree: LinkTreeProjection | null = null;
   private view: DelegationViewModel | null = null;
   private lastAvailableView: DelegationViewModel | null = null;
@@ -94,7 +105,8 @@ export class LinkTickCollector {
     this.reader.close();
     this.reader = reader;
     this.ledgerToken = '';
-    this.memoKey = '';
+    this.memoKey = -1;
+    this.port?.invalidateSnapshots?.();
     this.immediate.clear();
     this.selectionMap = {};
     this.ledger = { state: 'degraded', snapshot: null, reason: 'ledger_initializing' };
@@ -118,8 +130,24 @@ export class LinkTickCollector {
     this.reader.close();
   }
 
+  private referenceKey(ref: SessionRef): string {
+    const previous = this.refKeys.get(ref);
+    if (
+      previous &&
+      previous.harness === ref.harness &&
+      previous.sourceId === ref.sourceId &&
+      previous.sessionId === ref.sessionId &&
+      previous.threadId === ref.threadId
+    )
+      return previous.key;
+    const key = displayNodeKey({ kind: 'session', ref });
+    this.refKeys.set(ref, { ...ref, key });
+    return key;
+  }
+
   private availableFreshness(view: DelegationViewModel, nowMs: number): DelegationViewModel {
     if (view === this.freshnessView && nowMs >= this.freshnessClock && nowMs < this.nextFreshnessAt) return view;
+    if (nowMs < this.freshnessClock || nowMs >= this.nextFreshnessAt) this.port?.invalidateSnapshots?.();
     this.freshnessClock = nowMs;
     this.nextFreshnessAt = Infinity;
     let changed = false;
@@ -176,11 +204,17 @@ export class LinkTickCollector {
       }
       return this.view;
     };
-    let retained = [...(input.sessions ?? this.port?.sessions() ?? [])];
-    const messages = retained.flatMap((s) =>
-      s.evidence.linkEvidence.filter((e): e is LaunchMessageLinkEvidence => e.kind === 'launch_message')
-    );
-    const launches = canonicalJson(messages);
+    let retained = input.sessions ?? this.port?.sessions() ?? [];
+    const immutableSnapshots = !input.sessions && this.port?.immutableSnapshots === true;
+    if (!immutableSnapshots || retained !== this.launchSnapshot) {
+      this.launchMessages = retained.flatMap((s) =>
+        s.evidence.linkEvidence.filter((e): e is LaunchMessageLinkEvidence => e.kind === 'launch_message')
+      );
+      this.launchFingerprint = canonicalJson(this.launchMessages);
+      this.launchSnapshot = immutableSnapshots ? retained : null;
+    }
+    const messages = this.launchMessages;
+    const launches = this.launchFingerprint;
     let b9Start = performance.now();
     const token = input.ledgerUnavailableReason ?? this.reader.changeToken();
     if (!input.ledgerUnavailableReason) stats.highWaterChecks++;
@@ -193,6 +227,7 @@ export class LinkTickCollector {
       this.launchKey = launches;
     }
     stats.b9Ms += performance.now() - b9Start;
+    if (this.ledger.state === 'degraded') this.port?.invalidateSnapshots?.();
     if (
       this.ledger.state === 'degraded' &&
       this.ledger.reason === 'ledger_busy' &&
@@ -232,7 +267,7 @@ export class LinkTickCollector {
         },
         nowMs
       );
-      this.memoKey = '';
+      this.memoKey = -1;
       return finish();
     }
     if (this.ledger.state === 'available' && !this.ledger.snapshot.links.length) {
@@ -240,30 +275,30 @@ export class LinkTickCollector {
       return finish();
     }
     this.port?.begin?.(deadline);
-    retained = [...(input.sessions ?? this.port?.sessions() ?? [])];
-    const unique = new Map(retained.map((s) => [displayNodeKey({ kind: 'session', ref: s.evidence.ref }), s]));
+    retained = input.sessions ?? this.port?.sessions() ?? [];
+    if (!immutableSnapshots || retained !== this.indexedSnapshot) {
+      this.snapshotIndex = new Map(retained.map((s) => [displayNodeKey({ kind: 'session', ref: s.evidence.ref }), s]));
+      this.indexedSnapshot = immutableSnapshots ? retained : null;
+    }
+    let unique = this.snapshotIndex;
+    let didCollect = false;
     // Scheduling metadata only. planLinkRead remains the single grant authority, including the retained fair cursor.
     if (this.port && performance.now() < deadline) {
       const refs = new Map<string, SessionRef>();
-      const add = (ref: SessionRef | null) => {
-        if (ref) refs.set(displayNodeKey({ kind: 'session', ref }), ref);
-      };
-      for (const root of input.roots) if (root.kind === 'session') add(root.ref);
+      for (const root of input.roots) if (root.kind === 'session') refs.set(this.referenceKey(root.ref), root.ref);
       for (const node of this.tree?.nodes ?? [])
         if (node.identity.kind === 'session' && node.crossHarnessDepth <= (input.budget?.maxCrossHarnessDepth ?? 4))
-          add(node.identity.ref);
-      const eligible = [...refs].slice(0, Math.min(200, input.budget?.maxNodes ?? 200)).flatMap(([key, ref]) => {
-        const kind = this.port!.pending(ref);
-        return kind
-          ? [
-              {
-                key,
-                identity: { kind: 'session' as const, ref },
-                reason: kind === 'session' ? ('unloaded' as const) : ('native_topology' as const),
-              },
-            ]
-          : [];
-      });
+          refs.set(this.referenceKey(node.identity.ref), node.identity.ref);
+      const eligible = [];
+      for (const [key, ref] of [...refs].slice(0, Math.min(200, input.budget?.maxNodes ?? 200))) {
+        const kind = this.port.pending(ref, key);
+        if (kind)
+          eligible.push({
+            key,
+            identity: { kind: 'session' as const, ref },
+            reason: kind === 'session' ? 'unloaded' : 'native_topology',
+          });
+      }
       const charged = retained.reduce((sum, s) => sum + s.bytesRead + (s.topology?.bytesRead ?? 0), 0);
       const schedulingTree = {
         ...this.tree,
@@ -277,6 +312,8 @@ export class LinkTickCollector {
         minimumBytes: this.port.minimumBytes,
       });
       if (plan.target) {
+        didCollect = true;
+        unique = new Map(unique);
         this.cursor = plan.nextCursor;
         const read = await this.port.collect(plan.target.ref, plan.target.kind, plan.budget);
         if (read) {
@@ -318,7 +355,8 @@ export class LinkTickCollector {
         }
       }
     }
-    const sessions = [...unique.values()];
+    const sessions =
+      !didCollect && immutableSnapshots && unique.size === retained.length ? retained : [...unique.values()];
     const extraIO = this.port?.takeUnattributedIO?.() ?? { bytesRead: 0, recordsRead: 0 };
     stats.bytesRead = extraIO.bytesRead + sessions.reduce((n, s) => n + s.bytesRead + (s.topology?.bytesRead ?? 0), 0);
     stats.recordsRead =
@@ -328,25 +366,15 @@ export class LinkTickCollector {
         ? [this.ledger.snapshot.ledgerId, this.ledger.snapshot.asOfSeq, this.ledgerToken]
         : [this.ledger.reason];
     const keyOf = () =>
-      JSON.stringify([
+      this.projectionMemo.key(
         ledgerKey,
-        sessions.map((s) => [
-          s.evidence.ref,
-          s.sourceGeneration,
-          s.loaded,
-          s.linkEvidenceCurrent,
-          s.evidence.observation.evidenceStamp,
-          s.evidence.observation.statusProjection.observationStamp,
-          s.evidence.observation.coverage,
-          s.topology
-            ? [s.topology.sourceGeneration, s.topology.children, s.topology.loaded, s.topology.coverage]
-            : null,
-        ]),
+        sessions,
         input.hosts ?? [],
         input.roots,
         input.budget ?? {},
         this.selectionMap,
-      ]);
+        immutableSnapshots
+      );
     const memo = keyOf();
     if (memo !== this.memoKey) {
       b9Start = performance.now();
