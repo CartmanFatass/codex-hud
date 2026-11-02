@@ -16,6 +16,8 @@
 
 冻结后生效版本：`A9 + consult4-2026-11-01`。下文标记的增补以 [Oracle consult 4](../reviews/2026-11-01-astra-consult4.md) 为准，保留此前 C/D/E 与 A9-fix 裁决；不改 ledger schema v1，也不追认未验收的生产能力。（consult 4 增补，F01）（consult 4 增补，F04）（consult 4 增补，F05）（consult 4 增补，F07）（consult 4 增补，F09）（consult 4 增补，F11）
 
+（F08 Pro 裁决增补）依 [F08 Pro 裁决](../reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md) §4 补齐下文 Oracle consult 4 Q4/F06 的 resolver 正文；F07 与 I-01-2/10/12 保持原义。该档案的成本门槛改依 06 P-06-4/5 与 05 能力证据，不由预算修订追认身份或生产能力已验证。
+
 ## 数据模型
 
 ### 身份、实例与定位
@@ -80,10 +82,22 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 
 | harness / 来源 | 可接受的独立绑定证据 | 不足时的结果 |
 |---|---|---|
-| cc | sessions/<harness_pid>.json 的 pid/procStart/PID 域与当前实例一致，并有本次逻辑来源的根隔离或精确调用关联；原生子必须可辨 agentId | 仅根 env/session 文件不能把子调用授成根；不可见 PID 域 unknown，来源不可辨即拒绝 |
+| cc | 显式且经验证的 `claude_pre_tool_use_v1` 档案，按下节精确关联本次同步 hook 记录；sessions/<harness_pid>.json 的 pid/procStart/PID 域、当前根 ref 与真实实例/source 相符，原生 agent 来源可辨（F08 Pro 裁决增补） | Claude 2.1.305 默认 direct stdio/public-transcript 路径无操作授权；仅根 env/session 文件不够，不可见 PID 域 unknown，来源不可辨即拒绝（F08 Pro 裁决增补） |
 | Codex | 下文版本受限的直接 stdio：per-launch config env + 真实启动实例/source + 本次 params._meta 与精确 rollout header 一致；注册表/精确回执为有条件 fallback，resume 必须仍是既有 child_ref | metadata 冲突/缺失、原生子不可辨、daemon 时间配对、cwd/最新文件均不得沿用 root 授权 |
 | pi | 从已核验的 harness 进程 cmdline 解析精确 `--session` / `--session-id`，读取该 source 的 header 核对 id；目录参数只界定候选范围 | 只有 --session-dir、--role、--orchestrator 不产生唯一会话 |
 | transcript | 只作下文限定核验；绑定必须已有独立启动/会话证据 | copied linkId、claim 或历史 prompt 不构成独立证据 |
+
+### Claude 同步 PreToolUse 来源档案（F06）
+
+（F08 Pro 裁决增补）唯一新增取证路径为显式 `callSource:{kind:'claude_pre_tool_use_v1'}`（仅 Claude 合法），不增加通用身份插件框架。Claude 2.1.305 默认 direct stdio/public-transcript 路径仍缺已验证的执行前根调用识别能力，保持无操作授权；显式选择仅选机制，须按 05 对具体 Claude 版本、helper 修订和完整档案指纹验收。受信同步 PreToolUse 输入须提供精确 `tool_use_id`、`session_id` 及可区分的原生 agent 来源；MCP 用本次真正的 `params._meta["claudecode/toolUseId"]`、精确配置服务器名/完整工具名、真实 ProcessKey/source 与当前 scope 前提交叉核验。缺失、歧义、冲突、旧代或不支持版本均先拒绝，不查询幂等结果、不消费 claim、不执行工具。
+
+1. （F08 Pro 裁决增补）安装与范围：由启动档案/B11 `hud claude` 经本轮 CLI `--settings` 注入同步 command hook，仅匹配精确配置 MCP 服务器下的七个 HUD 工具：`delegate_spawn/resume/wait/status/cancel/whoami/report`。不全局安装，不覆盖用户其他 hooks/MCP 配置，不对 Shell/Read 等其他工具运行。CLI 注入、已有 hooks 共存及真正同步执行均须验收；关闭或加载失败即没有该能力。
+2. （F08 Pro 裁决增补）最少记录：只保存格式/实现版本、ledgerId/档案指纹、经核验的 ProcessKey/source、toolUseId、完整工具名、sessionId、明确根/原生子分类及 agentId、当前 scope 读取前提、证据时间/指纹。不原样落盘 hook stdin，tool_input、claim、prompt、transcript 正文不入记录；transcript_path 至多限定核验，不能判根，因为子调用也可能给根路径。
+3. （F08 Pro 裁决增补）来源与代次：helper 实际启动链必须匹配同一已核验 harness 实例；固定配置/继承 env 只定位本轮记录空间，不独立证明调用者。发布前由 B2 只读入口取得该 ProcessKey 的当前 scope generation/ref，或明确的“尚无当前 scope”比较前提并绑定进记录；MCP 不能给旧记录重贴新 generation。A→B→A 后相同 SessionRef 也不是同代调用。hook 只有索引读取权，不写运行意图、claim 或绑定；查询幂等/提交仍按 F07 锁内重验捕获前提。
+4. （F08 Pro 裁决增补）有界原子发布：私有目录/0600 文件、精确键、不可覆盖的完整发布，每条≤8 KiB；键至少隔离 ledgerId、ProcessKey、配置服务器、toolUseId，字段再核对档案/工具。不存在、半写、重复发布冲突、错 source/实例均拒绝，不取 last-wins。MCP 仅精确有界读取；清理依托现有调用/退出路径的限额工作，无目录轮询器/常驻服务，未产生 tools/call 的孤儿记录不触发工作。
+5. （F08 Pro 裁决增补）证明边界：合格记录只证明该 harness 在本次精确 HUD 工具执行前报告的逻辑根/原生子来源，结合真实启动/source 核验后才进入已有 context 选择。不证明 link 所有权、run 身份、claim 有效性、report 权限或运行结束；01–04 后续门禁全部保留，原生子仍按 F07 只拒自身。
+
+（F08 Pro 裁决增补）记录缺失时 MCP 独立拒绝，不能假设 hook 非零退出必使 harness 阻止 tools/call。迟到记录不自动重放被拒工作；重试须新的、重新取证的工具调用，同一控制意图保留原 request_key。B1 的 resolver 使用既有 CurrentCallSourcePort，B2 提供 scope 只读快照/事务围栏，B4/B11 仅负责启动注入与档案选择，B5 接授权；不新增 ledger DDL。B1/B5/B14 在 T-01-33/35/36 的生产重验中覆盖上述缺失/迟到/半写/重复、错版本/source/boot/start/server/tool、ABA、/clear 与双 MCP 反例，不追认 A9 已执行新增断言。
 
 现有实现依据：[daemon-binding.ts](../../src/collectors/daemon-binding.ts) 的 `findConnection` 用启动时间/排序配对，读失败可能保留旧 thread；[session-finder.ts](../../src/collectors/session-finder.ts) 的 `rootThreadOf` 是 HUD 根视图策略，不用于把实际 caller 子线程授权成根。shell snapshot 的 `TMUX_PANE` 可能来自 daemon；`findFallbackSession` 会选最新 cwd rollout，不执行授权所需的唯一性判断。[Herdr 观察桥](../../bin/codex-hud-herdr.mjs) 的 `readNativePane` 只返回状态，没有验证 `agent_session.value`；[环境修复说明](../herdr-context-fix.md) 证明命令环境的运输边界，不证明 MCP 的会话归属。B1 必须在复用这些观察结果时保留 provenance，并补独立证据；本契约不改旧观察代码。
 

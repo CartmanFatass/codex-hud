@@ -89,6 +89,10 @@ host=none 只与 headless 配对。表中的组合项必须展开后独立留证
 
 （consult 4 增补，F03）`DelegateConfig`、LaunchProfile 与角色映射的唯一权威类型位于 `src/core/types/capabilities.ts`，B1 的有界严格校验器及 B4/B11/B13 引用它。`callSource:{kind:'claude_pre_tool_use_v1'}` 是本轮批准的唯一附加可选键，仅对 Claude 合法，机制/能力门禁按 consult 4 F06（B1b）；未设置的既有配置仍可解析，配置本身不授 Claude 授权或任何 verified 能力。即使配置含 managedShellVerified:true，也只是提示，B4 仍核验版本、完整档案与已接受证据。
 
+（F08 Pro 裁决增补）该显式 Claude 来源档案升为 verified 前，能力格证据必须绑定具体 Claude 版本、hook/helper 实现修订、完整非秘密 profile 指纹及同一调用的双预算原始计时/已接受报告；helper 修订或档案指纹改变时，受影响格回到 unverified。按 [F08 Pro 裁决](../reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md) 替代 consult 4 F08 对此档案的联合成本门槛：必需 hook 最外层冷进程启动至同次调用响应 flush 的联合 p95 <150ms，MCP 内部 p95 <50ms 不变；边界、保守计时、逐工具/成功/拒绝/busy 分计及 B5 的30/10/20ms限制均依06，不给其他档案或预算放宽。未选择 callSource 的 Claude 默认路径仍拒绝授权；历史 hook/skeleton 或 not_implemented 的快响应不构成完整授权/事务证据。
+
+（F08 Pro 裁决增补）B4 必须用真实 Claude 在此档案下发起 spawn/resume 并返回 durable accepted，保留既有 hooks/配置，精确注入 claim/HUD_HOME，零重复提交且同测150/50两预算；B11 的 `hud claude` 经本轮 Claude CLI `--settings` 按档案注入01的同步 hook。B5 保留01 F06/F07全部来源/代次反例；B14 按06每非wait工具/组合≥1000次、H/R=1/1与2/10验真事务，最终档案另收≥200次真实联合调用、跨≥10次harness启动、每声明路径≥20次，逐工具/结果报告n及p50/p95/p99/max，合成不混入，缺格不授verified。G13及B15真实Claude→Codex闭环仍为门禁，预算修订不等于实现通过。
+
 准备阶段解析本轮实际启动的规范绝对 cwd 与请求显式 originRepoId，随02意图逐run冻结为 launch_cwd/project_origin；resume不按后来CLI目录重算。Git元数据只读有效缓存，冷缺失由已有启动/采集流程依06每代≤2子进程/200ms软预算取得，不入写事务/MCP accepted热路径/paint；未知不挡正常委派。后端包装改变实际cwd时提供06带来源的observed workspace，不覆盖历史启动快照（T-05-17）。
 
 控制边界引用03/04：MVP HUD仅显示/复制类型化ActionDescriptor，Open/focus只按interaction/occupant能力。复制resume须有已实现/已验证的01 local_user入口、明确HUD_HOME及request-key/expected-run/mode，按02重放/03全门禁；未来直接调用需单独能力与显式确认/固定目标/执行时重验，不由宿主能spawn推定支持（T-05-18）。
@@ -134,7 +138,7 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 
 | 编号 | 断言 | 测试 |
 |---|---|---|
-| I-05-1 | 支持声明绑定完整能力键、版本、档案和已接受证据；未测格始终 unverified，未声明能力不猜；delegate.json 解析成功、callSource 选择或 managedShellVerified:true 都不自证能力，仍按完整版本/档案/已接受证据验收（consult 4 增补，F03） | T-05-1、2 |
+| I-05-1 | 支持声明绑定完整能力键、版本、档案和已接受证据；未测格始终 unverified，未声明能力不猜；delegate.json 解析成功、callSource 选择或 managedShellVerified:true 都不自证能力，仍按完整版本/档案/已接受证据验收（consult 4 增补，F03）；显式 Claude hook 档案还须绑定 Claude 版本、helper 修订、profile 指纹及06联合<150ms/MCP内部<50ms双预算证据，缺格不授 verified，相关变更使受影响格退回 unverified（F08 Pro 裁决增补） | T-05-1、2 |
 | I-05-2 | argv/shell 互斥，source 显式且核验；逐run启动位置冻结，Git不进热路径；shell 单次前台启动形态经验证，不能把任意文本升级为受管能力；v1 envelope/严格键/类型/唯一名称/文件及 profile 上限必须校验，可选 roles 仅数据，实际 model/effort 入 02 digest，缺映射不猜，资源约束键拒绝（consult 4 增补，F03） | T-05-3、6、17 |
 | I-05-3 | Codex 按服务器名仅注入四个 HUD 叶子键，保留其余配置；HUD_HOME 到 MCP、resume 新 claim，运输不等于身份 | T-05-4、5 |
 | I-05-4 | 观测SessionBinding非null必有完整ref，无可靠唯一选择返回null；普通SurfaceLocator用独立nullable occupantGeneration，无假run/受管代次；managed仅真实相符当前run，ref/实例不符不升级关联；控制前校验实例/occupant，未知拒绝但可有预算读取，管理copy-only与权限仍依01–04 | T-05-7、8、18 |
@@ -168,8 +172,8 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 
 | 编号 | Gate | 输入 → 断言 |
 |---|---|---|
-| T-05-1 | A9 | 只有 CLI 成功/单跳 env/计划排期，缺版本或日志/接受记录 → 无 verified 格；矩阵默认 unverified；合法 v1 envelope/roles 或 managedShellVerified:true 仍不授 verified；未知版本/键、错类型、重复 name、文件>256 KiB 或 profiles>128 均拒绝（consult 4 增补，F03） |
-| T-05-2 | B | 每个 Codex 产品格逐一验身份、输入落点、退出/槽与不重复提交；改 harness/profile/host 版本仅使受影响格未验证；保留原证据快照 |
+| T-05-1 | A9 | 只有 CLI 成功/单跳 env/计划排期，缺版本或日志/接受记录 → 无 verified 格；矩阵默认 unverified；合法 v1 envelope/roles 或 managedShellVerified:true 仍不授 verified；未知版本/键、错类型、重复 name、文件>256 KiB 或 profiles>128 均拒绝（consult 4 增补，F03）；显式 callSource 但缺 Claude 版本/helper 修订/profile 指纹或双预算已接受证据，仍 unverified，历史 hook/skeleton/not_implemented 数值不补齐；新增断言在B重验，不追认A9已执行（F08 Pro 裁决增补） |
+| T-05-2 | B | 每个 Codex 产品格逐一验身份、输入落点、退出/槽与不重复提交；改 harness/profile/host 版本仅使受影响格未验证；保留原证据快照；显式 Claude 来源档案逐格绑定 Claude 版本/helper 修订/profile 指纹及06双预算证据，改其中任一项使受影响格退回unverified；真实Claude的spawn/resume须durable accepted、保留hooks/配置及精确claim/HUD_HOME、零重复提交，F06/F07反例通过；B14的≥1000次/组合与另行≥200次真实联合/≥10次启动/每声明路径≥20次及逐工具/结果分布齐全，缺格或只测快拒绝不授verified，B15仍须真实Claude→Codex闭环（F08 Pro 裁决增补） |
 | T-05-3 | A9 | 空格、引号、换行、$()、分号参数与显式 shell 两组 → argv 字节不成为代码；双形态/空模板拒绝；shell 延迟/循环不授完整托管能力；roles 只接收 model:string/effort?:string 的有界数据，未知资源约束/模板键和不合格类型拒绝，不静默忽略、不执行角色映射（consult 4 增补，F03） |
 | T-05-4 | A9 | 合成既有 command/args、多 env、其他服务器、安全/timeout 配置，含带点服务器名 → 只改四个 HUD 叶子；参数/TOML 正确；精确 claim/HUD_HOME 字节到探针 MCP，日志无明文 claim |
 | T-05-5 | B | TUI/exec 的 launch 与两个 resume 模板分别启 MCP → 每轮新 claim/同 HUD_HOME/同 source，其他配置保留；验证 01 握手，不把旧凭据带到新 run |
