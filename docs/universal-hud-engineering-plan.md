@@ -13,7 +13,7 @@
 
 | 阶段 | 交付物 | 状态 |
 |---|---|---|
-| A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 已完成待 A9：契约 01–07（Oracle 三次裁决 C/D/E 已落实）、A3/A8 探针、前端信息设计 v1.0、A4 核心类型与 122 个契约 fixture（`c4c0950`、`651cd7c`）与隔离 A9 原型 21/21（`f8008e5`）、A5 四接口与假实现（`a7aa3a6`）、A6 Codex facade（`c215892`）、A7 测试基建（`145988c`）；A9 送 ChatGPT Pro 门禁评审 |
+| A 契约、探针与 facade | `docs/contracts/` 七份契约、`docs/probes/` 六份探针报告（A3 五份、A8 一份）、核心类型与 fixture、三接口与假实现、Codex facade、测试基建 | 已完成，**A9 带条件放行，契约 01–07 与 schema v1 冻结**：契约（Oracle 三次裁决 C/D/E 与 A9-fix 已落实）、A3/A8 探针、前端信息设计 v1.0、A4 核心类型与契约 fixture、隔离 A9 原型 23/23、A5 四接口与假实现、A6 Codex facade、A7 测试基建；Pro 评审见 reviews/2026-11-01-chatgpt-pro-a9-gate.md |
 | B MVP 纵向切片 cc → Codex | `packages/hud-mcp`、`hud-run`、账本、Herdr 集成层、cc 最小适配器、链接解析、渲染、`hud claude`、最小 `hud panel`、skill 更新、能力矩阵、两个真实场景 | 待开工 |
 | C pi 与 Jev 后端 | pi 适配器与 `hud pi`、resume 实测、Jev 后端与 JobRef、pi 的 MCP 加载 | |
 | D cc 完整与 statusline | cc 原生子代理、checkpoint 与采集租约、`hud statusline`、对照清单与基准、三道门切换 | |
