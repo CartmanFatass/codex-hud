@@ -5,6 +5,9 @@
 - 分支：`universal-hud`；WP A8（engineering plan v1.1 §4）
 - 结论：**采用方案甲（wrapper）**（Oracle 2026-11-01 §4；乙不作为 MVP 受管后端）。B2 补齐第 1、2、11 行后，甲在 12+1 行中：第 1、2、11 行通过；第 12 行是已记录的故障语义（supervisor 死亡 ⇒ 交互中断、`uncertain` 持槽、禁止自动 input/focus），不是正常运行的通过项。第 11 行只在“hud-run 是 pane 前台作业”的生产形态下通过；B1 的 `sh -c '<supervisor> &'` 后台启动形态对 TTY-reading harness 失败（输入落到 pane shell，intermediate shell 以 149/SIGTTIN 退出）。shell 模式下 harness 原生退出码/信号仍不可知（`harnessExitCode`/`harnessSignal=null`），receipt 的 `shellStatus` 只是中间 shell 的状态。第 2 行的 context 效果在甲下由 Codex 实际执行的命令证明；乙的第 1、2 行按 note 未重测（需额外模型轮次）。
 
+（Pro 2026-11-02 增补）生产权威以 [Pro 裁决 B](../reviews/2026-11-02-pro-budget-visible-cancel.md) 及 [04](../contracts/04-supervision.md) / [05](../contracts/05-capabilities.md) 为准。下文 verify→数字 PGID signal、共享组时 single-PID fallback、早期正向取消阶梯与表中第13行 pass 均是**非权威的历史原型行为**，保留原观测，不证明生产 no-reuse 安全，也不授权信号/输入/宿主销毁pane。核验 stamp 后再 kill(-pgid) 不能原子绑定交付时的组实例；单PID回退禁止。MVP visible 仅启动/观察及用户在pane内手动停止，程序化取消unsupported；合法意图可持久接受，返回cancel.unconfirmed/visible_scope_control_unavailable且delivery not attempted。手动quit、适用时Ctrl-C或pane close只是动作，仍须独立scope结束证据；raw TTY的Ctrl-C可能只是输入，不保证全组退出。B14验拒绝/观察/手动结束对账，headless正向控制另验；本历史探针不因此重跑或晋级。
+
+
 ## 方法
 
 ### 原型

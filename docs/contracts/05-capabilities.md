@@ -70,7 +70,7 @@ type CapabilityManifestV1 =
 
 （consult 6 增补，H01）H01 现明确 G01：唯一生产轻量执行器，核验系统 /usr/bin/env 的 -i/-S/--default-signal=INT,QUIT 及 /usr/bin/mkfifo 功能、实际版本、冷预检/启动成本并纳入能力证据；9.4 是受测而非通用最低版本。缺失/语义错误拒绝，Node 兼容后端退出生产选择/模块图；精确真实 wait 测试仍保留，默认 argv/managed shell 允许 native_unknown/nullable native/shell，但完整 R/Q 可正常 ended。B14 必须针对最终生产模块图/真实依赖，不将旧 Node fixture 当默认能力。
 
-（consult 6 增补，H06）visible 的 no-reuse 目标与 headless 一致，verify→数字 PGID 同步发送不是稳定交付证据。当前只接受取消意图并投影 visible_scope_control_unavailable/cancel.unconfirmed，零信号/单 PID/sendKeys/升级；安全拒绝 pass 不等于正向 visible cancel 格 verified。受信直接前台档案须真 TTY、PID=PGID=tpgid 和 pane shell 等待 hud-run 的固定拓扑，保 harness/TTY/context/独立 shell wait；A8 历史原型/早期阶梯不授生产权。正向能力补齐按 04 的 B3b-C/Pro 成本范围门槛，不把永久不可取消当完整 MVP。
+（consult 6 增补，H06）visible 的 no-reuse 目标与 headless 一致，verify→数字 PGID 同步发送不是稳定交付证据。当前只接受取消意图并投影 visible_scope_control_unavailable/cancel.unconfirmed，零信号/单 PID/sendKeys/升级；安全拒绝 pass 不等于正向 visible cancel 格 verified。受信直接前台档案须真 TTY、PID=PGID=tpgid 和 pane shell 等待 hud-run 的固定拓扑，保 harness/TTY/context/独立 shell wait；A8 历史原型/早期阶梯不授生产权。（Pro 2026-11-02 增补）程序化 visible cancellation 在 MVP 明确 unsupported；可见启动/观察/用户pane手动停止可按本身门禁独立验收，完整双模式声明须披露能力差异；正向控制补齐按04的B15后B3b-C限定调查。
 
 本批读取的证据如下，SHA-256 以前 12 位定位报告快照；它们是局部事实，不是托管产品格的 pass：
 
@@ -102,6 +102,20 @@ E-05-1 的新版报告含补测链接，不把链接新增内容追认为原 A3 
 | M-05-10 | Codex / Herdr / split | visible / spawn、resume | unverified，后续布局 | E-05-3 未测此交叉格；不能借 tab 的结论 |
 
 host=none 只与 headless 配对。表中的组合项必须展开后独立留证；同一行不共享 pass。未列但在计划内的组合默认为 unverified。明确 unsupported：活跃/uncertain 运行的模式切换；MVP 的乙 managed 后端、无 MCP 正向身份绑定、不能隔离逻辑来源的 shared MCP；原生 Windows、跨机主动控制。shared 正向与 no-MCP 正向按 Oracle 延期；未知拓扑不冒充根上下文。Jev 是 C 阶段 JobRef 后端，不把它填成 harness/resume 格。
+
+### MVP 控制能力矩阵
+
+（Pro 2026-11-02 增补）本表区分能力，不改既有 CapabilityCell 键/共享类型；launch/resume 仍用原完整键、版本和证据独立验收，未测不授 verified：
+
+| 能力 | visible MVP | headless MVP |
+|---|---|---|
+| launch / observation | 沿目标矩阵逐格 unverified→验收；用户在 pane 内手动停止 | 沿目标矩阵独立验收 |
+| programmatic cancellation / escalation | **unsupported**，启动前披露并由 capability inspection 返回；合法意图可 accepted，控制结果 cancel.unconfirmed / visible_scope_control_unavailable，signal delivery not attempted | 独立正向控制能力，须04稳定整组交付/阶梯/完成证据及06预算；不借visible拒绝通过 |
+| cancel / deadline / parent disconnection / supervisor failure 后自动终止；自动 policy retirement | 不保证；MVP可见不自动退役，用户关闭，槽上限兜底 | 依04各自控制/containment能力与实际证据，不无条件外推 |
+| 要求 enforced cancellation 或 unattended cleanup 的工作流 | admission failure，不能静默放入 visible | 仅单独合格 headless profile 可准入 |
+
+（Pro 2026-11-02 增补）visible unavailable 路径禁 INT/TERM/KILL、单PIDfallback、terminal input/sendKeys、宿主销毁pane、升级timer/延迟retry；重复意图幂等。status/wait/HUD 同述“仍在运行，自动取消不可用，请在pane内停止”，fresh/live不因拒绝变uncertain，独立scope end后依02释放，缺时序为ended+cancel_timing_unknown。B13逐真实harness/profile披露并记录受测手动quit/interruption/pane-close；B14正向visible cancel为out-of-scope而非passed，必须通过04六项拒绝/观察/手动结束对账门禁。监督者/FD/监控资源仍有界，禁自动输入/resume/relaunch/重获控制。
+
 
 ### LaunchProfile 与两种启动契约
 
@@ -171,7 +185,7 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 | I-05-3 | Codex 按服务器名仅注入四个 HUD 叶子键，保留其余配置；HUD_HOME 到 MCP、resume 新 claim，运输不等于身份 | T-05-4、5 |
 | I-05-4 | 观测SessionBinding非null必有完整ref，无可靠唯一选择返回null；普通SurfaceLocator用独立nullable occupantGeneration，无假run/受管代次；managed仅真实相符当前run，ref/实例不符不升级关联；控制前校验实例/occupant，未知拒绝但可有预算读取，管理copy-only与权限仍依01–04 | T-05-7、8、18 |
 | I-05-5 | 只有预检证明命令从未提交才可选 fallback；任何 dispatch 已发/结果未知都交 02 对账，不再启动 | T-05-9、10 |
-| I-05-6 | 可见托管采用修订后的甲，原生结果可未知；父断连 continue 与 supervisor 死亡分开验收，乙无 MVP managed 能力 | T-05-11、12 |
+| I-05-6 | 可见托管采用修订后的甲，原生结果可未知；父断连 continue 与 supervisor 死亡分开验收，乙无 MVP managed 能力；（Pro 2026-11-02 增补）visible程序化取消unsupported、启动前及能力检查披露；要求强制取消者admission failure，headless正向控制另验，visible手动停止/对账仍必需 | T-05-11、12 |
 | I-05-7 | 有效 wait 含客户端余量且≤120 s；短等/断线保持原 run/游标，无取消或终结副作用 | T-05-13、14 |
 | I-05-8 | Herdr 可整体关闭，核心无 Herdr import；env 三跳与布局逐格验证，不外推 | T-05-8、15、16 |
 
@@ -181,7 +195,7 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 
 宿主启动只经过 `preflight → selected → dispatch → observed`。preflight 失败且有未提交证明，可在同一意图提交前选择已验证核心宿主并冻结最终档案；若该选择改变 02 参数摘要，重新按最终参数处理，不能重放已接受意图却换命令。dispatch 一旦可能发出，进入 02 的原 run 对账入口，不能跳回 selected。其 failed/uncertain 判定及重试禁令以 02 为准。
 
-可见模式按 Oracle C10 选择甲的组终止路线；生产 ScopeControl/封口/终结由 04 定义。supervisor 死亡时停止自动 input/focus、标交互不可用并按 02 持槽对账；不自动 fg、重建 wrapper 或 resume。父 MCP 断连的 continue 则须保留子前台、输入与最终收尾，不能拿无 TTY sleep 的实验替代。乙只保留探针/未来观察模式材料；不得在甲提交失败后转乙再发。
+（Pro 2026-11-02 增补）可见模式保留修订甲的前台启动/观察及独立scope终结路线，MVP程序化取消unsupported、用户在pane手动停止；生产 ScopeControl/封口/终结由 04 定义。supervisor 死亡时停止自动 input/focus、标交互不可用并按 02 持槽对账；不自动 fg、重建 wrapper 或 resume。父 MCP 断连的 continue 则须保留子前台、输入与最终收尾，不能拿无 TTY sleep 的实验替代。乙只保留探针/未来观察模式材料；不得在甲提交失败后转乙再发。
 
 ## 失败案例
 
@@ -201,7 +215,7 @@ clientToolTimeoutMs 取本版本/档案实测或明确配置并验证的客户�
 | 编号 | Gate | 输入 → 断言 |
 |---|---|---|
 | T-05-1 | A9 | 只有 CLI 成功/单跳 env/计划排期，缺版本或日志/接受记录 → 无 verified 格；矩阵默认 unverified；合法 v1 envelope/roles 或 managedShellVerified:true 仍不授 verified；未知版本/键、错类型、重复 name、文件>256 KiB 或 profiles>128 均拒绝（consult 4 增补，F03）；显式 callSource 但缺 Claude 版本/helper 修订/profile 指纹或双预算已接受证据，仍 unverified，历史 hook/skeleton/not_implemented 数值不补齐；新增断言在B重验，不追认A9已执行（F08 Pro 裁决增补）；（consult 5 增补，G04）补 manifest null revision 仅空 cells、错 envelope/cell HUD revision、未知版本/坏结构/重复完整键/矛盾证据、超256KiB或128cells、占位版本、任意环境/用户证据文件覆盖均不选 verified；动态 shell 目标不可证仍 unverified |
-| T-05-2 | B | 每个 Codex 产品格逐一验身份、输入落点、退出/槽与不重复提交；改 harness/profile/host 版本仅使受影响格未验证；保留原证据快照；显式 Claude 来源档案逐格绑定 Claude 版本/helper 修订/profile 指纹及06双预算证据，改其中任一项使受影响格退回unverified；真实Claude的spawn/resume须durable accepted、保留hooks/配置及精确claim/HUD_HOME、零重复提交，F06/F07反例通过；B14的≥1000次/组合与另行≥200次真实联合/≥10次启动/每声明路径≥20次及逐工具/结果分布齐全，缺格或只测快拒绝不授verified，B15仍须真实Claude→Codex闭环（F08 Pro 裁决增补）；（consult 5 增补，G04）补受信构建与完整 key/source/profile/executable/拓扑/versions 元组匹配；代码/helper/版本变更退格；五项 passed 但缺预算/accepted review/空 incomplete 不晋级，可信启动预检结果复用且 acceptance 不跑版本子进程；B14 test-only取证→评审→发布manifest，Claude父版本/双预算全覆盖，生产无注入参数；（consult 5 增补，G01）headless 晋级前验证轻量 leader 的 scope/封口/环境/取消及 native_unknown/verified_wait 正反例，资源/故障按 06 G02，替代未验不放行；（consult 6 增补，H01）最终轻量生产模块图/env-mkfifo 功能与实际版本/冷预检成本留证，真实精确 wait fixture 不冒默认生产能力；（consult 6 增补，H06）visible 拒绝不晋级正向 cancel，直接前台 admission/真TTY/context独立验收 |
+| T-05-2 | B | 每个 Codex 产品格逐一验身份、输入落点、退出/槽与不重复提交；改 harness/profile/host 版本仅使受影响格未验证；保留原证据快照；显式 Claude 来源档案逐格绑定 Claude 版本/helper 修订/profile 指纹及06双预算证据，改其中任一项使受影响格退回unverified；真实Claude的spawn/resume须durable accepted、保留hooks/配置及精确claim/HUD_HOME、零重复提交，F06/F07反例通过；B14的≥1000次/组合与另行≥200次真实联合/≥10次启动/每声明路径≥20次及逐工具/结果分布齐全，缺格或只测快拒绝不授verified，B15仍须真实Claude→Codex闭环（F08 Pro 裁决增补）；（consult 5 增补，G04）补受信构建与完整 key/source/profile/executable/拓扑/versions 元组匹配；代码/helper/版本变更退格；五项 passed 但缺预算/accepted review/空 incomplete 不晋级，可信启动预检结果复用且 acceptance 不跑版本子进程；B14 test-only取证→评审→发布manifest，Claude父版本/双预算全覆盖，生产无注入参数；（consult 5 增补，G01）headless 晋级前验证轻量 leader 的 scope/封口/环境/取消及 native_unknown/verified_wait 正反例，资源/故障按 06 G02，替代未验不放行；（consult 6 增补，H01）最终轻量生产模块图/env-mkfifo 功能与实际版本/冷预检成本留证，真实精确 wait fixture 不冒默认生产能力；（consult 6 增补，H06）visible 拒绝不晋级正向 cancel，直接前台 admission/真TTY/context独立验收；（Pro 2026-11-02 增补）按控制能力矩阵验visible启动前/能力检查披露、要求enforced cancellation者准入失败、status/wait/HUD一致与04六项门禁；visible正向取消out-of-scope非passed，headless正向控制不由拒绝通过替代 |
 | T-05-3 | A9 | 空格、引号、换行、$()、分号参数与显式 shell 两组 → argv 字节不成为代码；双形态/空模板拒绝；shell 延迟/循环不授完整托管能力；roles 只接收 model:string/effort?:string 的有界数据，未知资源约束/模板键和不合格类型拒绝，不静默忽略、不执行角色映射（consult 4 增补，F03）；（consult 6 增补，H04）headless command operand 含 = 的登记前拒绝/零ledger变化，非命令参数不误拒，无自动shell/Node fallback |
 | T-05-4 | A9 | 合成既有 command/args、多 env、其他服务器、安全/timeout 配置，含带点服务器名 → 只改四个 HUD 叶子；参数/TOML 正确；精确 claim/HUD_HOME 字节到探针 MCP，日志无明文 claim |
 | T-05-5 | B | TUI/exec 的 launch 与两个 resume 模板分别启 MCP → 每轮新 claim/同 HUD_HOME/同 source，其他配置保留；验证 01 握手，不把旧凭据带到新 run |
