@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "bin": {
     "codex-hud": "./bin/codex-hud",
-    "hud-run": "./bin/hud-run"
+    "hud-run": "./bin/hud-run",
+    "hud": "./bin/hud"
   },
   "scripts": {
     "build": "node ./node_modules/typescript/bin/tsc",
