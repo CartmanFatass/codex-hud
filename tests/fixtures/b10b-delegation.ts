@@ -100,7 +100,26 @@ export interface NodeSpec {
   /** Further parents that claim the same child (conflict relations). */
   alsoClaimedBy?: string[];
   continuation?: boolean;
+  // B10B-s2 additions (additive; rulings B10B-s2 Q3, Q9, Q10).
+  /** The observed workspace; default: the shared synthetic checkout, so no node reads `in ?` by accident. */
+  workspace?: { worktreeRoot?: string | null; worktree?: string; cwd?: string | null } | null;
+  /** `link.boundAt`; default the node's creation time. `null`: bound at an unknown time. */
+  boundAt?: number | null;
+  /** `run.runSeq`; default 1. */
+  runSeq?: number;
+  /** `LinkTreeNode.native` for a native child (§7 #33). */
+  nativeMeta?: {
+    title: string | null;
+    kind: 'research' | 'experiment' | 'fix' | 'review' | 'writing' | 'summary' | 'other' | null;
+  };
+  /** `reconciliation.missing`; default `[]`. */
+  missing?: string[];
+  /** `execution.terminal.note`. */
+  terminalNote?: 'cancel_timing_unknown' | 'retire_timing_unknown';
 }
+
+/** The synthetic checkout every node works in unless a test says otherwise. */
+export const DEFAULT_WORKSPACE = { worktreeRoot: '/work/parser-kit', cwd: '/work/parser-kit' } as const;
 
 function statusOf(spec: StatusSpec): StatusProjection {
   const stateKey = spec.reason ? `${spec.cls}:${spec.reason}` : spec.cls;
@@ -226,6 +245,7 @@ export function buildVm(specs: readonly NodeSpec[], options: BuildOptions = {}):
           endedAt: run.endedAt ?? null,
           cancelRequestedAt: run.cancelRequestedAt ?? null,
           heartbeatAt: run.heartbeatAt ?? null,
+          runSeq: spec.runSeq ?? 1,
           exitCode: run.exit?.code ?? null,
           exitSignal: run.exit?.signal ?? null,
           exitSource: run.exit?.source ?? null,
@@ -250,6 +270,14 @@ export function buildVm(specs: readonly NodeSpec[], options: BuildOptions = {}):
                     source: 'synthetic',
                     asOf: NOW,
                   },
+            workspace:
+              spec.workspace === null
+                ? null
+                : {
+                    worktreeRoot: DEFAULT_WORKSPACE.worktreeRoot,
+                    cwd: DEFAULT_WORKSPACE.cwd,
+                    ...(spec.workspace ?? {}),
+                  },
             spent: {
               costUsd:
                 spec.costUsd === undefined || spec.costUsd === null
@@ -272,8 +300,14 @@ export function buildVm(specs: readonly NodeSpec[], options: BuildOptions = {}):
         isRunTerminal,
         execution: run ? 'managed' : 'unmanaged',
         launchFailure: run?.launchFailure ? { stateKey: 'launch_failed', reason: 'spawn_error' } : null,
-        reconciliation: run?.reconciliation ? { cause: run.reconciliation, missing: [] } : null,
-        terminal: run?.requestedCause ? { note: null, termination: { requestedCause: run.requestedCause } } : null,
+        reconciliation: run?.reconciliation ? { cause: run.reconciliation, missing: spec.missing ?? [] } : null,
+        terminal:
+          run?.requestedCause || spec.terminalNote
+            ? {
+                note: spec.terminalNote ?? null,
+                termination: run?.requestedCause ? { requestedCause: run.requestedCause } : null,
+              }
+            : null,
       },
       conflict: spec.conflict ?? null,
       links: [],
@@ -281,6 +315,7 @@ export function buildVm(specs: readonly NodeSpec[], options: BuildOptions = {}):
         ? { locator: null, state: 'valid', occupantMatches: true, checkedAt: NOW, currentState: { label: spec.pane } }
         : null,
       parent: null,
+      ...(spec.nativeMeta ? { native: spec.nativeMeta } : {}),
     } as unknown as LinkTreeNode;
     if (!spec.relationOnly) nodes.push(node);
     if (spec.continuation) continuation.push({ key, identity, reason: 'native_topology' } as never);
@@ -322,6 +357,7 @@ export function buildVm(specs: readonly NodeSpec[], options: BuildOptions = {}):
             role: spec.role ?? 'worker',
             backend: harness === 'pi' ? 'pi-reviewer' : harness === 'claude' ? 'claude' : 'codex-sol',
             createdAt,
+            boundAt: spec.boundAt === undefined ? createdAt : spec.boundAt,
             parentRef: null,
             // A link names its child session once it is bound; an intent has none yet.
             childRef:
@@ -398,7 +434,7 @@ export function buildVm(specs: readonly NodeSpec[], options: BuildOptions = {}):
  * with a Codex implementer (visible, two native children), a pi reviewer
  * waiting for approval (headless), a ChatGPT job, and a reported Codex writer.
  */
-export function situationC(options: { reviewPass?: boolean } = {}): Built {
+export function situationC(options: { reviewPass?: boolean; nativeMeta?: boolean } = {}): Built {
   return buildVm(
     [
       {
@@ -429,7 +465,8 @@ export function situationC(options: { reviewPass?: boolean } = {}): Built {
         parent: 'impl-parser',
         native: true,
         harness: 'codex',
-        label: 'scout 中文 boundaries',
+        label: options.nativeMeta ? null : 'scout 中文 boundaries',
+        ...(options.nativeMeta ? { nativeMeta: { title: 'scout 中文 boundaries', kind: 'research' as const } } : {}),
         status: S.working(ago(60)),
         model: 'gpt-6.1-sol',
         createdAt: ago(300),
@@ -441,7 +478,8 @@ export function situationC(options: { reviewPass?: boolean } = {}): Built {
               parent: 'impl-parser',
               native: true,
               harness: 'codex' as const,
-              label: 'review-pass',
+              label: options.nativeMeta ? null : 'review-pass',
+              ...(options.nativeMeta ? { nativeMeta: { title: 'review-pass', kind: 'review' as const } } : {}),
               status: S.idle(ago(100)),
               model: 'gpt-6.1-sol',
               createdAt: ago(400),
@@ -748,4 +786,155 @@ export function situationH(): Built {
     ],
     { capacity: { active: 3, limit: 6, mine: 3, mineLimit: 4 } }
   );
+}
+
+// ---------------------------------------------------------------------------
+// B10B-s2 situations (additive): the panel's (a), (b) and the delegatee's parent row.
+
+/** Situation (a): one Claude Code session at work, nothing under it. */
+export function situationA(): Built {
+  return buildVm([
+    {
+      id: 'main',
+      root: true,
+      harness: 'claude',
+      model: 'fable-5.1',
+      effort: 'high',
+      contextPercent: 41,
+      status: S.working(ago(190)),
+      label: null,
+    },
+  ]);
+}
+
+/**
+ * Situation (b): a Codex session with native children only: an implementer at work with two subtasks under it
+ * (one failed, one running) and a scout that finished. Titles and kinds come from `native` (§7 #33).
+ */
+export function situationB(): Built {
+  return buildVm([
+    {
+      id: 'main',
+      root: true,
+      harness: 'codex',
+      model: 'gpt-6.1-sol',
+      effort: 'high',
+      contextPercent: 33,
+      status: S.working(ago(250)),
+      label: null,
+    },
+    {
+      id: 'impl',
+      parent: 'main',
+      native: true,
+      harness: 'codex',
+      label: null,
+      nativeMeta: { title: 'implementer', kind: 'fix' },
+      status: S.working(ago(200)),
+      model: 'gpt-6.1-sol',
+      contextPercent: 52,
+      createdAt: ago(240),
+    },
+    {
+      id: 'running-sub',
+      parent: 'impl',
+      native: true,
+      harness: 'codex',
+      label: null,
+      nativeMeta: { title: 'running_子', kind: 'research' },
+      status: S.working(ago(70)),
+      model: 'gpt-6.1-sol',
+      createdAt: ago(150),
+    },
+    {
+      id: 'failed-sub',
+      parent: 'impl',
+      native: true,
+      harness: 'codex',
+      label: null,
+      nativeMeta: { title: 'failed_子', kind: 'experiment' },
+      status: S.failed(ago(40)),
+      model: 'gpt-6.1-sol',
+      createdAt: ago(160),
+    },
+    {
+      id: 'scout',
+      parent: 'main',
+      native: true,
+      harness: 'codex',
+      label: null,
+      nativeMeta: { title: 'scout', kind: 'research' },
+      status: S.idle(ago(90)),
+      model: 'gpt-6.1-sol',
+      createdAt: ago(230),
+    },
+  ]);
+}
+
+/**
+ * The delegatee's view (§4.6): the HUD sits in a Codex worker's pane; its root is someone's child. `form` picks the
+ * parent row's form: a confirmed parent, an offline one, an unconfirmed caller, or a visible cancel asked of it.
+ */
+export function situationParent(form: 'confirmed' | 'offline' | 'unconfirmed' | 'cancel' = 'confirmed'): Built {
+  const built = buildVm([
+    {
+      id: 'impl-parser',
+      root: true,
+      harness: 'codex',
+      model: 'gpt-6.1-sol',
+      effort: 'xhigh',
+      contextPercent: 56,
+      status: S.working(ago(300)),
+      label: null,
+    },
+    {
+      id: 'scout',
+      parent: 'impl-parser',
+      native: true,
+      harness: 'codex',
+      label: null,
+      nativeMeta: { title: 'scout boundaries', kind: 'research' },
+      status: S.working(ago(60)),
+      createdAt: ago(100),
+    },
+  ]);
+  const rootKey = built.keys['impl-parser'];
+  const parentRef = { harness: 'claude', sourceId: 'cd'.repeat(32), sessionId: 'a7f3c2d1-0001', threadId: null };
+  const relation = {
+    link: {
+      linkId: 'l_root',
+      state: 'bound',
+      label: 'impl-parser',
+      role: 'implementer',
+      backend: 'codex-sol',
+      createdAt: ago(800),
+      boundAt: ago(720),
+      parentCaller: 'c0ffee12-3456-4789-abcd-ef0123456789',
+      parentRef: form === 'unconfirmed' ? null : parentRef,
+      childRef: null,
+    },
+    currentRun:
+      form === 'cancel'
+        ? { runId: 'r_root', state: 'cancelling', mode: 'visible', cancelRequestedAt: ago(120) }
+        : { runId: 'r_root', state: 'running', mode: 'visible', cancelRequestedAt: null },
+    parentKey: null,
+    childKey: rootKey,
+    attribution: form === 'unconfirmed' ? 'intent' : 'confirmed',
+    verification: 'not_observed',
+    conflict: null,
+    parentOffline: form === 'offline' ? { since: ago(180), seq: 9, orphanPolicy: 'continue' } : null,
+    host: { locator: null, state: 'valid', occupantMatches: null, checkedAt: null, currentState: null },
+  } as unknown as LinkRelationProjection;
+  built.vm.tree.relations.push(relation);
+  if (form !== 'unconfirmed') {
+    const root = built.vm.tree.nodes.find((n) => n.key === rootKey)!;
+    (root as { parent: LinkTreeNode['parent'] }).parent = {
+      identity: { kind: 'session', ref: parentRef as never },
+      harness: 'claude',
+      name: 'main',
+      liveness: 'alive',
+      paneLabel: 'pane 2',
+    };
+  }
+  return built;
 }

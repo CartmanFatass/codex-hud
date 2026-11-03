@@ -87,6 +87,61 @@ const TABLE: Entry[] = [
     mutate: (t) => (t.relations[1].link.label = 'beta'),
   },
   { fact: 'paneLabel', specs: child({ pane: 'pane 4' }), mutate: (t) => (t.node.host.currentState = null) },
+  // B10B-s2: a native child's title and kind (§7 #33).
+  {
+    fact: 'nativeTitle',
+    specs: child({ native: true, label: null }),
+    mutate: (t) => (t.node.native = { title: 'scout boundaries', kind: null }),
+  },
+  {
+    fact: 'nativeKind',
+    specs: child({ native: true, label: null }),
+    mutate: (t) => (t.node.native = { title: null, kind: 'research' }),
+  },
+  // B10B-s2: the facts of the delegation line and the focus line (rulings B10B-s2 Q2, Q3).
+  {
+    fact: 'costValue',
+    specs: child({ costUsd: 0.12 }),
+    mutate: (t) => (t.node.observation.spent.costUsd.value = 0.5),
+  },
+  {
+    fact: 'costQuality',
+    specs: child({ costUsd: 0.12 }),
+    mutate: (t) => (t.node.observation.spent.costUsd.quality = 'estimated'),
+  },
+  {
+    fact: 'worktreeRoot',
+    specs: child(),
+    mutate: (t) => (t.node.observation.workspace.worktreeRoot = '/work/other'),
+  },
+  {
+    fact: 'worktreeName',
+    specs: child(),
+    mutate: (t) => (t.node.observation.workspace.worktree = 'fix-cjk'),
+  },
+  {
+    fact: 'workspaceCwd',
+    specs: child(),
+    mutate: (t) => (t.node.observation.workspace.cwd = '/work/other'),
+  },
+  { fact: 'runSeq', specs: child(), mutate: (t) => (t.node.currentRun.runSeq = 2) },
+  {
+    fact: 'reconciliationMissing',
+    specs: run(
+      { state: 'uncertain', reconciliation: 'scope_unknown' },
+      { status: { cls: 'uncertain', since: ago(100) } }
+    ),
+    mutate: (t) => (t.node.execution.reconciliation.missing = ['scope_unknown', 'exit_receipt']),
+  },
+  {
+    fact: 'terminalNote',
+    specs: run(
+      { state: 'ended', endedAt: ago(500) },
+      { status: S.exited(ago(500)), terminalNote: 'cancel_timing_unknown' }
+    ),
+    mutate: (t) => (t.node.execution.terminal.note = 'retire_timing_unknown'),
+  },
+  { fact: 'linkBoundAt', specs: child(), mutate: (t) => (t.relations[0].link.boundAt = ago(10)) },
 
   // The observation.
   {

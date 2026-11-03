@@ -1,6 +1,7 @@
 import type { ProgressState, ProgressContext } from '../collectors/progress-summary.js';
 /** Default F12 view: a monitor, not another transcript. No I/O or terminal input here. */
 import type { HudData, SubagentTree } from '../types.js';
+import type { HudDelegationData } from '../core/link/view-model.js';
 import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
@@ -171,6 +172,8 @@ export interface MonitorRow {
   controls?: RowControl[];
   /** On the agents' heading: its counts in each form, for the title row to say as much as fits. */
   counts?: CountsText;
+  /** A row pinned above the agents' heading (the delegation view's parent row, design §4.6). */
+  lead?: boolean;
 }
 export interface MonitorRect {
   id: MonitorPane;
@@ -229,7 +232,8 @@ export interface MonitorFrame {
   statusCard?: FootInfo;
 }
 export interface MonitorData {
-  hud?: HudData;
+  /** The HUD's data; `delegation`, when non-null, draws the agents view from the delegation view model. */
+  hud?: HudData & HudDelegationData;
   tree: SubagentTree;
   /** The tmux prefix as the help writes it ("Ctrl+\"). */
   prefix?: string;
@@ -782,6 +786,14 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const agentsHeight = sizes.get('agents') ?? 0;
   if (ids.includes('agents') && agentsHeight < DENSE_BELOW && (content.get('agents')?.length ?? 0) > agentsHeight)
     content.set('agents', agentsView(input, state, cw, now, false));
+  // The delegation view's rich cards fold to the pane they were given (design §3.5's accordion).
+  if (
+    ids.includes('agents') &&
+    input.hud?.delegation &&
+    state.style === 'rich' &&
+    (content.get('agents')?.length ?? 0) > agentsHeight
+  )
+    content.set('agents', agentsView(input, state, cw, now, false, agentsHeight));
   // In the frame look a row no pane draws on is blank between the frame's sides, `cw` wide.
   frame.lines = Array.from({ length: height }, () => fit('', cw));
   bar.lines.slice(0, top).forEach((line, i) => {

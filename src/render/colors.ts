@@ -79,6 +79,10 @@ export const theme = {
   band: (text: string) => palette().band(text),
   bar: (text: string) => palette().bar(text),
   selectedBand: (text: string) => palette().selectedBand(text),
+  /** The ink calibrated for `selectedBand`, per role (`palette.ts`, design §5.2 "选中行"). */
+  get onSelectedBand() {
+    return palette().onSelectedBand;
+  },
   chip: (text: string) => palette().chip(text),
   tab: (text: string) => palette().tab(text),
   alert: (text: string) => palette().alert(text),

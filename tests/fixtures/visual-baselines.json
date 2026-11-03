@@ -8968,6 +8968,502 @@
         "fable-5.1 ===------ 41% | parser-kit | $1.24 | > Edit parser.ts | # 2> 1@ 1+    ",
         "# @ P review-tests approval 10s - > X impl-parser 12m - > J ask-pro 4m - +1+    "
       ]
+    },
+    "delegation/view/en/a-rich/48x3": {
+      "width": 48,
+      "height": 3,
+      "lines": [
+        "                                                ",
+        "┌ ▸ main ───────────────────────────── fable-5.1",
+        "└ ◷3m10s ───────────────41%─────────────────────"
+      ]
+    },
+    "delegation/view/en/b-rich/48x10": {
+      "width": 48,
+      "height": 10,
+      "lines": [
+        " 2▸ 1✗ 1✓                                       ",
+        "┌ ▸   main ───────────────────────── 6.1sol·high",
+        "└ ◷4m10s ────────────33%────────────────────────",
+        "  ┌ ▸ ⚒ implementer ───────────────────── 6.1sol",
+        "  │ ! ⚗ failed_子 · failed                   40s",
+        "  │ ▸ ⌕ running_子                        ◷1m10s",
+        "  └ ◷3m20s ──────────────────52%────────────────",
+        "  ┌ ✓ ⌕ scout ─────────────────────────── 6.1sol",
+        "  └ 1m ─────────────────────────────────────────",
+        "                                                "
+      ]
+    },
+    "delegation/view/en/b-compact/48x6": {
+      "width": 48,
+      "height": 6,
+      "lines": [
+        " 2▸ 1✗ 1✓                                       ",
+        "  ▸   main              6.1sol·high ━╸──  ◷4m10s",
+        " ├ ▸ ⚒ implementer                        ◷3m20s",
+        " │ ├ ! ⚗ failed_子 · failed                  40s",
+        " │ └ ▸ ⌕ running_子                       ◷1m10s",
+        " └ ✓ ⌕ scout                                  1m"
+      ]
+    },
+    "delegation/view/en/c-rich/48x19": {
+      "width": 48,
+      "height": 19,
+      "lines": [
+        " 3▸ 1⚑ 2✓ · 3 workers, 1 job · ≥$0.12           ",
+        "┌ ▸ ✳ main ─────────────────────────── fable-5.1",
+        "└ ◷3m10s ───────────────41%─────────────────────",
+        "  ┌ ⚑ π review-tests ─────────────── 6.1sol·high",
+        "  │ worker · ⊟ headless · bound 6m · $0.12      ",
+        "  │ ⚑ approval                                  ",
+        "  └ 10s ─────────24%────────────────────────────",
+        "  ┌ ▸ ⌬ impl-parser ─────────────── 6.1sol·xhigh",
+        "  │ worker · pane 4 · bound 12m                 ",
+        "  │ ▸ ⌕ scout 中文 boundaries             ◷1m00s",
+        "  │ ✓ ◈ review-pass                           1m",
+        "  └ ◷12m04s ──────────────────56%───────────────",
+        "  ┌ ▸ ◎ ask-pro ────────────────────────────────",
+        "  │ worker · bound 4m                           ",
+        "  └ ◷4m00s ─────────────────────────────────────",
+        "  ┌ ✓ ⌬ docs-sync ────────────────── 6.1sol·high",
+        "  │ worker · reported 2m                        ",
+        "  │ ✓ Synced two reference sections.            ",
+        "  └ 2m ────────────31%──────────────────────────"
+      ]
+    },
+    "delegation/view/en/c-rich-selected/80x19": {
+      "width": 80,
+      "height": 19,
+      "lines": [
+        " 3▸ 1⚑ 2✓ · 3 workers, 1 job · ≥$0.12                                           ",
+        "┌ ▸ ✳ main ─────────────────────────────────────────────────────────── fable-5.1",
+        "└ ◷3m10s ────────────────────────────41%────────────────────────────────────────",
+        "  ┌ ⚑ π review-tests ─────────────────────────────────────────────── 6.1sol·high",
+        "  │ worker · ⊟ headless · bound 6m · $0.12                                      ",
+        "  │ ⚑ approval                                                                  ",
+        "  └ 10s ─────────────────24%────────────────────────────────────────────────────",
+        "  › ▸ ⌬ impl-parser ─────────────────────────────────────────────── 6.1sol·xhigh",
+        "  │ worker · pane 4 · bound 12m                                                 ",
+        "  │ ▸ ⌕ scout 中文 boundaries                                             ◷1m00s",
+        "  │ ✓ ◈ review-pass                                                           1m",
+        "  └ ◷12m04s ────────────────────────────────────56%─────────────────────────────",
+        "  ┌ ▸ ◎ ask-pro ────────────────────────────────────────────────────────────────",
+        "  │ worker · bound 4m                                                           ",
+        "  └ ◷4m00s ─────────────────────────────────────────────────────────────────────",
+        "  ┌ ✓ ⌬ docs-sync ────────────────────────────────────────────────── 6.1sol·high",
+        "  │ worker · reported 2m                                                        ",
+        "  │ ✓ Synced two reference sections.                                            ",
+        "  └ 2m ──────────────────────31%────────────────────────────────────────────────"
+      ]
+    },
+    "delegation/view/en/c-compact-selected/48x10": {
+      "width": 48,
+      "height": 10,
+      "lines": [
+        " 3▸ 1⚑ 2✓ · 3 workers, 1 job · ≥$0.12           ",
+        "  ▸ ✳ main                fable-5.1 ━╸──  ◷3m10s",
+        "›├ ⚑ π review-tests ⊟ · approval             10s",
+        "││   worker · ⊟ headless · bound 6m · $0.12     ",
+        "││   ⚑ approval                                 ",
+        " ├ ▸ ⌬ impl-parser     6.1sol·xhigh ━━── ◷12m04s",
+        " │ ├ ▸ ⌕ scout 中文 boundaries            ◷1m00s",
+        " │ └ ✓ ◈ review-pass                          1m",
+        " ├ ▸ ◎ ask-pro                            ◷4m00s",
+        " └ ✓ ⌬ docs-sync · Synced two reference…      2m"
+      ]
+    },
+    "delegation/view/en/c-compact-chip/56x8": {
+      "width": 56,
+      "height": 8,
+      "lines": [
+        " 3▸ 1⚑ 2✓ · 3 workers, 1 job · ≥$0.12                   ",
+        "  ▸ ✳ main                        fable-5.1 ━╸──  ◷3m10s",
+        " ├ ⚑ π review-tests ⊟ · approval                     10s",
+        " ├ ▸ ⌬ impl-parser         ◈1  6.1sol·xhigh ━━── ◷12m04s",
+        " │ ├ ▸ ⌕ scout 中文 boundaries                    ◷1m00s",
+        " │ └ ✓ ◈ review-pass                                  1m",
+        " ├ ▸ ◎ ask-pro                                    ◷4m00s",
+        " └ ✓ ⌬ docs-sync · Synced two reference section…      2m"
+      ]
+    },
+    "delegation/view/en/c-compact-selected/32x10": {
+      "width": 32,
+      "height": 10,
+      "lines": [
+        " 3▸ 1⚑ 2✓ · ≥$0.12              ",
+        "  ▸ ✳ main          ━╸──  ◷3m10s",
+        "›├ ⚑ π review-tests ⊟        10s",
+        "││   worker · ⊟ headless · 6m   ",
+        "││   ⚑ approval                 ",
+        " ├ ▸ ⌬ impl-parser  ━━── ◷12m04s",
+        " │ ├ ▸ ⌕ scout 中文 bou…  ◷1m00s",
+        " │ └ ✓ ◈ review-pass          1m",
+        " ├ ▸ ◎ ask-pro            ◷4m00s",
+        " └ ✓ ⌬ docs-sync              2m"
+      ]
+    },
+    "delegation/view/en/d-compact/48x11": {
+      "width": 48,
+      "height": 11,
+      "lines": [
+        " 3▸ 1· 1⚑ 1? 9✓ · slots 6/6 · 6 workers         ",
+        "  ▸ ✳ main                fable-5.1 ━╸──  ◷8m02s",
+        " ├ ⚑ π t-07 ⊟ · approval                     10s",
+        "›├ ? ⌬ t-11 ⊟ · uncertain                    14m",
+        "││   worker · ⊟ headless · bound 25m · slot held",
+        "││   ? uncertain: scope unknown                 ",
+        " ├ ▸ ⌬ t-01 ⊟          6.1sol·xhigh ━━──  ◷9m02s",
+        " │ ├ ▸ ⌬ t-12 ⊟        6.1sol·xhigh ━───  ◷2m51s",
+        " │ └ · π t-13 ⊟ · starting                   12s",
+        " ├ ▸ π t-09 ⊟           6.1sol·high ━───  ◷3m15s",
+        " └ ✓ 9 done · t-02 t-03 t-04 t-05 t-06 t-14 … ⊕9"
+      ]
+    },
+    "delegation/view/en/d-rich-accordion/48x16": {
+      "width": 48,
+      "height": 16,
+      "lines": [
+        " 3▸ 1· 1⚑ 1? 9✓ · slots 6/6 · 6 workers         ",
+        "┌ ▸ ✳ main ─────────────────────────── fable-5.1",
+        "└ ◷8m02s ───────────────41%─────────────────────",
+        "  › ⚑ π t-07 ───────────────────────────────────",
+        "  │ worker · ⊟ headless · bound 15m             ",
+        "  │ ⚑ approval                                  ",
+        "  └ 10s ────────────────────────────────────────",
+        "  ┌ ? ⌬ t-11 ───────────────────────────────────",
+        "  │ worker · ⊟ headless · bound 25m · slot held ",
+        "  │ ? uncertain: scope unknown                  ",
+        "  └ 14m ────────────────────────────────────────",
+        "  ─ ▸ ⌬ t-01 ⊟         6.1sol·xhigh ━━──  ◷9m02s",
+        "    ─ ▸ ⌬ t-12 ⊟       6.1sol·xhigh ━───  ◷2m51s",
+        "    ─ · π t-13 ⊟ · starting                  12s",
+        "  ─ ▸ π t-09 ⊟          6.1sol·high ━───  ◷3m15s",
+        " └ ✓ 9 done · t-02 t-03 t-04 t-05 t-06 t-14 … ⊕9"
+      ]
+    },
+    "delegation/view/en/e-compact/48x10": {
+      "width": 48,
+      "height": 10,
+      "lines": [
+        " 1▸ 1⚑ 3? 1⚠ · 5 workers, 1 job                 ",
+        "  ■ ✳ main · exited       fable-5.1 ━╸──      3m",
+        " ├ ▸ ⌬ impl-a ⊟        6.1sol·xhigh ━╸──  ◷2m10s",
+        " │ └ ? π rev-a ⊟ · stale                     48s",
+        " ┊ ⚠ ⌬ impl-c · conflict                     ~6m",
+        "›├ ? ⌬ impl-d · supervisor lost               7m",
+        "││   worker · bound 20m · slot held             ",
+        "││   ? supervisor lost                          ",
+        " ├ ⚑ ◎ ask-pro · needs human                  9m",
+        " └ ? ⌬ impl-b ⊟ · uncertain                  14m"
+      ]
+    },
+    "delegation/view/en/e-rich/48x25": {
+      "width": 48,
+      "height": 25,
+      "lines": [
+        " 1▸ 1⚑ 3? 1⚠ · 5 workers, 1 job                 ",
+        "┌ ■ ✳ main ─────────────────────────── fable-5.1",
+        "└ 3m ────────────────41%────────────────────────",
+        "  ┌ ▸ ⌬ impl-a ──────────────────── 6.1sol·xhigh",
+        "  │ worker · ⊟ headless · bound 21m             ",
+        "  └ ◷2m10s ──────────────40%────────────────────",
+        "    ┌ ? π rev-a ────────────────────────────────",
+        "    │ worker · ⊟ headless · bound 13m           ",
+        "    │ ? stale                                   ",
+        "    └ 48s ──────────────────────────────────────",
+        "  ┌ ⚠ ⌬ impl-c ─────────────────────────────────",
+        "  │ ⚠ conflict: 2 records · since ~6m           ",
+        "  └ ~6m ────────────────────────────────────────",
+        "  ┌ ? ⌬ impl-d ─────────────────────────────────",
+        "  │ worker · bound 20m · slot held              ",
+        "  │ ? supervisor lost                           ",
+        "  └ 7m ─────────────────────────────────────────",
+        "  ┌ ⚑ ◎ ask-pro ────────────────────────────────",
+        "  │ worker · bound 18m                          ",
+        "  │ ⚑ needs human                               ",
+        "  └ 9m ─────────────────────────────────────────",
+        "  › ? ⌬ impl-b ─────────────────────────────────",
+        "  │ worker · ⊟ headless · bound 23m · slot held ",
+        "  │ ? uncertain: scope unknown                  ",
+        "  └ 14m ────────────────────────────────────────"
+      ]
+    },
+    "delegation/view/en/g-compact/48x4": {
+      "width": 48,
+      "height": 4,
+      "lines": [
+        " 1▸ 1✗ 5✓ · 1 worker · 6 put away               ",
+        "  ▸ ✳ main                fable-5.1 ━╸──  ◷1m20s",
+        " ├ ▸ ⌬ impl-parser ⊟   6.1sol·xhigh ━━── ◷12m04s",
+        " └ ✓ 6 done · t-old t-07 soak bench …         ⊕6"
+      ]
+    },
+    "delegation/view/en/g-history/48x11": {
+      "width": 48,
+      "height": 11,
+      "lines": [
+        " 1▸ 1✗ 5✓ · 7 workers                           ",
+        "  ▸ ✳ main                fable-5.1 ━╸──  ◷1m20s",
+        " ├ ▸ ⌬ impl-parser ⊟   6.1sol·xhigh ━━── ◷12m04s",
+        " ├ ■ ⌬ t-old · ended                          2d",
+        " ├ ✓ ⌬ t-07 · reported                        3h",
+        "›├ ■ ⌬ soak · ended · runtime limit           2h",
+        "││   worker · bound 2h                          ",
+        "││   ended · no report · runtime limit          ",
+        " ├ ■ ⌬ bench · cancelled                      1h",
+        " ├ ! π lint-fix · Lint rule 12 unresolv…     31m",
+        " └ ✓ ⌬ docs-sync · Synced two reference…     14m"
+      ]
+    },
+    "delegation/view/en/h-rich/48x19": {
+      "width": 48,
+      "height": 19,
+      "lines": [
+        " 2▸ 1⚑ 1✓ · 3 workers, 1 job                    ",
+        "┌ ▸ ✳ main ─────────────────────────── fable-5.1",
+        "└ ◷9m12s ───────────────41%─────────────────────",
+        "  › ⚑ ⌬ impl-parser ─────────────── 6.1sol·xhigh",
+        "  │ worker · pane 4 · bound 15m                 ",
+        "  │ ⚑ Still running — automatic cancellation is ",
+        "  │   unavailable. Stop this run in its terminal",
+        "  │   pane.                                     ",
+        "  └ 2m ─────────────────────────────────────────",
+        "  ┌ ▸ π review-tests ─────────────── 6.1sol·high",
+        "  │ worker · ⊟ headless · bound 10m             ",
+        "  └ ◷5m00s ────────24%──────────────────────────",
+        "  ┌ ▸ ◎ ask-pro ────────────────────────────────",
+        "  │ worker · bound 4m                           ",
+        "  └ ◷4m00s ─────────────────────────────────────",
+        "  ┌ ✓ ⌬ docs-sync ──────────────────────────────",
+        "  │ worker · pane 5 · reported 8m · close pane  ",
+        "  │ ✓ Synced two reference sections.            ",
+        "  └ 8m ─────────────────────────────────────────"
+      ]
+    },
+    "delegation/view/en/h-compact/48x8": {
+      "width": 48,
+      "height": 8,
+      "lines": [
+        " 2▸ 1⚑ 1✓ · 3 workers, 1 job                    ",
+        "  ▸ ✳ main                fable-5.1 ━╸──  ◷9m12s",
+        "›├ ⚑ ⌬ impl-parser · stop in pane             2m",
+        "││   worker · pane 4 · bound 15m                ",
+        "││   ⚑ Still running — stop this run in its pane",
+        " ├ ▸ π review-tests ⊟   6.1sol·high ━───  ◷5m00s",
+        " ├ ▸ ◎ ask-pro                            ◷4m00s",
+        " └ ✓ ⌬ docs-sync · close pane                 8m"
+      ]
+    },
+    "delegation/view/en/h-compact/32x8": {
+      "width": 32,
+      "height": 8,
+      "lines": [
+        " 2▸ 1⚑ 1✓ · 3 workers, 1 job    ",
+        "  ▸ ✳ main          ━╸──  ◷9m12s",
+        "›├ ⚑ ⌬ impl-parser            2m",
+        "││   worker · pane 4 · bound 15m",
+        "││   ⚑ running · stop in pane   ",
+        " ├ ▸ π review-te… ⊟ ━───  ◷5m00s",
+        " ├ ▸ ◎ ask-pro            ◷4m00s",
+        " └ ✓ ⌬ docs-sync              8m"
+      ]
+    },
+    "delegation/view/en/parent-offline/48x4": {
+      "width": 48,
+      "height": 4,
+      "lines": [
+        "↑ parent ✳ main · pane 2 · offline 3m · continue",
+        " 1▸                                             ",
+        "  ▸   impl-parser      6.1sol·xhigh ━━──  ◷5m00s",
+        " └ ▸ ⌕ scout boundaries                   ◷1m00s"
+      ]
+    },
+    "delegation/view/en/parent-unconfirmed/32x4": {
+      "width": 32,
+      "height": 4,
+      "lines": [
+        "↑ parent ? unconfirmed          ",
+        " 1▸                             ",
+        "  ▸   impl-parser   ━━──  ◷5m00s",
+        " └ ▸ ⌕ scout boundaries   ◷1m00s"
+      ]
+    },
+    "delegation/view/en/parent-cancel/48x6": {
+      "width": 48,
+      "height": 6,
+      "lines": [
+        "↑ parent ✳ main · pane 2 · asked to cancel 2m   ",
+        " 1▸                                             ",
+        "┌ ▸   impl-parser ───────────────── 6.1sol·xhigh",
+        "└ ◷5m00s ────────────────────56%────────────────",
+        "  ┌ ▸ ⌕ scout boundaries ───────────────────────",
+        "  └ ◷1m00s ─────────────────────────────────────"
+      ]
+    },
+    "delegation/view/zh/c-rich/48x19": {
+      "width": 48,
+      "height": 19,
+      "lines": [
+        " 3▸ 1⚑ 2✓ · 3 委派, 1 作业 · ≥$0.12             ",
+        "┌ ▸ ✳ 主会话 ───────────────────────── fable-5.1",
+        "└ ◷3m10s ───────────────41%─────────────────────",
+        "  ┌ ⚑ π review-tests ─────────────── 6.1sol·high",
+        "  │ worker · ⊟ 无界面 · 已绑定 6m · $0.12       ",
+        "  │ ⚑ 审批                                      ",
+        "  └ 10s ─────────24%────────────────────────────",
+        "  ┌ ▸ ⌬ impl-parser ─────────────── 6.1sol·xhigh",
+        "  │ worker · pane 4 · 已绑定 12m                ",
+        "  │ ▸ ⌕ scout 中文 boundaries             ◷1m00s",
+        "  │ ✓ ◈ review-pass                           1m",
+        "  └ ◷12m04s ──────────────────56%───────────────",
+        "  ┌ ▸ ◎ ask-pro ────────────────────────────────",
+        "  │ worker · 已绑定 4m                          ",
+        "  └ ◷4m00s ─────────────────────────────────────",
+        "  ┌ ✓ ⌬ docs-sync ────────────────── 6.1sol·high",
+        "  │ worker · 已报告 2m                          ",
+        "  │ ✓ Synced two reference sections.            ",
+        "  └ 2m ────────────31%──────────────────────────"
+      ]
+    },
+    "delegation/view/zh/h-compact/48x8": {
+      "width": 48,
+      "height": 8,
+      "lines": [
+        " 2▸ 1⚑ 1✓ · 3 委派, 1 作业                      ",
+        "  ▸ ✳ 主会话              fable-5.1 ━╸──  ◷9m12s",
+        "›├ ⚑ ⌬ impl-parser · 手动停止                 2m",
+        "││   worker · pane 4 · 已绑定 15m               ",
+        "││   ⚑ 仍在运行——请在其 pane 内停止             ",
+        " ├ ▸ π review-tests ⊟   6.1sol·high ━───  ◷5m00s",
+        " ├ ▸ ◎ ask-pro                            ◷4m00s",
+        " └ ✓ ⌬ docs-sync · 请关窗格                   8m"
+      ]
+    },
+    "delegation/view/en/c-compact-ascii/48x10": {
+      "width": 48,
+      "height": 10,
+      "lines": [
+        " 3> 1@ 2+ - 3 workers, 1 job - >=$0.12          ",
+        "  > C main                fable-5.1 ==--   3m10s",
+        ">| @ P review-tests - - approval             10s",
+        "||   worker - - headless - bound 6m - $0.12     ",
+        "||   @ approval                                 ",
+        " | > X impl-parser     6.1sol·xhigh ==--  12m04s",
+        " | | >   scout 中文 boundaries             1m00s",
+        " | \\ +   review-pass                          1m",
+        " | > J ask-pro                             4m00s",
+        " \\ + X docs-sync - Synced two reference~      2m"
+      ]
+    },
+    "delegation/view/en/b-compact-ascii/48x6": {
+      "width": 48,
+      "height": 6,
+      "lines": [
+        " 2> 1! 1+                                       ",
+        "  > main                6.1sol·high ==--   4m10s",
+        " | > implementer                           3m20s",
+        " | | ! failed_子 - failed                    40s",
+        " | \\ > running_子                          1m10s",
+        " \\ + scout                                    1m"
+      ]
+    },
+    "delegation/panel/en/c-rich/48x32": {
+      "width": 48,
+      "height": 32,
+      "lines": [
+        " ⌂  ▦ Agents    ≣   ±   ◫   ⚙ Settings      ǁ ? ",
+        "                                                ",
+        " ▦ Agents  3▸ 1⚑ 2✓ · 3 workers, 1 job · ≥$0.12 ",
+        "┌ ▸ ✳ main ─────────────────────────── fable-5.1",
+        "└ ◷3m10s ───────────────41%─────────────────────",
+        "  ┌ ⚑ π review-tests ─────────────── 6.1sol·high",
+        "  │ worker · ⊟ headless · bound 6m · $0.12      ",
+        "  │ ⚑ approval                                  ",
+        "  └ 10s ─────────24%────────────────────────────",
+        "  ┌ ▸ ⌬ impl-parser ─────────────── 6.1sol·xhigh",
+        "  │ worker · pane 4 · bound 12m                 ",
+        "  │ ▸ ⌕ scout 中文 boundaries             ◷1m00s",
+        "  │ ✓ ◈ review-pass                           1m",
+        "  └ ◷12m04s ──────────────────56%───────────────",
+        "  ┌ ▸ ◎ ask-pro ────────────────────────────────",
+        "  │ worker · bound 4m                           ",
+        "  └ ◷4m00s ─────────────────────────────────────",
+        "  ┌ ✓ ⌬ docs-sync ────────────────── 6.1sol·high",
+        "  │ worker · reported 2m                        ",
+        "  │ ✓ Synced two reference sections.            ",
+        "  └ 2m ────────────31%──────────────────────────",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        " ! 5.6astra·xhigh 30m ─────42%────────272K ~30s ",
+        "│ ! 1 tool · 1 subtask failed                   ",
+        "│ ! Inspect failed assertion                    ",
+        "│ ◎ Repair parser and preserve 中文 boundaries  ",
+        "│ ▸ Waiting for synthetic tests                 ",
+        "│ ✓ Recovery path completed                     ",
+        "╰─ parser-kit 5h ─────────────61%──────── ↺1h23m"
+      ]
+    },
+    "delegation/panel/en/d-rich-accordion/48x24": {
+      "width": 48,
+      "height": 24,
+      "lines": [
+        " ⌂  ▦ Agents    ≣   ±   ◫   ⚙ Settings      ǁ ? ",
+        " ▦  3▸ 1· 1⚑ 1? 9✓ · slots 6/6 · 6 workers      ",
+        "┌ ▸ ✳ main ─────────────────────────── fable-5.1",
+        "└ ◷8m02s ───────────────41%─────────────────────",
+        "  ┌ ⚑ π t-07 ───────────────────────────────────",
+        "  │ worker · ⊟ headless · bound 15m             ",
+        "  │ ⚑ approval                                  ",
+        "  └ 10s ────────────────────────────────────────",
+        "  ┌ ? ⌬ t-11 ───────────────────────────────────",
+        "  │ worker · ⊟ headless · bound 25m · slot held ",
+        "  │ ? uncertain: scope unknown                  ",
+        "  └ 14m ────────────────────────────────────────",
+        "  ─ ▸ ⌬ t-01 ⊟         6.1sol·xhigh ━━──  ◷9m02s",
+        "    ─ ▸ ⌬ t-12 ⊟       6.1sol·xhigh ━───  ◷2m51s",
+        "    ─ · π t-13 ⊟ · starting                  12s",
+        "  ─ ▸ π t-09 ⊟          6.1sol·high ━───  ◷3m15s",
+        " └ ✓ 9 done · t-02 t-03 t-04 t-05 t-06 t-14 … ⊕9",
+        " ! 5.6astra·xhigh 30m ─────42%────────272K ~30s ",
+        "│ ! 1 tool · 1 subtask failed                   ",
+        "│ ! Inspect failed assertion                    ",
+        "│ ◎ Repair parser and preserve 中文 boundaries  ",
+        "│ ▸ Waiting for synthetic tests                 ",
+        "│ ✓ Recovery path completed                     ",
+        "╰─ parser-kit 5h ─────────────61%──────── ↺1h23m"
+      ]
+    },
+    "delegation/panel/en/parent-compact/48x24": {
+      "width": 48,
+      "height": 24,
+      "lines": [
+        " ⌂  ▦ Agents    ≣   ±   ◫   ⚙ Settings      ǁ ? ",
+        "↑ parent ✳ main · pane 2 · offline 3m · continue",
+        " ▦ Agents  1▸                                   ",
+        "  ▸   impl-parser      6.1sol·xhigh ━━──  ◷5m00s",
+        " └ ▸ ⌕ scout boundaries                   ◷1m00s",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        "                                                ",
+        " ! 5.6astra·xhigh 30m ─────42%────────272K ~30s ",
+        "│ ! 1 tool · 1 subtask failed                   ",
+        "╰─ parser-kit 5h ─────────────61%──────── ↺1h23m"
+      ]
     }
   }
 }

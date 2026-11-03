@@ -520,11 +520,17 @@ test('CJK: a wide character that does not fit leaves a space, and a name is cut 
   }
 });
 
-test('the plan is memoised per second, per option set; the second moving on replans', () => {
+test('the plan is memoised per option set until a subtree crosses its put-away time (B10B-s2, §6 #3)', () => {
   const proj = projectDelegation(situationC().vm);
   const a = planRows(proj, { nowMs: NOW });
   assert.equal(planRows(proj, { nowMs: NOW + 400 }), a);
-  assert.notEqual(planRows(proj, { nowMs: NOW + 1000 }), a);
+  // The second moving on changes nothing in the plan: the same plan (B10B-s2; segment 1 replanned every second).
+  assert.equal(planRows(proj, { nowMs: NOW + 1000 }), a);
+  // `docs-sync` finished 120 s before NOW: at NOW + 60 s it is put away, and the plan is a new one.
+  const later = planRows(proj, { nowMs: NOW + 60_000 });
+  assert.notEqual(later, a);
+  assert.equal(later.putAway, a.putAway + 1);
+  assert.equal(planRows(proj, { nowMs: NOW + 59_999 }).putAway, a.putAway, 'and back before the boundary');
   assert.notEqual(planRows(proj, { nowMs: NOW, showHistory: true }), planRows(proj, { nowMs: NOW }));
   const key = [...proj.nodes].find((pn) => pn.children.length > 0 && !pn.proj.isRoot)!.key;
   const folded = planRows(proj, { nowMs: NOW, collapsed: new Set([key]) });

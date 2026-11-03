@@ -26,7 +26,18 @@ import { renderRows } from '../../src/render/delegation/rows.js';
 import { joinFirstLine, statuslineDelegation } from '../../src/render/delegation/statusline.js';
 import { panelSay, plainSay } from '../../src/render/delegation/style.js';
 import { fit as fitDelegationBar, sessionData as delegationSession } from './b10b-bar.js';
-import { situationC, situationD, situationE, situationG, situationH, type Built } from './b10b-delegation.js';
+import {
+  situationA,
+  situationB,
+  situationC,
+  situationD,
+  situationE,
+  situationG,
+  situationH,
+  situationParent,
+  type Built,
+} from './b10b-delegation.js';
+import { delegationAgentsRows } from '../../src/render/delegation/panel.js';
 import { FIXED_NOW, at, makeContextUsage, makeHudData, node, treeOf } from './hud-data.js';
 
 export const VISUAL_NOW = FIXED_NOW.getTime();
@@ -56,13 +67,18 @@ export interface VisualCase {
     | 'inspector'
     | 'delegation-rows'
     | 'delegation-bar'
-    | 'delegation-statusline';
+    | 'delegation-statusline'
+    | 'delegation-panel'
+    | 'delegation-view';
   preset: CardPreset;
   progressPhase?: 'queued' | 'running' | 'off' | 'paused';
   saveError?: boolean;
   /** The delegation scenes (B10b): which synthetic situation, and how it is drawn. */
   delegation?: {
-    situation: 'c' | 'd' | 'e' | 'g' | 'h';
+    situation: 'c' | 'd' | 'e' | 'g' | 'h' | 'a' | 'b' | 'c-kinds' | 'parent' | 'parent-unconfirmed' | 'parent-cancel';
+    /** The panel scenes (B10B-s2): the layout, and the rows the agents pane is given (rich folds to it). */
+    style?: 'rich' | 'compact';
+    viewport?: number;
     ascii?: boolean;
     /** `a`: finished rows stay on the list. */
     history?: boolean;
@@ -345,12 +361,18 @@ export function renderVisualInspector(scene: VisualCase) {
   });
 }
 
-const DELEGATION_SITUATIONS: Record<'c' | 'd' | 'e' | 'g' | 'h', () => Built> = {
+const DELEGATION_SITUATIONS: Record<NonNullable<VisualCase['delegation']>['situation'], () => Built> = {
   c: situationC,
   d: situationD,
   e: situationE,
   g: situationG,
   h: situationH,
+  a: situationA,
+  b: situationB,
+  'c-kinds': () => situationC({ reviewPass: true, nativeMeta: true }),
+  parent: () => situationParent('offline'),
+  'parent-unconfirmed': () => situationParent('unconfirmed'),
+  'parent-cancel': () => situationParent('cancel'),
 };
 
 /** The text of a delegation frame, padded to the frame's exact size (`lines` is what a golden keeps). */
@@ -374,6 +396,44 @@ export function renderVisualDelegation(scene: VisualCase): { lines: string[] } {
       { width: scene.width, ascii, say: panelSay, selectedKey: spec.selected ? built.keys[spec.selected] : null }
     );
     return { lines: padFrame(rows, scene) };
+  }
+  if (scene.kind === 'delegation-view') {
+    // The agents view alone (B10B-s2): parent row, summary row, the tree or the cards, with a selection.
+    const rows = delegationAgentsRows(built.vm, {
+      width: scene.width,
+      nowMs: VISUAL_NOW,
+      style: spec.style ?? 'compact',
+      selectedId: spec.selected ? built.keys[spec.selected] : null,
+      showHistory: spec.history === true,
+      ascii,
+      say: panelSay,
+      viewport: spec.viewport,
+    });
+    return {
+      lines: padFrame(
+        rows.map((row) => row.text),
+        scene
+      ),
+    };
+  }
+  if (scene.kind === 'delegation-panel') {
+    // The whole panel through `renderMonitor` with `hud.delegation` set: the hook, the pinned rows, the accordion.
+    const settings = visualSettings(scene);
+    const state = visualState(settings);
+    state.style = spec.style ?? 'rich';
+    state.tree = { ...state.tree, showAll: spec.history === true, selectedId: null };
+    const material = visualMaterial(scene.language);
+    return renderMonitor({
+      ...material,
+      tree: { ...material.tree, nodes: [] },
+      hud: { ...material.data, delegation: built.vm },
+      state,
+      width: scene.width,
+      height: scene.height,
+      nowMs: VISUAL_NOW,
+      status: (now) => statusCard(material.data, now),
+      session: (now) => sessionState(material.data, now),
+    });
   }
   if (scene.kind === 'delegation-bar') {
     const tick = VISUAL_NOW + (spec.tickMs ?? 0);
@@ -406,6 +466,8 @@ export function renderVisualCase(scene: VisualCase) {
     case 'delegation-rows':
     case 'delegation-bar':
     case 'delegation-statusline':
+    case 'delegation-panel':
+    case 'delegation-view':
       return renderVisualDelegation(scene);
     case 'panel':
       return renderVisualPanel(scene);
@@ -530,7 +592,7 @@ function delegationCases(): VisualCase[] {
     });
   const rows = (
     language: Language,
-    situation: Spec['situation'],
+    situation: keyof typeof DELEGATION_ROWS & Spec['situation'],
     widths: number[],
     extra: Partial<Spec> = {},
     label?: string
@@ -594,6 +656,43 @@ function delegationCases(): VisualCase[] {
   for (const width of [80, 120]) line('en', 'h', width);
   line('zh', 'c', 120);
   line('en', 'c', 80, { ascii: true });
+
+  // The panel's delegation view (B10B-s2): scenarios (a)-(h) at their stated widths, the parent row, ZH and ASCII.
+  const view = (language: Language, label: string, width: number, height: number, delegation: Spec) =>
+    add('delegation-view', language, label, width, height, delegation);
+  view('en', 'a-rich', 48, 3, { situation: 'a', style: 'rich' });
+  view('en', 'b-rich', 48, 10, { situation: 'b', style: 'rich' });
+  view('en', 'b-compact', 48, 6, { situation: 'b', style: 'compact' });
+  view('en', 'c-rich', 48, 19, { situation: 'c-kinds', style: 'rich' });
+  view('en', 'c-rich-selected', 80, 19, { situation: 'c-kinds', style: 'rich', selected: 'impl-parser' });
+  view('en', 'c-compact-selected', 48, 10, { situation: 'c-kinds', style: 'compact', selected: 'review-tests' });
+  view('en', 'c-compact-chip', 56, 8, { situation: 'c-kinds', style: 'compact' });
+  view('en', 'c-compact-selected', 32, 10, { situation: 'c-kinds', style: 'compact', selected: 'review-tests' });
+  view('en', 'd-compact', 48, 11, { situation: 'd', style: 'compact', selected: 't-11' });
+  view('en', 'd-rich-accordion', 48, 16, { situation: 'd', style: 'rich', selected: 't-07', viewport: 16 });
+  view('en', 'e-compact', 48, 10, { situation: 'e', style: 'compact', selected: 'impl-d' });
+  view('en', 'e-rich', 48, 25, { situation: 'e', style: 'rich', selected: 'impl-b' });
+  view('en', 'g-compact', 48, 4, { situation: 'g', style: 'compact' });
+  view('en', 'g-history', 48, 11, { situation: 'g', style: 'compact', history: true, selected: 'soak' });
+  view('en', 'h-rich', 48, 19, { situation: 'h', style: 'rich', selected: 'impl-parser' });
+  view('en', 'h-compact', 48, 8, { situation: 'h', style: 'compact', selected: 'impl-parser' });
+  view('en', 'h-compact', 32, 8, { situation: 'h', style: 'compact', selected: 'impl-parser' });
+  view('en', 'parent-offline', 48, 4, { situation: 'parent', style: 'compact' });
+  view('en', 'parent-unconfirmed', 32, 4, { situation: 'parent-unconfirmed', style: 'compact' });
+  view('en', 'parent-cancel', 48, 6, { situation: 'parent-cancel', style: 'rich' });
+  view('zh', 'c-rich', 48, 19, { situation: 'c-kinds', style: 'rich' });
+  view('zh', 'h-compact', 48, 8, { situation: 'h', style: 'compact', selected: 'impl-parser' });
+  view('en', 'c-compact-ascii', 48, 10, {
+    situation: 'c-kinds',
+    style: 'compact',
+    ascii: true,
+    selected: 'review-tests',
+  });
+  view('en', 'b-compact-ascii', 48, 6, { situation: 'b', style: 'compact', ascii: true });
+  // The whole panel, through `renderMonitor`: control bar, pinned heading, the agents pane, the status card.
+  add('delegation-panel', 'en', 'c-rich', 48, 32, { situation: 'c-kinds', style: 'rich' });
+  add('delegation-panel', 'en', 'd-rich-accordion', 48, 24, { situation: 'd', style: 'rich' });
+  add('delegation-panel', 'en', 'parent-compact', 48, 24, { situation: 'parent', style: 'compact' });
   return cases;
 }
 
