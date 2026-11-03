@@ -71,8 +71,10 @@ can put it to the owner.
 
 ## Oracle recommendation
 
+[Full verbatim Oracle ruling](../../cloud/rulings/b10d-route.md).
+
 Oracle recommendation summary (full verbatim ruling archival pending): Keep B10D unmerged; preserve 200-node/20,000-header profile and numeric gates. Create separate LEG1 bounded incremental legacy catalog and RCP1 exact continuation/disposal packages; retain 16-heavy-reader cap and §18 continuity. Finish retirement recapture in B10D before enablement. The owner-approved §19 one-use continuation ticket may consume the next ordinary operation's single reader grant, cannot enqueue, add budget or reset age, and bounds a fixed N-target round at at most 2N opportunities. RCP1 and LEG1 require their own bounded briefs; no acceptance of B10D or waiver of timing, resource or liveness gates follows. Full source-bound rationale and acceptance details must be archived before implementation.
 
 ## Owner decision
 
-2026-11-03: “公平例外你让一个oracle确认后独立实现即可”; subsequently “批准 我给你全权 你以Oracle的意见为准即可 不要逐项要权限”. Follow Oracle recommendations within safety and explicit no-main/no-force-push scope; full ruling archival pending.
+2026-11-03: “公平例外你让一个oracle确认后独立实现即可”; subsequently “批准 我给你全权 你以Oracle的意见为准即可 不要逐项要权限”. Follow Oracle recommendations within safety and explicit no-main/no-force-push scope; full verbatim ruling archived.
