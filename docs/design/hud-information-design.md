@@ -783,7 +783,7 @@ fable-5.1 high ━━━━╸───── 112.3K/272K │ parser-kit main*�
 | 徽章、Jev provider | model（max / ultra effort 仍 warning） |
 | `⊟`、`$0.12`、`12cr`、`pane 4` | muted |
 | 未证实边 `┊` | muted |
-| 选中行 | selectedBand + `›`；行上的文字和标记用调色板为 band 校准过的前景（`selected` 角色族），不能把 warning / muted 原样叠在 band 上；没有 band 的调色板（`none`、`terminal`）选中 = `›` + 名字加粗 |
+| 选中行 | selectedBand + `›`；行上的每个 span 都走 `onSelectedBand` 角色族（text、muted、accent、success、warning、danger、info、model）：对 band 的对比度 text ≥ 4.5:1，muted ≥ 3:1 且与 text 相差 ≥ 1.5:1，色相角色 ≥ 3:1 且只动明度（色相 ±6°、饱和度 ±6 以内）；达标的角色与原色相同，不达标的按明度校准（latte 的 warning `#9C6414`、success `#337F22`、info `#0378A6`）；band 上的 strong = text 加粗，alert = danger 加粗；徽章（含 max / ultra 的 warning）与计量线填充同样走该族（B10b 裁决 2026-11-02）；没有 band 的调色板（`none`、`terminal`）选中 = `›` + 名字加粗，不画底色 |
 | bar 警示 | alert |
 
 harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再加一层会让 `▸` 失去唯一的"亮"。若用户反馈分不清，加设置 `harnessColors`（§9）。
@@ -820,7 +820,7 @@ harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再�
 - **密度**：bar 三档不变；面板 rich / compact 不变；rich 下的手风琴折叠（§3.5）是唯一新增的自动变化，而且是逐张卡折，不是整棵树换布局。
 - **动效**：只有选中卡关系行的 `⇄/⇆` 250 ms 标记（现有）；行上没有 spinner，"活着"由时钟和心跳年龄回答；其它变化最多每秒一次，reduced motion 时静止。
 - **CJK**：所有截断走 `truncateAnsi`，按格计算；ZH 状态词限 ≤ 8 格（`未确定 需要人 记录冲突 已退出 已关闭 已取消 启动中 已回答 未加载 离线 等浏览器 过期`，v1.1 再加 `手动停止 请关窗格 超时限 空闲上限 阻塞上限 父已断 槽已满 树不完整 账本忙`；`两条记录` 不再用）。契约原句里的 `——` / `—` 是 Ambiguous 宽度，与面板上其它 A 类字符一样按 1 格计（§5.3）；`icons=text` 时写成 `-`。
-- **明暗**：latte / mocha 都不靠颜色单独表达状态——每个状态有标记，每个 trouble 有词；muted 在 latte 上保持可读由调色板负责（现有）。
+- **明暗**：latte / mocha 都不靠颜色单独表达状态——每个状态有标记，每个 trouble 有词；muted 在 latte 上保持可读由调色板负责（现有）。选中行的 band 是另一块底色，§5.2 的 `onSelectedBand` 下限由单元测试守住；mocha / titanium 的原色全部达标，只有 latte 的三个状态色需要校准。
 
 ### 5.5 用词表（`t()`）
 
@@ -865,6 +865,7 @@ harness 不用颜色区分：颜色已经承担状态和 agent 方向色，再�
    | 无变化 tick（#16） | 只有时钟桶变 | ≤ 2 ms | 只重画时钟文字变了的行 |
 
    超出 50 ms 的 tick 记进 `health`（现有机制），超出 200 ms 的是缺陷（B14 记 performance-unqualified），都不降级画面——唯一的自动降级仍是活跃行 > 30 时的分钟粒度时钟。
+   （B10C 增补，2026-11-02）发布观测的 bar / panel 把整个采集操作（含 B9、B16、租约与 SQLite 发布）放进各自一个有界 worker 线程，主线程只画最近一个完整的已提交视图；上表的 B9 份额改记在 worker 阶段，测量包含 IPC。全 tick 门禁拆成三道（契约 06「增量 tick 验收」B10C 增补）：paint p99 < 50 ms / max < 200 ms；观测操作 p99 < 100 ms / max < 1 000 ms；本地 commit 到 paint p99 < 50 ms / max < 200 ms。无变化 tick 的 ≤ 2 ms 按 p99 计，最大值另报。
 7. **文本**：外部文本过 `monitorText` 一次，按文本哈希缓存；截断结果随行缓存。
 8. **动效**：唯一的 250 ms 定时器只在面板聚焦且选中卡有关系行时存在。
 9. **statusline**：优先读 HUD 的机读状态文件（`$CODEX_HOME/hud/state/<session>.json` 的通用版，≤ 5 s 新鲜）；没有则做一次索引查询（父 ref → ≤ 50 个直接子节点，不建树）；两者都没有就省略第二行。p95 < 150 ms。
