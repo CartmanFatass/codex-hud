@@ -1,6 +1,9 @@
 import { performance } from 'node:perf_hooks';
-import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
+import { DelegationWorkerClient, type WorkerBuildScope } from './core/link/worker-client.js';
+import { withDelegationObservation } from './core/link/activity.js';
+import { monotonicNow } from './core/link/worker-protocol.js';
 import { initialParserState } from './core/observation.js';
+import type { HudDelegationData } from './core/link/view-model.js';
 import type { DelegationViewModel } from './core/link/view-model.js';
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import { navigateSession } from './utils/session-navigation.js';
@@ -246,11 +249,16 @@ function requestEnsureSingle(): void {
 
 async function runLivePage(): Promise<void> {
   startProfiling('panel');
-  const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
+  let delegationCollector: DelegationWorkerClient | null = null;
   let delegation: DelegationViewModel | null = null;
+  let hudBuildScope: WorkerBuildScope | null = null;
   // Opened again, the panel reads only what each rollout gained since it last saved its scan.
   useTreeScanStore(new TreeScanStore(path.join(getHudHome(), 'scan')));
-  const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
+  const finder = new SessionFinder(
+    HUD_CWD_REAL,
+    (session) => delegationCollector?.invalidateScope(session?.sessionId),
+    HUD_SESSION_START
+  );
   const parser = new RolloutParser(40);
   const worktreeCollector = new WorktreeCollector();
   // Typing here goes to Codex; with no Codex pane to give it to (the panel
@@ -578,6 +586,14 @@ async function runLivePage(): Promise<void> {
   };
   const render = () => {
     if (closed) return;
+    const current = hudStatus.current();
+    const compatible = Boolean(current && delegationCollector?.scopeIsCurrent(hudBuildScope));
+    if (delegationCollector && compatible) {
+      delegation = delegationCollector.current();
+      Object.assign(current!, { delegation });
+    }
+    let renderedDelegation: DelegationViewModel | null | undefined;
+    const hidden = activityHub ? 'activity' : observability ? 'observability' : settingsPage ? 'settings' : null;
     const output = time('render', () => {
       let lines: string[];
       if (activityHub) {
@@ -689,6 +705,7 @@ async function runLivePage(): Promise<void> {
           linkNames: mainCols === null || mainCols >= 63,
         });
         state = frame.state;
+        if (compatible && hud) renderedDelegation = (hud as typeof hud & HudDelegationData).delegation ?? null;
         lines = frame.lines;
       }
       return lines;
@@ -696,7 +713,16 @@ async function runLivePage(): Promise<void> {
     const update = frameDiff(lastPaint, output);
     lastPaint = output;
     if (update) time('write', () => process.stdout.write(update));
+    if (renderedDelegation !== undefined) delegationCollector?.painted(renderedDelegation);
+    else if (compatible && hidden) delegationCollector?.consumeHidden(delegation, hudBuildScope, hidden);
   };
+  delegationCollector = DelegationWorkerClient.open(process.env, getCodexHome(), {
+    onResult: () => render(),
+    onHealth: (reason) => {
+      hudStatus.health.fail('tree', reason);
+      queueMicrotask(() => render());
+    },
+  });
   modelChanged = () => {
     adaptive = forceAdaptivePoll(adaptive);
     collectionEpoch++;
@@ -891,7 +917,10 @@ async function runLivePage(): Promise<void> {
       adaptive = recordAdaptivePoll(adaptive, {
         scopeKey: collectionScope(),
         nowMs: Date.now(),
-        ...withDelegationObservation(collectionObservation(currentHud(), tree), delegation),
+        ...withDelegationObservation(
+          collectionObservation(currentHud(), tree),
+          delegationCollector?.scopeIsCurrent(hudBuildScope) ? delegation : null
+        ),
         succeeded: !currentHud()?.stale && !error && currentHud()?.health?.sessionBound === true,
       });
     else if (!closed) void collect(true);
@@ -902,19 +931,20 @@ async function runLivePage(): Promise<void> {
       await collectNowBody();
     } finally {
       collecting = false;
-      delegationCollector?.abandonCollection();
+      delegationCollector?.abandonLegacySlice();
     }
   };
   const collectNowBody = async () => {
-    const collectionStartedAt = performance.now();
-    const delegationDeadline = collectionStartedAt + 40;
     let session: ReturnType<typeof finder.check> = null;
+    let buildScope: WorkerBuildScope | null = null;
     let stale = false;
     // Where a failure happened, for the health row.
     let stage: HealthSource = 'session';
     try {
       session = finder.check();
-      delegation = delegationCollector ? await delegationCollector.tick(session?.sessionId, delegationDeadline) : null;
+      const rootGrant = delegationCollector?.beginCollection(session?.sessionId) ?? null;
+      buildScope = delegationCollector?.collectionScope() ?? null;
+      delegation = delegationCollector?.current() ?? null;
       stage = 'rollout';
       const rootReadStarted = performance.now();
       const priorRootStats = parser.getReadStats();
@@ -922,6 +952,9 @@ async function runLivePage(): Promise<void> {
       if (!session) {
         main = null;
         lastParsedRollout = null;
+      } else if (delegationCollector && !rootGrant) {
+        main = parser.getCached();
+        stale = true;
       } else {
         const signature = fileSignature(session.path);
         const cached = parser.getCached();
@@ -931,18 +964,17 @@ async function runLivePage(): Promise<void> {
           lastParsedRollout = signature;
           try {
             main = await parser.parse(
-              delegation
+              rootGrant
                 ? {
                     budget: {
-                      maxBytes: 4 * 1024 * 1024,
-                      maxRecords: 2000,
-                      budgetMs: Math.max(0, Math.min(20, Math.floor(delegationDeadline - performance.now()))),
+                      ...rootGrant.budget,
+                      budgetMs: Math.max(0, Math.min(20, Math.floor(rootGrant.deadlineAt - monotonicNow()))),
                     },
                     state: parser.getReadStats()?.state ?? initialParserState(),
                   }
                 : undefined
             );
-            if (delegation && ((parser.getReadStats()?.remainingBytes ?? 0) > 0 || parser.getReadStats()?.continuation))
+            if (rootGrant && ((parser.getReadStats()?.remainingBytes ?? 0) > 0 || parser.getReadStats()?.continuation))
               lastParsedRollout = null;
           } catch (err) {
             // A failed read is not "already parsed"; let the next tick retry.
@@ -952,14 +984,14 @@ async function runLivePage(): Promise<void> {
         }
       }
       const rootStats = parser.getReadStats();
-      if (delegation && rootStats && rootStats !== priorRootStats)
-        delegationCollector?.collector.chargeAdditionalRead(
-          rootStats.bytesRead,
-          rootStats.recordsRead,
-          performance.now() - rootReadStarted
-        );
+      if (rootGrant)
+        delegationCollector?.submitLegacy(rootGrant, {
+          bytesRead: rootStats && rootStats !== priorRootStats ? rootStats.bytesRead : 0,
+          recordsRead: rootStats && rootStats !== priorRootStats ? rootStats.recordsRead : 0,
+          elapsedMs: performance.now() - rootReadStarted,
+        });
       hudStatus.health.bind(Boolean(session));
-      hudStatus.health.read();
+      if (!delegationCollector || (session && rootGrant)) hudStatus.health.read();
       stage = 'tree';
       const rootId = main?.session?.id ?? session?.sessionId ?? '';
       if (rootId !== tree.rootId) {
@@ -985,25 +1017,23 @@ async function runLivePage(): Promise<void> {
       // The root is not a card node, but its new spawn charges must be read
       // on this tick too, rather than waiting for the quiet-file budget.
       if (session) priority.add(session.path);
-      const listed =
-        rootId && !delegation
-          ? await timeAsync('tree.list', () =>
-              findRolloutsInDaysYielding(
-                treeLookbackDays(
-                  rootId,
-                  3,
-                  main?.subagents?.map((agent) => agent.id)
-                ),
-                priority
-              )
+      const listed = rootId
+        ? await timeAsync('tree.list', () =>
+            findRolloutsInDaysYielding(
+              treeLookbackDays(
+                rootId,
+                3,
+                main?.subagents?.map((agent) => agent.id)
+              ),
+              priority
             )
-          : undefined;
-      tree =
-        rootId && !delegation
-          ? await timeAsync('tree.build', () =>
-              buildSubagentTreeYielding(rootId, main?.subagents ?? [], 3, Date.now(), listed)
-            )
-          : { rootId, nodes: [], totalCount: 0, updatedAt: new Date() };
+          )
+        : undefined;
+      tree = rootId
+        ? await timeAsync('tree.build', () =>
+            buildSubagentTreeYielding(rootId, main?.subagents ?? [], 3, Date.now(), listed)
+          )
+        : { rootId, nodes: [], totalCount: 0, updatedAt: new Date() };
       treeBuiltFor = rootId;
       markActivitySourceSuccess('tree');
       applyAgentContext();
@@ -1027,14 +1057,13 @@ async function runLivePage(): Promise<void> {
     }
     let built: ReturnType<HudStatus['build']> | null = null;
     try {
-      const delegationMs = delegationCollector?.collector.stats().totalMs ?? 0;
-      if (delegationMs > 50)
-        hudStatus.health.fail(
-          'tree',
-          delegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms'
-        );
       built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree });
-      if (delegationCollector) Object.assign(built, { delegation });
+      if (delegationCollector && buildScope?.scope === (main?.session?.id ?? session?.sessionId ?? null)) {
+        hudBuildScope = buildScope;
+        Object.assign(built, {
+          delegation: delegationCollector.scopeIsCurrent(buildScope) ? delegationCollector.current() : null,
+        });
+      } else hudBuildScope = null;
       markActivitySourceSuccess('status');
     } catch (err) {
       hudStatus.health.fail('status', err); /* The foot keeps its last good rows. */
@@ -1050,26 +1079,6 @@ async function runLivePage(): Promise<void> {
     observeActivity();
     if (observability) sampleTelemetry();
     render();
-    try {
-      const publicationToken = delegationCollector?.publicationToken();
-      await delegationCollector?.afterPaint(
-        (committed) => {
-          delegation = committed;
-          if (built) Object.assign(built, { delegation });
-          render();
-        },
-        collectionStartedAt,
-        publicationToken
-      );
-      const fullDelegationMs = delegationCollector?.publicationStats().fullTickMs ?? 0;
-      if (fullDelegationMs > 50)
-        hudStatus.health.fail(
-          'tree',
-          fullDelegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms'
-        );
-    } finally {
-      collecting = false;
-    }
     readMainCols();
     void refreshInspection();
     void refreshAgentContext();
@@ -1164,7 +1173,7 @@ async function runLivePage(): Promise<void> {
   const finish = (user = false) => {
     if (closed) return;
     closed = true;
-    delegationCollector?.close();
+    const workerClose = delegationCollector?.close();
     briefer.stop();
     jobs.stop();
     progress.stop();
@@ -1186,10 +1195,7 @@ async function runLivePage(): Promise<void> {
     snapshotWriter.remove();
     if (user) requestEnsureSingle();
     // Settle bounded local telemetry writes before the terminal process exits.
-    void model
-      .flushTelemetry()
-      .catch(() => {})
-      .finally(resolveDone);
+    void Promise.all([model.flushTelemetry().catch(() => {}), workerClose]).finally(resolveDone);
   };
   const switchSession = async (id: string) => {
     if (navigating || !id) return;

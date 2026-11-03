@@ -1,5 +1,7 @@
 import { performance } from 'node:perf_hooks';
-import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
+import { DelegationWorkerClient, type WorkerBuildScope } from './core/link/worker-client.js';
+import { withDelegationObservation } from './core/link/activity.js';
+import { monotonicNow } from './core/link/worker-protocol.js';
 import { initialParserState } from './core/observation.js';
 import type { ReaderBudget } from './core/interfaces/harness-adapter.js';
 import type { HudDelegationData } from './core/link/view-model.js';
@@ -73,12 +75,15 @@ const HUD_SESSION_START = (() => {
 let isRunning = true;
 
 // Phase 2: Session and rollout tracking
+let rootSelectionEpoch = 0;
 const sessionFinder = new SessionFinder(
   HUD_CWD_REAL,
   (session) => {
     wakeCollection();
     // When session changes, update rollout path
     resetRolloutSignature();
+    rootSelectionEpoch++;
+    delegationCollector?.invalidateScope(session?.sessionId);
     if (session) {
       rolloutParser.setRolloutPath(session.path);
       hudFileWatcher.setRolloutPath(session.path);
@@ -109,7 +114,8 @@ let cachedHudData: (HudData & HudDelegationData) | null = null;
 let journal: ActivityJournal | undefined;
 let journalRoot = '';
 let configNeedsRefresh = false;
-let delegationCollector: HudDelegationCollector | null = null;
+let delegationCollector: DelegationWorkerClient | null = null;
+let cachedDelegationScope: WorkerBuildScope | null = null;
 let delegationParseBudget: ReaderBudget | null = null;
 const parseRolloutSafely = createParseQueue(() =>
   rolloutParser.parse(
@@ -165,7 +171,6 @@ const hudStatus = new HudStatus(HUD_CWD, () => repaintCached());
  * Collect all HUD data including async rollout parsing
  */
 async function collectData(): Promise<HudData & HudDelegationData> {
-  const delegationDeadline = performance.now() + 40;
   try {
     const settings = runtimeSettings();
     applyDisplaySettings(settings);
@@ -193,17 +198,17 @@ async function collectData(): Promise<HudData & HudDelegationData> {
     health.fail('session', error);
   }
 
-  const delegation = delegationCollector
-    ? await delegationCollector.tick(session?.sessionId, delegationDeadline)
+  const rootGrant = delegationCollector?.beginCollection(session?.sessionId) ?? null;
+  const rootSelectionAtStart = rootSelectionEpoch,
+    rootSessionId = session?.sessionId,
+    rootPath = session?.path;
+  const buildScope = delegationCollector?.collectionScope() ?? null;
+  const delegation = delegationCollector?.current() ?? null;
+  delegationParseBudget = delegationCollector
+    ? rootGrant
+      ? { ...rootGrant.budget, budgetMs: Math.max(0, Math.min(20, Math.floor(rootGrant.deadlineAt - monotonicNow()))) }
+      : { maxBytes: 0, maxRecords: 0, budgetMs: 0 }
     : null;
-  delegationParseBudget = delegation
-    ? {
-        maxBytes: 4 * 1024 * 1024,
-        maxRecords: 2000,
-        budgetMs: Math.max(0, Math.min(20, Math.floor(delegationDeadline - performance.now()))),
-      }
-    : null;
-
   // Re-parse the current rollout only when the file actually moved. The parser
   // is incremental, but reaching that conclusion still costs an open, a read
   // and a close of a file that grows to tens of megabytes; one stat answers
@@ -212,40 +217,56 @@ async function collectData(): Promise<HudData & HudDelegationData> {
   let rolloutData = rolloutParser.getCached();
   const rootReadStarted = performance.now();
   const priorRootStats = rolloutParser.getReadStats();
-  if (session) {
+  let rootReadFailed = false;
+  if (session && delegationCollector && !rootGrant) stale = true;
+  if (session && (!delegationCollector || rootGrant)) {
     try {
       rolloutData = await parseRolloutIfChanged(session.path);
     } catch (error) {
       stale = true;
+      rootReadFailed = true;
       health.fail('rollout', error);
     }
   }
   const rootStats = rolloutParser.getReadStats();
-  if (delegation && rootStats && rootStats !== priorRootStats)
-    delegationCollector?.collector.chargeAdditionalRead(
-      rootStats.bytesRead,
-      rootStats.recordsRead,
-      performance.now() - rootReadStarted
-    );
+  const currentSession = sessionFinder.getCurrentSession();
+  const superseded = Boolean(
+    delegationCollector &&
+    (rootSelectionAtStart !== rootSelectionEpoch ||
+      currentSession?.sessionId !== rootSessionId ||
+      currentSession?.path !== rootPath ||
+      (rootGrant && !delegationCollector.legacyGrantIsCurrent(rootGrant)))
+  );
+  if (superseded) {
+    stale = true;
+    rootReadFailed = true;
+    lastParsedRollout = null;
+    rolloutData = null;
+    session = currentSession;
+  }
+  if (rootGrant)
+    delegationCollector?.submitLegacy(rootGrant, {
+      bytesRead: rootStats && rootStats !== priorRootStats ? rootStats.bytesRead : 0,
+      recordsRead: rootStats && rootStats !== priorRootStats ? rootStats.recordsRead : 0,
+      elapsedMs: performance.now() - rootReadStarted,
+      failed: rootReadFailed,
+    });
+  delegationParseBudget = null;
   // Keep lookup success distinct from an actual bound Codex session.
   if (!stale) {
     health.bind(Boolean(session));
-    health.read();
+    if (!delegationCollector || (session && rootGrant)) health.read();
   }
 
-  const delegationMs = delegationCollector?.collector.stats().totalMs ?? 0;
-  if (delegationMs > 50)
-    health.fail('tree', delegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms');
   const hudData = hudStatus.build({
     rollout: rolloutData,
     sessionId: session?.sessionId,
     stale,
     runtimeSession: paneRuntimeStateCollector?.collect() ?? undefined,
-    ...(delegation
-      ? { tree: { rootId: session?.sessionId ?? '', nodes: [], totalCount: 0, updatedAt: new Date() } }
-      : {}),
   });
   if (delegationCollector) Object.assign(hudData, { delegation });
+  cachedDelegationScope =
+    !superseded && buildScope?.scope === (rolloutData?.session?.id ?? session?.sessionId ?? null) ? buildScope : null;
   cachedHudData = hudData;
   return hudData;
 }
@@ -270,9 +291,7 @@ async function mainLoop(): Promise<void> {
     }
     const epoch = collectionEpoch;
     try {
-      const collectionStartedAt = performance.now();
       const data = await collectData();
-      const publicationToken = delegationCollector?.publicationToken();
       const rootId = data.session?.id ?? data.subagentTree?.rootId ?? '';
       if (rootId !== journalRoot) {
         journal?.flush();
@@ -281,21 +300,13 @@ async function mainLoop(): Promise<void> {
       }
       journal?.observe(scopedActivityObservation(rootId, rootId, { tree: data.subagentTree, data }));
       data.notices = notices.observe(data, Date.now());
+      if (delegationCollector)
+        Object.assign(data, {
+          delegation: delegationCollector.scopeIsCurrent(cachedDelegationScope) ? delegationCollector.current() : null,
+        });
       renderToStdout(data, HUD_PANE_HEIGHT);
-      await delegationCollector?.afterPaint(
-        (committed) => {
-          Object.assign(data, { delegation: committed });
-          renderToStdout(data, HUD_PANE_HEIGHT);
-        },
-        collectionStartedAt,
-        publicationToken
-      );
-      const fullDelegationMs = delegationCollector?.publicationStats().fullTickMs ?? 0;
-      if (fullDelegationMs > 50)
-        hudStatus.health.fail(
-          'tree',
-          fullDelegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms'
-        );
+      if (delegationCollector?.scopeIsCurrent(cachedDelegationScope))
+        delegationCollector.painted(data.delegation ?? null);
       // Notifications and the state file run on the collection tick, not on
       // the repaint a status refresh triggers.
       notifier.update(data);
@@ -312,7 +323,7 @@ async function mainLoop(): Promise<void> {
           succeeded: !data.stale && data.health?.sessionBound === true,
         });
     } catch (error) {
-      delegationCollector?.abandonCollection();
+      delegationCollector?.abandonLegacySlice();
       wakeCollection();
       hudStatus.health.fail('status', error);
       console.error('Render error:', error);
@@ -328,7 +339,11 @@ function repaintCached(): void {
     return;
   }
   try {
+    if (delegationCollector && delegationCollector.scopeIsCurrent(cachedDelegationScope))
+      Object.assign(cachedHudData, { delegation: delegationCollector.current() });
     renderToStdout(cachedHudData, HUD_PANE_HEIGHT);
+    if (delegationCollector?.scopeIsCurrent(cachedDelegationScope))
+      delegationCollector?.painted(cachedHudData.delegation ?? null);
   } catch {
     // between-collection repaints are best-effort
   }
@@ -337,9 +352,10 @@ function repaintCached(): void {
 /**
  * Handle graceful shutdown
  */
-function shutdown(): void {
+async function shutdown(): Promise<void> {
+  if (!isRunning) return;
   isRunning = false;
-  delegationCollector?.close();
+  const workerClose = delegationCollector?.close();
 
   // A snapshot of a HUD that is no longer running would read as live.
   snapshotWriter.remove();
@@ -353,6 +369,7 @@ function shutdown(): void {
   });
 
   cleanupRenderer();
+  await workerClose;
   process.exit(0);
 }
 
@@ -399,7 +416,12 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
   process.on('SIGHUP', shutdown);
   startProfiling('bar');
-  delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
+  delegationCollector = DelegationWorkerClient.open(process.env, getCodexHome(), {
+    onResult: () => {
+      if (delegationCollector?.scopeIsCurrent(cachedDelegationScope)) repaintCached();
+    },
+    onHealth: (reason) => hudStatus.health.fail('tree', reason),
+  });
   // Started again, the bar reads only what each rollout gained since it last saved its scan.
   useTreeScanStore(new TreeScanStore(path.join(getHudHome(), 'scan')));
 
@@ -418,8 +440,7 @@ async function main(): Promise<void> {
     wakeCollection();
     try {
       const session = sessionFinder.check();
-      if (session && !delegationCollector?.collector.current())
-        void parseRolloutIfChanged(session.path).catch(() => {});
+      if (session && !delegationCollector) void parseRolloutIfChanged(session.path).catch(() => {});
     } catch {
       /* The next collection displays a failed read without an unhandled rejection. */
     }
@@ -438,7 +459,8 @@ async function main(): Promise<void> {
 }
 
 // Run main
-main().catch((error) => {
+main().catch(async (error) => {
   console.error('Fatal error:', error);
+  await delegationCollector?.close();
   process.exit(1);
 });

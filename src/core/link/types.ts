@@ -139,7 +139,15 @@ export interface LinkTreeProjection {
   coverage: Coverage;
 }
 
+/** Private lifecycle certificate from B9's existing metadata reachability walk; never part of the wire view. */
+export interface LinkScopeMembership {
+  readonly present: ReadonlySet<string>;
+  readonly complete: boolean;
+  readonly currentRuns: ReadonlyMap<string, LedgerReadRun | null>;
+}
+
 export interface LinkTreeInput {
+  onMembership?: (certificate: LinkScopeMembership) => void;
   ledger: LinkLedgerRead;
   roots: readonly DisplayNodeIdentity[];
   sessions: readonly CollectedLinkSession[];

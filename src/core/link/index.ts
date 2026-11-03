@@ -408,6 +408,29 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
     const session = sessions.get(key);
     if (identity.kind === 'session' && !topologyComplete(session)) unknownDescendants = true;
   }
+  input.onMembership?.({
+    present: new Set([...sessions.keys()].filter((key) => known.has(key))),
+    currentRuns: new Map([...sessions.keys()].map((key) => [key, runsByNode.get(key) ?? null])),
+    complete:
+      available &&
+      !overspent &&
+      known.size <= limits.maxNodes &&
+      conflicts.size === 0 &&
+      nodeConflicts.size === 0 &&
+      ![...deferred.values()].some((entry) => ['nodes', 'depth', 'bytes'].includes(entry.reason)) &&
+      [...known].every((key) => {
+        const identity = identities.get(key),
+          session = sessions.get(key);
+        return (
+          identity?.kind === 'delegationIntent' ||
+          !!(
+            session?.loaded &&
+            topologyComplete(session) &&
+            Object.values(session.topology!.coverage.skipped).every((count) => count === 0)
+          )
+        );
+      }),
+  });
   const knownOmitted = [...known].filter((key) => !nodeMap.has(key)).length;
   for (const node of nodes) {
     const parent = node.parentKey ? nodeMap.get(node.parentKey) : undefined;

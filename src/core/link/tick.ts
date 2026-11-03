@@ -1,8 +1,9 @@
 import { performance } from 'node:perf_hooks';
+import { projectDelegationFreshness } from './freshness.js';
 import { canonicalJson } from '../canonical.js';
 import { capacityProjection } from '../capacity.js';
 import type { LinkLedgerReader, LinkLedgerRead } from '../link-ledger-read.js';
-import { displayNodeKey, projectFreshness, observationStampMismatch } from '../observation.js';
+import { displayNodeKey, observationStampMismatch } from '../observation.js';
 import { mergeStatus, STATUS_RULE_VERSION, type MergeResult, type LedgerStatusFact } from '../status/merge.js';
 import type { DisplayNodeIdentity } from '../types/observation.js';
 import type { LedgerEvent } from '../types/execution.js';
@@ -15,7 +16,7 @@ import { planLinkRead } from './read-plan.js';
 import { reconcileDescriptor } from './actions.js';
 import { LinkProjectionMemo } from './memo.js';
 import type { LoadedLimits } from './limits.js';
-import type { CollectedLinkHost, CollectedLinkSession, LinkTreeProjection } from './types.js';
+import type { CollectedLinkHost, CollectedLinkSession, LinkTreeProjection, LinkScopeMembership } from './types.js';
 import type { DelegationViewModel, DelegationNodeDetails } from './view-model.js';
 
 export const LEDGER_SNAPSHOT_VALIDITY_MS = 5000;
@@ -26,6 +27,8 @@ export interface LinkCollectionPort {
   /** Explicit production mode can observe real native roots even before the first delegation. */
   readonly publishesObservations?: boolean;
   invalidateSnapshots?(): void;
+  reconcileMembership?(certificate: LinkScopeMembership, view: DelegationViewModel): readonly string[];
+  observeLedger?(ledger: LinkLedgerRead, observedAt: number | null): void;
   /** Stable evidence retained from previous ticks, with zero current-tick charges. */
   begin?(deadline: number): void;
   sessions(): readonly CollectedLinkSession[];
@@ -60,6 +63,9 @@ export interface LinkTickStats {
   ledgerReads: number;
   highWaterChecks: number;
   immediateMerges: number;
+  eligibleBacklog?: number;
+  oldestEligibleWaitMs?: number;
+  readGrant?: { key: string; kind: 'session' | 'native_topology'; waitMs: number };
 }
 
 /** One retained read-only data path for both entry points. Creation/opening belongs to startup. */
@@ -80,6 +86,8 @@ export class LinkTickCollector {
   private snapshotIndex = new Map<string, CollectedLinkSession>();
   private refKeys = new WeakMap<SessionRef, SessionRef & { key: string }>();
   private tree: LinkTreeProjection | null = null;
+  private membership: LinkScopeMembership | null = null;
+  private membershipMemo = -1;
   private view: DelegationViewModel | null = null;
   private lastAvailableView: DelegationViewModel | null = null;
   private lastAvailableScope = '';
@@ -88,6 +96,7 @@ export class LinkTickCollector {
   private freshnessView: DelegationViewModel | null = null;
   private selectionMap: Record<string, string> = {};
   private cursor: string | undefined;
+  private eligibleSince = new Map<string, number>();
   private mergeCursor: string | undefined;
   private immediate = new Map<string, { key: string; result: MergeResult }>();
   private lastStats: LinkTickStats = {
@@ -160,31 +169,9 @@ export class LinkTickCollector {
     if (nowMs < this.freshnessClock || nowMs >= this.nextFreshnessAt) this.port?.invalidateSnapshots?.();
     this.freshnessClock = nowMs;
     this.nextFreshnessAt = Infinity;
-    let changed = false;
-    const details: Record<string, DelegationNodeDetails> = {};
-    for (const [key, detail] of Object.entries(view.details)) {
-      const original = view.tree.nodes.find((node) => node.key === key)?.observation?.statusProjection;
-      if (detail.statusSource !== 'committed' || !original) {
-        details[key] = detail;
-        continue;
-      }
-      const freshness = projectFreshness(original.freshness.sources, original.freshness.requiredSourceIds, nowMs);
-      for (const source of original.freshness.sources)
-        if (source.deadlineAt !== null && source.deadlineAt >= nowMs)
-          this.nextFreshnessAt = Math.min(this.nextFreshnessAt, source.deadlineAt + 1);
-      if (
-        detail.status?.freshness.state === freshness.state &&
-        detail.status.freshness.reason === freshness.reason &&
-        detail.status.freshness.staleSince === freshness.staleSince &&
-        detail.status.freshness.clockAnomaly === freshness.clockAnomaly
-      )
-        details[key] = detail;
-      else {
-        details[key] = { ...detail, status: { ...original, freshness } };
-        changed = true;
-      }
-    }
-    this.freshnessView = changed ? { ...view, details } : view;
+    const result = projectDelegationFreshness(view, nowMs);
+    this.nextFreshnessAt = result.nextDeadline;
+    this.freshnessView = result.view;
     return this.freshnessView;
   }
 
@@ -299,6 +286,28 @@ export class LinkTickCollector {
       immediateMerges: 0,
     };
     const finish = () => {
+      if (
+        !projectionOnly &&
+        this.view &&
+        this.ledger.state === 'available' &&
+        this.membership &&
+        this.membershipMemo === this.memoKey
+      ) {
+        const retired = this.port?.reconcileMembership?.(this.membership, this.view) ?? [];
+        if (retired.length) {
+          for (const key of retired) {
+            this.snapshotIndex.delete(key);
+            this.immediate.delete(key);
+            this.eligibleSince.delete(key);
+          }
+          this.indexedSnapshot = this.launchSnapshot = null;
+          this.launchMessages = [];
+          this.launchFingerprint = '';
+          this.projectionMemo = new LinkProjectionMemo();
+          this.memoKey = -1;
+          this.membership = null;
+        }
+      }
       stats.totalMs = performance.now() - started;
       stats.wiringMs = Math.max(0, stats.totalMs - stats.b9Ms);
       this.lastStats = stats;
@@ -382,7 +391,10 @@ export class LinkTickCollector {
       this.view = null;
       return finish();
     }
-    if (!projectionOnly) this.port?.begin?.(deadline);
+    if (!projectionOnly) {
+      this.port?.observeLedger?.(this.ledger, this.ledgerObservedAt);
+      this.port?.begin?.(deadline);
+    }
     retained = input.sessions ?? this.port?.sessions() ?? [];
     if (!immutableSnapshots || retained !== this.indexedSnapshot) {
       this.snapshotIndex = new Map(retained.map((s) => [displayNodeKey({ kind: 'session', ref: s.evidence.ref }), s]));
@@ -397,8 +409,9 @@ export class LinkTickCollector {
       for (const node of this.tree?.nodes ?? [])
         if (node.identity.kind === 'session' && node.crossHarnessDepth <= (input.budget?.maxCrossHarnessDepth ?? 4))
           refs.set(this.referenceKey(node.identity.ref), node.identity.ref);
+      const retainedOrder = [...refs].slice(0, Math.min(200, input.budget?.maxNodes ?? 200));
       const eligible = [];
-      for (const [key, ref] of [...refs].slice(0, Math.min(200, input.budget?.maxNodes ?? 200))) {
+      for (const [key, ref] of retainedOrder) {
         const kind = this.port.pending(ref, key);
         if (kind)
           eligible.push({
@@ -407,10 +420,16 @@ export class LinkTickCollector {
             reason: kind === 'session' ? 'unloaded' : 'native_topology',
           });
       }
+      const eligibleKeys = new Set(eligible.map((entry) => entry.key));
+      const fairnessNow = performance.now();
+      for (const key of this.eligibleSince.keys()) if (!eligibleKeys.has(key)) this.eligibleSince.delete(key);
+      for (const key of eligibleKeys) if (!this.eligibleSince.has(key)) this.eligibleSince.set(key, fairnessNow);
+      stats.eligibleBacklog = eligible.length;
+      stats.oldestEligibleWaitMs = Math.max(0, ...[...this.eligibleSince.values()].map((at) => fairnessNow - at));
       const charged = retained.reduce((sum, s) => sum + s.bytesRead + (s.topology?.bytesRead ?? 0), 0);
       const schedulingTree = {
         ...this.tree,
-        nodes: eligible.map((e) => ({ key: e.key })),
+        nodes: retainedOrder.map(([key]) => ({ key })),
         continuation: eligible,
         io: { remainingBytes: Math.max(0, maxBytes - charged), exceeded: charged > maxBytes },
       } as LinkTreeProjection;
@@ -423,6 +442,12 @@ export class LinkTickCollector {
         didCollect = true;
         unique = new Map(unique);
         this.cursor = plan.nextCursor;
+        stats.readGrant = {
+          key: plan.target.key,
+          kind: plan.target.kind,
+          waitMs: fairnessNow - (this.eligibleSince.get(plan.target.key) ?? fairnessNow),
+        };
+        this.eligibleSince.set(plan.target.key, fairnessNow);
         const read = await this.port.collect(plan.target.ref, plan.target.kind, plan.budget);
         if (read) {
           const previous = unique.get(plan.target.key);
@@ -487,6 +512,9 @@ export class LinkTickCollector {
     if (memo !== this.memoKey) {
       b9Start = performance.now();
       this.tree = projectLinkTree({
+        onMembership: (certificate) => {
+          this.membership = certificate;
+        },
         ledger: this.ledger,
         roots: input.roots,
         sessions,
@@ -506,6 +534,7 @@ export class LinkTickCollector {
       stats.projected = true;
       this.selectionMap = this.tree.selectionMap;
       this.memoKey = keyOf();
+      this.membershipMemo = this.memoKey;
       this.view = {
         tree: this.tree,
         capacity:

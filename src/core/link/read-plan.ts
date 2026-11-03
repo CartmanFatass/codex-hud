@@ -29,8 +29,16 @@ export function planLinkRead(
       ['unloaded', 'native_topology'].includes(entry.reason)
   );
   if (!eligible.length) return { target: null, reason: 'no_eligible_target', nextCursor: input.afterKey ?? null };
-  const previous = eligible.findIndex((entry) => entry.key === input.afterKey);
-  const entry = eligible[(previous + 1) % eligible.length];
+  const eligibleByKey = new Map(eligible.map((entry) => [entry.key, entry]));
+  const previous = tree.nodes.findIndex((entry) => entry.key === input.afterKey);
+  let entry = eligible[0];
+  for (let i = 1; i <= tree.nodes.length; i++) {
+    const candidate = eligibleByKey.get(tree.nodes[(previous + i) % tree.nodes.length].key);
+    if (candidate) {
+      entry = candidate;
+      break;
+    }
+  }
   const minimum = input.minimumBytes?.get(entry.key) ?? 1;
   if (!Number.isSafeInteger(minimum) || minimum < 1 || minimum > tree.io.remainingBytes || minimum > 4 * 1024 * 1024)
     return { target: null, reason: 'bytes', nextCursor: input.afterKey ?? null };
