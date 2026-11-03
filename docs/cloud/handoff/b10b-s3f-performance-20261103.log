@@ -1,0 +1,186 @@
+=== RUN 1 ===
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.105ms p95=0.262ms p99=0.593ms max=1.082ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.347ms p95=0.762ms p99=1.128ms max=1.842ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.624ms p95=1.084ms p99=1.444ms max=3.626ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.093ms p95=0.219ms p99=0.488ms max=1.462ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.386ms p95=0.704ms p99=1.377ms max=3.291ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.808ms p95=1.259ms p99=1.576ms max=2.387ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.409ms p95=2.493ms p99=11.257ms max=23.675ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.209ms p95=2.574ms p99=12.015ms max=19.366ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.080ms p95=7.752ms p99=11.443ms max=17.113ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=2.844ms p95=4.511ms p99=15.672ms max=23.610ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.813ms p95=2.717ms p99=15.493ms max=23.151ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.598ms p95=8.306ms p99=10.555ms max=15.763ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.689ms p95=1.130ms p99=1.446ms max=4.222ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=2.838ms p95=9.140ms p99=12.800ms max=22.198ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.810ms p95=1.378ms p99=1.898ms max=2.641ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.219ms p95=9.070ms p99=14.535ms max=27.409ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (3386.750356ms)
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (22655.248547ms)
+✖ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (28499.691586ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (21698.380811ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 2
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 76439.912551
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b10b-s3-perf.test.js:158:1
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (22655.248547ms)
+  AssertionError [ERR_ASSERTION]: changed p99 11.257 ms
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b10b-s3-perf.test.js:163:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/b10b-s3-perf.test.js:165:1
+✖ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (28499.691586ms)
+  AssertionError [ERR_ASSERTION]: changed p99 15.672 ms
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b10b-s3-perf.test.js:170:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+=== EXIT 1 ===
+=== RUN 2 ===
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.094ms p95=0.234ms p99=0.514ms max=1.405ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.384ms p95=0.804ms p99=2.251ms max=2.954ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.657ms p95=1.172ms p99=2.629ms max=21.258ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.098ms p95=0.274ms p99=0.778ms max=3.299ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.418ms p95=0.904ms p99=1.954ms max=4.280ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.751ms p95=1.156ms p99=1.432ms max=9.786ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.314ms p95=2.781ms p99=11.076ms max=16.345ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.031ms p95=2.429ms p99=13.352ms max=22.617ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.260ms p95=8.273ms p99=12.366ms max=21.704ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.618ms p95=4.242ms p99=13.697ms max=17.357ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.243ms p95=3.266ms p99=12.849ms max=100.127ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.481ms p95=7.096ms p99=8.394ms max=13.168ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.591ms p95=1.007ms p99=1.415ms max=4.449ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.237ms p95=9.796ms p99=12.824ms max=22.014ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=1.429ms p95=2.089ms p99=3.357ms max=6.115ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.034ms p95=8.362ms p99=10.893ms max=26.712ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (3645.969978ms)
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (21986.765289ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (23902.458526ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (22457.734669ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 72199.780961
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b10b-s3-perf.test.js:158:1
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (21986.765289ms)
+  AssertionError [ERR_ASSERTION]: changed p99 11.076 ms
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b10b-s3-perf.test.js:163:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+=== EXIT 1 ===
+=== RUN 3 ===
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.094ms p95=0.225ms p99=0.684ms max=1.048ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.341ms p95=0.633ms p99=0.867ms max=1.859ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.701ms p95=1.169ms p99=1.542ms max=5.413ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.164ms p95=0.258ms p99=0.418ms max=0.998ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.426ms p95=0.785ms p99=1.546ms max=5.324ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=1.016ms p95=1.524ms p99=2.018ms max=3.648ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.818ms p95=3.158ms p99=14.706ms max=34.181ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.797ms p95=2.555ms p99=16.029ms max=23.026ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=3.105ms p95=10.624ms p99=14.227ms max=36.187ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=3.041ms p95=3.884ms p99=16.611ms max=21.627ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=2.408ms p95=6.577ms p99=19.743ms max=40.246ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=4.298ms p95=13.141ms p99=18.087ms max=43.760ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.916ms p95=1.300ms p99=3.270ms max=6.627ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.690ms p95=11.569ms p99=16.967ms max=23.999ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=1.236ms p95=1.651ms p99=2.082ms max=3.733ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.239ms p95=9.465ms p99=11.945ms max=21.851ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (3917.849667ms)
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (27280.732032ms)
+✖ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (34947.829202ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (23944.642872ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 2
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 90246.090319
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b10b-s3-perf.test.js:158:1
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (27280.732032ms)
+  AssertionError [ERR_ASSERTION]: changed p99 14.706 ms
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b10b-s3-perf.test.js:163:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/b10b-s3-perf.test.js:165:1
+✖ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (34947.829202ms)
+  AssertionError [ERR_ASSERTION]: changed p99 16.611 ms
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b10b-s3-perf.test.js:170:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+=== EXIT 1 ===
