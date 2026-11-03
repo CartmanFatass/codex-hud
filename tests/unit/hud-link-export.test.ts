@@ -45,17 +45,6 @@ async function invoke(args: readonly string[], home: string) {
   return { status, stdout: stdout.join(''), stderr: stderr.join(''), writes: stdout.length };
 }
 
-// Node 22 prints this notice once when a process first loads node:sqlite; Node 24 does not. It is
-// the runtime's line, not hud's, so on Node 22 only, exactly one copy of exactly this warning is
-// removed from a launched process's stderr. Any other text, a second copy, any other warning, or
-// this text on a runtime that does not print it still fails.
-const NODE_PRINTS_SQLITE_WARNING = Number(process.versions.node.split('.')[0]) === 22;
-const SQLITE_EXPERIMENTAL_WARNING =
-  /^\(node:\d+\) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(?:\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\n)?/m;
-function hudStderr(stderr: string): string {
-  return NODE_PRINTS_SQLITE_WARNING ? stderr.replace(SQLITE_EXPERIMENTAL_WARNING, '') : stderr;
-}
-
 function child(args: readonly string[], home: string, env: NodeJS.ProcessEnv = {}) {
   const result = spawnSync(process.execPath, [entry, ...args], {
     env: { ...process.env, HUD_HOME: home, ...env },
@@ -65,7 +54,7 @@ function child(args: readonly string[], home: string, env: NodeJS.ProcessEnv = {
   });
   assert.ifError(result.error);
   assert.equal(result.signal, null);
-  return { ...result, stderr: hudStderr(result.stderr) };
+  return result;
 }
 
 test('hud help and strict argument refusals never access or create a ledger', async () => {
@@ -257,7 +246,7 @@ test('hud reports asynchronous stdout failures for export and help without Node 
         assert.equal(actual.signal, null);
         assert.equal(actual.status, 1);
         assert.equal(actual.stdout, null);
-        assert.equal(hudStderr(actual.stderr), 'internal_or_output_failure\n');
+        assert.equal(actual.stderr, 'internal_or_output_failure\n');
         assert.equal(readFileSync(outputPath, 'utf8'), 'synthetic unchanged output');
       }
     } finally {
@@ -279,7 +268,7 @@ test('hud reports asynchronous stdout failures for export and help without Node 
       assert.equal(signal, null);
       assert.equal(status, 1);
       assert.equal(stdout, '');
-      assert.equal(hudStderr(stderr), 'internal_or_output_failure\n');
+      assert.equal(stderr, 'internal_or_output_failure\n');
     }
   } finally {
     await fixture.cleanup();
@@ -422,5 +411,62 @@ test('hud defaults to ~/.hud only inside an isolated synthetic HOME', { skip }, 
     assert.equal(decoded.value.ledgerId, fixture.ledger.ledgerId);
   } finally {
     await fixture.cleanup();
+  }
+});
+
+test('hud export leaves fresh-process raw stderr free of SQLite initialization warnings', { skip }, async () => {
+  const fixture = await exportFixture(golden.records);
+  try {
+    const result = child(command, fixture.home);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, '');
+    assert.ok(decodeDelegationExport(result.stdout).ok);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('ledger initialization restores emitWarning and preserves unrelated warnings', { skip }, () => {
+  const home = mkdtempSync(join(tmpdir(), 'hud-warning-'));
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+      import assert from 'node:assert/strict';
+      import { loadLedgerSqlite } from './dist/ledger/runtime.js';
+      import Module from 'node:module';
+      const emit = process.emitWarning;
+      const load = Module._load;
+      Module._load = function(request, ...args) {
+        if (request === 'node:sqlite') throw new Error('synthetic initialization failure');
+        return load.call(this, request, ...args);
+      };
+      await assert.rejects(loadLedgerSqlite(), /requires unflagged node:sqlite/);
+      assert.equal(process.emitWarning, emit);
+      Module._load = function(request, ...args) {
+        if (request === 'node:sqlite') process.emitWarning('synthetic loader warning mentioning SQLite', 'SyntheticWarning');
+        return load.call(this, request, ...args);
+      };
+      await Promise.all([loadLedgerSqlite(), loadLedgerSqlite()]);
+      assert.equal(process.emitWarning, emit);
+      process.emitWarning('synthetic unrelated warning', 'SyntheticWarning');
+    `,
+      ],
+      {
+        env: { ...process.env, HOME: home, HUD_HOME: home, NODE_NO_WARNINGS: '', NODE_OPTIONS: '' },
+        encoding: 'utf8',
+        timeout: 10_000,
+      }
+    );
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /SyntheticWarning: synthetic unrelated warning/);
+    assert.match(result.stderr, /SyntheticWarning: synthetic loader warning mentioning SQLite/);
+    assert.doesNotMatch(result.stderr, /ExperimentalWarning/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 });

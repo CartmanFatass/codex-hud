@@ -1,4 +1,4 @@
-import { once } from 'node:events';
+import { ProcessClient } from '../int/process-client.js';
 import test from 'node:test';
 import { performance } from 'node:perf_hooks';
 import assert from 'node:assert/strict';
@@ -442,34 +442,14 @@ test(
       const child = fork(path.resolve('tests/int/b12r-process.mjs'), [], {
         stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
       });
-      t.after(async () => {
-        if (child.exitCode === null && child.signalCode === null) {
-          child.kill('SIGKILL');
-          await once(child, 'exit');
-        }
-      });
-      let id = 0;
-      const rpc = (op: string, fields: Record<string, unknown> = {}) =>
-        new Promise<any>((resolve, reject) => {
-          const request = ++id;
-          const handler = (m: any) => {
-            if (m.id !== request) return;
-            child.off('message', handler);
-            m.error ? reject(Error(m.error)) : resolve(m.result);
-          };
-          child.on('message', handler);
-          child.send({ id: request, op, ...fields });
-        });
+      const client = new ProcessClient(child, 'b12r-process');
+      t.after(() => client.kill());
+      const rpc = (op: string, fields: Record<string, unknown> = {}) => client.call(op, fields);
       await rpc('open', { options: { hudHome: f.root, sourceId: REF.sourceId }, now: NOW });
       const lease = await rpc('acquire', { ref: REF, holder: 'rebuild' });
       const c = rebuild(lease.generation);
-      const reached = new Promise<void>((resolve) =>
-        child.on('message', (m: any) => {
-          if (m.point === cut) resolve();
-        })
-      );
-      child.send({
-        id: ++id,
+      const reached = client.point(cut);
+      client.send({
         op: 'publish',
         crash: cut,
         lease,
@@ -481,8 +461,7 @@ test(
         },
       });
       await reached;
-      child.kill('SIGKILL');
-      await once(child, 'exit');
+      await client.kill();
       const reopened = await f.open();
       const inspect = new DatabaseSync(file);
       try {
