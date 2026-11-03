@@ -7,7 +7,7 @@ your answer as text (the orchestrator saves it to `docs/cloud/rulings/b10d-route
 
 - B10D report `docs/handoff/b10d/report.md` (NOT ACCEPTED), its final review
   `oracle-review-2.md`, design rulings `oracle-1.md` and the §13–§18 follow-ups, and the measurements
-  `performance-delivery.json` (all in `docs/handoff/b10d/`).
+  `performance-summary.json` (all in `docs/handoff/b10d/`; the 45 MB raw file stayed local).
 - The approved route: `docs/reviews/2026-11-02-astra-b10c-worker.md`; contract 06 「增量 tick 验收」 with the
   「B10C 增补」 (three gates, resource limits); design §6.
 - Code: branch `b10d-worker` (uncommitted diff against `6fcf08a`).

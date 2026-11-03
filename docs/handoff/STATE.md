@@ -49,20 +49,44 @@ Rules for every merge:
 - B10A: data and tick wiring.
 - Earlier: batches 1–5, B13. See plan §1.
 
-**In progress, not accepted:** B10D, the observation worker, on branch `b10d-worker` (pushed as work in progress, NOT
-mergeable). Its implementer ran out of design latitude. The final review verdict is NOT ACCEPTED, for these reasons:
+**Stopped, not accepted:** B10D, the observation worker. Branch `b10d-worker`, commit `4f2c4ac`, pushed as frozen work
+in progress and NOT mergeable. It is based on `6fcf08a`, so merge `universal-hud` (`997c4ab` or later) into it before
+any further work. That merge also brings in B10B-s2, which the panel needs to paint delegation content.
 
-1. **Legacy collection.** The 20,000-header legacy collection, meaning the Codex subagent tree and file listing on the
-   main thread, costs about 85–132 ms per tick even on today's synchronous path. So the paint and operation gates
-   fail at that profile with or without the worker. The matched synchronous reference is in the B10D report.
-2. **Reader pinning.** Readers that cannot be proven evictable stay pinned, so legal trees can exhaust the 16-reader
-   cap and starve the rest.
-3. **Retirement recapture.** There is no evidence yet that owed retirement work recaptured after eviction makes
-   progress.
-4. **Panel content.** Panel delegation content still needs B10B-s2 merged into the B10D branch.
+The final Oracle verdict is NOT ACCEPTED. Evidence is in `docs/handoff/b10d/`:
+- `report.md`, which contains the Handoff section;
+- `oracle-1.md`, the design rulings §1–§19;
+- `oracle-review-1.md` and `oracle-review-2.md`;
+- `performance-summary.json`.
 
-The design question for the next Oracle is `docs/handoff/questions/B10D-route.md`. The B10D report, rulings and
-reviews are under `docs/handoff/b10d/`.
+What works:
+- Worker isolation. Store stalls of several seconds no longer block paint.
+- Legacy output stays byte-identical, with publication only in the worker and zero workers for CLI status/wait.
+- 156/156 focused integration tests pass, and the full checks pass.
+
+What fails, measured at n = 1000 per population on 200 nodes and 20,000 headers:
+
+1. **Legacy collection.** The Codex subagent tree and file listing run on the main thread and cost about 85–132 ms
+   per tick. This holds on today's synchronous path too: the matched synchronous reference already fails P-06-7 at this
+   profile.
+   - Bar paint p99 is 93–154 ms; bar operation p99 is 112–282 ms.
+   - Simultaneous mixed: bar paint p99 168 ms (max 212 ms), full operation p99 253 ms (bar) and 338 ms (panel).
+2. **Storage stalls.** A single `publishPrepared` call took 888 ms, giving an operation max of 1,184 ms. The worker
+   keeps paint unaffected, but the operation gate fails.
+3. **Liveness.**
+   - The 16 reader slots fill with checkpoint-only recoveries, which hold no native reader yet. Full fair traversal plus
+     the 15 s lease expiry can rebuild them repeatedly.
+   - Large shares of the new-checkpoint and mixed populations fail with `reader_slots_pinned`: 791–920 of 1000.
+   - The 30-minute paired soak's no-rescue drain left 166 of 200 targets unsettled after 5,000 operations.
+   - §18 also pins accepted history that cannot be proven evictable, such as approval pauses and ended turns.
+4. **Retirement recapture.** Progress evidence is still missing.
+
+The Oracle's preferred next design (§19) is a one-use "next normal operation" continuation ticket. It needs the
+owner's explicit fairness exception, because a normal round can approach twice the operation opportunities. Admission
+and housekeeping tweaks alone are judged insufficient, and discard-and-reload is rejected.
+
+The route question for the next Oracle is `docs/handoff/questions/B10D-route.md`. It covers what to do with legacy
+collection, the reader cap against pinning, recapture, and whether and how B10D merges.
 
 **Ready for the next remote run:**
 
@@ -85,6 +109,8 @@ reviews are under `docs/handoff/b10d/`.
 - O1: the implementer-comparison B14 idle-cost runner. None of the three arms met the merge bar.
 - Whether to rename the real project names `shenlun` / `atlas-launch-sources` used in some tests.
 - Whether to rewrite git history to remove old private paths. Those commits are already public on `main`.
+- B10D fairness exception (§19 continuation ticket): approve, or choose another route after the Oracle's ruling on
+  `docs/handoff/questions/B10D-route.md`.
 - Statusline wiring: nothing calls the statusline renderer yet. Candidates are a `hud statusline` entry, or plan D3.
 
 ## Local only (needs the owner's machine)
