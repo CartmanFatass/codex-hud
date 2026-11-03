@@ -321,11 +321,13 @@ function leafSubtree(proj: NodeProjection): Subtree {
 }
 
 interface Memo {
+  tree: DelegationViewModel['tree'];
   details: DelegationViewModel['details'];
   capacity: DelegationViewModel['capacity'];
   result: DelegationProjection;
 }
-const memo = new WeakMap<DelegationViewModel['tree'], Memo>();
+/** Own only the current tuple; callers holding older frames keep their independent snapshots. */
+let memo: Memo | undefined;
 
 /**
  * Projects a view model. Cheap when nothing changed: the same tree, details
@@ -336,11 +338,16 @@ export function projectDelegation(
   vm: DelegationViewModel,
   cache: ProjectionCache = sharedProjectionCache
 ): DelegationProjection {
-  const hit = memo.get(vm.tree);
-  if (hit && hit.details === vm.details && hit.capacity === vm.capacity && cache === sharedProjectionCache)
+  const hit = memo;
+  if (
+    cache === sharedProjectionCache &&
+    hit?.tree === vm.tree &&
+    hit.details === vm.details &&
+    hit.capacity === vm.capacity
+  )
     return hit.result.vm === vm ? hit.result : { ...hit.result, vm };
   const result = buildProjection_(vm, cache);
-  if (cache === sharedProjectionCache) memo.set(vm.tree, { details: vm.details, capacity: vm.capacity, result });
+  if (cache === sharedProjectionCache) memo = { tree: vm.tree, details: vm.details, capacity: vm.capacity, result };
   return result;
 }
 
