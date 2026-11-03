@@ -2,9 +2,9 @@
 
 Date: 2026-11-03. Tier M, shared control-plane correctness and measurement. Intended path: `docs/cloud/P065-BUDGET.md`.
 
-**Status: contract fork resolved; scope and branch/worktree ownership RELEASED on base `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; mutating/compute work HOLD pending explicit NEXT lease return and dispatcher resource assignment.** The owner approved the preparation-inclusive budget interpretation. Under the owner's delegated decision authority, the [metadata-exception ruling](rulings/p065-metadata-exception.md) approves the precise fixed private-store metadata exception and closes section 8's architecture fork. This document synchronizes that approved decision; it does not establish implementation acceptance or change the queue. Section 12 records the archived [scheduling/ownership release](rulings/p065-budget-release.md) and its remaining resource-admission condition; no implementation, acceptance or merge is claimed.
+**Status: scope and ownership remain released on base `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; candidate 2 is frozen WIP pending documentary recording and explicit dispatcher admission under the wave-1 resource-window ruling.** The owner approved the preparation-inclusive budget interpretation. Under the owner's delegated decision authority, the [metadata-exception ruling](rulings/p065-metadata-exception.md) approves the precise fixed private-store metadata exception and closes section 8's architecture fork. This document synchronizes that approved decision; it does not establish implementation acceptance or change the queue. Section 12 records the scheduling release and current frozen-candidate disposition from the corrected [six-design ruling](rulings/p065-six-design-dispositions.md). Its six questions are resolved, but no compute window, implementation acceptance, qualification or merge is granted.
 
-The original brief was a read-only consultation. This 2026-11-03 synchronization records only the approved documentation amendments. No source/test implementation, build, probe, capability promotion or local-only qualification is claimed.
+The original brief was a read-only consultation. This 2026-11-03 synchronization records only the approved documentation amendments. This documentary synchronization claims no source/test execution, capability promotion or local-only qualification; candidate 2 remains unaccepted WIP.
 
 ## 1. Authority, inspected base and binding inputs
 
@@ -19,6 +19,7 @@ Read these binding inputs before any later implementation:
 - `docs/handoff/questions/P-06-5.md`, `docs/cloud/rulings/p-06-5.md`, and `docs/reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md`.
 - Contract 01's current-source/generation and narrow local-user authority rules; contract 02's authorization → canonical replay → new-intent admission order, external-preparation rule, immutable ledger identity and execution-ticket semantics; contract 03's resume/cancel/wait rules; contract 04's typed writer/manager boundaries; contract 05's capability evidence and trusted startup preflight rules; contract 06 P-06-4/5/6, T-06-14 and measurement protocol; contract 07's public evidence/privacy boundaries.
 - `docs/universal-hud-concept.md` §15. Preserve all unrelated decisions.
+- The corrected [six-design ruling](rulings/p065-six-design-dispositions.md), [replay/expiry/clock ruling](rulings/p065-replay-expiry-clock.md), and [wave-1 resource windows](rulings/wave1-resource-windows-20261103.md). The six-design ruling supplies the approved qualification-composition amendment and status/wait applicability clarification below; it grants no compute lease.
 - The source and tests enumerated below, plus the active HYG2, RUNZ1, B10B-S3F and B10B-S3F-PERF briefs and the B10D route ruling.
 
 Current implementation facts verified at the pinned base:
@@ -52,7 +53,7 @@ Production files:
 - `src/ledger/intents.ts`: preserve authorization/replay/admission order; use the original budget for intent acceptance and optional rejection auditing; support truthful replay/committed-result handling.
 - `src/ledger/handshake.ts`: same-budget handshake/report commits and unchanged binding/claim/report authorization.
 - `src/ledger/reconcile.ts`: optional shared budget through the MCP cancel's reconciliation and cancel-intent transactions; unrelated reconciliation semantics unchanged.
-- `src/ledger/local-manager.ts`: only the additive original-store binding and fixed local acceptance revalidation approved in the [metadata-exception ruling](rulings/p065-metadata-exception.md) §§3–4 and 6. **Mutating/compute work remains held until section 12's explicit lease-return and dispatcher-assignment condition is met.** Preserve existing `check(actor?)` behavior for excluded shared callers; no global weakening, repinning, caching, poisoning or sidecar-policy migration.
+- `src/ledger/local-manager.ts`: only the additive original-store binding and fixed local acceptance revalidation approved in the [metadata-exception ruling](rulings/p065-metadata-exception.md) §§3–4 and 6. **Candidate 2 mutating/compute work remains held until section 12's current recording and explicit dispatcher-admission conditions are met.** Preserve existing `check(actor?)` behavior for excluded shared callers; no global weakening, repinning, caching, poisoning or sidecar-policy migration.
 - `packages/hud-mcp/src/server.ts`: establish/carry the budget at the existing or earlier request boundary; retain the full-response measurement boundary and external result shapes.
 - `packages/hud-mcp/src/resolvers.ts` and `packages/hud-mcp/src/hook/resolve.ts`: internal budget checks/accounting around existing per-call bounded evidence work, with no change to identity eligibility, hook producer behavior or source selection.
 - `packages/hud-mcp/src/delegation.ts`, `packages/hud-mcp/src/handshake.ts`, `packages/hud-mcp/src/read-control.ts`: carry the same budget and maintain post-commit protections.
@@ -129,6 +130,28 @@ An expired call must never be converted to the numeric `0` low-level convention 
 - Wait retains its existing wait/client deadline and separately reported upfront cost. Status and wait remain read-only. Do not force a 30 ms write transaction into either path.
 - Durable accepted → started/bound/ready, executor ticket checks, cancellation execution and post-acceptance recovery keep their existing independent lifecycle semantics. A late accepted response does not create a second execution authorization.
 
+### Cold CLI disposition (six-design ruling §3)
+
+**The current imports remain charged.** hud.ts captures the resume budget before privateHome; run.ts then parses the request, loads config, opens the bound store, dynamically imports the independently built delegation module and performs target/executable preparation. Those operations occur inside this request's original clock. A cold import that crosses the deadline must stop further uncommitted acceptance at the next required checkpoint, complete mandatory cleanup, and retain its failed numerical sample. If COMMIT already succeeded, preserve its truth instead of manufacturing refusal.
+
+Genuine reusable process/module initialization may precede request handling and be measured separately. It must actually be initialization, independent of this request's target, home/config contents, current source/authority and admission work. Moving a resume-selected lazy import or await above a newly sampled timestamp does not qualify. Benchmark-only prewarming, priming module caches without reporting first use, or timing only resumeLocal is prohibited.
+
+A real startup restructuring within owned paths can be considered as implementation, but must preserve the original request boundary and report cold process launch, module initialization, first command/tool and warm calls separately. It cannot conceal a slow first request or load the whole HUD graph into MCP against P-06-6. Request-specific config/store/gate/target/executable work remains charged even if a helper is named startup. Any excluded entry/build-file change needs a separate ownership disposition.
+
+Tests must cover the actual compiled CLI-to-MCP module graphs in a fresh process, a warmed comparison, slow module/preparation completion, unchanged original budget/binding propagation and zero new acceptance after expiry. A warm semantic seam is not evidence that the cold production path meets 30 ms.
+
+### Status/wait applicability (six-design ruling §6)
+
+**Choose preservation of existing read behavior, not a new 30 ms refusal.** Base delegation.ts returns status and enters wait before constructing the B5 write deadline. P065 §4 specifically defines the write/authorization budget and separately preserves wait/client timing and read-only behavior. The original source/security predicates are still mandatory, but this package does not turn every read into a newly deadline-failing B5 operation.
+
+The candidate's unconditional server.ts:118–120 source budget checks, the budget passed into source/hook resolver checks for these tools, delegation.ts:177 entry check and :185 status-completion check therefore need narrowing. Fix every layer, not only the final status check. For status/wait, preserve the original receipt timestamp and use non-enforcing timing observation; do not supply an expiring P065 write budget to their source or read-authority path. No public argument/config knob selects enforcement. Tool classification is trusted internal dispatch. Write-capable spawn/resume/cancel/whoami/report retain the same original 30 ms clock before source resolution, even when that particular call ultimately refuses or replays.
+
+Status still has the complete receipt-to-serialization/flush p95<50 ms gate. A valid 35 ms status is not newly rejected as P065 busy merely for exceeding 30 ms. A slow status still counts against its applicable response distribution and cannot be hidden by fast refusals. Wait retains its original client/request deadline, response margin, cancellation/EOF/shutdown behavior and upfront-cost reporting; source/read work consumes that original elapsed time, not a later reset. Neither tool adds root registration, last_seen, audit, metadata guard or other ledger writes. Keep existing independent bounded source-search/freshness limits and all current identity/captured-generation checks.
+
+Record P-06-5 as not applicable to status/wait's read-only path, rather than manufacturing a successful write-budget sample or treating a legitimate long poll as a 30 ms failure. This is an applicability clarification preserving existing behavior, not an exemption for write tools or a relaxation of P-06-4.
+
+Add deterministic paired tests: valid slow source/read authorization above 30 ms does not create the new refusal for status or wait; invalid/stale/native-child source still refuses; the same preparation delay for each write-capable dispatch prevents further new authorization/admission; status/wait make zero ledger writes; wait retains its original elapsed/client deadline and cancellation responsiveness. Measure real status flush latency and separately reported wait upfront cost. Revert the candidate's new read-only checks as a behavioral control where useful, without weakening any source predicate.
+
 ## 5. Transaction admission and committed truth
 
 Carry the original budget object through the final transaction. A wrapper checking only before calling `acceptIntent` is insufficient.
@@ -146,6 +169,24 @@ A COMMIT error with uncertain outcome must not be coerced into a clean budget re
 Optional rejection audit shares the original remaining budget. Do not start another audit transaction after budget exhaustion, local-store-proof failure or uncertain COMMIT. Proof failure invalidates the local binding for later local admissions, suppresses a separate rejection audit and permits only necessary rollback/connection cleanup, not repinning or automatic retry. An otherwise eligible local business-refusal audit uses the same bound store and a fresh post-acquisition metadata pass in its separate transaction; proof failure there also suppresses the audit without replacing the primary refusal. Do not close an actively used shared connection inside its callback. Expiry alone does not invalidate a safe store. Post-commit optional advice/status/hint/diagnostic failure must not falsify an already durable requested outcome. The exact failure classification and cleanup boundaries are binding in the [metadata-exception ruling](rulings/p065-metadata-exception.md) §4.
 
 Do not use Promise.race to return busy while an abandoned write can later commit. In-flight uninterruptible work and mandatory cleanup may overrun; retain and report that evidence rather than hiding it behind an early response.
+
+### Durable-result marker disposition (six-design ruling §1)
+
+The following records the approved decision for the inspected frozen candidate 2, not proof that its implementation or tests pass:
+
+**Adopt the inspected approach for these exact paths:**
+
+- acceptIntent: current source/context/owner authorization and, where applicable, the original bound-store guard precede canonical owner/key/version/digest lookup. The returned outcome and link/run IDs are from the prior durable record. Fresh expectedRun/capacity/capability admission remains after lookup.
+- commitHandshake: the currently authorized, unrevoked binding is already persisted for the same caller/context/generation and current run. The existing claim, independent launch/session, captured-version and ownership checks still run. Slot repair, binding creation or remapping is new transactional work and cannot use this exception.
+- requestCancel: after current authorization and snapshot comparison, a nonterminal run already has a persisted cancelRequestedAt. Return that original fact without a second cancellation intent. The terminal/no-new-acceptance path is not silently promoted into this marker.
+
+The commitCompared wrapper's re-marking of the exact wrapper result is acceptable: it preserves the same independently durable inner fact and rechecks that no preceding transaction mutation occurred. It is not an additional generic recovery path. report has no canonical request key and gains no marker-based deduplication or automatic resubmission.
+
+Candidate transaction.ts:65–79 records total_changes at transaction-object creation and rejects marking after counted DML, including writes through get/all RETURNING. This is a useful conservative guard. It does not establish that a read came from an earlier committed operation, cover arbitrary schema/connection-state changes, or prove that authority is independent of rolled-back writes. The trusted, audited call sites establish those facts. Do not advertise this as a general SQL mutation detector or allow arbitrary future callbacks to declare ok:true durable. No schema/PRAGMA changes or new marker call sites are authorized by this decision.
+
+Candidate ledger.ts:94–145 recognizes the marker only after synchronousResult successfully returns the exact marked result, then rolls the current transaction back. That matches the earlier ruling. A callback exception, including undefined/null/false/0/empty-string throws, a thenable, or a different returned object must not be rescued. Incidental writes after a genuinely eligible marker may be rolled back, but cannot create the returned authority or alter the historical result. Mandatory cleanup must finish or the unusable connection must be isolated before returning it; queued work must never reuse a dirty transaction. No replay dispatch, new ticket, rejection audit or hint for rolled-back work follows.
+
+Required verification remains behavioral and uses real SQLite: all three positive call sites across expiry; canonical old-key replay after currentRun advances; stale/revoked source and failed store proof before replay; slot repair/remap as fresh work; counted writes through run/get/all before marking; marker followed by falsy throw, thenable or a different return; incidental rollback and cleanup failure with isolation; zero duplicate acceptance/report/cancel/launch/hint. Keep the existing independent late-COMMIT and uncertain-COMMIT controls. These requirements are not a claim that candidate 2 already supplies every case.
 
 ## 6. Internal timing seam and diagnostics
 
@@ -195,6 +236,12 @@ Keep all fourteen deterministic cases and the complete real-clock matrix in P065
 11. For each new behavior provide an old-tree failure or narrowly reverted behavioral negative control. Deleting a new symbol and observing an import failure is insufficient. At minimum revert original-gate propagation, post-acquisition observation, post-gate expiry, and unsafe-audit suppression independently.
 
 
+### Forced-overrun safety controls (six-design ruling §4)
+
+Predeclare operational performance populations and test-only forced-overrun safety controls before execution. Every measured interval and every failed numerical bound remains in the raw evidence, including deliberately induced callback/COMMIT stalls. A forced-overrun control may pass only its declared safety, rollback, committed-truth and no-duplicate-action assertions; it does not pass the 30 ms bound and does not contribute a successful latency sample. P065's operational numerical qualification is evaluated over the complete predeclared operational populations. Acceptance additionally requires all prescribed forced-overrun controls to complete with their expected semantics. The inclusive all-samples numerical result remains false whenever any applicable sample exceeds its bound. Never report an unqualified all-samples performance pass.
+
+The complete permitted injection boundary, output flags and operational exclusions are in section 9 and the corrected ruling §4. All fourteen cases and eleven metadata precisions above remain required; status/wait paired controls follow section 4's applicability clarification.
+
 ## 8. Resolved local-gate contract fork
 
 **Resolved by the [metadata-exception ruling](rulings/p065-metadata-exception.md).** The earlier no-external-I/O rule conflicted with the existing post-acquisition private-store check. The approved decision deliberately amends that rule for exactly one fixed synchronous metadata pass, not for arbitrary filesystem work and not by claiming the existing implementation already complies. Historical F08, p-06-5.md and p065-budget-local-gate.md remain unchanged.
@@ -214,7 +261,7 @@ The ruling's §6 covers only the existing metadata operation for shared callers 
 
 The registry's lock-held reader.get()/process-content reads remain a separate unresolved startup-writer compliance issue. They are not covered merely because they share a closure with gate.check(); do not silently move/delete their authority checks or claim global lock-I/O compliance. A shared-helper/callsite policy change requires its own recorded ownership revision or separate migration.
 
-The architecture fork is closed and section 12's scheduling/ownership release is recorded. Code mutation and compute remain held pending explicit NEXT lease return and dispatcher resource assignment; read-only preparation does not wait for owner-run local tests.
+The architecture fork is closed and section 12's scheduling/ownership release is recorded. Candidate 2 mutation and compute remain held pending documentary recording and explicit dispatcher admission under wave1-resource-windows; read-only preparation does not wait for owner-run local tests.
 
 ## 9. Real-clock evidence and acceptance
 
@@ -232,9 +279,41 @@ Run at least three isolated measured series on each supported Node family, Node 
 
 These remote measurements are host-labeled design/implementation evidence, not formal WSL or real-Claude qualification. Real Claude same-call 150/50 evidence, real-harness/capability cells, Herdr/tmux and the full B14 supported-platform requirements stay local-only and unverified until the owner supplies applicable evidence. No synthetic pass upgrades a capability cell.
 
+### Synthetic H/R fixture disposition (six-design ruling §2)
+
+**Approve existing configured limits, for example maxActiveRuns=12 and maxActiveRunsPerOwner=12, in the synthetic fixture only.** The accepted configuration already supports these fields. This does not increase the production defaults of 6/4, bypass capacity checks, or turn the old comparator's concurrency_limit abort into success. Record the exact chosen limits for every population and preserve separate default-limit/capacity-refusal regressions.
+
+For this cloud driver, define the labels explicitly:
+
+- H is the number of independently registered, concurrently exercised synthetic MCP caller/server compositions. H=2 needs two real server/stream instances in the test composition, two valid registrations and current source/context premises, with both participating in the declared concurrent schedule. Merely issuing two IDs through one caller is insufficient. If both compositions live in one OS process, say so. Do not claim two actual harness processes.
+- R is the baseline active ledger-run load supplied to that experiment: 1 or 10 valid accepted, nonterminal runs, with matching slots, issued/armed claims, registered synthetic supervisor identities and real heartbeat CAS traffic. It is not ten fabricated rows or ten reported-but-unowned tasks.
+- Contract 06's formal H=actual loaded harnesses and R=actual active supervisor topology remains unchanged. The above is the brief's explicitly synthetic cloud workload surrogate, not P-06-1/B14 topology qualification.
+
+The proposed ten-run baseline is legal. Seed it through real acceptIntent and registerSupervisor APIs and exercise createHeartbeatWriter with each correct registered producer and monotonically valid facts. Existing visibly synthetic identity/process/capability fixture seams are allowed; they are not production evidence. Do not fabricate child_bindings, force-update state/slots, or use an unauthorized caller to make a benchmark cell succeed.
+
+Parent-operation compositions may share a verified logical owner/session if their separate current process/context evidence supports it. Sharing an owner does not create extra capacity or a second owner. Child whoami/report success populations require each participating child composition's own valid claim, run and current binding, established through the existing handshake path. A second child cannot reuse the first child's identity or binding. Parent identity does not authorize a child report.
+
+Foreground spawn/resume can add runs to the baseline: with two in-flight creations, R_baseline=10 can temporarily become 11 or 12. Record baseline, before/after/peak active counts and the foreground target IDs separately; never label every instant as exactly ten active runs. A previously terminal resume target is not part of the ten-active baseline. For status/cancel/whoami/report, use appropriately authorized targets within the declared population where possible. Restore the baseline between declared trials through valid terminal-evidence/reconciliation APIs or a separately disclosed fresh fixture, never by force-releasing slots or deleting live authority. Prevent unreported accumulation of accepted runs, historical rows or setup work from changing the workload.
+
+Fixture assertions must verify active counts, distinct slots/claims, matching registrations/heartbeat sequences, both H participants, current owner/source premises, and cross-child refusal. Record fixture/setup time separately without excluding per-request source or preparation. Heartbeat and actual writer-lock contention must use the same ledger SQLite file. Concurrent observation-store load must use its own already accepted observation store on the same measured filesystem/storage; it must not write observations into the ledger. Maintain production clocks, actual framed flush measurement, all attempts/outcomes, prescribed warmups/sample counts and three isolated series per Node family. A fixture precondition failure is incomplete evidence, not a busy/success sample or permission to weaken authority.
+
+### Operational qualification and forced-overrun controls (six-design ruling §4)
+
+Predeclare operational performance populations and test-only forced-overrun safety controls before execution. Every measured interval and every failed numerical bound remains in the raw evidence, including deliberately induced callback/COMMIT stalls. A forced-overrun control may pass only its declared safety, rollback, committed-truth and no-duplicate-action assertions; it does not pass the 30 ms bound and does not contribute a successful latency sample. P065's operational numerical qualification is evaluated over the complete predeclared operational populations. Acceptance additionally requires all prescribed forced-overrun controls to complete with their expected semantics. The inclusive all-samples numerical result remains false whenever any applicable sample exceeds its bound. Never report an unqualified all-samples performance pass.
+
+This deliberately supersedes only the reading that one inclusive Boolean must make correct forced-overrun negative controls indistinguishable from ordinary performance failure. It is an acceptance-composition amendment under the owner's delegated authority. Historical rulings, samples and failed reports are not rewritten.
+
+The exception is confined to test-only, predeclared synchronous delay/fault injection that deliberately forces the callback or COMMIT completion beyond its deadline, with the injection point, duration, affected call identities and expected outcome recorded before execution. Keep the real monotonic clock and real SQLite transaction/cleanup. Separate these controls from operational distributions and from each other when their semantics differ. Test-induced time is never subtracted from the recorded duration.
+
+It does not exempt naturally slow callbacks/COMMIT, cold or first-use imports, real source/config/metadata work, ordinary queued expiry, actual lock contention, heartbeat/observation-storage load, scheduler interference, refusal, busy, successful-late COMMIT or failed/uncompleted attempts in an operational population. Those remain operational numerical failures. A long lock is not automatically semantic-only: the ordinary contention path is still expected to stop attempting acceptance within the unchanged limits. No post-hoc relabeling of a slow call as injected is allowed. Isolate forced controls so they cannot silently contaminate another operational series.
+
+Emit at least three separately scoped results: operational numerical qualification, forced-control semantic completion, and inclusive all-samples numerical status. Also emit population completeness and every per-call numerical flag. If a legacy single overall-qualified Boolean is retained, it must remain false when the inclusive numerical status is false; it cannot conceal the distinction. A separately named acceptance-check result may combine complete operational qualification with successful prescribed fault semantics, with its scope explicit. A driver may exit successfully for that correctly implemented expected-fault test bank, but must fail for any operational gate failure, incomplete required population, unexpected fault semantics, undeclared injection or misclassified sample. Exit zero alone is never qualification evidence.
+
+All existing per-call 30 ms, cumulative 20 ms, busy_timeout=0, full-response p95<50 ms and applicable joint p95<150 ms gates remain unchanged. No required warmup, sample count, tool, workload, runtime or series is removed. Correct handling of forced uncertainty still never authorizes a retry or duplicate dispatch.
+
 ## 10. Checks, timeouts and evidence locations
 
-The commands below are for implementation after resource admission, not commands executed by this consultation. The [scheduling release](rulings/p065-budget-release.md) reserves `/workspace/shared/p065-budget` and branch `dots/p065-budget` from accepted integration base `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; materialization waits for explicit NEXT lease return and dispatcher assignment. Do not mix active unaccepted package code into it. Preserve all evidence on failure.
+The commands below are for implementation after resource admission, not commands executed by this consultation. The [scheduling release](rulings/p065-budget-release.md) reserves `/workspace/shared/p065-budget` and branch `dots/p065-budget` from accepted integration base `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; the current frozen candidate may resume only after documentary recording and explicit dispatcher admission under [wave1-resource-windows](rulings/wave1-resource-windows-20261103.md). Do not mix active unaccepted package code into it. Preserve all evidence on failure.
 
 Every command runs with temporary HOME, HUD_HOME, TMPDIR and synthetic source directories, never the user's real stores. Unset inherited harness/session/HERDR variables and NO_COLOR/FORCE_COLOR where the README requires. Keep runtime selection explicit and executable resolution correct before changing HOME. Own and clean child PIDs individually; never kill by name/pattern. Use separate temporary directories per command and retain raw stdout, stderr, exit code, source/runtime identity and duration. Timeout is a failed/incomplete stage, not a pass. Clean only the temporary resources this command created.
 
@@ -277,9 +356,30 @@ Dispatcher evidence paths:
 - `docs/cloud/handoff/p065-budget/summary-<runtime>-<run>.json`
 - `docs/cloud/handoff/p065-budget/negative-controls.md`
 - `docs/cloud/handoff/p065-budget/review-1.md` and subsequent distinct fix/re-check records.
-- `docs/cloud/rulings/p065-budget-local-gate.md` remains the historical fork report; `docs/cloud/rulings/p065-metadata-exception.md` is the approved resolution. `docs/cloud/rulings/p065-budget-release.md` is the archived scheduling/ownership release, with resource admission still pending explicit NEXT lease return and dispatcher assignment.
+- `docs/cloud/rulings/p065-budget-local-gate.md` remains the historical fork report; `docs/cloud/rulings/p065-metadata-exception.md` is the approved resolution. `docs/cloud/rulings/p065-budget-release.md` is the archived scheduling/ownership release, with current resource admission governed by [wave1-resource-windows](rulings/wave1-resource-windows-20261103.md) and the corrected [six-design ruling](rulings/p065-six-design-dispositions.md).
 
 Sanitize before publication. Keep synthetic source identities, full commands and byte/row counts, but exclude secrets, raw private filesystem paths and real user data. Preserve prior evidence rather than replacing an earlier failed report with a later successful one.
+
+### Evidence result composition (six-design ruling §4)
+
+Predeclare operational performance populations and test-only forced-overrun safety controls before execution. Every measured interval and every failed numerical bound remains in the raw evidence, including deliberately induced callback/COMMIT stalls. A forced-overrun control may pass only its declared safety, rollback, committed-truth and no-duplicate-action assertions; it does not pass the 30 ms bound and does not contribute a successful latency sample. P065's operational numerical qualification is evaluated over the complete predeclared operational populations. Acceptance additionally requires all prescribed forced-overrun controls to complete with their expected semantics. The inclusive all-samples numerical result remains false whenever any applicable sample exceeds its bound. Never report an unqualified all-samples performance pass.
+
+Use the population declarations, required result flags and narrow injection scope in section 9. Required commands and timeouts remain acceptance requirements, but are not authorization to re-attempt a known blocked operation.
+
+### Exact denied-operation scope (six-design ruling §5)
+
+The inspected logs establish specific earlier runtime failures:
+
+- HYG2 supplemental npm run test:mjs, source dced9114e9d15977fef07fa52c1a329a58dfa505: tests/unit/herdr-bridge.mjs fakeHerdr calls Node net.Server.listen on a fresh temporary hud-herdr-*/api.sock pathname. The operation returned EPERM, syscall listen, before the fake endpoint could serve the intended protocol assertions. The first detailed failure is lines 83–99 of docs/cloud/handoff/hyg2-fix-mjs-dispatcher-20261103.log on dots/hyg2.
+- RUNZ1 npm test, source 2eb08fbd091a44b77bbaa3761c68ae8b11688778: run-light-leader's exec-audit tests invoke tests/int/b3ar1-env-audit.py. Its freshly forked owned child calls libc.ptrace(PTRACE_TRACEME, 0, ...) and receives errno 1/Operation not permitted before the exec-stop audit. See part05 lines 657–671 and part06 lines 35–48 and 70–83. The later standalone test:mjs also records the Unix-path listen failure in part07 lines 66–82.
+
+These are actual OS-operation failures, not evidence that a reviewer denied the names npm test or herdr-bridge, and not proof that all spawning, pipes, SQLite, /proc reads, Unix-socket client operations or independent tests are forbidden. Missing CONFIG_PROC_CHILDREN and unrelated product/registration failures are separate blockers; do not collapse them into ptrace permission.
+
+At the current base, package.json expands npm test through test:unit, whose wildcard includes run-light-leader.test.js and its ptrace helper, then test:mjs, whose wildcard includes the listener tests. Therefore an unchanged aggregate would deliberately re-attempt known blocked operations. The dispatcher identifies prior executor contexts and has supplied no verified permission change. Historical failure does not prove a fresh measurement of current capability, but the absence of new evidence is not authority to probe again. Keep these aggregate stages blocked/unrun for P065, with the underlying operation and prior evidence named.
+
+Continue independently allowed exact focused stages after inspecting their dependency paths, under a later assigned lease. Do not alter aggregate scripts, skip assertions, substitute synthetic success or call those focused passes a full gate. Do not change socket paths, transport, tracing method, permissions, seccomp, sysctls, privileges or executor merely to evade a block. A genuinely separate sanctioned executor must have its own authorized scope and relevant capability evidence; the owner's successful WSL run is not assistant permission to use that machine or a P065 exact-tree result.
+
+Any reconsideration must first record materially new, relevant evidence for the exact operation/target and applicable executor. If an authorization denial is known not to have executed and that evidence addresses it, only the specifically permitted single retry may be considered; uncertain outcomes are checked first. Nothing in this ruling schedules or automatically performs such a retry. Owner-run exact-tree evidence may be requested through the existing workflow while permitted cloud work continues.
 
 ## 11. Ownership comparison, workflow and stop conditions
 
@@ -300,14 +400,14 @@ Final acceptance requires a fresh Oracle's accept verdict verifying the report, 
 
 ## 12. Separate release disposition
 
-**Disposition now: scope and branch/worktree ownership RELEASED; actual mutation/compute HOLD pending explicit NEXT lease return and dispatcher resource assignment.** The [scheduling/ownership ruling](rulings/p065-budget-release.md) supplies the separate release required by queue-progress and this brief. It does not claim implementation, acceptance, merge or green checks.
+**Disposition now: scope and branch/worktree ownership remain RELEASED; candidate 2 remains frozen WIP until documentary recording and explicit dispatcher admission under [wave1-resource-windows](rulings/wave1-resource-windows-20261103.md).** The [scheduling/ownership ruling](rulings/p065-budget-release.md) supplies the separate release required by queue-progress and this brief. It does not claim implementation, acceptance, merge or green checks.
 
 The release records completed contract/brief/status synchronization and reserves P065 as one bounded independent follow-on to the owner-approved wave-1 P-06-5 consultation:
 
 - Exact accepted integration base: `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; tree `03bd36610d46fd220eb9c0e4fbf153a52bc3c3b9`.
-- Reserved branch `dots/p065-budget` and dedicated cloud worktree `/workspace/shared/p065-budget`; reservation is not a claim that either has been created.
+- Reserved branch `dots/p065-budget` and dedicated cloud worktree `/workspace/shared/p065-budget`. The corrected six-design ruling inspected uncommitted candidate 2 on that branch, with thirty-file aggregate SHA-256 `ffbeda20c512181de5f7e49ecb6edc1adfd1440ffff4fcc2e54636161febd602`; the base commit is not a commit of this WIP candidate.
 - Exact production/test ownership is in ruling §§4–5, including the three bounded fixture additions; shared documentation remains serialized and dispatcher-owned per §6. No broader ownership is implied.
-- The current NEXT measurement lease must be explicitly returned and reassigned by the dispatcher before branch/worktree materialization, dependency installation, source/test mutation, builds, tests, benchmarks or negative-control execution. Read-only brief/source preparation may continue. A quiet snapshot, elapsed time or a passing run does not release the lease.
+- The original scheduling release required explicit NEXT lease return; subsequent admissions follow [wave1-resource-windows](rulings/wave1-resource-windows-20261103.md). The six-design decision itself grants no compute window. Candidate 2 remains frozen until documentary recording and a new explicit dispatcher admission; no automatic benchmark, aggregate, denied-publication or local-test restart follows. Preserve the separate publication blocker and check inventory. Read-only preparation may continue; elapsed time or a quiet snapshot is not admission.
 - Use the exact pin; do not import unaccepted HYG2/RUNZ1/S3F/PERF/NEXT/B10D code. Later documentation-only descendants do not silently replace the declared base; any intervening source/test change requires base/ownership/brief revalidation.
 
 Owner-run local testing or review is not a prerequisite to this independent scope release. One isolated measurement workload at a time remains mandatory. All numeric budgets, security and committed-truth requirements, failure tests, real-clock populations, full checks and independent final-Oracle/merge gates remain unchanged.
@@ -320,7 +420,7 @@ The following preserves the already approved preparation-inclusive clarification
 
 > P-06-5 的 30 ms 是单次调用的授权与事务总墙钟，不是持锁时长。MCP 从完整 tools/call 进入逐调用验证、来源解析与授权准备之前开始计时，包含本次文件读取/stat、进程与来源取证、参数与摘要准备、连接队列等待，以及全部相关授权/提交事务的等锁、重试、退避和 commit；在最后相关事务提交、回滚或拒绝决定完成时结束。准备必须在写事务之外，但仍在同一预算之内；不得在取得写锁、完成准备或开始下一事务时重置时钟，也不另加准备预算。单次 busy_timeout≤10 ms、累计等锁/重试/退避≤20 ms，均包含在30 ms内。耗尽且目标操作尚未提交时不得再接受该操作；已提交结果不改报未接受，同步commit超时单列预算缺陷。MCP完整响应和显式Claude hook联合计时仍分别按P-06-4；wait的等待预算不变。
 
-Record the corresponding T-06-14/measurement wording and contract-01/03/04/05 cross-references consistently with the [metadata-exception ruling](rulings/p065-metadata-exception.md) §5. Preserve F08 and predecessor rulings as history; scope and ownership are released under section 12, while actual mutation/compute remains held for explicit NEXT lease return and dispatcher assignment; independent acceptance and merged-tree checks remain required.
+Record the corresponding T-06-14/measurement wording and contract-01/03/04/05 cross-references consistently with the [metadata-exception ruling](rulings/p065-metadata-exception.md) §5. Preserve F08 and predecessor rulings as history; scope and ownership remain released under section 12, while candidate 2 is frozen pending recording and explicit dispatcher admission under wave1-resource-windows; independent acceptance and merged-tree checks remain required.
 
 ## Sources
 
@@ -336,4 +436,4 @@ Record the corresponding T-06-14/measurement wording and contract-01/03/04/05 cr
 - [CLI preparation and discarded pinned gate](https://github.com/CartmanFatass/codex-hud/blob/2249ab5952b2b4ba6fa8cefaf14c06ea97118c9e/src/cli/run.ts#L81-L128)
 - [Existing store open/check sequence](https://github.com/CartmanFatass/codex-hud/blob/2249ab5952b2b4ba6fa8cefaf14c06ea97118c9e/src/cli/runtime.ts#L87-L121)
 
-Current disposition: precise metadata exception recorded and local-gate contract fork resolved; scope and branch/worktree ownership released on the pinned accepted base, with mutation/compute still HOLD pending explicit NEXT lease return and dispatcher assignment. No implementation, acceptance, merge, performance pass or capability promotion is claimed.
+Current disposition: precise metadata exception recorded and local-gate contract fork resolved; scope and branch/worktree ownership released on the pinned accepted base, with candidate 2 still frozen pending recording and explicit dispatcher admission under wave1-resource-windows. All six design questions are resolved; no implementation acceptance, merge, performance pass or capability promotion is claimed.
