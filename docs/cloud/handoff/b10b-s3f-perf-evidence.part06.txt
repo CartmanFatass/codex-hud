@@ -1,0 +1,571 @@
+00 nodes differ; not asserted): n=1000 p50=3.005ms p95=8.042ms p99=10.992ms max=12.503ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.876ms p95=1.520ms p99=1.980ms max=3.658ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.188ms p95=8.726ms p99=12.145ms max=22.950ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (3585.692159ms)
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (21378.771757ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (22607.530528ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (21077.349944ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 68808.576146
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b10b-s3-perf.test.js:158:1
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (21378.771757ms)
+  AssertionError [ERR_ASSERTION]: changed p99 10.579 ms
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/b10b-perf-work/dist-test/tests/unit/b10b-s3-perf.test.js:163:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+EXIT=1
+2026-11-03T15:17:26Z
+ 07:17:26 up  2:20,  0 users,  load average: 1.40, 1.22, 1.06
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    272       2 ps               0.0  0.0
+    273       2 head             0.0  0.0
+
+
+=== candidate-final-node24-run2.log ===
+SOURCE: 5f2134d0ccedeca4d4fe184699b3bdd2307a65f4
+ M node_modules/.package-lock.json
+NODE=/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+v24.22.1
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-perf-home-pUErRx HUD_HOME=/tmp/b10b-perf-hud-e6ts4v B10B_PERF=1 /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node --test dist-test/tests/unit/b10b-s3-perf.test.js
+2026-11-03T15:17:26Z
+ 07:17:26 up  2:20,  0 users,  load average: 1.40, 1.22, 1.06
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    283       2 ps               0.0  0.0
+    284       2 head             0.0  0.0
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.095ms p95=0.235ms p99=0.482ms max=1.684ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.373ms p95=0.783ms p99=1.093ms max=2.239ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.679ms p95=1.214ms p99=1.576ms max=3.502ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.107ms p95=0.312ms p99=0.623ms max=3.146ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.417ms p95=0.880ms p99=1.788ms max=4.389ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.850ms p95=1.391ms p99=1.828ms max=3.379ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.364ms p95=2.318ms p99=9.488ms max=12.330ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.175ms p95=2.799ms p99=10.824ms max=14.626ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.176ms p95=6.271ms p99=8.688ms max=50.184ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.672ms p95=3.310ms p99=12.379ms max=18.239ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.175ms p95=2.459ms p99=12.844ms max=18.163ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.568ms p95=7.620ms p99=11.246ms max=14.085ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.666ms p95=1.145ms p99=1.515ms max=1.846ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=2.781ms p95=7.491ms p99=10.143ms max=14.630ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.846ms p95=1.433ms p99=1.835ms max=3.697ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=4.040ms p95=12.001ms p99=18.465ms max=40.743ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (3751.001299ms)
+✔ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (21898.32395ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (23414.121702ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (22638.70443ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 71881.793086
+EXIT=0
+2026-11-03T15:18:38Z
+ 07:18:38 up  2:21,  0 users,  load average: 1.32, 1.24, 1.08
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    300       2 ps               0.0  0.0
+    301       2 head             0.0  0.0
+
+
+=== candidate-final-node24-run3.log ===
+SOURCE: 5f2134d0ccedeca4d4fe184699b3bdd2307a65f4
+ M node_modules/.package-lock.json
+NODE=/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+v24.22.1
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-perf-home-ZJD4NU HUD_HOME=/tmp/b10b-perf-hud-EDJWdY B10B_PERF=1 /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node --test dist-test/tests/unit/b10b-s3-perf.test.js
+2026-11-03T15:18:38Z
+ 07:18:38 up  2:21,  0 users,  load average: 1.32, 1.24, 1.08
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    311       2 ps               0.0  0.0
+    312       2 head             0.0  0.0
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.109ms p95=0.245ms p99=0.683ms max=1.364ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.398ms p95=0.830ms p99=1.253ms max=3.607ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.686ms p95=1.151ms p99=1.550ms max=32.926ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.096ms p95=0.194ms p99=0.375ms max=0.881ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.398ms p95=0.707ms p99=1.341ms max=4.345ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.850ms p95=1.402ms p99=1.807ms max=18.194ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.407ms p95=2.422ms p99=9.900ms max=11.728ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.090ms p95=1.979ms p99=9.983ms max=27.412ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.007ms p95=6.922ms p99=9.370ms max=29.164ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.512ms p95=2.825ms p99=12.893ms max=17.498ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.311ms p95=3.068ms p99=12.934ms max=19.006ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.724ms p95=8.448ms p99=10.740ms max=39.551ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.682ms p95=1.226ms p99=1.711ms max=6.433ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.019ms p95=7.914ms p99=11.080ms max=16.197ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.963ms p95=1.816ms p99=2.460ms max=3.232ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.455ms p95=9.289ms p99=14.915ms max=35.816ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (3664.095758ms)
+✔ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (21152.282923ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (23786.03026ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (21774.207116ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 70579.912886
+EXIT=0
+2026-11-03T15:19:49Z
+ 07:19:49 up  2:22,  0 users,  load average: 1.62, 1.38, 1.14
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    328       2 ps               0.0  0.0
+    329       2 head             0.0  0.0
+
+
+=== candidate-fixtures.log ===
+2026-11-03T15:10:20Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-cDRqHS HUD_HOME=/tmp/b10b-check-hud-F21R94 npm run check:fixtures 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:10:20 up  2:13,  0 users,  load average: 1.59, 1.12, 0.97
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 check:fixtures
+> bash tests/check-fixtures.sh
+
+check-fixtures: OK (tests/fixtures tests/prototypes docs/probes docs/design)
+EXIT=0
+2026-11-03T15:10:20Z
+
+
+=== candidate-format.log ===
+2026-11-03T15:10:06Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-G6gL0j HUD_HOME=/tmp/b10b-check-hud-4qWZ5G npm run format:check 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:10:06 up  2:12,  0 users,  load average: 1.22, 1.02, 0.94
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 format:check
+> node ./node_modules/prettier/bin/prettier.cjs --check src tests
+
+Checking formatting...
+All matched files use Prettier code style!
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T15:10:20Z
+
+
+=== candidate-frozen-source.log ===
+2026-11-03T15:20:27Z
+5f2134d0ccedeca4d4fe184699b3bdd2307a65f4
+f3fff50d66c62effd9a169e8ccca73c6e21833cb
+ M node_modules/.package-lock.json
+ src/render/delegation/projection.ts        |  15 +-
+ tests/unit/b10b-s3-perf-regression.test.ts | 256 +++++++++++++++++++++++++++++
+ 2 files changed, 267 insertions(+), 4 deletions(-)
+commit 5f2134d0ccedeca4d4fe184699b3bdd2307a65f4
+Author:     Codex <codex@openai.com>
+AuthorDate: Tue Nov 3 07:11:40 2026 -0800
+Commit:     Codex <codex@openai.com>
+CommitDate: Tue Nov 3 07:11:40 2026 -0800
+
+    Bound delegation whole-tree memo to the latest snapshot
+371b8f784229636f66e88434c422484dd85251eb
+eb44fbfb91983c8afb18a1e8ab970c81a9c039b55ae4db87d8ddbd5f97d0363d  src/render/delegation/projection.ts
+651ad99457c744bc4d3b6e998a7ab7997fa07cef8a31f8c1aa446e9e3b540de5  tests/unit/b10b-s3-perf-regression.test.ts
+3425410732bfb12b750feb3a86cb9ebe2bf03855caf7e1657cc723e3586d8beb  -
+
+
+=== candidate-hud-mcp.log ===
+2026-11-03T15:10:02Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-8IRtzs HUD_HOME=/tmp/b10b-check-hud-AsRfqO npm run test:hud-mcp 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:10:02 up  2:12,  0 users,  load average: 1.24, 1.02, 0.94
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:hud-mcp
+> npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+
+✔ refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool (2.525728ms)
+✔ dual MCP instance shares scope and owner; stale first-bind CAS refuses (13.412289ms)
+✔ /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A (9.14279ms)
+✔ wrong generation is refused before currentAuthority can authorize an intent (6.669039ms)
+✔ delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot (60.289711ms)
+✔ B19 merge: one real status and spawn response retain cache keys and advice.wake (25.694716ms)
+✔ the checked-in §5.2 file never guesses an auth label for a codex caller (12.893551ms)
+✔ a missing cache.json is a valid empty snapshot with empty advice (18.96172ms)
+✔ an invalid cache.json still serves status and spawn with configError and empty advice (22.627546ms)
+✔ status and every spawn outcome perform no cache file access after startup (49.240409ms)
+✔ status and spawn merge the cache advice over an existing advice object (21.993497ms)
+✔ a thrown spawn refusal carries advice at the server boundary for valid and invalid snapshots (18.861773ms)
+✔ hud-mcp starts and answers initialize with a valid and with an invalid cache.json (269.996996ms)
+✔ shared delegate config accepts optional roles and the exact Claude call-source mechanism (6.372856ms)
+✔ call-source selection is Claude-only and rejects unknown keys, kinds and malformed shapes (2.899071ms)
+✔ delegate envelope keeps its version, unique-name, profile-count and file-byte bounds (3.962794ms)
+✔ config without A5 keys loads exact NOTIFY defaults (0.909366ms)
+✔ B45 accepted spawn is atomic, lost response replays immutable result with zero second launch (64.361311ms)
+✔ B45 different owner same request key is isolated; unverified new intent refuses (41.762153ms)
+✔ B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay (55.981145ms)
+✔ B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates (36.897704ms)
+{"diagnostic":"dispatch_unknown","runId":"7e6ccb20-aee0-4857-87e5-02d7dea8c59a"}
+✔ B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits (147.64459ms)
+✔ B45 same-owner predecessor atomically transfers one child and replays before historical gates (37.736785ms)
+✔ B45 distinct backend source is registered atomically with acceptance (13.611634ms)
+✔ B45 headless build refuses explicit visible layouts instead of discarding them (10.527338ms)
+﹣ B45 synthetic whoami/report success refusal busy distributions with real SQLite writer contention (1.134789ms) # Set HUD_B45_BENCH=1 and run this benchmark alone to measure without parallel test I/O
+✔ B45 whoami env claim binds exact independently observed launch and report (37.73299ms)
+✔ B45 whoami parameter claim binds exact independently observed launch and report (16.346951ms)
+✔ B45 whoami launch evidence missing stays pending; env conflicts and wrong run refuse (18.188267ms)
+✔ B45 copied fork claim refuses before consumption, expiry boundary and bound retry after TTL (25.659362ms)
+✔ B45 same-process MCP restart rebuilds binding with independent proof and never redeems twice (23.802375ms)
+✔ B45 identity ProcessKey and run stamp keep their distinct domain encodings on the same host (16.024735ms)
+✔ BID1 handshake refuses a missing run domain and never accepts the caller form (11.639134ms)
+✔ hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files (11.621647ms)
+✔ missing then late record never revives a refused call; a new exact call can retry (5.01411ms)
+✔ half-written, oversized, symlink and duplicate conflicting publications refuse (2.957247ms)
+✔ wrong hook version refuses even with a matching content fingerprint (4.869998ms)
+✔ wrong hook implementation refuses even with a matching content fingerprint (0.940883ms)
+✔ wrong hook claudeVersion refuses even with a matching content fingerprint (5.668354ms)
+✔ wrong hook profileFingerprint refuses even with a matching content fingerprint (0.909516ms)
+✔ wrong hook sourceId refuses even with a matching content fingerprint (0.654148ms)
+✔ wrong hook processKey refuses even with a matching content fingerprint (3.77069ms)
+✔ wrong hook bootId refuses even with a matching content fingerprint (4.502317ms)
+✔ wrong hook serverName refuses even with a matching content fingerprint (0.748879ms)
+✔ wrong hook toolUseId refuses even with a matching content fingerprint (0.695569ms)
+✔ wrong hook toolName refuses even with a matching content fingerprint (0.890127ms)
+✔ wrong hook sessionId refuses even with a matching content fingerprint (0.785342ms)
+✔ wrong hook hookStartMonoMs refuses even with a matching content fingerprint (0.784792ms)
+✔ wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint (0.769248ms)
+✔ wrong hook publishedMonoMs refuses even with a matching content fingerprint (0.653157ms)
+✔ native child with root transcript path refuses and leaves subsequent root verifiable (1.79737ms)
+✔ A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation (1.316328ms)
+✔ CLI settings preserve existing hooks/config and match only the seven exact server tools (0.727857ms)
+✔ scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file (12.079256ms)
+✔ resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear (8.670251ms)
+✔ scope reader refuses unsupported runtimes before touching a missing path (135.589224ms)
+✔ hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values (0.787686ms)
+✔ fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies (1.303369ms)
+✔ int hud-mcp physical caller registration persists real procStart/cwd without logical authority (24.079434ms)
+✔ int hud-mcp composition uses existing ledger even when diagnostic registry requested (186.46551ms)
+✔ G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required (2.628731ms)
+✔ G03 old request key replays its original run after a newer run appeared and ended (82.613658ms)
+✔ G03 same request key with a different expectedRun conflicts without a new intent (28.653152ms)
+✔ G03 two callers that read the same run and race with different keys create at most one intent (24.179272ms)
+✔ G03 an old expectedRun is still refused after another run started and ended (41.136327ms)
+✔ G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest (37.765899ms)
+✔ G03 local management resume still requires expectedRun (27.951304ms)
+✔ delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts (5.54763ms)
+✔ registration records A4 fields and verified physical start; file fake remains private and refuses overwrite (3.246325ms)
+✔ unknown cwd is a typed refusal before registry write (0.461062ms)
+✔ real /proc registration stamp and PID domain are read without environment secrets (1.994662ms)
+✔ Codex root combination resolves, native child refuses without invalidating subsequent root (3.647368ms)
+✔ missing, conflicting and forged arguments metadata never falls back to remembered root/proc (1.86508ms)
+✔ session switches remain source diagnostics; shared ledger supplies the generation gate (2.044025ms)
+✔ PID reuse, source mismatch, missing header and unmeasured Codex versions refuse (0.731823ms)
+✔ Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId (3.868134ms)
+✔ Claude late/missing public call refuses, observed record still cannot upgrade unverified profile (1.634488ms)
+✔ pi explicit session path resolver checks header and source; directory alone grants nothing (1.023665ms)
+✔ seven MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments (1.85826ms)
+✔ runtime rejects Node 18, 22.12 and 23 before importing package entry (148.482765ms)
+✔ runtime accepts declared 22.13 and 24 entry boundaries (246.476684ms)
+✔ bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths (1.24368ms)
+✔ source/header mismatch, missing header and daemon topology cannot resolve identity (0.807165ms)
+✔ stdio framing rejects malformed JSON, ignores notifications and serializes stub replies (2.728898ms)
+ℹ tests 84
+ℹ suites 0
+ℹ pass 83
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 656.745835
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T15:10:06Z
+
+
+=== candidate-prototype-profile.log ===
+2026-11-03T14:58:44Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+DIAGNOSTIC ONLY. CPU sampling + allocation sampling with collected objects + GC PerformanceObserver + measurement arrays add overhead. No timing from this run is acceptance evidence.
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-profile-home-qtLLpE HUD_HOME=/tmp/b10b-profile-hud-dhPFgv B10B_PERF=1 PROFILE_OUT=/workspace/shared/b10b-s3f-perf-evidence/candidate-prototype-profile /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node --import /workspace/shared/b10b-s3f-perf-evidence/profile-v2.mjs dist-test/tests/unit/b10b-s3-perf-diagnostic.js
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.130ms p95=0.312ms p99=0.909ms max=1.264ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.557ms p95=1.228ms p99=2.351ms max=9.127ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=1.061ms p95=2.079ms p99=3.219ms max=6.561ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.172ms p95=0.467ms p99=1.119ms max=4.833ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.573ms p95=1.063ms p99=2.261ms max=6.282ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=1.694ms p95=3.104ms p99=4.405ms max=16.379ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.779ms p95=3.181ms p99=11.574ms max=15.833ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.446ms p95=2.816ms p99=13.173ms max=89.229ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.755ms p95=7.520ms p99=11.059ms max=22.419ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=2.313ms p95=4.712ms p99=14.934ms max=24.929ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.564ms p95=2.730ms p99=14.038ms max=18.311ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=3.952ms p95=9.475ms p99=12.784ms max=51.075ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=1.079ms p95=1.864ms p99=2.534ms max=4.700ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=4.445ms p95=10.958ms p99=15.388ms max=63.814ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=1.794ms p95=3.391ms p99=5.340ms max=205.087ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=5.699ms p95=14.248ms p99=17.591ms max=23.600ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (6187.172012ms)
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (24338.92848ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (27378.693291ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (30011.270342ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 87940.273862
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b10b-s3-perf-diagnostic.js:169:1
+✖ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (24338.92848ms)
+  AssertionError [ERR_ASSERTION]: changed p99 11.574 ms
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/b10b-perf-work/dist-test/tests/unit/b10b-s3-perf-diagnostic.js:174:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+EXIT=1
+2026-11-03T15:00:16Z
+
+
+=== candidate-prototype-strict-node24.log ===
+2026-11-03T15:03:34Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-TdzH7U HUD_HOME=/tmp/b10b-check-hud-ZjGOTj env B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:03:34 up  2:06,  0 users,  load average: 0.18, 0.56, 0.79
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.097ms p95=0.242ms p99=0.732ms max=1.906ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.356ms p95=0.689ms p99=0.886ms max=4.570ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.711ms p95=1.221ms p99=1.863ms max=4.299ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.104ms p95=0.232ms p99=0.582ms max=1.179ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.399ms p95=0.810ms p99=1.590ms max=7.959ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.872ms p95=1.482ms p99=1.945ms max=5.091ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.487ms p95=2.989ms p99=9.561ms max=14.367ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.327ms p95=2.853ms p99=11.987ms max=35.580ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.578ms p95=7.999ms p99=12.319ms max=24.028ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.742ms p95=3.489ms p99=12.699ms max=17.359ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.309ms p95=2.769ms p99=13.441ms max=19.341ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.908ms p95=8.124ms p99=11.940ms max=20.917ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.648ms p95=1.192ms p99=1.659ms max=5.541ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.237ms p95=8.901ms p99=10.938ms max=33.441ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.913ms p95=1.615ms p99=2.338ms max=5.325ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.754ms p95=10.130ms p99=14.180ms max=82.378ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (3668.609051ms)
+✔ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (24319.781555ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (25006.063738ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (23390.324803ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 76576.811168
+EXIT=0
+2026-11-03T15:04:51Z
+
+
+=== candidate-s2.log ===
+2026-11-03T15:10:23Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-kDdqkz HUD_HOME=/tmp/b10b-check-hud-gSsCMI node --test dist-test/tests/unit/b10b-s2-perf.test.js 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:10:23 up  2:13,  0 users,  load average: 1.47, 1.10, 0.96
+b10b-s2-perf compact no-change tick (same view model, clocks moved; the 60 rows in view): n=1000 p50=0.093ms p95=0.252ms p99=0.503ms max=6.262ms strict=false
+b10b-s2-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.354ms p95=0.699ms p99=0.983ms max=3.547ms strict=false
+b10b-s2-perf rich no-change tick (same view model, clocks moved; the 60 rows in view): n=1000 p50=0.045ms p95=0.167ms p99=0.401ms max=1.373ms strict=false
+b10b-s2-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.334ms p95=0.729ms p99=1.254ms max=3.371ms strict=false
+b10b-s2-perf compact no-change + one cached row (two memoised view models alternated; not asserted): n=1000 p50=1.078ms p95=2.043ms p99=3.267ms max=10.370ms strict=false
+b10b-s2-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved; every row + frame-diff): n=1000 p50=1.476ms p95=2.855ms p99=9.400ms max=26.766ms strict=false
+b10b-s2-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.226ms p95=2.738ms p99=10.913ms max=18.058ms strict=false
+b10b-s2-perf compact cold tick, every row read (all 200 nodes differ; project + plan + rows + frame-diff; not asserted): n=1000 p50=3.819ms p95=9.055ms p99=13.297ms max=19.427ms strict=false
+b10b-s2-perf compact cold tick, the 60 rows in view (not asserted): n=1000 p50=2.037ms p95=8.270ms p99=9.752ms max=15.967ms strict=false
+b10b-s2-perf rich no-change + one cached card (two memoised view models alternated; not asserted): n=1000 p50=1.137ms p95=2.031ms p99=5.674ms max=9.009ms strict=false
+b10b-s2-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved; every row; cards 39600 hits / 1200 misses, limit 500): n=1000 p50=1.466ms p95=2.783ms p99=12.976ms max=25.447ms strict=false
+b10b-s2-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.188ms p95=2.405ms p99=13.629ms max=18.231ms strict=false
+b10b-s2-perf rich cold tick, every row read (all 200 nodes differ; not asserted): n=1000 p50=5.018ms p95=11.767ms p99=16.871ms max=66.239ms strict=false
+b10b-s2-perf rich cold tick, the 60 rows in view (not asserted): n=1000 p50=2.356ms p95=4.901ms p99=14.835ms max=20.628ms strict=false
+✔ the no-change tick: the same view model, the second moves on; compact and rich p99 <= 2 ms (1291.869982ms)
+✔ compact, 200 nodes at 56 columns, every row + frame-diff: a production-shaped changed tick, p99 <= 10 ms (33964.69047ms)
+✔ rich, 200 nodes as cards at 56 columns (500-card cache, accordion to 60 rows), a production-shaped changed tick: p99 <= 15 ms (36604.027647ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 72017.267411
+EXIT=0
+2026-11-03T15:11:35Z
+
+
+=== candidate-visual.log ===
+2026-11-03T15:09:49Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-oeOzBu HUD_HOME=/tmp/b10b-check-hud-tmaaST npm run test:visual 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:09:49 up  2:12,  0 users,  load average: 1.28, 1.02, 0.93
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:visual
+> npm run build:test && node --test dist-test/tests/unit/visual-baselines.test.js
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+✔ visual semantics: all presets retain identity and exact frame dimensions (202.151517ms)
+✔ visual semantics: child role counts off removes only footer counts, not children, summaries or targets (5.739063ms)
+✔ visual semantics: recap viewport is independent of card preset at every width and look (128.202704ms)
+✔ visual semantics: active Settings navigation retains full localized label and nonoverlapping controls from width 24 (36.695284ms)
+✔ visual semantics: Save returns the new width and the next render reflows navigation, values and selected identity (34.477342ms)
+✔ visual semantics: confirmation owns input, blocks hidden UI clicks and defaults to cancel (7.664854ms)
+✔ visual semantics: Inspector preserves stored summary and distinguishes explicit Coverage from legacy Recorded (15.023954ms)
+✔ visual semantics: normalization retains spaces and diffs identify the exact case and row (0.551035ms)
+✔ visual semantics: fixture generation is deterministic without reading a wall clock (482.275536ms)
+▶ visual baselines: fixed-time EN/ZH textual frames match reviewed goldens
+  ✔ panel/en/tab/minimal/32x32 (0.548672ms)
+  ✔ panel/en/tab/progress/32x32 (0.156832ms)
+  ✔ panel/en/tab/monitor/32x32 (0.072778ms)
+  ✔ settings/en/tab/active-settings/32x24 (0.096082ms)
+  ✔ panel/en/tab/minimal/40x32 (0.072497ms)
+  ✔ panel/en/tab/progress/40x32 (0.052228ms)
+  ✔ panel/en/tab/monitor/40x32 (0.046428ms)
+  ✔ settings/en/tab/active-settings/40x24 (0.061811ms)
+  ✔ panel/en/tab/minimal/48x32 (0.08096ms)
+  ✔ panel/en/tab/progress/48x32 (0.07442ms)
+  ✔ panel/en/tab/monitor/48x32 (0.159175ms)
+  ✔ settings/en/tab/active-settings/48x24 (0.17584ms)
+  ✔ panel/en/tab/minimal/56x32 (0.126738ms)
+  ✔ panel/en/tab/progress/56x32 (0.07405ms)
+  ✔ panel/en/tab/monitor/56x32 (0.042303ms)
+  ✔ settings/en/tab/active-settings/56x24 (0.034201ms)
+  ✔ panel/en/tab/minimal/80x32 (0.063925ms)
+  ✔ panel/en/tab/progress/80x32 (0.152977ms)
+  ✔ panel/en/tab/monitor/80x32 (0.049053ms)
+  ✔ settings/en/tab/active-settings/80x24 (0.033189ms)
+  ✔ panel/en/band/minimal/32x32 (0.033049ms)
+  ✔ panel/en/band/progress/32x32 (0.031687ms)
+  ✔ panel/en/band/monitor/32x32 (0.083724ms)
+  ✔ settings/en/band/active-settings/32x24 (0.03393ms)
+  ✔ panel/en/band/minimal/40x32 (0.053259ms)
+  ✔ panel/en/band/progress/40x32 (0.031266ms)
+  ✔ panel/en/band/monitor/40x32 (0.029654ms)
+  ✔ settings/en/band/active-settings/40x24 (0.063444ms)
+  ✔ panel/en/band/minimal/48x32 (0.056253ms)
+  ✔ panel/en/band/progress/48x32 (0.032859ms)
+  ✔ panel/en/band/monitor/48x32 (0.030004ms)
+  ✔ settings/en/band/active-settings/48x24 (0.028402ms)
+  ✔ panel/en/band/minimal/56x32 (0.029274ms)
+  ✔ panel/en/band/progress/56x32 (0.030415ms)
+  ✔ panel/en/band/monitor/56x32 (0.032559ms)
+  ✔ settings/en/band/active-settings/56x24 (0.078356ms)
+  ✔ panel/en/band/minimal/80x32 (0.038237ms)
+  ✔ panel/en/band/progress/80x32 (0.062573ms)
+  ✔ panel/en/band/monitor/80x32 (0.035983ms)
+  ✔ settings/en/band/active-settings/80x24 (0.037826ms)
+  ✔ panel/en/tile/minimal/32x32 (0.029474ms)
+  ✔ panel/en/tile/progress/32x32 (0.029674ms)
+  ✔ panel/en/tile/monitor/32x32 (0.0272ms)
+  ✔ settings/en/tile/active-settings/32x24 (0.031396ms)
+  ✔ panel/en/tile/minimal/40x32 (0.032698ms)
+  ✔ panel/en/tile/progress/40x32 (0.033068ms)
+  ✔ panel/en/tile/monitor/40x32 (0.034161ms)
+  ✔ settings/en/tile/active-settings/40x24 (0.049022ms)
+  ✔ panel/en/tile/minimal/48x32 (0.03996ms)
+  ✔ panel/en/tile/progress/48x32 (0.106587ms)
+  ✔ panel/en/tile/monitor/48x32 (0.036824ms)
+  ✔ settings/en/tile/active-
