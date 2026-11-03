@@ -262,3 +262,37 @@ test('rich: l on the fifth sub-row whose children are past the fifth does nothin
   // h still folds it: its children are real, only not drawn.
   assert.ok(press(frame, 'left').state.tree.collapsed.has(keys['n4']));
 });
+
+for (const childKind of ['history', 'card'] as const) {
+  test(`l enters a native sub-row's ${childKind} child by parent identity, not screen adjacency`, () => {
+    const child =
+      childKind === 'history'
+        ? native('D', 'N1', 1, { status: S.exited(ago(600)) })
+        : card('B', { parent: 'N1', createdAt: ago(1800) });
+    const { vm, keys } = buildVm([
+      root,
+      card('A', { createdAt: ago(2000) }),
+      native('N1', 'A', 0, { createdAt: ago(1900) }),
+      child,
+      native('N3', 'A', 2, { createdAt: ago(1700) }),
+    ]);
+    for (const style of ['compact', 'rich'] as const) {
+      const frame = draw(vm, { style, selected: keys['N1'], height: 40 });
+      const view = frame.delegation!;
+      const destination = view.dest.rows.find((row) => row.parentKey === keys['N1'])!;
+      assert.ok(destination, 'the direct child is a destination');
+      assert.equal(destination.kind, childKind === 'history' ? 'putAway' : 'node');
+      if (childKind === 'card') assert.equal(destination.key, keys['B']);
+      if (style === 'rich') {
+        const at = view.dest.index.get(keys['N1'])!;
+        assert.equal(view.dest.rows[at + 1].key, keys['N3'], 'a sibling is drawn before the child');
+        assert.ok(lineOf(frame, destination.key) > lineOf(frame, keys['N3']));
+      }
+      const out = press(frame, 'right');
+      assert.equal(out.state.tree.selectedId, destination.key, style);
+      assert.equal(out.state.tree.collapsed.size, 0);
+      assert.equal(out.action, undefined);
+      assert.equal(press(draw(vm, { style, state: out.state, height: 40 }), 'left').state.tree.selectedId, keys['N1']);
+    }
+  });
+}

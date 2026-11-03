@@ -563,8 +563,9 @@ function navigateDelegation(
     // Unfold a folded branch, otherwise step in to its first child.
     if (row.fold && row.pn) fold(row.pn.key, false);
     else if (row.pn && row.pn.children.length > 0) {
-      const child = rows[at + 1];
-      if (child && child.parentKey === row.key) next.tree.selectedId = child.key;
+      // Rich groups native sub-rows inside their ancestor card, so a child may follow a sibling on screen.
+      const child = rows.find((candidate) => candidate.parentKey === row.key);
+      if (child) next.tree.selectedId = child.key;
     }
   } else if (key === 'next-trouble' || key === 'previous-trouble') {
     const to = stepStop(stopsOf(view.proj, view.dest), at, key === 'next-trouble' ? 1 : -1);
