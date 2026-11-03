@@ -1,0 +1,280 @@
+{
+  "schemaVersion": 1,
+  "status": "Source-only compile/fixture repair WIP; NOT ACCEPTED; NOT MERGEABLE; NOT PERFORMANCE-QUALIFIED",
+  "repository": "CartmanFatass/codex-hud",
+  "branch": "dots/p065-budget",
+  "parent": "a2b595ce68a9f295d5147971173ebaa0d874e638",
+  "parentTree": "1bbf38aa42d0ffc2206da1c246ec1f7c9d62c221",
+  "sourceCommit": "cd2dce1623a07f78a707f8bf0a998ebe8a5c0d66",
+  "sourceTree": "26c77dcd23b559e405173427bf8681c5b5181675",
+  "rulingSha256": "490d5e0dbb6b177430840a2edcd9987c9c4645f28a3e985ba012a138f717c9ef",
+  "previousManifest": "docs/cloud/handoff/p065-budget/continuation-1-source-manifest.json",
+  "sourceFileCount": 30,
+  "totalSourceBytes": 411363,
+  "sourceFilesAggregateSha256": "83cee903df17f29a53b2a4ab70e49a1c4fda0504214d7a49e31be8c0d311d1cb",
+  "aggregateMethod": "In files order, SHA-256 of UTF-8 concatenation of path + NUL + decimal byte length + NUL + lowercase SHA-256 + LF.",
+  "sourceFingerprintSha256": "59d60fde40d02bc1e34ffdc30a99ae82e90f055b0d727f4ac3c707e65ac38088",
+  "fingerprintMethod": "Lexicographically sorted changed/untracked source paths under src, packages and tests; SHA-256 of UTF-8 concatenation of lowercase file SHA-256 + two spaces + path + LF.",
+  "changedSourcePaths": [
+    "tests/unit/p065-budget-fixture.ts",
+    "tests/unit/p065-budget.test.ts"
+  ],
+  "files": [
+    {
+      "path": "packages/hud-mcp/src/delegation.ts",
+      "bytes": 23230,
+      "sha256": "7b7289f280b5807f5c733826f2346b0c86a0a670208d86aa2b81f9dbba1a3f12",
+      "gitBlob": "89bb0eb2acbd85717f4dc24236f45229df6be7f3",
+      "mode": "100644"
+    },
+    {
+      "path": "packages/hud-mcp/src/handshake.ts",
+      "bytes": 7401,
+      "sha256": "e31c8d02b4811351025552d64d67169a43639049cb64673ad81b4748f1a62d5a",
+      "gitBlob": "518452c3dd80eaa7d7a71131eb566452152caac6",
+      "mode": "100644"
+    },
+    {
+      "path": "packages/hud-mcp/src/hook/resolve.ts",
+      "bytes": 4577,
+      "sha256": "cd7fd1da7a32342be4951e4e69ad2535573cec7828cfad8cf5220378c9566204",
+      "gitBlob": "221332f02d5296cc479bb4469ce97db3283aad72",
+      "mode": "100644"
+    },
+    {
+      "path": "packages/hud-mcp/src/read-control.ts",
+      "bytes": 16337,
+      "sha256": "144d841c60f08c9981ce5155ed26bbcbeceb95d1ae162057380f56fbf2bde4b7",
+      "gitBlob": "9b99385ecb2701a3ec6ff08f1ab9b9e6c04ffc5e",
+      "mode": "100644"
+    },
+    {
+      "path": "packages/hud-mcp/src/resolvers.ts",
+      "bytes": 14947,
+      "sha256": "faab362c50491824a64865e98eb6378c1a06265488f907e3a77b96e3baeaecb3",
+      "gitBlob": "67dae19f8b198c649e763512b877592fe535cfc2",
+      "mode": "100644"
+    },
+    {
+      "path": "packages/hud-mcp/src/server.ts",
+      "bytes": 13128,
+      "sha256": "df9d8be233acd49b2908f02f754a5395d48f6771373f02ee66b573cd20730e50",
+      "gitBlob": "265e20b32139ef87119cde3261bc51722c3516dd",
+      "mode": "100644"
+    },
+    {
+      "path": "src/cli/hud.ts",
+      "bytes": 4235,
+      "sha256": "a272714c82a007bc20c2b6ee2526bc311e22d143d3b62787bb396ce3cbc5d761",
+      "gitBlob": "2af7c0a7f9c6d845855b603540a93bec3635863d",
+      "mode": "100644"
+    },
+    {
+      "path": "src/cli/run.ts",
+      "bytes": 7809,
+      "sha256": "04f9099efed437c82727f39363b29c45b40a3cb41b5a503b47e83a22c5dc208f",
+      "gitBlob": "7795829f9e42e789a14a1364bf3dc225f159b9cf",
+      "mode": "100644"
+    },
+    {
+      "path": "src/cli/runtime.ts",
+      "bytes": 6173,
+      "sha256": "499cbd3c1d608c0303ce3bf127bd3cb2e003cd83ad3a35d6df3dc81b2ce1343f",
+      "gitBlob": "33a994d2964157b57444679f41caa1e28d9744fd",
+      "mode": "100644"
+    },
+    {
+      "path": "src/core/launch/brief.ts",
+      "bytes": 2047,
+      "sha256": "6f571f2ee052b3e570d4ce93c9610e03a47608b217fbcad8ad6e26f95a5e364c",
+      "gitBlob": "a12fdeb9f03db5ef320c9572eedce834249260c7",
+      "mode": "100644"
+    },
+    {
+      "path": "src/core/launch/fingerprint.ts",
+      "bytes": 3677,
+      "sha256": "99057ef20c00e0a2e47262914c25457fdf0cb7affd278887bc55320782ff39d2",
+      "gitBlob": "ab6719a81051a89f006f2e6fb714d7c3407ac52a",
+      "mode": "100644"
+    },
+    {
+      "path": "src/harness/codex/profile.ts",
+      "bytes": 14065,
+      "sha256": "6dcdc6de0057ea53a25b0ed65f6fb1793a04362e11f3ffdf17707e29a77b11da",
+      "gitBlob": "ac661432d216227edb439fb06c15f171c5439c73",
+      "mode": "100644"
+    },
+    {
+      "path": "src/ledger/call-budget.ts",
+      "bytes": 6210,
+      "sha256": "900589c446cda07cbe92ae3fd524fc126aa7eb8ce11184fa8e9aabe8b6c256fa",
+      "gitBlob": "d1105587414ce63e66d924f3725b24237766022f",
+      "mode": "100644"
+    },
+    {
+      "path": "src/ledger/call-context.ts",
+      "bytes": 10657,
+      "sha256": "1427eecaf06ee5dca1fd925855022a5fea335549fbdc7d312b74d8fe57e659fe",
+      "gitBlob": "45c15e6df7f30eb9d74eac4776eb338c05a2c253",
+      "mode": "100644"
+    },
+    {
+      "path": "src/ledger/handshake.ts",
+      "bytes": 18688,
+      "sha256": "03ebaea24f82ce5eec063bf21fd6841fe6a86ae60078599821076e29d305a591",
+      "gitBlob": "6d1bf2e3d54b2856dbfd65be81f7e35202f9dd02",
+      "mode": "100644"
+    },
+    {
+      "path": "src/ledger/intents.ts",
+      "bytes": 22139,
+      "sha256": "c3f75aa7b8ee0707329c2281a9c163d2b32f357313827b3a3cdd49a6acba39d5",
+      "gitBlob": "ca1319cd6c8e159792240de7594011698cc1e1fc",
+      "mode": "100644"
+    },
+    {
+      "path": "src/ledger/ledger.ts",
+      "bytes": 9073,
+      "sha256": "5fa21d571cea67ac7bbced5d9d6c81cef80408c171430bb499d2f84cad25eec3",
+      "gitBlob": "9195f160bfdc8f76bee3d15ce88ed6ecf2c1dc4c",
+      "mode": "100644"
+    },
+    {
+      "path": "src/ledger/local-manager.ts",
+      "bytes": 5279,
+      "sha256": "9472d8e52622caf9f3e9b38db218ef71c4d2a117e5008846f63b6006dfca2aff",
+      "gitBlob": "e42e2dfc2331ff858278a211cfa4bdbe64ee2822",
+      "mode": "100644"
+    },
+    {
+      "path": "src/ledger/reconcile.ts",
+      "bytes": 18312,
+      "sha256": "0daf6f40a26dcec9edd2ed8f512fec6028df317efc4641134a7f61029d0afd10",
+      "gitBlob": "be4056ce9f3bbce34dfcbccf8755e5fd8faff151",
+      "mode": "100644"
+    },
+    {
+      "path": "src/ledger/transaction.ts",
+      "bytes": 3869,
+      "sha256": "8c9550b3cdb0e785c12739d51c67517f53c312dc30e6f1737f130b3721d2ea8c",
+      "gitBlob": "598549dc3e7c283fbe3b6fbe2682c43d5fb260f1",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/hud-mcp/b20-advice.test.ts",
+      "bytes": 26957,
+      "sha256": "5d71406355664c41f78e8f49870a941493d7941a177f7ecfb6c97c16a9eb81b6",
+      "gitBlob": "dce1320cdbde2eac7d85aca11b4ee6ec180865af",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/hud-mcp/delegation.test.ts",
+      "bytes": 13806,
+      "sha256": "ae4fe2a6bbec8b1a39fcaa285a97f2a03ac6e15193dca9842f043130bfb6b081",
+      "gitBlob": "8a62f99de1b453ae8d82a60d52b0491e6619468b",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/hud-mcp/hook-source.test.ts",
+      "bytes": 20896,
+      "sha256": "35c44962d9dd3eadba73dcead00a8c1086cf5ba26720248a4c9d11cb2ff9e249",
+      "gitBlob": "46a225e147e3d7cc22a595b7c30737817e20bd3b",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/hud-mcp/p065-budget.test.ts",
+      "bytes": 30400,
+      "sha256": "08a00ee9ae48b22901febee799478f9d8c6c0554d846e1f994d90d4edefad4c2",
+      "gitBlob": "f83c49be752157bec9b2299bfeaa81f3ed13701a",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/hud-mcp/resume-expected-run.test.ts",
+      "bytes": 13749,
+      "sha256": "b3f0da0b5244d6c724229ef66529042d7fdfc865f66b64bf52fa5e0992c4bf9d",
+      "gitBlob": "c1018ab3a195514f6b7ba3d0d576feda4ae1ce98",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/unit/b11-cli.test.ts",
+      "bytes": 25975,
+      "sha256": "afc27254b3488ccf34827c718dded6fcfacc299e1cb574de414988fc1434b946",
+      "gitBlob": "8e170a99b64edf47499ea3933461d21085ec980a",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/unit/b45-delegation-fixture.ts",
+      "bytes": 6125,
+      "sha256": "e49f4a44faa7c7517272ed5abbe8e0ed7662158a25a2dd929fe104db1c105116",
+      "gitBlob": "a56cd8c9d09e0700a9146006abfe89ee520b9e67",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/unit/p065-budget-fixture.ts",
+      "bytes": 14853,
+      "sha256": "3c7c777e2b29e8712e9cb53d83084e5a0cc61cb205b617e113120ab0db99ec87",
+      "gitBlob": "4264874ef20ebbae2fabe80fe505785c8a89c191",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/unit/p065-budget.test.ts",
+      "bytes": 27862,
+      "sha256": "190e03adeff542c36cd815bd5c464611d0066e16e87494a64f99178707eabb32",
+      "gitBlob": "7c0d9b190c684509002dd8646d751828f5ec8fb0",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/unit/p065-local-gate.test.ts",
+      "bytes": 18887,
+      "sha256": "cd219c2dab8c658f15529434c53151fd0b0b8751e620d9bd073626a68e4089cc",
+      "gitBlob": "48a00ef4d659d8c445f0b6418af0f2db09eef16d",
+      "mode": "100644"
+    }
+  ],
+  "unchangedBuildConfiguration": [
+    {
+      "path": "package.json",
+      "bytes": 2061,
+      "sha256": "e829a2a4c0ad639d37f9e94ed93a67e87eb6c8b8f758cfbb8a4f27f0fe66ec9b",
+      "gitBlob": "53182affe4637beb767664c56c288ae9e7dd4585"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 3411,
+      "sha256": "98a7e2d3f5256810fe477812be64b35411aeede8b34f91e648d62e96c39e3294",
+      "gitBlob": "87327f35757f729247f1f2256e7ba87345956a01"
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 481,
+      "sha256": "25bb17e17ea109ef835738bc5481a8e79b3169dd003dd3c73c3f860724e653e8",
+      "gitBlob": "c83c5333234b1fd69d23bfc13d07cead4ebaee6f"
+    },
+    {
+      "path": "tsconfig.test.json",
+      "bytes": 314,
+      "sha256": "46f2efa76899b906759eae43e154b7a6d987330f9ba939bb629456910e17bde6",
+      "gitBlob": "3b07660e9ef9fe7a66fea6c595aa333160b7c4eb"
+    },
+    {
+      "path": "packages/hud-mcp/tsconfig.json",
+      "bytes": 296,
+      "sha256": "776f5464e306374c24d658416402fa3990d78ac5dfbf392042d6cc711714b485",
+      "gitBlob": "2858054717f4dd79e4347a87e0b815bea61a57c5"
+    }
+  ],
+  "unchangedDependencyBlobCount": 275,
+  "verification": "All 30 source files and five build configurations were fetched from sourceCommit through the GitHub connector and independently hashed. Complete recursive Git trees differ in exactly the two named source files; all other blobs, including all 275 inherited dependency blobs, match the frozen parent. No compiler, test, fixture, benchmark, formatter, dependency setup or executable workload ran.",
+  "checkStatus": {
+    "compile": "UNRUN for this source",
+    "constructionTests": "UNRUN",
+    "semanticNegativeControls": "UNRUN",
+    "fullP065SemanticSuites": "UNRUN",
+    "Node22": "UNRUN",
+    "formatter": "UNRUN",
+    "fullChecks": "UNRUN / prior blocked operations remain held",
+    "performanceQualification": "NOT ESTABLISHED"
+  },
+  "dependencyProvenance": "Inherited tracked dependency bytes preserved. The historical installation process remains unverified. No installation, deletion, staging or restaging of dependency files occurred.",
+  "lifecycle": "Old shared session 87162 outcome and authoritative descendant cleanup remain UNKNOWN. Independent previous compiler PID/PGID 1134 exited 1 with original group absent; escaped-descendant completeness remains unestablished. Neither is cleared by this source-only repair."
+}
