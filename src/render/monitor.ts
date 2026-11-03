@@ -1,7 +1,7 @@
 import type { ProgressState, ProgressContext } from '../collectors/progress-summary.js';
 /** Default F12 view: a monitor, not another transcript. No I/O or terminal input here. */
 import type { HudData, SubagentTree } from '../types.js';
-import type { HudDelegationData } from '../core/link/view-model.js';
+import type { DelegationViewModel, HudDelegationData } from '../core/link/view-model.js';
 import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
@@ -16,7 +16,7 @@ import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
 import { t } from './i18n.js';
 import { drawAgentsView } from './agents-view.js';
-import { controlBar, paneHead, icon, look, type CountsText } from './control-bar.js';
+import { controlBar, paneHead, icon, look, type CountsText, type RowButtons } from './control-bar.js';
 import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
 import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
@@ -29,6 +29,9 @@ import {
   worktreeOfItem,
 } from './monitor-labels.js';
 import { paneRows, agentsView, putAwayCount, summaryRow } from './monitor-panes.js';
+import { delegationPutAway, delegationView, type DelegationView, type PlanOptions } from './delegation/panel.js';
+import { resolveSelection } from './delegation/selection.js';
+import { selectedActions, type DelegationAction } from './delegation/actions.js';
 import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
 import { roleSet } from './directions.js';
 
@@ -152,6 +155,13 @@ export interface MonitorState {
   importantRoles?: ReadonlySet<string>;
   /** The cards' corners. The panel sets it from settings. */
   cardCorners?: 'square' | 'round';
+  /**
+   * The last render drew the delegation view, so `tree.selectedId` is one of its row keys. A reconcile that has no view
+   * model to check it against (`reconcileMonitor` without one) leaves the selection alone instead of resetting it
+   * against the empty legacy tree. `renderMonitor` sets it with a view model and removes the key without one: it is
+   * present or absent, never false (rulings B10B-s3 Q6).
+   */
+  delegating?: true;
 }
 export type PanelStyle = 'rich' | 'compact';
 /** A click target on a row; `x` counts from the row's start. */
@@ -174,6 +184,8 @@ export interface MonitorRow {
   counts?: CountsText;
   /** A row pinned above the agents' heading (the delegation view's parent row, design §4.6). */
   lead?: boolean;
+  /** The item this row is a part of, when it has an item of its own: a sub-row's line in its card (B10B-s3). */
+  of?: string;
 }
 export interface MonitorRect {
   id: MonitorPane;
@@ -214,10 +226,14 @@ export interface MonitorControl {
     | 'zoom'
     | 'observability'
     | 'keys'
-    | 'open-session';
+    | 'open-session'
+    | 'delegation-open'
+    | 'delegation-recover';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
+  /** A greyed button (the delegation view's `⇢` when its gate fails): a click on it does nothing. */
+  disabled?: boolean;
   x: number;
   y: number;
   width: number;
@@ -230,6 +246,8 @@ export interface MonitorFrame {
   helpPage?: { count: number; total: number };
   /** The status card's place and its brief's scroll, for the wheel. */
   statusCard?: FootInfo;
+  /** The delegation view this frame drew (its plan, its rows), what a key or a click is resolved against. */
+  delegation?: DelegationView;
 }
 export interface MonitorData {
   /** The HUD's data; `delegation`, when non-null, draws the agents view from the delegation view model. */
@@ -310,7 +328,8 @@ export interface MonitorOutcome {
     | { type: 'pick'; id: string }
     | { type: 'brief-toggle' }
     | { type: 'status-level' }
-    | { type: 'observability' };
+    | { type: 'observability' }
+    | Exclude<DelegationAction, { type: 'switch' }>;
 }
 
 export function initialMonitorState(): MonitorState {
@@ -394,15 +413,46 @@ function fileSelection(
   if (file) return isUntracked(file) && !state.untrackedOpen ? UNTRACKED_ROW : file.path;
   return files.find((f) => !isUntracked(f))?.path ?? (folded ? UNTRACKED_ROW : null);
 }
+/** The plan options a state asks for (the fold, the history, the order). */
+function planOptions(state: MonitorState, nowMs: number): PlanOptions {
+  return {
+    nowMs,
+    collapsed: state.tree.collapsed,
+    showHistory: state.tree.showAll,
+    sortByCreation: state.tree.sort === 'created',
+  };
+}
+
+/**
+ * Keeps the cursors on what exists. `delegation` is the view model the frame is drawn from: with one the agents'
+ * selection is checked against its plan (`resolveSelection`) and the state is marked `delegating`; `null` (a render
+ * with none) clears the mark and reconciles as always; absent (the page's own calls, which have no view model to ask)
+ * leaves the selection of a marked state alone, since the legacy tree it would be checked against is empty then.
+ */
 export function reconcileMonitor(
   state: MonitorState,
   tree: SubagentTree,
   git?: GitChanges | null,
   worktrees?: WorktreesSnapshot | null,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  delegation?: DelegationViewModel | null
 ): MonitorState {
-  const rows = listedAgents(tree.nodes, state, nowMs);
-  const selected = reconcileSelection(state.tree, tree.nodes, rows);
+  if (delegation === null && state.delegating) {
+    const { delegating: _mark, ...unmarked } = state;
+    state = unmarked;
+  }
+  const view = delegation
+    ? delegationView(delegation, { ...planOptions(state, nowMs), style: state.style === 'rich' ? 'rich' : 'compact' })
+    : null;
+  let selected: PanelState;
+  if (view) {
+    const key = resolveSelection(state.tree.selectedId, view.proj, view.plan, view.dest);
+    selected =
+      key === state.tree.selectedId
+        ? state.tree
+        : { ...state.tree, selectedId: key, view: state.tree.view === 'detail' && !key ? 'tree' : state.tree.view };
+  } else if (delegation === undefined && state.delegating) selected = state.tree;
+  else selected = reconcileSelection(state.tree, tree.nodes, listedAgents(tree.nodes, state, nowMs));
   const entries = worktrees?.entries ?? [];
   const selectedWorktree = entries.some((w) => w.path === state.selectedWorktree)
     ? state.selectedWorktree
@@ -422,6 +472,7 @@ export function reconcileMonitor(
   const revealed = selected.selectedId !== state.tree.selectedId ? selected.selectedId : state.revealed;
   return {
     ...state,
+    ...(view ? { delegating: true as const } : {}),
     tree: selected,
     selectedWorktree,
     selectedFile,
@@ -475,7 +526,8 @@ function helpText(
   rich: boolean,
   prefix: string,
   tabbed = false,
-  cardSummary = true
+  cardSummary = true,
+  delegation = false
 ): Array<string | { head: string; tab: HelpTab }> {
   const p = { p: prefix };
   const head = (text: string, tab: HelpTab = 'keys') => ({ head: t(text, p), tab });
@@ -502,6 +554,8 @@ function helpText(
       "Timeline: ↑ ↓ an agent's entry, Enter inspects",
       ...(rich ? [] : ['{p} h l  fold / unfold agent']),
       '{p} f  filter  {p} s  order',
+      // The delegation view's keys (design §2, §3.7): only where that view is drawn, so the legacy help is as it was.
+      ...(delegation ? ['{p} n N  next / previous trouble', '{p} L  log', '{p} R  resume / reconcile'] : []),
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
       '{p} Esc  back  {p} q  close panel',
       '{p} {p}  {p} itself, to Codex',
@@ -579,11 +633,24 @@ export function paneShown(state: MonitorState, id: MonitorPane): boolean {
   return state.tabbed ? state.focus === id : state.modes[id] === 'open';
 }
 
+/** The control bar's `⇢` and `↻` for the selected row of a delegation view. */
+export function rowButtons(view: DelegationView, selected: string | null): RowButtons {
+  const actions = selectedActions(view.plan, view.proj, selected);
+  return { open: actions?.open ?? null, recover: actions?.recover ?? null };
+}
+
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const width = Math.max(0, Math.floor(input.width));
   const height = Math.max(0, Math.floor(input.height));
-  const state = reconcileMonitor(input.state, input.tree, input.git, input.worktrees, input.nowMs ?? Date.now());
+  const now = input.nowMs ?? Date.now();
+  const delegation = input.hud?.delegation ?? null;
+  const state = reconcileMonitor(input.state, input.tree, input.git, input.worktrees, now, delegation);
   const frame: MonitorFrame = { lines: [], panes: [], controls: [], state };
+  if (delegation)
+    frame.delegation = delegationView(delegation, {
+      ...planOptions(state, now),
+      style: state.style === 'rich' ? 'rich' : 'compact',
+    });
   if (!width || !height) return frame;
   if (state.help) {
     // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
@@ -604,7 +671,8 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       state.style === 'rich',
       prefix,
       Boolean(state.tabbed),
-      state.cardVisibility?.cardSummary ?? defaultCardVisibility().cardSummary
+      state.cardVisibility?.cardSummary ?? defaultCardVisibility().cardSummary,
+      Boolean(delegation)
     );
     // The shortcuts, up to the second heading, are a table: each key without
     // the prefix its heading names, in a column, and what it does beside it,
@@ -707,7 +775,6 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const cw = framed ? width - 4 : width;
   const gutter = framed ? '' : width >= 24 ? '│ ' : '│';
   const inner = Math.max(0, cw - gutter.length);
-  const now = input.nowMs ?? Date.now();
   const notice = input.notice || input.error;
   const noticeRows = notice && height >= 6 ? wrapped(notice, Math.max(1, cw - 2)).slice(0, 2) : [];
   // The status card takes the foot, at the level chosen, at most about a
@@ -715,7 +782,18 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   let footPlan = planFoot(input, state, width, height, now, noticeRows.length);
   let footRows = footPlan.rows;
   // Every control the panel has is on its first rows; nothing else is a button.
-  const bar = controlBar(state, { brief: input.brief, expired: putAwayCount(input.tree.nodes, state, now) }, width);
+  const dview = frame.delegation;
+  const bar = controlBar(
+    state,
+    dview
+      ? {
+          brief: input.brief,
+          expired: delegationPutAway(dview.vm, planOptions(state, now)),
+          buttons: rowButtons(dview, state.tree.selectedId),
+        }
+      : { brief: input.brief, expired: putAwayCount(input.tree.nodes, state, now) },
+    width
+  );
   const top = Math.min(height, bar.lines.length);
   let budget = Math.max(0, height - top - footRows - noticeRows.length);
   // A closed pane takes no row at all; in the tabs layout only the one shown

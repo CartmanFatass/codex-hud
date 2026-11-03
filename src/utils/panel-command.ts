@@ -47,6 +47,10 @@ export const PANEL_COMMANDS = [
   'page-down',
   'left',
   'right',
+  'next-trouble',
+  'previous-trouble',
+  'log',
+  'resume-reconcile',
 ] as const;
 export type PanelCommand = (typeof PANEL_COMMANDS)[number];
 
@@ -88,6 +92,10 @@ const MONITOR_KEYS: Record<PanelCommand, string> = {
   'page-down': 'page-down',
   left: 'left',
   right: 'right',
+  'next-trouble': 'next-trouble',
+  'previous-trouble': 'previous-trouble',
+  log: 'log',
+  'resume-reconcile': 'resume-reconcile',
 };
 export function monitorKey(command: PanelCommand): string {
   return MONITOR_KEYS[command];
@@ -125,9 +133,27 @@ export function overlayKey(command: PanelCommand, overlay: 'settings' | 'help'):
   }
 }
 
-/** What runs when the panel is closed: these do nothing, the rest open it first. */
+/**
+ * What runs when the panel is closed: these do nothing, the rest open it first. The delegation view's four keys move
+ * or act inside the panel on a row that is not there yet, so a closed panel ignores them.
+ */
 export function needsOpenPanel(command: PanelCommand): boolean {
-  return !['quit', 'back', 'up', 'down', 'page-up', 'page-down', 'first', 'last', 'left', 'right'].includes(command);
+  return ![
+    'quit',
+    'back',
+    'up',
+    'down',
+    'page-up',
+    'page-down',
+    'first',
+    'last',
+    'left',
+    'right',
+    'next-trouble',
+    'previous-trouble',
+    'log',
+    'resume-reconcile',
+  ].includes(command);
 }
 
 /** The prefix keys the settings offer, checked against Codex's own bindings (see README). */

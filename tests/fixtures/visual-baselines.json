@@ -8740,7 +8740,7 @@
       "lines": [
         "  ▸ ✳ main          ━╸──  ◷9m12s",
         " ├ ⚑ ⌬ impl-parser            2m",
-        " ├ ▸ π review-te… ⊟ ━───  ◷5m00s",
+        " ├ ▸ π review-tests ━───  ◷5m00s",
         " ├ ▸ ◎ ask-pro            ◷4m00s",
         " └ ✓ ⌬ docs-sync              8m"
       ]
@@ -8776,7 +8776,7 @@
       "lines": [
         "  ▸ ✳ 主会话        ━╸──  ◷9m12s",
         " ├ ⚑ ⌬ impl-parser            2m",
-        " ├ ▸ π review-te… ⊟ ━───  ◷5m00s",
+        " ├ ▸ π review-tests ━───  ◷5m00s",
         " ├ ▸ ◎ ask-pro            ◷4m00s",
         " └ ✓ ⌬ docs-sync              8m"
       ]
@@ -9263,7 +9263,7 @@
         "›├ ⚑ ⌬ impl-parser            2m",
         "││   worker · pane 4 · bound 15m",
         "││   ⚑ running · stop in pane   ",
-        " ├ ▸ π review-te… ⊟ ━───  ◷5m00s",
+        " ├ ▸ π review-tests ━───  ◷5m00s",
         " ├ ▸ ◎ ask-pro            ◷4m00s",
         " └ ✓ ⌬ docs-sync              8m"
       ]

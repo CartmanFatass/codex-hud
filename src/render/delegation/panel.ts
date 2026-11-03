@@ -33,6 +33,7 @@ import {
   type RowPlan,
 } from './rows.js';
 import { richRows } from './cards.js';
+import { destinationsOf, type Destinations } from './selection.js';
 import { panelSay, W, type Say } from './style.js';
 
 export interface DelegationPanelOptions {
@@ -50,6 +51,47 @@ export interface DelegationPanelOptions {
   viewport?: number;
   /** What to say when there is no viewpoint root but the ledger is readable (the legacy empty lines). */
   empty?: () => MonitorRow[];
+}
+
+/** What the agents pane is made of this frame: the projection, the plan, and the rows the selection can stand on. */
+export interface DelegationView {
+  vm: DelegationViewModel;
+  proj: DelegationProjection;
+  plan: RowPlan;
+  dest: Destinations;
+  style: 'rich' | 'compact';
+  nowMs: number;
+}
+
+export type PlanOptions = Pick<DelegationPanelOptions, 'nowMs' | 'collapsed' | 'showHistory' | 'sortByCreation'>;
+
+/** The view of a view model: the same memoised projection and plan the rows are drawn from. */
+export function delegationView(
+  vm: DelegationViewModel,
+  options: PlanOptions & { style: 'rich' | 'compact' }
+): DelegationView {
+  const proj = projectDelegation(vm);
+  const plan = planRows(proj, {
+    nowMs: options.nowMs,
+    collapsed: options.collapsed,
+    showHistory: options.showHistory,
+    sortByCreation: options.sortByCreation,
+  });
+  return { vm, proj, plan, dest: destinationsOf(plan, options.style), style: options.style, nowMs: options.nowMs };
+}
+
+/**
+ * What the `older` button counts: the rows the tree would put away with history hidden, as today's button does. It
+ * is read while history is shown too (the button then offers to hide them); the plan it asks for is kept beside the
+ * drawn one (`planRows` keeps one per option set), so the drawn plan is not evicted.
+ */
+export function delegationPutAway(vm: DelegationViewModel, options: PlanOptions): number {
+  return planRows(projectDelegation(vm), {
+    nowMs: options.nowMs,
+    collapsed: options.collapsed,
+    showHistory: false,
+    sortByCreation: options.sortByCreation,
+  }).putAway;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,8 +328,7 @@ export function delegationAgentsRows(vm: DelegationViewModel, options: Delegatio
     showHistory: options.showHistory,
     sortByCreation: options.sortByCreation,
   });
-  const selectedKey =
-    options.selectedId && plan.rows.some((row) => row.key === options.selectedId) ? options.selectedId : null;
+  const selectedKey = options.selectedId && plan.index.has(options.selectedId) ? options.selectedId : null;
   const rows: MonitorRow[] = [];
   const parent = parentRow(proj, width, nowMs, g, say);
   if (parent !== null) rows.push({ text: parent, lead: true });

@@ -37,7 +37,9 @@ import {
   clockOf,
   exact,
   fadedRole,
+  foldKey,
   foldTexts,
+  NAME_MIN,
   nameMuted,
   newEpisode,
   PLAIN_INK,
@@ -65,6 +67,22 @@ const SENTENCE_LINES = 3;
 export function isCardHolder(pn: PNode): boolean {
   if (!pn.proj.isNative) return true;
   return pn.parent !== null && pn.parent.proj.isRoot;
+}
+
+const overflowMemo = new WeakMap<RowPlan, ReadonlySet<string>>();
+/**
+ * The sub-rows a card does not draw (past the fifth, folded into its `+N (…)` line): they are not destinations of the
+ * selection (rulings B10B-s3 Q2). Empty in compact, where every row is drawn.
+ */
+export function overflowKeys(plan: RowPlan): ReadonlySet<string> {
+  let kept = overflowMemo.get(plan);
+  if (!kept) {
+    const keys = new Set<string>();
+    for (const block of blocksOf(plan))
+      if (block.kind === 'card') for (const row of block.subs.slice(MAX_SUB_ROWS)) keys.add(row.key);
+    overflowMemo.set(plan, (kept = keys));
+  }
+  return kept;
 }
 
 interface CardBlock {
@@ -256,6 +274,9 @@ function renderCard(block: CardBlock, ctx: RenderContext, g: GlyphSet, say: Say)
   const clock = clockOf(proj, nowMs, g, ctx.coarse === true);
   const emphasis = newEpisode(proj, nowMs);
   const subTexts = subRowLines(block, ctx, w, g, say);
+  // A collapsed card (`h`) says what it holds on its head (design §3.4; B10B-s2 review F6).
+  const fold = block.row.fold;
+  const foldAt = fold ? foldKey(fold) : '';
   const root = rootOf(ctx.proj);
   const look = lookId(g, say);
   const ages = [
@@ -283,6 +304,7 @@ function renderCard(block: CardBlock, ctx: RenderContext, g: GlyphSet, say: Say)
     clock.text,
     clock.role,
     emphasis,
+    foldAt,
   ];
   const last = cardMemo.get(proj);
   if (last && sameInputs(last.inputs, inputs)) {
@@ -302,6 +324,7 @@ function renderCard(block: CardBlock, ctx: RenderContext, g: GlyphSet, say: Say)
     ctx.proj.kindIcons ? 1 : 0,
     ages.join('\u0001'),
     subTexts.join('\u0002'),
+    foldAt,
   ].join('\u0001');
   const footKey = `${shape}\u0001${look}\u0001${clock.text}\u0001${clock.role}\u0001${emphasis ? 1 : 0}\u0001${proj.contextPercent}`;
   let top = recall(bodyCache, bodyKey);
@@ -334,7 +357,15 @@ function renderCard(block: CardBlock, ctx: RenderContext, g: GlyphSet, say: Say)
     if (badge && w - headWidth - visualLength(badge) - 3 < Math.min(8, visualLength(name))) badge = '';
     const tail = badge ? ` ${badge}` : '';
     const room = Math.max(1, w - headWidth - visualLength(tail) - 2);
-    const shown = clip(name, room, g);
+    // The fold after the name, as the compact row writes it: the long form, then the short one, while the name keeps
+    // its 8 columns (§4.2); neither fits, none is written.
+    const foldText = fold
+      ? ([foldTexts(fold, g).long, foldTexts(fold, g).short].find(
+          (text) => room - 1 - visualLength(text) >= Math.min(NAME_MIN, visualLength(name))
+        ) ?? '')
+      : '';
+    const foldWidth = foldText ? 1 + visualLength(foldText) : 0;
+    const shown = clip(name, Math.max(1, room - foldWidth), g);
     const namePainted = selected
       ? colors.bold(muted ? ink.muted(shown) : ink.paint('text', shown))
       : proj.isRoot
@@ -342,9 +373,9 @@ function renderCard(block: CardBlock, ctx: RenderContext, g: GlyphSet, say: Say)
         : muted
           ? ink.muted(shown)
           : colors.bold(theme.value(shown));
-    const dashes = Math.max(0, w - headWidth - visualLength(shown) - 1 - visualLength(tail));
+    const dashes = Math.max(0, w - headWidth - visualLength(shown) - foldWidth - 1 - visualLength(tail));
     // Exactly `w` by construction while there is room for a dash; a name that fills the head is cut to fit.
-    const built = `${head}${namePainted} ${frame('─'.repeat(dashes))}${tail}`;
+    const built = `${head}${namePainted}${foldText ? ` ${ink.muted(foldText)}` : ''} ${frame('─'.repeat(dashes))}${tail}`;
     const headLine = dashes > 0 ? built : exact(built, w);
     lines.push(pad + (banded ? theme.selectedBand(headLine) : headLine));
 
@@ -472,15 +503,21 @@ class FrameRow implements MonitorRow {
   }
 }
 
-/** A card's line `i` as a pane row: drawn when the pane reads it (§6 #5). */
+/**
+ * A card's line `i` as a pane row: drawn when the pane reads it (§6 #5). A sub-row's line is the sub-row's own item (a
+ * click on it selects it) and belongs to the card (`of`), whose whole range the view scrolls into place.
+ */
 class CardLine implements MonitorRow {
   readonly item: string;
+  readonly of?: string;
   constructor(
     private readonly card: CardDrawing,
     private readonly index: number,
-    readonly key: string
+    readonly key: string,
+    sub?: string
   ) {
-    this.item = card.block.pn.key;
+    this.item = sub ?? card.block.pn.key;
+    if (sub !== undefined) this.of = card.block.pn.key;
   }
   get text(): string {
     return this.card.line(this.index);
@@ -492,7 +529,9 @@ class CardLine implements MonitorRow {
 
 /** 0 finished, 1 unselected alive, 2 the root; null never folds (§3.5). */
 function foldClass(block: CardBlock, selectedKey: string | null | undefined): 0 | 1 | 2 | null {
+  // The selected card, and the card that holds the selected sub-row, never fold (§3.5 "选中卡").
   if (block.pn.key === selectedKey) return null;
+  if (selectedKey && block.subs.some((row) => row.key === selectedKey)) return null;
   const glyph = block.pn.proj.marker.glyph;
   if (block.pn.proj.isRoot)
     return glyph === 'working' || glyph === 'starting' || glyph === 'done' || glyph === 'stop' ? 2 : null;
@@ -599,7 +638,15 @@ export function richRows(
     const card = new CardDrawing(block, frame, g, say);
     drawings.push(card);
     const count = full.get(block)!;
-    for (let i = 0; i < count; i++) rows.push(new CardLine(card, i, key));
+    // The sub-rows' lines sit after the head and the body: 2 lines of frame, the body, then the sub-rows, then the
+    // `+N` line when there is one (`cardHeight`).
+    const shown = Math.min(MAX_SUB_ROWS, block.subs.length);
+    const fold = block.subs.length > MAX_SUB_ROWS || block.pn.childrenUnknown ? 1 : 0;
+    const firstSub = count - 1 - fold - shown;
+    for (let i = 0; i < count; i++) {
+      const sub = i >= firstSub && i < firstSub + shown ? block.subs[i - firstSub].key : undefined;
+      rows.push(new CardLine(card, i, key, sub));
+    }
   }
   richViews.set(plan, { sig, frame, rows, drawings, lazies });
   return rows;

@@ -56,9 +56,31 @@ export interface BarInput {
   expired: number;
   /** Settings is the active navigation tab while its modal is open. */
   settingsActive?: boolean;
+  /**
+   * The delegation view is drawn: the buttons of its selected row (design §3.7), in place of the legacy Switch. A row
+   * with no button for one of them passes null; absent is the legacy panel.
+   */
+  buttons?: RowButtons;
 }
 
-type IconName = MonitorPane | 'main' | 'pause' | 'resume' | 'show' | 'hide' | 'settings' | 'help' | 'keys' | 'open';
+/** The `⇢` and `↻` buttons of the selected delegation row; `word` is the English key, `enabled` false is greyed. */
+export interface RowButtons {
+  open: { word: string; enabled: boolean } | null;
+  recover: { word: string; enabled: boolean } | null;
+}
+
+type IconName =
+  | MonitorPane
+  | 'main'
+  | 'pause'
+  | 'resume'
+  | 'show'
+  | 'hide'
+  | 'settings'
+  | 'help'
+  | 'keys'
+  | 'open'
+  | 'recover';
 
 /**
  * The Unicode icons: one column each, every one a glyph MesloLGS NF (the
@@ -80,6 +102,7 @@ export const UNICODE_ICONS: Record<IconName, string> = {
   help: '?',
   keys: '⌨',
   open: '⇢',
+  recover: '↻',
 };
 
 /**
@@ -102,6 +125,7 @@ export const ICONS: Record<IconName, string> = {
   help: '',
   keys: '\uf11c',
   open: '\uf090',
+  recover: '↻',
 };
 
 /**
@@ -172,7 +196,8 @@ export function paneTitle(id: MonitorPane): { icon: string; name: string } {
 const CAP_LEFT = '';
 const CAP_RIGHT = '';
 
-type ChipState = 'focused' | 'open' | 'closed' | 'button';
+/** `live` and `grey` are an action on the selected row that can be pressed and one that cannot (design §3.7). */
+type ChipState = 'focused' | 'open' | 'closed' | 'button' | 'live' | 'grey';
 
 /** One button: its icon, its word, the word where room is short and there is no icon, and its state. */
 interface Spec {
@@ -183,6 +208,8 @@ interface Spec {
   short: string;
   state: ChipState;
   accent?: boolean;
+  /** A dead button: its control says so, and the panel does nothing for a click on it. */
+  disabled?: boolean;
 }
 
 interface Specs {
@@ -252,8 +279,32 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
   // An agent selected, in its list or its Inspector: switching Codex to it, as `o` does, is a click away.
   const switchable =
     state.tree.selectedId && (state.focus === 'agents' || (state.focus === 'details' && state.preview === 'agent'));
-  if (switchable && !input.settingsActive && keep >= 2)
-    actions.push({ kind: 'open-session', glyph: icon('open'), word: t('Switch'), short: '⇢', state: 'button' });
+  if (switchable && !input.settingsActive && keep >= 2) {
+    const row = input.buttons;
+    if (!row) actions.push({ kind: 'open-session', glyph: icon('open'), word: t('Switch'), short: '⇢', state: 'button' });
+    else {
+      // The delegation view's row: its word follows the row (Open, Switch, Log), greyed when its gate fails; `↻` only
+      // when it applies.
+      if (row.open)
+        actions.push({
+          kind: 'delegation-open',
+          glyph: icon('open'),
+          word: t(row.open.word),
+          short: '⇢',
+          state: row.open.enabled ? 'live' : 'grey',
+          disabled: !row.open.enabled,
+        });
+      if (row.recover)
+        actions.push({
+          kind: 'delegation-recover',
+          glyph: icon('recover'),
+          word: t(row.recover.word === 'Resume' ? 'Resume run' : row.recover.word),
+          short: '↻',
+          // A greyed Resume is a paint, not a dead control: a click on it still answers with its diagnostic.
+          state: row.recover.enabled ? 'live' : 'grey',
+        });
+    }
+  }
   if (input.brief && keep >= 2) {
     const paused = Boolean(input.brief.paused);
     actions.push({
@@ -310,6 +361,9 @@ const OPTIONS: ReadonlyArray<readonly [Level, number]> = [
 
 function hasWord(level: Level, spec: Spec, olderWords = false): boolean {
   if (spec.kind === 'older') return olderWords;
+  // The selected row's buttons say what they do while the bar has any word to spare: the word is what changes with the
+  // row (design §4.9's `⇢ Log` at 48 columns), so it outlasts the other tabs' words and goes with the last of them.
+  if (spec.kind === 'delegation-open' || spec.kind === 'delegation-recover') return level !== 'none';
   // The held keys' word outlasts the closed tabs' and the other actions', as an alert would.
   if (spec.kind === 'keys') return level !== 'focus' && level !== 'none';
   if (spec.kind === 'settings') return true;
@@ -346,6 +400,8 @@ function paint(look: LookName, text: string, state: ChipState, accent = false, r
     if (look === 'pill') return `${theme.tabEdge(CAP_LEFT)}${theme.tab(theme.bold(text))}${theme.tabEdge(CAP_RIGHT)}`;
     return theme.tab(theme.bold(` ${text} `));
   }
+  if (state === 'live') return theme.value(text);
+  if (state === 'grey') return colors.dim(text);
   if (state === 'button') return accent ? theme.accent(text) : colors.dim(text);
   const shown = look === 'tile' && roomy ? ` ${text} ` : text;
   if (look === 'tile' && state === 'open' && !bare) return theme.chip(shown);
@@ -376,6 +432,7 @@ function spans(placed: Placed[], y: number, from: number, to: number): MonitorCo
     return {
       kind: p.spec.kind,
       ...(p.spec.pane ? { pane: p.spec.pane } : {}),
+      ...(p.spec.disabled ? { disabled: true } : {}),
       x: start,
       y,
       width: Math.max(1, end - start),
@@ -504,7 +561,14 @@ function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
       const actions = set.actions.map((spec) =>
         paint(
           'frame',
-          face(spec, (spec.kind === 'older' || spec.kind === 'keys') && olderWords),
+          face(
+            spec,
+            (spec.kind === 'older' ||
+              spec.kind === 'keys' ||
+              spec.kind === 'delegation-open' ||
+              spec.kind === 'delegation-recover') &&
+              olderWords
+          ),
           spec.state,
           spec.accent
         )

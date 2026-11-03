@@ -72,6 +72,11 @@ export interface PlannedRow {
   flat: boolean;
   fold: FoldInfo | null;
   put: { count: number; names: string[] } | null;
+  /**
+   * The key of the node whose children these rows are (a `⊕N` row's too); null for a root. A `⊕N` row is
+   * identified by it, wherever the row sits (rulings B10B-s3 Q2).
+   */
+  parentKey: string | null;
 }
 
 export interface RowPlan {
@@ -80,6 +85,23 @@ export interface RowPlan {
   putAway: number;
   /** More active rows than `COARSE_CLOCK_ROWS`. */
   coarse: boolean;
+  /** A row's place in `rows`, by key. */
+  index: Map<string, number>;
+  /** A child put away → the key of the `⊕N` row that holds it. */
+  away: Map<string, string>;
+  /** A parent → the place of its `⊕N` row in `rows`. */
+  putRows: Map<string, number>;
+}
+
+/** A `⊕N` row's key: its place in the plan, then the node whose children it holds (`put:7:codex:impl-a`). */
+export function putKey(index: number, parentKey: string): string {
+  return `put:${index}:${parentKey}`;
+}
+const PUT_KEY = /^put:(\d+):([\s\S]*)$/;
+/** The place and the parent a `⊕N` row's key names; null for any other key. */
+export function parsePutKey(key: string): { index: number; parentKey: string } | null {
+  const m = PUT_KEY.exec(key);
+  return m ? { index: Number(m[1]), parentKey: m[2] } : null;
 }
 
 function creationOf(pn: PNode): number {
@@ -103,10 +125,17 @@ export function compareSiblings(byCreation: boolean) {
   };
 }
 
+interface PutItem {
+  put: { count: number; names: string[] };
+  /** The children folded into it, by key. */
+  members: string[];
+}
 interface Frame {
-  items: Array<PNode | { put: { count: number; names: string[] } }>;
+  items: Array<PNode | PutItem>;
   i: number;
   ancestors: boolean[];
+  /** The node these items are the children of. */
+  parentKey: string | null;
 }
 
 /**
@@ -114,25 +143,33 @@ interface Frame {
  * put-away time: the only thing the clock decides in a plan (§3.2). So a panel replans when the tree, the options or
  * a fold boundary change, not every second.
  */
-const planMemo = new WeakMap<DelegationProjection, { key: string; from: number; until: number; plan: RowPlan }>();
+const planMemo = new WeakMap<DelegationProjection, Map<string, { from: number; until: number; plan: RowPlan }>>();
+/**
+ * A projection keeps this many plans, one per option set: the one drawn and the one the `older` button counts (history
+ * hidden while it is shown) do not evict each other (rulings B10B-s3, default 5).
+ */
+const PLAN_MEMO_ENTRIES = 4;
 
 /** The rows in order, with each row's tree drawing and fold; no strings are built. */
 export function planRows(proj: DelegationProjection, options: RowOptions): RowPlan {
   const memoKey = `${options.showHistory ? 1 : 0}|${options.sortByCreation ? 1 : 0}|${
     options.collapsed && options.collapsed.size > 0 ? [...options.collapsed].sort().join('\u0001') : ''
   }`;
-  const hit = planMemo.get(proj);
-  if (hit && hit.key === memoKey && options.nowMs >= hit.from && options.nowMs < hit.until) return hit.plan;
+  const kept = planMemo.get(proj);
+  const hit = kept?.get(memoKey);
+  if (hit && options.nowMs >= hit.from && options.nowMs < hit.until) return hit.plan;
   // The window: the latest put-away time already passed, and the next one to come.
   let from = Number.NEGATIVE_INFINITY;
   let until = Number.POSITIVE_INFINITY;
 
   const compare = compareSiblings(options.sortByCreation === true);
   const rows: PlannedRow[] = [];
+  const away = new Map<string, string>();
+  const putRows = new Map<string, number>();
   let putAway = 0;
   const active = proj.counts.working + proj.counts.starting;
 
-  const stack: Frame[] = [{ items: proj.roots.slice(), i: 0, ancestors: [] }];
+  const stack: Frame[] = [{ items: proj.roots.slice(), i: 0, ancestors: [], parentKey: null }];
   while (stack.length > 0) {
     const frame = stack[stack.length - 1];
     if (frame.i >= frame.items.length) {
@@ -143,9 +180,12 @@ export function planRows(proj: DelegationProjection, options: RowOptions): RowPl
     const later = frame.i < frame.items.length;
     const depthOf = frame.ancestors.length + 1;
     if ('put' in item) {
+      const key = putKey(rows.length, frame.parentKey!);
+      for (const member of item.members) away.set(member, key);
+      putRows.set(frame.parentKey!, rows.length);
       rows.push({
         kind: 'putAway',
-        key: `put:${stack.length}:${rows.length}`,
+        key,
         pn: null,
         depth: Math.min(depthOf, MAX_DEPTH),
         ancestors: frame.ancestors.slice(0, MAX_DEPTH - 1),
@@ -154,6 +194,7 @@ export function planRows(proj: DelegationProjection, options: RowOptions): RowPl
         flat: false,
         fold: null,
         put: item.put,
+        parentKey: frame.parentKey,
       });
       continue;
     }
@@ -173,17 +214,18 @@ export function planRows(proj: DelegationProjection, options: RowOptions): RowPl
       flat: !isViewRoot && depthOf > MAX_DEPTH,
       fold: collapsed ? { hidden: pn.sub.total, below: pn.sub.below, unknown: pn.childrenUnknown } : null,
       put: null,
+      parentKey: frame.parentKey,
     });
     if (collapsed || pn.children.length === 0) continue;
 
     // Children in bucket order; finished subtrees past their linger window fold into one row (§3.2).
     const kept: PNode[] = [];
-    const away: PNode[] = [];
+    const gone: PNode[] = [];
     for (const child of pn.children) {
       const finish = child.sub.youngestFinish;
       const boundary = !options.showHistory && child.sub.allFinished && finish !== null ? finish + PUT_AWAY_MS : null;
       if (boundary !== null && options.nowMs >= boundary) {
-        away.push(child);
+        gone.push(child);
         from = Math.max(from, boundary);
       } else {
         kept.push(child);
@@ -192,21 +234,27 @@ export function planRows(proj: DelegationProjection, options: RowOptions): RowPl
     }
     kept.sort(compare);
     const items: Frame['items'] = kept;
-    if (away.length > 0) {
-      away.sort(compare);
-      const count = away.reduce((sum, child) => sum + 1 + child.sub.total, 0);
+    if (gone.length > 0) {
+      gone.sort(compare);
+      const count = gone.reduce((sum, child) => sum + 1 + child.sub.total, 0);
       putAway += count;
       items.push({
-        put: { count, names: away.slice(0, PUT_AWAY_NAMES).map((child) => child.proj.name ?? child.key) },
+        put: { count, names: gone.slice(0, PUT_AWAY_NAMES).map((child) => child.proj.name ?? child.key) },
+        members: gone.map((child) => child.key),
       });
     }
     // This node's own column continues below it while it has later siblings; the root draws none.
     const own = isViewRoot ? [] : [later];
-    stack.push({ items, i: 0, ancestors: frame.ancestors.concat(own) });
+    stack.push({ items, i: 0, ancestors: frame.ancestors.concat(own), parentKey: pn.key });
   }
 
-  const plan: RowPlan = { rows, putAway, coarse: active > COARSE_CLOCK_ROWS };
-  planMemo.set(proj, { key: memoKey, from, until, plan });
+  const index = new Map<string, number>();
+  for (let i = 0; i < rows.length; i++) index.set(rows[i].key, i);
+  const plan: RowPlan = { rows, putAway, coarse: active > COARSE_CLOCK_ROWS, index, away, putRows };
+  let entries = planMemo.get(proj);
+  if (!entries) planMemo.set(proj, (entries = new Map()));
+  if (entries.size >= PLAN_MEMO_ENTRIES && !entries.has(memoKey)) entries.delete(entries.keys().next().value!);
+  entries.set(memoKey, { from, until, plan });
   return plan;
 }
 
@@ -468,7 +516,7 @@ function sayId(say: Say): number {
 }
 
 /** The fold's counts as a delimited tuple: `1,11,0,...` can never read as `11,1,0,...`. */
-const foldKey = (fold: FoldInfo): string =>
+export const foldKey = (fold: FoldInfo): string =>
   `${fold.hidden}/${fold.unknown ? 1 : 0}/${GLYPHS.map((glyph) => fold.below[glyph]).join(',')}`;
 
 /**
@@ -633,7 +681,13 @@ function layoutRow(row: PlannedRow, ctx: RenderContext, l: Layout): string {
   const fits = (nameNeeds: number) => (step: [boolean, string, string]) =>
     fieldRoom - widthOf(step[0], step[1], step[2]) >= nameNeeds;
   let chosen: [boolean, string, string] | null;
-  if (narrow && words) {
+  if (narrow && !words && headless !== '') {
+    // 32-39, a row with a `⊟` and no state word: the `⊟` goes before the name is cut (§3.4 rule 3, §4.13's 32-column
+    // sample: `review-tests` whole, no `⊟`). A row that needs no cut keeps it; once a cut is needed it is already
+    // gone, and the name goes down to its floor (B10B-s2 review F7).
+    chosen = shed('').find(fits(nameWidth)) ??
+      shed('').slice(1).find(fits(floor)) ?? [false, fold ? fold.short : '', ''];
+  } else if (narrow && words) {
     // 32-39: the state word goes before the name is cut at all (§3.4 rule 3, read literally); once it is gone
     // the `⊟` comes back if it fits, since that is dropping in order until the row fits (rulings Q7).
     chosen = shed(words).find(fits(nameWidth)) ?? shed('').find(fits(floor)) ?? [false, fold ? fold.short : '', ''];

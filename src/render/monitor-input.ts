@@ -12,6 +12,17 @@ import type {
 } from './monitor.js';
 import { MONITOR_PANES, HELP_TABS, listedAgents } from './monitor.js';
 import { applyKey } from './panel-state.js';
+import {
+  logKeyAction,
+  openButtonAction,
+  openKeyAction,
+  recoverAction,
+  selectedActions,
+  type DelegationAction,
+  type RowActions,
+} from './delegation/actions.js';
+import { stepStop, stopsOf } from './delegation/selection.js';
+import type { DelegationView } from './delegation/panel.js';
 import { directions } from './directions.js';
 import { WHEEL_ROWS } from './agents-view.js';
 import { nextLevel } from './status-foot.js';
@@ -90,6 +101,17 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   };
   let key = input.type === 'key' ? input.key : '';
   const result = (action?: MonitorOutcome['action'], close = false): MonitorOutcome => ({ state: next, close, action });
+  // The delegation view the user saw: its plan and rows are what a key or a click is resolved against.
+  const del = ctx.frame?.delegation;
+  // A key acts exactly when its button is drawn (the bar's condition), and does what a click on that button does.
+  const onRow = () =>
+    next.tree.selectedId !== null &&
+    (next.focus === 'agents' || (next.focus === 'details' && next.preview === 'agent'));
+  const rowAction = (choose: (actions: RowActions) => DelegationAction | null): MonitorOutcome => {
+    const actions = del && onRow() ? selectedActions(del.plan, del.proj, next.tree.selectedId) : null;
+    const action = actions ? choose(actions) : null;
+    return result(action ?? undefined);
+  };
   if (key === 'close') return result(undefined, true);
   // Space and Enter inspect the selection in either panel style.
   if (key === 'space') key = 'enter';
@@ -136,6 +158,11 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     // The bar's Switch: the selected agent, as `o`.
     if (control?.kind === 'open-session')
       return next.tree.selectedId ? result({ type: 'switch', id: next.tree.selectedId }) : result();
+    // The selected delegation row's `⇢` and `↻`: what the button's word says, nothing for a greyed `⇢`.
+    if (control?.kind === 'delegation-open' || control?.kind === 'delegation-recover')
+      return control.disabled
+        ? result()
+        : rowAction(control.kind === 'delegation-open' ? openButtonAction : recoverAction);
     if (control?.kind === 'settings') return result({ type: 'settings' });
     if (control?.kind === 'observability') return result({ type: 'observability' });
     if (control?.kind === 'help') {
@@ -228,6 +255,12 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
             return result();
           }
           if (pane.id === 'agents') {
+            // A delegation row only selects: the Inspector has nothing to show for it yet, and a second click
+            // must not hand a delegation key to the session switch.
+            if (del || next.delegating) {
+              if (del?.dest.index.has(id)) pick(id);
+              return result();
+            }
             if (!listedAgents(ctx.tree.nodes, next, ctx.nowMs ?? Date.now()).some((row) => row.node.id === id))
               return result();
             // A rich card only selects. A compact row opens the Inspector and arms a second click, which switches.
@@ -291,6 +324,10 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     return result({ type: 'status-level' });
   }
   if (key === 'main') return result({ type: 'switch', id: ctx.tree.rootId });
+  // `o`, `L` and `R` on a delegation row: Open or Switch, Log, Reconcile or Resume. Each acts when its button is drawn.
+  if (key === 'open-session' && (del || next.delegating)) return rowAction(openKeyAction);
+  if (key === 'log') return rowAction(logKeyAction);
+  if (key === 'resume-reconcile') return rowAction(recoverAction);
   if (key === 'open-session')
     return next.focus === 'agents' && next.tree.selectedId
       ? result({ type: 'switch', id: next.tree.selectedId })
@@ -378,7 +415,9 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     const delta =
       key === 'down' ? 1 : key === 'up' ? -1 : key === 'page-down' ? itemPage : key === 'page-up' ? -itemPage : 0;
     const move = delta !== 0 || key === 'home' || key === 'end';
-    if (next.focus === 'agents') {
+    if (next.focus === 'agents' && del) {
+      navigateDelegation(next, key, del, pane, page, delta, move);
+    } else if (next.focus === 'agents') {
       const rows = listedAgents(ctx.tree.nodes, next, ctx.nowMs ?? Date.now());
       // A page key scrolls the view a page; the selection keys move the
       // selection, and the view follows it there.
@@ -477,4 +516,58 @@ function inspectFromTimeline(state: MonitorState, agent: string): MonitorState {
   next.expanded = false;
   next.inspectFrom = 'timeline';
   return next;
+}
+
+/**
+ * The agents pane's keys over a delegation view: the selection moves over the plan's destinations, `h` and `l` fold
+ * and unfold through `tree.collapsed` by row key, `s` and `a` change the order and the history (the plan is read from
+ * the state again), `n` and `N` go to the next and previous stop. Pure but for the state it is given to write in.
+ */
+function navigateDelegation(
+  next: MonitorState,
+  key: string,
+  view: DelegationView,
+  pane: MonitorRect | undefined,
+  page: number,
+  delta: number,
+  move: boolean
+): void {
+  const rows = view.dest.rows;
+  const selected = next.tree.selectedId;
+  const at = selected === null ? -1 : (view.dest.index.get(selected) ?? -1);
+  const row = at >= 0 ? rows[at] : undefined;
+  const fold = (key: string, folded: boolean) => {
+    const collapsed = new Set(next.tree.collapsed);
+    if (folded) collapsed.add(key);
+    else collapsed.delete(key);
+    next.tree.collapsed = collapsed;
+  };
+  if (key === 'page-down' || key === 'page-up') {
+    // A page key scrolls the view a page; the selection keys move the selection, and the view follows it there.
+    const span = Math.max(1, (pane?.visible ?? page) - (pane?.pinned ?? 0) - 1);
+    next.scroll.agents = Math.max(0, next.scroll.agents + (key === 'page-down' ? span : -span));
+  } else if (move) {
+    next.revealed = null;
+    const target = key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, at) + delta;
+    const to = rows[Math.max(0, Math.min(rows.length - 1, target))];
+    if (to) next.tree.selectedId = to.key;
+  } else if (key === 'sort') next.tree.sort = next.tree.sort === 'active' ? 'created' : 'active';
+  else if (key === 'left' && row) {
+    // Fold an open branch, otherwise step out to the parent.
+    if (row.pn && row.pn.children.length > 0 && !row.fold) fold(row.pn.key, true);
+    else if (row.parentKey !== null && view.dest.index.has(row.parentKey)) next.tree.selectedId = row.parentKey;
+  } else if (key === 'right' && row) {
+    // Unfold a folded branch, otherwise step in to its first child.
+    if (row.fold && row.pn) fold(row.pn.key, false);
+    else if (row.pn && row.pn.children.length > 0) {
+      const child = rows[at + 1];
+      if (child && child.parentKey === row.key) next.tree.selectedId = child.key;
+    }
+  } else if (key === 'next-trouble' || key === 'previous-trouble') {
+    const to = stepStop(stopsOf(view.proj, view.dest), at, key === 'next-trouble' ? 1 : -1);
+    if (to !== null) {
+      next.revealed = null;
+      next.tree.selectedId = rows[to].key;
+    }
+  }
 }

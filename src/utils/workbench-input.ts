@@ -38,6 +38,11 @@ const KEYS: Record<string, string> = {
   f: 'filter',
   '/': 'filter',
   s: 'sort',
+  // The delegation view's keys (design §2, §3.7): the next and previous trouble node, the log, resume or reconcile.
+  n: 'next-trouble',
+  N: 'previous-trouble',
+  L: 'log',
+  R: 'resume-reconcile',
   z: 'zoom',
   '?': 'help',
   b: 'brief-toggle',

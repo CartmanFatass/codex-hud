@@ -232,15 +232,18 @@ export function factsEqual(a: NodeFacts, b: NodeFacts): boolean {
   // One straight-line comparison of every field, built once from the constructor's own keys: a loop of keyed
   // loads over sixty names is the hot spot of a changed tick, where every node of a fresh tree is compared (B10B-s2
   // review F1). The keys are this module's own identifiers, never input.
-  compare ??= comparatorFor(Object.keys(a) as Array<keyof NodeFacts>);
+  compare ??= comparatorFor<NodeFacts>(Object.keys(a) as Array<keyof NodeFacts>);
   return compare(a, b);
 }
 
-function comparatorFor(keys: ReadonlyArray<keyof NodeFacts>): (a: NodeFacts, b: NodeFacts) => boolean {
-  if (!keys.every((key) => /^[A-Za-z]+$/.test(key))) throw new Error('fact names are identifiers');
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+/** A fact name is a plain JavaScript identifier: letters, digits, `_` and `$`, not starting with a digit. */
+const FACT_NAME = /^[A-Za-z_$][\w$]*$/;
+
+/** Exported for the test of the name guard; `factsEqual` is the one caller. */
+export function comparatorFor<T extends object>(keys: ReadonlyArray<keyof T & string>): (a: T, b: T) => boolean {
+  if (!keys.every((key) => FACT_NAME.test(key))) throw new Error('fact names are identifiers');
   return new Function('a', 'b', `return ${keys.map((key) => `a.${key} === b.${key}`).join(' && ')};`) as (
-    a: NodeFacts,
-    b: NodeFacts
+    a: T,
+    b: T
   ) => boolean;
 }

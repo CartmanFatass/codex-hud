@@ -51,7 +51,7 @@ export function drawAgentsView(
     const from = rows.findIndex((row, i) => i >= pinned && row.item === selected);
     if (from >= 0) {
       let to = from;
-      while (to + 1 < rows.length && rows[to + 1].item === selected) to++;
+      while (to + 1 < rows.length && (rows[to + 1].item === selected || rows[to + 1].of === selected)) to++;
       // The whole card when it fits, else its top.
       if (from - pinned < offset) offset = from - pinned;
       else if (to - pinned >= offset + shown) offset = Math.min(from - pinned, to - pinned - shown + 1);

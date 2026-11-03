@@ -800,12 +800,25 @@ const ZH: Record<string, string> = {
   'scope conflict': '范围冲突',
   'provisional conflict': '占位冲突',
   'launch timeout': '启动超时',
+  // The control bar's buttons for the selected delegation row, and the keys that go with them (design §3.7, §5.5;
+  // rulings B10B-s3). `Switch` and `Log` are the words above.
+  Open: '打开',
+  Reconcile: '对账',
+  'Resume run': '恢复',
+  'resume not verified on this machine · ask the parent to delegate_resume':
+    '本机 resume 入口未验证 · 请原父调用 delegate_resume',
+  '{p} n N  next / previous trouble': '{p} n N  下一个 / 上一个异常',
+  '{p} L  log': '{p} L  日志',
+  '{p} R  resume / reconcile': '{p} R  恢复 / 对账',
 };
 
 const EN_OVERRIDES: Record<string, string> = {
   // Setting values whose stored form is not a word in either language.
   en: 'English',
   zh: '中文',
+  // A key that tells one use of an English word from another: the Chinese differs, the English reads the same. `Resume`
+  // is the brief's button (继续 models); `Resume run` is the delegation button for an ended run (恢复, design §5.5).
+  'Resume run': 'Resume',
 };
 
 export function t(text: string, vars?: Record<string, string | number>): string {

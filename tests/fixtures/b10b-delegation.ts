@@ -9,6 +9,7 @@
 import type { DelegationNodeDetails, DelegationViewModel } from '../../src/core/link/view-model.js';
 import type { LinkRelationProjection, LinkTreeNode, LinkTreeProjection } from '../../src/core/link/types.js';
 import type { StatusProjection } from '../../src/core/types/observation.js';
+import { reconcileDescriptor } from '../../src/core/link/actions.js';
 import { FIXED_NOW } from './hud-data.js';
 
 export const NOW = FIXED_NOW.getTime();
@@ -116,6 +117,14 @@ export interface NodeSpec {
   missing?: string[];
   /** `execution.terminal.note`. */
   terminalNote?: 'cancel_timing_unknown' | 'retire_timing_unknown';
+  // B10B-s3 additions (additive; rulings B10B-s3 Q1, Q3, Q4).
+  /** The node's `reconcile` descriptor: the real shipped template over synthetic ids (`l_<id>`, `r_<id>`). */
+  reconcile?: boolean;
+  /**
+   * The host check failed: the locator is stale (or the occupant does not match), so `host.currentState` is null even
+   * when a `pane` is named. Absent: a named `pane` is a verified host state, no `pane` is no host at all.
+   */
+  hostCheck?: 'stale' | 'mismatch';
 }
 
 /** The synthetic checkout every node works in unless a test says otherwise. */
@@ -191,6 +200,8 @@ export interface Built {
 }
 
 export interface BuildOptions {
+  /** `tree.selectionMap`: an intent key to the session key it was bound to. */
+  selectionMap?: Record<string, string>;
   capacity?: { active: number; limit: number; mine: number; mineLimit: number; uncertain?: number } | null;
 }
 
@@ -311,9 +322,17 @@ export function buildVm(specs: readonly NodeSpec[], options: BuildOptions = {}):
       },
       conflict: spec.conflict ?? null,
       links: [],
-      host: spec.pane
-        ? { locator: null, state: 'valid', occupantMatches: true, checkedAt: NOW, currentState: { label: spec.pane } }
-        : null,
+      host: spec.hostCheck
+        ? {
+            locator: null,
+            state: spec.hostCheck === 'stale' ? 'stale' : 'valid',
+            occupantMatches: spec.hostCheck === 'mismatch' ? false : null,
+            checkedAt: NOW,
+            currentState: null,
+          }
+        : spec.pane
+          ? { locator: null, state: 'valid', occupantMatches: true, checkedAt: NOW, currentState: { label: spec.pane } }
+          : null,
       parent: null,
       ...(spec.nativeMeta ? { native: spec.nativeMeta } : {}),
     } as unknown as LinkTreeNode;
@@ -340,7 +359,7 @@ export function buildVm(specs: readonly NodeSpec[], options: BuildOptions = {}):
       ...(spec.observationUnavailable ? { observationUnavailableReason: spec.observationUnavailable } : {}),
       parentOffline: null,
       wake: null,
-      reconcile: null,
+      reconcile: spec.reconcile ? reconcileDescriptor('/synthetic/hud-home', `l_${spec.id}`, `r_${spec.id}`) : null,
       resumable: { resumable: false, reason: 'capability_unverified', subject: 'local_user' },
     } as DelegationNodeDetails;
 
@@ -383,7 +402,7 @@ export function buildVm(specs: readonly NodeSpec[], options: BuildOptions = {}):
     nodes,
     relations,
     candidates: [],
-    selectionMap: {},
+    selectionMap: options.selectionMap ?? {},
     continuation,
     truncation: { candidates: 0, conflictRecords: 0, continuation: 0 },
     counts: {

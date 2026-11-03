@@ -121,6 +121,9 @@ Every key below follows the prefix: `Ctrl+\`, then the key (or the prefix chosen
 | `s` | Active-first / creation order |
 | `a` | Show or hide the finished agents the tree has put away (the `⊕N` button) |
 | `f` or `/` | Filter all, running, failed, unknown |
+| `n` / `N` | Where the delegation tree is drawn: the next / previous row that needs a person (`⚑`, a live `!`, `⚠`, an unsure `?`; a collapsed row over one counts, and stays collapsed). Wraps at the ends; nothing when there is none |
+| `L` | Where the delegation tree is drawn: the log of the selected headless run, in any state (the bar's `⇢ Log`) |
+| `R` | Where the delegation tree is drawn: the bar's `↻` for the selected row. Reconcile copies the reconcile command; Resume only says the local resume entry is not verified here (ask the parent to `delegate_resume`) |
 | `o` | Switch the actual Codex conversation to the selected agent at once (`⌂` does the same for the main session; the bar's `⇢` Switch does the same as `o`). A click selects; a second click on the name within 400 ms switches |
 | `m` | Return the Codex conversation to the root session (the `⌂` button) |
 | `z` | Zoom/restore focused pane, a click on its title too (stacked layout) |

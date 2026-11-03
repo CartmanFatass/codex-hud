@@ -91,6 +91,11 @@ bind_command 0 g first
 bind_command 0 G last
 bind_command 0 h left
 bind_command 0 l right
+# The delegation view's keys. Not repeating (no -r): a key typed within repeat-time after j/k goes to the pane.
+bind_command 0 n next-trouble
+bind_command 0 N previous-trouble
+bind_command 0 L log
+bind_command 0 R resume-reconcile
 bind_command 0 Escape back
 # Within repeat-time the next of these needs no prefix: prefix j j j.
 bind_command 1 j down
