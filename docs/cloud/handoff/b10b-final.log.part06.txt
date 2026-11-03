@@ -1,0 +1,859 @@
+d wide widths (4.543133ms)
+✔ reopening Changes links its preview and tiny/zoomed panes really collapse (2.570334ms)
+✔ default stacked layout shows every agent report without opening inspector (1.518968ms)
+✔ team reports are selection independent and inspector is explicit (2.687738ms)
+✔ old reports are marked prior-turn and report text cannot inject terminal controls (0.974142ms)
+✔ enter inspects but a mouse agent selection returns to team view (3.079718ms)
+✔ navigation notices occupy only the footer and never reflow agent details (1.307235ms)
+✔ narrow Changes is a workspace summary, not a hidden file selector (1.233806ms)
+✔ an agent task continuation selects that agent; empty space is not an agent (1.860524ms)
+✔ workspace warnings remain visible when a partial Git read returned files (4.242168ms)
+✔ Git failures never echo the failed command or native stderr (2.646326ms)
+✔ literal filename controls and bidi marks cannot inject terminal structure (0.803574ms)
+✔ padding and two-column gutter use the same coordinates as hit testing (2.796519ms)
+✔ a narrow file preview contains metadata, not wrapped diff lines (0.62141ms)
+✔ worktree list parses NUL fields, including multiline paths, empty lock reason and detached/bare (10.661909ms)
+✔ status counts files, not rename paths, and staged/unstaged overlap (0.679185ms)
+✔ truncated and unrecognized records fail instead of pretending clean (0.390608ms)
+✔ unknown upstream differs from ahead=0 behind=0 (0.248808ms)
+✔ repository selection uses only explicit configuration or session/launch cwd (0.992329ms)
+✔ collector probes a bounded round-robin batch with at most two concurrent Git calls (31.246303ms)
+✔ failed status clears old clean evidence and errors do not echo argv or paths (1.231673ms)
+✔ prunable and bare entries never trigger status or filter commands (0.325812ms)
+✔ filter commands are disabled before status and never executed as shell text (1.058826ms)
+✔ an unrepresentable filter key fails closed before touching file contents (2.157127ms)
+✔ list limit is visible rather than claiming an exhaustive result (1.044256ms)
+✔ concurrent refresh requests share a single collection instead of spawning duplicate probes (0.388034ms)
+✔ real Git read-only smoke: unusual untracked filenames; no staging, commit or checkout (62.675146ms)
+✔ a detached worktree is named by the nearest directory that is not an id, never by a hash (105.863037ms)
+✔ the HEAD subjects are read in one git log, once per hash, and a failure is not retried (2.315727ms)
+✔ the worktrees over the changes: names, subjects and the word locked; no hash anywhere (41.958146ms)
+ℹ tests 2455
+ℹ suites 0
+ℹ pass 2427
+ℹ fail 12
+ℹ cancelled 0
+ℹ skipped 16
+ℹ todo 0
+ℹ duration_ms 87886.754568
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b19-adapters.test.js:171:1
+✖ B19 pi sends the exact bounded protocol and preserves accepted/stale replies (3.650392ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/b19-adapter-q2n3wT/pi-accepted.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at file:///tmp/b10bs3f-repo/dist-test/tests/unit/b19-adapters.test.js:68:16
+      at new Promise (<anonymous>)
+      at endpoint (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b19-adapters.test.js:66:11)
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b19-adapters.test.js:176:32)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/b19-adapter-q2n3wT/pi-accepted.sock',
+    port: -1
+  }
+
+test at dist-test/tests/unit/b19-adapters.test.js:199:1
+✖ B19 pi absent endpoint, timeout, oversized/invalid replies and abort are bounded (8.414092ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/b19-adapter-k0YJMf/timeout.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at file:///tmp/b10bs3f-repo/dist-test/tests/unit/b19-adapters.test.js:68:16
+      at new Promise (<anonymous>)
+      at endpoint (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b19-adapters.test.js:66:11)
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b19-adapters.test.js:207:32)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/b19-adapter-k0YJMf/timeout.sock',
+    port: -1
+  }
+
+test at dist-test/tests/unit/b19-adapters.test.js:247:1
+✖ B19 pi extension session lifecycle, exact allowlist, fresh stale fence, private socket (11.494811ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/b19-adapter-uo5rfa/wake/pi-755-240072.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at server (file:///tmp/b10bs3f-repo/dist-test/integrations/pi/hud-wake.js:172:23)
+      at new Promise (<anonymous>)
+      at file:///tmp/b10bs3f-repo/dist-test/integrations/pi/hud-wake.js:170:15
+      at async TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b19-adapters.test.js:265:9)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/b19-adapter-uo5rfa/wake/pi-755-240072.sock',
+    port: -1
+  }
+
+test at dist-test/tests/unit/b19-drainer.test.js:349:1
+✖ B19 pi stale/no-endpoint rejection revokes atomically, degrades status and triggers no turn (55.177086ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-b45-handshake-8r56zY/pi.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at f.ledger.transaction.recordWakeRegistered.adapter (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b19-drainer.test.js:403:51)
+      at new Promise (<anonymous>)
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b19-drainer.test.js:403:19)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-b45-handshake-8r56zY/pi.sock',
+    port: -1
+  }
+
+test at dist-test/tests/unit/b3h-production.test.js:73:5
+✖ H05 real-ledger forwarder death preserves the documented fault boundary (1350.620816ms)
+  Error: ENOENT: no such file or directory, open '/proc/1284/task/1284/children'
+      at readFileSync (node:fs:483:20)
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b3h-production.test.js:94:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/proc/1284/task/1284/children'
+  }
+
+test at dist-test/tests/unit/b3h-production.test.js:73:5
+✖ H05 real-ledger waiter death preserves the documented fault boundary (1343.167852ms)
+  Error: ENOENT: no such file or directory, open '/proc/1411/task/1411/children'
+      at readFileSync (node:fs:483:20)
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b3h-production.test.js:94:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/proc/1411/task/1411/children'
+  }
+
+test at dist-test/tests/unit/b3h-production.test.js:73:5
+✖ H05 real-ledger leader death preserves the documented fault boundary (1306.78218ms)
+  Error: ENOENT: no such file or directory, open '/proc/1547/task/1547/children'
+      at readFileSync (node:fs:483:20)
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/b3h-production.test.js:94:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/proc/1547/task/1547/children'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:304:1
+✖ exec-stop audit covers leader, env before exec, harness and failed exec without argv disclosure (64.359348ms)
+  AssertionError [ERR_ASSERTION]: Traceback (most recent call last):
+    File "/tmp/b10bs3f-repo/tests/int/b3ar1-env-audit.py", line 37, in <module>
+      ptrace(TRACEME, 0)
+      ~~~~~~^^^^^^^^^^^^
+    File "/tmp/b10bs3f-repo/tests/int/b3ar1-env-audit.py", line 27, in ptrace
+      if err != 3: raise OSError(err, os.strerror(err))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  PermissionError: [Errno 1] Operation not permitted
+  Traceback (most recent call last):
+    File "/tmp/b10bs3f-repo/tests/int/b3ar1-env-audit.py", line 53, in <module>
+      if who == pid: assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, 'driver failed'
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  AssertionError: driver failed
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/run-light-leader.test.js:306:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:697:5
+✖ only waiter death retains honest state and safe scoped control outcome (63.930276ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(target)
+  
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/run-light-leader.test.js:709:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:697:5
+✖ only forwarder death retains honest state and safe scoped control outcome (53.021554ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(target)
+  
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/run-light-leader.test.js:709:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:736:5
+✖ portable bash-sh exec audit covers original env bytes and all argv phases (65.686491ms)
+  AssertionError [ERR_ASSERTION]: Traceback (most recent call last):
+    File "/tmp/b10bs3f-repo/tests/int/b3ar1-env-audit.py", line 37, in <module>
+      ptrace(TRACEME, 0)
+      ~~~~~~^^^^^^^^^^^^
+    File "/tmp/b10bs3f-repo/tests/int/b3ar1-env-audit.py", line 27, in ptrace
+      if err != 3: raise OSError(err, os.strerror(err))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  PermissionError: [Errno 1] Operation not permitted
+  Traceback (most recent call last):
+    File "/tmp/b10bs3f-repo/tests/int/b3ar1-env-audit.py", line 53, in <module>
+      if who == pid: assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, 'driver failed'
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  AssertionError: driver failed
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/run-light-leader.test.js:738:16)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:736:5
+✖ portable bash-posix exec audit covers original env bytes and all argv phases (63.64887ms)
+  AssertionError [ERR_ASSERTION]: Traceback (most recent call last):
+    File "/tmp/b10bs3f-repo/tests/int/b3ar1-env-audit.py", line 37, in <module>
+      ptrace(TRACEME, 0)
+      ~~~~~~^^^^^^^^^^^^
+    File "/tmp/b10bs3f-repo/tests/int/b3ar1-env-audit.py", line 27, in ptrace
+      if err != 3: raise OSError(err, os.strerror(err))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  PermissionError: [Errno 1] Operation not permitted
+  Traceback (most recent call last):
+    File "/tmp/b10bs3f-repo/tests/int/b3ar1-env-audit.py", line 53, in <module>
+      if who == pid: assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, 'driver failed'
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  AssertionError: driver failed
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///tmp/b10bs3f-repo/dist-test/tests/unit/run-light-leader.test.js:738:16)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+=== EXIT 1 ===
+=== npm run test:core ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:core
+> bash tests/run-core.sh
+
+using temporary HUD_HOME: /workspace/scratch/6daef0397a95/hud-tmp/hud-core.ko6EsZ
+core tests: dist-test/tests/unit/codex-facade.test.js dist-test/tests/unit/contracts.test.js dist-test/tests/unit/core-fakes.test.js dist-test/tests/unit/ledger-perf.test.js dist-test/tests/unit/ledger-processes.test.js dist-test/tests/unit/ledger-read.test.js dist-test/tests/unit/ledger-schema.test.js dist-test/tests/unit/ledger-write.test.js
+✔ A6 observation fits the shared nullable-root v3 fixture and full node shape (27.139717ms)
+✔ Codex source is explicit and verified; binding needs a unique full ref, with no managed identity (7.437235ms)
+✔ budgeted parser checkpoints restore exact merge/tool/rate state after JSON round trip (13.41505ms)
+✔ reader honors record/zero budgets, restores split UTF-8/CRLF, and consumes a complete final record (19.001815ms)
+✔ resumed sessions keep identity and cumulative totals, while forked threads remain distinct (12.67875ms)
+✔ children delegates native topology, returns only direct children, and caps preserve quota/goal/plan/todos (13.007677ms)
+✔ link evidence requires an exact hud-mcp call/output pair, bounds state and never retains claims (4.161398ms)
+✔ oversized/incomplete records remain bounded and gaps survive EOF and checkpoint recovery (13.515478ms)
+✔ truncation and inode replacement reset checkpoint lineage and old evidence (11.812969ms)
+✔ scan version 4 persists bounded pending calls and evidence across scanner restart, rejects v3 (9.64421ms)
+✔ registry bindings require the same known occupant and complete source-scoped identity (4.761295ms)
+✔ checkpoint restore preserves token-rate tool-wait union and concurrent reads serialize (13.418154ms)
+✔ identical session IDs in two explicit sources do not cross-read, and custom hud server names are exact (5.874632ms)
+✔ read statistics count fetched chunk bytes separately from the committed record cursor (3.308215ms)
+✔ model/context clocks survive checkpoints and unrelated replies; baseline context is estimated (9.83373ms)
+✔ cumulative counter growth has its own clock and equal counters after file replacement start a new clock (7.304859ms)
+✔ malformed known records produce a gap preserved across recovery and EOF (4.624973ms)
+✔ strict bind recovers a quiet older session and unique registry ref without a locator (3.51438ms)
+✔ current action uses open calls after the bounded recent-call history evicts it (4.581239ms)
+✔ source-scoped candidates and native topology exclude rollout symlinks escaping the source (10.062499ms)
+✔ multiple profiles sharing one source retain every explicitly configured hud-mcp alias (6.142769ms)
+✔ unknown metrics use the time absence was confirmed, including cost and compact-invalidated context (5.109551ms)
+✔ production-default Codex reads advance despite 30 ms open/stat/read latency (350.813508ms)
+✔ controlled time slicing consumes one bounded step and preserves byte/record caps (4.484525ms)
+✔ drain bounds every await and rejects late terminal responses (12.846779ms)
+✔ F09/F10 Codex crash cuts recover UTF-8/CRLF, private blobs and fallback claims without raw state (23.812093ms)
+✔ F10 Codex maximum legal record, typed recovery continuation and oversize discard across restarts (18.407031ms)
+✔ F10 Codex truncation or replacement drops old transient and repeated recovery preserves usage clocks (4.846481ms)
+✔ F10 Codex rereads a replaced growing tail before compaction instead of grafting old bytes (2.67009ms)
+✔ F10 Codex maximum fixed-EOF JSON consumes 1 MiB without a nonexistent delimiter (10.913253ms)
+✔ F09/F10 no-content budgeted rereads preserve the nested checkpoint event clock (10.800812ms)
+✔ T-01-1 (4.547268ms)
+✔ T-01-2 (0.377398ms)
+✔ T-01-6 (0.616242ms)
+✔ T-01-7 (1.546679ms)
+✔ T-01-8 (0.570234ms)
+✔ T-01-9 (0.331521ms)
+✔ T-01-10 (0.478629ms)
+✔ T-01-11 (0.568121ms)
+✔ T-01-12 (0.434193ms)
+✔ T-01-13 (0.3712ms)
+✔ T-01-14 (0.453962ms)
+✔ T-01-15 (0.222869ms)
+✔ T-01-16 (0.293324ms)
+✔ T-01-17 (0.299113ms)
+✔ T-01-19 (0.524126ms)
+✔ T-01-20 (0.729039ms)
+✔ T-01-21 (0.648068ms)
+✔ T-01-22 (1.367443ms)
+✔ T-01-24 (0.576954ms)
+✔ T-01-25 (0.362516ms)
+✔ T-01-26 (0.485569ms)
+✔ T-01-28 (0.239915ms)
+✔ T-01-29 (0.311211ms)
+✔ T-01-30 (1.332402ms)
+✔ T-01-31 (0.288808ms)
+✔ T-01-32 (0.183391ms)
+✔ T-01-35 (0.312222ms)
+✔ T-01-36 (0.248798ms)
+✔ T-01-37 (0.352662ms)
+✔ T-01-38 (2.564715ms)
+✔ T-01-39 (0.390998ms)
+✔ T-02-2 (3.125174ms)
+✔ T-02-9 (0.530475ms)
+✔ T-02-10 (0.289539ms)
+✔ T-02-11 (0.311831ms)
+✔ T-02-13 (2.468383ms)
+✔ T-02-17 (4.103101ms)
+✔ T-02-18 (0.492298ms)
+✔ T-02-19 (0.515503ms)
+✔ T-02-20 (0.212404ms)
+✔ T-02-23 (0.130212ms)
+✔ T-02-27 (0.588681ms)
+✔ T-02-28 (0.610654ms)
+✔ T-02-30 (0.489965ms)
+✔ T-02-31 (0.557705ms)
+✔ T-02-32 (0.23672ms)
+✔ T-02-33 (0.785543ms)
+✔ T-02-34 (0.566338ms)
+✔ T-03-1 (0.386692ms)
+✔ T-03-2 (0.581771ms)
+✔ T-03-3 (0.591134ms)
+✔ T-03-4 (0.275658ms)
+✔ T-03-5 (0.633117ms)
+✔ T-03-6 (0.447993ms)
+✔ T-03-7 (0.512499ms)
+✔ T-03-8 (0.35149ms)
+✔ T-03-9 (0.261808ms)
+✔ T-03-10 (0.391198ms)
+✔ T-03-11 (0.313944ms)
+✔ T-03-12 (0.341676ms)
+✔ T-03-14 (0.269309ms)
+✔ T-03-15 (0.343028ms)
+✔ T-03-16 (0.706566ms)
+✔ T-03-17 (0.430657ms)
+✔ T-03-19 (1.051095ms)
+✔ T-03-20 (0.635731ms)
+✔ T-03-26 (1.70354ms)
+✔ T-03-34 (0.834544ms)
+✔ T-03-35 (0.276649ms)
+✔ T-03-36 (0.431238ms)
+✔ T-03-37 (0.726355ms)
+✔ T-04-2 (0.227516ms)
+✔ T-04-4 (0.191384ms)
+✔ T-04-6 (0.198233ms)
+✔ T-04-7 (0.230471ms)
+✔ T-04-8 (0.296609ms)
+✔ T-04-9 (0.81072ms)
+✔ T-04-12 (0.194077ms)
+✔ T-04-13 (0.513059ms)
+✔ T-04-14 (0.70315ms)
+✔ T-04-15 (1.137133ms)
+✔ T-04-16 (0.214066ms)
+✔ T-04-20 (0.184143ms)
+✔ T-04-31 (0.138435ms)
+✔ T-04-32 (0.713826ms)
+✔ T-04-33 (0.200437ms)
+✔ T-04-35 (0.226686ms)
+✔ T-04-40 (0.421184ms)
+✔ T-04-41 (0.847604ms)
+✔ T-04-43 (0.811801ms)
+✔ T-05-1 (0.706796ms)
+✔ T-05-3 (1.280334ms)
+✔ T-05-4 (2.207757ms)
+✔ T-05-8 (0.219164ms)
+✔ T-05-10 (0.206987ms)
+✔ T-05-11 (0.16942ms)
+✔ T-05-13 (0.257211ms)
+✔ T-05-17 (0.740496ms)
+✔ T-05-18 (0.232634ms)
+✔ T-06-1 (0.347465ms)
+✔ T-06-4 (3.426941ms)
+✔ T-06-5 (3.896606ms)
+✔ T-06-6 (1.143612ms)
+✔ T-06-10 (0.360253ms)
+✔ T-06-17 (0.195299ms)
+✔ T-06-22 (0.518638ms)
+✔ T-06-23 (0.387053ms)
+✔ T-06-24 (2.259904ms)
+✔ T-06-25 (0.683422ms)
+✔ T-06-26 (0.213226ms)
+✔ T-06-27 (0.448454ms)
+✔ T-06-28 (0.395325ms)
+✔ T-06-29 (0.33782ms)
+✔ T-07-1 (0.561071ms)
+✔ T-07-3 (0.2839ms)
+✔ T-07-10 (0.268066ms)
+✔ T-07-20 (7.034368ms)
+✔ T-07-22 (31.050854ms)
+✔ T-07-23 (0.452209ms)
+✔ T-07-24 (0.852611ms)
+✔ T-07-25 (296.736998ms)
+✔ T-07-26 (2.606697ms)
+✔ T-07-27 (0.587068ms)
+✔ F09/F10 A4 crash cuts keep UTF-8/CRLF, private blobs and claims out of every serialized artifact (1.933721ms)
+✔ F10 A4 transient continuation, maximum record, oversize restarts and source resets (11.040456ms)
+✔ empty optional registry still supports binding, reading and a core session tree (2.719885ms)
+✔ 06 T-06-6: cached unmanaged registry records retain validity, generation and observation clocks (2.028942ms)
+✔ valid, stale and unknown locator occupants drive the core interaction policy (0.967351ms)
+✔ lost supervisor refuses RunControl input even with a matching visible occupant (2.408274ms)
+✔ 05 T-05-8: absent or unavailable optional host selects a verified tmux fake before submission (1.711001ms)
+✔ 05 T-05-10: accepted replay cannot switch host or dispatch a fallback (1.154698ms)
+✔ bind/open/children feed an intent-to-session merge with native topology and selection preserved (0.976625ms)
+✔ 05 T-05-18: resume descriptor is copy-only with no RunControl or host dispatch (4.526257ms)
+﹣ ledger benchmark: 1000 small writes and read-only snapshots with 10000 runs (0.895776ms) # Run HUD_LEDGER_BENCHMARK=1 node --test dist-test/tests/unit/ledger-perf.test.js for the isolated 10000-run benchmark
+✔ ledger processes: concurrent identical request keys replay one complete intent and slot (196.467771ms)
+✔ ledger processes: concurrent same key with different parameters rejects the losing request (145.224966ms)
+✔ ledger processes: SIGKILL at insert:links recovers an atomic intent without a double slot (203.838483ms)
+✔ ledger processes: SIGKILL at insert:runs recovers an atomic intent without a double slot (181.303524ms)
+✔ ledger processes: SIGKILL at insert:claims recovers an atomic intent without a double slot (175.536256ms)
+✔ ledger processes: SIGKILL at insert:slots recovers an atomic intent without a double slot (177.416447ms)
+✔ ledger processes: SIGKILL at insert:idempotency recovers an atomic intent without a double slot (185.803974ms)
+✔ ledger processes: SIGKILL at insert:events recovers an atomic intent without a double slot (182.965658ms)
+✔ ledger processes: SIGKILL at insert:events:2 recovers an atomic intent without a double slot (169.903081ms)
+✔ ledger processes: SIGKILL at before:commit recovers an atomic intent without a double slot (167.736299ms)
+✔ ledger processes: SIGKILL at after:commit recovers an atomic intent without a double slot (184.833522ms)
+✔ ledger processes: the gathered reconcile evidence can commit against an unchanged snapshot (79.697128ms)
+✔ ledger processes: stale reconcile after actual write-lock contention preserves cancel (185.794539ms)
+✔ ledger processes: stale reconcile after actual write-lock contention preserves terminate (197.930571ms)
+✔ ledger processes: stale reconcile after actual write-lock contention preserves conflict (187.610862ms)
+✔ ledger read runtime gate leaves importing on Node 18 safe (1.304891ms)
+✔ ledger read never creates missing ledgers or migrates uninitialized/newer versions (12.488719ms)
+✔ ledger typed read snapshots preserve complete refs, per-run history and private launch context (30.248066ms)
+✔ ledger reads preserve empty scopes and do not truncate to HUD display limits (86.550839ms)
+✔ ledger read uses registration evidence for full supervisor stamps and rejects contradictory facts (24.08029ms)
+✔ ledger rows and high-water stay in one WAL read snapshot during a concurrent commit (21.791613ms)
+✔ ledger snapshot callback lifetime and errors release read transactions (22.798528ms)
+✔ link command functions distinguish missing links from unavailable ledgers and keep report/run states separate (40.740862ms)
+✔ ledger schema v1 is byte-for-byte the frozen contract SQL block (1.92561ms)
+✔ ledger runtime floor is explicit and does not raise the bar runtime (0.787545ms)
+✔ ledger native readOnly capability probe rejects ignored flags using memory only (2.363828ms)
+✔ ledger initialize, reopen, WAL recovery and backup preserve private ledgerId (30.850247ms)
+✔ ledger rejects unknown or populated unversioned schema without replacing metadata (14.539979ms)
+✔ ledger transaction rollback, callback lifetime and async-callback rejection (19.090857ms)
+✔ ledger freezes launch context, captures workspace once with event, and replays across Git metadata changes (31.141934ms)
+✔ ledger initial cached workspace event is atomic and unknown JSON metadata is refused (14.156747ms)
+✔ ledger supervisor registration persists full stamp, one ticket, one CAS heartbeat and single submission (43.784715ms)
+✔ ledger CAS includes context generations, validation changes, and evidence without an event (24.905551ms)
+✔ ledger irreversible N counter-evidence persists X and terminal incremental import cannot rewrite completion (33.553607ms)
+✔ ledger full completion after cancellation with unknown chronology ends with a stable note (34.23098ms)
+✔ ledger owner binding atomically rekeys outcomes, preserves origin and permits the original actor to register (21.216172ms)
+✔ ledger alias collision rolls back binding and original idempotency instead of choosing a winner (14.406376ms)
+✔ ledger event pages use committed per-run cursors and never mutate the ledger (12.710361ms)
+✔ ledger fresh reconciliation retains accepted link conflicts without normalized sidecars (15.580224ms)
+✔ ledger revoked parent cannot cancel or register an active run (16.150763ms)
+✔ ledger revoked parent cannot cancel or submit an active run (18.256092ms)
+✔ ledger handover increases generation and revokes old binding atomically with edge transfer (25.615898ms)
+✔ ledger fresh reconciliation keeps conflicts from another run sharing the actual target (15.500345ms)
+✔ ledger original supervisor cannot submit after reconciliation marks its armed run uncertain (16.036773ms)
+✔ ledger terminal timing uncertainty durably prevents resume without fabricating a conflict fact (23.188521ms)
+ℹ tests 210
+ℹ suites 0
+ℹ pass 209
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 2697.695909
+removed temporary HUD_HOME: /workspace/scratch/6daef0397a95/hud-tmp/hud-core.ko6EsZ
+=== EXIT 0 ===
+=== npm run test:visual ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:visual
+> npm run build:test && node --test dist-test/tests/unit/visual-baselines.test.js
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+✔ visual semantics: all presets retain identity and exact frame dimensions (206.687136ms)
+✔ visual semantics: child role counts off removes only footer counts, not children, summaries or targets (6.036554ms)
+✔ visual semantics: recap viewport is independent of card preset at every width and look (119.516597ms)
+✔ visual semantics: active Settings navigation retains full localized label and nonoverlapping controls from width 24 (29.571625ms)
+✔ visual semantics: Save returns the new width and the next render reflows navigation, values and selected identity (31.29815ms)
+✔ visual semantics: confirmation owns input, blocks hidden UI clicks and defaults to cancel (7.982183ms)
+✔ visual semantics: Inspector preserves stored summary and distinguishes explicit Coverage from legacy Recorded (15.557244ms)
+✔ visual semantics: normalization retains spaces and diffs identify the exact case and row (0.565788ms)
+✔ visual semantics: fixture generation is deterministic without reading a wall clock (459.675936ms)
+▶ visual baselines: fixed-time EN/ZH textual frames match reviewed goldens
+  ✔ panel/en/tab/minimal/32x32 (0.432349ms)
+  ✔ panel/en/tab/progress/32x32 (0.115241ms)
+  ✔ panel/en/tab/monitor/32x32 (0.061982ms)
+  ✔ settings/en/tab/active-settings/32x24 (0.098125ms)
+  ✔ panel/en/tab/minimal/40x32 (0.10808ms)
+  ✔ panel/en/tab/progress/40x32 (0.137063ms)
+  ✔ panel/en/tab/monitor/40x32 (0.083464ms)
+  ✔ settings/en/tab/active-settings/40x24 (0.121189ms)
+  ✔ panel/en/tab/minimal/48x32 (0.082942ms)
+  ✔ panel/en/tab/progress/48x32 (0.080309ms)
+  ✔ panel/en/tab/monitor/48x32 (0.068131ms)
+  ✔ settings/en/tab/active-settings/48x24 (0.168019ms)
+  ✔ panel/en/tab/minimal/56x32 (0.057936ms)
+  ✔ panel/en/tab/progress/56x32 (0.06769ms)
+  ✔ panel/en/tab/monitor/56x32 (0.057105ms)
+  ✔ settings/en/tab/active-settings/56x24 (0.036424ms)
+  ✔ panel/en/tab/minimal/80x32 (0.066168ms)
+  ✔ panel/en/tab/progress/80x32 (0.055362ms)
+  ✔ panel/en/tab/monitor/80x32 (0.04745ms)
+  ✔ settings/en/tab/active-settings/80x24 (0.034602ms)
+  ✔ panel/en/band/minimal/32x32 (0.032548ms)
+  ✔ panel/en/band/progress/32x32 (0.077986ms)
+  ✔ panel/en/band/monitor/32x32 (0.044676ms)
+  ✔ settings/en/band/active-settings/32x24 (0.034331ms)
+  ✔ panel/en/band/minimal/40x32 (0.049934ms)
+  ✔ panel/en/band/progress/40x32 (0.031297ms)
+  ✔ panel/en/band/monitor/40x32 (0.031066ms)
+  ✔ settings/en/band/active-settings/40x24 (0.066879ms)
+  ✔ panel/en/band/minimal/48x32 (0.072357ms)
+  ✔ panel/en/band/progress/48x32 (0.041381ms)
+  ✔ panel/en/band/monitor/48x32 (0.032438ms)
+  ✔ settings/en/band/active-settings/48x24 (0.031446ms)
+  ✔ panel/en/band/minimal/56x32 (0.074911ms)
+  ✔ panel/en/band/progress/56x32 (0.035583ms)
+  ✔ panel/en/band/monitor/56x32 (0.030585ms)
+  ✔ settings/en/band/active-settings/56x24 (0.031337ms)
+  ✔ panel/en/band/minimal/80x32 (0.029384ms)
+  ✔ panel/en/band/progress/80x32 (0.061752ms)
+  ✔ panel/en/band/monitor/80x32 (0.038107ms)
+  ✔ settings/en/band/active-settings/80x24 (0.058096ms)
+  ✔ panel/en/tile/minimal/32x32 (0.031226ms)
+  ✔ panel/en/tile/progress/32x32 (0.214418ms)
+  ✔ panel/en/tile/monitor/32x32 (0.040109ms)
+  ✔ settings/en/tile/active-settings/32x24 (0.119717ms)
+  ✔ panel/en/tile/minimal/40x32 (0.035693ms)
+  ✔ panel/en/tile/progress/40x32 (0.032918ms)
+  ✔ panel/en/tile/monitor/40x32 (0.035733ms)
+  ✔ settings/en/tile/active-settings/40x24 (0.053509ms)
+  ✔ panel/en/tile/minimal/48x32 (0.036234ms)
+  ✔ panel/en/tile/progress/48x32 (0.139406ms)
+  ✔ panel/en/tile/monitor/48x32 (0.142852ms)
+  ✔ settings/en/tile/active-settings/48x24 (0.05378ms)
+  ✔ panel/en/tile/minimal/56x32 (0.111645ms)
+  ✔ panel/en/tile/progress/56x32 (0.04108ms)
+  ✔ panel/en/tile/monitor/56x32 (0.029844ms)
+  ✔ settings/en/tile/active-settings/56x24 (0.029203ms)
+  ✔ panel/en/tile/minimal/80x32 (0.035313ms)
+  ✔ panel/en/tile/progress/80x32 (0.140147ms)
+  ✔ panel/en/tile/monitor/80x32 (0.097674ms)
+  ✔ settings/en/tile/active-settings/80x24 (0.035292ms)
+  ✔ panel/en/frame/minimal/32x32 (0.108751ms)
+  ✔ panel/en/frame/progress/32x32 (0.095742ms)
+  ✔ panel/en/frame/monitor/32x32 (0.062592ms)
+  ✔ settings/en/frame/active-settings/32x24 (0.151604ms)
+  ✔ panel/en/frame/minimal/40x32 (0.035403ms)
+  ✔ panel/en/frame/progress/40x32 (0.18233ms)
+  ✔ panel/en/frame/monitor/40x32 (0.035923ms)
+  ✔ settings/en/frame/active-settings/40x24 (0.030184ms)
+  ✔ panel/en/frame/minimal/48x32 (0.028342ms)
+  ✔ panel/en/frame/progress/48x32 (0.028362ms)
+  ✔ panel/en/frame/monitor/48x32 (0.0269ms)
+  ✔ settings/en/frame/active-settings/48x24 (0.027921ms)
+  ✔ panel/en/frame/minimal/56x32 (0.026469ms)
+  ✔ panel/en/frame/progress/56x32 (0.027611ms)
+  ✔ panel/en/frame/monitor/56x32 (0.026649ms)
+  ✔ settings/en/frame/active-settings/56x24 (0.026749ms)
+  ✔ panel/en/frame/minimal/80x32 (0.032558ms)
+  ✔ panel/en/frame/progress/80x32 (0.02702ms)
+  ✔ panel/en/frame/monitor/80x32 (0.02725ms)
+  ✔ settings/en/frame/active-settings/80x24 (0.029043ms)
+  ✔ panel/en/pill/minimal/32x32 (0.02714ms)
+  ✔ panel/en/pill/progress/32x32 (0.036885ms)
+  ✔ panel/en/pill/monitor/32x32 (0.02743ms)
+  ✔ settings/en/pill/active-settings/32x24 (0.028012ms)
+  ✔ panel/en/pill/minimal/40x32 (0.028923ms)
+  ✔ panel/en/pill/progress/40x32 (0.032037ms)
+  ✔ panel/en/pill/monitor/40x32 (0.02711ms)
+  ✔ settings/en/pill/active-settings/40x24 (0.026239ms)
+  ✔ panel/en/pill/minimal/48x32 (0.02756ms)
+  ✔ panel/en/pill/progress/48x32 (0.027941ms)
+  ✔ panel/en/pill/monitor/48x32 (0.02708ms)
+  ✔ settings/en/pill/active-settings/48x24 (0.026469ms)
+  ✔ panel/en/pill/minimal/56x32 (0.113127ms)
+  ✔ panel/en/pill/progress/56x32 (0.041441ms)
+  ✔ panel/en/pill/monitor/56x32 (0.067269ms)
+  ✔ settings/en/pill/active-settings/56x24 (0.039308ms)
+  ✔ panel/en/pill/minimal/80x32 (0.030655ms)
+  ✔ panel/en/pill/progress/80x32 (0.038086ms)
+  ✔ panel/en/pill/monitor/80x32 (0.035022ms)
+  ✔ settings/en/pill/active-settings/80x24 (0.02757ms)
+  ✔ panel/zh/tab/minimal/32x32 (0.119597ms)
+  ✔ panel/zh/tab/progress/32x32 (0.029914ms)
+  ✔ panel/zh/tab/monitor/32x32 (0.026749ms)
+  ✔ settings/zh/tab/active-settings/32x24 (0.025898ms)
+  ✔ panel/zh/tab/minimal/40x32 (0.02684ms)
+  ✔ panel/zh/tab/progress/40x32 (0.026669ms)
+  ✔ panel/zh/tab/monitor/40x32 (0.026099ms)
+  ✔ settings/zh/tab/active-settings/40x24 (0.025848ms)
+  ✔ panel/zh/tab/minimal/48x32 (0.026069ms)
+  ✔ panel/zh/tab/progress/48x32 (0.091775ms)
+  ✔ panel/zh/tab/monitor/48x32 (0.075692ms)
+  ✔ settings/zh/tab/active-settings/48x24 (0.102101ms)
+  ✔ panel/zh/tab/minimal/56x32 (0.029935ms)
+  ✔ panel/zh/tab/progress/56x32 (0.027761ms)
+  ✔ panel/zh/tab/monitor/56x32 (0.02658ms)
+  ✔ settings/zh/tab/active-settings/56x24 (0.027211ms)
+  ✔ panel/zh/tab/minimal/80x32 (0.02675ms)
+  ✔ panel/zh/tab/progress/80x32 (0.026089ms)
+  ✔ panel/zh/tab/monitor/80x32 (0.064255ms)
+  ✔ settings/zh/tab/active-settings/80x24 (0.029684ms)
+  ✔ panel/zh/band/minimal/32x32 (0.052568ms)
+  ✔ panel/zh/band/progress/32x32 (0.041972ms)
+  ✔ panel/zh/band/monitor/32x32 (0.036173ms)
+  ✔ settings/zh/band/active-settings/32x24 (0.028412ms)
+  ✔ panel/zh/band/minimal/40x32 (0.02674ms)
+  ✔ panel/zh/band/progress/40x32 (0.034631ms)
+  ✔ panel/zh/band/monitor/40x32 (0.13507ms)
+  ✔ settings/zh/band/active-settings/40x24 (0.035152ms)
+  ✔ panel/zh/band/minimal/48x32 (0.102361ms)
+  ✔ panel/zh/band/progress/48x32 (0.036334ms)
+  ✔ panel/zh/band/monitor/48x32 (0.029704ms)
+  ✔ settings/zh/band/active-settings/48x24 (0.029343ms)
+  ✔ panel/zh/band/minimal/56x32 (0.02677ms)
+  ✔ panel/zh/band/progress/56x32 (0.06764ms)
+  ✔ panel/zh/band/monitor/56x32 (0.079127ms)
+  ✔ settings/zh/band/active-settings/56x24 (0.086217ms)
+  ✔ panel/zh/band/minimal/80x32 (0.037515ms)
+  ✔ panel/zh/band/progress/80x32 (0.030125ms)
+  ✔ panel/zh/band/monitor/80x32 (0.057295ms)
+  ✔ settings/zh/band/active-settings/80x24 (0.034781ms)
+  ✔ panel/zh/tile/minimal/32x32 (0.026729ms)
+  ✔ panel/zh/tile/progress/32x32 (0.026379ms)
+  ✔ panel/zh/tile/monitor/32x32 (0.026649ms)
+  ✔ settings/zh/tile/active-settings/32x24 (0.077094ms)
+  ✔ panel/zh/tile/minimal/40x32 (0.057214ms)
+  ✔ panel/zh/tile/progress/40x32 (0.121329ms)
+  ✔ panel/zh/tile/monitor/40x32 (0.030094ms)
+  ✔ settings/zh/tile/active-settings/40x24 (0.033639ms)
+  ✔ panel/zh/tile/minimal/48x32 (0.02649ms)
+  ✔ panel/zh/tile/progress/48x32 (0.025257ms)
+  ✔ panel/zh/tile/monitor/48x32 (0.027671ms)
+  ✔ settings/zh/tile/active-settings/48x24 (0.025688ms)
+  ✔ panel/zh/tile/minimal/56x32 (0.028362ms)
+  ✔ panel/zh/tile/progress/56x32 (0.026029ms)
+  ✔ panel/zh/tile/monitor/56x32 (0.025778ms)
+  ✔ settings/zh/tile/active-settings/56x24 (0.026989ms)
+  ✔ panel/zh/tile/minimal/80x32 (0.027661ms)
+  ✔ panel/zh/tile/progress/80x32 (0.129502ms)
+  ✔ panel/zh/tile/monitor/80x32 (0.041471ms)
+  ✔ settings/zh/tile/active-settings/80x24 (0.045497ms)
+  ✔ panel/zh/frame/minimal/32x32 (0.119276ms)
+  ✔ panel/zh/frame/progress/32x32 (0.076934ms)
+  ✔ panel/zh/frame/monitor/32x32 (1.45959ms)
+  ✔ settings/zh/frame/active-settings/32x24 (0.051787ms)
+  ✔ panel/zh/frame/minimal/40x32 (0.032428ms)
+  ✔ panel/zh/frame/progress/40x32 (0.061031ms)
+  ✔ panel/zh/frame/monitor/40x32 (0.032698ms)
+  ✔ settings/zh/frame/active-settings/40x24 (0.029073ms)
+  ✔ panel/zh/frame/minimal/48x32 (0.03361ms)
+  ✔ panel/zh/frame/progress/48x32 (0.028142ms)
+  ✔ panel/zh/frame/monitor/48x32 (0.028442ms)
+  ✔ settings/zh/frame/active-settings/48x24 (0.025738ms)
+  ✔ panel/zh/frame/minimal/56x32 (0.024896ms)
+  ✔ panel/zh/frame/progress/56x32 (0.038447ms)
+  ✔ panel/zh/frame/monitor/56x32 (0.028603ms)
+  ✔ settings/zh/frame/active-settings/56x24 (0.026008ms)
+  ✔ panel/zh/frame/minimal/80x32 (0.024546ms)
+  ✔ panel/zh/frame/progress/80x32 (0.02667ms)
+  ✔ panel/zh/frame/monitor/80x32 (0.025377ms)
+  ✔ settings/zh/frame/active-settings/80x24 (0.025929ms)
+  ✔ panel/zh/pill/minimal/32x32 (0.024437ms)
+  ✔ panel/zh/pill/progress/32x32 (0.024637ms)
+  ✔ panel/zh/pill/monitor/32x32 (0.024667ms)
+  ✔ settings/zh/pill/active-settings/32x24 (0.034791ms)
+  ✔ panel/zh/pill/minimal/40x32 (0.025958ms)
+  ✔ panel/zh/pill/progress/40x32 (0.024626ms)
+  ✔ panel/zh/pill/monitor/40x32 (0.024977ms)
+  ✔ settings/zh/pill/active-settings/40x24 (0.024406ms)
+  ✔ panel/zh/pill/minimal/48x32 (0.03397ms)
+  ✔ panel/zh/pill/progress/48x32 (0.026879ms)
+  ✔ panel/zh/pill/monitor/48x32 (0.032958ms)
+  ✔ settings/zh/pill/active-settings/48x24 (0.02695ms)
+  ✔ panel/zh/pill/minimal/56x32 (0.042152ms)
+  ✔ panel/zh/pill/progress/56x32 (0.028242ms)
+  ✔ panel/zh/pill/monitor/56x32 (0.028482ms)
+  ✔ settings/zh/pill/active-settings/56x24 (0.095891ms)
+  ✔ panel/zh/pill/minimal/80x32 (0.101761ms)
+  ✔ panel/zh/pill/progress/80x32 (0.039619ms)
+  ✔ panel/zh/pill/monitor/80x32 (0.028973ms)
+  ✔ settings/zh/pill/active-settings/80x24 (0.025979ms)
+  ✔ settings/en/tab/saved-width-40-to-56/56x24 (0.024737ms)
+  ✔ settings/en/band/saved-width-40-to-56/56x24 (0.023314ms)
+  ✔ settings/en/tile/saved-width-40-to-56/56x24 (0.074159ms)
+  ✔ settings/en/frame/saved-width-40-to-56/56x24 (0.30385ms)
+  ✔ settings/en/pill/saved-width-40-to-56/56x24 (0.034761ms)
+  ✔ settings/zh/tab/saved-width-40-to-56/56x24 (0.028242ms)
+  ✔ settings/zh/band/saved-width-40-to-56/56x24 (0.026329ms)
+  ✔ settings/zh/tile/saved-width-40-to-56/56x24 (0.024146ms)
+  ✔ settings/zh/frame/saved-width-40-to-56/56x24 (0.024456ms)
+  ✔ settings/zh/pill/saved-width-40-to-56/56x24 (0.023575ms)
+  ✔ confirmation/en/cancel/16x24 (0.022313ms)
+  ✔ confirmation/en/cancel/24x24 (0.023575ms)
+  ✔ confirmation/en/cancel/40x24 (0.023715ms)
+  ✔ confirmation/en/cancel/56x24 (0.023174ms)
+  ✔ confirmation/en/save-error/48x24 (0.027491ms)
+  ✔ inspector/en/queued-explicit-coverage/32x32 (0.034932ms)
+  ✔ inspector/en/queued-explicit-coverage/48x32 (0.025237ms)
+  ✔ inspector/en/queued-explicit-coverage/80x32 (0.024787ms)
+  ✔ inspector/en/running-explicit-coverage/32x32 (0.023976ms)
+  ✔ inspector/en/running-explicit-coverage/48x32 (0.023495ms)
+  ✔ inspector/en/running-explicit-coverage/80x32 (0.024786ms)
+  ✔ inspector/en/off-legacy-recorded/32x32 (0.023154ms)
+  ✔ inspector/en/off-legacy-recorded/48x32 (0.024386ms)
+  ✔ inspector/en/off-legacy-recorded/80x32 (0.023976ms)
+  ✔ inspector/en/paused-explicit-coverage/48x32 (0.024346ms)
+  ✔ confirmation/zh/cancel/16x24 (0.031306ms)
+  ✔ confirmation/zh/cancel/24x24 (0.023895ms)
+  ✔ confirmation/zh/cancel/40x24 (0.042864ms)
+  ✔ confirmation/zh/cancel/56x24 (0.025938ms)
+  ✔ confirmation/zh/save-error/48x24 (0.025017ms)
+  ✔ inspector/zh/queued-explicit-coverage/32x32 (0.025247ms)
+  ✔ inspector/zh/queued-explicit-coverage/48x32 (0.039258ms)
+  ✔ inspector/zh/queued-explicit-coverage/80x32 (0.02685ms)
+  ✔ inspector/zh/running-explicit-coverage/32x32 (0.024556ms)
+  ✔ inspector/zh/running-explicit-coverage/48x32 (0.024506ms)
+  ✔ inspector/zh/running-explicit-coverage/80x32 (0.024957ms)
+  ✔ inspector/zh/off-legacy-recorded/32x32 (0.025828ms)
+  ✔ inspector/zh/off-legacy-recorded/48x32 (0.023986ms)
+  ✔ inspector/zh/off-legacy-recorded/80x32 (0.044606ms)
+  ✔ inspector/zh/paused-explicit-coverage/48x32 (0.028011ms)
+  ✔ delegation/rows/en/c/80x6 (0.025708ms)
+  ✔ delegation/rows/en/c/56x6 (0.024166ms)
+  ✔ delegation/rows/en/c/48x6 (0.021452ms)
+  ✔ delegation/rows/en/c/40x6 (0.022593ms)
+  ✔ delegation/rows/en/c/32x6 (0.022343ms)
+  ✔ delegation/rows/en/c-selected/48x6 (0.081461ms)
+  ✔ delegation/rows/en/d/48x8 (0.16894ms)
+  ✔ delegation/rows/en/d/32x8 (0.04731ms)
+  ✔ delegation/rows/en/e/80x7 (0.030194ms)
+  ✔ delegation/rows/en/e/48x7 (0.025979ms)
+  ✔ delegation/rows/en/e/32x7 (0.025197ms)
+  ✔ delegation/rows/en/g/48x3 (0.030846ms)
+  ✔ delegation/rows/en/g-history/48x8 (0.069262ms)
+  ✔ delegation/rows/en/h/48x5 (0.036093ms)
+  ✔ delegation/rows/en/h/32x5 (0.023535ms)
+  ✔ delegation/rows/zh/c/48x6 (0.024146ms)
+  ✔ delegation/rows/zh/e/48x7 (0.10177ms)
+  ✔ delegation/rows/zh/h/32x5 (0.029794ms)
+  ✔ delegation/rows/en/c-ascii/48x6 (0.023234ms)
+  ✔ delegation/rows/en/e-ascii/32x7 (0.023125ms)
+  ✔ delegation/rows/en/d-ascii/48x8 (0.022794ms)
+  ✔ delegation/bar/en/c/200x1 (0.034241ms)
+  ✔ delegation/bar/en/c/120x1 (0.037455ms)
+  ✔ delegation/bar/en/c/80x1 (0.024126ms)
+  ✔ delegation/bar/en/d-fresh/200x1 (0.023065ms)
+  ✔ delegation/bar/en/c-ascii/120x1 (0.023716ms)
+  ✔ delegation/bar/en/d/200x1 (0.022693ms)
+  ✔ delegation/bar/en/d/80x1 (0.033019ms)
+  ✔ delegation/bar/en/e/120x1 (0.023485ms)
+  ✔ delegation/bar/en/e/80x1 (0.022974ms)
+  ✔ delegation/bar/en/h/120x1 (0.021882ms)
+  ✔ delegation/bar/en/h/80x1 (0.118646ms)
+  ✔ delegation/statusline/en/c/80x2 (0.030204ms)
+  ✔ delegation/statusline/en/c/120x2 (0.025067ms)
+  ✔ delegation/statusline/en/c/200x2 (0.022654ms)
+  ✔ delegation/statusline/en/d/80x2 (0.023705ms)
+  ✔ delegation/statusline/en/d/120x2 (0.022393ms)
+  ✔ delegation/statusline/en/e/80x2 (0.021713ms)
+  ✔ delegation/statusline/en/h/80x2 (0.023715ms)
+  ✔ delegation/statusline/en/h/120x2 (0.021993ms)
+  ✔ delegation/statusline/zh/c/120x2 (0.021822ms)
+  ✔ delegation/statusline/en/c-ascii/80x2 (0.021482ms)
+  ✔ delegation/view/en/a-rich/48x3 (0.023375ms)
+  ✔ delegation/view/en/b-rich/48x10 (0.025267ms)
+  ✔ delegation/view/en/b-compact/48x6 (0.023034ms)
+  ✔ delegation/view/en/c-rich/48x19 (0.023886ms)
+  ✔ delegation/view/en/c-rich-selected/80x19 (0.023845ms)
+  ✔ delegation/view/en/c-compact-selected/48x10 (0.022944ms)
+  ✔ delegation/view/en/c-compact-chip/56x8 (0.023004ms)
+  ✔ delegation/view/en/c-compact-selected/32x10 (0.022093ms)
+  ✔ delegation/view/en/d-compact/48x11 (0.023054ms)
+  ✔ delegation/view/en/d-rich-accordion/48x16 (0.052167ms)
+  ✔ delegation/view/en/e-compact/48x10 (0.029734ms)
+  ✔ delegation/view/en/e-rich/48x25 (0.02667ms)
+  ✔ delegation/view/en/g-compact/48x4 (0.025648ms)
+  ✔ delegation/view/en/g-history/48x11 (0.024105ms)
+  ✔ delegation/view/en/h-rich/48x19 (0.023194ms)
+  ✔ delegation/view/en/h-compact/48x8 (0.023515ms)
+  ✔ delegation/view/en/h-compact/32x8 (0.022032ms)
+  ✔ delegation/view/en/parent-offline/48x4 (0.022002ms)
+  ✔ delegation/view/en/parent-unconfirmed/32x4 (0.023024ms)
+  ✔ delegation/view/en/parent-cancel/48x6 (0.031817ms)
+  ✔ delegation/view/zh/c-rich/48x19 (0.023815ms)
+  ✔ delegation/view/zh/h-compact/48x8 (0.032117ms)
+  ✔ delegation/view/en/c-compact-ascii/48x10 (0.024366ms)
+  ✔ delegation/view/en/b-compact-ascii/48x6 (0.025297ms)
+  ✔ delegation/panel/en/c-rich/48x32 (0.030264ms)
+  ✔ delegation/panel/en/d-rich-accordion/48x24 (0.100259ms)
+  ✔ delegation/panel/en/parent-compact/48x24 (0.039338ms)
+  ✔ delegation/panel/en/h-open/48x9 (0.027311ms)
+  ✔ delegation/panel/en/h-open/80x9 (0.022533ms)
+  ✔ delegation/panel/en/h-open/32x9 (0.024186ms)
+  ✔ delegation/panel/en/h-log/48x9 (0.023244ms)
+  ✔ delegation/panel/en/b-switch/48x10 (0.023455ms)
+  ✔ delegation/panel/en/e-reconcile/48x12 (0.023475ms)
