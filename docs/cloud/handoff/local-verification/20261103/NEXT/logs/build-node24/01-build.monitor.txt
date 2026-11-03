@@ -1,0 +1,6 @@
+22:33:29 1.40 1.15 0.89 2/1106 | claude:4.4 pi:2.4 herdr:1.7 herdr:1.3 containerd:0.4 surreal:0.4 
+22:33:30 1.40 1.15 0.89 3/1124 | MainThread:203 npm:run claude:4.4 pi:2.4 herdr:1.7 herdr:1.3 
+22:33:31 1.40 1.15 0.89 2/1124 | MainThread:203 npm:run claude:4.3 pi:2.4 herdr:1.7 herdr:1.3 
+22:33:32 1.40 1.15 0.89 3/1123 | MainThread:199 claude:4.3 npm:run pi:2.4 herdr:1.7 herdr:1.3 
+22:33:33 1.40 1.15 0.89 3/1123 | MainThread:188 claude:4.3 pi:2.4 npm:run herdr:1.7 herdr:1.3 
+22:33:34 1.36 1.15 0.89 2/1125 | MainThread:180 python3:68.7 claude:4.3 pi:2.4 npm:run herdr:1.7 

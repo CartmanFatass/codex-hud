@@ -1,0 +1,113 @@
+# id: check-test-hud-mcp
+# target: commit=0cca9caa6ddf3249291c8ed85a41da1eed800ee4 tree=4b66dca450ad717455321e2b103dc9b5d190716c cwd=<wt>/next
+# runtime: node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+# wrapper: cd <wt>/next; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SESSION_TMP>/home.nWNL2O HUD_HOME=<SESSION_TMP>/hud.RZRmJK TMPDIR=<SESSION_TMP> LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false  timeout -k 10 600s bash <VERIFY_ROOT>/next/scripts/anc-exec.sh <anc-file> npm run test:hud-mcp
+# command: npm run test:hud-mcp
+# timeout: 600s
+# unset by env -i: NO_COLOR FORCE_COLOR NODE_USE_ENV_PROXY NODE_OPTIONS HUD_HOME(real) proxy vars CLAUDE*/HERDR*/CODEX* (all inherited vars)
+# load before: 5.58 3.93 2.13 2/1248
+# start: 2026-11-03T22:38:52.653Z
+
+> codex-hud@0.1.0 test:hud-mcp
+> npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js
+
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+
+✔ refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool (1.923665ms)
+✔ dual MCP instance shares scope and owner; stale first-bind CAS refuses (8.657507ms)
+✔ /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A (8.58856ms)
+✔ wrong generation is refused before currentAuthority can authorize an intent (6.342005ms)
+✔ delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot (84.803515ms)
+✔ B19 merge: one real status and spawn response retain cache keys and advice.wake (66.044687ms)
+✔ the checked-in §5.2 file never guesses an auth label for a codex caller (50.674414ms)
+✔ a missing cache.json is a valid empty snapshot with empty advice (52.966145ms)
+✔ an invalid cache.json still serves status and spawn with configError and empty advice (52.815584ms)
+✔ status and every spawn outcome perform no cache file access after startup (66.640354ms)
+✔ status and spawn merge the cache advice over an existing advice object (54.166535ms)
+✔ a thrown spawn refusal carries advice at the server boundary for valid and invalid snapshots (49.206327ms)
+✔ hud-mcp starts and answers initialize with a valid and with an invalid cache.json (248.711866ms)
+✔ shared delegate config accepts optional roles and the exact Claude call-source mechanism (4.323083ms)
+✔ call-source selection is Claude-only and rejects unknown keys, kinds and malformed shapes (2.372409ms)
+✔ delegate envelope keeps its version, unique-name, profile-count and file-byte bounds (4.007807ms)
+✔ config without A5 keys loads exact NOTIFY defaults (2.708388ms)
+✔ B45 accepted spawn is atomic, lost response replays immutable result with zero second launch (88.122789ms)
+✔ B45 different owner same request key is isolated; unverified new intent refuses (80.241292ms)
+✔ B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay (94.683481ms)
+✔ B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates (74.153378ms)
+{"diagnostic":"dispatch_unknown","runId":"9d17eedc-fbf8-4ceb-a02c-3afd5815c1dd"}
+✔ B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits (175.972539ms)
+✔ B45 same-owner predecessor atomically transfers one child and replays before historical gates (68.960761ms)
+✔ B45 distinct backend source is registered atomically with acceptance (40.243427ms)
+✔ B45 headless build refuses explicit visible layouts instead of discarding them (37.102046ms)
+﹣ B45 synthetic whoami/report success refusal busy distributions with real SQLite writer contention (1.23231ms) # Set HUD_B45_BENCH=1 and run this benchmark alone to measure without parallel test I/O
+✔ B45 whoami env claim binds exact independently observed launch and report (73.863466ms)
+✔ B45 whoami parameter claim binds exact independently observed launch and report (63.053739ms)
+✔ B45 whoami launch evidence missing stays pending; env conflicts and wrong run refuse (60.733894ms)
+✔ B45 copied fork claim refuses before consumption, expiry boundary and bound retry after TTL (64.383134ms)
+✔ B45 same-process MCP restart rebuilds binding with independent proof and never redeems twice (70.075548ms)
+✔ B45 identity ProcessKey and run stamp keep their distinct domain encodings on the same host (56.919971ms)
+✔ BID1 handshake refuses a missing run domain and never accepts the caller form (43.621007ms)
+✔ hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files (10.357497ms)
+✔ missing then late record never revives a refused call; a new exact call can retry (4.762344ms)
+✔ half-written, oversized, symlink and duplicate conflicting publications refuse (10.170017ms)
+✔ wrong hook version refuses even with a matching content fingerprint (2.365717ms)
+✔ wrong hook implementation refuses even with a matching content fingerprint (2.046684ms)
+✔ wrong hook claudeVersion refuses even with a matching content fingerprint (2.697172ms)
+✔ wrong hook profileFingerprint refuses even with a matching content fingerprint (1.901193ms)
+✔ wrong hook sourceId refuses even with a matching content fingerprint (1.765731ms)
+✔ wrong hook processKey refuses even with a matching content fingerprint (3.033557ms)
+✔ wrong hook bootId refuses even with a matching content fingerprint (1.989427ms)
+✔ wrong hook serverName refuses even with a matching content fingerprint (1.510426ms)
+✔ wrong hook toolUseId refuses even with a matching content fingerprint (1.930848ms)
+✔ wrong hook toolName refuses even with a matching content fingerprint (1.791158ms)
+✔ wrong hook sessionId refuses even with a matching content fingerprint (2.25543ms)
+✔ wrong hook hookStartMonoMs refuses even with a matching content fingerprint (1.663672ms)
+✔ wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint (1.753795ms)
+✔ wrong hook publishedMonoMs refuses even with a matching content fingerprint (1.955063ms)
+✔ native child with root transcript path refuses and leaves subsequent root verifiable (3.629148ms)
+✔ A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation (2.463773ms)
+✔ CLI settings preserve existing hooks/config and match only the seven exact server tools (1.215684ms)
+✔ scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file (35.192648ms)
+✔ resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear (9.911056ms)
+✔ scope reader refuses unsupported runtimes before touching a missing path (89.429191ms)
+✔ hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values (0.432103ms)
+✔ fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies (2.382948ms)
+✔ int hud-mcp physical caller registration persists real procStart/cwd without logical authority (43.194582ms)
+✔ int hud-mcp composition uses existing ledger even when diagnostic registry requested (139.335436ms)
+✔ G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required (1.509665ms)
+✔ G03 old request key replays its original run after a newer run appeared and ended (120.872481ms)
+✔ G03 same request key with a different expectedRun conflicts without a new intent (88.165463ms)
+✔ G03 two callers that read the same run and race with different keys create at most one intent (80.632415ms)
+✔ G03 an old expectedRun is still refused after another run started and ended (80.572873ms)
+✔ G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest (69.34432ms)
+✔ G03 local management resume still requires expectedRun (58.325873ms)
+✔ delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts (8.596785ms)
+✔ registration records A4 fields and verified physical start; file fake remains private and refuses overwrite (10.579093ms)
+✔ unknown cwd is a typed refusal before registry write (1.177864ms)
+✔ real /proc registration stamp and PID domain are read without environment secrets (1.250584ms)
+✔ Codex root combination resolves, native child refuses without invalidating subsequent root (3.067437ms)
+✔ missing, conflicting and forged arguments metadata never falls back to remembered root/proc (3.475326ms)
+✔ session switches remain source diagnostics; shared ledger supplies the generation gate (2.852847ms)
+✔ PID reuse, source mismatch, missing header and unmeasured Codex versions refuse (2.725468ms)
+✔ Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId (0.458813ms)
+✔ Claude late/missing public call refuses, observed record still cannot upgrade unverified profile (4.298898ms)
+✔ pi explicit session path resolver checks header and source; directory alone grants nothing (2.028946ms)
+✔ seven MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments (1.247532ms)
+✔ runtime rejects Node 18, 22.12 and 23 before importing package entry (78.305647ms)
+✔ runtime accepts declared 22.13 and 24 entry boundaries (252.569766ms)
+✔ bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths (4.242725ms)
+✔ source/header mismatch, missing header and daemon topology cannot resolve identity (1.464762ms)
+✔ stdio framing rejects malformed JSON, ignores notifications and serializes stub replies (1.675503ms)
+ℹ tests 84
+ℹ suites 0
+ℹ pass 83
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 853.017413
+# end: 2026-11-03T22:38:56.473Z
+# exit: 0
+# load after: 5.22 3.89 2.13 1/1253

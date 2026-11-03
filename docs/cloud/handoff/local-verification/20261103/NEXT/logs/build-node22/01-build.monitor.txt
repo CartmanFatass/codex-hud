@@ -1,0 +1,6 @@
+22:30:19 1.13 0.91 0.76 2/1172 | zsh:25.0 python3:21.1 codex:9.5 claude:7.7 pi:2.7 python:2.0 
+22:30:20 1.13 0.91 0.76 5/1189 | node:227 npm:run codex:9.4 claude:7.7 zsh:4.0 pi:2.7 
+22:30:21 1.13 0.91 0.76 4/1187 | node:241 codex:9.4 claude:7.7 npm:run pi:2.7 zsh:2.2 
+22:30:22 1.13 0.91 0.76 2/1187 | node:228 codex:9.4 claude:7.7 npm:run pi:2.7 python:1.8 
+22:30:23 1.12 0.91 0.76 2/1186 | node:213 codex:9.4 claude:7.6 pi:2.7 npm:run python:1.8 
+22:30:24 1.12 0.91 0.76 2/1190 | node:206 codex:9.4 claude:7.6 pi:2.7 npm:run herdr:1.8 

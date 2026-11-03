@@ -1,0 +1,19 @@
+Redaction of the published copy (applied by a local script that is not published, because its patterns contain the
+private values themselves). Applied to every text file; no binary files exist in this set.
+
+Substitutions:
+  HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (both cases)=<value>   -> NAME=<proxy>
+  NO_PROXY/no_proxy=<list>                                 -> NAME=<no-proxy-list>
+  local verification root path                             -> <VERIFY_ROOT>
+  owner repository checkout path                           -> <REPO>
+  owner home directory path                                -> <HOME>
+  session temp dir /tmp/hudnext.<random>                   -> <SESSION_TMP>   (the home./hud. suffixes are kept)
+  owner email                                              -> <email>
+  host / user name                                         -> <host>
+  loopback proxy URL http://127.0.0.1:<port>               -> <local-proxy>
+  Claude Code task temp paths                              -> <claude-tmp>
+Not changed: numbers, timings, exit codes, test names, failure text, hashes, commit/tree ids, PIDs in ancestry files.
+Residual scan after substitution (home paths, user/host/email, token/key prefixes, proxy host/port/domains, Claude
+temp paths): only false positives (hex digests containing 7890; test titles). scripts/redact.py removed from the copy.
+RAW-SHA256SUMS: SHA-256 of the unredacted local originals (relative paths, incl. the unpublished redact.py).
+SHA256SUMS: SHA-256 of the files published here. The two sets are not claimed to be byte-identical.

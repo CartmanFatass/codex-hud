@@ -1,0 +1,23 @@
+node22-build node22 exit=0
+node22-build-test node22 exit=0
+node22-build-hud-mcp node22 exit=0
+strict-node22-run1 node22 exit=0
+strict-node22-run2 node22 exit=0
+strict-node22-run3 node22 exit=0
+node24-build node24 exit=0
+node24-build-test node24 exit=0
+node24-build-hud-mcp node24 exit=0
+strict-node24-run1 node24 exit=0
+strict-node24-run2 node24 exit=0
+strict-node24-run3 node24 exit=0
+check-npm-test node24 exit=1
+check-test-mjs-separate node24 exit=0
+check-test-core node24 exit=0
+check-test-visual node24 exit=0
+check-test-hud-mcp node24 exit=0
+check-format-check node24 exit=0
+check-check-fixtures node24 exit=0
+check-git-diff-check node24 exit=0
+next-focused-facts-regression node24 exit=0
+next-focused-b10b-all node24 exit=0
+MAIN-DONE 2026-11-03T22:41:14Z

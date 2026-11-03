@@ -1,0 +1,5 @@
+utc: 2026-11-03T22:30:19Z
+removed before fresh node22 build:
+dist (absent)
+dist-test (absent)
+packages/hud-mcp/dist (absent)

@@ -1,0 +1,13 @@
+22:38:28 7.20 4.07 2.13 2/1246 | codex:29.4 claude:2.8 pi:2.7 opengrep-core:1.9 opengrep:1.8 herdr:1.7 
+22:38:29 6.71 4.02 2.12 5/1265 | MainThread:197 codex:29.2 npm:run claude:2.8 pi:2.7 opengrep-core:1.8 
+22:38:30 6.71 4.02 2.12 3/1264 | MainThread:201 codex:28.9 npm:run claude:2.8 pi:2.7 opengrep-core:1.8 
+22:38:31 6.71 4.02 2.12 2/1264 | MainThread:195 codex:28.6 npm:run claude:2.8 pi:2.7 opengrep-core:1.8 
+22:38:32 6.71 4.02 2.12 3/1272 | MainThread:185 python3:63.0 codex:28.4 zsh:8.4 claude:2.8 pi:2.7 
+22:38:33 6.71 4.02 2.12 4/1270 | MainThread:178 codex:28.1 zsh:3.4 claude:2.8 pi:2.7 npm:run 
+22:38:34 6.25 3.97 2.11 2/1264 | MainThread:172 codex:27.8 claude:2.8 pi:2.7 opengrep-core:1.8 herdr:1.7 
+22:38:35 6.25 3.97 2.11 3/1263 | MainThread:167 codex:27.6 claude:2.8 pi:2.7 opengrep-core:1.8 herdr:1.7 
+22:38:36 6.25 3.97 2.11 3/1263 | MainThread:165 codex:27.4 claude:2.8 pi:2.7 opengrep-core:1.7 herdr:1.7 
+22:38:37 6.25 3.97 2.11 2/1262 | MainThread:161 ps:100 codex:27.1 claude:2.8 pi:2.6 opengrep-core:1.7 
+22:38:38 6.25 3.97 2.11 6/1325 | MainThread:117 MainThread:117 ps:100 MainThread:75.0 MainThread:50.0 MainThread:43.7 
+22:38:39 6.15 3.98 2.13 3/1290 | MainThread:150 MainThread:100 python3:45.0 codex:26.6 MainThread:9.8 MainThread:9.4 
+22:38:40 6.15 3.98 2.13 3/1301 | MainThread:75.0 MainThread:44.4 MainThread:31.2 python3:31.0 codex:26.5 MainThread:7.7 

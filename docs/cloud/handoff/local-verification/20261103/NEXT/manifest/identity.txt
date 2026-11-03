@@ -1,0 +1,34 @@
+HEAD: 0cca9caa6ddf3249291c8ed85a41da1eed800ee4 (expected 0cca9caa6ddf3249291c8ed85a41da1eed800ee4) MATCH
+tree: 4b66dca450ad717455321e2b103dc9b5d190716c (expected 4b66dca450ad717455321e2b103dc9b5d190716c) MATCH
+commit object:
+tree 4b66dca450ad717455321e2b103dc9b5d190716c
+parent ce2c7678d16c5edf62088c77518ea1a6ce2b9c16
+author Fish <email> 1793727908 -0800
+committer Fish <email> 1793727908 -0800
+
+Record B10B NEXT candidate b10b-s3-perf-regression.test.ts
+e5ccee3 is ancestor: yes
+diff --name-status e5ccee3..HEAD:
+M	src/render/delegation/facts.ts
+M	src/render/delegation/projection.ts
+M	tests/unit/b10b-s3-facts.test.ts
+M	tests/unit/b10b-s3-perf-regression.test.ts
+log e5ccee3..HEAD:
+0cca9caa6ddf3249291c8ed85a41da1eed800ee4 Record B10B NEXT candidate b10b-s3-perf-regression.test.ts
+ce2c7678d16c5edf62088c77518ea1a6ce2b9c16 Record B10B NEXT candidate b10b-s3-facts.test.ts
+ef6b7493edabe4be5830fd5efbed2c8a14311a95 Record B10B NEXT candidate projection.ts
+076e4497c418928a420dffa4d1768a7080be2dbc Record B10B NEXT candidate facts.ts
+
+benchmark blob tests/unit/b10b-s3-perf.test.ts: 371b8f784229636f66e88434c422484dd85251eb (expected 371b8f784229636f66e88434c422484dd85251eb)
+hash-object worktree file: 371b8f784229636f66e88434c422484dd85251eb
+fixture blob tests/fixtures/b10b-big.ts: a711705346161d155324c86564ab819e546d3fae (expected a711705346161d155324c86564ab819e546d3fae)
+hash-object worktree file: a711705346161d155324c86564ab819e546d3fae
+blob src/render/delegation/facts.ts: 6820c8f3fca966409e229b2d9bd042cbea6cd426
+blob src/render/delegation/projection.ts: 77c61250733d33527204a819893dd08d5d0b62a5
+blob tests/unit/b10b-s3-facts.test.ts: 20f2f7a7a268b87bdd224e71be93a51c1f98f79f
+blob tests/unit/b10b-s3-perf-regression.test.ts: 53aa1088483ee0d0f0ebe833a809c6ab94692edb
+blob package-lock.json: 87327f35757f729247f1f2256e7ba87345956a01
+blob package.json: 53182affe4637beb767664c56c288ae9e7dd4585
+
+git status --short (before install):
+source sha256 manifest aggregate: 254b3e2826bc43dd690b837c588d7a4b2387e29fdf5f71afe8ee8f92dfa0ced1 files=1329

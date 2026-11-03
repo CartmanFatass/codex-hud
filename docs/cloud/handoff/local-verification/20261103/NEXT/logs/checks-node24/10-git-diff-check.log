@@ -1,0 +1,12 @@
+# id: check-git-diff-check
+# target: commit=0cca9caa6ddf3249291c8ed85a41da1eed800ee4 tree=4b66dca450ad717455321e2b103dc9b5d190716c cwd=<wt>/next
+# runtime: node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+# wrapper: cd <wt>/next; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SESSION_TMP>/home.lSUjsm HUD_HOME=<SESSION_TMP>/hud.tM81L0 TMPDIR=<SESSION_TMP> LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false  timeout -k 10 60s bash <VERIFY_ROOT>/next/scripts/anc-exec.sh <anc-file> git diff --check
+# command: git diff --check
+# timeout: 60s
+# unset by env -i: NO_COLOR FORCE_COLOR NODE_USE_ENV_PROXY NODE_OPTIONS HUD_HOME(real) proxy vars CLAUDE*/HERDR*/CODEX* (all inherited vars)
+# load before: 4.65 3.81 2.12 1/1248
+# start: 2026-11-03T22:39:07.671Z
+# end: 2026-11-03T22:39:07.730Z
+# exit: 0
+# load after: 4.65 3.81 2.12 1/1249

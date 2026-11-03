@@ -1,0 +1,1397 @@
+{
+ "strict": [
+  {
+   "log": "logs/strict/b10b-strict-node22-run1.log",
+   "runtime": "node22 <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9",
+   "start": "2026-11-03T22:30:39.302Z",
+   "end": "2026-11-03T22:31:35.465Z",
+   "exit": "0",
+   "populations": [
+    {
+     "name": "compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.082,
+     "p95": 0.196,
+     "p99": 0.735,
+     "max": 1.267,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.283,
+     "p95": 0.591,
+     "p99": 1.243,
+     "max": 2.305,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.534,
+     "p95": 1.112,
+     "p99": 1.515,
+     "max": 2.054,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.093,
+     "p95": 0.189,
+     "p99": 0.666,
+     "max": 1.108,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.32,
+     "p95": 0.825,
+     "p99": 1.451,
+     "max": 2.339,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.779,
+     "p95": 1.569,
+     "p99": 2.037,
+     "max": 2.908,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.256,
+     "p95": 3.433,
+     "p99": 5.326,
+     "max": 5.804,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 1.042,
+     "p95": 2.886,
+     "p99": 4.705,
+     "max": 5.482,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 2.064,
+     "p95": 4.834,
+     "p99": 5.48,
+     "max": 9.263,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.284,
+     "p95": 3.931,
+     "p99": 5.506,
+     "max": 6.537,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 0.915,
+     "p95": 3.54,
+     "p99": 4.2,
+     "max": 5.862,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 2.903,
+     "p95": 4.734,
+     "p99": 5.766,
+     "max": 11.017,
+     "strict": "true"
+    },
+    {
+     "name": "compact reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.462,
+     "p95": 0.799,
+     "p99": 1.114,
+     "max": 2.433,
+     "strict": "true"
+    },
+    {
+     "name": "compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 2.81,
+     "p95": 5.829,
+     "p99": 6.863,
+     "max": 13.426,
+     "strict": "true"
+    },
+    {
+     "name": "rich reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.804,
+     "p95": 1.697,
+     "p99": 2.008,
+     "max": 2.693,
+     "strict": "true"
+    },
+    {
+     "name": "rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 3.505,
+     "p95": 6.01,
+     "p99": 7.019,
+     "max": 11.075,
+     "strict": "true"
+    }
+   ],
+   "gates": [
+    {
+     "ok": true,
+     "name": "the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms",
+     "ms": null,
+     "reporter": "tap"
+    },
+    {
+     "ok": true,
+     "name": "compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms",
+     "ms": null,
+     "reporter": "tap"
+    },
+    {
+     "ok": true,
+     "name": "rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms",
+     "ms": null,
+     "reporter": "tap"
+    },
+    {
+     "ok": true,
+     "name": "printed: the selection resolved from a miss (a hidden node every tick), and the cold tick",
+     "ms": null,
+     "reporter": "tap"
+    }
+   ]
+  },
+  {
+   "log": "logs/strict/b10b-strict-node22-run2.log",
+   "runtime": "node22 <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9",
+   "start": "2026-11-03T22:31:35.591Z",
+   "end": "2026-11-03T22:32:30.781Z",
+   "exit": "0",
+   "populations": [
+    {
+     "name": "compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.089,
+     "p95": 0.197,
+     "p99": 0.599,
+     "max": 1.459,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.305,
+     "p95": 0.648,
+     "p99": 1.104,
+     "max": 1.834,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.492,
+     "p95": 0.976,
+     "p99": 1.398,
+     "max": 2.409,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.087,
+     "p95": 0.174,
+     "p99": 0.557,
+     "max": 1.163,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.307,
+     "p95": 0.653,
+     "p99": 1.297,
+     "max": 2.651,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.795,
+     "p95": 1.572,
+     "p99": 2.071,
+     "max": 2.677,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.092,
+     "p95": 3.082,
+     "p99": 4.536,
+     "max": 6.02,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 0.823,
+     "p95": 2.606,
+     "p99": 3.427,
+     "max": 5.979,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 1.772,
+     "p95": 4.113,
+     "p99": 5.429,
+     "max": 8.424,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.29,
+     "p95": 3.847,
+     "p99": 5.224,
+     "max": 6.236,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 1.043,
+     "p95": 3.795,
+     "p99": 5.078,
+     "max": 6.353,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 3.14,
+     "p95": 5.534,
+     "p99": 6.402,
+     "max": 8.034,
+     "strict": "true"
+    },
+    {
+     "name": "compact reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.499,
+     "p95": 1.075,
+     "p99": 1.671,
+     "max": 3.118,
+     "strict": "true"
+    },
+    {
+     "name": "compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 2.554,
+     "p95": 5.455,
+     "p99": 7.057,
+     "max": 10.556,
+     "strict": "true"
+    },
+    {
+     "name": "rich reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.818,
+     "p95": 1.675,
+     "p99": 2.264,
+     "max": 2.821,
+     "strict": "true"
+    },
+    {
+     "name": "rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 3.579,
+     "p95": 6.219,
+     "p99": 7.276,
+     "max": 10.835,
+     "strict": "true"
+    }
+   ],
+   "gates": [
+    {
+     "ok": true,
+     "name": "the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms",
+     "ms": null,
+     "reporter": "tap"
+    },
+    {
+     "ok": true,
+     "name": "compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms",
+     "ms": null,
+     "reporter": "tap"
+    },
+    {
+     "ok": true,
+     "name": "rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms",
+     "ms": null,
+     "reporter": "tap"
+    },
+    {
+     "ok": true,
+     "name": "printed: the selection resolved from a miss (a hidden node every tick), and the cold tick",
+     "ms": null,
+     "reporter": "tap"
+    }
+   ]
+  },
+  {
+   "log": "logs/strict/b10b-strict-node22-run3.log",
+   "runtime": "node22 <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9",
+   "start": "2026-11-03T22:32:30.900Z",
+   "end": "2026-11-03T22:33:29.616Z",
+   "exit": "0",
+   "populations": [
+    {
+     "name": "compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.081,
+     "p95": 0.206,
+     "p99": 0.707,
+     "max": 2.288,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.274,
+     "p95": 0.54,
+     "p99": 1.028,
+     "max": 1.769,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.488,
+     "p95": 1.016,
+     "p99": 1.523,
+     "max": 1.872,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.094,
+     "p95": 0.182,
+     "p99": 0.625,
+     "max": 1.36,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.316,
+     "p95": 0.666,
+     "p99": 1.525,
+     "max": 2.091,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.848,
+     "p95": 1.727,
+     "p99": 2.127,
+     "max": 3.481,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.219,
+     "p95": 3.191,
+     "p99": 4.693,
+     "max": 5.78,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 0.858,
+     "p95": 2.869,
+     "p99": 4.158,
+     "max": 7.13,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 1.946,
+     "p95": 4.721,
+     "p99": 5.557,
+     "max": 7.971,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.482,
+     "p95": 4.961,
+     "p99": 6.652,
+     "max": 7.977,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 1.184,
+     "p95": 4.126,
+     "p99": 6.028,
+     "max": 6.865,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 3.204,
+     "p95": 5.767,
+     "p99": 6.558,
+     "max": 7.567,
+     "strict": "true"
+    },
+    {
+     "name": "compact reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.475,
+     "p95": 0.878,
+     "p99": 1.303,
+     "max": 2.0,
+     "strict": "true"
+    },
+    {
+     "name": "compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 2.882,
+     "p95": 5.753,
+     "p99": 6.609,
+     "max": 7.297,
+     "strict": "true"
+    },
+    {
+     "name": "rich reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.8,
+     "p95": 1.723,
+     "p99": 2.102,
+     "max": 3.147,
+     "strict": "true"
+    },
+    {
+     "name": "rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 3.59,
+     "p95": 6.348,
+     "p99": 8.04,
+     "max": 14.15,
+     "strict": "true"
+    }
+   ],
+   "gates": [
+    {
+     "ok": true,
+     "name": "the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms",
+     "ms": null,
+     "reporter": "tap"
+    },
+    {
+     "ok": true,
+     "name": "compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms",
+     "ms": null,
+     "reporter": "tap"
+    },
+    {
+     "ok": true,
+     "name": "rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms",
+     "ms": null,
+     "reporter": "tap"
+    },
+    {
+     "ok": true,
+     "name": "printed: the selection resolved from a miss (a hidden node every tick), and the cold tick",
+     "ms": null,
+     "reporter": "tap"
+    }
+   ]
+  },
+  {
+   "log": "logs/strict/b10b-strict-node24-run1.log",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:33:46.937Z",
+   "end": "2026-11-03T22:34:53.246Z",
+   "exit": "0",
+   "populations": [
+    {
+     "name": "compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.085,
+     "p95": 0.225,
+     "p99": 0.573,
+     "max": 2.035,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.296,
+     "p95": 0.738,
+     "p99": 1.08,
+     "max": 2.401,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.571,
+     "p95": 1.291,
+     "p99": 2.22,
+     "max": 5.281,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.086,
+     "p95": 0.168,
+     "p99": 0.288,
+     "max": 1.08,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.316,
+     "p95": 0.585,
+     "p99": 1.371,
+     "max": 4.144,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.697,
+     "p95": 1.279,
+     "p99": 1.669,
+     "max": 2.584,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.538,
+     "p95": 2.967,
+     "p99": 7.756,
+     "max": 11.031,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 1.695,
+     "p95": 3.372,
+     "p99": 9.001,
+     "max": 15.883,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 2.55,
+     "p95": 5.843,
+     "p99": 8.751,
+     "max": 10.335,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 2.357,
+     "p95": 4.239,
+     "p99": 11.44,
+     "max": 16.414,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 1.579,
+     "p95": 2.783,
+     "p99": 10.805,
+     "max": 12.257,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 2.453,
+     "p95": 6.941,
+     "p99": 8.343,
+     "max": 13.992,
+     "strict": "true"
+    },
+    {
+     "name": "compact reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.561,
+     "p95": 1.017,
+     "p99": 1.48,
+     "max": 2.289,
+     "strict": "true"
+    },
+    {
+     "name": "compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 2.789,
+     "p95": 7.164,
+     "p99": 10.204,
+     "max": 15.988,
+     "strict": "true"
+    },
+    {
+     "name": "rich reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.742,
+     "p95": 1.381,
+     "p99": 2.011,
+     "max": 2.481,
+     "strict": "true"
+    },
+    {
+     "name": "rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 3.054,
+     "p95": 8.298,
+     "p99": 10.019,
+     "max": 21.162,
+     "strict": "true"
+    }
+   ],
+   "gates": [
+    {
+     "ok": true,
+     "name": "the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms",
+     "ms": 3091.62762
+    },
+    {
+     "ok": true,
+     "name": "compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms",
+     "ms": 21797.544701
+    },
+    {
+     "ok": true,
+     "name": "rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms",
+     "ms": 22927.586959
+    },
+    {
+     "ok": true,
+     "name": "printed: the selection resolved from a miss (a hidden node every tick), and the cold tick",
+     "ms": 18220.11256
+    }
+   ]
+  },
+  {
+   "log": "logs/strict/b10b-strict-node24-run2.log",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:34:53.364Z",
+   "end": "2026-11-03T22:35:51.310Z",
+   "exit": "0",
+   "populations": [
+    {
+     "name": "compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.078,
+     "p95": 0.181,
+     "p99": 0.457,
+     "max": 2.456,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.31,
+     "p95": 0.703,
+     "p99": 1.349,
+     "max": 1.578,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.532,
+     "p95": 1.02,
+     "p99": 1.615,
+     "max": 2.468,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.089,
+     "p95": 0.198,
+     "p99": 0.388,
+     "max": 1.441,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.328,
+     "p95": 0.674,
+     "p99": 1.348,
+     "max": 2.29,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.784,
+     "p95": 1.303,
+     "p99": 1.97,
+     "max": 2.367,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.471,
+     "p95": 2.739,
+     "p99": 8.414,
+     "max": 10.759,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 0.996,
+     "p95": 2.005,
+     "p99": 7.136,
+     "max": 10.861,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 1.887,
+     "p95": 5.125,
+     "p99": 7.199,
+     "max": 9.299,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.491,
+     "p95": 2.706,
+     "p99": 8.535,
+     "max": 10.897,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 1.261,
+     "p95": 3.149,
+     "p99": 9.363,
+     "max": 12.025,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 2.373,
+     "p95": 6.11,
+     "p99": 8.008,
+     "max": 12.408,
+     "strict": "true"
+    },
+    {
+     "name": "compact reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.497,
+     "p95": 0.833,
+     "p99": 1.345,
+     "max": 1.998,
+     "strict": "true"
+    },
+    {
+     "name": "compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 2.278,
+     "p95": 5.793,
+     "p99": 8.708,
+     "max": 11.831,
+     "strict": "true"
+    },
+    {
+     "name": "rich reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.705,
+     "p95": 1.31,
+     "p99": 1.993,
+     "max": 2.215,
+     "strict": "true"
+    },
+    {
+     "name": "rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 2.733,
+     "p95": 7.427,
+     "p99": 9.158,
+     "max": 20.882,
+     "strict": "true"
+    }
+   ],
+   "gates": [
+    {
+     "ok": true,
+     "name": "the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms",
+     "ms": 3130.706064
+    },
+    {
+     "ok": true,
+     "name": "compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms",
+     "ms": 18335.476607
+    },
+    {
+     "ok": true,
+     "name": "rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms",
+     "ms": 19936.960779
+    },
+    {
+     "ok": true,
+     "name": "printed: the selection resolved from a miss (a hidden node every tick), and the cold tick",
+     "ms": 16298.646957
+    }
+   ]
+  },
+  {
+   "log": "logs/strict/b10b-strict-node24-run3.log",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:35:51.421Z",
+   "end": "2026-11-03T22:36:49.203Z",
+   "exit": "0",
+   "populations": [
+    {
+     "name": "compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.078,
+     "p95": 0.188,
+     "p99": 0.419,
+     "max": 1.695,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.281,
+     "p95": 0.643,
+     "p99": 1.006,
+     "max": 1.549,
+     "strict": "true"
+    },
+    {
+     "name": "compact no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 0.511,
+     "p95": 0.901,
+     "p99": 1.298,
+     "max": 1.877,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+     "n": 1000,
+     "p50": 0.088,
+     "p95": 0.178,
+     "p99": 0.315,
+     "max": 2.044,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick, every row read (not asserted)",
+     "n": 1000,
+     "p50": 0.31,
+     "p95": 0.641,
+     "p99": 1.387,
+     "max": 1.981,
+     "strict": "true"
+    },
+    {
+     "name": "rich no-change tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 1.051,
+     "p95": 1.936,
+     "p99": 2.399,
+     "max": 3.864,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.275,
+     "p95": 2.609,
+     "p99": 7.653,
+     "max": 10.981,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 0.777,
+     "p95": 1.711,
+     "p99": 6.947,
+     "max": 9.623,
+     "strict": "true"
+    },
+    {
+     "name": "compact changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 1.453,
+     "p95": 3.376,
+     "p99": 6.94,
+     "max": 8.702,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+     "n": 1000,
+     "p50": 1.147,
+     "p95": 2.713,
+     "p99": 9.301,
+     "max": 10.908,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick, the 60 rows in view (not asserted)",
+     "n": 1000,
+     "p50": 1.338,
+     "p95": 2.843,
+     "p99": 9.835,
+     "max": 22.234,
+     "strict": "true"
+    },
+    {
+     "name": "rich changed tick through the whole renderMonitor (not asserted)",
+     "n": 1000,
+     "p50": 2.269,
+     "p95": 6.407,
+     "p99": 8.539,
+     "max": 20.109,
+     "strict": "true"
+    },
+    {
+     "name": "compact reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.503,
+     "p95": 0.917,
+     "p99": 1.255,
+     "max": 2.013,
+     "strict": "true"
+    },
+    {
+     "name": "compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 2.648,
+     "p95": 7.073,
+     "p99": 8.481,
+     "max": 18.956,
+     "strict": "true"
+    },
+    {
+     "name": "rich reconcile + render from a selection that is not a destination (not asserted)",
+     "n": 1000,
+     "p50": 0.783,
+     "p95": 1.463,
+     "p99": 1.982,
+     "max": 2.942,
+     "strict": "true"
+    },
+    {
+     "name": "rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+     "n": 1000,
+     "p50": 3.132,
+     "p95": 8.878,
+     "p99": 14.969,
+     "max": 23.342,
+     "strict": "true"
+    }
+   ],
+   "gates": [
+    {
+     "ok": true,
+     "name": "the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms",
+     "ms": 3395.203775
+    },
+    {
+     "ok": true,
+     "name": "compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms",
+     "ms": 17115.64395
+    },
+    {
+     "ok": true,
+     "name": "rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms",
+     "ms": 18973.639409
+    },
+    {
+     "ok": true,
+     "name": "printed: the selection resolved from a miss (a hidden node every tick), and the cold tick",
+     "ms": 17983.239316
+    }
+   ]
+  }
+ ],
+ "steps": [
+  {
+   "log": "logs/build-node22/01-build.log",
+   "id": "node22-build",
+   "command": "npm run build",
+   "runtime": "node22 <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9",
+   "start": "2026-11-03T22:30:19.723Z",
+   "end": "2026-11-03T22:30:25.718Z",
+   "exit": "0",
+   "timeout": "180s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/build-node22/02-build-test.log",
+   "id": "node22-build-test",
+   "command": "npm run build:test",
+   "runtime": "node22 <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9",
+   "start": "2026-11-03T22:30:25.820Z",
+   "end": "2026-11-03T22:30:36.063Z",
+   "exit": "0",
+   "timeout": "180s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/build-node22/03-build-hud-mcp.log",
+   "id": "node22-build-hud-mcp",
+   "command": "npm run build:hud-mcp",
+   "runtime": "node22 <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9",
+   "start": "2026-11-03T22:30:36.166Z",
+   "end": "2026-11-03T22:30:39.121Z",
+   "exit": "0",
+   "timeout": "180s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/build-node24/01-build.log",
+   "id": "node24-build",
+   "command": "npm run build",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:33:29.793Z",
+   "end": "2026-11-03T22:33:35.008Z",
+   "exit": "0",
+   "timeout": "180s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/build-node24/02-build-test.log",
+   "id": "node24-build-test",
+   "command": "npm run build:test",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:33:35.122Z",
+   "end": "2026-11-03T22:33:43.958Z",
+   "exit": "0",
+   "timeout": "180s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/build-node24/03-build-hud-mcp.log",
+   "id": "node24-build-hud-mcp",
+   "command": "npm run build:hud-mcp",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:33:44.067Z",
+   "end": "2026-11-03T22:33:46.758Z",
+   "exit": "0",
+   "timeout": "180s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/04-npm-test.log",
+   "id": "check-npm-test",
+   "command": "npm test",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:36:49.457Z",
+   "end": "2026-11-03T22:38:27.280Z",
+   "exit": "1",
+   "timeout": "1200s",
+   "test_blocks": [
+    {
+     "tests": 3,
+     "suites": 0,
+     "pass": 2,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 1,
+     "todo": 0,
+     "duration_ms": 1131.936021
+    },
+    {
+     "tests": 2468,
+     "suites": 0,
+     "pass": 2450,
+     "fail": 2,
+     "cancelled": 0,
+     "skipped": 16,
+     "todo": 0,
+     "duration_ms": 72233.862234
+    }
+   ],
+   "failing_test_lines": [
+    "B21 real-SQLite MCP refusal is stable and never dispatches a launch",
+    "ledger processes: concurrent same key with different parameters rejects the losing request"
+   ]
+  },
+  {
+   "log": "logs/checks-node24/04b-test-mjs-separate.log",
+   "id": "check-test-mjs-separate",
+   "command": "npm run test:mjs",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:38:27.395Z",
+   "end": "2026-11-03T22:38:28.288Z",
+   "exit": "0",
+   "timeout": "300s",
+   "test_blocks": [
+    {
+     "tests": 47,
+     "suites": 0,
+     "pass": 47,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 0,
+     "todo": 0,
+     "duration_ms": 727.208114
+    }
+   ],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/04r1-known-flake-rerun-b21-capacity.log",
+   "id": "check-npm-test-known-flake-rerun-b21-capacity",
+   "command": "node --test dist-test/tests/unit/b21-capacity.test.js",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:43:57.704Z",
+   "end": "2026-11-03T22:43:58.377Z",
+   "exit": "0",
+   "timeout": "600s",
+   "test_blocks": [
+    {
+     "tests": 5,
+     "suites": 0,
+     "pass": 5,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 0,
+     "todo": 0,
+     "duration_ms": 582.439772
+    }
+   ],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/05-test-core.log",
+   "id": "check-test-core",
+   "command": "npm run test:core",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:38:28.399Z",
+   "end": "2026-11-03T22:38:41.007Z",
+   "exit": "0",
+   "timeout": "600s",
+   "test_blocks": [
+    {
+     "tests": 210,
+     "suites": 0,
+     "pass": 209,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 1,
+     "todo": 0,
+     "duration_ms": 2606.769596
+    }
+   ],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/06-test-visual.log",
+   "id": "check-test-visual",
+   "command": "npm run test:visual",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:38:41.122Z",
+   "end": "2026-11-03T22:38:52.538Z",
+   "exit": "0",
+   "timeout": "600s",
+   "test_blocks": [
+    {
+     "tests": 331,
+     "suites": 0,
+     "pass": 331,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 0,
+     "todo": 0,
+     "duration_ms": 1201.134701
+    }
+   ],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/07-test-hud-mcp.log",
+   "id": "check-test-hud-mcp",
+   "command": "npm run test:hud-mcp",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:38:52.653Z",
+   "end": "2026-11-03T22:38:56.473Z",
+   "exit": "0",
+   "timeout": "600s",
+   "test_blocks": [
+    {
+     "tests": 84,
+     "suites": 0,
+     "pass": 83,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 1,
+     "todo": 0,
+     "duration_ms": 853.017413
+    }
+   ],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/08-format-check.log",
+   "id": "check-format-check",
+   "command": "npm run format:check",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:38:56.589Z",
+   "end": "2026-11-03T22:39:07.246Z",
+   "exit": "0",
+   "timeout": "180s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/09-check-fixtures.log",
+   "id": "check-check-fixtures",
+   "command": "npm run check:fixtures",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:39:07.354Z",
+   "end": "2026-11-03T22:39:07.551Z",
+   "exit": "0",
+   "timeout": "180s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/10-git-diff-check.log",
+   "id": "check-git-diff-check",
+   "command": "git diff --check",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:39:07.671Z",
+   "end": "2026-11-03T22:39:07.730Z",
+   "exit": "0",
+   "timeout": "60s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/11-next-focused-facts-regression.log",
+   "id": "next-focused-facts-regression",
+   "command": "node --test --test-concurrency=1 dist-test/tests/unit/b10b-s3-facts.test.js dist-test/tests/unit/b10b-s3-perf-regression.test.js",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:39:07.829Z",
+   "end": "2026-11-03T22:39:08.147Z",
+   "exit": "0",
+   "timeout": "180s",
+   "test_blocks": [
+    {
+     "tests": 16,
+     "suites": 0,
+     "pass": 16,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 0,
+     "todo": 0,
+     "duration_ms": 237.487098
+    }
+   ],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/checks-node24/12-next-focused-b10b-all.log",
+   "id": "next-focused-b10b-all",
+   "command": "bash -c node --test --test-concurrency=1 dist-test/tests/unit/b10b*.test.js",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:39:08.272Z",
+   "end": "2026-11-03T22:41:14.135Z",
+   "exit": "0",
+   "timeout": "600s",
+   "test_blocks": [
+    {
+     "tests": 385,
+     "suites": 0,
+     "pass": 385,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 0,
+     "todo": 0,
+     "duration_ms": 125778.567765
+    }
+   ],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/setup/npm-ci.log",
+   "id": "setup-npm-ci",
+   "command": "npm ci --ignore-scripts --prefer-offline",
+   "runtime": "node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1",
+   "start": "2026-11-03T22:30:02.721Z",
+   "end": "2026-11-03T22:30:03.481Z",
+   "exit": "0",
+   "timeout": "600s",
+   "test_blocks": [],
+   "failing_test_lines": []
+  },
+  {
+   "log": "logs/setup/worktree-add.log",
+   "id": null,
+   "command": null,
+   "runtime": null,
+   "start": null,
+   "end": null,
+   "exit": null,
+   "timeout": null,
+   "test_blocks": [],
+   "failing_test_lines": []
+  }
+ ]
+}

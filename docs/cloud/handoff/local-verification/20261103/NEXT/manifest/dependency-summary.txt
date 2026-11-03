@@ -1,0 +1,8 @@
+dependency manifest aggregate: 843e84e7586722ab8673d9f3cc252e08357dbea9e52410a9dc9da69d596742f3 files=332
+chokidar@5.0.0
+prettier@3.9.9
+readdirp@5.0.0
+typescript@5.9.3
+undici-types@6.21.0
+@iarna/toml@2.2.5
+@types/node@20.19.29

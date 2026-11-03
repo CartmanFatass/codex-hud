@@ -1,0 +1,36 @@
+# id: next-focused-facts-regression
+# target: commit=0cca9caa6ddf3249291c8ed85a41da1eed800ee4 tree=4b66dca450ad717455321e2b103dc9b5d190716c cwd=<wt>/next
+# runtime: node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+# wrapper: cd <wt>/next; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SESSION_TMP>/home.J7hSuq HUD_HOME=<SESSION_TMP>/hud.gXyyMd TMPDIR=<SESSION_TMP> LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false  timeout -k 10 180s bash <VERIFY_ROOT>/next/scripts/anc-exec.sh <anc-file> node --test --test-concurrency=1 dist-test/tests/unit/b10b-s3-facts.test.js dist-test/tests/unit/b10b-s3-perf-regression.test.js
+# command: node --test --test-concurrency=1 dist-test/tests/unit/b10b-s3-facts.test.js dist-test/tests/unit/b10b-s3-perf-regression.test.js
+# timeout: 180s
+# unset by env -i: NO_COLOR FORCE_COLOR NODE_USE_ENV_PROXY NODE_OPTIONS HUD_HOME(real) proxy vars CLAUDE*/HERDR*/CODEX* (all inherited vars)
+# load before: 4.65 3.81 2.12 1/1248
+# start: 2026-11-03T22:39:07.829Z
+✔ a fact name with a digit, an underscore or a dollar compares by value (no throw, every field read) (0.739444ms)
+✔ a name that is not an identifier is refused, so nothing but identifiers reaches the generated code (0.277155ms)
+✔ the real facts still compare field by field through the same comparator (1.131643ms)
+✔ facts materialization: default calls return independent complete ordinary records (0.816888ms)
+✔ facts materialization policy: opt-in refill writes every field and returns the supplied record (2.570086ms)
+✔ perf equivalence: rebuilt-equal views, one fact changed, and return to its previous value (6.395023ms)
+✔ perf equivalence: an older compact or rich frame retains its text, destinations and exact descriptor (11.937784ms)
+✔ perf equivalence: removed and reinserted nodes and a different root cannot contaminate a live snapshot (16.429491ms)
+✔ perf equivalence: old views survive conflict, topology and bucket changes plus option and clock boundaries (15.054354ms)
+✔ perf memo identity: consecutive hits, envelope-only wrappers, and all three tuple references (1.189221ms)
+✔ perf memo policy: one live tuple is retained, A to B to A evicts without retargeting snapshots (0.453442ms)
+✔ perf memo isolation: a custom projection cache neither hits nor replaces the shared tuple (0.262427ms)
+✔ perf snapshots: unread lazy rows and equal render facts with a newer descriptor keep their own views (4.446763ms)
+✔ perf cache churn: repeated keys under distinct roots sweep disappeared entries and preserve old trees (1.875264ms)
+✔ facts scratch lifetime: equal/miss/equal passes never overwrite or alias retained frozen facts (2.45454ms)
+✔ facts scratch lifetime: all-cold and all-miss records stay distinct through removal and reinsertion (0.81763ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 237.487098
+# end: 2026-11-03T22:39:08.147Z
+# exit: 0
+# load after: 4.65 3.81 2.12 1/1249

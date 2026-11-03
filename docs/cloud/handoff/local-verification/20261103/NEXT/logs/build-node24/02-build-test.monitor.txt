@@ -1,0 +1,9 @@
+22:33:35 1.36 1.15 0.89 2/1106 | python3:46.5 claude:4.3 pi:2.4 herdr:1.7 herdr:1.3 containerd:0.4 
+22:33:36 1.36 1.15 0.89 2/1124 | MainThread:207 python3:19.5 npm:run claude:4.3 pi:2.4 herdr:1.7 
+22:33:37 1.36 1.15 0.89 4/1122 | MainThread:211 npm:run claude:4.3 pi:2.4 herdr:1.7 herdr:1.3 
+22:33:38 1.36 1.15 0.89 2/1122 | MainThread:201 claude:4.3 npm:run pi:2.4 herdr:1.7 herdr:1.3 
+22:33:39 1.42 1.17 0.90 2/1122 | MainThread:190 claude:4.3 pi:2.4 npm:run herdr:1.7 herdr:1.3 
+22:33:40 1.42 1.17 0.90 2/1122 | MainThread:183 claude:4.3 pi:2.4 herdr:1.7 npm:run herdr:1.3 
+22:33:41 1.42 1.17 0.90 2/1122 | MainThread:176 claude:4.2 pi:2.4 herdr:1.7 npm:run herdr:1.3 
+22:33:42 1.42 1.17 0.90 3/1125 | MainThread:173 python3:56.9 claude:4.2 pi:2.4 herdr:1.7 herdr:1.3 
+22:33:43 1.42 1.17 0.90 2/1123 | MainThread:168 claude:4.2 pi:2.4 herdr:1.7 herdr:1.3 npm:run 

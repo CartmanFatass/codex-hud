@@ -1,0 +1,1 @@
+22:30:02 0.91 0.85 0.74 4/1241 | codex:9.4 claude:7.9 python:4.8 python:3.2 pi:2.8 herdr:1.8 

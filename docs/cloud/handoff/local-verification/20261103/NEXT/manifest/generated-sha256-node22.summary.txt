@@ -1,0 +1,6 @@
+files: 2341
+aggregate-sha256(of manifest): 649becafa0aca4ef1da7a450c827379259b94161e489ed90ecfc6dfcaacdc0e0
+dist aggregate: 7e8fd9267b428f8028fdf335acd07607e06d7aba7edd3dbaf1f04bceee19653d files=1081
+dist-test aggregate: d67fead6931b3e4e95ad2f9ab085a7fadeccdd0a1e56ada5fe76a2c4acdf69ed files=1027
+packages/hud-mcp/dist aggregate: 1eeb498bb2538ffb487a03989b73e2deabe9ba339707df4d533a5e159e691ec5 files=233
+compiled-benchmark: 24a2437918e49b34339f5eb15c3c325e50bb9d1cf9b0faefada2139d74425022  dist-test/tests/unit/b10b-s3-perf.test.js

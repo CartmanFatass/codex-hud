@@ -1,0 +1,24 @@
+setup-npm-ci	node24	0	2026-11-03T22:30:02.721Z	2026-11-03T22:30:03.481Z	600	HTTP_PROXY=<proxy> HTTPS_PROXY=<proxy> ALL_PROXY=<proxy> NO_PROXY=<no-proxy-list> http_proxy=<proxy> https_proxy=<proxy> all_proxy=<proxy> no_proxy=<no-proxy-list>	npm ci --ignore-scripts --prefer-offline
+node22-build	node22	0	2026-11-03T22:30:19.723Z	2026-11-03T22:30:25.718Z	180		npm run build
+node22-build-test	node22	0	2026-11-03T22:30:25.820Z	2026-11-03T22:30:36.063Z	180		npm run build:test
+node22-build-hud-mcp	node22	0	2026-11-03T22:30:36.166Z	2026-11-03T22:30:39.121Z	180		npm run build:hud-mcp
+strict-node22-run1	node22	0	2026-11-03T22:30:39.302Z	2026-11-03T22:31:35.465Z	300	B10B_PERF=1	node --test dist-test/tests/unit/b10b-s3-perf.test.js
+strict-node22-run2	node22	0	2026-11-03T22:31:35.591Z	2026-11-03T22:32:30.781Z	300	B10B_PERF=1	node --test dist-test/tests/unit/b10b-s3-perf.test.js
+strict-node22-run3	node22	0	2026-11-03T22:32:30.900Z	2026-11-03T22:33:29.616Z	300	B10B_PERF=1	node --test dist-test/tests/unit/b10b-s3-perf.test.js
+node24-build	node24	0	2026-11-03T22:33:29.793Z	2026-11-03T22:33:35.008Z	180		npm run build
+node24-build-test	node24	0	2026-11-03T22:33:35.122Z	2026-11-03T22:33:43.958Z	180		npm run build:test
+node24-build-hud-mcp	node24	0	2026-11-03T22:33:44.067Z	2026-11-03T22:33:46.758Z	180		npm run build:hud-mcp
+strict-node24-run1	node24	0	2026-11-03T22:33:46.937Z	2026-11-03T22:34:53.246Z	300	B10B_PERF=1	node --test dist-test/tests/unit/b10b-s3-perf.test.js
+strict-node24-run2	node24	0	2026-11-03T22:34:53.364Z	2026-11-03T22:35:51.310Z	300	B10B_PERF=1	node --test dist-test/tests/unit/b10b-s3-perf.test.js
+strict-node24-run3	node24	0	2026-11-03T22:35:51.421Z	2026-11-03T22:36:49.203Z	300	B10B_PERF=1	node --test dist-test/tests/unit/b10b-s3-perf.test.js
+check-npm-test	node24	1	2026-11-03T22:36:49.457Z	2026-11-03T22:38:27.280Z	1200		npm test
+check-test-mjs-separate	node24	0	2026-11-03T22:38:27.395Z	2026-11-03T22:38:28.288Z	300		npm run test:mjs
+check-test-core	node24	0	2026-11-03T22:38:28.399Z	2026-11-03T22:38:41.007Z	600		npm run test:core
+check-test-visual	node24	0	2026-11-03T22:38:41.122Z	2026-11-03T22:38:52.538Z	600		npm run test:visual
+check-test-hud-mcp	node24	0	2026-11-03T22:38:52.653Z	2026-11-03T22:38:56.473Z	600		npm run test:hud-mcp
+check-format-check	node24	0	2026-11-03T22:38:56.589Z	2026-11-03T22:39:07.246Z	180		npm run format:check
+check-check-fixtures	node24	0	2026-11-03T22:39:07.354Z	2026-11-03T22:39:07.551Z	180		npm run check:fixtures
+check-git-diff-check	node24	0	2026-11-03T22:39:07.671Z	2026-11-03T22:39:07.730Z	60		git diff --check
+next-focused-facts-regression	node24	0	2026-11-03T22:39:07.829Z	2026-11-03T22:39:08.147Z	180		node --test --test-concurrency=1 dist-test/tests/unit/b10b-s3-facts.test.js dist-test/tests/unit/b10b-s3-perf-regression.test.js
+next-focused-b10b-all	node24	0	2026-11-03T22:39:08.272Z	2026-11-03T22:41:14.135Z	600		bash -c node --test --test-concurrency=1 dist-test/tests/unit/b10b*.test.js
+check-npm-test-known-flake-rerun-b21-capacity	node24	0	2026-11-03T22:43:57.704Z	2026-11-03T22:43:58.377Z	600		node --test dist-test/tests/unit/b21-capacity.test.js

@@ -1,0 +1,88 @@
+# id: check-test-mjs-separate
+# target: commit=0cca9caa6ddf3249291c8ed85a41da1eed800ee4 tree=4b66dca450ad717455321e2b103dc9b5d190716c cwd=<wt>/next
+# runtime: node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+# wrapper: cd <wt>/next; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SESSION_TMP>/home.ZnLUxE HUD_HOME=<SESSION_TMP>/hud.a4jbbv TMPDIR=<SESSION_TMP> LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false  timeout -k 10 300s bash <VERIFY_ROOT>/next/scripts/anc-exec.sh <anc-file> npm run test:mjs
+# command: npm run test:mjs
+# timeout: 300s
+# unset by env -i: NO_COLOR FORCE_COLOR NODE_USE_ENV_PROXY NODE_OPTIONS HUD_HOME(real) proxy vars CLAUDE*/HERDR*/CODEX* (all inherited vars)
+# load before: 7.20 4.07 2.13 1/1244
+# start: 2026-11-03T22:38:27.395Z
+
+> codex-hud@0.1.0 test:mjs
+> node --test tests/unit/*.mjs
+
+✔ classifier uses only live Codex metadata from the exact session (2.243048ms)
+✔ environment gates and target validation fail closed without I/O (2.753577ms)
+✔ tmux probe is exact, read-only, shell-free and bounded (1.300045ms)
+✔ fake Unix socket receives minimal schema, current outer identity and safe sequence (26.572946ms)
+▶ socket acknowledges only matching successful newline responses
+  ✔ JSON-RPC success (6.378432ms)
+  ✔ malformed (7.045722ms)
+  ✔ error (12.106984ms)
+  ✔ explicit failure (19.910302ms)
+  ✔ wrong id (13.448942ms)
+  ✔ no acknowledgement (10.69148ms)
+  ✔ no newline (6.639918ms)
+  ✔ oversized (9.054513ms)
+  ✔ disconnect (9.50933ms)
+✔ socket acknowledges only matching successful newline responses (99.337678ms)
+✔ socket timeout, absent endpoint and cancellation are quiet bounded failures (40.174716ms)
+✔ controller deduplicates heartbeats and handles rapid working/idle/working without duplicate idle (1.024684ms)
+✔ short uncertain tmux failure preserves working then publishes observed completion (0.775671ms)
+✔ prolonged probe failure releases unknown without inventing a completion (0.487045ms)
+✔ lost target, wrong process, dead pane and session reuse immediately release state (0.785089ms)
+✔ reconnect clears ambiguous reports then re-reads latest state without replaying missed turns (0.900904ms)
+✔ private per-attach health files remain readable after stop and exclude title/socket text (15.953431ms)
+✔ health write failure never interrupts state reporting (0.437223ms)
+✔ stop aborts an in-flight report before one final unknown; repeated stop is idempotent (0.305818ms)
+✔ parent death aborts a pending probe and terminates without a late working report (5.109593ms)
+✔ already-dead parent releases once without probing tmux (0.455006ms)
+✔ stop with a silent fake server cancels the active request and bounds the final release (453.870587ms)
+✔ native readback validates exact outer pane and status without claiming lifecycle authority (2.437378ms)
+✔ native observer reads projected completion and stops without unknown or lifecycle writes (0.485342ms)
+✔ native observer diagnoses ignored custom authority rather than treating an API ACK as delivery (0.161971ms)
+✔ native observer recovery only reads current state and keeps diagnostic gap visible (0.194932ms)
+✔ native readback never certifies another pane or agent as this Codex (2.253292ms)
+test-codex-path-first-run: PASS
+✔ tests/unit/test-codex-path-first-run.mjs (78.132703ms)
+test-environment-line-runtime-state: PASS
+✔ tests/unit/test-environment-line-runtime-state.mjs (78.662908ms)
+test-identity-line-effort: PASS
+✔ tests/unit/test-identity-line-effort.mjs (80.482289ms)
+test-model-glyphs: PASS
+✔ tests/unit/test-model-glyphs.mjs (79.386743ms)
+test-pane-runtime-state: PASS
+✔ tests/unit/test-pane-runtime-state.mjs (78.100393ms)
+test-parse-queue: PASS
+✔ tests/unit/test-parse-queue.mjs (123.64972ms)
+test-render-clear-scrollback-once: PASS
+✔ tests/unit/test-render-clear-scrollback-once.mjs (184.149518ms)
+test-rollout-offset: PASS
+✔ tests/unit/test-rollout-offset.mjs (73.181954ms)
+test-rollout-turn-context: PASS
+✔ tests/unit/test-rollout-turn-context.mjs (95.983431ms)
+test-session-finder-pane-binding: PASS
+✔ tests/unit/test-session-finder-pane-binding.mjs (172.859339ms)
+test-subagent-tree: PASS
+✔ tests/unit/test-subagent-tree.mjs (228.782994ms)
+test-tree-keys: PASS
+✔ tests/unit/test-tree-keys.mjs (68.175521ms)
+test-visual-width: PASS
+✔ tests/unit/test-visual-width.mjs (52.432179ms)
+test-windows-codex-path-exclusion: PASS
+✔ tests/unit/test-windows-codex-path-exclusion.mjs (46.253805ms)
+test-windows-installer-preserves-codex: PASS
+✔ tests/unit/test-windows-installer-preserves-codex.mjs (53.952852ms)
+test-wsl-codex-origin: PASS
+✔ tests/unit/test-wsl-codex-origin.mjs (127.949669ms)
+ℹ tests 47
+ℹ suites 0
+ℹ pass 47
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 727.208114
+# end: 2026-11-03T22:38:28.288Z
+# exit: 0
+# load after: 7.20 4.07 2.13 1/1244

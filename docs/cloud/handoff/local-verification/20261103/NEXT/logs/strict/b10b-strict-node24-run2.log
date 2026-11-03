@@ -1,0 +1,40 @@
+# id: strict-node24-run2
+# target: commit=0cca9caa6ddf3249291c8ed85a41da1eed800ee4 tree=4b66dca450ad717455321e2b103dc9b5d190716c cwd=<wt>/next
+# runtime: node24 <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+# wrapper: cd <wt>/next; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SESSION_TMP>/home.aHmwlU HUD_HOME=<SESSION_TMP>/hud.cGgj8p TMPDIR=<SESSION_TMP> LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false B10B_PERF=1 timeout -k 10 300s bash <VERIFY_ROOT>/next/scripts/anc-exec.sh <anc-file> node --test dist-test/tests/unit/b10b-s3-perf.test.js
+# command: node --test dist-test/tests/unit/b10b-s3-perf.test.js
+# timeout: 300s
+# unset by env -i: NO_COLOR FORCE_COLOR NODE_USE_ENV_PROXY NODE_OPTIONS HUD_HOME(real) proxy vars CLAUDE*/HERDR*/CODEX* (all inherited vars)
+# load before: 4.13 2.02 1.22 2/1226
+# start: 2026-11-03T22:34:53.364Z
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.078ms p95=0.181ms p99=0.457ms max=2.456ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.310ms p95=0.703ms p99=1.349ms max=1.578ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.532ms p95=1.020ms p99=1.615ms max=2.468ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.089ms p95=0.198ms p99=0.388ms max=1.441ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.328ms p95=0.674ms p99=1.348ms max=2.290ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.784ms p95=1.303ms p99=1.970ms max=2.367ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.471ms p95=2.739ms p99=8.414ms max=10.759ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=0.996ms p95=2.005ms p99=7.136ms max=10.861ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=1.887ms p95=5.125ms p99=7.199ms max=9.299ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.491ms p95=2.706ms p99=8.535ms max=10.897ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.261ms p95=3.149ms p99=9.363ms max=12.025ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.373ms p95=6.110ms p99=8.008ms max=12.408ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.497ms p95=0.833ms p99=1.345ms max=1.998ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=2.278ms p95=5.793ms p99=8.708ms max=11.831ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.705ms p95=1.310ms p99=1.993ms max=2.215ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=2.733ms p95=7.427ms p99=9.158ms max=20.882ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (3130.706064ms)
+✔ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (18335.476607ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (19936.960779ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (16298.646957ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 57860.296228
+# end: 2026-11-03T22:35:51.310Z
+# exit: 0
+# load after: 2.42 1.91 1.23 1/1146
