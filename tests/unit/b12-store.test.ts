@@ -657,8 +657,23 @@ class ProcessClient {
   seq = 0;
   pending = new Map<number, { resolve: (v: any) => void; reject: (e: unknown) => void }>();
   points = new Map<string, () => void>();
+  stopping = false;
+  failure: Error | null = null;
   constructor(t: TestContext) {
+    // The helper imports the compiled dist/. If it cannot start (no build) or dies on its own, every
+    // pending and later call fails at once with its stderr, instead of the test hanging until the
+    // runner cancels it. A kill the test asks for is not a failure.
     this.child = fork(path.resolve('tests/int/b12-process.mjs'), [], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    let stderr = '';
+    this.child.stderr!.on('data', (chunk) => {
+      if (stderr.length < 8192) stderr += String(chunk);
+    });
+    this.child.once('close', (code, signal) => {
+      if (this.stopping) return;
+      this.failure = new Error(`b12-process exited (code ${code}, signal ${signal}) before replying: ${stderr}`);
+      for (const handler of this.pending.values()) handler.reject(this.failure);
+      this.pending.clear();
+    });
     this.child.on('message', (message: any) => {
       if (message.point) {
         this.points.get(message.point)?.();
@@ -671,6 +686,7 @@ class ProcessClient {
     });
     t.after(async () => {
       if (this.child.exitCode === null && this.child.signalCode === null) {
+        this.stopping = true;
         const ended = once(this.child, 'exit');
         this.child.kill('SIGKILL');
         await ended;
@@ -678,15 +694,18 @@ class ProcessClient {
     });
   }
   call(op: string, input: Record<string, unknown> = {}): Promise<any> {
+    if (this.failure) return Promise.reject(this.failure);
     const id = ++this.seq;
     const response = new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
-    this.child.send({ id, op, ...input });
+    // A send that fails because the helper died is reported by the 'close' handler with its stderr.
+    this.child.send({ id, op, ...input }, () => {});
     return response;
   }
   point(point: string): Promise<void> {
     return new Promise((resolve) => this.points.set(point, resolve));
   }
   async kill(): Promise<void> {
+    this.stopping = true;
     const ended = once(this.child, 'exit');
     this.child.kill('SIGKILL');
     await ended;
