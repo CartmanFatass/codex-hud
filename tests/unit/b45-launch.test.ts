@@ -328,7 +328,19 @@ test('B45 supervisor launch uses optimized Node argv and a private stdin payload
   );
   const result = await launchPreparedRun(prepared, 'synthetic-private-ticket', { hudRunPath: executable });
   assert.ok(result.pid > 0);
-  assert.deepEqual(await result.completion, { code: 0, signal: null });
+  // launchPreparedRun unrefs the detached supervisor by design, so while this test waits for its
+  // exit nothing in this process holds the event loop open; Node 22's test runner then cancels
+  // the test and every later one in the file, and Node 24's would wait forever if it never exits.
+  // A rejecting timer bounds the wait on both: the synthetic supervisor exits in well under 1 s.
+  let deadline: NodeJS.Timeout | undefined;
+  try {
+    const timedOut = new Promise<never>((_, reject) => {
+      deadline = setTimeout(() => reject(new Error('supervisor did not exit within 10 s')), 10_000);
+    });
+    assert.deepEqual(await Promise.race([result.completion, timedOut]), { code: 0, signal: null });
+  } finally {
+    clearTimeout(deadline);
+  }
   const seen = JSON.parse(readFileSync(output, 'utf8'));
   assert.equal(seen.argv[0], process.execPath);
   assert.deepEqual(seen.execArgv, [...RUN_NODE_FLAGS]);
