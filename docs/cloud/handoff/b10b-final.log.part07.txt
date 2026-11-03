@@ -1,0 +1,140 @@
+  ✔ delegation/panel/en/e-reconcile-log/80x12 (0.022684ms)
+  ✔ delegation/panel/en/g-resume/48x14 (0.027281ms)
+  ✔ delegation/panel/en/g-resume/80x14 (0.024085ms)
+  ✔ delegation/panel/en/c-rich-folded/48x24 (0.025408ms)
+  ✔ delegation/panel/zh/h-open/48x9 (0.023194ms)
+  ✔ delegation/panel/zh/e-reconcile/48x12 (0.024406ms)
+✔ visual baselines: fixed-time EN/ZH textual frames match reviewed goldens (227.924817ms)
+ℹ tests 331
+ℹ suites 0
+ℹ pass 331
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1356.119342
+=== EXIT 0 ===
+=== npm run test:hud-mcp ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:hud-mcp
+> npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+
+✔ refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool (2.812892ms)
+✔ dual MCP instance shares scope and owner; stale first-bind CAS refuses (13.010448ms)
+✔ /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A (8.431033ms)
+✔ wrong generation is refused before currentAuthority can authorize an intent (6.422351ms)
+✔ delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot (90.145147ms)
+✔ B19 merge: one real status and spawn response retain cache keys and advice.wake (43.419517ms)
+✔ the checked-in §5.2 file never guesses an auth label for a codex caller (29.21287ms)
+✔ a missing cache.json is a valid empty snapshot with empty advice (43.568358ms)
+✔ an invalid cache.json still serves status and spawn with configError and empty advice (32.289321ms)
+✔ status and every spawn outcome perform no cache file access after startup (58.068335ms)
+✔ status and spawn merge the cache advice over an existing advice object (35.689927ms)
+✔ a thrown spawn refusal carries advice at the server boundary for valid and invalid snapshots (34.166678ms)
+✔ hud-mcp starts and answers initialize with a valid and with an invalid cache.json (278.377796ms)
+✔ shared delegate config accepts optional roles and the exact Claude call-source mechanism (7.321052ms)
+✔ call-source selection is Claude-only and rejects unknown keys, kinds and malformed shapes (4.469632ms)
+✔ delegate envelope keeps its version, unique-name, profile-count and file-byte bounds (4.526577ms)
+✔ config without A5 keys loads exact NOTIFY defaults (3.350257ms)
+✔ B45 accepted spawn is atomic, lost response replays immutable result with zero second launch (93.387899ms)
+✔ B45 different owner same request key is isolated; unverified new intent refuses (75.898264ms)
+✔ B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay (79.733533ms)
+✔ B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates (52.183599ms)
+{"diagnostic":"dispatch_unknown","runId":"b212292e-506a-4edb-a721-4b3dd822fdf0"}
+✔ B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits (154.669458ms)
+✔ B45 same-owner predecessor atomically transfers one child and replays before historical gates (51.547453ms)
+✔ B45 distinct backend source is registered atomically with acceptance (25.055678ms)
+✔ B45 headless build refuses explicit visible layouts instead of discarding them (23.202608ms)
+﹣ B45 synthetic whoami/report success refusal busy distributions with real SQLite writer contention (0.950296ms) # Set HUD_B45_BENCH=1 and run this benchmark alone to measure without parallel test I/O
+✔ B45 whoami env claim binds exact independently observed launch and report (63.884475ms)
+✔ B45 whoami parameter claim binds exact independently observed launch and report (42.636424ms)
+✔ B45 whoami launch evidence missing stays pending; env conflicts and wrong run refuse (44.011759ms)
+✔ B45 copied fork claim refuses before consumption, expiry boundary and bound retry after TTL (55.464402ms)
+✔ B45 same-process MCP restart rebuilds binding with independent proof and never redeems twice (43.884341ms)
+✔ B45 identity ProcessKey and run stamp keep their distinct domain encodings on the same host (30.898529ms)
+✔ BID1 handshake refuses a missing run domain and never accepts the caller form (27.07451ms)
+✔ hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files (11.219418ms)
+✔ missing then late record never revives a refused call; a new exact call can retry (4.950985ms)
+✔ half-written, oversized, symlink and duplicate conflicting publications refuse (5.212081ms)
+✔ wrong hook version refuses even with a matching content fingerprint (1.905038ms)
+✔ wrong hook implementation refuses even with a matching content fingerprint (1.113077ms)
+✔ wrong hook claudeVersion refuses even with a matching content fingerprint (2.754375ms)
+✔ wrong hook profileFingerprint refuses even with a matching content fingerprint (2.119476ms)
+✔ wrong hook sourceId refuses even with a matching content fingerprint (1.051816ms)
+✔ wrong hook processKey refuses even with a matching content fingerprint (1.114299ms)
+✔ wrong hook bootId refuses even with a matching content fingerprint (5.380836ms)
+✔ wrong hook serverName refuses even with a matching content fingerprint (0.974772ms)
+✔ wrong hook toolUseId refuses even with a matching content fingerprint (1.983369ms)
+✔ wrong hook toolName refuses even with a matching content fingerprint (1.160407ms)
+✔ wrong hook sessionId refuses even with a matching content fingerprint (0.944017ms)
+✔ wrong hook hookStartMonoMs refuses even with a matching content fingerprint (2.014461ms)
+✔ wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint (1.099717ms)
+✔ wrong hook publishedMonoMs refuses even with a matching content fingerprint (1.086227ms)
+✔ native child with root transcript path refuses and leaves subsequent root verifiable (2.256328ms)
+✔ A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation (2.116681ms)
+✔ CLI settings preserve existing hooks/config and match only the seven exact server tools (1.325792ms)
+✔ scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file (20.038717ms)
+✔ resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear (8.105972ms)
+✔ scope reader refuses unsupported runtimes before touching a missing path (173.057944ms)
+✔ hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values (0.804591ms)
+✔ fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies (2.249588ms)
+✔ int hud-mcp physical caller registration persists real procStart/cwd without logical authority (33.569696ms)
+✔ int hud-mcp composition uses existing ledger even when diagnostic registry requested (165.739702ms)
+✔ G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required (2.580458ms)
+✔ G03 old request key replays its original run after a newer run appeared and ended (119.460392ms)
+✔ G03 same request key with a different expectedRun conflicts without a new intent (54.930743ms)
+✔ G03 two callers that read the same run and race with different keys create at most one intent (51.556096ms)
+✔ G03 an old expectedRun is still refused after another run started and ended (58.235141ms)
+✔ G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest (48.563263ms)
+✔ G03 local management resume still requires expectedRun (34.996466ms)
+✔ delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts (5.213974ms)
+✔ registration records A4 fields and verified physical start; file fake remains private and refuses overwrite (5.517083ms)
+✔ unknown cwd is a typed refusal before registry write (0.863057ms)
+✔ real /proc registration stamp and PID domain are read without environment secrets (1.251191ms)
+✔ Codex root combination resolves, native child refuses without invalidating subsequent root (2.54816ms)
+✔ missing, conflicting and forged arguments metadata never falls back to remembered root/proc (1.693956ms)
+✔ session switches remain source diagnostics; shared ledger supplies the generation gate (2.354774ms)
+✔ PID reuse, source mismatch, missing header and unmeasured Codex versions refuse (0.945489ms)
+✔ Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId (0.613297ms)
+✔ Claude late/missing public call refuses, observed record still cannot upgrade unverified profile (2.097673ms)
+✔ pi explicit session path resolver checks header and source; directory alone grants nothing (1.057194ms)
+✔ seven MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments (1.678985ms)
+✔ runtime rejects Node 18, 22.12 and 23 before importing package entry (139.747722ms)
+✔ runtime accepts declared 22.13 and 24 entry boundaries (291.429871ms)
+✔ bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths (2.118825ms)
+✔ source/header mismatch, missing header and daemon topology cannot resolve identity (1.305943ms)
+✔ stdio framing rejects malformed JSON, ignores notifications and serializes stub replies (2.51436ms)
+ℹ tests 84
+ℹ suites 0
+ℹ pass 83
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 801.713508
+=== EXIT 0 ===
+=== npm run format:check ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 format:check
+> node ./node_modules/prettier/bin/prettier.cjs --check src tests
+
+Checking formatting...
+All matched files use Prettier code style!
+=== EXIT 0 ===
+=== npm run check:fixtures ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 check:fixtures
+> bash tests/check-fixtures.sh
+
+check-fixtures: OK (tests/fixtures tests/prototypes docs/probes docs/design)
+=== EXIT 0 ===
+=== git diff --check ===
+=== EXIT 0 ===
