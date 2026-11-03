@@ -2,9 +2,10 @@ import { performance } from 'node:perf_hooks';
 import { canonicalJson } from '../canonical.js';
 import { capacityProjection } from '../capacity.js';
 import type { LinkLedgerReader, LinkLedgerRead } from '../link-ledger-read.js';
-import { displayNodeKey, projectFreshness } from '../observation.js';
+import { displayNodeKey, projectFreshness, observationStampMismatch } from '../observation.js';
 import { mergeStatus, STATUS_RULE_VERSION, type MergeResult, type LedgerStatusFact } from '../status/merge.js';
 import type { DisplayNodeIdentity } from '../types/observation.js';
+import type { LedgerEvent } from '../types/execution.js';
 import type { SessionRef } from '../types/identity.js';
 import type { ReaderBudget } from '../interfaces/harness-adapter.js';
 import type { LaunchMessageLinkEvidence } from '../interfaces/session-evidence.js';
@@ -17,9 +18,13 @@ import type { LoadedLimits } from './limits.js';
 import type { CollectedLinkHost, CollectedLinkSession, LinkTreeProjection } from './types.js';
 import type { DelegationViewModel, DelegationNodeDetails } from './view-model.js';
 
+export const LEDGER_SNAPSHOT_VALIDITY_MS = 5000;
+
 export interface LinkCollectionPort {
   /** Owned snapshots never mutate their memo fields; replace the array on any change. */
   readonly immutableSnapshots?: boolean;
+  /** Explicit production mode can observe real native roots even before the first delegation. */
+  readonly publishesObservations?: boolean;
   invalidateSnapshots?(): void;
   /** Stable evidence retained from previous ticks, with zero current-tick charges. */
   begin?(deadline: number): void;
@@ -61,6 +66,10 @@ export interface LinkTickStats {
 export class LinkTickCollector {
   private ledger: LinkLedgerRead;
   private ledgerToken = '';
+  private ledgerObservedAt: number | null = null;
+  publicationLedgerObservedAt(): number | null {
+    return this.ledgerObservedAt;
+  }
   private launchKey = '';
   private memoKey = -1;
   private projectionMemo = new LinkProjectionMemo();
@@ -105,6 +114,7 @@ export class LinkTickCollector {
     this.reader.close();
     this.reader = reader;
     this.ledgerToken = '';
+    this.ledgerObservedAt = null;
     this.memoKey = -1;
     this.port?.invalidateSnapshots?.();
     this.immediate.clear();
@@ -178,7 +188,101 @@ export class LinkTickCollector {
     return this.freshnessView;
   }
 
+  private lastInput: LinkTickInput | null = null;
+  private reportFacts = new Map<string, LedgerStatusFact>();
+  private runEvents = new Map<string, LedgerEvent>();
+  private runStateEvents = new Map<string, LedgerEvent>();
+  publicationRunStateEvents(): ReadonlyMap<string, LedgerEvent> {
+    return this.runStateEvents;
+  }
+  publicationRunEvents(): ReadonlyMap<string, LedgerEvent> {
+    return this.runEvents;
+  }
+  publicationReportFacts(): ReadonlyMap<string, LedgerStatusFact> {
+    return this.reportFacts;
+  }
+  /** Pure assembly of newly committed envelopes, using the exact retained ledger snapshot. */
+  async refreshCommitted(changedKey?: string): Promise<DelegationViewModel | null> {
+    const started = performance.now();
+    const node = changedKey ? this.tree?.nodes.find((node) => node.key === changedKey) : null;
+    const session = changedKey
+      ? this.port?.sessions().find((session) => this.referenceKey(session.evidence.ref) === changedKey)
+      : null;
+    const summary = session?.evidence.observation;
+    if (
+      this.view &&
+      this.tree &&
+      node?.identity.kind === 'session' &&
+      node.loaded &&
+      node.observation?.statusProjection.observationStamp &&
+      session?.loaded &&
+      summary?.statusProjection.observationStamp &&
+      !observationStampMismatch(
+        {
+          ref: node.identity.ref,
+          sourceGeneration: session.sourceGeneration,
+          ...(node.currentRun
+            ? { runId: node.currentRun.runId, bindingGeneration: node.currentRun.expectedGeneration }
+            : {}),
+          asOfSeq: this.tree.ledger.asOfSeq,
+        },
+        summary.statusProjection.observationStamp
+      ) &&
+      node.observation.statusProjection.observationStamp.sourceGeneration === session.sourceGeneration &&
+      JSON.stringify(node.observation.coverage) === JSON.stringify(summary.coverage) &&
+      JSON.stringify(node.conflict) === JSON.stringify(summary.conflict)
+    ) {
+      // The same ledger/topology was already projected before paint. Only this committed observation changed.
+      this.tree = {
+        ...this.tree,
+        nodes: this.tree.nodes.map((value) =>
+          value.key === changedKey ? { ...value, observation: summary, lastObservation: summary } : value
+        ),
+      };
+      this.view = {
+        ...this.view,
+        tree: this.tree,
+        details: {
+          ...this.view.details,
+          [changedKey!]: {
+            ...this.view.details[changedKey!],
+            status: summary.statusProjection,
+            statusSource: 'committed',
+            observationUnavailableReason: null,
+          },
+        },
+      };
+      this.nextFreshnessAt = -Infinity;
+      this.view = this.availableFreshness(this.view, Date.now());
+      this.lastAvailableView = this.view;
+      // A normal tick will fold this adopted observation together with its next native/ledger changes.
+      this.memoKey = -1;
+      const elapsed = performance.now() - started;
+      this.lastStats = {
+        ...this.lastStats,
+        totalMs: this.lastStats.totalMs + elapsed,
+        b9Ms: this.lastStats.b9Ms + elapsed,
+      };
+      return this.view;
+    }
+    if (!this.lastInput) return this.view;
+    const previous = this.lastStats;
+    const view = await this.assemble(this.lastInput, true);
+    const refreshed = this.lastStats;
+    this.lastStats = {
+      ...previous,
+      totalMs: previous.totalMs + refreshed.totalMs,
+      b9Ms: previous.b9Ms + refreshed.b9Ms,
+      wiringMs: previous.wiringMs + refreshed.wiringMs,
+      projected: previous.projected || refreshed.projected,
+    };
+    return view;
+  }
   async tick(input: LinkTickInput): Promise<DelegationViewModel | null> {
+    return this.assemble(input, false);
+  }
+  private async assemble(input: LinkTickInput, projectionOnly: boolean): Promise<DelegationViewModel | null> {
+    if (!projectionOnly) this.lastInput = input;
     const started = performance.now();
     const nowMs = input.nowMs ?? Date.now();
     const deadline = Math.min(input.deadline ?? started + 40, started + 40);
@@ -216,12 +320,16 @@ export class LinkTickCollector {
     const messages = this.launchMessages;
     const launches = this.launchFingerprint;
     let b9Start = performance.now();
-    const token = input.ledgerUnavailableReason ?? this.reader.changeToken();
-    if (!input.ledgerUnavailableReason) stats.highWaterChecks++;
-    if (token !== this.ledgerToken || launches !== this.launchKey || this.ledger.state === 'degraded') {
+    const token = projectionOnly ? this.ledgerToken : (input.ledgerUnavailableReason ?? this.reader.changeToken());
+    if (!projectionOnly && !input.ledgerUnavailableReason) stats.highWaterChecks++;
+    if (
+      !projectionOnly &&
+      (token !== this.ledgerToken || launches !== this.launchKey || this.ledger.state === 'degraded')
+    ) {
       this.ledger = input.ledgerUnavailableReason
         ? { state: 'degraded', snapshot: null, reason: input.ledgerUnavailableReason }
         : this.reader.read(messages);
+      this.ledgerObservedAt = this.ledger.state === 'available' ? nowMs : null;
       if (!input.ledgerUnavailableReason) stats.ledgerReads++;
       this.ledgerToken = token;
       this.launchKey = launches;
@@ -270,11 +378,11 @@ export class LinkTickCollector {
       this.memoKey = -1;
       return finish();
     }
-    if (this.ledger.state === 'available' && !this.ledger.snapshot.links.length) {
+    if (this.ledger.state === 'available' && !this.ledger.snapshot.links.length && !this.port?.publishesObservations) {
       this.view = null;
       return finish();
     }
-    this.port?.begin?.(deadline);
+    if (!projectionOnly) this.port?.begin?.(deadline);
     retained = input.sessions ?? this.port?.sessions() ?? [];
     if (!immutableSnapshots || retained !== this.indexedSnapshot) {
       this.snapshotIndex = new Map(retained.map((s) => [displayNodeKey({ kind: 'session', ref: s.evidence.ref }), s]));
@@ -283,7 +391,7 @@ export class LinkTickCollector {
     let unique = this.snapshotIndex;
     let didCollect = false;
     // Scheduling metadata only. planLinkRead remains the single grant authority, including the retained fair cursor.
-    if (this.port && performance.now() < deadline) {
+    if (!projectionOnly && this.port && performance.now() < deadline) {
       const refs = new Map<string, SessionRef>();
       for (const root of input.roots) if (root.kind === 'session') refs.set(this.referenceKey(root.ref), root.ref);
       for (const node of this.tree?.nodes ?? [])
@@ -425,11 +533,28 @@ export class LinkTickCollector {
     const snapshot = this.ledger.state === 'available' ? this.ledger.snapshot : null;
     const events = snapshot?.events ?? [];
     const reports = new Map<string, typeof snapshot extends null ? never : NonNullable<typeof snapshot>['reports']>();
+    this.reportFacts = new Map();
+    this.runEvents = new Map();
+    this.runStateEvents = new Map();
+    for (const event of events)
+      if (event.runId && ['run.state', 'run.terminal'].includes(event.kind))
+        this.runStateEvents.set(event.runId, event);
+    for (const event of events)
+      if (event.runId && ['run.state', 'run.terminal', 'run.reconciliation'].includes(event.kind))
+        this.runEvents.set(event.runId, event);
     const reportsById = new Map(snapshot?.reports.map((r) => [r.reportId, r]));
     for (const event of events)
       if (event.kind === 'report.received' && typeof event.payload.reportId === 'string') {
         const report = reportsById.get(event.payload.reportId);
         if (report && report.runId === event.runId && report.linkId === event.linkId) {
+          this.reportFacts.set(report.reportId, {
+            id: `report:${report.reportId}`,
+            value: { report },
+            seq: event.seq,
+            eventAt: report.createdAt,
+            observedAt: this.ledgerObservedAt!,
+            deadlineAt: this.ledgerObservedAt! + LEDGER_SNAPSHOT_VALIDITY_MS,
+          });
           const list = reports.get(report.runId) ?? [];
           list.push(report);
           reports.set(report.runId, list);

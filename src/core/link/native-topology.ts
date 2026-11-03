@@ -4,6 +4,8 @@ import { performance } from 'node:perf_hooks';
 import { RolloutParser } from '../../collectors/rollout.js';
 import { sessionParentId } from '../../utils/session-parent.js';
 import { initialParserState } from '../observation.js';
+import { agentDisplayName, identityFromMeta } from '../../collectors/subagent-tree.js';
+import type { NativeMetadata } from './types.js';
 import type { NativeTopologyResult, ReaderBudget } from '../interfaces/harness-adapter.js';
 import type { SessionRef } from '../types/identity.js';
 import type { ReaderParserState } from '../types/observation.js';
@@ -29,6 +31,7 @@ interface Header {
   stamp: FileStamp | null;
   id: string | null;
   parent: string | null;
+  native?: NativeMetadata;
   parser?: RolloutParser;
   state: ReaderParserState;
 }
@@ -67,6 +70,7 @@ export class MeteredCodexTopology {
     }
     header.id = null;
     header.parent = null;
+    header.native = undefined;
   }
   private identify(header: Header, id: string, parent: string | null): void {
     this.clearIdentity(header);
@@ -165,7 +169,10 @@ export class MeteredCodexTopology {
       return;
     }
   }
-  async collect(ref: SessionRef, budget: ReaderBudget): Promise<NativeTopologyResult> {
+  async collect(
+    ref: SessionRef,
+    budget: ReaderBudget
+  ): Promise<NativeTopologyResult & { nativeMetadata?: Readonly<Record<string, NativeMetadata>> }> {
     const started = performance.now(),
       deadline = started + budget.budgetMs;
     if (!this.directories.size) this.start();
@@ -206,9 +213,10 @@ export class MeteredCodexTopology {
             onRecord: (entry) => {
               found = true;
               const payload = entry.payload as any;
-              if (entry.type === 'session_meta' && typeof payload?.id === 'string' && payload.id.length > 0)
+              if (entry.type === 'session_meta' && typeof payload?.id === 'string' && payload.id.length > 0) {
                 this.identify(h, payload.id, sessionParentId(payload) ?? null);
-              else {
+                h.native = { title: agentDisplayName(identityFromMeta(payload)) ?? null, kind: null };
+              } else {
                 this.clearIdentity(h);
                 this.gaps.add('native_header_unavailable');
               }
@@ -332,16 +340,21 @@ export class MeteredCodexTopology {
       }
     }
     const children: SessionRef[] = [];
+    const nativeMetadata: Record<string, NativeMetadata> = Object.create(null);
     const candidates = this.byParent.get(ref.sessionId) ?? new Set<string>();
     let inspected = 0;
     for (const file of candidates) {
       if (inspected++ >= 200) break;
       const h = this.headers.get(file);
-      if (h?.id && this.byId.get(h.id)?.size === 1) children.push({ ...ref, sessionId: h.id, threadId: null });
+      if (h?.id && this.byId.get(h.id)?.size === 1) {
+        children.push({ ...ref, sessionId: h.id, threadId: null });
+        nativeMetadata[h.id] = h.native ?? { title: null, kind: null };
+      }
     }
     const omitted = Math.max(0, candidates.size - Math.min(inspected, 200));
     return {
       children,
+      nativeMetadata,
       loaded: this.complete,
       coverage: {
         state: !this.complete ? 'catching_up' : this.gaps.size || omitted ? 'partial' : 'complete',

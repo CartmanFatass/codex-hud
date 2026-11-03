@@ -53,13 +53,23 @@ export class JsonVersion {
 export function sessionMemoInput(s: CollectedLinkSession) {
   return [
     s.evidence.ref,
+    s.committedOnly,
+    s.lastCommitted?.statusProjection.observationStamp,
     s.sourceGeneration,
     s.loaded,
     s.linkEvidenceCurrent,
     s.evidence.observation.evidenceStamp,
     s.evidence.observation.statusProjection.observationStamp,
     s.evidence.observation.coverage,
-    s.topology ? [s.topology.sourceGeneration, s.topology.children, s.topology.loaded, s.topology.coverage] : null,
+    s.topology
+      ? [
+          s.topology.sourceGeneration,
+          s.topology.children,
+          s.topology.loaded,
+          s.topology.coverage,
+          s.topology.nativeMetadata,
+        ]
+      : null,
   ];
 }
 

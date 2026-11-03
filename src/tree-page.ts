@@ -898,7 +898,16 @@ async function runLivePage(): Promise<void> {
   };
   const collectNow = async () => {
     collecting = true;
-    const delegationDeadline = performance.now() + 40;
+    try {
+      await collectNowBody();
+    } finally {
+      collecting = false;
+      delegationCollector?.abandonCollection();
+    }
+  };
+  const collectNowBody = async () => {
+    const collectionStartedAt = performance.now();
+    const delegationDeadline = collectionStartedAt + 40;
     let session: ReturnType<typeof finder.check> = null;
     let stale = false;
     // Where a failure happened, for the health row.
@@ -1014,7 +1023,6 @@ async function runLivePage(): Promise<void> {
       stale = true;
       hudStatus.health.fail(stage, err);
     } finally {
-      collecting = false;
       collected = true;
     }
     let built: ReturnType<HudStatus['build']> | null = null;
@@ -1042,6 +1050,26 @@ async function runLivePage(): Promise<void> {
     observeActivity();
     if (observability) sampleTelemetry();
     render();
+    try {
+      const publicationToken = delegationCollector?.publicationToken();
+      await delegationCollector?.afterPaint(
+        (committed) => {
+          delegation = committed;
+          if (built) Object.assign(built, { delegation });
+          render();
+        },
+        collectionStartedAt,
+        publicationToken
+      );
+      const fullDelegationMs = delegationCollector?.publicationStats().fullTickMs ?? 0;
+      if (fullDelegationMs > 50)
+        hudStatus.health.fail(
+          'tree',
+          fullDelegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms'
+        );
+    } finally {
+      collecting = false;
+    }
     readMainCols();
     void refreshInspection();
     void refreshAgentContext();

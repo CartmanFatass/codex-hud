@@ -270,7 +270,9 @@ async function mainLoop(): Promise<void> {
     }
     const epoch = collectionEpoch;
     try {
+      const collectionStartedAt = performance.now();
       const data = await collectData();
+      const publicationToken = delegationCollector?.publicationToken();
       const rootId = data.session?.id ?? data.subagentTree?.rootId ?? '';
       if (rootId !== journalRoot) {
         journal?.flush();
@@ -280,6 +282,20 @@ async function mainLoop(): Promise<void> {
       journal?.observe(scopedActivityObservation(rootId, rootId, { tree: data.subagentTree, data }));
       data.notices = notices.observe(data, Date.now());
       renderToStdout(data, HUD_PANE_HEIGHT);
+      await delegationCollector?.afterPaint(
+        (committed) => {
+          Object.assign(data, { delegation: committed });
+          renderToStdout(data, HUD_PANE_HEIGHT);
+        },
+        collectionStartedAt,
+        publicationToken
+      );
+      const fullDelegationMs = delegationCollector?.publicationStats().fullTickMs ?? 0;
+      if (fullDelegationMs > 50)
+        hudStatus.health.fail(
+          'tree',
+          fullDelegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms'
+        );
       // Notifications and the state file run on the collection tick, not on
       // the repaint a status refresh triggers.
       notifier.update(data);
@@ -296,6 +312,7 @@ async function mainLoop(): Promise<void> {
           succeeded: !data.stale && data.health?.sessionBound === true,
         });
     } catch (error) {
+      delegationCollector?.abandonCollection();
       wakeCollection();
       hudStatus.health.fail('status', error);
       console.error('Render error:', error);
