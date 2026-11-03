@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD b2897a4)
+HEAD is now at b2897a4 Wait for MCP stdio close before complete-output assertions

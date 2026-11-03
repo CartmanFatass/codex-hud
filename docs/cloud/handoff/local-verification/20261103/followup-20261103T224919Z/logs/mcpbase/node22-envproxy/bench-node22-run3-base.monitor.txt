@@ -1,0 +1,4 @@
+22:56:14 2.79 4.11 3.02 2/1260 | ast-grep:56.9 pi:8.6 codex:3.6 claude:3.3 pi:2.3 herdr:1.8 
+22:56:15 2.65 4.06 3.01 5/1280 | node:100 MainThread:100 ast-grep:56.8 pi:8.6 node:5.8 codex:3.5 
+22:56:17 2.65 4.06 3.01 3/1260 | ast-grep:56.7 pi:8.6 node:4.4 codex:3.5 claude:3.3 pi:2.3 
+22:56:18 2.65 4.06 3.01 5/1267 | node:125 python3:94.1 ast-grep:56.6 pi:8.6 codex:3.5 claude:3.3 

@@ -1,0 +1,46 @@
+utc: 2026-11-03T22:49:37Z
+origin: https://github.com/CartmanFatass/codex-hud.git
+From https://github.com/CartmanFatass/codex-hud
+ * branch            universal-hud -> FETCH_HEAD
+ * branch            dots/mcp-ancestor -> FETCH_HEAD
+ * branch            dots/node22-proxy -> FETCH_HEAD
+ * branch            dots/runz1-kill -> FETCH_HEAD
+ * branch            local-verification/20261103 -> FETCH_HEAD
+origin/universal-hud: 48abc4fc5e4b71ef36af720a69cad344ad71ea34
+origin/dots/mcp-ancestor: dc4b96b8b3e224736cf0aeee4062184a433a023e
+origin/dots/node22-proxy: 65b26a914bc0f54d2a4318ebf461a52140238872
+origin/dots/runz1-kill: fa024ffa30afc2398408d2c735da4351b7033c2b
+origin/local-verification/20261103: 88b997e51144c84f8ffc9bf8b20c3b9fe9a8b547
+== dots/mcp-ancestor: candidate b2897a4f9769bca6305ff0e3ae3dc694a9320ffe expected doc head dc4b96b8b3e224736cf0aeee4062184a433a023e current dc4b96b8b3e224736cf0aeee4062184a433a023e MATCH
+candidate ancestor of branch head: yes
+diff --name-status candidate..branch head:
+A	docs/cloud/handoff/mcp-ancestor-fix1-publication.md
+A	docs/cloud/handoff/mcp-ancestor-fix1.md
+A	docs/cloud/handoff/mcp-ancestor-review-2.md
+== dots/node22-proxy: candidate b4047320262f72f401a513db07236ff1473db933 expected doc head 65b26a914bc0f54d2a4318ebf461a52140238872 current 65b26a914bc0f54d2a4318ebf461a52140238872 MATCH
+candidate ancestor of branch head: yes
+diff --name-status candidate..branch head:
+A	docs/cloud/handoff/node22-proxy/implementation-correction.md
+A	docs/cloud/handoff/node22-proxy/implementation.md
+A	docs/cloud/handoff/node22-proxy/node22-verification.md
+A	docs/cloud/handoff/node22-proxy/review-1.md
+== dots/runz1-kill: candidate 7ba567ee0c3cd12933d79a5029162d32770ee245 expected doc head fa024ffa30afc2398408d2c735da4351b7033c2b current fa024ffa30afc2398408d2c735da4351b7033c2b MATCH
+candidate ancestor of branch head: yes
+diff --name-status candidate..branch head:
+A	docs/cloud/handoff/runz1-kill/fix-1-report.md
+A	docs/cloud/handoff/runz1-kill/review-2.md
+== mcpbase 26f6fba ancestor of mcp candidate: yes
+== n22 parent: ce5e6961a0e6de1304dcebb00fc1b8c805573ec6 (expected ce5e6961a0e6de1304dcebb00fc1b8c805573ec6)
+== binding documents at origin/universal-hud 48abc4fc5e4b71ef36af720a69cad344ad71ea34:
+docs/cloud/README.md 3029d6928c42534eee1c2fa86e1c33a2381f59cc
+docs/handoff/STATE.md 23e88a175620bcf5071db2f219a1206610e3205e
+docs/cloud/MCP-ANCESTOR.md f9b73b78e49c3f3e7c6477cceb54027e24788e7c
+docs/cloud/NODE22-PROXY.md 9e1032e832c71097de2508fb0cd5b421934fbe74
+docs/cloud/RUNZ1-KILL.md cf8aeda76e5442096307e8dc76c64fe72d7efc07
+docs/cloud/rulings/node22-proxy-profile.md 593b79b573111f878ae40f08993aa45c7c5d0067
+docs/cloud/rulings/runz1-kill-fix-1.md 6d277b8a269b2c601d99be949937fb27078251f4
+== latest reviews:
+docs/cloud/handoff/mcp-ancestor-review-2.md 0a4bea4a878b69f18e3204d92d11cafac3ee4609
+docs/cloud/handoff/node22-proxy/review-1.md 0fbd64836abd84b6d14a8c2a12cda7833ceeae25
+docs/cloud/handoff/node22-proxy/node22-verification.md bd06617544bdf5e31d3965da9e16d8ff28c91e60
+docs/cloud/handoff/runz1-kill/review-2.md c228618ce3bf3112bcd9fa12d9fa649001817a95

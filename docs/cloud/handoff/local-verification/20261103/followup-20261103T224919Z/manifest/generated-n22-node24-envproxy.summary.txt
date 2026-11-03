@@ -1,0 +1,4 @@
+files: 2311 manifest-sha256: 1b968283048af80e3aec55e484efb5f7200498df419538663d778276ab745ccc
+dist: files=1073 aggregate=fbe2991556e9f713dbafc18267d79acaa294b7d9943d8f48760152ac6ce717cd
+dist-test: files=1005 aggregate=2b9abe9340eb4805fd054f26e745b7273e3a33ecbaf769206a2f49b5aa2fcfaf
+packages/hud-mcp/dist: files=233 aggregate=dbb31a6160679f1bfbb9bf47270277ccad0b12ee244250712c5d583c8dbd1e8d

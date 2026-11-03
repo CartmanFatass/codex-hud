@@ -1,0 +1,5 @@
+
+> codex-hud@0.1.0 check:fixtures
+> bash tests/check-fixtures.sh
+
+check-fixtures: OK (tests/fixtures tests/prototypes docs/probes docs/design)

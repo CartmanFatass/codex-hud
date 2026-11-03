@@ -1,0 +1,23 @@
+{
+  "unix_socket": {
+    "ok": true,
+    "path_len": 44,
+    "reply": "pong"
+  },
+  "ptrace": {
+    "status": 0,
+    "stdout": [
+      "traceme 0 0 ",
+      "attach 0 0"
+    ],
+    "stderr": "",
+    "ptrace_scope": "1",
+    "ok": true
+  },
+  "proc_children": {
+    "ok": true,
+    "contents": "736568",
+    "expected_child": 736568
+  },
+  "node": "v22.23.4"
+}

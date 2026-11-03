@@ -1,0 +1,4 @@
+23:08:55 6.18 5.60 4.62 4/1384 | ast-grep:97.4 pi:55.7 npm:view npm:view npm:view npm:view 
+23:08:56 5.84 5.54 4.60 3/1401 | node:226 ast-grep:97.4 pi:45.0 npm:view npm:view npm:view 
+23:08:57 5.84 5.54 4.60 6/1390 | node:227 npm:view npm:view ast-grep:97.5 npm:view pi:35.6 
+23:08:58 5.84 5.54 4.60 6/1393 | node:216 ast-grep:97.5 python3:51.2 pi:29.2 npm:view npm:view 

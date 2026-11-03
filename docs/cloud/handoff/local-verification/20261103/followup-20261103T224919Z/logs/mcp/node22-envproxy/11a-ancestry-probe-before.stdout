@@ -1,0 +1,113 @@
+{
+ "uid": 1000,
+ "euid": 1000,
+ "gid": 1000,
+ "egid": 1000,
+ "clk_tck": 100,
+ "chain_from_probe": [
+  {
+   "pid": 749634,
+   "comm": "python3",
+   "ppid": 749633,
+   "starttime_ticks": 2740166,
+   "uid_real_eff_saved_fs": [
+    1000,
+    1000,
+    1000,
+    1000
+   ],
+   "environ_open": "ok (closed unread)"
+  },
+  {
+   "pid": 749633,
+   "comm": "timeout",
+   "ppid": 737438,
+   "starttime_ticks": 2740166,
+   "uid_real_eff_saved_fs": [
+    1000,
+    1000,
+    1000,
+    1000
+   ],
+   "environ_open": "ok (closed unread)"
+  },
+  {
+   "pid": 737438,
+   "comm": "bash",
+   "ppid": 737436,
+   "starttime_ticks": 2724907,
+   "uid_real_eff_saved_fs": [
+    1000,
+    1000,
+    1000,
+    1000
+   ],
+   "environ_open": "ok (closed unread)"
+  },
+  {
+   "pid": 737436,
+   "comm": "zsh",
+   "ppid": 685067,
+   "starttime_ticks": 2724901,
+   "uid_real_eff_saved_fs": [
+    1000,
+    1000,
+    1000,
+    1000
+   ],
+   "environ_open": "ok (closed unread)"
+  },
+  {
+   "pid": 685067,
+   "comm": "claude",
+   "ppid": 684479,
+   "starttime_ticks": 2589537,
+   "uid_real_eff_saved_fs": [
+    1000,
+    1000,
+    1000,
+    1000
+   ],
+   "environ_open": "ok (closed unread)"
+  },
+  {
+   "pid": 684479,
+   "comm": "zsh",
+   "ppid": 31274,
+   "starttime_ticks": 2588396,
+   "uid_real_eff_saved_fs": [
+    1000,
+    1000,
+    1000,
+    1000
+   ],
+   "environ_open": "ok (closed unread)"
+  },
+  {
+   "pid": 31274,
+   "comm": "herdr",
+   "ppid": 1,
+   "starttime_ticks": 132385,
+   "uid_real_eff_saved_fs": [
+    1000,
+    1000,
+    1000,
+    1000
+   ],
+   "environ_open": "ok (closed unread)"
+  },
+  {
+   "pid": 1,
+   "comm": "systemd",
+   "ppid": 0,
+   "starttime_ticks": 3153,
+   "uid_real_eff_saved_fs": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "environ_open": "EACCES"
+  }
+ ]
+}

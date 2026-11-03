@@ -1,0 +1,313 @@
+
+> codex-hud@0.1.0 test:mjs
+> node --test tests/unit/*.mjs
+
+TAP version 13
+# Subtest: classifier uses only live Codex metadata from the exact session
+ok 1 - classifier uses only live Codex metadata from the exact session
+  ---
+  duration_ms: 1.985949
+  type: 'test'
+  ...
+# Subtest: environment gates and target validation fail closed without I/O
+ok 2 - environment gates and target validation fail closed without I/O
+  ---
+  duration_ms: 2.526183
+  type: 'test'
+  ...
+# Subtest: tmux probe is exact, read-only, shell-free and bounded
+ok 3 - tmux probe is exact, read-only, shell-free and bounded
+  ---
+  duration_ms: 0.932353
+  type: 'test'
+  ...
+# Subtest: fake Unix socket receives minimal schema, current outer identity and safe sequence
+ok 4 - fake Unix socket receives minimal schema, current outer identity and safe sequence
+  ---
+  duration_ms: 16.641813
+  type: 'test'
+  ...
+# Subtest: socket acknowledges only matching successful newline responses
+    # Subtest: JSON-RPC success
+    ok 1 - JSON-RPC success
+      ---
+      duration_ms: 5.044608
+      type: 'test'
+      ...
+    # Subtest: malformed
+    ok 2 - malformed
+      ---
+      duration_ms: 10.425549
+      type: 'test'
+      ...
+    # Subtest: error
+    ok 3 - error
+      ---
+      duration_ms: 8.502767
+      type: 'test'
+      ...
+    # Subtest: explicit failure
+    ok 4 - explicit failure
+      ---
+      duration_ms: 13.296991
+      type: 'test'
+      ...
+    # Subtest: wrong id
+    ok 5 - wrong id
+      ---
+      duration_ms: 9.271265
+      type: 'test'
+      ...
+    # Subtest: no acknowledgement
+    ok 6 - no acknowledgement
+      ---
+      duration_ms: 9.74
+      type: 'test'
+      ...
+    # Subtest: no newline
+    ok 7 - no newline
+      ---
+      duration_ms: 10.856019
+      type: 'test'
+      ...
+    # Subtest: oversized
+    ok 8 - oversized
+      ---
+      duration_ms: 9.348989
+      type: 'test'
+      ...
+    # Subtest: disconnect
+    ok 9 - disconnect
+      ---
+      duration_ms: 9.545575
+      type: 'test'
+      ...
+    1..9
+ok 5 - socket acknowledges only matching successful newline responses
+  ---
+  duration_ms: 87.932835
+  type: 'test'
+  ...
+# Subtest: socket timeout, absent endpoint and cancellation are quiet bounded failures
+ok 6 - socket timeout, absent endpoint and cancellation are quiet bounded failures
+  ---
+  duration_ms: 43.232832
+  type: 'test'
+  ...
+# Subtest: controller deduplicates heartbeats and handles rapid working/idle/working without duplicate idle
+ok 7 - controller deduplicates heartbeats and handles rapid working/idle/working without duplicate idle
+  ---
+  duration_ms: 0.850971
+  type: 'test'
+  ...
+# Subtest: short uncertain tmux failure preserves working then publishes observed completion
+ok 8 - short uncertain tmux failure preserves working then publishes observed completion
+  ---
+  duration_ms: 0.436361
+  type: 'test'
+  ...
+# Subtest: prolonged probe failure releases unknown without inventing a completion
+ok 9 - prolonged probe failure releases unknown without inventing a completion
+  ---
+  duration_ms: 0.441209
+  type: 'test'
+  ...
+# Subtest: lost target, wrong process, dead pane and session reuse immediately release state
+ok 10 - lost target, wrong process, dead pane and session reuse immediately release state
+  ---
+  duration_ms: 0.475253
+  type: 'test'
+  ...
+# Subtest: reconnect clears ambiguous reports then re-reads latest state without replaying missed turns
+ok 11 - reconnect clears ambiguous reports then re-reads latest state without replaying missed turns
+  ---
+  duration_ms: 0.372913
+  type: 'test'
+  ...
+# Subtest: private per-attach health files remain readable after stop and exclude title/socket text
+ok 12 - private per-attach health files remain readable after stop and exclude title/socket text
+  ---
+  duration_ms: 16.563232
+  type: 'test'
+  ...
+# Subtest: health write failure never interrupts state reporting
+ok 13 - health write failure never interrupts state reporting
+  ---
+  duration_ms: 0.465385
+  type: 'test'
+  ...
+# Subtest: stop aborts an in-flight report before one final unknown; repeated stop is idempotent
+ok 14 - stop aborts an in-flight report before one final unknown; repeated stop is idempotent
+  ---
+  duration_ms: 0.352154
+  type: 'test'
+  ...
+# Subtest: parent death aborts a pending probe and terminates without a late working report
+ok 15 - parent death aborts a pending probe and terminates without a late working report
+  ---
+  duration_ms: 5.112218
+  type: 'test'
+  ...
+# Subtest: already-dead parent releases once without probing tmux
+ok 16 - already-dead parent releases once without probing tmux
+  ---
+  duration_ms: 0.480393
+  type: 'test'
+  ...
+# Subtest: stop with a silent fake server cancels the active request and bounds the final release
+ok 17 - stop with a silent fake server cancels the active request and bounds the final release
+  ---
+  duration_ms: 454.936903
+  type: 'test'
+  ...
+# Subtest: native readback validates exact outer pane and status without claiming lifecycle authority
+ok 18 - native readback validates exact outer pane and status without claiming lifecycle authority
+  ---
+  duration_ms: 4.161992
+  type: 'test'
+  ...
+# Subtest: native observer reads projected completion and stops without unknown or lifecycle writes
+ok 19 - native observer reads projected completion and stops without unknown or lifecycle writes
+  ---
+  duration_ms: 0.473289
+  type: 'test'
+  ...
+# Subtest: native observer diagnoses ignored custom authority rather than treating an API ACK as delivery
+ok 20 - native observer diagnoses ignored custom authority rather than treating an API ACK as delivery
+  ---
+  duration_ms: 0.157733
+  type: 'test'
+  ...
+# Subtest: native observer recovery only reads current state and keeps diagnostic gap visible
+ok 21 - native observer recovery only reads current state and keeps diagnostic gap visible
+  ---
+  duration_ms: 0.152143
+  type: 'test'
+  ...
+# Subtest: native readback never certifies another pane or agent as this Codex
+ok 22 - native readback never certifies another pane or agent as this Codex
+  ---
+  duration_ms: 9.543021
+  type: 'test'
+  ...
+# test-codex-path-first-run: PASS
+# Subtest: tests/unit/test-codex-path-first-run.mjs
+ok 2 - tests/unit/test-codex-path-first-run.mjs
+  ---
+  duration_ms: 83.710265
+  type: 'test'
+  ...
+# test-environment-line-runtime-state: PASS
+# Subtest: tests/unit/test-environment-line-runtime-state.mjs
+ok 3 - tests/unit/test-environment-line-runtime-state.mjs
+  ---
+  duration_ms: 84.338072
+  type: 'test'
+  ...
+# test-identity-line-effort: PASS
+# Subtest: tests/unit/test-identity-line-effort.mjs
+ok 4 - tests/unit/test-identity-line-effort.mjs
+  ---
+  duration_ms: 84.463384
+  type: 'test'
+  ...
+# test-model-glyphs: PASS
+# Subtest: tests/unit/test-model-glyphs.mjs
+ok 5 - tests/unit/test-model-glyphs.mjs
+  ---
+  duration_ms: 83.415577
+  type: 'test'
+  ...
+# test-pane-runtime-state: PASS
+# Subtest: tests/unit/test-pane-runtime-state.mjs
+ok 6 - tests/unit/test-pane-runtime-state.mjs
+  ---
+  duration_ms: 82.194308
+  type: 'test'
+  ...
+# test-parse-queue: PASS
+# Subtest: tests/unit/test-parse-queue.mjs
+ok 7 - tests/unit/test-parse-queue.mjs
+  ---
+  duration_ms: 95.354007
+  type: 'test'
+  ...
+# test-render-clear-scrollback-once: PASS
+# Subtest: tests/unit/test-render-clear-scrollback-once.mjs
+ok 8 - tests/unit/test-render-clear-scrollback-once.mjs
+  ---
+  duration_ms: 119.284517
+  type: 'test'
+  ...
+# test-rollout-offset: PASS
+# Subtest: tests/unit/test-rollout-offset.mjs
+ok 9 - tests/unit/test-rollout-offset.mjs
+  ---
+  duration_ms: 76.304456
+  type: 'test'
+  ...
+# test-rollout-turn-context: PASS
+# Subtest: tests/unit/test-rollout-turn-context.mjs
+ok 10 - tests/unit/test-rollout-turn-context.mjs
+  ---
+  duration_ms: 77.290337
+  type: 'test'
+  ...
+# test-session-finder-pane-binding: PASS
+# Subtest: tests/unit/test-session-finder-pane-binding.mjs
+ok 11 - tests/unit/test-session-finder-pane-binding.mjs
+  ---
+  duration_ms: 117.7893
+  type: 'test'
+  ...
+# test-subagent-tree: PASS
+# Subtest: tests/unit/test-subagent-tree.mjs
+ok 12 - tests/unit/test-subagent-tree.mjs
+  ---
+  duration_ms: 167.971176
+  type: 'test'
+  ...
+# test-tree-keys: PASS
+# Subtest: tests/unit/test-tree-keys.mjs
+ok 13 - tests/unit/test-tree-keys.mjs
+  ---
+  duration_ms: 78.529308
+  type: 'test'
+  ...
+# test-visual-width: PASS
+# Subtest: tests/unit/test-visual-width.mjs
+ok 14 - tests/unit/test-visual-width.mjs
+  ---
+  duration_ms: 36.81595
+  type: 'test'
+  ...
+# test-windows-codex-path-exclusion: PASS
+# Subtest: tests/unit/test-windows-codex-path-exclusion.mjs
+ok 15 - tests/unit/test-windows-codex-path-exclusion.mjs
+  ---
+  duration_ms: 39.395553
+  type: 'test'
+  ...
+# test-windows-installer-preserves-codex: PASS
+# Subtest: tests/unit/test-windows-installer-preserves-codex.mjs
+ok 16 - tests/unit/test-windows-installer-preserves-codex.mjs
+  ---
+  duration_ms: 37.792614
+  type: 'test'
+  ...
+# test-wsl-codex-origin: PASS
+# Subtest: tests/unit/test-wsl-codex-origin.mjs
+ok 17 - tests/unit/test-wsl-codex-origin.mjs
+  ---
+  duration_ms: 94.281804
+  type: 'test'
+  ...
+1..38
+# tests 47
+# suites 0
+# pass 47
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 712.487808

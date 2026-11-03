@@ -1,0 +1,17 @@
+id: 10-git-diff-check
+package: rk
+profile: node24-envproxy
+target: commit=7ba567ee0c3cd12933d79a5029162d32770ee245 tree=ad4c596860b264d76d4060be90d70337046b92c5 cwd=<wt>/fu-rk
+runtime: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+wrapper: cd <wt>/fu-rk; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SROOT>/h.wT5PtJ HUD_HOME=<SROOT>/u.kK6yoN TMPDIR=<SROOT>/t.lScQYY LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1 RUNZ1_KILL_EVIDENCE_DIR=<captures>/rk/node24-envproxy/10-git-diff-check  timeout -k 10 60s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh 10-git-diff-check.ancestry.txt git diff --check
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: git diff --check
+timeout: 60s
+stdout: 10-git-diff-check.stdout
+stderr: 10-git-diff-check.stderr
+load before: 5.85 5.80 4.87 2/1349
+start: 2026-11-03T23:12:06.290Z
+end: 2026-11-03T23:12:06.412Z
+exit: 0
+signal/timeout: -
+load after: 5.85 5.80 4.87 2/1350

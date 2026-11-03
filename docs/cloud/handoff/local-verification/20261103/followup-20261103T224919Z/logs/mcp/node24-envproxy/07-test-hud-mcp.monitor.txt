@@ -1,0 +1,5 @@
+22:54:40 6.24 4.89 3.13 2/1259 | ast-grep:69.5 pi:8.5 codex:3.8 claude:3.3 pi:2.3 opengrep-core:2.0 
+22:54:41 6.24 4.89 3.13 3/1290 | MainThread:205 ast-grep:69.3 npm:run npm:run pi:8.5 codex:3.8 
+22:54:42 6.24 4.89 3.13 2/1289 | MainThread:199 ast-grep:69.1 pi:8.5 npm:run npm:run codex:3.8 
+22:54:43 6.24 4.89 3.13 4/1289 | MainThread:191 ast-grep:69.0 pi:8.5 npm:run npm:run codex:3.8 
+22:54:44 6.38 4.94 3.16 3/1347 | MainThread:100 python3:88.8 ast-grep:68.8 MainThread:66.6 MainThread:53.1 MainThread:52.0 

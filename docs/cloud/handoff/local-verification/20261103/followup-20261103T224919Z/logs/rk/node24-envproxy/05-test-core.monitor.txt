@@ -1,0 +1,15 @@
+23:11:25 6.76 5.87 4.84 5/1375 | ast-grep:98.7 grep:27.5 pi:11.4 pi:7.2 codex:3.2 opengrep-core:2.6 
+23:11:26 6.94 5.92 4.86 6/1403 | MainThread:184 MainThread:100 ast-grep:98.7 grep:27.3 npm:run pi:11.4 
+23:11:27 6.94 5.92 4.86 6/1394 | MainThread:198 ast-grep:98.8 grep:27.7 pi:11.4 pi:7.1 npm:run 
+23:11:28 6.94 5.92 4.86 5/1393 | MainThread:192 ast-grep:98.8 python3:81.4 grep:27.8 pi:11.5 pi:7.1 
+23:11:29 6.94 5.92 4.86 7/1397 | MainThread:183 ast-grep:98.8 python3:28.2 grep:28.0 pi:11.5 pi:7.1 
+23:11:30 6.94 5.92 4.86 5/1394 | MainThread:175 ast-grep:98.8 grep:27.8 pi:11.5 pi:7.1 codex:3.2 
+23:11:31 7.34 6.02 4.90 5/1395 | MainThread:169 ps:100 ast-grep:98.8 grep:27.3 pi:11.5 pi:7.0 
+23:11:32 7.34 6.02 4.90 3/1373 | MainThread:165 ast-grep:98.8 grep:26.8 pi:11.6 pi:7.0 codex:3.2 
+23:11:33 7.34 6.02 4.90 3/1372 | MainThread:161 ast-grep:98.8 grep:26.6 pi:11.6 pi:7.0 codex:3.2 
+23:11:34 7.34 6.02 4.90 3/1372 | MainThread:159 ast-grep:98.8 grep:26.4 pi:11.6 pi:7.0 codex:3.2 
+23:11:35 7.34 6.02 4.90 6/1374 | MainThread:156 ast-grep:98.8 python3:95.4 grep:26.5 pi:11.6 pi:7.0 
+23:11:36 6.99 5.97 4.89 12/1424 | MainThread:140 MainThread:140 MainThread:133 MainThread:133 MainThread:120 MainThread:116 
+23:11:37 6.99 5.97 4.89 5/1387 | MainThread:100 ast-grep:98.8 grep:26.1 MainThread:14.0 MainThread:12.8 pi:11.5 
+23:11:38 6.99 5.97 4.89 4/1387 | MainThread:100 ast-grep:98.8 grep:25.8 pi:11.5 MainThread:9.5 MainThread:7.4 
+23:11:39 6.99 5.97 4.89 3/1371 | ast-grep:98.8 grep:25.5 pi:11.5 pi:6.9 codex:3.2 opengrep-core:2.5 

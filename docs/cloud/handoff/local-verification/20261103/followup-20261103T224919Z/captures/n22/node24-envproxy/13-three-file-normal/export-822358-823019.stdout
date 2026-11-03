@@ -1,0 +1,114 @@
+{
+  "format": "hud-delegation-export",
+  "schemaVersion": 1,
+  "ledgerId": "da8e836d8f28c18970c44d1ea879fce7",
+  "asOfSeq": 7,
+  "exportedAt": 1793747255300,
+  "scope": {
+    "kind": "links",
+    "linkIds": [
+      "synthetic-link-d"
+    ]
+  },
+  "coverage": {
+    "state": "complete",
+    "recordCount": 2
+  },
+  "paths": "local",
+  "records": [
+    {
+      "linkId": "synthetic-link-d",
+      "runId": "synthetic-run-d1",
+      "runSeq": 1,
+      "operation": "handover",
+      "linkState": "bound",
+      "runState": "ended",
+      "isCurrentRun": false,
+      "currentOwner": true,
+      "predecessor": "synthetic-link-c",
+      "hasUnresolvedConflict": false,
+      "parentRef": {
+        "harness": "claude",
+        "sourceId": "76826f56313f3b69987f74c49d2d643b86b2c9402168bf943248a7e81c6fe6e9",
+        "sessionId": "synthetic-parent",
+        "threadId": "synthetic-agent-a"
+      },
+      "childRef": {
+        "harness": "codex",
+        "sourceId": "e7094499b17cb0b4630e5f12967c2bb77f9338a113ebf341a4146dc909d24ec7",
+        "sessionId": "synthetic-child",
+        "threadId": null
+      },
+      "relationshipConfirmed": true,
+      "bindingReason": null,
+      "runHandshake": {
+        "state": "bound",
+        "reason": null
+      },
+      "cwdBasis": "launch",
+      "cwdCapturedAt": 1700000004000,
+      "workspaceSnapshot": {
+        "repoId": "0b53a9906e831e64bdc38f7af61ec513e2112666d2999eecec030f4ee34c286a",
+        "identityKind": "git-common-dir-v1",
+        "scope": "local",
+        "cwdSource": "launch",
+        "cwdAsOf": 1700000000000,
+        "gitCapturedAt": 1700000000001,
+        "gitMissingReason": null,
+        "worktreeRoot": "/synthetic/worktree-a"
+      },
+      "projectOrigin": null,
+      "createdAt": 1700000004000,
+      "startedAt": 1700000004100,
+      "endedAt": 1700000004900,
+      "launchCwd": "/synthetic/launch-d1"
+    },
+    {
+      "linkId": "synthetic-link-d",
+      "runId": "synthetic-run-d2",
+      "runSeq": 2,
+      "operation": "resume",
+      "linkState": "bound",
+      "runState": "ended",
+      "isCurrentRun": true,
+      "currentOwner": true,
+      "predecessor": "synthetic-link-c",
+      "hasUnresolvedConflict": false,
+      "parentRef": {
+        "harness": "claude",
+        "sourceId": "76826f56313f3b69987f74c49d2d643b86b2c9402168bf943248a7e81c6fe6e9",
+        "sessionId": "synthetic-parent",
+        "threadId": "synthetic-agent-a"
+      },
+      "childRef": {
+        "harness": "codex",
+        "sourceId": "e7094499b17cb0b4630e5f12967c2bb77f9338a113ebf341a4146dc909d24ec7",
+        "sessionId": "synthetic-child",
+        "threadId": null
+      },
+      "relationshipConfirmed": true,
+      "bindingReason": null,
+      "runHandshake": {
+        "state": "bound",
+        "reason": null
+      },
+      "cwdBasis": "launch",
+      "cwdCapturedAt": 1700000006000,
+      "workspaceSnapshot": {
+        "repoId": "0b53a9906e831e64bdc38f7af61ec513e2112666d2999eecec030f4ee34c286a",
+        "identityKind": "git-common-dir-v1",
+        "scope": "local",
+        "cwdSource": "launch",
+        "cwdAsOf": 1700000000000,
+        "gitCapturedAt": 1700000000001,
+        "gitMissingReason": null,
+        "worktreeRoot": "/synthetic/worktree-a"
+      },
+      "projectOrigin": null,
+      "createdAt": 1700000006000,
+      "startedAt": 1700000006100,
+      "endedAt": 1700000006900,
+      "launchCwd": "/synthetic/launch-d2"
+    }
+  ]
+}

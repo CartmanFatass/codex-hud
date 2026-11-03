@@ -1,0 +1,17 @@
+id: 12-three-file-serial
+package: n22
+profile: node22-noenvproxy-control
+target: commit=b4047320262f72f401a513db07236ff1473db933 tree=d9be29f28da496a880802c267a08e8bb4fcbee74 cwd=<wt>/fu-n22
+runtime: <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9
+wrapper: cd <wt>/fu-n22; env -i PATH=<VERIFY_ROOT>/runtimes/node-v22.23.4/bin:/usr/bin:/bin HOME=<SROOT>/h.vLTob5 HUD_HOME=<SROOT>/u.o0gKTc TMPDIR=<SROOT>/t.EfVfYt LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_PROXY_EVIDENCE_DIR=<captures>/n22/node22-noenvproxy-control/12-three-file-serial  timeout -k 10 600s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh 12-three-file-serial.ancestry.txt node --test --test-concurrency=1 dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/run-process.test.js dist-test/tests/unit/run-light-leader.test.js
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables NODE_USE_ENV_PROXY
+command: node --test --test-concurrency=1 dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/run-process.test.js dist-test/tests/unit/run-light-leader.test.js
+timeout: 600s
+stdout: 12-three-file-serial.stdout
+stderr: 12-three-file-serial.stderr
+load before: 4.72 6.19 4.48 1/1242
+start: 2026-11-03T23:04:05.857Z
+end: 2026-11-03T23:04:27.812Z
+exit: 0
+signal/timeout: -
+load after: 3.63 5.85 4.40 3/1228

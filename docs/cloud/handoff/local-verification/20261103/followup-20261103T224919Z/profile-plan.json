@@ -1,0 +1,27 @@
+{
+  "declared_before_execution": true,
+  "proxy_policy": "Owner-declared: HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY and lowercase forms passed unchanged from the invoking shell to every command (values not recorded). No --no-warnings, NODE_NO_WARNINGS, warning disable/redirect/preload/trace. NODE_OPTIONS absent. stdout/stderr captured raw to separate files.",
+  "profiles": {
+    "node22-envproxy": {"node": "22.23.4", "NODE_USE_ENV_PROXY": "1", "proxy_vars": "passed"},
+    "node22-noenvproxy-control": {"node": "22.23.4", "NODE_USE_ENV_PROXY": "absent (no --use-env-proxy in argv or NODE_OPTIONS)", "proxy_vars": "passed, identical"},
+    "node24-envproxy": {"node": "24.22.1", "NODE_USE_ENV_PROXY": "1", "proxy_vars": "passed"}
+  },
+  "isolation": "env -i; fresh HOME, HUD_HOME and TMPDIR (mktemp under a short /tmp root on the WSL ext4 root) per command; selected node bin first on PATH; real ~/.hud ~/.claude ~/.codex* ~/.pi untouched",
+  "order": ["setup (worktrees, identities, environment, capability probe, npm ci --ignore-scripts per worktree)", "MCP-ANCESTOR", "MCP benchmark window", "NODE22-PROXY", "RUNZ1-KILL"],
+  "packages": {
+    "MCP-ANCESTOR": {"candidate": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe", "tree": "0d195bd47ff2b29581e1c394c2973d9479f8d928", "benchmark_baseline": "26f6fba36948e6c96e2e109cb374c0d4dbb9ab22",
+      "profiles": ["node22-envproxy", "node24-envproxy"],
+      "per_profile": ["full README set (limits: builds 600, npm test 1800, mjs 600, core 900, visual 600, hud-mcp 900, format 300, fixtures 300, diff 60)", "ancestry probe", "three-file gate 300", "ancestry probe", "package prettier check 300"],
+      "benchmark": "node tests/hud-mcp/benchmark.mjs, 600 s, 12 runs in manifest/mcp-benchmark-order.txt, driver blob c36817dee4cf70c27a39a86b3965f4eb6701ceb0"},
+    "NODE22-PROXY": {"candidate": "b4047320262f72f401a513db07236ff1473db933", "tree": "d9be29f28da496a880802c267a08e8bb4fcbee74",
+      "profiles": ["node22-envproxy", "node22-noenvproxy-control", "node24-envproxy"],
+      "per_profile": ["full README set (MCP/NODE22 limits)", "node-proxy-profile 300", "three-file serial 600", "three-file normal 600", "HYG2 six-suite 900"],
+      "evidence_env": "NODE_PROXY_EVIDENCE_DIR = new empty captures/n22/<profile>/<command>/ per command"},
+    "RUNZ1-KILL": {"candidate": "7ba567ee0c3cd12933d79a5029162d32770ee245", "tree": "ad4c596860b264d76d4060be90d70337046b92c5",
+      "node22-envproxy": ["three fresh builds 180", "kill-evidence serial 600", "runz1 three-file 600"],
+      "node24-envproxy": ["full README set (builds 180, npm test 1200, mjs 300, core/visual/hud-mcp 600, format/fixtures 180, diff 60)", "kill-evidence serial 600", "runz1 three-file 600"],
+      "evidence_env": "RUNZ1_KILL_EVIDENCE_DIR = new empty captures/rk/<profile>/<command>/ per command"}
+  },
+  "reruns": "Each command once. Only a README-listed known flake may get one isolated suite rerun, both logs kept.",
+  "not_in_scope": ["NEXT", "old PERF", "P065", "negative-control mutations (implementer evidence)", "real harness/Herdr/tmux/B13_REAL/B45 real closure/B14/install/live statusline"]
+}

@@ -1,0 +1,2 @@
+22:54:58 5.63 4.83 3.14 3/1253 | ast-grep:66.7 pi:8.5 codex:3.7 claude:3.3 pi:2.3 opengrep-core:1.9 
+22:54:59 5.63 4.83 3.14 2/1285 | MainThread:100 MainThread:84.6 ast-grep:66.6 python3:41.0 MainThread:15.5 MainThread:14.6 

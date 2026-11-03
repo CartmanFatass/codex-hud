@@ -1,0 +1,17 @@
+id: 01-build
+package: rk
+profile: node22-envproxy
+target: commit=7ba567ee0c3cd12933d79a5029162d32770ee245 tree=ad4c596860b264d76d4060be90d70337046b92c5 cwd=<wt>/fu-rk
+runtime: <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9
+wrapper: cd <wt>/fu-rk; env -i PATH=<VERIFY_ROOT>/runtimes/node-v22.23.4/bin:/usr/bin:/bin HOME=<SROOT>/h.JJFzSi HUD_HOME=<SROOT>/u.KhBdwy TMPDIR=<SROOT>/t.JqOGwe LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1 RUNZ1_KILL_EVIDENCE_DIR=<captures>/rk/node22-envproxy/01-build  timeout -k 10 180s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh 01-build.ancestry.txt npm run build
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: npm run build
+timeout: 180s
+stdout: 01-build.stdout
+stderr: 01-build.stderr
+load before: 6.99 5.71 4.64 3/1285
+start: 2026-11-03T23:08:37.936Z
+end: 2026-11-03T23:08:44.238Z
+exit: 0
+signal/timeout: -
+load after: 6.67 5.67 4.63 2/1294

@@ -1,0 +1,19 @@
+rk node22-envproxy 01-build exit=0 -
+rk node22-envproxy 02-build-test exit=0 -
+rk node22-envproxy 03-build-hud-mcp exit=0 -
+rk node22-envproxy 11-kill-evidence-serial exit=0 -
+rk node22-envproxy 12-runz1-three-file exit=1 -
+rk node24-envproxy 01-build exit=0 -
+rk node24-envproxy 02-build-test exit=0 -
+rk node24-envproxy 03-build-hud-mcp exit=0 -
+rk node24-envproxy 04-npm-test exit=1 -
+rk node24-envproxy 04b-test-mjs-separate exit=0 -
+rk node24-envproxy 05-test-core exit=0 -
+rk node24-envproxy 06-test-visual exit=0 -
+rk node24-envproxy 07-test-hud-mcp exit=0 -
+rk node24-envproxy 08-format-check exit=0 -
+rk node24-envproxy 09-check-fixtures exit=0 -
+rk node24-envproxy 10-git-diff-check exit=0 -
+rk node24-envproxy 11-kill-evidence-serial exit=0 -
+rk node24-envproxy 12-runz1-three-file exit=0 -
+RK-DONE 2026-11-03T23:12:45Z

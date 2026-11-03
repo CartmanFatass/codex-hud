@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD b404732)
+HEAD is now at b404732 WIP NODE22-PROXY: preserve exact output and proxy-enabled diagnostics

@@ -1,0 +1,2 @@
+23:08:30 6.96 5.67 4.61 8/1288 | ast-grep:96.3 python3:44.8 pi:10.5 codex:3.0 claude:2.6 pi:2.3 
+23:08:31 6.72 5.64 4.61 3/1310 | MainThread:100 ast-grep:96.3 python3:20.5 node:20.4 pi:10.5 node:3.9 

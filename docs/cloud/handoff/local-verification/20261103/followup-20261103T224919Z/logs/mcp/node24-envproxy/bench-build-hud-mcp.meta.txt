@@ -1,0 +1,17 @@
+id: bench-build-hud-mcp
+package: mcp
+profile: node24-envproxy
+target: commit=b2897a4f9769bca6305ff0e3ae3dc694a9320ffe tree=0d195bd47ff2b29581e1c394c2973d9479f8d928 cwd=<wt>/fu-mcp
+runtime: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+wrapper: cd <wt>/fu-mcp; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SROOT>/h.EmrzYl HUD_HOME=<SROOT>/u.pcOeCJ TMPDIR=<SROOT>/t.dM6gha LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1  timeout -k 10 600s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh bench-build-hud-mcp.ancestry.txt npm run build:hud-mcp
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: npm run build:hud-mcp
+timeout: 600s
+stdout: bench-build-hud-mcp.stdout
+stderr: bench-build-hud-mcp.stderr
+load before: 3.31 4.29 3.05 1/1252
+start: 2026-11-03T22:55:53.896Z
+end: 2026-11-03T22:55:56.987Z
+exit: 0
+signal/timeout: -
+load after: 3.20 4.25 3.05 1/1254

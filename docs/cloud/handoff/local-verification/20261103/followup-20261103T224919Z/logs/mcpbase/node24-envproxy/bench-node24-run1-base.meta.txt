@@ -1,0 +1,17 @@
+id: bench-node24-run1-base
+package: mcpbase
+profile: node24-envproxy
+target: commit=26f6fba36948e6c96e2e109cb374c0d4dbb9ab22 tree=03bd36610d46fd220eb9c0e4fbf153a52bc3c3b9 cwd=<wt>/fu-mcpbase
+runtime: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+wrapper: cd <wt>/fu-mcpbase; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SROOT>/h.gpxZqL HUD_HOME=<SROOT>/u.Wp2yRG TMPDIR=<SROOT>/t.lZzUbA LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1  timeout -k 10 600s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh bench-node24-run1-base.ancestry.txt node tests/hud-mcp/benchmark.mjs
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: node tests/hud-mcp/benchmark.mjs
+timeout: 600s
+stdout: bench-node24-run1-base.stdout
+stderr: bench-node24-run1-base.stderr
+load before: 2.59 4.02 3.00 1/1257
+start: 2026-11-03T22:56:22.900Z
+end: 2026-11-03T22:56:27.127Z
+exit: 0
+signal/timeout: -
+load after: 2.55 3.99 3.00 1/1254

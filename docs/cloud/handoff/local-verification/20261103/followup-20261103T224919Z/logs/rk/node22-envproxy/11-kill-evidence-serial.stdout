@@ -1,0 +1,306 @@
+TAP version 13
+# (node:828679) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# RUNZ1-KILL K1 old key-only serializer failed the embedded-identity assertion; synthetic markers only
+# Subtest: RUNZ1-KILL K1 publication pseudonymizes embedded identities without mutating evidence
+ok 1 - RUNZ1-KILL K1 publication pseudonymizes embedded identities without mutating evidence
+  ---
+  duration_ms: 11.965644
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: no completion evidence
+ok 2 - RUNZ1-KILL table: no completion evidence
+  ---
+  duration_ms: 0.997354
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: complete Q with before_exit
+ok 3 - RUNZ1-KILL table: complete Q with before_exit
+  ---
+  duration_ms: 0.192027
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: complete Q with absent chronology
+ok 4 - RUNZ1-KILL table: complete Q with absent chronology
+  ---
+  duration_ms: 0.099275
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: complete Q with unknown chronology
+ok 5 - RUNZ1-KILL table: complete Q with unknown chronology
+  ---
+  duration_ms: 0.330865
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: complete Q with after_exit
+ok 6 - RUNZ1-KILL table: complete Q with after_exit
+  ---
+  duration_ms: 0.213537
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: incomplete complete
+ok 7 - RUNZ1-KILL table: incomplete complete
+  ---
+  duration_ms: 0.471867
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: incomplete harnessTerminated
+ok 8 - RUNZ1-KILL table: incomplete harnessTerminated
+  ---
+  duration_ms: 0.428236
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: incomplete launchersSealed
+ok 9 - RUNZ1-KILL table: incomplete launchersSealed
+  ---
+  duration_ms: 0.307562
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: wrong run
+ok 10 - RUNZ1-KILL table: wrong run
+  ---
+  duration_ms: 0.323161
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: wrong source
+ok 11 - RUNZ1-KILL table: wrong source
+  ---
+  duration_ms: 0.173793
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: wrong generation
+ok 12 - RUNZ1-KILL table: wrong generation
+  ---
+  duration_ms: 0.110195
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: wrong supervisor
+ok 13 - RUNZ1-KILL table: wrong supervisor
+  ---
+  duration_ms: 0.169425
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: rejected validation
+ok 14 - RUNZ1-KILL table: rejected validation
+  ---
+  duration_ms: 0.16145
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: pending validation
+ok 15 - RUNZ1-KILL table: pending validation
+  ---
+  duration_ms: 0.106778
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: invalid fact time null
+ok 16 - RUNZ1-KILL table: invalid fact time null
+  ---
+  duration_ms: 1.414573
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: invalid fact time -1
+ok 17 - RUNZ1-KILL table: invalid fact time -1
+  ---
+  duration_ms: 0.219558
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: invalid fact time NaN
+ok 18 - RUNZ1-KILL table: invalid fact time NaN
+  ---
+  duration_ms: 0.154187
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: invalid fact time 1700000000001
+ok 19 - RUNZ1-KILL table: invalid fact time 1700000000001
+  ---
+  duration_ms: 0.117399
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: conflicting live evidence
+ok 20 - RUNZ1-KILL table: conflicting live evidence
+  ---
+  duration_ms: 0.269561
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: undated live evidence
+ok 21 - RUNZ1-KILL table: undated live evidence
+  ---
+  duration_ms: 0.117719
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: unresolved identity conflict
+ok 22 - RUNZ1-KILL table: unresolved identity conflict
+  ---
+  duration_ms: 0.295409
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: conflicting cancellation evidence
+ok 23 - RUNZ1-KILL table: conflicting cancellation evidence
+  ---
+  duration_ms: 0.221697
+  type: 'test'
+  ...
+# RUNZ1-KILL legacy assertion rejected actual valid receiptless Q: false !== true
+# RUNZ1-KILL assertion negative control rejected remove-Q; cloned description, not a production defect
+# RUNZ1-KILL assertion negative control rejected incomplete-Q; cloned description, not a production defect
+# RUNZ1-KILL assertion negative control rejected wrong-binding; cloned description, not a production defect
+# RUNZ1-KILL K2 old held branch accepted coherent retained-Q counterexample (no-cancellation); new assertion rejected it; synthetic outcome
+# RUNZ1-KILL K2 old held branch accepted coherent retained-Q counterexample (absent); new assertion rejected it; synthetic outcome
+# RUNZ1-KILL K2 old held branch accepted coherent retained-Q counterexample (unknown); new assertion rejected it; synthetic outcome
+# RUNZ1-KILL K2 old held branch accepted coherent retained-Q counterexample (before_exit); new assertion rejected it; synthetic outcome
+# RUNZ1-KILL K2 paired remove-Q: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired incomplete-complete: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired incomplete-harnessTerminated: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired incomplete-launchersSealed: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired wrong-runId: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired wrong-sourceId: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired wrong-bindingGeneration: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired wrong-supervisor: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired rejected: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired pending: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired invalid-time-null: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired invalid-time--1: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired invalid-time-NaN: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired invalid-time-future: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired live: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired undated-live: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired unsealed: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired explicit-conflict: coherent held allowed, alleged release rejected; synthetic description
+# RUNZ1-KILL K2 paired scope-tie: coherent held allowed, alleged release rejected; synthetic description
+# Subtest: RUNZ1-KILL real live original holds slot, then reaped fixed scope gives receiptless Q exactly once
+ok 24 - RUNZ1-KILL real live original holds slot, then reaped fixed scope gives receiptless Q exactly once
+  ---
+  duration_ms: 102.962126
+  type: 'test'
+  ...
+# (node:828689) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: RunControl real contract: readonly status, byte logs, stdin EOF, normal and nonzero native result
+ok 25 - RunControl real contract: readonly status, byte logs, stdin EOF, normal and nonzero native result
+  ---
+  duration_ms: 266.75053
+  type: 'test'
+  ...
+# Subtest: normal exit 0 creates one durable final receipt before adoption
+ok 26 - normal exit 0 creates one durable final receipt before adoption
+  ---
+  duration_ms: 278.266532
+  type: 'test'
+  ...
+# Subtest: cancel authenticates intent, returns promptly, preserves duplicate grace and signals three stages
+ok 27 - cancel authenticates intent, returns promptly, preserves duplicate grace and signals three stages
+  ---
+  duration_ms: 229.114956
+  type: 'test'
+  ...
+# Subtest: unknown scope refuses receipts, control and recovery after short shell without harness identity
+ok 28 - unknown scope refuses receipts, control and recovery after short shell without harness identity
+  ---
+  duration_ms: 195.039082
+  type: 'test'
+  ...
+# Subtest: configuration claim leaves preserve user argv and only override four named leaves
+ok 29 - configuration claim leaves preserve user argv and only override four named leaves
+  ---
+  duration_ms: 0.350952
+  type: 'test'
+  ...
+# Subtest: supervisor death receiptless Q uses registered stamp, no replacement execution or writer files
+ok 30 - supervisor death receiptless Q uses registered stamp, no replacement execution or writer files
+  ---
+  duration_ms: 2042.881514
+  type: 'test'
+  ...
+# Subtest: two real supervisors compete for one fake slot/ticket: loser touches no logs, exactly one submission
+ok 31 - two real supervisors compete for one fake slot/ticket: loser touches no logs, exactly one submission
+  ---
+  duration_ms: 741.705903
+  type: 'test'
+  ...
+# Subtest: registration commit before meta crash retains all stamp fields; missing/mismatched domain never backfills
+ok 32 - registration commit before meta crash retains all stamp fields; missing/mismatched domain never backfills
+  ---
+  duration_ms: 1.195601
+  type: 'test'
+  ...
+# Subtest: reconcile revision prevents competing cancel or registration being overwritten
+ok 33 - reconcile revision prevents competing cancel or registration being overwritten
+  ---
+  duration_ms: 0.90953
+  type: 'test'
+  ...
+# Subtest: verified shell harness keeps native unknown separately from actual shell status 137
+ok 34 - verified shell harness keeps native unknown separately from actual shell status 137
+  ---
+  duration_ms: 536.253594
+  type: 'test'
+  ...
+# Subtest: direct harness killed by a real signal records sourced wait signal
+ok 35 - direct harness killed by a real signal records sourced wait signal
+  ---
+  duration_ms: 202.105842
+  type: 'test'
+  ...
+# Subtest: accepted cancellation with verified scope absent never signals a guessed shell group
+ok 36 - accepted cancellation with verified scope absent never signals a guessed shell group
+  ---
+  duration_ms: 450.86678
+  type: 'test'
+  ...
+# Subtest: orphan policy reacts to verified physical parent death, while continue preserves the run
+ok 37 - orphan policy reacts to verified physical parent death, while continue preserves the run
+  ---
+  duration_ms: 450.975132
+  type: 'test'
+  ...
+# Subtest: cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof
+ok 38 - cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof
+  ---
+  duration_ms: 2236.644536
+  type: 'test'
+  ...
+# Subtest: cancel accepted after submitting and before scope fixation wakes once discovery finishes
+ok 39 - cancel accepted after submitting and before scope fixation wakes once discovery finishes
+  ---
+  duration_ms: 184.864205
+  type: 'test'
+  ...
+# Subtest: heartbeat wall/monotonic disagreement records one anomaly and stays uncertain
+ok 40 - heartbeat wall/monotonic disagreement records one anomaly and stays uncertain
+  ---
+  duration_ms: 5132.009803
+  type: 'test'
+  ...
+# Subtest: historical PGID/SID reuse simulation never makes unrelated new workload an old-scope conflict
+ok 41 - historical PGID/SID reuse simulation never makes unrelated new workload an old-scope conflict
+  ---
+  duration_ms: 1500.278258
+  type: 'test'
+  ...
+# Subtest: real supervisor SIGKILL at submitted_before_scope never resubmits or replays signals
+ok 42 - real supervisor SIGKILL at submitted_before_scope never resubmits or replays signals
+  ---
+  duration_ms: 380.339059
+  type: 'test'
+  ...
+# Subtest: real supervisor SIGKILL at cancel_before_ack_commit never resubmits or replays signals
+ok 43 - real supervisor SIGKILL at cancel_before_ack_commit never resubmits or replays signals
+  ---
+  duration_ms: 5347.071675
+  type: 'test'
+  ...
+# Subtest: argv wrapper honors independent harness discovery and never uses launcher wait as native exit
+ok 44 - argv wrapper honors independent harness discovery and never uses launcher wait as native exit
+  ---
+  duration_ms: 438.955514
+  type: 'test'
+  ...
+1..44
+# tests 44
+# suites 0
+# pass 44
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 20907.625412

@@ -1,0 +1,17 @@
+id: 11-focused-ancestor-gate
+package: mcp
+profile: node22-envproxy
+target: commit=b2897a4f9769bca6305ff0e3ae3dc694a9320ffe tree=0d195bd47ff2b29581e1c394c2973d9479f8d928 cwd=<wt>/fu-mcp
+runtime: <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9
+wrapper: cd <wt>/fu-mcp; env -i PATH=<VERIFY_ROOT>/runtimes/node-v22.23.4/bin:/usr/bin:/bin HOME=<SROOT>/h.x0PkGk HUD_HOME=<SROOT>/u.YnrT8p TMPDIR=<SROOT>/t.CTuNhn LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1  timeout -k 10 300s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh 11-focused-ancestor-gate.ancestry.txt node --test packages/hud-mcp/dist/tests/hud-mcp/ancestor-discovery.test.js packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: node --test packages/hud-mcp/dist/tests/hud-mcp/ancestor-discovery.test.js packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js
+timeout: 300s
+stdout: 11-focused-ancestor-gate.stdout
+stderr: 11-focused-ancestor-gate.stderr
+load before: 3.30 3.12 2.32 19/1350
+start: 2026-11-03T22:52:24.684Z
+end: 2026-11-03T22:52:25.624Z
+exit: 0
+signal/timeout: -
+load after: 4.48 3.37 2.41 7/1345

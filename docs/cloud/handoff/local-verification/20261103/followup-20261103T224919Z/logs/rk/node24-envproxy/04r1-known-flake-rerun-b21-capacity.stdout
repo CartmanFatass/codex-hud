@@ -1,0 +1,13 @@
+✔ B21 per-owner and global limits compose; same-key replay wins at capacity, refusal has no idempotency/slot leak (80.576578ms)
+✔ B21 reported-but-alive and uncertain runs retain slots; only established termination frees capacity and refusal key may succeed later (63.050512ms)
+✔ B21 real-SQLite MCP refusal is stable and never dispatches a launch (63.012942ms)
+✔ B21 configured limits reach MCP admission and the same status snapshot (45.546096ms)
+✔ B21 canonical proc-to-session owner alias preserves capacity occupancy and replay at owner limit (30.365535ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 408.861963

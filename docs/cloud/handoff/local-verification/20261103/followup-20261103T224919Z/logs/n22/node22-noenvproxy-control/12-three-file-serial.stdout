@@ -1,0 +1,471 @@
+TAP version 13
+# Subtest: hud help and strict argument refusals never access or create a ledger
+ok 1 - hud help and strict argument refusals never access or create a ledger
+  ---
+  duration_ms: 251.200167
+  type: 'test'
+  ...
+# Subtest: hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes
+ok 2 - hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes
+  ---
+  duration_ms: 67.652261
+  type: 'test'
+  ...
+# Subtest: hud missing and unreadable ledgers fail with no stdout or initialization
+ok 3 - hud missing and unreadable ledgers fail with no stdout or initialization
+  ---
+  duration_ms: 67.591939
+  type: 'test'
+  ...
+# Subtest: hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes
+ok 4 - hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes
+  ---
+  duration_ms: 611.440442
+  type: 'test'
+  ...
+# Subtest: hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4
+ok 5 - hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4
+  ---
+  duration_ms: 279.082582
+  type: 'test'
+  ...
+# Subtest: hud reports asynchronous stdout failures for export and help without Node stack traces
+ok 6 - hud reports asynchronous stdout failures for export and help without Node stack traces
+  ---
+  duration_ms: 421.740501
+  type: 'test'
+  ...
+# Subtest: hud consumes producer JSON byte for byte, preserving full refs, scopes, history and path opt-in
+ok 7 - hud consumes producer JSON byte for byte, preserving full refs, scopes, history and path opt-in
+  ---
+  duration_ms: 210.42359
+  type: 'test'
+  ...
+# Subtest: hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged
+ok 8 - hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged
+  ---
+  duration_ms: 213.467346
+  type: 'test'
+  ...
+# Subtest: hud refuses unknown ledger versions without migrating or emitting JSON
+ok 9 - hud refuses unknown ledger versions without migrating or emitting JSON
+  ---
+  duration_ms: 242.395256
+  type: 'test'
+  ...
+# Subtest: hud producer validation refusal writes no partial JSON
+ok 10 - hud producer validation refusal writes no partial JSON
+  ---
+  duration_ms: 247.381291
+  type: 'test'
+  ...
+# Subtest: hud defaults to ~/.hud only inside an isolated synthetic HOME
+ok 11 - hud defaults to ~/.hud only inside an isolated synthetic HOME
+  ---
+  duration_ms: 178.335168
+  type: 'test'
+  ...
+# Subtest: hud export leaves fresh-process raw stderr free of SQLite initialization warnings
+ok 12 - hud export leaves fresh-process raw stderr free of SQLite initialization warnings
+  ---
+  duration_ms: 235.772648
+  type: 'test'
+  ...
+# Subtest: ledger initialization restores emitWarning and preserves unrelated warnings
+ok 13 - ledger initialization restores emitWarning and preserves unrelated warnings
+  ---
+  duration_ms: 29.482709
+  type: 'test'
+  ...
+# Subtest: light leader keeps 0 sourced as native_unknown and completes scope
+ok 14 - light leader keeps 0 sourced as native_unknown and completes scope
+  ---
+  duration_ms: 279.873933
+  type: 'test'
+  ...
+# {"result":0,"source":"native_unknown","native_exit":null,"shellDiagnostic":0}
+# Subtest: light leader keeps 3 sourced as native_unknown and completes scope
+ok 15 - light leader keeps 3 sourced as native_unknown and completes scope
+  ---
+  duration_ms: 262.66318
+  type: 'test'
+  ...
+# {"result":3,"source":"native_unknown","native_exit":null,"shellDiagnostic":3}
+# Subtest: light leader keeps 137 sourced as native_unknown and completes scope
+ok 16 - light leader keeps 137 sourced as native_unknown and completes scope
+  ---
+  duration_ms: 237.349369
+  type: 'test'
+  ...
+# {"result":137,"source":"native_unknown","native_exit":null,"shellDiagnostic":137}
+# Subtest: light leader keeps SIGKILL sourced as native_unknown and completes scope
+ok 17 - light leader keeps SIGKILL sourced as native_unknown and completes scope
+  ---
+  duration_ms: 199.098944
+  type: 'test'
+  ...
+# {"result":"SIGKILL","source":"native_unknown","native_exit":null,"shellDiagnostic":137}
+# Subtest: light leader keeps SIGTERM sourced as native_unknown and completes scope
+ok 18 - light leader keeps SIGTERM sourced as native_unknown and completes scope
+  ---
+  duration_ms: 193.252883
+  type: 'test'
+  ...
+# {"result":"SIGTERM","source":"native_unknown","native_exit":null,"shellDiagnostic":143}
+# Subtest: compatibility native waiter retains exact 0 with full subject stamp
+ok 19 - compatibility native waiter retains exact 0 with full subject stamp
+  ---
+  duration_ms: 299.512698
+  type: 'test'
+  ...
+# Subtest: compatibility native waiter retains exact 3 with full subject stamp
+ok 20 - compatibility native waiter retains exact 3 with full subject stamp
+  ---
+  duration_ms: 303.628158
+  type: 'test'
+  ...
+# Subtest: compatibility native waiter retains exact 137 with full subject stamp
+ok 21 - compatibility native waiter retains exact 137 with full subject stamp
+  ---
+  duration_ms: 330.569121
+  type: 'test'
+  ...
+# Subtest: compatibility native waiter retains exact SIGKILL with full subject stamp
+ok 22 - compatibility native waiter retains exact SIGKILL with full subject stamp
+  ---
+  duration_ms: 245.070035
+  type: 'test'
+  ...
+# Subtest: compatibility native waiter retains exact SIGTERM with full subject stamp
+ok 23 - compatibility native waiter retains exact SIGTERM with full subject stamp
+  ---
+  duration_ms: 240.246972
+  type: 'test'
+  ...
+# Subtest: native waiter subject mismatch cannot project either a harness or another shell result
+ok 24 - native waiter subject mismatch cannot project either a harness or another shell result
+  ---
+  duration_ms: 303.712557
+  type: 'test'
+  ...
+# Subtest: environment transport is byte-exact, nonrecursive and absent from command lines
+ok 25 - environment transport is byte-exact, nonrecursive and absent from command lines
+  ---
+  duration_ms: 235.357486
+  type: 'test'
+  ...
+# Subtest: very large environments explicitly refuse instead of truncating, and missing env features never fall back
+ok 26 - very large environments explicitly refuse instead of truncating, and missing env features never fall back
+  ---
+  duration_ms: 31.475288
+  type: 'test'
+  ...
+# Subtest: light leader consumes RUN once, rejects control code, seals on EOF, and reaps after interrupted wait
+ok 27 - light leader consumes RUN once, rejects control code, seals on EOF, and reaps after interrupted wait
+  ---
+  duration_ms: 392.610397
+  type: 'test'
+  ...
+# Subtest: light leader EOF before RUN launches nothing and never reopens submission
+ok 28 - light leader EOF before RUN launches nothing and never reopens submission
+  ---
+  duration_ms: 15.641897
+  type: 'test'
+  ...
+# Subtest: exec-stop audit covers leader, env before exec, harness and failed exec without argv disclosure
+ok 29 - exec-stop audit covers leader, env before exec, harness and failed exec without argv disclosure
+  ---
+  duration_ms: 247.079047
+  type: 'test'
+  ...
+# Subtest: leader death before a live harness refuses control and never proves scope gone
+ok 30 - leader death before a live harness refuses control and never proves scope gone
+  ---
+  duration_ms: 44.94575
+  type: 'test'
+  ...
+# Subtest: lightweight scope cancellation covers an INT-ignoring harness and forked grandchild through KILL
+ok 31 - lightweight scope cancellation covers an INT-ignoring harness and forked grandchild through KILL
+  ---
+  duration_ms: 2185.302096
+  type: 'test'
+  ...
+# Subtest: the harness cannot move the real session leader into an owned decoy group
+ok 32 - the harness cannot move the real session leader into an owned decoy group
+  ---
+  duration_ms: 49.446443
+  type: 'test'
+  ...
+# Subtest: empty environment and a real sh workload are confirmed after exec, never in the pre-env fork
+ok 33 - empty environment and a real sh workload are confirmed after exec, never in the pre-env fork
+  ---
+  duration_ms: 211.142655
+  type: 'test'
+  ...
+# Subtest: failed workload exec never fixes the temporary env process as a harness
+ok 34 - failed workload exec never fixes the temporary env process as a harness
+  ---
+  duration_ms: 7.460389
+  type: 'test'
+  ...
+# Subtest: equals in executable is refused before registration with no reserved-intent effects
+ok 35 - equals in executable is refused before registration with no reserved-intent effects
+  ---
+  duration_ms: 1.924115
+  type: 'test'
+  ...
+# Subtest: stopped direct workload keeps leader control across stop/continue CHLD notifications
+ok 36 - stopped direct workload keeps leader control across stop/continue CHLD notifications
+  ---
+  duration_ms: 129.063223
+  type: 'test'
+  ...
+# Subtest: a stopped harness remains reachable by every cancellation step through group KILL
+ok 37 - a stopped harness remains reachable by every cancellation step through group KILL
+  ---
+  duration_ms: 137.418831
+  type: 'test'
+  ...
+# Subtest: light leader preserves exact brief bytes and EOF on workload fd0
+ok 38 - light leader preserves exact brief bytes and EOF on workload fd0
+  ---
+  duration_ms: 92.53493
+  type: 'test'
+  ...
+# Subtest: workload signal dispositions match a direct spawn before installing handlers
+ok 39 - workload signal dispositions match a direct spawn before installing handlers
+  ---
+  duration_ms: 245.911347
+  type: 'test'
+  ...
+# Subtest: waiter completion before the leader read loop remains buffered without control EOF
+ok 40 - waiter completion before the leader read loop remains buffered without control EOF
+  ---
+  duration_ms: 88.023898
+  type: 'test'
+  ...
+# Subtest: physical parent MCP death with continue policy preserves the same lightweight run through final reconciliation
+ok 41 - physical parent MCP death with continue policy preserves the same lightweight run through final reconciliation
+  ---
+  duration_ms: 5626.453881
+  type: 'test'
+  ...
+# Subtest: waiter completion between loop check and read is buffered independently of CHLD traps
+ok 42 - waiter completion between loop check and read is buffered independently of CHLD traps
+  ---
+  duration_ms: 115.640066
+  type: 'test'
+  ...
+# Subtest: aggregate exec environment exceeding kernel ARG_MAX refuses explicitly
+ok 43 - aggregate exec environment exceeding kernel ARG_MAX refuses explicitly
+  ---
+  duration_ms: 17.298625
+  type: 'test'
+  ...
+# Subtest: portable waiter topology completes, preserves stdin, and controls scope under {"path":"/bin/sh"}
+ok 44 - portable waiter topology completes, preserves stdin, and controls scope under {"path":"/bin/sh"}
+  ---
+  duration_ms: 35.247659
+  type: 'test'
+  ...
+# Subtest: portable waiter topology completes, preserves stdin, and controls scope under {"path":"/bin/bash","argv0":"/bin/sh"}
+ok 45 - portable waiter topology completes, preserves stdin, and controls scope under {"path":"/bin/bash","argv0":"/bin/sh"}
+  ---
+  duration_ms: 35.513352
+  type: 'test'
+  ...
+# Subtest: portable waiter topology completes, preserves stdin, and controls scope under {"path":"/bin/bash","args":["--posix"]}
+ok 46 - portable waiter topology completes, preserves stdin, and controls scope under {"path":"/bin/bash","args":["--posix"]}
+  ---
+  duration_ms: 34.94641
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} 0
+ok 47 - portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} 0
+  ---
+  duration_ms: 259.45665
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} 3
+ok 48 - portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} 3
+  ---
+  duration_ms: 240.688175
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} 137
+ok 49 - portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} 137
+  ---
+  duration_ms: 271.734075
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} SIGKILL
+ok 50 - portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} SIGKILL
+  ---
+  duration_ms: 163.750486
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} SIGTERM
+ok 51 - portable Bash source matrix {"path":"/bin/bash","argv0":"/bin/sh"} SIGTERM
+  ---
+  duration_ms: 158.367294
+  type: 'test'
+  ...
+# Subtest: portable Bash environment multiset and EOF sealing {"path":"/bin/bash","argv0":"/bin/sh"}
+ok 52 - portable Bash environment multiset and EOF sealing {"path":"/bin/bash","argv0":"/bin/sh"}
+  ---
+  duration_ms: 286.179361
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} 0
+ok 53 - portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} 0
+  ---
+  duration_ms: 266.729364
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} 3
+ok 54 - portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} 3
+  ---
+  duration_ms: 307.507993
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} 137
+ok 55 - portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} 137
+  ---
+  duration_ms: 263.481238
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} SIGKILL
+ok 56 - portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} SIGKILL
+  ---
+  duration_ms: 171.150398
+  type: 'test'
+  ...
+# Subtest: portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} SIGTERM
+ok 57 - portable Bash source matrix {"path":"/bin/bash","args":["--posix"]} SIGTERM
+  ---
+  duration_ms: 180.103706
+  type: 'test'
+  ...
+# Subtest: portable Bash environment multiset and EOF sealing {"path":"/bin/bash","args":["--posix"]}
+ok 58 - portable Bash environment multiset and EOF sealing {"path":"/bin/bash","args":["--posix"]}
+  ---
+  duration_ms: 287.217847
+  type: 'test'
+  ...
+# Subtest: only waiter death retains honest state and safe scoped control outcome
+ok 59 - only waiter death retains honest state and safe scoped control outcome
+  ---
+  duration_ms: 481.505791
+  type: 'test'
+  ...
+# Subtest: only forwarder death retains honest state and safe scoped control outcome
+ok 60 - only forwarder death retains honest state and safe scoped control outcome
+  ---
+  duration_ms: 385.890615
+  type: 'test'
+  ...
+# Subtest: portable bash-sh exec audit covers original env bytes and all argv phases
+ok 61 - portable bash-sh exec audit covers original env bytes and all argv phases
+  ---
+  duration_ms: 244.271984
+  type: 'test'
+  ...
+# Subtest: portable bash-sh EOF before RUN cannot launch or reopen
+ok 62 - portable bash-sh EOF before RUN cannot launch or reopen
+  ---
+  duration_ms: 16.474203
+  type: 'test'
+  ...
+# Subtest: portable bash-sh exported function and signal dispositions match direct launch
+ok 63 - portable bash-sh exported function and signal dispositions match direct launch
+  ---
+  duration_ms: 364.305956
+  type: 'test'
+  ...
+# Subtest: portable bash-posix exec audit covers original env bytes and all argv phases
+ok 64 - portable bash-posix exec audit covers original env bytes and all argv phases
+  ---
+  duration_ms: 248.080556
+  type: 'test'
+  ...
+# Subtest: portable bash-posix EOF before RUN cannot launch or reopen
+ok 65 - portable bash-posix EOF before RUN cannot launch or reopen
+  ---
+  duration_ms: 16.724853
+  type: 'test'
+  ...
+# Subtest: portable bash-posix exported function and signal dispositions match direct launch
+ok 66 - portable bash-posix exported function and signal dispositions match direct launch
+  ---
+  duration_ms: 363.793855
+  type: 'test'
+  ...
+# Subtest: process stamps preserve boot and PID namespace, and cross-domain state stays unknown
+ok 67 - process stamps preserve boot and PID namespace, and cross-domain state stays unknown
+  ---
+  duration_ms: 2.370985
+  type: 'test'
+  ...
+# Subtest: one-shot group launch preserves argv and stdin EOF, waits for helper exit
+ok 68 - one-shot group launch preserves argv and stdin EOF, waits for helper exit
+  ---
+  duration_ms: 76.030292
+  type: 'test'
+  ...
+# Subtest: helper in its own group delivers INT then TERM; replacement-stamp simulation refuses control
+ok 69 - helper in its own group delivers INT then TERM; replacement-stamp simulation refuses control
+  ---
+  duration_ms: 38.874419
+  type: 'test'
+  ...
+# Subtest: SIGKILL from inside helper group loses acknowledgement and never invents command wait status
+ok 70 - SIGKILL from inside helper group loses acknowledgement and never invents command wait status
+  ---
+  duration_ms: 30.495888
+  type: 'test'
+  ...
+# Subtest: dead command and group leader with a living member never prove scope gone
+ok 71 - dead command and group leader with a living member never prove scope gone
+  ---
+  duration_ms: 41.96937
+  type: 'test'
+  ...
+# Subtest: fork during actual /proc enumeration is partial evidence, never complete scope proof
+ok 72 - fork during actual /proc enumeration is partial evidence, never complete scope proof
+  ---
+  duration_ms: 57.885735
+  type: 'test'
+  ...
+# Subtest: real member leaving group during enumeration keeps original harness alive outside scope
+ok 73 - real member leaving group during enumeration keeps original harness alive outside scope
+  ---
+  duration_ms: 54.345296
+  type: 'test'
+  ...
+# Subtest: IPC disconnect seals helper while the existing command continues
+ok 74 - IPC disconnect seals helper while the existing command continues
+  ---
+  duration_ms: 178.623304
+  type: 'test'
+  ...
+# Subtest: crash/disconnect before scope fixation seals unsubmitted helper with zero command spawn
+ok 75 - crash/disconnect before scope fixation seals unsubmitted helper with zero command spawn
+  ---
+  duration_ms: 32.590011
+  type: 'test'
+  ...
+# Subtest: private helper accepts exactly one submission and refuses a second launch
+ok 76 - private helper accepts exactly one submission and refuses a second launch
+  ---
+  duration_ms: 161.354754
+  type: 'test'
+  ...
+1..76
+# tests 76
+# suites 0
+# pass 76
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 21865.394244

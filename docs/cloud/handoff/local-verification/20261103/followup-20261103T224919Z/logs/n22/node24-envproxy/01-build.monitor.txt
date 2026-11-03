@@ -1,0 +1,6 @@
+23:04:58 2.91 5.45 4.31 2/1241 | pi:10.0 codex:2.8 claude:2.7 pi:2.3 opengrep-core:1.8 herdr:1.8 
+23:04:59 2.91 5.45 4.31 2/1256 | MainThread:210 npm:run pi:10.0 codex:2.8 claude:2.7 pi:2.3 
+23:05:00 2.91 5.45 4.31 4/1257 | MainThread:205 pi:10.0 npm:run codex:2.8 claude:2.7 pi:2.3 
+23:05:01 3.08 5.44 4.32 2/1260 | MainThread:199 python3:46.0 pi:10.0 npm:run codex:2.8 claude:2.7 
+23:05:02 3.08 5.44 4.32 3/1259 | MainThread:183 python3:26.4 pi:10.0 npm:run codex:2.8 claude:2.7 
+23:05:03 3.08 5.44 4.32 2/1258 | MainThread:178 pi:10.0 codex:2.8 claude:2.7 pi:2.3 npm:run 

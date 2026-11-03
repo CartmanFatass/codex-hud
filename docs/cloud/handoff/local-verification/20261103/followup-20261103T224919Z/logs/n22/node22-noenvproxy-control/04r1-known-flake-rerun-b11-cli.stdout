@@ -1,0 +1,131 @@
+TAP version 13
+# Subtest: B11 explicit argv and shell forms are distinct, literal overrides and cannot replace resume
+ok 1 - B11 explicit argv and shell forms are distinct, literal overrides and cannot replace resume
+  ---
+  duration_ms: 1.639267
+  type: 'test'
+  ...
+# Subtest: B11 compatibility bin routes codex directly to the existing wrapper help without HUD_HOME
+ok 2 - B11 compatibility bin routes codex directly to the existing wrapper help without HUD_HOME
+  ---
+  duration_ms: 44.972674
+  type: 'test'
+  ...
+# Subtest: B11 real bin entry reports an unavailable MCP build in an installation path with spaces
+ok 3 - B11 real bin entry reports an unavailable MCP build in an installation path with spaces
+  ---
+  duration_ms: 225.628746
+  type: 'test'
+  ...
+# Subtest: B11 waiter generation check observes scope/context retirement during the registration gap
+ok 4 - B11 waiter generation check observes scope/context retirement during the registration gap
+  ---
+  duration_ms: 322.759407
+  type: 'test'
+  ...
+# Subtest: B11 status --help succeeds before HUD_HOME access or argument validation without a ledger
+ok 5 - B11 status --help succeeds before HUD_HOME access or argument validation without a ledger
+  ---
+  duration_ms: 1.541164
+  type: 'test'
+  ...
+# Subtest: B11 cancel --help succeeds before HUD_HOME access or argument validation without a ledger
+ok 6 - B11 cancel --help succeeds before HUD_HOME access or argument validation without a ledger
+  ---
+  duration_ms: 0.50577
+  type: 'test'
+  ...
+# Subtest: B11 reconcile --help succeeds before HUD_HOME access or argument validation without a ledger
+ok 7 - B11 reconcile --help succeeds before HUD_HOME access or argument validation without a ledger
+  ---
+  duration_ms: 1.168772
+  type: 'test'
+  ...
+# Subtest: B11 resume --help succeeds before HUD_HOME access or argument validation without a ledger
+ok 8 - B11 resume --help succeeds before HUD_HOME access or argument validation without a ledger
+  ---
+  duration_ms: 0.652362
+  type: 'test'
+  ...
+# Subtest: B11 wait --help succeeds before HUD_HOME access or argument validation without a ledger
+ok 9 - B11 wait --help succeeds before HUD_HOME access or argument validation without a ledger
+  ---
+  duration_ms: 0.73197
+  type: 'test'
+  ...
+# Subtest: B11 claude --help succeeds before HUD_HOME access or argument validation without a ledger
+ok 10 - B11 claude --help succeeds before HUD_HOME access or argument validation without a ledger
+  ---
+  duration_ms: 0.715129
+  type: 'test'
+  ...
+# Subtest: B11 run --help describes independent parent checks and ledger/watch recovery
+ok 11 - B11 run --help describes independent parent checks and ledger/watch recovery
+  ---
+  duration_ms: 0.156871
+  type: 'test'
+  ...
+# Subtest: B11 cancellation remains durably accepted when the subsequent status refresh fails
+ok 12 - B11 cancellation remains durably accepted when the subsequent status refresh fails
+  ---
+  duration_ms: 200.512162
+  type: 'test'
+  ...
+# Subtest: B11 strict local resume and wait parameters reject incomplete or ambiguous intents
+ok 13 - B11 strict local resume and wait parameters reject incomplete or ambiguous intents
+  ---
+  duration_ms: 0.556269
+  type: 'test'
+  ...
+# Subtest: B11 unsafe HUD_HOME refuses before creating files or dispatching
+ok 14 - B11 unsafe HUD_HOME refuses before creating files or dispatching
+  ---
+  duration_ms: 5.447152
+  type: 'test'
+  ...
+# Subtest: B11 wait registration race and lost hint recover using the real ledger, without writes
+ok 15 - B11 wait registration race and lost hint recover using the real ledger, without writes
+  ---
+  duration_ms: 596.266797
+  type: 'test'
+  ...
+# Subtest: B11 notify drains multi-page high-water, strips bodies and leaves the caller cursor independent
+ok 16 - B11 notify drains multi-page high-water, strips bodies and leaves the caller cursor independent
+  ---
+  duration_ms: 241.966093
+  type: 'test'
+  ...
+# Subtest: B11 local resume preserves all parameters, rejects stale/active, replays once through B4
+ok 17 - B11 local resume preserves all parameters, rejects stale/active, replays once through B4
+  ---
+  duration_ms: 375.678909
+  type: 'test'
+  ...
+# /bin/sh: 0: can't access tty; job control turned off
+# Subtest: B11 standalone argv and explicit shell preserve special argument bytes in real processes
+ok 18 - B11 standalone argv and explicit shell preserve special argument bytes in real processes
+  ---
+  duration_ms: 54.763021
+  type: 'test'
+  ...
+# Subtest: B11 Claude hook --settings preserves explicit user hooks and exact env; unverified launch makes no files
+ok 19 - B11 Claude hook --settings preserves explicit user hooks and exact env; unverified launch makes no files
+  ---
+  duration_ms: 32.757112
+  type: 'test'
+  ...
+# Subtest: B11 large-history wait pages never query or decode unbounded event history
+ok 20 - B11 large-history wait pages never query or decode unbounded event history
+  ---
+  duration_ms: 486.044331
+  type: 'test'
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2711.647118

@@ -1,0 +1,11 @@
+23:11:55 6.48 5.91 4.89 5/1360 | ast-grep:98.9 grep:25.7 pi:11.5 pi:6.6 codex:3.2 claude:2.5 
+23:11:56 6.37 5.89 4.89 4/1382 | MainThread:213 ast-grep:98.9 grep:25.7 npm:run pi:11.5 pi:6.6 
+23:11:57 6.37 5.89 4.89 7/1385 | MainThread:206 ast-grep:98.9 python3:49.3 grep:25.9 pi:11.5 pi:6.6 
+23:11:58 6.37 5.89 4.89 5/1384 | MainThread:198 ast-grep:98.9 python3:31.2 grep:26.2 pi:11.5 pi:6.5 
+23:11:59 6.37 5.89 4.89 3/1379 | MainThread:191 ast-grep:98.9 grep:26.1 pi:11.5 pi:6.5 codex:3.2 
+23:12:00 6.37 5.89 4.89 3/1383 | MainThread:186 ast-grep:98.9 grep:26.0 pi:11.5 pi:6.5 codex:3.2 
+23:12:01 6.10 5.85 4.88 4/1377 | MainThread:180 ast-grep:98.9 grep:25.9 pi:11.5 pi:6.5 codex:3.2 
+23:12:02 6.10 5.85 4.88 3/1376 | MainThread:179 ast-grep:98.9 grep:25.8 pi:11.5 pi:6.5 codex:3.2 
+23:12:03 6.10 5.85 4.88 5/1375 | MainThread:177 ast-grep:98.9 grep:25.7 pi:11.5 pi:6.4 codex:3.2 
+23:12:04 6.10 5.85 4.88 4/1378 | MainThread:174 ps:100 ast-grep:98.9 python3:49.4 grep:25.8 pi:11.5 
+23:12:05 6.10 5.85 4.88 3/1371 | MainThread:171 ast-grep:98.9 grep:25.9 pi:11.5 pi:6.4 codex:3.2 

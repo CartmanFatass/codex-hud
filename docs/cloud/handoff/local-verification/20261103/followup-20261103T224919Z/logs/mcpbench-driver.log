@@ -1,0 +1,19 @@
+mcpbase node24-envproxy bench-build exit=0 -
+mcpbase node24-envproxy bench-build-test exit=0 -
+mcpbase node24-envproxy bench-build-hud-mcp exit=0 -
+mcp node24-envproxy bench-build exit=0 -
+mcp node24-envproxy bench-build-test exit=0 -
+mcp node24-envproxy bench-build-hud-mcp exit=0 -
+mcpbase node22-envproxy bench-node22-run1-base exit=0 -
+mcp node22-envproxy bench-node22-run1-cand exit=0 -
+mcpbase node22-envproxy bench-node22-run2-base exit=0 -
+mcp node22-envproxy bench-node22-run2-cand exit=0 -
+mcpbase node22-envproxy bench-node22-run3-base exit=0 -
+mcp node22-envproxy bench-node22-run3-cand exit=0 -
+mcpbase node24-envproxy bench-node24-run1-base exit=0 -
+mcp node24-envproxy bench-node24-run1-cand exit=0 -
+mcpbase node24-envproxy bench-node24-run2-base exit=0 -
+mcp node24-envproxy bench-node24-run2-cand exit=0 -
+mcpbase node24-envproxy bench-node24-run3-base exit=0 -
+mcp node24-envproxy bench-node24-run3-cand exit=0 -
+MCPBENCH-DONE 2026-11-03T22:56:48Z

@@ -1,0 +1,9 @@
+22:52:26 4.48 3.37 2.41 14/1343 | chrome-headless:767 ast-grep:65.8 chrome-headless:12.1 pi:8.0 chrome-headless:6.6 MainThread:4.4 
+22:52:27 4.48 3.37 2.41 19/1361 | chrome-headless:784 MainThread:169 ast-grep:65.5 npm:run chrome-headless:11.5 pi:8.0 
+22:52:28 4.48 3.37 2.41 19/1361 | chrome-headless:806 MainThread:175 ast-grep:65.3 chrome-headless:10.9 npm:run pi:8.0 
+22:52:30 5.64 3.63 2.50 19/1360 | chrome-headless:825 MainThread:175 ps:100 ast-grep:65.1 chrome-headless:10.5 pi:8.0 
+22:52:31 5.64 3.63 2.50 23/1369 | chrome-headless:843 MainThread:176 MainThread:118 ast-grep:64.9 chrome-headless:10.1 pi:8.0 
+22:52:32 5.64 3.63 2.50 18/1362 | chrome-headless:857 MainThread:172 python3:96.6 ast-grep:64.6 chrome-headless:9.8 pi:8.0 
+22:52:33 5.64 3.63 2.50 14/1370 | chrome-headless:872 MainThread:165 ast-grep:64.4 python3:37.0 chrome-headless:9.8 pi:8.0 
+22:52:34 5.64 3.63 2.50 4/1368 | chrome-headless:879 MainThread:164 ast-grep:64.2 chrome-headless:10.0 pi:8.0 chrome-headless:7.2 
+22:52:35 5.43 3.62 2.50 16/1368 | chrome-headless:881 MainThread:160 ast-grep:64.0 chrome-headless:10.4 pi:8.0 chrome-headless:7.5 

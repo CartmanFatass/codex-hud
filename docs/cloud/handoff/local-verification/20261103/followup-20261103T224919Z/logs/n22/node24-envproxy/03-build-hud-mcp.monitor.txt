@@ -1,0 +1,4 @@
+23:05:13 3.38 5.43 4.33 2/1266 | pi:10.1 codex:2.9 claude:2.7 pi:2.3 opengrep-core:1.8 herdr:1.8 
+23:05:14 3.38 5.43 4.33 5/1311 | MainThread:196 python:100 python:91.8 npm:run python3:13.5 pi:10.1 
+23:05:15 3.38 5.43 4.33 3/1361 | MainThread:190 python:88.2 python:87.7 python3:67.1 python:60.6 python:58.6 
+23:05:16 3.27 5.37 4.31 8/1366 | MainThread:181 python:100 python:100 python:90.1 python:86.0 python:32.0 

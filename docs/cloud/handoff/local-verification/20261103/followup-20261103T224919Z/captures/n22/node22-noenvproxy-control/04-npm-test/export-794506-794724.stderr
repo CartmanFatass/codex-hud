@@ -1,0 +1,1 @@
+invalid_command: Usage: hud link export --json --schema-version 1 [--paths local] [--link <linkId> ...]

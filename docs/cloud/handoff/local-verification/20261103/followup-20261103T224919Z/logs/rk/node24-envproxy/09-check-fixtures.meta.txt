@@ -1,0 +1,17 @@
+id: 09-check-fixtures
+package: rk
+profile: node24-envproxy
+target: commit=7ba567ee0c3cd12933d79a5029162d32770ee245 tree=ad4c596860b264d76d4060be90d70337046b92c5 cwd=<wt>/fu-rk
+runtime: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+wrapper: cd <wt>/fu-rk; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SROOT>/h.t4CIWv HUD_HOME=<SROOT>/u.rf4wBq TMPDIR=<SROOT>/t.mqTDHu LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1 RUNZ1_KILL_EVIDENCE_DIR=<captures>/rk/node24-envproxy/09-check-fixtures  timeout -k 10 180s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh 09-check-fixtures.ancestry.txt npm run check:fixtures
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: npm run check:fixtures
+timeout: 180s
+stdout: 09-check-fixtures.stdout
+stderr: 09-check-fixtures.stderr
+load before: 5.85 5.80 4.87 2/1348
+start: 2026-11-03T23:12:05.932Z
+end: 2026-11-03T23:12:06.186Z
+exit: 0
+signal/timeout: -
+load after: 5.85 5.80 4.87 4/1361

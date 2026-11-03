@@ -1,0 +1,12 @@
+node22-run1-base mcpbase node22-envproxy
+node22-run1-cand mcp node22-envproxy
+node22-run2-base mcpbase node22-envproxy
+node22-run2-cand mcp node22-envproxy
+node22-run3-base mcpbase node22-envproxy
+node22-run3-cand mcp node22-envproxy
+node24-run1-base mcpbase node24-envproxy
+node24-run1-cand mcp node24-envproxy
+node24-run2-base mcpbase node24-envproxy
+node24-run2-cand mcp node24-envproxy
+node24-run3-base mcpbase node24-envproxy
+node24-run3-cand mcp node24-envproxy

@@ -1,0 +1,4 @@
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+

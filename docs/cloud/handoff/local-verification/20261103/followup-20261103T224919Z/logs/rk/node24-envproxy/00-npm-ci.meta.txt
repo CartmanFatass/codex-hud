@@ -1,0 +1,17 @@
+id: 00-npm-ci
+package: rk
+profile: node24-envproxy
+target: commit=7ba567ee0c3cd12933d79a5029162d32770ee245 tree=ad4c596860b264d76d4060be90d70337046b92c5 cwd=<wt>/fu-rk
+runtime: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+wrapper: cd <wt>/fu-rk; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SROOT>/h.afnpK0 HUD_HOME=<SROOT>/u.Xk1Hcp TMPDIR=<SROOT>/t.ICLRZ9 LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1  timeout -k 10 900s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh 00-npm-ci.ancestry.txt npm ci --ignore-scripts --prefer-offline
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: npm ci --ignore-scripts --prefer-offline
+timeout: 900s
+stdout: 00-npm-ci.stdout
+stderr: 00-npm-ci.stderr
+load before: 2.75 2.27 1.92 2/1212
+start: 2026-11-03T22:49:46.776Z
+end: 2026-11-03T22:49:47.614Z
+exit: 0
+signal/timeout: -
+load after: 2.75 2.27 1.92 3/1221

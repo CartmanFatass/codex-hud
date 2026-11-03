@@ -1,0 +1,3 @@
+23:09:57 3.92 5.01 4.47 4/1346 | ast-grep:98.5 pi:11.0 pi:5.5 codex:3.0 opengrep-core:2.7 claude:2.6 
+23:09:58 3.92 5.01 4.47 5/1358 | MainThread:203 ast-grep:98.5 npm:run pi:11.0 pi:5.4 codex:3.0 
+23:09:59 3.92 5.01 4.47 3/1356 | MainThread:201 ast-grep:98.5 pi:11.0 npm:run pi:5.4 codex:3.0 

@@ -1,0 +1,11 @@
+23:08:44 6.67 5.67 4.63 3/1296 | ast-grep:97.0 python3:45.7 pi:10.5 codex:3.0 claude:2.7 pi:2.3 
+23:08:45 6.67 5.67 4.63 5/1311 | node:213 ast-grep:97.0 npm:run pi:10.5 codex:3.0 claude:2.7 
+23:08:46 6.45 5.64 4.62 5/1311 | node:217 ast-grep:97.1 pi:10.5 npm:run codex:3.0 claude:2.7 
+23:08:47 6.45 5.64 4.62 9/1323 | node:219 MainThread:114 ast-grep:97.1 zsh:27.2 pi:10.6 npm:run 
+23:08:48 6.45 5.64 4.62 4/1350 | node:212 ast-grep:97.2 python3:40.7 zsh:15.2 pi:10.6 codex:3.0 
+23:08:49 6.45 5.64 4.62 6/1352 | 2.1.305:300 node:200 ps:100 ast-grep:97.2 zsh:41.6 pi:10.6 
+23:08:50 6.45 5.64 4.62 3/1348 | node:192 ast-grep:97.2 pi:10.6 zsh:6.6 codex:3.0 claude:2.7 
+23:08:51 6.18 5.60 4.62 3/1354 | node:185 ast-grep:97.3 python3:38.8 pi:10.6 zsh:5.1 codex:3.0 
+23:08:52 6.18 5.60 4.62 4/1350 | node:178 ast-grep:97.3 python3:22.3 pi:10.6 zsh:4.2 codex:3.0 
+23:08:53 6.18 5.60 4.62 5/1357 | node:177 pi:114 ast-grep:97.3 pi:10.6 zsh:3.6 codex:3.0 
+23:08:54 6.18 5.60 4.62 3/1411 | node:172 ast-grep:97.4 npm:view npm:view npm:view npm:view 

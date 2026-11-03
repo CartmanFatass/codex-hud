@@ -1,0 +1,54 @@
+TAP version 13
+# Subtest: source-backed startup profiles preserve raw streams and validate the minimal no-HUD child
+ok 1 - source-backed startup profiles preserve raw streams and validate the minimal no-HUD child
+  ---
+  duration_ms: 23.001615
+  type: 'test'
+  ...
+# Subtest: closed diagnostic matcher rejects altered missing duplicate and unrelated warning bytes
+ok 2 - closed diagnostic matcher rejects altered missing duplicate and unrelated warning bytes
+  ---
+  duration_ms: 5.168857
+  type: 'test'
+  ...
+# Subtest: strict raw result rejects parseable stdout corruption and reason-line status changes
+ok 3 - strict raw result rejects parseable stdout corruption and reason-line status changes
+  ---
+  duration_ms: 1.431741
+  type: 'test'
+  ...
+# Subtest: declared profile rejects inherited warning suppression redirection preloads and unknown opt-ins
+ok 4 - declared profile rejects inherited warning suppression redirection preloads and unknown opt-ins
+  ---
+  duration_ms: 2.24431
+  type: 'test'
+  ...
+# Subtest: synthetic HTTP fetch routing NO_PROXY and native precedence through direct and production launch paths
+ok 5 - synthetic HTTP fetch routing NO_PROXY and native precedence through direct and production launch paths
+  ---
+  duration_ms: 2893.083459
+  type: 'test'
+  ...
+# {"id":"synthetic-direct-upper-proxy","route":"direct","name":"upper-proxy","hits":{"upper":1,"lower":0},"targetEvents":[{"id":"synthetic-direct-upper-proxy","route":"upper"}],"status":0,"pid":803035}
+# {"id":"synthetic-direct-upper-bypass","route":"direct","name":"upper-bypass","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-direct-upper-bypass","route":"direct"}],"status":0,"pid":803062}
+# {"id":"synthetic-direct-upper-disabled","route":"direct","name":"upper-disabled","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-direct-upper-disabled","route":"direct"}],"status":0,"pid":803078}
+# {"id":"synthetic-direct-lower-proxy","route":"direct","name":"lower-proxy","hits":{"upper":0,"lower":1},"targetEvents":[{"id":"synthetic-direct-lower-proxy","route":"lower"}],"status":0,"pid":803107}
+# {"id":"synthetic-direct-lower-bypass","route":"direct","name":"lower-bypass","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-direct-lower-bypass","route":"direct"}],"status":0,"pid":803131}
+# {"id":"synthetic-direct-lower-disabled","route":"direct","name":"lower-disabled","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-direct-lower-disabled","route":"direct"}],"status":0,"pid":803165}
+# {"id":"synthetic-direct-lost-environment-control","route":"direct","name":"lost-environment-control","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-direct-lost-environment-control","route":"direct"}],"status":0,"pid":803200}
+# {"id":"synthetic-launchGroup-upper-proxy","route":"launchGroup","name":"upper-proxy","hits":{"upper":1,"lower":0},"targetEvents":[{"id":"synthetic-launchGroup-upper-proxy","route":"upper"}],"status":0,"pid":803221}
+# {"id":"synthetic-launchGroup-upper-bypass","route":"launchGroup","name":"upper-bypass","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-launchGroup-upper-bypass","route":"direct"}],"status":0,"pid":803241}
+# {"id":"synthetic-launchGroup-upper-disabled","route":"launchGroup","name":"upper-disabled","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-launchGroup-upper-disabled","route":"direct"}],"status":0,"pid":803267}
+# {"id":"synthetic-launchGroup-lower-proxy","route":"launchGroup","name":"lower-proxy","hits":{"upper":0,"lower":1},"targetEvents":[{"id":"synthetic-launchGroup-lower-proxy","route":"lower"}],"status":0,"pid":803287}
+# {"id":"synthetic-launchGroup-lower-bypass","route":"launchGroup","name":"lower-bypass","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-launchGroup-lower-bypass","route":"direct"}],"status":0,"pid":803318}
+# {"id":"synthetic-launchGroup-lower-disabled","route":"launchGroup","name":"lower-disabled","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-launchGroup-lower-disabled","route":"direct"}],"status":0,"pid":803339}
+# {"id":"synthetic-launchGroup-lost-environment-control","route":"launchGroup","name":"lost-environment-control","hits":{"upper":0,"lower":0},"targetEvents":[{"id":"synthetic-launchGroup-lost-environment-control","route":"direct"}],"status":0,"pid":803358}
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2999.529039

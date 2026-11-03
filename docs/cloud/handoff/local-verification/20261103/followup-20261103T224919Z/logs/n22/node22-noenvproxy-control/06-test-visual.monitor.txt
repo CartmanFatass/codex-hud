@@ -1,0 +1,13 @@
+23:03:33 6.39 6.64 4.55 4/1229 | pi:9.6 codex:3.0 claude:2.8 pi:2.3 opengrep-core:2.0 herdr:1.8 
+23:03:34 6.39 6.64 4.55 2/1259 | node:214 npm:run npm:run pi:9.6 codex:2.9 claude:2.8 
+23:03:35 6.04 6.56 4.54 2/1258 | node:216 ps:100 pi:9.5 npm:run npm:run codex:2.9 
+23:03:36 6.04 6.56 4.54 4/1258 | node:222 pi:9.5 npm:run npm:run codex:2.9 claude:2.8 
+23:03:37 6.04 6.56 4.54 3/1268 | node:214 python3:44.4 pi:9.5 codex:2.9 claude:2.8 npm:run 
+23:03:38 6.04 6.56 4.54 3/1269 | node:204 python3:20.7 pi:9.5 codex:2.9 claude:2.8 pi:2.3 
+23:03:39 6.04 6.56 4.54 4/1266 | node:195 pi:9.5 codex:2.9 claude:2.8 pi:2.3 opengrep-core:2.0 
+23:03:40 5.72 6.49 4.52 5/1266 | node:188 pi:9.5 codex:2.9 claude:2.8 pi:2.3 opengrep-core:2.0 
+23:03:41 5.72 6.49 4.52 3/1271 | node:182 pi:9.6 codex:2.9 claude:2.8 pi:2.3 opengrep-core:2.0 
+23:03:42 5.72 6.49 4.52 4/1271 | node:180 pi:9.6 codex:2.9 claude:2.8 pi:2.3 opengrep-core:2.0 
+23:03:43 5.72 6.49 4.52 2/1271 | node:176 pi:9.6 codex:2.9 claude:2.8 pi:2.3 opengrep-core:2.0 
+23:03:44 5.72 6.49 4.52 2/1274 | node:170 python3:48.6 pi:9.6 codex:2.9 claude:2.8 pi:2.3 
+23:03:45 5.42 6.41 4.51 5/1267 | node:142 python3:28.5 pi:9.6 codex:2.9 claude:2.8 pi:2.3 

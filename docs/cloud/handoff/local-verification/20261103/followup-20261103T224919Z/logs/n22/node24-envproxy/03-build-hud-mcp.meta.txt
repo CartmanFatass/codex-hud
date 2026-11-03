@@ -1,0 +1,17 @@
+id: 03-build-hud-mcp
+package: n22
+profile: node24-envproxy
+target: commit=b4047320262f72f401a513db07236ff1473db933 tree=d9be29f28da496a880802c267a08e8bb4fcbee74 cwd=<wt>/fu-n22
+runtime: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+wrapper: cd <wt>/fu-n22; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SROOT>/h.W47pAl HUD_HOME=<SROOT>/u.89kuzG TMPDIR=<SROOT>/t.b477nw LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1 NODE_PROXY_EVIDENCE_DIR=<captures>/n22/node24-envproxy/03-build-hud-mcp  timeout -k 10 600s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh 03-build-hud-mcp.ancestry.txt npm run build:hud-mcp
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: npm run build:hud-mcp
+timeout: 600s
+stdout: 03-build-hud-mcp.stdout
+stderr: 03-build-hud-mcp.stderr
+load before: 3.38 5.43 4.33 2/1264
+start: 2026-11-03T23:05:13.368Z
+end: 2026-11-03T23:05:17.157Z
+exit: 0
+signal/timeout: -
+load after: 3.27 5.37 4.31 5/1333

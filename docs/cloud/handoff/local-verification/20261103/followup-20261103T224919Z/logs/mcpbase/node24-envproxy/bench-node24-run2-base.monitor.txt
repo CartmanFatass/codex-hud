@@ -1,0 +1,5 @@
+22:56:31 2.50 3.96 2.99 2/1253 | ast-grep:55.2 pi:8.6 codex:3.5 claude:3.3 pi:2.3 herdr:1.8 
+22:56:32 2.50 3.96 2.99 2/1268 | python3:55.7 ast-grep:55.1 MainThread:50.0 pi:8.6 MainThread:6.8 codex:3.5 
+22:56:33 2.50 3.96 2.99 4/1270 | MainThread:75.0 ast-grep:55.0 python3:23.2 pi:8.6 MainThread:3.9 codex:3.5 
+22:56:34 2.50 3.96 2.99 2/1261 | MainThread:110 ps:100 ast-grep:54.9 pi:8.6 codex:3.5 claude:3.3 
+22:56:35 2.46 3.93 2.98 2/1261 | MainThread:95.4 ast-grep:54.8 pi:8.6 MainThread:4.1 codex:3.5 claude:3.3 

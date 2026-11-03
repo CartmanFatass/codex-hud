@@ -1,0 +1,12 @@
+23:06:30 4.77 5.63 4.50 2/1280 | python3:37.8 pi:10.2 codex:3.2 claude:2.7 pi:2.3 herdr:1.8 
+23:06:31 4.77 5.63 4.50 5/1284 | MainThread:195 npm:run pi:10.2 codex:3.2 claude:2.7 pi:2.3 
+23:06:32 4.77 5.63 4.50 3/1284 | MainThread:208 pi:10.2 npm:run codex:3.2 claude:2.6 pi:2.3 
+23:06:33 4.77 5.63 4.50 4/1284 | MainThread:200 pi:10.2 npm:run codex:3.2 claude:2.6 pi:2.3 
+23:06:34 4.77 5.63 4.50 3/1283 | MainThread:188 pi:10.2 codex:3.2 npm:run claude:2.6 pi:2.3 
+23:06:35 4.47 5.55 4.48 3/1283 | MainThread:182 pi:10.2 codex:3.2 claude:2.6 npm:run pi:2.3 
+23:06:36 4.47 5.55 4.48 3/1291 | MainThread:175 python3:91.6 pi:10.2 codex:3.2 claude:2.6 pi:2.3 
+23:06:37 4.47 5.55 4.48 2/1292 | MainThread:172 python3:35.3 pi:10.2 codex:3.2 claude:2.6 pi:2.3 
+23:06:38 4.47 5.55 4.48 2/1290 | MainThread:166 pi:10.2 codex:3.2 claude:2.6 pi:2.3 herdr:1.8 
+23:06:39 4.47 5.55 4.48 3/1326 | MainThread:60.0 MainThread:35.5 MainThread:32.2 MainThread:19.6 MainThread:18.6 pi:10.2 
+23:06:40 4.35 5.51 4.47 3/1313 | MainThread:100 pi:10.2 MainThread:9.3 MainThread:8.3 codex:3.2 claude:2.6 
+23:06:41 4.35 5.51 4.47 1/1311 | pi:10.2 MainThread:7.6 MainThread:5.2 codex:3.2 claude:2.6 pi:2.3 

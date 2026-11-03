@@ -1,0 +1,178 @@
+Redaction of the published copy. The redaction script is kept locally and not published, because its patterns contain
+the private values. Applied to every text file; no binary files exist in this set.
+
+Substitutions:
+  local verification root path                 -> <VERIFY_ROOT>
+  owner repository checkout path               -> <REPO>
+  owner home directory path                    -> <HOME>
+  short temp root /tmp/hudfu.<random>          -> <SROOT>   (per-command h./u./t. suffixes kept)
+  owner email                                  -> <email>
+  host / user name                             -> <host>
+  Claude Code task temp paths                  -> <claude-tmp>
+  identity-sha256-<64 hex> (test-generated one-way scope/boot/PID-domain identities) -> identity-R<n>,
+      one token per distinct value across the whole set, so every equality relation is kept.
+Not present anywhere (so nothing to replace): real proxy address/port and NO_PROXY list (only presence is logged as
+NAME=<set>), real boot_id (checked against /proc/sys/kernel/random/boot_id), PID-namespace inode, process arguments.
+Not changed: numbers, timings, exit codes, signals, test names, failure text, PIDs, synthetic 127.0.0.1 ephemeral
+ports, synthetic.invalid, and every NODE22-PROXY capture (0 files under captures/n22 changed).
+manifest/session.env is not published (local paths only).
+RAW-SHA256SUMS: SHA-256 of the unredacted local originals. SHA256SUMS: SHA-256 of the files published here.
+Files listed below differ from their raw original; every other file is byte-identical to it.
+
+files byte-identical to raw original: 3905
+files changed by redaction: 152
+distinct identity-sha256 values tokenised: 8
+
+changed files:
+REPORT.md
+SUMMARY.json
+commands.sh
+scripts/lib.sh
+scripts/mcp.sh
+scripts/mcpbench.sh
+scripts/n22.sh
+scripts/rk.sh
+scripts/setup.sh
+manifest/environment.txt
+manifest/results.tsv
+logs/n22/node22-envproxy/01-build.meta.txt
+logs/n22/node22-envproxy/02-build-test.meta.txt
+logs/n22/node22-envproxy/03-build-hud-mcp.meta.txt
+logs/n22/node22-envproxy/04-npm-test.meta.txt
+logs/n22/node22-envproxy/05-test-core.meta.txt
+logs/n22/node22-envproxy/05-test-core.stdout
+logs/n22/node22-envproxy/06-test-visual.meta.txt
+logs/n22/node22-envproxy/07-test-hud-mcp.meta.txt
+logs/n22/node22-envproxy/08-format-check.meta.txt
+logs/n22/node22-envproxy/09-check-fixtures.meta.txt
+logs/n22/node22-envproxy/10-git-diff-check.meta.txt
+logs/n22/node22-envproxy/11-node-proxy-profile.meta.txt
+logs/n22/node22-envproxy/12-three-file-serial.meta.txt
+logs/n22/node22-envproxy/13-three-file-normal.meta.txt
+logs/n22/node22-envproxy/14-hyg2-six-suite.meta.txt
+logs/n22/node24-envproxy/00-npm-ci.meta.txt
+logs/n22/node24-envproxy/01-build.meta.txt
+logs/n22/node24-envproxy/02-build-test.meta.txt
+logs/n22/node24-envproxy/03-build-hud-mcp.meta.txt
+logs/n22/node24-envproxy/04-npm-test.meta.txt
+logs/n22/node24-envproxy/05-test-core.meta.txt
+logs/n22/node24-envproxy/05-test-core.stdout
+logs/n22/node24-envproxy/06-test-visual.meta.txt
+logs/n22/node24-envproxy/07-test-hud-mcp.meta.txt
+logs/n22/node24-envproxy/08-format-check.meta.txt
+logs/n22/node24-envproxy/09-check-fixtures.meta.txt
+logs/n22/node24-envproxy/10-git-diff-check.meta.txt
+logs/n22/node24-envproxy/11-node-proxy-profile.meta.txt
+logs/n22/node24-envproxy/12-three-file-serial.meta.txt
+logs/n22/node24-envproxy/13-three-file-normal.meta.txt
+logs/n22/node24-envproxy/14-hyg2-six-suite.meta.txt
+logs/n22/node22-noenvproxy-control/01-build.meta.txt
+logs/n22/node22-noenvproxy-control/02-build-test.meta.txt
+logs/n22/node22-noenvproxy-control/03-build-hud-mcp.meta.txt
+logs/n22/node22-noenvproxy-control/04-npm-test.meta.txt
+logs/n22/node22-noenvproxy-control/04-npm-test.stdout
+logs/n22/node22-noenvproxy-control/04b-test-mjs-separate.meta.txt
+logs/n22/node22-noenvproxy-control/04r1-known-flake-rerun-b11-cli.meta.txt
+logs/n22/node22-noenvproxy-control/04r2-known-flake-rerun-b21-capacity.meta.txt
+logs/n22/node22-noenvproxy-control/05-test-core.meta.txt
+logs/n22/node22-noenvproxy-control/05-test-core.stdout
+logs/n22/node22-noenvproxy-control/06-test-visual.meta.txt
+logs/n22/node22-noenvproxy-control/07-test-hud-mcp.meta.txt
+logs/n22/node22-noenvproxy-control/08-format-check.meta.txt
+logs/n22/node22-noenvproxy-control/09-check-fixtures.meta.txt
+logs/n22/node22-noenvproxy-control/10-git-diff-check.meta.txt
+logs/n22/node22-noenvproxy-control/11-node-proxy-profile.meta.txt
+logs/n22/node22-noenvproxy-control/12-three-file-serial.meta.txt
+logs/n22/node22-noenvproxy-control/13-three-file-normal.meta.txt
+logs/n22/node22-noenvproxy-control/14-hyg2-six-suite.meta.txt
+logs/mcpbase/node22-envproxy/bench-node22-run1-base.meta.txt
+logs/mcpbase/node22-envproxy/bench-node22-run2-base.meta.txt
+logs/mcpbase/node22-envproxy/bench-node22-run3-base.meta.txt
+logs/mcpbase/node24-envproxy/00-npm-ci.meta.txt
+logs/mcpbase/node24-envproxy/bench-build-hud-mcp.meta.txt
+logs/mcpbase/node24-envproxy/bench-build-test.meta.txt
+logs/mcpbase/node24-envproxy/bench-build.meta.txt
+logs/mcpbase/node24-envproxy/bench-node24-run1-base.meta.txt
+logs/mcpbase/node24-envproxy/bench-node24-run2-base.meta.txt
+logs/mcpbase/node24-envproxy/bench-node24-run3-base.meta.txt
+logs/rk/node22-envproxy/01-build.meta.txt
+logs/rk/node22-envproxy/02-build-test.meta.txt
+logs/rk/node22-envproxy/03-build-hud-mcp.meta.txt
+logs/rk/node22-envproxy/11-kill-evidence-serial.meta.txt
+logs/rk/node22-envproxy/12-runz1-three-file.meta.txt
+logs/rk/node22-envproxy/12-runz1-three-file.stdout
+logs/rk/node24-envproxy/00-npm-ci.meta.txt
+logs/rk/node24-envproxy/01-build.meta.txt
+logs/rk/node24-envproxy/02-build-test.meta.txt
+logs/rk/node24-envproxy/03-build-hud-mcp.meta.txt
+logs/rk/node24-envproxy/04-npm-test.meta.txt
+logs/rk/node24-envproxy/04-npm-test.stdout
+logs/rk/node24-envproxy/04b-test-mjs-separate.meta.txt
+logs/rk/node24-envproxy/04r1-known-flake-rerun-b21-capacity.meta.txt
+logs/rk/node24-envproxy/05-test-core.meta.txt
+logs/rk/node24-envproxy/05-test-core.stdout
+logs/rk/node24-envproxy/06-test-visual.meta.txt
+logs/rk/node24-envproxy/07-test-hud-mcp.meta.txt
+logs/rk/node24-envproxy/08-format-check.meta.txt
+logs/rk/node24-envproxy/09-check-fixtures.meta.txt
+logs/rk/node24-envproxy/10-git-diff-check.meta.txt
+logs/rk/node24-envproxy/11-kill-evidence-serial.meta.txt
+logs/rk/node24-envproxy/12-runz1-three-file.meta.txt
+logs/mcp/node22-envproxy/00-capability-probe.meta.txt
+logs/mcp/node22-envproxy/01-build.meta.txt
+logs/mcp/node22-envproxy/02-build-test.meta.txt
+logs/mcp/node22-envproxy/03-build-hud-mcp.meta.txt
+logs/mcp/node22-envproxy/04-npm-test.meta.txt
+logs/mcp/node22-envproxy/04-npm-test.stdout
+logs/mcp/node22-envproxy/04b-test-mjs-separate.meta.txt
+logs/mcp/node22-envproxy/05-test-core.meta.txt
+logs/mcp/node22-envproxy/05-test-core.stdout
+logs/mcp/node22-envproxy/06-test-visual.meta.txt
+logs/mcp/node22-envproxy/07-test-hud-mcp.meta.txt
+logs/mcp/node22-envproxy/08-format-check.meta.txt
+logs/mcp/node22-envproxy/09-check-fixtures.meta.txt
+logs/mcp/node22-envproxy/10-git-diff-check.meta.txt
+logs/mcp/node22-envproxy/11-focused-ancestor-gate.meta.txt
+logs/mcp/node22-envproxy/11a-ancestry-probe-before.meta.txt
+logs/mcp/node22-envproxy/11b-ancestry-probe-after.meta.txt
+logs/mcp/node22-envproxy/12-prettier-packages.meta.txt
+logs/mcp/node22-envproxy/bench-node22-run1-cand.meta.txt
+logs/mcp/node22-envproxy/bench-node22-run2-cand.meta.txt
+logs/mcp/node22-envproxy/bench-node22-run3-cand.meta.txt
+logs/mcp/node24-envproxy/00-capability-probe.meta.txt
+logs/mcp/node24-envproxy/00-npm-ci.meta.txt
+logs/mcp/node24-envproxy/01-build.meta.txt
+logs/mcp/node24-envproxy/02-build-test.meta.txt
+logs/mcp/node24-envproxy/03-build-hud-mcp.meta.txt
+logs/mcp/node24-envproxy/04-npm-test.meta.txt
+logs/mcp/node24-envproxy/05-test-core.meta.txt
+logs/mcp/node24-envproxy/05-test-core.stdout
+logs/mcp/node24-envproxy/06-test-visual.meta.txt
+logs/mcp/node24-envproxy/07-test-hud-mcp.meta.txt
+logs/mcp/node24-envproxy/08-format-check.meta.txt
+logs/mcp/node24-envproxy/09-check-fixtures.meta.txt
+logs/mcp/node24-envproxy/10-git-diff-check.meta.txt
+logs/mcp/node24-envproxy/11-focused-ancestor-gate.meta.txt
+logs/mcp/node24-envproxy/11a-ancestry-probe-before.meta.txt
+logs/mcp/node24-envproxy/11b-ancestry-probe-after.meta.txt
+logs/mcp/node24-envproxy/12-prettier-packages.meta.txt
+logs/mcp/node24-envproxy/bench-build-hud-mcp.meta.txt
+logs/mcp/node24-envproxy/bench-build-test.meta.txt
+logs/mcp/node24-envproxy/bench-build.meta.txt
+logs/mcp/node24-envproxy/bench-node24-run1-cand.meta.txt
+logs/mcp/node24-envproxy/bench-node24-run2-cand.meta.txt
+logs/mcp/node24-envproxy/bench-node24-run3-cand.meta.txt
+captures/rk/node22-envproxy/11-kill-evidence-serial/controlled-Q-828679.json
+captures/rk/node22-envproxy/11-kill-evidence-serial/controlled-final-828679.json
+captures/rk/node22-envproxy/11-kill-evidence-serial/controlled-live-828679.json
+captures/rk/node22-envproxy/11-kill-evidence-serial/kill-ladder-828689.json
+captures/rk/node22-envproxy/12-runz1-three-file/kill-ladder-829871.json
+captures/rk/node24-envproxy/04-npm-test/controlled-Q-836414.json
+captures/rk/node24-envproxy/04-npm-test/controlled-final-836414.json
+captures/rk/node24-envproxy/04-npm-test/controlled-live-836414.json
+captures/rk/node24-envproxy/04-npm-test/kill-ladder-836439.json
+captures/rk/node24-envproxy/11-kill-evidence-serial/controlled-Q-843724.json
+captures/rk/node24-envproxy/11-kill-evidence-serial/controlled-final-843724.json
+captures/rk/node24-envproxy/11-kill-evidence-serial/controlled-live-843724.json
+captures/rk/node24-envproxy/11-kill-evidence-serial/kill-ladder-843734.json
+captures/rk/node24-envproxy/12-runz1-three-file/kill-ladder-844742.json

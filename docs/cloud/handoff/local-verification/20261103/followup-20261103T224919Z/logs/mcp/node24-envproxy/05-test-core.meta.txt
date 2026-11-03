@@ -1,0 +1,17 @@
+id: 05-test-core
+package: mcp
+profile: node24-envproxy
+target: commit=b2897a4f9769bca6305ff0e3ae3dc694a9320ffe tree=0d195bd47ff2b29581e1c394c2973d9479f8d928 cwd=<wt>/fu-mcp
+runtime: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+wrapper: cd <wt>/fu-mcp; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SROOT>/h.plnax8 HUD_HOME=<SROOT>/u.u8ktVE TMPDIR=<SROOT>/t.zwd6KK LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1  timeout -k 10 900s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh 05-test-core.ancestry.txt npm run test:core
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: npm run test:core
+timeout: 900s
+stdout: 05-test-core.stdout
+stderr: 05-test-core.stderr
+load before: 6.88 4.84 3.06 3/1257
+start: 2026-11-03T22:54:13.668Z
+end: 2026-11-03T22:54:28.313Z
+exit: 0
+signal/timeout: -
+load after: 6.79 4.92 3.11 1/1251

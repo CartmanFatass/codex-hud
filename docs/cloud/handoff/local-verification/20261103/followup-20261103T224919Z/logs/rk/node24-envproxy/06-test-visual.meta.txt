@@ -1,0 +1,17 @@
+id: 06-test-visual
+package: rk
+profile: node24-envproxy
+target: commit=7ba567ee0c3cd12933d79a5029162d32770ee245 tree=ad4c596860b264d76d4060be90d70337046b92c5 cwd=<wt>/fu-rk
+runtime: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+wrapper: cd <wt>/fu-rk; env -i PATH=<HOME>/.nvm/versions/node/v24.22.1/bin:/usr/bin:/bin HOME=<SROOT>/h.FczagL HUD_HOME=<SROOT>/u.2m0WMe TMPDIR=<SROOT>/t.9fcMrl LANG=C.UTF-8 TERM=xterm-256color npm_config_cache=<VERIFY_ROOT>/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HTTP_PROXY=<set> HTTPS_PROXY=<set> ALL_PROXY=<set> NO_PROXY=<set> http_proxy=<set> https_proxy=<set> all_proxy=<set> no_proxy=<set> NODE_USE_ENV_PROXY=1 RUNZ1_KILL_EVIDENCE_DIR=<captures>/rk/node24-envproxy/06-test-visual  timeout -k 10 600s bash <VERIFY_ROOT>/followup-scripts/anc-exec.sh 06-test-visual.ancestry.txt npm run test:visual
+absent (env -i): NODE_OPTIONS NODE_NO_WARNINGS NODE_REDIRECT_WARNINGS NO_COLOR FORCE_COLOR CI CLAUDE* HERDR* CODEX* and all other inherited variables
+command: npm run test:visual
+timeout: 600s
+stdout: 06-test-visual.stdout
+stderr: 06-test-visual.stderr
+load before: 6.99 5.97 4.89 2/1348
+start: 2026-11-03T23:11:39.578Z
+end: 2026-11-03T23:11:50.533Z
+exit: 0
+signal/timeout: -
+load after: 6.61 5.93 4.89 3/1358

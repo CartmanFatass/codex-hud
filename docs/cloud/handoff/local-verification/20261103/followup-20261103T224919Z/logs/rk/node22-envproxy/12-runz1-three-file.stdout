@@ -1,0 +1,351 @@
+TAP version 13
+# (node:829871) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: RunControl real contract: readonly status, byte logs, stdin EOF, normal and nonzero native result
+ok 1 - RunControl real contract: readonly status, byte logs, stdin EOF, normal and nonzero native result
+  ---
+  duration_ms: 319.838756
+  type: 'test'
+  ...
+# Subtest: normal exit 0 creates one durable final receipt before adoption
+ok 2 - normal exit 0 creates one durable final receipt before adoption
+  ---
+  duration_ms: 397.644707
+  type: 'test'
+  ...
+# Subtest: cancel authenticates intent, returns promptly, preserves duplicate grace and signals three stages
+ok 3 - cancel authenticates intent, returns promptly, preserves duplicate grace and signals three stages
+  ---
+  duration_ms: 323.139153
+  type: 'test'
+  ...
+# Subtest: unknown scope refuses receipts, control and recovery after short shell without harness identity
+ok 4 - unknown scope refuses receipts, control and recovery after short shell without harness identity
+  ---
+  duration_ms: 224.279819
+  type: 'test'
+  ...
+# Subtest: configuration claim leaves preserve user argv and only override four named leaves
+ok 5 - configuration claim leaves preserve user argv and only override four named leaves
+  ---
+  duration_ms: 0.443814
+  type: 'test'
+  ...
+# Subtest: supervisor death receiptless Q uses registered stamp, no replacement execution or writer files
+ok 6 - supervisor death receiptless Q uses registered stamp, no replacement execution or writer files
+  ---
+  duration_ms: 2180.440068
+  type: 'test'
+  ...
+# Subtest: two real supervisors compete for one fake slot/ticket: loser touches no logs, exactly one submission
+ok 7 - two real supervisors compete for one fake slot/ticket: loser touches no logs, exactly one submission
+  ---
+  duration_ms: 710.748728
+  type: 'test'
+  ...
+# Subtest: registration commit before meta crash retains all stamp fields; missing/mismatched domain never backfills
+ok 8 - registration commit before meta crash retains all stamp fields; missing/mismatched domain never backfills
+  ---
+  duration_ms: 1.15196
+  type: 'test'
+  ...
+# Subtest: reconcile revision prevents competing cancel or registration being overwritten
+ok 9 - reconcile revision prevents competing cancel or registration being overwritten
+  ---
+  duration_ms: 0.937773
+  type: 'test'
+  ...
+# Subtest: verified shell harness keeps native unknown separately from actual shell status 137
+ok 10 - verified shell harness keeps native unknown separately from actual shell status 137
+  ---
+  duration_ms: 511.894113
+  type: 'test'
+  ...
+# Subtest: direct harness killed by a real signal records sourced wait signal
+ok 11 - direct harness killed by a real signal records sourced wait signal
+  ---
+  duration_ms: 179.480104
+  type: 'test'
+  ...
+# Subtest: accepted cancellation with verified scope absent never signals a guessed shell group
+ok 12 - accepted cancellation with verified scope absent never signals a guessed shell group
+  ---
+  duration_ms: 423.720913
+  type: 'test'
+  ...
+# Subtest: orphan policy reacts to verified physical parent death, while continue preserves the run
+ok 13 - orphan policy reacts to verified physical parent death, while continue preserves the run
+  ---
+  duration_ms: 433.283021
+  type: 'test'
+  ...
+# Subtest: cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof
+ok 14 - cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof
+  ---
+  duration_ms: 2191.536901
+  type: 'test'
+  ...
+# Subtest: cancel accepted after submitting and before scope fixation wakes once discovery finishes
+ok 15 - cancel accepted after submitting and before scope fixation wakes once discovery finishes
+  ---
+  duration_ms: 125.591651
+  type: 'test'
+  ...
+# Subtest: heartbeat wall/monotonic disagreement records one anomaly and stays uncertain
+ok 16 - heartbeat wall/monotonic disagreement records one anomaly and stays uncertain
+  ---
+  duration_ms: 5051.021628
+  type: 'test'
+  ...
+# Subtest: historical PGID/SID reuse simulation never makes unrelated new workload an old-scope conflict
+ok 17 - historical PGID/SID reuse simulation never makes unrelated new workload an old-scope conflict
+  ---
+  duration_ms: 1399.57537
+  type: 'test'
+  ...
+# Subtest: real supervisor SIGKILL at submitted_before_scope never resubmits or replays signals
+ok 18 - real supervisor SIGKILL at submitted_before_scope never resubmits or replays signals
+  ---
+  duration_ms: 201.620988
+  type: 'test'
+  ...
+# Subtest: real supervisor SIGKILL at cancel_before_ack_commit never resubmits or replays signals
+ok 19 - real supervisor SIGKILL at cancel_before_ack_commit never resubmits or replays signals
+  ---
+  duration_ms: 5222.407207
+  type: 'test'
+  ...
+# Subtest: argv wrapper honors independent harness discovery and never uses launcher wait as native exit
+ok 20 - argv wrapper honors independent harness discovery and never uses launcher wait as native exit
+  ---
+  duration_ms: 432.37267
+  type: 'test'
+  ...
+# (node:829872) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: process stamps preserve boot and PID namespace, and cross-domain state stays unknown
+ok 21 - process stamps preserve boot and PID namespace, and cross-domain state stays unknown
+  ---
+  duration_ms: 2.333276
+  type: 'test'
+  ...
+# Subtest: one-shot group launch preserves argv and stdin EOF, waits for helper exit
+not ok 22 - one-shot group launch preserves argv and stdin EOF, waits for helper exit
+  ---
+  duration_ms: 128.221172
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/fu-rk/dist-test/tests/unit/run-process.test.js:81:1'
+  failureType: 'testCodeFailure'
+  error: `Unexpected token '(', "(node:8298"... is not valid JSON`
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/fu-rk/dist-test/tests/unit/run-process.test.js:98:27)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: helper in its own group delivers INT then TERM; replacement-stamp simulation refuses control
+ok 23 - helper in its own group delivers INT then TERM; replacement-stamp simulation refuses control
+  ---
+  duration_ms: 59.711151
+  type: 'test'
+  ...
+# Subtest: SIGKILL from inside helper group loses acknowledgement and never invents command wait status
+ok 24 - SIGKILL from inside helper group loses acknowledgement and never invents command wait status
+  ---
+  duration_ms: 51.203601
+  type: 'test'
+  ...
+# Subtest: dead command and group leader with a living member never prove scope gone
+ok 25 - dead command and group leader with a living member never prove scope gone
+  ---
+  duration_ms: 64.868664
+  type: 'test'
+  ...
+# Subtest: fork during actual /proc enumeration is partial evidence, never complete scope proof
+ok 26 - fork during actual /proc enumeration is partial evidence, never complete scope proof
+  ---
+  duration_ms: 93.109413
+  type: 'test'
+  ...
+# Subtest: real member leaving group during enumeration keeps original harness alive outside scope
+ok 27 - real member leaving group during enumeration keeps original harness alive outside scope
+  ---
+  duration_ms: 65.126108
+  type: 'test'
+  ...
+# Subtest: IPC disconnect seals helper while the existing command continues
+ok 28 - IPC disconnect seals helper while the existing command continues
+  ---
+  duration_ms: 195.997648
+  type: 'test'
+  ...
+# Subtest: crash/disconnect before scope fixation seals unsubmitted helper with zero command spawn
+ok 29 - crash/disconnect before scope fixation seals unsubmitted helper with zero command spawn
+  ---
+  duration_ms: 51.030031
+  type: 'test'
+  ...
+# Subtest: private helper accepts exactly one submission and refuses a second launch
+ok 30 - private helper accepts exactly one submission and refuses a second launch
+  ---
+  duration_ms: 197.461137
+  type: 'test'
+  ...
+# (node:829873) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: RUNZ1 true zombie-only own session ends while the kernel still holds its PGID
+ok 31 - RUNZ1 true zombie-only own session ends while the kernel still holds its PGID
+  ---
+  duration_ms: 46.242023
+  type: 'test'
+  ...
+# Subtest: RUNZ1 fork after the first census snapshot cannot end a live group
+ok 32 - RUNZ1 fork after the first census snapshot cannot end a live group
+  ---
+  duration_ms: 50.949881
+  type: 'test'
+  ...
+# Subtest: RUNZ1 same-session outsider can join a zombie-held PGID and never produces gone
+ok 33 - RUNZ1 same-session outsider can join a zombie-held PGID and never produces gone
+  ---
+  duration_ms: 50.95476
+  type: 'test'
+  ...
+# Subtest: RUNZ1 full census rejects the fork then setsid escape after the second snapshot
+ok 34 - RUNZ1 full census rejects the fork then setsid escape after the second snapshot
+  ---
+  duration_ms: 58.132527
+  type: 'test'
+  ...
+# Subtest: RUNZ1 zombie thread-group leader with a live sibling never proves gone
+ok 35 - RUNZ1 zombie thread-group leader with a live sibling never proves gone
+  ---
+  duration_ms: 32.286641
+  type: 'test'
+  ...
+# Subtest: RUNZ1 visible shared-session zombie stays unknown until ESRCH despite a living session outsider
+ok 36 - RUNZ1 visible shared-session zombie stays unknown until ESRCH despite a living session outsider
+  ---
+  duration_ms: 59.165277
+  type: 'test'
+  ...
+# Subtest: RUNZ1 synthetic control and vanished identities: stable or shrinking census is accepted
+ok 37 - RUNZ1 synthetic control and vanished identities: stable or shrinking census is accepted
+  ---
+  duration_ms: 0.711642
+  type: 'test'
+  ...
+# Subtest: RUNZ1 new evidence cannot certify zombie absence
+ok 38 - RUNZ1 new evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.245005
+  type: 'test'
+  ...
+# Subtest: RUNZ1 reused evidence cannot certify zombie absence
+ok 39 - RUNZ1 reused evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.296561
+  type: 'test'
+  ...
+# Subtest: RUNZ1 ENOENT evidence cannot certify zombie absence
+ok 40 - RUNZ1 ENOENT evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.198459
+  type: 'test'
+  ...
+# Subtest: RUNZ1 ESRCH evidence cannot certify zombie absence
+ok 41 - RUNZ1 ESRCH evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.084287
+  type: 'test'
+  ...
+# Subtest: RUNZ1 EACCES evidence cannot certify zombie absence
+ok 42 - RUNZ1 EACCES evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.066694
+  type: 'test'
+  ...
+# Subtest: RUNZ1 malformed evidence cannot certify zombie absence
+ok 43 - RUNZ1 malformed evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.076923
+  type: 'test'
+  ...
+# Subtest: RUNZ1 visibility evidence cannot certify zombie absence
+ok 44 - RUNZ1 visibility evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.062546
+  type: 'test'
+  ...
+# Subtest: RUNZ1 remount evidence cannot certify zombie absence
+ok 45 - RUNZ1 remount evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.128238
+  type: 'test'
+  ...
+# Subtest: RUNZ1 thread evidence cannot certify zombie absence
+ok 46 - RUNZ1 thread evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.063298
+  type: 'test'
+  ...
+# Subtest: RUNZ1 task-list evidence cannot certify zombie absence
+ok 47 - RUNZ1 task-list evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.056385
+  type: 'test'
+  ...
+# Subtest: RUNZ1 subject-thread evidence cannot certify zombie absence
+ok 48 - RUNZ1 subject-thread evidence cannot certify zombie absence
+  ---
+  duration_ms: 0.090037
+  type: 'test'
+  ...
+# Subtest: RUNZ1 stat validation rejects invalid identity, state, membership, thread and start fields
+ok 49 - RUNZ1 stat validation rejects invalid identity, state, membership, thread and start fields
+  ---
+  duration_ms: 0.186777
+  type: 'test'
+  ...
+# Subtest: RUNZ1 a failed census read throws instead of silently dropping an enumerated PID
+ok 50 - RUNZ1 a failed census read throws instead of silently dropping an enumerated PID
+  ---
+  duration_ms: 0.111337
+  type: 'test'
+  ...
+# Subtest: RUNZ1 visibility witness rejects hidden, partial, unknown and overmounted proc views
+ok 51 - RUNZ1 visibility witness rejects hidden, partial, unknown and overmounted proc views
+  ---
+  duration_ms: 0.280791
+  type: 'test'
+  ...
+# Subtest: RUNZ1 ESRCH cannot override escaped harness zombie TGID with a live sibling
+ok 52 - RUNZ1 ESRCH cannot override escaped harness zombie TGID with a live sibling
+  ---
+  duration_ms: 56.90146
+  type: 'test'
+  ...
+# Subtest: RUNZ1 ESRCH cannot override escaped launcher zombie TGID with a live sibling
+ok 53 - RUNZ1 ESRCH cannot override escaped launcher zombie TGID with a live sibling
+  ---
+  duration_ms: 55.803891
+  type: 'test'
+  ...
+# Subtest: RUNZ1 common subject proof rejects ambiguous tasks and wrong domains but accepts replaced originals
+ok 54 - RUNZ1 common subject proof rejects ambiguous tasks and wrong domains but accepts replaced originals
+  ---
+  duration_ms: 35.361806
+  type: 'test'
+  ...
+1..54
+# tests 54
+# suites 0
+# pass 53
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 20421.149046

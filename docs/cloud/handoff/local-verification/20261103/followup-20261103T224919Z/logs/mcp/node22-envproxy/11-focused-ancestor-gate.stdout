@@ -1,0 +1,275 @@
+TAP version 13
+# (node:749784) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: simulated EACCES optional ancestor: physical registration survives, no farther harness or authority (profile=false)
+ok 1 - simulated EACCES optional ancestor: physical registration survives, no farther harness or authority (profile=false)
+  ---
+  duration_ms: 7.052595
+  type: 'test'
+  ...
+# Subtest: simulated EACCES optional ancestor: physical registration survives, no farther harness or authority (profile=true)
+ok 2 - simulated EACCES optional ancestor: physical registration survives, no farther harness or authority (profile=true)
+  ---
+  duration_ms: 1.766092
+  type: 'test'
+  ...
+# Subtest: simulated EACCES mandatory self initial still rejects before any registry write
+ok 3 - simulated EACCES mandatory self initial still rejects before any registry write
+  ---
+  duration_ms: 0.722468
+  type: 'test'
+  ...
+# Subtest: simulated EACCES mandatory actual parent initial still rejects before any registry write
+ok 4 - simulated EACCES mandatory actual parent initial still rejects before any registry write
+  ---
+  duration_ms: 0.214097
+  type: 'test'
+  ...
+# Subtest: simulated EACCES mandatory self final still rejects before any registry write
+ok 5 - simulated EACCES mandatory self final still rejects before any registry write
+  ---
+  duration_ms: 0.484925
+  type: 'test'
+  ...
+# Subtest: simulated EACCES mandatory actual parent final still rejects before any registry write
+ok 6 - simulated EACCES mandatory actual parent final still rejects before any registry write
+  ---
+  duration_ms: 0.277005
+  type: 'test'
+  ...
+# Subtest: simulated EPERM optional ancestor: physical registration survives, no farther harness or authority (profile=false)
+ok 7 - simulated EPERM optional ancestor: physical registration survives, no farther harness or authority (profile=false)
+  ---
+  duration_ms: 0.368365
+  type: 'test'
+  ...
+# Subtest: simulated EPERM optional ancestor: physical registration survives, no farther harness or authority (profile=true)
+ok 8 - simulated EPERM optional ancestor: physical registration survives, no farther harness or authority (profile=true)
+  ---
+  duration_ms: 0.375839
+  type: 'test'
+  ...
+# Subtest: simulated EPERM mandatory self initial still rejects before any registry write
+ok 9 - simulated EPERM mandatory self initial still rejects before any registry write
+  ---
+  duration_ms: 0.565501
+  type: 'test'
+  ...
+# Subtest: simulated EPERM mandatory actual parent initial still rejects before any registry write
+ok 10 - simulated EPERM mandatory actual parent initial still rejects before any registry write
+  ---
+  duration_ms: 0.542197
+  type: 'test'
+  ...
+# Subtest: simulated EPERM mandatory self final still rejects before any registry write
+ok 11 - simulated EPERM mandatory self final still rejects before any registry write
+  ---
+  duration_ms: 0.371761
+  type: 'test'
+  ...
+# Subtest: simulated EPERM mandatory actual parent final still rejects before any registry write
+ok 12 - simulated EPERM mandatory actual parent final still rejects before any registry write
+  ---
+  duration_ms: 0.223115
+  type: 'test'
+  ...
+# Subtest: optional discovery propagates the exact non-permission error or identity refusal; message text is not errno
+ok 13 - optional discovery propagates the exact non-permission error or identity refusal; message text is not errno
+  ---
+  duration_ms: 1.341703
+  type: 'test'
+  ...
+# Subtest: normal no-harness, nearest genuine harness, eight reads, PID 1 and self-parent bounds remain unchanged
+ok 14 - normal no-harness, nearest genuine harness, eight reads, PID 1 and self-parent bounds remain unchanged
+  ---
+  duration_ms: 0.443685
+  type: 'test'
+  ...
+# Subtest: changed physical stamps, inconsistent namespace, unavailable domain and cwd retain zero-write guards
+ok 15 - changed physical stamps, inconsistent namespace, unavailable domain and cwd retain zero-write guards
+  ---
+  duration_ms: 4.051594
+  type: 'test'
+  ...
+# Subtest: malformed optional process evidence is not converted into unavailable harness evidence
+ok 16 - malformed optional process evidence is not converted into unavailable harness evidence
+  ---
+  duration_ms: 0.409772
+  type: 'test'
+  ...
+# (node:749785) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:749785) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: int simulated optional ancestor EACCES writes only physical caller; source-less tool cannot authorize
+ok 17 - int simulated optional ancestor EACCES writes only physical caller; source-less tool cannot authorize
+  ---
+  duration_ms: 56.017768
+  type: 'test'
+  ...
+# Subtest: int simulated optional ancestor EPERM writes only physical caller; source-less tool cannot authorize
+ok 18 - int simulated optional ancestor EPERM writes only physical caller; source-less tool cannot authorize
+  ---
+  duration_ms: 38.241071
+  type: 'test'
+  ...
+# Subtest: int hud-mcp physical caller registration persists real procStart/cwd without logical authority
+ok 19 - int hud-mcp physical caller registration persists real procStart/cwd without logical authority
+  ---
+  duration_ms: 65.450458
+  type: 'test'
+  ...
+# Subtest: int hud-mcp composition uses existing ledger even when diagnostic registry requested
+ok 20 - int hud-mcp composition uses existing ledger even when diagnostic registry requested
+  ---
+  duration_ms: 177.260258
+  type: 'test'
+  ...
+# Subtest: stdio capture rejects non-JSON line delivered after exit and before close
+ok 21 - stdio capture rejects non-JSON line delivered after exit and before close
+  ---
+  duration_ms: 1.471374
+  type: 'test'
+  ...
+# Subtest: stdio capture rejects extra JSON-RPC record delivered after exit and before close
+ok 22 - stdio capture rejects extra JSON-RPC record delivered after exit and before close
+  ---
+  duration_ms: 1.742709
+  type: 'test'
+  ...
+# Subtest: stdio capture rejects unterminated output delivered after exit and before close
+ok 23 - stdio capture rejects unterminated output delivered after exit and before close
+  ---
+  duration_ms: 6.735828
+  type: 'test'
+  ...
+# Subtest: int unconfigured real MCP answers discovery and refuses whoami with JSON-RPC-only stdout
+ok 24 - int unconfigured real MCP answers discovery and refuses whoami with JSON-RPC-only stdout
+  ---
+  duration_ms: 189.778223
+  type: 'test'
+  ...
+# (node:749787) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts
+ok 25 - delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts
+  ---
+  duration_ms: 8.215336
+  type: 'test'
+  ...
+# Subtest: registration records A4 fields and verified physical start; file fake remains private and refuses overwrite
+ok 26 - registration records A4 fields and verified physical start; file fake remains private and refuses overwrite
+  ---
+  duration_ms: 15.949789
+  type: 'test'
+  ...
+# Subtest: unknown cwd is a typed refusal before registry write
+ok 27 - unknown cwd is a typed refusal before registry write
+  ---
+  duration_ms: 5.812
+  type: 'test'
+  ...
+# Subtest: real /proc registration stamp and PID domain are read without environment secrets
+ok 28 - real /proc registration stamp and PID domain are read without environment secrets
+  ---
+  duration_ms: 1.836313
+  type: 'test'
+  ...
+# Subtest: Codex root combination resolves, native child refuses without invalidating subsequent root
+ok 29 - Codex root combination resolves, native child refuses without invalidating subsequent root
+  ---
+  duration_ms: 15.80566
+  type: 'test'
+  ...
+# Subtest: current Codex source is not remembered after simulated optional ancestor EACCES; fresh root still resolves
+ok 30 - current Codex source is not remembered after simulated optional ancestor EACCES; fresh root still resolves
+  ---
+  duration_ms: 14.448379
+  type: 'test'
+  ...
+# Subtest: current Codex source is not remembered after simulated optional ancestor EPERM; fresh root still resolves
+ok 31 - current Codex source is not remembered after simulated optional ancestor EPERM; fresh root still resolves
+  ---
+  duration_ms: 5.676649
+  type: 'test'
+  ...
+# Subtest: missing, conflicting and forged arguments metadata never falls back to remembered root/proc
+ok 32 - missing, conflicting and forged arguments metadata never falls back to remembered root/proc
+  ---
+  duration_ms: 3.216928
+  type: 'test'
+  ...
+# Subtest: session switches remain source diagnostics; shared ledger supplies the generation gate
+ok 33 - session switches remain source diagnostics; shared ledger supplies the generation gate
+  ---
+  duration_ms: 5.303758
+  type: 'test'
+  ...
+# Subtest: PID reuse, source mismatch, missing header and unmeasured Codex versions refuse
+ok 34 - PID reuse, source mismatch, missing header and unmeasured Codex versions refuse
+  ---
+  duration_ms: 3.392584
+  type: 'test'
+  ...
+# Subtest: Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId
+ok 35 - Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId
+  ---
+  duration_ms: 0.564609
+  type: 'test'
+  ...
+# Subtest: Claude late/missing public call refuses, observed record still cannot upgrade unverified profile
+ok 36 - Claude late/missing public call refuses, observed record still cannot upgrade unverified profile
+  ---
+  duration_ms: 4.669988
+  type: 'test'
+  ...
+# Subtest: pi explicit session path resolver checks header and source; directory alone grants nothing
+ok 37 - pi explicit session path resolver checks header and source; directory alone grants nothing
+  ---
+  duration_ms: 1.620341
+  type: 'test'
+  ...
+# Subtest: seven MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments
+ok 38 - seven MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments
+  ---
+  duration_ms: 0.725258
+  type: 'test'
+  ...
+# Subtest: runtime rejects Node 18, 22.12 and 23 before importing package entry
+ok 39 - runtime rejects Node 18, 22.12 and 23 before importing package entry
+  ---
+  duration_ms: 215.718603
+  type: 'test'
+  ...
+# Subtest: runtime accepts declared 22.13 and 24 entry boundaries
+ok 40 - runtime accepts declared 22.13 and 24 entry boundaries
+  ---
+  duration_ms: 325.988441
+  type: 'test'
+  ...
+# Subtest: bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths
+ok 41 - bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths
+  ---
+  duration_ms: 4.980665
+  type: 'test'
+  ...
+# Subtest: source/header mismatch, missing header and daemon topology cannot resolve identity
+ok 42 - source/header mismatch, missing header and daemon topology cannot resolve identity
+  ---
+  duration_ms: 2.097117
+  type: 'test'
+  ...
+# Subtest: stdio framing rejects malformed JSON, ignores notifications and serializes stub replies
+ok 43 - stdio framing rejects malformed JSON, ignores notifications and serializes stub replies
+  ---
+  duration_ms: 2.100023
+  type: 'test'
+  ...
+1..43
+# tests 43
+# suites 0
+# pass 43
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 772.536756

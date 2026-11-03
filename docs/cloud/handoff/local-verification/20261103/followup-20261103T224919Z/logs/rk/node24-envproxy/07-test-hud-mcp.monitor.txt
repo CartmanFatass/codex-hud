@@ -1,0 +1,5 @@
+23:11:50 6.61 5.93 4.89 4/1360 | ast-grep:98.9 python3:29.0 grep:25.3 pi:11.5 pi:6.7 codex:3.2 
+23:11:51 6.48 5.91 4.89 4/1392 | MainThread:197 ast-grep:98.9 grep:25.4 npm:run npm:run pi:11.5 
+23:11:52 6.48 5.91 4.89 6/1398 | MainThread:194 ast-grep:98.9 grep:25.3 pi:11.5 npm:run pi:6.6 
+23:11:53 6.48 5.91 4.89 5/1398 | MainThread:190 ps:100 ast-grep:98.9 grep:25.6 pi:11.5 pi:6.6 
+23:11:54 6.48 5.91 4.89 5/1427 | MainThread:116 ps:100 ast-grep:98.9 MainThread:69.2 MainThread:67.9 MainThread:66.0 

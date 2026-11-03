@@ -1,0 +1,3 @@
+removed dist (1073 files)
+removed dist-test (997 files)
+removed packages/hud-mcp/dist (235 files)

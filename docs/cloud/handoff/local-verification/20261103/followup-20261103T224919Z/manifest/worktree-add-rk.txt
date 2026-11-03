@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD 7ba567e)
+HEAD is now at 7ba567e WIP RUNZ1-KILL fix-1: sanitize embedded identities and reject held eligible proof
