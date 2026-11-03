@@ -1,0 +1,486 @@
+gation words the design lists are used (0.215619ms)
+✔ §3.2: a native child that has ended is history whether it ended well, badly or interrupted (0.546139ms)
+✔ §3.2: a finished failed native lets its finished subtree fold after the linger window (0.671855ms)
+✔ §3.3 row 6: the current freshness decides, never a retained `stale` state key (0.830148ms)
+✔ §3.4: a clock that ran backwards leaves the clock empty and the node without an entering time (0.647128ms)
+b10b-perf rows200 cold (plan + 200 row strings, 0 folded away, coarse=true): n=1000 p50=2.877ms p99=6.849ms max=26.763ms strict=false
+b10b-perf projection200 cold: n=1000 p50=0.638ms p99=1.532ms max=4.644ms strict=false
+b10b-perf projection200 changed tick (1 of 200 differs, rebuilt objects): n=1000 p50=0.385ms p99=0.948ms max=1.440ms strict=false
+b10b-perf no-change tick (counts + alerts + notice + plan + 200 rows, clocks moved): n=1000 p50=0.324ms p99=0.796ms max=1.106ms strict=false
+b10b-perf statusline delegation (120 cols, warm): n=1000 p50=0.601ms p99=1.175ms max=3.873ms strict=false
+b10b-perf alerts + notice (200 nodes): n=1000 p50=0.016ms p99=0.044ms max=0.301ms strict=false
+b10b-perf conflict-heavy boundary (150 nodes + 400 conflict children: project + alerts + notice + 200 rows, cold): n=1000 p50=3.775ms p99=8.594ms max=33.753ms strict=false
+✔ 200-node compact rows at 56 columns, every row built from nothing: p99 <= 10 ms (5132.689961ms)
+✔ 200-node projection: cold build and a changed tick (one node differs) (1361.146951ms)
+✔ the no-change tick: same tree, the second moves on; p99 <= 2 ms (417.916952ms)
+✔ the statusline from a warm projection, and the alerts alone (824.791402ms)
+✔ the conflict-heavy boundary: 150 nodes and 400 conflicting children stay inside the 200-node budget (5195.419676ms)
+✔ counts are by marker over every node but the viewpoint root; backends and spend follow (4.938059ms)
+✔ a tree of one harness is not cross-harness, and a spend nobody reported is not written (0.428414ms)
+✔ the slots and the close-pane count: held by marker, to close by fact (1.338191ms)
+✔ one post-order pass: a finished parent with a pending grandchild sorts first, and counts what is below (0.798652ms)
+✔ a finished subtree is put away with its youngest member, not its oldest (0.49265ms)
+✔ the node cache: an equal tree rebuilt every tick costs one stamp compare per node (0.83055ms)
+✔ the node cache: one changed state projects one node (0.476706ms)
+✔ the node cache: derived freshness moves the marker with every commit stamp unchanged (2.005329ms)
+✔ a node the cache no longer sees is swept (0.474272ms)
+✔ the same tree, details and capacity objects return the same projection (0.375306ms)
+✔ an observation the reader says is unavailable is `? unknown`, never healthy or idle (0.361044ms)
+✔ conflicts: one row per claiming parent in the tree, one count per child (1.246515ms)
+✔ a session ref the identity check rejects does not stop the render (0.326293ms)
+✔ model and effort are escaped once, when the projection is built (§6 #7) (2.583785ms)
+✔ §3.4: a conflicting child has one name, the shared label only when every record agrees (2.783701ms)
+✔ §3.4: a conflicting child that is also a node is named the same way on every row (0.447622ms)
+✔ §3.4: a conflict-only child takes part in cross-harness detection, with its harness from the link (0.928875ms)
+✔ §6 #3: conflict rows share the 200-node budget; the rest are counted and reported (22.432176ms)
+✔ §4.1, §4.12: a conflict that fits no row still lights the bar and the statusline, and marks the root (5.454615ms)
+✔ §3.2, §3.4: a claim that fits no row still keeps its parent unfinished, troubled and on the list (2.828347ms)
+✔ §4.12: every claim omitted, two finished parents: one child, one alert, one item, both parents troubled (4.980583ms)
+✔ every row is exactly the width asked for: situations x widths x icon sets x selection (214.04397ms)
+✔ Chinese words keep every row at exactly the width asked for (49.764532ms)
+✔ ASCII rows hold only printable ASCII besides user-written names and the model badge (10.448441ms)
+✔ situation (c) at 80 columns (1.716661ms)
+✔ situation (c): the field-shedding order at 56, 48, 40, 32 and 24 columns (§4.2) (1.577004ms)
+✔ trouble rows drop the badge and the meter at any width, and keep the word and the clock (3.37089ms)
+✔ below 40 columns the name keeps 8 columns and the word goes first; from 40 the word stays (2.568802ms)
+✔ history rows say what they delivered: the summary after 12 free columns, else the word (2.937889ms)
+✔ a two-word state gives up its second word before the first is clipped (from 40 columns) (3.109613ms)
+✔ situation (g) with history: every ending gets its word, newest at the bottom of its bucket (0.681719ms)
+✔ finished rows fold into one `✓ N done` row once the linger window has passed, and `a` brings them back (2.409887ms)
+✔ a finished subtree with an unfinished descendant stays on the list (0.266594ms)
+✔ rows deeper than 4 are drawn at depth 4 with a flat `↳` (0.643553ms)
+✔ a folded node says how many it hides: long form, short form, unknown children (1.567781ms)
+✔ the worst glyph leads the fold: a trouble below wins over the working below (0.962786ms)
+✔ a conflict or an intent edge is drawn with `┊`, and a conflict row keeps its `~` age (1.344991ms)
+✔ a node that was not loaded is `? · not loaded` with no clock (0.349047ms)
+✔ the selection mark replaces the first column and nothing else moves (0.954884ms)
+✔ the native child shows a badge only when its model differs from its parent (0.85843ms)
+✔ siblings sort by subtree bucket: trouble newest first, then actives, then finished (§3.2) (0.758653ms)
+✔ `s` sorts by creation alone, with no buckets (0.580609ms)
+✔ turn clocks: seconds under an hour, minutes after, coarse drops the seconds (0.097615ms)
+✔ more than 30 active rows: the turn clocks go coarse so a second no longer repaints them (1.555893ms)
+✔ CJK: a wide character that does not fit leaves a space, and a name is cut by columns (1.766364ms)
+✔ the plan is memoised per option set until a subtree crosses its put-away time (B10B-s2, §6 #3) (0.461773ms)
+✔ a row is rendered once for what it reads: same inputs give the same string object cache (0.522704ms)
+✔ no root row and no nodes: no rows (0.146838ms)
+✔ a folded node keeps its counts apart: 1 flag + 11 failures is not 11 flags + 1 failure (1.164935ms)
+✔ §3.4: an age that cannot be measured is left empty, never `0s` (1.355657ms)
+✔ §5.2: a selected row is the palette band across the whole row, without faint text or the alert hue lost (9.76199ms)
+✔ §5.2: a palette without a band (none, terminal) selects with › and a bold name, and no background (1.340964ms)
+✔ §3.2, §5.2: a state that began in the last three seconds has its word and its clock bold, for every node (6.704875ms)
+✔ the root is a card even with nothing under it (6.008024ms)
+✔ a card shows five native sub-rows at most, then one fold line with the rest by marker (4.003256ms)
+✔ a card with children the tree did not list: `children unknown`, or `+N?` when some are folded (2.736511ms)
+✔ root natives are cards; a native under a native is a sub-row of that card (0.951839ms)
+✔ a sub-row carries a badge only when its model differs from the card`s (not its own parent`s) (2.06665ms)
+✔ accordion: finished cards fold first, then the unselected live ones, the root last; trouble and the selection never (6.479973ms)
+✔ accordion: more than five card siblings fold their finished cards at once (2.283039ms)
+✔ card cache: an unchanged frame draws nothing again; the next second redraws only the feet of live cards (1.287886ms)
+✔ a card is exactly as tall as its drawing: head first, foot last, no blank filler (every scenario, every width) (74.49573ms)
+✔ lookId is monotonic: a cleared table never hands out an id a cached card still carries (F2) (0.856558ms)
+✔ a folded card and a sub-row are tiered by the panel width: the badge of a compact row at 48 (F3) (3.559619ms)
+✔ delegation line: role, host, the bound time; `pane N` only from a verified host (5.755149ms)
+✔ delegation line: the handshake while the link is pending or claimed; reported once there is a report (1.273185ms)
+✔ delegation line: run N past the first, heartbeat from 80 columns, cost, slot held, close pane (1.989966ms)
+✔ delegation line: `in <dir>` by worktree root, then by cwd, `in ?` when neither compares (1.052999ms)
+✔ delegation line: shedding right to left at 80, 56, 48, 40 and 32; slot held and close pane stay (1.913983ms)
+✔ delegation line: an extra intent root says `parent unconfirmed` and nothing else (0.39144ms)
+✔ focus line: pending word, uncertain cause and missing items, conflict, report, terminal facts (2.836819ms)
+✔ parent row: the four forms, one row, exactly the width (2.521312ms)
+✔ parent row: a gone parent says `exited`; alive says no activity word (0.477657ms)
+✔ focus line: short of room it drops exit unknown, then the timing note, then the cause, before it cuts (F4) (1.280325ms)
+✔ native: the name is native.title; null title falls back to the session short form (9.079871ms)
+✔ native: the kind icon from native.kind; null and `other` leave the slot blank (2.585106ms)
+✔ native: with no kind icon anywhere, a single-harness tree has no slot column (segment 1 unchanged) (1.251653ms)
+✔ native: the table is the panel`s KIND_GLYPHS (0.767025ms)
+✔ ASCII: no kind column in a single-harness tree; a blank native slot beside the harness letters (1.747046ms)
+✔ ◈N: on compact rows from 56 columns, before the badge; not at 55, not on a rich card head (4.905732ms)
+✔ hook: a null or absent view model draws the legacy panel byte for byte (31.990875ms)
+✔ hook: a non-null view model is the agents view, natives only included (no content heuristic) (17.941148ms)
+✔ the parent row is pinned above the heading: it stays at the top however far the view is scrolled (2.454353ms)
+✔ no viewpoint root: the summary row, and the empty lines only while the ledger is readable (1.207507ms)
+✔ (a) one session, 48 rich: the root card, head and foot, no agents counts (1.243521ms)
+✔ (b) natives only, 48: root card, root natives as cards, deeper natives as sub-rows, failures first (4.065127ms)
+✔ (c) cross-harness, 48: summary, cards, micro card under the selection (4.670844ms)
+✔ (d) slots full, 48: the slots chip, the uncertain worker holds its slot, the done bucket folds (2.954203ms)
+✔ (e) trouble, 48: supervisor lost is its own word; the conflict child is one worker (3.338492ms)
+✔ (g) history, 48: one worker on the list, the rest put away; the ended row tells why (1.601811ms)
+✔ (h) visible run endings, 48 and 32: the contract sentence, its short forms, close pane (6.62012ms)
+✔ every row is exactly the panel width: every scenario, both layouts, 32-80, EN, ZH and ASCII (767.422283ms)
+✔ CJK: a ZH word and a CJK name count two columns each, and the line is cut by columns (1.070344ms)
+✔ ASCII: the whole glyph table switches, the contract dash included (1.275368ms)
+✔ a fresh projection and a cached one draw the same panel (1.986ms)
+b10b-s2-perf compact no-change tick (same view model, clocks moved; the 60 rows in view): n=1000 p50=0.097ms p95=0.296ms p99=0.772ms max=1.298ms strict=false
+b10b-s2-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.398ms p95=0.845ms p99=1.923ms max=5.182ms strict=false
+b10b-s2-perf rich no-change tick (same view model, clocks moved; the 60 rows in view): n=1000 p50=0.041ms p95=0.159ms p99=0.275ms max=1.511ms strict=false
+b10b-s2-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.347ms p95=0.910ms p99=2.491ms max=19.401ms strict=false
+b10b-s2-perf compact no-change + one cached row (two memoised view models alternated; not asserted): n=1000 p50=1.088ms p95=2.225ms p99=4.469ms max=7.816ms strict=false
+b10b-s2-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved; every row + frame-diff): n=1000 p50=1.882ms p95=4.034ms p99=10.954ms max=18.149ms strict=false
+b10b-s2-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.115ms p95=2.577ms p99=12.419ms max=15.252ms strict=false
+b10b-s2-perf compact cold tick, every row read (all 200 nodes differ; project + plan + rows + frame-diff; not asserted): n=1000 p50=3.598ms p95=8.788ms p99=14.555ms max=29.378ms strict=false
+b10b-s2-perf compact cold tick, the 60 rows in view (not asserted): n=1000 p50=2.102ms p95=8.415ms p99=10.990ms max=23.585ms strict=false
+b10b-s2-perf rich no-change + one cached card (two memoised view models alternated; not asserted): n=1000 p50=1.123ms p95=2.131ms p99=6.140ms max=23.487ms strict=false
+b10b-s2-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved; every row; cards 39600 hits / 1200 misses, limit 500): n=1000 p50=1.461ms p95=2.808ms p99=11.664ms max=14.220ms strict=false
+b10b-s2-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.055ms p95=2.145ms p99=12.443ms max=30.408ms strict=false
+b10b-s2-perf rich cold tick, every row read (all 200 nodes differ; not asserted): n=1000 p50=4.363ms p95=11.358ms p99=14.860ms max=46.310ms strict=false
+b10b-s2-perf rich cold tick, the 60 rows in view (not asserted): n=1000 p50=2.314ms p95=6.730ms p99=15.138ms max=39.604ms strict=false
+✔ the no-change tick: the same view model, the second moves on; compact and rich p99 <= 2 ms (1480.484497ms)
+✔ compact, 200 nodes at 56 columns, every row + frame-diff: a production-shaped changed tick, p99 <= 10 ms (35220.278768ms)
+✔ rich, 200 nodes as cards at 56 columns (500-card cache, accordion to 60 rows), a production-shaped changed tick: p99 <= 15 ms (34436.4274ms)
+✔ ⊕N selected on a band palette: every cell on the band, in the family ink, `›` first (mocha, latte, titanium) (14.187031ms)
+✔ ⊕N selected without a band (none, terminal): `›` and bold text, no surface (3.215909ms)
+✔ a rich card selected on a band palette: its head is on the band with `›` for the corner (4.335505ms)
+✔ a selection that is no planned row selects nothing (the legacy ids of today, Q6) (3.36545ms)
+✔ micro card under a selected row: no band and the plain ink, never the band family (mocha, latte, titanium) (3.642099ms)
+✔ summary: the sampled strings of (c), (d), (e) and (g); no rate anywhere (11.023711ms)
+✔ summary: shedding order put away, then workers, then spend; counts and chips stay (3.329377ms)
+✔ summary: workers count delegated sessions and intents on the list, not natives, not the put away (1.057605ms)
+✔ coverage chip: precedence, and `N not loaded` counts the omitted conflict rows (5.614618ms)
+✔ coverage chip: an unreadable ledger is muted for 30 seconds, then warning; busy never warns (1.112015ms)
+✔ the summary row is a heading, never a selectable row (rulings Q5) (0.680316ms)
+✔ Log: a headless run in any state reads ⇢ Log; L and the button emit delegation-log; o does nothing (25.584126ms)
+✔ Log: a visible run has none (its ⇢ is Open); the root, a native, a conflict row and ⊕N have none either (6.211952ms)
+✔ Switch: a Codex native in the root’s own native subtree switches, with today’s action (1.246635ms)
+✔ Switch: no ⇢ for a native under a delegated session, a native of another harness, or the root (1.324811ms)
+✔ Open: a visible run with a verified host reads ⇢ Open and emits delegation-open with the row key (0.802277ms)
+✔ Open is greyed, and does nothing, for each way the gate fails (2.894082ms)
+✔ a plain session (no managed run) has no ⇢ (0.70277ms)
+✔ Reconcile: ↻ copies exactly the descriptor the view model holds, displayCommand included; o and L stay out of it (0.796188ms)
+✔ Resume: an ended run with a report of any status draws ↻ Resume greyed and answers with the diagnostic only (2.43324ms)
+✔ Resume: the diagnostic is the §5.5 sentence in English and in Chinese (1.66299ms)
+✔ Resume is not drawn without an ended run with a report: no report, still alive, the root, a native (2.091414ms)
+✔ Reconcile wins over Resume when the node has a descriptor (0.741668ms)
+✔ the bar: the word follows the selected row, the legacy Switch is gone, ZH has the table’s words (4.869665ms)
+✔ a greyed and a live button differ in paint, not only in a flag (and the control says which) (0.789107ms)
+✔ rowActions reads what the frame showed: the descriptor is the very object, the key the row’s (0.647938ms)
+✔ painting, a tick, or a row jumping into trouble produces no action: only a key or a click does (1.588871ms)
+✔ o, L and R do nothing where the bar sheds ⇢ and ↻ (narrow widths, zero height), in every look and icon set (94.131227ms)
+✔ older reads the count with history hidden, as today’s button does, and stays (as Hide) while history is shown (15.030499ms)
+✔ the second plan does not evict the drawn one from its memo (a no-change tick rebuilds nothing) (1.324259ms)
+✔ the buttons are the selected row’s, where the legacy Switch was: focus on Agents, or the Inspector on the agent (10.992195ms)
+✔ the order on the bar: ⇢, ↻, the brief, the older button, help (1.815496ms)
+✔ every width, look and icon set: exactly the width, the buttons present from 48 columns, words where there is room (53.139077ms)
+✔ ZH at 48 columns: the words fit and the line is exactly the width (1.043194ms)
+✔ at 48 columns the row’s buttons keep their words; no bare ⇢ ↻ stands beside blank space at any width (60.656255ms)
+✔ the older button’s word gives way to the row’s words, not the other way round (1.224042ms)
+✔ frame look with a pinned parent row: every line is exactly the width, the title is the frame’s edge (10.947199ms)
+✔ a collapsed card writes +N (…) after its name and loses its sub-rows; an open one writes none (26.952751ms)
+✔ the card keeps its badge and its frame when the fold is written (head exactly the width) (1.045487ms)
+✔ under 40 columns the long form gives way to the short one before the name is cut (1.210111ms)
+✔ ASCII: the fold is written in the ASCII marks (1.472108ms)
+✔ ZH: the same head, the counts are marks and need no words (1.041782ms)
+✔ collapsing the root card folds the whole tree under it into its head (0.553719ms)
+✔ a card drawn open does not keep its old head once collapsed, and back (the caches read the fold) (2.498097ms)
+✔ a fact name with a digit, an underscore or a dollar compares by value (no throw, every field read) (0.849287ms)
+✔ a name that is not an identifier is refused, so nothing but identifiers reaches the generated code (0.431789ms)
+✔ the real facts still compare field by field through the same comparator (1.695458ms)
+✔ the decoder names n, N, L and R, and every other key (all of ASCII) is exactly what it was, in both profiles (6.511384ms)
+✔ the four commands are panel commands, mapped to keys of their own; R is named for both its words (0.765643ms)
+✔ with the panel closed all four do nothing; every other command is as it was (0.315126ms)
+✔ the prefix table binds the four, never repeating, and the closed-panel script does nothing for them (57.958128ms)
+✔ help lists the four keys only where the delegation view is drawn; the legacy help is the same with or without them (16.171628ms)
+✔ the references list the keys in their Keys sections, English and Chinese (1.099928ms)
+✔ ↓ and ↑ walk the plan’s rows in screen order and stop at the ends (the heading is not a row) (34.903475ms)
+✔ home and end go to the first and last row; a page key scrolls the view and leaves the selection (3.294715ms)
+✔ the summary row and the parent row are never selectable: a click on them selects nothing (1.503624ms)
+✔ h folds an open branch, then steps to the parent; l unfolds it, then steps to the first child (4.638573ms)
+✔ h on the viewpoint root folds the whole tree into its row; on a fold of the root it has nowhere to go (1.604004ms)
+✔ in rich, h folds the card and its head says what it holds (F6), through the same key (4.652534ms)
+✔ `a` and `s` go through the state: history shown, creation order; the selection stays on its row (1.747135ms)
+✔ each kind of stop is one, and each excluded kind is not (the root’s own marker included) (1.714937ms)
+✔ n goes to the next stop below the selection, N to the previous; both wrap; a stop is not the selection itself (4.193245ms)
+✔ with no stop n and N do nothing (0.938509ms)
+✔ a collapsed row over a ⚑ is a stop and stays collapsed; n never unfolds, reorders or filters (1.144113ms)
+✔ a rich card whose sixth sub-row is a ⚑ is a stop: the card stands for the row it does not draw (2.049823ms)
+✔ claims past the node budget have no row: no parent of theirs, and not the root, is a stop (11.398475ms)
+✔ Enter, Space and v are the Inspector’s keys: they emit no delegation action (2.393822ms)
+✔ a click selects the row and nothing else: no Inspector, no pick, no action (both styles) (2.353273ms)
+✔ a click on the ⊕N row’s own line selects it and does nothing else (both styles) (2.028321ms)
+✔ legacy: with no view model the keys behave as they did (o switches the selected agent; the new keys do nothing) (2.274706ms)
+✔ perf equivalence: rebuilt-equal views, one fact changed, and return to its previous value (10.626333ms)
+✔ perf equivalence: an older compact or rich frame retains its text, destinations and exact descriptor (20.143791ms)
+✔ perf equivalence: removed and reinserted nodes and a different root cannot contaminate a live snapshot (19.510008ms)
+✔ perf equivalence: old views survive conflict, topology and bucket changes plus option and clock boundaries (17.711127ms)
+✔ perf memo identity: consecutive hits, envelope-only wrappers, and all three tuple references (1.796668ms)
+✔ perf memo policy: one live tuple is retained, A to B to A evicts without retargeting snapshots (0.69624ms)
+✔ perf memo isolation: a custom projection cache neither hits nor replaces the shared tuple (0.460371ms)
+✔ perf snapshots: unread lazy rows and equal render facts with a newer descriptor keep their own views (5.189679ms)
+✔ perf cache churn: repeated keys under distinct roots sweep disappeared entries and preserve old trees (2.479069ms)
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.109ms p95=0.245ms p99=0.441ms max=1.728ms strict=false
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.384ms p95=0.750ms p99=1.103ms max=3.058ms strict=false
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.701ms p95=1.287ms p99=3.194ms max=5.654ms strict=false
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.108ms p95=0.266ms p99=0.550ms max=5.115ms strict=false
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.412ms p95=0.936ms p99=3.439ms max=6.715ms strict=false
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.915ms p95=1.691ms p99=3.310ms max=5.759ms strict=false
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.807ms p95=4.632ms p99=11.566ms max=23.596ms strict=false
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.209ms p95=2.205ms p99=10.769ms max=13.837ms strict=false
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.161ms p95=5.941ms p99=9.104ms max=25.689ms strict=false
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.495ms p95=2.605ms p99=11.771ms max=14.663ms strict=false
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.075ms p95=1.875ms p99=12.493ms max=14.847ms strict=false
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.407ms p95=7.118ms p99=8.708ms max=31.537ms strict=false
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.681ms p95=1.218ms p99=2.108ms max=4.390ms strict=false
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=2.848ms p95=8.003ms p99=11.469ms max=29.677ms strict=false
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.932ms p95=1.770ms p99=2.496ms max=4.172ms strict=false
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.340ms p95=9.226ms p99=12.247ms max=44.481ms strict=false
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (4002.017712ms)
+✔ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (23804.138836ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (21728.671676ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (21104.348897ms)
+✔ a sub-row’s line is the sub-row’s own item and belongs to its card; the card’s other lines are the card’s (24.695323ms)
+✔ a click on a sub-row’s line selects it and does not scroll; the selection draws on that line (7.039947ms)
+✔ keys walk into a card’s sub-rows and out again, one row at a time (10.614777ms)
+✔ a key move to a sub-row reveals it; a stay does not move the view (7.445217ms)
+✔ the card that holds the selected sub-row never folds on its own; its unselected siblings do (4.600698ms)
+✔ sub-rows past the fifth are no destinations: ↓ from the fifth leaves the card, and a click on the +N line selects the card (3.320884ms)
+✔ moving onto a card with sub-rows scrolls the whole card into view, its foot included (1.783489ms)
+✔ rich: the destinations are in the order the cards draw them, not the plan’s depth-first order (2.404758ms)
+✔ rich: ↓ walks the screen, Home and End go to its first and last row, ↑ walks back (11.300952ms)
+✔ rich: n and N visit the stops in screen order (5.138834ms)
+✔ rich: l on the fifth sub-row whose children are past the fifth does nothing (they are no destinations) (1.139547ms)
+✔ l enters a native sub-row's history child by parent identity, not screen adjacency (2.810198ms)
+✔ l enters a native sub-row's card child by parent identity, not screen adjacency (1.56726ms)
+✔ a destination stays selected across a tick that rebuilds every object of the view model (25.636745ms)
+✔ an intent binding follows tree.selectionMap to its session, in both styles (4.780393ms)
+✔ a chain of mappings is followed to a key that is on the list; one that leads nowhere falls to the first row (0.501132ms)
+✔ a node that is gone with no mapping falls to the first row; so does no selection at all (2.136772ms)
+✔ a finished row that is put away passes the selection to the ⊕N row that holds it (2.932629ms)
+✔ a row under a collapsed ancestor passes the selection to that ancestor (1.880162ms)
+✔ a rich card past its fifth sub-row: the sixth is no destination, its card is selected (2.935203ms)
+✔ a ⊕N row stays selected when a row is inserted above it: it is the parent that identifies it (1.865731ms)
+✔ after `a` the ⊕N row is gone and the selection lands at its old place, where its rows came back (2.543654ms)
+✔ a ⊕N row whose parent is put away passes the selection to the grandparent’s ⊕N row (1.778853ms)
+✔ the summary row and the parent row are never destinations (1.161699ms)
+✔ tree-page order: a reconcile with no view model, then the render with it: the selection survives; not without the mark (2.391078ms)
+✔ the mark is written by every reconcile against a view model, drawn or not, and by nothing else (4.009272ms)
+✔ with a null view model the state has no mark and the selection falls back as in legacy (2.359561ms)
+✔ a stale press resolves against the frame the user saw, never against a newer view model (1.429776ms)
+✔ situation D: an empty state starts on the first row, the viewpoint root (1.373933ms)
+✔ 32 columns: a headless row without a state word keeps its whole name and drops ⊟ (the §4.13 sample) (5.447471ms)
+✔ 39 columns: ⊟ stays while the whole name fits beside it, and is the first thing to go when it does not (1.454532ms)
+✔ 34 columns: the boundary, ⊟ kept by the name that fits, dropped by the one that does not (1.012338ms)
+✔ the name is cut to its 8-column floor at most, and the ⊟ stays gone (1.957246ms)
+✔ 40 columns and up are untouched: the name is cut to its floor beside ⊟ (segment 1) (1.01398ms)
+✔ a row with a state word keeps its segment 1 order (the word goes, then ⊟ comes back if it fits) (0.611555ms)
+✔ onSelectedBand: the floors against selectedBand, and a role that meets its floor is the plain role (3.472708ms)
+✔ onSelectedBand: without a band (none, terminal) the family is the plain roles (0.307936ms)
+✔ model badge: the default paints are the palette roles, and a given table recolours exactly its spans (15.333449ms)
+✔ selected row: markers and words carry the family hue of their role, on the band (mocha, latte, titanium) (11.207223ms)
+✔ selected row: every cell is the band's own ink, at 3:1 or better (clock, badge, meter, tree, name, harness mark) (9.064433ms)
+✔ selected row: the latte status hues are the calibrated ones, and never the plain ones (1.403186ms)
+✔ selected row: the selection mark, the tree, the name and the harness mark (2.08146ms)
+✔ selected row: the model badge is painted with the family (text, glyph and both modes) (6.006257ms)
+✔ selected row: the context meter is painted with the family zones (70 and 85 as ever) (2.315676ms)
+✔ the counts end the first line: 2 working, 1 flag, 1 done (5.693164ms)
+✔ 80 columns: the design sample, plus the finished item the engine keeps (1.485258ms)
+✔ 120 columns: the design sample exactly, with the pane (0.832321ms)
+✔ 200 columns: each item carries its pane and mode (0.721548ms)
+✔ the line is never wider than the width, at any width (77.502469ms)
+✔ the ladder: pane and mode go first, then ages, then actives into +N▸, trouble last of all (2.544084ms)
+✔ trouble items come newest first, ahead of the actives (§3.2); a conflict is one item however many parents claim it (0.348445ms)
+✔ the ladder drops the troubled items words before it turns them into counts, in the order ⚑ ? ⚠ ✗ (13.804387ms)
+✔ close pane and stop in pane are alive in fact: kept as items, ahead of +N, never folded (1.166396ms)
+✔ a full set of slots appends `· 6/6` to the count, and adds no item (0.712864ms)
+✔ the remainder counts agree with the first line: ✗ for a failure, ■ counted with ✓ (0.308356ms)
+✔ height: 1 without live or troubled delegations, 2 with them (0.464407ms)
+✔ a root alone, with nothing delegated, adds no count and no line (0.87845ms)
+✔ delegationLine=false keeps the count and drops the second line (0.228899ms)
+✔ too narrow for any item: only the first line (height 1) (0.25031ms)
+✔ ASCII fallback: no non-ASCII character in the count or the line, same shape (2.66328ms)
+✔ CJK names: widths are measured in columns and the line still fits (1.840263ms)
+✔ Chinese words come from the table, the markers and names do not change (0.442885ms)
+✔ countsText is the count alone, and empty when nothing was delegated (0.220716ms)
+✔ joinFirstLine keeps the count at the end and cuts the session facts first (0.334305ms)
+✔ §3.4: an item whose age cannot be measured has no age, never `0s` (0.43949ms)
+✔ ASCII: the statusline holds nothing but ASCII, a capped name included (0.404589ms)
+ℹ tests 381
+ℹ suites 0
+ℹ pass 381
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 161245.653985
+EXIT=0
+2026-11-03T15:09:34Z
+
+
+=== candidate-build-hud-mcp.log ===
+2026-11-03T15:06:50Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-VIKEwh HUD_HOME=/tmp/b10b-check-hud-rTAoGR npm run build:hud-mcp 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:06:50 up  2:09,  0 users,  load average: 0.82, 0.78, 0.85
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T15:06:53Z
+
+
+=== candidate-build-test.log ===
+2026-11-03T15:06:37Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-euLnKR HUD_HOME=/tmp/b10b-check-hud-gxa8Js npm run build:test 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:06:37 up  2:09,  0 users,  load average: 0.51, 0.72, 0.83
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T15:06:50Z
+
+
+=== candidate-build.log ===
+2026-11-03T15:06:30Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-2KHAPP HUD_HOME=/tmp/b10b-check-hud-1FoO6l npm run build 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:06:30 up  2:09,  0 users,  load average: 0.33, 0.69, 0.82
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build
+> node ./node_modules/typescript/bin/tsc
+
+EXIT=0
+2026-11-03T15:06:37Z
+
+
+=== candidate-core.log ===
+2026-11-03T15:09:34Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-n9eJ0F HUD_HOME=/tmp/b10b-check-hud-2NYjNc npm run test:core 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:09:34 up  2:12,  0 users,  load average: 1.17, 0.99, 0.92
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:core
+> bash tests/run-core.sh
+
+using temporary HUD_HOME: /tmp/hud-core.EHLRNq
+core tests: dist-test/tests/unit/codex-facade.test.js dist-test/tests/unit/contracts.test.js dist-test/tests/unit/core-fakes.test.js dist-test/tests/unit/ledger-perf.test.js dist-test/tests/unit/ledger-processes.test.js dist-test/tests/unit/ledger-read.test.js dist-test/tests/unit/ledger-schema.test.js dist-test/tests/unit/ledger-write.test.js
+✔ A6 observation fits the shared nullable-root v3 fixture and full node shape (21.478664ms)
+✔ Codex source is explicit and verified; binding needs a unique full ref, with no managed identity (5.079457ms)
+✔ budgeted parser checkpoints restore exact merge/tool/rate state after JSON round trip (22.991614ms)
+✔ reader honors record/zero budgets, restores split UTF-8/CRLF, and consumes a complete final record (3.987391ms)
+✔ resumed sessions keep identity and cumulative totals, while forked threads remain distinct (4.802597ms)
+✔ children delegates native topology, returns only direct children, and caps preserve quota/goal/plan/todos (8.80538ms)
+✔ link evidence requires an exact hud-mcp call/output pair, bounds state and never retains claims (2.087709ms)
+✔ oversized/incomplete records remain bounded and gaps survive EOF and checkpoint recovery (9.802641ms)
+✔ truncation and inode replacement reset checkpoint lineage and old evidence (8.531906ms)
+✔ scan version 4 persists bounded pending calls and evidence across scanner restart, rejects v3 (8.010263ms)
+✔ registry bindings require the same known occupant and complete source-scoped identity (1.875114ms)
+✔ checkpoint restore preserves token-rate tool-wait union and concurrent reads serialize (8.960856ms)
+✔ identical session IDs in two explicit sources do not cross-read, and custom hud server names are exact (5.004054ms)
+✔ read statistics count fetched chunk bytes separately from the committed record cursor (1.848365ms)
+✔ model/context clocks survive checkpoints and unrelated replies; baseline context is estimated (5.176068ms)
+✔ cumulative counter growth has its own clock and equal counters after file replacement start a new clock (4.685074ms)
+✔ malformed known records produce a gap preserved across recovery and EOF (4.136722ms)
+✔ strict bind recovers a quiet older session and unique registry ref without a locator (1.610423ms)
+✔ current action uses open calls after the bounded recent-call history evicts it (2.154027ms)
+✔ source-scoped candidates and native topology exclude rollout symlinks escaping the source (4.327914ms)
+✔ multiple profiles sharing one source retain every explicitly configured hud-mcp alias (3.518037ms)
+✔ unknown metrics use the time absence was confirmed, including cost and compact-invalidated context (8.493939ms)
+✔ production-default Codex reads advance despite 30 ms open/stat/read latency (357.69731ms)
+✔ controlled time slicing consumes one bounded step and preserves byte/record caps (4.187026ms)
+✔ drain bounds every await and rejects late terminal responses (12.366441ms)
+✔ F09/F10 Codex crash cuts recover UTF-8/CRLF, private blobs and fallback claims without raw state (27.357533ms)
+✔ F10 Codex maximum legal record, typed recovery continuation and oversize discard across restarts (17.192032ms)
+✔ F10 Codex truncation or replacement drops old transient and repeated recovery preserves usage clocks (3.962634ms)
+✔ F10 Codex rereads a replaced growing tail before compaction instead of grafting old bytes (2.727947ms)
+✔ F10 Codex maximum fixed-EOF JSON consumes 1 MiB without a nonexistent delimiter (8.925748ms)
+✔ F09/F10 no-content budgeted rereads preserve the nested checkpoint event clock (11.465026ms)
+✔ T-01-1 (4.320894ms)
+✔ T-01-2 (0.406883ms)
+✔ T-01-6 (0.644915ms)
+✔ T-01-7 (1.470306ms)
+✔ T-01-8 (0.561351ms)
+✔ T-01-9 (0.296018ms)
+✔ T-01-10 (0.518297ms)
+✔ T-01-11 (0.545878ms)
+✔ T-01-12 (0.386502ms)
+✔ T-01-13 (0.457146ms)
+✔ T-01-14 (0.54051ms)
+✔ T-01-15 (0.537045ms)
+✔ T-01-16 (0.373592ms)
+✔ T-01-17 (0.368646ms)
+✔ T-01-19 (0.54078ms)
+✔ T-01-20 (0.570434ms)
+✔ T-01-21 (0.700226ms)
+✔ T-01-22 (0.869667ms)
+✔ T-01-24 (0.642631ms)
+✔ T-01-25 (0.347634ms)
+✔ T-01-26 (0.583052ms)
+✔ T-01-28 (0.244682ms)
+✔ T-01-29 (0.273675ms)
+✔ T-01-30 (1.364138ms)
+✔ T-01-31 (0.225804ms)
+✔ T-01-32 (0.319754ms)
+✔ T-01-35 (0.352402ms)
+✔ T-01-36 (0.269609ms)
+✔ T-01-37 (0.382296ms)
+✔ T-01-38 (1.321636ms)
+✔ T-01-39 (1.421534ms)
+✔ T-02-2 (1.874073ms)
+✔ T-02-9 (0.906611ms)
+✔ T-02-10 (0.359232ms)
+✔ T-02-11 (0.386902ms)
+✔ T-02-13 (3.178593ms)
+✔ T-02-17 (5.095169ms)
+✔ T-02-18 (0.526149ms)
+✔ T-02-19 (0.546869ms)
+✔ T-02-20 (0.274566ms)
+✔ T-02-23 (0.15527ms)
+✔ T-02-27 (0.588361ms)
+✔ T-02-28 (0.578816ms)
+✔ T-02-30 (0.529764ms)
+✔ T-02-31 (0.614689ms)
+✔ T-02-32 (0.301346ms)
+✔ T-02-33 (0.847774ms)
+✔ T-02-34 (0.523905ms)
+✔ T-03-1 (0.422756ms)
+✔ T-03-2 (0.559408ms)
+✔ T-03-3 (0.492589ms)
+✔ T-03-4 (0.286013ms)
+✔ T-03-5 (0.693527ms)
+✔ T-03-6 (0.335947ms)
+✔ T-03-7 (0.57438ms)
+✔ T-03-8 (0.360183ms)
+✔ T-03-9
