@@ -15,7 +15,7 @@ import type { Brief } from '../collectors/briefing.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { StatusCard } from './status-block.js';
 import { t } from './i18n.js';
-import { drawAgentsView } from './agents-view.js';
+import { agentsTitleAt, drawAgentsView } from './agents-view.js';
 import { controlBar, paneHead, icon, look, type CountsText, type RowButtons } from './control-bar.js';
 import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
 import type { WorkbenchEvent } from './workbench-state.js';
@@ -909,7 +909,8 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
           }),
         framed ? 2 : 0
       );
-      if (rows.length) titles.add(y);
+      // The title row is the frame's edge; a pinned parent row above it is a body row, between the sides like the rest.
+      if (rows.length) titles.add(y + agentsTitleAt(rows, h));
       y += h;
       continue;
     }

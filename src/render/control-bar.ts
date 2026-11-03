@@ -350,11 +350,17 @@ const OPTIONS: ReadonlyArray<readonly [Level, number]> = [
   ['none', 1],
 ];
 
-function hasWord(level: Level, spec: Spec, olderWords = false): boolean {
+/**
+ * Which of the selected row's buttons keep their word. The word is what changes with the row (design §4.9's `⇢ Log` at
+ * 48 columns), so it outlasts the tabs' words; at the last level, with no tab word left, `↻` gives up its word before
+ * `⇢` does, and both before the older button's word is given up for them (review B10B-s3 1, F3).
+ */
+type RowWords = 'both' | 'open' | 'none';
+
+function hasWord(level: Level, spec: Spec, olderWords = false, rowWords: RowWords = 'both'): boolean {
   if (spec.kind === 'older') return olderWords;
-  // The selected row's buttons say what they do while the bar has any word to spare: the word is what changes with the
-  // row (design §4.9's `⇢ Log` at 48 columns), so it outlasts the other tabs' words and goes with the last of them.
-  if (spec.kind === 'delegation-open' || spec.kind === 'delegation-recover') return level !== 'none';
+  if (spec.kind === 'delegation-open') return level !== 'none' || rowWords !== 'none';
+  if (spec.kind === 'delegation-recover') return level !== 'none' || rowWords === 'both';
   // The held keys' word outlasts the closed tabs' and the other actions', as an alert would.
   if (spec.kind === 'keys') return level !== 'focus' && level !== 'none';
   if (spec.kind === 'settings') return true;
@@ -445,21 +451,62 @@ function mainOnly(width: number): Bar {
   };
 }
 
+/** A button of the selected row (`⇢`, `↻`). */
+const isRowButton = (spec: Spec): boolean => spec.kind === 'delegation-open' || spec.kind === 'delegation-recover';
+
+/**
+ * The word sets a level is tried with, in order: the older button's words first, and when they do not fit the same row
+ * with its icon alone. At the last level, where no tab has a word, the row's words come before the older button's.
+ */
+function wordsFor(level: Level, set: Specs, older: boolean): Array<[RowWords, boolean]> {
+  if (level !== 'none' || !set.actions.some(isRowButton))
+    return older
+      ? [
+          ['both', true],
+          ['both', false],
+        ]
+      : [['both', true]];
+  return older
+    ? [
+        ['both', false],
+        ['open', false],
+        ['none', true],
+        ['none', false],
+      ]
+    : [
+        ['both', true],
+        ['open', true],
+        ['none', true],
+      ];
+}
+
 /** The one-row bar of the tab, band, tile and pill looks. */
 function rowBar(state: MonitorState, input: BarInput, width: number): Bar {
   const style = look(width);
   for (let keep = 4; keep >= -1; keep--) {
     const set = specs(state, input, keep, width);
+    const older = input.expired > 0;
+    const hasRow = set.actions.some(isRowButton);
+    const closing: number[] = [];
     for (const [level, gap] of OPTIONS) {
       // The actions' words come last and go first: never in place of a button.
       if (level === 'every' && keep < 4) continue;
       if (level === 'named' && !state.tabbed) continue;
-      // The older button's words first. When they do not fit, the same row with the icon alone.
-      const laid =
-        layRow(style, set, level, gap, width, true) ??
-        (input.expired ? layRow(style, set, level, gap, width, false) : null);
-      if (laid) return laid;
+      // With the selected row's buttons, the last level tries their words at both gaps before it gives them up.
+      if (level === 'none' && hasRow) {
+        closing.push(gap);
+        continue;
+      }
+      for (const [rowWords, olderWords] of wordsFor(level, set, older)) {
+        const laid = layRow(style, set, level, gap, width, olderWords, rowWords);
+        if (laid) return laid;
+      }
     }
+    for (const [rowWords, olderWords] of wordsFor('none', set, older))
+      for (const gap of closing) {
+        const laid = layRow(style, set, 'none', gap, width, olderWords, rowWords);
+        if (laid) return laid;
+      }
   }
   return mainOnly(width);
 }
@@ -476,13 +523,20 @@ function layRow(
   level: Level,
   gap: number,
   width: number,
-  olderWords: boolean
+  olderWords: boolean,
+  rowWords: RowWords = 'both'
 ): Bar | null {
   // A tab with no surface of its own needs two columns to the next tab for its word to stand apart.
   if (style === 'band' && gap < 2 && level !== 'none' && palette().name !== 'none') return null;
   const roomy = gap >= 2;
   const make = (spec: Spec) =>
-    paint(style, face(spec, hasWord(level, spec, olderWords), hasIcon(level, spec)), spec.state, spec.accent, roomy);
+    paint(
+      style,
+      face(spec, hasWord(level, spec, olderWords, rowWords), hasIcon(level, spec)),
+      spec.state,
+      spec.accent,
+      roomy
+    );
   const band = style === 'band';
   const main = make(set.main);
   const tabs = set.tabs.map(make);
@@ -548,18 +602,22 @@ function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
     // The title gives up its word, then (with icons off) all but its arrow.
     // The older button tries its words, then the icon alone when those do not fit.
     const titles = [...new Set([face(set.main, true), face(set.main, false), set.main.glyph || '←'])];
-    for (const olderWords of [true, false]) {
+    // The row's buttons keep their words before the older button's and the held keys' do.
+    const combos: Array<[boolean, boolean]> = set.actions.some(isRowButton)
+      ? [
+          [true, true],
+          [false, true],
+          [false, false],
+        ]
+      : [
+          [true, false],
+          [false, false],
+        ];
+    for (const [olderWords, rowWords] of combos) {
       const actions = set.actions.map((spec) =>
         paint(
           'frame',
-          face(
-            spec,
-            (spec.kind === 'older' ||
-              spec.kind === 'keys' ||
-              spec.kind === 'delegation-open' ||
-              spec.kind === 'delegation-recover') &&
-              olderWords
-          ),
+          face(spec, isRowButton(spec) ? rowWords : (spec.kind === 'older' || spec.kind === 'keys') && olderWords),
           spec.state,
           spec.accent
         )

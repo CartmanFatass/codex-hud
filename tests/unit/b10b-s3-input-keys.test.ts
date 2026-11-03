@@ -143,7 +143,7 @@ test('with the panel closed all four do nothing; every other command is as it wa
   }
 });
 
-test('the prefix table binds the four, never repeating, and the closed-panel script does nothing for them', () => {
+test('the prefix table binds the four, never repeating, and the closed-panel script does nothing for them', (t) => {
   const source = fs.readFileSync(path.join(root, 'bin/codex-hud-keys'), 'utf8');
   const bindings = [...source.matchAll(/^bind_command ([01]) (\S+) (\S+)$/gm)].map(([, repeat, key, command]) => ({
     repeat,
@@ -165,6 +165,7 @@ test('the prefix table binds the four, never repeating, and the closed-panel scr
   for (const b of bindings) assert.ok(isPanelCommand(b.command), `${b.key}: ${b.command}`);
 
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-s3-'));
+  t.after(() => fs.rmSync(bin, { recursive: true, force: true }));
   const log = path.join(bin, 'tmux.log');
   fs.writeFileSync(
     path.join(bin, 'tmux'),

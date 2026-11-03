@@ -12,7 +12,17 @@ import { setDisplayConfig } from '../../src/render/hud-config.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { delegationPutAway, delegationView } from '../../src/render/delegation/panel.js';
 import { planRows } from '../../src/render/delegation/rows.js';
-import { NOW, S, ago, buildVm, situationC, type NodeSpec } from '../fixtures/b10b-delegation.js';
+import {
+  NOW,
+  S,
+  ago,
+  buildVm,
+  situationC,
+  situationE,
+  situationG,
+  situationParent,
+  type NodeSpec,
+} from '../fixtures/b10b-delegation.js';
 import { bar, buttons, click, draw, monitorInput, press, step, text } from '../fixtures/b10b-s3.js';
 import { renderMonitor } from '../../src/render/monitor.js';
 
@@ -150,5 +160,75 @@ test('ZH at 48 columns: the words fit and the line is exactly the width', () => 
     assert.match(bar(frame), /⇢ 日志/);
   } finally {
     setLanguage(previous);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The last level (review 1, F3): the row words come before the older button's word, and ↻ gives its word up before ⇢
+
+test('at 48 columns the row’s buttons keep their words; no bare ⇢ ↻ stands beside blank space at any width', () => {
+  const e = situationE();
+  const g = situationG();
+  const cases = [
+    {
+      name: 'reconcile',
+      built: e,
+      id: 'impl-d',
+      extra: {},
+      at48: /⇢ Open ↻ Reconcile/,
+      at40: /⇢ Open ↻ (?!Reconcile)/,
+    },
+    {
+      name: 'resume',
+      built: g,
+      id: 't-07',
+      extra: { showAll: true },
+      at48: /⇢ Log ↻ Resume/,
+      at40: /⇢ Log ↻ (?!Resume)/,
+    },
+  ];
+  for (const c of cases) {
+    const line = (width: number) =>
+      bar(draw(c.built.vm, { selected: c.built.keys[c.id], width, height: 3, ...c.extra }));
+    assert.match(line(48), c.at48, `${c.name} @48: ${line(48)}`);
+    assert.match(line(40), c.at40, `${c.name} @40: ${line(40)}`);
+    for (let width = 30; width <= 120; width++) {
+      const text = line(width);
+      assert.equal(visualLength(text), width);
+      // ⇢ without its word needs the room the word would take (5 columns) and the bar’s least spare (3) to stand
+      // beside: more blank than that and the word was shed for nothing.
+      assert.ok(!/ {8,}⇢ (↻|ǁ|⊖|\?)/.test(text), `${c.name} @${width}: ${JSON.stringify(text)}`);
+    }
+  }
+});
+
+test('the older button’s word gives way to the row’s words, not the other way round', () => {
+  const g = situationG();
+  const text = (width: number) => bar(draw(g.vm, { selected: g.keys['t-07'], width, height: 3, showAll: true }));
+  // Where both the older word and the row's words would fit, the row's words are kept and the older button is its count.
+  assert.match(text(48), /⇢ Log ↻ Resume ⊖6/);
+  assert.ok(!/Hide/.test(text(48)));
+  assert.match(text(80), /⇢ Log ↻ Resume ⊖ Hide/, 'with room for all, the older word too');
+});
+
+// ---------------------------------------------------------------------------
+// The frame look with a parent row (review 1, F8; a segment 2 defect): the parent row is a body row between the sides
+
+test('frame look with a pinned parent row: every line is exactly the width, the title is the frame’s edge', () => {
+  const p = situationParent('offline');
+  const previous = setDisplayConfig({ look: 'frame' });
+  try {
+    for (const style of ['compact', 'rich'] as const)
+      for (const width of [24, 32, 40, 48, 56, 80]) {
+        const frame = draw(p.vm, { style, selected: p.keys['impl-parser'], width, height: 14 });
+        const lines = text(frame);
+        for (const line of frame.lines) assert.equal(visualLength(line), width, `${style}@${width}`);
+        const parent = lines.findIndex((line) => line.includes('↑ parent'));
+        assert.ok(parent > 0, `${style}@${width}: the parent row is drawn`);
+        assert.match(lines[parent], /^│ .* │$/, `${style}@${width}: between the frame's sides: ${lines[parent]}`);
+        assert.match(lines[parent + 1], /^├/, `${style}@${width}: the title right under it is the frame's edge`);
+      }
+  } finally {
+    setDisplayConfig(previous);
   }
 });

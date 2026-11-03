@@ -708,7 +708,7 @@ function delegationCases(): VisualCase[] {
   panel('en', 'h-open', 80, 9, { situation: 'h', style: 'compact', selected: 'impl-parser' });
   panel('en', 'h-open', 32, 9, { situation: 'h', style: 'compact', selected: 'impl-parser' });
   panel('en', 'h-log', 48, 9, { situation: 'h', style: 'compact', selected: 'review-tests' });
-  panel('en', 'c-switch', 48, 12, { situation: 'c-kinds', style: 'compact', selected: 'scout' });
+  panel('en', 'b-switch', 48, 10, { situation: 'b', style: 'compact', selected: 'impl' });
   panel('en', 'e-reconcile', 48, 12, { situation: 'e', style: 'compact', selected: 'impl-d' });
   panel('en', 'e-reconcile-log', 80, 12, { situation: 'e', style: 'compact', selected: 'impl-b' });
   panel('en', 'g-resume', 48, 14, { situation: 'g', style: 'compact', history: true, selected: 't-07' });

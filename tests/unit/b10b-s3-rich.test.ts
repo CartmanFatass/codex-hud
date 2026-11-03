@@ -163,3 +163,102 @@ test('moving onto a card with sub-rows scrolls the whole card into view, its foo
   assert.ok(foot >= pane.y + (pane.pinned ?? 0) && foot < pane.y + pane.height, `the foot is at ${foot}, in view`);
   assert.match(text(frame)[foot], /^ *└/);
 });
+
+// ---------------------------------------------------------------------------
+// Screen order (review 1, F1): a native sub-row is drawn inside its ancestor card, whatever the plan's order.
+
+/** root → A (card) → N1 native, B (a child card), N3 native created after B: the screen shows A, N1, N3, B. */
+function mixedChildren(pending = false) {
+  const flag = pending ? { status: S.pending('approval', ago(10)) } : {};
+  return buildVm([
+    root,
+    card('A', { createdAt: ago(2000) }),
+    native('N1', 'A', 0, { createdAt: ago(1900) }),
+    card('B', { parent: 'A', createdAt: ago(1800), ...flag }),
+    native('N3', 'A', 2, { createdAt: ago(1700), ...flag }),
+  ]);
+}
+
+test('rich: the destinations are in the order the cards draw them, not the plan’s depth-first order', () => {
+  const { vm, keys } = mixedChildren();
+  const rich = draw(vm, { style: 'rich', selected: keys['A'], height: 40 });
+  const screen = [keys['A'], keys['N1'], keys['N3'], keys['B']];
+  assert.deepEqual(
+    rich.delegation!.dest.rows.map((r) => r.key).filter((k) => k !== keys['main']),
+    screen
+  );
+  // The screen agrees: each of those rows is lower on it than the one before.
+  const ys = screen.map((key) => lineOf(rich, key));
+  assert.ok(
+    ys.every((y, i) => y > 0 && (i === 0 || y > ys[i - 1])),
+    `lines ${ys.join()}`
+  );
+  // The plan itself is depth-first, which compact follows (it draws every row in place): compact does not change.
+  const compact = draw(vm, { style: 'compact', selected: keys['A'], height: 40 });
+  assert.deepEqual(
+    compact.delegation!.dest.rows.map((r) => r.key).filter((k) => k !== keys['main']),
+    [keys['A'], keys['N1'], keys['B'], keys['N3']]
+  );
+});
+
+test('rich: ↓ walks the screen, Home and End go to its first and last row, ↑ walks back', () => {
+  const { vm, keys } = mixedChildren();
+  const o = { style: 'rich' as const, height: 40 };
+  let frame = draw(vm, { ...o, selected: keys['A'] });
+  const down: Array<string | null> = [];
+  for (let i = 0; i < 4; i++) {
+    frame = step(vm, frame, 'down', o).frame;
+    down.push(selectedOf(frame));
+  }
+  assert.deepEqual(down, [keys['N1'], keys['N3'], keys['B'], keys['B']], 'N3 is not skipped; B is the last row');
+  assert.equal(selectedOf(step(vm, draw(vm, { ...o, selected: keys['A'] }), 'end', o).frame), keys['B']);
+  assert.equal(selectedOf(step(vm, draw(vm, { ...o, selected: keys['B'] }), 'home', o).frame), keys['main']);
+  frame = draw(vm, { ...o, selected: keys['B'] });
+  const up: Array<string | null> = [];
+  for (let i = 0; i < 3; i++) {
+    frame = step(vm, frame, 'up', o).frame;
+    up.push(selectedOf(frame));
+  }
+  assert.deepEqual(up, [keys['N3'], keys['N1'], keys['A']]);
+  // In compact the same keys follow the plan.
+  const c = { style: 'compact' as const, height: 40 };
+  assert.equal(selectedOf(step(vm, draw(vm, { ...c, selected: keys['A'] }), 'end', c).frame), keys['N3']);
+});
+
+test('rich: n and N visit the stops in screen order', () => {
+  const { vm, keys } = mixedChildren(true);
+  const o = { style: 'rich' as const, height: 40 };
+  let frame = draw(vm, { ...o, selected: keys['A'] });
+  frame = step(vm, frame, 'next-trouble', o).frame;
+  assert.equal(selectedOf(frame), keys['N3'], 'N3 is drawn before B');
+  frame = step(vm, frame, 'next-trouble', o).frame;
+  assert.equal(selectedOf(frame), keys['B']);
+  frame = step(vm, frame, 'next-trouble', o).frame;
+  assert.equal(selectedOf(frame), keys['N3'], 'and wraps to the first stop on screen');
+  frame = step(vm, frame, 'previous-trouble', o).frame;
+  assert.equal(selectedOf(frame), keys['B']);
+  const c = { style: 'compact' as const, height: 40 };
+  const compact = step(vm, draw(vm, { ...c, selected: keys['A'] }), 'next-trouble', c).frame;
+  assert.equal(selectedOf(compact), keys['B'], 'compact draws B first, as the plan has it');
+});
+
+test('rich: l on the fifth sub-row whose children are past the fifth does nothing (they are no destinations)', () => {
+  const natives = [0, 1, 2, 3, 4].map((i) => native(`n${i}`, 'impl', i, { createdAt: ago(1000 - i) }));
+  const { vm, keys } = buildVm([
+    root,
+    card('impl'),
+    ...natives,
+    native('c1', 'n4', 5, { createdAt: ago(900) }),
+    native('c2', 'n4', 6, { createdAt: ago(890) }),
+    card('after', { createdAt: ago(1900) }),
+  ]);
+  const o = { style: 'rich' as const, height: 30 };
+  const frame = draw(vm, { ...o, selected: keys['n4'] });
+  assert.ok(!frame.delegation!.dest.index.has(keys['c1']) && frame.delegation!.plan.index.has(keys['c1']));
+  const out = press(frame, 'right');
+  assert.equal(out.state.tree.selectedId, keys['n4'], 'nowhere to step in to');
+  assert.equal(out.state.tree.collapsed.size, 0);
+  assert.equal(out.action, undefined);
+  // h still folds it: its children are real, only not drawn.
+  assert.ok(press(frame, 'left').state.tree.collapsed.has(keys['n4']));
+});

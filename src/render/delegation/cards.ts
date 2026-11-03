@@ -69,18 +69,23 @@ export function isCardHolder(pn: PNode): boolean {
   return pn.parent !== null && pn.parent.proj.isRoot;
 }
 
-const overflowMemo = new WeakMap<RowPlan, ReadonlySet<string>>();
+const drawnMemo = new WeakMap<RowPlan, readonly PlannedRow[]>();
 /**
- * The sub-rows a card does not draw (past the fifth, folded into its `+N (…)` line): they are not destinations of the
- * selection (rulings B10B-s3 Q2). Empty in compact, where every row is drawn.
+ * The rows a rich view draws, in the order it draws them: a card’s head, then its first five sub-rows (the others are
+ * folded into its `+N (…)` line and are no destinations of the selection), then the next block. A native sub-row is
+ * drawn inside its nearest ancestor card, so this is not the plan’s depth-first order when a card’s children mix
+ * natives with cards: the keys follow the screen (rulings B10B-s3 Q2, Q7; review 1 F1).
  */
-export function overflowKeys(plan: RowPlan): ReadonlySet<string> {
-  let kept = overflowMemo.get(plan);
+export function drawnRows(plan: RowPlan): readonly PlannedRow[] {
+  let kept = drawnMemo.get(plan);
   if (!kept) {
-    const keys = new Set<string>();
-    for (const block of blocksOf(plan))
-      if (block.kind === 'card') for (const row of block.subs.slice(MAX_SUB_ROWS)) keys.add(row.key);
-    overflowMemo.set(plan, (kept = keys));
+    const rows: PlannedRow[] = [];
+    for (const block of blocksOf(plan)) {
+      rows.push(block.row);
+      if (block.kind === 'card')
+        for (let i = 0; i < MAX_SUB_ROWS && i < block.subs.length; i++) rows.push(block.subs[i]);
+    }
+    drawnMemo.set(plan, (kept = rows));
   }
   return kept;
 }
@@ -103,7 +108,15 @@ function bare(row: PlannedRow): PlannedRow {
   return { ...row, ancestors: row.ancestors.map(() => false) };
 }
 
+const blockMemo = new WeakMap<RowPlan, Block[]>();
+/** The plan’s blocks, kept with it: the destinations and the view both read them. */
 function blocksOf(plan: RowPlan): Block[] {
+  let kept = blockMemo.get(plan);
+  if (!kept) blockMemo.set(plan, (kept = buildBlocks(plan)));
+  return kept;
+}
+
+function buildBlocks(plan: RowPlan): Block[] {
   const blocks: Block[] = [];
   const cards = new Map<string, CardBlock>();
   for (const row of plan.rows) {

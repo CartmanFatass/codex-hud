@@ -10,6 +10,18 @@ import type { CountsText } from './control-bar.js';
 /** Rows one wheel step scrolls the agents view. */
 export const WHEEL_ROWS = 3;
 
+/** How many rows are pinned at the top of the view: its title, and a row marked `lead` above it. */
+function pinnedRows(rows: MonitorRow[], height: number): { lead: number; pinned: number } {
+  const lead = rows[0]?.lead ? 1 : 0;
+  return { lead, pinned: Math.min(1 + lead, height, rows.length) };
+}
+
+/** The title's row within the view: the first, or the second under a pinned parent row. */
+export function agentsTitleAt(rows: MonitorRow[], height: number): number {
+  const { lead, pinned } = pinnedRows(rows, height);
+  return Math.min(lead, pinned - 1);
+}
+
 /**
  * Draw the agents view at `y`, `height` rows tall: its title stays put, as
  * `head` draws it from the summary line's counts, as much of them as fits,
@@ -32,8 +44,7 @@ export function drawAgentsView(
   x = 0
 ): void {
   // The heading is pinned, and a row marked `lead` above it with it (the delegation view's parent row).
-  const lead = rows[0]?.lead ? 1 : 0;
-  const pinned = Math.min(1 + lead, height, rows.length);
+  const { lead, pinned } = pinnedRows(rows, height);
   const room = height - pinned;
   const body = Math.max(0, rows.length - pinned);
   const overflow = body > room;

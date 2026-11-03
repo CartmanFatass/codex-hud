@@ -7,6 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { setDisplayConfig } from '../../src/render/hud-config.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import type { MonitorFrame } from '../../src/render/monitor.js';
 import { RESUME_DIAGNOSTIC, rowActions } from '../../src/render/delegation/actions.js';
@@ -377,4 +378,50 @@ test('painting, a tick, or a row jumping into trouble produces no action: only a
     press(frame, 'resume-reconcile').action?.type === 'delegation-copy',
     frame.delegation!.proj.vm === troubled.vm
   );
+});
+
+// ---------------------------------------------------------------------------
+// Below the bar's floor (review 1, F2): a key acts only when its control is drawn in the frame the user saw
+
+test('o, L and R do nothing where the bar sheds ⇢ and ↻ (narrow widths, zero height), in every look and icon set', () => {
+  const rows = {
+    'delegation-open': { spec: w({ run: { state: 'running', mode: 'visible' }, pane: 'pane 4' }), key: 'open-session' },
+    log: { spec: w(), key: 'log' },
+    'delegation-recover': { spec: { ...ended('headless', done), reconcile: true }, key: 'resume-reconcile' },
+  } as const;
+  let shed = 0;
+  let drawn = 0;
+  for (const look of ['tab', 'band', 'tile', 'frame', 'pill'] as const)
+    for (const icons of ['unicode', 'text'] as const) {
+      const previous = setDisplayConfig({ look, icons });
+      try {
+        for (const [name, { spec, key }] of Object.entries(rows)) {
+          const built = buildVm([root, spec]);
+          for (const [width, height] of [
+            [8, 12],
+            [12, 12],
+            [16, 12],
+            [20, 12],
+            [24, 12],
+            [28, 12],
+            [32, 12],
+            [48, 12],
+            [48, 0],
+            [0, 12],
+          ] as const) {
+            const frame = draw(built.vm, { selected: built.keys[spec.id], width, height });
+            const control = name === 'log' ? 'delegation-open' : name;
+            const isDrawn = frame.controls.some((c) => c.kind === control);
+            const acted = press(frame, key).action !== undefined;
+            const label = `${look}/${icons}/${key}/${width}x${height}`;
+            if (isDrawn) drawn++;
+            else shed++;
+            assert.equal(acted, isDrawn, `${label}: acts exactly when the button is drawn`);
+          }
+        }
+      } finally {
+        setDisplayConfig(previous);
+      }
+    }
+  assert.ok(shed > 30 && drawn > 30, `the sweep covers both: ${shed} shed, ${drawn} drawn`);
 });

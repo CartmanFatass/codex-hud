@@ -18,7 +18,7 @@
  * A hit is one map lookup (the plan's own index); the ancestor walks run only on a miss. Pure.
  */
 
-import { overflowKeys } from './cards.js';
+import { drawnRows } from './cards.js';
 import type { DelegationProjection, PNode } from './projection.js';
 import { parsePutKey, type PlannedRow, type RowPlan } from './rows.js';
 
@@ -32,16 +32,18 @@ export interface Destinations {
 
 const destinationMemo = new WeakMap<RowPlan, Partial<Record<PanelStyle, Destinations>>>();
 
-/** The plan's destinations in a style: all its rows in compact, all but the sub-rows a card does not draw in rich. */
+/**
+ * The plan's destinations in a style, in screen order: all its rows in compact; in rich the rows as the cards draw them
+ * (a native sub-row sits inside its ancestor card, the sub-rows past a card’s fifth are folded away and are none).
+ */
 export function destinationsOf(plan: RowPlan, style: PanelStyle): Destinations {
   let byStyle = destinationMemo.get(plan);
   if (!byStyle) destinationMemo.set(plan, (byStyle = {}));
   let hit = byStyle[style];
   if (!hit) {
-    const skip = style === 'rich' ? overflowKeys(plan) : null;
-    if (skip === null || skip.size === 0) hit = { rows: plan.rows, index: plan.index };
+    if (style === 'compact') hit = { rows: plan.rows, index: plan.index };
     else {
-      const rows = plan.rows.filter((row) => !skip.has(row.key));
+      const rows = drawnRows(plan);
       hit = { rows, index: new Map(rows.map((row, i) => [row.key, i])) };
     }
     byStyle[style] = hit;
@@ -121,7 +123,8 @@ const stopMemo = new WeakMap<Destinations, readonly number[]>();
  * The places, in screen order, `n` and `N` stop at: a destination whose own marker is in the first bucket (`rank` 0:
  * `⚑`, a live `!`, `⚠`, and `?` that is uncertain, supervisor lost, stale or unknown), the viewpoint root's own
  * marker excluded; and a destination that stands for a stop it hides (a collapsed row over a `⚑`, a card whose sixth
- * sub-row is one), which is why they never unfold anything.
+ * sub-row is one), which is why they never unfold anything. A conflict claim past the node budget has no node and no
+ * row: the summary row counts it (`N not loaded`), and it makes no row a stop (orchestrator decision after review 1).
  */
 export function stopsOf(proj: DelegationProjection, dest: Destinations): readonly number[] {
   let hit = stopMemo.get(dest);
@@ -142,8 +145,6 @@ export function stopsOf(proj: DelegationProjection, dest: Destinations): readonl
     // A stop that is a destination stands for itself, one that is not for its nearest destination ancestor.
     represent(pn);
   }
-  // A conflicting child without a row is no node here, but its parent's subtree is troubled: the parent stands for it.
-  for (const pn of proj.omittedConflicts) represent(pn.parent);
   hit = [...marked].sort((a, b) => a - b);
   stopMemo.set(dest, hit);
   return hit;

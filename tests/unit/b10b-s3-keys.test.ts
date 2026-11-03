@@ -9,7 +9,6 @@ import assert from 'node:assert/strict';
 
 import { stopsOf } from '../../src/render/delegation/selection.js';
 import {
-  NOW,
   S,
   ago,
   buildVm,
@@ -265,6 +264,35 @@ test('a rich card whose sixth sub-row is a ⚑ is a stop: the card stands for th
   assert.ok(compact.includes(keys['n5']) && !compact.includes(keys['impl']), 'compact draws it, so it is its own stop');
 });
 
+test('claims past the node budget have no row: no parent of theirs, and not the root, is a stop', () => {
+  const quiet = (i: number): NodeSpec => ({ ...worker(`w${i}`), createdAt: ago(3000 - i) });
+  const claim = (id: string, parent: string): NodeSpec => ({
+    ...worker(id),
+    parent,
+    relationOnly: true,
+    conflict: { count: 2, since: ago(300) },
+  });
+  // The root and 199 workers fill the 200-node budget; the three claims have no room for a row.
+  const { vm, keys } = buildVm([
+    { id: 'main', root: true, harness: 'claude', status: S.working(ago(100)), label: null },
+    ...Array.from({ length: 199 }, (_, i) => quiet(i)),
+    claim('x0', 'w5'),
+    claim('x1', 'main'),
+    claim('x2', 'w5'),
+  ]);
+  for (const style of ['compact', 'rich'] as const) {
+    const frame = draw(vm, { style, selected: keys['w5'], height: 60 });
+    assert.equal(frame.delegation!.proj.omittedConflictRows, 3, 'the claims are known (the summary counts them)');
+    const { dest, proj } = frame.delegation!;
+    assert.deepEqual(stopsOf(proj, dest), [], `${style}: nothing to stop at`);
+    for (const key of ['next-trouble', 'previous-trouble']) {
+      const out = press(frame, key);
+      assert.equal(out.state.tree.selectedId, keys['w5'], `${style} ${key}`);
+      assert.equal(out.action, undefined);
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Enter, Space, v; the click
 
@@ -292,13 +320,32 @@ test('a click selects the row and nothing else: no Inspector, no pick, no action
   }
 });
 
-test('a click on a ⊕N row selects it; a click on a row the plan does not have selects nothing', () => {
-  const e = situationE();
-  const frame = draw(e.vm, { selected: e.keys['main'], height: 40 });
-  const out = click(frame, 6, 0);
-  assert.equal(out.action, undefined);
-  assert.equal(out.state.tree.selectedId, e.keys['main']);
-  assert.equal(NOW > 0, true);
+test('a click on the ⊕N row’s own line selects it and does nothing else (both styles)', () => {
+  const finished = (id: string, endedAgo: number): NodeSpec => ({
+    ...worker(id),
+    status: S.exited(ago(endedAgo)),
+    run: { state: 'ended', mode: 'headless', endedAt: ago(endedAgo) },
+    report: { status: 'completed', summary: 'done', at: ago(endedAgo) },
+    createdAt: ago(3000),
+  });
+  const { vm, keys } = buildVm([
+    { id: 'main', root: true, harness: 'claude', status: S.working(ago(100)), label: null },
+    worker('a'),
+    finished('d1', 400),
+    finished('d2', 450),
+  ]);
+  for (const style of ['compact', 'rich'] as const) {
+    const frame = draw(vm, { style, selected: keys['a'], height: 30 });
+    const put = frame.delegation!.plan.rows.find((row) => row.kind === 'putAway')!;
+    const y = lineOf(frame, put.key);
+    assert.ok(y > 0, `${style}: the ⊕N row is on screen`);
+    assert.match(text(frame)[y], /2 done/, `${style}: and it is that line`);
+    const out = click(frame, 6, y);
+    assert.equal(out.state.tree.selectedId, put.key, style);
+    assert.equal(out.action, undefined, style);
+    assert.equal(out.state.revealed, put.key, `${style}: a click does not scroll`);
+    assert.equal(out.state.modes.details, frame.state.modes.details, `${style}: no pane opened`);
+  }
 });
 
 test('legacy: with no view model the keys behave as they did (o switches the selected agent; the new keys do nothing)', () => {

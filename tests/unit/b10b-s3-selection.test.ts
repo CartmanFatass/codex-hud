@@ -12,7 +12,7 @@ import { parsePutKey } from '../../src/render/delegation/rows.js';
 import { PUT_AWAY_MS } from '../../src/render/delegation/rows.js';
 import { delegationView } from '../../src/render/delegation/panel.js';
 import { resolveSelection } from '../../src/render/delegation/selection.js';
-import { FIXED_NOW, makeNestedTree } from '../fixtures/hud-data.js';
+import { makeNestedTree } from '../fixtures/hud-data.js';
 import { NOW, S, ago, buildVm, situationC, situationD, type NodeSpec } from '../fixtures/b10b-delegation.js';
 import { draw, monitorInput, press, selectedOf, step, text } from '../fixtures/b10b-s3.js';
 
@@ -295,9 +295,7 @@ test('a stale press resolves against the frame the user saw, never against a new
   assert.deepEqual(press(frame, 'open-session').action, out.action, 'the old frame still answers as it drew');
 });
 
-test('situation D: the first row is the selection of an empty state, and a hidden node maps to its list ancestor', () => {
+test('situation D: an empty state starts on the first row, the viewpoint root', () => {
   const d = situationD();
-  const frame = draw(d.vm, { selected: null });
-  assert.equal(selectedOf(frame), d.keys['main']);
-  assert.equal(FIXED_NOW.getTime(), NOW);
+  assert.equal(selectedOf(draw(d.vm, { selected: null })), d.keys['main']);
 });

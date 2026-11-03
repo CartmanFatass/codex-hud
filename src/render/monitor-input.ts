@@ -103,12 +103,15 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   const result = (action?: MonitorOutcome['action'], close = false): MonitorOutcome => ({ state: next, close, action });
   // The delegation view the user saw: its plan and rows are what a key or a click is resolved against.
   const del = ctx.frame?.delegation;
-  // A key acts exactly when its button is drawn (the bar's condition), and does what a click on that button does.
-  const onRow = () =>
-    next.tree.selectedId !== null &&
-    (next.focus === 'agents' || (next.focus === 'details' && next.preview === 'agent'));
-  const rowAction = (choose: (actions: RowActions) => DelegationAction | null): MonitorOutcome => {
-    const actions = del && onRow() ? selectedActions(del.plan, del.proj, next.tree.selectedId) : null;
+  // A key acts exactly when its button is drawn in the frame the user saw (the bar sheds the buttons below its
+  // floor, and with no room for a row), and does what a click on that button does.
+  const drawn = (kind: 'delegation-open' | 'delegation-recover') =>
+    ctx.frame?.controls.some((control) => control.kind === kind) === true;
+  const rowAction = (
+    kind: 'delegation-open' | 'delegation-recover',
+    choose: (actions: RowActions) => DelegationAction | null
+  ): MonitorOutcome => {
+    const actions = del && drawn(kind) ? selectedActions(del.plan, del.proj, next.tree.selectedId) : null;
     const action = actions ? choose(actions) : null;
     return result(action ?? undefined);
   };
@@ -162,7 +165,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if (control?.kind === 'delegation-open' || control?.kind === 'delegation-recover')
       return control.disabled
         ? result()
-        : rowAction(control.kind === 'delegation-open' ? openButtonAction : recoverAction);
+        : rowAction(control.kind, control.kind === 'delegation-open' ? openButtonAction : recoverAction);
     if (control?.kind === 'settings') return result({ type: 'settings' });
     if (control?.kind === 'observability') return result({ type: 'observability' });
     if (control?.kind === 'help') {
@@ -325,9 +328,9 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   }
   if (key === 'main') return result({ type: 'switch', id: ctx.tree.rootId });
   // `o`, `L` and `R` on a delegation row: Open or Switch, Log, Reconcile or Resume. Each acts when its button is drawn.
-  if (key === 'open-session' && (del || next.delegating)) return rowAction(openKeyAction);
-  if (key === 'log') return rowAction(logKeyAction);
-  if (key === 'resume-reconcile') return rowAction(recoverAction);
+  if (key === 'open-session' && (del || next.delegating)) return rowAction('delegation-open', openKeyAction);
+  if (key === 'log') return rowAction('delegation-open', logKeyAction);
+  if (key === 'resume-reconcile') return rowAction('delegation-recover', recoverAction);
   if (key === 'open-session')
     return next.focus === 'agents' && next.tree.selectedId
       ? result({ type: 'switch', id: next.tree.selectedId })

@@ -9525,19 +9525,17 @@
         " ! 5.6astra·xhigh Ctx ────42%────── ~30s 5h 61% "
       ]
     },
-    "delegation/panel/en/c-switch/48x12": {
+    "delegation/panel/en/b-switch/48x10": {
       "width": 48,
-      "height": 12,
+      "height": 10,
       "lines": [
-        " ⌂  ▦ Agents    ≣   ±   ◫   ⚙ Settings      ǁ ? ",
-        " ▦ Agents  3▸ 1⚑ 2✓ · 3 workers, 1 job · ≥$0.12 ",
-        "  ▸ ✳ main                fable-5.1 ━╸──  ◷3m10s",
-        " ├ ⚑ π review-tests ⊟ · approval             10s",
-        " ├ ▸ ⌬ impl-parser     6.1sol·xhigh ━━── ◷12m04s",
-        "›│ ├ ▸ ⌕ scout 中文 boundaries            ◷1m00s",
-        " │ └ ✓ ◈ review-pass                          1m",
-        " ├ ▸ ◎ ask-pro                            ◷4m00s",
-        " └ ✓ ⌬ docs-sync · Synced two reference…      2m",
+        " ⌂  ▦ Agents   ≣  ±  ◫  Settings   ⇢ Switch ǁ ? ",
+        " ▦ Agents  2▸ 1✗ 1✓                             ",
+        "  ▸   main              6.1sol·high ━╸──  ◷4m10s",
+        "›├ ▸ ⚒ implementer                        ◷3m20s",
+        " │ ├ ! ⚗ failed_子 · failed                  40s",
+        " │ └ ▸ ⌕ running_子                       ◷1m10s",
+        " └ ✓ ⌕ scout                                  1m",
         " ! 5.6astra·xhigh 30m ─────42%────────272K ~30s ",
         "│ ! 1 tool · 1 subtask failed                   ",
         "╰─ parser-kit 5h ─────────────61%──────── ↺1h23m"
@@ -9547,7 +9545,7 @@
       "width": 48,
       "height": 12,
       "lines": [
-        " ⌂  ▦   ≣  ±  ◫  Settings               ⇢ ↻ ǁ ? ",
+        " ⌂  ▦  ≣ ± ◫ Settings    ⇢ Open ↻ Reconcile ǁ ? ",
         " ▦ Agents  1▸ 1⚑ 3? 1⚠ · 5 workers, 1 job       ",
         "  ■ ✳ main · exited       fable-5.1 ━╸──      3m",
         " ├ ▸ ⌬ impl-a ⊟        6.1sol·xhigh ━╸──  ◷2m10s",
@@ -9583,7 +9581,7 @@
       "width": 48,
       "height": 14,
       "lines": [
-        " ⌂  ▦   ≣  ±  ◫  Settings        ⇢ ↻ ǁ ⊖ Hide ? ",
+        " ⌂  ▦  ≣ ± ◫ Settings     ⇢ Log ↻ Resume ǁ ⊖6 ? ",
         " ▦ Agents  1▸ 1✗ 5✓ · 7 workers                 ",
         "  ▸ ✳ main                fable-5.1 ━╸──  ◷1m20s",
         " ├ ▸ ⌬ impl-parser ⊟   6.1sol·xhigh ━━── ◷12m04s",
