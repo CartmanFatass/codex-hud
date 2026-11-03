@@ -489,6 +489,354 @@ test('P065 source refusal decision excludes later advice and flush from authoriz
   const response = await server.handle(request('delegate_status', { runId: 'run-a' }));
   clock.advance(50);
   server.flushed(response);
-  assert.equal(sample.authorizationMs, 7);
+  assert.equal(sample.writeBudgetApplicable, false);
+  assert.equal(sample.authorizationMs, null);
+  assert.equal(sample.upfrontMs, 7);
+  assert.equal(sample.deadlineMs, null);
   assert.equal(sample.elapsedMs, 67);
+});
+
+for (const tool of ['delegate_status', 'delegate_wait'])
+  for (const delayed of ['source', 'read'])
+    test(`P065 ${tool} preserves valid ${delayed} above 30 ms without a write budget`, async () => {
+      const clock = new TestBudgetClock(),
+        f = await delegationBenchmarkFixture(true, clock);
+      try {
+        const before = f.ledger.snapshot((tx) => tx.get('SELECT total_changes() AS n')!.n);
+        const original = f.ledger.readSnapshot.bind(f.ledger);
+        f.ledger.readSnapshot = async (callback) => {
+          if (delayed === 'read') clock.advance(35);
+          return original(callback);
+        };
+        let sample: any;
+        const server = new HudMcpServer(
+          {
+            resolve: async (_meta, _tool, budget) => {
+              assert.equal(budget, undefined, 'read source must not receive an enforcing budget');
+              if (delayed === 'source') clock.advance(35);
+              return f.source();
+            },
+          },
+          f.service,
+          () => true,
+          {
+            clock,
+            observe: (value) => {
+              sample = value;
+            },
+          }
+        );
+        const response: any = await server.handle(
+          request(tool, { runId: 'run-a', ...(tool === 'delegate_wait' ? { timeoutMs: 0 } : {}) })
+        );
+        assert.equal(response.result.structuredContent.ok, true);
+        server.flushed(response);
+        assert.equal(sample.writeBudgetApplicable, false);
+        assert.equal(sample.deadlineMs, null);
+        assert.equal(sample.authorizationMs, null);
+        assert.ok(sample.upfrontMs >= 35);
+        assert.ok(sample.elapsedMs >= 35);
+        assert.equal(
+          f.ledger.snapshot((tx) => tx.get('SELECT total_changes() AS n')!.n),
+          before
+        );
+      } finally {
+        await f.service.close();
+        await f.close();
+      }
+    });
+
+for (const tool of ['delegate_spawn', 'delegate_resume', 'delegate_cancel', 'delegate_whoami', 'delegate_report'])
+  test(`P065 same slow source stops ${tool} before any writer`, async () => {
+    const clock = new TestBudgetClock(),
+      f = await delegationBenchmarkFixture(true, clock);
+    try {
+      const before = counts(f),
+        changes = f.ledger.snapshot((tx) => tx.get('SELECT total_changes() AS n')!.n);
+      let entries = 0;
+      const transaction = f.ledger.transaction.bind(f.ledger);
+      f.ledger.transaction = (callback, budget) => {
+        entries++;
+        return transaction(callback, budget);
+      };
+      const args =
+        tool === 'delegate_spawn'
+          ? f.spawnArgs
+          : tool === 'delegate_resume'
+            ? f.resumeArgs
+            : tool === 'delegate_report'
+              ? { runId: 'run-a', status: 'completed', summary: 'Synthetic' }
+              : tool === 'delegate_cancel'
+                ? { runId: 'run-a' }
+                : {};
+      const server = new HudMcpServer(
+        {
+          resolve: async (_meta, _tool, budget) => {
+            assert.ok(budget);
+            clock.advance(35);
+            return f.source();
+          },
+        },
+        f.service,
+        () => true,
+        { clock }
+      );
+      const response: any = await server.handle(request(tool, args));
+      assert.equal(response.result.structuredContent.code, 'busy');
+      assert.equal(entries, 0);
+      assert.deepEqual(counts(f), before);
+      assert.equal(
+        f.ledger.snapshot((tx) => tx.get('SELECT total_changes() AS n')!.n),
+        changes
+      );
+    } finally {
+      await f.service.close();
+      await f.close();
+    }
+  });
+
+for (const tool of ['delegate_status', 'delegate_wait'])
+  test(`P065 slow ${tool} still rejects revoked current read authority with zero writes`, async () => {
+    const clock = new TestBudgetClock(),
+      f = await delegationBenchmarkFixture(true, clock);
+    try {
+      const captured = f.source();
+      await f.ledger.transaction((tx) =>
+        tx.run('UPDATE caller_contexts SET closed_at=2000 WHERE context_id=?', f.parent.context.contextId)
+      );
+      const changes = f.ledger.snapshot((tx) => tx.get('SELECT total_changes() AS n')!.n);
+      const server = new HudMcpServer(
+        {
+          resolve: async () => {
+            clock.advance(35);
+            return captured;
+          },
+        },
+        f.service,
+        () => true,
+        { clock }
+      );
+      const response: any = await server.handle(
+        request(tool, { runId: 'run-a', ...(tool === 'delegate_wait' ? { timeoutMs: 0 } : {}) })
+      );
+      assert.equal(response.result.structuredContent.ok, false);
+      assert.equal(response.result.structuredContent.code, 'stale_context');
+      assert.equal(
+        f.ledger.snapshot((tx) => tx.get('SELECT total_changes() AS n')!.n),
+        changes
+      );
+    } finally {
+      await f.service.close();
+      await f.close();
+    }
+  });
+
+test('P065 wait consumes its original source elapsed time rather than restarting the client deadline', async () => {
+  const clock = new TestBudgetClock(),
+    f = await delegationBenchmarkFixture(true, clock);
+  let subscriptions = 0;
+  const service = new DelegationService({
+    ...optionsOf(f.service),
+    subscribeWait: () => {
+      subscriptions++;
+      return { unavailable: false, close() {} };
+    },
+  });
+  try {
+    const server = new HudMcpServer(
+      {
+        resolve: async () => {
+          clock.advance(35);
+          return f.source();
+        },
+      },
+      service,
+      () => true,
+      { clock }
+    );
+    const response: any = await server.handle(
+      request('delegate_wait', { runId: 'run-a', timeoutMs: 20, afterSeq: 9999 })
+    );
+    assert.equal(response.result.structuredContent.ok, true);
+    assert.equal(response.result.structuredContent.timedOut, true);
+    assert.equal(subscriptions, 0);
+  } finally {
+    await service.close();
+    await f.service.close();
+    await f.close();
+  }
+});
+
+for (const operation of ['handshake', 'cancel'] as const)
+  test(`P065 existing durable ${operation} survives expiry and rolls back incidental bookkeeping`, async () => {
+    const clock = new TestBudgetClock(),
+      f = await handshakeFixture();
+    try {
+      await f.startup();
+      const handshake = new HandshakeService({
+        ledger: f.ledger,
+        registration: f.child.registration,
+        reader: f.reader,
+        env: { HUD_CLAIM: f.claim },
+        now: f.now,
+        home: f.root,
+      });
+      const reads = new ReadControlService(f.ledger, f.root, undefined, { supervisorState: () => 'alive' });
+      const invoke = () =>
+        operation === 'handshake'
+          ? handshake.whoami({}, f.child.authority, clock.budget())
+          : reads.cancel('run-a', 10, f.parent.authority, clock.budget());
+      const first = await invoke();
+      const before = f.ledger.snapshot((tx) => ({
+        events: tx.all('SELECT * FROM events ORDER BY seq'),
+        callers: tx.all('SELECT * FROM callers ORDER BY caller_id'),
+        bindings: tx.all('SELECT * FROM child_bindings'),
+        reports: tx.all('SELECT * FROM reports'),
+      }));
+      const transaction = f.ledger.transaction.bind(f.ledger);
+      let marked = 0;
+      f.ledger.transaction = (callback, budget) =>
+        transaction((tx) => {
+          const result = callback(tx);
+          if (tx.isPriorDurableResult(result)) {
+            marked++;
+            tx.run('UPDATE callers SET last_seen_at=12345');
+            clock.advance(31);
+          }
+          return result;
+        }, budget);
+      const replay = await invoke();
+      assert.deepEqual(replay, first);
+      assert.equal(marked, 1);
+      assert.deepEqual(
+        f.ledger.snapshot((tx) => ({
+          events: tx.all('SELECT * FROM events ORDER BY seq'),
+          callers: tx.all('SELECT * FROM callers ORDER BY caller_id'),
+          bindings: tx.all('SELECT * FROM child_bindings'),
+          reports: tx.all('SELECT * FROM reports'),
+        })),
+        before
+      );
+      reads.close();
+    } finally {
+      await f.close();
+    }
+  });
+
+test('P065 new handshake binding cannot use durable replay when its callback expires', async () => {
+  const clock = new TestBudgetClock(),
+    f = await handshakeFixture();
+  try {
+    await f.startup();
+    const service = new HandshakeService({
+      ledger: f.ledger,
+      registration: f.child.registration,
+      reader: f.reader,
+      env: { HUD_CLAIM: f.claim },
+      now: f.now,
+      home: f.root,
+    });
+    const before = f.ledger.snapshot((tx) => ({
+      claim: tx.all('SELECT * FROM claims'),
+      slots: tx.all('SELECT * FROM slots'),
+      events: tx.all('SELECT * FROM events ORDER BY seq'),
+    }));
+    const transaction = f.ledger.transaction.bind(f.ledger);
+    f.ledger.transaction = (callback, budget) =>
+      transaction((tx) => {
+        const result = callback(tx);
+        assert.equal(tx.isPriorDurableResult(result), false);
+        clock.advance(31);
+        return result;
+      }, budget);
+    await assert.rejects(service.whoami({}, f.child.authority, clock.budget()), CallBudgetExpired);
+    assert.equal(
+      f.ledger.snapshot((tx) => tx.get('SELECT count(*) AS n FROM child_bindings')!.n),
+      0
+    );
+    assert.deepEqual(
+      f.ledger.snapshot((tx) => ({
+        claim: tx.all('SELECT * FROM claims'),
+        slots: tx.all('SELECT * FROM slots'),
+        events: tx.all('SELECT * FROM events ORDER BY seq'),
+      })),
+      before
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('P065 late canonical old expectedRun replay wins after current run advances; changed digest still conflicts', async () => {
+  const clock = new TestBudgetClock(),
+    f = await delegationBenchmarkFixture(true, clock);
+  try {
+    await f.bindAndEnd();
+    const args = { ...f.resumeArgs, expectedRun: 'run-a' };
+    const first = (await f.service.invoke(f.source(), 'delegate_resume', args)) as any;
+    assert.notEqual(first.runId, 'run-a');
+    const before = counts(f);
+    const transaction = f.ledger.transaction.bind(f.ledger);
+    f.ledger.transaction = (callback, budget) =>
+      transaction((tx) => {
+        const result = callback(tx);
+        if (tx.isPriorDurableResult(result)) clock.advance(31);
+        return result;
+      }, budget);
+    assert.deepEqual(await f.service.invoke(f.source(), 'delegate_resume', args), first);
+    assert.deepEqual(counts(f), before);
+    await assert.rejects(
+      f.service.invoke(f.source(), 'delegate_resume', { ...args, expectedRun: first.runId }),
+      /idempotency_conflict/
+    );
+    assert.equal(f.launches.length, 1);
+  } finally {
+    await f.service.close();
+    await f.close();
+  }
+});
+
+test('P065 read-only wait remains cancellable after slow valid source work', async () => {
+  const clock = new TestBudgetClock(),
+    f = await delegationBenchmarkFixture(true, clock);
+  let ready!: () => void;
+  const subscribed = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  let closed = 0;
+  const service = new DelegationService({
+    ...optionsOf(f.service),
+    subscribeWait: () => {
+      ready();
+      return {
+        unavailable: false,
+        close() {
+          closed++;
+        },
+      };
+    },
+  });
+  try {
+    const server = new HudMcpServer(
+      {
+        resolve: async () => {
+          clock.advance(35);
+          return f.source();
+        },
+      },
+      service,
+      () => true,
+      { clock }
+    );
+    const pending = server.handle(request('delegate_wait', { runId: 'run-a', timeoutMs: 1000, afterSeq: 9999 }));
+    await subscribed;
+    await server.handle({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 1 } });
+    const response: any = await pending;
+    assert.equal(response.result.structuredContent.ok, false);
+    assert.equal(closed, 1);
+  } finally {
+    await service.close();
+    await f.service.close();
+    await f.close();
+  }
 });

@@ -380,3 +380,38 @@ test('P065 bounded diagnostics retain phase totals and mandatory rollback overru
     await f.close();
   }
 });
+
+for (const method of ['run', 'get', 'all'] as const)
+  test(`P065 ${method} counted mutation cannot create durable-result eligibility`, async () => {
+    const f = await budgetFixture();
+    try {
+      await assert.rejects(
+        f.ledger.transaction((tx) => {
+          tx[method]('UPDATE callers SET last_seen_at=2 RETURNING caller_id');
+          return tx.priorDurableResult({ ok: true });
+        }, f.clock.budget()),
+        /prior_result_depends_on_transaction/
+      );
+      assert.equal(f.db.prepare('SELECT last_seen_at FROM callers').get()!.last_seen_at, 1000);
+    } finally {
+      await f.close();
+    }
+  });
+
+test('P065 a different returned object cannot inherit an earlier durable marker', async () => {
+  const f = await budgetFixture();
+  try {
+    await assert.rejects(
+      f.ledger.transaction((tx) => {
+        tx.priorDurableResult({ ok: true });
+        tx.run('UPDATE callers SET last_seen_at=2');
+        f.clock.advance(31);
+        return { ok: true };
+      }, f.clock.budget()),
+      CallBudgetExpired
+    );
+    assert.equal(f.db.prepare('SELECT last_seen_at FROM callers').get()!.last_seen_at, 1000);
+  } finally {
+    await f.close();
+  }
+});

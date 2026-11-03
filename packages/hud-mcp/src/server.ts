@@ -3,7 +3,7 @@ import { object } from './io.js';
 import { outcomeCode } from './errors.js';
 import type { CallResolution, CurrentCallSourcePort } from './resolvers.js';
 import { TOOLS, validateToolArguments } from './tools.js';
-import { CallBudget, type BudgetClock } from '../../../src/ledger/call-budget.js';
+import { CallBudget, ReadCallTiming, monotonicClock, type BudgetClock } from '../../../src/ledger/call-budget.js';
 export interface RpcRequest {
   jsonrpc: '2.0';
   id?: string | number | null;
@@ -11,7 +11,7 @@ export interface RpcRequest {
   params?: unknown;
 }
 export class HudMcpServer {
-  private readonly responseBudgets = new WeakMap<object, CallBudget>();
+  private readonly responseBudgets = new WeakMap<object, CallBudget | ReadCallTiming>();
   flushed(response: unknown): void {
     if (!response || typeof response !== 'object') return;
     const budget = this.responseBudgets.get(response);
@@ -45,7 +45,8 @@ export class HudMcpServer {
         args: Record<string, unknown>,
         started: number,
         signal?: AbortSignal,
-        budget?: CallBudget
+        budget?: CallBudget,
+        readTiming?: ReadCallTiming
       ): Promise<unknown>;
       /** Adds tool-owned fields to a sanitized structured failure; its code and fields stay as built. */
       decorateFailure?(tool: string, args: Record<string, unknown>, outcome: { ok: false; code: string }): unknown;
@@ -53,7 +54,7 @@ export class HudMcpServer {
     private readonly parentAlive: () => boolean = () => true,
     private readonly timing: {
       clock?: BudgetClock;
-      observe?: (sample: ReturnType<CallBudget['diagnostics']>) => void;
+      observe?: (sample: ReturnType<CallBudget['diagnostics'] | ReadCallTiming['diagnostics']>) => void;
     } = {}
   ) {}
   async handle(value: unknown): Promise<unknown | null> {
@@ -94,10 +95,13 @@ export class HudMcpServer {
       case 'tools/list':
         return reply({ tools: TOOLS });
       case 'tools/call': {
-        const budget = new CallBudget(this.timing.clock);
-        const started = budget.started;
+        const started = (this.timing.clock ?? monotonicClock).now();
         const definition = TOOLS.find((t) => t.name === params.name);
         if (!definition) return error(id, -32602, 'Unknown tool');
+        const readOnly = definition.name === 'delegate_status' || definition.name === 'delegate_wait';
+        const budget = readOnly ? undefined : new CallBudget(this.timing.clock, started);
+        const readTiming = readOnly ? new ReadCallTiming(this.timing.clock, started) : undefined;
+        const observation = budget ?? readTiming!;
         if (!validateToolArguments(definition, params.arguments === undefined ? {} : params.arguments))
           return error(id, -32602, 'Invalid tool arguments');
         if (this.requests.has(id)) return error(id, -32600, 'Duplicate active request id');
@@ -115,15 +119,30 @@ export class HudMcpServer {
         try {
           if (this.stopped) throw new Error('server_shutdown');
           // params.arguments, prompt, claim and env hints cannot select a logical caller.
-          budget.check('source');
+          budget?.check('source');
+          readTiming?.note('source');
           const resolution = await this.source.resolve(params._meta, definition.name, budget);
-          budget.check('source');
+          budget?.check('source');
+          readTiming?.note('source');
           controller.signal.throwIfAborted();
           if (resolution.ok && this.bodies) {
-            outcome = await this.bodies.invoke(resolution, definition.name, args, started, controller.signal, budget);
+            outcome = await this.bodies.invoke(
+              resolution,
+              definition.name,
+              args,
+              started,
+              controller.signal,
+              budget,
+              readTiming
+            );
+            try {
+              readTiming?.note('complete');
+            } catch {
+              /* Optional observation. */
+            }
           } else {
             // The source/body refusal decision precedes optional advice and response serialization.
-            budget.note('complete');
+            observation.note('complete');
             outcome = resolution.ok
               ? { ok: false, code: 'not_implemented', tool: definition.name }
               : failure(resolution.code);
@@ -131,7 +150,7 @@ export class HudMcpServer {
         } catch (error) {
           // A committed intent is returned by its body even if subsequent dispatch fails.
           try {
-            budget.note('complete');
+            observation.note('complete');
           } catch {
             /* Keep the original failure. */
           }
@@ -144,7 +163,7 @@ export class HudMcpServer {
           isError: object(outcome) && outcome.ok === false,
           structuredContent: outcome,
         });
-        this.responseBudgets.set(response, budget);
+        this.responseBudgets.set(response, observation);
         return response;
       }
       default:

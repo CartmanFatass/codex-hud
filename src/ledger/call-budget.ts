@@ -108,6 +108,7 @@ export class CallBudget {
     const elapsedMs = this.now() - this.started;
     const authorizationMs = (this.#completed ?? this.#last) - this.started;
     return {
+      writeBudgetApplicable: true as const,
       elapsedMs,
       deadlineMs: this.#deadline - this.started,
       authorizationMs,
@@ -127,4 +128,45 @@ export class CallBudget {
 /** Structural rather than instanceof: CLI and MCP have independent compiled module graphs. */
 export function isCallBudget(value: number | CallBudget): value is CallBudget {
   return typeof value !== 'number';
+}
+
+/** Read-only receipt/response observation. It has no admission deadline or writer API.
+ * Only trusted dispatch selects this type; no request/config field disables a write budget. */
+export class ReadCallTiming {
+  readonly started: number;
+  #completed: number | null = null;
+  #last: number;
+  #phases: { phase: BudgetPhase; at: number }[] = [];
+  constructor(
+    readonly clock: BudgetClock = monotonicClock,
+    started?: number
+  ) {
+    this.#last = clock.now();
+    this.started = started ?? this.#last;
+    if (!Number.isFinite(this.started) || !Number.isFinite(this.#last) || this.started > this.#last)
+      throw new TypeError('invalid_budget_clock');
+  }
+  note(phase: BudgetPhase): void {
+    const now = this.clock.now();
+    if (!Number.isFinite(now) || now < this.#last) throw new TypeError('invalid_budget_clock');
+    this.#last = now;
+    if (phase === 'complete') this.#completed ??= now;
+    if (this.#phases.length === 64) this.#phases.shift();
+    this.#phases.push({ phase, at: now - this.started });
+  }
+  diagnostics() {
+    return {
+      writeBudgetApplicable: false as const,
+      elapsedMs: this.#last - this.started,
+      upfrontMs: this.#completed === null ? null : this.#completed - this.started,
+      authorizationMs: null,
+      deadlineMs: null,
+      overrunMs: null,
+      waitMs: null,
+      queueMs: null,
+      attempts: 0,
+      enclosingDeadline: 'not_applicable' as const,
+      phases: [...this.#phases],
+    };
+  }
 }

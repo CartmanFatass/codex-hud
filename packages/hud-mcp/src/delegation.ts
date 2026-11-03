@@ -17,7 +17,7 @@ import { taskDigest } from '../../../src/core/lifecycle.js';
 import { prepareCodexLaunch, launchPreparedRun, type CapabilityVerifier } from '../../../src/core/launch/index.js';
 import { readProcess } from '../../../src/core/run/process.js';
 import { type LocalStoreBinding, LocalStoreProofFailed } from '../../../src/ledger/local-manager.js';
-import { CallBudget, type BudgetClock } from '../../../src/ledger/call-budget.js';
+import { CallBudget, type ReadCallTiming, type BudgetClock } from '../../../src/ledger/call-budget.js';
 import { LedgerBusyError } from '../../../src/ledger/transaction.js';
 import { digest } from '../../../src/core/canonical.js';
 import { ReadControlService, withCacheAdvice, type CacheAdviceSource } from './read-control.js';
@@ -170,11 +170,14 @@ export class DelegationService {
     args: DelegationArguments,
     started?: number,
     signal?: AbortSignal,
-    suppliedBudget?: CallBudget
+    suppliedBudget?: CallBudget,
+    readTiming?: ReadCallTiming
   ): Promise<unknown> {
-    const budget = suppliedBudget ?? new CallBudget(this.options.clock, started);
-    started = budget.started;
-    budget.check();
+    // Read-only tools preserve their receipt timestamp but never acquire an enforcing write budget.
+    const readOnly = tool === 'delegate_status' || tool === 'delegate_wait';
+    const budget = readOnly ? undefined : (suppliedBudget ?? new CallBudget(this.options.clock, started));
+    started = budget?.started ?? started ?? this.options.clock?.now() ?? performance.now();
+    budget?.check();
     if (!source.scopePremise) throw new Error('identity_unverified');
     this.wakes?.parentCall();
     if (!this.options.registration || !this.options.reader) throw new Error('local_entry_only');
@@ -182,7 +185,11 @@ export class DelegationService {
       const status = await this.reads.status(args as unknown as Parameters<ReadControlService['status']>[0], (tx) =>
         this.readAuthority(tx, source)
       );
-      budget.check('complete');
+      try {
+        readTiming?.note('complete');
+      } catch {
+        /* Optional observation. */
+      }
       return status;
     }
     if (tool === 'delegate_wait') {
@@ -199,10 +206,13 @@ export class DelegationService {
           responseMarginMs: profile?.responseMarginMs ?? null,
           verified: this.options.waitTimeoutVerified === true,
           started,
+          now: () => (readTiming?.clock ?? this.options.clock)?.now() ?? performance.now(),
+          onReady: () => readTiming?.note('complete'),
         },
         signal
       );
     }
+    if (!budget) throw new Error('invalid_write_budget');
     const handshake = new HandshakeService({
       ledger: this.options.ledger,
       registration: this.options.registration,
