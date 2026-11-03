@@ -2,9 +2,9 @@
 
 Date: 2026-11-03. Tier M, shared control-plane correctness and measurement. Intended path: `docs/cloud/P065-BUDGET.md`.
 
-**Status: conditional brief; HOLD for implementation.** The owner approved the preparation-inclusive budget interpretation. This consultation establishes the bounded budget work and its acceptance requirements, but does not establish a safe replacement for the local acceptance gate's filesystem checks inside a write transaction. Section 8 is the exact unresolved architecture blocker. Section 12 is a separate release disposition. Archiving this brief is not permission to start code work, acceptance of a package, or a change to the queue.
+**Status: contract fork resolved; HOLD for implementation pending a separate scheduling/ownership release.** The owner approved the preparation-inclusive budget interpretation. Under the owner's delegated decision authority, the [metadata-exception ruling](rulings/p065-metadata-exception.md) approves the precise fixed private-store metadata exception and closes section 8's architecture fork. This document synchronizes that approved decision; it does not establish implementation acceptance or change the queue. Section 12 remains the separate release disposition.
 
-This was a read-only consultation. No source changes, branches, tests, builds, probes, capability changes or local-only work were performed.
+The original brief was a read-only consultation. This 2026-11-03 synchronization records only the approved documentation amendments. No source/test implementation, build, probe, capability promotion or local-only qualification is claimed.
 
 ## 1. Authority, inspected base and binding inputs
 
@@ -42,7 +42,7 @@ This is not a performance-threshold relaxation, a new capability, a schema migra
 
 ## 3. Conditional ownership whitelist
 
-The following is the maximum bounded file set for the budget work, not permission to change every file and not a dispatch release. Section 8 may require this list to be revised by a fresh architecture ruling before release. New files below are explicitly named.
+The following is the maximum bounded file set for the budget work, not permission to change every file and not a dispatch release. The [metadata-exception ruling](rulings/p065-metadata-exception.md) §6 retains the exact production whitelist and bounds the optional fixture additions below; section 12 still requires a fresh scheduling/ownership release. New files below are explicitly named.
 
 Production files:
 
@@ -52,7 +52,7 @@ Production files:
 - `src/ledger/intents.ts`: preserve authorization/replay/admission order; use the original budget for intent acceptance and optional rejection auditing; support truthful replay/committed-result handling.
 - `src/ledger/handshake.ts`: same-budget handshake/report commits and unchanged binding/claim/report authorization.
 - `src/ledger/reconcile.ts`: optional shared budget through the MCP cancel's reconciliation and cancel-intent transactions; unrelated reconciliation semantics unchanged.
-- `src/ledger/local-manager.ts`: only the eventual separately resolved, additive local acceptance proof/guard and its tests. **No implementation is authorized here until section 8 is resolved.** Existing callers' security behavior must not be weakened by a global change to `check()`.
+- `src/ledger/local-manager.ts`: only the additive original-store binding and fixed local acceptance revalidation approved in the [metadata-exception ruling](rulings/p065-metadata-exception.md) §§3–4 and 6. **Implementation remains held until section 12's separate release.** Preserve existing `check(actor?)` behavior for excluded shared callers; no global weakening, repinning, caching, poisoning or sidecar-policy migration.
 - `packages/hud-mcp/src/server.ts`: establish/carry the budget at the existing or earlier request boundary; retain the full-response measurement boundary and external result shapes.
 - `packages/hud-mcp/src/resolvers.ts` and `packages/hud-mcp/src/hook/resolve.ts`: internal budget checks/accounting around existing per-call bounded evidence work, with no change to identity eligibility, hook producer behavior or source selection.
 - `packages/hud-mcp/src/delegation.ts`, `packages/hud-mcp/src/handshake.ts`, `packages/hud-mcp/src/read-control.ts`: carry the same budget and maintain post-commit protections.
@@ -87,15 +87,18 @@ Existing test files allowed only for additive cases or passing the trusted timin
 
 The existing `tests/int/b45-delegation-benchmark.mjs` and `tests/int/b45-mcp-stdio-benchmark.mjs` are read-only comparators for this package. Preserve their original evidence. The new driver supplies complete P065 populations rather than retroactively relabeling their 200-sample partial measurements as full qualification.
 
+The [metadata-exception ruling](rulings/p065-metadata-exception.md) §6 permits a release brief to reserve only these additional existing test/fixture paths if required for the internal binding API: `tests/unit/int-ledger-run.test.ts`, `tests/unit/b45-parent-offline.test.ts` and `tests/int/fixture.mjs`. Reserve ownership explicitly in the scheduling release before editing. Changes are limited to additive regression cases or trusted fixture proof plumbing, preserving lifecycle/business assertions; they do not authorize real-process repairs or weakened assertions. Keep new cases in the already named p065 files where practical.
+
 Documentation amendments, serialized by the dispatcher from the Oracle-approved text:
 
+- `docs/contracts/01-identity.md`, `docs/contracts/02-execution.md`, `docs/contracts/03-lifecycle.md` and `docs/contracts/04-supervision.md`: only the exact transaction, F07, rejection-audit and narrow cross-reference amendments in the [metadata-exception ruling](rulings/p065-metadata-exception.md) §5.
 - `docs/contracts/06-observation.md`: P-06-5, T-06-14 and measurement-protocol clarification only.
 - `docs/contracts/05-capabilities.md`: matching P065 cross-reference; no capability promotion or matrix change.
 - `docs/universal-hud-concept.md`: append the approved scope decision to §15.
 - `docs/cloud/P065-BUDGET.md`, a separately recorded P065 release/local-gate ruling, and package-specific reports/reviews/raw evidence under `docs/cloud/handoff/p065-budget/` and `docs/cloud/rulings/`.
 - `docs/handoff/STATE.md`, `docs/handoff/questions/P-06-5.md`, and the engineering-plan §1 status line are dispatcher-owned factual records, not implementer-owned files. Record the HOLD and later actual disposition; do not mark implemented/accepted early.
 
-All other paths are excluded. In particular, do not edit `src/ledger/runtime.ts`, `src/core/run/process.ts`, `src/core/run/process-census.ts`, `src/core/run/ledger-port.ts`, `src/ledger/supervisor.ts`, renderer/collector/link/status/observation-store code, `src/tree-page.ts`, capability manifests/cells, hook producer/command files, shared process helpers, `b45-launch.test.ts`, visual baselines, package/lock files, build/test scripts, or historical reports/rulings. If a safe solution needs an excluded file, stop that portion and obtain a recorded ownership/design revision; do not silently expand the diff.
+All other paths are excluded. In particular, do not edit `src/ledger/runtime.ts`, `src/core/run/process.ts`, `src/core/run/process-census.ts`, `src/core/run/ledger-port.ts`, `src/ledger/supervisor.ts`, `packages/hud-mcp/src/ledger-registry.ts`, renderer/collector/link/status/observation-store code, `src/tree-page.ts`, capability manifests/cells, hook producer/command files, shared process helpers, `b45-launch.test.ts`, visual baselines, package/lock files, build/test scripts, or historical reports/rulings. If a safe solution needs an excluded file, stop that portion and obtain a recorded ownership/design revision; do not silently expand the diff.
 
 ## 4. Budget and timing semantics
 
@@ -130,7 +133,7 @@ An expired call must never be converted to the numeric `0` low-level convention 
 
 Carry the original budget object through the final transaction. A wrapper checking only before calling `acceptIntent` is insufficient.
 
-Required checkpoints: before starting another preparation step, after asynchronous preparation/queue waits, before each acquisition attempt/backoff, after lock acquisition and before the callback, and immediately before COMMIT. The callback remains synchronous. No file read/stat, process discovery, hash/normalization, CLI, network call, await or arbitrary asynchronous observer may occur inside the write transaction.
+Required checkpoints: before starting another preparation step, after asynchronous preparation/queue waits, before each acquisition attempt/backoff, after actual lock acquisition before the approved metadata pass, after that pass before protected authorization/replay/admission, and immediately before COMMIT. The callback remains synchronous. Only contract 02's fixed private-store metadata operation, as specified by the [metadata-exception ruling](rulings/p065-metadata-exception.md) §§3–4, is excepted from the lock-held external-I/O prohibition. All other file/content/process/source/CLI/network/IPC work remains outside the actual BEGIN-success through COMMIT/ROLLBACK-completion interval. No await or arbitrary external callback occurs between the guard and protected synchronous work. Fixed API counts are not a hard syscall-latency guarantee.
 
 If expiry is detected before the requested mutation commits, roll back that transaction and do not launch, signal, consume a claim, insert a report or issue a new acceptance afterward. Earlier valid root-authority or death-reconciliation commits may remain; tests must not incorrectly assert that an entire multi-transaction call performed zero bookkeeping.
 
@@ -140,7 +143,7 @@ The deadline cannot forcibly interrupt synchronous SQLite. If COMMIT returns suc
 
 A COMMIT error with uncertain outcome must not be coerced into a clean budget refusal or blindly retried. Use the existing authoritative result/identity when recoverable; otherwise retain uncertainty and do not emit another external action. Test successful-late commit and uncertain-outcome handling separately.
 
-Optional rejection audit shares the original remaining budget. Audit failure must not replace the primary refusal or consume fresh time after expiry. Post-commit optional advice/status/hint/diagnostic failure must not falsify an already durable requested outcome.
+Optional rejection audit shares the original remaining budget. Do not start another audit transaction after budget exhaustion, local-store-proof failure or uncertain COMMIT. Proof failure invalidates the local binding for later local admissions, suppresses a separate rejection audit and permits only necessary rollback/connection cleanup, not repinning or automatic retry. An otherwise eligible local business-refusal audit uses the same bound store and a fresh post-acquisition metadata pass in its separate transaction; proof failure there also suppresses the audit without replacing the primary refusal. Do not close an actively used shared connection inside its callback. Expiry alone does not invalidate a safe store. Post-commit optional advice/status/hint/diagnostic failure must not falsify an already durable requested outcome. The exact failure classification and cleanup boundaries are binding in the [metadata-exception ruling](rulings/p065-metadata-exception.md) §4.
 
 Do not use Promise.race to return busy while an abandoned write can later commit. In-flight uninterruptible work and mandatory cleanup may overrun; retain and report that evidence rather than hiding it behind an early response.
 
@@ -169,29 +172,49 @@ Required deterministic cases:
 9. A commit outcome is uncertain: no clean not-accepted claim based solely on elapsed time, no duplicate external dispatch, and canonical recovery remains possible.
 10. Generation/session/owner/expectedRun/capability/slot changes while preparation or lock waiting proceeds: reject according to existing predicates, without adopting newer authority. Preserve native-child, /clear, ABA, dual-MCP and old-key replay coverage.
 11. Local resume charges gate and per-call prefix time, preserves typed local actor/owner and replay/CAS ordering, and does not impersonate an old parent MCP.
-12. Local gate tests, after section 8 is resolved: replace the home or ledger during queueing, lock contention and the handoff between external preparation and transaction; replace with a same-ledgerId copy; test symlink/hardlink/nonprivate/wrong-owner sidecars and UID/eUID mismatch. Require zero new accepted operation and no launch on failed proof. A safe unchanged private store still resumes and replays. Instrument the transaction interval to prove that external filesystem/process probes do not occur there.
+12. Local gate tests under the resolved section 8: replace the home or ledger during queueing, actual lock contention/backoff and after BEGIN before the guard; include an equivalent-SQL same-ledgerId/different-inode copy and unchanged-SQL chmod control. Cover original-opening binding propagation, wrong/missing binding, symlink/hardlink/nonprivate/wrong-owner objects, dangling sidecars, non-ENOENT errors and UID/eUID mismatch. Require zero requested-operation body/admission/new accepted operation/launch and no unsafe audit on failed proof. A safe unchanged private store still resumes and canonically replays. Instrument actual writer-lock ownership, not only the callback, to count only the exact approved metadata operations and prove zero other application external I/O.
 13. Status and wait retain zero writes, wait timeout behavior and cancellation responsiveness; no shared budget integration turns reads into root-registration mutations.
 14. Server serialization/output backpressure and optional post-commit advice errors do not turn committed acceptance into refusal. Full response measurement includes the delay.
 
 Retain business assertions in B45 atomic acceptance, G03 old-key replay, B21 capacity, B11 local resume and B20 advice. Do not accept busy as an alternate success everywhere, skip assertions, increase production limits, or hide failures by a clock starting in the future.
 
-## 8. Unresolved local-gate design blocker
+### Additional mandatory precision from the metadata-exception ruling §7
 
-**Exact blocker:** `acceptIntent` calls `localCheck` after acquiring the write lock, and `PrivateLedgerGate.check()` performs filesystem I/O. Contract 02 and P-06-5 prohibit that I/O inside the write transaction. The approved scope requires preserving current private-store identity/replacement protection, not deleting the check.
+Keep all fourteen deterministic cases and the complete real-clock matrix in P065-BUDGET. The following precision is mandatory, not a substitute for that matrix:
 
-This consultation does not establish a bounded, supported implementation that satisfies both requirements. In particular:
+1. Deterministically mutate home/main privacy or identity after the last precheck while queued, during actual contention/backoff, and after BEGIN succeeds but before the local guard. Assert the named refusal stage, no requested-operation body/admission, and no new run/claim/slot/idempotency/accepted event/launch. Do not rely only on sleep races.
+2. Test a same-ledgerId, equivalent-SQL, different-inode replacement of home/main. Use valid synthetic prepared copies. Incidental DBMOVED/corruption failure is not the sole evidence that the guard worked. Add post-acquisition chmod with unchanged SQL as the independent negative control.
+3. Replace after existingLedger opens but before resumeLocal. Verify original binding is carried and refused, not repinned. Test wrong Ledger/home binding and missing production binding. Verify a fresh valid invocation after restore remains possible.
+4. Cover wrong UID/eUID, owner, mode, malformed/forged actor, nonregular objects, symlink and hardlink for relevant objects. Include stable dangling WAL/SHM symlinks and non-ENOENT errors. Preserve safe absent sidecars and normal SQLite sidecar lifecycle without lifetime inode pinning.
+5. Cause proof failure with enough budget still remaining. Verify no rejection audit, no second acceptance attempt, no invalid-binding queued local admission, and completed rollback. Separately change the store before an otherwise permitted local rejection-audit transaction and verify that audit also refuses without replacing the primary error.
+6. Instrument actual writer-lock ownership, including the await handoff after successful acquisition through final COMMIT/ROLLBACK. Match every allowed filesystem call to the fixed gate/target/phase/count. All other application file/content/process/CLI/network/IPC work remains zero for the measured P065 transaction. Test instrumentation must distinguish the fixture's deliberately injected adversary from system-under-test calls; it must not hide production I/O outside a callback-only interval.
+7. Show a valid unchanged-store local resume and canonical same-key replay with one launch, including replay after currentRun has advanced. Store/current authority still precedes replay; new expectedRun/capability/slot admission follows it. Reject model admin/actor attempts and keep local_user separate from trusted_local management. An always-refuse design fails.
+8. Inject slow opening, configuration, source/executable preparation and gate work under the one original clock. Test exact boundary sides, queued expiry, late acquisition, expiry after gate and before COMMIT, cumulative waits and oversleep, successful-late COMMIT and uncertain COMMIT. No accepted operation is falsified; no duplicate dispatch occurs. A gate overrun is still a failed performance sample even when refusal is correct.
+9. Exercise the real compiled CLI runtime-to-MCP service handoff in addition to source-level fixtures. Check that proof and budget survive separate build output module graphs without repinning or a later start timestamp.
+10. Preserve shared-writer tests for F05 manager audit/forged actors, unsafe home/store, typed stored local_user executor, revoked claims, original-writer/orphan-policy boundaries and one-connection overlap. Source locations include int-ledger-run.test.ts:90–132, 220–333, 432 onward and 650–682, plus b45-parent-offline.test.ts. Verify unchanged shared gate behavior and no newly added periodic probes. Registry tests do not turn its separate process-I/O defect into a pass.
+11. For each new behavior provide an old-tree failure or narrowly reverted behavioral negative control. Deleting a new symbol and observing an import failure is insufficient. At minimum revert original-gate propagation, post-acquisition observation, post-gate expiry, and unsafe-audit suppression independently.
 
-- Checking only before entering the connection queue leaves the proof stale across queue and lock waits.
-- Checking immediately before BEGIN is better but is not automatically equivalent to the current after-acquisition replacement check. Removing an await does not make a filesystem namespace observation atomic with SQLite lock acquisition or prevent another process from replacing/changing the path in between.
-- Comparing only `ledger.ledgerId`/SQL metadata cannot prove the current filesystem path still names the same private store. Contract 02 deliberately preserves ledgerId through same-store backup/restore; a same-ID copy is a required negative case, not a new store guaranteed to have a different ID.
-- Constructing a new gate after an old Ledger connection was opened can pin the replacement rather than prove it is the connection's original store. The existing CLI already receives a gate from `existingLedger` but currently discards it before service construction. Do not repair this by simply repinning later.
-- A recent timestamp, an fs.watch notification, a cached boolean, a path string or a caller-supplied actor is not an authoritative replacement proof. `fstat`/`realpath` inside the transaction remains filesystem I/O. This brief does not authorize a native helper, new VFS, security setting, new persistent service or supported-profile change to solve the conflict.
 
-Recommended next step: a separate, fresh read-only architecture consultation focused on the actual connection-to-private-store binding and the precise guarantee required at local acceptance. It must establish a concrete supported mechanism, show its queue/acquisition/replacement and same-ID-copy behavior, name exact API/files and tests, and explain why it preserves the current trust boundary. Contract 01 does not claim isolation from malicious same-UID scripts; nevertheless that fact is not blanket permission to remove an existing replacement check or to grant authority from a stale prepared snapshot.
+## 8. Resolved local-gate contract fork
 
-If the only workable solution changes the meaning of the store-identity gate, permits filesystem I/O inside a write transaction, adds a native/profile dependency or changes another package's files, state that exact change as a separate recorded decision. Do not smuggle it into a budget clarification. No new end-user approval is needed merely to request the read-only consultation under the owner's delegated Oracle workflow.
+**Resolved by the [metadata-exception ruling](rulings/p065-metadata-exception.md).** The earlier no-external-I/O rule conflicted with the existing post-acquisition private-store check. The approved decision deliberately amends that rule for exactly one fixed synchronous metadata pass, not for arbitrary filesystem work and not by claiming the existing implementation already complies. Historical F08, p-06-5.md and p065-budget-local-gate.md remain unchanged.
 
-Until that ruling is complete, retain existing production local-gate behavior and do not start P065 implementation. Do not silently exclude local resume and call the approved scope complete. Post-acceptance supervisor/manager callers of the same gate are not automatically owned by this package; any required migration of those callers needs an explicit scope addition and regression plan.
+The ruling's §§3–4 are binding implementation requirements:
+
+- Carry the original trusted opening gate together with the exact Ledger instance through the CLI runtime, LocalResumeService/ResumeServiceOptions, DelegationService and local intent guard. Use an internal non-serializable binding; reject wrong Ledger/home, missing production binding and invalidated binding. Do not repin after opening/queueing, serialize/reconstruct the binding, rely on unverified cross-build instanceof identity, or expose this authority through request data, CLI flags, environment or configuration.
+- After actual BEGIN IMMEDIATE acquisition, check the original deadline, perform one synchronous lstatSync/realpathSync pass over only the original HUD_HOME, ledger.sqlite, ledger.sqlite-wal and ledger.sqlite-shm (each API at most once per target, at most eight JavaScript API calls), then check the same deadline before protected work and again before COMMIT. Early refusal/actually absent sidecars may use fewer calls. No arbitrary callback or await is allowed between guard and protected work.
+- Preserve current UID/eUID, absolute/canonical path, directory/regular-file type, owner/private-mode, no-symlink, file nlink and original home/main dev+ino checks. Existing sidecars retain safety checks without lifetime inode pinning; dangling symlinks are not absence, and non-ENOENT errors refuse. Preserve legitimate sidecar lifecycle.
+- The guarantee is consistency between original opening and post-acquisition metadata observations. It is not an atomic filesystem/SQLite binding, OS handle attestation, complete ABA/content-restore detection or isolation from malicious same-UID scripts. A same-ledgerId replacement with a different inode still refuses.
+- The same original budget includes opening/config/source/executable/gate/queue/acquisition/body/commit/rollback work. Gate time is separately reported as lock-held metadata, never a separate allowance, excluded preparation or presumed lock contention. If acquisition/gate finishes late, do not enter the requested-operation body; uncommitted expiry rolls back. Successful-late COMMIT remains accepted and over-budget; uncertain COMMIT neither means clean refusal nor permits redispatch.
+- Preserve current authority/source predicates before canonical replay, then new expectedRun/capability/slot admission. Store safety precedes local replay. Proof failure suppresses audit, invalidates only that local binding for subsequent local admissions and does not authorize retries/repinning/repair; mandatory cleanup completes. A fresh valid invocation after restore remains possible. Section 5 records the exact optional business-refusal audit boundary.
+
+No file contents/hash/config/source/process/proc/directory scans, host CLI, network, IPC, waits, retries or file modifications are excepted. No native helper, VFS, new daemon/binding, supported-profile change or positive-local-resume removal is approved.
+
+The ruling's §6 covers only the existing metadata operation for shared callers in src/ledger/supervisor.ts, src/core/run/ledger-port.ts and packages/hud-mcp/src/ledger-registry.ts. Those production paths remain read-only impact/regression targets, not P065 ownership. Preserve their existing check(actor?) policy and authority/lifecycle semantics; no new periodic heartbeat/status/wait/generic-transaction probes and no old caller 30 ms propagated into accepted supervisor execution.
+
+The registry's lock-held reader.get()/process-content reads remain a separate unresolved startup-writer compliance issue. They are not covered merely because they share a closure with gate.check(); do not silently move/delete their authority checks or claim global lock-I/O compliance. A shared-helper/callsite policy change requires its own recorded ownership revision or separate migration.
+
+The architecture fork is closed, but code remains held for section 12's separately recorded scheduling/ownership release. Documentation synchronization and that read-only release consultation do not wait for owner-run local tests.
 
 ## 9. Real-clock evidence and acceptance
 
@@ -238,6 +261,8 @@ Exact command set and per-command outer timeouts:
 - `HUD_B45_BENCH=1 node --test packages/hud-mcp/dist/tests/hud-mcp/handshake-benchmark.test.js`: 900 s, alone.
 - `node tests/int/p065-budget-benchmark.mjs "$EVIDENCE/p065-budget.json"`: 3,600 s per run. The new driver must implement the full declared matrix and raw-sample output as its default, not require a hidden qualification flag. Run three isolated series per Node family with distinct EVIDENCE directories.
 
+The [metadata-exception ruling](rulings/p065-metadata-exception.md) §7 additionally requires compiled CLI-to-MCP handoff coverage, actual-lock-interval gate counters, preserved shared-writer security/lifecycle regressions and independent behavioral negative controls for original-gate propagation, post-acquisition observation, post-gate expiry and unsafe-audit suppression. If `tests/unit/int-ledger-run.test.ts` and `tests/unit/b45-parent-offline.test.ts` are not already covered by the required aggregate command, the release brief must add their exact compiled invocation and timeout before implementation. The optional three fixture paths in section 3 require explicit ownership reservation. All original commands, timeouts and complete Node 22/24 real-clock populations remain; metadata overruns are not excluded samples.
+
 A later read-only Oracle verifies each test's failing-before behavior and semantic assertions. The deterministic suite must prove all section 7 state assertions; the real-clock driver must emit complete samples and fail its qualification summary if any applicable gate is unmet. Do not use a benchmark's exit zero alone as a substitute for inspecting its per-call flags and population completeness.
 
 Existing real-process B6 regressions may be run only on an authorized executor supporting their facilities. Do not run a wildcard that includes real-TTY/tmux/Herdr cases in cloud. The new deterministic counterpart is additional coverage, not a claim that an unrun real-process matrix passed. Synthetic socket, ptrace or process-topology denials must be reported; do not bypass them or relabel pre-behavior failure as successful lifecycle validation.
@@ -252,7 +277,7 @@ Dispatcher evidence paths:
 - `docs/cloud/handoff/p065-budget/summary-<runtime>-<run>.json`
 - `docs/cloud/handoff/p065-budget/negative-controls.md`
 - `docs/cloud/handoff/p065-budget/review-1.md` and subsequent distinct fix/re-check records.
-- `docs/cloud/rulings/p065-budget-local-gate.md` and `docs/cloud/rulings/p065-budget-release.md` for the missing design and scheduling decisions.
+- `docs/cloud/rulings/p065-budget-local-gate.md` remains the historical fork report; `docs/cloud/rulings/p065-metadata-exception.md` is the approved resolution. `docs/cloud/rulings/p065-budget-release.md` is reserved for the separate scheduling/ownership decision, still pending.
 
 Sanitize before publication. Keep synthetic source identities, full commands and byte/row counts, but exclude secrets, raw private filesystem paths and real user data. Preserve prior evidence rather than replacing an earlier failed report with a later successful one.
 
@@ -269,7 +294,7 @@ This proves present file disjointness for the bounded candidate only. It does no
 
 After an explicit release, use the dots hierarchy: dispatcher schedules/records/runs raw checks; one Astra-high implementer owns this brief; a fresh Astra-max Oracle handles each design fork and the final review; fixes return unchanged to the same implementer; fresh re-checks review fixes. No subdelegation of judgment to the dispatcher. At most two normal P065 fix rounds, then record unresolved findings. This new package does not reset any old package's consumed rounds or authorize another S3F-PERF remedy.
 
-Stop implementation on an unresolved section-8 design, missing accepted base, changed/overlapping file ownership, missing complete qualification data, an outside-whitelist remedy, or a proposed gate/profile/contract change beyond the approved scope. Preserve the branch/evidence and return the exact question. Full-suite environmental failures remain failures, not a reason to skip the gate.
+Stop implementation on an unresolved deviation from section 8's approved design, missing scheduling release or accepted base, changed/overlapping file ownership, missing complete qualification data, an outside-whitelist remedy, or a proposed gate/profile/contract change beyond the approved scope. Preserve the branch/evidence and return the exact question. Full-suite environmental failures remain failures, not a reason to skip the gate.
 
 Final acceptance requires a fresh Oracle's accept verdict verifying the report, source, failure-mode tests and measured populations. Merge only per STATE: one active merger, --no-ff into universal-hud, full green check set on the merged tree with permitted flake handling and both outputs retained, then push and factual STATE/plan updates. Never touch main, force-push, rewrite history, stage node_modules/.package-lock.json or integrate an unaccepted branch as a shortcut.
 
@@ -277,25 +302,25 @@ Final acceptance requires a fresh Oracle's accept verdict verifying the report, 
 
 **Disposition now: HOLD. P065-BUDGET implementation may not start from this brief.**
 
-The approved budget interpretation is ready to record. The conditional source/test ownership is disjoint from the inspected active implementation diffs. Those facts are insufficient to release code while the local-gate design remains unresolved. There is also no already recorded P065 implementation slot in STATE. The queue-progress ruling expressly requires both a complete bounded brief and a separate scheduling/ownership disposition; it does not itself create that slot.
+The approved budget interpretation and precise metadata exception are recorded by the [metadata-exception ruling](rulings/p065-metadata-exception.md); section 8's contract fork is closed. The conditional source/test ownership was disjoint from the inspected active implementation diffs, but that historical comparison is not a current scheduling release. The queue-progress ruling and metadata-exception ruling §8 require a complete synchronized brief plus a separately recorded fresh scheduling/ownership disposition; neither creates an implementation slot by itself.
 
-What may proceed immediately: archive this text and the HOLD, record the approved scope clarification with shared-doc serialization, and commission the narrowly focused read-only local-gate architecture consultation. These do not wait for the user's local tests and do not advance a later implementation wave.
+What may proceed immediately: complete the serialized contract/brief/status synchronization and commission the fresh read-only scheduling/ownership ruling. These do not wait for the user's local tests and do not advance a later implementation wave. The owner has delegated project decisions to Oracle, so no additional owner permission is needed for that ruling.
 
 Implementation becomes eligible only after all of the following are recorded:
 
-1. A concrete local-gate ruling closes section 8, including exact files/APIs, replacement semantics, no in-transaction external I/O and meaningful failure tests. If its mechanism changes the conditional whitelist or a reserved contract/profile boundary, that change receives an explicit recorded disposition before implementation.
-2. A fresh scheduling/ownership check against the then-current STATE and heads reserves a named bounded slot and the exact file set, including serialized shared-doc edits. It must say whether this is an independent follow-on to the owner-approved wave-1 P-06-5 consultation or must wait for named overlapping packages. File disjointness alone is not queue permission.
+1. The [metadata-exception ruling](rulings/p065-metadata-exception.md) closes section 8 with the exact fixed metadata exception, original-binding/replacement semantics and meaningful failure tests. Complete its §5 contract/brief/status synchronization through one documentation owner; no broader lock-held external I/O, authority/profile change or implicit ownership expansion is allowed.
+2. A separately recorded fresh scheduling/ownership ruling checks then-current STATE, active heads and uncommitted ownership, reserves the exact source/test/docs set (including any of section 3's three bounded fixture additions), and names the pinned accepted integration base. It must identify this as an independent follow-on to the owner-approved wave-1 P-06-5 consultation or name remaining overlaps/dependencies. File disjointness alone is not queue permission. Benchmark workloads remain isolated, one at a time.
 3. The base is a pinned accepted universal-hud image, without cherry-picking or merging unaccepted HYG2/RUNZ1/S3F/B10D code. Any source changes since this consultation require revalidation of this brief.
 
-This consultation does **not** release DOC2 or TPD1 before B10B-S3F merges, Inspector/data before the ordered wave-2 work, or B10D/LEG1/RCP1 ahead of the route's sequence. It does not hold the cloud idle: read-only gate design and the already authorized wave-1 review/evidence work can continue while the user independently tests locally. It does not promise that a later released P065 package can merge while full-check prerequisites remain red.
+This consultation does **not** release DOC2 or TPD1 before B10B-S3F merges, Inspector/data before the ordered wave-2 work, or B10D/LEG1/RCP1 ahead of the route's sequence. It does not hold the cloud idle: read-only scheduling/ownership work and the already authorized wave-1 review/evidence work can continue while the user independently tests locally. It does not promise that a later released P065 package can merge while full-check prerequisites remain red.
 
 ## 13. Approved normative text to record
 
-The following is the already approved preparation-inclusive clarification from the prior Oracle ruling, not a new threshold or a resolution of section 8:
+The following preserves the already approved preparation-inclusive clarification from the prior Oracle ruling. Its transaction-preparation statement is now qualified only by contract 02's fixed metadata exception, recorded in the [metadata-exception ruling](rulings/p065-metadata-exception.md) §5 and section 8 above; numeric limits and all other boundaries remain unchanged:
 
 > P-06-5 的 30 ms 是单次调用的授权与事务总墙钟，不是持锁时长。MCP 从完整 tools/call 进入逐调用验证、来源解析与授权准备之前开始计时，包含本次文件读取/stat、进程与来源取证、参数与摘要准备、连接队列等待，以及全部相关授权/提交事务的等锁、重试、退避和 commit；在最后相关事务提交、回滚或拒绝决定完成时结束。准备必须在写事务之外，但仍在同一预算之内；不得在取得写锁、完成准备或开始下一事务时重置时钟，也不另加准备预算。单次 busy_timeout≤10 ms、累计等锁/重试/退避≤20 ms，均包含在30 ms内。耗尽且目标操作尚未提交时不得再接受该操作；已提交结果不改报未接受，同步commit超时单列预算缺陷。MCP完整响应和显式Claude hook联合计时仍分别按P-06-4；wait的等待预算不变。
 
-Update the corresponding T-06-14/measurement wording and contract-05 cross-reference consistently, preserve F08 as history, and mark the implementation follow-on HOLD until its design and release conditions are met.
+Record the corresponding T-06-14/measurement wording and contract-01/03/04/05 cross-references consistently with the [metadata-exception ruling](rulings/p065-metadata-exception.md) §5. Preserve F08 and predecessor rulings as history; implementation remains HOLD until the separate scheduling release, with later independent acceptance and merged-tree checks still required.
 
 ## Sources
 
@@ -311,4 +336,4 @@ Update the corresponding T-06-14/measurement wording and contract-05 cross-refer
 - [CLI preparation and discarded pinned gate](https://github.com/CartmanFatass/codex-hud/blob/2249ab5952b2b4ba6fa8cefaf14c06ea97118c9e/src/cli/run.ts#L81-L128)
 - [Existing store open/check sequence](https://github.com/CartmanFatass/codex-hud/blob/2249ab5952b2b4ba6fa8cefaf14c06ea97118c9e/src/cli/runtime.ts#L87-L121)
 
-Consultation result: conditional brief and exact architecture blocker delivered; no implementation release, no acceptance verdict and no gate change.
+Current disposition: precise metadata exception recorded and local-gate contract fork resolved; implementation remains HOLD pending separate scheduling/ownership release. No implementation acceptance, merge, performance pass or capability promotion is claimed.
