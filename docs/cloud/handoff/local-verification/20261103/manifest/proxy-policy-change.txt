@@ -1,0 +1,2 @@
+switched 2026-11-03T16:00:00Z
+2026-11-03T16:39:46Z owner chose: rerun node22 check set + focused with NODE_USE_ENV_PROXY not passed (other proxy vars kept); logs under logs/<target>/node22-noenvproxy/; original node22 results retained

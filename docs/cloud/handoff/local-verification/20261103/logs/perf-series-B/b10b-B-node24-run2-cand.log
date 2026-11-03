@@ -1,0 +1,34 @@
+# target=perf runtime=node24 commit=94969100ec85a41f93eb2a0d677aefc886290691 tree=c91d20549ccc1df9fe0d8860478f76c892d17db2
+# node: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1
+# command: B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js (env -i wrapper, fresh HOME, no HUD_HOME)
+# start: 2026-11-03T16:58:37Z
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.074ms p95=0.183ms p99=0.617ms max=1.280ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.284ms p95=0.729ms p99=1.206ms max=3.703ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.475ms p95=0.878ms p99=1.408ms max=1.948ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.078ms p95=0.148ms p99=0.515ms max=1.054ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.309ms p95=0.661ms p99=1.303ms max=4.108ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.620ms p95=1.257ms p99=1.925ms max=2.808ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.127ms p95=2.619ms p99=7.882ms max=13.208ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=0.803ms p95=1.899ms p99=7.617ms max=10.075ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=1.552ms p95=5.079ms p99=6.866ms max=10.102ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.217ms p95=2.951ms p99=9.446ms max=11.148ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=0.861ms p95=1.783ms p99=9.079ms max=12.037ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=1.988ms p95=5.885ms p99=7.575ms max=10.572ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.481ms p95=0.867ms p99=1.186ms max=1.553ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=2.000ms p95=5.871ms p99=8.576ms max=15.511ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.647ms p95=1.323ms p99=1.974ms max=2.406ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=2.498ms p95=6.633ms p99=9.441ms max=11.222ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (2725.431009ms)
+✔ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (16537.988013ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (17976.614347ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (15543.144675ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 52952.759685
+# end: 2026-11-03T16:59:30Z
+# exit: 0

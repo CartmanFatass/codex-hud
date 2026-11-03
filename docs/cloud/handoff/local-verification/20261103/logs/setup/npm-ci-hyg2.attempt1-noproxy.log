@@ -1,0 +1,9 @@
+npm error code ECONNRESET
+npm error syscall read
+npm error errno ECONNRESET
+npm error network request to https://registry.npmjs.org/undici-types/-/undici-types-6.21.0.tgz failed, reason: read ECONNRESET
+npm error network This is a problem related to network connectivity.
+npm error network In most cases you are behind a proxy or have bad network settings.
+npm error network
+npm error network If you are behind a proxy, please make sure that the 'proxy' config is set properly.  See: 'npm help config'
+npm error A complete log of this run can be found in: <VERIFY_ROOT>/npm-cache/_logs/2026-11-03T15_44_40_235Z-debug-0.log

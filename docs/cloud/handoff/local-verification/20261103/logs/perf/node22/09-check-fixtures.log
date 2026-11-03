@@ -1,0 +1,12 @@
+# target=perf runtime=node22 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: npm run check:fixtures
+# start: 2026-11-03T16:16:50Z
+(node:131385) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> codex-hud@0.1.0 check:fixtures
+> bash tests/check-fixtures.sh
+
+check-fixtures: OK (tests/fixtures tests/prototypes docs/probes docs/design)
+# end: 2026-11-03T16:16:51Z
+# exit: 0

@@ -1,0 +1,11 @@
+# target=perf runtime=node22 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: npm run build
+# start: 2026-11-03T16:13:01Z
+(node:119812) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> codex-hud@0.1.0 build
+> node ./node_modules/typescript/bin/tsc
+
+# end: 2026-11-03T16:13:08Z
+# exit: 0

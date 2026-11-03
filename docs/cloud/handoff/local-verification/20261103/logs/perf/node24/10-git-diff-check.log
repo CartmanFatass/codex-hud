@@ -1,0 +1,5 @@
+# target=perf runtime=node24 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: git diff --check
+# start: 2026-11-03T16:00:12Z
+# end: 2026-11-03T16:00:12Z
+# exit: 0

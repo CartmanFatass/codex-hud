@@ -1,0 +1,9 @@
+
+> codex-hud@0.1.0 build
+> node ./node_modules/typescript/bin/tsc
+
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+# exit: 0

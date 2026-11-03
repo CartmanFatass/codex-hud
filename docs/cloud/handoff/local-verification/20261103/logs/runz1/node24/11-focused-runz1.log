@@ -1,0 +1,87 @@
+# target=runz1 runtime=node24 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 cwd=<wt>/runz1
+# command: node --test dist-test/tests/unit/runz1-process.test.js dist-test/tests/unit/run-control.test.js dist-test/tests/unit/run-process.test.js
+# start: 2026-11-03T15:57:06Z
+✔ RunControl real contract: readonly status, byte logs, stdin EOF, normal and nonzero native result (315.744867ms)
+✔ normal exit 0 creates one durable final receipt before adoption (282.327971ms)
+✔ cancel authenticates intent, returns promptly, preserves duplicate grace and signals three stages (212.689442ms)
+✔ unknown scope refuses receipts, control and recovery after short shell without harness identity (191.532358ms)
+✔ configuration claim leaves preserve user argv and only override four named leaves (0.549882ms)
+✔ supervisor death receiptless Q uses registered stamp, no replacement execution or writer files (2161.072322ms)
+✔ two real supervisors compete for one fake slot/ticket: loser touches no logs, exactly one submission (783.248584ms)
+✔ registration commit before meta crash retains all stamp fields; missing/mismatched domain never backfills (1.740885ms)
+✔ reconcile revision prevents competing cancel or registration being overwritten (1.160346ms)
+✔ verified shell harness keeps native unknown separately from actual shell status 137 (435.492184ms)
+✔ direct harness killed by a real signal records sourced wait signal (165.843811ms)
+✔ accepted cancellation with verified scope absent never signals a guessed shell group (390.984556ms)
+✔ orphan policy reacts to verified physical parent death, while continue preserves the run (341.506404ms)
+✖ cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof (2155.755083ms)
+✔ cancel accepted after submitting and before scope fixation wakes once discovery finishes (274.291608ms)
+✔ heartbeat wall/monotonic disagreement records one anomaly and stays uncertain (5120.770537ms)
+✔ historical PGID/SID reuse simulation never makes unrelated new workload an old-scope conflict (1411.381716ms)
+✔ real supervisor SIGKILL at submitted_before_scope never resubmits or replays signals (383.291626ms)
+✔ real supervisor SIGKILL at cancel_before_ack_commit never resubmits or replays signals (5325.789819ms)
+✔ argv wrapper honors independent harness discovery and never uses launcher wait as native exit (387.893663ms)
+✔ process stamps preserve boot and PID namespace, and cross-domain state stays unknown (3.186351ms)
+✔ one-shot group launch preserves argv and stdin EOF, waits for helper exit (89.961426ms)
+✔ helper in its own group delivers INT then TERM; replacement-stamp simulation refuses control (59.092205ms)
+✔ SIGKILL from inside helper group loses acknowledgement and never invents command wait status (44.80131ms)
+✔ dead command and group leader with a living member never prove scope gone (64.68696ms)
+✔ fork during actual /proc enumeration is partial evidence, never complete scope proof (107.696541ms)
+✔ real member leaving group during enumeration keeps original harness alive outside scope (79.199175ms)
+✔ IPC disconnect seals helper while the existing command continues (183.117717ms)
+✔ crash/disconnect before scope fixation seals unsubmitted helper with zero command spawn (46.50507ms)
+✔ private helper accepts exactly one submission and refuses a second launch (177.655362ms)
+✔ RUNZ1 true zombie-only own session ends while the kernel still holds its PGID (63.977705ms)
+✔ RUNZ1 fork after the first census snapshot cannot end a live group (67.869153ms)
+✔ RUNZ1 same-session outsider can join a zombie-held PGID and never produces gone (70.646837ms)
+✔ RUNZ1 full census rejects the fork then setsid escape after the second snapshot (150.260301ms)
+✔ RUNZ1 zombie thread-group leader with a live sibling never proves gone (46.159771ms)
+✔ RUNZ1 visible shared-session zombie stays unknown until ESRCH despite a living session outsider (77.483287ms)
+✔ RUNZ1 synthetic control and vanished identities: stable or shrinking census is accepted (1.178189ms)
+✔ RUNZ1 new evidence cannot certify zombie absence (0.345411ms)
+✔ RUNZ1 reused evidence cannot certify zombie absence (0.195944ms)
+✔ RUNZ1 ENOENT evidence cannot certify zombie absence (0.242741ms)
+✔ RUNZ1 ESRCH evidence cannot certify zombie absence (0.119432ms)
+✔ RUNZ1 EACCES evidence cannot certify zombie absence (0.140231ms)
+✔ RUNZ1 malformed evidence cannot certify zombie absence (0.159486ms)
+✔ RUNZ1 visibility evidence cannot certify zombie absence (0.122478ms)
+✔ RUNZ1 remount evidence cannot certify zombie absence (0.185215ms)
+✔ RUNZ1 thread evidence cannot certify zombie absence (0.094346ms)
+✔ RUNZ1 task-list evidence cannot certify zombie absence (0.085239ms)
+✔ RUNZ1 subject-thread evidence cannot certify zombie absence (0.14511ms)
+✔ RUNZ1 stat validation rejects invalid identity, state, membership, thread and start fields (0.287544ms)
+✔ RUNZ1 a failed census read throws instead of silently dropping an enumerated PID (0.138587ms)
+✔ RUNZ1 visibility witness rejects hidden, partial, unknown and overmounted proc views (0.326186ms)
+✔ RUNZ1 ESRCH cannot override escaped harness zombie TGID with a live sibling (67.01257ms)
+✔ RUNZ1 ESRCH cannot override escaped launcher zombie TGID with a live sibling (72.365476ms)
+✔ RUNZ1 common subject proof rejects ambiguous tasks and wrong domains but accepts replaced originals (51.735558ms)
+ℹ tests 54
+ℹ suites 0
+ℹ pass 53
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20450.826937
+
+✖ failing tests:
+
+test at dist-test/tests/unit/run-control.test.js:337:1
+✖ cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof (2155.755083ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/runz1/dist-test/tests/unit/run-control.test.js:360:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+# end: 2026-11-03T15:57:26Z
+# exit: 1

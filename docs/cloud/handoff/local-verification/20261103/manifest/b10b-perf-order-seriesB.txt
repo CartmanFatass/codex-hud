@@ -1,0 +1,12 @@
+B-node22-run1-base base 22
+B-node22-run1-cand perf 22
+B-node22-run2-base base 22
+B-node22-run2-cand perf 22
+B-node22-run3-base base 22
+B-node22-run3-cand perf 22
+B-node24-run1-base base 24
+B-node24-run1-cand perf 24
+B-node24-run2-base base 24
+B-node24-run2-cand perf 24
+B-node24-run3-base base 24
+B-node24-run3-cand perf 24

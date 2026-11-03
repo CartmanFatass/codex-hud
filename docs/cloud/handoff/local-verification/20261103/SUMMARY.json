@@ -1,0 +1,7027 @@
+{
+ "run_id": ".",
+ "report": "REPORT.md",
+ "targets": {
+  "hyg2": {
+   "branch": "dots/hyg2",
+   "commit": "2bcaa4f9c8eb2c1c230a0249c0fa40bccd6fbd31",
+   "tree": "50438e87a1915d5e739a4a4d926cc9b1e7e85724",
+   "role": "HYG2"
+  },
+  "runz1": {
+   "branch": "dots/runz1",
+   "commit": "86ca8887fcfb331750ec6dc5518d69134cb795e4",
+   "tree": "da3e386e3512736f3078d0fd9c7b85a868f83f6d",
+   "role": "RUNZ1"
+  },
+  "perf": {
+   "branch": "dots/b10b-s3f-perf",
+   "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+   "tree": "c91d20549ccc1df9fe0d8860478f76c892d17db2",
+   "role": "B10B-S3F-PERF candidate"
+  },
+  "base": {
+   "branch": "dots/b10b-s3f",
+   "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+   "tree": "f9bcdc5c069156d655ca7d3cd7a08590e74b8eec",
+   "role": "B10B-S3F baseline (perf only)"
+  }
+ },
+ "checks": {
+  "hyg2": {
+   "node24": {
+    "01-build": {
+     "command": "npm run build",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:51:22Z",
+     "end_utc": "2026-11-03T15:51:31Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node24/01-build.log"
+    },
+    "02-build-test": {
+     "command": "npm run build:test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:51:31Z",
+     "end_utc": "2026-11-03T15:51:50Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node24/02-build-test.log"
+    },
+    "03-build-hud-mcp": {
+     "command": "npm run build:hud-mcp",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:51:50Z",
+     "end_utc": "2026-11-03T15:51:53Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node24/03-build-hud-mcp.log"
+    },
+    "04-npm-test": {
+     "command": "npm test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:51:53Z",
+     "end_utc": "2026-11-03T15:53:14Z",
+     "test_counts": [
+      {
+       "tests": 3,
+       "suites": 0,
+       "pass": 2,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      },
+      {
+       "tests": 2357,
+       "suites": 0,
+       "pass": 2341,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 16,
+       "todo": 0
+      },
+      {
+       "tests": 47,
+       "suites": 0,
+       "pass": 47,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/hyg2/node24/04-npm-test.log"
+    },
+    "04b-test-mjs-separate": null,
+    "05-test-core": {
+     "command": "npm run test:core",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:53:14Z",
+     "end_utc": "2026-11-03T15:53:27Z",
+     "test_counts": [
+      {
+       "tests": 210,
+       "suites": 0,
+       "pass": 209,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/hyg2/node24/05-test-core.log"
+    },
+    "06-test-visual": {
+     "command": "npm run test:visual",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:53:27Z",
+     "end_utc": "2026-11-03T15:53:39Z",
+     "test_counts": [
+      {
+       "tests": 319,
+       "suites": 0,
+       "pass": 319,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/hyg2/node24/06-test-visual.log"
+    },
+    "07-test-hud-mcp": {
+     "command": "npm run test:hud-mcp",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T15:53:39Z",
+     "end_utc": "2026-11-03T15:53:45Z",
+     "test_counts": [
+      {
+       "tests": 84,
+       "suites": 0,
+       "pass": 82,
+       "fail": 1,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "int hud-mcp physical caller registration persists real procStart/cwd without logical authority (73.921496ms)"
+     ],
+     "log": "logs/hyg2/node24/07-test-hud-mcp.log"
+    },
+    "08-format-check": {
+     "command": "npm run format:check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:53:45Z",
+     "end_utc": "2026-11-03T15:54:02Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node24/08-format-check.log"
+    },
+    "09-check-fixtures": {
+     "command": "npm run check:fixtures",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:54:02Z",
+     "end_utc": "2026-11-03T15:54:02Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node24/09-check-fixtures.log"
+    },
+    "10-git-diff-check": {
+     "command": "git diff --check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:54:02Z",
+     "end_utc": "2026-11-03T15:54:02Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node24/10-git-diff-check.log"
+    }
+   },
+   "node22": {
+    "01-build": {
+     "command": "npm run build",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:04:34Z",
+     "end_utc": "2026-11-03T16:04:41Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22/01-build.log"
+    },
+    "02-build-test": {
+     "command": "npm run build:test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:04:41Z",
+     "end_utc": "2026-11-03T16:04:52Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22/02-build-test.log"
+    },
+    "03-build-hud-mcp": {
+     "command": "npm run build:hud-mcp",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:04:52Z",
+     "end_utc": "2026-11-03T16:04:56Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22/03-build-hud-mcp.log"
+    },
+    "04-npm-test": {
+     "command": "npm test",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T16:04:56Z",
+     "end_utc": "2026-11-03T16:06:25Z",
+     "test_counts": [
+      {
+       "tests": 2357,
+       "suites": 0,
+       "pass": 2328,
+       "fail": 13,
+       "cancelled": 0,
+       "skipped": 16,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "hud help and strict argument refusals never access or create a ledger",
+      "hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes",
+      "hud missing and unreadable ledgers fail with no stdout or initialization",
+      "hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes",
+      "hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4",
+      "hud reports asynchronous stdout failures for export and help without Node stack traces",
+      "hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged",
+      "hud refuses unknown ledger versions without migrating or emitting JSON",
+      "hud producer validation refusal writes no partial JSON",
+      "hud defaults to ~/.hud only inside an isolated synthetic HOME",
+      "hud export leaves fresh-process raw stderr free of SQLite initialization warnings",
+      "light leader preserves exact brief bytes and EOF on workload fd0",
+      "one-shot group launch preserves argv and stdin EOF, waits for helper exit"
+     ],
+     "log": "logs/hyg2/node22/04-npm-test.log"
+    },
+    "04b-test-mjs-separate": {
+     "command": "npm run test:mjs (separately)",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:37:39Z",
+     "end_utc": "2026-11-03T16:37:40Z",
+     "test_counts": [
+      {
+       "tests": 47,
+       "suites": 0,
+       "pass": 47,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22/04b-test-mjs-separate.log"
+    },
+    "05-test-core": {
+     "command": "npm run test:core",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:06:25Z",
+     "end_utc": "2026-11-03T16:06:54Z",
+     "test_counts": [
+      {
+       "tests": 210,
+       "suites": 0,
+       "pass": 209,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22/05-test-core.log"
+    },
+    "06-test-visual": {
+     "command": "npm run test:visual",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:06:54Z",
+     "end_utc": "2026-11-03T16:07:18Z",
+     "test_counts": [
+      {
+       "tests": 319,
+       "suites": 0,
+       "pass": 319,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22/06-test-visual.log"
+    },
+    "07-test-hud-mcp": {
+     "command": "npm run test:hud-mcp",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T16:07:18Z",
+     "end_utc": "2026-11-03T16:07:29Z",
+     "test_counts": [
+      {
+       "tests": 84,
+       "suites": 0,
+       "pass": 82,
+       "fail": 1,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "int hud-mcp physical caller registration persists real procStart/cwd without logical authority"
+     ],
+     "log": "logs/hyg2/node22/07-test-hud-mcp.log"
+    },
+    "08-format-check": {
+     "command": "npm run format:check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:07:29Z",
+     "end_utc": "2026-11-03T16:07:50Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22/08-format-check.log"
+    },
+    "09-check-fixtures": {
+     "command": "npm run check:fixtures",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:07:50Z",
+     "end_utc": "2026-11-03T16:07:51Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22/09-check-fixtures.log"
+    },
+    "10-git-diff-check": {
+     "command": "git diff --check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:07:51Z",
+     "end_utc": "2026-11-03T16:07:51Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22/10-git-diff-check.log"
+    }
+   },
+   "node22-noenvproxy": {
+    "01-build": {
+     "command": "npm run build",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:39:46Z",
+     "end_utc": "2026-11-03T16:39:52Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22-noenvproxy/01-build.log"
+    },
+    "02-build-test": {
+     "command": "npm run build:test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:39:52Z",
+     "end_utc": "2026-11-03T16:40:02Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22-noenvproxy/02-build-test.log"
+    },
+    "03-build-hud-mcp": {
+     "command": "npm run build:hud-mcp",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:40:02Z",
+     "end_utc": "2026-11-03T16:40:04Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22-noenvproxy/03-build-hud-mcp.log"
+    },
+    "04-npm-test": {
+     "command": "npm test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:40:04Z",
+     "end_utc": "2026-11-03T16:41:18Z",
+     "test_counts": [
+      {
+       "tests": 2357,
+       "suites": 0,
+       "pass": 2341,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 16,
+       "todo": 0
+      },
+      {
+       "tests": 47,
+       "suites": 0,
+       "pass": 47,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22-noenvproxy/04-npm-test.log"
+    },
+    "04b-test-mjs-separate": null,
+    "05-test-core": {
+     "command": "npm run test:core",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:41:18Z",
+     "end_utc": "2026-11-03T16:41:33Z",
+     "test_counts": [
+      {
+       "tests": 210,
+       "suites": 0,
+       "pass": 209,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22-noenvproxy/05-test-core.log"
+    },
+    "06-test-visual": {
+     "command": "npm run test:visual",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:41:33Z",
+     "end_utc": "2026-11-03T16:41:43Z",
+     "test_counts": [
+      {
+       "tests": 319,
+       "suites": 0,
+       "pass": 319,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22-noenvproxy/06-test-visual.log"
+    },
+    "07-test-hud-mcp": {
+     "command": "npm run test:hud-mcp",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T16:41:43Z",
+     "end_utc": "2026-11-03T16:41:51Z",
+     "test_counts": [
+      {
+       "tests": 84,
+       "suites": 0,
+       "pass": 82,
+       "fail": 1,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "int hud-mcp physical caller registration persists real procStart/cwd without logical authority"
+     ],
+     "log": "logs/hyg2/node22-noenvproxy/07-test-hud-mcp.log"
+    },
+    "08-format-check": {
+     "command": "npm run format:check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:41:51Z",
+     "end_utc": "2026-11-03T16:42:00Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22-noenvproxy/08-format-check.log"
+    },
+    "09-check-fixtures": {
+     "command": "npm run check:fixtures",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:42:00Z",
+     "end_utc": "2026-11-03T16:42:01Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22-noenvproxy/09-check-fixtures.log"
+    },
+    "10-git-diff-check": {
+     "command": "git diff --check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:42:01Z",
+     "end_utc": "2026-11-03T16:42:01Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/hyg2/node22-noenvproxy/10-git-diff-check.log"
+    }
+   }
+  },
+  "runz1": {
+   "node24": {
+    "01-build": {
+     "command": "npm run build",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:54:16Z",
+     "end_utc": "2026-11-03T15:54:27Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node24/01-build.log"
+    },
+    "02-build-test": {
+     "command": "npm run build:test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:54:27Z",
+     "end_utc": "2026-11-03T15:54:45Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node24/02-build-test.log"
+    },
+    "03-build-hud-mcp": {
+     "command": "npm run build:hud-mcp",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:54:45Z",
+     "end_utc": "2026-11-03T15:54:50Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node24/03-build-hud-mcp.log"
+    },
+    "04-npm-test": {
+     "command": "npm test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:54:50Z",
+     "end_utc": "2026-11-03T15:56:22Z",
+     "test_counts": [
+      {
+       "tests": 3,
+       "suites": 0,
+       "pass": 2,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      },
+      {
+       "tests": 2369,
+       "suites": 0,
+       "pass": 2353,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 16,
+       "todo": 0
+      },
+      {
+       "tests": 47,
+       "suites": 0,
+       "pass": 47,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/runz1/node24/04-npm-test.log"
+    },
+    "04b-test-mjs-separate": null,
+    "05-test-core": {
+     "command": "npm run test:core",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:56:22Z",
+     "end_utc": "2026-11-03T15:56:34Z",
+     "test_counts": [
+      {
+       "tests": 210,
+       "suites": 0,
+       "pass": 209,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/runz1/node24/05-test-core.log"
+    },
+    "06-test-visual": {
+     "command": "npm run test:visual",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:56:34Z",
+     "end_utc": "2026-11-03T15:56:45Z",
+     "test_counts": [
+      {
+       "tests": 319,
+       "suites": 0,
+       "pass": 319,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/runz1/node24/06-test-visual.log"
+    },
+    "07-test-hud-mcp": {
+     "command": "npm run test:hud-mcp",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T15:56:45Z",
+     "end_utc": "2026-11-03T15:56:51Z",
+     "test_counts": [
+      {
+       "tests": 84,
+       "suites": 0,
+       "pass": 82,
+       "fail": 1,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "int hud-mcp physical caller registration persists real procStart/cwd without logical authority (49.913862ms)"
+     ],
+     "log": "logs/runz1/node24/07-test-hud-mcp.log"
+    },
+    "08-format-check": {
+     "command": "npm run format:check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:56:51Z",
+     "end_utc": "2026-11-03T15:57:06Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node24/08-format-check.log"
+    },
+    "09-check-fixtures": {
+     "command": "npm run check:fixtures",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:57:06Z",
+     "end_utc": "2026-11-03T15:57:06Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node24/09-check-fixtures.log"
+    },
+    "10-git-diff-check": {
+     "command": "git diff --check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:57:06Z",
+     "end_utc": "2026-11-03T15:57:06Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node24/10-git-diff-check.log"
+    }
+   },
+   "node22": {
+    "01-build": {
+     "command": "npm run build",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:08:49Z",
+     "end_utc": "2026-11-03T16:09:02Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22/01-build.log"
+    },
+    "02-build-test": {
+     "command": "npm run build:test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:09:02Z",
+     "end_utc": "2026-11-03T16:09:24Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22/02-build-test.log"
+    },
+    "03-build-hud-mcp": {
+     "command": "npm run build:hud-mcp",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:09:24Z",
+     "end_utc": "2026-11-03T16:09:31Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22/03-build-hud-mcp.log"
+    },
+    "04-npm-test": {
+     "command": "npm test",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T16:09:31Z",
+     "end_utc": "2026-11-03T16:11:16Z",
+     "test_counts": [
+      {
+       "tests": 2369,
+       "suites": 0,
+       "pass": 2341,
+       "fail": 12,
+       "cancelled": 0,
+       "skipped": 16,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "hud help and strict argument refusals never access or create a ledger",
+      "hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes",
+      "hud missing and unreadable ledgers fail with no stdout or initialization",
+      "hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes",
+      "hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4",
+      "hud reports asynchronous stdout failures for export and help without Node stack traces",
+      "hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged",
+      "hud refuses unknown ledger versions without migrating or emitting JSON",
+      "hud producer validation refusal writes no partial JSON",
+      "hud defaults to ~/.hud only inside an isolated synthetic HOME",
+      "light leader preserves exact brief bytes and EOF on workload fd0",
+      "one-shot group launch preserves argv and stdin EOF, waits for helper exit"
+     ],
+     "log": "logs/runz1/node22/04-npm-test.log"
+    },
+    "04b-test-mjs-separate": {
+     "command": "npm run test:mjs (separately)",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:37:40Z",
+     "end_utc": "2026-11-03T16:37:41Z",
+     "test_counts": [
+      {
+       "tests": 47,
+       "suites": 0,
+       "pass": 47,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/runz1/node22/04b-test-mjs-separate.log"
+    },
+    "05-test-core": {
+     "command": "npm run test:core",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:11:16Z",
+     "end_utc": "2026-11-03T16:11:45Z",
+     "test_counts": [
+      {
+       "tests": 210,
+       "suites": 0,
+       "pass": 209,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/runz1/node22/05-test-core.log"
+    },
+    "06-test-visual": {
+     "command": "npm run test:visual",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:11:45Z",
+     "end_utc": "2026-11-03T16:12:09Z",
+     "test_counts": [
+      {
+       "tests": 319,
+       "suites": 0,
+       "pass": 319,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/runz1/node22/06-test-visual.log"
+    },
+    "07-test-hud-mcp": {
+     "command": "npm run test:hud-mcp",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T16:12:09Z",
+     "end_utc": "2026-11-03T16:12:20Z",
+     "test_counts": [
+      {
+       "tests": 84,
+       "suites": 0,
+       "pass": 80,
+       "fail": 3,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot",
+      "B45 accepted spawn is atomic, lost response replays immutable result with zero second launch",
+      "int hud-mcp physical caller registration persists real procStart/cwd without logical authority"
+     ],
+     "log": "logs/runz1/node22/07-test-hud-mcp.log"
+    },
+    "08-format-check": {
+     "command": "npm run format:check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:12:20Z",
+     "end_utc": "2026-11-03T16:12:40Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22/08-format-check.log"
+    },
+    "09-check-fixtures": {
+     "command": "npm run check:fixtures",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:12:40Z",
+     "end_utc": "2026-11-03T16:12:41Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22/09-check-fixtures.log"
+    },
+    "10-git-diff-check": {
+     "command": "git diff --check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:12:41Z",
+     "end_utc": "2026-11-03T16:12:41Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22/10-git-diff-check.log"
+    }
+   },
+   "node22-noenvproxy": {
+    "01-build": {
+     "command": "npm run build",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:42:24Z",
+     "end_utc": "2026-11-03T16:42:29Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22-noenvproxy/01-build.log"
+    },
+    "02-build-test": {
+     "command": "npm run build:test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:42:29Z",
+     "end_utc": "2026-11-03T16:42:38Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22-noenvproxy/02-build-test.log"
+    },
+    "03-build-hud-mcp": {
+     "command": "npm run build:hud-mcp",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:42:38Z",
+     "end_utc": "2026-11-03T16:42:41Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22-noenvproxy/03-build-hud-mcp.log"
+    },
+    "04-npm-test": {
+     "command": "npm test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:42:41Z",
+     "end_utc": "2026-11-03T16:43:54Z",
+     "test_counts": [
+      {
+       "tests": 2369,
+       "suites": 0,
+       "pass": 2353,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 16,
+       "todo": 0
+      },
+      {
+       "tests": 47,
+       "suites": 0,
+       "pass": 47,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/runz1/node22-noenvproxy/04-npm-test.log"
+    },
+    "04b-test-mjs-separate": null,
+    "05-test-core": {
+     "command": "npm run test:core",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:43:54Z",
+     "end_utc": "2026-11-03T16:44:06Z",
+     "test_counts": [
+      {
+       "tests": 210,
+       "suites": 0,
+       "pass": 209,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/runz1/node22-noenvproxy/05-test-core.log"
+    },
+    "06-test-visual": {
+     "command": "npm run test:visual",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:44:06Z",
+     "end_utc": "2026-11-03T16:44:16Z",
+     "test_counts": [
+      {
+       "tests": 319,
+       "suites": 0,
+       "pass": 319,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/runz1/node22-noenvproxy/06-test-visual.log"
+    },
+    "07-test-hud-mcp": {
+     "command": "npm run test:hud-mcp",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T16:44:16Z",
+     "end_utc": "2026-11-03T16:44:20Z",
+     "test_counts": [
+      {
+       "tests": 84,
+       "suites": 0,
+       "pass": 82,
+       "fail": 1,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "int hud-mcp physical caller registration persists real procStart/cwd without logical authority"
+     ],
+     "log": "logs/runz1/node22-noenvproxy/07-test-hud-mcp.log"
+    },
+    "08-format-check": {
+     "command": "npm run format:check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:44:20Z",
+     "end_utc": "2026-11-03T16:44:30Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22-noenvproxy/08-format-check.log"
+    },
+    "09-check-fixtures": {
+     "command": "npm run check:fixtures",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:44:30Z",
+     "end_utc": "2026-11-03T16:44:30Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22-noenvproxy/09-check-fixtures.log"
+    },
+    "10-git-diff-check": {
+     "command": "git diff --check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:44:30Z",
+     "end_utc": "2026-11-03T16:44:30Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/runz1/node22-noenvproxy/10-git-diff-check.log"
+    }
+   }
+  },
+  "perf": {
+   "node24": {
+    "01-build": {
+     "command": "npm run build",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:57:27Z",
+     "end_utc": "2026-11-03T15:57:36Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node24/01-build.log"
+    },
+    "02-build-test": {
+     "command": "npm run build:test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:57:36Z",
+     "end_utc": "2026-11-03T15:57:51Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node24/02-build-test.log"
+    },
+    "03-build-hud-mcp": {
+     "command": "npm run build:hud-mcp",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:57:51Z",
+     "end_utc": "2026-11-03T15:57:55Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node24/03-build-hud-mcp.log"
+    },
+    "04-npm-test": {
+     "command": "npm test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:57:55Z",
+     "end_utc": "2026-11-03T15:59:29Z",
+     "test_counts": [
+      {
+       "tests": 3,
+       "suites": 0,
+       "pass": 2,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      },
+      {
+       "tests": 2464,
+       "suites": 0,
+       "pass": 2448,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 16,
+       "todo": 0
+      },
+      {
+       "tests": 47,
+       "suites": 0,
+       "pass": 47,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/perf/node24/04-npm-test.log"
+    },
+    "04b-test-mjs-separate": null,
+    "05-test-core": {
+     "command": "npm run test:core",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:59:29Z",
+     "end_utc": "2026-11-03T15:59:42Z",
+     "test_counts": [
+      {
+       "tests": 210,
+       "suites": 0,
+       "pass": 209,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/perf/node24/05-test-core.log"
+    },
+    "06-test-visual": {
+     "command": "npm run test:visual",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:59:42Z",
+     "end_utc": "2026-11-03T15:59:54Z",
+     "test_counts": [
+      {
+       "tests": 331,
+       "suites": 0,
+       "pass": 331,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/perf/node24/06-test-visual.log"
+    },
+    "07-test-hud-mcp": {
+     "command": "npm run test:hud-mcp",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T15:59:54Z",
+     "end_utc": "2026-11-03T15:59:58Z",
+     "test_counts": [
+      {
+       "tests": 84,
+       "suites": 0,
+       "pass": 82,
+       "fail": 1,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "int hud-mcp physical caller registration persists real procStart/cwd without logical authority (50.879145ms)"
+     ],
+     "log": "logs/perf/node24/07-test-hud-mcp.log"
+    },
+    "08-format-check": {
+     "command": "npm run format:check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T15:59:58Z",
+     "end_utc": "2026-11-03T16:00:12Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node24/08-format-check.log"
+    },
+    "09-check-fixtures": {
+     "command": "npm run check:fixtures",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:00:12Z",
+     "end_utc": "2026-11-03T16:00:12Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node24/09-check-fixtures.log"
+    },
+    "10-git-diff-check": {
+     "command": "git diff --check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:00:12Z",
+     "end_utc": "2026-11-03T16:00:12Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node24/10-git-diff-check.log"
+    }
+   },
+   "node22": {
+    "01-build": {
+     "command": "npm run build",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:13:01Z",
+     "end_utc": "2026-11-03T16:13:08Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22/01-build.log"
+    },
+    "02-build-test": {
+     "command": "npm run build:test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:13:08Z",
+     "end_utc": "2026-11-03T16:13:18Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22/02-build-test.log"
+    },
+    "03-build-hud-mcp": {
+     "command": "npm run build:hud-mcp",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:13:18Z",
+     "end_utc": "2026-11-03T16:13:22Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22/03-build-hud-mcp.log"
+    },
+    "04-npm-test": {
+     "command": "npm test",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T16:13:22Z",
+     "end_utc": "2026-11-03T16:15:34Z",
+     "test_counts": [
+      {
+       "tests": 2464,
+       "suites": 0,
+       "pass": 2436,
+       "fail": 12,
+       "cancelled": 0,
+       "skipped": 16,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "hud help and strict argument refusals never access or create a ledger",
+      "hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes",
+      "hud missing and unreadable ledgers fail with no stdout or initialization",
+      "hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes",
+      "hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4",
+      "hud reports asynchronous stdout failures for export and help without Node stack traces",
+      "hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged",
+      "hud refuses unknown ledger versions without migrating or emitting JSON",
+      "hud producer validation refusal writes no partial JSON",
+      "hud defaults to ~/.hud only inside an isolated synthetic HOME",
+      "light leader preserves exact brief bytes and EOF on workload fd0",
+      "one-shot group launch preserves argv and stdin EOF, waits for helper exit"
+     ],
+     "log": "logs/perf/node22/04-npm-test.log"
+    },
+    "04b-test-mjs-separate": {
+     "command": "npm run test:mjs (separately)",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:37:41Z",
+     "end_utc": "2026-11-03T16:37:42Z",
+     "test_counts": [
+      {
+       "tests": 47,
+       "suites": 0,
+       "pass": 47,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/perf/node22/04b-test-mjs-separate.log"
+    },
+    "05-test-core": {
+     "command": "npm run test:core",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:15:34Z",
+     "end_utc": "2026-11-03T16:16:04Z",
+     "test_counts": [
+      {
+       "tests": 210,
+       "suites": 0,
+       "pass": 209,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/perf/node22/05-test-core.log"
+    },
+    "06-test-visual": {
+     "command": "npm run test:visual",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:16:04Z",
+     "end_utc": "2026-11-03T16:16:31Z",
+     "test_counts": [
+      {
+       "tests": 331,
+       "suites": 0,
+       "pass": 331,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/perf/node22/06-test-visual.log"
+    },
+    "07-test-hud-mcp": {
+     "command": "npm run test:hud-mcp",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T16:16:31Z",
+     "end_utc": "2026-11-03T16:16:36Z",
+     "test_counts": [
+      {
+       "tests": 84,
+       "suites": 0,
+       "pass": 82,
+       "fail": 1,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "int hud-mcp physical caller registration persists real procStart/cwd without logical authority"
+     ],
+     "log": "logs/perf/node22/07-test-hud-mcp.log"
+    },
+    "08-format-check": {
+     "command": "npm run format:check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:16:36Z",
+     "end_utc": "2026-11-03T16:16:50Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22/08-format-check.log"
+    },
+    "09-check-fixtures": {
+     "command": "npm run check:fixtures",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:16:50Z",
+     "end_utc": "2026-11-03T16:16:51Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22/09-check-fixtures.log"
+    },
+    "10-git-diff-check": {
+     "command": "git diff --check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:16:51Z",
+     "end_utc": "2026-11-03T16:16:51Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22/10-git-diff-check.log"
+    }
+   },
+   "node22-noenvproxy": {
+    "01-build": {
+     "command": "npm run build",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:44:49Z",
+     "end_utc": "2026-11-03T16:44:54Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22-noenvproxy/01-build.log"
+    },
+    "02-build-test": {
+     "command": "npm run build:test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:44:54Z",
+     "end_utc": "2026-11-03T16:45:04Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22-noenvproxy/02-build-test.log"
+    },
+    "03-build-hud-mcp": {
+     "command": "npm run build:hud-mcp",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:45:04Z",
+     "end_utc": "2026-11-03T16:45:06Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22-noenvproxy/03-build-hud-mcp.log"
+    },
+    "04-npm-test": {
+     "command": "npm test",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:45:06Z",
+     "end_utc": "2026-11-03T16:46:26Z",
+     "test_counts": [
+      {
+       "tests": 2464,
+       "suites": 0,
+       "pass": 2448,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 16,
+       "todo": 0
+      },
+      {
+       "tests": 47,
+       "suites": 0,
+       "pass": 47,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/perf/node22-noenvproxy/04-npm-test.log"
+    },
+    "04b-test-mjs-separate": null,
+    "05-test-core": {
+     "command": "npm run test:core",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:46:26Z",
+     "end_utc": "2026-11-03T16:46:42Z",
+     "test_counts": [
+      {
+       "tests": 210,
+       "suites": 0,
+       "pass": 209,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/perf/node22-noenvproxy/05-test-core.log"
+    },
+    "06-test-visual": {
+     "command": "npm run test:visual",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:46:42Z",
+     "end_utc": "2026-11-03T16:46:53Z",
+     "test_counts": [
+      {
+       "tests": 331,
+       "suites": 0,
+       "pass": 331,
+       "fail": 0,
+       "cancelled": 0,
+       "skipped": 0,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [],
+     "log": "logs/perf/node22-noenvproxy/06-test-visual.log"
+    },
+    "07-test-hud-mcp": {
+     "command": "npm run test:hud-mcp",
+     "exit": 1,
+     "result": "FAIL",
+     "start_utc": "2026-11-03T16:46:53Z",
+     "end_utc": "2026-11-03T16:47:01Z",
+     "test_counts": [
+      {
+       "tests": 84,
+       "suites": 0,
+       "pass": 82,
+       "fail": 1,
+       "cancelled": 0,
+       "skipped": 1,
+       "todo": 0
+      }
+     ],
+     "failing_tests": [
+      "int hud-mcp physical caller registration persists real procStart/cwd without logical authority"
+     ],
+     "log": "logs/perf/node22-noenvproxy/07-test-hud-mcp.log"
+    },
+    "08-format-check": {
+     "command": "npm run format:check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:47:01Z",
+     "end_utc": "2026-11-03T16:47:12Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22-noenvproxy/08-format-check.log"
+    },
+    "09-check-fixtures": {
+     "command": "npm run check:fixtures",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:47:12Z",
+     "end_utc": "2026-11-03T16:47:12Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22-noenvproxy/09-check-fixtures.log"
+    },
+    "10-git-diff-check": {
+     "command": "git diff --check",
+     "exit": 0,
+     "result": "PASS",
+     "start_utc": "2026-11-03T16:47:12Z",
+     "end_utc": "2026-11-03T16:47:12Z",
+     "test_counts": [],
+     "failing_tests": [],
+     "log": "logs/perf/node22-noenvproxy/10-git-diff-check.log"
+    }
+   }
+  }
+ },
+ "focused": {
+  "hyg2": {
+   "node24": {
+    "command": "node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/b45-launch.test.js dist-test/tests/unit/process-client.test.js dist-test/tests/unit/b12r-store.test.js dist-test/tests/unit/b12d-wal.test.js dist-test/tests/unit/b16-writer.test.js",
+    "exit": 0,
+    "result": "PASS",
+    "test_counts": [
+     {
+      "tests": 76,
+      "suites": 0,
+      "pass": 76,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     }
+    ],
+    "failing_tests": [],
+    "log": "logs/hyg2/node24/11-focused-hyg2.log"
+   },
+   "node22": {
+    "command": "node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/b45-launch.test.js dist-test/tests/unit/process-client.test.js dist-test/tests/unit/b12r-store.test.js dist-test/tests/unit/b12d-wal.test.js dist-test/tests/unit/b16-writer.test.js",
+    "exit": 1,
+    "result": "FAIL",
+    "test_counts": [
+     {
+      "tests": 76,
+      "suites": 0,
+      "pass": 65,
+      "fail": 11,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     }
+    ],
+    "failing_tests": [
+     "hud help and strict argument refusals never access or create a ledger",
+     "hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes",
+     "hud missing and unreadable ledgers fail with no stdout or initialization",
+     "hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes",
+     "hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4",
+     "hud reports asynchronous stdout failures for export and help without Node stack traces",
+     "hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged",
+     "hud refuses unknown ledger versions without migrating or emitting JSON",
+     "hud producer validation refusal writes no partial JSON",
+     "hud defaults to ~/.hud only inside an isolated synthetic HOME",
+     "hud export leaves fresh-process raw stderr free of SQLite initialization warnings"
+    ],
+    "log": "logs/hyg2/node22/11-focused-hyg2.log"
+   },
+   "node22-noenvproxy": {
+    "command": "node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/b45-launch.test.js dist-test/tests/unit/process-client.test.js dist-test/tests/unit/b12r-store.test.js dist-test/tests/unit/b12d-wal.test.js dist-test/tests/unit/b16-writer.test.js",
+    "exit": 0,
+    "result": "PASS",
+    "test_counts": [
+     {
+      "tests": 76,
+      "suites": 0,
+      "pass": 76,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     }
+    ],
+    "failing_tests": [],
+    "log": "logs/hyg2/node22-noenvproxy/11-focused-hyg2.log"
+   }
+  },
+  "runz1": {
+   "node24": {
+    "command": "node --test dist-test/tests/unit/runz1-process.test.js dist-test/tests/unit/run-control.test.js dist-test/tests/unit/run-process.test.js",
+    "exit": 1,
+    "result": "FAIL",
+    "test_counts": [
+     {
+      "tests": 54,
+      "suites": 0,
+      "pass": 53,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     }
+    ],
+    "failing_tests": [
+     "cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof (2155.755083ms)"
+    ],
+    "log": "logs/runz1/node24/11-focused-runz1.log"
+   },
+   "node22": {
+    "command": "node --test dist-test/tests/unit/runz1-process.test.js dist-test/tests/unit/run-control.test.js dist-test/tests/unit/run-process.test.js",
+    "exit": 1,
+    "result": "FAIL",
+    "test_counts": [
+     {
+      "tests": 54,
+      "suites": 0,
+      "pass": 53,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     }
+    ],
+    "failing_tests": [
+     "one-shot group launch preserves argv and stdin EOF, waits for helper exit"
+    ],
+    "log": "logs/runz1/node22/11-focused-runz1.log"
+   },
+   "node22-noenvproxy": {
+    "command": "node --test dist-test/tests/unit/runz1-process.test.js dist-test/tests/unit/run-control.test.js dist-test/tests/unit/run-process.test.js",
+    "exit": 0,
+    "result": "PASS",
+    "test_counts": [
+     {
+      "tests": 54,
+      "suites": 0,
+      "pass": 54,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     }
+    ],
+    "failing_tests": [],
+    "log": "logs/runz1/node22-noenvproxy/11-focused-runz1.log"
+   }
+  },
+  "perf": {
+   "node24": {
+    "command": "node --test --test-concurrency=1 dist-test/tests/unit/b10b*.test.js",
+    "exit": 0,
+    "result": "PASS",
+    "test_counts": [
+     {
+      "tests": 381,
+      "suites": 0,
+      "pass": 381,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     }
+    ],
+    "failing_tests": [],
+    "log": "logs/perf/node24/11-focused-b10b.log"
+   },
+   "node22": {
+    "command": "node --test --test-concurrency=1 dist-test/tests/unit/b10b*.test.js",
+    "exit": 0,
+    "result": "PASS",
+    "test_counts": [
+     {
+      "tests": 381,
+      "suites": 0,
+      "pass": 381,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     }
+    ],
+    "failing_tests": [],
+    "log": "logs/perf/node22/11-focused-b10b.log"
+   },
+   "node22-noenvproxy": {
+    "command": "node --test --test-concurrency=1 dist-test/tests/unit/b10b*.test.js",
+    "exit": 0,
+    "result": "PASS",
+    "test_counts": [
+     {
+      "tests": 381,
+      "suites": 0,
+      "pass": 381,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     }
+    ],
+    "failing_tests": [],
+    "log": "logs/perf/node22-noenvproxy/11-focused-b10b.log"
+   }
+  }
+ },
+ "supplementary": [
+  {
+   "target": "runz1",
+   "runtime": "node22",
+   "step": "07r1-flake-rerun-b20-advice",
+   "command": "node --test packages/hud-mcp/dist/tests/hud-mcp/b20-advice.test.js",
+   "exit": 0,
+   "test_counts": [
+    {
+     "tests": 9,
+     "suites": 0,
+     "pass": 9,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 0,
+     "todo": 0
+    }
+   ],
+   "log": "logs/runz1/node22/07r1-flake-rerun-b20-advice.log"
+  },
+  {
+   "target": "runz1",
+   "runtime": "node22",
+   "step": "07r2-flake-rerun-delegation",
+   "command": "node --test packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js",
+   "exit": 0,
+   "test_counts": [
+    {
+     "tests": 8,
+     "suites": 0,
+     "pass": 8,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 0,
+     "todo": 0
+    }
+   ],
+   "log": "logs/runz1/node22/07r2-flake-rerun-delegation.log"
+  }
+ ],
+ "runz1_perf": [
+  {
+   "step": "runz1-perf-node22-run1",
+   "runtime": "node22",
+   "exit": 0,
+   "start_utc": "2026-11-03T16:20:21Z",
+   "command": "node tests/int/runz1-perf.mjs",
+   "log": "logs/perf-series/runz1-perf-node22-run1.log",
+   "result": {
+    "host": {
+     "name": "<host>",
+     "kernel": "6.18.33.2-microsoft-standard-WSL2",
+     "arch": "x64",
+     "node": "v22.23.4"
+    },
+    "timing": "wall-clock performance.now; nearest-rank; sequential populations; no explicit GC; full proof includes existing inspection and both new censuses plus visibility/thread checks",
+    "subject_stamps": {
+     "total": 3,
+     "unique": 2
+    },
+    "census_size_before": 179,
+    "full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 13.872647000000143,
+     "p95_ms": 17.373835000000327,
+     "p99_ms": 20.509205000000293,
+     "max_ms": 34.55962599999975,
+     "refusals": 22
+    },
+    "additional_complete_scan": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 3.4379680000001827,
+     "p95_ms": 4.277258999998594,
+     "p99_ms": 5.221487999999226,
+     "max_ms": 9.81924699999945,
+     "refusals": 5
+    },
+    "existing_inspection": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 3.513308000001416,
+     "p95_ms": 4.617846000001009,
+     "p99_ms": 5.6436070000017935,
+     "max_ms": 7.51461399999971,
+     "refusals": 0
+    },
+    "churn_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 11.146663999999873,
+     "p95_ms": 14.154421999999613,
+     "p99_ms": 15.604041999999026,
+     "max_ms": 28.015559999999823,
+     "refusals": 966
+    },
+    "census_size_after": 181,
+    "esrch_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 3.5672300000005635,
+     "p95_ms": 4.489225000004808,
+     "p99_ms": 5.6000310000017635,
+     "max_ms": 11.476833000000624,
+     "refusals": 0
+    }
+   }
+  },
+  {
+   "step": "runz1-perf-node22-run2",
+   "runtime": "node22",
+   "exit": 0,
+   "start_utc": "2026-11-03T16:21:00Z",
+   "command": "node tests/int/runz1-perf.mjs",
+   "log": "logs/perf-series/runz1-perf-node22-run2.log",
+   "result": {
+    "host": {
+     "name": "<host>",
+     "kernel": "6.18.33.2-microsoft-standard-WSL2",
+     "arch": "x64",
+     "node": "v22.23.4"
+    },
+    "timing": "wall-clock performance.now; nearest-rank; sequential populations; no explicit GC; full proof includes existing inspection and both new censuses plus visibility/thread checks",
+    "subject_stamps": {
+     "total": 3,
+     "unique": 2
+    },
+    "census_size_before": 181,
+    "full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 11.848238000000492,
+     "p95_ms": 14.654481999999916,
+     "p99_ms": 16.681278999999904,
+     "max_ms": 31.75024099999996,
+     "refusals": 28
+    },
+    "additional_complete_scan": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 1.921661000000313,
+     "p95_ms": 2.448789999998553,
+     "p99_ms": 3.3484840000000986,
+     "max_ms": 4.454578999999285,
+     "refusals": 3
+    },
+    "existing_inspection": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 1.922220999998899,
+     "p95_ms": 2.380171999997401,
+     "p99_ms": 3.2832520000010845,
+     "max_ms": 5.858718000001318,
+     "refusals": 0
+    },
+    "churn_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 6.511469999997644,
+     "p95_ms": 8.11469500000021,
+     "p99_ms": 9.359042000000045,
+     "max_ms": 11.320637000000715,
+     "refusals": 890
+    },
+    "census_size_after": 174,
+    "esrch_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 2.1845700000012584,
+     "p95_ms": 2.772623000000749,
+     "p99_ms": 3.75367499999993,
+     "max_ms": 4.4141619999973045,
+     "refusals": 0
+    }
+   }
+  },
+  {
+   "step": "runz1-perf-node22-run3",
+   "runtime": "node22",
+   "exit": 0,
+   "start_utc": "2026-11-03T16:21:27Z",
+   "command": "node tests/int/runz1-perf.mjs",
+   "log": "logs/perf-series/runz1-perf-node22-run3.log",
+   "result": {
+    "host": {
+     "name": "<host>",
+     "kernel": "6.18.33.2-microsoft-standard-WSL2",
+     "arch": "x64",
+     "node": "v22.23.4"
+    },
+    "timing": "wall-clock performance.now; nearest-rank; sequential populations; no explicit GC; full proof includes existing inspection and both new censuses plus visibility/thread checks",
+    "subject_stamps": {
+     "total": 3,
+     "unique": 2
+    },
+    "census_size_before": 173,
+    "full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 7.032579000000169,
+     "p95_ms": 9.521662000000106,
+     "p99_ms": 11.195694000000003,
+     "max_ms": 13.107387000000017,
+     "refusals": 17
+    },
+    "additional_complete_scan": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 2.4828039999993052,
+     "p95_ms": 3.664330000001428,
+     "p99_ms": 4.2963330000002316,
+     "max_ms": 5.552396999999473,
+     "refusals": 6
+    },
+    "existing_inspection": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 2.1238069999999425,
+     "p95_ms": 2.935013999998773,
+     "p99_ms": 3.393660000001546,
+     "max_ms": 4.028024999999616,
+     "refusals": 0
+    },
+    "churn_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 7.052924999999959,
+     "p95_ms": 10.12919200000033,
+     "p99_ms": 11.271743999999671,
+     "max_ms": 12.286521999998513,
+     "refusals": 878
+    },
+    "census_size_after": 179,
+    "esrch_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 2.5946829999993497,
+     "p95_ms": 3.879699000000983,
+     "p99_ms": 4.584029000001465,
+     "max_ms": 5.053489999998419,
+     "refusals": 0
+    }
+   }
+  },
+  {
+   "step": "runz1-perf-node24-run1",
+   "runtime": "node24",
+   "exit": 0,
+   "start_utc": "2026-11-03T16:21:51Z",
+   "command": "node tests/int/runz1-perf.mjs",
+   "log": "logs/perf-series/runz1-perf-node24-run1.log",
+   "result": {
+    "host": {
+     "name": "<host>",
+     "kernel": "6.18.33.2-microsoft-standard-WSL2",
+     "arch": "x64",
+     "node": "v24.22.1"
+    },
+    "timing": "wall-clock performance.now; nearest-rank; sequential populations; no explicit GC; full proof includes existing inspection and both new censuses plus visibility/thread checks",
+    "subject_stamps": {
+     "total": 3,
+     "unique": 2
+    },
+    "census_size_before": 172,
+    "full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 8.29960200000005,
+     "p95_ms": 10.216775000000098,
+     "p99_ms": 11.79746299999988,
+     "max_ms": 13.72501099999954,
+     "refusals": 19
+    },
+    "additional_complete_scan": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 2.140105999998923,
+     "p95_ms": 2.916628999999375,
+     "p99_ms": 3.2789729999985866,
+     "max_ms": 3.9320279999992636,
+     "refusals": 5
+    },
+    "existing_inspection": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 2.286367999999129,
+     "p95_ms": 3.1746230000007927,
+     "p99_ms": 3.8194769999990967,
+     "max_ms": 4.632476999999199,
+     "refusals": 0
+    },
+    "churn_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 9.116610000000946,
+     "p95_ms": 14.038010000000213,
+     "p99_ms": 15.457653999998001,
+     "max_ms": 17.390089999997144,
+     "refusals": 920
+    },
+    "census_size_after": 180,
+    "esrch_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 4.057854000002408,
+     "p95_ms": 5.754444999998668,
+     "p99_ms": 7.317117999999027,
+     "max_ms": 13.93692799999917,
+     "refusals": 1
+    }
+   }
+  },
+  {
+   "step": "runz1-perf-node24-run2",
+   "runtime": "node24",
+   "exit": 0,
+   "start_utc": "2026-11-03T16:22:19Z",
+   "command": "node tests/int/runz1-perf.mjs",
+   "log": "logs/perf-series/runz1-perf-node24-run2.log",
+   "result": {
+    "host": {
+     "name": "<host>",
+     "kernel": "6.18.33.2-microsoft-standard-WSL2",
+     "arch": "x64",
+     "node": "v24.22.1"
+    },
+    "timing": "wall-clock performance.now; nearest-rank; sequential populations; no explicit GC; full proof includes existing inspection and both new censuses plus visibility/thread checks",
+    "subject_stamps": {
+     "total": 3,
+     "unique": 2
+    },
+    "census_size_before": 180,
+    "full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 14.274443999999676,
+     "p95_ms": 17.32197499999893,
+     "p99_ms": 19.852975000000242,
+     "max_ms": 23.461722999999893,
+     "refusals": 25
+    },
+    "additional_complete_scan": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 3.921024999999645,
+     "p95_ms": 5.78911700000026,
+     "p99_ms": 7.190868000001501,
+     "max_ms": 9.88816399999996,
+     "refusals": 7
+    },
+    "existing_inspection": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 3.937286000000313,
+     "p95_ms": 5.459946999999374,
+     "p99_ms": 7.638848000002326,
+     "max_ms": 29.158355999999912,
+     "refusals": 0
+    },
+    "churn_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 11.797293999999965,
+     "p95_ms": 15.829509000002872,
+     "p99_ms": 19.803531000005023,
+     "max_ms": 38.31225799999811,
+     "refusals": 974
+    },
+    "census_size_after": 182,
+    "esrch_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 4.199914999997418,
+     "p95_ms": 6.181644000003871,
+     "p99_ms": 7.942253999994136,
+     "max_ms": 12.079883999998856,
+     "refusals": 0
+    }
+   }
+  },
+  {
+   "step": "runz1-perf-node24-run3",
+   "runtime": "node24",
+   "exit": 0,
+   "start_utc": "2026-11-03T16:23:02Z",
+   "command": "node tests/int/runz1-perf.mjs",
+   "log": "logs/perf-series/runz1-perf-node24-run3.log",
+   "result": {
+    "host": {
+     "name": "<host>",
+     "kernel": "6.18.33.2-microsoft-standard-WSL2",
+     "arch": "x64",
+     "node": "v24.22.1"
+    },
+    "timing": "wall-clock performance.now; nearest-rank; sequential populations; no explicit GC; full proof includes existing inspection and both new censuses plus visibility/thread checks",
+    "subject_stamps": {
+     "total": 3,
+     "unique": 2
+    },
+    "census_size_before": 178,
+    "full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 14.216929999999593,
+     "p95_ms": 17.00481099999979,
+     "p99_ms": 19.743495000000166,
+     "max_ms": 62.95666199999869,
+     "refusals": 32
+    },
+    "additional_complete_scan": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 3.9159710000021732,
+     "p95_ms": 5.711311999999452,
+     "p99_ms": 7.221859000001132,
+     "max_ms": 10.480065000003378,
+     "refusals": 3
+    },
+    "existing_inspection": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 4.094890999997006,
+     "p95_ms": 6.078065999998216,
+     "p99_ms": 8.208256999998412,
+     "max_ms": 15.142747000001691,
+     "refusals": 0
+    },
+    "churn_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 11.408498999997391,
+     "p95_ms": 15.797537000002194,
+     "p99_ms": 18.541904999998224,
+     "max_ms": 26.729398999996192,
+     "refusals": 969
+    },
+    "census_size_after": 181,
+    "esrch_full_proof": {
+     "n": 1000,
+     "warmup": 100,
+     "p50_ms": 4.121768999997585,
+     "p95_ms": 6.006430000001274,
+     "p99_ms": 8.128211999995983,
+     "max_ms": 18.070149999999558,
+     "refusals": 0
+    }
+   }
+  }
+ ],
+ "b10b_perf": {
+  "A": [
+   {
+    "step": "b10b-node22-run1-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:24:27Z",
+    "end_utc": "2026-11-03T16:25:24Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.086,
+      "p95_ms": 0.196,
+      "p99_ms": 0.732,
+      "max_ms": 0.972,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.084,
+      "p95_ms": 0.161,
+      "p99_ms": 0.658,
+      "max_ms": 0.961,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.452,
+      "p95_ms": 4.365,
+      "p99_ms": 5.119,
+      "max_ms": 5.942,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.51,
+      "p95_ms": 4.115,
+      "p99_ms": 4.634,
+      "max_ms": 5.632,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.086,
+      "p95_ms": 0.196,
+      "p99_ms": 0.732,
+      "max_ms": 0.972,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.288,
+      "p95_ms": 0.441,
+      "p99_ms": 1.041,
+      "max_ms": 5.01,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.49,
+      "p95_ms": 1.013,
+      "p99_ms": 1.301,
+      "max_ms": 1.873,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.084,
+      "p95_ms": 0.161,
+      "p99_ms": 0.658,
+      "max_ms": 0.961,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.301,
+      "p95_ms": 0.602,
+      "p99_ms": 1.288,
+      "max_ms": 1.819,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.718,
+      "p95_ms": 1.406,
+      "p99_ms": 1.666,
+      "max_ms": 2.968,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.452,
+      "p95_ms": 4.365,
+      "p99_ms": 5.119,
+      "max_ms": 5.942,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.961,
+      "p95_ms": 3.529,
+      "p99_ms": 4.091,
+      "max_ms": 5.825,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.785,
+      "p95_ms": 3.929,
+      "p99_ms": 4.863,
+      "max_ms": 6.7,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.51,
+      "p95_ms": 4.115,
+      "p99_ms": 4.634,
+      "max_ms": 5.632,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.162,
+      "p95_ms": 3.672,
+      "p99_ms": 4.353,
+      "max_ms": 5.373,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.332,
+      "p95_ms": 4.279,
+      "p99_ms": 5.362,
+      "max_ms": 8.67,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.508,
+      "p95_ms": 0.993,
+      "p99_ms": 1.229,
+      "max_ms": 1.929,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.403,
+      "p95_ms": 4.673,
+      "p99_ms": 5.592,
+      "max_ms": 8.752,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.779,
+      "p95_ms": 1.696,
+      "p99_ms": 2.06,
+      "max_ms": 2.898,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.981,
+      "p95_ms": 4.862,
+      "p99_ms": 6.262,
+      "max_ms": 13.597,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 11.56,
+      "after": 5.79
+     }
+    },
+    "log": "logs/perf-series/b10b-node22-run1-base.log"
+   },
+   {
+    "step": "b10b-node22-run1-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:25:24Z",
+    "end_utc": "2026-11-03T16:26:30Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.086,
+      "p95_ms": 0.188,
+      "p99_ms": 0.684,
+      "max_ms": 1.339,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.086,
+      "p95_ms": 0.161,
+      "p99_ms": 0.647,
+      "max_ms": 1.021,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.245,
+      "p95_ms": 3.177,
+      "p99_ms": 3.813,
+      "max_ms": 6.194,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.356,
+      "p95_ms": 3.963,
+      "p99_ms": 4.508,
+      "max_ms": 5.716,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.086,
+      "p95_ms": 0.188,
+      "p99_ms": 0.684,
+      "max_ms": 1.339,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.29,
+      "p95_ms": 0.536,
+      "p99_ms": 1.053,
+      "max_ms": 2.406,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.53,
+      "p95_ms": 1.131,
+      "p99_ms": 1.429,
+      "max_ms": 2.137,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.086,
+      "p95_ms": 0.161,
+      "p99_ms": 0.647,
+      "max_ms": 1.021,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.306,
+      "p95_ms": 0.638,
+      "p99_ms": 1.424,
+      "max_ms": 2.48,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.731,
+      "p95_ms": 1.542,
+      "p99_ms": 2.061,
+      "max_ms": 7.472,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.245,
+      "p95_ms": 3.177,
+      "p99_ms": 3.813,
+      "max_ms": 6.194,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.062,
+      "p95_ms": 3.065,
+      "p99_ms": 3.895,
+      "max_ms": 4.877,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.878,
+      "p95_ms": 4.098,
+      "p99_ms": 5.24,
+      "max_ms": 6.816,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.356,
+      "p95_ms": 3.963,
+      "p99_ms": 4.508,
+      "max_ms": 5.716,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.254,
+      "p95_ms": 4.024,
+      "p99_ms": 5.011,
+      "max_ms": 6.587,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.337,
+      "p95_ms": 4.437,
+      "p99_ms": 5.243,
+      "max_ms": 8.901,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.524,
+      "p95_ms": 0.995,
+      "p99_ms": 1.271,
+      "max_ms": 2.513,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 4.155,
+      "p95_ms": 10.222,
+      "p99_ms": 13.268,
+      "max_ms": 18.426,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.19,
+      "p95_ms": 1.951,
+      "p99_ms": 2.405,
+      "max_ms": 3.353,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 5.442,
+      "p95_ms": 11.558,
+      "p99_ms": 16.666,
+      "max_ms": 33.684,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 5.79,
+      "after": 7.29
+     }
+    },
+    "log": "logs/perf-series/b10b-node22-run1-cand.log"
+   },
+   {
+    "step": "b10b-node22-run2-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node22",
+    "exit": 1,
+    "start_utc": "2026-11-03T16:26:30Z",
+    "end_utc": "2026-11-03T16:28:02Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.162,
+      "p95_ms": 0.318,
+      "p99_ms": 1.351,
+      "max_ms": 4.532,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.168,
+      "p95_ms": 0.288,
+      "p99_ms": 0.858,
+      "max_ms": 1.139,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 2.351,
+      "p95_ms": 9.437,
+      "p99_ms": 14.319,
+      "max_ms": 17.051,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": false
+     },
+     "rich changed": {
+      "p50_ms": 2.494,
+      "p95_ms": 10.051,
+      "p99_ms": 13.32,
+      "max_ms": 20.696,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.162,
+      "p95_ms": 0.318,
+      "p99_ms": 1.351,
+      "max_ms": 4.532,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.526,
+      "p95_ms": 0.871,
+      "p99_ms": 1.687,
+      "max_ms": 3.936,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.903,
+      "p95_ms": 1.6,
+      "p99_ms": 2.392,
+      "max_ms": 13.477,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.168,
+      "p95_ms": 0.288,
+      "p99_ms": 0.858,
+      "max_ms": 1.139,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.556,
+      "p95_ms": 1.073,
+      "p99_ms": 1.747,
+      "max_ms": 3.053,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.206,
+      "p95_ms": 1.996,
+      "p99_ms": 4.68,
+      "max_ms": 6.911,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 2.351,
+      "p95_ms": 9.437,
+      "p99_ms": 14.319,
+      "max_ms": 17.051,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.796,
+      "p95_ms": 8.535,
+      "p99_ms": 12.769,
+      "max_ms": 24.088,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 3.126,
+      "p95_ms": 9.716,
+      "p99_ms": 11.75,
+      "max_ms": 19.284,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 2.494,
+      "p95_ms": 10.051,
+      "p99_ms": 13.32,
+      "max_ms": 20.696,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.953,
+      "p95_ms": 8.438,
+      "p99_ms": 13.095,
+      "max_ms": 28.866,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 3.948,
+      "p95_ms": 9.278,
+      "p99_ms": 14.25,
+      "max_ms": 31.366,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.905,
+      "p95_ms": 1.58,
+      "p99_ms": 1.979,
+      "max_ms": 4.844,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.532,
+      "p95_ms": 9.453,
+      "p99_ms": 11.649,
+      "max_ms": 20.594,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.716,
+      "p95_ms": 1.529,
+      "p99_ms": 1.763,
+      "max_ms": 2.476,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.158,
+      "p95_ms": 4.968,
+      "p99_ms": 6.284,
+      "max_ms": 12.548,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [
+     "compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms"
+    ],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 7.29,
+      "after": 11.68
+     }
+    },
+    "log": "logs/perf-series/b10b-node22-run2-base.log"
+   },
+   {
+    "step": "b10b-node22-run2-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:28:02Z",
+    "end_utc": "2026-11-03T16:29:16Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.094,
+      "p95_ms": 0.209,
+      "p99_ms": 0.766,
+      "max_ms": 1.136,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.102,
+      "p95_ms": 0.239,
+      "p99_ms": 0.79,
+      "max_ms": 1.063,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.529,
+      "p95_ms": 3.753,
+      "p99_ms": 4.641,
+      "max_ms": 6.024,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 2.782,
+      "p95_ms": 9.629,
+      "p99_ms": 13.61,
+      "max_ms": 20.083,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.094,
+      "p95_ms": 0.209,
+      "p99_ms": 0.766,
+      "max_ms": 1.136,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.303,
+      "p95_ms": 0.668,
+      "p99_ms": 1.128,
+      "max_ms": 1.392,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.533,
+      "p95_ms": 1.106,
+      "p99_ms": 1.399,
+      "max_ms": 2.526,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.102,
+      "p95_ms": 0.239,
+      "p99_ms": 0.79,
+      "max_ms": 1.063,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.336,
+      "p95_ms": 0.765,
+      "p99_ms": 1.418,
+      "max_ms": 2.873,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.796,
+      "p95_ms": 1.599,
+      "p99_ms": 1.97,
+      "max_ms": 2.667,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.529,
+      "p95_ms": 3.753,
+      "p99_ms": 4.641,
+      "max_ms": 6.024,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.02,
+      "p95_ms": 2.948,
+      "p99_ms": 3.727,
+      "max_ms": 4.797,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.924,
+      "p95_ms": 8.216,
+      "p99_ms": 10.901,
+      "max_ms": 25.401,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 2.782,
+      "p95_ms": 9.629,
+      "p99_ms": 13.61,
+      "max_ms": 20.083,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.045,
+      "p95_ms": 10.372,
+      "p99_ms": 17.038,
+      "max_ms": 25.444,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 3.762,
+      "p95_ms": 9.109,
+      "p99_ms": 11.366,
+      "max_ms": 32.672,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.511,
+      "p95_ms": 1.057,
+      "p99_ms": 1.313,
+      "max_ms": 2.009,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.413,
+      "p95_ms": 4.573,
+      "p99_ms": 5.488,
+      "max_ms": 6.799,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.758,
+      "p95_ms": 1.705,
+      "p99_ms": 2.118,
+      "max_ms": 3.287,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.462,
+      "p95_ms": 5.598,
+      "p99_ms": 8.184,
+      "max_ms": 13.079,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 11.68,
+      "after": 9.38
+     }
+    },
+    "log": "logs/perf-series/b10b-node22-run2-cand.log"
+   },
+   {
+    "step": "b10b-node22-run3-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:29:16Z",
+    "end_utc": "2026-11-03T16:30:12Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.084,
+      "p95_ms": 0.165,
+      "p99_ms": 0.714,
+      "max_ms": 1.063,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.087,
+      "p95_ms": 0.159,
+      "p99_ms": 0.676,
+      "max_ms": 1.165,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.298,
+      "p95_ms": 3.731,
+      "p99_ms": 4.573,
+      "max_ms": 5.922,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.354,
+      "p95_ms": 3.97,
+      "p99_ms": 4.611,
+      "max_ms": 5.694,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.084,
+      "p95_ms": 0.165,
+      "p99_ms": 0.714,
+      "max_ms": 1.063,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.299,
+      "p95_ms": 0.534,
+      "p99_ms": 1.065,
+      "max_ms": 1.782,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.508,
+      "p95_ms": 1.054,
+      "p99_ms": 1.341,
+      "max_ms": 1.763,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.087,
+      "p95_ms": 0.159,
+      "p99_ms": 0.676,
+      "max_ms": 1.165,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.327,
+      "p95_ms": 0.692,
+      "p99_ms": 1.5,
+      "max_ms": 2.152,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.738,
+      "p95_ms": 1.513,
+      "p99_ms": 1.771,
+      "max_ms": 2.496,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.298,
+      "p95_ms": 3.731,
+      "p99_ms": 4.573,
+      "max_ms": 5.922,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.243,
+      "p95_ms": 4.009,
+      "p99_ms": 4.907,
+      "max_ms": 6.638,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.824,
+      "p95_ms": 3.948,
+      "p99_ms": 5.014,
+      "max_ms": 8.348,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.354,
+      "p95_ms": 3.97,
+      "p99_ms": 4.611,
+      "max_ms": 5.694,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.022,
+      "p95_ms": 3.567,
+      "p99_ms": 4.445,
+      "max_ms": 5.521,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.224,
+      "p95_ms": 4.064,
+      "p99_ms": 4.843,
+      "max_ms": 9.686,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.477,
+      "p95_ms": 0.89,
+      "p99_ms": 1.033,
+      "max_ms": 1.371,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.611,
+      "p95_ms": 4.95,
+      "p99_ms": 6.195,
+      "max_ms": 10.461,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.801,
+      "p95_ms": 1.807,
+      "p99_ms": 2.473,
+      "max_ms": 3.186,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.78,
+      "p95_ms": 6.317,
+      "p99_ms": 8.533,
+      "max_ms": 13.044,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 9.38,
+      "after": 4.9
+     }
+    },
+    "log": "logs/perf-series/b10b-node22-run3-base.log"
+   },
+   {
+    "step": "b10b-node22-run3-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:30:12Z",
+    "end_utc": "2026-11-03T16:31:10Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.08,
+      "p95_ms": 0.184,
+      "p99_ms": 0.734,
+      "max_ms": 1.613,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.082,
+      "p95_ms": 0.201,
+      "p99_ms": 0.657,
+      "max_ms": 1.028,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.236,
+      "p95_ms": 3.506,
+      "p99_ms": 4.213,
+      "max_ms": 6.145,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.74,
+      "p95_ms": 5.09,
+      "p99_ms": 7.085,
+      "max_ms": 14.691,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.08,
+      "p95_ms": 0.184,
+      "p99_ms": 0.734,
+      "max_ms": 1.613,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.283,
+      "p95_ms": 0.624,
+      "p99_ms": 1.098,
+      "max_ms": 2.253,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.52,
+      "p95_ms": 1.08,
+      "p99_ms": 1.404,
+      "max_ms": 2.287,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.082,
+      "p95_ms": 0.201,
+      "p99_ms": 0.657,
+      "max_ms": 1.028,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.31,
+      "p95_ms": 0.636,
+      "p99_ms": 1.149,
+      "max_ms": 1.523,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.676,
+      "p95_ms": 1.379,
+      "p99_ms": 1.597,
+      "max_ms": 2.708,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.236,
+      "p95_ms": 3.506,
+      "p99_ms": 4.213,
+      "max_ms": 6.145,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.985,
+      "p95_ms": 1.581,
+      "p99_ms": 3.76,
+      "max_ms": 5.041,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.76,
+      "p95_ms": 3.933,
+      "p99_ms": 4.955,
+      "max_ms": 6.248,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.74,
+      "p95_ms": 5.09,
+      "p99_ms": 7.085,
+      "max_ms": 14.691,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.198,
+      "p95_ms": 3.946,
+      "p99_ms": 5.235,
+      "max_ms": 10.806,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.316,
+      "p95_ms": 4.325,
+      "p99_ms": 5.618,
+      "max_ms": 10.949,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.498,
+      "p95_ms": 1.0,
+      "p99_ms": 1.162,
+      "max_ms": 2.462,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.286,
+      "p95_ms": 4.412,
+      "p99_ms": 5.483,
+      "max_ms": 7.251,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.703,
+      "p95_ms": 1.551,
+      "p99_ms": 1.959,
+      "max_ms": 3.491,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.037,
+      "p95_ms": 4.931,
+      "p99_ms": 7.906,
+      "max_ms": 11.83,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 4.9,
+      "after": 3.73
+     }
+    },
+    "log": "logs/perf-series/b10b-node22-run3-cand.log"
+   },
+   {
+    "step": "b10b-node24-run1-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:31:10Z",
+    "end_utc": "2026-11-03T16:32:02Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.077,
+      "p95_ms": 0.163,
+      "p99_ms": 0.528,
+      "max_ms": 1.086,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.079,
+      "p95_ms": 0.143,
+      "p99_ms": 0.271,
+      "max_ms": 0.968,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.202,
+      "p95_ms": 1.903,
+      "p99_ms": 8.695,
+      "max_ms": 10.276,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.236,
+      "p95_ms": 2.002,
+      "p99_ms": 8.878,
+      "max_ms": 10.782,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.077,
+      "p95_ms": 0.163,
+      "p99_ms": 0.528,
+      "max_ms": 1.086,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.277,
+      "p95_ms": 0.704,
+      "p99_ms": 1.095,
+      "max_ms": 2.555,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.472,
+      "p95_ms": 0.837,
+      "p99_ms": 1.082,
+      "max_ms": 2.005,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.079,
+      "p95_ms": 0.143,
+      "p99_ms": 0.271,
+      "max_ms": 0.968,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.31,
+      "p95_ms": 0.734,
+      "p99_ms": 1.553,
+      "max_ms": 4.848,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.64,
+      "p95_ms": 1.23,
+      "p99_ms": 1.641,
+      "max_ms": 2.481,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.202,
+      "p95_ms": 1.903,
+      "p99_ms": 8.695,
+      "max_ms": 10.276,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.774,
+      "p95_ms": 1.232,
+      "p99_ms": 8.578,
+      "max_ms": 10.618,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.556,
+      "p95_ms": 5.291,
+      "p99_ms": 6.763,
+      "max_ms": 8.918,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.236,
+      "p95_ms": 2.002,
+      "p99_ms": 8.878,
+      "max_ms": 10.782,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.883,
+      "p95_ms": 1.374,
+      "p99_ms": 8.582,
+      "max_ms": 9.626,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.137,
+      "p95_ms": 6.246,
+      "p99_ms": 10.332,
+      "max_ms": 18.096,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.463,
+      "p95_ms": 0.687,
+      "p99_ms": 1.121,
+      "max_ms": 2.266,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.089,
+      "p95_ms": 6.706,
+      "p99_ms": 8.026,
+      "max_ms": 8.863,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.676,
+      "p95_ms": 1.372,
+      "p99_ms": 1.757,
+      "max_ms": 3.019,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.49,
+      "p95_ms": 6.68,
+      "p99_ms": 8.042,
+      "max_ms": 10.045,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 3.73,
+      "after": 2.64
+     }
+    },
+    "log": "logs/perf-series/b10b-node24-run1-base.log"
+   },
+   {
+    "step": "b10b-node24-run1-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:32:02Z",
+    "end_utc": "2026-11-03T16:32:52Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.077,
+      "p95_ms": 0.167,
+      "p99_ms": 0.548,
+      "max_ms": 2.205,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.077,
+      "p95_ms": 0.145,
+      "p99_ms": 0.303,
+      "max_ms": 1.348,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.046,
+      "p95_ms": 1.645,
+      "p99_ms": 6.77,
+      "max_ms": 8.124,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.148,
+      "p95_ms": 1.816,
+      "p99_ms": 8.628,
+      "max_ms": 9.983,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.077,
+      "p95_ms": 0.167,
+      "p99_ms": 0.548,
+      "max_ms": 2.205,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.276,
+      "p95_ms": 0.642,
+      "p99_ms": 0.986,
+      "max_ms": 2.138,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.468,
+      "p95_ms": 0.859,
+      "p99_ms": 1.17,
+      "max_ms": 1.967,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.077,
+      "p95_ms": 0.145,
+      "p99_ms": 0.303,
+      "max_ms": 1.348,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.291,
+      "p95_ms": 0.62,
+      "p99_ms": 1.411,
+      "max_ms": 4.07,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.645,
+      "p95_ms": 1.23,
+      "p99_ms": 1.539,
+      "max_ms": 2.253,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.046,
+      "p95_ms": 1.645,
+      "p99_ms": 6.77,
+      "max_ms": 8.124,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.795,
+      "p95_ms": 1.439,
+      "p99_ms": 7.308,
+      "max_ms": 9.19,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.466,
+      "p95_ms": 4.682,
+      "p99_ms": 5.797,
+      "max_ms": 7.248,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.148,
+      "p95_ms": 1.816,
+      "p99_ms": 8.628,
+      "max_ms": 9.983,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.939,
+      "p95_ms": 1.583,
+      "p99_ms": 8.388,
+      "max_ms": 10.225,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.936,
+      "p95_ms": 5.616,
+      "p99_ms": 6.28,
+      "max_ms": 6.974,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.456,
+      "p95_ms": 0.637,
+      "p99_ms": 1.125,
+      "max_ms": 2.38,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 1.963,
+      "p95_ms": 5.813,
+      "p99_ms": 7.226,
+      "max_ms": 15.163,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.633,
+      "p95_ms": 1.315,
+      "p99_ms": 1.618,
+      "max_ms": 2.153,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.305,
+      "p95_ms": 6.43,
+      "p99_ms": 8.175,
+      "max_ms": 18.53,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 2.64,
+      "after": 2.07
+     }
+    },
+    "log": "logs/perf-series/b10b-node24-run1-cand.log"
+   },
+   {
+    "step": "b10b-node24-run2-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:32:52Z",
+    "end_utc": "2026-11-03T16:33:43Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.072,
+      "p95_ms": 0.161,
+      "p99_ms": 0.449,
+      "max_ms": 0.907,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.076,
+      "p95_ms": 0.133,
+      "p99_ms": 0.224,
+      "max_ms": 0.883,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.135,
+      "p95_ms": 1.824,
+      "p99_ms": 7.735,
+      "max_ms": 11.924,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.179,
+      "p95_ms": 2.173,
+      "p99_ms": 8.476,
+      "max_ms": 19.658,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.072,
+      "p95_ms": 0.161,
+      "p99_ms": 0.449,
+      "max_ms": 0.907,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.271,
+      "p95_ms": 0.578,
+      "p99_ms": 0.877,
+      "max_ms": 2.094,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.451,
+      "p95_ms": 0.8,
+      "p99_ms": 1.13,
+      "max_ms": 2.294,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.076,
+      "p95_ms": 0.133,
+      "p99_ms": 0.224,
+      "max_ms": 0.883,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.288,
+      "p95_ms": 0.621,
+      "p99_ms": 1.336,
+      "max_ms": 4.045,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.63,
+      "p95_ms": 1.157,
+      "p99_ms": 1.509,
+      "max_ms": 2.088,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.135,
+      "p95_ms": 1.824,
+      "p99_ms": 7.735,
+      "max_ms": 11.924,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.996,
+      "p95_ms": 1.667,
+      "p99_ms": 8.395,
+      "max_ms": 12.563,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.487,
+      "p95_ms": 5.026,
+      "p99_ms": 6.849,
+      "max_ms": 8.362,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.179,
+      "p95_ms": 2.173,
+      "p99_ms": 8.476,
+      "max_ms": 19.658,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.869,
+      "p95_ms": 1.359,
+      "p99_ms": 8.376,
+      "max_ms": 10.542,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.969,
+      "p95_ms": 5.464,
+      "p99_ms": 6.302,
+      "max_ms": 7.844,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.455,
+      "p95_ms": 0.602,
+      "p99_ms": 1.048,
+      "max_ms": 1.756,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.034,
+      "p95_ms": 6.67,
+      "p99_ms": 8.016,
+      "max_ms": 9.979,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.699,
+      "p95_ms": 1.302,
+      "p99_ms": 1.684,
+      "max_ms": 2.154,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.389,
+      "p95_ms": 6.568,
+      "p99_ms": 8.168,
+      "max_ms": 13.349,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 2.07,
+      "after": 2.17
+     }
+    },
+    "log": "logs/perf-series/b10b-node24-run2-base.log"
+   },
+   {
+    "step": "b10b-node24-run2-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:33:43Z",
+    "end_utc": "2026-11-03T16:34:33Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.074,
+      "p95_ms": 0.164,
+      "p99_ms": 0.546,
+      "max_ms": 0.934,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.082,
+      "p95_ms": 0.151,
+      "p99_ms": 0.699,
+      "max_ms": 5.505,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.118,
+      "p95_ms": 2.118,
+      "p99_ms": 7.013,
+      "max_ms": 12.519,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.167,
+      "p95_ms": 2.221,
+      "p99_ms": 8.447,
+      "max_ms": 10.227,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.074,
+      "p95_ms": 0.164,
+      "p99_ms": 0.546,
+      "max_ms": 0.934,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.273,
+      "p95_ms": 0.631,
+      "p99_ms": 0.881,
+      "max_ms": 2.69,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.483,
+      "p95_ms": 1.144,
+      "p99_ms": 3.036,
+      "max_ms": 7.717,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.082,
+      "p95_ms": 0.151,
+      "p99_ms": 0.699,
+      "max_ms": 5.505,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.296,
+      "p95_ms": 0.68,
+      "p99_ms": 1.864,
+      "max_ms": 7.959,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.619,
+      "p95_ms": 1.183,
+      "p99_ms": 1.49,
+      "max_ms": 2.35,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.118,
+      "p95_ms": 2.118,
+      "p99_ms": 7.013,
+      "max_ms": 12.519,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.858,
+      "p95_ms": 1.658,
+      "p99_ms": 7.105,
+      "max_ms": 8.596,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.51,
+      "p95_ms": 4.816,
+      "p99_ms": 5.899,
+      "max_ms": 7.115,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.167,
+      "p95_ms": 2.221,
+      "p99_ms": 8.447,
+      "max_ms": 10.227,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.855,
+      "p95_ms": 1.318,
+      "p99_ms": 8.144,
+      "max_ms": 10.57,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.027,
+      "p95_ms": 5.708,
+      "p99_ms": 6.341,
+      "max_ms": 10.836,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.456,
+      "p95_ms": 0.602,
+      "p99_ms": 1.106,
+      "max_ms": 2.238,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.062,
+      "p95_ms": 5.921,
+      "p99_ms": 7.522,
+      "max_ms": 11.405,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.63,
+      "p95_ms": 1.233,
+      "p99_ms": 1.568,
+      "max_ms": 2.848,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.399,
+      "p95_ms": 6.331,
+      "p99_ms": 7.953,
+      "max_ms": 17.075,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 2.17,
+      "after": 2.69
+     }
+    },
+    "log": "logs/perf-series/b10b-node24-run2-cand.log"
+   },
+   {
+    "step": "b10b-node24-run3-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:34:33Z",
+    "end_utc": "2026-11-03T16:35:26Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.07,
+      "p95_ms": 0.149,
+      "p99_ms": 0.645,
+      "max_ms": 1.207,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.078,
+      "p95_ms": 0.144,
+      "p99_ms": 0.227,
+      "max_ms": 0.927,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.033,
+      "p95_ms": 2.074,
+      "p99_ms": 8.079,
+      "max_ms": 11.792,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.48,
+      "p95_ms": 2.876,
+      "p99_ms": 9.217,
+      "max_ms": 12.024,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.07,
+      "p95_ms": 0.149,
+      "p99_ms": 0.645,
+      "max_ms": 1.207,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.269,
+      "p95_ms": 0.575,
+      "p99_ms": 0.952,
+      "max_ms": 3.227,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.452,
+      "p95_ms": 0.832,
+      "p99_ms": 1.184,
+      "max_ms": 2.561,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.078,
+      "p95_ms": 0.144,
+      "p99_ms": 0.227,
+      "max_ms": 0.927,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.286,
+      "p95_ms": 0.621,
+      "p99_ms": 1.291,
+      "max_ms": 4.95,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.616,
+      "p95_ms": 1.152,
+      "p99_ms": 1.468,
+      "max_ms": 2.697,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.033,
+      "p95_ms": 2.074,
+      "p99_ms": 8.079,
+      "max_ms": 11.792,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.879,
+      "p95_ms": 1.531,
+      "p99_ms": 8.831,
+      "max_ms": 9.862,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.583,
+      "p95_ms": 5.662,
+      "p99_ms": 7.165,
+      "max_ms": 8.533,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.48,
+      "p95_ms": 2.876,
+      "p99_ms": 9.217,
+      "max_ms": 12.024,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.166,
+      "p95_ms": 1.908,
+      "p99_ms": 9.524,
+      "max_ms": 10.761,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.268,
+      "p95_ms": 6.157,
+      "p99_ms": 7.286,
+      "max_ms": 7.867,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.479,
+      "p95_ms": 0.751,
+      "p99_ms": 1.123,
+      "max_ms": 1.974,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.26,
+      "p95_ms": 7.169,
+      "p99_ms": 8.413,
+      "max_ms": 11.544,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.668,
+      "p95_ms": 1.302,
+      "p99_ms": 1.657,
+      "max_ms": 2.464,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.6,
+      "p95_ms": 6.804,
+      "p99_ms": 8.388,
+      "max_ms": 19.749,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 2.69,
+      "after": 1.89
+     }
+    },
+    "log": "logs/perf-series/b10b-node24-run3-base.log"
+   },
+   {
+    "step": "b10b-node24-run3-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:35:26Z",
+    "end_utc": "2026-11-03T16:36:19Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.081,
+      "p95_ms": 0.184,
+      "p99_ms": 0.548,
+      "max_ms": 0.955,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.08,
+      "p95_ms": 0.142,
+      "p99_ms": 0.239,
+      "max_ms": 0.95,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.19,
+      "p95_ms": 2.099,
+      "p99_ms": 7.328,
+      "max_ms": 9.583,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.363,
+      "p95_ms": 2.385,
+      "p99_ms": 9.168,
+      "max_ms": 10.424,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.081,
+      "p95_ms": 0.184,
+      "p99_ms": 0.548,
+      "max_ms": 0.955,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.288,
+      "p95_ms": 0.682,
+      "p99_ms": 1.002,
+      "max_ms": 2.572,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.478,
+      "p95_ms": 0.882,
+      "p99_ms": 1.14,
+      "max_ms": 1.505,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.08,
+      "p95_ms": 0.142,
+      "p99_ms": 0.239,
+      "max_ms": 0.95,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.3,
+      "p95_ms": 0.59,
+      "p99_ms": 1.297,
+      "max_ms": 4.167,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.644,
+      "p95_ms": 1.167,
+      "p99_ms": 1.454,
+      "max_ms": 1.882,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.19,
+      "p95_ms": 2.099,
+      "p99_ms": 7.328,
+      "max_ms": 9.583,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.88,
+      "p95_ms": 1.535,
+      "p99_ms": 7.314,
+      "max_ms": 8.533,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.624,
+      "p95_ms": 5.255,
+      "p99_ms": 6.232,
+      "max_ms": 6.926,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.363,
+      "p95_ms": 2.385,
+      "p99_ms": 9.168,
+      "max_ms": 10.424,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.989,
+      "p95_ms": 1.678,
+      "p99_ms": 9.079,
+      "max_ms": 10.964,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.018,
+      "p95_ms": 5.706,
+      "p99_ms": 6.623,
+      "max_ms": 7.465,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.464,
+      "p95_ms": 0.758,
+      "p99_ms": 1.066,
+      "max_ms": 1.637,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.086,
+      "p95_ms": 3.757,
+      "p99_ms": 7.093,
+      "max_ms": 11.132,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.638,
+      "p95_ms": 1.237,
+      "p99_ms": 1.574,
+      "max_ms": 1.92,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.629,
+      "p95_ms": 6.727,
+      "p99_ms": 8.277,
+      "max_ms": 15.222,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "before/after ps snapshots only",
+     "loadavg_1m": {
+      "before": 1.89,
+      "after": 1.81
+     }
+    },
+    "log": "logs/perf-series/b10b-node24-run3-cand.log"
+   }
+  ],
+  "B": [
+   {
+    "step": "b10b-B-node22-run1-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:49:51Z",
+    "end_utc": "2026-11-03T16:50:55Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.087,
+      "p95_ms": 0.24,
+      "p99_ms": 0.802,
+      "max_ms": 1.586,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.103,
+      "p95_ms": 0.229,
+      "p99_ms": 0.795,
+      "max_ms": 1.339,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.654,
+      "p95_ms": 4.828,
+      "p99_ms": 6.083,
+      "max_ms": 7.715,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.657,
+      "p95_ms": 5.189,
+      "p99_ms": 6.018,
+      "max_ms": 7.395,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.087,
+      "p95_ms": 0.24,
+      "p99_ms": 0.802,
+      "max_ms": 1.586,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.295,
+      "p95_ms": 0.734,
+      "p99_ms": 1.268,
+      "max_ms": 2.013,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.567,
+      "p95_ms": 1.272,
+      "p99_ms": 1.657,
+      "max_ms": 2.668,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.103,
+      "p95_ms": 0.229,
+      "p99_ms": 0.795,
+      "max_ms": 1.339,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.351,
+      "p95_ms": 0.887,
+      "p99_ms": 1.859,
+      "max_ms": 2.601,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.862,
+      "p95_ms": 1.798,
+      "p99_ms": 2.134,
+      "max_ms": 2.908,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.654,
+      "p95_ms": 4.828,
+      "p99_ms": 6.083,
+      "max_ms": 7.715,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.316,
+      "p95_ms": 4.669,
+      "p99_ms": 5.867,
+      "max_ms": 7.188,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.181,
+      "p95_ms": 5.309,
+      "p99_ms": 5.913,
+      "max_ms": 7.693,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.657,
+      "p95_ms": 5.189,
+      "p99_ms": 6.018,
+      "max_ms": 7.395,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.288,
+      "p95_ms": 4.02,
+      "p99_ms": 5.639,
+      "max_ms": 7.395,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 3.125,
+      "p95_ms": 5.814,
+      "p99_ms": 6.655,
+      "max_ms": 9.016,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.563,
+      "p95_ms": 1.296,
+      "p99_ms": 1.754,
+      "max_ms": 2.874,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.32,
+      "p95_ms": 6.338,
+      "p99_ms": 7.521,
+      "max_ms": 9.98,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.801,
+      "p95_ms": 1.705,
+      "p99_ms": 2.061,
+      "max_ms": 2.696,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.826,
+      "p95_ms": 6.676,
+      "p99_ms": 8.67,
+      "max_ms": 17.532,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 63,
+     "loadavg_1m_min": 1.92,
+     "loadavg_1m_max": 3.0
+    },
+    "log": "logs/perf-series-B/b10b-B-node22-run1-base.log"
+   },
+   {
+    "step": "b10b-B-node22-run1-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:50:55Z",
+    "end_utc": "2026-11-03T16:51:58Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.085,
+      "p95_ms": 0.225,
+      "p99_ms": 0.728,
+      "max_ms": 1.391,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.105,
+      "p95_ms": 0.217,
+      "p99_ms": 0.874,
+      "max_ms": 1.327,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.484,
+      "p95_ms": 3.998,
+      "p99_ms": 5.731,
+      "max_ms": 7.611,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.795,
+      "p95_ms": 5.175,
+      "p99_ms": 6.34,
+      "max_ms": 15.982,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.085,
+      "p95_ms": 0.225,
+      "p99_ms": 0.728,
+      "max_ms": 1.391,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.333,
+      "p95_ms": 0.77,
+      "p99_ms": 1.44,
+      "max_ms": 2.025,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.537,
+      "p95_ms": 1.181,
+      "p99_ms": 1.669,
+      "max_ms": 2.746,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.105,
+      "p95_ms": 0.217,
+      "p99_ms": 0.874,
+      "max_ms": 1.327,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.309,
+      "p95_ms": 0.754,
+      "p99_ms": 1.555,
+      "max_ms": 1.89,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.812,
+      "p95_ms": 1.788,
+      "p99_ms": 2.259,
+      "max_ms": 2.776,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.484,
+      "p95_ms": 3.998,
+      "p99_ms": 5.731,
+      "max_ms": 7.611,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.144,
+      "p95_ms": 3.113,
+      "p99_ms": 5.079,
+      "max_ms": 6.461,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.159,
+      "p95_ms": 5.201,
+      "p99_ms": 6.154,
+      "max_ms": 7.162,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.795,
+      "p95_ms": 5.175,
+      "p99_ms": 6.34,
+      "max_ms": 15.982,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.353,
+      "p95_ms": 4.315,
+      "p99_ms": 6.566,
+      "max_ms": 7.957,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.971,
+      "p95_ms": 5.774,
+      "p99_ms": 6.597,
+      "max_ms": 10.781,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.508,
+      "p95_ms": 1.086,
+      "p99_ms": 1.526,
+      "max_ms": 2.435,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.355,
+      "p95_ms": 6.428,
+      "p99_ms": 7.358,
+      "max_ms": 8.973,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.849,
+      "p95_ms": 1.974,
+      "p99_ms": 2.521,
+      "max_ms": 3.757,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 4.014,
+      "p95_ms": 7.559,
+      "p99_ms": 10.524,
+      "max_ms": 18.354,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 63,
+     "loadavg_1m_min": 2.93,
+     "loadavg_1m_max": 3.44
+    },
+    "log": "logs/perf-series-B/b10b-B-node22-run1-cand.log"
+   },
+   {
+    "step": "b10b-B-node22-run2-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:51:58Z",
+    "end_utc": "2026-11-03T16:53:00Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.095,
+      "p95_ms": 0.253,
+      "p99_ms": 0.781,
+      "max_ms": 1.694,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.091,
+      "p95_ms": 0.188,
+      "p99_ms": 0.735,
+      "max_ms": 1.374,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.587,
+      "p95_ms": 4.388,
+      "p99_ms": 6.261,
+      "max_ms": 12.455,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.552,
+      "p95_ms": 4.953,
+      "p99_ms": 6.358,
+      "max_ms": 8.256,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.095,
+      "p95_ms": 0.253,
+      "p99_ms": 0.781,
+      "max_ms": 1.694,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.292,
+      "p95_ms": 0.718,
+      "p99_ms": 1.222,
+      "max_ms": 1.726,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.547,
+      "p95_ms": 1.292,
+      "p99_ms": 1.685,
+      "max_ms": 2.387,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.091,
+      "p95_ms": 0.188,
+      "p99_ms": 0.735,
+      "max_ms": 1.374,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.336,
+      "p95_ms": 0.828,
+      "p99_ms": 1.76,
+      "max_ms": 2.558,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.844,
+      "p95_ms": 1.732,
+      "p99_ms": 2.138,
+      "max_ms": 2.635,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.587,
+      "p95_ms": 4.388,
+      "p99_ms": 6.261,
+      "max_ms": 12.455,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.163,
+      "p95_ms": 3.99,
+      "p99_ms": 5.606,
+      "max_ms": 6.489,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.019,
+      "p95_ms": 5.129,
+      "p99_ms": 5.879,
+      "max_ms": 6.91,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.552,
+      "p95_ms": 4.953,
+      "p99_ms": 6.358,
+      "max_ms": 8.256,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.182,
+      "p95_ms": 3.844,
+      "p99_ms": 5.607,
+      "max_ms": 7.645,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 3.067,
+      "p95_ms": 5.573,
+      "p99_ms": 6.704,
+      "max_ms": 8.671,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.521,
+      "p95_ms": 1.114,
+      "p99_ms": 1.704,
+      "max_ms": 2.341,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.055,
+      "p95_ms": 6.15,
+      "p99_ms": 7.108,
+      "max_ms": 9.201,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.062,
+      "p95_ms": 2.316,
+      "p99_ms": 3.097,
+      "max_ms": 4.486,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.872,
+      "p95_ms": 7.1,
+      "p99_ms": 10.498,
+      "max_ms": 13.533,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 61,
+     "loadavg_1m_min": 3.4,
+     "loadavg_1m_max": 4.65
+    },
+    "log": "logs/perf-series-B/b10b-B-node22-run2-base.log"
+   },
+   {
+    "step": "b10b-B-node22-run2-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:53:00Z",
+    "end_utc": "2026-11-03T16:54:01Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.089,
+      "p95_ms": 0.244,
+      "p99_ms": 0.753,
+      "max_ms": 2.098,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.099,
+      "p95_ms": 0.223,
+      "p99_ms": 0.723,
+      "max_ms": 1.189,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.627,
+      "p95_ms": 4.419,
+      "p99_ms": 5.826,
+      "max_ms": 7.482,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.588,
+      "p95_ms": 4.977,
+      "p99_ms": 6.224,
+      "max_ms": 8.519,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.089,
+      "p95_ms": 0.244,
+      "p99_ms": 0.753,
+      "max_ms": 2.098,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.307,
+      "p95_ms": 0.713,
+      "p99_ms": 1.453,
+      "max_ms": 1.801,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.554,
+      "p95_ms": 1.292,
+      "p99_ms": 1.813,
+      "max_ms": 2.964,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.099,
+      "p95_ms": 0.223,
+      "p99_ms": 0.723,
+      "max_ms": 1.189,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.318,
+      "p95_ms": 0.886,
+      "p99_ms": 1.501,
+      "max_ms": 2.917,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.834,
+      "p95_ms": 1.825,
+      "p99_ms": 2.156,
+      "max_ms": 3.416,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.627,
+      "p95_ms": 4.419,
+      "p99_ms": 5.826,
+      "max_ms": 7.482,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.145,
+      "p95_ms": 3.136,
+      "p99_ms": 5.104,
+      "max_ms": 6.294,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.034,
+      "p95_ms": 4.958,
+      "p99_ms": 5.72,
+      "max_ms": 7.098,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.588,
+      "p95_ms": 4.977,
+      "p99_ms": 6.224,
+      "max_ms": 8.519,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.196,
+      "p95_ms": 4.018,
+      "p99_ms": 5.686,
+      "max_ms": 7.756,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.928,
+      "p95_ms": 5.612,
+      "p99_ms": 6.338,
+      "max_ms": 10.038,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.46,
+      "p95_ms": 0.855,
+      "p99_ms": 1.332,
+      "max_ms": 2.511,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.749,
+      "p95_ms": 5.518,
+      "p99_ms": 6.858,
+      "max_ms": 8.422,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.806,
+      "p95_ms": 1.756,
+      "p99_ms": 2.168,
+      "max_ms": 3.089,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.719,
+      "p95_ms": 6.712,
+      "p99_ms": 8.094,
+      "max_ms": 15.678,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 61,
+     "loadavg_1m_min": 3.32,
+     "loadavg_1m_max": 5.07
+    },
+    "log": "logs/perf-series-B/b10b-B-node22-run2-cand.log"
+   },
+   {
+    "step": "b10b-B-node22-run3-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:54:01Z",
+    "end_utc": "2026-11-03T16:55:00Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.088,
+      "p95_ms": 0.235,
+      "p99_ms": 0.641,
+      "max_ms": 1.459,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.089,
+      "p95_ms": 0.194,
+      "p99_ms": 0.671,
+      "max_ms": 0.996,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.298,
+      "p95_ms": 4.191,
+      "p99_ms": 6.44,
+      "max_ms": 8.441,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.514,
+      "p95_ms": 4.393,
+      "p99_ms": 6.061,
+      "max_ms": 7.033,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.088,
+      "p95_ms": 0.235,
+      "p99_ms": 0.641,
+      "max_ms": 1.459,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.274,
+      "p95_ms": 0.515,
+      "p99_ms": 0.977,
+      "max_ms": 1.574,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.532,
+      "p95_ms": 1.084,
+      "p99_ms": 1.545,
+      "max_ms": 2.083,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.089,
+      "p95_ms": 0.194,
+      "p99_ms": 0.671,
+      "max_ms": 0.996,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.303,
+      "p95_ms": 0.857,
+      "p99_ms": 1.256,
+      "max_ms": 2.197,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.863,
+      "p95_ms": 1.731,
+      "p99_ms": 2.254,
+      "max_ms": 3.423,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.298,
+      "p95_ms": 4.191,
+      "p99_ms": 6.44,
+      "max_ms": 8.441,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.964,
+      "p95_ms": 3.488,
+      "p99_ms": 5.616,
+      "max_ms": 7.054,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.749,
+      "p95_ms": 4.513,
+      "p99_ms": 5.854,
+      "max_ms": 7.356,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.514,
+      "p95_ms": 4.393,
+      "p99_ms": 6.061,
+      "max_ms": 7.033,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.001,
+      "p95_ms": 3.542,
+      "p99_ms": 4.971,
+      "max_ms": 6.312,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.675,
+      "p95_ms": 5.546,
+      "p99_ms": 6.416,
+      "max_ms": 10.273,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.499,
+      "p95_ms": 1.027,
+      "p99_ms": 1.49,
+      "max_ms": 1.868,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.876,
+      "p95_ms": 5.784,
+      "p99_ms": 7.483,
+      "max_ms": 9.49,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.828,
+      "p95_ms": 1.821,
+      "p99_ms": 2.221,
+      "max_ms": 2.595,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.691,
+      "p95_ms": 6.713,
+      "p99_ms": 8.033,
+      "max_ms": 13.372,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 59,
+     "loadavg_1m_min": 2.1,
+     "loadavg_1m_max": 3.32
+    },
+    "log": "logs/perf-series-B/b10b-B-node22-run3-base.log"
+   },
+   {
+    "step": "b10b-B-node22-run3-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node22",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:55:00Z",
+    "end_utc": "2026-11-03T16:55:58Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.081,
+      "p95_ms": 0.177,
+      "p99_ms": 0.779,
+      "max_ms": 1.141,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.093,
+      "p95_ms": 0.182,
+      "p99_ms": 0.629,
+      "max_ms": 1.539,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.21,
+      "p95_ms": 3.25,
+      "p99_ms": 4.275,
+      "max_ms": 6.985,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.457,
+      "p95_ms": 4.272,
+      "p99_ms": 6.266,
+      "max_ms": 7.573,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.081,
+      "p95_ms": 0.177,
+      "p99_ms": 0.779,
+      "max_ms": 1.141,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.293,
+      "p95_ms": 0.664,
+      "p99_ms": 1.223,
+      "max_ms": 2.212,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.488,
+      "p95_ms": 1.041,
+      "p99_ms": 1.435,
+      "max_ms": 2.727,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.093,
+      "p95_ms": 0.182,
+      "p99_ms": 0.629,
+      "max_ms": 1.539,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.34,
+      "p95_ms": 0.851,
+      "p99_ms": 1.633,
+      "max_ms": 2.261,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.844,
+      "p95_ms": 1.701,
+      "p99_ms": 2.084,
+      "max_ms": 3.001,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.21,
+      "p95_ms": 3.25,
+      "p99_ms": 4.275,
+      "max_ms": 6.985,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.937,
+      "p95_ms": 2.851,
+      "p99_ms": 4.093,
+      "max_ms": 5.786,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.79,
+      "p95_ms": 4.145,
+      "p99_ms": 5.842,
+      "max_ms": 6.694,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.457,
+      "p95_ms": 4.272,
+      "p99_ms": 6.266,
+      "max_ms": 7.573,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.058,
+      "p95_ms": 3.804,
+      "p99_ms": 5.268,
+      "max_ms": 6.978,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.685,
+      "p95_ms": 5.2,
+      "p99_ms": 6.224,
+      "max_ms": 7.639,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.462,
+      "p95_ms": 0.858,
+      "p99_ms": 1.247,
+      "max_ms": 2.141,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.916,
+      "p95_ms": 5.872,
+      "p99_ms": 7.098,
+      "max_ms": 10.998,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.843,
+      "p95_ms": 1.821,
+      "p99_ms": 2.233,
+      "max_ms": 3.383,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 3.749,
+      "p95_ms": 6.659,
+      "p99_ms": 8.521,
+      "max_ms": 14.966,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 57,
+     "loadavg_1m_min": 1.67,
+     "loadavg_1m_max": 2.1
+    },
+    "log": "logs/perf-series-B/b10b-B-node22-run3-cand.log"
+   },
+   {
+    "step": "b10b-B-node24-run1-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:55:58Z",
+    "end_utc": "2026-11-03T16:56:51Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.082,
+      "p95_ms": 0.202,
+      "p99_ms": 0.724,
+      "max_ms": 1.661,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.092,
+      "p95_ms": 0.207,
+      "p99_ms": 0.368,
+      "max_ms": 1.324,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.131,
+      "p95_ms": 2.683,
+      "p99_ms": 8.359,
+      "max_ms": 10.996,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.214,
+      "p95_ms": 2.807,
+      "p99_ms": 8.632,
+      "max_ms": 13.034,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.082,
+      "p95_ms": 0.202,
+      "p99_ms": 0.724,
+      "max_ms": 1.661,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.304,
+      "p95_ms": 0.688,
+      "p99_ms": 1.182,
+      "max_ms": 2.263,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.483,
+      "p95_ms": 0.909,
+      "p99_ms": 1.429,
+      "max_ms": 2.643,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.092,
+      "p95_ms": 0.207,
+      "p99_ms": 0.368,
+      "max_ms": 1.324,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.289,
+      "p95_ms": 0.661,
+      "p99_ms": 1.265,
+      "max_ms": 4.192,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.62,
+      "p95_ms": 1.197,
+      "p99_ms": 1.524,
+      "max_ms": 2.078,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.131,
+      "p95_ms": 2.683,
+      "p99_ms": 8.359,
+      "max_ms": 10.996,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.788,
+      "p95_ms": 1.894,
+      "p99_ms": 8.621,
+      "max_ms": 11.255,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.518,
+      "p95_ms": 5.787,
+      "p99_ms": 7.913,
+      "max_ms": 9.387,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.214,
+      "p95_ms": 2.807,
+      "p99_ms": 8.632,
+      "max_ms": 13.034,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.126,
+      "p95_ms": 2.33,
+      "p99_ms": 9.35,
+      "max_ms": 11.149,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.994,
+      "p95_ms": 5.73,
+      "p99_ms": 7.875,
+      "max_ms": 9.644,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.465,
+      "p95_ms": 0.806,
+      "p99_ms": 1.13,
+      "max_ms": 2.102,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.059,
+      "p95_ms": 6.802,
+      "p99_ms": 8.802,
+      "max_ms": 12.009,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.642,
+      "p95_ms": 1.324,
+      "p99_ms": 1.718,
+      "max_ms": 2.558,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.44,
+      "p95_ms": 6.649,
+      "p99_ms": 9.49,
+      "max_ms": 19.488,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 53,
+     "loadavg_1m_min": 1.49,
+     "loadavg_1m_max": 1.73
+    },
+    "log": "logs/perf-series-B/b10b-B-node24-run1-base.log"
+   },
+   {
+    "step": "b10b-B-node24-run1-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:56:51Z",
+    "end_utc": "2026-11-03T16:57:44Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.079,
+      "p95_ms": 0.175,
+      "p99_ms": 0.671,
+      "max_ms": 1.642,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.081,
+      "p95_ms": 0.153,
+      "p99_ms": 0.273,
+      "max_ms": 0.901,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.214,
+      "p95_ms": 2.666,
+      "p99_ms": 6.762,
+      "max_ms": 9.84,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.212,
+      "p95_ms": 2.939,
+      "p99_ms": 8.838,
+      "max_ms": 10.748,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.079,
+      "p95_ms": 0.175,
+      "p99_ms": 0.671,
+      "max_ms": 1.642,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.274,
+      "p95_ms": 0.577,
+      "p99_ms": 0.924,
+      "max_ms": 2.054,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.487,
+      "p95_ms": 0.877,
+      "p99_ms": 1.405,
+      "max_ms": 1.97,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.081,
+      "p95_ms": 0.153,
+      "p99_ms": 0.273,
+      "max_ms": 0.901,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.296,
+      "p95_ms": 0.594,
+      "p99_ms": 1.307,
+      "max_ms": 4.917,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.644,
+      "p95_ms": 1.223,
+      "p99_ms": 1.743,
+      "max_ms": 2.717,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.214,
+      "p95_ms": 2.666,
+      "p99_ms": 6.762,
+      "max_ms": 9.84,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.804,
+      "p95_ms": 2.037,
+      "p99_ms": 7.474,
+      "max_ms": 10.271,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.506,
+      "p95_ms": 4.633,
+      "p99_ms": 6.642,
+      "max_ms": 10.865,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.212,
+      "p95_ms": 2.939,
+      "p99_ms": 8.838,
+      "max_ms": 10.748,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.884,
+      "p95_ms": 2.064,
+      "p99_ms": 8.347,
+      "max_ms": 12.126,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.004,
+      "p95_ms": 5.795,
+      "p99_ms": 7.784,
+      "max_ms": 9.452,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.5,
+      "p95_ms": 0.853,
+      "p99_ms": 1.442,
+      "max_ms": 2.231,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.016,
+      "p95_ms": 5.831,
+      "p99_ms": 8.701,
+      "max_ms": 15.615,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.651,
+      "p95_ms": 1.372,
+      "p99_ms": 1.994,
+      "max_ms": 2.764,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.407,
+      "p95_ms": 6.51,
+      "p99_ms": 9.744,
+      "max_ms": 21.111,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 52,
+     "loadavg_1m_min": 1.59,
+     "loadavg_1m_max": 2.28
+    },
+    "log": "logs/perf-series-B/b10b-B-node24-run1-cand.log"
+   },
+   {
+    "step": "b10b-B-node24-run2-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:57:44Z",
+    "end_utc": "2026-11-03T16:58:37Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.075,
+      "p95_ms": 0.172,
+      "p99_ms": 0.712,
+      "max_ms": 1.407,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.083,
+      "p95_ms": 0.157,
+      "p99_ms": 0.371,
+      "max_ms": 1.491,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.118,
+      "p95_ms": 2.419,
+      "p99_ms": 8.488,
+      "max_ms": 13.301,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.186,
+      "p95_ms": 2.702,
+      "p99_ms": 8.739,
+      "max_ms": 13.045,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.075,
+      "p95_ms": 0.172,
+      "p99_ms": 0.712,
+      "max_ms": 1.407,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.274,
+      "p95_ms": 0.636,
+      "p99_ms": 1.011,
+      "max_ms": 2.403,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.47,
+      "p95_ms": 0.871,
+      "p99_ms": 1.206,
+      "max_ms": 2.318,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.083,
+      "p95_ms": 0.157,
+      "p99_ms": 0.371,
+      "max_ms": 1.491,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.302,
+      "p95_ms": 0.61,
+      "p99_ms": 1.403,
+      "max_ms": 4.55,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.659,
+      "p95_ms": 1.272,
+      "p99_ms": 1.883,
+      "max_ms": 2.835,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.118,
+      "p95_ms": 2.419,
+      "p99_ms": 8.488,
+      "max_ms": 13.301,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.901,
+      "p95_ms": 2.111,
+      "p99_ms": 9.368,
+      "max_ms": 12.145,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.59,
+      "p95_ms": 5.856,
+      "p99_ms": 7.875,
+      "max_ms": 9.783,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.186,
+      "p95_ms": 2.702,
+      "p99_ms": 8.739,
+      "max_ms": 13.045,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.937,
+      "p95_ms": 2.103,
+      "p99_ms": 8.8,
+      "max_ms": 12.593,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.952,
+      "p95_ms": 5.658,
+      "p99_ms": 7.691,
+      "max_ms": 9.524,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.486,
+      "p95_ms": 0.825,
+      "p99_ms": 1.477,
+      "max_ms": 1.906,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.101,
+      "p95_ms": 6.836,
+      "p99_ms": 9.415,
+      "max_ms": 13.151,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.651,
+      "p95_ms": 1.329,
+      "p99_ms": 1.965,
+      "max_ms": 2.142,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.403,
+      "p95_ms": 6.949,
+      "p99_ms": 9.578,
+      "max_ms": 17.535,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 53,
+     "loadavg_1m_min": 1.48,
+     "loadavg_1m_max": 1.91
+    },
+    "log": "logs/perf-series-B/b10b-B-node24-run2-base.log"
+   },
+   {
+    "step": "b10b-B-node24-run2-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:58:37Z",
+    "end_utc": "2026-11-03T16:59:30Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.074,
+      "p95_ms": 0.183,
+      "p99_ms": 0.617,
+      "max_ms": 1.28,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.078,
+      "p95_ms": 0.148,
+      "p99_ms": 0.515,
+      "max_ms": 1.054,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.127,
+      "p95_ms": 2.619,
+      "p99_ms": 7.882,
+      "max_ms": 13.208,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.217,
+      "p95_ms": 2.951,
+      "p99_ms": 9.446,
+      "max_ms": 11.148,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.074,
+      "p95_ms": 0.183,
+      "p99_ms": 0.617,
+      "max_ms": 1.28,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.284,
+      "p95_ms": 0.729,
+      "p99_ms": 1.206,
+      "max_ms": 3.703,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.475,
+      "p95_ms": 0.878,
+      "p99_ms": 1.408,
+      "max_ms": 1.948,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.078,
+      "p95_ms": 0.148,
+      "p99_ms": 0.515,
+      "max_ms": 1.054,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.309,
+      "p95_ms": 0.661,
+      "p99_ms": 1.303,
+      "max_ms": 4.108,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.62,
+      "p95_ms": 1.257,
+      "p99_ms": 1.925,
+      "max_ms": 2.808,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.127,
+      "p95_ms": 2.619,
+      "p99_ms": 7.882,
+      "max_ms": 13.208,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.803,
+      "p95_ms": 1.899,
+      "p99_ms": 7.617,
+      "max_ms": 10.075,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.552,
+      "p95_ms": 5.079,
+      "p99_ms": 6.866,
+      "max_ms": 10.102,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.217,
+      "p95_ms": 2.951,
+      "p99_ms": 9.446,
+      "max_ms": 11.148,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.861,
+      "p95_ms": 1.783,
+      "p99_ms": 9.079,
+      "max_ms": 12.037,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.988,
+      "p95_ms": 5.885,
+      "p99_ms": 7.575,
+      "max_ms": 10.572,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.481,
+      "p95_ms": 0.867,
+      "p99_ms": 1.186,
+      "max_ms": 1.553,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.0,
+      "p95_ms": 5.871,
+      "p99_ms": 8.576,
+      "max_ms": 15.511,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.647,
+      "p95_ms": 1.323,
+      "p99_ms": 1.974,
+      "max_ms": 2.406,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.498,
+      "p95_ms": 6.633,
+      "p99_ms": 9.441,
+      "max_ms": 11.222,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 53,
+     "loadavg_1m_min": 1.51,
+     "loadavg_1m_max": 1.86
+    },
+    "log": "logs/perf-series-B/b10b-B-node24-run2-cand.log"
+   },
+   {
+    "step": "b10b-B-node24-run3-base",
+    "side": "baseline",
+    "commit": "bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T16:59:30Z",
+    "end_utc": "2026-11-03T17:00:23Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.072,
+      "p95_ms": 0.167,
+      "p99_ms": 0.597,
+      "max_ms": 1.365,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.083,
+      "p95_ms": 0.157,
+      "p99_ms": 0.436,
+      "max_ms": 1.132,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.162,
+      "p95_ms": 2.439,
+      "p99_ms": 7.895,
+      "max_ms": 9.436,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.235,
+      "p95_ms": 2.728,
+      "p99_ms": 9.171,
+      "max_ms": 10.363,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.072,
+      "p95_ms": 0.167,
+      "p99_ms": 0.597,
+      "max_ms": 1.365,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.283,
+      "p95_ms": 0.696,
+      "p99_ms": 1.035,
+      "max_ms": 2.553,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.494,
+      "p95_ms": 0.907,
+      "p99_ms": 1.331,
+      "max_ms": 1.939,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.083,
+      "p95_ms": 0.157,
+      "p99_ms": 0.436,
+      "max_ms": 1.132,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.339,
+      "p95_ms": 0.703,
+      "p99_ms": 1.348,
+      "max_ms": 4.169,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.686,
+      "p95_ms": 1.255,
+      "p99_ms": 1.84,
+      "max_ms": 2.164,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.162,
+      "p95_ms": 2.439,
+      "p99_ms": 7.895,
+      "max_ms": 9.436,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.847,
+      "p95_ms": 1.951,
+      "p99_ms": 8.382,
+      "max_ms": 11.694,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.561,
+      "p95_ms": 5.364,
+      "p99_ms": 7.808,
+      "max_ms": 9.158,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.235,
+      "p95_ms": 2.728,
+      "p99_ms": 9.171,
+      "max_ms": 10.363,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.964,
+      "p95_ms": 2.006,
+      "p99_ms": 8.629,
+      "max_ms": 11.116,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.995,
+      "p95_ms": 5.874,
+      "p99_ms": 7.629,
+      "max_ms": 9.647,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.475,
+      "p95_ms": 0.784,
+      "p99_ms": 1.244,
+      "max_ms": 2.446,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.078,
+      "p95_ms": 7.005,
+      "p99_ms": 9.103,
+      "max_ms": 12.218,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.652,
+      "p95_ms": 1.338,
+      "p99_ms": 1.887,
+      "max_ms": 2.164,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.518,
+      "p95_ms": 6.785,
+      "p99_ms": 9.555,
+      "max_ms": 21.559,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 53,
+     "loadavg_1m_min": 1.4,
+     "loadavg_1m_max": 1.58
+    },
+    "log": "logs/perf-series-B/b10b-B-node24-run3-base.log"
+   },
+   {
+    "step": "b10b-B-node24-run3-cand",
+    "side": "candidate",
+    "commit": "94969100ec85a41f93eb2a0d677aefc886290691",
+    "runtime": "node24",
+    "exit": 0,
+    "start_utc": "2026-11-03T17:00:23Z",
+    "end_utc": "2026-11-03T17:01:16Z",
+    "command": "B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js",
+    "gated": {
+     "compact no-change": {
+      "p50_ms": 0.081,
+      "p95_ms": 0.233,
+      "p99_ms": 0.545,
+      "max_ms": 1.632,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "rich no-change": {
+      "p50_ms": 0.086,
+      "p95_ms": 0.177,
+      "p99_ms": 0.367,
+      "max_ms": 1.155,
+      "n": 1000,
+      "limit_p99_ms": 2.0,
+      "within_gate": true
+     },
+     "compact changed": {
+      "p50_ms": 1.143,
+      "p95_ms": 2.74,
+      "p99_ms": 7.586,
+      "max_ms": 9.505,
+      "n": 1000,
+      "limit_p99_ms": 10.0,
+      "within_gate": true
+     },
+     "rich changed": {
+      "p50_ms": 1.232,
+      "p95_ms": 2.921,
+      "p99_ms": 8.725,
+      "max_ms": 10.918,
+      "n": 1000,
+      "limit_p99_ms": 15.0,
+      "within_gate": true
+     }
+    },
+    "all_populations": [
+     {
+      "population": "b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.081,
+      "p95_ms": 0.233,
+      "p99_ms": 0.545,
+      "max_ms": 1.632,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.27,
+      "p95_ms": 0.635,
+      "p99_ms": 0.987,
+      "max_ms": 2.456,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.502,
+      "p95_ms": 0.936,
+      "p99_ms": 1.446,
+      "max_ms": 2.145,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view)",
+      "n": 1000,
+      "p50_ms": 0.086,
+      "p95_ms": 0.177,
+      "p99_ms": 0.367,
+      "max_ms": 1.155,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick, every row read (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.297,
+      "p95_ms": 0.678,
+      "p99_ms": 1.421,
+      "max_ms": 4.499,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.64,
+      "p95_ms": 1.243,
+      "p99_ms": 1.891,
+      "max_ms": 2.657,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.143,
+      "p95_ms": 2.74,
+      "p99_ms": 7.586,
+      "max_ms": 9.505,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.816,
+      "p95_ms": 1.923,
+      "p99_ms": 7.132,
+      "max_ms": 10.739,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 1.557,
+      "p95_ms": 4.747,
+      "p99_ms": 7.214,
+      "max_ms": 8.414,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read)",
+      "n": 1000,
+      "p50_ms": 1.232,
+      "p95_ms": 2.921,
+      "p99_ms": 8.725,
+      "max_ms": 10.918,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick, the 60 rows in view (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.907,
+      "p95_ms": 1.984,
+      "p99_ms": 8.461,
+      "max_ms": 10.079,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted)",
+      "n": 1000,
+      "p50_ms": 2.039,
+      "p95_ms": 5.729,
+      "p99_ms": 8.098,
+      "max_ms": 10.03,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.473,
+      "p95_ms": 0.8,
+      "p99_ms": 1.172,
+      "max_ms": 2.418,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 1.964,
+      "p95_ms": 5.734,
+      "p99_ms": 8.05,
+      "max_ms": 13.337,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted)",
+      "n": 1000,
+      "p50_ms": 0.636,
+      "p95_ms": 1.276,
+      "p99_ms": 1.753,
+      "max_ms": 2.361,
+      "strict": "true"
+     },
+     {
+      "population": "b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted)",
+      "n": 1000,
+      "p50_ms": 2.365,
+      "p95_ms": 6.644,
+      "p99_ms": 9.738,
+      "max_ms": 17.005,
+      "strict": "true"
+     }
+    ],
+    "failing_tests": [],
+    "load": {
+     "kind": "1 s sampler (loadavg + top-5 comm by ps %CPU)",
+     "samples": 52,
+     "loadavg_1m_min": 1.45,
+     "loadavg_1m_max": 1.91
+    },
+    "log": "logs/perf-series-B/b10b-B-node24-run3-cand.log"
+   }
+  ]
+ }
+}

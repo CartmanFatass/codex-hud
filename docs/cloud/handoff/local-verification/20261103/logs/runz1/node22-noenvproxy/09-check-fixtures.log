@@ -1,0 +1,10 @@
+# target=runz1 runtime=node22 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 cwd=<wt>/runz1
+# command: npm run check:fixtures
+# start: 2026-11-03T16:44:30Z
+
+> codex-hud@0.1.0 check:fixtures
+> bash tests/check-fixtures.sh
+
+check-fixtures: OK (tests/fixtures tests/prototypes docs/probes docs/design)
+# end: 2026-11-03T16:44:30Z
+# exit: 0

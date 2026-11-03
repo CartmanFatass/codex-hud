@@ -1,0 +1,24 @@
+Redaction of the published copy (scripts/redact.py, literals withheld in the published copy of that script)
+
+Substitutions applied to every text file:
+  <VERIFY_ROOT>  local verification root (under the owner's home)
+  <REPO>         the owner's local clone path
+  <HOME>         the owner's home directory
+  <host>         machine name (also in runz1-perf JSON "host.name")
+  <email>        owner e-mail (no occurrences found in logs)
+  <local-proxy>  local proxy URL (no occurrences found in logs; proxy values were never printed)
+  <claude-tmp>   Claude Code temp paths (no occurrences found)
+
+Residual scan after substitution (home paths, Windows user paths, GitHub/OpenAI/AWS/Slack token prefixes, private-key
+headers, Claude session/messaging token names and values, Herdr pane/tab/workspace ids, local proxy port, NO_PROXY domain
+names, owner e-mail, user name, machine name):
+  - 3 hits, all false positives: the digits of the proxy port inside duration_ms values
+    (logs/runz1/node22/06-test-visual.log:1189, logs/perf/node22/04-npm-test.log:5136,
+     logs/perf/node22-noenvproxy/04-npm-test.log:11022).
+  - 12 hits inside scripts/redact.py itself (its own pattern list) -> that file is published with the literals replaced
+    by descriptions.
+  - The WSL process names "Relay" and "SessionLeader" are kept (they explain REPORT.md §5.1).
+Nothing was removed for lack of a safe redaction; all logs are published.
+
+SHA256SUMS in the published directory covers the redacted files. The unredacted originals and their own SHA256SUMS
+remain only on the owner's machine (<VERIFY_ROOT>/runs/20261103T154219Z).

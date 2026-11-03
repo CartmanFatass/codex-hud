@@ -1,0 +1,86 @@
+# target=runz1 runtime=node22 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 tree=da3e386e3512736f3078d0fd9c7b85a868f83f6d
+# node binary: <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node (v22.23.4)
+# command: node tests/int/runz1-perf.mjs (via env -i wrapper, fresh HOME, no HUD_HOME)
+## before 2026-11-03T16:20:21Z loadavg: 13.06 13.11 11.55 19/1326 136468
+    PID COMMAND         %CPU
+ 135126 chrome-headless 1112
+  28095 pi              10.9
+   2573 codex            3.2
+  32051 claude           2.7
+ 135137 chrome-headless  1.6
+    491 python           1.5
+  40952 MainThread       1.5
+# start: 2026-11-03T16:20:21Z
+(node:136477) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{
+  "host": {
+    "name": "<host>",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "arch": "x64",
+    "node": "v22.23.4"
+  },
+  "timing": "wall-clock performance.now; nearest-rank; sequential populations; no explicit GC; full proof includes existing inspection and both new censuses plus visibility/thread checks",
+  "subject_stamps": {
+    "total": 3,
+    "unique": 2
+  },
+  "census_size_before": 179,
+  "full_proof": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 13.872647000000143,
+    "p95_ms": 17.373835000000327,
+    "p99_ms": 20.509205000000293,
+    "max_ms": 34.55962599999975,
+    "refusals": 22
+  },
+  "additional_complete_scan": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 3.4379680000001827,
+    "p95_ms": 4.277258999998594,
+    "p99_ms": 5.221487999999226,
+    "max_ms": 9.81924699999945,
+    "refusals": 5
+  },
+  "existing_inspection": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 3.513308000001416,
+    "p95_ms": 4.617846000001009,
+    "p99_ms": 5.6436070000017935,
+    "max_ms": 7.51461399999971,
+    "refusals": 0
+  },
+  "churn_full_proof": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 11.146663999999873,
+    "p95_ms": 14.154421999999613,
+    "p99_ms": 15.604041999999026,
+    "max_ms": 28.015559999999823,
+    "refusals": 966
+  },
+  "census_size_after": 181,
+  "esrch_full_proof": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 3.5672300000005635,
+    "p95_ms": 4.489225000004808,
+    "p99_ms": 5.6000310000017635,
+    "max_ms": 11.476833000000624,
+    "refusals": 0
+  }
+}
+# end: 2026-11-03T16:21:00Z
+# exit: 0
+## after 2026-11-03T16:21:00Z loadavg: 15.10 13.62 11.78 18/1297 140510
+    PID COMMAND         %CPU
+ 135126 chrome-headless 1151
+ 140456 python3         30.8
+  28095 pi              10.9
+   2573 codex            3.2
+  32051 claude           2.7
+    491 python           1.5
+  40952 MainThread       1.5

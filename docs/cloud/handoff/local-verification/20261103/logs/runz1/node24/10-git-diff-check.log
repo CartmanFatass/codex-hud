@@ -1,0 +1,5 @@
+# target=runz1 runtime=node24 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 cwd=<wt>/runz1
+# command: git diff --check
+# start: 2026-11-03T15:57:06Z
+# end: 2026-11-03T15:57:06Z
+# exit: 0

@@ -1,0 +1,9 @@
+# target=perf runtime=node24 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: npm run build:hud-mcp
+# start: 2026-11-03T15:57:51Z
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+
+# end: 2026-11-03T15:57:55Z
+# exit: 0

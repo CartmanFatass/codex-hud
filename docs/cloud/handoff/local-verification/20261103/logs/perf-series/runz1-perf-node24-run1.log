@@ -1,0 +1,84 @@
+# target=runz1 runtime=node24 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 tree=da3e386e3512736f3078d0fd9c7b85a868f83f6d
+# node binary: <HOME>/.nvm/versions/node/v24.22.1/bin/node (v24.22.1)
+# command: node tests/int/runz1-perf.mjs (via env -i wrapper, fresh HOME, no HUD_HOME)
+## before 2026-11-03T16:21:51Z loadavg: 8.69 12.26 11.43 1/1212 145906
+    PID COMMAND         %CPU
+  28095 pi              11.0
+   2573 codex            3.1
+  32051 claude           2.6
+  40952 MainThread       1.5
+    491 python           1.5
+   1282 litellm          0.6
+  74429 opengrep-core    0.6
+# start: 2026-11-03T16:21:51Z
+{
+  "host": {
+    "name": "<host>",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "arch": "x64",
+    "node": "v24.22.1"
+  },
+  "timing": "wall-clock performance.now; nearest-rank; sequential populations; no explicit GC; full proof includes existing inspection and both new censuses plus visibility/thread checks",
+  "subject_stamps": {
+    "total": 3,
+    "unique": 2
+  },
+  "census_size_before": 172,
+  "full_proof": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 8.29960200000005,
+    "p95_ms": 10.216775000000098,
+    "p99_ms": 11.79746299999988,
+    "max_ms": 13.72501099999954,
+    "refusals": 19
+  },
+  "additional_complete_scan": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 2.140105999998923,
+    "p95_ms": 2.916628999999375,
+    "p99_ms": 3.2789729999985866,
+    "max_ms": 3.9320279999992636,
+    "refusals": 5
+  },
+  "existing_inspection": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 2.286367999999129,
+    "p95_ms": 3.1746230000007927,
+    "p99_ms": 3.8194769999990967,
+    "max_ms": 4.632476999999199,
+    "refusals": 0
+  },
+  "churn_full_proof": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 9.116610000000946,
+    "p95_ms": 14.038010000000213,
+    "p99_ms": 15.457653999998001,
+    "max_ms": 17.390089999997144,
+    "refusals": 920
+  },
+  "census_size_after": 180,
+  "esrch_full_proof": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 4.057854000002408,
+    "p95_ms": 5.754444999998668,
+    "p99_ms": 7.317117999999027,
+    "max_ms": 13.93692799999917,
+    "refusals": 1
+  }
+}
+# end: 2026-11-03T16:22:19Z
+# exit: 0
+## after 2026-11-03T16:22:19Z loadavg: 8.28 11.84 11.31 7/1314 149338
+    PID COMMAND         %CPU
+ 147501 chrome-headless  935
+ 149339 ps               100
+ 149273 python3         17.1
+  28095 pi              11.0
+ 147528 chrome-headless  8.3
+ 146797 MainThread       3.5
+   2573 codex            3.1

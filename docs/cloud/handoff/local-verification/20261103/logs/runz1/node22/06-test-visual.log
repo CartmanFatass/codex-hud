@@ -1,0 +1,1946 @@
+# target=runz1 runtime=node22 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 cwd=<wt>/runz1
+# command: npm run test:visual
+# start: 2026-11-03T16:11:45Z
+(node:117300) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> codex-hud@0.1.0 test:visual
+> npm run build:test && node --test dist-test/tests/unit/visual-baselines.test.js
+
+(node:117313) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+(node:117768) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:117775) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: visual semantics: all presets retain identity and exact frame dimensions
+ok 1 - visual semantics: all presets retain identity and exact frame dimensions
+  ---
+  duration_ms: 394.67762
+  type: 'test'
+  ...
+# Subtest: visual semantics: child role counts off removes only footer counts, not children, summaries or targets
+ok 2 - visual semantics: child role counts off removes only footer counts, not children, summaries or targets
+  ---
+  duration_ms: 10.804937
+  type: 'test'
+  ...
+# Subtest: visual semantics: recap viewport is independent of card preset at every width and look
+ok 3 - visual semantics: recap viewport is independent of card preset at every width and look
+  ---
+  duration_ms: 222.964222
+  type: 'test'
+  ...
+# Subtest: visual semantics: active Settings navigation retains full localized label and nonoverlapping controls from width 24
+ok 4 - visual semantics: active Settings navigation retains full localized label and nonoverlapping controls from width 24
+  ---
+  duration_ms: 62.975752
+  type: 'test'
+  ...
+# Subtest: visual semantics: Save returns the new width and the next render reflows navigation, values and selected identity
+ok 5 - visual semantics: Save returns the new width and the next render reflows navigation, values and selected identity
+  ---
+  duration_ms: 57.194532
+  type: 'test'
+  ...
+# Subtest: visual semantics: confirmation owns input, blocks hidden UI clicks and defaults to cancel
+ok 6 - visual semantics: confirmation owns input, blocks hidden UI clicks and defaults to cancel
+  ---
+  duration_ms: 13.846531
+  type: 'test'
+  ...
+# Subtest: visual semantics: Inspector preserves stored summary and distinguishes explicit Coverage from legacy Recorded
+ok 7 - visual semantics: Inspector preserves stored summary and distinguishes explicit Coverage from legacy Recorded
+  ---
+  duration_ms: 21.250418
+  type: 'test'
+  ...
+# Subtest: visual semantics: normalization retains spaces and diffs identify the exact case and row
+ok 8 - visual semantics: normalization retains spaces and diffs identify the exact case and row
+  ---
+  duration_ms: 0.450447
+  type: 'test'
+  ...
+# Subtest: visual semantics: fixture generation is deterministic without reading a wall clock
+ok 9 - visual semantics: fixture generation is deterministic without reading a wall clock
+  ---
+  duration_ms: 716.731758
+  type: 'test'
+  ...
+# Subtest: visual baselines: fixed-time EN/ZH textual frames match reviewed goldens
+    # Subtest: panel/en/tab/minimal/32x32
+    ok 1 - panel/en/tab/minimal/32x32
+      ---
+      duration_ms: 0.756185
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/progress/32x32
+    ok 2 - panel/en/tab/progress/32x32
+      ---
+      duration_ms: 0.147724
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/monitor/32x32
+    ok 3 - panel/en/tab/monitor/32x32
+      ---
+      duration_ms: 0.082373
+      type: 'test'
+      ...
+    # Subtest: settings/en/tab/active-settings/32x24
+    ok 4 - settings/en/tab/active-settings/32x24
+      ---
+      duration_ms: 0.071052
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/minimal/40x32
+    ok 5 - panel/en/tab/minimal/40x32
+      ---
+      duration_ms: 0.087122
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/progress/40x32
+    ok 6 - panel/en/tab/progress/40x32
+      ---
+      duration_ms: 0.052768
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/monitor/40x32
+    ok 7 - panel/en/tab/monitor/40x32
+      ---
+      duration_ms: 0.083144
+      type: 'test'
+      ...
+    # Subtest: settings/en/tab/active-settings/40x24
+    ok 8 - settings/en/tab/active-settings/40x24
+      ---
+      duration_ms: 0.068137
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/minimal/48x32
+    ok 9 - panel/en/tab/minimal/48x32
+      ---
+      duration_ms: 0.067335
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/progress/48x32
+    ok 10 - panel/en/tab/progress/48x32
+      ---
+      duration_ms: 0.073778
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/monitor/48x32
+    ok 11 - panel/en/tab/monitor/48x32
+      ---
+      duration_ms: 0.103964
+      type: 'test'
+      ...
+    # Subtest: settings/en/tab/active-settings/48x24
+    ok 12 - settings/en/tab/active-settings/48x24
+      ---
+      duration_ms: 0.138347
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/minimal/56x32
+    ok 13 - panel/en/tab/minimal/56x32
+      ---
+      duration_ms: 0.116497
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/progress/56x32
+    ok 14 - panel/en/tab/progress/56x32
+      ---
+      duration_ms: 0.073045
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/monitor/56x32
+    ok 15 - panel/en/tab/monitor/56x32
+      ---
+      duration_ms: 0.072165
+      type: 'test'
+      ...
+    # Subtest: settings/en/tab/active-settings/56x24
+    ok 16 - settings/en/tab/active-settings/56x24
+      ---
+      duration_ms: 0.071623
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/minimal/80x32
+    ok 17 - panel/en/tab/minimal/80x32
+      ---
+      duration_ms: 0.066774
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/progress/80x32
+    ok 18 - panel/en/tab/progress/80x32
+      ---
+      duration_ms: 0.105607
+      type: 'test'
+      ...
+    # Subtest: panel/en/tab/monitor/80x32
+    ok 19 - panel/en/tab/monitor/80x32
+      ---
+      duration_ms: 0.084117
+      type: 'test'
+      ...
+    # Subtest: settings/en/tab/active-settings/80x24
+    ok 20 - settings/en/tab/active-settings/80x24
+      ---
+      duration_ms: 0.090348
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/minimal/32x32
+    ok 21 - panel/en/band/minimal/32x32
+      ---
+      duration_ms: 0.067575
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/progress/32x32
+    ok 22 - panel/en/band/progress/32x32
+      ---
+      duration_ms: 0.056335
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/monitor/32x32
+    ok 23 - panel/en/band/monitor/32x32
+      ---
+      duration_ms: 0.05916
+      type: 'test'
+      ...
+    # Subtest: settings/en/band/active-settings/32x24
+    ok 24 - settings/en/band/active-settings/32x24
+      ---
+      duration_ms: 0.131946
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/minimal/40x32
+    ok 25 - panel/en/band/minimal/40x32
+      ---
+      duration_ms: 0.062717
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/progress/40x32
+    ok 26 - panel/en/band/progress/40x32
+      ---
+      duration_ms: 0.061143
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/monitor/40x32
+    ok 27 - panel/en/band/monitor/40x32
+      ---
+      duration_ms: 0.083325
+      type: 'test'
+      ...
+    # Subtest: settings/en/band/active-settings/40x24
+    ok 28 - settings/en/band/active-settings/40x24
+      ---
+      duration_ms: 0.074088
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/minimal/48x32
+    ok 29 - panel/en/band/minimal/48x32
+      ---
+      duration_ms: 0.077153
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/progress/48x32
+    ok 30 - panel/en/band/progress/48x32
+      ---
+      duration_ms: 0.075741
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/monitor/48x32
+    ok 31 - panel/en/band/monitor/48x32
+      ---
+      duration_ms: 0.09166
+      type: 'test'
+      ...
+    # Subtest: settings/en/band/active-settings/48x24
+    ok 32 - settings/en/band/active-settings/48x24
+      ---
+      duration_ms: 0.074458
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/minimal/56x32
+    ok 33 - panel/en/band/minimal/56x32
+      ---
+      duration_ms: 0.062255
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/progress/56x32
+    ok 34 - panel/en/band/progress/56x32
+      ---
+      duration_ms: 0.061274
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/monitor/56x32
+    ok 35 - panel/en/band/monitor/56x32
+      ---
+      duration_ms: 0.067776
+      type: 'test'
+      ...
+    # Subtest: settings/en/band/active-settings/56x24
+    ok 36 - settings/en/band/active-settings/56x24
+      ---
+      duration_ms: 0.053279
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/minimal/80x32
+    ok 37 - panel/en/band/minimal/80x32
+      ---
+      duration_ms: 0.054351
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/progress/80x32
+    ok 38 - panel/en/band/progress/80x32
+      ---
+      duration_ms: 0.059521
+      type: 'test'
+      ...
+    # Subtest: panel/en/band/monitor/80x32
+    ok 39 - panel/en/band/monitor/80x32
+      ---
+      duration_ms: 0.133698
+      type: 'test'
+      ...
+    # Subtest: settings/en/band/active-settings/80x24
+    ok 40 - settings/en/band/active-settings/80x24
+      ---
+      duration_ms: 0.087443
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/minimal/32x32
+    ok 41 - panel/en/tile/minimal/32x32
+      ---
+      duration_ms: 0.051907
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/progress/32x32
+    ok 42 - panel/en/tile/progress/32x32
+      ---
+      duration_ms: 0.039403
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/monitor/32x32
+    ok 43 - panel/en/tile/monitor/32x32
+      ---
+      duration_ms: 0.035215
+      type: 'test'
+      ...
+    # Subtest: settings/en/tile/active-settings/32x24
+    ok 44 - settings/en/tile/active-settings/32x24
+      ---
+      duration_ms: 0.037279
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/minimal/40x32
+    ok 45 - panel/en/tile/minimal/40x32
+      ---
+      duration_ms: 0.03234
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/progress/40x32
+    ok 46 - panel/en/tile/progress/40x32
+      ---
+      duration_ms: 0.032971
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/monitor/40x32
+    ok 47 - panel/en/tile/monitor/40x32
+      ---
+      duration_ms: 0.031279
+      type: 'test'
+      ...
+    # Subtest: settings/en/tile/active-settings/40x24
+    ok 48 - settings/en/tile/active-settings/40x24
+      ---
+      duration_ms: 0.131926
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/minimal/48x32
+    ok 49 - panel/en/tile/minimal/48x32
+      ---
+      duration_ms: 0.726189
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/progress/48x32
+    ok 50 - panel/en/tile/progress/48x32
+      ---
+      duration_ms: 0.314455
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/monitor/48x32
+    ok 51 - panel/en/tile/monitor/48x32
+      ---
+      duration_ms: 0.077794
+      type: 'test'
+      ...
+    # Subtest: settings/en/tile/active-settings/48x24
+    ok 52 - settings/en/tile/active-settings/48x24
+      ---
+      duration_ms: 0.066112
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/minimal/56x32
+    ok 53 - panel/en/tile/minimal/56x32
+      ---
+      duration_ms: 0.060562
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/progress/56x32
+    ok 54 - panel/en/tile/progress/56x32
+      ---
+      duration_ms: 0.055203
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/monitor/56x32
+    ok 55 - panel/en/tile/monitor/56x32
+      ---
+      duration_ms: 0.057106
+      type: 'test'
+      ...
+    # Subtest: settings/en/tile/active-settings/56x24
+    ok 56 - settings/en/tile/active-settings/56x24
+      ---
+      duration_ms: 0.082273
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/minimal/80x32
+    ok 57 - panel/en/tile/minimal/80x32
+      ---
+      duration_ms: 0.067235
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/progress/80x32
+    ok 58 - panel/en/tile/progress/80x32
+      ---
+      duration_ms: 0.062817
+      type: 'test'
+      ...
+    # Subtest: panel/en/tile/monitor/80x32
+    ok 59 - panel/en/tile/monitor/80x32
+      ---
+      duration_ms: 0.057617
+      type: 'test'
+      ...
+    # Subtest: settings/en/tile/active-settings/80x24
+    ok 60 - settings/en/tile/active-settings/80x24
+      ---
+      duration_ms: 0.095567
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/minimal/32x32
+    ok 61 - panel/en/frame/minimal/32x32
+      ---
+      duration_ms: 0.093314
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/progress/32x32
+    ok 62 - panel/en/frame/progress/32x32
+      ---
+      duration_ms: 0.085769
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/monitor/32x32
+    ok 63 - panel/en/frame/monitor/32x32
+      ---
+      duration_ms: 0.106949
+      type: 'test'
+      ...
+    # Subtest: settings/en/frame/active-settings/32x24
+    ok 64 - settings/en/frame/active-settings/32x24
+      ---
+      duration_ms: 0.08053
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/minimal/40x32
+    ok 65 - panel/en/frame/minimal/40x32
+      ---
+      duration_ms: 0.073997
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/progress/40x32
+    ok 66 - panel/en/frame/progress/40x32
+      ---
+      duration_ms: 0.063929
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/monitor/40x32
+    ok 67 - panel/en/frame/monitor/40x32
+      ---
+      duration_ms: 0.060352
+      type: 'test'
+      ...
+    # Subtest: settings/en/frame/active-settings/40x24
+    ok 68 - settings/en/frame/active-settings/40x24
+      ---
+      duration_ms: 0.060643
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/minimal/48x32
+    ok 69 - panel/en/frame/minimal/48x32
+      ---
+      duration_ms: 0.074599
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/progress/48x32
+    ok 70 - panel/en/frame/progress/48x32
+      ---
+      duration_ms: 0.07527
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/monitor/48x32
+    ok 71 - panel/en/frame/monitor/48x32
+      ---
+      duration_ms: 0.06459
+      type: 'test'
+      ...
+    # Subtest: settings/en/frame/active-settings/48x24
+    ok 72 - settings/en/frame/active-settings/48x24
+      ---
+      duration_ms: 0.054
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/minimal/56x32
+    ok 73 - panel/en/frame/minimal/56x32
+      ---
+      duration_ms: 0.058017
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/progress/56x32
+    ok 74 - panel/en/frame/progress/56x32
+      ---
+      duration_ms: 0.058298
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/monitor/56x32
+    ok 75 - panel/en/frame/monitor/56x32
+      ---
+      duration_ms: 0.057487
+      type: 'test'
+      ...
+    # Subtest: settings/en/frame/active-settings/56x24
+    ok 76 - settings/en/frame/active-settings/56x24
+      ---
+      duration_ms: 0.055734
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/minimal/80x32
+    ok 77 - panel/en/frame/minimal/80x32
+      ---
+      duration_ms: 0.068898
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/progress/80x32
+    ok 78 - panel/en/frame/progress/80x32
+      ---
+      duration_ms: 0.085879
+      type: 'test'
+      ...
+    # Subtest: panel/en/frame/monitor/80x32
+    ok 79 - panel/en/frame/monitor/80x32
+      ---
+      duration_ms: 0.063348
+      type: 'test'
+      ...
+    # Subtest: settings/en/frame/active-settings/80x24
+    ok 80 - settings/en/frame/active-settings/80x24
+      ---
+      duration_ms: 0.08052
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/minimal/32x32
+    ok 81 - panel/en/pill/minimal/32x32
+      ---
+      duration_ms: 0.111978
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/progress/32x32
+    ok 82 - panel/en/pill/progress/32x32
+      ---
+      duration_ms: 0.060613
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/monitor/32x32
+    ok 83 - panel/en/pill/monitor/32x32
+      ---
+      duration_ms: 0.047659
+      type: 'test'
+      ...
+    # Subtest: settings/en/pill/active-settings/32x24
+    ok 84 - settings/en/pill/active-settings/32x24
+      ---
+      duration_ms: 0.040956
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/minimal/40x32
+    ok 85 - panel/en/pill/minimal/40x32
+      ---
+      duration_ms: 0.034795
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/progress/40x32
+    ok 86 - panel/en/pill/progress/40x32
+      ---
+      duration_ms: 0.038251
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/monitor/40x32
+    ok 87 - panel/en/pill/monitor/40x32
+      ---
+      duration_ms: 0.033412
+      type: 'test'
+      ...
+    # Subtest: settings/en/pill/active-settings/40x24
+    ok 88 - settings/en/pill/active-settings/40x24
+      ---
+      duration_ms: 0.031138
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/minimal/48x32
+    ok 89 - panel/en/pill/minimal/48x32
+      ---
+      duration_ms: 0.071142
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/progress/48x32
+    ok 90 - panel/en/pill/progress/48x32
+      ---
+      duration_ms: 0.042279
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/monitor/48x32
+    ok 91 - panel/en/pill/monitor/48x32
+      ---
+      duration_ms: 0.078696
+      type: 'test'
+      ...
+    # Subtest: settings/en/pill/active-settings/48x24
+    ok 92 - settings/en/pill/active-settings/48x24
+      ---
+      duration_ms: 0.088895
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/minimal/56x32
+    ok 93 - panel/en/pill/minimal/56x32
+      ---
+      duration_ms: 0.074058
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/progress/56x32
+    ok 94 - panel/en/pill/progress/56x32
+      ---
+      duration_ms: 0.089757
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/monitor/56x32
+    ok 95 - panel/en/pill/monitor/56x32
+      ---
+      duration_ms: 0.082653
+      type: 'test'
+      ...
+    # Subtest: settings/en/pill/active-settings/56x24
+    ok 96 - settings/en/pill/active-settings/56x24
+      ---
+      duration_ms: 0.099034
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/minimal/80x32
+    ok 97 - panel/en/pill/minimal/80x32
+      ---
+      duration_ms: 0.07007
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/progress/80x32
+    ok 98 - panel/en/pill/progress/80x32
+      ---
+      duration_ms: 0.065141
+      type: 'test'
+      ...
+    # Subtest: panel/en/pill/monitor/80x32
+    ok 99 - panel/en/pill/monitor/80x32
+      ---
+      duration_ms: 0.052337
+      type: 'test'
+      ...
+    # Subtest: settings/en/pill/active-settings/80x24
+    ok 100 - settings/en/pill/active-settings/80x24
+      ---
+      duration_ms: 0.047358
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/minimal/32x32
+    ok 101 - panel/zh/tab/minimal/32x32
+      ---
+      duration_ms: 3.290344
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/progress/32x32
+    ok 102 - panel/zh/tab/progress/32x32
+      ---
+      duration_ms: 0.124852
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/monitor/32x32
+    ok 103 - panel/zh/tab/monitor/32x32
+      ---
+      duration_ms: 0.083836
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tab/active-settings/32x24
+    ok 104 - settings/zh/tab/active-settings/32x24
+      ---
+      duration_ms: 0.074809
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/minimal/40x32
+    ok 105 - panel/zh/tab/minimal/40x32
+      ---
+      duration_ms: 0.094846
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/progress/40x32
+    ok 106 - panel/zh/tab/progress/40x32
+      ---
+      duration_ms: 2.142091
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/monitor/40x32
+    ok 107 - panel/zh/tab/monitor/40x32
+      ---
+      duration_ms: 0.10219
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tab/active-settings/40x24
+    ok 108 - settings/zh/tab/active-settings/40x24
+      ---
+      duration_ms: 0.069299
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/minimal/48x32
+    ok 109 - panel/zh/tab/minimal/48x32
+      ---
+      duration_ms: 0.058298
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/progress/48x32
+    ok 110 - panel/zh/tab/progress/48x32
+      ---
+      duration_ms: 0.054892
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/monitor/48x32
+    ok 111 - panel/zh/tab/monitor/48x32
+      ---
+      duration_ms: 0.052798
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tab/active-settings/48x24
+    ok 112 - settings/zh/tab/active-settings/48x24
+      ---
+      duration_ms: 0.052808
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/minimal/56x32
+    ok 113 - panel/zh/tab/minimal/56x32
+      ---
+      duration_ms: 0.076042
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/progress/56x32
+    ok 114 - panel/zh/tab/progress/56x32
+      ---
+      duration_ms: 0.051075
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/monitor/56x32
+    ok 115 - panel/zh/tab/monitor/56x32
+      ---
+      duration_ms: 0.043121
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tab/active-settings/56x24
+    ok 116 - settings/zh/tab/active-settings/56x24
+      ---
+      duration_ms: 0.043361
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/minimal/80x32
+    ok 117 - panel/zh/tab/minimal/80x32
+      ---
+      duration_ms: 0.038812
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/progress/80x32
+    ok 118 - panel/zh/tab/progress/80x32
+      ---
+      duration_ms: 0.039173
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tab/monitor/80x32
+    ok 119 - panel/zh/tab/monitor/80x32
+      ---
+      duration_ms: 0.039213
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tab/active-settings/80x24
+    ok 120 - settings/zh/tab/active-settings/80x24
+      ---
+      duration_ms: 0.036878
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/minimal/32x32
+    ok 121 - panel/zh/band/minimal/32x32
+      ---
+      duration_ms: 0.037179
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/progress/32x32
+    ok 122 - panel/zh/band/progress/32x32
+      ---
+      duration_ms: 0.03728
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/monitor/32x32
+    ok 123 - panel/zh/band/monitor/32x32
+      ---
+      duration_ms: 0.067786
+      type: 'test'
+      ...
+    # Subtest: settings/zh/band/active-settings/32x24
+    ok 124 - settings/zh/band/active-settings/32x24
+      ---
+      duration_ms: 0.047248
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/minimal/40x32
+    ok 125 - panel/zh/band/minimal/40x32
+      ---
+      duration_ms: 0.064069
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/progress/40x32
+    ok 126 - panel/zh/band/progress/40x32
+      ---
+      duration_ms: 0.065091
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/monitor/40x32
+    ok 127 - panel/zh/band/monitor/40x32
+      ---
+      duration_ms: 0.072756
+      type: 'test'
+      ...
+    # Subtest: settings/zh/band/active-settings/40x24
+    ok 128 - settings/zh/band/active-settings/40x24
+      ---
+      duration_ms: 0.09166
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/minimal/48x32
+    ok 129 - panel/zh/band/minimal/48x32
+      ---
+      duration_ms: 0.085038
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/progress/48x32
+    ok 130 - panel/zh/band/progress/48x32
+      ---
+      duration_ms: 0.106638
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/monitor/48x32
+    ok 131 - panel/zh/band/monitor/48x32
+      ---
+      duration_ms: 0.075961
+      type: 'test'
+      ...
+    # Subtest: settings/zh/band/active-settings/48x24
+    ok 132 - settings/zh/band/active-settings/48x24
+      ---
+      duration_ms: 0.089045
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/minimal/56x32
+    ok 133 - panel/zh/band/minimal/56x32
+      ---
+      duration_ms: 0.084577
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/progress/56x32
+    ok 134 - panel/zh/band/progress/56x32
+      ---
+      duration_ms: 0.07016
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/monitor/56x32
+    ok 135 - panel/zh/band/monitor/56x32
+      ---
+      duration_ms: 0.132937
+      type: 'test'
+      ...
+    # Subtest: settings/zh/band/active-settings/56x24
+    ok 136 - settings/zh/band/active-settings/56x24
+      ---
+      duration_ms: 0.067996
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/minimal/80x32
+    ok 137 - panel/zh/band/minimal/80x32
+      ---
+      duration_ms: 0.08036
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/progress/80x32
+    ok 138 - panel/zh/band/progress/80x32
+      ---
+      duration_ms: 0.105556
+      type: 'test'
+      ...
+    # Subtest: panel/zh/band/monitor/80x32
+    ok 139 - panel/zh/band/monitor/80x32
+      ---
+      duration_ms: 0.087623
+      type: 'test'
+      ...
+    # Subtest: settings/zh/band/active-settings/80x24
+    ok 140 - settings/zh/band/active-settings/80x24
+      ---
+      duration_ms: 0.068978
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/minimal/32x32
+    ok 141 - panel/zh/tile/minimal/32x32
+      ---
+      duration_ms: 0.051185
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/progress/32x32
+    ok 142 - panel/zh/tile/progress/32x32
+      ---
+      duration_ms: 0.053669
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/monitor/32x32
+    ok 143 - panel/zh/tile/monitor/32x32
+      ---
+      duration_ms: 0.03728
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tile/active-settings/32x24
+    ok 144 - settings/zh/tile/active-settings/32x24
+      ---
+      duration_ms: 0.044793
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/minimal/40x32
+    ok 145 - panel/zh/tile/minimal/40x32
+      ---
+      duration_ms: 0.087373
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/progress/40x32
+    ok 146 - panel/zh/tile/progress/40x32
+      ---
+      duration_ms: 6.952118
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/monitor/40x32
+    ok 147 - panel/zh/tile/monitor/40x32
+      ---
+      duration_ms: 0.140181
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tile/active-settings/40x24
+    ok 148 - settings/zh/tile/active-settings/40x24
+      ---
+      duration_ms: 0.094576
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/minimal/48x32
+    ok 149 - panel/zh/tile/minimal/48x32
+      ---
+      duration_ms: 0.066874
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/progress/48x32
+    ok 150 - panel/zh/tile/progress/48x32
+      ---
+      duration_ms: 0.071773
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/monitor/48x32
+    ok 151 - panel/zh/tile/monitor/48x32
+      ---
+      duration_ms: 0.062185
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tile/active-settings/48x24
+    ok 152 - settings/zh/tile/active-settings/48x24
+      ---
+      duration_ms: 0.081261
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/minimal/56x32
+    ok 153 - panel/zh/tile/minimal/56x32
+      ---
+      duration_ms: 0.073226
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/progress/56x32
+    ok 154 - panel/zh/tile/progress/56x32
+      ---
+      duration_ms: 0.060923
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/monitor/56x32
+    ok 155 - panel/zh/tile/monitor/56x32
+      ---
+      duration_ms: 0.078546
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tile/active-settings/56x24
+    ok 156 - settings/zh/tile/active-settings/56x24
+      ---
+      duration_ms: 0.062196
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/minimal/80x32
+    ok 157 - panel/zh/tile/minimal/80x32
+      ---
+      duration_ms: 0.057657
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/progress/80x32
+    ok 158 - panel/zh/tile/progress/80x32
+      ---
+      duration_ms: 0.055073
+      type: 'test'
+      ...
+    # Subtest: panel/zh/tile/monitor/80x32
+    ok 159 - panel/zh/tile/monitor/80x32
+      ---
+      duration_ms: 0.045224
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tile/active-settings/80x24
+    ok 160 - settings/zh/tile/active-settings/80x24
+      ---
+      duration_ms: 0.041538
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/minimal/32x32
+    ok 161 - panel/zh/frame/minimal/32x32
+      ---
+      duration_ms: 0.040825
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/progress/32x32
+    ok 162 - panel/zh/frame/progress/32x32
+      ---
+      duration_ms: 0.040996
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/monitor/32x32
+    ok 163 - panel/zh/frame/monitor/32x32
+      ---
+      duration_ms: 0.060583
+      type: 'test'
+      ...
+    # Subtest: settings/zh/frame/active-settings/32x24
+    ok 164 - settings/zh/frame/active-settings/32x24
+      ---
+      duration_ms: 0.040755
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/minimal/40x32
+    ok 165 - panel/zh/frame/minimal/40x32
+      ---
+      duration_ms: 0.040826
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/progress/40x32
+    ok 166 - panel/zh/frame/progress/40x32
+      ---
+      duration_ms: 0.038431
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/monitor/40x32
+    ok 167 - panel/zh/frame/monitor/40x32
+      ---
+      duration_ms: 0.037309
+      type: 'test'
+      ...
+    # Subtest: settings/zh/frame/active-settings/40x24
+    ok 168 - settings/zh/frame/active-settings/40x24
+      ---
+      duration_ms: 0.066444
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/minimal/48x32
+    ok 169 - panel/zh/frame/minimal/48x32
+      ---
+      duration_ms: 0.048189
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/progress/48x32
+    ok 170 - panel/zh/frame/progress/48x32
+      ---
+      duration_ms: 0.040986
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/monitor/48x32
+    ok 171 - panel/zh/frame/monitor/48x32
+      ---
+      duration_ms: 0.043802
+      type: 'test'
+      ...
+    # Subtest: settings/zh/frame/active-settings/48x24
+    ok 172 - settings/zh/frame/active-settings/48x24
+      ---
+      duration_ms: 0.059321
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/minimal/56x32
+    ok 173 - panel/zh/frame/minimal/56x32
+      ---
+      duration_ms: 0.04291
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/progress/56x32
+    ok 174 - panel/zh/frame/progress/56x32
+      ---
+      duration_ms: 0.045895
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/monitor/56x32
+    ok 175 - panel/zh/frame/monitor/56x32
+      ---
+      duration_ms: 0.066533
+      type: 'test'
+      ...
+    # Subtest: settings/zh/frame/active-settings/56x24
+    ok 176 - settings/zh/frame/active-settings/56x24
+      ---
+      duration_ms: 0.077323
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/minimal/80x32
+    ok 177 - panel/zh/frame/minimal/80x32
+      ---
+      duration_ms: 0.060472
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/progress/80x32
+    ok 178 - panel/zh/frame/progress/80x32
+      ---
+      duration_ms: 0.092311
+      type: 'test'
+      ...
+    # Subtest: panel/zh/frame/monitor/80x32
+    ok 179 - panel/zh/frame/monitor/80x32
+      ---
+      duration_ms: 0.079387
+      type: 'test'
+      ...
+    # Subtest: settings/zh/frame/active-settings/80x24
+    ok 180 - settings/zh/frame/active-settings/80x24
+      ---
+      duration_ms: 0.068908
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/minimal/32x32
+    ok 181 - panel/zh/pill/minimal/32x32
+      ---
+      duration_ms: 0.190614
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/progress/32x32
+    ok 182 - panel/zh/pill/progress/32x32
+      ---
+      duration_ms: 0.080018
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/monitor/32x32
+    ok 183 - panel/zh/pill/monitor/32x32
+      ---
+      duration_ms: 0.084077
+      type: 'test'
+      ...
+    # Subtest: settings/zh/pill/active-settings/32x24
+    ok 184 - settings/zh/pill/active-settings/32x24
+      ---
+      duration_ms: 0.061124
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/minimal/40x32
+    ok 185 - panel/zh/pill/minimal/40x32
+      ---
+      duration_ms: 0.076452
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/progress/40x32
+    ok 186 - panel/zh/pill/progress/40x32
+      ---
+      duration_ms: 0.078907
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/monitor/40x32
+    ok 187 - panel/zh/pill/monitor/40x32
+      ---
+      duration_ms: 0.064029
+      type: 'test'
+      ...
+    # Subtest: settings/zh/pill/active-settings/40x24
+    ok 188 - settings/zh/pill/active-settings/40x24
+      ---
+      duration_ms: 0.063348
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/minimal/48x32
+    ok 189 - panel/zh/pill/minimal/48x32
+      ---
+      duration_ms: 0.054041
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/progress/48x32
+    ok 190 - panel/zh/pill/progress/48x32
+      ---
+      duration_ms: 0.084317
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/monitor/48x32
+    ok 191 - panel/zh/pill/monitor/48x32
+      ---
+      duration_ms: 0.054471
+      type: 'test'
+      ...
+    # Subtest: settings/zh/pill/active-settings/48x24
+    ok 192 - settings/zh/pill/active-settings/48x24
+      ---
+      duration_ms: 0.078646
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/minimal/56x32
+    ok 193 - panel/zh/pill/minimal/56x32
+      ---
+      duration_ms: 0.076382
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/progress/56x32
+    ok 194 - panel/zh/pill/progress/56x32
+      ---
+      duration_ms: 0.06459
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/monitor/56x32
+    ok 195 - panel/zh/pill/monitor/56x32
+      ---
+      duration_ms: 0.054922
+      type: 'test'
+      ...
+    # Subtest: settings/zh/pill/active-settings/56x24
+    ok 196 - settings/zh/pill/active-settings/56x24
+      ---
+      duration_ms: 0.052478
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/minimal/80x32
+    ok 197 - panel/zh/pill/minimal/80x32
+      ---
+      duration_ms: 0.147253
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/progress/80x32
+    ok 198 - panel/zh/pill/progress/80x32
+      ---
+      duration_ms: 0.068768
+      type: 'test'
+      ...
+    # Subtest: panel/zh/pill/monitor/80x32
+    ok 199 - panel/zh/pill/monitor/80x32
+      ---
+      duration_ms: 0.065262
+      type: 'test'
+      ...
+    # Subtest: settings/zh/pill/active-settings/80x24
+    ok 200 - settings/zh/pill/active-settings/80x24
+      ---
+      duration_ms: 0.042378
+      type: 'test'
+      ...
+    # Subtest: settings/en/tab/saved-width-40-to-56/56x24
+    ok 201 - settings/en/tab/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.03229
+      type: 'test'
+      ...
+    # Subtest: settings/en/band/saved-width-40-to-56/56x24
+    ok 202 - settings/en/band/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.028994
+      type: 'test'
+      ...
+    # Subtest: settings/en/tile/saved-width-40-to-56/56x24
+    ok 203 - settings/en/tile/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.364647
+      type: 'test'
+      ...
+    # Subtest: settings/en/frame/saved-width-40-to-56/56x24
+    ok 204 - settings/en/frame/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.03238
+      type: 'test'
+      ...
+    # Subtest: settings/en/pill/saved-width-40-to-56/56x24
+    ok 205 - settings/en/pill/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.0273
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tab/saved-width-40-to-56/56x24
+    ok 206 - settings/zh/tab/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.025959
+      type: 'test'
+      ...
+    # Subtest: settings/zh/band/saved-width-40-to-56/56x24
+    ok 207 - settings/zh/band/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.025578
+      type: 'test'
+      ...
+    # Subtest: settings/zh/tile/saved-width-40-to-56/56x24
+    ok 208 - settings/zh/tile/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.027451
+      type: 'test'
+      ...
+    # Subtest: settings/zh/frame/saved-width-40-to-56/56x24
+    ok 209 - settings/zh/frame/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.025127
+      type: 'test'
+      ...
+    # Subtest: settings/zh/pill/saved-width-40-to-56/56x24
+    ok 210 - settings/zh/pill/saved-width-40-to-56/56x24
+      ---
+      duration_ms: 0.072175
+      type: 'test'
+      ...
+    # Subtest: confirmation/en/cancel/16x24
+    ok 211 - confirmation/en/cancel/16x24
+      ---
+      duration_ms: 0.049362
+      type: 'test'
+      ...
+    # Subtest: confirmation/en/cancel/24x24
+    ok 212 - confirmation/en/cancel/24x24
+      ---
+      duration_ms: 0.056505
+      type: 'test'
+      ...
+    # Subtest: confirmation/en/cancel/40x24
+    ok 213 - confirmation/en/cancel/40x24
+      ---
+      duration_ms: 0.060613
+      type: 'test'
+      ...
+    # Subtest: confirmation/en/cancel/56x24
+    ok 214 - confirmation/en/cancel/56x24
+      ---
+      duration_ms: 1.721529
+      type: 'test'
+      ...
+    # Subtest: confirmation/en/save-error/48x24
+    ok 215 - confirmation/en/save-error/48x24
+      ---
+      duration_ms: 0.081141
+      type: 'test'
+      ...
+    # Subtest: inspector/en/queued-explicit-coverage/32x32
+    ok 216 - inspector/en/queued-explicit-coverage/32x32
+      ---
+      duration_ms: 0.059921
+      type: 'test'
+      ...
+    # Subtest: inspector/en/queued-explicit-coverage/48x32
+    ok 217 - inspector/en/queued-explicit-coverage/48x32
+      ---
+      duration_ms: 0.05422
+      type: 'test'
+      ...
+    # Subtest: inspector/en/queued-explicit-coverage/80x32
+    ok 218 - inspector/en/queued-explicit-coverage/80x32
+      ---
+      duration_ms: 0.047989
+      type: 'test'
+      ...
+    # Subtest: inspector/en/running-explicit-coverage/32x32
+    ok 219 - inspector/en/running-explicit-coverage/32x32
+      ---
+      duration_ms: 0.065762
+      type: 'test'
+      ...
+    # Subtest: inspector/en/running-explicit-coverage/48x32
+    ok 220 - inspector/en/running-explicit-coverage/48x32
+      ---
+      duration_ms: 0.065982
+      type: 'test'
+      ...
+    # Subtest: inspector/en/running-explicit-coverage/80x32
+    ok 221 - inspector/en/running-explicit-coverage/80x32
+      ---
+      duration_ms: 0.057246
+      type: 'test'
+      ...
+    # Subtest: inspector/en/off-legacy-recorded/32x32
+    ok 222 - inspector/en/off-legacy-recorded/32x32
+      ---
+      duration_ms: 0.090708
+      type: 'test'
+      ...
+    # Subtest: inspector/en/off-legacy-recorded/48x32
+    ok 223 - inspector/en/off-legacy-recorded/48x32
+      ---
+      duration_ms: 0.068958
+      type: 'test'
+      ...
+    # Subtest: inspector/en/off-legacy-recorded/80x32
+    ok 224 - inspector/en/off-legacy-recorded/80x32
+      ---
+      duration_ms: 0.074097
+      type: 'test'
+      ...
+    # Subtest: inspector/en/paused-explicit-coverage/48x32
+    ok 225 - inspector/en/paused-explicit-coverage/48x32
+      ---
+      duration_ms: 0.069909
+      type: 'test'
+      ...
+    # Subtest: confirmation/zh/cancel/16x24
+    ok 226 - confirmation/zh/cancel/16x24
+      ---
+      duration_ms: 0.05375
+      type: 'test'
+      ...
+    # Subtest: confirmation/zh/cancel/24x24
+    ok 227 - confirmation/zh/cancel/24x24
+      ---
+      duration_ms: 0.049311
+      type: 'test'
+      ...
+    # Subtest: confirmation/zh/cancel/40x24
+    ok 228 - confirmation/zh/cancel/40x24
+      ---
+      duration_ms: 0.069088
+      type: 'test'
+      ...
+    # Subtest: confirmation/zh/cancel/56x24
+    ok 229 - confirmation/zh/cancel/56x24
+      ---
+      duration_ms: 0.055944
+      type: 'test'
+      ...
+    # Subtest: confirmation/zh/save-error/48x24
+    ok 230 - confirmation/zh/save-error/48x24
+      ---
+      duration_ms: 0.047118
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/queued-explicit-coverage/32x32
+    ok 231 - inspector/zh/queued-explicit-coverage/32x32
+      ---
+      duration_ms: 0.039303
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/queued-explicit-coverage/48x32
+    ok 232 - inspector/zh/queued-explicit-coverage/48x32
+      ---
+      duration_ms: 0.040726
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/queued-explicit-coverage/80x32
+    ok 233 - inspector/zh/queued-explicit-coverage/80x32
+      ---
+      duration_ms: 0.044412
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/running-explicit-coverage/32x32
+    ok 234 - inspector/zh/running-explicit-coverage/32x32
+      ---
+      duration_ms: 0.063307
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/running-explicit-coverage/48x32
+    ok 235 - inspector/zh/running-explicit-coverage/48x32
+      ---
+      duration_ms: 0.049933
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/running-explicit-coverage/80x32
+    ok 236 - inspector/zh/running-explicit-coverage/80x32
+      ---
+      duration_ms: 0.083936
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/off-legacy-recorded/32x32
+    ok 237 - inspector/zh/off-legacy-recorded/32x32
+      ---
+      duration_ms: 0.052728
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/off-legacy-recorded/48x32
+    ok 238 - inspector/zh/off-legacy-recorded/48x32
+      ---
+      duration_ms: 0.049462
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/off-legacy-recorded/80x32
+    ok 239 - inspector/zh/off-legacy-recorded/80x32
+      ---
+      duration_ms: 0.067736
+      type: 'test'
+      ...
+    # Subtest: inspector/zh/paused-explicit-coverage/48x32
+    ok 240 - inspector/zh/paused-explicit-coverage/48x32
+      ---
+      duration_ms: 0.05371
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/c/80x6
+    ok 241 - delegation/rows/en/c/80x6
+      ---
+      duration_ms: 0.038581
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/c/56x6
+    ok 242 - delegation/rows/en/c/56x6
+      ---
+      duration_ms: 0.071052
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/c/48x6
+    ok 243 - delegation/rows/en/c/48x6
+      ---
+      duration_ms: 0.061985
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/c/40x6
+    ok 244 - delegation/rows/en/c/40x6
+      ---
+      duration_ms: 0.04292
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/c/32x6
+    ok 245 - delegation/rows/en/c/32x6
+      ---
+      duration_ms: 0.031017
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/c-selected/48x6
+    ok 246 - delegation/rows/en/c-selected/48x6
+      ---
+      duration_ms: 0.02695
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/d/48x8
+    ok 247 - delegation/rows/en/d/48x8
+      ---
+      duration_ms: 0.025327
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/d/32x8
+    ok 248 - delegation/rows/en/d/32x8
+      ---
+      duration_ms: 0.023514
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/e/80x7
+    ok 249 - delegation/rows/en/e/80x7
+      ---
+      duration_ms: 0.023884
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/e/48x7
+    ok 250 - delegation/rows/en/e/48x7
+      ---
+      duration_ms: 0.075801
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/e/32x7
+    ok 251 - delegation/rows/en/e/32x7
+      ---
+      duration_ms: 0.0538
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/g/48x3
+    ok 252 - delegation/rows/en/g/48x3
+      ---
+      duration_ms: 0.046206
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/g-history/48x8
+    ok 253 - delegation/rows/en/g-history/48x8
+      ---
+      duration_ms: 0.040976
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/h/48x5
+    ok 254 - delegation/rows/en/h/48x5
+      ---
+      duration_ms: 0.040585
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/h/32x5
+    ok 255 - delegation/rows/en/h/32x5
+      ---
+      duration_ms: 0.039674
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/zh/c/48x6
+    ok 256 - delegation/rows/zh/c/48x6
+      ---
+      duration_ms: 0.044383
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/zh/e/48x7
+    ok 257 - delegation/rows/zh/e/48x7
+      ---
+      duration_ms: 0.046957
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/zh/h/32x5
+    ok 258 - delegation/rows/zh/h/32x5
+      ---
+      duration_ms: 0.043281
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/c-ascii/48x6
+    ok 259 - delegation/rows/en/c-ascii/48x6
+      ---
+      duration_ms: 0.044132
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/e-ascii/32x7
+    ok 260 - delegation/rows/en/e-ascii/32x7
+      ---
+      duration_ms: 0.040435
+      type: 'test'
+      ...
+    # Subtest: delegation/rows/en/d-ascii/48x8
+    ok 261 - delegation/rows/en/d-ascii/48x8
+      ---
+      duration_ms: 0.041668
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/c/200x1
+    ok 262 - delegation/bar/en/c/200x1
+      ---
+      duration_ms: 0.056335
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/c/120x1
+    ok 263 - delegation/bar/en/c/120x1
+      ---
+      duration_ms: 0.068107
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/c/80x1
+    ok 264 - delegation/bar/en/c/80x1
+      ---
+      duration_ms: 0.046677
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/d-fresh/200x1
+    ok 265 - delegation/bar/en/d-fresh/200x1
+      ---
+      duration_ms: 0.029564
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/c-ascii/120x1
+    ok 266 - delegation/bar/en/c-ascii/120x1
+      ---
+      duration_ms: 0.026279
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/d/200x1
+    ok 267 - delegation/bar/en/d/200x1
+      ---
+      duration_ms: 0.024365
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/d/80x1
+    ok 268 - delegation/bar/en/d/80x1
+      ---
+      duration_ms: 0.022272
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/e/120x1
+    ok 269 - delegation/bar/en/e/120x1
+      ---
+      duration_ms: 0.028483
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/e/80x1
+    ok 270 - delegation/bar/en/e/80x1
+      ---
+      duration_ms: 0.069359
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/h/120x1
+    ok 271 - delegation/bar/en/h/120x1
+      ---
+      duration_ms: 0.06457
+      type: 'test'
+      ...
+    # Subtest: delegation/bar/en/h/80x1
+    ok 272 - delegation/bar/en/h/80x1
+      ---
+      duration_ms: 0.050033
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/en/c/80x2
+    ok 273 - delegation/statusline/en/c/80x2
+      ---
+      duration_ms: 0.041257
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/en/c/120x2
+    ok 274 - delegation/statusline/en/c/120x2
+      ---
+      duration_ms: 0.044353
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/en/c/200x2
+    ok 275 - delegation/statusline/en/c/200x2
+      ---
+      duration_ms: 0.055643
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/en/d/80x2
+    ok 276 - delegation/statusline/en/d/80x2
+      ---
+      duration_ms: 0.037289
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/en/d/120x2
+    ok 277 - delegation/statusline/en/d/120x2
+      ---
+      duration_ms: 0.044233
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/en/e/80x2
+    ok 278 - delegation/statusline/en/e/80x2
+      ---
+      duration_ms: 0.026509
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/en/h/80x2
+    ok 279 - delegation/statusline/en/h/80x2
+      ---
+      duration_ms: 0.023654
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/en/h/120x2
+    ok 280 - delegation/statusline/en/h/120x2
+      ---
+      duration_ms: 0.063267
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/zh/c/120x2
+    ok 281 - delegation/statusline/zh/c/120x2
+      ---
+      duration_ms: 0.035206
+      type: 'test'
+      ...
+    # Subtest: delegation/statusline/en/c-ascii/80x2
+    ok 282 - delegation/statusline/en/c-ascii/80x2
+      ---
+      duration_ms: 0.027932
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/a-rich/48x3
+    ok 283 - delegation/view/en/a-rich/48x3
+      ---
+      duration_ms: 0.025017
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/b-rich/48x10
+    ok 284 - delegation/view/en/b-rich/48x10
+      ---
+      duration_ms: 0.025116
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/b-compact/48x6
+    ok 285 - delegation/view/en/b-compact/48x6
+      ---
+      duration_ms: 0.028513
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/c-rich/48x19
+    ok 286 - delegation/view/en/c-rich/48x19
+      ---
+      duration_ms: 0.075951
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/c-rich-selected/80x19
+    ok 287 - delegation/view/en/c-rich-selected/80x19
+      ---
+      duration_ms: 0.056145
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/c-compact-selected/48x10
+    ok 288 - delegation/view/en/c-compact-selected/48x10
+      ---
+      duration_ms: 0.043381
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/c-compact-chip/56x8
+    ok 289 - delegation/view/en/c-compact-chip/56x8
+      ---
+      duration_ms: 0.040185
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/c-compact-selected/32x10
+    ok 290 - delegation/view/en/c-compact-selected/32x10
+      ---
+      duration_ms: 0.05878
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/d-compact/48x11
+    ok 291 - delegation/view/en/d-compact/48x11
+      ---
+      duration_ms: 0.046957
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/d-rich-accordion/48x16
+    ok 292 - delegation/view/en/d-rich-accordion/48x16
+      ---
+      duration_ms: 0.039914
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/e-compact/48x10
+    ok 293 - delegation/view/en/e-compact/48x10
+      ---
+      duration_ms: 0.034234
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/e-rich/48x25
+    ok 294 - delegation/view/en/e-rich/48x25
+      ---
+      duration_ms: 0.037299
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/g-compact/48x4
+    ok 295 - delegation/view/en/g-compact/48x4
+      ---
+      duration_ms: 0.03804
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/g-history/48x11
+    ok 296 - delegation/view/en/g-history/48x11
+      ---
+      duration_ms: 0.041728
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/h-rich/48x19
+    ok 297 - delegation/view/en/h-rich/48x19
+      ---
+      duration_ms: 0.051656
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/h-compact/48x8
+    ok 298 - delegation/view/en/h-compact/48x8
+      ---
+      duration_ms: 0.055332
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/h-compact/32x8
+    ok 299 - delegation/view/en/h-compact/32x8
+      ---
+      duration_ms: 0.047949
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/parent-offline/48x4
+    ok 300 - delegation/view/en/parent-offline/48x4
+      ---
+      duration_ms: 0.041858
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/parent-unconfirmed/32x4
+    ok 301 - delegation/view/en/parent-unconfirmed/32x4
+      ---
+      duration_ms: 0.041598
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/parent-cancel/48x6
+    ok 302 - delegation/view/en/parent-cancel/48x6
+      ---
+      duration_ms: 0.038491
+      type: 'test'
+      ...
+    # Subtest: delegation/view/zh/c-rich/48x19
+    ok 303 - delegation/view/zh/c-rich/48x19
+      ---
+      duration_ms: 0.045084
+      type: 'test'
+      ...
+    # Subtest: delegation/view/zh/h-compact/48x8
+    ok 304 - delegation/view/zh/h-compact/48x8
+      ---
+      duration_ms: 0.042519
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/c-compact-ascii/48x10
+    ok 305 - delegation/view/en/c-compact-ascii/48x10
+      ---
+      duration_ms: 0.039453
+      type: 'test'
+      ...
+    # Subtest: delegation/view/en/b-compact-ascii/48x6
+    ok 306 - delegation/view/en/b-compact-ascii/48x6
+      ---
+      duration_ms: 0.058819
+      type: 'test'
+      ...
+    # Subtest: delegation/panel/en/c-rich/48x32
+    ok 307 - delegation/panel/en/c-rich/48x32
+      ---
+      duration_ms: 0.070701
+      type: 'test'
+      ...
+    # Subtest: delegation/panel/en/d-rich-accordion/48x24
+    ok 308 - delegation/panel/en/d-rich-accordion/48x24
+      ---
+      duration_ms: 0.057346
+      type: 'test'
+      ...
+    # Subtest: delegation/panel/en/parent-compact/48x24
+    ok 309 - delegation/panel/en/parent-compact/48x24
+      ---
+      duration_ms: 0.046807
+      type: 'test'
+      ...
+    1..309
+ok 10 - visual baselines: fixed-time EN/ZH textual frames match reviewed goldens
+  ---
+  duration_ms: 495.712506
+  type: 'test'
+  ...
+1..10
+# tests 319
+# suites 0
+# pass 319
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2326.634019
+# end: 2026-11-03T16:12:09Z
+# exit: 0

@@ -1,0 +1,11 @@
+# target=perf runtime=node22 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: npm run format:check
+# start: 2026-11-03T16:47:01Z
+
+> codex-hud@0.1.0 format:check
+> node ./node_modules/prettier/bin/prettier.cjs --check src tests
+
+Checking formatting...
+All matched files use Prettier code style!
+# end: 2026-11-03T16:47:12Z
+# exit: 0

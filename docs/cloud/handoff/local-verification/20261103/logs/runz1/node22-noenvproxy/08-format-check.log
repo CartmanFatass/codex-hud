@@ -1,0 +1,11 @@
+# target=runz1 runtime=node22 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 cwd=<wt>/runz1
+# command: npm run format:check
+# start: 2026-11-03T16:44:20Z
+
+> codex-hud@0.1.0 format:check
+> node ./node_modules/prettier/bin/prettier.cjs --check src tests
+
+Checking formatting...
+All matched files use Prettier code style!
+# end: 2026-11-03T16:44:30Z
+# exit: 0

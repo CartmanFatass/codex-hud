@@ -1,0 +1,69 @@
+# target=runz1 runtime=node22 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 cwd=<wt>/runz1
+# command: node --test packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js
+# start: 2026-11-03T16:37:43Z
+(node:177383) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:177390) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:177390) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: B45 accepted spawn is atomic, lost response replays immutable result with zero second launch
+ok 1 - B45 accepted spawn is atomic, lost response replays immutable result with zero second launch
+  ---
+  duration_ms: 95.219375
+  type: 'test'
+  ...
+# Subtest: B45 different owner same request key is isolated; unverified new intent refuses
+ok 2 - B45 different owner same request key is isolated; unverified new intent refuses
+  ---
+  duration_ms: 88.126551
+  type: 'test'
+  ...
+# Subtest: B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay
+ok 3 - B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay
+  ---
+  duration_ms: 111.434176
+  type: 'test'
+  ...
+# Subtest: B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates
+ok 4 - B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates
+  ---
+  duration_ms: 93.951124
+  type: 'test'
+  ...
+# {"diagnostic":"dispatch_unknown","runId":"7f257aef-f4a6-42a4-b750-37396ee63513"}
+# Subtest: B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits
+ok 5 - B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits
+  ---
+  duration_ms: 194.973576
+  type: 'test'
+  ...
+# Subtest: B45 same-owner predecessor atomically transfers one child and replays before historical gates
+ok 6 - B45 same-owner predecessor atomically transfers one child and replays before historical gates
+  ---
+  duration_ms: 103.305161
+  type: 'test'
+  ...
+# Subtest: B45 distinct backend source is registered atomically with acceptance
+ok 7 - B45 distinct backend source is registered atomically with acceptance
+  ---
+  duration_ms: 77.786255
+  type: 'test'
+  ...
+# Subtest: B45 headless build refuses explicit visible layouts instead of discarding them
+ok 8 - B45 headless build refuses explicit visible layouts instead of discarding them
+  ---
+  duration_ms: 55.035724
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 917.883663
+# end: 2026-11-03T16:37:44Z
+# exit: 0

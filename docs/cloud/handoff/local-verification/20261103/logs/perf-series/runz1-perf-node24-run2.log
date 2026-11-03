@@ -1,0 +1,84 @@
+# target=runz1 runtime=node24 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 tree=da3e386e3512736f3078d0fd9c7b85a868f83f6d
+# node binary: <HOME>/.nvm/versions/node/v24.22.1/bin/node (v24.22.1)
+# command: node tests/int/runz1-perf.mjs (via env -i wrapper, fresh HOME, no HUD_HOME)
+## before 2026-11-03T16:22:19Z loadavg: 8.28 11.84 11.31 14/1314 149348
+    PID COMMAND         %CPU
+ 147501 chrome-headless  936
+ 149273 python3         16.9
+  28095 pi              11.0
+ 147528 chrome-headless  8.3
+ 146797 MainThread       3.5
+   2573 codex            3.1
+  32051 claude           2.6
+# start: 2026-11-03T16:22:19Z
+{
+  "host": {
+    "name": "<host>",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "arch": "x64",
+    "node": "v24.22.1"
+  },
+  "timing": "wall-clock performance.now; nearest-rank; sequential populations; no explicit GC; full proof includes existing inspection and both new censuses plus visibility/thread checks",
+  "subject_stamps": {
+    "total": 3,
+    "unique": 2
+  },
+  "census_size_before": 180,
+  "full_proof": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 14.274443999999676,
+    "p95_ms": 17.32197499999893,
+    "p99_ms": 19.852975000000242,
+    "max_ms": 23.461722999999893,
+    "refusals": 25
+  },
+  "additional_complete_scan": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 3.921024999999645,
+    "p95_ms": 5.78911700000026,
+    "p99_ms": 7.190868000001501,
+    "max_ms": 9.88816399999996,
+    "refusals": 7
+  },
+  "existing_inspection": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 3.937286000000313,
+    "p95_ms": 5.459946999999374,
+    "p99_ms": 7.638848000002326,
+    "max_ms": 29.158355999999912,
+    "refusals": 0
+  },
+  "churn_full_proof": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 11.797293999999965,
+    "p95_ms": 15.829509000002872,
+    "p99_ms": 19.803531000005023,
+    "max_ms": 38.31225799999811,
+    "refusals": 974
+  },
+  "census_size_after": 182,
+  "esrch_full_proof": {
+    "n": 1000,
+    "warmup": 100,
+    "p50_ms": 4.199914999997418,
+    "p95_ms": 6.181644000003871,
+    "p99_ms": 7.942253999994136,
+    "max_ms": 12.079883999998856,
+    "refusals": 0
+  }
+}
+# end: 2026-11-03T16:23:02Z
+# exit: 0
+## after 2026-11-03T16:23:02Z loadavg: 13.78 12.79 11.66 20/1320 153435
+    PID COMMAND         %CPU
+ 147501 chrome-headless 1128
+ 153415 runc            50.0
+  28095 pi              11.0
+   2573 codex            3.1
+  32051 claude           2.6
+ 147528 chrome-headless  1.8
+    491 python           1.4

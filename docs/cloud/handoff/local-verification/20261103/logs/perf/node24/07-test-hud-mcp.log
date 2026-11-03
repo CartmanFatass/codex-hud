@@ -1,0 +1,125 @@
+# target=perf runtime=node24 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: npm run test:hud-mcp
+# start: 2026-11-03T15:59:54Z
+
+> codex-hud@0.1.0 test:hud-mcp
+> npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js
+
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+
+✔ refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool (2.147882ms)
+✔ dual MCP instance shares scope and owner; stale first-bind CAS refuses (10.467992ms)
+✔ /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A (6.917134ms)
+✔ wrong generation is refused before currentAuthority can authorize an intent (4.238817ms)
+✔ delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot (138.282674ms)
+✔ B19 merge: one real status and spawn response retain cache keys and advice.wake (107.306265ms)
+✔ the checked-in §5.2 file never guesses an auth label for a codex caller (101.706171ms)
+✔ a missing cache.json is a valid empty snapshot with empty advice (114.549499ms)
+✔ an invalid cache.json still serves status and spawn with configError and empty advice (98.152809ms)
+✔ status and every spawn outcome perform no cache file access after startup (118.726691ms)
+✔ status and spawn merge the cache advice over an existing advice object (110.244129ms)
+✔ a thrown spawn refusal carries advice at the server boundary for valid and invalid snapshots (108.418815ms)
+✔ hud-mcp starts and answers initialize with a valid and with an invalid cache.json (296.03023ms)
+✔ shared delegate config accepts optional roles and the exact Claude call-source mechanism (5.052759ms)
+✔ call-source selection is Claude-only and rejects unknown keys, kinds and malformed shapes (2.885653ms)
+✔ delegate envelope keeps its version, unique-name, profile-count and file-byte bounds (4.199083ms)
+✔ config without A5 keys loads exact NOTIFY defaults (1.857131ms)
+✔ B45 accepted spawn is atomic, lost response replays immutable result with zero second launch (138.851024ms)
+✔ B45 different owner same request key is isolated; unverified new intent refuses (132.677766ms)
+✔ B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay (150.052139ms)
+✔ B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates (142.27112ms)
+{"diagnostic":"dispatch_unknown","runId":"6d970954-076c-44a7-afc6-10df182c22c5"}
+✔ B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits (221.678547ms)
+✔ B45 same-owner predecessor atomically transfers one child and replays before historical gates (134.176971ms)
+✔ B45 distinct backend source is registered atomically with acceptance (63.299164ms)
+✔ B45 headless build refuses explicit visible layouts instead of discarding them (104.34748ms)
+﹣ B45 synthetic whoami/report success refusal busy distributions with real SQLite writer contention (0.64065ms) # Set HUD_B45_BENCH=1 and run this benchmark alone to measure without parallel test I/O
+✔ B45 whoami env claim binds exact independently observed launch and report (134.265455ms)
+✔ B45 whoami parameter claim binds exact independently observed launch and report (114.365416ms)
+✔ B45 whoami launch evidence missing stays pending; env conflicts and wrong run refuse (96.255855ms)
+✔ B45 copied fork claim refuses before consumption, expiry boundary and bound retry after TTL (122.762539ms)
+✔ B45 same-process MCP restart rebuilds binding with independent proof and never redeems twice (145.584889ms)
+✔ B45 identity ProcessKey and run stamp keep their distinct domain encodings on the same host (100.585269ms)
+✔ BID1 handshake refuses a missing run domain and never accepts the caller form (97.252958ms)
+✔ hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files (7.83036ms)
+✔ missing then late record never revives a refused call; a new exact call can retry (3.259466ms)
+✔ half-written, oversized, symlink and duplicate conflicting publications refuse (7.047558ms)
+✔ wrong hook version refuses even with a matching content fingerprint (1.84034ms)
+✔ wrong hook implementation refuses even with a matching content fingerprint (1.834684ms)
+✔ wrong hook claudeVersion refuses even with a matching content fingerprint (2.47805ms)
+✔ wrong hook profileFingerprint refuses even with a matching content fingerprint (3.30401ms)
+✔ wrong hook sourceId refuses even with a matching content fingerprint (1.682726ms)
+✔ wrong hook processKey refuses even with a matching content fingerprint (1.795848ms)
+✔ wrong hook bootId refuses even with a matching content fingerprint (1.778234ms)
+✔ wrong hook serverName refuses even with a matching content fingerprint (1.633375ms)
+✔ wrong hook toolUseId refuses even with a matching content fingerprint (1.762265ms)
+✔ wrong hook toolName refuses even with a matching content fingerprint (1.987542ms)
+✔ wrong hook sessionId refuses even with a matching content fingerprint (1.287974ms)
+✔ wrong hook hookStartMonoMs refuses even with a matching content fingerprint (1.300818ms)
+✔ wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint (1.482405ms)
+✔ wrong hook publishedMonoMs refuses even with a matching content fingerprint (1.56559ms)
+✔ native child with root transcript path refuses and leaves subsequent root verifiable (2.467515ms)
+✔ A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation (2.913474ms)
+✔ CLI settings preserve existing hooks/config and match only the seven exact server tools (0.970944ms)
+✔ scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file (66.950078ms)
+✔ resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear (6.934226ms)
+✔ scope reader refuses unsupported runtimes before touching a missing path (82.217257ms)
+✔ hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values (0.508405ms)
+✔ fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies (2.164703ms)
+✖ int hud-mcp physical caller registration persists real procStart/cwd without logical authority (50.879145ms)
+✔ int hud-mcp composition uses existing ledger even when diagnostic registry requested (164.794744ms)
+✔ G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required (1.329731ms)
+✔ G03 old request key replays its original run after a newer run appeared and ended (175.188229ms)
+✔ G03 same request key with a different expectedRun conflicts without a new intent (158.953156ms)
+✔ G03 two callers that read the same run and race with different keys create at most one intent (147.401178ms)
+✔ G03 an old expectedRun is still refused after another run started and ended (153.366459ms)
+✔ G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest (141.348614ms)
+✔ G03 local management resume still requires expectedRun (123.683471ms)
+✔ delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts (3.677493ms)
+✔ registration records A4 fields and verified physical start; file fake remains private and refuses overwrite (14.006609ms)
+✔ unknown cwd is a typed refusal before registry write (0.815445ms)
+✔ real /proc registration stamp and PID domain are read without environment secrets (1.430868ms)
+✔ Codex root combination resolves, native child refuses without invalidating subsequent root (4.24616ms)
+✔ missing, conflicting and forged arguments metadata never falls back to remembered root/proc (1.822456ms)
+✔ session switches remain source diagnostics; shared ledger supplies the generation gate (5.30937ms)
+✔ PID reuse, source mismatch, missing header and unmeasured Codex versions refuse (1.493795ms)
+✔ Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId (0.426993ms)
+✔ Claude late/missing public call refuses, observed record still cannot upgrade unverified profile (3.034936ms)
+✔ pi explicit session path resolver checks header and source; directory alone grants nothing (1.436259ms)
+✔ seven MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments (0.568947ms)
+✔ runtime rejects Node 18, 22.12 and 23 before importing package entry (69.560403ms)
+✔ runtime accepts declared 22.13 and 24 entry boundaries (294.102291ms)
+✔ bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths (4.907739ms)
+✔ source/header mismatch, missing header and daemon topology cannot resolve identity (2.460112ms)
+✔ stdio framing rejects malformed JSON, ignores notifications and serializes stub replies (2.124849ms)
+ℹ tests 84
+ℹ suites 0
+ℹ pass 82
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 1316.741545
+
+✖ failing tests:
+
+test at packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js:14:1
+✖ int hud-mcp physical caller registration persists real procStart/cwd without logical authority (50.879145ms)
+  Error: EACCES: permission denied, open '/proc/29952/environ'
+      at openSync (node:fs:621:18)
+      at readBounded (file://<VERIFY_ROOT>/wt/perf/packages/hud-mcp/dist/packages/hud-mcp/src/io.js:5:16)
+      at LinuxProcessReader.get (file://<VERIFY_ROOT>/wt/perf/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:19:29)
+      at findHarness (file://<VERIFY_ROOT>/wt/perf/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:55:32)
+      at registerCaller (file://<VERIFY_ROOT>/wt/perf/packages/hud-mcp/dist/packages/hud-mcp/src/registry.js:65:19)
+      at TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/perf/packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js:36:36)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    errno: -13,
+    code: 'EACCES',
+    syscall: 'open',
+    path: '/proc/29952/environ'
+  }
+# end: 2026-11-03T15:59:58Z
+# exit: 1

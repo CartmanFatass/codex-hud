@@ -1,0 +1,15 @@
+# target=perf runtime=node22 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: npm run format:check
+# start: 2026-11-03T16:16:36Z
+(node:130945) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> codex-hud@0.1.0 format:check
+> node ./node_modules/prettier/bin/prettier.cjs --check src tests
+
+(node:130958) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Checking formatting...
+All matched files use Prettier code style!
+# end: 2026-11-03T16:16:50Z
+# exit: 0

@@ -1,0 +1,30 @@
+run_id: 20261103T154219Z
+captured_utc: 2026-11-03T15:50:58Z
+uname: Linux 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 24.04.4 LTS"
+WSL version: 2.7.11.0
+Kernel version: 6.18.33.2-2
+WSLg version: 1.0.73.2
+MSRDC version: 1.2.7214
+Direct3D version: 1.611.1-81528511
+DXCore version: 10.0.26100.1-240331-1435.ge-release
+Windows version: 10.0.26300.9711
+cpu:  AMD Ryzen 7 8745H w/ Radeon 780M Graphics x 16
+               total        used        free      shared  buff/cache   available
+Mem:           14873        6135        1702          20        7453        8738
+repo_fs: /dev/sdd ext4  tmp_fs: /dev/sdd ext4
+node22: <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 npm 10.9.9
+node24: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 npm 11.19.1
+node22 tarball sha256 verified against nodejs.org SHASUMS256.txt: 1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce  node-v22.23.4-linux-x64.tar.xz
+npm ci runtime: node24 npm 11.19.1; lockfile sha256 per worktree:
+  hyg2 98a7e2d3f5256810fe477812be64b35411aeede8b34f91e648d62e96c39e3294 node_modules-list-sha 4a8d677c26497311
+  runz1 98a7e2d3f5256810fe477812be64b35411aeede8b34f91e648d62e96c39e3294 node_modules-list-sha 4a8d677c26497311
+  perf 98a7e2d3f5256810fe477812be64b35411aeede8b34f91e648d62e96c39e3294 node_modules-list-sha 4a8d677c26497311
+  base 98a7e2d3f5256810fe477812be64b35411aeede8b34f91e648d62e96c39e3294 node_modules-list-sha 4a8d677c26497311
+isolation: every test command runs via env -i with PATH=<node bin>:/usr/bin:/bin, fresh HOME=mktemp -d /tmp/hudv-home.*, HUD_HOME unset, TMPDIR=/tmp, no HERDR_*/CLAUDE_*/proxy variables
+
+# Environment-variable record (added after universal-hud 42aadb8 ruling line 69):
+invoking shell NODE_OPTIONS: <unset>
+inside wrapper NODE_OPTIONS: <unset>
+HUD_HOME inside wrapper: unset per README (env -u HUD_HOME); effective HUD_HOME = <fresh temp HOME>/.hud for every process
+wrapper source: scripts/lib.sh (copied into manifest at report time)

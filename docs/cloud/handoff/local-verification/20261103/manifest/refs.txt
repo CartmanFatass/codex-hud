@@ -1,0 +1,13 @@
+universal-hud f26124235480d6d6d9f588c3bd62b47388467302 tree 47db3937ab146c2436c8c1612a0b1f5a3a8f550f merge-base-with-UH f26124235480d6d6d9f588c3bd62b47388467302 UH-only/branch-only 0/0
+dots/hyg2 2bcaa4f9c8eb2c1c230a0249c0fa40bccd6fbd31 tree 50438e87a1915d5e739a4a4d926cc9b1e7e85724 merge-base-with-UH f1e2a8408fbc6ddef181978e8a2d9fd5831242e9 UH-only/branch-only 23/18
+dots/runz1 86ca8887fcfb331750ec6dc5518d69134cb795e4 tree da3e386e3512736f3078d0fd9c7b85a868f83f6d merge-base-with-UH f1e2a8408fbc6ddef181978e8a2d9fd5831242e9 UH-only/branch-only 23/11
+dots/b10b-s3f-perf e5ccee38165b30809bd537e7f31cfed7f227f152 tree 6783e8a04969886d02223966413299fede6a6f09 merge-base-with-UH f1e2a8408fbc6ddef181978e8a2d9fd5831242e9 UH-only/branch-only 23/36
+dots/b10b-s3f bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60 tree f9bcdc5c069156d655ca7d3cd7a08590e74b8eec merge-base-with-UH f1e2a8408fbc6ddef181978e8a2d9fd5831242e9 UH-only/branch-only 23/23
+
+# Pinned at first fetch 2026-11-03T15:41Z (tested commits):
+#   dots/hyg2 2bcaa4f9c8eb2c1c230a0249c0fa40bccd6fbd31, dots/runz1 86ca8887fcfb331750ec6dc5518d69134cb795e4,
+#   dots/b10b-s3f-perf 94969100ec85a41f93eb2a0d677aefc886290691 (tree c91d20549ccc1df9fe0d8860478f76c892d17db2),
+#   baseline dots/b10b-s3f bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60; docs read from universal-hud 2249ab5952b2b4ba6fa8cefaf14c06ea97118c9e.
+# Re-fetch at 15:51Z (above): dots/b10b-s3f-perf advanced to e5ccee3 (adds only docs/cloud/handoff/b10b-s3f-perf-review-1.md);
+#   universal-hud advanced to f261242 (docs/handoff/STATE.md + docs/cloud/rulings/queue-progress-20261103.md only).
+#   Tests stay on the pinned commits; no source/test difference between 9496910 and e5ccee3.

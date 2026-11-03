@@ -1,0 +1,5 @@
+Series B declared 2026-11-03 before execution: same order as series A (node22 run1..3 base,cand alternating; then node24).
+Reason: series A snapshots show external host load not started by this verification (chrome-headless ~1100% CPU, npm exec vite build,
+python3/MainThread ~260% CPU, loadavg up to 11.7 on 16 CPUs) overlapping node22 run1-cand (end), node22 run2-base/cand, node24 run1-base (start).
+Series A is retained unchanged. Series B adds a continuous 1 s sampler (loadavg + top-5 process names by CPU) per run.
+Same env policy as series A (all proxy variables passed incl. NODE_USE_ENV_PROXY), same builds/dist provenance re-recorded.

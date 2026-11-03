@@ -1,0 +1,78 @@
+# target=perf runtime=node22 commit=94969100ec85a41f93eb2a0d677aefc886290691 tree=c91d20549ccc1df9fe0d8860478f76c892d17db2
+# node binary: <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node (v22.23.4)
+# command: B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js (via env -i wrapper, fresh HOME, no HUD_HOME)
+## before 2026-11-03T16:25:24Z loadavg: 5.79 10.89 11.18 1/1222 159673
+    PID COMMAND         %CPU
+  28095 pi              11.2
+ 158868 marksman         4.4
+ 159440 MainThread       4.1
+   2573 codex            3.1
+  32051 claude           2.4
+  40952 MainThread       1.4
+    491 python           1.4
+# start: 2026-11-03T16:25:24Z
+(node:159681) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:159688) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.086ms p95=0.188ms p99=0.684ms max=1.339ms strict=true
+# b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.290ms p95=0.536ms p99=1.053ms max=2.406ms strict=true
+# b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.530ms p95=1.131ms p99=1.429ms max=2.137ms strict=true
+# b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.086ms p95=0.161ms p99=0.647ms max=1.021ms strict=true
+# b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.306ms p95=0.638ms p99=1.424ms max=2.480ms strict=true
+# b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.731ms p95=1.542ms p99=2.061ms max=7.472ms strict=true
+# b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.245ms p95=3.177ms p99=3.813ms max=6.194ms strict=true
+# b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.062ms p95=3.065ms p99=3.895ms max=4.877ms strict=true
+# b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=1.878ms p95=4.098ms p99=5.240ms max=6.816ms strict=true
+# b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.356ms p95=3.963ms p99=4.508ms max=5.716ms strict=true
+# b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.254ms p95=4.024ms p99=5.011ms max=6.587ms strict=true
+# b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.337ms p95=4.437ms p99=5.243ms max=8.901ms strict=true
+# b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.524ms p95=0.995ms p99=1.271ms max=2.513ms strict=true
+# b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=4.155ms p95=10.222ms p99=13.268ms max=18.426ms strict=true
+# b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=1.190ms p95=1.951ms p99=2.405ms max=3.353ms strict=true
+# b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=5.442ms p95=11.558ms p99=16.666ms max=33.684ms strict=true
+# Subtest: the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+ok 1 - the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+  ---
+  duration_ms: 3126.880621
+  type: 'test'
+  ...
+# Subtest: compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+ok 2 - compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+  ---
+  duration_ms: 16655.618235
+  type: 'test'
+  ...
+# Subtest: rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+ok 3 - rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+  ---
+  duration_ms: 18263.853729
+  type: 'test'
+  ...
+# Subtest: printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+ok 4 - printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+  ---
+  duration_ms: 27574.191412
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 65797.379884
+# end: 2026-11-03T16:26:30Z
+# exit: 0
+## after 2026-11-03T16:26:30Z loadavg: 7.29 10.06 10.86 19/1307 161437
+    PID COMMAND         %CPU
+ 160862 chrome-headless 1103
+  28095 pi              11.3
+ 160879 chrome-headless  3.2
+   2573 codex            3.0
+  32051 claude           2.4
+ 160831 MainThread       1.6
+  40952 MainThread       1.4

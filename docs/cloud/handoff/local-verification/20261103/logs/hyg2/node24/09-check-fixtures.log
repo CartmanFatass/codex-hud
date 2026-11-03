@@ -1,0 +1,10 @@
+# target=hyg2 runtime=node24 commit=2bcaa4f9c8eb2c1c230a0249c0fa40bccd6fbd31 cwd=<wt>/hyg2
+# command: npm run check:fixtures
+# start: 2026-11-03T15:54:02Z
+
+> codex-hud@0.1.0 check:fixtures
+> bash tests/check-fixtures.sh
+
+check-fixtures: OK (tests/fixtures tests/prototypes docs/probes docs/design)
+# end: 2026-11-03T15:54:02Z
+# exit: 0

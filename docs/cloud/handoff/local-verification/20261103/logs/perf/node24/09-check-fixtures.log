@@ -1,0 +1,10 @@
+# target=perf runtime=node24 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: npm run check:fixtures
+# start: 2026-11-03T16:00:12Z
+
+> codex-hud@0.1.0 check:fixtures
+> bash tests/check-fixtures.sh
+
+check-fixtures: OK (tests/fixtures tests/prototypes docs/probes docs/design)
+# end: 2026-11-03T16:00:12Z
+# exit: 0

@@ -1,0 +1,2392 @@
+# target=perf runtime=node22 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: node --test --test-concurrency=1 dist-test/tests/unit/b10b*.test.js
+# start: 2026-11-03T16:16:51Z
+(node:131464) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:131471) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: §4.1 at 200 columns: the alert leads, the agents count the whole tree, the backends follow
+ok 1 - §4.1 at 200 columns: the alert leads, the agents count the whole tree, the backends follow
+  ---
+  duration_ms: 12.373652
+  type: 'test'
+  ...
+# Subtest: §4.1 at 120 columns (balanced): the same alert, the counts without the backends
+ok 2 - §4.1 at 120 columns (balanced): the same alert, the counts without the backends
+  ---
+  duration_ms: 4.48272
+  type: 'test'
+  ...
+# Subtest: §4.1 at 80 columns: the alert is still the first field, in its short form, and the counts stay
+ok 3 - §4.1 at 80 columns: the alert is still the first field, in its short form, and the counts stay
+  ---
+  duration_ms: 3.512136
+  type: 'test'
+  ...
+# Subtest: the focus density keeps the counts when there is a delegation tree, and only then (rulings round 2, Q1)
+ok 4 - the focus density keeps the counts when there is a delegation tree, and only then (rulings round 2, Q1)
+  ---
+  duration_ms: 15.118023
+  type: 'test'
+  ...
+# Subtest: with a delegation tree the counts outlast the quota at 80 columns, in situations (c), (d), (e) and (h)
+ok 5 - with a delegation tree the counts outlast the quota at 80 columns, in situations (c), (d), (e) and (h)
+  ---
+  duration_ms: 31.479931
+  type: 'test'
+  ...
+# Subtest: the alert survives every pane width, in every density
+ok 6 - the alert survives every pane width, in every density
+  ---
+  duration_ms: 716.908036
+  type: 'test'
+  ...
+# Subtest: the backend counts go before anything else gives up room, and only from 160 columns of the full density
+ok 7 - the backend counts go before anything else gives up room, and only from 160 columns of the full density
+  ---
+  duration_ms: 23.162079
+  type: 'test'
+  ...
+# Subtest: the agents count covers the whole tree: natives and jobs, not the root
+ok 8 - the agents count covers the whole tree: natives and jobs, not the root
+  ---
+  duration_ms: 1.458541
+  type: 'test'
+  ...
+# Subtest: alert forms: one alert says itself in full, then in a count, then in a glyph
+ok 9 - alert forms: one alert says itself in full, then in a count, then in a glyph
+  ---
+  duration_ms: 0.915652
+  type: 'test'
+  ...
+# Subtest: alert forms: the counts narrow to the class that matters most, ⚑ > ✗ > ⚠ > ?, and display in their own order
+ok 10 - alert forms: the counts narrow to the class that matters most, ⚑ > ✗ > ⚠ > ?, and display in their own order
+  ---
+  duration_ms: 0.8448
+  type: 'test'
+  ...
+# Subtest: alert forms: the standing slots alert is not a node and keeps its three forms
+ok 11 - alert forms: the standing slots alert is not a node and keeps its three forms
+  ---
+  duration_ms: 0.415031
+  type: 'test'
+  ...
+# Subtest: alert precedence: a person first, then failures, conflicts, uncertain; the newest of a kind first
+ok 12 - alert precedence: a person first, then failures, conflicts, uncertain; the newest of a kind first
+  ---
+  duration_ms: 0.28014
+  type: 'test'
+  ...
+# Subtest: a failure lights the bar only while its row is on the list
+ok 13 - a failure lights the bar only while its row is on the list
+  ---
+  duration_ms: 0.281233
+  type: 'test'
+  ...
+# Subtest: a conflicting child is one alert however many parents claim it
+ok 14 - a conflicting child is one alert however many parents claim it
+  ---
+  duration_ms: 0.216723
+  type: 'test'
+  ...
+# Subtest: notices: the newest delegation event of the last minute, with the design's words
+ok 15 - notices: the newest delegation event of the last minute, with the design's words
+  ---
+  duration_ms: 0.933775
+  type: 'test'
+  ...
+# Subtest: the bar tells the newest of its own notice and the delegation one
+ok 16 - the bar tells the newest of its own notice and the delegation one
+  ---
+  duration_ms: 0.671739
+  type: 'test'
+  ...
+# Subtest: the notice zone does not say again what the badge already names in full (§4.1)
+ok 17 - the notice zone does not say again what the badge already names in full (§4.1)
+  ---
+  duration_ms: 2.090725
+  type: 'test'
+  ...
+# Subtest: every kind of notice is left out for the one node the badge names in full, and told when it counts (rulings round 2, Q2)
+ok 18 - every kind of notice is left out for the one node the badge names in full, and told when it counts (rulings round 2, Q2)
+  ---
+  duration_ms: 0.803763
+  type: 'test'
+  ...
+# Subtest: ASCII: the whole set switches, never one symbol
+ok 19 - ASCII: the whole set switches, never one symbol
+  ---
+  duration_ms: 0.680054
+  type: 'test'
+  ...
+# Subtest: delegation null, undefined or absent: the bar is what it always was, byte for byte
+ok 20 - delegation null, undefined or absent: the bar is what it always was, byte for byte
+  ---
+  duration_ms: 128.711989
+  type: 'test'
+  ...
+# Subtest: with a delegation tree the bar renders the agents from it, and the legacy subagent tree is not counted twice
+ok 21 - with a delegation tree the bar renders the agents from it, and the legacy subagent tree is not counted twice
+  ---
+  duration_ms: 0.813963
+  type: 'test'
+  ...
+# Subtest: a delegation tree with nothing to say adds nothing
+ok 22 - a delegation tree with nothing to say adds nothing
+  ---
+  duration_ms: 0.241239
+  type: 'test'
+  ...
+# Subtest: ASCII: no notice, alert or capped name holds a Unicode character the renderer wrote (§5.3)
+ok 23 - ASCII: no notice, alert or capped name holds a Unicode character the renderer wrote (§5.3)
+  ---
+  duration_ms: 1.007492
+  type: 'test'
+  ...
+# (node:131491) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: the facts are the cache key: a table entry for every fact, none for a field that is not one
+ok 24 - the facts are the cache key: a table entry for every fact, none for a field that is not one
+  ---
+  duration_ms: 2.678767
+  type: 'test'
+  ...
+# Subtest: factsEqual compares every fact: two facts that differ in any one field are not equal
+ok 25 - factsEqual compares every fact: two facts that differ in any one field are not equal
+  ---
+  duration_ms: 0.832387
+  type: 'test'
+  ...
+# Subtest: projection cache: changing idKind alone projects again, and warm equals cold
+ok 26 - projection cache: changing idKind alone projects again, and warm equals cold
+  ---
+  duration_ms: 2.622743
+  type: 'test'
+  ...
+# Subtest: projection cache: changing idHarness alone projects again, and warm equals cold
+ok 27 - projection cache: changing idHarness alone projects again, and warm equals cold
+  ---
+  duration_ms: 1.148815
+  type: 'test'
+  ...
+# Subtest: projection cache: changing shortRef alone projects again, and warm equals cold
+ok 28 - projection cache: changing shortRef alone projects again, and warm equals cold
+  ---
+  duration_ms: 1.203055
+  type: 'test'
+  ...
+# Subtest: projection cache: changing isRoot alone projects again, and warm equals cold
+ok 29 - projection cache: changing isRoot alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.843017
+  type: 'test'
+  ...
+# Subtest: projection cache: changing edge alone projects again, and warm equals cold
+ok 30 - projection cache: changing edge alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.717554
+  type: 'test'
+  ...
+# Subtest: projection cache: changing loaded alone projects again, and warm equals cold
+ok 31 - projection cache: changing loaded alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.614752
+  type: 'test'
+  ...
+# Subtest: projection cache: changing conflictCount alone projects again, and warm equals cold
+ok 32 - projection cache: changing conflictCount alone projects again, and warm equals cold
+  ---
+  duration_ms: 1.053197
+  type: 'test'
+  ...
+# Subtest: projection cache: changing conflictSince alone projects again, and warm equals cold
+ok 33 - projection cache: changing conflictSince alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.766815
+  type: 'test'
+  ...
+# Subtest: projection cache: changing conflictName alone projects again, and warm equals cold
+ok 34 - projection cache: changing conflictName alone projects again, and warm equals cold
+  ---
+  duration_ms: 1.069888
+  type: 'test'
+  ...
+# Subtest: projection cache: changing paneLabel alone projects again, and warm equals cold
+ok 35 - projection cache: changing paneLabel alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.518112
+  type: 'test'
+  ...
+# Subtest: projection cache: changing nativeTitle alone projects again, and warm equals cold
+ok 36 - projection cache: changing nativeTitle alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.767486
+  type: 'test'
+  ...
+# Subtest: projection cache: changing nativeKind alone projects again, and warm equals cold
+ok 37 - projection cache: changing nativeKind alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.786401
+  type: 'test'
+  ...
+# Subtest: projection cache: changing costValue alone projects again, and warm equals cold
+ok 38 - projection cache: changing costValue alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.530677
+  type: 'test'
+  ...
+# Subtest: projection cache: changing costQuality alone projects again, and warm equals cold
+ok 39 - projection cache: changing costQuality alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.40396
+  type: 'test'
+  ...
+# Subtest: projection cache: changing worktreeRoot alone projects again, and warm equals cold
+ok 40 - projection cache: changing worktreeRoot alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.373805
+  type: 'test'
+  ...
+# Subtest: projection cache: changing worktreeName alone projects again, and warm equals cold
+ok 41 - projection cache: changing worktreeName alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.350972
+  type: 'test'
+  ...
+# Subtest: projection cache: changing workspaceCwd alone projects again, and warm equals cold
+ok 42 - projection cache: changing workspaceCwd alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.394123
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runSeq alone projects again, and warm equals cold
+ok 43 - projection cache: changing runSeq alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.389664
+  type: 'test'
+  ...
+# Subtest: projection cache: changing reconciliationMissing alone projects again, and warm equals cold
+ok 44 - projection cache: changing reconciliationMissing alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.44154
+  type: 'test'
+  ...
+# Subtest: projection cache: changing terminalNote alone projects again, and warm equals cold
+ok 45 - projection cache: changing terminalNote alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.439506
+  type: 'test'
+  ...
+# Subtest: projection cache: changing linkBoundAt alone projects again, and warm equals cold
+ok 46 - projection cache: changing linkBoundAt alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.350762
+  type: 'test'
+  ...
+# Subtest: projection cache: changing evidenceStamp alone projects again, and warm equals cold
+ok 47 - projection cache: changing evidenceStamp alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.318301
+  type: 'test'
+  ...
+# Subtest: projection cache: changing model alone projects again, and warm equals cold
+ok 48 - projection cache: changing model alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.381459
+  type: 'test'
+  ...
+# Subtest: projection cache: changing effort alone projects again, and warm equals cold
+ok 49 - projection cache: changing effort alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.335994
+  type: 'test'
+  ...
+# Subtest: projection cache: changing contextPercent alone projects again, and warm equals cold
+ok 50 - projection cache: changing contextPercent alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.413248
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runId alone projects again, and warm equals cold
+ok 51 - projection cache: changing runId alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.30094
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runState alone projects again, and warm equals cold
+ok 52 - projection cache: changing runState alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.528011
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runMode alone projects again, and warm equals cold
+ok 53 - projection cache: changing runMode alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.367713
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runCreatedAt alone projects again, and warm equals cold
+ok 54 - projection cache: changing runCreatedAt alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.612383
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runEndedAt alone projects again, and warm equals cold
+ok 55 - projection cache: changing runEndedAt alone projects again, and warm equals cold
+  ---
+  duration_ms: 1.262966
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runCancelRequestedAt alone projects again, and warm equals cold
+ok 56 - projection cache: changing runCancelRequestedAt alone projects again, and warm equals cold
+  ---
+  duration_ms: 3.585493
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runHeartbeatAt alone projects again, and warm equals cold
+ok 57 - projection cache: changing runHeartbeatAt alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.561393
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runExitSource alone projects again, and warm equals cold
+ok 58 - projection cache: changing runExitSource alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.482867
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runExitCode alone projects again, and warm equals cold
+ok 59 - projection cache: changing runExitCode alone projects again, and warm equals cold
+  ---
+  duration_ms: 1.23764
+  type: 'test'
+  ...
+# Subtest: projection cache: changing runExitSignal alone projects again, and warm equals cold
+ok 60 - projection cache: changing runExitSignal alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.498196
+  type: 'test'
+  ...
+# Subtest: projection cache: changing isRunTerminal alone projects again, and warm equals cold
+ok 61 - projection cache: changing isRunTerminal alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.416344
+  type: 'test'
+  ...
+# Subtest: projection cache: changing reconciliationCause alone projects again, and warm equals cold
+ok 62 - projection cache: changing reconciliationCause alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.559119
+  type: 'test'
+  ...
+# Subtest: projection cache: changing requestedCause alone projects again, and warm equals cold
+ok 63 - projection cache: changing requestedCause alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.649867
+  type: 'test'
+  ...
+# Subtest: projection cache: changing launchFailed alone projects again, and warm equals cold
+ok 64 - projection cache: changing launchFailed alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.811247
+  type: 'test'
+  ...
+# Subtest: projection cache: changing linkId alone projects again, and warm equals cold
+ok 65 - projection cache: changing linkId alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.612778
+  type: 'test'
+  ...
+# Subtest: projection cache: changing linkState alone projects again, and warm equals cold
+ok 66 - projection cache: changing linkState alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.504487
+  type: 'test'
+  ...
+# Subtest: projection cache: changing linkLabel alone projects again, and warm equals cold
+ok 67 - projection cache: changing linkLabel alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.44137
+  type: 'test'
+  ...
+# Subtest: projection cache: changing linkRole alone projects again, and warm equals cold
+ok 68 - projection cache: changing linkRole alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.489249
+  type: 'test'
+  ...
+# Subtest: projection cache: changing linkBackend alone projects again, and warm equals cold
+ok 69 - projection cache: changing linkBackend alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.520357
+  type: 'test'
+  ...
+# Subtest: projection cache: changing linkCreatedAt alone projects again, and warm equals cold
+ok 70 - projection cache: changing linkCreatedAt alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.362102
+  type: 'test'
+  ...
+# Subtest: projection cache: changing childHarness alone projects again, and warm equals cold
+ok 71 - projection cache: changing childHarness alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.409971
+  type: 'test'
+  ...
+# Subtest: projection cache: changing observationUnavailableReason alone projects again, and warm equals cold
+ok 72 - projection cache: changing observationUnavailableReason alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.455421
+  type: 'test'
+  ...
+# Subtest: projection cache: changing hasStatus alone projects again, and warm equals cold
+ok 73 - projection cache: changing hasStatus alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.480393
+  type: 'test'
+  ...
+# Subtest: projection cache: changing statusAsOfSeq alone projects again, and warm equals cold
+ok 74 - projection cache: changing statusAsOfSeq alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.330835
+  type: 'test'
+  ...
+# Subtest: projection cache: changing commitSeq alone projects again, and warm equals cold
+ok 75 - projection cache: changing commitSeq alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.306489
+  type: 'test'
+  ...
+# Subtest: projection cache: changing stateKey alone projects again, and warm equals cold
+ok 76 - projection cache: changing stateKey alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.451138
+  type: 'test'
+  ...
+# Subtest: projection cache: changing stateSince alone projects again, and warm equals cold
+ok 77 - projection cache: changing stateSince alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.477647
+  type: 'test'
+  ...
+# Subtest: projection cache: changing stateSinceBasis alone projects again, and warm equals cold
+ok 78 - projection cache: changing stateSinceBasis alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.459153
+  type: 'test'
+  ...
+# Subtest: projection cache: changing freshnessState alone projects again, and warm equals cold
+ok 79 - projection cache: changing freshnessState alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.67307
+  type: 'test'
+  ...
+# Subtest: projection cache: changing freshnessReason alone projects again, and warm equals cold
+ok 80 - projection cache: changing freshnessReason alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.621294
+  type: 'test'
+  ...
+# Subtest: projection cache: changing clockAnomaly alone projects again, and warm equals cold
+ok 81 - projection cache: changing clockAnomaly alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.636142
+  type: 'test'
+  ...
+# Subtest: projection cache: changing liveness alone projects again, and warm equals cold
+ok 82 - projection cache: changing liveness alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.658755
+  type: 'test'
+  ...
+# Subtest: projection cache: changing activity alone projects again, and warm equals cold
+ok 83 - projection cache: changing activity alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.53848
+  type: 'test'
+  ...
+# Subtest: projection cache: changing pendingReason alone projects again, and warm equals cold
+ok 84 - projection cache: changing pendingReason alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.50038
+  type: 'test'
+  ...
+# Subtest: projection cache: changing lastTurnOutcome alone projects again, and warm equals cold
+ok 85 - projection cache: changing lastTurnOutcome alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.510088
+  type: 'test'
+  ...
+# Subtest: projection cache: changing lastEvidenceAt alone projects again, and warm equals cold
+ok 86 - projection cache: changing lastEvidenceAt alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.407137
+  type: 'test'
+  ...
+# Subtest: projection cache: changing reportId alone projects again, and warm equals cold
+ok 87 - projection cache: changing reportId alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.516319
+  type: 'test'
+  ...
+# Subtest: projection cache: changing reportStatus alone projects again, and warm equals cold
+ok 88 - projection cache: changing reportStatus alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.517081
+  type: 'test'
+  ...
+# Subtest: projection cache: changing reportCreatedAt alone projects again, and warm equals cold
+ok 89 - projection cache: changing reportCreatedAt alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.413178
+  type: 'test'
+  ...
+# Subtest: projection cache: changing reportSummary alone projects again, and warm equals cold
+ok 90 - projection cache: changing reportSummary alone projects again, and warm equals cold
+  ---
+  duration_ms: 0.38716
+  type: 'test'
+  ...
+# Subtest: projection cache: an equal rebuild is all hits
+ok 91 - projection cache: an equal rebuild is all hits
+  ---
+  duration_ms: 0.321437
+  type: 'test'
+  ...
+# Subtest: row cache: changing width alone, the warm row equals the cold row
+ok 92 - row cache: changing width alone, the warm row equals the cold row
+  ---
+  duration_ms: 2.101385
+  type: 'test'
+  ...
+# Subtest: row cache: changing selection alone, the warm row equals the cold row
+ok 93 - row cache: changing selection alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.907807
+  type: 'test'
+  ...
+# Subtest: row cache: changing glyph set (ascii option) alone, the warm row equals the cold row
+ok 94 - row cache: changing glyph set (ascii option) alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.782203
+  type: 'test'
+  ...
+# Subtest: row cache: changing glyph set (icon set, ascii omitted) alone, the warm row equals the cold row
+ok 95 - row cache: changing glyph set (icon set, ascii omitted) alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.435549
+  type: 'test'
+  ...
+# Subtest: row cache: changing clock text alone, the warm row equals the cold row
+ok 96 - row cache: changing clock text alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.760383
+  type: 'test'
+  ...
+# Subtest: row cache: changing coarse clocks alone, the warm row equals the cold row
+ok 97 - row cache: changing coarse clocks alone, the warm row equals the cold row
+  ---
+  duration_ms: 1.121685
+  type: 'test'
+  ...
+# Subtest: row cache: changing fold counts alone, the warm row equals the cold row
+ok 98 - row cache: changing fold counts alone, the warm row equals the cold row
+  ---
+  duration_ms: 9.388235
+  type: 'test'
+  ...
+# Subtest: row cache: changing cross-harness slot alone, the warm row equals the cold row
+ok 99 - row cache: changing cross-harness slot alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.562946
+  type: 'test'
+  ...
+# Subtest: row cache: changing tree prefix alone, the warm row equals the cold row
+ok 100 - row cache: changing tree prefix alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.868794
+  type: 'test'
+  ...
+# Subtest: row cache: changing fade alone, the warm row equals the cold row
+ok 101 - row cache: changing fade alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.436391
+  type: 'test'
+  ...
+# Subtest: row cache: changing parent model alone, the warm row equals the cold row
+ok 102 - row cache: changing parent model alone, the warm row equals the cold row
+  ---
+  duration_ms: 1.240796
+  type: 'test'
+  ...
+# Subtest: row cache: changing language alone, the warm row equals the cold row
+ok 103 - row cache: changing language alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.735586
+  type: 'test'
+  ...
+# Subtest: row cache: changing translator alone, the warm row equals the cold row
+ok 104 - row cache: changing translator alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.438465
+  type: 'test'
+  ...
+# Subtest: row cache: changing palette alone, the warm row equals the cold row
+ok 105 - row cache: changing palette alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.508586
+  type: 'test'
+  ...
+# Subtest: row cache: changing model glyph mode alone, the warm row equals the cold row
+ok 106 - row cache: changing model glyph mode alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.551104
+  type: 'test'
+  ...
+# Subtest: row cache: changing emphasis alone, the warm row equals the cold row
+ok 107 - row cache: changing emphasis alone, the warm row equals the cold row
+  ---
+  duration_ms: 0.337837
+  type: 'test'
+  ...
+# Subtest: row cache: every input of the row key has a case
+ok 108 - row cache: every input of the row key has a case
+  ---
+  duration_ms: 0.140241
+  type: 'test'
+  ...
+# (node:131500) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: row 1: conflicting records are a warning, before anything the node itself says
+ok 109 - row 1: conflicting records are a warning, before anything the node itself says
+  ---
+  duration_ms: 5.333901
+  type: 'test'
+  ...
+# Subtest: row 2a: a dead supervisor is `? supervisor lost`, warning, with the evidence age as its clock
+ok 110 - row 2a: a dead supervisor is `? supervisor lost`, warning, with the evidence age as its clock
+  ---
+  duration_ms: 0.691285
+  type: 'test'
+  ...
+# Subtest: row 2b: any other uncertain run is `? uncertain`, warning
+ok 111 - row 2b: any other uncertain run is `? uncertain`, warning
+  ---
+  duration_ms: 0.475514
+  type: 'test'
+  ...
+# Subtest: row 3: something waits for a person is the alert marker, with its own word
+ok 112 - row 3: something waits for a person is the alert marker, with its own word
+  ---
+  duration_ms: 3.365804
+  type: 'test'
+  ...
+# Subtest: row 4: failure is `!`, danger, and not a guess from the exit shell status
+ok 113 - row 4: failure is `!`, danger, and not a guess from the exit shell status
+  ---
+  duration_ms: 1.146901
+  type: 'test'
+  ...
+# Subtest: row 5a: a visible cancel that cannot be delivered is `⚑ stop in pane`, alive, alert
+ok 114 - row 5a: a visible cancel that cannot be delivered is `⚑ stop in pane`, alive, alert
+  ---
+  duration_ms: 0.44699
+  type: 'test'
+  ...
+# Subtest: row 5b: interrupted, a headless cancelling ladder and a cancelled run are `■`, warning
+ok 115 - row 5b: interrupted, a headless cancelling ladder and a cancelled run are `■`, warning
+  ---
+  duration_ms: 1.428073
+  type: 'test'
+  ...
+# Subtest: row 6: lost sources are a muted `?`, never the last known good marker
+ok 116 - row 6: lost sources are a muted `?`, never the last known good marker
+  ---
+  duration_ms: 0.701854
+  type: 'test'
+  ...
+# Subtest: row 7: working is `▸`, info, with a turn clock
+ok 117 - row 7: working is `▸`, info, with a turn clock
+  ---
+  duration_ms: 0.567695
+  type: 'test'
+  ...
+# Subtest: row 8: starting is a quiet `·`
+ok 118 - row 8: starting is a quiet `·`
+  ---
+  duration_ms: 0.821857
+  type: 'test'
+  ...
+# Subtest: row 9a: an ended run is `✓` with a report and `■` without; the cause stays on the row
+ok 119 - row 9a: an ended run is `✓` with a report and `■` without; the cause stays on the row
+  ---
+  duration_ms: 1.035494
+  type: 'test'
+  ...
+# Subtest: row 9b: a reported agent that is still alive keeps its slot and says so
+ok 120 - row 9b: a reported agent that is still alive keeps its slot and says so
+  ---
+  duration_ms: 0.581881
+  type: 'test'
+  ...
+# Subtest: row 10: idle is `✓` for a session and `·` for a delegation that has not reported
+ok 121 - row 10: idle is `✓` for a session and `·` for a delegation that has not reported
+  ---
+  duration_ms: 0.348257
+  type: 'test'
+  ...
+# Subtest: row 11: no evidence is `? unknown`, muted, and an unavailable status is never healthy
+ok 122 - row 11: no evidence is `? unknown`, muted, and an unavailable status is never healthy
+  ---
+  duration_ms: 0.388542
+  type: 'test'
+  ...
+# Subtest: a node the observation did not load is `? not loaded`, or a history row when the ledger knows it ended
+ok 123 - a node the observation did not load is `? not loaded`, or a history row when the ledger knows it ended
+  ---
+  duration_ms: 0.329182
+  type: 'test'
+  ...
+# Subtest: the first matching row wins: the order of the table
+ok 124 - the first matching row wins: the order of the table
+  ---
+  duration_ms: 0.797742
+  type: 'test'
+  ...
+# Subtest: only the delegation words the design lists are used
+ok 125 - only the delegation words the design lists are used
+  ---
+  duration_ms: 0.227182
+  type: 'test'
+  ...
+# Subtest: §3.2: a native child that has ended is history whether it ended well, badly or interrupted
+ok 126 - §3.2: a native child that has ended is history whether it ended well, badly or interrupted
+  ---
+  duration_ms: 0.747329
+  type: 'test'
+  ...
+# Subtest: §3.2: a finished failed native lets its finished subtree fold after the linger window
+ok 127 - §3.2: a finished failed native lets its finished subtree fold after the linger window
+  ---
+  duration_ms: 0.70993
+  type: 'test'
+  ...
+# Subtest: §3.3 row 6: the current freshness decides, never a retained `stale` state key
+ok 128 - §3.3 row 6: the current freshness decides, never a retained `stale` state key
+  ---
+  duration_ms: 1.075278
+  type: 'test'
+  ...
+# Subtest: §3.4: a clock that ran backwards leaves the clock empty and the node without an entering time
+ok 129 - §3.4: a clock that ran backwards leaves the clock empty and the node without an entering time
+  ---
+  duration_ms: 0.405674
+  type: 'test'
+  ...
+# (node:131528) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# b10b-perf rows200 cold (plan + 200 row strings, 0 folded away, coarse=true): n=1000 p50=5.574ms p99=12.038ms max=61.265ms strict=false
+# b10b-perf projection200 cold: n=1000 p50=1.007ms p99=3.657ms max=6.897ms strict=false
+# b10b-perf projection200 changed tick (1 of 200 differs, rebuilt objects): n=1000 p50=0.641ms p99=2.869ms max=9.093ms strict=false
+# b10b-perf no-change tick (counts + alerts + notice + plan + 200 rows, clocks moved): n=1000 p50=0.514ms p99=1.910ms max=3.298ms strict=false
+# b10b-perf statusline delegation (120 cols, warm): n=1000 p50=1.001ms p99=5.250ms max=9.127ms strict=false
+# b10b-perf alerts + notice (200 nodes): n=1000 p50=0.026ms p99=0.187ms max=2.068ms strict=false
+# b10b-perf conflict-heavy boundary (150 nodes + 400 conflict children: project + alerts + notice + 200 rows, cold): n=1000 p50=7.083ms p99=20.650ms max=36.561ms strict=false
+# Subtest: 200-node compact rows at 56 columns, every row built from nothing: p99 <= 10 ms
+ok 130 - 200-node compact rows at 56 columns, every row built from nothing: p99 <= 10 ms
+  ---
+  duration_ms: 9370.926352
+  type: 'test'
+  ...
+# Subtest: 200-node projection: cold build and a changed tick (one node differs)
+ok 131 - 200-node projection: cold build and a changed tick (one node differs)
+  ---
+  duration_ms: 2417.23392
+  type: 'test'
+  ...
+# Subtest: the no-change tick: same tree, the second moves on; p99 <= 2 ms
+ok 132 - the no-change tick: same tree, the second moves on; p99 <= 2 ms
+  ---
+  duration_ms: 725.339555
+  type: 'test'
+  ...
+# Subtest: the statusline from a warm projection, and the alerts alone
+ok 133 - the statusline from a warm projection, and the alerts alone
+  ---
+  duration_ms: 1576.73725
+  type: 'test'
+  ...
+# Subtest: the conflict-heavy boundary: 150 nodes and 400 conflicting children stay inside the 200-node budget
+ok 134 - the conflict-heavy boundary: 150 nodes and 400 conflicting children stay inside the 200-node budget
+  ---
+  duration_ms: 9317.409802
+  type: 'test'
+  ...
+# (node:132020) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: counts are by marker over every node but the viewpoint root; backends and spend follow
+ok 135 - counts are by marker over every node but the viewpoint root; backends and spend follow
+  ---
+  duration_ms: 6.735618
+  type: 'test'
+  ...
+# Subtest: a tree of one harness is not cross-harness, and a spend nobody reported is not written
+ok 136 - a tree of one harness is not cross-harness, and a spend nobody reported is not written
+  ---
+  duration_ms: 1.354587
+  type: 'test'
+  ...
+# Subtest: the slots and the close-pane count: held by marker, to close by fact
+ok 137 - the slots and the close-pane count: held by marker, to close by fact
+  ---
+  duration_ms: 3.993115
+  type: 'test'
+  ...
+# Subtest: one post-order pass: a finished parent with a pending grandchild sorts first, and counts what is below
+ok 138 - one post-order pass: a finished parent with a pending grandchild sorts first, and counts what is below
+  ---
+  duration_ms: 1.429406
+  type: 'test'
+  ...
+# Subtest: a finished subtree is put away with its youngest member, not its oldest
+ok 139 - a finished subtree is put away with its youngest member, not its oldest
+  ---
+  duration_ms: 0.901245
+  type: 'test'
+  ...
+# Subtest: the node cache: an equal tree rebuilt every tick costs one stamp compare per node
+ok 140 - the node cache: an equal tree rebuilt every tick costs one stamp compare per node
+  ---
+  duration_ms: 1.273155
+  type: 'test'
+  ...
+# Subtest: the node cache: one changed state projects one node
+ok 141 - the node cache: one changed state projects one node
+  ---
+  duration_ms: 0.722994
+  type: 'test'
+  ...
+# Subtest: the node cache: derived freshness moves the marker with every commit stamp unchanged
+ok 142 - the node cache: derived freshness moves the marker with every commit stamp unchanged
+  ---
+  duration_ms: 2.623766
+  type: 'test'
+  ...
+# Subtest: a node the cache no longer sees is swept
+ok 143 - a node the cache no longer sees is swept
+  ---
+  duration_ms: 0.767106
+  type: 'test'
+  ...
+# Subtest: the same tree, details and capacity objects return the same projection
+ok 144 - the same tree, details and capacity objects return the same projection
+  ---
+  duration_ms: 0.607389
+  type: 'test'
+  ...
+# Subtest: an observation the reader says is unavailable is `? unknown`, never healthy or idle
+ok 145 - an observation the reader says is unavailable is `? unknown`, never healthy or idle
+  ---
+  duration_ms: 0.356242
+  type: 'test'
+  ...
+# Subtest: conflicts: one row per claiming parent in the tree, one count per child
+ok 146 - conflicts: one row per claiming parent in the tree, one count per child
+  ---
+  duration_ms: 1.433173
+  type: 'test'
+  ...
+# Subtest: a session ref the identity check rejects does not stop the render
+ok 147 - a session ref the identity check rejects does not stop the render
+  ---
+  duration_ms: 0.527695
+  type: 'test'
+  ...
+# Subtest: model and effort are escaped once, when the projection is built (§6 \#7)
+ok 148 - model and effort are escaped once, when the projection is built (§6 \#7)
+  ---
+  duration_ms: 3.614929
+  type: 'test'
+  ...
+# Subtest: §3.4: a conflicting child has one name, the shared label only when every record agrees
+ok 149 - §3.4: a conflicting child has one name, the shared label only when every record agrees
+  ---
+  duration_ms: 5.668723
+  type: 'test'
+  ...
+# Subtest: §3.4: a conflicting child that is also a node is named the same way on every row
+ok 150 - §3.4: a conflicting child that is also a node is named the same way on every row
+  ---
+  duration_ms: 0.602479
+  type: 'test'
+  ...
+# Subtest: §3.4: a conflict-only child takes part in cross-harness detection, with its harness from the link
+ok 151 - §3.4: a conflict-only child takes part in cross-harness detection, with its harness from the link
+  ---
+  duration_ms: 1.256315
+  type: 'test'
+  ...
+# Subtest: §6 \#3: conflict rows share the 200-node budget; the rest are counted and reported
+ok 152 - §6 \#3: conflict rows share the 200-node budget; the rest are counted and reported
+  ---
+  duration_ms: 42.482853
+  type: 'test'
+  ...
+# Subtest: §4.1, §4.12: a conflict that fits no row still lights the bar and the statusline, and marks the root
+ok 153 - §4.1, §4.12: a conflict that fits no row still lights the bar and the statusline, and marks the root
+  ---
+  duration_ms: 11.998215
+  type: 'test'
+  ...
+# Subtest: §3.2, §3.4: a claim that fits no row still keeps its parent unfinished, troubled and on the list
+ok 154 - §3.2, §3.4: a claim that fits no row still keeps its parent unfinished, troubled and on the list
+  ---
+  duration_ms: 8.893301
+  type: 'test'
+  ...
+# Subtest: §4.12: every claim omitted, two finished parents: one child, one alert, one item, both parents troubled
+ok 155 - §4.12: every claim omitted, two finished parents: one child, one alert, one item, both parents troubled
+  ---
+  duration_ms: 7.416818
+  type: 'test'
+  ...
+# (node:132031) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: every row is exactly the width asked for: situations x widths x icon sets x selection
+ok 156 - every row is exactly the width asked for: situations x widths x icon sets x selection
+  ---
+  duration_ms: 470.322506
+  type: 'test'
+  ...
+# Subtest: Chinese words keep every row at exactly the width asked for
+ok 157 - Chinese words keep every row at exactly the width asked for
+  ---
+  duration_ms: 62.705918
+  type: 'test'
+  ...
+# Subtest: ASCII rows hold only printable ASCII besides user-written names and the model badge
+ok 158 - ASCII rows hold only printable ASCII besides user-written names and the model badge
+  ---
+  duration_ms: 12.722543
+  type: 'test'
+  ...
+# Subtest: situation (c) at 80 columns
+ok 159 - situation (c) at 80 columns
+  ---
+  duration_ms: 1.283404
+  type: 'test'
+  ...
+# Subtest: situation (c): the field-shedding order at 56, 48, 40, 32 and 24 columns (§4.2)
+ok 160 - situation (c): the field-shedding order at 56, 48, 40, 32 and 24 columns (§4.2)
+  ---
+  duration_ms: 1.915098
+  type: 'test'
+  ...
+# Subtest: trouble rows drop the badge and the meter at any width, and keep the word and the clock
+ok 161 - trouble rows drop the badge and the meter at any width, and keep the word and the clock
+  ---
+  duration_ms: 4.405477
+  type: 'test'
+  ...
+# Subtest: below 40 columns the name keeps 8 columns and the word goes first; from 40 the word stays
+ok 162 - below 40 columns the name keeps 8 columns and the word goes first; from 40 the word stays
+  ---
+  duration_ms: 2.971261
+  type: 'test'
+  ...
+# Subtest: history rows say what they delivered: the summary after 12 free columns, else the word
+ok 163 - history rows say what they delivered: the summary after 12 free columns, else the word
+  ---
+  duration_ms: 2.27645
+  type: 'test'
+  ...
+# Subtest: a two-word state gives up its second word before the first is clipped (from 40 columns)
+ok 164 - a two-word state gives up its second word before the first is clipped (from 40 columns)
+  ---
+  duration_ms: 4.119645
+  type: 'test'
+  ...
+# Subtest: situation (g) with history: every ending gets its word, newest at the bottom of its bucket
+ok 165 - situation (g) with history: every ending gets its word, newest at the bottom of its bucket
+  ---
+  duration_ms: 0.951003
+  type: 'test'
+  ...
+# Subtest: finished rows fold into one `✓ N done` row once the linger window has passed, and `a` brings them back
+ok 166 - finished rows fold into one `✓ N done` row once the linger window has passed, and `a` brings them back
+  ---
+  duration_ms: 10.229995
+  type: 'test'
+  ...
+# Subtest: a finished subtree with an unfinished descendant stays on the list
+ok 167 - a finished subtree with an unfinished descendant stays on the list
+  ---
+  duration_ms: 0.469362
+  type: 'test'
+  ...
+# Subtest: rows deeper than 4 are drawn at depth 4 with a flat `↳`
+ok 168 - rows deeper than 4 are drawn at depth 4 with a flat `↳`
+  ---
+  duration_ms: 0.804906
+  type: 'test'
+  ...
+# Subtest: a folded node says how many it hides: long form, short form, unknown children
+ok 169 - a folded node says how many it hides: long form, short form, unknown children
+  ---
+  duration_ms: 2.339007
+  type: 'test'
+  ...
+# Subtest: the worst glyph leads the fold: a trouble below wins over the working below
+ok 170 - the worst glyph leads the fold: a trouble below wins over the working below
+  ---
+  duration_ms: 0.40332
+  type: 'test'
+  ...
+# Subtest: a conflict or an intent edge is drawn with `┊`, and a conflict row keeps its `~` age
+ok 171 - a conflict or an intent edge is drawn with `┊`, and a conflict row keeps its `~` age
+  ---
+  duration_ms: 1.048308
+  type: 'test'
+  ...
+# Subtest: a node that was not loaded is `? · not loaded` with no clock
+ok 172 - a node that was not loaded is `? · not loaded` with no clock
+  ---
+  duration_ms: 0.332497
+  type: 'test'
+  ...
+# Subtest: the selection mark replaces the first column and nothing else moves
+ok 173 - the selection mark replaces the first column and nothing else moves
+  ---
+  duration_ms: 0.748972
+  type: 'test'
+  ...
+# Subtest: the native child shows a badge only when its model differs from its parent
+ok 174 - the native child shows a badge only when its model differs from its parent
+  ---
+  duration_ms: 0.920551
+  type: 'test'
+  ...
+# Subtest: siblings sort by subtree bucket: trouble newest first, then actives, then finished (§3.2)
+ok 175 - siblings sort by subtree bucket: trouble newest first, then actives, then finished (§3.2)
+  ---
+  duration_ms: 1.364726
+  type: 'test'
+  ...
+# Subtest: `s` sorts by creation alone, with no buckets
+ok 176 - `s` sorts by creation alone, with no buckets
+  ---
+  duration_ms: 0.968621
+  type: 'test'
+  ...
+# Subtest: turn clocks: seconds under an hour, minutes after, coarse drops the seconds
+ok 177 - turn clocks: seconds under an hour, minutes after, coarse drops the seconds
+  ---
+  duration_ms: 0.17721
+  type: 'test'
+  ...
+# Subtest: more than 30 active rows: the turn clocks go coarse so a second no longer repaints them
+ok 178 - more than 30 active rows: the turn clocks go coarse so a second no longer repaints them
+  ---
+  duration_ms: 2.751332
+  type: 'test'
+  ...
+# Subtest: CJK: a wide character that does not fit leaves a space, and a name is cut by columns
+ok 179 - CJK: a wide character that does not fit leaves a space, and a name is cut by columns
+  ---
+  duration_ms: 2.546231
+  type: 'test'
+  ...
+# Subtest: the plan is memoised per option set until a subtree crosses its put-away time (B10B-s2, §6 \#3)
+ok 180 - the plan is memoised per option set until a subtree crosses its put-away time (B10B-s2, §6 \#3)
+  ---
+  duration_ms: 0.602079
+  type: 'test'
+  ...
+# Subtest: a row is rendered once for what it reads: same inputs give the same string object cache
+ok 181 - a row is rendered once for what it reads: same inputs give the same string object cache
+  ---
+  duration_ms: 0.632495
+  type: 'test'
+  ...
+# Subtest: no root row and no nodes: no rows
+ok 182 - no root row and no nodes: no rows
+  ---
+  duration_ms: 0.194722
+  type: 'test'
+  ...
+# Subtest: a folded node keeps its counts apart: 1 flag + 11 failures is not 11 flags + 1 failure
+ok 183 - a folded node keeps its counts apart: 1 flag + 11 failures is not 11 flags + 1 failure
+  ---
+  duration_ms: 1.291891
+  type: 'test'
+  ...
+# Subtest: §3.4: an age that cannot be measured is left empty, never `0s`
+ok 184 - §3.4: an age that cannot be measured is left empty, never `0s`
+  ---
+  duration_ms: 1.185723
+  type: 'test'
+  ...
+# Subtest: §5.2: a selected row is the palette band across the whole row, without faint text or the alert hue lost
+ok 185 - §5.2: a selected row is the palette band across the whole row, without faint text or the alert hue lost
+  ---
+  duration_ms: 15.602995
+  type: 'test'
+  ...
+# Subtest: §5.2: a palette without a band (none, terminal) selects with › and a bold name, and no background
+ok 186 - §5.2: a palette without a band (none, terminal) selects with › and a bold name, and no background
+  ---
+  duration_ms: 1.95865
+  type: 'test'
+  ...
+# Subtest: §3.2, §5.2: a state that began in the last three seconds has its word and its clock bold, for every node
+ok 187 - §3.2, §5.2: a state that began in the last three seconds has its word and its clock bold, for every node
+  ---
+  duration_ms: 11.486724
+  type: 'test'
+  ...
+# (node:132041) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: the root is a card even with nothing under it
+ok 188 - the root is a card even with nothing under it
+  ---
+  duration_ms: 7.542856
+  type: 'test'
+  ...
+# Subtest: a card shows five native sub-rows at most, then one fold line with the rest by marker
+ok 189 - a card shows five native sub-rows at most, then one fold line with the rest by marker
+  ---
+  duration_ms: 7.284536
+  type: 'test'
+  ...
+# Subtest: a card with children the tree did not list: `children unknown`, or `+N?` when some are folded
+ok 190 - a card with children the tree did not list: `children unknown`, or `+N?` when some are folded
+  ---
+  duration_ms: 4.039105
+  type: 'test'
+  ...
+# Subtest: root natives are cards; a native under a native is a sub-row of that card
+ok 191 - root natives are cards; a native under a native is a sub-row of that card
+  ---
+  duration_ms: 1.271303
+  type: 'test'
+  ...
+# Subtest: a sub-row carries a badge only when its model differs from the card`s (not its own parent`s)
+ok 192 - a sub-row carries a badge only when its model differs from the card`s (not its own parent`s)
+  ---
+  duration_ms: 2.43731
+  type: 'test'
+  ...
+# Subtest: accordion: finished cards fold first, then the unselected live ones, the root last; trouble and the selection never
+ok 193 - accordion: finished cards fold first, then the unselected live ones, the root last; trouble and the selection never
+  ---
+  duration_ms: 4.856204
+  type: 'test'
+  ...
+# Subtest: accordion: more than five card siblings fold their finished cards at once
+ok 194 - accordion: more than five card siblings fold their finished cards at once
+  ---
+  duration_ms: 2.082629
+  type: 'test'
+  ...
+# Subtest: card cache: an unchanged frame draws nothing again; the next second redraws only the feet of live cards
+ok 195 - card cache: an unchanged frame draws nothing again; the next second redraws only the feet of live cards
+  ---
+  duration_ms: 1.656298
+  type: 'test'
+  ...
+# Subtest: a card is exactly as tall as its drawing: head first, foot last, no blank filler (every scenario, every width)
+ok 196 - a card is exactly as tall as its drawing: head first, foot last, no blank filler (every scenario, every width)
+  ---
+  duration_ms: 116.427461
+  type: 'test'
+  ...
+# Subtest: lookId is monotonic: a cleared table never hands out an id a cached card still carries (F2)
+ok 197 - lookId is monotonic: a cleared table never hands out an id a cached card still carries (F2)
+  ---
+  duration_ms: 1.087772
+  type: 'test'
+  ...
+# Subtest: a folded card and a sub-row are tiered by the panel width: the badge of a compact row at 48 (F3)
+ok 198 - a folded card and a sub-row are tiered by the panel width: the badge of a compact row at 48 (F3)
+  ---
+  duration_ms: 2.802217
+  type: 'test'
+  ...
+# (node:132068) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: delegation line: role, host, the bound time; `pane N` only from a verified host
+ok 199 - delegation line: role, host, the bound time; `pane N` only from a verified host
+  ---
+  duration_ms: 9.112472
+  type: 'test'
+  ...
+# Subtest: delegation line: the handshake while the link is pending or claimed; reported once there is a report
+ok 200 - delegation line: the handshake while the link is pending or claimed; reported once there is a report
+  ---
+  duration_ms: 0.970313
+  type: 'test'
+  ...
+# Subtest: delegation line: run N past the first, heartbeat from 80 columns, cost, slot held, close pane
+ok 201 - delegation line: run N past the first, heartbeat from 80 columns, cost, slot held, close pane
+  ---
+  duration_ms: 1.719135
+  type: 'test'
+  ...
+# Subtest: delegation line: `in <dir>` by worktree root, then by cwd, `in ?` when neither compares
+ok 202 - delegation line: `in <dir>` by worktree root, then by cwd, `in ?` when neither compares
+  ---
+  duration_ms: 0.68904
+  type: 'test'
+  ...
+# Subtest: delegation line: shedding right to left at 80, 56, 48, 40 and 32; slot held and close pane stay
+ok 203 - delegation line: shedding right to left at 80, 56, 48, 40 and 32; slot held and close pane stay
+  ---
+  duration_ms: 2.246645
+  type: 'test'
+  ...
+# Subtest: delegation line: an extra intent root says `parent unconfirmed` and nothing else
+ok 204 - delegation line: an extra intent root says `parent unconfirmed` and nothing else
+  ---
+  duration_ms: 0.444617
+  type: 'test'
+  ...
+# Subtest: focus line: pending word, uncertain cause and missing items, conflict, report, terminal facts
+ok 205 - focus line: pending word, uncertain cause and missing items, conflict, report, terminal facts
+  ---
+  duration_ms: 4.271608
+  type: 'test'
+  ...
+# Subtest: parent row: the four forms, one row, exactly the width
+ok 206 - parent row: the four forms, one row, exactly the width
+  ---
+  duration_ms: 3.199315
+  type: 'test'
+  ...
+# Subtest: parent row: a gone parent says `exited`; alive says no activity word
+ok 207 - parent row: a gone parent says `exited`; alive says no activity word
+  ---
+  duration_ms: 0.585238
+  type: 'test'
+  ...
+# Subtest: focus line: short of room it drops exit unknown, then the timing note, then the cause, before it cuts (F4)
+ok 208 - focus line: short of room it drops exit unknown, then the timing note, then the cause, before it cuts (F4)
+  ---
+  duration_ms: 1.311808
+  type: 'test'
+  ...
+# (node:132105) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: native: the name is native.title; null title falls back to the session short form
+ok 209 - native: the name is native.title; null title falls back to the session short form
+  ---
+  duration_ms: 6.978655
+  type: 'test'
+  ...
+# Subtest: native: the kind icon from native.kind; null and `other` leave the slot blank
+ok 210 - native: the kind icon from native.kind; null and `other` leave the slot blank
+  ---
+  duration_ms: 2.481621
+  type: 'test'
+  ...
+# Subtest: native: with no kind icon anywhere, a single-harness tree has no slot column (segment 1 unchanged)
+ok 211 - native: with no kind icon anywhere, a single-harness tree has no slot column (segment 1 unchanged)
+  ---
+  duration_ms: 3.318007
+  type: 'test'
+  ...
+# Subtest: native: the table is the panel`s KIND_GLYPHS
+ok 212 - native: the table is the panel`s KIND_GLYPHS
+  ---
+  duration_ms: 1.094814
+  type: 'test'
+  ...
+# Subtest: ASCII: no kind column in a single-harness tree; a blank native slot beside the harness letters
+ok 213 - ASCII: no kind column in a single-harness tree; a blank native slot beside the harness letters
+  ---
+  duration_ms: 3.41212
+  type: 'test'
+  ...
+# Subtest: ◈N: on compact rows from 56 columns, before the badge; not at 55, not on a rich card head
+ok 214 - ◈N: on compact rows from 56 columns, before the badge; not at 55, not on a rich card head
+  ---
+  duration_ms: 6.151734
+  type: 'test'
+  ...
+# (node:132113) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: hook: a null or absent view model draws the legacy panel byte for byte
+ok 215 - hook: a null or absent view model draws the legacy panel byte for byte
+  ---
+  duration_ms: 32.688963
+  type: 'test'
+  ...
+# Subtest: hook: a non-null view model is the agents view, natives only included (no content heuristic)
+ok 216 - hook: a non-null view model is the agents view, natives only included (no content heuristic)
+  ---
+  duration_ms: 27.732915
+  type: 'test'
+  ...
+# Subtest: the parent row is pinned above the heading: it stays at the top however far the view is scrolled
+ok 217 - the parent row is pinned above the heading: it stays at the top however far the view is scrolled
+  ---
+  duration_ms: 4.766187
+  type: 'test'
+  ...
+# Subtest: no viewpoint root: the summary row, and the empty lines only while the ledger is readable
+ok 218 - no viewpoint root: the summary row, and the empty lines only while the ledger is readable
+  ---
+  duration_ms: 1.084786
+  type: 'test'
+  ...
+# Subtest: (a) one session, 48 rich: the root card, head and foot, no agents counts
+ok 219 - (a) one session, 48 rich: the root card, head and foot, no agents counts
+  ---
+  duration_ms: 1.110774
+  type: 'test'
+  ...
+# Subtest: (b) natives only, 48: root card, root natives as cards, deeper natives as sub-rows, failures first
+ok 220 - (b) natives only, 48: root card, root natives as cards, deeper natives as sub-rows, failures first
+  ---
+  duration_ms: 2.812226
+  type: 'test'
+  ...
+# Subtest: (c) cross-harness, 48: summary, cards, micro card under the selection
+ok 221 - (c) cross-harness, 48: summary, cards, micro card under the selection
+  ---
+  duration_ms: 3.447896
+  type: 'test'
+  ...
+# Subtest: (d) slots full, 48: the slots chip, the uncertain worker holds its slot, the done bucket folds
+ok 222 - (d) slots full, 48: the slots chip, the uncertain worker holds its slot, the done bucket folds
+  ---
+  duration_ms: 2.177076
+  type: 'test'
+  ...
+# Subtest: (e) trouble, 48: supervisor lost is its own word; the conflict child is one worker
+ok 223 - (e) trouble, 48: supervisor lost is its own word; the conflict child is one worker
+  ---
+  duration_ms: 2.678497
+  type: 'test'
+  ...
+# Subtest: (g) history, 48: one worker on the list, the rest put away; the ended row tells why
+ok 224 - (g) history, 48: one worker on the list, the rest put away; the ended row tells why
+  ---
+  duration_ms: 1.999036
+  type: 'test'
+  ...
+# Subtest: (h) visible run endings, 48 and 32: the contract sentence, its short forms, close pane
+ok 225 - (h) visible run endings, 48 and 32: the contract sentence, its short forms, close pane
+  ---
+  duration_ms: 4.456622
+  type: 'test'
+  ...
+# Subtest: every row is exactly the panel width: every scenario, both layouts, 32-80, EN, ZH and ASCII
+ok 226 - every row is exactly the panel width: every scenario, both layouts, 32-80, EN, ZH and ASCII
+  ---
+  duration_ms: 1321.360681
+  type: 'test'
+  ...
+# Subtest: CJK: a ZH word and a CJK name count two columns each, and the line is cut by columns
+ok 227 - CJK: a ZH word and a CJK name count two columns each, and the line is cut by columns
+  ---
+  duration_ms: 1.10314
+  type: 'test'
+  ...
+# Subtest: ASCII: the whole glyph table switches, the contract dash included
+ok 228 - ASCII: the whole glyph table switches, the contract dash included
+  ---
+  duration_ms: 1.199408
+  type: 'test'
+  ...
+# Subtest: a fresh projection and a cached one draw the same panel
+ok 229 - a fresh projection and a cached one draw the same panel
+  ---
+  duration_ms: 1.496501
+  type: 'test'
+  ...
+# (node:132122) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# b10b-s2-perf compact no-change tick (same view model, clocks moved; the 60 rows in view): n=1000 p50=0.152ms p95=0.320ms p99=2.042ms max=8.391ms strict=false
+# b10b-s2-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.548ms p95=1.075ms p99=1.979ms max=3.162ms strict=false
+# b10b-s2-perf rich no-change tick (same view model, clocks moved; the 60 rows in view): n=1000 p50=0.083ms p95=0.183ms p99=1.028ms max=2.726ms strict=false
+# b10b-s2-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.522ms p95=1.517ms p99=3.235ms max=7.583ms strict=false
+# b10b-s2-perf compact no-change + one cached row (two memoised view models alternated; not asserted): n=1000 p50=1.573ms p95=3.191ms p99=4.491ms max=14.073ms strict=false
+# b10b-s2-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved; every row + frame-diff): n=1000 p50=2.395ms p95=8.708ms p99=12.562ms max=25.914ms strict=false
+# b10b-s2-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.860ms p95=5.072ms p99=11.892ms max=14.996ms strict=false
+# b10b-s2-perf compact cold tick, every row read (all 200 nodes differ; project + plan + rows + frame-diff; not asserted): n=1000 p50=6.692ms p95=12.085ms p99=20.316ms max=47.140ms strict=false
+# b10b-s2-perf compact cold tick, the 60 rows in view (not asserted): n=1000 p50=3.593ms p95=11.880ms p99=15.194ms max=31.027ms strict=false
+# b10b-s2-perf rich no-change + one cached card (two memoised view models alternated; not asserted): n=1000 p50=1.923ms p95=5.350ms p99=7.660ms max=22.722ms strict=false
+# b10b-s2-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved; every row; cards 39600 hits / 1200 misses, limit 500): n=1000 p50=2.492ms p95=8.311ms p99=14.593ms max=19.701ms strict=false
+# b10b-s2-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.083ms p95=3.732ms p99=4.958ms max=6.596ms strict=false
+# b10b-s2-perf rich cold tick, every row read (all 200 nodes differ; not asserted): n=1000 p50=4.553ms p95=6.786ms p99=7.965ms max=10.514ms strict=false
+# b10b-s2-perf rich cold tick, the 60 rows in view (not asserted): n=1000 p50=1.972ms p95=5.300ms p99=6.371ms max=8.154ms strict=false
+# Subtest: the no-change tick: the same view model, the second moves on; compact and rich p99 <= 2 ms
+ok 230 - the no-change tick: the same view model, the second moves on; compact and rich p99 <= 2 ms
+  ---
+  duration_ms: 2088.899626
+  type: 'test'
+  ...
+# Subtest: compact, 200 nodes at 56 columns, every row + frame-diff: a production-shaped changed tick, p99 <= 10 ms
+ok 231 - compact, 200 nodes at 56 columns, every row + frame-diff: a production-shaped changed tick, p99 <= 10 ms
+  ---
+  duration_ms: 52743.211742
+  type: 'test'
+  ...
+# Subtest: rich, 200 nodes as cards at 56 columns (500-card cache, accordion to 60 rows), a production-shaped changed tick: p99 <= 15 ms
+ok 232 - rich, 200 nodes as cards at 56 columns (500-card cache, accordion to 60 rows), a production-shaped changed tick: p99 <= 15 ms
+  ---
+  duration_ms: 35686.689414
+  type: 'test'
+  ...
+# (node:133994) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ⊕N selected on a band palette: every cell on the band, in the family ink, `›` first (mocha, latte, titanium)
+ok 233 - ⊕N selected on a band palette: every cell on the band, in the family ink, `›` first (mocha, latte, titanium)
+  ---
+  duration_ms: 19.989185
+  type: 'test'
+  ...
+# Subtest: ⊕N selected without a band (none, terminal): `›` and bold text, no surface
+ok 234 - ⊕N selected without a band (none, terminal): `›` and bold text, no surface
+  ---
+  duration_ms: 2.602797
+  type: 'test'
+  ...
+# Subtest: a rich card selected on a band palette: its head is on the band with `›` for the corner
+ok 235 - a rich card selected on a band palette: its head is on the band with `›` for the corner
+  ---
+  duration_ms: 6.725949
+  type: 'test'
+  ...
+# Subtest: a selection that is no planned row selects nothing (the legacy ids of today, Q6)
+ok 236 - a selection that is no planned row selects nothing (the legacy ids of today, Q6)
+  ---
+  duration_ms: 5.113091
+  type: 'test'
+  ...
+# Subtest: micro card under a selected row: no band and the plain ink, never the band family (mocha, latte, titanium)
+ok 237 - micro card under a selected row: no band and the plain ink, never the band family (mocha, latte, titanium)
+  ---
+  duration_ms: 3.130137
+  type: 'test'
+  ...
+# (node:134002) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: summary: the sampled strings of (c), (d), (e) and (g); no rate anywhere
+ok 238 - summary: the sampled strings of (c), (d), (e) and (g); no rate anywhere
+  ---
+  duration_ms: 8.407213
+  type: 'test'
+  ...
+# Subtest: summary: shedding order put away, then workers, then spend; counts and chips stay
+ok 239 - summary: shedding order put away, then workers, then spend; counts and chips stay
+  ---
+  duration_ms: 2.18494
+  type: 'test'
+  ...
+# Subtest: summary: workers count delegated sessions and intents on the list, not natives, not the put away
+ok 240 - summary: workers count delegated sessions and intents on the list, not natives, not the put away
+  ---
+  duration_ms: 0.561233
+  type: 'test'
+  ...
+# Subtest: coverage chip: precedence, and `N not loaded` counts the omitted conflict rows
+ok 241 - coverage chip: precedence, and `N not loaded` counts the omitted conflict rows
+  ---
+  duration_ms: 5.105747
+  type: 'test'
+  ...
+# Subtest: coverage chip: an unreadable ledger is muted for 30 seconds, then warning; busy never warns
+ok 242 - coverage chip: an unreadable ledger is muted for 30 seconds, then warning; busy never warns
+  ---
+  duration_ms: 1.172018
+  type: 'test'
+  ...
+# Subtest: the summary row is a heading, never a selectable row (rulings Q5)
+ok 243 - the summary row is a heading, never a selectable row (rulings Q5)
+  ---
+  duration_ms: 0.550002
+  type: 'test'
+  ...
+# (node:134011) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Log: a headless run in any state reads ⇢ Log; L and the button emit delegation-log; o does nothing
+ok 244 - Log: a headless run in any state reads ⇢ Log; L and the button emit delegation-log; o does nothing
+  ---
+  duration_ms: 19.979266
+  type: 'test'
+  ...
+# Subtest: Log: a visible run has none (its ⇢ is Open); the root, a native, a conflict row and ⊕N have none either
+ok 245 - Log: a visible run has none (its ⇢ is Open); the root, a native, a conflict row and ⊕N have none either
+  ---
+  duration_ms: 5.408942
+  type: 'test'
+  ...
+# Subtest: Switch: a Codex native in the root’s own native subtree switches, with today’s action
+ok 246 - Switch: a Codex native in the root’s own native subtree switches, with today’s action
+  ---
+  duration_ms: 1.021649
+  type: 'test'
+  ...
+# Subtest: Switch: no ⇢ for a native under a delegated session, a native of another harness, or the root
+ok 247 - Switch: no ⇢ for a native under a delegated session, a native of another harness, or the root
+  ---
+  duration_ms: 1.995698
+  type: 'test'
+  ...
+# Subtest: Open: a visible run with a verified host reads ⇢ Open and emits delegation-open with the row key
+ok 248 - Open: a visible run with a verified host reads ⇢ Open and emits delegation-open with the row key
+  ---
+  duration_ms: 3.213331
+  type: 'test'
+  ...
+# Subtest: Open is greyed, and does nothing, for each way the gate fails
+ok 249 - Open is greyed, and does nothing, for each way the gate fails
+  ---
+  duration_ms: 5.079769
+  type: 'test'
+  ...
+# Subtest: a plain session (no managed run) has no ⇢
+ok 250 - a plain session (no managed run) has no ⇢
+  ---
+  duration_ms: 0.379426
+  type: 'test'
+  ...
+# Subtest: Reconcile: ↻ copies exactly the descriptor the view model holds, displayCommand included; o and L stay out of it
+ok 251 - Reconcile: ↻ copies exactly the descriptor the view model holds, displayCommand included; o and L stay out of it
+  ---
+  duration_ms: 0.730467
+  type: 'test'
+  ...
+# Subtest: Resume: an ended run with a report of any status draws ↻ Resume greyed and answers with the diagnostic only
+ok 252 - Resume: an ended run with a report of any status draws ↻ Resume greyed and answers with the diagnostic only
+  ---
+  duration_ms: 1.602598
+  type: 'test'
+  ...
+# Subtest: Resume: the diagnostic is the §5.5 sentence in English and in Chinese
+ok 253 - Resume: the diagnostic is the §5.5 sentence in English and in Chinese
+  ---
+  duration_ms: 1.308832
+  type: 'test'
+  ...
+# Subtest: Resume is not drawn without an ended run with a report: no report, still alive, the root, a native
+ok 254 - Resume is not drawn without an ended run with a report: no report, still alive, the root, a native
+  ---
+  duration_ms: 2.185041
+  type: 'test'
+  ...
+# Subtest: Reconcile wins over Resume when the node has a descriptor
+ok 255 - Reconcile wins over Resume when the node has a descriptor
+  ---
+  duration_ms: 1.329201
+  type: 'test'
+  ...
+# Subtest: the bar: the word follows the selected row, the legacy Switch is gone, ZH has the table’s words
+ok 256 - the bar: the word follows the selected row, the legacy Switch is gone, ZH has the table’s words
+  ---
+  duration_ms: 4.20833
+  type: 'test'
+  ...
+# Subtest: a greyed and a live button differ in paint, not only in a flag (and the control says which)
+ok 257 - a greyed and a live button differ in paint, not only in a flag (and the control says which)
+  ---
+  duration_ms: 0.697095
+  type: 'test'
+  ...
+# Subtest: rowActions reads what the frame showed: the descriptor is the very object, the key the row’s
+ok 258 - rowActions reads what the frame showed: the descriptor is the very object, the key the row’s
+  ---
+  duration_ms: 0.660347
+  type: 'test'
+  ...
+# Subtest: painting, a tick, or a row jumping into trouble produces no action: only a key or a click does
+ok 259 - painting, a tick, or a row jumping into trouble produces no action: only a key or a click does
+  ---
+  duration_ms: 1.863563
+  type: 'test'
+  ...
+# Subtest: o, L and R do nothing where the bar sheds ⇢ and ↻ (narrow widths, zero height), in every look and icon set
+ok 260 - o, L and R do nothing where the bar sheds ⇢ and ↻ (narrow widths, zero height), in every look and icon set
+  ---
+  duration_ms: 95.614264
+  type: 'test'
+  ...
+# (node:134019) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: older reads the count with history hidden, as today’s button does, and stays (as Hide) while history is shown
+ok 261 - older reads the count with history hidden, as today’s button does, and stays (as Hide) while history is shown
+  ---
+  duration_ms: 13.365347
+  type: 'test'
+  ...
+# Subtest: the second plan does not evict the drawn one from its memo (a no-change tick rebuilds nothing)
+ok 262 - the second plan does not evict the drawn one from its memo (a no-change tick rebuilds nothing)
+  ---
+  duration_ms: 1.186675
+  type: 'test'
+  ...
+# Subtest: the buttons are the selected row’s, where the legacy Switch was: focus on Agents, or the Inspector on the agent
+ok 263 - the buttons are the selected row’s, where the legacy Switch was: focus on Agents, or the Inspector on the agent
+  ---
+  duration_ms: 8.082319
+  type: 'test'
+  ...
+# Subtest: the order on the bar: ⇢, ↻, the brief, the older button, help
+ok 264 - the order on the bar: ⇢, ↻, the brief, the older button, help
+  ---
+  duration_ms: 3.941494
+  type: 'test'
+  ...
+# Subtest: every width, look and icon set: exactly the width, the buttons present from 48 columns, words where there is room
+ok 265 - every width, look and icon set: exactly the width, the buttons present from 48 columns, words where there is room
+  ---
+  duration_ms: 61.11172
+  type: 'test'
+  ...
+# Subtest: ZH at 48 columns: the words fit and the line is exactly the width
+ok 266 - ZH at 48 columns: the words fit and the line is exactly the width
+  ---
+  duration_ms: 1.168201
+  type: 'test'
+  ...
+# Subtest: at 48 columns the row’s buttons keep their words; no bare ⇢ ↻ stands beside blank space at any width
+ok 267 - at 48 columns the row’s buttons keep their words; no bare ⇢ ↻ stands beside blank space at any width
+  ---
+  duration_ms: 49.598135
+  type: 'test'
+  ...
+# Subtest: the older button’s word gives way to the row’s words, not the other way round
+ok 268 - the older button’s word gives way to the row’s words, not the other way round
+  ---
+  duration_ms: 1.742849
+  type: 'test'
+  ...
+# Subtest: frame look with a pinned parent row: every line is exactly the width, the title is the frame’s edge
+ok 269 - frame look with a pinned parent row: every line is exactly the width, the title is the frame’s edge
+  ---
+  duration_ms: 8.025785
+  type: 'test'
+  ...
+# (node:134047) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a collapsed card writes +N (…) after its name and loses its sub-rows; an open one writes none
+ok 270 - a collapsed card writes +N (…) after its name and loses its sub-rows; an open one writes none
+  ---
+  duration_ms: 20.372938
+  type: 'test'
+  ...
+# Subtest: the card keeps its badge and its frame when the fold is written (head exactly the width)
+ok 271 - the card keeps its badge and its frame when the fold is written (head exactly the width)
+  ---
+  duration_ms: 0.547888
+  type: 'test'
+  ...
+# Subtest: under 40 columns the long form gives way to the short one before the name is cut
+ok 272 - under 40 columns the long form gives way to the short one before the name is cut
+  ---
+  duration_ms: 0.785239
+  type: 'test'
+  ...
+# Subtest: ASCII: the fold is written in the ASCII marks
+ok 273 - ASCII: the fold is written in the ASCII marks
+  ---
+  duration_ms: 0.783375
+  type: 'test'
+  ...
+# Subtest: ZH: the same head, the counts are marks and need no words
+ok 274 - ZH: the same head, the counts are marks and need no words
+  ---
+  duration_ms: 1.451948
+  type: 'test'
+  ...
+# Subtest: collapsing the root card folds the whole tree under it into its head
+ok 275 - collapsing the root card folds the whole tree under it into its head
+  ---
+  duration_ms: 1.062033
+  type: 'test'
+  ...
+# Subtest: a card drawn open does not keep its old head once collapsed, and back (the caches read the fold)
+ok 276 - a card drawn open does not keep its old head once collapsed, and back (the caches read the fold)
+  ---
+  duration_ms: 2.322967
+  type: 'test'
+  ...
+# (node:134056) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a fact name with a digit, an underscore or a dollar compares by value (no throw, every field read)
+ok 277 - a fact name with a digit, an underscore or a dollar compares by value (no throw, every field read)
+  ---
+  duration_ms: 0.688299
+  type: 'test'
+  ...
+# Subtest: a name that is not an identifier is refused, so nothing but identifiers reaches the generated code
+ok 278 - a name that is not an identifier is refused, so nothing but identifiers reaches the generated code
+  ---
+  duration_ms: 0.318632
+  type: 'test'
+  ...
+# Subtest: the real facts still compare field by field through the same comparator
+ok 279 - the real facts still compare field by field through the same comparator
+  ---
+  duration_ms: 1.297832
+  type: 'test'
+  ...
+# (node:134064) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: the decoder names n, N, L and R, and every other key (all of ASCII) is exactly what it was, in both profiles
+ok 280 - the decoder names n, N, L and R, and every other key (all of ASCII) is exactly what it was, in both profiles
+  ---
+  duration_ms: 2.95967
+  type: 'test'
+  ...
+# Subtest: the four commands are panel commands, mapped to keys of their own; R is named for both its words
+ok 281 - the four commands are panel commands, mapped to keys of their own; R is named for both its words
+  ---
+  duration_ms: 0.442682
+  type: 'test'
+  ...
+# Subtest: with the panel closed all four do nothing; every other command is as it was
+ok 282 - with the panel closed all four do nothing; every other command is as it was
+  ---
+  duration_ms: 0.35001
+  type: 'test'
+  ...
+# Subtest: the prefix table binds the four, never repeating, and the closed-panel script does nothing for them
+ok 283 - the prefix table binds the four, never repeating, and the closed-panel script does nothing for them
+  ---
+  duration_ms: 47.670152
+  type: 'test'
+  ...
+# Subtest: help lists the four keys only where the delegation view is drawn; the legacy help is the same with or without them
+ok 284 - help lists the four keys only where the delegation view is drawn; the legacy help is the same with or without them
+  ---
+  duration_ms: 12.923514
+  type: 'test'
+  ...
+# Subtest: the references list the keys in their Keys sections, English and Chinese
+ok 285 - the references list the keys in their Keys sections, English and Chinese
+  ---
+  duration_ms: 0.903639
+  type: 'test'
+  ...
+# (node:134104) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ↓ and ↑ walk the plan’s rows in screen order and stop at the ends (the heading is not a row)
+ok 286 - ↓ and ↑ walk the plan’s rows in screen order and stop at the ends (the heading is not a row)
+  ---
+  duration_ms: 26.659499
+  type: 'test'
+  ...
+# Subtest: home and end go to the first and last row; a page key scrolls the view and leaves the selection
+ok 287 - home and end go to the first and last row; a page key scrolls the view and leaves the selection
+  ---
+  duration_ms: 6.658523
+  type: 'test'
+  ...
+# Subtest: the summary row and the parent row are never selectable: a click on them selects nothing
+ok 288 - the summary row and the parent row are never selectable: a click on them selects nothing
+  ---
+  duration_ms: 1.09194
+  type: 'test'
+  ...
+# Subtest: h folds an open branch, then steps to the parent; l unfolds it, then steps to the first child
+ok 289 - h folds an open branch, then steps to the parent; l unfolds it, then steps to the first child
+  ---
+  duration_ms: 2.76008
+  type: 'test'
+  ...
+# Subtest: h on the viewpoint root folds the whole tree into its row; on a fold of the root it has nowhere to go
+ok 290 - h on the viewpoint root folds the whole tree into its row; on a fold of the root it has nowhere to go
+  ---
+  duration_ms: 0.915791
+  type: 'test'
+  ...
+# Subtest: in rich, h folds the card and its head says what it holds (F6), through the same key
+ok 291 - in rich, h folds the card and its head says what it holds (F6), through the same key
+  ---
+  duration_ms: 3.532574
+  type: 'test'
+  ...
+# Subtest: `a` and `s` go through the state: history shown, creation order; the selection stays on its row
+ok 292 - `a` and `s` go through the state: history shown, creation order; the selection stays on its row
+  ---
+  duration_ms: 1.763196
+  type: 'test'
+  ...
+# Subtest: each kind of stop is one, and each excluded kind is not (the root’s own marker included)
+ok 293 - each kind of stop is one, and each excluded kind is not (the root’s own marker included)
+  ---
+  duration_ms: 2.619998
+  type: 'test'
+  ...
+# Subtest: n goes to the next stop below the selection, N to the previous; both wrap; a stop is not the selection itself
+ok 294 - n goes to the next stop below the selection, N to the previous; both wrap; a stop is not the selection itself
+  ---
+  duration_ms: 5.775021
+  type: 'test'
+  ...
+# Subtest: with no stop n and N do nothing
+ok 295 - with no stop n and N do nothing
+  ---
+  duration_ms: 0.970443
+  type: 'test'
+  ...
+# Subtest: a collapsed row over a ⚑ is a stop and stays collapsed; n never unfolds, reorders or filters
+ok 296 - a collapsed row over a ⚑ is a stop and stays collapsed; n never unfolds, reorders or filters
+  ---
+  duration_ms: 1.672688
+  type: 'test'
+  ...
+# Subtest: a rich card whose sixth sub-row is a ⚑ is a stop: the card stands for the row it does not draw
+ok 297 - a rich card whose sixth sub-row is a ⚑ is a stop: the card stands for the row it does not draw
+  ---
+  duration_ms: 1.12465
+  type: 'test'
+  ...
+# Subtest: claims past the node budget have no row: no parent of theirs, and not the root, is a stop
+ok 298 - claims past the node budget have no row: no parent of theirs, and not the root, is a stop
+  ---
+  duration_ms: 7.713064
+  type: 'test'
+  ...
+# Subtest: Enter, Space and v are the Inspector’s keys: they emit no delegation action
+ok 299 - Enter, Space and v are the Inspector’s keys: they emit no delegation action
+  ---
+  duration_ms: 3.444741
+  type: 'test'
+  ...
+# Subtest: a click selects the row and nothing else: no Inspector, no pick, no action (both styles)
+ok 300 - a click selects the row and nothing else: no Inspector, no pick, no action (both styles)
+  ---
+  duration_ms: 2.538296
+  type: 'test'
+  ...
+# Subtest: a click on the ⊕N row’s own line selects it and does nothing else (both styles)
+ok 301 - a click on the ⊕N row’s own line selects it and does nothing else (both styles)
+  ---
+  duration_ms: 3.111011
+  type: 'test'
+  ...
+# Subtest: legacy: with no view model the keys behave as they did (o switches the selected agent; the new keys do nothing)
+ok 302 - legacy: with no view model the keys behave as they did (o switches the selected agent; the new keys do nothing)
+  ---
+  duration_ms: 1.819932
+  type: 'test'
+  ...
+# (node:134112) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: perf equivalence: rebuilt-equal views, one fact changed, and return to its previous value
+ok 303 - perf equivalence: rebuilt-equal views, one fact changed, and return to its previous value
+  ---
+  duration_ms: 11.010239
+  type: 'test'
+  ...
+# Subtest: perf equivalence: an older compact or rich frame retains its text, destinations and exact descriptor
+ok 304 - perf equivalence: an older compact or rich frame retains its text, destinations and exact descriptor
+  ---
+  duration_ms: 23.950285
+  type: 'test'
+  ...
+# Subtest: perf equivalence: removed and reinserted nodes and a different root cannot contaminate a live snapshot
+ok 305 - perf equivalence: removed and reinserted nodes and a different root cannot contaminate a live snapshot
+  ---
+  duration_ms: 28.904302
+  type: 'test'
+  ...
+# Subtest: perf equivalence: old views survive conflict, topology and bucket changes plus option and clock boundaries
+ok 306 - perf equivalence: old views survive conflict, topology and bucket changes plus option and clock boundaries
+  ---
+  duration_ms: 24.0976
+  type: 'test'
+  ...
+# Subtest: perf memo identity: consecutive hits, envelope-only wrappers, and all three tuple references
+ok 307 - perf memo identity: consecutive hits, envelope-only wrappers, and all three tuple references
+  ---
+  duration_ms: 2.794833
+  type: 'test'
+  ...
+# Subtest: perf memo policy: one live tuple is retained, A to B to A evicts without retargeting snapshots
+ok 308 - perf memo policy: one live tuple is retained, A to B to A evicts without retargeting snapshots
+  ---
+  duration_ms: 1.700871
+  type: 'test'
+  ...
+# Subtest: perf memo isolation: a custom projection cache neither hits nor replaces the shared tuple
+ok 309 - perf memo isolation: a custom projection cache neither hits nor replaces the shared tuple
+  ---
+  duration_ms: 0.729927
+  type: 'test'
+  ...
+# Subtest: perf snapshots: unread lazy rows and equal render facts with a newer descriptor keep their own views
+ok 310 - perf snapshots: unread lazy rows and equal render facts with a newer descriptor keep their own views
+  ---
+  duration_ms: 10.565963
+  type: 'test'
+  ...
+# Subtest: perf cache churn: repeated keys under distinct roots sweep disappeared entries and preserve old trees
+ok 311 - perf cache churn: repeated keys under distinct roots sweep disappeared entries and preserve old trees
+  ---
+  duration_ms: 3.011047
+  type: 'test'
+  ...
+# (node:134121) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.084ms p95=0.197ms p99=0.795ms max=1.162ms strict=false
+# b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.305ms p95=0.789ms p99=1.183ms max=1.719ms strict=false
+# b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.512ms p95=1.182ms p99=1.637ms max=3.009ms strict=false
+# b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.087ms p95=0.209ms p99=0.650ms max=1.126ms strict=false
+# b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.300ms p95=0.792ms p99=1.285ms max=2.066ms strict=false
+# b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.799ms p95=1.736ms p99=2.121ms max=2.918ms strict=false
+# b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.429ms p95=3.643ms p99=4.983ms max=6.613ms strict=false
+# b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.168ms p95=3.078ms p99=4.353ms max=6.403ms strict=false
+# b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.286ms p95=4.893ms p99=6.166ms max=8.664ms strict=false
+# b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.624ms p95=5.017ms p99=6.344ms max=13.321ms strict=false
+# b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=2.087ms p95=6.545ms p99=12.234ms max=19.386ms strict=false
+# b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=5.024ms p95=10.927ms p99=14.743ms max=81.224ms strict=false
+# b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.963ms p95=1.841ms p99=2.914ms max=4.693ms strict=false
+# b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=5.432ms p95=12.720ms p99=15.618ms max=37.325ms strict=false
+# b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=1.347ms p95=2.664ms p99=3.865ms max=14.516ms strict=false
+# b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=6.793ms p95=13.282ms p99=19.800ms max=42.620ms strict=false
+# Subtest: the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+ok 312 - the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+  ---
+  duration_ms: 3256.994835
+  type: 'test'
+  ...
+# Subtest: compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+ok 313 - compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+  ---
+  duration_ms: 18822.016541
+  type: 'test'
+  ...
+# Subtest: rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+ok 314 - rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+  ---
+  duration_ms: 30157.66166
+  type: 'test'
+  ...
+# Subtest: printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+ok 315 - printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+  ---
+  duration_ms: 35361.375005
+  type: 'test'
+  ...
+# (node:136386) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a sub-row’s line is the sub-row’s own item and belongs to its card; the card’s other lines are the card’s
+ok 316 - a sub-row’s line is the sub-row’s own item and belongs to its card; the card’s other lines are the card’s
+  ---
+  duration_ms: 20.354719
+  type: 'test'
+  ...
+# Subtest: a click on a sub-row’s line selects it and does not scroll; the selection draws on that line
+ok 317 - a click on a sub-row’s line selects it and does not scroll; the selection draws on that line
+  ---
+  duration_ms: 21.632363
+  type: 'test'
+  ...
+# Subtest: keys walk into a card’s sub-rows and out again, one row at a time
+ok 318 - keys walk into a card’s sub-rows and out again, one row at a time
+  ---
+  duration_ms: 24.066631
+  type: 'test'
+  ...
+# Subtest: a key move to a sub-row reveals it; a stay does not move the view
+ok 319 - a key move to a sub-row reveals it; a stay does not move the view
+  ---
+  duration_ms: 14.778562
+  type: 'test'
+  ...
+# Subtest: the card that holds the selected sub-row never folds on its own; its unselected siblings do
+ok 320 - the card that holds the selected sub-row never folds on its own; its unselected siblings do
+  ---
+  duration_ms: 4.188893
+  type: 'test'
+  ...
+# Subtest: sub-rows past the fifth are no destinations: ↓ from the fifth leaves the card, and a click on the +N line selects the card
+ok 321 - sub-rows past the fifth are no destinations: ↓ from the fifth leaves the card, and a click on the +N line selects the card
+  ---
+  duration_ms: 5.059362
+  type: 'test'
+  ...
+# Subtest: moving onto a card with sub-rows scrolls the whole card into view, its foot included
+ok 322 - moving onto a card with sub-rows scrolls the whole card into view, its foot included
+  ---
+  duration_ms: 5.5965
+  type: 'test'
+  ...
+# Subtest: rich: the destinations are in the order the cards draw them, not the plan’s depth-first order
+ok 323 - rich: the destinations are in the order the cards draw them, not the plan’s depth-first order
+  ---
+  duration_ms: 3.91781
+  type: 'test'
+  ...
+# Subtest: rich: ↓ walks the screen, Home and End go to its first and last row, ↑ walks back
+ok 324 - rich: ↓ walks the screen, Home and End go to its first and last row, ↑ walks back
+  ---
+  duration_ms: 16.747671
+  type: 'test'
+  ...
+# Subtest: rich: n and N visit the stops in screen order
+ok 325 - rich: n and N visit the stops in screen order
+  ---
+  duration_ms: 11.095467
+  type: 'test'
+  ...
+# Subtest: rich: l on the fifth sub-row whose children are past the fifth does nothing (they are no destinations)
+ok 326 - rich: l on the fifth sub-row whose children are past the fifth does nothing (they are no destinations)
+  ---
+  duration_ms: 1.478477
+  type: 'test'
+  ...
+# Subtest: l enters a native sub-row's history child by parent identity, not screen adjacency
+ok 327 - l enters a native sub-row's history child by parent identity, not screen adjacency
+  ---
+  duration_ms: 2.705778
+  type: 'test'
+  ...
+# Subtest: l enters a native sub-row's card child by parent identity, not screen adjacency
+ok 328 - l enters a native sub-row's card child by parent identity, not screen adjacency
+  ---
+  duration_ms: 2.553023
+  type: 'test'
+  ...
+# (node:136396) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a destination stays selected across a tick that rebuilds every object of the view model
+ok 329 - a destination stays selected across a tick that rebuilds every object of the view model
+  ---
+  duration_ms: 34.721962
+  type: 'test'
+  ...
+# Subtest: an intent binding follows tree.selectionMap to its session, in both styles
+ok 330 - an intent binding follows tree.selectionMap to its session, in both styles
+  ---
+  duration_ms: 13.084644
+  type: 'test'
+  ...
+# Subtest: a chain of mappings is followed to a key that is on the list; one that leads nowhere falls to the first row
+ok 331 - a chain of mappings is followed to a key that is on the list; one that leads nowhere falls to the first row
+  ---
+  duration_ms: 0.907792
+  type: 'test'
+  ...
+# Subtest: a node that is gone with no mapping falls to the first row; so does no selection at all
+ok 332 - a node that is gone with no mapping falls to the first row; so does no selection at all
+  ---
+  duration_ms: 2.569434
+  type: 'test'
+  ...
+# Subtest: a finished row that is put away passes the selection to the ⊕N row that holds it
+ok 333 - a finished row that is put away passes the selection to the ⊕N row that holds it
+  ---
+  duration_ms: 9.845722
+  type: 'test'
+  ...
+# Subtest: a row under a collapsed ancestor passes the selection to that ancestor
+ok 334 - a row under a collapsed ancestor passes the selection to that ancestor
+  ---
+  duration_ms: 5.914851
+  type: 'test'
+  ...
+# Subtest: a rich card past its fifth sub-row: the sixth is no destination, its card is selected
+ok 335 - a rich card past its fifth sub-row: the sixth is no destination, its card is selected
+  ---
+  duration_ms: 2.368871
+  type: 'test'
+  ...
+# Subtest: a ⊕N row stays selected when a row is inserted above it: it is the parent that identifies it
+ok 336 - a ⊕N row stays selected when a row is inserted above it: it is the parent that identifies it
+  ---
+  duration_ms: 2.520404
+  type: 'test'
+  ...
+# Subtest: after `a` the ⊕N row is gone and the selection lands at its old place, where its rows came back
+ok 337 - after `a` the ⊕N row is gone and the selection lands at its old place, where its rows came back
+  ---
+  duration_ms: 6.78916
+  type: 'test'
+  ...
+# Subtest: a ⊕N row whose parent is put away passes the selection to the grandparent’s ⊕N row
+ok 338 - a ⊕N row whose parent is put away passes the selection to the grandparent’s ⊕N row
+  ---
+  duration_ms: 2.317306
+  type: 'test'
+  ...
+# Subtest: the summary row and the parent row are never destinations
+ok 339 - the summary row and the parent row are never destinations
+  ---
+  duration_ms: 1.426832
+  type: 'test'
+  ...
+# Subtest: tree-page order: a reconcile with no view model, then the render with it: the selection survives; not without the mark
+ok 340 - tree-page order: a reconcile with no view model, then the render with it: the selection survives; not without the mark
+  ---
+  duration_ms: 1.932391
+  type: 'test'
+  ...
+# Subtest: the mark is written by every reconcile against a view model, drawn or not, and by nothing else
+ok 341 - the mark is written by every reconcile against a view model, drawn or not, and by nothing else
+  ---
+  duration_ms: 9.11392
+  type: 'test'
+  ...
+# Subtest: with a null view model the state has no mark and the selection falls back as in legacy
+ok 342 - with a null view model the state has no mark and the selection falls back as in legacy
+  ---
+  duration_ms: 7.041364
+  type: 'test'
+  ...
+# Subtest: a stale press resolves against the frame the user saw, never against a newer view model
+ok 343 - a stale press resolves against the frame the user saw, never against a newer view model
+  ---
+  duration_ms: 2.071038
+  type: 'test'
+  ...
+# Subtest: situation D: an empty state starts on the first row, the viewpoint root
+ok 344 - situation D: an empty state starts on the first row, the viewpoint root
+  ---
+  duration_ms: 2.645957
+  type: 'test'
+  ...
+# (node:136424) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 32 columns: a headless row without a state word keeps its whole name and drops ⊟ (the §4.13 sample)
+ok 345 - 32 columns: a headless row without a state word keeps its whole name and drops ⊟ (the §4.13 sample)
+  ---
+  duration_ms: 7.073364
+  type: 'test'
+  ...
+# Subtest: 39 columns: ⊟ stays while the whole name fits beside it, and is the first thing to go when it does not
+ok 346 - 39 columns: ⊟ stays while the whole name fits beside it, and is the first thing to go when it does not
+  ---
+  duration_ms: 2.038067
+  type: 'test'
+  ...
+# Subtest: 34 columns: the boundary, ⊟ kept by the name that fits, dropped by the one that does not
+ok 347 - 34 columns: the boundary, ⊟ kept by the name that fits, dropped by the one that does not
+  ---
+  duration_ms: 1.882328
+  type: 'test'
+  ...
+# Subtest: the name is cut to its 8-column floor at most, and the ⊟ stays gone
+ok 348 - the name is cut to its 8-column floor at most, and the ⊟ stays gone
+  ---
+  duration_ms: 3.772211
+  type: 'test'
+  ...
+# Subtest: 40 columns and up are untouched: the name is cut to its floor beside ⊟ (segment 1)
+ok 349 - 40 columns and up are untouched: the name is cut to its floor beside ⊟ (segment 1)
+  ---
+  duration_ms: 1.365086
+  type: 'test'
+  ...
+# Subtest: a row with a state word keeps its segment 1 order (the word goes, then ⊟ comes back if it fits)
+ok 350 - a row with a state word keeps its segment 1 order (the word goes, then ⊟ comes back if it fits)
+  ---
+  duration_ms: 0.738537
+  type: 'test'
+  ...
+# (node:136432) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: onSelectedBand: the floors against selectedBand, and a role that meets its floor is the plain role
+ok 351 - onSelectedBand: the floors against selectedBand, and a role that meets its floor is the plain role
+  ---
+  duration_ms: 4.497238
+  type: 'test'
+  ...
+# Subtest: onSelectedBand: without a band (none, terminal) the family is the plain roles
+ok 352 - onSelectedBand: without a band (none, terminal) the family is the plain roles
+  ---
+  duration_ms: 0.340333
+  type: 'test'
+  ...
+# Subtest: model badge: the default paints are the palette roles, and a given table recolours exactly its spans
+ok 353 - model badge: the default paints are the palette roles, and a given table recolours exactly its spans
+  ---
+  duration_ms: 34.487651
+  type: 'test'
+  ...
+# Subtest: selected row: markers and words carry the family hue of their role, on the band (mocha, latte, titanium)
+ok 354 - selected row: markers and words carry the family hue of their role, on the band (mocha, latte, titanium)
+  ---
+  duration_ms: 18.601466
+  type: 'test'
+  ...
+# Subtest: selected row: every cell is the band's own ink, at 3:1 or better (clock, badge, meter, tree, name, harness mark)
+ok 355 - selected row: every cell is the band's own ink, at 3:1 or better (clock, badge, meter, tree, name, harness mark)
+  ---
+  duration_ms: 13.888803
+  type: 'test'
+  ...
+# Subtest: selected row: the latte status hues are the calibrated ones, and never the plain ones
+ok 356 - selected row: the latte status hues are the calibrated ones, and never the plain ones
+  ---
+  duration_ms: 2.412804
+  type: 'test'
+  ...
+# Subtest: selected row: the selection mark, the tree, the name and the harness mark
+ok 357 - selected row: the selection mark, the tree, the name and the harness mark
+  ---
+  duration_ms: 3.077409
+  type: 'test'
+  ...
+# Subtest: selected row: the model badge is painted with the family (text, glyph and both modes)
+ok 358 - selected row: the model badge is painted with the family (text, glyph and both modes)
+  ---
+  duration_ms: 8.936055
+  type: 'test'
+  ...
+# Subtest: selected row: the context meter is painted with the family zones (70 and 85 as ever)
+ok 359 - selected row: the context meter is painted with the family zones (70 and 85 as ever)
+  ---
+  duration_ms: 5.099836
+  type: 'test'
+  ...
+# (node:136440) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: the counts end the first line: 2 working, 1 flag, 1 done
+ok 360 - the counts end the first line: 2 working, 1 flag, 1 done
+  ---
+  duration_ms: 6.645736
+  type: 'test'
+  ...
+# Subtest: 80 columns: the design sample, plus the finished item the engine keeps
+ok 361 - 80 columns: the design sample, plus the finished item the engine keeps
+  ---
+  duration_ms: 3.661443
+  type: 'test'
+  ...
+# Subtest: 120 columns: the design sample exactly, with the pane
+ok 362 - 120 columns: the design sample exactly, with the pane
+  ---
+  duration_ms: 1.514088
+  type: 'test'
+  ...
+# Subtest: 200 columns: each item carries its pane and mode
+ok 363 - 200 columns: each item carries its pane and mode
+  ---
+  duration_ms: 0.890324
+  type: 'test'
+  ...
+# Subtest: the line is never wider than the width, at any width
+ok 364 - the line is never wider than the width, at any width
+  ---
+  duration_ms: 224.037239
+  type: 'test'
+  ...
+# Subtest: the ladder: pane and mode go first, then ages, then actives into +N▸, trouble last of all
+ok 365 - the ladder: pane and mode go first, then ages, then actives into +N▸, trouble last of all
+  ---
+  duration_ms: 6.301755
+  type: 'test'
+  ...
+# Subtest: trouble items come newest first, ahead of the actives (§3.2); a conflict is one item however many parents claim it
+ok 366 - trouble items come newest first, ahead of the actives (§3.2); a conflict is one item however many parents claim it
+  ---
+  duration_ms: 0.828339
+  type: 'test'
+  ...
+# Subtest: the ladder drops the troubled items words before it turns them into counts, in the order ⚑ ? ⚠ ✗
+ok 367 - the ladder drops the troubled items words before it turns them into counts, in the order ⚑ ? ⚠ ✗
+  ---
+  duration_ms: 24.871158
+  type: 'test'
+  ...
+# Subtest: close pane and stop in pane are alive in fact: kept as items, ahead of +N, never folded
+ok 368 - close pane and stop in pane are alive in fact: kept as items, ahead of +N, never folded
+  ---
+  duration_ms: 1.854462
+  type: 'test'
+  ...
+# Subtest: a full set of slots appends `· 6/6` to the count, and adds no item
+ok 369 - a full set of slots appends `· 6/6` to the count, and adds no item
+  ---
+  duration_ms: 3.896665
+  type: 'test'
+  ...
+# Subtest: the remainder counts agree with the first line: ✗ for a failure, ■ counted with ✓
+ok 370 - the remainder counts agree with the first line: ✗ for a failure, ■ counted with ✓
+  ---
+  duration_ms: 0.856982
+  type: 'test'
+  ...
+# Subtest: height: 1 without live or troubled delegations, 2 with them
+ok 371 - height: 1 without live or troubled delegations, 2 with them
+  ---
+  duration_ms: 0.66214
+  type: 'test'
+  ...
+# Subtest: a root alone, with nothing delegated, adds no count and no line
+ok 372 - a root alone, with nothing delegated, adds no count and no line
+  ---
+  duration_ms: 0.960916
+  type: 'test'
+  ...
+# Subtest: delegationLine=false keeps the count and drops the second line
+ok 373 - delegationLine=false keeps the count and drops the second line
+  ---
+  duration_ms: 0.37647
+  type: 'test'
+  ...
+# Subtest: too narrow for any item: only the first line (height 1)
+ok 374 - too narrow for any item: only the first line (height 1)
+  ---
+  duration_ms: 0.332237
+  type: 'test'
+  ...
+# Subtest: ASCII fallback: no non-ASCII character in the count or the line, same shape
+ok 375 - ASCII fallback: no non-ASCII character in the count or the line, same shape
+  ---
+  duration_ms: 4.545847
+  type: 'test'
+  ...
+# Subtest: CJK names: widths are measured in columns and the line still fits
+ok 376 - CJK names: widths are measured in columns and the line still fits
+  ---
+  duration_ms: 1.838617
+  type: 'test'
+  ...
+# Subtest: Chinese words come from the table, the markers and names do not change
+ok 377 - Chinese words come from the table, the markers and names do not change
+  ---
+  duration_ms: 0.99571
+  type: 'test'
+  ...
+# Subtest: countsText is the count alone, and empty when nothing was delegated
+ok 378 - countsText is the count alone, and empty when nothing was delegated
+  ---
+  duration_ms: 0.429118
+  type: 'test'
+  ...
+# Subtest: joinFirstLine keeps the count at the end and cuts the session facts first
+ok 379 - joinFirstLine keeps the count at the end and cuts the session facts first
+  ---
+  duration_ms: 0.583885
+  type: 'test'
+  ...
+# Subtest: §3.4: an item whose age cannot be measured has no age, never `0s`
+ok 380 - §3.4: an item whose age cannot be measured has no age, never `0s`
+  ---
+  duration_ms: 0.420461
+  type: 'test'
+  ...
+# Subtest: ASCII: the statusline holds nothing but ASCII, a capped name included
+ok 381 - ASCII: the statusline holds nothing but ASCII, a capped name included
+  ---
+  duration_ms: 0.464143
+  type: 'test'
+  ...
+1..381
+# tests 381
+# suites 0
+# pass 381
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 210532.1749
+# end: 2026-11-03T16:20:21Z
+# exit: 0

@@ -1,0 +1,569 @@
+# target=hyg2 runtime=node22 commit=2bcaa4f9c8eb2c1c230a0249c0fa40bccd6fbd31 cwd=<wt>/hyg2
+# command: npm run test:hud-mcp
+# start: 2026-11-03T16:07:18Z
+(node:104460) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> codex-hud@0.1.0 test:hud-mcp
+> npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js
+
+(node:104473) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+
+(node:104592) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:104599) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool
+ok 1 - refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool
+  ---
+  duration_ms: 2.5451
+  type: 'test'
+  ...
+# Subtest: dual MCP instance shares scope and owner; stale first-bind CAS refuses
+ok 2 - dual MCP instance shares scope and owner; stale first-bind CAS refuses
+  ---
+  duration_ms: 14.103157
+  type: 'test'
+  ...
+# Subtest: /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A
+ok 3 - /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A
+  ---
+  duration_ms: 10.335976
+  type: 'test'
+  ...
+# Subtest: wrong generation is refused before currentAuthority can authorize an intent
+ok 4 - wrong generation is refused before currentAuthority can authorize an intent
+  ---
+  duration_ms: 6.165418
+  type: 'test'
+  ...
+# (node:104600) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot
+ok 5 - delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot
+  ---
+  duration_ms: 566.785349
+  type: 'test'
+  ...
+# Subtest: B19 merge: one real status and spawn response retain cache keys and advice.wake
+ok 6 - B19 merge: one real status and spawn response retain cache keys and advice.wake
+  ---
+  duration_ms: 603.188981
+  type: 'test'
+  ...
+# Subtest: the checked-in §5.2 file never guesses an auth label for a codex caller
+ok 7 - the checked-in §5.2 file never guesses an auth label for a codex caller
+  ---
+  duration_ms: 464.947888
+  type: 'test'
+  ...
+# Subtest: a missing cache.json is a valid empty snapshot with empty advice
+ok 8 - a missing cache.json is a valid empty snapshot with empty advice
+  ---
+  duration_ms: 537.174998
+  type: 'test'
+  ...
+# Subtest: an invalid cache.json still serves status and spawn with configError and empty advice
+ok 9 - an invalid cache.json still serves status and spawn with configError and empty advice
+  ---
+  duration_ms: 470.527242
+  type: 'test'
+  ...
+# Subtest: status and every spawn outcome perform no cache file access after startup
+ok 10 - status and every spawn outcome perform no cache file access after startup
+  ---
+  duration_ms: 538.170143
+  type: 'test'
+  ...
+# Subtest: status and spawn merge the cache advice over an existing advice object
+ok 11 - status and spawn merge the cache advice over an existing advice object
+  ---
+  duration_ms: 552.861491
+  type: 'test'
+  ...
+# Subtest: a thrown spawn refusal carries advice at the server boundary for valid and invalid snapshots
+ok 12 - a thrown spawn refusal carries advice at the server boundary for valid and invalid snapshots
+  ---
+  duration_ms: 458.261415
+  type: 'test'
+  ...
+# Subtest: hud-mcp starts and answers initialize with a valid and with an invalid cache.json
+ok 13 - hud-mcp starts and answers initialize with a valid and with an invalid cache.json
+  ---
+  duration_ms: 711.581573
+  type: 'test'
+  ...
+# (node:104601) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: shared delegate config accepts optional roles and the exact Claude call-source mechanism
+ok 14 - shared delegate config accepts optional roles and the exact Claude call-source mechanism
+  ---
+  duration_ms: 5.578226
+  type: 'test'
+  ...
+# Subtest: call-source selection is Claude-only and rejects unknown keys, kinds and malformed shapes
+ok 15 - call-source selection is Claude-only and rejects unknown keys, kinds and malformed shapes
+  ---
+  duration_ms: 3.101233
+  type: 'test'
+  ...
+# Subtest: delegate envelope keeps its version, unique-name, profile-count and file-byte bounds
+ok 16 - delegate envelope keeps its version, unique-name, profile-count and file-byte bounds
+  ---
+  duration_ms: 6.346173
+  type: 'test'
+  ...
+# Subtest: config without A5 keys loads exact NOTIFY defaults
+ok 17 - config without A5 keys loads exact NOTIFY defaults
+  ---
+  duration_ms: 2.654122
+  type: 'test'
+  ...
+# (node:104605) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: B45 accepted spawn is atomic, lost response replays immutable result with zero second launch
+ok 18 - B45 accepted spawn is atomic, lost response replays immutable result with zero second launch
+  ---
+  duration_ms: 590.145052
+  type: 'test'
+  ...
+# Subtest: B45 different owner same request key is isolated; unverified new intent refuses
+ok 19 - B45 different owner same request key is isolated; unverified new intent refuses
+  ---
+  duration_ms: 689.541254
+  type: 'test'
+  ...
+# Subtest: B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay
+ok 20 - B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay
+  ---
+  duration_ms: 653.691025
+  type: 'test'
+  ...
+# Subtest: B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates
+ok 21 - B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates
+  ---
+  duration_ms: 672.649515
+  type: 'test'
+  ...
+# {"diagnostic":"dispatch_unknown","runId":"c23b43c5-b297-4f8d-9c01-8f46042dab7b"}
+# Subtest: B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits
+ok 22 - B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits
+  ---
+  duration_ms: 639.846361
+  type: 'test'
+  ...
+# Subtest: B45 same-owner predecessor atomically transfers one child and replays before historical gates
+ok 23 - B45 same-owner predecessor atomically transfers one child and replays before historical gates
+  ---
+  duration_ms: 680.795872
+  type: 'test'
+  ...
+# Subtest: B45 distinct backend source is registered atomically with acceptance
+ok 24 - B45 distinct backend source is registered atomically with acceptance
+  ---
+  duration_ms: 326.787861
+  type: 'test'
+  ...
+# Subtest: B45 headless build refuses explicit visible layouts instead of discarding them
+ok 25 - B45 headless build refuses explicit visible layouts instead of discarding them
+  ---
+  duration_ms: 289.799039
+  type: 'test'
+  ...
+# (node:104613) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: B45 synthetic whoami/report success refusal busy distributions with real SQLite writer contention
+ok 26 - B45 synthetic whoami/report success refusal busy distributions with real SQLite writer contention # SKIP Set HUD_B45_BENCH=1 and run this benchmark alone to measure without parallel test I/O
+  ---
+  duration_ms: 0.879444
+  type: 'test'
+  ...
+# (node:104619) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: B45 whoami env claim binds exact independently observed launch and report
+ok 27 - B45 whoami env claim binds exact independently observed launch and report
+  ---
+  duration_ms: 557.386349
+  type: 'test'
+  ...
+# Subtest: B45 whoami parameter claim binds exact independently observed launch and report
+ok 28 - B45 whoami parameter claim binds exact independently observed launch and report
+  ---
+  duration_ms: 655.529563
+  type: 'test'
+  ...
+# Subtest: B45 whoami launch evidence missing stays pending; env conflicts and wrong run refuse
+ok 29 - B45 whoami launch evidence missing stays pending; env conflicts and wrong run refuse
+  ---
+  duration_ms: 515.55711
+  type: 'test'
+  ...
+# Subtest: B45 copied fork claim refuses before consumption, expiry boundary and bound retry after TTL
+ok 30 - B45 copied fork claim refuses before consumption, expiry boundary and bound retry after TTL
+  ---
+  duration_ms: 579.44079
+  type: 'test'
+  ...
+# Subtest: B45 same-process MCP restart rebuilds binding with independent proof and never redeems twice
+ok 31 - B45 same-process MCP restart rebuilds binding with independent proof and never redeems twice
+  ---
+  duration_ms: 671.090883
+  type: 'test'
+  ...
+# Subtest: B45 identity ProcessKey and run stamp keep their distinct domain encodings on the same host
+ok 32 - B45 identity ProcessKey and run stamp keep their distinct domain encodings on the same host
+  ---
+  duration_ms: 565.375516
+  type: 'test'
+  ...
+# Subtest: BID1 handshake refuses a missing run domain and never accepts the caller form
+ok 33 - BID1 handshake refuses a missing run domain and never accepts the caller form
+  ---
+  duration_ms: 397.981193
+  type: 'test'
+  ...
+# (node:104630) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:104630) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files
+ok 34 - hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files
+  ---
+  duration_ms: 9.442085
+  type: 'test'
+  ...
+# Subtest: missing then late record never revives a refused call; a new exact call can retry
+ok 35 - missing then late record never revives a refused call; a new exact call can retry
+  ---
+  duration_ms: 2.668068
+  type: 'test'
+  ...
+# Subtest: half-written, oversized, symlink and duplicate conflicting publications refuse
+ok 36 - half-written, oversized, symlink and duplicate conflicting publications refuse
+  ---
+  duration_ms: 12.568254
+  type: 'test'
+  ...
+# Subtest: wrong hook version refuses even with a matching content fingerprint
+ok 37 - wrong hook version refuses even with a matching content fingerprint
+  ---
+  duration_ms: 3.610271
+  type: 'test'
+  ...
+# Subtest: wrong hook implementation refuses even with a matching content fingerprint
+ok 38 - wrong hook implementation refuses even with a matching content fingerprint
+  ---
+  duration_ms: 2.095403
+  type: 'test'
+  ...
+# Subtest: wrong hook claudeVersion refuses even with a matching content fingerprint
+ok 39 - wrong hook claudeVersion refuses even with a matching content fingerprint
+  ---
+  duration_ms: 3.465991
+  type: 'test'
+  ...
+# Subtest: wrong hook profileFingerprint refuses even with a matching content fingerprint
+ok 40 - wrong hook profileFingerprint refuses even with a matching content fingerprint
+  ---
+  duration_ms: 3.429212
+  type: 'test'
+  ...
+# Subtest: wrong hook sourceId refuses even with a matching content fingerprint
+ok 41 - wrong hook sourceId refuses even with a matching content fingerprint
+  ---
+  duration_ms: 3.037434
+  type: 'test'
+  ...
+# Subtest: wrong hook processKey refuses even with a matching content fingerprint
+ok 42 - wrong hook processKey refuses even with a matching content fingerprint
+  ---
+  duration_ms: 3.456283
+  type: 'test'
+  ...
+# Subtest: wrong hook bootId refuses even with a matching content fingerprint
+ok 43 - wrong hook bootId refuses even with a matching content fingerprint
+  ---
+  duration_ms: 2.431739
+  type: 'test'
+  ...
+# Subtest: wrong hook serverName refuses even with a matching content fingerprint
+ok 44 - wrong hook serverName refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.940126
+  type: 'test'
+  ...
+# Subtest: wrong hook toolUseId refuses even with a matching content fingerprint
+ok 45 - wrong hook toolUseId refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.738761
+  type: 'test'
+  ...
+# Subtest: wrong hook toolName refuses even with a matching content fingerprint
+ok 46 - wrong hook toolName refuses even with a matching content fingerprint
+  ---
+  duration_ms: 3.874555
+  type: 'test'
+  ...
+# Subtest: wrong hook sessionId refuses even with a matching content fingerprint
+ok 47 - wrong hook sessionId refuses even with a matching content fingerprint
+  ---
+  duration_ms: 3.525047
+  type: 'test'
+  ...
+# Subtest: wrong hook hookStartMonoMs refuses even with a matching content fingerprint
+ok 48 - wrong hook hookStartMonoMs refuses even with a matching content fingerprint
+  ---
+  duration_ms: 2.356228
+  type: 'test'
+  ...
+# Subtest: wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint
+ok 49 - wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint
+  ---
+  duration_ms: 3.185109
+  type: 'test'
+  ...
+# Subtest: wrong hook publishedMonoMs refuses even with a matching content fingerprint
+ok 50 - wrong hook publishedMonoMs refuses even with a matching content fingerprint
+  ---
+  duration_ms: 2.210849
+  type: 'test'
+  ...
+# Subtest: native child with root transcript path refuses and leaves subsequent root verifiable
+ok 51 - native child with root transcript path refuses and leaves subsequent root verifiable
+  ---
+  duration_ms: 2.72297
+  type: 'test'
+  ...
+# Subtest: A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation
+ok 52 - A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation
+  ---
+  duration_ms: 2.76647
+  type: 'test'
+  ...
+# Subtest: CLI settings preserve existing hooks/config and match only the seven exact server tools
+ok 53 - CLI settings preserve existing hooks/config and match only the seven exact server tools
+  ---
+  duration_ms: 2.950422
+  type: 'test'
+  ...
+# Subtest: scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file
+ok 54 - scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file
+  ---
+  duration_ms: 389.906303
+  type: 'test'
+  ...
+# Subtest: resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear
+ok 55 - resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear
+  ---
+  duration_ms: 11.232634
+  type: 'test'
+  ...
+# Subtest: scope reader refuses unsupported runtimes before touching a missing path
+ok 56 - scope reader refuses unsupported runtimes before touching a missing path
+  ---
+  duration_ms: 266.17776
+  type: 'test'
+  ...
+# Subtest: hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values
+ok 57 - hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values
+  ---
+  duration_ms: 1.292832
+  type: 'test'
+  ...
+# Subtest: fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies
+ok 58 - fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies
+  ---
+  duration_ms: 3.199435
+  type: 'test'
+  ...
+# (node:104632) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: int hud-mcp physical caller registration persists real procStart/cwd without logical authority
+not ok 59 - int hud-mcp physical caller registration persists real procStart/cwd without logical authority
+  ---
+  duration_ms: 201.250012
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js:14:1'
+  failureType: 'testCodeFailure'
+  error: "EACCES: permission denied, open '/proc/29952/environ'"
+  code: 'EACCES'
+  stack: |-
+    openSync (node:fs:560:18)
+    readBounded (file://<VERIFY_ROOT>/wt/hyg2/packages/hud-mcp/dist/packages/hud-mcp/src/io.js:5:16)
+    LinuxProcessReader.get (file://<VERIFY_ROOT>/wt/hyg2/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:19:29)
+    findHarness (file://<VERIFY_ROOT>/wt/hyg2/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:55:32)
+    registerCaller (file://<VERIFY_ROOT>/wt/hyg2/packages/hud-mcp/dist/packages/hud-mcp/src/registry.js:65:19)
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js:36:36)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: int hud-mcp composition uses existing ledger even when diagnostic registry requested
+ok 60 - int hud-mcp composition uses existing ledger even when diagnostic registry requested
+  ---
+  duration_ms: 480.090763
+  type: 'test'
+  ...
+# (node:104640) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required
+ok 61 - G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required
+  ---
+  duration_ms: 2.148428
+  type: 'test'
+  ...
+# Subtest: G03 old request key replays its original run after a newer run appeared and ended
+ok 62 - G03 old request key replays its original run after a newer run appeared and ended
+  ---
+  duration_ms: 839.844551
+  type: 'test'
+  ...
+# Subtest: G03 same request key with a different expectedRun conflicts without a new intent
+ok 63 - G03 same request key with a different expectedRun conflicts without a new intent
+  ---
+  duration_ms: 710.69406
+  type: 'test'
+  ...
+# Subtest: G03 two callers that read the same run and race with different keys create at most one intent
+ok 64 - G03 two callers that read the same run and race with different keys create at most one intent
+  ---
+  duration_ms: 675.226043
+  type: 'test'
+  ...
+# Subtest: G03 an old expectedRun is still refused after another run started and ended
+ok 65 - G03 an old expectedRun is still refused after another run started and ended
+  ---
+  duration_ms: 692.190677
+  type: 'test'
+  ...
+# Subtest: G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest
+ok 66 - G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest
+  ---
+  duration_ms: 727.908553
+  type: 'test'
+  ...
+# Subtest: G03 local management resume still requires expectedRun
+ok 67 - G03 local management resume still requires expectedRun
+  ---
+  duration_ms: 501.787581
+  type: 'test'
+  ...
+# (node:104645) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts
+ok 68 - delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts
+  ---
+  duration_ms: 5.62486
+  type: 'test'
+  ...
+# Subtest: registration records A4 fields and verified physical start; file fake remains private and refuses overwrite
+ok 69 - registration records A4 fields and verified physical start; file fake remains private and refuses overwrite
+  ---
+  duration_ms: 49.475018
+  type: 'test'
+  ...
+# Subtest: unknown cwd is a typed refusal before registry write
+ok 70 - unknown cwd is a typed refusal before registry write
+  ---
+  duration_ms: 1.023042
+  type: 'test'
+  ...
+# Subtest: real /proc registration stamp and PID domain are read without environment secrets
+ok 71 - real /proc registration stamp and PID domain are read without environment secrets
+  ---
+  duration_ms: 1.805526
+  type: 'test'
+  ...
+# Subtest: Codex root combination resolves, native child refuses without invalidating subsequent root
+ok 72 - Codex root combination resolves, native child refuses without invalidating subsequent root
+  ---
+  duration_ms: 11.409672
+  type: 'test'
+  ...
+# Subtest: missing, conflicting and forged arguments metadata never falls back to remembered root/proc
+ok 73 - missing, conflicting and forged arguments metadata never falls back to remembered root/proc
+  ---
+  duration_ms: 5.916434
+  type: 'test'
+  ...
+# Subtest: session switches remain source diagnostics; shared ledger supplies the generation gate
+ok 74 - session switches remain source diagnostics; shared ledger supplies the generation gate
+  ---
+  duration_ms: 4.701276
+  type: 'test'
+  ...
+# Subtest: PID reuse, source mismatch, missing header and unmeasured Codex versions refuse
+ok 75 - PID reuse, source mismatch, missing header and unmeasured Codex versions refuse
+  ---
+  duration_ms: 1.790126
+  type: 'test'
+  ...
+# Subtest: Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId
+ok 76 - Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId
+  ---
+  duration_ms: 0.665908
+  type: 'test'
+  ...
+# Subtest: Claude late/missing public call refuses, observed record still cannot upgrade unverified profile
+ok 77 - Claude late/missing public call refuses, observed record still cannot upgrade unverified profile
+  ---
+  duration_ms: 4.307323
+  type: 'test'
+  ...
+# Subtest: pi explicit session path resolver checks header and source; directory alone grants nothing
+ok 78 - pi explicit session path resolver checks header and source; directory alone grants nothing
+  ---
+  duration_ms: 3.609376
+  type: 'test'
+  ...
+# Subtest: seven MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments
+ok 79 - seven MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments
+  ---
+  duration_ms: 0.991001
+  type: 'test'
+  ...
+# Subtest: runtime rejects Node 18, 22.12 and 23 before importing package entry
+ok 80 - runtime rejects Node 18, 22.12 and 23 before importing package entry
+  ---
+  duration_ms: 213.550095
+  type: 'test'
+  ...
+# Subtest: runtime accepts declared 22.13 and 24 entry boundaries
+ok 81 - runtime accepts declared 22.13 and 24 entry boundaries
+  ---
+  duration_ms: 955.480934
+  type: 'test'
+  ...
+# Subtest: bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths
+ok 82 - bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths
+  ---
+  duration_ms: 6.368755
+  type: 'test'
+  ...
+# Subtest: source/header mismatch, missing header and daemon topology cannot resolve identity
+ok 83 - source/header mismatch, missing header and daemon topology cannot resolve identity
+  ---
+  duration_ms: 2.899692
+  type: 'test'
+  ...
+# Subtest: stdio framing rejects malformed JSON, ignores notifications and serializes stub replies
+ok 84 - stdio framing rejects malformed JSON, ignores notifications and serializes stub replies
+  ---
+  duration_ms: 3.026433
+  type: 'test'
+  ...
+1..84
+# tests 84
+# suites 0
+# pass 82
+# fail 1
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 5127.199974
+# end: 2026-11-03T16:07:29Z
+# exit: 1

@@ -1,0 +1,9 @@
+# target=perf runtime=node22 commit=94969100ec85a41f93eb2a0d677aefc886290691 cwd=<wt>/perf
+# command: npm run build:test
+# start: 2026-11-03T16:44:54Z
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+# end: 2026-11-03T16:45:04Z
+# exit: 0

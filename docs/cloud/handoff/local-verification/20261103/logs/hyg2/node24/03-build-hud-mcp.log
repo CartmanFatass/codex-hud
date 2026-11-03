@@ -1,0 +1,9 @@
+# target=hyg2 runtime=node24 commit=2bcaa4f9c8eb2c1c230a0249c0fa40bccd6fbd31 cwd=<wt>/hyg2
+# command: npm run build:hud-mcp
+# start: 2026-11-03T15:51:50Z
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+
+# end: 2026-11-03T15:51:53Z
+# exit: 0

@@ -1,0 +1,74 @@
+# target=runz1 runtime=node22 commit=86ca8887fcfb331750ec6dc5518d69134cb795e4 cwd=<wt>/runz1
+# command: node --test packages/hud-mcp/dist/tests/hud-mcp/b20-advice.test.js
+# start: 2026-11-03T16:37:42Z
+(node:177312) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:177319) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:177319) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot
+ok 1 - delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot
+  ---
+  duration_ms: 97.656199
+  type: 'test'
+  ...
+# Subtest: B19 merge: one real status and spawn response retain cache keys and advice.wake
+ok 2 - B19 merge: one real status and spawn response retain cache keys and advice.wake
+  ---
+  duration_ms: 73.743041
+  type: 'test'
+  ...
+# Subtest: the checked-in §5.2 file never guesses an auth label for a codex caller
+ok 3 - the checked-in §5.2 file never guesses an auth label for a codex caller
+  ---
+  duration_ms: 61.373067
+  type: 'test'
+  ...
+# Subtest: a missing cache.json is a valid empty snapshot with empty advice
+ok 4 - a missing cache.json is a valid empty snapshot with empty advice
+  ---
+  duration_ms: 68.498617
+  type: 'test'
+  ...
+# Subtest: an invalid cache.json still serves status and spawn with configError and empty advice
+ok 5 - an invalid cache.json still serves status and spawn with configError and empty advice
+  ---
+  duration_ms: 67.53208
+  type: 'test'
+  ...
+# Subtest: status and every spawn outcome perform no cache file access after startup
+ok 6 - status and every spawn outcome perform no cache file access after startup
+  ---
+  duration_ms: 85.576415
+  type: 'test'
+  ...
+# Subtest: status and spawn merge the cache advice over an existing advice object
+ok 7 - status and spawn merge the cache advice over an existing advice object
+  ---
+  duration_ms: 77.782413
+  type: 'test'
+  ...
+# Subtest: a thrown spawn refusal carries advice at the server boundary for valid and invalid snapshots
+ok 8 - a thrown spawn refusal carries advice at the server boundary for valid and invalid snapshots
+  ---
+  duration_ms: 68.960234
+  type: 'test'
+  ...
+# Subtest: hud-mcp starts and answers initialize with a valid and with an invalid cache.json
+ok 9 - hud-mcp starts and answers initialize with a valid and with an invalid cache.json
+  ---
+  duration_ms: 266.145431
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 967.825076
+# end: 2026-11-03T16:37:43Z
+# exit: 0

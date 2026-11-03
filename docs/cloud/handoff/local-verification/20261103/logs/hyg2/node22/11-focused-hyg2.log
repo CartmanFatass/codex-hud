@@ -1,0 +1,764 @@
+# target=hyg2 runtime=node22 commit=2bcaa4f9c8eb2c1c230a0249c0fa40bccd6fbd31 cwd=<wt>/hyg2
+# command: node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/b45-launch.test.js dist-test/tests/unit/process-client.test.js dist-test/tests/unit/b12r-store.test.js dist-test/tests/unit/b12d-wal.test.js dist-test/tests/unit/b16-writer.test.js
+# start: 2026-11-03T16:07:51Z
+(node:105410) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:105424) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:105424) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: B12D WAL FULL opens once, keeps busy limit and private db/wal/shm; read-only projection does not write
+ok 1 - B12D WAL FULL opens once, keeps busy limit and private db/wal/shm; read-only projection does not write
+  ---
+  duration_ms: 704.600288
+  type: 'test'
+  ...
+# Subtest: B12D read-only projection during uncommitted publication sees old complete commit, then new complete recovery; stale lease/CAS refused
+ok 2 - B12D read-only projection during uncommitted publication sees old complete commit, then new complete recovery; stale lease/CAS refused
+  ---
+  duration_ms: 937.061479
+  type: 'test'
+  ...
+# Subtest: B12D automatic checkpoint bounds declared short-reader load, long snapshot pins WAL, release permits reclamation
+ok 3 - B12D automatic checkpoint bounds declared short-reader load, long snapshot pins WAL, release permits reclamation
+  ---
+  duration_ms: 48411.049207
+  type: 'test'
+  ...
+# {"shortPublishes":1200,"maxShortWalBytes":4120032,"longSnapshotPublishes":1200,"longSnapshotMs":20633.150035,"pinnedWalBytes":11568992,"blockedCheckpointMs":10.634322999998403,"reclaimMs":12.738922000004095,"finalWalBytes":0}
+# Subtest: B12D refuses public or symlinked WAL and SHM before SQLite opens them
+ok 4 - B12D refuses public or symlinked WAL and SHM before SQLite opens them
+  ---
+  duration_ms: 767.490981
+  type: 'test'
+  ...
+# Subtest: B12D unsafe DELETE ref refuses ordinary publication, fenced rebuild clears guard, reopen scrubs before WAL and does not inherit authority
+ok 5 - B12D unsafe DELETE ref refuses ordinary publication, fenced rebuild clears guard, reopen scrubs before WAL and does not inherit authority
+  ---
+  duration_ms: 904.837148
+  type: 'test'
+  ...
+# Subtest: B12D DELETE migration requires stopped snapshots and scrubs historic freed bytes before WAL
+ok 6 - B12D DELETE migration requires stopped snapshots and scrubs historic freed bytes before WAL
+  ---
+  duration_ms: 537.238227
+  type: 'test'
+  ...
+# Subtest: B12D SIGKILL during fenced DELETE rebuild retains old complete storage; after COMMIT exposes all rebuilt state before WAL
+ok 7 - B12D SIGKILL during fenced DELETE rebuild retains old complete storage; after COMMIT exposes all rebuilt state before WAL
+  ---
+  duration_ms: 1666.05313
+  type: 'test'
+  ...
+# Subtest: B12D pre-WAL qualification refuses duplicate JSON shadow bytes and preserves safe indexed metadata
+ok 8 - B12D pre-WAL qualification refuses duplicate JSON shadow bytes and preserves safe indexed metadata
+  ---
+  duration_ms: 1043.312481
+  type: 'test'
+  ...
+# Subtest: B12D transition removes literal orphan raw bytes while preserving live head, lease and reader fences
+ok 9 - B12D transition removes literal orphan raw bytes while preserving live head, lease and reader fences
+  ---
+  duration_ms: 732.368769
+  type: 'test'
+  ...
+# Subtest: B12D genuine native indexed Claude checkpoint qualifies on DELETE-to-WAL reopen without rebuilding
+ok 10 - B12D genuine native indexed Claude checkpoint qualifies on DELETE-to-WAL reopen without rebuilding
+  ---
+  duration_ms: 508.573248
+  type: 'test'
+  ...
+# Subtest: B12D refuses incomplete legacy-bearing WAL and gates inconsistent blob/current/index joins before cleanup
+ok 11 - B12D refuses incomplete legacy-bearing WAL and gates inconsistent blob/current/index joins before cleanup
+  ---
+  duration_ms: 2082.447249
+  type: 'test'
+  ...
+# (node:105425) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:105425) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: B12R immutable checkpoint reused for summary edges; projection reads never select recovery body
+ok 12 - B12R immutable checkpoint reused for summary edges; projection reads never select recovery body
+  ---
+  duration_ms: 796.287771
+  type: 'test'
+  ...
+# Subtest: B12R exact indexed snapshots, bounded lookup and acknowledgement preserve history without inline growth
+ok 13 - B12R exact indexed snapshots, bounded lookup and acknowledgement preserve history without inline growth
+  ---
+  duration_ms: 847.995226
+  type: 'test'
+  ...
+# Subtest: B12R preparation detaches mutable input and rejects forged tokens, wrong formats, oversize and stale CAS
+ok 14 - B12R preparation detaches mutable input and rejects forged tokens, wrong formats, oversize and stale CAS
+  ---
+  duration_ms: 564.605237
+  type: 'test'
+  ...
+# Subtest: B12R stale index base cannot branch through a newer source generation or mutate a pinned snapshot
+ok 15 - B12R stale index base cannot branch through a newer source generation or mutate a pinned snapshot
+  ---
+  duration_ms: 806.201217
+  type: 'test'
+  ...
+# Subtest: B12R publication uses only detached CAS values and acknowledgements cannot lose newer reader changes
+ok 16 - B12R publication uses only detached CAS values and acknowledgements cannot lose newer reader changes
+  ---
+  duration_ms: 873.634572
+  type: 'test'
+  ...
+# Subtest: B12R schema-v1 upgrade fences a pre-opened old writer; leased rebuild erases old raw cache
+ok 17 - B12R schema-v1 upgrade fences a pre-opened old writer; leased rebuild erases old raw cache
+  ---
+  duration_ms: 2136.770198
+  type: 'test'
+  ...
+# Subtest: B12R indexed publication crash cuts retain an entire old or new projection/recovery/index commit
+ok 18 - B12R indexed publication crash cuts retain an entire old or new projection/recovery/index commit
+  ---
+  duration_ms: 1416.403528
+  type: 'test'
+  ...
+# Subtest: B12R standalone preparation cannot relabel an inherited index recovery version
+ok 19 - B12R standalone preparation cannot relabel an inherited index recovery version
+  ---
+  duration_ms: 548.723142
+  type: 'test'
+  ...
+# Subtest: B12R real Claude reader restarts from SQLite without re-counting old IDs or losing late pending results
+ok 20 - B12R real Claude reader restarts from SQLite without re-counting old IDs or losing late pending results
+  ---
+  duration_ms: 725.476234
+  type: 'test'
+  ...
+# Subtest: B12R compatibility readCurrent pins projection and recovery across a competing publish
+ok 21 - B12R compatibility readCurrent pins projection and recovery across a competing publish
+  ---
+  duration_ms: 974.140917
+  type: 'test'
+  ...
+# (node:105427) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:105427) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: B16 restart restores committed continuity and exact notice baseline; consumers only reread
+ok 22 - B16 restart restores committed continuity and exact notice baseline; consumers only reread
+  ---
+  duration_ms: 941.766552
+  type: 'test'
+  ...
+# Subtest: B16 retained prepared reading never re-prepares no-op or summary-only paths
+ok 23 - B16 retained prepared reading never re-prepares no-op or summary-only paths
+  ---
+  duration_ms: 731.575391
+  type: 'test'
+  ...
+# Subtest: B16 prepares each new ReaderResult even at unchanged offset; captured inputs detached
+ok 24 - B16 prepares each new ReaderResult even at unchanged offset; captured inputs detached
+  ---
+  duration_ms: 732.513344
+  type: 'test'
+  ...
+# Subtest: B16 stale lease, wrong instance and stale previousCommitSeq fail without advancing baseline
+ok 25 - B16 stale lease, wrong instance and stale previousCommitSeq fail without advancing baseline
+  ---
+  duration_ms: 921.589644
+  type: 'test'
+  ...
+# Subtest: B16 notice sequences advance only in their observation domain and survive new runs
+ok 26 - B16 notice sequences advance only in their observation domain and survive new runs
+  ---
+  duration_ms: 1010.828993
+  type: 'test'
+  ...
+# Subtest: B16 report cursor is bounded across history, ignores missing seq without losing status facts
+ok 27 - B16 report cursor is bounded across history, ignores missing seq without losing status facts
+  ---
+  duration_ms: 3924.799334
+  type: 'test'
+  ...
+# Subtest: B16 old commits without noticeState establish one silent baseline and preserve continuity
+ok 28 - B16 old commits without noticeState establish one silent baseline and preserve continuity
+  ---
+  duration_ms: 777.466022
+  type: 'test'
+  ...
+# Subtest: B16 bounded noticeState accepts three active stamps, refuses fourth/unknown fields and mismatched state
+ok 29 - B16 bounded noticeState accepts three active stamps, refuses fourth/unknown fields and mismatched state
+  ---
+  duration_ms: 887.373281
+  type: 'test'
+  ...
+# Subtest: B16 failed publication does not acknowledge an edge; corrected retry emits it once
+ok 30 - B16 failed publication does not acknowledge an edge; corrected retry emits it once
+  ---
+  duration_ms: 651.488722
+  type: 'test'
+  ...
+# Subtest: B16 process crash before/after COMMIT exposes old or complete new checkpoint/summary/baseline
+ok 31 - B16 process crash before/after COMMIT exposes old or complete new checkpoint/summary/baseline
+  ---
+  duration_ms: 1754.06778
+  type: 'test'
+  ...
+# Subtest: B16 active stamp compaction never orders event identities as text; renewed stale deadlines still publish
+ok 32 - B16 active stamp compaction never orders event identities as text; renewed stale deadlines still publish
+  ---
+  duration_ms: 728.0797
+  type: 'test'
+  ...
+# Subtest: B16 retained token rejects changed native facts until a new ReaderResult is prepared
+ok 33 - B16 retained token rejects changed native facts until a new ReaderResult is prepared
+  ---
+  duration_ms: 663.368764
+  type: 'test'
+  ...
+# Subtest: B16 restart preserves event aliases when the same open episode gains an ID
+ok 34 - B16 restart preserves event aliases when the same open episode gains an ID
+  ---
+  duration_ms: 790.066729
+  type: 'test'
+  ...
+# Subtest: H09–H13 policy rows restore exact committed intervals and bounded dedup from SQLite
+ok 35 - H09–H13 policy rows restore exact committed intervals and bounded dedup from SQLite
+  ---
+  duration_ms: 3991.042827
+  type: 'test'
+  ...
+# Subtest: H11 recovered report cursor emits only new reports, even across rule upgrade and failed publication
+ok 36 - H11 recovered report cursor emits only new reports, even across rule upgrade and failed publication
+  ---
+  duration_ms: 646.89545
+  type: 'test'
+  ...
+# Subtest: H10 a retained reading publishes deadline withdrawal without rebuilding native recovery
+ok 37 - H10 a retained reading publishes deadline withdrawal without rebuilding native recovery
+  ---
+  duration_ms: 535.04164
+  type: 'test'
+  ...
+# Subtest: H10 rule upgrade and stale recovery establish stable observed intervals across restart
+ok 38 - H10 rule upgrade and stale recovery establish stable observed intervals across restart
+  ---
+  duration_ms: 1625.132786
+  type: 'test'
+  ...
+# (node:105432) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: B45 brief captures bounded bytes and owns a copy independent of replacement, deletion and caller mutation
+ok 39 - B45 brief captures bounded bytes and owns a copy independent of replacement, deletion and caller mutation
+  ---
+  duration_ms: 49.803091
+  type: 'test'
+  ...
+# Subtest: B45 accepted brief segment and delivered suffix use captured bytes with separately reproducible hashes
+ok 40 - B45 accepted brief segment and delivered suffix use captured bytes with separately reproducible hashes
+  ---
+  duration_ms: 10.017495
+  type: 'test'
+  ...
+# Subtest: B45 Codex spawn and resume inject exactly four env leaves and preserve every other user setting
+ok 41 - B45 Codex spawn and resume inject exactly four env leaves and preserve every other user setting
+  ---
+  duration_ms: 9.038445
+  type: 'test'
+  ...
+# Subtest: B45 explicit launch-message fallback has one shared envelope and checkpoints retain only its fingerprint
+ok 42 - B45 explicit launch-message fallback has one shared envelope and checkpoints retain only its fingerprint
+  ---
+  duration_ms: 6.80727
+  type: 'test'
+  ...
+# Subtest: B45 visible launch and resume clearly refuse this build without manufacturing capability support
+ok 43 - B45 visible launch and resume clearly refuse this build without manufacturing capability support
+  ---
+  duration_ms: 9.116738
+  type: 'test'
+  ...
+# Subtest: B45 preparation captures source/cwd/config and rejects mismatched source, server, placeholders and excessive input
+ok 44 - B45 preparation captures source/cwd/config and rejects mismatched source, server, placeholders and excessive input
+  ---
+  duration_ms: 16.114269
+  type: 'test'
+  ...
+# Subtest: B45 model and effort use explicit configuration and fingerprints invalidate changed server command
+ok 45 - B45 model and effort use explicit configuration and fingerprints invalidate changed server command
+  ---
+  duration_ms: 8.508811
+  type: 'test'
+  ...
+# Subtest: B45 production capability evidence is revision/version/key/source/profile bound and empty shipped cells stay unverified
+ok 46 - B45 production capability evidence is revision/version/key/source/profile bound and empty shipped cells stay unverified
+  ---
+  duration_ms: 13.224826
+  type: 'test'
+  ...
+# Subtest: B45 supervisor wait timeout kills and reaps the exact detached child before rejecting
+ok 47 - B45 supervisor wait timeout kills and reaps the exact detached child before rejecting
+  ---
+  duration_ms: 32.69729
+  type: 'test'
+  ...
+# Subtest: B45 supervisor launch uses optimized Node argv and a private stdin payload without ticket or claim in supervisor argv
+ok 48 - B45 supervisor launch uses optimized Node argv and a private stdin payload without ticket or claim in supervisor argv
+  ---
+  duration_ms: 88.678156
+  type: 'test'
+  ...
+# Subtest: B45 supervisor dispatch failure is bounded and never retries or rewrites a run state
+ok 49 - B45 supervisor dispatch failure is bounded and never retries or rewrites a run state
+  ---
+  duration_ms: 6.844152
+  type: 'test'
+  ...
+# Subtest: B45 one post-acceptance workspace capture uses canonical common-dir identity or records bounded missing evidence
+ok 50 - B45 one post-acceptance workspace capture uses canonical common-dir identity or records bounded missing evidence
+  ---
+  duration_ms: 35.366796
+  type: 'test'
+  ...
+# Subtest: B45 preserved MCP environment values invalidate intent and capability fingerprints
+ok 51 - B45 preserved MCP environment values invalidate intent and capability fingerprints
+  ---
+  duration_ms: 8.490116
+  type: 'test'
+  ...
+# Subtest: B45 capability template has typed per-run sentinels while execution keeps actual values
+ok 52 - B45 capability template has typed per-run sentinels while execution keeps actual values
+  ---
+  duration_ms: 19.714274
+  type: 'test'
+  ...
+# Subtest: B45 trusted executable version and resolved file identity are part of the capability profile
+ok 53 - B45 trusted executable version and resolved file identity are part of the capability profile
+  ---
+  duration_ms: 11.294269
+  type: 'test'
+  ...
+# Subtest: B45 every preserved MCP server setting participates in configuration and capability fingerprints
+ok 54 - B45 every preserved MCP server setting participates in configuration and capability fingerprints
+  ---
+  duration_ms: 9.141186
+  type: 'test'
+  ...
+# (node:105438) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: hud help and strict argument refusals never access or create a ledger
+not ok 55 - hud help and strict argument refusals never access or create a ledger
+  ---
+  duration_ms: 108.099324
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:42:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /^invalid_command: Usage:/. Input:
+    
+    '(node:105484) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+      '(Use `node --trace-warnings ...` to show where the warning was created)\n' +
+      'invalid_command: Usage: hud link export --json --schema-version 1 [--paths local] [--link <linkId> ...]\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    (node:105484) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    invalid_command: Usage: hud link export --json --schema-version 1 [--paths local] [--link <linkId> ...]
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:90:16)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes
+not ok 56 - hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes
+  ---
+  duration_ms: 93.774137
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:96:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105518) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n' +
+    +   'invalid_hud_home\n'
+    - 'invalid_hud_home\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    invalid_hud_home
+    
+  actual: |-
+    (node:105518) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    invalid_hud_home
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:116:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: hud missing and unreadable ledgers fail with no stdout or initialization
+not ok 57 - hud missing and unreadable ledgers fail with no stdout or initialization
+  ---
+  duration_ms: 85.917465
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:132:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105551) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n' +
+    +   'ledger_missing\n'
+    - 'ledger_missing\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    ledger_missing
+    
+  actual: |-
+    (node:105551) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    ledger_missing
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:138:16)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes
+not ok 58 - hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes
+  ---
+  duration_ms: 364.277419
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:151:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105607) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n' +
+    +   'invalid_hud_home\n'
+    - 'invalid_hud_home\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    invalid_hud_home
+    
+  actual: |-
+    (node:105607) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    invalid_hud_home
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:160:20)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4
+not ok 59 - hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4
+  ---
+  duration_ms: 436.897676
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:174:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105619) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n' +
+    +   'hud_home_unavailable\n'
+    - 'hud_home_unavailable\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    hud_home_unavailable
+    
+  actual: |-
+    (node:105619) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    hud_home_unavailable
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:186:24)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: hud reports asynchronous stdout failures for export and help without Node stack traces
+not ok 60 - hud reports asynchronous stdout failures for export and help without Node stack traces
+  ---
+  duration_ms: 402.234507
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:211:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105633) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n' +
+    +   'internal_or_output_failure\n'
+    - 'internal_or_output_failure\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    internal_or_output_failure
+    
+  actual: |-
+    (node:105633) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    internal_or_output_failure
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:229:24)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: hud consumes producer JSON byte for byte, preserving full refs, scopes, history and path opt-in
+ok 61 - hud consumes producer JSON byte for byte, preserving full refs, scopes, history and path opt-in
+  ---
+  duration_ms: 335.314351
+  type: 'test'
+  ...
+# Subtest: hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged
+not ok 62 - hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged
+  ---
+  duration_ms: 332.595206
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:309:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105693) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n'
+    - ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ''
+  actual: |-
+    (node:105693) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:317:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: hud refuses unknown ledger versions without migrating or emitting JSON
+not ok 63 - hud refuses unknown ledger versions without migrating or emitting JSON
+  ---
+  duration_ms: 503.173903
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:338:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105705) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n' +
+    +   'unsupported_ledger_schema\n'
+    - 'unsupported_ledger_schema\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    unsupported_ledger_schema
+    
+  actual: |-
+    (node:105705) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    unsupported_ledger_schema
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:345:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: hud producer validation refusal writes no partial JSON
+not ok 64 - hud producer validation refusal writes no partial JSON
+  ---
+  duration_ms: 451.648417
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:352:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105718) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n' +
+    +   'invalid_worktree_root\n'
+    - 'invalid_worktree_root\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    invalid_worktree_root
+    
+  actual: |-
+    (node:105718) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    invalid_worktree_root
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:361:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: hud defaults to ~/.hud only inside an isolated synthetic HOME
+not ok 65 - hud defaults to ~/.hud only inside an isolated synthetic HOME
+  ---
+  duration_ms: 453.020808
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:367:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105731) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n'
+    - ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ''
+  actual: |-
+    (node:105731) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:375:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: hud export leaves fresh-process raw stderr free of SQLite initialization warnings
+not ok 66 - hud export leaves fresh-process raw stderr free of SQLite initialization warnings
+  ---
+  duration_ms: 407.427643
+  type: 'test'
+  location: '<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:385:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '(node:105744) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n' +
+    +   '(Use `node --trace-warnings ...` to show where the warning was created)\n'
+    - ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ''
+  actual: |-
+    (node:105744) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+    (Use `node --trace-warnings ...` to show where the warning was created)
+    
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<VERIFY_ROOT>/wt/hyg2/dist-test/tests/unit/hud-link-export.test.js:390:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: ledger initialization restores emitWarning and preserves unrelated warnings
+ok 67 - ledger initialization restores emitWarning and preserves unrelated warnings
+  ---
+  duration_ms: 49.748145
+  type: 'test'
+  ...
+# (node:105444) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: process client rejects pending and later RPC/point waits with b12r-process.mjs import diagnostics
+ok 68 - process client rejects pending and later RPC/point waits with b12r-process.mjs import diagnostics
+  ---
+  duration_ms: 67.67472
+  type: 'test'
+  ...
+# Subtest: process client rejects pending and later RPC/point waits with b16-process.mjs import diagnostics
+ok 69 - process client rejects pending and later RPC/point waits with b16-process.mjs import diagnostics
+  ---
+  duration_ms: 53.595761
+  type: 'test'
+  ...
+# Subtest: process client drains noisy stderr with bounded diagnostics and rejects a zero-exit missing reply
+ok 70 - process client drains noisy stderr with bounded diagnostics and rejects a zero-exit missing reply
+  ---
+  duration_ms: 68.723485
+  type: 'test'
+  ...
+# Subtest: process client reports id-less errors to RPC and point waits
+ok 71 - process client reports id-less errors to RPC and point waits
+  ---
+  duration_ms: 50.419152
+  type: 'test'
+  ...
+# Subtest: process client rejects live IPC disconnection instead of leaving waits pending
+ok 72 - process client rejects live IPC disconnection instead of leaving waits pending
+  ---
+  duration_ms: 102.422226
+  type: 'test'
+  ...
+# Subtest: process client preserves replies and early points, then reaps an intentional exact-child kill
+ok 73 - process client preserves replies and early points, then reaps an intentional exact-child kill
+  ---
+  duration_ms: 50.460086
+  type: 'test'
+  ...
+# Subtest: process client rejects buffered and later points after fatal
+ok 74 - process client rejects buffered and later points after fatal
+  ---
+  duration_ms: 48.900541
+  type: 'test'
+  ...
+# Subtest: process client rejects buffered and later points after close
+ok 75 - process client rejects buffered and later points after close
+  ---
+  duration_ms: 51.395856
+  type: 'test'
+  ...
+# Subtest: process client rejects buffered and later points after disconnect
+ok 76 - process client rejects buffered and later points after disconnect
+  ---
+  duration_ms: 100.372357
+  type: 'test'
+  ...
+1..76
+# tests 76
+# suites 0
+# pass 65
+# fail 11
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 58391.78768
+# end: 2026-11-03T16:08:49Z
+# exit: 1

@@ -1,0 +1,52 @@
+# target=perf runtime=node24 commit=94969100ec85a41f93eb2a0d677aefc886290691 tree=c91d20549ccc1df9fe0d8860478f76c892d17db2
+# node binary: <HOME>/.nvm/versions/node/v24.22.1/bin/node (v24.22.1)
+# command: B10B_PERF=1 node --test dist-test/tests/unit/b10b-s3-perf.test.js (via env -i wrapper, fresh HOME, no HUD_HOME)
+## before 2026-11-03T16:35:26Z loadavg: 1.89 4.62 8.13 2/1036 173369
+    PID COMMAND         %CPU
+   2573 codex            2.8
+  32051 claude           2.1
+    491 python           1.2
+   1282 litellm          0.6
+  31274 herdr            0.5
+    352 containerd       0.4
+    407 dockerd          0.4
+# start: 2026-11-03T16:35:26Z
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.081ms p95=0.184ms p99=0.548ms max=0.955ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.288ms p95=0.682ms p99=1.002ms max=2.572ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.478ms p95=0.882ms p99=1.140ms max=1.505ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.080ms p95=0.142ms p99=0.239ms max=0.950ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.300ms p95=0.590ms p99=1.297ms max=4.167ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.644ms p95=1.167ms p99=1.454ms max=1.882ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.190ms p95=2.099ms p99=7.328ms max=9.583ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=0.880ms p95=1.535ms p99=7.314ms max=8.533ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=1.624ms p95=5.255ms p99=6.232ms max=6.926ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.363ms p95=2.385ms p99=9.168ms max=10.424ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=0.989ms p95=1.678ms p99=9.079ms max=10.964ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.018ms p95=5.706ms p99=6.623ms max=7.465ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.464ms p95=0.758ms p99=1.066ms max=1.637ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=2.086ms p95=3.757ms p99=7.093ms max=11.132ms strict=true
+b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.638ms p95=1.237ms p99=1.574ms max=1.920ms strict=true
+b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=2.629ms p95=6.727ms p99=8.277ms max=15.222ms strict=true
+✔ the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms (2720.241713ms)
+✔ compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms (16684.294579ms)
+✔ rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms (17945.465571ms)
+✔ printed: the selection resolved from a miss (a hidden node every tick), and the cold tick (15389.892554ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 52903.942374
+# end: 2026-11-03T16:36:19Z
+# exit: 0
+## after 2026-11-03T16:36:19Z loadavg: 1.81 4.14 7.76 1/1019 174454
+    PID COMMAND         %CPU
+   2573 codex            2.8
+  32051 claude           2.1
+    491 python           1.2
+   1282 litellm          0.6
+  31274 herdr            0.5
+    352 containerd       0.4
+    407 dockerd          0.4

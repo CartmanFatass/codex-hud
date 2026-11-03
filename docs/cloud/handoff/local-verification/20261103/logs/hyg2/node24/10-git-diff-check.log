@@ -1,0 +1,5 @@
+# target=hyg2 runtime=node24 commit=2bcaa4f9c8eb2c1c230a0249c0fa40bccd6fbd31 cwd=<wt>/hyg2
+# command: git diff --check
+# start: 2026-11-03T15:54:02Z
+# end: 2026-11-03T15:54:02Z
+# exit: 0
