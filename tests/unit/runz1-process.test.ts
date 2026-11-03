@@ -39,14 +39,18 @@ async function fixture(t: TestContext, mode = 'zombie') {
   let stderr = '';
   child.stderr.on('data', (chunk) => (stderr += chunk));
   const exited = once(child, 'exit');
-  t.after(async () => {
+  let cleaned = false;
+  const cleanup = async () => {
+    if (cleaned) return;
+    cleaned = true;
     child.stdin.end('cleanup\n');
     const timeout = setTimeout(() => child.kill('SIGKILL'), 5000);
     const [code, signal] = await exited;
     clearTimeout(timeout);
     assert.equal(code, 0, `${signal}: ${stderr}`);
     rmSync(home, { recursive: true, force: true });
-  });
+  };
+  t.after(cleanup);
   const readyTimeout = setTimeout(() => child.kill('SIGKILL'), 5000);
   try {
     await Promise.race([
@@ -75,6 +79,7 @@ async function fixture(t: TestContext, mode = 'zombie') {
   return {
     home,
     child,
+    cleanup,
     pid,
     leader,
     scope,
@@ -181,23 +186,34 @@ test('RUNZ1 same-session outsider can join a zombie-held PGID and never produces
 });
 
 test('RUNZ1 full census rejects the fork then setsid escape after the second snapshot', { skip: !linux }, async (t) => {
-  const f = await fixture(t, 'escape');
-  const reached: number[] = [];
-  assert.equal(
-    f.proof({
-      afterSnapshot(scan) {
-        reached.push(scan);
-        f.step(scan);
-        if (scan === 1) until(() => readProcess(f.pid('worker'))?.state === 'Z');
-      },
-    }),
-    false
-  );
-  assert.deepEqual(reached, [1, 2]);
-  assert.notEqual(readProcess(f.pid('child'))?.sid, f.scope.sid);
-  assert.equal(readProcess(f.pid('grandchild'))?.sid, f.scope.sid);
-  assert.equal(readProcess(f.pid('grandchild'))?.pgid, f.scope.pgid);
-  assert.equal(processState(readProcess(f.pid('grandchild'))!.stamp), 'alive');
+  // A strict census may refuse before scan 2 when unrelated host processes exit.
+  // Retry only the synthetic setup, never relax the proof or omit the race boundary.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const f = await fixture(t, 'escape');
+    const reached: number[] = [];
+    try {
+      assert.equal(
+        f.proof({
+          afterSnapshot(scan) {
+            reached.push(scan);
+            f.step(scan);
+            if (scan === 1) until(() => readProcess(f.pid('worker'))?.state === 'Z');
+          },
+        }),
+        false
+      );
+      if (reached.length < 2) continue;
+      assert.deepEqual(reached, [1, 2]);
+      assert.notEqual(readProcess(f.pid('child'))?.sid, f.scope.sid);
+      assert.equal(readProcess(f.pid('grandchild'))?.sid, f.scope.sid);
+      assert.equal(readProcess(f.pid('grandchild'))?.pgid, f.scope.pgid);
+      assert.equal(processState(readProcess(f.pid('grandchild'))!.stamp), 'alive');
+      return;
+    } finally {
+      await f.cleanup();
+    }
+  }
+  assert.fail('could not exercise both census boundaries within 20 fresh fixtures');
 });
 
 test('RUNZ1 zombie thread-group leader with a live sibling never proves gone', { skip: !linux }, async (t) => {
