@@ -101,6 +101,16 @@ collection, the reader cap against pinning, recapture, and whether and how B10D 
 **Not merged:** `cloud/b10b-s3-wip`, B10B segment 3 (selection, navigation, control bar). Fix round 1 has been
 applied, but the re-check is still pending. B10B-S3F finishes it.
 
+## Dots wave 1 checkpoint (2026-11-03)
+
+No wave-1 implementation package below has been accepted or merged. Preserve their branches and full evidence; the merged-tree check gate remains outstanding.
+
+- **B10B-S3F**, `dots/b10b-s3f`: first re-check fixed R1 but retained R2 and the full-check blockers. Its one permitted fix round is consumed. A bounded follow-on performance series retained 3/3 Node 22 passes and 3/3 Node 24 failures; the first Node 22 run overlapped another benchmark. The Oracle recommends owner-authorized scoped performance remediation under unchanged gates; see branch handoff `b10b-s3f-recheck-2.md`, `b10b-s3f-isolated-perf-investigation-20261103.log`, and ruling `b10b-s3f-performance.md`.
+- **HYG2**, `dots/hyg2`: Oracle re-check found the P2 fix correct, but the full checks remain red. See branch handoff `hyg2-review-2.md` and `hyg2-topology-diagnosis.md`.
+- **RUNZ1**, `dots/runz1`: Oracle final review found no new must-fix code issue, but the full checks remain red. See branch handoff `runz1-review-1.md`.
+- The executor denies synthetic Unix sockets and ptrace; its kernel lacks `CONFIG_PROC_CHILDREN`. HYG2 diagnosis reproduced the five corresponding process-topology failures on pinned baseline and current snapshots with both Node 22 and 24. This is not evidence that the affected lifecycle behavior passes.
+- Owner questions and Oracle recommendation: `docs/handoff/questions/B10B-S3F-verification.md`. Wave 2 depends on B10B-S3F.
+
 ## Package queue for dots
 
 Run the items in order. Packages in the same wave touch disjoint files and may run in parallel. A package without a
