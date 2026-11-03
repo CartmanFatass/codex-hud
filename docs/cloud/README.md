@@ -40,7 +40,8 @@ elsewhere and owns `src/collectors/**` and the collector wiring in `src/tree-pag
 6. **Hand back.**
    - The orchestrator commits on `cloud/<wp>`, adds `docs/cloud/handoff/<wp>.md` (report summary, Oracle verdict,
      check output, open items) and pushes the branch.
-   - No merges into `universal-hud`. The owner's local orchestrator merges after its own acceptance.
+   - Merge into `universal-hud` only per `docs/handoff/STATE.md` "Merging" (from 2026-11-03 the remote orchestrator
+     merges accepted packages itself; there is no local merge step).
 
 Keep the whole run within about 10 agents. Performance gates on a cloud host are noisy: report the range over at least
 three runs (and the GC share when the tail is GC), never a single best run. A failed check is reported, never worked around. One review per change:
@@ -95,7 +96,8 @@ yourself before review; one final Oracle review per package; fixes go back to th
 SendMessage; re-checks go to a fresh Oracle; at most two fix rounds. Subagents cannot write report files: when one
 returns its report or review as text, save it yourself under docs/cloud/handoff/ or docs/cloud/rulings/. When a
 package is accepted and green, commit it on its branch cloud/<wp> (end the message with the Co-Authored-By line),
-add docs/cloud/handoff/<wp>.md, and push that branch. Do not merge into universal-hud or main. Keep going without
+add docs/cloud/handoff/<wp>.md, and push that branch. Then merge it into universal-hud per docs/handoff/STATE.md
+"Merging" (full check set green on the merged tree), update STATE.md and push. Never touch main. Keep going without
 asking me unless a decision changes a contract, the design doc or another package's files; then stop that package and
 write the question into its handoff file.
 ```
