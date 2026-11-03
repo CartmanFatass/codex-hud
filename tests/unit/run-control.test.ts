@@ -1,3 +1,4 @@
+import { assertKillEvidence, captureKill, saveKillCapture } from './run-control-kill-fixture.js';
 import { launchNodeGroup } from '../run/native-group.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -353,6 +354,8 @@ test('cancel escalates INT then TERM then KILL; lost KILL wait remains unknown w
     '-e',
     `process.on('SIGINT',()=>{});process.on('SIGTERM',()=>{});process.stdout.write('ready');setTimeout(()=>{},60000)`,
   ]);
+  const capture = captureKill(s.port, () => s.seed.snapshot);
+  s.control = new HeadlessRunControl(s.port, s.home, local, capture.launcher);
   let running: Promise<void> | undefined;
   try {
     running = s.control.start({ input: s.input, ticket: s.ticket });
@@ -371,10 +374,14 @@ test('cancel escalates INT then TERM then KILL; lost KILL wait remains unknown w
       ['SIGINT', 'SIGTERM', 'SIGKILL']
     );
     assert.equal(p.receipt?.native_exit ?? null, null);
-    if (!p.receipt) assert.equal(p.slotHeld, true);
+    assertKillEvidence(capture.records, p, RunArtifacts.open(s.home, s.input.runId).readExit());
   } finally {
     await running?.catch(() => {});
-    s.cleanup();
+    try {
+      saveKillCapture('kill-ladder', capture.records, await s.port.read(s.input.runId), s.home);
+    } finally {
+      s.cleanup();
+    }
   }
 });
 
