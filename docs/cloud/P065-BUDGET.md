@@ -2,7 +2,7 @@
 
 Date: 2026-11-03. Tier M, shared control-plane correctness and measurement. Intended path: `docs/cloud/P065-BUDGET.md`.
 
-**Status: contract fork resolved; HOLD for implementation pending a separate scheduling/ownership release.** The owner approved the preparation-inclusive budget interpretation. Under the owner's delegated decision authority, the [metadata-exception ruling](rulings/p065-metadata-exception.md) approves the precise fixed private-store metadata exception and closes section 8's architecture fork. This document synchronizes that approved decision; it does not establish implementation acceptance or change the queue. Section 12 remains the separate release disposition.
+**Status: contract fork resolved; scope and branch/worktree ownership RELEASED on base `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; mutating/compute work HOLD pending explicit NEXT lease return and dispatcher resource assignment.** The owner approved the preparation-inclusive budget interpretation. Under the owner's delegated decision authority, the [metadata-exception ruling](rulings/p065-metadata-exception.md) approves the precise fixed private-store metadata exception and closes section 8's architecture fork. This document synchronizes that approved decision; it does not establish implementation acceptance or change the queue. Section 12 records the archived [scheduling/ownership release](rulings/p065-budget-release.md) and its remaining resource-admission condition; no implementation, acceptance or merge is claimed.
 
 The original brief was a read-only consultation. This 2026-11-03 synchronization records only the approved documentation amendments. No source/test implementation, build, probe, capability promotion or local-only qualification is claimed.
 
@@ -42,7 +42,7 @@ This is not a performance-threshold relaxation, a new capability, a schema migra
 
 ## 3. Conditional ownership whitelist
 
-The following is the maximum bounded file set for the budget work, not permission to change every file and not a dispatch release. The [metadata-exception ruling](rulings/p065-metadata-exception.md) §6 retains the exact production whitelist and bounds the optional fixture additions below; section 12 still requires a fresh scheduling/ownership release. New files below are explicitly named.
+The following is the maximum bounded file set for the budget work, not permission to change every file and not a dispatch release. The [metadata-exception ruling](rulings/p065-metadata-exception.md) §6 retains the exact production whitelist and bounds the optional fixture additions below; section 12 now records the separate scheduling/ownership release and the outstanding resource-admission condition. New files below are explicitly named.
 
 Production files:
 
@@ -52,7 +52,7 @@ Production files:
 - `src/ledger/intents.ts`: preserve authorization/replay/admission order; use the original budget for intent acceptance and optional rejection auditing; support truthful replay/committed-result handling.
 - `src/ledger/handshake.ts`: same-budget handshake/report commits and unchanged binding/claim/report authorization.
 - `src/ledger/reconcile.ts`: optional shared budget through the MCP cancel's reconciliation and cancel-intent transactions; unrelated reconciliation semantics unchanged.
-- `src/ledger/local-manager.ts`: only the additive original-store binding and fixed local acceptance revalidation approved in the [metadata-exception ruling](rulings/p065-metadata-exception.md) §§3–4 and 6. **Implementation remains held until section 12's separate release.** Preserve existing `check(actor?)` behavior for excluded shared callers; no global weakening, repinning, caching, poisoning or sidecar-policy migration.
+- `src/ledger/local-manager.ts`: only the additive original-store binding and fixed local acceptance revalidation approved in the [metadata-exception ruling](rulings/p065-metadata-exception.md) §§3–4 and 6. **Mutating/compute work remains held until section 12's explicit lease-return and dispatcher-assignment condition is met.** Preserve existing `check(actor?)` behavior for excluded shared callers; no global weakening, repinning, caching, poisoning or sidecar-policy migration.
 - `packages/hud-mcp/src/server.ts`: establish/carry the budget at the existing or earlier request boundary; retain the full-response measurement boundary and external result shapes.
 - `packages/hud-mcp/src/resolvers.ts` and `packages/hud-mcp/src/hook/resolve.ts`: internal budget checks/accounting around existing per-call bounded evidence work, with no change to identity eligibility, hook producer behavior or source selection.
 - `packages/hud-mcp/src/delegation.ts`, `packages/hud-mcp/src/handshake.ts`, `packages/hud-mcp/src/read-control.ts`: carry the same budget and maintain post-commit protections.
@@ -87,7 +87,7 @@ Existing test files allowed only for additive cases or passing the trusted timin
 
 The existing `tests/int/b45-delegation-benchmark.mjs` and `tests/int/b45-mcp-stdio-benchmark.mjs` are read-only comparators for this package. Preserve their original evidence. The new driver supplies complete P065 populations rather than retroactively relabeling their 200-sample partial measurements as full qualification.
 
-The [metadata-exception ruling](rulings/p065-metadata-exception.md) §6 permits a release brief to reserve only these additional existing test/fixture paths if required for the internal binding API: `tests/unit/int-ledger-run.test.ts`, `tests/unit/b45-parent-offline.test.ts` and `tests/int/fixture.mjs`. Reserve ownership explicitly in the scheduling release before editing. Changes are limited to additive regression cases or trusted fixture proof plumbing, preserving lifecycle/business assertions; they do not authorize real-process repairs or weakened assertions. Keep new cases in the already named p065 files where practical.
+The [metadata-exception ruling](rulings/p065-metadata-exception.md) §6 permits a release brief to reserve only these additional existing test/fixture paths if required for the internal binding API: `tests/unit/int-ledger-run.test.ts`, `tests/unit/b45-parent-offline.test.ts` and `tests/int/fixture.mjs`. The [scheduling release](rulings/p065-budget-release.md) §5 explicitly reserves these three paths within those limits; editing still waits for its resource admission. Changes are limited to additive regression cases or trusted fixture proof plumbing, preserving lifecycle/business assertions; they do not authorize real-process repairs or weakened assertions. Keep new cases in the already named p065 files where practical.
 
 Documentation amendments, serialized by the dispatcher from the Oracle-approved text:
 
@@ -214,7 +214,7 @@ The ruling's §6 covers only the existing metadata operation for shared callers 
 
 The registry's lock-held reader.get()/process-content reads remain a separate unresolved startup-writer compliance issue. They are not covered merely because they share a closure with gate.check(); do not silently move/delete their authority checks or claim global lock-I/O compliance. A shared-helper/callsite policy change requires its own recorded ownership revision or separate migration.
 
-The architecture fork is closed, but code remains held for section 12's separately recorded scheduling/ownership release. Documentation synchronization and that read-only release consultation do not wait for owner-run local tests.
+The architecture fork is closed and section 12's scheduling/ownership release is recorded. Code mutation and compute remain held pending explicit NEXT lease return and dispatcher resource assignment; read-only preparation does not wait for owner-run local tests.
 
 ## 9. Real-clock evidence and acceptance
 
@@ -234,7 +234,7 @@ These remote measurements are host-labeled design/implementation evidence, not f
 
 ## 10. Checks, timeouts and evidence locations
 
-The commands below are for the later released implementation, not commands executed by this consultation. Use a dedicated worktree from the accepted base recorded at release, with a distinct branch `dots/p065-budget`. Do not mix active unaccepted package code into it. Preserve all evidence on failure.
+The commands below are for implementation after resource admission, not commands executed by this consultation. The [scheduling release](rulings/p065-budget-release.md) reserves `/workspace/shared/p065-budget` and branch `dots/p065-budget` from accepted integration base `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; materialization waits for explicit NEXT lease return and dispatcher assignment. Do not mix active unaccepted package code into it. Preserve all evidence on failure.
 
 Every command runs with temporary HOME, HUD_HOME, TMPDIR and synthetic source directories, never the user's real stores. Unset inherited harness/session/HERDR variables and NO_COLOR/FORCE_COLOR where the README requires. Keep runtime selection explicit and executable resolution correct before changing HOME. Own and clean child PIDs individually; never kill by name/pattern. Use separate temporary directories per command and retain raw stdout, stderr, exit code, source/runtime identity and duration. Timeout is a failed/incomplete stage, not a pass. Clean only the temporary resources this command created.
 
@@ -261,7 +261,7 @@ Exact command set and per-command outer timeouts:
 - `HUD_B45_BENCH=1 node --test packages/hud-mcp/dist/tests/hud-mcp/handshake-benchmark.test.js`: 900 s, alone.
 - `node tests/int/p065-budget-benchmark.mjs "$EVIDENCE/p065-budget.json"`: 3,600 s per run. The new driver must implement the full declared matrix and raw-sample output as its default, not require a hidden qualification flag. Run three isolated series per Node family with distinct EVIDENCE directories.
 
-The [metadata-exception ruling](rulings/p065-metadata-exception.md) §7 additionally requires compiled CLI-to-MCP handoff coverage, actual-lock-interval gate counters, preserved shared-writer security/lifecycle regressions and independent behavioral negative controls for original-gate propagation, post-acquisition observation, post-gate expiry and unsafe-audit suppression. If `tests/unit/int-ledger-run.test.ts` and `tests/unit/b45-parent-offline.test.ts` are not already covered by the required aggregate command, the release brief must add their exact compiled invocation and timeout before implementation. The optional three fixture paths in section 3 require explicit ownership reservation. All original commands, timeouts and complete Node 22/24 real-clock populations remain; metadata overruns are not excluded samples.
+The [metadata-exception ruling](rulings/p065-metadata-exception.md) §7 additionally requires compiled CLI-to-MCP handoff coverage, actual-lock-interval gate counters, preserved shared-writer security/lifecycle regressions and independent behavioral negative controls for original-gate propagation, post-acquisition observation, post-gate expiry and unsafe-audit suppression. The [scheduling release](rulings/p065-budget-release.md) §5 verifies that the required `npm test` aggregate includes `tests/unit/int-ledger-run.test.ts` and `tests/unit/b45-parent-offline.test.ts`, and reserves the three bounded fixture paths in section 3. If a stage is not reached by the aggregate, its exact standalone invocation is `node --test dist-test/tests/unit/int-ledger-run.test.js dist-test/tests/unit/b45-parent-offline.test.js`, outer timeout 600 s, with the same isolation, runtime and owned-PID cleanup requirements; this does not make a failed aggregate green or waive unavailable real-process coverage. All original commands, timeouts and complete Node 22/24 real-clock populations remain; metadata overruns are not excluded samples.
 
 A later read-only Oracle verifies each test's failing-before behavior and semantic assertions. The deterministic suite must prove all section 7 state assertions; the real-clock driver must emit complete samples and fail its qualification summary if any applicable gate is unmet. Do not use a benchmark's exit zero alone as a substitute for inspecting its per-call flags and population completeness.
 
@@ -277,7 +277,7 @@ Dispatcher evidence paths:
 - `docs/cloud/handoff/p065-budget/summary-<runtime>-<run>.json`
 - `docs/cloud/handoff/p065-budget/negative-controls.md`
 - `docs/cloud/handoff/p065-budget/review-1.md` and subsequent distinct fix/re-check records.
-- `docs/cloud/rulings/p065-budget-local-gate.md` remains the historical fork report; `docs/cloud/rulings/p065-metadata-exception.md` is the approved resolution. `docs/cloud/rulings/p065-budget-release.md` is reserved for the separate scheduling/ownership decision, still pending.
+- `docs/cloud/rulings/p065-budget-local-gate.md` remains the historical fork report; `docs/cloud/rulings/p065-metadata-exception.md` is the approved resolution. `docs/cloud/rulings/p065-budget-release.md` is the archived scheduling/ownership release, with resource admission still pending explicit NEXT lease return and dispatcher assignment.
 
 Sanitize before publication. Keep synthetic source identities, full commands and byte/row counts, but exclude secrets, raw private filesystem paths and real user data. Preserve prior evidence rather than replacing an earlier failed report with a later successful one.
 
@@ -294,25 +294,25 @@ This proves present file disjointness for the bounded candidate only. It does no
 
 After an explicit release, use the dots hierarchy: dispatcher schedules/records/runs raw checks; one Astra-high implementer owns this brief; a fresh Astra-max Oracle handles each design fork and the final review; fixes return unchanged to the same implementer; fresh re-checks review fixes. No subdelegation of judgment to the dispatcher. At most two normal P065 fix rounds, then record unresolved findings. This new package does not reset any old package's consumed rounds or authorize another S3F-PERF remedy.
 
-Stop implementation on an unresolved deviation from section 8's approved design, missing scheduling release or accepted base, changed/overlapping file ownership, missing complete qualification data, an outside-whitelist remedy, or a proposed gate/profile/contract change beyond the approved scope. Preserve the branch/evidence and return the exact question. Full-suite environmental failures remain failures, not a reason to skip the gate.
+Stop implementation on an unresolved deviation from section 8's approved design, missing resource admission or the pinned accepted base, changed/overlapping file ownership, missing complete qualification data, an outside-whitelist remedy, or a proposed gate/profile/contract change beyond the approved scope. Preserve the branch/evidence and return the exact question. Full-suite environmental failures remain failures, not a reason to skip the gate.
 
 Final acceptance requires a fresh Oracle's accept verdict verifying the report, source, failure-mode tests and measured populations. Merge only per STATE: one active merger, --no-ff into universal-hud, full green check set on the merged tree with permitted flake handling and both outputs retained, then push and factual STATE/plan updates. Never touch main, force-push, rewrite history, stage node_modules/.package-lock.json or integrate an unaccepted branch as a shortcut.
 
 ## 12. Separate release disposition
 
-**Disposition now: HOLD. P065-BUDGET implementation may not start from this brief.**
+**Disposition now: scope and branch/worktree ownership RELEASED; actual mutation/compute HOLD pending explicit NEXT lease return and dispatcher resource assignment.** The [scheduling/ownership ruling](rulings/p065-budget-release.md) supplies the separate release required by queue-progress and this brief. It does not claim implementation, acceptance, merge or green checks.
 
-The approved budget interpretation and precise metadata exception are recorded by the [metadata-exception ruling](rulings/p065-metadata-exception.md); section 8's contract fork is closed. The conditional source/test ownership was disjoint from the inspected active implementation diffs, but that historical comparison is not a current scheduling release. The queue-progress ruling and metadata-exception ruling §8 require a complete synchronized brief plus a separately recorded fresh scheduling/ownership disposition; neither creates an implementation slot by itself.
+The release records completed contract/brief/status synchronization and reserves P065 as one bounded independent follow-on to the owner-approved wave-1 P-06-5 consultation:
 
-What may proceed immediately: complete the serialized contract/brief/status synchronization and commission the fresh read-only scheduling/ownership ruling. These do not wait for the user's local tests and do not advance a later implementation wave. The owner has delegated project decisions to Oracle, so no additional owner permission is needed for that ruling.
+- Exact accepted integration base: `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; tree `03bd36610d46fd220eb9c0e4fbf153a52bc3c3b9`.
+- Reserved branch `dots/p065-budget` and dedicated cloud worktree `/workspace/shared/p065-budget`; reservation is not a claim that either has been created.
+- Exact production/test ownership is in ruling §§4–5, including the three bounded fixture additions; shared documentation remains serialized and dispatcher-owned per §6. No broader ownership is implied.
+- The current NEXT measurement lease must be explicitly returned and reassigned by the dispatcher before branch/worktree materialization, dependency installation, source/test mutation, builds, tests, benchmarks or negative-control execution. Read-only brief/source preparation may continue. A quiet snapshot, elapsed time or a passing run does not release the lease.
+- Use the exact pin; do not import unaccepted HYG2/RUNZ1/S3F/PERF/NEXT/B10D code. Later documentation-only descendants do not silently replace the declared base; any intervening source/test change requires base/ownership/brief revalidation.
 
-Implementation becomes eligible only after all of the following are recorded:
+Owner-run local testing or review is not a prerequisite to this independent scope release. One isolated measurement workload at a time remains mandatory. All numeric budgets, security and committed-truth requirements, failure tests, real-clock populations, full checks and independent final-Oracle/merge gates remain unchanged.
 
-1. The [metadata-exception ruling](rulings/p065-metadata-exception.md) closes section 8 with the exact fixed metadata exception, original-binding/replacement semantics and meaningful failure tests. Complete its §5 contract/brief/status synchronization through one documentation owner; no broader lock-held external I/O, authority/profile change or implicit ownership expansion is allowed.
-2. A separately recorded fresh scheduling/ownership ruling checks then-current STATE, active heads and uncommitted ownership, reserves the exact source/test/docs set (including any of section 3's three bounded fixture additions), and names the pinned accepted integration base. It must identify this as an independent follow-on to the owner-approved wave-1 P-06-5 consultation or name remaining overlaps/dependencies. File disjointness alone is not queue permission. Benchmark workloads remain isolated, one at a time.
-3. The base is a pinned accepted universal-hud image, without cherry-picking or merging unaccepted HYG2/RUNZ1/S3F/B10D code. Any source changes since this consultation require revalidation of this brief.
-
-This consultation does **not** release DOC2 or TPD1 before B10B-S3F merges, Inspector/data before the ordered wave-2 work, or B10D/LEG1/RCP1 ahead of the route's sequence. It does not hold the cloud idle: read-only scheduling/ownership work and the already authorized wave-1 review/evidence work can continue while the user independently tests locally. It does not promise that a later released P065 package can merge while full-check prerequisites remain red.
+This release does **not** release DOC2 or TPD1 before B10B-S3F merges, Inspector/data before the ordered wave-2 work, or B10D/LEG1/RCP1 ahead of the route's sequence. It does not renew any package's consumed fix rounds or authorize assistant-run local testing. Acceptance, merge and local-only qualification remain held until their distinct gates are met.
 
 ## 13. Approved normative text to record
 
@@ -320,7 +320,7 @@ The following preserves the already approved preparation-inclusive clarification
 
 > P-06-5 的 30 ms 是单次调用的授权与事务总墙钟，不是持锁时长。MCP 从完整 tools/call 进入逐调用验证、来源解析与授权准备之前开始计时，包含本次文件读取/stat、进程与来源取证、参数与摘要准备、连接队列等待，以及全部相关授权/提交事务的等锁、重试、退避和 commit；在最后相关事务提交、回滚或拒绝决定完成时结束。准备必须在写事务之外，但仍在同一预算之内；不得在取得写锁、完成准备或开始下一事务时重置时钟，也不另加准备预算。单次 busy_timeout≤10 ms、累计等锁/重试/退避≤20 ms，均包含在30 ms内。耗尽且目标操作尚未提交时不得再接受该操作；已提交结果不改报未接受，同步commit超时单列预算缺陷。MCP完整响应和显式Claude hook联合计时仍分别按P-06-4；wait的等待预算不变。
 
-Record the corresponding T-06-14/measurement wording and contract-01/03/04/05 cross-references consistently with the [metadata-exception ruling](rulings/p065-metadata-exception.md) §5. Preserve F08 and predecessor rulings as history; implementation remains HOLD until the separate scheduling release, with later independent acceptance and merged-tree checks still required.
+Record the corresponding T-06-14/measurement wording and contract-01/03/04/05 cross-references consistently with the [metadata-exception ruling](rulings/p065-metadata-exception.md) §5. Preserve F08 and predecessor rulings as history; scope and ownership are released under section 12, while actual mutation/compute remains held for explicit NEXT lease return and dispatcher assignment; independent acceptance and merged-tree checks remain required.
 
 ## Sources
 
@@ -336,4 +336,4 @@ Record the corresponding T-06-14/measurement wording and contract-01/03/04/05 cr
 - [CLI preparation and discarded pinned gate](https://github.com/CartmanFatass/codex-hud/blob/2249ab5952b2b4ba6fa8cefaf14c06ea97118c9e/src/cli/run.ts#L81-L128)
 - [Existing store open/check sequence](https://github.com/CartmanFatass/codex-hud/blob/2249ab5952b2b4ba6fa8cefaf14c06ea97118c9e/src/cli/runtime.ts#L87-L121)
 
-Current disposition: precise metadata exception recorded and local-gate contract fork resolved; implementation remains HOLD pending separate scheduling/ownership release. No implementation acceptance, merge, performance pass or capability promotion is claimed.
+Current disposition: precise metadata exception recorded and local-gate contract fork resolved; scope and branch/worktree ownership released on the pinned accepted base, with mutation/compute still HOLD pending explicit NEXT lease return and dispatcher assignment. No implementation, acceptance, merge, performance pass or capability promotion is claimed.
