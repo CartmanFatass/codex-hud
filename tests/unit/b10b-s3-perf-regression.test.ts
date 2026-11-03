@@ -254,3 +254,78 @@ test('perf cache churn: repeated keys under distinct roots sweep disappeared ent
     assert.equal(proj.byKey.get('codex:worker')!.proj.name, label);
   }
 });
+
+test('facts scratch lifetime: equal/miss/equal passes never overwrite or alias retained frozen facts', () => {
+  const built = buildVm([
+    root,
+    { ...worker('first'), id: 'first' },
+    { ...worker('middle'), id: 'middle' },
+    { ...worker('last'), id: 'last' },
+  ]);
+  const cache = new ProjectionCache();
+  const original = projectDelegation(built.vm, cache);
+  const saved = built.vm.tree.nodes.map((node) => {
+    const facts = cache.get(node.key)!.facts;
+    Object.freeze(facts);
+    return { key: node.key, facts, value: { ...facts } };
+  });
+  const equal = projectDelegation(structuredClone(built.vm), cache);
+  assert.equal(cache.hits, 4);
+  assert.equal(cache.misses, 4);
+  for (const { key, facts } of saved) {
+    assert.strictEqual(cache.get(key)!.facts, facts);
+    assert.strictEqual(equal.byKey.get(key)!.proj, original.byKey.get(key)!.proj);
+  }
+  const changed = structuredClone(built.vm);
+  changed.tree.relations.find((r) => r.childKey === built.keys['middle'])!.link.label = 'middle changed';
+  const mixed = projectDelegation(changed, cache);
+  assert.equal(cache.hits, 7, 'hits before and after the middle miss remain hits');
+  assert.equal(cache.misses, 5);
+  assert.deepEqual(mixed, projectDelegation(changed, new ProjectionCache()));
+  for (const { key, facts, value } of saved) {
+    assert.deepEqual(facts, value);
+    if (key !== built.keys['middle']) assert.strictEqual(cache.get(key)!.facts, facts);
+    Object.freeze(cache.get(key)!.facts);
+  }
+  assert.equal(new Set(changed.tree.nodes.map((node) => cache.get(node.key)!.facts)).size, 4);
+  const later = structuredClone(changed);
+  later.tree.relations.find((r) => r.childKey === built.keys['last'])!.link.label = 'last changed';
+  assert.deepEqual(projectDelegation(later, cache), projectDelegation(later, new ProjectionCache()));
+  assert.equal(cache.hits, 10);
+  assert.equal(cache.misses, 6);
+  assert.equal(cache.get(built.keys['middle'])!.facts.linkLabel, 'middle changed');
+  assert.equal(cache.get(built.keys['last'])!.facts.linkLabel, 'last changed');
+  assert.deepEqual(projectDelegation(structuredClone(built.vm), cache), original);
+  assert.equal(cache.hits, 12);
+  assert.equal(cache.misses, 8);
+  for (const { facts, value } of saved) assert.deepEqual(facts, value);
+});
+
+test('facts scratch lifetime: all-cold and all-miss records stay distinct through removal and reinsertion', () => {
+  const a = buildVm([root, worker(), { ...worker('sibling'), id: 'sibling' }]);
+  const cache = new ProjectionCache();
+  const first = projectDelegation(a.vm, cache);
+  const old = a.vm.tree.nodes.map((node) => Object.freeze(cache.get(node.key)!.facts));
+  const b = structuredClone(a.vm);
+  for (const node of b.tree.nodes) node.loaded = !node.loaded;
+  const second = projectDelegation(b, cache);
+  assert.equal(cache.misses, 6);
+  assert.equal(cache.hits, 0);
+  const next = b.tree.nodes.map((node) => cache.get(node.key)!.facts);
+  assert.equal(new Set(next).size, 3);
+  for (const facts of next) {
+    assert.ok(!old.includes(facts));
+    Object.freeze(facts);
+  }
+  assert.deepEqual(second, projectDelegation(b, new ProjectionCache()));
+  projectDelegation(buildVm([root]).vm, cache);
+  assert.equal(cache.size, 1);
+  assert.equal(cache.get(a.keys['worker']), undefined);
+  assert.deepEqual(projectDelegation(a.vm, cache), first);
+  assert.equal(cache.size, 3);
+  for (const [index, node] of a.vm.tree.nodes.entries()) {
+    assert.strictEqual(first.byKey.get(node.key)!.node, node);
+    assert.equal(old[index].loaded, node.loaded);
+    assert.equal(next[index].loaded, !node.loaded);
+  }
+});
