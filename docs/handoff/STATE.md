@@ -90,9 +90,10 @@ What fails, measured at n = 1000 per population on 200 nodes and 20,000 headers:
    - §18 also pins accepted history that cannot be proven evictable, such as approval pauses and ended turns.
 4. **Retirement recapture.** Progress evidence is still missing.
 
-The Oracle's preferred next design (§19) is a one-use "next normal operation" continuation ticket. It needs the
-owner's explicit fairness exception, because a normal round can approach twice the operation opportunities. Admission
-and housekeeping tweaks alone are judged insufficient, and discard-and-reload is rejected.
+The owner authorized the fairness exception subject to Oracle confirmation. The Oracle confirmed a bounded one-use
+continuation ticket and recorded the route in `docs/cloud/rulings/b10d-route.md`; see
+`docs/handoff/questions/B10D-route.md` for the recommendation and authorization. B10D remains unaccepted and unmerged;
+the ruling preserves its gates and identifies follow-on work.
 
 The route question for the next Oracle is `docs/handoff/questions/B10D-route.md`. It covers what to do with legacy
 collection, the reader cap against pinning, recapture, and whether and how B10D merges.
@@ -129,15 +130,16 @@ The real resume gate waits for B14.
 After the queue: B14, the production acceptance and capability matrix, is mostly local; see below. Then B15, the phase
 review (ARCH); B3b-C after B15; then phases C–F of the plan.
 
+## Decisions recorded on 2026-11-03
+
+- B10D fairness exception: owner authorized the Oracle-confirmed route; see `questions/B10D-route.md` and `../cloud/rulings/b10d-route.md`.
+- P-06-5 scope: owner authorized the Oracle recommendation; the 30 ms budget includes pre-lock preparation and is not reset at lock acquisition. See `questions/P-06-5.md` and `../cloud/rulings/p-06-5.md`. Follow-on work remains.
+
 ## Open owner decisions
 
 - O1: the implementer-comparison B14 idle-cost runner. None of the three arms met the merge bar.
 - Whether to rename the real project names `shenlun` / `atlas-launch-sources` used in some tests.
 - Whether to rewrite git history to remove old private paths. Those commits are already public on `main`.
-- B10D fairness exception (§19 continuation ticket): approve, or choose another route after the Oracle's ruling on
-  `docs/handoff/questions/B10D-route.md`.
-- P-06-5 scope: should the 30 ms budget include the file reads made before the ledger lock? This budget is behind the
-  `ledger_busy` flake family. The Oracle's recommendation will be in `docs/handoff/questions/P-06-5.md`.
 - Statusline wiring: nothing calls the statusline renderer yet. Candidates are a `hud statusline` entry, or plan D3.
 
 ## Local only (needs the owner's machine)
