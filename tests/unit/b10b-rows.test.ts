@@ -640,16 +640,16 @@ const hex = (value: string): string => {
   return `2;${r};${g};${b}`;
 };
 
-test('§5.2: a selected row is the palette band across the whole row, and nothing on it is muted', () => {
-  const bands: Array<[string, string, string, string]> = [
-    // palette, band, muted text, danger (the `⚑` hue)
-    ['mocha', '#45475A', '#9399B2', '#F38BA8'],
-    ['latte', '#CCD0DA', '#6C6F85', '#D20F39'],
-    ['titanium', '#2E3540', '#9CA3B0', '#FF4757'],
+test('§5.2: a selected row is the palette band across the whole row, without faint text or the alert hue lost', () => {
+  const bands: Array<[string, string, string]> = [
+    // palette, band, danger (the `⚑` hue)
+    ['mocha', '#45475A', '#F38BA8'],
+    ['latte', '#CCD0DA', '#D20F39'],
+    ['titanium', '#2E3540', '#FF4757'],
   ];
   const previous = setDisplayConfig({});
   try {
-    for (const [theme, band, muted, danger] of bands) {
+    for (const [theme, band, danger] of bands) {
       setDisplayConfig({ theme: theme as never });
       const c = situationC({ reviewPass: true });
       for (const width of [32, 48, 80]) {
@@ -663,10 +663,6 @@ test('§5.2: a selected row is the palette band across the whole row, and nothin
         assert.ok(
           selected.every((cell) => !cell.faint),
           `${theme} ${width}: no faint text on the band`
-        );
-        assert.ok(
-          selected.every((cell) => cell.ch === ' ' || cell.fg !== hex(muted)),
-          `${theme} ${width}: the muted colour is not used on the band`
         );
         // The marker keeps its meaning on the band: `⚑` is the bold danger hue.
         const flag = cellsOf(rows[1], '⚑')[0];
@@ -687,28 +683,53 @@ test('§5.2: a selected row is the palette band across the whole row, and nothin
         `${theme}: the working row`
       );
     }
-    // No band in `none`; the selected name is still bold.
-    setDisplayConfig({ theme: 'none' });
-    const c = situationC();
-    const rows = drawRaw(c.vm, 60, { selectedKey: c.keys['review-tests'] });
-    assert.ok(cells(rows[1]).every((cell) => cell.bg === null));
-    assert.equal(
-      cellsOf(rows[1], 'review-tests').every((cell) => cell.bold),
-      true
-    );
-    // The terminal palette's own band is its grey, and its faint text is not used on it.
-    setDisplayConfig({ theme: 'terminal' });
-    const terminal = drawRaw(c.vm, 60, { selectedKey: c.keys['review-tests'] })[1];
-    assert.ok(cells(terminal).every((cell) => cell.bg === '5;237' && !cell.faint));
   } finally {
     setDisplayConfig(previous);
   }
 });
 
-test('§3.2, §5.2: a state that began in the last three seconds has its word and its clock bold', () => {
+test('§5.2: a palette without a band (none, terminal) selects with › and a bold name, and no background', () => {
+  const previous = setDisplayConfig({});
+  try {
+    // The selection is `›` and a bold name, and no cell has a background.
+    // Every other cell is painted as on the unselected row, muted text included.
+    for (const theme of ['none', 'terminal'] as const) {
+      setDisplayConfig({ theme });
+      const c = situationC({ reviewPass: true });
+      const was = cells(drawRaw(c.vm, 60)[1]);
+      const rows = drawRaw(c.vm, 60, { selectedKey: c.keys['review-tests'] });
+      const now = cells(rows[1]);
+      assert.equal(now.length, 60);
+      assert.ok(
+        now.every((cell) => cell.bg === null),
+        `${theme}: no background on the selected row`
+      );
+      assert.equal(now[0].ch, '›', `${theme}: the selection mark`);
+      assert.ok(
+        cellsOf(rows[1], 'review-tests').every((cell) => cell.bold),
+        `${theme}: the name is bold`
+      );
+      now.forEach((cell, i) => {
+        if (i === 0) return;
+        assert.equal(cell.fg, was[i].fg, `${theme}: cell ${i} keeps its colour`);
+        assert.equal(cell.faint, was[i].faint, `${theme}: cell ${i} keeps its dimming`);
+      });
+      if (theme === 'terminal')
+        assert.ok(
+          now.some((cell) => cell.faint),
+          'terminal: muted text stays muted: there is no band to make it illegible'
+        );
+    }
+  } finally {
+    setDisplayConfig(previous);
+  }
+});
+
+test('§3.2, §5.2: a state that began in the last three seconds has its word and its clock bold, for every node', () => {
   const previous = setDisplayConfig({ theme: 'mocha' });
   try {
-    const starting = (basis: 'event' | 'observed', since: number): Built =>
+    type Basis = 'event' | 'observed' | 'unknown';
+    const starting = (basis: Basis, since: number, extra: { clockAnomaly?: boolean } = {}): Built =>
       buildVm([
         { ...root(), status: S.working(ago(30)) },
         {
@@ -716,28 +737,70 @@ test('§3.2, §5.2: a state that began in the last three seconds has its word an
           parent: 'main',
           harness: 'codex',
           run: { state: 'starting' },
-          status: { cls: 'starting', since, basis },
+          status: { cls: 'starting', since, basis, ...extra },
           createdAt: ago(100),
         },
       ]);
-    const bold = (built: Built, nowMs: number) => {
-      const row = drawRaw(built.vm, 60, { nowMs })[1];
-      const word = cellsOf(row, 'starting').every((cell) => cell.bold);
+    /** Is the state word bold, and the clock (the last 7 columns, there must be one) too? */
+    const bold = (built: Built, nowMs: number, at = 1, word = 'starting') => {
+      const row = drawRaw(built.vm, 60, { nowMs })[at];
       const clock = cells(row)
         .slice(-7)
-        .filter((cell) => cell.ch !== ' ')
-        .every((cell) => cell.bold);
-      const name = cellsOf(row, ' a ').some((cell) => cell.bold);
-      return { word, clock, name };
+        .filter((cell) => cell.ch !== ' ');
+      return {
+        word: cellsOf(row, word).every((cell) => cell.bold),
+        clock: clock.length > 0 && clock.every((cell) => cell.bold),
+      };
     };
+    const on = { word: true, clock: true };
+    const off = { word: false, clock: false };
     const since = NOW - 10_000;
-    const tree = starting('event', since);
+
     // Either side of the third second, on a state that is not an alert.
-    assert.deepEqual(bold(tree, since + 2999), { word: true, clock: true, name: false });
-    assert.deepEqual(bold(tree, since + 3000), { word: false, clock: false, name: false });
-    assert.deepEqual(bold(tree, since + 20_000), { word: false, clock: false, name: false });
-    // An observed time is when this process first looked, not an episode: no emphasis after a restart.
-    assert.deepEqual(bold(starting('observed', since), since + 1000), { word: false, clock: false, name: false });
+    const tree = starting('event', since);
+    assert.deepEqual(bold(tree, since + 2999), on);
+    assert.deepEqual(bold(tree, since + 3000), off);
+    assert.deepEqual(bold(tree, since + 20_000), off);
+
+    // An observed boundary is a persisted episode too (the commit carries it), clock `~1s` and all; its window ends the same.
+    assert.deepEqual(bold(starting('observed', since), since + 1000), on);
+    assert.match(plain(drawRaw(starting('observed', since).vm, 60, { nowMs: since + 1000 })[1]), /~1s$/);
+    assert.deepEqual(bold(starting('observed', since), since + 2999), on);
+    assert.deepEqual(bold(starting('observed', since), since + 3000), off);
+
+    // The viewpoint root is a node like the others: its own new episode is emphasised, and ends at the same second.
+    const rootStarting = (at: number) => buildVm([{ ...root(), status: S.starting(at) }]);
+    assert.deepEqual(bold(rootStarting(since), since + 1000, 0), on, 'the root');
+    assert.deepEqual(bold(rootStarting(since), since + 3000, 0), off);
+    const rootUncertain = buildVm([{ ...root(), status: { cls: 'uncertain', since: NOW - 1000 } }]);
+    assert.equal(
+      cellsOf(drawRaw(rootUncertain.vm, 60)[0], 'uncertain').every((cell) => cell.bold),
+      true
+    );
+    assert.equal(
+      cellsOf(drawRaw(rootUncertain.vm, 60, { nowMs: NOW + 5000 })[0], 'uncertain').some((cell) => cell.bold),
+      false
+    );
+
+    // What the published data does not stand behind is no episode: an unknown basis, a time that has not happened
+    // yet, a clock the observation calls anomalous. (The controls above are the same rows with a good boundary.)
+    const stale = (basis: Basis) =>
+      buildVm([
+        root(),
+        {
+          id: 's',
+          parent: 'main',
+          harness: 'codex',
+          status: { cls: 'stale', reason: 'heartbeat', since: NOW - 1000, basis, evidenceAt: NOW - 5000 },
+          createdAt: ago(100),
+        },
+      ]);
+    assert.equal(bold(stale('observed'), NOW, 1, 'stale').word, true, 'control');
+    assert.equal(bold(stale('unknown'), NOW, 1, 'stale').word, false, 'basis unknown');
+    assert.deepEqual(bold(starting('event', NOW + 5000), NOW), off, 'a boundary in the future');
+    assert.deepEqual(bold(starting('event', NOW - 1000), NOW), on, 'control');
+    assert.deepEqual(bold(starting('event', NOW - 1000, { clockAnomaly: true }), NOW), off, 'an anomalous clock');
+
     // A new round of the same state is a new episode: the published time moved, so it is bold again. (A `⚑` word
     // is bold at any age, so the state used here is `uncertain`.)
     const uncertain = (at: number) =>
@@ -756,14 +819,7 @@ test('§3.2, §5.2: a state that began in the last three seconds has its word an
       cellsOf(drawRaw(built.vm, 60, { nowMs })[1], 'uncertain').every((cell) => cell.bold);
     assert.equal(wordBold(uncertain(NOW - 600_000), NOW), false, 'ten minutes in');
     assert.equal(wordBold(uncertain(NOW - 1000), NOW), true, 'the renewed episode');
-    // The viewpoint root never changes bucket and is not one of the rows that just moved.
-    const rootRow = drawRaw(buildVm([{ ...root(), status: S.working(NOW - 1000) }]).vm, 60)[0];
-    assert.ok(
-      cells(rootRow)
-        .slice(-7)
-        .filter((c) => c.ch !== ' ')
-        .every((c) => !c.bold)
-    );
+
     // The cached row follows the boundary.
     const cached = starting('event', NOW - 2950);
     const a = drawRaw(cached.vm, 60, { nowMs: NOW })[1];

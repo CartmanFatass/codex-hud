@@ -11,15 +11,15 @@
  * string compare (§6 #2b).
  */
 
-import { colors, getContextColor, theme, truncateAnsi, visualLength } from '../colors.js';
-import { fitModelEffortToken } from '../model-glyphs.js';
+import { colors, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
+import { fitModelEffortToken, type ModelTokenPaints } from '../model-glyphs.js';
 import { age } from '../monitor-labels.js';
 import { palette } from '../palette.js';
 import { displayConfig } from '../hud-config.js';
 import { language } from '../i18n.js';
 import { glyphSet, GLYPHS, useAscii, type Glyph, type GlyphSet } from './glyphs.js';
 import type { DelegationProjection, GlyphCounts, NodeProjection, PNode } from './projection.js';
-import { paint, panelSay, W, type Role, type Say } from './style.js';
+import { hasSelectionBand, paint, paintOnSelectedBand, panelSay, W, type Role, type Say } from './style.js';
 
 /** A finished row stays on the list this long after the last finish in its subtree (§3.2). */
 export const PUT_AWAY_MS = 180_000;
@@ -262,7 +262,9 @@ function meter(percent: number, cells: number, g: GlyphSet, ink: Ink): string {
   const full = unicodeHalf ? Math.floor(halves / 2) : Math.round(halves / 2);
   const half = unicodeHalf && halves % 2 ? g.meter.half : '';
   const used = g.meter.fill.repeat(full) + half;
-  return getContextColor(clamped)(used) + ink.muted(g.meter.track.repeat(Math.max(0, cells - visualLength(used))));
+  // The fill's zone is the shared one (success, warning from 70, danger from 85), painted by the row's ink.
+  const zone: Role = clamped >= METER_DANGER ? 'danger' : clamped >= METER_WARN ? 'warning' : 'success';
+  return ink.paint(zone, used) + ink.muted(g.meter.track.repeat(Math.max(0, cells - visualLength(used))));
 }
 
 function clip(text: string, width: number, g: GlyphSet): string {
@@ -308,34 +310,45 @@ function prefixText(row: PlannedRow, g: GlyphSet): string {
 export const EMPHASIS_MS = 3000;
 
 /**
- * Whether the row's state began in the last three seconds, by the published `stateSince` (an event time, not the
- * first look of this process): the second round of approval under the same `⚑` is a new episode too. The viewpoint
- * root never changes bucket and is not one of the rows that "just moved".
+ * Whether the row's state began in the last three seconds, by the published episode boundary (`stateSince`, §7 #23):
+ * the second round of approval under the same `⚑` is a new episode too. Every node qualifies, the viewpoint root
+ * included, and an `observed` boundary as much as an `event` one: it is persisted with the commit, not a timer
+ * this process started. A boundary the published data does not stand behind (basis `unknown`, an anomalous clock)
+ * is no episode, and neither is one that has not happened yet.
  */
 function newEpisode(proj: NodeProjection, nowMs: number): boolean {
   const m = proj.marker;
-  return (
-    !proj.isRoot &&
-    m.sinceBasis === 'event' &&
-    m.sinceMs !== null &&
-    nowMs >= m.sinceMs &&
-    nowMs - m.sinceMs < EMPHASIS_MS
-  );
+  return m.sinceBasis !== 'unknown' && m.sinceMs !== null && nowMs >= m.sinceMs && nowMs - m.sinceMs < EMPHASIS_MS;
 }
 
 /**
- * How a row paints. A selected row sits on the palette's band, so its muted ink is the palette's text colour
- * (muted text on the band is the least legible pairing in two of the palettes) and the roles keep their hue;
- * everywhere else it is the plain role colours (§5.2 "选中行").
+ * How a row paints. A selected row on a palette with a band sits on it and paints every span through the palette's
+ * `onSelectedBand` family (calibrated for that surface: nothing on the band is a plain `theme.*` colour). A selected
+ * row on a palette without one (`none`, `terminal`), and every other row, uses the plain role colours (§5.2 "选中行").
  */
 interface Ink {
+  /** What recedes: the tree, separators, `⊟`, the summary, the fold, the meter's track. */
   muted(text: string): string;
+  /** The selection mark. */
+  accent(text: string): string;
   paint(role: Role, text: string): string;
+  /** The model badge's paints; undefined is the palette's plain roles. */
+  badge(): ModelTokenPaints | undefined;
 }
-const PLAIN_INK: Ink = { muted: (text) => colors.dim(text), paint };
+const PLAIN_INK: Ink = {
+  muted: (text) => colors.dim(text),
+  accent: (text) => theme.accent(text),
+  paint,
+  badge: () => undefined,
+};
 const SELECTED_INK: Ink = {
-  muted: (text) => theme.value(text),
-  paint: (role, text) => (role === 'muted' ? theme.value(text) : paint(role, text)),
+  muted: (text) => palette().onSelectedBand.muted(text),
+  accent: (text) => palette().onSelectedBand.accent(text),
+  paint: paintOnSelectedBand,
+  badge: () => {
+    const ink = palette().onSelectedBand;
+    return { model: ink.model, muted: ink.muted, warning: ink.warning };
+  },
 };
 
 /** Marker paint with the §5.2 fade: success and warning settle to muted after `fadesAfterMs`. */
@@ -444,22 +457,24 @@ function layoutRow(row: PlannedRow, ctx: RenderContext, l: Layout): string {
   const { g, say } = l;
   const width = ctx.width;
   const tier = tierOf(width);
-  const ink = l.selected ? SELECTED_INK : PLAIN_INK;
+  // A palette with a band puts the row on it and its text in the band's ink; one without (`none`, `terminal`)
+  // marks the selection with `›` and the bold name alone, and everything else is drawn as on any other row.
+  const banded = l.selected && hasSelectionBand();
+  const ink = banded ? SELECTED_INK : PLAIN_INK;
   const emph = (text: string): string => (l.emphasis ? colors.bold(text) : text);
   // A selected row is the palette's band across its whole width, however its spans reset in between (§5.2).
-  const finish = (text: string): string => (l.selected ? theme.selectedBand(exact(text, width)) : exact(text, width));
-  const select = l.selected ? theme.accent(g.select) : ' ';
+  const finish = (text: string): string => (banded ? theme.selectedBand(exact(text, width)) : exact(text, width));
+  const select = l.selected ? ink.accent(g.select) : ' ';
   // A cross-harness tree gives every row an icon slot. A native child has no harness mark of its own, so its slot
   // is blank until the data layer carries the native's kind (§3.4 icon slot, §7 #33; rulings B10b s1, Q3).
   const slot = ctx.proj.crossHarness ? (proj.harness && !proj.isNative ? g.harness[proj.harness] : ' ') : '';
+  // The harness mark is muted, and "strong" on the selected row: the text colour in bold on a band (§5.2).
+  const slotPainted = (text: string): string =>
+    banded ? colors.bold(ink.paint('text', text)) : ink.muted(l.selected ? colors.bold(text) : text);
   const markerText = g.marker[m.glyph];
   const markerPainted = l.selected ? colors.bold(ink.paint(l.faded, markerText)) : ink.paint(l.faded, markerText);
   const lead =
-    select +
-    ink.muted(l.prefix) +
-    markerPainted +
-    ' ' +
-    (slot ? (slot.trim() ? ink.muted(l.selected ? colors.bold(slot) : slot) : slot) + ' ' : '');
+    select + ink.muted(l.prefix) + markerPainted + ' ' + (slot ? (slot.trim() ? slotPainted(slot) : slot) + ' ' : '');
   const leadWidth = 1 + visualLength(l.prefix) + 2 + (slot ? 2 : 0);
 
   // The right cluster: what the row's class keeps at this width (§3.4, §4.2).
@@ -472,7 +487,7 @@ function layoutRow(row: PlannedRow, ctx: RenderContext, l: Layout): string {
   }
   let badge =
     badgeCols > 0 && proj.model && !(cls === 'native' && proj.model === l.parentModel)
-      ? fitModelEffortToken(proj.model, proj.effort ?? undefined, badgeCols)
+      ? fitModelEffortToken(proj.model, proj.effort ?? undefined, badgeCols, undefined, ink.badge())
       : '';
   // A native child shows a badge only when its model differs from its parent's; otherwise it has no column.
   if (cls === 'native' && !badge) badgeCols = 0;
@@ -529,7 +544,7 @@ function layoutRow(row: PlannedRow, ctx: RenderContext, l: Layout): string {
 
   const muted = nameMuted(proj, ctx.nowMs);
   const nameStyle = (text: string): string => {
-    if (l.selected) return colors.bold(muted ? ink.muted(text) : theme.value(text));
+    if (l.selected) return colors.bold(muted ? ink.muted(text) : ink.paint('text', text));
     if (proj.isRoot) return colors.bold(theme.strong(text));
     return muted ? ink.muted(text) : theme.value(text);
   };

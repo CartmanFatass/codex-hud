@@ -9,6 +9,7 @@
 
 import { colors, theme } from '../colors.js';
 import { t } from '../i18n.js';
+import { palette } from '../palette.js';
 
 export type Role = 'alert' | 'warning' | 'danger' | 'info' | 'success' | 'muted' | 'text' | 'strong';
 
@@ -44,6 +45,43 @@ export function paint(role: Role, text: string): string {
     default:
       return theme.value(text);
   }
+}
+
+/**
+ * The same roles on the selected row's band (§5.2 "选中行"): every span goes through the palette's
+ * `onSelectedBand` family, calibrated for that surface, and nothing on the band is drawn with a plain `theme.*`.
+ * `alert` is the danger hue in bold and `strong` is the text colour in bold, as on the plain row.
+ */
+export function paintOnSelectedBand(role: Role, text: string): string {
+  const ink = palette().onSelectedBand;
+  switch (role) {
+    case 'alert':
+      return colors.bold(ink.danger(text));
+    case 'warning':
+      return ink.warning(text);
+    case 'danger':
+      return ink.danger(text);
+    case 'info':
+      return ink.info(text);
+    case 'success':
+      return ink.success(text);
+    case 'muted':
+      return ink.muted(text);
+    case 'strong':
+      return colors.bold(ink.text(text));
+    default:
+      return ink.text(text);
+  }
+}
+
+/**
+ * Whether the palette has a selection surface. `none` has no colour at all and `terminal` has no surface of its
+ * own to calibrate a foreground against (its band is a fixed grey that is not the user's theme), so a selected
+ * row there is the `›` and a bold name and nothing else (§5.2 "选中行").
+ */
+export function hasSelectionBand(): boolean {
+  const name = palette().name;
+  return name !== 'none' && name !== 'terminal';
 }
 
 /** The English words of §3.3 and §5.5 in one place, so a typo cannot fork the bar from the panel. */

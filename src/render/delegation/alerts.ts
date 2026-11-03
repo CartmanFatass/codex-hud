@@ -97,14 +97,14 @@ export function delegationAlerts(
   const g = glyphSet(ascii);
   const nodes: NodeAlert[] = [];
   const seen = new Set<string>();
-  for (const pn of proj.nodes) {
-    if (pn.proj.isRoot) continue;
+  const offer = (pn: PNode) => {
+    if (pn.proj.isRoot) return;
     const cls = classify(pn, nowMs);
-    if (!cls) continue;
+    if (!cls) return;
     // A conflicting child is one alert however many parents claim it.
     const identity = cls === 'warn' ? (pn.relation?.childKey ?? pn.key) : pn.key;
     if (cls === 'warn') {
-      if (seen.has(identity)) continue;
+      if (seen.has(identity)) return;
       seen.add(identity);
     }
     nodes.push({
@@ -114,7 +114,10 @@ export function delegationAlerts(
       word: say(pn.proj.marker.words[0] ?? ''),
       at: pn.proj.marker.sinceMs,
     });
-  }
+  };
+  for (const pn of proj.nodes) offer(pn);
+  // A conflict that did not fit the row budget is no less a conflict (the projection keeps one summary per child).
+  for (const pn of proj.omittedConflicts) offer(pn);
   nodes.sort((a, b) => ORDER[a.cls] - ORDER[b.cls] || (b.at ?? -Infinity) - (a.at ?? -Infinity));
   const slots = slotsAlert(proj);
   return { nodes, slots };

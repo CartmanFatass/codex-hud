@@ -15,6 +15,7 @@ import {
 } from '../../src/render/delegation/projection.js';
 import { planRows, renderRow, renderRows } from '../../src/render/delegation/rows.js';
 import { delegationAlerts } from '../../src/render/delegation/alerts.js';
+import { attentionForms } from '../../src/render/delegation/bar.js';
 import { statuslineDelegation } from '../../src/render/delegation/statusline.js';
 import { plainSay } from '../../src/render/delegation/style.js';
 import { stripAnsi, visualLength } from '../../src/render/colors.js';
@@ -513,4 +514,156 @@ test('§6 #3: conflict rows share the 200-node budget; the rest are counted and 
   assert.equal(shared.nodes.length, 200, 'one of the three claims fits');
   assert.equal(shared.omittedConflictRows, 2);
   assert.equal(shared.counts.warn, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Fix round 2, #16: the row budget bounds what is drawn, not what is known.
+
+/** A finished native child, old enough to be history (and so to fold away when its subtree is finished). */
+const oldNative = (id: string, parent: string): NodeSpec => ({
+  id,
+  parent,
+  native: true,
+  status: S.exited(ago(3600)),
+  createdAt: ago(7200),
+});
+
+const fillers = (count: number, from = 0): NodeSpec[] =>
+  Array.from({ length: count }, (_, i): NodeSpec => ({
+    id: `w${from + i}`,
+    parent: 'main',
+    status: S.working(ago(60 + i)),
+    createdAt: ago(1000 - i),
+  }));
+
+test('§4.1, §4.12: a conflict that fits no row still lights the bar and the statusline, and marks the root', () => {
+  // 199 history rows and the root fill the budget; the one conflicting child has no row.
+  const { vm } = buildVm([
+    MAIN,
+    ...Array.from({ length: 199 }, (_, i) => oldNative(`n${i}`, 'main')),
+    { id: 'x', parent: 'main', harness: 'codex', relationOnly: true, conflict: { count: 2, since: ago(300) } },
+  ]);
+  const proj = projectDelegation(vm, new ProjectionCache());
+  assert.equal(proj.nodes.length, 200);
+  assert.equal(proj.omittedConflictRows, 1);
+  assert.equal(proj.omittedConflicts.length, 1, 'one summary for the child nothing draws');
+  assert.equal(proj.counts.warn, 1);
+  assert.equal(proj.byKey.get('claude:main')!.sub.below.warn, 1, 'the root counts it below itself');
+  assert.equal(proj.byKey.get('claude:main')!.sub.rank, 0);
+
+  // The bar: one alert, in full, naming the child.
+  const alerts = delegationAlerts(proj, NOW, plainSay);
+  assert.deepEqual(
+    alerts.nodes.map((a) => [a.cls, a.name, a.word]),
+    [['warn', 'x', 'conflict']]
+  );
+  const forms = attentionForms(vm, NOW, false, { flag: 0, fail: 0 });
+  assert.ok(forms, 'the attention module has something to say');
+  assert.match(stripAnsi(forms!.full), /⚠ x conflict/);
+
+  // The statusline: nothing else earns line two, and this does.
+  const line = statuslineDelegation(vm, { width: 120, nowMs: NOW });
+  assert.match(stripAnsi(line.counts), /1⚠/);
+  assert.equal(line.height, 2);
+  assert.ok(line.line2);
+  assert.match(stripAnsi(line.line2!), /⚠ .*x conflict/);
+});
+
+test('§3.2, §3.4: a claim that fits no row still keeps its parent unfinished, troubled and on the list', () => {
+  // The child `c` is claimed by the root (this claim fits the 200th row) and by the finished parent `p`
+  // (this one does not). `p` and its finished child are history; without the claim they would fold into `⊕N`.
+  const { vm } = buildVm([
+    MAIN,
+    { ...oldNative('p', 'main') },
+    oldNative('q', 'p'),
+    ...fillers(196),
+    {
+      id: 'c',
+      parent: 'main',
+      harness: 'codex',
+      alsoClaimedBy: ['p'],
+      relationOnly: true,
+      conflict: { count: 2, since: ago(120) },
+    },
+  ]);
+  const proj = projectDelegation(vm, new ProjectionCache());
+  assert.equal(proj.nodes.length, 200, 'one claim fits');
+  assert.equal(proj.omittedConflictRows, 1, 'the claim under p does not');
+  assert.equal(proj.omittedConflicts.length, 0, 'the child has a row, so the summary would be a second alert');
+  assert.equal(proj.counts.warn, 1, 'one child, counted once');
+  assert.equal(delegationAlerts(proj, NOW, plainSay).nodes.filter((a) => a.cls === 'warn').length, 1);
+
+  const p = proj.byKey.get('codex:p')!;
+  assert.equal(p.sub.allFinished, false, 'the omitted claim is not a finished thing');
+  assert.equal(p.sub.youngestFinish, null);
+  assert.equal(p.sub.rank, 0, 'the subtree is in the trouble bucket');
+  assert.equal(p.sub.below.warn, 1);
+  assert.equal(p.sub.total, 2, 'q and the claim');
+
+  const plan = planRows(proj, { nowMs: NOW });
+  // Only the finished child `q` is put away, under `p`; `p` itself (which would go with it) stays on the list.
+  assert.equal(plan.putAway, 1);
+  const keys = plan.rows.map((row) => row.key);
+  assert.ok(keys.includes('codex:p'), 'the parent stays on the list');
+  // Trouble first: both `p` (its omitted claim) and the drawn claim row sort before the working rows.
+  assert.ok(keys.indexOf('codex:p') < keys.indexOf('codex:w0'));
+  // A folded `p` still tells of the conflict it holds.
+  const folded = planRows(proj, { nowMs: NOW, collapsed: new Set(['codex:p']) }).rows.find((r) => r.key === 'codex:p')!;
+  assert.equal(folded.fold!.below.warn, 1);
+  assert.equal(folded.fold!.hidden, 2);
+});
+
+test('§4.12: every claim omitted, two finished parents: one child, one alert, one item, both parents troubled', () => {
+  const { vm } = buildVm([
+    MAIN,
+    oldNative('p1', 'main'),
+    oldNative('p2', 'main'),
+    ...fillers(197),
+    {
+      id: 'c',
+      parent: 'p1',
+      harness: 'pi',
+      alsoClaimedBy: ['p2'],
+      relationOnly: true,
+      conflict: { count: 2, since: ago(90) },
+    },
+  ]);
+  const proj = projectDelegation(vm, new ProjectionCache());
+  assert.equal(proj.nodes.length, 200);
+  assert.equal(proj.omittedConflictRows, 2);
+  assert.equal(proj.omittedConflicts.length, 1, 'one summary however many parents claim the child');
+  assert.equal(proj.counts.warn, 1);
+  assert.equal(delegationAlerts(proj, NOW, plainSay).nodes.length, 1);
+  for (const id of ['codex:p1', 'codex:p2']) {
+    const parent = proj.byKey.get(id)!;
+    assert.equal(parent.sub.allFinished, false, `${id} holds a claim`);
+    assert.equal(parent.sub.below.warn, 1, `${id} counts the conflict below it`);
+  }
+  const plan = planRows(proj, { nowMs: NOW });
+  assert.equal(plan.putAway, 0);
+  assert.ok(plan.rows.some((r) => r.key === 'codex:p1') && plan.rows.some((r) => r.key === 'codex:p2'));
+  const line = statuslineDelegation(vm, { width: 160, nowMs: NOW });
+  assert.equal((stripAnsi(line.line2 ?? '').match(/conflict/g) ?? []).length, 1, 'one item for the child');
+  // The same tree under the budget gives the same alert, item and parent summaries (the budget changes rows only).
+  const small = buildVm([
+    MAIN,
+    oldNative('p1', 'main'),
+    oldNative('p2', 'main'),
+    {
+      id: 'c',
+      parent: 'p1',
+      harness: 'pi',
+      alsoClaimedBy: ['p2'],
+      relationOnly: true,
+      conflict: { count: 2, since: ago(90) },
+    },
+  ]);
+  const whole = projectDelegation(small.vm, new ProjectionCache());
+  assert.equal(whole.omittedConflictRows, 0);
+  for (const id of ['codex:p1', 'codex:p2'])
+    assert.deepEqual(
+      { ...whole.byKey.get(id)!.sub.below },
+      { ...proj.byKey.get(id)!.sub.below },
+      `${id}: the omitted claim marks its parent the way the drawn one does`
+    );
 });

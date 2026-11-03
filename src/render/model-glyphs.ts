@@ -68,20 +68,39 @@ export function versionedModelLabel(model?: string | null): string {
   return version ? `${version}${family}` : family;
 }
 
-function paintEffort(effort: string, glyph: string): string {
+/**
+ * The three paints a badge is made of: the family (symbol or words, and the high efforts' glyph), what recedes
+ * (low efforts, `·effort` words, the words beside a symbol) and the strongest efforts. The default is the active
+ * palette's own `model` / `muted` / `warning`; a row on a surface of its own passes the ink calibrated for it.
+ */
+export interface ModelTokenPaints {
+  model: (text: string) => string;
+  muted: (text: string) => string;
+  warning: (text: string) => string;
+}
+
+const PLAIN_PAINTS: ModelTokenPaints = {
+  model: (text) => theme.model(text),
+  muted: (text) => colors.dim(text),
+  warning: (text) => theme.warning(text),
+};
+
+function paintEffort(effort: string, glyph: string, paints: ModelTokenPaints): string {
   const key = effort.toLowerCase();
   if (key === 'max' || key === 'ultra') {
-    return theme.warning(glyph);
+    return paints.warning(glyph);
   }
   if (key === 'high' || key === 'xhigh') {
-    return theme.model(glyph);
+    return paints.model(glyph);
   }
-  return colors.dim(glyph);
+  return paints.muted(glyph);
 }
 
 export interface ModelTokenOptions {
   /** Override the configured glyph mode, for the narrowest layout variants. */
   mode?: GlyphMode;
+  /** Override the paints (default: the active palette's plain roles). */
+  paints?: ModelTokenPaints;
 }
 
 /**
@@ -98,6 +117,7 @@ export function renderModelEffortToken(
   options: ModelTokenOptions = {}
 ): string {
   const mode = options.mode ?? displayConfig().glyphs;
+  const paints = options.paints ?? PLAIN_PAINTS;
   const family = classifyModelFamily(model);
   const effortKey = (effort ?? '').trim().toLowerCase();
   const effortGlyph = effortKey ? (EFFORT_GLYPHS[effortKey] ?? '') : '';
@@ -107,28 +127,28 @@ export function renderModelEffortToken(
   const familyText = model ? versionedModelLabel(model) : '';
 
   if (mode === 'glyph' && familyGlyph) {
-    const painted = theme.model(familyGlyph);
-    return effortGlyph ? `${painted}${paintEffort(effortKey, effortGlyph)}` : painted;
+    const painted = paints.model(familyGlyph);
+    return effortGlyph ? `${painted}${paintEffort(effortKey, effortGlyph, paints)}` : painted;
   }
 
   if (mode === 'text') {
     if (!familyText) {
       return '';
     }
-    const painted = theme.model(familyText);
-    return effortKey ? `${painted}${colors.dim('·' + effortKey)}` : painted;
+    const painted = paints.model(familyText);
+    return effortKey ? `${painted}${paints.muted('·' + effortKey)}` : painted;
   }
 
   // both, and the glyph-mode fallback for an unrecognised model
   const parts: string[] = [];
   if (familyGlyph) {
-    parts.push(theme.model(familyGlyph) + (effortGlyph ? paintEffort(effortKey, effortGlyph) : ''));
+    parts.push(paints.model(familyGlyph) + (effortGlyph ? paintEffort(effortKey, effortGlyph, paints) : ''));
   }
   if (familyText) {
-    parts.push(familyGlyph ? colors.dim(familyText) : theme.model(familyText));
+    parts.push(familyGlyph ? paints.muted(familyText) : paints.model(familyText));
   }
   if (!familyGlyph && effortKey) {
-    parts.push(effortGlyph ? paintEffort(effortKey, effortGlyph) : colors.dim('·' + effortKey));
+    parts.push(effortGlyph ? paintEffort(effortKey, effortGlyph, paints) : paints.muted('·' + effortKey));
   }
   return parts.join(' ');
 }
@@ -147,14 +167,15 @@ export function fitModelEffortToken(
   model: string | undefined,
   effort: string | undefined,
   max: number,
-  mode: ModelTokenOptions['mode'] = displayConfig().glyphs
+  mode: ModelTokenOptions['mode'] = displayConfig().glyphs,
+  paints?: ModelTokenPaints
 ): string {
   const forms = mode === 'text' ? ['text', 'text-bare'] : mode === 'glyph' ? ['glyph'] : ['both', 'glyph'];
   for (const form of forms) {
     const token =
       form === 'text-bare'
-        ? renderModelEffortToken(model, undefined, { mode: 'text' })
-        : renderModelEffortToken(model, effort, { mode: form as ModelTokenOptions['mode'] });
+        ? renderModelEffortToken(model, undefined, { mode: 'text', paints })
+        : renderModelEffortToken(model, effort, { mode: form as ModelTokenOptions['mode'], paints });
     if (token && visualLength(token) <= max) return token;
   }
   return '';

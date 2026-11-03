@@ -183,7 +183,10 @@ function secondLine(proj: DelegationProjection, width: number, nowMs: number, g:
   // A conflicting child is one item however many parents claim it: the rows of the other claims are
   // synthetic (no node of their own), so they are told apart by the child they name (§4.12).
   const seen = new Set<string>();
-  const nodes = proj.nodes.filter((pn) => !pn.proj.isRoot && !pn.proj.isNative).sort(compareSiblings(false));
+  // The conflicts that did not fit the row budget are items all the same (`omittedConflicts`).
+  const nodes = [...proj.nodes, ...proj.omittedConflicts]
+    .filter((pn) => !pn.proj.isRoot && !pn.proj.isNative)
+    .sort(compareSiblings(false));
   for (const pn of nodes) {
     const identity = pn.node === null ? (pn.relation?.childKey ?? pn.key) : pn.key;
     if (seen.has(identity)) continue;

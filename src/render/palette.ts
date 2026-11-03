@@ -12,6 +12,22 @@ import { displayConfig, type ThemeName } from './hud-config.js';
 
 export type Paint = (text: string) => string;
 
+/**
+ * The ink calibrated for `selectedBand` (the selected row's surface): text >= 4.5:1 against it, muted >= 3:1 and
+ * >= 1.5:1 from text, every hue >= 3:1 with its hue and saturation kept (lightness is all that moves). A role
+ * that already meets its floor is the plain role itself; only a failing one is a constant of its own.
+ */
+export interface OnSelectedBand {
+  text: Paint;
+  muted: Paint;
+  accent: Paint;
+  success: Paint;
+  warning: Paint;
+  danger: Paint;
+  info: Paint;
+  model: Paint;
+}
+
 export interface Palette {
   name: ThemeName;
   /** Ordinary text. */
@@ -74,6 +90,11 @@ export interface Palette {
    */
   tabEdge: Paint;
   chipEdge: Paint;
+  /**
+   * What the selected row's text, marks and badges are painted with, calibrated against `selectedBand`. A palette
+   * with no band (`none`, `terminal`) has the plain roles here and never draws it (design §5.2 "选中行").
+   */
+  onSelectedBand: OnSelectedBand;
 }
 
 const ESC = '\x1b[';
@@ -118,10 +139,31 @@ function surface(hex: string): Paint {
 const identity: Paint = (text: string) => text;
 
 /**
+ * A palette with its `onSelectedBand` family: each role is the palette's plain role unless `calibrated` names a
+ * constant for it, so the family cannot drift from the roles it aliases.
+ */
+function withSelectedInk(roles: Omit<Palette, 'onSelectedBand'>, calibrated: Partial<OnSelectedBand> = {}): Palette {
+  return {
+    ...roles,
+    onSelectedBand: {
+      text: roles.text,
+      muted: roles.muted,
+      accent: roles.accent,
+      success: roles.success,
+      warning: roles.warning,
+      danger: roles.danger,
+      info: roles.info,
+      model: roles.model,
+      ...calibrated,
+    },
+  };
+}
+
+/**
  * The original look: basic ANSI codes, so the colours follow whatever the
  * user's terminal theme already defines.
  */
-const TERMINAL: Palette = {
+const TERMINAL: Palette = withSelectedInk({
   name: 'terminal',
   text: basic(39), // Terminal foreground remains legible on light and dark themes.
   muted: basic(2),
@@ -156,10 +198,10 @@ const TERMINAL: Palette = {
   frame: ansi256(240),
   tabEdge: ansi256(31),
   chipEdge: ansi256(238),
-};
+});
 
 // Catppuccin Mocha and Latte, from the published palettes.
-const MOCHA: Palette = {
+const MOCHA: Palette = withSelectedInk({
   name: 'mocha',
   text: rgb('#CDD6F4'),
   muted: rgb('#9399B2'),
@@ -187,9 +229,9 @@ const MOCHA: Palette = {
   frame: rgb('#6C7086'),
   tabEdge: rgb('#89B4FA'),
   chipEdge: rgb('#45475A'),
-};
+});
 
-const LATTE: Palette = {
+const LATTE_ROLES: Omit<Palette, 'onSelectedBand'> = {
   name: 'latte',
   text: rgb('#4C4F69'),
   muted: rgb('#6C6F85'),
@@ -221,6 +263,13 @@ const LATTE: Palette = {
   chipEdge: rgb('#CCD0DA'),
 };
 
+// On the latte band (#CCD0DA) these three fall under 3:1 (1.70, 2.17, 1.81). Lightness moves, hue and saturation stay.
+const LATTE: Palette = withSelectedInk(LATTE_ROLES, {
+  warning: rgb('#9C6414'),
+  success: rgb('#337F22'),
+  info: rgb('#0378A6'),
+});
+
 /**
  * omp's titanium, as omp paints its status line and settings: aluminium text
  * on dark titanium, electric blue where the attention goes, deep blue under
@@ -234,7 +283,7 @@ const LATTE: Palette = {
  * and a button on the bar, each a step lighter than the last. The track
  * stays between the band and the frame, so a meter on the band still shows.
  */
-const TITANIUM: Palette = {
+const TITANIUM: Palette = withSelectedInk({
   name: 'titanium',
   text: rgb('#E8ECF4'),
   muted: rgb('#9CA3B0'),
@@ -261,9 +310,9 @@ const TITANIUM: Palette = {
   frame: rgb('#454C59'),
   tabEdge: rgb('#0082B3'),
   chipEdge: rgb('#3A424E'),
-};
+});
 
-const NONE: Palette = {
+const NONE: Palette = withSelectedInk({
   name: 'none',
   text: identity,
   muted: identity,
@@ -290,7 +339,7 @@ const NONE: Palette = {
   frame: identity,
   tabEdge: identity,
   chipEdge: identity,
-};
+});
 
 const PALETTES: Record<ThemeName, Palette> = {
   terminal: TERMINAL,

@@ -116,9 +116,16 @@ export interface DelegationProjection {
   conflictKeys: Set<string>;
   /**
    * Conflict relations that would have had a row of their own but did not fit the node budget
-   * (`MAX_PROJECTED_NODES`); their children are still counted once each.
+   * (`MAX_PROJECTED_NODES`).
    */
   omittedConflictRows: number;
+  /**
+   * The row budget bounds what is drawn, not what is known: a conflicting child that has no row at all gets a
+   * summary here (never in `nodes`, never drawn, never a child of its parent), so the bar's alerts and the
+   * statusline's second line still tell of it. Each claim without a row also marks its parent's subtree as
+   * troubled and unfinished (`Subtree`), so it neither folds away nor drops out of the trouble bucket.
+   */
+  omittedConflicts: PNode[];
 }
 
 /** §6 #1, #6: the work of one tick is bounded by 200 projected nodes, conflict rows included. */
@@ -362,17 +369,18 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
   cache.sweep();
 
   // Conflict relations whose parent is drawn get a row of their own (§3.6), inside the same node budget as
-  // everything else; the ones that do not fit are counted (once per child) and reported, not drawn.
+  // everything else. The ones that do not fit are not drawn, but they stay known: counted once per child,
+  // summarised for the alerts and the statusline, and marked on their parent's subtree (below).
   const conflictKeys = new Set<string>();
   for (const pn of nodes) if (pn.proj.marker.glyph === 'warn') conflictKeys.add(pn.key);
   const drawn = nodes.length;
-  const omitted: LinkRelationProjection[] = [];
+  const omitted: Array<{ relation: LinkRelationProjection; parent: PNode }> = [];
   for (const relation of tree.relations) {
     if (relation.attribution !== 'conflict' || relation.parentKey === null) continue;
     const parent = byKey.get(relation.parentKey);
     if (!parent) continue;
     if (nodes.length >= MAX_PROJECTED_NODES) {
-      omitted.push(relation);
+      omitted.push({ relation, parent });
       continue;
     }
     const info = conflictGroupOf(relation.childKey);
@@ -391,6 +399,21 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
       pn.parent = parent;
       parent.children.push(pn);
     }
+  }
+
+  // A claim without a row is still a conflict under its parent: it counts below the parent as a `⚠`, puts the
+  // subtree in the trouble bucket (newest first) and keeps it from being finished, exactly as the row would.
+  // Seeded before the sweep, so every ancestor receives it through its child's subtree.
+  for (const { relation, parent } of omitted) {
+    const sub = parent.sub;
+    const at = relation.conflict?.since ?? Number.NEGATIVE_INFINITY;
+    sub.total += 1;
+    sub.below.warn += 1;
+    sub.allFinished = false;
+    if (sub.rank > 0) {
+      sub.rank = 0;
+      sub.sortAt = at;
+    } else if (sub.rank === 0) sub.sortAt = sub.sortAt === null ? at : Math.max(sub.sortAt, at);
   }
 
   // Children come after parents in the node list, so one reverse sweep is a post-order pass (§6 #10).
@@ -441,15 +464,18 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
     }
   }
 
-  // A conflict row that did not fit still counts: one `⚠` per child, however many claims were left out.
-  for (const relation of omitted) {
+  // A conflict row that did not fit still counts: one `⚠` per child, however many claims were left out. A child
+  // that has no row anywhere gets its summary (the alert and the statusline item are made from it).
+  const omittedConflicts: PNode[] = [];
+  for (const { relation, parent } of omitted) {
     if (counted.has(relation.childKey)) continue;
     counted.add(relation.childKey);
     conflictKeys.add(relation.childKey);
     counts.warn++;
     delegatedCounts.warn++;
-    const harness = conflictGroupOf(relation.childKey).harness;
-    if (harness) backends[harness]++;
+    const info = conflictGroupOf(relation.childKey);
+    if (info.harness) backends[info.harness]++;
+    omittedConflicts.push(syntheticConflictRow(relation, parent, nodes.length + omittedConflicts.length, info));
   }
 
   const sessions = nodes
@@ -492,6 +518,7 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
     spend,
     conflictKeys,
     omittedConflictRows: omitted.length,
+    omittedConflicts,
   };
 }
 
