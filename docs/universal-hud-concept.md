@@ -646,6 +646,8 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 | 2026-11-02 | 唤醒投递（B19，Oracle 裁决 `tmp/tasks/B19/oracle-1.md`，编排者批准）：`wake.delivered` 的 unknown 改为发送前不可退回的已计尝试（每批最多两次实际发送，两次发送前崩溃则零次，接受）；未决批次与新事件游标分开、每登记最多一个未决批次；所有触发共用每登记每 `recoveryMs` 一页的读预算，积压按页逐步推进；继承来的 unknown 只有在连续观察到父端静默时才重试，重启或观察缺口后保持 unconfirmed 不自动重试；终态后恢复定时器只保留有界尾段（最后一次终态后 10 × recoveryMs，至少 5 分钟），之后迟到报告的丢 hint 恢复退化为下一个 hint 或显式调用。理由：原文的崩溃安全两次上限、读预算与静默前提互相矛盾；有界尾段按轻量优先。契约 02 A1、06 A6 与设计 §3 随 B19 合入时改写 | B19 Oracle |
 | 2026-11-02 | 观测发布的执行位置与计时（B10C）：发布观测的 bar / panel 各用一个有界 worker 线程跑整个采集操作（租约、恢复、B16、`publishPrepared`、B9），主线程只画最近一个完整的已提交视图；不另起共享采集服务、不改 B12 API。P-06-7 的单一全 tick 门禁拆成三道：paint p99 < 50 / max < 200 ms，观测操作 p99 < 100 / max < 1 000 ms，本地 commit 到 paint p99 < 50 / max < 200 ms；无变化 ≤ 2 ms 按 p99。内存上限：每个 HUD 稳态多 ≤ 32 MiB、峰值 ≤ 64 MiB。过渡期 B10C 以发布关闭合入（HUD 只读账本），worker 版另作一个工作包 | Jacob 批准；Oracle `docs/reviews/2026-11-02-astra-b10c-worker.md`；契约 06「B10C 增补」 |
 | 2026-11-03 | 开发改为远程编排：先 Claude Code cloud（`docs/cloud/README.md`），云额度用完后转 dots（`docs/cloud/dots.md`：implementer Astra high，Oracle Astra max 负责架构、设计含前端、终审与复查）；远程编排者在 Oracle 接受且合并后全套检查通过时自行合入 `universal-hud`（不再有本地合并步骤，同一时间只有一个环境合并）；本地只做 Herdr、真实 harness、Jev、WSL 正式性能认证与改用户配置的工作。状态与交接见 `docs/handoff/STATE.md` | Jacob |
+| 2026-11-03 | P065 私有存储元数据例外：Oracle 依所有者委托的决策权批准仅对原打开门禁的 HUD_HOME、ledger.sqlite、WAL/SHM 在实际取得写锁后作固定同步 lstat/realpath 复验（每路径每 API 至多一次），保留原 Ledger 绑定、安全谓词及失败后禁审计/重钉/自动重试边界；不扩展来源取证或一般持锁 I/O 权限。准备计入原 30 ms、累计等锁/重试/退避 20 ms、单次 busy_timeout≤10 ms（当前为0）与其他预算不变，现有授权/重放/准入次序及已提交事实保真不变。局部门禁契约分叉已解决；实现仍须独立排期/所有权放行、终审与合并检查，不代表已实现、接受或合并 | 所有者委托 Oracle；[metadata exception ruling](./cloud/rulings/p065-metadata-exception.md) §§3–8；[P065-BUDGET](./cloud/P065-BUDGET.md) |
+
 
 ## 16. 评审状态与下一次评审
 
