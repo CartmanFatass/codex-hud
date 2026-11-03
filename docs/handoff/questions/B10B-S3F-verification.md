@@ -1,6 +1,6 @@
 # B10B-S3F performance and verification follow-up
 
-Status: owner decision requested; B10B-S3F, HYG2 and RUNZ1 remain unaccepted and unmerged.
+Status: owner approved both questions on 2026-11-03; B10B-S3F, HYG2 and RUNZ1 remain unaccepted and unmerged.
 
 ## B10B-S3F
 
@@ -13,3 +13,7 @@ Owner: may a scoped follow-on performance remediation proceed beyond this brief'
 The current cloud executor denies AF_UNIX and ptrace and its kernel has `CONFIG_PROC_CHILDREN` disabled. The three packages' full checks are therefore not green; no check is waived. Baseline/current diagnosis is on `dots/hyg2:docs/cloud/handoff/hyg2-topology-diagnosis.md` and `hyg2-proc-diagnosis-20261103.log`. The user has prohibited local-only work.
 
 Owner: provide or authorize a capable non-local executor for the normal synthetic check set, or explicitly authorize use of a Codex session on a suitable connected executor for these checks. This request does not include local-only real-harness work or changes to security settings.
+
+## Owner decision
+
+The owner approved both items and requested 6.1 Terra Max for testing. A separate Codex test session was started in the connected environment. Approval does not waive any gate or authorize local-only work or security-setting changes.
