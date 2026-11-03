@@ -75,7 +75,11 @@ Fresh work and an unresolved retry batch are derived separately. A batch is the 
 
 路径读取、摘要/hash、宿主 CLI、配置/进程/会话证据采集均在事务外完成；带着版本/指纹进入短 `BEGIN IMMEDIATE`，事务内重验 context 当前逻辑来源/代次、证据版本、owner/槽/冲突。外部 I/O 不占 SQLite 写事务，锁等待与重试受契约 [06](./06-observation.md) 的总响应预算约束；预算耗尽返回 busy/未接受，不提交动作。
 
+（P065 私有存储元数据例外，2026-11-03）外部准备仍须在 SQLite 写事务外完成。唯一新增例外是受信入口既有私有存储门禁的固定同步元数据复验：实际取得 BEGIN IMMEDIATE 写锁后，在本次受保护的本地授权、canonical 重放、新意图准入或既有受保护写入之前，只可对原门禁的 HUD_HOME、ledger.sqlite、ledger.sqlite-wal、ledger.sqlite-shm 执行一次 lstat/realpath 元数据复验；每路径每种 API 至多一次，提前拒绝或 sidecar 确实不存在时可更少。保持 UID/eUID、规范绝对路径、对象类型、所有权、私有权限、无符号链接、文件单硬链接及原 home/main dev+ino 比较；存在的 sidecar 校验安全属性，不固定其全生命周期 inode，悬空链接不是不存在。原打开门禁必须随同一 Ledger 实例传递，不得在等待后重新钉住路径、以 ledgerId/缓存/监听器代替复验，或由 MCP/CLI 参数选择此权限。该例外不包含内容读取、hash、配置/来源/进程取证、/proc、目录扫描、宿主 CLI、网络、IPC、异步等待、重试或文件修改。门禁失败时不接受目标操作，不以该连接另写拒绝审计，不重新钉住或自动重试；完成必要回滚/清理，并拒绝继续使用已失效本地绑定的准入。其保证是打开前后与取得锁后的元数据观察一致性，不是文件系统命名空间与 SQLite 的原子绑定，也不新增对恶意同 UID 进程的隔离保证。
+
 （consult 4 增补，F07）本调用的可信来源选择必须携带已捕获的 scope generation、证据版本、context 与目标 run/binding 前提；取得写锁后、查幂等或写入前仍须全部匹配。过时即 stale_context/identity_unverified，不临时重贴新 generation、不凭旧证据盲重试。原生子只拒本调用，不建立 root context、不兑换根 claim、不关闭根 scope/context/alias、不触发根换代；可信根来源变化才由同一 reconciler 事务失效旧范围/授权。跨 MCP 的当前 scope/context 以共享 B2 事务为权威，实例内 currentRef/invalidated 仅诊断；同根 MCP 重启/并发建代保持同 OwnerKey/未关闭代次，CAS 失败可要求新调用。新会话换代后旧实例不能复活旧授权，MCP 物理启动较晚不构成换代。合法旧代已 durable accepted 的意图保留原事实，仍按原票据在登记/提交重验，不抹掉接受或起副本；01 的 Claude /clear、双 MCP 和 Codex 原生子矩阵全部适用。外部取证仍在事务外，不能为修竞态把文件或 /proc I/O 搬入写事务。
+
+上述 P065 例外仅复验既有 HUD_HOME/ledger 私有存储安全，不适用于当前调用来源、scope generation、会话记录或 /proc 证据；F07 的事务外取证与锁内前提比较不变。
 
 1. 从本次已核验的当前 context 派生 canonical OwnerKey：已绑定 session；仅逻辑来源可辨且尚未绑定的 dedicated 用本代 proc。共享/缺来源/旧代先拒绝，不沿用连接上次身份。
 2. 仅用 `(canonical owner_key, request_key)` 索引查询；params_version/digest 不符即 idempotency_conflict。同参只返回原 linkId/runId/outcome，动态状态另作 current 投影；uncertain 也不重新提交。
@@ -89,6 +93,8 @@ Fresh work and an unresolved retry batch are derived separately. A batch is the 
 
 
 拒绝事件在有效事务中提交；失败的意图事务先完整回滚，再单独记录拒绝，不留下半个 run/slot。幂等接受记录不覆盖、不自动过期。槽忙的请求可持久化 rejected outcome（无新 run）；同 key 以后仍返回该拒绝，要在槽空闲后提出新请求必须显式换 request_key。这属于新的意图，不是重放旧动作。
+
+拒绝审计不是无条件补写：P065 原预算耗尽、存储证明失败或提交结果未明时，不启动新的拒绝审计事务。保留主要拒绝及已存在的持久事实；本地业务拒绝的可选审计仍须在同一剩余预算内重新验证原存储绑定。
 
 （NOTIFY 增补，A3）容量校验在 acceptIntent 的同一 BEGIN IMMEDIATE 内，沿用既有当前授权/捕获来源前提 → canonical OwnerKey×request_key/digest → 同参原结果重放的顺序；已满也先重放。只有新意图才按本 ledger/HUD_HOME 全局及当前 owner 计数 starting/running/cancelling/uncertain，默认 limits.maxActiveRuns=6、maxActiveRunsPerOwner=4，并同事务预留 starting。超限完整回滚，返回 `{ok:false,code:'concurrency_limit',active,limit,occupants:[{runId,linkId,state,since,holder:'self'|'other',retireEta:number|null}],retryAdvisable}`，不存幂等行；这是暂时拒绝，不沿用上文 slot_busy 可持久拒绝规则。所有未终态（包括报告完成但仍活、宽限中的可见子、uncertain）继续占容量及原槽，只有 R-02 证实终结才释放。全为调用者自己的未终态子（嵌套耗尽）或存在 uncertain 需对账时 retryAdvisable=false；等待/取消/内联或对账，不循环重试。此 cap 不限制原生 subagent、shell 子进程、waiter/helper，其预算另计。
 
