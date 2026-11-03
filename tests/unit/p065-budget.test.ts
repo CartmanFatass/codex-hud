@@ -5,6 +5,13 @@ import { CallBudget, CallBudgetExpired } from '../../src/ledger/call-budget.js';
 import { Ledger, LedgerCommitUncertain, LedgerCleanupFailed } from '../../src/ledger/ledger.js';
 import { acceptIntent } from '../../src/ledger/intents.js';
 import { budgetFixture, TestBudgetClock } from './p065-budget-fixture.js';
+import { existsSync } from 'node:fs';
+import { p065SupervisorSeed, p065WorkloadFixture } from './p065-budget-fixture.js';
+import { readContext, readEvents, readEvidence, readLink, readRun, refValue } from '../../src/ledger/records.js';
+import { scopeSnapshot } from '../../src/ledger/call-context.js';
+import { taskDigest } from '../../src/core/lifecycle.js';
+import { hashClaim } from './b45-handshake-fixture.js';
+import type { ProcessStamp } from '../../src/core/types/supervision.js';
 
 for (const elapsed of [29.999, 30, 30.001])
   test(`P065 original boundary ${elapsed} ms; zero remains intentional only for numeric API`, async () => {
@@ -415,3 +422,295 @@ test('P065 a different returned object cannot inherit an earlier durable marker'
     await f.close();
   }
 });
+
+/** Construction/invariant checks only, not framed MCP or latency qualification. */
+for (const [h, r] of [
+  [1, 1],
+  [2, 10],
+] as const)
+  for (const tool of [
+    'delegate_status',
+    'delegate_spawn',
+    'delegate_resume',
+    'delegate_cancel',
+    'delegate_whoami',
+    'delegate_report',
+  ])
+    test(`P065 workload fixture H=${h} R=${r} ${tool}`, { concurrency: false }, async (t) => {
+      const { DelegationService } = await import('../../packages/hud-mcp/src/delegation.js');
+      const close = DelegationService.prototype.close;
+      const closed: InstanceType<typeof DelegationService>[] = [];
+      t.mock.method(
+        DelegationService.prototype,
+        'close',
+        async function (this: InstanceType<typeof DelegationService>) {
+          closed.push(this);
+          await close.call(this);
+        }
+      );
+      const f = await p065WorkloadFixture(h, r, tool);
+      try {
+        const sourceId = f.parent.ref.sourceId;
+        const seed = p065SupervisorSeed(f.meta.supervisor);
+        assert.equal(f.initial.active.length, r);
+        assert.equal(f.initial.slots.length, r);
+        assert.equal(f.initial.claims.length, r);
+        assert.equal(new Set(f.initial.slots.map((row) => row.slot_key)).size, r);
+        assert.equal(new Set(f.initial.claims.map((row) => row.run_id)).size, r);
+        assert.deepEqual(
+          f.initial.active.map((row) => row.run_id).sort(),
+          [...f.baselineIds].sort()
+        );
+        const before = f.ledger.snapshot((tx) =>
+          f.baselineIds.map((runId) => {
+            const run = readRun(tx, runId);
+            const index = runId === 'run-a' ? 0 : Number(runId.slice('p065-run-'.length));
+            const supervisor: ProcessStamp = {
+              ...seed,
+              pid: 15000 + index,
+              proc_start: String(15000 + index),
+            };
+            assert.equal(run.sourceId, sourceId);
+            assert.deepEqual(run.supervisor, supervisor);
+            assert.equal(run.launchPhase, 'submitted');
+            assert.ok(['starting', 'running', 'cancelling', 'uncertain'].includes(run.state));
+            assert.ok(run.heartbeatSeq >= 2);
+            assert.deepEqual(
+              readEvents(tx, runId)
+                .filter((event) => event.kind === 'supervisor.registered')
+                .map((event) => event.payload),
+              [{ sourceId, bindingGeneration: run.expectedGeneration, supervisor }]
+            );
+            const claim = tx.get('SELECT * FROM claims WHERE run_id=?', runId);
+            assert.ok(claim);
+            assert.equal(claim.source_id, sourceId);
+            assert.equal(claim.supervisor_pid, supervisor.pid);
+            assert.equal(claim.supervisor_proc_start, supervisor.proc_start);
+            assert.equal(claim.state, f.targets.some((target) => target.runId === runId) ? 'redeemed' : 'armed');
+            assert.equal(tx.all('SELECT slot_key FROM slots WHERE run_id=?', runId).length, 1);
+            if (index !== 0)
+              assert.equal(
+                readLink(tx, run.linkId).taskDigest,
+                taskDigest(f.spawnArgs.brief, hashClaim('Synthetic task bytes.'), 'codex', sourceId, 'implementer')
+              );
+            return run;
+          })
+        );
+        const pulses = await f.pulse();
+        assert.equal(pulses.length, r);
+        for (let i = 0; i < r; i++) {
+          assert.equal(pulses[i]?.seq, before[i].heartbeatSeq + 1);
+          const after = f.ledger.snapshot((tx) => readRun(tx, before[i].runId));
+          assert.equal(after.heartbeatSeq, before[i].heartbeatSeq + 1);
+          assert.deepEqual(after.supervisor, before[i].supervisor);
+          const prior = before[i];
+          assert.ok(prior.heartbeatAt !== null && prior.heartbeatMonoMs !== null);
+          assert.ok(after.heartbeatAt !== null && after.heartbeatAt > prior.heartbeatAt);
+          assert.ok(after.heartbeatMonoMs !== null && after.heartbeatMonoMs > prior.heartbeatMonoMs);
+        }
+        assert.equal(f.services.length, h);
+        assert.equal(f.actors.length, h);
+        assert.equal(new Set(f.actors.map((actor) => actor.registration.caller.callerId)).size, h);
+        assert.equal(new Set(f.actors.map((actor) => actor.authority.contextId)).size, h);
+        assert.equal(new Set(f.actors.map((actor) => actor.authority.evidence.processKey)).size, h);
+        for (let i = 0; i < h; i++) {
+          const actor = f.actors[i];
+          const proof = f.source(i);
+          assert.equal(actor.registration.source?.sourceId, sourceId);
+          assert.equal(actor.registration.caller.sourceId, sourceId);
+          assert.deepEqual(proof.sessionRef, actor.ref);
+          assert.equal(proof.processKey, actor.authority.evidence.processKey);
+          assert.deepEqual(
+            proof.scopePremise,
+            f.ledger.snapshot((tx) => scopeSnapshot(tx, f.ledger.ledgerId, proof.processKey))
+          );
+          assert.equal(proof.scopePremise.kind, 'current');
+          assert.deepEqual(proof.scopePremise.current?.sessionRef, actor.ref);
+          const context = f.ledger.snapshot((tx) =>
+            readContext(tx, actor.authority.contextId, actor.authority.generation)
+          );
+          assert.equal(context.callerId, actor.registration.caller.callerId);
+          assert.equal(context.closedAt, null);
+          assert.deepEqual(context.sessionRef, actor.ref);
+        }
+        assert.equal(f.targets.length, h);
+        for (let i = 0; i < h; i++) {
+          const target = f.targets[i];
+          f.ledger.snapshot((tx) => {
+            const run = readRun(tx, target.runId);
+            const link = readLink(tx, run.linkId);
+            const claim = tx.get('SELECT * FROM claims WHERE run_id=?', target.runId);
+            assert.ok(claim);
+            assert.equal(run.sourceId, sourceId);
+            assert.deepEqual(run.supervisor, target.supervisor);
+            assert.equal(claim.claim_hash, hashClaim(target.claim));
+            assert.equal(claim.redeemed_context_id, target.child.authority.contextId);
+            assert.equal(claim.redeemed_generation, target.child.authority.generation);
+            assert.equal(claim.redeemed_session_ref, refValue(target.child.ref));
+            assert.deepEqual(link.childRef, target.child.ref);
+            assert.equal(link.state, 'bound');
+            assert.equal(link.currentOwner, true);
+            assert.equal(
+              tx.all(
+                'SELECT binding_id FROM child_bindings WHERE run_id=? AND caller_context_id=? AND context_generation=?',
+                target.runId,
+                target.child.authority.contextId,
+                target.child.authority.generation
+              ).length,
+              1
+            );
+            if (tool === 'delegate_resume') {
+              assert.equal(f.baselineIds.includes(target.runId), false);
+              assert.equal(run.state, 'ended');
+              assert.equal(claim.state, 'revoked');
+              assert.equal(tx.all('SELECT slot_key FROM slots WHERE run_id=?', target.runId).length, 0);
+              const evidence = readEvidence(tx, target.runId).find(
+                (entry) => entry.evidenceId === `p065-terminal-${target.runId}`
+              );
+              assert.ok(evidence);
+              assert.equal(evidence.validation, 'accepted');
+              assert.deepEqual(evidence.payload.reconcileFacts, [
+                {
+                  evidenceId: evidence.evidenceId,
+                  runId: target.runId,
+                  sourceId,
+                  bindingGeneration: 1,
+                  supervisor: target.supervisor,
+                  validation: 'accepted',
+                  asOf: 1020,
+                  observedAt: 1020,
+                  fact: {
+                    kind: 'scope_reconciled',
+                    complete: true,
+                    harnessTerminated: true,
+                    launchersSealed: true,
+                    nativeExit: null,
+                  },
+                },
+              ]);
+              assert.equal(f.args(i).expectedRun, target.runId);
+            } else {
+              assert.equal(f.baselineIds.includes(target.runId), true);
+              assert.equal(claim.state, 'redeemed');
+            }
+          });
+          if (tool === 'delegate_whoami' || tool === 'delegate_report') {
+            assert.equal(f.actors[i], target.child);
+            assert.notEqual(f.actors[i].authority.contextId, f.parent.authority.contextId);
+          }
+        }
+        assert.equal(f.initial.totalRuns, r + (tool === 'delegate_resume' ? h : 0));
+        assert.equal(f.population().active.length, r);
+        if (h === 2 && (tool === 'delegate_whoami' || tool === 'delegate_report')) {
+          const { HandshakeService } = await import('../../packages/hud-mcp/src/handshake.js');
+          const crossed = new HandshakeService({
+            ledger: f.ledger,
+            registration: f.targets[1].child.registration,
+            reader: f.reader,
+            env: { HUD_CLAIM: f.targets[0].claim },
+            now: f.now,
+            home: f.root,
+          });
+          await assert.rejects(
+            crossed.whoami({}, f.targets[1].child.authority),
+            /claim_anchor_mismatch|claim_redeemed|claim_invalid/
+          );
+        }
+      } finally {
+        await f.dispose();
+      }
+      for (const service of [f.service, ...f.services])
+        assert.equal(closed.filter((candidate) => candidate === service).length, 1);
+      assert.equal(existsSync(f.root), false);
+      await assert.rejects(f.ledger.transaction(() => 1), /ledger_closed/);
+    });
+
+test('P065 workload fixture rejects missing or malformed supervisor seeds', () => {
+  const seed: ProcessStamp = {
+    pid: 15000,
+    proc_start: '15000',
+    boot_id: 'synthetic-boot',
+    pid_domain: 'synthetic-domain',
+  };
+  assert.deepEqual(p065SupervisorSeed(seed), seed);
+  assert.throws(() => p065SupervisorSeed(null), /p065_invalid_supervisor_seed/);
+  for (const [field, value] of [
+    ['pid', 0],
+    ['pid', 1.5],
+    ['proc_start', ''],
+    ['proc_start', 'not-a-start'],
+    ['boot_id', ''],
+    ['pid_domain', ''],
+  ] as const) {
+    const malformed = { ...seed };
+    Reflect.set(malformed, field, value);
+    assert.throws(() => p065SupervisorSeed(malformed), /p065_invalid_supervisor_seed/);
+  }
+  for (const field of ['pid', 'proc_start', 'boot_id', 'pid_domain']) {
+    const malformed = { ...seed };
+    Reflect.deleteProperty(malformed, field);
+    assert.throws(() => p065SupervisorSeed(malformed), /p065_invalid_supervisor_seed/);
+  }
+});
+
+test(
+  'P065 workload fixture failed binding releases its service, ledger and temporary root',
+  { concurrency: false },
+  async (t) => {
+    const { HandshakeService } = await import('../../packages/hud-mcp/src/handshake.js');
+    const { DelegationService } = await import('../../packages/hud-mcp/src/delegation.js');
+    const close = DelegationService.prototype.close;
+    const closed: InstanceType<typeof DelegationService>[] = [];
+    let captured: { root: string | undefined; ledger: Ledger } | undefined;
+    t.mock.method(DelegationService.prototype, 'close', async function (this: InstanceType<typeof DelegationService>) {
+      closed.push(this);
+      await close.call(this);
+    });
+    const failure = new Error('synthetic_p065_binding_failure');
+    t.mock.method(HandshakeService.prototype, 'whoami', async function (this: InstanceType<typeof HandshakeService>) {
+      captured = { root: this['options'].home, ledger: this['options'].ledger };
+      throw failure;
+    });
+    await assert.rejects(p065WorkloadFixture(2, 10, 'delegate_report'), (error) => error === failure);
+    assert.ok(captured);
+    const observed = captured;
+    assert.ok(observed.root);
+    assert.equal(closed.filter((service) => service['options'].ledger === observed.ledger).length, 1);
+    assert.equal(existsSync(observed.root), false);
+    await assert.rejects(observed.ledger.transaction(() => 1), /ledger_closed/);
+  }
+);
+
+test(
+  'P065 workload fixture failed population check releases every composed service',
+  { concurrency: false },
+  async (t) => {
+    const { DelegationService } = await import('../../packages/hud-mcp/src/delegation.js');
+    const close = DelegationService.prototype.close;
+    const closed: InstanceType<typeof DelegationService>[] = [];
+    t.mock.method(DelegationService.prototype, 'close', async function (this: InstanceType<typeof DelegationService>) {
+      closed.push(this);
+      await close.call(this);
+    });
+    const prepare = DatabaseSync.prototype.prepare;
+    const failure = new Error('synthetic_p065_population_failure');
+    t.mock.method(DatabaseSync.prototype, 'prepare', function (this: DatabaseSync, sql: string) {
+      if (
+        sql ===
+        "SELECT run_id,supervisor_pid,heartbeat_seq FROM runs WHERE state IN ('starting','running','cancelling','uncertain') ORDER BY run_id"
+      )
+        throw failure;
+      return prepare.call(this, sql);
+    });
+    await assert.rejects(p065WorkloadFixture(2, 10, 'delegate_status'), (error) => error === failure);
+    assert.equal(closed.length, 3);
+    assert.equal(new Set(closed).size, 3);
+    const { ledger, home } = closed[0]['options'];
+    assert.equal(
+      closed.every((service) => service['options'].ledger === ledger && service['options'].home === home),
+      true
+    );
+    assert.equal(existsSync(home), false);
+    await assert.rejects(ledger.transaction(() => 1), /ledger_closed/);
+  }
+);

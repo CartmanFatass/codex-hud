@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Ledger, openLedger } from '../../src/ledger/ledger.js';
 import { CallBudget, type BudgetClock } from '../../src/ledger/call-budget.js';
 import type { PreparedIntent } from '../../src/ledger/types.js';
+import type { ProcessStamp } from '../../src/core/types/supervision.js';
 
 /** Trusted deterministic dependency, not a global clock or request timestamp. */
 export class TestBudgetClock implements BudgetClock {
@@ -53,12 +54,30 @@ export async function budgetFixture() {
   };
 }
 
+/** A malformed synthetic seed must fail before it is used as population evidence. */
+export function p065SupervisorSeed(seed: ProcessStamp | null): ProcessStamp {
+  if (
+    seed === null ||
+    typeof seed !== 'object' ||
+    !Number.isSafeInteger(seed.pid) ||
+    seed.pid <= 0 ||
+    typeof seed.proc_start !== 'string' ||
+    !/^\d+$/.test(seed.proc_start) ||
+    typeof seed.boot_id !== 'string' ||
+    seed.boot_id.length === 0 ||
+    typeof seed.pid_domain !== 'string' ||
+    seed.pid_domain.length === 0
+  )
+    throw new TypeError('p065_invalid_supervisor_seed');
+  return { pid: seed.pid, proc_start: seed.proc_start, boot_id: seed.boot_id, pid_domain: seed.pid_domain };
+}
+
 /** Cloud surrogate only: H registered MCP compositions in one OS process; R real active ledger runs.
  * A fresh fixture is used for every concurrent request wave, so history never silently accumulates. */
 export async function p065WorkloadFixture(h: 1 | 2, r: 1 | 10, tool: string) {
   const { performance } = await import('node:perf_hooks');
   const began = performance.now();
-  const assert = (await import('node:assert/strict')).default;
+  const assert: typeof import('node:assert/strict') = (await import('node:assert/strict')).default;
   const { delegationBenchmarkFixture } = await import('./b45-delegation-fixture.js');
   const { hashClaim } = await import('./b45-handshake-fixture.js');
   const { DelegationService } = await import('../../packages/hud-mcp/src/delegation.js');
@@ -73,12 +92,22 @@ export async function p065WorkloadFixture(h: 1 | 2, r: 1 | 10, tool: string) {
   const limits = { maxActiveRuns: 12, maxActiveRunsPerOwner: 12 };
   const f = await delegationBenchmarkFixture();
   const services: InstanceType<typeof DelegationService>[] = [];
-  const runs: { runId: string; claim: string; child: typeof f.child; supervisor: typeof f.meta.supervisor }[] = [];
+  const runs: { runId: string; claim: string; child: typeof f.child; supervisor: ProcessStamp }[] = [];
   try {
+    const seedSupervisor = p065SupervisorSeed(f.meta.supervisor);
+    const registeredSource = f.parent.registration.source;
+    assert.ok(registeredSource, 'p065_registered_source_required');
+    const sourceId = registeredSource.sourceId;
+    assert.equal(sourceId, f.parent.ref.sourceId);
+    assert.equal(sourceId, f.input.params.sourceId);
+    assert.equal(sourceId, f.input.run.sourceId);
+    assert.equal(sourceId, f.input.claim.sourceId);
+    assert.equal(sourceId, f.meta.source_id);
+    assert.deepEqual(f.ledger.snapshot((tx) => readRun(tx, 'run-a')).supervisor, seedSupervisor);
     const parent2 = h === 2 ? await f.actor('p065-parent-2', 11000, f.parent.ref.sessionId) : f.parent;
     const parents = [f.parent, parent2].slice(0, h);
     await f.startup();
-    runs.push({ runId: 'run-a', claim: f.claim, child: f.child, supervisor: f.meta.supervisor });
+    runs.push({ runId: 'run-a', claim: f.claim, child: f.child, supervisor: seedSupervisor });
     async function addRun(index: number) {
       const runId = `p065-run-${index}`,
         linkId = `p065-link-${index}`;
@@ -91,7 +120,7 @@ export async function p065WorkloadFixture(h: 1 | 2, r: 1 | 10, tool: string) {
         f.spawnArgs.brief,
         hashClaim('Synthetic task bytes.'),
         'codex',
-        f.source.sourceId,
+        sourceId,
         'implementer'
       );
       input.params.briefPath = f.spawnArgs.brief;
@@ -107,7 +136,11 @@ export async function p065WorkloadFixture(h: 1 | 2, r: 1 | 10, tool: string) {
       Object.assign(input.claim, { runId, claimHash: hashClaim(claim) });
       input.holder = `synthetic-supervisor-${index}`;
       await acceptIntent(f.ledger, input, 20, undefined, limits);
-      const supervisor = { ...f.meta.supervisor, pid: 15000 + index, proc_start: String(15000 + index) };
+      const supervisor: ProcessStamp = {
+        ...seedSupervisor,
+        pid: 15000 + index,
+        proc_start: String(15000 + index),
+      };
       const registration = {
         runId,
         ticketHash: input.run.launchTokenHash,
@@ -178,7 +211,7 @@ export async function p065WorkloadFixture(h: 1 | 2, r: 1 | 10, tool: string) {
         const fact = {
           evidenceId: id,
           runId: target.runId,
-          sourceId: f.source.sourceId,
+          sourceId: sourceId,
           bindingGeneration: 1,
           supervisor: target.supervisor,
           validation: 'accepted' as const,
@@ -232,6 +265,11 @@ export async function p065WorkloadFixture(h: 1 | 2, r: 1 | 10, tool: string) {
     }
     const childTool = tool === 'delegate_whoami' || tool === 'delegate_report';
     const actors = childTool ? targets.map((target) => target.child) : parents;
+    for (const actor of [...parents, ...runs.map((run) => run.child)]) {
+      assert.equal(actor.registration.source?.sourceId, sourceId);
+      assert.equal(actor.registration.caller.sourceId, sourceId);
+      assert.equal(actor.ref.sourceId, sourceId);
+    }
     const options = f.service['options'];
     for (let i = 0; i < h; i++)
       services.push(
@@ -252,7 +290,10 @@ export async function p065WorkloadFixture(h: 1 | 2, r: 1 | 10, tool: string) {
       .map((entry) => entry.runId);
     const heartbeat = baselineIds.map((runId) => {
       const run = f.ledger.snapshot((tx) => readRun(tx, runId));
-      return createHeartbeatWriter(f.ledger, runId, run.supervisor!, run);
+      const entry = runs.find((candidate) => candidate.runId === runId);
+      assert.ok(entry);
+      assert.deepEqual(run.supervisor, entry.supervisor);
+      return createHeartbeatWriter(f.ledger, runId, entry.supervisor, run);
     });
     let tick = 0;
     const pulse = async () => {
