@@ -1,0 +1,30 @@
+✔ B11 explicit argv and shell forms are distinct, literal overrides and cannot replace resume (2.170832ms)
+✔ B11 compatibility bin routes codex directly to the existing wrapper help without HUD_HOME (62.201268ms)
+✔ B11 real bin entry reports an unavailable MCP build in an installation path with spaces (242.449402ms)
+✔ B11 waiter generation check observes scope/context retirement during the registration gap (135.175452ms)
+✔ B11 status --help succeeds before HUD_HOME access or argument validation without a ledger (1.321335ms)
+✔ B11 cancel --help succeeds before HUD_HOME access or argument validation without a ledger (0.666577ms)
+✔ B11 reconcile --help succeeds before HUD_HOME access or argument validation without a ledger (0.524947ms)
+✔ B11 resume --help succeeds before HUD_HOME access or argument validation without a ledger (0.668178ms)
+✔ B11 wait --help succeeds before HUD_HOME access or argument validation without a ledger (0.597103ms)
+✔ B11 claude --help succeeds before HUD_HOME access or argument validation without a ledger (0.893292ms)
+✔ B11 run --help describes independent parent checks and ledger/watch recovery (0.379451ms)
+✔ B11 cancellation remains durably accepted when the subsequent status refresh fails (30.780595ms)
+✔ B11 strict local resume and wait parameters reject incomplete or ambiguous intents (0.418339ms)
+✔ B11 unsafe HUD_HOME refuses before creating files or dispatching (2.295767ms)
+✔ B11 wait registration race and lost hint recover using the real ledger, without writes (259.8817ms)
+✔ B11 notify drains multi-page high-water, strips bodies and leaves the caller cursor independent (32.41223ms)
+✔ B11 local resume preserves all parameters, rejects stale/active, replays once through B4 (114.825595ms)
+/bin/sh: 0: can't access tty; job control turned off
+✔ B11 standalone argv and explicit shell preserve special argument bytes in real processes (71.305524ms)
+✔ B11 Claude hook --settings preserves explicit user hooks and exact env; unverified launch makes no files (28.335428ms)
+✔ B11 large-history wait pages never query or decode unbounded event history (222.325133ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1362.219155
+EXIT=0
