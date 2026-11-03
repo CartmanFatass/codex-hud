@@ -16,7 +16,7 @@ Read `docs/ARCHITECTURE.md` before changing code: the two processes (bar `src/in
 
 # Universal HUD effort (branch `universal-hud`)
 
-This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi, with a delegation MCP (`hud-mcp`) and a run supervisor (`hud-run`). Before doing anything on this branch read, in order:
+This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi, with a delegation MCP (`hud-mcp`) and a run supervisor (`hud-run`). From 2026-11-03 the effort runs remotely: remote sessions (Claude Code cloud, dots) follow `AGENTS.md` and `docs/handoff/STATE.md`, not the local routing below. On the owner's machine, before doing anything on this branch read, in order:
 
 1. `docs/delegation.md`: who does which kind of task (Pro for architecture, Codex sol max reviewers, Codex sol implementers for core work, pi implementers for ordinary work with an escalation rule, the `frontend-implementer` subagent for rendering, Hermes for human-interaction tests).
 2. `docs/universal-hud-engineering-plan.md`: the work packages, their order, roles and acceptance. The orchestrator works through it phase by phase.

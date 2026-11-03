@@ -28,17 +28,23 @@ import type {
   CheckpointPreparation,
   CheckpointIdentity,
   PreparedCheckpoint,
+  MeteredLookupResult,
+  MeteredRecoveryResult,
   ObservationProjection,
   ObservationRecovery,
   ObservationRecoveryTarget,
   RecoveryIndexReference,
   RecoveryIndexLookup,
   RecoveryIndexEntry,
+  RecoveryReadGrant,
+  RecoveryReadStats,
 } from './types/checkpoint.js';
 import type { SessionRef } from './types/identity.js';
 import type { CollectLease, ObservationCommit, ReaderCheckpoint, ReaderContinuation } from './types/observation.js';
 
 type Row = Record<string, SQLOutputValue>;
+/** StatementSync.iterate (Node >=22.13, the store's floor) is missing from the pinned @types/node 20. */
+type IterableStatement = { iterate(...params: (string | number | null)[]): IterableIterator<Row> };
 const SCHEMA = `
 CREATE TABLE collect_leases (
   ref TEXT PRIMARY KEY, holder TEXT, generation INTEGER NOT NULL,
@@ -89,6 +95,134 @@ export interface ObservationHead {
   seqDomain: string;
 }
 
+function validBudget(budget: ReaderBudget): boolean {
+  return (
+    Number.isSafeInteger(budget.maxBytes) &&
+    budget.maxBytes >= 0 &&
+    Number.isSafeInteger(budget.maxRecords) &&
+    budget.maxRecords >= 0 &&
+    Number.isFinite(budget.budgetMs) &&
+    budget.budgetMs >= 0
+  );
+}
+
+/** A metered outcome before its statistics are attached (distributes over the result union). */
+type Unmetered<R> = R extends unknown ? Omit<R, 'stats'> : never;
+
+/**
+ * B12M: one collection grant. It holds the remaining shared allowance (bytes, records) and an absolute cooperative
+ * deadline on a monotonic clock, and accumulates every metered read charged to it. `drain()` returns the work
+ * charged since the previous drain, so a reader and a collector that both drain never count the same work twice.
+ */
+export class RecoveryGrant implements RecoveryReadGrant {
+  readonly deadline: number;
+  readonly #budget: Readonly<ReaderBudget>;
+  readonly #now: () => number;
+  #charged = { bytesRead: 0, recordsRead: 0, elapsedMs: 0 };
+  #undrained = { bytesRead: 0, recordsRead: 0, elapsedMs: 0 };
+  /**
+   * @param budget the allowance this grant may still spend; `budgetMs` sets the deadline from now.
+   * @param options.deadline an absolute deadline on the same clock, for a grant that shares an existing deadline.
+   * @param options.now a monotonic clock in ms (default `performance.now`).
+   */
+  constructor(budget: ReaderBudget, options: { deadline?: number; now?: () => number } = {}) {
+    if (!validBudget(budget) || (options.deadline !== undefined && !Number.isFinite(options.deadline)))
+      throw new ObservationStoreError('invalid_recovery_budget');
+    this.#budget = Object.freeze({ ...budget });
+    this.#now = options.now ?? (() => performance.now());
+    this.deadline = options.deadline ?? this.#now() + budget.budgetMs;
+  }
+  now(): number {
+    return this.#now();
+  }
+  remaining(): ReaderBudget {
+    return {
+      maxBytes: Math.max(0, this.#budget.maxBytes - this.#charged.bytesRead),
+      maxRecords: Math.max(0, this.#budget.maxRecords - this.#charged.recordsRead),
+      budgetMs: Math.max(0, this.deadline - this.#now()),
+    };
+  }
+  charge(stats: RecoveryReadStats): void {
+    for (const value of [stats.bytesRead, stats.recordsRead, stats.elapsedMs])
+      if (!Number.isFinite(value) || value < 0) throw new ObservationStoreError('invalid_recovery_stats');
+    for (const total of [this.#charged, this.#undrained]) {
+      total.bytesRead += stats.bytesRead;
+      total.recordsRead += stats.recordsRead;
+      total.elapsedMs += stats.elapsedMs;
+    }
+  }
+  drain(): RecoveryReadStats {
+    const drained = Object.freeze(this.#undrained);
+    this.#undrained = { bytesRead: 0, recordsRead: 0, elapsedMs: 0 };
+    return drained;
+  }
+  /** Everything charged to this grant so far (drained or not). */
+  get charged(): RecoveryReadStats {
+    return Object.freeze({ ...this.#charged });
+  }
+}
+
+/**
+ * B12M: a metered read that threw (corrupt body, invalid reference, a refused or stale lazy read reached through the
+ * legacy `get`/`page` while a grant is active). `stats` is the work done before the throw; it was already charged.
+ */
+export class RecoveryReadError extends ObservationStoreError {
+  constructor(
+    code: string,
+    readonly stats: RecoveryReadStats,
+    readonly minimumBytes?: number,
+    options?: { cause?: unknown }
+  ) {
+    super(code);
+    this.name = 'RecoveryReadError';
+    if (options && 'cause' in options) (this as { cause?: unknown }).cause = options.cause;
+  }
+}
+
+/** The commit a lookup was created for (at recovery or commit ACK). */
+interface LookupPin {
+  readonly commitSeq: number;
+  readonly sourceGeneration: number;
+  readonly seqDomain: string;
+  readonly checkpointId: string;
+}
+
+/** Collects one metered read's statistics and charges them to the grant exactly once. */
+class ReadMeter {
+  bytesRead = 0;
+  recordsRead = 0;
+  #charged: RecoveryReadStats | undefined;
+  readonly #start: number;
+  constructor(readonly grant: RecoveryReadGrant) {
+    this.#start = grant.now();
+  }
+  text(value: SQLOutputValue): string {
+    const text = String(value);
+    this.bytesRead += Buffer.byteLength(text);
+    return text;
+  }
+  expired(): boolean {
+    return this.grant.remaining().budgetMs <= 0;
+  }
+  finish(): RecoveryReadStats {
+    if (!this.#charged) {
+      this.#charged = Object.freeze({
+        bytesRead: this.bytesRead,
+        recordsRead: this.recordsRead,
+        elapsedMs: Math.max(0, this.grant.now() - this.#start),
+      });
+      this.grant.charge(this.#charged);
+    }
+    return this.#charged;
+  }
+  fail(error: unknown): RecoveryReadError {
+    const stats = this.finish();
+    if (error instanceof RecoveryReadError) return error;
+    const code = error instanceof ObservationStoreError ? error.code : 'recovery_read_failed';
+    return new RecoveryReadError(code, stats, undefined, { cause: error });
+  }
+}
+
 function privateDirectory(directory: string): void {
   let created = false;
   try {
@@ -131,6 +265,8 @@ export class ObservationStore {
   #closed = false;
   #lastSampledNow = 0;
   #readingSnapshot = false;
+  #activeGrant: RecoveryReadGrant | null = null;
+  #inTransaction = false;
   #authority = new Map<string, { holder: string; generation: number }>();
   constructor(
     private readonly db: DatabaseSync,
@@ -153,6 +289,7 @@ export class ObservationStore {
     try {
       this.db.exec('BEGIN IMMEDIATE');
       begun = true;
+      this.#inTransaction = true;
       const result = work();
       this.db.exec('COMMIT');
       begun = false;
@@ -162,6 +299,8 @@ export class ObservationStore {
       if (error instanceof Error && /database (?:is )?(?:locked|busy)/.test(error.message))
         throw new ObservationStoreError('observation_busy');
       throw error;
+    } finally {
+      this.#inTransaction = false;
     }
   }
 
@@ -191,6 +330,16 @@ export class ObservationStore {
         this.#readingSnapshot = false;
       }
     });
+  }
+
+  /**
+   * B12M: one metered read in one read snapshot. Inside an open write transaction it runs in that transaction (no
+   * nested BEGIN). The meter is finished after the snapshot's COMMIT, so `elapsedMs` includes it and a throw from
+   * COMMIT is still charged.
+   */
+  #meteredSnapshot<R extends { readonly stats: RecoveryReadStats }>(meter: ReadMeter, work: () => Unmetered<R>): R {
+    const result = this.#inTransaction ? this.#read(work) : this.#snapshot(work);
+    return { ...result, stats: meter.finish() } as unknown as R;
   }
 
   #lease(row: Row | undefined, ref: SessionRef): CollectLease | null {
@@ -294,46 +443,200 @@ export class ObservationStore {
     return row;
   }
 
-  #lookup(reference: RecoveryIndexReference): RecoveryIndexLookup {
+  /**
+   * B12M: lazy `get`/`page` calls on lookups created by this store are admitted against and charged to this grant
+   * while it is active; refusals and stale pins then throw RecoveryReadError. With no active grant (the default) they
+   * keep the unmetered pre-B12M behaviour.
+   *
+   * Scoped: at most one grant is active per store (one collection operation at a time on one store; interleaved
+   * collects on one store are refused with `recovery_grant_active`, never silently re-pointed). The returned
+   * deactivator ends exactly this activation: it is idempotent, a no-op after `close()`, and throws
+   * `recovery_grant_mismatch` rather than clearing a grant it did not activate.
+   */
+  activateRecoveryGrant(grant: RecoveryReadGrant): () => void {
+    if (this.#closed) throw new ObservationStoreError('observation_store_closed');
+    if (this.#activeGrant !== null) throw new ObservationStoreError('recovery_grant_active');
+    this.#activeGrant = grant;
+    let ended = false;
+    return () => {
+      if (ended || this.#closed) {
+        ended = true;
+        return;
+      }
+      if (this.#activeGrant !== grant) throw new ObservationStoreError('recovery_grant_mismatch');
+      ended = true;
+      this.#activeGrant = null;
+    };
+  }
+
+  /** Is the pinned commit still the current commit of its session? Evaluated in SQLite: no payload is fetched. */
+  #pinCurrent(key: string, pin: LookupPin): boolean {
+    return (
+      this.db
+        .prepare(
+          'SELECT 1 AS current FROM observation_current WHERE ref=? AND commit_seq=? AND source_generation=? AND seq_domain=? AND checkpoint_id=?'
+        )
+        .get(key, pin.commitSeq, pin.sourceGeneration, pin.seqDomain, pin.checkpointId) !== undefined
+    );
+  }
+
+  #lookup(reference: RecoveryIndexReference, pin: LookupPin): RecoveryIndexLookup {
     // Detached identity prevents a caller from moving a lookup to a later boundary.
     const pinned = JSON.parse(canonicalJson(reference)) as RecoveryIndexReference;
     const row = this.#indexRow(pinned);
-    const lineage = String(row.lineage);
-    const revision = Number(row.revision);
-    const lookup: RecoveryIndexLookup = {
-      reference: pinned,
-      get: (namespace, key) => {
-        this.#key(pinned.boundary.ref);
-        const entry = this.#read(() =>
-          this.db
-            .prepare(
-              `SELECT i.id, (SELECT e.value FROM recovery_entries e WHERE e.lineage=i.lineage AND e.namespace=? AND e.key=? AND e.revision<=i.revision ORDER BY e.revision DESC LIMIT 1) AS value FROM recovery_indexes i WHERE i.id=?`
-            )
-            .get(namespace, key, pinned.indexId)
-        );
-        if (!entry) throw new ObservationStoreError('recovery_snapshot_retired');
-        return entry.value == null ? undefined : String(entry.value);
-      },
-      page: (namespace, after, limit) => {
-        this.#key(pinned.boundary.ref);
-        if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256)
-          throw new ObservationStoreError('invalid_recovery_budget');
-        return this.#snapshot(() => {
-          this.#indexRow(pinned);
-          const entries = this.db
-            .prepare(
-              `
+    return this.#pinnedLookup(pinned, String(row.lineage), Number(row.revision), pin);
+  }
+
+  #pinnedLookup(
+    pinned: RecoveryIndexReference,
+    lineage: string,
+    revision: number,
+    pin: LookupPin
+  ): RecoveryIndexLookup {
+    const frozenPin: LookupPin = Object.freeze({ ...pin });
+    // Pre-B12M behaviour, unchanged: used while no grant is active on this store.
+    const legacyGet = (namespace: string, key: string): string | undefined => {
+      this.#key(pinned.boundary.ref);
+      const entry = this.#read(() =>
+        this.db
+          .prepare(
+            `SELECT i.id, (SELECT e.value FROM recovery_entries e WHERE e.lineage=i.lineage AND e.namespace=? AND e.key=? AND e.revision<=i.revision ORDER BY e.revision DESC LIMIT 1) AS value FROM recovery_indexes i WHERE i.id=?`
+          )
+          .get(namespace, key, pinned.indexId)
+      );
+      if (!entry) throw new ObservationStoreError('recovery_snapshot_retired');
+      return entry.value == null ? undefined : String(entry.value);
+    };
+    const legacyPage = (namespace: string, after: string | null, limit: number): readonly RecoveryIndexEntry[] => {
+      this.#key(pinned.boundary.ref);
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256)
+        throw new ObservationStoreError('invalid_recovery_budget');
+      return this.#snapshot(() => {
+        this.#indexRow(pinned);
+        const entries = this.db
+          .prepare(
+            `
           SELECT e.key, e.value FROM recovery_entries e
           WHERE e.lineage=? AND e.namespace=? AND e.key>? AND e.revision<=?
             AND e.revision=(SELECT MAX(n.revision) FROM recovery_entries n
               WHERE n.lineage=e.lineage AND n.namespace=e.namespace AND n.key=e.key AND n.revision<=?)
             AND e.value IS NOT NULL ORDER BY e.key LIMIT ?
         `
-            )
-            .all(lineage, namespace, after ?? '', revision, revision, limit);
-          return entries.map((entry) => ({ namespace, key: String(entry.key), value: String(entry.value) }));
-        });
+          )
+          .all(lineage, namespace, after ?? '', revision, revision, limit);
+        return entries.map((entry) => ({ namespace, key: String(entry.key), value: String(entry.value) }));
+      });
+    };
+    const unwrap = <T>(result: MeteredLookupResult<T>): T => {
+      if (result.kind === 'value') return result.value;
+      if (result.kind === 'stale') throw new RecoveryReadError('recovery_snapshot_stale', result.stats);
+      throw new RecoveryReadError(
+        result.reason === 'deadline' ? 'recovery_deadline_exceeded' : 'recovery_budget_exhausted',
+        result.stats,
+        result.minimumBytes
+      );
+    };
+    const getMetered = (
+      grant: RecoveryReadGrant,
+      namespace: string,
+      key: string
+    ): MeteredLookupResult<string | undefined> => {
+      const meter = new ReadMeter(grant);
+      try {
+        const ref = this.#key(pinned.boundary.ref);
+        if (meter.expired()) return { kind: 'refused', reason: 'deadline', stats: meter.finish() };
+        return this.#meteredSnapshot<MeteredLookupResult<string | undefined>>(
+          meter,
+          (): Unmetered<MeteredLookupResult<string | undefined>> => {
+            if (!this.#pinCurrent(ref, frozenPin)) return { kind: 'stale' };
+            if (!this.db.prepare('SELECT 1 AS present FROM recovery_indexes WHERE id=?').get(pinned.indexId))
+              throw new ObservationStoreError('recovery_snapshot_retired');
+            // Size probe: the visible revision's rowid and payload length; the value itself is not selected.
+            const probe = this.db
+              .prepare(
+                'SELECT rowid AS rid, value IS NULL AS absent, octet_length(value) AS n FROM recovery_entries WHERE lineage=? AND namespace=? AND key=? AND revision<=? ORDER BY revision DESC LIMIT 1'
+              )
+              .get(lineage, namespace, key, revision);
+            if (!probe || Number(probe.absent) === 1) return { kind: 'value', value: undefined };
+            const needed = Number(probe.n);
+            if (needed > grant.remaining().maxBytes) return { kind: 'refused', reason: 'bytes', minimumBytes: needed };
+            if (meter.expired()) return { kind: 'refused', reason: 'deadline' };
+            const row = this.db.prepare('SELECT value FROM recovery_entries WHERE rowid=?').get(probe.rid);
+            if (!row) throw new ObservationStoreError('recovery_snapshot_retired');
+            const value = meter.text(row.value);
+            meter.recordsRead++;
+            return { kind: 'value', value };
+          }
+        );
+      } catch (error) {
+        throw meter.fail(error);
+      }
+    };
+    const pageMetered = (
+      grant: RecoveryReadGrant,
+      namespace: string,
+      after: string | null,
+      limit: number
+    ): MeteredLookupResult<readonly RecoveryIndexEntry[]> => {
+      const meter = new ReadMeter(grant);
+      try {
+        const ref = this.#key(pinned.boundary.ref);
+        if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256)
+          throw new ObservationStoreError('invalid_recovery_budget');
+        if (meter.expired()) return { kind: 'refused', reason: 'deadline', stats: meter.finish() };
+        return this.#meteredSnapshot<MeteredLookupResult<readonly RecoveryIndexEntry[]>>(
+          meter,
+          (): Unmetered<MeteredLookupResult<readonly RecoveryIndexEntry[]>> => {
+            if (!this.#pinCurrent(ref, frozenPin)) return { kind: 'stale' };
+            if (!this.db.prepare('SELECT 1 AS present FROM recovery_indexes WHERE id=?').get(pinned.indexId))
+              throw new ObservationStoreError('invalid_recovery_reference');
+            // Phase 1, size probe: the page's rowids and payload lengths in key order; no key or value is selected.
+            const rowids: number[] = [];
+            let needed = 0;
+            const sizes = this.db.prepare(
+              `
+          SELECT e.rowid AS rid, octet_length(e.key) + octet_length(e.value) AS n FROM recovery_entries e
+          WHERE e.lineage=? AND e.namespace=? AND e.key>? AND e.revision<=?
+            AND e.revision=(SELECT MAX(n.revision) FROM recovery_entries n
+              WHERE n.lineage=e.lineage AND n.namespace=e.namespace AND n.key=e.key AND n.revision<=?)
+            AND e.value IS NOT NULL ORDER BY e.key LIMIT ?
+        `
+            ) as unknown as IterableStatement;
+            for (const row of sizes.iterate(lineage, namespace, after ?? '', revision, revision, limit)) {
+              if (meter.expired()) return { kind: 'refused', reason: 'deadline' };
+              rowids.push(Number(row.rid));
+              needed += Number(row.n);
+            }
+            if (needed > grant.remaining().maxBytes) return { kind: 'refused', reason: 'bytes', minimumBytes: needed };
+            // Phase 2: fetch the admitted rows in key order; at the deadline, stop and discard the partial page.
+            const entries: RecoveryIndexEntry[] = [];
+            const fetch = this.db.prepare('SELECT key, value FROM recovery_entries WHERE rowid=?');
+            for (const rid of rowids) {
+              if (meter.expired()) return { kind: 'refused', reason: 'deadline' };
+              const row = fetch.get(rid);
+              if (!row) throw new ObservationStoreError('invalid_recovery_reference');
+              entries.push({ namespace, key: meter.text(row.key), value: meter.text(row.value) });
+              meter.recordsRead++;
+            }
+            return { kind: 'value', value: entries };
+          }
+        );
+      } catch (error) {
+        throw meter.fail(error);
+      }
+    };
+    const lookup: RecoveryIndexLookup = {
+      reference: pinned,
+      get: (namespace, key) => {
+        const grant = this.#activeGrant;
+        return grant ? unwrap(getMetered(grant, namespace, key)) : legacyGet(namespace, key);
       },
+      page: (namespace, after, limit) => {
+        const grant = this.#activeGrant;
+        return grant ? unwrap(pageMetered(grant, namespace, after, limit)) : legacyPage(namespace, after, limit);
+      },
+      getMetered,
+      pageMetered,
     };
     Object.freeze(pinned.boundary.ref);
     Object.freeze(pinned.boundary.fileId);
@@ -395,7 +698,12 @@ export class ObservationStore {
       const checkpoint = decodeCheckpointBody(body, selected.checkpointIdentity);
       const references = selected.checkpointIdentity.recoveryReferences;
       if (references.length) {
-        const lookup = this.#lookup(references[0]);
+        const lookup = this.#lookup(references[0], {
+          commitSeq: selected.commitSeq,
+          sourceGeneration: selected.sourceGeneration,
+          seqDomain: selected.seqDomain,
+          checkpointId: selected.checkpointIdentity.contentIdentity,
+        });
         const handoff = {
           delta: { recoveryVersion: references[0].recoveryVersion, base: lookup.reference, entries: [] },
         };
@@ -408,6 +716,109 @@ export class ObservationStore {
         recoveryReferences: JSON.parse(canonicalJson(references)) as RecoveryIndexReference[],
       };
     });
+  }
+
+  /**
+   * B12M: metered readRecovery. It size-probes the checkpoint body, identity and index lineage of the exact target
+   * before selecting any of them (the projection body is never selected), admits the recovery against the grant's
+   * remaining bytes, records and deadline, and charges the grant exactly once on every outcome. A recovery that does
+   * not fit is a continuation, never a partial read. A throw after work is a RecoveryReadError carrying the stats.
+   * The returned lookup is pinned to the target commit.
+   */
+  readRecoveryMetered(target: ObservationRecoveryTarget, grant: RecoveryReadGrant): MeteredRecoveryResult {
+    const meter = new ReadMeter(grant);
+    try {
+      const selected: ObservationRecoveryTarget = JSON.parse(
+        canonicalJson({
+          ref: target.ref,
+          sourceGeneration: target.sourceGeneration,
+          seqDomain: target.seqDomain,
+          commitSeq: target.commitSeq,
+          checkpointIdentity: target.checkpointIdentity,
+        })
+      );
+      const key = this.#key(selected.ref);
+      const catchingUp: Unmetered<MeteredRecoveryResult> = {
+        kind: 'continuation',
+        continuation: {
+          kind: 'recovery_catching_up',
+          coverage: { state: 'catching_up', loaded: false, skipped: {}, gaps: [], reason: 'recovery_budget_exhausted' },
+        },
+      };
+      const start = grant.remaining();
+      if (start.budgetMs <= 0 || start.maxRecords < 1) return { ...catchingUp, stats: meter.finish() };
+      const references = selected.checkpointIdentity.recoveryReferences;
+      const reference = references[0];
+      const where =
+        'WHERE c.ref=? AND c.commit_seq=? AND c.source_generation=? AND c.seq_domain=? AND c.checkpoint_id=?';
+      const args = [
+        key,
+        selected.commitSeq,
+        selected.sourceGeneration,
+        selected.seqDomain,
+        selected.checkpointIdentity.contentIdentity,
+      ] as const;
+      return this.#meteredSnapshot<MeteredRecoveryResult>(meter, (): Unmetered<MeteredRecoveryResult> => {
+        // Admission: payload sizes only. One snapshot pins the probe, the fetch and the index row to one commit.
+        const probe = this.db
+          .prepare(
+            `SELECT octet_length(b.body) AS body, octet_length(b.identity) AS identity,
+              (SELECT octet_length(i.lineage) FROM recovery_indexes i WHERE i.id=?) AS lineage
+            FROM observation_current c JOIN checkpoint_blobs b ON b.id=c.checkpoint_id ${where}`
+          )
+          .get(reference?.indexId ?? null, ...args);
+        if (!probe) return { kind: 'stale' };
+        const needed = Number(probe.body) + Number(probe.identity) + (reference ? Number(probe.lineage ?? 0) : 0);
+        const remaining = grant.remaining();
+        if (needed > remaining.maxBytes)
+          return {
+            kind: 'continuation',
+            continuation: { kind: 'record_needs_larger_slice', minimumBytes: needed },
+          };
+        if (remaining.budgetMs <= 0) return catchingUp;
+        const row = this.db
+          .prepare(
+            `SELECT b.body, b.identity FROM observation_current c JOIN checkpoint_blobs b ON b.id=c.checkpoint_id ${where}`
+          )
+          .get(...args);
+        if (!row) return { kind: 'stale' };
+        const identity = meter.text(row.identity);
+        const body = meter.text(row.body);
+        if (identity !== canonicalJson(selected.checkpointIdentity))
+          throw new ObservationStoreError('invalid_recovery_reference');
+        const checkpoint = decodeCheckpointBody(body, selected.checkpointIdentity);
+        if (reference) {
+          const pinned = JSON.parse(canonicalJson(reference)) as RecoveryIndexReference;
+          // The reference and its session are compared inside SQLite; only the lineage id is materialized.
+          const index = this.db
+            .prepare('SELECT lineage, revision FROM recovery_indexes WHERE id=? AND reference=? AND ref=?')
+            .get(pinned.indexId, canonicalJson(pinned), this.#key(pinned.boundary.ref));
+          if (!index) throw new ObservationStoreError('invalid_recovery_reference');
+          const lookup = this.#pinnedLookup(pinned, meter.text(index.lineage), Number(index.revision), {
+            commitSeq: selected.commitSeq,
+            sourceGeneration: selected.sourceGeneration,
+            seqDomain: selected.seqDomain,
+            checkpointId: selected.checkpointIdentity.contentIdentity,
+          });
+          const handoff = {
+            delta: { recoveryVersion: reference.recoveryVersion, base: lookup.reference, entries: [] },
+          };
+          Object.defineProperty(handoff, 'lookup', { value: lookup });
+          checkpoint.recoveryIndex = handoff;
+        }
+        meter.recordsRead = 1;
+        return {
+          kind: 'recovered',
+          recovery: {
+            target: JSON.parse(canonicalJson(selected)) as ObservationRecoveryTarget,
+            checkpoint,
+            recoveryReferences: JSON.parse(canonicalJson(references)) as RecoveryIndexReference[],
+          },
+        };
+      });
+    } catch (error) {
+      throw meter.fail(error);
+    }
   }
 
   /** Compatibility only. Status/wait/paint callers use readProjection. */
@@ -547,7 +958,13 @@ export class ObservationStore {
       } else if (prepared.rebuildFromReaderVersion !== undefined)
         throw new ObservationStoreError('observation_rebuild_mismatch');
       if (previous?.content_digest === prepared.contentDigest) {
-        if (data.identity.recoveryReferences[0]) acknowledgement = this.#lookup(data.identity.recoveryReferences[0]);
+        if (data.identity.recoveryReferences[0])
+          acknowledgement = this.#lookup(data.identity.recoveryReferences[0], {
+            commitSeq: Number(previous.commit_seq),
+            sourceGeneration: Number(previous.source_generation),
+            seqDomain: String(previous.seq_domain),
+            checkpointId: String(previous.checkpoint_id ?? ''),
+          });
         return { changed: false, commitSeq: Number(previous.commit_seq), bytes: 0 };
       }
       const reference = data.identity.recoveryReferences[0];
@@ -630,7 +1047,13 @@ export class ObservationStore {
         }
       }
       this.db.prepare('UPDATE collect_leases SET last_now=? WHERE ref=?').run(now, key);
-      if (reference) acknowledgement = this.#lookup(reference);
+      if (reference)
+        acknowledgement = this.#lookup(reference, {
+          commitSeq: commit.commitSeq,
+          sourceGeneration: commit.sourceGeneration,
+          seqDomain: commit.seqDomain,
+          checkpointId: id,
+        });
       return {
         changed: true,
         commitSeq: commit.commitSeq,
@@ -653,6 +1076,7 @@ export class ObservationStore {
     if (!this.#closed) {
       this.db.close();
       this.#authority.clear();
+      this.#activeGrant = null;
       this.#closed = true;
     }
   }

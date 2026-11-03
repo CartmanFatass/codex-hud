@@ -2,10 +2,12 @@ import type { ObservationBoundaryWitness, ObservationCandidate } from '../checkp
 import type { PublishResult } from '../observation-store.js';
 import type {
   CheckpointPreparation,
+  MeteredRecoveryResult,
   ObservationProjection,
   ObservationRecovery,
   ObservationRecoveryTarget,
   PreparedCheckpoint,
+  RecoveryReadGrant,
 } from '../types/checkpoint.js';
 import type { SessionRef } from '../types/identity.js';
 import type { CollectLease, ObservationCommit, ReaderContinuation } from '../types/observation.js';
@@ -45,4 +47,15 @@ export interface PreparedObservationStore {
     target: ObservationRecoveryTarget,
     budget: ReaderBudget
   ): ObservationRecovery | ReaderContinuation | null;
+  /**
+   * B12M: the metered form of readRecovery. Size-probes before fetching, admits against the grant's remaining
+   * bytes/records/deadline, and charges the grant exactly once on every outcome, including a throw after work.
+   */
+  readRecoveryMetered?(target: ObservationRecoveryTarget, grant: RecoveryReadGrant): MeteredRecoveryResult;
+  /**
+   * B12M: makes `grant` the one grant that lazy `get`/`page` calls on this store's lookups are admitted against and
+   * charged to (none active: unmetered legacy behaviour). Refused with `recovery_grant_active` while another
+   * activation is open. Returns the deactivator for exactly this activation (idempotent; a no-op after close).
+   */
+  activateRecoveryGrant?(grant: RecoveryReadGrant): () => void;
 }

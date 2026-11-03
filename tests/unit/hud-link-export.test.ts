@@ -45,6 +45,17 @@ async function invoke(args: readonly string[], home: string) {
   return { status, stdout: stdout.join(''), stderr: stderr.join(''), writes: stdout.length };
 }
 
+// Node 22 prints this notice once when a process first loads node:sqlite; Node 24 does not. It is
+// the runtime's line, not hud's, so on Node 22 only, exactly one copy of exactly this warning is
+// removed from a launched process's stderr. Any other text, a second copy, any other warning, or
+// this text on a runtime that does not print it still fails.
+const NODE_PRINTS_SQLITE_WARNING = Number(process.versions.node.split('.')[0]) === 22;
+const SQLITE_EXPERIMENTAL_WARNING =
+  /^\(node:\d+\) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(?:\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\n)?/m;
+function hudStderr(stderr: string): string {
+  return NODE_PRINTS_SQLITE_WARNING ? stderr.replace(SQLITE_EXPERIMENTAL_WARNING, '') : stderr;
+}
+
 function child(args: readonly string[], home: string, env: NodeJS.ProcessEnv = {}) {
   const result = spawnSync(process.execPath, [entry, ...args], {
     env: { ...process.env, HUD_HOME: home, ...env },
@@ -54,7 +65,7 @@ function child(args: readonly string[], home: string, env: NodeJS.ProcessEnv = {
   });
   assert.ifError(result.error);
   assert.equal(result.signal, null);
-  return result;
+  return { ...result, stderr: hudStderr(result.stderr) };
 }
 
 test('hud help and strict argument refusals never access or create a ledger', async () => {
@@ -246,7 +257,7 @@ test('hud reports asynchronous stdout failures for export and help without Node 
         assert.equal(actual.signal, null);
         assert.equal(actual.status, 1);
         assert.equal(actual.stdout, null);
-        assert.equal(actual.stderr, 'internal_or_output_failure\n');
+        assert.equal(hudStderr(actual.stderr), 'internal_or_output_failure\n');
         assert.equal(readFileSync(outputPath, 'utf8'), 'synthetic unchanged output');
       }
     } finally {
@@ -268,7 +279,7 @@ test('hud reports asynchronous stdout failures for export and help without Node 
       assert.equal(signal, null);
       assert.equal(status, 1);
       assert.equal(stdout, '');
-      assert.equal(stderr, 'internal_or_output_failure\n');
+      assert.equal(hudStderr(stderr), 'internal_or_output_failure\n');
     }
   } finally {
     await fixture.cleanup();

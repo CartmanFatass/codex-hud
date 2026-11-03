@@ -7,16 +7,27 @@ and one Oracle.
 | Role | Who | Does |
 |---|---|---|
 | Orchestrator | the cloud session itself | reads the brief, launches the agents, verifies their claims, commits and pushes the package branch |
-| Implementer | Agent tool, `model: "opus"`, own git worktree | implements the brief, runs the checks, reports |
-| Oracle | Agent tool, `model: "fable"`, `effort: "max"`, fresh context each time | design forks inside the package, the final review, re-checks |
+| Implementer (core) | Agent tool, `model: "opus"`, `effort: "high"`, `isolation: "worktree"` | implements a core or test brief, runs the checks, reports |
+| Frontend implementer | Agent tool, `model: "sonnet"`, `effort: "xhigh"`, `isolation: "worktree"` | implements a rendering brief (`src/render/**`, visual baselines) |
+| Oracle | Agent tool, `model: "opus"`, `effort: "max"`, fresh context each time | design forks inside the package, the final review, re-checks |
 
-Packages ready for the cloud: [`B12M`](B12M.md) (metered recovery reads, core) and [`B10B-s2`](B10B-s2.md) (panel
-rendering, segment 2). They touch disjoint files and can run in parallel, each in its own worktree.
+The brief's tier line names which implementer it takes. (Run 1, 2026-11-03, used Opus implementers and Fable max
+Oracles; from run 2 the roles above apply.)
+
+Run 1 is done: [`B12M`](B12M.md) on `cloud/b12m` and [`B10B-s2`](B10B-s2.md) on `cloud/b10b-s2`, both accepted, handoffs
+in `handoff/`. Packages ready for run 2:
+
+- [`B10B-s3`](B10B-s3.md): selection, navigation and the control bar for the delegation panel (frontend). Branches
+  from `cloud/b10b-s2`.
+- [`HYG1`](HYG1.md): a clean cloud test baseline (core, tests only). Branches from `universal-hud`.
+
+They touch disjoint files and can run in parallel. B10D (the collector worker) is not a cloud package: it runs
+elsewhere and owns `src/collectors/**` and the collector wiring in `src/tree-page.ts`.
 
 ## Loop per package
 
 1. **Implement.** Launch the implementer with the implementer prompt below. It works in its own worktree on branch
-   `cloud/<wp>`, created from `universal-hud`.
+   `cloud/<wp>`, created from the base the brief names (`universal-hud` unless stated).
 2. **Design forks.** If the brief is silent or contradictory, the implementer stops and reports the question. The
    orchestrator launches one Oracle design consultation, which writes nothing and answers in text. The orchestrator
    saves the ruling to `docs/cloud/rulings/<wp>.md` and passes it to the implementer with SendMessage.
@@ -29,9 +40,11 @@ rendering, segment 2). They touch disjoint files and can run in parallel, each i
 6. **Hand back.**
    - The orchestrator commits on `cloud/<wp>`, adds `docs/cloud/handoff/<wp>.md` (report summary, Oracle verdict,
      check output, open items) and pushes the branch.
-   - No merges into `universal-hud`. The owner's local orchestrator merges after its own acceptance.
+   - Merge into `universal-hud` only per `docs/handoff/STATE.md` "Merging" (from 2026-11-03 the remote orchestrator
+     merges accepted packages itself; there is no local merge step).
 
-Keep the whole run within about 10 agents. A failed check is reported, never worked around. One review per change:
+Keep the whole run within about 10 agents. Performance gates on a cloud host are noisy: report the range over at least
+three runs (and the GC share when the tail is GC), never a single best run. A failed check is reported, never worked around. One review per change:
 no second reviewer on the same diff.
 
 ## Rules every agent keeps
@@ -66,8 +79,22 @@ npm run check:fixtures
 git diff --check
 ```
 
-Known flakes under load: `model-jobs.test.js` timing, `b6-wait-status` "idle wait zero writes", `b3h-heartbeat-busy`
-fence loss, a hud-mcp B20 advice `ledger_busy`. Rerun a flaky suite once alone and report both runs.
+Known flakes under load:
+- `model-jobs.test.js` timing;
+- `b6-wait-status` "idle wait zero writes";
+- `b3h-heartbeat-busy` fence loss;
+- `run-light-leader` "portable waiter topology … bash --posix" (143 !== 3);
+- the `ledger_busy` family.
+  - Cause: the wall-clock check at `packages/hud-mcp/src/delegation.ts:417` (P-06-5's 30 ms) fires when the
+    preparation before the lock runs slow.
+  - Seen in: b11-cli "B11 local resume preserves all parameters…"; b21-capacity; hud-mcp B45 "accepted spawn is
+    atomic", G03 "old request key" and B20 advice.
+
+Rerun a flaky suite once alone and report both runs.
+
+In this container (Node 22.23.4), `run-control` "supervisor death receiptless Q" fails on every base. It is a product
+defect in `proveGroupGone` (see `handoff/hyg1.md`): name it, do not work around it. On a base without HYG1,
+`b45-launch` (7 cancelled) and `hud-link-export` (6 SQLite-warning failures) fail too.
 
 ## Prompts
 
@@ -75,24 +102,25 @@ fence loss, a hud-mcp B20 advice `ledger_busy`. Rerun a flaky suite once alone a
 
 ```text
 You are the orchestrator for a two-day cloud run on the universal-hud branch of this repo. Read docs/cloud/README.md
-(workflow, rules, prompts), then CLAUDE.md and docs/ARCHITECTURE.md §8. Run the packages B12M (docs/cloud/B12M.md)
-and B10B-s2 (docs/cloud/B10B-s2.md) in parallel, each with one implementer (Agent tool, model "opus", isolation
-"worktree", the implementer prompt from the README) and Oracles (Agent tool, model "fable", effort "max", a fresh
-agent each time, the Oracle prompts from the README). Follow the loop in the README exactly: verify each report
+(workflow, rules, prompts), then CLAUDE.md and docs/ARCHITECTURE.md §8. Run the packages the README lists as ready in
+parallel, each with one implementer (Agent tool, isolation "worktree", the implementer prompt from the README; model
+"opus" effort "high" for core and test briefs, model "sonnet" effort "xhigh" for rendering briefs) and Oracles (Agent
+tool, model "opus", effort "max", a fresh agent each time, the Oracle prompts from the README). Follow the loop in the README exactly: verify each report
 yourself before review; one final Oracle review per package; fixes go back to the same implementer through
 SendMessage; re-checks go to a fresh Oracle; at most two fix rounds. Subagents cannot write report files: when one
 returns its report or review as text, save it yourself under docs/cloud/handoff/ or docs/cloud/rulings/. When a
 package is accepted and green, commit it on its branch cloud/<wp> (end the message with the Co-Authored-By line),
-add docs/cloud/handoff/<wp>.md, and push that branch. Do not merge into universal-hud or main. Keep going without
+add docs/cloud/handoff/<wp>.md, and push that branch. Then merge it into universal-hud per docs/handoff/STATE.md
+"Merging" (full check set green on the merged tree), update STATE.md and push. Never touch main. Keep going without
 asking me unless a decision changes a contract, the design doc or another package's files; then stop that package and
 write the question into its handoff file.
 ```
 
-### Implementer (Agent tool, `model: "opus"`, `isolation: "worktree"`)
+### Implementer (Agent tool, `isolation: "worktree"`; core: `model: "opus"`, `effort: "high"`; frontend: `model: "sonnet"`, `effort: "xhigh"`)
 
 ```text
 You are the implementer of work package <WP> in this repo. In your worktree, create branch cloud/<wp> from
-universal-hud. Read docs/cloud/README.md (rules and check set), CLAUDE.md, docs/ARCHITECTURE.md §8, then your brief
+the base your brief names (universal-hud unless stated). Read docs/cloud/README.md (rules and check set), CLAUDE.md, docs/ARCHITECTURE.md §8, then your brief
 docs/cloud/<WP>.md and everything it lists as binding. Implement exactly the brief within its owned files. You do
 not decide design forks: if the spec is silent or contradictory on something you need, stop and return the question
 (options, your default, why) instead of guessing. Each behaviour you add or fix gets a test that would fail without
@@ -101,7 +129,7 @@ as text: changed files, exported API, decisions, check output, performance numbe
 names, open items.
 ```
 
-### Oracle: design consultation (`model: "fable"`, `effort: "max"`)
+### Oracle: design consultation (`model: "opus"`, `effort: "max"`)
 
 ```text
 You are the Oracle for work package <WP> of this repo: a design consultation, read-only (edit nothing, spawn
@@ -112,7 +140,7 @@ contract, the design doc or another package (if so, say so plainly: the orchestr
 owner). Return the ruling as text ready to paste into docs/cloud/rulings/<wp>.md.
 ```
 
-### Oracle: final review (`model: "fable"`, `effort: "max"`)
+### Oracle: final review (`model: "opus"`, `effort: "max"`)
 
 ```text
 You are the single reviewer of work package <WP> in this repo: read-only (edit nothing, no git mutations, spawn
@@ -125,7 +153,7 @@ Return findings as `file:line — defect — failure scenario — severity P0–
 verdict: accept or fix required.
 ```
 
-### Oracle: re-check (`model: "fable"`, `effort: "max"`, fresh agent)
+### Oracle: re-check (`model: "opus"`, `effort: "max"`, fresh agent)
 
 ```text
 You are the re-check reviewer for work package <WP>: read-only. Previous review: <pasted findings>. Fix report:

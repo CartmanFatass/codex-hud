@@ -1,0 +1,164 @@
+# State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
+
+From 2026-11-03 development runs remotely: first Claude Code cloud (`docs/cloud/README.md`), then dots
+(`docs/cloud/dots.md`). The local machine only does the work listed under "Local only". This file replaces the
+local orchestrator's scratch notes. Keep it current: the remote orchestrator updates it whenever a package merges
+or a decision is taken.
+
+Read first: `AGENTS.md` (the remote entry point), `docs/cloud/dots.md`, `docs/universal-hud-engineering-plan.md` §1
+and §4, `docs/universal-hud-concept.md` §15 (decision log), `docs/handoff/integration-notes.md`. `docs/delegation.md`
+describes the former local routing only.
+
+## Remote roles
+
+| Phase | Implementer | Oracle (architecture, design incl. frontend, review) |
+|---|---|---|
+| Claude cloud | per `docs/cloud/README.md` (Opus high for core and tests, Sonnet xhigh for rendering) | Opus max |
+| dots | Astra high (all packages, frontend included) | Astra max |
+
+Owner decisions of 2026-11-03:
+- In remote phases the Oracle also decides frontend design forks. Locally that was a Fable max subagent.
+- On dots, the main session only dispatches. Every judgment goes to a subagent; see `AGENTS.md`.
+
+## Merging (changed 2026-11-03)
+
+The remote orchestrator merges accepted packages into `universal-hud` itself; there is no local merge step any more.
+Merge only when:
+- the package's Oracle verdict is `accept`;
+- an Oracle has verified the report against the branch;
+- the full check set in `docs/cloud/README.md` is green on the merged tree, with known flakes rerun alone and both
+  runs recorded.
+
+Rules for every merge:
+- Use `--no-ff`; never force-push, never rewrite history, never commit to `main`.
+- Only one environment merges at a time: whichever phase is active.
+- After each merge, update this file and the plan §1 status line (`docs/universal-hud-engineering-plan.md`).
+
+## Status
+
+**Merged on `universal-hud`** (newest first):
+
+- HYG1, the clean cloud test baseline, from cloud run 2. Its handoff is `docs/cloud/handoff/hyg1.md`. One test stays red
+  on purpose: `run-control`, which RUNZ1 fixes.
+- The cloud run-2 docs, summarised in `docs/cloud/handoff/run-2.md`.
+- B10B-s2, the delegation panel: cloud run 1. See `docs/cloud/handoff/b10b-s2.md`.
+- B12M, metered recovery reads: cloud run 1, additive. See `docs/cloud/handoff/b12m.md`. B10D adopts it.
+- B10b segment 1: the delegation presentation core, bar and statusline line 2.
+- B10C:
+  - the observation publisher, with production publishing **off**;
+  - the native node `{title, kind}`;
+  - the owner-approved worker route and split timing gates, recorded in contract 06 「B10C 增补」 and
+    `docs/reviews/2026-11-02-astra-b10c-worker.md`.
+- B10A: data and tick wiring.
+- Earlier: batches 1–5, B13. See plan §1.
+
+Local acceptance of the merged tree (`b42ab16`, WSL, 2026-11-03): build, `npm test` (2329 + 47 pass, 0 fail; HYG1's
+red `run-control` test passes on WSL), core, visual 319/319, hud-mcp 83/83, format and fixtures are green; b12m perf
+passes. The `b10b-s2-perf` compact changed tick is borderline: p99 10.151 / 8.389 / 9.290 ms over three runs against
+the 10 ms gate (rich changed tick 8.77–9.06 ms, rows200 cold 5.63–5.93 ms). Treat a single run above 10 ms as a known
+flake only after rerunning it alone, and record both runs; B10B-S3F reruns the gate three times.
+
+**Stopped, not accepted:** B10D, the observation worker. Branch `b10d-worker`, commit `4f2c4ac`, pushed as frozen work
+in progress and NOT mergeable. It is based on `6fcf08a`, so merge `universal-hud` (`997c4ab` or later) into it before
+any further work. That merge also brings in B10B-s2, which the panel needs to paint delegation content.
+
+The final Oracle verdict is NOT ACCEPTED. Evidence is in `docs/handoff/b10d/`:
+- `report.md`, which contains the Handoff section;
+- `oracle-1.md`, the design rulings §1–§19;
+- `oracle-review-1.md` and `oracle-review-2.md`;
+- `performance-summary.json`.
+
+What works:
+- Worker isolation. Store stalls of several seconds no longer block paint.
+- Legacy output stays byte-identical, with publication only in the worker and zero workers for CLI status/wait.
+- 156/156 focused integration tests pass, and the full checks pass.
+
+What fails, measured at n = 1000 per population on 200 nodes and 20,000 headers:
+
+1. **Legacy collection.** The Codex subagent tree and file listing run on the main thread and cost about 85–132 ms
+   per tick. This holds on today's synchronous path too: the matched synchronous reference already fails P-06-7 at this
+   profile.
+   - Bar paint p99 is 93–154 ms; bar operation p99 is 112–282 ms.
+   - Simultaneous mixed: bar paint p99 168 ms (max 212 ms), full operation p99 253 ms (bar) and 338 ms (panel).
+2. **Storage stalls.** A single `publishPrepared` call took 888 ms, giving an operation max of 1,184 ms. The worker
+   keeps paint unaffected, but the operation gate fails.
+3. **Liveness.**
+   - The 16 reader slots fill with checkpoint-only recoveries, which hold no native reader yet. Full fair traversal plus
+     the 15 s lease expiry can rebuild them repeatedly.
+   - Large shares of the new-checkpoint and mixed populations fail with `reader_slots_pinned`: 791–920 of 1000.
+   - The 30-minute paired soak's no-rescue drain left 166 of 200 targets unsettled after 5,000 operations.
+   - §18 also pins accepted history that cannot be proven evictable, such as approval pauses and ended turns.
+4. **Retirement recapture.** Progress evidence is still missing.
+
+The Oracle's preferred next design (§19) is a one-use "next normal operation" continuation ticket. It needs the
+owner's explicit fairness exception, because a normal round can approach twice the operation opportunities. Admission
+and housekeeping tweaks alone are judged insufficient, and discard-and-reload is rejected.
+
+The route question for the next Oracle is `docs/handoff/questions/B10D-route.md`. It covers what to do with legacy
+collection, the reader cap against pinning, recapture, and whether and how B10D merges.
+
+**Not merged:** `cloud/b10b-s3-wip`, B10B segment 3 (selection, navigation, control bar). Fix round 1 has been
+applied, but the re-check is still pending. B10B-S3F finishes it.
+
+## Package queue for dots
+
+Run the items in order. Packages in the same wave touch disjoint files and may run in parallel. A package without a
+brief gets one from an Oracle first (`docs/cloud/dots.md`, step 0).
+
+| Wave | Package | Brief | Notes |
+|---|---|---|---|
+| 1 | B10D route consultation | `docs/handoff/questions/B10D-route.md` | Oracle only, no implementer. Its recommendation goes into the question file for the owner. |
+| 1 | P-06-5 scope consultation | `docs/handoff/questions/P-06-5.md` | Oracle only. The recommendation is for the owner. |
+| 1 | B10B-S3F | `docs/cloud/B10B-S3F.md` | rendering |
+| 1 | RUNZ1 | `docs/cloud/RUNZ1.md` | `src/core/run` |
+| 1 | HYG2 | `docs/cloud/HYG2.md` | ledger runtime warning and tests |
+| 2 | DOC2 | `docs/cloud/DOC2.md` | starts after B10B-S3F; design doc only |
+| 2 | TPD1 | `docs/cloud/TPD1.md` | starts after B10B-S3F; `src/tree-page.ts` dispatch |
+| 3 | B10B-s4, the Inspector (design §4.11) | an Oracle writes it | Delegation keys, reasons for a greyed Open, the Resume diagnostic, Coverage with `omittedConflictRows` |
+| 3 | Data-layer additions (B9/B16) | an Oracle writes it | See below. |
+| 4 | B10D-2 | an Oracle writes it, after the owner decides the route | Merge `universal-hud` into `b10d-worker` first. |
+
+Data-layer additions for wave 3:
+- the action, brief and rate fields, and the native digest;
+- `node.parent` for the viewpoint root;
+- a reconcile descriptor for each conflict relation;
+- the picker-label inputs.
+
+The real resume gate waits for B14.
+
+After the queue: B14, the production acceptance and capability matrix, is mostly local; see below. Then B15, the phase
+review (ARCH); B3b-C after B15; then phases C–F of the plan.
+
+## Open owner decisions
+
+- O1: the implementer-comparison B14 idle-cost runner. None of the three arms met the merge bar.
+- Whether to rename the real project names `shenlun` / `atlas-launch-sources` used in some tests.
+- Whether to rewrite git history to remove old private paths. Those commits are already public on `main`.
+- B10D fairness exception (§19 continuation ticket): approve, or choose another route after the Oracle's ruling on
+  `docs/handoff/questions/B10D-route.md`.
+- P-06-5 scope: should the 30 ms budget include the file reads made before the ledger lock? This budget is behind the
+  `ledger_busy` flake family. The Oracle's recommendation will be in `docs/handoff/questions/P-06-5.md`.
+- Statusline wiring: nothing calls the statusline renderer yet. Candidates are a `hud statusline` entry, or plan D3.
+
+## Local only (needs the owner's machine)
+
+- Herdr integration tests (`npm run test:herdr`) and anything that creates or reads Herdr panes and tabs.
+- Real-harness tests that need logged-in Codex or Claude CLIs: `B13_REAL=1`, the B45 real closures, and B14's
+  real capability evidence (visible cc→Codex, resume, wake delivery).
+- Jev / shared browser and the Hermes human-interaction tests.
+- The final P-06-7 qualification on the supported WSL platform. Remote numbers are evidence for design, labelled with
+  their host. They are not the formal qualification.
+- Switching the live statusline (`claude-hud` replacement), and anything touching `~/.hud`, `~/.claude`, `~/.codex*` or
+  `~/.pi`.
+
+## Rules (unchanged)
+
+These are in `docs/cloud/README.md` "Rules every agent keeps":
+
+- The repo is public: synthetic data only.
+- Tests use a temporary `HOME` and `HUD_HOME`.
+- Only hud-mcp, hud-run and the reconciler write the ledger.
+- Contracts and the design are the spec.
+- Performance is acceptance.
+- One review per change; at most two fix rounds, then ask the owner.
+- Never stage `node_modules/.package-lock.json`.

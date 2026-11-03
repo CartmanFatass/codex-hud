@@ -645,6 +645,7 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 | 2026-11-02 | 可见委派的收尾：MVP 内完成后的可见 agent 由用户在 pane 内关闭，HUD 标为“已完成，请关闭此 pane”，进程数由运行槽上限（6 / 4）兜底；无人值守的工作优先 headless（自动退役）。B3b-C（pidfd 组信号原生辅助）排在 B15 阶段门之后第一项，恢复可见自动退役 | Jacob |
 | 2026-11-02 | 唤醒投递（B19，Oracle 裁决 `tmp/tasks/B19/oracle-1.md`，编排者批准）：`wake.delivered` 的 unknown 改为发送前不可退回的已计尝试（每批最多两次实际发送，两次发送前崩溃则零次，接受）；未决批次与新事件游标分开、每登记最多一个未决批次；所有触发共用每登记每 `recoveryMs` 一页的读预算，积压按页逐步推进；继承来的 unknown 只有在连续观察到父端静默时才重试，重启或观察缺口后保持 unconfirmed 不自动重试；终态后恢复定时器只保留有界尾段（最后一次终态后 10 × recoveryMs，至少 5 分钟），之后迟到报告的丢 hint 恢复退化为下一个 hint 或显式调用。理由：原文的崩溃安全两次上限、读预算与静默前提互相矛盾；有界尾段按轻量优先。契约 02 A1、06 A6 与设计 §3 随 B19 合入时改写 | B19 Oracle |
 | 2026-11-02 | 观测发布的执行位置与计时（B10C）：发布观测的 bar / panel 各用一个有界 worker 线程跑整个采集操作（租约、恢复、B16、`publishPrepared`、B9），主线程只画最近一个完整的已提交视图；不另起共享采集服务、不改 B12 API。P-06-7 的单一全 tick 门禁拆成三道：paint p99 < 50 / max < 200 ms，观测操作 p99 < 100 / max < 1 000 ms，本地 commit 到 paint p99 < 50 / max < 200 ms；无变化 ≤ 2 ms 按 p99。内存上限：每个 HUD 稳态多 ≤ 32 MiB、峰值 ≤ 64 MiB。过渡期 B10C 以发布关闭合入（HUD 只读账本），worker 版另作一个工作包 | Jacob 批准；Oracle `docs/reviews/2026-11-02-astra-b10c-worker.md`；契约 06「B10C 增补」 |
+| 2026-11-03 | 开发改为远程编排：先 Claude Code cloud（`docs/cloud/README.md`），云额度用完后转 dots（`docs/cloud/dots.md`：implementer Astra high，Oracle Astra max 负责架构、设计含前端、终审与复查）；远程编排者在 Oracle 接受且合并后全套检查通过时自行合入 `universal-hud`（不再有本地合并步骤，同一时间只有一个环境合并）；本地只做 Herdr、真实 harness、Jev、WSL 正式性能认证与改用户配置的工作。状态与交接见 `docs/handoff/STATE.md` | Jacob |
 
 ## 16. 评审状态与下一次评审
 
