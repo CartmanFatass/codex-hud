@@ -1,3 +1,4 @@
+import { TestBudgetClock } from '../unit/p065-budget-fixture.js';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -106,7 +107,9 @@ async function fixture(t: test.TestContext) {
   };
   const launches: PreparedRunLaunch[] = [];
   const config = { version: 1 as const, profiles: [profile] };
+  const clock = new TestBudgetClock();
   const options = {
+    clock,
     ledger: f.ledger,
     home: f.root,
     config,
@@ -613,7 +616,9 @@ test('a thrown spawn refusal carries advice at the server boundary for valid and
   });
   const validService = refused(valid);
   t.after(() => validService.close());
-  const validServer = new HudMcpServer({ resolve: async () => f.source() }, validService);
+  const validServer = new HudMcpServer({ resolve: async () => f.source() }, validService, () => true, {
+    clock: f.options.clock,
+  });
   const accepted = (await validServer.handle(request(1))) as any;
   assert.deepEqual(accepted.result.structuredContent, {
     ok: false,
@@ -624,7 +629,9 @@ test('a thrown spawn refusal carries advice at the server boundary for valid and
 
   const invalidService = refused(invalid);
   t.after(() => invalidService.close());
-  const invalidServer = new HudMcpServer({ resolve: async () => f.source() }, invalidService);
+  const invalidServer = new HudMcpServer({ resolve: async () => f.source() }, invalidService, () => true, {
+    clock: f.options.clock,
+  });
   const broken = (await invalidServer.handle(request(2))) as any;
   assert.deepEqual(broken.result.structuredContent, {
     ok: false,

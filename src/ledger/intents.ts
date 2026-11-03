@@ -41,9 +41,12 @@ import {
   validateOrigin,
   validateWorkspace,
 } from './records.js';
-import type { LedgerTransaction } from './transaction.js';
+import { synchronousResult, type LedgerTransaction } from './transaction.js';
 import type { AcceptedActor, IntentAuthority, IntentResult, PreparedIntent } from './types.js';
 import { requireScopePremise } from './call-context.js';
+import { isCallBudget, type CallBudget } from './call-budget.js';
+import { type LocalStoreBinding, LocalStoreProofFailed } from './local-manager.js';
+import { LedgerCommitUncertain, LedgerCleanupFailed } from './ledger.js';
 
 export function currentAuthority(tx: LedgerTransaction, authority: IntentAuthority): ControlAuthority {
   if (authority.kind === 'local_user') return authority;
@@ -188,24 +191,32 @@ function validateNewIntent(input: PreparedIntent): string {
 export async function acceptIntent(
   ledger: Ledger,
   supplied: PreparedIntent,
-  budgetMs = ledger.busyBudgetMs,
-  localCheck?: () => void,
+  budgetMs: number | CallBudget = ledger.busyBudgetMs,
+  localCheck?: (() => void) | LocalStoreBinding,
   limits: CapacityLimits = {},
   /** Trusted synchronous bookkeeping for a fresh intent; shares rollback and lock budget. */
   onAccepted?: (tx: LedgerTransaction) => void
 ): Promise<IntentResult> {
+  const budget = isCallBudget(budgetMs) ? budgetMs : undefined;
+  budget?.check();
   // Clone and perform normalization/hashing outside the write transaction, before any await.
   const input = JSON.parse(canonicalJson(supplied)) as PreparedIntent;
   const paramsDigest = validateNewIntent(input);
   const resolvedLimits = capacityLimits(limits);
-  const writeDeadline = performance.now() + Math.min(ledger.busyBudgetMs, budgetMs);
+  const writeDeadline = budget ? 0 : performance.now() + Math.min(ledger.busyBudgetMs, budgetMs as number);
+  budget?.check();
+  const localGuard = () => {
+    if (input.authority.kind !== 'local_user') return;
+    if (budget) {
+      if (!localCheck || typeof localCheck === 'function' || typeof localCheck.check !== 'function')
+        throw new LocalStoreProofFailed();
+      localCheck.check(ledger, input.authority, budget);
+    } else if (typeof localCheck === 'function') localCheck();
+  };
   try {
     return await ledger.transaction((tx) => {
-      if (input.authority.kind === 'local_user') {
-        // Trusted entry points pass the pinned OS/store gate; low-level fixtures
-        // may supply already validated authorities directly.
-        localCheck?.();
-      }
+      localGuard();
+      budget?.check('callback');
       const authority = currentAuthority(tx, input.authority);
       const existing = tx.get('SELECT * FROM links WHERE link_id=?', input.link.linkId);
       let link = existing ? decodeRecord<Link>(existing) : input.link;
@@ -229,12 +240,12 @@ export async function acceptIntent(
       );
       if (replay.kind === 'conflict') throw new Error(replay.reason);
       if (replay.kind === 'replay')
-        return {
+        return tx.priorDurableResult({
           replayed: true,
           outcome: replay.record.outcome,
           linkId: replay.record.linkId,
           runId: replay.record.runId,
-        };
+        });
       const { full, retryAdvisable, ...capacity } = readCapacity(tx, allowed.ownerKey, resolvedLimits);
       if (full)
         throw new CapacityRefusal({
@@ -406,7 +417,7 @@ export async function acceptIntent(
       insertRun(tx, run);
       insertClaim(tx, claim);
       insertRecord(tx, 'slots', slot);
-      onAccepted?.(tx);
+      synchronousResult(onAccepted?.(tx));
       const outcome = { status: 'accepted', state: 'starting', linkId: link.linkId, runId: run.runId };
       insertRecord(tx, 'idempotency', {
         ownerKey: allowed.ownerKey,
@@ -443,25 +454,34 @@ export async function acceptIntent(
       return { replayed: false, outcome, linkId: link.linkId, runId: run.runId };
     }, budgetMs);
   } catch (error) {
+    const auditUnsafe = Boolean(error && typeof error === 'object' && 'auditUnsafe' in error && error.auditUnsafe);
+    if (!auditUnsafe) budget?.check('complete');
     if (error instanceof CapacityRefusal) return error.result;
     // A failed intent is entirely rolled back before a separate rejection audit is attempted.
     if (
       error instanceof Error &&
-      performance.now() < writeDeadline &&
+      (budget ? budget.remaining() > 0 && budget.lockRemaining() > 0 : performance.now() < writeDeadline) &&
+      !auditUnsafe &&
+      !(error instanceof LedgerCommitUncertain) &&
+      !(error instanceof LedgerCleanupFailed) &&
+      !(error instanceof LocalStoreProofFailed) &&
       !('code' in error && error.code === 'ledger_busy') &&
       !['stale_context', 'identity_unverified', 'identity_source_missing', 'unauthorized'].includes(error.message)
     ) {
       await ledger
         .transaction(
-          (tx) =>
+          (tx) => {
+            localGuard();
+            budget?.check('callback');
             insertRecord(tx, 'events', {
               linkId: null,
               runId: null,
               kind: 'intent.rejected',
               payload: { requestKey: input.requestKey, reason: error.message },
               at: input.run.createdAt,
-            }),
-          Math.max(0, writeDeadline - performance.now())
+            });
+          },
+          budget ?? Math.max(0, writeDeadline - performance.now())
         )
         .catch(() => {});
     }

@@ -1,3 +1,4 @@
+import type { CallBudget } from '../../../../src/ledger/call-budget.js';
 import { unlinkSync } from 'node:fs';
 import type { ScopeSnapshot, ScopeSnapshotPort } from '../../../../src/core/ledger-scope-read.js';
 import {
@@ -38,18 +39,23 @@ export function consumeHookRecord(
     callId: string;
     toolName: string;
     sessionId?: string;
-  }
+  },
+  budget?: CallBudget
 ): { record: HookRecord; premise: ScopeSnapshot } {
+  budget?.check('source');
   const { config, scopes } = options;
   privateDirectory(config.directory);
+  budget?.check('source');
   const premise = scopes.read(expected.processKey);
   const paths = recordPaths(config, premise, expected.callId);
   // Retain the small tombstone through harness exit. A late publication can never
   // revive a refused call, including through another physical MCP instance.
   marker(paths.seen);
   try {
+    budget?.check('source');
     if (exists(paths.conflict)) throw new Error('Duplicate publication');
     const bytes = privateRead(paths.record, MAX_RECORD_BYTES);
+    budget?.check('source');
     if (!bytes.endsWith('\n')) throw new Error('Incomplete record');
     const value: unknown = JSON.parse(bytes);
     if (!object(value)) throw new Error('Invalid hook record');
@@ -94,14 +100,19 @@ export function consumeHookRecord(
       throw new Error('Stale hook record');
     if (exists(paths.conflict)) throw new Error('Duplicate publication');
     const isRoot = value.agent.kind === 'root';
-    options.observe?.({
-      hookStartMonoMs: value.hookStartMonoMs,
-      hookStartUncertaintyMs: value.hookStartUncertaintyMs,
-      publishedMonoMs: value.publishedMonoMs,
-      agent: isRoot ? 'root' : 'native_child',
-      sessionId: value.sessionId as string,
-    });
+    try {
+      options.observe?.({
+        hookStartMonoMs: value.hookStartMonoMs,
+        hookStartUncertaintyMs: value.hookStartUncertaintyMs,
+        publishedMonoMs: value.publishedMonoMs,
+        agent: isRoot ? 'root' : 'native_child',
+        sessionId: value.sessionId as string,
+      });
+    } catch {
+      /* Optional diagnostic only. */
+    }
     if (!isRoot) throw new Error('Native child cannot select root context');
+    budget?.check('source');
     return { record: value as unknown as HookRecord, premise };
   } finally {
     try {

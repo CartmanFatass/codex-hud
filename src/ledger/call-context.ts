@@ -1,3 +1,4 @@
+import { isCallBudget, type CallBudget } from './call-budget.js';
 import { randomUUID } from 'node:crypto';
 import { canonicalJson } from '../core/canonical.js';
 import { sameSessionRef, sessionRefKey } from '../core/identity.js';
@@ -46,8 +47,9 @@ export interface VerifiedRootCall {
 export async function authorizeRootCall(
   ledger: Ledger,
   supplied: VerifiedRootCall,
-  budgetMs = 20
+  budgetMs: number | CallBudget = 20
 ): Promise<Extract<IntentAuthority, { kind: 'mcp' }>> {
+  if (isCallBudget(budgetMs)) budgetMs.check();
   const input = structuredClone(supplied);
   return ledger.transaction((tx) => {
     requireScopePremise(tx, ledger.ledgerId, input.premise);

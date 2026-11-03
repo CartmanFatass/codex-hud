@@ -1,3 +1,4 @@
+import { TestBudgetClock } from './p065-budget-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -380,13 +381,17 @@ test(
 );
 
 test('B11 local resume preserves all parameters, rejects stale/active, replays once through B4', { skip }, async () => {
-  const f = await delegationBenchmarkFixture();
+  const clock = new TestBudgetClock();
+  const f = await delegationBenchmarkFixture(true, clock);
   let launches = 0;
   try {
     await f.bindAndEnd();
     const profile = { ...f.service['options'].config.profiles[0] };
     writeFileSync(join(f.root, 'delegate.json'), JSON.stringify({ version: 1, profiles: [profile] }), { mode: 0o600 });
     const trusted = {
+      get budget() {
+        return clock.budget();
+      },
       capability: { verify: () => ({ ok: true as const, reason: null }) },
       resumeService: (options: ResumeServiceOptions) =>
         new DelegationService({

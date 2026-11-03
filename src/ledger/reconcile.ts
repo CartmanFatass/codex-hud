@@ -1,3 +1,4 @@
+import { isCallBudget, type CallBudget } from './call-budget.js';
 import { terminalNote, finalizeTermination } from './run-facts.js';
 import { canonicalJson, digest, type JsonObject } from '../core/canonical.js';
 import { isRunTerminal, reconcileRun, updateRun } from '../core/execution.js';
@@ -192,9 +193,10 @@ export async function commitReconcile(
   supplied: readonly ValidatedEvidence[],
   nowMs: number,
   gate?: (tx: LedgerTransaction) => void,
-  budgetMs = ledger.busyBudgetMs,
+  budgetMs: number | CallBudget = ledger.busyBudgetMs,
   home?: string
 ): Promise<{ committed: false; reason: 'stale_snapshot' } | { committed: true; decision: ReconcileDecision }> {
+  if (isCallBudget(budgetMs)) budgetMs.check();
   const runId = expected.run.runId;
   const expectedVersion = expected.version;
   const incoming = preparedEvidence(supplied, runId);
@@ -356,7 +358,13 @@ export async function commitReconcile(
     }
     return { committed: true as const, decision };
   }, budgetMs);
-  if (home && hintSeq !== undefined) touchHint(home, runId, hintSeq);
+  if (home && hintSeq !== undefined) {
+    try {
+      touchHint(home, runId, hintSeq);
+    } catch {
+      /* Optional post-commit hint. */
+    }
+  }
   return result;
 }
 
@@ -365,8 +373,9 @@ export async function commitCompared<T>(
   ledger: Ledger,
   expected: ReconcileSnapshot,
   callback: (tx: LedgerTransaction, current: ReconcileSnapshot) => T,
-  budgetMs = ledger.busyBudgetMs
+  budgetMs: number | CallBudget = ledger.busyBudgetMs
 ): Promise<{ committed: false; reason: 'stale_snapshot' } | { committed: true; result: T }> {
+  if (isCallBudget(budgetMs)) budgetMs.check();
   const runId = expected.run.runId;
   const version = expected.version;
   return ledger.transaction((tx) => {
@@ -375,7 +384,8 @@ export async function commitCompared<T>(
     const result = callback(tx, snapshotInTransaction(tx, runId));
     if (result !== null && typeof result === 'object' && 'then' in result)
       throw new TypeError('ledger_transaction_callback_must_be_synchronous');
-    return { committed: true as const, result };
+    const wrapped = { committed: true as const, result };
+    return tx.isPriorDurableResult(result) ? tx.priorDurableResult(wrapped) : wrapped;
   }, budgetMs);
 }
 
@@ -385,7 +395,7 @@ export async function requestCancel(
   authority: IntentAuthority,
   at: number,
   graceMs = 10000,
-  budgetMs = ledger.busyBudgetMs
+  budgetMs: number | CallBudget = ledger.busyBudgetMs
 ): Promise<
   | { committed: false; reason: 'stale_snapshot' }
   | { committed: true; result: { accepted: boolean; cancelRequestedAt: number | null } }
@@ -406,7 +416,7 @@ export async function requestCancel(
       if (!allowed.ok) throw new Error(allowed.reason);
       if (isRunTerminal(current.run)) return { accepted: false, cancelRequestedAt: current.run.cancelRequestedAt };
       if (current.run.cancelRequestedAt !== null)
-        return { accepted: true, cancelRequestedAt: current.run.cancelRequestedAt };
+        return tx.priorDurableResult({ accepted: true, cancelRequestedAt: current.run.cancelRequestedAt });
       tx.run(
         "UPDATE runs SET cancel_requested_at=?,state=CASE WHEN state='uncertain' THEN state ELSE 'cancelling' END WHERE run_id=?",
         at,

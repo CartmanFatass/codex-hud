@@ -1,3 +1,4 @@
+import type { CallBudget } from '../../../src/ledger/call-budget.js';
 import { opendirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -25,21 +26,22 @@ export type CallResolution =
     }
   | { ok: false; code: 'identity_source_missing' | 'identity_unverified' | 'unsupported' | 'stale_context' };
 export interface CurrentCallSourcePort {
-  resolve(meta: unknown, toolName: string): Promise<CallResolution>;
+  resolve(meta: unknown, toolName: string, budget?: CallBudget): Promise<CallResolution>;
 }
 export interface SessionRecordLocatorPort {
-  codex(root: string, sessionId: string): string | null;
+  codex(root: string, sessionId: string, budget?: CallBudget): string | null;
 }
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 /** UUIDv7 day ±1 covers harness-local date directories. One total 4096-entry/10ms budget. */
 export class BoundedSessionLocator implements SessionRecordLocatorPort {
-  codex(root: string, sessionId: string): string | null {
+  codex(root: string, sessionId: string, budget?: CallBudget): string | null {
     if (!uuid.test(sessionId) || sessionId[14] !== '7') return null;
     const created = parseInt(sessionId.replaceAll('-', '').slice(0, 12), 16);
     const matches: string[] = [];
     const deadline = performance.now() + 10;
     let count = 0;
     for (const offset of [-1, 0, 1]) {
+      budget?.check('source');
       const date = new Date(created + offset * 86400000);
       const directory = join(
         root,
@@ -57,6 +59,7 @@ export class BoundedSessionLocator implements SessionRecordLocatorPort {
       }
       try {
         for (;;) {
+          budget?.check('source');
           if (count >= 4096 || performance.now() >= deadline) return null;
           const entry = dir.readSync();
           if (!entry) break;
@@ -151,11 +154,12 @@ export class SessionRefResolver implements CurrentCallSourcePort {
     private readonly claudeHook?: ClaudeHookSourceOptions,
     private readonly scopes?: ScopeSnapshotPort
   ) {}
-  async resolve(meta: unknown, toolName: string): Promise<CallResolution> {
+  async resolve(meta: unknown, toolName: string, budget?: CallBudget): Promise<CallResolution> {
     const deny = (code: Exclude<CallResolution, { ok: true }>['code']): CallResolution => ({ ok: false, code });
     const { caller, source, harnessPid, harnessProcStart } = this.registration;
     if (!source || !this.profile || harnessPid === null || !object(meta)) return deny('identity_source_missing');
     try {
+      budget?.check('source');
       const self = this.reader.get(caller.pid),
         parent = this.reader.get(caller.ppid),
         domain = this.reader.domain();
@@ -181,6 +185,7 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         harnessProcStart!
       );
       // Captured before reading the source. A losing call must obtain fresh evidence.
+      budget?.check('source');
       const scopePremise = this.scopes?.read(processKey);
       let callId: string;
       let sessionRef: SessionRef;
@@ -201,13 +206,19 @@ export class SessionRefResolver implements CurrentCallSourcePort {
           // The launch profile pins an executable whose version was checked by the launcher.
           // Config/env alone never proves that the actual ancestor is this executable.
           if (readlinkSync(`/proc/${harnessPid}/exe`) !== hook.config.claudeExecutable) return deny('unsupported');
-          const evidence = consumeHookRecord(hook, {
-            processKey,
-            sourceId: source.sourceId,
-            bootId: domain.bootId,
-            callId,
-            toolName: `mcp__${this.profile.mcpServerName}__${toolName}`,
-          });
+          budget?.check('source');
+          const evidence = consumeHookRecord(
+            hook,
+            {
+              processKey,
+              sourceId: source.sourceId,
+              bootId: domain.bootId,
+              callId,
+              toolName: `mcp__${this.profile.mcpServerName}__${toolName}`,
+            },
+            budget
+          );
+          budget?.check('source');
           const record = readJson(join(source.rootPath, 'sessions', `${harnessPid}.json`));
           if (
             !object(record) ||
@@ -225,6 +236,7 @@ export class SessionRefResolver implements CurrentCallSourcePort {
             this.reader.get(caller.pid).procStart !== caller.procStart
           )
             return deny('identity_unverified');
+          budget?.check('source');
           return {
             ok: true,
             callId,
@@ -251,6 +263,7 @@ export class SessionRefResolver implements CurrentCallSourcePort {
           record.cwd.replace(/[^a-zA-Z0-9]/g, '-'),
           `${record.sessionId}.jsonl`
         );
+        budget?.check('source');
         const text = readBounded(file, 65536, true);
         const matches = exactClaudeCallRecords(text, callId, `mcp__${this.profile.mcpServerName}__${toolName}`);
         if (matches.length === 0) return deny('identity_source_missing');
@@ -281,9 +294,10 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         )
           return deny('identity_unverified');
         if (turn.codex_version !== '0.166.0') return deny('unsupported');
-        const file = this.locator.codex(source.rootPath, meta.sessionId);
+        const file = this.locator.codex(source.rootPath, meta.sessionId, budget);
         if (!file || !realpathSync(file).startsWith(source.rootPath + '/sessions/'))
           return deny('identity_source_missing');
+        budget?.check('source');
         const first = readBounded(file, 262144).split('\n')[0];
         const header: unknown = JSON.parse(first);
         if (!object(header) || header.type !== 'session_meta' || !object(header.payload))
@@ -300,12 +314,14 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         if (payload.source === 'exec' && turn.turn_trigger !== 'exec') return deny('identity_unverified');
         sessionRef = { harness: 'codex', sourceId: source.sourceId, sessionId: meta.threadId, threadId: null };
       } else return deny('unsupported');
+      budget?.check('source');
       // Recheck physical stamps after filesystem evidence; registration alone is no authority.
       if (
         this.reader.get(harnessPid).procStart !== harnessProcStart ||
         this.reader.get(caller.pid).procStart !== caller.procStart
       )
         return deny('identity_unverified');
+      budget?.check('source');
       return {
         ok: true,
         callId,
@@ -314,7 +330,8 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         evidenceDigest: digest([callId, sessionRef, processKey]),
         scopePremise,
       };
-    } catch {
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ledger_busy') throw error;
       return deny('identity_source_missing');
     }
   }

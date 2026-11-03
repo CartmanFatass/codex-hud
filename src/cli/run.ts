@@ -1,3 +1,4 @@
+import { CallBudget } from '../ledger/call-budget.js';
 import { join } from 'node:path';
 import { validateRequestKey } from '../core/execution.js';
 import { HeadlessRunControl } from '../core/run/control.js';
@@ -72,6 +73,7 @@ export async function runCommand(
   home: string,
   io: HudIO,
   trusted: {
+    budget?: CallBudget;
     capability?: CapabilityVerifier;
     resumeService?: (options: ResumeServiceOptions) => LocalResumeService;
   } = {}
@@ -79,22 +81,32 @@ export async function runCommand(
   const [command, ...rest] = args;
   if (command === 'wait') return runWait(parseWait(rest), home, io);
   if (command === 'resume') {
+    const budget = trusted.budget ?? new CallBudget();
+    budget.check();
     const request = parseResume(rest);
     const config = await delegateConfig(home);
-    const { ledger } = await existingLedger(home, true);
+    budget.check();
+    const { ledger, binding } = await existingLedger(home, true, budget);
     let service: LocalResumeService | undefined;
+    let knownResult = false;
     try {
+      budget.check();
       const { DelegationService } = await mcpModule('delegation');
+      budget.check();
       const backend = await ledger.readSnapshot(
         (tx) => tx.get('SELECT backend FROM links WHERE link_id=?', request.linkId)?.backend
       );
+      budget.check();
       const profile = config.profiles.find((p) => p.name === backend);
       const template = request.mode === 'headless' ? profile?.resumeHeadless : profile?.resume;
       // Trusted startup discovery is reusable by release attestation. It is not
       // itself local-initiation capability evidence (oracle-1, sections 4-5).
       const executable =
         !trusted.capability && template ? await discoverExecutable(template, { ...io.env, ...profile?.env }) : null;
+      budget.check();
       const serviceOptions = {
+        localBinding: binding,
+        callBudget: budget,
         ledger,
         home,
         config,
@@ -120,11 +132,23 @@ export async function runCommand(
           }),
       };
       service = trusted.resumeService ? trusted.resumeService(serviceOptions) : new DelegationService(serviceOptions);
-      await io.stdout(JSON.stringify(await service!.resumeLocal(request)) + '\n');
+      const result = await service!.resumeLocal(request);
+      knownResult = true;
+      await io.stdout(JSON.stringify(result) + '\n');
       return 0;
     } finally {
-      service?.close();
-      await ledger.close();
+      let cleanupError: unknown;
+      try {
+        await service?.close();
+      } catch (error) {
+        cleanupError = error;
+      }
+      try {
+        await ledger.close();
+      } catch (error) {
+        cleanupError ??= error;
+      }
+      if (cleanupError && !knownResult) throw cleanupError;
     }
   }
   if (!['status', 'cancel', 'reconcile'].includes(command)) throw new CliError('invalid_command');

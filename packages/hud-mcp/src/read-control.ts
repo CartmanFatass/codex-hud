@@ -1,3 +1,4 @@
+import { CallBudget } from '../../../src/ledger/call-budget.js';
 import type { Ledger } from '../../../src/ledger/ledger.js';
 import type { LedgerTransaction } from '../../../src/ledger/transaction.js';
 import type { IntentAuthority } from '../../../src/ledger/types.js';
@@ -300,9 +301,13 @@ export class ReadControlService {
     runId: string,
     graceMs: number,
     authority: IntentAuthority,
-    budget = { deadline: performance.now() + 30, lockDeadline: performance.now() + 20 }
+    budget: CallBudget | { deadline: number; lockDeadline: number } = new CallBudget()
   ) {
     const remaining = () => {
+      if ('check' in budget) {
+        budget.check();
+        return budget;
+      }
       const left = Math.min(budget.deadline, budget.lockDeadline) - performance.now();
       if (left <= 0) throw new LedgerBusyError();
       return Math.min(20, left);
@@ -316,6 +321,7 @@ export class ReadControlService {
         requireCancel(tx, status.link, authority);
         return snapshotInTransaction(tx, runId);
       });
+      remaining();
       if (
         !isRunTerminal(expected.run) &&
         expected.run.state !== 'uncertain' &&

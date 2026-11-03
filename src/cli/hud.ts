@@ -1,3 +1,4 @@
+import { CallBudget } from '../ledger/call-budget.js';
 import { EXPORT_HELP, EXPORT_USAGE, linkExport, type HudIO } from './link-export.js';
 import { CliError, privateHome } from './runtime.js';
 import { RUN_HELP, RUN_USAGE, runCommand } from './run.js';
@@ -45,7 +46,10 @@ export async function main(
         await io.stdout(`Usage: ${usage}\n`);
         return 0;
       }
-      return await runCommand(args.slice(1), privateHome(io.env), io);
+      const budget = args[1] === 'resume' ? new CallBudget() : undefined;
+      const home = privateHome(io.env, budget);
+      budget?.check();
+      return await runCommand(args.slice(1), home, io, { budget });
     }
     if (args[0] === 'cache') {
       // Help must work without reading or validating HUD_HOME.
