@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough, type Readable } from 'node:stream';
 import { openLedger } from '../../src/ledger/ledger.js';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
 import { PrivateLedgerGate } from '../../src/ledger/local-manager.js';
@@ -215,20 +217,95 @@ test('int hud-mcp composition uses existing ledger even when diagnostic registry
   }
 });
 
+// Child exit can precede the last stdio data event. Only close completes capture.
+function captureMcpOutput(child: { stdout: Readable; stderr: Readable; once: EventEmitter['once'] }) {
+  let stdout = '',
+    stderr = '';
+  child.stdout.on('data', (chunk) => (stdout += chunk));
+  child.stderr.on('data', (chunk) => (stderr += chunk));
+  const done = new Promise<number | null>((resolve) => child.once('close', resolve));
+  return {
+    done,
+    get stdout() {
+      return stdout;
+    },
+    get stderr() {
+      return stderr;
+    },
+  };
+}
+
+function assertDiscoveryStdout(stdout: string) {
+  assert.ok(stdout.endsWith('\n'));
+  const replies = stdout
+    .slice(0, -1)
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  assert.equal(replies.length, 3);
+  assert.deepEqual(
+    replies.map((reply) => [reply.jsonrpc, reply.id]),
+    [
+      ['2.0', 1],
+      ['2.0', 2],
+      ['2.0', 3],
+    ]
+  );
+}
+
+for (const [name, tail] of [
+  ['non-JSON line', 'late diagnostic\n'],
+  ['extra JSON-RPC record', JSON.stringify({ jsonrpc: '2.0', id: 4, result: {} }) + '\n'],
+  ['unterminated output', 'late diagnostic'],
+] as const) {
+  test(`stdio capture rejects ${name} delivered after exit and before close`, async () => {
+    // Trusted deterministic event fixture: no process, socket or timing race is needed.
+    const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough() });
+    const capture = captureMcpOutput(child);
+    const valid = [1, 2, 3].map((id) => JSON.stringify({ jsonrpc: '2.0', id, result: {} }) + '\n').join('');
+    child.stdout.write(valid);
+    assertDiscoveryStdout(capture.stdout);
+    let completed = false;
+    const done = capture.done.then((code) => {
+      completed = true;
+      assert.equal(code, 0);
+      assertDiscoveryStdout(capture.stdout);
+    });
+    // Attach the rejection assertion before introducing the contaminated output.
+    const rejected = assert.rejects(done, name === 'non-JSON line' ? SyntaxError : assert.AssertionError);
+    child.emit('exit', 0, null);
+    await Promise.resolve();
+    assert.equal(completed, false, 'exit must not settle complete-output verification');
+    child.stdout.write(tail);
+    child.stderr.write('late stderr diagnostic\n');
+    await Promise.all(
+      [child.stdout, child.stderr].map(
+        (stream) =>
+          new Promise<void>((resolve) => {
+            stream.once('end', resolve);
+            stream.end();
+          })
+      )
+    );
+    assert.equal(completed, false, 'capture waits for close even after EOF');
+    child.emit('close', 0, null);
+    await rejected;
+    assert.equal(completed, true);
+    assert.equal(capture.stdout, valid + tail);
+    assert.equal(capture.stderr, 'late stderr diagnostic\n');
+  });
+}
+
 test('int unconfigured real MCP answers discovery and refuses whoami with JSON-RPC-only stdout', { skip }, async () => {
   const home = mkdtempSync(join(tmpdir(), 'hud-mcp-ancestor-stdio-'));
   const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
     env: { ...process.env, HOME: home, HUD_HOME: home, HUD_MCP_PROFILE: '', HUD_MCP_REGISTRY_DIR: '' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-  let stdout = '',
-    stderr = '',
-    buffer = '';
+  const capture = captureMcpOutput(child);
+  let buffer = '';
   let sequence = 0;
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
-  child.stderr.on('data', (chunk) => (stderr += chunk));
   child.stdout.on('data', (chunk) => {
-    stdout += chunk;
     buffer += chunk;
     let index;
     while ((index = buffer.indexOf('\n')) >= 0) {
@@ -242,12 +319,10 @@ test('int unconfigured real MCP answers discovery and refuses whoami with JSON-R
       }
     }
   });
-  const done = new Promise<number | null>((resolve) =>
-    child.once('exit', (code) => {
-      for (const request of pending.values()) request.reject(new Error(`MCP exited early: ${stderr}`));
-      resolve(code);
-    })
-  );
+  const done = capture.done.then((code) => {
+    for (const request of pending.values()) request.reject(new Error(`MCP closed early: ${capture.stderr}`));
+    return code;
+  });
   const request = (method: string, params: unknown) =>
     new Promise<unknown>((resolve, reject) => {
       const id = ++sequence;
@@ -257,7 +332,7 @@ test('int unconfigured real MCP answers discovery and refuses whoami with JSON-R
         if (error) reject(error);
         else resolve(value);
       };
-      const timer = setTimeout(() => finish(null, new Error(`MCP deadline: ${method}: ${stderr}`)), 5000);
+      const timer = setTimeout(() => finish(null, new Error(`MCP deadline: ${method}: ${capture.stderr}`)), 5000);
       pending.set(id, { resolve: (value) => finish(value), reject: (error) => finish(null, error) });
       child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
     });
@@ -273,22 +348,9 @@ test('int unconfigured real MCP answers discovery and refuses whoami with JSON-R
     };
     assert.deepEqual(called.result.structuredContent, { ok: false, code: 'identity_source_missing' });
     child.stdin.end();
-    assert.equal(await done, 0, stderr);
+    assert.equal(await done, 0, capture.stderr);
     assert.equal(buffer, '');
-    assert.ok(stdout.endsWith('\n'));
-    const replies = stdout
-      .slice(0, -1)
-      .split('\n')
-      .map((line) => JSON.parse(line));
-    assert.equal(replies.length, 3);
-    assert.deepEqual(
-      replies.map((reply) => [reply.jsonrpc, reply.id]),
-      [
-        ['2.0', 1],
-        ['2.0', 2],
-        ['2.0', 3],
-      ]
-    );
+    assertDiscoveryStdout(capture.stdout);
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     await done;
