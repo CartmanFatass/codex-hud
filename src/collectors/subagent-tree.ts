@@ -154,7 +154,7 @@ function nonEmpty(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-function identityFromMeta(payload: Record<string, unknown>): AgentIdentity {
+export function identityFromMeta(payload: Record<string, unknown>): AgentIdentity {
   const source = payload.source;
   const subagent =
     source && typeof source === 'object'

@@ -52,6 +52,7 @@ interface Edge {
   records: string[];
   since: number;
   relation?: LinkRelationProjection;
+  native?: LinkTreeNode['native'];
 }
 
 function topologyValid(session: CollectedLinkSession | undefined): boolean {
@@ -209,6 +210,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
         parent,
         child,
         kind: 'native',
+        native: topology!.nativeMetadata?.[ref.sessionId] ?? { title: null, kind: null },
         records: [`native:${parent}:${child}`],
         since: session.evidence.observation.statusProjection.lastEvidenceAt ?? input.nowMs,
       });
@@ -346,6 +348,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
       key: item.key,
       parentKey: item.parentKey,
       edge: item.edge?.kind ?? null,
+      native: item.edge?.kind === 'native' ? (item.edge.native ?? { title: null, kind: null }) : null,
       depth: item.depth,
       crossHarnessDepth: item.cross,
       loaded,
@@ -359,7 +362,9 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
         ...(!loaded ? { reason } : {}),
       },
       observation,
-      lastObservation: session?.evidence.observation ?? null,
+      lastObservation: session?.committedOnly
+        ? (session.lastCommitted ?? null)
+        : (session?.evidence.observation ?? null),
       currentRun: run,
       execution: linkExecution(run, snapshot.events),
       conflict: nodeConflicts.get(item.key) ?? null,

@@ -1,11 +1,20 @@
+import { homedir } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { canonicalJson } from '../core/canonical.js';
+import { SessionPublisher } from '../core/link/publisher.js';
+import { linkStatusInput } from '../core/link/index.js';
+import { STATUS_RULE_VERSION, type LedgerStatusFact } from '../core/status/merge.js';
+import type { LedgerEvent } from '../core/types/execution.js';
+import type { WriterFacts } from '../core/status/writer.js';
 import { performance } from 'node:perf_hooks';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CodexAdapter } from '../harness/codex/index.js';
+import { ClaudeTranscriptFiles } from '../harness/claude/binding.js';
 import { ClaudeAdapter } from '../harness/claude/index.js';
 import { openLinkLedgerReader } from '../core/link-ledger-read.js';
 import { openObservationStore, type ObservationStore } from '../core/observation-store.js';
-import { LinkTickCollector, type LinkCollectionPort } from '../core/link/tick.js';
+import { LinkTickCollector, LEDGER_SNAPSHOT_VALIDITY_MS, type LinkCollectionPort } from '../core/link/tick.js';
 import { displayNodeKey } from '../core/observation.js';
 import { loadLimits } from '../core/link/limits.js';
 import type { CollectedLinkSession } from '../core/link/types.js';
@@ -15,6 +24,29 @@ import type { LaunchProfile } from '../core/types/capabilities.js';
 import type { SessionRef } from '../core/types/identity.js';
 import type { ObservationView, ReaderCheckpoint } from '../core/types/observation.js';
 import type { DelegationViewModel } from '../core/link/view-model.js';
+
+/** Startup-only mirror of CLI privateHome; never creates the home or imports CLI/writer code. */
+function existingHudHome(env: Readonly<Record<string, string | undefined>>): string | null {
+  const requested = env.HUD_HOME ?? path.join(homedir(), '.hud');
+  if (!path.isAbsolute(requested) || requested.includes('\0')) return null;
+  const home = requested.replace(/(?:\/\.?)+$/, '') || '/';
+  try {
+    const info = fs.lstatSync(home);
+    if (
+      !info.isDirectory() ||
+      info.isSymbolicLink() ||
+      fs.realpathSync(home) !== home ||
+      process.getuid?.() !== process.geteuid?.() ||
+      info.uid !== process.getuid?.() ||
+      (info.mode & 0o077) !== 0
+    )
+      return null;
+    if (!fs.statSync(path.join(home, 'ledger.sqlite')).isFile()) return null;
+    return home;
+  } catch {
+    return null;
+  }
+}
 
 function signature(file: string): string | null {
   try {
@@ -55,12 +87,16 @@ function sameFileStamp(a: FileStamp | null | undefined, b: FileStamp | null | un
 interface Source {
   adapter: CodexAdapter | ClaudeAdapter;
   root: string;
+  writable: boolean;
+  claudeFiles?: ClaudeTranscriptFiles;
   store: ObservationStore | null;
   storeIdentity: string | null;
   storeSignature: string;
   storeDirty: boolean;
 }
 interface Reading {
+  publisher?: SessionPublisher;
+  recoveryPending?: boolean;
   snapshot?: { envelope: CollectedLinkSession; token: number; dirty: boolean; value: CollectedLinkSession };
   file?: string | null;
   checkpoint?: ReaderCheckpoint;
@@ -102,6 +138,10 @@ function evidenceFromView(ref: SessionRef, observation: ObservationView): Sessio
 
 class SessionCollection implements LinkCollectionPort {
   readonly immutableSnapshots = true;
+  get publishesObservations(): boolean {
+    return this.publishing;
+  }
+  private readonly holder = `hud:${process.pid}:${randomUUID()}`;
   private snapshot: readonly CollectedLinkSession[] | null = null;
   private readings = new Map<string, Reading>();
   private sourceChecks = new Map<string, { dirty: boolean; token: number }>();
@@ -109,7 +149,223 @@ class SessionCollection implements LinkCollectionPort {
   private pendingCommits = new Set<string>();
   private commitCursor: string | undefined;
   private deadline = Infinity;
-  constructor(readonly sources: Map<string, Source>) {}
+  constructor(
+    readonly sources: Map<string, Source>,
+    readonly publishing = false
+  ) {}
+  private publicationCursor = '';
+  private publicationRevision = 0;
+  private newReadingKey: string | null = null;
+  preparePublication(view: DelegationViewModel | null): void {
+    const key = this.newReadingKey;
+    this.newReadingKey = null;
+    if (!key || !view || view.tree.ledger.state !== 'available') return;
+    const reading = this.readings.get(key);
+    const node = view.tree.nodes.find((node) => node.key === key);
+    if (!reading?.publisher || node?.identity.kind !== 'session') return;
+    const run = node.currentRun;
+    reading.publisher.prepare({
+      nodeIdentity: node.identity,
+      sourceGeneration: reading.checkpoint!.sourceGeneration,
+      ...(run ? { runId: run.runId, bindingGeneration: run.expectedGeneration } : {}),
+    });
+  }
+  private noOpRevision = -1;
+  private noOpView: DelegationViewModel | null = null;
+  private noOpDeadline = Infinity;
+  private publicationClock = -Infinity;
+  private ledgerObservedAt: number | null = null;
+  setLedgerObservedAt(at: number | null): void {
+    this.ledgerObservedAt = at;
+  }
+  private publicationView: DelegationViewModel | null = null;
+  setPublicationView(view: DelegationViewModel | null): void {
+    this.publicationView = view;
+  }
+  private publisher(source: Source, reading: Reading): SessionPublisher | null {
+    if (!this.publishing || !source.writable || !source.store) return null;
+    if (identity(source.store.databasePath) !== source.storeIdentity) {
+      source.writable = false;
+      reading.publisher?.forget();
+      return null;
+    }
+    return (reading.publisher ??= new SessionPublisher(source.store, reading.ref, this.holder));
+  }
+  /** Same collection operation, one fair session, no flusher/timer/second queue. */
+  publishOne(nowMs: number): { attempted: boolean; changed: boolean; error: string | null; key?: string } {
+    const view = this.publicationView;
+    const ledgerObservedAt = this.ledgerObservedAt;
+    if (!this.publishing || !view || view.tree.ledger.state !== 'available' || ledgerObservedAt === null)
+      return { attempted: false, changed: false, error: null };
+    if (
+      view === this.noOpView &&
+      this.publicationRevision === this.noOpRevision &&
+      nowMs >= this.publicationClock &&
+      nowMs <= this.noOpDeadline
+    )
+      return { attempted: false, changed: false, error: null };
+    this.publicationClock = nowMs;
+    let nextDeadline = Infinity;
+    const nodes = view.tree.nodes;
+    const cursor = nodes.findIndex((n) => n.key === this.publicationCursor);
+    for (let i = 1; i <= nodes.length; i++) {
+      const node = nodes[(cursor + i) % nodes.length];
+      if (node.identity.kind !== 'session') continue;
+      const reading = this.readings.get(node.key);
+      const publisher = reading?.publisher;
+      if (!reading || !publisher?.hasReading()) continue;
+      const source = this.sources.get(reading.ref.sourceId)!;
+      if (!source.store || identity(source.store.databasePath) !== source.storeIdentity) {
+        source.writable = false;
+        publisher.forget();
+        if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false };
+        return { attempted: false, changed: false, error: 'observation_store_identity_changed' };
+      }
+      const run = node.currentRun;
+      const detail = view.details[node.key];
+      const reports = detail?.reportHistory ?? [];
+      const facts: WriterFacts = {
+        ...linkStatusInput(view.tree, node.key),
+        target: {
+          nodeIdentity: node.identity,
+          sourceGeneration: reading.checkpoint!.sourceGeneration,
+          ...(run ? { runId: run.runId, bindingGeneration: run.expectedGeneration } : {}),
+        },
+        sources: run
+          ? [
+              {
+                id: `supervisor:${run.runId}`,
+                deadlineAt: run.heartbeatAt === null ? null : run.heartbeatAt + 30000,
+                evidence: {
+                  origin: 'supervisor',
+                  ref: node.identity.ref,
+                  sourceGeneration: reading.checkpoint!.sourceGeneration,
+                  runId: run.runId,
+                  bindingGeneration: run.expectedGeneration,
+                  validity: 'current',
+                  eventAt: run.heartbeatAt,
+                  observedAt: ledgerObservedAt,
+                  lastSuccessfulReadAt: ledgerObservedAt,
+                  value: { heartbeatAt: run.heartbeatAt },
+                },
+              },
+            ]
+          : [],
+        ledgerFacts: run
+          ? [
+              {
+                id: `run:${run.runId}`,
+                value: {
+                  run: {
+                    runId: run.runId,
+                    state: run.state,
+                    reason: node.execution.reconciliation?.cause ?? node.execution.launchFailure?.reason,
+                  },
+                },
+                eventAt: run.cancelRequestedAt ?? run.endedAt ?? run.startedAt ?? run.createdAt,
+                observedAt: ledgerObservedAt,
+                deadlineAt: ledgerObservedAt + LEDGER_SNAPSHOT_VALIDITY_MS,
+              },
+            ]
+          : [],
+        history: {
+          continuity: publisher.historyContinuity(),
+          gap: publisher.historyGap(),
+        },
+      };
+      const stateEvent = run ? this.runEvents.get(run.runId) : undefined;
+      const entryEvent = run ? this.runStateEvents.get(run.runId) : undefined;
+      const selectedReason = facts.ledgerFacts?.[0]?.value.run?.reason ?? null;
+      if (
+        run &&
+        stateEvent &&
+        (stateEvent.payload.state === run.state ||
+          (stateEvent.kind === 'run.reconciliation' && (stateEvent.payload.cause ?? null) === selectedReason))
+      ) {
+        const fact = facts.ledgerFacts![0];
+        facts.ledgerFacts = [
+          {
+            ...fact,
+            seq: stateEvent.seq,
+            eventAt: stateEvent.at,
+            value: {
+              ...fact.value,
+              episodes: { run: `ledger:${entryEvent?.payload.state === run?.state ? entryEvent.seq : stateEvent.seq}` },
+            },
+          },
+        ];
+      }
+      // Report sequence comes only from the same validated ledger snapshot, never an observation sequence.
+      const reportFacts = reports.flatMap((report) => {
+        const fact = this.reportFacts.get(report.reportId);
+        return fact?.value.report?.runId === run?.runId ? [fact!] : [];
+      });
+      facts.ledgerFacts = [...(facts.ledgerFacts ?? []), ...reportFacts];
+      const key = JSON.stringify([
+        STATUS_RULE_VERSION,
+        facts.target,
+        facts.link ? [facts.link.linkId, facts.link.state] : null,
+        facts.conflict,
+        run && [run.state, run.heartbeatAt, run.cancelRequestedAt, run.endedAt, node.execution],
+        stateEvent?.seq ?? null,
+        run
+          ? this.ledgerObservedAt !== null &&
+            nowMs >= this.ledgerObservedAt &&
+            nowMs <= this.ledgerObservedAt + LEDGER_SNAPSHOT_VALIDITY_MS
+          : null,
+        reportFacts.map((fact) => [fact.id, fact.seq, fact.value]),
+      ]);
+      nextDeadline = Math.min(nextDeadline, publisher.deadline());
+      if (!publisher.due(key, nowMs)) continue;
+      this.publicationCursor = node.key;
+      try {
+        if (!publisher.valid(nowMs)) {
+          publisher.forget();
+          reading.reader = undefined;
+          reading.checkpoint = undefined;
+          reading.recoveryPending = true;
+          reading.dirty = true;
+          return { attempted: false, changed: false, error: null };
+        }
+        const prior = reading.envelope?.evidence.observation.statusProjection.observationStamp?.commitSeq;
+        const committed = publisher.publish(facts, key, nowMs);
+        if (committed) this.committed(this.sources.get(reading.ref.sourceId)!, reading);
+        return { attempted: true, changed: committed?.commitSeq !== prior, error: null, key: node.key };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'observation_unavailable';
+        if (reason === 'status_new_reading_required') {
+          publisher.discardReading();
+          reading.dirty = true;
+        }
+        if (['lease_fenced', 'lease_expired', 'lease_time_unknown', 'observation_commit_conflict'].includes(reason)) {
+          publisher.forget();
+          reading.reader = undefined;
+          reading.checkpoint = undefined;
+          reading.recoveryPending = true;
+          reading.dirty = true;
+        }
+        if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false };
+        return { attempted: true, changed: false, error: reason };
+      }
+    }
+    this.noOpView = view;
+    this.noOpRevision = this.publicationRevision;
+    this.noOpDeadline = nextDeadline;
+    return { attempted: false, changed: false, error: null };
+  }
+  private reportFacts: ReadonlyMap<string, LedgerStatusFact> = new Map();
+  private runEvents: ReadonlyMap<string, LedgerEvent> = new Map();
+  private runStateEvents: ReadonlyMap<string, LedgerEvent> = new Map();
+  setRunStateEvents(events: ReadonlyMap<string, LedgerEvent>): void {
+    this.runStateEvents = events;
+  }
+  setRunEvents(events: ReadonlyMap<string, LedgerEvent>): void {
+    this.runEvents = events;
+  }
+  setReportFacts(facts: ReadonlyMap<string, LedgerStatusFact>): void {
+    this.reportFacts = facts;
+  }
+
   invalidateSnapshots(): void {
     this.snapshot = null;
     for (const reading of this.readings.values()) reading.snapshot = undefined;
@@ -210,6 +466,17 @@ class SessionCollection implements LinkCollectionPort {
       return false;
     }
     try {
+      const stamp = reading.envelope?.evidence.observation.statusProjection.observationStamp;
+      if (stamp && reading.envelope?.loaded) {
+        const head = source.store.readHead(reading.ref);
+        if (
+          head &&
+          head.commitSeq === stamp.commitSeq &&
+          head.seqDomain === stamp.seqDomain &&
+          head.sourceGeneration === stamp.sourceGeneration
+        )
+          return true;
+      }
       const commit = source.store.readProjection(reading.ref);
       if (!commit) {
         if (reading.envelope?.evidence.observation.statusProjection.observationStamp)
@@ -217,10 +484,31 @@ class SessionCollection implements LinkCollectionPort {
         return true;
       }
       // Preserve the exact committed summary/stamp. B9 checks it against the real current run.
-      const prior = reading.envelope;
-      if (reading.raw && prior?.sourceGeneration !== commit.sourceGeneration) return true;
+      let prior = reading.envelope;
+      if (reading.raw && prior?.sourceGeneration !== commit.sourceGeneration) {
+        if (prior && commit.sourceGeneration > prior.sourceGeneration) {
+          // A follower adopts the authoritative newer lineage without acquiring a write lease.
+          reading.raw = undefined;
+          reading.reader = undefined;
+          reading.checkpoint = undefined;
+          reading.publisher?.forget();
+          reading.recoveryPending = true;
+          reading.dirty = true;
+          reading.caughtUp = false;
+          reading.signature = null;
+          reading.resetPending = false;
+          reading.topologyToken = -1;
+          this.pendingTopology.delete(displayNodeKey({ kind: 'session', ref: reading.ref }));
+          if (source.adapter instanceof CodexAdapter) source.adapter.invalidateTopology(reading.ref);
+          prior = undefined;
+        } else {
+          if (prior && this.publishing) reading.envelope = { ...prior, lastCommitted: commit.summary };
+          return true;
+        }
+      }
       reading.envelope = {
         evidence: { ...(reading.raw ?? evidenceFromView(reading.ref, commit.summary)), observation: commit.summary },
+        ...(this.publishing ? { committedOnly: true, lastCommitted: commit.summary } : {}),
         sourceGeneration: commit.sourceGeneration,
         linkEvidenceCurrent: reading.raw ? (prior?.linkEvidenceCurrent ?? false) : false,
         loaded: true,
@@ -243,6 +531,21 @@ class SessionCollection implements LinkCollectionPort {
     const source = this.sources.get(ref.sourceId);
     if (!source || source.adapter.id !== ref.harness) return null;
     const reading = this.reading(ref, key);
+    if (source.adapter instanceof ClaudeAdapter && reading.file) {
+      const current = fileStamp(reading.file);
+      if (!sameFileStamp(current, reading.signature)) reading.dirty = true;
+      if (
+        reading.signature &&
+        (!current ||
+          current.dev !== reading.signature.dev ||
+          current.ino !== reading.signature.ino ||
+          current.size < reading.signature.size)
+      ) {
+        reading.resetPending = true;
+        reading.publisher?.discardReading();
+        if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
+      }
+    }
     if (source.adapter instanceof CodexAdapter) {
       const first = !this.sourceChecks.has(ref.sourceId);
       const prior = this.sourceChecks.get(ref.sourceId);
@@ -272,6 +575,7 @@ class SessionCollection implements LinkCollectionPort {
             reading.topologyToken = -1;
             reading.resetSignature = current;
             reading.resetPending = true;
+            reading.publisher?.discardReading();
             if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
             return 'native_topology';
           }
@@ -279,12 +583,13 @@ class SessionCollection implements LinkCollectionPort {
       }
       const check = this.sourceChecks.get(ref.sourceId)!;
       if (!state.file || check.dirty || reading.topologyToken !== check.token) {
-        if (state.file && reading.reader && (reading.dirty || !reading.caughtUp)) {
+        if (state.file && reading.reader && !reading.publisher?.hasPending() && (reading.dirty || !reading.caughtUp)) {
           return reading.lastGrantedKind === 'session' ? 'native_topology' : 'session';
         }
         return 'native_topology';
       }
     }
+    if (reading.publisher?.hasPending()) return null;
     return !reading.envelope || !reading.envelope.loaded || reading.dirty || !reading.caughtUp ? 'session' : null;
   }
   lineageCurrent(ref: SessionRef): boolean {
@@ -338,6 +643,55 @@ class SessionCollection implements LinkCollectionPort {
       return reading.envelope;
     }
     try {
+      const collectionDeadline = performance.now() + budget.budgetMs;
+      if (source.claudeFiles) {
+        const file = source.claudeFiles.resolve(ref, collectionDeadline);
+        if (!file) return reading.envelope ?? null;
+        if (reading.file !== file) reading.reader = undefined;
+        reading.file = file;
+        budget = { ...budget, budgetMs: Math.max(0, Math.floor(collectionDeadline - performance.now())) };
+        if (budget.budgetMs === 0) return reading.envelope ?? null;
+      }
+      const publisher = this.publisher(source, reading);
+      if (this.publishing) {
+        if (!publisher) {
+          this.committed(source, reading);
+          return reading.envelope ?? null;
+        }
+        const claim = publisher.claim(Date.now());
+        if (claim === 'follower') {
+          this.committed(source, reading);
+          return reading.envelope ?? null;
+        }
+        if (claim === 'acquired') {
+          reading.reader = undefined;
+          reading.checkpoint = undefined;
+          reading.recoveryPending = true;
+        }
+        if (reading.recoveryPending) {
+          const prior = source.store!.readProjection(ref);
+          if (prior) {
+            const recovery = source.store!.readRecovery(prior, budget);
+            if (!recovery || 'kind' in recovery) {
+              if (recovery?.kind === 'record_needs_larger_slice')
+                this.minimumBytes.set(displayNodeKey({ kind: 'session', ref }), recovery.minimumBytes);
+              this.charges = { bytesRead: budget.maxBytes, recordsRead: budget.maxRecords };
+              return reading.envelope ?? null;
+            }
+            reading.checkpoint = recovery.checkpoint;
+            // Known compact recovery bytes only. B12M must add SQLite/lazy-index metering; all wall time is included.
+            const { recoveryIndex: _index, ...inline } = recovery.checkpoint;
+            const charged = Buffer.byteLength(canonicalJson(inline));
+            budget = {
+              ...budget,
+              maxBytes: Math.max(0, budget.maxBytes - charged),
+              maxRecords: Math.max(0, budget.maxRecords - 1),
+            };
+            this.charges = { bytesRead: charged, recordsRead: 1 };
+          }
+          reading.recoveryPending = false;
+        }
+      }
       if (source.adapter instanceof CodexAdapter) {
         const file = source.adapter.collectionState(ref, false).file;
         if (reading.file !== file) {
@@ -345,8 +699,13 @@ class SessionCollection implements LinkCollectionPort {
           reading.file = file;
         }
       }
+      budget = {
+        ...budget,
+        budgetMs: Math.max(0, Math.floor(Math.min(collectionDeadline, this.deadline) - performance.now())),
+      };
+      if (budget.budgetMs === 0 || budget.maxBytes === 0 || budget.maxRecords === 0) return reading.envelope ?? null;
       reading.reader ??= source.adapter.open(ref, reading.checkpoint);
-      const readSignature = source.adapter instanceof CodexAdapter ? fileStamp(reading.file!) : null;
+      const readSignature = reading.file ? fileStamp(reading.file) : null;
       const previousGeneration = reading.checkpoint?.sourceGeneration;
       const result = await reading.reader.read(budget);
       if (!result.evidence || !result.stats) return null;
@@ -358,6 +717,11 @@ class SessionCollection implements LinkCollectionPort {
       }
       reading.resetPending = false;
       reading.resetSignature = undefined;
+      publisher?.capture(result);
+      if (publisher) {
+        this.publicationRevision++;
+        this.newReadingKey = displayNodeKey({ kind: 'session', ref });
+      }
       reading.raw = result.evidence;
       reading.checkpoint = result.checkpoint;
       const topologyKey = displayNodeKey({ kind: 'session', ref });
@@ -365,6 +729,7 @@ class SessionCollection implements LinkCollectionPort {
       this.pendingTopology.delete(topologyKey);
       reading.envelope = {
         evidence: result.evidence,
+        ...(this.publishing ? { committedOnly: true, lastCommitted: reading.envelope?.lastCommitted ?? null } : {}),
         sourceGeneration: result.checkpoint.sourceGeneration,
         linkEvidenceCurrent: !result.checkpoint.resetReason,
         loaded: result.observation.coverage.state !== 'catching_up' && !result.continuation,
@@ -393,21 +758,23 @@ class SessionCollection implements LinkCollectionPort {
       };
       reading.caughtUp = result.observation.coverage.state !== 'catching_up' && !result.continuation;
       reading.dirty = !reading.caughtUp;
-      if (source.adapter instanceof CodexAdapter) {
-        const state = source.adapter.collectionState(ref, false);
-        reading.signature = readSignature;
-      }
+      reading.signature = readSignature;
       const key = displayNodeKey({ kind: 'session', ref });
       if (result.continuation?.kind === 'record_needs_larger_slice')
         this.minimumBytes.set(key, result.continuation.minimumBytes);
       else this.minimumBytes.delete(key);
       const charged = { bytesRead: result.stats.bytesRead, recordsRead: result.stats.recordsRead };
       this.committed(source, reading);
+      if (this.publishing && !reading.envelope.evidence.observation.statusProjection.observationStamp)
+        reading.envelope = { ...reading.envelope, loaded: false };
       reading.envelope = { ...reading.envelope, ...charged };
       return reading.envelope;
     } catch {
       // No completed statistics are available on a thrown read: reserve its full grant conservatively.
-      this.charges = { bytesRead: budget.maxBytes, recordsRead: budget.maxRecords };
+      this.charges = {
+        bytesRead: this.charges.bytesRead + budget.maxBytes,
+        recordsRead: this.charges.recordsRead + budget.maxRecords,
+      };
       reading.dirty = true;
       if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
       return reading.envelope ?? null;
@@ -421,6 +788,18 @@ class SessionCollection implements LinkCollectionPort {
     return charged;
   }
   invalidateSource(sourceId: string): void {
+    const source = this.sources.get(sourceId);
+    const identityChanged = source?.store && identity(source.store.databasePath) !== source.storeIdentity;
+    for (const reading of this.readings.values())
+      if (reading.ref.sourceId === sourceId) {
+        if (identityChanged) reading.publisher?.forget();
+        else reading.publisher?.close();
+        reading.publisher = undefined;
+        reading.reader = undefined;
+        reading.checkpoint = undefined;
+        reading.recoveryPending = true;
+        reading.dirty = true;
+      }
     this.invalidateSnapshots();
     for (const [key, reading] of this.readings)
       if (reading.ref.sourceId === sourceId) {
@@ -430,6 +809,7 @@ class SessionCollection implements LinkCollectionPort {
       }
   }
   close(): void {
+    for (const reading of this.readings.values()) reading.publisher?.close();
     for (const source of this.sources.values()) {
       source.store?.close();
       if (source.adapter instanceof CodexAdapter) source.adapter.closeCollection();
@@ -500,13 +880,19 @@ export class HudDelegationCollector {
       for (const [sourceId, source] of this.port.sources) {
         const file = path.join(this.home, 'sources', sourceId, 'observation.sqlite');
         const nextIdentity = identity(file);
-        if (nextIdentity === source.storeIdentity) continue;
+        if (
+          nextIdentity === source.storeIdentity &&
+          (!this.port.publishing || source.writable || this.ledgerIdentity === null)
+        )
+          continue;
         this.port.invalidateSource(sourceId);
         source.store?.close();
         source.store = null;
+        source.writable = false;
         try {
-          source.store = await openObservationStore({ hudHome: this.home, sourceId, readOnly: true });
-          source.storeIdentity = nextIdentity;
+          source.store = await openObservationStore({ hudHome: this.home, sourceId, readOnly: !this.port.publishing });
+          source.writable = this.port.publishing;
+          source.storeIdentity = identity(source.store.databasePath);
         } catch {
           if (nextIdentity === null) source.storeIdentity = null;
           else this.refreshPending = true;
@@ -525,22 +911,79 @@ export class HudDelegationCollector {
     }
   }
 
+  private tickStarted = 0;
+  private tailPending = false;
+  private operation: object | null = null;
+  /** Release only this collection operation after an entrypoint assembly/paint failure; retain unacknowledged evidence. */
+  abandonCollection(): void {
+    this.tailPending = false;
+    this.operation = null;
+    this.collecting = false;
+  }
+  publicationToken(): object | null {
+    return this.operation;
+  }
+  private publication = { publishMs: 0, fullTickMs: 0, attempted: false, changed: false, error: null as string | null };
+  publicationStats() {
+    return { ...this.publication };
+  }
+  /** Await immediately after this collection's initial paint; never call for redraw/status/wait. */
+  async afterPaint(
+    paint: (view: DelegationViewModel | null) => void,
+    collectionStartedAt = this.tickStarted,
+    token = this.operation
+  ): Promise<void> {
+    if (!this.tailPending || this.closed || token !== this.operation) return;
+    this.tailPending = false;
+    this.operation = null;
+    const started = performance.now();
+    this.publication = { publishMs: 0, fullTickMs: 0, attempted: false, changed: false, error: null };
+    try {
+      this.port.setPublicationView(this.collector.current());
+      this.port.setLedgerObservedAt(this.collector.publicationLedgerObservedAt());
+      this.port.setReportFacts(this.collector.publicationReportFacts());
+      this.port.setRunEvents(this.collector.publicationRunEvents());
+      this.port.setRunStateEvents(this.collector.publicationRunStateEvents());
+      const result = this.port.publishOne(Date.now());
+      this.publication = { ...result, publishMs: performance.now() - started, fullTickMs: 0 };
+      if (result.changed || result.error)
+        paint(await this.collector.refreshCommitted(result.error ? undefined : result.key));
+    } catch (error) {
+      this.publication = {
+        ...this.publication,
+        publishMs: performance.now() - started,
+        error: error instanceof Error ? error.message : 'observation_unavailable',
+      };
+    } finally {
+      this.collecting = false;
+      if (this.refreshPending) await this.prepare();
+      this.publication.fullTickMs = performance.now() - collectionStartedAt;
+    }
+  }
   async tick(sessionId: string | undefined, deadline?: number): Promise<DelegationViewModel | null> {
+    if (this.collecting) return this.collector.current();
     this.collecting = true;
+    this.tickStarted = performance.now();
+    this.tailPending = this.port.publishing;
+    this.operation = Object.freeze({});
     try {
       const ref = sessionId ? this.ambientRef(sessionId) : null;
-      return await this.collector.tick({
+      const view = await this.collector.tick({
         roots: ref ? [{ kind: 'session', ref }] : [],
         deadline,
         ...(this.preparing || identity(path.join(this.home, 'ledger.sqlite')) !== this.ledgerIdentity
           ? { ledgerUnavailableReason: 'ledger_identity_changed' }
           : {}),
       });
+      this.port.preparePublication(view);
+      return view;
     } catch {
       return this.collector.current();
     } finally {
-      this.collecting = false;
-      if (this.refreshPending)
+      if (this.port.publishing && [...this.port.sources.values()].some((source) => !source.writable))
+        this.refreshPending = true;
+      if (!this.tailPending) this.collecting = false;
+      if (this.refreshPending && !this.collecting)
         setImmediate(() => {
           void this.prepare();
         }).unref();
@@ -555,10 +998,14 @@ export class HudDelegationCollector {
   }
   static async open(
     env: Readonly<Record<string, string | undefined>> = process.env,
-    ambientHome?: string
+    ambientHome?: string,
+    options: { publish?: boolean } = {}
   ): Promise<HudDelegationCollector | null> {
-    const home = env.HUD_HOME;
-    if (!home || !path.isAbsolute(home)) return null;
+    const home = existingHudHome(env);
+    if (!home) return null;
+    const hasLedger = identity(path.join(home, 'ledger.sqlite')) !== null;
+    if (options.publish === true && !hasLedger) return null;
+    const publishing = options.publish === true && hasLedger;
     const sources = new Map<string, Source>();
     const codex = new CodexAdapter(undefined, true),
       claude = new ClaudeAdapter();
@@ -593,11 +1040,15 @@ export class HudDelegationCollector {
         if (sources.has(sourceId)) continue;
         let store: ObservationStore | null = null;
         try {
-          store = await openObservationStore({ hudHome: home, sourceId, readOnly: true });
+          store = await openObservationStore({ hudHome: home, sourceId, readOnly: !publishing });
         } catch {}
         sources.set(sourceId, {
           adapter,
           root: fs.realpathSync(profile.source.root),
+          writable: publishing && store !== null,
+          ...(profile.harness === 'claude'
+            ? { claudeFiles: new ClaudeTranscriptFiles(fs.realpathSync(profile.source.root), sourceId) }
+            : {}),
           store,
           storeIdentity: store ? identity(store.databasePath) : null,
           storeSignature: '',
@@ -605,7 +1056,7 @@ export class HudDelegationCollector {
         });
       } catch {}
     }
-    const port = new SessionCollection(sources);
+    const port = new SessionCollection(sources, options.publish === true);
     const reader = await openLinkLedgerReader(path.join(home, 'ledger.sqlite'));
     const collector = new LinkTickCollector(reader, home, loadLimits(home), port);
     return new HudDelegationCollector(home, collector, port, (id) =>

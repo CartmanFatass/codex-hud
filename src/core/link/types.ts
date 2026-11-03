@@ -6,12 +6,22 @@ import type { Link, ParentOffline } from '../types/lifecycle.js';
 import type { Coverage, DisplayNodeIdentity, ObservationView, RunExecutionProjection } from '../types/observation.js';
 import type { LocatorCheck } from '../types/capabilities.js';
 import type { JsonObject } from '../canonical.js';
+import type { AgentTaskKind } from '../../types.js';
+
+/** Display metadata from an already charged native listing; never identity or binding evidence. */
+export interface NativeMetadata {
+  title: string | null;
+  kind: AgentTaskKind | null;
+}
 
 export type LinkConflict = NonNullable<ObservationView['conflict']>;
 
 /** B10 collection boundary: actual I/O, including signatures/recovery/native listing, charged once per tick. */
 export interface CollectedLinkSession {
   evidence: SessionEvidence;
+  /** Publication-mode raw anchors may be read, but their unpublished summary is never a display/history value. */
+  committedOnly?: boolean;
+  lastCommitted?: ObservationView | null;
   sourceGeneration: number;
   /** False for retained anchors from a reset/unknown reading lineage. */
   linkEvidenceCurrent: boolean;
@@ -23,6 +33,7 @@ export interface CollectedLinkSession {
     ref: SessionRef;
     sourceGeneration: number;
     children: readonly SessionRef[];
+    nativeMetadata?: Readonly<Record<string, NativeMetadata>>;
     loaded: boolean;
     bytesRead: number;
     recordsRead: number;
@@ -79,6 +90,8 @@ export interface LinkTreeNode {
   key: string;
   parentKey: string | null;
   edge: 'delegated' | 'native' | 'intent' | null;
+  /** Additive transport; populated iff the projected edge is native. */
+  native?: NativeMetadata | null;
   depth: number;
   crossHarnessDepth: number;
   loaded: boolean;
