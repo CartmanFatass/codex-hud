@@ -1,0 +1,813 @@
+t/tests/unit/run-light-leader.test.js:697:5
+✖ only waiter death retains honest state and safe scoped control outcome (82.638559ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(target)
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/runz1-work/dist-test/tests/unit/run-light-leader.test.js:709:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:697:5
+✖ only forwarder death retains honest state and safe scoped control outcome (71.445722ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(target)
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/runz1-work/dist-test/tests/unit/run-light-leader.test.js:709:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:736:5
+✖ portable bash-sh exec audit covers original env bytes and all argv phases (43.648359ms)
+  AssertionError [ERR_ASSERTION]: Traceback (most recent call last):
+    File "/workspace/scratch/6daef0397a95/runz1-work/tests/int/b3ar1-env-audit.py", line 37, in <module>
+      ptrace(TRACEME, 0)
+      ~~~~~~^^^^^^^^^^^^
+    File "/workspace/scratch/6daef0397a95/runz1-work/tests/int/b3ar1-env-audit.py", line 27, in ptrace
+      if err != 3: raise OSError(err, os.strerror(err))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  PermissionError: [Errno 1] Operation not permitted
+  Traceback (most recent call last):
+    File "/workspace/scratch/6daef0397a95/runz1-work/tests/int/b3ar1-env-audit.py", line 53, in <module>
+      if who == pid: assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, 'driver failed'
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  AssertionError: driver failed
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/runz1-work/dist-test/tests/unit/run-light-leader.test.js:738:16)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:736:5
+✖ portable bash-posix exec audit covers original env bytes and all argv phases (54.109569ms)
+  AssertionError [ERR_ASSERTION]: Traceback (most recent call last):
+    File "/workspace/scratch/6daef0397a95/runz1-work/tests/int/b3ar1-env-audit.py", line 37, in <module>
+      ptrace(TRACEME, 0)
+      ~~~~~~^^^^^^^^^^^^
+    File "/workspace/scratch/6daef0397a95/runz1-work/tests/int/b3ar1-env-audit.py", line 27, in ptrace
+      if err != 3: raise OSError(err, os.strerror(err))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  PermissionError: [Errno 1] Operation not permitted
+  Traceback (most recent call last):
+    File "/workspace/scratch/6daef0397a95/runz1-work/tests/int/b3ar1-env-audit.py", line 53, in <module>
+      if who == pid: assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, 'driver failed'
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  AssertionError: driver failed
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/runz1-work/dist-test/tests/unit/run-light-leader.test.js:738:16)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+=== EXIT 1 ===
+=== npm run test:core ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:core
+> bash tests/run-core.sh
+
+using temporary HUD_HOME: /workspace/scratch/6daef0397a95/hud-tmp/hud-core.B71RmF
+core tests: dist-test/tests/unit/codex-facade.test.js dist-test/tests/unit/contracts.test.js dist-test/tests/unit/core-fakes.test.js dist-test/tests/unit/ledger-perf.test.js dist-test/tests/unit/ledger-processes.test.js dist-test/tests/unit/ledger-read.test.js dist-test/tests/unit/ledger-schema.test.js dist-test/tests/unit/ledger-write.test.js
+✔ A6 observation fits the shared nullable-root v3 fixture and full node shape (30.872186ms)
+✔ Codex source is explicit and verified; binding needs a unique full ref, with no managed identity (5.624804ms)
+✔ budgeted parser checkpoints restore exact merge/tool/rate state after JSON round trip (15.274604ms)
+✔ reader honors record/zero budgets, restores split UTF-8/CRLF, and consumes a complete final record (10.731495ms)
+✔ resumed sessions keep identity and cumulative totals, while forked threads remain distinct (6.710956ms)
+✔ children delegates native topology, returns only direct children, and caps preserve quota/goal/plan/todos (9.701146ms)
+✔ link evidence requires an exact hud-mcp call/output pair, bounds state and never retains claims (3.04052ms)
+✔ oversized/incomplete records remain bounded and gaps survive EOF and checkpoint recovery (10.500007ms)
+✔ truncation and inode replacement reset checkpoint lineage and old evidence (4.490555ms)
+✔ scan version 4 persists bounded pending calls and evidence across scanner restart, rejects v3 (6.130803ms)
+✔ registry bindings require the same known occupant and complete source-scoped identity (2.236179ms)
+✔ checkpoint restore preserves token-rate tool-wait union and concurrent reads serialize (11.051314ms)
+✔ identical session IDs in two explicit sources do not cross-read, and custom hud server names are exact (4.368425ms)
+✔ read statistics count fetched chunk bytes separately from the committed record cursor (2.063965ms)
+✔ model/context clocks survive checkpoints and unrelated replies; baseline context is estimated (4.580829ms)
+✔ cumulative counter growth has its own clock and equal counters after file replacement start a new clock (8.711316ms)
+✔ malformed known records produce a gap preserved across recovery and EOF (6.866571ms)
+✔ strict bind recovers a quiet older session and unique registry ref without a locator (1.899942ms)
+✔ current action uses open calls after the bounded recent-call history evicts it (3.110534ms)
+✔ source-scoped candidates and native topology exclude rollout symlinks escaping the source (5.703621ms)
+✔ multiple profiles sharing one source retain every explicitly configured hud-mcp alias (10.408242ms)
+✔ unknown metrics use the time absence was confirmed, including cost and compact-invalidated context (8.939649ms)
+✔ production-default Codex reads advance despite 30 ms open/stat/read latency (353.661536ms)
+✔ controlled time slicing consumes one bounded step and preserves byte/record caps (5.67637ms)
+✔ drain bounds every await and rejects late terminal responses (12.40723ms)
+✔ F09/F10 Codex crash cuts recover UTF-8/CRLF, private blobs and fallback claims without raw state (20.464624ms)
+✔ F10 Codex maximum legal record, typed recovery continuation and oversize discard across restarts (34.883553ms)
+✔ F10 Codex truncation or replacement drops old transient and repeated recovery preserves usage clocks (6.427111ms)
+✔ F10 Codex rereads a replaced growing tail before compaction instead of grafting old bytes (6.630697ms)
+✔ F10 Codex maximum fixed-EOF JSON consumes 1 MiB without a nonexistent delimiter (7.810869ms)
+✔ F09/F10 no-content budgeted rereads preserve the nested checkpoint event clock (5.496524ms)
+✔ T-01-1 (3.484177ms)
+✔ T-01-2 (0.379081ms)
+✔ T-01-6 (0.514522ms)
+✔ T-01-7 (1.560429ms)
+✔ T-01-8 (0.544045ms)
+✔ T-01-9 (0.263079ms)
+✔ T-01-10 (0.413231ms)
+✔ T-01-11 (0.415104ms)
+✔ T-01-12 (0.287255ms)
+✔ T-01-13 (0.224682ms)
+✔ T-01-14 (0.385291ms)
+✔ T-01-15 (0.292963ms)
+✔ T-01-16 (0.346002ms)
+✔ T-01-17 (0.403758ms)
+✔ T-01-19 (0.461392ms)
+✔ T-01-20 (0.580238ms)
+✔ T-01-21 (0.537085ms)
+✔ T-01-22 (0.684082ms)
+✔ T-01-24 (0.620919ms)
+✔ T-01-25 (0.321035ms)
+✔ T-01-26 (0.481172ms)
+✔ T-01-28 (0.218143ms)
+✔ T-01-29 (0.301607ms)
+✔ T-01-30 (1.193566ms)
+✔ T-01-31 (0.234647ms)
+✔ T-01-32 (0.172716ms)
+✔ T-01-35 (0.262268ms)
+✔ T-01-36 (0.251833ms)
+✔ T-01-37 (0.348826ms)
+✔ T-01-38 (1.088401ms)
+✔ T-01-39 (0.37792ms)
+✔ T-02-2 (1.778351ms)
+✔ T-02-9 (0.647939ms)
+✔ T-02-10 (0.339993ms)
+✔ T-02-11 (0.389456ms)
+✔ T-02-13 (3.197181ms)
+✔ T-02-17 (4.220005ms)
+✔ T-02-18 (1.826293ms)
+✔ T-02-19 (0.546619ms)
+✔ T-02-20 (0.212865ms)
+✔ T-02-23 (0.146657ms)
+✔ T-02-27 (0.507882ms)
+✔ T-02-28 (0.564546ms)
+✔ T-02-30 (0.505709ms)
+✔ T-02-31 (0.5272ms)
+✔ T-02-32 (0.321456ms)
+✔ T-02-33 (0.759574ms)
+✔ T-02-34 (0.487631ms)
+✔ T-03-1 (0.327574ms)
+✔ T-03-2 (0.519129ms)
+✔ T-03-3 (0.389125ms)
+✔ T-03-4 (0.31095ms)
+✔ T-03-5 (0.614149ms)
+✔ T-03-6 (0.438488ms)
+✔ T-03-7 (0.56118ms)
+✔ T-03-8 (0.383177ms)
+✔ T-03-9 (0.416606ms)
+✔ T-03-10 (0.39187ms)
+✔ T-03-11 (0.315006ms)
+✔ T-03-12 (0.345261ms)
+✔ T-03-14 (0.318461ms)
+✔ T-03-15 (0.269158ms)
+✔ T-03-16 (0.714528ms)
+✔ T-03-17 (0.383087ms)
+✔ T-03-19 (0.867864ms)
+✔ T-03-20 (0.391629ms)
+✔ T-03-26 (1.452699ms)
+✔ T-03-34 (0.738603ms)
+✔ T-03-35 (0.246205ms)
+✔ T-03-36 (0.311481ms)
+✔ T-03-37 (0.480771ms)
+✔ T-04-2 (0.262619ms)
+✔ T-04-4 (0.214317ms)
+✔ T-04-6 (0.145154ms)
+✔ T-04-7 (0.202961ms)
+✔ T-04-8 (0.273044ms)
+✔ T-04-9 (0.778862ms)
+✔ T-04-12 (0.194307ms)
+✔ T-04-13 (0.54051ms)
+✔ T-04-14 (0.490717ms)
+✔ T-04-15 (0.982904ms)
+✔ T-04-16 (0.228879ms)
+✔ T-04-20 (0.143292ms)
+✔ T-04-31 (0.102391ms)
+✔ T-04-32 (0.627078ms)
+✔ T-04-33 (0.167588ms)
+✔ T-04-35 (0.153677ms)
+✔ T-04-40 (0.467121ms)
+✔ T-04-41 (0.539288ms)
+✔ T-04-43 (0.646186ms)
+✔ T-05-1 (0.640107ms)
+✔ T-05-3 (1.258662ms)
+✔ T-05-4 (6.302136ms)
+✔ T-05-8 (0.301756ms)
+✔ T-05-10 (0.172435ms)
+✔ T-05-11 (0.163372ms)
+✔ T-05-13 (0.275637ms)
+✔ T-05-17 (0.590654ms)
+✔ T-05-18 (0.171313ms)
+✔ T-06-1 (0.360924ms)
+✔ T-06-4 (3.272613ms)
+✔ T-06-5 (3.65555ms)
+✔ T-06-6 (1.246144ms)
+✔ T-06-10 (0.328986ms)
+✔ T-06-17 (0.204492ms)
+✔ T-06-22 (0.463656ms)
+✔ T-06-23 (0.279303ms)
+✔ T-06-24 (2.184012ms)
+✔ T-06-25 (0.737592ms)
+✔ T-06-26 (0.235289ms)
+✔ T-06-27 (0.455324ms)
+✔ T-06-28 (0.437728ms)
+✔ T-06-29 (0.318061ms)
+✔ T-07-1 (0.37206ms)
+✔ T-07-3 (0.834665ms)
+✔ T-07-10 (0.532839ms)
+✔ T-07-20 (4.994881ms)
+✔ T-07-22 (25.500647ms)
+✔ T-07-23 (0.423647ms)
+✔ T-07-24 (1.056673ms)
+✔ T-07-25 (281.412579ms)
+✔ T-07-26 (2.044255ms)
+✔ T-07-27 (0.610023ms)
+✔ F09/F10 A4 crash cuts keep UTF-8/CRLF, private blobs and claims out of every serialized artifact (1.255698ms)
+✔ F10 A4 transient continuation, maximum record, oversize restarts and source resets (9.052406ms)
+✔ empty optional registry still supports binding, reading and a core session tree (3.532378ms)
+✔ 06 T-06-6: cached unmanaged registry records retain validity, generation and observation clocks (1.654419ms)
+✔ valid, stale and unknown locator occupants drive the core interaction policy (0.915935ms)
+✔ lost supervisor refuses RunControl input even with a matching visible occupant (2.700181ms)
+✔ 05 T-05-8: absent or unavailable optional host selects a verified tmux fake before submission (2.127007ms)
+✔ 05 T-05-10: accepted replay cannot switch host or dispatch a fallback (0.258663ms)
+✔ bind/open/children feed an intent-to-session merge with native topology and selection preserved (1.085056ms)
+✔ 05 T-05-18: resume descriptor is copy-only with no RunControl or host dispatch (0.698844ms)
+﹣ ledger benchmark: 1000 small writes and read-only snapshots with 10000 runs (0.87215ms) # Run HUD_LEDGER_BENCHMARK=1 node --test dist-test/tests/unit/ledger-perf.test.js for the isolated 10000-run benchmark
+✔ ledger processes: concurrent identical request keys replay one complete intent and slot (253.186786ms)
+✔ ledger processes: concurrent same key with different parameters rejects the losing request (190.694326ms)
+✔ ledger processes: SIGKILL at insert:links recovers an atomic intent without a double slot (274.179511ms)
+✔ ledger processes: SIGKILL at insert:runs recovers an atomic intent without a double slot (281.86641ms)
+✔ ledger processes: SIGKILL at insert:claims recovers an atomic intent without a double slot (257.053837ms)
+✔ ledger processes: SIGKILL at insert:slots recovers an atomic intent without a double slot (264.166107ms)
+✔ ledger processes: SIGKILL at insert:idempotency recovers an atomic intent without a double slot (256.238666ms)
+✔ ledger processes: SIGKILL at insert:events recovers an atomic intent without a double slot (242.147474ms)
+✔ ledger processes: SIGKILL at insert:events:2 recovers an atomic intent without a double slot (242.778077ms)
+✔ ledger processes: SIGKILL at before:commit recovers an atomic intent without a double slot (356.570015ms)
+✔ ledger processes: SIGKILL at after:commit recovers an atomic intent without a double slot (240.592849ms)
+✔ ledger processes: the gathered reconcile evidence can commit against an unchanged snapshot (88.214589ms)
+✔ ledger processes: stale reconcile after actual write-lock contention preserves cancel (256.450429ms)
+✔ ledger processes: stale reconcile after actual write-lock contention preserves terminate (258.524629ms)
+✔ ledger processes: stale reconcile after actual write-lock contention preserves conflict (240.350891ms)
+✔ ledger read runtime gate leaves importing on Node 18 safe (1.572988ms)
+✔ ledger read never creates missing ledgers or migrates uninitialized/newer versions (59.000601ms)
+✔ ledger typed read snapshots preserve complete refs, per-run history and private launch context (42.77498ms)
+✔ ledger reads preserve empty scopes and do not truncate to HUD display limits (97.398619ms)
+✔ ledger read uses registration evidence for full supervisor stamps and rejects contradictory facts (34.559843ms)
+✔ ledger rows and high-water stay in one WAL read snapshot during a concurrent commit (21.984659ms)
+✔ ledger snapshot callback lifetime and errors release read transactions (20.319745ms)
+✔ link command functions distinguish missing links from unavailable ledgers and keep report/run states separate (44.053942ms)
+✔ ledger schema v1 is byte-for-byte the frozen contract SQL block (2.407212ms)
+✔ ledger runtime floor is explicit and does not raise the bar runtime (1.979119ms)
+✔ ledger native readOnly capability probe rejects ignored flags using memory only (5.015122ms)
+✔ ledger initialize, reopen, WAL recovery and backup preserve private ledgerId (72.153636ms)
+✔ ledger rejects unknown or populated unversioned schema without replacing metadata (25.416107ms)
+✔ ledger transaction rollback, callback lifetime and async-callback rejection (36.472409ms)
+✔ ledger freezes launch context, captures workspace once with event, and replays across Git metadata changes (40.833245ms)
+✔ ledger initial cached workspace event is atomic and unknown JSON metadata is refused (14.252377ms)
+✔ ledger supervisor registration persists full stamp, one ticket, one CAS heartbeat and single submission (40.136415ms)
+✔ ledger CAS includes context generations, validation changes, and evidence without an event (32.214903ms)
+✔ ledger irreversible N counter-evidence persists X and terminal incremental import cannot rewrite completion (47.819371ms)
+✔ ledger full completion after cancellation with unknown chronology ends with a stable note (36.71019ms)
+✔ ledger owner binding atomically rekeys outcomes, preserves origin and permits the original actor to register (24.733602ms)
+✔ ledger alias collision rolls back binding and original idempotency instead of choosing a winner (13.937745ms)
+✔ ledger event pages use committed per-run cursors and never mutate the ledger (12.951977ms)
+✔ ledger fresh reconciliation retains accepted link conflicts without normalized sidecars (15.580606ms)
+✔ ledger revoked parent cannot cancel or register an active run (19.007538ms)
+✔ ledger revoked parent cannot cancel or submit an active run (25.071321ms)
+✔ ledger handover increases generation and revokes old binding atomically with edge transfer (27.722465ms)
+✔ ledger fresh reconciliation keeps conflicts from another run sharing the actual target (15.811959ms)
+✔ ledger original supervisor cannot submit after reconciliation marks its armed run uncertain (19.095378ms)
+✔ ledger terminal timing uncertainty durably prevents resume without fabricating a conflict fact (21.784587ms)
+ℹ tests 210
+ℹ suites 0
+ℹ pass 209
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 3825.436262
+removed temporary HUD_HOME: /workspace/scratch/6daef0397a95/hud-tmp/hud-core.B71RmF
+=== EXIT 0 ===
+=== npm run test:visual ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:visual
+> npm run build:test && node --test dist-test/tests/unit/visual-baselines.test.js
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+✔ visual semantics: all presets retain identity and exact frame dimensions (218.470147ms)
+✔ visual semantics: child role counts off removes only footer counts, not children, summaries or targets (6.956174ms)
+✔ visual semantics: recap viewport is independent of card preset at every width and look (143.563114ms)
+✔ visual semantics: active Settings navigation retains full localized label and nonoverlapping controls from width 24 (33.570919ms)
+✔ visual semantics: Save returns the new width and the next render reflows navigation, values and selected identity (43.825068ms)
+✔ visual semantics: confirmation owns input, blocks hidden UI clicks and defaults to cancel (17.982141ms)
+✔ visual semantics: Inspector preserves stored summary and distinguishes explicit Coverage from legacy Recorded (22.725509ms)
+✔ visual semantics: normalization retains spaces and diffs identify the exact case and row (0.494802ms)
+✔ visual semantics: fixture generation is deterministic without reading a wall clock (452.39879ms)
+▶ visual baselines: fixed-time EN/ZH textual frames match reviewed goldens
+  ✔ panel/en/tab/minimal/32x32 (0.62846ms)
+  ✔ panel/en/tab/progress/32x32 (0.127319ms)
+  ✔ panel/en/tab/monitor/32x32 (0.066028ms)
+  ✔ settings/en/tab/active-settings/32x24 (0.103253ms)
+  ✔ panel/en/tab/minimal/40x32 (0.077064ms)
+  ✔ panel/en/tab/progress/40x32 (0.072097ms)
+  ✔ panel/en/tab/monitor/40x32 (0.136321ms)
+  ✔ settings/en/tab/active-settings/40x24 (0.091645ms)
+  ✔ panel/en/tab/minimal/48x32 (0.180868ms)
+  ✔ panel/en/tab/progress/48x32 (0.163452ms)
+  ✔ panel/en/tab/monitor/48x32 (0.0742ms)
+  ✔ settings/en/tab/active-settings/48x24 (0.228458ms)
+  ✔ panel/en/tab/minimal/56x32 (0.068451ms)
+  ✔ panel/en/tab/progress/56x32 (0.073659ms)
+  ✔ panel/en/tab/monitor/56x32 (0.13511ms)
+  ✔ settings/en/tab/active-settings/56x24 (0.106428ms)
+  ✔ panel/en/tab/minimal/80x32 (0.21602ms)
+  ✔ panel/en/tab/progress/80x32 (0.045687ms)
+  ✔ panel/en/tab/monitor/80x32 (0.084235ms)
+  ✔ settings/en/tab/active-settings/80x24 (0.036504ms)
+  ✔ panel/en/band/minimal/32x32 (0.03424ms)
+  ✔ panel/en/band/progress/32x32 (0.204032ms)
+  ✔ panel/en/band/monitor/32x32 (0.170162ms)
+  ✔ settings/en/band/active-settings/32x24 (0.041532ms)
+  ✔ panel/en/band/minimal/40x32 (0.139136ms)
+  ✔ panel/en/band/progress/40x32 (0.037515ms)
+  ✔ panel/en/band/monitor/40x32 (0.0339ms)
+  ✔ settings/en/band/active-settings/40x24 (0.089963ms)
+  ✔ panel/en/band/minimal/48x32 (0.128831ms)
+  ✔ panel/en/band/progress/48x32 (0.041361ms)
+  ✔ panel/en/band/monitor/48x32 (0.034431ms)
+  ✔ settings/en/band/active-settings/48x24 (0.033129ms)
+  ✔ panel/en/band/minimal/56x32 (0.031657ms)
+  ✔ panel/en/band/progress/56x32 (0.03373ms)
+  ✔ panel/en/band/monitor/56x32 (0.034411ms)
+  ✔ settings/en/band/active-settings/56x24 (0.031847ms)
+  ✔ panel/en/band/minimal/80x32 (0.031937ms)
+  ✔ panel/en/band/progress/80x32 (0.08074ms)
+  ✔ panel/en/band/monitor/80x32 (0.096693ms)
+  ✔ settings/en/band/active-settings/80x24 (0.247366ms)
+  ✔ panel/en/tile/minimal/32x32 (0.038808ms)
+  ✔ panel/en/tile/progress/32x32 (0.333864ms)
+  ✔ panel/en/tile/monitor/32x32 (0.044766ms)
+  ✔ settings/en/tile/active-settings/32x24 (0.037716ms)
+  ✔ panel/en/tile/minimal/40x32 (0.036314ms)
+  ✔ panel/en/tile/progress/40x32 (0.034131ms)
+  ✔ panel/en/tile/monitor/40x32 (0.071436ms)
+  ✔ settings/en/tile/active-settings/40x24 (0.12156ms)
+  ✔ panel/en/tile/minimal/48x32 (0.039468ms)
+  ✔ panel/en/tile/progress/48x32 (0.133708ms)
+  ✔ panel/en/tile/monitor/48x32 (0.066629ms)
+  ✔ settings/en/tile/active-settings/48x24 (0.054511ms)
+  ✔ panel/en/tile/minimal/56x32 (0.0339ms)
+  ✔ panel/en/tile/progress/56x32 (0.034521ms)
+  ✔ panel/en/tile/monitor/56x32 (0.051827ms)
+  ✔ settings/en/tile/active-settings/56x24 (0.031817ms)
+  ✔ panel/en/tile/minimal/80x32 (0.029174ms)
+  ✔ panel/en/tile/progress/80x32 (0.061151ms)
+  ✔ panel/en/tile/monitor/80x32 (0.065067ms)
+  ✔ settings/en/tile/active-settings/80x24 (0.031877ms)
+  ✔ panel/en/frame/minimal/32x32 (0.083554ms)
+  ✔ panel/en/frame/progress/32x32 (0.109101ms)
+  ✔ panel/en/frame/monitor/32x32 (0.035943ms)
+  ✔ settings/en/frame/active-settings/32x24 (0.029173ms)
+  ✔ panel/en/frame/minimal/40x32 (0.028152ms)
+  ✔ panel/en/frame/progress/40x32 (0.092848ms)
+  ✔ panel/en/frame/monitor/40x32 (0.035893ms)
+  ✔ settings/en/frame/active-settings/40x24 (0.028843ms)
+  ✔ panel/en/frame/minimal/48x32 (0.027861ms)
+  ✔ panel/en/frame/progress/48x32 (0.025988ms)
+  ✔ panel/en/frame/monitor/48x32 (0.028312ms)
+  ✔ settings/en/frame/active-settings/48x24 (0.062874ms)
+  ✔ panel/en/frame/minimal/56x32 (0.059529ms)
+  ✔ panel/en/frame/progress/56x32 (0.051907ms)
+  ✔ panel/en/frame/monitor/56x32 (0.031957ms)
+  ✔ settings/en/frame/active-settings/56x24 (0.029985ms)
+  ✔ panel/en/frame/minimal/80x32 (0.15559ms)
+  ✔ panel/en/frame/progress/80x32 (0.042743ms)
+  ✔ panel/en/frame/monitor/80x32 (0.029444ms)
+  ✔ settings/en/frame/active-settings/80x24 (0.029083ms)
+  ✔ panel/en/pill/minimal/32x32 (0.027812ms)
+  ✔ panel/en/pill/progress/32x32 (0.026109ms)
+  ✔ panel/en/pill/monitor/32x32 (0.02729ms)
+  ✔ settings/en/pill/active-settings/32x24 (0.026168ms)
+  ✔ panel/en/pill/minimal/40x32 (0.028572ms)
+  ✔ panel/en/pill/progress/40x32 (0.03334ms)
+  ✔ panel/en/pill/monitor/40x32 (0.02691ms)
+  ✔ settings/en/pill/active-settings/40x24 (0.026839ms)
+  ✔ panel/en/pill/minimal/48x32 (0.026589ms)
+  ✔ panel/en/pill/progress/48x32 (0.02681ms)
+  ✔ panel/en/pill/monitor/48x32 (0.026919ms)
+  ✔ settings/en/pill/active-settings/48x24 (0.027261ms)
+  ✔ panel/en/pill/minimal/56x32 (0.027801ms)
+  ✔ panel/en/pill/progress/56x32 (0.111225ms)
+  ✔ panel/en/pill/monitor/56x32 (0.070684ms)
+  ✔ settings/en/pill/active-settings/56x24 (0.061401ms)
+  ✔ panel/en/pill/minimal/80x32 (0.06076ms)
+  ✔ panel/en/pill/progress/80x32 (0.085036ms)
+  ✔ panel/en/pill/monitor/80x32 (0.098115ms)
+  ✔ settings/en/pill/active-settings/80x24 (0.037055ms)
+  ✔ panel/zh/tab/minimal/32x32 (0.099678ms)
+  ✔ panel/zh/tab/progress/32x32 (0.031056ms)
+  ✔ panel/zh/tab/monitor/32x32 (0.02697ms)
+  ✔ settings/zh/tab/active-settings/32x24 (0.025788ms)
+  ✔ panel/zh/tab/minimal/40x32 (0.024847ms)
+  ✔ panel/zh/tab/progress/40x32 (0.025067ms)
+  ✔ panel/zh/tab/monitor/40x32 (0.028092ms)
+  ✔ settings/zh/tab/active-settings/40x24 (0.029433ms)
+  ✔ panel/zh/tab/minimal/48x32 (0.02704ms)
+  ✔ panel/zh/tab/progress/48x32 (0.084304ms)
+  ✔ panel/zh/tab/monitor/48x32 (0.034511ms)
+  ✔ settings/zh/tab/active-settings/48x24 (0.02687ms)
+  ✔ panel/zh/tab/minimal/56x32 (0.02707ms)
+  ✔ panel/zh/tab/progress/56x32 (0.057796ms)
+  ✔ panel/zh/tab/monitor/56x32 (0.028792ms)
+  ✔ settings/zh/tab/active-settings/56x24 (0.026819ms)
+  ✔ panel/zh/tab/minimal/80x32 (0.038727ms)
+  ✔ panel/zh/tab/progress/80x32 (0.045017ms)
+  ✔ panel/zh/tab/monitor/80x32 (0.029473ms)
+  ✔ settings/zh/tab/active-settings/80x24 (0.029113ms)
+  ✔ panel/zh/band/minimal/32x32 (0.036454ms)
+  ✔ panel/zh/band/progress/32x32 (0.056904ms)
+  ✔ panel/zh/band/monitor/32x32 (0.031457ms)
+  ✔ settings/zh/band/active-settings/32x24 (0.026079ms)
+  ✔ panel/zh/band/minimal/40x32 (0.025708ms)
+  ✔ panel/zh/band/progress/40x32 (0.088781ms)
+  ✔ panel/zh/band/monitor/40x32 (0.045237ms)
+  ✔ settings/zh/band/active-settings/40x24 (0.031998ms)
+  ✔ panel/zh/band/minimal/48x32 (0.02762ms)
+  ✔ panel/zh/band/progress/48x32 (0.175149ms)
+  ✔ panel/zh/band/monitor/48x32 (0.035973ms)
+  ✔ settings/zh/band/active-settings/48x24 (0.028142ms)
+  ✔ panel/zh/band/minimal/56x32 (0.02752ms)
+  ✔ panel/zh/band/progress/56x32 (0.037705ms)
+  ✔ panel/zh/band/monitor/56x32 (0.059928ms)
+  ✔ settings/zh/band/active-settings/56x24 (0.255138ms)
+  ✔ panel/zh/band/minimal/80x32 (0.041902ms)
+  ✔ panel/zh/band/progress/80x32 (0.188079ms)
+  ✔ panel/zh/band/monitor/80x32 (0.063304ms)
+  ✔ settings/zh/band/active-settings/80x24 (0.052378ms)
+  ✔ panel/zh/tile/minimal/32x32 (0.030816ms)
+  ✔ panel/zh/tile/progress/32x32 (0.027771ms)
+  ✔ panel/zh/tile/monitor/32x32 (0.02743ms)
+  ✔ settings/zh/tile/active-settings/32x24 (0.09494ms)
+  ✔ panel/zh/tile/minimal/40x32 (0.032338ms)
+  ✔ panel/zh/tile/progress/40x32 (0.027912ms)
+  ✔ panel/zh/tile/monitor/40x32 (0.066258ms)
+  ✔ settings/zh/tile/active-settings/40x24 (0.049644ms)
+  ✔ panel/zh/tile/minimal/48x32 (0.032618ms)
+  ✔ panel/zh/tile/progress/48x32 (0.113618ms)
+  ✔ panel/zh/tile/monitor/48x32 (0.036133ms)
+  ✔ settings/zh/tile/active-settings/48x24 (0.029414ms)
+  ✔ panel/zh/tile/minimal/56x32 (0.027701ms)
+  ✔ panel/zh/tile/progress/56x32 (0.028653ms)
+  ✔ panel/zh/tile/monitor/56x32 (0.025998ms)
+  ✔ settings/zh/tile/active-settings/56x24 (0.041471ms)
+  ✔ panel/zh/tile/minimal/80x32 (0.030765ms)
+  ✔ panel/zh/tile/progress/80x32 (0.059017ms)
+  ✔ panel/zh/tile/monitor/80x32 (0.030716ms)
+  ✔ settings/zh/tile/active-settings/80x24 (0.031096ms)
+  ✔ panel/zh/frame/minimal/32x32 (0.115531ms)
+  ✔ panel/zh/frame/progress/32x32 (0.196742ms)
+  ✔ panel/zh/frame/monitor/32x32 (0.068251ms)
+  ✔ settings/zh/frame/active-settings/32x24 (0.045577ms)
+  ✔ panel/zh/frame/minimal/40x32 (0.032448ms)
+  ✔ panel/zh/frame/progress/40x32 (0.028111ms)
+  ✔ panel/zh/frame/monitor/40x32 (0.028693ms)
+  ✔ settings/zh/frame/active-settings/40x24 (0.028082ms)
+  ✔ panel/zh/frame/minimal/48x32 (0.028712ms)
+  ✔ panel/zh/frame/progress/48x32 (0.027351ms)
+  ✔ panel/zh/frame/monitor/48x32 (0.0269ms)
+  ✔ settings/zh/frame/active-settings/48x24 (0.037485ms)
+  ✔ panel/zh/frame/minimal/56x32 (0.025338ms)
+  ✔ panel/zh/frame/progress/56x32 (0.02699ms)
+  ✔ panel/zh/frame/monitor/56x32 (0.130863ms)
+  ✔ settings/zh/frame/active-settings/56x24 (0.037535ms)
+  ✔ panel/zh/frame/minimal/80x32 (0.094419ms)
+  ✔ panel/zh/frame/progress/80x32 (0.094961ms)
+  ✔ panel/zh/frame/monitor/80x32 (0.03383ms)
+  ✔ settings/zh/frame/active-settings/80x24 (0.029053ms)
+  ✔ panel/zh/pill/minimal/32x32 (0.085737ms)
+  ✔ panel/zh/pill/progress/32x32 (0.029063ms)
+  ✔ panel/zh/pill/monitor/32x32 (0.027641ms)
+  ✔ settings/zh/pill/active-settings/32x24 (0.038226ms)
+  ✔ panel/zh/pill/minimal/40x32 (0.159556ms)
+  ✔ panel/zh/pill/progress/40x32 (0.125596ms)
+  ✔ panel/zh/pill/monitor/40x32 (0.037585ms)
+  ✔ settings/zh/pill/active-settings/40x24 (0.02699ms)
+  ✔ panel/zh/pill/minimal/48x32 (0.095692ms)
+  ✔ panel/zh/pill/progress/48x32 (0.035392ms)
+  ✔ panel/zh/pill/monitor/48x32 (0.028031ms)
+  ✔ settings/zh/pill/active-settings/48x24 (0.046018ms)
+  ✔ panel/zh/pill/minimal/56x32 (0.028432ms)
+  ✔ panel/zh/pill/progress/56x32 (0.027941ms)
+  ✔ panel/zh/pill/monitor/56x32 (0.032768ms)
+  ✔ settings/zh/pill/active-settings/56x24 (0.099827ms)
+  ✔ panel/zh/pill/minimal/80x32 (0.032628ms)
+  ✔ panel/zh/pill/progress/80x32 (0.083133ms)
+  ✔ panel/zh/pill/monitor/80x32 (0.037736ms)
+  ✔ settings/zh/pill/active-settings/80x24 (0.028703ms)
+  ✔ settings/en/tab/saved-width-40-to-56/56x24 (0.030245ms)
+  ✔ settings/en/band/saved-width-40-to-56/56x24 (0.026059ms)
+  ✔ settings/en/tile/saved-width-40-to-56/56x24 (0.024065ms)
+  ✔ settings/en/frame/saved-width-40-to-56/56x24 (0.198274ms)
+  ✔ settings/en/pill/saved-width-40-to-56/56x24 (0.032669ms)
+  ✔ settings/zh/tab/saved-width-40-to-56/56x24 (0.02685ms)
+  ✔ settings/zh/band/saved-width-40-to-56/56x24 (0.024526ms)
+  ✔ settings/zh/tile/saved-width-40-to-56/56x24 (0.025277ms)
+  ✔ settings/zh/frame/saved-width-40-to-56/56x24 (0.023505ms)
+  ✔ settings/zh/pill/saved-width-40-to-56/56x24 (0.024106ms)
+  ✔ confirmation/en/cancel/16x24 (0.024416ms)
+  ✔ confirmation/en/cancel/24x24 (0.024356ms)
+  ✔ confirmation/en/cancel/40x24 (0.038517ms)
+  ✔ confirmation/en/cancel/56x24 (0.160998ms)
+  ✔ confirmation/en/save-error/48x24 (0.036073ms)
+  ✔ inspector/en/queued-explicit-coverage/32x32 (0.030205ms)
+  ✔ inspector/en/queued-explicit-coverage/48x32 (0.026429ms)
+  ✔ inspector/en/queued-explicit-coverage/80x32 (0.025297ms)
+  ✔ inspector/en/running-explicit-coverage/32x32 (0.027701ms)
+  ✔ inspector/en/running-explicit-coverage/48x32 (0.027941ms)
+  ✔ inspector/en/running-explicit-coverage/80x32 (0.024816ms)
+  ✔ inspector/en/off-legacy-recorded/32x32 (0.024927ms)
+  ✔ inspector/en/off-legacy-recorded/48x32 (0.025988ms)
+  ✔ inspector/en/off-legacy-recorded/80x32 (0.024937ms)
+  ✔ inspector/en/paused-explicit-coverage/48x32 (0.030455ms)
+  ✔ confirmation/zh/cancel/16x24 (0.058737ms)
+  ✔ confirmation/zh/cancel/24x24 (0.168679ms)
+  ✔ confirmation/zh/cancel/40x24 (0.035052ms)
+  ✔ confirmation/zh/cancel/56x24 (0.028402ms)
+  ✔ confirmation/zh/save-error/48x24 (0.027792ms)
+  ✔ inspector/zh/queued-explicit-coverage/32x32 (0.029143ms)
+  ✔ inspector/zh/queued-explicit-coverage/48x32 (0.028252ms)
+  ✔ inspector/zh/queued-explicit-coverage/80x32 (0.02713ms)
+  ✔ inspector/zh/running-explicit-coverage/32x32 (0.026619ms)
+  ✔ inspector/zh/running-explicit-coverage/48x32 (0.02678ms)
+  ✔ inspector/zh/running-explicit-coverage/80x32 (0.023535ms)
+  ✔ inspector/zh/off-legacy-recorded/32x32 (0.023856ms)
+  ✔ inspector/zh/off-legacy-recorded/48x32 (0.082392ms)
+  ✔ inspector/zh/off-legacy-recorded/80x32 (0.03345ms)
+  ✔ inspector/zh/paused-explicit-coverage/48x32 (0.10185ms)
+  ✔ delegation/rows/en/c/80x6 (0.045087ms)
+  ✔ delegation/rows/en/c/56x6 (0.027521ms)
+  ✔ delegation/rows/en/c/48x6 (0.027731ms)
+  ✔ delegation/rows/en/c/40x6 (0.027661ms)
+  ✔ delegation/rows/en/c/32x6 (0.024887ms)
+  ✔ delegation/rows/en/c-selected/48x6 (0.062592ms)
+  ✔ delegation/rows/en/d/48x8 (0.326483ms)
+  ✔ delegation/rows/en/d/32x8 (0.057655ms)
+  ✔ delegation/rows/en/e/80x7 (0.030485ms)
+  ✔ delegation/rows/en/e/48x7 (0.023074ms)
+  ✔ delegation/rows/en/e/32x7 (0.023715ms)
+  ✔ delegation/rows/en/g/48x3 (0.054771ms)
+  ✔ delegation/rows/en/g-history/48x8 (0.09417ms)
+  ✔ delegation/rows/en/h/48x5 (0.035813ms)
+  ✔ delegation/rows/en/h/32x5 (0.024065ms)
+  ✔ delegation/rows/zh/c/48x6 (0.037265ms)
+  ✔ delegation/rows/zh/e/48x7 (0.040901ms)
+  ✔ delegation/rows/zh/h/32x5 (0.026789ms)
+  ✔ delegation/rows/en/c-ascii/48x6 (0.023625ms)
+  ✔ delegation/rows/en/e-ascii/32x7 (0.024396ms)
+  ✔ delegation/rows/en/d-ascii/48x8 (0.024807ms)
+  ✔ delegation/bar/en/c/200x1 (0.022523ms)
+  ✔ delegation/bar/en/c/120x1 (0.021462ms)
+  ✔ delegation/bar/en/c/80x1 (0.022974ms)
+  ✔ delegation/bar/en/d-fresh/200x1 (0.023905ms)
+  ✔ delegation/bar/en/c-ascii/120x1 (0.021772ms)
+  ✔ delegation/bar/en/d/200x1 (0.021783ms)
+  ✔ delegation/bar/en/d/80x1 (0.041231ms)
+  ✔ delegation/bar/en/e/120x1 (0.024156ms)
+  ✔ delegation/bar/en/e/80x1 (0.024586ms)
+  ✔ delegation/bar/en/h/120x1 (0.049393ms)
+  ✔ delegation/bar/en/h/80x1 (0.027341ms)
+  ✔ delegation/statusline/en/c/80x2 (0.024456ms)
+  ✔ delegation/statusline/en/c/120x2 (0.022714ms)
+  ✔ delegation/statusline/en/c/200x2 (0.331796ms)
+  ✔ delegation/statusline/en/d/80x2 (0.138775ms)
+  ✔ delegation/statusline/en/d/120x2 (0.041732ms)
+  ✔ delegation/statusline/en/e/80x2 (0.073188ms)
+  ✔ delegation/statusline/en/h/80x2 (0.100128ms)
+  ✔ delegation/statusline/en/h/120x2 (0.052979ms)
+  ✔ delegation/statusline/zh/c/120x2 (0.033099ms)
+  ✔ delegation/statusline/en/c-ascii/80x2 (0.051667ms)
+  ✔ delegation/view/en/a-rich/48x3 (0.031757ms)
+  ✔ delegation/view/en/b-rich/48x10 (0.027441ms)
+  ✔ delegation/view/en/b-compact/48x6 (0.131104ms)
+  ✔ delegation/view/en/c-rich/48x19 (0.044846ms)
+  ✔ delegation/view/en/c-rich-selected/80x19 (0.036274ms)
+  ✔ delegation/view/en/c-compact-selected/48x10 (0.042663ms)
+  ✔ delegation/view/en/c-compact-chip/56x8 (0.04028ms)
+  ✔ delegation/view/en/c-compact-selected/32x10 (0.039599ms)
+  ✔ delegation/view/en/d-compact/48x11 (0.028983ms)
+  ✔ delegation/view/en/d-rich-accordion/48x16 (0.02687ms)
+  ✔ delegation/view/en/e-compact/48x10 (0.033039ms)
+  ✔ delegation/view/en/e-rich/48x25 (0.028792ms)
+  ✔ delegation/view/en/g-compact/48x4 (0.023795ms)
+  ✔ delegation/view/en/g-history/48x11 (0.02711ms)
+  ✔ delegation/view/en/h-rich/48x19 (0.054741ms)
+  ✔ delegation/view/en/h-compact/48x8 (0.031256ms)
+  ✔ delegation/view/en/h-compact/32x8 (0.041181ms)
+  ✔ delegation/view/en/parent-offline/48x4 (0.044105ms)
+  ✔ delegation/view/en/parent-unconfirmed/32x4 (0.029334ms)
+  ✔ delegation/view/en/parent-cancel/48x6 (0.03328ms)
+  ✔ delegation/view/zh/c-rich/48x19 (0.02719ms)
+  ✔ delegation/view/zh/h-compact/48x8 (0.026529ms)
+  ✔ delegation/view/en/c-compact-ascii/48x10 (0.104185ms)
+  ✔ delegation/view/en/b-compact-ascii/48x6 (0.045127ms)
+  ✔ delegation/panel/en/c-rich/48x32 (0.030636ms)
+  ✔ delegation/panel/en/d-rich-accordion/48x24 (0.029324ms)
+  ✔ delegation/panel/en/parent-compact/48x24 (0.025628ms)
+✔ visual baselines: fixed-time EN/ZH textual frames match reviewed goldens (261.663957ms)
+ℹ tests 319
+ℹ suites 0
+ℹ pass 319
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1492.083354
+=== EXIT 0 ===
+=== npm run test:hud-mcp ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:hud-mcp
+> npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:hud-mcp
+> node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json
+
+✔ refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool (3.050234ms)
+✔ dual MCP instance shares scope and owner; stale first-bind CAS refuses (15.820641ms)
+✔ /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A (11.960068ms)
+✔ wrong generation is refused before currentAuthority can authorize an intent (5.679965ms)
+✔ delegate_status and delegate_spawn carry the §5.2 advice from the startup snapshot (83.116575ms)
+✔ B19 merge: one real status and spawn response retain cache keys and advice.wake (42.30777ms)
+✔ the checked-in §5.2 file never guesses an auth label for a codex caller (23.538492ms)
+✔ a missing cache.json is a valid empty snapshot with empty advice (39.869369ms)
+✔ an invalid cache.json still serves status and spawn with configError and empty advice (31.443971ms)
+✔ status and every spawn outcome perform no cache file access after startup (65.947869ms)
+✔ status and spawn merge the cache advice over an existing advice object (37.008074ms)
+✔ a thrown spawn refusal carries advice at the server boundary for valid and invalid snapshots (30.746528ms)
+✔ hud-mcp starts and answers initialize with a valid and with an invalid cache.json (307.887936ms)
+✔ shared delegate config accepts optional roles and the exact Claude call-source mechanism (6.927492ms)
+✔ call-source selection is Claude-only and rejects unknown keys, kinds and malformed shapes (3.971777ms)
+✔ delegate envelope keeps its version, unique-name, profile-count and file-byte bounds (2.516694ms)
+✔ config without A5 keys loads exact NOTIFY defaults (1.091255ms)
+✔ B45 accepted spawn is atomic, lost response replays immutable result with zero second launch (79.431181ms)
+✔ B45 different owner same request key is isolated; unverified new intent refuses (55.513788ms)
+✔ B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay (71.291891ms)
+✔ B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates (52.197722ms)
+{"diagnostic":"dispatch_unknown","runId":"d47a8f1d-0f7c-417c-ba19-0ffb666e6382"}
+✔ B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits (151.761469ms)
+✔ B45 same-owner predecessor atomically transfers one child and replays before historical gates (53.399249ms)
+✔ B45 distinct backend source is registered atomically with acceptance (24.525783ms)
+✔ B45 headless build refuses explicit visible layouts instead of discarding them (18.814882ms)
+﹣ B45 synthetic whoami/report success refusal busy distributions with real SQLite writer contention (0.678253ms) # Set HUD_B45_BENCH=1 and run this benchmark alone to measure without parallel test I/O
+✔ B45 whoami env claim binds exact independently observed launch and report (74.586026ms)
+✔ B45 whoami parameter claim binds exact independently observed launch and report (31.727429ms)
+✔ B45 whoami launch evidence missing stays pending; env conflicts and wrong run refuse (33.240974ms)
+✔ B45 copied fork claim refuses before consumption, expiry boundary and bound retry after TTL (44.94558ms)
+✔ B45 same-process MCP restart rebuilds binding with independent proof and never redeems twice (39.218694ms)
+✔ B45 identity ProcessKey and run stamp keep their distinct domain encodings on the same host (28.499148ms)
+✔ BID1 handshake refuses a missing run domain and never accepts the caller form (22.182474ms)
+✔ hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files (20.315432ms)
+✔ missing then late record never revives a refused call; a new exact call can retry (2.401544ms)
+✔ half-written, oversized, symlink and duplicate conflicting publications refuse (6.384537ms)
+✔ wrong hook version refuses even with a matching content fingerprint (1.738062ms)
+✔ wrong hook implementation refuses even with a matching content fingerprint (1.17567ms)
+✔ wrong hook claudeVersion refuses even with a matching content fingerprint (1.228568ms)
+✔ wrong hook profileFingerprint refuses even with a matching content fingerprint (1.330949ms)
+✔ wrong hook sourceId refuses even with a matching content fingerprint (2.49981ms)
+✔ wrong hook processKey refuses even with a matching content fingerprint (1.134809ms)
+✔ wrong hook bootId refuses even with a matching content fingerprint (1.464747ms)
+✔ wrong hook serverName refuses even with a matching content fingerprint (0.759113ms)
+✔ wrong hook toolUseId refuses even with a matching content fingerprint (0.680527ms)
+✔ wrong hook toolName refuses even with a matching content fingerprint (1.534141ms)
+✔ wrong hook sessionId refuses even with a matching content fingerprint (3.806347ms)
+✔ wrong hook hookStartMonoMs refuses even with a matching content fingerprint (0.976415ms)
+✔ wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint (0.960111ms)
+✔ wrong hook publishedMonoMs refuses even with a matching content fingerprint (0.914213ms)
+✔ native child with root transcript path refuses and leaves subsequent root verifiable (1.961092ms)
+✔ A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation (1.732794ms)
+✔ CLI settings preserve existing hooks/config and match only the seven exact server tools (0.802358ms)
+✔ scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file (21.188294ms)
+✔ resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear (10.637411ms)
+✔ scope reader refuses unsupported runtimes before touching a missing path (270.003286ms)
+✔ hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values (0.940973ms)
+✔ fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies (2.218754ms)
+✔ int hud-mcp physical caller registration persists real procStart/cwd without logical authority (37.747018ms)
+✔ int hud-mcp composition uses existing ledger even when diagnostic registry requested (206.841716ms)
+✔ G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required (2.553879ms)
+✔ G03 old request key replays its original run after a newer run appeared and ended (109.802689ms)
+✔ G03 same request key with a different expectedRun conflicts without a new intent (55.978966ms)
+✔ G03 two callers that read the same run and race with different keys create at most one intent (53.330022ms)
+✔ G03 an old expectedRun is still refused after another run started and ended (45.890122ms)
+✔ G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest (41.267317ms)
+✔ G03 local management resume still requires expectedRun (39.05983ms)
+✔ delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts (4.480791ms)
+✔ registration records A4 fields and verified physical start; file fake remains private and refuses overwrite (5.742678ms)
+✔ unknown cwd is a typed refusal before registry write (0.611866ms)
+✔ real /proc registration stamp and PID domain are read without environment secrets (1.605026ms)
+✔ Codex root combination resolves, native child refuses without invalidating subsequent root (2.989384ms)
+✔ missing, conflicting and forged arguments metadata never falls back to remembered root/proc (1.952128ms)
+✔ session switches remain source diagnostics; shared ledger supplies the generation gate (4.793624ms)
+✔ PID reuse, source mismatch, missing header and unmeasured Codex versions refuse (0.904909ms)
+✔ Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId (0.497546ms)
+✔ Claude late/missing public call refuses, observed record still cannot upgrade unverified profile (2.319663ms)
+✔ pi explicit session path resolver checks header and source; directory alone grants nothing (1.021903ms)
+✔ seven MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments (0.64237ms)
+✔ runtime rejects Node 18, 22.12 and 23 before importing package entry (238.450585ms)
+✔ runtime accepts declared 22.13 and 24 entry boundaries (311.068544ms)
+✔ bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths (1.750901ms)
+✔ source/header mismatch, missing header and daemon topology cannot resolve identity (0.982904ms)
+✔ stdio framing rejects malformed JSON, ignores notifications and serializes stub replies (2.797039ms)
+ℹ tests 84
+ℹ suites 0
+ℹ pass 83
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 851.19627
+=== EXIT 0 ===
+=== npm run format:check ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 format:check
+> node ./node_modules/prettier/bin/prettier.cjs --check src tests
+
+Checking formatting...
+All matched files use Prettier code style!
+=== EXIT 0 ===
+=== npm run check:fixtures ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 check:fixtures
+> bash tests/check-fixtures.sh
+
+check-fixtures: OK (tests/fixtures tests/prototypes docs/probes docs/design)
+=== EXIT 0 ===
+=== git diff --check ===
+=== EXIT 0 ===
+=== npm run test:mjs ===
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:mjs
+> node --test tests/unit/*.mjs
+
+✔ classifier uses only live Codex metadata from the exact session (2.086068ms)
+✔ environment gates and target validation fail closed without I/O (2.261367ms)
+✔ tmux probe is exact, read-only, shell-free and bounded (0.605206ms)
+✖ fake Unix socket receives minimal schema, current outer identity and safe sequence (16.027663ms)
+▶ socket acknowledges only matching successful newline responses
+  ✖ JSON-RPC success (6.416125ms)
+  ✖ malformed (9.743404ms)
+  ✖ error (7.89959ms)
+  ✖ explicit failure (4.428603ms)
+  ✖ wrong id (2.502303ms)
+  ✖ no acknowledgement (1.4305
