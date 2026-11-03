@@ -31,7 +31,9 @@ export function drawAgentsView(
   head: (counts: CountsText | undefined, range: string) => string,
   x = 0
 ): void {
-  const pinned = Math.min(1, height, rows.length);
+  // The heading is pinned, and a row marked `lead` above it with it (the delegation view's parent row).
+  const lead = rows[0]?.lead ? 1 : 0;
+  const pinned = Math.min(1 + lead, height, rows.length);
   const room = height - pinned;
   const body = Math.max(0, rows.length - pinned);
   const overflow = body > room;
@@ -91,7 +93,8 @@ export function drawAgentsView(
   if (pinned) {
     // The title spans the frame's sides too, where there is a frame.
     const range = overflow && shown > 0 ? `${offset + 1}–${offset + shown}/${body}` : '';
-    frame.lines[y] = head(rows[0].counts, range);
-    frame.controls.push({ kind: 'zoom', pane: 'agents', x: 0, y, width: width + 2 * x });
+    const at = Math.min(lead, pinned - 1);
+    frame.lines[y + at] = head(rows[at].counts, range);
+    frame.controls.push({ kind: 'zoom', pane: 'agents', x: 0, y: y + at, width: width + 2 * x });
   }
 }

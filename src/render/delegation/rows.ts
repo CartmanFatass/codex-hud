@@ -18,7 +18,7 @@ import { palette } from '../palette.js';
 import { displayConfig } from '../hud-config.js';
 import { language } from '../i18n.js';
 import { glyphSet, GLYPHS, useAscii, type Glyph, type GlyphSet } from './glyphs.js';
-import type { DelegationProjection, GlyphCounts, NodeProjection, PNode } from './projection.js';
+import type { DelegationProjection, GlyphCounts, NodeProjection, PNode, ReviewCount } from './projection.js';
 import { hasSelectionBand, paint, paintOnSelectedBand, panelSay, W, type Role, type Say } from './style.js';
 
 /** A finished row stays on the list this long after the last finish in its subtree (§3.2). */
@@ -28,10 +28,10 @@ export const MAX_DEPTH = 4;
 // The clock is always the last 7 columns (§3.4 rule 1: a row must not reflow when `59s` becomes `1m00s`), with a
 // gap before it. A state word that does not fit beside the name at 32-39 columns yields instead, `close pane`
 // included (rulings B10b s1, Q6; the 3-column clock of the §4.13 32-column sample broke the rule).
-const CLOCK_COLS = 7;
+export const CLOCK_COLS = 7;
 const METER_COLS = 4;
 const BADGE_COLS = 13;
-const NAME_MIN = 8;
+export const NAME_MIN = 8;
 const SUMMARY_MIN = 12;
 /** More active rows than this and the turn clocks go coarse (`◷9m`), so a second no longer repaints them. */
 export const COARSE_CLOCK_ROWS = 30;
@@ -109,15 +109,23 @@ interface Frame {
   ancestors: boolean[];
 }
 
-const planMemo = new WeakMap<DelegationProjection, { key: string; plan: RowPlan }>();
+/**
+ * A plan is kept while its options are the same and the clock stays inside the window where no subtree crosses its
+ * put-away time: the only thing the clock decides in a plan (§3.2). So a panel replans when the tree, the options or
+ * a fold boundary change, not every second.
+ */
+const planMemo = new WeakMap<DelegationProjection, { key: string; from: number; until: number; plan: RowPlan }>();
 
 /** The rows in order, with each row's tree drawing and fold; no strings are built. */
 export function planRows(proj: DelegationProjection, options: RowOptions): RowPlan {
-  const memoKey = `${Math.floor(options.nowMs / 1000)}|${options.showHistory ? 1 : 0}|${options.sortByCreation ? 1 : 0}|${
+  const memoKey = `${options.showHistory ? 1 : 0}|${options.sortByCreation ? 1 : 0}|${
     options.collapsed && options.collapsed.size > 0 ? [...options.collapsed].sort().join('\u0001') : ''
   }`;
   const hit = planMemo.get(proj);
-  if (hit && hit.key === memoKey) return hit.plan;
+  if (hit && hit.key === memoKey && options.nowMs >= hit.from && options.nowMs < hit.until) return hit.plan;
+  // The window: the latest put-away time already passed, and the next one to come.
+  let from = Number.NEGATIVE_INFINITY;
+  let until = Number.POSITIVE_INFINITY;
 
   const compare = compareSiblings(options.sortByCreation === true);
   const rows: PlannedRow[] = [];
@@ -173,9 +181,14 @@ export function planRows(proj: DelegationProjection, options: RowOptions): RowPl
     const away: PNode[] = [];
     for (const child of pn.children) {
       const finish = child.sub.youngestFinish;
-      if (!options.showHistory && child.sub.allFinished && finish !== null && options.nowMs - finish >= PUT_AWAY_MS)
+      const boundary = !options.showHistory && child.sub.allFinished && finish !== null ? finish + PUT_AWAY_MS : null;
+      if (boundary !== null && options.nowMs >= boundary) {
         away.push(child);
-      else kept.push(child);
+        from = Math.max(from, boundary);
+      } else {
+        kept.push(child);
+        if (boundary !== null) until = Math.min(until, boundary);
+      }
     }
     kept.sort(compare);
     const items: Frame['items'] = kept;
@@ -193,7 +206,7 @@ export function planRows(proj: DelegationProjection, options: RowOptions): RowPl
   }
 
   const plan: RowPlan = { rows, putAway, coarse: active > COARSE_CLOCK_ROWS };
-  planMemo.set(proj, { key: memoKey, plan });
+  planMemo.set(proj, { key: memoKey, from, until, plan });
   return plan;
 }
 
@@ -210,6 +223,16 @@ export interface RenderContext {
   selectedKey?: string | null;
   /** From the plan; turn clocks drop their seconds. */
   coarse?: boolean;
+  /**
+   * The model a native row's badge is compared with: a card's sub-rows compare with the card's own model
+   * (rulings B10B-s2 Q10). Absent: the row's parent's.
+   */
+  cardModel?: string | null;
+  /**
+   * The width the row's tier (badge form, `◈N`) is judged by, when the row is drawn narrower than the panel: a folded
+   * card and a card's sub-row are compact rows of the panel (§3.5, §4.2). Absent: `width`.
+   */
+  tierWidth?: number;
 }
 
 /** `12m04s`, `1h05m` (a turn's clock, §3.4). */
@@ -223,7 +246,12 @@ export function turnClockText(ms: number, coarse = false): string {
   return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`;
 }
 
-function clockOf(proj: NodeProjection, nowMs: number, g: GlyphSet, coarse: boolean): { text: string; role: Role } {
+export function clockOf(
+  proj: NodeProjection,
+  nowMs: number,
+  g: GlyphSet,
+  coarse: boolean
+): { text: string; role: Role } {
   const c = proj.marker.clock;
   // No clock rather than an invented age: nothing to measure from, or a time that has not happened yet (§3.4).
   if (c.at === null || c.kind === 'none' || c.at > nowMs) return { text: '', role: 'muted' };
@@ -236,7 +264,7 @@ function clockOf(proj: NodeProjection, nowMs: number, g: GlyphSet, coarse: boole
 const WORST_ORDER: readonly Glyph[] = ['flag', 'fail', 'warn', 'unknown', 'working', 'starting', 'stop', 'done'];
 
 /** `1⚑ 2▸` for the long fold, the worst glyph alone for the short one. */
-function foldTexts(fold: FoldInfo, g: GlyphSet): { long: string; short: string } {
+export function foldTexts(fold: FoldInfo, g: GlyphSet): { long: string; short: string } {
   const u = fold.unknown ? '?' : '';
   const parts: string[] = [];
   let worst = '';
@@ -249,8 +277,8 @@ function foldTexts(fold: FoldInfo, g: GlyphSet): { long: string; short: string }
   return { long: `+${fold.hidden}${u} (${parts.join(' ')})`, short: `+${fold.hidden}${u}${worst}` };
 }
 
-type Tier = 'wide' | 'medium' | 'narrow' | 'tight';
-function tierOf(width: number): Tier {
+export type Tier = 'wide' | 'medium' | 'narrow' | 'tight';
+export function tierOf(width: number): Tier {
   return width >= 48 ? 'wide' : width >= 40 ? 'medium' : width >= 32 ? 'narrow' : 'tight';
 }
 
@@ -267,12 +295,12 @@ function meter(percent: number, cells: number, g: GlyphSet, ink: Ink): string {
   return ink.paint(zone, used) + ink.muted(g.meter.track.repeat(Math.max(0, cells - visualLength(used))));
 }
 
-function clip(text: string, width: number, g: GlyphSet): string {
+export function clip(text: string, width: number, g: GlyphSet): string {
   if (width <= 0) return '';
   return visualLength(text) <= width ? text : truncateAnsi(text, width, g.ellipsis);
 }
 
-function padStart(text: string, width: number): string {
+export function padStart(text: string, width: number): string {
   const w = visualLength(text);
   return w >= width ? text : ' '.repeat(width - w) + text;
 }
@@ -284,7 +312,7 @@ type RightClass = 'full' | 'native' | 'clock';
  * what they delivered in place of the badge and the meter (§3.4); the root is
  * never history.
  */
-function isHistoryStyle(proj: NodeProjection): boolean {
+export function isHistoryStyle(proj: NodeProjection): boolean {
   return !proj.isRoot && (proj.marker.rank === 3 || proj.marker.closePane);
 }
 
@@ -296,7 +324,7 @@ function rightClassOf(proj: NodeProjection): RightClass {
 const rowCache = new WeakMap<NodeProjection, Map<string, string>>();
 const ROW_CACHE_LIMIT = 8;
 
-function prefixText(row: PlannedRow, g: GlyphSet): string {
+export function prefixText(row: PlannedRow, g: GlyphSet): string {
   let out = '';
   for (const cont of row.ancestors) out += cont ? `${g.edge.line} ` : '  ';
   // The viewpoint root is drawn one column in, as in the design's samples (`|› ▸ ✳ main`), clear of the selection mark.
@@ -304,6 +332,25 @@ function prefixText(row: PlannedRow, g: GlyphSet): string {
   if (row.flat) return `${out}${g.edge.flat} `;
   if (row.unconfirmed) return `${out}${g.edge.unconfirmed} `;
   return `${out}${row.tee === 'end' ? g.edge.end : g.edge.tee} `;
+}
+
+/** The icon slot's text: '' when the tree has no slot, a blank when this row has nothing to put in it. */
+export function slotText(proj: NodeProjection, tree: DelegationProjection, g: GlyphSet): string {
+  // A kind icon makes the column only where the glyph set in use can draw one: ASCII has no kind column, so a
+  // single-harness tree there has no slot at all (rulings B10B-s2 Q7).
+  if (!tree.crossHarness && !(tree.kindIcons && g.kind.review !== '')) return '';
+  if (proj.isNative) return (proj.kind && g.kind[proj.kind]) || ' ';
+  return tree.crossHarness && proj.harness ? g.harness[proj.harness] : ' ';
+}
+
+/** The review chip shows from this width (§4.2's 56 row). */
+export const CHIP_MIN_WIDTH = 56;
+
+const reviewsKey = (r: ReviewCount | undefined): string => (r ? `\u0001r${r.total}/${r.failed}/${r.active}` : '');
+
+/** Red when a review failed, the info colour while one is at work, else muted (today's `reviewChip`). */
+function reviewChipPaint(r: ReviewCount, text: string, ink: Ink): string {
+  return r.failed > 0 ? ink.paint('danger', text) : r.active > 0 ? ink.paint('info', text) : ink.muted(text);
 }
 
 /** A new semantic episode keeps its state word and clock bold for this long (§3.2, §5.2). */
@@ -317,7 +364,7 @@ export const EMPHASIS_MS = 3000;
  * is no episode, and neither is one that has not happened yet. The marker's own clock (`sinceMs`) is not the
  * boundary: it falls back to ledger times when the continuity is unknown, and a fallback is no episode.
  */
-function newEpisode(proj: NodeProjection, nowMs: number): boolean {
+export function newEpisode(proj: NodeProjection, nowMs: number): boolean {
   const m = proj.marker;
   return (
     m.episodeBasis !== 'unknown' && m.episodeMs !== null && nowMs >= m.episodeMs && nowMs - m.episodeMs < EMPHASIS_MS
@@ -329,7 +376,7 @@ function newEpisode(proj: NodeProjection, nowMs: number): boolean {
  * `onSelectedBand` family (calibrated for that surface: nothing on the band is a plain `theme.*` colour). A selected
  * row on a palette without one (`none`, `terminal`), and every other row, uses the plain role colours (§5.2 "选中行").
  */
-interface Ink {
+export interface Ink {
   /** What recedes: the tree, separators, `⊟`, the summary, the fold, the meter's track. */
   muted(text: string): string;
   /** The selection mark. */
@@ -338,13 +385,13 @@ interface Ink {
   /** The model badge's paints; undefined is the palette's plain roles. */
   badge(): ModelTokenPaints | undefined;
 }
-const PLAIN_INK: Ink = {
+export const PLAIN_INK: Ink = {
   muted: (text) => colors.dim(text),
   accent: (text) => theme.accent(text),
   paint,
   badge: () => undefined,
 };
-const SELECTED_INK: Ink = {
+export const SELECTED_INK: Ink = {
   muted: (text) => palette().onSelectedBand.muted(text),
   accent: (text) => palette().onSelectedBand.accent(text),
   paint: paintOnSelectedBand,
@@ -355,13 +402,13 @@ const SELECTED_INK: Ink = {
 };
 
 /** Marker paint with the §5.2 fade: success and warning settle to muted after `fadesAfterMs`. */
-function fadedRole(proj: NodeProjection, nowMs: number): Role {
+export function fadedRole(proj: NodeProjection, nowMs: number): Role {
   const m = proj.marker;
   if (m.fadesAfterMs !== null && m.sinceMs !== null && nowMs - m.sinceMs >= m.fadesAfterMs) return 'muted';
   return m.role;
 }
 
-function nameMuted(proj: NodeProjection, nowMs: number): boolean {
+export function nameMuted(proj: NodeProjection, nowMs: number): boolean {
   const m = proj.marker;
   if (m.muteName === 'always') return true;
   if (m.muteName === 'afterFade') return fadedRole(proj, nowMs) === 'muted' && m.fadesAfterMs !== null;
@@ -379,20 +426,27 @@ export function renderRow(row: PlannedRow, ctx: RenderContext): string {
   const prefix = prefixText(row, g);
   const clock = clockOf(proj, ctx.nowMs, g, ctx.coarse === true);
   const faded = fadedRole(proj, ctx.nowMs);
-  const parentModel = proj.isNative ? (pn.parent?.proj.model ?? null) : null;
+  const parentModel = proj.isNative
+    ? ctx.cardModel !== undefined
+      ? ctx.cardModel
+      : (pn.parent?.proj.model ?? null)
+    : null;
   const emphasis = newEpisode(proj, ctx.nowMs);
   const key = rowKey(row, ctx, say, selected, prefix, clock.text, faded, parentModel, emphasis);
+  const reviewKey = reviewsKey(ctx.proj.reviews.get(pn.key));
   let cache = rowCache.get(proj);
-  const cached = cache?.get(key);
+  const cached = cache?.get(key + reviewKey);
   if (cached !== undefined) return cached;
 
-  const text = layoutRow(row, ctx, { prefix, clock, faded, selected, parentModel, emphasis, g, say });
+  const reviews = ctx.proj.reviews.get(pn.key);
+  const chip = reviews ? `${g.review}${reviews.total}` : '';
+  const text = layoutRow(row, ctx, { prefix, clock, faded, selected, parentModel, emphasis, g, say, chip });
   if (!cache) {
     cache = new Map();
     rowCache.set(proj, cache);
   }
   if (cache.size >= ROW_CACHE_LIMIT) cache.clear();
-  cache.set(key, text);
+  cache.set(key + reviewKey, text);
   return text;
 }
 
@@ -434,14 +488,16 @@ function rowKey(
   emphasis: boolean
 ): string {
   // The glyph set actually in use, not the option: an omitted `ascii` follows the display's icon set.
-  return `${ctx.width}${useAscii(ctx.ascii) ? 'a' : 'u'}${selected ? 's' : 'n'}${emphasis ? 'e' : 'q'}${
+  return `${ctx.width}/${ctx.tierWidth ?? ''}${useAscii(ctx.ascii) ? 'a' : 'u'}${selected ? 's' : 'n'}${emphasis ? 'e' : 'q'}${
     ctx.proj.crossHarness ? 'x' : 'y'
-  }${nameMuted(row.pn!.proj, ctx.nowMs) ? 'm' : 'v'}\u0001${prefix}\u0001${clockText}\u0001${faded}\u0001${
+  }${ctx.proj.kindIcons ? 'k' : 'j'}${nameMuted(row.pn!.proj, ctx.nowMs) ? 'm' : 'v'}\u0001${prefix}\u0001${clockText}\u0001${faded}\u0001${
     row.fold ? foldKey(row.fold) : ''
   }\u0001${parentModel ?? ''}\u0001${sayId(say)}\u0001${language()}\u0001${palette().name}\u0001${displayConfig().glyphs}`;
 }
 
 interface Layout {
+  /** The plain text of the review chip (`◈2`), '' when the node has no review natives. */
+  chip: string;
   prefix: string;
   clock: { text: string; role: Role };
   faded: Role;
@@ -459,7 +515,7 @@ function layoutRow(row: PlannedRow, ctx: RenderContext, l: Layout): string {
   const m = proj.marker;
   const { g, say } = l;
   const width = ctx.width;
-  const tier = tierOf(width);
+  const tier = tierOf(ctx.tierWidth ?? width);
   // A palette with a band puts the row on it and its text in the band's ink; one without (`none`, `terminal`)
   // marks the selection with `›` and the bold name alone, and everything else is drawn as on any other row.
   const banded = l.selected && hasSelectionBand();
@@ -468,9 +524,10 @@ function layoutRow(row: PlannedRow, ctx: RenderContext, l: Layout): string {
   // A selected row is the palette's band across its whole width, however its spans reset in between (§5.2).
   const finish = (text: string): string => (banded ? theme.selectedBand(exact(text, width)) : exact(text, width));
   const select = l.selected ? ink.accent(g.select) : ' ';
-  // A cross-harness tree gives every row an icon slot. A native child has no harness mark of its own, so its slot
-  // is blank until the data layer carries the native's kind (§3.4 icon slot, §7 #33; rulings B10b s1, Q3).
-  const slot = ctx.proj.crossHarness ? (proj.harness && !proj.isNative ? g.harness[proj.harness] : ' ') : '';
+  // The icon slot exists in a cross-harness tree, or when some row has a kind icon (§3.4). A session or a job shows
+  // its harness mark (cross-harness trees only); a native child shows its kind icon, and an absent or `other` kind
+  // leaves the slot blank (§7 #33).
+  const slot = slotText(proj, ctx.proj, g);
   // The harness mark is muted, and "strong" on the selected row: the text colour in bold on a band (§5.2).
   const slotPainted = (text: string): string =>
     banded ? colors.bold(ink.paint('text', text)) : ink.muted(l.selected ? colors.bold(text) : text);
@@ -494,7 +551,13 @@ function layoutRow(row: PlannedRow, ctx: RenderContext, l: Layout): string {
       : '';
   // A native child shows a badge only when its model differs from its parent's; otherwise it has no column.
   if (cls === 'native' && !badge) badgeCols = 0;
-  const rightWidth = () => (badgeCols > 0 ? badgeCols + 1 : 0) + (showMeter ? METER_COLS + 1 : 0) + CLOCK_COLS;
+  // `◈N`, the review natives under the node: from 56 columns, before the badge, and the first thing to go when the
+  // name field would fall under 8 cells (§4.2; rulings B10B-s2 Q8).
+  let chip = cls !== 'clock' && (ctx.tierWidth ?? width) >= CHIP_MIN_WIDTH ? l.chip : '';
+  const chipCols = () => (chip ? visualLength(chip) + 1 : 0);
+  const rightWidth = () =>
+    chipCols() + (badgeCols > 0 ? badgeCols + 1 : 0) + (showMeter ? METER_COLS + 1 : 0) + CLOCK_COLS;
+  if (chip && width - leadWidth - 1 - rightWidth() < NAME_MIN) chip = '';
   // 32-39: a name field under 8 columns costs the meter, then the badge, before the name.
   if (showMeter && width - leadWidth - 1 - rightWidth() < NAME_MIN) showMeter = false;
   if (badgeCols > 0 && width - leadWidth - 1 - rightWidth() < NAME_MIN) {
@@ -503,6 +566,7 @@ function layoutRow(row: PlannedRow, ctx: RenderContext, l: Layout): string {
   }
   const clockCell = padStart(l.clock.text, CLOCK_COLS);
   const right = [
+    chip ? reviewChipPaint(ctx.proj.reviews.get(pn.key)!, chip, ink) : '',
     badgeCols > 0 ? ' '.repeat(Math.max(0, badgeCols - visualLength(badge))) + badge : '',
     showMeter
       ? proj.contextPercent !== null
@@ -602,7 +666,7 @@ function layoutRow(row: PlannedRow, ctx: RenderContext, l: Layout): string {
 }
 
 /** `text` as exactly `width` columns: short is padded, long is cut (a wide character that does not fit leaves a space). */
-function exact(text: string, width: number): string {
+export function exact(text: string, width: number): string {
   const w = visualLength(text);
   if (w === width) return text;
   if (w < width) return text + ' '.repeat(width - w);
@@ -615,7 +679,14 @@ function renderPutAway(row: PlannedRow, ctx: RenderContext): string {
   const say = ctx.say ?? panelSay;
   const put = row.put!;
   const prefix = prefixText(row, g);
-  const lead = ' ' + colors.dim(prefix) + theme.dim(g.marker.done) + ' ';
+  // The `⊕N` row is selectable like a node row: on a palette with a band it sits on the band and every span takes
+  // the band's ink; without one (`none`, `terminal`) it is the `›` and the bold text (§5.2; rulings B10B-s2 Q5).
+  const selected = ctx.selectedKey === row.key;
+  const banded = selected && hasSelectionBand();
+  const ink = banded ? SELECTED_INK : PLAIN_INK;
+  const select = selected ? ink.accent(g.select) : ' ';
+  const mark = selected ? colors.bold(ink.muted(g.marker.done)) : ink.muted(g.marker.done);
+  const lead = select + ink.muted(prefix) + mark + ' ';
   const leadWidth = 1 + visualLength(prefix) + 2;
   const tail = `${g.putAway}${put.count}`;
   const tailWidth = visualLength(tail);
@@ -632,8 +703,8 @@ function renderPutAway(row: PlannedRow, ctx: RenderContext): string {
   }
   if (shown < put.names.length || put.count > put.names.length) text += ` ${g.ellipsis}`;
   const body = exact(clip(text, room, g), room);
-  const line = lead + theme.dim(body) + ' ' + theme.dim(tail);
-  return exact(line, ctx.width);
+  const line = lead + (selected ? colors.bold(ink.muted(body)) : ink.muted(body)) + ' ' + ink.muted(tail);
+  return banded ? theme.selectedBand(exact(line, ctx.width)) : exact(line, ctx.width);
 }
 
 /** Every row of a plan as strings: for the statusline-sized lists and the tests; panels render only what is in view. */

@@ -20,10 +20,11 @@ import { sumCostUsd } from '../../core/observation.js';
 import type { LinkRelationProjection, LinkTreeNode } from '../../core/link/types.js';
 import type { DelegationNodeDetails, DelegationViewModel } from '../../core/link/view-model.js';
 import type { CostTotal, Metric } from '../../core/types/observation.js';
+import type { AgentTaskKind } from '../../types.js';
 import { monitorText, plainText } from '../monitor-text.js';
 import { factsEqual, nodeFacts, shortRefOf, type NodeFacts } from './facts.js';
 import type { Glyph, HarnessMark } from './glyphs.js';
-import { GLYPHS } from './glyphs.js';
+import { GLYPHS, UNICODE_GLYPHS } from './glyphs.js';
 import { deriveMarker, harnessFromBackend, harnessOf, type NodeMarker, type Rank } from './marker.js';
 
 export type GlyphCounts = Record<Glyph, number>;
@@ -49,6 +50,8 @@ export interface NodeProjection {
   unconfirmed: boolean;
   isRoot: boolean;
   isNative: boolean;
+  /** A native child's kind of work (§3.4 icon slot, §7 #33); null when the data layer has none. */
+  kind: AgentTaskKind | null;
   /** The report's summary, escaped and flattened, for history rows. */
   summary: string | null;
   reportAt: number | null;
@@ -58,6 +61,40 @@ export interface NodeProjection {
   contextPercent: number | null;
   createdAt: number | null;
   paneLabel: string | null;
+  /** What the panel's delegation line and focus line say beyond the row (design §3.4, §3.5; rulings B10B-s2 Q2, Q3). */
+  detail: NodeDetail;
+}
+
+/** The node's own facts for the panel's micro card and rich card, escaped once; null where unknown. */
+export interface NodeDetail {
+  idKind: NodeFacts['idKind'];
+  role: string | null;
+  linkState: string | null;
+  boundAt: number | null;
+  runSeq: number | null;
+  runState: string | null;
+  heartbeatAt: number | null;
+  /** The node has a managed run projection (`isRunTerminal` is not null). */
+  managed: boolean;
+  terminal: boolean;
+  cost: { value: number; estimated: boolean } | null;
+  worktreeRoot: string | null;
+  worktreeName: string | null;
+  cwd: string | null;
+  reconciliationCause: string | null;
+  missing: string[];
+  terminalNote: string | null;
+  requestedCause: string | null;
+  exit: { code: number | null; signal: string | null } | null;
+  reportStatus: string | null;
+  conflictCount: number;
+}
+
+/** A node's review natives: how many, and how many failed or are at work (the chip's colour). */
+export interface ReviewCount {
+  total: number;
+  failed: number;
+  active: number;
 }
 
 export interface Subtree {
@@ -104,6 +141,10 @@ export interface DelegationProjection {
   roots: PNode[];
   /** A tree with more than one harness shows the harness marks (§3.4). */
   crossHarness: boolean;
+  /** Some row draws a kind icon: the icon slot exists even in a single-harness tree (§3.4). */
+  kindIcons: boolean;
+  /** Native children of the review kind under each node, by key: the `◈N` chip (§7 #33; rulings B10B-s2 Q8). */
+  reviews: Map<string, ReviewCount>;
   /** Counts over every node but the viewpoint roots, by marker (§3.3 "计数"). */
   counts: GlyphCounts;
   /** The same, over delegated workers and jobs only (the statusline `⧉`). */
@@ -204,13 +245,16 @@ function buildProjection(f: NodeFacts): NodeProjection {
   const name =
     f.conflictCount > 0
       ? monitorText(f.conflictName ?? f.shortRef)
-      : f.linkLabel?.trim()
-        ? monitorText(f.linkLabel.trim())
-        : f.linkRole?.trim()
-          ? monitorText(f.linkRole.trim())
-          : f.isRoot
-            ? null
-            : monitorText(f.shortRef);
+      : // A native child is named by its own title (§7 #33), else by its session's short form.
+        f.nativeTitle?.trim()
+        ? monitorText(f.nativeTitle.replace(/\s+/g, ' ').trim())
+        : f.linkLabel?.trim()
+          ? monitorText(f.linkLabel.trim())
+          : f.linkRole?.trim()
+            ? monitorText(f.linkRole.trim())
+            : f.isRoot
+              ? null
+              : monitorText(f.shortRef);
   return {
     key: f.key,
     marker,
@@ -220,6 +264,7 @@ function buildProjection(f: NodeFacts): NodeProjection {
     unconfirmed: f.edge === 'intent',
     isRoot: f.isRoot,
     isNative: f.edge === 'native',
+    kind: f.nativeKind,
     summary: f.reportSummary ? monitorText(plainText(f.reportSummary).replace(/\s+/g, ' ').trim()) || null : null,
     reportAt: f.reportCreatedAt,
     cancelRequestedAt: f.runCancelRequestedAt,
@@ -230,6 +275,29 @@ function buildProjection(f: NodeFacts): NodeProjection {
     contextPercent: f.contextPercent,
     createdAt: f.linkCreatedAt ?? f.runCreatedAt,
     paneLabel: f.paneLabel !== null ? monitorText(f.paneLabel) : null,
+    detail: {
+      idKind: f.idKind,
+      role: f.linkRole?.trim() ? monitorText(f.linkRole.replace(/\s+/g, ' ').trim()) : null,
+      linkState: f.linkState,
+      boundAt: f.linkBoundAt,
+      runSeq: f.runSeq,
+      runState: f.runState,
+      heartbeatAt: f.runHeartbeatAt,
+      managed: f.isRunTerminal !== null,
+      terminal: f.isRunTerminal === true,
+      cost: f.costValue !== null ? { value: f.costValue, estimated: f.costQuality === 'estimated' } : null,
+      worktreeRoot: f.worktreeRoot,
+      worktreeName: f.worktreeName !== null ? monitorText(f.worktreeName) : null,
+      cwd: f.workspaceCwd,
+      reconciliationCause: f.reconciliationCause,
+      missing: f.reconciliationMissing ? f.reconciliationMissing.split('\u0001').filter(Boolean) : [],
+      terminalNote: f.terminalNote,
+      requestedCause: f.requestedCause,
+      // Only a native result with a source is an exit fact (§3.3 row 4); a shell status never is.
+      exit: f.runExitSource !== null ? { code: f.runExitCode, signal: f.runExitSignal } : null,
+      reportStatus: f.reportStatus,
+      conflictCount: f.conflictCount,
+    },
   };
 }
 
@@ -502,6 +570,21 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
     };
   }
 
+  let kindIcons = false;
+  const reviews = new Map<string, ReviewCount>();
+  for (const pn of nodes) {
+    const kind = pn.proj.kind;
+    if (!pn.proj.isNative || kind === null) continue;
+    if (UNICODE_GLYPHS.kind[kind]) kindIcons = true;
+    if (kind === 'review' && pn.parent) {
+      const count = reviews.get(pn.parent.key) ?? { total: 0, failed: 0, active: 0 };
+      count.total++;
+      if (pn.proj.marker.glyph === 'fail') count.failed++;
+      if (pn.proj.marker.glyph === 'working') count.active++;
+      reviews.set(pn.parent.key, count);
+    }
+  }
+
   const roots = nodes.filter((pn) => pn.parent === null);
   roots.sort((a, b) => Number(!a.proj.isRoot) - Number(!b.proj.isRoot) || a.index - b.index);
 
@@ -511,6 +594,8 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
     byKey,
     roots,
     crossHarness: harnesses.size > 1,
+    kindIcons,
+    reviews,
     counts,
     delegatedCounts,
     backends,
@@ -562,6 +647,7 @@ function syntheticConflictRow(
     unconfirmed: true,
     isRoot: false,
     isNative: false,
+    kind: null,
     summary: null,
     reportAt: null,
     cancelRequestedAt: null,
@@ -570,6 +656,28 @@ function syntheticConflictRow(
     contextPercent: null,
     createdAt: link.createdAt,
     paneLabel: null,
+    detail: {
+      idKind: 'session',
+      role: null,
+      linkState: link.state,
+      boundAt: null,
+      runSeq: null,
+      runState: null,
+      heartbeatAt: null,
+      managed: false,
+      terminal: false,
+      cost: null,
+      worktreeRoot: null,
+      worktreeName: null,
+      cwd: null,
+      reconciliationCause: null,
+      missing: [],
+      terminalNote: null,
+      requestedCause: null,
+      exit: null,
+      reportStatus: null,
+      conflictCount: relation.conflict?.count ?? 0,
+    },
   };
   return {
     node: null,

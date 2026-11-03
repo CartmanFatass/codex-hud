@@ -39,6 +39,7 @@ import {
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
 import { timelineRows } from './monitor-timeline.js';
+import { delegationAgentsRows } from './delegation/panel.js';
 
 /**
  * What the linger window put away from the list, counted whether or not it
@@ -567,8 +568,23 @@ export function agentsView(
   state: MonitorState,
   width: number,
   now: number,
-  spaced: boolean
+  spaced: boolean,
+  viewport?: number
 ): MonitorRow[] {
+  // A delegation view model, whenever there is one, is the agents view (rulings B10B-s2 Q1).
+  const delegation = input.hud?.delegation;
+  if (delegation)
+    return delegationAgentsRows(delegation, {
+      width,
+      nowMs: now,
+      style: state.style === 'rich' ? 'rich' : 'compact',
+      selectedId: state.tree.selectedId,
+      collapsed: state.tree.collapsed,
+      showHistory: state.tree.showAll,
+      sortByCreation: state.tree.sort === 'created',
+      viewport,
+      empty: () => emptyAgentsRows(input, width),
+    });
   if (state.style === 'rich') return richRows(input, state, width, now, spaced);
   return [...agentRows(input, state, width, now), ...briefRows(input, state, width, now, spaced)];
 }

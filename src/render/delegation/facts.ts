@@ -15,6 +15,7 @@
 import type { LinkRelationProjection, LinkTreeNode } from '../../core/link/types.js';
 import type { DelegationNodeDetails } from '../../core/link/view-model.js';
 import type { DisplayNodeIdentity } from '../../core/types/observation.js';
+import type { AgentTaskKind } from '../../types.js';
 import type { HarnessMark } from './glyphs.js';
 
 export type Fact = string | number | boolean | null;
@@ -36,9 +37,19 @@ export interface NodeFacts {
   conflictName: string | null;
   /** `pane 4`, only from a verified host state (§1). */
   paneLabel: string | null;
+  /** A native child's display name and kind of work (`LinkTreeNode.native`, §7 #33); null when absent. */
+  nativeTitle: string | null;
+  nativeKind: AgentTaskKind | null;
 
   // The observation.
   evidenceStamp: string | null;
+  /** `spent.costUsd`, when reported or estimated (§1 "花费"). */
+  costValue: number | null;
+  costQuality: string | null;
+  /** The observed workspace (§1 "工作目录 / 工作树"), for the delegation line's `in <dir>`. */
+  worktreeRoot: string | null;
+  worktreeName: string | null;
+  workspaceCwd: string | null;
   model: string | null;
   effort: string | null;
   contextPercent: number | null;
@@ -54,12 +65,16 @@ export interface NodeFacts {
   runExitSource: string | null;
   runExitCode: number | null;
   runExitSignal: string | null;
+  runSeq: number | null;
 
   // What the execution projection says of the run.
   isRunTerminal: boolean | null;
   reconciliationCause: string | null;
   requestedCause: string | null;
   launchFailed: boolean;
+  /** `reconciliation.missing`, joined by U+0001 (a primitive, so the facts compare by value). */
+  reconciliationMissing: string | null;
+  terminalNote: string | null;
 
   // The current relation (label, role, link state, backend, child).
   linkId: string | null;
@@ -68,6 +83,7 @@ export interface NodeFacts {
   linkRole: string | null;
   linkBackend: string | null;
   linkCreatedAt: number | null;
+  linkBoundAt: number | null;
   /** The harness of `link.childRef`, when the link names its child. */
   childHarness: HarnessMark | null;
 
@@ -143,8 +159,15 @@ export function nodeFacts(
     conflictSince: node.conflict?.since ?? null,
     conflictName,
     paneLabel: host && typeof host.label === 'string' ? host.label : null,
+    nativeTitle: node.edge === 'native' && typeof node.native?.title === 'string' ? node.native.title : null,
+    nativeKind: node.edge === 'native' ? (node.native?.kind ?? null) : null,
 
     evidenceStamp: observation?.evidenceStamp ?? null,
+    costValue: metric(observation?.spent?.costUsd),
+    costQuality: metric(observation?.spent?.costUsd) !== null ? (observation?.spent?.costUsd.quality ?? null) : null,
+    worktreeRoot: observation?.workspace?.worktreeRoot ?? null,
+    worktreeName: observation?.workspace?.worktree ?? null,
+    workspaceCwd: observation?.workspace?.cwd ?? null,
     model: metric(observation?.model),
     effort: metric(observation?.effort),
     contextPercent: context ? context.percent : null,
@@ -159,11 +182,14 @@ export function nodeFacts(
     runExitSource: run?.exitSource ?? null,
     runExitCode: run?.exitCode ?? null,
     runExitSignal: run?.exitSignal ?? null,
+    runSeq: typeof run?.runSeq === 'number' ? run.runSeq : null,
 
     isRunTerminal: exec.isRunTerminal ?? null,
     reconciliationCause: exec.reconciliation?.cause ?? null,
     requestedCause: exec.terminal?.termination?.requestedCause ?? null,
     launchFailed: (exec.launchFailure ?? null) !== null,
+    reconciliationMissing: exec.reconciliation ? exec.reconciliation.missing.join('\u0001') : null,
+    terminalNote: exec.terminal?.note ?? null,
 
     linkId: link?.linkId ?? null,
     linkState: link?.state ?? null,
@@ -171,6 +197,7 @@ export function nodeFacts(
     linkRole: link?.role ?? null,
     linkBackend: link?.backend ?? null,
     linkCreatedAt: link?.createdAt ?? null,
+    linkBoundAt: link?.boundAt ?? null,
     childHarness: link?.childRef?.harness ?? null,
 
     observationUnavailableReason: detail?.observationUnavailableReason ?? null,
@@ -200,9 +227,20 @@ export function nodeFacts(
  * Whether two nodes' facts are the same, field by field. Every fact is a primitive, so `!==` is exact; the keys
  * are those of the one constructor, in its one order, and are read once.
  */
-let factKeys: ReadonlyArray<keyof NodeFacts> | null = null;
+let compare: ((a: NodeFacts, b: NodeFacts) => boolean) | null = null;
 export function factsEqual(a: NodeFacts, b: NodeFacts): boolean {
-  const keys = (factKeys ??= Object.keys(a) as Array<keyof NodeFacts>);
-  for (let i = 0; i < keys.length; i++) if (a[keys[i]] !== b[keys[i]]) return false;
-  return true;
+  // One straight-line comparison of every field, built once from the constructor's own keys: a loop of keyed
+  // loads over sixty names is the hot spot of a changed tick, where every node of a fresh tree is compared (B10B-s2
+  // review F1). The keys are this module's own identifiers, never input.
+  compare ??= comparatorFor(Object.keys(a) as Array<keyof NodeFacts>);
+  return compare(a, b);
+}
+
+function comparatorFor(keys: ReadonlyArray<keyof NodeFacts>): (a: NodeFacts, b: NodeFacts) => boolean {
+  if (!keys.every((key) => /^[A-Za-z]+$/.test(key))) throw new Error('fact names are identifiers');
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  return new Function('a', 'b', `return ${keys.map((key) => `a.${key} === b.${key}`).join(' && ')};`) as (
+    a: NodeFacts,
+    b: NodeFacts
+  ) => boolean;
 }

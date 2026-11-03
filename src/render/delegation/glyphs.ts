@@ -5,6 +5,7 @@
  * other harness mark. Neither table ever contains a variation selector.
  */
 
+import type { AgentTaskKind } from '../../types.js';
 import { iconSet } from '../hud-config.js';
 
 /** What a row's single marker stands for (§3.3). Colour and word live beside it, in `marker.ts`. */
@@ -18,7 +19,11 @@ export interface GlyphSet {
   /** The bar writes a failure as `✗`; the rows write it as `!`. */
   barFail: string;
   harness: Record<HarnessMark, string>;
+  /** A native child's kind of work in the icon slot (§3.4, §7 #33); `other` leaves the slot empty. */
+  kind: Record<AgentTaskKind, string>;
   headless: string;
+  /** The review chip's mark: `◈2` (§4.2; `r2` in ASCII, rulings B10B-s2 Q7). */
+  review: string;
   delegated: string;
   /** `│ ├ └ ┊ ↳`. */
   edge: { line: string; tee: string; end: string; unconfirmed: string; flat: string };
@@ -37,7 +42,10 @@ export const UNICODE_GLYPHS: GlyphSet = {
   marker: { warn: '⚠', flag: '⚑', fail: '!', stop: '■', unknown: '?', working: '▸', starting: '·', done: '✓' },
   barFail: '✗',
   harness: { claude: '✳', codex: '⌬', pi: 'π', jev: '◎' },
+  // The panel's `KIND_GLYPHS` (`agent-title.ts`), kept apart so the bar's process does not load the panel.
+  kind: { research: '⌕', experiment: '⚗', fix: '⚒', review: '◈', writing: '✎', summary: '∑', other: '' },
   headless: '⊟',
+  review: '◈',
   delegated: '⧉',
   edge: { line: '│', tee: '├', end: '└', unconfirmed: '┊', flat: '↳' },
   meter: { fill: '━', half: '╸', track: '─' },
@@ -53,7 +61,9 @@ export const ASCII_GLYPHS: GlyphSet = {
   marker: { warn: '^', flag: '@', fail: '!', stop: '#', unknown: '?', working: '>', starting: '.', done: '+' },
   barFail: '!',
   harness: { claude: 'C', codex: 'X', pi: 'P', jev: 'J' },
+  kind: { research: '', experiment: '', fix: '', review: '', writing: '', summary: '', other: '' },
   headless: '-',
+  review: 'r',
   delegated: '#',
   edge: { line: '|', tee: '|', end: '\\', unconfirmed: ':', flat: '>' },
   meter: { fill: '=', half: '=', track: '-' },
