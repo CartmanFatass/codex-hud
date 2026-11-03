@@ -68,3 +68,11 @@ for the owner.
 
 Give a decision, not a survey. Mark every change to contract 06, design §6 or a supported profile so the orchestrator
 can put it to the owner.
+
+## Oracle recommendation
+
+(pending: a dots design Oracle writes it here)
+
+## Owner decision
+
+(pending)
