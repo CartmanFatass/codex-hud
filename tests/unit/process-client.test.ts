@@ -123,3 +123,26 @@ test(
     await assert.rejects(client.call('after kill'), /synthetic-helper/);
   }
 );
+
+for (const failure of ['fatal', 'close', 'disconnect'])
+  test(`process client rejects buffered and later points after ${failure}`, { timeout: 5000 }, async (t) => {
+    const f = fixture(t);
+    const client = f.script(`
+      process.send({point:'before_failure'}, () => {
+        if (${JSON.stringify(failure)} === 'fatal') {
+          process.send({error:'synthetic fatal failure'}, () => {
+            process.send({point:'after_failure'}, () => process.disconnect());
+          });
+        } else {
+          if (${JSON.stringify(failure)} === 'disconnect') setInterval(() => {}, 1000);
+          process.disconnect();
+        }
+      });
+    `);
+    // The earlier point has no waiter, so it is buffered before this pending wait sees failure.
+    await assert.rejects(client.point('missing'), /synthetic-helper/);
+    if (failure !== 'disconnect') await client.closed;
+    await assert.rejects(client.point('before_failure'), /synthetic-helper/);
+    await assert.rejects(client.point('after_failure'), /synthetic-helper/);
+    await assert.rejects(client.call('later'), /synthetic-helper/);
+  });

@@ -26,6 +26,7 @@ export class ProcessClient {
       this.stderr += String(chunk).slice(0, Math.max(0, 8192 - this.stderr.length));
     });
     child.on('message', (message: Message) => {
+      if (this.failure) return;
       if (message.error && message.id === undefined) {
         this.fail(`reported ${message.error}`);
         return;
@@ -49,6 +50,7 @@ export class ProcessClient {
 
   private fail(reason: string): void {
     this.failure = new Error(`${this.label} ${reason}: ${this.stderr}`);
+    this.messages = [];
     for (const waiter of this.waiters.splice(0)) waiter.reject(this.failure);
   }
 
@@ -58,9 +60,9 @@ export class ProcessClient {
   }
 
   wait(match: (message: Message) => boolean): Promise<Message> {
+    if (this.failure) return Promise.reject(this.failure);
     const index = this.messages.findIndex(match);
     if (index >= 0) return Promise.resolve(this.messages.splice(index, 1)[0]);
-    if (this.failure) return Promise.reject(this.failure);
     return new Promise((resolve, reject) => this.waiters.push({ match, resolve, reject }));
   }
 
