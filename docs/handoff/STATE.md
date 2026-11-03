@@ -111,6 +111,12 @@ No wave-1 implementation package below has been accepted or merged. Preserve the
 - The executor denies synthetic Unix sockets and ptrace; its kernel lacks `CONFIG_PROC_CHILDREN`. HYG2 diagnosis reproduced the five corresponding process-topology failures on pinned baseline and current snapshots with both Node 22 and 24. This is not evidence that the affected lifecycle behavior passes.
 - The owner withdrew assistant-run local testing for this project; both local test sessions stopped without completing tests. The owner will independently ask local Claude to test and publish sanitized evidence on `local-verification/20261103`; see `docs/handoff/questions/B10B-S3F-verification.md`. Assistant continues cloud work. Wave 2 requires B10B-S3F to merge; see `docs/cloud/rulings/queue-progress-20261103.md`.
 
+## Follow-on work checkpoint (2026-11-03)
+
+- The owner directs cloud work to continue while they independently arrange local Claude testing; Oracle decides project forks. No merge or check gate is waived. The requested sanitized local results branch is `local-verification/20261103`; no results had been found at the last check.
+- `docs/cloud/B10B-S3F-NEXT.md` defines one released follow-on implementation, with all previous performance failures retained. It is in progress, not accepted. The prior large profile archive and three instrumentation scripts were lost when the executor was replaced; a fresh Oracle consultation is deciding a transparently labeled replacement diagnostic. Text reports, checks and hashes remain recorded; no claim of original raw-archive recovery is made.
+- `docs/cloud/P065-BUDGET.md` remains on HOLD. `docs/cloud/rulings/p065-budget-local-gate.md` records the unresolved lock-held local-store security check; a fresh Oracle is deciding the contract fork. Both briefs were restored and verified after a publication error.
+
 ## Package queue for dots
 
 Run the items in order. Packages in the same wave touch disjoint files and may run in parallel. A package without a
