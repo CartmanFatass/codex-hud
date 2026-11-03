@@ -8,7 +8,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { stopsOf } from '../../src/render/delegation/selection.js';
-import { NOW, S, ago, buildVm, situationC, situationE, situationParent, type NodeSpec } from '../fixtures/b10b-delegation.js';
+import {
+  NOW,
+  S,
+  ago,
+  buildVm,
+  situationC,
+  situationE,
+  situationParent,
+  type NodeSpec,
+} from '../fixtures/b10b-delegation.js';
 import { click, draw, lineOf, press, selectedOf, step, text } from '../fixtures/b10b-s3.js';
 
 const orderOf = (frame: ReturnType<typeof draw>) => frame.delegation!.dest.rows.map((r) => r.key);
@@ -106,7 +115,7 @@ test('in rich, h folds the card and its head says what it holds (F6), through th
   assert.ok(!lines.some((line) => line.includes('scout')));
 });
 
-test('a puts `a` and `s` through the state: history shown, creation order; the selection stays on its row', () => {
+test('`a` and `s` go through the state: history shown, creation order; the selection stays on its row', () => {
   const c = situationC();
   const key = c.keys['ask-pro'];
   let frame = draw(c.vm, { selected: key });
@@ -169,8 +178,8 @@ test('each kind of stop is one, and each excluded kind is not (the root’s own 
   const frame = draw(vm, { height: 60 });
   const dest = frame.delegation!.dest;
   const stops = stopsOf(frame.delegation!.proj, dest).map((place) => dest.rows[place].key);
-  const expect = ['flag', 'stop-in-pane', 'live-fail', 'stale', 'uncertain', 'conflict'].map(
-    (id) => (id === 'conflict' ? `conflict:l_conflict:${keys['main']}` : keys[id])
+  const expect = ['flag', 'stop-in-pane', 'live-fail', 'stale', 'uncertain', 'conflict'].map((id) =>
+    id === 'conflict' ? `conflict:l_conflict:${keys['main']}` : keys[id]
   );
   assert.deepEqual([...stops].sort(), [...expect].sort(), 'exactly those');
   assert.ok(!stops.includes(keys['main']), 'the root’s own ⚑ is not a stop');
@@ -263,8 +272,7 @@ test('Enter, Space and v are the Inspector’s keys: they emit no delegation act
   const c = situationC();
   for (const id of ['impl-parser', 'review-tests', 'ask-pro', 'docs-sync', 'main']) {
     const frame = draw(c.vm, { selected: c.keys[id] });
-    for (const key of ['enter', 'detail-toggle'])
-      assert.equal(press(frame, key).action, undefined, `${id}: ${key}`);
+    for (const key of ['enter', 'detail-toggle']) assert.equal(press(frame, key).action, undefined, `${id}: ${key}`);
   }
 });
 

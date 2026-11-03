@@ -155,8 +155,8 @@ export function planRows(proj: DelegationProjection, options: RowOptions): RowPl
   const memoKey = `${options.showHistory ? 1 : 0}|${options.sortByCreation ? 1 : 0}|${
     options.collapsed && options.collapsed.size > 0 ? [...options.collapsed].sort().join('\u0001') : ''
   }`;
-  const kept = planMemo.get(proj);
-  const hit = kept?.get(memoKey);
+  const memo = planMemo.get(proj);
+  const hit = memo?.get(memoKey);
   if (hit && options.nowMs >= hit.from && options.nowMs < hit.until) return hit.plan;
   // The window: the latest put-away time already passed, and the next one to come.
   let from = Number.NEGATIVE_INFINITY;
@@ -251,7 +251,7 @@ export function planRows(proj: DelegationProjection, options: RowOptions): RowPl
   const index = new Map<string, number>();
   for (let i = 0; i < rows.length; i++) index.set(rows[i].key, i);
   const plan: RowPlan = { rows, putAway, coarse: active > COARSE_CLOCK_ROWS, index, away, putRows };
-  let entries = planMemo.get(proj);
+  let entries = memo;
   if (!entries) planMemo.set(proj, (entries = new Map()));
   if (entries.size >= PLAN_MEMO_ENTRIES && !entries.has(memoKey)) entries.delete(entries.keys().next().value!);
   entries.set(memoKey, { from, until, plan });

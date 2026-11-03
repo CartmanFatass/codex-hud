@@ -86,6 +86,8 @@ export interface VisualCase {
     density?: 'focus' | 'balanced' | 'full';
     tickMs?: number;
     selected?: string;
+    /** The rows folded with `h` (B10B-s3), by node id. */
+    collapsed?: string[];
   };
 }
 export interface VisualGolden {
@@ -421,7 +423,12 @@ export function renderVisualDelegation(scene: VisualCase): { lines: string[] } {
     const settings = visualSettings(scene);
     const state = visualState(settings);
     state.style = spec.style ?? 'rich';
-    state.tree = { ...state.tree, showAll: spec.history === true, selectedId: null };
+    state.tree = {
+      ...state.tree,
+      showAll: spec.history === true,
+      selectedId: spec.selected ? built.keys[spec.selected] : null,
+      collapsed: new Set((spec.collapsed ?? []).map((id) => built.keys[id])),
+    };
     const material = visualMaterial(scene.language);
     return renderMonitor({
       ...material,
@@ -693,6 +700,27 @@ function delegationCases(): VisualCase[] {
   add('delegation-panel', 'en', 'c-rich', 48, 32, { situation: 'c-kinds', style: 'rich' });
   add('delegation-panel', 'en', 'd-rich-accordion', 48, 24, { situation: 'd', style: 'rich' });
   add('delegation-panel', 'en', 'parent-compact', 48, 24, { situation: 'parent', style: 'compact' });
+  // The selected row's buttons (B10B-s3): Open, Switch, Log, a greyed Open with Reconcile, a greyed Resume; a card
+  // folded with `h`; the narrow bar; ZH.
+  const panel = (language: Language, label: string, width: number, height: number, delegation: Spec) =>
+    add('delegation-panel', language, label, width, height, delegation);
+  panel('en', 'h-open', 48, 9, { situation: 'h', style: 'compact', selected: 'impl-parser' });
+  panel('en', 'h-open', 80, 9, { situation: 'h', style: 'compact', selected: 'impl-parser' });
+  panel('en', 'h-open', 32, 9, { situation: 'h', style: 'compact', selected: 'impl-parser' });
+  panel('en', 'h-log', 48, 9, { situation: 'h', style: 'compact', selected: 'review-tests' });
+  panel('en', 'c-switch', 48, 12, { situation: 'c-kinds', style: 'compact', selected: 'scout' });
+  panel('en', 'e-reconcile', 48, 12, { situation: 'e', style: 'compact', selected: 'impl-d' });
+  panel('en', 'e-reconcile-log', 80, 12, { situation: 'e', style: 'compact', selected: 'impl-b' });
+  panel('en', 'g-resume', 48, 14, { situation: 'g', style: 'compact', history: true, selected: 't-07' });
+  panel('en', 'g-resume', 80, 14, { situation: 'g', style: 'compact', history: true, selected: 't-07' });
+  panel('en', 'c-rich-folded', 48, 24, {
+    situation: 'c-kinds',
+    style: 'rich',
+    selected: 'impl-parser',
+    collapsed: ['impl-parser'],
+  });
+  panel('zh', 'h-open', 48, 9, { situation: 'h', style: 'compact', selected: 'impl-parser' });
+  panel('zh', 'e-reconcile', 48, 12, { situation: 'e', style: 'compact', selected: 'impl-d' });
   return cases;
 }
 

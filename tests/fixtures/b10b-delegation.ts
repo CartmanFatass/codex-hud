@@ -667,6 +667,7 @@ export function situationE(): Built {
       run: { state: 'uncertain', mode: 'visible', reconciliation: 'supervisor_dead', heartbeatAt: ago(425) },
       status: { cls: 'uncertain', reason: 'supervisor_dead', since: ago(420), evidenceAt: ago(425) },
       createdAt: ago(1200),
+      reconcile: true,
     },
     {
       id: 'ask-pro',
@@ -684,6 +685,7 @@ export function situationE(): Built {
       run: { state: 'uncertain', mode: 'headless', reconciliation: 'scope_unknown', heartbeatAt: ago(840) },
       status: { cls: 'uncertain', reason: 'scope_unknown', since: ago(840), evidenceAt: ago(840) },
       createdAt: ago(1400),
+      reconcile: true,
     },
   ]);
 }

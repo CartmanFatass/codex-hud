@@ -56,7 +56,10 @@ test('a destination stays selected across a tick that rebuilds every object of t
 });
 
 test('an intent binding follows tree.selectionMap to its session, in both styles', () => {
-  const before = buildVm([root, { id: 'i1', parent: 'main', kind: 'intent', label: 'impl', status: S.starting(ago(5)) }]);
+  const before = buildVm([
+    root,
+    { id: 'i1', parent: 'main', kind: 'intent', label: 'impl', status: S.starting(ago(5)) },
+  ]);
   const after = buildVm(
     [root, { id: 'i1', parent: 'main', harness: 'codex', label: 'impl', status: S.working(ago(5)) }],
     { selectionMap: { [before.keys['i1']]: keyOf('codex', 'i1') } }
@@ -105,7 +108,12 @@ test('a finished row that is put away passes the selection to the ⊕N row that 
 });
 
 test('a row under a collapsed ancestor passes the selection to that ancestor', () => {
-  const { vm, keys } = buildVm([root, running('p', 'main'), running('child', 'p', 1500), running('grand', 'child', 1400)]);
+  const { vm, keys } = buildVm([
+    root,
+    running('p', 'main'),
+    running('child', 'p', 1500),
+    running('grand', 'child', 1400),
+  ]);
   let frame = draw(vm, { selected: keys['grand'] });
   assert.equal(selectedOf(frame), keys['grand']);
   frame = draw(vm, { state: frame.state, collapsed: [keys['p']] });
@@ -134,7 +142,11 @@ test('a rich card past its fifth sub-row: the sixth is no destination, its card 
   const rich = draw(vm, { style: 'rich', selected: sixth, height: 40 });
   assert.equal(selectedOf(rich), keys['impl'], 'rich: the card');
   assert.ok(!rich.delegation!.dest.index.has(sixth) && rich.delegation!.plan.index.has(sixth));
-  assert.equal(selectedOf(draw(vm, { style: 'rich', selected: keys['n4'], height: 40 })), keys['n4'], 'the fifth stays');
+  assert.equal(
+    selectedOf(draw(vm, { style: 'rich', selected: keys['n4'], height: 40 })),
+    keys['n4'],
+    'the fifth stays'
+  );
   assert.equal(selectedOf(draw(vm, { style: 'compact', selected: sixth })), sixth, 'compact draws every row');
 });
 
@@ -156,7 +168,11 @@ test('a ⊕N row stays selected when a row is inserted above it: it is the paren
   assert.notEqual(put.key, before, 'the row moved, so its key (it holds its place) changed');
   assert.equal(parsePutKey(put.key)!.index, put.key === before ? -1 : frame.delegation!.plan.rows.indexOf(put));
   assert.equal(selectedOf(frame), put.key, 'the same ⊕N row, not the node that took its place');
-  assert.equal(frame.delegation!.plan.rows[parsePutKey(before)!.index].pn?.key, grown.keys['a'], 'a is at the old place');
+  assert.equal(
+    frame.delegation!.plan.rows[parsePutKey(before)!.index].pn?.key,
+    grown.keys['a'],
+    'a is at the old place'
+  );
 });
 
 test('after `a` the ⊕N row is gone and the selection lands at its old place, where its rows came back', () => {

@@ -70,17 +70,7 @@ export interface RowButtons {
 }
 
 type IconName =
-  | MonitorPane
-  | 'main'
-  | 'pause'
-  | 'resume'
-  | 'show'
-  | 'hide'
-  | 'settings'
-  | 'help'
-  | 'keys'
-  | 'open'
-  | 'recover';
+  MonitorPane | 'main' | 'pause' | 'resume' | 'show' | 'hide' | 'settings' | 'help' | 'keys' | 'open' | 'recover';
 
 /**
  * The Unicode icons: one column each, every one a glyph MesloLGS NF (the
@@ -281,7 +271,8 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
     state.tree.selectedId && (state.focus === 'agents' || (state.focus === 'details' && state.preview === 'agent'));
   if (switchable && !input.settingsActive && keep >= 2) {
     const row = input.buttons;
-    if (!row) actions.push({ kind: 'open-session', glyph: icon('open'), word: t('Switch'), short: '⇢', state: 'button' });
+    if (!row)
+      actions.push({ kind: 'open-session', glyph: icon('open'), word: t('Switch'), short: '⇢', state: 'button' });
     else {
       // The delegation view's row: its word follows the row (Open, Switch, Log), greyed when its gate fails; `↻` only
       // when it applies.
