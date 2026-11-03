@@ -1,0 +1,33 @@
+{
+  "package": "RUNZ1-KILL",
+  "base": "37cf7bef3075ffa312c36b8f78102f6c4bd4de67",
+  "baseTree": "5599ac1595a069215850750609f7f64371d1b6f9",
+  "branch": "dots/runz1-kill",
+  "worktree": "/workspace/shared/runz1-kill",
+  "phase": "instrumentation-only; old assertion intact",
+  "runtime": "v24.22.1",
+  "budget": "One predeclared burst, no retry-until-green",
+  "commands": [
+    {
+      "command": "node --test --test-name-pattern='^cancel escalates INT then TERM then KILL' dist-test/tests/unit/run-control.test.js",
+      "attempts": 3,
+      "timeoutSeconds": 120
+    },
+    {
+      "command": "node --test dist-test/tests/unit/runz1-process.test.js dist-test/tests/unit/run-control.test.js dist-test/tests/unit/run-process.test.js",
+      "attempts": 1,
+      "timeoutSeconds": 600,
+      "condition": "Only if no unsafe release or cleanup failure, and no previously denied operation is retried"
+    }
+  ],
+  "capture": "Existing port/group seams; no extra critical-path observation/probe/delay/reconciliation. At most 256 immutable records, written after assertion boundary and before cleanup. Full before/after transitions and actual observations/decisions. Explicit publication allowlist; domain/boot pseudonyms, original capture digest; no seed, tickets, credentials, environment or unrelated process data. Instrumentation may perturb timing.",
+  "stop": [
+    "Release without complete correctly bound proof",
+    "Cleanup failure",
+    "Missing diagnostic premise",
+    "Missing retained evidence",
+    "Out-of-scope change required"
+  ],
+  "checks": "Separate 180-second build/build:test/build:hud-mcp, fresh compilation; inherited proxy values preserved, no warning suppression, fresh temporary HOME/HUD_HOME/TMPDIR and selected Node first PATH; wrapper commands.sh records commands, UTC, versions, commit/tree, patch hash and exits. Previously denied socket/ptrace tests will not be retried; blocked complete stages remain blocked.",
+  "historical": "Owner Node24 one failure and five passes retained, actual old snapshot cause unproved; new runs do not retrospectively establish safety or flakiness."
+}
