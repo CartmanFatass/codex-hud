@@ -18,14 +18,27 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import { main } from '../../src/cli/hud.js';
-import { EXPORT_HELP } from '../../src/cli/link-export.js';
+import { EXPORT_HELP, EXPORT_USAGE } from '../../src/cli/link-export.js';
 import { queryDelegationExport, type ExportQueryOptions } from '../../src/core/export-query.js';
 import { decodeDelegationExport } from '../../src/core/export.js';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
 import { goldenExportInput } from '../fixtures/contracts/observation-export.js';
 import { exportFixture, SENTINEL } from '../fixtures/export/ledger.js';
+
+import {
+  validateStartup,
+  startupStderr,
+  retainCapture,
+  traceHint,
+  type DiagnosticProfile,
+} from '../int/node-startup-diagnostics.js';
+
+let profile: DiagnosticProfile;
+before(() => {
+  profile = validateStartup();
+});
 
 const command = ['link', 'export', '--json', '--schema-version', '1'];
 const entry = resolve('bin/hud');
@@ -48,13 +61,23 @@ async function invoke(args: readonly string[], home: string) {
 function child(args: readonly string[], home: string, env: NodeJS.ProcessEnv = {}) {
   const result = spawnSync(process.execPath, [entry, ...args], {
     env: { ...process.env, HUD_HOME: home, ...env },
-    encoding: 'utf8',
     timeout: 10_000,
     maxBuffer: 20 * 1024 * 1024,
   });
+  retainCapture('export', result);
   assert.ifError(result.error);
   assert.equal(result.signal, null);
-  return result;
+  return {
+    ...result,
+    rawStdout: result.stdout,
+    rawStderr: result.stderr,
+    stdout: result.stdout.toString('utf8'),
+    stderr: result.stderr.toString('utf8'),
+  };
+}
+
+function assertChildStderr(result: { pid: number; rawStderr: Buffer }, application = '') {
+  assert.deepEqual(result.rawStderr, Buffer.concat([startupStderr(profile, result.pid), Buffer.from(application)]));
 }
 
 test('hud help and strict argument refusals never access or create a ledger', async () => {
@@ -65,6 +88,16 @@ test('hud help and strict argument refusals never access or create a ledger', as
       assert.equal(result.status, 0);
       assert.equal(result.stdout, EXPORT_HELP);
       assert.equal(result.stderr, '');
+      assert.ok(
+        result.stdout.includes(
+          'HUD failures emit one reason-code line on stderr and no JSON.\nNode/runtime diagnostics may also appear on stderr; stdout remains the machine-readable channel.'
+        )
+      );
+      const launchedHelp = child(args, home);
+      assert.equal(launchedHelp.status, 0);
+      assert.deepEqual(launchedHelp.rawStdout, Buffer.from(EXPORT_HELP));
+      assertChildStderr(launchedHelp);
+      assert.deepEqual(readdirSync(home), []);
     }
     const cases: [string[], string][] = [
       [[], 'invalid_command'],
@@ -105,7 +138,7 @@ test('hud help and strict argument refusals never access or create a ledger', as
     const launched = child(['unknown'], home);
     assert.equal(launched.status, 2);
     assert.equal(launched.stdout, '');
-    assert.match(launched.stderr, /^invalid_command: Usage:/);
+    assertChildStderr(launched, `invalid_command: ${EXPORT_USAGE}\n`);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -131,7 +164,7 @@ test('hud rejects missing, relative, public, symlink, file and foreign-owned HUD
     const result = child(command, home);
     assert.equal(result.status, 3);
     assert.equal(result.stdout, '');
-    assert.equal(result.stderr, 'invalid_hud_home\n');
+    assertChildStderr(result, 'invalid_hud_home\n');
     chmodSync(home, 0o700);
     if (process.getuid) {
       const uid = process.getuid();
@@ -153,7 +186,7 @@ test('hud missing and unreadable ledgers fail with no stdout or initialization',
     const missing = child(command, home);
     assert.equal(missing.status, 4);
     assert.equal(missing.stdout, '');
-    assert.equal(missing.stderr, 'ledger_missing\n');
+    assertChildStderr(missing, 'ledger_missing\n');
     assert.deepEqual(readdirSync(home), []);
     mkdirSync(join(home, 'ledger.sqlite'), { mode: 0o700 });
     const unreadable = await invoke(command, home);
@@ -175,13 +208,13 @@ test('hud rejects symlink HUD_HOME with trailing slashes and dot components in r
       const actual = child(command, alias + suffix);
       assert.equal(actual.status, 3, suffix);
       assert.equal(actual.stdout, '');
-      assert.equal(actual.stderr, 'invalid_hud_home\n');
+      assertChildStderr(actual, 'invalid_hud_home\n');
     }
     // The same suffixes on a real private directory continue to work.
     for (const suffix of ['/', '/.', '//.//./']) {
       const actual = child(command, fixture.home + suffix);
       assert.equal(actual.status, 0, actual.stderr);
-      assert.equal(actual.stderr, '');
+      assertChildStderr(actual);
       assert.equal(JSON.parse(actual.stdout).coverage.recordCount, golden.records.length);
     }
   } finally {
@@ -204,7 +237,7 @@ test(
           const actual = child(command, fixture.home);
           assert.equal(actual.status, 3);
           assert.equal(actual.stdout, '');
-          assert.equal(actual.stderr, 'hud_home_unavailable\n');
+          assertChildStderr(actual, 'hud_home_unavailable\n');
         } finally {
           chmodSync(fixture.home, 0o700);
         }
@@ -215,7 +248,7 @@ test(
         const actual = child(command, fixture.home);
         assert.equal(actual.status, 4);
         assert.equal(actual.stdout, '');
-        assert.equal(actual.stderr, 'ledger_unavailable\n');
+        assertChildStderr(actual, 'ledger_unavailable\n');
       } finally {
         chmodSync(ledgerPath, mode);
       }
@@ -239,14 +272,17 @@ test('hud reports asynchronous stdout failures for export and help without Node 
         const actual = spawnSync(process.execPath, [entry, ...args], {
           env: { ...process.env, HUD_HOME: fixture.home },
           stdio: ['ignore', fd, 'pipe'],
-          encoding: 'utf8',
           timeout: 10_000,
         });
+        retainCapture('export-readonly-output', actual);
         assert.ifError(actual.error);
         assert.equal(actual.signal, null);
         assert.equal(actual.status, 1);
         assert.equal(actual.stdout, null);
-        assert.equal(actual.stderr, 'internal_or_output_failure\n');
+        assert.deepEqual(
+          actual.stderr,
+          Buffer.concat([startupStderr(profile, actual.pid), Buffer.from('internal_or_output_failure\n')])
+        );
         assert.equal(readFileSync(outputPath, 'utf8'), 'synthetic unchanged output');
       }
     } finally {
@@ -259,16 +295,22 @@ test('hud reports asynchronous stdout failures for export and help without Node 
         timeout: 10_000,
       });
       const closed = once(launched, 'close');
-      let stdout = '';
-      let stderr = '';
-      launched.stdout.on('data', (chunk) => (stdout += String(chunk)));
-      launched.stderr.on('data', (chunk) => (stderr += String(chunk)));
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
+      launched.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+      launched.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
       launched.stdout.destroy();
       const [status, signal] = await closed;
+      const stdout = Buffer.concat(stdoutChunks);
+      const stderr = Buffer.concat(stderrChunks);
+      retainCapture('export-closed-output', { stdout, stderr, pid: launched.pid!, status, signal });
       assert.equal(signal, null);
       assert.equal(status, 1);
-      assert.equal(stdout, '');
-      assert.equal(stderr, 'internal_or_output_failure\n');
+      assert.deepEqual(stdout, Buffer.alloc(0));
+      assert.deepEqual(
+        stderr,
+        Buffer.concat([startupStderr(profile, launched.pid!), Buffer.from('internal_or_output_failure\n')])
+      );
     }
   } finally {
     await fixture.cleanup();
@@ -339,7 +381,7 @@ test(
       const args = [...command, '--paths', 'local', '--link', 'synthetic-link-d'];
       const actual = child(args, fixture.home);
       assert.equal(actual.status, 0, actual.stderr);
-      assert.equal(actual.stderr, '');
+      assertChildStderr(actual);
       const envelope = JSON.parse(actual.stdout);
       t.mock.method(Date, 'now', () => envelope.exportedAt);
       const expected = await queryDelegationExport(fixture.home, {
@@ -349,6 +391,7 @@ test(
       });
       assert.ok(expected.ok);
       assert.equal(actual.stdout, expected.value.json);
+      assert.deepEqual(actual.rawStdout, Buffer.from(expected.value.json));
       assert.deepEqual(
         envelope.records.map((record: { operation: string }) => record.operation),
         ['handover', 'resume']
@@ -371,7 +414,7 @@ test('hud refuses unknown ledger versions without migrating or emitting JSON', {
     const actual = child(command, fixture.home);
     assert.equal(actual.status, 5);
     assert.equal(actual.stdout, '');
-    assert.equal(actual.stderr, 'unsupported_ledger_schema\n');
+    assertChildStderr(actual, 'unsupported_ledger_schema\n');
     assert.equal(
       fixture.ledger.snapshot((tx) => tx.get('PRAGMA user_version')?.user_version),
       2
@@ -390,7 +433,7 @@ test('hud producer validation refusal writes no partial JSON', { skip }, async (
     const actual = child([...command, '--paths', 'local'], fixture.home);
     assert.equal(actual.status, 6);
     assert.equal(actual.stdout, '');
-    assert.equal(actual.stderr, 'invalid_worktree_root\n');
+    assertChildStderr(actual, 'invalid_worktree_root\n');
   } finally {
     await fixture.cleanup();
   }
@@ -404,7 +447,7 @@ test('hud defaults to ~/.hud only inside an isolated synthetic HOME', { skip }, 
     renameSync(fixture.home, home);
     const actual = child(command, home, { HUD_HOME: undefined, HOME: fixture.container });
     assert.equal(actual.status, 0, actual.stderr);
-    assert.equal(actual.stderr, '');
+    assertChildStderr(actual);
     const decoded = decodeDelegationExport(actual.stdout);
     assert.ok(decoded.ok);
     assert.equal(decoded.value.coverage.recordCount, golden.records.length);
@@ -419,7 +462,8 @@ test('hud export leaves fresh-process raw stderr free of SQLite initialization w
   try {
     const result = child(command, fixture.home);
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stderr, '');
+    assert.doesNotMatch(result.stderr, /SQLite is an experimental feature and might change at any time/);
+    assertChildStderr(result);
     assert.ok(decodeDelegationExport(result.stdout).ok);
   } finally {
     await fixture.cleanup();
@@ -456,16 +500,28 @@ test('ledger initialization restores emitWarning and preserves unrelated warning
     `,
       ],
       {
-        env: { ...process.env, HOME: home, HUD_HOME: home, NODE_NO_WARNINGS: '', NODE_OPTIONS: '' },
-        encoding: 'utf8',
+        env: { ...process.env, HOME: home, HUD_HOME: home },
         timeout: 10_000,
       }
     );
+    retainCapture('warning-restoration', result);
     assert.ifError(result.error);
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stderr, /SyntheticWarning: synthetic unrelated warning/);
-    assert.match(result.stderr, /SyntheticWarning: synthetic loader warning mentioning SQLite/);
-    assert.doesNotMatch(result.stderr, /ExperimentalWarning/);
+    assert.equal(result.signal, null);
+    assert.equal(result.status, 0, result.stderr.toString());
+    assert.deepEqual(result.stdout, Buffer.alloc(0));
+    const startup = startupStderr(profile, result.pid);
+    const loader = `(node:${result.pid}) SyntheticWarning: synthetic loader warning mentioning SQLite\n`;
+    const expected = Buffer.concat([
+      startup,
+      Buffer.from(
+        loader +
+          (startup.length ? '' : traceHint()) +
+          loader +
+          `(node:${result.pid}) SyntheticWarning: synthetic unrelated warning\n`
+      ),
+    ]);
+    assert.deepEqual(result.stderr, expected);
+    assert.doesNotMatch(result.stderr.toString(), /ExperimentalWarning/);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
