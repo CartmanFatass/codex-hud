@@ -128,16 +128,91 @@ function metric<T>(m: { quality: string; value: T | null } | null | undefined): 
   return m && m.quality !== 'unknown' && m.value !== null && m.value !== undefined ? m.value : null;
 }
 
+/** A fresh fixed-shape record, private until the complete extraction below fills every field. */
+function newNodeFacts(): NodeFacts {
+  return {
+    key: '',
+    idKind: 'session',
+    idHarness: null,
+    shortRef: '',
+    isRoot: false,
+    edge: null,
+    loaded: false,
+    conflictCount: 0,
+    conflictSince: null,
+    conflictName: null,
+    paneLabel: null,
+    nativeTitle: null,
+    nativeKind: null,
+    evidenceStamp: null,
+    costValue: null,
+    costQuality: null,
+    worktreeRoot: null,
+    worktreeName: null,
+    workspaceCwd: null,
+    model: null,
+    effort: null,
+    contextPercent: null,
+    runId: null,
+    runState: null,
+    runMode: null,
+    runCreatedAt: null,
+    runEndedAt: null,
+    runCancelRequestedAt: null,
+    runHeartbeatAt: null,
+    runExitSource: null,
+    runExitCode: null,
+    runExitSignal: null,
+    runSeq: null,
+    isRunTerminal: null,
+    reconciliationCause: null,
+    requestedCause: null,
+    launchFailed: false,
+    reconciliationMissing: null,
+    terminalNote: null,
+    linkId: null,
+    linkState: null,
+    linkLabel: null,
+    linkRole: null,
+    linkBackend: null,
+    linkCreatedAt: null,
+    linkBoundAt: null,
+    childHarness: null,
+    observationUnavailableReason: null,
+    hasStatus: false,
+    statusAsOfSeq: null,
+    commitSeq: null,
+    stateKey: null,
+    stateSince: null,
+    stateSinceBasis: null,
+    freshnessState: null,
+    freshnessReason: null,
+    clockAnomaly: false,
+    liveness: null,
+    activity: null,
+    pendingReason: null,
+    lastTurnOutcome: null,
+    lastEvidenceAt: null,
+    reportId: null,
+    reportStatus: null,
+    reportCreatedAt: null,
+    reportSummary: null,
+  };
+}
+
 /**
  * Every fact a projection reads. `conflictName` is derived from the whole conflict group of the child, which
  * the caller holds (§3.4): it is a fact of this node's projection like the others.
+ * An opt-in buffer must be exclusively owned by the caller; every field is overwritten.
+ * Without it, each call returns a fresh independent record.
  */
 export function nodeFacts(
   node: LinkTreeNode,
   detail: DelegationNodeDetails | undefined,
   relation: LinkRelationProjection | undefined,
   isRoot: boolean,
-  conflictName: string | null
+  conflictName: string | null,
+  buffer?: NodeFacts
 ): NodeFacts {
   const status = detail?.status ?? null;
   const run = node.currentRun;
@@ -147,80 +222,82 @@ export function nodeFacts(
   const link = relation?.link;
   const host = node.host?.currentState;
   const context = metric(observation?.context);
-  return {
-    key: node.key,
-    idKind: node.identity.kind,
-    idHarness: node.identity.kind === 'session' ? node.identity.ref.harness : null,
-    shortRef: shortRefOf(node.identity),
-    isRoot,
-    edge: node.edge ?? null,
-    loaded: node.loaded,
-    conflictCount: node.conflict?.count ?? 0,
-    conflictSince: node.conflict?.since ?? null,
-    conflictName,
-    paneLabel: host && typeof host.label === 'string' ? host.label : null,
-    nativeTitle: node.edge === 'native' && typeof node.native?.title === 'string' ? node.native.title : null,
-    nativeKind: node.edge === 'native' ? (node.native?.kind ?? null) : null,
+  const facts = buffer ?? newNodeFacts();
 
-    evidenceStamp: observation?.evidenceStamp ?? null,
-    costValue: metric(observation?.spent?.costUsd),
-    costQuality: metric(observation?.spent?.costUsd) !== null ? (observation?.spent?.costUsd.quality ?? null) : null,
-    worktreeRoot: observation?.workspace?.worktreeRoot ?? null,
-    worktreeName: observation?.workspace?.worktree ?? null,
-    workspaceCwd: observation?.workspace?.cwd ?? null,
-    model: metric(observation?.model),
-    effort: metric(observation?.effort),
-    contextPercent: context ? context.percent : null,
+  facts.key = node.key;
+  facts.idKind = node.identity.kind;
+  facts.idHarness = node.identity.kind === 'session' ? node.identity.ref.harness : null;
+  facts.shortRef = shortRefOf(node.identity);
+  facts.isRoot = isRoot;
+  facts.edge = node.edge ?? null;
+  facts.loaded = node.loaded;
+  facts.conflictCount = node.conflict?.count ?? 0;
+  facts.conflictSince = node.conflict?.since ?? null;
+  facts.conflictName = conflictName;
+  facts.paneLabel = host && typeof host.label === 'string' ? host.label : null;
+  facts.nativeTitle = node.edge === 'native' && typeof node.native?.title === 'string' ? node.native.title : null;
+  facts.nativeKind = node.edge === 'native' ? (node.native?.kind ?? null) : null;
 
-    runId: run?.runId ?? null,
-    runState: run?.state ?? null,
-    runMode: run?.mode ?? null,
-    runCreatedAt: run?.createdAt ?? null,
-    runEndedAt: run?.endedAt ?? null,
-    runCancelRequestedAt: run?.cancelRequestedAt ?? null,
-    runHeartbeatAt: run?.heartbeatAt ?? null,
-    runExitSource: run?.exitSource ?? null,
-    runExitCode: run?.exitCode ?? null,
-    runExitSignal: run?.exitSignal ?? null,
-    runSeq: typeof run?.runSeq === 'number' ? run.runSeq : null,
+  facts.evidenceStamp = observation?.evidenceStamp ?? null;
+  facts.costValue = metric(observation?.spent?.costUsd);
+  facts.costQuality =
+    metric(observation?.spent?.costUsd) !== null ? (observation?.spent?.costUsd.quality ?? null) : null;
+  facts.worktreeRoot = observation?.workspace?.worktreeRoot ?? null;
+  facts.worktreeName = observation?.workspace?.worktree ?? null;
+  facts.workspaceCwd = observation?.workspace?.cwd ?? null;
+  facts.model = metric(observation?.model);
+  facts.effort = metric(observation?.effort);
+  facts.contextPercent = context ? context.percent : null;
 
-    isRunTerminal: exec.isRunTerminal ?? null,
-    reconciliationCause: exec.reconciliation?.cause ?? null,
-    requestedCause: exec.terminal?.termination?.requestedCause ?? null,
-    launchFailed: (exec.launchFailure ?? null) !== null,
-    reconciliationMissing: exec.reconciliation ? exec.reconciliation.missing.join('\u0001') : null,
-    terminalNote: exec.terminal?.note ?? null,
+  facts.runId = run?.runId ?? null;
+  facts.runState = run?.state ?? null;
+  facts.runMode = run?.mode ?? null;
+  facts.runCreatedAt = run?.createdAt ?? null;
+  facts.runEndedAt = run?.endedAt ?? null;
+  facts.runCancelRequestedAt = run?.cancelRequestedAt ?? null;
+  facts.runHeartbeatAt = run?.heartbeatAt ?? null;
+  facts.runExitSource = run?.exitSource ?? null;
+  facts.runExitCode = run?.exitCode ?? null;
+  facts.runExitSignal = run?.exitSignal ?? null;
+  facts.runSeq = typeof run?.runSeq === 'number' ? run.runSeq : null;
 
-    linkId: link?.linkId ?? null,
-    linkState: link?.state ?? null,
-    linkLabel: link?.label ?? null,
-    linkRole: link?.role ?? null,
-    linkBackend: link?.backend ?? null,
-    linkCreatedAt: link?.createdAt ?? null,
-    linkBoundAt: link?.boundAt ?? null,
-    childHarness: link?.childRef?.harness ?? null,
+  facts.isRunTerminal = exec.isRunTerminal ?? null;
+  facts.reconciliationCause = exec.reconciliation?.cause ?? null;
+  facts.requestedCause = exec.terminal?.termination?.requestedCause ?? null;
+  facts.launchFailed = (exec.launchFailure ?? null) !== null;
+  facts.reconciliationMissing = exec.reconciliation ? exec.reconciliation.missing.join('\u0001') : null;
+  facts.terminalNote = exec.terminal?.note ?? null;
 
-    observationUnavailableReason: detail?.observationUnavailableReason ?? null,
-    hasStatus: status !== null,
-    statusAsOfSeq: status?.asOfSeq ?? null,
-    commitSeq: status?.observationStamp?.commitSeq ?? null,
-    stateKey: status?.stateKey ?? null,
-    stateSince: status?.stateSince ?? null,
-    stateSinceBasis: status?.stateSinceBasis ?? null,
-    freshnessState: status?.freshness?.state ?? null,
-    freshnessReason: status?.freshness?.reason ?? null,
-    clockAnomaly: status?.freshness?.clockAnomaly === true,
-    liveness: status?.liveness ?? null,
-    activity: status?.activity ?? null,
-    pendingReason: status?.pendingReason ?? null,
-    lastTurnOutcome: status?.lastTurnOutcome ?? null,
-    lastEvidenceAt: status?.lastEvidenceAt ?? null,
+  facts.linkId = link?.linkId ?? null;
+  facts.linkState = link?.state ?? null;
+  facts.linkLabel = link?.label ?? null;
+  facts.linkRole = link?.role ?? null;
+  facts.linkBackend = link?.backend ?? null;
+  facts.linkCreatedAt = link?.createdAt ?? null;
+  facts.linkBoundAt = link?.boundAt ?? null;
+  facts.childHarness = link?.childRef?.harness ?? null;
 
-    reportId: report?.reportId ?? null,
-    reportStatus: report?.status ?? null,
-    reportCreatedAt: report?.createdAt ?? null,
-    reportSummary: report?.summary ?? null,
-  };
+  facts.observationUnavailableReason = detail?.observationUnavailableReason ?? null;
+  facts.hasStatus = status !== null;
+  facts.statusAsOfSeq = status?.asOfSeq ?? null;
+  facts.commitSeq = status?.observationStamp?.commitSeq ?? null;
+  facts.stateKey = status?.stateKey ?? null;
+  facts.stateSince = status?.stateSince ?? null;
+  facts.stateSinceBasis = status?.stateSinceBasis ?? null;
+  facts.freshnessState = status?.freshness?.state ?? null;
+  facts.freshnessReason = status?.freshness?.reason ?? null;
+  facts.clockAnomaly = status?.freshness?.clockAnomaly === true;
+  facts.liveness = status?.liveness ?? null;
+  facts.activity = status?.activity ?? null;
+  facts.pendingReason = status?.pendingReason ?? null;
+  facts.lastTurnOutcome = status?.lastTurnOutcome ?? null;
+  facts.lastEvidenceAt = status?.lastEvidenceAt ?? null;
+
+  facts.reportId = report?.reportId ?? null;
+  facts.reportStatus = report?.status ?? null;
+  facts.reportCreatedAt = report?.createdAt ?? null;
+  facts.reportSummary = report?.summary ?? null;
+  return facts;
 }
 
 /**
