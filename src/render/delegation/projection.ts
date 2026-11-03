@@ -389,6 +389,8 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
   const nodes: PNode[] = [];
   const byKey = new Map<string, PNode>();
   const harnesses = new Set<HarnessMark>();
+  // Only unretained equal-comparison facts may be refilled, and only within this pass.
+  let scratch: NodeFacts | undefined;
   for (const node of tree.nodes) {
     const detail = vm.details[node.key];
     const group = relationsByChild.get(node.key);
@@ -410,8 +412,9 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
       entry.seen = generation;
       cache.hits++;
     } else {
-      const facts = nodeFacts(node, detail, relation, isRoot, conflictName);
+      const facts = nodeFacts(node, detail, relation, isRoot, conflictName, scratch);
       if (entry && factsEqual(entry.facts, facts)) {
+        scratch = facts;
         proj = entry.proj;
         entry.node = node;
         entry.detail = detail;
@@ -423,6 +426,8 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
         cache.misses++;
         proj = buildProjection(facts);
         cache.set(node.key, { node, detail, relation, conflictName, facts, proj, seen: generation });
+        // Ownership transfers to the entry. Never refill a retained facts record.
+        scratch = undefined;
       }
     }
     const pn: PNode = {
