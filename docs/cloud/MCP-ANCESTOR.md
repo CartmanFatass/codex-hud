@@ -2,7 +2,7 @@
 
 Date: 2026-11-03. Tier S, one bounded shared wave-1 verification repair.
 
-**Design and scope released; execution awaits a free dispatcher-assigned resource window. Acceptance and merge remain held.** Binding design ruling: docs/cloud/rulings/mcp-ancestor-gate-20261103.md. This brief does not authorize a later queue wave, local assistant-run testing, a gate/profile change or privilege expansion.
+**Design and scope released; execution awaits a free dispatcher-assigned resource window. Acceptance and merge remain held.** Binding design ruling: docs/cloud/rulings/mcp-ancestor-gate.md. This brief does not authorize a later queue wave, local assistant-run testing, a gate/profile change or privilege expansion.
 
 ## 1. Base and binding inputs
 
@@ -52,7 +52,7 @@ Keep fixtures local to those test files. Existing hud-mcp build/test globs alrea
 Dispatcher-owned records only:
 
 - docs/cloud/MCP-ANCESTOR.md.
-- docs/cloud/rulings/mcp-ancestor-gate-20261103.md and any necessary later specifically named scoped ruling.
+- docs/cloud/rulings/mcp-ancestor-gate.md and any necessary later specifically named scoped ruling.
 - docs/cloud/handoff/mcp-ancestor/implementation.md, checks-node22.log, checks-node24.log, negative-controls.log, root-ancestor-evidence.md, environment-manifest.json, performance-summary.json, review-1.md and numbered lossless evidence parts if needed.
 - STATE and the engineering-plan §1 factual status, serialized with every other documentation writer.
 
