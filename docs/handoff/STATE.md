@@ -105,11 +105,11 @@ applied, but the re-check is still pending. B10B-S3F finishes it.
 
 No wave-1 implementation package below has been accepted or merged. Preserve their branches and full evidence; the merged-tree check gate remains outstanding.
 
-- **B10B-S3F**, `dots/b10b-s3f`: first re-check fixed R1 but retained R2 and the full-check blockers. Its one permitted fix round is consumed. A bounded follow-on performance series retained 3/3 Node 22 passes and 3/3 Node 24 failures; the first Node 22 run overlapped another benchmark. The owner approved a scoped performance remediation under unchanged gates; its Oracle brief is `docs/cloud/B10B-S3F-PERF.md`. See branch handoff `b10b-s3f-recheck-2.md`, `b10b-s3f-isolated-perf-investigation-20261103.log`, and ruling `b10b-s3f-performance.md`.
+- **B10B-S3F**, `dots/b10b-s3f`: R1 is fixed, R2 and the full-check gates remain open. The owner-approved follow-on `dots/b10b-s3f-perf` candidate has received a fresh Oracle verdict **fix required**, not accepted: repeated Node 24 strict performance failures and missing full checks remain. See `docs/cloud/handoff/b10b-s3f-perf-review-1.md` on that branch and `docs/cloud/B10B-S3F-PERF.md`. Preserve the failed and passing runs; no gate is waived.
 - **HYG2**, `dots/hyg2`: Oracle re-check found the P2 fix correct, but the full checks remain red. See branch handoff `hyg2-review-2.md` and `hyg2-topology-diagnosis.md`.
 - **RUNZ1**, `dots/runz1`: Oracle final review found no new must-fix code issue, but the full checks remain red. See branch handoff `runz1-review-1.md`.
 - The executor denies synthetic Unix sockets and ptrace; its kernel lacks `CONFIG_PROC_CHILDREN`. HYG2 diagnosis reproduced the five corresponding process-topology failures on pinned baseline and current snapshots with both Node 22 and 24. This is not evidence that the affected lifecycle behavior passes.
-- Owner approved the two follow-on requests and later local testing using 6.1 Terra Max; see `docs/handoff/questions/B10B-S3F-verification.md`. The initial cloud-task attempt did not run tests; its evidence is `docs/cloud/handoff/terra-verification-attempt.md`. A native local session was created afterward; results are unverified. Wave 2 depends on B10B-S3F.
+- The owner withdrew assistant-run local testing for this project; both local test sessions stopped without completing tests. The owner will independently ask local Claude to test and publish sanitized evidence on `local-verification/20261103`; see `docs/handoff/questions/B10B-S3F-verification.md`. Assistant continues cloud work. Wave 2 requires B10B-S3F to merge; see `docs/cloud/rulings/queue-progress-20261103.md`.
 
 ## Package queue for dots
 
