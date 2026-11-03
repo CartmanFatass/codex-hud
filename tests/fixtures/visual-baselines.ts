@@ -10,7 +10,7 @@ import type { SubagentTreeNode } from '../../src/types.js';
 import { defaultSettings, type HudSettings } from '../../src/settings.js';
 import { setDisplayConfig, LOOKS, type LookName } from '../../src/render/hud-config.js';
 import { setLanguage, type Language } from '../../src/render/i18n.js';
-import { stripAnsi } from '../../src/render/colors.js';
+import { stripAnsi, visualLength } from '../../src/render/colors.js';
 import { controlBar } from '../../src/render/control-bar.js';
 import { initialMonitorState, monitorSettings, renderMonitor, type MonitorState } from '../../src/render/monitor.js';
 import {
@@ -21,6 +21,12 @@ import {
 } from '../../src/render/settings-page.js';
 import { statusCard, sessionState } from '../../src/render/status-block.js';
 import { renderSettingsConfirmation, type SettingsConfirmationState } from '../../src/render/settings-confirmation.js';
+import { projectDelegation, ProjectionCache } from '../../src/render/delegation/projection.js';
+import { renderRows } from '../../src/render/delegation/rows.js';
+import { joinFirstLine, statuslineDelegation } from '../../src/render/delegation/statusline.js';
+import { panelSay, plainSay } from '../../src/render/delegation/style.js';
+import { fit as fitDelegationBar, sessionData as delegationSession } from './b10b-bar.js';
+import { situationC, situationD, situationE, situationG, situationH, type Built } from './b10b-delegation.js';
 import { FIXED_NOW, at, makeContextUsage, makeHudData, node, treeOf } from './hud-data.js';
 
 export const VISUAL_NOW = FIXED_NOW.getTime();
@@ -42,10 +48,29 @@ export interface VisualCase {
   look: LookName;
   width: number;
   height: number;
-  kind: 'panel' | 'settings' | 'saved-width' | 'confirmation' | 'inspector';
+  kind:
+    | 'panel'
+    | 'settings'
+    | 'saved-width'
+    | 'confirmation'
+    | 'inspector'
+    | 'delegation-rows'
+    | 'delegation-bar'
+    | 'delegation-statusline';
   preset: CardPreset;
   progressPhase?: 'queued' | 'running' | 'off' | 'paused';
   saveError?: boolean;
+  /** The delegation scenes (B10b): which synthetic situation, and how it is drawn. */
+  delegation?: {
+    situation: 'c' | 'd' | 'e' | 'g' | 'h';
+    ascii?: boolean;
+    /** `a`: finished rows stay on the list. */
+    history?: boolean;
+    /** The bar's density, and how long after the situation's clock the bar is drawn. */
+    density?: 'focus' | 'balanced' | 'full';
+    tickMs?: number;
+    selected?: string;
+  };
 }
 export interface VisualGolden {
   width: number;
@@ -320,8 +345,68 @@ export function renderVisualInspector(scene: VisualCase) {
   });
 }
 
+const DELEGATION_SITUATIONS: Record<'c' | 'd' | 'e' | 'g' | 'h', () => Built> = {
+  c: situationC,
+  d: situationD,
+  e: situationE,
+  g: situationG,
+  h: situationH,
+};
+
+/** The text of a delegation frame, padded to the frame's exact size (`lines` is what a golden keeps). */
+function padFrame(lines: readonly string[], scene: Pick<VisualCase, 'width' | 'height'>): string[] {
+  const blank = ' '.repeat(scene.width);
+  const out = lines.slice(0, scene.height);
+  while (out.length < scene.height) out.push(blank);
+  return out;
+}
+
+/** The delegation rows, bar and statusline at the pinned clock (design §3.4, §4.1, §4.12). */
+export function renderVisualDelegation(scene: VisualCase): { lines: string[] } {
+  const spec = scene.delegation!;
+  const built = DELEGATION_SITUATIONS[spec.situation]();
+  const ascii = spec.ascii === true;
+  if (scene.kind === 'delegation-rows') {
+    const proj = projectDelegation(built.vm, new ProjectionCache());
+    const rows = renderRows(
+      proj,
+      { nowMs: VISUAL_NOW, showHistory: spec.history === true },
+      { width: scene.width, ascii, say: panelSay, selectedKey: spec.selected ? built.keys[spec.selected] : null }
+    );
+    return { lines: padFrame(rows, scene) };
+  }
+  if (scene.kind === 'delegation-bar') {
+    const tick = VISUAL_NOW + (spec.tickMs ?? 0);
+    const result = fitDelegationBar(delegationSession(built.vm, tick), scene.width, spec.density ?? 'balanced', {
+      tickMs: tick,
+      ascii,
+    });
+    return { lines: padFrame([result.line + ' '.repeat(Math.max(0, scene.width - visualLength(result.line)))], scene) };
+  }
+  // The statusline: the session's first line with the count at its end, then the second line.
+  const wide = scene.width >= 100;
+  const first = ascii
+    ? 'fable-5.1 ===------ 41% | parser-kit | $1.24 | > Edit parser.ts'
+    : wide
+      ? 'fable-5.1 high ━━━━╸───── 112.3K/272K │ parser-kit main*↑2 │ $1.24 · 38 tok/s · 12m │ ▸ Edit src/parser.ts'
+      : 'fable-5.1 ━━━━╸───── 41% │ parser-kit │ $1.24 │ ▸ Edit parser.ts';
+  const parts = statuslineDelegation(built.vm, { width: scene.width, nowMs: VISUAL_NOW, ascii, say: panelSay });
+  const lines = [joinFirstLine(first, parts.counts, scene.width, ascii)];
+  if (parts.line2 !== null) lines.push(parts.line2);
+  return {
+    lines: padFrame(
+      lines.map((line) => line + ' '.repeat(Math.max(0, scene.width - visualLength(line)))),
+      scene
+    ),
+  };
+}
+
 export function renderVisualCase(scene: VisualCase) {
   switch (scene.kind) {
+    case 'delegation-rows':
+    case 'delegation-bar':
+    case 'delegation-statusline':
+      return renderVisualDelegation(scene);
     case 'panel':
       return renderVisualPanel(scene);
     case 'confirmation':
@@ -414,6 +499,101 @@ export function visualCases(): VisualCase[] {
       height: 32,
     });
   }
+  // Delegation (B10b), appended after every earlier case so the existing frames keep their place.
+  cases.push(...delegationCases());
+  return cases;
+}
+
+/** Rows each situation draws, so a frame has exactly the height it needs (and a changed plan fails loudly). */
+const DELEGATION_ROWS = { c: 6, d: 8, e: 7, g: 3, 'g-history': 8, h: 5 } as const;
+
+function delegationCases(): VisualCase[] {
+  type Spec = NonNullable<VisualCase['delegation']>;
+  const cases: VisualCase[] = [];
+  const add = (
+    kind: Extract<VisualCase['kind'], `delegation-${string}`>,
+    language: Language,
+    label: string,
+    width: number,
+    height: number,
+    delegation: Spec
+  ) =>
+    cases.push({
+      name: `delegation/${kind.slice('delegation-'.length)}/${language}/${label}/${width}x${height}`,
+      kind,
+      language,
+      look: 'tab',
+      preset: 'monitor',
+      width,
+      height,
+      delegation,
+    });
+  const rows = (
+    language: Language,
+    situation: Spec['situation'],
+    widths: number[],
+    extra: Partial<Spec> = {},
+    label?: string
+  ) => {
+    const key = extra.history ? (`${situation}-history` as keyof typeof DELEGATION_ROWS) : situation;
+    for (const width of widths)
+      add(
+        'delegation-rows',
+        language,
+        label ?? `${situation}${extra.ascii ? '-ascii' : ''}`,
+        width,
+        DELEGATION_ROWS[key],
+        { situation, ...extra }
+      );
+  };
+  rows('en', 'c', [80, 56, 48, 40, 32]);
+  rows('en', 'c', [48], { selected: 'review-tests' }, 'c-selected');
+  rows('en', 'd', [48, 32]);
+  rows('en', 'e', [80, 48, 32]);
+  rows('en', 'g', [48]);
+  rows('en', 'g', [48], { history: true }, 'g-history');
+  rows('en', 'h', [48, 32]);
+  rows('zh', 'c', [48]);
+  rows('zh', 'e', [48]);
+  rows('zh', 'h', [32]);
+  rows('en', 'c', [48], { ascii: true });
+  rows('en', 'e', [32], { ascii: true });
+  rows('en', 'd', [48], { ascii: true });
+
+  // The bar, one line, at the width's usual density (the 80-column frames are `focus`, which keeps the agents'
+  // counts when there is a tree). The approval has waited 100 s in the frames that show the alert alone;
+  // `d-fresh` is drawn ten seconds after it began, so the notice sentence is up beside the badge's counts.
+  const bar = (
+    situation: Spec['situation'],
+    label: string,
+    width: number,
+    density: NonNullable<Spec['density']>,
+    extra: Partial<Spec> = {}
+  ) => add('delegation-bar', 'en', label, width, 1, { situation, density, tickMs: 90_000, ...extra });
+  bar('c', 'c', 200, 'full');
+  bar('c', 'c', 120, 'balanced');
+  bar('c', 'c', 80, 'focus');
+  bar('d', 'd-fresh', 200, 'full', { tickMs: 0 });
+  bar('c', 'c-ascii', 120, 'balanced', { ascii: true });
+  bar('d', 'd', 200, 'full');
+  bar('d', 'd', 80, 'focus');
+  bar('e', 'e', 120, 'balanced');
+  bar('e', 'e', 80, 'focus');
+  bar('h', 'h', 120, 'balanced');
+  bar('h', 'h', 80, 'focus');
+
+  // The statusline: the first line with the count at its end, then the second line (2 rows).
+  const line = (language: Language, situation: Spec['situation'], width: number, extra: Partial<Spec> = {}) =>
+    add('delegation-statusline', language, `${situation}${extra.ascii ? '-ascii' : ''}`, width, 2, {
+      situation,
+      ...extra,
+    });
+  for (const width of [80, 120, 200]) line('en', 'c', width);
+  for (const width of [80, 120]) line('en', 'd', width);
+  line('en', 'e', 80);
+  for (const width of [80, 120]) line('en', 'h', width);
+  line('zh', 'c', 120);
+  line('en', 'c', 80, { ascii: true });
   return cases;
 }
 

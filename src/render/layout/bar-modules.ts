@@ -29,6 +29,9 @@ import { displayConfig, iconSet, type Density } from '../hud-config.js';
 import { formatCredits, quotaState, readQuotaWindows } from '../quota.js';
 import { age, idleFor } from '../monitor-labels.js';
 import type { BarModule } from './engine.js';
+import type { DelegationViewModel, HudDelegationData } from '../../core/link/view-model.js';
+import { attentionForms, delegationAgentsModule, noticeSentence } from '../delegation/bar.js';
+import { useAscii } from '../delegation/glyphs.js';
 
 export const MODULE_PRIORITY = {
   attention: 100,
@@ -125,16 +128,75 @@ const BAR_ALERTS = new Set<AttentionItem['kind']>([
   'review-error',
 ]);
 
-function attentionModule(data: HudData, nowMs: number): BarModule {
-  const items = collectAttention(data, nowMs).filter((item) => BAR_ALERTS.has(item.kind));
+/**
+ * The failures of the bar's own tree: with a delegation tree they are nodes of it and light its alerts instead.
+ * §4.1 counts per node, so one failed agent must not read `✗2`; only the delegation tree's alerts speak for
+ * failures, and approvals and tool errors stay the bar's own (design rulings B10b s1, Q10).
+ */
+const TREE_FAILURES = new Set<AttentionItem['kind']>(['agent-error', 'subtask-error', 'review-error']);
+
+/** Columns from which the full density adds the backend counts to the agents (design §0.2). */
+const BACKEND_COUNTS_FROM = 160;
+
+/** What the delegation parts of the bar need, when there is a delegation tree to show. */
+interface DelegationBar {
+  vm: DelegationViewModel;
+  ascii: boolean;
+  backends: boolean;
+  /** The focus density keeps the counts without their label (design §4.1). */
+  countsOnly: boolean;
+}
+
+/**
+ * With a delegation tree the attention badge keeps its words (`⚑ 1 approval`, then `⚑1`) until the quota has
+ * gone, and the agents' counts outlast the quota: the alert's two shortening steps come at 85 and 87 and the
+ * counts hide at priority 87 (design §4.1 80-column samples, rulings B10b s1 "Samples"). Without a tree the
+ * legacy order stands.
+ */
+const TREE_ATTENTION_SHRINK = { full: 85, short: 87 } as const;
+const TREE_AGENTS_PRIORITY = 87;
+
+/** The bar's own alerts that the attention badge counts beside the delegation tree's. */
+function legacyAlertCounts(data: HudData, nowMs: number): { flag: number; fail: number } {
+  const items = collectAttention(data, nowMs).filter(
+    (item) => BAR_ALERTS.has(item.kind) && !TREE_FAILURES.has(item.kind)
+  );
+  return {
+    flag: items.filter((item) => item.kind === 'approval').length,
+    fail: items.filter((item) => item.severity === 'error').length,
+  };
+}
+
+function attentionModule(data: HudData, nowMs: number, delegation: DelegationBar | null = null): BarModule {
+  const items = collectAttention(data, nowMs).filter(
+    (item) => BAR_ALERTS.has(item.kind) && !(delegation && TREE_FAILURES.has(item.kind))
+  );
   const base = {
     id: 'attention',
     priority: MODULE_PRIORITY.attention,
     shrink: SHRINK.attention,
+    ...(delegation ? { shrinkByLevel: TREE_ATTENTION_SHRINK } : {}),
     group: 'notice',
-    align: 'fill' as const,
+    // With a delegation tree the alert leads the line (design §4.1 samples), not the fill zone.
+    align: delegation ? ('left' as const) : ('fill' as const),
     pinned: true,
   };
+  const forms = delegation
+    ? attentionForms(delegation.vm, nowMs, delegation.ascii, {
+        flag: items.filter((item) => item.kind === 'approval').length,
+        fail: items.filter((item) => item.severity === 'error').length,
+      })
+    : null;
+  if (forms) {
+    return {
+      ...base,
+      variants: {
+        full: theme.alert(` ${forms.full} `),
+        short: theme.alert(` ${forms.short} `),
+        min: theme.alert(` ${forms.min} `),
+      },
+    };
+  }
   if (items.length === 0) {
     return { ...base, variants: {} };
   }
@@ -235,8 +297,14 @@ function noticeText(notice: BarNotice, nowMs: number, fresh: boolean): string {
  * while a turn runs, the tool at work and what it works on, dim; else the
  * last thing that happened, dim, with how long ago.
  */
-function noticeLine(data: HudData, nowMs: number): string {
+function noticeLine(data: HudData, nowMs: number, delegation: DelegationBar | null = null): string {
   const latest = data.notices?.[0];
+  // A delegation event of the last minute is told if it is newer than the bar's own.
+  const told = delegation
+    ? noticeSentence(delegation.vm, nowMs, delegation.ascii, legacyAlertCounts(data, nowMs))
+    : null;
+  if (told && !(latest && nowMs - latest.at.getTime() < NOTICE_FRESH_MS && latest.at.getTime() > told.at))
+    return told.text;
   if (latest && nowMs - latest.at.getTime() < NOTICE_FRESH_MS) return noticeText(latest, nowMs, true);
   if (data.activity?.state === 'working' && !data.stale) {
     const calls = data.toolActivity?.recentCalls ?? [];
@@ -257,8 +325,8 @@ function noticeLine(data: HudData, nowMs: number): string {
  * its words change; its last form, the same words, asks for none and is cut
  * to whatever the line leaves.
  */
-function noticeModule(data: HudData, nowMs: number): BarModule {
-  const text = noticeLine(data, nowMs);
+function noticeModule(data: HudData, nowMs: number, delegation: DelegationBar | null = null): BarModule {
+  const text = noticeLine(data, nowMs, delegation);
   return {
     id: 'notice',
     priority: MODULE_PRIORITY.notice,
@@ -368,10 +436,22 @@ function speedModule(data: HudData): BarModule {
   };
 }
 
-function agentsModule(data: HudData): BarModule {
+function agentsModule(data: HudData, delegation: DelegationBar | null = null): BarModule {
+  const base = { id: 'agents', priority: MODULE_PRIORITY.agents, shrink: SHRINK.agents, group: 'agents' };
+  // With a delegation tree the whole tree is counted, every harness, by marker (design §4.1).
+  if (delegation) {
+    return delegationAgentsModule(
+      delegation.vm,
+      { ...base, priority: TREE_AGENTS_PRIORITY },
+      {
+        ascii: delegation.ascii,
+        showBackends: delegation.backends,
+        countsOnly: delegation.countsOnly,
+      }
+    );
+  }
   // The agents the main session started, as the panel's title counts them.
   const summary = agentCounts(data.subagentTree?.nodes ?? []).agents;
-  const base = { id: 'agents', priority: MODULE_PRIORITY.agents, shrink: SHRINK.agents, group: 'agents' };
   if (summary.total === 0) {
     return { ...base, variants: {} };
   }
@@ -529,30 +609,48 @@ export interface BarModuleOptions {
   density?: Density;
   /** Words where a mark would stand (the activity): the icons set to text. */
   words?: boolean;
+  /** The pane's columns: the agents' backend counts need 160 of them, at the full density only. */
+  width?: number;
+  /** Delegation marks in ASCII; defaults to the icon set. */
+  ascii?: boolean;
 }
 
 /**
  * Build the bar in display order. Order here is reading
  * order; importance is carried separately by each module's priority.
  */
-export function buildBarModules(data: HudData, options: BarModuleOptions = {}): BarModule[] {
+export function buildBarModules(data: HudData & HudDelegationData, options: BarModuleOptions = {}): BarModule[] {
   const nowMs = options.nowMs ?? Date.now();
   const barWidth = options.barWidth ?? 10;
   const density = options.density ?? displayConfig().density;
   const words = options.words ?? iconSet() === 'text';
   const allowed = new Set<string>(DENSITY_MODULES[density] ?? DENSITY_MODULES.balanced);
+  // No delegation tree, or none loaded: everything below is the bar as it always was.
+  const delegation: DelegationBar | null = data.delegation
+    ? {
+        vm: data.delegation,
+        ascii: useAscii(options.ascii),
+        backends: density === 'full' && (options.width ?? 0) >= BACKEND_COUNTS_FROM,
+        countsOnly: density === 'focus',
+      }
+    : null;
+  // The focus density has no `agents` field, but with a delegation tree its counts are what the user asked the
+  // bar to keep in view (design §4.1, 80-column sample; rulings B10b s1 round 2, Q1). Without a tree it is untouched.
+  if (delegation) allowed.add('agents');
 
   const modules: BarModule[] = [
+    // With a delegation tree the alert leads the line (design §4.1), so it is built first.
+    ...(delegation ? [attentionModule(data, nowMs, delegation)] : []),
     identityModule(data),
     contextModule(data, barWidth),
     projectModule(data),
     quotaModule(data, nowMs),
     activityModule(data, words, nowMs),
     speedModule(data),
-    agentsModule(data),
+    agentsModule(data, delegation),
     tasksModule(data),
-    attentionModule(data, nowMs),
-    noticeModule(data, nowMs),
+    ...(delegation ? [] : [attentionModule(data, nowMs)]),
+    noticeModule(data, nowMs, delegation),
     configModule(data),
     environmentModule(data),
     tokensModule(data),

@@ -55,6 +55,13 @@ export interface BarModule {
    * lower. Without one, a module shortens before anything is hidden.
    */
   shrink?: number;
+  /**
+   * The same order, per form: the step away from `full` and the step away
+   * from `short` may come at different turns (a module whose longest form is
+   * an add-on to its middle one gives the add-on up early). A level without
+   * an entry takes `shrink`.
+   */
+  shrinkByLevel?: Partial<Record<VariantLevel, number>>;
   /** May leave in the shortening pass, as if hiding were its shortest form. */
   optional?: boolean;
   /** Columns each form keeps, however short its text. */
@@ -187,7 +194,8 @@ function totalWidth(
 
 /** The order of a step: a module's next shortening, or its hiding. */
 function shortenOrder(candidate: Candidate): number {
-  return candidate.module.shrink ?? candidate.module.priority - 1_000_000;
+  const { module } = candidate;
+  return module.shrinkByLevel?.[candidate.levels[candidate.levelIndex]] ?? module.shrink ?? module.priority - 1_000_000;
 }
 
 /**
