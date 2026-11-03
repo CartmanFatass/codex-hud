@@ -109,13 +109,13 @@ No wave-1 implementation package below has been accepted or merged. Preserve the
 - **HYG2**, `dots/hyg2`: Oracle re-check found the P2 fix correct, but the full checks remain red. See branch handoff `hyg2-review-2.md` and `hyg2-topology-diagnosis.md`.
 - **RUNZ1**, `dots/runz1`: Oracle final review found no new must-fix code issue, but the full checks remain red. See branch handoff `runz1-review-1.md`.
 - The executor denies synthetic Unix sockets and ptrace; its kernel lacks `CONFIG_PROC_CHILDREN`. HYG2 diagnosis reproduced the five corresponding process-topology failures on pinned baseline and current snapshots with both Node 22 and 24. This is not evidence that the affected lifecycle behavior passes.
-- The owner withdrew assistant-run local testing for this project; both local test sessions stopped without completing tests. The owner will independently ask local Claude to test and publish sanitized evidence on `local-verification/20261103`; see `docs/handoff/questions/B10B-S3F-verification.md`. Assistant continues cloud work. Wave 2 requires B10B-S3F to merge; see `docs/cloud/rulings/queue-progress-20261103.md`.
+- The owner withdrew assistant-run local testing for this project; both local test sessions stopped without completing tests. Owner-arranged local Claude evidence has now been received on `local-verification/20261103` (see the follow-on checkpoint below); independent Oracle verification remains pending. See `docs/handoff/questions/B10B-S3F-verification.md`. Assistant continues cloud work. Wave 2 requires B10B-S3F to merge; see `docs/cloud/rulings/queue-progress-20261103.md`.
 
 ## Follow-on work checkpoint (2026-11-03)
 
-- The owner directs cloud work to continue while they independently arrange local Claude testing; Oracle decides project forks. No merge or check gate is waived. The requested sanitized local results branch is `local-verification/20261103`; no results had been found at the last check.
+- The owner directs cloud work to continue while local evidence is reviewed; Oracle decides project forks. No merge or check gate is waived. The [local verification report](https://github.com/CartmanFatass/codex-hud/blob/9be7246c25b5355845e639116c57150ff79d3117/docs/cloud/handoff/local-verification/20261103/REPORT.md) has been received at `local-verification/20261103` commit `9be7246c25b5355845e639116c57150ff79d3117`. The report itself says the HYG2, RUNZ1 and B10B-S3F-PERF README check sets are not green. Independent Oracle verification remains pending; receipt is not acceptance or a green merged-tree result.
 - `docs/cloud/B10B-S3F-NEXT.md` defines one released follow-on implementation, with all previous performance failures retained. It is in progress, not accepted. The prior large profile archive and three instrumentation scripts were lost when the executor was replaced; a fresh Oracle consultation is deciding a transparently labeled replacement diagnostic. Text reports, checks and hashes remain recorded; no claim of original raw-archive recovery is made.
-- `docs/cloud/P065-BUDGET.md` remains on HOLD. `docs/cloud/rulings/p065-budget-local-gate.md` records the unresolved lock-held local-store security check; a fresh Oracle is deciding the contract fork. Both briefs were restored and verified after a publication error.
+- `docs/cloud/rulings/p065-metadata-exception.md` approves the precise fixed private-store metadata exception under the owner's delegated Oracle authority and resolves the P065 local-gate contract fork. Contracts 01–06, concept §15 and `docs/cloud/P065-BUDGET.md` were synchronized through `448c58b1f386f72d74b730018a659c6a75068cea`. P065 implementation remains **HOLD pending the separately recorded scheduling/ownership release**, not implemented, accepted or merged. The historical local-gate ruling remains intact; the startup-registry process-I/O issue remains separate and unresolved.
 
 ## Package queue for dots
 
@@ -149,7 +149,7 @@ review (ARCH); B3b-C after B15; then phases C–F of the plan.
 ## Decisions recorded on 2026-11-03
 
 - B10D fairness exception: owner authorized the Oracle-confirmed route; see `questions/B10D-route.md` and `../cloud/rulings/b10d-route.md`.
-- P-06-5 scope: owner authorized the Oracle recommendation; the 30 ms budget includes pre-lock preparation and is not reset at lock acquisition. See `questions/P-06-5.md` and `../cloud/rulings/p-06-5.md`. Follow-on work remains.
+- P-06-5 scope: owner authorized the Oracle recommendation; the 30 ms budget includes pre-lock preparation and is not reset at lock acquisition. See `questions/P-06-5.md` and `../cloud/rulings/p-06-5.md`. The later precise metadata exception in `../cloud/rulings/p065-metadata-exception.md` resolves the local-gate contract fork without changing numeric budgets; P065 implementation remains HOLD pending its separate scheduling/ownership release.
 
 ## Open owner decisions
 
