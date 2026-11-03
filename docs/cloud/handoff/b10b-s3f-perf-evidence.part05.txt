@@ -1,0 +1,608 @@
+ (0.3109ms)
+✔ T-03-10 (0.407113ms)
+✔ T-03-11 (0.319413ms)
+✔ T-03-12 (0.389206ms)
+✔ T-03-14 (0.32407ms)
+✔ T-03-15 (0.426851ms)
+✔ T-03-16 (0.743951ms)
+✔ T-03-17 (0.418029ms)
+✔ T-03-19 (0.969184ms)
+✔ T-03-20 (0.418238ms)
+✔ T-03-26 (1.622051ms)
+✔ T-03-34 (0.75003ms)
+✔ T-03-35 (0.266305ms)
+✔ T-03-36 (0.418889ms)
+✔ T-03-37 (0.749169ms)
+✔ T-04-2 (0.281106ms)
+✔ T-04-4 (0.204953ms)
+✔ T-04-6 (0.170071ms)
+✔ T-04-7 (0.249329ms)
+✔ T-04-8 (0.343899ms)
+✔ T-04-9 (0.811041ms)
+✔ T-04-12 (0.218523ms)
+✔ T-04-13 (0.502343ms)
+✔ T-04-14 (0.620338ms)
+✔ T-04-15 (1.210301ms)
+✔ T-04-16 (0.244582ms)
+✔ T-04-20 (0.16844ms)
+✔ T-04-31 (0.131925ms)
+✔ T-04-32 (0.708729ms)
+✔ T-04-33 (0.178474ms)
+✔ T-04-35 (0.172846ms)
+✔ T-04-40 (0.548662ms)
+✔ T-04-41 (0.557565ms)
+✔ T-04-43 (0.799604ms)
+✔ T-05-1 (0.775327ms)
+✔ T-05-3 (1.242088ms)
+✔ T-05-4 (1.950577ms)
+✔ T-05-8 (0.18918ms)
+✔ T-05-10 (0.174869ms)
+✔ T-05-11 (0.133287ms)
+✔ T-05-13 (0.225944ms)
+✔ T-05-17 (0.566839ms)
+✔ T-05-18 (0.194908ms)
+✔ T-06-1 (0.320194ms)
+✔ T-06-4 (3.397708ms)
+✔ T-06-5 (4.133807ms)
+✔ T-06-6 (1.10139ms)
+✔ T-06-10 (0.389106ms)
+✔ T-06-17 (0.205194ms)
+✔ T-06-22 (0.549002ms)
+✔ T-06-23 (0.397037ms)
+✔ T-06-24 (2.407012ms)
+✔ T-06-25 (0.698724ms)
+✔ T-06-26 (0.207136ms)
+✔ T-06-27 (0.484527ms)
+✔ T-06-28 (0.425189ms)
+✔ T-06-29 (0.365041ms)
+✔ T-07-1 (0.4253ms)
+✔ T-07-3 (0.304882ms)
+✔ T-07-10 (0.294626ms)
+✔ T-07-20 (6.735637ms)
+✔ T-07-22 (35.073602ms)
+✔ T-07-23 (0.503294ms)
+✔ T-07-24 (0.912561ms)
+✔ T-07-25 (237.357705ms)
+✔ T-07-26 (1.498908ms)
+✔ T-07-27 (0.545888ms)
+✔ F09/F10 A4 crash cuts keep UTF-8/CRLF, private blobs and claims out of every serialized artifact (1.088111ms)
+✔ F10 A4 transient continuation, maximum record, oversize restarts and source resets (7.329656ms)
+✔ empty optional registry still supports binding, reading and a core session tree (2.215168ms)
+✔ 06 T-06-6: cached unmanaged registry records retain validity, generation and observation clocks (1.994171ms)
+✔ valid, stale and unknown locator occupants drive the core interaction policy (0.705384ms)
+✔ lost supervisor refuses RunControl input even with a matching visible occupant (1.871008ms)
+✔ 05 T-05-8: absent or unavailable optional host selects a verified tmux fake before submission (1.564215ms)
+✔ 05 T-05-10: accepted replay cannot switch host or dispatch a fallback (0.210761ms)
+✔ bind/open/children feed an intent-to-session merge with native topology and selection preserved (0.674509ms)
+✔ 05 T-05-18: resume descriptor is copy-only with no RunControl or host dispatch (0.599708ms)
+﹣ ledger benchmark: 1000 small writes and read-only snapshots with 10000 runs (1.592807ms) # Run HUD_LEDGER_BENCHMARK=1 node --test dist-test/tests/unit/ledger-perf.test.js for the isolated 10000-run benchmark
+✔ ledger processes: concurrent identical request keys replay one complete intent and slot (173.604883ms)
+✔ ledger processes: concurrent same key with different parameters rejects the losing request (150.729647ms)
+✔ ledger processes: SIGKILL at insert:links recovers an atomic intent without a double slot (180.00863ms)
+✔ ledger processes: SIGKILL at insert:runs recovers an atomic intent without a double slot (174.854392ms)
+✔ ledger processes: SIGKILL at insert:claims recovers an atomic intent without a double slot (187.48293ms)
+✔ ledger processes: SIGKILL at insert:slots recovers an atomic intent without a double slot (181.839954ms)
+✔ ledger processes: SIGKILL at insert:idempotency recovers an atomic intent without a double slot (206.300135ms)
+✔ ledger processes: SIGKILL at insert:events recovers an atomic intent without a double slot (171.14318ms)
+✔ ledger processes: SIGKILL at insert:events:2 recovers an atomic intent without a double slot (197.544428ms)
+✔ ledger processes: SIGKILL at before:commit recovers an atomic intent without a double slot (189.3618ms)
+✔ ledger processes: SIGKILL at after:commit recovers an atomic intent without a double slot (168.235207ms)
+✔ ledger processes: the gathered reconcile evidence can commit against an unchanged snapshot (81.584781ms)
+✔ ledger processes: stale reconcile after actual write-lock contention preserves cancel (198.283167ms)
+✔ ledger processes: stale reconcile after actual write-lock contention preserves terminate (180.433908ms)
+✔ ledger processes: stale reconcile after actual write-lock contention preserves conflict (204.727944ms)
+✔ ledger read runtime gate leaves importing on Node 18 safe (1.328786ms)
+✔ ledger read never creates missing ledgers or migrates uninitialized/newer versions (6.471847ms)
+✔ ledger typed read snapshots preserve complete refs, per-run history and private launch context (16.105183ms)
+✔ ledger reads preserve empty scopes and do not truncate to HUD display limits (96.675842ms)
+✔ ledger read uses registration evidence for full supervisor stamps and rejects contradictory facts (11.397517ms)
+✔ ledger rows and high-water stay in one WAL read snapshot during a concurrent commit (8.957025ms)
+✔ ledger snapshot callback lifetime and errors release read transactions (7.661738ms)
+✔ link command functions distinguish missing links from unavailable ledgers and keep report/run states separate (14.37435ms)
+✔ ledger schema v1 is byte-for-byte the frozen contract SQL block (6.922915ms)
+✔ ledger runtime floor is explicit and does not raise the bar runtime (1.3311ms)
+✔ ledger native readOnly capability probe rejects ignored flags using memory only (1.901674ms)
+✔ ledger initialize, reopen, WAL recovery and backup preserve private ledgerId (18.626343ms)
+✔ ledger rejects unknown or populated unversioned schema without replacing metadata (7.773634ms)
+✔ ledger transaction rollback, callback lifetime and async-callback rejection (10.178472ms)
+✔ ledger freezes launch context, captures workspace once with event, and replays across Git metadata changes (14.469802ms)
+✔ ledger initial cached workspace event is atomic and unknown JSON metadata is refused (6.543524ms)
+✔ ledger supervisor registration persists full stamp, one ticket, one CAS heartbeat and single submission (20.11087ms)
+✔ ledger CAS includes context generations, validation changes, and evidence without an event (11.882614ms)
+✔ ledger irreversible N counter-evidence persists X and terminal incremental import cannot rewrite completion (17.859924ms)
+✔ ledger full completion after cancellation with unknown chronology ends with a stable note (17.32604ms)
+✔ ledger owner binding atomically rekeys outcomes, preserves origin and permits the original actor to register (8.982783ms)
+✔ ledger alias collision rolls back binding and original idempotency instead of choosing a winner (5.287765ms)
+✔ ledger event pages use committed per-run cursors and never mutate the ledger (6.583602ms)
+✔ ledger fresh reconciliation retains accepted link conflicts without normalized sidecars (9.123071ms)
+✔ ledger revoked parent cannot cancel or register an active run (10.707876ms)
+✔ ledger revoked parent cannot cancel or submit an active run (9.615078ms)
+✔ ledger handover increases generation and revokes old binding atomically with edge transfer (15.339249ms)
+✔ ledger fresh reconciliation keeps conflicts from another run sharing the actual target (10.23752ms)
+✔ ledger original supervisor cannot submit after reconciliation marks its armed run uncertain (9.831899ms)
+✔ ledger terminal timing uncertainty durably prevents resume without fabricating a conflict fact (15.181636ms)
+ℹ tests 210
+ℹ suites 0
+ℹ pass 209
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 2724.79761
+removed temporary HUD_HOME: /tmp/hud-core.EHLRNq
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T15:09:49Z
+
+
+=== candidate-diff.log ===
+2026-11-03T15:10:20Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-oyVvuV HUD_HOME=/tmp/b10b-check-hud-TNLZh8 git diff --check 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 07:10:20 up  2:13,  0 users,  load average: 1.59, 1.12, 0.97
+EXIT=0
+2026-11-03T15:10:20Z
+
+
+=== candidate-final-metadata.log ===
+Evidence: candidate-final; order Node22 run1,run2,run3 then Node24 run1,run2,run3
+Dispatcher reserved agent-controlled measurement window; external host scheduling/activity not controlled. Process snapshots are observations, not proof of continuous host isolation.
+5f2134d0ccedeca4d4fe184699b3bdd2307a65f4
+f3fff50d66c62effd9a169e8ccca73c6e21833cb
+ M node_modules/.package-lock.json
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -
+371b8f784229636f66e88434c422484dd85251eb
+100644 d51b25cd4931cd86010ced4b9c9d084ba2c2f093 0	tests/fixtures/b10b-bar.ts
+100644 a711705346161d155324c86564ab819e546d3fae 0	tests/fixtures/b10b-big.ts
+100644 661309578917307d153044abf502db43656a6316 0	tests/fixtures/b10b-delegation.ts
+100644 390b94f9a2f3fdef2693bfa1f8bd5551f988f75b 0	tests/fixtures/b10b-legacy-bar.json
+100644 383a47c9418a1e2814819f949d3cede80175d481 0	tests/fixtures/b10b-s3.ts
+100644 e5140ea0fb07ba139ce64430a941676b5ed2ca03 0	tests/fixtures/b10b-sgr.ts
+100644 0f8466a3b711aba9de99b8be20237a7b91346a39 0	tests/fixtures/b20/cache-v2-assumption-only.json
+100644 ea349f118586756d60892e2e7484412bec146105 0	tests/fixtures/b20/cache-v2-observed.json
+100644 7fac0008cd9ff348ea852d0cdfdd10fbec1bf17d 0	tests/fixtures/b20/cache-v2.json
+100644 2104beb0f918a4af0471e94f3ae86ca253aef872 0	tests/fixtures/claude/benchmark.mjs
+100644 b1902bf0413342464cef71249f61837cd5753b58 0	tests/fixtures/claude/transcripts.ts
+100644 2e438e26aee9ab88ce047930896ca62822d214be 0	tests/fixtures/codex-facade/rollouts.ts
+100644 1318cc9ab748de893a4cf9285f314e82adedf344 0	tests/fixtures/contracts/export-v1.golden.json
+100644 00ff167d3839d17f8b5b4ef7e928767be2f3fd36 0	tests/fixtures/contracts/identity-execution.ts
+100644 35cf182ad5dd918320dfe5b8804d27523cefaa0f 0	tests/fixtures/contracts/observation-export.ts
+100644 07009b46ea24e70c3261e76591df49b164ba052f 0	tests/fixtures/contracts/supervision.ts
+100644 4ef8d1c4039cadc8e02c81ffc1ab2d5ec2713090 0	tests/fixtures/display.ts
+100644 4db8a478883bcf51f9b97249fdf7c2c135672b6b 0	tests/fixtures/export/entry.mjs
+100644 be2f9f4e105a015d0e894698cbccd571f7bfa629 0	tests/fixtures/export/ledger.ts
+100644 49ae7060f2103d14668fa8bfbeb42028f3fc6f89 0	tests/fixtures/hud-data.ts
+100644 c180fca3e59522f10ed8dc656d97e44053c08672 0	tests/fixtures/paths.ts
+100644 ef7d6427600aea71587c7943bd4923dca6d957b3 0	tests/fixtures/readme-demo.ts
+100644 94ca96d80a54307e384200dd22b29312cfb88739 0	tests/fixtures/rollouts/approval.jsonl
+100644 ecd214a21372020db7c67aa1ab879dc1433e04bd 0	tests/fixtures/rollouts/basic-session.jsonl
+100644 e0fcc7e7a68fb63b923b93e7afbb4e504e9b44a4 0	tests/fixtures/rollouts/compaction.jsonl
+100644 d2c78732697301a9a7912fbb0f3367d369985f3d 0	tests/fixtures/rollouts/model-switch.jsonl
+100644 db5d71bea801dd2f35d21b5c805997ce8ab77385 0	tests/fixtures/rollouts/no-rate-limits.jsonl
+100644 b77a3ed2884a3f0f05e9de73a50f6bd825396154 0	tests/fixtures/rollouts/small-context.jsonl
+100644 55e2768cd1869a739a2bb7351a4c56b1dc8e884f 0	tests/fixtures/rollouts/subagent-lifecycle.jsonl
+100644 064d41962fb9b800a302eefefbbc79f3649489aa 0	tests/fixtures/rollouts/truncated-line.jsonl
+100644 5fecdda76a0d3b31c447f9f0f1dcbc631f0189fc 0	tests/fixtures/samples.ts
+100644 fc99edeba5f9f5f9b3d22a70d8b61daaa15121b3 0	tests/fixtures/status-merge/C01.json
+100644 cc32df1a66f93ec88b344fd050343dc7cefbd5ad 0	tests/fixtures/status-merge/C02.json
+100644 b09dd557cc65cd7c01429fa72ec120cb77e0c7d0 0	tests/fixtures/status-merge/C03.json
+100644 da344e0c32a180818928e3056747bc224e36f831 0	tests/fixtures/status-merge/C04.json
+100644 96fc571c117c725f8fda5c5abcd3d47704b6c671 0	tests/fixtures/status-merge/C05.json
+100644 731a965c5d7f084aebf8d022a1b8680d37b4c1c2 0	tests/fixtures/status-merge/C06.json
+100644 da5715a4414e87f4b175a39d7f5ef8cd9849082b 0	tests/fixtures/status-merge/C07.json
+100644 b7a6452ed1d34c6332f24d08c3a5a7ed470053ee 0	tests/fixtures/status-merge/C08.json
+100644 a479428b5869ea035627f516bab1d858b761f744 0	tests/fixtures/status-merge/C09.json
+100644 d29c1b95e6390d8e88e167cbfb07fdd1c257c2f1 0	tests/fixtures/status-merge/C10.json
+100644 2acec64fd5adbab1ab629ca1733715dc1077cf4a 0	tests/fixtures/status-merge/C11.json
+100644 e42547fe0f231c8c60e0a5981abb2e0fc765ad0c 0	tests/fixtures/status-merge/C12.json
+100644 62cad16a1e2a479dd1f8861e352133cc9695d260 0	tests/fixtures/status-merge/C13.json
+100644 2b3c792bc107732d10b0f508d8bd66f8bdc6d2b5 0	tests/fixtures/status-merge/C14.json
+100644 e56c792514fb6249cbd191100effa5ef8d9fcb7b 0	tests/fixtures/status-merge/C15.json
+100644 2c77d988561317db557851de620b5a99060ab548 0	tests/fixtures/status-merge/C16.json
+100644 5d277f99c226adfc92dafa50eb49d0fa847450bb 0	tests/fixtures/status-merge/C17.json
+100644 a7c88f42b97b9bee1940a7d55eb4c2b763dc9e71 0	tests/fixtures/status-merge/C18.json
+100644 c176261ad1077a323c39fc1649b101075ad4bb90 0	tests/fixtures/status-merge/C19.json
+100644 c82a8bebb5bbfd5202634195b8c95859e43fe73a 0	tests/fixtures/status-merge/C20.json
+100644 0e19334e8081cede2452c8b387fa42314890ee3e 0	tests/fixtures/status-merge/C21.json
+100644 72d1520eb5e59e4ea447c04d0f7565fc64043a73 0	tests/fixtures/status-merge/C22.json
+100644 bd8b555a3c2c01fa374c56bf4c4780f2b410a1de 0	tests/fixtures/status-merge/C23.json
+100644 e10959097b9ccbd2fec3162bd94e54bbda89419b 0	tests/fixtures/status-merge/C24.json
+100644 18d3f65d16624a2b5e65676b9af893d941e15507 0	tests/fixtures/status-merge/C25.json
+100644 548e148e6596c4f032af696e2b9754ff960101c6 0	tests/fixtures/status-merge/C26.json
+100644 21a491f2186d71ad3a3166790e521e5063d3072d 0	tests/fixtures/status-merge/C27.json
+100644 068eeb5fb61705545b806dba9281b25bd619160a 0	tests/fixtures/status-merge/C28.json
+100644 b0d62cb328447fff1a91344679c9d0a4724d28b4 0	tests/fixtures/status-merge/C29.json
+100644 eeb77d18c7e153195eca4089e6d92090b772fdfb 0	tests/fixtures/status-merge/C30.json
+100644 c6329009f736c9701a696aff3fd344d475f0b823 0	tests/fixtures/status-merge/C31.json
+100644 9615879efd439322734c659718627de7f7ddd1fc 0	tests/fixtures/status-merge/C32.json
+100644 24304e642d36215378251a1eeeb6f2a57b37fb86 0	tests/fixtures/status-merge/C33.json
+100644 2c60f21d985de4b2b86d94c154c221734167c207 0	tests/fixtures/status-merge/C34.json
+100644 657f67448395a2a5efe4c5924cbe40f7021d3c36 0	tests/fixtures/status-merge/C35.json
+100644 e9444c4a1d1270bc0d109cff64ad495261dca926 0	tests/fixtures/status-merge/C36.json
+100644 3c9d1b3b4e2b22de94654f5243195e486e8ba930 0	tests/fixtures/status-merge/C37.json
+100644 132036ab4593bc44000fec3eb6cd16ea661f6276 0	tests/fixtures/status-merge/C38.json
+100644 1046edb2f0d60a865d7aa28e4e925e45115724c0 0	tests/fixtures/status-merge/C39.json
+100644 e74816cc0e7926ec9ad9e8b41d5503bbf9e57907 0	tests/fixtures/status-merge/C40.json
+100644 5158e1672d93ef08a3609b9db873caece344ac2f 0	tests/fixtures/status-merge/C41.json
+100644 655e248a228a7e92df6c59e708194596a166bbc8 0	tests/fixtures/status-merge/C42.json
+100644 14123582b1ea281897baea222f8e39ec69228a74 0	tests/fixtures/status-merge/C43.json
+100644 24ccd38cca9a7582bdef5658dcd0823448f1401b 0	tests/fixtures/status-merge/C44.json
+100644 3f70e33dfb4ab4ae458c2e729b800144a1c6fcb7 0	tests/fixtures/status-merge/C45.json
+100644 8ae858c278346698f0ed527f5c5a57f8ae572ebd 0	tests/fixtures/status-merge/C46.json
+100644 d0e30997d23ade3004de97a761165e3e621d7212 0	tests/fixtures/status-merge/C47.json
+100644 0ddf80386e590379b5009e1f78cb43c5226b798e 0	tests/fixtures/status-merge/C48.json
+100644 920a795845edc6f37a16d2089a742316be1fa809 0	tests/fixtures/status-merge/C49.json
+100644 16dbb22382b8962902cc4c55b80f1ad608b93d7e 0	tests/fixtures/status-merge/C50.json
+100644 17a0e428d89f2f9d25943a493d3a0a786001b9f4 0	tests/fixtures/status-merge/C51.json
+100644 c4a4ddd8ceaa1e620cf973b8a736de2b2625bb07 0	tests/fixtures/status-merge/C52.json
+100644 60944b6cff757595c1000b723657ffbcbd456f47 0	tests/fixtures/status-merge/C53.json
+100644 f9df3945b7166205013345b4ed4dd8ab3b173a06 0	tests/fixtures/status-merge/C54.json
+100644 662a1000175adfa65987bdef652aa8c904c03a1f 0	tests/fixtures/status-merge/C55.json
+100644 7d796cd765d5dc75eb8e85ef7d43ac7b3021cbcc 0	tests/fixtures/status-merge/C56.json
+100644 d924671cf9248f0781cc827cb6d27bb6c4722eda 0	tests/fixtures/status-merge/C57.json
+100644 02f6daa238629e8a87cb11a969d189791103a0ed 0	tests/fixtures/status-merge/C58.json
+100644 fd0854f21ec0a5732842d694b6f6ed8a7506c589 0	tests/fixtures/status-merge/C59.json
+100644 d18404eba25109a823348c5b7de7da167155ae81 0	tests/fixtures/status-merge/C60.json
+100644 17b2c5572300653a7171e9c99c902458872b83e5 0	tests/fixtures/status-merge/C61.json
+100644 1eee447c1f345868f44da20280e0ad72318877c4 0	tests/fixtures/status-merge/C62.json
+100644 63165794312bb7ee9ed8f97dc82a7a81912243a0 0	tests/fixtures/status-merge/C63.json
+100644 51c8488cb1a8b156ab422c4118bca344ce10550e 0	tests/fixtures/status-merge/C64.json
+100644 47d973cf478a8908b0f53d1400f9f9d062ef3e03 0	tests/fixtures/status-merge/C65.json
+100644 144c14cd7bbb91b399835a734d2a709ada3ad71f 0	tests/fixtures/status-merge/C66.json
+100644 006421abff586016f4e8424bf1be9b60e8eb6d54 0	tests/fixtures/status-merge/C67.json
+100644 cb4f572e89e6ee4e4d62fc199a9544c4a5892232 0	tests/fixtures/status-merge/C68.json
+100644 a458ab230378e47d8b26f74a3a22b3a6ea7c2268 0	tests/fixtures/status-merge/C69.json
+100644 d7843933859fd8e3295a7c32dd611a3c3804d343 0	tests/fixtures/status-merge/C70.json
+100644 3e8ccfc841e36ac32d4afa96d5b6fad37264a7b3 0	tests/fixtures/status-merge/C71.json
+100644 079fa17705e6d7a78f9fcb2b9cebfa0f721f4325 0	tests/fixtures/status-merge/C72.json
+100644 750883ee517dde35130400d8b468c72a254603e8 0	tests/fixtures/status-merge/C73.json
+100644 0d1c7a30f890114fffc9c3ead6ca678bb140780c 0	tests/fixtures/status-merge/C74.json
+100644 cef2c5f2339e72045ea29204c8196628678f1632 0	tests/fixtures/status-merge/C75.json
+100644 4de1c1ebeb32f77ada56318f01a4d9a6d49fdcc5 0	tests/fixtures/status-merge/C76.json
+100644 05de48e6f7a04f913406dac4fad2a56b712455b4 0	tests/fixtures/status-merge/C77.json
+100644 43ab1b1a19c8f13e42f1516819316a21caf65c1f 0	tests/fixtures/status-merge/C78.json
+100644 711e39138b1e9da9fe76767b9278ee7b6edd3701 0	tests/fixtures/status-merge/C79.json
+100644 ee6e940071df62711fccc2ebb7fa619742a03375 0	tests/fixtures/visual-baselines.json
+100644 eb1df2aacfa084949cf227ef08300f1d88c8b100 0	tests/fixtures/visual-baselines.ts
+d14215e6cbaa
+Linux d14215e6cbaa 6.18.57 #1 SMP Tue Oct 20 21:56:04 UTC 2026 x86_64 GNU/Linux
+lscpu: failed to determine number of CPUs: /sys/devices/system/cpu/possible: No such file or directory
+98a7e2d3f5256810fe477812be64b35411aeede8b34f91e648d62e96c39e3294  package-lock.json
+2026-11-03T15:11:50Z
+ 07:11:50 up  2:14,  0 users,  load average: 1.12, 1.10, 0.98
+    PID    PPID COMMAND         %CPU %MEM
+      1       0 codex            0.0  0.1
+      2       1 run-series.sh    0.0  0.0
+     22       2 ps               0.0  0.0
+     23       2 head             0.0  0.0
+
+
+=== candidate-final-node22-build.log ===
+2026-11-03T15:11:50Z
+ 07:11:50 up  2:14,  0 users,  load average: 1.12, 1.10, 0.98
+    PID    PPID COMMAND         %CPU %MEM
+      1       0 codex            0.0  0.1
+      2       1 run-series.sh    0.0  0.0
+     29       2 ps               0.0  0.0
+     30       2 head             0.0  0.0
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-perf-build-home-ZmTaTf HUD_HOME=/tmp/b10b-perf-build-hud-seiRTW /workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node /opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js run build && run build:test
+v22.23.4
+(node:32) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+11.9.0
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build
+> node ./node_modules/typescript/bin/tsc
+
+build EXIT=0
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+build:test EXIT=0
+91f562344feb9be84fec8cce5b19f7ddc5c19b08e483a10c361231a6dc3e2bc7  -
+24a2437918e49b34339f5eb15c3c325e50bb9d1cf9b0faefada2139d74425022  dist-test/tests/unit/b10b-s3-perf.test.js
+2026-11-03T15:12:12Z
+ 07:12:12 up  2:15,  0 users,  load average: 1.24, 1.12, 0.99
+    PID    PPID COMMAND         %CPU %MEM
+      1       0 codex            0.0  0.1
+      2       1 run-series.sh    0.0  0.0
+     91       2 ps               0.0  0.0
+     92       2 head             0.0  0.0
+
+
+=== candidate-final-node22-run1.log ===
+SOURCE: 5f2134d0ccedeca4d4fe184699b3bdd2307a65f4
+ M node_modules/.package-lock.json
+NODE=/workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node
+v22.23.4
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-perf-home-u1e6PV HUD_HOME=/tmp/b10b-perf-hud-Yif3Gb B10B_PERF=1 /workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node --test dist-test/tests/unit/b10b-s3-perf.test.js
+2026-11-03T15:12:12Z
+ 07:12:12 up  2:15,  0 users,  load average: 1.24, 1.12, 0.99
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    102       2 ps               0.0  0.0
+    103       2 head             0.0  0.0
+TAP version 13
+# b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.115ms p95=0.301ms p99=1.048ms max=3.181ms strict=true
+# b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.406ms p95=0.965ms p99=1.878ms max=3.207ms strict=true
+# b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.715ms p95=1.197ms p99=1.766ms max=4.470ms strict=true
+# b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.114ms p95=0.261ms p99=0.553ms max=0.895ms strict=true
+# b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.394ms p95=0.784ms p99=1.382ms max=3.051ms strict=true
+# b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.874ms p95=1.409ms p99=1.846ms max=4.890ms strict=true
+# b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.466ms p95=3.827ms p99=4.915ms max=9.310ms strict=true
+# b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.237ms p95=4.030ms p99=5.540ms max=8.115ms strict=true
+# b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.145ms p95=4.573ms p99=7.063ms max=11.238ms strict=true
+# b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.681ms p95=4.931ms p99=6.336ms max=7.787ms strict=true
+# b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.309ms p95=4.244ms p99=5.737ms max=7.506ms strict=true
+# b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=3.129ms p95=5.899ms p99=8.573ms max=24.258ms strict=true
+# b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.650ms p95=1.154ms p99=1.478ms max=2.972ms strict=true
+# b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.267ms p95=5.880ms p99=8.761ms max=14.840ms strict=true
+# b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=1.095ms p95=2.277ms p99=3.565ms max=7.135ms strict=true
+# b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=4.286ms p95=6.873ms p99=12.711ms max=25.130ms strict=true
+# Subtest: the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+ok 1 - the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+  ---
+  duration_ms: 3871.072543
+  type: 'test'
+  ...
+# Subtest: compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+ok 2 - compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+  ---
+  duration_ms: 21928.401629
+  type: 'test'
+  ...
+# Subtest: rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+ok 3 - rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+  ---
+  duration_ms: 23721.905145
+  type: 'test'
+  ...
+# Subtest: printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+ok 4 - printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+  ---
+  duration_ms: 22761.287485
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 72419.05565
+EXIT=0
+2026-11-03T15:13:24Z
+ 07:13:24 up  2:16,  0 users,  load average: 1.22, 1.15, 1.01
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    119       2 ps               0.0  0.0
+    120       2 head             0.0  0.0
+
+
+=== candidate-final-node22-run2.log ===
+SOURCE: 5f2134d0ccedeca4d4fe184699b3bdd2307a65f4
+ M node_modules/.package-lock.json
+NODE=/workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node
+v22.23.4
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-perf-home-0YQrh9 HUD_HOME=/tmp/b10b-perf-hud-vDigJc B10B_PERF=1 /workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node --test dist-test/tests/unit/b10b-s3-perf.test.js
+2026-11-03T15:13:24Z
+ 07:13:24 up  2:16,  0 users,  load average: 1.22, 1.15, 1.01
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    130       2 ps               0.0  0.0
+    131       2 head             0.0  0.0
+TAP version 13
+# b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.118ms p95=0.300ms p99=0.995ms max=4.162ms strict=true
+# b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.390ms p95=0.851ms p99=1.627ms max=3.443ms strict=true
+# b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.794ms p95=1.600ms p99=3.368ms max=7.354ms strict=true
+# b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.126ms p95=0.278ms p99=0.794ms max=4.852ms strict=true
+# b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.421ms p95=1.069ms p99=1.987ms max=7.566ms strict=true
+# b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.940ms p95=1.588ms p99=2.056ms max=6.983ms strict=true
+# b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=2.076ms p95=5.956ms p99=9.717ms max=17.436ms strict=true
+# b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.497ms p95=4.437ms p99=7.226ms max=12.062ms strict=true
+# b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.270ms p95=4.862ms p99=7.293ms max=19.382ms strict=true
+# b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.684ms p95=5.293ms p99=6.464ms max=13.713ms strict=true
+# b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.200ms p95=4.286ms p99=5.514ms max=13.041ms strict=true
+# b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=3.294ms p95=5.934ms p99=8.285ms max=18.858ms strict=true
+# b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.733ms p95=1.849ms p99=5.155ms max=8.222ms strict=true
+# b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=4.752ms p95=9.781ms p99=15.366ms max=27.521ms strict=true
+# b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=1.143ms p95=2.622ms p99=4.960ms max=28.330ms strict=true
+# b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=4.725ms p95=9.019ms p99=14.437ms max=31.199ms strict=true
+# Subtest: the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+ok 1 - the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+  ---
+  duration_ms: 4234.694971
+  type: 'test'
+  ...
+# Subtest: compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+ok 2 - compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+  ---
+  duration_ms: 25158.370214
+  type: 'test'
+  ...
+# Subtest: rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+ok 3 - rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+  ---
+  duration_ms: 23919.110057
+  type: 'test'
+  ...
+# Subtest: printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+ok 4 - printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+  ---
+  duration_ms: 27279.896517
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 80761.91941
+EXIT=0
+2026-11-03T15:14:45Z
+ 07:14:45 up  2:17,  0 users,  load average: 1.15, 1.15, 1.02
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    147       2 ps               0.0  0.0
+    148       2 head             0.0  0.0
+
+
+=== candidate-final-node22-run3.log ===
+SOURCE: 5f2134d0ccedeca4d4fe184699b3bdd2307a65f4
+ M node_modules/.package-lock.json
+NODE=/workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node
+v22.23.4
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-perf-home-9gTgmQ HUD_HOME=/tmp/b10b-perf-hud-ZMbQCd B10B_PERF=1 /workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node --test dist-test/tests/unit/b10b-s3-perf.test.js
+2026-11-03T15:14:45Z
+ 07:14:45 up  2:17,  0 users,  load average: 1.15, 1.15, 1.02
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    158       2 ps               0.0  0.0
+    159       2 head             0.0  0.0
+TAP version 13
+# b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.138ms p95=0.405ms p99=1.213ms max=3.087ms strict=true
+# b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.406ms p95=0.946ms p99=1.725ms max=2.425ms strict=true
+# b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.815ms p95=1.826ms p99=3.342ms max=9.877ms strict=true
+# b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.142ms p95=0.374ms p99=0.904ms max=1.460ms strict=true
+# b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.474ms p95=1.484ms p99=2.069ms max=3.616ms strict=true
+# b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=1.125ms p95=2.081ms p99=2.836ms max=3.890ms strict=true
+# b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.597ms p95=3.984ms p99=5.457ms max=6.610ms strict=true
+# b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.252ms p95=3.771ms p99=5.219ms max=8.160ms strict=true
+# b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.285ms p95=4.535ms p99=5.947ms max=23.519ms strict=true
+# b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.517ms p95=4.595ms p99=5.557ms max=15.881ms strict=true
+# b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.332ms p95=4.419ms p99=6.077ms max=91.199ms strict=true
+# b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.811ms p95=5.220ms p99=6.999ms max=13.689ms strict=true
+# b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.699ms p95=1.354ms p99=2.499ms max=3.186ms strict=true
+# b10b-s3-perf compact cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.684ms p95=7.575ms p99=10.707ms max=26.125ms strict=true
+# b10b-s3-perf rich reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.941ms p95=1.718ms p99=3.357ms max=5.396ms strict=true
+# b10b-s3-perf rich cold tick, the 60 rows in view (all 200 nodes differ; not asserted): n=1000 p50=3.971ms p95=6.337ms p99=9.232ms max=26.594ms strict=true
+# Subtest: the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+ok 1 - the no-change tick: same view model, a key press, the second moves on; compact and rich p99 <= 2 ms
+  ---
+  duration_ms: 4694.532633
+  type: 'test'
+  ...
+# Subtest: compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+ok 2 - compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms
+  ---
+  duration_ms: 22735.246354
+  type: 'test'
+  ...
+# Subtest: rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+ok 3 - rich, 200 nodes as cards at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 15 ms
+  ---
+  duration_ms: 23264.40811
+  type: 'test'
+  ...
+# Subtest: printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+ok 4 - printed: the selection resolved from a miss (a hidden node every tick), and the cold tick
+  ---
+  duration_ms: 22958.406787
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 73795.54452
+EXIT=0
+2026-11-03T15:15:59Z
+ 07:15:59 up  2:18,  0 users,  load average: 1.16, 1.16, 1.03
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    175       2 ps               0.0  0.0
+    176       2 head             0.0  0.0
+
+
+=== candidate-final-node24-build.log ===
+2026-11-03T15:15:59Z
+ 07:15:59 up  2:18,  0 users,  load average: 1.16, 1.16, 1.03
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    182       2 ps               0.0  0.0
+    183       2 head             0.0  0.0
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-perf-build-home-upAsli HUD_HOME=/tmp/b10b-perf-build-hud-te62O4 /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node /opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js run build && run build:test
+v24.22.1
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+11.9.0
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build
+> node ./node_modules/typescript/bin/tsc
+
+build EXIT=0
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+build:test EXIT=0
+91f562344feb9be84fec8cce5b19f7ddc5c19b08e483a10c361231a6dc3e2bc7  -
+24a2437918e49b34339f5eb15c3c325e50bb9d1cf9b0faefada2139d74425022  dist-test/tests/unit/b10b-s3-perf.test.js
+2026-11-03T15:16:17Z
+ 07:16:17 up  2:19,  0 users,  load average: 1.13, 1.15, 1.03
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    244       2 ps               0.0  0.0
+    245       2 head             0.0  0.0
+
+
+=== candidate-final-node24-run1.log ===
+SOURCE: 5f2134d0ccedeca4d4fe184699b3bdd2307a65f4
+ M node_modules/.package-lock.json
+NODE=/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+v24.22.1
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-perf-home-gjQaGe HUD_HOME=/tmp/b10b-perf-hud-yNzgLw B10B_PERF=1 /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node --test dist-test/tests/unit/b10b-s3-perf.test.js
+2026-11-03T15:16:17Z
+ 07:16:17 up  2:19,  0 users,  load average: 1.13, 1.15, 1.03
+    PID    PPID COMMAND         %CPU %MEM
+      2       1 run-series.sh    0.0  0.0
+      1       0 codex            0.0  0.1
+    255       2 ps               0.0  0.0
+    256       2 head             0.0  0.0
+b10b-s3-perf compact no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.096ms p95=0.249ms p99=0.493ms max=3.146ms strict=true
+b10b-s3-perf compact no-change tick, every row read (not asserted): n=1000 p50=0.361ms p95=0.706ms p99=1.181ms max=7.517ms strict=true
+b10b-s3-perf compact no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.672ms p95=1.183ms p99=1.685ms max=6.024ms strict=true
+b10b-s3-perf rich no-change tick (reconcile + key press + rows + the 60 rows in view): n=1000 p50=0.116ms p95=0.230ms p99=0.443ms max=1.562ms strict=true
+b10b-s3-perf rich no-change tick, every row read (not asserted): n=1000 p50=0.392ms p95=0.669ms p99=1.444ms max=1.990ms strict=true
+b10b-s3-perf rich no-change tick through the whole renderMonitor (not asserted): n=1000 p50=0.835ms p95=1.351ms p99=1.809ms max=3.726ms strict=true
+b10b-s3-perf compact changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.458ms p95=2.896ms p99=10.579ms max=13.759ms strict=true
+b10b-s3-perf compact changed tick, the 60 rows in view (not asserted): n=1000 p50=1.091ms p95=2.579ms p99=11.235ms max=40.383ms strict=true
+b10b-s3-perf compact changed tick through the whole renderMonitor (not asserted): n=1000 p50=1.977ms p95=7.078ms p99=9.073ms max=34.769ms strict=true
+b10b-s3-perf rich changed tick (fresh view model, 1 of 200 differs, clocks moved, a key pressed; every row read): n=1000 p50=1.566ms p95=3.027ms p99=12.540ms max=15.770ms strict=true
+b10b-s3-perf rich changed tick, the 60 rows in view (not asserted): n=1000 p50=1.180ms p95=2.453ms p99=13.503ms max=18.221ms strict=true
+b10b-s3-perf rich changed tick through the whole renderMonitor (not asserted): n=1000 p50=2.700ms p95=7.948ms p99=10.000ms max=13.214ms strict=true
+b10b-s3-perf compact reconcile + render from a selection that is not a destination (not asserted): n=1000 p50=0.621ms p95=1.053ms p99=1.369ms max=2.087ms strict=true
+b10b-s3-perf compact cold tick, the 60 rows in view (all 2
