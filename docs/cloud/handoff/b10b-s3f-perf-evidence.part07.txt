@@ -1,0 +1,776 @@
+settings/48x24 (0.029884ms)
+  ✔ panel/en/tile/minimal/56x32 (0.038737ms)
+  ✔ panel/en/tile/progress/56x32 (0.036784ms)
+  ✔ panel/en/tile/monitor/56x32 (0.037625ms)
+  ✔ settings/en/tile/active-settings/56x24 (0.045427ms)
+  ✔ panel/en/tile/minimal/80x32 (0.076503ms)
+  ✔ panel/en/tile/progress/80x32 (0.068652ms)
+  ✔ panel/en/tile/monitor/80x32 (0.056774ms)
+  ✔ settings/en/tile/active-settings/80x24 (0.065737ms)
+  ✔ panel/en/frame/minimal/32x32 (0.032568ms)
+  ✔ panel/en/frame/progress/32x32 (0.06765ms)
+  ✔ panel/en/frame/monitor/32x32 (0.032047ms)
+  ✔ settings/en/frame/active-settings/32x24 (0.027641ms)
+  ✔ panel/en/frame/minimal/40x32 (0.030605ms)
+  ✔ panel/en/frame/progress/40x32 (0.02701ms)
+  ✔ panel/en/frame/monitor/40x32 (0.02693ms)
+  ✔ settings/en/frame/active-settings/40x24 (0.051175ms)
+  ✔ panel/en/frame/minimal/48x32 (0.035803ms)
+  ✔ panel/en/frame/progress/48x32 (0.060699ms)
+  ✔ panel/en/frame/monitor/48x32 (0.030946ms)
+  ✔ settings/en/frame/active-settings/48x24 (0.027751ms)
+  ✔ panel/en/frame/minimal/56x32 (0.02672ms)
+  ✔ panel/en/frame/progress/56x32 (0.02727ms)
+  ✔ panel/en/frame/monitor/56x32 (0.025428ms)
+  ✔ settings/en/frame/active-settings/56x24 (0.027581ms)
+  ✔ panel/en/frame/minimal/80x32 (0.031467ms)
+  ✔ panel/en/frame/progress/80x32 (0.028142ms)
+  ✔ panel/en/frame/monitor/80x32 (0.027741ms)
+  ✔ settings/en/frame/active-settings/80x24 (0.03436ms)
+  ✔ panel/en/pill/minimal/32x32 (0.032758ms)
+  ✔ panel/en/pill/progress/32x32 (0.025768ms)
+  ✔ panel/en/pill/monitor/32x32 (0.027861ms)
+  ✔ settings/en/pill/active-settings/32x24 (0.026759ms)
+  ✔ panel/en/pill/minimal/40x32 (0.025608ms)
+  ✔ panel/en/pill/progress/40x32 (0.031267ms)
+  ✔ panel/en/pill/monitor/40x32 (0.257681ms)
+  ✔ settings/en/pill/active-settings/40x24 (0.037605ms)
+  ✔ panel/en/pill/minimal/48x32 (0.028773ms)
+  ✔ panel/en/pill/progress/48x32 (0.02667ms)
+  ✔ panel/en/pill/monitor/48x32 (0.028282ms)
+  ✔ settings/en/pill/active-settings/48x24 (0.026309ms)
+  ✔ panel/en/pill/minimal/56x32 (0.02718ms)
+  ✔ panel/en/pill/progress/56x32 (0.035642ms)
+  ✔ panel/en/pill/monitor/56x32 (0.029053ms)
+  ✔ settings/en/pill/active-settings/56x24 (0.030976ms)
+  ✔ panel/en/pill/minimal/80x32 (0.057876ms)
+  ✔ panel/en/pill/progress/80x32 (0.033329ms)
+  ✔ panel/en/pill/monitor/80x32 (0.028613ms)
+  ✔ settings/en/pill/active-settings/80x24 (0.105155ms)
+  ✔ panel/zh/tab/minimal/32x32 (0.092967ms)
+  ✔ panel/zh/tab/progress/32x32 (0.028542ms)
+  ✔ panel/zh/tab/monitor/32x32 (0.151263ms)
+  ✔ settings/zh/tab/active-settings/32x24 (0.074581ms)
+  ✔ panel/zh/tab/minimal/40x32 (0.031937ms)
+  ✔ panel/zh/tab/progress/40x32 (0.050064ms)
+  ✔ panel/zh/tab/monitor/40x32 (0.030665ms)
+  ✔ settings/zh/tab/active-settings/40x24 (0.029063ms)
+  ✔ panel/zh/tab/minimal/48x32 (0.028392ms)
+  ✔ panel/zh/tab/progress/48x32 (0.075182ms)
+  ✔ panel/zh/tab/monitor/48x32 (0.026629ms)
+  ✔ settings/zh/tab/active-settings/48x24 (0.025218ms)
+  ✔ panel/zh/tab/minimal/56x32 (0.025969ms)
+  ✔ panel/zh/tab/progress/56x32 (0.026349ms)
+  ✔ panel/zh/tab/monitor/56x32 (0.025628ms)
+  ✔ settings/zh/tab/active-settings/56x24 (0.02679ms)
+  ✔ panel/zh/tab/minimal/80x32 (0.026739ms)
+  ✔ panel/zh/tab/progress/80x32 (0.154859ms)
+  ✔ panel/zh/tab/monitor/80x32 (0.070074ms)
+  ✔ settings/zh/tab/active-settings/80x24 (0.053058ms)
+  ✔ panel/zh/band/minimal/32x32 (0.028573ms)
+  ✔ panel/zh/band/progress/32x32 (0.025958ms)
+  ✔ panel/zh/band/monitor/32x32 (0.025939ms)
+  ✔ settings/zh/band/active-settings/32x24 (0.026139ms)
+  ✔ panel/zh/band/minimal/40x32 (0.027842ms)
+  ✔ panel/zh/band/progress/40x32 (0.146597ms)
+  ✔ panel/zh/band/monitor/40x32 (0.034371ms)
+  ✔ settings/zh/band/active-settings/40x24 (0.028983ms)
+  ✔ panel/zh/band/minimal/48x32 (0.045026ms)
+  ✔ panel/zh/band/progress/48x32 (0.036404ms)
+  ✔ panel/zh/band/monitor/48x32 (0.030335ms)
+  ✔ settings/zh/band/active-settings/48x24 (0.026379ms)
+  ✔ panel/zh/band/minimal/56x32 (0.0267ms)
+  ✔ panel/zh/band/progress/56x32 (0.036574ms)
+  ✔ panel/zh/band/monitor/56x32 (0.054992ms)
+  ✔ settings/zh/band/active-settings/56x24 (0.030596ms)
+  ✔ panel/zh/band/minimal/80x32 (0.035682ms)
+  ✔ panel/zh/band/progress/80x32 (0.030004ms)
+  ✔ panel/zh/band/monitor/80x32 (0.05402ms)
+  ✔ settings/zh/band/active-settings/80x24 (0.03405ms)
+  ✔ panel/zh/tile/minimal/32x32 (0.025929ms)
+  ✔ panel/zh/tile/progress/32x32 (0.026349ms)
+  ✔ panel/zh/tile/monitor/32x32 (0.114579ms)
+  ✔ settings/zh/tile/active-settings/32x24 (0.061071ms)
+  ✔ panel/zh/tile/minimal/40x32 (0.035412ms)
+  ✔ panel/zh/tile/progress/40x32 (0.03348ms)
+  ✔ panel/zh/tile/monitor/40x32 (0.028723ms)
+  ✔ settings/zh/tile/active-settings/40x24 (0.046409ms)
+  ✔ panel/zh/tile/minimal/48x32 (0.030135ms)
+  ✔ panel/zh/tile/progress/48x32 (0.043405ms)
+  ✔ panel/zh/tile/monitor/48x32 (0.028643ms)
+  ✔ settings/zh/tile/active-settings/48x24 (0.024557ms)
+  ✔ panel/zh/tile/minimal/56x32 (0.025007ms)
+  ✔ panel/zh/tile/progress/56x32 (0.024806ms)
+  ✔ panel/zh/tile/monitor/56x32 (0.063774ms)
+  ✔ settings/zh/tile/active-settings/56x24 (0.031897ms)
+  ✔ panel/zh/tile/minimal/80x32 (0.02733ms)
+  ✔ panel/zh/tile/progress/80x32 (0.055612ms)
+  ✔ panel/zh/tile/monitor/80x32 (0.050405ms)
+  ✔ settings/zh/tile/active-settings/80x24 (0.034391ms)
+  ✔ panel/zh/frame/minimal/32x32 (0.123693ms)
+  ✔ panel/zh/frame/progress/32x32 (0.080149ms)
+  ✔ panel/zh/frame/monitor/32x32 (0.053289ms)
+  ✔ settings/zh/frame/active-settings/32x24 (0.027852ms)
+  ✔ panel/zh/frame/minimal/40x32 (0.025748ms)
+  ✔ panel/zh/frame/progress/40x32 (0.058566ms)
+  ✔ panel/zh/frame/monitor/40x32 (0.031636ms)
+  ✔ settings/zh/frame/active-settings/40x24 (0.027581ms)
+  ✔ panel/zh/frame/minimal/48x32 (0.025848ms)
+  ✔ panel/zh/frame/progress/48x32 (0.026169ms)
+  ✔ panel/zh/frame/monitor/48x32 (0.025818ms)
+  ✔ settings/zh/frame/active-settings/48x24 (0.034801ms)
+  ✔ panel/zh/frame/minimal/56x32 (0.02693ms)
+  ✔ panel/zh/frame/progress/56x32 (0.026179ms)
+  ✔ panel/zh/frame/monitor/56x32 (0.02719ms)
+  ✔ settings/zh/frame/active-settings/56x24 (0.025027ms)
+  ✔ panel/zh/frame/minimal/80x32 (0.024547ms)
+  ✔ panel/zh/frame/progress/80x32 (0.026419ms)
+  ✔ panel/zh/frame/monitor/80x32 (0.027722ms)
+  ✔ settings/zh/frame/active-settings/80x24 (0.027641ms)
+  ✔ panel/zh/pill/minimal/32x32 (0.024776ms)
+  ✔ panel/zh/pill/progress/32x32 (0.023535ms)
+  ✔ panel/zh/pill/monitor/32x32 (0.024897ms)
+  ✔ settings/zh/pill/active-settings/32x24 (0.095151ms)
+  ✔ panel/zh/pill/minimal/40x32 (0.064515ms)
+  ✔ panel/zh/pill/progress/40x32 (0.052397ms)
+  ✔ panel/zh/pill/monitor/40x32 (0.078837ms)
+  ✔ settings/zh/pill/active-settings/40x24 (0.029604ms)
+  ✔ panel/zh/pill/minimal/48x32 (0.025458ms)
+  ✔ panel/zh/pill/progress/48x32 (0.025037ms)
+  ✔ panel/zh/pill/monitor/48x32 (0.025408ms)
+  ✔ settings/zh/pill/active-settings/48x24 (0.02703ms)
+  ✔ panel/zh/pill/minimal/56x32 (0.024877ms)
+  ✔ panel/zh/pill/progress/56x32 (0.023775ms)
+  ✔ panel/zh/pill/monitor/56x32 (0.030225ms)
+  ✔ settings/zh/pill/active-settings/56x24 (0.077966ms)
+  ✔ panel/zh/pill/minimal/80x32 (0.042142ms)
+  ✔ panel/zh/pill/progress/80x32 (0.024997ms)
+  ✔ panel/zh/pill/monitor/80x32 (0.02683ms)
+  ✔ settings/zh/pill/active-settings/80x24 (0.029213ms)
+  ✔ settings/en/tab/saved-width-40-to-56/56x24 (0.025869ms)
+  ✔ settings/en/band/saved-width-40-to-56/56x24 (0.076063ms)
+  ✔ settings/en/tile/saved-width-40-to-56/56x24 (0.032898ms)
+  ✔ settings/en/frame/saved-width-40-to-56/56x24 (0.319393ms)
+  ✔ settings/en/pill/saved-width-40-to-56/56x24 (0.039248ms)
+  ✔ settings/zh/tab/saved-width-40-to-56/56x24 (0.037796ms)
+  ✔ settings/zh/band/saved-width-40-to-56/56x24 (0.02699ms)
+  ✔ settings/zh/tile/saved-width-40-to-56/56x24 (0.026109ms)
+  ✔ settings/zh/frame/saved-width-40-to-56/56x24 (0.025177ms)
+  ✔ settings/zh/pill/saved-width-40-to-56/56x24 (0.024476ms)
+  ✔ confirmation/en/cancel/16x24 (0.025518ms)
+  ✔ confirmation/en/cancel/24x24 (0.024536ms)
+  ✔ confirmation/en/cancel/40x24 (0.022974ms)
+  ✔ confirmation/en/cancel/56x24 (0.026249ms)
+  ✔ confirmation/en/save-error/48x24 (0.026659ms)
+  ✔ inspector/en/queued-explicit-coverage/32x32 (0.028062ms)
+  ✔ inspector/en/queued-explicit-coverage/48x32 (0.026239ms)
+  ✔ inspector/en/queued-explicit-coverage/80x32 (0.02717ms)
+  ✔ inspector/en/running-explicit-coverage/32x32 (0.023935ms)
+  ✔ inspector/en/running-explicit-coverage/48x32 (0.025297ms)
+  ✔ inspector/en/running-explicit-coverage/80x32 (0.025127ms)
+  ✔ inspector/en/off-legacy-recorded/32x32 (0.052798ms)
+  ✔ inspector/en/off-legacy-recorded/48x32 (0.029934ms)
+  ✔ inspector/en/off-legacy-recorded/80x32 (0.027922ms)
+  ✔ inspector/en/paused-explicit-coverage/48x32 (0.024867ms)
+  ✔ confirmation/zh/cancel/16x24 (0.032347ms)
+  ✔ confirmation/zh/cancel/24x24 (0.02668ms)
+  ✔ confirmation/zh/cancel/40x24 (0.023975ms)
+  ✔ confirmation/zh/cancel/56x24 (0.026018ms)
+  ✔ confirmation/zh/save-error/48x24 (0.025147ms)
+  ✔ inspector/zh/queued-explicit-coverage/32x32 (0.024496ms)
+  ✔ inspector/zh/queued-explicit-coverage/48x32 (0.056123ms)
+  ✔ inspector/zh/queued-explicit-coverage/80x32 (0.028942ms)
+  ✔ inspector/zh/running-explicit-coverage/32x32 (0.025287ms)
+  ✔ inspector/zh/running-explicit-coverage/48x32 (0.025618ms)
+  ✔ inspector/zh/running-explicit-coverage/80x32 (0.024105ms)
+  ✔ inspector/zh/off-legacy-recorded/32x32 (0.025988ms)
+  ✔ inspector/zh/off-legacy-recorded/48x32 (0.240656ms)
+  ✔ inspector/zh/off-legacy-recorded/80x32 (0.031837ms)
+  ✔ inspector/zh/paused-explicit-coverage/48x32 (0.027151ms)
+  ✔ delegation/rows/en/c/80x6 (0.028722ms)
+  ✔ delegation/rows/en/c/56x6 (0.022814ms)
+  ✔ delegation/rows/en/c/48x6 (0.023235ms)
+  ✔ delegation/rows/en/c/40x6 (0.022764ms)
+  ✔ delegation/rows/en/c/32x6 (0.022553ms)
+  ✔ delegation/rows/en/c-selected/48x6 (0.051076ms)
+  ✔ delegation/rows/en/d/48x8 (0.214888ms)
+  ✔ delegation/rows/en/d/32x8 (0.172285ms)
+  ✔ delegation/rows/en/e/80x7 (0.03414ms)
+  ✔ delegation/rows/en/e/48x7 (0.025368ms)
+  ✔ delegation/rows/en/e/32x7 (0.022824ms)
+  ✔ delegation/rows/en/g/48x3 (0.029183ms)
+  ✔ delegation/rows/en/g-history/48x8 (0.029433ms)
+  ✔ delegation/rows/en/h/48x5 (0.023365ms)
+  ✔ delegation/rows/en/h/32x5 (0.066608ms)
+  ✔ delegation/rows/zh/c/48x6 (0.037746ms)
+  ✔ delegation/rows/zh/e/48x7 (0.025538ms)
+  ✔ delegation/rows/zh/h/32x5 (0.023284ms)
+  ✔ delegation/rows/en/c-ascii/48x6 (0.022874ms)
+  ✔ delegation/rows/en/e-ascii/32x7 (0.022693ms)
+  ✔ delegation/rows/en/d-ascii/48x8 (0.059118ms)
+  ✔ delegation/bar/en/c/200x1 (0.027531ms)
+  ✔ delegation/bar/en/c/120x1 (0.022814ms)
+  ✔ delegation/bar/en/c/80x1 (0.02023ms)
+  ✔ delegation/bar/en/d-fresh/200x1 (0.021582ms)
+  ✔ delegation/bar/en/c-ascii/120x1 (0.021461ms)
+  ✔ delegation/bar/en/d/200x1 (0.022613ms)
+  ✔ delegation/bar/en/d/80x1 (0.029815ms)
+  ✔ delegation/bar/en/e/120x1 (0.022013ms)
+  ✔ delegation/bar/en/e/80x1 (0.022103ms)
+  ✔ delegation/bar/en/h/120x1 (0.02015ms)
+  ✔ delegation/bar/en/h/80x1 (0.020551ms)
+  ✔ delegation/statusline/en/c/80x2 (0.02055ms)
+  ✔ delegation/statusline/en/c/120x2 (0.024105ms)
+  ✔ delegation/statusline/en/c/200x2 (0.045186ms)
+  ✔ delegation/statusline/en/d/80x2 (0.026619ms)
+  ✔ delegation/statusline/en/d/120x2 (0.021181ms)
+  ✔ delegation/statusline/en/e/80x2 (0.020841ms)
+  ✔ delegation/statusline/en/h/80x2 (0.021692ms)
+  ✔ delegation/statusline/en/h/120x2 (0.02042ms)
+  ✔ delegation/statusline/zh/c/120x2 (0.044696ms)
+  ✔ delegation/statusline/en/c-ascii/80x2 (0.025178ms)
+  ✔ delegation/view/en/a-rich/48x3 (0.02049ms)
+  ✔ delegation/view/en/b-rich/48x10 (0.022603ms)
+  ✔ delegation/view/en/b-compact/48x6 (0.02718ms)
+  ✔ delegation/view/en/c-rich/48x19 (0.023785ms)
+  ✔ delegation/view/en/c-rich-selected/80x19 (0.022994ms)
+  ✔ delegation/view/en/c-compact-selected/48x10 (0.021432ms)
+  ✔ delegation/view/en/c-compact-chip/56x8 (0.021973ms)
+  ✔ delegation/view/en/c-compact-selected/32x10 (0.023485ms)
+  ✔ delegation/view/en/d-compact/48x11 (0.024517ms)
+  ✔ delegation/view/en/d-rich-accordion/48x16 (0.022583ms)
+  ✔ delegation/view/en/e-compact/48x10 (0.023205ms)
+  ✔ delegation/view/en/e-rich/48x25 (0.025007ms)
+  ✔ delegation/view/en/g-compact/48x4 (0.022193ms)
+  ✔ delegation/view/en/g-history/48x11 (0.023214ms)
+  ✔ delegation/view/en/h-rich/48x19 (0.024315ms)
+  ✔ delegation/view/en/h-compact/48x8 (0.023555ms)
+  ✔ delegation/view/en/h-compact/32x8 (0.024326ms)
+  ✔ delegation/view/en/parent-offline/48x4 (0.021151ms)
+  ✔ delegation/view/en/parent-unconfirmed/32x4 (0.124173ms)
+  ✔ delegation/view/en/parent-cancel/48x6 (0.066708ms)
+  ✔ delegation/view/zh/c-rich/48x19 (0.053469ms)
+  ✔ delegation/view/zh/h-compact/48x8 (0.029614ms)
+  ✔ delegation/view/en/c-compact-ascii/48x10 (0.025457ms)
+  ✔ delegation/view/en/b-compact-ascii/48x6 (0.025077ms)
+  ✔ delegation/panel/en/c-rich/48x32 (0.024856ms)
+  ✔ delegation/panel/en/d-rich-accordion/48x24 (0.024957ms)
+  ✔ delegation/panel/en/parent-compact/48x24 (0.024316ms)
+  ✔ delegation/panel/en/h-open/48x9 (0.022603ms)
+  ✔ delegation/panel/en/h-open/80x9 (0.023585ms)
+  ✔ delegation/panel/en/h-open/32x9 (0.022764ms)
+  ✔ delegation/panel/en/h-log/48x9 (0.020981ms)
+  ✔ delegation/panel/en/b-switch/48x10 (0.023214ms)
+  ✔ delegation/panel/en/e-reconcile/48x12 (0.022894ms)
+  ✔ delegation/panel/en/e-reconcile-log/80x12 (0.023204ms)
+  ✔ delegation/panel/en/g-resume/48x14 (0.023976ms)
+  ✔ delegation/panel/en/g-resume/80x14 (0.023345ms)
+  ✔ delegation/panel/en/c-rich-folded/48x24 (0.049614ms)
+  ✔ delegation/panel/zh/h-open/48x9 (0.026439ms)
+  ✔ delegation/panel/zh/e-reconcile/48x12 (0.023344ms)
+✔ visual baselines: fixed-time EN/ZH textual frames match reviewed goldens (254.420309ms)
+ℹ tests 331
+ℹ suites 0
+ℹ pass 331
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1408.184931
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T15:10:02Z
+
+
+=== format-candidate.log ===
+2026-11-03T14:58:31Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-bFcurp HUD_HOME=/tmp/b10b-check-hud-h01nkS node node_modules/prettier/bin/prettier.cjs --write src/render/delegation/projection.ts tests/unit/b10b-s3-perf-regression.test.ts 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 06:58:31 up  2:01,  0 users,  load average: 0.49, 0.86, 0.92
+src/render/delegation/projection.ts 175ms (unchanged)
+tests/unit/b10b-s3-perf-regression.test.ts 50ms (unchanged)
+EXIT=0
+2026-11-03T14:58:31Z
+
+
+=== format-new-tests.log ===
+2026-11-03T14:57:39Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+?? tests/unit/b10b-s3-perf-regression.test.ts
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-Iveg8C HUD_HOME=/tmp/b10b-check-hud-AJ2UY4 node node_modules/prettier/bin/prettier.cjs --write tests/unit/b10b-s3-perf-regression.test.ts 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 06:57:39 up  2:00,  0 users,  load average: 0.37, 0.91, 0.94
+tests/unit/b10b-s3-perf-regression.test.ts 151ms
+EXIT=0
+2026-11-03T14:57:39Z
+
+
+=== install.log ===
+2026-11-03T14:45:04Z
+Before npm ci
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+codex-hud@0.1.0 /workspace/scratch/6daef0397a95/b10b-perf-work
+├── @iarna/toml@2.2.5
+├── @types/node@20.19.29
+├── chokidar@5.0.0
+├── UNMET DEPENDENCY prettier@^3.9.9
+└── typescript@5.9.3
+
+npm error code ELSPROBLEMS
+npm error missing: prettier@^3.9.9, required by codex-hud@0.1.0
+npm error A complete log of this run can be found in: /tmp/b10b-install-home-dyO1PS/.npm/_logs/2026-11-03T14_45_04_756Z-debug-0.log
+COMMAND env HOME=/tmp/b10b-install-home-dyO1PS HUD_HOME=/tmp/b10b-install-hud-imOvRk npm ci --ignore-scripts
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+added 7 packages in 6s
+EXIT=0
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+codex-hud@0.1.0 /workspace/scratch/6daef0397a95/b10b-perf-work
+├── @iarna/toml@2.2.5
+├── @types/node@20.19.29
+├── chokidar@5.0.0
+├── prettier@3.9.9
+└── typescript@5.9.3
+
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+2026-11-03T14:45:10Z
+
+
+=== prototype-build.log ===
+2026-11-03T14:44:20Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+ src/render/delegation/projection.ts | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T14:44:33Z
+
+
+=== regression-baseline-build.log ===
+2026-11-03T14:57:39Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+?? tests/unit/b10b-s3-perf-regression.test.ts
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-sSj5fO HUD_HOME=/tmp/b10b-check-hud-KzyQ7V npm run build:test 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 06:57:39 up  2:00,  0 users,  load average: 0.37, 0.91, 0.94
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T14:57:51Z
+
+
+=== regression-baseline-corrected-build.log ===
+2026-11-03T14:58:12Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+?? tests/unit/b10b-s3-perf-regression.test.ts
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-MZNY95 HUD_HOME=/tmp/b10b-check-hud-hI6gMz npm run build:test 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 06:58:12 up  2:01,  0 users,  load average: 0.36, 0.85, 0.92
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T14:58:25Z
+
+
+=== regression-baseline-corrected.log ===
+2026-11-03T14:58:25Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+?? tests/unit/b10b-s3-perf-regression.test.ts
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-gImxoK HUD_HOME=/tmp/b10b-check-hud-KMNdig node --test dist-test/tests/unit/b10b-s3-perf-regression.test.js 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 06:58:25 up  2:01,  0 users,  load average: 0.54, 0.87, 0.93
+✔ perf equivalence: rebuilt-equal views, one fact changed, and return to its previous value (10.037105ms)
+✔ perf equivalence: an older compact or rich frame retains its text, destinations and exact descriptor (16.201538ms)
+✔ perf equivalence: removed and reinserted nodes and a different root cannot contaminate a live snapshot (17.281787ms)
+✔ perf equivalence: old views survive conflict, topology and bucket changes plus option and clock boundaries (12.125866ms)
+✔ perf memo identity: consecutive hits, envelope-only wrappers, and all three tuple references (1.387503ms)
+✖ perf memo policy: one live tuple is retained, A to B to A evicts without retargeting snapshots (3.023796ms)
+✔ perf memo isolation: a custom projection cache neither hits nor replaces the shared tuple (0.260515ms)
+✔ perf snapshots: unread lazy rows and equal render facts with a newer descriptor keep their own views (4.478348ms)
+✔ perf cache churn: repeated keys under distinct roots sweep disappeared entries and preserve old trees (1.955835ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 8
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 220.756544
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b10b-s3-perf-regression.test.js:147:1
+✖ perf memo policy: one live tuple is retained, A to B to A evicts without retargeting snapshots (3.023796ms)
+  AssertionError [ERR_ASSERTION]: Expected "actual" not to be reference-equal to "expected":
+  
+  {
+    backends: {
+      claude: 0,
+      codex: 1,
+      jev: 0,
+      pi: 0
+    },
+    byKey: Map(2) {
+      'claude:main' => <ref *1> {
+        children: [
+          <ref *2> {
+            children: [],
+            childrenUnknown: false,
+            depth: 1,
+            index: 1,
+            key: 'codex:worker',
+            node: {
+              conflict: null,
+              crossHarnessDepth: 0,
+              currentRun: {
+                cancelRequestedAt: null,
+                createdAt: 1772362800000,
+                endedAt: null,
+                exitCode: null,
+                exitSignal: null,
+                exitSource: null,
+                heartbeatAt: null,
+                linkId: 'l_worker',
+                mode: 'headless',
+                runId: 'r_worker',
+                runSeq: 1,
+                state: 'running'
+              },
+              depth: 1,
+              edge: 'delegated',
+              execution: {
+                execution: 'managed',
+                isRunTerminal: false,
+                launchFailure: null,
+                reconciliation: null,
+                terminal: null
+              },
+              host: null,
+              identity: {
+                kind: 'session',
+                ref: {
+  ...
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/b10b-perf-work/dist-test/tests/unit/b10b-s3-perf-regression.test.js:154:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { vm: { tree: [Object], capacity: null, limits: [Object], details: [Object], pendingStatus: 0 }, nodes: [ [Object], [Object] ], byKey: Map(2) { 'claude:main' => [Object], 'codex:worker' => [Object] }, roots: [ [Object] ], crossHarness: true, kindIcons: false, reviews: Map(0) {}, counts: { warn: 0, flag: 0, fail: 0, stop: 0, unknown: 0, working: 1, starting: 0, done: 0 }, delegatedCounts: { warn: 0, flag: 0, fail: 0, stop: 0, unknown: 0, working: 1, starting: 0, done: 0 }, backends: { codex: 1, pi: 0, jev: 0, claude: 0 }, toClose: 0, spend: { value: null, knownCount: 0, missingCount: 2, coverage: 'partial', quality: 'unknown', isLowerBound: false }, conflictKeys: Set(0) {}, omittedConflictRows: 0, omittedConflicts: [] },
+    expected: { vm: { tree: [Object], capacity: null, limits: [Object], details: [Object], pendingStatus: 0 }, nodes: [ [Object], [Object] ], byKey: Map(2) { 'claude:main' => [Object], 'codex:worker' => [Object] }, roots: [ [Object] ], crossHarness: true, kindIcons: false, reviews: Map(0) {}, counts: { warn: 0, flag: 0, fail: 0, stop: 0, unknown: 0, working: 1, starting: 0, done: 0 }, delegatedCounts: { warn: 0, flag: 0, fail: 0, stop: 0, unknown: 0, working: 1, starting: 0, done: 0 }, backends: { codex: 1, pi: 0, jev: 0, claude: 0 }, toClose: 0, spend: { value: null, knownCount: 0, missingCount: 2, coverage: 'partial', quality: 'unknown', isLowerBound: false }, conflictKeys: Set(0) {}, omittedConflictRows: 0, omittedConflicts: [] },
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+EXIT=1
+2026-11-03T14:58:25Z
+
+
+=== regression-baseline.log ===
+2026-11-03T14:57:51Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+?? tests/unit/b10b-s3-perf-regression.test.ts
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-PcNrC6 HUD_HOME=/tmp/b10b-check-hud-ZZRjfN node --test dist-test/tests/unit/b10b-s3-perf-regression.test.js 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 06:57:51 up  2:00,  0 users,  load average: 0.54, 0.93, 0.95
+✔ perf equivalence: rebuilt-equal views, one fact changed, and return to its previous value (9.800837ms)
+✖ perf equivalence: an older compact or rich frame retains its text, destinations and exact descriptor (8.65349ms)
+✔ perf equivalence: removed and reinserted nodes and a different root cannot contaminate a live snapshot (19.634042ms)
+✔ perf equivalence: old views survive conflict, topology and bucket changes plus option and clock boundaries (13.796698ms)
+✔ perf memo identity: consecutive hits, envelope-only wrappers, and all three tuple references (1.554499ms)
+✖ perf memo policy: one live tuple is retained, A to B to A evicts without retargeting snapshots (3.62333ms)
+✔ perf memo isolation: a custom projection cache neither hits nor replaces the shared tuple (0.536173ms)
+✖ perf snapshots: unread lazy rows and equal render facts with a newer descriptor keep their own views (4.168766ms)
+✔ perf cache churn: repeated keys under distinct roots sweep disappeared entries and preserve old trees (2.832155ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 6
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 217.357342
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b10b-s3-perf-regression.test.js:39:1
+✖ perf equivalence: an older compact or rich frame retains its text, destinations and exact descriptor (8.65349ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'delegation-copy'
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/b10b-perf-work/dist-test/tests/unit/b10b-s3-perf-regression.test.js:61:16)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'delegation-copy',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/b10b-s3-perf-regression.test.js:147:1
+✖ perf memo policy: one live tuple is retained, A to B to A evicts without retargeting snapshots (3.62333ms)
+  AssertionError [ERR_ASSERTION]: Expected "actual" not to be reference-equal to "expected":
+  
+  {
+    backends: {
+      claude: 0,
+      codex: 1,
+      jev: 0,
+      pi: 0
+    },
+    byKey: Map(2) {
+      'claude:main' => <ref *1> {
+        children: [
+          <ref *2> {
+            children: [],
+            childrenUnknown: false,
+            depth: 1,
+            index: 1,
+            key: 'codex:worker',
+            node: {
+              conflict: null,
+              crossHarnessDepth: 0,
+              currentRun: {
+                cancelRequestedAt: null,
+                createdAt: 1772362800000,
+                endedAt: null,
+                exitCode: null,
+                exitSignal: null,
+                exitSource: null,
+                heartbeatAt: null,
+                linkId: 'l_worker',
+                mode: 'headless',
+                runId: 'r_worker',
+                runSeq: 1,
+                state: 'running'
+              },
+              depth: 1,
+              edge: 'delegated',
+              execution: {
+                execution: 'managed',
+                isRunTerminal: false,
+                launchFailure: null,
+                reconciliation: null,
+                terminal: null
+              },
+              host: null,
+              identity: {
+                kind: 'session',
+                ref: {
+  ...
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/b10b-perf-work/dist-test/tests/unit/b10b-s3-perf-regression.test.js:154:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { vm: { tree: [Object], capacity: null, limits: [Object], details: [Object], pendingStatus: 0 }, nodes: [ [Object], [Object] ], byKey: Map(2) { 'claude:main' => [Object], 'codex:worker' => [Object] }, roots: [ [Object] ], crossHarness: true, kindIcons: false, reviews: Map(0) {}, counts: { warn: 0, flag: 0, fail: 0, stop: 0, unknown: 0, working: 1, starting: 0, done: 0 }, delegatedCounts: { warn: 0, flag: 0, fail: 0, stop: 0, unknown: 0, working: 1, starting: 0, done: 0 }, backends: { codex: 1, pi: 0, jev: 0, claude: 0 }, toClose: 0, spend: { value: null, knownCount: 0, missingCount: 2, coverage: 'partial', quality: 'unknown', isLowerBound: false }, conflictKeys: Set(0) {}, omittedConflictRows: 0, omittedConflicts: [] },
+    expected: { vm: { tree: [Object], capacity: null, limits: [Object], details: [Object], pendingStatus: 0 }, nodes: [ [Object], [Object] ], byKey: Map(2) { 'claude:main' => [Object], 'codex:worker' => [Object] }, roots: [ [Object] ], crossHarness: true, kindIcons: false, reviews: Map(0) {}, counts: { warn: 0, flag: 0, fail: 0, stop: 0, unknown: 0, working: 1, starting: 0, done: 0 }, delegatedCounts: { warn: 0, flag: 0, fail: 0, stop: 0, unknown: 0, working: 1, starting: 0, done: 0 }, backends: { codex: 1, pi: 0, jev: 0, claude: 0 }, toClose: 0, spend: { value: null, knownCount: 0, missingCount: 2, coverage: 'partial', quality: 'unknown', isLowerBound: false }, conflictKeys: Set(0) {}, omittedConflictRows: 0, omittedConflicts: [] },
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/b10b-s3-perf-regression.test.js:178:1
+✖ perf snapshots: unread lazy rows and equal render facts with a newer descriptor keep their own views (4.168766ms)
+  AssertionError [ERR_ASSERTION]: the frame offers reconcile
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/b10b-perf-work/dist-test/tests/unit/b10b-s3-perf-regression.test.js:203:24)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: undefined,
+    operator: 'fail',
+    diff: 'simple'
+  }
+EXIT=1
+2026-11-03T14:57:52Z
+
+
+=== regression-candidate-build.log ===
+2026-11-03T14:58:31Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-dqR1xo HUD_HOME=/tmp/b10b-check-hud-KfHzHC npm run build:test 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 06:58:31 up  2:01,  0 users,  load average: 0.49, 0.86, 0.92
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+EXIT=0
+2026-11-03T14:58:44Z
+
+
+=== regression-candidate.log ===
+2026-11-03T14:58:44Z
+bd7e77a0f9a17c3d333527d82fcb4c56f8c72e60
+f9bcdc5c069156d655ca7d3cd7a08590e74b8eec
+ M node_modules/.package-lock.json
+ M src/render/delegation/projection.ts
+?? tests/unit/b10b-s3-perf-regression.test.ts
+cc635a009637eeaf7f3f397df6233abe7b71c2cd9b6aa72896519341368855c3  -
+COMMAND: env -u NO_COLOR -u FORCE_COLOR -u NODE_USE_ENV_PROXY -u NODE_OPTIONS HOME=/tmp/b10b-check-home-dSFapj HUD_HOME=/tmp/b10b-check-hud-V7UBGz node --test dist-test/tests/unit/b10b-s3-perf-regression.test.js 
+v24.22.1
+/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+ 06:58:44 up  2:01,  0 users,  load average: 0.61, 0.87, 0.92
+✔ perf equivalence: rebuilt-equal views, one fact changed, and return to its previous value (10.574898ms)
+✔ perf equivalence: an older compact or rich frame retains its text, destinations and exact descriptor (16.363514ms)
+✔ perf equivalence: removed and reinserted nodes and a different root cannot contaminate a live snapshot (19.161244ms)
+✔ perf equivalence: old views survive conflict, topology and bucket changes plus option and clock boundaries (18.017827ms)
+✔ perf memo identity: consecutive hits, envelope-only wrappers, and all three tuple references (1.228528ms)
+✔ perf memo policy: one live tuple is retained, A to B to A evicts without retargeting snapshots (0.605206ms)
+✔ perf memo isolation: a custom projection cache neither hits nor replaces the shared tuple (0.293013ms)
+✔ perf snapshots: unread lazy rows and equal render facts with a newer descriptor keep their own views (4.669279ms)
+✔ perf cache churn: repeated keys under distinct roots sweep disappeared entries and preserve old trees (2.153076ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 233.893279
+EXIT=0
+2026-11-03T14:58:44Z
+
+
+=== SHA256SUMS ===
+89ff4260c3d1362f2099f5a4e31c409d289aa59213dc564bd3b761baf1baeb13  ./baseline-installed-metadata.log
+7ec4edb6895b80343732b0c3c80dc8ec3d0b3d070217f734b005921836f75fb4  ./baseline-installed-node22-build.log
+15838f8319fd66ae2d512efbee10f05e656cd1b62a4c4e56bb7d41665e3a57cd  ./baseline-installed-node22-run1.log
+b4a68a835a7aaf8ce98a6ec006d05249580ba974f835bea04ed45e45df722d96  ./baseline-installed-node22-run2.log
+9836775fd2863a3dd92696e847e8da7061a76d27c3e9145ff157dfcc7da30cd9  ./baseline-installed-node22-run3.log
+445ee7c39ac0730cdedc9369778420bbe23217e9e5c22ec78c532503a112909d  ./baseline-installed-node24-build.log
+79cfb6bbc934b234b069fd1287399341bf3cd407c2fa0e312147669d3b2d08da  ./baseline-installed-node24-run1.log
+0e6ab674b1a801cea6de8d9e81ca7167a61966e2e0bf0f031e3107c59f117421  ./baseline-installed-node24-run2.log
+f451c721c804f29705fafa0fff5cbae8df46c2dd69ed039a77d9c486a6da4c96  ./baseline-installed-node24-run3.log
+57aa10a7ed2f4468c43fab21bb1bad837fd506251fe9be696bedcbdb11f6c7fc  ./baseline-installed-profile-cpu.json
+ff3500c8cca52b929988b3c749981d7167f28242af55bddd8a72443b9603a97c  ./baseline-installed-profile-gc.json
+fd063d46a0083089721ab23cfa6bc3e9f02520de7ef382ee9427db7453565f02  ./baseline-installed-profile-heap.json
+b01ab83c9319ddc80d73d72127b87df28dd4257b1dca1fc23b658795851c20e7  ./baseline-installed-profile-memory.json
+3e648b785a311aae3e57d5aa6c84c000b3ecbd215ff12a96824140ab72e43c11  ./baseline-installed-profile-samples.json
+b9bddbe773a1eba26091f206f5539b8006dcf80c63eb3e4e777e817162a80721  ./baseline-installed-profile-summary.json
+4c1191c3c72694a5fa3ccf627f3c3d982b14d6b408589b6a88be13f086e44d9e  ./baseline-installed-profile-summary.txt
+1d95b76b375424b12f917cf6b94d455eb1f5bad94a6cd0c820de4a2a8071f5b0  ./baseline-installed-profile.log
+62a2f5c94077273ab9d2df36fc97e4b562def92a26d24f02faae8f272970f980  ./baseline-installed-s2.log
+a219b34bfe6b74189d4f93b8691e08865c7898718aad6dea2073a8ef13b5e9e3  ./baseline-metadata.log
+c48aa2e7e34d478a5c58ec14873afd57480e847d0758b97ed4ba8e6406df3486  ./baseline-node22-build.log
+e9322da5e3324b18a78d3b1b0c2f634c08bf0118dfa9e68076fe532be4c943b1  ./baseline-node22-run1.log
+e4a81784481e9ef88f71f37832a541bacfc4de493b86b3eaae023f3c909abb10  ./baseline-node22-run2.log
+f447a49978cc545333626eeef8b99799ee9a9d8919b688d19810e403f6ef3291  ./baseline-node22-run3.log
+1d3174407934eee6aa4126a8e2a242c3826214cc9645bef1e52f2b77a3470c42  ./baseline-node24-build.log
+2f5032bd52b1e53d5cedfe3090c38c92eca7aff1fc99dc6e1ead1b83187fe706  ./baseline-node24-run1.log
+03527d07948a8259150e15b27996d65f914dc8aecfa3a87202db697ac536b7b8  ./baseline-node24-run2.log
+f33e9f9a004f424b6f50b3b7e6f76b0658126407189edf36c87e93492b528bc4  ./baseline-node24-run3.log
+204da5a9d3e2bfea640197ec5f34cf497d1528817607448dc3a8580f72fbf1ae  ./baseline-profile-cpu.json
+4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945  ./baseline-profile-gc.json
+7a0516937266c983ba532b01ef43dca496aa009bf46c56ba090163dba5f40114  ./baseline-profile-heap.json
+8385e0fba39fc8dfbbfed8e0b815f615440724d441fdc7248b90aeb573e89b79  ./baseline-profile-samples.json
+52f65aa08bd1f9ad54627be467e55120ad5de46d73cda6eac22697a36a45956c  ./baseline-profile-summary.json
+43cccc1862df84c665723ed12728b26857593700f1893a57aac183e9d1130d7c  ./baseline-profile-v2-cpu.json
+a18bb6bc5c113435f3a8a4b635ef81a76cbb341364ceeeac0e83ba4cfbc6992a  ./baseline-profile-v2-gc.json
+a726e660e48eaba03c36fecc9203d2bb0300567e204d06113022b1a362a13e59  ./baseline-profile-v2-heap.json
+6ebb3fa54596a3bdf804aa62cde0eb84e21f0fabc1735e4e46b8cc850fdda9ce  ./baseline-profile-v2-samples.json
+d517c8df0ff5487928d3318f53fd8d15473606b10a31afafc45d6c27aa10f566  ./baseline-profile-v2-summary.json
+81c2b3b24bd77a0e3264902e0911ab5b2691710af984537ea46591c0bfc49fcd  ./baseline-profile-v2-summary.txt
+ab58d4bd35f57fb54dcd5c0e683f65549e339b358405754f967c99f1a3db7f30  ./baseline-profile-v2.log
+2e42c330d5a09e6421d830818ad9018f62284d7998ad5eba97479415839d659b  ./baseline-profile.log
+3d91ca2c0119f0824903bf7e0fc70c77fed589f404a6d4119ab85ce87d4d63a4  ./candidate-b10b.log
+9fa775a4ef308bec4bda58f7b64b13410a3eeb6a497150cbaeb6587d3b9c067e  ./candidate-build-hud-mcp.log
+0ff05b8e3040f19a6387da75dd88c608bbdc29602d3de64dc6a987ce60c36f06  ./candidate-build-test.log
+0533b0a6726f4c7eb7f3dc9e3737e83b653006dd81bb974fced29b41c6ec1889  ./candidate-build.log
+7a15c8283298f2e079044c0b5e482c94c27fce353c4e9738c382e24ed7b699bd  ./candidate-core.log
+9aa43710c9c29f1015471a827bdbc84995ea11529ad80c6d0fb61e8030842a94  ./candidate-diff.log
+fa2d832cd9075c33e80eb578685878b415f115d87b4ee1835cfbebc8e59f8ddc  ./candidate-final-metadata.log
+8df230e7cdf8a19ca099f8f26382b81438175b7fac709c4a9b79ff6377ac4371  ./candidate-final-node22-build.log
+3b6d6a325374d20458a1ec1421d1a9cc67d4c36dc97caf275a258f2872cccf63  ./candidate-final-nod
