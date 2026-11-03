@@ -17,3 +17,5 @@ Owner: provide or authorize a capable non-local executor for the normal syntheti
 ## Owner decision
 
 The owner approved both items and requested 6.1 Terra Max for testing. A separate Codex test session was started in the connected environment. Approval does not waive any gate or authorize local-only work or security-setting changes.
+
+On 2026-11-03 the owner also authorized subsequent local testing using 6.1 Terra Max. The active session's immediate assignment remains the normal synthetic checks; other changes to live configuration or security settings are not implied.
