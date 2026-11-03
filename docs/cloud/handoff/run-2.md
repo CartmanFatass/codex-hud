@@ -17,13 +17,13 @@ Nothing is merged. The owner's local orchestrator merges after its own acceptanc
 | `cloud/b10b-s2` (run 1) | `universal-hud` | accepted | `handoff/b10b-s2.md` on that branch |
 | `cloud/briefs-2` | `universal-hud` | docs | run-2 roles, the B10B-s3 and HYG1 briefs, known flakes, this summary |
 | `cloud/hyg1` | `universal-hud` | accepted | `handoff/hyg1.md` on that branch |
-| `cloud/b10b-s3` | `cloud/b10b-s2` | _pending the final review_ | `handoff/b10b-s3.md` on that branch |
-| `cloud/hyg1-wip`, `cloud/b10b-s3-wip` | — | snapshots pushed while work was in flight | superseded by the final branches; safe to delete |
+| `cloud/b10b-s3-wip` | `cloud/b10b-s2` | **not accepted**: fix round 1 applied, re-check pending | `handoff/b10b-s3.md` on that branch |
+| `cloud/hyg1-wip` | — | snapshot pushed while HYG1 was in flight | superseded by `cloud/hyg1`; safe to delete |
 
 **Suggested merge order:**
 1. `cloud/b12m` and `cloud/hyg1`. They are independent and touch disjoint files.
 2. `cloud/b10b-s2`.
-3. `cloud/b10b-s3`, which contains `cloud/b10b-s2`.
+3. `cloud/b10b-s3-wip`, which contains `cloud/b10b-s2`, only after its re-check: see its handoff.
 
 ## Run 2 packages
 
@@ -49,7 +49,35 @@ Nothing is merged. The owner's local orchestrator merges after its own acceptanc
 
 ### B10B-s3: delegation panel, segment 3 (selection, navigation, control bar)
 
-_Filled in after the final review._
+**Status: not accepted.** The run ended here at the owner's request.
+
+**Steps done:**
+1. The frontend implementer stopped with seven design questions. An Opus max Oracle ruled on them, and the orchestrator widened file ownership for the keys `n N L R` (Q5).
+2. Implementation completed.
+3. The final review returned **fix required**: one P2 and seven P3s. The P2 was rich navigation leaving screen order.
+   - Every safety property held, over 3,840 frames and 61,440 key presses.
+4. Fix round 1 was applied in the tree. The run was stopped before:
+   - the implementer's fix report;
+   - the full check set;
+   - the fresh re-check.
+
+**Checks on the fixed tree:**
+- builds clean;
+- `b10b-*` 370/370;
+- `test:visual` 331/331;
+- `test:core` green;
+- perf gates pass (one run);
+- format, fixtures and diff-check clean.
+
+**Not run on the fixed tree:** `npm test` and `test:hud-mcp`.
+
+**Delivered:**
+- selection that follows nodes;
+- navigation, including `n`/`N` between trouble stops;
+- the §3.7 control bar: ⇢ Open/Switch/Log, ↻ Reconcile/Resume;
+- typed actions, which the `tree-page.ts` dispatcher must still execute.
+
+**To finish:** see `handoff/b10b-s3.md` on `cloud/b10b-s3-wip`. Run the full check set, then send the fixed tree to a fresh Oracle re-check, which can grant one more fix round. Then commit the accepted result.
 
 ## Decisions waiting for the owner
 
