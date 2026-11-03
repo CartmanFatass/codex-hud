@@ -801,6 +801,57 @@ test('§3.2, §5.2: a state that began in the last three seconds has its word an
     assert.deepEqual(bold(starting('event', NOW - 1000), NOW), on, 'control');
     assert.deepEqual(bold(starting('event', NOW - 1000, { clockAnomaly: true }), NOW), off, 'an anomalous clock');
 
+    // The ledger is no stand-in for an unknown published episode: a run created a second ago, whose published
+    // continuity is `{stateSince: null, basis: unknown}`, is not a new episode (the clock still reads from the
+    // run, which is not what the emphasis is about).
+    const unknownEpisode = (state: 'starting' | 'uncertain', published: { since: number | null; basis: Basis }) =>
+      buildVm([
+        root(),
+        {
+          id: 'e',
+          parent: 'main',
+          harness: 'codex',
+          run:
+            state === 'starting'
+              ? { state: 'starting', createdAt: NOW - 1000 }
+              : { state: 'uncertain', reconciliation: 'scope_unknown', createdAt: NOW - 1000 },
+          status: { cls: state, ...published },
+          createdAt: NOW - 1000,
+        },
+      ]);
+    for (const state of ['starting', 'uncertain'] as const) {
+      assert.deepEqual(bold(unknownEpisode(state, { since: NOW - 1000, basis: 'event' }), NOW, 1, state), on, state);
+      assert.deepEqual(bold(unknownEpisode(state, { since: null, basis: 'unknown' }), NOW, 1, state), off, state);
+      // The published time with its basis unknown is no more an episode than none at all.
+      assert.deepEqual(bold(unknownEpisode(state, { since: NOW - 1000, basis: 'unknown' }), NOW, 1, state), off, state);
+    }
+    assert.match(
+      plain(drawRaw(unknownEpisode('starting', { since: null, basis: 'unknown' }).vm, 60)[1]),
+      /1s$/,
+      'the clock still shows the run'
+    );
+
+    // A conflict keeps its own (observed) timing: the node's row and the claim's row are both new for three seconds.
+    const conflicts = (at: number) =>
+      buildVm([
+        root(),
+        { id: 'n', parent: 'main', harness: 'codex', conflict: { count: 2, since: at }, createdAt: ago(900) },
+        { id: 'c', parent: 'main', harness: 'codex', relationOnly: true, conflict: { count: 2, since: at } },
+      ]);
+    for (const [at, wanted] of [
+      [NOW - 1000, true],
+      [NOW - 3000, false],
+    ] as const) {
+      const rows = drawRaw(conflicts(at).vm, 60);
+      for (const row of rows.filter((r) => r.includes('conflict')))
+        assert.equal(
+          cellsOf(row, 'conflict').every((cell) => cell.bold),
+          wanted,
+          `a conflict that began ${NOW - at} ms ago`
+        );
+      assert.equal(rows.filter((r) => r.includes('conflict')).length, 2);
+    }
+
     // A new round of the same state is a new episode: the published time moved, so it is bold again. (A `⚑` word
     // is bold at any age, so the state used here is `uncertain`.)
     const uncertain = (at: number) =>

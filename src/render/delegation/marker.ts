@@ -42,6 +42,15 @@ export interface NodeMarker {
   muteName: 'always' | 'afterFade' | 'never';
   sinceMs: number | null;
   sinceBasis: StateSinceBasis;
+  /**
+   * The published semantic episode of the node (`stateSince` and its basis, §7 #23), kept apart from `sinceMs`,
+   * which falls back to ledger times (run creation, a report, a finish) when the continuity is unknown. The 3 second
+   * emphasis of a new episode reads this one: a fallback is a clock, not an episode. Null with basis `unknown` when
+   * the observation is absent or unloaded, the continuity is unknown, or the clock is anomalous; a conflict's own
+   * time (`observed`) stands in for it on the conflict row.
+   */
+  episodeMs: number | null;
+  episodeBasis: StateSinceBasis;
   clock: MarkerClock;
   /** A terminal row that the 3 minute rule may put away; needs a known finish time. */
   historyEligible: boolean;
@@ -147,6 +156,8 @@ export function deriveMarker(f: NodeFacts): NodeMarker {
   const reportStatus = f.reportStatus;
   const hasReport = reportStatus !== null;
 
+  // The published continuity as it stands, with nothing substituted for what it does not say.
+  const published = !anomaly && statusSince !== null && statusBasis !== 'unknown';
   const base = (glyph: Glyph, role: Role, extra: Partial<NodeMarker> = {}): NodeMarker => {
     const marker: NodeMarker = {
       glyph,
@@ -158,6 +169,8 @@ export function deriveMarker(f: NodeFacts): NodeMarker {
       muteName: 'never',
       sinceMs: null,
       sinceBasis: 'unknown',
+      episodeMs: published ? statusSince : null,
+      episodeBasis: published ? statusBasis : 'unknown',
       clock: NO_CLOCK,
       historyEligible: false,
       finishedAt: null,
@@ -170,7 +183,9 @@ export function deriveMarker(f: NodeFacts): NodeMarker {
       stale: false,
       ...extra,
     };
-    return anomaly ? { ...marker, clock: NO_CLOCK, sinceMs: null, sinceBasis: 'unknown' } : marker;
+    return anomaly
+      ? { ...marker, clock: NO_CLOCK, sinceMs: null, sinceBasis: 'unknown', episodeMs: null, episodeBasis: 'unknown' }
+      : marker;
   };
   const sinceOf = (
     fallback: number | null,
@@ -191,6 +206,8 @@ export function deriveMarker(f: NodeFacts): NodeMarker {
       trouble: true,
       sinceMs: f.conflictSince,
       sinceBasis: 'observed',
+      episodeMs: f.conflictSince,
+      episodeBasis: f.conflictSince === null ? 'unknown' : 'observed',
       clock: { kind: 'dwell', at: f.conflictSince, approx: true },
     });
 

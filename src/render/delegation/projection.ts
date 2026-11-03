@@ -542,6 +542,8 @@ function syntheticConflictRow(
       muteName: 'never',
       sinceMs: since,
       sinceBasis: 'observed',
+      episodeMs: since,
+      episodeBasis: since === null ? 'unknown' : 'observed',
       clock: { kind: 'dwell', at: since, approx: true },
       historyEligible: false,
       finishedAt: null,

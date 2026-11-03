@@ -314,11 +314,14 @@ export const EMPHASIS_MS = 3000;
  * the second round of approval under the same `⚑` is a new episode too. Every node qualifies, the viewpoint root
  * included, and an `observed` boundary as much as an `event` one: it is persisted with the commit, not a timer
  * this process started. A boundary the published data does not stand behind (basis `unknown`, an anomalous clock)
- * is no episode, and neither is one that has not happened yet.
+ * is no episode, and neither is one that has not happened yet. The marker's own clock (`sinceMs`) is not the
+ * boundary: it falls back to ledger times when the continuity is unknown, and a fallback is no episode.
  */
 function newEpisode(proj: NodeProjection, nowMs: number): boolean {
   const m = proj.marker;
-  return m.sinceBasis !== 'unknown' && m.sinceMs !== null && nowMs >= m.sinceMs && nowMs - m.sinceMs < EMPHASIS_MS;
+  return (
+    m.episodeBasis !== 'unknown' && m.episodeMs !== null && nowMs >= m.episodeMs && nowMs - m.episodeMs < EMPHASIS_MS
+  );
 }
 
 /**
