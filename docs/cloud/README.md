@@ -79,8 +79,22 @@ npm run check:fixtures
 git diff --check
 ```
 
-Known flakes under load: `model-jobs.test.js` timing, `b6-wait-status` "idle wait zero writes", `b3h-heartbeat-busy`
-fence loss, a hud-mcp B20 advice `ledger_busy`. Rerun a flaky suite once alone and report both runs.
+Known flakes under load:
+- `model-jobs.test.js` timing;
+- `b6-wait-status` "idle wait zero writes";
+- `b3h-heartbeat-busy` fence loss;
+- `run-light-leader` "portable waiter topology … bash --posix" (143 !== 3);
+- the `ledger_busy` family.
+  - Cause: the wall-clock check at `packages/hud-mcp/src/delegation.ts:417` (P-06-5's 30 ms) fires when the
+    preparation before the lock runs slow.
+  - Seen in: b11-cli "B11 local resume preserves all parameters…"; b21-capacity; hud-mcp B45 "accepted spawn is
+    atomic", G03 "old request key" and B20 advice.
+
+Rerun a flaky suite once alone and report both runs.
+
+In this container (Node 22.23.4), `run-control` "supervisor death receiptless Q" fails on every base. It is a product
+defect in `proveGroupGone` (see `handoff/hyg1.md`): name it, do not work around it. On a base without HYG1,
+`b45-launch` (7 cancelled) and `hud-link-export` (6 SQLite-warning failures) fail too.
 
 ## Prompts
 
