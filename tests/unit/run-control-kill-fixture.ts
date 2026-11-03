@@ -171,17 +171,73 @@ function safeInput(record: KillRecord) {
     return [args[0], { kind: 'trusted_local', invocationId: 'synthetic-invocation' }, args[2]];
   return record.input;
 }
-export function saveKillCapture(label: string, records: readonly KillRecord[], final: RunSnapshot, home: string) {
-  const file = join(home, 'runs', final.run.runId, 'exit.json');
-  const exitFile = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
-  const capture = {
-    schema: 1,
+/** Pure publication-copy transformation. Protected identities are opaque, including
+ * scope_id. A single simultaneous substitution preserves equality and avoids
+ * recursively rewriting generated pseudonyms. No live evidence is changed. */
+export function serializeKillPublication(value: unknown, extraProtected: readonly string[] = []): string {
+  const protectedValues = new Set(extraProtected);
+  const visit = (item: unknown, visitor: (key: string, child: unknown) => void) => {
+    if (!item || typeof item !== 'object') return;
+    for (const [key, child] of Object.entries(item)) {
+      visitor(key, child);
+      visit(child, visitor);
+    }
+  };
+  visit(value, (key, child) => {
+    if (['boot_id', 'pid_domain', 'scope_id'].includes(key)) {
+      assert.ok(typeof child === 'string' && child.length > 0, 'invalid protected identity in publication');
+      protectedValues.add(child);
+    }
+  });
+  const originals = [...protectedValues].sort((a, b) => b.length - a.length || a.localeCompare(b));
+  assert.ok(
+    originals.every((item) => item.length > 0),
+    'empty protected identity'
+  );
+  const aliases = new Map(
+    originals.map((item) => [item, `identity-sha256-${createHash('sha256').update(item).digest('hex')}`])
+  );
+  assert.equal(new Set(aliases.values()).size, aliases.size, 'distinct identity aliases');
+  const pattern = originals.length
+    ? new RegExp(originals.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g')
+    : null;
+  const transform = (item: unknown): unknown => {
+    if (typeof item === 'string') return pattern ? item.replace(pattern, (raw) => aliases.get(raw)!) : item;
+    if (Array.isArray(item)) return item.map(transform);
+    if (item && typeof item === 'object')
+      return Object.fromEntries(Object.entries(item).map(([key, child]) => [transform(key), transform(child)]));
+    return item;
+  };
+  const copy = transform(value);
+  // Check both decoded strings and encoded bytes; never include an identifier or
+  // matching line in diagnostics. Refuse publication instead of unsafe fallback.
+  visit(copy, (key, child) => {
+    assert.ok(
+      !originals.some((raw) => key.includes(raw) || (typeof child === 'string' && child.includes(raw))),
+      'protected identity survived publication'
+    );
+  });
+  if (typeof copy === 'string')
+    assert.ok(!originals.some((raw) => copy.includes(raw)), 'protected identity survived publication');
+  const json = JSON.stringify(copy, null, 2) + '\n';
+  assert.ok(!originals.some((raw) => json.includes(raw)), 'protected identity survived encoded publication');
+  return json;
+}
+
+export function projectKillCapture(
+  label: string,
+  records: readonly KillRecord[],
+  final: RunSnapshot,
+  exitFile: unknown
+) {
+  return {
+    schema: 2,
     label,
     runtime: process.version,
     caveat:
       'Instrumentation may perturb scheduling. New evidence, not historical replay. No extra critical-path probes.',
     redaction:
-      'Explicit field allowlist; boot_id and pid_domain pseudonymized by SHA-256; stable identity equality and fact times retained. Raw in-memory record hash retained; raw seed/environment/tickets never published.',
+      'v2 explicit field allowlist; opaque scope, boot and PID-domain identities consistently pseudonymized throughout projected copies; original in-memory digest retained, not reconstructible from projection.',
     originalRecordsSha256: createHash('sha256').update(JSON.stringify(records)).digest('hex'),
     records: records.map((r) => ({
       sequence: r.sequence,
@@ -195,55 +251,17 @@ export function saveKillCapture(label: string, records: readonly KillRecord[], f
     final: safeSnapshot(final),
     exitFile,
   };
-  const json =
-    JSON.stringify(
-      capture,
-      (key, value) =>
-        key === 'boot_id' || key === 'pid_domain'
-          ? `redacted-${createHash('sha256').update(String(value)).digest('hex')}`
-          : value,
-      2
-    ) + '\n';
+}
+export function saveKillCapture(label: string, records: readonly KillRecord[], final: RunSnapshot, home: string) {
+  const file = join(home, 'runs', final.run.runId, 'exit.json');
+  const exitFile = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+  const json = serializeKillPublication(projectKillCapture(label, records, final, exitFile));
   const directory = process.env.RUNZ1_KILL_EVIDENCE_DIR;
   if (directory) writeFileSync(join(directory, `${label}-${process.pid}.json`), json, { flag: 'wx', mode: 0o600 });
   else console.log(`RUNZ1_KILL_CAPTURE ${json}`);
 }
 
-/** Independent assertion over the *releasing transaction*, not a later probe and
- * not reconcileRun used as its own expected answer. Only this fixture's lost-wait
- * receipt/Q cases are admitted; unknown native fields remain null in every branch. */
-export function assertKillEvidence(records: readonly KillRecord[], final: RunSnapshot, exitFile: unknown) {
-  assert.equal(final.run.exitCode, null);
-  assert.equal(final.run.exitSignal, null);
-  assert.equal(final.run.exitSource, null);
-  assert.deepEqual(exitFile, final.receipt, 'file and retained receipt agree');
-  const reconciles = records.filter((r) => r.operation === 'reconcile');
-  const released = reconciles.filter((r) => r.before!.slotHeld && !r.after!.slotHeld);
-  const terminalEvents = final.events.filter(
-    (e) => e.kind === 'run.reconciled' && ['ended', 'failed', 'cancelled'].includes(String(e.payload.state))
-  );
-  if (final.slotHeld) {
-    assert.equal(released.length, 0);
-    assert.equal(terminalEvents.length, 0);
-    assert.ok(!['ended', 'failed', 'cancelled'].includes(final.run.state));
-    assert.equal(final.receipt, null);
-    assert.equal(records.filter((r) => r.operation === 'receipt').length, 0);
-    assert.equal(final.run.endedAt, null);
-    assert.equal(final.run.terminalEvidenceId, null);
-    return 'incomplete-proof' as const;
-  }
-  assert.equal(released.length, 1, 'exactly one captured slot-releasing transaction');
-  const transition = released[0];
-  const before = transition.before!,
-    after = transition.after!;
-  const input = transition.input as [string, number, ReconcileEvidence[], number];
-  const decision = transition.result as ReconcileDecision;
-  assert.equal(input[0], before.run.runId);
-  assert.equal(input[1], before.revision, 'successful CAS was on the captured revision');
-  assert.ok(decision && decision.releaseSlot && decision.emitTransition);
-  const all = [...before.facts, ...input[2]];
-  assert.deepEqual(after.facts, all, 'actual supplied facts retained unchanged');
-  assertCompletionEvidence(before.run, all, input[3], decision);
+function assertCaptureBinding(before: RunSnapshot) {
   const meta = before.meta;
   assert.ok(meta?.scope && meta.harness && meta.command_leader && meta.supervisor);
   assert.equal(meta.run_id, before.run.runId);
@@ -264,6 +282,149 @@ export function assertKillEvidence(records: readonly KillRecord[], final: RunSna
     assert.equal(stamp.boot_id, meta.scope.boot_id);
     assert.equal(stamp.pid_domain, meta.scope.pid_domain);
   }
+  return meta;
+}
+
+/** Explicit completion prerequisites, independent of the actual returned decision.
+ * This lost-wait test never has a known native result or a valid never-submitted
+ * proof. Report those unsupported premises rather than treating them as absence. */
+function completionEligibility(run: Run, facts: readonly ReconcileEvidence[], now: number) {
+  assert.ok(Number.isFinite(now) && now >= 0, 'capture needs a valid reconciliation time');
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const bound = facts.filter(
+    (e) =>
+      e.validation === 'accepted' &&
+      e.runId === run.runId &&
+      e.sourceId === run.sourceId &&
+      e.bindingGeneration === run.expectedGeneration &&
+      same(e.supervisor, run.supervisor)
+  );
+  const timed = (e: ReconcileEvidence) => e.asOf !== null && Number.isFinite(e.asOf) && e.asOf >= 0 && e.asOf <= now;
+  const complete = bound.filter(
+    (e) =>
+      (e.fact.kind === 'receipt' || e.fact.kind === 'scope_reconciled') &&
+      e.fact.complete &&
+      e.fact.harnessTerminated &&
+      e.fact.launchersSealed
+  );
+  const dated = complete.filter(timed);
+  for (const e of complete)
+    assert.equal(
+      (e.fact as { nativeExit: unknown }).nativeExit,
+      null,
+      'lost-wait proof must keep native status unknown'
+    );
+  assert.ok(
+    !bound.some((e) => e.fact.kind === 'never_submitted'),
+    'launched capture cannot claim never-submitted proof'
+  );
+  const chronology = new Set(
+    bound.flatMap((e) => (e.fact.kind === 'cancel' && e.fact.chronology !== 'unknown' ? [e.fact.chronology] : []))
+  );
+  const reasons: string[] = [];
+  if (bound.some((e) => e.fact.kind === 'conflict')) reasons.push('explicit-conflict');
+  if (run.cancelRequestedAt !== null && chronology.size > 1) reasons.push('cancellation-conflict');
+  if (complete.some((e) => !timed(e))) reasons.push('invalid-completion-time');
+  const scopes = bound.filter((e) => e.fact.kind === 'scope' && timed(e));
+  if (
+    scopes.some(
+      (a) =>
+        a.fact.kind === 'scope' &&
+        a.fact.state === 'alive' &&
+        scopes.some(
+          (g) =>
+            g.asOf === a.asOf &&
+            g.fact.kind === 'scope' &&
+            g.fact.state === 'gone' &&
+            g.fact.complete &&
+            g.fact.harnessTerminated &&
+            g.fact.launchersSealed
+        )
+    )
+  )
+    reasons.push('persistent-scope-tie');
+  const counter = (e: ReconcileEvidence) =>
+    e.fact.kind === 'scope'
+      ? e.fact.state === 'alive' || (e.fact.state !== 'unknown' && e.fact.complete && !e.fact.launchersSealed)
+      : (e.fact.kind === 'receipt' || e.fact.kind === 'scope_reconciled') &&
+        (!e.fact.harnessTerminated || !e.fact.launchersSealed);
+  if (dated.some((proof) => bound.some((e) => counter(e) && (!timed(e) || e.asOf! >= proof.asOf!))))
+    reasons.push('current-or-undated-counter-evidence');
+  return { eligible: dated.length > 0 && reasons.length === 0, reasons, proofCount: complete.length };
+}
+
+/** Independent assertion over the *releasing transaction*, not a later probe and
+ * not reconcileRun used as its own expected answer. Only this fixture's lost-wait
+ * receipt/Q cases are admitted; unknown native fields remain null in every branch. */
+export function assertKillEvidence(records: readonly KillRecord[], final: RunSnapshot, exitFile: unknown) {
+  assert.equal(final.run.exitCode, null);
+  assert.equal(final.run.exitSignal, null);
+  assert.equal(final.run.exitSource, null);
+  assert.deepEqual(exitFile, final.receipt, 'file and retained receipt agree');
+  const reconciles = records.filter((r) => r.operation === 'reconcile');
+  const released = reconciles.filter((r) => r.before!.slotHeld && !r.after!.slotHeld);
+  const terminalEvents = final.events.filter(
+    (e) => e.kind === 'run.reconciled' && ['ended', 'failed', 'cancelled'].includes(String(e.payload.state))
+  );
+  if (final.slotHeld) {
+    let lastCommitted: KillRecord | undefined;
+    let blocked = false;
+    for (const transaction of reconciles) {
+      assert.ok(transaction.before && transaction.after, 'missing captured transaction boundary');
+      const before = transaction.before,
+        after = transaction.after;
+      const input = transaction.input as [string, number, ReconcileEvidence[], number];
+      if (transaction.result === null) {
+        assert.deepEqual(after, before, 'rejected CAS must not change retained state');
+        continue; // Proposed observations were not committed.
+      }
+      assert.ok(transaction.result, 'missing transaction result');
+      assertCaptureBinding(before);
+      assert.equal(input[0], before.run.runId);
+      assert.equal(input[1], before.revision, 'successful CAS revision');
+      const facts = [...before.facts, ...input[2]];
+      assert.deepEqual(after.facts, facts, 'successful transaction retains supplied facts');
+      assert.equal(after.revision, before.revision + 1);
+      const eligibility = completionEligibility(before.run, facts, input[3]);
+      assert.equal(eligibility.eligible, false, 'eligible completion proof cannot remain held');
+      blocked ||= eligibility.reasons.length > 0;
+      const decision = transaction.result as ReconcileDecision;
+      assert.equal(decision.releaseSlot, false);
+      assert.equal(after.slotHeld, true);
+      assert.equal(after.run.state, decision.state);
+      assert.equal(after.status.terminalNote, decision.terminalNote);
+      assert.ok(!['ended', 'failed', 'cancelled'].includes(decision.state));
+      lastCommitted = transaction;
+    }
+    assert.ok(lastCommitted, 'incomplete capture: no successful reconciliation boundary');
+    assert.deepEqual(final.facts, lastCommitted.after!.facts, 'final retained facts need a known committed boundary');
+    assertCaptureBinding(final);
+    const lastInput = lastCommitted.input as [string, number, ReconcileEvidence[], number];
+    const retained = completionEligibility(final.run, final.facts, lastInput[3]);
+    assert.equal(retained.eligible, false, 'eligible retained completion proof cannot remain held');
+    blocked ||= retained.reasons.length > 0;
+    assert.equal(released.length, 0);
+    assert.equal(terminalEvents.length, 0);
+    assert.ok(!['ended', 'failed', 'cancelled'].includes(final.run.state));
+    assert.equal(final.receipt, null);
+    assert.equal(records.filter((r) => r.operation === 'receipt').length, 0);
+    assert.equal(final.run.endedAt, null);
+    assert.equal(final.run.terminalEvidenceId, null);
+    return blocked ? ('blocked-proof' as const) : ('incomplete-proof' as const);
+  }
+  assert.equal(released.length, 1, 'exactly one captured slot-releasing transaction');
+  const transition = released[0];
+  const before = transition.before!,
+    after = transition.after!;
+  const input = transition.input as [string, number, ReconcileEvidence[], number];
+  const decision = transition.result as ReconcileDecision;
+  assert.equal(input[0], before.run.runId);
+  assert.equal(input[1], before.revision, 'successful CAS was on the captured revision');
+  assert.ok(decision && decision.releaseSlot && decision.emitTransition);
+  const all = [...before.facts, ...input[2]];
+  assert.deepEqual(after.facts, all, 'actual supplied facts retained unchanged');
+  assertCompletionEvidence(before.run, all, input[3], decision);
+  const meta = assertCaptureBinding(before);
   assert.equal(after.claimState, 'revoked');
   assert.equal(final.claimState, 'revoked');
   assert.equal(after.run.endedAt, input[3]);
