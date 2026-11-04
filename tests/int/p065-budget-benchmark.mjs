@@ -14,8 +14,20 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { fork, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  appendFileSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync,
-  readFileSync, readdirSync, realpathSync, rmSync, statfsSync, statSync, writeFileSync,
+  appendFileSync,
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statfsSync,
+  statSync,
+  writeFileSync,
 } from 'node:fs';
 import { availableParallelism, cpus, freemem, hostname, release, tmpdir, totalmem, type } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
@@ -33,33 +45,71 @@ assert.ok(outputFile, 'Usage: node tests/int/p065-budget-benchmark.mjs OUTPUT.js
 assert.equal(process.argv.length, 3, 'No reduced-population or hidden qualification switches');
 const [major, minor] = process.versions.node.split('.').map(Number);
 assert.ok((major === 22 && minor >= 13) || major === 24, 'Requires Node 22 >=22.13 or Node 24');
-const WARMUPS = 50, MEASURED = 1000, RESPONSE_MS = 5000, HELPER_MS = 10000, OUTER_MS = 3_600_000;
-const tools = ['delegate_status', 'delegate_spawn', 'delegate_resume', 'delegate_cancel', 'delegate_whoami', 'delegate_report'];
-const profiles = [{ h: 1, r: 1 }, { h: 2, r: 10 }];
-const operational = ['first-use', 'success', 'refusal', 'short-lock', 'long-lock', 'queued-expiry', 'storage-load', 'response-loss'];
+const WARMUPS = 50,
+  MEASURED = 1000,
+  RESPONSE_MS = 5000,
+  HELPER_MS = 10000,
+  OUTER_MS = 3_600_000;
+const tools = [
+  'delegate_status',
+  'delegate_spawn',
+  'delegate_resume',
+  'delegate_cancel',
+  'delegate_whoami',
+  'delegate_report',
+];
+const profiles = [
+  { h: 1, r: 1 },
+  { h: 2, r: 10 },
+];
+const operational = [
+  'first-use',
+  'success',
+  'refusal',
+  'short-lock',
+  'long-lock',
+  'queued-expiry',
+  'storage-load',
+  'response-loss',
+];
 const forced = ['callback-overrun', 'commit-overrun', 'commit-uncertain'];
-const planned = profiles.flatMap((profile) => tools.flatMap((tool) => [
-  ...operational.map((scenario) => ({ ...profile, tool, scenario, bank: 'operational' })),
-  ...(tool === 'delegate_status' ? [] : forced.map((scenario) => ({ ...profile, tool, scenario, bank: 'forced' }))),
-])).map((cell) => ({ ...cell, id: [cell.h, cell.r, cell.tool, cell.scenario].join('/'), warmups: WARMUPS, measured: MEASURED,
-  lossCoverageRequired: cell.scenario === 'response-loss' ? {
-    successfulLostMeasuredPerParticipant: 1,
-    checkedRecoveryMeasuredPerParticipant: cell.tool === 'delegate_report' ? 0 : 1,
-    durableInspectionMeasuredPerParticipant: 1,
-  } : null,
-}));
+const planned = profiles
+  .flatMap((profile) =>
+    tools.flatMap((tool) => [
+      ...operational.map((scenario) => ({ ...profile, tool, scenario, bank: 'operational' })),
+      ...(tool === 'delegate_status' ? [] : forced.map((scenario) => ({ ...profile, tool, scenario, bank: 'forced' }))),
+    ])
+  )
+  .map((cell) => ({
+    ...cell,
+    id: [cell.h, cell.r, cell.tool, cell.scenario].join('/'),
+    warmups: WARMUPS,
+    measured: MEASURED,
+    lossCoverageRequired:
+      cell.scenario === 'response-loss'
+        ? {
+            successfulLostMeasuredPerParticipant: 1,
+            checkedRecoveryMeasuredPerParticipant: cell.tool === 'delegate_report' ? 0 : 1,
+            durableInspectionMeasuredPerParticipant: 1,
+          }
+        : null,
+  }));
 const startedAt = new Date().toISOString();
 const sandbox = mkdtempSync(join(tmpdir(), 'p065-budget-'));
 const token = randomUUID();
 writeFileSync(join(sandbox, '.p065-owner'), token, { mode: 0o600 });
 const originalEnv = { ...process.env };
-const childEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-  !/^(HUD_|CODEX_|CLAUDE|PI_|HERDR|TMUX|STY|NODE_OPTIONS|NO_COLOR|FORCE_COLOR|XDG_)/.test(key)
-  && !/(TOKEN|SECRET|PASSWORD|API_KEY|CREDENTIAL|AUTH)/i.test(key)
-));
+const childEnv = Object.fromEntries(
+  Object.entries(process.env).filter(
+    ([key]) =>
+      !/^(HUD_|CODEX_|CLAUDE|PI_|HERDR|TMUX|STY|NODE_OPTIONS|NO_COLOR|FORCE_COLOR|XDG_)/.test(key) &&
+      !/(TOKEN|SECRET|PASSWORD|API_KEY|CREDENTIAL|AUTH)/i.test(key)
+  )
+);
 Object.assign(childEnv, { HOME: sandbox, HUD_HOME: sandbox, TMPDIR: sandbox, TMP: sandbox, TEMP: sandbox });
 for (const key of Object.keys(process.env)) {
-  if (/^(HUD_|CODEX_|CLAUDE|PI_|HERDR|TMUX|STY|NODE_OPTIONS|NO_COLOR|FORCE_COLOR|XDG_)/.test(key)) delete process.env[key];
+  if (/^(HUD_|CODEX_|CLAUDE|PI_|HERDR|TMUX|STY|NODE_OPTIONS|NO_COLOR|FORCE_COLOR|XDG_)/.test(key))
+    delete process.env[key];
 }
 Object.assign(process.env, { HOME: sandbox, HUD_HOME: sandbox, TMPDIR: sandbox, TMP: sandbox, TEMP: sandbox });
 assert.equal(tmpdir(), sandbox);
@@ -68,29 +118,55 @@ const supportFile = outputFile + '.support.jsonl';
 const distributions = [];
 const failures = [];
 const coldCli = [];
-let calls = 0, stopped = false, fixtureOrdinal = 0, helper, current = null;
-let moduleStartupMs = null, sqliteVersion = null;
-const redact = (value) => JSON.parse(JSON.stringify(value, (_key, item) =>
-  typeof item === 'bigint' ? String(item) : typeof item === 'string' ? item.replaceAll(sandbox, '<temporary>') : item
-));
+let calls = 0,
+  stopped = false,
+  fixtureOrdinal = 0,
+  helper,
+  current = null;
+let moduleStartupMs = null,
+  sqliteVersion = null;
+const redact = (value) =>
+  JSON.parse(
+    JSON.stringify(value, (_key, item) =>
+      typeof item === 'bigint'
+        ? String(item)
+        : typeof item === 'string'
+          ? item.replaceAll(sandbox, '<temporary>')
+          : item
+    )
+  );
 const errorText = (error) => String(error?.stack ?? error).replaceAll(sandbox, '<temporary>');
 const raw = (row) => appendFileSync(rawFile, JSON.stringify(redact(row)) + '\n', { mode: 0o600 });
 const support = (row) => appendFileSync(supportFile, JSON.stringify(redact(row)) + '\n', { mode: 0o600 });
 const checkOuter = () => {
   if (stopped || performance.now() - bootAt >= OUTER_MS) throw new Error('p065_outer_timeout_incomplete');
 };
-function readOptional(path) { try { return readFileSync(path, 'utf8').trim(); } catch { return 'unavailable'; } }
-function git(...args) {
-  return execFileSync('git', ['--no-optional-locks', ...args], { cwd: repository, encoding: 'utf8', timeout: 5000, env: childEnv }).trim();
+function readOptional(path) {
+  try {
+    return readFileSync(path, 'utf8').trim();
+  } catch {
+    return 'unavailable';
+  }
 }
-function digestFile(path) { return createHash('sha256').update(readFileSync(path)).digest('hex'); }
+function git(...args) {
+  return execFileSync('git', ['--no-optional-locks', ...args], {
+    cwd: repository,
+    encoding: 'utf8',
+    timeout: 5000,
+    env: childEnv,
+  }).trim();
+}
+function digestFile(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
 function hashTree(root) {
   const entries = {};
   const visit = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const path = join(directory, entry.name);
       if (entry.isDirectory()) visit(path);
-      else if (entry.isFile() && /\.(js|json)$/.test(entry.name)) entries[relative(repository, path)] = digestFile(path);
+      else if (entry.isFile() && /\.(js|json)$/.test(entry.name))
+        entries[relative(repository, path)] = digestFile(path);
       else if (entry.isSymbolicLink()) throw new Error('compiled_output_symlink');
     }
   };
@@ -98,45 +174,102 @@ function hashTree(root) {
   return entries;
 }
 function stats(values) {
-  if (!values.length) return { n: 0, p50: null, p95: null, p99: null, max: null, over30Count: 0, over30MaximumMs: null };
+  if (!values.length)
+    return { n: 0, p50: null, p95: null, p99: null, max: null, over30Count: 0, over30MaximumMs: null };
   assert.ok(values.every(Number.isFinite), 'nonfinite_timing');
   const sorted = [...values].sort((a, b) => a - b);
   const rank = (fraction) => sorted[Math.ceil(sorted.length * fraction) - 1];
   const overs = sorted.filter((value) => value > 30);
   return {
-    n: sorted.length, p50: rank(.5), p95: rank(.95), p99: rank(.99), max: sorted.at(-1),
-    over30Count: overs.length, over30MaximumMs: overs.length ? overs.at(-1) : null,
+    n: sorted.length,
+    p50: rank(0.5),
+    p95: rank(0.95),
+    p99: rank(0.99),
+    max: sorted.at(-1),
+    over30Count: overs.length,
+    over30MaximumMs: overs.length ? overs.at(-1) : null,
   };
 }
 let identity;
-let checkerControls = { executed: false, passed: false, checks: [], scope: 'pure evidence-checker controls only; never benchmark samples or performance evidence' };
+let checkerControls = {
+  executed: false,
+  passed: false,
+  checks: [],
+  scope: 'pure evidence-checker controls only; never benchmark samples or performance evidence',
+};
 function snapshotReport(complete = false) {
-  const coldCliComplete = coldCli.length === profiles.length && coldCli.every((entry) => entry.samples.length === 2 && entry.semantic && entry.samples.every(validColdTiming));
-  const coldCliNumerical = coldCliComplete && coldCli.every((entry) => entry.samples.every((sample) =>
-    validColdTiming(sample) && sample.diagnostics.authorizationMs <= 30 && sample.diagnostics.waitMs <= 20));
-  const populationComplete = complete && checkerControls.passed && coldCliComplete && distributions.length === planned.length &&
+  const coldCliComplete =
+    coldCli.length === profiles.length &&
+    coldCli.every((entry) => entry.samples.length === 2 && entry.semantic && entry.samples.every(validColdTiming));
+  const coldCliNumerical =
+    coldCliComplete &&
+    coldCli.every((entry) =>
+      entry.samples.every(
+        (sample) =>
+          validColdTiming(sample) && sample.diagnostics.authorizationMs <= 30 && sample.diagnostics.waitMs <= 20
+      )
+    );
+  const populationComplete =
+    complete &&
+    checkerControls.passed &&
+    coldCliComplete &&
+    distributions.length === planned.length &&
     distributions.every((row) => row.warmups === WARMUPS && row.measured === MEASURED && row.complete);
-  const operationalNumericalQualification = populationComplete && checkerControls.passed && coldCliNumerical &&
+  const operationalNumericalQualification =
+    populationComplete &&
+    checkerControls.passed &&
+    coldCliNumerical &&
     distributions.every((row) => row.operationalNumerical && row.operationalSemantics);
-  const forcedControlSemanticCompletion = populationComplete &&
-    distributions.filter((row) => row.bank === 'forced').every((row) => row.semantics);
-  const inclusiveAllSamplesNumericalStatus = populationComplete && coldCliNumerical && distributions.every((row) => row.numerical);
+  const forcedControlSemanticCompletion =
+    populationComplete && distributions.filter((row) => row.bank === 'forced').every((row) => row.semantics);
+  const inclusiveAllSamplesNumericalStatus =
+    populationComplete && coldCliNumerical && distributions.every((row) => row.numerical);
   const report = {
-    schemaVersion: 2, kind: 'p065-real-sqlite-synthetic-cloud-surrogate',
-    startedAt, endedAt: new Date().toISOString(), complete, populationComplete, calls, planned,
-    identity, sqliteVersion, moduleStartupMs, checkerControls, distributions, failures, coldCli, coldCliComplete, coldCliNumerical,
-    resourceUsage: process.resourceUsage(), freeMemoryAtSnapshot: freemem(), cpuStatAtSnapshot: readOptional('/sys/fs/cgroup/cpu.stat'),
+    schemaVersion: 2,
+    kind: 'p065-real-sqlite-synthetic-cloud-surrogate',
+    startedAt,
+    endedAt: new Date().toISOString(),
+    complete,
+    populationComplete,
+    calls,
+    planned,
+    identity,
+    sqliteVersion,
+    moduleStartupMs,
+    checkerControls,
+    distributions,
+    failures,
+    coldCli,
+    coldCliComplete,
+    coldCliNumerical,
+    resourceUsage: process.resourceUsage(),
+    freeMemoryAtSnapshot: freemem(),
+    cpuStatAtSnapshot: readOptional('/sys/fs/cgroup/cpu.stat'),
     results: {
-      operationalNumericalQualification, forcedControlSemanticCompletion, inclusiveAllSamplesNumericalStatus,
+      operationalNumericalQualification,
+      forcedControlSemanticCompletion,
+      inclusiveAllSamplesNumericalStatus,
       overallQualified: inclusiveAllSamplesNumericalStatus && forcedControlSemanticCompletion && failures.length === 0,
       acceptanceChecks: operationalNumericalQualification && forcedControlSemanticCompletion && failures.length === 0,
     },
     settings: {
-      warmups: WARMUPS, measured: MEASURED, responseDeadlineMs: RESPONSE_MS, holderDeadlineMs: HELPER_MS,
-      outerDeadlineMs: OUTER_MS, ledgerBusyTimeoutMs: 0, writeWallBoundMs: 30, cumulativeWaitBoundMs: 20,
-      responseP95StrictlyBelowMs: 50, responseGateScopes: ['allAttempts', 'primaryMeasured', 'primaryWarmups', 'recoveryMeasured', 'recoveryWarmups'],
-      numericalExemption: 'only evidenced deliberate 40 ms callback/COMMIT overruns; zero-delay commit uncertainty stays operational', shortLockMs: 5, longLockMs: 100, forcedSynchronousDelayMs: 40,
-      limits: { maxActiveRuns: 12, maxActiveRunsPerOwner: 12 }, scenarioOrder: 'profile, tool, listed scenario, warmups, measured',
+      warmups: WARMUPS,
+      measured: MEASURED,
+      responseDeadlineMs: RESPONSE_MS,
+      holderDeadlineMs: HELPER_MS,
+      outerDeadlineMs: OUTER_MS,
+      ledgerBusyTimeoutMs: 0,
+      writeWallBoundMs: 30,
+      cumulativeWaitBoundMs: 20,
+      responseP95StrictlyBelowMs: 50,
+      responseGateScopes: ['allAttempts', 'primaryMeasured', 'primaryWarmups', 'recoveryMeasured', 'recoveryWarmups'],
+      numericalExemption:
+        'only evidenced deliberate 40 ms callback/COMMIT overruns; zero-delay commit uncertainty stays operational',
+      shortLockMs: 5,
+      longLockMs: 100,
+      forcedSynchronousDelayMs: 40,
+      limits: { maxActiveRuns: 12, maxActiveRunsPerOwner: 12 },
+      scenarioOrder: 'profile, tool, listed scenario, warmups, measured',
     },
     artifacts: { samples: basename(rawFile), support: basename(supportFile) },
     scope: [
@@ -157,32 +290,63 @@ function snapshotReport(complete = false) {
 }
 function ownedHelper() {
   const child = fork(join(repository, 'tests/int/p065-ledger-holder.mjs'), [sandbox, token], {
-    cwd: repository, execPath: process.execPath, env: childEnv, execArgv: [],
+    cwd: repository,
+    execPath: process.execPath,
+    env: childEnv,
+    execArgv: [],
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
-  let next = 0, exited = false, readyResolve, readyReject, stderr = '', stdout = '';
+  let next = 0,
+    exited = false,
+    readyResolve,
+    readyReject,
+    stderr = '',
+    stdout = '';
   const pending = new Map();
-  const ready = new Promise((yes, no) => { readyResolve = yes; readyReject = no; });
+  const ready = new Promise((yes, no) => {
+    readyResolve = yes;
+    readyReject = no;
+  });
   const readyTimer = setTimeout(() => readyReject(new Error('holder_ready_timeout')), HELPER_MS);
-  child.stdout.on('data', (chunk) => { stdout += chunk; if (stdout.length > 1000000) child.kill('SIGTERM'); });
-  child.stderr.on('data', (chunk) => { stderr += chunk; if (stderr.length > 1000000) child.kill('SIGTERM'); });
-  child.on('error', (error) => { readyReject(error); for (const p of pending.values()) p.reject(error); });
-  const done = new Promise((resolveDone) => child.once('exit', (code, signal) => {
-    exited = true;
-    clearTimeout(readyTimer);
-    const error = new Error('holder_exited:' + code + ':' + signal);
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk;
+    if (stdout.length > 1000000) child.kill('SIGTERM');
+  });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+    if (stderr.length > 1000000) child.kill('SIGTERM');
+  });
+  child.on('error', (error) => {
     readyReject(error);
-    for (const p of pending.values()) { clearTimeout(p.timer); p.reject(error); }
-    pending.clear();
-    support({ kind: 'holder_exit', code, signal, stdout, stderr });
-    resolveDone({ code, signal });
-  }));
+    for (const p of pending.values()) p.reject(error);
+  });
+  const done = new Promise((resolveDone) =>
+    child.once('exit', (code, signal) => {
+      exited = true;
+      clearTimeout(readyTimer);
+      const error = new Error('holder_exited:' + code + ':' + signal);
+      readyReject(error);
+      for (const p of pending.values()) {
+        clearTimeout(p.timer);
+        p.reject(error);
+      }
+      pending.clear();
+      support({ kind: 'holder_exit', code, signal, stdout, stderr });
+      resolveDone({ code, signal });
+    })
+  );
   child.on('message', (message) => {
-    if (message.ready) { clearTimeout(readyTimer); readyResolve(message); return; }
+    if (message.ready) {
+      clearTimeout(readyTimer);
+      readyResolve(message);
+      return;
+    }
     const p = pending.get(message.id);
     if (!p) return;
-    pending.delete(message.id); clearTimeout(p.timer);
-    if (message.ok) p.resolve(message.result); else p.reject(new Error(message.error));
+    pending.delete(message.id);
+    clearTimeout(p.timer);
+    if (message.ok) p.resolve(message.result);
+    else p.reject(new Error(message.error));
   });
   return {
     ready,
@@ -198,21 +362,34 @@ function ownedHelper() {
         }, HELPER_MS);
         pending.set(id, { resolve: resolveRequest, reject, timer });
         child.send({ id, action, ...fields }, (error) => {
-          if (error) { clearTimeout(timer); pending.delete(id); reject(error); }
+          if (error) {
+            clearTimeout(timer);
+            pending.delete(id);
+            reject(error);
+          }
         });
       });
     },
     async close() {
       if (!exited) child.kill('SIGTERM');
-      const timer = setTimeout(() => { if (!exited) child.kill('SIGKILL'); }, 2000);
-      try { await done; } finally { clearTimeout(timer); }
+      const timer = setTimeout(() => {
+        if (!exited) child.kill('SIGKILL');
+      }, 2000);
+      try {
+        await done;
+      } finally {
+        clearTimeout(timer);
+      }
     },
   };
 }
 let HudMcpServer, serveStdio, DelegationService, scopeSnapshot, p065WorkloadFixture, openLedger, monotonicClock;
 function framedClient(f, index, readLedger, service, mode) {
   const input = new PassThrough();
-  let nextId = 0, pending = null, observed = null, servingError = null;
+  let nextId = 0,
+    pending = null,
+    observed = null,
+    servingError = null;
   const output = new Writable({
     highWaterMark: 1,
     write(chunk, _encoding, callback) {
@@ -222,9 +399,15 @@ function framedClient(f, index, readLedger, service, mode) {
         const item = pending;
         callback(); // Production server.flushed observes this exact callback.
         if (item) {
-          pending = null; clearTimeout(item.timer);
-          item.resolve({ bytes: item.lose ? null : bytes, serverOutcome: JSON.parse(bytes.toString('utf8')).result?.structuredContent ?? null,
-            discardedBytes: item.lose ? bytes.length : 0, flushedAt, diagnostics: observed });
+          pending = null;
+          clearTimeout(item.timer);
+          item.resolve({
+            bytes: item.lose ? null : bytes,
+            serverOutcome: JSON.parse(bytes.toString('utf8')).result?.structuredContent ?? null,
+            discardedBytes: item.lose ? bytes.length : 0,
+            flushedAt,
+            diagnostics: observed,
+          });
         }
       });
     },
@@ -232,9 +415,16 @@ function framedClient(f, index, readLedger, service, mode) {
   const source = {
     async resolve() {
       const actor = f.actors[index];
-      const premise = await readLedger.readSnapshot((tx) => scopeSnapshot(tx, readLedger.ledgerId, actor.authority.evidence.processKey));
+      const premise = await readLedger.readSnapshot((tx) =>
+        scopeSnapshot(tx, readLedger.ledgerId, actor.authority.evidence.processKey)
+      );
       return {
-        ok: true, callId: 'p065-' + randomUUID(), sessionRef: mode === 'refusal' ? { ...actor.ref, sourceId: actor.ref.sourceId === '0'.repeat(64) ? '1'.repeat(64) : '0'.repeat(64) } : actor.ref,
+        ok: true,
+        callId: 'p065-' + randomUUID(),
+        sessionRef:
+          mode === 'refusal'
+            ? { ...actor.ref, sourceId: actor.ref.sourceId === '0'.repeat(64) ? '1'.repeat(64) : '0'.repeat(64) }
+            : actor.ref,
         processKey: actor.authority.evidence.processKey,
         evidenceDigest: createHash('sha256').update('synthetic current P065 source').digest('hex'),
         scopePremise: premise,
@@ -243,56 +433,76 @@ function framedClient(f, index, readLedger, service, mode) {
   };
   let measurement = null;
   const bodies = {
-    invoke: (...args) => callScope.run(measurement, () => {
-      const budget = args[5];
-      if (budget && measurement) {
-        const backoff = budget.backoff.bind(budget);
-        budget.backoff = async (ms) => {
-          const began = instant();
-          try { return await backoff(ms); }
-          finally { measurement.backoffs.push({ requestedMs: ms, began, ended: instant() }); }
-        };
-      }
-      return service.invoke(...args);
-    }),
+    invoke: (...args) =>
+      callScope.run(measurement, () => {
+        const budget = args[5];
+        if (budget && measurement) {
+          const backoff = budget.backoff.bind(budget);
+          budget.backoff = async (ms) => {
+            const began = instant();
+            try {
+              return await backoff(ms);
+            } finally {
+              measurement.backoffs.push({ requestedMs: ms, began, ended: instant() });
+            }
+          };
+        }
+        return service.invoke(...args);
+      }),
     decorateFailure: (...args) => service.decorateFailure(...args),
   };
   const server = new HudMcpServer(source, bodies, () => true, {
     // Real immutable production clock, never a fake now()/shortened sleep().
-    clock: monotonicClock, observe: (sample) => { observed = sample; },
+    clock: monotonicClock,
+    observe: (sample) => {
+      observed = sample;
+    },
   });
   const serving = serveStdio(server, input, output).catch((error) => {
     servingError = error;
-    if (pending) { clearTimeout(pending.timer); pending.reject(error); pending = null; }
+    if (pending) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+      pending = null;
+    }
   });
   return {
     busyTimeoutMs: Number(service.options.ledger.db.prepare('PRAGMA busy_timeout').get().timeout),
-    setMeasurement(value) { measurement = value; },
+    setMeasurement(value) {
+      measurement = value;
+    },
     async rpc(method, params, lose = false) {
       assert.equal(pending, null);
       if (servingError) throw servingError;
       observed = null;
-      const id = ++nextId, began = instant();
+      const id = ++nextId,
+        began = instant();
       const response = await new Promise((yes, no) => {
         const timer = setTimeout(() => {
           pending = null;
           no(new Error('framed_response_timeout'));
-          server.shutdown(); input.destroy(); output.destroy();
+          server.shutdown();
+          input.destroy();
+          output.destroy();
         }, RESPONSE_MS);
         pending = { resolve: yes, reject: no, timer, lose };
         input.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
       });
       const frame = response.bytes ? JSON.parse(response.bytes.toString('utf8')) : null;
       if (frame) {
-        assert.equal(frame.id, id); assert.equal(frame.jsonrpc, '2.0');
+        assert.equal(frame.id, id);
+        assert.equal(frame.jsonrpc, '2.0');
         assert.ok(!frame.error, JSON.stringify(frame.error));
-        if (method === 'tools/call') assert.deepEqual(JSON.parse(frame.result.content[0].text), frame.result.structuredContent);
+        if (method === 'tools/call')
+          assert.deepEqual(JSON.parse(frame.result.content[0].text), frame.result.structuredContent);
       }
       return { ...response, began, responseMs: response.flushedAt - began, frame, mode, participant: index };
     },
     async initialize() {
       return this.rpc('initialize', {
-        protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'p065-synthetic', version: '1' },
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'p065-synthetic', version: '1' },
       });
     },
     async close() {
@@ -316,10 +526,14 @@ function targetResult(tool, result) {
 function synchronousStall(ms) {
   // Deliberate uninterruptible test work, never an altered deadline/clock.
   const start = performance.now();
-  while (performance.now() - start < ms) { /* predeclared forced control */ }
+  while (performance.now() - start < ms) {
+    /* predeclared forced control */
+  }
 }
 function instrument(ledger) {
-  const transaction = ledger.transaction.bind(ledger), db = ledger.db, exec = db.exec.bind(db);
+  const transaction = ledger.transaction.bind(ledger),
+    db = ledger.db,
+    exec = db.exec.bind(db);
   let armed = null;
   db.exec = (sql) => {
     const sample = callScope.getStore();
@@ -331,16 +545,20 @@ function instrument(ledger) {
         const injection = armed;
         armed = null;
         injection.sample.injection = {
-          point: 'after_actual_target_COMMIT', requestedMs: injection.scenario === 'commit-overrun' ? 40 : 0,
-          began: instant(), durableSqlReturned: true,
+          point: 'after_actual_target_COMMIT',
+          requestedMs: injection.scenario === 'commit-overrun' ? 40 : 0,
+          began: instant(),
+          durableSqlReturned: true,
         };
         if (injection.scenario === 'commit-overrun') synchronousStall(40);
         injection.sample.injection.ended = instant();
         if (injection.scenario === 'commit-uncertain') throw new Error('p065_forced_commit_acknowledgement_loss');
       }
       return result;
-    } catch (caught) { error = String(caught?.code ?? caught?.message ?? caught); throw caught; }
-    finally {
+    } catch (caught) {
+      error = String(caught?.code ?? caught?.message ?? caught);
+      throw caught;
+    } finally {
       if (sample && /^(BEGIN|COMMIT|ROLLBACK)/.test(sql))
         sample.sql.push({ operation: sql, began, ended: instant(), error });
     }
@@ -363,16 +581,23 @@ function instrument(ledger) {
           } else armed = { sample, scenario: sample.scenario };
         }
         return result;
-      } finally { if (entry) entry.callbackMs = instant() - callbackAt; }
-    }, budget).catch((error) => {
-      if (entry) entry.error = String(error?.code ?? error?.message ?? error);
-      throw error;
-    }).finally(() => {
-      armed = null;
-      if (entry) entry.ended = instant();
-    });
+      } finally {
+        if (entry) entry.callbackMs = instant() - callbackAt;
+      }
+    }, budget)
+      .catch((error) => {
+        if (entry) entry.error = String(error?.code ?? error?.message ?? error);
+        throw error;
+      })
+      .finally(() => {
+        armed = null;
+        if (entry) entry.ended = instant();
+      });
   };
-  return () => { ledger.transaction = transaction; db.exec = exec; };
+  return () => {
+    ledger.transaction = transaction;
+    db.exec = exec;
+  };
 }
 function countState(ledger, launches) {
   return ledger.snapshot((tx) => ({
@@ -382,7 +607,9 @@ function countState(ledger, launches) {
     reports: Number(tx.get('SELECT count(*) AS n FROM reports').n),
     cancel: Number(tx.get("SELECT count(*) AS n FROM events WHERE kind='cancel.accepted'").n),
     bindings: Number(tx.get('SELECT count(*) AS n FROM child_bindings').n),
-    active: Number(tx.get("SELECT count(*) AS n FROM runs WHERE state IN ('starting','running','cancelling','uncertain')").n),
+    active: Number(
+      tx.get("SELECT count(*) AS n FROM runs WHERE state IN ('starting','running','cancelling','uncertain')").n
+    ),
     launches: launches.length,
   }));
 }
@@ -393,27 +620,37 @@ function durableFor(ledger, tool, args, actor, expectedRunId) {
       return row ? { ...row, outcome: JSON.parse(row.outcome) } : null;
     }
     if (tool === 'delegate_report')
-      return tx.get('SELECT report_id,run_id FROM reports WHERE summary=? AND run_id=?', args.summary, args.runId) ?? null;
+      return (
+        tx.get('SELECT report_id,run_id FROM reports WHERE summary=? AND run_id=?', args.summary, args.runId) ?? null
+      );
     if (tool === 'delegate_whoami') {
-      return tx.get(
-        'SELECT b.binding_id,b.run_id,r.link_id,b.caller_id,b.caller_context_id,b.context_generation,b.session_ref ' +
-        'FROM child_bindings b JOIN runs r ON r.run_id=b.run_id ' +
-        'JOIN caller_contexts c ON c.context_id=b.caller_context_id AND c.generation=b.context_generation ' +
-        'WHERE b.caller_context_id=? AND b.context_generation=? AND b.caller_id=? ' +
-        'AND b.is_current=1 AND b.revoked_at IS NULL AND c.closed_at IS NULL ' +
-        'AND b.caller_id=c.caller_id AND b.session_ref=c.session_ref ' +
-        'AND b.run_id=? AND b.binding_generation=r.expected_generation AND b.session_ref=r.target_session_ref',
-        actor.context.contextId, actor.context.generation, actor.registration.caller.callerId, expectedRunId
-      ) ?? null;
+      return (
+        tx.get(
+          'SELECT b.binding_id,b.run_id,r.link_id,b.caller_id,b.caller_context_id,b.context_generation,b.session_ref ' +
+            'FROM child_bindings b JOIN runs r ON r.run_id=b.run_id ' +
+            'JOIN caller_contexts c ON c.context_id=b.caller_context_id AND c.generation=b.context_generation ' +
+            'WHERE b.caller_context_id=? AND b.context_generation=? AND b.caller_id=? ' +
+            'AND b.is_current=1 AND b.revoked_at IS NULL AND c.closed_at IS NULL ' +
+            'AND b.caller_id=c.caller_id AND b.session_ref=c.session_ref ' +
+            'AND b.run_id=? AND b.binding_generation=r.expected_generation AND b.session_ref=r.target_session_ref',
+          actor.context.contextId,
+          actor.context.generation,
+          actor.registration.caller.callerId,
+          expectedRunId
+        ) ?? null
+      );
     }
     const run = tx.get(
       'SELECT r.run_id,r.link_id,r.run_seq,r.expected_generation,r.state,r.cancel_requested_at,l.state AS link_state ' +
-      'FROM runs r JOIN links l ON l.link_id=r.link_id WHERE r.run_id=?', args.runId
+        'FROM runs r JOIN links l ON l.link_id=r.link_id WHERE r.run_id=?',
+      args.runId
     );
     if (!run) return null;
     return {
       ...run,
-      isCurrent: tx.get('SELECT run_id FROM runs WHERE link_id=? ORDER BY run_seq DESC LIMIT 1', run.link_id)?.run_id === run.run_id,
+      isCurrent:
+        tx.get('SELECT run_id FROM runs WHERE link_id=? ORDER BY run_seq DESC LIMIT 1', run.link_id)?.run_id ===
+        run.run_id,
       slotHeld: Boolean(tx.get('SELECT 1 FROM slots WHERE run_id=?', run.run_id)),
       isRunTerminal: !['starting', 'running', 'cancelling', 'uncertain'].includes(run.state),
       asOfSeq: Number(tx.get('SELECT coalesce(max(seq),0) AS seq FROM events').seq),
@@ -422,40 +659,65 @@ function durableFor(ledger, tool, args, actor, expectedRunId) {
 }
 function canonicalReplyErrors(tool, value, durable, allowEarlierSeq = false) {
   const errors = [];
-  const require = (condition, message) => { if (!condition) errors.push(message); };
+  const require = (condition, message) => {
+    if (!condition) errors.push(message);
+  };
   if (!value || typeof value !== 'object' || Array.isArray(value) || value.ok !== true)
     return ['reply is not an explicit successful object'];
   if (!durable) return ['successful reply has no independent durable target'];
   if (tool === 'delegate_spawn' || tool === 'delegate_resume') {
     require(durable.outcome?.status === 'accepted', 'canonical outcome is not accepted');
-    require(durable.outcome?.runId === durable.run_id && durable.outcome?.linkId === durable.link_id,
-      'idempotency outcome and indexed identities disagree');
+    require(durable.outcome?.runId === durable.run_id &&
+      durable.outcome?.linkId === durable.link_id, 'idempotency outcome and indexed identities disagree');
     // Only these explicitly optional presentation fields may differ on replay.
     const { advice: _advice, wake: _wake, ...required } = value;
-    require(isDeepStrictEqual(required, { ok: true, ...durable.outcome }), 'reply differs from canonical idempotency outcome');
+    require(isDeepStrictEqual(required, {
+      ok: true,
+      ...durable.outcome,
+    }), 'reply differs from canonical idempotency outcome');
   } else if (tool === 'delegate_whoami') {
-    require(typeof durable.binding_id === 'string' && typeof durable.caller_context_id === 'string' &&
-      typeof durable.caller_id === 'string' && typeof durable.session_ref === 'string' &&
+    require(typeof durable.binding_id === 'string' &&
+      typeof durable.caller_context_id === 'string' &&
+      typeof durable.caller_id === 'string' &&
+      typeof durable.session_ref === 'string' &&
       Number.isSafeInteger(durable.context_generation), 'current child binding subject is incomplete');
     require(isDeepStrictEqual(value, {
-      ok: true, state: 'bound', linkId: durable.link_id, runId: durable.run_id, reason: null,
+      ok: true,
+      state: 'bound',
+      linkId: durable.link_id,
+      runId: durable.run_id,
+      reason: null,
     }), 'whoami reply differs from current bound run/link');
   } else if (tool === 'delegate_report') {
-    require(isDeepStrictEqual(value, { ok: true, reportId: durable.report_id, runId: durable.run_id }),
-      'report reply differs from stored report identity');
+    require(isDeepStrictEqual(value, {
+      ok: true,
+      reportId: durable.report_id,
+      runId: durable.run_id,
+    }), 'report reply differs from stored report identity');
   } else if (tool === 'delegate_cancel') {
     require(value.accepted === true, 'cancel reply is not accepted');
-    require(Number.isSafeInteger(durable.cancel_requested_at) && durable.cancel_requested_at >= 0 &&
+    require(Number.isSafeInteger(durable.cancel_requested_at) &&
+      durable.cancel_requested_at >= 0 &&
       value.cancelRequestedAt === durable.cancel_requested_at, 'cancel timestamp differs from durable original');
     if (value.status !== null && value.status !== undefined)
-      errors.push(...canonicalReplyErrors('delegate_status', value.status, durable, true).map((message) => 'cancel status: ' + message));
+      errors.push(
+        ...canonicalReplyErrors('delegate_status', value.status, durable, true).map(
+          (message) => 'cancel status: ' + message
+        )
+      );
   } else if (tool === 'delegate_status') {
-    require(value.link?.linkId === durable.link_id && value.link?.state === durable.link_state, 'status link identity/state differs');
+    require(value.link?.linkId === durable.link_id &&
+      value.link?.state === durable.link_state, 'status link identity/state differs');
     const run = value.currentRun;
     for (const [field, column] of [
-      ['runId', 'run_id'], ['linkId', 'link_id'], ['state', 'state'],
-      ['runSeq', 'run_seq'], ['expectedGeneration', 'expected_generation'], ['cancelRequestedAt', 'cancel_requested_at'],
-    ]) require(run?.[field] === durable[column], 'status run fact differs: ' + field);
+      ['runId', 'run_id'],
+      ['linkId', 'link_id'],
+      ['state', 'state'],
+      ['runSeq', 'run_seq'],
+      ['expectedGeneration', 'expected_generation'],
+      ['cancelRequestedAt', 'cancel_requested_at'],
+    ])
+      require(run?.[field] === durable[column], 'status run fact differs: ' + field);
     for (const field of ['isCurrent', 'isRunTerminal', 'slotHeld'])
       require(value[field] === durable[field], 'status read fact differs: ' + field);
     require(allowEarlierSeq
@@ -466,32 +728,47 @@ function canonicalReplyErrors(tool, value, durable, allowEarlierSeq = false) {
 }
 function actualOutcome(value) {
   if (!value) return 'uncompleted';
-  if (value.ok === false) return value.code === 'busy' ? 'busy' : value.code === 'internal_error' ? 'internal_error' : 'refusal';
+  if (value.ok === false)
+    return value.code === 'busy' ? 'busy' : value.code === 'internal_error' ? 'internal_error' : 'refusal';
   return 'success';
 }
 const nonnegative = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 function timingErrors(tool, diagnostics) {
   const errors = [];
-  const require = (condition, message) => { if (!condition) errors.push(message); };
+  const require = (condition, message) => {
+    if (!condition) errors.push(message);
+  };
   if (!diagnostics || typeof diagnostics !== 'object' || Array.isArray(diagnostics))
     return ['missing diagnostics object'];
   const d = diagnostics;
   const write = tool !== 'delegate_status';
   require(d.writeBudgetApplicable === write, 'wrong trusted timing applicability');
   require(nonnegative(d.elapsedMs), 'invalid elapsedMs');
-  require(Array.isArray(d.phases) && d.phases.length > 0 && d.phases.every((entry, index, entries) =>
-    entry && typeof entry.phase === 'string' && nonnegative(entry.at) && entry.at <= d.elapsedMs &&
-    (index === 0 || entry.at >= entries[index - 1].at)), 'invalid checkpoint intervals');
+  require(Array.isArray(d.phases) &&
+    d.phases.length > 0 &&
+    d.phases.every(
+      (entry, index, entries) =>
+        entry &&
+        typeof entry.phase === 'string' &&
+        nonnegative(entry.at) &&
+        entry.at <= d.elapsedMs &&
+        (index === 0 || entry.at >= entries[index - 1].at)
+    ), 'invalid checkpoint intervals');
   if (write) {
     for (const field of ['authorizationMs', 'deadlineMs', 'overrunMs', 'waitMs', 'queueMs'])
       require(nonnegative(d[field]), 'invalid ' + field);
     require(Number.isSafeInteger(d.attempts) && d.attempts >= 0, 'invalid lock attempt count');
     require(d.deadlineMs > 0 && d.deadlineMs <= 30, 'invalid original deadline');
     require(d.authorizationMs <= d.elapsedMs && d.queueMs <= d.waitMs, 'inconsistent timing intervals');
-    require(d.enclosingDeadline === 'trusted' || d.enclosingDeadline === 'unavailable', 'invalid enclosing deadline kind');
-    require(d.phaseMs && typeof d.phaseMs === 'object' && !Array.isArray(d.phaseMs) &&
+    require(d.enclosingDeadline === 'trusted' ||
+      d.enclosingDeadline === 'unavailable', 'invalid enclosing deadline kind');
+    require(d.phaseMs &&
+      typeof d.phaseMs === 'object' &&
+      !Array.isArray(d.phaseMs) &&
       Object.values(d.phaseMs).every(nonnegative), 'invalid phase totals');
-    require(d.phaseCounts && typeof d.phaseCounts === 'object' && !Array.isArray(d.phaseCounts) &&
+    require(d.phaseCounts &&
+      typeof d.phaseCounts === 'object' &&
+      !Array.isArray(d.phaseCounts) &&
       Object.values(d.phaseCounts).every((value) => Number.isSafeInteger(value) && value >= 0), 'invalid phase counts');
   } else {
     for (const field of ['authorizationMs', 'deadlineMs', 'overrunMs', 'waitMs', 'queueMs'])
@@ -502,8 +779,12 @@ function timingErrors(tool, diagnostics) {
   return errors;
 }
 function validColdTiming(sample) {
-  return timingErrors('delegate_resume', sample.diagnostics).length === 0 &&
-    nonnegative(sample.began) && nonnegative(sample.ended) && sample.ended >= sample.began;
+  return (
+    timingErrors('delegate_resume', sample.diagnostics).length === 0 &&
+    nonnegative(sample.began) &&
+    nonnegative(sample.ended) &&
+    sample.ended >= sample.began
+  );
 }
 function numerical(row) {
   const d = row.diagnostics;
@@ -511,7 +792,8 @@ function numerical(row) {
   if (!nonnegative(row.responseMs)) invalid.push('invalid responseMs');
   const completeTiming = invalid.length === 0;
   return {
-    completeTiming, invalidTiming: invalid,
+    completeTiming,
+    invalidTiming: invalid,
     writeBudgetApplicable: row.tool !== 'delegate_status',
     writeBound: row.tool === 'delegate_status' ? null : completeTiming && d.authorizationMs <= 30,
     cumulativeWaitBound: row.tool === 'delegate_status' ? null : completeTiming && d.waitMs <= 20,
@@ -523,25 +805,40 @@ function numerical(row) {
 function overrunExempt(row) {
   // Semantic fault membership is not numerical-exemption eligibility. In
   // particular, zero-delay acknowledgement loss remains operational numerically.
-  return row.bank === 'forced' && !row.recovery &&
+  return (
+    row.bank === 'forced' &&
+    !row.recovery &&
     ['callback-overrun', 'commit-overrun'].includes(row.declaredInjection) &&
     row.injection?.requestedMs === 40 &&
-    nonnegative(row.injection?.began) && nonnegative(row.injection?.ended) &&
+    nonnegative(row.injection?.began) &&
+    nonnegative(row.injection?.ended) &&
     row.injection.ended - row.injection.began >= 40 &&
-    nonnegative(row.diagnostics?.authorizationMs) && row.diagnostics.authorizationMs > 30;
+    nonnegative(row.diagnostics?.authorizationMs) &&
+    row.diagnostics.authorizationMs > 30
+  );
 }
 function numericalGates(selected) {
   const percentileGate = (group) => {
     const valid = group.every((row) => nonnegative(row.responseMs));
-    const outcomes = Object.fromEntries([...new Set(group.map((row) => row.actualOutcome))].map((outcome) => {
-      const bucket = group.filter((row) => row.actualOutcome === outcome);
-      const timing = stats(bucket.filter((row) => nonnegative(row.responseMs)).map((row) => row.responseMs));
-      return [outcome, { n: bucket.length, timing, qualified: timing.n === bucket.length && timing.p95 < 50 }];
-    }));
+    const outcomes = Object.fromEntries(
+      [...new Set(group.map((row) => row.actualOutcome))].map((outcome) => {
+        const bucket = group.filter((row) => row.actualOutcome === outcome);
+        const timing = stats(bucket.filter((row) => nonnegative(row.responseMs)).map((row) => row.responseMs));
+        return [outcome, { n: bucket.length, timing, qualified: timing.n === bucket.length && timing.p95 < 50 }];
+      })
+    );
     const timing = stats(group.filter((row) => nonnegative(row.responseMs)).map((row) => row.responseMs));
-    return { n: group.length, timing, outcomes,
-      qualified: group.length === 0 || (valid && timing.n === group.length && timing.p95 < 50 &&
-        Object.values(outcomes).every((bucket) => bucket.qualified)) };
+    return {
+      n: group.length,
+      timing,
+      outcomes,
+      qualified:
+        group.length === 0 ||
+        (valid &&
+          timing.n === group.length &&
+          timing.p95 < 50 &&
+          Object.values(outcomes).every((bucket) => bucket.qualified)),
+    };
   };
   const groups = {
     allAttempts: selected,
@@ -553,8 +850,12 @@ function numericalGates(selected) {
   const response = Object.fromEntries(Object.entries(groups).map(([name, group]) => [name, percentileGate(group)]));
   const perCall = selected.every((row) => {
     const numeric = row.numeric ?? numerical(row);
-    return numeric.completeTiming && numeric.writeBound !== false &&
-      numeric.cumulativeWaitBound !== false && numeric.busyTimeoutBound;
+    return (
+      numeric.completeTiming &&
+      numeric.writeBound !== false &&
+      numeric.cumulativeWaitBound !== false &&
+      numeric.busyTimeoutBound
+    );
   });
   return { perCall, response, qualified: perCall && Object.values(response).every((group) => group.qualified) };
 }
@@ -562,27 +863,62 @@ function lossCoverage(cell, rows) {
   if (!cell.lossCoverageRequired) return { applicable: false, complete: true };
   const participants = Array.from({ length: cell.h }, (_unused, participant) => {
     const primary = rows.filter((row) => !row.recovery && row.phase === 'measured' && row.participant === participant);
-    const successful = primary.filter((row) => row.deliveryOutcome === 'response_lost' && row.actualOutcome === 'success' &&
-      row.canonicalReplyVerified === true && row.durableInspectionVerified === true && row.semantic);
+    const successful = primary.filter(
+      (row) =>
+        row.deliveryOutcome === 'response_lost' &&
+        row.actualOutcome === 'success' &&
+        row.canonicalReplyVerified === true &&
+        row.durableInspectionVerified === true &&
+        row.semantic
+    );
     const recovered = successful.filter((row) => row.recoveryVerified === true);
     return {
-      participant, successfulLost: successful.length, durableInspections: successful.length, checkedRecoveries: recovered.length,
-      successfulCallIds: successful.map((row) => row.id), recoveryCallIds: recovered.map((row) => row.recoveryCall),
-      complete: successful.length >= cell.lossCoverageRequired.successfulLostMeasuredPerParticipant &&
+      participant,
+      successfulLost: successful.length,
+      durableInspections: successful.length,
+      checkedRecoveries: recovered.length,
+      successfulCallIds: successful.map((row) => row.id),
+      recoveryCallIds: recovered.map((row) => row.recoveryCall),
+      complete:
+        successful.length >= cell.lossCoverageRequired.successfulLostMeasuredPerParticipant &&
         successful.length >= cell.lossCoverageRequired.durableInspectionMeasuredPerParticipant &&
         recovered.length >= cell.lossCoverageRequired.checkedRecoveryMeasuredPerParticipant,
     };
   });
-  return { applicable: true, required: cell.lossCoverageRequired, participants, complete: participants.every((entry) => entry.complete) };
+  return {
+    applicable: true,
+    required: cell.lossCoverageRequired,
+    participants,
+    complete: participants.every((entry) => entry.complete),
+  };
 }
 function prepareCall(client, cell, phase, sequence, index, args, rows, recovery = false) {
   const row = {
-    kind: 'call', id: randomUUID(), cell: cell.id, bank: recovery ? 'operational' : cell.bank,
-    tool: cell.tool, scenario: recovery ? cell.scenario + '/recovery' : cell.scenario,
-    phase, sequence, participant: index, fixture: fixtureOrdinal, h: cell.h, r: cell.r,
-    recovery, dispatchState: 'pending', declaredInjection: !recovery && cell.bank === 'forced' ? cell.scenario : null,
-    requestKey: args.request_key ?? null, transactions: [], sql: [], backoffs: [], injection: null,
-    began: instant(), finished: false, semantic: true, semanticErrors: [], busyTimeoutMs: client.busyTimeoutMs,
+    kind: 'call',
+    id: randomUUID(),
+    cell: cell.id,
+    bank: recovery ? 'operational' : cell.bank,
+    tool: cell.tool,
+    scenario: recovery ? cell.scenario + '/recovery' : cell.scenario,
+    phase,
+    sequence,
+    participant: index,
+    fixture: fixtureOrdinal,
+    h: cell.h,
+    r: cell.r,
+    recovery,
+    dispatchState: 'pending',
+    declaredInjection: !recovery && cell.bank === 'forced' ? cell.scenario : null,
+    requestKey: args.request_key ?? null,
+    transactions: [],
+    sql: [],
+    backoffs: [],
+    injection: null,
+    began: instant(),
+    finished: false,
+    semantic: true,
+    semanticErrors: [],
+    busyTimeoutMs: client.busyTimeoutMs,
   };
   // A registered dispatch intention is already a retained, invalid-timing attempt.
   // No response duration exists until a real response is observed.
@@ -598,7 +934,11 @@ async function call(f, client, cell, phase, sequence, index, args, rows, recover
   row.dispatchState = 'issued';
   client.setMeasurement(row);
   try {
-    const value = await client.rpc('tools/call', { name: cell.tool, arguments: args }, !recovery && cell.scenario === 'response-loss');
+    const value = await client.rpc(
+      'tools/call',
+      { name: cell.tool, arguments: args },
+      !recovery && cell.scenario === 'response-loss'
+    );
     row.began = value.began;
     row.ended = value.flushedAt;
     row.responseMs = value.responseMs;
@@ -610,7 +950,10 @@ async function call(f, client, cell, phase, sequence, index, args, rows, recover
     row.deliveryOutcome = value.discardedBytes > 0 ? 'response_lost' : 'delivered';
     row.finished = true;
   } catch (error) {
-    row.error = errorText(error); row.ended = instant(); row.actualOutcome = 'uncompleted'; row.semantic = false;
+    row.error = errorText(error);
+    row.ended = instant();
+    row.actualOutcome = 'uncompleted';
+    row.semantic = false;
   } finally {
     client.setMeasurement(null);
     row.numeric = numerical(row);
@@ -618,8 +961,12 @@ async function call(f, client, cell, phase, sequence, index, args, rows, recover
     row.backoffRequestedMs = row.backoffs.reduce((sum, item) => sum + item.requestedMs, 0);
     row.transactionWallMs = row.transactions.reduce((sum, item) => sum + (item.ended ?? row.ended) - item.began, 0);
     row.callbackMs = row.transactions.reduce((sum, item) => sum + (item.callbackMs ?? 0), 0);
-    row.commitMs = row.sql.filter((item) => item.operation === 'COMMIT').reduce((sum, item) => sum + item.ended - item.began, 0);
-    row.rollbackMs = row.sql.filter((item) => item.operation === 'ROLLBACK').reduce((sum, item) => sum + item.ended - item.began, 0);
+    row.commitMs = row.sql
+      .filter((item) => item.operation === 'COMMIT')
+      .reduce((sum, item) => sum + item.ended - item.began, 0);
+    row.rollbackMs = row.sql
+      .filter((item) => item.operation === 'ROLLBACK')
+      .reduce((sum, item) => sum + item.ended - item.began, 0);
     row.numericalExemptionEligible = overrunExempt(row);
     // No synchronous serialization/storage work while a sibling call is timed.
     // The wave journals these completed/incomplete measurements after all clocks end.
@@ -627,13 +974,20 @@ async function call(f, client, cell, phase, sequence, index, args, rows, recover
   return row;
 }
 function verify(row, condition, message) {
-  if (!condition) { row.semantic = false; (row.semanticErrors ??= []).push(message); }
+  if (!condition) {
+    row.semantic = false;
+    (row.semanticErrors ??= []).push(message);
+  }
 }
 function finalizeWaveFailure(row, reason) {
   row.numeric ??= numerical(row);
   row.interruptionReason = reason;
-  row.completionDisposition = row.dispatchState === 'pending'
-    ? 'not_issued_incomplete' : row.finished ? 'issued_completed_wave_failed' : 'issued_incomplete';
+  row.completionDisposition =
+    row.dispatchState === 'pending'
+      ? 'not_issued_incomplete'
+      : row.finished
+        ? 'issued_completed_wave_failed'
+        : 'issued_incomplete';
   row.error ??= reason;
   verify(row, false, 'wave incomplete: ' + reason);
   // Preserve finished, dispatchState and any real measurements unchanged.
@@ -644,7 +998,10 @@ async function wave(cell, phase, sequence, rows) {
   fixtureOrdinal++;
   const setupBegan = instant();
   let f, observer;
-  const clients = [], services = [], ledgers = [], restorers = [];
+  const clients = [],
+    services = [],
+    ledgers = [],
+    restorers = [];
   const queueJobs = [];
   const waveRows = [];
   const registeredStart = rows.length;
@@ -653,7 +1010,8 @@ async function wave(cell, phase, sequence, rows) {
   try {
     f = await p065WorkloadFixture(cell.h, cell.r, cell.tool);
     current = { cell: cell.id, phase, sequence, fixture: fixtureOrdinal };
-    assert.equal(f.h, cell.h); assert.equal(f.r, cell.r);
+    assert.equal(f.h, cell.h);
+    assert.equal(f.r, cell.r);
     assert.equal(f.initial.active.length, cell.r);
     assert.equal(f.initial.slots.length, cell.r);
     assert.equal(f.baselineIds.length, cell.r);
@@ -666,8 +1024,12 @@ async function wave(cell, phase, sequence, rows) {
       const actors = [...f.actors];
       for (let i = 0; i < cell.h; i++) {
         const old = actors[i];
-        const replacement = await f.actor('p065-reconnect-' + i,
-          old.registration.harnessPid, old.ref.sessionId, old.registration.caller.pid + 5);
+        const replacement = await f.actor(
+          'p065-reconnect-' + i,
+          old.registration.harnessPid,
+          old.ref.sessionId,
+          old.registration.caller.pid + 5
+        );
         f.processes.get(replacement.registration.harnessPid).ppid = f.targets[i].supervisor.pid;
         actors[i] = replacement;
       }
@@ -675,7 +1037,10 @@ async function wave(cell, phase, sequence, rows) {
     }
     const sourceId = f.parent.registration.source.sourceId;
     const readiness = await helper.request('configure', {
-      root: f.root, baselineIds: f.baselineIds, sourceId, load: cell.scenario === 'storage-load',
+      root: f.root,
+      baselineIds: f.baselineIds,
+      sourceId,
+      load: cell.scenario === 'storage-load',
     });
     assert.equal(readiness.ledgerId, f.ledger.ledgerId);
     assert.equal(readiness.busyTimeoutMs, 0);
@@ -684,7 +1049,9 @@ async function wave(cell, phase, sequence, rows) {
       const ledger = await openLedger(join(f.root, 'ledger.sqlite'));
       ledgers.push(ledger);
       const options = {
-        ...f.services[i].options, ledger, registration: f.actors[i].registration,
+        ...f.services[i].options,
+        ledger,
+        registration: f.actors[i].registration,
       };
       const service = new DelegationService(options);
       if (cell.tool === 'delegate_cancel') service.reads.probes.supervisorState = () => 'alive';
@@ -693,15 +1060,35 @@ async function wave(cell, phase, sequence, rows) {
       const client = framedClient(f, i, observer, service, cell.scenario);
       clients.push(client);
       const initialized = await client.initialize();
-      support({ kind: 'initialize', fixture: fixtureOrdinal, participant: i, began: initialized.began, responseMs: initialized.responseMs });
+      support({
+        kind: 'initialize',
+        fixture: fixtureOrdinal,
+        participant: i,
+        began: initialized.began,
+        responseMs: initialized.responseMs,
+      });
     }
     before = countState(observer, f.launches);
     assert.equal(before.active, cell.r);
     const setupMs = instant() - setupBegan;
     support({
-      kind: 'fixture_ready', fixture: fixtureOrdinal, cell: cell.id, phase, sequence, setupMs, fixtureSetupMs: f.setupMs,
-      baseline: f.baselineIds, initial: f.initial, limits: f.limits, before, readiness,
-      callers: f.actors.map((actor) => ({ callerId: actor.registration.caller.callerId, contextId: actor.context.contextId, processKey: actor.authority.evidence.processKey })),
+      kind: 'fixture_ready',
+      fixture: fixtureOrdinal,
+      cell: cell.id,
+      phase,
+      sequence,
+      setupMs,
+      fixtureSetupMs: f.setupMs,
+      baseline: f.baselineIds,
+      initial: f.initial,
+      limits: f.limits,
+      before,
+      readiness,
+      callers: f.actors.map((actor) => ({
+        callerId: actor.registration.caller.callerId,
+        contextId: actor.context.contextId,
+        processKey: actor.authority.evidence.processKey,
+      })),
       sourcePremises: 'current scope/context; synthetic process facts; real writer enforcement',
     });
     if (['short-lock', 'long-lock', 'queued-expiry'].includes(cell.scenario)) {
@@ -715,9 +1102,21 @@ async function wave(cell, phase, sequence, rows) {
       for (const ledger of ledgers)
         for (let n = 0; n < 3; n++) {
           const began = instant();
-          queueJobs.push(ledger.transaction((tx) => tx.get('SELECT 1 AS queued_predecessor'), 20)
-            .then((result) => ({ result }), (error) => ({ error: errorText(error) }))
-            .then((result) => ({ kind: 'queue_predecessor', fixture: fixtureOrdinal, began, ended: instant(), ...result })));
+          queueJobs.push(
+            ledger
+              .transaction((tx) => tx.get('SELECT 1 AS queued_predecessor'), 20)
+              .then(
+                (result) => ({ result }),
+                (error) => ({ error: errorText(error) })
+              )
+              .then((result) => ({
+                kind: 'queue_predecessor',
+                fixture: fixtureOrdinal,
+                began,
+                ended: instant(),
+                ...result,
+              }))
+          );
         }
     }
     const argumentsByParticipant = f.actors.map((_actor, index) => {
@@ -727,10 +1126,24 @@ async function wave(cell, phase, sequence, rows) {
     });
     // Journal both dispatch intentions before issuing either H=2 frame.
     const prepared = f.actors.map((_actor, index) =>
-      prepareCall(clients[index], cell, phase, sequence + index, index, argumentsByParticipant[index], rows));
+      prepareCall(clients[index], cell, phase, sequence + index, index, argumentsByParticipant[index], rows)
+    );
     const issue = (index) => {
-      const job = call(f, clients[index], cell, phase, sequence + index, index, argumentsByParticipant[index], rows, false, prepared[index])
-        .then((result) => { waveRows.push(result); return result; });
+      const job = call(
+        f,
+        clients[index],
+        cell,
+        phase,
+        sequence + index,
+        index,
+        argumentsByParticipant[index],
+        rows,
+        false,
+        prepared[index]
+      ).then((result) => {
+        waveRows.push(result);
+        return result;
+      });
       issuedJobs.push(job);
       return job;
     };
@@ -743,64 +1156,102 @@ async function wave(cell, phase, sequence, rows) {
     support({ kind: 'traffic', fixture: fixtureOrdinal, ...traffic });
     assert.equal(traffic.missedMetrics, 0, 'helper_metric_overflow');
     const trafficErrors = traffic.metrics.filter((entry) => entry.kind.endsWith('_error'));
-    const unexpectedTrafficErrors = trafficErrors.filter((entry) =>
-      entry.kind !== 'heartbeat_error' || !/database (?:is )?(?:locked|busy)|SQLITE_BUSY|SQLITE_LOCKED|ledger_busy|Ledger busy/.test(entry.error));
+    const unexpectedTrafficErrors = trafficErrors.filter(
+      (entry) =>
+        entry.kind !== 'heartbeat_error' ||
+        !/database (?:is )?(?:locked|busy)|SQLITE_BUSY|SQLITE_LOCKED|ledger_busy|Ledger busy/.test(entry.error)
+    );
     support({ kind: 'traffic_validation', fixture: fixtureOrdinal, trafficErrors, unexpectedTrafficErrors });
     after = countState(observer, f.launches);
-    let accepted = 0, reported = 0, cancelled = 0, remapped = 0, expectedLaunches = 0;
+    let accepted = 0,
+      reported = 0,
+      cancelled = 0,
+      remapped = 0,
+      expectedLaunches = 0;
     for (const row of waveRows) {
-      const index = row.participant, args = argumentsByParticipant[index];
+      const index = row.participant,
+        args = argumentsByParticipant[index];
       const durable = durableFor(observer, cell.tool, args, f.actors[index], f.targets[index].runId);
       row.durable = durable;
       verify(row, unexpectedTrafficErrors.length === 0, 'unexpected heartbeat/observation traffic failure');
-      const committed = cell.tool === 'delegate_cancel' ? durable?.cancel_requested_at !== null && durable?.cancel_requested_at !== undefined : Boolean(durable);
-      row.canonicalReplyErrors = row.actualOutcome === 'success'
-        ? canonicalReplyErrors(cell.tool, row.serverValue, durable) : [];
+      const committed =
+        cell.tool === 'delegate_cancel'
+          ? durable?.cancel_requested_at !== null && durable?.cancel_requested_at !== undefined
+          : Boolean(durable);
+      row.canonicalReplyErrors =
+        row.actualOutcome === 'success' ? canonicalReplyErrors(cell.tool, row.serverValue, durable) : [];
       row.canonicalReplyVerified = row.actualOutcome === 'success' && row.canonicalReplyErrors.length === 0;
       row.durableInspectionVerified = row.canonicalReplyVerified;
-      verify(row, row.actualOutcome !== 'success' || row.canonicalReplyVerified,
-        'successful server reply contradicts durable truth: ' + row.canonicalReplyErrors.join('; '));
+      verify(
+        row,
+        row.actualOutcome !== 'success' || row.canonicalReplyVerified,
+        'successful server reply contradicts durable truth: ' + row.canonicalReplyErrors.join('; ')
+      );
       const targetSuccess = row.canonicalReplyVerified;
       if (['delegate_spawn', 'delegate_resume'].includes(cell.tool) && committed) accepted++;
       if (cell.tool === 'delegate_report' && committed) reported++;
       if (cell.tool === 'delegate_cancel' && committed) cancelled++;
       if (cell.tool === 'delegate_whoami' && cell.bank === 'forced' && committed) remapped++;
-      if (['delegate_spawn', 'delegate_resume'].includes(cell.tool) && committed && cell.scenario !== 'commit-uncertain') expectedLaunches++;
+      if (
+        ['delegate_spawn', 'delegate_resume'].includes(cell.tool) &&
+        committed &&
+        cell.scenario !== 'commit-uncertain'
+      )
+        expectedLaunches++;
       if (row.actualOutcome === 'busy' || row.actualOutcome === 'refusal') {
         if (cell.tool !== 'delegate_status' && !(cell.tool === 'delegate_whoami' && cell.bank !== 'forced'))
           verify(row, !committed, 'refusal/busy nevertheless committed requested work');
       }
-      if (cell.scenario === 'refusal') verify(row, row.actualOutcome === 'refusal', 'physical source mismatch was not refused');
+      if (cell.scenario === 'refusal')
+        verify(row, row.actualOutcome === 'refusal', 'physical source mismatch was not refused');
       else if (cell.bank === 'forced') {
         verify(row, Boolean(row.injection), 'required target injection was not reached');
         if (cell.scenario === 'callback-overrun') {
           verify(row, row.actualOutcome === 'busy', 'callback overrun did not refuse uncommitted target');
           verify(row, !committed, 'callback overrun persisted target');
-          verify(row, row.sql.some((entry) => entry.operation === 'ROLLBACK' && !entry.error), 'callback rollback missing');
+          verify(
+            row,
+            row.sql.some((entry) => entry.operation === 'ROLLBACK' && !entry.error),
+            'callback rollback missing'
+          );
         } else if (cell.scenario === 'commit-overrun') {
           verify(row, targetSuccess && committed, 'late target COMMIT did not preserve durable success');
           verify(row, row.diagnostics?.authorizationMs > 30, 'forced COMMIT overrun not in original timing');
         } else {
-          verify(row, row.actualOutcome === 'internal_error' && committed, 'uncertain real COMMIT mapping/truth incorrect');
-          verify(row, row.value && !('notAccepted' in row.value) && !('accepted' in row.value), 'uncertainty falsely promises not accepted');
+          verify(
+            row,
+            row.actualOutcome === 'internal_error' && committed,
+            'uncertain real COMMIT mapping/truth incorrect'
+          );
+          verify(
+            row,
+            row.value && !('notAccepted' in row.value) && !('accepted' in row.value),
+            'uncertainty falsely promises not accepted'
+          );
         }
       } else if (cell.scenario === 'response-loss') {
         verify(row, row.discardedBytes > 0 && row.value === null, 'response bytes were not actually discarded');
       } else if (row.actualOutcome === 'success') {
         verify(row, targetSuccess && committed, 'success lacks expected durable target/read');
       } else verify(row, row.actualOutcome === 'busy', 'unexpected operational outcome');
-      if (cell.tool === 'delegate_status') verify(row, row.transactions.length === 0, 'read-only status wrote to the ledger');
+      if (cell.tool === 'delegate_status')
+        verify(row, row.transactions.length === 0, 'read-only status wrote to the ledger');
       if (cell.scenario === 'storage-load') {
-        const overlapping = traffic.metrics.filter((entry) =>
-          entry.kind === 'observation' && entry.ended >= row.began && entry.began <= row.ended);
+        const overlapping = traffic.metrics.filter(
+          (entry) => entry.kind === 'observation' && entry.ended >= row.began && entry.began <= row.ended
+        );
         row.observationOverlap = overlapping.length;
       }
-      row.heartbeatOverlap = traffic.metrics.filter((entry) =>
-        entry.kind === 'heartbeat' && entry.ended >= row.began && entry.began <= row.ended).length;
+      row.heartbeatOverlap = traffic.metrics.filter(
+        (entry) => entry.kind === 'heartbeat' && entry.ended >= row.began && entry.began <= row.ended
+      ).length;
       row.fixtureSetupMs = setupMs;
-      row.activeBefore = before.active; row.activeAfter = after.active;
+      row.activeBefore = before.active;
+      row.activeAfter = after.active;
       row.activePeak = Math.max(before.active, after.active);
-      row.foregroundRunId = ['delegate_spawn', 'delegate_resume'].includes(cell.tool) ? durable?.run_id ?? null : null;
+      row.foregroundRunId = ['delegate_spawn', 'delegate_resume'].includes(cell.tool)
+        ? (durable?.run_id ?? null)
+        : null;
     }
     // Wave-level conservation avoids attributing another concurrent caller's changes
     // to this caller. Every service still has its own SQL trace and durable readback.
@@ -822,7 +1273,8 @@ async function wave(cell, phase, sequence, rows) {
     // automatic redispatch based on uncertainty. Reports have no retry key.
     if (['response-loss', 'commit-overrun', 'commit-uncertain'].includes(cell.scenario)) {
       for (const row of waveRows) {
-        const index = row.participant, args = argumentsByParticipant[index];
+        const index = row.participant,
+          args = argumentsByParticipant[index];
         if (cell.scenario === 'response-loss' && !row.canonicalReplyVerified) {
           row.recoveryDisposition = 'no verified successful lost result; required coverage is incomplete';
           continue;
@@ -842,7 +1294,9 @@ async function wave(cell, phase, sequence, rows) {
           const recoveredLedger = await openLedger(join(f.root, 'ledger.sqlite'));
           ledgers.push(recoveredLedger);
           const recoveredService = new DelegationService({
-            ...f.services[index].options, ledger: recoveredLedger, registration: f.actors[index].registration,
+            ...f.services[index].options,
+            ledger: recoveredLedger,
+            registration: f.actors[index].registration,
           });
           if (cell.tool === 'delegate_cancel') recoveredService.reads.probes.supervisorState = () => 'alive';
           services.push(recoveredService);
@@ -852,15 +1306,23 @@ async function wave(cell, phase, sequence, rows) {
         }
         const old = countState(observer, f.launches);
         const recovered = await call(f, clients[index], cell, phase, sequence + index, index, args, rows, true);
-        if (cell.tool === 'delegate_status') verify(recovered, recovered.transactions.length === 0, 'read-only status recovery wrote to the ledger');
+        if (cell.tool === 'delegate_status')
+          verify(recovered, recovered.transactions.length === 0, 'read-only status recovery wrote to the ledger');
         recovered.durable = durableFor(observer, cell.tool, args, f.actors[index], f.targets[index].runId);
         const latest = countState(observer, f.launches);
         recovered.canonicalReplyErrors = canonicalReplyErrors(cell.tool, recovered.value, row.durable);
         recovered.canonicalReplyVerified = recovered.canonicalReplyErrors.length === 0;
         recovered.durableInspectionVerified = recovered.canonicalReplyVerified;
-        verify(recovered, recovered.canonicalReplyVerified,
-          'canonical recovery reply mismatch: ' + recovered.canonicalReplyErrors.join('; '));
-        verify(recovered, JSON.stringify(recovered.durable) === JSON.stringify(row.durable), 'recovery changed durable identity');
+        verify(
+          recovered,
+          recovered.canonicalReplyVerified,
+          'canonical recovery reply mismatch: ' + recovered.canonicalReplyErrors.join('; ')
+        );
+        verify(
+          recovered,
+          JSON.stringify(recovered.durable) === JSON.stringify(row.durable),
+          'recovery changed durable identity'
+        );
         for (const field of ['accepted', 'runs', 'slots', 'reports', 'cancel', 'bindings', 'launches'])
           verify(recovered, latest[field] === old[field], 'recovery duplicated ' + field);
         raw({ ...recovered, record: 'completed' });
@@ -868,7 +1330,15 @@ async function wave(cell, phase, sequence, rows) {
         row.recoveryVerified = recovered.finished && recovered.semantic && recovered.canonicalReplyVerified;
       }
     }
-    support({ kind: 'wave_final', fixture: fixtureOrdinal, cell: cell.id, before, after, waveAssertions, activePeak: cell.r + accepted });
+    support({
+      kind: 'wave_final',
+      fixture: fixtureOrdinal,
+      cell: cell.id,
+      before,
+      after,
+      waveAssertions,
+      activePeak: cell.r + accepted,
+    });
     for (const row of waveRows) raw({ ...row, record: 'completed' });
     return waveRows;
   } catch (error) {
@@ -883,14 +1353,21 @@ async function wave(cell, phase, sequence, rows) {
     throw error;
   } finally {
     if (helper) {
-      try { await helper.request('close'); }
-      catch (error) {
+      try {
+        await helper.request('close');
+      } catch (error) {
         failures.push({ kind: 'holder_close_failure', fixture: fixtureOrdinal, error: errorText(error) });
         await helper.close();
       }
     }
     await Promise.allSettled(queueJobs);
-    for (const client of clients) { try { await client.close(); } catch (error) { failures.push(errorText(error)); } }
+    for (const client of clients) {
+      try {
+        await client.close();
+      } catch (error) {
+        failures.push(errorText(error));
+      }
+    }
     for (const restore of restorers) restore();
     for (const service of services) await service.close();
     for (const ledger of ledgers) await ledger.close();
@@ -903,8 +1380,11 @@ async function wave(cell, phase, sequence, rows) {
 function summarize(cell, rows) {
   // Defensive read normalization also handles a retained raw intention from an
   // interruption before call() entered its finalizer. Do not mutate raw evidence.
-  rows = rows.map((row) => ({ ...row, numeric: row.numeric ?? numerical(row),
-    semantic: row.finished === true && row.semantic === true }));
+  rows = rows.map((row) => ({
+    ...row,
+    numeric: row.numeric ?? numerical(row),
+    semantic: row.finished === true && row.semantic === true,
+  }));
   const primary = rows.filter((row) => !row.recovery);
   const measured = primary.filter((row) => row.phase === 'measured');
   const warmups = primary.filter((row) => row.phase === 'warmup');
@@ -913,7 +1393,13 @@ function summarize(cell, rows) {
     const included = rows.filter((row) => row.bank === bank);
     const measuredRows = included.filter((row) => row.phase === 'measured');
     const scopes = {};
-    for (const [scope, selected] of [['all-attempts-including-warmups', included], ['primary-measured', measuredRows.filter((row) => !row.recovery)], ['recovery-measured', measuredRows.filter((row) => row.recovery)], ['primary-warmups', included.filter((row) => row.phase === 'warmup' && !row.recovery)], ['recovery-warmups', included.filter((row) => row.phase === 'warmup' && row.recovery)]]) {
+    for (const [scope, selected] of [
+      ['all-attempts-including-warmups', included],
+      ['primary-measured', measuredRows.filter((row) => !row.recovery)],
+      ['recovery-measured', measuredRows.filter((row) => row.recovery)],
+      ['primary-warmups', included.filter((row) => row.phase === 'warmup' && !row.recovery)],
+      ['recovery-warmups', included.filter((row) => row.phase === 'warmup' && row.recovery)],
+    ]) {
       const outcomes = {};
       for (const row of selected) {
         const key = row.actualOutcome ?? 'uncompleted';
@@ -931,26 +1417,54 @@ function summarize(cell, rows) {
           invalid: group.filter((row) => !row.numeric.completeTiming).length,
         },
         responseMs: stats(group.filter((row) => Number.isFinite(row.responseMs)).map((row) => row.responseMs)),
-        authorizationMs: stats(group.filter((row) => Number.isFinite(row.diagnostics?.authorizationMs)).map((row) => row.diagnostics.authorizationMs)),
-        upfrontMs: stats(group.filter((row) => Number.isFinite(row.diagnostics?.upfrontMs)).map((row) => row.diagnostics.upfrontMs)),
-        waitMs: stats(group.filter((row) => Number.isFinite(row.diagnostics?.waitMs)).map((row) => row.diagnostics.waitMs)),
-        queueMs: stats(group.filter((row) => Number.isFinite(row.diagnostics?.queueMs)).map((row) => row.diagnostics.queueMs)),
+        authorizationMs: stats(
+          group
+            .filter((row) => Number.isFinite(row.diagnostics?.authorizationMs))
+            .map((row) => row.diagnostics.authorizationMs)
+        ),
+        upfrontMs: stats(
+          group.filter((row) => Number.isFinite(row.diagnostics?.upfrontMs)).map((row) => row.diagnostics.upfrontMs)
+        ),
+        waitMs: stats(
+          group.filter((row) => Number.isFinite(row.diagnostics?.waitMs)).map((row) => row.diagnostics.waitMs)
+        ),
+        queueMs: stats(
+          group.filter((row) => Number.isFinite(row.diagnostics?.queueMs)).map((row) => row.diagnostics.queueMs)
+        ),
         transactionMs: stats(group.map((row) => row.transactionWallMs).filter(nonnegative)),
         callbackMs: stats(group.map((row) => row.callbackMs).filter(nonnegative)),
         commitMs: stats(group.map((row) => row.commitMs).filter(nonnegative)),
         rollbackMs: stats(group.map((row) => row.rollbackMs).filter(nonnegative)),
         backoffMs: stats(group.map((row) => row.backoffWallMs).filter(nonnegative)),
         checkpointIntervalsMs: Object.fromEntries(
-          ['prepare', 'source', 'queue', 'acquire', 'metadata', 'callback', 'commit', 'rollback', 'complete', 'flush']
-            .map((phase) => [phase, stats(group.map((row) => row.diagnostics?.phaseMs?.[phase]).filter(Number.isFinite))])
+          [
+            'prepare',
+            'source',
+            'queue',
+            'acquire',
+            'metadata',
+            'callback',
+            'commit',
+            'rollback',
+            'complete',
+            'flush',
+          ].map((phase) => [
+            phase,
+            stats(group.map((row) => row.diagnostics?.phaseMs?.[phase]).filter(Number.isFinite)),
+          ])
         ),
         queueTotalMs: group.reduce((sum, row) => sum + (row.diagnostics?.queueMs ?? 0), 0),
         waitTotalMs: group.reduce((sum, row) => sum + (row.diagnostics?.waitMs ?? 0), 0),
         backoffTotalMs: group.reduce((sum, row) => sum + (row.backoffWallMs ?? 0), 0),
         lockAttempts: group.reduce((sum, row) => sum + (row.diagnostics?.attempts ?? 0), 0),
         uncompleted: group.filter((row) => !row.finished).length,
-        numericalFailures: group.filter((row) => !row.numeric.completeTiming ||
-          row.numeric.writeBound === false || row.numeric.cumulativeWaitBound === false || !row.numeric.busyTimeoutBound).length,
+        numericalFailures: group.filter(
+          (row) =>
+            !row.numeric.completeTiming ||
+            row.numeric.writeBound === false ||
+            row.numeric.cumulativeWaitBound === false ||
+            !row.numeric.busyTimeoutBound
+        ).length,
         semanticFailures: group.filter((row) => !row.semantic).length,
       });
       scopes[scope] = {
@@ -967,29 +1481,63 @@ function summarize(cell, rows) {
   const coverage = lossCoverage(cell, rows);
   const force = rows.filter((row) => row.bank === 'forced');
   const participants = [...new Set(measured.map((row) => row.participant))].sort();
-  const nonApplicable = cell.tool === 'delegate_status' ? {
-    p065WriteBudget: 'not applicable: read-only',
-    busyOutcome: 'not manufactured: read-only status does not acquire a writer lock',
-    forcedCallbackAndCommit: 'not applicable: no write callback/COMMIT',
-  } : null;
-  const observedOutcomes = Object.fromEntries(['success', 'refusal', 'busy', 'response_lost', 'internal_error', 'uncompleted']
-    .map((name) => [name, measured.filter((row) => (row.actualOutcome ?? 'uncompleted') === name).length]));
-  const requiredOutcomeSeen = cell.scenario === 'refusal' ? observedOutcomes.refusal > 0 :
-    cell.scenario === 'response-loss' ? measured.some((row) => row.deliveryOutcome === 'response_lost') :
-    cell.scenario === 'callback-overrun' || (cell.scenario === 'long-lock' && cell.tool !== 'delegate_status') ? observedOutcomes.busy > 0 :
-    cell.scenario === 'commit-uncertain' ? observedOutcomes.internal_error > 0 :
-    cell.scenario === 'queued-expiry' && cell.tool !== 'delegate_status' ? observedOutcomes.busy > 0 : observedOutcomes.success > 0;
+  const nonApplicable =
+    cell.tool === 'delegate_status'
+      ? {
+          p065WriteBudget: 'not applicable: read-only',
+          busyOutcome: 'not manufactured: read-only status does not acquire a writer lock',
+          forcedCallbackAndCommit: 'not applicable: no write callback/COMMIT',
+        }
+      : null;
+  const observedOutcomes = Object.fromEntries(
+    ['success', 'refusal', 'busy', 'response_lost', 'internal_error', 'uncompleted'].map((name) => [
+      name,
+      measured.filter((row) => (row.actualOutcome ?? 'uncompleted') === name).length,
+    ])
+  );
+  const requiredOutcomeSeen =
+    cell.scenario === 'refusal'
+      ? observedOutcomes.refusal > 0
+      : cell.scenario === 'response-loss'
+        ? measured.some((row) => row.deliveryOutcome === 'response_lost')
+        : cell.scenario === 'callback-overrun' || (cell.scenario === 'long-lock' && cell.tool !== 'delegate_status')
+          ? observedOutcomes.busy > 0
+          : cell.scenario === 'commit-uncertain'
+            ? observedOutcomes.internal_error > 0
+            : cell.scenario === 'queued-expiry' && cell.tool !== 'delegate_status'
+              ? observedOutcomes.busy > 0
+              : observedOutcomes.success > 0;
   const heartbeatSeen = cell.bank === 'forced' || measured.some((row) => row.heartbeatOverlap > 0);
   const observationSeen = cell.scenario !== 'storage-load' || measured.some((row) => row.observationOverlap > 0);
-  const contentionSeen = !['short-lock', 'long-lock', 'queued-expiry'].includes(cell.scenario) ||
-    cell.tool === 'delegate_status' || measured.some((row) =>
-      row.sql.some((entry) => entry.operation === 'BEGIN IMMEDIATE' && entry.error) || row.diagnostics?.queueMs >= 20);
-  const complete = warmups.length === WARMUPS && measured.length === MEASURED &&
-    primary.every((row) => row.finished && row.numeric.completeTiming) && participants.length === cell.h &&
-    requiredOutcomeSeen && heartbeatSeen && observationSeen && contentionSeen && coverage.complete;
+  const contentionSeen =
+    !['short-lock', 'long-lock', 'queued-expiry'].includes(cell.scenario) ||
+    cell.tool === 'delegate_status' ||
+    measured.some(
+      (row) =>
+        row.sql.some((entry) => entry.operation === 'BEGIN IMMEDIATE' && entry.error) || row.diagnostics?.queueMs >= 20
+    );
+  const complete =
+    warmups.length === WARMUPS &&
+    measured.length === MEASURED &&
+    primary.every((row) => row.finished && row.numeric.completeTiming) &&
+    participants.length === cell.h &&
+    requiredOutcomeSeen &&
+    heartbeatSeen &&
+    observationSeen &&
+    contentionSeen &&
+    coverage.complete;
   return {
-    ...cell, warmups: warmups.length, measured: measured.length, totalAttempts: rows.length,
-    complete, participants, observedOutcomes, requiredOutcomeSeen, heartbeatSeen, observationSeen, contentionSeen,
+    ...cell,
+    warmups: warmups.length,
+    measured: measured.length,
+    totalAttempts: rows.length,
+    complete,
+    participants,
+    observedOutcomes,
+    requiredOutcomeSeen,
+    heartbeatSeen,
+    observationSeen,
+    contentionSeen,
     dispatch: {
       registered: rows.length,
       issued: rows.filter((row) => row.dispatchState === 'issued').length,
@@ -997,10 +1545,14 @@ function summarize(cell, rows) {
       uncompleted: rows.filter((row) => !row.finished).length,
       interrupted: rows.filter((row) => row.interruptionReason !== undefined).length,
     },
-    nonApplicable, populations, lossCoverage: coverage,
+    nonApplicable,
+    populations,
+    lossCoverage: coverage,
     numericalScopes: {
-      inclusive: inclusiveGates, operational: operationalGates,
-      operationalAttempts: op.length, deliberateOverrunExemptions: exempt.length,
+      inclusive: inclusiveGates,
+      operational: operationalGates,
+      operationalAttempts: op.length,
+      deliberateOverrunExemptions: exempt.length,
       exemptionCallIds: exempt.map((row) => row.id),
       semanticFaultBankDoesNotImplyExemption: true,
     },
@@ -1016,28 +1568,62 @@ function runEvidenceCheckerControls() {
   // Fixed adversarial inputs exercise only the evidence checker. They never enter
   // rows, raw samples, planned populations, timings, or performance qualification.
   const checks = [];
-  const check = (name, body) => { body(); checks.push(name); };
+  const check = (name, body) => {
+    body();
+    checks.push(name);
+  };
   const writeDiagnostics = () => ({
-    writeBudgetApplicable: true, elapsedMs: 2, authorizationMs: 1, deadlineMs: 30,
-    overrunMs: 0, waitMs: 0, queueMs: 0, attempts: 1, enclosingDeadline: 'unavailable',
-    phaseMs: { prepare: 1 }, phaseCounts: { prepare: 1, complete: 1 },
-    phases: [{ phase: 'prepare', at: 0 }, { phase: 'complete', at: 1 }],
+    writeBudgetApplicable: true,
+    elapsedMs: 2,
+    authorizationMs: 1,
+    deadlineMs: 30,
+    overrunMs: 0,
+    waitMs: 0,
+    queueMs: 0,
+    attempts: 1,
+    enclosingDeadline: 'unavailable',
+    phaseMs: { prepare: 1 },
+    phaseCounts: { prepare: 1, complete: 1 },
+    phases: [
+      { phase: 'prepare', at: 0 },
+      { phase: 'complete', at: 1 },
+    ],
   });
   const record = (responseMs = 1, extra = {}) => {
     const row = {
-      tool: 'delegate_spawn', phase: 'measured', recovery: false, bank: 'operational',
-      responseMs, diagnostics: writeDiagnostics(), busyTimeoutMs: 0, actualOutcome: 'success', ...extra,
+      tool: 'delegate_spawn',
+      phase: 'measured',
+      recovery: false,
+      bank: 'operational',
+      responseMs,
+      diagnostics: writeDiagnostics(),
+      busyTimeoutMs: 0,
+      actualOutcome: 'success',
+      ...extra,
     };
     row.numeric = numerical(row);
     return row;
   };
   check('51-of-1000 slow primary calls cannot be diluted by 50 fast warmups', () => {
-    const read = { writeBudgetApplicable: false, elapsedMs: 2, upfrontMs: 1, authorizationMs: null,
-      deadlineMs: null, overrunMs: null, waitMs: null, queueMs: null, attempts: 0,
-      enclosingDeadline: 'not_applicable', phases: [{ phase: 'complete', at: 1 }] };
+    const read = {
+      writeBudgetApplicable: false,
+      elapsedMs: 2,
+      upfrontMs: 1,
+      authorizationMs: null,
+      deadlineMs: null,
+      overrunMs: null,
+      waitMs: null,
+      queueMs: null,
+      attempts: 0,
+      enclosingDeadline: 'not_applicable',
+      phases: [{ phase: 'complete', at: 1 }],
+    };
     const primary = Array.from({ length: 1000 }, (_unused, index) =>
-      record(index < 51 ? 60 : 1, { tool: 'delegate_status', diagnostics: read }));
-    const warmups = Array.from({ length: 50 }, () => record(1, { phase: 'warmup', tool: 'delegate_status', diagnostics: read }));
+      record(index < 51 ? 60 : 1, { tool: 'delegate_status', diagnostics: read })
+    );
+    const warmups = Array.from({ length: 50 }, () =>
+      record(1, { phase: 'warmup', tool: 'delegate_status', diagnostics: read })
+    );
     const gates = numericalGates([...primary, ...warmups]);
     assert.equal(gates.response.allAttempts.qualified, true);
     assert.equal(gates.response.primaryMeasured.timing.p95, 60);
@@ -1060,27 +1646,69 @@ function runEvidenceCheckerControls() {
     assert.equal(numericalGates([...rows.slice(0, 1000), record(60, { recovery: true })]).qualified, false);
   });
   check('loss coverage requires each participant success, durable inspection and recovery', () => {
-    const cell = { h: 2, lossCoverageRequired: {
-      successfulLostMeasuredPerParticipant: 1, durableInspectionMeasuredPerParticipant: 1,
-      checkedRecoveryMeasuredPerParticipant: 1,
-    } };
+    const cell = {
+      h: 2,
+      lossCoverageRequired: {
+        successfulLostMeasuredPerParticipant: 1,
+        durableInspectionMeasuredPerParticipant: 1,
+        checkedRecoveryMeasuredPerParticipant: 1,
+      },
+    };
     const success = (participant) => ({
-      id: 'checker-' + participant, participant, recovery: false, phase: 'measured',
-      deliveryOutcome: 'response_lost', actualOutcome: 'success', semantic: true,
-      canonicalReplyVerified: true, durableInspectionVerified: true,
-      recoveryVerified: true, recoveryCall: 'checker-recovery-' + participant,
+      id: 'checker-' + participant,
+      participant,
+      recovery: false,
+      phase: 'measured',
+      deliveryOutcome: 'response_lost',
+      actualOutcome: 'success',
+      semantic: true,
+      canonicalReplyVerified: true,
+      durableInspectionVerified: true,
+      recoveryVerified: true,
+      recoveryCall: 'checker-recovery-' + participant,
     });
     const good = [success(0), success(1)];
     assert.equal(lossCoverage(cell, good).complete, true);
-    assert.equal(lossCoverage(cell, good.map((row) => ({ ...row, actualOutcome: 'busy' }))).complete, false);
+    assert.equal(
+      lossCoverage(
+        cell,
+        good.map((row) => ({ ...row, actualOutcome: 'busy' }))
+      ).complete,
+      false
+    );
     assert.equal(lossCoverage(cell, [success(0)]).complete, false);
-    assert.equal(lossCoverage(cell, good.map((row) => ({ ...row, durableInspectionVerified: false }))).complete, false);
-    assert.equal(lossCoverage(cell, good.map((row) => ({ ...row, recoveryVerified: false }))).complete, false);
-    const report = { ...cell, lossCoverageRequired: { ...cell.lossCoverageRequired, checkedRecoveryMeasuredPerParticipant: 0 } };
-    assert.equal(lossCoverage(report, good.map((row) => ({ ...row, recoveryVerified: false }))).complete, true);
+    assert.equal(
+      lossCoverage(
+        cell,
+        good.map((row) => ({ ...row, durableInspectionVerified: false }))
+      ).complete,
+      false
+    );
+    assert.equal(
+      lossCoverage(
+        cell,
+        good.map((row) => ({ ...row, recoveryVerified: false }))
+      ).complete,
+      false
+    );
+    const report = {
+      ...cell,
+      lossCoverageRequired: { ...cell.lossCoverageRequired, checkedRecoveryMeasuredPerParticipant: 0 },
+    };
+    assert.equal(
+      lossCoverage(
+        report,
+        good.map((row) => ({ ...row, recoveryVerified: false }))
+      ).complete,
+      true
+    );
   });
   check('canonical intent reply rejects wrong run, link and saved outcome', () => {
-    const durable = { run_id: 'r', link_id: 'l', outcome: { status: 'accepted', state: 'starting', runId: 'r', linkId: 'l' } };
+    const durable = {
+      run_id: 'r',
+      link_id: 'l',
+      outcome: { status: 'accepted', state: 'starting', runId: 'r', linkId: 'l' },
+    };
     const reply = { ok: true, ...durable.outcome };
     for (const tool of ['delegate_spawn', 'delegate_resume']) {
       assert.deepEqual(canonicalReplyErrors(tool, { ...reply, advice: {} }, durable), []);
@@ -1090,30 +1718,86 @@ function runEvidenceCheckerControls() {
   });
   check('canonical cancel, whoami, report and status replies reject contradictions', () => {
     const cancel = { cancel_requested_at: 123 };
-    assert.deepEqual(canonicalReplyErrors('delegate_cancel', { ok: true, accepted: true, cancelRequestedAt: 123 }, cancel), []);
+    assert.deepEqual(
+      canonicalReplyErrors('delegate_cancel', { ok: true, accepted: true, cancelRequestedAt: 123 }, cancel),
+      []
+    );
     for (const bad of [{ accepted: false }, { cancelRequestedAt: 124 }])
-      assert.ok(canonicalReplyErrors('delegate_cancel', { ok: true, accepted: true, cancelRequestedAt: 123, ...bad }, cancel).length);
-    const binding = { binding_id: 'b', caller_context_id: 'c', caller_id: 'a', session_ref: '{}', context_generation: 1, link_id: 'l', run_id: 'r' };
+      assert.ok(
+        canonicalReplyErrors('delegate_cancel', { ok: true, accepted: true, cancelRequestedAt: 123, ...bad }, cancel)
+          .length
+      );
+    const binding = {
+      binding_id: 'b',
+      caller_context_id: 'c',
+      caller_id: 'a',
+      session_ref: '{}',
+      context_generation: 1,
+      link_id: 'l',
+      run_id: 'r',
+    };
     const whoami = { ok: true, state: 'bound', linkId: 'l', runId: 'r', reason: null };
     assert.deepEqual(canonicalReplyErrors('delegate_whoami', whoami, binding), []);
     for (const bad of [{ state: 'pending' }, { runId: 'wrong' }, { linkId: 'wrong' }])
       assert.ok(canonicalReplyErrors('delegate_whoami', { ...whoami, ...bad }, binding).length);
     assert.ok(canonicalReplyErrors('delegate_whoami', whoami, null).length);
-    assert.deepEqual(canonicalReplyErrors('delegate_report', { ok: true, reportId: 'p', runId: 'r' }, { report_id: 'p', run_id: 'r' }), []);
-    assert.ok(canonicalReplyErrors('delegate_report', { ok: true, reportId: 'wrong', runId: 'r' }, { report_id: 'p', run_id: 'r' }).length);
-    const durable = { run_id: 'r', link_id: 'l', link_state: 'bound', state: 'running', run_seq: 1,
-      expected_generation: 1, cancel_requested_at: null, isCurrent: true, isRunTerminal: false, slotHeld: true, asOfSeq: 3 };
-    const status = { ok: true, link: { linkId: 'l', state: 'bound' },
-      currentRun: { runId: 'r', linkId: 'l', state: 'running', runSeq: 1, expectedGeneration: 1, cancelRequestedAt: null },
-      isCurrent: true, isRunTerminal: false, slotHeld: true, asOfSeq: 3 };
+    assert.deepEqual(
+      canonicalReplyErrors('delegate_report', { ok: true, reportId: 'p', runId: 'r' }, { report_id: 'p', run_id: 'r' }),
+      []
+    );
+    assert.ok(
+      canonicalReplyErrors(
+        'delegate_report',
+        { ok: true, reportId: 'wrong', runId: 'r' },
+        { report_id: 'p', run_id: 'r' }
+      ).length
+    );
+    const durable = {
+      run_id: 'r',
+      link_id: 'l',
+      link_state: 'bound',
+      state: 'running',
+      run_seq: 1,
+      expected_generation: 1,
+      cancel_requested_at: null,
+      isCurrent: true,
+      isRunTerminal: false,
+      slotHeld: true,
+      asOfSeq: 3,
+    };
+    const status = {
+      ok: true,
+      link: { linkId: 'l', state: 'bound' },
+      currentRun: {
+        runId: 'r',
+        linkId: 'l',
+        state: 'running',
+        runSeq: 1,
+        expectedGeneration: 1,
+        cancelRequestedAt: null,
+      },
+      isCurrent: true,
+      isRunTerminal: false,
+      slotHeld: true,
+      asOfSeq: 3,
+    };
     assert.deepEqual(canonicalReplyErrors('delegate_status', status, durable), []);
     assert.ok(canonicalReplyErrors('delegate_status', { ...status, slotHeld: false }, durable).length);
-    assert.ok(canonicalReplyErrors('delegate_status', { ...status, currentRun: { ...status.currentRun, runId: 'wrong' } }, durable).length);
+    assert.ok(
+      canonicalReplyErrors(
+        'delegate_status',
+        { ...status, currentRun: { ...status.currentRun, runId: 'wrong' } },
+        durable
+      ).length
+    );
   });
   check('zero-delay acknowledgement loss is not a numerical exemption', () => {
-    const row = record(35, { bank: 'forced', declaredInjection: 'commit-uncertain',
+    const row = record(35, {
+      bank: 'forced',
+      declaredInjection: 'commit-uncertain',
       injection: { requestedMs: 0, began: 0, ended: 0 },
-      diagnostics: { ...writeDiagnostics(), elapsedMs: 35, authorizationMs: 31, overrunMs: 1 } });
+      diagnostics: { ...writeDiagnostics(), elapsedMs: 35, authorizationMs: 31, overrunMs: 1 },
+    });
     assert.equal(overrunExempt(row), false);
     assert.equal(numericalGates([row].filter((item) => !overrunExempt(item))).qualified, false);
   });
@@ -1133,28 +1817,74 @@ function runEvidenceCheckerControls() {
     assert.equal(validColdTiming({ began: 0, ended: 2, diagnostics: writeDiagnostics() }), true);
   });
   check('read-only timing requires explicit N/A writer fields and valid read intervals', () => {
-    const diagnostics = { writeBudgetApplicable: false, elapsedMs: 2, upfrontMs: 1, authorizationMs: null,
-      deadlineMs: null, overrunMs: null, waitMs: null, queueMs: null, attempts: 0,
-      enclosingDeadline: 'not_applicable', phases: [{ phase: 'complete', at: 1 }] };
+    const diagnostics = {
+      writeBudgetApplicable: false,
+      elapsedMs: 2,
+      upfrontMs: 1,
+      authorizationMs: null,
+      deadlineMs: null,
+      overrunMs: null,
+      waitMs: null,
+      queueMs: null,
+      attempts: 0,
+      enclosingDeadline: 'not_applicable',
+      phases: [{ phase: 'complete', at: 1 }],
+    };
     assert.equal(numerical(record(2, { tool: 'delegate_status', diagnostics })).completeTiming, true);
     for (const field of ['authorizationMs', 'deadlineMs', 'overrunMs', 'waitMs', 'queueMs'])
-      assert.equal(numerical(record(2, { tool: 'delegate_status', diagnostics: { ...diagnostics, [field]: 0 } })).completeTiming, false);
+      assert.equal(
+        numerical(record(2, { tool: 'delegate_status', diagnostics: { ...diagnostics, [field]: 0 } })).completeTiming,
+        false
+      );
     for (const value of [null, '1', -1, Number.NaN, Number.POSITIVE_INFINITY, undefined])
-      assert.equal(numerical(record(2, { tool: 'delegate_status', diagnostics: { ...diagnostics, upfrontMs: value } })).completeTiming, false);
+      assert.equal(
+        numerical(record(2, { tool: 'delegate_status', diagnostics: { ...diagnostics, upfrontMs: value } }))
+          .completeTiming,
+        false
+      );
   });
 
   check('pending H=2 intentions remain summarized without invented latency', () => {
-    const cell = { h: 2, r: 10, tool: 'delegate_spawn', scenario: 'callback-overrun', bank: 'forced',
-      lossCoverageRequired: null };
+    const cell = {
+      h: 2,
+      r: 10,
+      tool: 'delegate_spawn',
+      scenario: 'callback-overrun',
+      bank: 'forced',
+      lossCoverageRequired: null,
+    };
     const completed = {
-      ...record(), bank: 'forced', id: 'checker-finished', participant: 0, finished: true, semantic: true,
-      dispatchState: 'issued', semanticErrors: [], sql: [], injection: { requestedMs: 40 },
-      transactionWallMs: 1, callbackMs: 1, commitMs: 0, rollbackMs: 0, backoffWallMs: 0,
+      ...record(),
+      bank: 'forced',
+      id: 'checker-finished',
+      participant: 0,
+      finished: true,
+      semantic: true,
+      dispatchState: 'issued',
+      semanticErrors: [],
+      sql: [],
+      injection: { requestedMs: 40 },
+      transactionWallMs: 1,
+      callbackMs: 1,
+      commitMs: 0,
+      rollbackMs: 0,
+      backoffWallMs: 0,
     };
     const pending = (participant) => ({
-      id: 'checker-pending-' + participant, participant, tool: 'delegate_spawn', phase: 'measured',
-      recovery: false, bank: 'forced', dispatchState: 'pending', finished: false,
-      semantic: true, semanticErrors: [], sql: [], transactions: [], backoffs: [], busyTimeoutMs: 0,
+      id: 'checker-pending-' + participant,
+      participant,
+      tool: 'delegate_spawn',
+      phase: 'measured',
+      recovery: false,
+      bank: 'forced',
+      dispatchState: 'pending',
+      finished: false,
+      semantic: true,
+      semanticErrors: [],
+      sql: [],
+      transactions: [],
+      backoffs: [],
+      busyTimeoutMs: 0,
     });
     const second = pending(1);
     const mixed = [completed, second];
@@ -1203,11 +1933,23 @@ function runEvidenceCheckerControls() {
     assert.equal(pendingScope.timingCoverage.invalid, 2);
     assert.equal(pendingScope.responseMs.n, 0);
     assert.equal(pendingScope.transactionMs.n, 0);
-    assert.ok(noneIssued.every((row) => row.interruptionReason === reason &&
-      row.finished === false && !('responseMs' in row) && !('diagnostics' in row) && !('ended' in row)));
+    assert.ok(
+      noneIssued.every(
+        (row) =>
+          row.interruptionReason === reason &&
+          row.finished === false &&
+          !('responseMs' in row) &&
+          !('diagnostics' in row) &&
+          !('ended' in row)
+      )
+    );
   });
-  return { executed: true, passed: true, checks,
-    scope: 'pure evidence-checker controls only; never benchmark samples or performance evidence' };
+  return {
+    executed: true,
+    passed: true,
+    checks,
+    scope: 'pure evidence-checker controls only; never benchmark samples or performance evidence',
+  };
 }
 
 let artifactsReady = false;
@@ -1215,7 +1957,8 @@ let deadline;
 try {
   mkdirSync(dirname(outputFile), { recursive: true });
   // Refuse to overwrite any earlier series, even a failed/partial one.
-  for (const path of [outputFile, rawFile, supportFile]) assert.equal(existsSync(path), false, 'evidence_path_exists:' + basename(path));
+  for (const path of [outputFile, rawFile, supportFile])
+    assert.equal(existsSync(path), false, 'evidence_path_exists:' + basename(path));
   for (const path of [outputFile, rawFile, supportFile]) closeSync(openSync(path, 'wx', 0o600));
   artifactsReady = true;
   checkerControls = runEvidenceCheckerControls();
@@ -1226,36 +1969,83 @@ try {
     ...hashTree(join(repository, 'packages/hud-mcp/dist')),
   };
   const filesystem = statfsSync(sandbox);
-  const mountinfo = readOptional('/proc/self/mountinfo').split('\n')
+  const mountinfo = readOptional('/proc/self/mountinfo')
+    .split('\n')
     .filter((line) => {
       const mount = line.split(' ')[4];
       return mount && (sandbox === mount || sandbox.startsWith(mount.endsWith('/') ? mount : mount + '/'));
-    }).sort((a, b) => b.split(' ')[4].length - a.split(' ')[4].length)[0];
+    })
+    .sort((a, b) => b.split(' ')[4].length - a.split(' ')[4].length)[0];
   identity = {
-    sourceSha: git('rev-parse', 'HEAD'), sourceTree: git('rev-parse', 'HEAD^{tree}'),
-    trackedChanges: git('diff', '--name-only', 'HEAD'), untrackedFiles: git('ls-files', '--others', '--exclude-standard'),
-    compiledSha256: compiled, sourceDriverSha256: digestFile(self),
+    sourceSha: git('rev-parse', 'HEAD'),
+    sourceTree: git('rev-parse', 'HEAD^{tree}'),
+    trackedChanges: git('diff', '--name-only', 'HEAD'),
+    untrackedFiles: git('ls-files', '--others', '--exclude-standard'),
+    compiledSha256: compiled,
+    sourceDriverSha256: digestFile(self),
     sourceHolderSha256: digestFile(join(repository, 'tests/int/p065-ledger-holder.mjs')),
-    hostLabel: createHash('sha256').update(hostname() + '/' + release()).digest('hex').slice(0, 16),
-    node: process.versions, execArgv: process.execArgv, platform: process.platform, arch: process.arch,
-    os: type(), kernel: release(), cpus: cpus().map((cpu) => ({ model: cpu.model, mhz: cpu.speed })),
-    availableParallelism: availableParallelism(), totalMemory: totalmem(), freeMemoryAtStart: freemem(),
-    cpuQuota: readOptional('/sys/fs/cgroup/cpu.max'), memoryLimit: readOptional('/sys/fs/cgroup/memory.max'),
+    hostLabel: createHash('sha256')
+      .update(hostname() + '/' + release())
+      .digest('hex')
+      .slice(0, 16),
+    node: process.versions,
+    execArgv: process.execArgv,
+    platform: process.platform,
+    arch: process.arch,
+    os: type(),
+    kernel: release(),
+    cpus: cpus().map((cpu) => ({ model: cpu.model, mhz: cpu.speed })),
+    availableParallelism: availableParallelism(),
+    totalMemory: totalmem(),
+    freeMemoryAtStart: freemem(),
+    cpuQuota: readOptional('/sys/fs/cgroup/cpu.max'),
+    memoryLimit: readOptional('/sys/fs/cgroup/memory.max'),
     cpuStatAtStart: readOptional('/sys/fs/cgroup/cpu.stat'),
-    filesystem: { type: String(filesystem.type), blockSize: String(filesystem.bsize), device: String(statSync(sandbox).dev),
-      mount: mountinfo ? { point: mountinfo.split(' ')[4], options: mountinfo.split(' ')[5], type: mountinfo.split(' - ')[1]?.split(' ')[0] } : 'unavailable' },
+    filesystem: {
+      type: String(filesystem.type),
+      blockSize: String(filesystem.bsize),
+      device: String(statSync(sandbox).dev),
+      mount: mountinfo
+        ? {
+            point: mountinfo.split(' ')[4],
+            options: mountinfo.split(' ')[5],
+            type: mountinfo.split(' - ')[1]?.split(' ')[0],
+          }
+        : 'unavailable',
+    },
     command: ['node', 'tests/int/p065-budget-benchmark.mjs', basename(outputFile)],
-    relevantEnvironment: { HOME: '<temporary>', HUD_HOME: '<temporary>', TMPDIR: '<temporary>', inheritedHarnessVariables: 'removed',
+    relevantEnvironment: {
+      HOME: '<temporary>',
+      HUD_HOME: '<temporary>',
+      TMPDIR: '<temporary>',
+      inheritedHarnessVariables: 'removed',
       NODE_OPTIONS: 'removed for children; initial process value recorded as present/absent only',
-      parentNodeOptionsPresent: Boolean(originalEnv.NODE_OPTIONS) },
+      parentNodeOptionsPresent: Boolean(originalEnv.NODE_OPTIONS),
+    },
     interference: 'No unrelated workload is started. Host-wide interference is not controllable; all samples retained.',
   };
-  assert.equal(identity.parentNodeOptionsPresent ?? Boolean(originalEnv.NODE_OPTIONS), false, 'unset_NODE_OPTIONS_before_benchmark');
+  assert.equal(
+    identity.parentNodeOptionsPresent ?? Boolean(originalEnv.NODE_OPTIONS),
+    false,
+    'unset_NODE_OPTIONS_before_benchmark'
+  );
   assert.equal(identity.trackedChanges, '', 'source_worktree_must_match_recorded_commit');
   const evidencePaths = new Set([outputFile, rawFile, supportFile].map((path) => relative(repository, path)));
-  assert.ok(identity.untrackedFiles.split('\n').filter(Boolean).every((path) => evidencePaths.has(path)), 'source_worktree_has_unrecorded_files');
+  assert.ok(
+    identity.untrackedFiles
+      .split('\n')
+      .filter(Boolean)
+      .every((path) => evidencePaths.has(path)),
+    'source_worktree_has_unrecorded_files'
+  );
   snapshotReport(false);
-  deadline = setTimeout(() => { stopped = true; raw({ kind: 'interrupted', reason: 'outer_timeout', current, at: instant() }); }, OUTER_MS - (performance.now() - bootAt));
+  deadline = setTimeout(
+    () => {
+      stopped = true;
+      raw({ kind: 'interrupted', reason: 'outer_timeout', current, at: instant() });
+    },
+    OUTER_MS - (performance.now() - bootAt)
+  );
   const interrupted = (signal) => {
     stopped = true;
     raw({ kind: 'interrupted', reason: signal, current, at: instant() });
@@ -1275,32 +2065,55 @@ try {
     let coldFixture, coldHelper;
     try {
       coldFixture = await p065WorkloadFixture(profile.h, profile.r, 'delegate_resume');
-      writeFileSync(join(coldFixture.root, 'delegate.json'), JSON.stringify(coldFixture.services[0].options.config), { mode: 0o600 });
+      writeFileSync(join(coldFixture.root, 'delegate.json'), JSON.stringify(coldFixture.services[0].options.config), {
+        mode: 0o600,
+      });
       const processBegan = instant();
       coldHelper = ownedHelper();
       const ready = await coldHelper.ready;
       const launchToReadyMs = instant() - processBegan;
       await coldHelper.request('configure', {
-        root: coldFixture.root, baselineIds: coldFixture.baselineIds,
-        sourceId: coldFixture.parent.registration.source.sourceId, load: false,
+        root: coldFixture.root,
+        baselineIds: coldFixture.baselineIds,
+        sourceId: coldFixture.parent.registration.source.sourceId,
+        load: false,
       });
       const before = countState(coldFixture.ledger, coldFixture.launches);
       const result = await coldHelper.request('cold-cli', {
-        linkId: 'p065-link-100', runId: coldFixture.targets[0].runId,
+        linkId: 'p065-link-100',
+        runId: coldFixture.targets[0].runId,
       });
       const after = countState(coldFixture.ledger, coldFixture.launches);
-      const semantic = result.result.every((sample) => sample.exitCode === null && sample.output.length === 0 &&
-        /ledger_busy|capability_unverified/.test(sample.error ?? '')) &&
-        ['accepted', 'runs', 'slots', 'reports', 'cancel', 'bindings', 'launches']
-          .every((field) => before[field] === after[field]);
+      const semantic =
+        result.result.every(
+          (sample) =>
+            sample.exitCode === null &&
+            sample.output.length === 0 &&
+            /ledger_busy|capability_unverified/.test(sample.error ?? '')
+        ) &&
+        ['accepted', 'runs', 'slots', 'reports', 'cancel', 'bindings', 'launches'].every(
+          (field) => before[field] === after[field]
+        );
       const entry = {
-        profile, launchToReadyMs, initializationMs: result.initializationMs, scope: result.scope,
-        samples: result.result.map((sample) => ({ ...sample, invalidTiming: timingErrors('delegate_resume', sample.diagnostics) })), semantic, before, after, workerPid: ready.pid,
-        limitation: 'H/R names fixture baseline, not concurrent CLI callers; these are additive cold boundary probes, not substitutes for the MCP populations.',
+        profile,
+        launchToReadyMs,
+        initializationMs: result.initializationMs,
+        scope: result.scope,
+        samples: result.result.map((sample) => ({
+          ...sample,
+          invalidTiming: timingErrors('delegate_resume', sample.diagnostics),
+        })),
+        semantic,
+        before,
+        after,
+        workerPid: ready.pid,
+        limitation:
+          'H/R names fixture baseline, not concurrent CLI callers; these are additive cold boundary probes, not substitutes for the MCP populations.',
       };
       coldCli.push(entry);
       support({ kind: 'compiled_cli_cold', ...entry });
-      for (const sample of entry.samples) raw({ kind: 'compiled_cli_call', bank: 'operational', ...profile, ...sample, semantic });
+      for (const sample of entry.samples)
+        raw({ kind: 'compiled_cli_call', bank: 'operational', ...profile, ...sample, semantic });
       snapshotReport(false);
     } finally {
       await coldHelper?.close();
@@ -1312,8 +2125,20 @@ try {
   for (const cell of planned) {
     checkOuter();
     const rows = [];
-    support({ kind: 'population_predeclared', ...cell,
-      injection: cell.bank === 'forced' ? { point: cell.scenario === 'callback-overrun' ? 'target callback return before COMMIT' : 'after actual target COMMIT', synchronousDelayMs: cell.scenario === 'commit-uncertain' ? 0 : 40 } : null });
+    support({
+      kind: 'population_predeclared',
+      ...cell,
+      injection:
+        cell.bank === 'forced'
+          ? {
+              point:
+                cell.scenario === 'callback-overrun'
+                  ? 'target callback return before COMMIT'
+                  : 'after actual target COMMIT',
+              synchronousDelayMs: cell.scenario === 'commit-uncertain' ? 0 : 40,
+            }
+          : null,
+    });
     try {
       for (const phase of ['warmup', 'measured']) {
         const count = phase === 'warmup' ? WARMUPS : MEASURED;
@@ -1328,13 +2153,21 @@ try {
     const summary = summarize(cell, rows);
     distributions.push(summary);
     snapshotReport(false);
-    process.stdout.write(JSON.stringify({
-      cell: cell.id, complete: summary.complete, numerical: summary.numerical,
-      semantics: summary.semantics, measured: summary.measured, outcomes: summary.observedOutcomes,
-    }) + '\n');
+    process.stdout.write(
+      JSON.stringify({
+        cell: cell.id,
+        complete: summary.complete,
+        numerical: summary.numerical,
+        semantics: summary.semantics,
+        measured: summary.measured,
+        outcomes: summary.observedOutcomes,
+      }) + '\n'
+    );
   }
   const result = snapshotReport(true);
-  process.stdout.write(JSON.stringify({ kind: 'p065-summary', ...result.results, populationComplete: result.populationComplete }) + '\n');
+  process.stdout.write(
+    JSON.stringify({ kind: 'p065-summary', ...result.results, populationComplete: result.populationComplete }) + '\n'
+  );
   if (!result.results.acceptanceChecks || !result.populationComplete) process.exitCode = 1;
 } catch (error) {
   if (artifactsReady) {

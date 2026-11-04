@@ -29,19 +29,34 @@ for (const path of [sandbox, marker]) {
   assert.equal(stat.isSymbolicLink(), false);
 }
 const instant = () => performance.timeOrigin + performance.now();
-let ledger, blocker, observation, ref, lease, root, writers = [];
-let running = false, loop = Promise.resolve(), held = false, holdTimer, stopping = false;
-let sequence = 0, metrics = [], missedMetrics = 0, monotonicBase = 0, epochBase = 0;
+let ledger,
+  blocker,
+  observation,
+  ref,
+  lease,
+  root,
+  writers = [];
+let running = false,
+  loop = Promise.resolve(),
+  held = false,
+  holdTimer,
+  stopping = false;
+let sequence = 0,
+  metrics = [],
+  missedMetrics = 0,
+  monotonicBase = 0,
+  epochBase = 0;
 const append = (row) => {
   // Bound malformed/stalled parent memory. Overflow fails evidence, never drops silently.
   if (metrics.length >= 100000) missedMetrics++;
   else metrics.push(row);
 };
 const safeError = (error) => String(error?.code ?? error?.message ?? error).replaceAll(sandbox, '<temporary>');
-const send = (value) => new Promise((resolveSend, reject) => {
-  if (!process.connected) return reject(new Error('holder_parent_disconnected'));
-  process.send(value, (error) => error ? reject(error) : resolveSend());
-});
+const send = (value) =>
+  new Promise((resolveSend, reject) => {
+    if (!process.connected) return reject(new Error('holder_parent_disconnected'));
+    process.send(value, (error) => (error ? reject(error) : resolveSend()));
+  });
 function temporary(path) {
   const actual = realpathSync(path);
   const tail = relative(sandbox, actual);
@@ -56,33 +71,62 @@ function observationCommit(seq) {
   const at = Date.now();
   const stamp = { ref, sourceGeneration: 1, seqDomain: 'p065-storage-load', commitSeq: seq, inputLedgerSeq: null };
   return {
-    ref, sourceGeneration: 1, leaseGeneration: lease.generation, seqDomain: stamp.seqDomain,
-    commitSeq: seq, observationStamp: stamp,
+    ref,
+    sourceGeneration: 1,
+    leaseGeneration: lease.generation,
+    seqDomain: stamp.seqDomain,
+    commitSeq: seq,
+    observationStamp: stamp,
     checkpoint: {
-      schemaVersion: 1, readerVersion: 'p065-synthetic-reader-1', ref,
-      fileId: { dev: 1, inode: 2 }, offset: seq * 64, sourceGeneration: 1, parserState: initialParserState(),
+      schemaVersion: 1,
+      readerVersion: 'p065-synthetic-reader-1',
+      ref,
+      fileId: { dev: 1, inode: 2 },
+      offset: seq * 64,
+      sourceGeneration: 1,
+      parserState: initialParserState(),
     },
     summary: {
       nodeIdentity: { kind: 'session', ref },
       statusProjection: {
-        activity: 'working', pendingReason: 'none', lastTurnOutcome: 'none', liveness: 'alive',
-        freshness: projectFreshness([], [], at), stateKey: 'working', stateSince: epochBase,
-        stateSinceBasis: 'event', isRunTerminal: null, asOfSeq: null, observationStamp: stamp,
-        asOf: at, observedAt: at, lastEvidenceAt: at,
+        activity: 'working',
+        pendingReason: 'none',
+        lastTurnOutcome: 'none',
+        liveness: 'alive',
+        freshness: projectFreshness([], [], at),
+        stateKey: 'working',
+        stateSince: epochBase,
+        stateSinceBasis: 'event',
+        isRunTerminal: null,
+        asOfSeq: null,
+        observationStamp: stamp,
+        asOf: at,
+        observedAt: at,
+        lastEvidenceAt: at,
       },
       conflict: null,
       spent: {
         tokens: { value: { input: seq, output: 0 }, quality: 'reported', source: 'synthetic', asOf: at },
         costUsd: { value: null, quality: 'unknown', source: 'synthetic', asOf: at },
       },
-      workspace: null, coverage: { state: 'complete', skipped: {}, gaps: [], loaded: true },
-      loaded: true, depth: 0, evidenceStamp: 'p065-synthetic-' + seq,
+      workspace: null,
+      coverage: { state: 'complete', skipped: {}, gaps: [], loaded: true },
+      loaded: true,
+      depth: 0,
+      evidenceStamp: 'p065-synthetic-' + seq,
     },
     continuity: {
-      nodeIdentity: { kind: 'session', ref }, ruleVersion: 'p065-synthetic-1', sourceGeneration: 1,
-      episodeAnchor: 'p065-storage', stateKey: 'working', stateSince: epochBase, stateSinceBasis: 'event',
+      nodeIdentity: { kind: 'session', ref },
+      ruleVersion: 'p065-synthetic-1',
+      sourceGeneration: 1,
+      episodeAnchor: 'p065-storage',
+      stateKey: 'working',
+      stateSince: epochBase,
+      stateSinceBasis: 'event',
     },
-    notices: [{ seq, seqDomain: stamp.seqDomain, created_at: at, ref, kind: 'pending', inputStamp: 'synthetic-' + seq }],
+    notices: [
+      { seq, seqDomain: stamp.seqDomain, created_at: at, ref, kind: 'pending', inputStamp: 'synthetic-' + seq },
+    ],
   };
 }
 async function tick(load) {
@@ -102,10 +146,18 @@ async function tick(load) {
     try {
       lease = observation.renew(ref, lease);
       const commit = observationCommit(sequence + 1);
-      const result = observation.publish({
-        commit, previousCommitSeq: sequence,
-        boundary: witnessObservationBoundary(commit.checkpoint, commit.summary, checkpointBoundary(commit.checkpoint)),
-      }, lease);
+      const result = observation.publish(
+        {
+          commit,
+          previousCommitSeq: sequence,
+          boundary: witnessObservationBoundary(
+            commit.checkpoint,
+            commit.summary,
+            checkpointBoundary(commit.checkpoint)
+          ),
+        },
+        lease
+      );
       assert.equal(result.changed, true);
       sequence = result.commitSeq;
       assert.equal(observation.readProjection(ref).commitSeq, sequence);
@@ -132,7 +184,11 @@ async function halt() {
 async function close() {
   await halt();
   if (observation) {
-    try { observation.release(ref, lease); } finally { observation.close(); }
+    try {
+      observation.release(ref, lease);
+    } finally {
+      observation.close();
+    }
     observation = undefined;
   }
   blocker?.close();
@@ -151,18 +207,22 @@ async function command(message) {
     const file = temporary(join(root, 'ledger.sqlite'));
     assert.ok(lstatSync(file).isFile());
     assert.equal(lstatSync(file).nlink, 1);
-    metrics = []; missedMetrics = 0; sequence = 0;
+    metrics = [];
+    missedMetrics = 0;
+    sequence = 0;
     ledger = await openLedger(file);
     blocker = new DatabaseSync(file);
     blocker.exec('PRAGMA busy_timeout=0');
     const ids = message.baselineIds;
     assert.ok(Array.isArray(ids) && [1, 10].includes(ids.length) && new Set(ids).size === ids.length);
-    epochBase = Date.now(); monotonicBase = performance.now();
+    epochBase = Date.now();
+    monotonicBase = performance.now();
     writers = ids.map((runId) => {
       const run = ledger.snapshot((tx) => readRun(tx, runId));
       assert.ok(run.supervisor);
       return {
-        runId, initialMono: run.heartbeatMonoMs,
+        runId,
+        initialMono: run.heartbeatMonoMs,
         writer: createHeartbeatWriter(ledger, runId, run.supervisor, run),
       };
     });
@@ -175,11 +235,15 @@ async function command(message) {
     await tick(Boolean(message.load));
     assert.ok(!metrics.some((row) => row.kind.endsWith('_error')), 'holder_initial_traffic_failed');
     return {
-      ready: true, root: relative(sandbox, root), ledgerId: ledger.ledgerId,
+      ready: true,
+      root: relative(sandbox, root),
+      ledgerId: ledger.ledgerId,
       sqlite: blocker.prepare('SELECT sqlite_version() AS v').get().v,
       busyTimeoutMs: Number(blocker.prepare('PRAGMA busy_timeout').get().timeout),
       observationPath: observation ? relative(sandbox, observation.databasePath) : null,
-      device: String(statSync(file).dev), baselineIds: ids, readyAt: instant(),
+      device: String(statSync(file).dev),
+      baselineIds: ids,
+      readyAt: instant(),
     };
   }
   assert.ok(ledger, 'holder_not_configured');
@@ -199,34 +263,60 @@ async function command(message) {
       const budget = new CallBudget();
       const began = instant();
       const output = [];
-      let error = null, exitCode = null;
+      let error = null,
+        exitCode = null;
       try {
         const home = privateHome({ HUD_HOME: root }, budget);
-        exitCode = await runCommand([
-          'resume', message.linkId, '--request-key', 'p065-cold-cli-' + phase,
-          '--expected-run', message.runId, '--mode', 'headless', '--json',
-        ], home, {
-          env: { HOME: sandbox, HUD_HOME: root, PATH: process.env.PATH },
-          stdout: async (text) => { output.push(text); },
-          stderr: (text) => { output.push(text); },
-        }, {
-          budget,
-          // Real refusal after production preparation. Never launch a harness,
-          // manufacture capability success, or pre-import the MCP writer.
-          capability: { verify: () => ({ ok: false, reason: 'capability_unverified' }) },
-        });
-      } catch (caught) { error = safeError(caught); }
+        exitCode = await runCommand(
+          [
+            'resume',
+            message.linkId,
+            '--request-key',
+            'p065-cold-cli-' + phase,
+            '--expected-run',
+            message.runId,
+            '--mode',
+            'headless',
+            '--json',
+          ],
+          home,
+          {
+            env: { HOME: sandbox, HUD_HOME: root, PATH: process.env.PATH },
+            stdout: async (text) => {
+              output.push(text);
+            },
+            stderr: (text) => {
+              output.push(text);
+            },
+          },
+          {
+            budget,
+            // Real refusal after production preparation. Never launch a harness,
+            // manufacture capability success, or pre-import the MCP writer.
+            capability: { verify: () => ({ ok: false, reason: 'capability_unverified' }) },
+          }
+        );
+      } catch (caught) {
+        error = safeError(caught);
+      }
       budget.note('complete');
       const diagnostics = budget.diagnostics();
       result.push({ phase, began, ended: instant(), diagnostics, error, exitCode, output });
     }
-    return { initializationMs, result, scope: 'real compiled CLI privateHome/runCommand to independently built MCP; refusal-only capability seam' };
+    return {
+      initializationMs,
+      result,
+      scope: 'real compiled CLI privateHome/runCommand to independently built MCP; refusal-only capability seam',
+    };
   }
   if (action === 'start') {
     assert.equal(running, false);
     running = true;
     loop = (async () => {
-      while (running) { await tick(Boolean(observation)); if (running) await sleep(1); }
+      while (running) {
+        await tick(Boolean(observation));
+        if (running) await sleep(1);
+      }
     })();
     return { started: true, at: instant() };
   }
@@ -237,13 +327,20 @@ async function command(message) {
     held = true;
     const acquiredAt = instant();
     append({ kind: 'lock_acquired', at: acquiredAt, requestedMs: message.ms });
-    holdTimer = setTimeout(() => { try { release(); } catch (error) { append({ kind: 'release_error', error: safeError(error) }); } }, message.ms);
+    holdTimer = setTimeout(() => {
+      try {
+        release();
+      } catch (error) {
+        append({ kind: 'release_error', error: safeError(error) });
+      }
+    }, message.ms);
     return { acquired: true, acquiredAt, requestedMs: message.ms };
   }
   if (action === 'stop') {
     await halt();
     const result = { stopped: true, at: instant(), metrics, missedMetrics, observationCommits: sequence };
-    metrics = []; missedMetrics = 0;
+    metrics = [];
+    missedMetrics = 0;
     return result;
   }
   if (action === 'close') {
@@ -254,21 +351,38 @@ async function command(message) {
 }
 let chain = Promise.resolve();
 process.on('message', (message) => {
-  chain = chain.then(async () => {
-    try { await send({ id: message.id, ok: true, result: await command(message) }); }
-    catch (error) { await send({ id: message.id, ok: false, error: safeError(error) }); }
-  }).catch(() => shutdown(1));
+  chain = chain
+    .then(async () => {
+      try {
+        await send({ id: message.id, ok: true, result: await command(message) });
+      } catch (error) {
+        await send({ id: message.id, ok: false, error: safeError(error) });
+      }
+    })
+    .catch(() => shutdown(1));
 });
 async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
-  try { await close(); } catch { code = 1; }
+  try {
+    await close();
+  } catch {
+    code = 1;
+  }
   process.exitCode = code;
   if (process.connected) process.disconnect();
 }
-process.on('disconnect', () => { void shutdown(); });
-process.on('SIGTERM', () => { void shutdown(); });
-process.on('SIGINT', () => { void shutdown(1); });
+process.on('disconnect', () => {
+  void shutdown();
+});
+process.on('SIGTERM', () => {
+  void shutdown();
+});
+process.on('SIGINT', () => {
+  void shutdown(1);
+});
 // A wedged/missing parent can never leave an indefinite writer lock or helper.
-setTimeout(() => { void shutdown(1); }, 3_650_000).unref();
+setTimeout(() => {
+  void shutdown(1);
+}, 3_650_000).unref();
 await send({ ready: true, pid: process.pid, protocol: 1 });
