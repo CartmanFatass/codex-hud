@@ -1,0 +1,13 @@
+{
+ "tree": "u",
+ "profile": "node24-envproxy",
+ "id": "install-u-npm-ci",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:22:20.127Z",
+ "end": "2026-11-04T03:22:20.831Z",
+ "timeout_s": 900,
+ "command": "npm ci --ignore-scripts",
+ "owned_left": "none",
+ "captures": "captures/node24-envproxy/install-u-npm-ci"
+}

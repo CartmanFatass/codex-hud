@@ -1,0 +1,21 @@
+utc: 2026-11-04T03:22:15Z
+Linux 6.18.33.2-microsoft-standard-WSL2 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 24.04.4 LTS"
+VERSION="24.04.4 LTS (Noble Numbat)"
+wsl interop: enabled
+cpu:  AMD Ryzen 7 8745H w/ Radeon 780M Graphics x 16
+               total        used        free      shared  buff/cache   available
+Mem:     15596150784  3796742144  1578704896    26030080 10563936256 11799408640
+filesystems:
+/dev/sdd       ext4 1007G  315G  642G  33% /
+/dev/sdd       ext4 1007G  315G  642G  33% /
+/dev/sdd       ext4 1007G  315G  642G  33% /
+short temp root: <SROOT> (ext2/ext3; device 2096; worktree device 2096)
+uid/euid/gid: 1000/1000/1000 (bash EUID=1000)
+kernel.yama.ptrace_scope: 1
+node22: <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node v22.23.4 sha256 94efd062ed066c1a0b332e18249859c905e920eeada5df55d24c99b919629a90; npm 10.9.9 at <VERIFY_ROOT>/runtimes/node-v22.23.4/lib/node_modules/npm/bin/npm-cli.js npm-cli sha256 8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7
+node24: <HOME>/.nvm/versions/node/v24.22.1/bin/node v24.22.1 sha256 e32e2d16081cf644f88392934288086e7662529d0d43277c34f7aad2207cfafb; npm 11.19.1 at <HOME>/.nvm/versions/node/v24.22.1/lib/node_modules/npm/bin/npm-cli.js npm-cli sha256 8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7
+invoking shell variables present (names only): HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy NODE_USE_ENV_PROXY 
+NODE_OPTIONS / NODE_NO_WARNINGS / NODE_REDIRECT_WARNINGS in invoking shell: NODE_OPTIONS=absent NODE_NO_WARNINGS=absent NODE_REDIRECT_WARNINGS=absent 
+proxy value relations (no values): HTTP_PROXY==http_proxy yes; HTTPS_PROXY==https_proxy yes; ALL_PROXY==all_proxy yes; NO_PROXY==no_proxy yes; HTTP_PROXY==HTTPS_PROXY yes
+load: 0.41 0.42 0.29 1/1056 1074058

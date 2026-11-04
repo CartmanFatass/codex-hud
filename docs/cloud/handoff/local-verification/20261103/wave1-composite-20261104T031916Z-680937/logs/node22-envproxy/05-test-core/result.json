@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-envproxy",
+ "id": "05-test-core",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:24:07.882Z",
+ "end": "2026-11-04T03:24:20.832Z",
+ "timeout_s": 900,
+ "command": "npm run test:core",
+ "owned_left": "none",
+ "captures": "captures/node22-envproxy/05-test-core"
+}

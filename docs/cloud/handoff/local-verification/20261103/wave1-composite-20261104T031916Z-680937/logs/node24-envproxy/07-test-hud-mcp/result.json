@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node24-envproxy",
+ "id": "07-test-hud-mcp",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:32:55.580Z",
+ "end": "2026-11-04T03:32:59.780Z",
+ "timeout_s": 900,
+ "command": "npm run test:hud-mcp",
+ "owned_left": "none",
+ "captures": "captures/node24-envproxy/07-test-hud-mcp"
+}

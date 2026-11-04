@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node24-envproxy",
+ "id": "10-git-diff-check",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:33:10.925Z",
+ "end": "2026-11-04T03:33:10.982Z",
+ "timeout_s": 60,
+ "command": "git diff --check",
+ "owned_left": "none",
+ "captures": "captures/node24-envproxy/10-git-diff-check"
+}

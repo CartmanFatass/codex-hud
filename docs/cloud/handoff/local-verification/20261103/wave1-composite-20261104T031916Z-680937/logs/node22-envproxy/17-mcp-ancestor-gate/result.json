@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-envproxy",
+ "id": "17-mcp-ancestor-gate",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:27:10.330Z",
+ "end": "2026-11-04T03:27:10.938Z",
+ "timeout_s": 300,
+ "command": "node --test packages/hud-mcp/dist/tests/hud-mcp/ancestor-discovery.test.js packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js",
+ "owned_left": "none",
+ "captures": "captures/node22-envproxy/17-mcp-ancestor-gate"
+}

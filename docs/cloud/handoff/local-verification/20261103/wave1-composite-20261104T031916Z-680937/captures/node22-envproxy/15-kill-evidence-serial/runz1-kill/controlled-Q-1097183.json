@@ -1,0 +1,3184 @@
+{
+  "schema": 2,
+  "label": "controlled-Q",
+  "runtime": "v22.23.4",
+  "caveat": "Instrumentation may perturb scheduling. New evidence, not historical replay. No extra critical-path probes.",
+  "redaction": "v2 explicit field allowlist; opaque scope, boot and PID-domain identities consistently pseudonymized throughout projected copies; original in-memory digest retained, not reconstructible from projection.",
+  "originalRecordsSha256": "ead9f13a5a667827e0dcc45e52fda39081bc25818ec22d37113a4e07ec539a43",
+  "records": [
+    {
+      "sequence": 1,
+      "operation": "register",
+      "at": 1793762788186,
+      "input": [
+        "run_aac13b70be454155a1c85a813f286a11",
+        "<ticket omitted>",
+        "<digest omitted>",
+        {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        }
+      ],
+      "before": {
+        "revision": 0,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "reserved",
+          "supervisor": null,
+          "heartbeatAt": null,
+          "heartbeatSeq": 0,
+          "heartbeatMonoMs": null,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": null,
+        "claimState": "issued",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 1,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "armed",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      }
+    },
+    {
+      "sequence": 2,
+      "operation": "phase",
+      "at": 1793762788186,
+      "input": [
+        "run_aac13b70be454155a1c85a813f286a11",
+        {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "submitting"
+      ],
+      "before": {
+        "revision": 1,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "armed",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 2,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "submitting",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      }
+    },
+    {
+      "sequence": 3,
+      "operation": "phase",
+      "at": 1793762788186,
+      "input": [
+        "run_aac13b70be454155a1c85a813f286a11",
+        {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "submitted"
+      ],
+      "before": {
+        "revision": 2,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "submitting",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 3,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      }
+    },
+    {
+      "sequence": 4,
+      "operation": "startup",
+      "at": 1793762788186,
+      "input": [
+        "run_aac13b70be454155a1c85a813f286a11",
+        {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        {
+          "schema_version": 1,
+          "run_id": "run_aac13b70be454155a1c85a813f286a11",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "command_leader": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "harness": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "scope": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "created_at": 1793762788185,
+          "stdin_mode": "closed",
+          "capture": "file"
+        }
+      ],
+      "before": {
+        "revision": 3,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 4,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "state": "starting",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": 1793762788186,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_aac13b70be454155a1c85a813f286a11",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "command_leader": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "harness": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "scope": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "created_at": 1793762788185,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      }
+    },
+    {
+      "sequence": 5,
+      "operation": "reconcile",
+      "at": 1793762788193,
+      "input": [
+        "run_aac13b70be454155a1c85a813f286a11",
+        5,
+        [
+          {
+            "evidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788187,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "19e0a2fd-ae54-4106-995e-fe516a9754ed",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788192,
+            "observedAt": 1793762788192,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          }
+        ],
+        1793762788193
+      ],
+      "before": {
+        "revision": 5,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "state": "starting",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": 1793762788186,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_aac13b70be454155a1c85a813f286a11",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "command_leader": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "harness": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "scope": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "created_at": 1793762788185,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793762788187,
+            "payload": {}
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 6,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "state": "running",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": 1793762788186,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_aac13b70be454155a1c85a813f286a11",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "command_leader": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "harness": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "scope": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "created_at": 1793762788185,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788187,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "19e0a2fd-ae54-4106-995e-fe516a9754ed",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788192,
+            "observedAt": 1793762788192,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793762788187,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793762788193,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "result": {
+        "row": "R-02-5",
+        "state": "running",
+        "releaseSlot": false,
+        "emitTransition": true,
+        "blockNewOperations": true,
+        "evidenceIds": [
+          "6470b48e-d94a-4581-9908-13be8d6dfb03",
+          "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+          "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+          "19e0a2fd-ae54-4106-995e-fe516a9754ed"
+        ],
+        "auditEvidenceIds": [],
+        "cause": null,
+        "terminalNote": null,
+        "exitCode": null,
+        "exitSignal": null,
+        "exitSource": null
+      }
+    },
+    {
+      "sequence": 6,
+      "operation": "reconcile",
+      "at": 1793762788216,
+      "input": [
+        "run_aac13b70be454155a1c85a813f286a11",
+        6,
+        [
+          {
+            "evidenceId": "0ff26c40-4380-4680-bcf1-439039ab5203",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788208,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "a9d853e3-fe98-4396-8e64-0536ef05cf4e",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "9e2a5ee9-18fd-4a02-9cc0-107329653253",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "bfff257b-e347-455c-b91d-6f4714b76f62",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788215,
+            "observedAt": 1793762788215,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "1853da2e-e1b9-490c-8706-23f58f9a2050",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788215,
+            "observedAt": 1793762788215,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        1793762788216
+      ],
+      "before": {
+        "revision": 6,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "state": "running",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793762788185,
+          "startedAt": 1793762788186,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_aac13b70be454155a1c85a813f286a11",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "command_leader": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "harness": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "scope": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "created_at": 1793762788185,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788187,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "19e0a2fd-ae54-4106-995e-fe516a9754ed",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788192,
+            "observedAt": 1793762788192,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793762788187,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793762788193,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 7,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "state": "ended",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": 1793762788216,
+          "createdAt": 1793762788185,
+          "startedAt": 1793762788186,
+          "endedAt": 1793762788216,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03"
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_aac13b70be454155a1c85a813f286a11",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "command_leader": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "harness": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "scope": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "created_at": 1793762788185,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788187,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "19e0a2fd-ae54-4106-995e-fe516a9754ed",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788192,
+            "observedAt": 1793762788192,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          },
+          {
+            "evidenceId": "0ff26c40-4380-4680-bcf1-439039ab5203",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788208,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "a9d853e3-fe98-4396-8e64-0536ef05cf4e",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "9e2a5ee9-18fd-4a02-9cc0-107329653253",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "bfff257b-e347-455c-b91d-6f4714b76f62",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788215,
+            "observedAt": 1793762788215,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "1853da2e-e1b9-490c-8706-23f58f9a2050",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788215,
+            "observedAt": 1793762788215,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "revoked",
+        "slotHeld": false,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793762788187,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793762788193,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          },
+          {
+            "seq": 4,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793762788216,
+            "payload": {
+              "row": "R-02-3",
+              "state": "ended"
+            }
+          }
+        ],
+        "terminalTransitionCount": 1
+      },
+      "result": {
+        "row": "R-02-3",
+        "state": "ended",
+        "releaseSlot": true,
+        "emitTransition": true,
+        "blockNewOperations": false,
+        "evidenceIds": [
+          "6470b48e-d94a-4581-9908-13be8d6dfb03",
+          "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+          "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+          "0ff26c40-4380-4680-bcf1-439039ab5203",
+          "a9d853e3-fe98-4396-8e64-0536ef05cf4e",
+          "9e2a5ee9-18fd-4a02-9cc0-107329653253",
+          "bfff257b-e347-455c-b91d-6f4714b76f62",
+          "1853da2e-e1b9-490c-8706-23f58f9a2050"
+        ],
+        "auditEvidenceIds": [
+          "19e0a2fd-ae54-4106-995e-fe516a9754ed"
+        ],
+        "cause": null,
+        "terminalNote": null,
+        "exitCode": null,
+        "exitSignal": null,
+        "exitSource": null
+      }
+    },
+    {
+      "sequence": 7,
+      "operation": "reconcile",
+      "at": 1793762788241,
+      "input": [
+        "run_aac13b70be454155a1c85a813f286a11",
+        7,
+        [
+          {
+            "evidenceId": "9853031a-b2c9-4fb3-a4a9-35c2e954c53c",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788236,
+            "observedAt": 1793762788236,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "9c528cf5-5531-406e-8a5b-b5ffc74b9d17",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788236,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "5c75afb4-9f2a-4161-8e3a-bce46d43b09a",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788236,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "4337bf25-7e01-4110-95cd-6d87b4c6760d",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788240,
+            "observedAt": 1793762788240,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "906adf93-191b-47b7-823b-311d802ba58b",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788240,
+            "observedAt": 1793762788240,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        1793762788241
+      ],
+      "before": {
+        "revision": 7,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "state": "ended",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": 1793762788216,
+          "createdAt": 1793762788185,
+          "startedAt": 1793762788186,
+          "endedAt": 1793762788216,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03"
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_aac13b70be454155a1c85a813f286a11",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "command_leader": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "harness": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "scope": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "created_at": 1793762788185,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788187,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "19e0a2fd-ae54-4106-995e-fe516a9754ed",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788192,
+            "observedAt": 1793762788192,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          },
+          {
+            "evidenceId": "0ff26c40-4380-4680-bcf1-439039ab5203",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788208,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "a9d853e3-fe98-4396-8e64-0536ef05cf4e",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "9e2a5ee9-18fd-4a02-9cc0-107329653253",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "bfff257b-e347-455c-b91d-6f4714b76f62",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788215,
+            "observedAt": 1793762788215,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "1853da2e-e1b9-490c-8706-23f58f9a2050",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788215,
+            "observedAt": 1793762788215,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "revoked",
+        "slotHeld": false,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793762788187,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793762788193,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          },
+          {
+            "seq": 4,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793762788216,
+            "payload": {
+              "row": "R-02-3",
+              "state": "ended"
+            }
+          }
+        ],
+        "terminalTransitionCount": 1
+      },
+      "after": {
+        "revision": 8,
+        "run": {
+          "runId": "run_aac13b70be454155a1c85a813f286a11",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "state": "ended",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "heartbeatAt": 1793762788186,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 101.442749,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": 1793762788216,
+          "createdAt": 1793762788185,
+          "startedAt": 1793762788186,
+          "endedAt": 1793762788216,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03"
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_aac13b70be454155a1c85a813f286a11",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "command_leader": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "harness": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "scope": {
+            "scope_id": "identity-R3",
+            "scope_kind": "pgid",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2",
+            "pgid": 1097192,
+            "sid": 1097192,
+            "group_leader": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            }
+          },
+          "created_at": 1793762788185,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788187,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788187,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "19e0a2fd-ae54-4106-995e-fe516a9754ed",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788192,
+            "observedAt": 1793762788192,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          },
+          {
+            "evidenceId": "0ff26c40-4380-4680-bcf1-439039ab5203",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788208,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "a9d853e3-fe98-4396-8e64-0536ef05cf4e",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "9e2a5ee9-18fd-4a02-9cc0-107329653253",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788208,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "bfff257b-e347-455c-b91d-6f4714b76f62",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788215,
+            "observedAt": 1793762788215,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "1853da2e-e1b9-490c-8706-23f58f9a2050",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788215,
+            "observedAt": 1793762788215,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          },
+          {
+            "evidenceId": "9853031a-b2c9-4fb3-a4a9-35c2e954c53c",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788236,
+            "observedAt": 1793762788236,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "9c528cf5-5531-406e-8a5b-b5ffc74b9d17",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788236,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "5c75afb4-9f2a-4161-8e3a-bce46d43b09a",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788186,
+            "observedAt": 1793762788236,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793762788186
+            }
+          },
+          {
+            "evidenceId": "4337bf25-7e01-4110-95cd-6d87b4c6760d",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788240,
+            "observedAt": 1793762788240,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "906adf93-191b-47b7-823b-311d802ba58b",
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1097192,
+              "proc_start": "4384538",
+              "boot_id": "identity-R1",
+              "pid_domain": "identity-R2"
+            },
+            "validation": "accepted",
+            "asOf": 1793762788240,
+            "observedAt": 1793762788240,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538"
+        },
+        "claimState": "revoked",
+        "slotHeld": false,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793762788186,
+            "payload": {
+              "supervisor": {
+                "pid": 1097192,
+                "proc_start": "4384538",
+                "boot_id": "identity-R1",
+                "pid_domain": "identity-R2"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793762788187,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793762788193,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          },
+          {
+            "seq": 4,
+            "runId": "run_aac13b70be454155a1c85a813f286a11",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793762788216,
+            "payload": {
+              "row": "R-02-3",
+              "state": "ended"
+            }
+          }
+        ],
+        "terminalTransitionCount": 1
+      },
+      "result": {
+        "row": "R-02-0",
+        "state": "ended",
+        "releaseSlot": false,
+        "emitTransition": false,
+        "blockNewOperations": false,
+        "evidenceIds": [
+          "6470b48e-d94a-4581-9908-13be8d6dfb03",
+          "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+          "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+          "0ff26c40-4380-4680-bcf1-439039ab5203",
+          "a9d853e3-fe98-4396-8e64-0536ef05cf4e",
+          "9e2a5ee9-18fd-4a02-9cc0-107329653253",
+          "1853da2e-e1b9-490c-8706-23f58f9a2050",
+          "9853031a-b2c9-4fb3-a4a9-35c2e954c53c",
+          "9c528cf5-5531-406e-8a5b-b5ffc74b9d17",
+          "5c75afb4-9f2a-4161-8e3a-bce46d43b09a",
+          "4337bf25-7e01-4110-95cd-6d87b4c6760d",
+          "906adf93-191b-47b7-823b-311d802ba58b",
+          "6470b48e-d94a-4581-9908-13be8d6dfb03",
+          "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+          "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+          "0ff26c40-4380-4680-bcf1-439039ab5203",
+          "a9d853e3-fe98-4396-8e64-0536ef05cf4e",
+          "9e2a5ee9-18fd-4a02-9cc0-107329653253",
+          "1853da2e-e1b9-490c-8706-23f58f9a2050",
+          "9853031a-b2c9-4fb3-a4a9-35c2e954c53c",
+          "9c528cf5-5531-406e-8a5b-b5ffc74b9d17",
+          "5c75afb4-9f2a-4161-8e3a-bce46d43b09a",
+          "4337bf25-7e01-4110-95cd-6d87b4c6760d",
+          "906adf93-191b-47b7-823b-311d802ba58b"
+        ],
+        "auditEvidenceIds": [
+          "19e0a2fd-ae54-4106-995e-fe516a9754ed",
+          "bfff257b-e347-455c-b91d-6f4714b76f62",
+          "19e0a2fd-ae54-4106-995e-fe516a9754ed",
+          "bfff257b-e347-455c-b91d-6f4714b76f62"
+        ],
+        "cause": null,
+        "terminalNote": null,
+        "exitCode": null,
+        "exitSignal": null,
+        "exitSource": null
+      }
+    }
+  ],
+  "final": {
+    "revision": 8,
+    "run": {
+      "runId": "run_aac13b70be454155a1c85a813f286a11",
+      "linkId": "link-a",
+      "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+      "expectedGeneration": 1,
+      "mode": "headless",
+      "supervisionStrategy": "headless",
+      "scopeKind": "pgid",
+      "scopeRef": {
+        "scope_id": "identity-R3",
+        "scope_kind": "pgid",
+        "boot_id": "identity-R1",
+        "pid_domain": "identity-R2",
+        "pgid": 1097192,
+        "sid": 1097192,
+        "group_leader": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        }
+      },
+      "state": "ended",
+      "launchPhase": "submitted",
+      "supervisor": {
+        "pid": 1097192,
+        "proc_start": "4384538",
+        "boot_id": "identity-R1",
+        "pid_domain": "identity-R2"
+      },
+      "heartbeatAt": 1793762788186,
+      "heartbeatSeq": 1,
+      "heartbeatMonoMs": 101.442749,
+      "cancelRequestedAt": null,
+      "submissionFencedAt": 1793762788216,
+      "createdAt": 1793762788185,
+      "startedAt": 1793762788186,
+      "endedAt": 1793762788216,
+      "exitCode": null,
+      "exitSignal": null,
+      "exitSource": null,
+      "terminalEvidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03"
+    },
+    "meta": {
+      "schema_version": 1,
+      "run_id": "run_aac13b70be454155a1c85a813f286a11",
+      "link_id": "link-a",
+      "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+      "binding_generation": 1,
+      "mode": "headless",
+      "supervision_strategy": "headless",
+      "supervisor": {
+        "pid": 1097192,
+        "proc_start": "4384538",
+        "boot_id": "identity-R1",
+        "pid_domain": "identity-R2"
+      },
+      "command_leader": {
+        "pid": 1097192,
+        "proc_start": "4384538",
+        "boot_id": "identity-R1",
+        "pid_domain": "identity-R2"
+      },
+      "harness": {
+        "pid": 1097192,
+        "proc_start": "4384538",
+        "boot_id": "identity-R1",
+        "pid_domain": "identity-R2"
+      },
+      "scope": {
+        "scope_id": "identity-R3",
+        "scope_kind": "pgid",
+        "boot_id": "identity-R1",
+        "pid_domain": "identity-R2",
+        "pgid": 1097192,
+        "sid": 1097192,
+        "group_leader": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        }
+      },
+      "created_at": 1793762788185,
+      "stdin_mode": "closed",
+      "capture": "file"
+    },
+    "facts": [
+      {
+        "evidenceId": "6470b48e-d94a-4581-9908-13be8d6dfb03",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788187,
+        "observedAt": 1793762788187,
+        "fact": {
+          "kind": "supervisor",
+          "state": "alive"
+        }
+      },
+      {
+        "evidenceId": "3a4805cb-45bb-45ad-a0f1-ba69eda1d0a8",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788186,
+        "observedAt": 1793762788187,
+        "fact": {
+          "kind": "heartbeat",
+          "at": 1793762788186
+        }
+      },
+      {
+        "evidenceId": "a8bff220-7292-4a3f-a223-73f3a117c9c3",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788186,
+        "observedAt": 1793762788187,
+        "fact": {
+          "kind": "launch",
+          "childStarted": true,
+          "originalExecutorValid": true,
+          "observedAt": 1793762788186
+        }
+      },
+      {
+        "evidenceId": "19e0a2fd-ae54-4106-995e-fe516a9754ed",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788192,
+        "observedAt": 1793762788192,
+        "fact": {
+          "kind": "scope",
+          "state": "alive",
+          "complete": false,
+          "harnessTerminated": false,
+          "launchersSealed": false
+        }
+      },
+      {
+        "evidenceId": "0ff26c40-4380-4680-bcf1-439039ab5203",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788208,
+        "observedAt": 1793762788208,
+        "fact": {
+          "kind": "supervisor",
+          "state": "dead"
+        }
+      },
+      {
+        "evidenceId": "a9d853e3-fe98-4396-8e64-0536ef05cf4e",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788186,
+        "observedAt": 1793762788208,
+        "fact": {
+          "kind": "heartbeat",
+          "at": 1793762788186
+        }
+      },
+      {
+        "evidenceId": "9e2a5ee9-18fd-4a02-9cc0-107329653253",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788186,
+        "observedAt": 1793762788208,
+        "fact": {
+          "kind": "launch",
+          "childStarted": true,
+          "originalExecutorValid": true,
+          "observedAt": 1793762788186
+        }
+      },
+      {
+        "evidenceId": "bfff257b-e347-455c-b91d-6f4714b76f62",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788215,
+        "observedAt": 1793762788215,
+        "fact": {
+          "kind": "scope",
+          "state": "gone",
+          "complete": true,
+          "harnessTerminated": true,
+          "launchersSealed": true
+        }
+      },
+      {
+        "evidenceId": "1853da2e-e1b9-490c-8706-23f58f9a2050",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788215,
+        "observedAt": 1793762788215,
+        "fact": {
+          "kind": "scope_reconciled",
+          "complete": true,
+          "harnessTerminated": true,
+          "launchersSealed": true,
+          "nativeExit": null
+        }
+      },
+      {
+        "evidenceId": "9853031a-b2c9-4fb3-a4a9-35c2e954c53c",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788236,
+        "observedAt": 1793762788236,
+        "fact": {
+          "kind": "supervisor",
+          "state": "dead"
+        }
+      },
+      {
+        "evidenceId": "9c528cf5-5531-406e-8a5b-b5ffc74b9d17",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788186,
+        "observedAt": 1793762788236,
+        "fact": {
+          "kind": "heartbeat",
+          "at": 1793762788186
+        }
+      },
+      {
+        "evidenceId": "5c75afb4-9f2a-4161-8e3a-bce46d43b09a",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788186,
+        "observedAt": 1793762788236,
+        "fact": {
+          "kind": "launch",
+          "childStarted": true,
+          "originalExecutorValid": true,
+          "observedAt": 1793762788186
+        }
+      },
+      {
+        "evidenceId": "4337bf25-7e01-4110-95cd-6d87b4c6760d",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788240,
+        "observedAt": 1793762788240,
+        "fact": {
+          "kind": "scope",
+          "state": "gone",
+          "complete": true,
+          "harnessTerminated": true,
+          "launchersSealed": true
+        }
+      },
+      {
+        "evidenceId": "906adf93-191b-47b7-823b-311d802ba58b",
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1097192,
+          "proc_start": "4384538",
+          "boot_id": "identity-R1",
+          "pid_domain": "identity-R2"
+        },
+        "validation": "accepted",
+        "asOf": 1793762788240,
+        "observedAt": 1793762788240,
+        "fact": {
+          "kind": "scope_reconciled",
+          "complete": true,
+          "harnessTerminated": true,
+          "launchersSealed": true,
+          "nativeExit": null
+        }
+      }
+    ],
+    "receipt": null,
+    "claimSupervisor": {
+      "pid": 1097192,
+      "proc_start": "4384538"
+    },
+    "claimState": "revoked",
+    "slotHeld": false,
+    "controlConflict": false,
+    "terminalNote": null,
+    "events": [
+      {
+        "seq": 1,
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "linkId": "link-a",
+        "kind": "supervisor.registered",
+        "at": 1793762788186,
+        "payload": {
+          "supervisor": {
+            "pid": 1097192,
+            "proc_start": "4384538",
+            "boot_id": "identity-R1",
+            "pid_domain": "identity-R2"
+          },
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "bindingGeneration": 1
+        }
+      },
+      {
+        "seq": 2,
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "linkId": "link-a",
+        "kind": "manager.reconcile",
+        "at": 1793762788187,
+        "payload": {}
+      },
+      {
+        "seq": 3,
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "linkId": "link-a",
+        "kind": "run.reconciled",
+        "at": 1793762788193,
+        "payload": {
+          "row": "R-02-5",
+          "state": "running"
+        }
+      },
+      {
+        "seq": 4,
+        "runId": "run_aac13b70be454155a1c85a813f286a11",
+        "linkId": "link-a",
+        "kind": "run.reconciled",
+        "at": 1793762788216,
+        "payload": {
+          "row": "R-02-3",
+          "state": "ended"
+        }
+      }
+    ],
+    "terminalTransitionCount": 1
+  },
+  "exitFile": null
+}

@@ -1,0 +1,3 @@
+window start (pre-observation): 2026-11-04T03:36:29.061Z
+benchmark processes start: 2026-11-04T03:37:30.080Z
+benchmark processes end: 2026-11-04T03:38:33.471Z

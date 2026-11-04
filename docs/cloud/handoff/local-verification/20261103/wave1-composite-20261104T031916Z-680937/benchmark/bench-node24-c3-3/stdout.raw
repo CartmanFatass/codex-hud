@@ -1,0 +1,10 @@
+{
+  "node": "v24.22.1",
+  "coldSamples": 30,
+  "callsPerMethod": 200,
+  "coldP95Ms": 162.4487670000001,
+  "coldMaxMs": 219.586027,
+  "toolsListP95Ms": 0.40918000000056054,
+  "whoamiRefusalP95Ms": 0.36731200000031095,
+  "profile": "default unconfigured; physical registration plus fail-closed whoami stub"
+}

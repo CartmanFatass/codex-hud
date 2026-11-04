@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-noenvproxy-control",
+ "id": "02-build-test",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:27:18.882Z",
+ "end": "2026-11-04T03:27:28.984Z",
+ "timeout_s": 600,
+ "command": "npm run build:test",
+ "owned_left": "none",
+ "captures": "captures/node22-noenvproxy-control/02-build-test"
+}

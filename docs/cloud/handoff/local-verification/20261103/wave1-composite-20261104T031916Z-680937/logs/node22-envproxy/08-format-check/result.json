@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-envproxy",
+ "id": "08-format-check",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:24:37.548Z",
+ "end": "2026-11-04T03:24:47.744Z",
+ "timeout_s": 300,
+ "command": "npm run format:check",
+ "owned_left": "none",
+ "captures": "captures/node22-envproxy/08-format-check"
+}

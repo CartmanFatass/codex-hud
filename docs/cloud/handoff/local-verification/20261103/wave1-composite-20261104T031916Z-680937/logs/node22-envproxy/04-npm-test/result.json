@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-envproxy",
+ "id": "04-npm-test",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:22:50.450Z",
+ "end": "2026-11-04T03:24:07.417Z",
+ "timeout_s": 1800,
+ "command": "npm test",
+ "owned_left": "none",
+ "captures": "captures/node22-envproxy/04-npm-test"
+}

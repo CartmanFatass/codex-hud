@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node24-envproxy",
+ "id": "18-mcp-prettier",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:35:35.448Z",
+ "end": "2026-11-04T03:35:35.866Z",
+ "timeout_s": 300,
+ "command": "node node_modules/prettier/bin/prettier.cjs --check packages/hud-mcp/src/process.ts tests/hud-mcp/ancestor-discovery.test.ts tests/hud-mcp/skeleton.test.ts tests/hud-mcp/int-ledger-registry.test.ts",
+ "owned_left": "none",
+ "captures": "captures/node24-envproxy/18-mcp-prettier"
+}

@@ -1,0 +1,13 @@
+{
+ "tree": "u",
+ "profile": "node22-envproxy",
+ "id": "bench-node22-u-1",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:37:30.268Z",
+ "end": "2026-11-04T03:37:34.827Z",
+ "timeout_s": 600,
+ "command": "node tests/hud-mcp/benchmark.mjs",
+ "owned_left": "none",
+ "captures": "benchmark/bench-node22-u-1/captures"
+}

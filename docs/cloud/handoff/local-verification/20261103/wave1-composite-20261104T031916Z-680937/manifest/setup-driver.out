@@ -1,0 +1,5 @@
+c3 node22-envproxy 00-capability-probe exit=0 - left=none
+c3 node24-envproxy 00-capability-probe exit=0 - left=none
+c3 node24-envproxy install-c3-npm-ci exit=0 - left=none
+u node24-envproxy install-u-npm-ci exit=0 - left=none
+SETUP-DONE 2026-11-04T03:22:21Z

@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-noenvproxy-control",
+ "id": "11-node-proxy-profile",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:29:26.918Z",
+ "end": "2026-11-04T03:29:29.834Z",
+ "timeout_s": 300,
+ "command": "node --test --test-concurrency=1 dist-test/tests/unit/node-proxy-profile.test.js",
+ "owned_left": "none",
+ "captures": "captures/node22-noenvproxy-control/11-node-proxy-profile"
+}

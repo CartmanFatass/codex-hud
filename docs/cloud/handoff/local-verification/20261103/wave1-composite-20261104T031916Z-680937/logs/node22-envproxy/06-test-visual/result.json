@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-envproxy",
+ "id": "06-test-visual",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:24:21.258Z",
+ "end": "2026-11-04T03:24:32.524Z",
+ "timeout_s": 600,
+ "command": "npm run test:visual",
+ "owned_left": "none",
+ "captures": "captures/node22-envproxy/06-test-visual"
+}

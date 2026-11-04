@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-envproxy",
+ "id": "17b-ancestry-probe-after",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:27:11.354Z",
+ "end": "2026-11-04T03:27:11.424Z",
+ "timeout_s": 60,
+ "command": "/usr/bin/python3 -I <VERIFY_ROOT>/wave1-composite-20261104T031916Z-680937/scripts/ancprobe.py",
+ "owned_left": "none",
+ "captures": "captures/node22-envproxy/17b-ancestry-probe-after"
+}

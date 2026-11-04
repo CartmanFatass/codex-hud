@@ -1,0 +1,8 @@
+1149998 bash uid=1000
+1149996 timeout uid=1000
+1147154 bash uid=1000
+1147152 zsh uid=1000
+1059187 claude uid=1000
+906870 zsh uid=1000
+31274 herdr uid=1000
+1 systemd uid=0

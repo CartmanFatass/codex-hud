@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-envproxy",
+ "id": "16-runz1-three-file",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:26:47.992Z",
+ "end": "2026-11-04T03:27:09.356Z",
+ "timeout_s": 600,
+ "command": "node --test dist-test/tests/unit/runz1-process.test.js dist-test/tests/unit/run-control.test.js dist-test/tests/unit/run-process.test.js",
+ "owned_left": "none",
+ "captures": "captures/node22-envproxy/16-runz1-three-file"
+}

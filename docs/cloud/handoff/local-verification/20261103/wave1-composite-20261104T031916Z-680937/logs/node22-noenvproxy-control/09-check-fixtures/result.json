@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-noenvproxy-control",
+ "id": "09-check-fixtures",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:29:25.838Z",
+ "end": "2026-11-04T03:29:26.018Z",
+ "timeout_s": 300,
+ "command": "npm run check:fixtures",
+ "owned_left": "none",
+ "captures": "captures/node22-noenvproxy-control/09-check-fixtures"
+}

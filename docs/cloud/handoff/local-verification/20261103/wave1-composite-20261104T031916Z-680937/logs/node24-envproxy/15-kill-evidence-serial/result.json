@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node24-envproxy",
+ "id": "15-kill-evidence-serial",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:34:50.274Z",
+ "end": "2026-11-04T03:35:11.146Z",
+ "timeout_s": 600,
+ "command": "node --test --test-concurrency=1 dist-test/tests/unit/run-control-kill-evidence.test.js dist-test/tests/unit/run-control.test.js",
+ "owned_left": "none",
+ "captures": "captures/node24-envproxy/15-kill-evidence-serial"
+}

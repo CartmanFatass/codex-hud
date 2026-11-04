@@ -1,0 +1,1 @@
+{"id":"synthetic-direct-lost-environment-control","arg":"a b $(synthetic)","stdin":"synthetic route stdin\u0000$(not-a-command)\n","body":"synthetic-target-response\n","env":{}}

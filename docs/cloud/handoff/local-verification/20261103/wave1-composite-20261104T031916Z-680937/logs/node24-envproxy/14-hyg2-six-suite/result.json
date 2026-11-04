@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node24-envproxy",
+ "id": "14-hyg2-six-suite",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:33:55.029Z",
+ "end": "2026-11-04T03:34:49.846Z",
+ "timeout_s": 900,
+ "command": "node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/b45-launch.test.js dist-test/tests/unit/b12r-store.test.js dist-test/tests/unit/b12d-wal.test.js dist-test/tests/unit/b16-writer.test.js dist-test/tests/unit/process-client.test.js",
+ "owned_left": "none",
+ "captures": "captures/node24-envproxy/14-hyg2-six-suite"
+}

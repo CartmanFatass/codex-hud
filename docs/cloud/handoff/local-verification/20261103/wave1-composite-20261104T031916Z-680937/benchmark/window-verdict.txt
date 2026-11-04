@@ -1,0 +1,4 @@
+QUALIFIES
+samples: 129; non-owned cores mean 0.096 max 0.47
+Q1 violations (sample > 1.0 core): 0
+Q2 violations (5 s mean > 0.5 core): 0

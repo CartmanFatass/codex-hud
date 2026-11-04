@@ -1,0 +1,1281 @@
+
+> codex-hud@0.1.0 test:core
+> bash tests/run-core.sh
+
+using temporary HUD_HOME: <SROOT>/t.cxTkRy/hud-core.9wRFhF
+core tests: dist-test/tests/unit/codex-facade.test.js dist-test/tests/unit/contracts.test.js dist-test/tests/unit/core-fakes.test.js dist-test/tests/unit/ledger-perf.test.js dist-test/tests/unit/ledger-processes.test.js dist-test/tests/unit/ledger-read.test.js dist-test/tests/unit/ledger-schema.test.js dist-test/tests/unit/ledger-write.test.js
+TAP version 13
+# Subtest: A6 observation fits the shared nullable-root v3 fixture and full node shape
+ok 1 - A6 observation fits the shared nullable-root v3 fixture and full node shape
+  ---
+  duration_ms: 17.604296
+  type: 'test'
+  ...
+# Subtest: Codex source is explicit and verified; binding needs a unique full ref, with no managed identity
+ok 2 - Codex source is explicit and verified; binding needs a unique full ref, with no managed identity
+  ---
+  duration_ms: 6.529037
+  type: 'test'
+  ...
+# Subtest: budgeted parser checkpoints restore exact merge/tool/rate state after JSON round trip
+ok 3 - budgeted parser checkpoints restore exact merge/tool/rate state after JSON round trip
+  ---
+  duration_ms: 11.793896
+  type: 'test'
+  ...
+# Subtest: reader honors record/zero budgets, restores split UTF-8/CRLF, and consumes a complete final record
+ok 4 - reader honors record/zero budgets, restores split UTF-8/CRLF, and consumes a complete final record
+  ---
+  duration_ms: 7.731733
+  type: 'test'
+  ...
+# Subtest: resumed sessions keep identity and cumulative totals, while forked threads remain distinct
+ok 5 - resumed sessions keep identity and cumulative totals, while forked threads remain distinct
+  ---
+  duration_ms: 8.574916
+  type: 'test'
+  ...
+# Subtest: children delegates native topology, returns only direct children, and caps preserve quota/goal/plan/todos
+ok 6 - children delegates native topology, returns only direct children, and caps preserve quota/goal/plan/todos
+  ---
+  duration_ms: 13.241937
+  type: 'test'
+  ...
+# Subtest: link evidence requires an exact hud-mcp call/output pair, bounds state and never retains claims
+ok 7 - link evidence requires an exact hud-mcp call/output pair, bounds state and never retains claims
+  ---
+  duration_ms: 2.124838
+  type: 'test'
+  ...
+# Subtest: oversized/incomplete records remain bounded and gaps survive EOF and checkpoint recovery
+ok 8 - oversized/incomplete records remain bounded and gaps survive EOF and checkpoint recovery
+  ---
+  duration_ms: 16.504542
+  type: 'test'
+  ...
+# Subtest: truncation and inode replacement reset checkpoint lineage and old evidence
+ok 9 - truncation and inode replacement reset checkpoint lineage and old evidence
+  ---
+  duration_ms: 7.786459
+  type: 'test'
+  ...
+# Subtest: scan version 4 persists bounded pending calls and evidence across scanner restart, rejects v3
+ok 10 - scan version 4 persists bounded pending calls and evidence across scanner restart, rejects v3
+  ---
+  duration_ms: 10.069833
+  type: 'test'
+  ...
+# Subtest: registry bindings require the same known occupant and complete source-scoped identity
+ok 11 - registry bindings require the same known occupant and complete source-scoped identity
+  ---
+  duration_ms: 5.555098
+  type: 'test'
+  ...
+# Subtest: checkpoint restore preserves token-rate tool-wait union and concurrent reads serialize
+ok 12 - checkpoint restore preserves token-rate tool-wait union and concurrent reads serialize
+  ---
+  duration_ms: 9.168724
+  type: 'test'
+  ...
+# Subtest: identical session IDs in two explicit sources do not cross-read, and custom hud server names are exact
+ok 13 - identical session IDs in two explicit sources do not cross-read, and custom hud server names are exact
+  ---
+  duration_ms: 9.992905
+  type: 'test'
+  ...
+# Subtest: read statistics count fetched chunk bytes separately from the committed record cursor
+ok 14 - read statistics count fetched chunk bytes separately from the committed record cursor
+  ---
+  duration_ms: 3.943533
+  type: 'test'
+  ...
+# Subtest: model/context clocks survive checkpoints and unrelated replies; baseline context is estimated
+ok 15 - model/context clocks survive checkpoints and unrelated replies; baseline context is estimated
+  ---
+  duration_ms: 6.917486
+  type: 'test'
+  ...
+# Subtest: cumulative counter growth has its own clock and equal counters after file replacement start a new clock
+ok 16 - cumulative counter growth has its own clock and equal counters after file replacement start a new clock
+  ---
+  duration_ms: 5.848108
+  type: 'test'
+  ...
+# Subtest: malformed known records produce a gap preserved across recovery and EOF
+ok 17 - malformed known records produce a gap preserved across recovery and EOF
+  ---
+  duration_ms: 4.576334
+  type: 'test'
+  ...
+# Subtest: strict bind recovers a quiet older session and unique registry ref without a locator
+ok 18 - strict bind recovers a quiet older session and unique registry ref without a locator
+  ---
+  duration_ms: 4.4693
+  type: 'test'
+  ...
+# Subtest: current action uses open calls after the bounded recent-call history evicts it
+ok 19 - current action uses open calls after the bounded recent-call history evicts it
+  ---
+  duration_ms: 4.584355
+  type: 'test'
+  ...
+# Subtest: source-scoped candidates and native topology exclude rollout symlinks escaping the source
+ok 20 - source-scoped candidates and native topology exclude rollout symlinks escaping the source
+  ---
+  duration_ms: 10.75715
+  type: 'test'
+  ...
+# Subtest: multiple profiles sharing one source retain every explicitly configured hud-mcp alias
+ok 21 - multiple profiles sharing one source retain every explicitly configured hud-mcp alias
+  ---
+  duration_ms: 7.32329
+  type: 'test'
+  ...
+# Subtest: unknown metrics use the time absence was confirmed, including cost and compact-invalidated context
+ok 22 - unknown metrics use the time absence was confirmed, including cost and compact-invalidated context
+  ---
+  duration_ms: 6.197427
+  type: 'test'
+  ...
+# Subtest: production-default Codex reads advance despite 30 ms open/stat/read latency
+ok 23 - production-default Codex reads advance despite 30 ms open/stat/read latency
+  ---
+  duration_ms: 350.953638
+  type: 'test'
+  ...
+# Subtest: controlled time slicing consumes one bounded step and preserves byte/record caps
+ok 24 - controlled time slicing consumes one bounded step and preserves byte/record caps
+  ---
+  duration_ms: 6.912331
+  type: 'test'
+  ...
+# Subtest: drain bounds every await and rejects late terminal responses
+ok 25 - drain bounds every await and rejects late terminal responses
+  ---
+  duration_ms: 14.003322
+  type: 'test'
+  ...
+# Subtest: F09/F10 Codex crash cuts recover UTF-8/CRLF, private blobs and fallback claims without raw state
+ok 26 - F09/F10 Codex crash cuts recover UTF-8/CRLF, private blobs and fallback claims without raw state
+  ---
+  duration_ms: 29.759048
+  type: 'test'
+  ...
+# Subtest: F10 Codex maximum legal record, typed recovery continuation and oversize discard across restarts
+ok 27 - F10 Codex maximum legal record, typed recovery continuation and oversize discard across restarts
+  ---
+  duration_ms: 33.034529
+  type: 'test'
+  ...
+# Subtest: F10 Codex truncation or replacement drops old transient and repeated recovery preserves usage clocks
+ok 28 - F10 Codex truncation or replacement drops old transient and repeated recovery preserves usage clocks
+  ---
+  duration_ms: 8.788502
+  type: 'test'
+  ...
+# Subtest: F10 Codex rereads a replaced growing tail before compaction instead of grafting old bytes
+ok 29 - F10 Codex rereads a replaced growing tail before compaction instead of grafting old bytes
+  ---
+  duration_ms: 5.127338
+  type: 'test'
+  ...
+# Subtest: F10 Codex maximum fixed-EOF JSON consumes 1 MiB without a nonexistent delimiter
+ok 30 - F10 Codex maximum fixed-EOF JSON consumes 1 MiB without a nonexistent delimiter
+  ---
+  duration_ms: 12.843627
+  type: 'test'
+  ...
+# Subtest: F09/F10 no-content budgeted rereads preserve the nested checkpoint event clock
+ok 31 - F09/F10 no-content budgeted rereads preserve the nested checkpoint event clock
+  ---
+  duration_ms: 6.280801
+  type: 'test'
+  ...
+# Subtest: T-01-1
+ok 32 - T-01-1
+  ---
+  duration_ms: 2.019363
+  type: 'test'
+  ...
+# Subtest: T-01-2
+ok 33 - T-01-2
+  ---
+  duration_ms: 0.374686
+  type: 'test'
+  ...
+# Subtest: T-01-6
+ok 34 - T-01-6
+  ---
+  duration_ms: 0.355972
+  type: 'test'
+  ...
+# Subtest: T-01-7
+ok 35 - T-01-7
+  ---
+  duration_ms: 0.918277
+  type: 'test'
+  ...
+# Subtest: T-01-8
+ok 36 - T-01-8
+  ---
+  duration_ms: 0.374717
+  type: 'test'
+  ...
+# Subtest: T-01-9
+ok 37 - T-01-9
+  ---
+  duration_ms: 0.170206
+  type: 'test'
+  ...
+# Subtest: T-01-10
+ok 38 - T-01-10
+  ---
+  duration_ms: 0.299978
+  type: 'test'
+  ...
+# Subtest: T-01-11
+ok 39 - T-01-11
+  ---
+  duration_ms: 0.303735
+  type: 'test'
+  ...
+# Subtest: T-01-12
+ok 40 - T-01-12
+  ---
+  duration_ms: 0.384775
+  type: 'test'
+  ...
+# Subtest: T-01-13
+ok 41 - T-01-13
+  ---
+  duration_ms: 0.292905
+  type: 'test'
+  ...
+# Subtest: T-01-14
+ok 42 - T-01-14
+  ---
+  duration_ms: 0.289879
+  type: 'test'
+  ...
+# Subtest: T-01-15
+ok 43 - T-01-15
+  ---
+  duration_ms: 0.130512
+  type: 'test'
+  ...
+# Subtest: T-01-16
+ok 44 - T-01-16
+  ---
+  duration_ms: 0.217354
+  type: 'test'
+  ...
+# Subtest: T-01-17
+ok 45 - T-01-17
+  ---
+  duration_ms: 0.194892
+  type: 'test'
+  ...
+# Subtest: T-01-19
+ok 46 - T-01-19
+  ---
+  duration_ms: 0.275091
+  type: 'test'
+  ...
+# Subtest: T-01-20
+ok 47 - T-01-20
+  ---
+  duration_ms: 0.602245
+  type: 'test'
+  ...
+# Subtest: T-01-21
+ok 48 - T-01-21
+  ---
+  duration_ms: 0.502925
+  type: 'test'
+  ...
+# Subtest: T-01-22
+ok 49 - T-01-22
+  ---
+  duration_ms: 1.171628
+  type: 'test'
+  ...
+# Subtest: T-01-24
+ok 50 - T-01-24
+  ---
+  duration_ms: 0.308693
+  type: 'test'
+  ...
+# Subtest: T-01-25
+ok 51 - T-01-25
+  ---
+  duration_ms: 0.144348
+  type: 'test'
+  ...
+# Subtest: T-01-26
+ok 52 - T-01-26
+  ---
+  duration_ms: 0.244294
+  type: 'test'
+  ...
+# Subtest: T-01-28
+ok 53 - T-01-28
+  ---
+  duration_ms: 0.170742
+  type: 'test'
+  ...
+# Subtest: T-01-29
+ok 54 - T-01-29
+  ---
+  duration_ms: 0.3471
+  type: 'test'
+  ...
+# Subtest: T-01-30
+ok 55 - T-01-30
+  ---
+  duration_ms: 0.757779
+  type: 'test'
+  ...
+# Subtest: T-01-31
+ok 56 - T-01-31
+  ---
+  duration_ms: 0.132086
+  type: 'test'
+  ...
+# Subtest: T-01-32
+ok 57 - T-01-32
+  ---
+  duration_ms: 0.104274
+  type: 'test'
+  ...
+# Subtest: T-01-35
+ok 58 - T-01-35
+  ---
+  duration_ms: 0.160798
+  type: 'test'
+  ...
+# Subtest: T-01-36
+ok 59 - T-01-36
+  ---
+  duration_ms: 0.16124
+  type: 'test'
+  ...
+# Subtest: T-01-37
+ok 60 - T-01-37
+  ---
+  duration_ms: 0.214709
+  type: 'test'
+  ...
+# Subtest: T-01-38
+ok 61 - T-01-38
+  ---
+  duration_ms: 0.64603
+  type: 'test'
+  ...
+# Subtest: T-01-39
+ok 62 - T-01-39
+  ---
+  duration_ms: 0.18316
+  type: 'test'
+  ...
+# Subtest: T-02-2
+ok 63 - T-02-2
+  ---
+  duration_ms: 0.959112
+  type: 'test'
+  ...
+# Subtest: T-02-9
+ok 64 - T-02-9
+  ---
+  duration_ms: 0.475283
+  type: 'test'
+  ...
+# Subtest: T-02-10
+ok 65 - T-02-10
+  ---
+  duration_ms: 0.238713
+  type: 'test'
+  ...
+# Subtest: T-02-11
+ok 66 - T-02-11
+  ---
+  duration_ms: 0.254593
+  type: 'test'
+  ...
+# Subtest: T-02-13
+ok 67 - T-02-13
+  ---
+  duration_ms: 2.51085
+  type: 'test'
+  ...
+# Subtest: T-02-17
+ok 68 - T-02-17
+  ---
+  duration_ms: 1.959552
+  type: 'test'
+  ...
+# Subtest: T-02-18
+ok 69 - T-02-18
+  ---
+  duration_ms: 0.258661
+  type: 'test'
+  ...
+# Subtest: T-02-19
+ok 70 - T-02-19
+  ---
+  duration_ms: 0.293045
+  type: 'test'
+  ...
+# Subtest: T-02-20
+ok 71 - T-02-20
+  ---
+  duration_ms: 0.131805
+  type: 'test'
+  ...
+# Subtest: T-02-23
+ok 72 - T-02-23
+  ---
+  duration_ms: 0.079388
+  type: 'test'
+  ...
+# Subtest: T-02-27
+ok 73 - T-02-27
+  ---
+  duration_ms: 0.447427
+  type: 'test'
+  ...
+# Subtest: T-02-28
+ok 74 - T-02-28
+  ---
+  duration_ms: 0.371781
+  type: 'test'
+  ...
+# Subtest: T-02-30
+ok 75 - T-02-30
+  ---
+  duration_ms: 0.255285
+  type: 'test'
+  ...
+# Subtest: T-02-31
+ok 76 - T-02-31
+  ---
+  duration_ms: 0.305137
+  type: 'test'
+  ...
+# Subtest: T-02-32
+ok 77 - T-02-32
+  ---
+  duration_ms: 0.146022
+  type: 'test'
+  ...
+# Subtest: T-02-33
+ok 78 - T-02-33
+  ---
+  duration_ms: 0.502353
+  type: 'test'
+  ...
+# Subtest: T-02-34
+ok 79 - T-02-34
+  ---
+  duration_ms: 0.280191
+  type: 'test'
+  ...
+# Subtest: T-03-1
+ok 80 - T-03-1
+  ---
+  duration_ms: 0.23715
+  type: 'test'
+  ...
+# Subtest: T-03-2
+ok 81 - T-03-2
+  ---
+  duration_ms: 0.756917
+  type: 'test'
+  ...
+# Subtest: T-03-3
+ok 82 - T-03-3
+  ---
+  duration_ms: 0.196595
+  type: 'test'
+  ...
+# Subtest: T-03-4
+ok 83 - T-03-4
+  ---
+  duration_ms: 0.135842
+  type: 'test'
+  ...
+# Subtest: T-03-5
+ok 84 - T-03-5
+  ---
+  duration_ms: 0.332317
+  type: 'test'
+  ...
+# Subtest: T-03-6
+ok 85 - T-03-6
+  ---
+  duration_ms: 0.210511
+  type: 'test'
+  ...
+# Subtest: T-03-7
+ok 86 - T-03-7
+  ---
+  duration_ms: 0.288296
+  type: 'test'
+  ...
+# Subtest: T-03-8
+ok 87 - T-03-8
+  ---
+  duration_ms: 0.183722
+  type: 'test'
+  ...
+# Subtest: T-03-9
+ok 88 - T-03-9
+  ---
+  duration_ms: 0.191366
+  type: 'test'
+  ...
+# Subtest: T-03-10
+ok 89 - T-03-10
+  ---
+  duration_ms: 0.190133
+  type: 'test'
+  ...
+# Subtest: T-03-11
+ok 90 - T-03-11
+  ---
+  duration_ms: 0.207305
+  type: 'test'
+  ...
+# Subtest: T-03-12
+ok 91 - T-03-12
+  ---
+  duration_ms: 0.19946
+  type: 'test'
+  ...
+# Subtest: T-03-14
+ok 92 - T-03-14
+  ---
+  duration_ms: 0.213727
+  type: 'test'
+  ...
+# Subtest: T-03-15
+ok 93 - T-03-15
+  ---
+  duration_ms: 0.208698
+  type: 'test'
+  ...
+# Subtest: T-03-16
+ok 94 - T-03-16
+  ---
+  duration_ms: 0.401526
+  type: 'test'
+  ...
+# Subtest: T-03-17
+ok 95 - T-03-17
+  ---
+  duration_ms: 0.233383
+  type: 'test'
+  ...
+# Subtest: T-03-19
+ok 96 - T-03-19
+  ---
+  duration_ms: 0.369266
+  type: 'test'
+  ...
+# Subtest: T-03-20
+ok 97 - T-03-20
+  ---
+  duration_ms: 0.269431
+  type: 'test'
+  ...
+# Subtest: T-03-26
+ok 98 - T-03-26
+  ---
+  duration_ms: 0.806619
+  type: 'test'
+  ...
+# Subtest: T-03-34
+ok 99 - T-03-34
+  ---
+  duration_ms: 0.377461
+  type: 'test'
+  ...
+# Subtest: T-03-35
+ok 100 - T-03-35
+  ---
+  duration_ms: 0.122237
+  type: 'test'
+  ...
+# Subtest: T-03-36
+ok 101 - T-03-36
+  ---
+  duration_ms: 0.155198
+  type: 'test'
+  ...
+# Subtest: T-03-37
+ok 102 - T-03-37
+  ---
+  duration_ms: 1.242649
+  type: 'test'
+  ...
+# Subtest: T-04-2
+ok 103 - T-04-2
+  ---
+  duration_ms: 0.526067
+  type: 'test'
+  ...
+# Subtest: T-04-4
+ok 104 - T-04-4
+  ---
+  duration_ms: 0.125744
+  type: 'test'
+  ...
+# Subtest: T-04-6
+ok 105 - T-04-6
+  ---
+  duration_ms: 0.100417
+  type: 'test'
+  ...
+# Subtest: T-04-7
+ok 106 - T-04-7
+  ---
+  duration_ms: 0.127076
+  type: 'test'
+  ...
+# Subtest: T-04-8
+ok 107 - T-04-8
+  ---
+  duration_ms: 0.196736
+  type: 'test'
+  ...
+# Subtest: T-04-9
+ok 108 - T-04-9
+  ---
+  duration_ms: 1.299996
+  type: 'test'
+  ...
+# Subtest: T-04-12
+ok 109 - T-04-12
+  ---
+  duration_ms: 0.121717
+  type: 'test'
+  ...
+# Subtest: T-04-13
+ok 110 - T-04-13
+  ---
+  duration_ms: 0.253782
+  type: 'test'
+  ...
+# Subtest: T-04-14
+ok 111 - T-04-14
+  ---
+  duration_ms: 0.329392
+  type: 'test'
+  ...
+# Subtest: T-04-15
+ok 112 - T-04-15
+  ---
+  duration_ms: 0.629971
+  type: 'test'
+  ...
+# Subtest: T-04-16
+ok 113 - T-04-16
+  ---
+  duration_ms: 0.137836
+  type: 'test'
+  ...
+# Subtest: T-04-20
+ok 114 - T-04-20
+  ---
+  duration_ms: 0.092662
+  type: 'test'
+  ...
+# Subtest: T-04-31
+ok 115 - T-04-31
+  ---
+  duration_ms: 0.114673
+  type: 'test'
+  ...
+# Subtest: T-04-32
+ok 116 - T-04-32
+  ---
+  duration_ms: 0.397599
+  type: 'test'
+  ...
+# Subtest: T-04-33
+ok 117 - T-04-33
+  ---
+  duration_ms: 0.098393
+  type: 'test'
+  ...
+# Subtest: T-04-35
+ok 118 - T-04-35
+  ---
+  duration_ms: 0.082744
+  type: 'test'
+  ...
+# Subtest: T-04-40
+ok 119 - T-04-40
+  ---
+  duration_ms: 0.323341
+  type: 'test'
+  ...
+# Subtest: T-04-41
+ok 120 - T-04-41
+  ---
+  duration_ms: 0.29089
+  type: 'test'
+  ...
+# Subtest: T-04-43
+ok 121 - T-04-43
+  ---
+  duration_ms: 0.546706
+  type: 'test'
+  ...
+# Subtest: T-05-1
+ok 122 - T-05-1
+  ---
+  duration_ms: 0.628588
+  type: 'test'
+  ...
+# Subtest: T-05-3
+ok 123 - T-05-3
+  ---
+  duration_ms: 1.215059
+  type: 'test'
+  ...
+# Subtest: T-05-4
+ok 124 - T-05-4
+  ---
+  duration_ms: 1.641281
+  type: 'test'
+  ...
+# Subtest: T-05-8
+ok 125 - T-05-8
+  ---
+  duration_ms: 0.176007
+  type: 'test'
+  ...
+# Subtest: T-05-10
+ok 126 - T-05-10
+  ---
+  duration_ms: 0.110164
+  type: 'test'
+  ...
+# Subtest: T-05-11
+ok 127 - T-05-11
+  ---
+  duration_ms: 0.121165
+  type: 'test'
+  ...
+# Subtest: T-05-13
+ok 128 - T-05-13
+  ---
+  duration_ms: 0.21529
+  type: 'test'
+  ...
+# Subtest: T-05-17
+ok 129 - T-05-17
+  ---
+  duration_ms: 0.471857
+  type: 'test'
+  ...
+# Subtest: T-05-18
+ok 130 - T-05-18
+  ---
+  duration_ms: 0.122237
+  type: 'test'
+  ...
+# Subtest: T-06-1
+ok 131 - T-06-1
+  ---
+  duration_ms: 0.1506
+  type: 'test'
+  ...
+# Subtest: T-06-4
+ok 132 - T-06-4
+  ---
+  duration_ms: 2.681763
+  type: 'test'
+  ...
+# Subtest: T-06-5
+ok 133 - T-06-5
+  ---
+  duration_ms: 1.272936
+  type: 'test'
+  ...
+# Subtest: T-06-6
+ok 134 - T-06-6
+  ---
+  duration_ms: 0.693189
+  type: 'test'
+  ...
+# Subtest: T-06-10
+ok 135 - T-06-10
+  ---
+  duration_ms: 0.218516
+  type: 'test'
+  ...
+# Subtest: T-06-17
+ok 136 - T-06-17
+  ---
+  duration_ms: 0.118601
+  type: 'test'
+  ...
+# Subtest: T-06-22
+ok 137 - T-06-22
+  ---
+  duration_ms: 0.36051
+  type: 'test'
+  ...
+# Subtest: T-06-23
+ok 138 - T-06-23
+  ---
+  duration_ms: 0.211963
+  type: 'test'
+  ...
+# Subtest: T-06-24
+ok 139 - T-06-24
+  ---
+  duration_ms: 1.355459
+  type: 'test'
+  ...
+# Subtest: T-06-25
+ok 140 - T-06-25
+  ---
+  duration_ms: 0.325605
+  type: 'test'
+  ...
+# Subtest: T-06-26
+ok 141 - T-06-26
+  ---
+  duration_ms: 0.114733
+  type: 'test'
+  ...
+# Subtest: T-06-27
+ok 142 - T-06-27
+  ---
+  duration_ms: 0.221111
+  type: 'test'
+  ...
+# Subtest: T-06-28
+ok 143 - T-06-28
+  ---
+  duration_ms: 0.270272
+  type: 'test'
+  ...
+# Subtest: T-06-29
+ok 144 - T-06-29
+  ---
+  duration_ms: 0.310918
+  type: 'test'
+  ...
+# Subtest: T-07-1
+ok 145 - T-07-1
+  ---
+  duration_ms: 0.238203
+  type: 'test'
+  ...
+# Subtest: T-07-3
+ok 146 - T-07-3
+  ---
+  duration_ms: 0.236349
+  type: 'test'
+  ...
+# Subtest: T-07-10
+ok 147 - T-07-10
+  ---
+  duration_ms: 0.135131
+  type: 'test'
+  ...
+# Subtest: T-07-20
+ok 148 - T-07-20
+  ---
+  duration_ms: 5.428306
+  type: 'test'
+  ...
+# Subtest: T-07-22
+ok 149 - T-07-22
+  ---
+  duration_ms: 19.102279
+  type: 'test'
+  ...
+# Subtest: T-07-23
+ok 150 - T-07-23
+  ---
+  duration_ms: 0.399132
+  type: 'test'
+  ...
+# Subtest: T-07-24
+ok 151 - T-07-24
+  ---
+  duration_ms: 0.526398
+  type: 'test'
+  ...
+# Subtest: T-07-25
+ok 152 - T-07-25
+  ---
+  duration_ms: 274.157756
+  type: 'test'
+  ...
+# Subtest: T-07-26
+ok 153 - T-07-26
+  ---
+  duration_ms: 1.181926
+  type: 'test'
+  ...
+# Subtest: T-07-27
+ok 154 - T-07-27
+  ---
+  duration_ms: 0.305207
+  type: 'test'
+  ...
+# Subtest: F09/F10 A4 crash cuts keep UTF-8/CRLF, private blobs and claims out of every serialized artifact
+ok 155 - F09/F10 A4 crash cuts keep UTF-8/CRLF, private blobs and claims out of every serialized artifact
+  ---
+  duration_ms: 0.768488
+  type: 'test'
+  ...
+# Subtest: F10 A4 transient continuation, maximum record, oversize restarts and source resets
+ok 156 - F10 A4 transient continuation, maximum record, oversize restarts and source resets
+  ---
+  duration_ms: 4.697981
+  type: 'test'
+  ...
+# Subtest: empty optional registry still supports binding, reading and a core session tree
+ok 157 - empty optional registry still supports binding, reading and a core session tree
+  ---
+  duration_ms: 2.289225
+  type: 'test'
+  ...
+# Subtest: 06 T-06-6: cached unmanaged registry records retain validity, generation and observation clocks
+ok 158 - 06 T-06-6: cached unmanaged registry records retain validity, generation and observation clocks
+  ---
+  duration_ms: 1.624689
+  type: 'test'
+  ...
+# Subtest: valid, stale and unknown locator occupants drive the core interaction policy
+ok 159 - valid, stale and unknown locator occupants drive the core interaction policy
+  ---
+  duration_ms: 0.838007
+  type: 'test'
+  ...
+# Subtest: lost supervisor refuses RunControl input even with a matching visible occupant
+ok 160 - lost supervisor refuses RunControl input even with a matching visible occupant
+  ---
+  duration_ms: 1.99676
+  type: 'test'
+  ...
+# Subtest: 05 T-05-8: absent or unavailable optional host selects a verified tmux fake before submission
+ok 161 - 05 T-05-8: absent or unavailable optional host selects a verified tmux fake before submission
+  ---
+  duration_ms: 1.484689
+  type: 'test'
+  ...
+# Subtest: 05 T-05-10: accepted replay cannot switch host or dispatch a fallback
+ok 162 - 05 T-05-10: accepted replay cannot switch host or dispatch a fallback
+  ---
+  duration_ms: 1.031798
+  type: 'test'
+  ...
+# Subtest: bind/open/children feed an intent-to-session merge with native topology and selection preserved
+ok 163 - bind/open/children feed an intent-to-session merge with native topology and selection preserved
+  ---
+  duration_ms: 0.641973
+  type: 'test'
+  ...
+# Subtest: 05 T-05-18: resume descriptor is copy-only with no RunControl or host dispatch
+ok 164 - 05 T-05-18: resume descriptor is copy-only with no RunControl or host dispatch
+  ---
+  duration_ms: 0.425882
+  type: 'test'
+  ...
+# Subtest: ledger benchmark: 1000 small writes and read-only snapshots with 10000 runs
+ok 165 - ledger benchmark: 1000 small writes and read-only snapshots with 10000 runs # SKIP Run HUD_LEDGER_BENCHMARK=1 node --test dist-test/tests/unit/ledger-perf.test.js for the isolated 10000-run benchmark
+  ---
+  duration_ms: 0.669444
+  type: 'test'
+  ...
+# Subtest: ledger processes: concurrent identical request keys replay one complete intent and slot
+ok 166 - ledger processes: concurrent identical request keys replay one complete intent and slot
+  ---
+  duration_ms: 146.858192
+  type: 'test'
+  ...
+# Subtest: ledger processes: concurrent same key with different parameters rejects the losing request
+ok 167 - ledger processes: concurrent same key with different parameters rejects the losing request
+  ---
+  duration_ms: 148.694884
+  type: 'test'
+  ...
+# Subtest: ledger processes: SIGKILL at insert:links recovers an atomic intent without a double slot
+ok 168 - ledger processes: SIGKILL at insert:links recovers an atomic intent without a double slot
+  ---
+  duration_ms: 202.630754
+  type: 'test'
+  ...
+# Subtest: ledger processes: SIGKILL at insert:runs recovers an atomic intent without a double slot
+ok 169 - ledger processes: SIGKILL at insert:runs recovers an atomic intent without a double slot
+  ---
+  duration_ms: 199.474028
+  type: 'test'
+  ...
+# Subtest: ledger processes: SIGKILL at insert:claims recovers an atomic intent without a double slot
+ok 170 - ledger processes: SIGKILL at insert:claims recovers an atomic intent without a double slot
+  ---
+  duration_ms: 193.947138
+  type: 'test'
+  ...
+# Subtest: ledger processes: SIGKILL at insert:slots recovers an atomic intent without a double slot
+ok 171 - ledger processes: SIGKILL at insert:slots recovers an atomic intent without a double slot
+  ---
+  duration_ms: 175.677728
+  type: 'test'
+  ...
+# Subtest: ledger processes: SIGKILL at insert:idempotency recovers an atomic intent without a double slot
+ok 172 - ledger processes: SIGKILL at insert:idempotency recovers an atomic intent without a double slot
+  ---
+  duration_ms: 161.583875
+  type: 'test'
+  ...
+# Subtest: ledger processes: SIGKILL at insert:events recovers an atomic intent without a double slot
+ok 173 - ledger processes: SIGKILL at insert:events recovers an atomic intent without a double slot
+  ---
+  duration_ms: 180.093513
+  type: 'test'
+  ...
+# Subtest: ledger processes: SIGKILL at insert:events:2 recovers an atomic intent without a double slot
+ok 174 - ledger processes: SIGKILL at insert:events:2 recovers an atomic intent without a double slot
+  ---
+  duration_ms: 190.780614
+  type: 'test'
+  ...
+# Subtest: ledger processes: SIGKILL at before:commit recovers an atomic intent without a double slot
+ok 175 - ledger processes: SIGKILL at before:commit recovers an atomic intent without a double slot
+  ---
+  duration_ms: 176.298301
+  type: 'test'
+  ...
+# Subtest: ledger processes: SIGKILL at after:commit recovers an atomic intent without a double slot
+ok 176 - ledger processes: SIGKILL at after:commit recovers an atomic intent without a double slot
+  ---
+  duration_ms: 162.935608
+  type: 'test'
+  ...
+# Subtest: ledger processes: the gathered reconcile evidence can commit against an unchanged snapshot
+ok 177 - ledger processes: the gathered reconcile evidence can commit against an unchanged snapshot
+  ---
+  duration_ms: 87.444231
+  type: 'test'
+  ...
+# Subtest: ledger processes: stale reconcile after actual write-lock contention preserves cancel
+ok 178 - ledger processes: stale reconcile after actual write-lock contention preserves cancel
+  ---
+  duration_ms: 163.669894
+  type: 'test'
+  ...
+# Subtest: ledger processes: stale reconcile after actual write-lock contention preserves terminate
+ok 179 - ledger processes: stale reconcile after actual write-lock contention preserves terminate
+  ---
+  duration_ms: 160.495703
+  type: 'test'
+  ...
+# Subtest: ledger processes: stale reconcile after actual write-lock contention preserves conflict
+ok 180 - ledger processes: stale reconcile after actual write-lock contention preserves conflict
+  ---
+  duration_ms: 160.14572
+  type: 'test'
+  ...
+# (node:1111383) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ledger read runtime gate leaves importing on Node 18 safe
+ok 181 - ledger read runtime gate leaves importing on Node 18 safe
+  ---
+  duration_ms: 1.601125
+  type: 'test'
+  ...
+# Subtest: ledger read never creates missing ledgers or migrates uninitialized/newer versions
+ok 182 - ledger read never creates missing ledgers or migrates uninitialized/newer versions
+  ---
+  duration_ms: 22.825994
+  type: 'test'
+  ...
+# Subtest: ledger typed read snapshots preserve complete refs, per-run history and private launch context
+ok 183 - ledger typed read snapshots preserve complete refs, per-run history and private launch context
+  ---
+  duration_ms: 130.235676
+  type: 'test'
+  ...
+# Subtest: ledger reads preserve empty scopes and do not truncate to HUD display limits
+ok 184 - ledger reads preserve empty scopes and do not truncate to HUD display limits
+  ---
+  duration_ms: 151.871367
+  type: 'test'
+  ...
+# Subtest: ledger read uses registration evidence for full supervisor stamps and rejects contradictory facts
+ok 185 - ledger read uses registration evidence for full supervisor stamps and rejects contradictory facts
+  ---
+  duration_ms: 138.410622
+  type: 'test'
+  ...
+# Subtest: ledger rows and high-water stay in one WAL read snapshot during a concurrent commit
+ok 186 - ledger rows and high-water stay in one WAL read snapshot during a concurrent commit
+  ---
+  duration_ms: 90.087261
+  type: 'test'
+  ...
+# Subtest: ledger snapshot callback lifetime and errors release read transactions
+ok 187 - ledger snapshot callback lifetime and errors release read transactions
+  ---
+  duration_ms: 92.830911
+  type: 'test'
+  ...
+# Subtest: link command functions distinguish missing links from unavailable ledgers and keep report/run states separate
+ok 188 - link command functions distinguish missing links from unavailable ledgers and keep report/run states separate
+  ---
+  duration_ms: 169.923483
+  type: 'test'
+  ...
+# (node:1111389) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ledger schema v1 is byte-for-byte the frozen contract SQL block
+ok 189 - ledger schema v1 is byte-for-byte the frozen contract SQL block
+  ---
+  duration_ms: 1.512911
+  type: 'test'
+  ...
+# Subtest: ledger runtime floor is explicit and does not raise the bar runtime
+ok 190 - ledger runtime floor is explicit and does not raise the bar runtime
+  ---
+  duration_ms: 0.438655
+  type: 'test'
+  ...
+# Subtest: ledger native readOnly capability probe rejects ignored flags using memory only
+ok 191 - ledger native readOnly capability probe rejects ignored flags using memory only
+  ---
+  duration_ms: 0.797242
+  type: 'test'
+  ...
+# Subtest: ledger initialize, reopen, WAL recovery and backup preserve private ledgerId
+ok 192 - ledger initialize, reopen, WAL recovery and backup preserve private ledgerId
+  ---
+  duration_ms: 84.881659
+  type: 'test'
+  ...
+# Subtest: ledger rejects unknown or populated unversioned schema without replacing metadata
+ok 193 - ledger rejects unknown or populated unversioned schema without replacing metadata
+  ---
+  duration_ms: 97.429616
+  type: 'test'
+  ...
+# Subtest: ledger transaction rollback, callback lifetime and async-callback rejection
+ok 194 - ledger transaction rollback, callback lifetime and async-callback rejection
+  ---
+  duration_ms: 54.356001
+  type: 'test'
+  ...
+# Subtest: ledger freezes launch context, captures workspace once with event, and replays across Git metadata changes
+ok 195 - ledger freezes launch context, captures workspace once with event, and replays across Git metadata changes
+  ---
+  duration_ms: 73.587631
+  type: 'test'
+  ...
+# Subtest: ledger initial cached workspace event is atomic and unknown JSON metadata is refused
+ok 196 - ledger initial cached workspace event is atomic and unknown JSON metadata is refused
+  ---
+  duration_ms: 48.385265
+  type: 'test'
+  ...
+# Subtest: ledger supervisor registration persists full stamp, one ticket, one CAS heartbeat and single submission
+ok 197 - ledger supervisor registration persists full stamp, one ticket, one CAS heartbeat and single submission
+  ---
+  duration_ms: 90.029384
+  type: 'test'
+  ...
+# Subtest: ledger CAS includes context generations, validation changes, and evidence without an event
+ok 198 - ledger CAS includes context generations, validation changes, and evidence without an event
+  ---
+  duration_ms: 72.459695
+  type: 'test'
+  ...
+# Subtest: ledger irreversible N counter-evidence persists X and terminal incremental import cannot rewrite completion
+ok 199 - ledger irreversible N counter-evidence persists X and terminal incremental import cannot rewrite completion
+  ---
+  duration_ms: 70.185366
+  type: 'test'
+  ...
+# Subtest: ledger full completion after cancellation with unknown chronology ends with a stable note
+ok 200 - ledger full completion after cancellation with unknown chronology ends with a stable note
+  ---
+  duration_ms: 62.70434
+  type: 'test'
+  ...
+# Subtest: ledger owner binding atomically rekeys outcomes, preserves origin and permits the original actor to register
+ok 201 - ledger owner binding atomically rekeys outcomes, preserves origin and permits the original actor to register
+  ---
+  duration_ms: 58.395003
+  type: 'test'
+  ...
+# Subtest: ledger alias collision rolls back binding and original idempotency instead of choosing a winner
+ok 202 - ledger alias collision rolls back binding and original idempotency instead of choosing a winner
+  ---
+  duration_ms: 57.688504
+  type: 'test'
+  ...
+# Subtest: ledger event pages use committed per-run cursors and never mutate the ledger
+ok 203 - ledger event pages use committed per-run cursors and never mutate the ledger
+  ---
+  duration_ms: 44.193141
+  type: 'test'
+  ...
+# Subtest: ledger fresh reconciliation retains accepted link conflicts without normalized sidecars
+ok 204 - ledger fresh reconciliation retains accepted link conflicts without normalized sidecars
+  ---
+  duration_ms: 60.358681
+  type: 'test'
+  ...
+# Subtest: ledger revoked parent cannot cancel or register an active run
+ok 205 - ledger revoked parent cannot cancel or register an active run
+  ---
+  duration_ms: 59.430621
+  type: 'test'
+  ...
+# Subtest: ledger revoked parent cannot cancel or submit an active run
+ok 206 - ledger revoked parent cannot cancel or submit an active run
+  ---
+  duration_ms: 59.78987
+  type: 'test'
+  ...
+# Subtest: ledger handover increases generation and revokes old binding atomically with edge transfer
+ok 207 - ledger handover increases generation and revokes old binding atomically with edge transfer
+  ---
+  duration_ms: 64.617351
+  type: 'test'
+  ...
+# Subtest: ledger fresh reconciliation keeps conflicts from another run sharing the actual target
+ok 208 - ledger fresh reconciliation keeps conflicts from another run sharing the actual target
+  ---
+  duration_ms: 46.419864
+  type: 'test'
+  ...
+# Subtest: ledger original supervisor cannot submit after reconciliation marks its armed run uncertain
+ok 209 - ledger original supervisor cannot submit after reconciliation marks its armed run uncertain
+  ---
+  duration_ms: 53.119984
+  type: 'test'
+  ...
+# Subtest: ledger terminal timing uncertainty durably prevents resume without fabricating a conflict fact
+ok 210 - ledger terminal timing uncertainty durably prevents resume without fabricating a conflict fact
+  ---
+  duration_ms: 59.614914
+  type: 'test'
+  ...
+1..210
+# tests 210
+# suites 0
+# pass 209
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 2577.220269
+removed temporary HUD_HOME: <SROOT>/t.cxTkRy/hud-core.9wRFhF

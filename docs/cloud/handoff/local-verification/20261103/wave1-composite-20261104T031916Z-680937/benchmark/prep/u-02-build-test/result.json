@@ -1,0 +1,13 @@
+{
+ "tree": "u",
+ "profile": "node24-envproxy",
+ "id": "prep-u-build-test",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:35:59.516Z",
+ "end": "2026-11-04T03:36:07.786Z",
+ "timeout_s": 600,
+ "command": "npm run build:test",
+ "owned_left": "none",
+ "captures": "benchmark/prep/u-02-build-test/captures"
+}

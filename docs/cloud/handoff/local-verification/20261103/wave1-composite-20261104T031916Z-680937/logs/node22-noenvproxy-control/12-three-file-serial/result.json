@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-noenvproxy-control",
+ "id": "12-three-file-serial",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:29:30.248Z",
+ "end": "2026-11-04T03:29:50.390Z",
+ "timeout_s": 600,
+ "command": "node --test --test-concurrency=1 dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/run-process.test.js dist-test/tests/unit/run-light-leader.test.js",
+ "owned_left": "none",
+ "captures": "captures/node22-noenvproxy-control/12-three-file-serial"
+}

@@ -1,0 +1,4 @@
+c3 before install: tsc MISSING; prettier MISSING; node_modules files 275
+c3 dependency manifest: 843e84e7586722ab8673d9f3cc252e08357dbea9e52410a9dc9da69d596742f3 files=332; native .node files: 0
+u before install: tsc MISSING; prettier MISSING; node_modules files 275
+u dependency manifest: 843e84e7586722ab8673d9f3cc252e08357dbea9e52410a9dc9da69d596742f3 files=332; native .node files: 0

@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-noenvproxy-control",
+ "id": "14-hyg2-six-suite",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:30:09.470Z",
+ "end": "2026-11-04T03:31:03.355Z",
+ "timeout_s": 900,
+ "command": "node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/b45-launch.test.js dist-test/tests/unit/b12r-store.test.js dist-test/tests/unit/b12d-wal.test.js dist-test/tests/unit/b16-writer.test.js dist-test/tests/unit/process-client.test.js",
+ "owned_left": "none",
+ "captures": "captures/node22-noenvproxy-control/14-hyg2-six-suite"
+}

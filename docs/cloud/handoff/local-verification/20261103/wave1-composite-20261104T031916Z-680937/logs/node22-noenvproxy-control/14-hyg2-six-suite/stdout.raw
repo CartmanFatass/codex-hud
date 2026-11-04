@@ -1,0 +1,473 @@
+TAP version 13
+# (node:1119280) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: B12D WAL FULL opens once, keeps busy limit and private db/wal/shm; read-only projection does not write
+ok 1 - B12D WAL FULL opens once, keeps busy limit and private db/wal/shm; read-only projection does not write
+  ---
+  duration_ms: 668.878399
+  type: 'test'
+  ...
+# Subtest: B12D read-only projection during uncommitted publication sees old complete commit, then new complete recovery; stale lease/CAS refused
+ok 2 - B12D read-only projection during uncommitted publication sees old complete commit, then new complete recovery; stale lease/CAS refused
+  ---
+  duration_ms: 714.085465
+  type: 'test'
+  ...
+# Subtest: B12D automatic checkpoint bounds declared short-reader load, long snapshot pins WAL, release permits reclamation
+ok 3 - B12D automatic checkpoint bounds declared short-reader load, long snapshot pins WAL, release permits reclamation
+  ---
+  duration_ms: 45465.976244
+  type: 'test'
+  ...
+# {"shortPublishes":1200,"maxShortWalBytes":4120032,"longSnapshotPublishes":1200,"longSnapshotMs":18121.878116,"pinnedWalBytes":11568992,"blockedCheckpointMs":10.349421999999322,"reclaimMs":14.397314000001643,"finalWalBytes":0}
+# Subtest: B12D refuses public or symlinked WAL and SHM before SQLite opens them
+ok 4 - B12D refuses public or symlinked WAL and SHM before SQLite opens them
+  ---
+  duration_ms: 436.877162
+  type: 'test'
+  ...
+# Subtest: B12D unsafe DELETE ref refuses ordinary publication, fenced rebuild clears guard, reopen scrubs before WAL and does not inherit authority
+ok 5 - B12D unsafe DELETE ref refuses ordinary publication, fenced rebuild clears guard, reopen scrubs before WAL and does not inherit authority
+  ---
+  duration_ms: 589.308338
+  type: 'test'
+  ...
+# Subtest: B12D DELETE migration requires stopped snapshots and scrubs historic freed bytes before WAL
+ok 6 - B12D DELETE migration requires stopped snapshots and scrubs historic freed bytes before WAL
+  ---
+  duration_ms: 408.1238
+  type: 'test'
+  ...
+# Subtest: B12D SIGKILL during fenced DELETE rebuild retains old complete storage; after COMMIT exposes all rebuilt state before WAL
+ok 7 - B12D SIGKILL during fenced DELETE rebuild retains old complete storage; after COMMIT exposes all rebuilt state before WAL
+  ---
+  duration_ms: 1327.070188
+  type: 'test'
+  ...
+# Subtest: B12D pre-WAL qualification refuses duplicate JSON shadow bytes and preserves safe indexed metadata
+ok 8 - B12D pre-WAL qualification refuses duplicate JSON shadow bytes and preserves safe indexed metadata
+  ---
+  duration_ms: 1021.932785
+  type: 'test'
+  ...
+# Subtest: B12D transition removes literal orphan raw bytes while preserving live head, lease and reader fences
+ok 9 - B12D transition removes literal orphan raw bytes while preserving live head, lease and reader fences
+  ---
+  duration_ms: 782.432401
+  type: 'test'
+  ...
+# Subtest: B12D genuine native indexed Claude checkpoint qualifies on DELETE-to-WAL reopen without rebuilding
+ok 10 - B12D genuine native indexed Claude checkpoint qualifies on DELETE-to-WAL reopen without rebuilding
+  ---
+  duration_ms: 437.074319
+  type: 'test'
+  ...
+# Subtest: B12D refuses incomplete legacy-bearing WAL and gates inconsistent blob/current/index joins before cleanup
+ok 11 - B12D refuses incomplete legacy-bearing WAL and gates inconsistent blob/current/index joins before cleanup
+  ---
+  duration_ms: 1883.282661
+  type: 'test'
+  ...
+# (node:1119281) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: B12R immutable checkpoint reused for summary edges; projection reads never select recovery body
+ok 12 - B12R immutable checkpoint reused for summary edges; projection reads never select recovery body
+  ---
+  duration_ms: 734.188903
+  type: 'test'
+  ...
+# Subtest: B12R exact indexed snapshots, bounded lookup and acknowledgement preserve history without inline growth
+ok 13 - B12R exact indexed snapshots, bounded lookup and acknowledgement preserve history without inline growth
+  ---
+  duration_ms: 637.493129
+  type: 'test'
+  ...
+# Subtest: B12R preparation detaches mutable input and rejects forged tokens, wrong formats, oversize and stale CAS
+ok 14 - B12R preparation detaches mutable input and rejects forged tokens, wrong formats, oversize and stale CAS
+  ---
+  duration_ms: 596.812253
+  type: 'test'
+  ...
+# Subtest: B12R stale index base cannot branch through a newer source generation or mutate a pinned snapshot
+ok 15 - B12R stale index base cannot branch through a newer source generation or mutate a pinned snapshot
+  ---
+  duration_ms: 662.663707
+  type: 'test'
+  ...
+# Subtest: B12R publication uses only detached CAS values and acknowledgements cannot lose newer reader changes
+ok 16 - B12R publication uses only detached CAS values and acknowledgements cannot lose newer reader changes
+  ---
+  duration_ms: 642.081911
+  type: 'test'
+  ...
+# Subtest: B12R schema-v1 upgrade fences a pre-opened old writer; leased rebuild erases old raw cache
+ok 17 - B12R schema-v1 upgrade fences a pre-opened old writer; leased rebuild erases old raw cache
+  ---
+  duration_ms: 2841.138051
+  type: 'test'
+  ...
+# Subtest: B12R indexed publication crash cuts retain an entire old or new projection/recovery/index commit
+ok 18 - B12R indexed publication crash cuts retain an entire old or new projection/recovery/index commit
+  ---
+  duration_ms: 1531.325636
+  type: 'test'
+  ...
+# Subtest: B12R standalone preparation cannot relabel an inherited index recovery version
+ok 19 - B12R standalone preparation cannot relabel an inherited index recovery version
+  ---
+  duration_ms: 524.26308
+  type: 'test'
+  ...
+# Subtest: B12R real Claude reader restarts from SQLite without re-counting old IDs or losing late pending results
+ok 20 - B12R real Claude reader restarts from SQLite without re-counting old IDs or losing late pending results
+  ---
+  duration_ms: 568.485325
+  type: 'test'
+  ...
+# Subtest: B12R compatibility readCurrent pins projection and recovery across a competing publish
+ok 21 - B12R compatibility readCurrent pins projection and recovery across a competing publish
+  ---
+  duration_ms: 723.045536
+  type: 'test'
+  ...
+# (node:1119282) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: B16 restart restores committed continuity and exact notice baseline; consumers only reread
+ok 22 - B16 restart restores committed continuity and exact notice baseline; consumers only reread
+  ---
+  duration_ms: 801.938051
+  type: 'test'
+  ...
+# Subtest: B16 retained prepared reading never re-prepares no-op or summary-only paths
+ok 23 - B16 retained prepared reading never re-prepares no-op or summary-only paths
+  ---
+  duration_ms: 639.312996
+  type: 'test'
+  ...
+# Subtest: B16 prepares each new ReaderResult even at unchanged offset; captured inputs detached
+ok 24 - B16 prepares each new ReaderResult even at unchanged offset; captured inputs detached
+  ---
+  duration_ms: 651.989552
+  type: 'test'
+  ...
+# Subtest: B16 stale lease, wrong instance and stale previousCommitSeq fail without advancing baseline
+ok 25 - B16 stale lease, wrong instance and stale previousCommitSeq fail without advancing baseline
+  ---
+  duration_ms: 795.849103
+  type: 'test'
+  ...
+# Subtest: B16 notice sequences advance only in their observation domain and survive new runs
+ok 26 - B16 notice sequences advance only in their observation domain and survive new runs
+  ---
+  duration_ms: 944.928809
+  type: 'test'
+  ...
+# Subtest: B16 report cursor is bounded across history, ignores missing seq without losing status facts
+ok 27 - B16 report cursor is bounded across history, ignores missing seq without losing status facts
+  ---
+  duration_ms: 4575.421928
+  type: 'test'
+  ...
+# Subtest: B16 old commits without noticeState establish one silent baseline and preserve continuity
+ok 28 - B16 old commits without noticeState establish one silent baseline and preserve continuity
+  ---
+  duration_ms: 612.875322
+  type: 'test'
+  ...
+# Subtest: B16 bounded noticeState accepts three active stamps, refuses fourth/unknown fields and mismatched state
+ok 29 - B16 bounded noticeState accepts three active stamps, refuses fourth/unknown fields and mismatched state
+  ---
+  duration_ms: 589.119703
+  type: 'test'
+  ...
+# Subtest: B16 failed publication does not acknowledge an edge; corrected retry emits it once
+ok 30 - B16 failed publication does not acknowledge an edge; corrected retry emits it once
+  ---
+  duration_ms: 541.76615
+  type: 'test'
+  ...
+# Subtest: B16 process crash before/after COMMIT exposes old or complete new checkpoint/summary/baseline
+ok 31 - B16 process crash before/after COMMIT exposes old or complete new checkpoint/summary/baseline
+  ---
+  duration_ms: 1399.543934
+  type: 'test'
+  ...
+# Subtest: B16 active stamp compaction never orders event identities as text; renewed stale deadlines still publish
+ok 32 - B16 active stamp compaction never orders event identities as text; renewed stale deadlines still publish
+  ---
+  duration_ms: 595.587532
+  type: 'test'
+  ...
+# Subtest: B16 retained token rejects changed native facts until a new ReaderResult is prepared
+ok 33 - B16 retained token rejects changed native facts until a new ReaderResult is prepared
+  ---
+  duration_ms: 608.689263
+  type: 'test'
+  ...
+# Subtest: B16 restart preserves event aliases when the same open episode gains an ID
+ok 34 - B16 restart preserves event aliases when the same open episode gains an ID
+  ---
+  duration_ms: 751.449456
+  type: 'test'
+  ...
+# Subtest: H09–H13 policy rows restore exact committed intervals and bounded dedup from SQLite
+ok 35 - H09–H13 policy rows restore exact committed intervals and bounded dedup from SQLite
+  ---
+  duration_ms: 4766.940543
+  type: 'test'
+  ...
+# Subtest: H11 recovered report cursor emits only new reports, even across rule upgrade and failed publication
+ok 36 - H11 recovered report cursor emits only new reports, even across rule upgrade and failed publication
+  ---
+  duration_ms: 942.656652
+  type: 'test'
+  ...
+# Subtest: H10 a retained reading publishes deadline withdrawal without rebuilding native recovery
+ok 37 - H10 a retained reading publishes deadline withdrawal without rebuilding native recovery
+  ---
+  duration_ms: 784.644113
+  type: 'test'
+  ...
+# Subtest: H10 rule upgrade and stale recovery establish stable observed intervals across restart
+ok 38 - H10 rule upgrade and stale recovery establish stable observed intervals across restart
+  ---
+  duration_ms: 1581.000058
+  type: 'test'
+  ...
+# Subtest: B45 brief captures bounded bytes and owns a copy independent of replacement, deletion and caller mutation
+ok 39 - B45 brief captures bounded bytes and owns a copy independent of replacement, deletion and caller mutation
+  ---
+  duration_ms: 30.781576
+  type: 'test'
+  ...
+# Subtest: B45 accepted brief segment and delivered suffix use captured bytes with separately reproducible hashes
+ok 40 - B45 accepted brief segment and delivered suffix use captured bytes with separately reproducible hashes
+  ---
+  duration_ms: 7.04307
+  type: 'test'
+  ...
+# Subtest: B45 Codex spawn and resume inject exactly four env leaves and preserve every other user setting
+ok 41 - B45 Codex spawn and resume inject exactly four env leaves and preserve every other user setting
+  ---
+  duration_ms: 7.477967
+  type: 'test'
+  ...
+# Subtest: B45 explicit launch-message fallback has one shared envelope and checkpoints retain only its fingerprint
+ok 42 - B45 explicit launch-message fallback has one shared envelope and checkpoints retain only its fingerprint
+  ---
+  duration_ms: 6.083043
+  type: 'test'
+  ...
+# Subtest: B45 visible launch and resume clearly refuse this build without manufacturing capability support
+ok 43 - B45 visible launch and resume clearly refuse this build without manufacturing capability support
+  ---
+  duration_ms: 6.893515
+  type: 'test'
+  ...
+# Subtest: B45 preparation captures source/cwd/config and rejects mismatched source, server, placeholders and excessive input
+ok 44 - B45 preparation captures source/cwd/config and rejects mismatched source, server, placeholders and excessive input
+  ---
+  duration_ms: 17.173387
+  type: 'test'
+  ...
+# Subtest: B45 model and effort use explicit configuration and fingerprints invalidate changed server command
+ok 45 - B45 model and effort use explicit configuration and fingerprints invalidate changed server command
+  ---
+  duration_ms: 6.937802
+  type: 'test'
+  ...
+# Subtest: B45 production capability evidence is revision/version/key/source/profile bound and empty shipped cells stay unverified
+ok 46 - B45 production capability evidence is revision/version/key/source/profile bound and empty shipped cells stay unverified
+  ---
+  duration_ms: 11.102422
+  type: 'test'
+  ...
+# Subtest: B45 supervisor wait timeout kills and reaps the exact detached child before rejecting
+ok 47 - B45 supervisor wait timeout kills and reaps the exact detached child before rejecting
+  ---
+  duration_ms: 32.574511
+  type: 'test'
+  ...
+# Subtest: B45 supervisor launch uses optimized Node argv and a private stdin payload without ticket or claim in supervisor argv
+ok 48 - B45 supervisor launch uses optimized Node argv and a private stdin payload without ticket or claim in supervisor argv
+  ---
+  duration_ms: 38.419893
+  type: 'test'
+  ...
+# Subtest: B45 supervisor dispatch failure is bounded and never retries or rewrites a run state
+ok 49 - B45 supervisor dispatch failure is bounded and never retries or rewrites a run state
+  ---
+  duration_ms: 7.656468
+  type: 'test'
+  ...
+# Subtest: B45 one post-acceptance workspace capture uses canonical common-dir identity or records bounded missing evidence
+ok 50 - B45 one post-acceptance workspace capture uses canonical common-dir identity or records bounded missing evidence
+  ---
+  duration_ms: 35.509023
+  type: 'test'
+  ...
+# Subtest: B45 preserved MCP environment values invalidate intent and capability fingerprints
+ok 51 - B45 preserved MCP environment values invalidate intent and capability fingerprints
+  ---
+  duration_ms: 8.204718
+  type: 'test'
+  ...
+# Subtest: B45 capability template has typed per-run sentinels while execution keeps actual values
+ok 52 - B45 capability template has typed per-run sentinels while execution keeps actual values
+  ---
+  duration_ms: 18.452505
+  type: 'test'
+  ...
+# Subtest: B45 trusted executable version and resolved file identity are part of the capability profile
+ok 53 - B45 trusted executable version and resolved file identity are part of the capability profile
+  ---
+  duration_ms: 9.61972
+  type: 'test'
+  ...
+# Subtest: B45 every preserved MCP server setting participates in configuration and capability fingerprints
+ok 54 - B45 every preserved MCP server setting participates in configuration and capability fingerprints
+  ---
+  duration_ms: 9.254747
+  type: 'test'
+  ...
+# Subtest: hud help and strict argument refusals never access or create a ledger
+ok 55 - hud help and strict argument refusals never access or create a ledger
+  ---
+  duration_ms: 242.951123
+  type: 'test'
+  ...
+# Subtest: hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes
+ok 56 - hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes
+  ---
+  duration_ms: 61.792095
+  type: 'test'
+  ...
+# Subtest: hud missing and unreadable ledgers fail with no stdout or initialization
+ok 57 - hud missing and unreadable ledgers fail with no stdout or initialization
+  ---
+  duration_ms: 64.750442
+  type: 'test'
+  ...
+# Subtest: hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes
+ok 58 - hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes
+  ---
+  duration_ms: 709.829687
+  type: 'test'
+  ...
+# Subtest: hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4
+ok 59 - hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4
+  ---
+  duration_ms: 391.264545
+  type: 'test'
+  ...
+# Subtest: hud reports asynchronous stdout failures for export and help without Node stack traces
+ok 60 - hud reports asynchronous stdout failures for export and help without Node stack traces
+  ---
+  duration_ms: 494.209221
+  type: 'test'
+  ...
+# Subtest: hud consumes producer JSON byte for byte, preserving full refs, scopes, history and path opt-in
+ok 61 - hud consumes producer JSON byte for byte, preserving full refs, scopes, history and path opt-in
+  ---
+  duration_ms: 284.592614
+  type: 'test'
+  ...
+# Subtest: hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged
+ok 62 - hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged
+  ---
+  duration_ms: 350.635126
+  type: 'test'
+  ...
+# Subtest: hud refuses unknown ledger versions without migrating or emitting JSON
+ok 63 - hud refuses unknown ledger versions without migrating or emitting JSON
+  ---
+  duration_ms: 389.924785
+  type: 'test'
+  ...
+# Subtest: hud producer validation refusal writes no partial JSON
+ok 64 - hud producer validation refusal writes no partial JSON
+  ---
+  duration_ms: 332.796047
+  type: 'test'
+  ...
+# Subtest: hud defaults to ~/.hud only inside an isolated synthetic HOME
+ok 65 - hud defaults to ~/.hud only inside an isolated synthetic HOME
+  ---
+  duration_ms: 318.554523
+  type: 'test'
+  ...
+# Subtest: hud export leaves fresh-process raw stderr free of SQLite initialization warnings
+ok 66 - hud export leaves fresh-process raw stderr free of SQLite initialization warnings
+  ---
+  duration_ms: 395.621701
+  type: 'test'
+  ...
+# Subtest: ledger initialization restores emitWarning and preserves unrelated warnings
+ok 67 - ledger initialization restores emitWarning and preserves unrelated warnings
+  ---
+  duration_ms: 29.494408
+  type: 'test'
+  ...
+# Subtest: process client rejects pending and later RPC/point waits with b12r-process.mjs import diagnostics
+ok 68 - process client rejects pending and later RPC/point waits with b12r-process.mjs import diagnostics
+  ---
+  duration_ms: 31.207723
+  type: 'test'
+  ...
+# Subtest: process client rejects pending and later RPC/point waits with b16-process.mjs import diagnostics
+ok 69 - process client rejects pending and later RPC/point waits with b16-process.mjs import diagnostics
+  ---
+  duration_ms: 27.93508
+  type: 'test'
+  ...
+# Subtest: process client drains noisy stderr with bounded diagnostics and rejects a zero-exit missing reply
+ok 70 - process client drains noisy stderr with bounded diagnostics and rejects a zero-exit missing reply
+  ---
+  duration_ms: 30.775254
+  type: 'test'
+  ...
+# Subtest: process client reports id-less errors to RPC and point waits
+ok 71 - process client reports id-less errors to RPC and point waits
+  ---
+  duration_ms: 28.871645
+  type: 'test'
+  ...
+# Subtest: process client rejects live IPC disconnection instead of leaving waits pending
+ok 72 - process client rejects live IPC disconnection instead of leaving waits pending
+  ---
+  duration_ms: 81.35085
+  type: 'test'
+  ...
+# Subtest: process client preserves replies and early points, then reaps an intentional exact-child kill
+ok 73 - process client preserves replies and early points, then reaps an intentional exact-child kill
+  ---
+  duration_ms: 27.850092
+  type: 'test'
+  ...
+# Subtest: process client rejects buffered and later points after fatal
+ok 74 - process client rejects buffered and later points after fatal
+  ---
+  duration_ms: 28.493368
+  type: 'test'
+  ...
+# Subtest: process client rejects buffered and later points after close
+ok 75 - process client rejects buffered and later points after close
+  ---
+  duration_ms: 26.089061
+  type: 'test'
+  ...
+# Subtest: process client rejects buffered and later points after disconnect
+ok 76 - process client rejects buffered and later points after disconnect
+  ---
+  duration_ms: 77.0571
+  type: 'test'
+  ...
+1..76
+# tests 76
+# suites 0
+# pass 76
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 53799.044794

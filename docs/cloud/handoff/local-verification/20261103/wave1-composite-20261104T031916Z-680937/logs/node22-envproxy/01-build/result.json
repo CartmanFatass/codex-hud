@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-envproxy",
+ "id": "01-build",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:22:30.441Z",
+ "end": "2026-11-04T03:22:36.139Z",
+ "timeout_s": 600,
+ "command": "npm run build",
+ "owned_left": "none",
+ "captures": "captures/node22-envproxy/01-build"
+}

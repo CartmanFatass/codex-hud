@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD f248f32)
+HEAD is now at f248f32 docs: archive compatibility integration connector addendum

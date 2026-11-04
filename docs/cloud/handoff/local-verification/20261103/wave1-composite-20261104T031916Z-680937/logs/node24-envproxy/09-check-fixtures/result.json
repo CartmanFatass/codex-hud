@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node24-envproxy",
+ "id": "09-check-fixtures",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:33:10.298Z",
+ "end": "2026-11-04T03:33:10.510Z",
+ "timeout_s": 300,
+ "command": "npm run check:fixtures",
+ "owned_left": "none",
+ "captures": "captures/node24-envproxy/09-check-fixtures"
+}

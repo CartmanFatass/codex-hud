@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-envproxy",
+ "id": "00-capability-probe",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:22:17.407Z",
+ "end": "2026-11-04T03:22:17.678Z",
+ "timeout_s": 120,
+ "command": "node <VERIFY_ROOT>/wave1-composite-20261104T031916Z-680937/scripts/capprobe.mjs",
+ "owned_left": "none",
+ "captures": "captures/node22-envproxy/00-capability-probe"
+}

@@ -1,0 +1,53 @@
+utc: 2026-11-04T03:22:12Z
+origin: https://github.com/CartmanFatass/codex-hud.git
+From https://github.com/CartmanFatass/codex-hud
+ * branch            dots/wave1-compat-integration -> FETCH_HEAD
+ * branch            local-verification/20261103 -> FETCH_HEAD
+ * branch            universal-hud -> FETCH_HEAD
+origin/dots/wave1-compat-integration: 27990db71ca33136fbe3263a5eb92e57093dc0f5
+origin/local-verification/20261103: 1db757ec1f5c51a79f47eaabfe6483d0cb2db19d
+origin/universal-hud: f248f320d42528fd1eb97db9f1cd2ba97e6d3c86
+C3 36d3fd584bd403ed7ada95d1d863a8f63e96588b tree 0c8c67ede1f13122987802d9a0346cd6e6ecf73b expected 0c8c67ede1f13122987802d9a0346cd6e6ecf73b
+H  87ef8d1f59177badeebf8c863a5ad29abdc20ba1 tree 9aa8ee3afa2476f3588670f74c08814db737db15 expected 9aa8ee3afa2476f3588670f74c08814db737db15; parents: 36d3fd584bd403ed7ada95d1d863a8f63e96588b 
+U  f248f320d42528fd1eb97db9f1cd2ba97e6d3c86 tree 2a6491f7c0ca5262587d4ab15a8ae53cbf6901ce expected 2a6491f7c0ca5262587d4ab15a8ae53cbf6901ce
+H ancestor of origin/dots/wave1-compat-integration: yes
+C3..H name-status:
+A	docs/cloud/handoff/wave1-compat-integration/candidate-tree.tsv
+A	docs/cloud/handoff/wave1-compat-integration/check-inventory.json
+A	docs/cloud/handoff/wave1-compat-integration/composition-manifest.json
+A	docs/cloud/handoff/wave1-compat-integration/implementation.md
+H..origin/dots/wave1-compat-integration name-status (later documentary commits, not test identity):
+A	docs/cloud/handoff/wave1-compat-integration/oracle-v0-composition-review-20261104.md
+U..C3 leaf changes: 58
+C3 leaf entries: 1370
+C3 node_modules tree: 77829c47b2f75720a918a0dfef03e8671222cde9 (expected 77829c47b2f75720a918a0dfef03e8671222cde9)
+C3 node_modules/.package-lock.json blob: 8c35e164d1c5752a7756ca390d91081afb494413 (expected 8c35e164d1c5752a7756ca390d91081afb494413)
+C3 tracked dist/dist-test/packages/hud-mcp/dist entries: 0
+== documents read at H 87ef8d1f59177badeebf8c863a5ad29abdc20ba1 (path blob):
+docs/cloud/rulings/wave1-compat-integration-20261103.md acb7d1bdbfad3b7693752b7e39e55da55a0e66d0
+docs/cloud/rulings/wave1-compat-integration-connector-addendum-20261104.md 003a627641d99b1d780e11f8328cfbb2be254c18
+docs/cloud/handoff/wave1-compat-integration/implementation.md 65d8eb63b23981472d06bf9e1944a80d90b415bf
+docs/cloud/handoff/wave1-compat-integration/composition-manifest.json 24f9f0eed11ab3cc3ab97697d1911b41e499a04e
+docs/cloud/handoff/wave1-compat-integration/candidate-tree.tsv 39b143336f185b5a2af7ec7c057c3eebe6e75ba9
+docs/cloud/handoff/wave1-compat-integration/check-inventory.json 62a61579fc3bab9bb4f6812e1401e2d9bbb9b36d
+AGENTS.md 484370f426d002e97075bdac061c0847b95eb137
+docs/cloud/dots.md e586f2303819d3cc916a887ee24b0f9f41841add
+docs/cloud/README.md 3029d6928c42534eee1c2fa86e1c33a2381f59cc
+docs/handoff/STATE.md 23e88a175620bcf5071db2f219a1206610e3205e
+docs/cloud/NODE22-PROXY.md 9e1032e832c71097de2508fb0cd5b421934fbe74
+docs/cloud/MCP-ANCESTOR.md f9b73b78e49c3f3e7c6477cceb54027e24788e7c
+docs/cloud/RUNZ1-KILL.md cf8aeda76e5442096307e8dc76c64fe72d7efc07
+docs/cloud/handoff/mcp-ancestor-implementation.md 280b92156018c0ddd344616a34889977c08b40ea
+docs/cloud/handoff/mcp-ancestor-publication.md 431385f528afde9174395bc424dadc83a32926fa
+docs/cloud/handoff/mcp-ancestor-review-1.md c4e8e2400080aa19322e013d11aa3750a0d86bf7
+docs/cloud/handoff/node22-proxy-ownership.md 3ee44e1665d3f7511985f4fe95cb20b3efbb840f
+docs/cloud/handoff/runz1-kill/diagnostic-plan.json 87a734efe90bfe694adb7b59f8fe1f3946f85228
+docs/cloud/handoff/runz1-kill/implementation.md 78b75b2e876689ffdeeeaad6eb682e411320ffa3
+docs/cloud/handoff/runz1-kill/review-1.md 9bdfbf29dd905840b85c330b29f159fe0a138b6f
+docs/cloud/rulings/mcp-ancestor-gate.md c7af184b86d5cc2db363379407d17a7df7594b2e
+docs/cloud/rulings/node22-proxy-flake-closeout.md 81baeb1090dabdb088cceb0a8b4e21cf9dccb3e8
+docs/cloud/rulings/node22-proxy-profile.md 593b79b573111f878ae40f08993aa45c7c5d0067
+docs/cloud/rulings/runz1-kill-diagnosis.md cf8aeda76e5442096307e8dc76c64fe72d7efc07
+docs/cloud/rulings/runz1-kill-fix-1.md 6d277b8a269b2c601d99be949937fb27078251f4
+== later documentary file on the branch (read for context only):
+docs/cloud/handoff/wave1-compat-integration/oracle-v0-composition-review-20261104.md 47d79f1900129faa4ada93226ad639b0c172d13c sha256 3aa103bd258b87c2c4f61413cc392d31ced81101b11199e984be16b2c77843d9

@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node24-envproxy",
+ "id": "prep-c3-build-test",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:36:17.059Z",
+ "end": "2026-11-04T03:36:25.471Z",
+ "timeout_s": 600,
+ "command": "npm run build:test",
+ "owned_left": "none",
+ "captures": "benchmark/prep/c3-02-build-test/captures"
+}

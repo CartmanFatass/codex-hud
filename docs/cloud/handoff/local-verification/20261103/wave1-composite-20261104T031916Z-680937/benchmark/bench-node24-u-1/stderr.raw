@@ -1,0 +1,9 @@
+file://<VERIFY_ROOT>/wt/w1-u/tests/hud-mcp/benchmark.mjs:101
+    throw new Error('performance gate exceeded');
+          ^
+
+Error: performance gate exceeded
+    at file://<VERIFY_ROOT>/wt/w1-u/tests/hud-mcp/benchmark.mjs:101:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v24.22.1

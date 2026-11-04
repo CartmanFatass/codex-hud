@@ -1,0 +1,13 @@
+{
+ "tree": "c3",
+ "profile": "node22-noenvproxy-control",
+ "id": "07-test-hud-mcp",
+ "exit": 0,
+ "signal_or_timeout": "-",
+ "start": "2026-11-04T03:29:10.448Z",
+ "end": "2026-11-04T03:29:14.875Z",
+ "timeout_s": 900,
+ "command": "npm run test:hud-mcp",
+ "owned_left": "none",
+ "captures": "captures/node22-noenvproxy-control/07-test-hud-mcp"
+}

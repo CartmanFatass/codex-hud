@@ -1,0 +1,80 @@
+RUNZ1-KILL K1 old key-only serializer failed the embedded-identity assertion; synthetic markers only
+✔ RUNZ1-KILL K1 publication pseudonymizes embedded identities without mutating evidence (10.695424ms)
+✔ RUNZ1-KILL table: no completion evidence (0.861672ms)
+✔ RUNZ1-KILL table: complete Q with before_exit (0.239074ms)
+✔ RUNZ1-KILL table: complete Q with absent chronology (0.115365ms)
+✔ RUNZ1-KILL table: complete Q with unknown chronology (0.205722ms)
+✔ RUNZ1-KILL table: complete Q with after_exit (0.186387ms)
+✔ RUNZ1-KILL table: incomplete complete (0.274681ms)
+✔ RUNZ1-KILL table: incomplete harnessTerminated (0.23688ms)
+✔ RUNZ1-KILL table: incomplete launchersSealed (0.261716ms)
+✔ RUNZ1-KILL table: wrong run (0.310808ms)
+✔ RUNZ1-KILL table: wrong source (0.168744ms)
+✔ RUNZ1-KILL table: wrong generation (0.197888ms)
+✔ RUNZ1-KILL table: wrong supervisor (0.211884ms)
+✔ RUNZ1-KILL table: rejected validation (0.18309ms)
+✔ RUNZ1-KILL table: pending validation (0.18836ms)
+✔ RUNZ1-KILL table: invalid fact time null (0.197718ms)
+✔ RUNZ1-KILL table: invalid fact time -1 (0.154838ms)
+✔ RUNZ1-KILL table: invalid fact time NaN (0.144859ms)
+✔ RUNZ1-KILL table: invalid fact time 1700000000001 (0.124261ms)
+✔ RUNZ1-KILL table: conflicting live evidence (0.250797ms)
+✔ RUNZ1-KILL table: undated live evidence (0.147674ms)
+✔ RUNZ1-KILL table: unresolved identity conflict (0.238002ms)
+✔ RUNZ1-KILL table: conflicting cancellation evidence (0.168162ms)
+RUNZ1-KILL legacy assertion rejected actual valid receiptless Q: false !== true
+RUNZ1-KILL assertion negative control rejected remove-Q; cloned description, not a production defect
+RUNZ1-KILL assertion negative control rejected incomplete-Q; cloned description, not a production defect
+RUNZ1-KILL assertion negative control rejected wrong-binding; cloned description, not a production defect
+RUNZ1-KILL K2 old held branch accepted coherent retained-Q counterexample (no-cancellation); new assertion rejected it; synthetic outcome
+RUNZ1-KILL K2 old held branch accepted coherent retained-Q counterexample (absent); new assertion rejected it; synthetic outcome
+RUNZ1-KILL K2 old held branch accepted coherent retained-Q counterexample (unknown); new assertion rejected it; synthetic outcome
+RUNZ1-KILL K2 old held branch accepted coherent retained-Q counterexample (before_exit); new assertion rejected it; synthetic outcome
+RUNZ1-KILL K2 paired remove-Q: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired incomplete-complete: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired incomplete-harnessTerminated: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired incomplete-launchersSealed: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired wrong-runId: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired wrong-sourceId: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired wrong-bindingGeneration: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired wrong-supervisor: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired rejected: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired pending: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired invalid-time-null: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired invalid-time--1: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired invalid-time-NaN: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired invalid-time-future: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired live: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired undated-live: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired unsealed: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired explicit-conflict: coherent held allowed, alleged release rejected; synthetic description
+RUNZ1-KILL K2 paired scope-tie: coherent held allowed, alleged release rejected; synthetic description
+✔ RUNZ1-KILL real live original holds slot, then reaped fixed scope gives receiptless Q exactly once (85.724527ms)
+✔ RunControl real contract: readonly status, byte logs, stdin EOF, normal and nonzero native result (289.570124ms)
+✔ normal exit 0 creates one durable final receipt before adoption (273.894625ms)
+✔ cancel authenticates intent, returns promptly, preserves duplicate grace and signals three stages (218.012801ms)
+✔ unknown scope refuses receipts, control and recovery after short shell without harness identity (200.742499ms)
+✔ configuration claim leaves preserve user argv and only override four named leaves (0.519074ms)
+✔ supervisor death receiptless Q uses registered stamp, no replacement execution or writer files (2219.485595ms)
+✔ two real supervisors compete for one fake slot/ticket: loser touches no logs, exactly one submission (743.514986ms)
+✔ registration commit before meta crash retains all stamp fields; missing/mismatched domain never backfills (1.475297ms)
+✔ reconcile revision prevents competing cancel or registration being overwritten (0.715671ms)
+✔ verified shell harness keeps native unknown separately from actual shell status 137 (466.538666ms)
+✔ direct harness killed by a real signal records sourced wait signal (202.180491ms)
+✔ accepted cancellation with verified scope absent never signals a guessed shell group (390.947999ms)
+✔ orphan policy reacts to verified physical parent death, while continue preserves the run (478.375849ms)
+✔ cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof (2186.95011ms)
+✔ cancel accepted after submitting and before scope fixation wakes once discovery finishes (145.871074ms)
+✔ heartbeat wall/monotonic disagreement records one anomaly and stays uncertain (5099.086496ms)
+✔ historical PGID/SID reuse simulation never makes unrelated new workload an old-scope conflict (1424.985114ms)
+✔ real supervisor SIGKILL at submitted_before_scope never resubmits or replays signals (344.979943ms)
+✔ real supervisor SIGKILL at cancel_before_ack_commit never resubmits or replays signals (5377.267012ms)
+✔ argv wrapper honors independent harness discovery and never uses launcher wait as native exit (434.955603ms)
+ℹ tests 44
+ℹ suites 0
+ℹ pass 44
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20769.81269

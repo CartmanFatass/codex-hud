@@ -1,0 +1,76 @@
+c3	node22-envproxy	logs/node22-envproxy/00-capability-probe	00-capability-probe	0	-	2026-11-04T03:22:17.407Z	2026-11-04T03:22:17.678Z	120	node <VERIFY_ROOT>/wave1-composite-20261104T031916Z-680937/scripts/capprobe.mjs
+c3	node24-envproxy	logs/node24-envproxy/00-capability-probe	00-capability-probe	0	-	2026-11-04T03:22:18.108Z	2026-11-04T03:22:18.352Z	120	node <VERIFY_ROOT>/wave1-composite-20261104T031916Z-680937/scripts/capprobe.mjs
+c3	node24-envproxy	logs/install/c3-npm-ci	install-c3-npm-ci	0	-	2026-11-04T03:22:18.794Z	2026-11-04T03:22:19.505Z	900	npm ci --ignore-scripts
+u	node24-envproxy	logs/install/u-npm-ci	install-u-npm-ci	0	-	2026-11-04T03:22:20.127Z	2026-11-04T03:22:20.831Z	900	npm ci --ignore-scripts
+c3	node22-envproxy	logs/node22-envproxy/01-build	01-build	0	-	2026-11-04T03:22:30.441Z	2026-11-04T03:22:36.139Z	600	npm run build
+c3	node22-envproxy	logs/node22-envproxy/02-build-test	02-build-test	0	-	2026-11-04T03:22:36.561Z	2026-11-04T03:22:46.643Z	600	npm run build:test
+c3	node22-envproxy	logs/node22-envproxy/03-build-hud-mcp	03-build-hud-mcp	0	-	2026-11-04T03:22:47.073Z	2026-11-04T03:22:49.969Z	600	npm run build:hud-mcp
+c3	node22-envproxy	logs/node22-envproxy/04-npm-test	04-npm-test	0	-	2026-11-04T03:22:50.450Z	2026-11-04T03:24:07.417Z	1800	npm test
+c3	node22-envproxy	logs/node22-envproxy/05-test-core	05-test-core	0	-	2026-11-04T03:24:07.882Z	2026-11-04T03:24:20.832Z	900	npm run test:core
+c3	node22-envproxy	logs/node22-envproxy/06-test-visual	06-test-visual	0	-	2026-11-04T03:24:21.258Z	2026-11-04T03:24:32.524Z	600	npm run test:visual
+c3	node22-envproxy	logs/node22-envproxy/07-test-hud-mcp	07-test-hud-mcp	0	-	2026-11-04T03:24:32.983Z	2026-11-04T03:24:37.131Z	900	npm run test:hud-mcp
+c3	node22-envproxy	logs/node22-envproxy/08-format-check	08-format-check	0	-	2026-11-04T03:24:37.548Z	2026-11-04T03:24:47.744Z	300	npm run format:check
+c3	node22-envproxy	logs/node22-envproxy/09-check-fixtures	09-check-fixtures	0	-	2026-11-04T03:24:48.161Z	2026-11-04T03:24:48.367Z	300	npm run check:fixtures
+c3	node22-envproxy	logs/node22-envproxy/10-git-diff-check	10-git-diff-check	0	-	2026-11-04T03:24:48.797Z	2026-11-04T03:24:48.907Z	60	git diff --check
+c3	node22-envproxy	logs/node22-envproxy/11-node-proxy-profile	11-node-proxy-profile	0	-	2026-11-04T03:24:49.323Z	2026-11-04T03:24:52.333Z	300	node --test --test-concurrency=1 dist-test/tests/unit/node-proxy-profile.test.js
+c3	node22-envproxy	logs/node22-envproxy/12-three-file-serial	12-three-file-serial	0	-	2026-11-04T03:24:52.768Z	2026-11-04T03:25:13.855Z	600	node --test --test-concurrency=1 dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/run-process.test.js dist-test/tests/unit/run-light-leader.test.js
+c3	node22-envproxy	logs/node22-envproxy/13-three-file-normal	13-three-file-normal	0	-	2026-11-04T03:25:14.261Z	2026-11-04T03:25:32.399Z	600	node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/run-process.test.js dist-test/tests/unit/run-light-leader.test.js
+c3	node22-envproxy	logs/node22-envproxy/14-hyg2-six-suite	14-hyg2-six-suite	0	-	2026-11-04T03:25:32.824Z	2026-11-04T03:26:27.567Z	900	node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/b45-launch.test.js dist-test/tests/unit/b12r-store.test.js dist-test/tests/unit/b12d-wal.test.js dist-test/tests/unit/b16-writer.test.js dist-test/tests/unit/process-client.test.js
+c3	node22-envproxy	logs/node22-envproxy/15-kill-evidence-serial	15-kill-evidence-serial	0	-	2026-11-04T03:26:27.983Z	2026-11-04T03:26:47.580Z	600	node --test --test-concurrency=1 dist-test/tests/unit/run-control-kill-evidence.test.js dist-test/tests/unit/run-control.test.js
+c3	node22-envproxy	logs/node22-envproxy/16-runz1-three-file	16-runz1-three-file	0	-	2026-11-04T03:26:47.992Z	2026-11-04T03:27:09.356Z	600	node --test dist-test/tests/unit/runz1-process.test.js dist-test/tests/unit/run-control.test.js dist-test/tests/unit/run-process.test.js
+c3	node22-envproxy	ancestry/node22-envproxy/17a-probe-before	17a-ancestry-probe-before	0	-	2026-11-04T03:27:09.803Z	2026-11-04T03:27:09.879Z	60	/usr/bin/python3 -I <VERIFY_ROOT>/wave1-composite-20261104T031916Z-680937/scripts/ancprobe.py
+c3	node22-envproxy	logs/node22-envproxy/17-mcp-ancestor-gate	17-mcp-ancestor-gate	0	-	2026-11-04T03:27:10.330Z	2026-11-04T03:27:10.938Z	300	node --test packages/hud-mcp/dist/tests/hud-mcp/ancestor-discovery.test.js packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js
+c3	node22-envproxy	ancestry/node22-envproxy/17b-probe-after	17b-ancestry-probe-after	0	-	2026-11-04T03:27:11.354Z	2026-11-04T03:27:11.424Z	60	/usr/bin/python3 -I <VERIFY_ROOT>/wave1-composite-20261104T031916Z-680937/scripts/ancprobe.py
+c3	node22-envproxy	logs/node22-envproxy/18-mcp-prettier	18-mcp-prettier	0	-	2026-11-04T03:27:11.842Z	2026-11-04T03:27:12.284Z	300	node node_modules/prettier/bin/prettier.cjs --check packages/hud-mcp/src/process.ts tests/hud-mcp/ancestor-discovery.test.ts tests/hud-mcp/skeleton.test.ts tests/hud-mcp/int-ledger-registry.test.ts
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/01-build	01-build	0	-	2026-11-04T03:27:12.912Z	2026-11-04T03:27:18.457Z	600	npm run build
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/02-build-test	02-build-test	0	-	2026-11-04T03:27:18.882Z	2026-11-04T03:27:28.984Z	600	npm run build:test
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/03-build-hud-mcp	03-build-hud-mcp	0	-	2026-11-04T03:27:29.442Z	2026-11-04T03:27:32.284Z	600	npm run build:hud-mcp
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/04-npm-test	04-npm-test	0	-	2026-11-04T03:27:32.758Z	2026-11-04T03:28:45.796Z	1800	npm test
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/05-test-core	05-test-core	0	-	2026-11-04T03:28:46.252Z	2026-11-04T03:28:58.379Z	900	npm run test:core
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/06-test-visual	06-test-visual	0	-	2026-11-04T03:28:58.794Z	2026-11-04T03:29:09.987Z	600	npm run test:visual
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/07-test-hud-mcp	07-test-hud-mcp	0	-	2026-11-04T03:29:10.448Z	2026-11-04T03:29:14.875Z	900	npm run test:hud-mcp
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/08-format-check	08-format-check	0	-	2026-11-04T03:29:15.309Z	2026-11-04T03:29:25.419Z	300	npm run format:check
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/09-check-fixtures	09-check-fixtures	0	-	2026-11-04T03:29:25.838Z	2026-11-04T03:29:26.018Z	300	npm run check:fixtures
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/10-git-diff-check	10-git-diff-check	0	-	2026-11-04T03:29:26.442Z	2026-11-04T03:29:26.496Z	60	git diff --check
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/11-node-proxy-profile	11-node-proxy-profile	0	-	2026-11-04T03:29:26.918Z	2026-11-04T03:29:29.834Z	300	node --test --test-concurrency=1 dist-test/tests/unit/node-proxy-profile.test.js
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/12-three-file-serial	12-three-file-serial	0	-	2026-11-04T03:29:30.248Z	2026-11-04T03:29:50.390Z	600	node --test --test-concurrency=1 dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/run-process.test.js dist-test/tests/unit/run-light-leader.test.js
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/13-three-file-normal	13-three-file-normal	0	-	2026-11-04T03:29:50.807Z	2026-11-04T03:30:09.056Z	600	node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/run-process.test.js dist-test/tests/unit/run-light-leader.test.js
+c3	node22-noenvproxy-control	logs/node22-noenvproxy-control/14-hyg2-six-suite	14-hyg2-six-suite	0	-	2026-11-04T03:30:09.470Z	2026-11-04T03:31:03.355Z	900	node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/b45-launch.test.js dist-test/tests/unit/b12r-store.test.js dist-test/tests/unit/b12d-wal.test.js dist-test/tests/unit/b16-writer.test.js dist-test/tests/unit/process-client.test.js
+c3	node24-envproxy	logs/node24-envproxy/01-build	01-build	0	-	2026-11-04T03:31:03.942Z	2026-11-04T03:31:08.794Z	600	npm run build
+c3	node24-envproxy	logs/node24-envproxy/02-build-test	02-build-test	0	-	2026-11-04T03:31:09.207Z	2026-11-04T03:31:17.714Z	600	npm run build:test
+c3	node24-envproxy	logs/node24-envproxy/03-build-hud-mcp	03-build-hud-mcp	0	-	2026-11-04T03:31:18.146Z	2026-11-04T03:31:20.844Z	600	npm run build:hud-mcp
+c3	node24-envproxy	logs/node24-envproxy/04-npm-test	04-npm-test	0	-	2026-11-04T03:31:21.316Z	2026-11-04T03:32:32.325Z	1800	npm test
+c3	node24-envproxy	logs/node24-envproxy/05-test-core	05-test-core	0	-	2026-11-04T03:32:32.750Z	2026-11-04T03:32:44.882Z	900	npm run test:core
+c3	node24-envproxy	logs/node24-envproxy/06-test-visual	06-test-visual	0	-	2026-11-04T03:32:45.307Z	2026-11-04T03:32:55.166Z	600	npm run test:visual
+c3	node24-envproxy	logs/node24-envproxy/07-test-hud-mcp	07-test-hud-mcp	0	-	2026-11-04T03:32:55.580Z	2026-11-04T03:32:59.780Z	900	npm run test:hud-mcp
+c3	node24-envproxy	logs/node24-envproxy/08-format-check	08-format-check	0	-	2026-11-04T03:33:00.204Z	2026-11-04T03:33:09.879Z	300	npm run format:check
+c3	node24-envproxy	logs/node24-envproxy/09-check-fixtures	09-check-fixtures	0	-	2026-11-04T03:33:10.298Z	2026-11-04T03:33:10.510Z	300	npm run check:fixtures
+c3	node24-envproxy	logs/node24-envproxy/10-git-diff-check	10-git-diff-check	0	-	2026-11-04T03:33:10.925Z	2026-11-04T03:33:10.982Z	60	git diff --check
+c3	node24-envproxy	logs/node24-envproxy/11-node-proxy-profile	11-node-proxy-profile	0	-	2026-11-04T03:33:11.395Z	2026-11-04T03:33:14.494Z	300	node --test --test-concurrency=1 dist-test/tests/unit/node-proxy-profile.test.js
+c3	node24-envproxy	logs/node24-envproxy/12-three-file-serial	12-three-file-serial	0	-	2026-11-04T03:33:14.919Z	2026-11-04T03:33:36.135Z	600	node --test --test-concurrency=1 dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/run-process.test.js dist-test/tests/unit/run-light-leader.test.js
+c3	node24-envproxy	logs/node24-envproxy/13-three-file-normal	13-three-file-normal	0	-	2026-11-04T03:33:36.574Z	2026-11-04T03:33:54.578Z	600	node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/run-process.test.js dist-test/tests/unit/run-light-leader.test.js
+c3	node24-envproxy	logs/node24-envproxy/14-hyg2-six-suite	14-hyg2-six-suite	0	-	2026-11-04T03:33:55.029Z	2026-11-04T03:34:49.846Z	900	node --test dist-test/tests/unit/hud-link-export.test.js dist-test/tests/unit/b45-launch.test.js dist-test/tests/unit/b12r-store.test.js dist-test/tests/unit/b12d-wal.test.js dist-test/tests/unit/b16-writer.test.js dist-test/tests/unit/process-client.test.js
+c3	node24-envproxy	logs/node24-envproxy/15-kill-evidence-serial	15-kill-evidence-serial	0	-	2026-11-04T03:34:50.274Z	2026-11-04T03:35:11.146Z	600	node --test --test-concurrency=1 dist-test/tests/unit/run-control-kill-evidence.test.js dist-test/tests/unit/run-control.test.js
+c3	node24-envproxy	logs/node24-envproxy/16-runz1-three-file	16-runz1-three-file	0	-	2026-11-04T03:35:11.563Z	2026-11-04T03:35:32.400Z	600	node --test dist-test/tests/unit/runz1-process.test.js dist-test/tests/unit/run-control.test.js dist-test/tests/unit/run-process.test.js
+c3	node24-envproxy	ancestry/node24-envproxy/17a-probe-before	17a-ancestry-probe-before	0	-	2026-11-04T03:35:32.820Z	2026-11-04T03:35:32.894Z	60	/usr/bin/python3 -I <VERIFY_ROOT>/wave1-composite-20261104T031916Z-680937/scripts/ancprobe.py
+c3	node24-envproxy	logs/node24-envproxy/17-mcp-ancestor-gate	17-mcp-ancestor-gate	0	-	2026-11-04T03:35:33.318Z	2026-11-04T03:35:34.518Z	300	node --test packages/hud-mcp/dist/tests/hud-mcp/ancestor-discovery.test.js packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js
+c3	node24-envproxy	ancestry/node24-envproxy/17b-probe-after	17b-ancestry-probe-after	0	-	2026-11-04T03:35:34.944Z	2026-11-04T03:35:35.013Z	60	/usr/bin/python3 -I <VERIFY_ROOT>/wave1-composite-20261104T031916Z-680937/scripts/ancprobe.py
+c3	node24-envproxy	logs/node24-envproxy/18-mcp-prettier	18-mcp-prettier	0	-	2026-11-04T03:35:35.448Z	2026-11-04T03:35:35.866Z	300	node node_modules/prettier/bin/prettier.cjs --check packages/hud-mcp/src/process.ts tests/hud-mcp/ancestor-discovery.test.ts tests/hud-mcp/skeleton.test.ts tests/hud-mcp/int-ledger-registry.test.ts
+u	node24-envproxy	benchmark/prep/u-01-build	prep-u-build	0	-	2026-11-04T03:35:54.128Z	2026-11-04T03:35:59.099Z	600	npm run build
+u	node24-envproxy	benchmark/prep/u-02-build-test	prep-u-build-test	0	-	2026-11-04T03:35:59.516Z	2026-11-04T03:36:07.786Z	600	npm run build:test
+u	node24-envproxy	benchmark/prep/u-03-build-hud-mcp	prep-u-build-hud-mcp	0	-	2026-11-04T03:36:08.204Z	2026-11-04T03:36:10.929Z	600	npm run build:hud-mcp
+c3	node24-envproxy	benchmark/prep/c3-01-build	prep-c3-build	0	-	2026-11-04T03:36:11.591Z	2026-11-04T03:36:16.646Z	600	npm run build
+c3	node24-envproxy	benchmark/prep/c3-02-build-test	prep-c3-build-test	0	-	2026-11-04T03:36:17.059Z	2026-11-04T03:36:25.471Z	600	npm run build:test
+c3	node24-envproxy	benchmark/prep/c3-03-build-hud-mcp	prep-c3-build-hud-mcp	0	-	2026-11-04T03:36:25.874Z	2026-11-04T03:36:28.617Z	600	npm run build:hud-mcp
+u	node22-envproxy	benchmark/bench-node22-u-1	bench-node22-u-1	0	-	2026-11-04T03:37:30.268Z	2026-11-04T03:37:34.827Z	600	node tests/hud-mcp/benchmark.mjs
+c3	node22-envproxy	benchmark/bench-node22-c3-1	bench-node22-c3-1	0	-	2026-11-04T03:37:35.236Z	2026-11-04T03:37:40.295Z	600	node tests/hud-mcp/benchmark.mjs
+u	node22-envproxy	benchmark/bench-node22-u-2	bench-node22-u-2	0	-	2026-11-04T03:37:40.702Z	2026-11-04T03:37:45.341Z	600	node tests/hud-mcp/benchmark.mjs
+c3	node22-envproxy	benchmark/bench-node22-c3-2	bench-node22-c3-2	0	-	2026-11-04T03:37:45.762Z	2026-11-04T03:37:50.529Z	600	node tests/hud-mcp/benchmark.mjs
+u	node22-envproxy	benchmark/bench-node22-u-3	bench-node22-u-3	0	-	2026-11-04T03:37:50.947Z	2026-11-04T03:37:55.764Z	600	node tests/hud-mcp/benchmark.mjs
+c3	node22-envproxy	benchmark/bench-node22-c3-3	bench-node22-c3-3	0	-	2026-11-04T03:37:56.177Z	2026-11-04T03:38:00.878Z	600	node tests/hud-mcp/benchmark.mjs
+u	node24-envproxy	benchmark/bench-node24-u-1	bench-node24-u-1	1	-	2026-11-04T03:38:01.293Z	2026-11-04T03:38:06.568Z	600	node tests/hud-mcp/benchmark.mjs
+c3	node24-envproxy	benchmark/bench-node24-c3-1	bench-node24-c3-1	0	-	2026-11-04T03:38:06.984Z	2026-11-04T03:38:11.962Z	600	node tests/hud-mcp/benchmark.mjs
+u	node24-envproxy	benchmark/bench-node24-u-2	bench-node24-u-2	0	-	2026-11-04T03:38:12.371Z	2026-11-04T03:38:17.325Z	600	node tests/hud-mcp/benchmark.mjs
+c3	node24-envproxy	benchmark/bench-node24-c3-2	bench-node24-c3-2	0	-	2026-11-04T03:38:17.731Z	2026-11-04T03:38:22.576Z	600	node tests/hud-mcp/benchmark.mjs
+u	node24-envproxy	benchmark/bench-node24-u-3	bench-node24-u-3	0	-	2026-11-04T03:38:22.987Z	2026-11-04T03:38:27.915Z	600	node tests/hud-mcp/benchmark.mjs
+c3	node24-envproxy	benchmark/bench-node24-c3-3	bench-node24-c3-3	0	-	2026-11-04T03:38:28.325Z	2026-11-04T03:38:33.225Z	600	node tests/hud-mcp/benchmark.mjs
