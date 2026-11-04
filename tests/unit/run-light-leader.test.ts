@@ -1,12 +1,18 @@
+import {
+  validateStartup,
+  startupStderr,
+  retainCapture,
+  type DiagnosticProfile,
+} from '../int/node-startup-diagnostics.js';
 import { launchNodeGroup } from '../run/native-group.js';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import test, { type TestContext } from 'node:test';
+import test, { before, type TestContext } from 'node:test';
 import { HeadlessRunControl } from '../../src/core/run/control.js';
 import { MemoryRunFactPort } from '../../src/core/run/fake-port.js';
 import { createGroupPipe } from '../../src/core/run/group-pipe.js';
@@ -42,6 +48,12 @@ function spawnRawLeader(command: string, args: string[], options: Parameters<typ
   return child;
 }
 
+let profile: DiagnosticProfile;
+before(() => {
+  profile = validateStartup();
+});
+const STDERR_SENTINEL = 'synthetic-workload-stderr\n';
+
 const skip = process.platform !== 'linux';
 const actor = { kind: 'trusted_local' as const, uid: process.getuid!(), invocationId: 'synthetic-light-leader' };
 async function until(fn: () => boolean) {
@@ -72,6 +84,8 @@ function fixture(t: TestContext) {
   const home = mkdtempSync(join(tmpdir(), 'hud-light-leader-'));
   const output = join(home, 'output');
   const fd = openSync(output, 'a', 0o600);
+  const error = join(home, 'error');
+  const errorFd = openSync(error, 'a', 0o600);
   const groups: GroupProcess[] = [];
   const auxiliaries: ProcessStamp[] = [];
   t.after(async () => {
@@ -86,12 +100,21 @@ function fixture(t: TestContext) {
       g.close();
       await g.exited;
     }
+    retainCapture(`run-light-leader-${basename(home)}`, {
+      pid: process.pid,
+      status: null,
+      signal: null,
+      stdout: readFileSync(output),
+      stderr: readFileSync(error),
+    });
     closeSync(fd);
+    closeSync(errorFd);
     rmSync(home, { recursive: true, force: true });
   });
   return {
     home,
     output,
+    error,
     async launch(argv: string[], env?: NodeJS.ProcessEnv) {
       const g = await launchGroup({
         runId: 'synthetic-light',
@@ -100,7 +123,7 @@ function fixture(t: TestContext) {
         stdin: Buffer.from('$(touch forbidden);\n'),
         env,
         stdoutFd: fd,
-        stderrFd: fd,
+        stderrFd: errorFd,
       });
       groups.push(g);
       auxiliaries.push(...auxiliaryStamps(g));
@@ -531,10 +554,15 @@ test('light leader preserves exact brief bytes and EOF on workload fd0', { skip 
   const g = await f.launch([
     process.execPath,
     '-e',
-    "const a=[];process.stdin.on('data',b=>a.push(b));process.stdin.on('end',()=>{process.stdout.write(Buffer.concat(a));setTimeout(()=>process.exit(0),60)});",
+    `const a=[];process.stdin.on('data',b=>a.push(b));process.stdin.on('end',()=>{process.stdout.write(Buffer.concat(a));process.stderr.write(${JSON.stringify(STDERR_SENTINEL)});setTimeout(()=>process.exit(0),60)});`,
   ]);
   await g.exited;
-  assert.deepEqual(readFileSync(f.output), Buffer.from('$(touch forbidden);\n'));
+  const stdout = readFileSync(f.output);
+  const stderr = readFileSync(f.error);
+  assert.deepEqual(stdout, Buffer.from('$(touch forbidden);\n'));
+  assert.equal(stdout.includes(STDERR_SENTINEL), false);
+  assert.ok(g.command);
+  assert.deepEqual(stderr, Buffer.concat([startupStderr(profile, g.command.pid), Buffer.from(STDERR_SENTINEL)]));
   assert.equal(existsSync(join(f.home, 'forbidden')), false);
 });
 
