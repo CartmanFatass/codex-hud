@@ -1,5 +1,5 @@
+import { ProcessClient } from '../int/process-client.js';
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
 import { fork } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -398,16 +398,12 @@ test(
         stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
         env: { ...process.env, HUD_HOME: f.home },
       });
-      const exit = once(child, 'exit');
-      t.after(async () => {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-        await exit;
-      });
-      child.send({ home: f.home, ref: f.ref, step: row[1], reading: reading(row[1], 20), point });
-      const [message] = await once(child, 'message');
-      assert.deepEqual(message, { point });
-      child.kill('SIGKILL');
-      await exit;
+      const client = new ProcessClient(child, 'b16-process');
+      t.after(() => client.kill());
+      const reached = client.point(point);
+      client.send({ home: f.home, ref: f.ref, step: row[1], reading: reading(row[1], 20), point });
+      assert.deepEqual(await reached, { point });
+      await client.kill();
       const committed = f.store.readProjection(f.ref)!;
       assert.equal(
         committed.commitSeq,

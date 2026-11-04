@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import type { DatabaseSync } from 'node:sqlite';
 
 export const LEDGER_RUNTIME_REQUIREMENT = 'Node 22.x >=22.13 or Node >=24 (Node 23 is unsupported)';
@@ -32,13 +33,25 @@ export function verifyReadOnlyCapability(Constructor: typeof DatabaseSync): void
 export async function loadLedgerSqlite(): Promise<typeof import('node:sqlite')> {
   requireLedgerRuntime();
   let sqlite: typeof import('node:sqlite');
+  // Keep Node 22's SQLite initialization notice off the CLI's stderr, as the panel does.
+  // Loading synchronously confines the temporary hook to this initialization, without an await.
+  const emit = process.emitWarning;
+  process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
+    const text = typeof warning === 'string' ? warning : warning?.message;
+    const type = typeof warning === 'string' ? rest[0] : warning.name;
+    if (type === 'ExperimentalWarning' && text === 'SQLite is an experimental feature and might change at any time')
+      return;
+    return (emit as (...args: unknown[]) => void).call(process, warning, ...rest);
+  }) as typeof process.emitWarning;
   try {
-    sqlite = await import('node:sqlite');
+    sqlite = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
   } catch (cause) {
     throw new Error(
       `The HUD ledger requires unflagged node:sqlite with readOnly support (${LEDGER_RUNTIME_REQUIREMENT})`,
       { cause }
     );
+  } finally {
+    process.emitWarning = emit;
   }
   verifyReadOnlyCapability(sqlite.DatabaseSync);
   return sqlite;

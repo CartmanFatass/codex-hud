@@ -1,0 +1,357 @@
+HYG2 dispatcher supplemental test:mjs
+dced9114e9d15977fef07fa52c1a329a58dfa505
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 test:mjs
+> node --test tests/unit/*.mjs
+
+✔ classifier uses only live Codex metadata from the exact session (2.545117ms)
+✔ environment gates and target validation fail closed without I/O (2.801797ms)
+✔ tmux probe is exact, read-only, shell-free and bounded (0.936686ms)
+✖ fake Unix socket receives minimal schema, current outer identity and safe sequence (19.391927ms)
+▶ socket acknowledges only matching successful newline responses
+  ✖ JSON-RPC success (3.554ms)
+  ✖ malformed (1.613238ms)
+  ✖ error (4.449876ms)
+  ✖ explicit failure (1.73712ms)
+  ✖ wrong id (1.496695ms)
+  ✖ no acknowledgement (4.032648ms)
+  ✖ no newline (1.687877ms)
+  ✖ oversized (1.301316ms)
+  ✖ disconnect (1.279093ms)
+✖ socket acknowledges only matching successful newline responses (23.174775ms)
+✖ socket timeout, absent endpoint and cancellation are quiet bounded failures (3.481402ms)
+✔ controller deduplicates heartbeats and handles rapid working/idle/working without duplicate idle (1.203591ms)
+✔ short uncertain tmux failure preserves working then publishes observed completion (0.524046ms)
+✔ prolonged probe failure releases unknown without inventing a completion (0.312061ms)
+✔ lost target, wrong process, dead pane and session reuse immediately release state (0.634649ms)
+✔ reconnect clears ambiguous reports then re-reads latest state without replaying missed turns (0.43928ms)
+✔ private per-attach health files remain readable after stop and exclude title/socket text (12.019818ms)
+✔ health write failure never interrupts state reporting (0.678725ms)
+✔ stop aborts an in-flight report before one final unknown; repeated stop is idempotent (0.665114ms)
+✔ parent death aborts a pending probe and terminates without a late working report (5.670582ms)
+✔ already-dead parent releases once without probing tmux (0.509574ms)
+✖ stop with a silent fake server cancels the active request and bounds the final release (1.443396ms)
+✖ native readback validates exact outer pane and status without claiming lifecycle authority (1.714348ms)
+✔ native observer reads projected completion and stops without unknown or lifecycle writes (0.981963ms)
+✔ native observer diagnoses ignored custom authority rather than treating an API ACK as delivery (0.320544ms)
+✔ native observer recovery only reads current state and keeps diagnostic gap visible (0.270771ms)
+✖ native readback never certifies another pane or agent as this Codex (10.634478ms)
+test-codex-path-first-run: PASS
+✔ tests/unit/test-codex-path-first-run.mjs (122.025983ms)
+test-environment-line-runtime-state: PASS
+✔ tests/unit/test-environment-line-runtime-state.mjs (124.385294ms)
+test-identity-line-effort: PASS
+✔ tests/unit/test-identity-line-effort.mjs (188.924886ms)
+test-model-glyphs: PASS
+✔ tests/unit/test-model-glyphs.mjs (135.729673ms)
+test-pane-runtime-state: PASS
+✔ tests/unit/test-pane-runtime-state.mjs (122.322523ms)
+test-parse-queue: PASS
+✔ tests/unit/test-parse-queue.mjs (188.622858ms)
+test-render-clear-scrollback-once: PASS
+✔ tests/unit/test-render-clear-scrollback-once.mjs (262.086561ms)
+test-rollout-offset: PASS
+✔ tests/unit/test-rollout-offset.mjs (113.753567ms)
+test-rollout-turn-context: PASS
+✔ tests/unit/test-rollout-turn-context.mjs (129.948403ms)
+test-session-finder-pane-binding: PASS
+✔ tests/unit/test-session-finder-pane-binding.mjs (159.162637ms)
+test-subagent-tree: PASS
+✔ tests/unit/test-subagent-tree.mjs (267.336943ms)
+test-tree-keys: PASS
+✔ tests/unit/test-tree-keys.mjs (103.672919ms)
+test-visual-width: PASS
+✔ tests/unit/test-visual-width.mjs (108.339835ms)
+test-windows-codex-path-exclusion: PASS
+✔ tests/unit/test-windows-codex-path-exclusion.mjs (107.543897ms)
+test-windows-installer-preserves-codex: PASS
+✔ tests/unit/test-windows-installer-preserves-codex.mjs (85.929706ms)
+test-wsl-codex-origin: PASS
+✔ tests/unit/test-wsl-codex-origin.mjs (158.099273ms)
+ℹ tests 47
+ℹ suites 0
+ℹ pass 32
+ℹ fail 15
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 430.796978
+
+✖ failing tests:
+
+test at tests/unit/herdr-bridge.mjs:176:1
+✖ fake Unix socket receives minimal schema, current outer identity and safe sequence (19.391927ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-F6xzCP/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:178:18)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-F6xzCP/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:223:13
+✖ JSON-RPC success (3.554ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-mGSx8c/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:224:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:223:5)
+      at async Test.run (node:internal/test_runner/test:1409:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-mGSx8c/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:223:13
+✖ malformed (1.613238ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-lLn8a5/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:224:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:223:5)
+      at async Test.run (node:internal/test_runner/test:1409:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-lLn8a5/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:223:13
+✖ error (4.449876ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-OCZ9rT/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:224:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:223:5)
+      at async Test.run (node:internal/test_runner/test:1409:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-OCZ9rT/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:223:13
+✖ explicit failure (1.73712ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-kKza09/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:224:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:223:5)
+      at async Test.run (node:internal/test_runner/test:1409:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-kKza09/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:223:13
+✖ wrong id (1.496695ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-6IVv1d/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:224:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:223:5)
+      at async Test.run (node:internal/test_runner/test:1409:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-6IVv1d/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:223:13
+✖ no acknowledgement (4.032648ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-QQHfwq/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:224:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:223:5)
+      at async Test.run (node:internal/test_runner/test:1409:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-QQHfwq/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:223:13
+✖ no newline (1.687877ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-OeAHMU/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:224:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:223:5)
+      at async Test.run (node:internal/test_runner/test:1409:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-OeAHMU/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:223:13
+✖ oversized (1.301316ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-4kRqV5/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:224:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:223:5)
+      at async Test.run (node:internal/test_runner/test:1409:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-4kRqV5/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:223:13
+✖ disconnect (1.279093ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-bI6vMO/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:224:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:223:5)
+      at async Test.run (node:internal/test_runner/test:1409:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-bI6vMO/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:230:1
+✖ socket timeout, absent endpoint and cancellation are quiet bounded failures (3.481402ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-M5F5sN/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:231:18)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-M5F5sN/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:536:1
+✖ stop with a silent fake server cancels the active request and bounds the final release (1.443396ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-y4GITS/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:542:18)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-y4GITS/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:559:1
+✖ native readback validates exact outer pane and status without claiming lifecycle authority (1.714348ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-vXIire/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:561:18)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-vXIire/api.sock',
+    port: -1
+  }
+
+test at tests/unit/herdr-bridge.mjs:651:1
+✖ native readback never certifies another pane or agent as this Codex (10.634478ms)
+  Error: listen EPERM: operation not permitted /workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-pK8URb/api.sock
+      at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+      at listenInCluster (node:net:2499:12)
+      at Server.listen (node:net:2641:5)
+      at socketPath.socketPath (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:57:12)
+      at new Promise (<anonymous>)
+      at fakeHerdr (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:55:9)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-work/tests/unit/herdr-bridge.mjs:657:18)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '/workspace/scratch/6daef0397a95/hud-tmp/hud-herdr-pK8URb/api.sock',
+    port: -1
+  }
+=== EXIT 1 ===

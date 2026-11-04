@@ -60,7 +60,20 @@ export function findHarness(
 ): { process: ProcessInfo; harness: Harness } | null {
   let pid = ppid;
   for (let depth = 0; depth < 8 && pid > 1; depth++) {
-    const process = reader.get(pid);
+    let process: ProcessInfo;
+    try {
+      process = reader.get(pid);
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error.code === 'EACCES' || error.code === 'EPERM')
+      )
+        // Optional discovery has no usable evidence; never look past a denied ancestor.
+        return null;
+      throw error;
+    }
     const harness = inferHarness(process);
     if (harness) return { process, harness };
     if (process.ppid === pid) break;

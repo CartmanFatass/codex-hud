@@ -229,6 +229,69 @@ test('Codex root combination resolves, native child refuses without invalidating
     f.cleanup();
   }
 });
+for (const code of ['EACCES', 'EPERM'] as const) {
+  test(`current Codex source is not remembered after simulated optional ancestor ${code}; fresh root still resolves`, async () => {
+    const f = fixture();
+    try {
+      const reader = new Processes(f.root);
+      const harness = { ...reader.get(10), pid: 9, procStart: '90' };
+      reader.rows.set(9, harness);
+      reader.rows.set(10, { ...reader.get(10), ppid: 9, argv: ['synthetic-shell'] });
+      const p = profile(f.root);
+      const registration = await registerCaller({
+        reader,
+        registry: new MemoryCallerRegistry(),
+        profile: p,
+        pid: 11,
+        cwd: () => f.root,
+        envPane: null,
+        nowMs: 100,
+      });
+      assert.equal(registration.harnessPid, 9);
+      let deny = false;
+      const reads: number[] = [];
+      const original = reader.get.bind(reader);
+      reader.get = (pid) => {
+        reads.push(pid);
+        if (deny && pid === 9) throw Object.assign(new Error('simulated optional denial'), { code });
+        return original(pid);
+      };
+      let scopeReads = 0;
+      const resolver = new SessionRefResolver(registration, reader, p, locator(f.root), undefined, {
+        read: (processKey) => {
+          scopeReads++;
+          return { kind: 'no_current', processKey, ledgerId: null, highWaterGeneration: 0, current: null };
+        },
+      });
+      assert.equal((await resolver.resolve(meta(), 'delegate_whoami')).ok, true);
+      assert.equal(scopeReads, 1);
+      let dispatches = 0;
+      const server = new HudMcpServer(resolver, {
+        invoke: async () => {
+          dispatches++;
+          throw new Error('denied source must not reach authorization/dispatch');
+        },
+      });
+      reads.length = 0;
+      deny = true;
+      const reply = (await server.handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'delegate_whoami', arguments: { claim: 'synthetic' }, _meta: meta() },
+      })) as { result: { structuredContent: unknown } };
+      assert.deepEqual(reply.result.structuredContent, { ok: false, code: 'identity_unverified' });
+      assert.deepEqual(reads, [11, 10, 10, 9]);
+      assert.equal(scopeReads, 1, 'denial happens before scopes/contexts/claims/aliases can be selected');
+      assert.equal(dispatches, 0);
+      deny = false;
+      assert.equal((await resolver.resolve(meta(), 'delegate_whoami')).ok, true);
+      assert.equal(scopeReads, 2, 'subsequent root obtains independent current evidence');
+    } finally {
+      f.cleanup();
+    }
+  });
+}
 test('missing, conflicting and forged arguments metadata never falls back to remembered root/proc', async () => {
   const f = fixture();
   try {

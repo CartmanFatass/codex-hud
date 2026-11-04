@@ -6,6 +6,15 @@ import { GROUP_LEADER_SCRIPT } from './group-leader.js';
 import { createGroupPipe } from './group-pipe.js';
 export type { GroupExit } from '../types/supervision.js';
 import { readProcessDomain } from '../process-domain.js';
+import {
+  parseProcessStat,
+  proveZombieSessionGone,
+  terminalThreadGroup,
+  linuxCensusAccess,
+  type CensusAccess,
+  type CensusRecord,
+  type ZombieProofOptions,
+} from './process-census.js';
 
 export interface ProcRecord {
   stamp: ProcessStamp;
@@ -40,24 +49,9 @@ export function currentDomain(options?: RunProcessDomainOptions): { boot_id: str
   return { ...domain };
 }
 
-function readRecord(pid: number): ProcRecord {
+function readRecord(pid: number): CensusRecord {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('invalid pid');
-  const text = readFileSync(`/proc/${pid}/stat`, 'utf8');
-  const fields = text
-    .slice(text.lastIndexOf(')') + 2)
-    .trim()
-    .split(/\s+/);
-  if (!/^\d+$/.test(fields[19] ?? '')) throw new Error('invalid process stat');
-  return {
-    stamp: { pid, proc_start: fields[19], ...currentDomain() },
-    state: fields[0],
-    flags: Number(fields[6]),
-    pgid: Number(fields[2]),
-    sid: Number(fields[3]),
-    ppid: Number(fields[1]),
-    tty: Number(fields[4]),
-    foregroundPgid: Number(fields[5]),
-  };
+  return parseProcessStat(pid, readFileSync(`/proc/${pid}/stat`, 'utf8'), currentDomain());
 }
 
 export function readProcess(pid: number): ProcRecord | null {
@@ -152,24 +146,50 @@ export function inspectGroup(scope: ProcessScope, afterSnapshot?: () => void): G
   return result;
 }
 
+/** Unlike processState's TGID observation, completion must exclude live sibling tasks. */
+function subjectTerminated(stamp: ProcessStamp, access: CensusAccess = linuxCensusAccess): boolean {
+  if (!visible(stamp) || !Number.isSafeInteger(stamp.pid) || stamp.pid <= 0) return false;
+  try {
+    const record = parseProcessStat(stamp.pid, access.text(`/proc/${stamp.pid}/stat`), currentDomain());
+    if (!sameStamp(record.stamp, stamp)) return true;
+    return terminalThreadGroup(record, access);
+  } catch (error) {
+    if (!['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return false;
+    try {
+      process.kill(stamp.pid, 0);
+      return false;
+    } catch (probeError) {
+      return (probeError as NodeJS.ErrnoException).code === 'ESRCH';
+    }
+  }
+}
+
 /** Caller must additionally prove its single submission channel is permanently sealed. */
 export function proveGroupGone(
   scope: ProcessScope,
   harness: ProcessStamp,
-  launchers: readonly ProcessStamp[]
+  launchers: readonly ProcessStamp[],
+  options?: ZombieProofOptions
 ): boolean {
   if (!visible(scope) || !launchers.some((stamp) => sameStamp(stamp, scope.group_leader))) return false;
-  if (processState(harness) !== 'dead' || launchers.some((stamp) => processState(stamp) !== 'dead')) return false;
-  const inspection = inspectGroup(scope);
-  if (!inspection.enumerated || inspection.members.length !== 0) return false;
-  try {
-    // Signal zero is an existence query only. Deliverable signals exclusively use
-    // the live helper's own process group, never a parent-side numeric PGID.
-    process.kill(-scope.pgid, 0);
+  if (
+    !subjectTerminated(harness, options?.access) ||
+    launchers.some((stamp) => !subjectTerminated(stamp, options?.access))
+  )
     return false;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ESRCH';
+  const inspection = inspectGroup(scope);
+  if (!inspection.enumerated) return false;
+  if (inspection.members.length === 0) {
+    try {
+      // Signal zero is an existence query only. Keep the existing ESRCH route,
+      // including shared sessions and unrelated live processes outside the group.
+      process.kill(-scope.pgid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true;
+      return false;
+    }
   }
+  return proveZombieSessionGone(scope, [harness, ...launchers], options);
 }
 
 export interface GroupLaunchOptions {

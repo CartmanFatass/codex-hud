@@ -1,11 +1,17 @@
+import {
+  validateStartup,
+  startupStderr,
+  retainCapture,
+  type DiagnosticProfile,
+} from '../int/node-startup-diagnostics.js';
 import { launchNodeGroup } from '../run/native-group.js';
 import assert from 'node:assert/strict';
-import test, { type TestContext } from 'node:test';
+import test, { before, type TestContext } from 'node:test';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import {
@@ -18,6 +24,12 @@ import {
   type GroupProcess,
 } from '../../src/core/run/process.js';
 import type { ProcessStamp } from '../../src/core/types/supervision.js';
+
+let profile: DiagnosticProfile;
+before(() => {
+  profile = validateStartup();
+});
+const STDERR_SENTINEL = 'synthetic-workload-stderr\n';
 
 const linux = process.platform === 'linux';
 const python = '/usr/bin/python3';
@@ -34,6 +46,8 @@ function setup(t: TestContext) {
   const dir = mkdtempSync(join(tmpdir(), 'hud-run-process-'));
   const output = join(dir, 'output');
   const fd = openSync(output, 'a', 0o600);
+  const error = join(dir, 'error');
+  const errorFd = openSync(error, 'a', 0o600);
   const groups: GroupProcess[] = [];
   const extra: ProcessStamp[] = [];
   t.after(async () => {
@@ -57,12 +71,21 @@ function setup(t: TestContext) {
         }
       }
     }
+    retainCapture(`run-process-${basename(dir)}`, {
+      pid: process.pid,
+      status: null,
+      signal: null,
+      stdout: readFileSync(output),
+      stderr: readFileSync(error),
+    });
     closeSync(fd);
+    closeSync(errorFd);
     rmSync(dir, { force: true, recursive: true });
   });
   return {
     dir,
     output,
+    error,
     extra,
     async launch(argv: string[], stdin: Buffer | null = null, native = false) {
       const group = await (native ? launchNodeGroup : launchGroup)({
@@ -71,7 +94,7 @@ function setup(t: TestContext) {
         cwd: dir,
         stdin,
         stdoutFd: fd,
-        stderrFd: fd,
+        stderrFd: errorFd,
       });
       groups.push(group);
       return group;
@@ -95,7 +118,7 @@ test('one-shot group launch preserves argv and stdin EOF, waits for helper exit'
     [
       process.execPath,
       '-e',
-      `let s=''; process.stdin.on('data',b=>s+=b); process.stdin.on('end',()=>{console.log(JSON.stringify({args:process.argv.slice(1),s})); process.exitCode=7});`,
+      `let s=''; process.stdin.on('data',b=>s+=b); process.stdin.on('end',()=>{console.log(JSON.stringify({args:process.argv.slice(1),s})); process.stderr.write(${JSON.stringify(STDERR_SENTINEL)}); process.exitCode=7});`,
       'a b',
       '$(synthetic)',
     ],
@@ -110,7 +133,19 @@ test('one-shot group launch preserves argv and stdin EOF, waits for helper exit'
   assert.equal(exit.code, 7);
   assert.equal(exit.signal, null);
   assert.equal(processState(group.helper), 'dead');
-  assert.deepEqual(JSON.parse(readFileSync(fixture.output, 'utf8')), { args: ['a b', '$(synthetic)'], s: 'brief\n' });
+  const stdout = readFileSync(fixture.output);
+  const stderr = readFileSync(fixture.error);
+  assert.deepEqual(stdout, Buffer.from(JSON.stringify({ args: ['a b', '$(synthetic)'], s: 'brief\n' }) + '\n'));
+  assert.deepEqual(JSON.parse(stdout.toString('utf8')), { args: ['a b', '$(synthetic)'], s: 'brief\n' });
+  assert.equal(stdout.includes(STDERR_SENTINEL), false);
+  assert.deepEqual(
+    stderr,
+    Buffer.concat([
+      startupStderr(profile, group.helper.pid),
+      startupStderr(profile, group.command.pid),
+      Buffer.from(STDERR_SENTINEL),
+    ])
+  );
   assert.equal(proveGroupGone(group.scope, group.command, [group.helper]), true);
 });
 

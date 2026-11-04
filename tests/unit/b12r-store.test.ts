@@ -1,4 +1,4 @@
-import { once } from 'node:events';
+import { ProcessClient } from '../int/process-client.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -473,25 +473,9 @@ test(
       const child = fork(path.resolve('tests/int/b12r-process.mjs'), [], {
         stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
       });
-      t.after(async () => {
-        if (child.exitCode === null && child.signalCode === null) {
-          child.kill('SIGKILL');
-          await once(child, 'exit');
-        }
-      });
-      let id = 0;
-      const rpc = (op: string, fields: Record<string, unknown> = {}) =>
-        new Promise<any>((resolve, reject) => {
-          const requestId = ++id;
-          const handler = (message: any) => {
-            if (message.id !== requestId) return;
-            child.off('message', handler);
-            if (message.error) reject(new Error(message.error));
-            else resolve(message.result);
-          };
-          child.on('message', handler);
-          child.send({ id: requestId, op, ...fields });
-        });
+      const client = new ProcessClient(child, 'b12r-process');
+      t.after(() => client.kill());
+      const rpc = (op: string, fields: Record<string, unknown> = {}) => client.call(op, fields);
       await rpc('open', { options: { hudHome: f.root, sourceId: REF.sourceId }, now: NOW });
       const lease = await rpc('acquire', { ref: REF, holder: 'crash-reader' });
       const next = commit(2, lease.generation);
@@ -505,13 +489,8 @@ test(
           ],
         },
       };
-      const reached = new Promise<void>((resolve) => {
-        child.on('message', (m: any) => {
-          if (m.point === cut) resolve();
-        });
-      });
-      child.send({
-        id: ++id,
+      const reached = client.point(cut);
+      client.send({
         op: 'publish',
         crash: cut,
         lease,
@@ -522,8 +501,7 @@ test(
         },
       });
       await reached;
-      child.kill('SIGKILL');
-      await once(child, 'exit');
+      await client.kill();
       const projection = f.store.readProjection(REF)!;
       assert.equal(projection.commitSeq, cut === 'before_commit' ? 1 : 2);
       const recovery = f.store.readRecovery(projection, BUDGET) as ObservationRecovery;
