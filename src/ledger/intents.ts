@@ -455,21 +455,25 @@ export async function acceptIntent(
     }, budgetMs);
   } catch (error) {
     const auditUnsafe = Boolean(error && typeof error === 'object' && 'auditUnsafe' in error && error.auditUnsafe);
-    if (!auditUnsafe) budget?.check('complete');
+    try {
+      if (!auditUnsafe) budget?.note('complete');
+    } catch {
+      // Completion diagnostics cannot replace the established refusal.
+    }
     if (error instanceof CapacityRefusal) return error.result;
     // A failed intent is entirely rolled back before a separate rejection audit is attempted.
-    if (
-      error instanceof Error &&
-      (budget ? budget.remaining() > 0 && budget.lockRemaining() > 0 : performance.now() < writeDeadline) &&
-      !auditUnsafe &&
-      !(error instanceof LedgerCommitUncertain) &&
-      !(error instanceof LedgerCleanupFailed) &&
-      !(error instanceof LocalStoreProofFailed) &&
-      !('code' in error && error.code === 'ledger_busy') &&
-      !['stale_context', 'identity_unverified', 'identity_source_missing', 'unauthorized'].includes(error.message)
-    ) {
-      await ledger
-        .transaction(
+    try {
+      if (
+        error instanceof Error &&
+        !auditUnsafe &&
+        !(error instanceof LedgerCommitUncertain) &&
+        !(error instanceof LedgerCleanupFailed) &&
+        !(error instanceof LocalStoreProofFailed) &&
+        !('code' in error && error.code === 'ledger_busy') &&
+        !['stale_context', 'identity_unverified', 'identity_source_missing', 'unauthorized'].includes(error.message) &&
+        (budget ? budget.remaining() > 0 && budget.lockRemaining() > 0 : performance.now() < writeDeadline)
+      ) {
+        await ledger.transaction(
           (tx) => {
             localGuard();
             budget?.check('callback');
@@ -482,8 +486,10 @@ export async function acceptIntent(
             });
           },
           budget ?? Math.max(0, writeDeadline - performance.now())
-        )
-        .catch(() => {});
+        );
+      }
+    } catch {
+      // Optional audit eligibility, acquisition and completion cannot replace the primary error.
     }
     throw error;
   }

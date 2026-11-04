@@ -170,8 +170,8 @@ test(
     const f = await fixture(t);
     const other = await f.child();
     const results = await concurrentIntents(t, [
-      { child: f.seed, fields: { variant: 'one' } },
-      { child: other, fields: { variant: 'two', changed: true } },
+      { child: f.seed, fields: { variant: 'one', auditBudget: 'deterministic' } },
+      { child: other, fields: { variant: 'two', changed: true, auditBudget: 'deterministic' } },
     ]);
     const accepted = results.filter((result) => result.status === 'fulfilled');
     const rejected = results.filter((result) => result.status === 'rejected');
