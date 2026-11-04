@@ -457,10 +457,7 @@ for (const [h, r] of [
         assert.equal(f.initial.claims.length, r);
         assert.equal(new Set(f.initial.slots.map((row) => row.slot_key)).size, r);
         assert.equal(new Set(f.initial.claims.map((row) => row.run_id)).size, r);
-        assert.deepEqual(
-          f.initial.active.map((row) => row.run_id).sort(),
-          [...f.baselineIds].sort()
-        );
+        assert.deepEqual(f.initial.active.map((row) => row.run_id).sort(), [...f.baselineIds].sort());
         const before = f.ledger.snapshot((tx) =>
           f.baselineIds.map((runId) => {
             const run = readRun(tx, runId);
@@ -622,7 +619,10 @@ for (const [h, r] of [
       for (const service of [f.service, ...f.services])
         assert.equal(closed.filter((candidate) => candidate === service).length, 1);
       assert.equal(existsSync(f.root), false);
-      await assert.rejects(f.ledger.transaction(() => 1), /ledger_closed/);
+      await assert.rejects(
+        f.ledger.transaction(() => 1),
+        /ledger_closed/
+      );
     });
 
 test('P065 workload fixture rejects missing or malformed supervisor seeds', () => {
@@ -677,7 +677,10 @@ test(
     assert.ok(observed.root);
     assert.equal(closed.filter((service) => service['options'].ledger === observed.ledger).length, 1);
     assert.equal(existsSync(observed.root), false);
-    await assert.rejects(observed.ledger.transaction(() => 1), /ledger_closed/);
+    await assert.rejects(
+      observed.ledger.transaction(() => 1),
+      /ledger_closed/
+    );
   }
 );
 
@@ -711,6 +714,9 @@ test(
       true
     );
     assert.equal(existsSync(home), false);
-    await assert.rejects(ledger.transaction(() => 1), /ledger_closed/);
+    await assert.rejects(
+      ledger.transaction(() => 1),
+      /ledger_closed/
+    );
   }
 );
