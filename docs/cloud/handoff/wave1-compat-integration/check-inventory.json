@@ -1,0 +1,52 @@
+{
+  "candidate_commit": "36d3fd584bd403ed7ada95d1d863a8f63e96588b",
+  "candidate_tree": "0c8c67ede1f13122987802d9a0346cd6e6ecf73b",
+  "execution_status": "NOT RUN",
+  "profiles": [
+    "Node 22.23.4 NODE_USE_ENV_PROXY=1 required proxy policy",
+    "same Node 22.23.4 binary/proxy settings with activation omitted, control",
+    "Node 24.22.1 enabled required proxy policy"
+  ],
+  "shared_matrix": {
+    "build_seconds": 600,
+    "build_test_seconds": 600,
+    "build_hud_mcp_seconds": 600,
+    "npm_test_seconds": 1800,
+    "supplemental_mjs_seconds": 600,
+    "core_seconds": 900,
+    "visual_seconds": 600,
+    "hud_mcp_seconds": 900,
+    "format_seconds": 300,
+    "fixtures_seconds": 300,
+    "diff_seconds": 60
+  },
+  "all_profile_focused": {
+    "node_proxy_profile_seconds": 300,
+    "export_run_process_run_light_leader_serial_seconds": 600,
+    "same_three_files_normal_concurrency_seconds": 600,
+    "hyg2_six_suites_seconds": 900
+  },
+  "enabled_profile_focused": {
+    "kill_evidence_and_run_control_serial_seconds": 600,
+    "original_runz1_run_control_run_process_normal_seconds": 600,
+    "mcp_ancestor_skeleton_registry_seconds": 300,
+    "mcp_four_file_prettier_seconds": 300
+  },
+  "real_optional_ancestor": {
+    "status": "PENDING",
+    "requirement": "Naturally occurring PID > 1 optional-ancestor EACCES/EPERM, mandatory physical registration succeeds, no logical authority; unchanged bounded owner workflow"
+  },
+  "mcp_benchmarks": {
+    "status": "PENDING",
+    "processes": 12,
+    "baseline_commit": "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86",
+    "candidate_commit": "36d3fd584bd403ed7ada95d1d863a8f63e96588b",
+    "seconds_each": 600,
+    "driver": "tests/hud-mcp/benchmark.mjs",
+    "driver_change": "NONE",
+    "isolation": "No concurrent workload must be established; serialization/snapshot alone is insufficient"
+  },
+  "historical_custody": "PENDING; stopped archive uploads not resumed",
+  "acceptance": "HOLD; one fresh integration Oracle must explicitly accept complete dependent set",
+  "actual_merged_tree": "NOT RUN; no universal-hud merge authorized by this preparation"
+}
