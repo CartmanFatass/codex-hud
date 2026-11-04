@@ -551,8 +551,11 @@ function numericalGates(selected) {
     recoveryWarmups: selected.filter((row) => row.recovery && row.phase === 'warmup'),
   };
   const response = Object.fromEntries(Object.entries(groups).map(([name, group]) => [name, percentileGate(group)]));
-  const perCall = selected.every((row) => row.numeric.completeTiming &&
-    row.numeric.writeBound !== false && row.numeric.cumulativeWaitBound !== false && row.numeric.busyTimeoutBound);
+  const perCall = selected.every((row) => {
+    const numeric = row.numeric ?? numerical(row);
+    return numeric.completeTiming && numeric.writeBound !== false &&
+      numeric.cumulativeWaitBound !== false && numeric.busyTimeoutBound;
+  });
   return { perCall, response, qualified: perCall && Object.values(response).every((group) => group.qualified) };
 }
 function lossCoverage(cell, rows) {
@@ -581,6 +584,9 @@ function prepareCall(client, cell, phase, sequence, index, args, rows, recovery 
     requestKey: args.request_key ?? null, transactions: [], sql: [], backoffs: [], injection: null,
     began: instant(), finished: false, semantic: true, semanticErrors: [], busyTimeoutMs: client.busyTimeoutMs,
   };
+  // A registered dispatch intention is already a retained, invalid-timing attempt.
+  // No response duration exists until a real response is observed.
+  row.numeric = numerical(row);
   calls++;
   rows.push(row);
   raw({ ...row, record: 'started' });
@@ -621,7 +627,17 @@ async function call(f, client, cell, phase, sequence, index, args, rows, recover
   return row;
 }
 function verify(row, condition, message) {
-  if (!condition) { row.semantic = false; row.semanticErrors.push(message); }
+  if (!condition) { row.semantic = false; (row.semanticErrors ??= []).push(message); }
+}
+function finalizeWaveFailure(row, reason) {
+  row.numeric ??= numerical(row);
+  row.interruptionReason = reason;
+  row.completionDisposition = row.dispatchState === 'pending'
+    ? 'not_issued_incomplete' : row.finished ? 'issued_completed_wave_failed' : 'issued_incomplete';
+  row.error ??= reason;
+  verify(row, false, 'wave incomplete: ' + reason);
+  // Preserve finished, dispatchState and any real measurements unchanged.
+  // In particular, never assign response/end/zero-duration data to an intention.
 }
 async function wave(cell, phase, sequence, rows) {
   checkOuter();
@@ -631,6 +647,8 @@ async function wave(cell, phase, sequence, rows) {
   const clients = [], services = [], ledgers = [], restorers = [];
   const queueJobs = [];
   const waveRows = [];
+  const registeredStart = rows.length;
+  const issuedJobs = [];
   let before, after, traffic;
   try {
     f = await p065WorkloadFixture(cell.h, cell.r, cell.tool);
@@ -710,10 +728,11 @@ async function wave(cell, phase, sequence, rows) {
     // Journal both dispatch intentions before issuing either H=2 frame.
     const prepared = f.actors.map((_actor, index) =>
       prepareCall(clients[index], cell, phase, sequence + index, index, argumentsByParticipant[index], rows));
-    const issue = async (index) => {
-      const result = await call(f, clients[index], cell, phase, sequence + index, index, argumentsByParticipant[index], rows, false, prepared[index]);
-      waveRows.push(result);
-      return result;
+    const issue = (index) => {
+      const job = call(f, clients[index], cell, phase, sequence + index, index, argumentsByParticipant[index], rows, false, prepared[index])
+        .then((result) => { waveRows.push(result); return result; });
+      issuedJobs.push(job);
+      return job;
     };
     // H=2 operational frames are both issued before awaiting either result.
     if (cell.bank === 'operational') await Promise.all(f.actors.map((_actor, index) => issue(index)));
@@ -853,8 +872,12 @@ async function wave(cell, phase, sequence, rows) {
     for (const row of waveRows) raw({ ...row, record: 'completed' });
     return waveRows;
   } catch (error) {
-    for (const row of waveRows) {
-      verify(row, false, 'wave incomplete: ' + errorText(error));
+    // A sibling may already be issued when another participant fails its outer
+    // check. Its bounded response must settle before finalization/logging.
+    await Promise.allSettled(issuedJobs);
+    const reason = errorText(error);
+    for (const row of rows.slice(registeredStart)) {
+      finalizeWaveFailure(row, reason);
       raw({ ...row, record: 'wave_failed' });
     }
     throw error;
@@ -878,6 +901,10 @@ async function wave(cell, phase, sequence, rows) {
 }
 
 function summarize(cell, rows) {
+  // Defensive read normalization also handles a retained raw intention from an
+  // interruption before call() entered its finalizer. Do not mutate raw evidence.
+  rows = rows.map((row) => ({ ...row, numeric: row.numeric ?? numerical(row),
+    semantic: row.finished === true && row.semantic === true }));
   const primary = rows.filter((row) => !row.recovery);
   const measured = primary.filter((row) => row.phase === 'measured');
   const warmups = primary.filter((row) => row.phase === 'warmup');
@@ -908,11 +935,11 @@ function summarize(cell, rows) {
         upfrontMs: stats(group.filter((row) => Number.isFinite(row.diagnostics?.upfrontMs)).map((row) => row.diagnostics.upfrontMs)),
         waitMs: stats(group.filter((row) => Number.isFinite(row.diagnostics?.waitMs)).map((row) => row.diagnostics.waitMs)),
         queueMs: stats(group.filter((row) => Number.isFinite(row.diagnostics?.queueMs)).map((row) => row.diagnostics.queueMs)),
-        transactionMs: stats(group.map((row) => row.transactionWallMs ?? 0)),
-        callbackMs: stats(group.map((row) => row.callbackMs ?? 0)),
-        commitMs: stats(group.map((row) => row.commitMs ?? 0)),
-        rollbackMs: stats(group.map((row) => row.rollbackMs ?? 0)),
-        backoffMs: stats(group.map((row) => row.backoffWallMs ?? 0)),
+        transactionMs: stats(group.map((row) => row.transactionWallMs).filter(nonnegative)),
+        callbackMs: stats(group.map((row) => row.callbackMs).filter(nonnegative)),
+        commitMs: stats(group.map((row) => row.commitMs).filter(nonnegative)),
+        rollbackMs: stats(group.map((row) => row.rollbackMs).filter(nonnegative)),
+        backoffMs: stats(group.map((row) => row.backoffWallMs).filter(nonnegative)),
         checkpointIntervalsMs: Object.fromEntries(
           ['prepare', 'source', 'queue', 'acquire', 'metadata', 'callback', 'commit', 'rollback', 'complete', 'flush']
             .map((phase) => [phase, stats(group.map((row) => row.diagnostics?.phaseMs?.[phase]).filter(Number.isFinite))])
@@ -946,7 +973,7 @@ function summarize(cell, rows) {
     forcedCallbackAndCommit: 'not applicable: no write callback/COMMIT',
   } : null;
   const observedOutcomes = Object.fromEntries(['success', 'refusal', 'busy', 'response_lost', 'internal_error', 'uncompleted']
-    .map((name) => [name, measured.filter((row) => row.actualOutcome === name).length]));
+    .map((name) => [name, measured.filter((row) => (row.actualOutcome ?? 'uncompleted') === name).length]));
   const requiredOutcomeSeen = cell.scenario === 'refusal' ? observedOutcomes.refusal > 0 :
     cell.scenario === 'response-loss' ? measured.some((row) => row.deliveryOutcome === 'response_lost') :
     cell.scenario === 'callback-overrun' || (cell.scenario === 'long-lock' && cell.tool !== 'delegate_status') ? observedOutcomes.busy > 0 :
@@ -963,6 +990,13 @@ function summarize(cell, rows) {
   return {
     ...cell, warmups: warmups.length, measured: measured.length, totalAttempts: rows.length,
     complete, participants, observedOutcomes, requiredOutcomeSeen, heartbeatSeen, observationSeen, contentionSeen,
+    dispatch: {
+      registered: rows.length,
+      issued: rows.filter((row) => row.dispatchState === 'issued').length,
+      pendingNotIssued: rows.filter((row) => row.dispatchState === 'pending').length,
+      uncompleted: rows.filter((row) => !row.finished).length,
+      interrupted: rows.filter((row) => row.interruptionReason !== undefined).length,
+    },
     nonApplicable, populations, lossCoverage: coverage,
     numericalScopes: {
       inclusive: inclusiveGates, operational: operationalGates,
@@ -1107,6 +1141,70 @@ function runEvidenceCheckerControls() {
       assert.equal(numerical(record(2, { tool: 'delegate_status', diagnostics: { ...diagnostics, [field]: 0 } })).completeTiming, false);
     for (const value of [null, '1', -1, Number.NaN, Number.POSITIVE_INFINITY, undefined])
       assert.equal(numerical(record(2, { tool: 'delegate_status', diagnostics: { ...diagnostics, upfrontMs: value } })).completeTiming, false);
+  });
+
+  check('pending H=2 intentions remain summarized without invented latency', () => {
+    const cell = { h: 2, r: 10, tool: 'delegate_spawn', scenario: 'callback-overrun', bank: 'forced',
+      lossCoverageRequired: null };
+    const completed = {
+      ...record(), bank: 'forced', id: 'checker-finished', participant: 0, finished: true, semantic: true,
+      dispatchState: 'issued', semanticErrors: [], sql: [], injection: { requestedMs: 40 },
+      transactionWallMs: 1, callbackMs: 1, commitMs: 0, rollbackMs: 0, backoffWallMs: 0,
+    };
+    const pending = (participant) => ({
+      id: 'checker-pending-' + participant, participant, tool: 'delegate_spawn', phase: 'measured',
+      recovery: false, bank: 'forced', dispatchState: 'pending', finished: false,
+      semantic: true, semanticErrors: [], sql: [], transactions: [], backoffs: [], busyTimeoutMs: 0,
+    });
+    const second = pending(1);
+    const mixed = [completed, second];
+    const beforeFinalization = summarize(cell, mixed);
+    assert.equal(beforeFinalization.totalAttempts, 2);
+    assert.equal(beforeFinalization.measured, 2);
+    assert.equal(beforeFinalization.complete, false);
+    assert.equal(beforeFinalization.numerical, false);
+    assert.equal(beforeFinalization.operationalNumerical, false);
+    assert.equal(beforeFinalization.semantics, false);
+    assert.equal(numericalGates(mixed).qualified, false);
+    const scope = beforeFinalization.populations.forced['primary-measured'].all;
+    assert.equal(scope.timingCoverage.invalid, 1);
+    assert.equal(scope.timingCoverage.expectedResponse, 2);
+    assert.equal(scope.timingCoverage.expectedWrite, 2);
+    assert.equal(scope.timingCoverage.validWrite, 1);
+    assert.equal('numeric' in second, false);
+    assert.equal(scope.responseMs.n, 1);
+    assert.equal(scope.transactionMs.n, 1);
+    assert.equal(beforeFinalization.dispatch.pendingNotIssued, 1);
+    const reason = 'checker_outer_timeout_original_reason';
+    for (const row of mixed) finalizeWaveFailure(row, reason);
+    const afterFinalization = summarize(cell, mixed);
+    assert.equal(afterFinalization.totalAttempts, 2);
+    assert.equal(JSON.parse(JSON.stringify(afterFinalization)).dispatch.registered, 2);
+    assert.equal(afterFinalization.dispatch.interrupted, 2);
+    assert.equal(afterFinalization.complete, false);
+    assert.equal(second.completionDisposition, 'not_issued_incomplete');
+    assert.equal(second.interruptionReason, reason);
+    assert.equal(second.finished, false);
+    assert.equal(second.dispatchState, 'pending');
+    assert.equal(second.numeric.completeTiming, false);
+    assert.equal('responseMs' in second, false);
+    assert.equal('ended' in second, false);
+    const noneIssued = [pending(0), pending(1)];
+    assert.equal(summarize(cell, noneIssued).numerical, false);
+    for (const row of noneIssued) finalizeWaveFailure(row, reason);
+    const allPending = summarize(cell, noneIssued);
+    assert.equal(allPending.totalAttempts, 2);
+    assert.equal(allPending.dispatch.pendingNotIssued, 2);
+    assert.equal(allPending.dispatch.issued, 0);
+    assert.equal(allPending.complete, false);
+    assert.equal(allPending.operationalNumerical, false);
+    assert.equal(allPending.semantics, false);
+    const pendingScope = allPending.populations.forced['primary-measured'].all;
+    assert.equal(pendingScope.timingCoverage.invalid, 2);
+    assert.equal(pendingScope.responseMs.n, 0);
+    assert.equal(pendingScope.transactionMs.n, 0);
+    assert.ok(noneIssued.every((row) => row.interruptionReason === reason &&
+      row.finished === false && !('responseMs' in row) && !('diagnostics' in row) && !('ended' in row)));
   });
   return { executed: true, passed: true, checks,
     scope: 'pure evidence-checker controls only; never benchmark samples or performance evidence' };
