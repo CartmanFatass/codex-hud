@@ -90,13 +90,13 @@ What fails, measured at n = 1000 per population on 200 nodes and 20,000 headers:
    - §18 also pins accepted history that cannot be proven evictable, such as approval pauses and ended turns.
 4. **Retirement recapture.** Progress evidence is still missing.
 
-The owner authorized the fairness exception subject to Oracle confirmation. The Oracle confirmed a bounded one-use
-continuation ticket and recorded the route in `docs/cloud/rulings/b10d-route.md`; see
-`docs/handoff/questions/B10D-route.md` for the recommendation and authorization. B10D remains unaccepted and unmerged;
-the ruling preserves its gates and identifies follow-on work.
+The owner-authorized §19 fairness exception is Oracle-confirmed in [B10D route §4 and §8](../cloud/rulings/b10d-route.md#4-confirmed-fairness-exception) and recorded in contract 06 “B10D 公平续读增补”, design §6 #13 and concept §15. A normal fair admission that completes verified exact recovery but has no first native result because its granted slice ended may create one ticket for the next already-authorized ordinary collection opportunity's single reader grant. Bind it to full session identity, scope/source generation, exact accepted target and authority generation/current compatible context. Spent, refused or unusable attempts cannot rearm an immediate priority chain; stale context/head/source/scope, expired/lost/follower authority or completed capture invalidates the ticket, and the ordinary cursor resumes.
 
-The route question for the next Oracle is `docs/handoff/questions/B10D-route.md`. It covers what to do with legacy
-collection, the reader cap against pinning, recapture, and whether and how B10D merges.
+For a fixed continuously eligible set of N, a regular traversal may consume at most 2N ordinary opportunities, with regular visits and inserted attempts reported separately. Keep blocked targets and original debt/pending-request/latency ages visible. No new operation, timer, root allowance, read/publication grant, authority renewal, numeric-gate waiver or §18 exception is granted. This is opportunity ordering, not a wall-clock completion guarantee.
+
+Implementation and focused evidence remain pending. The next separately admitted B10D work must first incorporate current universal-hud into b10d-worker, adopt B12M's metered recovery handoff, preserve the retained-order cursor correction, and implement/test the bounded ticket and authority housekeeping serially with overlapping collector/link work. It must show actual next-opportunity native progress without repeating the exact recovery, one-use/refusal/expiry/ABA safety, ≤400-opportunity regular traversal for 200 targets at C=1 s and C=5 s, unchanged age/accounting and real publication settlement. This documentation does not start that work or grant a compute window.
+
+B10D remains frozen at 4f2c4ac, NOT ACCEPTED and NOT MERGEABLE. The measured failures and retirement-recapture gap above remain open. LEG1/RCP1 need their own separately resolved and recorded package scope/ownership release; this fairness amendment neither implements nor releases them. The full route is already recorded in docs/cloud/rulings/b10d-route.md, with the owner-decision record in docs/handoff/questions/B10D-route.md.
 
 **Not merged:** `cloud/b10b-s3-wip`, B10B segment 3 (selection, navigation, control bar). Fix round 1 has been
 applied, but the re-check is still pending. B10B-S3F finishes it.
@@ -150,7 +150,7 @@ review (ARCH); B3b-C after B15; then phases C–F of the plan.
 
 ## Decisions recorded on 2026-11-03
 
-- B10D fairness exception: owner authorized the Oracle-confirmed route; see `questions/B10D-route.md` and `../cloud/rulings/b10d-route.md`.
+- B10D fairness exception: owner-approved and Oracle-confirmed; contract 06, design §6 #13 and concept §15 record one-use next-normal-opportunity continuation and the explicit fixed-N ≤2N ordering bound. Original debt/request ages, blocked backlog, one-reader/one-publication limits and all numeric/durable-semantics gates remain unchanged. Implementation/evidence are pending and B10D remains NOT ACCEPTED / NOT MERGEABLE. See questions/B10D-route.md and ../cloud/rulings/b10d-route.md.
 - P-06-5 scope: owner authorized the Oracle recommendation; the 30 ms budget includes pre-lock preparation and is not reset at lock acquisition. See `questions/P-06-5.md` and `../cloud/rulings/p-06-5.md`. The later precise metadata exception in `../cloud/rulings/p065-metadata-exception.md` resolves the local-gate contract fork without changing numeric budgets; P065 scope and branch/worktree ownership are released by `../cloud/rulings/p065-budget-release.md` on base `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; the initial WIP source is published at `dots/p065-budget@346b3d6300a2e3f340f22e832c459371c19e2646` (tree `613c6bb048dc6b8616617b2d061232807102e9cb`), and the first lease was returned at 20:02 UTC. The six questions are ruled in `../cloud/rulings/p065-six-design-dispositions.md` and their exact documentary amendments are recorded through `cb90d0a7806e09685096814fe023491db6e3d02c`. The candidate is NOT ACCEPTED and not performance-qualified; resumption requires a separately assigned dispatcher window.
 
 ## Open owner decisions
