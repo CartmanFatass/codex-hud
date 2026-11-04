@@ -81,10 +81,7 @@ async function winnerAndConflict(f: Fixture) {
 }
 
 /** Observe actual calls and successful SQL only; every callback and SQL operation calls through. */
-function observe(
-  f: Fixture,
-  hooks: { afterConflictRollback?: () => void; afterAuditQueued?: () => void } = {}
-) {
+function observe(f: Fixture, hooks: { afterConflictRollback?: () => void; afterAuditQueued?: () => void } = {}) {
   const transaction = f.ledger.transaction;
   const exec = f.db.exec;
   const trace: string[] = [];
@@ -98,10 +95,7 @@ function observe(
     if (sql === 'ROLLBACK' && ++rollbacks === 1) hooks.afterConflictRollback?.();
     return result;
   };
-  f.ledger.transaction = <T>(
-    callback: (tx: LedgerTransaction) => T,
-    budgetMs?: number | CallBudget
-  ): Promise<T> => {
+  f.ledger.transaction = <T>(callback: (tx: LedgerTransaction) => T, budgetMs?: number | CallBudget): Promise<T> => {
     const invocation = budgets.length + 1;
     budgets.push(budgetMs);
     trace.push(`invoke:${invocation}`);
@@ -190,42 +184,46 @@ for (const elapsed of [29.999, 30, 30.001])
     });
   });
 
-test('P065 rejection audit: eligible audit keeps the identical budget and actual spent lock wait', options, async () => {
-  await withFixture(async (f) => {
-    const { conflict, before } = await winnerAndConflict(f);
-    const blocker = new DatabaseSync(f.file);
-    const sleep = f.clock.sleep;
-    const budget = f.clock.budget();
-    const observed = observe(f);
-    try {
-      blocker.exec('BEGIN IMMEDIATE');
-      f.clock.sleep = async (ms) => {
-        f.clock.advance(ms);
-        if (f.clock.time === 7) blocker.exec('ROLLBACK');
-      };
-      await assertOriginalConflict(f, conflict, budget, observed);
-      assertBudgetCalls(observed, budget, 2);
-      assert.equal(budget.diagnostics().waitMs, 7);
-      assert.ok(budget.diagnostics().attempts > 2, 'real SQLITE_BUSY must cause acquisition retries');
-      assert.deepEqual(observed.trace, [
-        'invoke:1',
-        'BEGIN IMMEDIATE',
-        'callback:1',
-        'ROLLBACK',
-        'invoke:2',
-        'BEGIN IMMEDIATE',
-        'callback:2',
-        'COMMIT',
-      ]);
-      assertRejection(f, conflict);
-      assertUnchanged(f, before);
-    } finally {
-      observed.restore();
-      f.clock.sleep = sleep;
-      blocker.close();
-    }
-  });
-});
+test(
+  'P065 rejection audit: eligible audit keeps the identical budget and actual spent lock wait',
+  options,
+  async () => {
+    await withFixture(async (f) => {
+      const { conflict, before } = await winnerAndConflict(f);
+      const blocker = new DatabaseSync(f.file);
+      const sleep = f.clock.sleep;
+      const budget = f.clock.budget();
+      const observed = observe(f);
+      try {
+        blocker.exec('BEGIN IMMEDIATE');
+        f.clock.sleep = async (ms) => {
+          f.clock.advance(ms);
+          if (f.clock.time === 7) blocker.exec('ROLLBACK');
+        };
+        await assertOriginalConflict(f, conflict, budget, observed);
+        assertBudgetCalls(observed, budget, 2);
+        assert.equal(budget.diagnostics().waitMs, 7);
+        assert.ok(budget.diagnostics().attempts > 2, 'real SQLITE_BUSY must cause acquisition retries');
+        assert.deepEqual(observed.trace, [
+          'invoke:1',
+          'BEGIN IMMEDIATE',
+          'callback:1',
+          'ROLLBACK',
+          'invoke:2',
+          'BEGIN IMMEDIATE',
+          'callback:2',
+          'COMMIT',
+        ]);
+        assertRejection(f, conflict);
+        assertUnchanged(f, before);
+      } finally {
+        observed.restore();
+        f.clock.sleep = sleep;
+        blocker.close();
+      }
+    });
+  }
+);
 
 test('P065 rejection audit: expired original budget never enters protected admission', options, async () => {
   await withFixture(async (f) => {
@@ -253,87 +251,99 @@ test('P065 rejection audit: expired original budget never enters protected admis
   });
 });
 
-test('P065 rejection audit: eligible queued audit expires before BEGIN without resetting the budget', options, async () => {
-  await withFixture(async (f) => {
-    const { conflict, before } = await winnerAndConflict(f);
-    const budget = f.clock.budget();
-    const observed = observe(f, {
-      afterAuditQueued: () => {
-        assert.equal(budget.remaining(), 30);
-        f.clock.advance(30);
-      },
+test(
+  'P065 rejection audit: eligible queued audit expires before BEGIN without resetting the budget',
+  options,
+  async () => {
+    await withFixture(async (f) => {
+      const { conflict, before } = await winnerAndConflict(f);
+      const budget = f.clock.budget();
+      const observed = observe(f, {
+        afterAuditQueued: () => {
+          assert.equal(budget.remaining(), 30);
+          f.clock.advance(30);
+        },
+      });
+      try {
+        await assertOriginalConflict(f, conflict, budget, observed);
+        assertBudgetCalls(observed, budget, 2);
+        assert.deepEqual(observed.trace, ['invoke:1', 'BEGIN IMMEDIATE', 'callback:1', 'ROLLBACK', 'invoke:2']);
+        assert.equal(observed.callbackErrors.length, 1);
+        assert.equal(observed.transactionErrors.length, 2);
+        assert.ok(observed.transactionErrors[1] instanceof CallBudgetExpired);
+        assert.equal(budget.diagnostics().queueMs, 30);
+        assert.equal(budget.diagnostics().waitMs, 30);
+        assert.equal(rejectedRows(f).length, 0);
+        assertUnchanged(f, before);
+      } finally {
+        observed.restore();
+      }
     });
-    try {
-      await assertOriginalConflict(f, conflict, budget, observed);
-      assertBudgetCalls(observed, budget, 2);
-      assert.deepEqual(observed.trace, ['invoke:1', 'BEGIN IMMEDIATE', 'callback:1', 'ROLLBACK', 'invoke:2']);
-      assert.equal(observed.callbackErrors.length, 1);
-      assert.equal(observed.transactionErrors.length, 2);
-      assert.ok(observed.transactionErrors[1] instanceof CallBudgetExpired);
-      assert.equal(budget.diagnostics().queueMs, 30);
-      assert.equal(budget.diagnostics().waitMs, 30);
-      assert.equal(rejectedRows(f).length, 0);
-      assertUnchanged(f, before);
-    } finally {
-      observed.restore();
-    }
-  });
-});
+  }
+);
 
-test('P065 rejection audit: real SQLite audit failure rolls back and preserves the original conflict', options, async () => {
-  await withFixture(async (f) => {
-    const { conflict, before } = await winnerAndConflict(f);
-    f.exec(`CREATE TEMP TRIGGER fail_rejection_audit BEFORE INSERT ON events
+test(
+  'P065 rejection audit: real SQLite audit failure rolls back and preserves the original conflict',
+  options,
+  async () => {
+    await withFixture(async (f) => {
+      const { conflict, before } = await winnerAndConflict(f);
+      f.exec(`CREATE TEMP TRIGGER fail_rejection_audit BEFORE INSERT ON events
       WHEN NEW.kind='intent.rejected'
       BEGIN SELECT RAISE(ABORT, 'synthetic_rejection_audit_failure'); END`);
-    const budget = f.clock.budget();
-    const observed = observe(f);
-    try {
-      await assertOriginalConflict(f, conflict, budget, observed);
-      assertBudgetCalls(observed, budget, 2);
-      assert.deepEqual(observed.trace, [
-        'invoke:1',
-        'BEGIN IMMEDIATE',
-        'callback:1',
-        'ROLLBACK',
-        'invoke:2',
-        'BEGIN IMMEDIATE',
-        'callback:2',
-        'ROLLBACK',
-      ]);
-      assert.equal(observed.callbackErrors.length, 2);
-      assert.match(String(observed.callbackErrors[1]), /synthetic_rejection_audit_failure/);
-      assert.ok(budget.remaining() > 0);
-      assert.equal(rejectedRows(f).length, 0);
-      assertUnchanged(f, before);
-    } finally {
-      observed.restore();
-      f.exec('DROP TRIGGER fail_rejection_audit');
-    }
-  });
-});
-
-test('P065 rejection audit: failed completion or eligibility observation cannot replace a real conflict', options, async () => {
-  await withFixture(async (f) => {
-    const { conflict, before } = await winnerAndConflict(f);
-    const budget = f.clock.budget();
-    const now = f.clock.now;
-    const observed = observe(f, {
-      afterConflictRollback: () => {
-        f.clock.now = () => {
-          throw new Error('synthetic_clock_observation_failure');
-        };
-      },
+      const budget = f.clock.budget();
+      const observed = observe(f);
+      try {
+        await assertOriginalConflict(f, conflict, budget, observed);
+        assertBudgetCalls(observed, budget, 2);
+        assert.deepEqual(observed.trace, [
+          'invoke:1',
+          'BEGIN IMMEDIATE',
+          'callback:1',
+          'ROLLBACK',
+          'invoke:2',
+          'BEGIN IMMEDIATE',
+          'callback:2',
+          'ROLLBACK',
+        ]);
+        assert.equal(observed.callbackErrors.length, 2);
+        assert.match(String(observed.callbackErrors[1]), /synthetic_rejection_audit_failure/);
+        assert.ok(budget.remaining() > 0);
+        assert.equal(rejectedRows(f).length, 0);
+        assertUnchanged(f, before);
+      } finally {
+        observed.restore();
+        f.exec('DROP TRIGGER fail_rejection_audit');
+      }
     });
-    try {
-      await assertOriginalConflict(f, conflict, budget, observed);
-      assertBudgetCalls(observed, budget, 1);
-      assert.deepEqual(observed.trace, ['invoke:1', 'BEGIN IMMEDIATE', 'callback:1', 'ROLLBACK']);
-      assert.equal(rejectedRows(f).length, 0);
-      assertUnchanged(f, before);
-    } finally {
-      f.clock.now = now;
-      observed.restore();
-    }
-  });
-});
+  }
+);
+
+test(
+  'P065 rejection audit: failed completion or eligibility observation cannot replace a real conflict',
+  options,
+  async () => {
+    await withFixture(async (f) => {
+      const { conflict, before } = await winnerAndConflict(f);
+      const budget = f.clock.budget();
+      const now = f.clock.now;
+      const observed = observe(f, {
+        afterConflictRollback: () => {
+          f.clock.now = () => {
+            throw new Error('synthetic_clock_observation_failure');
+          };
+        },
+      });
+      try {
+        await assertOriginalConflict(f, conflict, budget, observed);
+        assertBudgetCalls(observed, budget, 1);
+        assert.deepEqual(observed.trace, ['invoke:1', 'BEGIN IMMEDIATE', 'callback:1', 'ROLLBACK']);
+        assert.equal(rejectedRows(f).length, 0);
+        assertUnchanged(f, before);
+      } finally {
+        f.clock.now = now;
+        observed.restore();
+      }
+    });
+  }
+);
