@@ -1,0 +1,29 @@
+{
+  "commit": "33dd1bd4ce82c39aa2dceea2d5ce686c02e0faf5",
+  "equals_supplied_candidate_leaves": true,
+  "head_detached": true,
+  "leaf_count": 1425,
+  "modes": {
+    "100644": 1368,
+    "100755": 57
+  },
+  "node_modules_leaf_count": 275,
+  "output_roots": {
+    "dist": "absent",
+    "dist-test": "absent",
+    "packages/hud-mcp/dist": "absent"
+  },
+  "parents": [
+    "26096e825baeccbce1403c8cbffa964e243f83ff",
+    "585d14217b1d99192a5dd87b6efcc0f4c36c9323"
+  ],
+  "supplied_dependency_leaves_count": 275,
+  "supplied_dependency_leaves_subset_of_candidate": true,
+  "tracked_byte_mismatches": [],
+  "tracked_bytes_checked": 1425,
+  "tree": "ef8dc07594d5605eeeb94f3e2bac3e81c80e8822",
+  "types": {
+    "blob": 1425
+  },
+  "worktree_status_entries": []
+}

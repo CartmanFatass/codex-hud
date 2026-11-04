@@ -1,0 +1,19 @@
+--- local-original/run-one.sh
++++ optional-successor/run-one.sh
+@@ -7,7 +7,7 @@
+ base=/LV/p065-c3-local-preparation-20261104T134138Z-2371624/p065-local-build-node24-01
+ py=/usr/bin/python3
+ if [ "$mode" = check ]; then
+- /usr/bin/timeout 60s "$py" -I -S -B "$base/check.py" "$stage" before > "$base/stage-$stage-before.jsonl" 2> "$base/stage-$stage-before.stderr"
++ /usr/bin/timeout --kill-after=10s 60s "$py" -I -S -B "$base/check.py" "$stage" before > "$base/stage-$stage-before.jsonl" 2> "$base/stage-$stage-before.stderr"
+  check=$?;tail -n 1 "$base/stage-$stage-before.jsonl"
+  if [ "$check" -ne 0 ]; then exit "$check"; fi
+ fi
+@@ -22,6 +22,6 @@
+ event=$?
+ if [ "$event" -ne 0 ]; then exit "$event"; fi
+ if [ "$stage" -ge 2 ]; then tail -n 10 "/LV/p065-c3-local-preparation-20261104T134138Z-2371624/p065-local-build-node24-stage-$stage-evidence-01/stdout.raw"; fi
+-/usr/bin/timeout 60s "$py" -I -S -B "$base/check.py" "$stage" after > "$base/stage-$stage-after.jsonl" 2> "$base/stage-$stage-after.stderr"
++/usr/bin/timeout --kill-after=10s 60s "$py" -I -S -B "$base/check.py" "$stage" after > "$base/stage-$stage-after.jsonl" 2> "$base/stage-$stage-after.stderr"
+ check=$?;tail -n 1 "$base/stage-$stage-after.jsonl"
+ exit "$check"

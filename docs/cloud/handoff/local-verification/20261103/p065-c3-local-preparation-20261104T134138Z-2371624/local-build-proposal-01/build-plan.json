@@ -1,0 +1,26 @@
+{
+  "status": "PROPOSED_ONLY_NOT_ADMITTED",
+  "executor": "owner's independent local WSL2 machine (not a cloud executor, not dots)",
+  "sourceCommit": "33dd1bd4ce82c39aa2dceea2d5ce686c02e0faf5",
+  "sourceTree": "ef8dc07594d5605eeeb94f3e2bac3e81c80e8822",
+  "orderedParents": ["26096e825baeccbce1403c8cbffa964e243f83ff", "585d14217b1d99192a5dd87b6efcc0f4c36c9323"],
+  "stage": 1,
+  "logicalCommand": "npm run build",
+  "actualWorkload": ["<NODE24>", "./node_modules/typescript/bin/tsc"],
+  "actualWorkloadNote": "Direct fixed Node execution. No npm wrapper, no syntax check, no tests, no aggregate. A success may be reported only as 'direct compiler success', never as literal npm.",
+  "paths_placeholders": {
+    "LV/<run>/wt-source": "checkout (existing detached worktree at the fixed commit; the three output roots absent)",
+    "LV/<run>/p065-local-build-node24-01": "deployment root (ABSENT now; created only by an admitted materialization)",
+    "LV/<run>/p065-local-build-node24-stage-1-evidence-01": "stage-1 evidence root (ABSENT now; created by the launcher with mkdir, never reused)"
+  },
+  "limits_seconds": {"workload": 180, "term_grace": 10, "closeout": 210, "outer_timeout": 230, "outer_kill_after": 10, "custody_check_each": 60},
+  "outputs": {
+    "dist": {"buildStage": 1, "baselineSHA256": null},
+    "dist-test": {"buildStage": 2, "baselineSHA256": null, "note": "must remain absent after stage 1; stage 2 is not prepared"},
+    "packages/hud-mcp/dist": {"buildStage": 3, "baselineSHA256": null, "note": "must remain absent after stage 1; stage 3 is not prepared"}
+  },
+  "launcherSHA256_original": "78e282318d9cc0d6f4772229e55b013dbee20c9cf4a2bee4a6616c0a176c24d4",
+  "manifestSHA256": "e7a883d1abee980bb320c88a8c26eb2dba1268d31bd7d3763098a883b981c150",
+  "noRunnableReadinessManifest": true,
+  "noFakeBaseline": true
+}

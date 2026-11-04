@@ -1,0 +1,9 @@
+{
+ "run_id": "p065-c3-local-preparation-20261104T134138Z-2371624",
+ "redacted_placeholders": {"/LV/p065-c3-local-preparation-20261104T134138Z-2371624": "local run root (real path contains the owner's username)", "/NVM": "the owner's nvm directory", "/HOME": "the owner's home directory"},
+ "redacted_files": ["local-build-proposal-01/files/stage-1-launcher.py","local-build-proposal-01/files/check.py","local-build-proposal-01/files/run-one.sh","local-build-proposal-01/optional-successor/custody-kill-after.diff","local-build-proposal-01/diffs/published-vs-reviewed-node24__*.diff","local-build-proposal-01/generator/make_local_proposal.py"],
+ "byte_identical_to_private_original": ["local-build-proposal-01/files/manifest.json"],
+ "not_identical_to_private_original": "every other file under local-build-proposal-01/files; originals are kept privately and sealed in local-build-proposal-01/ORIGINAL-AND-PUBLISHED-SEALS.json",
+ "not_published": ["private original-form files and their original-vs-reviewed diffs", "raw/ (official Node tarball and extract)", "worktree contents"],
+ "kept": "relative source paths, source and runtime hashes, command structure, counts"
+}

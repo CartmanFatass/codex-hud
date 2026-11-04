@@ -1,0 +1,15 @@
+{
+  "note": "ORIGINAL = local executable-form files (real absolute paths, kept private, not published). PUBLISHED = path-redacted renderings in files/. Redaction maps: <run root> -> /LV/<run id>, nvm directory -> /NVM, home -> /HOME. The published bytes are NOT the original bytes except manifest.json (identical). check.py in the published copy pins the ORIGINAL launcher sha256 (78e28231...), which a published launcher does not satisfy; a future sealed executable original must be reviewed from the original seals below.",
+  "original_sha256": {
+    "check.py": "579694fcb3b194e8664d91b641fa04aa079a7ee9b90324fad6fac80858988d25",
+    "manifest.json": "e7a883d1abee980bb320c88a8c26eb2dba1268d31bd7d3763098a883b981c150",
+    "run-one.sh": "e9794b3d3f1082effb6883fe726bd7e9786c8a150e82e47c3fb771bf94593ca6",
+    "stage-1-launcher.py": "78e282318d9cc0d6f4772229e55b013dbee20c9cf4a2bee4a6616c0a176c24d4"
+  },
+  "published_sha256": {
+    "check.py": "00f1860f515240d729ee36bb88e85a296eb5072dbf5577dceff14299ee37d8d0",
+    "manifest.json": "e7a883d1abee980bb320c88a8c26eb2dba1268d31bd7d3763098a883b981c150",
+    "run-one.sh": "40563ed09a68d1dd7d70f6b06ab0aeaeac119dda4c7907e50ef4da2ba2dd2e94",
+    "stage-1-launcher.py": "37897595cb779431a6905653a50d1cef109b11f3d5c1817fa3149ea11f7bfa2d"
+  }
+}

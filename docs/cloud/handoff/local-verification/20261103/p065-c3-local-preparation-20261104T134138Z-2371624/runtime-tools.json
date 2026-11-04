@@ -1,0 +1,111 @@
+{
+  "checked": "this preparation, 2026-11-04, data-only (version flags and hashing); no project code, launcher, checker or compiler executed",
+  "platform": {
+    "kernel": "Linux 6.18.33.2-microsoft-standard-WSL2 x86_64",
+    "os": "Ubuntu 24.04.4 LTS (WSL2)",
+    "note": "read from uname/os-release only"
+  },
+  "local_tools": [
+    {
+      "role": "main TypeScript build workload (direct exec, argv [NODE,'./node_modules/typescript/bin/tsc'])",
+      "path": "<NVM>/versions/node/v24.22.1/bin/node",
+      "resolved": "<NVM>/versions/node/v24.22.1/bin/node",
+      "symlink": false,
+      "version": "v24.22.1",
+      "sha256": "e32e2d16081cf644f88392934288086e7662529d0d43277c34f7aad2207cfafb",
+      "version_source": "`node --version` output plus byte comparison with the official tarball member",
+      "official_source": {
+        "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz",
+        "tarball_sha256": "6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6",
+        "tarball_sha256_matches_published_SHASUMS256": true,
+        "extracted_bin_node_sha256": "e32e2d16081cf644f88392934288086e7662529d0d43277c34f7aad2207cfafb",
+        "cmp_with_local": "identical"
+      },
+      "use": "exec'd by the launcher's gated sole direct child; not used to compile or run project code by this preparation; only `--version` was executed"
+    },
+    {
+      "role": "supervisor/launcher, independent checker and inline checks",
+      "path": "/usr/bin/python3",
+      "resolved": "/usr/bin/python3.12",
+      "symlink": true,
+      "version": "Python 3.12.3",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+      "version_source": "`python3 --version`; dpkg owner python3.12-minimal; hasattr checks for hashlib.file_digest, os.pidfd_open, signal.pidfd_send_signal all True; stdlib imports (ctypes, hashlib, json, signal, datetime, subprocess) succeed under -I -S -B",
+      "use": "invoked as `python3 -I -S -B` by run-one.sh"
+    },
+    {
+      "role": "outer wrapper",
+      "path": "/usr/bin/bash",
+      "resolved": "/usr/bin/bash",
+      "symlink": false,
+      "version": "GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)",
+      "sha256": "bc5945feb8bd26203ebfafea5ce1878bb2e32cb8fb50ab7ae395cfb1e1aaaef1",
+      "version_source": "dpkg owner bash",
+      "use": "/bin/bash run-one.sh 1 (/bin/bash is a symlink to /usr/bin/bash through the merged-usr /bin link)"
+    },
+    {
+      "role": "custody-check Git reads (check.py)",
+      "path": "/usr/bin/git",
+      "resolved": "/usr/bin/git",
+      "symlink": false,
+      "version": "git version 2.43.0",
+      "sha256": "eb54b535467e0975c1284d4c4d08eea779aeb248a5d34b02e2ee171382e22201",
+      "version_source": "dpkg owner git",
+      "use": "rev-parse, status, ls-files via subprocess with a constructed environment"
+    },
+    {
+      "role": "environment scrub and outer timeout",
+      "path": "/usr/bin/env",
+      "resolved": "/usr/bin/env",
+      "symlink": false,
+      "version": "env (GNU coreutils) 9.4",
+      "sha256": "886e5fa8be716b03eeda48856e0f04493f2969fc148fb7812594ffac647fa050",
+      "version_source": "dpkg owner coreutils",
+      "use": "env -i for the launcher"
+    },
+    {
+      "role": "GNU timeout (outer 230 s + kill-after 10 s; custody checks 60 s)",
+      "path": "/usr/bin/timeout",
+      "resolved": "/usr/bin/timeout",
+      "symlink": false,
+      "version": "timeout (GNU coreutils) 9.4",
+      "sha256": "12690a043dfd555a6c14ccc1564f5649c18f1762c0d6ff66729948130898ec52",
+      "version_source": "dpkg owner coreutils",
+      "use": "see run-one.sh"
+    },
+    {
+      "role": "event/stdout tail in the wrapper",
+      "path": "/usr/bin/tail",
+      "resolved": "/usr/bin/tail",
+      "symlink": false,
+      "version": "tail (GNU coreutils) 9.4",
+      "sha256": "03806be6481b4232405b9a16cb6d2a615977f12b2fd49fc6eabcefc6c6abbbdc",
+      "version_source": "dpkg owner coreutils",
+      "use": "tail -n 1 receipts"
+    }
+  ],
+  "historical_cloud_pins": {
+    "source": "reviewed cloud packet builds/node24/check.py (historical cloud executor pins, NOT local facts)",
+    "node": "61ab14cd750fc24d5db53490ec5fc40f756e4b6e136b78cf7004265471d9bd1d",
+    "python": "fa67443527ed9647f760d807e2a38f26340757123e643c4639cf273ed15d5ea7",
+    "env": "eb1c64bbc9908afcdf8cb48524f17112d8dd76a249f80dee2f01da14747b3b6e",
+    "timeout": "6ca1891dfc0b05d7680770c2884c0391b92467c7bb6500a5c84677e6481739f1",
+    "git_bash_tail": "not pinned in the cloud packet (UNKNOWN there)"
+  },
+  "local_differs_from_cloud_pin": {
+    "node": true,
+    "python": true,
+    "env": true,
+    "timeout": true
+  },
+  "typescript_pins_from_launcher": "node_modules/typescript/{package.json,bin/tsc,lib/tsc.js,lib/_tsc.js} sha256 values in the reviewed launcher EXPECTED equal the local worktree bytes (they are tracked blobs)",
+  "not_used": [
+    "npm (the workload is direct Node; npm is not launched)",
+    "prettier (absent from the tracked dependency set; no install)"
+  ],
+  "other_node_builds_present_not_used": [
+    "v24.19.0",
+    "v24.20.0 (under the same nvm directory)",
+    "v22.23.4 (separate runtimes directory, later independent stage)"
+  ]
+}

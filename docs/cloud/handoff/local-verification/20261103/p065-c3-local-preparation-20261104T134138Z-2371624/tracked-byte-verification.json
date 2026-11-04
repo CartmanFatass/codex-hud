@@ -1,0 +1,13 @@
+{
+  "tracked_bytes_checked": 1425,
+  "tracked_byte_mismatches": [],
+  "method": "for each of the 1,425 leaves: git hash-object --no-filters of the worktree bytes (readlink target for symlinks; none exist) equals the leaf blob SHA; regular files' executable bit equals mode 100755; types all blob",
+  "worktree_status_porcelain_ignored_entries": [],
+  "ignored_or_untracked_inputs": "none (git status --porcelain --ignored is empty)",
+  "output_roots": {
+    "dist": "absent",
+    "dist-test": "absent",
+    "packages/hud-mcp/dist": "absent"
+  },
+  "head_detached": true
+}
