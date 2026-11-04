@@ -1,0 +1,29 @@
+{
+  "subject": "sealed run-one.sh 1 (Node 24 stage 1)",
+  "owner": "the session's native command facility (single exec, no added supervisor)",
+  "invocation": {
+    "argv": ["/bin/bash", "--noprofile", "--norc", "<DEPLOY>/run-one.sh", "1"],
+    "cwd": "<RUN_ROOT>",
+    "stdin": "/dev/null",
+    "environment": {
+      "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "TZ": "UTC", "HOME": "/nonexistent",
+      "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_OPTIONAL_LOCKS": "0",
+      "GIT_TERMINAL_PROMPT": "0", "GIT_NO_REPLACE_OBJECTS": "1"
+    },
+    "stdout": "native/native-wrapper.stdout.txt (exclusive private file, complete)",
+    "stderr": "native/native-wrapper.stderr.txt (exclusive private file, complete, empty)"
+  },
+  "classification": {
+    "completion": "normal",
+    "exit": 0,
+    "signal": null,
+    "timeout": null,
+    "killed": false,
+    "basis": "the native facility returns an error result for any non-zero exit and reports the code and wall time; this invocation returned a normal result with empty stderr, and the sealed wrapper's own final stdout line is 'outer=0' followed by the after-check PASS line",
+    "callerThresholdSeconds": 400,
+    "callerThresholdReached": false,
+    "killOrCancelIssued": false,
+    "replacementAttempt": false
+  },
+  "note": "The 400 s figure was an observation/escalation threshold only. The sealed inner limits (custody 60 s each, workload 180 s, TERM grace 10 s, closeout 210 s, compiler outer 230 s + 10 s kill-after) were unchanged and were not reached."
+}

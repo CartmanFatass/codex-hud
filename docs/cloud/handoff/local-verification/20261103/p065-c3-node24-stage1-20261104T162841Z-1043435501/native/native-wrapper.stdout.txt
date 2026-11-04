@@ -1,0 +1,4 @@
+{"item": "result", "value": {"monotonic_ns": 90810454057486, "status": "PASS", "utc": "2026-11-04T16:29:13.255875+00:00"}}
+outer=0
+{"closure": true, "compiler_result": "exit_status_observed_exec_unverified", "direct_exitcode": 0, "direct_status": 0, "event": "result", "exec_state": "no_error_reported", "failure": null, "interrupted": null, "lifecycle_valid": true, "monotonic_ns": 90816769937006, "post_error": null, "postcheck_ok": true, "unexpected_descendant": false, "utc": "2026-11-04T16:29:19.571755+00:00"}
+{"item": "result", "value": {"monotonic_ns": 90817094559945, "status": "PASS", "utc": "2026-11-04T16:29:19.896380+00:00"}}

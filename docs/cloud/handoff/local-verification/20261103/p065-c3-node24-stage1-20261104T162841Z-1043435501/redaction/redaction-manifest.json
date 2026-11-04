@@ -1,0 +1,146 @@
+{
+  "excludedFromPublication": [
+    "the four retained originals (executable form) - local only",
+    "PRIVATE-binding.json (real paths, exact argv/environment) - local only",
+    "combined-02 packet including PREPARATION-REPORT.md - local only",
+    "raw private directory mappings and any environment dump - local only"
+  ],
+  "files": [
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-stage1-dispatch-01/verification-receipt.json",
+      "privateSourceSha256": "7e77ac0c7ec19823dfb1f96bafd59ca6a11f1cfb44cf068e78c900d11e924a47",
+      "publishedPath": "verification/verification-receipt.json",
+      "publishedSha256": "7e77ac0c7ec19823dfb1f96bafd59ca6a11f1cfb44cf068e78c900d11e924a47",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-attempt-01/verifier.stdout",
+      "privateSourceSha256": "68d9dea3239cea833e422c2bfbb003edcc7098c1a0eaf4b8a441c7c0d0cc918d",
+      "publishedPath": "verification/verifier.stdout.json",
+      "publishedSha256": "68d9dea3239cea833e422c2bfbb003edcc7098c1a0eaf4b8a441c7c0d0cc918d",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-attempt-01/verifier.stderr",
+      "privateSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedPath": "verification/verifier.stderr.txt",
+      "publishedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-stage1-dispatch-01/native-wrapper.stdout",
+      "privateSourceSha256": "45e398fa4d845aba828d01c7b4be2df39ff17a041a8f6ce9aff82d8ac382fead",
+      "publishedPath": "native/native-wrapper.stdout.txt",
+      "publishedSha256": "45e398fa4d845aba828d01c7b4be2df39ff17a041a8f6ce9aff82d8ac382fead",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-stage1-dispatch-01/native-wrapper.stderr",
+      "privateSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedPath": "native/native-wrapper.stderr.txt",
+      "publishedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-stage-1-evidence-01/events.jsonl",
+      "privateSourceSha256": "d0e0f4e6fb36586ed7781f2a7e852fd286b3553e8f8b25e201bdd39bccd44862",
+      "publishedPath": "compiler/events.jsonl",
+      "publishedSha256": "612138d5d44dbe660eb4adff7df00d93bc21020b9a1bd88aa4bdb7e9b663566c",
+      "redaction": "path-token substitution"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-01/stage-1-outer-status.txt",
+      "privateSourceSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "publishedPath": "compiler/stage-1-outer-status.txt",
+      "publishedSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-01/stage-1-outer-start.txt",
+      "privateSourceSha256": "e5d14b392504521df829e992f0c020731a0ca28efde122606fafadded96644b6",
+      "publishedPath": "compiler/stage-1-outer-start.txt",
+      "publishedSha256": "e5d14b392504521df829e992f0c020731a0ca28efde122606fafadded96644b6",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-01/stage-1-outer-end.txt",
+      "privateSourceSha256": "c22f209d223fd43264bcc8b62e49a6870287203ae962a120d183ccc890d95bfd",
+      "publishedPath": "compiler/stage-1-outer-end.txt",
+      "publishedSha256": "c22f209d223fd43264bcc8b62e49a6870287203ae962a120d183ccc890d95bfd",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-01/stage-1-outer.stdout",
+      "privateSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedPath": "compiler/stage-1-outer.stdout",
+      "publishedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-01/stage-1-outer.stderr",
+      "privateSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedPath": "compiler/stage-1-outer.stderr",
+      "publishedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-stage-1-evidence-01/stdout.raw",
+      "privateSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedPath": "compiler/stdout.raw",
+      "publishedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-stage-1-evidence-01/stderr.raw",
+      "privateSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedPath": "compiler/stderr.raw",
+      "publishedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-01/stage-1-before.jsonl",
+      "privateSourceSha256": "c10c7d16ea8c95d1178dbd0b1fa9fbcce449c24580da495c28487c211617bd52",
+      "publishedPath": "custody/stage-1-before.jsonl",
+      "publishedSha256": "ce7cb713c484f1f97aa858b76c3b0bcdb6706509ba8a3c662a5ca24db90ee9e6",
+      "redaction": "path-token substitution"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-01/stage-1-after.jsonl",
+      "privateSourceSha256": "e870b16cfcf08e735e7d597afc0f46ef078c8dc25cd99ad1901a610fdd4b2851",
+      "publishedPath": "custody/stage-1-after.jsonl",
+      "publishedSha256": "f2fb6c9142f10e7ce805f6da17ba7d7226b4767541efb77cb7fbf0199a5d4383",
+      "redaction": "path-token substitution"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-01/baseline-dist.json",
+      "privateSourceSha256": "9ea2537ec51e0257c2dbae055c2aefb76a3a88b52a862ba8e5893cb8836cf275",
+      "publishedPath": "outputs/baseline-dist.provisional.json",
+      "publishedSha256": "9ea2537ec51e0257c2dbae055c2aefb76a3a88b52a862ba8e5893cb8836cf275",
+      "redaction": "none (verbatim bytes)"
+    },
+    {
+      "privateSource": "<RUN_ROOT>/p065-local-build-node24-01/stage-1-after.jsonl (inventory event, extracted)",
+      "privateSourceSha256": "e870b16cfcf08e735e7d597afc0f46ef078c8dc25cd99ad1901a610fdd4b2851",
+      "publishedPath": "outputs/dist-inventory.json",
+      "publishedSha256": "791864e406434b6dea5ea005ab05609d9fb55b1916c2d2780439f6fb92a87ba8",
+      "redaction": "extracted subset + path-token substitution"
+    }
+  ],
+  "note": "Published copies are independently sanitized renderings. Where redaction is \"none\" the bytes are identical to the private source; otherwise the published hash differs from the private source hash and is listed separately.",
+  "redactionMap": [
+    {
+      "from": "private run root (absolute path containing the local user name)",
+      "to": "/LV/<run id>"
+    },
+    {
+      "from": "private Node version manager directory",
+      "to": "/NVM"
+    },
+    {
+      "from": "private home directory prefix",
+      "to": "/HOME"
+    }
+  ],
+  "redactionMapNote": "The literal private path values are deliberately not published; they are retained locally with the private originals. Substitution was applied as whole literal path tokens, not as a general replacement, so every other byte of a sanitized copy is unchanged.",
+  "runId": "p065-c3-node24-stage1-20261104T162841Z-1043435501"
+}
