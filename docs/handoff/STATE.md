@@ -38,6 +38,8 @@ Rules for every merge:
 
 **Merged on `universal-hud`** (newest first):
 
+- C3 dependent set: HYG2/NODE22-PROXY, MCP-ANCESTOR and RUNZ1/RUNZ1-KILL, merged on 2026-11-04
+  as `5d2c0709c8e9674254214add15f2a04cfd606443`. See the C3 integration checkpoint below.
 - HYG1, the clean cloud test baseline, from cloud run 2. Its handoff is `docs/cloud/handoff/hyg1.md`. One test stays red
   on purpose: `run-control`, which RUNZ1 fixes.
 - The cloud run-2 docs, summarised in `docs/cloud/handoff/run-2.md`.
@@ -101,9 +103,31 @@ B10D remains frozen at 4f2c4ac, NOT ACCEPTED and NOT MERGEABLE. The measured fai
 **Not merged:** `cloud/b10b-s3-wip`, B10B segment 3 (selection, navigation, control bar). Fix round 1 has been
 applied, but the re-check is still pending. B10B-S3F finishes it.
 
+## C3 integration checkpoint (2026-11-04)
+
+- The accepted HYG2/NODE22-PROXY + MCP-ANCESTOR + RUNZ1/RUNZ1-KILL dependent set is merged into
+  `universal-hud` at `5d2c0709c8e9674254214add15f2a04cfd606443`. Remote read-back verified the exact
+  tested tree `48f59142862f643a98286e3d196d23ff13059a23` and ordered parents
+  `9dd4d06d2ee5ebb022719d11b74d6de0276172a4`, `09d9c3d95fe42932ecaf35dd46806a8747681aa7`.
+- The [fresh merged-tree Oracle ruling](../cloud/handoff/wave1-compat-integration/oracle-c3-merged-tree-final-20261104.md)
+  accepts the complete prescribed three-profile README gate under the existing once-alone known-flake rule.
+  Required commands were 29/30 exit 0. Original Node 24 `npm test` remains **FAIL / exit 1**:
+  the known B6 suite passed its isolated rerun 15/15, and the omitted mjs stage passed separately 47/47.
+  This is not 30/30 first-pass green; the initial Node 22 preparation UNKNOWN record also remains unchanged.
+- The [joint C3 acceptance](../cloud/handoff/wave1-compat-integration/oracle-c3-owner-exception-joint-acceptance-20261104.md)
+  retains the owner-accepted four-archive historical custody gap and the independently owner-deferred,
+  unverified real PID > 1 optional-ancestor denial. Neither missing evidence item has been recovered or passed.
+  Historical benchmark comparison remains 11/12, including the real Node 24 baseline cold-p95 failure;
+  no formal WSL qualification or held-executor admission follows.
+- B10B-S3F remains the next unresolved wave-1 queue package, through its separately recorded NEXT continuation.
+  C3 does not accept or merge B10B-S3F, release DOC2/TPD1 or later waves, or lift P065/B10D/executor holds.
+  Preserve the existing brief, review, ownership and scheduling requirements.
+
 ## Dots wave 1 checkpoint (2026-11-03)
 
-No wave-1 implementation package below has been accepted or merged. Preserve their branches and full evidence; the merged-tree check gate remains outstanding.
+Historical checkpoint as of 2026-11-03; the C3 integration checkpoint above supersedes only the later acceptance
+and merge status of its named dependent set. At this checkpoint no wave-1 implementation package below had
+been accepted or merged. Preserve these branches, failures and full evidence.
 
 - **B10B-S3F**, `dots/b10b-s3f`: R1 is fixed, R2 and the full-check gates remain open. The owner-approved follow-on `dots/b10b-s3f-perf` candidate has received a fresh Oracle verdict **fix required**, not accepted: repeated Node 24 strict performance failures and missing full checks remain. See `docs/cloud/handoff/b10b-s3f-perf-review-1.md` on that branch and `docs/cloud/B10B-S3F-PERF.md`. Preserve the failed and passing runs; no gate is waived.
 - **HYG2**, `dots/hyg2`: Oracle re-check found the P2 fix correct, but the full checks remain red. See branch handoff `hyg2-review-2.md` and `hyg2-topology-diagnosis.md`.
