@@ -1,0 +1,135 @@
+{
+  "status": "Published WIP; NOT ACCEPTED / NOT MERGEABLE / NOT PERFORMANCE-QUALIFIED",
+  "repository": "CartmanFatass/codex-hud",
+  "branch": "dots/p065-budget",
+  "commit": "346b3d6300a2e3f340f22e832c459371c19e2646",
+  "tree": "613c6bb048dc6b8616617b2d061232807102e9cb",
+  "parent": "26f6fba36948e6c96e2e109cb374c0d4dbb9ab22",
+  "sourceFilesAggregateSha256": "ffbeda20c512181de5f7e49ecb6edc1adfd1440ffff4fcc2e54636161febd602",
+  "evidenceArchiveSha256": "7ef653cf724e202250aa091552c7c454e433904f7be9044a63be1b3880cb50fa",
+  "publication": "The known-not-executed branch creation denial was resolved by the exact user authorization transcript. One retry succeeded; no bypass was used. Frozen source was published through the GitHub connector. Branch ref, sole parent, tree, exact 30 changed paths and all remote file blob hashes were verified.",
+  "ci": "No commit statuses and zero check runs at verification; no CI-green claim.",
+  "compute": "No builds, tests, benchmarks or source edits during publication. Exclusive compute lease remains returned.",
+  "verifiedFiles": [
+    {
+      "path": "packages/hud-mcp/src/delegation.ts",
+      "sha": "73183264e5290825d972a3b78a28b2a116faffec"
+    },
+    {
+      "path": "packages/hud-mcp/src/handshake.ts",
+      "sha": "518452c3dd80eaa7d7a71131eb566452152caac6"
+    },
+    {
+      "path": "packages/hud-mcp/src/hook/resolve.ts",
+      "sha": "221332f02d5296cc479bb4469ce97db3283aad72"
+    },
+    {
+      "path": "packages/hud-mcp/src/read-control.ts",
+      "sha": "fcce6c6c1d175020dd7c2601b94f9ce7d0241ada"
+    },
+    {
+      "path": "packages/hud-mcp/src/resolvers.ts",
+      "sha": "67dae19f8b198c649e763512b877592fe535cfc2"
+    },
+    {
+      "path": "packages/hud-mcp/src/server.ts",
+      "sha": "935522022c0315d3a5147cc88a030e8841e91464"
+    },
+    {
+      "path": "src/cli/hud.ts",
+      "sha": "2af7c0a7f9c6d845855b603540a93bec3635863d"
+    },
+    {
+      "path": "src/cli/run.ts",
+      "sha": "7795829f9e42e789a14a1364bf3dc225f159b9cf"
+    },
+    {
+      "path": "src/cli/runtime.ts",
+      "sha": "33a994d2964157b57444679f41caa1e28d9744fd"
+    },
+    {
+      "path": "src/core/launch/brief.ts",
+      "sha": "a12fdeb9f03db5ef320c9572eedce834249260c7"
+    },
+    {
+      "path": "src/core/launch/fingerprint.ts",
+      "sha": "ab6719a81051a89f006f2e6fb714d7c3407ac52a"
+    },
+    {
+      "path": "src/harness/codex/profile.ts",
+      "sha": "ac661432d216227edb439fb06c15f171c5439c73"
+    },
+    {
+      "path": "src/ledger/call-budget.ts",
+      "sha": "dc35c5dc09fa6b92f399e1360772018a40a8adae"
+    },
+    {
+      "path": "src/ledger/call-context.ts",
+      "sha": "45c15e6df7f30eb9d74eac4776eb338c05a2c253"
+    },
+    {
+      "path": "src/ledger/handshake.ts",
+      "sha": "6d1bf2e3d54b2856dbfd65be81f7e35202f9dd02"
+    },
+    {
+      "path": "src/ledger/intents.ts",
+      "sha": "ca1319cd6c8e159792240de7594011698cc1e1fc"
+    },
+    {
+      "path": "src/ledger/ledger.ts",
+      "sha": "9195f160bfdc8f76bee3d15ce88ed6ecf2c1dc4c"
+    },
+    {
+      "path": "src/ledger/local-manager.ts",
+      "sha": "e42e2dfc2331ff858278a211cfa4bdbe64ee2822"
+    },
+    {
+      "path": "src/ledger/reconcile.ts",
+      "sha": "be4056ce9f3bbce34dfcbccf8755e5fd8faff151"
+    },
+    {
+      "path": "src/ledger/transaction.ts",
+      "sha": "598549dc3e7c283fbe3b6fbe2682c43d5fb260f1"
+    },
+    {
+      "path": "tests/hud-mcp/b20-advice.test.ts",
+      "sha": "dce1320cdbde2eac7d85aca11b4ee6ec180865af"
+    },
+    {
+      "path": "tests/hud-mcp/delegation.test.ts",
+      "sha": "8a62f99de1b453ae8d82a60d52b0491e6619468b"
+    },
+    {
+      "path": "tests/hud-mcp/hook-source.test.ts",
+      "sha": "46a225e147e3d7cc22a595b7c30737817e20bd3b"
+    },
+    {
+      "path": "tests/hud-mcp/p065-budget.test.ts",
+      "sha": "27c1994bb32c64c0f68931d9a60a3b5cd13f2f44"
+    },
+    {
+      "path": "tests/hud-mcp/resume-expected-run.test.ts",
+      "sha": "c1018ab3a195514f6b7ba3d0d576feda4ae1ce98"
+    },
+    {
+      "path": "tests/unit/b11-cli.test.ts",
+      "sha": "8e170a99b64edf47499ea3933461d21085ec980a"
+    },
+    {
+      "path": "tests/unit/b45-delegation-fixture.ts",
+      "sha": "a56cd8c9d09e0700a9146006abfe89ee520b9e67"
+    },
+    {
+      "path": "tests/unit/p065-budget-fixture.ts",
+      "sha": "9b28389ccf3f940c231373a975cac23ad4c2d451"
+    },
+    {
+      "path": "tests/unit/p065-budget.test.ts",
+      "sha": "c39e7e7456614bf3b39ce2640668a8cb56e9ba97"
+    },
+    {
+      "path": "tests/unit/p065-local-gate.test.ts",
+      "sha": "48a00ef4d659d8c445f0b6418af0f2db09eef16d"
+    }
+  ]
+}

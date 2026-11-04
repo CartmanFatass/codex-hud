@@ -1,3 +1,4 @@
+import { CallBudget } from '../../../src/ledger/call-budget.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { canonicalJson } from '../../../src/core/canonical.js';
 import { makeProcessKey, makeSourceId, sameSessionRef } from '../../../src/core/identity.js';
@@ -5,6 +6,7 @@ import { sameProcessStamp } from '../../../src/core/supervision.js';
 import type { Evidence } from '../../../src/core/types/execution.js';
 import type { Ledger } from '../../../src/ledger/ledger.js';
 import {
+  checkChildBudget,
   commitChildReport,
   commitHandshake,
   readHandshakeSnapshot,
@@ -34,7 +36,12 @@ export class HandshakeService {
     this.now = options.now ?? Date.now;
   }
   /** SessionRef comes only from this call's independent resolver, never from the claim or arguments. */
-  private proveLaunch(snapshot: HandshakeSnapshot, authority: ChildAuthority): Evidence | null {
+  private proveLaunch(
+    snapshot: HandshakeSnapshot,
+    authority: ChildAuthority,
+    budget: ChildWriteBudget
+  ): Evidence | null {
+    checkChildBudget(budget);
     const { run, meta, context } = snapshot;
     const { registration, reader } = this.options;
     if (
@@ -93,6 +100,7 @@ export class HandshakeService {
         break;
       }
       if (cursor.ppid <= 1 || cursor.ppid === cursor.pid) break;
+      checkChildBudget(budget);
       cursor = reader.get(cursor.ppid);
       if (cursor.pidNamespace !== harness.pidNamespace) throw new Error('claim_anchor_mismatch');
     }
@@ -100,6 +108,7 @@ export class HandshakeService {
       throw new Error('claim_anchor_mismatch');
     // Recheck each observed edge and start after source/ancestry collection to reject PID reuse or reparenting.
     for (const edge of chain) {
+      checkChildBudget(budget);
       const current = reader.get(edge.pid);
       if (current.procStart !== edge.procStart || current.ppid !== edge.ppid) throw new Error('claim_anchor_mismatch');
     }
@@ -132,8 +141,9 @@ export class HandshakeService {
   async whoami(
     args: { claim?: string },
     authority: ChildAuthority,
-    budget?: ChildWriteBudget
+    budget: ChildWriteBudget = new CallBudget()
   ): Promise<HandshakeResult> {
+    checkChildBudget(budget);
     const claim = this.env.HUD_CLAIM || args.claim;
     if (!claim) throw new Error('claim_missing');
     if (this.env.HUD_CLAIM && args.claim && this.env.HUD_CLAIM !== args.claim) throw new Error('claim_conflict');
@@ -144,7 +154,8 @@ export class HandshakeService {
       (this.env.HUD_LINK && this.env.HUD_LINK !== snapshot.link.linkId)
     )
       throw new Error('claim_anchor_mismatch');
-    const proof = this.proveLaunch(snapshot, authority);
+    const proof = this.proveLaunch(snapshot, authority, budget);
+    checkChildBudget(budget);
     if (!proof)
       return {
         ok: true,
@@ -155,7 +166,8 @@ export class HandshakeService {
       };
     return commitHandshake(this.options.ledger, snapshot, authority, claimHash, proof, proof.validatedAt!, budget);
   }
-  async report(args: ChildReportInput, authority: ChildAuthority, budget?: ChildWriteBudget) {
+  async report(args: ChildReportInput, authority: ChildAuthority, budget: ChildWriteBudget = new CallBudget()) {
+    checkChildBudget(budget);
     if (this.env.HUD_RUN && this.env.HUD_RUN !== args.runId) throw new Error('stale_binding');
     return commitChildReport(this.options.ledger, args, authority, this.now(), budget, this.options.home);
   }

@@ -3,6 +3,7 @@ import { object } from './io.js';
 import { outcomeCode } from './errors.js';
 import type { CallResolution, CurrentCallSourcePort } from './resolvers.js';
 import { TOOLS, validateToolArguments } from './tools.js';
+import { CallBudget, ReadCallTiming, monotonicClock, type BudgetClock } from '../../../src/ledger/call-budget.js';
 export interface RpcRequest {
   jsonrpc: '2.0';
   id?: string | number | null;
@@ -10,6 +11,19 @@ export interface RpcRequest {
   params?: unknown;
 }
 export class HudMcpServer {
+  private readonly responseBudgets = new WeakMap<object, CallBudget | ReadCallTiming>();
+  flushed(response: unknown): void {
+    if (!response || typeof response !== 'object') return;
+    const budget = this.responseBudgets.get(response);
+    if (!budget) return;
+    this.responseBudgets.delete(response);
+    try {
+      budget.note('flush');
+      this.timing.observe?.(budget.diagnostics());
+    } catch {
+      /* Diagnostics only. */
+    }
+  }
   private readonly requests = new Map<string | number | null, AbortController>();
   private stopped = false;
   private readonly lifetime = new AbortController();
@@ -30,12 +44,18 @@ export class HudMcpServer {
         tool: string,
         args: Record<string, unknown>,
         started: number,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        budget?: CallBudget,
+        readTiming?: ReadCallTiming
       ): Promise<unknown>;
       /** Adds tool-owned fields to a sanitized structured failure; its code and fields stay as built. */
       decorateFailure?(tool: string, args: Record<string, unknown>, outcome: { ok: false; code: string }): unknown;
     },
-    private readonly parentAlive: () => boolean = () => true
+    private readonly parentAlive: () => boolean = () => true,
+    private readonly timing: {
+      clock?: BudgetClock;
+      observe?: (sample: ReturnType<CallBudget['diagnostics'] | ReadCallTiming['diagnostics']>) => void;
+    } = {}
   ) {}
   async handle(value: unknown): Promise<unknown | null> {
     const error = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0', id, error: { code, message } });
@@ -75,9 +95,13 @@ export class HudMcpServer {
       case 'tools/list':
         return reply({ tools: TOOLS });
       case 'tools/call': {
-        const started = performance.now();
+        const started = (this.timing.clock ?? monotonicClock).now();
         const definition = TOOLS.find((t) => t.name === params.name);
         if (!definition) return error(id, -32602, 'Unknown tool');
+        const readOnly = definition.name === 'delegate_status' || definition.name === 'delegate_wait';
+        const budget = readOnly ? undefined : new CallBudget(this.timing.clock, started);
+        const readTiming = readOnly ? new ReadCallTiming(this.timing.clock, started) : undefined;
+        const observation = budget ?? readTiming!;
         if (!validateToolArguments(definition, params.arguments === undefined ? {} : params.arguments))
           return error(id, -32602, 'Invalid tool arguments');
         if (this.requests.has(id)) return error(id, -32600, 'Duplicate active request id');
@@ -95,24 +119,52 @@ export class HudMcpServer {
         try {
           if (this.stopped) throw new Error('server_shutdown');
           // params.arguments, prompt, claim and env hints cannot select a logical caller.
-          const resolution = await this.source.resolve(params._meta, definition.name);
+          budget?.check('source');
+          readTiming?.note('source');
+          const resolution = await this.source.resolve(params._meta, definition.name, budget);
+          budget?.check('source');
+          readTiming?.note('source');
           controller.signal.throwIfAborted();
-          outcome = resolution.ok
-            ? this.bodies
-              ? await this.bodies.invoke(resolution, definition.name, args, started, controller.signal)
-              : { ok: false, code: 'not_implemented', tool: definition.name }
-            : failure(resolution.code);
+          if (resolution.ok && this.bodies) {
+            outcome = await this.bodies.invoke(
+              resolution,
+              definition.name,
+              args,
+              started,
+              controller.signal,
+              budget,
+              readTiming
+            );
+            try {
+              readTiming?.note('complete');
+            } catch {
+              /* Optional observation. */
+            }
+          } else {
+            // The source/body refusal decision precedes optional advice and response serialization.
+            observation.note('complete');
+            outcome = resolution.ok
+              ? { ok: false, code: 'not_implemented', tool: definition.name }
+              : failure(resolution.code);
+          }
         } catch (error) {
           // A committed intent is returned by its body even if subsequent dispatch fails.
+          try {
+            observation.note('complete');
+          } catch {
+            /* Keep the original failure. */
+          }
           outcome = failure(outcomeCode(error));
         } finally {
           this.requests.delete(id);
         }
-        return reply({
+        const response = reply({
           content: [{ type: 'text', text: JSON.stringify(outcome) }],
           isError: object(outcome) && outcome.ok === false,
           structuredContent: outcome,
         });
+        this.responseBudgets.set(response, observation);
+        return response;
       }
       default:
         return error(id, -32601, 'Method not found');
@@ -129,27 +181,34 @@ export async function serveStdio(server: HudMcpServer, input: Readable, output: 
     if (value === null) return Promise.resolve();
     writes = writes.then(async () => {
       if (output.destroyed || output.writableEnded) return;
-      if (!output.write(JSON.stringify(value) + '\n') && !server.shutdownSignal.aborted) {
-        await new Promise<void>((resolve, reject) => {
-          const cleanup = () => {
-            output.off('drain', done);
-            output.off('error', failed);
-            server.shutdownSignal.removeEventListener('abort', done);
-          };
-          const done = () => {
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => server.shutdownSignal.removeEventListener('abort', aborted);
+        const aborted = () => {
+          if (!settled) {
+            settled = true;
             cleanup();
             resolve();
-          };
-          const failed = (error: Error) => {
-            cleanup();
-            reject(error);
-          };
-          output.once('drain', done);
-          output.once('error', failed);
-          server.shutdownSignal.addEventListener('abort', done, { once: true });
-          if (server.shutdownSignal.aborted) done();
-        });
-      }
+          }
+        };
+        const flushed = (error?: Error | null) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          if (error) reject(error);
+          else {
+            server.flushed(value);
+            resolve();
+          }
+        };
+        server.shutdownSignal.addEventListener('abort', aborted, { once: true });
+        try {
+          output.write(JSON.stringify(value) + '\n', flushed);
+        } catch (error) {
+          flushed(error as Error);
+        }
+        if (server.shutdownSignal.aborted) aborted();
+      });
     });
     // Retain failures for the final await without unhandled rejections.
     void writes.catch(() => {});

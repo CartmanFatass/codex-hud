@@ -1,3 +1,4 @@
+import { type CallBudget } from './call-budget.js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { canonicalJson, digest } from '../core/canonical.js';
@@ -16,18 +17,21 @@ import { decodeRecord, insertRecord, readContext, readLink, readRun, refValue } 
 import { LedgerBusyError, type LedgerTransaction } from './transaction.js';
 import type { IntentAuthority } from './types.js';
 
-export interface ChildWriteBudget {
-  deadline: number;
-  lockBudgetMs: number;
+export type ChildWriteBudget = CallBudget | { deadline: number; lockBudgetMs: number };
+export function checkChildBudget(budget?: ChildWriteBudget): void {
+  if (budget && 'check' in budget) budget.check();
+  else if (budget && performance.now() >= budget.deadline) throw new LedgerBusyError();
 }
 function childTransaction<T>(
   ledger: Ledger,
   callback: (tx: LedgerTransaction) => T,
   budget?: ChildWriteBudget
 ): Promise<T> {
-  const check = () => {
-    if (budget && performance.now() >= budget.deadline) throw new LedgerBusyError();
-  };
+  if (budget && 'check' in budget) {
+    budget.check();
+    return ledger.transaction(callback, budget);
+  }
+  const check = () => checkChildBudget(budget);
   check();
   return ledger.transaction(
     (tx) => {
@@ -189,6 +193,7 @@ export async function commitHandshake(
   at: number,
   budget?: ChildWriteBudget
 ): Promise<HandshakeResult> {
+  checkChildBudget(budget);
   const copy = structuredClone(expected),
     proof = structuredClone(evidence),
     auth = structuredClone(authority);
@@ -288,6 +293,7 @@ export async function commitHandshake(
       )
         throw new Error('identity_conflict');
       const ownSlot = tx.get('SELECT * FROM slots WHERE run_id=?', run.runId);
+      let repairedSlot = false;
       if (ownSlot) {
         const slots = tx
           .all('SELECT * FROM slots WHERE run_id=? OR session_ref=?', run.runId, refValue(ref))
@@ -297,13 +303,15 @@ export async function commitHandshake(
           for (const id of migration.uncertainRunIds) conflict(tx, readRun(tx, id), ref, 'provisional_conflict', at);
           return { ok: false, code: 'provisional_conflict' };
         }
-        if (ownSlot.slot_key !== sessionRefKey(ref) || ownSlot.session_ref !== refValue(ref))
+        if (ownSlot.slot_key !== sessionRefKey(ref) || ownSlot.session_ref !== refValue(ref)) {
+          repairedSlot = true;
           tx.run(
             'UPDATE slots SET slot_key=?,session_ref=? WHERE run_id=?',
             sessionRefKey(ref),
             refValue(ref),
             run.runId
           );
+        }
       } else if (!isRunTerminal(run)) throw new Error('slot_missing');
       if (
         binding &&
@@ -311,8 +319,16 @@ export async function commitHandshake(
         binding.callerId === context.callerId &&
         binding.callerContextId === context.contextId &&
         binding.contextGeneration === context.generation
-      )
-        return { ok: true, state: 'bound', linkId: link.linkId, runId: run.runId, reason: null };
+      ) {
+        const result = {
+          ok: true as const,
+          state: 'bound' as const,
+          linkId: link.linkId,
+          runId: run.runId,
+          reason: null,
+        };
+        return repairedSlot ? result : tx.priorDurableResult(result);
+      }
       insertRecord(tx, 'evidence', proof);
       if (redeemed.consumed) {
         tx.run(
@@ -394,6 +410,7 @@ export async function commitChildReport(
   budget?: ChildWriteBudget,
   home?: string
 ): Promise<{ ok: true; reportId: string; runId: string } | { ok: false; code: string }> {
+  checkChildBudget(budget);
   const input = structuredClone(supplied),
     auth = structuredClone(authority);
   if (!Number.isSafeInteger(at) || at < 0 || typeof input.summary !== 'string') throw new TypeError('invalid_report');
@@ -460,6 +477,12 @@ export async function commitChildReport(
     },
     budget
   );
-  if (home && hintSeq !== undefined) touchHint(home, input.runId, hintSeq);
+  if (home && hintSeq !== undefined) {
+    try {
+      touchHint(home, input.runId, hintSeq);
+    } catch {
+      /* Optional post-commit hint. */
+    }
+  }
   return result;
 }

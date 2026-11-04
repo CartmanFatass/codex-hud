@@ -1,3 +1,4 @@
+import type { CallBudget } from '../../ledger/call-budget.js';
 import { promises as fs, constants } from 'node:fs';
 import { delimiter, isAbsolute, join } from 'node:path';
 import type { LaunchCommand } from '../types/capabilities.js';
@@ -11,7 +12,13 @@ export interface ExecutableIdentity {
  * Version discovery remains a trusted startup dependency; the capability verifier
  * additionally compares its complete actual-runtime version tuple.
  */
-export async function executableIdentity(command: LaunchCommand, env: NodeJS.ProcessEnv, known?: ExecutableIdentity) {
+export async function executableIdentity(
+  command: LaunchCommand,
+  env: NodeJS.ProcessEnv,
+  known?: ExecutableIdentity,
+  budget?: CallBudget
+) {
+  budget?.check();
   const configured = command.argv ? command.argv[0] : command.shellPath;
   const candidates = isAbsolute(configured)
     ? [configured]
@@ -25,8 +32,11 @@ export async function executableIdentity(command: LaunchCommand, env: NodeJS.Pro
   const paths = await Promise.all(
     candidates.map(async (path) => {
       try {
+        budget?.check();
         const canonical = await fs.realpath(path);
+        budget?.check();
         await fs.access(canonical, constants.X_OK);
+        budget?.check();
         const stat = await fs.stat(canonical);
         return stat.isFile()
           ? { path: canonical, file: { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs } }
@@ -36,9 +46,11 @@ export async function executableIdentity(command: LaunchCommand, env: NodeJS.Pro
       }
     })
   );
+  budget?.check();
   const found = paths.find((path) => path !== null) ?? null;
   if (known && (!known.version || !isAbsolute(known.path) || (found && (await fs.realpath(known.path)) !== found.path)))
     throw new Error('executable_identity_mismatch');
+  budget?.check();
   return { configured, resolved: found?.path ?? null, file: found?.file ?? null, version: known?.version ?? null };
 }
 

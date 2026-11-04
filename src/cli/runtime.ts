@@ -1,3 +1,4 @@
+import { type CallBudget } from '../ledger/call-budget.js';
 import { lstatSync, realpathSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -5,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { installationRoot } from './compat.js';
 export { installationRoot } from './compat.js';
 import { Ledger, openLedger } from '../ledger/ledger.js';
-import { PrivateLedgerGate } from '../ledger/local-manager.js';
+import { PrivateLedgerGate, type LocalStoreBinding } from '../ledger/local-manager.js';
 import { loadLedgerSqlite, requireLedgerRuntime } from '../ledger/runtime.js';
 import type { DelegateConfig } from '../core/types/capabilities.js';
 import type { LocalResumeRequest } from '../core/types/lifecycle.js';
@@ -22,12 +23,14 @@ export class CliError extends Error {
 }
 
 /** Validate before opening a store, loading configuration, or creating any files. */
-export function privateHome(env: NodeJS.ProcessEnv): string {
+export function privateHome(env: NodeJS.ProcessEnv, budget?: CallBudget): string {
+  budget?.check();
   const requested = env.HUD_HOME ?? join(homedir(), '.hud');
   if (!isAbsolute(requested) || requested.includes('\0')) throw new CliError('invalid_hud_home', 3);
   const home = requested.replace(/(?:\/\.?)+$/, '') || '/';
   try {
     const info = lstatSync(home);
+    budget?.check();
     if (
       !info.isDirectory() ||
       info.isSymbolicLink() ||
@@ -37,8 +40,10 @@ export function privateHome(env: NodeJS.ProcessEnv): string {
       (info.mode & 0o077) !== 0
     )
       throw new Error('unsafe');
+    budget?.check();
     return home;
-  } catch {
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ledger_busy') throw error;
     throw new CliError('invalid_hud_home', 3);
   }
 }
@@ -56,6 +61,8 @@ interface McpLibraries {
 export interface ResumeServiceOptions {
   ledger: Ledger;
   home: string;
+  localBinding: LocalStoreBinding;
+  callBudget: CallBudget;
   config: DelegateConfig;
   env: NodeJS.ProcessEnv;
   hudRunPath: string;
@@ -81,11 +88,12 @@ export async function delegateConfig(home: string): Promise<DelegateConfig> {
 
 export interface LocalResumeService {
   resumeLocal(request: LocalResumeRequest): Promise<unknown>;
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 /** No initialization/migration on CLI reads, including wait. Gate pins both inodes. */
-export async function existingLedger(home: string, writable = false) {
+export async function existingLedger(home: string, writable = false, budget?: CallBudget) {
+  budget?.check();
   requireLedgerRuntime();
   let gate: PrivateLedgerGate;
   try {
@@ -94,7 +102,9 @@ export async function existingLedger(home: string, writable = false) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new CliError('ledger_missing', 4);
     throw error;
   }
+  budget?.check();
   const { DatabaseSync } = await loadLedgerSqlite();
+  budget?.check();
   const db = new DatabaseSync(gate.path, { readOnly: true });
   let ledger: Ledger;
   try {
@@ -111,10 +121,13 @@ export async function existingLedger(home: string, writable = false) {
     gate.check();
     if (writable) {
       await ledger.close();
-      ledger = await openLedger(gate.path);
+      budget?.check();
+      ledger = await openLedger(gate.path, { callBudget: budget });
+      budget?.check();
       gate.check();
     }
-    return { ledger, gate };
+    budget?.check();
+    return { ledger, gate, binding: gate.bind(ledger) };
   } catch (error) {
     await ledger.close();
     throw error;

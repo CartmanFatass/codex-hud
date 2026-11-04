@@ -1,3 +1,4 @@
+import { CallBudget, type BudgetClock } from '../../src/ledger/call-budget.js';
 import { writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -13,7 +14,7 @@ import type { PreparedRunLaunch } from '../../src/core/launch/index.js';
 import type { ReconcileEvidence } from '../../src/core/types/execution.js';
 
 /** Synthetic only: real SQLite and writer APIs, simulated independently checked process/source evidence. */
-export async function delegationBenchmarkFixture(verified = true) {
+export async function delegationBenchmarkFixture(verified = true, clock?: BudgetClock) {
   const f = await handshakeFixture();
   const brief = join(f.root, 'brief.md');
   writeFileSync(brief, 'Synthetic task bytes.');
@@ -38,6 +39,7 @@ export async function delegationBenchmarkFixture(verified = true) {
   };
   const launches: PreparedRunLaunch[] = [];
   const service = new DelegationService({
+    clock,
     ledger: f.ledger,
     home: f.root,
     config: { version: 1, profiles: [profile] },
@@ -103,7 +105,7 @@ export async function delegationBenchmarkFixture(verified = true) {
       env: { HUD_CLAIM: f.claim },
       now: f.now,
     });
-    const binding = await handshake.whoami({}, f.child.authority);
+    const binding = await handshake.whoami({}, f.child.authority, clock ? new CallBudget(clock) : undefined);
     assert.equal(binding.ok && binding.state, 'bound');
     const snapshot = readReconcileSnapshot(f.ledger, 'run-a');
     const fact: ReconcileEvidence = {

@@ -1,3 +1,5 @@
+import { TestBudgetClock } from '../unit/p065-budget-fixture.js';
+import { PrivateLedgerGate } from '../../src/ledger/local-manager.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
@@ -40,7 +42,10 @@ async function fixture() {
     roles: { implementer: { model: 'synthetic-model', effort: 'low' } },
   };
   const launches: PreparedRunLaunch[] = [];
+  const clock = new TestBudgetClock();
   const options = {
+    clock,
+    localBinding: new PrivateLedgerGate(f.root).bind(f.ledger),
     ledger: f.ledger,
     home: f.root,
     config: { version: 1 as const, profiles: [profile] },
@@ -155,7 +160,7 @@ async function fixture() {
       env: { HUD_CLAIM: f.claim },
       now: f.now,
     });
-    await handshake.whoami({}, f.child.authority);
+    await handshake.whoami({}, f.child.authority, clock.budget());
     await endRun('run-a', 1, 'synthetic-terminal-run-a');
   }
   return {

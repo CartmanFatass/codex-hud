@@ -1,3 +1,4 @@
+import { CallBudget } from '../../../src/ledger/call-budget.js';
 import type { Ledger } from '../../../src/ledger/ledger.js';
 import type { LedgerTransaction } from '../../../src/ledger/transaction.js';
 import type { IntentAuthority } from '../../../src/ledger/types.js';
@@ -208,6 +209,9 @@ export class ReadControlService {
       responseMarginMs: number | null;
       verified: boolean;
       started?: number;
+      /** Trusted timing dependencies, never tool arguments. */
+      now?: () => number;
+      onReady?: () => void;
     },
     signal?: AbortSignal
   ) {
@@ -229,7 +233,8 @@ export class ReadControlService {
       timeout.responseMarginMs,
       timeout.verified
     );
-    const elapsed = Math.max(0, performance.now() - (timeout.started ?? performance.now()));
+    const now = timeout.now ?? (() => performance.now());
+    const elapsed = Math.max(0, now() - (timeout.started ?? now()));
     const configuredCap =
       timeout.clientToolTimeoutMs === null ? Infinity : Math.max(0, timeout.clientToolTimeoutMs - 2000);
     const base = timeout.verified ? verifiedBudget.effectiveWaitMs : Math.min(requested, 5000, configuredCap);
@@ -241,8 +246,8 @@ export class ReadControlService {
         timeoutMs: budget.effectiveWaitMs,
         signal,
         subscribe: this.subscribe,
-        read: async (runId?: string) =>
-          this.ledger.readSnapshot((tx) => {
+        read: async (runId?: string) => {
+          const page = await this.ledger.readSnapshot((tx) => {
             const status = readDelegationIn(tx, runId ? { runId } : (request as DelegationTarget), authority(tx));
             if (!opened) {
               this.wakes?.opened(token, status.currentRun.runId, afterSeq, until);
@@ -279,7 +284,14 @@ export class ReadControlService {
               page.matched = withoutReport.matched || page.events.some((e) => validReportSeqs.includes(e.seq));
             }
             return { ...page, lifecycle: status };
-          }),
+          });
+          try {
+            timeout.onReady?.();
+          } catch {
+            /* Optional observation cannot change the read. */
+          }
+          return page;
+        },
       });
       const { lifecycle, ...page } = result;
       const status = await this.compose(lifecycle);
@@ -300,9 +312,13 @@ export class ReadControlService {
     runId: string,
     graceMs: number,
     authority: IntentAuthority,
-    budget = { deadline: performance.now() + 30, lockDeadline: performance.now() + 20 }
+    budget: CallBudget | { deadline: number; lockDeadline: number } = new CallBudget()
   ) {
     const remaining = () => {
+      if ('check' in budget) {
+        budget.check();
+        return budget;
+      }
       const left = Math.min(budget.deadline, budget.lockDeadline) - performance.now();
       if (left <= 0) throw new LedgerBusyError();
       return Math.min(20, left);
@@ -316,6 +332,7 @@ export class ReadControlService {
         requireCancel(tx, status.link, authority);
         return snapshotInTransaction(tx, runId);
       });
+      remaining();
       if (
         !isRunTerminal(expected.run) &&
         expected.run.state !== 'uncertain' &&

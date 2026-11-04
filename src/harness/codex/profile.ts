@@ -1,3 +1,4 @@
+import type { CallBudget } from '../../ledger/call-budget.js';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
@@ -61,6 +62,7 @@ export interface CodexLaunchPreparation {
 }
 
 export interface PrepareCodexLaunchOptions {
+  budget?: CallBudget;
   executableIdentity?: ExecutableIdentity;
   profile: LaunchProfile;
   operation: 'spawn' | 'resume';
@@ -99,21 +101,28 @@ function claimArgs(server: string, env: HudLaunchEnv): string[] {
  * after authorized idempotency replay has been considered.
  */
 export async function prepareCodexLaunch(options: PrepareCodexLaunchOptions): Promise<CodexLaunchPreparation> {
-  const { operation, mode } = options;
+  const { operation, mode, budget } = options;
+  budget?.check();
   const profile = structuredClone(options.profile);
   if (profile.harness !== 'codex') throw new Error('unsupported_harness');
   if (!isAbsolute(options.cwd)) throw new Error('absolute_launch_cwd_required');
   if (!isAbsolute(profile.source.root)) throw new Error('invalid_codex_source');
   const inherited = { ...(options.env ?? process.env) };
-  const [cwd, root, brief] = await Promise.all([
-    fs.realpath(options.cwd),
-    fs.realpath(profile.source.root),
-    snapshotBrief(options.briefPath),
-  ]);
-  if (!(await fs.stat(cwd)).isDirectory() || !(await fs.stat(root)).isDirectory())
-    throw new Error('invalid_launch_directory');
+  const cwd = await fs.realpath(options.cwd);
+  budget?.check();
+  const root = await fs.realpath(profile.source.root);
+  budget?.check();
+  const brief = await snapshotBrief(options.briefPath, undefined, budget);
+  budget?.check();
+  const cwdStat = await fs.stat(cwd);
+  budget?.check();
+  const rootStat = await fs.stat(root);
+  budget?.check();
+  if (!cwdStat.isDirectory() || !rootStat.isDirectory()) throw new Error('invalid_launch_directory');
+  budget?.check();
   const effectiveHome = profile.env.CODEX_HOME ?? inherited.CODEX_HOME;
   if (effectiveHome && (await fs.realpath(effectiveHome)) !== root) throw new Error('codex_source_mismatch');
+  budget?.check();
   profile.source.root = root;
   const sourceId = makeSourceId('codex', root);
   const sentinel = { HUD_CLAIM: 'preflight', HUD_RUN: 'preflight', HUD_LINK: 'preflight', HUD_HOME: cwd };
@@ -121,12 +130,14 @@ export async function prepareCodexLaunch(options: PrepareCodexLaunchOptions): Pr
   let codexConfig = options.codexConfig;
   if (!codexConfig) {
     try {
-      const configBytes = await snapshotBrief(join(root, 'config.toml'));
+      const configBytes = await snapshotBrief(join(root, 'config.toml'), undefined, budget);
       codexConfig = TOML.parse(configBytes.bytes().toString('utf8')) as unknown as CodexConfig;
-    } catch {
+    } catch (error) {
+      budget?.check();
       throw new Error('hud_stdio_server_unavailable');
     }
   }
+  budget?.check();
   if (codexConfig.mcp_servers?.[profile.mcpServerName]?.enabled === false)
     throw new Error('hud_stdio_server_unavailable');
   injectCodexHudEnv(codexConfig, profile.mcpServerName, sentinel);
@@ -193,7 +204,13 @@ export async function prepareCodexLaunch(options: PrepareCodexLaunchOptions): Pr
           shellPath: command.shellPath,
         };
   const command = appendSettings(resolved, settingArgs);
-  const executable = await executableIdentity(command, { ...inherited, ...profile.env }, options.executableIdentity);
+  const executable = await executableIdentity(
+    command,
+    { ...inherited, ...profile.env },
+    options.executableIdentity,
+    budget
+  );
+  budget?.check();
   const capabilityEnv = Object.fromEntries(
     Object.entries(profile.env).filter(([key]) => !['HUD_CLAIM', 'HUD_RUN', 'HUD_LINK', 'HUD_HOME'].includes(key))
   );
@@ -295,5 +312,6 @@ export async function prepareCodexLaunch(options: PrepareCodexLaunchOptions): Pr
       return { input, launchDigest: launchDigest(input), payload, deliveredSha256: sha256(delivery) };
     },
   };
+  budget?.check();
   return Object.freeze(preparation);
 }

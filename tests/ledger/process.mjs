@@ -5,6 +5,7 @@ import { openLedger } from '../../dist-test/src/ledger/ledger.js';
 import { acceptIntent } from '../../dist-test/src/ledger/intents.js';
 import { insertRecord } from '../../dist-test/src/ledger/records.js';
 import { LedgerTransaction } from '../../dist-test/src/ledger/transaction.js';
+import { TestBudgetClock } from '../../dist-test/tests/unit/p065-budget-fixture.js';
 import { at, evidence, intent, seedCaller, staleCandidate } from './fixtures.mjs';
 
 const ledger = await openLedger(process.argv[2]);
@@ -60,6 +61,9 @@ process.on('message', async (message) => {
     else if (action === 'intent') {
       cut = message.cut ?? null;
       inserts = new Map();
+      // Only the audit-positive case selects this trusted test composition.
+      // Each actual invocation (including an explicit caller retry) owns one original budget.
+      const budget = message.auditBudget === 'deterministic' ? new TestBudgetClock().budget() : undefined;
       const prepared = intent(message.variant, message.changed);
       if (message.workspace)
         prepared.run.workspaceSnapshot = {
@@ -73,7 +77,7 @@ process.on('message', async (message) => {
           identityKind: 'git-common-dir-v1',
           scope: 'local',
         };
-      result = await acceptIntent(ledger, prepared);
+      result = await acceptIntent(ledger, prepared, budget);
       cut = null;
     } else if (action === 'inspect') {
       result = ledger.snapshot((tx) =>

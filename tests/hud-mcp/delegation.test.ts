@@ -1,3 +1,5 @@
+import { TestBudgetClock } from '../unit/p065-budget-fixture.js';
+import { PrivateLedgerGate } from '../../src/ledger/local-manager.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
@@ -38,7 +40,10 @@ async function fixture() {
   };
   const launches: PreparedRunLaunch[] = [];
   const config = { version: 1 as const, profiles: [profile] };
+  const clock = new TestBudgetClock();
   const options = {
+    clock,
+    localBinding: new PrivateLedgerGate(f.root).bind(f.ledger),
     ledger: f.ledger,
     home: f.root,
     config,
@@ -90,7 +95,7 @@ async function fixture() {
       env: { HUD_CLAIM: f.claim },
       now: f.now,
     });
-    await handshake.whoami({}, f.child.authority);
+    await handshake.whoami({}, f.child.authority, clock.budget());
     const snapshot = readReconcileSnapshot(f.ledger, 'run-a');
     const fact: ReconcileEvidence = {
       evidenceId: 'synthetic-terminal',

@@ -1,3 +1,5 @@
+import { TestBudgetClock } from '../unit/p065-budget-fixture.js';
+import { CallBudgetExpired } from '../../src/ledger/call-budget.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
@@ -550,6 +552,47 @@ test('fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded 
     assert.throws(() => bootStartToMonotonic(1, 0, 1, 2));
     assert.throws(() => bootStartToMonotonic(0, 0, 2, 1));
     assert.throws(() => bootStartToMonotonic(NaN, 0, 1, 2));
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('P065 hook numeric timestamps without correlation do not invent or extend the MCP deadline', () => {
+  const f = fixture(),
+    clock = new TestBudgetClock(),
+    budget = clock.budget();
+  try {
+    f.launch.hookStartMonoMs = Number(process.hrtime.bigint()) / 1e6 - 140;
+    publishRecord(f.config, f.record());
+    clock.advance(7);
+    consumeHookRecord({ config: f.config, scopes: f.scopes }, f.expected(), budget);
+    assert.equal(budget.remaining(), 23);
+    assert.equal(budget.diagnostics().enclosingDeadline, 'unavailable');
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('P065 genuinely supplied earlier cap remains on the same object through hook resolution and cleanup', () => {
+  const f = fixture(),
+    clock = new TestBudgetClock(),
+    budget = clock.budget();
+  try {
+    budget.tighten(8);
+    budget.tighten(200);
+    publishRecord(f.config, f.record());
+    assert.throws(
+      () =>
+        consumeHookRecord(
+          { config: f.config, scopes: f.scopes, observe: () => clock.advance(8) },
+          f.expected(),
+          budget
+        ),
+      CallBudgetExpired
+    );
+    assert.equal(budget.remaining(), 0);
+    assert.throws(() => readFileSync(f.paths().record), { code: 'ENOENT' });
+    assert.throws(() => f.consume()); // The existing one-shot tombstone remains authoritative.
   } finally {
     f.cleanup();
   }
