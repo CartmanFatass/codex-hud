@@ -1,0 +1,132 @@
+{
+ "root": "1934242:7434871",
+ "n_scans": 18,
+ "identities": {
+  "1934242:7434871": {
+   "pid": 1934242,
+   "start": 7434871,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934233,
+   "pgrp": 1934242,
+   "sid": 1934242,
+   "first_seen": "2026-11-04T11:54:51.522Z",
+   "last_seen": "2026-11-04T11:55:04.584Z",
+   "last_state": "S",
+   "cmdline": "node <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/npm run test:visual",
+   "alive": false
+  },
+  "1934257:7434882": {
+   "pid": 1934257,
+   "start": 7434882,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934242,
+   "pgrp": 1934242,
+   "sid": 1934242,
+   "first_seen": "2026-11-04T11:54:52.531Z",
+   "last_seen": "2026-11-04T11:55:04.584Z",
+   "last_state": "S",
+   "cmdline": "sh -c npm run build:test && node --test dist-test/tests/unit/visual-baselines.test.js",
+   "alive": false
+  },
+  "1934258:7434882": {
+   "pid": 1934258,
+   "start": 7434882,
+   "comm": "npm run build:t",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934257,
+   "pgrp": 1934242,
+   "sid": 1934242,
+   "first_seen": "2026-11-04T11:54:52.532Z",
+   "last_seen": "2026-11-04T11:55:02.576Z",
+   "last_state": "S",
+   "cmdline": "npm run build:test",
+   "alive": false
+  },
+  "1934270:7434895": {
+   "pid": 1934270,
+   "start": 7434895,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934258,
+   "pgrp": 1934242,
+   "sid": 1934242,
+   "first_seen": "2026-11-04T11:54:52.532Z",
+   "last_seen": "2026-11-04T11:55:02.576Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
+   "alive": false
+  },
+  "1934271:7434895": {
+   "pid": 1934271,
+   "start": 7434895,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934270,
+   "pgrp": 1934242,
+   "sid": 1934242,
+   "first_seen": "2026-11-04T11:54:52.532Z",
+   "last_seen": "2026-11-04T11:55:02.576Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
+   "alive": false
+  },
+  "1934519:7436040": {
+   "pid": 1934519,
+   "start": 7436040,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934257,
+   "pgrp": 1934242,
+   "sid": 1934242,
+   "first_seen": "2026-11-04T11:55:03.580Z",
+   "last_seen": "2026-11-04T11:55:04.584Z",
+   "last_state": "S",
+   "cmdline": "node --test dist-test/tests/unit/visual-baselines.test.js",
+   "alive": false
+  },
+  "1934526:7436045": {
+   "pid": 1934526,
+   "start": 7436045,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934519,
+   "pgrp": 1934242,
+   "sid": 1934242,
+   "first_seen": "2026-11-04T11:55:03.580Z",
+   "last_seen": "2026-11-04T11:55:04.584Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node dist-test/tests/unit/visual-baselines.test.js",
+   "alive": false
+  }
+ }
+}

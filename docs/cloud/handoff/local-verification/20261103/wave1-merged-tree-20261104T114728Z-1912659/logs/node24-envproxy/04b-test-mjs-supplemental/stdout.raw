@@ -1,0 +1,76 @@
+
+> codex-hud@0.1.0 test:mjs
+> node --test tests/unit/*.mjs
+
+✔ classifier uses only live Codex metadata from the exact session (1.928172ms)
+✔ environment gates and target validation fail closed without I/O (2.701671ms)
+✔ tmux probe is exact, read-only, shell-free and bounded (0.680244ms)
+✔ fake Unix socket receives minimal schema, current outer identity and safe sequence (25.837834ms)
+▶ socket acknowledges only matching successful newline responses
+  ✔ JSON-RPC success (4.662861ms)
+  ✔ malformed (12.089267ms)
+  ✔ error (8.475962ms)
+  ✔ explicit failure (9.508148ms)
+  ✔ wrong id (9.451032ms)
+  ✔ no acknowledgement (10.218419ms)
+  ✔ no newline (9.987398ms)
+  ✔ oversized (9.516945ms)
+  ✔ disconnect (10.760355ms)
+✔ socket acknowledges only matching successful newline responses (87.33059ms)
+✔ socket timeout, absent endpoint and cancellation are quiet bounded failures (38.641736ms)
+✔ controller deduplicates heartbeats and handles rapid working/idle/working without duplicate idle (0.812079ms)
+✔ short uncertain tmux failure preserves working then publishes observed completion (0.546806ms)
+✔ prolonged probe failure releases unknown without inventing a completion (0.271074ms)
+✔ lost target, wrong process, dead pane and session reuse immediately release state (0.351954ms)
+✔ reconnect clears ambiguous reports then re-reads latest state without replaying missed turns (0.298184ms)
+✔ private per-attach health files remain readable after stop and exclude title/socket text (15.50438ms)
+✔ health write failure never interrupts state reporting (0.492987ms)
+✔ stop aborts an in-flight report before one final unknown; repeated stop is idempotent (0.354449ms)
+✔ parent death aborts a pending probe and terminates without a late working report (5.039456ms)
+✔ already-dead parent releases once without probing tmux (0.444386ms)
+✔ stop with a silent fake server cancels the active request and bounds the final release (454.424526ms)
+✔ native readback validates exact outer pane and status without claiming lifecycle authority (3.75127ms)
+✔ native observer reads projected completion and stops without unknown or lifecycle writes (0.568206ms)
+✔ native observer diagnoses ignored custom authority rather than treating an API ACK as delivery (0.22628ms)
+✔ native observer recovery only reads current state and keeps diagnostic gap visible (0.175716ms)
+✔ native readback never certifies another pane or agent as this Codex (2.686262ms)
+test-codex-path-first-run: PASS
+✔ tests/unit/test-codex-path-first-run.mjs (92.197545ms)
+test-environment-line-runtime-state: PASS
+✔ tests/unit/test-environment-line-runtime-state.mjs (100.983491ms)
+test-identity-line-effort: PASS
+✔ tests/unit/test-identity-line-effort.mjs (99.170431ms)
+test-model-glyphs: PASS
+✔ tests/unit/test-model-glyphs.mjs (97.155337ms)
+test-pane-runtime-state: PASS
+✔ tests/unit/test-pane-runtime-state.mjs (88.523698ms)
+test-parse-queue: PASS
+✔ tests/unit/test-parse-queue.mjs (140.83771ms)
+test-render-clear-scrollback-once: PASS
+✔ tests/unit/test-render-clear-scrollback-once.mjs (179.755858ms)
+test-rollout-offset: PASS
+✔ tests/unit/test-rollout-offset.mjs (88.923772ms)
+test-rollout-turn-context: PASS
+✔ tests/unit/test-rollout-turn-context.mjs (106.984844ms)
+test-session-finder-pane-binding: PASS
+✔ tests/unit/test-session-finder-pane-binding.mjs (175.807758ms)
+test-subagent-tree: PASS
+✔ tests/unit/test-subagent-tree.mjs (217.522678ms)
+test-tree-keys: PASS
+✔ tests/unit/test-tree-keys.mjs (133.793569ms)
+test-visual-width: PASS
+✔ tests/unit/test-visual-width.mjs (89.90732ms)
+test-windows-codex-path-exclusion: PASS
+✔ tests/unit/test-windows-codex-path-exclusion.mjs (89.010843ms)
+test-windows-installer-preserves-codex: PASS
+✔ tests/unit/test-windows-installer-preserves-codex.mjs (80.390985ms)
+test-wsl-codex-origin: PASS
+✔ tests/unit/test-wsl-codex-origin.mjs (145.741801ms)
+ℹ tests 47
+ℹ suites 0
+ℹ pass 47
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 738.044368

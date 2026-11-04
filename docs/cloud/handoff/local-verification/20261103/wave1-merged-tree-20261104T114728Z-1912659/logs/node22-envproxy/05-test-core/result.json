@@ -1,0 +1,137 @@
+{
+ "row": "05-test-core",
+ "planned_row": "05-test-core",
+ "profile": "node22-envproxy",
+ "argv": [
+  "npm",
+  "run",
+  "test:core"
+ ],
+ "times": {
+  "start": "2026-11-04T11:54:33.091Z",
+  "command_exit_observed": "2026-11-04T11:54:49.868Z",
+  "closeout_done": "2026-11-04T11:54:51.393Z",
+  "duration_to_exit_s": 16.777
+ },
+ "command": {
+  "raw_exit": 0,
+  "native_signal": null,
+  "native_signal_basis": "exited normally per waitpid; no signal",
+  "wrapper_layer": "none: the command is the runner's direct child; no shell/timeout wrapper in between",
+  "root_pid_identity": "1933306:7433028"
+ },
+ "supervisor": {
+  "sent": [],
+  "timeout_triggered": false,
+  "timeout_deadline_s": 900,
+  "runner_exit_note": "runner pid 1933298; this record is the runner's own status, separate from the command's"
+ },
+ "streams": {
+  "stdout": {
+   "bytes": 34676,
+   "sha256": "f7dbe1f0ad92a625bf984319835cd0e660d0d5d4a74a589024f2c4d0a5392d46",
+   "eof_at": "2026-11-04T11:54:49.835Z",
+   "error": null
+  },
+  "stderr": {
+   "bytes": 360,
+   "sha256": "f85ef58e3f667eb1995f0235860b6f4cea96f81cdeadc1df42bd891f46448226",
+   "eof_at": "2026-11-04T11:54:49.835Z",
+   "error": null
+  },
+  "both_closed": true,
+  "separate_unmerged": true
+ },
+ "logging": {
+  "ok": true
+ },
+ "counts": {
+  "stages": [
+   {
+    "stage": "test:core",
+    "header": "> codex-hud@0.1.0 test:core",
+    "summary_blocks": 1,
+    "counts": {
+     "tests": 210,
+     "suites": 0,
+     "pass": 209,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 1,
+     "todo": 0
+    }
+   }
+  ],
+  "totals": {
+   "tests": 210,
+   "pass": 209,
+   "fail": 0,
+   "cancelled": 0,
+   "skipped": 1,
+   "todo": 0,
+   "suites": 0
+  },
+  "stages_seen": [
+   "test:core"
+  ],
+  "any_summary": true
+ },
+ "closeout": {
+  "owned_state": "none-left (all recorded identities gone)",
+  "recorded_identities": 16,
+  "left_alive": [],
+  "zombies": [],
+  "d_state": [],
+  "census_method": "1Hz /proc scan: descendants of root, root session/pgrp, and HOME-token in /proc/*/environ every 5s; identity=pid+start ticks. Processes that left the tree, changed session and cleared environ within <1s are not observable: not claimed.",
+  "tmp_dirs": {
+   "home": "<SHORT_ROOT>/a05testco/h",
+   "hud_home": "<SHORT_ROOT>/a05testco/u",
+   "tmpdir": "<SHORT_ROOT>/a05testco/t"
+  },
+  "capture_dirs": {
+   "node_proxy": "<RUN>/captures/node22-envproxy/05-test-core/node-proxy-evidence",
+   "runz1_kill": "<RUN>/captures/node22-envproxy/05-test-core/runz1-kill-evidence"
+  }
+ },
+ "source": {
+  "before": {
+   "label": "before",
+   "utc": "2026-11-04T11:54:33.091Z",
+   "head": "9112e87b1af9c321ca87facdfc56994cf493438f",
+   "tree": "48f59142862f643a98286e3d196d23ff13059a23",
+   "parents": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4 09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "head_is_M": true,
+   "tree_is_R": true,
+   "parents_are_T_H": true,
+   "tracked_nondep_files": 1114,
+   "tracked_nondep_sha256": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+   "porcelain_total_lines": 1,
+   "porcelain_non_dependency_non_generated": [],
+   "porcelain_dependency_lines": 1
+  },
+  "after": {
+   "label": "after",
+   "utc": "2026-11-04T11:54:51.434Z",
+   "head": "9112e87b1af9c321ca87facdfc56994cf493438f",
+   "tree": "48f59142862f643a98286e3d196d23ff13059a23",
+   "parents": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4 09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "head_is_M": true,
+   "tree_is_R": true,
+   "parents_are_T_H": true,
+   "tracked_nondep_files": 1114,
+   "tracked_nondep_sha256": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+   "porcelain_total_lines": 1,
+   "porcelain_non_dependency_non_generated": [],
+   "porcelain_dependency_lines": 1
+  },
+  "unchanged": true,
+  "generated_present_after": {
+   "dist": true,
+   "dist-test": true,
+   "packages/hud-mcp/dist": true
+  }
+ },
+ "anomalies": [],
+ "gate": "PASS",
+ "note": null
+}

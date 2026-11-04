@@ -1,0 +1,24 @@
+{
+ "root": "1962329:7474289",
+ "n_scans": 5,
+ "identities": {
+  "1962329:7474289": {
+   "pid": 1962329,
+   "start": 7474289,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1962320,
+   "pgrp": 1962329,
+   "sid": 1962329,
+   "first_seen": "2026-11-04T12:01:25.700Z",
+   "last_seen": "2026-11-04T12:01:25.705Z",
+   "last_state": "R",
+   "cmdline": "node <NVM>/versions/node/v24.22.1/bin/npm run check:fixtures",
+   "alive": false
+  }
+ }
+}

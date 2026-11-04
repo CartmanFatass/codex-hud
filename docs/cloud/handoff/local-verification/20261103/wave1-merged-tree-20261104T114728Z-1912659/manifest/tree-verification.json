@@ -1,0 +1,876 @@
+{
+ "C3_to_H": {
+  "all_under_handoff_wave1_dir": true,
+  "changed_count": 7,
+  "kinds": {
+   "added": 7,
+   "deleted": 0,
+   "mode_or_type_change": 0,
+   "modified": 0
+  },
+  "non_docs_changed": [],
+  "paths": [
+   "docs/cloud/handoff/wave1-compat-integration/candidate-tree.tsv",
+   "docs/cloud/handoff/wave1-compat-integration/check-inventory.json",
+   "docs/cloud/handoff/wave1-compat-integration/composition-manifest.json",
+   "docs/cloud/handoff/wave1-compat-integration/implementation.md",
+   "docs/cloud/handoff/wave1-compat-integration/oracle-c3-final-integration-review-20261104.md",
+   "docs/cloud/handoff/wave1-compat-integration/oracle-c3-owner-exception-joint-acceptance-20261104.md",
+   "docs/cloud/handoff/wave1-compat-integration/oracle-v0-composition-review-20261104.md"
+  ]
+ },
+ "T_to_R": {
+  "changed_count": 65,
+  "kinds": {
+   "added": 50,
+   "deleted": 0,
+   "mode_or_type_change": 0,
+   "modified": 15
+  },
+  "non_source_changed_count": 39,
+  "non_source_changed_paths": [
+   "docs/cloud/handoff/hyg2-dispatcher-checks-20261103.log",
+   "docs/cloud/handoff/hyg2-fix-dispatcher-20261103.log",
+   "docs/cloud/handoff/hyg2-fix-dispatcher.log.part01.txt",
+   "docs/cloud/handoff/hyg2-fix-dispatcher.log.part02.txt",
+   "docs/cloud/handoff/hyg2-fix-dispatcher.log.part03.txt",
+   "docs/cloud/handoff/hyg2-fix-dispatcher.log.part04.txt",
+   "docs/cloud/handoff/hyg2-fix-dispatcher.log.part05.txt",
+   "docs/cloud/handoff/hyg2-fix-dispatcher.log.part06.txt",
+   "docs/cloud/handoff/hyg2-fix-mjs-dispatcher-20261103.log",
+   "docs/cloud/handoff/hyg2-fix1-report.md",
+   "docs/cloud/handoff/hyg2-implement-report.md",
+   "docs/cloud/handoff/hyg2-local-review-20261103.md",
+   "docs/cloud/handoff/hyg2-proc-diagnosis-20261103.log",
+   "docs/cloud/handoff/hyg2-review-1.md",
+   "docs/cloud/handoff/hyg2-review-2.md",
+   "docs/cloud/handoff/hyg2-topology-diagnosis.md",
+   "docs/cloud/handoff/mcp-ancestor-implementation.md",
+   "docs/cloud/handoff/mcp-ancestor-publication.md",
+   "docs/cloud/handoff/mcp-ancestor-review-1.md",
+   "docs/cloud/handoff/runz1-dispatcher.log.part01.txt",
+   "docs/cloud/handoff/runz1-dispatcher.log.part02.txt",
+   "docs/cloud/handoff/runz1-dispatcher.log.part03.txt",
+   "docs/cloud/handoff/runz1-dispatcher.log.part04.txt",
+   "docs/cloud/handoff/runz1-dispatcher.log.part05.txt",
+   "docs/cloud/handoff/runz1-dispatcher.log.part06.txt",
+   "docs/cloud/handoff/runz1-dispatcher.log.part07.txt",
+   "docs/cloud/handoff/runz1-implement-report.md",
+   "docs/cloud/handoff/runz1-kill/implementation.md",
+   "docs/cloud/handoff/runz1-kill/review-1.md",
+   "docs/cloud/handoff/runz1-local-review-20261103.md",
+   "docs/cloud/handoff/runz1-review-1.md",
+   "docs/cloud/handoff/wave1-compat-integration/candidate-tree.tsv",
+   "docs/cloud/handoff/wave1-compat-integration/check-inventory.json",
+   "docs/cloud/handoff/wave1-compat-integration/composition-manifest.json",
+   "docs/cloud/handoff/wave1-compat-integration/implementation.md",
+   "docs/cloud/handoff/wave1-compat-integration/oracle-c3-final-integration-review-20261104.md",
+   "docs/cloud/handoff/wave1-compat-integration/oracle-c3-owner-exception-joint-acceptance-20261104.md",
+   "docs/cloud/handoff/wave1-compat-integration/oracle-v0-composition-review-20261104.md",
+   "docs/cloud/rulings/hyg2.md"
+  ],
+  "non_source_non_docs_paths": [],
+  "source_paths_changed": [
+   "packages/hud-mcp/src/process.ts",
+   "src/cli/link-export.ts",
+   "src/core/run/README.md",
+   "src/core/run/process-census.ts",
+   "src/core/run/process.ts",
+   "src/ledger/runtime.ts",
+   "tests/hud-mcp/ancestor-discovery.test.ts",
+   "tests/hud-mcp/int-ledger-registry.test.ts",
+   "tests/hud-mcp/skeleton.test.ts",
+   "tests/int/node-startup-diagnostics.ts",
+   "tests/int/process-client.ts",
+   "tests/int/runz1-perf.mjs",
+   "tests/unit/b12d-wal.test.ts",
+   "tests/unit/b12r-store.test.ts",
+   "tests/unit/b16-writer.test.ts",
+   "tests/unit/b45-launch.test.ts",
+   "tests/unit/hud-link-export.test.ts",
+   "tests/unit/node-proxy-profile.test.ts",
+   "tests/unit/process-client.test.ts",
+   "tests/unit/run-control-kill-evidence.test.ts",
+   "tests/unit/run-control-kill-fixture.ts",
+   "tests/unit/run-control.test.ts",
+   "tests/unit/run-light-leader.test.ts",
+   "tests/unit/run-process.test.ts",
+   "tests/unit/runz1-fixture.py",
+   "tests/unit/runz1-process.test.ts"
+  ]
+ },
+ "Tprev_to_T": {
+  "changed_count": 1,
+  "kinds": {
+   "added": 1,
+   "deleted": 0,
+   "mode_or_type_change": 0,
+   "modified": 0
+  },
+  "paths": [
+   "docs/cloud/rulings/leg1-owner-direction-20261104.md"
+  ]
+ },
+ "U_to_T": {
+  "changed_count": 16,
+  "kinds": {
+   "added": 12,
+   "deleted": 0,
+   "mode_or_type_change": 0,
+   "modified": 4
+  },
+  "non_docs_paths": []
+ },
+ "c3_is_ancestor_of_H": true,
+ "commits": {
+  "C3": {
+   "commit": "36d3fd584bd403ed7ada95d1d863a8f63e96588b",
+   "tree": "0c8c67ede1f13122987802d9a0346cd6e6ecf73b"
+  },
+  "H": {
+   "commit": "09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "tree": "9e0c32402123c01b19488fd849352938f4a481c0"
+  },
+  "R_expected": {
+   "commit": "48f59142862f643a98286e3d196d23ff13059a23",
+   "tree": "48f59142862f643a98286e3d196d23ff13059a23"
+  },
+  "T": {
+   "commit": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+   "tree": "cf2bad6828aeda55379b2602cbba4452864d0bdc"
+  },
+  "T_prev_reviewed": {
+   "commit": "4d0b7f146a55cbd631a31a8ce6b6ca9f33ee6dd2",
+   "tree": "040e50e09d9b54317305734148a074069e8f6080"
+  },
+  "U": {
+   "commit": "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86",
+   "tree": "2a6491f7c0ca5262587d4ab15a8ae53cbf6901ce"
+  }
+ },
+ "file_dir_prefix_collisions": [],
+ "leaf_counts": {
+  "C3": 1370,
+  "H": 1377,
+  "R_actual": 1389,
+  "T": 1339,
+  "U": 1327
+ },
+ "merge_base_all": [
+  "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86"
+ ],
+ "modes_in_R": [
+  "100644",
+  "100755"
+ ],
+ "non_regular_entries_in_R": {},
+ "non_source_non_docs_diffs_vs_U": [],
+ "non_source_non_docs_equal_U": true,
+ "pred_equals_actual_R_complete_entries": true,
+ "pred_vs_actual_diff_paths": [],
+ "predicted_leaf_count": 1389,
+ "recomputed_equals_R": true,
+ "recomputed_tree_sha_from_prediction": "48f59142862f643a98286e3d196d23ff13059a23",
+ "source_ownership": [
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "c7a05e752c166a29564db41385cf022365d83f0b"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "c7a05e752c166a29564db41385cf022365d83f0b"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "0c62d4d025cab6136407ddde392030858ce5af16"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "0c62d4d025cab6136407ddde392030858ce5af16"
+   ],
+   "path": "src/cli/link-export.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "c7a05e752c166a29564db41385cf022365d83f0b"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "3f61a6f4ebfc8607e59dbe464d93d63d8f211662"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "3f61a6f4ebfc8607e59dbe464d93d63d8f211662"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "9dea507d081094b437211111aea5364c024b24ac"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "9dea507d081094b437211111aea5364c024b24ac"
+   ],
+   "path": "src/ledger/runtime.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "3f61a6f4ebfc8607e59dbe464d93d63d8f211662"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "e1feac9598d0c3e3abfd19084b9274920a008699"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "e1feac9598d0c3e3abfd19084b9274920a008699"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/int/node-startup-diagnostics.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "e1feac9598d0c3e3abfd19084b9274920a008699"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "c161c158f85db34188e754ed06adcb842d93ae4a"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "c161c158f85db34188e754ed06adcb842d93ae4a"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/int/process-client.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "c161c158f85db34188e754ed06adcb842d93ae4a"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "46bc5da8b45d2d8e2f73fe5e6f4229e5e0d1bcd1"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "46bc5da8b45d2d8e2f73fe5e6f4229e5e0d1bcd1"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "5469a54f13a96efd07709219ee4a983340fe5707"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "5469a54f13a96efd07709219ee4a983340fe5707"
+   ],
+   "path": "tests/unit/b12d-wal.test.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "46bc5da8b45d2d8e2f73fe5e6f4229e5e0d1bcd1"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "9e281e7883765d49d06c2beb3332b89e8e8bb093"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "9e281e7883765d49d06c2beb3332b89e8e8bb093"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "4b61980429342ef150a1f3828743bfdfae8b8075"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "4b61980429342ef150a1f3828743bfdfae8b8075"
+   ],
+   "path": "tests/unit/b12r-store.test.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "9e281e7883765d49d06c2beb3332b89e8e8bb093"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "2017e31951a2b061585824fca9d7bd4d0d5ada86"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "2017e31951a2b061585824fca9d7bd4d0d5ada86"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "a308bd45c26a4de8eb0f0f7e03afa5a1cc31b90a"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "a308bd45c26a4de8eb0f0f7e03afa5a1cc31b90a"
+   ],
+   "path": "tests/unit/b16-writer.test.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "2017e31951a2b061585824fca9d7bd4d0d5ada86"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "21bfa19b76a5eec48c58a4adf76f077193bf61e9"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "21bfa19b76a5eec48c58a4adf76f077193bf61e9"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "b826d448bacc9383384c4692cf5229afb7574741"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "b826d448bacc9383384c4692cf5229afb7574741"
+   ],
+   "path": "tests/unit/b45-launch.test.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "21bfa19b76a5eec48c58a4adf76f077193bf61e9"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "5c2d0b2f0e698791ebc249fdca6af2774aeec317"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "5c2d0b2f0e698791ebc249fdca6af2774aeec317"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "9ad1ccb477aadd01057f44f4e8661e2e3c7f615a"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "9ad1ccb477aadd01057f44f4e8661e2e3c7f615a"
+   ],
+   "path": "tests/unit/hud-link-export.test.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "5c2d0b2f0e698791ebc249fdca6af2774aeec317"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "134a43985ab7fdbda12a6239517f9c7d3203de01"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "134a43985ab7fdbda12a6239517f9c7d3203de01"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/unit/node-proxy-profile.test.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "134a43985ab7fdbda12a6239517f9c7d3203de01"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "3ab24c1d2ed1433ae25d5ca674a1d05bcceac6e3"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "3ab24c1d2ed1433ae25d5ca674a1d05bcceac6e3"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/unit/process-client.test.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "3ab24c1d2ed1433ae25d5ca674a1d05bcceac6e3"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "dcff130926e1e88ada11b7a73d5de5869345cea4"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "dcff130926e1e88ada11b7a73d5de5869345cea4"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "823b738b944f6ac432cb980828b3eeef2b9a6954"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "823b738b944f6ac432cb980828b3eeef2b9a6954"
+   ],
+   "path": "tests/unit/run-light-leader.test.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "dcff130926e1e88ada11b7a73d5de5869345cea4"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "e95e606c912919f7770e053670ef5600147024f6"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "e95e606c912919f7770e053670ef5600147024f6"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "86605827a7d7420fdb5ab7f909c11e6ac7903e3e"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "86605827a7d7420fdb5ab7f909c11e6ac7903e3e"
+   ],
+   "path": "tests/unit/run-process.test.ts",
+   "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+   "source_entry": [
+    "100644",
+    "blob",
+    "e95e606c912919f7770e053670ef5600147024f6"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "72954abd0b5a483ff1bab1aaaeab59add4ffab5b"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "72954abd0b5a483ff1bab1aaaeab59add4ffab5b"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "d5407bbb9f819cc4f943f538b511d9f4a273f483"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "d5407bbb9f819cc4f943f538b511d9f4a273f483"
+   ],
+   "path": "packages/hud-mcp/src/process.ts",
+   "source_commit": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+   "source_entry": [
+    "100644",
+    "blob",
+    "72954abd0b5a483ff1bab1aaaeab59add4ffab5b"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "dae455671c9e7dc0b46f25516c2fc6d7b9c92649"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "dae455671c9e7dc0b46f25516c2fc6d7b9c92649"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/hud-mcp/ancestor-discovery.test.ts",
+   "source_commit": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+   "source_entry": [
+    "100644",
+    "blob",
+    "dae455671c9e7dc0b46f25516c2fc6d7b9c92649"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "234a3f2253f4bcf61f039732ae99c9c878853a1d"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "234a3f2253f4bcf61f039732ae99c9c878853a1d"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "0d2300630a1a9cfaa65525302ef9913c792e4501"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "0d2300630a1a9cfaa65525302ef9913c792e4501"
+   ],
+   "path": "tests/hud-mcp/int-ledger-registry.test.ts",
+   "source_commit": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+   "source_entry": [
+    "100644",
+    "blob",
+    "234a3f2253f4bcf61f039732ae99c9c878853a1d"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "025227b75736a43fb3fde6ec8ef8cdae25b98181"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "025227b75736a43fb3fde6ec8ef8cdae25b98181"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "2abbf873d48dfb84c990ee5f0346edadc439c073"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "2abbf873d48dfb84c990ee5f0346edadc439c073"
+   ],
+   "path": "tests/hud-mcp/skeleton.test.ts",
+   "source_commit": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+   "source_entry": [
+    "100644",
+    "blob",
+    "025227b75736a43fb3fde6ec8ef8cdae25b98181"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "6b2c137b57ec3b45b44fd189e02a4481377859b7"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "6b2c137b57ec3b45b44fd189e02a4481377859b7"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "12a32db6b22e947ec5e6ae4fb3ca3c301dcce5be"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "12a32db6b22e947ec5e6ae4fb3ca3c301dcce5be"
+   ],
+   "path": "src/core/run/README.md",
+   "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+   "source_entry": [
+    "100644",
+    "blob",
+    "6b2c137b57ec3b45b44fd189e02a4481377859b7"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "1243fef52711803e54fcafc4127316c8ae701ece"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "1243fef52711803e54fcafc4127316c8ae701ece"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "src/core/run/process-census.ts",
+   "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+   "source_entry": [
+    "100644",
+    "blob",
+    "1243fef52711803e54fcafc4127316c8ae701ece"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "f43cfe0bb18e1af5b940c42b8d5ee6d0e4d7eb3f"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "f43cfe0bb18e1af5b940c42b8d5ee6d0e4d7eb3f"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "fb45508e044cc99e9cd13a6b7575ba10cd7c2bff"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "fb45508e044cc99e9cd13a6b7575ba10cd7c2bff"
+   ],
+   "path": "src/core/run/process.ts",
+   "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+   "source_entry": [
+    "100644",
+    "blob",
+    "f43cfe0bb18e1af5b940c42b8d5ee6d0e4d7eb3f"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "fbd6c34c6de54a9b11ec155a5a01f18c83d77969"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "fbd6c34c6de54a9b11ec155a5a01f18c83d77969"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/int/runz1-perf.mjs",
+   "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+   "source_entry": [
+    "100644",
+    "blob",
+    "fbd6c34c6de54a9b11ec155a5a01f18c83d77969"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "bd4d5ad7012a896443eaa09df9da0f066079a9f4"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "bd4d5ad7012a896443eaa09df9da0f066079a9f4"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/unit/run-control-kill-evidence.test.ts",
+   "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+   "source_entry": [
+    "100644",
+    "blob",
+    "bd4d5ad7012a896443eaa09df9da0f066079a9f4"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "8d0c86138e888cefebd13b787e0c164053b2fa4b"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "8d0c86138e888cefebd13b787e0c164053b2fa4b"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/unit/run-control-kill-fixture.ts",
+   "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+   "source_entry": [
+    "100644",
+    "blob",
+    "8d0c86138e888cefebd13b787e0c164053b2fa4b"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "f12d545a26724d1239f2ce91140e1eb9e98dec82"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "f12d545a26724d1239f2ce91140e1eb9e98dec82"
+   ],
+   "R_equals_source": true,
+   "T_entry": [
+    "100644",
+    "blob",
+    "dfd323cc378f1f4b81e6188249528bfa66919ea1"
+   ],
+   "U_entry": [
+    "100644",
+    "blob",
+    "dfd323cc378f1f4b81e6188249528bfa66919ea1"
+   ],
+   "path": "tests/unit/run-control.test.ts",
+   "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+   "source_entry": [
+    "100644",
+    "blob",
+    "f12d545a26724d1239f2ce91140e1eb9e98dec82"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "4d0abb3c124a32704be9801ba9e8899cdb559ed9"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "4d0abb3c124a32704be9801ba9e8899cdb559ed9"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/unit/runz1-fixture.py",
+   "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+   "source_entry": [
+    "100644",
+    "blob",
+    "4d0abb3c124a32704be9801ba9e8899cdb559ed9"
+   ]
+  },
+  {
+   "H_entry": [
+    "100644",
+    "blob",
+    "f57755deeaeefb70ee9ed7c469fe6a4b39be4955"
+   ],
+   "R_entry": [
+    "100644",
+    "blob",
+    "f57755deeaeefb70ee9ed7c469fe6a4b39be4955"
+   ],
+   "R_equals_source": true,
+   "T_entry": null,
+   "U_entry": null,
+   "path": "tests/unit/runz1-process.test.ts",
+   "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+   "source_entry": [
+    "100644",
+    "blob",
+    "f57755deeaeefb70ee9ed7c469fe6a4b39be4955"
+   ]
+  }
+ ],
+ "source_ownership_all_match": true,
+ "three_way_conflicts": [],
+ "types": {
+  "09d9c3d95fe42932ecaf35dd46806a8747681aa7": "commit",
+  "36d3fd584bd403ed7ada95d1d863a8f63e96588b": "commit",
+  "9dd4d06d2ee5ebb022719d11b74d6de0276172a4": "commit",
+  "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86": "commit"
+ }
+}

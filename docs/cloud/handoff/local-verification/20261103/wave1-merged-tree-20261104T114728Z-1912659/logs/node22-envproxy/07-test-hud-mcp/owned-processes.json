@@ -1,0 +1,276 @@
+{
+ "root": "1934643:7436367",
+ "n_scans": 10,
+ "identities": {
+  "1934643:7436367": {
+   "pid": 1934643,
+   "start": 7436367,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934635,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:06.483Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "S",
+   "cmdline": "node <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/npm run test:hud-mcp",
+   "alive": false
+  },
+  "1934676:7436378": {
+   "pid": 1934676,
+   "start": 7436378,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934643,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:07.491Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "S",
+   "cmdline": "sh -c npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js",
+   "alive": false
+  },
+  "1934677:7436378": {
+   "pid": 1934677,
+   "start": 7436378,
+   "comm": "npm run build:h",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934676,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:07.491Z",
+   "last_seen": "2026-11-04T11:55:09.499Z",
+   "last_state": "S",
+   "cmdline": "npm run build:hud-mcp",
+   "alive": false
+  },
+  "1934691:7436390": {
+   "pid": 1934691,
+   "start": 7436390,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934677,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:07.491Z",
+   "last_seen": "2026-11-04T11:55:09.499Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
+   "alive": false
+  },
+  "1934692:7436390": {
+   "pid": 1934692,
+   "start": 7436390,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934691,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:07.491Z",
+   "last_seen": "2026-11-04T11:55:09.499Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
+   "alive": false
+  },
+  "1934772:7436727": {
+   "pid": 1934772,
+   "start": 7436727,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934676,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "S",
+   "cmdline": "node --test packages/hud-mcp/dist/tests/hud-mcp/ancestor-discovery.test.js packages/hud-mcp/dist/tests/hud-mcp/authorization.test.js packages/hud-mcp/dist/tests/hud-mcp/b20-advice.test.js packages/hud-mcp/dist/tests/hud-mcp/config.test.js packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js packages/hud-mcp/dist/tests/hud-mcp/handshake-benchmark.test.js packages/hud-mcp/dist/tests/hud-mcp/handshake.test.js packages/hud-mcp/dist/tests/hud-mcp/hook-source.test.js packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js packages/hud-mcp/dist/tests/hud-mcp/resume-expected-run.test.js packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js",
+   "alive": false
+  },
+  "1934782:7436733": {
+   "pid": 1934782,
+   "start": 7436733,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934772,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "D",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node packages/hud-mcp/dist/tests/hud-mcp/b20-advice.test.js",
+   "alive": false
+  },
+  "1934793:7436733": {
+   "pid": 1934793,
+   "start": 7436733,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934772,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js",
+   "alive": false
+  },
+  "1934805:7436734": {
+   "pid": 1934805,
+   "start": 7436734,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934772,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "D",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node packages/hud-mcp/dist/tests/hud-mcp/handshake.test.js",
+   "alive": false
+  },
+  "1934806:7436734": {
+   "pid": 1934806,
+   "start": 7436734,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934772,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "S",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node packages/hud-mcp/dist/tests/hud-mcp/hook-source.test.js",
+   "alive": false
+  },
+  "1934817:7436734": {
+   "pid": 1934817,
+   "start": 7436734,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934772,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js",
+   "alive": false
+  },
+  "1934824:7436734": {
+   "pid": 1934824,
+   "start": 7436734,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934772,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "D",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node packages/hud-mcp/dist/tests/hud-mcp/resume-expected-run.test.js",
+   "alive": false
+  },
+  "1934831:7436734": {
+   "pid": 1934831,
+   "start": 7436734,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934772,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "S",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js",
+   "alive": false
+  },
+  "1934948:7436765": {
+   "pid": 1934948,
+   "start": 7436765,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934831,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node --input-type=module -e Object.defineProperty(process.versions,'node',{value:\"22.13.0\"});await import(\"<WT:node22-envproxy>/packages/hud-mcp/bin/hud-mcp.mjs\");",
+   "alive": false
+  },
+  "1934955:7436767": {
+   "pid": 1934955,
+   "start": 7436767,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1934806,
+   "pgrp": 1934643,
+   "sid": 1934643,
+   "first_seen": "2026-11-04T11:55:10.504Z",
+   "last_seen": "2026-11-04T11:55:10.504Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node --input-type=module -e Object.defineProperty(process.versions,'node',{value:\"23.9.0\"}); const {ReadOnlyScopeSnapshot}=await import(\"file://<WT:node22-envproxy>/packages/hud-mcp/dist/src/core/ledger-scope-read.js\"); try {new ReadOnlyScopeSnapshot(\"<SHORT_ROOT>/a07testhu/t/hud-hook-test-1D1CJS/ledger.sqlite\").read('unused');process.exit(2);} catch(e) {if(!e.message.includes('require Node'))process.exit(3);}",
+   "alive": false
+  }
+ }
+}

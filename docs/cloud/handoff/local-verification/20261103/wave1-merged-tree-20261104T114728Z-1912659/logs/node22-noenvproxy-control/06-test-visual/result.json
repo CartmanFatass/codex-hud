@@ -1,0 +1,144 @@
+{
+ "row": "06-test-visual",
+ "planned_row": "06-test-visual",
+ "profile": "node22-noenvproxy-control",
+ "argv": [
+  "npm",
+  "run",
+  "test:visual"
+ ],
+ "times": {
+  "start": "2026-11-04T11:57:45.665Z",
+  "command_exit_observed": "2026-11-04T11:58:00.041Z",
+  "closeout_done": "2026-11-04T11:58:01.561Z",
+  "duration_to_exit_s": 14.376
+ },
+ "command": {
+  "raw_exit": 0,
+  "native_signal": null,
+  "native_signal_basis": "exited normally per waitpid; no signal",
+  "wrapper_layer": "none: the command is the runner's direct child; no shell/timeout wrapper in between",
+  "root_pid_identity": "1947216:7452286"
+ },
+ "supervisor": {
+  "sent": [],
+  "timeout_triggered": false,
+  "timeout_deadline_s": 600,
+  "runner_exit_note": "runner pid 1947208; this record is the runner's own status, separate from the command's"
+ },
+ "streams": {
+  "stdout": {
+   "bytes": 52129,
+   "sha256": "4398680e09ea16eadfadbed64591a681461ab880a668667b89b87e1c1100de6b",
+   "eof_at": "2026-11-04T11:58:00.030Z",
+   "error": null
+  },
+  "stderr": {
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "eof_at": "2026-11-04T11:58:00.029Z",
+   "error": null
+  },
+  "both_closed": true,
+  "separate_unmerged": true
+ },
+ "logging": {
+  "ok": true
+ },
+ "counts": {
+  "stages": [
+   {
+    "stage": "test:visual",
+    "header": "> codex-hud@0.1.0 test:visual",
+    "summary_blocks": 0,
+    "counts": {}
+   },
+   {
+    "stage": "build:test",
+    "header": "> codex-hud@0.1.0 build:test",
+    "summary_blocks": 1,
+    "counts": {
+     "tests": 319,
+     "suites": 0,
+     "pass": 319,
+     "fail": 0,
+     "cancelled": 0,
+     "skipped": 0,
+     "todo": 0
+    }
+   }
+  ],
+  "totals": {
+   "tests": 319,
+   "pass": 319,
+   "fail": 0,
+   "cancelled": 0,
+   "skipped": 0,
+   "todo": 0,
+   "suites": 0
+  },
+  "stages_seen": [
+   "test:visual",
+   "build:test"
+  ],
+  "any_summary": true
+ },
+ "closeout": {
+  "owned_state": "none-left (all recorded identities gone)",
+  "recorded_identities": 7,
+  "left_alive": [],
+  "zombies": [],
+  "d_state": [],
+  "census_method": "1Hz /proc scan: descendants of root, root session/pgrp, and HOME-token in /proc/*/environ every 5s; identity=pid+start ticks. Processes that left the tree, changed session and cleared environ within <1s are not observable: not claimed.",
+  "tmp_dirs": {
+   "home": "<SHORT_ROOT>/b06testvi/h",
+   "hud_home": "<SHORT_ROOT>/b06testvi/u",
+   "tmpdir": "<SHORT_ROOT>/b06testvi/t"
+  },
+  "capture_dirs": {
+   "node_proxy": "<RUN>/captures/node22-noenvproxy-control/06-test-visual/node-proxy-evidence",
+   "runz1_kill": "<RUN>/captures/node22-noenvproxy-control/06-test-visual/runz1-kill-evidence"
+  }
+ },
+ "source": {
+  "before": {
+   "label": "before",
+   "utc": "2026-11-04T11:57:45.665Z",
+   "head": "9112e87b1af9c321ca87facdfc56994cf493438f",
+   "tree": "48f59142862f643a98286e3d196d23ff13059a23",
+   "parents": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4 09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "head_is_M": true,
+   "tree_is_R": true,
+   "parents_are_T_H": true,
+   "tracked_nondep_files": 1114,
+   "tracked_nondep_sha256": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+   "porcelain_total_lines": 1,
+   "porcelain_non_dependency_non_generated": [],
+   "porcelain_dependency_lines": 1
+  },
+  "after": {
+   "label": "after",
+   "utc": "2026-11-04T11:58:01.605Z",
+   "head": "9112e87b1af9c321ca87facdfc56994cf493438f",
+   "tree": "48f59142862f643a98286e3d196d23ff13059a23",
+   "parents": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4 09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "head_is_M": true,
+   "tree_is_R": true,
+   "parents_are_T_H": true,
+   "tracked_nondep_files": 1114,
+   "tracked_nondep_sha256": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+   "porcelain_total_lines": 1,
+   "porcelain_non_dependency_non_generated": [],
+   "porcelain_dependency_lines": 1
+  },
+  "unchanged": true,
+  "generated_present_after": {
+   "dist": true,
+   "dist-test": true,
+   "packages/hud-mcp/dist": true
+  }
+ },
+ "anomalies": [],
+ "gate": "PASS",
+ "note": null
+}

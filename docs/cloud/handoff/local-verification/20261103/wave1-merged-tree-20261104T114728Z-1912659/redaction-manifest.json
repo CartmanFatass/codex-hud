@@ -1,0 +1,971 @@
+{
+ "run_id": "wave1-merged-tree-20261104T114728Z-1912659",
+ "method": "byte-level ordered substitutions applied to a copy; originals untouched; the pattern-to-value table is local-only and not published",
+ "categories": {
+  "worktree-path": "absolute per-profile worktree paths -> <WT:profile>",
+  "run-dir-path": "absolute local run directory -> <RUN>",
+  "verify-root-path": "absolute local verification root -> <VERIFY_ROOT>",
+  "repo-clone-path": "absolute path of the authorized clone -> <REPO>",
+  "nvm-path": "owner's nvm directory -> <NVM>",
+  "home-path": "owner's home directory -> <OWNER_HOME>",
+  "short-temp-root": "per-run short temp root holding fresh HOME/HUD_HOME/TMPDIR -> <SHORT_ROOT>",
+  "email-1/email-2/email-other": "e-mail addresses (git identity and account) -> <EMAIL-1>/<EMAIL-2>/<EMAIL-X>",
+  "host-or-author-name": "machine host name and git author/committer name (identical string) -> <HOST-OR-AUTHOR>",
+  "user-name": "local login name -> <USER>"
+ },
+ "equal_values_map_to_equal_codes": true,
+ "unchanged_facts": [
+  "exit codes",
+  "native signals",
+  "timeout flags",
+  "UTC timestamps",
+  "durations",
+  "test names",
+  "failure text",
+  "counts",
+  "PIDs and start-tick identities",
+  "synthetic loopback data",
+  "hashes of git objects and generated/dependency files",
+  "lifecycle relations"
+ ],
+ "not_published": [
+  "proxy variable values (never recorded anywhere)",
+  "tokens/keys (none present)",
+  "environment contents",
+  "private session data",
+  "the private raw-to-published mapping/patterns (scripts/redact.LOCAL-ONLY.py)",
+  "protected RUNZ1 originals",
+  "fresh HOME/HUD_HOME/TMPDIR contents under the short temp root (local only)"
+ ],
+ "notes": [
+  "Published files differ byte-wise from the local originals wherever a category matched; stdout_sha256/stderr_sha256 inside result.json and SUMMARY.json are the hashes of the LOCAL ORIGINAL raw streams, not of the published copies.",
+  "Published copies' own hashes are in PUBLISHED-SHA256SUMS.",
+  "scripts/ in this directory are the redacted copies of the scripts that ran; their original hashes are in manifest/script-identities.sha256."
+ ],
+ "replacement_counts": {
+  "worktree-path": 201,
+  "run-dir-path": 156,
+  "verify-root-path": 559,
+  "repo-clone-path": 0,
+  "nvm-path": 303,
+  "home-path": 0,
+  "short-temp-root": 390,
+  "email-1": 2,
+  "email-2": 0,
+  "email-other": 0,
+  "host-or-author-name": 2,
+  "user-name": 0
+ },
+ "files_changed": 124,
+ "files_total": 1404,
+ "changed_files": [
+  {
+   "path": "logs/node22-envproxy/00-npm-ci/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/00-npm-ci/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/00-npm-ci/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/00-runner-selfcheck/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/00-runner-selfcheck/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/01-build/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/01-build/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/02-build-test/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/02-build-test/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/02-build-test/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/03-build-hud-mcp/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/03-build-hud-mcp/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/03-build-hud-mcp/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/04-npm-test/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/04-npm-test/owned-processes.json",
+   "categories": {
+    "worktree-path": 52,
+    "verify-root-path": 248,
+    "short-temp-root": 57
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/04-npm-test/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/05-test-core/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/05-test-core/owned-processes.json",
+   "categories": {
+    "worktree-path": 6,
+    "verify-root-path": 11,
+    "short-temp-root": 6
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/05-test-core/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/05-test-core/stdout.raw",
+   "categories": {
+    "short-temp-root": 2
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/06-test-visual/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/06-test-visual/owned-processes.json",
+   "categories": {
+    "verify-root-path": 2
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/06-test-visual/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/07-test-hud-mcp/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/07-test-hud-mcp/owned-processes.json",
+   "categories": {
+    "worktree-path": 2,
+    "verify-root-path": 10,
+    "short-temp-root": 1
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/07-test-hud-mcp/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/08-format-check/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/08-format-check/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/08-format-check/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/09-check-fixtures/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/09-check-fixtures/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/09-check-fixtures/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/10-git-diff-check/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-envproxy/10-git-diff-check/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/00-npm-ci/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/00-npm-ci/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/00-npm-ci/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/01-build/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/01-build/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/01-build/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/02-build-test/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/02-build-test/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/02-build-test/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/03-build-hud-mcp/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/03-build-hud-mcp/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/03-build-hud-mcp/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/04-npm-test/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/04-npm-test/owned-processes.json",
+   "categories": {
+    "worktree-path": 49,
+    "verify-root-path": 232,
+    "short-temp-root": 49
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/04-npm-test/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/05-test-core/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/05-test-core/owned-processes.json",
+   "categories": {
+    "worktree-path": 2,
+    "verify-root-path": 4,
+    "short-temp-root": 2
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/05-test-core/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/05-test-core/stdout.raw",
+   "categories": {
+    "short-temp-root": 2
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/06-test-visual/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/06-test-visual/owned-processes.json",
+   "categories": {
+    "verify-root-path": 2
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/06-test-visual/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/07-test-hud-mcp/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/07-test-hud-mcp/owned-processes.json",
+   "categories": {
+    "worktree-path": 1,
+    "verify-root-path": 4
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/07-test-hud-mcp/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/08-format-check/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/08-format-check/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/08-format-check/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/09-check-fixtures/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/09-check-fixtures/owned-processes.json",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/09-check-fixtures/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/10-git-diff-check/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node22-noenvproxy-control/10-git-diff-check/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/00-npm-ci/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "verify-root-path": 1,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/00-npm-ci/owned-processes.json",
+   "categories": {
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/00-npm-ci/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/01-build/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/01-build/owned-processes.json",
+   "categories": {
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/01-build/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/02-build-test/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/02-build-test/owned-processes.json",
+   "categories": {
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/02-build-test/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/03-build-hud-mcp/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/03-build-hud-mcp/owned-processes.json",
+   "categories": {
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/03-build-hud-mcp/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04-npm-test/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04-npm-test/owned-processes.json",
+   "categories": {
+    "worktree-path": 46,
+    "nvm-path": 259,
+    "short-temp-root": 50
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04-npm-test/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04-npm-test/stdout.raw",
+   "categories": {
+    "worktree-path": 1
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04b-test-mjs-supplemental/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04b-test-mjs-supplemental/owned-processes.json",
+   "categories": {
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04b-test-mjs-supplemental/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04r1-b6-wait-status-alone/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04r1-b6-wait-status-alone/owned-processes.json",
+   "categories": {
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/04r1-b6-wait-status-alone/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/05-test-core/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/05-test-core/owned-processes.json",
+   "categories": {
+    "worktree-path": 3,
+    "nvm-path": 7,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/05-test-core/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/05-test-core/stdout.raw",
+   "categories": {
+    "short-temp-root": 2
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/06-test-visual/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/06-test-visual/owned-processes.json",
+   "categories": {
+    "nvm-path": 2
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/06-test-visual/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/07-test-hud-mcp/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/07-test-hud-mcp/owned-processes.json",
+   "categories": {
+    "nvm-path": 12
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/07-test-hud-mcp/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/08-format-check/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/08-format-check/owned-processes.json",
+   "categories": {
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/08-format-check/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/09-check-fixtures/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/09-check-fixtures/owned-processes.json",
+   "categories": {
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/09-check-fixtures/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/10-git-diff-check/meta.json",
+   "categories": {
+    "worktree-path": 1,
+    "run-dir-path": 2,
+    "nvm-path": 1,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "logs/node24-envproxy/10-git-diff-check/result.json",
+   "categories": {
+    "run-dir-path": 2,
+    "short-temp-root": 3
+   }
+  },
+  {
+   "path": "manifest/M-commit-object.txt",
+   "categories": {
+    "email-1": 2,
+    "host-or-author-name": 2
+   }
+  },
+  {
+   "path": "manifest/checkpoints/node22-envproxy-after-builds.json",
+   "categories": {
+    "run-dir-path": 1
+   }
+  },
+  {
+   "path": "manifest/checkpoints/node22-envproxy-after-npm-ci.json",
+   "categories": {
+    "run-dir-path": 1
+   }
+  },
+  {
+   "path": "manifest/checkpoints/node22-envproxy-end.json",
+   "categories": {
+    "run-dir-path": 2
+   }
+  },
+  {
+   "path": "manifest/checkpoints/node22-noenvproxy-control-after-builds.json",
+   "categories": {
+    "run-dir-path": 1
+   }
+  },
+  {
+   "path": "manifest/checkpoints/node22-noenvproxy-control-after-npm-ci.json",
+   "categories": {
+    "run-dir-path": 1
+   }
+  },
+  {
+   "path": "manifest/checkpoints/node22-noenvproxy-control-end.json",
+   "categories": {
+    "run-dir-path": 2
+   }
+  },
+  {
+   "path": "manifest/checkpoints/node24-envproxy-after-builds.json",
+   "categories": {
+    "run-dir-path": 1
+   }
+  },
+  {
+   "path": "manifest/checkpoints/node24-envproxy-after-npm-ci.json",
+   "categories": {
+    "run-dir-path": 1
+   }
+  },
+  {
+   "path": "manifest/checkpoints/node24-envproxy-end.json",
+   "categories": {
+    "run-dir-path": 2
+   }
+  },
+  {
+   "path": "profile-plan.json",
+   "categories": {
+    "worktree-path": 3,
+    "verify-root-path": 2,
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "scripts/drive.sh",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "scripts/make_plan.py",
+   "categories": {
+    "verify-root-path": 1,
+    "nvm-path": 1
+   }
+  },
+  {
+   "path": "scripts/profile.sh",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "scripts/report.py",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "scripts/summarize.py",
+   "categories": {
+    "verify-root-path": 1
+   }
+  },
+  {
+   "path": "scripts/w1m.py",
+   "categories": {
+    "verify-root-path": 2
+   }
+  }
+ ]
+}

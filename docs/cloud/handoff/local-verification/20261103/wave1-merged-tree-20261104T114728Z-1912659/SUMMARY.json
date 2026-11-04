@@ -1,0 +1,3153 @@
+{
+ "run_id": "wave1-merged-tree-20261104T114728Z-1912659",
+ "plan_sha256": "6f54b8dd7d33a4c3987a14cc0233a43262da94512bda0070df1c1e719c359cdc",
+ "identity": {
+  "T": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+  "H": "09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+  "R": "48f59142862f643a98286e3d196d23ff13059a23",
+  "M": "9112e87b1af9c321ca87facdfc56994cf493438f",
+  "C3": "36d3fd584bd403ed7ada95d1d863a8f63e96588b",
+  "U": "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86"
+ },
+ "profiles": {
+  "node22-envproxy": {
+   "runtime": {
+    "node": "v22.23.4",
+    "npm": "10.9.9",
+    "node_sha256": "94efd062ed066c1a0b332e18249859c905e920eeada5df55d24c99b919629a90",
+    "tarball_sha256_verified_against_SHASUMS256": "1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce",
+    "path_selection": "PATH=<node-bin>:/usr/bin:/bin; node and npm resolve under <node-bin>"
+   },
+   "rows": {
+    "01-build": {
+     "log_dir": "logs/node22-envproxy/01-build",
+     "capture_dir": "captures/node22-envproxy/01-build",
+     "argv": [
+      "npm",
+      "run",
+      "build"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:52:20.797Z",
+     "command_exit_observed": "2026-11-04T11:52:27.922Z",
+     "duration_s": 7.124,
+     "stdout_sha256": "052b45803b36f06dd45c7e9605035109e8f79afbb9440014733f3a514ab6ba0e",
+     "stderr_sha256": "936729d7d6a1ee12673de2c6851bbb431cd9cc2f83757e5684d5f01375d445e3",
+     "stdout_bytes": 67,
+     "stderr_bytes": 180,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 2,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "02-build-test": {
+     "log_dir": "logs/node22-envproxy/02-build-test",
+     "capture_dir": "captures/node22-envproxy/02-build-test",
+     "argv": [
+      "npm",
+      "run",
+      "build:test"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:52:29.570Z",
+     "command_exit_observed": "2026-11-04T11:52:41.045Z",
+     "duration_s": 11.475,
+     "stdout_sha256": "7c4a2e276a8d13b9eed541a48e2a8d73f1153e3866565c8739f697743f6f7678",
+     "stderr_sha256": "be8b4a7d3841594c961d62553cd7b5d7e6879e46e1ed8a6b9138b45023ad102b",
+     "stdout_bytes": 94,
+     "stderr_bytes": 180,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 2,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "03-build-hud-mcp": {
+     "log_dir": "logs/node22-envproxy/03-build-hud-mcp",
+     "capture_dir": "captures/node22-envproxy/03-build-hud-mcp",
+     "argv": [
+      "npm",
+      "run",
+      "build:hud-mcp"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:52:42.689Z",
+     "command_exit_observed": "2026-11-04T11:52:46.211Z",
+     "duration_s": 3.522,
+     "stdout_sha256": "21873503ae70b391b84e01152af36524356614eed8f764a8365b5a5aa3444d91",
+     "stderr_sha256": "db478c5b06c9cc43487a372333bf773d94203030d391d3ba2be99f141c644948",
+     "stdout_bytes": 109,
+     "stderr_bytes": 180,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 2,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "04-npm-test": {
+     "log_dir": "logs/node22-envproxy/04-npm-test",
+     "capture_dir": "captures/node22-envproxy/04-npm-test",
+     "argv": [
+      "npm",
+      "test"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 1800,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:52:53.833Z",
+     "command_exit_observed": "2026-11-04T11:54:20.726Z",
+     "duration_s": 86.893,
+     "stdout_sha256": "b3f4098195e2d3065f5962f3e34ba903a9061dfe3570ef0b783a3052b246d1bd",
+     "stderr_sha256": "6a291ef59dd7ce43a39ee683d2928351cdffd65b6f54d6e46788cd9f3cb05426",
+     "stdout_bytes": 589474,
+     "stderr_bytes": 1260,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 279,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "test:unit",
+       "summary_blocks": [
+        {
+         "tests": 2410,
+         "suites": 0,
+         "pass": 2394,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 16,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 2410,
+        "suites": 0,
+        "pass": 2394,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 16,
+        "todo": 0
+       }
+      },
+      {
+       "stage": "test:mjs",
+       "summary_blocks": [
+        {
+         "tests": 47,
+         "suites": 0,
+         "pass": 47,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 0,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 47,
+        "suites": 0,
+        "pass": 47,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 2457,
+      "pass": 2441,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 16,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 2457,
+      "pass": 2441,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 16,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "test:unit",
+      "test:mjs"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 14,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "05-test-core": {
+     "log_dir": "logs/node22-envproxy/05-test-core",
+     "capture_dir": "captures/node22-envproxy/05-test-core",
+     "argv": [
+      "npm",
+      "run",
+      "test:core"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 900,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:54:33.091Z",
+     "command_exit_observed": "2026-11-04T11:54:49.868Z",
+     "duration_s": 16.777,
+     "stdout_sha256": "f7dbe1f0ad92a625bf984319835cd0e660d0d5d4a74a589024f2c4d0a5392d46",
+     "stderr_sha256": "f85ef58e3f667eb1995f0235860b6f4cea96f81cdeadc1df42bd891f46448226",
+     "stdout_bytes": 34676,
+     "stderr_bytes": 360,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 16,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "test:core",
+       "summary_blocks": [
+        {
+         "tests": 210,
+         "suites": 0,
+         "pass": 209,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 1,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 210,
+        "suites": 0,
+        "pass": 209,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 210,
+      "pass": 209,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 210,
+      "pass": 209,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "test:core"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 4,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "06-test-visual": {
+     "log_dir": "logs/node22-envproxy/06-test-visual",
+     "capture_dir": "captures/node22-envproxy/06-test-visual",
+     "argv": [
+      "npm",
+      "run",
+      "test:visual"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:54:51.515Z",
+     "command_exit_observed": "2026-11-04T11:55:04.839Z",
+     "duration_s": 13.324,
+     "stdout_sha256": "f7579e0ed38b2f85a23121834d2345411f35ee6dea862b8b3a504cc5bb054fcb",
+     "stderr_sha256": "42cef5afdc3a7c5b7730479b91e81c25b586d39d03ca4919f876af42e5b0e77b",
+     "stdout_bytes": 52296,
+     "stderr_bytes": 540,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 7,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "build:test",
+       "summary_blocks": [
+        {
+         "tests": 319,
+         "suites": 0,
+         "pass": 319,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 0,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 319,
+        "suites": 0,
+        "pass": 319,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 319,
+      "pass": 319,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 319,
+      "pass": 319,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "build:test"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 6,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "07-test-hud-mcp": {
+     "log_dir": "logs/node22-envproxy/07-test-hud-mcp",
+     "capture_dir": "captures/node22-envproxy/07-test-hud-mcp",
+     "argv": [
+      "npm",
+      "run",
+      "test:hud-mcp"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 900,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:55:06.477Z",
+     "command_exit_observed": "2026-11-04T11:55:11.149Z",
+     "duration_s": 4.672,
+     "stdout_sha256": "f98535a9a4668328418a29928c9fe472102550321210f886cc473d9551f00eb0",
+     "stderr_sha256": "a663761382c0f7d00576f18a1f6d0a9c23063e16e2d8fb373f0e0d0dc4b438e8",
+     "stdout_bytes": 28917,
+     "stderr_bytes": 540,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 15,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "build:hud-mcp",
+       "summary_blocks": [
+        {
+         "tests": 108,
+         "suites": 0,
+         "pass": 107,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 1,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 108,
+        "suites": 0,
+        "pass": 107,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 108,
+      "pass": 107,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 108,
+      "pass": 107,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "build:hud-mcp"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 6,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "08-format-check": {
+     "log_dir": "logs/node22-envproxy/08-format-check",
+     "capture_dir": "captures/node22-envproxy/08-format-check",
+     "argv": [
+      "npm",
+      "run",
+      "format:check"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 300,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:55:12.791Z",
+     "command_exit_observed": "2026-11-04T11:55:24.114Z",
+     "duration_s": 11.322,
+     "stdout_sha256": "400ce5cb08c10175280eb056fa861e3b27a7e6b516eb181ab3eec6ec3c5ebd98",
+     "stderr_sha256": "9a951197f0ff2b12448ea4e3de6b2a9ef95ef650759cde4bc58d94b85a821b1d",
+     "stdout_bytes": 165,
+     "stderr_bytes": 360,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 4,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "09-check-fixtures": {
+     "log_dir": "logs/node22-envproxy/09-check-fixtures",
+     "capture_dir": "captures/node22-envproxy/09-check-fixtures",
+     "argv": [
+      "npm",
+      "run",
+      "check:fixtures"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 300,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:55:25.756Z",
+     "command_exit_observed": "2026-11-04T11:55:25.978Z",
+     "duration_s": 0.221,
+     "stdout_sha256": "8527d9a54fe4dab2ba1b5f5b91c8d3e24d19119b20b989f6c81f6d59df8522e6",
+     "stderr_sha256": "57a80b6c4c9a161bb6e7c0c6d85d020ae4f8ff29abca6d9fdbeebf8186a5d791",
+     "stdout_bytes": 143,
+     "stderr_bytes": 180,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 2,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "10-git-diff-check": {
+     "log_dir": "logs/node22-envproxy/10-git-diff-check",
+     "capture_dir": "captures/node22-envproxy/10-git-diff-check",
+     "argv": [
+      "git",
+      "diff",
+      "--check"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 60,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:55:27.629Z",
+     "command_exit_observed": "2026-11-04T11:55:27.637Z",
+     "duration_s": 0.008,
+     "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 0,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    }
+   },
+   "extra": {
+    "00-npm-ci": {
+     "log_dir": "logs/node22-envproxy/00-npm-ci",
+     "capture_dir": "captures/node22-envproxy/00-npm-ci",
+     "argv": [
+      "npm",
+      "ci",
+      "--ignore-scripts"
+     ],
+     "gate": "UNKNOWN",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 900,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:51:55.336Z",
+     "command_exit_observed": "2026-11-04T11:51:56.374Z",
+     "duration_s": 1.039,
+     "stdout_sha256": "55921488a384b33ff0a7f2268cdd0cd4b5e648e09684fb0303aa19a2f16566c5",
+     "stderr_sha256": "704b57d3823fe7d274f195e72c67f34bab1832da8a941947c83afa95ec7cb560",
+     "stdout_bytes": 27,
+     "stderr_bytes": 180,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": false,
+     "anomalies": [
+      "source/identity drift after command"
+     ],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 2,
+     "stderr_has_UNDICI_EHPA_warning": true
+    },
+    "00-runner-selfcheck": {
+     "log_dir": "logs/node22-envproxy/00-runner-selfcheck",
+     "capture_dir": "captures/node22-envproxy/00-runner-selfcheck",
+     "argv": [
+      "node",
+      "-e",
+      "console.log(process.version, process.env.NODE_USE_ENV_PROXY, process.env.NO_COLOR, Object.keys(process.env).length); console.error('err-line'); require('child_process').spawn('sleep',['2'],{stdio:'ignore'}).unref()"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 30,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:51:46.874Z",
+     "command_exit_observed": "2026-11-04T11:51:46.946Z",
+     "duration_s": 0.072,
+     "stdout_sha256": "9133464cfdbba437c504db84ef25964d086051e7fe64f6d40c552244c760c09f",
+     "stderr_sha256": "50dd1a6a96adeea3de768d677b1eb3ae29eae9279a04659d4f17dd6cf5f37247",
+     "stdout_bytes": 24,
+     "stderr_bytes": 189,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 2,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 3,
+     "stderr_has_UNDICI_EHPA_warning": true
+    }
+   },
+   "checkpoints": {
+    "after-builds": {
+     "source_sha": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+     "M": true,
+     "R": true,
+     "parents": true,
+     "nondep_dirty": [],
+     "deps": null,
+     "generated": "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8"
+    },
+    "after-npm-ci": {
+     "source_sha": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+     "M": true,
+     "R": true,
+     "parents": true,
+     "nondep_dirty": [],
+     "deps": "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518",
+     "generated": null
+    },
+    "end": {
+     "source_sha": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+     "M": true,
+     "R": true,
+     "parents": true,
+     "nondep_dirty": [],
+     "deps": "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518",
+     "generated": "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8"
+    }
+   }
+  },
+  "node22-noenvproxy-control": {
+   "runtime": {
+    "node": "v22.23.4",
+    "npm": "10.9.9",
+    "node_sha256": "94efd062ed066c1a0b332e18249859c905e920eeada5df55d24c99b919629a90",
+    "same_binary_as": "node22-envproxy",
+    "path_selection": "identical to node22-envproxy; NODE_USE_ENV_PROXY not present in the environment (unset, not 0)"
+   },
+   "rows": {
+    "01-build": {
+     "log_dir": "logs/node22-noenvproxy-control/01-build",
+     "capture_dir": "captures/node22-noenvproxy-control/01-build",
+     "argv": [
+      "npm",
+      "run",
+      "build"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:55:40.302Z",
+     "command_exit_observed": "2026-11-04T11:55:46.176Z",
+     "duration_s": 5.874,
+     "stdout_sha256": "052b45803b36f06dd45c7e9605035109e8f79afbb9440014733f3a514ab6ba0e",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 67,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "02-build-test": {
+     "log_dir": "logs/node22-noenvproxy-control/02-build-test",
+     "capture_dir": "captures/node22-noenvproxy-control/02-build-test",
+     "argv": [
+      "npm",
+      "run",
+      "build:test"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:55:47.807Z",
+     "command_exit_observed": "2026-11-04T11:55:57.816Z",
+     "duration_s": 10.009,
+     "stdout_sha256": "7c4a2e276a8d13b9eed541a48e2a8d73f1153e3866565c8739f697743f6f7678",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 94,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "03-build-hud-mcp": {
+     "log_dir": "logs/node22-noenvproxy-control/03-build-hud-mcp",
+     "capture_dir": "captures/node22-noenvproxy-control/03-build-hud-mcp",
+     "argv": [
+      "npm",
+      "run",
+      "build:hud-mcp"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:55:59.449Z",
+     "command_exit_observed": "2026-11-04T11:56:02.521Z",
+     "duration_s": 3.072,
+     "stdout_sha256": "21873503ae70b391b84e01152af36524356614eed8f764a8365b5a5aa3444d91",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 109,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "04-npm-test": {
+     "log_dir": "logs/node22-noenvproxy-control/04-npm-test",
+     "capture_dir": "captures/node22-noenvproxy-control/04-npm-test",
+     "argv": [
+      "npm",
+      "test"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 1800,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:56:04.279Z",
+     "command_exit_observed": "2026-11-04T11:57:27.334Z",
+     "duration_s": 83.055,
+     "stdout_sha256": "ce771d5b9fc974d8d97f5bee4bf76b66caef2aa292d334d2e62720fcf20a4613",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 552043,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 256,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "test:unit",
+       "summary_blocks": [
+        {
+         "tests": 2410,
+         "suites": 0,
+         "pass": 2394,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 16,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 2410,
+        "suites": 0,
+        "pass": 2394,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 16,
+        "todo": 0
+       }
+      },
+      {
+       "stage": "test:mjs",
+       "summary_blocks": [
+        {
+         "tests": 47,
+         "suites": 0,
+         "pass": 47,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 0,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 47,
+        "suites": 0,
+        "pass": 47,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 2457,
+      "pass": 2441,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 16,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 2457,
+      "pass": 2441,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 16,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "test:unit",
+      "test:mjs"
+     ],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "05-test-core": {
+     "log_dir": "logs/node22-noenvproxy-control/05-test-core",
+     "capture_dir": "captures/node22-noenvproxy-control/05-test-core",
+     "argv": [
+      "npm",
+      "run",
+      "test:core"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 900,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:57:28.993Z",
+     "command_exit_observed": "2026-11-04T11:57:44.025Z",
+     "duration_s": 15.033,
+     "stdout_sha256": "644e41081c81fdce08a6da1384f60dcce3fa7a4604c518801491e15830bd9349",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 33073,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 8,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "test:core",
+       "summary_blocks": [
+        {
+         "tests": 210,
+         "suites": 0,
+         "pass": 209,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 1,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 210,
+        "suites": 0,
+        "pass": 209,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 210,
+      "pass": 209,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 210,
+      "pass": 209,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "test:core"
+     ],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "06-test-visual": {
+     "log_dir": "logs/node22-noenvproxy-control/06-test-visual",
+     "capture_dir": "captures/node22-noenvproxy-control/06-test-visual",
+     "argv": [
+      "npm",
+      "run",
+      "test:visual"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:57:45.665Z",
+     "command_exit_observed": "2026-11-04T11:58:00.041Z",
+     "duration_s": 14.376,
+     "stdout_sha256": "4398680e09ea16eadfadbed64591a681461ab880a668667b89b87e1c1100de6b",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 52129,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 7,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "build:test",
+       "summary_blocks": [
+        {
+         "tests": 319,
+         "suites": 0,
+         "pass": 319,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 0,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 319,
+        "suites": 0,
+        "pass": 319,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 319,
+      "pass": 319,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 319,
+      "pass": 319,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "build:test"
+     ],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "07-test-hud-mcp": {
+     "log_dir": "logs/node22-noenvproxy-control/07-test-hud-mcp",
+     "capture_dir": "captures/node22-noenvproxy-control/07-test-hud-mcp",
+     "argv": [
+      "npm",
+      "run",
+      "test:hud-mcp"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 900,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:58:01.684Z",
+     "command_exit_observed": "2026-11-04T11:58:06.956Z",
+     "duration_s": 5.272,
+     "stdout_sha256": "c492db171fb14ce57ff190409e6a0d7568de46c4ecb3d7d80d8c7d7009f38b2d",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 26967,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 9,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "build:hud-mcp",
+       "summary_blocks": [
+        {
+         "tests": 108,
+         "suites": 0,
+         "pass": 107,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 1,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 108,
+        "suites": 0,
+        "pass": 107,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 108,
+      "pass": 107,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 108,
+      "pass": 107,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "build:hud-mcp"
+     ],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "08-format-check": {
+     "log_dir": "logs/node22-noenvproxy-control/08-format-check",
+     "capture_dir": "captures/node22-noenvproxy-control/08-format-check",
+     "argv": [
+      "npm",
+      "run",
+      "format:check"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 300,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:58:08.597Z",
+     "command_exit_observed": "2026-11-04T11:58:20.123Z",
+     "duration_s": 11.526,
+     "stdout_sha256": "400ce5cb08c10175280eb056fa861e3b27a7e6b516eb181ab3eec6ec3c5ebd98",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 165,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "09-check-fixtures": {
+     "log_dir": "logs/node22-noenvproxy-control/09-check-fixtures",
+     "capture_dir": "captures/node22-noenvproxy-control/09-check-fixtures",
+     "argv": [
+      "npm",
+      "run",
+      "check:fixtures"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 300,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:58:21.761Z",
+     "command_exit_observed": "2026-11-04T11:58:21.932Z",
+     "duration_s": 0.171,
+     "stdout_sha256": "8527d9a54fe4dab2ba1b5f5b91c8d3e24d19119b20b989f6c81f6d59df8522e6",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 143,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "10-git-diff-check": {
+     "log_dir": "logs/node22-noenvproxy-control/10-git-diff-check",
+     "capture_dir": "captures/node22-noenvproxy-control/10-git-diff-check",
+     "argv": [
+      "git",
+      "diff",
+      "--check"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 60,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:58:23.601Z",
+     "command_exit_observed": "2026-11-04T11:58:23.609Z",
+     "duration_s": 0.009,
+     "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 0,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    }
+   },
+   "extra": {
+    "00-npm-ci": {
+     "log_dir": "logs/node22-noenvproxy-control/00-npm-ci",
+     "capture_dir": "captures/node22-noenvproxy-control/00-npm-ci",
+     "argv": [
+      "npm",
+      "ci",
+      "--ignore-scripts"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 900,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:55:37.502Z",
+     "command_exit_observed": "2026-11-04T11:55:38.475Z",
+     "duration_s": 0.973,
+     "stdout_sha256": "fc2eacec714c5c6d4bdb73269c9d62bf7d156a8919d21369cef751ac51a95a1b",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 27,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": false,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    }
+   },
+   "checkpoints": {
+    "after-builds": {
+     "source_sha": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+     "M": true,
+     "R": true,
+     "parents": true,
+     "nondep_dirty": [],
+     "deps": null,
+     "generated": "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8"
+    },
+    "after-npm-ci": {
+     "source_sha": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+     "M": true,
+     "R": true,
+     "parents": true,
+     "nondep_dirty": [],
+     "deps": "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518",
+     "generated": null
+    },
+    "end": {
+     "source_sha": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+     "M": true,
+     "R": true,
+     "parents": true,
+     "nondep_dirty": [],
+     "deps": "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518",
+     "generated": "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8"
+    }
+   }
+  },
+  "node24-envproxy": {
+   "runtime": {
+    "node": "v24.22.1",
+    "npm": "11.19.1",
+    "node_sha256": "e32e2d16081cf644f88392934288086e7662529d0d43277c34f7aad2207cfafb",
+    "path_selection": "PATH=<node-bin>:/usr/bin:/bin"
+   },
+   "rows": {
+    "01-build": {
+     "log_dir": "logs/node24-envproxy/01-build",
+     "capture_dir": "captures/node24-envproxy/01-build",
+     "argv": [
+      "npm",
+      "run",
+      "build"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:58:33.455Z",
+     "command_exit_observed": "2026-11-04T11:58:39.577Z",
+     "duration_s": 6.122,
+     "stdout_sha256": "052b45803b36f06dd45c7e9605035109e8f79afbb9440014733f3a514ab6ba0e",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 67,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "02-build-test": {
+     "log_dir": "logs/node24-envproxy/02-build-test",
+     "capture_dir": "captures/node24-envproxy/02-build-test",
+     "argv": [
+      "npm",
+      "run",
+      "build:test"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:58:41.227Z",
+     "command_exit_observed": "2026-11-04T11:58:50.753Z",
+     "duration_s": 9.526,
+     "stdout_sha256": "7c4a2e276a8d13b9eed541a48e2a8d73f1153e3866565c8739f697743f6f7678",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 94,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "03-build-hud-mcp": {
+     "log_dir": "logs/node24-envproxy/03-build-hud-mcp",
+     "capture_dir": "captures/node24-envproxy/03-build-hud-mcp",
+     "argv": [
+      "npm",
+      "run",
+      "build:hud-mcp"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:58:52.379Z",
+     "command_exit_observed": "2026-11-04T11:58:55.252Z",
+     "duration_s": 2.873,
+     "stdout_sha256": "21873503ae70b391b84e01152af36524356614eed8f764a8365b5a5aa3444d91",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 109,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "04-npm-test": {
+     "log_dir": "logs/node24-envproxy/04-npm-test",
+     "capture_dir": "captures/node24-envproxy/04-npm-test",
+     "argv": [
+      "npm",
+      "test"
+     ],
+     "gate": "FAIL",
+     "raw_exit": 1,
+     "native_signal": null,
+     "timeout_s": 1800,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:58:57.000Z",
+     "command_exit_observed": "2026-11-04T12:00:12.201Z",
+     "duration_s": 75.2,
+     "stdout_sha256": "be53c8c1b806059a45ae6eeeb58bcaa044bbb5479800fe33be6565e5303ed87f",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 230548,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 282,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "test:unit",
+       "summary_blocks": [
+        {
+         "tests": 3,
+         "suites": 0,
+         "pass": 2,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 1,
+         "todo": 0
+        },
+        {
+         "tests": 2410,
+         "suites": 0,
+         "pass": 2393,
+         "fail": 1,
+         "cancelled": 0,
+         "skipped": 16,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 2410,
+        "suites": 0,
+        "pass": 2393,
+        "fail": 1,
+        "cancelled": 0,
+        "skipped": 16,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 2413,
+      "pass": 2395,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 17,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 2410,
+      "pass": 2393,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 16,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "test:unit"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false,
+     "failing_tests": [
+      "B6 idle wait has zero writes, no polling, and timeout leaves empty cursor/state unchanged"
+     ]
+    },
+    "05-test-core": {
+     "log_dir": "logs/node24-envproxy/05-test-core",
+     "capture_dir": "captures/node24-envproxy/05-test-core",
+     "argv": [
+      "npm",
+      "run",
+      "test:core"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 900,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T12:00:42.228Z",
+     "command_exit_observed": "2026-11-04T12:00:54.902Z",
+     "duration_s": 12.674,
+     "stdout_sha256": "8d5cd23fba26d9b713ea3f15b52fe2fd24fc40f32112549c9b40c61bf2881e15",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 12946,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 11,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "test:core",
+       "summary_blocks": [
+        {
+         "tests": 210,
+         "suites": 0,
+         "pass": 209,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 1,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 210,
+        "suites": 0,
+        "pass": 209,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 210,
+      "pass": 209,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 210,
+      "pass": 209,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "test:core"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "06-test-visual": {
+     "log_dir": "logs/node24-envproxy/06-test-visual",
+     "capture_dir": "captures/node24-envproxy/06-test-visual",
+     "argv": [
+      "npm",
+      "run",
+      "test:visual"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T12:00:56.533Z",
+     "command_exit_observed": "2026-11-04T12:01:06.957Z",
+     "duration_s": 10.424,
+     "stdout_sha256": "bbf49317f44ed7bca3f178636014015586831a32cce61921f6a6b8fdbc6c2356",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 17354,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 7,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "build:test",
+       "summary_blocks": [
+        {
+         "tests": 319,
+         "suites": 0,
+         "pass": 319,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 0,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 319,
+        "suites": 0,
+        "pass": 319,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 319,
+      "pass": 319,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 319,
+      "pass": 319,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "build:test"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "07-test-hud-mcp": {
+     "log_dir": "logs/node24-envproxy/07-test-hud-mcp",
+     "capture_dir": "captures/node24-envproxy/07-test-hud-mcp",
+     "argv": [
+      "npm",
+      "run",
+      "test:hud-mcp"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 900,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T12:01:08.583Z",
+     "command_exit_observed": "2026-11-04T12:01:12.508Z",
+     "duration_s": 3.925,
+     "stdout_sha256": "b7adfb357b769e730f9cb6122bcc95c60ac1e779c0c4e24cd1f1ad10edcc4b2d",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 11725,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 17,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "build:hud-mcp",
+       "summary_blocks": [
+        {
+         "tests": 108,
+         "suites": 0,
+         "pass": 107,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 1,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 108,
+        "suites": 0,
+        "pass": 107,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 108,
+      "pass": 107,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 108,
+      "pass": 107,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "build:hud-mcp"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "08-format-check": {
+     "log_dir": "logs/node24-envproxy/08-format-check",
+     "capture_dir": "captures/node24-envproxy/08-format-check",
+     "argv": [
+      "npm",
+      "run",
+      "format:check"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 300,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T12:01:14.138Z",
+     "command_exit_observed": "2026-11-04T12:01:24.064Z",
+     "duration_s": 9.926,
+     "stdout_sha256": "400ce5cb08c10175280eb056fa861e3b27a7e6b516eb181ab3eec6ec3c5ebd98",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 165,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 3,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "09-check-fixtures": {
+     "log_dir": "logs/node24-envproxy/09-check-fixtures",
+     "capture_dir": "captures/node24-envproxy/09-check-fixtures",
+     "argv": [
+      "npm",
+      "run",
+      "check:fixtures"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 300,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T12:01:25.695Z",
+     "command_exit_observed": "2026-11-04T12:01:25.865Z",
+     "duration_s": 0.17,
+     "stdout_sha256": "8527d9a54fe4dab2ba1b5f5b91c8d3e24d19119b20b989f6c81f6d59df8522e6",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 143,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "10-git-diff-check": {
+     "log_dir": "logs/node24-envproxy/10-git-diff-check",
+     "capture_dir": "captures/node24-envproxy/10-git-diff-check",
+     "argv": [
+      "git",
+      "diff",
+      "--check"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 60,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T12:01:27.496Z",
+     "command_exit_observed": "2026-11-04T12:01:27.503Z",
+     "duration_s": 0.008,
+     "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 0,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    }
+   },
+   "extra": {
+    "00-npm-ci": {
+     "log_dir": "logs/node24-envproxy/00-npm-ci",
+     "capture_dir": "captures/node24-envproxy/00-npm-ci",
+     "argv": [
+      "npm",
+      "ci",
+      "--ignore-scripts"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 900,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T11:58:30.770Z",
+     "command_exit_observed": "2026-11-04T11:58:31.642Z",
+     "duration_s": 0.873,
+     "stdout_sha256": "3a855751edb709c8fca6be4887a502294af8813eacce51b41c64c31363902b74",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 27,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [],
+     "counts_runner_sum": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 0,
+      "pass": 0,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "04b-test-mjs-supplemental": {
+     "log_dir": "logs/node24-envproxy/04b-test-mjs-supplemental",
+     "capture_dir": "captures/node24-envproxy/04b-test-mjs-supplemental",
+     "argv": [
+      "npm",
+      "run",
+      "test:mjs"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 600,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T12:00:26.855Z",
+     "command_exit_observed": "2026-11-04T12:00:27.779Z",
+     "duration_s": 0.924,
+     "stdout_sha256": "8009e937392b45aa7f75f3013c20b1aa71f108e94c0bbb7308fe08ac82a11fcb",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 4057,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 1,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "test:mjs",
+       "summary_blocks": [
+        {
+         "tests": 47,
+         "suites": 0,
+         "pass": 47,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 0,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 47,
+        "suites": 0,
+        "pass": 47,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 47,
+      "pass": 47,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 47,
+      "pass": 47,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "test:mjs"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    },
+    "04r1-b6-wait-status-alone": {
+     "log_dir": "logs/node24-envproxy/04r1-b6-wait-status-alone",
+     "capture_dir": "captures/node24-envproxy/04r1-b6-wait-status-alone",
+     "argv": [
+      "node",
+      "--test",
+      "dist-test/tests/unit/b6-wait-status.test.js"
+     ],
+     "gate": "PASS",
+     "raw_exit": 0,
+     "native_signal": null,
+     "timeout_s": 300,
+     "timeout_triggered": false,
+     "supervisor_signals_sent": [],
+     "start": "2026-11-04T12:00:29.441Z",
+     "command_exit_observed": "2026-11-04T12:00:32.762Z",
+     "duration_s": 3.321,
+     "stdout_sha256": "7b28f9a3f7a43c29f7145670499be597d85ee8071281aa8b9e927395f46667a1",
+     "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "stdout_bytes": 1792,
+     "stderr_bytes": 0,
+     "streams_both_closed": true,
+     "logging_ok": true,
+     "owned_state": "none-left (all recorded identities gone)",
+     "owned_identities_recorded": 2,
+     "source_unchanged": true,
+     "anomalies": [],
+     "reason": null,
+     "stage_counts": [
+      {
+       "stage": "(top)",
+       "summary_blocks": [
+        {
+         "tests": 15,
+         "suites": 0,
+         "pass": 15,
+         "fail": 0,
+         "cancelled": 0,
+         "skipped": 0,
+         "todo": 0
+        }
+       ],
+       "stage_own_summary": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+       }
+      }
+     ],
+     "counts_runner_sum": {
+      "tests": 15,
+      "pass": 15,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "suites": 0
+     },
+     "counts_stage_own": {
+      "tests": 15,
+      "pass": 15,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+     },
+     "npm_stages_executed": [
+      "(top)"
+     ],
+     "env_node_use_env_proxy": true,
+     "env_node_options_present": false,
+     "env_warning_vars_present": {
+      "NODE_NO_WARNINGS": false,
+      "NODE_REDIRECT_WARNINGS": false
+     },
+     "env_color_vars_present": {
+      "NO_COLOR": false,
+      "FORCE_COLOR": false
+     },
+     "proxy_names_present": {
+      "HTTP_PROXY": true,
+      "HTTPS_PROXY": true,
+      "ALL_PROXY": true,
+      "NO_PROXY": true,
+      "http_proxy": true,
+      "https_proxy": true,
+      "all_proxy": true,
+      "no_proxy": true
+     },
+     "stderr_lines": 0,
+     "stderr_has_UNDICI_EHPA_warning": false
+    }
+   },
+   "checkpoints": {
+    "after-builds": {
+     "source_sha": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+     "M": true,
+     "R": true,
+     "parents": true,
+     "nondep_dirty": [],
+     "deps": null,
+     "generated": "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8"
+    },
+    "after-npm-ci": {
+     "source_sha": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+     "M": true,
+     "R": true,
+     "parents": true,
+     "nondep_dirty": [],
+     "deps": "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518",
+     "generated": null
+    },
+    "end": {
+     "source_sha": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+     "M": true,
+     "R": true,
+     "parents": true,
+     "nondep_dirty": [],
+     "deps": "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518",
+     "generated": "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8"
+    }
+   }
+  }
+ },
+ "cross_profile_facts": {
+  "generated_manifest_sha256_per_profile": {
+   "node22-envproxy": [
+    "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8"
+   ],
+   "node22-noenvproxy-control": [
+    "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8"
+   ],
+   "node24-envproxy": [
+    "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8"
+   ]
+  },
+  "dependency_manifest_sha256_per_profile": {
+   "node22-envproxy": [
+    "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518"
+   ],
+   "node22-noenvproxy-control": [
+    "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518"
+   ],
+   "node24-envproxy": [
+    "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518"
+   ]
+  },
+  "source_digest_all_checkpoints_and_rows": [
+   "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39"
+  ],
+  "source_digest_before_after_every_command": [
+   "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39"
+  ],
+  "control_profile_never_had_NODE_USE_ENV_PROXY": true,
+  "envproxy_profiles_always_had_NODE_USE_ENV_PROXY": true,
+  "same_node22_binary_sha256_both_node22_profiles": true
+ },
+ "gate_table": {
+  "node22-envproxy": {
+   "01-build": "PASS",
+   "02-build-test": "PASS",
+   "03-build-hud-mcp": "PASS",
+   "04-npm-test": "PASS",
+   "05-test-core": "PASS",
+   "06-test-visual": "PASS",
+   "07-test-hud-mcp": "PASS",
+   "08-format-check": "PASS",
+   "09-check-fixtures": "PASS",
+   "10-git-diff-check": "PASS"
+  },
+  "node22-noenvproxy-control": {
+   "01-build": "PASS",
+   "02-build-test": "PASS",
+   "03-build-hud-mcp": "PASS",
+   "04-npm-test": "PASS",
+   "05-test-core": "PASS",
+   "06-test-visual": "PASS",
+   "07-test-hud-mcp": "PASS",
+   "08-format-check": "PASS",
+   "09-check-fixtures": "PASS",
+   "10-git-diff-check": "PASS"
+  },
+  "node24-envproxy": {
+   "01-build": "PASS",
+   "02-build-test": "PASS",
+   "03-build-hud-mcp": "PASS",
+   "04-npm-test": "FAIL",
+   "05-test-core": "PASS",
+   "06-test-visual": "PASS",
+   "07-test-hud-mcp": "PASS",
+   "08-format-check": "PASS",
+   "09-check-fixtures": "PASS",
+   "10-git-diff-check": "PASS"
+  }
+ }
+}

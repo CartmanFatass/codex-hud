@@ -1,0 +1,124 @@
+{
+ "row": "06-test-visual",
+ "planned_row": "06-test-visual",
+ "profile": "node22-envproxy",
+ "note": null,
+ "M": "9112e87b1af9c321ca87facdfc56994cf493438f",
+ "R": "48f59142862f643a98286e3d196d23ff13059a23",
+ "argv": [
+  "npm",
+  "run",
+  "test:visual"
+ ],
+ "cwd_code": "<wt:node22-envproxy>",
+ "cwd_real_local_only": "<WT:node22-envproxy>",
+ "timeout_s": 600,
+ "term_to_kill_grace_s": 10,
+ "env_names": [
+  "ALL_PROXY",
+  "HOME",
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "HUD_HOME",
+  "LANG",
+  "NODE_PROXY_EVIDENCE_DIR",
+  "NODE_USE_ENV_PROXY",
+  "NO_PROXY",
+  "PATH",
+  "RUNZ1_KILL_EVIDENCE_DIR",
+  "TERM",
+  "TMPDIR",
+  "all_proxy",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "npm_config_audit",
+  "npm_config_fund",
+  "npm_config_update_notifier"
+ ],
+ "env_values_nonsecret": {
+  "PATH": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin:/usr/bin:/bin",
+  "HOME": "<SHORT_ROOT>/a06testvi/h",
+  "HUD_HOME": "<SHORT_ROOT>/a06testvi/u",
+  "TMPDIR": "<SHORT_ROOT>/a06testvi/t",
+  "LANG": "C.UTF-8",
+  "TERM": "xterm-256color",
+  "npm_config_update_notifier": "false",
+  "npm_config_fund": "false",
+  "npm_config_audit": "false",
+  "NODE_USE_ENV_PROXY": "1",
+  "NODE_PROXY_EVIDENCE_DIR": "<RUN>/captures/node22-envproxy/06-test-visual/node-proxy-evidence",
+  "RUNZ1_KILL_EVIDENCE_DIR": "<RUN>/captures/node22-envproxy/06-test-visual/runz1-kill-evidence"
+ },
+ "proxy_names_present": {
+  "HTTP_PROXY": true,
+  "HTTPS_PROXY": true,
+  "ALL_PROXY": true,
+  "NO_PROXY": true,
+  "http_proxy": true,
+  "https_proxy": true,
+  "all_proxy": true,
+  "no_proxy": true
+ },
+ "proxy_case_relations": {
+  "HTTP_PROXY": {
+   "upper_present": true,
+   "lower_present": true,
+   "equal": true
+  },
+  "HTTPS_PROXY": {
+   "upper_present": true,
+   "lower_present": true,
+   "equal": true
+  },
+  "ALL_PROXY": {
+   "upper_present": true,
+   "lower_present": true,
+   "equal": true
+  },
+  "NO_PROXY": {
+   "upper_present": true,
+   "lower_present": true,
+   "equal": true
+  }
+ },
+ "node_use_env_proxy_in_env": true,
+ "node_options_present": false,
+ "node_no_warnings_present": false,
+ "node_redirect_warnings_present": false,
+ "no_color_present": false,
+ "force_color_present": false,
+ "runtime": {
+  "node": "v22.23.4",
+  "npm": "10.9.9",
+  "node_sha256": "94efd062ed066c1a0b332e18249859c905e920eeada5df55d24c99b919629a90",
+  "tarball_sha256_verified_against_SHASUMS256": "1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce",
+  "path_selection": "PATH=<node-bin>:/usr/bin:/bin; node and npm resolve under <node-bin>"
+ },
+ "pre_source": {
+  "label": "before",
+  "utc": "2026-11-04T11:54:51.515Z",
+  "head": "9112e87b1af9c321ca87facdfc56994cf493438f",
+  "tree": "48f59142862f643a98286e3d196d23ff13059a23",
+  "parents": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4 09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+  "head_is_M": true,
+  "tree_is_R": true,
+  "parents_are_T_H": true,
+  "tracked_nondep_files": 1114,
+  "tracked_nondep_sha256": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+  "porcelain_total_lines": 1,
+  "porcelain_non_dependency_non_generated": [],
+  "porcelain_dependency_lines": 1
+ },
+ "generated_present_before": {
+  "dist": true,
+  "dist-test": true,
+  "packages/hud-mcp/dist": true
+ },
+ "loadavg_before": [
+  "2.61",
+  "2.09",
+  "1.80",
+  "2/1266"
+ ]
+}

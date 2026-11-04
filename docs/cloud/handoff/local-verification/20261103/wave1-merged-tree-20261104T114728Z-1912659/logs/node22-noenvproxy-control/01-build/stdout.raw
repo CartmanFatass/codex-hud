@@ -1,0 +1,4 @@
+
+> codex-hud@0.1.0 build
+> node ./node_modules/typescript/bin/tsc
+

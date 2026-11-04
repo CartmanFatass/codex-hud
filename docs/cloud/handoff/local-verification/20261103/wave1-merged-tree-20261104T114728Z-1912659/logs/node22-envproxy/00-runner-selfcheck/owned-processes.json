@@ -1,0 +1,41 @@
+{
+ "root": "1921057:7416407",
+ "n_scans": 7,
+ "identities": {
+  "1921057:7416407": {
+   "pid": 1921057,
+   "start": 7416407,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1921009,
+   "pgrp": 1921057,
+   "sid": 1921057,
+   "first_seen": "2026-11-04T11:51:46.882Z",
+   "last_seen": "2026-11-04T11:51:46.887Z",
+   "last_state": "R",
+   "cmdline": "node -e console.log(process.version, process.env.NODE_USE_ENV_PROXY, process.env.NO_COLOR, Object.keys(process.env).length); console.error('err-line'); require('child_process').spawn('sleep',['2'],{stdio:'ignore'}).unref()",
+   "alive": false
+  },
+  "1921084:7416411": {
+   "pid": 1921084,
+   "start": 7416411,
+   "comm": "sleep",
+   "how": [
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1,
+   "pgrp": 1921057,
+   "sid": 1921057,
+   "first_seen": "2026-11-04T11:51:47.891Z",
+   "last_seen": "2026-11-04T11:51:48.895Z",
+   "last_state": "S",
+   "cmdline": "sleep 2",
+   "alive": false
+  }
+ }
+}

@@ -1,0 +1,60 @@
+{
+ "root": "1950433:7458957",
+ "n_scans": 8,
+ "identities": {
+  "1950433:7458957": {
+   "pid": 1950433,
+   "start": 7458957,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1950425,
+   "pgrp": 1950433,
+   "sid": 1950433,
+   "first_seen": "2026-11-04T11:58:52.385Z",
+   "last_seen": "2026-11-04T11:58:54.398Z",
+   "last_state": "S",
+   "cmdline": "node <NVM>/versions/node/v24.22.1/bin/npm run build:hud-mcp",
+   "alive": false
+  },
+  "1950448:7458968": {
+   "pid": 1950448,
+   "start": 7458968,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1950433,
+   "pgrp": 1950433,
+   "sid": 1950433,
+   "first_seen": "2026-11-04T11:58:53.394Z",
+   "last_seen": "2026-11-04T11:58:54.398Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
+   "alive": false
+  },
+  "1950449:7458968": {
+   "pid": 1950449,
+   "start": 7458968,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1950448,
+   "pgrp": 1950433,
+   "sid": 1950433,
+   "first_seen": "2026-11-04T11:58:53.394Z",
+   "last_seen": "2026-11-04T11:58:54.398Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
+   "alive": false
+  }
+ }
+}

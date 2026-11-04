@@ -1,0 +1,60 @@
+{
+ "root": "1936960:7440500",
+ "n_scans": 15,
+ "identities": {
+  "1936960:7440500": {
+   "pid": 1936960,
+   "start": 7440500,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1936950,
+   "pgrp": 1936960,
+   "sid": 1936960,
+   "first_seen": "2026-11-04T11:55:47.814Z",
+   "last_seen": "2026-11-04T11:55:56.854Z",
+   "last_state": "S",
+   "cmdline": "node <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/npm run build:test",
+   "alive": false
+  },
+  "1936974:7440509": {
+   "pid": 1936974,
+   "start": 7440509,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1936960,
+   "pgrp": 1936960,
+   "sid": 1936960,
+   "first_seen": "2026-11-04T11:55:48.822Z",
+   "last_seen": "2026-11-04T11:55:56.855Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
+   "alive": false
+  },
+  "1936975:7440509": {
+   "pid": 1936975,
+   "start": 7440509,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1936974,
+   "pgrp": 1936960,
+   "sid": 1936960,
+   "first_seen": "2026-11-04T11:55:48.822Z",
+   "last_seen": "2026-11-04T11:55:56.855Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
+   "alive": false
+  }
+ }
+}

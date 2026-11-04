@@ -1,0 +1,204 @@
+{
+ "root": "1960454:7469942",
+ "n_scans": 18,
+ "identities": {
+  "1960454:7469942": {
+   "pid": 1960454,
+   "start": 7469942,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960446,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:42.234Z",
+   "last_seen": "2026-11-04T12:00:54.291Z",
+   "last_state": "S",
+   "cmdline": "node <NVM>/versions/node/v24.22.1/bin/npm run test:core",
+   "alive": false
+  },
+  "1960469:7469953": {
+   "pid": 1960469,
+   "start": 7469953,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960454,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:43.243Z",
+   "last_seen": "2026-11-04T12:00:54.291Z",
+   "last_state": "S",
+   "cmdline": "sh -c bash tests/run-core.sh",
+   "alive": false
+  },
+  "1960470:7469953": {
+   "pid": 1960470,
+   "start": 7469953,
+   "comm": "bash",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960469,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:43.243Z",
+   "last_seen": "2026-11-04T12:00:54.291Z",
+   "last_state": "S",
+   "cmdline": "bash tests/run-core.sh",
+   "alive": false
+  },
+  "1960474:7469954": {
+   "pid": 1960474,
+   "start": 7469954,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960470,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:43.243Z",
+   "last_seen": "2026-11-04T12:00:51.277Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
+   "alive": false
+  },
+  "1960774:7470883": {
+   "pid": 1960774,
+   "start": 7470883,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960470,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:52.283Z",
+   "last_seen": "2026-11-04T12:00:54.291Z",
+   "last_state": "S",
+   "cmdline": "node --test dist-test/tests/unit/codex-facade.test.js dist-test/tests/unit/contracts.test.js dist-test/tests/unit/core-fakes.test.js dist-test/tests/unit/ledger-perf.test.js dist-test/tests/unit/ledger-processes.test.js dist-test/tests/unit/ledger-read.test.js dist-test/tests/unit/ledger-schema.test.js dist-test/tests/unit/ledger-write.test.js",
+   "alive": false
+  },
+  "1960781:7470889": {
+   "pid": 1960781,
+   "start": 7470889,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960774,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:52.283Z",
+   "last_seen": "2026-11-04T12:00:52.283Z",
+   "last_state": "S",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 dist-test/tests/unit/codex-facade.test.js",
+   "alive": false
+  },
+  "1960795:7470890": {
+   "pid": 1960795,
+   "start": 7470890,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960774,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:52.283Z",
+   "last_seen": "2026-11-04T12:00:54.291Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 dist-test/tests/unit/ledger-processes.test.js",
+   "alive": false
+  },
+  "1960808:7470891": {
+   "pid": 1960808,
+   "start": 7470891,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960774,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:52.283Z",
+   "last_seen": "2026-11-04T12:00:52.283Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 dist-test/tests/unit/ledger-write.test.js",
+   "alive": false
+  },
+  "1960894:7470942": {
+   "pid": 1960894,
+   "start": 7470942,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960795,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:52.283Z",
+   "last_seen": "2026-11-04T12:00:52.283Z",
+   "last_state": "S",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node <WT:node24-envproxy>/tests/ledger/process.mjs <SHORT_ROOT>/c05testco/t/hud-ledger-process-pgtIZS/ledger.sqlite",
+   "alive": false
+  },
+  "1961027:7471045": {
+   "pid": 1961027,
+   "start": 7471045,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960795,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:53.287Z",
+   "last_seen": "2026-11-04T12:00:53.287Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node <WT:node24-envproxy>/tests/ledger/process.mjs <SHORT_ROOT>/c05testco/t/hud-ledger-process-BHdNwv/ledger.sqlite",
+   "alive": false
+  },
+  "1961186:7471142": {
+   "pid": 1961186,
+   "start": 7471142,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1960795,
+   "pgrp": 1960454,
+   "sid": 1960454,
+   "first_seen": "2026-11-04T12:00:54.291Z",
+   "last_seen": "2026-11-04T12:00:54.291Z",
+   "last_state": "S",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node <WT:node24-envproxy>/tests/ledger/process.mjs <SHORT_ROOT>/c05testco/t/hud-ledger-process-HeO0O6/ledger.sqlite",
+   "alive": false
+  }
+ }
+}

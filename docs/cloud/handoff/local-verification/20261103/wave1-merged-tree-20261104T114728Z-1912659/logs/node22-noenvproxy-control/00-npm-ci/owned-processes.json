@@ -1,0 +1,24 @@
+{
+ "root": "1936553:7439470",
+ "n_scans": 6,
+ "identities": {
+  "1936553:7439470": {
+   "pid": 1936553,
+   "start": 7439470,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1936513,
+   "pgrp": 1936553,
+   "sid": 1936553,
+   "first_seen": "2026-11-04T11:55:37.508Z",
+   "last_seen": "2026-11-04T11:55:37.514Z",
+   "last_state": "R",
+   "cmdline": "node <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/npm ci --ignore-scripts",
+   "alive": false
+  }
+ }
+}

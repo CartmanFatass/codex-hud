@@ -1,0 +1,47 @@
+{
+ "source": {
+  "label": "end",
+  "utc": "2026-11-04T11:55:36.596Z",
+  "head": "9112e87b1af9c321ca87facdfc56994cf493438f",
+  "tree": "48f59142862f643a98286e3d196d23ff13059a23",
+  "parents": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4 09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+  "head_is_M": true,
+  "tree_is_R": true,
+  "parents_are_T_H": true,
+  "tracked_nondep_files": 1114,
+  "tracked_nondep_sha256": "1d31999efe228e84e74c4cdd64c4d99dbf738a98632f2206b030c6c5edb1bc39",
+  "porcelain_total_lines": 1,
+  "porcelain_non_dependency_non_generated": [],
+  "porcelain_dependency_lines": 1
+ },
+ "dependencies": {
+  "path": "<RUN>/manifest/deps-node22-envproxy-end.sha256",
+  "files": 334,
+  "manifest_sha256": "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518",
+  "per_dir": {
+   "node_modules": {
+    "files": 334,
+    "aggregate": "861f57957168c696805b093a6a944c14cb90e65541a1c5d3ef6d9d53d6de5518"
+   }
+  }
+ },
+ "generated": {
+  "path": "<RUN>/manifest/generated-node22-envproxy-end.sha256",
+  "files": 2327,
+  "manifest_sha256": "4e076ab5038c93ce7a95d9fc319ad382a40ca056527c2c47d085c76ce34294f8",
+  "per_dir": {
+   "dist": {
+    "files": 1077,
+    "aggregate": "3b64e2ba1298f6f3408c5e83cd05246737491214bd68c4011b37f019be5ccb56"
+   },
+   "dist-test": {
+    "files": 1013,
+    "aggregate": "16ca58b324b64152f3259356b326ea1a8fb375e2fd847fa800d9451cb2152386"
+   },
+   "packages/hud-mcp/dist": {
+    "files": 237,
+    "aggregate": "e14881bfd0f0f13d6d9e5fb2698f7ce1a6b41afac46a9a855e4755a98a5d4616"
+   }
+  }
+ }
+}

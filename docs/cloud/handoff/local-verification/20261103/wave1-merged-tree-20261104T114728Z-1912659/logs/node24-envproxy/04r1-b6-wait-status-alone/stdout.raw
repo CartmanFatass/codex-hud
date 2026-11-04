@@ -1,0 +1,23 @@
+✔ B6 wait registration race commits between first snapshot and subscribe; fresh snapshot finds event (94.408389ms)
+✔ B6 lost hints recover at deadline, duplicate hints coalesce and unrelated hints are filtered (161.292872ms)
+✔ B6 reordered multi-page events retain ordered durable cursors and never skip a later matching page (825.133889ms)
+✔ B6 old-run late events cannot satisfy new run wait; link entry fixes run before later resume (37.09244ms)
+✔ B6 idle wait has zero writes, no polling, and timeout leaves empty cursor/state unchanged (132.617806ms)
+✔ B6 status and wait revalidate existing caller/scope read-only and do not establish missing authority (54.977328ms)
+✔ B6 observation reads preserve B16 stamps/continuity/notices and reject an old run summary (82.273942ms)
+✔ B6 report match is computed on each returned page, including hasMore and orphan rejection (674.786852ms)
+✔ B6 historical owner can read own handed-over link; foreign owner and stale scope cannot read (38.568327ms)
+✔ B6 unverified timeout uses a short wait with a flag; explicit shorter deadline and elapsed budget cap it (71.782617ms)
+✔ B6 drain pins run/high-water across pages while a real concurrent writer adds later events (666.687422ms)
+✔ B6 shared hints watcher is one per home and detects replaced directory as unavailable (107.184079ms)
+✔ B6 null filename hint wakes a real SQLite wait without treating hint data as truth (57.103149ms)
+✔ B6 missing and incompatible real projection storage is unavailable and read paths never create/migrate it (65.845475ms)
+✔ B6 actual late old-run report is rejected and cannot fill a new run wait/status (49.299338ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3235.723733

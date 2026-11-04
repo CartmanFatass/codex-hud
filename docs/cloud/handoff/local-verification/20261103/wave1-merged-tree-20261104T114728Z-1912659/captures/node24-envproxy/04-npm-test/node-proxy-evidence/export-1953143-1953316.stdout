@@ -1,0 +1,24 @@
+Usage: hud link export --json --schema-version 1 [--paths local] [--link <linkId> ...]
+       hud [link [export]] --help
+       hud claude --help
+       hud run --help
+       hud cache show [--json]
+       hud codex [ARG ...]          Existing codex-hud compatibility launcher
+
+Export a complete, read-only snapshot of local delegation metadata to stdout.
+--json and --schema-version 1 are required. --link is repeatable; default: all links.
+Paths are omitted unless --paths local is given. No files are saved.
+HUD_HOME defaults to ~/.hud and must be an absolute, private directory owned by this uid.
+The ledger must already exist. Nothing is initialized or migrated.
+
+HUD failures emit one reason-code line on stderr and no JSON.
+Node/runtime diagnostics may also appear on stderr; stdout remains the machine-readable channel.
+
+Exit codes:
+  0  Success or help
+  1  Unexpected internal or output failure
+  2  Invalid command, arguments, or export schema version
+  3  Invalid, missing, inaccessible, or non-private HUD_HOME
+  4  Missing, inaccessible, or invalid ledger
+  5  Unsupported ledger storage version or runtime
+  6  Export budget exceeded or metadata assembly/validation failed

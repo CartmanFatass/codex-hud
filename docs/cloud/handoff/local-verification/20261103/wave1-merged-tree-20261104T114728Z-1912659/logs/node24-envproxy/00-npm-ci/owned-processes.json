@@ -1,0 +1,24 @@
+{
+ "root": "1949431:7456796",
+ "n_scans": 6,
+ "identities": {
+  "1949431:7456796": {
+   "pid": 1949431,
+   "start": 7456796,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1949372,
+   "pgrp": 1949431,
+   "sid": 1949431,
+   "first_seen": "2026-11-04T11:58:30.775Z",
+   "last_seen": "2026-11-04T11:58:30.780Z",
+   "last_state": "R",
+   "cmdline": "node <NVM>/versions/node/v24.22.1/bin/npm ci --ignore-scripts",
+   "alive": false
+  }
+ }
+}

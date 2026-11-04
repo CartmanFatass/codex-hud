@@ -1,0 +1,60 @@
+{
+ "root": "1922513:7419799",
+ "n_scans": 12,
+ "identities": {
+  "1922513:7419799": {
+   "pid": 1922513,
+   "start": 7419799,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1922505,
+   "pgrp": 1922513,
+   "sid": 1922513,
+   "first_seen": "2026-11-04T11:52:20.803Z",
+   "last_seen": "2026-11-04T11:52:27.837Z",
+   "last_state": "S",
+   "cmdline": "",
+   "alive": false
+  },
+  "1922528:7419811": {
+   "pid": 1922528,
+   "start": 7419811,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1922513,
+   "pgrp": 1922513,
+   "sid": 1922513,
+   "first_seen": "2026-11-04T11:52:21.811Z",
+   "last_seen": "2026-11-04T11:52:27.837Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/typescript/bin/tsc",
+   "alive": false
+  },
+  "1922529:7419812": {
+   "pid": 1922529,
+   "start": 7419812,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1922528,
+   "pgrp": 1922513,
+   "sid": 1922513,
+   "first_seen": "2026-11-04T11:52:21.811Z",
+   "last_seen": "2026-11-04T11:52:27.837Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc",
+   "alive": false
+  }
+ }
+}

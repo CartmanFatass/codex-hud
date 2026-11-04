@@ -1,0 +1,60 @@
+{
+ "root": "1935051:7436998",
+ "n_scans": 16,
+ "identities": {
+  "1935051:7436998": {
+   "pid": 1935051,
+   "start": 7436998,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1935023,
+   "pgrp": 1935051,
+   "sid": 1935051,
+   "first_seen": "2026-11-04T11:55:12.797Z",
+   "last_seen": "2026-11-04T11:55:23.849Z",
+   "last_state": "S",
+   "cmdline": "node <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/npm run format:check",
+   "alive": false
+  },
+  "1935066:7437009": {
+   "pid": 1935066,
+   "start": 7437009,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1935051,
+   "pgrp": 1935051,
+   "sid": 1935051,
+   "first_seen": "2026-11-04T11:55:13.807Z",
+   "last_seen": "2026-11-04T11:55:23.849Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/prettier/bin/prettier.cjs --check src tests",
+   "alive": false
+  },
+  "1935067:7437010": {
+   "pid": 1935067,
+   "start": 7437010,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1935066,
+   "pgrp": 1935051,
+   "sid": 1935051,
+   "first_seen": "2026-11-04T11:55:13.807Z",
+   "last_seen": "2026-11-04T11:55:23.849Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/prettier/bin/prettier.cjs --check src tests",
+   "alive": false
+  }
+ }
+}

@@ -1,0 +1,312 @@
+{
+ "root": "1961627:7472578",
+ "n_scans": 9,
+ "identities": {
+  "1961627:7472578": {
+   "pid": 1961627,
+   "start": 7472578,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961602,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:08.589Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "S",
+   "cmdline": "node <NVM>/versions/node/v24.22.1/bin/npm run test:hud-mcp",
+   "alive": false
+  },
+  "1961654:7472589": {
+   "pid": 1961654,
+   "start": 7472589,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961627,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:09.598Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "S",
+   "cmdline": "sh -c npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js",
+   "alive": false
+  },
+  "1961655:7472589": {
+   "pid": 1961655,
+   "start": 7472589,
+   "comm": "npm run build:h",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961654,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:09.598Z",
+   "last_seen": "2026-11-04T12:01:10.601Z",
+   "last_state": "S",
+   "cmdline": "npm run build:hud-mcp",
+   "alive": false
+  },
+  "1961667:7472600": {
+   "pid": 1961667,
+   "start": 7472600,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961655,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:09.598Z",
+   "last_seen": "2026-11-04T12:01:10.601Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
+   "alive": false
+  },
+  "1961668:7472601": {
+   "pid": 1961668,
+   "start": 7472601,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961667,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:09.598Z",
+   "last_seen": "2026-11-04T12:01:10.601Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
+   "alive": false
+  },
+  "1961760:7472871": {
+   "pid": 1961760,
+   "start": 7472871,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961654,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "S",
+   "cmdline": "node --test packages/hud-mcp/dist/tests/hud-mcp/ancestor-discovery.test.js packages/hud-mcp/dist/tests/hud-mcp/authorization.test.js packages/hud-mcp/dist/tests/hud-mcp/b20-advice.test.js packages/hud-mcp/dist/tests/hud-mcp/config.test.js packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js packages/hud-mcp/dist/tests/hud-mcp/handshake-benchmark.test.js packages/hud-mcp/dist/tests/hud-mcp/handshake.test.js packages/hud-mcp/dist/tests/hud-mcp/hook-source.test.js packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js packages/hud-mcp/dist/tests/hud-mcp/resume-expected-run.test.js packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js",
+   "alive": false
+  },
+  "1961767:7472877": {
+   "pid": 1961767,
+   "start": 7472877,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/ancestor-discovery.test.js",
+   "alive": false
+  },
+  "1961768:7472877": {
+   "pid": 1961768,
+   "start": 7472877,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/authorization.test.js",
+   "alive": false
+  },
+  "1961769:7472877": {
+   "pid": 1961769,
+   "start": 7472877,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/b20-advice.test.js",
+   "alive": false
+  },
+  "1961771:7472877": {
+   "pid": 1961771,
+   "start": 7472877,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/config.test.js",
+   "alive": false
+  },
+  "1961781:7472878": {
+   "pid": 1961781,
+   "start": 7472878,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js",
+   "alive": false
+  },
+  "1961787:7472878": {
+   "pid": 1961787,
+   "start": 7472878,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/handshake-benchmark.test.js",
+   "alive": false
+  },
+  "1961791:7472878": {
+   "pid": 1961791,
+   "start": 7472878,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/handshake.test.js",
+   "alive": false
+  },
+  "1961794:7472878": {
+   "pid": 1961794,
+   "start": 7472878,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/hook-source.test.js",
+   "alive": false
+  },
+  "1961805:7472878": {
+   "pid": 1961805,
+   "start": 7472878,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js",
+   "alive": false
+  },
+  "1961811:7472878": {
+   "pid": 1961811,
+   "start": 7472878,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/resume-expected-run.test.js",
+   "alive": false
+  },
+  "1961818:7472879": {
+   "pid": 1961818,
+   "start": 7472879,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961760,
+   "pgrp": 1961627,
+   "sid": 1961627,
+   "first_seen": "2026-11-04T12:01:11.606Z",
+   "last_seen": "2026-11-04T12:01:11.606Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js",
+   "alive": false
+  }
+ }
+}

@@ -1,0 +1,294 @@
+{
+ "root": "1933306:7433028",
+ "n_scans": 22,
+ "identities": {
+  "1933306:7433028": {
+   "pid": 1933306,
+   "start": 7433028,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933298,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:33.097Z",
+   "last_seen": "2026-11-04T11:54:49.175Z",
+   "last_state": "S",
+   "cmdline": "node <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/npm run test:core",
+   "alive": false
+  },
+  "1933321:7433040": {
+   "pid": 1933321,
+   "start": 7433040,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933306,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:34.108Z",
+   "last_seen": "2026-11-04T11:54:49.175Z",
+   "last_state": "S",
+   "cmdline": "sh -c bash tests/run-core.sh",
+   "alive": false
+  },
+  "1933322:7433040": {
+   "pid": 1933322,
+   "start": 7433040,
+   "comm": "bash",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933321,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:34.108Z",
+   "last_seen": "2026-11-04T11:54:49.175Z",
+   "last_state": "S",
+   "cmdline": "bash tests/run-core.sh",
+   "alive": false
+  },
+  "1933326:7433041": {
+   "pid": 1933326,
+   "start": 7433041,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933322,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:34.108Z",
+   "last_seen": "2026-11-04T11:54:44.152Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
+   "alive": false
+  },
+  "1933696:7434176": {
+   "pid": 1933696,
+   "start": 7434176,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933322,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:45.156Z",
+   "last_seen": "2026-11-04T11:54:49.175Z",
+   "last_state": "S",
+   "cmdline": "node --test dist-test/tests/unit/codex-facade.test.js dist-test/tests/unit/contracts.test.js dist-test/tests/unit/core-fakes.test.js dist-test/tests/unit/ledger-perf.test.js dist-test/tests/unit/ledger-processes.test.js dist-test/tests/unit/ledger-read.test.js dist-test/tests/unit/ledger-schema.test.js dist-test/tests/unit/ledger-write.test.js",
+   "alive": false
+  },
+  "1933703:7434182": {
+   "pid": 1933703,
+   "start": 7434182,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933696,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:45.156Z",
+   "last_seen": "2026-11-04T11:54:45.156Z",
+   "last_state": "S",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node dist-test/tests/unit/codex-facade.test.js",
+   "alive": false
+  },
+  "1933717:7434183": {
+   "pid": 1933717,
+   "start": 7434183,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933696,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:45.156Z",
+   "last_seen": "2026-11-04T11:54:49.175Z",
+   "last_state": "S",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node dist-test/tests/unit/ledger-processes.test.js",
+   "alive": false
+  },
+  "1933723:7434183": {
+   "pid": 1933723,
+   "start": 7434183,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933696,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:45.156Z",
+   "last_seen": "2026-11-04T11:54:47.164Z",
+   "last_state": "D",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node dist-test/tests/unit/ledger-read.test.js",
+   "alive": false
+  },
+  "1933735:7434183": {
+   "pid": 1933735,
+   "start": 7434183,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933696,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:45.156Z",
+   "last_seen": "2026-11-04T11:54:48.170Z",
+   "last_state": "D",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node dist-test/tests/unit/ledger-write.test.js",
+   "alive": false
+  },
+  "1933807:7434233": {
+   "pid": 1933807,
+   "start": 7434233,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933717,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:45.156Z",
+   "last_seen": "2026-11-04T11:54:45.156Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node <WT:node22-envproxy>/tests/ledger/process.mjs <SHORT_ROOT>/a05testco/t/hud-ledger-process-6PlE3B/ledger.sqlite",
+   "alive": false
+  },
+  "1933875:7434325": {
+   "pid": 1933875,
+   "start": 7434325,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933717,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:46.161Z",
+   "last_seen": "2026-11-04T11:54:46.161Z",
+   "last_state": "D",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node <WT:node22-envproxy>/tests/ledger/process.mjs <SHORT_ROOT>/a05testco/t/hud-ledger-process-5nhfp6/ledger.sqlite",
+   "alive": false
+  },
+  "1933923:7434432": {
+   "pid": 1933923,
+   "start": 7434432,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933717,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:47.164Z",
+   "last_seen": "2026-11-04T11:54:47.164Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node <WT:node22-envproxy>/tests/ledger/process.mjs <SHORT_ROOT>/a05testco/t/hud-ledger-process-ChNMVx/ledger.sqlite",
+   "alive": false
+  },
+  "1933971:7434515": {
+   "pid": 1933971,
+   "start": 7434515,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933717,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:48.170Z",
+   "last_seen": "2026-11-04T11:54:48.170Z",
+   "last_state": "Z",
+   "cmdline": null,
+   "alive": false
+  },
+  "1934122:7434614": {
+   "pid": 1934122,
+   "start": 7434614,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933717,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:49.175Z",
+   "last_seen": "2026-11-04T11:54:49.175Z",
+   "last_state": "S",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node <WT:node22-envproxy>/tests/ledger/process.mjs <SHORT_ROOT>/a05testco/t/hud-ledger-process-e1YZnv/ledger.sqlite",
+   "alive": false
+  },
+  "1934130:7434625": {
+   "pid": 1934130,
+   "start": 7434625,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933717,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:49.175Z",
+   "last_seen": "2026-11-04T11:54:49.175Z",
+   "last_state": "S",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node <WT:node22-envproxy>/tests/ledger/process.mjs <SHORT_ROOT>/a05testco/t/hud-ledger-process-e1YZnv/ledger.sqlite",
+   "alive": false
+  },
+  "1934138:7434631": {
+   "pid": 1934138,
+   "start": 7434631,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1933717,
+   "pgrp": 1933306,
+   "sid": 1933306,
+   "first_seen": "2026-11-04T11:54:49.175Z",
+   "last_seen": "2026-11-04T11:54:49.175Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node <WT:node22-envproxy>/tests/ledger/process.mjs <SHORT_ROOT>/a05testco/t/hud-ledger-process-e1YZnv/ledger.sqlite",
+   "alive": false
+  }
+ }
+}

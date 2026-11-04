@@ -1,0 +1,3184 @@
+{
+  "schema": 2,
+  "label": "controlled-final",
+  "runtime": "v22.23.4",
+  "caveat": "Instrumentation may perturb scheduling. New evidence, not historical replay. No extra critical-path probes.",
+  "redaction": "v2 explicit field allowlist; opaque scope, boot and PID-domain identities consistently pseudonymized throughout projected copies; original in-memory digest retained, not reconstructible from projection.",
+  "originalRecordsSha256": "c758f281eedcaef50386e38e8b33db7f7ce6aefca1f6c94be6f0a305e6d80e27",
+  "records": [
+    {
+      "sequence": 1,
+      "operation": "register",
+      "at": 1793793206127,
+      "input": [
+        "run_8540797fa6ba445e9e0733953017f518",
+        "<ticket omitted>",
+        "<digest omitted>",
+        {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        }
+      ],
+      "before": {
+        "revision": 0,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "reserved",
+          "supervisor": null,
+          "heartbeatAt": null,
+          "heartbeatSeq": 0,
+          "heartbeatMonoMs": null,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": null,
+        "claimState": "issued",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 1,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "armed",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      }
+    },
+    {
+      "sequence": 2,
+      "operation": "phase",
+      "at": 1793793206129,
+      "input": [
+        "run_8540797fa6ba445e9e0733953017f518",
+        {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "submitting"
+      ],
+      "before": {
+        "revision": 1,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "armed",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 2,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "submitting",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      }
+    },
+    {
+      "sequence": 3,
+      "operation": "phase",
+      "at": 1793793206129,
+      "input": [
+        "run_8540797fa6ba445e9e0733953017f518",
+        {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "submitted"
+      ],
+      "before": {
+        "revision": 2,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "submitting",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 3,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      }
+    },
+    {
+      "sequence": 4,
+      "operation": "startup",
+      "at": 1793793206129,
+      "input": [
+        "run_8540797fa6ba445e9e0733953017f518",
+        {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        {
+          "schema_version": 1,
+          "run_id": "run_8540797fa6ba445e9e0733953017f518",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "command_leader": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "harness": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "scope": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "created_at": 1793793206126,
+          "stdin_mode": "closed",
+          "capture": "file"
+        }
+      ],
+      "before": {
+        "revision": 3,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": null,
+          "state": "starting",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": null,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": null,
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 4,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "state": "starting",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": 1793793206129,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_8540797fa6ba445e9e0733953017f518",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "command_leader": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "harness": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "scope": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "created_at": 1793793206126,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      }
+    },
+    {
+      "sequence": 5,
+      "operation": "reconcile",
+      "at": 1793793206143,
+      "input": [
+        "run_8540797fa6ba445e9e0733953017f518",
+        5,
+        [
+          {
+            "evidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206133,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "5e028784-f302-435e-8b6f-47b6d63b1882",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7571f1c6-e4a9-454e-a950-e3a277d62002",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206141,
+            "observedAt": 1793793206142,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          }
+        ],
+        1793793206142
+      ],
+      "before": {
+        "revision": 5,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "state": "starting",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": 1793793206129,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_8540797fa6ba445e9e0733953017f518",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "command_leader": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "harness": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "scope": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "created_at": 1793793206126,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793793206130,
+            "payload": {}
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 6,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "state": "running",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": 1793793206129,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_8540797fa6ba445e9e0733953017f518",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "command_leader": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "harness": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "scope": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "created_at": 1793793206126,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206133,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "5e028784-f302-435e-8b6f-47b6d63b1882",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7571f1c6-e4a9-454e-a950-e3a277d62002",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206141,
+            "observedAt": 1793793206142,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793793206130,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793793206142,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "result": {
+        "row": "R-02-5",
+        "state": "running",
+        "releaseSlot": false,
+        "emitTransition": true,
+        "blockNewOperations": true,
+        "evidenceIds": [
+          "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+          "5e028784-f302-435e-8b6f-47b6d63b1882",
+          "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+          "7571f1c6-e4a9-454e-a950-e3a277d62002"
+        ],
+        "auditEvidenceIds": [],
+        "cause": null,
+        "terminalNote": null,
+        "exitCode": null,
+        "exitSignal": null,
+        "exitSource": null
+      }
+    },
+    {
+      "sequence": 6,
+      "operation": "reconcile",
+      "at": 1793793206179,
+      "input": [
+        "run_8540797fa6ba445e9e0733953017f518",
+        6,
+        [
+          {
+            "evidenceId": "5bc84984-9729-4641-968f-f107c7285849",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206165,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "2dc9f7be-9e9c-4980-bf76-b7b3b724e33f",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "95f2312d-356f-4759-a818-dffd25b80af9",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7afb2300-8c0f-4b91-a834-55820bf7ac9e",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206177,
+            "observedAt": 1793793206177,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "8e48b25c-c0be-4101-b688-9079cfe1582c",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206177,
+            "observedAt": 1793793206177,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        1793793206178
+      ],
+      "before": {
+        "revision": 6,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "state": "running",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": null,
+          "createdAt": 1793793206126,
+          "startedAt": 1793793206129,
+          "endedAt": null,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": null
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_8540797fa6ba445e9e0733953017f518",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "command_leader": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "harness": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "scope": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "created_at": 1793793206126,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206133,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "5e028784-f302-435e-8b6f-47b6d63b1882",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7571f1c6-e4a9-454e-a950-e3a277d62002",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206141,
+            "observedAt": 1793793206142,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "armed",
+        "slotHeld": true,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793793206130,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793793206142,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          }
+        ],
+        "terminalTransitionCount": 0
+      },
+      "after": {
+        "revision": 7,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "state": "ended",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": 1793793206178,
+          "createdAt": 1793793206126,
+          "startedAt": 1793793206129,
+          "endedAt": 1793793206178,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1"
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_8540797fa6ba445e9e0733953017f518",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "command_leader": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "harness": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "scope": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "created_at": 1793793206126,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206133,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "5e028784-f302-435e-8b6f-47b6d63b1882",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7571f1c6-e4a9-454e-a950-e3a277d62002",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206141,
+            "observedAt": 1793793206142,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          },
+          {
+            "evidenceId": "5bc84984-9729-4641-968f-f107c7285849",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206165,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "2dc9f7be-9e9c-4980-bf76-b7b3b724e33f",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "95f2312d-356f-4759-a818-dffd25b80af9",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7afb2300-8c0f-4b91-a834-55820bf7ac9e",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206177,
+            "observedAt": 1793793206177,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "8e48b25c-c0be-4101-b688-9079cfe1582c",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206177,
+            "observedAt": 1793793206177,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "revoked",
+        "slotHeld": false,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793793206130,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793793206142,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          },
+          {
+            "seq": 4,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793793206178,
+            "payload": {
+              "row": "R-02-3",
+              "state": "ended"
+            }
+          }
+        ],
+        "terminalTransitionCount": 1
+      },
+      "result": {
+        "row": "R-02-3",
+        "state": "ended",
+        "releaseSlot": true,
+        "emitTransition": true,
+        "blockNewOperations": false,
+        "evidenceIds": [
+          "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+          "5e028784-f302-435e-8b6f-47b6d63b1882",
+          "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+          "5bc84984-9729-4641-968f-f107c7285849",
+          "2dc9f7be-9e9c-4980-bf76-b7b3b724e33f",
+          "95f2312d-356f-4759-a818-dffd25b80af9",
+          "7afb2300-8c0f-4b91-a834-55820bf7ac9e",
+          "8e48b25c-c0be-4101-b688-9079cfe1582c"
+        ],
+        "auditEvidenceIds": [
+          "7571f1c6-e4a9-454e-a950-e3a277d62002"
+        ],
+        "cause": null,
+        "terminalNote": null,
+        "exitCode": null,
+        "exitSignal": null,
+        "exitSource": null
+      }
+    },
+    {
+      "sequence": 7,
+      "operation": "reconcile",
+      "at": 1793793206242,
+      "input": [
+        "run_8540797fa6ba445e9e0733953017f518",
+        7,
+        [
+          {
+            "evidenceId": "75c7565c-1a1a-4492-ba14-70a0a55850ff",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206229,
+            "observedAt": 1793793206229,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "15e3e1a1-15df-49bc-8622-92cd852ad921",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206229,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "d3bb21b0-021b-4c7d-82ab-3af297a01047",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206229,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "f163f209-2283-4ee1-9648-809f89fe84cd",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206240,
+            "observedAt": 1793793206240,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "d839cdc5-0876-4287-9745-a1405484e73d",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206240,
+            "observedAt": 1793793206240,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        1793793206241
+      ],
+      "before": {
+        "revision": 7,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "state": "ended",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": 1793793206178,
+          "createdAt": 1793793206126,
+          "startedAt": 1793793206129,
+          "endedAt": 1793793206178,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1"
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_8540797fa6ba445e9e0733953017f518",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "command_leader": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "harness": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "scope": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "created_at": 1793793206126,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206133,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "5e028784-f302-435e-8b6f-47b6d63b1882",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7571f1c6-e4a9-454e-a950-e3a277d62002",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206141,
+            "observedAt": 1793793206142,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          },
+          {
+            "evidenceId": "5bc84984-9729-4641-968f-f107c7285849",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206165,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "2dc9f7be-9e9c-4980-bf76-b7b3b724e33f",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "95f2312d-356f-4759-a818-dffd25b80af9",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7afb2300-8c0f-4b91-a834-55820bf7ac9e",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206177,
+            "observedAt": 1793793206177,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "8e48b25c-c0be-4101-b688-9079cfe1582c",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206177,
+            "observedAt": 1793793206177,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "revoked",
+        "slotHeld": false,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793793206130,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793793206142,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          },
+          {
+            "seq": 4,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793793206178,
+            "payload": {
+              "row": "R-02-3",
+              "state": "ended"
+            }
+          }
+        ],
+        "terminalTransitionCount": 1
+      },
+      "after": {
+        "revision": 8,
+        "run": {
+          "runId": "run_8540797fa6ba445e9e0733953017f518",
+          "linkId": "link-a",
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "expectedGeneration": 1,
+          "mode": "headless",
+          "supervisionStrategy": "headless",
+          "scopeKind": "pgid",
+          "scopeRef": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "state": "ended",
+          "launchPhase": "submitted",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "heartbeatAt": 1793793206127,
+          "heartbeatSeq": 1,
+          "heartbeatMonoMs": 191.639988,
+          "cancelRequestedAt": null,
+          "submissionFencedAt": 1793793206178,
+          "createdAt": 1793793206126,
+          "startedAt": 1793793206129,
+          "endedAt": 1793793206178,
+          "exitCode": null,
+          "exitSignal": null,
+          "exitSource": null,
+          "terminalEvidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1"
+        },
+        "meta": {
+          "schema_version": 1,
+          "run_id": "run_8540797fa6ba445e9e0733953017f518",
+          "link_id": "link-a",
+          "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "binding_generation": 1,
+          "mode": "headless",
+          "supervision_strategy": "headless",
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "command_leader": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "harness": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "scope": {
+            "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+            "scope_kind": "pgid",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+            "pgid": 1929054,
+            "sid": 1929054,
+            "group_leader": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            }
+          },
+          "created_at": 1793793206126,
+          "stdin_mode": "closed",
+          "capture": "file"
+        },
+        "facts": [
+          {
+            "evidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206133,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "supervisor",
+              "state": "alive"
+            }
+          },
+          {
+            "evidenceId": "5e028784-f302-435e-8b6f-47b6d63b1882",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206133,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7571f1c6-e4a9-454e-a950-e3a277d62002",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206141,
+            "observedAt": 1793793206142,
+            "fact": {
+              "kind": "scope",
+              "state": "alive",
+              "complete": false,
+              "harnessTerminated": false,
+              "launchersSealed": false
+            }
+          },
+          {
+            "evidenceId": "5bc84984-9729-4641-968f-f107c7285849",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206165,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "2dc9f7be-9e9c-4980-bf76-b7b3b724e33f",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "95f2312d-356f-4759-a818-dffd25b80af9",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206165,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "7afb2300-8c0f-4b91-a834-55820bf7ac9e",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206177,
+            "observedAt": 1793793206177,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "8e48b25c-c0be-4101-b688-9079cfe1582c",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206177,
+            "observedAt": 1793793206177,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          },
+          {
+            "evidenceId": "75c7565c-1a1a-4492-ba14-70a0a55850ff",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206229,
+            "observedAt": 1793793206229,
+            "fact": {
+              "kind": "supervisor",
+              "state": "dead"
+            }
+          },
+          {
+            "evidenceId": "15e3e1a1-15df-49bc-8622-92cd852ad921",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206127,
+            "observedAt": 1793793206229,
+            "fact": {
+              "kind": "heartbeat",
+              "at": 1793793206127
+            }
+          },
+          {
+            "evidenceId": "d3bb21b0-021b-4c7d-82ab-3af297a01047",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206129,
+            "observedAt": 1793793206229,
+            "fact": {
+              "kind": "launch",
+              "childStarted": true,
+              "originalExecutorValid": true,
+              "observedAt": 1793793206129
+            }
+          },
+          {
+            "evidenceId": "f163f209-2283-4ee1-9648-809f89fe84cd",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206240,
+            "observedAt": 1793793206240,
+            "fact": {
+              "kind": "scope",
+              "state": "gone",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true
+            }
+          },
+          {
+            "evidenceId": "d839cdc5-0876-4287-9745-a1405484e73d",
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+            "bindingGeneration": 1,
+            "supervisor": {
+              "pid": 1929054,
+              "proc_start": "7426332",
+              "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+              "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+            },
+            "validation": "accepted",
+            "asOf": 1793793206240,
+            "observedAt": 1793793206240,
+            "fact": {
+              "kind": "scope_reconciled",
+              "complete": true,
+              "harnessTerminated": true,
+              "launchersSealed": true,
+              "nativeExit": null
+            }
+          }
+        ],
+        "receipt": null,
+        "claimSupervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332"
+        },
+        "claimState": "revoked",
+        "slotHeld": false,
+        "controlConflict": false,
+        "terminalNote": null,
+        "events": [
+          {
+            "seq": 1,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "supervisor.registered",
+            "at": 1793793206127,
+            "payload": {
+              "supervisor": {
+                "pid": 1929054,
+                "proc_start": "7426332",
+                "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+                "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+              },
+              "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+              "bindingGeneration": 1
+            }
+          },
+          {
+            "seq": 2,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "manager.reconcile",
+            "at": 1793793206130,
+            "payload": {}
+          },
+          {
+            "seq": 3,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793793206142,
+            "payload": {
+              "row": "R-02-5",
+              "state": "running"
+            }
+          },
+          {
+            "seq": 4,
+            "runId": "run_8540797fa6ba445e9e0733953017f518",
+            "linkId": "link-a",
+            "kind": "run.reconciled",
+            "at": 1793793206178,
+            "payload": {
+              "row": "R-02-3",
+              "state": "ended"
+            }
+          }
+        ],
+        "terminalTransitionCount": 1
+      },
+      "result": {
+        "row": "R-02-0",
+        "state": "ended",
+        "releaseSlot": false,
+        "emitTransition": false,
+        "blockNewOperations": false,
+        "evidenceIds": [
+          "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+          "5e028784-f302-435e-8b6f-47b6d63b1882",
+          "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+          "5bc84984-9729-4641-968f-f107c7285849",
+          "2dc9f7be-9e9c-4980-bf76-b7b3b724e33f",
+          "95f2312d-356f-4759-a818-dffd25b80af9",
+          "8e48b25c-c0be-4101-b688-9079cfe1582c",
+          "75c7565c-1a1a-4492-ba14-70a0a55850ff",
+          "15e3e1a1-15df-49bc-8622-92cd852ad921",
+          "d3bb21b0-021b-4c7d-82ab-3af297a01047",
+          "f163f209-2283-4ee1-9648-809f89fe84cd",
+          "d839cdc5-0876-4287-9745-a1405484e73d",
+          "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+          "5e028784-f302-435e-8b6f-47b6d63b1882",
+          "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+          "5bc84984-9729-4641-968f-f107c7285849",
+          "2dc9f7be-9e9c-4980-bf76-b7b3b724e33f",
+          "95f2312d-356f-4759-a818-dffd25b80af9",
+          "8e48b25c-c0be-4101-b688-9079cfe1582c",
+          "75c7565c-1a1a-4492-ba14-70a0a55850ff",
+          "15e3e1a1-15df-49bc-8622-92cd852ad921",
+          "d3bb21b0-021b-4c7d-82ab-3af297a01047",
+          "f163f209-2283-4ee1-9648-809f89fe84cd",
+          "d839cdc5-0876-4287-9745-a1405484e73d"
+        ],
+        "auditEvidenceIds": [
+          "7571f1c6-e4a9-454e-a950-e3a277d62002",
+          "7afb2300-8c0f-4b91-a834-55820bf7ac9e",
+          "7571f1c6-e4a9-454e-a950-e3a277d62002",
+          "7afb2300-8c0f-4b91-a834-55820bf7ac9e"
+        ],
+        "cause": null,
+        "terminalNote": null,
+        "exitCode": null,
+        "exitSignal": null,
+        "exitSource": null
+      }
+    }
+  ],
+  "final": {
+    "revision": 8,
+    "run": {
+      "runId": "run_8540797fa6ba445e9e0733953017f518",
+      "linkId": "link-a",
+      "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+      "expectedGeneration": 1,
+      "mode": "headless",
+      "supervisionStrategy": "headless",
+      "scopeKind": "pgid",
+      "scopeRef": {
+        "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+        "scope_kind": "pgid",
+        "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+        "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+        "pgid": 1929054,
+        "sid": 1929054,
+        "group_leader": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        }
+      },
+      "state": "ended",
+      "launchPhase": "submitted",
+      "supervisor": {
+        "pid": 1929054,
+        "proc_start": "7426332",
+        "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+        "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+      },
+      "heartbeatAt": 1793793206127,
+      "heartbeatSeq": 1,
+      "heartbeatMonoMs": 191.639988,
+      "cancelRequestedAt": null,
+      "submissionFencedAt": 1793793206178,
+      "createdAt": 1793793206126,
+      "startedAt": 1793793206129,
+      "endedAt": 1793793206178,
+      "exitCode": null,
+      "exitSignal": null,
+      "exitSource": null,
+      "terminalEvidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1"
+    },
+    "meta": {
+      "schema_version": 1,
+      "run_id": "run_8540797fa6ba445e9e0733953017f518",
+      "link_id": "link-a",
+      "source_id": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+      "binding_generation": 1,
+      "mode": "headless",
+      "supervision_strategy": "headless",
+      "supervisor": {
+        "pid": 1929054,
+        "proc_start": "7426332",
+        "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+        "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+      },
+      "command_leader": {
+        "pid": 1929054,
+        "proc_start": "7426332",
+        "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+        "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+      },
+      "harness": {
+        "pid": 1929054,
+        "proc_start": "7426332",
+        "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+        "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+      },
+      "scope": {
+        "scope_id": "identity-sha256-958dc9ffb022153f7c15313db53a202e8a7cd365c15bc3809e808d53146027ff",
+        "scope_kind": "pgid",
+        "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+        "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7",
+        "pgid": 1929054,
+        "sid": 1929054,
+        "group_leader": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        }
+      },
+      "created_at": 1793793206126,
+      "stdin_mode": "closed",
+      "capture": "file"
+    },
+    "facts": [
+      {
+        "evidenceId": "e948bad0-bd9b-41ec-8ee3-fb63632b20f1",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206133,
+        "observedAt": 1793793206133,
+        "fact": {
+          "kind": "supervisor",
+          "state": "alive"
+        }
+      },
+      {
+        "evidenceId": "5e028784-f302-435e-8b6f-47b6d63b1882",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206127,
+        "observedAt": 1793793206133,
+        "fact": {
+          "kind": "heartbeat",
+          "at": 1793793206127
+        }
+      },
+      {
+        "evidenceId": "7e26a5da-9d44-4c97-9ab5-3b76bd3d3920",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206129,
+        "observedAt": 1793793206133,
+        "fact": {
+          "kind": "launch",
+          "childStarted": true,
+          "originalExecutorValid": true,
+          "observedAt": 1793793206129
+        }
+      },
+      {
+        "evidenceId": "7571f1c6-e4a9-454e-a950-e3a277d62002",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206141,
+        "observedAt": 1793793206142,
+        "fact": {
+          "kind": "scope",
+          "state": "alive",
+          "complete": false,
+          "harnessTerminated": false,
+          "launchersSealed": false
+        }
+      },
+      {
+        "evidenceId": "5bc84984-9729-4641-968f-f107c7285849",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206165,
+        "observedAt": 1793793206165,
+        "fact": {
+          "kind": "supervisor",
+          "state": "dead"
+        }
+      },
+      {
+        "evidenceId": "2dc9f7be-9e9c-4980-bf76-b7b3b724e33f",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206127,
+        "observedAt": 1793793206165,
+        "fact": {
+          "kind": "heartbeat",
+          "at": 1793793206127
+        }
+      },
+      {
+        "evidenceId": "95f2312d-356f-4759-a818-dffd25b80af9",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206129,
+        "observedAt": 1793793206165,
+        "fact": {
+          "kind": "launch",
+          "childStarted": true,
+          "originalExecutorValid": true,
+          "observedAt": 1793793206129
+        }
+      },
+      {
+        "evidenceId": "7afb2300-8c0f-4b91-a834-55820bf7ac9e",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206177,
+        "observedAt": 1793793206177,
+        "fact": {
+          "kind": "scope",
+          "state": "gone",
+          "complete": true,
+          "harnessTerminated": true,
+          "launchersSealed": true
+        }
+      },
+      {
+        "evidenceId": "8e48b25c-c0be-4101-b688-9079cfe1582c",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206177,
+        "observedAt": 1793793206177,
+        "fact": {
+          "kind": "scope_reconciled",
+          "complete": true,
+          "harnessTerminated": true,
+          "launchersSealed": true,
+          "nativeExit": null
+        }
+      },
+      {
+        "evidenceId": "75c7565c-1a1a-4492-ba14-70a0a55850ff",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206229,
+        "observedAt": 1793793206229,
+        "fact": {
+          "kind": "supervisor",
+          "state": "dead"
+        }
+      },
+      {
+        "evidenceId": "15e3e1a1-15df-49bc-8622-92cd852ad921",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206127,
+        "observedAt": 1793793206229,
+        "fact": {
+          "kind": "heartbeat",
+          "at": 1793793206127
+        }
+      },
+      {
+        "evidenceId": "d3bb21b0-021b-4c7d-82ab-3af297a01047",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206129,
+        "observedAt": 1793793206229,
+        "fact": {
+          "kind": "launch",
+          "childStarted": true,
+          "originalExecutorValid": true,
+          "observedAt": 1793793206129
+        }
+      },
+      {
+        "evidenceId": "f163f209-2283-4ee1-9648-809f89fe84cd",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206240,
+        "observedAt": 1793793206240,
+        "fact": {
+          "kind": "scope",
+          "state": "gone",
+          "complete": true,
+          "harnessTerminated": true,
+          "launchersSealed": true
+        }
+      },
+      {
+        "evidenceId": "d839cdc5-0876-4287-9745-a1405484e73d",
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+        "bindingGeneration": 1,
+        "supervisor": {
+          "pid": 1929054,
+          "proc_start": "7426332",
+          "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+          "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+        },
+        "validation": "accepted",
+        "asOf": 1793793206240,
+        "observedAt": 1793793206240,
+        "fact": {
+          "kind": "scope_reconciled",
+          "complete": true,
+          "harnessTerminated": true,
+          "launchersSealed": true,
+          "nativeExit": null
+        }
+      }
+    ],
+    "receipt": null,
+    "claimSupervisor": {
+      "pid": 1929054,
+      "proc_start": "7426332"
+    },
+    "claimState": "revoked",
+    "slotHeld": false,
+    "controlConflict": false,
+    "terminalNote": null,
+    "events": [
+      {
+        "seq": 1,
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "linkId": "link-a",
+        "kind": "supervisor.registered",
+        "at": 1793793206127,
+        "payload": {
+          "supervisor": {
+            "pid": 1929054,
+            "proc_start": "7426332",
+            "boot_id": "identity-sha256-bb5ff638a98b85d859274bf6913a1c4b489ceb0099a3c25f03c0b6a07b75d812",
+            "pid_domain": "identity-sha256-d601bc563b2c10f8de0036d1ff82284be71c376142bc9b7b1f91e4b40886cba7"
+          },
+          "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+          "bindingGeneration": 1
+        }
+      },
+      {
+        "seq": 2,
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "linkId": "link-a",
+        "kind": "manager.reconcile",
+        "at": 1793793206130,
+        "payload": {}
+      },
+      {
+        "seq": 3,
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "linkId": "link-a",
+        "kind": "run.reconciled",
+        "at": 1793793206142,
+        "payload": {
+          "row": "R-02-5",
+          "state": "running"
+        }
+      },
+      {
+        "seq": 4,
+        "runId": "run_8540797fa6ba445e9e0733953017f518",
+        "linkId": "link-a",
+        "kind": "run.reconciled",
+        "at": 1793793206178,
+        "payload": {
+          "row": "R-02-3",
+          "state": "ended"
+        }
+      }
+    ],
+    "terminalTransitionCount": 1
+  },
+  "exitFile": null
+}

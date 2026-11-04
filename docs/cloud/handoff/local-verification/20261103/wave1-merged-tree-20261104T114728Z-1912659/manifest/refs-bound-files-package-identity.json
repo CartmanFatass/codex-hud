@@ -1,0 +1,74 @@
+{
+ "bound_files_at_T": {
+  "AGENTS.md": {
+   "commit": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+   "blob": "484370f426d002e97075bdac061c0847b95eb137"
+  },
+  "docs/cloud/dots.md": {
+   "commit": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+   "blob": "e586f2303819d3cc916a887ee24b0f9f41841add"
+  },
+  "docs/cloud/README.md": {
+   "commit": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+   "blob": "3029d6928c42534eee1c2fa86e1c33a2381f59cc"
+  },
+  "docs/handoff/STATE.md": {
+   "commit": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+   "blob": "83b6dd34ef64ea31f88e712e2e66c05df9aea9f7"
+  },
+  "docs/cloud/rulings/wave1-compat-integration-20261103.md": {
+   "commit": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+   "blob": "acb7d1bdbfad3b7693752b7e39e55da55a0e66d0"
+  },
+  "docs/cloud/rulings/wave1-compat-integration-connector-addendum-20261104.md": {
+   "commit": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+   "blob": "003a627641d99b1d780e11f8328cfbb2be254c18"
+  },
+  "docs/cloud/rulings/wave1-ancestor-deferral-20261104.md": {
+   "commit": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+   "blob": "1329243a260f1a15c47351a2bd430f8109f756e8"
+  },
+  "docs/cloud/rulings/wave1-missing-custody-decision-20261104.md": {
+   "commit": "9dd4d06d2ee5ebb022719d11b74d6de0276172a4",
+   "blob": "54576ac22d005e25273eca5900d65218edcb5d9f"
+  }
+ },
+ "bound_files_at_H": {
+  "docs/cloud/handoff/wave1-compat-integration/oracle-c3-owner-exception-joint-acceptance-20261104.md": {
+   "commit": "09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "blob": "d60cd9d033c1fd7076234054a30e131c25b51d37"
+  },
+  "docs/cloud/handoff/wave1-compat-integration/composition-manifest.json": {
+   "commit": "09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "blob": "24f9f0eed11ab3cc3ab97697d1911b41e499a04e"
+  },
+  "docs/cloud/handoff/wave1-compat-integration/candidate-tree.tsv": {
+   "commit": "09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "blob": "39b143336f185b5a2af7ec7c057c3eebe6e75ba9"
+  },
+  "docs/cloud/handoff/wave1-compat-integration/implementation.md": {
+   "commit": "09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "blob": "65d8eb63b23981472d06bf9e1944a80d90b415bf"
+  },
+  "docs/cloud/handoff/wave1-compat-integration/oracle-c3-final-integration-review-20261104.md": {
+   "commit": "09d9c3d95fe42932ecaf35dd46806a8747681aa7",
+   "blob": "268e12e3f1ccc8acc9a59aa896991bd9c91d4b49"
+  }
+ },
+ "package_identity_blobs_in_M": {
+  "package.json": "53182affe4637beb767664c56c288ae9e7dd4585",
+  "package-lock.json": "87327f35757f729247f1f2256e7ba87345956a01",
+  "node_modules_tree": "77829c47b2f75720a918a0dfef03e8671222cde9"
+ },
+ "package_identity_expected": {
+  "package.json": "53182affe4637beb767664c56c288ae9e7dd4585",
+  "package-lock.json": "87327f35757f729247f1f2256e7ba87345956a01",
+  "node_modules_tree": "77829c47b2f75720a918a0dfef03e8671222cde9"
+ },
+ "package_identity_match": true,
+ "host": {
+  "kernel_class": "Linux WSL2",
+  "ptrace_scope": "1",
+  "cpus": 16
+ }
+}

@@ -1,0 +1,132 @@
+{
+ "root": "1961295:7471373",
+ "n_scans": 15,
+ "identities": {
+  "1961295:7471373": {
+   "pid": 1961295,
+   "start": 7471373,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961287,
+   "pgrp": 1961295,
+   "sid": 1961295,
+   "first_seen": "2026-11-04T12:00:56.540Z",
+   "last_seen": "2026-11-04T12:01:06.589Z",
+   "last_state": "S",
+   "cmdline": "node <NVM>/versions/node/v24.22.1/bin/npm run test:visual",
+   "alive": false
+  },
+  "1961310:7471383": {
+   "pid": 1961310,
+   "start": 7471383,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961295,
+   "pgrp": 1961295,
+   "sid": 1961295,
+   "first_seen": "2026-11-04T12:00:57.548Z",
+   "last_seen": "2026-11-04T12:01:06.589Z",
+   "last_state": "S",
+   "cmdline": "sh -c npm run build:test && node --test dist-test/tests/unit/visual-baselines.test.js",
+   "alive": false
+  },
+  "1961311:7471383": {
+   "pid": 1961311,
+   "start": 7471383,
+   "comm": "npm run build:t",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961310,
+   "pgrp": 1961295,
+   "sid": 1961295,
+   "first_seen": "2026-11-04T12:00:57.548Z",
+   "last_seen": "2026-11-04T12:01:05.583Z",
+   "last_state": "S",
+   "cmdline": "npm run build:test",
+   "alive": false
+  },
+  "1961323:7471394": {
+   "pid": 1961323,
+   "start": 7471394,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961311,
+   "pgrp": 1961295,
+   "sid": 1961295,
+   "first_seen": "2026-11-04T12:00:57.548Z",
+   "last_seen": "2026-11-04T12:01:05.583Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
+   "alive": false
+  },
+  "1961324:7471394": {
+   "pid": 1961324,
+   "start": 7471394,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961323,
+   "pgrp": 1961295,
+   "sid": 1961295,
+   "first_seen": "2026-11-04T12:00:57.548Z",
+   "last_seen": "2026-11-04T12:01:05.583Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
+   "alive": false
+  },
+  "1961558:7472292": {
+   "pid": 1961558,
+   "start": 7472292,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961310,
+   "pgrp": 1961295,
+   "sid": 1961295,
+   "first_seen": "2026-11-04T12:01:06.589Z",
+   "last_seen": "2026-11-04T12:01:06.589Z",
+   "last_state": "S",
+   "cmdline": "node --test dist-test/tests/unit/visual-baselines.test.js",
+   "alive": false
+  },
+  "1961565:7472297": {
+   "pid": 1961565,
+   "start": 7472297,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1961558,
+   "pgrp": 1961295,
+   "sid": 1961295,
+   "first_seen": "2026-11-04T12:01:06.589Z",
+   "last_seen": "2026-11-04T12:01:06.589Z",
+   "last_state": "R",
+   "cmdline": "<NVM>/versions/node/v24.22.1/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA --experimental-addon-modules --use-largepages=off --max-http-header-size=16384 --test-timeout=0 --node-snapshot --secure-heap=0 --use-env-proxy --network-family-autoselection-attempt-timeout=250 --heapsnapshot-near-heap-limit=0 dist-test/tests/unit/visual-baselines.test.js",
+   "alive": false
+  }
+ }
+}

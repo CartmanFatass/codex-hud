@@ -1,0 +1,24 @@
+{
+ "root": "1959592:7468405",
+ "n_scans": 6,
+ "identities": {
+  "1959592:7468405": {
+   "pid": 1959592,
+   "start": 7468405,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1959584,
+   "pgrp": 1959592,
+   "sid": 1959592,
+   "first_seen": "2026-11-04T12:00:26.862Z",
+   "last_seen": "2026-11-04T12:00:26.867Z",
+   "last_state": "R",
+   "cmdline": "node <NVM>/versions/node/v24.22.1/bin/npm run test:mjs",
+   "alive": false
+  }
+ }
+}

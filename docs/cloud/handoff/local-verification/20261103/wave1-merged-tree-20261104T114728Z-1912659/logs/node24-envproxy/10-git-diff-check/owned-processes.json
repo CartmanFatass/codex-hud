@@ -1,0 +1,24 @@
+{
+ "root": "1962421:7474469",
+ "n_scans": 5,
+ "identities": {
+  "1962421:7474469": {
+   "pid": 1962421,
+   "start": 7474469,
+   "comm": "git",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1962413,
+   "pgrp": 1962421,
+   "sid": 1962421,
+   "first_seen": "2026-11-04T12:01:27.503Z",
+   "last_seen": "2026-11-04T12:01:27.503Z",
+   "last_state": "Z",
+   "cmdline": "",
+   "alive": false
+  }
+ }
+}

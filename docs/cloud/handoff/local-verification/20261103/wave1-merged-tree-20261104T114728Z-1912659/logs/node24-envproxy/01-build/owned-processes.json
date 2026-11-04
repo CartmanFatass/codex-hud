@@ -1,0 +1,60 @@
+{
+ "root": "1949503:7457065",
+ "n_scans": 11,
+ "identities": {
+  "1949503:7457065": {
+   "pid": 1949503,
+   "start": 7457065,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1949495,
+   "pgrp": 1949503,
+   "sid": 1949503,
+   "first_seen": "2026-11-04T11:58:33.461Z",
+   "last_seen": "2026-11-04T11:58:39.493Z",
+   "last_state": "S",
+   "cmdline": "node <NVM>/versions/node/v24.22.1/bin/npm run build",
+   "alive": false
+  },
+  "1949535:7457076": {
+   "pid": 1949535,
+   "start": 7457076,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1949503,
+   "pgrp": 1949503,
+   "sid": 1949503,
+   "first_seen": "2026-11-04T11:58:34.471Z",
+   "last_seen": "2026-11-04T11:58:39.493Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/typescript/bin/tsc",
+   "alive": false
+  },
+  "1949536:7457077": {
+   "pid": 1949536,
+   "start": 7457077,
+   "comm": "MainThread",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1949535,
+   "pgrp": 1949503,
+   "sid": 1949503,
+   "first_seen": "2026-11-04T11:58:34.471Z",
+   "last_seen": "2026-11-04T11:58:39.493Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc",
+   "alive": false
+  }
+ }
+}

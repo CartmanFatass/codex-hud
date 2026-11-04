@@ -1,0 +1,168 @@
+{
+ "root": "1947640:7453888",
+ "n_scans": 10,
+ "identities": {
+  "1947640:7453888": {
+   "pid": 1947640,
+   "start": 7453888,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1947627,
+   "pgrp": 1947640,
+   "sid": 1947640,
+   "first_seen": "2026-11-04T11:58:01.690Z",
+   "last_seen": "2026-11-04T11:58:06.724Z",
+   "last_state": "S",
+   "cmdline": "node <VERIFY_ROOT>/runtimes/node-v22.23.4/bin/npm run test:hud-mcp",
+   "alive": false
+  },
+  "1947656:7453897": {
+   "pid": 1947656,
+   "start": 7453897,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1947640,
+   "pgrp": 1947640,
+   "sid": 1947640,
+   "first_seen": "2026-11-04T11:58:02.702Z",
+   "last_seen": "2026-11-04T11:58:06.724Z",
+   "last_state": "S",
+   "cmdline": "sh -c npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js",
+   "alive": false
+  },
+  "1947657:7453897": {
+   "pid": 1947657,
+   "start": 7453897,
+   "comm": "npm run build:h",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1947656,
+   "pgrp": 1947640,
+   "sid": 1947640,
+   "first_seen": "2026-11-04T11:58:02.702Z",
+   "last_seen": "2026-11-04T11:58:05.716Z",
+   "last_state": "S",
+   "cmdline": "npm run build:hud-mcp",
+   "alive": false
+  },
+  "1947688:7453908": {
+   "pid": 1947688,
+   "start": 7453908,
+   "comm": "sh",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1947657,
+   "pgrp": 1947640,
+   "sid": 1947640,
+   "first_seen": "2026-11-04T11:58:02.702Z",
+   "last_seen": "2026-11-04T11:58:05.716Z",
+   "last_state": "S",
+   "cmdline": "sh -c node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
+   "alive": false
+  },
+  "1947690:7453908": {
+   "pid": 1947690,
+   "start": 7453908,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1947688,
+   "pgrp": 1947640,
+   "sid": 1947640,
+   "first_seen": "2026-11-04T11:58:02.702Z",
+   "last_seen": "2026-11-04T11:58:05.716Z",
+   "last_state": "R",
+   "cmdline": "node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
+   "alive": false
+  },
+  "1947939:7454304": {
+   "pid": 1947939,
+   "start": 7454304,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1947656,
+   "pgrp": 1947640,
+   "sid": 1947640,
+   "first_seen": "2026-11-04T11:58:06.724Z",
+   "last_seen": "2026-11-04T11:58:06.724Z",
+   "last_state": "S",
+   "cmdline": "node --test packages/hud-mcp/dist/tests/hud-mcp/ancestor-discovery.test.js packages/hud-mcp/dist/tests/hud-mcp/authorization.test.js packages/hud-mcp/dist/tests/hud-mcp/b20-advice.test.js packages/hud-mcp/dist/tests/hud-mcp/config.test.js packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js packages/hud-mcp/dist/tests/hud-mcp/handshake-benchmark.test.js packages/hud-mcp/dist/tests/hud-mcp/handshake.test.js packages/hud-mcp/dist/tests/hud-mcp/hook-source.test.js packages/hud-mcp/dist/tests/hud-mcp/int-ledger-registry.test.js packages/hud-mcp/dist/tests/hud-mcp/resume-expected-run.test.js packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js",
+   "alive": false
+  },
+  "1947949:7454308": {
+   "pid": 1947949,
+   "start": 7454308,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1947939,
+   "pgrp": 1947640,
+   "sid": 1947640,
+   "first_seen": "2026-11-04T11:58:06.724Z",
+   "last_seen": "2026-11-04T11:58:06.724Z",
+   "last_state": "S",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node packages/hud-mcp/dist/tests/hud-mcp/b20-advice.test.js",
+   "alive": false
+  },
+  "1947961:7454308": {
+   "pid": 1947961,
+   "start": 7454308,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1947939,
+   "pgrp": 1947640,
+   "sid": 1947640,
+   "first_seen": "2026-11-04T11:58:06.724Z",
+   "last_seen": "2026-11-04T11:58:06.724Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js",
+   "alive": false
+  },
+  "1948150:7454379": {
+   "pid": 1948150,
+   "start": 7454379,
+   "comm": "node",
+   "how": [
+    "descendant",
+    "pgrp",
+    "session"
+   ],
+   "ppid_first": 1947949,
+   "pgrp": 1947640,
+   "sid": 1947640,
+   "first_seen": "2026-11-04T11:58:06.724Z",
+   "last_seen": "2026-11-04T11:58:06.724Z",
+   "last_state": "R",
+   "cmdline": "<VERIFY_ROOT>/runtimes/node-v22.23.4/bin/node <WT:node22-noenvproxy-control>/packages/hud-mcp/bin/hud-mcp.mjs",
+   "alive": false
+  }
+ }
+}

@@ -1,0 +1,1 @@
+{"id":"synthetic-direct-upper-bypass","arg":"a b $(synthetic)","stdin":"synthetic route stdin\u0000$(not-a-command)\n","body":"synthetic-target-response\n","env":{"HTTP_PROXY":"http://127.0.0.1:45214","HTTPS_PROXY":"http://127.0.0.1:45216","NO_PROXY":"127.0.0.1","NODE_USE_ENV_PROXY":"1"}}
