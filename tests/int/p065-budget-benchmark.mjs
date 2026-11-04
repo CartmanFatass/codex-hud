@@ -9,6 +9,7 @@
  * claim six-run or formal WSL/Claude qualification from one invocation.
  */
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { fork, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -40,7 +41,13 @@ const forced = ['callback-overrun', 'commit-overrun', 'commit-uncertain'];
 const planned = profiles.flatMap((profile) => tools.flatMap((tool) => [
   ...operational.map((scenario) => ({ ...profile, tool, scenario, bank: 'operational' })),
   ...(tool === 'delegate_status' ? [] : forced.map((scenario) => ({ ...profile, tool, scenario, bank: 'forced' }))),
-])).map((cell) => ({ ...cell, id: [cell.h, cell.r, cell.tool, cell.scenario].join('/'), warmups: WARMUPS, measured: MEASURED }));
+])).map((cell) => ({ ...cell, id: [cell.h, cell.r, cell.tool, cell.scenario].join('/'), warmups: WARMUPS, measured: MEASURED,
+  lossCoverageRequired: cell.scenario === 'response-loss' ? {
+    successfulLostMeasuredPerParticipant: 1,
+    checkedRecoveryMeasuredPerParticipant: cell.tool === 'delegate_report' ? 0 : 1,
+    durableInspectionMeasuredPerParticipant: 1,
+  } : null,
+}));
 const startedAt = new Date().toISOString();
 const sandbox = mkdtempSync(join(tmpdir(), 'p065-budget-'));
 const token = randomUUID();
@@ -102,20 +109,22 @@ function stats(values) {
   };
 }
 let identity;
+let checkerControls = { executed: false, passed: false, checks: [], scope: 'pure evidence-checker controls only; never benchmark samples or performance evidence' };
 function snapshotReport(complete = false) {
-  const coldCliComplete = coldCli.length === profiles.length && coldCli.every((entry) => entry.samples.length === 2 && entry.semantic);
-  const coldCliNumerical = coldCliComplete && coldCli.every((entry) => entry.samples.every((sample) => sample.diagnostics.authorizationMs <= 30 && sample.diagnostics.waitMs <= 20));
-  const populationComplete = complete && coldCliComplete && distributions.length === planned.length &&
+  const coldCliComplete = coldCli.length === profiles.length && coldCli.every((entry) => entry.samples.length === 2 && entry.semantic && entry.samples.every(validColdTiming));
+  const coldCliNumerical = coldCliComplete && coldCli.every((entry) => entry.samples.every((sample) =>
+    validColdTiming(sample) && sample.diagnostics.authorizationMs <= 30 && sample.diagnostics.waitMs <= 20));
+  const populationComplete = complete && checkerControls.passed && coldCliComplete && distributions.length === planned.length &&
     distributions.every((row) => row.warmups === WARMUPS && row.measured === MEASURED && row.complete);
-  const operationalNumericalQualification = populationComplete && coldCliNumerical &&
+  const operationalNumericalQualification = populationComplete && checkerControls.passed && coldCliNumerical &&
     distributions.every((row) => row.operationalNumerical && row.operationalSemantics);
   const forcedControlSemanticCompletion = populationComplete &&
     distributions.filter((row) => row.bank === 'forced').every((row) => row.semantics);
   const inclusiveAllSamplesNumericalStatus = populationComplete && coldCliNumerical && distributions.every((row) => row.numerical);
   const report = {
-    schemaVersion: 1, kind: 'p065-real-sqlite-synthetic-cloud-surrogate',
+    schemaVersion: 2, kind: 'p065-real-sqlite-synthetic-cloud-surrogate',
     startedAt, endedAt: new Date().toISOString(), complete, populationComplete, calls, planned,
-    identity, sqliteVersion, moduleStartupMs, distributions, failures, coldCli, coldCliComplete, coldCliNumerical,
+    identity, sqliteVersion, moduleStartupMs, checkerControls, distributions, failures, coldCli, coldCliComplete, coldCliNumerical,
     resourceUsage: process.resourceUsage(), freeMemoryAtSnapshot: freemem(), cpuStatAtSnapshot: readOptional('/sys/fs/cgroup/cpu.stat'),
     results: {
       operationalNumericalQualification, forcedControlSemanticCompletion, inclusiveAllSamplesNumericalStatus,
@@ -125,7 +134,8 @@ function snapshotReport(complete = false) {
     settings: {
       warmups: WARMUPS, measured: MEASURED, responseDeadlineMs: RESPONSE_MS, holderDeadlineMs: HELPER_MS,
       outerDeadlineMs: OUTER_MS, ledgerBusyTimeoutMs: 0, writeWallBoundMs: 30, cumulativeWaitBoundMs: 20,
-      responseP95StrictlyBelowMs: 50, shortLockMs: 5, longLockMs: 100, forcedSynchronousDelayMs: 40,
+      responseP95StrictlyBelowMs: 50, responseGateScopes: ['allAttempts', 'primaryMeasured', 'primaryWarmups', 'recoveryMeasured', 'recoveryWarmups'],
+      numericalExemption: 'only evidenced deliberate 40 ms callback/COMMIT overruns; zero-delay commit uncertainty stays operational', shortLockMs: 5, longLockMs: 100, forcedSynchronousDelayMs: 40,
       limits: { maxActiveRuns: 12, maxActiveRunsPerOwner: 12 }, scenarioOrder: 'profile, tool, listed scenario, warmups, measured',
     },
     artifacts: { samples: basename(rawFile), support: basename(supportFile) },
@@ -376,51 +386,210 @@ function countState(ledger, launches) {
     launches: launches.length,
   }));
 }
-function durableFor(ledger, tool, args, actor) {
+function durableFor(ledger, tool, args, actor, expectedRunId) {
   return ledger.snapshot((tx) => {
     if (tool === 'delegate_spawn' || tool === 'delegate_resume') {
       const row = tx.get('SELECT run_id,link_id,outcome FROM idempotency WHERE request_key=?', args.request_key);
       return row ? { ...row, outcome: JSON.parse(row.outcome) } : null;
     }
-    if (tool === 'delegate_report') return tx.get('SELECT report_id,run_id FROM reports WHERE summary=?', args.summary) ?? null;
-    if (tool === 'delegate_whoami')
-      return tx.get('SELECT binding_id,run_id,caller_context_id FROM child_bindings WHERE caller_context_id=? AND is_current=1', actor.context.contextId) ?? null;
-    if (tool === 'delegate_cancel')
-      return tx.get('SELECT run_id,cancel_requested_at FROM runs WHERE run_id=?', args.runId) ?? null;
-    return tx.get('SELECT run_id,state FROM runs WHERE run_id=?', args.runId) ?? null;
+    if (tool === 'delegate_report')
+      return tx.get('SELECT report_id,run_id FROM reports WHERE summary=? AND run_id=?', args.summary, args.runId) ?? null;
+    if (tool === 'delegate_whoami') {
+      return tx.get(
+        'SELECT b.binding_id,b.run_id,r.link_id,b.caller_id,b.caller_context_id,b.context_generation,b.session_ref ' +
+        'FROM child_bindings b JOIN runs r ON r.run_id=b.run_id ' +
+        'JOIN caller_contexts c ON c.context_id=b.caller_context_id AND c.generation=b.context_generation ' +
+        'WHERE b.caller_context_id=? AND b.context_generation=? AND b.caller_id=? ' +
+        'AND b.is_current=1 AND b.revoked_at IS NULL AND c.closed_at IS NULL ' +
+        'AND b.caller_id=c.caller_id AND b.session_ref=c.session_ref ' +
+        'AND b.run_id=? AND b.binding_generation=r.expected_generation AND b.session_ref=r.target_session_ref',
+        actor.context.contextId, actor.context.generation, actor.registration.caller.callerId, expectedRunId
+      ) ?? null;
+    }
+    const run = tx.get(
+      'SELECT r.run_id,r.link_id,r.run_seq,r.expected_generation,r.state,r.cancel_requested_at,l.state AS link_state ' +
+      'FROM runs r JOIN links l ON l.link_id=r.link_id WHERE r.run_id=?', args.runId
+    );
+    if (!run) return null;
+    return {
+      ...run,
+      isCurrent: tx.get('SELECT run_id FROM runs WHERE link_id=? ORDER BY run_seq DESC LIMIT 1', run.link_id)?.run_id === run.run_id,
+      slotHeld: Boolean(tx.get('SELECT 1 FROM slots WHERE run_id=?', run.run_id)),
+      isRunTerminal: !['starting', 'running', 'cancelling', 'uncertain'].includes(run.state),
+      asOfSeq: Number(tx.get('SELECT coalesce(max(seq),0) AS seq FROM events').seq),
+    };
   });
 }
-function actualOutcome(value, lost = false) {
-  if (lost) return 'response_lost';
+function canonicalReplyErrors(tool, value, durable, allowEarlierSeq = false) {
+  const errors = [];
+  const require = (condition, message) => { if (!condition) errors.push(message); };
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.ok !== true)
+    return ['reply is not an explicit successful object'];
+  if (!durable) return ['successful reply has no independent durable target'];
+  if (tool === 'delegate_spawn' || tool === 'delegate_resume') {
+    require(durable.outcome?.status === 'accepted', 'canonical outcome is not accepted');
+    require(durable.outcome?.runId === durable.run_id && durable.outcome?.linkId === durable.link_id,
+      'idempotency outcome and indexed identities disagree');
+    // Only these explicitly optional presentation fields may differ on replay.
+    const { advice: _advice, wake: _wake, ...required } = value;
+    require(isDeepStrictEqual(required, { ok: true, ...durable.outcome }), 'reply differs from canonical idempotency outcome');
+  } else if (tool === 'delegate_whoami') {
+    require(typeof durable.binding_id === 'string' && typeof durable.caller_context_id === 'string' &&
+      typeof durable.caller_id === 'string' && typeof durable.session_ref === 'string' &&
+      Number.isSafeInteger(durable.context_generation), 'current child binding subject is incomplete');
+    require(isDeepStrictEqual(value, {
+      ok: true, state: 'bound', linkId: durable.link_id, runId: durable.run_id, reason: null,
+    }), 'whoami reply differs from current bound run/link');
+  } else if (tool === 'delegate_report') {
+    require(isDeepStrictEqual(value, { ok: true, reportId: durable.report_id, runId: durable.run_id }),
+      'report reply differs from stored report identity');
+  } else if (tool === 'delegate_cancel') {
+    require(value.accepted === true, 'cancel reply is not accepted');
+    require(Number.isSafeInteger(durable.cancel_requested_at) && durable.cancel_requested_at >= 0 &&
+      value.cancelRequestedAt === durable.cancel_requested_at, 'cancel timestamp differs from durable original');
+    if (value.status !== null && value.status !== undefined)
+      errors.push(...canonicalReplyErrors('delegate_status', value.status, durable, true).map((message) => 'cancel status: ' + message));
+  } else if (tool === 'delegate_status') {
+    require(value.link?.linkId === durable.link_id && value.link?.state === durable.link_state, 'status link identity/state differs');
+    const run = value.currentRun;
+    for (const [field, column] of [
+      ['runId', 'run_id'], ['linkId', 'link_id'], ['state', 'state'],
+      ['runSeq', 'run_seq'], ['expectedGeneration', 'expected_generation'], ['cancelRequestedAt', 'cancel_requested_at'],
+    ]) require(run?.[field] === durable[column], 'status run fact differs: ' + field);
+    for (const field of ['isCurrent', 'isRunTerminal', 'slotHeld'])
+      require(value[field] === durable[field], 'status read fact differs: ' + field);
+    require(allowEarlierSeq
+      ? Number.isSafeInteger(value.asOfSeq) && value.asOfSeq >= 0 && value.asOfSeq <= durable.asOfSeq
+      : value.asOfSeq === durable.asOfSeq, 'status event snapshot bound differs');
+  } else errors.push('unknown canonical reply tool');
+  return errors;
+}
+function actualOutcome(value) {
   if (!value) return 'uncompleted';
   if (value.ok === false) return value.code === 'busy' ? 'busy' : value.code === 'internal_error' ? 'internal_error' : 'refusal';
   return 'success';
 }
+const nonnegative = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+function timingErrors(tool, diagnostics) {
+  const errors = [];
+  const require = (condition, message) => { if (!condition) errors.push(message); };
+  if (!diagnostics || typeof diagnostics !== 'object' || Array.isArray(diagnostics))
+    return ['missing diagnostics object'];
+  const d = diagnostics;
+  const write = tool !== 'delegate_status';
+  require(d.writeBudgetApplicable === write, 'wrong trusted timing applicability');
+  require(nonnegative(d.elapsedMs), 'invalid elapsedMs');
+  require(Array.isArray(d.phases) && d.phases.length > 0 && d.phases.every((entry, index, entries) =>
+    entry && typeof entry.phase === 'string' && nonnegative(entry.at) && entry.at <= d.elapsedMs &&
+    (index === 0 || entry.at >= entries[index - 1].at)), 'invalid checkpoint intervals');
+  if (write) {
+    for (const field of ['authorizationMs', 'deadlineMs', 'overrunMs', 'waitMs', 'queueMs'])
+      require(nonnegative(d[field]), 'invalid ' + field);
+    require(Number.isSafeInteger(d.attempts) && d.attempts >= 0, 'invalid lock attempt count');
+    require(d.deadlineMs > 0 && d.deadlineMs <= 30, 'invalid original deadline');
+    require(d.authorizationMs <= d.elapsedMs && d.queueMs <= d.waitMs, 'inconsistent timing intervals');
+    require(d.enclosingDeadline === 'trusted' || d.enclosingDeadline === 'unavailable', 'invalid enclosing deadline kind');
+    require(d.phaseMs && typeof d.phaseMs === 'object' && !Array.isArray(d.phaseMs) &&
+      Object.values(d.phaseMs).every(nonnegative), 'invalid phase totals');
+    require(d.phaseCounts && typeof d.phaseCounts === 'object' && !Array.isArray(d.phaseCounts) &&
+      Object.values(d.phaseCounts).every((value) => Number.isSafeInteger(value) && value >= 0), 'invalid phase counts');
+  } else {
+    for (const field of ['authorizationMs', 'deadlineMs', 'overrunMs', 'waitMs', 'queueMs'])
+      require(d[field] === null, 'read-only field must be explicitly N/A: ' + field);
+    require(nonnegative(d.upfrontMs) && d.upfrontMs <= d.elapsedMs, 'invalid read upfrontMs');
+    require(d.attempts === 0 && d.enclosingDeadline === 'not_applicable', 'read-only timing has writer metadata');
+  }
+  return errors;
+}
+function validColdTiming(sample) {
+  return timingErrors('delegate_resume', sample.diagnostics).length === 0 &&
+    nonnegative(sample.began) && nonnegative(sample.ended) && sample.ended >= sample.began;
+}
 function numerical(row) {
   const d = row.diagnostics;
+  const invalid = timingErrors(row.tool, d);
+  if (!nonnegative(row.responseMs)) invalid.push('invalid responseMs');
+  const completeTiming = invalid.length === 0;
   return {
-    completeTiming: Boolean(d) && Number.isFinite(row.responseMs),
+    completeTiming, invalidTiming: invalid,
     writeBudgetApplicable: row.tool !== 'delegate_status',
-    writeBound: row.tool === 'delegate_status' ? null : Boolean(d) && d.authorizationMs <= 30,
-    cumulativeWaitBound: row.tool === 'delegate_status' ? null : Boolean(d) && d.waitMs <= 20,
+    writeBound: row.tool === 'delegate_status' ? null : completeTiming && d.authorizationMs <= 30,
+    cumulativeWaitBound: row.tool === 'delegate_status' ? null : completeTiming && d.waitMs <= 20,
     busyTimeoutBound: row.busyTimeoutMs === 0,
-    responseIndividualBelow50: Number.isFinite(row.responseMs) && row.responseMs < 50,
-    overrunMs: d?.overrunMs ?? null,
+    responseIndividualBelow50: nonnegative(row.responseMs) && row.responseMs < 50,
+    overrunMs: nonnegative(d?.overrunMs) ? d.overrunMs : null,
   };
 }
-async function call(f, client, cell, phase, sequence, index, args, rows, recovery = false) {
-  checkOuter();
+function overrunExempt(row) {
+  // Semantic fault membership is not numerical-exemption eligibility. In
+  // particular, zero-delay acknowledgement loss remains operational numerically.
+  return row.bank === 'forced' && !row.recovery &&
+    ['callback-overrun', 'commit-overrun'].includes(row.declaredInjection) &&
+    row.injection?.requestedMs === 40 &&
+    nonnegative(row.injection?.began) && nonnegative(row.injection?.ended) &&
+    row.injection.ended - row.injection.began >= 40 &&
+    nonnegative(row.diagnostics?.authorizationMs) && row.diagnostics.authorizationMs > 30;
+}
+function numericalGates(selected) {
+  const percentileGate = (group) => {
+    const valid = group.every((row) => nonnegative(row.responseMs));
+    const outcomes = Object.fromEntries([...new Set(group.map((row) => row.actualOutcome))].map((outcome) => {
+      const bucket = group.filter((row) => row.actualOutcome === outcome);
+      const timing = stats(bucket.filter((row) => nonnegative(row.responseMs)).map((row) => row.responseMs));
+      return [outcome, { n: bucket.length, timing, qualified: timing.n === bucket.length && timing.p95 < 50 }];
+    }));
+    const timing = stats(group.filter((row) => nonnegative(row.responseMs)).map((row) => row.responseMs));
+    return { n: group.length, timing, outcomes,
+      qualified: group.length === 0 || (valid && timing.n === group.length && timing.p95 < 50 &&
+        Object.values(outcomes).every((bucket) => bucket.qualified)) };
+  };
+  const groups = {
+    allAttempts: selected,
+    primaryMeasured: selected.filter((row) => !row.recovery && row.phase === 'measured'),
+    primaryWarmups: selected.filter((row) => !row.recovery && row.phase === 'warmup'),
+    recoveryMeasured: selected.filter((row) => row.recovery && row.phase === 'measured'),
+    recoveryWarmups: selected.filter((row) => row.recovery && row.phase === 'warmup'),
+  };
+  const response = Object.fromEntries(Object.entries(groups).map(([name, group]) => [name, percentileGate(group)]));
+  const perCall = selected.every((row) => row.numeric.completeTiming &&
+    row.numeric.writeBound !== false && row.numeric.cumulativeWaitBound !== false && row.numeric.busyTimeoutBound);
+  return { perCall, response, qualified: perCall && Object.values(response).every((group) => group.qualified) };
+}
+function lossCoverage(cell, rows) {
+  if (!cell.lossCoverageRequired) return { applicable: false, complete: true };
+  const participants = Array.from({ length: cell.h }, (_unused, participant) => {
+    const primary = rows.filter((row) => !row.recovery && row.phase === 'measured' && row.participant === participant);
+    const successful = primary.filter((row) => row.deliveryOutcome === 'response_lost' && row.actualOutcome === 'success' &&
+      row.canonicalReplyVerified === true && row.durableInspectionVerified === true && row.semantic);
+    const recovered = successful.filter((row) => row.recoveryVerified === true);
+    return {
+      participant, successfulLost: successful.length, durableInspections: successful.length, checkedRecoveries: recovered.length,
+      successfulCallIds: successful.map((row) => row.id), recoveryCallIds: recovered.map((row) => row.recoveryCall),
+      complete: successful.length >= cell.lossCoverageRequired.successfulLostMeasuredPerParticipant &&
+        successful.length >= cell.lossCoverageRequired.durableInspectionMeasuredPerParticipant &&
+        recovered.length >= cell.lossCoverageRequired.checkedRecoveryMeasuredPerParticipant,
+    };
+  });
+  return { applicable: true, required: cell.lossCoverageRequired, participants, complete: participants.every((entry) => entry.complete) };
+}
+function prepareCall(client, cell, phase, sequence, index, args, rows, recovery = false) {
   const row = {
     kind: 'call', id: randomUUID(), cell: cell.id, bank: recovery ? 'operational' : cell.bank,
     tool: cell.tool, scenario: recovery ? cell.scenario + '/recovery' : cell.scenario,
     phase, sequence, participant: index, fixture: fixtureOrdinal, h: cell.h, r: cell.r,
-    recovery, declaredInjection: !recovery && cell.bank === 'forced' ? cell.scenario : null,
+    recovery, dispatchState: 'pending', declaredInjection: !recovery && cell.bank === 'forced' ? cell.scenario : null,
     requestKey: args.request_key ?? null, transactions: [], sql: [], backoffs: [], injection: null,
     began: instant(), finished: false, semantic: true, semanticErrors: [], busyTimeoutMs: client.busyTimeoutMs,
   };
   calls++;
   rows.push(row);
   raw({ ...row, record: 'started' });
+  return row;
+}
+async function call(f, client, cell, phase, sequence, index, args, rows, recovery = false, prepared) {
+  checkOuter();
+  const row = prepared ?? prepareCall(client, cell, phase, sequence, index, args, rows, recovery);
+  row.dispatchState = 'issued';
   client.setMeasurement(row);
   try {
     const value = await client.rpc('tools/call', { name: cell.tool, arguments: args }, !recovery && cell.scenario === 'response-loss');
@@ -445,8 +614,9 @@ async function call(f, client, cell, phase, sequence, index, args, rows, recover
     row.callbackMs = row.transactions.reduce((sum, item) => sum + (item.callbackMs ?? 0), 0);
     row.commitMs = row.sql.filter((item) => item.operation === 'COMMIT').reduce((sum, item) => sum + item.ended - item.began, 0);
     row.rollbackMs = row.sql.filter((item) => item.operation === 'ROLLBACK').reduce((sum, item) => sum + item.ended - item.began, 0);
-    // Completion is appended again with semantic assertions after durable readback.
-    raw({ ...row, record: row.finished ? 'flushed' : 'incomplete' });
+    row.numericalExemptionEligible = overrunExempt(row);
+    // No synchronous serialization/storage work while a sibling call is timed.
+    // The wave journals these completed/incomplete measurements after all clocks end.
   }
   return row;
 }
@@ -529,7 +699,7 @@ async function wave(cell, phase, sequence, rows) {
           const began = instant();
           queueJobs.push(ledger.transaction((tx) => tx.get('SELECT 1 AS queued_predecessor'), 20)
             .then((result) => ({ result }), (error) => ({ error: errorText(error) }))
-            .then((result) => support({ kind: 'queue_predecessor', fixture: fixtureOrdinal, began, ended: instant(), ...result })));
+            .then((result) => ({ kind: 'queue_predecessor', fixture: fixtureOrdinal, began, ended: instant(), ...result })));
         }
     }
     const argumentsByParticipant = f.actors.map((_actor, index) => {
@@ -537,15 +707,19 @@ async function wave(cell, phase, sequence, rows) {
       if (cell.tool === 'delegate_report') args.summary = 'Synthetic P065 report ' + fixtureOrdinal + '-' + index;
       return args;
     });
+    // Journal both dispatch intentions before issuing either H=2 frame.
+    const prepared = f.actors.map((_actor, index) =>
+      prepareCall(clients[index], cell, phase, sequence + index, index, argumentsByParticipant[index], rows));
     const issue = async (index) => {
-      const result = await call(f, clients[index], cell, phase, sequence + index, index, argumentsByParticipant[index], rows);
+      const result = await call(f, clients[index], cell, phase, sequence + index, index, argumentsByParticipant[index], rows, false, prepared[index]);
       waveRows.push(result);
       return result;
     };
     // H=2 operational frames are both issued before awaiting either result.
     if (cell.bank === 'operational') await Promise.all(f.actors.map((_actor, index) => issue(index)));
     else for (let index = 0; index < cell.h; index++) await issue(index);
-    await Promise.all(queueJobs);
+    for (const row of waveRows) raw({ ...row, record: row.finished ? 'flushed' : 'incomplete' });
+    for (const predecessor of await Promise.all(queueJobs)) support(predecessor);
     traffic = await helper.request('stop');
     support({ kind: 'traffic', fixture: fixtureOrdinal, ...traffic });
     assert.equal(traffic.missedMetrics, 0, 'helper_metric_overflow');
@@ -557,14 +731,17 @@ async function wave(cell, phase, sequence, rows) {
     let accepted = 0, reported = 0, cancelled = 0, remapped = 0, expectedLaunches = 0;
     for (const row of waveRows) {
       const index = row.participant, args = argumentsByParticipant[index];
-      const durable = durableFor(observer, cell.tool, args, f.actors[index]);
+      const durable = durableFor(observer, cell.tool, args, f.actors[index], f.targets[index].runId);
       row.durable = durable;
       verify(row, unexpectedTrafficErrors.length === 0, 'unexpected heartbeat/observation traffic failure');
       const committed = cell.tool === 'delegate_cancel' ? durable?.cancel_requested_at !== null && durable?.cancel_requested_at !== undefined : Boolean(durable);
-      const targetSuccess = cell.tool === 'delegate_status' ? row.value?.ok === true :
-        cell.tool === 'delegate_cancel' ? row.value?.accepted === true :
-        cell.tool === 'delegate_whoami' ? row.value?.state === 'bound' :
-        row.value?.ok === true;
+      row.canonicalReplyErrors = row.actualOutcome === 'success'
+        ? canonicalReplyErrors(cell.tool, row.serverValue, durable) : [];
+      row.canonicalReplyVerified = row.actualOutcome === 'success' && row.canonicalReplyErrors.length === 0;
+      row.durableInspectionVerified = row.canonicalReplyVerified;
+      verify(row, row.actualOutcome !== 'success' || row.canonicalReplyVerified,
+        'successful server reply contradicts durable truth: ' + row.canonicalReplyErrors.join('; '));
+      const targetSuccess = row.canonicalReplyVerified;
       if (['delegate_spawn', 'delegate_resume'].includes(cell.tool) && committed) accepted++;
       if (cell.tool === 'delegate_report' && committed) reported++;
       if (cell.tool === 'delegate_cancel' && committed) cancelled++;
@@ -627,6 +804,10 @@ async function wave(cell, phase, sequence, rows) {
     if (['response-loss', 'commit-overrun', 'commit-uncertain'].includes(cell.scenario)) {
       for (const row of waveRows) {
         const index = row.participant, args = argumentsByParticipant[index];
+        if (cell.scenario === 'response-loss' && !row.canonicalReplyVerified) {
+          row.recoveryDisposition = 'no verified successful lost result; required coverage is incomplete';
+          continue;
+        }
         if (cell.tool === 'delegate_report') {
           row.recoveryDisposition = 'durable report inspected; no automatic resubmission';
           continue;
@@ -652,14 +833,20 @@ async function wave(cell, phase, sequence, rows) {
         }
         const old = countState(observer, f.launches);
         const recovered = await call(f, clients[index], cell, phase, sequence + index, index, args, rows, true);
-        recovered.durable = durableFor(observer, cell.tool, args, f.actors[index]);
+        if (cell.tool === 'delegate_status') verify(recovered, recovered.transactions.length === 0, 'read-only status recovery wrote to the ledger');
+        recovered.durable = durableFor(observer, cell.tool, args, f.actors[index], f.targets[index].runId);
         const latest = countState(observer, f.launches);
-        verify(recovered, recovered.value?.ok === true, 'canonical recovery did not succeed');
+        recovered.canonicalReplyErrors = canonicalReplyErrors(cell.tool, recovered.value, row.durable);
+        recovered.canonicalReplyVerified = recovered.canonicalReplyErrors.length === 0;
+        recovered.durableInspectionVerified = recovered.canonicalReplyVerified;
+        verify(recovered, recovered.canonicalReplyVerified,
+          'canonical recovery reply mismatch: ' + recovered.canonicalReplyErrors.join('; '));
         verify(recovered, JSON.stringify(recovered.durable) === JSON.stringify(row.durable), 'recovery changed durable identity');
         for (const field of ['accepted', 'runs', 'slots', 'reports', 'cancel', 'bindings', 'launches'])
           verify(recovered, latest[field] === old[field], 'recovery duplicated ' + field);
         raw({ ...recovered, record: 'completed' });
         row.recoveryCall = recovered.id;
+        row.recoveryVerified = recovered.finished && recovered.semantic && recovered.canonicalReplyVerified;
       }
     }
     support({ kind: 'wave_final', fixture: fixtureOrdinal, cell: cell.id, before, after, waveAssertions, activePeak: cell.r + accepted });
@@ -699,7 +886,7 @@ function summarize(cell, rows) {
     const included = rows.filter((row) => row.bank === bank);
     const measuredRows = included.filter((row) => row.phase === 'measured');
     const scopes = {};
-    for (const [scope, selected] of [['all-attempts-including-warmups', included], ['measured', measuredRows]]) {
+    for (const [scope, selected] of [['all-attempts-including-warmups', included], ['primary-measured', measuredRows.filter((row) => !row.recovery)], ['recovery-measured', measuredRows.filter((row) => row.recovery)], ['primary-warmups', included.filter((row) => row.phase === 'warmup' && !row.recovery)], ['recovery-warmups', included.filter((row) => row.phase === 'warmup' && row.recovery)]]) {
       const outcomes = {};
       for (const row of selected) {
         const key = row.actualOutcome ?? 'uncompleted';
@@ -707,6 +894,15 @@ function summarize(cell, rows) {
       }
       const describe = (group) => ({
         n: group.length,
+        timingCoverage: {
+          expectedResponse: group.length,
+          validResponse: group.filter((row) => nonnegative(row.responseMs)).length,
+          expectedWrite: group.filter((row) => row.tool !== 'delegate_status').length,
+          validWrite: group.filter((row) => row.tool !== 'delegate_status' && row.numeric.completeTiming).length,
+          expectedRead: group.filter((row) => row.tool === 'delegate_status').length,
+          validRead: group.filter((row) => row.tool === 'delegate_status' && row.numeric.completeTiming).length,
+          invalid: group.filter((row) => !row.numeric.completeTiming).length,
+        },
         responseMs: stats(group.filter((row) => Number.isFinite(row.responseMs)).map((row) => row.responseMs)),
         authorizationMs: stats(group.filter((row) => Number.isFinite(row.diagnostics?.authorizationMs)).map((row) => row.diagnostics.authorizationMs)),
         upfrontMs: stats(group.filter((row) => Number.isFinite(row.diagnostics?.upfrontMs)).map((row) => row.diagnostics.upfrontMs)),
@@ -737,12 +933,11 @@ function summarize(cell, rows) {
     }
     populations[bank] = scopes;
   }
-  const numeric = (selected) => selected.every((row) => row.numeric.completeTiming &&
-    row.numeric.writeBound !== false && row.numeric.cumulativeWaitBound !== false && row.numeric.busyTimeoutBound) &&
-    (!selected.length || stats(selected.map((row) => row.responseMs)).p95 < 50) &&
-    [...new Set(selected.map((row) => row.actualOutcome))].every((outcome) =>
-      stats(selected.filter((row) => row.actualOutcome === outcome).map((row) => row.responseMs)).p95 < 50);
-  const op = rows.filter((row) => row.bank === 'operational');
+  const inclusiveGates = numericalGates(rows);
+  const exempt = rows.filter(overrunExempt);
+  const op = rows.filter((row) => !overrunExempt(row));
+  const operationalGates = numericalGates(op);
+  const coverage = lossCoverage(cell, rows);
   const force = rows.filter((row) => row.bank === 'forced');
   const participants = [...new Set(measured.map((row) => row.participant))].sort();
   const nonApplicable = cell.tool === 'delegate_status' ? {
@@ -764,18 +959,159 @@ function summarize(cell, rows) {
       row.sql.some((entry) => entry.operation === 'BEGIN IMMEDIATE' && entry.error) || row.diagnostics?.queueMs >= 20);
   const complete = warmups.length === WARMUPS && measured.length === MEASURED &&
     primary.every((row) => row.finished && row.numeric.completeTiming) && participants.length === cell.h &&
-    requiredOutcomeSeen && heartbeatSeen && observationSeen && contentionSeen;
+    requiredOutcomeSeen && heartbeatSeen && observationSeen && contentionSeen && coverage.complete;
   return {
     ...cell, warmups: warmups.length, measured: measured.length, totalAttempts: rows.length,
     complete, participants, observedOutcomes, requiredOutcomeSeen, heartbeatSeen, observationSeen, contentionSeen,
-    nonApplicable, populations,
-    numerical: numeric(rows),
-    operationalNumerical: numeric(op),
+    nonApplicable, populations, lossCoverage: coverage,
+    numericalScopes: {
+      inclusive: inclusiveGates, operational: operationalGates,
+      operationalAttempts: op.length, deliberateOverrunExemptions: exempt.length,
+      exemptionCallIds: exempt.map((row) => row.id),
+      semanticFaultBankDoesNotImplyExemption: true,
+    },
+    numerical: inclusiveGates.qualified,
+    operationalNumerical: operationalGates.qualified,
     operationalSemantics: op.every((row) => row.semantic),
     semantics: rows.every((row) => row.semantic) && force.every((row) => row.injection),
     fixturePolicy: 'fresh real fixture per H-sized wave; no direct run/claim/slot/binding rewrite',
   };
 }
+
+function runEvidenceCheckerControls() {
+  // Fixed adversarial inputs exercise only the evidence checker. They never enter
+  // rows, raw samples, planned populations, timings, or performance qualification.
+  const checks = [];
+  const check = (name, body) => { body(); checks.push(name); };
+  const writeDiagnostics = () => ({
+    writeBudgetApplicable: true, elapsedMs: 2, authorizationMs: 1, deadlineMs: 30,
+    overrunMs: 0, waitMs: 0, queueMs: 0, attempts: 1, enclosingDeadline: 'unavailable',
+    phaseMs: { prepare: 1 }, phaseCounts: { prepare: 1, complete: 1 },
+    phases: [{ phase: 'prepare', at: 0 }, { phase: 'complete', at: 1 }],
+  });
+  const record = (responseMs = 1, extra = {}) => {
+    const row = {
+      tool: 'delegate_spawn', phase: 'measured', recovery: false, bank: 'operational',
+      responseMs, diagnostics: writeDiagnostics(), busyTimeoutMs: 0, actualOutcome: 'success', ...extra,
+    };
+    row.numeric = numerical(row);
+    return row;
+  };
+  check('51-of-1000 slow primary calls cannot be diluted by 50 fast warmups', () => {
+    const read = { writeBudgetApplicable: false, elapsedMs: 2, upfrontMs: 1, authorizationMs: null,
+      deadlineMs: null, overrunMs: null, waitMs: null, queueMs: null, attempts: 0,
+      enclosingDeadline: 'not_applicable', phases: [{ phase: 'complete', at: 1 }] };
+    const primary = Array.from({ length: 1000 }, (_unused, index) =>
+      record(index < 51 ? 60 : 1, { tool: 'delegate_status', diagnostics: read }));
+    const warmups = Array.from({ length: 50 }, () => record(1, { phase: 'warmup', tool: 'delegate_status', diagnostics: read }));
+    const gates = numericalGates([...primary, ...warmups]);
+    assert.equal(gates.response.allAttempts.qualified, true);
+    assert.equal(gates.response.primaryMeasured.timing.p95, 60);
+    assert.equal(gates.response.primaryMeasured.qualified, false);
+    assert.equal(gates.qualified, false);
+  });
+  check('fast recoveries cannot dilute slow primary calls', () => {
+    const primary = Array.from({ length: 1000 }, (_unused, index) => record(index < 51 ? 60 : 1));
+    const recovery = Array.from({ length: 1000 }, () => record(1, { recovery: true }));
+    const gates = numericalGates([...primary, ...recovery]);
+    assert.equal(gates.response.allAttempts.qualified, true);
+    assert.equal(gates.response.recoveryMeasured.qualified, true);
+    assert.equal(gates.response.primaryMeasured.qualified, false);
+    assert.equal(gates.qualified, false);
+  });
+  check('outcome splits and recovery distributions are independently gated', () => {
+    const rows = Array.from({ length: 1000 }, () => record());
+    rows.push(record(60, { actualOutcome: 'busy' }));
+    assert.equal(numericalGates(rows).qualified, false);
+    assert.equal(numericalGates([...rows.slice(0, 1000), record(60, { recovery: true })]).qualified, false);
+  });
+  check('loss coverage requires each participant success, durable inspection and recovery', () => {
+    const cell = { h: 2, lossCoverageRequired: {
+      successfulLostMeasuredPerParticipant: 1, durableInspectionMeasuredPerParticipant: 1,
+      checkedRecoveryMeasuredPerParticipant: 1,
+    } };
+    const success = (participant) => ({
+      id: 'checker-' + participant, participant, recovery: false, phase: 'measured',
+      deliveryOutcome: 'response_lost', actualOutcome: 'success', semantic: true,
+      canonicalReplyVerified: true, durableInspectionVerified: true,
+      recoveryVerified: true, recoveryCall: 'checker-recovery-' + participant,
+    });
+    const good = [success(0), success(1)];
+    assert.equal(lossCoverage(cell, good).complete, true);
+    assert.equal(lossCoverage(cell, good.map((row) => ({ ...row, actualOutcome: 'busy' }))).complete, false);
+    assert.equal(lossCoverage(cell, [success(0)]).complete, false);
+    assert.equal(lossCoverage(cell, good.map((row) => ({ ...row, durableInspectionVerified: false }))).complete, false);
+    assert.equal(lossCoverage(cell, good.map((row) => ({ ...row, recoveryVerified: false }))).complete, false);
+    const report = { ...cell, lossCoverageRequired: { ...cell.lossCoverageRequired, checkedRecoveryMeasuredPerParticipant: 0 } };
+    assert.equal(lossCoverage(report, good.map((row) => ({ ...row, recoveryVerified: false }))).complete, true);
+  });
+  check('canonical intent reply rejects wrong run, link and saved outcome', () => {
+    const durable = { run_id: 'r', link_id: 'l', outcome: { status: 'accepted', state: 'starting', runId: 'r', linkId: 'l' } };
+    const reply = { ok: true, ...durable.outcome };
+    for (const tool of ['delegate_spawn', 'delegate_resume']) {
+      assert.deepEqual(canonicalReplyErrors(tool, { ...reply, advice: {} }, durable), []);
+      for (const bad of [{ runId: 'wrong' }, { linkId: 'wrong' }, { state: 'running' }, { status: 'refused' }])
+        assert.ok(canonicalReplyErrors(tool, { ...reply, ...bad }, durable).length > 0);
+    }
+  });
+  check('canonical cancel, whoami, report and status replies reject contradictions', () => {
+    const cancel = { cancel_requested_at: 123 };
+    assert.deepEqual(canonicalReplyErrors('delegate_cancel', { ok: true, accepted: true, cancelRequestedAt: 123 }, cancel), []);
+    for (const bad of [{ accepted: false }, { cancelRequestedAt: 124 }])
+      assert.ok(canonicalReplyErrors('delegate_cancel', { ok: true, accepted: true, cancelRequestedAt: 123, ...bad }, cancel).length);
+    const binding = { binding_id: 'b', caller_context_id: 'c', caller_id: 'a', session_ref: '{}', context_generation: 1, link_id: 'l', run_id: 'r' };
+    const whoami = { ok: true, state: 'bound', linkId: 'l', runId: 'r', reason: null };
+    assert.deepEqual(canonicalReplyErrors('delegate_whoami', whoami, binding), []);
+    for (const bad of [{ state: 'pending' }, { runId: 'wrong' }, { linkId: 'wrong' }])
+      assert.ok(canonicalReplyErrors('delegate_whoami', { ...whoami, ...bad }, binding).length);
+    assert.ok(canonicalReplyErrors('delegate_whoami', whoami, null).length);
+    assert.deepEqual(canonicalReplyErrors('delegate_report', { ok: true, reportId: 'p', runId: 'r' }, { report_id: 'p', run_id: 'r' }), []);
+    assert.ok(canonicalReplyErrors('delegate_report', { ok: true, reportId: 'wrong', runId: 'r' }, { report_id: 'p', run_id: 'r' }).length);
+    const durable = { run_id: 'r', link_id: 'l', link_state: 'bound', state: 'running', run_seq: 1,
+      expected_generation: 1, cancel_requested_at: null, isCurrent: true, isRunTerminal: false, slotHeld: true, asOfSeq: 3 };
+    const status = { ok: true, link: { linkId: 'l', state: 'bound' },
+      currentRun: { runId: 'r', linkId: 'l', state: 'running', runSeq: 1, expectedGeneration: 1, cancelRequestedAt: null },
+      isCurrent: true, isRunTerminal: false, slotHeld: true, asOfSeq: 3 };
+    assert.deepEqual(canonicalReplyErrors('delegate_status', status, durable), []);
+    assert.ok(canonicalReplyErrors('delegate_status', { ...status, slotHeld: false }, durable).length);
+    assert.ok(canonicalReplyErrors('delegate_status', { ...status, currentRun: { ...status.currentRun, runId: 'wrong' } }, durable).length);
+  });
+  check('zero-delay acknowledgement loss is not a numerical exemption', () => {
+    const row = record(35, { bank: 'forced', declaredInjection: 'commit-uncertain',
+      injection: { requestedMs: 0, began: 0, ended: 0 },
+      diagnostics: { ...writeDiagnostics(), elapsedMs: 35, authorizationMs: 31, overrunMs: 1 } });
+    assert.equal(overrunExempt(row), false);
+    assert.equal(numericalGates([row].filter((item) => !overrunExempt(item))).qualified, false);
+  });
+  check('malformed write and cold CLI timings cannot qualify', () => {
+    for (const field of ['authorizationMs', 'elapsedMs', 'deadlineMs', 'overrunMs', 'waitMs', 'queueMs']) {
+      for (const value of [null, '1', -1, Number.NaN, Number.POSITIVE_INFINITY, undefined]) {
+        const diagnostics = { ...writeDiagnostics(), [field]: value };
+        assert.equal(numerical(record(1, { diagnostics })).completeTiming, false);
+        assert.equal(validColdTiming({ began: 0, ended: 2, diagnostics }), false);
+      }
+    }
+    const wrong = { ...writeDiagnostics(), writeBudgetApplicable: false };
+    assert.equal(numerical(record(1, { diagnostics: wrong })).completeTiming, false);
+    assert.equal(validColdTiming({ began: 0, ended: 2, diagnostics: wrong }), false);
+    for (const value of [null, '1', -1, Number.NaN, Number.POSITIVE_INFINITY, undefined])
+      assert.equal(numerical(record(1, { responseMs: value })).completeTiming, false);
+    assert.equal(validColdTiming({ began: 0, ended: 2, diagnostics: writeDiagnostics() }), true);
+  });
+  check('read-only timing requires explicit N/A writer fields and valid read intervals', () => {
+    const diagnostics = { writeBudgetApplicable: false, elapsedMs: 2, upfrontMs: 1, authorizationMs: null,
+      deadlineMs: null, overrunMs: null, waitMs: null, queueMs: null, attempts: 0,
+      enclosingDeadline: 'not_applicable', phases: [{ phase: 'complete', at: 1 }] };
+    assert.equal(numerical(record(2, { tool: 'delegate_status', diagnostics })).completeTiming, true);
+    for (const field of ['authorizationMs', 'deadlineMs', 'overrunMs', 'waitMs', 'queueMs'])
+      assert.equal(numerical(record(2, { tool: 'delegate_status', diagnostics: { ...diagnostics, [field]: 0 } })).completeTiming, false);
+    for (const value of [null, '1', -1, Number.NaN, Number.POSITIVE_INFINITY, undefined])
+      assert.equal(numerical(record(2, { tool: 'delegate_status', diagnostics: { ...diagnostics, upfrontMs: value } })).completeTiming, false);
+  });
+  return { executed: true, passed: true, checks,
+    scope: 'pure evidence-checker controls only; never benchmark samples or performance evidence' };
+}
+
 let artifactsReady = false;
 let deadline;
 try {
@@ -784,6 +1120,8 @@ try {
   for (const path of [outputFile, rawFile, supportFile]) assert.equal(existsSync(path), false, 'evidence_path_exists:' + basename(path));
   for (const path of [outputFile, rawFile, supportFile]) closeSync(openSync(path, 'wx', 0o600));
   artifactsReady = true;
+  checkerControls = runEvidenceCheckerControls();
+  support({ kind: 'evidence_checker_controls', ...checkerControls });
   const compiled = {
     ...hashTree(join(repository, 'dist')),
     ...hashTree(join(repository, 'dist-test')),
@@ -859,7 +1197,7 @@ try {
           .every((field) => before[field] === after[field]);
       const entry = {
         profile, launchToReadyMs, initializationMs: result.initializationMs, scope: result.scope,
-        samples: result.result, semantic, before, after, workerPid: ready.pid,
+        samples: result.result.map((sample) => ({ ...sample, invalidTiming: timingErrors('delegate_resume', sample.diagnostics) })), semantic, before, after, workerPid: ready.pid,
         limitation: 'H/R names fixture baseline, not concurrent CLI callers; these are additive cold boundary probes, not substitutes for the MCP populations.',
       };
       coldCli.push(entry);
