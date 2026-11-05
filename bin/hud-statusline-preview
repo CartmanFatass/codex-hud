@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+import('../dist/statusline-preview.js')
+  .then(async ({ statuslinePreview }) => {
+    process.exitCode = await statuslinePreview(process.argv.slice(2), process.stdin, {
+      columns: process.env.COLUMNS,
+      ttyColumns: process.stdout.isTTY ? process.stdout.columns : undefined,
+      stdout: (text) =>
+        new Promise((resolve, reject) => {
+          process.stdout.once('error', reject);
+          process.stdout.write(text, (error) => (error ? reject(error) : resolve()));
+        }),
+      stderr: (text) => process.stderr.write(text),
+    });
+  })
+  .catch(() => {
+    process.stderr.write('statusline_preview_unavailable: run npm run build\n');
+    process.exitCode = 1;
+  });

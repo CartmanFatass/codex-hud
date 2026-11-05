@@ -6,9 +6,11 @@ import { PiTranscriptFiles } from '../harness/pi/binding.js';
 import { createPiReader, DEFAULT_READER_BUDGET } from '../harness/pi/reader.js';
 import type { HudIO } from './link-export.js';
 import { CliError, delegateConfig, integer, options, privateHome } from './runtime.js';
+import { piLaunchCommand } from './pi-launch.js';
 
 export const PI_HELP = `Usage: hud pi inspect --source ROOT --session FILE [--json] [--context-window TOKENS]
        hud pi inspect --profile NAME --session FILE [--json] [--context-window TOKENS]
+       hud pi launch [--executable /absolute/path/to/pi] [-- PI_ARG ...]
        hud pi --help
 
 Inspect one existing pi transcript without launching pi or writing any files.
@@ -20,7 +22,8 @@ The context window is unknown unless explicitly supplied; model names never impl
 One read is bounded to 4 MiB, 2000 records and a soft 20 ms, after a bounded header check.
 Partial coverage and continuation are shown, not hidden. Re-running starts a new inspection.
 Exit 0: complete observation; 6: incomplete observation; 2: invalid arguments; 4: unavailable source/session.
-This does not activate panel collection, launch/resume, MCP authorization or branch navigation.
+Inspection does not activate panel collection, launch/resume, MCP authorization or branch navigation.
+Use hud pi launch --help for local foreground launching (not managed delegation).
 `;
 
 export function parsePiInspect(args: readonly string[]) {
@@ -130,6 +133,7 @@ function presentation(value: unknown): string {
 }
 
 export async function piCommand(args: readonly string[], io: HudIO): Promise<number> {
+  if (args[0] === 'launch') return piLaunchCommand(args.slice(1), io);
   // Help and explicit-source inspection do not validate or touch HUD_HOME.
   if (
     (args.length === 1 && args[0] === '--help') ||
