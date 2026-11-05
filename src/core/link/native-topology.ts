@@ -4,7 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { RolloutParser } from '../../collectors/rollout.js';
 import { sessionParentId } from '../../utils/session-parent.js';
 import { initialParserState } from '../observation.js';
-import { agentDisplayName, identityFromMeta } from '../../collectors/subagent-tree.js';
+import { agentDisplayName, agentPickerLabel, identityFromMeta } from '../../collectors/subagent-tree.js';
 import type { NativeMetadata } from './types.js';
 import type { NativeTopologyResult, ReaderBudget } from '../interfaces/harness-adapter.js';
 import type { SessionRef } from '../types/identity.js';
@@ -215,7 +215,13 @@ export class MeteredCodexTopology {
               const payload = entry.payload as any;
               if (entry.type === 'session_meta' && typeof payload?.id === 'string' && payload.id.length > 0) {
                 this.identify(h, payload.id, sessionParentId(payload) ?? null);
-                h.native = { title: agentDisplayName(identityFromMeta(payload)) ?? null, kind: null };
+                const identity = identityFromMeta(payload);
+                h.native = {
+                  title: agentDisplayName(identity) ?? null,
+                  kind: null,
+                  pickerLabel:
+                    identity.agentPath || identity.nickname || identity.role ? agentPickerLabel(identity, false) : null,
+                };
               } else {
                 this.clearIdentity(h);
                 this.gaps.add('native_header_unavailable');

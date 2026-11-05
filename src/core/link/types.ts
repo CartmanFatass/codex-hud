@@ -12,6 +12,8 @@ import type { AgentTaskKind } from '../../types.js';
 export interface NativeMetadata {
   title: string | null;
   kind: AgentTaskKind | null;
+  /** Exact Codex picker label from the native session header, when known. */
+  pickerLabel?: string | null;
 }
 
 export type LinkConflict = NonNullable<ObservationView['conflict']>;

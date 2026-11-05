@@ -4,6 +4,13 @@ import { initialParserState } from './core/observation.js';
 import type { DelegationViewModel } from './core/link/view-model.js';
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import { navigateSession } from './utils/session-navigation.js';
+import {
+  dispatchDelegationAction,
+  copyDelegationCommand,
+  delegationPickerLabel,
+  withInputRefresh,
+  delegationActivityTarget,
+} from './utils/delegation-actions.js';
 import { defaultSettings, saveSettings, briefingScope, settingsPath, type HudSettings } from './settings.js';
 import { homedir } from 'node:os';
 import { runtimeSettings, applyDisplaySettings, withDisplaySettings } from './settings-runtime.js';
@@ -316,6 +323,8 @@ async function runLivePage(): Promise<void> {
   let diffKey = '';
   let error: string | null = settingsError || null;
   let frame: MonitorFrame | undefined;
+  let frameRoot = '';
+  let frameEpoch = 0;
   let lastPaint: string[] | null = null;
   let closed = false;
   let collecting = false;
@@ -688,6 +697,8 @@ async function runLivePage(): Promise<void> {
           height: process.stdout.rows || 24,
           linkNames: mainCols === null || mainCols >= 63,
         });
+        frameRoot = tree.rootId;
+        frameEpoch = collectionEpoch;
         state = frame.state;
         lines = frame.lines;
       }
@@ -1013,7 +1024,7 @@ async function runLivePage(): Promise<void> {
       timeline = time('timeline', () =>
         history.timeline(tree, main, logsIn(agentLog.snapshot(), resolveLanguage(settings.language)))
       );
-      state = reconcileMonitor(state, tree, git, worktrees);
+      state = reconcileMonitor(state, tree, git, worktrees, Date.now(), delegation);
       updateProgress();
       updateBriefer(settings.briefingPaused);
       updateJobs();
@@ -1102,7 +1113,7 @@ async function runLivePage(): Promise<void> {
       worktrees = snapshot;
       if (!snapshot.error) markActivitySourceSuccess('worktrees');
       const previousWorktree = state.selectedWorktree;
-      state = reconcileMonitor(state, tree, git, worktrees);
+      state = reconcileMonitor(state, tree, git, worktrees, Date.now(), delegation);
       if (state.selectedWorktree !== previousWorktree) {
         git = null;
         diff = undefined;
@@ -1131,7 +1142,7 @@ async function runLivePage(): Promise<void> {
           now: Date.now(),
         });
         const previousFile = state.selectedFile;
-        state = reconcileMonitor(state, tree, git, worktrees);
+        state = reconcileMonitor(state, tree, git, worktrees, Date.now(), delegation);
         if (previousFile !== state.selectedFile) {
           diff = undefined;
           diffKey = '';
@@ -1198,7 +1209,10 @@ async function runLivePage(): Promise<void> {
     render();
     try {
       // The name is the fallback for a Codex pane too narrow to print ids.
-      const result = await navigateSession(process.env.CODEX_HUD_MAIN_PANE, { id, label: uniquePickerLabel(tree, id) });
+      const result = await navigateSession(process.env.CODEX_HUD_MAIN_PANE, {
+        id,
+        label: delegation ? delegationPickerLabel(delegation, tree.rootId, id) : uniquePickerLabel(tree, id),
+      });
       navigationMessage = result.ok ? null : result.message;
     } catch (err) {
       navigationMessage = t('Switch failed: {reason}', { reason: String(err) });
@@ -1283,8 +1297,7 @@ async function runLivePage(): Promise<void> {
     }
     return { type: 'key', key: monitorKey(command) };
   };
-  const dispatch = (inputs: WorkbenchInput[]) => {
-    if (inputs.length) void collect(true);
+  const processInput = (inputs: WorkbenchInput[]) => {
     const overlayBefore = Boolean(settingsPage || state.help || activityHub || observability);
     // What goes to Codex, in order, sent once the whole read is through.
     const forward: ForwardItem[] = [];
@@ -1348,10 +1361,13 @@ async function runLivePage(): Promise<void> {
           else if (action?.type === 'pin') journal.pin(action.agentId, action.value);
           else if (action?.type === 'viewed') journal.markViewed(action.receipt);
           else if (action?.type === 'target') {
-            let live = action.agentId === tree.rootId;
-            walkNodes(tree.nodes, (node) => {
-              if (node.id === action.agentId) live = true;
-            });
+            const target = delegation ? delegationActivityTarget(delegation, tree.rootId, action.agentId) : null;
+            const selected = target?.key ?? null;
+            let live = delegation ? target !== null : action.agentId === tree.rootId;
+            if (!delegation)
+              walkNodes(tree.nodes, (node) => {
+                if (node.id === action.agentId) live = true;
+              });
             if (live) {
               state = {
                 ...state,
@@ -1360,7 +1376,7 @@ async function runLivePage(): Promise<void> {
                 preview: action.agentId === tree.rootId ? 'diagnostics' : 'agent',
                 tree: {
                   ...state.tree,
-                  selectedId: action.agentId === tree.rootId ? state.tree.selectedId : action.agentId,
+                  selectedId: action.agentId === tree.rootId ? state.tree.selectedId : (selected ?? action.agentId),
                   showAll: true,
                 },
                 modes: { ...state.modes, details: 'open' },
@@ -1502,7 +1518,16 @@ async function runLivePage(): Promise<void> {
         continue;
       }
       const previous = state;
-      const result = handleMonitorInput(state, input, { tree, git, worktrees, frame, navigationOverlay: fromSettings });
+      const actionFrame = frame;
+      const actionRoot = frameRoot;
+      const actionEpoch = frameEpoch;
+      const result = handleMonitorInput(state, input, {
+        tree,
+        git,
+        worktrees,
+        frame,
+        navigationOverlay: fromSettings,
+      });
       state = result.state;
       if (result.close) {
         finish(true);
@@ -1586,19 +1611,56 @@ async function runLivePage(): Promise<void> {
       )
         void refreshGit();
       void refreshInspection();
+      if (
+        result.action &&
+        (result.action.type === 'delegation-open' ||
+          result.action.type === 'delegation-log' ||
+          result.action.type === 'delegation-copy' ||
+          result.action.type === 'delegation-diagnostic')
+      ) {
+        const action = result.action;
+        void dispatchDelegationAction(
+          action,
+          actionFrame?.delegation?.vm,
+          delegation,
+          actionRoot === tree.rootId && actionEpoch === collectionEpoch,
+          { home: getHudHome(), copy: copyDelegationCommand }
+        ).then((message) => {
+          if (closed || actionRoot !== tree.rootId) return;
+          navigationMessage = message;
+          render();
+        });
+      }
       if (result.action?.type === 'switch') {
         const id = result.action.id;
         const at = Date.now();
         // Deduplicate a mouse burst only. This is NOT evidence of Codex's current thread.
         const duplicate = input.type === 'mouse' && lastClickSwitch?.id === id && at - lastClickSwitch.at < 400;
         if (input.type === 'mouse') lastClickSwitch = { id, at };
-        if (!duplicate) void switchSession(id);
+        if (
+          !duplicate &&
+          (!actionFrame?.delegation ||
+            (actionFrame.delegation.vm === delegation && actionRoot === tree.rootId && actionEpoch === collectionEpoch))
+        )
+          void switchSession(id);
+        else if (!duplicate) {
+          navigationMessage = t('Selection changed; try again.');
+          render();
+        }
       }
     }
     if (forward.length) void forwarder.send(forward);
     if (!settingsPage) probe.cancel();
     if (!closed && !overlayBefore && (settingsPage || state.help || activityHub || observability)) focusPanel();
   };
+  const dispatch = (inputs: WorkbenchInput[]) =>
+    withInputRefresh(
+      inputs.length > 0,
+      () => processInput(inputs),
+      () => {
+        if (!closed) void collect(true);
+      }
+    );
   /** A command that opened the panel (bin/codex-hud-toggle --command): run once, after the first read. */
   const initialCommand = process.env.CODEX_HUD_INITIAL_COMMAND;
   delete process.env.CODEX_HUD_INITIAL_COMMAND;
