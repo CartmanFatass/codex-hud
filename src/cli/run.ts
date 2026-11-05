@@ -1,3 +1,4 @@
+import { CallBudget } from '../ledger/call-budget.js';
 import { join } from 'node:path';
 import { validateRequestKey } from '../core/execution.js';
 import { HeadlessRunControl } from '../core/run/control.js';
@@ -72,31 +73,39 @@ export async function runCommand(
   home: string,
   io: HudIO,
   trusted: {
+    callBudget?: CallBudget;
     capability?: CapabilityVerifier;
     resumeService?: (options: ResumeServiceOptions) => LocalResumeService;
   } = {}
 ): Promise<number> {
   const [command, ...rest] = args;
+  const budget = ['resume', 'cancel'].includes(command) ? (trusted.callBudget ?? new CallBudget()) : undefined;
+  budget?.check();
   if (command === 'wait') return runWait(parseWait(rest), home, io);
   if (command === 'resume') {
     const request = parseResume(rest);
     const config = await delegateConfig(home);
-    const { ledger } = await existingLedger(home, true);
+    const { ledger } = await existingLedger(home, true, budget);
     let service: LocalResumeService | undefined;
     try {
       const { DelegationService } = await mcpModule('delegation');
+      budget?.check();
       const backend = await ledger.readSnapshot(
-        (tx) => tx.get('SELECT backend FROM links WHERE link_id=?', request.linkId)?.backend
+        (tx) => tx.get('SELECT backend FROM links WHERE link_id=?', request.linkId)?.backend,
+        budget
       );
+      budget?.check();
       const profile = config.profiles.find((p) => p.name === backend);
       const template = request.mode === 'headless' ? profile?.resumeHeadless : profile?.resume;
       // Trusted startup discovery is reusable by release attestation. It is not
       // itself local-initiation capability evidence (oracle-1, sections 4-5).
       const executable =
         !trusted.capability && template ? await discoverExecutable(template, { ...io.env, ...profile?.env }) : null;
+      budget?.check();
       const serviceOptions = {
         ledger,
         home,
+        callBudget: budget,
         config,
         env: io.env,
         hudRunPath: join(installationRoot(), 'bin/hud-run'),
@@ -131,14 +140,15 @@ export async function runCommand(
   const runId = identifier(rest[0]);
   const flags = options(rest.slice(1), ['--json'], command === 'cancel' ? ['--grace'] : []);
   const grace = flags.has('--grace') ? integer(String(flags.get('--grace')), 60_000) : 10_000;
-  const { ledger, gate } = await existingLedger(home, command !== 'status');
+  const { ledger, gate } = await existingLedger(home, command !== 'status', budget);
   try {
     const port = new LedgerRunFactPort(ledger, gate);
     const control = new HeadlessRunControl(port, home, gate.actor());
     let value: unknown;
     if (command === 'cancel') {
-      const mode = (await port.read(runId)).run.mode;
-      const intent = await port.acceptCancel(runId, gate.actor(), grace);
+      const mode = (await port.read(runId, budget)).run.mode;
+      budget?.check();
+      const intent = await port.acceptCancel(runId, gate.actor(), grace, budget);
       let status = null;
       try {
         status = await control.status(runId);

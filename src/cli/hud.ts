@@ -1,3 +1,4 @@
+import { CallBudget } from '../ledger/call-budget.js';
 import { migrateCommand } from './migrate.js';
 import { statuslineCommand } from './statusline.js';
 import { EXPORT_HELP, EXPORT_USAGE, linkExport, type HudIO } from './link-export.js';
@@ -36,8 +37,11 @@ export async function main(
     env: process.env,
     stdout: writeStdout,
     stderr: (text) => process.stderr.write(text),
-  }
+  },
+  received?: number
 ): Promise<number> {
+  const callBudget =
+    args[0] === 'run' && ['resume', 'cancel'].includes(args[1]) ? new CallBudget(undefined, received) : undefined;
   try {
     if (args[0] === 'migrate') return await migrateCommand(args.slice(1), io);
     if (args[0] === 'statusline') return await statuslineCommand(args.slice(1), io);
@@ -59,7 +63,7 @@ export async function main(
         await io.stdout(`Usage: ${usage}\n`);
         return 0;
       }
-      return await runCommand(args.slice(1), privateHome(io.env), io);
+      return await runCommand(args.slice(1), privateHome(io.env), io, { callBudget });
     }
     if (args[0] === 'cache') {
       // Help must work without reading or validating HUD_HOME.

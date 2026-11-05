@@ -1,3 +1,4 @@
+import { CallBudget, sharedRenewalBudget } from './call-budget.js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { canonicalJson, digest } from '../core/canonical.js';
@@ -16,17 +17,20 @@ import { decodeRecord, insertRecord, readContext, readLink, readRun, refValue } 
 import { LedgerBusyError, type LedgerTransaction } from './transaction.js';
 import type { IntentAuthority } from './types.js';
 
-export interface ChildWriteBudget {
+interface LegacyChildWriteBudget {
   deadline: number;
   lockBudgetMs: number;
 }
+export type ChildWriteBudget = LegacyChildWriteBudget | CallBudget;
 function childTransaction<T>(
   ledger: Ledger,
   callback: (tx: LedgerTransaction) => T,
   budget?: ChildWriteBudget
 ): Promise<T> {
+  const shared = sharedRenewalBudget(budget);
+  if (shared) return ledger.transaction(callback, shared);
   const check = () => {
-    if (budget && performance.now() >= budget.deadline) throw new LedgerBusyError();
+    if (budget && 'deadline' in budget && performance.now() >= budget.deadline) throw new LedgerBusyError();
   };
   check();
   return ledger.transaction(
@@ -36,7 +40,9 @@ function childTransaction<T>(
       check();
       return result;
     },
-    budget ? Math.min(20, budget.lockBudgetMs, Math.max(0, budget.deadline - performance.now())) : ledger.busyBudgetMs
+    budget && 'deadline' in budget
+      ? Math.min(20, budget.lockBudgetMs, Math.max(0, budget.deadline - performance.now()))
+      : ledger.busyBudgetMs
   );
 }
 
@@ -139,14 +145,15 @@ function assemble(tx: LedgerTransaction, runId: string, authority: ChildAuthorit
 export async function readHandshakeSnapshot(
   ledger: Ledger,
   claimHash: string,
-  authority: ChildAuthority
+  authority: ChildAuthority,
+  budget?: CallBudget
 ): Promise<HandshakeSnapshot> {
   return ledger.readSnapshot((tx) => {
     selection(tx, authority);
     const row = tx.get('SELECT run_id FROM claims WHERE claim_hash=?', claimHash);
     if (!row) throw new Error('claim_invalid');
     return assemble(tx, String(row.run_id), authority);
-  });
+  }, budget);
 }
 function conflict(
   tx: LedgerTransaction,
@@ -287,6 +294,7 @@ export async function commitHandshake(
         tx.get('SELECT 1 FROM links WHERE child_ref=? AND current_owner=1 AND link_id<>?', refValue(ref), link.linkId)
       )
         throw new Error('identity_conflict');
+      let repairedSlot = false;
       const ownSlot = tx.get('SELECT * FROM slots WHERE run_id=?', run.runId);
       if (ownSlot) {
         const slots = tx
@@ -297,13 +305,15 @@ export async function commitHandshake(
           for (const id of migration.uncertainRunIds) conflict(tx, readRun(tx, id), ref, 'provisional_conflict', at);
           return { ok: false, code: 'provisional_conflict' };
         }
-        if (ownSlot.slot_key !== sessionRefKey(ref) || ownSlot.session_ref !== refValue(ref))
+        if (ownSlot.slot_key !== sessionRefKey(ref) || ownSlot.session_ref !== refValue(ref)) {
+          repairedSlot = true;
           tx.run(
             'UPDATE slots SET slot_key=?,session_ref=? WHERE run_id=?',
             sessionRefKey(ref),
             refValue(ref),
             run.runId
           );
+        }
       } else if (!isRunTerminal(run)) throw new Error('slot_missing');
       if (
         binding &&
@@ -311,8 +321,16 @@ export async function commitHandshake(
         binding.callerId === context.callerId &&
         binding.callerContextId === context.contextId &&
         binding.contextGeneration === context.generation
-      )
-        return { ok: true, state: 'bound', linkId: link.linkId, runId: run.runId, reason: null };
+      ) {
+        const result = {
+          ok: true as const,
+          state: 'bound' as const,
+          linkId: link.linkId,
+          runId: run.runId,
+          reason: null,
+        };
+        return repairedSlot ? result : tx.priorDurableResult(result);
+      }
       insertRecord(tx, 'evidence', proof);
       if (redeemed.consumed) {
         tx.run(

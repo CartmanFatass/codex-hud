@@ -1,3 +1,4 @@
+import { CallBudget, monotonicClock, type BudgetClock } from '../../../src/ledger/call-budget.js';
 import type { Readable, Writable } from 'node:stream';
 import { object } from './io.js';
 import { outcomeCode } from './errors.js';
@@ -30,14 +31,19 @@ export class HudMcpServer {
         tool: string,
         args: Record<string, unknown>,
         started: number,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        budget?: CallBudget
       ): Promise<unknown>;
       /** Adds tool-owned fields to a sanitized structured failure; its code and fields stay as built. */
       decorateFailure?(tool: string, args: Record<string, unknown>, outcome: { ok: false; code: string }): unknown;
     },
-    private readonly parentAlive: () => boolean = () => true
+    private readonly parentAlive: () => boolean = () => true,
+    private readonly clock: BudgetClock = monotonicClock
   ) {}
-  async handle(value: unknown): Promise<unknown | null> {
+  receiptTime(): number {
+    return this.clock.now();
+  }
+  async handle(value: unknown, received = this.receiptTime()): Promise<unknown | null> {
     const error = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0', id, error: { code, message } });
     if (!this.parentAlive()) this.shutdown();
     if (this.stopped)
@@ -75,9 +81,12 @@ export class HudMcpServer {
       case 'tools/list':
         return reply({ tools: TOOLS });
       case 'tools/call': {
-        const started = performance.now();
+        const started = received;
         const definition = TOOLS.find((t) => t.name === params.name);
         if (!definition) return error(id, -32602, 'Unknown tool');
+        const budget = ['delegate_list', 'delegate_status', 'delegate_wait'].includes(definition.name)
+          ? undefined
+          : new CallBudget(this.clock, started);
         if (!validateToolArguments(definition, params.arguments === undefined ? {} : params.arguments))
           return error(id, -32602, 'Invalid tool arguments');
         if (this.requests.has(id)) return error(id, -32600, 'Duplicate active request id');
@@ -95,11 +104,13 @@ export class HudMcpServer {
         try {
           if (this.stopped) throw new Error('server_shutdown');
           // params.arguments, prompt, claim and env hints cannot select a logical caller.
+          budget?.check('source');
           const resolution = await this.source.resolve(params._meta, definition.name);
+          budget?.check('source');
           controller.signal.throwIfAborted();
           outcome = resolution.ok
             ? this.bodies
-              ? await this.bodies.invoke(resolution, definition.name, args, started, controller.signal)
+              ? await this.bodies.invoke(resolution, definition.name, args, started, controller.signal, budget)
               : { ok: false, code: 'not_implemented', tool: definition.name }
             : failure(resolution.code);
         } catch (error) {
@@ -167,19 +178,22 @@ export async function serveStdio(server: HudMcpServer, input: Readable, output: 
     input.destroy();
     await refusal;
   };
-  const dispatch = async (message: unknown) => {
+  const dispatch = async (message: unknown, received: number) => {
     if (object(message) && message.id === undefined) {
-      await server.handle(message);
+      await server.handle(message, received);
       return;
     }
     if (running.size >= 32) {
       await overload(object(message) ? (message.id ?? null) : null);
       return;
     }
-    track(server.handle(message).then(write));
+    track(server.handle(message, received).then(write));
   };
   try {
     for await (const chunk of input) {
+      // All complete calls in this chunk were received together, including those
+      // parsed after an earlier call synchronously starts source preparation.
+      const received = server.receiptTime();
       pending = Buffer.concat([pending, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
       let index: number;
       while ((index = pending.indexOf(10)) >= 0) {
@@ -196,7 +210,7 @@ export async function serveStdio(server: HudMcpServer, input: Readable, output: 
           if (server.shutdownSignal.aborted) return;
           continue;
         }
-        await dispatch(message);
+        await dispatch(message, received);
         if (server.shutdownSignal.aborted) return;
       }
       if (pending.length > maxLine) throw new Error('MCP input exceeds 256 KiB');

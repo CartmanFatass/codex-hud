@@ -1,3 +1,4 @@
+import { isCallBudget, type CallBudget } from './call-budget.js';
 import {
   CAPACITY_STATES,
   capacityLimits,
@@ -188,7 +189,7 @@ function validateNewIntent(input: PreparedIntent): string {
 export async function acceptIntent(
   ledger: Ledger,
   supplied: PreparedIntent,
-  budgetMs = ledger.busyBudgetMs,
+  budgetMs: number | CallBudget = ledger.busyBudgetMs,
   localCheck?: () => void,
   limits: CapacityLimits = {},
   /** Trusted synchronous bookkeeping for a fresh intent; shares rollback and lock budget. */
@@ -198,14 +199,24 @@ export async function acceptIntent(
   const input = JSON.parse(canonicalJson(supplied)) as PreparedIntent;
   const paramsDigest = validateNewIntent(input);
   const resolvedLimits = capacityLimits(limits);
-  const writeDeadline = performance.now() + Math.min(ledger.busyBudgetMs, budgetMs);
+  const call = isCallBudget(budgetMs) ? budgetMs : undefined;
+  call?.check();
+  const writeDeadline = call ? null : performance.now() + Math.min(ledger.busyBudgetMs, budgetMs as number);
+  let gateFailed = false;
+  const checkLocal = () => {
+    if (input.authority.kind !== 'local_user') return;
+    try {
+      call?.check('metadata');
+      localCheck?.();
+      call?.check('metadata');
+    } catch (error) {
+      gateFailed = true;
+      throw error;
+    }
+  };
   try {
     return await ledger.transaction((tx) => {
-      if (input.authority.kind === 'local_user') {
-        // Trusted entry points pass the pinned OS/store gate; low-level fixtures
-        // may supply already validated authorities directly.
-        localCheck?.();
-      }
+      checkLocal();
       const authority = currentAuthority(tx, input.authority);
       const existing = tx.get('SELECT * FROM links WHERE link_id=?', input.link.linkId);
       let link = existing ? decodeRecord<Link>(existing) : input.link;
@@ -229,12 +240,12 @@ export async function acceptIntent(
       );
       if (replay.kind === 'conflict') throw new Error(replay.reason);
       if (replay.kind === 'replay')
-        return {
+        return tx.priorDurableResult({
           replayed: true,
           outcome: replay.record.outcome,
           linkId: replay.record.linkId,
           runId: replay.record.runId,
-        };
+        });
       // HUD creates only one level of independent harnesses. The selected root
       // is a harness root, not necessarily the outermost HUD parent. Check its
       // durable target identity, not a current binding (which can be revoked or
@@ -463,26 +474,35 @@ export async function acceptIntent(
     }, budgetMs);
   } catch (error) {
     if (error instanceof CapacityRefusal) return error.result;
-    // A failed intent is entirely rolled back before a separate rejection audit is attempted.
-    if (
-      error instanceof Error &&
-      performance.now() < writeDeadline &&
-      !('code' in error && error.code === 'ledger_busy') &&
-      !['stale_context', 'identity_unverified', 'identity_source_missing', 'unauthorized'].includes(error.message)
-    ) {
-      await ledger
-        .transaction(
-          (tx) =>
-            insertRecord(tx, 'events', {
-              linkId: null,
-              runId: null,
-              kind: 'intent.rejected',
-              payload: { requestKey: input.requestKey, reason: error.message },
-              at: input.run.createdAt,
-            }),
-          Math.max(0, writeDeadline - performance.now())
-        )
-        .catch(() => {});
+    try {
+      // A failed intent is entirely rolled back before a separate rejection audit is attempted.
+      if (
+        error instanceof Error &&
+        !gateFailed &&
+        (call ? call.remaining() > 0 : performance.now() < writeDeadline!) &&
+        !('auditUnsafe' in error && error.auditUnsafe) &&
+        !('code' in error && error.code === 'ledger_busy') &&
+        !['stale_context', 'identity_unverified', 'identity_source_missing', 'unauthorized'].includes(error.message)
+      ) {
+        await ledger
+          .transaction(
+            (tx) => {
+              checkLocal();
+              call?.check();
+              return insertRecord(tx, 'events', {
+                linkId: null,
+                runId: null,
+                kind: 'intent.rejected',
+                payload: { requestKey: input.requestKey, reason: error.message },
+                at: input.run.createdAt,
+              });
+            },
+            call ?? Math.max(0, writeDeadline! - performance.now())
+          )
+          .catch(() => {});
+      }
+    } catch {
+      /* Optional audit must not replace the primary failure. */
     }
     throw error;
   }

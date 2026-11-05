@@ -1,3 +1,4 @@
+import { CallBudget, type BudgetClock } from '../../../src/ledger/call-budget.js';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type { DelegateConfig } from './config.js';
@@ -17,7 +18,6 @@ import { taskDigest } from '../../../src/core/lifecycle.js';
 import { prepareCodexLaunch, launchPreparedRun, type CapabilityVerifier } from '../../../src/core/launch/index.js';
 import { readProcess } from '../../../src/core/run/process.js';
 import { PrivateLedgerGate } from '../../../src/ledger/local-manager.js';
-import { LedgerBusyError } from '../../../src/ledger/transaction.js';
 import { digest } from '../../../src/core/canonical.js';
 import { ReadControlService, withCacheAdvice, type CacheAdviceSource } from './read-control.js';
 import { emptyCacheConfig, type CacheConfigLoad } from '../../../src/core/cache-config.js';
@@ -49,6 +49,8 @@ type DelegationArguments = Record<string, unknown> & Pick<McpResumeRequest, 'exp
 export interface DelegationOptions {
   ledger: Ledger;
   home: string;
+  callBudget?: CallBudget;
+  clock?: BudgetClock;
   config: DelegateConfig;
   registration?: Registration;
   reader?: ProcessReaderPort;
@@ -181,9 +183,14 @@ export class DelegationService {
     source: Extract<CallResolution, { ok: true }>,
     tool: string,
     args: DelegationArguments,
-    started = performance.now(),
-    signal?: AbortSignal
+    started?: number,
+    signal?: AbortSignal,
+    suppliedBudget?: CallBudget
   ): Promise<unknown> {
+    const readOnly = ['delegate_list', 'delegate_status', 'delegate_wait'].includes(tool);
+    const budget = readOnly ? undefined : (suppliedBudget ?? new CallBudget(this.options.clock, started));
+    started = budget?.started ?? started ?? performance.now();
+    budget?.check();
     if (!source.scopePremise) throw new Error('identity_unverified');
     this.wakes?.parentCall();
     if (!this.options.registration || !this.options.reader) throw new Error('local_entry_only');
@@ -218,8 +225,8 @@ export class DelegationService {
       env: this.options.env ?? process.env,
       home: this.options.home,
     });
-    const deadline = started + 30;
-    if (performance.now() >= deadline) throw new LedgerBusyError();
+    if (!budget) throw new Error('invalid_write_budget');
+    budget.check();
     const authority = await authorizeRootCall(
       this.options.ledger,
       {
@@ -230,14 +237,15 @@ export class DelegationService {
         premise: source.scopePremise,
         at: Date.now(),
       },
-      Math.min(20, Math.max(0, deadline - performance.now()))
+      budget
     );
-    const budget = { deadline, lockBudgetMs: Math.max(0, 20 - (performance.now() - started)) };
     if (tool === 'delegate_cancel')
-      return this.reads.cancel(String(args.runId), args.grace === undefined ? 10000 : Number(args.grace), authority, {
-        deadline,
-        lockDeadline: started + 20,
-      });
+      return this.reads.cancel(
+        String(args.runId),
+        args.grace === undefined ? 10000 : Number(args.grace),
+        authority,
+        budget
+      );
     if (tool === 'delegate_whoami') return handshake.whoami(args as { claim?: string }, authority, budget);
     if (tool === 'delegate_report')
       return handshake.report(args as unknown as Parameters<HandshakeService['report']>[0], authority, budget);
@@ -246,7 +254,7 @@ export class DelegationService {
         tool === 'delegate_spawn' ? 'spawn' : 'resume',
         { ...args, __callId: source.callId },
         authority,
-        deadline
+        budget
       );
     return { ok: false, code: 'not_implemented', tool };
   }
@@ -254,9 +262,10 @@ export class DelegationService {
     operation: 'spawn' | 'resume',
     args: DelegationArguments,
     authority: IntentAuthority,
-    deadline: number,
+    budget: CallBudget,
     gate?: PrivateLedgerGate
   ): Promise<unknown> {
+    budget.check();
     const { ledger, config, home } = this.options;
     if (args.layout !== undefined) throw new Error('visible_layout_not_in_this_build');
     // Consult 5 G03: only an explicitly supplied expectedRun is a parameter; omission stays the old encoding.
@@ -271,7 +280,8 @@ export class DelegationService {
       const row = tx.get('SELECT run_id FROM runs WHERE link_id=? ORDER BY run_seq DESC LIMIT 1', link.linkId);
       if (!row) throw new Error('run_not_found');
       return { link, run: readRun(tx, String(row.run_id)) };
-    });
+    }, budget);
+    budget.check();
     const backend = handover ? String(args.backend) : (previous?.link.backend ?? String(args.backend));
     const profile = config.profiles.find((p) => p.name === backend);
     if (!profile) throw new Error('backend_not_found');
@@ -293,23 +303,33 @@ export class DelegationService {
       codexConfig: this.options.codexConfig,
       executableIdentity: this.options.executableIdentity,
     });
+    budget.check();
     // A trusted preparer only proposes data. Independently bind all identity
     // and execution dimensions before it can reach capability or intent writes.
     const expectedRoot = await realpath(profile.source.root);
+    budget.check();
     const expectedCwd = await realpath(handover ? String(args.cwd) : (previous?.run.launchCwd ?? String(args.cwd)));
     if (args.mode !== 'headless' && args.mode !== 'visible') throw new Error('invalid_run_mode');
     const expectedMode = args.mode;
     const expectedOperation = handover ? 'resume' : operation;
     const capabilityRequest = preparation.capabilityRequest(previous?.run.mode);
     if (
-      preparation.harness !== profile.harness || preparation.sourceRoot !== expectedRoot ||
-      preparation.sourceId !== makeSourceId(profile.harness, expectedRoot) || preparation.cwd !== expectedCwd ||
-      preparation.profileDigest !== launchProfileDigest({ ...profile, source: { ...profile.source, root: expectedRoot } }) ||
-      capabilityRequest.sourceId !== preparation.sourceId || capabilityRequest.key.harness !== profile.harness ||
-      capabilityRequest.key.mode !== expectedMode || capabilityRequest.key.operation !== expectedOperation ||
-      capabilityRequest.key.hostKind !== profile.host.kind || capabilityRequest.key.layout !== profile.host.layout ||
+      preparation.harness !== profile.harness ||
+      preparation.sourceRoot !== expectedRoot ||
+      preparation.sourceId !== makeSourceId(profile.harness, expectedRoot) ||
+      preparation.cwd !== expectedCwd ||
+      preparation.profileDigest !==
+        launchProfileDigest({ ...profile, source: { ...profile.source, root: expectedRoot } }) ||
+      capabilityRequest.sourceId !== preparation.sourceId ||
+      capabilityRequest.key.harness !== profile.harness ||
+      capabilityRequest.key.mode !== expectedMode ||
+      capabilityRequest.key.operation !== expectedOperation ||
+      capabilityRequest.key.hostKind !== profile.host.kind ||
+      capabilityRequest.key.layout !== profile.host.layout ||
       (expectedOperation === 'resume' && capabilityRequest.key.resumeFrom !== previous?.run.mode)
-    ) throw new Error('launch_preparation_mismatch');
+    )
+      throw new Error('launch_preparation_mismatch');
+    budget.check();
     const at = Date.now(),
       runId = randomUUID(),
       linkId = handover ? randomUUID() : (previous?.link.linkId ?? randomUUID()),
@@ -328,15 +348,20 @@ export class DelegationService {
     }
     const launch = preparation.forRun({ runId, linkId, claim: claimText, hudHome: home, parent });
     if (
-      launch.input.runId !== runId || launch.input.sourceId !== preparation.sourceId ||
-      launch.input.profileDigest !== preparation.profileDigest || launch.input.cwd !== preparation.cwd ||
-      launch.input.mode !== expectedMode || launch.payload.input !== launch.input || launch.payload.env?.HUD_HOME !== home ||
+      launch.input.runId !== runId ||
+      launch.input.sourceId !== preparation.sourceId ||
+      launch.input.profileDigest !== preparation.profileDigest ||
+      launch.input.cwd !== preparation.cwd ||
+      launch.input.mode !== expectedMode ||
+      launch.payload.input !== launch.input ||
+      launch.payload.env?.HUD_HOME !== home ||
       launchDigest(launch.input) !== launch.launchDigest
-    ) throw new Error('launch_preparation_mismatch');
+    )
+      throw new Error('launch_preparation_mismatch');
     const capability = this.options.capability.verify(capabilityRequest);
     const context =
       authority.kind === 'mcp'
-        ? await ledger.readSnapshot((tx) => readContext(tx, authority.contextId, authority.generation))
+        ? await ledger.readSnapshot((tx) => readContext(tx, authority.contextId, authority.generation), budget)
         : null;
     const link: Link = (!handover ? previous?.link : null) ?? {
       linkId,
@@ -458,7 +483,7 @@ export class DelegationService {
             this.options.wakeExecutable
           )
         : null;
-    if (performance.now() >= deadline) throw new LedgerBusyError();
+    budget.check();
     const result = await acceptIntent(
       ledger,
       {
@@ -479,7 +504,7 @@ export class DelegationService {
         newSession: operation === 'spawn' && !handover,
         holder: run.launchTokenHash,
       },
-      Math.min(20, Math.max(0, deadline - 10 - performance.now())),
+      budget,
       gate ? () => gate.check() : undefined,
       config.limits,
       wakeRegistration
@@ -533,6 +558,8 @@ export class DelegationService {
   }
   /** Trusted B11 function entry; arguments cannot select an MCP or management actor. */
   async resumeLocal(args: LocalResumeRequest): Promise<unknown> {
+    const budget = this.options.callBudget ?? new CallBudget(this.options.clock);
+    budget.check();
     if (!args.request_key || !args.expectedRun || !args.mode) throw new Error('local_resume_parameters_required');
     const gate = new PrivateLedgerGate(this.options.home);
     gate.check();
@@ -545,6 +572,7 @@ export class DelegationService {
       ledgerOwned: true,
       privatePaths: true,
     };
-    return this.accept('resume', args, authority, performance.now() + 30, gate);
+    budget.check('metadata');
+    return this.accept('resume', args, authority, budget, gate);
   }
 }

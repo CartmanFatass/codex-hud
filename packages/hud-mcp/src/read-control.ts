@@ -1,3 +1,4 @@
+import { CallBudget } from '../../../src/ledger/call-budget.js';
 import { sessionRefKey } from '../../../src/core/identity.js';
 import type { Ledger } from '../../../src/ledger/ledger.js';
 import type { LedgerTransaction } from '../../../src/ledger/transaction.js';
@@ -14,7 +15,6 @@ import { selectCurrentObservation, projectFreshness } from '../../../src/core/ob
 import { openObservationStore, type ObservationStore } from '../../../src/core/observation-store.js';
 import { hintSubscription, waitForRun, type SubscribeWait } from '../../../src/core/wait/index.js';
 import { performance } from 'node:perf_hooks';
-import { LedgerBusyError } from '../../../src/ledger/transaction.js';
 import { randomUUID } from 'node:crypto';
 import { digest } from '../../../src/core/canonical.js';
 import { isRunTerminal } from '../../../src/core/execution.js';
@@ -407,26 +407,17 @@ export class ReadControlService {
       this.wakes?.closed(token);
     }
   }
-  async cancel(
-    runId: string,
-    graceMs: number,
-    authority: IntentAuthority,
-    budget = { deadline: performance.now() + 30, lockDeadline: performance.now() + 20 }
-  ) {
-    const remaining = () => {
-      const left = Math.min(budget.deadline, budget.lockDeadline) - performance.now();
-      if (left <= 0) throw new LedgerBusyError();
-      return Math.min(20, left);
-    };
+  async cancel(runId: string, graceMs: number, authority: IntentAuthority, budget = new CallBudget()) {
     if (!Number.isSafeInteger(graceMs) || graceMs < 0 || graceMs > 60000) throw new Error('invalid_grace');
     for (let attempt = 0; attempt < 3; attempt++) {
-      remaining();
+      budget.check();
       // No probes or external I/O occur inside either short transaction.
       const expected = await this.ledger.readSnapshot((tx) => {
         const status = readDelegationIn(tx, { runId }, authority);
         requireCancel(tx, status.link, authority);
         return snapshotInTransaction(tx, runId);
-      });
+      }, budget);
+      budget.check();
       if (
         !isRunTerminal(expected.run) &&
         expected.run.state !== 'uncertain' &&
@@ -471,13 +462,13 @@ export class ReadControlService {
             const current = readDelegationIn(tx, { runId }, authority);
             requireCancel(tx, current.link, authority);
           },
-          remaining(),
+          budget,
           this.home
         );
         void reconciled;
         continue;
       }
-      const result = await requestCancel(this.ledger, expected, authority, Date.now(), graceMs, remaining());
+      const result = await requestCancel(this.ledger, expected, authority, Date.now(), graceMs, budget);
       if (!result.committed) continue;
       // Acceptance is durable: a later read/authority failure must never turn it into busy/not accepted.
       let status: Awaited<ReturnType<ReadControlService['status']>> | null = null;

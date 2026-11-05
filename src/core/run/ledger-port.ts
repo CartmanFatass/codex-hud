@@ -1,3 +1,4 @@
+import type { CallBudget } from '../../ledger/call-budget.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { canonicalJson, digest } from '../canonical.js';
@@ -120,7 +121,8 @@ export class LedgerRunFactPort implements RunFactPort {
     )
       throw new Error('original_executor_required');
   }
-  async read(runId: string): Promise<RunSnapshot> {
+  async read(runId: string, budget?: CallBudget): Promise<RunSnapshot> {
+    budget?.check();
     this.gate.check();
     const { expected, result } = await this.ledger.readSnapshot((tx) => {
       // This is the SAME read transaction as the metadata, claim and slot projection.
@@ -261,7 +263,7 @@ export class LedgerRunFactPort implements RunFactPort {
         },
       };
       return { expected, result };
-    });
+    }, budget);
     result.revision = ++this.revision;
     this.snapshots.set(result.revision, expected);
     // Bounded handles: callers retry when an old handle has expired.
@@ -413,37 +415,46 @@ export class LedgerRunFactPort implements RunFactPort {
   async acceptCancel(
     runId: string,
     actor: LocalManager | { kind: 'orphan_policy'; supervisor: ProcessStamp },
-    graceMs: number
+    graceMs: number,
+    budget?: CallBudget
   ): Promise<CancelIntent | null> {
+    budget?.check();
     if (!Number.isInteger(graceMs) || graceMs < 0 || graceMs > 60000) throw new Error('invalid_grace');
     const copy = structuredClone(actor);
     for (let n = 0; n < 3; n++) {
-      const expected = await this.ledger.readSnapshot((tx) => readReconcileSnapshotIn(tx, runId));
-      const result = await commitCompared(this.ledger, expected, (tx, current) => {
-        if (copy.kind === 'trusted_local') this.gate.check(copy);
-        else if (copy.kind === 'orphan_policy') {
-          this.gate.check();
-          requireRunWriter(tx, runId, copy.supervisor);
-          if (
-            current.run.orphanPolicy !== 'stop' ||
-            !tx.get("SELECT 1 FROM events WHERE run_id=? AND kind='parent.offline'", runId)
-          )
-            throw new Error('unauthorized');
-        } else throw new Error('unauthorized_local_manager');
-        if (isRunTerminal(current.run)) return null;
-        const existing = cancelFrom(readEvents(tx, runId));
-        if (existing) return existing;
-        const at = Date.now();
-        tx.run("UPDATE runs SET cancel_requested_at=?,state='cancelling' WHERE run_id=?", at, runId);
-        insertRecord(tx, 'events', {
-          runId,
-          linkId: current.run.linkId,
-          kind: 'cancel.accepted',
-          payload: { actor: copy, runId, bindingGeneration: current.run.expectedGeneration, graceMs },
-          at,
-        });
-        return { seq: Number(tx.get('SELECT last_insert_rowid() AS seq')!.seq), at, graceMs };
-      });
+      const expected = await this.ledger.readSnapshot((tx) => readReconcileSnapshotIn(tx, runId), budget);
+      const result = await commitCompared(
+        this.ledger,
+        expected,
+        (tx, current) => {
+          budget?.check('metadata');
+          if (copy.kind === 'trusted_local') this.gate.check(copy);
+          else if (copy.kind === 'orphan_policy') {
+            this.gate.check();
+            requireRunWriter(tx, runId, copy.supervisor);
+            if (
+              current.run.orphanPolicy !== 'stop' ||
+              !tx.get("SELECT 1 FROM events WHERE run_id=? AND kind='parent.offline'", runId)
+            )
+              throw new Error('unauthorized');
+          } else throw new Error('unauthorized_local_manager');
+          budget?.check('metadata');
+          if (isRunTerminal(current.run)) return null;
+          const existing = cancelFrom(readEvents(tx, runId));
+          if (existing) return tx.priorDurableResult(existing);
+          const at = Date.now();
+          tx.run("UPDATE runs SET cancel_requested_at=?,state='cancelling' WHERE run_id=?", at, runId);
+          insertRecord(tx, 'events', {
+            runId,
+            linkId: current.run.linkId,
+            kind: 'cancel.accepted',
+            payload: { actor: copy, runId, bindingGeneration: current.run.expectedGeneration, graceMs },
+            at,
+          });
+          return { seq: Number(tx.get('SELECT last_insert_rowid() AS seq')!.seq), at, graceMs };
+        },
+        budget ?? this.ledger.busyBudgetMs
+      );
       if (result.committed) return result.result;
     }
     throw new Error('cancel_snapshot_changed');

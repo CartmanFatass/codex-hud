@@ -1,3 +1,4 @@
+import { CallBudget, sharedRenewalBudget } from '../../../src/ledger/call-budget.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { canonicalJson } from '../../../src/core/canonical.js';
 import { makeProcessKey, makeSourceId, sameSessionRef } from '../../../src/core/identity.js';
@@ -132,19 +133,23 @@ export class HandshakeService {
   async whoami(
     args: { claim?: string },
     authority: ChildAuthority,
-    budget?: ChildWriteBudget
+    budget: ChildWriteBudget = new CallBudget()
   ): Promise<HandshakeResult> {
+    const call = sharedRenewalBudget(budget);
+    call?.check();
     const claim = this.env.HUD_CLAIM || args.claim;
     if (!claim) throw new Error('claim_missing');
     if (this.env.HUD_CLAIM && args.claim && this.env.HUD_CLAIM !== args.claim) throw new Error('claim_conflict');
     const claimHash = createHash('sha256').update(claim).digest('hex');
-    const snapshot = await readHandshakeSnapshot(this.options.ledger, claimHash, authority);
+    const snapshot = await readHandshakeSnapshot(this.options.ledger, claimHash, authority, call ?? undefined);
     if (
       (this.env.HUD_RUN && this.env.HUD_RUN !== snapshot.run.runId) ||
       (this.env.HUD_LINK && this.env.HUD_LINK !== snapshot.link.linkId)
     )
       throw new Error('claim_anchor_mismatch');
+    call?.check();
     const proof = this.proveLaunch(snapshot, authority);
+    call?.check();
     if (!proof)
       return {
         ok: true,
@@ -155,7 +160,8 @@ export class HandshakeService {
       };
     return commitHandshake(this.options.ledger, snapshot, authority, claimHash, proof, proof.validatedAt!, budget);
   }
-  async report(args: ChildReportInput, authority: ChildAuthority, budget?: ChildWriteBudget) {
+  async report(args: ChildReportInput, authority: ChildAuthority, budget: ChildWriteBudget = new CallBudget()) {
+    sharedRenewalBudget(budget)?.check();
     if (this.env.HUD_RUN && this.env.HUD_RUN !== args.runId) throw new Error('stale_binding');
     return commitChildReport(this.options.ledger, args, authority, this.now(), budget, this.options.home);
   }

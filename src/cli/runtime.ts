@@ -1,3 +1,4 @@
+import type { CallBudget } from '../ledger/call-budget.js';
 import { lstatSync, realpathSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -56,6 +57,7 @@ interface McpLibraries {
 export interface ResumeServiceOptions {
   ledger: Ledger;
   home: string;
+  callBudget?: CallBudget;
   config: DelegateConfig;
   env: NodeJS.ProcessEnv;
   hudRunPath: string;
@@ -85,7 +87,8 @@ export interface LocalResumeService {
 }
 
 /** No initialization/migration on CLI reads, including wait. Gate pins both inodes. */
-export async function existingLedger(home: string, writable = false) {
+export async function existingLedger(home: string, writable = false, callBudget?: CallBudget) {
+  callBudget?.check();
   requireLedgerRuntime();
   let gate: PrivateLedgerGate;
   try {
@@ -111,9 +114,11 @@ export async function existingLedger(home: string, writable = false) {
     gate.check();
     if (writable) {
       await ledger.close();
-      ledger = await openLedger(gate.path);
+      callBudget?.check();
+      ledger = await openLedger(gate.path, { callBudget });
       gate.check();
     }
+    callBudget?.check('metadata');
     return { ledger, gate };
   } catch (error) {
     await ledger.close();

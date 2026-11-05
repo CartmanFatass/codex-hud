@@ -69,6 +69,8 @@ const outcomeCodes = new Set([
   'server_shutdown',
   'busy',
   'internal_error',
+  'ledger_commit_uncertain',
+  'ledger_cleanup_failed',
 ]);
 export function outcomeCode(error: unknown): string {
   if (error instanceof Error) {
