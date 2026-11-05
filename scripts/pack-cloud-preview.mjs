@@ -26,12 +26,15 @@ const ENTRYPOINTS = Object.values(ROOT_BINS);
 const REQUIRED_OUTPUTS = {
   'src/cli/statusline.ts': 'dist/cli/statusline.js',
   'src/harness/pi/footer.ts': 'dist/harness/pi/footer.js',
+  'src/harness/pi/delegation-bridge.ts': 'dist/harness/pi/delegation-bridge.js',
+  'src/harness/pi/delegation-channel.ts': 'dist/harness/pi/delegation-channel.js',
+  'src/harness/pi/delegation-context.ts': 'dist/harness/pi/delegation-context.js',
 };
-const EXTENSION_ENTRY = 'extensions/pi/hud-footer.ts';
+const EXTENSION_ENTRIES = ['extensions/pi/hud-footer.ts', 'extensions/pi/hud-delegate.ts'];
 const EXTRA_FILES = [
   'README.md',
   'bin/hud-statusline-preview',
-  EXTENSION_ENTRY,
+  ...EXTENSION_ENTRIES,
   'packages/hud-mcp/bin/hud-mcp.mjs',
   'packages/hud-mcp/bin/hud-claude-hook.mjs',
 ];
@@ -74,8 +77,8 @@ async function selfTest() {
   assert.equal(outputForSource('src/cli/hud.ts'), 'dist/cli/hud.js');
   assert.equal(outputForSource('src/cli/hud.ts', true), 'packages/hud-mcp/dist/src/cli/hud.js');
   for (const [source, output] of Object.entries(REQUIRED_OUTPUTS)) assert.equal(outputForSource(source), output);
-  assert.equal(EXTRA_FILES.filter((file) => file.startsWith('extensions/')).length, 1);
-  assert.equal(EXTRA_FILES.includes(EXTENSION_ENTRY), true);
+  assert.equal(EXTRA_FILES.filter((file) => file.startsWith('extensions/')).length, 2);
+  for (const entry of EXTENSION_ENTRIES) assert.equal(EXTRA_FILES.includes(entry), true);
   for (const name of [
     '.env',
     'node_modules/secret.ts',
@@ -124,7 +127,7 @@ async function main() {
       'node_modules',
       'tests',
       'source maps',
-      'source TS except the explicit Pi footer extension entry',
+      'source TS except the two explicit Pi extension entries',
       'logs',
       'settings',
       'credentials',

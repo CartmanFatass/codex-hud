@@ -52,9 +52,22 @@ export function inferHarness(process: ProcessInfo): Harness | null {
   const name = basename(process.argv[0] ?? '');
   if (name === 'claude') return 'claude';
   if (name === 'codex') return 'codex';
-  if (name === 'pi' || (name === 'node' && process.argv.slice(1, 3).some((a) => /\/pi-coding-agent\//.test(a))))
+  if (
+    name === 'pi' ||
+    (name === 'node' && process.argv.slice(1, 3).some((a) => /\/pi-coding-agent\//.test(a))) ||
+    (name === 'node' && piEntrypoint(process.argv) !== null)
+  )
     return 'pi';
   return null;
+}
+/** npm's normal .bin/pi symlink is resolved for discovery only, never caller authority. */
+function piEntrypoint(argv: readonly string[]): string | null {
+  try {
+    const entry = realpathSync(argv[1] ?? '');
+    return entry.endsWith('/pi-coding-agent/dist/bundle/cli.js') ? entry : null;
+  } catch {
+    return null;
+  }
 }
 export function findHarness(
   reader: ProcessReaderPort,
@@ -84,39 +97,42 @@ export function findHarness(
   return null;
 }
 export function actualSourceRoot(process: ProcessInfo, harness: Harness): string | null {
-  if (harness === 'pi') {
-    // This is only a source hint for an already identified Pi process, not session authority.
-    // Refuse an option terminator rather than interpret possible prompt text as an option.
-    if (process.argv.includes('--')) return null;
-    // Pinned Pi accepts the split form. Require it first, so a preceding option cannot
-    // consume the selector as its value; do not emulate the rest of Pi's argument parser.
-    const executable = basename(process.argv[0] ?? '');
-    const entrypoint = process.argv[1] ?? '';
-    const selectorIndex =
-      executable === 'pi'
-        ? 1
-        : executable === 'node' && isAbsolute(entrypoint) && /\/pi-coding-agent\//.test(entrypoint)
-          ? 2
-          : -1;
-    if (selectorIndex < 0 || process.argv[selectorIndex] !== '--session-dir') return null;
-    const root = process.argv[selectorIndex + 1];
-    if (!root || !isAbsolute(root)) return null;
-    if (
-      process.argv.slice(selectorIndex + 2).some((arg) => arg === '--session-dir' || arg.startsWith('--session-dir='))
-    )
-      return null;
-    try {
-      // No cwd/HOME fallback, normalization, or symlink resolution may change the supplied root.
-      return realpathSync(root) === root && statSync(root).isDirectory() ? root : null;
-    } catch {
-      return null;
-    }
-  }
+  if (harness === 'pi') return piSourceRootFromArgv(process.argv);
   const explicit = process.env[harness === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'];
   const home = process.env.HOME;
   if (!explicit && !home) return null;
   try {
     return realpathSync(explicit || `${home}/${harness === 'codex' ? '.codex' : '.claude'}`);
+  } catch {
+    return null;
+  }
+}
+
+/** Original host argv parsing, distinct from a physical process observation. */
+export function piSourceRootFromArgv(argv: readonly string[]): string | null {
+  // This is only a source hint for an already identified Pi process, not session authority.
+  // Refuse an option terminator rather than interpret possible prompt text as an option.
+  if (argv.includes('--')) return null;
+  // Pinned Pi accepts the split form. Require it first, so a preceding option cannot
+  // consume the selector as its value; do not emulate the rest of Pi's argument parser.
+  const executable = basename(argv[0] ?? '');
+  const entrypoint = argv[1] ?? '';
+  const selectorIndex =
+    executable === 'pi'
+      ? 1
+      : executable === 'node' &&
+          isAbsolute(entrypoint) &&
+          (/\/pi-coding-agent\//.test(entrypoint) || piEntrypoint(argv))
+        ? 2
+        : -1;
+  if (selectorIndex < 0 || argv[selectorIndex] !== '--session-dir') return null;
+  const root = argv[selectorIndex + 1];
+  if (!root || !isAbsolute(root)) return null;
+  if (argv.slice(selectorIndex + 2).some((arg) => arg === '--session-dir' || arg.startsWith('--session-dir=')))
+    return null;
+  try {
+    // No cwd/HOME fallback, normalization, or symlink resolution may change the supplied root.
+    return realpathSync(root) === root && statSync(root).isDirectory() ? root : null;
   } catch {
     return null;
   }

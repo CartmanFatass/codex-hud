@@ -109,9 +109,13 @@ export function validateDelegateConfig(value: unknown): DelegateConfig {
       bad();
     if (!['continue', 'stop'].includes(p.orphan_policy as string) || typeof p.managedShellVerified !== 'boolean') bad();
     if (p.callSource !== undefined) {
-      if (p.harness !== 'claude' || !object(p.callSource)) bad();
+      if (!object(p.callSource)) bad();
       keys(p.callSource, ['kind']);
-      if (p.callSource.kind !== 'claude_pre_tool_use_v1') bad();
+      if (!(
+        (p.harness === 'claude' && p.callSource.kind === 'claude_pre_tool_use_v1') ||
+        (p.harness === 'pi' && p.callSource.kind === 'pi_extension_v1')
+      ))
+        bad();
     }
     if (p.roles !== undefined) {
       if (!object(p.roles)) bad();

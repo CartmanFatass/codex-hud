@@ -328,6 +328,17 @@ async function main() {
       args: ['--test', 'packages/hud-mcp/dist/tests/hud-mcp/pi-source-root.test.js'],
       timeoutMs: 30000,
     },
+    {
+      name: 'pi-delegation-bridge',
+      args: [
+        '--test',
+        '--test-concurrency=1',
+        'tests/unit/pi-delegation-context.test.mjs',
+        'tests/unit/pi-delegation-channel.test.mjs',
+        'tests/unit/pi-delegation-bridge.test.mjs',
+      ],
+      timeoutMs: 180000,
+    },
     ...DEMOS.map((name) => ({ name, args: [`scripts/${name}.mjs`], timeoutMs: 30000 })),
   ];
   try {

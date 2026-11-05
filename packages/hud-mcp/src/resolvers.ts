@@ -13,6 +13,7 @@ import { actualSourceRoot, findHarness, type ProcessInfo, type ProcessReaderPort
 import { consumeHookRecord, type ClaudeHookSourceOptions } from './hook/resolve.js';
 import { CLAUDE_VERSION, IMPLEMENTATION, hookProfileFingerprint, selectsClaudeHook } from './hook/record.js';
 import { readlinkSync } from 'node:fs';
+import type { PiEvidenceChannel } from './pi-channel.js';
 
 export type CallResolution =
   | {
@@ -149,7 +150,8 @@ export class SessionRefResolver implements CurrentCallSourcePort {
     private readonly profile: DelegateProfile | null,
     private readonly locator: SessionRecordLocatorPort = new BoundedSessionLocator(),
     private readonly claudeHook?: ClaudeHookSourceOptions,
-    private readonly scopes?: ScopeSnapshotPort
+    private readonly scopes?: ScopeSnapshotPort,
+    private readonly piChannel?: PiEvidenceChannel
   ) {}
   async resolve(meta: unknown, toolName: string): Promise<CallResolution> {
     const deny = (code: Exclude<CallResolution, { ok: true }>['code']): CallResolution => ({ ok: false, code });
@@ -168,7 +170,7 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         found.process.pid !== harnessPid ||
         found.process.procStart !== harnessProcStart ||
         found.process.pidNamespace !== self.pidNamespace ||
-        actualSourceRoot(found.process, source.harness) !== source.rootPath
+        (source.harness !== 'pi' && actualSourceRoot(found.process, source.harness) !== source.rootPath)
       )
         return deny('identity_unverified');
       if (found.harness !== source.harness || found.process.argv.some((arg) => /^(app-server|daemon)$/.test(arg)))
@@ -299,6 +301,50 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         // diagnosable but no product capability is upgraded by this resolver.
         if (payload.source === 'exec' && turn.turn_trigger !== 'exec') return deny('identity_unverified');
         sessionRef = { harness: 'codex', sourceId: source.sourceId, sessionId: meta.threadId, threadId: null };
+      } else if (source.harness === 'pi') {
+        if (this.profile.callSource?.kind !== 'pi_extension_v1' || !this.piChannel) return deny('unsupported');
+        try {
+          // The private evidence fd must belong to this exact direct registered parent.
+          if (harnessPid !== caller.ppid || parent.pid !== harnessPid) return deny('identity_unverified');
+          this.piChannel.verifyHost(this.reader, source.rootPath);
+          const frame = await this.piChannel.consume(meta, toolName, source.rootPath);
+          this.piChannel.assertLive();
+          const currentParent = this.reader.get(harnessPid);
+          const currentSelf = this.reader.get(caller.pid);
+          this.piChannel.verifyHost(this.reader, source.rootPath);
+          if (
+            currentSelf.ppid !== harnessPid ||
+            currentSelf.procStart !== caller.procStart ||
+            currentSelf.pidNamespace !== currentParent.pidNamespace ||
+            this.reader.domain().pidDomain !== domain.pidDomain
+          )
+            return deny('identity_unverified');
+          sessionRef = {
+            harness: 'pi',
+            sourceId: source.sourceId,
+            sessionId: frame.snapshot.sessionId,
+            threadId: null,
+          };
+          return {
+            ok: true,
+            callId: frame.snapshot.toolCallId,
+            sessionRef,
+            processKey,
+            scopePremise,
+            evidenceDigest: digest([frame, processKey]),
+          };
+        } catch (error) {
+          // Preserve only protocol-owned Pi refusals; never expose arbitrary errors.
+          if (
+            error instanceof Refusal &&
+            (error.code === 'identity_source_missing' ||
+              error.code === 'identity_unverified' ||
+              error.code === 'unsupported' ||
+              error.code === 'stale_context')
+          )
+            return deny(error.code);
+          return deny('identity_source_missing');
+        }
       } else return deny('unsupported');
       // Recheck physical stamps after filesystem evidence; registration alone is no authority.
       if (

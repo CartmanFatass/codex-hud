@@ -16,6 +16,7 @@ import { makeSourceId } from '../../../src/core/identity.js';
 import type { DelegateProfile } from './config.js';
 import { Refusal } from './errors.js';
 import { actualSourceRoot, findHarness, type ProcessReaderPort } from './process.js';
+import { PiHostEvidence } from './pi-host.js';
 
 /** B2 integration: registration is raw physical evidence, never a binding transaction. */
 export interface CallerRegistryPort {
@@ -73,6 +74,8 @@ export async function registerCaller(input: {
   cwd: () => string;
   envPane: string | null;
   nowMs: number;
+  /** Only a consumed, physically checked private Pi bootstrap can supply this. */
+  piHost?: PiHostEvidence;
 }): Promise<Registration> {
   let cwd: string;
   try {
@@ -90,7 +93,15 @@ export async function registerCaller(input: {
   const profile = input.profile;
   if (found && profile && profile.harness === found.harness) {
     const rootPath = realpathSync(profile.source.root);
-    if (actualSourceRoot(found.process, found.harness) === rootPath)
+    const piSource =
+      found.harness === 'pi' &&
+      profile.callSource?.kind === 'pi_extension_v1' &&
+      input.piHost instanceof PiHostEvidence &&
+      input.piHost.parentPid === self.ppid &&
+      input.piHost.parentPid === found.process.pid &&
+      input.piHost.parentStart === found.process.procStart;
+    if (piSource) input.piHost!.assertCurrent(input.reader);
+    if ((piSource ? input.piHost!.rootPath : actualSourceRoot(found.process, found.harness)) === rootPath)
       source = {
         sourceId: makeSourceId(found.harness, rootPath),
         harness: found.harness,

@@ -89,8 +89,8 @@ export interface LaunchProfile {
     blockedWaitMs?: number;
     maxRunMs?: number;
   };
-  /** Claude-only mechanism selection; configuration does not verify the capability. */
-  callSource?: { kind: 'claude_pre_tool_use_v1' };
+  /** Per-call host mechanism selection; configuration never verifies a capability. */
+  callSource?: { kind: 'claude_pre_tool_use_v1' | 'pi_extension_v1' };
 }
 
 export type DelegateProfile = LaunchProfile;

@@ -36,7 +36,14 @@ The routing composition follow-on, based on `82013aaf99c8f3507163a02bed0ce7e8e4a
 adds the statusline settings, product CLI routing and Pi footer unit tests; five
 explicit unified-workbench/private-channel test files; and the MCP Pi source-root
 test. They use temporary synthetic data. Settings apply/restore tests operate only
-inside their own temporary homes, never the user's configuration. The real-PTY
+inside their own temporary homes, never the user's configuration. The Pi delegation follow-on adds the three explicit `pi-delegation-*` unit files
+(context, private channel and full synthetic host). Root `npm test` now builds
+hud-mcp after `build:test`, so the full host never depends on stale MCP output.
+Its six host cases explicitly require Linux, Node22.18+ (22.x) or Node24+,
+`registerHooks` and enabled built-in TypeScript loading; other runtimes skip only
+those cases while pure cleanup still runs. This fixture floor is separate from
+the ledger's Node22.13 minimum. The optional installed-official
+Pi no-model probe is not part of the default cloud command. The real-PTY
 workbench script and broader MCP suite remain outside this focused command.
 
 Each build/test command has a three-minute guard, each demo thirty seconds, and
@@ -90,9 +97,10 @@ It never recursively packs the working directory or copies arbitrary existing
   `src/` and `packages/hud-mcp/src/`, at their existing runtime output paths.
 - Explicitly required `dist/cli/statusline.js` and `dist/harness/pi/footer.js`
   outputs from their matching tracked sources. The exact
-  `extensions/pi/hud-footer.ts` entry is the sole source-TS exception: Pi loads
-  that extension entry explicitly, and it imports the packaged footer module.
-  Other extension files are not selected recursively. Loading it still requires
+  `extensions/pi/hud-footer.ts` and `extensions/pi/hud-delegate.ts` entries are the
+  only source-TS exceptions. Pi loads them explicitly and they import their
+  packaged runtime modules. The bridge/context/channel outputs are required
+  explicitly. Other extension files are not selected recursively. Loading it still requires
   a separately installed compatible Pi host; the preview never loads it itself.
 - The explicit runtime `src/core/launch/codex-cells.json`, copied to both builds'
   expected paths, and generated `CLOUD-PREVIEW.json` provenance.
