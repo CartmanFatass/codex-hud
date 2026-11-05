@@ -446,8 +446,8 @@ class SessionCollection implements LinkCollectionPort {
     this.activeContinuation = undefined;
     if (!ticket) return;
     const reading = this.readings.get(ticket.key);
+    if (reading) reading.spentRecovery = ticket.fingerprint;
     if (reading?.checkpoint === ticket.checkpoint) {
-      reading.spentRecovery = ticket.fingerprint;
       reading.recoveryPending = true;
       reading.reader = undefined;
       reading.dirty = true;
@@ -459,7 +459,7 @@ class SessionCollection implements LinkCollectionPort {
     this.activeContinuation = undefined;
     if (!ticket) return null;
     const reading = this.readings.get(ticket.key);
-    if (reading?.checkpoint === ticket.checkpoint) reading.spentRecovery = ticket.fingerprint;
+    if (reading) reading.spentRecovery = ticket.fingerprint;
     const node = tree?.nodes.find((item) => item.key === ticket.key);
     const run = node?.currentRun;
     const contextMatches =
@@ -481,6 +481,14 @@ class SessionCollection implements LinkCollectionPort {
   discardContinuation(): void {
     // A refused priority opportunity is spent; ordinary cursor order resumes.
     this.activeContinuation = undefined;
+  }
+  rejectContinuation(): boolean {
+    const ticket = this.continuation;
+    if (!ticket) return false;
+    this.continuation = undefined;
+    const reading = this.readings.get(ticket.key);
+    if (reading) reading.spentRecovery = ticket.fingerprint;
+    return true;
   }
   sessions(): readonly CollectedLinkSession[] {
     const states = new Map<string, { topologyDirty: boolean; topologyToken: number }>();
@@ -740,42 +748,53 @@ class SessionCollection implements LinkCollectionPort {
     )
       return reading.envelope ?? null;
     const sessionDeadline = Math.min(this.deadline, performance.now() + budget.budgetMs);
+    let continuationValid: (() => boolean) | undefined;
+    const abandonContinuation = () => {
+      if (ticket && reading.checkpoint === ticket.checkpoint) {
+        reading.recoveryPending = true;
+        reading.reader = undefined;
+        reading.dirty = true;
+      }
+    };
     if (continuation) {
       try {
-        const now = Date.now();
-        const lease = reading.publisher?.continuationLease(now);
-        const compatible =
-          !!ticket &&
-          ticket.scope === this.scope &&
-          ticket.key === displayNodeKey({ kind: 'session', ref }) &&
-          ticket.publisher === reading.publisher &&
-          ticket.checkpoint === reading.checkpoint &&
-          !reading.resetPending &&
-          source.store &&
-          ticket.sourceIdentity === source.storeIdentity &&
-          identity(source.store.databasePath) === ticket.sourceIdentity &&
-          lease &&
-          canonicalJson(lease) === canonicalJson(ticket.lease) &&
-          source.store.recoveryAuthorityCurrent(ticket.target, ticket.lease);
+        continuationValid = () => {
+          const lease = reading.publisher?.continuationLease(Date.now());
+          return !!(
+            !!ticket &&
+            ticket.scope === this.scope &&
+            ticket.key === displayNodeKey({ kind: 'session', ref }) &&
+            ticket.publisher === reading.publisher &&
+            ticket.checkpoint === reading.checkpoint &&
+            !reading.recoveryPending &&
+            !reading.resetPending &&
+            source.store &&
+            ticket.sourceIdentity === source.storeIdentity &&
+            identity(source.store.databasePath) === ticket.sourceIdentity &&
+            lease &&
+            canonicalJson(lease) === canonicalJson(ticket.lease) &&
+            source.store.recoveryAuthorityCurrent(ticket.target, ticket.lease)
+          );
+        };
+        const compatible = continuationValid();
         if (!compatible || performance.now() >= sessionDeadline) {
-          if (ticket && reading.checkpoint === ticket.checkpoint) {
-            reading.recoveryPending = true;
-            reading.reader = undefined;
-            reading.dirty = true;
-            if (!compatible) reading.publisher?.forget();
-          }
+          abandonContinuation();
+          if (!compatible) reading.publisher?.forget();
           return reading.envelope ?? null;
         }
       } catch {
-        if (ticket && reading.checkpoint === ticket.checkpoint) {
-          reading.recoveryPending = true;
-          reading.reader = undefined;
-          reading.dirty = true;
-          reading.publisher?.forget();
-        }
+        abandonContinuation();
+        reading.publisher?.forget();
         return reading.envelope ?? null;
       }
     }
+    const continuationStillValid = () => {
+      try {
+        return continuationValid?.() === true;
+      } catch {
+        return false;
+      }
+    };
     reading.lastGrantedKind = kind;
     if (kind === 'native_topology') {
       const topology = source.adapter.collectTopology
@@ -931,7 +950,9 @@ class SessionCollection implements LinkCollectionPort {
           this.committed(source, reading);
           return reading.envelope ?? null;
         }
-        const claim = publisher.claim(Date.now());
+        // A continuation is restricted to the already verified lease: it cannot
+        // enter claim(), which can renew or acquire a different generation.
+        const claim = continuation ? 'retained' : publisher.claim(Date.now());
         if (claim === 'follower') {
           this.committed(source, reading);
           return reading.envelope ?? null;
@@ -1025,10 +1046,25 @@ class SessionCollection implements LinkCollectionPort {
         return reading.envelope ?? null;
       }
       reading.reader ??= source.adapter.open(ref, reading.checkpoint);
+      if (continuation && (!continuationStillValid() || performance.now() >= collectionDeadline)) {
+        abandonContinuation();
+        return reading.envelope ?? null;
+      }
+      budget = { ...budget, budgetMs: Math.max(0, Math.floor(collectionDeadline - performance.now())) };
+      if (budget.budgetMs === 0) {
+        if (continuation) abandonContinuation();
+        return reading.envelope ?? null;
+      }
       const readSignature = reading.file ? fileStamp(reading.file) : null;
       const previousGeneration = reading.checkpoint?.sourceGeneration;
       reading.lastSessionWasRate = false;
       const result = await reading.reader.read(budget);
+      if (continuation && !continuationStillValid()) {
+        this.charges.bytesRead += result.stats?.bytesRead ?? budget.maxBytes;
+        this.charges.recordsRead += result.stats?.recordsRead ?? budget.maxRecords;
+        abandonContinuation();
+        return reading.envelope ?? null;
+      }
       if (!result.evidence || !result.stats) return null;
       reading.spentRecovery = undefined;
       const reset = previousGeneration !== undefined && previousGeneration !== result.checkpoint.sourceGeneration;

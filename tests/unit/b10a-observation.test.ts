@@ -267,6 +267,19 @@ test('publishing recovery charges exact checkpoint I/O and retains it across an 
   });
   assert.ok(port.continuation, 'exact recovery exhausted the grant and created one continuation');
   let savedTicket = port.continuation;
+  assert.equal(port.rejectContinuation(), true);
+  assert.equal(port.rejectContinuation(), false, 'deadline rejection spends one ticket only');
+  const originalCheckpoint = port.readings.get(key).checkpoint;
+  port.readings.get(key).checkpoint = { ...originalCheckpoint };
+  port.continuation = savedTicket;
+  assert.equal(port.rejectContinuation(), true);
+  assert.equal(
+    port.readings.get(key).spentRecovery,
+    savedTicket.fingerprint,
+    'replaced object cannot revive old priority'
+  );
+  port.readings.get(key).checkpoint = originalCheckpoint;
+  port.continuation = savedTicket;
   assert.equal(store.recoveryAuthorityCurrent(savedTicket.target, savedTicket.lease), true);
   assert.equal(
     store.recoveryAuthorityCurrent(
@@ -325,6 +338,41 @@ test('publishing recovery charges exact checkpoint I/O and retains it across an 
   assert.equal(results[2]?.kind, 'recovered');
   assert.equal(port.takeContinuation('synthetic-scope', firstTree), null, 'same recovery cannot rearm');
   savedTicket = { ...savedTicket, checkpoint: port.readings.get(key).checkpoint };
+  // The lease can expire after the first check; a priority attempt must never call claim().
+  const publisher = port.readings.get(key).publisher;
+  const leaseCheck = publisher.continuationLease.bind(publisher);
+  const originalClaim = publisher.claim.bind(publisher);
+  let leaseChecks = 0;
+  let claimCalls = 0;
+  publisher.continuationLease = (at: number) => (++leaseChecks === 1 ? leaseCheck(at) : null);
+  publisher.claim = (at: number) => {
+    claimCalls++;
+    return originalClaim(at);
+  };
+  port.continuation = savedTicket;
+  port.begin(performance.now() + 2000, 'synthetic-scope');
+  assert.deepEqual(port.takeContinuation('synthetic-scope', firstTree), { key });
+  await port.collect(f.child.ref, 'session', { ...budget, maxRecords: 2000 }, true);
+  assert.equal(claimCalls, 0, 'priority never calls the renewing or reacquiring claim path');
+  assert.equal(port.readings.get(key).recoveryPending, true);
+  assert.equal(publisher.hasReading(), false, 'expired authority never captures a native result');
+  assert.equal(port.takeContinuation('synthetic-scope', firstTree), null);
+  // Expiry while native I/O is in flight also discards the result rather than publishing it.
+  leaseChecks = 0;
+  publisher.continuationLease = (at: number) => (++leaseChecks <= 2 ? leaseCheck(at) : null);
+  port.readings.get(key).recoveryPending = false;
+  port.continuation = savedTicket;
+  port.begin(performance.now() + 2000, 'synthetic-scope');
+  assert.deepEqual(port.takeContinuation('synthetic-scope', firstTree), { key });
+  await port.collect(f.child.ref, 'session', { ...budget, maxRecords: 2000 }, true);
+  assert.ok(leaseChecks >= 3, 'authority is rechecked after the native read');
+  assert.equal(claimCalls, 0);
+  assert.equal(publisher.hasReading(), false, 'an in-flight expiry cannot publish the result');
+  assert.equal(port.readings.get(key).recoveryPending, true);
+  assert.equal(port.takeContinuation('synthetic-scope', firstTree), null);
+  publisher.continuationLease = leaseCheck;
+  publisher.claim = originalClaim;
+  port.readings.get(key).recoveryPending = false;
   // Reinsert the saved ticket bound to the equivalent fresh checkpoint only for the separate success control.
   port.continuation = savedTicket;
   port.begin(performance.now() + 2000, 'synthetic-scope');

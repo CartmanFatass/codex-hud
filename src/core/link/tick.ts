@@ -31,6 +31,7 @@ export interface LinkCollectionPort {
   /** Consume at most one recovery continuation for this ordinary opportunity. */
   takeContinuation?(scope: string, tree: LinkTreeProjection | null): { key: string | null } | null;
   discardContinuation?(): void;
+  rejectContinuation?(): boolean;
   sessions(): readonly CollectedLinkSession[];
   /** Metadata-only invalidation. No body/topology reads on this call. */
   pending(ref: SessionRef, key?: string): 'session' | 'native_topology' | null;
@@ -324,6 +325,10 @@ export class LinkTickCollector {
       }
       return this.view;
     };
+    const rejectContinuation = () => {
+      if (!projectionOnly && this.port?.rejectContinuation?.()) stats.continuationAttempts++;
+    };
+    if (!projectionOnly && performance.now() >= deadline) rejectContinuation();
     let retained = input.sessions ?? this.port?.sessions() ?? [];
     const immutableSnapshots = !input.sessions && this.port?.immutableSnapshots === true;
     if (!immutableSnapshots || retained !== this.launchSnapshot) {
@@ -358,6 +363,7 @@ export class LinkTickCollector {
       this.lastAvailableView &&
       this.lastAvailableScope === JSON.stringify([input.roots, input.budget ?? {}])
     ) {
+      rejectContinuation();
       const prior = this.lastAvailableView;
       const tree = {
         ...prior.tree,
@@ -395,6 +401,7 @@ export class LinkTickCollector {
       return finish();
     }
     if (this.ledger.state === 'available' && !this.ledger.snapshot.links.length && !this.port?.publishesObservations) {
+      rejectContinuation();
       this.view = null;
       return finish();
     }
@@ -410,6 +417,7 @@ export class LinkTickCollector {
     }
     let unique = this.snapshotIndex;
     let didCollect = false;
+    if (!projectionOnly && this.port && performance.now() >= deadline) rejectContinuation();
     // Scheduling metadata only. planLinkRead remains the single grant authority, including the retained fair cursor.
     if (!projectionOnly && this.port && performance.now() < deadline) {
       const refs = new Map<string, SessionRef>();

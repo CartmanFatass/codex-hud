@@ -6,6 +6,7 @@ import type { LinkTreeInput } from '../../src/core/link/index.js';
 import type { DisplayNodeIdentity } from '../../src/core/types/observation.js';
 import { LinkTickCollector } from '../../src/core/link/tick.js';
 import { buildVm, S } from '../fixtures/b10b-delegation.js';
+import { performance } from 'node:perf_hooks';
 
 const degraded = { state: 'degraded', snapshot: null, reason: 'ledger_unavailable' } as const;
 const input = (roots: DisplayNodeIdentity[]): LinkTreeInput => ({ ledger: degraded, roots, sessions: [], nowMs: 1000 });
@@ -217,6 +218,11 @@ test('collector spends a continuation in one ordinary opportunity without moving
       ticket = null;
       return value === null ? null : { key: value };
     },
+    rejectContinuation: () => {
+      if (ticket === null) return false;
+      ticket = null;
+      return true;
+    },
     collect: async (ref: { sessionId: string }, _kind: unknown, _budget: unknown, priority?: boolean) => {
       calls.push({ id: ref.sessionId, priority: !!priority });
       return null;
@@ -259,6 +265,15 @@ test('collector spends a continuation in one ordinary opportunity without moving
       { id: 'A', priority: true },
       { id: 'B', priority: false },
     ]);
+    ticket = displayNodeKey(roots[2]);
+    await collector.refreshCommitted();
+    assert.notEqual(ticket, null, 'projection-only work must not consume priority');
+    await collector.tick({ roots, deadline: performance.now() - 1 });
+    assert.equal(ticket, null, 'an expired ordinary opportunity consumes priority');
+    assert.equal(collector.stats().continuationAttempts, 1);
+    assert.equal(calls.length, 3, 'expired opportunity performs no collection');
+    await collector.tick({ roots });
+    assert.deepEqual(calls[3], { id: 'C', priority: false }, 'ordinary cursor continues without priority');
   } finally {
     collector.close();
   }
