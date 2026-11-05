@@ -4,6 +4,7 @@ import { RUN_HELP, RUN_USAGE, runCommand } from './run.js';
 import { CACHE_HELP, CACHE_USAGE, cacheCommand } from './cache.js';
 import { CLAUDE_HELP, claudeCommand, codexCommand } from './launcher.js';
 import { panelCommand, PANEL_HELP } from './panel.js';
+import { piCommand } from './pi.js';
 
 function writeStdout(text: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -68,6 +69,7 @@ export async function main(
       }
       return await cacheCommand(args.slice(1), privateHome(io.env), io);
     }
+    if (args[0] === 'pi') return await piCommand(args.slice(1), io);
     if (args[0] === 'claude') {
       if (args.length === 2 && args[1] === '--help') {
         await io.stdout(CLAUDE_HELP);
