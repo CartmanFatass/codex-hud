@@ -33,6 +33,7 @@ const outcomeCodes = new Set([
   'claim_conflict',
   'claim_missing',
   'delegation_cycle',
+  'nested_delegation_not_supported',
   'graph_budget',
   'identity_conflict',
   'slot_busy',

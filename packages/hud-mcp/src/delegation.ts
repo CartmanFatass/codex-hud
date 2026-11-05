@@ -76,7 +76,12 @@ export class DelegationService {
   private readonly wakes?: WakeDrainer;
   private readonly cache: CacheAdviceSource;
   private readonly preparers: Readonly<Partial<Record<Harness, LaunchPreparer>>>;
+  private readonly managedLaunch: boolean;
   constructor(private readonly options: DelegationOptions) {
+    const env = options.env ?? process.env;
+    // A managed harness receives these before whoami. Partial, empty, unknown or
+    // contradictory markers still restrict; none of them grants caller authority.
+    this.managedLaunch = ['HUD_RUN', 'HUD_LINK', 'HUD_CLAIM'].some((key) => env[key] !== undefined);
     this.preparers = Object.freeze({ ...(options.launchPreparers ?? {}), codex: prepareCodexLaunch });
     mkdirSync(hintDirectory(options.home), { recursive: true, mode: 0o700 });
     const physical = options.registration;
@@ -457,6 +462,7 @@ export class DelegationService {
     const result = await acceptIntent(
       ledger,
       {
+        managedLaunch: this.managedLaunch,
         requestKey: String(args.request_key),
         targetSource: {
           sourceId: preparation.sourceId,

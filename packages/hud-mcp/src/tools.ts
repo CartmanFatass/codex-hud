@@ -37,7 +37,7 @@ export const TOOLS: ToolDefinition[] = [
   ),
   tool(
     'delegate_spawn',
-    'Accept one headless delegated run; retry the same request_key only to replay that intent.',
+    'Accept one headless delegated run. HUD-managed children cannot spawn another new session; existing-session handover remains subject to its normal gates. Retry the same request_key only to replay that intent.',
     {
       backend: string,
       role: string,

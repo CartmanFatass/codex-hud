@@ -226,3 +226,19 @@ HUD只读关系/运行/报告与上述投影；uncertain提供缺证及对账入
 | T-03-35 (A9 fixture) | 无报告且N成立的run.failed、failed报告但run.running、run.cancelling → launch_failed/non_execution且终态、任务失败但运行非终态、取消中仍非终态；不按图标折历史 |
 | T-03-36 (A9 fixture) | ledger currentRun=b、观测commit仍a；另无关run提高high-water、无库/空库 → b事实+有原因的缺失观测，不混a报告/stateSince/cwd；无关seq不全失效，asOfSeq分别null/0，游标分域且零读路径写 |
 | T-03-37 (A9 fixture) | local resume同键重放、旧expectedRun新key、MCP admin参数/父ref未确认、旧父context离线 → 按01/02先鉴别再重放；新意图拒旧目标/非例外；合法管理主体按typed权限重验，全部I-03-5不放宽；（consult 5 增补，G03）B45-R2 补 MCP 指定/缺省两支；旧键在新轮出现后重放，同键改 expectedRun 冲突；同旧 run 不同 key 竞争最多一轮，竞争轮已结束也拒旧 expectedRun，缺省兼容/local 必填；B13 mismatch 重读后重新决定，零自动换 key/目标重试 |
+
+## 2026-11-05 owner-selected one-level creation boundary
+
+HUD MCP creates only one level of new independent harness sessions. A managed
+child's fresh new-session `delegate_spawn` is refused with
+`nested_delegation_not_supported`; native harness subagents are not constrained.
+This is a creation-depth restriction, not a new concurrency limit. Authorization
+and immutable idempotency replay precede this guard. Existing-session
+resume/handover, whoami/report and owner-scoped historical deep reads retain
+their existing contracts and gates.
+
+The server-captured presence of managed launch markers can only restrict;
+it never grants caller identity. Once bound, a full SessionRef match in durable
+run history remains restrictive across terminal/revoked state and restart.
+Pre-bind protection assumes the supported launch's marker plumbing, not an
+adversarial sandbox. See [implementation boundary and regression scope](../cloud/single-level-delegation.md).

@@ -1,0 +1,62 @@
+✖ B45 accepted spawn is atomic, lost response replays immutable result with zero second launch (94.922995ms)
+✔ B45 different owner same request key is isolated; unverified new intent refuses (94.296996ms)
+✔ B45 MCP resume selects current run transactionally; local stale expected-run is refused after replay (76.388526ms)
+✔ B45 local resume audits actual UID without an MCP context and preserves replay before expected-run gates (89.36547ms)
+{"diagnostic":"dispatch_unknown","runId":"ddb1308a-ad66-43ff-a32a-7788a5f75e37"}
+✔ B45 dispatch pipe uncertainty returns durable accepted promptly and never resubmits (171.535236ms)
+✔ B45 same-owner predecessor atomically transfers one child and replays before historical gates (72.038754ms)
+✔ B45 distinct backend source is registered atomically with acceptance (49.929473ms)
+✔ B45 headless build refuses explicit visible layouts instead of discarding them (25.60801ms)
+✔ one-level HUD rejects marked pre-bind spawns atomically, including partial and contradictory markers (79.291041ms)
+✔ one-level provenance is captured at server start and returns its stable MCP refusal code (40.123798ms)
+✖ one-level durable identity survives binding removal, terminal run and server/store restart without env (188.118689ms)
+✔ one-level upgrade preserves accepted historical nested replay and owner-scoped list/status/wait (74.39051ms)
+✔ one-level restriction preserves authorized resume of an existing session and replay (50.805704ms)
+✔ one-level restriction preserves authorized handover of an existing session and replay (55.635693ms)
+✔ one-level exact identity does not reject an unrelated source with the same session ID (32.54077ms)
+✔ one-level exact identity does not reject an unrelated thread with the same session ID (30.896513ms)
+✔ one-level durable run identity remains restrictive without a corresponding child binding or link identity (33.261944ms)
+✔ one-level marked child retains verified whoami and report while new-session spawn is denied (47.256685ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 16
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1610.754039
+
+✖ failing tests:
+
+test at packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js:125:1
+✖ B45 accepted spawn is atomic, lost response replays immutable result with zero second launch (94.922995ms)
+  Error: Ledger busy: no operation was accepted within the write-lock budget
+      at DelegationService.accept (file:///workspace/scratch/6daef0397a95/hud-single-level-delegation/packages/hud-mcp/dist/packages/hud-mcp/src/delegation.js:361:19)
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hud-single-level-delegation/packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js:128:24)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    code: 'ledger_busy'
+  }
+
+test at packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js:369:1
+✖ one-level durable identity survives binding removal, terminal run and server/store restart without env (188.118689ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /nested_delegation_not_supported/. Input:
+  
+  'Error: Ledger busy: no operation was accepted within the write-lock budget'
+  
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hud-single-level-delegation/packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js:388:9)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: Error: Ledger busy: no operation was accepted within the write-lock budget
+        at DelegationService.accept (file:///workspace/scratch/6daef0397a95/hud-single-level-delegation/packages/hud-mcp/dist/packages/hud-mcp/src/delegation.js:361:19)
+        at async waitForActual (node:assert:646:5)
+        at async strict.rejects (node:assert:769:25)
+        at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hud-single-level-delegation/packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js:388:9)
+        at async Test.run (node:internal/test_runner/test:1409:7)
+        at async Test.processPendingSubtests (node:internal/test_runner/test:974:7),
+    expected: /nested_delegation_not_supported/,
+    operator: 'rejects',
+    diff: 'simple'
+  }

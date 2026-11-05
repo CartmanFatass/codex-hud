@@ -12,6 +12,8 @@ export type IntentAuthority =
   | Extract<ControlAuthority, { kind: 'local_user' }>;
 
 export interface PreparedIntent {
+  /** Trusted server-start provenance, never tool input. Presence can only restrict fresh spawn. */
+  managedLaunch?: boolean;
   /** Explicit captured backend source; added atomically with the first cross-source intent. */
   targetSource?: Source;
   requestKey: string;

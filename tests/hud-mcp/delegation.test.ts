@@ -6,6 +6,10 @@ import { performance } from 'node:perf_hooks';
 import { handshakeFixture, hashClaim } from '../unit/b45-handshake-fixture.js';
 import { DelegationService } from '../../packages/hud-mcp/src/delegation.js';
 import { scopeSnapshot } from '../../src/ledger/call-context.js';
+import { HudMcpServer } from '../../packages/hud-mcp/src/server.js';
+import { insertRecord, insertRun, refValue } from '../../src/ledger/records.js';
+import { makeSourceId } from '../../src/core/identity.js';
+import { openLedger } from '../../src/ledger/ledger.js';
 import { HandshakeService } from '../../packages/hud-mcp/src/handshake.js';
 import { taskDigest } from '../../src/core/lifecycle.js';
 import { commitReconcile, readReconcileSnapshot } from '../../src/ledger/reconcile.js';
@@ -330,6 +334,302 @@ test('B45 headless build refuses explicit visible layouts instead of discarding 
       0
     );
   } finally {
+    await f.close();
+  }
+});
+
+function intentRows(f: Awaited<ReturnType<typeof fixture>>) {
+  return f.ledger.snapshot((tx) => ({
+    sources: tx.all('SELECT * FROM sources ORDER BY source_id'),
+    links: tx.all('SELECT * FROM links ORDER BY link_id'),
+    runs: tx.all('SELECT * FROM runs ORDER BY run_id'),
+    claims: tx.all('SELECT * FROM claims ORDER BY run_id'),
+    slots: tx.all('SELECT * FROM slots ORDER BY slot_key'),
+    idempotency: tx.all('SELECT * FROM idempotency ORDER BY owner_key,request_key'),
+    accepted: tx.all("SELECT * FROM events WHERE kind='intent.accepted' ORDER BY seq"),
+  }));
+}
+
+test('one-level HUD rejects marked pre-bind spawns atomically, including partial and contradictory markers', async () => {
+  const f = await fixture();
+  try {
+    const variants = [
+      { HUD_RUN: 'run-a' },
+      { HUD_LINK: '' },
+      { HUD_CLAIM: 'unknown-claim' },
+      { HUD_RUN: 'wrong-run', HUD_LINK: 'wrong-link', HUD_CLAIM: f.claim },
+    ];
+    for (const env of variants) {
+      const service = new DelegationService({ ...f.options, registration: f.child.registration, env });
+      const before = intentRows(f);
+      try {
+        await assert.rejects(service.invoke(f.source(f.child), 'delegate_spawn', f.args), {
+          message: 'nested_delegation_not_supported',
+        });
+        assert.deepEqual(intentRows(f), before);
+        assert.equal(f.launches.length, 0);
+      } finally {
+        await service.close();
+      }
+    }
+    assert.equal(
+      f.ledger.snapshot((tx) => tx.get('SELECT count(*) AS n FROM child_bindings')!.n),
+      0
+    );
+    // Refusal does not consume the request key: the genuine root still accepts.
+    assert.equal(
+      ((await f.service.invoke(f.source(), 'delegate_spawn', f.args)) as { status: string }).status,
+      'accepted'
+    );
+    assert.equal(f.launches.length, 1);
+  } finally {
+    await f.service.close();
+    await f.close();
+  }
+});
+
+test('one-level provenance is captured at server start and returns its stable MCP refusal code', async () => {
+  const f = await fixture();
+  const env: Record<string, string | undefined> = { HUD_RUN: 'run-a' };
+  const service = new DelegationService({ ...f.options, registration: f.child.registration, env });
+  delete env.HUD_RUN;
+  const server = new HudMcpServer({ resolve: async () => f.source(f.child) }, service);
+  try {
+    const response = (await server.handle({
+      jsonrpc: '2.0',
+      id: 'nested',
+      method: 'tools/call',
+      params: { name: 'delegate_spawn', arguments: f.args },
+    })) as { result: { isError: boolean; structuredContent: { ok: boolean; code: string } } };
+    assert.equal(response.result.isError, true);
+    assert.equal(response.result.structuredContent.ok, false);
+    assert.equal(response.result.structuredContent.code, 'nested_delegation_not_supported');
+    assert.equal(f.launches.length, 0);
+    const forged = (await server.handle({
+      jsonrpc: '2.0',
+      id: 'forged-provenance',
+      method: 'tools/call',
+      params: { name: 'delegate_spawn', arguments: { ...f.args, managedLaunch: false } },
+    })) as { error: { code: number } };
+    assert.equal(forged.error.code, -32602);
+    await f.ledger.transaction((tx) =>
+      tx.run('UPDATE callers SET retired_at=2000 WHERE caller_id=?', f.child.registration.caller.callerId)
+    );
+    await assert.rejects(service.invoke(f.source(f.child), 'delegate_spawn', f.args), /identity_unverified/);
+  } finally {
+    await service.close();
+    await f.service.close();
+    await f.close();
+  }
+});
+
+test('one-level durable identity survives binding removal, terminal run and server/store restart without env', async () => {
+  const f = await fixture();
+  let restarted: Awaited<ReturnType<typeof openLedger>> | undefined;
+  let service: DelegationService | undefined;
+  try {
+    await f.bindAndEnd();
+    service = new DelegationService({ ...f.options, registration: f.child.registration, env: {} });
+    await assert.rejects(
+      service.invoke(f.source(f.child), 'delegate_spawn', f.args),
+      /nested_delegation_not_supported/
+    );
+    await service.close();
+    await f.ledger.transaction((tx) => {
+      tx.run('UPDATE child_bindings SET is_current=0,revoked_at=2000');
+      tx.run("UPDATE links SET state='revoked',current_owner=0 WHERE link_id='link-a'");
+    });
+    const actor = await f.actor('restarted-child', 31000, f.child.ref.sessionId);
+    const source = f.source(actor);
+    const before = intentRows(f);
+    await f.ledger.close();
+    restarted = await openLedger(join(f.root, 'ledger.sqlite'));
+    service = new DelegationService({ ...f.options, ledger: restarted, registration: actor.registration, env: {} });
+    await assert.rejects(service.invoke(source, 'delegate_spawn', f.args), /nested_delegation_not_supported/);
+    assert.deepEqual(intentRows({ ...f, ledger: restarted }), before);
+    assert.equal(f.launches.length, 0);
+    assert.equal(
+      restarted.snapshot((tx) => tx.get("SELECT state FROM runs WHERE run_id='run-a'")!.state),
+      'ended'
+    );
+  } finally {
+    await service?.close();
+    await f.service.close();
+    await restarted?.close();
+    await f.close();
+  }
+});
+
+test('one-level upgrade preserves accepted historical nested replay and owner-scoped list/status/wait', async () => {
+  const f = await fixture();
+  const legacy = new DelegationService({ ...f.options, registration: f.child.registration, env: {} });
+  let guarded: DelegationService | undefined;
+  try {
+    // Seed a historical nested acceptance before this caller acquired a managed
+    // identity. This represents data written before the one-level restriction.
+    const accepted = (await legacy.invoke(f.source(f.child), 'delegate_spawn', f.args)) as {
+      linkId: string;
+      runId: string;
+      status: string;
+    };
+    await f.bindAndEnd();
+    guarded = new DelegationService({ ...f.options, registration: f.child.registration, env: { HUD_RUN: 'run-a' } });
+    const before = intentRows(f);
+    assert.deepEqual(await guarded.invoke(f.source(f.child), 'delegate_spawn', f.args), accepted);
+    assert.deepEqual(intentRows(f), before);
+    assert.equal(f.launches.length, 1);
+    await assert.rejects(
+      guarded.invoke(f.source(f.child), 'delegate_spawn', { ...f.args, request_key: 'fresh-nested' }),
+      /nested_delegation_not_supported/
+    );
+    const page = (await guarded.invoke(f.source(f.child), 'delegate_list', {})) as { items: { linkId: string }[] };
+    assert.deepEqual(
+      page.items.map((x) => x.linkId),
+      [accepted.linkId]
+    );
+    const parentPage = (await f.service.invoke(f.source(), 'delegate_list', {})) as { items: { linkId: string }[] };
+    assert.deepEqual(
+      parentPage.items.map((x) => x.linkId),
+      ['link-a']
+    );
+    const status = (await guarded.invoke(f.source(f.child), 'delegate_status', { runId: accepted.runId })) as {
+      ok: boolean;
+    };
+    assert.equal(status.ok, true);
+    const wait = (await guarded.invoke(f.source(f.child), 'delegate_wait', {
+      runId: accepted.runId,
+      timeoutMs: 0,
+    })) as { ok: boolean };
+    assert.equal(wait.ok, true);
+    assert.deepEqual(intentRows(f), before);
+  } finally {
+    await guarded?.close();
+    await legacy.close();
+    await f.service.close();
+    await f.close();
+  }
+});
+
+for (const operation of ['resume', 'handover'] as const)
+  test(`one-level restriction preserves authorized ${operation} of an existing session and replay`, async () => {
+    const f = await fixture();
+    const service = new DelegationService({ ...f.options, env: { HUD_RUN: 'restrictive-marker' } });
+    try {
+      await f.bindAndEnd();
+      const args =
+        operation === 'resume'
+          ? { linkId: 'link-a', mode: 'headless', request_key: 'existing-session' }
+          : { ...f.args, predecessor: 'link-a', request_key: 'existing-session' };
+      const tool = operation === 'resume' ? 'delegate_resume' : 'delegate_spawn';
+      const accepted = (await service.invoke(f.source(), tool, args)) as { status: string };
+      assert.equal(accepted.status, 'accepted');
+      assert.deepEqual(await service.invoke(f.source(), tool, args), accepted);
+      assert.equal(f.launches.length, 1);
+    } finally {
+      await service.close();
+      await f.service.close();
+      await f.close();
+    }
+  });
+
+for (const difference of ['source', 'thread'] as const)
+  test(`one-level exact identity does not reject an unrelated ${difference} with the same session ID`, async () => {
+    const f = await fixture();
+    try {
+      const source =
+        difference === 'source'
+          ? {
+              ...f.parent.registration.source!,
+              rootPath: '/synthetic/other-source',
+              sourceId: makeSourceId('codex', '/synthetic/other-source'),
+            }
+          : f.parent.registration.source!;
+      const target = {
+        ...f.parent.ref,
+        sourceId: source.sourceId,
+        threadId: difference === 'thread' ? 'other-thread' : null,
+      };
+      await f.ledger.transaction((tx) => {
+        if (difference === 'source') insertRecord(tx, 'sources', source);
+        tx.run(
+          'INSERT INTO sessions(session_ref,harness,source_id,session_id,thread_id) VALUES(?,?,?,?,?)',
+          refValue(target),
+          target.harness,
+          target.sourceId,
+          target.sessionId,
+          target.threadId ?? ''
+        );
+        insertRecord(tx, 'links', { ...f.input.link, linkId: 'other-identity', childRef: target });
+        insertRun(tx, {
+          ...f.input.run,
+          runId: 'other-identity-run',
+          linkId: 'other-identity',
+          sourceId: source.sourceId,
+          targetSessionRef: target,
+          launchTokenHash: hashClaim(difference),
+        });
+      });
+      const accepted = (await f.service.invoke(f.source(), 'delegate_spawn', f.args)) as { status: string };
+      assert.equal(accepted.status, 'accepted');
+      assert.equal(f.launches.length, 1);
+    } finally {
+      await f.service.close();
+      await f.close();
+    }
+  });
+
+test('one-level durable run identity remains restrictive without a corresponding child binding or link identity', async () => {
+  const f = await fixture();
+  const service = new DelegationService({ ...f.options, registration: f.child.registration, env: {} });
+  try {
+    await f.ledger.transaction((tx) =>
+      tx.run('UPDATE runs SET target_session_ref=? WHERE run_id=?', refValue(f.child.ref), 'run-a')
+    );
+    const before = intentRows(f);
+    await assert.rejects(
+      service.invoke(f.source(f.child), 'delegate_spawn', f.args),
+      /nested_delegation_not_supported/
+    );
+    assert.deepEqual(intentRows(f), before);
+    assert.equal(f.launches.length, 0);
+  } finally {
+    await service.close();
+    await f.service.close();
+    await f.close();
+  }
+});
+
+test('one-level marked child retains verified whoami and report while new-session spawn is denied', async () => {
+  const f = await fixture();
+  const env = { HUD_RUN: 'run-a', HUD_LINK: 'link-a', HUD_CLAIM: f.claim };
+  const service = new DelegationService({ ...f.options, registration: f.child.registration, env });
+  try {
+    await f.startup();
+    const binding = new HandshakeService({
+      ledger: f.ledger,
+      registration: f.child.registration,
+      reader: f.reader,
+      env,
+      now: f.now,
+    });
+    assert.equal((await binding.whoami({}, f.child.authority)).ok, true);
+    const whoami = (await service.invoke(f.source(f.child), 'delegate_whoami', {})) as { ok: boolean; state: string };
+    assert.equal(whoami.ok, true);
+    assert.equal(whoami.state, 'bound');
+    const report = (await service.invoke(f.source(f.child), 'delegate_report', {
+      runId: 'run-a',
+      status: 'completed',
+      summary: 'Synthetic completed task',
+    })) as { ok: boolean };
+    assert.equal(report.ok, true);
+    await assert.rejects(
+      service.invoke(f.source(f.child), 'delegate_spawn', f.args),
+      /nested_delegation_not_supported/
+    );
+    assert.equal(f.launches.length, 0);
+  } finally {
+    await service.close();
+    await f.service.close();
     await f.close();
   }
 });
