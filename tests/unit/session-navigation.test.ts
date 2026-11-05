@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { navigateSession, type NavigationAdapter, type NavigationPane } from '../../src/utils/session-navigation.js';
+import { delegationPickerLabel, sameDelegationPickerLabel } from '../../src/utils/delegation-actions.js';
+import { S, ago, buildVm } from '../fixtures/b10b-delegation.js';
 
 const root = '00000000-0000-0000-0000-000000000001';
 const child = '00000000-0000-0000-0000-000000000002';
@@ -403,5 +405,35 @@ test('navigation does not focus a pane after the view becomes stale during switc
   };
   const result = await navigateSession('%1', child, pane, () => current);
   assert.equal(result.ok, false);
+  assert.equal(pane.focused, false);
+});
+
+test('a newly ambiguous narrow picker label stops further navigation after the first send', async () => {
+  const built = buildVm([
+    { id: 'main', root: true, harness: 'codex', label: null, status: S.working(ago(10)) },
+    { id: 'a', parent: 'main', native: true, harness: 'codex', label: 'a', status: S.working(ago(10)) },
+    { id: 'b', parent: 'main', native: true, harness: 'codex', label: 'b', status: S.working(ago(10)) },
+  ]);
+  const a = built.vm.tree.nodes.find((n) => n.key === built.keys.a)!;
+  const b = built.vm.tree.nodes.find((n) => n.key === built.keys.b)!;
+  if (a.identity.kind !== 'session') throw new Error('missing session');
+  a.identity.ref.sessionId = child;
+  a.native = { title: 'a', kind: null, pickerLabel: 'alpha beta' };
+  b.native = { title: 'b', kind: null, pickerLabel: 'other' };
+  let vm = built.vm;
+  const label = delegationPickerLabel(vm, 'main-0001', child);
+  assert.equal(label, 'alpha beta');
+  const pane = new FakePane();
+  pane.width = 50;
+  pane.wait = async () => {
+    vm = structuredClone(vm);
+    const other = vm.tree.nodes.find((n) => n.key === built.keys.b)!;
+    other.native = { title: 'b', kind: null, pickerLabel: 'alphabeta' };
+  };
+  const result = await navigateSession('%1', { id: child, label }, pane, () =>
+    sameDelegationPickerLabel(vm, 'main-0001', child, label)
+  );
+  assert.equal(result.ok, false);
+  assert.deepEqual(pane.sent, ['/subagents']);
   assert.equal(pane.focused, false);
 });

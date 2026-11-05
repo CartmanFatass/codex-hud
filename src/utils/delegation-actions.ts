@@ -221,3 +221,13 @@ export function sameDelegationActionTarget(
   const before = stamp(drawn);
   return before !== null && before === stamp(current);
 }
+
+/** Recheck the narrow-pane label after asynchronous navigation begins. */
+export function sameDelegationPickerLabel(
+  vm: DelegationViewModel | null,
+  root: string,
+  id: string,
+  label: string | undefined
+): boolean {
+  return delegationPickerLabel(vm, root, id) === label;
+}

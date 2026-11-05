@@ -14,6 +14,7 @@ import {
   revealDelegationAncestors,
   createOpenGate,
   sameDelegationActionTarget,
+  sameDelegationPickerLabel,
 } from './utils/delegation-actions.js';
 import { defaultSettings, saveSettings, briefingScope, settingsPath, type HudSettings } from './settings.js';
 import { homedir } from 'node:os';
@@ -1228,7 +1229,8 @@ async function runLivePage(): Promise<void> {
       !closed &&
       tree.rootId === root &&
       state.tree.selectedId === selected &&
-      selectedIdentity(delegation) === identity;
+      selectedIdentity(delegation) === identity &&
+      (!view || sameDelegationPickerLabel(delegation, root, id, label));
     return navigateOnce(
       id,
       () => navigateSession(process.env.CODEX_HUD_MAIN_PANE, { id, label }, undefined, current),
