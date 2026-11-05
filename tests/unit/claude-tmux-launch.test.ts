@@ -32,6 +32,7 @@ import { makeHookSettings } from '../../packages/hud-mcp/src/hook/record.js';
 import { digest } from '../../src/core/canonical.js';
 import { claudeCommand } from '../../src/cli/launcher.js';
 import { delegateConfig } from '../../src/cli/runtime.js';
+import type { ClaudeConfiguration } from '../../src/cli/claude-configuration.js';
 
 const identity = (path: string): NativeFile => ({
   path,
@@ -206,6 +207,17 @@ async function launchFixture() {
     hooks: { Stop: [{ hooks: [{ type: 'command', command: 'true' }] }] },
   };
   const info = statSync(root, { bigint: true });
+  const configuration: ClaudeConfiguration = {
+    description: {
+      schema: 'claude-local-inputs-v1',
+      selection: 'default-user-project-local',
+      remote: 'bedrock-no-remote-settings-or-connectors',
+      bookkeepingDependencies: [],
+      projectLocalTracked: null,
+      layers: [],
+    },
+    receipt: { cwd: realpathSync(process.cwd()), files: [] },
+  };
   const input = {
     profile,
     configuredProfile: profile,
@@ -215,6 +227,7 @@ async function launchFixture() {
     resume: false,
     home: root,
     env,
+    configuration,
   };
   const plan = claudeLaunchPlan({
     ...input,
@@ -262,6 +275,7 @@ test('Claude production matcher admits only exact synthetic plan, pins argv and 
     let observations = 0,
       launches = 0;
     const result = await launchClaudeInTmux(f.input, {
+      configuration: () => ({ observation: f.input.configuration, reason: null }),
       observe: async () => {
         observations++;
         return structuredClone(f.startup);
@@ -313,6 +327,7 @@ test('hud claude routes through the production matcher and refuses the unchanged
     assert.equal(
       await claudeCommand([], f.root, io, {
         production: {
+          configuration: () => ({ observation: f.input.configuration, reason: null }),
           observe: async () => f.startup,
           manifest: () => f.manifest,
           hudRevision: 'synthetic-reviewed-build',
@@ -326,7 +341,10 @@ test('hud claude routes through the production matcher and refuses the unchanged
     );
     await assert.rejects(
       claudeCommand([], f.root, io, {
-        production: { observe: async () => f.startup },
+        production: {
+          observe: async () => f.startup,
+          configuration: () => ({ observation: f.input.configuration, reason: null }),
+        },
         launch: async () => {
           launches++;
           return 0;
@@ -365,6 +383,7 @@ test('Claude production refuses missing/mismatched evidence and stale host after
       if (scenario === 'loader') Object.assign(input.env, { LD_PRELOAD: '/synthetic/library.so' });
       await assert.rejects(
         launchClaudeInTmux(input, {
+          configuration: () => ({ observation: f.input.configuration, reason: null }),
           observe: async () => {
             observations++;
             if (scenario === 'missing-host') return null;
@@ -412,6 +431,7 @@ test('Claude pre-dispatch source identity recheck rejects a directory replaced a
       launches = 0;
     await assert.rejects(
       launchClaudeInTmux(f.input, {
+        configuration: () => ({ observation: f.input.configuration, reason: null }),
         observe: async () => {
           if (++observations === 2) {
             renameSync(source, source + '-old');

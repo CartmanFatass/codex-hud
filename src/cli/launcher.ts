@@ -155,6 +155,7 @@ export async function claudeCommand(
         profile,
         configuredProfile,
         command: prepared.command,
+        ...(!parsed.argv ? { template: settingsInput(template, undefined).command } : {}),
         settings,
         hasSettings: prepared.sources.length > 0,
         resume: !!parsed.resume,

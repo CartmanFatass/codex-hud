@@ -4,7 +4,8 @@ import { mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { canonicalJson, digest } from '../core/canonical.js';
 import { makeSourceId } from '../core/identity.js';
-import { launchProfileDigest, shellQuote } from '../core/capabilities.js';
+import { launchProfileDigest, resolveLaunchCommand, shellQuote } from '../core/capabilities.js';
+import { capabilityTemplate } from '../core/launch/fingerprint.js';
 import type { CapabilityManifestV1, LaunchCommand, LaunchProfile } from '../core/types/capabilities.js';
 import { foreground } from './compat.js';
 import { CliError, installationRoot, mcpModule } from './runtime.js';
@@ -16,6 +17,12 @@ import {
   type CapabilityExpectation,
 } from './capability.js';
 import { nativeFile, observeClaudeTmux, sameTmuxStartup, type NativeFile, type TmuxStartup } from './claude-tmux.js';
+import {
+  observeClaudeConfiguration,
+  sameClaudeConfiguration,
+  bookkeepingDependencies,
+  type ClaudeConfiguration,
+} from './claude-configuration.js';
 
 interface SourceReceipt {
   root: string;
@@ -32,11 +39,12 @@ export interface ClaudeHelper {
 }
 type HookSettings = (config: object, command: string, settings: Record<string, unknown>) => Record<string, unknown>;
 export interface ClaudeLaunchPlan {
-  version: 1;
+  version: 2;
   profileDigest: string;
   source: SourceReceipt;
   cwd: string;
   argv: string[];
+  commandTemplate: ReturnType<typeof capabilityTemplate>;
   settings: Record<string, unknown>;
   injectSettings: boolean;
   hook: null | {
@@ -50,6 +58,8 @@ export interface ClaudeLaunchPlan {
   settingsTemplate: Record<string, unknown>;
   executable: NativeFile & { version: string };
   environmentFingerprint: string;
+  environmentReceipt: string;
+  configuration: ClaudeConfiguration;
   runtime: Omit<TmuxStartup, 'receipt'>;
 }
 
@@ -61,6 +71,8 @@ export function claudeLaunchPlan(input: {
   cwd: string;
   home: string;
   command: LaunchCommand;
+  /** Only profile templates use declared substitutions. Explicit argv is literal. */
+  template?: LaunchCommand;
   settings: Record<string, unknown>;
   hasSettings: boolean;
   executable: NativeFile & { version: string };
@@ -68,8 +80,28 @@ export function claudeLaunchPlan(input: {
   helper: ClaudeHelper | null;
   makeHookSettings: HookSettings | null;
   env: NodeJS.ProcessEnv;
+  configuration: ClaudeConfiguration;
 }): ClaudeLaunchPlan {
   if (!input.command.argv) throw new CliError('capability_unverified', 4);
+  if (
+    input.template &&
+    (!input.template.argv ||
+      input.template.argv.some((arg) =>
+        [...arg.matchAll(/\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g)].some((match) => !['cwd', 'sourceRoot'].includes(match[1]))
+      ))
+  )
+    throw new CliError('capability_unverified', 4);
+  if (
+    input.template &&
+    !equal(
+      resolveLaunchCommand(input.template, { cwd: input.cwd, sourceRoot: input.profile.source.root }),
+      input.command
+    )
+  )
+    throw new CliError('capability_unverified', 4);
+  const commandTemplate: ReturnType<typeof capabilityTemplate> = input.template
+    ? capabilityTemplate(input.template, { sourceRoot: input.profile.source.root })
+    : { kind: 'argv', arguments: input.command.argv.map((value) => [{ kind: 'literal', value }]) };
   const { receipt: _receipt, ...runtime } = input.startup;
   const hook = input.helper
     ? {
@@ -82,17 +114,25 @@ export function claudeLaunchPlan(input: {
     : null;
   if (!!input.profile.callSource !== !!hook || (hook && !input.makeHookSettings))
     throw new CliError('capability_unverified', 4);
+  const referenced = new Set([
+    ...input.configuration.description.bookkeepingDependencies,
+    ...bookkeepingDependencies(input.settings),
+  ]);
   const environment = Object.fromEntries(
     Object.entries(input.env).filter(
-      ([key, value]) => value !== undefined && !['TMUX', 'TMUX_PANE', 'HUD_CLAUDE_HOOK_CONFIG'].includes(key)
+      ([key, value]) =>
+        value !== undefined &&
+        !['TMUX', 'TMUX_PANE', 'HUD_CLAUDE_HOOK_CONFIG'].includes(key) &&
+        (!['PWD', 'OLDPWD', '_'].includes(key) || referenced.has(key))
     )
   );
   return structuredClone({
-    version: 1,
+    version: 2,
     profileDigest: launchProfileDigest(input.profile),
     source: input.source,
     cwd: input.cwd,
     argv: [input.executable.path, ...input.command.argv.slice(1)],
+    commandTemplate,
     settings: input.settings,
     injectSettings: input.hasSettings || !!hook,
     hook,
@@ -107,11 +147,23 @@ export function claudeLaunchPlan(input: {
     // Values are never logged/exported; only the digest enters the capability.
     // The terminal locator is independently observed and kept in its private receipt.
     environmentFingerprint: digest(environment),
+    environmentReceipt: environmentReceipt(input.env),
+    configuration: input.configuration,
     runtime,
   });
 }
 
 export function claudeExpectation(plan: ClaudeLaunchPlan, hudRevision: string): CapabilityExpectation {
+  // Reusable capability shape and per-launch identity receipts are distinct.
+  // {{cwd}} is a typed template slot, never a text replacement in user argv.
+  const {
+    cwd: _cwd,
+    argv: _argv,
+    environmentReceipt: _environmentReceipt,
+    source,
+    configuration,
+    ...description
+  } = plan;
   return {
     key: {
       harness: 'claude',
@@ -122,7 +174,7 @@ export function claudeExpectation(plan: ClaudeLaunchPlan, hudRevision: string): 
       operation: 'launch',
     },
     sourceId: makeSourceId('claude', plan.source.root),
-    profileFingerprint: digest(plan),
+    profileFingerprint: digest({ ...description, sourceRoot: source.root, configuration: configuration.description }),
     topology: plan.runtime.topology,
     versions: {
       hudRevision,
@@ -211,10 +263,18 @@ async function sourceReceipt(path: string): Promise<SourceReceipt | null> {
   }
 }
 const equal = (a: unknown, b: unknown) => canonicalJson(a) === canonicalJson(b);
+function environmentReceipt(env: NodeJS.ProcessEnv): string {
+  return digest(
+    Object.fromEntries(
+      Object.entries(env).filter(([key, value]) => value !== undefined && key !== 'HUD_CLAUDE_HOOK_CONFIG')
+    )
+  );
+}
 
 export interface ClaudeProductionDependencies {
   /** Trusted composition/test seams. There is no CLI, env or config selector. */
   observe?: typeof observeClaudeTmux;
+  configuration?: typeof observeClaudeConfiguration;
   manifest?: () => CapabilityManifestV1 | null;
   hudRevision?: string;
   launch?: typeof foreground;
@@ -226,6 +286,7 @@ export async function launchClaudeInTmux(
     profile: LaunchProfile;
     configuredProfile: LaunchProfile;
     command: LaunchCommand;
+    template?: LaunchCommand;
     settings: Record<string, unknown>;
     hasSettings: boolean;
     resume: boolean;
@@ -287,7 +348,29 @@ export async function launchClaudeInTmux(
     makeHookSettings = record.makeHookSettings;
   }
   const cwd = await realpath(process.cwd());
-  const plan = claudeLaunchPlan({ ...input, source, cwd, executable, startup, helper, makeHookSettings, env });
+  const configurationRequest = {
+    sourceRoot: source.root,
+    cwd,
+    argv: input.command.argv,
+    env,
+    version: executable.version,
+    kernel: startup.kernel,
+    settings: input.settings,
+  };
+  const observeConfiguration = dependencies.configuration ?? observeClaudeConfiguration;
+  const configuration = observeConfiguration(configurationRequest).observation;
+  if (!configuration) return reject();
+  const plan = claudeLaunchPlan({
+    ...input,
+    source,
+    cwd,
+    executable,
+    startup,
+    helper,
+    makeHookSettings,
+    env,
+    configuration,
+  });
   const actual = claudeExpectation(plan, dependencies.hudRevision ?? HUD_REVISION);
   if (!matchesCapability((dependencies.manifest ?? shippedManifest)(), actual)) return reject();
   let directory: string | undefined;
@@ -307,10 +390,25 @@ export async function launchClaudeInTmux(
     // the single dispatch. No fallback, re-plan or retry is allowed on mismatch.
     const currentExecutable = await discoverExecutable({ argv: [executable.path] }, env);
     const current = await observe(input.env);
+    const currentCwd = await realpath(process.cwd());
+    const currentEnv = { ...input.env, CLAUDE_CONFIG_DIR: source.root };
     if (
       !sameTmuxStartup(startup, current) ||
       !equal(await sourceReceipt(input.profile.source.root), source) ||
-      (await realpath(process.cwd())) !== cwd ||
+      currentCwd !== cwd ||
+      environmentReceipt(currentEnv) !== plan.environmentReceipt ||
+      !equal(plan.argv, [executable.path, ...input.command.argv.slice(1)]) ||
+      launchProfileDigest(input.profile) !== plan.profileDigest ||
+      !sameClaudeConfiguration(
+        plan.configuration,
+        observeConfiguration({
+          ...configurationRequest,
+          cwd: currentCwd,
+          env: currentEnv,
+          argv: input.command.argv,
+          settings: input.settings,
+        }).observation
+      ) ||
       currentExecutable.version !== executable.version ||
       !equal(nativeFile(executable.path), native) ||
       (helper && (fileHash(helper.script) !== helper.scriptSha256 || fileHash(helper.record) !== helper.recordSha256))
