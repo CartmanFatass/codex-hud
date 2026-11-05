@@ -16,10 +16,22 @@ import {
   runStep,
 } from './check-cloud.mjs';
 
-const ENTRYPOINTS = ['bin/codex-hud', 'bin/hud', 'bin/hud-run'];
+const ROOT_BINS = {
+  'codex-hud': 'bin/codex-hud',
+  hud: 'bin/hud',
+  'hud-run': 'bin/hud-run',
+  'hud-statusline': 'bin/hud-statusline',
+};
+const ENTRYPOINTS = Object.values(ROOT_BINS);
+const REQUIRED_OUTPUTS = {
+  'src/cli/statusline.ts': 'dist/cli/statusline.js',
+  'src/harness/pi/footer.ts': 'dist/harness/pi/footer.js',
+};
+const EXTENSION_ENTRY = 'extensions/pi/hud-footer.ts';
 const EXTRA_FILES = [
   'README.md',
   'bin/hud-statusline-preview',
+  EXTENSION_ENTRY,
   'packages/hud-mcp/bin/hud-mcp.mjs',
   'packages/hud-mcp/bin/hud-claude-hook.mjs',
 ];
@@ -31,16 +43,19 @@ export function outputForSource(file, mcp = false) {
 function previewManifest(original, mcp = false) {
   if (typeof original.name !== 'string' || typeof original.version !== 'string' || original.type !== 'module')
     throw new Error('invalid_package_manifest');
-  if (mcp) {
-    if (JSON.stringify(original.bin) !== JSON.stringify({ 'hud-mcp': 'bin/hud-mcp.mjs' }))
-      throw new Error('unreviewed_mcp_entrypoints');
-  } else {
-    const bins = Object.values(original.bin ?? {})
-      .map((p) => (typeof p === 'string' ? p.replace(/^\.\//, '') : ''))
+  const expected = mcp ? { 'hud-mcp': 'bin/hud-mcp.mjs' } : ROOT_BINS;
+  const entries = (bins) =>
+    Object.entries(bins)
+      .map(([name, file]) => [name, typeof file === 'string' ? file.replace(/^\.\//, '') : null])
       .sort();
-    if (JSON.stringify(bins) !== JSON.stringify([...ENTRYPOINTS].sort()) || original.main !== 'dist/index.js')
-      throw new Error('unreviewed_package_entrypoints');
-  }
+  if (
+    !original.bin ||
+    typeof original.bin !== 'object' ||
+    Array.isArray(original.bin) ||
+    JSON.stringify(entries(original.bin)) !== JSON.stringify(entries(expected)) ||
+    (!mcp && original.main !== 'dist/index.js')
+  )
+    throw new Error(mcp ? 'unreviewed_mcp_entrypoints' : 'unreviewed_package_entrypoints');
   // No lifecycle scripts, dev dependencies, release configuration or implicit installer in the preview.
   return {
     name: original.name,
@@ -58,6 +73,9 @@ function previewManifest(original, mcp = false) {
 async function selfTest() {
   assert.equal(outputForSource('src/cli/hud.ts'), 'dist/cli/hud.js');
   assert.equal(outputForSource('src/cli/hud.ts', true), 'packages/hud-mcp/dist/src/cli/hud.js');
+  for (const [source, output] of Object.entries(REQUIRED_OUTPUTS)) assert.equal(outputForSource(source), output);
+  assert.equal(EXTRA_FILES.filter((file) => file.startsWith('extensions/')).length, 1);
+  assert.equal(EXTRA_FILES.includes(EXTENSION_ENTRY), true);
   for (const name of [
     '.env',
     'node_modules/secret.ts',
@@ -65,12 +83,23 @@ async function selfTest() {
     'dist/extra.js',
     'src/types.d.ts',
     'src/secret.log',
+    'extensions/pi/other.ts',
   ])
     assert.equal(outputForSource(name), null);
   assert.throws(() =>
     previewManifest({ name: 'synthetic', version: '0', type: 'module', main: 'dist/index.js', bin: { x: '../../bad' } })
   );
-  const value = previewManifest(JSON.parse(fs.readFileSync(safeFile('package.json'), 'utf8')));
+  const original = JSON.parse(fs.readFileSync(safeFile('package.json'), 'utf8'));
+  const value = previewManifest(original);
+  const bins = { ...original.bin };
+  delete bins['hud-statusline'];
+  for (const bin of [
+    bins,
+    { ...bins, renamed: original.bin['hud-statusline'] },
+    { ...original.bin, unexpected: './bin/hud' },
+    { ...original.bin, 'hud-statusline': './bin/hud-statusline-preview' },
+  ])
+    assert.throws(() => previewManifest({ ...original, bin }), /unreviewed_package_entrypoints/);
   assert.equal(value.private, true);
   assert.equal(value.scripts, undefined);
   assert.equal(value.devDependencies, undefined);
@@ -95,7 +124,7 @@ async function main() {
       'node_modules',
       'tests',
       'source maps',
-      'source TS',
+      'source TS except the explicit Pi footer extension entry',
       'logs',
       'settings',
       'credentials',
@@ -164,6 +193,10 @@ async function main() {
       const mcpOutput = `mcp/${source.slice(0, -3)}.js`;
       if (mcp && (source.startsWith('packages/hud-mcp/src/') || fs.existsSync(path.join(out, mcpOutput))))
         add(mcp, generated(mcpOutput), 0o644, source);
+    }
+    for (const [source, output] of Object.entries(REQUIRED_OUTPUTS)) {
+      if (!report.entries.some((entry) => entry.path === output && entry.origin === source))
+        throw new Error(`missing_required_runtime_output: ${output}`);
     }
     // The sole tracked runtime JSON input is explicit, not a recursive JSON/config glob.
     const cells = 'src/core/launch/codex-cells.json';

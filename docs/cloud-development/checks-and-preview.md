@@ -26,11 +26,18 @@ are not inherited. Temporary SQLite lives on the workspace filesystem rather
 than assuming `/tmp` supports its required WAL semantics.
 
 `check-cloud.mjs` runs three real builds, an explicit focused test list, then the
-eight existing M1/protocol/fake demos. The list is in the script, not discovered
+nine existing M1/protocol/fake/footer demos. The list is in the script, not discovered
 from arbitrary files. It covers Pi reading/launch, Claude last-confirmed panel
 visibility, the configuration refusal boundary, versioned RPC/exec/app-server
 transports, workbench rendering and the Jev fake. It does not run broad historical
 performance loops, real tmux/Herdr/provider probes, or change capability manifests.
+
+The routing composition follow-on, based on `82013aaf99c8f3507163a02bed0ce7e8e4a1ab90`,
+adds the statusline settings, product CLI routing and Pi footer unit tests; five
+explicit unified-workbench/private-channel test files; and the MCP Pi source-root
+test. They use temporary synthetic data. Settings apply/restore tests operate only
+inside their own temporary homes, never the user's configuration. The real-PTY
+workbench script and broader MCP suite remain outside this focused command.
 
 Each build/test command has a three-minute guard, each demo thirty seconds, and
 captured output is limited to 2 MiB per command. The first failure stops later
@@ -73,12 +80,20 @@ It never recursively packs the working directory or copies arbitrary existing
 - Root `package.json`, generated from the manifest's name/version/type/main/bin/
   license/dependencies. The preview adds `private:true`, omits scripts and dev
   dependencies, and declares the Node runtime this cloud path actually requires.
-- Manifest-declared `bin/codex-hud`, `bin/hud`, `bin/hud-run`; plus the already
-  opt-in `bin/hud-statusline-preview` file.
+- Manifest-declared `bin/codex-hud`, `bin/hud`, `bin/hud-run`, `bin/hud-statusline`;
+  plus the already opt-in `bin/hud-statusline-preview` file. Both aliases and paths
+  are checked against the exact reviewed mapping; renamed, missing or extra
+  aliases are rejected, even if they point to an otherwise allowed file.
 - `README.md`, and the equivalent private `packages/hud-mcp/package.json`.
 - `packages/hud-mcp/bin/hud-mcp.mjs` and its required `hud-claude-hook.mjs` helper.
 - Fresh `.js` outputs corresponding to Git-tracked non-declaration `.ts` under
   `src/` and `packages/hud-mcp/src/`, at their existing runtime output paths.
+- Explicitly required `dist/cli/statusline.js` and `dist/harness/pi/footer.js`
+  outputs from their matching tracked sources. The exact
+  `extensions/pi/hud-footer.ts` entry is the sole source-TS exception: Pi loads
+  that extension entry explicitly, and it imports the packaged footer module.
+  Other extension files are not selected recursively. Loading it still requires
+  a separately installed compatible Pi host; the preview never loads it itself.
 - The explicit runtime `src/core/launch/codex-cells.json`, copied to both builds'
   expected paths, and generated `CLOUD-PREVIEW.json` provenance.
 
@@ -88,7 +103,7 @@ tar listing must exactly match the generated inventory. `preview-manifest.json`
 lists every entry, origin, mode, byte count and SHA-256, plus archive SHA-256 and
 the build results. It is the exact per-run inventory, not an assumed glob.
 
-Excluded: node_modules, tests/fixtures, source TS, source maps/declarations,
+Excluded: node_modules, tests/fixtures, other source TS, source maps/declarations,
 untracked files, logs, credentials, settings, transcripts and installer/upgrade
 scripts. There is no npm pack/publish/install, release tag, default configuration
 change or implicit invocation of packaged entrypoints. Production dependencies

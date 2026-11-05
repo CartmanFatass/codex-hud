@@ -61,7 +61,7 @@ test('hud dispatches pi help and preserves existing command help without HUD_HOM
     assert.equal(await main(args, capture.io), 0);
     assert.deepEqual(capture.read(), { stdout: expected, stderr: '' });
   }
-  assert.match(EXPORT_HELP, /hud pi inspect --help/);
+  assert.match(EXPORT_HELP, /hud pi --help/);
   assert.match(EXPORT_HELP, /hud panel \[--help\]/);
 });
 
