@@ -1,0 +1,25 @@
+✔ sealing protocol input keeps existing stdout tee alive through final drain (251.152481ms)
+✔ descendant-held stdout has a bounded drain and is not mistaken for scope completion (1133.322116ms)
+✔ correlated rejection stays rejected; another explicit send remains usable with no replay (29.039252ms)
+✔ uncorrelated response is unknown and never automatically replayed (11.173949ms)
+✔ late pipe failure after correlated acceptance never reports not submitted (6.778541ms)
+✔ late pipe failure after correlated rejection never reports not submitted (7.937107ms)
+✔ a next explicit send after acceptance does not await the prior pipe callback (4.281949ms)
+✔ a next explicit send after rejection does not await the prior pipe callback (2.919544ms)
+✔ an old pipe callback cannot release a newer awaited admission lock (3.567114ms)
+✔ escaped input exceeds wire limit before submission and does not write (5.143191ms)
+✔ binding changes are rejected before submission, not labelled ambiguous delivery (5.62ms)
+✔ private run directory replacement during awaited ledger read prevents submission (5.765538ms)
+✔ endpoint diagnostics preserve only allowlisted cause, never paths or private message bodies (0.526438ms)
+✔ correlation, split UTF-8 and idless boundary do not imply consumption (5.97393ms)
+✔ refusals are explicit, unknown/mismatched and extension UI poison channel (0.901469ms)
+✔ codec operates against an actual synthetic child pipe (180.505592ms)
+✔ wire expansion refuses before consuming command ID or poisoning codec (3.291714ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1734.227016

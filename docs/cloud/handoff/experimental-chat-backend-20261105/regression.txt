@@ -1,0 +1,27 @@
+✔ run artifacts create private files exclusively and recover read-only without truncation (9.658904ms)
+✔ run artifacts final receipts are immutable, idempotent, validated and matched to meta (5.023248ms)
+✔ run artifacts meta permits one-time instance enrichment and freezes stable identity (4.130368ms)
+✔ scope receipt preserves shell 137 separately from unknown native exit (2.722805ms)
+✔ run artifacts check current owner and refuse hard-linked files (1.002941ms)
+✔ run artifacts reject traversal, symlink ancestors, replacement directories and unsafe permissions (2.554576ms)
+✔ run artifact reads ignore partial or malformed final files and unknown schemas (2.960092ms)
+✔ crash after temporary receipt fsync and before rename leaves no final receipt (118.619911ms)
+✔ crash after final rename leaves a recoverable receipt without metadata (159.635731ms)
+✔ process stamps preserve boot and PID namespace, and cross-domain state stays unknown (4.389698ms)
+✔ one-shot group launch preserves argv and stdin EOF, waits for helper exit (250.342478ms)
+✔ helper in its own group delivers INT then TERM; replacement-stamp simulation refuses control (163.456362ms)
+✔ SIGKILL from inside helper group loses acknowledgement and never invents command wait status (133.339673ms)
+✔ dead command and group leader with a living member never prove scope gone (142.408699ms)
+✔ fork during actual /proc enumeration is partial evidence, never complete scope proof (229.273042ms)
+✔ real member leaving group during enumeration keeps original harness alive outside scope (188.455041ms)
+✔ IPC disconnect seals helper while the existing command continues (437.086986ms)
+✔ crash/disconnect before scope fixation seals unsubmitted helper with zero command spawn (143.886782ms)
+✔ private helper accepts exactly one submission and refuses a second launch (418.513679ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2420.575964

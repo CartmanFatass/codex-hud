@@ -1,0 +1,106 @@
+{
+  "base": "727284b1d5e3617860cfdfc8d27d942c50a06991",
+  "mode": "experimental backend, socket-free and synthetic process validation only",
+  "files": [
+    {
+      "path": "scripts/workbench/chat-demo.mjs",
+      "bytes": 843,
+      "sha256": "5c5a507d58713620e0bc7706bc51709753fd5a1af568d2ace24463beba95d027"
+    },
+    {
+      "path": "scripts/workbench/chat-pi-preparer.mjs",
+      "bytes": 751,
+      "sha256": "4b1f2c39a69361027c2787877ca2bfdc3e4210ac0eee620496b42235bf3ffe9d"
+    },
+    {
+      "path": "scripts/workbench/chat-port.mjs",
+      "bytes": 374,
+      "sha256": "8175ceefd64fb1d8e54eb954888b6e44760b325be004b13b67db35e003514ebd"
+    },
+    {
+      "path": "scripts/workbench/chat-scenario.mjs",
+      "bytes": 879,
+      "sha256": "371c10dca8b6398142119b2d3c220e35e5ca7bb45f093b87a393d3fc5d5378a4"
+    },
+    {
+      "path": "scripts/workbench/chat-synthetic-pi.mjs",
+      "bytes": 5521,
+      "sha256": "0ef4d901def0162777534422ec245de871f5db51eaa8a8450676f22856c80c6e"
+    },
+    {
+      "path": "scripts/workbench/chat-world.mjs",
+      "bytes": 19408,
+      "sha256": "414e26c31066dc85c39aa391d0cfc01ceb8532fe7d84d3ad84ea7de4d18c5534"
+    },
+    {
+      "path": "src/core/run/artifacts.ts",
+      "bytes": 15134,
+      "sha256": "78bfc5ca59700a526ed2ee864bea19e43b3e1775aee18d81ed21e55dec89e2d2"
+    },
+    {
+      "path": "src/core/run/chat-channel.ts",
+      "bytes": 18401,
+      "sha256": "906e486f7942b0f112b4552fc401146bc6388dd0416320ada5ed689c265126bb"
+    },
+    {
+      "path": "src/core/run/cli.ts",
+      "bytes": 5142,
+      "sha256": "0216387b85e5f125e01d97cf4b462b17e9f346fc71b236eae0d0064b22b042a2"
+    },
+    {
+      "path": "src/core/run/control.ts",
+      "bytes": 37634,
+      "sha256": "439d7ad0a088946badf6b5c5cceccbd29df037c56ad75522d5443c380f19a49f"
+    },
+    {
+      "path": "src/core/run/ledger-port.ts",
+      "bytes": 28745,
+      "sha256": "698e5a98373b200d6e666b0a7b486a193d7634ec623949008a07c60cfd2da717"
+    },
+    {
+      "path": "src/core/run/port.ts",
+      "bytes": 3777,
+      "sha256": "6c261c8a093c29bd95297cc9492fca01472f5b113ffee94ad371b78e55c25bcb"
+    },
+    {
+      "path": "src/core/run/process.ts",
+      "bytes": 23896,
+      "sha256": "8a051180b130a22ba6e5f4b01c57815ddc0459ff3ab6cc27abe8841d81840c87"
+    },
+    {
+      "path": "src/core/types/supervision.ts",
+      "bytes": 5794,
+      "sha256": "6971dd5e6933655aaa8dbbe5cdda36baa06f3e96ce93c46e10f40c04ef6298c7"
+    },
+    {
+      "path": "src/harness/pi/chat-protocol.ts",
+      "bytes": 3722,
+      "sha256": "40883c689152c337362bf0ac3226c523ed842824529f9914d473c5b74b8174b9"
+    },
+    {
+      "path": "tests/unit/pi-chat-protocol.test.mjs",
+      "bytes": 3563,
+      "sha256": "47ebf5b9cf7ffb65cc1e549f5b6651cdbf1044fbe02ed75e0f8337c2069bf00c"
+    },
+    {
+      "path": "tests/unit/run-chat-channel.test.ts",
+      "bytes": 5932,
+      "sha256": "992a8819f070632cc10e094913e028714a03a34a7c803d61d76d3e2a95817c36"
+    },
+    {
+      "path": "tests/unit/run-chat-drain.test.ts",
+      "bytes": 4744,
+      "sha256": "01cf482c37570eacb6af51eef0874132c9d6928cbb2dee8cbb84b17a54456b63"
+    },
+    {
+      "path": "tests/unit/run-chat-memory.test.ts",
+      "bytes": 10600,
+      "sha256": "94e5ca087db4608345c213d6c792c1e1cc6d7c2e21edf2dfd1ee7a797864186d"
+    },
+    {
+      "path": "tests/workbench/chat-managed.test.mjs",
+      "bytes": 1121,
+      "sha256": "08747715ddd28ac3ff45756f3b106909c9471af7accc72a1c9bc96af3113bef7"
+    }
+  ]
+}

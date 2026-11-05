@@ -184,6 +184,7 @@ export class LedgerRunFactPort implements RunFactPort {
       );
       const premises = retirementAuthority(tx, run, expected.link, claim);
       const result: RunSnapshot = {
+        currentChildBinding: binding,
         revision: 0,
         controlConflict: premises.conflict,
         retirement: {

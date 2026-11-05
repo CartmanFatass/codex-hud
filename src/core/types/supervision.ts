@@ -39,7 +39,7 @@ export interface ProcessScope {
   group_leader: ProcessStamp;
 }
 
-export type StdinMode = 'brief' | 'closed' | 'tty';
+export type StdinMode = 'brief' | 'closed' | 'tty' | 'protocol';
 export type Capture = 'file' | 'tty_passthrough' | 'unavailable';
 export type { SupervisionStrategy } from './execution.js';
 export type { LaunchCommand } from './capabilities.js';
@@ -52,6 +52,8 @@ export interface RunLaunchInput {
   sourceId: SourceId;
   profileDigest: string;
   stdin: StdinMode;
+  /** Explicit trusted duplex launch contract, included in the frozen launch digest. */
+  chatProtocol?: string;
   orphanPolicy: OrphanPolicy;
 }
 

@@ -15,12 +15,24 @@ export class PiChatProtocol {
   private failed = false;
   encode(text: string, turnId: string): Buffer {
     if (this.failed || this.pending) throw new Error('pi_chat_protocol_unavailable');
-    if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 32_768 ||
-        typeof turnId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(turnId) || this.used.has(turnId) || this.used.size >= 4096)
+    if (
+      typeof text !== 'string' ||
+      !text.trim() ||
+      Buffer.byteLength(text) > 32_768 ||
+      typeof turnId !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(turnId) ||
+      this.used.has(turnId) ||
+      this.used.size >= 4096
+    )
       throw new Error('pi_chat_protocol_invalid_input');
+    const bytes = Buffer.from(
+      JSON.stringify({ id: turnId, type: 'prompt', message: text, streamingBehavior: 'steer' }) + '\n'
+    );
+    // JSON escaping may expand a raw-text-valid input. Refuse before reserving an ID.
+    if (bytes.length > 65536) throw new Error('pi_chat_protocol_input_limit');
     this.pending = turnId;
     this.used.add(turnId);
-    return Buffer.from(JSON.stringify({ id: turnId, type: 'prompt', message: text, streamingBehavior: 'steer' }) + '\n');
+    return bytes;
   }
   consume(chunk: Buffer): PiChatProtocolEvent[] {
     if (this.failed) return [];
@@ -33,8 +45,11 @@ export class PiChatProtocol {
       this.buffer = this.buffer.subarray(newline + 1);
       if (line.length > 1024 * 1024) return out.concat(this.fail('frame_limit'));
       let record: unknown;
-      try { record = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(line)); }
-      catch { return out.concat(this.fail('invalid_frame')); }
+      try {
+        record = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(line));
+      } catch {
+        return out.concat(this.fail('invalid_frame'));
+      }
       if (!object(record) || typeof record.type !== 'string') return out.concat(this.fail('invalid_record'));
       if (record.type === 'extension_ui_request') return out.concat(this.fail('unsupported_ui_request'));
       if (record.type === 'response') {
@@ -48,7 +63,8 @@ export class PiChatProtocol {
         const e = record.assistantMessageEvent;
         if (!object(e) || typeof e.type !== 'string') return out.concat(this.fail('invalid_message_event'));
         if (e.type === 'text_delta') {
-          if (typeof e.delta !== 'string' || Buffer.byteLength(e.delta) > 65_536) return out.concat(this.fail('invalid_text_delta'));
+          if (typeof e.delta !== 'string' || Buffer.byteLength(e.delta) > 65_536)
+            return out.concat(this.fail('invalid_text_delta'));
           out.push({ type: 'delta', text: e.delta });
         }
       } else if (record.type === 'agent_end') out.push({ type: 'boundary' });

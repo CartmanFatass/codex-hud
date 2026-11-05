@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeSync } from 'node:fs';
 import type { GroupExit, ProcessScope, ProcessStamp } from '../types/supervision.js';
 import { GROUP_LEADER_SCRIPT } from './group-leader.js';
 import { createGroupPipe } from './group-pipe.js';
@@ -198,6 +198,8 @@ export interface GroupLaunchOptions {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   stdin: Buffer | null;
+  /** Trusted supervisor-only protocol tap. Retains stdin; never starts a second child. */
+  duplex?: { onData(chunk: Buffer): void; onClose(): void };
   stdoutFd: number;
   stderrFd: number;
 }
@@ -217,6 +219,7 @@ export interface GroupProcess {
   /** Resolves only after helper wait; absent command wait status remains null. */
   exited: Promise<GroupExit>;
   readonly shellDiagnostic?: ShellWaitDiagnostic | null;
+  writeInput?(bytes: Buffer): Promise<void>;
   signal(signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'): Promise<boolean>;
   /** Permanently seals submission; existing command continues after disconnect. */
   close(): void;
@@ -307,13 +310,46 @@ export async function launchShellGroup(
       detached: true,
       cwd: options.cwd,
       env: transport.env,
-      stdio: ['pipe', options.stdoutFd, options.stderrFd, 'pipe', 'pipe', 'ignore', pipe.read, pipe.write],
+      stdio: [
+        'pipe',
+        options.duplex ? 'pipe' : options.stdoutFd,
+        options.stderrFd,
+        'pipe',
+        'pipe',
+        'ignore',
+        pipe.read,
+        pipe.write,
+      ],
     });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'E2BIG') throw new Error('headless_environment_too_large');
     throw new Error('headless_leader_spawn_failed');
   } finally {
     pipe.close();
+  }
+  if (options.duplex) {
+    let protocolClosed = false;
+    const closeProtocol = () => {
+      if (protocolClosed) return;
+      protocolClosed = true;
+      options.duplex!.onClose();
+    };
+    child.stdout!.on('data', (chunk: Buffer) => {
+      try {
+        let offset = 0;
+        while (offset < chunk.length) {
+          const written = writeSync(options.stdoutFd, chunk, offset, chunk.length - offset);
+          if (written <= 0) throw new Error('chat_log_write_failed');
+          offset += written;
+        }
+        options.duplex!.onData(chunk);
+      } catch {
+        closeProtocol();
+      }
+    });
+    child.stdout!.once('end', closeProtocol);
+    child.stdout!.once('error', closeProtocol);
+    child.stdout!.once('close', closeProtocol);
   }
   const helperArgv = [
     shell.argv0 ?? shell.path,
@@ -377,7 +413,9 @@ function connectShellGroup(
     let started = false,
       sealed = false,
       childExited = false,
-      repliesEnded = false;
+      repliesEnded = false,
+      stdoutClosed = !options.duplex;
+    let stdoutDrainTimer: NodeJS.Timeout | undefined;
     let diagnostic: ShellWaitDiagnostic | null = null;
     let seq = 0,
       buffer = '';
@@ -390,7 +428,8 @@ function connectShellGroup(
       sealed = true;
       clearTimeout(timer);
       control.end();
-      child.stdin?.end();
+      if (options.duplex) child.stdin?.destroy(new Error('chat_channel_closed'));
+      else child.stdin?.end();
       for (const done of pending.values()) done(false);
       pending.clear();
     };
@@ -399,12 +438,21 @@ function connectShellGroup(
       reject(new Error('group startup unconfirmed; submission must not be retried'));
     }, 10000);
     const finish = () => {
-      if (!childExited || !repliesEnded) return;
+      if (!childExited || !repliesEnded || !stdoutClosed) return;
       clearTimeout(timer);
+      clearTimeout(stdoutDrainTimer);
       close();
       resolveExit({ source: 'native_unknown', subject: null, code: null, signal: null, at: Date.now() });
       if (!started) reject(new Error('group helper exited before confirmed submission'));
     };
+    // A shell WAIT/exit does not imply stdout EOF. Keep the tee alive after
+    // input seals, but do not let a descendant holding the pipe block exit forever.
+    if (options.duplex)
+      child.stdout!.once('close', () => {
+        stdoutClosed = true;
+        clearTimeout(stdoutDrainTimer);
+        finish();
+      });
     control.on('error', () => close());
     child.stdin?.on('error', () => {});
     child.on('error', (error: NodeJS.ErrnoException) => {
@@ -414,6 +462,16 @@ function connectShellGroup(
     });
     child.on('exit', () => {
       childExited = true;
+      if (!stdoutClosed)
+        stdoutDrainTimer = setTimeout(() => {
+          if (stdoutClosed) return;
+          // This stops observing a pipe only. It neither kills a descendant nor
+          // proves the scope is gone; the supervisor still performs that proof.
+          try {
+            writeSync(options.stderrFd, 'hud-run chat stdout drain incomplete\n');
+          } catch {}
+          child.stdout!.destroy();
+        }, 1000);
       finish();
     });
     replies.on('end', () => {
@@ -503,12 +561,26 @@ function connectShellGroup(
       clearTimeout(timer);
       command = record.pgid === scope.pgid && record.sid === scope.sid ? record.stamp : null;
       const fixedScope = command ? scope : null;
-      child.stdin?.end(options.stdin ?? undefined);
+      if (options.duplex) {
+        if (options.stdin?.length) child.stdin?.write(options.stdin);
+      } else child.stdin?.end(options.stdin ?? undefined);
       resolve({
         helper,
         command,
         scope: fixedScope,
         exited,
+        ...(options.duplex
+          ? {
+              writeInput: (bytes: Buffer) =>
+                new Promise<void>((done, fail) => {
+                  if (sealed || !child.stdin?.writable || bytes.length > 65536) {
+                    fail(new Error('chat_channel_unavailable'));
+                    return;
+                  }
+                  child.stdin.write(bytes, (error) => (error ? fail(error) : done()));
+                }),
+            }
+          : {}),
         get shellDiagnostic() {
           return diagnostic;
         },

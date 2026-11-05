@@ -1,3 +1,4 @@
+import { RunChatChannel, chatEndpointFailure, type ChatProtocol } from './chat-channel.js';
 import { randomUUID } from 'node:crypto';
 import { LedgerBusyError } from '../../ledger/transaction.js';
 import { closeSync, writeSync } from 'node:fs';
@@ -38,6 +39,8 @@ import { RetirementEvidenceReader } from './retirement-evidence.js';
 import { readFrozenRetirementPolicy, type PolicyRunLaunchInput } from './retirement-policy.js';
 
 export interface StartOptions {
+  /** Trusted executable protocol composition, never accepted from protected JSON. */
+  chat?: ChatProtocol;
   input: PolicyRunLaunchInput;
   ticket: string;
   brief?: Buffer;
@@ -70,12 +73,24 @@ function validGrace(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 60000 ? value : 10000;
 }
 function validateStart(options: StartOptions): string[] {
+  if (
+    options.input.chatProtocol !== undefined &&
+    (!options.chat ||
+      typeof options.chat.encode !== 'function' ||
+      typeof options.chat.consume !== 'function' ||
+      options.chat.name !== options.input.chatProtocol ||
+      options.input.mode !== 'headless' ||
+      options.input.stdin !== 'protocol')
+  )
+    throw new Error('unsupported_chat_launch');
+  if (options.input.stdin === 'protocol' && !options.input.chatProtocol) throw new Error('unsupported_chat_launch');
+  if (options.chat && options.input.chatProtocol !== options.chat.name) throw new Error('unsupported_chat_launch');
   const { input } = options,
     launch = input.launch;
   if (input.mode === 'visible') {
     if (input.stdin !== 'tty') throw new Error('unsupported_visible_input');
     preflightVisible(options.visible);
-  } else if (input.mode !== 'headless' || !['brief', 'closed'].includes(input.stdin))
+  } else if (input.mode !== 'headless' || !['brief', 'closed', 'protocol'].includes(input.stdin))
     throw new Error('unsupported_headless_input');
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.runId) || !isAbsolute(input.cwd)) throw new Error('invalid_launch');
   if ('argv' in launch && launch.argv && !('shell' in launch)) {
@@ -364,6 +379,15 @@ export class HeadlessRunControl implements RunControl {
         clockAnomalyRecorded = false,
         cancelTask: Promise<void> | null = null;
       let group: Awaited<ReturnType<typeof launchGroup>> | VisibleProcess | null = null;
+      let chatChannel: RunChatChannel | null = options.chat
+        ? new RunChatChannel(
+            options.chat,
+            this.port,
+            this.hudHome,
+            { linkId: r.linkId, runId: id, sourceId: r.sourceId, bindingGeneration: r.expectedGeneration },
+            self
+          )
+        : null;
       let groupFinished = false;
       const startedMono = performance.now();
       let previousWall = Date.now(),
@@ -641,6 +665,14 @@ export class HeadlessRunControl implements RunControl {
               cwd: input.cwd,
               env: options.env,
               stdin: input.stdin === 'brief' ? (options.brief ?? Buffer.alloc(0)) : null,
+              ...(chatChannel
+                ? {
+                    duplex: {
+                      onData: (chunk: Buffer) => chatChannel?.consume(chunk),
+                      onClose: () => chatChannel?.close(),
+                    },
+                  }
+                : {}),
               stdoutFd: logs.stdout,
               stderrFd: logs.stderr,
             });
@@ -669,6 +701,20 @@ export class HeadlessRunControl implements RunControl {
         meta = { ...meta, command_leader: group.command, harness, scope: harness ? group.scope : null };
         const startupClock = await this.port.startup(id, self, meta);
         artifacts.writeMeta(meta);
+        if (chatChannel) {
+          try {
+            if (!harness || !(group as Awaited<ReturnType<typeof launchGroup>>).writeInput)
+              throw new Error('chat_pipe_unavailable');
+            await chatChannel.listen((group as Awaited<ReturnType<typeof launchGroup>>).writeInput!);
+          } catch (error) {
+            // Existing private stderr is diagnostic only, never routing/identity authority.
+            try {
+              writeSync(logs.stderr, `hud-run chat endpoint unavailable: ${chatEndpointFailure(error)}\n`);
+            } catch {}
+            chatChannel.close();
+            chatChannel = null;
+          } // Channel failure cannot abandon the existing supervised child.
+        }
         discoveryFinished = true;
         await this.port.raw(id, self, 'launch.sealed', {
           helper: group.helper,
@@ -838,6 +884,7 @@ export class HeadlessRunControl implements RunControl {
         retirement?.close();
         evidenceReader.close();
         wakeDelay?.();
+        chatChannel?.close();
         group?.close();
         await cancelTask;
       }

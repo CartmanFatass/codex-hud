@@ -68,7 +68,7 @@ function isMeta(v: unknown): v is RunMeta {
     digest(v.profile_digest) &&
     text(v.launch_call_id) &&
     text(v.launch_correlation_id) &&
-    oneOf(v.stdin_mode, ['brief', 'closed', 'tty']) &&
+    oneOf(v.stdin_mode, ['brief', 'closed', 'tty', 'protocol']) &&
     capture(v.capture) &&
     text(v.launch_cwd) &&
     isAbsolute(v.launch_cwd) &&
@@ -182,6 +182,31 @@ export class RunArtifacts {
       artifacts.identity = { dev: stat.dev, ino: stat.ino };
     }, writable);
     return artifacts;
+  }
+
+  /** A scoped descriptor for private local endpoints; public pathname is never an authority. */
+  pinDirectory(): { path: string; check(): void; close(): void } {
+    const held = this.withDirectory((fd) =>
+      openSync(`/proc/self/fd/${fd}`, constants.O_RDONLY | constants.O_DIRECTORY)
+    );
+    const initial = fstatSync(held);
+    let closed = false;
+    return {
+      path: `/proc/self/fd/${held}`,
+      check: () => {
+        if (closed) throw new Error('run_directory_closed');
+        this.withDirectory((fd) => {
+          const current = fstatSync(fd);
+          if (current.dev !== initial.dev || current.ino !== initial.ino) throw new Error('run_directory_replaced');
+        });
+      },
+      close: () => {
+        if (!closed) {
+          closed = true;
+          closeSync(held);
+        }
+      },
+    };
   }
 
   /** Open each component relative to a held parent descriptor; no unverified ancestor is followed. */

@@ -1,3 +1,4 @@
+import type { ChildBinding } from '../types/identity.js';
 import type { RunControl } from '../interfaces/run-control.js';
 import type { LedgerEvent, ReconcileDecision, ReconcileEvidence, Run } from '../types/execution.js';
 import type { LifecycleStatus } from '../types/lifecycle.js';
@@ -5,6 +6,8 @@ import type { ProcessStamp, RunMeta, FinalExitReceipt } from '../types/supervisi
 import type { RetireRequest } from '../../ledger/notify-events.js';
 
 export interface RunSnapshot {
+  /** Same committed snapshot, read-only identity for explicit local channel selection. */
+  currentChildBinding?: ChildBinding | null;
   revision: number;
   run: Run;
   events: LedgerEvent[];
@@ -88,6 +91,8 @@ export interface RunFactPort {
   ): Promise<ReconcileDecision | null>;
 }
 export interface RunPortModule {
+  /** Explicit trusted integration adapter, never selected by channel clients. */
+  createChatProtocol?(name: string): import('./chat-channel.js').ChatProtocol;
   createRunFactPort(hudHome: string): Promise<RunFactPort> | RunFactPort;
 }
 export type { RunControl };

@@ -68,6 +68,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       chunks.push(value);
     }
     const input = JSON.parse(Buffer.concat(chunks).toString('utf8')) as StartOptions & { briefBase64?: string };
+    // Discard JSON objects masquerading as executable protocol adapters.
+    input.chat =
+      input.input.chatProtocol && adapter.createChatProtocol
+        ? adapter.createChatProtocol(input.input.chatProtocol)
+        : undefined;
     if (input.briefBase64 !== undefined) input.brief = Buffer.from(input.briefBase64, 'base64');
     input.afterRegistered =
       port instanceof LedgerRunFactPort
