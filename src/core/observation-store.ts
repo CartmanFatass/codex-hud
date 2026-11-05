@@ -480,6 +480,44 @@ export class ObservationStore {
     );
   }
 
+  /** Revalidate an exact recovered checkpoint and this instance's held lease without renewing either. */
+  recoveryAuthorityCurrent(target: ObservationRecoveryTarget, lease: CollectLease): boolean {
+    const key = this.#key(target.ref);
+    const authority = this.#authority.get(key);
+    if (
+      !authority ||
+      authority.holder !== lease.holder ||
+      authority.generation !== lease.generation ||
+      lease.resource !== collectResource(target.ref)
+    )
+      return false;
+    const now = this.#sampleNow(0);
+    if (!Number.isFinite(lease.expires_at) || now >= lease.expires_at) return false;
+    return this.#read(
+      () =>
+        this.db
+          .prepare(
+            `
+      SELECT 1 AS current FROM observation_current c JOIN collect_leases l ON l.ref=c.ref
+      WHERE c.ref=? AND c.commit_seq=? AND c.source_generation=? AND c.seq_domain=? AND c.checkpoint_id=?
+        AND l.holder=? AND l.generation=? AND l.expires_at=? AND l.expires_at>? AND l.last_now<=?
+    `
+          )
+          .get(
+            key,
+            target.commitSeq,
+            target.sourceGeneration,
+            target.seqDomain,
+            target.checkpointIdentity.contentIdentity,
+            lease.holder,
+            lease.generation,
+            lease.expires_at,
+            now,
+            now
+          ) !== undefined
+    );
+  }
+
   #lookup(reference: RecoveryIndexReference, pin: LookupPin): RecoveryIndexLookup {
     // Detached identity prevents a caller from moving a lookup to a later boundary.
     const pinned = JSON.parse(canonicalJson(reference)) as RecoveryIndexReference;

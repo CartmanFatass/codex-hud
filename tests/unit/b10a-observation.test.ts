@@ -14,6 +14,7 @@ import type { ReaderResult } from '../../src/core/interfaces/harness-adapter.js'
 import type { ObservationRecoveryTarget, RecoveryReadGrant } from '../../src/core/types/checkpoint.js';
 import { performance } from 'node:perf_hooks';
 import { sameSessionRef } from '../../src/core/identity.js';
+import type { LinkTreeProjection } from '../../src/core/link/types.js';
 const opts = { skip: !ledgerRuntimeSupported() };
 
 async function setup(t: import('node:test').TestContext, runId = 'run-a') {
@@ -133,6 +134,7 @@ test('publishing recovery charges exact checkpoint I/O and retains it across an 
   });
   const key = displayNodeKey({ kind: 'session', ref: f.child.ref });
   let published = false;
+  let firstTree: LinkTreeProjection | null = null;
   for (let i = 0; i < 60; i++) {
     let view = await first.tick(f.parent.ref.sessionId);
     await first.afterPaint((next) => {
@@ -140,6 +142,7 @@ test('publishing recovery charges exact checkpoint I/O and retains it across an 
     });
     if (view?.details[key]?.statusSource === 'committed') {
       published = true;
+      firstTree = view.tree;
       break;
     }
   }
@@ -237,21 +240,21 @@ test('publishing recovery charges exact checkpoint I/O and retains it across an 
   assert.deepEqual([leaseReads, leaseAcquisitions, leaseRenewals], [0, 0, 0]);
   assert.equal(results.length, 0);
   // Isolate writer recovery from the separately tested optional display-rate recovery.
-  port.begin(performance.now() + 2000);
+  port.begin(performance.now() + 2000, 'synthetic-scope');
   port.readings.get(key).rateTarget = undefined;
   await port.collect(f.child.ref, 'session', budget);
   assert.equal(results[0]?.kind, 'continuation');
   assert.ok(leaseAcquisitions > 0, 'a later ordinary grant can still acquire authority');
   assert.equal(port.readings.get(key).recoveryPending, true);
   assert.deepEqual(port.takeUnattributedIO(), { bytesRead: 0, recordsRead: 0 });
-  port.begin(performance.now() + 2000);
+  port.begin(performance.now() + 2000, 'synthetic-scope');
   port.readings.get(key).rateTarget = undefined;
   leaseReads = leaseAcquisitions = leaseRenewals = 0;
   await port.collect(f.child.ref, 'session', { ...budget, budgetMs: 0 });
   assert.deepEqual([leaseReads, leaseAcquisitions, leaseRenewals], [0, 0, 0], 'held authority is not renewed');
   assert.equal(results.length, 1);
   assert.equal(port.readings.get(key).recoveryPending, true);
-  port.begin(performance.now() + 2000);
+  port.begin(performance.now() + 2000, 'synthetic-scope');
   port.readings.get(key).rateTarget = undefined;
   await port.collect(f.child.ref, 'session', budget);
   assert.equal(results[1]?.kind, 'recovered');
@@ -262,14 +265,93 @@ test('publishing recovery charges exact checkpoint I/O and retains it across an 
     bytesRead: results[1].stats.bytesRead,
     recordsRead: results[1].stats.recordsRead,
   });
-  port.begin(performance.now() + 2000);
+  assert.ok(port.continuation, 'exact recovery exhausted the grant and created one continuation');
+  let savedTicket = port.continuation;
+  assert.equal(store.recoveryAuthorityCurrent(savedTicket.target, savedTicket.lease), true);
+  assert.equal(
+    store.recoveryAuthorityCurrent(
+      { ...savedTicket.target, commitSeq: savedTicket.target.commitSeq + 1 },
+      savedTicket.lease
+    ),
+    false
+  );
+  assert.equal(
+    store.recoveryAuthorityCurrent(
+      {
+        ...savedTicket.target,
+        checkpointIdentity: {
+          ...savedTicket.target.checkpointIdentity,
+          contentIdentity: 'different-checkpoint',
+        },
+      },
+      savedTicket.lease
+    ),
+    false,
+    'same sequence with a different checkpoint is not accepted'
+  );
+  assert.equal(
+    store.recoveryAuthorityCurrent(savedTicket.target, {
+      ...savedTicket.lease,
+      generation: savedTicket.lease.generation + 1,
+    }),
+    false
+  );
+  assert.equal(store.recoveryAuthorityCurrent(savedTicket.target, { ...savedTicket.lease, expires_at: 0 }), false);
+  const wrongTree = structuredClone(firstTree)!;
+  wrongTree.nodes.find((node) => node.key === key)!.currentRun!.expectedGeneration++;
+  assert.deepEqual(port.takeContinuation('synthetic-scope', wrongTree), { key: null }, 'binding change invalidates');
+  assert.equal(port.takeContinuation('synthetic-scope', firstTree), null);
+  assert.equal(port.readings.get(key).recoveryPending, true);
+  // Restore only the fixture for the independent scope and successful-use controls.
+  port.readings.get(key).recoveryPending = false;
+  port.continuation = savedTicket;
+  port.begin(performance.now() + 2000, 'other-scope');
+  assert.equal(port.takeContinuation('other-scope', firstTree), null, 'scope change invalidates immediately');
+  port.begin(performance.now() + 2000, 'synthetic-scope');
+  assert.equal(port.takeContinuation('synthetic-scope', firstTree), null, 'scope ABA cannot revive a ticket');
+  assert.equal(port.takeContinuation('other-scope', firstTree), null);
+  port.readings.get(key).recoveryPending = false;
+  port.continuation = savedTicket;
+  port.begin(performance.now() + 2000, 'synthetic-scope');
   port.readings.get(key).rateTarget = undefined;
-  await port.collect(f.child.ref, 'session', { ...budget, maxRecords: 2000 });
-  assert.equal(results.length, 2, 'next ordinary grant uses the recovered checkpoint without refetching');
+  assert.deepEqual(port.takeContinuation('synthetic-scope', firstTree), { key });
+  await port.collect(f.child.ref, 'session', { ...budget, maxRecords: 2000, budgetMs: 0 }, true);
+  assert.equal(port.takeContinuation('synthetic-scope', firstTree), null, 'refusal spends the ticket');
+  // A later ordinary attempt that recovers the same target cannot manufacture another ticket.
+  port.readings.get(key).recoveryPending = true;
+  port.begin(performance.now() + 2000, 'synthetic-scope');
+  port.readings.get(key).rateTarget = undefined;
+  await port.collect(f.child.ref, 'session', budget);
+  assert.equal(results[2]?.kind, 'recovered');
+  assert.equal(port.takeContinuation('synthetic-scope', firstTree), null, 'same recovery cannot rearm');
+  savedTicket = { ...savedTicket, checkpoint: port.readings.get(key).checkpoint };
+  // Reinsert the saved ticket bound to the equivalent fresh checkpoint only for the separate success control.
+  port.continuation = savedTicket;
+  port.begin(performance.now() + 2000, 'synthetic-scope');
+  assert.deepEqual(port.takeContinuation('synthetic-scope', firstTree), { key });
+  await port.collect(f.child.ref, 'session', { ...budget, maxRecords: 2000 }, true);
+  assert.equal(results.length, 3, 'next ordinary grant uses the recovered checkpoint without refetching');
   assert.ok(
     port.readings.get(key).publisher?.hasReading(),
     `a real native capture followed recovery: ${nativeErrors.join(', ')}`
   );
+  assert.equal(port.takeContinuation('synthetic-scope', firstTree), null, 'successful capture cannot rearm');
+  port.readings.get(key).publisher.close();
+  assert.equal(
+    store.recoveryAuthorityCurrent(savedTicket.target, savedTicket.lease),
+    false,
+    'released authority fails closed'
+  );
+  // Reinsert only to model the lease being released after a ticket was issued.
+  port.readings.get(key).checkpoint = savedTicket.checkpoint;
+  port.continuation = savedTicket;
+  port.begin(performance.now() + 2000, 'synthetic-scope');
+  assert.deepEqual(port.takeContinuation('synthetic-scope', firstTree), { key });
+  await port.collect(f.child.ref, 'session', { ...budget, maxRecords: 2000 }, true);
+  assert.equal(port.readings.get(key).publisher.hasReading(), false);
+  assert.equal(port.readings.get(key).recoveryPending, true);
+  assert.equal(results.length, 3, 'lost authority does not refetch or capture under the ticket');
+  assert.equal(port.takeContinuation('synthetic-scope', firstTree), null, 'lost authority consumes the ticket');
 });
 
 for (const runId of ['run-a', 'old-run'])

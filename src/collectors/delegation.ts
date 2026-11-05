@@ -21,12 +21,12 @@ import type { ObservationStamp } from '../core/types/observation.js';
 import { LinkTickCollector, LEDGER_SNAPSHOT_VALIDITY_MS, type LinkCollectionPort } from '../core/link/tick.js';
 import { displayNodeKey } from '../core/observation.js';
 import { loadLimits } from '../core/link/limits.js';
-import type { CollectedLinkSession } from '../core/link/types.js';
+import type { CollectedLinkSession, LinkTreeProjection } from '../core/link/types.js';
 import type { ReaderBudget, SessionReader } from '../core/interfaces/harness-adapter.js';
 import type { SessionEvidence } from '../core/interfaces/session-evidence.js';
 import type { LaunchProfile } from '../core/types/capabilities.js';
 import type { SessionRef } from '../core/types/identity.js';
-import type { ObservationView, ReaderCheckpoint } from '../core/types/observation.js';
+import type { CollectLease, ObservationView, ReaderCheckpoint } from '../core/types/observation.js';
 import type { DelegationViewModel } from '../core/link/view-model.js';
 
 /** Startup-only mirror of CLI privateHome; never creates the home or imports CLI/writer code. */
@@ -121,6 +121,18 @@ interface Reading {
   rateReceipt?: CollectedLinkSession['committedRate'];
   actionReceipt?: CollectedLinkSession['committedAction'];
   lastSessionWasRate?: boolean;
+  spentRecovery?: string;
+}
+interface RecoveryContinuation {
+  key: string;
+  scope: string;
+  sourceIdentity: string;
+  target: ObservationRecoveryTarget;
+  stamp: ObservationStamp;
+  lease: CollectLease;
+  publisher: SessionPublisher;
+  checkpoint: ReaderCheckpoint;
+  fingerprint: string;
 }
 function evidenceFromView(ref: SessionRef, observation: ObservationView): SessionEvidence {
   const unknown = {
@@ -159,6 +171,9 @@ class SessionCollection implements LinkCollectionPort {
   private pendingCommits = new Set<string>();
   private commitCursor: string | undefined;
   private deadline = Infinity;
+  private scope: string | undefined;
+  private continuation?: RecoveryContinuation;
+  private activeContinuation?: RecoveryContinuation;
   constructor(
     readonly sources: Map<string, Source>,
     readonly publishing = false
@@ -385,8 +400,10 @@ class SessionCollection implements LinkCollectionPort {
     this.snapshot = null;
     for (const reading of this.readings.values()) reading.snapshot = undefined;
   }
-  begin(deadline: number): void {
+  begin(deadline: number, scope?: string): void {
     this.deadline = deadline;
+    this.scope = scope;
+    if (!scope || (this.continuation && this.continuation.scope !== scope)) this.invalidateContinuation();
     this.charges = { bytesRead: 0, recordsRead: 0 };
     this.sourceChecks.clear();
     let storesChanged = false;
@@ -422,6 +439,48 @@ class SessionCollection implements LinkCollectionPort {
       if (source && this.committed(source, reading)) this.pendingCommits.delete(key);
       this.commitCursor = key;
     }
+  }
+  private invalidateContinuation(): void {
+    const ticket = this.continuation ?? this.activeContinuation;
+    this.continuation = undefined;
+    this.activeContinuation = undefined;
+    if (!ticket) return;
+    const reading = this.readings.get(ticket.key);
+    if (reading?.checkpoint === ticket.checkpoint) {
+      reading.spentRecovery = ticket.fingerprint;
+      reading.recoveryPending = true;
+      reading.reader = undefined;
+      reading.dirty = true;
+    }
+  }
+  takeContinuation(scope: string, tree: LinkTreeProjection | null): { key: string | null } | null {
+    const ticket = this.continuation;
+    this.continuation = undefined;
+    this.activeContinuation = undefined;
+    if (!ticket) return null;
+    const reading = this.readings.get(ticket.key);
+    if (reading?.checkpoint === ticket.checkpoint) reading.spentRecovery = ticket.fingerprint;
+    const node = tree?.nodes.find((item) => item.key === ticket.key);
+    const run = node?.currentRun;
+    const contextMatches =
+      !!node &&
+      node.identity.kind === 'session' &&
+      !node.conflict &&
+      canonicalJson(node.identity.ref) === canonicalJson(ticket.target.ref) &&
+      (run
+        ? ticket.stamp.runId === run.runId && ticket.stamp.bindingGeneration === run.expectedGeneration
+        : ticket.stamp.runId === undefined && ticket.stamp.bindingGeneration === undefined);
+    if (ticket.scope !== scope || !contextMatches) {
+      this.activeContinuation = ticket;
+      this.invalidateContinuation();
+      return { key: null };
+    }
+    this.activeContinuation = ticket;
+    return { key: ticket.key };
+  }
+  discardContinuation(): void {
+    // A refused priority opportunity is spent; ordinary cursor order resumes.
+    this.activeContinuation = undefined;
   }
   sessions(): readonly CollectedLinkSession[] {
     const states = new Map<string, { topologyDirty: boolean; topologyToken: number }>();
@@ -648,6 +707,7 @@ class SessionCollection implements LinkCollectionPort {
       }
     }
     if (reading.publisher?.hasPending()) return null;
+    if (this.continuation?.key === displayNodeKey({ kind: 'session', ref }) && !reading.resetPending) return 'session';
     if (reading.rateTarget && reading.envelope?.loaded && !reading.resetPending) return 'session';
     return !reading.envelope || !reading.envelope.loaded || reading.dirty || !reading.caughtUp ? 'session' : null;
   }
@@ -657,8 +717,11 @@ class SessionCollection implements LinkCollectionPort {
   async collect(
     ref: SessionRef,
     kind: 'session' | 'native_topology',
-    budget: ReaderBudget
+    budget: ReaderBudget,
+    continuation = false
   ): Promise<CollectedLinkSession | null> {
+    const ticket = continuation ? this.activeContinuation : undefined;
+    if (continuation) this.activeContinuation = undefined;
     const source = this.sources.get(ref.sourceId);
     if (!source) return null;
     const reading = this.reading(ref);
@@ -676,6 +739,43 @@ class SessionCollection implements LinkCollectionPort {
         performance.now() >= this.deadline)
     )
       return reading.envelope ?? null;
+    const sessionDeadline = Math.min(this.deadline, performance.now() + budget.budgetMs);
+    if (continuation) {
+      try {
+        const now = Date.now();
+        const lease = reading.publisher?.continuationLease(now);
+        const compatible =
+          !!ticket &&
+          ticket.scope === this.scope &&
+          ticket.key === displayNodeKey({ kind: 'session', ref }) &&
+          ticket.publisher === reading.publisher &&
+          ticket.checkpoint === reading.checkpoint &&
+          !reading.resetPending &&
+          source.store &&
+          ticket.sourceIdentity === source.storeIdentity &&
+          identity(source.store.databasePath) === ticket.sourceIdentity &&
+          lease &&
+          canonicalJson(lease) === canonicalJson(ticket.lease) &&
+          source.store.recoveryAuthorityCurrent(ticket.target, ticket.lease);
+        if (!compatible || performance.now() >= sessionDeadline) {
+          if (ticket && reading.checkpoint === ticket.checkpoint) {
+            reading.recoveryPending = true;
+            reading.reader = undefined;
+            reading.dirty = true;
+            if (!compatible) reading.publisher?.forget();
+          }
+          return reading.envelope ?? null;
+        }
+      } catch {
+        if (ticket && reading.checkpoint === ticket.checkpoint) {
+          reading.recoveryPending = true;
+          reading.reader = undefined;
+          reading.dirty = true;
+          reading.publisher?.forget();
+        }
+        return reading.envelope ?? null;
+      }
+    }
     reading.lastGrantedKind = kind;
     if (kind === 'native_topology') {
       const topology = source.adapter.collectTopology
@@ -720,6 +820,7 @@ class SessionCollection implements LinkCollectionPort {
     if (rateTarget && (!envelopeStamp || canonicalJson(envelopeStamp) !== canonicalJson(rateTarget.stamp)))
       reading.rateTarget = undefined;
     if (
+      !continuation &&
       rateTarget &&
       source.store &&
       reading.envelope?.loaded &&
@@ -813,7 +914,8 @@ class SessionCollection implements LinkCollectionPort {
       }
     }
     try {
-      const collectionDeadline = performance.now() + budget.budgetMs;
+      const collectionDeadline = sessionDeadline;
+      let recoveredTicket: RecoveryContinuation | undefined;
       if (source.claudeFiles) {
         const file = source.claudeFiles.resolve(ref, collectionDeadline);
         if (!file) return reading.envelope ?? null;
@@ -860,9 +962,52 @@ class SessionCollection implements LinkCollectionPort {
               return reading.envelope ?? null;
             }
             reading.checkpoint = recovery.recovery.checkpoint;
+            const lease = publisher.continuationLease(Date.now());
+            if (!continuation && this.scope && source.storeIdentity && lease) {
+              const target: ObservationRecoveryTarget = {
+                ref: prior.ref,
+                sourceGeneration: prior.sourceGeneration,
+                seqDomain: prior.seqDomain,
+                commitSeq: prior.commitSeq,
+                checkpointIdentity: prior.checkpointIdentity,
+              };
+              const fingerprint = canonicalJson([
+                target.ref,
+                target.sourceGeneration,
+                target.seqDomain,
+                target.commitSeq,
+                target.checkpointIdentity.contentIdentity,
+                source.storeIdentity,
+                lease.resource,
+                lease.holder,
+                lease.generation,
+              ]);
+              if (reading.spentRecovery !== fingerprint)
+                recoveredTicket = {
+                  key: displayNodeKey({ kind: 'session', ref }),
+                  scope: this.scope,
+                  sourceIdentity: source.storeIdentity,
+                  target: structuredClone(target),
+                  stamp: structuredClone(prior.observationStamp),
+                  lease,
+                  publisher,
+                  checkpoint: reading.checkpoint,
+                  fingerprint,
+                };
+            }
           }
           reading.recoveryPending = false;
         }
+      }
+      // Only an exact recovery that consumed this grant before the first native result
+      // may insert one priority attempt into the next ordinary opportunity.
+      if (
+        budget.maxBytes === 0 ||
+        budget.maxRecords === 0 ||
+        performance.now() >= Math.min(collectionDeadline, this.deadline)
+      ) {
+        if (recoveredTicket) this.continuation = recoveredTicket;
+        return reading.envelope ?? null;
       }
       if (source.adapter instanceof CodexAdapter) {
         const file = source.adapter.collectionState(ref, false).file;
@@ -875,13 +1020,17 @@ class SessionCollection implements LinkCollectionPort {
         ...budget,
         budgetMs: Math.max(0, Math.floor(Math.min(collectionDeadline, this.deadline) - performance.now())),
       };
-      if (budget.budgetMs === 0 || budget.maxBytes === 0 || budget.maxRecords === 0) return reading.envelope ?? null;
+      if (budget.budgetMs === 0 || budget.maxBytes === 0 || budget.maxRecords === 0) {
+        if (recoveredTicket) this.continuation = recoveredTicket;
+        return reading.envelope ?? null;
+      }
       reading.reader ??= source.adapter.open(ref, reading.checkpoint);
       const readSignature = reading.file ? fileStamp(reading.file) : null;
       const previousGeneration = reading.checkpoint?.sourceGeneration;
       reading.lastSessionWasRate = false;
       const result = await reading.reader.read(budget);
       if (!result.evidence || !result.stats) return null;
+      reading.spentRecovery = undefined;
       const reset = previousGeneration !== undefined && previousGeneration !== result.checkpoint.sourceGeneration;
       if (reset && source.adapter instanceof CodexAdapter) {
         source.adapter.invalidateTopology(ref);
@@ -961,6 +1110,11 @@ class SessionCollection implements LinkCollectionPort {
     return charged;
   }
   invalidateSource(sourceId: string): void {
+    if (
+      this.continuation?.target.ref.sourceId === sourceId ||
+      this.activeContinuation?.target.ref.sourceId === sourceId
+    )
+      this.invalidateContinuation();
     const source = this.sources.get(sourceId);
     const identityChanged = source?.store && identity(source.store.databasePath) !== source.storeIdentity;
     for (const reading of this.readings.values())
@@ -987,6 +1141,8 @@ class SessionCollection implements LinkCollectionPort {
       }
   }
   close(): void {
+    this.continuation = undefined;
+    this.activeContinuation = undefined;
     for (const reading of this.readings.values()) reading.publisher?.close();
     for (const source of this.sources.values()) {
       source.store?.close();

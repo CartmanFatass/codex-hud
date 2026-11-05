@@ -169,3 +169,97 @@ test('collector tick preserves retained order as pending work alternates A/B whi
     collector.close();
   }
 });
+
+test('one continuation per regular visit keeps the 200-target round within 400 opportunities', () => {
+  const roots: DisplayNodeIdentity[] = Array.from({ length: 200 }, (_, i) => ({
+    kind: 'session',
+    ref: { harness: 'codex', sourceId: '1'.repeat(64), sessionId: `ticket-${i}`, threadId: null },
+  }));
+  const tree = projectLinkTree(input(roots));
+  let cursor: string | undefined;
+  const seen = new Set<string>();
+  for (let i = 0; i < 200; i++) {
+    const regular = planLinkRead(tree, { remainingMs: 10, afterKey: cursor });
+    assert.ok(regular.target);
+    assert.equal(regular.continuation, undefined);
+    seen.add(regular.target.key);
+    cursor = regular.nextCursor;
+    const priority = planLinkRead(tree, { remainingMs: 10, afterKey: cursor, continuationKey: cursor });
+    assert.equal(priority.target?.key, cursor);
+    assert.equal(priority.target && priority.continuation, true);
+    // Priority does not advance the caller's ordinary cursor.
+  }
+  assert.equal(seen.size, 200);
+  const blocked = planLinkRead(tree, {
+    remainingMs: 10,
+    afterKey: cursor,
+    continuationKey: cursor,
+    minimumBytes: new Map([[cursor!, 4 * 1024 * 1024 + 1]]),
+  });
+  assert.ok(blocked.target);
+  assert.notEqual(blocked.target.key, cursor);
+  assert.equal(blocked.continuation, undefined);
+});
+
+test('collector spends a continuation in one ordinary opportunity without moving its regular cursor', async () => {
+  const roots: DisplayNodeIdentity[] = ['A', 'B', 'C'].map((sessionId) => ({
+    kind: 'session',
+    ref: { harness: 'codex', sourceId: '1'.repeat(64), sessionId, threadId: null },
+  }));
+  const calls: { id: string; priority: boolean }[] = [];
+  let ticket: string | null = null;
+  const port = {
+    publishesObservations: true,
+    sessions: () => [],
+    pending: () => 'session' as const,
+    takeContinuation: () => {
+      const value = ticket;
+      ticket = null;
+      return value === null ? null : { key: value };
+    },
+    collect: async (ref: { sessionId: string }, _kind: unknown, _budget: unknown, priority?: boolean) => {
+      calls.push({ id: ref.sessionId, priority: !!priority });
+      return null;
+    },
+  };
+  const reader = {
+    changeToken: () => 'fixed',
+    close() {},
+    read: () => ({
+      state: 'available',
+      reason: null,
+      claimChecks: [],
+      conflictTargets: new Map(),
+      snapshot: {
+        ledgerId: 'synthetic',
+        asOfSeq: 1,
+        links: [],
+        runs: [],
+        claims: [],
+        bindings: [],
+        reports: [],
+        events: [],
+        evidence: [],
+        slots: [],
+      },
+    }),
+  };
+  const limits = buildVm([{ id: 'root', root: true, status: S.working() }]).vm.limits;
+  const collector = new LinkTickCollector(reader as never, '/synthetic', limits, port as never);
+  try {
+    await collector.tick({ roots });
+    ticket = displayNodeKey(roots[0]);
+    await collector.tick({ roots });
+    assert.equal(collector.stats().continuationAttempts, 1);
+    assert.equal(collector.stats().regularVisits, 0);
+    await collector.tick({ roots });
+    assert.equal(collector.stats().regularVisits, 1);
+    assert.deepEqual(calls, [
+      { id: 'A', priority: false },
+      { id: 'A', priority: true },
+      { id: 'B', priority: false },
+    ]);
+  } finally {
+    collector.close();
+  }
+});

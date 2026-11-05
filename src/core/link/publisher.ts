@@ -131,6 +131,10 @@ export class SessionPublisher {
   valid(nowMs: number): boolean {
     return !!this.lease && nowMs >= this.lastNow && nowMs < this.lease.expires_at;
   }
+  /** Identity only; this does not renew, acquire, or confer authority. */
+  continuationLease(nowMs: number): CollectLease | null {
+    return this.valid(nowMs) && this.writer && this.lease ? { ...this.lease } : null;
+  }
   capture(result: ReaderResult): void {
     this.result = result;
     this.prepared = null;

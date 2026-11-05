@@ -7,6 +7,7 @@ export type LinkReadPlan =
       target: { key: string; ref: SessionRef; kind: 'session' | 'native_topology' };
       budget: ReaderBudget;
       nextCursor: string;
+      continuation?: true;
     }
   | { target: null; reason: 'deadline' | 'bytes' | 'no_eligible_target'; nextCursor: string | null };
 
@@ -15,7 +16,12 @@ export type LinkReadPlan =
  */
 export function planLinkRead(
   tree: LinkTreeProjection,
-  input: { remainingMs: number; afterKey?: string; minimumBytes?: ReadonlyMap<string, number> }
+  input: {
+    remainingMs: number;
+    afterKey?: string;
+    minimumBytes?: ReadonlyMap<string, number>;
+    continuationKey?: string;
+  }
 ): LinkReadPlan {
   if (!Number.isFinite(input.remainingMs) || input.remainingMs <= 0)
     return { target: null, reason: 'deadline', nextCursor: input.afterKey ?? null };
@@ -38,15 +44,18 @@ export function planLinkRead(
   const previous = order.indexOf(input.afterKey ?? '');
   // A blocked session remains in continuation, but cannot prevent other eligible work.
   // minimumBytes describes a native session record, not the separate topology operation.
-  const entry = Array.from({ length: order.length }, (_, i) =>
-    eligible.get(order[(previous + 1 + i) % order.length])
-  ).find((candidate) => {
+  const fits = (candidate: (typeof tree.continuation)[number] | undefined) => {
     if (!candidate) return false;
     const minimum = candidate.reason === 'unloaded' ? (input.minimumBytes?.get(candidate.key) ?? 1) : 1;
     return (
       Number.isSafeInteger(minimum) && minimum >= 1 && minimum <= Math.min(tree.io.remainingBytes, 4 * 1024 * 1024)
     );
-  });
+  };
+  const preferred = input.continuationKey ? eligible.get(input.continuationKey) : undefined;
+  const continuation = preferred?.reason === 'unloaded' && fits(preferred);
+  const entry = continuation
+    ? preferred
+    : Array.from({ length: order.length }, (_, i) => eligible.get(order[(previous + 1 + i) % order.length])).find(fits);
   if (!entry) return { target: null, reason: 'bytes', nextCursor: input.afterKey ?? null };
   return {
     target: {
@@ -60,5 +69,6 @@ export function planLinkRead(
       budgetMs: Math.min(20, input.remainingMs),
     },
     nextCursor: entry.key,
+    ...(continuation ? { continuation: true as const } : {}),
   };
 }

@@ -27,14 +27,18 @@ export interface LinkCollectionPort {
   readonly publishesObservations?: boolean;
   invalidateSnapshots?(): void;
   /** Stable evidence retained from previous ticks, with zero current-tick charges. */
-  begin?(deadline: number): void;
+  begin?(deadline: number, scope?: string): void;
+  /** Consume at most one recovery continuation for this ordinary opportunity. */
+  takeContinuation?(scope: string, tree: LinkTreeProjection | null): { key: string | null } | null;
+  discardContinuation?(): void;
   sessions(): readonly CollectedLinkSession[];
   /** Metadata-only invalidation. No body/topology reads on this call. */
   pending(ref: SessionRef, key?: string): 'session' | 'native_topology' | null;
   collect(
     ref: SessionRef,
     kind: 'session' | 'native_topology',
-    budget: ReaderBudget
+    budget: ReaderBudget,
+    continuation?: boolean
   ): Promise<CollectedLinkSession | null>;
   takeUnattributedIO?(): { bytesRead: number; recordsRead: number };
   lineageCurrent?(ref: SessionRef): boolean;
@@ -60,6 +64,8 @@ export interface LinkTickStats {
   ledgerReads: number;
   highWaterChecks: number;
   immediateMerges: number;
+  regularVisits: number;
+  continuationAttempts: number;
 }
 
 /** One retained read-only data path for both entry points. Creation/opening belongs to startup. */
@@ -100,6 +106,8 @@ export class LinkTickCollector {
     ledgerReads: 0,
     highWaterChecks: 0,
     immediateMerges: 0,
+    regularVisits: 0,
+    continuationAttempts: 0,
   };
   constructor(
     private reader: LinkLedgerReader,
@@ -303,6 +311,8 @@ export class LinkTickCollector {
       ledgerReads: 0,
       highWaterChecks: 0,
       immediateMerges: 0,
+      regularVisits: 0,
+      continuationAttempts: 0,
     };
     const finish = () => {
       stats.totalMs = performance.now() - started;
@@ -388,7 +398,11 @@ export class LinkTickCollector {
       this.view = null;
       return finish();
     }
-    if (!projectionOnly) this.port?.begin?.(deadline);
+    const scope =
+      this.ledger.state === 'available'
+        ? canonicalJson([input.roots, input.budget ?? {}, this.ledgerToken, this.ledger.snapshot.ledgerId, launches])
+        : undefined;
+    if (!projectionOnly) this.port?.begin?.(deadline, scope);
     retained = input.sessions ?? this.port?.sessions() ?? [];
     if (!immutableSnapshots || retained !== this.indexedSnapshot) {
       this.snapshotIndex = new Map(retained.map((s) => [displayNodeKey({ kind: 'session', ref: s.evidence.ref }), s]));
@@ -421,16 +435,24 @@ export class LinkTickCollector {
         continuation: eligible,
         io: { remainingBytes: Math.max(0, maxBytes - charged), exceeded: charged > maxBytes },
       } as LinkTreeProjection;
+      const offer = scope ? this.port.takeContinuation?.(scope, this.tree) : null;
+      const continuationKey = offer?.key ?? undefined;
+      if (offer) stats.continuationAttempts++;
       const plan = planLinkRead(schedulingTree, {
         remainingMs: Math.max(0, Math.floor(deadline - performance.now())),
         afterKey: this.cursor,
         minimumBytes: this.port.minimumBytes,
+        continuationKey,
       });
+      if (!plan.target || !plan.continuation) this.port.discardContinuation?.();
       if (plan.target) {
         didCollect = true;
         unique = new Map(unique);
-        this.cursor = plan.nextCursor;
-        const read = await this.port.collect(plan.target.ref, plan.target.kind, plan.budget);
+        if (!plan.continuation) {
+          this.cursor = plan.nextCursor;
+          stats.regularVisits++;
+        }
+        const read = await this.port.collect(plan.target.ref, plan.target.kind, plan.budget, plan.continuation);
         if (read) {
           const previous = unique.get(plan.target.key);
           unique.set(plan.target.key, {
