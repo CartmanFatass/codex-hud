@@ -25,11 +25,21 @@ test('synthetic cross-harness workbench exercises real accepted, replayed, super
   assert.ok(value.second.cancelled.events.includes('cancel.accepted'));
   assert.ok(['ended','cancelled','failed'].includes(value.second.cancelled.run.state));
   assert.equal(value.second.cancelled.slotHeld,false);
-  assert.deepEqual(value.childEnvironment,['CODEX_HOME','HOME','HUD_HOME','PATH']);
+  assert.deepEqual(value.childEnvironment,['CODEX_HOME','HOME','HUD_HOME','HUD_LAB_HELPER','PATH']);
   assert.ok(value.frames.every((f)=>f.panel.some((line)=>line.includes('SIMULATED Codex'))));
-  assert.ok(value.frames.flatMap((f)=>f.relations).every((r)=>r.attribution==='intent' && !r.childBound));
+  assert.deepEqual(value.first.reports,[{status:'completed',summary:'SIMULATED child report'}]);
+  assert.equal(value.first.reportedState.run.state,'running');
+  assert.equal(value.first.reportedState.slotHeld,true);
+  assert.ok(value.first.reportedState.events.includes('child.bound'));
+  assert.ok(value.first.reportedState.events.includes('report.received'));
+  const bound=value.frames.find((f)=>f.label==='bound / reported').relations.find((r)=>r.runId===value.first.runId);
+  assert.equal(bound.attribution,'confirmed'); assert.equal(bound.childBound,true);
+  assert.ok(value.frames.find((f)=>f.label==='bound / reported').panel.some((line)=>line.includes('reported')));
+  assert.ok(value.frames.find((f)=>f.label==='scope ended').panel.some((line)=>line.includes('SIMULATED child report')));
+  const second=value.frames.find((f)=>f.label==='second run active').relations.find((r)=>r.runId===value.second.runId);
+  assert.equal(second.attribution,'intent'); assert.equal(second.childBound,false);
   assert.equal(value.frames[0].relations.find((r)=>r.runId===value.first.runId).state,'running');
-  assert.equal(value.frames[1].relations.find((r)=>r.runId===value.first.runId).state,'ended');
+  assert.equal(value.frames.find((f)=>f.label==='scope ended').relations.find((r)=>r.runId===value.first.runId).state,'ended');
   assert.ok(value.supervisorExits.every((exit)=>exit.code===0));
 });
 
@@ -47,4 +57,19 @@ test('direct runner never removes an environment-supplied home', async () => {
     assert.equal(r.status,0,r.stderr);
     assert.equal(readFileSync(marker,'utf8'),'preserve');
   } finally { rmSync(supplied,{recursive:true,force:true}); }
+});
+
+test('lab reporter rejects a caller outside its owned synthetic child', async () => {
+  const {mkdtempSync,writeFileSync,existsSync,rmSync}=await import('node:fs');
+  const {tmpdir}=await import('node:os'); const {join}=await import('node:path');
+  const home=mkdtempSync(join(tmpdir(),'hud-reporter-refusal-'));
+  try {
+    writeFileSync(join(home,'synthetic-codex'),'not an executable');
+    const r=spawnSync(process.execPath,[resolve('scripts/workbench/synthetic-handshake.mjs')],{
+      cwd:home,encoding:'utf8',timeout:10000,
+      env:{HOME:home,HUD_HOME:home,CODEX_HOME:home,PATH:'/usr/bin:/bin',HUD_RUN:'synthetic',HUD_CLAIM:'synthetic-refusal-claim'}
+    });
+    assert.notEqual(r.status,0); assert.equal(existsSync(join(home,'ledger.sqlite')),false);
+    assert.doesNotMatch(r.stdout+r.stderr,/synthetic-refusal-claim/);
+  } finally { rmSync(home,{recursive:true,force:true}); }
 });

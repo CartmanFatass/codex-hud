@@ -55,7 +55,7 @@ try {
   });
   const processes = new Map([[pid, {pid, ppid:1, procStart:start, argv:['/synthetic/claude'], env:{}, pidNamespace:'synthetic-pid-ns'}], [callerPid, {pid:callerPid, ppid:pid, procStart:'990002', argv:['/synthetic/node'], env:{}, pidNamespace:'synthetic-pid-ns'}]]);
   const reader = { domain:() => domain, get:(id) => { const p=processes.get(id); if (!p) throw Error('process_missing'); return structuredClone(p); } };
-  const profile = { name:'synthetic-codex', harness:'codex', source:{root,label:'SIMULATED Codex child'}, launch:{argv:[executable]}, headless:{argv:[executable]}, resume:{argv:[executable,'{{sessionId}}']}, resumeHeadless:{argv:[executable,'{{sessionId}}']}, host:{kind:'none',layout:'none'}, env:{CODEX_HOME:root}, mcpServerName:'hud', claimTransport:'config_env', clientToolTimeoutMs:60000, responseMarginMs:2000, orphan_policy:'continue', managedShellVerified:false, roles:{implementer:{model:'synthetic-model',effort:'low'}} };
+  const profile = { name:'synthetic-codex', harness:'codex', source:{root,label:'SIMULATED Codex child'}, launch:{argv:[executable]}, headless:{argv:[executable]}, resume:{argv:[executable,'{{sessionId}}']}, resumeHeadless:{argv:[executable,'{{sessionId}}']}, host:{kind:'none',layout:'none'}, env:{CODEX_HOME:root,HUD_LAB_HELPER:resolve('scripts/workbench/synthetic-handshake.mjs')}, mcpServerName:'hud', claimTransport:'config_env', clientToolTimeoutMs:60000, responseMarginMs:2000, orphan_policy:'continue', managedShellVerified:false, roles:{implementer:{model:'synthetic-model',effort:'low'}} };
   const registration = { caller, source, harnessPid:pid, harnessProcStart:start };
   let dispatchCount = 0;
   service = new DelegationService({ ledger:db, home:root, config:{version:1,profiles:[profile]}, registration, reader, env:{HOME:root,PATH:'/usr/bin:/bin',CODEX_HOME:root}, codexConfig:{mcp_servers:{hud:{command:'/synthetic/node'}}}, hudRunPath:resolve('bin/hud-run'), capability:{verify:(request) => request.executableIdentity.path === executable && request.sourceId === childId && request.key.harness === 'codex' && request.key.mode === 'headless' && request.key.operation === 'spawn' ? {ok:true,reason:null} : {ok:false,reason:'lab_scope_only'}}, launch:async (prepared, ticket, options) => { dispatchCount++; const pending=launchPreparedRun(prepared,ticket,options); pendingDispatches.push(pending); const dispatched = await pending; dispatches.push(dispatched); return dispatched; } });
@@ -94,6 +94,13 @@ try {
   const frames=[];
   const active=await waitFor(accepted.runId,(s)=>s.run?.state==='running');
   frames.push(await frame('accepted / active'));
+  const reportDeadline=Date.now()+12000;
+  while (Date.now()<reportDeadline && !db.snapshot((tx)=>tx.get('SELECT 1 FROM reports WHERE run_id=?',accepted.runId))) await delay(40);
+  const reports=db.snapshot((tx)=>tx.all('SELECT status,summary FROM reports WHERE run_id=?',accepted.runId));
+  if (reports.length!==1) throw Error('lab_report_missing');
+  const reportedState=readState(accepted.runId);
+  if (reportedState.run?.state!=='running' || !reportedState.slotHeld) throw Error('report_did_not_preserve_live_scope');
+  frames.push(await frame('bound / reported'));
   const ended=await waitFor(accepted.runId,(s)=>['ended','failed','cancelled'].includes(s.run?.state));
   frames.push(await frame('scope ended'));
   const secondBrief=join(root,'hold-brief.txt'); writeFileSync(secondBrief,'synthetic workbench brief: hold for cancellation\n',{mode:0o600});
@@ -107,14 +114,14 @@ try {
   frames.push(await frame('cancellation outcome'));
   if (dispatches.length!==2) throw Error('unexpected_dispatch_count');
   const exits=await Promise.all(dispatches.map((d)=>d.completion));
-  const output={label:'SIMULATED Claude parent → SIMULATED Codex child',childEnvironment:JSON.parse(readFileSync(join(root,'observed-env.json'),'utf8')),first:{runId:accepted.runId,linkId:accepted.linkId,replayRunId:replay.runId,active,ended},second:{runId:second.runId,active:secondActive,cancel:{accepted:cancel.accepted,ok:cancel.ok},cancelled},dispatchCount,supervisorExits:exits,frames};
+  const output={label:'SIMULATED Claude parent → SIMULATED Codex child',childEnvironment:JSON.parse(readFileSync(join(root,'observed-env.json'),'utf8')),first:{runId:accepted.runId,linkId:accepted.linkId,replayRunId:replay.runId,active,reports,reportedState,ended},second:{runId:second.runId,active:secondActive,cancel:{accepted:cancel.accepted,ok:cancel.ok},cancelled},dispatchCount,supervisorExits:exits,frames};
   if (process.argv.includes('--json')) console.log(JSON.stringify(output));
   else {
     console.log(output.label+' (synthetic parent authority; no provider clients)');
     for (const item of frames) { console.log('\n--- '+item.label+' ---'); console.log(item.panel.join('\n')); console.log(JSON.stringify(item.relations)); }
     console.log('\nReplay same run: '+(accepted.runId===replay.runId)+'; total dispatches: '+dispatchCount+' (two distinct requests).');
     console.log('First terminal: '+JSON.stringify(ended)+'\nCancellation: '+JSON.stringify({cancel,cancelled}));
-    console.log('Child binding/report remain unverified; native exit may be unknown.');
+    console.log('Binding/report use SIMULATED identity evidence; native exit may be unknown.');
   }
 } finally {
   // If the lab fails mid-run, only signal exact, still-matching stamps owned by
