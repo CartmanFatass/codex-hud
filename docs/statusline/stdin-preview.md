@@ -9,6 +9,8 @@ printf '%s' '{"model":{"display_name":"Claude"},"context_window":{"used_percenta
 
 Output: `Claude · ctx 42% · $0.12`.
 
+USD is Claude-provided estimated session cost, not an actual invoice or billing total.
+
 Use `--width 48` to set the output width. Otherwise valid `COLUMNS`, TTY columns,
 then 80 are used. Width is 1–500 terminal columns using the existing HUD width
 convention. Cost, then context, are omitted when space is short. Model text is
