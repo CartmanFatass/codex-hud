@@ -189,6 +189,7 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
   if (node.identity.kind === 'session') {
     const ref = node.identity.ref;
     lines.push(`Session: ${ref.harness} · ${ref.sessionId}`);
+    if (ref.harness === 'pi') lines.push(`Source: ${ref.sourceId}`);
     if (ref.threadId) lines.push(`Thread: ${ref.threadId}`);
   } else if (node.identity.kind === 'delegationIntent') lines.push(`Intent: ${node.identity.linkId}`);
   if (pn.proj.isRoot) {
@@ -216,6 +217,16 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
       lines.push(`Context: ${context.used}/${context.window} · ${context.percent}% (${observation.context.quality})`);
     }
     if (observation.workspace?.cwd) lines.push(`Workspace: ${observation.workspace.cwd}`);
+    if (node.identity.kind === 'session' && node.identity.ref.harness === 'pi') {
+      lines.push(`Observation coverage: ${observation.coverage.state}`);
+      const tokens = observation.spent.tokens;
+      if (tokens.value)
+        lines.push(
+          `Tokens: ${tokens.value.input} in · ${tokens.value.output} out · ${tokens.value.cacheRead} cache read · ${tokens.value.cacheWrite} cache write (${tokens.quality})`
+        );
+      const cost = observation.spent.costUsd;
+      if (cost.value !== null) lines.push(`Session cost: $${cost.value} (${cost.quality}; not invoice)`);
+    }
   } else {
     lines.push(
       node.lastObservation ? 'No current observation · previous observation available' : 'Observation unavailable'

@@ -18,6 +18,8 @@ import * as path from 'node:path';
 import { CodexAdapter } from '../harness/codex/index.js';
 import { ClaudeTranscriptFiles } from '../harness/claude/binding.js';
 import { ClaudeAdapter } from '../harness/claude/index.js';
+import { PiAdapter } from '../harness/pi/index.js';
+import { PiTranscriptFiles } from '../harness/pi/binding.js';
 import { createClaudeReaderRebuild } from '../harness/claude/reader.js';
 import { openLinkLedgerReader } from '../core/link-ledger-read.js';
 import { openObservationStore, RecoveryGrant, type ObservationStore } from '../core/observation-store.js';
@@ -96,10 +98,11 @@ function sameFileStamp(a: FileStamp | null | undefined, b: FileStamp | null | un
   );
 }
 interface Source {
-  adapter: CodexAdapter | ClaudeAdapter;
+  adapter: CodexAdapter | ClaudeAdapter | PiAdapter;
   root: string;
   writable: boolean;
   claudeFiles?: ClaudeTranscriptFiles;
+  piFiles?: PiTranscriptFiles;
   store: ObservationStore | null;
   storeIdentity: string | null;
   storeSignature: string;
@@ -771,7 +774,7 @@ class SessionCollection implements LinkCollectionPort {
           reading.resetPending = false;
           reading.topologyToken = -1;
           this.pendingTopology.delete(displayNodeKey({ kind: 'session', ref: reading.ref }));
-          source.adapter.invalidateTopology(reading.ref);
+          if (!(source.adapter instanceof PiAdapter)) source.adapter.invalidateTopology(reading.ref);
           prior = undefined;
         } else {
           if (prior && this.publishing) reading.envelope = { ...prior, lastCommitted: commit.summary };
@@ -842,7 +845,7 @@ class SessionCollection implements LinkCollectionPort {
     // Keep the empty upgrade boundary until its ordinary publication succeeds.
     // In particular, topology scheduling must not replace a pending rebuild.
     if (reading.publisher?.hasPendingRebuild()) return null;
-    if (source.adapter instanceof ClaudeAdapter && reading.file) {
+    if ((source.adapter instanceof ClaudeAdapter || source.adapter instanceof PiAdapter) && reading.file) {
       const current = fileStamp(reading.file);
       if (!sameFileStamp(current, reading.signature)) reading.dirty = true;
       if (
@@ -850,7 +853,10 @@ class SessionCollection implements LinkCollectionPort {
         (!current ||
           current.dev !== reading.signature.dev ||
           current.ino !== reading.signature.ino ||
-          current.size < reading.signature.size)
+          current.size < reading.signature.size ||
+          (source.adapter instanceof PiAdapter &&
+            current.size === reading.signature.size &&
+            !sameFileStamp(current, reading.signature)))
       ) {
         reading.resetPending = true;
         (reading.publisher?.discardReading(), clearClaudeDisplay(reading));
@@ -1013,7 +1019,8 @@ class SessionCollection implements LinkCollectionPort {
             },
           };
       if (!reading.resetPending) this.committed(source, reading);
-      reading.topologyToken = source.adapter.collectionState(ref, false).topologyToken;
+      reading.topologyToken =
+        source.adapter instanceof PiAdapter ? 0 : source.adapter.collectionState(ref, false).topologyToken;
       // Topology before any reader lineage is kept pending; never invent sourceGeneration=1.
       if (!reading.envelope) {
         reading.dirty = true;
@@ -1021,7 +1028,7 @@ class SessionCollection implements LinkCollectionPort {
         this.charges = { bytesRead: topology.bytesRead, recordsRead: topology.recordsRead };
         return null;
       }
-      if (!source.adapter.collectionState(ref, false).file)
+      if (!(source.adapter instanceof PiAdapter) && !source.adapter.collectionState(ref, false).file)
         reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
       this.pendingTopology.delete(displayNodeKey({ kind: 'session', ref }));
       reading.envelope = {
@@ -1137,8 +1144,9 @@ class SessionCollection implements LinkCollectionPort {
     try {
       const collectionDeadline = sessionDeadline;
       let recoveredTicket: RecoveryContinuation | undefined;
-      if (source.claudeFiles) {
-        const file = source.claudeFiles.resolve(ref, collectionDeadline);
+      const transcriptFiles = source.claudeFiles ?? source.piFiles;
+      if (transcriptFiles) {
+        const file = transcriptFiles.resolve(ref, collectionDeadline);
         if (!file) return reading.envelope ?? null;
         if (reading.file !== file) reading.reader = undefined;
         reading.file = file;
@@ -1323,7 +1331,9 @@ class SessionCollection implements LinkCollectionPort {
       reading.raw = result.evidence;
       reading.checkpoint = result.checkpoint;
       const topologyKey = displayNodeKey({ kind: 'session', ref });
-      const topology = this.pendingTopology.get(topologyKey);
+      const topology =
+        this.pendingTopology.get(topologyKey) ??
+        (source.adapter instanceof PiAdapter ? await source.adapter.collectTopology(ref, budget) : undefined);
       this.pendingTopology.delete(topologyKey);
       reading.envelope = {
         evidence: result.evidence,
@@ -1430,7 +1440,7 @@ class SessionCollection implements LinkCollectionPort {
     for (const reading of this.readings.values()) if (reading.publisher && !reading.publisher.close()) clean = false;
     for (const source of this.sources.values()) {
       source.store?.close();
-      source.adapter.closeCollection();
+      if (!(source.adapter instanceof PiAdapter)) source.adapter.closeCollection();
     }
     return clean;
   }
@@ -1643,7 +1653,8 @@ export class HudDelegationCollector {
     const publishing = options.publish === true && hasLedger;
     const sources = new Map<string, Source>();
     const codex = new CodexAdapter(undefined, true),
-      claude = new ClaudeAdapter();
+      claude = new ClaudeAdapter(),
+      pi = new PiAdapter();
     const profiles: LaunchProfile[] = [];
     try {
       const config = JSON.parse(fs.readFileSync(path.join(home, 'delegate.json'), 'utf8'));
@@ -1661,14 +1672,14 @@ export class HudDelegationCollector {
     for (const profile of profiles) {
       if (
         !profile ||
-        !['codex', 'claude'].includes(profile.harness) ||
+        !['codex', 'claude', 'pi'].includes(profile.harness) ||
         typeof profile.source?.root !== 'string' ||
         !path.isAbsolute(profile.source.root) ||
         !profile.env ||
         typeof profile.mcpServerName !== 'string'
       )
         continue;
-      const adapter = profile.harness === 'codex' ? codex : claude;
+      const adapter = profile.harness === 'codex' ? codex : profile.harness === 'claude' ? claude : pi;
       try {
         const sourceId = await adapter.resolveSource(profile, {});
         if (profile.name === 'hud-observer') ambientSource = sourceId;
@@ -1683,7 +1694,9 @@ export class HudDelegationCollector {
           writable: publishing && store !== null,
           ...(profile.harness === 'claude'
             ? { claudeFiles: new ClaudeTranscriptFiles(fs.realpathSync(profile.source.root), sourceId) }
-            : {}),
+            : profile.harness === 'pi'
+              ? { piFiles: new PiTranscriptFiles(fs.realpathSync(profile.source.root), sourceId) }
+              : {}),
           store,
           storeIdentity: store ? identity(store.databasePath) : null,
           storeSignature: '',
