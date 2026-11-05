@@ -243,6 +243,65 @@ test('Claude configuration fails closed for remote/WSL, uncovered selectors, ext
   }
 });
 
+test('Claude ordinary and WSL candidates retain explicit policy gaps without reading account or credential contents', () => {
+  const f = fixture();
+  try {
+    delete f.request.env.CLAUDE_CODE_USE_BEDROCK;
+    // Invalid and oversized content is intentionally never read by the local
+    // metadata inventory. Account and credential paths are not even inventoried.
+    writeFileSync(join(f.request.sourceRoot, 'settings.json'), 'synthetic-private-marker'.repeat(20000));
+    symlinkSync('/synthetic/must-not-follow', join(f.request.sourceRoot, '.claude.json'));
+    symlinkSync('/synthetic/must-not-follow', join(f.request.sourceRoot, '.credentials.json'));
+    f.request.argv = [...f.request.argv, '--settings', '/synthetic/must-not-probe'];
+    const ordinary = f.observe();
+    assert.equal(ordinary.observation, null);
+    assert.equal(ordinary.candidate?.status, 'unverified');
+    assert.equal(ordinary.candidate?.provider.authentication, 'unobserved');
+    assert.ok(ordinary.candidate?.blockers.includes('configuration_remote_sources_unobserved'));
+    assert.ok(ordinary.candidate?.blockers.includes('configuration_selection_unobserved'));
+    assert.equal(ordinary.candidate?.localLayers.length, 7);
+    assert.equal(JSON.stringify(ordinary).includes('synthetic-private-marker'), false);
+    assert.equal(JSON.stringify(ordinary).includes('must-not'), false);
+    assert.equal(
+      ordinary.candidate?.localLayers.every((entry) => entry.receipt.fingerprint === null),
+      true
+    );
+    f.request.kernel = 'synthetic-microsoft-standard-WSL2';
+    const unknownWindows = f.observe();
+    assert.equal(unknownWindows.reason, 'configuration_windows_system_identity_unobserved');
+    assert.equal(unknownWindows.candidate?.platform, 'wsl');
+    const windowsRoot = join(f.root, 'windows-managed');
+    mkdirSync(windowsRoot);
+    json(join(windowsRoot, 'managed-settings.json'), { wslInheritsWindowsSettings: true, hooks: {} });
+    const windows = {
+      system: () => ({
+        regExe: '/synthetic/Windows/System32/reg.exe',
+        managedRoot: windowsRoot,
+        executableIdentity: 'synthetic-system',
+        interopIdentity: 'synthetic-interop',
+      }),
+      query: () => ({
+        status: 1,
+        stdout: '',
+        stderr: 'ERROR: The system was unable to find the specified registry key or value.',
+      }),
+    };
+    const captured = observeClaudeConfiguration(f.request, { managedRoot: f.managedRoot, windows });
+    assert.equal(captured.observation, null);
+    assert.equal(captured.candidate?.windows?.observation?.localChain, 'windows-admin');
+    assert.ok(captured.candidate?.blockers.includes('configuration_windows_effective_merge_unverified'));
+    assert.ok(captured.candidate?.blockers.includes('configuration_remote_sources_unobserved'));
+    rmSync(join(windowsRoot, 'managed-settings.json'));
+    symlinkSync('/synthetic/must-not-follow', join(windowsRoot, 'managed-settings.json'));
+    const unsafe = observeClaudeConfiguration(f.request, { managedRoot: f.managedRoot, windows });
+    assert.equal(unsafe.observation, null);
+    assert.equal(unsafe.candidate?.windows?.observation, null);
+    assert.equal(unsafe.reason, 'configuration_symlink_unverified');
+  } finally {
+    f.close();
+  }
+});
+
 function planFixture(f: ReturnType<typeof fixture>, cwd: string, literal = false) {
   const native = nativeFile(process.execPath)!;
   const executable = { ...native, version: process.versions.node };

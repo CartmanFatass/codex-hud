@@ -32,7 +32,7 @@ import { makeHookSettings } from '../../packages/hud-mcp/src/hook/record.js';
 import { digest } from '../../src/core/canonical.js';
 import { claudeCommand } from '../../src/cli/launcher.js';
 import { delegateConfig } from '../../src/cli/runtime.js';
-import type { ClaudeConfiguration } from '../../src/cli/claude-configuration.js';
+import { observeClaudeConfiguration, type ClaudeConfiguration } from '../../src/cli/claude-configuration.js';
 
 const identity = (path: string): NativeFile => ({
   path,
@@ -107,6 +107,18 @@ test('Claude tmux observer joins locator to bracketed server/process/TTY/foregro
     change(changed);
     assert.equal(sameTmuxStartup(actual, changed), false);
   }
+});
+
+test('Claude WSL reuses observed Linux procfs and tmux facts; environment labels do not replace kernel or TTY proof', async () => {
+  const f = observerFixture();
+  f.ports.kernel = 'synthetic-microsoft-standard-WSL2';
+  const actual = await observeClaudeTmux(f.env, f.ports);
+  assert.equal(actual?.kernel, f.ports.kernel);
+  assert.equal(actual?.platform, 'linux');
+  f.records.get(30)!.foregroundPgid = 99;
+  assert.equal(await observeClaudeTmux(f.env, f.ports), null);
+  f.ports.platform = 'win32';
+  assert.equal(await observeClaudeTmux(f.env, f.ports), null);
 });
 
 test('Claude tmux observer rejects forged locators, missing proof, wrong ancestry/TTY/group and replacement races', async () => {
@@ -298,6 +310,44 @@ test('Claude production matcher admits only exact synthetic plan, pins argv and 
     assert.deepEqual(readdirSync(f.root), []);
   } finally {
     f.close();
+  }
+});
+
+test('Claude unverified ordinary and WSL candidates cannot reach matcher or dispatch, even with synthetic capability evidence', async () => {
+  for (const wsl of [false, true]) {
+    const f = await launchFixture();
+    try {
+      if (wsl) f.startup.kernel = 'synthetic-microsoft-standard-WSL2';
+      let matching = 0,
+        launches = 0;
+      await assert.rejects(
+        launchClaudeInTmux(f.input, {
+          observe: async () => f.startup,
+          configuration: (request) => {
+            const result = observeClaudeConfiguration({ ...request, version: '2.1.305' });
+            assert.equal(result.candidate?.status, 'unverified');
+            // A mistaken composition cannot promote a candidate by attaching an
+            // otherwise complete synthetic configuration alongside it.
+            return { ...result, observation: f.input.configuration };
+          },
+          manifest: () => {
+            matching++;
+            return f.manifest;
+          },
+          hudRevision: 'synthetic-reviewed-build',
+          launch: async () => {
+            launches++;
+            return 0;
+          },
+        }),
+        /capability_unverified/
+      );
+      assert.equal(matching, 0);
+      assert.equal(launches, 0);
+      assert.deepEqual(readdirSync(f.root), []);
+    } finally {
+      f.close();
+    }
   }
 });
 

@@ -4,8 +4,8 @@ import {
   fstatSync,
   lstatSync,
   openSync,
+  opendirSync,
   readSync,
-  readdirSync,
   realpathSync,
   type BigIntStats,
 } from 'node:fs';
@@ -13,6 +13,12 @@ import { dirname, isAbsolute, join, parse, relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { canonicalJson, digest } from '../core/canonical.js';
 import { nativeFile } from './claude-tmux.js';
+import {
+  observeWindowsPolicy,
+  queryWindowsRegistry,
+  type WindowsPolicyPorts,
+  type WindowsPolicyResult,
+} from './claude-windows-policy.js';
 
 /** Local inputs only, not a claim to reconstruct Claude's effective merge.
  * Discovery references (accessed 2026-11-05):
@@ -53,6 +59,20 @@ export interface ClaudeConfigurationRequest {
 export interface ClaudeConfigurationResult {
   observation: ClaudeConfiguration | null;
   reason: string | null;
+  /** Partial evidence is never an input to capability matching or dispatch. */
+  candidate?: ClaudeUnverifiedCandidate;
+}
+export interface ClaudeUnverifiedCandidate {
+  schema: 'claude-unverified-local-metadata-v1';
+  status: 'unverified';
+  platform: 'linux' | 'wsl';
+  version: string;
+  kernel: string;
+  provider: { requested: 'bedrock' | 'ordinary-or-other'; authentication: 'unobserved' };
+  blockers: string[];
+  windows: WindowsPolicyResult | null;
+  /** Metadata only: no configuration, account or credential bytes are read. */
+  localLayers: { role: string; receipt: FileReceipt }[];
 }
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
@@ -73,7 +93,8 @@ const metadata = (s: BigIntStats) => ({
 /** No symlinks, devices, unbounded reads, guessed missing files or raw data output. */
 function capture(
   path: string,
-  budget: { bytes: number }
+  budget: { bytes: number },
+  contents = true
 ): { receipt: FileReceipt; value: Record<string, unknown> | null; entries: string[] | null } {
   if (!isAbsolute(path) || path.includes('\0') || path !== join(parse(path).root, relative(parse(path).root, path)))
     throw new Error('configuration_path_unverified');
@@ -101,12 +122,35 @@ function capture(
       continue;
     }
     if (info.isDirectory()) {
-      const entries = readdirSync(current).sort();
-      if (entries.length > 128) throw new Error('configuration_directory_too_large');
+      if (!contents)
+        return {
+          receipt: { path, state: 'directory', parents, file: metadata(info), fingerprint: null },
+          value: null,
+          entries: null,
+        };
+      const entries: string[] = [];
+      const directory = opendirSync(current);
+      try {
+        for (let entry = directory.readSync(); entry; entry = directory.readSync()) {
+          if (entries.length === 128) throw new Error('configuration_directory_too_large');
+          entries.push(entry.name);
+        }
+      } finally {
+        directory.closeSync();
+      }
+      entries.sort();
       return {
         receipt: { path, state: 'directory', parents, file: metadata(info), fingerprint: digest(entries) },
         value: null,
         entries,
+      };
+    }
+    if (!contents) {
+      if (!info.isFile()) throw new Error('configuration_file_unverified');
+      return {
+        receipt: { path, state: 'file', parents, file: metadata(info), fingerprint: null },
+        value: null,
+        entries: null,
       };
     }
     if (!info.isFile() || info.size > 262144n || Number(info.size) > budget.bytes)
@@ -244,21 +288,104 @@ function trustedGitExecutable(): string {
   return binary;
 }
 
+/** A bounded inventory, not a configuration identity or an effective merge.
+ * In particular, absence under /etc cannot establish Windows policy absence:
+ * WSL may inherit HKLM, Windows managed files/drop-ins and HKCU. Only an
+ * explicitly trusted host adapter may supply the Windows executable/mapping;
+ * no environment variable or assumed /mnt/c location establishes that trust.
+ * https://code.claude.com/docs/en/managed-settings (accessed 2026-11-05)
+ */
+function unverifiedCandidate(
+  request: ClaudeConfigurationRequest,
+  managedRoot: string,
+  wsl: boolean,
+  remote: boolean,
+  windowsPorts?: Pick<WindowsPolicyPorts, 'system'> & Partial<Pick<WindowsPolicyPorts, 'query'>>
+): ClaudeConfigurationResult {
+  const blockers = [
+    'configuration_contents_unobserved',
+    'configuration_selection_unobserved',
+    'configuration_global_account_and_mcp_unobserved',
+    'configuration_extensions_unobserved',
+    'configuration_authentication_unobserved',
+  ];
+  if (remote) blockers.push('configuration_remote_sources_unobserved', 'configuration_connectors_unobserved');
+  const windowsBudget = { bytes: 1048576 };
+  const windows = wsl
+    ? observeWindowsPolicy(
+        request.version,
+        windowsPorts && {
+          ...windowsPorts,
+          query: windowsPorts.query ?? queryWindowsRegistry,
+          read: (path) => capture(path, windowsBudget),
+        }
+      )
+    : null;
+  if (windows?.reason) blockers.push(windows.reason);
+  if (windows?.observation) blockers.push('configuration_windows_effective_merge_unverified');
+  const candidate: ClaudeUnverifiedCandidate = {
+    schema: 'claude-unverified-local-metadata-v1',
+    status: 'unverified',
+    platform: wsl ? 'wsl' : 'linux',
+    version: request.version,
+    kernel: request.kernel,
+    provider: { requested: remote ? 'ordinary-or-other' : 'bedrock', authentication: 'unobserved' },
+    blockers,
+    windows,
+    localLayers: [],
+  };
+  // Fixed paths only. Directory contents and global account/credential stores
+  // are deliberately not enumerated. Selector args/env cannot redirect probes.
+  for (const [role, path] of [
+    ['user-settings', join(request.sourceRoot, 'settings.json')],
+    ['project-settings', join(request.cwd, '.claude/settings.json')],
+    ['project-local-settings', join(request.cwd, '.claude/settings.local.json')],
+    ['project-mcp', join(request.cwd, '.mcp.json')],
+    ['managed-settings', join(managedRoot, 'managed-settings.json')],
+    ['managed-mcp', join(managedRoot, 'managed-mcp.json')],
+    ['managed-dropins', join(managedRoot, 'managed-settings.d')],
+  ]) {
+    try {
+      candidate.localLayers.push({ role, receipt: capture(path, { bytes: 0 }, false).receipt });
+    } catch (error) {
+      // Keep already-observed metadata, never turn an unreadable layer into a
+      // missing one or expose filesystem error text that may contain user data.
+      const reason =
+        error instanceof Error && error.message.startsWith('configuration_')
+          ? error.message
+          : 'configuration_unreadable';
+      blockers.push(reason);
+      break;
+    }
+  }
+  return {
+    observation: null,
+    reason: wsl
+      ? (windows?.reason ?? 'configuration_windows_effective_merge_unverified')
+      : 'configuration_remote_sources_unobserved',
+    candidate,
+  };
+}
+
 /** Read default local settings/MCP layers only. This does not disable any source.
  * The finite complete lane requires an already-selected Bedrock provider (no
  * remote policy/connectors), Linux without WSL policy, and no extra discovery.
- * Every other lane returns an explicit unknown result, including native versions
- * other than the currently targeted 2.1.305.
+ * WSL and ordinary provider configurations expose only an explicitly unverified
+ * metadata candidate. Other native versions remain unknown without observation.
  */
 export function observeClaudeConfiguration(
   request: ClaudeConfigurationRequest,
   /** Trusted test/composition dependencies, never CLI/config/env selectors. */
-  trusted: { managedRoot?: string; gitExecutable?: () => string } = {}
+  trusted: {
+    managedRoot?: string;
+    gitExecutable?: () => string;
+    windows?: Pick<WindowsPolicyPorts, 'system'> & Partial<Pick<WindowsPolicyPorts, 'query'>>;
+  } = {}
 ): ClaudeConfigurationResult {
   try {
     if (request.version !== '2.1.305') throw new Error('configuration_version_uncovered');
-    if (/microsoft|wsl/i.test(request.kernel)) throw new Error('configuration_windows_policy_unobserved');
-    if (
+    const wsl = /microsoft|wsl/i.test(request.kernel);
+    const remote =
       request.env.CLAUDE_CODE_USE_BEDROCK !== '1' ||
       Object.keys(request.env).some(
         (key) =>
@@ -266,9 +393,9 @@ export function observeClaudeConfiguration(
           /^(?:CLAUDE_CODE_USE_(?:VERTEX|FOUNDRY)|CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST|ANTHROPIC_BASE_URL|ANTHROPIC_PROFILE|.*GATEWAY.*)$/.test(
             key
           )
-      )
-    )
-      throw new Error('configuration_remote_sources_unobserved');
+      );
+    if (wsl || remote)
+      return unverifiedCandidate(request, trusted.managedRoot ?? '/etc/claude-code', wsl, remote, trusted.windows);
     if (Object.keys(request.env).some((key) => key.startsWith('GIT_') && request.env[key]))
       throw new Error('configuration_git_selector_uncovered');
     const at = request.argv.indexOf('--', 1);

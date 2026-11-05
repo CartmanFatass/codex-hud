@@ -358,8 +358,9 @@ export async function launchClaudeInTmux(
     settings: input.settings,
   };
   const observeConfiguration = dependencies.configuration ?? observeClaudeConfiguration;
-  const configuration = observeConfiguration(configurationRequest).observation;
-  if (!configuration) return reject();
+  const configurationResult = observeConfiguration(configurationRequest);
+  const configuration = configurationResult.observation;
+  if (configurationResult.candidate || !configuration) return reject();
   const plan = claudeLaunchPlan({
     ...input,
     source,
