@@ -105,7 +105,7 @@ export function parsePutKey(key: string): { index: number; parentKey: string } |
 }
 
 function creationOf(pn: PNode): number {
-  return pn.proj.createdAt ?? Number.POSITIVE_INFINITY;
+  return Number.isFinite(pn.proj.createdAt) ? pn.proj.createdAt! : Number.POSITIVE_INFINITY;
 }
 
 /** §3.2: by subtree bucket, trouble newest first, the rest in creation order. */
@@ -114,14 +114,15 @@ export function compareSiblings(byCreation: boolean) {
     if (!byCreation) {
       if (a.sub.rank !== b.sub.rank) return a.sub.rank - b.sub.rank;
       if (a.sub.rank === 0) {
-        const d = (b.sub.sortAt ?? Number.NEGATIVE_INFINITY) - (a.sub.sortAt ?? Number.NEGATIVE_INFINITY);
-        if (d !== 0 && Number.isFinite(d)) return d;
+        const ta = Number.isFinite(a.sub.sortAt) ? a.sub.sortAt! : Number.NEGATIVE_INFINITY;
+        const tb = Number.isFinite(b.sub.sortAt) ? b.sub.sortAt! : Number.NEGATIVE_INFINITY;
+        if (ta !== tb) return ta > tb ? -1 : 1;
       }
     }
     const ca = creationOf(a);
     const cb = creationOf(b);
-    if (ca !== cb && Number.isFinite(ca) && Number.isFinite(cb)) return ca - cb;
-    return a.index - b.index;
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    return a.index - b.index || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
   };
 }
 
