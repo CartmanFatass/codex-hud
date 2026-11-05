@@ -4,6 +4,8 @@ import { projectLinkTree, planLinkRead } from '../../src/core/link/index.js';
 import { displayNodeKey } from '../../src/core/observation.js';
 import type { LinkTreeInput } from '../../src/core/link/index.js';
 import type { DisplayNodeIdentity } from '../../src/core/types/observation.js';
+import { LinkTickCollector } from '../../src/core/link/tick.js';
+import { buildVm, S } from '../fixtures/b10b-delegation.js';
 
 const degraded = { state: 'degraded', snapshot: null, reason: 'ledger_unavailable' } as const;
 const input = (roots: DisplayNodeIdentity[]): LinkTreeInput => ({ ledger: degraded, roots, sessions: [], nowMs: 1000 });
@@ -115,4 +117,55 @@ test('a session blocked only by the remaining shared bytes resumes on the next s
   assert.equal(next.target?.key, large.key);
   if (!next.target) throw new Error('expected target');
   assert.equal(next.budget.maxBytes, 4096);
+});
+
+test('the retained cursor orders alternating eligibility even when its target is no longer pending', () => {
+  const roots: DisplayNodeIdentity[] = ['A', 'B', 'C'].map((sessionId) => ({
+    kind: 'session',
+    ref: { harness: 'codex', sourceId: '1'.repeat(64), sessionId, threadId: null },
+  }));
+  const tree = projectLinkTree(input(roots));
+  const [a, b, c] = tree.continuation;
+  tree.continuation = [a, c];
+  const first = planLinkRead(tree, { remainingMs: 10 });
+  assert.equal(first.target?.key, a.key);
+  tree.continuation = [b, c];
+  const second = planLinkRead(tree, { remainingMs: 10, afterKey: first.nextCursor! });
+  assert.equal(second.target?.key, b.key);
+  tree.continuation = [a, c];
+  const third = planLinkRead(tree, { remainingMs: 10, afterKey: second.nextCursor! });
+  assert.equal(third.target?.key, c.key);
+  const removed = planLinkRead(tree, { remainingMs: 10, afterKey: 'removed' });
+  assert.equal(removed.target?.key, a.key, 'a genuinely removed cursor starts at the retained head');
+  const none = planLinkRead({ ...tree, continuation: [] }, { remainingMs: 10, afterKey: b.key });
+  assert.deepEqual(none, { target: null, reason: 'no_eligible_target', nextCursor: b.key });
+});
+
+test('collector tick preserves retained order as pending work alternates A/B while C waits', async () => {
+  const roots: DisplayNodeIdentity[] = ['A', 'B', 'C'].map((sessionId) => ({
+    kind: 'session',
+    ref: { harness: 'codex', sourceId: '1'.repeat(64), sessionId, threadId: null },
+  }));
+  let pending = new Set(['A', 'C']);
+  const collected: string[] = [];
+  const port = {
+    sessions: () => [],
+    pending: (ref: { sessionId: string }) => (pending.has(ref.sessionId) ? ('session' as const) : null),
+    collect: async (ref: { sessionId: string }) => {
+      collected.push(ref.sessionId);
+      return null;
+    },
+  };
+  const limits = buildVm([{ id: 'root', root: true, status: S.working() }]).vm.limits;
+  const collector = new LinkTickCollector({ close() {} } as never, '/synthetic', limits, port as never);
+  try {
+    await collector.tick({ roots, ledgerUnavailableReason: 'synthetic' });
+    pending = new Set(['B', 'C']);
+    await collector.tick({ roots, ledgerUnavailableReason: 'synthetic' });
+    pending = new Set(['A', 'C']);
+    await collector.tick({ roots, ledgerUnavailableReason: 'synthetic' });
+    assert.deepEqual(collected, ['A', 'B', 'C']);
+  } finally {
+    collector.close();
+  }
 });

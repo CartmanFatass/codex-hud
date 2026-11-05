@@ -403,8 +403,9 @@ export class LinkTickCollector {
       for (const node of this.tree?.nodes ?? [])
         if (node.identity.kind === 'session' && node.crossHarnessDepth <= (input.budget?.maxCrossHarnessDepth ?? 4))
           refs.set(this.referenceKey(node.identity.ref), node.identity.ref);
+      const orderedRefs = [...refs].slice(0, Math.min(200, input.budget?.maxNodes ?? 200));
       const eligible = [];
-      for (const [key, ref] of [...refs].slice(0, Math.min(200, input.budget?.maxNodes ?? 200))) {
+      for (const [key, ref] of orderedRefs) {
         const kind = this.port.pending(ref, key);
         if (kind)
           eligible.push({
@@ -416,7 +417,7 @@ export class LinkTickCollector {
       const charged = retained.reduce((sum, s) => sum + s.bytesRead + (s.topology?.bytesRead ?? 0), 0);
       const schedulingTree = {
         ...this.tree,
-        nodes: eligible.map((e) => ({ key: e.key })),
+        nodes: orderedRefs.map(([key]) => ({ key })),
         continuation: eligible,
         io: { remainingBytes: Math.max(0, maxBytes - charged), exceeded: charged > maxBytes },
       } as LinkTreeProjection;
