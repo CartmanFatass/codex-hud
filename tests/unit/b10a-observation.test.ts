@@ -198,13 +198,59 @@ test('publishing recovery charges exact checkpoint I/O and retains it across an 
   }
   assert.ok(source.adapter.collectionState(f.child.ref, false).file, 'native discovery completed');
   port.takeUnattributedIO();
+  let leaseReads = 0;
+  let leaseAcquisitions = 0;
+  let leaseRenewals = 0;
+  const readLease = store.readLease.bind(store);
+  const acquire = store.acquire.bind(store);
+  const renew = store.renew.bind(store);
+  store.readLease = (...args: any[]) => {
+    leaseReads++;
+    return readLease(...args);
+  };
+  store.acquire = (...args: any[]) => {
+    leaseAcquisitions++;
+    return acquire(...args);
+  };
+  store.renew = (...args: any[]) => {
+    leaseRenewals++;
+    return renew(...args);
+  };
+  for (const refused of [
+    { ...budget, maxBytes: 0 },
+    { ...budget, maxRecords: 0 },
+    { ...budget, budgetMs: 0 },
+    { ...budget, budgetMs: Number.NaN },
+  ]) {
+    port.begin(performance.now() + 2000);
+    port.readings.get(key).rateTarget = undefined;
+    leaseReads = leaseAcquisitions = leaseRenewals = 0;
+    await port.collect(f.child.ref, 'session', refused);
+    assert.deepEqual([leaseReads, leaseAcquisitions, leaseRenewals], [0, 0, 0]);
+    assert.equal(results.length, 0);
+    assert.equal(port.readings.get(key).publisher, undefined);
+  }
+  port.begin(performance.now() - 1);
+  port.readings.get(key).rateTarget = undefined;
+  leaseReads = leaseAcquisitions = leaseRenewals = 0;
+  await port.collect(f.child.ref, 'session', budget);
+  assert.deepEqual([leaseReads, leaseAcquisitions, leaseRenewals], [0, 0, 0]);
+  assert.equal(results.length, 0);
   // Isolate writer recovery from the separately tested optional display-rate recovery.
   port.begin(performance.now() + 2000);
   port.readings.get(key).rateTarget = undefined;
   await port.collect(f.child.ref, 'session', budget);
   assert.equal(results[0]?.kind, 'continuation');
+  assert.ok(leaseAcquisitions > 0, 'a later ordinary grant can still acquire authority');
   assert.equal(port.readings.get(key).recoveryPending, true);
   assert.deepEqual(port.takeUnattributedIO(), { bytesRead: 0, recordsRead: 0 });
+  port.begin(performance.now() + 2000);
+  port.readings.get(key).rateTarget = undefined;
+  leaseReads = leaseAcquisitions = leaseRenewals = 0;
+  await port.collect(f.child.ref, 'session', { ...budget, budgetMs: 0 });
+  assert.deepEqual([leaseReads, leaseAcquisitions, leaseRenewals], [0, 0, 0], 'held authority is not renewed');
+  assert.equal(results.length, 1);
+  assert.equal(port.readings.get(key).recoveryPending, true);
   port.begin(performance.now() + 2000);
   port.readings.get(key).rateTarget = undefined;
   await port.collect(f.child.ref, 'session', budget);

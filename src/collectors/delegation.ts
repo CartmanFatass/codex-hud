@@ -663,6 +663,19 @@ class SessionCollection implements LinkCollectionPort {
     if (!source) return null;
     const reading = this.reading(ref);
     ref = reading.ref;
+    // A refused session grant must not acquire or renew collection authority.
+    // Recheck below after any discovery work, which also shares this deadline.
+    if (
+      kind === 'session' &&
+      (!Number.isFinite(budget.budgetMs) ||
+        !Number.isSafeInteger(budget.maxBytes) ||
+        !Number.isSafeInteger(budget.maxRecords) ||
+        budget.budgetMs <= 0 ||
+        budget.maxBytes <= 0 ||
+        budget.maxRecords <= 0 ||
+        performance.now() >= this.deadline)
+    )
+      return reading.envelope ?? null;
     reading.lastGrantedKind = kind;
     if (kind === 'native_topology') {
       const topology = source.adapter.collectTopology
@@ -809,6 +822,7 @@ class SessionCollection implements LinkCollectionPort {
         budget = { ...budget, budgetMs: Math.max(0, Math.floor(collectionDeadline - performance.now())) };
         if (budget.budgetMs === 0) return reading.envelope ?? null;
       }
+      if (performance.now() >= Math.min(collectionDeadline, this.deadline)) return reading.envelope ?? null;
       const publisher = this.publisher(source, reading);
       if (this.publishing) {
         if (!publisher) {
