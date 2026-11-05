@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { RunArtifacts } from '../../src/core/run/artifacts.js';
+import { RunArtifacts, RUN_META_READ_BYTES } from '../../src/core/run/artifacts.js';
 import type { FinalExitReceipt, RunMeta } from '../../src/core/types/supervision.js';
 
 const supported = process.platform === 'linux';
@@ -321,4 +321,74 @@ test('crash after final rename leaves a recoverable receipt without metadata', {
     assert.equal(child.status, 74, child.stderr);
     assert.deepEqual(RunArtifacts.open(home, 'run-one').readExit(), receipt());
   })
+);
+
+test(
+  'bounded metadata accepts the byte limit, rejects larger files and preserves writer/recovery semantics',
+  { skip: !supported },
+  () =>
+    fixture((home) => {
+      const writer = RunArtifacts.create(home, 'run-one');
+      writer.writeMeta(meta());
+      const reader = RunArtifacts.open(home, 'run-one');
+      const path = join(writer.directory, 'meta.json');
+      const json = JSON.stringify(meta());
+      writeFileSync(path, json.padEnd(RUN_META_READ_BYTES, ' '));
+      assert.deepEqual(reader.readMetaBounded(), meta());
+      writeFileSync(path, json.padEnd(RUN_META_READ_BYTES + 1, ' '));
+      assert.throws(() => reader.readMetaBounded(), /run_meta_too_large/);
+      assert.deepEqual(reader.readMeta(), meta());
+      writer.writeMeta(meta());
+      assert.deepEqual(reader.readMetaBounded(), meta());
+    })
+);
+
+test(
+  'bounded metadata performs no allocation/read/parse for oversize and caps reads after fstat growth',
+  { skip: !supported },
+  () =>
+    fixture((home) => {
+      const writer = RunArtifacts.create(home, 'run-one');
+      writer.writeMeta(meta());
+      const path = join(writer.directory, 'meta.json');
+      const moduleUrl = new URL('../../src/core/run/artifacts.js', import.meta.url).href;
+      // Instrument built-in seams in an owned subprocess, without changing the parent test runtime.
+      const source = `
+      import assert from 'node:assert/strict';
+      import fs from 'node:fs';
+      import { syncBuiltinESMExports } from 'node:module';
+      import { RunArtifacts, RUN_META_READ_BYTES } from ${JSON.stringify(moduleUrl)};
+      const reader = RunArtifacts.open(${JSON.stringify(home)}, 'run-one');
+      const path = ${JSON.stringify(path)};
+      const original = fs.readFileSync(path);
+      fs.appendFileSync(path, ' '.repeat(8 * 1024 * 1024));
+      const read = fs.readSync, stat = fs.fstatSync, alloc = Buffer.alloc, parse = JSON.parse;
+      let reads = 0, allocations = 0, parses = 0, bytes = 0;
+      fs.readFileSync = () => { throw new Error('unbounded read'); };
+      fs.readSync = (...args) => { reads++; bytes += args[3]; return read(...args); };
+      Buffer.alloc = (...args) => { allocations++; assert.ok(args[0] <= RUN_META_READ_BYTES + 1); return alloc(...args); };
+      JSON.parse = (...args) => { parses++; return parse(...args); };
+      syncBuiltinESMExports();
+      assert.throws(() => reader.readMetaBounded(), /run_meta_too_large/);
+      assert.deepEqual([reads, allocations, parses], [0, 0, 0]);
+      fs.writeFileSync(path, original);
+      let grown = false;
+      fs.fstatSync = (...args) => {
+        const result = stat(...args);
+        if (result.isFile() && !grown) {
+          grown = true;
+          fs.appendFileSync(path, ' '.repeat(8 * 1024 * 1024));
+        }
+        return result;
+      };
+      syncBuiltinESMExports();
+      assert.throws(() => reader.readMetaBounded(), /run_meta_too_large/);
+      assert.equal(grown, true);
+      assert.equal(allocations, 1);
+      assert.equal(parses, 0);
+      assert.ok(bytes <= RUN_META_READ_BYTES + 1);
+    `;
+      const child = spawnSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8' });
+      assert.equal(child.status, 0, child.stderr);
+    })
 );

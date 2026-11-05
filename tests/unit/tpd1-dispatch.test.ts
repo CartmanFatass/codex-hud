@@ -59,7 +59,7 @@ test('R from the displayed frame copies exactly the displayed descriptor, and st
   assert.match(await dispatchDelegationAction(action, frame.delegation?.vm, vm, false, ports), /changed/);
   assert.equal(seen.length, 1);
 });
-test('L from the displayed frame exposes a verified log path; missing logs are unavailable', async () => {
+test('L from the displayed frame opens the bounded viewer; absent viewer is unavailable', async () => {
   const { vm, frame } = view('headless');
   const action = press(frame, 'log').action;
   assert.equal(action?.type, 'delegation-log');
@@ -71,16 +71,10 @@ test('L from the displayed frame exposes a verified log path; missing logs are u
     const logs = artifacts.openLogs();
     closeSync(logs.stdout);
     closeSync(logs.stderr);
-    const ports = { home, copy: async () => false };
-    assert.equal(
-      await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, ports),
-      `Log: stdout: ${join(artifacts.directory, 'stdout.log')} · stderr: ${join(artifacts.directory, 'stderr.log')}`
-    );
+    const ports = { home, copy: async () => false, openLog: () => true };
+    assert.equal(await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, ports), 'Log viewer opened.');
     unlinkSync(join(artifacts.directory, 'stderr.log'));
-    assert.equal(
-      await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, ports),
-      `Log: stdout: ${join(artifacts.directory, 'stdout.log')} · stderr: unavailable`
-    );
+    assert.equal(await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, ports), 'Log viewer opened.');
     assert.equal(
       await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, { ...ports, home: null }),
       'Log unavailable for this run.'
@@ -440,7 +434,7 @@ test('clipboard failure is honestly reported by the real monitor notice without 
   }
 });
 
-test('long log paths render an explicit truncation notice in a narrow monitor', async () => {
+test('missing log viewer reports unavailable without exposing filesystem paths', async () => {
   const { vm, frame, keys } = view('headless');
   const action = press(frame, 'log').action;
   if (!action || action.type !== 'delegation-log') throw new Error('missing action');
@@ -456,13 +450,13 @@ test('long log paths render an explicit truncation notice in a narrow monitor', 
       copy: async () => false,
     });
     const notice = boundedActionNotice(message, 32);
-    assert.equal(notice, 'Log paths too long to display.');
+    assert.equal(notice, 'Log viewer unavailable for this run.');
     const displayed = text(
       renderMonitor({ ...monitorInput(vm, { selected: keys.worker, width: 32, height: 24 }), notice })
     )
       .join(' ')
       .replace(/\s+/g, ' ');
-    assert.match(displayed, /Log paths too long to display\./);
+    assert.match(displayed.replace(/\s/g, ''), /Logviewerunavailableforthisrun\./);
     assert.ok(!displayed.includes(home));
   } finally {
     rmSync(home, { recursive: true, force: true });

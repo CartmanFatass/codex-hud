@@ -17,7 +17,7 @@ import type { Registration } from '../../packages/hud-mcp/src/registry.js';
 import type { ProcessInfo, ProcessReaderPort } from '../../packages/hud-mcp/src/process.js';
 
 export const hashClaim = (claim: string) => createHash('sha256').update(claim).digest('hex');
-export async function handshakeFixture() {
+export async function handshakeFixture(visible = false) {
   const root = mkdtempSync(join(tmpdir(), 'hud-b45-handshake-'));
   const ledger = await openLedger(join(root, 'ledger.sqlite'));
   const sourceId = makeSourceId('codex', root);
@@ -158,7 +158,7 @@ export async function handshakeFixture() {
     requestKey: 'synthetic-spawn',
     params: {
       sourceId,
-      mode: 'headless',
+      mode: visible ? 'visible' : 'headless',
       backend: 'codex',
       role: 'implementer',
       briefPath: '/synthetic/brief.md',
@@ -196,11 +196,11 @@ export async function handshakeFixture() {
       sourceId,
       harness: 'codex',
       expectedGeneration: 1,
-      mode: 'headless',
+      mode: visible ? 'visible' : 'headless',
       launchCwd: root,
       workspaceSnapshot: null,
       projectOrigin: null,
-      supervisionStrategy: 'headless',
+      supervisionStrategy: visible ? 'wrapper' : 'headless',
       scopeKind: 'pgid',
       scopeRef: null,
       state: 'starting',
@@ -287,8 +287,8 @@ export async function handshakeFixture() {
     link_id: 'link-a',
     source_id: sourceId,
     binding_generation: 1,
-    mode: 'headless',
-    supervision_strategy: 'headless',
+    mode: visible ? 'visible' : 'headless',
+    supervision_strategy: visible ? 'wrapper' : 'headless',
     supervisor,
     command_leader: harness,
     harness,

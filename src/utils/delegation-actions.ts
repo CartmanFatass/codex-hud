@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process';
 import { join, isAbsolute, delimiter } from 'node:path';
-import { lstatSync, accessSync, realpathSync, constants } from 'node:fs';
-import { RunArtifacts } from '../core/run/artifacts.js';
+import { accessSync, realpathSync, constants } from 'node:fs';
 import type { HostAdapter } from '../core/interfaces/host-adapter.js';
 import type { DelegationViewModel } from '../core/link/view-model.js';
 import type { DelegationAction } from '../render/delegation/actions.js';
@@ -18,13 +17,17 @@ export async function dispatchDelegationAction(
     copy: (text: string) => Promise<boolean | ClipboardResult>;
     host?: Pick<HostAdapter, 'locate' | 'focus'>;
     isCurrent?: () => boolean;
+    open?: () => Promise<string>;
+    openLog?: () => boolean;
   }
 ): Promise<string> {
-  if (!sameRootAndEpoch || !drawn || drawn !== current) return 'Selection changed; try again.';
+  if (!sameRootAndEpoch || !drawn || !sameDelegationActionTarget(drawn, current, action.key))
+    return 'Selection changed; try again.';
   const node = drawn.tree.nodes.find((item) => item.key === action.key);
   if (!node) return 'Selection changed; try again.';
   if (action.type === 'delegation-diagnostic') return action.text;
   if (action.type === 'delegation-open') {
+    if (ports.open) return ports.open();
     if (!ports.host) return 'Open unavailable: no host adapter is connected.';
     if (!node.currentRun || !node.host?.currentState) return 'Open unavailable for this run.';
     try {
@@ -43,22 +46,7 @@ export async function dispatchDelegationAction(
     return result === 'unconfirmed' ? `Clipboard unconfirmed: ${command}` : `Not copied: ${command}`;
   }
   if (node.currentRun?.mode !== 'headless' || !ports.home) return 'Log unavailable for this run.';
-  try {
-    const artifacts = RunArtifacts.open(ports.home, node.currentRun.runId);
-    const streams = (['stdout', 'stderr'] as const).map((stream) => {
-      try {
-        const file = join(artifacts.directory, `${stream}.log`);
-        if (!lstatSync(file).isFile()) return `${stream}: unavailable`;
-        artifacts.readLog(stream, 0, 1);
-        return `${stream}: ${file}`;
-      } catch {
-        return `${stream}: unavailable`;
-      }
-    });
-    return `Log: ${streams.join(' · ')}`;
-  } catch {
-    return 'Log unavailable for this run.';
-  }
+  return ports.openLog?.() ? 'Log viewer opened.' : 'Log viewer unavailable for this run.';
 }
 
 export type ClipboardResult = 'copied' | 'unavailable' | 'unconfirmed';
@@ -320,6 +308,9 @@ export function sameDelegationActionTarget(
         seq: run.runSeq,
         generation: run.expectedGeneration,
         mode: run.mode,
+        source: run.sourceId,
+        harness: run.harness,
+        locator: run.locator,
       },
       host: node.host?.locator ?? null,
       descriptor: vm.details[key]?.reconcile ?? null,

@@ -17,6 +17,9 @@ import { isDeepStrictEqual } from 'node:util';
 import { inspectReceipt, receiptEligibility, sameProcessStamp, scopeUpdateAllowed } from '../supervision.js';
 import type { FinalExitReceipt, RunMeta } from '../types/supervision.js';
 
+/** UI-only read bound; artifact writers and recovery retain their existing semantics. */
+export const RUN_META_READ_BYTES = 64 * 1024;
+
 type ObjectValue = Record<string, unknown>;
 const object = (v: unknown): v is ObjectValue => v !== null && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
@@ -154,6 +157,7 @@ const fdPath = (fd: number, name: string): string => `/proc/self/fd/${fd}/${name
 export class RunArtifacts {
   readonly directory: string;
   private identity: { dev: number; ino: number };
+  private logIdentities = new Map<string, { dev: number; ino: number }>();
 
   private constructor(
     private readonly hudHome: string,
@@ -245,11 +249,12 @@ export class RunArtifacts {
     }
   }
 
-  private assertFile(fd: number): void {
+  private assertFile(fd: number) {
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.uid !== process.getuid!() || (stat.mode & 0o7777) !== 0o600 || stat.nlink !== 1) {
       throw new Error('unsafe_run_file');
     }
+    return stat;
   }
 
   private parse<T>(bytes: Buffer | null, check: (v: unknown) => v is T): T | null {
@@ -363,6 +368,36 @@ export class RunArtifacts {
     return this.withDirectory((fd) => this.metaAt(fd));
   }
 
+  /** Main-thread consumers must refuse large metadata before allocation or JSON decoding. */
+  readMetaBounded(): RunMeta | null {
+    return this.withDirectory((fd) => {
+      let file: number;
+      try {
+        file = openSync(fdPath(fd, 'meta.json'), fileFlags);
+      } catch (error) {
+        if (missing(error)) return null;
+        throw error;
+      }
+      try {
+        if (this.assertFile(file).size > RUN_META_READ_BYTES) throw new Error('run_meta_too_large');
+        // A fixed extra byte detects growth after fstat without an unbounded readFileSync.
+        const bytes = Buffer.alloc(RUN_META_READ_BYTES + 1);
+        let count = 0;
+        while (count < bytes.length) {
+          const n = readSync(file, bytes, count, bytes.length - count, count);
+          if (n === 0) break;
+          count += n;
+        }
+        if (count > RUN_META_READ_BYTES || this.assertFile(file).size > RUN_META_READ_BYTES)
+          throw new Error('run_meta_too_large');
+        const meta = this.parse(bytes.subarray(0, count), isMeta);
+        return meta?.run_id === this.runId ? meta : null;
+      } finally {
+        closeSync(file);
+      }
+    });
+  }
+
   readExit(): FinalExitReceipt | null {
     return this.withDirectory((fd) => {
       const receipt = this.parse(this.readBytes(fd, 'exit.json'), isReceipt);
@@ -387,6 +422,15 @@ export class RunArtifacts {
   }
 
   readLog(stream: 'stdout' | 'stderr', offset: number, limit = 64 * 1024): { data: Buffer; nextOffset: number } {
+    return this.readLogRange(stream, offset, limit, false);
+  }
+
+  /** Pin each stream on first successful read; same-inode append/truncate is valid, replacement is not. */
+  readLogPinned(stream: 'stdout' | 'stderr', offset: number, limit = 64 * 1024): { data: Buffer; nextOffset: number } {
+    return this.readLogRange(stream, offset, limit, true);
+  }
+
+  private readLogRange(stream: 'stdout' | 'stderr', offset: number, limit: number, pinned: boolean) {
     if (!oneOf(stream, ['stdout', 'stderr']) || !uint(offset) || !uint(limit) || limit > 16 * 1024 * 1024)
       throw new Error('invalid_log_range');
     return this.withDirectory((fd) => {
@@ -394,12 +438,20 @@ export class RunArtifacts {
       try {
         file = openSync(fdPath(fd, `${stream}.log`), fileFlags);
       } catch (error) {
-        if (missing(error)) return { data: Buffer.alloc(0), nextOffset: offset };
+        if (missing(error)) {
+          if (pinned && this.logIdentities.has(stream)) throw new Error('run_log_replaced');
+          return { data: Buffer.alloc(0), nextOffset: offset };
+        }
         throw error;
       }
       try {
-        this.assertFile(file);
-        const data = Buffer.alloc(Math.min(limit, Math.max(0, fstatSync(file).size - offset)));
+        const stat = this.assertFile(file);
+        if (pinned) {
+          const identity = this.logIdentities.get(stream);
+          if (identity && (identity.dev !== stat.dev || identity.ino !== stat.ino)) throw new Error('run_log_replaced');
+          this.logIdentities.set(stream, { dev: stat.dev, ino: stat.ino });
+        }
+        const data = Buffer.alloc(Math.min(limit, Math.max(0, stat.size - offset)));
         const count = data.length ? readSync(file, data, 0, data.length, offset) : 0;
         return { data: data.subarray(0, count), nextOffset: offset + count };
       } finally {

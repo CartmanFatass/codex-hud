@@ -1,5 +1,12 @@
 import { performance } from 'node:perf_hooks';
 import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
+import {
+  PanelHostController,
+  panelHostTarget,
+  panelHostStamp,
+  withPanelHostAvailability,
+} from './integrations/herdr/panel-host.js';
+import { DelegationLogView, type LogFrame } from './utils/delegation-log-view.js';
 import { initialParserState } from './core/observation.js';
 import type { DelegationViewModel } from './core/link/view-model.js';
 /** Live keyboard/mouse workbench beside the compact HUD. */
@@ -330,6 +337,51 @@ async function runLivePage(): Promise<void> {
   const clipboard = createClipboardProvider();
   const navigateOnce = createNavigationGate();
   const openOnce = createOpenGate();
+  const runLogs = new DelegationLogView();
+  let logFrame: LogFrame | undefined;
+  const panelHost = new PanelHostController({ home: delegationCollector?.home ?? null });
+  let panelDelegation: DelegationViewModel | null = null;
+  let appliedDelegation: DelegationViewModel | null = null;
+  let appliedHost: typeof panelHost.snapshot = null;
+  let panelEpoch = 0;
+  let panelSelection = '';
+  const logContext = () => ({
+    vm: panelDelegation,
+    root: tree.rootId,
+    epoch: panelEpoch,
+    selected: state.tree.selectedId,
+  });
+  const syncPanelView = () => {
+    const selection = JSON.stringify([tree.rootId, state.tree.selectedId]);
+    if (selection !== panelSelection) {
+      panelSelection = selection;
+      panelEpoch++;
+      runLogs.close();
+      panelHost.invalidate();
+    }
+    if (appliedDelegation !== delegation || appliedHost !== panelHost.snapshot) {
+      appliedDelegation = delegation;
+      appliedHost = panelHost.snapshot;
+      panelDelegation = withPanelHostAvailability(delegation, panelHost.snapshot);
+    }
+    if (runLogs.isOpen && !runLogs.valid(logContext())) runLogs.close();
+  };
+  const refreshPanelHost = () => {
+    if (closed) return;
+    syncPanelView();
+    const target = panelHostTarget(delegation, state.tree.selectedId);
+    const epoch = panelEpoch;
+    const current = () => {
+      const next = panelHostTarget(delegation, state.tree.selectedId);
+      return !closed && epoch === panelEpoch && !!target && !!next && panelHostStamp(target) === panelHostStamp(next);
+    };
+    void panelHost.refresh(target, current).then(() => {
+      if (!closed) {
+        syncPanelView();
+        render();
+      }
+    });
+  };
   let lastClickSwitch: { id: string; at: number } | undefined;
   let navigationMessage: string | null = null;
   let tree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
@@ -515,7 +567,12 @@ async function runLivePage(): Promise<void> {
   const hudStatus = new HudStatus(HUD_CWD, () => render(), 30_000);
   const currentHud = () => {
     const data = hudStatus.current();
-    return data ? { ...data, modelHealth: settings.briefing === 'off' ? undefined : model.diagnostics() } : undefined;
+    return data
+      ? {
+          ...data,
+          modelHealth: settings.briefing === 'off' ? undefined : model.diagnostics(),
+        }
+      : undefined;
   };
   const observeActivity = () => {
     if (tree.rootId !== journalRoot) {
@@ -614,9 +671,13 @@ async function runLivePage(): Promise<void> {
   };
   const render = () => {
     if (closed) return;
+    syncPanelView();
     const output = time('render', () => {
       let lines: string[];
-      if (activityHub) {
+      if (runLogs.isOpen) {
+        logFrame = runLogs.render(process.stdout.columns || 30, process.stdout.rows || 24);
+        lines = logFrame.lines;
+      } else if (activityHub) {
         activityFrame = renderActivityHub(
           journal.view(),
           activityHub,
@@ -697,9 +758,14 @@ async function runLivePage(): Promise<void> {
           error,
           publicationNotice: publicationError ? t('Publisher unavailable; read-only') : null,
           nowMs,
-          hud,
+          hud: hud ? { ...hud, delegation: panelDelegation } : hud,
           notice:
-            (navigationMessage ? boundedActionNotice(navigationMessage, width) : null) || hudProblems(hud, nowMs, t)[0],
+            (navigationMessage ? boundedActionNotice(navigationMessage, width) : null) ||
+            panelHost.snapshot?.reason ||
+            (panelHostTarget(panelDelegation, state.tree.selectedId) && !panelHost.snapshot
+              ? 'Open unavailable: verifying exact host identity.'
+              : null) ||
+            hudProblems(hud, nowMs, t)[0],
           loading: !collected || treeBuiltFor !== tree.rootId,
           art: drawArt,
           prefix: prefixName(settings.prefixKey),
@@ -944,6 +1010,7 @@ async function runLivePage(): Promise<void> {
     } finally {
       collecting = false;
       delegationCollector?.abandonCollection();
+      refreshPanelHost();
     }
   };
   const collectNowBody = async () => {
@@ -1213,6 +1280,8 @@ async function runLivePage(): Promise<void> {
   const finish = (user = false) => {
     if (closed) return;
     closed = true;
+    runLogs.close();
+    panelHost.close();
     const clipboardClosing = clipboard.close();
     const workerClosing = publicationWorker?.close().then((clean) => {
       if (!clean) process.stderr.write('observation_worker_cleanup_unconfirmed\n');
@@ -1369,9 +1438,16 @@ async function runLivePage(): Promise<void> {
     const forward: ForwardItem[] = [];
     for (let input of inputs) {
       if (closed) break;
+      if (input.type === 'mouse' && !settings.mouse) continue;
+      syncPanelView();
+      if (runLogs.isOpen) {
+        runLogs.input(input, logFrame, logContext());
+        if (!runLogs.isOpen && !state.keys) focusMain();
+        render();
+        continue;
+      }
       const fromSettings = Boolean(settingsPage);
       let panelInput = input.type === 'command';
-      if (input.type === 'mouse' && !settings.mouse) continue;
       if (settingsLeave && confirmationFrame) {
         const dialogInput: WorkbenchInput =
           input.type === 'command' ? { type: 'key', key: overlayKey(input.command, 'settings') ?? '' } : input;
@@ -1599,6 +1675,8 @@ async function runLivePage(): Promise<void> {
         navigationOverlay: fromSettings,
       });
       state = result.state;
+      syncPanelView();
+      if (result.action?.type !== 'delegation-open') refreshPanelHost();
       if (result.close) {
         finish(true);
         break;
@@ -1694,16 +1772,46 @@ async function runLivePage(): Promise<void> {
           dispatchDelegationAction(
             action,
             actionFrame?.delegation?.vm,
-            delegation,
+            panelDelegation,
             actionRoot === tree.rootId && actionEpoch === collectionEpoch,
-            { home: delegationCollector?.home ?? null, copy: clipboard.copy }
+            {
+              home: delegationCollector?.home ?? null,
+              copy: clipboard.copy,
+              openLog: () => {
+                if (!delegationCollector?.home) return false;
+                const opened = runLogs.open(delegationCollector.home, action.key, logContext());
+                if (opened) {
+                  focusPanel();
+                  render();
+                }
+                return opened;
+              },
+              open: async () => {
+                const target = panelHostTarget(panelDelegation, action.key);
+                const epoch = panelEpoch;
+                const root = tree.rootId;
+                return target
+                  ? panelHost.open(target, () => {
+                      const next = panelHostTarget(delegation, action.key);
+                      return (
+                        !closed &&
+                        root === tree.rootId &&
+                        epoch === panelEpoch &&
+                        state.tree.selectedId === selected &&
+                        !!next &&
+                        panelHostStamp(next) === panelHostStamp(target)
+                      );
+                    })
+                  : 'Open unavailable for this run.';
+              },
+            }
           );
         void (action.type === 'delegation-open' ? openOnce(action.key, execute) : execute()).then((message) => {
           if (
             message === null ||
             closed ||
             actionRoot !== tree.rootId ||
-            !sameDelegationActionTarget(actionFrame?.delegation?.vm, delegation, action.key) ||
+            !sameDelegationActionTarget(actionFrame?.delegation?.vm, panelDelegation, action.key) ||
             state.tree.selectedId !== selected
           )
             return;
@@ -1720,7 +1828,9 @@ async function runLivePage(): Promise<void> {
         if (
           !duplicate &&
           (!actionFrame?.delegation ||
-            (actionFrame.delegation.vm === delegation && actionRoot === tree.rootId && actionEpoch === collectionEpoch))
+            (actionFrame.delegation.vm === panelDelegation &&
+              actionRoot === tree.rootId &&
+              actionEpoch === collectionEpoch))
         )
           void switchSession(id);
         else if (!duplicate) {
