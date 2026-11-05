@@ -13,12 +13,8 @@ import { dirname, isAbsolute, join, parse, relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { canonicalJson, digest } from '../core/canonical.js';
 import { nativeFile } from './claude-tmux.js';
-import {
-  observeWindowsPolicy,
-  queryWindowsRegistry,
-  type WindowsPolicyPorts,
-  type WindowsPolicyResult,
-} from './claude-windows-policy.js';
+import { observeWindowsPolicy, type WindowsPolicyPorts, type WindowsPolicyResult } from './claude-windows-policy.js';
+import { productionWindowsPolicyPorts } from './claude-windows-host.js';
 
 /** Local inputs only, not a claim to reconstruct Claude's effective merge.
  * Discovery references (accessed 2026-11-05):
@@ -63,7 +59,7 @@ export interface ClaudeConfigurationResult {
   candidate?: ClaudeUnverifiedCandidate;
 }
 export interface ClaudeUnverifiedCandidate {
-  schema: 'claude-unverified-local-metadata-v1';
+  schema: 'claude-unverified-local-inputs-v2';
   status: 'unverified';
   platform: 'linux' | 'wsl';
   version: string;
@@ -71,7 +67,7 @@ export interface ClaudeUnverifiedCandidate {
   provider: { requested: 'bedrock' | 'ordinary-or-other'; authentication: 'unobserved' };
   blockers: string[];
   windows: WindowsPolicyResult | null;
-  /** Metadata only: no configuration, account or credential bytes are read. */
+  /** Bounded local configuration only; account and credential stores are excluded. */
   localLayers: { role: string; receipt: FileReceipt }[];
 }
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -300,10 +296,10 @@ function unverifiedCandidate(
   managedRoot: string,
   wsl: boolean,
   remote: boolean,
-  windowsPorts?: Pick<WindowsPolicyPorts, 'system'> & Partial<Pick<WindowsPolicyPorts, 'query'>>
+  windowsPorts?: Pick<WindowsPolicyPorts, 'system' | 'registry'>
 ): ClaudeConfigurationResult {
   const blockers = [
-    'configuration_contents_unobserved',
+    'configuration_effective_settings_unverified',
     'configuration_selection_unobserved',
     'configuration_global_account_and_mcp_unobserved',
     'configuration_extensions_unobserved',
@@ -314,17 +310,15 @@ function unverifiedCandidate(
   const windows = wsl
     ? observeWindowsPolicy(
         request.version,
-        windowsPorts && {
-          ...windowsPorts,
-          query: windowsPorts.query ?? queryWindowsRegistry,
-          read: (path) => capture(path, windowsBudget),
-        }
+        windowsPorts
+          ? { ...windowsPorts, read: (path) => capture(path, windowsBudget) }
+          : productionWindowsPolicyPorts((path) => capture(path, windowsBudget))
       )
     : null;
   if (windows?.reason) blockers.push(windows.reason);
   if (windows?.observation) blockers.push('configuration_windows_effective_merge_unverified');
   const candidate: ClaudeUnverifiedCandidate = {
-    schema: 'claude-unverified-local-metadata-v1',
+    schema: 'claude-unverified-local-inputs-v2',
     status: 'unverified',
     platform: wsl ? 'wsl' : 'linux',
     version: request.version,
@@ -334,8 +328,11 @@ function unverifiedCandidate(
     windows,
     localLayers: [],
   };
-  // Fixed paths only. Directory contents and global account/credential stores
-  // are deliberately not enumerated. Selector args/env cannot redirect probes.
+  // These are observed local inputs, never a claim about which inputs Claude
+  // selects or merges. Provider/auth uncertainty does not prevent file evidence.
+  // Global account/credential stores and computed helpers remain unobserved.
+  const localBudget = { bytes: 1048576 };
+  let localFailure: string | null = null;
   for (const [role, path] of [
     ['user-settings', join(request.sourceRoot, 'settings.json')],
     ['project-settings', join(request.cwd, '.claude/settings.json')],
@@ -346,7 +343,12 @@ function unverifiedCandidate(
     ['managed-dropins', join(managedRoot, 'managed-settings.d')],
   ]) {
     try {
-      candidate.localLayers.push({ role, receipt: capture(path, { bytes: 0 }, false).receipt });
+      const input = capture(path, localBudget);
+      candidate.localLayers.push({ role, receipt: input.receipt });
+      if (input.value && role.endsWith('settings')) supportedSettings(input.value);
+      if (input.value && role.endsWith('mcp')) supportedMcp(input.value.mcpServers);
+      if (role !== 'managed-dropins' && input.receipt.state === 'directory')
+        throw new Error('configuration_file_expected');
     } catch (error) {
       // Keep already-observed metadata, never turn an unreadable layer into a
       // missing one or expose filesystem error text that may contain user data.
@@ -355,14 +357,16 @@ function unverifiedCandidate(
           ? error.message
           : 'configuration_unreadable';
       blockers.push(reason);
+      localFailure = reason;
       break;
     }
   }
   return {
     observation: null,
-    reason: wsl
-      ? (windows?.reason ?? 'configuration_windows_effective_merge_unverified')
-      : 'configuration_remote_sources_unobserved',
+    reason:
+      windows?.reason ??
+      localFailure ??
+      (wsl ? 'configuration_windows_effective_merge_unverified' : 'configuration_remote_sources_unobserved'),
     candidate,
   };
 }
@@ -371,7 +375,7 @@ function unverifiedCandidate(
  * The finite complete lane requires an already-selected Bedrock provider (no
  * remote policy/connectors), Linux without WSL policy, and no extra discovery.
  * WSL and ordinary provider configurations expose only an explicitly unverified
- * metadata candidate. Other native versions remain unknown without observation.
+ * local-input candidate. Other native versions remain unknown without observation.
  */
 export function observeClaudeConfiguration(
   request: ClaudeConfigurationRequest,
@@ -379,7 +383,7 @@ export function observeClaudeConfiguration(
   trusted: {
     managedRoot?: string;
     gitExecutable?: () => string;
-    windows?: Pick<WindowsPolicyPorts, 'system'> & Partial<Pick<WindowsPolicyPorts, 'query'>>;
+    windows?: Pick<WindowsPolicyPorts, 'system' | 'registry'>;
   } = {}
 ): ClaudeConfigurationResult {
   try {

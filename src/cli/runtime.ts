@@ -15,9 +15,10 @@ import type { ExecutableIdentity } from '../core/launch/fingerprint.js';
 export class CliError extends Error {
   constructor(
     readonly reason: string,
-    readonly exitCode = 2
+    readonly exitCode = 2,
+    readonly detail?: string
   ) {
-    super(reason);
+    super(detail ? `${reason}: ${detail}` : reason);
   }
 }
 

@@ -247,9 +247,9 @@ test('Claude ordinary and WSL candidates retain explicit policy gaps without rea
   const f = fixture();
   try {
     delete f.request.env.CLAUDE_CODE_USE_BEDROCK;
-    // Invalid and oversized content is intentionally never read by the local
-    // metadata inventory. Account and credential paths are not even inventoried.
-    writeFileSync(join(f.request.sourceRoot, 'settings.json'), 'synthetic-private-marker'.repeat(20000));
+    // Local configuration is observed independently of authentication. Account
+    // and credential paths remain excluded, even when they are unsafe aliases.
+    json(join(f.request.sourceRoot, 'settings.json'), { hooks: { Stop: [] } });
     symlinkSync('/synthetic/must-not-follow', join(f.request.sourceRoot, '.claude.json'));
     symlinkSync('/synthetic/must-not-follow', join(f.request.sourceRoot, '.credentials.json'));
     f.request.argv = [...f.request.argv, '--settings', '/synthetic/must-not-probe'];
@@ -262,29 +262,27 @@ test('Claude ordinary and WSL candidates retain explicit policy gaps without rea
     assert.equal(ordinary.candidate?.localLayers.length, 7);
     assert.equal(JSON.stringify(ordinary).includes('synthetic-private-marker'), false);
     assert.equal(JSON.stringify(ordinary).includes('must-not'), false);
-    assert.equal(
-      ordinary.candidate?.localLayers.every((entry) => entry.receipt.fingerprint === null),
-      true
+    assert.match(ordinary.candidate!.localLayers[0].receipt.fingerprint!, /^[a-f0-9]{64}$/);
+    json(join(f.request.sourceRoot, 'settings.json'), { hooks: { Stop: [{ matcher: 'changed' }] } });
+    assert.notEqual(
+      ordinary.candidate?.localLayers[0].receipt.fingerprint,
+      f.observe().candidate?.localLayers[0].receipt.fingerprint
     );
     f.request.kernel = 'synthetic-microsoft-standard-WSL2';
     const unknownWindows = f.observe();
-    assert.equal(unknownWindows.reason, 'configuration_windows_system_identity_unobserved');
+    assert.equal(unknownWindows.reason, 'configuration_windows_host_not_wsl');
     assert.equal(unknownWindows.candidate?.platform, 'wsl');
     const windowsRoot = join(f.root, 'windows-managed');
     mkdirSync(windowsRoot);
     json(join(windowsRoot, 'managed-settings.json'), { wslInheritsWindowsSettings: true, hooks: {} });
     const windows = {
       system: () => ({
-        regExe: '/synthetic/Windows/System32/reg.exe',
+        observerExe: '/synthetic/observer.exe',
         managedRoot: windowsRoot,
         executableIdentity: 'synthetic-system',
         interopIdentity: 'synthetic-interop',
       }),
-      query: () => ({
-        status: 1,
-        stdout: '',
-        stderr: 'ERROR: The system was unable to find the specified registry key or value.',
-      }),
+      registry: () => ({ state: 'missing' as const, code: 2 as const }),
     };
     const captured = observeClaudeConfiguration(f.request, { managedRoot: f.managedRoot, windows });
     assert.equal(captured.observation, null);

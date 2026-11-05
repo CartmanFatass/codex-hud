@@ -1,13 +1,13 @@
-import { execFileSync } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
 import { canonicalJson, digest } from '../core/canonical.js';
+import { productionWindowsPolicyPorts } from './claude-windows-host.js';
 
-/** A host adapter must attest the native Windows system executable, its Windows
- * access controls, the WSL interop endpoint and the mapped managed-policy root.
- * POSIX owner bits, a /mnt/c guess and environment variables cannot attest these.
+/** The default host adapter pins a built HUD helper and uses Win32 system APIs.
+ * WSL transport/mapping and installed artifact identity are bracketed separately;
+ * POSIX owner bits never stand in for Windows ACL attestation.
  */
 export interface WindowsPolicySystem {
-  regExe: string;
+  observerExe: string;
   managedRoot: string;
   executableIdentity: string;
   interopIdentity: string;
@@ -19,15 +19,7 @@ export interface WindowsPolicyFile {
 }
 export interface WindowsPolicyPorts {
   system(): WindowsPolicySystem | null;
-  query(
-    executable: string,
-    args: string[],
-    limits: { timeout: number; maxBuffer: number }
-  ): {
-    status: number | null;
-    stdout: string;
-    stderr: string;
-  };
+  registry(hive: 'HKLM' | 'HKCU'): RegistryResult;
   read(path: string): WindowsPolicyFile;
 }
 export interface WindowsPolicyObservation {
@@ -49,51 +41,27 @@ const equal = (a: unknown, b: unknown) => canonicalJson(a) === canonicalJson(b);
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
-/** The only command is read-only `query <fixed hive> /v Settings`. No shell,
- * credential queries, environment expansion, registry writes or helper programs.
- * This adapter is reached only after a trusted host supplies system identity.
- */
-export const queryWindowsRegistry: WindowsPolicyPorts['query'] = (executable, args, limits) => {
-  try {
-    return {
-      status: 0,
-      stdout: execFileSync(executable, args, { ...limits, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }),
-      stderr: '',
-    };
-  } catch (error) {
-    const failure = error as { status?: number; stdout?: string; stderr?: string; code?: string };
-    if (failure.code || typeof failure.status !== 'number') throw new Error('configuration_windows_interop_unknown');
-    return { status: failure.status, stdout: String(failure.stdout ?? ''), stderr: String(failure.stderr ?? '') };
-  }
-};
+/** Numeric Win32 statuses, never localized command diagnostics. */
+export type RegistryResult =
+  | { state: 'value'; code: 0; kind: 1 | 2; data: string }
+  | { state: 'missing'; code: 2 }
+  | { state: 'denied'; code: 5 }
+  | { state: 'error'; code: number };
 
-function registry(ports: WindowsPolicyPorts, system: WindowsPolicySystem, hive: 'HKLM' | 'HKCU') {
-  const result = ports.query(system.regExe, ['query', `${hive}\\SOFTWARE\\Policies\\ClaudeCode`, '/v', 'Settings'], {
-    timeout: 500,
-    maxBuffer: 262144,
-  });
-  if (Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) > 262144)
-    throw new Error('configuration_windows_registry_limit');
-  // reg.exe uses the same error status for denial and absence. Accept only its
-  // exact English missing-key/value diagnostic; localized/other failures remain
-  // unknown, never silently missing.
-  if (
-    result.status === 1 &&
-    result.stdout.trim() === '' &&
-    result.stderr.trim() === 'ERROR: The system was unable to find the specified registry key or value.'
-  )
+function registry(ports: WindowsPolicyPorts, _system: WindowsPolicySystem, hive: 'HKLM' | 'HKCU') {
+  const result = ports.registry(hive);
+  if (!result || typeof result !== 'object') throw new Error('configuration_windows_registry_shape');
+  if (result.state === 'missing' && result.code === 2)
     return { value: null, receipt: { hive, state: 'missing' as const, fingerprint: null } };
-  if (result.status !== 0 || result.stderr.trim()) throw new Error('configuration_windows_registry_unknown');
-  const fullHive = hive === 'HKLM' ? 'HKEY_LOCAL_MACHINE' : 'HKEY_CURRENT_USER';
-  const lines = result.stdout.trim().split(/\r?\n/);
-  if (lines.length !== 2 || lines[0] !== `${fullHive}\\SOFTWARE\\Policies\\ClaudeCode`)
-    throw new Error('configuration_windows_registry_shape');
-  const row = /^\s+Settings\s+(REG_SZ|REG_EXPAND_SZ)\s+(.+)$/.exec(lines[1]);
-  if (!row || (row[1] === 'REG_EXPAND_SZ' && /%[^%]+%/.test(row[2])))
+  if (result.state === 'denied' && result.code === 5) throw new Error('configuration_windows_registry_denied');
+  if (result.state !== 'value' || result.code !== 0 || ![1, 2].includes(result.kind) || typeof result.data !== 'string')
+    throw new Error('configuration_windows_registry_unknown');
+  if (Buffer.byteLength(result.data) > 262144) throw new Error('configuration_windows_registry_limit');
+  if (result.kind === 2 && /%[^%]+%/.test(result.data))
     throw new Error('configuration_windows_registry_expansion_unknown');
-  const value: unknown = JSON.parse(row[2]);
+  const value: unknown = JSON.parse(result.data);
   if (!object(value)) throw new Error('configuration_windows_registry_shape');
-  return { value, receipt: { hive, state: 'value' as const, fingerprint: digest({ type: row[1], value }) } };
+  return { value, receipt: { hive, state: 'value' as const, fingerprint: digest({ type: result.kind, value }) } };
 }
 
 function inheritance(value: Record<string, unknown> | null): boolean | null {
@@ -115,15 +83,20 @@ const hasPolicy = (value: Record<string, unknown> | null) =>
  * Selection: https://code.claude.com/docs/en/settings-reference#wslinheritswindowssettings
  * and https://code.claude.com/docs/en/managed-settings (accessed 2026-11-05).
  */
-export function observeWindowsPolicy(version: string, ports?: WindowsPolicyPorts): WindowsPolicyResult {
+export function observeWindowsPolicy(version: string, supplied?: WindowsPolicyPorts): WindowsPolicyResult {
+  const ports =
+    supplied ??
+    productionWindowsPolicyPorts(() => {
+      throw new Error('configuration_windows_local_reader_unavailable');
+    });
   try {
     if (version !== '2.1.305') throw new Error('configuration_windows_version_uncovered');
-    const observed = ports?.system();
-    if (!ports || !observed) throw new Error('configuration_windows_system_identity_unobserved');
+    const observed = ports.system();
+    if (!observed) throw new Error('configuration_windows_system_identity_unobserved');
     const system = structuredClone(observed);
     if (
-      !isAbsolute(system.regExe) ||
-      !system.regExe.endsWith('/reg.exe') ||
+      !isAbsolute(system.observerExe) ||
+      !system.observerExe.endsWith('.exe') ||
       !isAbsolute(system.managedRoot) ||
       !system.executableIdentity ||
       !system.interopIdentity

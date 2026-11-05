@@ -8,6 +8,7 @@ import { launchProfileDigest, resolveLaunchCommand, shellQuote } from '../core/c
 import { capabilityTemplate } from '../core/launch/fingerprint.js';
 import type { CapabilityManifestV1, LaunchCommand, LaunchProfile } from '../core/types/capabilities.js';
 import { foreground } from './compat.js';
+import { safeConfigurationReason } from './claude-diagnostics.js';
 import { CliError, installationRoot, mcpModule } from './runtime.js';
 import {
   HUD_REVISION,
@@ -295,8 +296,8 @@ export async function launchClaudeInTmux(
   },
   dependencies: ClaudeProductionDependencies = {}
 ): Promise<number> {
-  const reject = () => {
-    throw new CliError('capability_unverified', 4);
+  const reject = (detail?: string) => {
+    throw new CliError('capability_unverified', 4, detail);
   };
   if (
     process.platform !== 'linux' ||
@@ -320,11 +321,13 @@ export async function launchClaudeInTmux(
   const observe = dependencies.observe ?? observeClaudeTmux;
   const observed = await observe(input.env);
   const startup = observed ? structuredClone(observed) : null;
-  if (!startup) return reject();
+  if (!startup) return reject('tmux_startup_unobserved');
   const source = await sourceReceipt(input.profile.source.root);
   const discovered = await discoverExecutable(input.command, input.env);
   const native = discovered.resolved && nativeFile(discovered.resolved);
-  if (!startup || !source || !native || !discovered.version) return reject();
+  if (!source) return reject('source_identity_unobserved');
+  if (!native) return reject('native_executable_unobserved');
+  if (!discovered.version) return reject('executable_version_unobserved');
   const executable = { ...native, version: discovered.version };
   const env: NodeJS.ProcessEnv = { ...input.env, CLAUDE_CONFIG_DIR: source.root };
   delete env.HUD_CLAUDE_HOOK_CONFIG;
@@ -360,7 +363,8 @@ export async function launchClaudeInTmux(
   const observeConfiguration = dependencies.configuration ?? observeClaudeConfiguration;
   const configurationResult = observeConfiguration(configurationRequest);
   const configuration = configurationResult.observation;
-  if (configurationResult.candidate || !configuration) return reject();
+  if (configurationResult.candidate || !configuration)
+    return reject(safeConfigurationReason(configurationResult.reason));
   const plan = claudeLaunchPlan({
     ...input,
     source,
@@ -373,7 +377,8 @@ export async function launchClaudeInTmux(
     configuration,
   });
   const actual = claudeExpectation(plan, dependencies.hudRevision ?? HUD_REVISION);
-  if (!matchesCapability((dependencies.manifest ?? shippedManifest)(), actual)) return reject();
+  if (!matchesCapability((dependencies.manifest ?? shippedManifest)(), actual))
+    return reject('capability_manifest_no_match');
   let directory: string | undefined;
   try {
     if (plan.injectSettings) directory = await mkdtemp(join(input.home, 'claude-launch-'));

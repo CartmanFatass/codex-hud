@@ -10,36 +10,23 @@ import {
 
 function fixture() {
   const system: WindowsPolicySystem = {
-    regExe: '/synthetic/windows/Windows/System32/reg.exe',
+    observerExe: '/synthetic/windows/Windows/System32/reg.exe',
     managedRoot: '/synthetic/windows/Program Files/ClaudeCode',
     executableIdentity: 'synthetic-native-system-executable-and-acl',
     interopIdentity: 'synthetic-interop-and-mount',
   };
   const registry: Record<string, Record<string, unknown> | null> = { HKLM: null, HKCU: null };
   const files = new Map<string, Record<string, unknown> | string[]>();
-  const queries: string[][] = [];
+  const queries: string[] = [];
   const reads: string[] = [];
   const ports: WindowsPolicyPorts = {
     system: () => structuredClone(system),
-    query: (executable, args, limits) => {
-      assert.equal(executable, system.regExe);
-      assert.deepEqual(limits, { timeout: 500, maxBuffer: 262144 });
-      assert.deepEqual([args[0], ...args.slice(2)], ['query', '/v', 'Settings']);
-      queries.push([...args]);
-      const hive = args[1].split('\\')[0];
-      assert.equal(args[1], `${hive}\\SOFTWARE\\Policies\\ClaudeCode`);
+    registry: (hive) => {
+      queries.push(hive);
       const value = registry[hive];
       return value === null
-        ? {
-            status: 1,
-            stdout: '',
-            stderr: 'ERROR: The system was unable to find the specified registry key or value.\r\n',
-          }
-        : {
-            status: 0,
-            stdout: `\r\n${hive === 'HKLM' ? 'HKEY_LOCAL_MACHINE' : 'HKEY_CURRENT_USER'}\\SOFTWARE\\Policies\\ClaudeCode\r\n    Settings    REG_SZ    ${JSON.stringify(value)}\r\n`,
-            stderr: '',
-          };
+        ? { state: 'missing', code: 2 }
+        : { state: 'value', code: 0, kind: 1, data: JSON.stringify(value) };
     },
     read: (path) => {
       reads.push(path);
@@ -58,7 +45,7 @@ function fixture() {
 }
 
 test('Claude Windows policy captures explicit absence and bounded read-only queries without guessed system paths', () => {
-  assert.equal(observeWindowsPolicy('2.1.305').reason, 'configuration_windows_system_identity_unobserved');
+  assert.equal(observeWindowsPolicy('2.1.305').reason, 'configuration_windows_host_not_wsl');
   const f = fixture();
   const before = observeWindowsPolicy('2.1.305', f.ports);
   assert.equal(before.reason, null);
@@ -109,26 +96,21 @@ test('Claude Windows access, interop, expansion, limits, identity races and unco
       f.ports.system = () => null;
     },
     (f: ReturnType<typeof fixture>) => {
-      f.ports.query = () => ({ status: 1, stdout: '', stderr: 'ERROR: Access is denied.' });
+      f.ports.registry = () => ({ state: 'denied', code: 5 });
     },
     (f: ReturnType<typeof fixture>) => {
-      f.ports.query = () => ({ status: 1, stdout: '', stderr: 'localized missing-key message' });
+      f.ports.registry = () => ({ state: 'error', code: 1 });
     },
     (f: ReturnType<typeof fixture>) => {
-      f.ports.query = () => {
+      f.ports.registry = () => {
         throw new Error('synthetic timeout with private data');
       };
     },
     (f: ReturnType<typeof fixture>) => {
-      f.ports.query = () => ({ status: 0, stdout: 'x'.repeat(262145), stderr: '' });
+      f.ports.registry = () => ({ state: 'value', code: 0, kind: 1, data: 'x'.repeat(262145) });
     },
     (f: ReturnType<typeof fixture>) => {
-      f.ports.query = () => ({
-        status: 0,
-        stdout:
-          'HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\ClaudeCode\n    Settings    REG_EXPAND_SZ    {"env":{"VALUE":"%SECRET%"}}',
-        stderr: '',
-      });
+      f.ports.registry = () => ({ state: 'value', code: 0, kind: 2, data: '{"env":{"VALUE":"%SECRET%"}}' });
     },
     (f: ReturnType<typeof fixture>) => {
       f.registry.HKLM = { wslInheritsWindowsSettings: 'invalid' };
@@ -145,8 +127,8 @@ test('Claude Windows access, interop, expansion, limits, identity races and unco
       };
     },
     (f: ReturnType<typeof fixture>) => {
-      const query = f.ports.query;
-      f.ports.query = (...args) => {
+      const query = f.ports.registry;
+      f.ports.registry = (...args) => {
         const result = query(...args);
         f.system.executableIdentity = 'replaced';
         return result;

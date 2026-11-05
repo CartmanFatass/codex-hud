@@ -91,7 +91,7 @@ export async function main(
     return await linkExport(args.slice(2), io);
   } catch (error) {
     if (error instanceof CliError) {
-      io.stderr(`${error.reason}\n`);
+      io.stderr(`${error.reason}${error.detail ? `: ${error.detail}` : ''}\n`);
       return error.exitCode;
     }
     const reason = error instanceof Error ? error.message : '';
