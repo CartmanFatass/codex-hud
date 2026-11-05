@@ -11,10 +11,12 @@ import { CodexAdapter, type CodexCheckpoint } from '../../src/harness/codex/inde
 import type { LaunchProfile } from '../../src/core/types/capabilities.js';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
 import type { CollectedLinkSession } from '../../src/core/link/types.js';
+import type { ObservationRecoveryTarget, RecoveryReadGrant } from '../../src/core/types/checkpoint.js';
 import { stripAnsi } from '../../src/render/colors.js';
 import { notifyFixture, reportFor } from './b21-fixture.js';
 import { HudDelegationCollector } from '../../src/collectors/delegation.js';
 import { displayNodeKey } from '../../src/core/observation.js';
+import { sameSessionRef } from '../../src/core/identity.js';
 import { buildVm, S, NOW } from '../fixtures/b10b-delegation.js';
 import { draw, press } from '../fixtures/b10b-s3.js';
 
@@ -301,9 +303,34 @@ test(
     const follower = await HudDelegationCollector.open({ HUD_HOME: f.root }, f.root);
     assert.ok(follower);
     t.after(() => follower.close());
+    const followerPort = (follower as any).port;
+    const followerStore = followerPort.sources.get(f.child.ref.sourceId).store;
+    const recover = followerStore.readRecoveryMetered.bind(followerStore);
+    const attemptedOffsets: number[] = [];
+    followerStore.readRecoveryMetered = (target: ObservationRecoveryTarget, grant: RecoveryReadGrant) => {
+      if (!sameSessionRef(target.ref, f.child.ref)) return recover(target, grant);
+      attemptedOffsets.push(followerPort.readings.get(key)?.checkpoint?.offset ?? 0);
+      const attempt = attemptedOffsets.length;
+      assert.ok(grant.remaining().maxBytes <= 4 * 1024 * 1024);
+      assert.ok(grant.remaining().maxRecords <= 2000);
+      if (attempt <= 2) {
+        const limited: RecoveryReadGrant = {
+          now: () => grant.now(),
+          remaining: () => ({ ...grant.remaining(), ...(attempt === 1 ? { budgetMs: 0 } : { maxRecords: 0 }) }),
+          charge: (stats) => grant.charge(stats),
+          drain: () => grant.drain(),
+        };
+        return recover(target, limited);
+      }
+      return recover(target, grant);
+    };
     let followerView = null;
     let chargedBytes = 0;
     for (let i = 0; i < 50; i++) {
+      appendFileSync(
+        join(dir, `rollout-${f.child.ref.sessionId}.jsonl`),
+        entry(now - 700 + i, 'event_msg', { type: 'synthetic_progress' }) + '\n'
+      );
       followerView = await follower.tick(f.parent.ref.sessionId);
       chargedBytes += follower.collector.stats().bytesRead;
       if (followerView?.details[key]?.outputRate) break;
@@ -315,6 +342,9 @@ test(
     );
     assert.equal(followerView?.details[key]?.statusSource, 'committed');
     assert.ok(chargedBytes > 0, 'recovery is charged to collection');
+    assert.ok(attemptedOffsets.length >= 3, 'deadline and record refusals are retried');
+    assert.ok(attemptedOffsets[1] > attemptedOffsets[0], 'ordinary source reading progresses after the first refusal');
+    assert.ok(attemptedOffsets[2] > attemptedOffsets[1], 'ordinary source reading progresses after the second refusal');
     const priorSeq = view!.details[key].status!.observationStamp!.commitSeq;
     appendFileSync(
       join(dir, `rollout-${f.child.ref.sessionId}.jsonl`),

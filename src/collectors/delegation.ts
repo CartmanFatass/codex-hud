@@ -116,7 +116,9 @@ interface Reading {
   resetPending?: boolean;
   rateTarget?: { target: ObservationRecoveryTarget; stamp: ObservationStamp; key: string };
   rateDone?: string;
+  rateBlocked?: string;
   rateReceipt?: CollectedLinkSession['committedRate'];
+  lastSessionWasRate?: boolean;
 }
 function evidenceFromView(ref: SessionRef, observation: ObservationView): SessionEvidence {
   const unknown = {
@@ -475,6 +477,7 @@ class SessionCollection implements LinkCollectionPort {
     if (identity(source.store.databasePath) !== source.storeIdentity) {
       reading.rateTarget = undefined;
       reading.rateDone = undefined;
+      reading.rateBlocked = undefined;
       reading.rateReceipt = undefined;
       if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false };
       return false;
@@ -495,6 +498,7 @@ class SessionCollection implements LinkCollectionPort {
       if (!commit) {
         reading.rateTarget = undefined;
         reading.rateDone = undefined;
+        reading.rateBlocked = undefined;
         reading.rateReceipt = undefined;
         if (reading.envelope?.evidence.observation.statusProjection.observationStamp)
           reading.envelope = { ...reading.envelope, loaded: false };
@@ -511,7 +515,7 @@ class SessionCollection implements LinkCollectionPort {
         const key = canonicalJson(target);
         if (reading.rateDone !== key) reading.rateReceipt = undefined;
         reading.rateTarget =
-          reading.rateDone === key
+          reading.rateDone === key || reading.rateBlocked === key
             ? undefined
             : { target: structuredClone(target), stamp: structuredClone(commit.observationStamp), key };
       }
@@ -630,8 +634,7 @@ class SessionCollection implements LinkCollectionPort {
       }
     }
     if (reading.publisher?.hasPending()) return null;
-    if (!this.publishing && reading.rateTarget && reading.envelope?.loaded && !reading.dirty && reading.caughtUp)
-      return 'session';
+    if (!this.publishing && reading.rateTarget && reading.envelope?.loaded && !reading.resetPending) return 'session';
     return !reading.envelope || !reading.envelope.loaded || reading.dirty || !reading.caughtUp ? 'session' : null;
   }
   lineageCurrent(ref: SessionRef): boolean {
@@ -694,12 +697,13 @@ class SessionCollection implements LinkCollectionPort {
       rateTarget &&
       source.store &&
       reading.envelope?.loaded &&
-      !reading.dirty &&
-      reading.caughtUp &&
+      !reading.resetPending &&
+      (!reading.lastSessionWasRate || (!reading.dirty && reading.caughtUp)) &&
       envelopeStamp &&
       canonicalJson(envelopeStamp) === canonicalJson(rateTarget.stamp) &&
       identity(source.store.databasePath) === source.storeIdentity
     ) {
+      reading.lastSessionWasRate = true;
       const grant = new RecoveryGrant(budget, {
         deadline: Math.min(this.deadline, performance.now() + budget.budgetMs),
       });
@@ -713,7 +717,6 @@ class SessionCollection implements LinkCollectionPort {
           reading.rateDone = rateTarget.key;
           reading.rateTarget = undefined;
           reading.rateReceipt = rate ? { rate, stamp: rateTarget.stamp } : undefined;
-          this.minimumBytes.delete(key);
           reading.envelope = {
             ...reading.envelope,
             committedOnly: true,
@@ -725,6 +728,7 @@ class SessionCollection implements LinkCollectionPort {
         } else if (recovered.kind === 'stale') {
           reading.rateTarget = undefined;
           reading.rateDone = undefined;
+          reading.rateBlocked = undefined;
           reading.rateReceipt = undefined;
           this.pendingCommits.add(key);
           reading.envelope = {
@@ -735,9 +739,15 @@ class SessionCollection implements LinkCollectionPort {
             recordsRead: charged.recordsRead,
           };
         } else {
-          // Optional display recovery never blocks ordinary source collection or demands a larger grant.
-          reading.rateDone = rateTarget.key;
-          reading.rateTarget = undefined;
+          // Temporary refusal remains eligible; recovery still alternates with ordinary session reads.
+          // A checkpoint larger than the normal grant cannot be admitted without changing the budget.
+          if (
+            recovered.continuation.kind === 'record_needs_larger_slice' &&
+            recovered.continuation.minimumBytes > 4 * 1024 * 1024
+          ) {
+            reading.rateBlocked = rateTarget.key;
+            reading.rateTarget = undefined;
+          }
           reading.rateReceipt = undefined;
           reading.envelope = {
             ...reading.envelope,
@@ -753,10 +763,7 @@ class SessionCollection implements LinkCollectionPort {
           bytesRead: charged.bytesRead + extra.bytesRead,
           recordsRead: charged.recordsRead + extra.recordsRead,
         };
-        reading.rateDone = rateTarget.key;
-        reading.rateTarget = undefined;
         reading.rateReceipt = undefined;
-        this.minimumBytes.delete(key);
         reading.envelope = {
           ...reading.envelope,
           committedRate: undefined,
@@ -831,6 +838,7 @@ class SessionCollection implements LinkCollectionPort {
       reading.reader ??= source.adapter.open(ref, reading.checkpoint);
       const readSignature = reading.file ? fileStamp(reading.file) : null;
       const previousGeneration = reading.checkpoint?.sourceGeneration;
+      reading.lastSessionWasRate = false;
       const result = await reading.reader.read(budget);
       if (!result.evidence || !result.stats) return null;
       const reset = previousGeneration !== undefined && previousGeneration !== result.checkpoint.sourceGeneration;
@@ -924,6 +932,7 @@ class SessionCollection implements LinkCollectionPort {
         reading.recoveryPending = true;
         reading.rateTarget = undefined;
         reading.rateDone = undefined;
+        reading.rateBlocked = undefined;
         reading.rateReceipt = undefined;
         reading.dirty = true;
       }
