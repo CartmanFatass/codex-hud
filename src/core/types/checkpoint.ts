@@ -138,8 +138,8 @@ export interface RecoveryReadGrant {
   drain(): RecoveryReadStats;
 }
 
-/** B12M: why a metered lookup did not fetch. `bytes`: the value does not fit the remaining bytes. */
-export type RecoveryReadRefusalReason = 'bytes' | 'deadline';
+/** B12M: why a metered lookup did not fetch; a record refusal never implies a byte minimum. */
+export type RecoveryReadRefusalReason = 'bytes' | 'records' | 'deadline';
 
 /**
  * B12M: a metered lookup outcome. `stale`: the commit the lookup was created for (at recovery or commit ACK) is no

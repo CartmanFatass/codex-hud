@@ -598,6 +598,7 @@ export class ObservationStore {
             if (!probe || Number(probe.absent) === 1) return { kind: 'value', value: undefined };
             const needed = Number(probe.n);
             if (needed > grant.remaining().maxBytes) return { kind: 'refused', reason: 'bytes', minimumBytes: needed };
+            if (grant.remaining().maxRecords < 1) return { kind: 'refused', reason: 'records' };
             if (meter.expired()) return { kind: 'refused', reason: 'deadline' };
             const row = this.db.prepare('SELECT value FROM recovery_entries WHERE rowid=?').get(probe.rid);
             if (!row) throw new ObservationStoreError('recovery_snapshot_retired');
@@ -646,6 +647,7 @@ export class ObservationStore {
               needed += Number(row.n);
             }
             if (needed > grant.remaining().maxBytes) return { kind: 'refused', reason: 'bytes', minimumBytes: needed };
+            if (rowids.length > grant.remaining().maxRecords) return { kind: 'refused', reason: 'records' };
             // Phase 2: fetch the admitted rows in key order; at the deadline, stop and discard the partial page.
             const entries: RecoveryIndexEntry[] = [];
             const fetch = this.db.prepare('SELECT key, value FROM recovery_entries WHERE rowid=?');

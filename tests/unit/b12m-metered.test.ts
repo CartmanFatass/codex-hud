@@ -277,6 +277,62 @@ test(
   }
 );
 
+test('recovery index admits exact reads and whole pages against the shared record allowance', { skip }, async (t) => {
+  const f = await indexed(t);
+  const lookup = f.acks[0];
+  const grant = new RecoveryGrant({ ...WIDE, maxRecords: 1 });
+  const first = lookup.getMetered!(grant, 'synthetic.ids', '00007');
+  assert.equal(first.kind, 'value');
+  assert.equal(grant.charged.recordsRead, 1);
+  const consumedBytes = grant.charged.bytesRead;
+  const refused = lookup.getMetered!(grant, 'synthetic.ids', '00042');
+  assert.equal(refused.kind, 'refused');
+  if (refused.kind === 'refused') {
+    assert.equal(refused.reason, 'records');
+    assert.equal(refused.minimumBytes, undefined);
+    assert.equal(refused.stats.bytesRead, 0);
+    assert.equal(refused.stats.recordsRead, 0);
+  }
+  assert.equal(grant.charged.bytesRead, consumedBytes);
+  assert.equal(grant.charged.recordsRead, 1);
+  const absent = lookup.getMetered!(grant, 'synthetic.ids', 'absent');
+  assert.equal(absent.kind, 'value');
+  if (absent.kind === 'value') assert.equal(absent.value, undefined);
+
+  const oneRecord = new RecoveryGrant({ ...WIDE, maxRecords: 1 });
+  const page = lookup.pageMetered!(oneRecord, 'synthetic.ids', null, 2);
+  assert.equal(page.kind, 'refused');
+  if (page.kind === 'refused') {
+    assert.equal(page.reason, 'records');
+    assert.equal(page.stats.bytesRead, 0);
+    assert.equal(page.stats.recordsRead, 0);
+  }
+  assert.equal(oneRecord.charged.recordsRead, 0, 'no partial page is materialized');
+  const exact = new RecoveryGrant({ ...WIDE, maxRecords: 2 });
+  const admitted = lookup.pageMetered!(exact, 'synthetic.ids', null, 2);
+  assert.equal(admitted.kind, 'value');
+  if (admitted.kind === 'value') assert.equal(admitted.value.length, 2);
+  assert.equal(exact.charged.recordsRead, 2);
+  const empty = lookup.pageMetered!(exact, 'missing-namespace', null, 2);
+  assert.equal(empty.kind, 'value');
+  if (empty.kind === 'value') assert.deepEqual(empty.value, []);
+
+  const none = new RecoveryGrant({ ...WIDE, maxRecords: 0 });
+  const end = f.store.activateRecoveryGrant(none);
+  try {
+    assert.throws(
+      () => f.overlay.get('synthetic.ids', '00001'),
+      (error: unknown) =>
+        error instanceof RecoveryReadError &&
+        error.code === 'recovery_budget_exhausted' &&
+        error.minimumBytes === undefined
+    );
+    assert.equal(none.charged.recordsRead, 0);
+  } finally {
+    end();
+  }
+});
+
 test(
   'B12M grant activation is scoped: no interleaved activation, stale deactivators never clear a live grant, close',
   { skip },
