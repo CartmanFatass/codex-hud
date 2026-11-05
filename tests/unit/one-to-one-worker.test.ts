@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { pathToFileURL } from 'node:url';
 import { PublicationWorker } from '../../src/core/link/publication-worker.js';
 import { openObservationStore } from '../../src/core/observation-store.js';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
@@ -166,6 +167,84 @@ test('worker shutdown timeout reports uncertainty and terminates the owned threa
   ]).finally(() => clearTimeout(timer));
 });
 
+test('panel keeps the publisher failure visible after successful read-only refresh', options, async (t) => {
+  const f = await notifyFixture();
+  t.after(() => f.close());
+  await reportFor(f, 'completed');
+  const preload = join(f.root, 'synthetic-failed-worker.mjs');
+  writeFileSync(
+    preload,
+    `
+    import { createRequire, syncBuiltinESMExports } from 'node:module';
+    import { EventEmitter } from 'node:events';
+    const threads = createRequire(import.meta.url)('node:worker_threads');
+    threads.Worker = class extends EventEmitter {
+      constructor() { super(); setImmediate(() => { this.emit('error', new Error('synthetic failure')); this.emit('exit', 1); }); }
+      postMessage() {} unref() {} terminate() { return Promise.resolve(0); }
+    };
+    syncBuiltinESMExports();
+  `
+  );
+  const child = spawn(process.execPath, [resolve('bin/hud'), 'panel'], {
+    cwd: f.root,
+    env: {
+      PATH: '/usr/bin:/bin',
+      HOME: f.root,
+      CODEX_HOME: f.root,
+      HUD_HOME: f.root,
+      LANG: 'C',
+      NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    detached: true,
+  });
+  let output = '';
+  let stderr = '';
+  child.stdout!.setEncoding('utf8');
+  child.stdout!.on('data', (chunk: string) => {
+    output += chunk;
+  });
+  child.stderr!.setEncoding('utf8');
+  child.stderr!.on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+  const waitFor = async (predicate: () => boolean, label: string) => {
+    const deadline = Date.now() + 8000;
+    while (!predicate() && child.exitCode === null && Date.now() < deadline)
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+    assert.ok(predicate(), `${label}: stderr=${stderr}; output=${output.slice(-8000)}`);
+  };
+  let childClosed = false;
+  try {
+    await waitFor(
+      () => output.includes('Publisher unavailable') && /implementer|Synthetic B21 task outcome/.test(output),
+      'failure and read-only delegation'
+    );
+    child.stdin!.write('?');
+    await waitFor(() => /Keys|Help/.test(output), 'help overlay');
+    const before = output.length;
+    child.stdin!.write('\x1b');
+    await waitFor(() => output.slice(before).includes('Publisher unavailable'), 'failure after read-only refresh');
+    const closed = once(child, 'close');
+    child.stdin!.end();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const [code] = await Promise.race([
+      closed,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('panel_close_timeout')), 5000);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    childClosed = true;
+    assert.equal(code, 0, stderr);
+  } finally {
+    if (!childClosed && child.exitCode === null) {
+      if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+      else child.kill('SIGKILL');
+      await once(child, 'close');
+    }
+  }
+});
+
 test('real hud panel owns its publisher and releases its lease on exit', options, async (t) => {
   const f = await notifyFixture();
   t.after(() => f.close());
@@ -208,18 +287,25 @@ test('real hud panel owns its publisher and releases its lease on exit', options
     const file = join(f.root, 'sources', f.child.ref.sourceId, 'observation.sqlite');
     const deadline = Date.now() + 12_000;
     let observed = false;
+    let busyReads = 0;
     while (Date.now() < deadline && child.exitCode === null && !observed) {
       if (existsSync(file)) {
-        const store = await openObservationStore({ hudHome: f.root, sourceId: f.child.ref.sourceId, readOnly: true });
         try {
-          observed = store.readProjection(f.child.ref) !== null;
-        } finally {
-          store.close();
+          const store = await openObservationStore({ hudHome: f.root, sourceId: f.child.ref.sourceId, readOnly: true });
+          try {
+            observed = store.readProjection(f.child.ref) !== null;
+          } finally {
+            store.close();
+          }
+        } catch (error) {
+          if (!(error instanceof Error) || !('code' in error) || error.code !== 'observation_busy') throw error;
+          busyReads++;
         }
       }
       if (!observed) await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
     }
     assert.ok(observed, `panel did not publish a child observation: ${stderr}`);
+    t.diagnostic(`read-only observation checks that returned busy: ${busyReads}`);
     assert.match(output, /implementer|Synthetic B21 task outcome/, 'the real panel also renders the delegation');
     const closed = once(child, 'close');
     child.stdin!.end();

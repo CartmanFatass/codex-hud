@@ -352,6 +352,7 @@ async function runLivePage(): Promise<void> {
   let lastPaint: string[] | null = null;
   let closed = false;
   let publicationWorker: PublicationWorker | null = null;
+  let publicationError: string | null = null;
   let workerRefresh = false;
   let collecting = false;
   let collectingGit = false;
@@ -694,6 +695,7 @@ async function runLivePage(): Promise<void> {
           worktrees,
           diff,
           error,
+          publicationNotice: publicationError ? t('Publisher unavailable; read-only') : null,
           nowMs,
           hud,
           notice:
@@ -1754,8 +1756,11 @@ async function runLivePage(): Promise<void> {
     try {
       publicationWorker = new PublicationWorker(delegationCollector.home, getCodexHome(), (changed, error) => {
         if (closed) return;
+        const previousError = publicationError;
+        publicationError = error;
         if (error) {
-          hudStatus.health.fail('tree', error);
+          render();
+        } else if (previousError) {
           render();
         }
         if (changed) {
@@ -1764,7 +1769,7 @@ async function runLivePage(): Promise<void> {
         }
       });
     } catch {
-      hudStatus.health.fail('tree', 'observation_worker_unavailable');
+      publicationError = 'observation_worker_unavailable';
     }
   }
   await new Promise<void>((resolve) => {

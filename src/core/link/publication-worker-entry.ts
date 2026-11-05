@@ -48,11 +48,14 @@ async function collect(scope: string | null): Promise<void> {
       if (!runtime) throw new Error('observation_worker_unavailable');
     }
     currentScope = scope;
-    await runtime.tick(scope ?? undefined, undefined, 4 * 1024 * 1024);
+    const view = await runtime.tick(scope ?? undefined, undefined, 4 * 1024 * 1024);
     await runtime.afterPaint(() => {});
     const publication = runtime.publicationStats();
     changed = publication.changed;
-    error = publication.error ?? runtime.workerBlock();
+    error =
+      publication.error ??
+      runtime.workerBlock() ??
+      (view?.tree.ledger.state === 'available' ? null : 'observation_ledger_unavailable');
   } catch (caught) {
     runtime?.abandonCollection();
     error = caught instanceof Error ? caught.message : 'observation_worker_unavailable';

@@ -1216,6 +1216,7 @@ class SessionCollection implements LinkCollectionPort {
 }
 
 export class HudDelegationCollector {
+  private workerTickError: string | null = null;
   private watcher: fs.FSWatcher | null = null;
   private sourceWatchers: fs.FSWatcher[] = [];
   private ledgerIdentity: string | null;
@@ -1360,6 +1361,7 @@ export class HudDelegationCollector {
   }
   async tick(sessionId: string | undefined, deadline?: number, maxBytes?: number): Promise<DelegationViewModel | null> {
     if (this.collecting) return this.collector.current();
+    this.workerTickError = null;
     this.collecting = true;
     this.tickStarted = performance.now();
     this.tailPending = this.port.publishing;
@@ -1377,6 +1379,7 @@ export class HudDelegationCollector {
       this.port.preparePublication(view);
       return view;
     } catch {
+      this.workerTickError = 'observation_collection_failed';
       return this.collector.current();
     } finally {
       if (this.port.publishing && [...this.port.sources.values()].some((source) => !source.writable))
@@ -1392,7 +1395,7 @@ export class HudDelegationCollector {
     return this.port.hasPendingPublication();
   }
   workerBlock(): string | null {
-    return this.port.workerBlock();
+    return this.workerTickError ?? this.port.workerBlock();
   }
   close(): boolean {
     this.closed = true;

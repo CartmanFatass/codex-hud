@@ -213,6 +213,7 @@ test('width, height and margins remain bounded with CJK and terminal controls', 
           height,
           nowMs: now,
           notice: 'View is blocked. No keys sent.',
+          publicationNotice: 'Publisher unavailable; read-only',
         });
         assert.equal(frame.lines.length, height);
         assert.ok(frame.lines.every((line) => visualLength(line) <= width));
@@ -235,6 +236,21 @@ test('width, height and margins remain bounded with CJK and terminal controls', 
       }
   }
   setDisplayConfig({ theme: 'terminal' });
+});
+
+test('publication failure remains visible alongside an action notice', () => {
+  const frame = renderMonitor({
+    tree,
+    state: initialMonitorState(),
+    width: 60,
+    height: 24,
+    nowMs: now,
+    publicationNotice: 'Publisher unavailable; read-only',
+    notice: 'Copy command: hud run reconcile run-a',
+  });
+  const text = stripAnsi(frame.lines.join('\n'));
+  assert.match(text, /Publisher unavailable; read-only/);
+  assert.match(text, /Copy command: hud run reconcile run-a/);
 });
 
 test('a pane opens and closes, its number toggles it, the agents too; Tab skips closed panes', () => {

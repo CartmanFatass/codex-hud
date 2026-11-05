@@ -68,6 +68,7 @@ const ZH: Record<string, string> = {
   'Git observed': 'Git 已观测',
   'Model off; stored summaries only': '模型已关闭，仅显示已有摘要',
   'Model summaries unavailable': '模型摘要不可用',
+  'Publisher unavailable; read-only': '发布不可用；只读模式',
   'Stored model summaries': '已保存模型摘要',
   'Historical observation': '历史观测',
   'Activity save pending': '活动记录等待保存',

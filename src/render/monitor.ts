@@ -264,6 +264,8 @@ export interface MonitorData {
   nowMs?: number;
   notice?: string | null;
   error?: string | null;
+  /** Worker publication health is independent of read-only collection notices. */
+  publicationNotice?: string | null;
   /**
    * The brief, when one is configured; `paused` puts the model calls on hold.
    */
@@ -776,7 +778,13 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const gutter = framed ? '' : width >= 24 ? '│ ' : '│';
   const inner = Math.max(0, cw - gutter.length);
   const notice = input.notice || input.error;
-  const noticeRows = notice && height >= 6 ? wrapped(notice, Math.max(1, cw - 2)).slice(0, 2) : [];
+  const noticeRows =
+    height >= 6
+      ? [
+          ...(input.publicationNotice ? wrapped(input.publicationNotice, Math.max(1, cw - 2)).slice(0, 2) : []),
+          ...(notice ? wrapped(notice, Math.max(1, cw - 2)).slice(0, 2) : []),
+        ].slice(0, Math.max(0, height - 2))
+      : [];
   // The status card takes the foot, at the level chosen, at most about a
   // third of the panel; it replaces the key hint's own line.
   let footPlan = planFoot(input, state, width, height, now, noticeRows.length);
