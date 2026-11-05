@@ -1,5 +1,7 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
+> **2026-11-05 cloud-development update:** See [the current cloud handbook and revised C–F roadmap](../cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
+
 From 2026-11-03 development runs remotely: first Claude Code cloud (`docs/cloud/README.md`), then dots
 (`docs/cloud/dots.md`). The local machine only does the work listed under "Local only". This file replaces the
 local orchestrator's scratch notes. Keep it current: the remote orchestrator updates it whenever a package merges
