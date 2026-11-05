@@ -221,7 +221,8 @@ function pickerView(pane: NavigationPane): PickerView | null {
 export async function navigateSession(
   mainPane: string | null | undefined,
   target: NavigationTarget | string,
-  adapter: NavigationAdapter = terminalAdapter
+  adapter: NavigationAdapter = terminalAdapter,
+  isCurrent: () => boolean = () => true
 ): Promise<NavigationResult> {
   const fail = (message: string): NavigationResult => ({ ok: false, message });
   const wanted = typeof target === 'string' ? { id: target } : target;
@@ -232,11 +233,22 @@ export async function navigateSession(
   const label = wanted.label?.trim() ? squash(wanted.label) : undefined;
   activePanes.add(mainPane);
   const deadline = Date.now() + 8000;
+  const checkCurrent = () => {
+    if (!isCurrent()) throw new Error('navigation_cancelled');
+  };
   const read = () => {
+    checkCurrent();
     if (Date.now() > deadline) throw new Error('navigation timeout');
     return adapter.readPane(mainPane);
   };
-  const keys = (...keys: string[]) => adapter.sendKeys(mainPane, keys);
+  const keys = (...keys: string[]) => {
+    checkCurrent();
+    return adapter.sendKeys(mainPane, keys);
+  };
+  const focus = () => {
+    checkCurrent();
+    return adapter.focusPane(mainPane);
+  };
   const waitFor = async (check: (pane: NavigationPane) => boolean): Promise<NavigationPane | null> => {
     for (let i = 0; i < 30; i++) {
       const pane = await read();
@@ -271,6 +283,7 @@ export async function navigateSession(
     const before = await read();
     if (pickerView(before) !== null) return before;
     if (!isCodex(before) || !emptyComposer(before)) return null;
+    checkCurrent();
     await adapter.sendKeys(mainPane, ['/subagents'], true);
     // Codex paste_burst.rs suppresses Enter for 120ms after rapid text input.
     // Let it expire, then verify the composer again before submitting.
@@ -347,7 +360,7 @@ export async function navigateSession(
     }
     if (confirmed.current) {
       await closePicker();
-      await adapter.focusPane(mainPane);
+      await focus();
       return { ok: true, message: 'Codex is already showing this thread.', sessionId: id, confirmed: true };
     }
     await keys('Enter');
@@ -356,7 +369,7 @@ export async function navigateSession(
     // Opening /subagents again caused a second popup, redraw and transcript
     // jump. A closed picker acknowledges delivery, not proof of the final view.
     // Preserve any restored target draft and report only what we can observe.
-    await adapter.focusPane(mainPane);
+    await focus();
     return { ok: true, message: 'Codex thread switch requested.', sessionId: id, confirmed: false };
   } catch {
     // Do not send cleanup keys into a pane whose current view cannot be verified.

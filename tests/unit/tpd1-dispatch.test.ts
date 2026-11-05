@@ -9,6 +9,10 @@ import {
   delegationPickerLabel,
   withInputRefresh,
   delegationActivityTarget,
+  createNavigationGate,
+  revealDelegationAncestors,
+  createOpenGate,
+  sameDelegationActionTarget,
 } from '../../src/utils/delegation-actions.js';
 import { S, ago, buildVm, type NodeSpec } from '../fixtures/b10b-delegation.js';
 import { draw, press } from '../fixtures/b10b-s3.js';
@@ -149,3 +153,146 @@ test('activity target uses projected keys and refuses missing or ambiguous ident
   vm.tree.nodes.push({ ...node, key: 'duplicate' });
   assert.equal(delegationActivityTarget(vm, 'main-0001', 'worker-0001'), null);
 });
+
+test('duplicate switch presses submit once and stale completion cannot update the view', async () => {
+  const gate = createNavigationGate();
+  let resolve!: (value: string) => void;
+  let current = true;
+  let calls = 0;
+  const outcomes: string[] = [];
+  const execute = () => {
+    calls++;
+    return new Promise<string>((done) => {
+      resolve = done;
+    });
+  };
+  const finish = (value: { value: string } | { error: unknown }) => {
+    if ('value' in value) outcomes.push(value.value);
+  };
+  const first = gate(
+    'one',
+    execute,
+    () => current,
+    () => {},
+    finish
+  );
+  assert.equal(
+    await gate(
+      'one',
+      execute,
+      () => current,
+      () => {},
+      finish
+    ),
+    false
+  );
+  assert.equal(calls, 1);
+  current = false;
+  resolve('done');
+  assert.equal(await first, true);
+  assert.deepEqual(outcomes, []);
+  current = true;
+  const next = gate(
+    'one',
+    execute,
+    () => current,
+    () => {},
+    finish
+  );
+  resolve('next');
+  await next;
+  assert.deepEqual(outcomes, ['next']);
+});
+
+test('activity target unfolds its ancestors and remains selected when redrawn', () => {
+  const built = buildVm([
+    { ...root, harness: 'codex' },
+    { id: 'a', parent: 'main', native: true, harness: 'codex', label: 'a', status: S.working(ago(10)) },
+    { id: 'b', parent: 'a', native: true, harness: 'codex', label: 'b', status: S.working(ago(10)) },
+  ]);
+  const target = delegationActivityTarget(built.vm, 'main-0001', 'b-0001');
+  assert.equal(target?.key, built.keys.b);
+  const collapsed = new Set([built.keys.a, 'unrelated']);
+  const revealed = revealDelegationAncestors(built.vm, target!.key!, collapsed);
+  assert.equal(revealed.has(built.keys.a), false);
+  assert.equal(revealed.has('unrelated'), true);
+  const frame = draw(built.vm, { selected: target!.key!, collapsed: [...revealed], showAll: true, height: 30 });
+  assert.equal(frame.state.tree.selectedId, target!.key);
+});
+
+test('repeated Open key cannot start simultaneous host actions; copying remains explicit per press', async () => {
+  const { vm, frame } = view('visible');
+  const first = press(frame, 'open-session').action;
+  const second = press(frame, 'open-session').action;
+  assert.equal(first?.type, 'delegation-open');
+  assert.deepEqual(second, first);
+  if (!first || first.type !== 'delegation-open') throw new Error('missing action');
+  let complete!: (value: never) => void;
+  let locations = 0;
+  let focuses = 0;
+  const host = {
+    locate: async () => {
+      locations++;
+      return new Promise<never>((done) => {
+        complete = done;
+      });
+    },
+    focus: async () => {
+      focuses++;
+    },
+  };
+  const gate = createOpenGate();
+  const execute = () =>
+    dispatchDelegationAction(first, frame.delegation?.vm, vm, true, {
+      home: '/nonexistent',
+      copy: async () => false,
+      host,
+      isCurrent: () => true,
+    });
+  const pending = gate(first.key, execute);
+  assert.equal(await gate(first.key, execute), null);
+  assert.equal(locations, 1);
+  complete({} as never);
+  assert.equal(await pending, 'Opened run.');
+  assert.equal(focuses, 1);
+  const copyView = view('headless', true);
+  const copy = press(copyView.frame, 'resume-reconcile').action;
+  if (!copy || copy.type !== 'delegation-copy') throw new Error('missing copy');
+  let copies = 0;
+  const ports = {
+    home: '/nonexistent',
+    copy: async () => {
+      copies++;
+      return true;
+    },
+  };
+  await dispatchDelegationAction(copy, copyView.frame.delegation?.vm, copyView.vm, true, ports);
+  await dispatchDelegationAction(copy, copyView.frame.delegation?.vm, copyView.vm, true, ports);
+  assert.equal(copies, 2);
+});
+
+for (const succeeds of [true, false])
+  test(`delayed clipboard ${succeeds ? 'success' : 'failure'} survives equivalent refresh but rejects changed target`, async () => {
+    const { vm, frame } = view('headless', true);
+    const action = press(frame, 'resume-reconcile').action;
+    if (!action || action.type !== 'delegation-copy') throw new Error('missing action');
+    let resolve!: (ok: boolean) => void;
+    const pending = dispatchDelegationAction(action, frame.delegation?.vm, vm, true, {
+      home: '/nonexistent',
+      copy: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+    const refreshed = structuredClone(vm);
+    assert.equal(sameDelegationActionTarget(frame.delegation?.vm, refreshed, action.key), true);
+    resolve(succeeds);
+    const message = await pending;
+    assert.match(message, succeeds ? /copied/ : /Clipboard unavailable/);
+    if (!succeeds) assert.ok(message.includes(action.descriptor.displayCommand));
+    const changed = {
+      ...refreshed,
+      details: { ...refreshed.details, [action.key]: { ...refreshed.details[action.key], reconcile: null } },
+    };
+    assert.equal(sameDelegationActionTarget(frame.delegation?.vm, changed, action.key), false);
+  });

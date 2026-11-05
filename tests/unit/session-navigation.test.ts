@@ -380,3 +380,28 @@ test('a switch request with a picker that stays open is reported as a failure', 
   assert.equal(pane.current, root);
   assert.equal(pane.sent.filter((key) => key === '/subagents').length, 1);
 });
+
+test('navigation stops after the view becomes stale before further keys or focus', async () => {
+  const pane = new FakePane();
+  let current = true;
+  pane.wait = async () => {
+    current = false;
+  };
+  const result = await navigateSession('%1', child, pane, () => current);
+  assert.equal(result.ok, false);
+  assert.deepEqual(pane.sent, ['/subagents']);
+  assert.equal(pane.focused, false);
+});
+
+test('navigation does not focus a pane after the view becomes stale during switch', async () => {
+  const pane = new FakePane();
+  let current = true;
+  const send = pane.sendKeys.bind(pane);
+  pane.sendKeys = async (id, keys, literal) => {
+    await send(id, keys, literal);
+    if (!literal && keys.includes('Enter') && pane.current === child) current = false;
+  };
+  const result = await navigateSession('%1', child, pane, () => current);
+  assert.equal(result.ok, false);
+  assert.equal(pane.focused, false);
+});

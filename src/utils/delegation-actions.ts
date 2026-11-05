@@ -133,3 +133,91 @@ export function delegationActivityTarget(
   );
   return matches.length === 1 ? { root: false, key: matches[0].key } : null;
 }
+
+/** Serialise navigation and publish its completion only while the originating view is current. */
+export function createNavigationGate() {
+  let busy = false;
+  return async function run<T>(
+    id: string,
+    execute: () => Promise<T>,
+    current: () => boolean,
+    start: () => void,
+    finish: (outcome: { value: T } | { error: unknown }) => void
+  ): Promise<boolean> {
+    if (!id || busy) return false;
+    busy = true;
+    try {
+      start();
+      let outcome: { value: T } | { error: unknown };
+      try {
+        outcome = { value: await execute() };
+      } catch (error) {
+        outcome = { error };
+      }
+      if (current()) finish(outcome);
+      return true;
+    } finally {
+      busy = false;
+    }
+  };
+}
+
+/** Reveal the target while retaining unrelated folded branches. */
+export function revealDelegationAncestors(
+  vm: DelegationViewModel,
+  key: string,
+  collapsed: ReadonlySet<string>
+): Set<string> {
+  const result = new Set(collapsed);
+  let node = vm.tree.nodes.find((item) => item.key === key);
+  const seen = new Set<string>();
+  while (node?.parentKey && !seen.has(node.parentKey)) {
+    seen.add(node.parentKey);
+    result.delete(node.parentKey);
+    node = vm.tree.nodes.find((item) => item.key === node?.parentKey);
+  }
+  return result;
+}
+
+/** A second Open on the same row must not start another host interaction. */
+export function createOpenGate() {
+  const inFlight = new Set<string>();
+  return async (key: string, execute: () => Promise<string>): Promise<string | null> => {
+    if (inFlight.has(key)) return null;
+    inFlight.add(key);
+    try {
+      return await execute();
+    } finally {
+      inFlight.delete(key);
+    }
+  };
+}
+
+/** Compare the identity and command the user saw, allowing equivalent refreshed snapshots. */
+export function sameDelegationActionTarget(
+  drawn: DelegationViewModel | undefined,
+  current: DelegationViewModel | null,
+  key: string
+): boolean {
+  const stamp = (vm: DelegationViewModel | null | undefined) => {
+    const node = vm?.tree.nodes.find((item) => item.key === key);
+    if (!vm || !node) return null;
+    const run = node.currentRun;
+    return JSON.stringify({
+      ledgerId: vm.tree.ledger.ledgerId,
+      identity: node.identity,
+      parent: node.parentKey,
+      run: run && {
+        id: run.runId,
+        link: run.linkId,
+        seq: run.runSeq,
+        generation: run.expectedGeneration,
+        mode: run.mode,
+      },
+      host: node.host?.locator ?? null,
+      descriptor: vm.details[key]?.reconcile ?? null,
+    });
+  };
+  const before = stamp(drawn);
+  return before !== null && before === stamp(current);
+}

@@ -10,6 +10,10 @@ import {
   delegationPickerLabel,
   withInputRefresh,
   delegationActivityTarget,
+  createNavigationGate,
+  revealDelegationAncestors,
+  createOpenGate,
+  sameDelegationActionTarget,
 } from './utils/delegation-actions.js';
 import { defaultSettings, saveSettings, briefingScope, settingsPath, type HudSettings } from './settings.js';
 import { homedir } from 'node:os';
@@ -305,7 +309,8 @@ async function runLivePage(): Promise<void> {
   let confirmationFrame: SettingsConfirmationFrame | undefined;
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
-  let navigating = false;
+  const navigateOnce = createNavigationGate();
+  const openOnce = createOpenGate();
   let lastClickSwitch: { id: string; at: number } | undefined;
   let navigationMessage: string | null = null;
   let tree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
@@ -1202,24 +1207,46 @@ async function runLivePage(): Promise<void> {
       .catch(() => {})
       .finally(resolveDone);
   };
-  const switchSession = async (id: string) => {
-    if (navigating || !id) return;
-    navigating = true;
-    navigationMessage = t('Switching Codex session…');
-    render();
-    try {
-      // The name is the fallback for a Codex pane too narrow to print ids.
-      const result = await navigateSession(process.env.CODEX_HUD_MAIN_PANE, {
-        id,
-        label: delegation ? delegationPickerLabel(delegation, tree.rootId, id) : uniquePickerLabel(tree, id),
-      });
-      navigationMessage = result.ok ? null : result.message;
-    } catch (err) {
-      navigationMessage = t('Switch failed: {reason}', { reason: String(err) });
-    } finally {
-      navigating = false;
-      render();
-    }
+  const switchSession = (id: string) => {
+    const root = tree.rootId;
+    const view = delegation;
+    const selected = state.tree.selectedId;
+    const label = view ? delegationPickerLabel(view, root, id) : uniquePickerLabel(tree, id);
+    const selectedIdentity = (snapshot: DelegationViewModel | null) => {
+      const node = snapshot?.tree.nodes.find((item) => item.key === selected);
+      return snapshot
+        ? JSON.stringify({
+            ledger: snapshot.tree.ledger.ledgerId,
+            identity: node?.identity,
+            parent: node?.parentKey,
+            run: node?.currentRun?.runId,
+          })
+        : null;
+    };
+    const identity = selectedIdentity(view);
+    const current = () =>
+      !closed &&
+      tree.rootId === root &&
+      state.tree.selectedId === selected &&
+      selectedIdentity(delegation) === identity;
+    return navigateOnce(
+      id,
+      () => navigateSession(process.env.CODEX_HUD_MAIN_PANE, { id, label }, undefined, current),
+      current,
+      () => {
+        navigationMessage = t('Switching Codex session…');
+        render();
+      },
+      (outcome) => {
+        navigationMessage =
+          'error' in outcome
+            ? t('Switch failed: {reason}', { reason: String(outcome.error) })
+            : outcome.value.ok
+              ? null
+              : outcome.value.message;
+        render();
+      }
+    );
   };
   /**
    * A command from the prefix table as the input it stands for. An open
@@ -1377,6 +1404,10 @@ async function runLivePage(): Promise<void> {
                 tree: {
                   ...state.tree,
                   selectedId: action.agentId === tree.rootId ? state.tree.selectedId : (selected ?? action.agentId),
+                  collapsed:
+                    delegation && selected
+                      ? revealDelegationAncestors(delegation, selected, state.tree.collapsed)
+                      : state.tree.collapsed,
                   showAll: true,
                 },
                 modes: { ...state.modes, details: 'open' },
@@ -1619,14 +1650,24 @@ async function runLivePage(): Promise<void> {
           result.action.type === 'delegation-diagnostic')
       ) {
         const action = result.action;
-        void dispatchDelegationAction(
-          action,
-          actionFrame?.delegation?.vm,
-          delegation,
-          actionRoot === tree.rootId && actionEpoch === collectionEpoch,
-          { home: getHudHome(), copy: copyDelegationCommand }
-        ).then((message) => {
-          if (closed || actionRoot !== tree.rootId) return;
+        const selected = state.tree.selectedId;
+        const execute = () =>
+          dispatchDelegationAction(
+            action,
+            actionFrame?.delegation?.vm,
+            delegation,
+            actionRoot === tree.rootId && actionEpoch === collectionEpoch,
+            { home: getHudHome(), copy: copyDelegationCommand }
+          );
+        void (action.type === 'delegation-open' ? openOnce(action.key, execute) : execute()).then((message) => {
+          if (
+            message === null ||
+            closed ||
+            actionRoot !== tree.rootId ||
+            !sameDelegationActionTarget(actionFrame?.delegation?.vm, delegation, action.key) ||
+            state.tree.selectedId !== selected
+          )
+            return;
           navigationMessage = message;
           render();
         });
