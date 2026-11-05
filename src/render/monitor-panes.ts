@@ -7,6 +7,7 @@ import type { SubagentTreeNode } from '../types.js';
 import type { GitChangedFile } from '../collectors/git-changes.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { MonitorData, MonitorPane, MonitorRow, MonitorState } from './monitor.js';
+import type { DelegationView } from './delegation/panel.js';
 import type { CountsText } from './control-bar.js';
 import { visibleRows, countExpired, guardianCount } from './panel-state.js';
 import { agentCounts, eachThread, type StatusCounts } from '../collectors/subagent-tree.js';
@@ -419,12 +420,13 @@ export function paneRows(
   input: MonitorData,
   state: MonitorState,
   width: number,
-  now: number
+  now: number,
+  delegation?: DelegationView
 ): MonitorRow[] {
   if (id === 'agents') return agentRows(input, state, width, now);
   if (id === 'timeline') return timelineRows(input, width, now);
   if (id === 'changes') return changesRows(input, state, width, now);
-  return inspectorRows(input, state, width, now);
+  return inspectorRows(input, state, width, now, delegation);
 }
 
 /**

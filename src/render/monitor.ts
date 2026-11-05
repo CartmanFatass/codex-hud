@@ -816,7 +816,9 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const content = new Map(
     ids.map((id) => [
       id,
-      id === 'agents' ? agentsView(input, state, cw, now, true) : paneRows(id, input, state, inner, now),
+      id === 'agents'
+        ? agentsView(input, state, cw, now, true)
+        : paneRows(id, input, state, inner, now, frame.delegation),
     ])
   );
   const sizes = new Map<MonitorPane, number>();

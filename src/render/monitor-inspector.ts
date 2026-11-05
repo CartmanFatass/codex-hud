@@ -15,6 +15,7 @@ import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
 import { newestIntent } from './cards.js';
 import { conflictDetails } from '../core/link/conflict-details.js';
+import type { DelegationView } from './delegation/panel.js';
 import {
   age,
   nodeStatus,
@@ -94,8 +95,88 @@ function proseLines(text: string, width: number, limit?: number): string[] {
   return shown.map((line) => `  ${line}`);
 }
 
+/** Read only the same planned destination and immutable view used by this frame. */
+function delegationInspectorRows(view: DelegationView, selected: string | null, width: number): MonitorRow[] {
+  const matches = view.dest.rows.filter((row) => row.key === selected);
+  if (matches.length !== 1) return wrapped('Selection unavailable', width).map((text) => ({ text }));
+  const row = matches[0];
+  if (row.kind === 'putAway') return wrapped('Put away · aggregate', width).map((text) => ({ text }));
+  const pn = row.pn;
+  if (!pn) return wrapped('Selection unavailable', width).map((text) => ({ text }));
+  const node = pn.node;
+  if (!node) {
+    const conflict = pn.relation && conflictDetails(pn.relation);
+    if (!conflict) return wrapped('Conflict details unavailable', width).map((text) => ({ text }));
+    const lines = [
+      'Conflict',
+      `${conflict.count} records · no run attributed`,
+      ...conflict.recordIds.slice(0, 5).map((id) => `${id} · provenance unavailable`),
+    ];
+    if (conflict.recordIds.length > 5) lines.push(`+${conflict.recordIds.length - 5} more`);
+    if (conflict.notListed) lines.push(`+${conflict.notListed} not listed`);
+    lines.push('Reconcile unavailable · record target unverified');
+    return lines.flatMap((line) => wrapped(line, width).map((text) => ({ text })));
+  }
+  const detail = view.vm.details[node.key];
+  const observation = node.observation;
+  const run = node.currentRun;
+  const lines = [
+    pn.proj.name || (pn.proj.isRoot ? 'Root' : 'Unnamed'),
+    `Status: ${detail?.status?.stateKey ?? 'unavailable'} (${detail?.statusSource ?? 'unavailable'})`,
+  ];
+  if (node.identity.kind === 'session') {
+    const ref = node.identity.ref;
+    lines.push(`Session: ${ref.harness} · ${ref.sessionId}`);
+    if (ref.threadId) lines.push(`Thread: ${ref.threadId}`);
+  } else if (node.identity.kind === 'delegationIntent') lines.push(`Intent: ${node.identity.linkId}`);
+  if (pn.proj.isRoot) {
+    const counts = view.vm.tree.counts;
+    lines.push('Coverage', `Known not loaded: ${counts.knownUnloaded} · including omitted: ${counts.omitted}`);
+    if (counts.unknownDescendants) lines.push('Children unknown');
+  }
+  if (view.vm.tree.ledger.state !== 'available')
+    lines.push(`Ledger: ${view.vm.tree.ledger.reason ?? 'unavailable'} · retained view`);
+  if (!node.loaded) lines.push('History not loaded');
+  if (node.conflict) {
+    lines.push(`Conflict: ${node.conflict.count} records · target unavailable`);
+  }
+  if (observation) {
+    lines.push(view.vm.tree.ledger.state === 'available' ? 'Current observation' : 'Retained observation');
+    if (observation.model?.value != null)
+      lines.push(`Model: ${observation.model.value} (${observation.model.quality})`);
+    if (observation.effort?.value != null)
+      lines.push(`Effort: ${observation.effort.value} (${observation.effort.quality})`);
+    if (observation.context?.value != null) {
+      const context = observation.context.value;
+      lines.push(`Context: ${context.used}/${context.window} · ${context.percent}% (${observation.context.quality})`);
+    }
+    if (observation.workspace?.cwd) lines.push(`Workspace: ${observation.workspace.cwd}`);
+  } else {
+    lines.push(
+      node.lastObservation ? 'No current observation · previous observation available' : 'Observation unavailable'
+    );
+  }
+  if (run) lines.push(`Run: ${run.runId} · ${run.mode} · ${run.state}`);
+  else lines.push('Run: unavailable');
+  lines.push('Reports');
+  const reports = run
+    ? (detail?.reportHistory ?? []).filter((report) => report.runId === run.runId && report.linkId === run.linkId)
+    : [];
+  if (!reports.length)
+    lines.push(run && detail && view.vm.tree.ledger.state === 'available' ? 'none yet' : 'unavailable');
+  for (const report of reports.slice(-5)) lines.push(`${report.status} · ${report.summary}`);
+  lines.push('Action: unavailable', 'Output rate: unavailable');
+  return lines.flatMap((line) => wrapped(line, width).map((text) => ({ text })));
+}
+
 /** The Inspector's rows: the agent, worktree or file it was opened on. */
-export function inspectorRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
+export function inspectorRows(
+  input: MonitorData,
+  state: MonitorState,
+  width: number,
+  now: number,
+  delegation?: DelegationView
+): MonitorRow[] {
   // Inspector is explicitly opened (Enter/v/4), never follows agent clicks into a transcript.
   let lines: string[] = [];
   if (state.preview === 'diagnostics') {
@@ -109,24 +190,7 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
     ];
   }
   if (state.preview === 'agent') {
-    const delegation = input.hud?.delegation;
-    const conflict =
-      delegation && state.tree.selectedId ? conflictDetails(delegation.tree, state.tree.selectedId) : null;
-    if (conflict) {
-      const rows = [
-        'Conflict',
-        `${conflict.count} records · no run attributed`,
-        ...conflict.records
-          .slice(0, 5)
-          .map(
-            (record) =>
-              `${monitorText(record.id)} · ${record.parentKey ? monitorText(record.parentKey) : 'parent unavailable'} · ${record.runId ? monitorText(record.runId) : 'run unavailable'}${record.runState ? ` ${monitorText(record.runState)}` : ''}`
-          ),
-      ];
-      if (conflict.records.length > 5) rows.push(`+${conflict.records.length - 5} more`);
-      if (conflict.notListed) rows.push(`+${conflict.notListed} not listed`);
-      return rows.flatMap((line) => wrapped(line, width).map((text) => ({ text })));
-    }
+    if (delegation) return delegationInspectorRows(delegation, state.tree.selectedId, width);
     const node = findNode(input.tree.nodes, state.tree.selectedId);
     if (!node) lines = [];
     else {
