@@ -32,10 +32,18 @@ import { WakeDrainer } from './wake-drainer.js';
 import { WakeAdapters } from '../../../src/core/wake/adapters.js';
 import { makeProcessKey } from '../../../src/core/identity.js';
 import { mkdirSync } from 'node:fs';
+import { realpath } from 'node:fs/promises';
+import { makeSourceId } from '../../../src/core/identity.js';
+import { launchDigest } from '../../../src/core/run/control.js';
+import { launchProfileDigest } from '../../../src/core/capabilities.js';
+import type { Harness } from '../../../src/core/types/identity.js';
+import type { CodexLaunchPreparation, PrepareCodexLaunchOptions } from '../../../src/core/launch/index.js';
 import { hintDirectory } from '../../../src/core/wait/hints.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 type McpAuthority = Extract<IntentAuthority, { kind: 'mcp' }>;
+export type LaunchPreparer = (options: PrepareCodexLaunchOptions) => Promise<CodexLaunchPreparation>;
+
 /** Consult 5 G03: shared request fields only; schema/digest/CAS behavior is B45-R2. */
 type DelegationArguments = Record<string, unknown> & Pick<McpResumeRequest, 'expectedRun'>;
 export interface DelegationOptions {
@@ -49,6 +57,8 @@ export interface DelegationOptions {
   env?: NodeJS.ProcessEnv;
   codexConfig?: import('../../../src/core/types/capabilities.js').CodexConfig;
   executableIdentity?: import('../../../src/core/launch/fingerprint.js').ExecutableIdentity;
+  /** Trusted constructor-only test/integration preparers; no configuration or tool selects code. */
+  launchPreparers?: Readonly<Partial<Record<Exclude<Harness, 'codex'>, LaunchPreparer>>>;
   /** Trusted dependency for owned-process tests. Never selected by tool/config input. */
   launch?: typeof launchPreparedRun;
   /** Trusted client/version/profile timeout proof; numeric config alone is insufficient. */
@@ -65,7 +75,9 @@ export class DelegationService {
   private readonly reads: ReadControlService;
   private readonly wakes?: WakeDrainer;
   private readonly cache: CacheAdviceSource;
+  private readonly preparers: Readonly<Partial<Record<Harness, LaunchPreparer>>>;
   constructor(private readonly options: DelegationOptions) {
+    this.preparers = Object.freeze({ ...(options.launchPreparers ?? {}), codex: prepareCodexLaunch });
     mkdirSync(hintDirectory(options.home), { recursive: true, mode: 0o700 });
     const physical = options.registration;
     if (
@@ -256,7 +268,9 @@ export class DelegationService {
     const backend = handover ? String(args.backend) : (previous?.link.backend ?? String(args.backend));
     const profile = config.profiles.find((p) => p.name === backend);
     if (!profile) throw new Error('backend_not_found');
-    const preparation = await prepareCodexLaunch({
+    const prepare = Object.hasOwn(this.preparers, profile.harness) ? this.preparers[profile.harness] : undefined;
+    if (!prepare) throw new Error('unsupported_harness');
+    const preparation = await prepare({
       profile,
       retireRecoveryMs: config.wake?.recoveryMs,
       operation: handover ? 'resume' : operation,
@@ -272,6 +286,23 @@ export class DelegationService {
       codexConfig: this.options.codexConfig,
       executableIdentity: this.options.executableIdentity,
     });
+    // A trusted preparer only proposes data. Independently bind all identity
+    // and execution dimensions before it can reach capability or intent writes.
+    const expectedRoot = await realpath(profile.source.root);
+    const expectedCwd = await realpath(handover ? String(args.cwd) : (previous?.run.launchCwd ?? String(args.cwd)));
+    if (args.mode !== 'headless' && args.mode !== 'visible') throw new Error('invalid_run_mode');
+    const expectedMode = args.mode;
+    const expectedOperation = handover ? 'resume' : operation;
+    const capabilityRequest = preparation.capabilityRequest(previous?.run.mode);
+    if (
+      preparation.harness !== profile.harness || preparation.sourceRoot !== expectedRoot ||
+      preparation.sourceId !== makeSourceId(profile.harness, expectedRoot) || preparation.cwd !== expectedCwd ||
+      preparation.profileDigest !== launchProfileDigest({ ...profile, source: { ...profile.source, root: expectedRoot } }) ||
+      capabilityRequest.sourceId !== preparation.sourceId || capabilityRequest.key.harness !== profile.harness ||
+      capabilityRequest.key.mode !== expectedMode || capabilityRequest.key.operation !== expectedOperation ||
+      capabilityRequest.key.hostKind !== profile.host.kind || capabilityRequest.key.layout !== profile.host.layout ||
+      (expectedOperation === 'resume' && capabilityRequest.key.resumeFrom !== previous?.run.mode)
+    ) throw new Error('launch_preparation_mismatch');
     const at = Date.now(),
       runId = randomUUID(),
       linkId = handover ? randomUUID() : (previous?.link.linkId ?? randomUUID()),
@@ -289,7 +320,13 @@ export class DelegationService {
         parent = { process: actual, contextId: authority.contextId, generation: authority.generation };
     }
     const launch = preparation.forRun({ runId, linkId, claim: claimText, hudHome: home, parent });
-    const capability = this.options.capability.verify(preparation.capabilityRequest(previous?.run.mode));
+    if (
+      launch.input.runId !== runId || launch.input.sourceId !== preparation.sourceId ||
+      launch.input.profileDigest !== preparation.profileDigest || launch.input.cwd !== preparation.cwd ||
+      launch.input.mode !== expectedMode || launch.payload.input !== launch.input || launch.payload.env?.HUD_HOME !== home ||
+      launchDigest(launch.input) !== launch.launchDigest
+    ) throw new Error('launch_preparation_mismatch');
+    const capability = this.options.capability.verify(capabilityRequest);
     const context =
       authority.kind === 'mcp'
         ? await ledger.readSnapshot((tx) => readContext(tx, authority.contextId, authority.generation))
@@ -329,7 +366,7 @@ export class DelegationService {
       operation: handover ? 'handover' : operation,
       targetSessionRef: previous?.link.childRef ?? null,
       sourceId: preparation.sourceId,
-      harness: 'codex',
+      harness: preparation.harness,
       expectedGeneration: (previous?.run.expectedGeneration ?? 0) + 1,
       mode: args.mode as 'headless' | 'visible',
       launchCwd: preparation.cwd,
@@ -421,8 +458,8 @@ export class DelegationService {
         requestKey: String(args.request_key),
         targetSource: {
           sourceId: preparation.sourceId,
-          harness: 'codex',
-          rootPath: profile.source.root,
+          harness: preparation.harness,
+          rootPath: preparation.sourceRoot,
           label: profile.source.label,
         },
         params,

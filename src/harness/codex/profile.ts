@@ -43,6 +43,8 @@ export interface CodexRunValues {
   parent?: StartOptions['parent'];
 }
 export interface CodexLaunchPreparation {
+  readonly harness: 'claude' | 'codex' | 'pi';
+  readonly sourceRoot: string;
   readonly profileDigest: string;
   readonly sourceId: string;
   readonly cwd: string;
@@ -226,6 +228,8 @@ export async function prepareCodexLaunch(options: PrepareCodexLaunchOptions): Pr
   delete env.HUD_LINK;
   const commandFingerprint = digest({ command, configFingerprint });
   const preparation: CodexLaunchPreparation = {
+    harness: 'codex',
+    sourceRoot: root,
     profileDigest,
     sourceId,
     cwd,

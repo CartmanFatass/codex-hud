@@ -73,3 +73,28 @@ test('lab reporter rejects a caller outside its owned synthetic child', async ()
     assert.doesNotMatch(r.stdout+r.stderr,/synthetic-refusal-claim/);
   } finally { rmSync(home,{recursive:true,force:true}); }
 });
+
+test('Pi lab intent uses real supervision without claiming Pi binding', () => {
+  const r=spawnSync(process.execPath,[resolve('scripts/workbench/vertical.mjs'),'--pi','--json'],{
+    cwd:resolve('.'),encoding:'utf8',timeout:60000,
+    env:{...process.env,EXAMPLE_SECRET:'must-not-propagate',OPENAI_API_KEY:'must-not-propagate'}
+  });
+  assert.equal(r.status,0,r.stderr);
+  const value=JSON.parse(r.stdout);
+  assert.match(value.label,/SIMULATED Claude.*SIMULATED Pi/);
+  assert.equal(value.first.replayWithCapabilityDenied,true);
+  assert.equal(value.first.runId,value.first.replayRunId);
+  assert.equal(value.dispatchCount,2);
+  assert.equal(value.first.active.run.harness,'pi'); assert.equal(value.first.active.run.state,'running');
+  assert.equal(value.first.active.slotHeld,true);
+  assert.equal(value.first.active.events.filter((e)=>e==='launch.submitting').length,1);
+  assert.equal(value.first.ended.run.harness,'pi'); assert.equal(value.first.ended.run.state,'ended');
+  assert.equal(value.first.ended.slotHeld,false); assert.equal(value.first.ended.run.exit_code,null);
+  assert.deepEqual(value.first.reports,[]); assert.equal(value.first.reportedState,null);
+  assert.ok(value.frames.flatMap((f)=>f.relations).every((r)=>r.harness==='pi' && r.attribution==='intent' && !r.childBound));
+  assert.ok(value.frames[0].panel.some((line)=>line.includes('SIMULATED Pi child')));
+  assert.equal(value.second.cancel.accepted,true);
+  assert.ok(value.second.cancelled.events.includes('cancel.accepted'));
+  assert.ok(['ended','cancelled','failed'].includes(value.second.cancelled.run.state));
+  assert.deepEqual(value.childEnvironment,['HOME','HUD_HOME','PATH']);
+});
