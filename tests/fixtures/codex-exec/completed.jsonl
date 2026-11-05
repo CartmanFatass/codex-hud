@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"synthetic-thread-1"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"cmd-1","type":"command_execution","command":"echo simulated","aggregated_output":"","status":"in_progress"}}
+{"type":"item.updated","item":{"id":"cmd-1","type":"command_execution","command":"echo simulated","aggregated_output":"模拟","status":"in_progress"}}
+{"type":"item.completed","item":{"id":"cmd-1","type":"command_execution","command":"echo simulated","aggregated_output":"模拟","status":"completed","exit_code":0}}
+{"type":"item.completed","item":{"id":"answer-1","type":"agent_message","text":"Synthetic response; not a model call."}}
+{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":5,"cache_write_input_tokens":0,"output_tokens":7,"reasoning_output_tokens":0}}

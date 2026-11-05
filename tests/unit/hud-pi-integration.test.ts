@@ -88,7 +88,7 @@ test('hud pi inspect routes complete and partial JSON observations without write
 test('hud pi errors preserve reason codes and keep stdout empty', async (t) => {
   const f = fixture(t);
   for (const [args, code, reason] of [
-    [['pi', 'launch'], 2, 'invalid_pi_command'],
+    [['pi', 'unknown-command'], 2, 'invalid_pi_command'],
     [['pi', 'inspect'], 2, 'invalid_arguments'],
     [['pi', 'inspect', '--source', join(f.root, 'missing'), '--session', f.file], 4, 'invalid_pi_source'],
     [['pi', 'inspect', '--source', f.root, '--session', join(f.root, 'missing')], 4, 'pi_transcript_unavailable'],
