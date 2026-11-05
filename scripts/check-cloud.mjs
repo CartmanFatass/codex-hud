@@ -17,6 +17,7 @@ export const FOCUSED_TESTS = [
   'hud-pi-integration',
   'statusline-preview',
   'statusline-settings',
+  'statusline-summary',
   'product-cli-routing',
   'pi-footer',
   'codex-exec-json',

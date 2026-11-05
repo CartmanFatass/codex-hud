@@ -1,15 +1,21 @@
 import { fileURLToPath } from 'node:url';
 import { statuslinePreview } from '../statusline-preview.js';
 import { statuslineSettings } from '../statusline-settings.js';
+import { readStatuslineSummary } from '../core/statusline-summary.js';
+import { renderStatuslineSession } from '../render/statusline-session.js';
+import { renderStatuslineSummary } from '../render/statusline-summary.js';
 import type { HudIO } from './link-export.js';
 
-export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS]
+export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--source ABSOLUTE_CLAUDE_ROOT]
        hud statusline settings preview
        hud statusline settings apply --plan ABSOLUTE_FILE
        hud statusline settings restore --backup ABSOLUTE_FILE
        hud-statusline [same arguments]
 
-Render one stdin Claude statusline JSON; no installation by default.
+Render stdin Claude facts, with a bounded read-only delegation line when available.
+Delegation source: --source or explicit CLAUDE_CONFIG_DIR; no guessed source/home.
+Direct-child fallback is partial, never a full-tree total. Missing data keeps line 1.
+No transcript reading, collection, network access or installation by default.
 Settings commands are explicit Linux opt-in operations under HOME/.claude.
 Preview before apply; keep the returned backup path for exact restore.
 USD is the provider's estimated session cost, not an invoice.
@@ -36,12 +42,30 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
       return 2;
     }
   }
-  return statuslinePreview(args, process.stdin, {
+  let sourceRoot: string | undefined;
+  const widthArgs: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    if (args[index] === '--source') {
+      if (sourceRoot !== undefined || !args[index + 1] || args[index + 1].startsWith('--')) {
+        io.stderr('invalid_arguments\n');
+        return 2;
+      }
+      sourceRoot = args[++index];
+    } else widthArgs.push(args[index]);
+  }
+  return statuslinePreview(widthArgs, process.stdin, {
     columns: io.env.COLUMNS,
     ttyColumns: process.stdout.isTTY ? process.stdout.columns : undefined,
     stdout: async (text) => {
       await io.stdout(text);
     },
     stderr: io.stderr,
+    render: async (value, width) => {
+      const first = renderStatuslineSession(value, width);
+      const nowMs = Date.now();
+      const summary = await readStatuslineSummary(value, io.env, sourceRoot, { nowMs });
+      const second = renderStatuslineSummary(summary, width, nowMs);
+      return second ? `${first}\n${second}` : first;
+    },
   });
 }

@@ -1,0 +1,96 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build
+> node ./node_modules/typescript/bin/tsc
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.2
+npm notice To update run: npm install -g npm@12.2.2
+npm notice
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> codex-hud@0.1.0 build:test
+> node ./node_modules/typescript/bin/tsc -p tsconfig.test.json
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.2
+npm notice To update run: npm install -g npm@12.2.2
+npm notice
+✔ the counts end the first line: 2 working, 1 flag, 1 done (15.080821ms)
+✔ 80 columns: the design sample, plus the finished item the engine keeps (2.778061ms)
+✔ 120 columns: the design sample exactly, with the pane (1.986847ms)
+✔ 200 columns: each item carries its pane and mode (0.880042ms)
+✔ the line is never wider than the width, at any width (198.869283ms)
+✔ the ladder: pane and mode go first, then ages, then actives into +N▸, trouble last of all (7.237864ms)
+✔ trouble items come newest first, ahead of the actives (§3.2); a conflict is one item however many parents claim it (1.300348ms)
+✔ the ladder drops the troubled items words before it turns them into counts, in the order ⚑ ? ⚠ ✗ (32.521983ms)
+✔ close pane and stop in pane are alive in fact: kept as items, ahead of +N, never folded (2.776096ms)
+✔ a full set of slots appends `· 6/6` to the count, and adds no item (1.180158ms)
+✔ the remainder counts agree with the first line: ✗ for a failure, ■ counted with ✓ (0.642473ms)
+✔ height: 1 without live or troubled delegations, 2 with them (1.242234ms)
+✔ a root alone, with nothing delegated, adds no count and no line (3.351722ms)
+✔ delegationLine=false keeps the count and drops the second line (1.223704ms)
+✔ too narrow for any item: only the first line (height 1) (0.635238ms)
+✔ ASCII fallback: no non-ASCII character in the count or the line, same shape (4.857403ms)
+✔ CJK names: widths are measured in columns and the line still fits (2.942225ms)
+✔ Chinese words come from the table, the markers and names do not change (0.992343ms)
+✔ countsText is the count alone, and empty when nothing was delegated (0.550552ms)
+✔ joinFirstLine keeps the count at the end and cuts the session facts first (0.783787ms)
+✔ §3.4: an item whose age cannot be measured has no age, never `0s` (1.042206ms)
+✔ ASCII: the statusline holds nothing but ASCII, a capped name included (0.755849ms)
+✔ B12 lease expiry fences old renew/release/publish; generation persists across release/restart and clocks fail closed (30.694566ms)
+✔ B12 clock rollback after no-op and refused expiry stays read-only without tick writes or lease resurrection (26.393723ms)
+✔ B12 one source/ref/seq CAS; durable restart continuity and gaps; no ledger created; private/read-only files (14.261738ms)
+✔ B12 F09 gate rejects raw tails, encoded extensions, binary, tampered witness and inconsistent complete boundaries before writes (9.264923ms)
+✔ B12 fixed evidence deadlines ignore repeated reads; a changed absolute freshness deadline persists (10.769421ms)
+✔ B12 WAL lock budget refuses competing publication while read consumers retain old complete commit (19.412909ms)
+✔ B12 controlled readerVersion rebuild removes old raw cache atomically, resets continuity and permanently fences retired readers (15.849395ms)
+✔ B12 compact Codex/Claude checkpoints restart without private tails; bounded legacy V8 rejects hidden state (59.16122ms)
+✔ B12 reopened stores cannot inherit authority after no-op/expiry clock rollback; same holder waits and reacquires a new generation (13.900013ms)
+✔ B12 a crashed collector is read-only through inherited handles; takeover waits expiry and bumps persistent generation (139.613509ms)
+✔ B12 two real panel/statusline processes elect one writer; delayed old candidate cannot overwrite takeover (258.941554ms)
+✔ B12 SIGKILL before preparation, after journal writes before publish, and after publish exposes only complete versions; uncommitted leftovers cleaned (813.755351ms)
+﹣ B12 cost: 1000 publishes/reads, unchanged ages and early renewals cause zero database writes (0.332702ms) # set B12_BENCHMARK=1 for the isolated 1000-sample disk benchmark
+✔ root help discovers statusline without opening a ledger; render aliases agree (1176.905515ms)
+✔ routed settings preserve preview/apply/restore safeguards in temporary HOME (661.936497ms)
+✔ package and lock agree on executable aliases (2.391724ms)
+✔ stdin model, native context percent and cost are displayed without interpreting other fields (1.995752ms)
+✔ unknown and malformed values are omitted, while zero and tiny costs remain facts (0.613934ms)
+✔ narrow output drops cost and context before shortening identity (8.312015ms)
+✔ terminal controls and bidi are escaped, never emitted as commands or extra lines (1.447013ms)
+✔ width precedence is explicit, COLUMNS, TTY, default; malformed widths never coerce (1.060407ms)
+✔ input accepts chunked UTF-8 JSON but rejects invalid UTF-8, arrays, trailing objects and large input (12.340706ms)
+✔ input deadline and premature close stop a stalled producer (11.597814ms)
+✔ argument/input failures leave stdout empty and never include private input in diagnostics (1.431405ms)
+✔ help does not consume input, and an output rejection is reported once (1.045417ms)
+✔ built standalone command renders with isolated HOME and creates no files (252.339451ms)
+✔ preview read-only; explicit apply preserves other settings and restore returns exact bytes/mode (6.980779ms)
+✔ new file is removed on explicit restore, backup retained (4.410039ms)
+✔ stale preview and post-install edit conflict, no overwrite (4.846756ms)
+✔ symlink, wrong target, invalid JSON and cooperative lock fail closed (3.165198ms)
+✔ actual product entry renders stdin and explicit preview/apply/restore in temporary HOME only (636.600302ms)
+✔ large valid settings have a readable exact backup; tampered backup cannot restore (83.463391ms)
+✔ actual FIFO settings, plan and backup are refused promptly without waiting for writers (456.678378ms)
+✔ directory substitution cannot redirect apply mutations to another directory (4.148746ms)
+✔ group/world-writable settings, plan and backup are rejected (167.009767ms)
+✔ statusline identity needs explicit canonical source and exact root/thread tuple (41.079835ms)
+✔ committed projection is read-only, partial and independent of transcript/recovery bodies (43.038808ms)
+✔ missing, old, future and oversized projections never invent current activity (48.400328ms)
+✔ later ledger sequence and revoked exact binding invalidate observation (35.083909ms)
+✔ one indexed parent page is capped at fifty with no tree totals or descendants (31.401677ms)
+✔ historical rows consume candidate budget rather than an unbounded filtered scan (24.198379ms)
+✔ unsafe private paths and unavailable ledger leave first-line fallback possible (24.800581ms)
+✔ budget includes close and close failure cannot escape the read-only reader (26.767727ms)
+✔ render is bounded, terminal-safe and never supplies capacity or tree totals (40.468889ms)
+✔ actual hud-statusline and hud statusline render line 2 without settings or transcript reads (756.365177ms)
+✔ projection byte charge includes stored whitespace and malformed JSON before decode (23.375159ms)
+ℹ tests 68
+ℹ suites 0
+ℹ pass 67
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 7576.855265

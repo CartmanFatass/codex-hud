@@ -83,6 +83,8 @@ export interface ObservationStoreOptions {
   hudHome: string;
   sourceId: string;
   readOnly?: boolean;
+  /** Lower the default 10ms lock wait for bounded read-only consumers. */
+  busyTimeoutMs?: number;
   /** Epoch clock, sampled again after obtaining the write lock. */
   now?: () => number;
 }
@@ -427,13 +429,27 @@ export class ObservationStore {
   }
 
   /** Cheap, read-only projection: this query never selects checkpoint or index bodies. */
-  readProjection(ref: SessionRef): ObservationProjection | null {
+  readProjection(
+    ref: SessionRef,
+    maxBytes?: number,
+    onReadBytes?: (bytes: number) => void
+  ): ObservationProjection | null {
+    if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 1))
+      throw new ObservationStoreError('invalid_projection_budget');
     const key = this.#key(ref);
     const row = this.#read(() =>
-      this.db.prepare('SELECT projection_body FROM observation_current WHERE ref=?').get(key)
+      maxBytes === undefined
+        ? this.db.prepare('SELECT projection_body FROM observation_current WHERE ref=?').get(key)
+        : this.db
+            .prepare(
+              'SELECT projection_body FROM observation_current WHERE ref=? AND length(CAST(projection_body AS BLOB))<=?'
+            )
+            .get(key, maxBytes)
     );
     if (!row) return null;
-    return decodeProjectionBody(String(row.projection_body), ref);
+    const body = String(row.projection_body);
+    onReadBytes?.(Buffer.byteLength(body));
+    return decodeProjectionBody(body, ref);
   }
 
   #indexRow(reference: RecoveryIndexReference): Row {
@@ -1123,6 +1139,14 @@ export class ObservationStore {
 }
 
 export async function openObservationStore(options: ObservationStoreOptions): Promise<ObservationStore> {
+  if (
+    options.busyTimeoutMs !== undefined &&
+    (!options.readOnly ||
+      !Number.isSafeInteger(options.busyTimeoutMs) ||
+      options.busyTimeoutMs < 0 ||
+      options.busyTimeoutMs > 10)
+  )
+    throw new ObservationStoreError('invalid_observation_timeout');
   const [major, minor] = process.versions.node.split('.').map(Number);
   if (!((major === 22 && minor >= 13) || major >= 24))
     throw new ObservationStoreError(
@@ -1159,7 +1183,7 @@ export async function openObservationStore(options: ObservationStoreOptions): Pr
   let staging = false;
   const unsafeRefs = new Set<string>();
   try {
-    db.exec('PRAGMA busy_timeout=10');
+    db.exec(`PRAGMA busy_timeout=${options.busyTimeoutMs ?? 10}`);
     if (!options.readOnly) {
       db.exec('PRAGMA synchronous=FULL; PRAGMA secure_delete=ON');
       verifyWritableSettings(db);
