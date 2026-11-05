@@ -602,7 +602,9 @@ environment and default bar behavior. The existing `codex-hud` entry is unchange
 
 `hud panel` opens the existing interactive panel in the current terminal. Its
 delegation view covers the ledger instead of selecting a Codex session as its root.
-This entry reads available observations; it does not start an observation publisher.
+When a local ledger is available, the panel owns a bounded observation worker;
+if it cannot run, the panel continues with read-only observations. Closing the
+panel stops its worker and attempts to release its collection leases.
 Use `hud panel --help` for its syntax.
 
 `hud claude --profile NAME` selects a Claude profile from `HUD_HOME/delegate.json`.

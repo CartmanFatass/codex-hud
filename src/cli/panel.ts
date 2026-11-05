@@ -5,7 +5,8 @@ import type { HudIO } from './link-export.js';
 export const PANEL_HELP = `Usage: hud panel
 
 Open the interactive HUD panel in the current terminal.
-The panel reads available delegation observations; it does not enable observation publication.
+When a local ledger is available, the panel owns a bounded observation worker.
+If the worker is unavailable, the panel continues with read-only observations.
 `;
 
 /** Use the installed panel entry, with inherited terminal and normal signal handling. */

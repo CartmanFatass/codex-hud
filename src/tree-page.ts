@@ -75,6 +75,7 @@ import {
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
+import { PublicationWorker } from './core/link/publication-worker.js';
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
@@ -350,6 +351,8 @@ async function runLivePage(): Promise<void> {
   let frameEpoch = 0;
   let lastPaint: string[] | null = null;
   let closed = false;
+  let publicationWorker: PublicationWorker | null = null;
+  let workerRefresh = false;
   let collecting = false;
   let collectingGit = false;
   let gitAgain = false;
@@ -951,8 +954,14 @@ async function runLivePage(): Promise<void> {
     try {
       session = finder.check();
       delegation = delegationCollector
-        ? await delegationCollector.tick(allDelegations ? undefined : session?.sessionId, delegationDeadline)
+        ? await delegationCollector.tick(
+            allDelegations ? undefined : session?.sessionId,
+            delegationDeadline,
+            publicationWorker ? 2 * 1024 * 1024 : undefined
+          )
         : null;
+      if (workerRefresh) workerRefresh = false;
+      else publicationWorker?.request(allDelegations ? undefined : session?.sessionId);
       stage = 'rollout';
       const rootReadStarted = performance.now();
       const priorRootStats = parser.getReadStats();
@@ -969,10 +978,10 @@ async function runLivePage(): Promise<void> {
           lastParsedRollout = signature;
           try {
             main = await parser.parse(
-              delegation
+              delegation || publicationWorker
                 ? {
                     budget: {
-                      maxBytes: 4 * 1024 * 1024,
+                      maxBytes: (publicationWorker ? 2 : 4) * 1024 * 1024,
                       maxRecords: 2000,
                       budgetMs: Math.max(0, Math.min(20, Math.floor(delegationDeadline - performance.now()))),
                     },
@@ -1203,6 +1212,9 @@ async function runLivePage(): Promise<void> {
     if (closed) return;
     closed = true;
     const clipboardClosing = clipboard.close();
+    const workerClosing = publicationWorker?.close().then((clean) => {
+      if (!clean) process.stderr.write('observation_worker_cleanup_unconfirmed\n');
+    });
     delegationCollector?.close();
     briefer.stop();
     jobs.stop();
@@ -1225,7 +1237,7 @@ async function runLivePage(): Promise<void> {
     snapshotWriter.remove();
     if (user) requestEnsureSingle();
     // Settle bounded local telemetry writes before the terminal process exits.
-    void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing]).finally(resolveDone);
+    void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing, workerClosing]).finally(resolveDone);
   };
   const switchSession = (id: string) => {
     if (STANDALONE_PANEL) {
@@ -1738,6 +1750,23 @@ async function runLivePage(): Promise<void> {
     dispatch(decoder.push(chunk));
     escapeTimer = setTimeout(() => dispatch(decoder.flushEscape()), 40);
   };
+  if (STANDALONE_PANEL && delegationCollector) {
+    try {
+      publicationWorker = new PublicationWorker(delegationCollector.home, getCodexHome(), (changed, error) => {
+        if (closed) return;
+        if (error) {
+          hudStatus.health.fail('tree', error);
+          render();
+        }
+        if (changed) {
+          workerRefresh = true;
+          void collect(true);
+        }
+      });
+    } catch {
+      hudStatus.health.fail('tree', 'observation_worker_unavailable');
+    }
+  }
   await new Promise<void>((resolve) => {
     resolveDone = resolve;
     process.once('SIGINT', () => finish());

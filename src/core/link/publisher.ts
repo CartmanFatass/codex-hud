@@ -216,13 +216,16 @@ export class SessionPublisher {
     this.pending = false;
     this.nextDeadline = Infinity;
   }
-  close(): void {
+  close(): boolean {
+    let released = true;
     if (this.lease)
       try {
         this.store.release(this.ref, this.lease);
       } catch {
-        /* Already expired or fenced. */
+        // The caller must not report a confirmed release without a receipt.
+        released = false;
       }
     this.forget();
+    return released;
   }
 }

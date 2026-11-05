@@ -176,8 +176,29 @@ class SessionCollection implements LinkCollectionPort {
   private activeContinuation?: RecoveryContinuation;
   constructor(
     readonly sources: Map<string, Source>,
-    readonly publishing = false
+    readonly publishing = false,
+    private readonly boundedWorker = false
   ) {}
+  private resourceBlock: string | null = null;
+  workerBlock(): string | null {
+    return this.resourceBlock;
+  }
+  hasPendingPublication(): boolean {
+    return [...this.readings.values()].some((reading) => reading.publisher?.hasPending());
+  }
+  private canAdmit(ref: SessionRef): boolean {
+    if (!this.boundedWorker) return true;
+    if (process.memoryUsage().arrayBuffers + 8 * 1024 * 1024 > 24 * 1024 * 1024) {
+      this.resourceBlock = 'observation_worker_buffer_limit';
+      return false;
+    }
+    const key = displayNodeKey({ kind: 'session', ref });
+    if (!this.readings.has(key) && this.readings.size >= 16) {
+      this.resourceBlock = 'observation_worker_reader_limit';
+      return false;
+    }
+    return true;
+  }
   private publicationCursor = '';
   private publicationRevision = 0;
   private newReadingKey: string | null = null;
@@ -401,6 +422,7 @@ class SessionCollection implements LinkCollectionPort {
     for (const reading of this.readings.values()) reading.snapshot = undefined;
   }
   begin(deadline: number, scope?: string): void {
+    this.resourceBlock = null;
     this.deadline = deadline;
     this.scope = scope;
     if (!scope || (this.continuation && this.continuation.scope !== scope)) this.invalidateContinuation();
@@ -655,6 +677,7 @@ class SessionCollection implements LinkCollectionPort {
     if (performance.now() >= this.deadline) return null;
     const source = this.sources.get(ref.sourceId);
     if (!source || source.adapter.id !== ref.harness) return null;
+    if (!this.canAdmit(ref)) return null;
     const reading = this.reading(ref, key);
     if (source.adapter instanceof ClaudeAdapter && reading.file) {
       const current = fileStamp(reading.file);
@@ -720,7 +743,9 @@ class SessionCollection implements LinkCollectionPort {
     return !reading.envelope || !reading.envelope.loaded || reading.dirty || !reading.caughtUp ? 'session' : null;
   }
   lineageCurrent(ref: SessionRef): boolean {
-    return !this.reading(ref).resetPending;
+    if (!this.boundedWorker) return !this.reading(ref).resetPending;
+    const reading = this.readings.get(displayNodeKey({ kind: 'session', ref }));
+    return !reading?.resetPending;
   }
   async collect(
     ref: SessionRef,
@@ -732,6 +757,7 @@ class SessionCollection implements LinkCollectionPort {
     if (continuation) this.activeContinuation = undefined;
     const source = this.sources.get(ref.sourceId);
     if (!source) return null;
+    if (!this.canAdmit(ref)) return null;
     const reading = this.reading(ref);
     ref = reading.ref;
     // A refused session grant must not acquire or renew collection authority.
@@ -1176,14 +1202,16 @@ class SessionCollection implements LinkCollectionPort {
         this.pendingCommits.add(key);
       }
   }
-  close(): void {
+  close(): boolean {
     this.continuation = undefined;
     this.activeContinuation = undefined;
-    for (const reading of this.readings.values()) reading.publisher?.close();
+    let clean = !this.hasPendingPublication();
+    for (const reading of this.readings.values()) if (reading.publisher && !reading.publisher.close()) clean = false;
     for (const source of this.sources.values()) {
       source.store?.close();
       if (source.adapter instanceof CodexAdapter) source.adapter.closeCollection();
     }
+    return clean;
   }
 }
 
@@ -1330,7 +1358,7 @@ export class HudDelegationCollector {
       this.publication.fullTickMs = performance.now() - collectionStartedAt;
     }
   }
-  async tick(sessionId: string | undefined, deadline?: number): Promise<DelegationViewModel | null> {
+  async tick(sessionId: string | undefined, deadline?: number, maxBytes?: number): Promise<DelegationViewModel | null> {
     if (this.collecting) return this.collector.current();
     this.collecting = true;
     this.tickStarted = performance.now();
@@ -1341,6 +1369,7 @@ export class HudDelegationCollector {
       const view = await this.collector.tick({
         roots: ref ? [{ kind: 'session', ref }] : [],
         deadline,
+        ...(maxBytes === undefined ? {} : { budget: { maxBytes } }),
         ...(this.preparing || identity(path.join(this.home, 'ledger.sqlite')) !== this.ledgerIdentity
           ? { ledgerUnavailableReason: 'ledger_identity_changed' }
           : {}),
@@ -1359,17 +1388,23 @@ export class HudDelegationCollector {
         }).unref();
     }
   }
-  close(): void {
+  hasPendingPublication(): boolean {
+    return this.port.hasPendingPublication();
+  }
+  workerBlock(): string | null {
+    return this.port.workerBlock();
+  }
+  close(): boolean {
     this.closed = true;
     this.watcher?.close();
     for (const watcher of this.sourceWatchers) watcher.close();
     this.collector.close();
-    this.port.close();
+    return this.port.close();
   }
   static async open(
     env: Readonly<Record<string, string | undefined>> = process.env,
     ambientHome?: string,
-    options: { publish?: boolean } = {}
+    options: { publish?: boolean; boundedWorker?: boolean } = {}
   ): Promise<HudDelegationCollector | null> {
     const home = existingHudHome(env);
     if (!home) return null;
@@ -1426,7 +1461,7 @@ export class HudDelegationCollector {
         });
       } catch {}
     }
-    const port = new SessionCollection(sources, options.publish === true);
+    const port = new SessionCollection(sources, options.publish === true, options.boundedWorker === true);
     const reader = await openLinkLedgerReader(path.join(home, 'ledger.sqlite'));
     const collector = new LinkTickCollector(reader, home, loadLimits(home), port);
     return new HudDelegationCollector(home, collector, port, (id) =>
