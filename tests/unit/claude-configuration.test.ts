@@ -23,6 +23,7 @@ import { claudeExpectation, claudeLaunchPlan, launchClaudeInTmux } from '../../s
 import { nativeFile, type TmuxStartup } from '../../src/cli/claude-tmux.js';
 import { resolveLaunchCommand } from '../../src/core/capabilities.js';
 import type { CapabilityManifestV1, LaunchProfile } from '../../src/core/types/capabilities.js';
+import { InteropUnverified } from '../../src/cli/claude-wsl-interop.js';
 
 function fixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'hud-claude-config-')));
@@ -289,6 +290,23 @@ test('Claude ordinary and WSL candidates retain explicit policy gaps without rea
     assert.equal(captured.candidate?.windows?.observation?.localChain, 'windows-admin');
     assert.ok(captured.candidate?.blockers.includes('configuration_windows_effective_merge_unverified'));
     assert.ok(captured.candidate?.blockers.includes('configuration_remote_sources_unobserved'));
+    const observedSystem = windows.system;
+    windows.system = () => {
+      throw new InteropUnverified({
+        schema: 'wsl-interop-diagnostic-v1',
+        authority: 'none',
+        directoryMode: '0777',
+        listenerOwnerObserved: true,
+        reason: 'configuration_windows_interop_writable_transport_unverified',
+      });
+    };
+    const diagnostic = observeClaudeConfiguration(f.request, { managedRoot: f.managedRoot, windows });
+    assert.equal(diagnostic.observation, null);
+    assert.equal(diagnostic.candidate?.windows?.interop?.authority, 'none');
+    assert.equal(diagnostic.candidate?.windows?.interop?.directoryMode, '0777');
+    assert.equal(diagnostic.candidate?.localLayers.length, 7);
+    assert.match(diagnostic.candidate!.localLayers[0].receipt.fingerprint!, /^[a-f0-9]{64}$/);
+    windows.system = observedSystem;
     rmSync(join(windowsRoot, 'managed-settings.json'));
     symlinkSync('/synthetic/must-not-follow', join(windowsRoot, 'managed-settings.json'));
     const unsafe = observeClaudeConfiguration(f.request, { managedRoot: f.managedRoot, windows });

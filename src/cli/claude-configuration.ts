@@ -312,7 +312,7 @@ function unverifiedCandidate(
         request.version,
         windowsPorts
           ? { ...windowsPorts, read: (path) => capture(path, windowsBudget) }
-          : productionWindowsPolicyPorts((path) => capture(path, windowsBudget))
+          : productionWindowsPolicyPorts((path) => capture(path, windowsBudget), request.env)
       )
     : null;
   if (windows?.reason) blockers.push(windows.reason);

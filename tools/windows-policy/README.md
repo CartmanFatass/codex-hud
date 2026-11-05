@@ -18,11 +18,22 @@ Windows component. Missing artifacts produce an explicit unverified reason.
 
 The default adapter trusts the loaded HUD installation and pins the helper's
 source/artifact hashes and file identities before/after invocation. It checks
-the `/init` binfmt interpreter, a protected WSL interop socket tied to an observed
-ancestor, and a unique procfs drive mapping for OS-reported system folders. It
+the `/init` binfmt interpreter, a protected WSL interop socket tied directly to a
+live listener owned by that `/init` process, and a unique procfs drive mapping for OS-reported system folders. It
 does not infer Windows ACLs from Linux owner bits, guess `/mnt/c`, or execute a
 host-discovered system binary. Unsupported socket layouts, mount aliases,
 shadows, paths, helper revisions and transport errors fail closed.
+
+A daemonized or reparented tmux does not have to descend from the interop server.
+The observer joins the pathname's listening UNIX inode to the server's fd table,
+checks its executable and process stamp, compares the server's socket mount view,
+and repeats those observations. If procfs access is denied, ownership is unknown.
+On the normal non-sticky `0777` `/run/WSL` layout, this evidence is diagnostic only:
+the separately launched `/init` can reconnect through a rebound pathname. The
+observer reports the directory mode and listener-observation status with
+`authority: none`, refuses Windows helper execution, and continues local config
+diagnostics. A connection-bound peer guarantee is still needed to execute through
+that writable transport; pre/post checks are not a substitute.
 
 This is source support, not Windows/WSL runtime or product-cell qualification.
 Account/provider state, remote policy/connectors, configuration selection and

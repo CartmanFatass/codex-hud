@@ -1,12 +1,23 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  opendirSync,
+  readlinkSync,
+  readSync,
+  realpathSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { release } from 'node:os';
 import { canonicalJson, digest } from '../core/canonical.js';
 import { readProcess } from '../core/run/process.js';
 import { installationRoot } from './compat.js';
 import { nativeFile } from './claude-tmux.js';
+import { observeWindowsInterop } from './claude-wsl-interop.js';
 import type { RegistryResult, WindowsPolicyPorts, WindowsPolicySystem } from './claude-windows-policy.js';
 
 const hash = (value: Buffer) => createHash('sha256').update(value).digest('hex');
@@ -72,41 +83,49 @@ function protectedPath(path: string, owner: number, directory: boolean) {
   }
 }
 
-function interop() {
-  const locator = process.env.WSL_INTEROP;
-  const match = locator && /^\/run\/WSL\/([1-9][0-9]*)_interop$/.exec(locator);
-  if (!match) throw new Error('configuration_windows_interop_locator_unknown');
-  protectedPath('/init', 0, false);
-  const init = nativeFile('/init');
-  if (!init) throw new Error('configuration_windows_interpreter_unknown');
-  protectedPath('/run/WSL', 0, true);
-  const socket = lstatSync(locator!, { bigint: true });
-  if (!socket.isSocket() || (socket.uid !== 0n && socket.uid !== BigInt(process.getuid!())))
-    throw new Error('configuration_windows_interop_identity_unknown');
-  let pid = process.pid,
-    found = false;
-  const ancestry = [];
-  for (let depth = 0; pid > 0 && depth < 32; depth++) {
-    const record = readProcess(pid);
-    if (!record) break;
-    ancestry.push(record.stamp);
-    if (pid === Number(match[1])) {
-      const executable = nativeFile(`/proc/${pid}/exe`);
-      if (!executable || !equal(executable.file, init.file)) break;
-      found = true;
-      break;
-    }
-    if (record.ppid === pid) break;
-    pid = record.ppid;
-  }
-  if (!found) throw new Error('configuration_windows_interop_ancestry_unknown');
-  const format = snapshot('/proc/sys/fs/binfmt_misc/WSLInterop', 8192, true).bytes.toString('utf8');
-  if (!/^enabled\n/m.test(format) || !/^interpreter \/init\n/m.test(format) || !/^magic 4d5a/m.test(format))
-    throw new Error('configuration_windows_binfmt_unknown');
-  return {
-    locator: locator!,
-    identity: digest({ init, ancestry, format, socket: [String(socket.dev), String(socket.ino)] }),
-  };
+function interop(locator: string | undefined) {
+  return observeWindowsInterop(locator, {
+    uid: process.getuid!(),
+    init: () => {
+      protectedPath('/init', 0, false);
+      return nativeFile('/init');
+    },
+    directory: () => {
+      protectedPath('/run', 0, true);
+      const s = lstatSync('/run/WSL', { bigint: true });
+      if (!s.isDirectory() || s.isSymbolicLink()) throw new Error('configuration_windows_path_untrusted');
+      return {
+        uid: Number(s.uid),
+        mode: Number(s.mode),
+        identity: digest([String(s.dev), String(s.ino), String(s.ctimeNs)]),
+      };
+    },
+    socket: (path) => {
+      const s = lstatSync(path, { bigint: true });
+      if (!s.isSocket() || s.isSymbolicLink()) throw new Error('configuration_windows_interop_identity_unknown');
+      return {
+        uid: Number(s.uid),
+        identity: digest([String(s.dev), String(s.ino), String(s.mode), String(s.ctimeNs), String(s.mtimeNs)]),
+      };
+    },
+    process: readProcess,
+    executable: (pid) => nativeFile(`/proc/${pid}/exe`),
+    unix: (pid) => snapshot(`/proc/${pid}/net/unix`, 1048576, true).bytes.toString('utf8'),
+    descriptors: (pid) => {
+      const directory = opendirSync(`/proc/${pid}/fd`);
+      const entries: { fd: string; target: string }[] = [];
+      try {
+        for (let entry = directory.readSync(); entry; entry = directory.readSync()) {
+          if (entries.length === 512) throw new Error('configuration_windows_interop_listener_limit');
+          entries.push({ fd: entry.name, target: readlinkSync(`/proc/${pid}/fd/${entry.name}`) });
+        }
+      } finally {
+        directory.closeSync();
+      }
+      return entries;
+    },
+    format: () => snapshot('/proc/sys/fs/binfmt_misc/WSLInterop', 8192, true).bytes.toString('utf8'),
+  });
 }
 
 const decode = (text: string) =>
@@ -163,6 +182,7 @@ export function observeWindowsHost(ports: WindowsHostPorts): {
     throw new Error('configuration_windows_host_not_wsl');
   const arch = ports.arch === 'x64' ? 'amd64' : ports.arch === 'arm64' ? 'arm64' : null;
   if (!arch) throw new Error('configuration_windows_arch_uncovered');
+  const transport = ports.interop();
   const binary = join(ports.root, 'dist/windows-policy', `observer-${arch}.exe`);
   let receipt, source, artifact;
   try {
@@ -181,7 +201,6 @@ export function observeWindowsHost(ports: WindowsHostPorts): {
     artifact.bytes.toString('ascii', 0, 2) !== 'MZ'
   )
     throw new Error('configuration_windows_helper_identity_mismatch');
-  const transport = ports.interop();
   const mount = ports.file(`/proc/${process.pid}/mountinfo`, 1048576);
   let output;
   try {
@@ -231,7 +250,10 @@ export function observeWindowsHost(ports: WindowsHostPorts): {
   };
 }
 
-export function productionWindowsPolicyPorts(read: WindowsPolicyPorts['read']): WindowsPolicyPorts {
+export function productionWindowsPolicyPorts(
+  read: WindowsPolicyPorts['read'],
+  env: NodeJS.ProcessEnv = process.env
+): WindowsPolicyPorts {
   const ports: WindowsHostPorts = {
     platform: process.platform,
     kernel: release(),
@@ -241,7 +263,7 @@ export function productionWindowsPolicyPorts(read: WindowsPolicyPorts['read']): 
       if (!path.startsWith('/proc/')) protectedPath(path, process.getuid!(), false);
       return snapshot(path, limit, path.startsWith('/proc/'));
     },
-    interop,
+    interop: () => interop(env.WSL_INTEROP),
     directory: (path) => {
       if (realpathSync(path) !== path) throw new Error('configuration_windows_path_alias');
       const s = lstatSync(path, { bigint: true });

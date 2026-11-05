@@ -1,6 +1,7 @@
 import { isAbsolute, join } from 'node:path';
 import { canonicalJson, digest } from '../core/canonical.js';
 import { productionWindowsPolicyPorts } from './claude-windows-host.js';
+import { InteropUnverified, type InteropDiagnostic } from './claude-wsl-interop.js';
 
 /** The default host adapter pins a built HUD helper and uses Win32 system APIs.
  * WSL transport/mapping and installed artifact identity are bracketed separately;
@@ -34,6 +35,7 @@ export interface WindowsPolicyObservation {
   system: WindowsPolicySystem;
 }
 export interface WindowsPolicyResult {
+  interop?: InteropDiagnostic;
   observation: WindowsPolicyObservation | null;
   reason: string | null;
 }
@@ -146,6 +148,7 @@ export function observeWindowsPolicy(version: string, supplied?: WindowsPolicyPo
     };
   } catch (error) {
     return {
+      ...(error instanceof InteropUnverified ? { interop: error.diagnostic } : {}),
       observation: null,
       reason:
         error instanceof Error && error.message.startsWith('configuration_')
