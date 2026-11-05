@@ -277,7 +277,7 @@ export function observeClaudeConfiguration(
         .slice(1, at < 0 ? undefined : at)
         .some(
           (arg) =>
-            /^--(?:setting-sources|mcp-config|strict-mcp-config|plugin-dir|add-dir|agent|agents|settings|worktree|cwd)(?:=|$)/.test(
+            /^--(?:setting-sources|mcp-config|strict-mcp-config|plugin-dir|add-dir|agent|agents|settings|worktree|cwd|bare)(?:=|$)/.test(
               arg
             ) || /^-w/.test(arg)
         )

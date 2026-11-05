@@ -430,3 +430,75 @@ test('Claude production rechecks actual automatic config and frozen environment 
     }
   }
 });
+
+test('Claude bare selector is rejected before filesystem observation; default and literal arguments retain discovery', () => {
+  const f = fixture();
+  try {
+    const normal = f.observe();
+    assert.equal(normal.reason, null);
+    assert.equal(normal.observation?.description.selection, 'default-user-project-local');
+    for (const flag of ['--bare', '--bare=true', '--bare=false', '--bare=']) {
+      assert.deepEqual(f.observe({ ...f.request, argv: [process.execPath, flag] }), {
+        observation: null,
+        reason: 'configuration_cli_selector_uncovered',
+      });
+      // Invalid roots would fail realpath before any configuration file can be
+      // captured. The selector must take precedence over filesystem observation.
+      assert.deepEqual(
+        f.observe({
+          ...f.request,
+          sourceRoot: join(f.root, 'absent-source'),
+          cwd: join(f.root, 'absent-cwd'),
+          argv: [process.execPath, flag],
+        }),
+        { observation: null, reason: 'configuration_cli_selector_uncovered' }
+      );
+      const literal = f.observe({ ...f.request, argv: [process.execPath, '--', flag] });
+      assert.equal(literal.reason, null);
+      assert.deepEqual(literal.observation?.description, normal.observation?.description);
+    }
+    assert.equal(f.observe({ ...f.request, argv: [process.execPath, '--barely'] }).reason, null);
+  } finally {
+    f.close();
+  }
+});
+
+test('Claude production bare launch refuses before manifest or foreground dispatch', async () => {
+  const f = fixture();
+  try {
+    const { input, runtime } = planFixture(f, f.request.cwd);
+    for (const flag of ['--bare', '--bare=true']) {
+      let observations = 0,
+        manifests = 0,
+        launches = 0;
+      await assert.rejects(
+        launchClaudeInTmux(
+          { ...input, command: { argv: [process.execPath, flag] } },
+          {
+            observe: async () => structuredClone(runtime),
+            configuration: (request) => {
+              observations++;
+              const result = f.observe({ ...request, version: '2.1.305' });
+              assert.equal(result.reason, 'configuration_cli_selector_uncovered');
+              return result;
+            },
+            manifest: () => {
+              manifests++;
+              return null;
+            },
+            launch: async () => {
+              launches++;
+              return 0;
+            },
+          }
+        ),
+        /capability_unverified/
+      );
+      assert.equal(observations, 1);
+      assert.equal(manifests, 0);
+      assert.equal(launches, 0);
+    }
+  } finally {
+    f.close();
+  }
+});
