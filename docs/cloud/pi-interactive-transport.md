@@ -1,0 +1,7 @@
+# Pi interactive RPC protocol (experimental)
+
+`PiChatProtocol` is a bounded encoder/decoder for an **already-owned** Pi v0.73.1 RPC stream. It does not launch a process, prove an executable's version, attach to an existing HUD run or enable managed delegation. A trusted supervisor must retain sole process and framing ownership, bind a channel to the exact run and generation, and demultiplex unrelated RPC responses before this codec. The codec does not itself establish that authority.
+
+Only one command may await acknowledgement. `encode(text, turnId)` produces an RPC `prompt` with `streamingBehavior: "steer"`. While Pi is busy, the message may wait for a tool/turn boundary. Matching successful response means accepted, queued or handled, not consumed or completed. Text deltas are session-stream data, not proof that a particular message was handled. `agent_end` is an uncorrelated cycle boundary, not proven quiescence. Rejected messages are distinct from unknown outcomes on lost acknowledgement or channel failure. Unsupported extension UI requests fail closed, without approval. The component never retries or restarts a process. The UI must sanitize untrusted terminal controls.
+
+[Pi v0.73.1 RPC source snapshot](https://github.com/badlogic/pi-mono/blob/781152fc24841dc54b22284514604048ebe5e2c9/packages/coding-agent/docs/rpc.md). Synthetic tests exercise a real child pipe but do not establish live-provider compatibility.
