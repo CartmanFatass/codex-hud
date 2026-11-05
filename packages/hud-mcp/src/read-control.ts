@@ -1,3 +1,4 @@
+import { sessionRefKey } from '../../../src/core/identity.js';
 import type { Ledger } from '../../../src/ledger/ledger.js';
 import type { LedgerTransaction } from '../../../src/ledger/transaction.js';
 import type { IntentAuthority } from '../../../src/ledger/types.js';
@@ -177,6 +178,116 @@ export class ReadControlService {
         selected?.unavailableReason ?? (observation ? (freshnessNow?.reason ?? null) : 'observation_unavailable'),
       rejectedObservationStamp: selected?.rejectedObservationStamp ?? null,
     };
+  }
+  /** Owner-scoped keyset page. Never enumerate foreign links then filter them. */
+  async list(request: { limit?: number; cursor?: string }, authority: (tx: LedgerTransaction) => IntentAuthority) {
+    const limit = request.limit ?? 20;
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 50 ||
+      (request.cursor !== undefined && (typeof request.cursor !== 'string' || request.cursor.length > 2048))
+    )
+      throw new Error('invalid');
+    const scope = (tx: LedgerTransaction) => {
+      const original = authority(tx);
+      const permission = currentAuthority(tx, original);
+      if (permission.kind !== 'mcp') throw new Error('unsupported');
+      if (!permission.selection.ok) throw new Error(permission.selection.reason);
+      const { context, ownerKey } = permission.selection;
+      const ledgerId = String(tx.get('SELECT ledger_id FROM ledger_metadata WHERE singleton=1')!.ledger_id);
+      return {
+        original,
+        context,
+        binding: digest([ledgerId, ownerKey, context.contextId, context.generation, 'delegate-list-v1']),
+      };
+    };
+    const page = await this.ledger.readSnapshot((tx) => {
+      const selected = scope(tx); // Required even for an empty page.
+      let after = { at: -1, id: '' };
+      if (request.cursor !== undefined) {
+        try {
+          const value = JSON.parse(Buffer.from(request.cursor, 'base64url').toString('utf8'));
+          if (
+            value.version !== 1 ||
+            value.binding !== selected.binding ||
+            !Number.isSafeInteger(value.at) ||
+            value.at < 0 ||
+            typeof value.id !== 'string' ||
+            !value.id ||
+            value.id.length > 512
+          )
+            throw new Error();
+          after = { at: value.at, id: value.id };
+        } catch {
+          throw new Error('invalid_list_cursor');
+        }
+      }
+      const context = selected.context;
+      const ref = context.sessionRef ? sessionRefKey(context.sessionRef) : null;
+      const ownerSql =
+        ref !== null
+          ? '(l.parent_ref=? OR (l.parent_ref IS NULL AND c.session_ref=?))'
+          : '(l.parent_ref IS NULL AND c.session_ref IS NULL AND c.process_key=? AND c.proc_generation=?)';
+      const ownerArgs = ref !== null ? [ref, ref] : [context.processKey!, context.procGeneration!];
+      const rows = tx.all(
+        `SELECT l.link_id,l.created_at FROM links l
+        JOIN caller_contexts c ON c.context_id=l.parent_context_id AND c.generation=l.parent_context_generation
+        WHERE ${ownerSql} AND EXISTS (SELECT 1 FROM runs r WHERE r.link_id=l.link_id)
+        AND (l.created_at>? OR (l.created_at=? AND l.link_id>?))
+        ORDER BY l.created_at,l.link_id LIMIT ?`,
+        ...ownerArgs,
+        after.at,
+        after.at,
+        after.id,
+        limit + 1
+      );
+      const visible = rows.slice(0, limit);
+      const snapshots = visible.map((row) => readDelegationIn(tx, { linkId: String(row.link_id) }, selected.original));
+      const last = visible.at(-1);
+      return {
+        snapshots,
+        binding: selected.binding,
+        hasMore: rows.length > limit,
+        nextCursor:
+          rows.length > limit && last
+            ? Buffer.from(
+                JSON.stringify({
+                  version: 1,
+                  binding: selected.binding,
+                  at: Number(last.created_at),
+                  id: String(last.link_id),
+                })
+              ).toString('base64url')
+            : null,
+      };
+    });
+    const items = [];
+    for (const snapshot of page.snapshots) {
+      const value = await this.compose(snapshot);
+      items.push({
+        linkId: snapshot.link.linkId,
+        runId: snapshot.currentRun.runId,
+        backend: snapshot.link.backend,
+        role: snapshot.link.role,
+        linkState: snapshot.link.state,
+        runState: snapshot.currentRun.state,
+        childRef: snapshot.link.childRef,
+        currentOwner: snapshot.link.currentOwner,
+        isRunTerminal: snapshot.isRunTerminal,
+        slotHeld: snapshot.slotHeld,
+        statusProjection: value.statusProjection,
+        observationStamp: value.observationStamp,
+        observationAvailability: value.observationAvailability,
+        observationUnavailableReason: value.observationUnavailableReason,
+        freshnessNow: value.freshnessNow,
+      });
+    }
+    // Async store opening may overlap context retirement. Do not return a stale authorization.
+    await this.ledger.readSnapshot((tx) => {
+      if (scope(tx).binding !== page.binding) throw new Error('stale_context');
+    });
+    return { ok: true, items, hasMore: page.hasMore, nextCursor: page.nextCursor };
   }
   async status(target: DelegationTarget, authority: (tx: LedgerTransaction) => IntentAuthority) {
     const snapshot = await this.ledger.readSnapshot((tx) => {

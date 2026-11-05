@@ -30,6 +30,12 @@ const target = {
 };
 export const TOOLS: ToolDefinition[] = [
   tool(
+    'delegate_list',
+    'Read a bounded page of this authenticated owner’s links and latest runs; committed observations only, no transcript or report bodies.',
+    { limit: { type: 'integer', minimum: 1, maximum: 50 }, cursor: { type: 'string', minLength: 1, maxLength: 2048 } },
+    []
+  ),
+  tool(
     'delegate_spawn',
     'Accept one headless delegated run; retry the same request_key only to replay that intent.',
     {

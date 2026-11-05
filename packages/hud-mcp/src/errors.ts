@@ -52,6 +52,7 @@ const outcomeCodes = new Set([
   'invalid_grace',
   'invalid_run_id',
   'invalid_event_cursor',
+  'invalid_list_cursor',
   'invalid_wait_timeout',
   'visible_layout_not_in_this_build',
   'local_entry_only',
