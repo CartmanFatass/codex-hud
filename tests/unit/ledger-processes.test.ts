@@ -170,8 +170,8 @@ test(
     const f = await fixture(t);
     const other = await f.child();
     const results = await concurrentIntents(t, [
-      { child: f.seed, fields: { variant: 'one' } },
-      { child: other, fields: { variant: 'two', changed: true } },
+      { child: f.seed, fields: { variant: 'one', auditClock: 'eligible' } },
+      { child: other, fields: { variant: 'two', changed: true, auditClock: 'eligible' } },
     ]);
     const accepted = results.filter((result) => result.status === 'fulfilled');
     const rejected = results.filter((result) => result.status === 'rejected');
@@ -181,7 +181,44 @@ test(
     const rows = await f.seed.request('inspect');
     assertComplete(rows, 1);
     assert.equal(rows.runs[0].run_id, (accepted[0] as PromiseFulfilledResult<any>).value.runId);
-    assert.equal(rows.events.filter((event: any) => event.kind === 'intent.rejected').length, 1);
+    const audit = rows.events.filter((event: any) => event.kind === 'intent.rejected');
+    assert.equal(audit.length, 1);
+    assert.deepEqual(JSON.parse(audit[0].payload), { requestKey: 'same-key', reason: 'idempotency_conflict' });
+    assert.equal(audit[0].link_id, null);
+    assert.equal(audit[0].run_id, null);
+    const clocks = await Promise.all([f.seed, other].map((child) => child.request('audit-clock-observation')));
+    assert.deepEqual(clocks.map((clock) => clock.transactions).sort(), [1, 2]);
+    assert.deepEqual(clocks.map((clock) => clock.rollbacks).sort(), [0, 1]);
+    assert.ok(clocks.every((clock) => clock.mode === 'eligible' && clock.now === 0 && clock.restored));
+  }
+);
+
+test(
+  'ledger processes: exhausted rejection-audit budget preserves concurrent conflict without a new transaction',
+  options,
+  async (t) => {
+    const f = await fixture(t);
+    const other = await f.child();
+    const results = await concurrentIntents(t, [
+      { child: f.seed, fields: { variant: 'one', auditClock: 'exhausted' } },
+      { child: other, fields: { variant: 'two', changed: true, auditClock: 'exhausted' } },
+    ]);
+    const accepted = results.filter((result) => result.status === 'fulfilled');
+    const rejected = results.filter((result) => result.status === 'rejected');
+    assert.equal(accepted.length, 1);
+    assert.equal(rejected.length, 1);
+    assert.match((rejected[0] as PromiseRejectedResult).reason.message, /idempotency_conflict/);
+    const rows = await f.seed.request('inspect');
+    assertComplete(rows, 1);
+    assert.equal(rows.runs[0].run_id, (accepted[0] as PromiseFulfilledResult<any>).value.runId);
+    assert.equal(rows.events.filter((event: any) => event.kind === 'intent.rejected').length, 0);
+    const clocks = await Promise.all([f.seed, other].map((child) => child.request('audit-clock-observation')));
+    // The losing request reaches the deadline only after rollback. Optional auditing must not
+    // call ledger.transaction at all, even if a second transaction could later acquire its lock.
+    assert.deepEqual(clocks.map((clock) => clock.transactions).sort(), [1, 1]);
+    assert.deepEqual(clocks.map((clock) => clock.rollbacks).sort(), [0, 1]);
+    assert.deepEqual(clocks.map((clock) => clock.now).sort((a, b) => a - b), [0, 20]);
+    assert.ok(clocks.every((clock) => clock.mode === 'exhausted' && clock.restored));
   }
 );
 

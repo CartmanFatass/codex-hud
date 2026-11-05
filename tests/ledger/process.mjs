@@ -1,6 +1,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { DatabaseSync } from 'node:sqlite';
+import { mock } from 'node:test';
 import { openLedger } from '../../dist-test/src/ledger/ledger.js';
 import { acceptIntent } from '../../dist-test/src/ledger/intents.js';
 import { insertRecord } from '../../dist-test/src/ledger/records.js';
@@ -14,6 +15,8 @@ let busyBarrier = null;
 let busyAttempts = 0;
 let expected;
 let inserts = new Map();
+let auditClock = null;
+let lastAuditClock = null;
 
 function pauseAt(label) {
   if (cut !== label) return;
@@ -40,6 +43,11 @@ DatabaseSync.prototype.exec = function (sql) {
   if (sql === 'COMMIT') pauseAt('before:commit');
   try {
     const result = exec.call(this, sql);
+    if (sql === 'ROLLBACK' && auditClock) {
+      auditClock.rollbacks++;
+      // Advance only after a real failed intent has rolled back. No production result is mocked.
+      if (auditClock.mode === 'exhausted') auditClock.now = ledger.busyBudgetMs;
+    }
     if (sql === 'COMMIT') pauseAt('after:commit');
     return result;
   } catch (error) {
@@ -73,8 +81,33 @@ process.on('message', async (message) => {
           identityKind: 'git-common-dir-v1',
           scope: 'local',
         };
-      result = await acceptIntent(ledger, prepared);
+      if (message.auditClock !== undefined) {
+        if (!['eligible', 'exhausted'].includes(message.auditClock)) throw new Error('unknown_audit_clock');
+        // This owned child handles one intent at a time. Logical time is controlled only for the
+        // two audit-contract cases; SQLite, lock retries, authorization and idempotency stay real.
+        // All production callers and every other fixture request retain the real monotonic clock.
+        auditClock = { mode: message.auditClock, now: 0, transactions: 0, rollbacks: 0, restored: false };
+        const observed = auditClock;
+        const transaction = ledger.transaction;
+        const monotonicNow = performance.now;
+        const clockMock = mock.method(performance, 'now', () => observed.now);
+        const transactionMock = mock.method(ledger, 'transaction', function (...args) {
+          observed.transactions++;
+          return transaction.apply(this, args);
+        });
+        try {
+          result = await acceptIntent(ledger, prepared);
+        } finally {
+          transactionMock.mock.restore();
+          clockMock.mock.restore();
+          observed.restored = performance.now === monotonicNow && ledger.transaction === transaction;
+          lastAuditClock = { ...observed };
+          auditClock = null;
+        }
+      } else result = await acceptIntent(ledger, prepared);
       cut = null;
+    } else if (action === 'audit-clock-observation') {
+      result = lastAuditClock;
     } else if (action === 'inspect') {
       result = ledger.snapshot((tx) =>
         Object.fromEntries(
