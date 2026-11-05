@@ -5,7 +5,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { launchProfileDigest, resolveLaunchCommand, shellQuote, validateLaunchCommand } from '../core/capabilities.js';
 import { executableIdentity } from '../core/launch/fingerprint.js';
 import { snapshotBrief } from '../core/launch/brief.js';
-import { discoverExecutable } from './capability.js';
+import { launchClaudeInTmux, type ClaudeProductionDependencies } from './claude-launch.js';
 import { digest } from '../core/canonical.js';
 import type { LaunchCommand, LaunchProfile } from '../core/types/capabilities.js';
 import type { HudIO } from './link-export.js';
@@ -93,6 +93,7 @@ export async function claudeCommand(
       facts: { settingsFingerprint: string }
     ) => Promise<boolean>;
     launch?: typeof foreground;
+    production?: ClaudeProductionDependencies;
   } = {}
 ): Promise<number> {
   const parsed = parseClaude(args);
@@ -148,9 +149,24 @@ export async function claudeCommand(
   };
   for (const key of ['HUD_CLAIM', 'HUD_RUN', 'HUD_LINK', 'HUD_MCP_REGISTRY_DIR', 'HUD_RUN_PORT_MODULE'])
     delete env[key];
-  const executable = trusted.verify ? await executableIdentity(resolved, env) : await discoverExecutable(resolved, env);
+  if (!trusted.verify) {
+    return launchClaudeInTmux(
+      {
+        profile,
+        configuredProfile,
+        command: prepared.command,
+        settings,
+        hasSettings: prepared.sources.length > 0,
+        resume: !!parsed.resume,
+        home,
+        env,
+      },
+      { ...trusted.production, launch: trusted.launch ?? trusted.production?.launch }
+    );
+  }
+  const executable = await executableIdentity(resolved, env);
   if (!executable.resolved) throw new CliError('executable_unavailable', 4);
-  // The initial release has an empty manifest. Product attestation is supplied below by the shipped matcher.
+  // Legacy test seam only. Production uses the complete startup matcher above.
   if (!trusted.verify || !(await trusted.verify(profile, capabilityCommand, { settingsFingerprint: digest(settings) })))
     throw new CliError('capability_unverified', 4);
   let directory: string | undefined;
