@@ -1,9 +1,16 @@
 import { truncateAnsi } from '../../render/colors.js';
+import { renderStatuslineSummary } from '../../render/statusline-summary.js';
+import {
+  validateDelegationSummary,
+  delegationSummaryStatusline,
+  type CommittedDelegationSummary,
+} from '../../core/delegation-summary-schema.js';
+export { createPiDelegationSummaryProvider } from '../../core/delegation-summary-pi.js';
 
 /** Public UI API/source pin, not a runtime version attestation or capability grant. */
 export const PI_FOOTER_SOURCE = '4a080252f06caf63a525d7873c5d94d3c23887e0';
 export const PI_FOOTER_VERSION = '1.4.0';
-export const PI_FOOTER_SUMMARY_MAX_AGE_MS = 15_000;
+export const PI_FOOTER_SUMMARY_MAX_AGE_MS = 5000;
 export const PI_FOOTER_MAX_ENTRIES = 10_000;
 
 /** Native display identity only. No SourceId, caller context or managed authority is inferred. */
@@ -19,7 +26,7 @@ export interface PiFooterHudSummary {
   coverage: 'complete' | 'partial' | 'catching_up';
   delegated: { total: number; working: number; waiting: number };
 }
-/** Explicit, already available in-memory data only. This module never discovers or reads storage. */
+/** Explicit bounded capture-time provider. Render never invokes it or discovers storage. */
 export type PiFooterSummaryProvider = (identity: Readonly<PiFooterIdentity>) => unknown;
 
 // Narrow structural projections of the pinned official ExtensionContext/setFooter API.
@@ -60,7 +67,7 @@ export interface PiFooterSnapshot {
   activity: 'idle' | 'working' | 'unknown';
   context: { tokens: number | null; window: number | null; percent: number | null };
   usage: BranchUsage;
-  hud: { state: HudState; summary: PiFooterHudSummary | null };
+  hud: { state: HudState; summary: PiFooterHudSummary | null; delegation?: CommittedDelegationSummary };
 }
 const fields: UsageField[] = ['input', 'output', 'cacheRead', 'cacheWrite', 'costUsd'];
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -135,6 +142,23 @@ export function validatePiFooterSummary(
 ): PiFooterSnapshot['hud'] {
   const denied = (state: HudState): PiFooterSnapshot['hud'] => ({ state, summary: null });
   if (value === undefined || value === null || current === null) return denied('unavailable');
+  if (object(value) && 'committedDelegation' in value) {
+    if (Object.keys(value).sort().join(',') !== 'committedDelegation,identity' || !identity(value.identity))
+      return denied('invalid');
+    if (!sameIdentity(value.identity, current)) return denied('identity_mismatch');
+    const summary = value.committedDelegation;
+    if (
+      !object(summary) ||
+      !object(summary.parent) ||
+      summary.parent.harness !== 'pi' ||
+      summary.parent.sessionId !== current.sessionId ||
+      summary.parent.threadId !== null
+    )
+      return denied('identity_mismatch');
+    if (!validateDelegationSummary(summary, summary.parent as unknown as CommittedDelegationSummary['parent'], now))
+      return denied('stale');
+    return { state: 'partial', summary: null, delegation: structuredClone(summary) };
+  }
   if (
     !object(value) ||
     Object.keys(value).sort().join(',') !== 'coverage,delegated,identity,observedAt' ||
@@ -254,10 +278,16 @@ export function renderPiFooter(
     c.window === null
       ? 'ctx unknown'
       : `ctx ~${tokens(c.tokens)}/${tokens(c.window)}${c.percent === null ? '' : ` ${c.percent.toFixed(1)}%`}`;
-  const hud = s.hud.summary ? validatePiFooterSummary(s.hud.summary, s.identity, now) : s.hud;
-  const status = hud.summary
-    ? `HUD ${hud.summary.delegated.total} delegated ${hud.summary.delegated.working} working ${hud.summary.delegated.waiting} waiting`
-    : `HUD ${hud.state === 'current' ? 'unavailable' : hud.state.replace('_', ' ')}`;
+  const hud = s.hud.delegation
+    ? validatePiFooterSummary({ identity: s.identity, committedDelegation: s.hud.delegation }, s.identity, now)
+    : s.hud.summary
+      ? validatePiFooterSummary(s.hud.summary, s.identity, now)
+      : s.hud;
+  const status = hud.delegation
+    ? `HUD ${renderStatuslineSummary(delegationSummaryStatusline(hud.delegation, now), Math.max(1, width - 4), now) ?? 'partial (direct children)'} `
+    : hud.summary
+      ? `HUD ${hud.summary.delegated.total} delegated ${hud.summary.delegated.working} working ${hud.summary.delegated.waiting} waiting`
+      : `HUD ${hud.state === 'current' ? 'unavailable' : hud.state.replace('_', ' ')}`;
   const cost = u.costUsd === null ? '$?' : `$${u.costUsd.toFixed(3)}`;
   const lines = [
     `π ${clean(s.model ?? 'model unknown')}${s.effort ? ` ${clean(s.effort, 64)}` : ''} | ${ctx} | ${s.activity}`,
@@ -272,7 +302,7 @@ export function renderPiFooter(
   return lines.map((line) => truncateAnsi(line, width));
 }
 
-/** Owns only this explicitly loaded footer. No timer, file access, provider call or lifecycle authority. */
+/** Owns only this explicitly loaded footer. Provider calls are capture-only; render has no I/O or authority. */
 export function createPiFooterController(options: { summary?: PiFooterSummaryProvider; now?: () => number } = {}) {
   const now = options.now ?? Date.now;
   let enabled = true;
