@@ -5,6 +5,7 @@ import { RunArtifacts } from '../core/run/artifacts.js';
 import type { HostAdapter } from '../core/interfaces/host-adapter.js';
 import type { DelegationViewModel } from '../core/link/view-model.js';
 import type { DelegationAction } from '../render/delegation/actions.js';
+import { wrapped } from '../render/monitor-text.js';
 
 /** Execute only actions captured from the displayed frame. No command is executed. */
 export async function dispatchDelegationAction(
@@ -13,7 +14,7 @@ export async function dispatchDelegationAction(
   current: DelegationViewModel | null,
   sameRootAndEpoch: boolean,
   ports: {
-    home: string;
+    home: string | null;
     copy: (text: string) => Promise<boolean>;
     host?: Pick<HostAdapter, 'locate' | 'focus'>;
     isCurrent?: () => boolean;
@@ -37,45 +38,67 @@ export async function dispatchDelegationAction(
   }
   if (action.type === 'delegation-copy') {
     const command = action.descriptor.displayCommand;
-    return (await ports.copy(command))
-      ? 'Reconcile command copied.'
-      : `Clipboard unavailable. Reconcile command: ${command}`;
+    return (await ports.copy(command)) ? 'Reconcile command copied.' : 'Clipboard failed; command not shown.';
   }
-  if (node.currentRun?.mode !== 'headless') return 'Log unavailable for this run.';
+  if (node.currentRun?.mode !== 'headless' || !ports.home) return 'Log unavailable for this run.';
   try {
     const artifacts = RunArtifacts.open(ports.home, node.currentRun.runId);
-    const file = join(artifacts.directory, 'stdout.log');
-    if (!lstatSync(file).isFile()) return 'Log unavailable for this run.';
-    artifacts.readLog('stdout', 0, 1);
-    return `Log: ${join(artifacts.directory, 'stdout.log')}`;
+    const streams = (['stdout', 'stderr'] as const).map((stream) => {
+      try {
+        const file = join(artifacts.directory, `${stream}.log`);
+        if (!lstatSync(file).isFile()) return `${stream}: unavailable`;
+        artifacts.readLog(stream, 0, 1);
+        return `${stream}: ${file}`;
+      } catch {
+        return `${stream}: unavailable`;
+      }
+    });
+    return `Log: ${streams.join(' · ')}`;
   } catch {
     return 'Log unavailable for this run.';
   }
 }
 
-/** A clipboard helper must acknowledge success; writing an OSC 52 sequence is not an acknowledgement. */
-export async function copyDelegationCommand(text: string): Promise<boolean> {
-  const program = process.env.WAYLAND_DISPLAY ? 'wl-copy' : 'xclip';
-  const args = program === 'xclip' ? ['-selection', 'clipboard'] : [];
-  return new Promise((resolve) => {
-    const child = spawn(program, args, { stdio: ['pipe', 'ignore', 'ignore'] });
-    let settled = false;
-    const finish = (ok: boolean) => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        resolve(ok);
-      }
-    };
-    const timer = setTimeout(() => {
-      child.kill();
-      finish(false);
-    }, 2000);
-    child.once('error', () => finish(false));
-    child.once('exit', (code) => finish(code === 0));
-    child.stdin.on('error', () => finish(false));
-    child.stdin.end(text);
-  });
+type ClipboardOptions = { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv };
+
+/** A clipboard helper must acknowledge success; OSC 52 is not an acknowledgement. */
+export async function copyDelegationCommand(text: string, options: ClipboardOptions = {}): Promise<boolean> {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+  const candidates: Array<{ program: string; args: string[]; windows: boolean }> = [];
+  if (platform === 'darwin') candidates.push({ program: 'pbcopy', args: [], windows: false });
+  else if (platform === 'win32') candidates.push({ program: 'clip.exe', args: [], windows: true });
+  else {
+    if (env.WAYLAND_DISPLAY) candidates.push({ program: 'wl-copy', args: [], windows: false });
+    candidates.push({ program: 'xclip', args: ['-selection', 'clipboard'], windows: false });
+    if (env.WSL_INTEROP || env.WSL_DISTRO_NAME) candidates.push({ program: 'clip.exe', args: [], windows: true });
+  }
+  for (const { program, args, windows } of candidates) {
+    const data = windows
+      ? Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')])
+      : Buffer.from(text, 'utf8');
+    const ok = await new Promise<boolean>((resolve) => {
+      const child = spawn(program, args, { stdio: ['pipe', 'ignore', 'ignore'], env });
+      let settled = false;
+      const finish = (success: boolean) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(success);
+        }
+      };
+      const timer = setTimeout(() => {
+        child.kill();
+        finish(false);
+      }, 2000);
+      child.once('error', () => finish(false));
+      child.once('exit', (code) => finish(code === 0));
+      child.stdin.on('error', () => finish(false));
+      child.stdin.end(data);
+    });
+    if (ok) return true;
+  }
+  return false;
 }
 
 /** Only use a picker label when the complete native root tree makes it unique. */
@@ -230,4 +253,10 @@ export function sameDelegationPickerLabel(
   label: string | undefined
 ): boolean {
   return delegationPickerLabel(vm, root, id) === label;
+}
+
+/** The monitor has at most two notice lines; never present a partial log path as complete. */
+export function boundedActionNotice(message: string, width: number): string {
+  if (!message.startsWith('Log: ')) return message;
+  return wrapped(message, Math.max(1, width - 6)).length > 2 ? 'Log paths too long to display.' : message;
 }

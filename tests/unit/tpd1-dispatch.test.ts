@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, closeSync } from 'node:fs';
+import { mkdtempSync, rmSync, closeSync, unlinkSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RunArtifacts } from '../../src/core/run/artifacts.js';
 import {
   dispatchDelegationAction,
+  copyDelegationCommand,
   delegationPickerLabel,
   withInputRefresh,
   delegationActivityTarget,
@@ -13,9 +14,11 @@ import {
   revealDelegationAncestors,
   createOpenGate,
   sameDelegationActionTarget,
+  boundedActionNotice,
 } from '../../src/utils/delegation-actions.js';
 import { S, ago, buildVm, type NodeSpec } from '../fixtures/b10b-delegation.js';
-import { draw, press } from '../fixtures/b10b-s3.js';
+import { draw, press, monitorInput, text } from '../fixtures/b10b-s3.js';
+import { renderMonitor } from '../../src/render/monitor.js';
 
 const root: NodeSpec = { id: 'main', root: true, harness: 'claude', status: S.working(ago(300)), label: null };
 function view(mode: 'headless' | 'visible', reconcile = false) {
@@ -71,7 +74,16 @@ test('L from the displayed frame exposes a verified log path; missing logs are u
     const ports = { home, copy: async () => false };
     assert.equal(
       await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, ports),
-      `Log: ${join(artifacts.directory, 'stdout.log')}`
+      `Log: stdout: ${join(artifacts.directory, 'stdout.log')} · stderr: ${join(artifacts.directory, 'stderr.log')}`
+    );
+    unlinkSync(join(artifacts.directory, 'stderr.log'));
+    assert.equal(
+      await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, ports),
+      `Log: stdout: ${join(artifacts.directory, 'stdout.log')} · stderr: unavailable`
+    );
+    assert.equal(
+      await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, { ...ports, home: null }),
+      'Log unavailable for this run.'
     );
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -288,11 +300,86 @@ for (const succeeds of [true, false])
     assert.equal(sameDelegationActionTarget(frame.delegation?.vm, refreshed, action.key), true);
     resolve(succeeds);
     const message = await pending;
-    assert.match(message, succeeds ? /copied/ : /Clipboard unavailable/);
-    if (!succeeds) assert.ok(message.includes(action.descriptor.displayCommand));
+    assert.match(message, succeeds ? /copied/ : /Clipboard failed; command not shown/);
     const changed = {
       ...refreshed,
       details: { ...refreshed.details, [action.key]: { ...refreshed.details[action.key], reconcile: null } },
     };
     assert.equal(sameDelegationActionTarget(frame.delegation?.vm, changed, action.key), false);
   });
+
+test('WSL clipboard falls back to clip.exe and preserves exact Unicode command bytes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpd1-clipboard-'));
+  const capture = join(dir, 'capture');
+  try {
+    writeFileSync(join(dir, 'wl-copy'), '#!/bin/sh\nexit 1\n', { mode: 0o700 });
+    writeFileSync(join(dir, 'xclip'), '#!/bin/sh\nexit 1\n', { mode: 0o700 });
+    writeFileSync(join(dir, 'clip.exe'), '#!/bin/sh\n/bin/cat > "$CAPTURE_FILE"\n', { mode: 0o700 });
+    const command = "HUD_HOME='/tmp/中文 home' hud run reconcile r_123";
+    const env = { PATH: dir, WAYLAND_DISPLAY: 'wayland-0', WSL_DISTRO_NAME: 'Ubuntu', CAPTURE_FILE: capture };
+    assert.equal(await copyDelegationCommand(command, { platform: 'linux', env }), true);
+    const bytes = readFileSync(capture);
+    assert.deepEqual(bytes.subarray(0, 2), Buffer.from([0xff, 0xfe]));
+    assert.equal(bytes.subarray(2).toString('utf16le'), command);
+    unlinkSync(join(dir, 'clip.exe'));
+    assert.equal(await copyDelegationCommand(command, { platform: 'linux', env }), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Windows clipboard invokes clip.exe and requires a successful exit', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpd1-clipboard-'));
+  try {
+    writeFileSync(join(dir, 'clip.exe'), '#!/bin/sh\nexit 1\n', { mode: 0o700 });
+    assert.equal(await copyDelegationCommand('reconcile', { platform: 'win32', env: { PATH: dir } }), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('clipboard failure is honestly reported by the real monitor notice without a truncated command', async () => {
+  const { vm, frame, keys } = view('headless', true);
+  const action = press(frame, 'resume-reconcile').action;
+  if (!action || action.type !== 'delegation-copy') throw new Error('missing action');
+  const message = await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, {
+    home: null,
+    copy: async () => false,
+  });
+  for (const width of [32, 80]) {
+    const displayed = text(
+      renderMonitor({ ...monitorInput(vm, { selected: keys.worker, width, height: 24 }), notice: message })
+    ).join(' ');
+    assert.match(displayed.replace(/\s+/g, ' '), /Clipboard failed; command not shown\./);
+    assert.ok(!displayed.includes(action.descriptor.displayCommand));
+  }
+});
+
+test('long log paths render an explicit truncation notice in a narrow monitor', async () => {
+  const { vm, frame, keys } = view('headless');
+  const action = press(frame, 'log').action;
+  if (!action || action.type !== 'delegation-log') throw new Error('missing action');
+  const home = mkdtempSync(join(tmpdir(), 'tpd1-a-very-long-home-with-a-distinctive-ledger-'));
+  try {
+    const node = vm.tree.nodes.find((n) => n.key === action.key)!;
+    const artifacts = RunArtifacts.create(home, node.currentRun!.runId);
+    const logs = artifacts.openLogs();
+    closeSync(logs.stdout);
+    closeSync(logs.stderr);
+    const message = await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, {
+      home,
+      copy: async () => false,
+    });
+    const notice = boundedActionNotice(message, 32);
+    assert.equal(notice, 'Log paths too long to display.');
+    const displayed = text(
+      renderMonitor({ ...monitorInput(vm, { selected: keys.worker, width: 32, height: 24 }), notice })
+    )
+      .join(' ')
+      .replace(/\s+/g, ' ');
+    assert.match(displayed, /Log paths too long to display\./);
+    assert.ok(!displayed.includes(home));
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});

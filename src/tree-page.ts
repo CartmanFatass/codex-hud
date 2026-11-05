@@ -7,14 +7,13 @@ import { navigateSession } from './utils/session-navigation.js';
 import {
   dispatchDelegationAction,
   copyDelegationCommand,
-  delegationPickerLabel,
   withInputRefresh,
   delegationActivityTarget,
   createNavigationGate,
   revealDelegationAncestors,
   createOpenGate,
   sameDelegationActionTarget,
-  sameDelegationPickerLabel,
+  boundedActionNotice,
 } from './utils/delegation-actions.js';
 import { defaultSettings, saveSettings, briefingScope, settingsPath, type HudSettings } from './settings.js';
 import { homedir } from 'node:os';
@@ -676,7 +675,8 @@ async function runLivePage(): Promise<void> {
           error,
           nowMs,
           hud,
-          notice: navigationMessage || hudProblems(hud, nowMs, t)[0],
+          notice:
+            (navigationMessage ? boundedActionNotice(navigationMessage, width) : null) || hudProblems(hud, nowMs, t)[0],
           loading: !collected || treeBuiltFor !== tree.rootId,
           art: drawArt,
           prefix: prefixName(settings.prefixKey),
@@ -1212,7 +1212,7 @@ async function runLivePage(): Promise<void> {
     const root = tree.rootId;
     const view = delegation;
     const selected = state.tree.selectedId;
-    const label = view ? delegationPickerLabel(view, root, id) : uniquePickerLabel(tree, id);
+    const label = view ? undefined : uniquePickerLabel(tree, id);
     const selectedIdentity = (snapshot: DelegationViewModel | null) => {
       const node = snapshot?.tree.nodes.find((item) => item.key === selected);
       return snapshot
@@ -1229,8 +1229,7 @@ async function runLivePage(): Promise<void> {
       !closed &&
       tree.rootId === root &&
       state.tree.selectedId === selected &&
-      selectedIdentity(delegation) === identity &&
-      (!view || sameDelegationPickerLabel(delegation, root, id, label));
+      selectedIdentity(delegation) === identity;
     return navigateOnce(
       id,
       () => navigateSession(process.env.CODEX_HUD_MAIN_PANE, { id, label }, undefined, current),
@@ -1659,7 +1658,7 @@ async function runLivePage(): Promise<void> {
             actionFrame?.delegation?.vm,
             delegation,
             actionRoot === tree.rootId && actionEpoch === collectionEpoch,
-            { home: getHudHome(), copy: copyDelegationCommand }
+            { home: delegationCollector?.home ?? null, copy: copyDelegationCommand }
           );
         void (action.type === 'delegation-open' ? openOnce(action.key, execute) : execute()).then((message) => {
           if (
