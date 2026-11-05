@@ -10,6 +10,8 @@
 
 正确性与轻量同级（概念§2 G13/G14）：正常调用者一次 spawn + 有界 wait，登记、握手运输、托管与对账由现有写者推进，不要求手工续租/放槽。spawn/resume 只等持久 accepted，cancel 只等取消意图接受，不等 ready/结束；accepted→started/bound 单独计量。短 SQLite 等待和全部性能/唤醒预算归 [06](./06-observation.md)，外部读取/hash/宿主命令不占写事务。HUD 只读字段与能力门供给依据 [信息设计§7](../design/hud-information-design.md)；本文不决定呈现。
 
+（P065 元数据例外，2026-11-03）仅 [02 执行协议](./02-execution.md) 明列的固定私有存储元数据复验可例外占用写锁区间；其余外部准备与来源取证仍在事务外。此例外不改变 actor、来源证明、writer、capability 或受支持档案规则，详见 [Oracle 裁决](../cloud/rulings/p065-metadata-exception.md)。
+
 Oracle 已追认 provisional、同 owner predecessor、逐轮 runHandshake 等核心不变量；修改项以其 C01–C14 为准，不再把旧编排者方案当待实现协议。§15 决策日志保留，跨契约/范围新分叉仍交编排者/Oracle。
 
 

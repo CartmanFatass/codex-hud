@@ -1,0 +1,2431 @@
+{
+  "schema": "wave1-compat-integration/source-composition-v1",
+  "repository": "CartmanFatass/codex-hud",
+  "destination": "dots/wave1-compat-integration",
+  "status": "WIP / NOT ACCEPTED / NOT MERGEABLE",
+  "facts": {
+    "ruling_sha256": "6b25da00c8f8c0236e5382d94158b40f6a5b173bdd627e35defe89772df73774",
+    "addendum_sha256": "fcaaceb768f6f55bacfd01c547152d64301575732420dd1c85123286fa66d86e",
+    "originalDestination": "absent",
+    "localPreparation": "Before connector-only restriction was received: one separate empty git repository was initialized and four refs fetched; no checkout, local merge, source edit, install, build, test, process probe or publication. Local operations stopped on instruction. Thereafter construction/readback used GitHub connector only.",
+    "builds": "NOT RUN",
+    "tests": "NOT RUN",
+    "benchmarks": "NOT RUN"
+  },
+  "U": {
+    "commit": "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86",
+    "tree": "2a6491f7c0ca5262587d4ab15a8ae53cbf6901ce",
+    "original_integration_commit": "88633ef53490f213b6ec987fdafec4f3fd1aa0a5",
+    "original_integration_tree": "b4f5c3a80c9b16f734234d24e90c622bbb9346fa",
+    "documentary_drift": [
+      "docs/cloud/rulings/wave1-compat-integration-20261103.md",
+      "docs/cloud/rulings/wave1-compat-integration-connector-addendum-20261104.md"
+    ]
+  },
+  "sources": [
+    {
+      "lineage": "proxy",
+      "commit": "b4047320262f72f401a513db07236ff1473db933",
+      "tree": "d9be29f28da496a880802c267a08e8bb4fcbee74",
+      "documentary_head_proof": {
+        "repository_full_name": "CartmanFatass/codex-hud",
+        "base": "b4047320262f72f401a513db07236ff1473db933",
+        "head": "394f5085933fab1d2a57d0c4012cf19efbc723b1",
+        "status": "ahead",
+        "ahead_by": 5,
+        "behind_by": 0,
+        "total_commits": 5,
+        "too_large": null,
+        "base_commit": {
+          "sha": "b4047320262f72f401a513db07236ff1473db933",
+          "url": "https://api.github.com/repos/CartmanFatass/codex-hud/commits/b4047320262f72f401a513db07236ff1473db933",
+          "html_url": "https://github.com/CartmanFatass/codex-hud/commit/b4047320262f72f401a513db07236ff1473db933"
+        },
+        "merge_base_commit": {
+          "sha": "b4047320262f72f401a513db07236ff1473db933",
+          "url": "https://api.github.com/repos/CartmanFatass/codex-hud/commits/b4047320262f72f401a513db07236ff1473db933",
+          "html_url": "https://github.com/CartmanFatass/codex-hud/commit/b4047320262f72f401a513db07236ff1473db933"
+        },
+        "files": [
+          {
+            "filename": "docs/cloud/handoff/node22-proxy/implementation-correction.md",
+            "status": "added",
+            "additions": 3,
+            "deletions": 0,
+            "changes": 3,
+            "previous_filename": null
+          },
+          {
+            "filename": "docs/cloud/handoff/node22-proxy/implementation.md",
+            "status": "added",
+            "additions": 114,
+            "deletions": 0,
+            "changes": 114,
+            "previous_filename": null
+          },
+          {
+            "filename": "docs/cloud/handoff/node22-proxy/node22-verification.md",
+            "status": "added",
+            "additions": 18,
+            "deletions": 0,
+            "changes": 18,
+            "previous_filename": null
+          },
+          {
+            "filename": "docs/cloud/handoff/node22-proxy/owner-local-followup-oracle-review-20261103.md",
+            "status": "added",
+            "additions": 113,
+            "deletions": 0,
+            "changes": 113,
+            "previous_filename": null
+          },
+          {
+            "filename": "docs/cloud/handoff/node22-proxy/review-1.md",
+            "status": "added",
+            "additions": 105,
+            "deletions": 0,
+            "changes": 105,
+            "previous_filename": null
+          }
+        ]
+      }
+    },
+    {
+      "lineage": "mcp",
+      "commit": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+      "tree": "0d195bd47ff2b29581e1c394c2973d9479f8d928",
+      "documentary_head_proof": {
+        "repository_full_name": "CartmanFatass/codex-hud",
+        "base": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+        "head": "99a6761cfd79dc047a048dfffdc24018e9780a29",
+        "status": "ahead",
+        "ahead_by": 4,
+        "behind_by": 0,
+        "total_commits": 4,
+        "too_large": null,
+        "base_commit": {
+          "sha": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+          "url": "https://api.github.com/repos/CartmanFatass/codex-hud/commits/b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+          "html_url": "https://github.com/CartmanFatass/codex-hud/commit/b2897a4f9769bca6305ff0e3ae3dc694a9320ffe"
+        },
+        "merge_base_commit": {
+          "sha": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+          "url": "https://api.github.com/repos/CartmanFatass/codex-hud/commits/b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+          "html_url": "https://github.com/CartmanFatass/codex-hud/commit/b2897a4f9769bca6305ff0e3ae3dc694a9320ffe"
+        },
+        "files": [
+          {
+            "filename": "docs/cloud/handoff/mcp-ancestor-fix1-publication.md",
+            "status": "added",
+            "additions": 15,
+            "deletions": 0,
+            "changes": 15,
+            "previous_filename": null
+          },
+          {
+            "filename": "docs/cloud/handoff/mcp-ancestor-fix1.md",
+            "status": "added",
+            "additions": 48,
+            "deletions": 0,
+            "changes": 48,
+            "previous_filename": null
+          },
+          {
+            "filename": "docs/cloud/handoff/mcp-ancestor-owner-local-followup-review-20261103.md",
+            "status": "added",
+            "additions": 118,
+            "deletions": 0,
+            "changes": 118,
+            "previous_filename": null
+          },
+          {
+            "filename": "docs/cloud/handoff/mcp-ancestor-review-2.md",
+            "status": "added",
+            "additions": 128,
+            "deletions": 0,
+            "changes": 128,
+            "previous_filename": null
+          }
+        ]
+      }
+    },
+    {
+      "lineage": "kill",
+      "commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "tree": "ad4c596860b264d76d4060be90d70337046b92c5",
+      "documentary_head_proof": {
+        "repository_full_name": "CartmanFatass/codex-hud",
+        "base": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+        "head": "00d3317303d40a357bf7b3219911e40372631c6d",
+        "status": "ahead",
+        "ahead_by": 3,
+        "behind_by": 0,
+        "total_commits": 3,
+        "too_large": null,
+        "base_commit": {
+          "sha": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+          "url": "https://api.github.com/repos/CartmanFatass/codex-hud/commits/7ba567ee0c3cd12933d79a5029162d32770ee245",
+          "html_url": "https://github.com/CartmanFatass/codex-hud/commit/7ba567ee0c3cd12933d79a5029162d32770ee245"
+        },
+        "merge_base_commit": {
+          "sha": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+          "url": "https://api.github.com/repos/CartmanFatass/codex-hud/commits/7ba567ee0c3cd12933d79a5029162d32770ee245",
+          "html_url": "https://github.com/CartmanFatass/codex-hud/commit/7ba567ee0c3cd12933d79a5029162d32770ee245"
+        },
+        "files": [
+          {
+            "filename": "docs/cloud/handoff/runz1-kill/fix-1-report.md",
+            "status": "added",
+            "additions": 94,
+            "deletions": 0,
+            "changes": 94,
+            "previous_filename": null
+          },
+          {
+            "filename": "docs/cloud/handoff/runz1-kill/review-2.md",
+            "status": "added",
+            "additions": 124,
+            "deletions": 0,
+            "changes": 124,
+            "previous_filename": null
+          },
+          {
+            "filename": "docs/cloud/handoff/runz1-kill/review-local-followup-20261103.md",
+            "status": "added",
+            "additions": 136,
+            "deletions": 0,
+            "changes": 136,
+            "previous_filename": null
+          }
+        ]
+      }
+    }
+  ],
+  "source_manifest": [
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "src/cli/link-export.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "c7a05e752c166a29564db41385cf022365d83f0b"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "src/ledger/runtime.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "3f61a6f4ebfc8607e59dbe464d93d63d8f211662"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/int/node-startup-diagnostics.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "e1feac9598d0c3e3abfd19084b9274920a008699"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/int/process-client.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "c161c158f85db34188e754ed06adcb842d93ae4a"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/unit/b12d-wal.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "46bc5da8b45d2d8e2f73fe5e6f4229e5e0d1bcd1"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/unit/b12r-store.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "9e281e7883765d49d06c2beb3332b89e8e8bb093"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/unit/b16-writer.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "2017e31951a2b061585824fca9d7bd4d0d5ada86"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/unit/b45-launch.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "21bfa19b76a5eec48c58a4adf76f077193bf61e9"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/unit/hud-link-export.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "5c2d0b2f0e698791ebc249fdca6af2774aeec317"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/unit/node-proxy-profile.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "134a43985ab7fdbda12a6239517f9c7d3203de01"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/unit/process-client.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "3ab24c1d2ed1433ae25d5ca674a1d05bcceac6e3"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/unit/run-light-leader.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "dcff130926e1e88ada11b7a73d5de5869345cea4"
+    },
+    {
+      "lineage": "proxy",
+      "source_commit": "b4047320262f72f401a513db07236ff1473db933",
+      "path": "tests/unit/run-process.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "e95e606c912919f7770e053670ef5600147024f6"
+    },
+    {
+      "lineage": "mcp",
+      "source_commit": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+      "path": "packages/hud-mcp/src/process.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "72954abd0b5a483ff1bab1aaaeab59add4ffab5b"
+    },
+    {
+      "lineage": "mcp",
+      "source_commit": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+      "path": "tests/hud-mcp/ancestor-discovery.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "dae455671c9e7dc0b46f25516c2fc6d7b9c92649"
+    },
+    {
+      "lineage": "mcp",
+      "source_commit": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+      "path": "tests/hud-mcp/int-ledger-registry.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "234a3f2253f4bcf61f039732ae99c9c878853a1d"
+    },
+    {
+      "lineage": "mcp",
+      "source_commit": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+      "path": "tests/hud-mcp/skeleton.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "025227b75736a43fb3fde6ec8ef8cdae25b98181"
+    },
+    {
+      "lineage": "kill",
+      "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "path": "src/core/run/README.md",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "6b2c137b57ec3b45b44fd189e02a4481377859b7"
+    },
+    {
+      "lineage": "kill",
+      "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "path": "src/core/run/process-census.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "1243fef52711803e54fcafc4127316c8ae701ece"
+    },
+    {
+      "lineage": "kill",
+      "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "path": "src/core/run/process.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "f43cfe0bb18e1af5b940c42b8d5ee6d0e4d7eb3f"
+    },
+    {
+      "lineage": "kill",
+      "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "path": "tests/int/runz1-perf.mjs",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "fbd6c34c6de54a9b11ec155a5a01f18c83d77969"
+    },
+    {
+      "lineage": "kill",
+      "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "path": "tests/unit/run-control-kill-evidence.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "bd4d5ad7012a896443eaa09df9da0f066079a9f4"
+    },
+    {
+      "lineage": "kill",
+      "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "path": "tests/unit/run-control-kill-fixture.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "8d0c86138e888cefebd13b787e0c164053b2fa4b"
+    },
+    {
+      "lineage": "kill",
+      "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "path": "tests/unit/run-control.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "f12d545a26724d1239f2ce91140e1eb9e98dec82"
+    },
+    {
+      "lineage": "kill",
+      "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "path": "tests/unit/runz1-fixture.py",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "4d0abb3c124a32704be9801ba9e8899cdb559ed9"
+    },
+    {
+      "lineage": "kill",
+      "source_commit": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+      "path": "tests/unit/runz1-process.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "f57755deeaeefb70ee9ed7c469fe6a4b39be4955"
+    }
+  ],
+  "source_candidate": {
+    "commit": "36d3fd584bd403ed7ada95d1d863a8f63e96588b",
+    "tree": "0c8c67ede1f13122987802d9a0346cd6e6ecf73b",
+    "ordered_parents": [
+      "80a4de01992379c1ae4bf019cf96ec2dc4180cd0",
+      "7ba567ee0c3cd12933d79a5029162d32770ee245"
+    ],
+    "complete_recursive_tree_truncated": false,
+    "leaf_count": 1370
+  },
+  "merges": [
+    {
+      "lineage": "proxy",
+      "commit": "fd06676862b600518e399b2385b63f79685e6701",
+      "tree": "8b557e9a6d19347f3568908260c66bbd49362760",
+      "parents": [
+        "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86",
+        "b4047320262f72f401a513db07236ff1473db933"
+      ],
+      "merge_base": "f1e2a8408fbc6ddef181978e8a2d9fd5831242e9",
+      "delta": [
+        {
+          "path": "src/cli/link-export.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "c7a05e752c166a29564db41385cf022365d83f0b"
+        },
+        {
+          "path": "src/ledger/runtime.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "3f61a6f4ebfc8607e59dbe464d93d63d8f211662"
+        },
+        {
+          "path": "tests/unit/b12d-wal.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "46bc5da8b45d2d8e2f73fe5e6f4229e5e0d1bcd1"
+        },
+        {
+          "path": "tests/unit/b12r-store.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "9e281e7883765d49d06c2beb3332b89e8e8bb093"
+        },
+        {
+          "path": "tests/unit/b16-writer.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "2017e31951a2b061585824fca9d7bd4d0d5ada86"
+        },
+        {
+          "path": "tests/unit/b45-launch.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "21bfa19b76a5eec48c58a4adf76f077193bf61e9"
+        },
+        {
+          "path": "tests/unit/hud-link-export.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "5c2d0b2f0e698791ebc249fdca6af2774aeec317"
+        },
+        {
+          "path": "tests/unit/run-light-leader.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "dcff130926e1e88ada11b7a73d5de5869345cea4"
+        },
+        {
+          "path": "tests/unit/run-process.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "e95e606c912919f7770e053670ef5600147024f6"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-dispatcher-checks-20261103.log",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "fe1fb74c1e9cc43672f28eff93f8f639dc10e388"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-fix-dispatcher-20261103.log",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "bcb20d1f90c31f91541b3a6c60369d20875e2cf3"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part01.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "d9d8b1eea5c96235d802bcdd20a5cb1a6ae8b4ad"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part02.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "7f908a076fc829837ef56d48da2dd9fc04479bdf"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part03.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "27a5ad2d81f1452099b5c2a9ef501134c3c946dc"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part04.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "ed294f8256c2f4a4bf4c8afe5226f8696bfffe6f"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part05.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "7f612e586bbbebafc9f3be0f57dba2ed7ab5db6f"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part06.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "a7b441878e954d1a2125d1cb052a52949c445999"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-fix-mjs-dispatcher-20261103.log",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "f7310c758e3884036c615a641c66d3b91827b35e"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-fix1-report.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "7bebf78f96d72b97a503026191b341be7ed0fad4"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-implement-report.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "dc2d73f1a3cc24d6d94c814b1068ac9b79514829"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-local-review-20261103.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "c474c3155f7c4edcdf1d503af63a336e5ad5739b"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-proc-diagnosis-20261103.log",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "81d63c9bdd454dd56624ec1fada6acdedb13846f"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-review-1.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "662c67ea462fe572954caf4fac6f1f94fdbc6b58"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-review-2.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "216502e77a24c1a6b477f3b40c2fc46c3e380619"
+        },
+        {
+          "path": "docs/cloud/handoff/hyg2-topology-diagnosis.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "d0bfe2f16fd2a6fe7ae7c288ddc9b063b1fe4fd3"
+        },
+        {
+          "path": "docs/cloud/rulings/hyg2.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "f54edebf7e389bfdd04492756ea412eb5e7a2cbf"
+        },
+        {
+          "path": "tests/int/node-startup-diagnostics.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "e1feac9598d0c3e3abfd19084b9274920a008699"
+        },
+        {
+          "path": "tests/int/process-client.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "c161c158f85db34188e754ed06adcb842d93ae4a"
+        },
+        {
+          "path": "tests/unit/node-proxy-profile.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "134a43985ab7fdbda12a6239517f9c7d3203de01"
+        },
+        {
+          "path": "tests/unit/process-client.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "3ab24c1d2ed1433ae25d5ca674a1d05bcceac6e3"
+        }
+      ],
+      "complete_tree_verified": true,
+      "predicted_leaf_count": 1348,
+      "conflicts": [],
+      "prefix_collisions": [],
+      "ancestry": [
+        {
+          "base": "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86",
+          "head": "fd06676862b600518e399b2385b63f79685e6701",
+          "status": "ahead",
+          "behind_by": 0,
+          "merge_base": "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86",
+          "files": [
+            {
+              "filename": "docs/cloud/handoff/hyg2-dispatcher-checks-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part01.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part02.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part03.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part04.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part05.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part06.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-mjs-dispatcher-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix1-report.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-implement-report.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-local-review-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-proc-diagnosis-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-review-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-review-2.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-topology-diagnosis.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/hyg2.md",
+              "status": "added"
+            },
+            {
+              "filename": "src/cli/link-export.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "src/ledger/runtime.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/int/node-startup-diagnostics.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/int/process-client.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/b12d-wal.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/b12r-store.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/b16-writer.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/b45-launch.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/hud-link-export.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/node-proxy-profile.test.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/process-client.test.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/run-light-leader.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/run-process.test.ts",
+              "status": "modified"
+            }
+          ]
+        },
+        {
+          "base": "b4047320262f72f401a513db07236ff1473db933",
+          "head": "fd06676862b600518e399b2385b63f79685e6701",
+          "status": "ahead",
+          "behind_by": 0,
+          "merge_base": "b4047320262f72f401a513db07236ff1473db933",
+          "files": [
+            {
+              "filename": "docs/cloud/B10B-S3F-NEXT.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/B10B-S3F-PERF.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/MCP-ANCESTOR.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/NODE22-PROXY.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/P065-BUDGET.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/RUNZ1-KILL.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/node22-proxy-ownership.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/p065-doc-amendments.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/p065-six-doc-amendments.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/p065-status-amendments.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-kill/diagnostic-plan.json",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/terra-verification-attempt.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-diagnostic-v3.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-next-post-review-route.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-next-route-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-s3f-perf-memo.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-s3f-perf-validation.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10d-route.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/cloud-test-feasibility-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/doc2-prerequisite-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/mcp-ancestor-gate.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/mcp-startup-diagnostic.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/node22-proxy-flake-closeout.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/node22-proxy-profile.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p-06-5.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-budget-local-gate.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-budget-release.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-independent-cloud-route-exact-source-freeze-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-independent-compile-failure-bounded-repair-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-interrupted-build.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-metadata-exception.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-repaired-candidate-fresh-executor-supervision-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-replay-expiry-clock.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-six-design-dispositions.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/queue-progress-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-doc.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-esrch.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-kill-diagnosis.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-kill-fix-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-scope.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-wip.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/tpd1-prerequisite-source-action-test-map-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/wave1-compat-integration-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/wave1-compat-integration-connector-addendum-20261104.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/wave1-resource-windows-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/contracts/01-identity.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/02-execution.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/03-lifecycle.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/04-supervision.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/05-capabilities.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/06-observation.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/handoff/STATE.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/handoff/questions/B10B-S3F-verification.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/handoff/questions/B10D-route.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/handoff/questions/P-06-5.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/universal-hud-concept.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/universal-hud-engineering-plan.md",
+              "status": "modified"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "lineage": "mcp",
+      "commit": "80a4de01992379c1ae4bf019cf96ec2dc4180cd0",
+      "tree": "2f79b4407cd4677e800b933046a89fb00b8cf6e4",
+      "parents": [
+        "fd06676862b600518e399b2385b63f79685e6701",
+        "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe"
+      ],
+      "merge_base": "26f6fba36948e6c96e2e109cb374c0d4dbb9ab22",
+      "delta": [
+        {
+          "path": "packages/hud-mcp/src/process.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "72954abd0b5a483ff1bab1aaaeab59add4ffab5b"
+        },
+        {
+          "path": "tests/hud-mcp/int-ledger-registry.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "234a3f2253f4bcf61f039732ae99c9c878853a1d"
+        },
+        {
+          "path": "tests/hud-mcp/skeleton.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "025227b75736a43fb3fde6ec8ef8cdae25b98181"
+        },
+        {
+          "path": "docs/cloud/handoff/mcp-ancestor-implementation.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "280b92156018c0ddd344616a34889977c08b40ea"
+        },
+        {
+          "path": "docs/cloud/handoff/mcp-ancestor-publication.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "431385f528afde9174395bc424dadc83a32926fa"
+        },
+        {
+          "path": "docs/cloud/handoff/mcp-ancestor-review-1.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "c4e8e2400080aa19322e013d11aa3750a0d86bf7"
+        },
+        {
+          "path": "tests/hud-mcp/ancestor-discovery.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "dae455671c9e7dc0b46f25516c2fc6d7b9c92649"
+        }
+      ],
+      "complete_tree_verified": true,
+      "predicted_leaf_count": 1352,
+      "conflicts": [],
+      "prefix_collisions": [],
+      "ancestry": [
+        {
+          "base": "fd06676862b600518e399b2385b63f79685e6701",
+          "head": "80a4de01992379c1ae4bf019cf96ec2dc4180cd0",
+          "status": "ahead",
+          "behind_by": 0,
+          "merge_base": "fd06676862b600518e399b2385b63f79685e6701",
+          "files": [
+            {
+              "filename": "docs/cloud/handoff/mcp-ancestor-implementation.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/mcp-ancestor-publication.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/mcp-ancestor-review-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "packages/hud-mcp/src/process.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/hud-mcp/ancestor-discovery.test.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/hud-mcp/int-ledger-registry.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/hud-mcp/skeleton.test.ts",
+              "status": "modified"
+            }
+          ]
+        },
+        {
+          "base": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+          "head": "80a4de01992379c1ae4bf019cf96ec2dc4180cd0",
+          "status": "ahead",
+          "behind_by": 0,
+          "merge_base": "b2897a4f9769bca6305ff0e3ae3dc694a9320ffe",
+          "files": [
+            {
+              "filename": "docs/cloud/MCP-ANCESTOR.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/NODE22-PROXY.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/P065-BUDGET.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/cloud/RUNZ1-KILL.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-dispatcher-checks-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part01.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part02.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part03.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part04.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part05.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part06.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-mjs-dispatcher-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix1-report.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-implement-report.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-local-review-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-proc-diagnosis-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-review-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-review-2.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-topology-diagnosis.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/node22-proxy-ownership.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/p065-six-doc-amendments.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-kill/diagnostic-plan.json",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-next-post-review-route.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/doc2-prerequisite-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/hyg2.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/mcp-ancestor-gate.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/mcp-startup-diagnostic.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/node22-proxy-flake-closeout.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/node22-proxy-profile.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-budget-release.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-independent-cloud-route-exact-source-freeze-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-independent-compile-failure-bounded-repair-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-interrupted-build.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-repaired-candidate-fresh-executor-supervision-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-replay-expiry-clock.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-six-design-dispositions.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-kill-diagnosis.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-kill-fix-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/tpd1-prerequisite-source-action-test-map-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/wave1-compat-integration-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/wave1-compat-integration-connector-addendum-20261104.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/wave1-resource-windows-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/contracts/06-observation.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/handoff/STATE.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/universal-hud-concept.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/universal-hud-engineering-plan.md",
+              "status": "modified"
+            },
+            {
+              "filename": "src/cli/link-export.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "src/ledger/runtime.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/int/node-startup-diagnostics.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/int/process-client.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/b12d-wal.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/b12r-store.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/b16-writer.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/b45-launch.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/hud-link-export.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/node-proxy-profile.test.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/process-client.test.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/run-light-leader.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/run-process.test.ts",
+              "status": "modified"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "lineage": "kill",
+      "commit": "36d3fd584bd403ed7ada95d1d863a8f63e96588b",
+      "tree": "0c8c67ede1f13122987802d9a0346cd6e6ecf73b",
+      "parents": [
+        "80a4de01992379c1ae4bf019cf96ec2dc4180cd0",
+        "7ba567ee0c3cd12933d79a5029162d32770ee245"
+      ],
+      "merge_base": "f1e2a8408fbc6ddef181978e8a2d9fd5831242e9",
+      "delta": [
+        {
+          "path": "src/core/run/README.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "6b2c137b57ec3b45b44fd189e02a4481377859b7"
+        },
+        {
+          "path": "src/core/run/process.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "f43cfe0bb18e1af5b940c42b8d5ee6d0e4d7eb3f"
+        },
+        {
+          "path": "tests/unit/run-control.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "f12d545a26724d1239f2ce91140e1eb9e98dec82"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-dispatcher.log.part01.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "d0570b3a3ac973e72db74141a610cc2d5e16d5ee"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-dispatcher.log.part02.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "82d98327f0018bdaf3abfbd376c2418ba2aac7fe"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-dispatcher.log.part03.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "17fc7993ac01d503cf77e0b754a8c719ce7dcec7"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-dispatcher.log.part04.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "d054fd9fbc055cb0f1fb57dbef92c53d66f11bf7"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-dispatcher.log.part05.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "4935f0a877bd4783db2dfaa93fdff994fc2c6c37"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-dispatcher.log.part06.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "cade0dbb1ace012559ecae11deab0911b5415d2b"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-dispatcher.log.part07.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "b4ba1d9867ef770c666121497d54b7adf291486d"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-implement-report.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "fcb5727383fc74b64ce48e0a869967f650ba15e9"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-kill/implementation.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "78b75b2e876689ffdeeeaad6eb682e411320ffa3"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-kill/review-1.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "9bdfbf29dd905840b85c330b29f159fe0a138b6f"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-local-review-20261103.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "9ceefb7d5e608652c99332552ee2d38a5c6db669"
+        },
+        {
+          "path": "docs/cloud/handoff/runz1-review-1.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "992ea44ea68647bf728889076d0b1ab1dcb1a874"
+        },
+        {
+          "path": "src/core/run/process-census.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "1243fef52711803e54fcafc4127316c8ae701ece"
+        },
+        {
+          "path": "tests/int/runz1-perf.mjs",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "fbd6c34c6de54a9b11ec155a5a01f18c83d77969"
+        },
+        {
+          "path": "tests/unit/run-control-kill-evidence.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "bd4d5ad7012a896443eaa09df9da0f066079a9f4"
+        },
+        {
+          "path": "tests/unit/run-control-kill-fixture.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "8d0c86138e888cefebd13b787e0c164053b2fa4b"
+        },
+        {
+          "path": "tests/unit/runz1-fixture.py",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "4d0abb3c124a32704be9801ba9e8899cdb559ed9"
+        },
+        {
+          "path": "tests/unit/runz1-process.test.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "f57755deeaeefb70ee9ed7c469fe6a4b39be4955"
+        }
+      ],
+      "complete_tree_verified": true,
+      "predicted_leaf_count": 1370,
+      "conflicts": [],
+      "prefix_collisions": [],
+      "ancestry": [
+        {
+          "base": "80a4de01992379c1ae4bf019cf96ec2dc4180cd0",
+          "head": "36d3fd584bd403ed7ada95d1d863a8f63e96588b",
+          "status": "ahead",
+          "behind_by": 0,
+          "merge_base": "80a4de01992379c1ae4bf019cf96ec2dc4180cd0",
+          "files": [
+            {
+              "filename": "docs/cloud/handoff/runz1-dispatcher.log.part01.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-dispatcher.log.part02.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-dispatcher.log.part03.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-dispatcher.log.part04.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-dispatcher.log.part05.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-dispatcher.log.part06.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-dispatcher.log.part07.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-implement-report.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-kill/implementation.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-kill/review-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-local-review-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-review-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "src/core/run/README.md",
+              "status": "modified"
+            },
+            {
+              "filename": "src/core/run/process-census.ts",
+              "status": "added"
+            },
+            {
+              "filename": "src/core/run/process.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/int/runz1-perf.mjs",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/run-control-kill-evidence.test.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/run-control-kill-fixture.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/run-control.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/runz1-fixture.py",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/runz1-process.test.ts",
+              "status": "added"
+            }
+          ]
+        },
+        {
+          "base": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+          "head": "36d3fd584bd403ed7ada95d1d863a8f63e96588b",
+          "status": "ahead",
+          "behind_by": 0,
+          "merge_base": "7ba567ee0c3cd12933d79a5029162d32770ee245",
+          "files": [
+            {
+              "filename": "docs/cloud/B10B-S3F-NEXT.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/B10B-S3F-PERF.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/MCP-ANCESTOR.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/NODE22-PROXY.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/P065-BUDGET.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/RUNZ1-KILL.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-dispatcher-checks-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part01.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part02.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part03.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part04.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part05.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part06.txt",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix-mjs-dispatcher-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-fix1-report.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-implement-report.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-local-review-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-proc-diagnosis-20261103.log",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-review-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-review-2.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/hyg2-topology-diagnosis.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/mcp-ancestor-implementation.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/mcp-ancestor-publication.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/mcp-ancestor-review-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/node22-proxy-ownership.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/p065-doc-amendments.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/p065-six-doc-amendments.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/p065-status-amendments.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/runz1-kill/diagnostic-plan.json",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/handoff/terra-verification-attempt.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-diagnostic-v3.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-next-post-review-route.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-next-route-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-s3f-perf-memo.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10b-s3f-perf-validation.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/b10d-route.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/cloud-test-feasibility-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/doc2-prerequisite-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/hyg2.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/mcp-ancestor-gate.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/mcp-startup-diagnostic.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/node22-proxy-flake-closeout.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/node22-proxy-profile.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p-06-5.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-budget-local-gate.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-budget-release.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-independent-cloud-route-exact-source-freeze-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-independent-compile-failure-bounded-repair-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-interrupted-build.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-metadata-exception.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-repaired-candidate-fresh-executor-supervision-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-replay-expiry-clock.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/p065-six-design-dispositions.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/queue-progress-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-doc.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-esrch.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-kill-diagnosis.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-kill-fix-1.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-scope.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/runz1-wip.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/tpd1-prerequisite-source-action-test-map-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/wave1-compat-integration-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/wave1-compat-integration-connector-addendum-20261104.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/cloud/rulings/wave1-resource-windows-20261103.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/contracts/01-identity.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/02-execution.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/03-lifecycle.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/04-supervision.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/05-capabilities.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/contracts/06-observation.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/handoff/STATE.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/handoff/questions/B10B-S3F-verification.md",
+              "status": "added"
+            },
+            {
+              "filename": "docs/handoff/questions/B10D-route.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/handoff/questions/P-06-5.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/universal-hud-concept.md",
+              "status": "modified"
+            },
+            {
+              "filename": "docs/universal-hud-engineering-plan.md",
+              "status": "modified"
+            },
+            {
+              "filename": "packages/hud-mcp/src/process.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "src/cli/link-export.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "src/ledger/runtime.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/hud-mcp/ancestor-discovery.test.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/hud-mcp/int-ledger-registry.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/hud-mcp/skeleton.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/int/node-startup-diagnostics.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/int/process-client.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/b12d-wal.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/b12r-store.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/b16-writer.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/b45-launch.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/hud-link-export.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/node-proxy-profile.test.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/process-client.test.ts",
+              "status": "added"
+            },
+            {
+              "filename": "tests/unit/run-light-leader.test.ts",
+              "status": "modified"
+            },
+            {
+              "filename": "tests/unit/run-process.test.ts",
+              "status": "modified"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "full_delta": [
+    {
+      "path": "docs/cloud/handoff/hyg2-dispatcher-checks-20261103.log",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "fe1fb74c1e9cc43672f28eff93f8f639dc10e388",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-fix-dispatcher-20261103.log",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "bcb20d1f90c31f91541b3a6c60369d20875e2cf3",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part01.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d9d8b1eea5c96235d802bcdd20a5cb1a6ae8b4ad",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part02.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "7f908a076fc829837ef56d48da2dd9fc04479bdf",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part03.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "27a5ad2d81f1452099b5c2a9ef501134c3c946dc",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part04.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "ed294f8256c2f4a4bf4c8afe5226f8696bfffe6f",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part05.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "7f612e586bbbebafc9f3be0f57dba2ed7ab5db6f",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-fix-dispatcher.log.part06.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "a7b441878e954d1a2125d1cb052a52949c445999",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-fix-mjs-dispatcher-20261103.log",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f7310c758e3884036c615a641c66d3b91827b35e",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-fix1-report.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "7bebf78f96d72b97a503026191b341be7ed0fad4",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-implement-report.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "dc2d73f1a3cc24d6d94c814b1068ac9b79514829",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-local-review-20261103.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c474c3155f7c4edcdf1d503af63a336e5ad5739b",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-proc-diagnosis-20261103.log",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "81d63c9bdd454dd56624ec1fada6acdedb13846f",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-review-1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "662c67ea462fe572954caf4fac6f1f94fdbc6b58",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-review-2.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "216502e77a24c1a6b477f3b40c2fc46c3e380619",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/hyg2-topology-diagnosis.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d0bfe2f16fd2a6fe7ae7c288ddc9b063b1fe4fd3",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/mcp-ancestor-implementation.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "280b92156018c0ddd344616a34889977c08b40ea",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/mcp-ancestor-publication.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "431385f528afde9174395bc424dadc83a32926fa",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/mcp-ancestor-review-1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c4e8e2400080aa19322e013d11aa3750a0d86bf7",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-dispatcher.log.part01.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d0570b3a3ac973e72db74141a610cc2d5e16d5ee",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-dispatcher.log.part02.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "82d98327f0018bdaf3abfbd376c2418ba2aac7fe",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-dispatcher.log.part03.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "17fc7993ac01d503cf77e0b754a8c719ce7dcec7",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-dispatcher.log.part04.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d054fd9fbc055cb0f1fb57dbef92c53d66f11bf7",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-dispatcher.log.part05.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "4935f0a877bd4783db2dfaa93fdff994fc2c6c37",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-dispatcher.log.part06.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "cade0dbb1ace012559ecae11deab0911b5415d2b",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-dispatcher.log.part07.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "b4ba1d9867ef770c666121497d54b7adf291486d",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-implement-report.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "fcb5727383fc74b64ce48e0a869967f650ba15e9",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-kill/implementation.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "78b75b2e876689ffdeeeaad6eb682e411320ffa3",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-kill/review-1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "9bdfbf29dd905840b85c330b29f159fe0a138b6f",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-local-review-20261103.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "9ceefb7d5e608652c99332552ee2d38a5c6db669",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/handoff/runz1-review-1.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "992ea44ea68647bf728889076d0b1ab1dcb1a874",
+      "category": "inherited-document"
+    },
+    {
+      "path": "docs/cloud/rulings/hyg2.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f54edebf7e389bfdd04492756ea412eb5e7a2cbf",
+      "category": "inherited-document"
+    },
+    {
+      "path": "packages/hud-mcp/src/process.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "72954abd0b5a483ff1bab1aaaeab59add4ffab5b",
+      "category": "implementation"
+    },
+    {
+      "path": "src/cli/link-export.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c7a05e752c166a29564db41385cf022365d83f0b",
+      "category": "implementation"
+    },
+    {
+      "path": "src/core/run/README.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "6b2c137b57ec3b45b44fd189e02a4481377859b7",
+      "category": "implementation"
+    },
+    {
+      "path": "src/core/run/process-census.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "1243fef52711803e54fcafc4127316c8ae701ece",
+      "category": "implementation"
+    },
+    {
+      "path": "src/core/run/process.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f43cfe0bb18e1af5b940c42b8d5ee6d0e4d7eb3f",
+      "category": "implementation"
+    },
+    {
+      "path": "src/ledger/runtime.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "3f61a6f4ebfc8607e59dbe464d93d63d8f211662",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/hud-mcp/ancestor-discovery.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "dae455671c9e7dc0b46f25516c2fc6d7b9c92649",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/hud-mcp/int-ledger-registry.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "234a3f2253f4bcf61f039732ae99c9c878853a1d",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/hud-mcp/skeleton.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "025227b75736a43fb3fde6ec8ef8cdae25b98181",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/int/node-startup-diagnostics.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e1feac9598d0c3e3abfd19084b9274920a008699",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/int/process-client.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "c161c158f85db34188e754ed06adcb842d93ae4a",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/int/runz1-perf.mjs",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "fbd6c34c6de54a9b11ec155a5a01f18c83d77969",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/b12d-wal.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "46bc5da8b45d2d8e2f73fe5e6f4229e5e0d1bcd1",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/b12r-store.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "9e281e7883765d49d06c2beb3332b89e8e8bb093",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/b16-writer.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "2017e31951a2b061585824fca9d7bd4d0d5ada86",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/b45-launch.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "21bfa19b76a5eec48c58a4adf76f077193bf61e9",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/hud-link-export.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "5c2d0b2f0e698791ebc249fdca6af2774aeec317",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/node-proxy-profile.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "134a43985ab7fdbda12a6239517f9c7d3203de01",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/process-client.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "3ab24c1d2ed1433ae25d5ca674a1d05bcceac6e3",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/run-control-kill-evidence.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "bd4d5ad7012a896443eaa09df9da0f066079a9f4",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/run-control-kill-fixture.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8d0c86138e888cefebd13b787e0c164053b2fa4b",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/run-control.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f12d545a26724d1239f2ce91140e1eb9e98dec82",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/run-light-leader.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "dcff130926e1e88ada11b7a73d5de5869345cea4",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/run-process.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e95e606c912919f7770e053670ef5600147024f6",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/runz1-fixture.py",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "4d0abb3c124a32704be9801ba9e8899cdb559ed9",
+      "category": "implementation"
+    },
+    {
+      "path": "tests/unit/runz1-process.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f57755deeaeefb70ee9ed7c469fe6a4b39be4955",
+      "category": "implementation"
+    }
+  ],
+  "verification": {
+    "exact_implementation_path_count": 26,
+    "inherited_document_count": 32,
+    "every_U_document_preserved": true,
+    "every_other_U_path_retained": true,
+    "unexpected_deletions": 0,
+    "mode_or_type_changes": 0,
+    "original_blobs_reused": true,
+    "new_source_blobs": 0,
+    "ref_update": {
+      "expected_sha": "f248f320d42528fd1eb97db9f1cd2ba97e6d3c86",
+      "force": false,
+      "intended_sha": "36d3fd584bd403ed7ada95d1d863a8f63e96588b",
+      "result": {
+        "success": true
+      },
+      "readback_sha": "36d3fd584bd403ed7ada95d1d863a8f63e96588b"
+    }
+  },
+  "dependency_and_build": {
+    "tracked_node_modules_tree": "77829c47b2f75720a918a0dfef03e8671222cde9",
+    "tracked_node_modules_lock": "8c35e164d1c5752a7756ca390d91081afb494413",
+    "unchanged_from_U": true,
+    "dependency_operations": "NOT RUN",
+    "fresh_builds": "NOT RUN",
+    "generated_build_manifests": "PENDING exact-candidate admitted execution; no generated build output exists in the candidate repository tree",
+    "config_entries": [
+      {
+        "path": "package-lock.json",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "87327f35757f729247f1f2256e7ba87345956a01"
+      },
+      {
+        "path": "package.json",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "53182affe4637beb767664c56c288ae9e7dd4585"
+      },
+      {
+        "path": "packages/hud-mcp/package.json",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "17d974864fd7c781bc45f9f2086937f46d6f3fe2"
+      },
+      {
+        "path": "packages/hud-mcp/tsconfig.json",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "2858054717f4dd79e4347a87e0b815bea61a57c5"
+      },
+      {
+        "path": "tsconfig.json",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "c83c5333234b1fd69d23bfc13d07cead4ebaee6f"
+      },
+      {
+        "path": "tsconfig.test.json",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "3b07660e9ef9fe7a66fea6c595aa333160b7c4eb"
+      }
+    ]
+  }
+}

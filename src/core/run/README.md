@@ -76,10 +76,17 @@ and forwarder remain controllable, with the scope held until explicit cancellati
 or channel closure. It is not automatically completed or claimed reaped. All
 three shells are counted separately from the supervisor in resource evidence.
 
-A /proc enumeration is partial evidence. R/Q also requires original harness and
-all launchers terminated/sealed plus kernel group absence. Helpers cannot be
-excluded from an active scope to fabricate completion. Z-only scopes remain
-conservative until absence; no periodic group enumeration was added.
+A single /proc enumeration is partial evidence. R/Q still requires the original
+harness to have terminated, all launchers to be terminated or sealed against
+further submission, and the submission channel to be permanently sealed.
+`proveGroupGone` retains the kernel-group-absence path. For a headless scope that
+owns its session (SID = PGID = recorded leader PID), RUNZ1 also permits zombie-only
+completion through two complete, same-domain procfs censuses with full-stamp
+corroboration and no live tasks in the recorded session. The second census must
+introduce no new or reused process identities; remaining session members must
+match first-census terminal stamps. Missing visibility or inconclusive
+corroboration stays unknown. Helpers cannot be excluded from an active scope to
+fabricate completion. No periodic group enumeration is added.
 
 Environment restoration requires absolute system `/usr/bin/env` (GNU coreutils),
 with `-i`, `-S`, `--default-signal=INT,QUIT`. Cold preflight checks real expansion
@@ -193,9 +200,12 @@ After discovery there is no group polling or scope watcher. The existing five
 second heartbeat remains the only idle timer. A shell exit triggers the scope
 proof; a surviving member prevents R. Without further member events the original
 writer records its last facts and exits, leaving explicit reconciliation to prove
-Q later. Z-only groups remain conservative under the existing shared proof:
-`proveGroupGone` is unchanged and requires kernel group absence. The startup
-observation cannot release the slot as Q ahead of the original writer's R.
+Q later. Visible scopes share the terminal’s session, so their zombie-only groups remain
+unknown and keep the slot until kernel group absence is proved. RUNZ1’s
+corroborated zombie-only path applies only to scopes that own their session. The
+existing ESRCH path does not require the shared terminal session itself to end.
+The startup observation cannot release the slot as Q ahead of the original
+writer’s R.
 
 Metadata/receipt record wrapper mode, independent command shell and harness stamps,
 the fixed PGID/SID/leader scope, and `tty_passthrough` capture. Empty log files do

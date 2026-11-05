@@ -127,6 +127,8 @@ host=none 只与 headless 配对。表中的组合项必须展开后独立留证
 
 （F08 Pro 裁决增补）该显式 Claude 来源档案升为 verified 前，能力格证据必须绑定具体 Claude 版本、hook/helper 实现修订、完整非秘密 profile 指纹及同一调用的双预算原始计时/已接受报告；helper 修订或档案指纹改变时，受影响格回到 unverified。按 [F08 Pro 裁决](../reviews/2026-11-01-chatgpt-pro-f08-hook-budget.md) 替代 consult 4 F08 对此档案的联合成本门槛：必需 hook 最外层冷进程启动至同次调用响应 flush 的联合 p95 <150ms，MCP 内部 p95 <50ms 不变；边界、保守计时、逐工具/成功/拒绝/busy 分计及 B5 的30/10/20ms限制均依06，不给其他档案或预算放宽。未选择 callSource 的 Claude 默认路径仍拒绝授权；历史 hook/skeleton 或 not_implemented 的快响应不构成完整授权/事务证据。
 
+（P065 预算引用，2026-11-03）[P065-BUDGET](../cloud/P065-BUDGET.md) 与 [06 P-06-5](./06-observation.md) 将本次准备计入原 30 ms，不另加准备或元数据预算。（P065 元数据例外，2026-11-03）仅 [02 执行协议](./02-execution.md) 明列的固定私有存储元数据复验可例外占用写锁区间；其余外部准备与来源取证仍在事务外。此例外不改变 actor、来源证明、writer、capability 或受支持档案规则，详见 [Oracle 裁决](../cloud/rulings/p065-metadata-exception.md)。
+
 （F08 Pro 裁决增补）B4 必须用真实 Claude 在此档案下发起 spawn/resume 并返回 durable accepted，保留既有 hooks/配置，精确注入 claim/HUD_HOME，零重复提交且同测150/50两预算；B11 的 `hud claude` 经本轮 Claude CLI `--settings` 按档案注入01的同步 hook。B5 保留01 F06/F07全部来源/代次反例；B14 按06每非wait工具/组合≥1000次、H/R=1/1与2/10验真事务，最终档案另收≥200次真实联合调用、跨≥10次harness启动、每声明路径≥20次，逐工具/结果报告n及p50/p95/p99/max，合成不混入，缺格不授verified。G13及B15真实Claude→Codex闭环仍为门禁，预算修订不等于实现通过。
 
 准备阶段解析本轮实际启动的规范绝对 cwd 与请求显式 originRepoId，随02意图逐run冻结为 launch_cwd/project_origin；resume不按后来CLI目录重算。Git元数据只读有效缓存，冷缺失由已有启动/采集流程依06每代≤2子进程/200ms软预算取得，不入写事务/MCP accepted热路径/paint；未知不挡正常委派。后端包装改变实际cwd时提供06带来源的observed workspace，不覆盖历史启动快照（T-05-17）。

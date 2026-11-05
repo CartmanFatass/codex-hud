@@ -1,0 +1,12 @@
+SUPERSEDING CORRECTION: Do not archive or rely on my preceding NODE22 append-to-current-lease decision. The dispatcher has now confirmed the NODE22 worker explicitly returned its lease at 20:49 UTC before that clarification. There is no live lease to extend.
+
+Final ruling: preserve RUNZ1-KILL as the next admitted window, followed by the already scheduled ready work; defer NODE22's prescribed known-flake closeout to its next NODE22 verification-sweep turn. Do not reopen the returned lease or insert a new NODE22 window ahead of RUNZ1-KILL. The one-rerun allowance remains available but confers no priority or lease extension.
+
+At that next NODE22 turn, explicitly admit one bounded closeout window containing at most one isolated whole-suite rerun each, only if its counter is unused:
+1. node --test packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js
+2. node --test packages/hud-mcp/dist/tests/hud-mcp/resume-expected-run.test.js
+Run serially on the same frozen candidate and identified generated output, under the unchanged Node 22.23.4 enabled-proxy profile and isolation wrapper, with the existing 900-second hud-mcp outer limit per invocation. No new builds, source/dependency/profile changes, test-name filtering, further groups or retry-until-green. A failed/timed-out attempt consumes its one rerun. No denied operation may be retried unchanged; stop the affected action if access or cleanup blocks it. If the frozen source/build identity no longer matches, report the prerequisite rather than silently rebuilding.
+
+Preserve the original dispatcher-reported aggregate (81 pass, 2 fail, 1 skip), failure traces and every isolated result separately. A later isolated pass does not erase the original red aggregate or grant acceptance. Return the closeout lease after both permitted attempts finish or become blocked and owned-resource cleanup completes. File/worktree reservations and all independent acceptance/integration gates remain unchanged.
+
+Read-only basis unchanged: NODE22-PROXY §10 blob 9e1032e832c71097de2508fb0cd5b421934fbe74; cloud README blob 3029d6928c42534eee1c2fa86e1c33a2381f59cc; resource-window ruling blob 20bded878c6b77601634fde1c223dd0f378b6ba2; named test and package-script readback. Current outcomes and 20:49 lease return are dispatcher-reported. No edits, builds or tests performed. This message wholly supersedes the previous current-lease scheduling disposition.

@@ -1,0 +1,13 @@
+## B10B-S3F-PERF memo ruling clarification: validation checkpoint
+
+**Yes: the evidence justifies proceeding to the declared six-run strict validation of this unchanged prototype, within the dispatcher's reserved window.** This permits completing the already authorized experiment, not retaining the patch as a proven remedy or accepting the package.
+
+I inspected the memo-only source diff, both installed-baseline/candidate profile logs and summaries, sampled memory records, regression logs, and the exploratory strict log. The exploratory Node 24 run has now finished: exit 0, four tests passed; gated p99 values are compact no-change 0.732 ms, rich no-change 0.582 ms, compact changed 9.561 ms and rich changed 12.699 ms. Candidate regressions are 9/9; the corrected baseline is 8/9, failing only the explicit new eviction-policy assertion.
+
+The paired diagnostic is mixed: compact changed p99 improves 13.130 → 11.574 ms while rich changes 14.332 → 14.934 ms; compact slowest-ten GC overlap decreases while rich overlap increases. The sampled old-space peaks increase rather than demonstrate a retention-byte reduction. These observations provide a localized signal worth testing, not proof of a leak, the ephemeron explanation, general GC improvement or reliable gate compliance. Profiling overhead and scheduling/GC variability prevent treating this pair as a conclusive causal result. The original requirement to justify retaining the change remains open until the full evidence is assessed.
+
+Keep the exploratory pass separate; do not retrospectively count it among the three declared candidate runs per runtime. Freeze and record the exact prototype source, including the untracked regression file, and verify build/benchmark provenance. Use the matched installed-baseline evidence: its Node 24 compact-changed p99 values are 12.125 / 11.886 / 13.273 ms, distinct from the earlier pre-install series. Preserve both sets without mixing identities. Do not stage `node_modules/.package-lock.json`.
+
+Run the full predeclared candidate series on Node 22 and Node 24 without source/flags/workload changes, retain every result, and report all four gates plus the diagnostics and regressions, including the changed alternating-VM cost. Do not rerun until a favorable subset appears. If the series does not establish the required result, keep the package unaccepted and return the evidence before selecting a different remedy. Even six passing runs do not replace remaining memory/snapshot assessment, complete checks, independent verification and fresh final review.
+
+No new implementation scope, gate waiver, retention claim or extra fix round is granted. This clarification was read-only; no tests, builds, profiles or writes were performed by this Oracle.

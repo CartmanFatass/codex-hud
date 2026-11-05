@@ -19,7 +19,10 @@ Paths are omitted unless --paths local is given. No files are saved.
 HUD_HOME defaults to ~/.hud and must be an absolute, private directory owned by this uid.
 The ledger must already exist. Nothing is initialized or migrated.
 
-Exit codes (failures emit one reason-code line on stderr and no JSON):
+HUD failures emit one reason-code line on stderr and no JSON.
+Node/runtime diagnostics may also appear on stderr; stdout remains the machine-readable channel.
+
+Exit codes:
   0  Success or help
   1  Unexpected internal or output failure
   2  Invalid command, arguments, or export schema version

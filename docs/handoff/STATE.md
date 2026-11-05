@@ -38,6 +38,8 @@ Rules for every merge:
 
 **Merged on `universal-hud`** (newest first):
 
+- C3 dependent set: HYG2/NODE22-PROXY, MCP-ANCESTOR and RUNZ1/RUNZ1-KILL, merged on 2026-11-04
+  as `5d2c0709c8e9674254214add15f2a04cfd606443`. See the C3 integration checkpoint below.
 - HYG1, the clean cloud test baseline, from cloud run 2. Its handoff is `docs/cloud/handoff/hyg1.md`. One test stays red
   on purpose: `run-control`, which RUNZ1 fixes.
 - The cloud run-2 docs, summarised in `docs/cloud/handoff/run-2.md`.
@@ -90,15 +92,56 @@ What fails, measured at n = 1000 per population on 200 nodes and 20,000 headers:
    - §18 also pins accepted history that cannot be proven evictable, such as approval pauses and ended turns.
 4. **Retirement recapture.** Progress evidence is still missing.
 
-The Oracle's preferred next design (§19) is a one-use "next normal operation" continuation ticket. It needs the
-owner's explicit fairness exception, because a normal round can approach twice the operation opportunities. Admission
-and housekeeping tweaks alone are judged insufficient, and discard-and-reload is rejected.
+The owner-authorized §19 fairness exception is Oracle-confirmed in [B10D route §4 and §8](../cloud/rulings/b10d-route.md#4-confirmed-fairness-exception) and recorded in contract 06 “B10D 公平续读增补”, design §6 #13 and concept §15. A normal fair admission that completes verified exact recovery but has no first native result because its granted slice ended may create one ticket for the next already-authorized ordinary collection opportunity's single reader grant. Bind it to full session identity, scope/source generation, exact accepted target and authority generation/current compatible context. Spent, refused or unusable attempts cannot rearm an immediate priority chain; stale context/head/source/scope, expired/lost/follower authority or completed capture invalidates the ticket, and the ordinary cursor resumes.
 
-The route question for the next Oracle is `docs/handoff/questions/B10D-route.md`. It covers what to do with legacy
-collection, the reader cap against pinning, recapture, and whether and how B10D merges.
+For a fixed continuously eligible set of N, a regular traversal may consume at most 2N ordinary opportunities, with regular visits and inserted attempts reported separately. Keep blocked targets and original debt/pending-request/latency ages visible. No new operation, timer, root allowance, read/publication grant, authority renewal, numeric-gate waiver or §18 exception is granted. This is opportunity ordering, not a wall-clock completion guarantee.
+
+Implementation and focused evidence remain pending. The next separately admitted B10D work must first incorporate current universal-hud into b10d-worker, adopt B12M's metered recovery handoff, preserve the retained-order cursor correction, and implement/test the bounded ticket and authority housekeeping serially with overlapping collector/link work. It must show actual next-opportunity native progress without repeating the exact recovery, one-use/refusal/expiry/ABA safety, ≤400-opportunity regular traversal for 200 targets at C=1 s and C=5 s, unchanged age/accounting and real publication settlement. This documentation does not start that work or grant a compute window.
+
+B10D remains frozen at 4f2c4ac, NOT ACCEPTED and NOT MERGEABLE. The measured failures and retirement-recapture gap above remain open. LEG1/RCP1 need their own separately resolved and recorded package scope/ownership release; this fairness amendment neither implements nor releases them. The full route is already recorded in docs/cloud/rulings/b10d-route.md, with the owner-decision record in docs/handoff/questions/B10D-route.md.
 
 **Not merged:** `cloud/b10b-s3-wip`, B10B segment 3 (selection, navigation, control bar). Fix round 1 has been
 applied, but the re-check is still pending. B10B-S3F finishes it.
+
+## C3 integration checkpoint (2026-11-04)
+
+- The accepted HYG2/NODE22-PROXY + MCP-ANCESTOR + RUNZ1/RUNZ1-KILL dependent set is merged into
+  `universal-hud` at `5d2c0709c8e9674254214add15f2a04cfd606443`. Remote read-back verified the exact
+  tested tree `48f59142862f643a98286e3d196d23ff13059a23` and ordered parents
+  `9dd4d06d2ee5ebb022719d11b74d6de0276172a4`, `09d9c3d95fe42932ecaf35dd46806a8747681aa7`.
+- The [fresh merged-tree Oracle ruling](../cloud/handoff/wave1-compat-integration/oracle-c3-merged-tree-final-20261104.md)
+  accepts the complete prescribed three-profile README gate under the existing once-alone known-flake rule.
+  Required commands were 29/30 exit 0. Original Node 24 `npm test` remains **FAIL / exit 1**:
+  the known B6 suite passed its isolated rerun 15/15, and the omitted mjs stage passed separately 47/47.
+  This is not 30/30 first-pass green; the initial Node 22 preparation UNKNOWN record also remains unchanged.
+- The [joint C3 acceptance](../cloud/handoff/wave1-compat-integration/oracle-c3-owner-exception-joint-acceptance-20261104.md)
+  retains the owner-accepted four-archive historical custody gap and the independently owner-deferred,
+  unverified real PID > 1 optional-ancestor denial. Neither missing evidence item has been recovered or passed.
+  Historical benchmark comparison remains 11/12, including the real Node 24 baseline cold-p95 failure;
+  no formal WSL qualification or held-executor admission follows.
+- B10B-S3F remains the next unresolved wave-1 queue package, through its separately recorded NEXT continuation.
+  C3 does not accept or merge B10B-S3F, release DOC2/TPD1 or later waves, or lift P065/B10D/executor holds.
+  Preserve the existing brief, review, ownership and scheduling requirements.
+
+## Dots wave 1 checkpoint (2026-11-03)
+
+Historical checkpoint as of 2026-11-03; the C3 integration checkpoint above supersedes only the later acceptance
+and merge status of its named dependent set. At this checkpoint no wave-1 implementation package below had
+been accepted or merged. Preserve these branches, failures and full evidence.
+
+- **B10B-S3F**, `dots/b10b-s3f`: R1 is fixed, R2 and the full-check gates remain open. The owner-approved follow-on `dots/b10b-s3f-perf` candidate has received a fresh Oracle verdict **fix required**, not accepted: repeated Node 24 strict performance failures and missing full checks remain. See `docs/cloud/handoff/b10b-s3f-perf-review-1.md` on that branch and `docs/cloud/B10B-S3F-PERF.md`. Preserve the failed and passing runs; no gate is waived.
+- **HYG2**, `dots/hyg2`: Oracle re-check found the P2 fix correct, but the full checks remain red. See branch handoff `hyg2-review-2.md` and `hyg2-topology-diagnosis.md`.
+- **RUNZ1**, `dots/runz1`: Oracle final review found no new must-fix code issue, but the full checks remain red. See branch handoff `runz1-review-1.md`.
+- The executor denies synthetic Unix sockets and ptrace; its kernel lacks `CONFIG_PROC_CHILDREN`. HYG2 diagnosis reproduced the five corresponding process-topology failures on pinned baseline and current snapshots with both Node 22 and 24. This is not evidence that the affected lifecycle behavior passes.
+- The owner withdrew assistant-run local testing for this project; both local test sessions stopped without completing tests. Owner-arranged local Claude evidence has now been received on `local-verification/20261103` (see the follow-on checkpoint below); independent Oracle verification remains pending. See `docs/handoff/questions/B10B-S3F-verification.md`. Assistant continues cloud work. Wave 2 requires B10B-S3F to merge; see `docs/cloud/rulings/queue-progress-20261103.md`.
+
+## Follow-on work checkpoint (2026-11-03)
+
+- The owner directs cloud work to continue while local evidence is reviewed; Oracle decides project forks. No merge or check gate is waived. The [local verification report](https://github.com/CartmanFatass/codex-hud/blob/9be7246c25b5355845e639116c57150ff79d3117/docs/cloud/handoff/local-verification/20261103/REPORT.md) has been received at `local-verification/20261103` commit `9be7246c25b5355845e639116c57150ff79d3117`. The report itself says the HYG2, RUNZ1 and B10B-S3F-PERF README check sets are not green. Independent Oracle verification remains pending; receipt is not acceptance or a green merged-tree result.
+- `docs/cloud/B10B-S3F-NEXT.md` defines one released follow-on implementation, with all previous performance failures retained. It is in progress, not accepted. The prior large profile archive and three instrumentation scripts were lost when the executor was replaced; a fresh Oracle consultation is deciding a transparently labeled replacement diagnostic. Text reports, checks and hashes remain recorded; no claim of original raw-archive recovery is made.
+- `docs/cloud/rulings/p065-metadata-exception.md` approves the precise fixed private-store metadata exception under the owner's delegated Oracle authority and resolves the P065 local-gate contract fork. Contracts 01–06, concept §15 and `docs/cloud/P065-BUDGET.md` were synchronized through `448c58b1f386f72d74b730018a659c6a75068cea`. The archived [P065 scheduling release](../cloud/rulings/p065-budget-release.md) releases the bounded scope and reserves `dots/p065-budget` plus `/workspace/shared/p065-budget` from accepted integration base `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`. The initial WIP implementation was published on `dots/p065-budget` at `346b3d6300a2e3f340f22e832c459371c19e2646`, exact source tree `613c6bb048dc6b8616617b2d061232807102e9cb`, followed by handoff documentation including the [implementation report](https://github.com/CartmanFatass/codex-hud/blob/dots/p065-budget/docs/cloud/handoff/p065-budget/implementation.md). The first compute lease was returned at 20:02 UTC on 2026-11-03. The [six design questions](../cloud/rulings/p065-six-design-dispositions.md) have been ruled, and their exact P065/contract-06/concept amendments were recorded through `cb90d0a7806e09685096814fe023491db6e3d02c`. The candidate remains **NOT ACCEPTED, NOT MERGEABLE and NOT PERFORMANCE-QUALIFIED**; work may resume only in a separately assigned dispatcher window under [the resource-window ruling](../cloud/rulings/wave1-resource-windows-20261103.md). Publication and documentation recording do not grant a compute window or satisfy acceptance/merge gates. The historical local-gate ruling remains intact; the startup-registry process-I/O issue remains separate and unresolved.
+
+- **P065 interrupted continuation, 21:20 UTC checkpoint:** The separately admitted 21:07 continuation remains frozen, uncommitted WIP, **NOT ACCEPTED / NOT MERGEABLE / NOT PERFORMANCE-QUALIFIED**. The [prior continuation report](https://github.com/CartmanFatass/codex-hud/blob/dots/p065-budget/docs/cloud/handoff/p065-budget/continuation-1.md) preserves its source identity and earlier checks; those checks precede the final workload-fixture addition and do not validate it. Per the authoritative [interrupted-build ruling](../cloud/rulings/p065-interrupted-build.md), the fixture append and formatting executed at 21:14:05 UTC, and the build reached the TypeScript invocation, but its exit status and authoritative session/owned-descendant termination remain **UNKNOWN**. The first empty status poll was denied; exactly one authorized empty recovery poll at 21:19:48 UTC returned `write_stdin failed: Unknown process id 87162`. No further poll or replay occurred. The reported 21:15 lease return, elapsed time and namespace-limited process snapshots do not prove termination. New controlled workloads on the shared executor remain held pending authoritative lifecycle/cleanup evidence, or a separately authorized genuinely independent executor for distinct validation under the ruling's prerequisites and a new bounded dispatcher window. Do not replay the already-executed append/format/build wrapper or infer a build pass/failure; preserve all prior evidence and restrictions.
 
 ## Package queue for dots
 
@@ -129,15 +172,16 @@ The real resume gate waits for B14.
 After the queue: B14, the production acceptance and capability matrix, is mostly local; see below. Then B15, the phase
 review (ARCH); B3b-C after B15; then phases C–F of the plan.
 
+## Decisions recorded on 2026-11-03
+
+- B10D fairness exception: owner-approved and Oracle-confirmed; contract 06, design §6 #13 and concept §15 record one-use next-normal-opportunity continuation and the explicit fixed-N ≤2N ordering bound. Original debt/request ages, blocked backlog, one-reader/one-publication limits and all numeric/durable-semantics gates remain unchanged. Implementation/evidence are pending and B10D remains NOT ACCEPTED / NOT MERGEABLE. See questions/B10D-route.md and ../cloud/rulings/b10d-route.md.
+- P-06-5 scope: owner authorized the Oracle recommendation; the 30 ms budget includes pre-lock preparation and is not reset at lock acquisition. See `questions/P-06-5.md` and `../cloud/rulings/p-06-5.md`. The later precise metadata exception in `../cloud/rulings/p065-metadata-exception.md` resolves the local-gate contract fork without changing numeric budgets; P065 scope and branch/worktree ownership are released by `../cloud/rulings/p065-budget-release.md` on base `26f6fba36948e6c96e2e109cb374c0d4dbb9ab22`; the initial WIP source is published at `dots/p065-budget@346b3d6300a2e3f340f22e832c459371c19e2646` (tree `613c6bb048dc6b8616617b2d061232807102e9cb`), and the first lease was returned at 20:02 UTC. The six questions are ruled in `../cloud/rulings/p065-six-design-dispositions.md` and their exact documentary amendments are recorded through `cb90d0a7806e09685096814fe023491db6e3d02c`. The candidate is NOT ACCEPTED and not performance-qualified; resumption requires a separately assigned dispatcher window.
+
 ## Open owner decisions
 
 - O1: the implementer-comparison B14 idle-cost runner. None of the three arms met the merge bar.
 - Whether to rename the real project names `shenlun` / `atlas-launch-sources` used in some tests.
 - Whether to rewrite git history to remove old private paths. Those commits are already public on `main`.
-- B10D fairness exception (§19 continuation ticket): approve, or choose another route after the Oracle's ruling on
-  `docs/handoff/questions/B10D-route.md`.
-- P-06-5 scope: should the 30 ms budget include the file reads made before the ledger lock? This budget is behind the
-  `ledger_busy` flake family. The Oracle's recommendation will be in `docs/handoff/questions/P-06-5.md`.
 - Statusline wiring: nothing calls the statusline renderer yet. Candidates are a `hud statusline` entry, or plan D3.
 
 ## Local only (needs the owner's machine)

@@ -316,6 +316,65 @@ test('B45 production capability evidence is revision/version/key/source/profile 
   );
 });
 
+async function waitForSupervisor(result: Awaited<ReturnType<typeof launchPreparedRun>>, timeoutMs = 10_000) {
+  let deadline: NodeJS.Timeout | undefined;
+  try {
+    const timedOut = new Promise<never>((_, reject) => {
+      deadline = setTimeout(() => reject(new Error('supervisor did not exit within 10 s')), timeoutMs);
+    });
+    return await Promise.race([result.completion, timedOut]);
+  } catch (error) {
+    // The deadline has fired and the child is unref'ed: retain a handle until it is reaped.
+    const reaping = setInterval(() => {}, 1000);
+    try {
+      // Only this test's exact detached supervisor is ours.
+      try {
+        process.kill(result.pid, 'SIGKILL');
+      } catch (killError) {
+        if ((killError as NodeJS.ErrnoException).code !== 'ESRCH') throw killError;
+      }
+      await result.completion;
+      throw error;
+    } finally {
+      clearInterval(reaping);
+    }
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
+test(
+  'B45 supervisor wait timeout kills and reaps the exact detached child before rejecting',
+  { timeout: 5000 },
+  async (t) => {
+    const f = fixture(t);
+    const p = await prepareCodexLaunch(f.options);
+    const executable = join(f.root, 'synthetic-hanging-supervisor.mjs');
+    writeFileSync(executable, 'process.stdin.resume(); setInterval(() => {}, 1000);');
+    const result = await launchPreparedRun(p.forRun(f.run), 'synthetic-ticket', {
+      hudRunPath: executable,
+      env: { HOME: f.root },
+    });
+    // The production wait remains 10 s; this child cannot exit on its own at any test deadline.
+    t.after(async () => {
+      const reaping = setInterval(() => {}, 1000);
+      try {
+        try {
+          process.kill(result.pid, 'SIGKILL');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        }
+        await result.completion;
+      } finally {
+        clearInterval(reaping);
+      }
+    });
+    await assert.rejects(waitForSupervisor(result, 20), /supervisor did not exit within 10 s/);
+    assert.throws(() => process.kill(result.pid, 0), { code: 'ESRCH' });
+    assert.deepEqual(await result.completion, { code: null, signal: 'SIGKILL' });
+  }
+);
+
 test('B45 supervisor launch uses optimized Node argv and a private stdin payload without ticket or claim in supervisor argv', async (t) => {
   const f = fixture(t);
   const p = await prepareCodexLaunch(f.options);
@@ -332,15 +391,7 @@ test('B45 supervisor launch uses optimized Node argv and a private stdin payload
   // exit nothing in this process holds the event loop open; Node 22's test runner then cancels
   // the test and every later one in the file, and Node 24's would wait forever if it never exits.
   // A rejecting timer bounds the wait on both: the synthetic supervisor exits in well under 1 s.
-  let deadline: NodeJS.Timeout | undefined;
-  try {
-    const timedOut = new Promise<never>((_, reject) => {
-      deadline = setTimeout(() => reject(new Error('supervisor did not exit within 10 s')), 10_000);
-    });
-    assert.deepEqual(await Promise.race([result.completion, timedOut]), { code: 0, signal: null });
-  } finally {
-    clearTimeout(deadline);
-  }
+  assert.deepEqual(await waitForSupervisor(result), { code: 0, signal: null });
   const seen = JSON.parse(readFileSync(output, 'utf8'));
   assert.equal(seen.argv[0], process.execPath);
   assert.deepEqual(seen.execArgv, [...RUN_NODE_FLAGS]);

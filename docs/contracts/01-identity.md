@@ -63,6 +63,10 @@
 
 （consult 4 增补，F07）以下规则由 B2/B5 落实事务，B4 接受/票据流程沿用 02；外部取证在写事务外，锁内只重验已捕获前提，不搬入文件或 /proc I/O：
 
+（P065 元数据例外，2026-11-03）仅 [02 执行协议](./02-execution.md) 明列的固定私有存储元数据复验可例外占用写锁区间；其余外部准备与来源取证仍在事务外。此例外不改变 actor、来源证明、writer、capability 或受支持档案规则，详见 [Oracle 裁决](../cloud/rulings/p065-metadata-exception.md)。
+
+以下 F07 来源/代次规则仍原样适用：
+
 | 情形 | 必须行为（consult 4 增补，F07） |
 |---|---|
 | Claude 根/原生子共享一个 MCP | 按本次合格 hook 的原生 agent 来源区分；子携根 sessionId、transcript_path、env/claim 仍非根。无版本保证、字段矛盾或 agent_id 未读到均不能推定根，拒绝仅影响本调用。（consult 4 增补，F07） |
@@ -83,6 +87,8 @@ CLI 必须带 `--request-key`、`--expected-run`、`--mode`，顺序/幂等归02
 
 
 （consult 4 增补，F05）本地 cancel/reconcile 使用 [04「取消与父断连」「写者与RunHandle」](./04-supervision.md#取消与父断连) 的独立 LocalManager/authorizeManager 门禁；实际 UID、私有 HUD_HOME/ledger 及所有权由本地入口和真实 writer 校验。它针对固定 runId，未绑定 run 也可管理，不要求已确认 parent_ref，不代表 OwnerKey、不转移 parent/child/owner，不授 spawn/resume/report/predecessor 权限。authorizeControl 的 local_user 仍仅允许上述 resume；两入口可共用 OS/私有路径核验，不能把 cancel/reconcile 加进 resume 分支或让 MCP 参数选择管理主体。
+
+（P065 元数据例外，2026-11-03）仅 [02 执行协议](./02-execution.md) 明列的固定私有存储元数据复验可例外占用写锁区间；其余外部准备与来源取证仍在事务外。此例外不改变 actor、来源证明、writer、capability 或受支持档案规则，详见 [Oracle 裁决](../cloud/rulings/p065-metadata-exception.md)。
 
 ### claim 与证据
 

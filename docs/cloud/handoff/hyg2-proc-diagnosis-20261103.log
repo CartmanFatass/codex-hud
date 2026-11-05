@@ -1,0 +1,555 @@
+=== proc-capability.log ===
+READ-ONLY CAPABILITY OBSERVATION; NO TESTS RUN
+UTC=2026-11-03T14:06:08Z
+HOST=d14215e6cbaa
+KERNEL=Linux 6.18.57 x86_64 GNU/Linux
+SHELL_PID=2
+COMMAND: ls -ld /proc/$SHELL_PID /proc/$SHELL_PID/task/$SHELL_PID
+dr-xr-xr-x 9 agent agent 0 Nov  3 06:06 /proc/2
+dr-xr-xr-x 7 agent agent 0 Nov  3 06:06 /proc/2/task/2
+COMMAND: ls -l live-process stat, task stat, task children
+ls: cannot access '/proc/2/task/2/children': No such file or directory
+-r--r--r-- 1 agent agent 0 Nov  3 06:06 /proc/2/stat
+-r--r--r-- 1 agent agent 0 Nov  3 06:06 /proc/2/task/2/stat
+COMMAND: zcat /proc/config.gz | grep selected options
+CONFIG_NAMESPACES=y
+CONFIG_PID_NS=y
+# CONFIG_CHECKPOINT_RESTORE is not set
+CONFIG_PROC_FS=y
+# CONFIG_PROC_CHILDREN is not set
+COMMAND: git show baseline revision/tree
+f1e2a8408fbc6ddef181978e8a2d9fd5831242e9
+84fd5e55643891c83f97a79f32fe2fe949b2476e
+docs(handoff): dots handoff: AGENTS.md, dispatch-only roles, run-2 package briefs
+COMMAND: git show tested revision/tree
+dced9114e9d15977fef07fa52c1a329a58dfa505
+380b637c6cc867cde2a62d38789743e65f694b62
+test(hygiene): reject buffered messages after helper failure
+COMMAND: compare relevant blobs, baseline then tested
+PATH=tests/unit/b3h-production.test.ts
+3fb1c92adc228f86d7b176812499352bce56f91b
+3fb1c92adc228f86d7b176812499352bce56f91b
+PATH=tests/unit/run-light-leader.test.ts
+823b738b944f6ac432cb980828b3eeef2b9a6954
+823b738b944f6ac432cb980828b3eeef2b9a6954
+PATH=src/core/run/process.ts
+fb45508e044cc99e9cd13a6b7575ba10cd7c2bff
+fb45508e044cc99e9cd13a6b7575ba10cd7c2bff
+PATH=src/core/run/group-leader.ts
+bb27681b892db6242884ac9a8285b8315c020e6a
+bb27681b892db6242884ac9a8285b8315c020e6a
+PATH=tests/int/fixture.mjs
+fed584ac64c661b51cd2118dc48fb050e0710142
+fed584ac64c661b51cd2118dc48fb050e0710142
+COMMAND: git status --short
+ M node_modules/.package-lock.json
+=== baseline-build.log ===
+LABEL=baseline REVISION=f1e2a8408fbc6ddef181978e8a2d9fd5831242e9 TREE=84fd5e55643891c83f97a79f32fe2fe949b2476e
+UTC=2026-11-03T14:13:58Z
+d14215e6cbaa
+Linux 6.18.57 x86_64 GNU/Linux
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1006; excluded node_modules only, shared installed dependencies
+BUILD_RUNTIME=v24.22.1
+COMMAND: node24 node_modules/typescript/bin/tsc; node24 node_modules/typescript/bin/tsc -p tsconfig.test.json
+BUILD_EXIT=0
+BUILD_TEST_EXIT=0
+=== current-build.log ===
+LABEL=current REVISION=dced9114e9d15977fef07fa52c1a329a58dfa505 TREE=380b637c6cc867cde2a62d38789743e65f694b62
+UTC=2026-11-03T14:14:26Z
+d14215e6cbaa
+Linux 6.18.57 x86_64 GNU/Linux
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1010; excluded node_modules only, shared installed dependencies
+BUILD_RUNTIME=v24.22.1
+COMMAND: node24 node_modules/typescript/bin/tsc; node24 node_modules/typescript/bin/tsc -p tsconfig.test.json
+BUILD_EXIT=0
+BUILD_TEST_EXIT=0
+=== baseline-v24.22.1.log ===
+LABEL=baseline REVISION=f1e2a8408fbc6ddef181978e8a2d9fd5831242e9 TREE=84fd5e55643891c83f97a79f32fe2fe949b2476e
+UTC=2026-11-03T14:14:17Z
+d14215e6cbaa
+Linux 6.18.57 x86_64 GNU/Linux
+RUNTIME=/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node VERSION=v24.22.1
+HOME=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-home HUD_HOME=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-hud TMPDIR=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/tmp
+NODE_OPTIONS/NODE_USE_ENV_PROXY/NO_COLOR/FORCE_COLOR unset; no security-setting changes
+CONFIG_PROC_FS=y
+# CONFIG_PROC_CHILDREN is not set
+COMMAND: /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node --test --test-concurrency=1 --test-name-pattern=\^H05\ real-ledger\|\^only\ \(waiter\|forwarder\)\ death dist-test/tests/unit/b3h-production.test.js dist-test/tests/unit/run-light-leader.test.js
+✖ H05 real-ledger forwarder death preserves the documented fault boundary (1332.177583ms)
+✖ H05 real-ledger waiter death preserves the documented fault boundary (1314.711813ms)
+✖ H05 real-ledger leader death preserves the documented fault boundary (1295.417927ms)
+✖ only waiter death retains honest state and safe scoped control outcome (63.108763ms)
+✖ only forwarder death retains honest state and safe scoped control outcome (46.847307ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 0
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4245.742497
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b3h-production.test.js:73:5
+✖ H05 real-ledger forwarder death preserves the documented fault boundary (1332.177583ms)
+  Error: ENOENT: no such file or directory, open '/proc/54/task/54/children'
+      at readFileSync (node:fs:483:20)
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/proc/54/task/54/children'
+  }
+
+test at dist-test/tests/unit/b3h-production.test.js:73:5
+✖ H05 real-ledger waiter death preserves the documented fault boundary (1314.711813ms)
+  Error: ENOENT: no such file or directory, open '/proc/65/task/65/children'
+      at readFileSync (node:fs:483:20)
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/proc/65/task/65/children'
+  }
+
+test at dist-test/tests/unit/b3h-production.test.js:73:5
+✖ H05 real-ledger leader death preserves the documented fault boundary (1295.417927ms)
+  Error: ENOENT: no such file or directory, open '/proc/76/task/76/children'
+      at readFileSync (node:fs:483:20)
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/proc/76/task/76/children'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:697:5
+✖ only waiter death retains honest state and safe scoped control outcome (63.108763ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(target)
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/run-light-leader.test.js:709:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:697:5
+✖ only forwarder death retains honest state and safe scoped control outcome (46.847307ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(target)
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/run-light-leader.test.js:709:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+EXIT_STATUS=1
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1006; excluded node_modules only, shared installed dependencies
+=== baseline-v22.23.4.log ===
+LABEL=baseline REVISION=f1e2a8408fbc6ddef181978e8a2d9fd5831242e9 TREE=84fd5e55643891c83f97a79f32fe2fe949b2476e
+UTC=2026-11-03T14:14:21Z
+d14215e6cbaa
+Linux 6.18.57 x86_64 GNU/Linux
+RUNTIME=/workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node VERSION=v22.23.4
+HOME=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-home HUD_HOME=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-hud TMPDIR=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/tmp
+NODE_OPTIONS/NODE_USE_ENV_PROXY/NO_COLOR/FORCE_COLOR unset; no security-setting changes
+CONFIG_PROC_FS=y
+# CONFIG_PROC_CHILDREN is not set
+COMMAND: /workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node --test --test-concurrency=1 --test-name-pattern=\^H05\ real-ledger\|\^only\ \(waiter\|forwarder\)\ death dist-test/tests/unit/b3h-production.test.js dist-test/tests/unit/run-light-leader.test.js
+TAP version 13
+# (node:132) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: H05 real-ledger forwarder death preserves the documented fault boundary
+not ok 1 - H05 real-ledger forwarder death preserves the documented fault boundary
+  ---
+  duration_ms: 1352.688118
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/b3h-production.test.js:73:5'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/proc/141/task/141/children'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: H05 real-ledger waiter death preserves the documented fault boundary
+not ok 2 - H05 real-ledger waiter death preserves the documented fault boundary
+  ---
+  duration_ms: 1337.576606
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/b3h-production.test.js:73:5'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/proc/152/task/152/children'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: H05 real-ledger leader death preserves the documented fault boundary
+not ok 3 - H05 real-ledger leader death preserves the documented fault boundary
+  ---
+  duration_ms: 1289.55952
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/b3h-production.test.js:73:5'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/proc/163/task/163/children'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: only waiter death retains honest state and safe scoped control outcome
+not ok 4 - only waiter death retains honest state and safe scoped control outcome
+  ---
+  duration_ms: 56.832893
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/run-light-leader.test.js:697:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok(target)
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/run-light-leader.test.js:709:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: only forwarder death retains honest state and safe scoped control outcome
+not ok 5 - only forwarder death retains honest state and safe scoped control outcome
+  ---
+  duration_ms: 43.06666
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/run-light-leader.test.js:697:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok(target)
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/dist-test/tests/unit/run-light-leader.test.js:709:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 0
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4252.162531
+EXIT_STATUS=1
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1006; excluded node_modules only, shared installed dependencies
+=== current-v24.22.1.log ===
+LABEL=current REVISION=dced9114e9d15977fef07fa52c1a329a58dfa505 TREE=380b637c6cc867cde2a62d38789743e65f694b62
+UTC=2026-11-03T14:14:44Z
+d14215e6cbaa
+Linux 6.18.57 x86_64 GNU/Linux
+RUNTIME=/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node VERSION=v24.22.1
+HOME=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-home HUD_HOME=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-hud TMPDIR=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/tmp
+NODE_OPTIONS/NODE_USE_ENV_PROXY/NO_COLOR/FORCE_COLOR unset; no security-setting changes
+CONFIG_PROC_FS=y
+# CONFIG_PROC_CHILDREN is not set
+COMMAND: /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node --test --test-concurrency=1 --test-name-pattern=\^H05\ real-ledger\|\^only\ \(waiter\|forwarder\)\ death dist-test/tests/unit/b3h-production.test.js dist-test/tests/unit/run-light-leader.test.js
+✖ H05 real-ledger forwarder death preserves the documented fault boundary (1329.603536ms)
+✖ H05 real-ledger waiter death preserves the documented fault boundary (1294.442642ms)
+✖ H05 real-ledger leader death preserves the documented fault boundary (1290.212348ms)
+✖ only waiter death retains honest state and safe scoped control outcome (68.427652ms)
+✖ only forwarder death retains honest state and safe scoped control outcome (42.316217ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 0
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4213.882796
+
+✖ failing tests:
+
+test at dist-test/tests/unit/b3h-production.test.js:73:5
+✖ H05 real-ledger forwarder death preserves the documented fault boundary (1329.603536ms)
+  Error: ENOENT: no such file or directory, open '/proc/253/task/253/children'
+      at readFileSync (node:fs:483:20)
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/proc/253/task/253/children'
+  }
+
+test at dist-test/tests/unit/b3h-production.test.js:73:5
+✖ H05 real-ledger waiter death preserves the documented fault boundary (1294.442642ms)
+  Error: ENOENT: no such file or directory, open '/proc/264/task/264/children'
+      at readFileSync (node:fs:483:20)
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/proc/264/task/264/children'
+  }
+
+test at dist-test/tests/unit/b3h-production.test.js:73:5
+✖ H05 real-ledger leader death preserves the documented fault boundary (1290.212348ms)
+  Error: ENOENT: no such file or directory, open '/proc/275/task/275/children'
+      at readFileSync (node:fs:483:20)
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/proc/275/task/275/children'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:697:5
+✖ only waiter death retains honest state and safe scoped control outcome (68.427652ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(target)
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/run-light-leader.test.js:709:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/run-light-leader.test.js:697:5
+✖ only forwarder death retains honest state and safe scoped control outcome (42.316217ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(target)
+  
+      at TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/run-light-leader.test.js:709:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+EXIT_STATUS=1
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1010; excluded node_modules only, shared installed dependencies
+=== current-v22.23.4.log ===
+LABEL=current REVISION=dced9114e9d15977fef07fa52c1a329a58dfa505 TREE=380b637c6cc867cde2a62d38789743e65f694b62
+UTC=2026-11-03T14:14:49Z
+d14215e6cbaa
+Linux 6.18.57 x86_64 GNU/Linux
+RUNTIME=/workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node VERSION=v22.23.4
+HOME=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-home HUD_HOME=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-hud TMPDIR=/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/tmp
+NODE_OPTIONS/NODE_USE_ENV_PROXY/NO_COLOR/FORCE_COLOR unset; no security-setting changes
+CONFIG_PROC_FS=y
+# CONFIG_PROC_CHILDREN is not set
+COMMAND: /workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node --test --test-concurrency=1 --test-name-pattern=\^H05\ real-ledger\|\^only\ \(waiter\|forwarder\)\ death dist-test/tests/unit/b3h-production.test.js dist-test/tests/unit/run-light-leader.test.js
+TAP version 13
+# Subtest: H05 real-ledger forwarder death preserves the documented fault boundary
+not ok 1 - H05 real-ledger forwarder death preserves the documented fault boundary
+  ---
+  duration_ms: 1357.240054
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/b3h-production.test.js:73:5'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/proc/340/task/340/children'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: H05 real-ledger waiter death preserves the documented fault boundary
+not ok 2 - H05 real-ledger waiter death preserves the documented fault boundary
+  ---
+  duration_ms: 1303.613102
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/b3h-production.test.js:73:5'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/proc/351/task/351/children'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: H05 real-ledger leader death preserves the documented fault boundary
+not ok 3 - H05 real-ledger leader death preserves the documented fault boundary
+  ---
+  duration_ms: 1279.303829
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/b3h-production.test.js:73:5'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/proc/362/task/362/children'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/b3h-production.test.js:94:30)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: only waiter death retains honest state and safe scoped control outcome
+not ok 4 - only waiter death retains honest state and safe scoped control outcome
+  ---
+  duration_ms: 43.690977
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/run-light-leader.test.js:697:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok(target)
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/run-light-leader.test.js:709:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: only forwarder death retains honest state and safe scoped control outcome
+not ok 5 - only forwarder death retains honest state and safe scoped control outcome
+  ---
+  duration_ms: 32.593826
+  type: 'test'
+  location: '/workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/run-light-leader.test.js:697:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok(target)
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/dist-test/tests/unit/run-light-leader.test.js:709:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 0
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4166.566171
+EXIT_STATUS=1
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1010; excluded node_modules only, shared installed dependencies
+=== comparison-summary.log ===
+UTC=2026-11-03T14:15:45Z
+RUNTIME_BINARY_SHA256
+61ab14cd750fc24d5db53490ec5fc40f756e4b6e136b78cf7004265471d9bd1d  /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node
+94efd062ed066c1a0b332e18249859c905e920eeada5df55d24c99b919629a90  /workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node
+PACKAGE_LOCK_SOURCE_SHA256
+98a7e2d3f5256810fe477812be64b35411aeede8b34f91e648d62e96c39e3294  /workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/baseline-source/package-lock.json
+98a7e2d3f5256810fe477812be64b35411aeede8b34f91e648d62e96c39e3294  /workspace/scratch/6daef0397a95/hyg2-diagnosis-20261103/current-source/package-lock.json
+INSTALLED_DEPENDENCY_VERSIONS
+@iarna/toml=2.2.5
+chokidar=5.0.0
+readdirp=5.0.0
+@types/node=20.19.29
+undici-types=6.21.0
+typescript=5.9.3
+prettier=3.9.9
+FOUR_MATCHED_RUN_SUMMARIES
+FILE=baseline-v22.23.4.log
+LABEL=baseline REVISION=f1e2a8408fbc6ddef181978e8a2d9fd5831242e9 TREE=84fd5e55643891c83f97a79f32fe2fe949b2476e
+RUNTIME=/workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node VERSION=v22.23.4
+# tests 5
+# pass 0
+# fail 5
+# skipped 0
+EXIT_STATUS=1
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1006; excluded node_modules only, shared installed dependencies
+FILE=baseline-v24.22.1.log
+LABEL=baseline REVISION=f1e2a8408fbc6ddef181978e8a2d9fd5831242e9 TREE=84fd5e55643891c83f97a79f32fe2fe949b2476e
+RUNTIME=/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node VERSION=v24.22.1
+ℹ tests 5
+ℹ pass 0
+ℹ fail 5
+ℹ skipped 0
+EXIT_STATUS=1
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1006; excluded node_modules only, shared installed dependencies
+FILE=current-v22.23.4.log
+LABEL=current REVISION=dced9114e9d15977fef07fa52c1a329a58dfa505 TREE=380b637c6cc867cde2a62d38789743e65f694b62
+RUNTIME=/workspace/scratch/6daef0397a95/hyg2-node22/node_modules/node/bin/node VERSION=v22.23.4
+# tests 5
+# pass 0
+# fail 5
+# skipped 0
+EXIT_STATUS=1
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1010; excluded node_modules only, shared installed dependencies
+FILE=current-v24.22.1.log
+LABEL=current REVISION=dced9114e9d15977fef07fa52c1a329a58dfa505 TREE=380b637c6cc867cde2a62d38789743e65f694b62
+RUNTIME=/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node VERSION=v24.22.1
+ℹ tests 5
+ℹ pass 0
+ℹ fail 5
+ℹ skipped 0
+EXIT_STATUS=1
+ARCHIVED_SOURCE_BLOBS_VERIFIED=1010; excluded node_modules only, shared installed dependencies
+ORIGINAL_CHECKOUT_STATUS
+ M node_modules/.package-lock.json
+=== SHA256SUMS ===
+00107342d501cba4cf942a7b126037ac1f5ac0cc9d08d20d288873d9016f863b  proc-capability.log
+a0b3959f036d3489b03f57237503ee48e7366386d6bc05a30b47c5e0320d1aa8  baseline-build.log
+049eadcc0b6b4c2b5305f6039c5dca42133657b8ff6635098f081e8fafc86cdf  current-build.log
+dea9dbe240ad411fd2b6117d2205f3d6bf28b4c2aca9d8f792b4e463c379cf31  baseline-v22.23.4.log
+13bc4d05299c9c271eb9c627ac6f94cee0b6172f92914f36b755dd8f0f84f4d8  baseline-v24.22.1.log
+02b589f84a5d390a8271e59dfd86d180806b7fa897d2c92e12b5f7b25c7aa400  current-v22.23.4.log
+93985b78380fc0181470a1c3e6dc58d5f5bf97954cd8a2d52b33d4a34bb576b5  current-v24.22.1.log
+51661f60a60f73ffdba06519e8c1bcdfda64f7f7443f56e401ac3e73f666e2ef  comparison-summary.log
+82e5f2520c79cf4399007fe031a504fb70d0280e2275a4246b090b26a8189ae1  run-comparison.sh
+0aad3cdb191ef02fb38d742887c6d293ca03bfde0470073893e6a1f9deda905f  verify-snapshot.py
