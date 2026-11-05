@@ -9,13 +9,14 @@ import { HudMcpServer, serveStdioProcess } from './server.js';
 import { LedgerCallerRegistry } from './ledger-registry.js';
 import { ReadOnlyScopeSnapshot } from '../../../src/core/ledger-scope-read.js';
 import { DelegationService } from './delegation.js';
-import { createShippedCodexCapabilityVerifier } from '../../../src/core/launch/index.js';
+import { createShippedManagedCapabilityVerifier } from '../../../src/core/launch/index.js';
 import { readHookConfig, selectsClaudeHook } from './hook/record.js';
 import { fileURLToPath } from 'node:url';
 import { openLedger } from '../../../src/ledger/ledger.js';
-import { shippedManifest, verifiedClientTimeout } from '../../../src/cli/capability.js';
+import { discoverExecutable, shippedManifest, verifiedClientTimeout } from '../../../src/cli/capability.js';
 import { ParentLifetime } from './lifetime.js';
 import { loadCacheConfig } from '../../../src/core/cache-config.js';
+import { launchProbeEnvironment } from '../../../src/core/launch/fingerprint.js';
 import { PiEvidenceChannel } from './pi-channel.js';
 const lifetime = new ParentLifetime();
 const home = process.env.HUD_HOME;
@@ -85,20 +86,48 @@ try {
     profile && selectsClaudeHook(profile) && hookConfig && scopes
       ? { config: readHookConfig(hookConfig), scopes }
       : undefined;
+  // Discover target executables once at startup, separately for each selected
+  // backend/operation. Never borrow the caller harness's version or run --version
+  // on a budgeted accepted-intent path. Unresolved facts remain unverified.
+  const launchExecutableIdentities = new Map<string, { path: string; version: string }>();
+  const observations = new Map<string, Awaited<ReturnType<typeof discoverExecutable>>>();
+  for (const target of config.profiles) {
+    for (const operation of ['spawn', 'resume'] as const) {
+      const command = operation === 'spawn' ? target.headless : target.resumeHeadless;
+      if (!command?.argv) continue;
+      const env = launchProbeEnvironment(process.env, target.env);
+      const key = JSON.stringify([command.argv[0], env]);
+      let observed = observations.get(key);
+      if (!observed) {
+        observed = await discoverExecutable(command, env);
+        observations.set(key, observed);
+      }
+      if (observed.resolved && observed.version)
+        launchExecutableIdentities.set(JSON.stringify([target.name, operation, 'headless']), {
+          path: observed.resolved,
+          version: observed.version,
+        });
+    }
+  }
   // A release binds reviewed cells to this revision and the exact runtime tuple.
   // This build ships an empty, explicitly unverified matrix.
-  const capability = createShippedCodexCapabilityVerifier({
+  const capability = createShippedManagedCapabilityVerifier({
     hudRevision: 'b45-unverified',
-    versions: {
+    versions: (request) => ({
       hudRevision: 'b45-unverified',
-      harness: 'unverified',
+      harness: [...launchExecutableIdentities.values()].some(
+        (identity) =>
+          identity.path === request.executableIdentity.path && identity.version === request.executableIdentity.version
+      )
+        ? request.executableIdentity.version!
+        : 'unverified',
       host: 'none',
       shell: 'none',
       node: process.versions.node,
       platform: process.platform,
       kernel: 'unverified',
       mcpClient: 'unverified',
-    },
+    }),
   });
   // B6 selects timeout numbers by first harness/source match. Never attest a different
   // selected profile, or an ambiguous same-source configuration.
@@ -123,6 +152,7 @@ try {
           registration,
           reader,
           capability,
+          launchExecutableIdentities,
           waitTimeoutVerified,
           wakeExecutable,
           cache,

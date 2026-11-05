@@ -16,6 +16,7 @@ import {
   type HandshakeSnapshot,
 } from '../../../src/ledger/handshake.js';
 import { actualSourceRoot, inferHarness, type ProcessReaderPort } from './process.js';
+import { PiHostEvidence } from './pi-host.js';
 import type { Registration } from './registry.js';
 
 export interface HandshakeServiceOptions {
@@ -65,7 +66,13 @@ export class HandshakeService {
     if (domain.runPidDomain === null) throw new Error('run_domain_unavailable');
     const self = reader.get(registration.caller.pid);
     const harness = reader.get(stamp.pid);
-    const root = actualSourceRoot(harness, run.harness);
+    const piHost = run.harness === 'pi' && registration.piHost instanceof PiHostEvidence ? registration.piHost : null;
+    if (piHost) {
+      piHost.assertCurrent(reader);
+      if (piHost.parentPid !== stamp.pid || piHost.parentStart !== stamp.proc_start)
+        throw new Error('claim_anchor_mismatch');
+    }
+    const root = piHost?.rootPath ?? actualSourceRoot(harness, run.harness);
     if (
       stamp.boot_id !== domain.bootId ||
       stamp.pid_domain !== domain.runPidDomain ||
@@ -104,6 +111,7 @@ export class HandshakeService {
       const current = reader.get(edge.pid);
       if (current.procStart !== edge.procStart || current.ppid !== edge.ppid) throw new Error('claim_anchor_mismatch');
     }
+    piHost?.assertCurrent(reader);
     const at = this.now();
     const payload = {
       sourceId: run.sourceId,

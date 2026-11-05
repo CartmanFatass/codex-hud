@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { capabilityKey, capabilitySupport, launchProfileDigest } from '../core/capabilities.js';
 import { canonicalJson, digest } from '../core/canonical.js';
-import { executableIdentity } from '../core/launch/fingerprint.js';
+import { executableIdentity, launchProbeEnvironment } from '../core/launch/fingerprint.js';
 import type {
   CapabilityKey,
   CapabilityManifestV1,
@@ -125,7 +125,7 @@ export function shippedManifest(): CapabilityManifestV1 | null {
   let fd: number | undefined;
   try {
     fd = openSync(
-      fileURLToPath(new URL('../core/launch/codex-cells.json', import.meta.url)),
+      fileURLToPath(new URL('../core/launch/managed-cells.json', import.meta.url)),
       constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
     );
     const stat = fstatSync(fd);
@@ -185,6 +185,7 @@ export function matchesCapability(
 
 /** Startup-only, bounded executable discovery. Never execute shell text or accept a configured version. */
 export async function discoverExecutable(command: LaunchCommand, env: NodeJS.ProcessEnv) {
+  env = launchProbeEnvironment(env);
   const identity = await executableIdentity(command, env);
   if (!command.argv || !identity.resolved) return { ...identity, version: null };
   // A script/wrapper's --version can dispatch another executable. Its actual

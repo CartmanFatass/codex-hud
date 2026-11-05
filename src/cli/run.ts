@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { validateRequestKey } from '../core/execution.js';
 import { HeadlessRunControl } from '../core/run/control.js';
 import { LedgerRunFactPort } from '../core/run/ledger-port.js';
-import { createShippedCodexCapabilityVerifier } from '../core/launch/capability.js';
+import { createShippedManagedCapabilityVerifier } from '../core/launch/capability.js';
 import type { CapabilityVerifier } from '../core/launch/capability.js';
 import type { LocalResumeRequest } from '../core/types/lifecycle.js';
 import type { HudIO } from './link-export.js';
@@ -114,7 +114,7 @@ export async function runCommand(
           : {}),
         capability:
           trusted.capability ??
-          createShippedCodexCapabilityVerifier({
+          createShippedManagedCapabilityVerifier({
             hudRevision: HUD_REVISION,
             versions: {
               hudRevision: HUD_REVISION,

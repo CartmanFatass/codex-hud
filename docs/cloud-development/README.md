@@ -6,6 +6,7 @@ This documentation set describes a cloud-first continuation of the Universal HUD
 
 - [Cloud development handbook](cloud-development.md): setup, isolation, checks, simulation and evidence.
 - [Revised development roadmap](cloud-roadmap.md): independent slices, dependencies and next actions.
+- [Experimental managed targets](managed-targets.md): production default preparation, unchanged capability gates, private artifacts and synthetic verification scope.
 - [Opt-in Pi delegation bridge](../cloud/pi-delegation-bridge.md): pinned official extension, private per-call identity, synthetic and no-model checks.
 - [Engineering plan](../universal-hud-engineering-plan.md): original A–F scope and historical status; its global phase order is superseded for the cloud-development workflow described here. Its contract and safety requirements are not silently changed.
 - [Contracts 01–07](../contracts/), [architecture](../ARCHITECTURE.md), [design](../design/hud-information-design.md), and [handoff state](../handoff/STATE.md): technical specifications and historical context. Resolve any behavioural conflict explicitly; do not silently change an executable contract.

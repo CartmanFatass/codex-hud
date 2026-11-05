@@ -31,6 +31,9 @@ export const FOCUSED_TESTS = [
   'd1-claude-visibility',
   'd1-claude-render',
   'claude-configuration',
+  'claude-managed-launch',
+  'managed-capability',
+  'managed-launch-artifacts',
   'c45-jev-fake',
   'workbench-events',
   'workbench-input',
@@ -338,6 +341,16 @@ async function main() {
         'tests/unit/pi-delegation-bridge.test.mjs',
       ],
       timeoutMs: 180000,
+    },
+    {
+      name: 'managed-targets',
+      args: [
+        '--test',
+        '--test-concurrency=1',
+        'tests/unit/pi-managed-launch.test.mjs',
+        'packages/hud-mcp/dist/tests/hud-mcp/managed-target.test.js',
+      ],
+      timeoutMs: 120000,
     },
     ...DEMOS.map((name) => ({ name, args: [`scripts/${name}.mjs`], timeoutMs: 30000 })),
   ];

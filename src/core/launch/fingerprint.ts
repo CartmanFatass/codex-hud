@@ -2,6 +2,18 @@ import { promises as fs, constants } from 'node:fs';
 import { delimiter, isAbsolute, join } from 'node:path';
 import type { LaunchCommand } from '../types/capabilities.js';
 
+/** Version probes are not delegation recipients. Scrub authority after profile overrides. */
+export function launchProbeEnvironment(
+  inherited: NodeJS.ProcessEnv,
+  overrides: NodeJS.ProcessEnv = {}
+): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries({ ...inherited, ...overrides }).filter(
+      ([key]) => !key.startsWith('HUD_') && !key.startsWith('PI_SESSION_') && key !== 'PI_CODING_AGENT_SESSION_DIR'
+    )
+  );
+}
+
 export interface ExecutableIdentity {
   path: string;
   /** Captured by trusted startup/version discovery, never a delegate.json assertion. */

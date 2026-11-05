@@ -61,6 +61,8 @@ export class FileCallerRegistry implements CallerRegistryPort {
   }
 }
 export interface Registration {
+  /** Nonserialized, private-channel physical host proof; never persisted as caller authority. */
+  piHost?: PiHostEvidence;
   caller: Caller;
   source: Source | null;
   harnessPid: number | null;
@@ -75,7 +77,7 @@ export async function registerCaller(input: {
   envPane: string | null;
   nowMs: number;
   /** Only a consumed, physically checked private Pi bootstrap can supply this. */
-  piHost?: PiHostEvidence;
+  readonly piHost?: PiHostEvidence;
 }): Promise<Registration> {
   let cwd: string;
   try {
@@ -132,5 +134,13 @@ export async function registerCaller(input: {
   )
     throw new Refusal('registration_unverified');
   await input.registry.register(caller, source);
-  return { caller, source, harnessPid: found?.process.pid ?? null, harnessProcStart: found?.process.procStart ?? null };
+  const registration: Registration = {
+    caller,
+    source,
+    harnessPid: found?.process.pid ?? null,
+    harnessProcStart: found?.process.procStart ?? null,
+  };
+  if (source?.harness === 'pi' && input.piHost instanceof PiHostEvidence)
+    Object.defineProperty(registration, 'piHost', { value: input.piHost, enumerable: false, writable: false });
+  return registration;
 }

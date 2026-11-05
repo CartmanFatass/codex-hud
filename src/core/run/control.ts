@@ -37,7 +37,10 @@ import { retirementAllowed, RetirementScheduler, type RetirementDeadline, type Q
 import { RetirementEvidenceReader } from './retirement-evidence.js';
 import { readFrozenRetirementPolicy, type PolicyRunLaunchInput } from './retirement-policy.js';
 
+import { validateLaunchArtifacts, type LaunchArtifactPayload } from './launch-artifacts.js';
+
 export interface StartOptions {
+  launchArtifacts?: readonly LaunchArtifactPayload[];
   input: PolicyRunLaunchInput;
   ticket: string;
   brief?: Buffer;
@@ -300,6 +303,12 @@ export class HeadlessRunControl implements RunControl {
   /** Exactly one invocation in the supervisor process; call only with a committed intent. */
   async start(options: StartOptions): Promise<void> {
     const policy = readFrozenRetirementPolicy(options.input);
+    const launchArtifacts = validateLaunchArtifacts(
+      options.launchArtifacts,
+      this.hudHome,
+      options.input.runId,
+      options.input.launch
+    );
     const argv = validateStart(options),
       { input } = options,
       id = input.runId;
@@ -329,6 +338,7 @@ export class HeadlessRunControl implements RunControl {
       }
       const artifacts = RunArtifacts.create(this.hudHome, id),
         logs = (logFds = artifacts.openLogs());
+      artifacts.writeLaunchArtifacts(launchArtifacts);
       const initial = await this.port.read(id),
         r = initial.run;
       let meta: RunMeta = {

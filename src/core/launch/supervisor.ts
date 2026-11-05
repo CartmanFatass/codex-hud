@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchDigest } from '../run/control.js';
+import { validateLaunchArtifacts } from '../run/launch-artifacts.js';
 import { RUN_NODE_FLAGS } from '../run/runtime.js';
-import type { PreparedRunLaunch } from '../../harness/codex/profile.js';
+import type { PreparedRunLaunch } from './types.js';
 
 export interface SupervisorDispatch {
   pid: number;
@@ -39,6 +40,7 @@ export async function launchPreparedRun(
   if (payload.length > 1_048_576) throw new Error('protected_launch_input_too_large');
   const home = prepared.payload.env?.HUD_HOME;
   if (!home || !isAbsolute(home)) throw new Error('invalid_hud_home');
+  validateLaunchArtifacts(prepared.payload.launchArtifacts, home, prepared.input.runId, prepared.input.launch);
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [...RUN_NODE_FLAGS, executable, 'start'], {
       cwd: prepared.input.cwd,

@@ -15,6 +15,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isAbsolute, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { inspectReceipt, receiptEligibility, sameProcessStamp, scopeUpdateAllowed } from '../supervision.js';
+import type { LaunchArtifactName } from './launch-artifacts.js';
+import { decodeLaunchArtifacts } from './launch-artifacts.js';
 import type { FinalExitReceipt, RunMeta } from '../types/supervision.js';
 
 /** UI-only read bound; artifact writers and recovery retain their existing semantics. */
@@ -296,6 +298,29 @@ export class RunArtifacts {
         if (!missing(error)) throw error;
       }
     }
+  }
+
+  /** Exclusive fixed support files. Never replace files or remove uncertain partial writes. */
+  writeLaunchArtifacts(entries: readonly { name: LaunchArtifactName; bytes: Buffer }[]): void {
+    this.assertWritable();
+    decodeLaunchArtifacts(entries.map(({ name, bytes }) => ({ name, base64: bytes.toString('base64') })));
+    this.withDirectory((fd) => {
+      for (const { name, bytes } of entries) {
+        const file = openSync(
+          fdPath(fd, name),
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+          0o600
+        );
+        try {
+          this.assertFile(file);
+          writeFileSync(file, bytes);
+          fsyncSync(file);
+        } finally {
+          closeSync(file);
+        }
+      }
+      if (entries.length) fsyncSync(fd);
+    });
   }
 
   writeMeta(meta: RunMeta): void {

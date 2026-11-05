@@ -15,7 +15,13 @@ import type { Link, LocalResumeRequest, McpResumeRequest } from '../../../src/co
 import type { Claim } from '../../../src/core/types/identity.js';
 import type { Run } from '../../../src/core/types/execution.js';
 import { taskDigest } from '../../../src/core/lifecycle.js';
-import { prepareCodexLaunch, launchPreparedRun, type CapabilityVerifier } from '../../../src/core/launch/index.js';
+import {
+  prepareCodexLaunch,
+  prepareClaudeLaunch,
+  preparePiLaunch,
+  launchPreparedRun,
+  type CapabilityVerifier,
+} from '../../../src/core/launch/index.js';
 import { readProcess } from '../../../src/core/run/process.js';
 import { PrivateLedgerGate } from '../../../src/ledger/local-manager.js';
 import { digest } from '../../../src/core/canonical.js';
@@ -37,12 +43,12 @@ import { makeSourceId } from '../../../src/core/identity.js';
 import { launchDigest } from '../../../src/core/run/control.js';
 import { launchProfileDigest } from '../../../src/core/capabilities.js';
 import type { Harness } from '../../../src/core/types/identity.js';
-import type { CodexLaunchPreparation, PrepareCodexLaunchOptions } from '../../../src/core/launch/index.js';
+import type { LaunchPreparer } from '../../../src/core/launch/types.js';
+export type { LaunchPreparer } from '../../../src/core/launch/types.js';
 import { hintDirectory } from '../../../src/core/wait/hints.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 type McpAuthority = Extract<IntentAuthority, { kind: 'mcp' }>;
-export type LaunchPreparer = (options: PrepareCodexLaunchOptions) => Promise<CodexLaunchPreparation>;
 
 /** Consult 5 G03: shared request fields only; schema/digest/CAS behavior is B45-R2. */
 type DelegationArguments = Record<string, unknown> & Pick<McpResumeRequest, 'expectedRun'>;
@@ -58,8 +64,13 @@ export interface DelegationOptions {
   hudRunPath: string;
   env?: NodeJS.ProcessEnv;
   codexConfig?: import('../../../src/core/types/capabilities.js').CodexConfig;
+  /** Startup observations keyed by backend, operation and mode. Never read from tool/config claims. */
+  launchExecutableIdentities?: ReadonlyMap<
+    string,
+    import('../../../src/core/launch/fingerprint.js').ExecutableIdentity
+  >;
   executableIdentity?: import('../../../src/core/launch/fingerprint.js').ExecutableIdentity;
-  /** Trusted constructor-only test/integration preparers; no configuration or tool selects code. */
+  /** Trusted constructor-only overrides; production defaults cover all managed harnesses. */
   launchPreparers?: Readonly<Partial<Record<Exclude<Harness, 'codex'>, LaunchPreparer>>>;
   /** Trusted dependency for owned-process tests. Never selected by tool/config input. */
   launch?: typeof launchPreparedRun;
@@ -84,7 +95,12 @@ export class DelegationService {
     // A managed harness receives these before whoami. Partial, empty, unknown or
     // contradictory markers still restrict; none of them grants caller authority.
     this.managedLaunch = ['HUD_RUN', 'HUD_LINK', 'HUD_CLAIM'].some((key) => env[key] !== undefined);
-    this.preparers = Object.freeze({ ...(options.launchPreparers ?? {}), codex: prepareCodexLaunch });
+    this.preparers = Object.freeze({
+      claude: prepareClaudeLaunch,
+      pi: preparePiLaunch,
+      ...(options.launchPreparers ?? {}),
+      codex: prepareCodexLaunch,
+    });
     mkdirSync(hintDirectory(options.home), { recursive: true, mode: 0o700 });
     const physical = options.registration;
     if (
@@ -301,7 +317,10 @@ export class DelegationService {
       resumeSessionId: previous?.link.childRef?.sessionId,
       env: this.options.env,
       codexConfig: this.options.codexConfig,
-      executableIdentity: this.options.executableIdentity,
+      executableIdentity:
+        this.options.launchExecutableIdentities?.get(
+          JSON.stringify([profile.name, handover ? 'resume' : operation, args.mode])
+        ) ?? this.options.executableIdentity,
     });
     budget.check();
     // A trusted preparer only proposes data. Independently bind all identity

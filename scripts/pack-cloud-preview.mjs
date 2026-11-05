@@ -25,6 +25,9 @@ const ROOT_BINS = {
 const ENTRYPOINTS = Object.values(ROOT_BINS);
 const REQUIRED_OUTPUTS = {
   'src/cli/statusline.ts': 'dist/cli/statusline.js',
+  'src/harness/pi/managed-launch.ts': 'dist/harness/pi/managed-launch.js',
+  'src/harness/claude/managed-launch.ts': 'dist/harness/claude/managed-launch.js',
+  'src/core/run/launch-artifacts.ts': 'dist/core/run/launch-artifacts.js',
   'src/harness/pi/footer.ts': 'dist/harness/pi/footer.js',
   'src/harness/pi/delegation-bridge.ts': 'dist/harness/pi/delegation-bridge.js',
   'src/harness/pi/delegation-channel.ts': 'dist/harness/pi/delegation-channel.js',
@@ -201,12 +204,14 @@ async function main() {
       if (!report.entries.some((entry) => entry.path === output && entry.origin === source))
         throw new Error(`missing_required_runtime_output: ${output}`);
     }
-    // The sole tracked runtime JSON input is explicit, not a recursive JSON/config glob.
-    const cells = 'src/core/launch/codex-cells.json';
-    if (!tracked.includes(cells)) throw new Error('missing_runtime_json');
-    const cellBytes = fs.readFileSync(safeFile(cells));
-    add('dist/core/launch/codex-cells.json', cellBytes, 0o644, cells);
-    add('packages/hud-mcp/dist/src/core/launch/codex-cells.json', cellBytes, 0o644, cells);
+    // Explicit runtime capability manifests, never a recursive JSON/config glob.
+    for (const name of ['codex-cells.json', 'managed-cells.json']) {
+      const cells = `src/core/launch/${name}`;
+      if (!tracked.includes(cells)) throw new Error('missing_runtime_json');
+      const cellBytes = fs.readFileSync(safeFile(cells));
+      add(`dist/core/launch/${name}`, cellBytes, 0o644, cells);
+      add(`packages/hud-mcp/dist/src/core/launch/${name}`, cellBytes, 0o644, cells);
+    }
     for (const file of [...ENTRYPOINTS, ...EXTRA_FILES]) {
       if (!tracked.includes(file)) throw new Error('untracked_package_input');
       add(
