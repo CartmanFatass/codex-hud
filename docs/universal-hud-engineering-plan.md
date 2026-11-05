@@ -1,5 +1,7 @@
 # 通用 Agent HUD 工程计划书（v1.1，2026-11-01）
 
+> **2026-11-05 cloud-development update:** See [the current cloud handbook and revised C–F roadmap](cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
+
 状态：v1.1，**阶段 A 开工基线**。v1 与概念方案 v2.2 一起经 ChatGPT Pro 第三轮评审（[reviews/2026-11-01-chatgpt-pro-v22-plan.md](./reviews/2026-11-01-chatgpt-pro-v22-plan.md)），v1.1 吸收其全部修正：缺包（状态归并器 B16、材料入口 B17）、合拆（A1 分批共审、B3 拆托管核心与可见终端、D2 最小一致提交并入 B12）、顺序（A8 依赖 A3、A4 依赖 A2 定稿、B11 依赖 B10、全部 B 受 A9 门禁、B14 依赖 B4 / B5、pi 加载统一在 C1）、规模（B12 升 M、B3 / C4 探针后重估、D5 含两周观察）、验收（每份 brief 的要素、能力矩阵逐格、Hermes 证据规则）、权威依赖表。概念方案（[v2.3](./universal-hud-concept.md)）是"做什么、为什么"的事实来源；本计划书是"谁、按什么顺序、怎么验收"。两者冲突以概念方案为准，并在本文修订。
 
 ## 0. 怎么用这份计划

@@ -1,5 +1,7 @@
 # Agent guide (remote orchestration)
 
+> **2026-11-05 cloud-development update:** See [the current cloud handbook and revised C–F roadmap](docs/cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
+
 This repo is codex-hud, being turned into one HUD for Claude Code, Codex and pi, with a delegation MCP (`hud-mcp`) and
 a run supervisor (`hud-run`). Work happens on branch `universal-hud`. From 2026-11-03 it is developed remotely; this
 file is the entry point for remote agents (dots). `CLAUDE.md` holds the same project guide for Claude Code, plus local
