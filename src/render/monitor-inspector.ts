@@ -14,6 +14,7 @@ import { diagnosticLines, tokenRateDetails } from './hud-diagnostics.js';
 import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
 import { newestIntent } from './cards.js';
+import { conflictDetails } from '../core/link/conflict-details.js';
 import {
   age,
   nodeStatus,
@@ -108,6 +109,24 @@ export function inspectorRows(input: MonitorData, state: MonitorState, width: nu
     ];
   }
   if (state.preview === 'agent') {
+    const delegation = input.hud?.delegation;
+    const conflict =
+      delegation && state.tree.selectedId ? conflictDetails(delegation.tree, state.tree.selectedId) : null;
+    if (conflict) {
+      const rows = [
+        'Conflict',
+        `${conflict.count} records · no run attributed`,
+        ...conflict.records
+          .slice(0, 5)
+          .map(
+            (record) =>
+              `${monitorText(record.id)} · ${record.parentKey ? monitorText(record.parentKey) : 'parent unavailable'} · ${record.runId ? monitorText(record.runId) : 'run unavailable'}${record.runState ? ` ${monitorText(record.runState)}` : ''}`
+          ),
+      ];
+      if (conflict.records.length > 5) rows.push(`+${conflict.records.length - 5} more`);
+      if (conflict.notListed) rows.push(`+${conflict.notListed} not listed`);
+      return rows.flatMap((line) => wrapped(line, width).map((text) => ({ text })));
+    }
     const node = findNode(input.tree.nodes, state.tree.selectedId);
     if (!node) lines = [];
     else {
