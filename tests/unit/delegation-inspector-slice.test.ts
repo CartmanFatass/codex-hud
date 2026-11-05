@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { stripAnsi } from '../../src/render/colors.js';
-import { buildVm, S } from '../fixtures/b10b-delegation.js';
+import { buildVm, NOW, S } from '../fixtures/b10b-delegation.js';
 import { draw, press } from '../fixtures/b10b-s3.js';
 
 function inspect(vm: ReturnType<typeof buildVm>['vm'], key: string) {
@@ -75,4 +75,47 @@ test('degraded ledger does not present absent retained reports as confirmed empt
   const text = inspect(built.vm, built.keys.one);
   assert.match(text, /ledger_busy · retained view/);
   assert.doesNotMatch(text, /none yet/);
+});
+
+test('Inspector explains disabled Open and the copy-only recovery in the selected frame', () => {
+  const built = buildVm([
+    { id: 'main', root: true, status: S.working() },
+    { id: 'stale', parent: 'main', run: { mode: 'visible' }, hostCheck: 'stale', status: S.working() },
+    { id: 'mismatch', parent: 'main', run: { mode: 'visible' }, hostCheck: 'mismatch', status: S.working() },
+    {
+      id: 'uncertain',
+      parent: 'main',
+      run: { mode: 'visible', state: 'uncertain' },
+      pane: '4',
+      status: { cls: 'uncertain', reason: 'scope_unknown' },
+      reconcile: true,
+    },
+    {
+      id: 'ended',
+      parent: 'main',
+      run: { state: 'ended', endedAt: NOW },
+      status: S.exited(NOW),
+      report: { status: 'completed', at: NOW },
+    },
+  ]);
+  assert.match(inspect(built.vm, built.keys.stale), /Open unavailable · locator stale/);
+  assert.match(inspect(built.vm, built.keys.mismatch), /Open unavailable · occupant mismatch/);
+  const uncertain = inspect(built.vm, built.keys.uncertain);
+  assert.match(uncertain, /Open unavailable · run uncertain/);
+  assert.match(uncertain, /Reconcile available · copy only/);
+  assert.doesNotMatch(uncertain, /HUD_HOME|hud run reconcile/);
+  assert.match(inspect(built.vm, built.keys.ended), /resume not verified on this machine/);
+});
+
+test('root Inspector reports conflict rows omitted by the projection', () => {
+  const built = buildVm([
+    { id: 'main', root: true, status: S.working() },
+    ...Array.from({ length: 204 }, (_, i) => ({
+      id: `conflict-${i}`,
+      parent: 'main',
+      relationOnly: true,
+      conflict: { count: 2, since: 10 },
+    })),
+  ]);
+  assert.match(inspect(built.vm, built.keys.main), /Conflict rows not shown: 5/);
 });

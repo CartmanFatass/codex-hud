@@ -19,6 +19,7 @@ import { formatTokenRate } from '../collectors/token-rate.js';
 import { sameSessionRef } from '../core/identity.js';
 import type { LinkTreeNode } from '../core/link/types.js';
 import type { DelegationView } from './delegation/panel.js';
+import { RESUME_DIAGNOSTIC, selectedActions } from './delegation/actions.js';
 import {
   age,
   nodeStatus,
@@ -193,6 +194,7 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
   if (pn.proj.isRoot) {
     const counts = view.vm.tree.counts;
     lines.push('Coverage', `Known not loaded: ${counts.knownUnloaded} · including omitted: ${counts.omitted}`);
+    if (view.proj.omittedConflictRows) lines.push(`Conflict rows not shown: ${view.proj.omittedConflictRows}`);
     if (counts.unknownDescendants) lines.push('Children unknown');
     lines.push(...slotsLines(view));
   }
@@ -229,6 +231,20 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
     lines.push(run && detail && view.vm.tree.ledger.state === 'available' ? 'none yet' : 'unavailable');
   for (const report of reports.slice(-5)) lines.push(`${report.status} · ${report.summary}`);
   lines.push('Action: unavailable');
+  const actions = selectedActions(view.plan, view.proj, selected);
+  if (actions?.open?.word === 'Open' && !actions.open.enabled) {
+    const state = detail?.status?.stateKey;
+    const reason = state?.startsWith('uncertain:')
+      ? 'run uncertain'
+      : node.host?.occupantMatches === false
+        ? 'occupant mismatch'
+        : node.host?.state === 'stale'
+          ? 'locator stale'
+          : 'host not verified';
+    lines.push(`Open unavailable · ${reason}`);
+  }
+  if (actions?.recover?.word === 'Resume') lines.push(RESUME_DIAGNOSTIC);
+  if (actions?.recover?.word === 'Reconcile') lines.push('Reconcile available · copy only');
   const rate = detail?.outputRate;
   const displayedRate =
     view.vm.tree.ledger.state === 'available' && node.observation && rate && rate.sampledAt <= view.nowMs
