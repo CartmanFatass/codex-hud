@@ -12,7 +12,7 @@ async function setup(preparer) {
   const f=await handshakeFixture(); const executable=join(f.root,'synthetic-pi');
   writeFileSync(executable,'#!/bin/sh\nexit 0\n',{mode:0o700});
   const brief=join(f.root,'brief'); writeFileSync(brief,'synthetic workbench brief');
-  const profile={name:'synthetic-pi',harness:'pi',source:{root:f.root,label:'SIMULATED'},launch:{argv:[executable]},headless:{argv:[executable]},resume:null,resumeHeadless:null,host:{kind:'none',layout:'none'},env:{},mcpServerName:'hud',claimTransport:'config_env',clientToolTimeoutMs:60000,responseMarginMs:2000,orphan_policy:'continue',managedShellVerified:false,roles:{implementer:{model:'synthetic-model'}}};
+  const profile={name:'synthetic-pi',harness:'pi',source:{root:f.root,label:'SIMULATED'},launch:{argv:[executable]},headless:{argv:[executable,'--session-dir',f.root]},resume:null,resumeHeadless:null,host:{kind:'none',layout:'none'},env:{},mcpServerName:'hud',claimTransport:'config_env',clientToolTimeoutMs:60000,responseMarginMs:2000,orphan_policy:'continue',managedShellVerified:false,roles:{implementer:{model:'synthetic-model'}}};
   let launches=0, capabilities=0;
   const service=new DelegationService({ledger:f.ledger,home:f.root,config:{version:1,profiles:[profile]},registration:f.parent.registration,reader:f.reader,env:{},hudRunPath:resolve('bin/hud-run'),...(preparer?{launchPreparers:{pi:preparer(f.root,executable)}}:{}),capability:{verify:()=>{capabilities++;return {ok:true,reason:null}}},launch:async()=>{launches++;return {pid:1,completion:Promise.resolve({code:0,signal:null})}}});
   const args={backend:'synthetic-pi',role:'implementer',brief,cwd:f.root,mode:'headless',request_key:'new-pi'};
@@ -49,7 +49,7 @@ test('Pi lab preparer refuses model and effort overrides',async()=>{
   const f=await setup();
   try {
     const executable=join(f.root,'synthetic-pi'), prepare=makeLabPiPreparer(f.root,executable);
-    const options={profile:{name:'synthetic-pi',harness:'pi',source:{root:f.root},headless:{argv:[executable]},host:{kind:'none',layout:'none'}},cwd:f.root,operation:'spawn',mode:'headless',role:'implementer',briefPath:join(f.root,'brief')};
+    const options={profile:{name:'synthetic-pi',harness:'pi',source:{root:f.root},headless:{argv:[executable,'--session-dir',f.root]},host:{kind:'none',layout:'none'}},cwd:f.root,operation:'spawn',mode:'headless',role:'implementer',briefPath:join(f.root,'brief')};
     await assert.rejects(prepare({...options,model:'other'}),/unsupported_lab_pi_profile/);
     await assert.rejects(prepare({...options,effort:'high'}),/unsupported_lab_pi_profile/);
   } finally {await f.cleanup()}

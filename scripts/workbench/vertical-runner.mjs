@@ -32,7 +32,8 @@ Object.assign(process.env,{HOME:root,HUD_HOME:root,CODEX_HOME:root,TMPDIR:root})
 const hash = (s) => createHash('sha256').update(s).digest('hex');
 const isPi=process.argv.includes('--pi');
 const harness=isPi?'pi':'codex', childLabel=isPi?'Pi':'Codex';
-const executable = join(root, `synthetic-${harness}`);
+if (isPi) { mkdirSync(join(root,'pi-coding-agent'),{mode:0o700}); writeFileSync(join(root,'pi-coding-agent','pi-extension-context.mjs'),readFileSync(resolve('scripts/workbench/pi-extension-context.mjs')),{mode:0o600}); }
+const executable = isPi ? join(root,'pi-coding-agent','synthetic-pi') : join(root,'synthetic-codex');
 const fixture = readFileSync(resolve(`scripts/workbench/synthetic-${harness}.mjs`), 'utf8');
 writeFileSync(executable, `#!${process.execPath}\n${fixture}`, { mode: 0o700 });
 const brief = join(root, 'brief.txt');
@@ -61,7 +62,7 @@ try {
   const processes = new Map([[pid, {pid, ppid:1, procStart:start, argv:['/synthetic/claude'], env:{}, pidNamespace:'synthetic-pid-ns'}], [callerPid, {pid:callerPid, ppid:pid, procStart:'990002', argv:['/synthetic/node'], env:{}, pidNamespace:'synthetic-pid-ns'}]]);
   const reader = { domain:() => domain, get:(id) => { const p=processes.get(id); if (!p) throw Error('process_missing'); return structuredClone(p); } };
   const profile = { name:`synthetic-${harness}`, harness, source:{root,label:`SIMULATED ${childLabel} child`}, launch:{argv:[executable]}, headless:{argv:[executable]}, resume:{argv:[executable,'{{sessionId}}']}, resumeHeadless:{argv:[executable,'{{sessionId}}']}, host:{kind:'none',layout:'none'}, env:{CODEX_HOME:root,HUD_LAB_HELPER:resolve('scripts/workbench/synthetic-handshake.mjs')}, mcpServerName:'hud', claimTransport:'config_env', clientToolTimeoutMs:60000, responseMarginMs:2000, orphan_policy:'continue', managedShellVerified:false, roles:{implementer:{model:'synthetic-model',effort:'low'}} };
-  if (isPi) { profile.env={}; profile.resume=null; profile.resumeHeadless=null; }
+  if (isPi) { profile.env={}; profile.headless={argv:[executable,'--session-dir',root]}; profile.resume=null; profile.resumeHeadless=null; }
   const registration = { caller, source, harnessPid:pid, harnessProcStart:start };
   let dispatchCount = 0, allowPiCapability = true;
   service = new DelegationService({ ledger:db, home:root, config:{version:1,profiles:[profile]}, registration, reader, env:{HOME:root,PATH:'/usr/bin:/bin',CODEX_HOME:root}, codexConfig:{mcp_servers:{hud:{command:'/synthetic/node'}}}, hudRunPath:resolve('bin/hud-run'), ...(isPi?{launchPreparers:{pi:makeLabPiPreparer(root,executable)}}:{}), capability:{verify:(request) => (!isPi || allowPiCapability) && request.executableIdentity.path === executable && request.sourceId === childId && request.key.harness === harness && request.key.mode === 'headless' && request.key.operation === 'spawn' && request.key.hostKind==='none' && request.key.layout==='none' && (!isPi || (request.profileFingerprint===digest({lab:'fixed-synthetic-pi',root,executable}) && request.key.profileDigest===launchProfileDigest(profile) && request.executableIdentity.version==='synthetic-lab')) ? {ok:true,reason:null} : {ok:false,reason:'lab_scope_only'}}, launch:async (prepared, ticket, options) => { dispatchCount++; const pending=launchPreparedRun(prepared,ticket,options); pendingDispatches.push(pending); const dispatched = await pending; dispatches.push(dispatched); return dispatched; } });
@@ -103,7 +104,7 @@ try {
   const active=await waitFor(accepted.runId,(s)=>s.run?.state==='running');
   frames.push(await frame('accepted / active'));
   let reports=[], reportedState=null;
-  if (!isPi) {
+  {
     const reportDeadline=Date.now()+12000;
     while (Date.now()<reportDeadline && !db.snapshot((tx)=>tx.get('SELECT 1 FROM reports WHERE run_id=?',accepted.runId))) await delay(40);
     reports=db.snapshot((tx)=>tx.all('SELECT status,summary FROM reports WHERE run_id=?',accepted.runId));
@@ -132,7 +133,7 @@ try {
     for (const item of frames) { console.log('\n--- '+item.label+' ---'); console.log(item.panel.join('\n')); console.log(JSON.stringify(item.relations)); }
     console.log('\nReplay same run: '+(accepted.runId===replay.runId)+'; total dispatches: '+dispatchCount+' (two distinct requests).');
     console.log('First terminal: '+JSON.stringify(ended)+'\nCancellation: '+JSON.stringify({cancel,cancelled}));
-    console.log(isPi?'Pi intent remains unbound; native exit may be unknown.':'Binding/report use SIMULATED identity evidence; native exit may be unknown.');
+    console.log(isPi?'Pi binding/report use SIMULATED extension context; native exit may be unknown.':'Binding/report use SIMULATED identity evidence; native exit may be unknown.');
   }
 } finally {
   // If the lab fails mid-run, only signal exact, still-matching stamps owned by

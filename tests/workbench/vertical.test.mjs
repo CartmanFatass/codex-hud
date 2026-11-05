@@ -74,7 +74,7 @@ test('lab reporter rejects a caller outside its owned synthetic child', async ()
   } finally { rmSync(home,{recursive:true,force:true}); }
 });
 
-test('Pi lab intent uses real supervision without claiming Pi binding', () => {
+test('Pi lab uses extension context for synthetic binding and report while scope stays live', () => {
   const r=spawnSync(process.execPath,[resolve('scripts/workbench/vertical.mjs'),'--pi','--json'],{
     cwd:resolve('.'),encoding:'utf8',timeout:60000,
     env:{...process.env,EXAMPLE_SECRET:'must-not-propagate',OPENAI_API_KEY:'must-not-propagate'}
@@ -90,11 +90,31 @@ test('Pi lab intent uses real supervision without claiming Pi binding', () => {
   assert.equal(value.first.active.events.filter((e)=>e==='launch.submitting').length,1);
   assert.equal(value.first.ended.run.harness,'pi'); assert.equal(value.first.ended.run.state,'ended');
   assert.equal(value.first.ended.slotHeld,false); assert.equal(value.first.ended.run.exit_code,null);
-  assert.deepEqual(value.first.reports,[]); assert.equal(value.first.reportedState,null);
-  assert.ok(value.frames.flatMap((f)=>f.relations).every((r)=>r.harness==='pi' && r.attribution==='intent' && !r.childBound));
+  assert.deepEqual(value.first.reports,[{status:'completed',summary:'SIMULATED Pi child report'}]);
+  assert.equal(value.first.reportedState.run.state,'running'); assert.equal(value.first.reportedState.slotHeld,true);
+  assert.ok(value.first.reportedState.events.includes('child.bound')); assert.ok(value.first.reportedState.events.includes('report.received'));
+  const bound=value.frames.find((f)=>f.label==='bound / reported').relations.find((r)=>r.runId===value.first.runId);
+  assert.equal(bound.harness,'pi'); assert.equal(bound.attribution,'confirmed'); assert.equal(bound.childBound,true);
+  assert.ok(value.frames.find((f)=>f.label==='scope ended').panel.some((line)=>line.includes('SIMULATED Pi child report')));
+  const second=value.frames.find((f)=>f.label==='second run active').relations.find((r)=>r.runId===value.second.runId);
+  assert.equal(second.attribution,'intent'); assert.equal(second.childBound,false);
   assert.ok(value.frames[0].panel.some((line)=>line.includes('SIMULATED Pi child')));
   assert.equal(value.second.cancel.accepted,true);
   assert.ok(value.second.cancelled.events.includes('cancel.accepted'));
   assert.ok(['ended','cancelled','failed'].includes(value.second.cancelled.run.state));
-  assert.deepEqual(value.childEnvironment,['HOME','HUD_HOME','PATH']);
+  assert.deepEqual(value.childEnvironment,['HOME','HUD_CLAIM','HUD_HOME','HUD_LAB_PI_HELPER','HUD_LINK','HUD_RUN','PATH']);
+});
+
+test('Pi lab reporter refuses an unrelated parent before opening a ledger', async () => {
+  const {mkdtempSync,mkdirSync,writeFileSync,existsSync,rmSync}=await import('node:fs');
+  const {tmpdir}=await import('node:os'); const {join}=await import('node:path');
+  const home=mkdtempSync(join(tmpdir(),'hud-pi-reporter-refusal-'));
+  try {
+    mkdirSync(join(home,'pi-coding-agent')); writeFileSync(join(home,'pi-coding-agent','synthetic-pi'),'fixture');
+    const r=spawnSync(process.execPath,[resolve('scripts/workbench/synthetic-pi-reporter.mjs')],{
+      cwd:home,encoding:'utf8',timeout:10000,env:{HOME:home,HUD_HOME:home,PATH:'/usr/bin:/bin',HUD_CLAIM:'synthetic-secret-refusal'}
+    });
+    assert.notEqual(r.status,0); assert.equal(existsSync(join(home,'ledger.sqlite')),false);
+    assert.doesNotMatch(r.stdout+r.stderr,/synthetic-secret-refusal/);
+  } finally { rmSync(home,{recursive:true,force:true}); }
 });
