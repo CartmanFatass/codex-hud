@@ -14,6 +14,7 @@ export const EXPORT_HELP = `${EXPORT_USAGE}
        hud pi --help              Inspect transcripts or launch Pi explicitly
        hud run --help
        hud cache show [--json]
+       hud migrate --help         Preview, apply or restore compatible settings
        hud codex [ARG ...]          Existing codex-hud compatibility launcher
 
 Export a complete, read-only snapshot of local delegation metadata to stdout.
