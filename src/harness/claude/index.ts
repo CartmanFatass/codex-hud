@@ -8,9 +8,10 @@ import type { ReaderCheckpoint } from '../../core/types/observation.js';
 import { makeSourceId } from '../../core/identity.js';
 import { bindClaude, ClaudeTranscriptFiles, type ClaudeBindContext } from './binding.js';
 import { createClaudeReader, type ClaudeSessionReader, type ClaudeStatusline } from './reader.js';
+import { ClaudeNativeTopology } from './topology.js';
 
 export type { ClaudeBindContext } from './binding.js';
-export { CLAUDE_READER_VERSION, DEFAULT_READER_BUDGET } from './reader.js';
+export { CLAUDE_READER_VERSION, DEFAULT_READER_BUDGET, createClaudeReaderRebuild } from './reader.js';
 export type {
   ClaudeCheckpoint,
   ClaudeReaderBudget,
@@ -22,6 +23,7 @@ export type {
 
 interface ClaudeSource {
   files: ClaudeTranscriptFiles;
+  topology: ClaudeNativeTopology;
   serverNames: string[];
   statuslines: Map<string, ClaudeStatusline>;
 }
@@ -44,12 +46,15 @@ export class ClaudeAdapter implements HarnessAdapter {
     const existing = this.sources.get(sourceId);
     if (existing) {
       if (!existing.serverNames.includes(profile.mcpServerName)) existing.serverNames.push(profile.mcpServerName);
-    } else
+    } else {
+      const files = new ClaudeTranscriptFiles(root, sourceId);
       this.sources.set(sourceId, {
-        files: new ClaudeTranscriptFiles(root, sourceId),
+        files,
+        topology: new ClaudeNativeTopology(files),
         serverNames: [profile.mcpServerName],
         statuslines: new Map(),
       });
+    }
     return sourceId;
   }
 
@@ -75,7 +80,7 @@ export class ClaudeAdapter implements HarnessAdapter {
   open(target: SessionRef, checkpoint?: ReaderCheckpoint): ClaudeSessionReader {
     const source = this.source(target);
     const ref = source.files.validate(structuredClone(target));
-    return createClaudeReader(
+    const reader = createClaudeReader(
       {
         ref,
         resolveFile: (deadlineMs) => source.files.resolve(ref, deadlineMs),
@@ -84,27 +89,36 @@ export class ClaudeAdapter implements HarnessAdapter {
       },
       checkpoint
     );
+    const epoch = source.topology.begin(ref, checkpoint);
+    return {
+      read: async (budget) => {
+        const started = performance.now();
+        const result = await reader.read(budget);
+        source.topology.observe(result, epoch);
+        if (result.stats) result.stats.elapsedMs = performance.now() - started;
+        return result;
+      },
+    };
   }
 
   async children(ref: SessionRef): Promise<SessionRef[]> {
-    this.source(ref);
-    return [];
+    const result = await this.collectTopology(ref, { maxBytes: 4 * 1024 * 1024, maxRecords: 2000, budgetMs: 20 });
+    return result.children.map((child) => ({ ...child }));
   }
 
-  async collectTopology(ref: SessionRef, _budget: import('../../core/interfaces/harness-adapter.js').ReaderBudget) {
-    this.source(ref);
-    return {
-      children: [],
-      loaded: false,
-      bytesRead: 0,
-      recordsRead: 0,
-      coverage: {
-        state: 'partial' as const,
-        skipped: {},
-        gaps: ['native_topology_unavailable'],
-        loaded: false,
-        reason: 'native_topology_unavailable',
-      },
-    };
+  collectionState(ref: SessionRef, checkChanges = true, deadline = performance.now() + 2) {
+    return this.source(ref).topology.state(ref, checkChanges, deadline);
+  }
+
+  invalidateTopology(ref: SessionRef): void {
+    this.source(ref).topology.invalidateSession(ref);
+  }
+
+  async collectTopology(ref: SessionRef, budget: import('../../core/interfaces/harness-adapter.js').ReaderBudget) {
+    return this.source(ref).topology.collect(ref, budget);
+  }
+
+  closeCollection(): void {
+    for (const source of this.sources.values()) source.topology.close();
   }
 }

@@ -668,7 +668,7 @@ test(
     }
     const p = reopened.readProjection(target)!;
     const r = reopened.readRecovery(p, BUDGET) as ObservationRecovery;
-    assert.equal(r.checkpoint.readerVersion, 'claude-reader-4');
+    assert.equal(r.checkpoint.readerVersion, 'claude-reader-5');
     assert.ok(r.checkpoint.recoveryIndex!.lookup);
     assert.equal(p.summary.spent.tokens.value!.input, 3);
     assert.equal(p.commitSeq, 1);

@@ -509,6 +509,10 @@ class SessionCollection implements LinkCollectionPort {
         }
         token = state.topologyToken;
         dirty = state.topologyDirty || token !== reading.topologyToken;
+      } else if (topology && source?.adapter instanceof ClaudeAdapter) {
+        const state = source.adapter.collectionState(reading.ref, false);
+        token = state.topologyToken;
+        dirty = state.topologyDirty || token !== reading.topologyToken;
       }
       let cached = reading.snapshot;
       if (!cached || cached.envelope !== envelope || cached.token !== token || cached.dirty !== dirty) {
@@ -609,7 +613,7 @@ class SessionCollection implements LinkCollectionPort {
           reading.resetPending = false;
           reading.topologyToken = -1;
           this.pendingTopology.delete(displayNodeKey({ kind: 'session', ref: reading.ref }));
-          if (source.adapter instanceof CodexAdapter) source.adapter.invalidateTopology(reading.ref);
+          source.adapter.invalidateTopology(reading.ref);
           prior = undefined;
         } else {
           if (prior && this.publishing) reading.envelope = { ...prior, lastCommitted: commit.summary };
@@ -669,6 +673,16 @@ class SessionCollection implements LinkCollectionPort {
         reading.resetPending = true;
         reading.publisher?.discardReading();
         if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
+      }
+    }
+    if (source.adapter instanceof ClaudeAdapter) {
+      const state = source.adapter.collectionState(ref, true, this.deadline);
+      if (state.topologyDirty || state.topologyToken !== reading.topologyToken) {
+        // Parent calls enter topology only after a successful ordinary session slice.
+        // Alternate while that slice is catching up; metadata gets no extra read grant.
+        if (!reading.reader || reading.dirty || !reading.caughtUp)
+          return reading.lastGrantedKind === 'session' && reading.checkpoint ? 'native_topology' : 'session';
+        return 'native_topology';
       }
     }
     if (source.adapter instanceof CodexAdapter) {
@@ -813,8 +827,7 @@ class SessionCollection implements LinkCollectionPort {
             },
           };
       if (!reading.resetPending) this.committed(source, reading);
-      if (source.adapter instanceof CodexAdapter)
-        reading.topologyToken = source.adapter.collectionState(ref, false).topologyToken;
+      reading.topologyToken = source.adapter.collectionState(ref, false).topologyToken;
       // Topology before any reader lineage is kept pending; never invent sourceGeneration=1.
       if (!reading.envelope) {
         reading.dirty = true;
@@ -822,7 +835,7 @@ class SessionCollection implements LinkCollectionPort {
         this.charges = { bytesRead: topology.bytesRead, recordsRead: topology.recordsRead };
         return null;
       }
-      if (source.adapter instanceof CodexAdapter && !source.adapter.collectionState(ref, false).file)
+      if (!source.adapter.collectionState(ref, false).file)
         reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
       this.pendingTopology.delete(displayNodeKey({ kind: 'session', ref }));
       reading.envelope = {
@@ -1060,6 +1073,7 @@ class SessionCollection implements LinkCollectionPort {
       reading.lastSessionWasRate = false;
       const result = await reading.reader.read(budget);
       if (continuation && !continuationStillValid()) {
+        if (source.adapter instanceof ClaudeAdapter) source.adapter.invalidateTopology(ref);
         this.charges.bytesRead += result.stats?.bytesRead ?? budget.maxBytes;
         this.charges.recordsRead += result.stats?.recordsRead ?? budget.maxRecords;
         abandonContinuation();
@@ -1155,6 +1169,7 @@ class SessionCollection implements LinkCollectionPort {
     const identityChanged = source?.store && identity(source.store.databasePath) !== source.storeIdentity;
     for (const reading of this.readings.values())
       if (reading.ref.sourceId === sourceId) {
+        if (source?.adapter instanceof ClaudeAdapter) source.adapter.invalidateTopology(reading.ref);
         if (identityChanged) reading.publisher?.forget();
         else reading.publisher?.close();
         reading.publisher = undefined;
@@ -1182,7 +1197,7 @@ class SessionCollection implements LinkCollectionPort {
     for (const reading of this.readings.values()) reading.publisher?.close();
     for (const source of this.sources.values()) {
       source.store?.close();
-      if (source.adapter instanceof CodexAdapter) source.adapter.closeCollection();
+      source.adapter.closeCollection();
     }
   }
 }

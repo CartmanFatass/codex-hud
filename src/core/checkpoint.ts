@@ -1105,7 +1105,8 @@ export function checkpointFormat(checkpoint: ReaderCheckpoint): CheckpointFormat
   const c = checkpoint as ReaderCheckpoint & { codex?: { rollout: { version: number } } };
   if (c.codex?.rollout.version === 2) return { name: 'codex-v8', version: 2, runtime: process.versions.v8 };
   if (c.codex?.rollout.version === 3) return { name: 'codex-recovery', version: 3, runtime: null };
-  if (checkpoint.readerVersion === 'claude-reader-4') return { name: 'claude-recovery', version: 1, runtime: null };
+  if (['claude-reader-4', 'claude-reader-5'].includes(checkpoint.readerVersion))
+    return { name: 'claude-recovery', version: 1, runtime: null };
   return { name: 'reader-json', version: 1, runtime: null };
 }
 
@@ -1118,7 +1119,7 @@ export function prepareCheckpoint(input: CheckpointPreparation): PreparedCheckpo
   if (Buffer.byteLength(wire) > MAX_INLINE_RECOVERY_BYTES) fail('checkpoint_state_oversize');
   const checkpoint = JSON.parse(wire) as ReaderCheckpoint;
   const decoded = validateCheckpoint(checkpoint);
-  if (['codex-facade-4', 'claude-reader-4'].includes(checkpoint.readerVersion) && !handoff)
+  if (['codex-facade-4', 'claude-reader-4', 'claude-reader-5'].includes(checkpoint.readerVersion) && !handoff)
     fail('recovery_index_required');
   const captured = checkpointBoundary(checkpoint);
   if (digest(captured) !== digest(input.boundary) || digest(input.format) !== digest(checkpointFormat(checkpoint)))
@@ -1175,7 +1176,8 @@ export function prepareCheckpoint(input: CheckpointPreparation): PreparedCheckpo
     }
     if (
       (checkpoint.readerVersion === 'codex-facade-4' && delta.recoveryVersion !== 'codex-recovery-3') ||
-      (checkpoint.readerVersion === 'claude-reader-4' && delta.recoveryVersion !== 'claude-recovery-1')
+      (['claude-reader-4', 'claude-reader-5'].includes(checkpoint.readerVersion) &&
+        delta.recoveryVersion !== 'claude-recovery-1')
     )
       fail('recovery_version_mismatch');
     references.length = 0;
