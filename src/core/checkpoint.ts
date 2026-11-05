@@ -981,6 +981,115 @@ export function decodePublishedCommit(body: string, expectedRef: SessionRef): Ob
   return commit;
 }
 
+/** Live-only cursor over one immutable lookup. It never advances on a refused page. */
+export class RecoveryPageCursor {
+  private after: string | null = null;
+  private page: readonly import('./types/checkpoint.js').RecoveryIndexEntry[] = [];
+  private position = 0;
+  private finalPage = false;
+  private done = false;
+  constructor(
+    readonly lookup: import('./types/checkpoint.js').RecoveryIndexLookup,
+    readonly namespace: string
+  ) {
+    if (!lookup.pageMetered || !lookup.checkMetered) fail('recovery_metered_lookup_required');
+  }
+  next(
+    grant: import('./types/checkpoint.js').RecoveryReadGrant
+  ):
+    | { kind: 'value'; value: import('./types/checkpoint.js').RecoveryIndexEntry }
+    | { kind: 'continued'; reason: 'bytes' | 'records' | 'deadline'; minimumBytes?: number }
+    | { kind: 'stale' }
+    | { kind: 'done' } {
+    const checked = this.lookup.checkMetered!(grant);
+    if (checked.kind === 'stale') return checked;
+    if (checked.kind === 'refused')
+      return {
+        kind: 'continued',
+        reason: checked.reason,
+        ...(checked.minimumBytes !== undefined ? { minimumBytes: checked.minimumBytes } : {}),
+      };
+    if (this.position < this.page.length) {
+      const value = this.page[this.position++];
+      this.after = value.key;
+      return { kind: 'value', value };
+    }
+    if (this.done || this.finalPage) {
+      this.done = true;
+      return { kind: 'done' };
+    }
+    const remaining = grant.remaining();
+    if (remaining.budgetMs <= 0) return { kind: 'continued', reason: 'deadline' };
+    if (remaining.maxRecords <= 0) return { kind: 'continued', reason: 'records' };
+    let limit = Math.min(128, remaining.maxRecords);
+    for (;;) {
+      const result = this.lookup.pageMetered!(grant, this.namespace, this.after, limit);
+      if (result.kind === 'stale') return result;
+      if (result.kind === 'refused') {
+        if (result.reason === 'bytes' && limit > 1) {
+          limit = Math.max(1, Math.floor(limit / 2));
+          continue;
+        }
+        return {
+          kind: 'continued',
+          reason: result.reason,
+          ...(result.minimumBytes !== undefined ? { minimumBytes: result.minimumBytes } : {}),
+        };
+      }
+      this.page = result.value;
+      this.position = 0;
+      this.finalPage = result.value.length < limit;
+      return this.next(grant);
+    }
+  }
+}
+
+/** A live, bounded-page scan of one overlay snapshot and its pinned store lookup. */
+export class RecoveryOverlayCursor {
+  private readonly base?: RecoveryPageCursor;
+  private localIterator?: IterableIterator<[string, string | null]>;
+  constructor(
+    lookup: import('./types/checkpoint.js').RecoveryIndexLookup | undefined,
+    readonly namespace: string,
+    private readonly local: Map<string, string | null>
+  ) {
+    if (lookup) this.base = new RecoveryPageCursor(lookup, namespace);
+  }
+  next(
+    grant: import('./types/checkpoint.js').RecoveryReadGrant
+  ):
+    | { kind: 'value'; key: string; value: string }
+    | { kind: 'continued'; reason: 'bytes' | 'records' | 'deadline'; minimumBytes?: number }
+    | { kind: 'stale' }
+    | { kind: 'done' } {
+    if (this.localIterator && this.base) {
+      const verified = this.base.next(grant);
+      if (verified.kind === 'stale' || verified.kind === 'continued') return verified;
+      if (verified.kind !== 'done') fail('recovery_cursor_invalid');
+    }
+    if (!this.localIterator && this.base) {
+      for (;;) {
+        const item = this.base.next(grant);
+        if (item.kind === 'done') break;
+        if (item.kind !== 'value') return item;
+        const { key, value } = item.value;
+        if (this.local.has(key)) {
+          const replacement = this.local.get(key);
+          this.local.delete(key);
+          if (replacement !== null && replacement !== undefined) return { kind: 'value', key, value: replacement };
+        } else if (value !== null) return { kind: 'value', key, value };
+      }
+    }
+    this.localIterator ??= this.local.entries();
+    for (;;) {
+      const item = this.localIterator.next();
+      if (item.done) return { kind: 'done' };
+      const [key, value] = item.value;
+      if (value !== null) return { kind: 'value', key, value };
+    }
+  }
+}
+
 /** An exact read-through overlay. Historical keys stay in SQLite; only this slice's mutations are copied. */
 export class RecoveryIndexOverlay {
   private lookup: import('./types/checkpoint.js').RecoveryIndexLookup | undefined;
@@ -1014,6 +1123,23 @@ export class RecoveryIndexOverlay {
   delete(namespace: string, key: string): void {
     if (this.has(namespace, key)) this.put(namespace, key, null);
   }
+  /** Start a live scan whose local shadow cannot change underneath the cursor. */
+  scan(namespace: string): RecoveryOverlayCursor {
+    const layers: RecoveryIndexOverlay[] = [];
+    let layer: RecoveryIndexOverlay | undefined = this;
+    while (layer) {
+      layers.push(layer);
+      layer = layer.parent;
+    }
+    const local = new Map<string, string | null>();
+    for (const current of layers.reverse())
+      for (const [key, value] of current.changes.get(namespace) ?? []) local.set(key, value);
+    return new RecoveryOverlayCursor(layers[0]?.lookup, namespace, local);
+  }
+  /** Apply a deletion established by a pinned scan without a second lookup. */
+  deleteKnown(namespace: string, key: string): void {
+    this.put(namespace, key, null);
+  }
   *entries(namespace: string): IterableIterator<[string, string]> {
     const local = this.changes.get(namespace);
     let after: string | null = null;
@@ -1021,11 +1147,12 @@ export class RecoveryIndexOverlay {
       for (const [key, value] of this.parent.entries(namespace)) if (!local?.has(key)) yield [key, value];
     } else if (this.lookup) {
       while (true) {
-        const page = this.lookup.page(namespace, after, 128);
+        const requested = this.lookup.pageLimit?.(128) ?? 128;
+        const page = this.lookup.page(namespace, after, requested);
         for (const entry of page) {
           if (!local?.has(entry.key) && entry.value !== null) yield [entry.key, entry.value];
         }
-        if (page.length < 128) break;
+        if (page.length < requested) break;
         after = page[page.length - 1].key;
       }
     }

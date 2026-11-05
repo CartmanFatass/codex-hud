@@ -667,6 +667,21 @@ export class ObservationStore {
     };
     const lookup: RecoveryIndexLookup = {
       reference: pinned,
+      checkMetered: (grant) => {
+        const meter = new ReadMeter(grant);
+        try {
+          const ref = this.#key(pinned.boundary.ref);
+          if (meter.expired()) return { kind: 'refused', reason: 'deadline', stats: meter.finish() };
+          return this.#meteredSnapshot<MeteredLookupResult<true>>(meter, () => {
+            if (!this.#pinCurrent(ref, frozenPin)) return { kind: 'stale' };
+            if (!this.db.prepare('SELECT 1 AS present FROM recovery_indexes WHERE id=?').get(pinned.indexId))
+              throw new ObservationStoreError('recovery_snapshot_retired');
+            return { kind: 'value', value: true };
+          });
+        } catch (error) {
+          throw meter.fail(error);
+        }
+      },
       get: (namespace, key) => {
         const grant = this.#activeGrant;
         return grant ? unwrap(getMetered(grant, namespace, key)) : legacyGet(namespace, key);
@@ -674,6 +689,11 @@ export class ObservationStore {
       page: (namespace, after, limit) => {
         const grant = this.#activeGrant;
         return grant ? unwrap(pageMetered(grant, namespace, after, limit)) : legacyPage(namespace, after, limit);
+      },
+      pageLimit: (maximum) => {
+        if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 256)
+          throw new ObservationStoreError('invalid_recovery_budget');
+        return this.#activeGrant ? Math.max(1, Math.min(maximum, this.#activeGrant.remaining().maxRecords)) : maximum;
       },
       getMetered,
       pageMetered,

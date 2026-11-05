@@ -8,6 +8,7 @@ import { CodexAdapter, CODEX_RECOVERY_VERSION, type CodexCheckpoint } from '../.
 import { observeLinkEvidence, LINK_EVIDENCE_LIMIT, type LinkScanState } from '../../src/harness/codex/link-evidence.js';
 import { RolloutParser } from '../../src/collectors/rollout.js';
 import { RecoveryIndexOverlay } from '../../src/core/checkpoint.js';
+import { RecoveryGrant, RecoveryReadError } from '../../src/core/observation-store.js';
 import { TreeScanStore, SCAN_VERSION, SAVE_MIN_BYTES } from '../../src/collectors/tree-scan-store.js';
 import {
   buildSubagentTreeYielding,
@@ -170,6 +171,45 @@ test('Codex source is explicit and verified; binding needs a unique full ref, wi
     /source_mismatch/
   );
   await assert.rejects(f.adapter.resolveSource(profile(path.join(f.root, 'missing')), {}));
+});
+
+test('Codex shared-grant slices charge native reads and preserve record boundaries', async (t) => {
+  const f = await fixture(t);
+  const reader = f.adapter.open(f.ref);
+  const stepBudget = { ...TEST_BUDGET, maxRecords: 1 };
+  const firstGrant = new RecoveryGrant(TEST_BUDGET);
+  const first = await reader.read(stepBudget, { grant: firstGrant });
+  assert.equal(first.stats?.recordsRead, 1);
+  assert.equal(firstGrant.charged.recordsRead, 1);
+  assert.equal(firstGrant.charged.bytesRead, first.stats?.bytesRead);
+  const nextGrant = new RecoveryGrant(TEST_BUDGET);
+  const next = await reader.read(stepBudget, { grant: nextGrant });
+  assert.equal(next.stats?.recordsRead, 1);
+  assert.ok(next.checkpoint.offset > first.checkpoint.offset);
+  assert.equal(nextGrant.charged.recordsRead, 1);
+});
+
+test('Codex shared grant preserves the first record when the next step is refused', async (t) => {
+  const f = await fixture(t);
+  const reader = f.adapter.open(f.ref);
+  const real = new RecoveryGrant(TEST_BUDGET);
+  let records = 0;
+  const grant = {
+    now: () => real.now(),
+    remaining: () => real.remaining(),
+    drain: () => real.drain(),
+    charge: (stats: { bytesRead: number; recordsRead: number; elapsedMs: number }) => {
+      if (stats.recordsRead && ++records === 2)
+        throw new RecoveryReadError('recovery_budget_exhausted', { bytesRead: 0, recordsRead: 0, elapsedMs: 0 });
+      real.charge(stats);
+    },
+  };
+  const first = await reader.read(TEST_BUDGET, { grant });
+  assert.equal(first.stats?.recordsRead, 1);
+  const expectedOffset = Buffer.byteLength(initial[0] + '\n');
+  assert.equal(first.checkpoint.offset, expectedOffset);
+  const next = await reader.read({ ...TEST_BUDGET, maxRecords: 1 }, { grant: new RecoveryGrant(TEST_BUDGET) });
+  assert.ok(next.checkpoint.offset > expectedOffset);
 });
 
 test('budgeted parser checkpoints restore exact merge/tool/rate state after JSON round trip', async (t) => {

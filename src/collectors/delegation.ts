@@ -932,6 +932,8 @@ class SessionCollection implements LinkCollectionPort {
         return reading.envelope;
       }
     }
+    let sharedGrant: RecoveryGrant | undefined;
+    let deactivateGrant: (() => void) | undefined;
     try {
       const collectionDeadline = sessionDeadline;
       let recoveredTicket: RecoveryContinuation | undefined;
@@ -944,6 +946,17 @@ class SessionCollection implements LinkCollectionPort {
         if (budget.budgetMs === 0) return reading.envelope ?? null;
       }
       if (performance.now() >= Math.min(collectionDeadline, this.deadline)) return reading.envelope ?? null;
+      if (source.adapter instanceof CodexAdapter && source.store) {
+        if (identity(source.store.databasePath) !== source.storeIdentity) {
+          reading.reader = undefined;
+          reading.checkpoint = undefined;
+          reading.recoveryPending = true;
+          reading.dirty = true;
+          return reading.envelope ?? null;
+        }
+        sharedGrant = new RecoveryGrant(budget, { deadline: Math.min(collectionDeadline, this.deadline) });
+        deactivateGrant = source.store.activateRecoveryGrant(sharedGrant);
+      }
       const publisher = this.publisher(source, reading);
       if (this.publishing) {
         if (!publisher) {
@@ -965,15 +978,18 @@ class SessionCollection implements LinkCollectionPort {
         if (reading.recoveryPending) {
           const prior = source.store!.readProjection(ref);
           if (prior) {
-            const grant = new RecoveryGrant(budget, { deadline: Math.min(collectionDeadline, this.deadline) });
+            const grant =
+              sharedGrant ?? new RecoveryGrant(budget, { deadline: Math.min(collectionDeadline, this.deadline) });
             let recovery: ReturnType<ObservationStore['readRecoveryMetered']>;
             try {
               recovery = source.store!.readRecoveryMetered(prior, grant);
             } finally {
               // Store reads charge the grant even on failure. Account them once as unattributed I/O.
-              const charged = grant.drain();
-              this.charges.bytesRead += charged.bytesRead;
-              this.charges.recordsRead += charged.recordsRead;
+              if (!sharedGrant) {
+                const charged = grant.drain();
+                this.charges.bytesRead += charged.bytesRead;
+                this.charges.recordsRead += charged.recordsRead;
+              }
               budget = grant.remaining();
             }
             if (recovery.kind !== 'recovered') {
@@ -1058,10 +1074,12 @@ class SessionCollection implements LinkCollectionPort {
       const readSignature = reading.file ? fileStamp(reading.file) : null;
       const previousGeneration = reading.checkpoint?.sourceGeneration;
       reading.lastSessionWasRate = false;
-      const result = await reading.reader.read(budget);
+      const result = await reading.reader.read(budget, sharedGrant ? { grant: sharedGrant } : undefined);
       if (continuation && !continuationStillValid()) {
-        this.charges.bytesRead += result.stats?.bytesRead ?? budget.maxBytes;
-        this.charges.recordsRead += result.stats?.recordsRead ?? budget.maxRecords;
+        if (!sharedGrant) {
+          this.charges.bytesRead += result.stats?.bytesRead ?? budget.maxBytes;
+          this.charges.recordsRead += result.stats?.recordsRead ?? budget.maxRecords;
+        }
         abandonContinuation();
         return reading.envelope ?? null;
       }
@@ -1091,8 +1109,8 @@ class SessionCollection implements LinkCollectionPort {
         sourceGeneration: result.checkpoint.sourceGeneration,
         linkEvidenceCurrent: !result.checkpoint.resetReason,
         loaded: result.observation.coverage.state !== 'catching_up' && !result.continuation,
-        bytesRead: result.stats.bytesRead,
-        recordsRead: result.stats.recordsRead,
+        bytesRead: sharedGrant ? 0 : result.stats.bytesRead,
+        recordsRead: sharedGrant ? 0 : result.stats.recordsRead,
         ...(topology
           ? {
               topology: {
@@ -1121,21 +1139,39 @@ class SessionCollection implements LinkCollectionPort {
       if (result.continuation?.kind === 'record_needs_larger_slice')
         this.minimumBytes.set(key, result.continuation.minimumBytes);
       else this.minimumBytes.delete(key);
-      const charged = { bytesRead: result.stats.bytesRead, recordsRead: result.stats.recordsRead };
+      const charged = sharedGrant
+        ? { bytesRead: 0, recordsRead: 0 }
+        : { bytesRead: result.stats.bytesRead, recordsRead: result.stats.recordsRead };
       this.committed(source, reading);
       if (this.publishing && !reading.envelope.evidence.observation.statusProjection.observationStamp)
         reading.envelope = { ...reading.envelope, loaded: false };
       reading.envelope = { ...reading.envelope, ...charged };
       return reading.envelope;
-    } catch {
+    } catch (error) {
       // No completed statistics are available on a thrown read: reserve its full grant conservatively.
-      this.charges = {
-        bytesRead: this.charges.bytesRead + budget.maxBytes,
-        recordsRead: this.charges.recordsRead + budget.maxRecords,
-      };
+      if (!sharedGrant)
+        this.charges = {
+          bytesRead: this.charges.bytesRead + budget.maxBytes,
+          recordsRead: this.charges.recordsRead + budget.maxRecords,
+        };
       reading.dirty = true;
+      if (
+        error instanceof Error &&
+        (error.message === 'recovery_snapshot_stale' || (error as { code?: string }).code === 'recovery_snapshot_stale')
+      ) {
+        reading.reader = undefined;
+        reading.checkpoint = undefined;
+        reading.recoveryPending = true;
+      }
       if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
       return reading.envelope ?? null;
+    } finally {
+      deactivateGrant?.();
+      if (sharedGrant) {
+        const charged = sharedGrant.drain();
+        this.charges.bytesRead += charged.bytesRead;
+        this.charges.recordsRead += charged.recordsRead;
+      }
     }
   }
   private pendingTopology = new Map<string, Awaited<ReturnType<NonNullable<CodexAdapter['collectTopology']>>>>();

@@ -4,6 +4,7 @@ import {
   RecoveryMap,
   RecoverySet,
   RecoveryCalls,
+  type RecoveryClearCoordinator,
   recoveryArray,
   recoveryCounts,
 } from '../harness/codex/recovery-index.js';
@@ -22,6 +23,7 @@ import {
 export { validateRolloutRecovery, validateCodexRecoveryIndexEntry } from '../harness/codex/recovery.js';
 import { initialParserState } from '../core/observation.js';
 import type { ReaderBudget } from '../core/interfaces/harness-adapter.js';
+import type { RecoveryReadGrant } from '../core/types/checkpoint.js';
 import type { ReaderParserState } from '../core/types/observation.js';
 import { taskText, looksAutomatic } from '../utils/task-text.js';
 import { extractAgentReport } from './agent-report.js';
@@ -417,6 +419,11 @@ export interface RolloutReadOptions {
   /** Internal live storage; never part of an exported checkpoint. */
   transient?: RolloutTransient;
   previousStat?: { size: number; mtimeMs: number; ctimeMs: number };
+  /** Optional shared allowance for native file bytes and complete records. */
+  grant?: RecoveryReadGrant;
+  /** Maximum native records in this transactional step, independent of index I/O. */
+  maxNativeRecords?: number;
+  clearCoordinator?: RecoveryClearCoordinator;
 }
 
 export interface RolloutReadStats {
@@ -443,6 +450,7 @@ const rolloutTails = new WeakMap<
     committedOffset: number;
     position: number;
     pending: Buffer;
+    buffered?: Buffer;
   }
 >();
 
@@ -1015,7 +1023,8 @@ export async function parseRolloutFile(
     let committedOffset = startOffset;
     let readStats: RolloutReadStats | undefined;
     if (options) {
-      const { maxBytes, maxRecords, budgetMs } = options.budget;
+      const { maxBytes, budgetMs } = options.budget;
+      const maxRecords = Math.min(options.budget.maxRecords, options.maxNativeRecords ?? options.budget.maxRecords);
       if ([maxBytes, maxRecords, budgetMs].some((value) => !Number.isSafeInteger(value) || value < 0)) {
         throw new Error('invalid_reader_budget');
       }
@@ -1037,6 +1046,7 @@ export async function parseRolloutFile(
         oldTail.position <= fileSize &&
         !state.discardingOversize;
       let pending = matches ? oldTail.pending : Buffer.alloc(0);
+      let buffered = options.grant && matches ? (oldTail.buffered ?? Buffer.alloc(0)) : Buffer.alloc(0);
       let position = state.discardingOversize
         ? (state.discardOffset ?? startOffset)
         : matches
@@ -1048,9 +1058,15 @@ export async function parseRolloutFile(
       let recordsRead = 0,
         fetchedBytes = 0,
         consumptionSteps = 0;
+      const grant = options.grant;
+      const hasGrantRecords = () => !grant || grant.remaining().maxRecords > 0;
+      const grantBytes = () => (grant ? grant.remaining().maxBytes : maxBytes - fetchedBytes);
+      const charge = (bytesRead: number, recordsRead: number) =>
+        grant?.charge({ bytesRead, recordsRead, elapsedMs: 0 });
       let timeExhausted = false;
-      const hasTime = () => performance.now() - readStarted < budgetMs;
-      const canConsume = () => budgetMs > 0 && (consumptionSteps === 0 || hasTime());
+      const hasTime = () => performance.now() - readStarted < budgetMs && (!grant || grant.remaining().budgetMs > 0);
+      const canConsume = () =>
+        budgetMs > 0 && (!grant || grant.remaining().budgetMs > 0) && (consumptionSteps === 0 || hasTime());
       const skip = (reason: string) => {
         state.skipped[reason] = (state.skipped[reason] ?? 0) + 1;
         if (!state.gaps.includes(reason)) state.gaps.push(reason);
@@ -1089,19 +1105,34 @@ export async function parseRolloutFile(
           skip('malformed_record');
         }
       };
-      while (position < fileSize && fetchedBytes < maxBytes && recordsRead < maxRecords && canConsume()) {
+      while (
+        position < fileSize &&
+        (buffered.length > 0 || fetchedBytes < maxBytes) &&
+        recordsRead < maxRecords &&
+        hasGrantRecords() &&
+        (buffered.length > 0 || grantBytes() > 0) &&
+        canConsume()
+      ) {
         // Charge all fetched bytes, including unprocessed prefetch. Time is a soft limit:
         // one bounded step must consume fetched data even if open/stat/read exhausted it.
-        const { bytesRead } = await handle.read(
-          buffer,
-          0,
-          Math.min(buffer.length, fileSize - position, maxBytes - fetchedBytes),
-          position
-        );
+        let bytesRead: number;
+        if (buffered.length) {
+          bytesRead = Math.min(buffer.length, buffered.length);
+          buffered.copy(buffer, 0, 0, bytesRead);
+          buffered = buffered.subarray(bytesRead);
+        } else {
+          ({ bytesRead } = await handle.read(
+            buffer,
+            0,
+            Math.min(buffer.length, fileSize - position, maxBytes - fetchedBytes, grantBytes()),
+            position
+          ));
+          fetchedBytes += bytesRead;
+          charge(bytesRead, 0);
+        }
         if (!bytesRead) break;
-        fetchedBytes += bytesRead;
         let start = 0;
-        while (start < bytesRead && recordsRead < maxRecords && canConsume()) {
+        while (start < bytesRead && recordsRead < maxRecords && hasGrantRecords() && canConsume()) {
           const newline = buffer.subarray(0, bytesRead).indexOf(10, start);
           const end = newline < 0 ? bytesRead : newline;
           const piece = buffer.subarray(start, end);
@@ -1118,6 +1149,7 @@ export async function parseRolloutFile(
           consumptionSteps++;
           if (state.discardingOversize) state.discardOffset = position;
           if (newline >= 0) {
+            charge(0, 1);
             if (!state.discardingOversize) line(pending);
             state.discardingOversize = false;
             state.discardOffset = null;
@@ -1126,6 +1158,7 @@ export async function parseRolloutFile(
             recordsRead++;
           }
         }
+        if (grant && start < bytesRead) buffered = Buffer.concat([buffer.subarray(start, bytesRead), buffered]);
       }
       timeExhausted = budgetMs > 0 && !hasTime();
       // A complete newline-free final record is one nonpreemptible record step.
@@ -1135,6 +1168,7 @@ export async function parseRolloutFile(
         budgetMs > 0 &&
         pending.length &&
         recordsRead < maxRecords &&
+        hasGrantRecords() &&
         (recordsRead === 0 || !timeExhausted)
       ) {
         let complete = false;
@@ -1145,6 +1179,7 @@ export async function parseRolloutFile(
           /* An incomplete tail is reread from the committed boundary after restart. */
         }
         if (complete) {
+          charge(0, 1);
           line(pending);
           pending = Buffer.alloc(0);
           committedOffset = position;
@@ -1160,6 +1195,7 @@ export async function parseRolloutFile(
         committedOffset,
         position,
         pending,
+        buffered,
       });
       const needsLarger =
         pending.length > 0 &&
@@ -1342,9 +1378,10 @@ export class RolloutParser {
   /**
    * Parse the rollout file, reading only new content since last parse
    */
-  async parse(options?: RolloutReadOptions): Promise<RolloutParseResult | null> {
-    const generation = this.generation;
-    const prior = {
+  savepoint() {
+    return {
+      generation: this.generation,
+      rolloutPath: this.rolloutPath,
       cachedResult: this.cachedResult,
       runningCalls: this.runningCalls,
       rateTracker: this.rateTracker,
@@ -1357,15 +1394,25 @@ export class RolloutParser {
       recoverySubagents: this.recoverySubagents,
       recoveryMaterialMissing: this.recoveryMaterialMissing,
     };
+  }
+
+  restore(savepoint: ReturnType<RolloutParser['savepoint']>): void {
+    Object.assign(this, savepoint);
+    // A tail obtained in an unsuccessful step must not outlive that step.
+    this.#transient = new RolloutTransient();
+  }
+
+  async parse(options?: RolloutReadOptions): Promise<RolloutParseResult | null> {
+    const generation = this.generation;
+    const prior = this.savepoint();
     try {
       return await timeAsync('rollout.parse', () => this.parseNow(options));
     } catch (error) {
       if (generation === this.generation) {
-        Object.assign(this, prior);
+        this.restore(prior);
         // Legacy reads have no durable file-stat witness, so a failed read must recheck the whole file.
         if (!this.recoveryIndex) this.needsReplay = true;
         // A completed read may have refreshed the live-only tail before metadata assembly failed.
-        this.#transient = new RolloutTransient();
       }
       throw error;
     }
@@ -1384,6 +1431,8 @@ export class RolloutParser {
     }
     // A failed or superseded read may not mutate the published snapshot.
     const tracker = cloneRateTracker(this.rateTracker, options?.recoveryIndex);
+    const stagedTools = (tracker as unknown as NativeRateState).tools;
+    if (stagedTools instanceof RecoverySet) stagedTools.coordinate(options?.clearCoordinator);
     const calls =
       this.runningCalls instanceof RecoveryMap
         ? this.runningCalls.fork(options?.recoveryIndex)

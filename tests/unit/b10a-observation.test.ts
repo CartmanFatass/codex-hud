@@ -1,10 +1,19 @@
 import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, writeFileSync, mkdtempSync, copyFileSync, renameSync, existsSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  writeFileSync,
+  appendFileSync,
+  mkdtempSync,
+  copyFileSync,
+  renameSync,
+  existsSync,
+  rmSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { notifyFixture, reportFor } from './b21-fixture.js';
-import { openObservationStore } from '../../src/core/observation-store.js';
+import { openObservationStore, RecoveryGrant } from '../../src/core/observation-store.js';
 import { StatusWriter } from '../../src/core/status/writer.js';
 import { initialParserState, displayNodeKey } from '../../src/core/observation.js';
 import { mergeStatus, STATUS_RULE_VERSION } from '../../src/core/status/merge.js';
@@ -15,7 +24,104 @@ import type { ObservationRecoveryTarget, RecoveryReadGrant } from '../../src/cor
 import { performance } from 'node:perf_hooks';
 import { sameSessionRef } from '../../src/core/identity.js';
 import type { LinkTreeProjection } from '../../src/core/link/types.js';
+import { RecoveryClearPending } from '../../src/harness/codex/recovery-index.js';
 const opts = { skip: !ledgerRuntimeSupported() };
+
+test('real Codex recovery resumes paged turn clear and commits the completed record', opts, async (t) => {
+  const f = await notifyFixture();
+  t.after(() => f.close());
+  await reportFor(f, 'completed');
+  const dir = join(f.root, 'sessions', '2026', '11', '02');
+  mkdirSync(dir, { recursive: true });
+  const now = Date.now();
+  const line = (type: string, payload: object, offset: number) =>
+    JSON.stringify({ type, timestamp: new Date(now + offset).toISOString(), payload });
+  const meta = (id: string) =>
+    line(
+      'session_meta',
+      { id, cwd: '/synthetic', timestamp: new Date(now).toISOString(), cli_version: '0.synthetic' },
+      0
+    );
+  const childPath = join(dir, `rollout-${f.child.ref.sessionId}.jsonl`);
+  const initial =
+    [
+      meta(f.child.ref.sessionId),
+      ...Array.from({ length: 5 }, (_, n) =>
+        line(
+          'response_item',
+          { type: 'function_call', call_id: `call-${n}`, name: 'exec_command', arguments: '{}' },
+          n + 1
+        )
+      ),
+    ].join('\n') + '\n';
+  writeFileSync(childPath, initial);
+  writeFileSync(join(dir, `rollout-${f.parent.ref.sessionId}.jsonl`), meta(f.parent.ref.sessionId) + '\n');
+  const first = await HudDelegationCollector.open({ HUD_HOME: f.root }, f.root, { publish: true });
+  assert.ok(first);
+  const key = displayNodeKey({ kind: 'session', ref: f.child.ref });
+  const wide = { maxBytes: 4 * 1024 * 1024, maxRecords: 2000, budgetMs: 2000 };
+  const firstPort = (first as any).port;
+  const firstStore = firstPort.sources.get(f.child.ref.sourceId).store;
+  let initialCommitted = false;
+  for (let n = 0; n < 80 && !initialCommitted; n++) {
+    await first.tick(f.parent.ref.sessionId);
+    await first.afterPaint(() => {});
+    const projection = firstStore.readProjection(f.child.ref);
+    if (!projection) continue;
+    const recovered = firstStore.readRecoveryMetered(projection, new RecoveryGrant(wide));
+    initialCommitted =
+      recovered.kind === 'recovered' && recovered.recovery.checkpoint.offset === Buffer.byteLength(initial);
+  }
+  assert.ok(initialCommitted, 'initial real native checkpoint is durable');
+  first.close();
+  const turn = line('event_msg', { type: 'task_started' }, 100) + '\n';
+  appendFileSync(childPath, turn);
+  const restarted = await HudDelegationCollector.open({ HUD_HOME: f.root }, f.root, { publish: true });
+  assert.ok(restarted);
+  t.after(() => restarted.close());
+  const port = (restarted as any).port;
+  const source = port.sources.get(f.child.ref.sourceId);
+  let sawPending = false;
+  const openNative = source.adapter.open.bind(source.adapter);
+  source.adapter.open = (...args: any[]) => {
+    const reader = openNative(...args);
+    const read = reader.read.bind(reader);
+    reader.read = async (...readArgs: any[]) => {
+      try {
+        return await read(...readArgs);
+      } catch (error) {
+        if (error instanceof RecoveryClearPending) sawPending = true;
+        throw error;
+      }
+    };
+    return reader;
+  };
+  for (let n = 0; n < 30 && !source.adapter.collectionState(f.child.ref, false).file; n++) {
+    port.begin(performance.now() + 2000);
+    await port.collect(f.child.ref, 'native_topology', wide);
+  }
+  assert.ok(source.adapter.collectionState(f.child.ref, false).file);
+  let captured = false;
+  for (let n = 0; n < 20 && !captured; n++) {
+    port.begin(performance.now() + 2000, 'clear-e2e');
+    await port.collect(f.child.ref, 'session', { ...wide, maxRecords: 3 });
+    const reading = port.readings.get(key);
+    if (sawPending && !captured && reading.checkpoint?.offset === Buffer.byteLength(initial))
+      assert.equal(reading.publisher?.hasReading(), false, 'pending deletions are not captured');
+    captured = reading?.checkpoint?.offset === Buffer.byteLength(initial + turn) && !!reading.publisher?.hasReading();
+  }
+  assert.ok(sawPending, 'the clear was left pending without publishing its record');
+  assert.ok(captured, 'the same record completes after subsequent grants');
+  for (let n = 0; n < 20; n++) {
+    await restarted.tick(f.parent.ref.sessionId);
+    await restarted.afterPaint(() => {});
+    const projection = source.store.readProjection(f.child.ref);
+    if (!projection) continue;
+    const result = source.store.readRecoveryMetered(projection, new RecoveryGrant(wide));
+    if (result.kind === 'recovered' && result.recovery.checkpoint.offset === Buffer.byteLength(initial + turn)) return;
+  }
+  assert.fail('completed record was not committed');
+});
 
 async function setup(t: import('node:test').TestContext, runId = 'run-a') {
   const f = await notifyFixture();

@@ -1,4 +1,91 @@
-import type { RecoveryIndexOverlay } from '../../core/checkpoint.js';
+import type { RecoveryIndexOverlay, RecoveryOverlayCursor } from '../../core/checkpoint.js';
+import type { RecoveryReadGrant } from '../../core/types/checkpoint.js';
+
+/** Pending deletions are private to one incomplete native record. */
+export class RecoveryClearPhase {
+  private readonly keys = new Set<string>();
+  private readonly shadow: Map<string, boolean>;
+  private complete = false;
+  constructor(
+    private readonly cursor: RecoveryOverlayCursor,
+    shadow: Map<string, boolean>
+  ) {
+    this.shadow = shadow;
+  }
+  advance(grant: RecoveryReadGrant): 'complete' | 'continued' | 'stale' {
+    if (this.complete) {
+      const verified = this.cursor.next(grant);
+      if (verified.kind === 'stale') return 'stale';
+      if (verified.kind === 'continued') return 'continued';
+      if (verified.kind !== 'done') throw new Error('recovery_clear_cursor_invalid');
+      return 'complete';
+    }
+    for (;;) {
+      const item = this.cursor.next(grant);
+      if (item.kind === 'stale') return 'stale';
+      if (item.kind === 'continued') return 'continued';
+      if (item.kind === 'done') break;
+      const present = this.shadow.get(item.key);
+      this.shadow.delete(item.key);
+      if (present !== false) this.keys.add(item.key);
+    }
+    for (const [key, present] of this.shadow) if (present) this.keys.add(key);
+    this.shadow.clear();
+    this.complete = true;
+    return 'complete';
+  }
+  apply<T>(map: RecoveryMap<T>): void {
+    if (!this.complete) throw new Error('recovery_clear_incomplete');
+    map.applyKnownClear(this.keys);
+  }
+}
+
+export class RecoveryClearPending extends Error {
+  constructor() {
+    super('recovery_clear_pending');
+  }
+}
+
+/** Owned by one reader; a phase is never part of a published checkpoint. */
+export class RecoveryClearCoordinator {
+  private phase?: RecoveryClearPhase;
+  private key?: string;
+  private grant?: RecoveryReadGrant;
+  private ordinal = 0;
+  private phaseOrdinal?: number;
+  get pending(): boolean {
+    return this.phase !== undefined;
+  }
+  begin(key: string, grant: RecoveryReadGrant): void {
+    if (this.key !== key) {
+      this.phase = undefined;
+      this.phaseOrdinal = undefined;
+    }
+    this.key = key;
+    this.grant = grant;
+    this.ordinal = 0;
+  }
+  clear(map: RecoveryMap<true>): void {
+    if (!this.grant) throw new Error('recovery_clear_grant_missing');
+    const ordinal = ++this.ordinal;
+    if (this.phase && this.phaseOrdinal !== ordinal) throw new Error('recovery_clear_ordinal_mismatch');
+    this.phase ??= map.beginClear();
+    this.phaseOrdinal = ordinal;
+    const result = this.phase.advance(this.grant);
+    if (result === 'stale') {
+      this.discard();
+      throw new Error('recovery_snapshot_stale');
+    }
+    if (result === 'continued') throw new RecoveryClearPending();
+    this.phase.apply(map);
+  }
+  discard(): void {
+    this.phase = undefined;
+    this.phaseOrdinal = undefined;
+    this.key = undefined;
+    this.grant = undefined;
+  }
+}
 
 const indexFailures = new WeakSet<object>();
 function indexAccess<T>(read: () => T): T {
@@ -61,6 +148,18 @@ export class RecoveryMap<T> extends Map<string, T> {
   override clear(): void {
     for (const key of this.keys()) this.delete(key);
   }
+  beginClear(): RecoveryClearPhase {
+    const layers: RecoveryMap<T>[] = [];
+    for (let map: RecoveryMap<T> | undefined = this; map; map = map.base) layers.push(map);
+    const shadow = new Map<string, boolean>();
+    for (const layer of layers.reverse())
+      for (const [key, value] of layer.changes) shadow.set(key, value !== undefined);
+    return new RecoveryClearPhase(this.index.scan(this.namespace), shadow);
+  }
+  applyKnownClear(keys: ReadonlySet<string>): void {
+    for (const key of keys) this.changes.set(key, undefined);
+    this.count = 0;
+  }
   override *entries(): MapIterator<[string, T]> {
     const seen = new Set<string>();
     for (const [key, value] of this.changes) {
@@ -107,7 +206,7 @@ export class RecoveryMap<T> extends Map<string, T> {
   /** Stage only touched keys; the previous live map remains immutable on a failed slice. */
   commit(): RecoveryMap<T> {
     for (const [key, value] of this.changes) {
-      if (value === undefined) this.index.delete(this.namespace, key);
+      if (value === undefined) this.index.deleteKnown(this.namespace, key);
       else this.index.set(this.namespace, key, this.encode(value));
     }
     return new RecoveryMap(this.index, this.namespace, this.count, this.encode, this.decode, undefined, this.copy);
@@ -115,7 +214,10 @@ export class RecoveryMap<T> extends Map<string, T> {
 }
 
 export class RecoverySet extends Set<string> {
-  constructor(readonly map: RecoveryMap<true>) {
+  constructor(
+    readonly map: RecoveryMap<true>,
+    private coordinator?: RecoveryClearCoordinator
+  ) {
     super();
   }
   override get size(): number {
@@ -132,7 +234,12 @@ export class RecoverySet extends Set<string> {
     return this.map.delete(key);
   }
   override clear(): void {
-    this.map.clear();
+    if (this.map.size === 0) return;
+    if (this.coordinator) this.coordinator.clear(this.map);
+    else this.map.clear();
+  }
+  beginClear(): RecoveryClearPhase {
+    return this.map.beginClear();
   }
   override values(): SetIterator<string> {
     return this.map.keys();
@@ -150,10 +257,13 @@ export class RecoverySet extends Set<string> {
     for (const key of this) fn.call(thisArg, key, key, this);
   }
   fork(index?: RecoveryIndexOverlay): RecoverySet {
-    return new RecoverySet(this.map.fork(index));
+    return new RecoverySet(this.map.fork(index), this.coordinator);
   }
   commit(): RecoverySet {
-    return new RecoverySet(this.map.commit());
+    return new RecoverySet(this.map.commit(), this.coordinator);
+  }
+  coordinate(coordinator?: RecoveryClearCoordinator): void {
+    this.coordinator = coordinator;
   }
 }
 

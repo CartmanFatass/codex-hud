@@ -1,4 +1,4 @@
-import type { RecoveryIndexHandoff } from '../types/checkpoint.js';
+import type { RecoveryIndexHandoff, RecoveryReadGrant } from '../types/checkpoint.js';
 import type { SessionEvidence } from './session-evidence.js';
 import type { LaunchProfile } from '../types/capabilities.js';
 import type { Harness, SessionRef, SourceId } from '../types/identity.js';
@@ -25,6 +25,11 @@ export interface ReaderBudget {
   budgetMs: number;
 }
 
+/** Optional operation-local accounting; it is never persisted in a checkpoint. */
+export interface ReaderContext {
+  grant: RecoveryReadGrant;
+}
+
 /** Minimal A5 transport; native concept §6.4 payloads are additive A6 work. */
 export interface ReaderResult {
   /** Same reader-produced index handoff as checkpoint.recoveryIndex, when present. */
@@ -48,7 +53,7 @@ export interface ReaderResult {
 
 export interface SessionReader {
   /** Concept §6.3; contract 06: defaults are 4 MiB/2000 records/soft 20 ms; cursor and state travel together. */
-  read(budget?: ReaderBudget): Promise<ReaderResult>;
+  read(budget?: ReaderBudget, context?: ReaderContext): Promise<ReaderResult>;
 }
 
 export interface NativeTopologyResult {

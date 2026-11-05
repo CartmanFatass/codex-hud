@@ -172,6 +172,10 @@ export interface RecoveryIndexLookup {
   readonly reference: RecoveryIndexReference;
   get(namespace: string, key: string): string | undefined;
   page(namespace: string, after: string | null, limit: number): readonly RecoveryIndexEntry[];
+  /** Maximum useful page request under the currently active grant, if supported. */
+  pageLimit?(maximum: number): number;
+  /** Verify the pinned head before consuming a retained page on a later grant. */
+  checkMetered?(grant: RecoveryReadGrant): MeteredLookupResult<true>;
   /**
    * B12M: metered exact-key read, admitted against and charged to `grant`, pinned to the commit this lookup was
    * created for. Store-created lookups always provide it; other implementations may omit it.

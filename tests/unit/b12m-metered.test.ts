@@ -2,9 +2,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RecoveryGrant, RecoveryReadError } from '../../src/core/observation-store.js';
-import { RecoveryIndexOverlay, attachRecoveryIndex } from '../../src/core/checkpoint.js';
+import { RecoveryIndexOverlay, RecoveryPageCursor, attachRecoveryIndex } from '../../src/core/checkpoint.js';
 import type { ObservationRecovery, RecoveryIndexLookup } from '../../src/core/types/checkpoint.js';
 import { BUDGET, REF, commit, setup, skip } from './b12m-helpers.js';
+import {
+  RecoveryMap,
+  RecoverySet,
+  RecoveryClearCoordinator,
+  RecoveryClearPending,
+} from '../../src/harness/codex/recovery-index.js';
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
 /** Real-clock grants whose deadline is not under test: wide enough to span fsync'd publishes on a loaded host. */
@@ -182,6 +188,8 @@ test('B12M lookup after a replacing commit: typed stale result, no data from the
   const fromRecovery = (recovered as { recovery: ObservationRecovery }).recovery.checkpoint.recoveryIndex!.lookup!;
   const fromAck = f.acks[0];
   const grant = new RecoveryGrant(WIDE);
+  const cursor = new RecoveryPageCursor(fromAck, 'synthetic.ids');
+  assert.equal(cursor.next(grant).kind, 'value');
   for (const lookup of [fromRecovery, fromAck]) {
     const value = lookup.getMetered!(grant, 'synthetic.ids', '00001');
     assert.equal(value.kind === 'value' && value.value, JSON.stringify({ n: 1, pad: 'x' }));
@@ -192,6 +200,8 @@ test('B12M lookup after a replacing commit: typed stale result, no data from the
   const second = commit(2);
   attachRecoveryIndex(second.checkpoint, f.overlay, (lookup) => f.acks.push(lookup));
   f.publish(second);
+  assert.equal(cursor.next(grant).kind, 'stale', 'buffered rows cannot cross a replaced head even within one grant');
+  assert.equal(cursor.next(new RecoveryGrant(WIDE)).kind, 'stale');
   const before = grant.charged;
   for (const lookup of [fromRecovery, fromAck]) {
     const got = lookup.getMetered!(grant, 'synthetic.ids', '00001');
@@ -331,6 +341,111 @@ test('recovery index admits exact reads and whole pages against the shared recor
   } finally {
     end();
   }
+});
+
+test(
+  'overlay pages use remaining record allowance without mistaking a short request for end of history',
+  { skip },
+  async (t) => {
+    const f = await indexed(t);
+    const grant = new RecoveryGrant({ ...WIDE, maxRecords: 300 });
+    const end = f.store.activateRecoveryGrant(grant);
+    try {
+      const entries = [...f.overlay.entries('synthetic.ids')];
+      assert.equal(entries.length, 300);
+      assert.equal(entries[299][0], '00299');
+      assert.equal(grant.charged.recordsRead, 300);
+    } finally {
+      end();
+    }
+    const small = new RecoveryGrant({ ...WIDE, maxRecords: 2 });
+    const endSmall = f.store.activateRecoveryGrant(small);
+    const seen: string[] = [];
+    try {
+      assert.throws(() => {
+        for (const [key] of f.overlay.entries('synthetic.ids')) seen.push(key);
+      }, /recovery_budget_exhausted/);
+      assert.deepEqual(seen, ['00000', '00001']);
+      assert.equal(small.charged.recordsRead, 2);
+    } finally {
+      endSmall();
+    }
+  }
+);
+
+test('metered page cursor resumes five SQLite rows across 2/2/1 grants', { skip }, async (t) => {
+  const f = await setup(t);
+  const overlay = new RecoveryIndexOverlay('synthetic-index-1');
+  for (let n = 0; n < 5; n++) overlay.set('synthetic.five', String(n), String(n));
+  const acks: RecoveryIndexLookup[] = [];
+  const first = commit();
+  attachRecoveryIndex(first.checkpoint, overlay, (lookup) => acks.push(lookup));
+  f.publish(first);
+  const cursor = new RecoveryPageCursor(acks[0], 'synthetic.five');
+  const keys: string[] = [];
+  for (const count of [2, 2, 1]) {
+    const grant = new RecoveryGrant({ ...WIDE, maxRecords: count });
+    for (let n = 0; n < count; n++) {
+      const result = cursor.next(grant);
+      assert.equal(result.kind, 'value');
+      if (result.kind === 'value') keys.push(result.value.key);
+    }
+    assert.equal(grant.charged.recordsRead, count);
+  }
+  assert.deepEqual(keys, ['0', '1', '2', '3', '4']);
+  assert.equal(cursor.next(new RecoveryGrant(WIDE)).kind, 'done');
+});
+
+test('RecoverySet.clear resumes SQLite pages without publishing partial deletes', { skip }, async (t) => {
+  const f = await setup(t);
+  const overlay = new RecoveryIndexOverlay('synthetic-index-1');
+  for (let n = 0; n < 5; n++) overlay.set('synthetic.five', String(n), 'true');
+  const first = commit();
+  attachRecoveryIndex(first.checkpoint, overlay);
+  f.publish(first);
+  const slice = overlay.fork();
+  const map = new RecoveryMap<true>(slice, 'synthetic.five', 5, JSON.stringify, () => true);
+  const set = new RecoverySet(map);
+  const coordinator = new RecoveryClearCoordinator();
+  set.coordinate(coordinator);
+  for (let n = 0; n < 2; n++) {
+    const grant = new RecoveryGrant({ ...WIDE, maxRecords: 2 });
+    coordinator.begin('same-record-and-source', grant);
+    assert.throws(() => set.clear(), RecoveryClearPending);
+    assert.equal(set.size, 5);
+    assert.equal(grant.charged.recordsRead, 2);
+    assert.equal(overlay.get('synthetic.five', '0'), 'true');
+  }
+  const last = new RecoveryGrant({ ...WIDE, maxRecords: 2 });
+  coordinator.begin('same-record-and-source', last);
+  set.clear();
+  assert.equal(set.size, 0);
+  assert.equal(last.charged.recordsRead, 1);
+  map.commit();
+  const completed = slice.commit();
+  const second = commit(2);
+  attachRecoveryIndex(second.checkpoint, completed);
+  f.publish(second);
+  assert.deepEqual([...completed.entries('synthetic.five')], []);
+});
+
+test('pending RecoverySet.clear refuses a replaced SQLite head', { skip }, async (t) => {
+  const f = await indexed(t);
+  const slice = f.overlay.fork();
+  const map = new RecoveryMap<true>(slice, 'synthetic.ids', 300, JSON.stringify, () => true);
+  const set = new RecoverySet(map);
+  const coordinator = new RecoveryClearCoordinator();
+  set.coordinate(coordinator);
+  coordinator.begin('same-record-and-source', new RecoveryGrant({ ...WIDE, maxRecords: 2 }));
+  assert.throws(() => set.clear(), RecoveryClearPending);
+  f.overlay.set('synthetic.ids', '00000', JSON.stringify('changed'));
+  const replacement = commit(2);
+  attachRecoveryIndex(replacement.checkpoint, f.overlay);
+  f.publish(replacement);
+  coordinator.begin('same-record-and-source', new RecoveryGrant({ ...WIDE, maxRecords: 2 }));
+  assert.throws(() => set.clear(), /recovery_snapshot_stale/);
+  assert.equal(set.size, 300);
+  assert.equal(f.overlay.get('synthetic.ids', '00000'), JSON.stringify('changed'));
 });
 
 test(

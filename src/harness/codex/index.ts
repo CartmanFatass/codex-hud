@@ -5,6 +5,7 @@ import type {
   HarnessAdapter,
   BindContext,
   ReaderBudget,
+  ReaderContext,
   ReaderResult,
   SessionReader,
 } from '../../core/interfaces/harness-adapter.js';
@@ -16,7 +17,8 @@ import type { Coverage, Metric, ObservationView, ReaderCheckpoint } from '../../
 import { makeSourceId, sameSessionRef, sessionRefKey, validateSessionRef } from '../../core/identity.js';
 import { initialParserState, makeMetric, projectFreshness } from '../../core/observation.js';
 import { RecoveryIndexOverlay, attachRecoveryIndex } from '../../core/checkpoint.js';
-import { RecoveryMap } from './recovery-index.js';
+import { RecoveryReadError } from '../../core/observation-store.js';
+import { RecoveryMap, RecoveryClearCoordinator, RecoveryClearPending } from './recovery-index.js';
 import { validateRolloutRecovery } from './recovery.js';
 import {
   SessionFinder,
@@ -253,14 +255,18 @@ export class CodexAdapter implements HarnessAdapter {
         : undefined;
     const cap = this.readerBudget;
     let initialized = false;
+    const clearCoordinator = new RecoveryClearCoordinator();
     let queue: Promise<unknown> = Promise.resolve();
-    const read = async (requested: ReaderBudget = cap): Promise<ReaderResult> => {
+    const readStep = async (requested: ReaderBudget = cap, context?: ReaderContext): Promise<ReaderResult> => {
       const started = performance.now();
       const budget = { ...requested };
       if (Object.values(budget).some((n) => !Number.isSafeInteger(n) || n < 0))
         throw new Error('invalid_reader_budget');
       budget.maxBytes = Math.min(budget.maxBytes, cap.maxBytes);
       budget.maxRecords = Math.min(budget.maxRecords, cap.maxRecords);
+      // A shared grant can be refused by an index lookup while processing a record.
+      // Commit at most one record per slice so an unsuccessful record is rolled back
+      // without losing any previously committed record in this reader.
       budget.budgetMs = Math.min(budget.budgetMs, cap.budgetMs);
       if (!initialized) {
         parser.setRolloutPath(this.rollout(ref));
@@ -276,6 +282,9 @@ export class CodexAdapter implements HarnessAdapter {
       let clocks: MetricClocks = structuredClone(current?.codex.clocks ?? {});
       const result = await parser.parse({
         budget,
+        grant: context?.grant,
+        maxNativeRecords: context ? 1 : undefined,
+        clearCoordinator: context ? clearCoordinator : undefined,
         state: current?.parserState ?? initialParserState(),
         recoveryIndex: sliceIndex,
         onParsed: () => {
@@ -416,9 +425,88 @@ export class CodexAdapter implements HarnessAdapter {
         stats: { bytesRead: stats.bytesRead, recordsRead: stats.recordsRead, elapsedMs: stats.elapsedMs },
       };
     };
+    const read = async (requested: ReaderBudget = cap, context?: ReaderContext): Promise<ReaderResult> => {
+      if (!context) return readStep(requested);
+      const started = performance.now();
+      let last: ReaderResult | undefined;
+      let bytesRead = 0;
+      let recordsRead = 0;
+      for (;;) {
+        const savedParser = parser.savepoint();
+        const savedCurrent = current;
+        const savedIndex = index;
+        const savedPendingHud = pendingHud;
+        const savedReset = pendingReset;
+        const savedInitialized = initialized;
+        const before = current?.offset;
+        try {
+          const file = fs.statSync(this.rollout(ref));
+          clearCoordinator.begin(
+            JSON.stringify([
+              current?.sourceGeneration ?? 1,
+              current?.offset ?? 0,
+              file.dev,
+              file.ino,
+              file.size,
+              file.mtimeMs,
+              file.ctimeMs,
+            ]),
+            context.grant
+          );
+          const result = await readStep(
+            {
+              maxBytes: Math.max(0, requested.maxBytes - bytesRead),
+              maxRecords: Math.max(0, requested.maxRecords - recordsRead),
+              budgetMs: Math.max(0, Math.floor(requested.budgetMs - (performance.now() - started))),
+            },
+            context
+          );
+          if (clearCoordinator.pending && (result.stats?.recordsRead ?? 0) === 0)
+            throw new RecoveryClearPending();
+          bytesRead += result.stats?.bytesRead ?? 0;
+          recordsRead += result.stats?.recordsRead ?? 0;
+          if ((result.stats?.recordsRead ?? 0) > 0) clearCoordinator.discard();
+          last = result;
+          const remaining = context.grant.remaining();
+          if (
+            result.checkpoint.offset === before ||
+            (result.stats?.recordsRead ?? 0) === 0 ||
+            !result.observation.coverage.remainingBytes ||
+            bytesRead >= requested.maxBytes ||
+            recordsRead >= requested.maxRecords ||
+            remaining.maxBytes <= 0 ||
+            remaining.maxRecords <= 0 ||
+            remaining.budgetMs <= 0
+          )
+            break;
+        } catch (error) {
+          parser.restore(savedParser);
+          current = savedCurrent;
+          index = savedIndex;
+          pendingHud = savedPendingHud;
+          pendingReset = savedReset;
+          initialized = savedInitialized;
+          if (error instanceof RecoveryClearPending) {
+            if (!last) throw error;
+            // Earlier complete records must publish before a clear is pinned to a new head.
+            clearCoordinator.discard();
+            break;
+          }
+          clearCoordinator.discard();
+          if (
+            !last ||
+            !(error instanceof RecoveryReadError) ||
+            !['recovery_budget_exhausted', 'recovery_deadline_exceeded'].includes(error.code)
+          )
+            throw error;
+          break;
+        }
+      }
+      return { ...last!, stats: { bytesRead, recordsRead, elapsedMs: performance.now() - started } };
+    };
     return {
-      read: (budget) => {
-        const next = queue.then(() => read(budget));
+      read: (budget, context) => {
+        const next = queue.then(() => read(budget, context));
         queue = next.catch(() => {});
         return next;
       },
