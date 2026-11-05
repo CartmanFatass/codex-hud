@@ -3,8 +3,10 @@
 `node bin/hud-statusline` renders the existing bounded stdin implementation as a
 product entrypoint: model, native context percentage and reported session estimated
 USD cost. USD is not an invoice. No settings are changed by normal rendering.
-Delegation line two, summary fallback and toktrack tee remain separate work; this
-is not a claim that all D3/D5/E3 or default migration is finished.
+The [bounded read-only delegation line](delegation-summary.md) is available when
+an explicit registered Claude source and existing ledger are supplied. A full-tree
+summary cache and toktrack tee remain separate work; this is not a claim that all
+D3/D5/E3 or default migration is finished.
 
 ```sh
 npm run build

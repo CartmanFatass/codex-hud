@@ -78,6 +78,7 @@ export async function statuslinePreview(
     ttyColumns?: number;
     stdout: (text: string) => void | Promise<void>;
     stderr: (text: string) => void;
+    render?: (value: unknown, width: number) => string | Promise<string>;
   }
 ): Promise<number> {
   let output: string;
@@ -91,7 +92,8 @@ export async function statuslinePreview(
       return 2;
     }
     try {
-      output = renderStatuslineSession(await readStatuslineInput(input), width) + '\n';
+      const value = await readStatuslineInput(input);
+      output = (await (io.render ?? renderStatuslineSession)(value, width)) + '\n';
     } catch (error) {
       const reason = error instanceof Error ? error.message : '';
       io.stderr(

@@ -1,0 +1,325 @@
+{
+  "schemaVersion": 1,
+  "repositorySha": "22bbb50a5563e3fe134d2af31f34a3190f72aa3e",
+  "dirty": true,
+  "node": "24.22.1",
+  "platform": "linux",
+  "architecture": "x64",
+  "git": "git version 2.47.3",
+  "lockfileSha256": "67b18477852d84c740ebcd1150693293645b5a5f8123f3aa7fd7b27834f2ed56",
+  "evidence": "cloud simulation; not live-provider or release qualification",
+  "startedAt": "2026-11-05T21:07:07.120Z",
+  "status": "PASS",
+  "results": [
+    {
+      "name": "build",
+      "command": [
+        "node",
+        "node_modules/typescript/bin/tsc"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 13588,
+      "capturedBytes": 0,
+      "log": "build.log"
+    },
+    {
+      "name": "build-test",
+      "command": [
+        "node",
+        "node_modules/typescript/bin/tsc",
+        "-p",
+        "tsconfig.test.json"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 20690,
+      "capturedBytes": 0,
+      "log": "build-test.log"
+    },
+    {
+      "name": "build-mcp",
+      "command": [
+        "node",
+        "node_modules/typescript/bin/tsc",
+        "-p",
+        "packages/hud-mcp/tsconfig.json"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 9184,
+      "capturedBytes": 0,
+      "log": "build-mcp.log"
+    },
+    {
+      "name": "focused",
+      "command": [
+        "node",
+        "--test",
+        "--test-concurrency=1",
+        "dist-test/tests/unit/pi-reader.test.js",
+        "dist-test/tests/unit/pi-binding.test.js",
+        "dist-test/tests/unit/pi-cli.test.js",
+        "dist-test/tests/unit/pi-launch.test.js",
+        "dist-test/tests/unit/hud-pi-integration.test.js",
+        "dist-test/tests/unit/statusline-preview.test.js",
+        "dist-test/tests/unit/statusline-settings.test.js",
+        "dist-test/tests/unit/product-cli-routing.test.js",
+        "dist-test/tests/unit/pi-footer.test.js",
+        "dist-test/tests/unit/codex-exec-json.test.js",
+        "dist-test/tests/unit/codex-exec-transport.test.js",
+        "dist-test/tests/unit/codex-app-server.test.js",
+        "dist-test/tests/unit/codex-app-server-transport.test.js",
+        "dist-test/tests/unit/claude-print-transport.test.js",
+        "dist-test/tests/unit/m2-claude-contract-simulation.test.js",
+        "dist-test/tests/unit/pi-rpc-observation.test.js",
+        "dist-test/tests/unit/pi-rpc-transport.test.js",
+        "dist-test/tests/unit/d1-claude-visibility.test.js",
+        "dist-test/tests/unit/d1-claude-render.test.js",
+        "dist-test/tests/unit/claude-configuration.test.js",
+        "dist-test/tests/unit/c45-jev-fake.test.js",
+        "dist-test/tests/unit/workbench-events.test.js",
+        "dist-test/tests/unit/workbench-input.test.js",
+        "dist-test/tests/unit/workbench-layout.test.js",
+        "dist-test/tests/unit/workbench-live.test.js",
+        "dist-test/tests/unit/workbench.test.js"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 36421,
+      "capturedBytes": 18828,
+      "log": "focused.log"
+    },
+    {
+      "name": "workbench-product",
+      "command": [
+        "node",
+        "--test",
+        "--test-concurrency=1",
+        "tests/workbench/unified.test.mjs",
+        "tests/workbench/preparer.test.mjs",
+        "tests/workbench/unified-paint.test.mjs",
+        "tests/workbench/pi-channel-state.test.mjs",
+        "tests/workbench/pi-extension-context.test.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 12669,
+      "capturedBytes": 6566,
+      "log": "workbench-product.log"
+    },
+    {
+      "name": "pi-source-root",
+      "command": [
+        "node",
+        "--test",
+        "packages/hud-mcp/dist/tests/hud-mcp/pi-source-root.test.js"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 210,
+      "capturedBytes": 1098,
+      "log": "pi-source-root.log"
+    },
+    {
+      "name": "demo-cloud-m1",
+      "command": [
+        "node",
+        "scripts/demo-cloud-m1.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 612,
+      "capturedBytes": 2316,
+      "log": "demo-cloud-m1.log"
+    },
+    {
+      "name": "demo-codex-exec",
+      "command": [
+        "node",
+        "scripts/demo-codex-exec.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 74,
+      "capturedBytes": 1395,
+      "log": "demo-codex-exec.log"
+    },
+    {
+      "name": "demo-codex-exec-transport",
+      "command": [
+        "node",
+        "scripts/demo-codex-exec-transport.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 137,
+      "capturedBytes": 186,
+      "log": "demo-codex-exec-transport.log"
+    },
+    {
+      "name": "demo-codex-app-server-transport",
+      "command": [
+        "node",
+        "scripts/demo-codex-app-server-transport.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 120,
+      "capturedBytes": 498,
+      "log": "demo-codex-app-server-transport.log"
+    },
+    {
+      "name": "demo-claude-print-transport",
+      "command": [
+        "node",
+        "scripts/demo-claude-print-transport.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 113,
+      "capturedBytes": 172,
+      "log": "demo-claude-print-transport.log"
+    },
+    {
+      "name": "demo-pi-rpc",
+      "command": [
+        "node",
+        "scripts/demo-pi-rpc.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 45,
+      "capturedBytes": 1256,
+      "log": "demo-pi-rpc.log"
+    },
+    {
+      "name": "demo-pi-rpc-transport",
+      "command": [
+        "node",
+        "scripts/demo-pi-rpc-transport.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 1182,
+      "capturedBytes": 1677,
+      "log": "demo-pi-rpc-transport.log"
+    },
+    {
+      "name": "demo-jev-fake",
+      "command": [
+        "node",
+        "scripts/demo-jev-fake.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 143,
+      "capturedBytes": 554,
+      "log": "demo-jev-fake.log"
+    },
+    {
+      "name": "demo-pi-footer",
+      "command": [
+        "node",
+        "scripts/demo-pi-footer.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "reaped": true,
+      "closeObserved": true,
+      "directChildExited": true,
+      "reason": null,
+      "cleanupUncertain": false,
+      "status": "PASS",
+      "elapsedMs": 573,
+      "capturedBytes": 1130,
+      "log": "demo-pi-footer.log"
+    }
+  ],
+  "notRun": [],
+  "finishedAt": "2026-11-05T21:08:42.886Z"
+}

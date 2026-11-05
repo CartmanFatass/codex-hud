@@ -137,7 +137,7 @@ function metric<T>(m: { quality: string; value: T | null } | null | undefined): 
 }
 
 /** A fresh fixed-shape record, private until the complete extraction below fills every field. */
-function newNodeFacts(): NodeFacts {
+export function newNodeFacts(): NodeFacts {
   return {
     key: '',
     idKind: 'session',

@@ -235,6 +235,25 @@ export async function acceptIntent(
           linkId: replay.record.linkId,
           runId: replay.record.runId,
         };
+      // HUD creates only one level of independent harnesses. The selected root
+      // is a harness root, not necessarily the outermost HUD parent. Check its
+      // durable target identity, not a current binding (which can be revoked or
+      // absent after restart). runs_target is an indexed exact-SessionRef lookup;
+      // binding commits retain this immutable ref along with the link's child.
+      // A matching run is restrictive even if its link is missing/contradictory.
+      // Pre-bind launches are covered by constructor-captured server provenance.
+      if (
+        input.run.operation === 'spawn' &&
+        authority.kind === 'mcp' &&
+        authority.selection.ok &&
+        (input.managedLaunch ||
+          (authority.selection.context.sessionRef !== null &&
+            tx.get(
+              'SELECT 1 FROM runs WHERE target_session_ref=? LIMIT 1',
+              refValue(authority.selection.context.sessionRef)
+            )))
+      )
+        throw new Error('nested_delegation_not_supported');
       const { full, retryAdvisable, ...capacity } = readCapacity(tx, allowed.ownerKey, resolvedLimits);
       if (full)
         throw new CapacityRefusal({

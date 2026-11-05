@@ -1,0 +1,34 @@
+✔ refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool (5.694042ms)
+✔ dual MCP instance shares scope and owner; stale first-bind CAS refuses (28.281822ms)
+✔ /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A (19.155207ms)
+✔ wrong generation is refused before currentAuthority can authorize an intent (5.578157ms)
+✔ delegate_list schema accepts bounded page only, never owner selectors (1.262125ms)
+✔ owner pages preserve historical same-session links, exclude unrelated owner and no private bodies (92.072241ms)
+✔ empty pages still authorize and stale contexts refuse; cursor cannot select a foreign owner (38.359615ms)
+✔ bounded owner pagination does not let foreign rows consume capacity and reads cause no ledger writes (223.719674ms)
+✔ same sessionId in another source cannot enter the owner page (25.62781ms)
+✔ Claude hook matcher captures delegate_list but not other names (0.969541ms)
+✔ real DelegationService routes list through current context without launch or capability verification (25.630111ms)
+✔ list preserves committed status stamp and rejects binding mismatch without reading transcripts (77.866195ms)
+✔ B45 whoami env claim binds exact independently observed launch and report (58.947154ms)
+✔ B45 whoami parameter claim binds exact independently observed launch and report (34.673787ms)
+✔ B45 whoami launch evidence missing stays pending; env conflicts and wrong run refuse (32.619766ms)
+✔ B45 copied fork claim refuses before consumption, expiry boundary and bound retry after TTL (58.619206ms)
+✔ B45 same-process MCP restart rebuilds binding with independent proof and never redeems twice (37.50058ms)
+✔ B45 identity ProcessKey and run stamp keep their distinct domain encodings on the same host (36.073684ms)
+✔ BID1 handshake refuses a missing run domain and never accepts the caller form (24.107417ms)
+✔ G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required (2.746809ms)
+✔ G03 old request key replays its original run after a newer run appeared and ended (135.723894ms)
+✔ G03 same request key with a different expectedRun conflicts without a new intent (91.051901ms)
+✔ G03 two callers that read the same run and race with different keys create at most one intent (69.238638ms)
+✔ G03 an old expectedRun is still refused after another run started and ended (64.459159ms)
+✔ G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest (80.712959ms)
+✔ G03 local management resume still requires expectedRun (48.806876ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2396.385524

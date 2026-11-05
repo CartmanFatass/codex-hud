@@ -1,0 +1,25 @@
+✖ one-level durable run identity remains restrictive without a corresponding child binding or link identity (88.783183ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 357.899677
+
+✖ failing tests:
+
+test at packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js:495:1
+✖ one-level durable run identity remains restrictive without a corresponding child binding or link identity (88.783183ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (file:///workspace/scratch/6daef0397a95/hud-single-level-delegation/packages/hud-mcp/dist/tests/hud-mcp/delegation.test.js:501:9)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /nested_delegation_not_supported/,
+    operator: 'rejects',
+    diff: 'simple'
+  }

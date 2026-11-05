@@ -1,0 +1,10 @@
+✔ B45 accepted spawn is atomic, lost response replays immutable result with zero second launch (83.321421ms)
+✔ one-level durable identity survives binding removal, terminal run and server/store restart without env (77.709684ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 395.595707
