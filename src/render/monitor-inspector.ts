@@ -230,7 +230,12 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
   if (!reports.length)
     lines.push(run && detail && view.vm.tree.ledger.state === 'available' ? 'none yet' : 'unavailable');
   for (const report of reports.slice(-5)) lines.push(`${report.status} · ${report.summary}`);
-  lines.push('Action: unavailable');
+  const action = view.vm.tree.ledger.state === 'available' && observation ? detail?.action : undefined;
+  lines.push(
+    action && action.startedAt <= view.nowMs
+      ? `Action: ${action.name}${action.target ? ` · ${action.target}` : ''} · started ${timestamp(action.startedAt)}`
+      : 'Action: unavailable'
+  );
   const actions = selectedActions(view.plan, view.proj, selected);
   if (actions?.open?.word === 'Open' && !actions.open.enabled) {
     const state = detail?.status?.stateKey;

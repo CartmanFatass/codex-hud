@@ -18,6 +18,7 @@ export interface DelegationViewModel {
   pendingStatus: number;
 }
 export interface DelegationNodeDetails {
+  action?: import('../interfaces/session-evidence.js').NativeAction;
   outputRate?: NonNullable<ReaderResult['outputRate']>;
   status: StatusProjection | null;
   statusSource: 'committed' | 'ledger' | 'unavailable';

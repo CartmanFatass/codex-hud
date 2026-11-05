@@ -15,6 +15,7 @@ import { ClaudeAdapter } from '../harness/claude/index.js';
 import { openLinkLedgerReader } from '../core/link-ledger-read.js';
 import { openObservationStore, RecoveryGrant, type ObservationStore } from '../core/observation-store.js';
 import { checkpointRate } from '../core/link/checkpoint-rate.js';
+import { checkpointAction } from '../core/link/checkpoint-action.js';
 import type { ObservationRecoveryTarget } from '../core/types/checkpoint.js';
 import type { ObservationStamp } from '../core/types/observation.js';
 import { LinkTickCollector, LEDGER_SNAPSHOT_VALIDITY_MS, type LinkCollectionPort } from '../core/link/tick.js';
@@ -118,6 +119,7 @@ interface Reading {
   rateDone?: string;
   rateBlocked?: string;
   rateReceipt?: CollectedLinkSession['committedRate'];
+  actionReceipt?: CollectedLinkSession['committedAction'];
   lastSessionWasRate?: boolean;
 }
 function evidenceFromView(ref: SessionRef, observation: ObservationView): SessionEvidence {
@@ -479,6 +481,7 @@ class SessionCollection implements LinkCollectionPort {
       reading.rateDone = undefined;
       reading.rateBlocked = undefined;
       reading.rateReceipt = undefined;
+      reading.actionReceipt = undefined;
       if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false };
       return false;
     }
@@ -500,11 +503,12 @@ class SessionCollection implements LinkCollectionPort {
         reading.rateDone = undefined;
         reading.rateBlocked = undefined;
         reading.rateReceipt = undefined;
+        reading.actionReceipt = undefined;
         if (reading.envelope?.evidence.observation.statusProjection.observationStamp)
           reading.envelope = { ...reading.envelope, loaded: false };
         return true;
       }
-      if (!this.publishing && source.adapter instanceof CodexAdapter) {
+      if (source.adapter instanceof CodexAdapter) {
         const target: ObservationRecoveryTarget = {
           ref: commit.ref,
           sourceGeneration: commit.sourceGeneration,
@@ -513,7 +517,10 @@ class SessionCollection implements LinkCollectionPort {
           checkpointIdentity: commit.checkpointIdentity,
         };
         const key = canonicalJson(target);
-        if (reading.rateDone !== key) reading.rateReceipt = undefined;
+        if (reading.rateDone !== key) {
+          reading.rateReceipt = undefined;
+          reading.actionReceipt = undefined;
+        }
         reading.rateTarget =
           reading.rateDone === key || reading.rateBlocked === key
             ? undefined
@@ -548,10 +555,17 @@ class SessionCollection implements LinkCollectionPort {
         canonicalJson(reading.rateReceipt.stamp) === canonicalJson(commit.observationStamp)
           ? reading.rateReceipt
           : undefined;
+      const retainedAction =
+        reading.actionReceipt && canonicalJson(reading.actionReceipt.stamp) === canonicalJson(commit.observationStamp)
+          ? reading.actionReceipt
+          : undefined;
       reading.envelope = {
         evidence: { ...(reading.raw ?? evidenceFromView(reading.ref, commit.summary)), observation: commit.summary },
-        ...(this.publishing || retainedRate ? { committedOnly: true, lastCommitted: commit.summary } : {}),
+        ...(this.publishing || retainedRate || retainedAction
+          ? { committedOnly: true, lastCommitted: commit.summary }
+          : {}),
         ...(retainedRate ? { committedRate: retainedRate } : {}),
+        ...(retainedAction ? { committedAction: retainedAction } : {}),
         sourceGeneration: commit.sourceGeneration,
         linkEvidenceCurrent: reading.raw ? (prior?.linkEvidenceCurrent ?? false) : false,
         loaded: true,
@@ -634,7 +648,7 @@ class SessionCollection implements LinkCollectionPort {
       }
     }
     if (reading.publisher?.hasPending()) return null;
-    if (!this.publishing && reading.rateTarget && reading.envelope?.loaded && !reading.resetPending) return 'session';
+    if (reading.rateTarget && reading.envelope?.loaded && !reading.resetPending) return 'session';
     return !reading.envelope || !reading.envelope.loaded || reading.dirty || !reading.caughtUp ? 'session' : null;
   }
   lineageCurrent(ref: SessionRef): boolean {
@@ -693,7 +707,6 @@ class SessionCollection implements LinkCollectionPort {
     if (rateTarget && (!envelopeStamp || canonicalJson(envelopeStamp) !== canonicalJson(rateTarget.stamp)))
       reading.rateTarget = undefined;
     if (
-      !this.publishing &&
       rateTarget &&
       source.store &&
       reading.envelope?.loaded &&
@@ -711,9 +724,13 @@ class SessionCollection implements LinkCollectionPort {
       let charged = { bytesRead: 0, recordsRead: 0 };
       try {
         const recovered = source.store.readRecoveryMetered(rateTarget.target, grant);
-        charged = grant.drain();
         if (recovered.kind === 'recovered') {
+          const actionResult = checkpointAction(recovered.recovery.checkpoint, grant, Date.now());
+          if (actionResult.kind !== 'value') throw new Error(actionResult.kind);
+          charged = grant.drain();
           const rate = checkpointRate(recovered.recovery.checkpoint, Date.now());
+          const action = actionResult.action;
+          reading.actionReceipt = action ? { action, stamp: rateTarget.stamp } : undefined;
           reading.rateDone = rateTarget.key;
           reading.rateTarget = undefined;
           reading.rateReceipt = rate ? { rate, stamp: rateTarget.stamp } : undefined;
@@ -722,23 +739,28 @@ class SessionCollection implements LinkCollectionPort {
             committedOnly: true,
             lastCommitted: reading.envelope.evidence.observation,
             ...(rate ? { committedRate: { rate, stamp: rateTarget.stamp } } : { committedRate: undefined }),
+            committedAction: reading.actionReceipt,
             bytesRead: charged.bytesRead,
             recordsRead: charged.recordsRead,
           };
         } else if (recovered.kind === 'stale') {
+          charged = grant.drain();
           reading.rateTarget = undefined;
           reading.rateDone = undefined;
           reading.rateBlocked = undefined;
           reading.rateReceipt = undefined;
+          reading.actionReceipt = undefined;
           this.pendingCommits.add(key);
           reading.envelope = {
             ...reading.envelope,
             loaded: false,
             committedRate: undefined,
+            committedAction: undefined,
             bytesRead: charged.bytesRead,
             recordsRead: charged.recordsRead,
           };
         } else {
+          charged = grant.drain();
           // Temporary refusal remains eligible; recovery still alternates with ordinary session reads.
           // A checkpoint larger than the normal grant cannot be admitted without changing the budget.
           if (
@@ -749,9 +771,11 @@ class SessionCollection implements LinkCollectionPort {
             reading.rateTarget = undefined;
           }
           reading.rateReceipt = undefined;
+          reading.actionReceipt = undefined;
           reading.envelope = {
             ...reading.envelope,
             committedRate: undefined,
+            committedAction: undefined,
             bytesRead: charged.bytesRead,
             recordsRead: charged.recordsRead,
           };
@@ -764,9 +788,11 @@ class SessionCollection implements LinkCollectionPort {
           recordsRead: charged.recordsRead + extra.recordsRead,
         };
         reading.rateReceipt = undefined;
+        reading.actionReceipt = undefined;
         reading.envelope = {
           ...reading.envelope,
           committedRate: undefined,
+          committedAction: undefined,
           bytesRead: charged.bytesRead,
           recordsRead: charged.recordsRead,
         };
@@ -934,6 +960,7 @@ class SessionCollection implements LinkCollectionPort {
         reading.rateDone = undefined;
         reading.rateBlocked = undefined;
         reading.rateReceipt = undefined;
+        reading.actionReceipt = undefined;
         reading.dirty = true;
       }
     this.invalidateSnapshots();

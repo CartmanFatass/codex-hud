@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { openObservationStore } from '../../src/core/observation-store.js';
 import { SessionPublisher } from '../../src/core/link/publisher.js';
-import { committedReaderRate } from '../../src/core/link/index.js';
+import { committedReaderRate, committedReaderAction } from '../../src/core/link/index.js';
 import { LinkTickCollector } from '../../src/core/link/tick.js';
+import { checkpointAction } from '../../src/core/link/checkpoint-action.js';
 import { checkpointRate } from '../../src/core/link/checkpoint-rate.js';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -180,6 +181,8 @@ test('Inspector reports exact sample age and hides unavailable or future rates',
     const opened = press(frame, 'enter');
     return draw(built.vm, { state: opened.state, width: 110, height: 40 }).lines.map(stripAnsi).join('\n');
   };
+  detail.action = { id: 'tool', name: 'read', target: '/synthetic/file', startedAt: NOW - 5000 };
+  assert.match(inspect(), /Action: read · \/synthetic\/file · started/);
   assert.match(inspect(), /Output rate: ~12\.0 tok\/s · estimated/);
   detail.outputRate = { ...detail.outputRate, sampledAt: NOW - 11000 };
   assert.match(inspect(), /Output rate: last ~12\.0 tok\/s · estimated/);
@@ -188,6 +191,7 @@ test('Inspector reports exact sample age and hides unavailable or future rates',
   detail.outputRate = { ...detail.outputRate, sampledAt: NOW - 5000 };
   built.vm.tree.ledger.state = 'degraded';
   assert.match(inspect(), /Output rate: unavailable/);
+  assert.match(inspect(), /Action: unavailable/);
 });
 
 test('fast committed refresh clears a previous rate when the new commit has none', async () => {
@@ -224,6 +228,8 @@ test('fast committed refresh clears a previous rate when the new commit has none
   };
   node.committedRate = rate;
   built.vm.details[node.key].outputRate = rate;
+  node.committedAction = { id: 'old', name: 'read', startedAt: NOW - 1000 };
+  built.vm.details[node.key].action = node.committedAction;
   const summary = structuredClone(node.observation!);
   summary.statusProjection.observationStamp = { ...stamp, commitSeq: 2 };
   const session = {
@@ -240,6 +246,8 @@ test('fast committed refresh clears a previous rate when the new commit has none
   const refreshed = await collector.refreshCommitted(node.key);
   assert.equal(refreshed!.tree.nodes.find((item) => item.key === node.key)!.committedRate, undefined);
   assert.equal(refreshed!.details[node.key].outputRate, undefined);
+  assert.equal(refreshed!.details[node.key].action, undefined);
+  assert.equal(refreshed!.tree.nodes.find((item) => item.key === node.key)!.committedAction, undefined);
   assert.equal(refreshed!.details[node.key].status!.observationStamp!.commitSeq, 2);
 });
 
@@ -275,6 +283,18 @@ test(
           entry(now - 1000, 'event_msg', {
             type: 'token_count',
             info: { total_token_usage: { input_tokens: 1, output_tokens: 124 } },
+          }),
+          entry(now - 900, 'response_item', {
+            type: 'function_call',
+            call_id: 'first',
+            name: 'exec_command',
+            arguments: '{\"cmd\":\"alpha\"}',
+          }),
+          entry(now - 800, 'response_item', {
+            type: 'function_call',
+            call_id: 'second',
+            name: 'exec_command',
+            arguments: '{\"cmd\":\"beta\"}',
           })
         );
       writeFileSync(join(dir, `rollout-${ref.sessionId}.jsonl`), rows.join('\n') + '\n');
@@ -296,6 +316,13 @@ test(
     }
     assert.equal(view?.details[key]?.outputRate?.tokensPerSecond, 12, `publication errors: ${errors.join(', ')}`);
     assert.equal(view?.details[key]?.statusSource, 'committed');
+    for (let i = 0; i < 50 && !view?.details[key]?.action; i++) {
+      view = await runtime.tick(f.parent.ref.sessionId);
+      await runtime.afterPaint((published) => {
+        if (published) view = published;
+      });
+    }
+    assert.equal(view?.details[key]?.action?.id, 'second', 'publisher recovers its committed action');
     assert.equal(
       view?.tree.nodes.find((node) => node.key === key)?.observation?.statusProjection.observationStamp?.runId,
       'run-a'
@@ -333,7 +360,7 @@ test(
       );
       followerView = await follower.tick(f.parent.ref.sessionId);
       chargedBytes += follower.collector.stats().bytesRead;
-      if (followerView?.details[key]?.outputRate) break;
+      if (followerView?.details[key]?.outputRate && followerView?.details[key]?.action) break;
     }
     assert.equal(
       followerView?.details[key]?.outputRate?.tokensPerSecond,
@@ -341,14 +368,56 @@ test(
       'read-only follower recovers exact committed sample'
     );
     assert.equal(followerView?.details[key]?.statusSource, 'committed');
+    assert.equal(followerView?.details[key]?.action?.id, 'second', 'latest unfinished call is recovered by key');
+    const projectedNode = followerView!.tree.nodes.find((node) => node.key === key)!;
+    const projectedSession = followerPort
+      .sessions()
+      .find((session: CollectedLinkSession) => sameSessionRef(session.evidence.ref, f.child.ref));
+    assert.equal(committedReaderAction(projectedSession, projectedNode.observation, Date.now(), true)?.id, 'second');
+    assert.equal(
+      committedReaderAction(
+        {
+          ...projectedSession,
+          committedAction: {
+            ...projectedSession.committedAction,
+            stamp: { ...projectedSession.committedAction.stamp, commitSeq: -1 },
+          },
+        },
+        projectedNode.observation,
+        Date.now(),
+        true
+      ),
+      undefined
+    );
+    assert.equal(committedReaderAction(projectedSession, projectedNode.observation, Date.now(), false), undefined);
     assert.ok(chargedBytes > 0, 'recovery is charged to collection');
     assert.ok(attemptedOffsets.length >= 3, 'deadline and record refusals are retried');
     assert.ok(attemptedOffsets[1] > attemptedOffsets[0], 'ordinary source reading progresses after the first refusal');
     assert.ok(attemptedOffsets[2] > attemptedOffsets[1], 'ordinary source reading progresses after the second refusal');
+    const firstSeq = view!.details[key].status!.observationStamp!.commitSeq;
+    appendFileSync(
+      join(dir, `rollout-${f.child.ref.sessionId}.jsonl`),
+      entry(now - 600, 'response_item', { type: 'function_call_output', call_id: 'second', output: 'ok' }) + '\n'
+    );
+    for (let i = 0; i < 50; i++) {
+      view = await runtime.tick(f.parent.ref.sessionId);
+      await runtime.afterPaint((published) => {
+        if (published) view = published;
+      });
+      if ((view?.details[key]?.status?.observationStamp?.commitSeq ?? 0) > firstSeq) break;
+    }
+    for (let i = 0; i < 50; i++) {
+      followerView = await follower.tick(f.parent.ref.sessionId);
+      if (followerView?.details[key]?.action?.id === 'first') break;
+    }
+    assert.equal(followerView?.details[key]?.action?.id, 'first', 'completion exposes the remaining unfinished call');
     const priorSeq = view!.details[key].status!.observationStamp!.commitSeq;
     appendFileSync(
       join(dir, `rollout-${f.child.ref.sessionId}.jsonl`),
-      entry(now - 500, 'event_msg', { type: 'task_started' }) + '\n'
+      [
+        entry(now - 499, 'response_item', { type: 'function_call_output', call_id: 'first', output: 'ok' }),
+        entry(now - 498, 'event_msg', { type: 'task_started' }),
+      ].join('\n') + '\n'
     );
     for (let i = 0; i < 50; i++) {
       view = await runtime.tick(f.parent.ref.sessionId);
@@ -368,5 +437,45 @@ test(
       'follower observed new commit'
     );
     assert.equal(followerView?.details[key]?.outputRate, undefined, 'new commit must clear old follower rate');
+    assert.equal(followerView?.details[key]?.action, undefined, 'new commit must clear old follower action');
   }
 );
+
+test('checkpoint action reads only the exact tail key and preserves refusal and old-data semantics', () => {
+  const stats = { bytesRead: 0, recordsRead: 0, elapsedMs: 0 };
+  const grant = {} as RecoveryReadGrant;
+  let calls = 0;
+  let outcome: any = {
+    kind: 'value',
+    value: JSON.stringify({ id: 'tail', name: 'exec_command', timestamp: 100, status: 'running', target: 'safe' }),
+    stats,
+  };
+  const checkpoint = {
+    ref: { harness: 'codex' },
+    codex: { rollout: { version: 3, state: { runningTail: 'tail', runningCount: 2 } } },
+    recoveryIndex: {
+      lookup: {
+        getMetered: (_grant: unknown, ns: string, key: string) => {
+          calls++;
+          assert.equal(ns, 'codex.running');
+          assert.equal(key, 'tail');
+          return outcome;
+        },
+        page: () => assert.fail('history scan'),
+      },
+    },
+  } as unknown as CodexCheckpoint;
+  assert.deepEqual(checkpointAction(checkpoint, grant, 200), {
+    kind: 'value',
+    action: { id: 'tail', name: 'exec_command', target: 'safe', startedAt: 100 },
+  });
+  assert.equal(calls, 1);
+  outcome = { kind: 'refused', reason: 'deadline', stats };
+  assert.deepEqual(checkpointAction(checkpoint, grant, 200), { kind: 'retry' });
+  outcome = { kind: 'stale', stats };
+  assert.deepEqual(checkpointAction(checkpoint, grant, 200), { kind: 'stale' });
+  checkpoint.codex.rollout.state.runningTail = null;
+  checkpoint.codex.rollout.state.runningCount = 0;
+  assert.deepEqual(checkpointAction(checkpoint, grant, 200), { kind: 'value' });
+  assert.equal(calls, 3);
+});

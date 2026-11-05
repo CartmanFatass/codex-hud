@@ -10,7 +10,7 @@ import type { SessionRef } from '../types/identity.js';
 import type { ReaderBudget } from '../interfaces/harness-adapter.js';
 import type { LaunchMessageLinkEvidence } from '../interfaces/session-evidence.js';
 import { wakeProjection } from '../wake/projection.js';
-import { projectLinkTree, linkStatusInput, committedReaderRate } from './index.js';
+import { projectLinkTree, linkStatusInput, committedReaderRate, committedReaderAction } from './index.js';
 import { planLinkRead } from './read-plan.js';
 import { reconcileDescriptor } from './actions.js';
 import { LinkProjectionMemo } from './memo.js';
@@ -234,11 +234,12 @@ export class LinkTickCollector {
     ) {
       // The same ledger/topology was already projected before paint. Only this committed observation changed.
       const rate = committedReaderRate(session, summary, Date.now(), this.tree.ledger.state === 'available');
+      const action = committedReaderAction(session, summary, Date.now(), this.tree.ledger.state === 'available');
       this.tree = {
         ...this.tree,
         nodes: this.tree.nodes.map((value) =>
           value.key === changedKey
-            ? { ...value, observation: summary, lastObservation: summary, committedRate: rate }
+            ? { ...value, observation: summary, lastObservation: summary, committedRate: rate, committedAction: action }
             : value
         ),
       };
@@ -253,6 +254,7 @@ export class LinkTickCollector {
             statusSource: 'committed',
             observationUnavailableReason: null,
             outputRate: rate,
+            action,
           },
         },
       };
@@ -678,6 +680,7 @@ export class LinkTickCollector {
       }
       details[node.key] = {
         ...(node.committedRate ? { outputRate: node.committedRate } : {}),
+        ...(node.committedAction ? { action: node.committedAction } : {}),
         status,
         statusSource,
         latestReportForRun: history.at(-1) ?? null,

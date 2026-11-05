@@ -129,6 +129,43 @@ export function committedReaderRate(
     : undefined;
 }
 
+/** A native action follows the same exact committed identity and stamp rules as the rate. */
+export function committedReaderAction(
+  session: CollectedLinkSession | undefined,
+  observation: ObservationView | null,
+  nowMs: number,
+  ledgerAvailable: boolean
+) {
+  const receipt = session?.committedAction;
+  if (
+    !receipt ||
+    !session ||
+    !observation ||
+    observation.nodeIdentity.kind !== 'session' ||
+    !ledgerAvailable ||
+    !session.loaded ||
+    !session.committedOnly
+  )
+    return undefined;
+  const stamp = observation.statusProjection.observationStamp;
+  try {
+    if (
+      !stamp ||
+      stamp.sourceGeneration !== session.sourceGeneration ||
+      !sameSessionRef(session.evidence.ref, observation.nodeIdentity.ref) ||
+      !sameSessionRef(stamp.ref, session.evidence.ref) ||
+      canonicalJson(stamp) !== canonicalJson(receipt.stamp)
+    )
+      return undefined;
+  } catch {
+    return undefined;
+  }
+  const action = receipt.action;
+  return action.name && Number.isFinite(action.startedAt) && action.startedAt >= 0 && action.startedAt <= nowMs
+    ? action
+    : undefined;
+}
+
 /** Pure entry point for B10 and B16. No reader, adapter, writer, clock or filesystem calls. */
 export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
   if (!Number.isFinite(input.nowMs) || input.nowMs < 0) throw new TypeError('invalid_link_clock');
@@ -383,6 +420,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
     );
     const observation = loaded && !nodeConflicts.has(item.key) ? currentObservation(session, run) : null;
     const committedRate = committedReaderRate(session, observation, input.nowMs, available);
+    const committedAction = committedReaderAction(session, observation, input.nowMs, available);
     const coverage = session?.evidence.observation.coverage;
     nodes.push({
       identity,
@@ -404,6 +442,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
       },
       observation,
       ...(committedRate ? { committedRate } : {}),
+      ...(committedAction ? { committedAction } : {}),
       lastObservation: session?.committedOnly
         ? (session.lastCommitted ?? null)
         : (session?.evidence.observation ?? null),
