@@ -15,6 +15,8 @@ import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
 import { newestIntent } from './cards.js';
 import { conflictDetails } from '../core/link/conflict-details.js';
+import { sameSessionRef } from '../core/identity.js';
+import type { LinkTreeNode } from '../core/link/types.js';
 import type { DelegationView } from './delegation/panel.js';
 import {
   age,
@@ -95,6 +97,64 @@ function proseLines(text: string, width: number, limit?: number): string[] {
   return shown.map((line) => `  ${line}`);
 }
 
+/** Slots are snapshot facts; row visibility and displayed names do not determine occupancy. */
+function slotsLines(view: DelegationView): string[] {
+  const { capacity, tree, limits } = view.vm;
+  if (tree.ledger.state !== 'available' || !capacity) return ['Slots unavailable'];
+  const lines = ['Slots', `${capacity.active}/${capacity.limit} held · mine ${capacity.mine}/${capacity.mineLimit}`];
+  if (limits.source === 'default') lines.push('Limits: default');
+  if (limits.reason) lines.push(`Limits: ${limits.reason}`);
+  const projected = view.plan.rows.flatMap((row, index) => {
+    const node = row.pn?.node;
+    const run = node?.currentRun;
+    return run ? [{ index, run, name: row.pn?.proj.name, closePane: row.pn?.proj.marker.closePane }] : [];
+  });
+  const mine = capacity.occupants
+    .filter((item) => item.holder === 'self')
+    .map((item, index) => {
+      const matches = projected.filter(({ run }) => run.runId === item.runId && run.linkId === item.linkId);
+      return { item, index, match: matches.length === 1 ? matches[0] : null };
+    });
+  mine.sort((a, b) => (a.match?.index ?? Infinity) - (b.match?.index ?? Infinity) || a.index - b.index);
+  for (const { item, match } of mine.slice(0, 10)) {
+    const name = match?.name || item.runId;
+    const note = item.state === 'uncertain' ? ' · reconcile first' : match?.closePane ? ' · close pane' : '';
+    lines.push(`${name} · ${item.state}${note}`);
+  }
+  if (mine.length > 10) lines.push(`+${mine.length - 10} holders not shown`);
+  const others = capacity.occupants.filter((item) => item.holder === 'other').length;
+  if (others) lines.push(`Other holders: ${others}`);
+  return lines;
+}
+
+/** Candidates are unconfirmed; scope uses complete refs or explicit link membership only. */
+function candidateLines(view: DelegationView, node: LinkTreeNode, isRoot: boolean): string[] {
+  const candidates = view.vm.tree.candidates.filter((candidate) => {
+    if (isRoot) return true;
+    if (candidate.linkId !== null && node.links.includes(candidate.linkId)) return true;
+    if (node.identity.kind !== 'session') return false;
+    try {
+      return sameSessionRef(candidate.ref, node.identity.ref);
+    } catch {
+      return false;
+    }
+  });
+  const omitted = view.vm.tree.truncation.candidates;
+  if (!candidates.length && !(isRoot && omitted)) return [];
+  const scope = isRoot ? ' · tree-wide' : '';
+  const retained = view.vm.tree.ledger.state === 'available' ? '' : ' · retained';
+  const lines = [`Candidates${scope}${retained} · unconfirmed`];
+  for (const candidate of candidates.slice(0, 5)) {
+    const ref = candidate.ref;
+    lines.push(
+      `${ref.harness}:${ref.sessionId} · source ${ref.sourceId}${ref.threadId ? ` · thread ${ref.threadId}` : ''} · ${candidate.kind} · ${candidate.reason}`
+    );
+  }
+  if (candidates.length > 5) lines.push(`+${candidates.length - 5} candidates not shown`);
+  if (isRoot && omitted) lines.push(`+${omitted} candidate metadata entries not listed`);
+  return lines;
+}
+
 /** Read only the same planned destination and immutable view used by this frame. */
 function delegationInspectorRows(view: DelegationView, selected: string | null, width: number): MonitorRow[] {
   const matches = view.dest.rows.filter((row) => row.key === selected);
@@ -133,6 +193,7 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
     const counts = view.vm.tree.counts;
     lines.push('Coverage', `Known not loaded: ${counts.knownUnloaded} · including omitted: ${counts.omitted}`);
     if (counts.unknownDescendants) lines.push('Children unknown');
+    lines.push(...slotsLines(view));
   }
   if (view.vm.tree.ledger.state !== 'available')
     lines.push(`Ledger: ${view.vm.tree.ledger.reason ?? 'unavailable'} · retained view`);
@@ -140,6 +201,7 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
   if (node.conflict) {
     lines.push(`Conflict: ${node.conflict.count} records · target unavailable`);
   }
+  lines.push(...candidateLines(view, node, pn.proj.isRoot));
   if (observation) {
     lines.push(view.vm.tree.ledger.state === 'available' ? 'Current observation' : 'Retained observation');
     if (observation.model?.value != null)
