@@ -160,3 +160,19 @@ test('B10A perf memo retains old equality for structure, order, null/undefined a
   assert.equal(version.update([undefined, NaN, -0, { ignored: undefined }]), version.update([null, null, 0, {}]));
   assert.notEqual(version.update({ a: 1, b: 2 }), version.update({ b: 2, a: 1 }));
 });
+
+test('same-commit action receipt addition, replacement and removal invalidate the projection memo', () => {
+  const x = fixture();
+  const memo = new LinkProjectionMemo();
+  const initial = key(memo, x);
+  const stamp = structuredClone(x.sessions[0].evidence.observation.statusProjection.observationStamp);
+  x.sessions[0].committedAction = { stamp, action: { id: 'one', name: 'read', startedAt: 100 } };
+  const added = key(memo, x);
+  assert.notEqual(added, initial);
+  assert.equal(key(memo, structuredClone(x)), added);
+  x.sessions[0].committedAction.action.name = 'write';
+  const replaced = key(memo, x);
+  assert.notEqual(replaced, added);
+  delete x.sessions[0].committedAction;
+  assert.notEqual(key(memo, x), replaced);
+});

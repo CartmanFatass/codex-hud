@@ -18,6 +18,7 @@ import { notifyFixture, reportFor } from './b21-fixture.js';
 import { HudDelegationCollector } from '../../src/collectors/delegation.js';
 import { displayNodeKey } from '../../src/core/observation.js';
 import { sameSessionRef } from '../../src/core/identity.js';
+import { sessionMemoInput } from '../../src/core/link/memo.js';
 import { buildVm, S, NOW } from '../fixtures/b10b-delegation.js';
 import { draw, press } from '../fixtures/b10b-s3.js';
 
@@ -390,6 +391,37 @@ test(
       undefined
     );
     assert.equal(committedReaderAction(projectedSession, projectedNode.observation, Date.now(), false), undefined);
+    // Simulate a delayed exact-checkpoint receipt without changing the commit or rate.
+    // The collector must rebuild the actual Inspector frame for this action-only update.
+    const sourceReading = followerPort.readings.get(key);
+    const receipt = sourceReading.actionReceipt;
+    assert.ok(receipt);
+    sourceReading.actionReceipt = undefined;
+    sourceReading.envelope = { ...sourceReading.envelope, committedAction: undefined };
+    followerView = await follower.tick(f.parent.ref.sessionId);
+    assert.equal(followerView?.details[key]?.action, undefined);
+    const before = followerPort
+      .sessions()
+      .find((item: CollectedLinkSession) => sameSessionRef(item.evidence.ref, f.child.ref));
+    const beforeMemo = sessionMemoInput(before);
+    sourceReading.actionReceipt = receipt;
+    sourceReading.envelope = { ...sourceReading.envelope, committedAction: receipt };
+    const after = followerPort
+      .sessions()
+      .find((item: CollectedLinkSession) => sameSessionRef(item.evidence.ref, f.child.ref));
+    const afterMemo = sessionMemoInput(after);
+    assert.deepEqual(
+      beforeMemo.filter((_, index) => index !== 9),
+      afterMemo.filter((_, index) => index !== 9)
+    );
+    followerView = await follower.tick(f.parent.ref.sessionId);
+    assert.equal(followerView?.details[key]?.action?.id, 'second');
+    const frame = draw(followerView, { selected: key, width: 110, height: 40, now: Date.now() });
+    const opened = press(frame, 'enter');
+    const inspector = draw(followerView, { state: opened.state, width: 110, height: 40, now: Date.now() })
+      .lines.map(stripAnsi)
+      .join('\n');
+    assert.match(inspector, /Action: exec_command/);
     assert.ok(chargedBytes > 0, 'recovery is charged to collection');
     assert.ok(attemptedOffsets.length >= 3, 'deadline and record refusals are retried');
     assert.ok(attemptedOffsets[1] > attemptedOffsets[0], 'ordinary source reading progresses after the first refusal');
