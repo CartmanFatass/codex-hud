@@ -189,6 +189,50 @@ function supportedMcp(value: unknown) {
       throw new Error('configuration_mcp_key_uncovered');
   }
 }
+
+// This is a finite projection for the already-supported 2.1.305 file-backed
+// lane. Do not infer that an arbitrary new field is statistics from its name.
+const globalSelectionKeys = new Set(['mcpServers']);
+const projectSelectionKeys = new Set([
+  'mcpServers',
+  'allowedTools',
+  'mcpContextUris',
+  'hasTrustDialogAccepted',
+  'enableAllProjectMcpServers',
+  'enabledMcpjsonServers',
+  'disabledMcpjsonServers',
+  'enabledMcpServers',
+  'disabledMcpServers',
+]);
+function routineStatistic(key: string, value: unknown): boolean {
+  if (key === 'numStartups') return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  if (key === 'lastCost') return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+  if (key === 'lastSessionId')
+    return value === null || (typeof value === 'string' && value.length <= 256 && !value.includes('\0'));
+  return false;
+}
+function configurationSelection(value: Record<string, unknown>, scope: 'global' | 'project') {
+  const selected: Record<string, unknown> = {};
+  const allowed = scope === 'global' ? globalSelectionKeys : projectSelectionKeys;
+  for (const [key, field] of Object.entries(value)) {
+    if (allowed.has(key)) selected[key] = field;
+    else if (!routineStatistic(key, field)) throw new Error(`configuration_${scope}_selector_uncovered`);
+  }
+  supportedMcp(selected.mcpServers);
+  return selected;
+}
+
+function globalAndLocalSelection(value: Record<string, unknown>, cwd: string) {
+  if (value.projects !== undefined && !object(value.projects)) throw new Error('configuration_projects_unverified');
+  const { projects, ...global } = value;
+  const project = (projects as Record<string, unknown> | undefined)?.[cwd] ?? null;
+  if (project !== null && !object(project)) throw new Error('configuration_project_unverified');
+  return {
+    global: configurationSelection(global, 'global'),
+    selectedProject: project === null ? null : configurationSelection(project, 'project'),
+  };
+}
+
 function trustedGitExecutable(): string {
   const binary = realpathSync('/usr/bin/git');
   if (!nativeFile(binary)) throw new Error('configuration_git_untrusted');
@@ -323,17 +367,9 @@ export function observeClaudeConfiguration(
     settings('user-settings', join(request.sourceRoot, 'settings.json'));
     settings('project-settings', join(request.cwd, '.claude/settings.json'));
     settings('project-local-settings', join(request.cwd, '.claude/settings.local.json'));
-    const global = read('global-and-selected-local-mcp', join(request.sourceRoot, '.claude.json'), (value) => {
-      if (Object.keys(value).some((key) => /gateway|plugin|profile|managed|provider/i.test(key)))
-        throw new Error('configuration_global_selector_uncovered');
-      if (value.projects !== undefined && !object(value.projects)) throw new Error('configuration_projects_unverified');
-      const { projects, ...rest } = value;
-      const project = (projects as Record<string, unknown> | undefined)?.[request.cwd] ?? null;
-      if (project !== null && !object(project)) throw new Error('configuration_project_unverified');
-      supportedMcp(rest.mcpServers);
-      if (object(project)) supportedMcp(project.mcpServers);
-      return { global: rest, selectedProject: project };
-    });
+    const global = read('global-and-selected-local-mcp', join(request.sourceRoot, '.claude.json'), (value) =>
+      globalAndLocalSelection(value, request.cwd)
+    );
     if (global.receipt.state === 'directory') throw new Error('configuration_file_expected');
     const mcp = (role: string, path: string) => {
       const entry = read(role, path);

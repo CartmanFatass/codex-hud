@@ -86,6 +86,101 @@ test('Claude default local inputs bind user/project/local, scoped MCP and manage
   }
 });
 
+test('Claude global/local capability projection ignores only known statistics while receipts retain the complete file', () => {
+  const f = fixture();
+  try {
+    const file = join(f.request.sourceRoot, '.claude.json');
+    const value = {
+      numStartups: 1,
+      lastCost: 0.5,
+      lastSessionId: 'synthetic-first',
+      mcpServers: { user: { command: '/synthetic/user', env: { MODE: 'fixed' } } },
+      projects: {
+        [f.request.cwd]: {
+          numStartups: 2,
+          lastCost: 0.25,
+          lastSessionId: 'synthetic-local',
+          mcpServers: { local: { command: '/synthetic/local' } },
+          hasTrustDialogAccepted: true,
+          allowedTools: ['synthetic'],
+          mcpContextUris: ['synthetic://resource'],
+          enableAllProjectMcpServers: false,
+          enabledMcpjsonServers: ['project'],
+          disabledMcpjsonServers: [] as string[],
+          enabledMcpServers: ['local'],
+          disabledMcpServers: [] as string[],
+        },
+      },
+    };
+    json(file, value);
+    const before = planFixture(f, f.request.cwd).plan;
+    value.numStartups++;
+    value.lastCost = 7;
+    value.lastSessionId = 'PWD';
+    value.projects[f.request.cwd].numStartups++;
+    value.projects[f.request.cwd].lastCost = 8;
+    value.projects[f.request.cwd].lastSessionId = 'OLDPWD';
+    json(file, value);
+    const after = planFixture(f, f.request.cwd).plan;
+    assert.equal(
+      claudeExpectation(before, 'synthetic-reviewed-build').profileFingerprint,
+      claudeExpectation(after, 'synthetic-reviewed-build').profileFingerprint
+    );
+    assert.deepEqual(before.configuration.description, after.configuration.description);
+    assert.equal(sameClaudeConfiguration(before.configuration, after.configuration), false);
+    for (const change of [
+      (v: typeof value) => {
+        v.mcpServers.user.command = '/synthetic/other';
+      },
+      (v: typeof value) => {
+        v.mcpServers.user.env.MODE = 'other';
+      },
+      (v: typeof value) => {
+        v.projects[f.request.cwd].mcpServers.local.command = '/synthetic/other';
+      },
+      (v: typeof value) => {
+        v.projects[f.request.cwd].hasTrustDialogAccepted = false;
+      },
+      (v: typeof value) => {
+        v.projects[f.request.cwd].disabledMcpServers = ['local'];
+      },
+      (v: typeof value) => {
+        v.projects[f.request.cwd].disabledMcpjsonServers = ['project'];
+      },
+      (v: typeof value) => {
+        v.projects[f.request.cwd].allowedTools = [];
+      },
+      (v: typeof value) => {
+        v.projects[f.request.cwd].mcpContextUris = [];
+      },
+    ]) {
+      const changed = structuredClone(value);
+      change(changed);
+      json(file, changed);
+      const selected = planFixture(f, f.request.cwd).plan;
+      assert.notEqual(
+        claudeExpectation(after, 'synthetic-reviewed-build').profileFingerprint,
+        claudeExpectation(selected, 'synthetic-reviewed-build').profileFingerprint
+      );
+    }
+    for (const [scope, key, field] of [
+      ['global', 'futureConfigSource', '/synthetic/source'],
+      ['project', 'futureMcpSelector', 'other'],
+      ['global', 'lastUnknownStatistic', 1],
+      ['project', 'lastCost', { mcpServers: {} }],
+    ] as const) {
+      const changed = structuredClone(value);
+      Object.assign(scope === 'global' ? changed : changed.projects[f.request.cwd], { [key]: field });
+      json(file, changed);
+      const result = f.observe();
+      assert.equal(result.observation, null);
+      assert.equal(result.reason, `configuration_${scope}_selector_uncovered`);
+    }
+  } finally {
+    f.close();
+  }
+});
+
 test('Claude missing-state and identity receipts reject creation and same-path replacement without stable inode coupling', () => {
   const f = fixture();
   try {
@@ -261,11 +356,12 @@ test('Claude reusable template matches equivalent configurations across cwd whil
 
 test('Claude production rechecks actual automatic config and frozen environment before dispatch', async () => {
   const originalCwd = process.cwd();
-  for (const mutation of ['file-created', 'file-replaced', 'environment', 'argv'] as const) {
+  for (const mutation of ['file-created', 'file-replaced', 'statistics', 'environment', 'argv'] as const) {
     const f = fixture();
     try {
       process.chdir(f.request.cwd);
       if (mutation === 'file-replaced') json(join(f.request.sourceRoot, 'settings.json'), { hooks: {} });
+      if (mutation === 'statistics') json(join(f.request.sourceRoot, '.claude.json'), { numStartups: 1 });
       const { input, plan, runtime } = planFixture(f, f.request.cwd);
       const actual = claudeExpectation(plan, 'synthetic-reviewed-build');
       const manifest: CapabilityManifestV1 = {
@@ -314,6 +410,7 @@ test('Claude production rechecks actual automatic config and frozen environment 
               }
               if (mutation === 'environment') input.env.PATH = '/synthetic/changed';
               if (mutation === 'argv') input.command.argv![3] = 'changed';
+              if (mutation === 'statistics') json(join(f.request.sourceRoot, '.claude.json'), { numStartups: 2 });
             }
             return structuredClone(runtime);
           },
