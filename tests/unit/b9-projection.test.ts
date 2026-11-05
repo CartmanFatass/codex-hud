@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import { projectLinkTree, planLinkRead } from '../../src/core/link/index.js';
 import { displayNodeKey } from '../../src/core/observation.js';
 import type { LinkTreeInput } from '../../src/core/link/index.js';
 import type { DisplayNodeIdentity } from '../../src/core/types/observation.js';
 import { LinkTickCollector } from '../../src/core/link/tick.js';
-import { buildVm, S } from '../fixtures/b10b-delegation.js';
+import { buildVm, NOW, S } from '../fixtures/b10b-delegation.js';
 import { performance } from 'node:perf_hooks';
 
 const degraded = { state: 'degraded', snapshot: null, reason: 'ledger_unavailable' } as const;
@@ -209,8 +209,13 @@ test('collector spends a continuation in one ordinary opportunity without moving
   }));
   const calls: { id: string; priority: boolean }[] = [];
   let ticket: string | null = null;
+  let crossing = false;
+  let readsAfterBegin = 0;
   const port = {
     publishesObservations: true,
+    begin: () => {
+      if (crossing) readsAfterBegin = 1;
+    },
     sessions: () => [],
     pending: () => 'session' as const,
     takeContinuation: () => {
@@ -274,6 +279,20 @@ test('collector spends a continuation in one ordinary opportunity without moving
     assert.equal(calls.length, 3, 'expired opportunity performs no collection');
     await collector.tick({ roots });
     assert.deepEqual(calls[3], { id: 'C', priority: false }, 'ordinary cursor continues without priority');
+    ticket = displayNodeKey(roots[0]);
+    crossing = true;
+    const clock = mock.method(performance, 'now', () => {
+      if (!readsAfterBegin) return 9;
+      return readsAfterBegin++ === 1 ? 9 : 10;
+    });
+    try {
+      await collector.tick({ roots, deadline: 10, nowMs: NOW });
+      assert.equal(ticket, null, 'a deadline crossing cannot preserve the ticket');
+      assert.equal(collector.stats().continuationAttempts, 1);
+      assert.equal(calls.length, 4, 'a crossed deadline performs no collection');
+    } finally {
+      clock.mock.restore();
+    }
   } finally {
     collector.close();
   }

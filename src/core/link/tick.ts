@@ -417,7 +417,6 @@ export class LinkTickCollector {
     }
     let unique = this.snapshotIndex;
     let didCollect = false;
-    if (!projectionOnly && this.port && performance.now() >= deadline) rejectContinuation();
     // Scheduling metadata only. planLinkRead remains the single grant authority, including the retained fair cursor.
     if (!projectionOnly && this.port && performance.now() < deadline) {
       const refs = new Map<string, SessionRef>();
@@ -499,6 +498,8 @@ export class LinkTickCollector {
           });
         }
       }
+    } else if (!projectionOnly && this.port) {
+      rejectContinuation();
     }
     const sessions =
       !didCollect && immutableSnapshots && unique.size === retained.length ? retained : [...unique.values()];
