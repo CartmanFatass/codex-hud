@@ -10,7 +10,8 @@ export const EXPORT_HELP = `${EXPORT_USAGE}
        hud [link [export]] --help
        hud claude --help
        hud panel [--help]          Open the delegation panel
-       hud pi inspect --help
+       hud statusline --help      Render stdin or explicitly manage statusline settings
+       hud pi --help              Inspect transcripts or launch Pi explicitly
        hud run --help
        hud cache show [--json]
        hud codex [ARG ...]          Existing codex-hud compatibility launcher

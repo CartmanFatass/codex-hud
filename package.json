@@ -7,7 +7,8 @@
   "bin": {
     "codex-hud": "./bin/codex-hud",
     "hud-run": "./bin/hud-run",
-    "hud": "./bin/hud"
+    "hud": "./bin/hud",
+    "hud-statusline": "./bin/hud-statusline"
   },
   "scripts": {
     "build": "node ./node_modules/typescript/bin/tsc",
