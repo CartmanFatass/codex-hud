@@ -456,11 +456,18 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
     if (!loaded || identity.kind !== 'session') {
       if (identity.kind === 'session') {
         unknownDescendants = true;
-        // The immediate frontier is already ledger/topology metadata. Retain its count without expanding it.
+        // In the unscoped panel, a missing native observation must not hide
+        // delegation relationships already established by the ledger. Native
+        // topology remains unavailable until its source is loaded.
         if (!crossExceeded)
           for (const edge of children.get(item.key) ?? []) {
             if (visited.has(edge.child)) continue;
-            defer(edge.child, reason);
+            if (!input.roots.length && !overspent && edge.kind !== 'native') {
+              const child = identities.get(edge.child)!;
+              const cross =
+                item.cross + (child.kind === 'session' && child.ref.harness !== identity.ref.harness ? 1 : 0);
+              queue.push({ key: edge.child, parentKey: item.key, depth: item.depth + 1, cross, edge });
+            } else defer(edge.child, reason);
           }
       }
       continue;

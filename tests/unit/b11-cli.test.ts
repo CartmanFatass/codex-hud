@@ -14,6 +14,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { main } from '../../src/cli/hud.js';
@@ -78,6 +79,154 @@ test('B11 compatibility bin routes codex directly to the existing wrapper help w
   assert.equal(result.stdout, original.stdout);
   assert.equal(result.stderr, original.stderr);
 });
+
+test('hud panel help and invalid arguments need no HUD_HOME', { skip }, () => {
+  const env = { PATH: '/usr/bin:/bin', HOME: '/synthetic/unused', HUD_HOME: 'not-absolute' };
+  const help = spawnSync(process.execPath, [resolve('bin/hud'), 'panel', '--help'], {
+    env,
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /Usage: hud panel/);
+  assert.equal(help.stderr, '');
+  const invalid = spawnSync(process.execPath, [resolve('bin/hud'), 'panel', '--unexpected'], {
+    env,
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  assert.equal(invalid.status, 2);
+  assert.match(invalid.stderr, /invalid_arguments/);
+});
+
+test('hud panel starts the actual panel and closes when its input closes', { skip }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'hud-panel-entry-'));
+  try {
+    const result = spawnSync(process.execPath, [resolve('bin/hud'), 'panel'], {
+      cwd: root,
+      env: { PATH: '/usr/bin:/bin', HOME: root, CODEX_HOME: root, HUD_HOME: join(root, 'missing-hud') },
+      input: '',
+      encoding: 'utf8',
+      timeout: 15_000,
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /\x1b\[\?1049h/);
+    assert.match(result.stdout, /\x1b\[\?1049l/);
+    assert.equal(existsSync(join(root, 'missing-hud', 'ledger.sqlite')), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+for (const unrelatedSession of [false, true])
+  test(
+    `hud panel displays ledger delegation ${unrelatedSession ? 'with an unrelated Codex session' : 'without a selected Codex session'}`,
+    { skip },
+    async () => {
+      const { notifyFixture, reportFor } = await import('./b21-fixture.js');
+      const f = await notifyFixture();
+      const emptyCodex = mkdtempSync(join(tmpdir(), 'hud-panel-source-'));
+      let child: ReturnType<typeof spawn> | undefined;
+      try {
+        await reportFor(f, 'completed');
+        if (unrelatedSession) {
+          const date = new Date();
+          const day = join(
+            emptyCodex,
+            'sessions',
+            String(date.getFullYear()),
+            String(date.getMonth() + 1).padStart(2, '0'),
+            String(date.getDate()).padStart(2, '0')
+          );
+          mkdirSync(day, { recursive: true });
+          const stamp = date.toISOString().slice(0, 19).replaceAll(':', '-');
+          writeFileSync(
+            join(day, `rollout-${stamp}-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.jsonl`),
+            JSON.stringify({
+              type: 'session_meta',
+              timestamp: date.toISOString(),
+              payload: {
+                id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                cwd: emptyCodex,
+                timestamp: date.toISOString(),
+                cli_version: 'synthetic',
+              },
+            }) + '\n'
+          );
+          const finderModule = pathToFileURL(resolve('dist/collectors/session-finder.js')).href;
+          const probe = spawnSync(
+            process.execPath,
+            [
+              '--input-type=module',
+              '-e',
+              `const m = await import(${JSON.stringify(finderModule)}); process.stdout.write(new m.SessionFinder(process.cwd()).check()?.sessionId ?? '');`,
+            ],
+            {
+              cwd: emptyCodex,
+              env: { PATH: '/usr/bin:/bin', HOME: emptyCodex, CODEX_HOME: emptyCodex },
+              encoding: 'utf8',
+              timeout: 5000,
+            }
+          );
+          assert.equal(probe.status, 0, probe.stderr);
+          assert.equal(
+            probe.stdout,
+            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            'the unrelated Codex session is selectable'
+          );
+        }
+        child = spawn(process.execPath, [resolve('bin/hud'), 'panel'], {
+          cwd: emptyCodex,
+          env: {
+            PATH: '/usr/bin:/bin',
+            HOME: emptyCodex,
+            CODEX_HOME: emptyCodex,
+            HUD_HOME: f.root,
+            COLUMNS: '120',
+            LINES: '50',
+            LANG: 'C',
+          },
+          stdio: ['pipe', 'pipe', 'pipe'],
+          detached: true,
+        });
+        let output = '';
+        let errors = '';
+        child.stderr!.setEncoding('utf8');
+        child.stderr!.on('data', (chunk: string) => {
+          errors += chunk;
+        });
+        const matched = await new Promise<boolean>((resolvePromise) => {
+          const timer = setTimeout(() => resolvePromise(false), 8000);
+          child!.stdout!.setEncoding('utf8');
+          child!.stdout!.on('data', (chunk: string) => {
+            output += chunk;
+            if (/implementer|Synthetic B21 task outcome/.test(output)) {
+              clearTimeout(timer);
+              resolvePromise(true);
+            }
+          });
+          child!.once('exit', () => {
+            clearTimeout(timer);
+            resolvePromise(false);
+          });
+        });
+        assert.ok(matched, `delegation was not rendered; stderr=${errors}; output=${output.slice(-12000)}`);
+        child.stdin!.end();
+        const [code] = await once(child, 'close');
+        assert.equal(code, 0, errors);
+        child = undefined;
+      } finally {
+        if (child && child.exitCode === null) {
+          if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+          else child.kill('SIGKILL');
+          await once(child, 'close');
+        }
+        await f.close();
+        rmSync(emptyCodex, { recursive: true, force: true });
+      }
+    }
+  );
 
 test('B11 real bin entry reports an unavailable MCP build in an installation path with spaces', { skip }, () => {
   const root = mkdtempSync(join(tmpdir(), 'hud b11 install '));

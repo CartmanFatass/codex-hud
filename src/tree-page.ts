@@ -257,6 +257,7 @@ function requestEnsureSingle(): void {
 
 async function runLivePage(): Promise<void> {
   startProfiling('panel');
+  const allDelegations = process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
   const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
   let delegation: DelegationViewModel | null = null;
   // Opened again, the panel reads only what each rollout gained since it last saved its scan.
@@ -932,7 +933,9 @@ async function runLivePage(): Promise<void> {
     let stage: HealthSource = 'session';
     try {
       session = finder.check();
-      delegation = delegationCollector ? await delegationCollector.tick(session?.sessionId, delegationDeadline) : null;
+      delegation = delegationCollector
+        ? await delegationCollector.tick(allDelegations ? undefined : session?.sessionId, delegationDeadline)
+        : null;
       stage = 'rollout';
       const rootReadStarted = performance.now();
       const priorRootStats = parser.getReadStats();

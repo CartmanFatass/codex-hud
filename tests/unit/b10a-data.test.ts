@@ -28,6 +28,41 @@ async function snapshot(f: Awaited<ReturnType<typeof notifyFixture>>) {
   }
 }
 
+test('unscoped ledger view retains a confirmed child when native observations are unavailable', options, async (t) => {
+  const f = await notifyFixture();
+  t.after(() => f.close());
+  await reportFor(f, 'completed');
+  const ledger = await snapshot(f);
+  const input = {
+    ledger: {
+      state: 'available' as const,
+      snapshot: ledger,
+      reason: null,
+      claimChecks: [],
+      conflictTargets: new Map(),
+    },
+    roots: [],
+    sessions: [],
+    nowMs: Date.now(),
+  };
+  const tree = projectLinkTree(input);
+  const parent = tree.nodes.find(
+    (node) => node.identity.kind === 'session' && node.identity.ref.sessionId === f.parent.ref.sessionId
+  );
+  const child = tree.nodes.find(
+    (node) => node.identity.kind === 'session' && node.identity.ref.sessionId === f.child.ref.sessionId
+  );
+  assert.ok(parent && child);
+  assert.equal(parent.loaded, false);
+  assert.equal(child.loaded, false);
+  assert.equal(child.parentKey, parent.key);
+  assert.ok(child.links.includes('link-a'));
+  assert.ok(tree.continuation.some((entry) => entry.key === child.key));
+  const capped = projectLinkTree({ ...input, budget: { maxNodes: 1 } });
+  assert.equal(capped.nodes.length, 1);
+  assert.ok(capped.counts.omitted > 0);
+});
+
 test('B10A capacity full shares admission counting on real SQLite and retains every occupant', options, async (t) => {
   const f = await notifyFixture();
   t.after(() => f.close());

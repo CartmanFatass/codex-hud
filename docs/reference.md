@@ -600,6 +600,11 @@ Node 22.x ≥22.13 or Node ≥24 (23 is unsupported). `hud codex ...` and
 `hud codex-hud ...` invoke the existing `codex-hud` launcher with the same arguments,
 environment and default bar behavior. The existing `codex-hud` entry is unchanged.
 
+`hud panel` opens the existing interactive panel in the current terminal. Its
+delegation view covers the ledger instead of selecting a Codex session as its root.
+This entry reads available observations; it does not start an observation publisher.
+Use `hud panel --help` for its syntax.
+
 `hud claude --profile NAME` selects a Claude profile from `HUD_HOME/delegate.json`.
 `--resume SESSION` selects its separate native resume template. Explicit
 `--profile NAME -- EXECUTABLE ARG ...` supplies complete literal argv;

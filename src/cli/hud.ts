@@ -3,6 +3,7 @@ import { CliError, privateHome } from './runtime.js';
 import { RUN_HELP, RUN_USAGE, runCommand } from './run.js';
 import { CACHE_HELP, CACHE_USAGE, cacheCommand } from './cache.js';
 import { CLAUDE_HELP, claudeCommand, codexCommand } from './launcher.js';
+import { panelCommand, PANEL_HELP } from './panel.js';
 
 function writeStdout(text: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -35,6 +36,14 @@ export async function main(
   }
 ): Promise<number> {
   try {
+    if (args[0] === 'panel') {
+      if (args.length === 2 && args[1] === '--help') {
+        await io.stdout(PANEL_HELP);
+        return 0;
+      }
+      if (args.length !== 1) throw new CliError('invalid_arguments');
+      return await panelCommand(io);
+    }
     if (args[0] === 'run') {
       if (args.length === 2 && args[1] === '--help') {
         await io.stdout(RUN_HELP);

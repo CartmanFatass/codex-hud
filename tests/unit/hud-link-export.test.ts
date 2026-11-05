@@ -101,7 +101,6 @@ test('hud help and strict argument refusals never access or create a ledger', as
     }
     const cases: [string[], string][] = [
       [[], 'invalid_command'],
-      [['panel'], 'invalid_command'],
       [['link'], 'invalid_command'],
       [['link', 'list'], 'invalid_command'],
       [['link', 'export'], 'json_required'],
