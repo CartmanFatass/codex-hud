@@ -25,9 +25,12 @@ export interface CodexExecTransportResult {
     | 'stdout_limit'
     | 'stderr_limit'
     | 'stdin_error'
+    | 'stdin_incomplete'
     | 'io_error'
     | 'close_unconfirmed';
   spawned: boolean;
+  /** Local writable finish only, not proof the child consumed or acted on the prompt. */
+  promptWriteFinished: boolean;
   /** Direct-child close only, never proof that a process group or external task ended. */
   closeObserved: boolean;
   exit: { code: number | null; signal: NodeJS.Signals | null } | null;
@@ -63,6 +66,7 @@ export class CodexExecTransport {
         outcome: 'not_started',
         reason: 'pre_aborted',
         spawned: false,
+        promptWriteFinished: false,
         closeObserved: false,
         exit: null,
         stderrBytes: 0,
@@ -80,6 +84,7 @@ export class CodexExecTransport {
           outcome: 'not_started',
           reason: 'spawn_failed',
           spawned: false,
+          promptWriteFinished: false,
           closeObserved: false,
           exit: null,
           stderrBytes: 0,
@@ -109,15 +114,18 @@ export class CodexExecTransport {
           child.stdin?.destroy();
         }
         const observation = reader.finish({ code: closeObserved ? code : null, signal });
-        const success = spawned && closeObserved && !reason && observation.complete;
+        const promptWriteFinished = child.stdin?.writableFinished === true;
+        const success = spawned && closeObserved && promptWriteFinished && !reason && observation.complete;
         resolve({
           outcome: !spawned ? 'not_started' : success ? 'observed_complete' : 'uncertain',
           reason: !spawned
             ? 'spawn_failed'
             : success
               ? 'completed'
-              : (reason ?? (closeObserved ? 'child_exit' : 'close_unconfirmed')),
+              : (reason ??
+                (!promptWriteFinished ? 'stdin_incomplete' : closeObserved ? 'child_exit' : 'close_unconfirmed')),
           spawned,
+          promptWriteFinished,
           closeObserved,
           exit: closeObserved ? { code, signal } : null,
           stderrBytes,

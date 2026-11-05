@@ -10,7 +10,15 @@ const mode = process.env.SYNTHETIC_MODE ?? 'complete';
 const expectedResume = process.env.SYNTHETIC_EXPECT_RESUME;
 if (expectedResume ? rest.length !== 2 || rest[0] !== 'resume' || rest[1] !== expectedResume : rest.length !== 0)
   process.exit(13);
-if (mode === 'early-close') {
+if (mode === 'early-success') {
+  process.stdin.destroy();
+  const events = [
+    { type: 'thread.started', thread_id: 'synthetic-thread' },
+    { type: 'turn.started' },
+    { type: 'turn.completed', usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 } },
+  ];
+  process.stdout.write(events.map((event) => JSON.stringify(event)).join('\n') + '\n', () => process.exit(0));
+} else if (mode === 'early-close') {
   process.stdin.destroy();
   process.exit(7);
 } else if (mode === 'hang') {
