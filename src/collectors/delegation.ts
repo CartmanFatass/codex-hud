@@ -828,23 +828,24 @@ class SessionCollection implements LinkCollectionPort {
         if (reading.recoveryPending) {
           const prior = source.store!.readProjection(ref);
           if (prior) {
-            const recovery = source.store!.readRecovery(prior, budget);
-            if (!recovery || 'kind' in recovery) {
-              if (recovery?.kind === 'record_needs_larger_slice')
-                this.minimumBytes.set(displayNodeKey({ kind: 'session', ref }), recovery.minimumBytes);
-              this.charges = { bytesRead: budget.maxBytes, recordsRead: budget.maxRecords };
+            const grant = new RecoveryGrant(budget, { deadline: Math.min(collectionDeadline, this.deadline) });
+            let recovery: ReturnType<ObservationStore['readRecoveryMetered']>;
+            try {
+              recovery = source.store!.readRecoveryMetered(prior, grant);
+            } finally {
+              // Store reads charge the grant even on failure. Account them once as unattributed I/O.
+              const charged = grant.drain();
+              this.charges.bytesRead += charged.bytesRead;
+              this.charges.recordsRead += charged.recordsRead;
+              budget = grant.remaining();
+            }
+            if (recovery.kind !== 'recovered') {
+              if (recovery.kind === 'continuation' && recovery.continuation.kind === 'record_needs_larger_slice')
+                this.minimumBytes.set(displayNodeKey({ kind: 'session', ref }), recovery.continuation.minimumBytes);
+              if (recovery.kind === 'stale') this.pendingCommits.add(displayNodeKey({ kind: 'session', ref }));
               return reading.envelope ?? null;
             }
-            reading.checkpoint = recovery.checkpoint;
-            // Known compact recovery bytes only. B12M must add SQLite/lazy-index metering; all wall time is included.
-            const { recoveryIndex: _index, ...inline } = recovery.checkpoint;
-            const charged = Buffer.byteLength(canonicalJson(inline));
-            budget = {
-              ...budget,
-              maxBytes: Math.max(0, budget.maxBytes - charged),
-              maxRecords: Math.max(0, budget.maxRecords - 1),
-            };
-            this.charges = { bytesRead: charged, recordsRead: 1 };
+            reading.checkpoint = recovery.recovery.checkpoint;
           }
           reading.recoveryPending = false;
         }

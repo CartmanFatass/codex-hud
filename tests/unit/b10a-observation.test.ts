@@ -11,6 +11,9 @@ import { mergeStatus, STATUS_RULE_VERSION } from '../../src/core/status/merge.js
 import { HudDelegationCollector } from '../../src/collectors/delegation.js';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
 import type { ReaderResult } from '../../src/core/interfaces/harness-adapter.js';
+import type { ObservationRecoveryTarget, RecoveryReadGrant } from '../../src/core/types/checkpoint.js';
+import { performance } from 'node:perf_hooks';
+import { sameSessionRef } from '../../src/core/identity.js';
 const opts = { skip: !ledgerRuntimeSupported() };
 
 async function setup(t: import('node:test').TestContext, runId = 'run-a') {
@@ -88,6 +91,140 @@ async function setup(t: import('node:test').TestContext, runId = 'run-a') {
   t.after(() => runtime.close());
   return { f, ref, store, committed, runtime };
 }
+
+test('publishing recovery charges exact checkpoint I/O and retains it across an exhausted grant', opts, async (t) => {
+  const f = await notifyFixture();
+  t.after(() => f.close());
+  await reportFor(f, 'completed');
+  const dir = join(f.root, 'sessions', '2026', '11', '02');
+  mkdirSync(dir, { recursive: true });
+  const now = Date.now();
+  for (const ref of [f.parent.ref, f.child.ref])
+    writeFileSync(
+      join(dir, `rollout-${ref.sessionId}.jsonl`),
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          timestamp: new Date(now - 5000).toISOString(),
+          payload: {
+            id: ref.sessionId,
+            cwd: '/synthetic',
+            timestamp: new Date(now - 5000).toISOString(),
+            cli_version: '0.synthetic',
+            ...(ref === f.child.ref ? { parent_thread_id: f.parent.ref.sessionId } : {}),
+          },
+        }),
+        ...(ref === f.child.ref
+          ? [
+              JSON.stringify({
+                type: 'event_msg',
+                timestamp: new Date(now - 4000).toISOString(),
+                payload: { type: 'task_started' },
+              }),
+            ]
+          : []),
+      ].join('\n') + '\n'
+    );
+  const first = await HudDelegationCollector.open({ HUD_HOME: f.root }, f.root, { publish: true });
+  assert.ok(first);
+  let firstClosed = false;
+  t.after(() => {
+    if (!firstClosed) first.close();
+  });
+  const key = displayNodeKey({ kind: 'session', ref: f.child.ref });
+  let published = false;
+  for (let i = 0; i < 60; i++) {
+    let view = await first.tick(f.parent.ref.sessionId);
+    await first.afterPaint((next) => {
+      if (next) view = next;
+    });
+    if (view?.details[key]?.statusSource === 'committed') {
+      published = true;
+      break;
+    }
+  }
+  assert.ok(published, 'real Codex checkpoint was committed');
+  first.close();
+  firstClosed = true;
+
+  const restarted = await HudDelegationCollector.open({ HUD_HOME: f.root }, f.root, { publish: true });
+  assert.ok(restarted);
+  t.after(() => restarted.close());
+  const port = (restarted as any).port;
+  const source = port.sources.get(f.child.ref.sourceId);
+  const store = source.store;
+  const nativeErrors: string[] = [];
+  const openNative = source.adapter.open.bind(source.adapter);
+  source.adapter.open = (...args: any[]) => {
+    try {
+      const reader = openNative(...args);
+      const readNative = reader.read.bind(reader);
+      reader.read = async (...readArgs: any[]) => {
+        try {
+          return await readNative(...readArgs);
+        } catch (error) {
+          nativeErrors.push(String(error));
+          throw error;
+        }
+      };
+      return reader;
+    } catch (error) {
+      nativeErrors.push(String(error));
+      throw error;
+    }
+  };
+  const read = store.readRecoveryMetered.bind(store);
+  store.readRecovery = () => assert.fail('legacy unmetered recovery must not be used');
+  const results: any[] = [];
+  store.readRecoveryMetered = (target: ObservationRecoveryTarget, grant: RecoveryReadGrant) => {
+    assert.ok(sameSessionRef(target.ref, f.child.ref));
+    const effective =
+      results.length === 0
+        ? {
+            now: () => grant.now(),
+            remaining: () => ({ ...grant.remaining(), maxRecords: 0 }),
+            charge: (stats: any) => grant.charge(stats),
+            drain: () => grant.drain(),
+          }
+        : grant;
+    const result = read(target, effective);
+    results.push(result);
+    return result;
+  };
+  const budget = { maxBytes: 4 * 1024 * 1024, maxRecords: 1, budgetMs: 2000 };
+  for (let i = 0; i < 30 && !source.adapter.collectionState(f.child.ref, false).file; i++) {
+    port.begin(performance.now() + 2000);
+    await port.collect(f.child.ref, 'native_topology', { ...budget, maxRecords: 2000 });
+  }
+  assert.ok(source.adapter.collectionState(f.child.ref, false).file, 'native discovery completed');
+  port.takeUnattributedIO();
+  // Isolate writer recovery from the separately tested optional display-rate recovery.
+  port.begin(performance.now() + 2000);
+  port.readings.get(key).rateTarget = undefined;
+  await port.collect(f.child.ref, 'session', budget);
+  assert.equal(results[0]?.kind, 'continuation');
+  assert.equal(port.readings.get(key).recoveryPending, true);
+  assert.deepEqual(port.takeUnattributedIO(), { bytesRead: 0, recordsRead: 0 });
+  port.begin(performance.now() + 2000);
+  port.readings.get(key).rateTarget = undefined;
+  await port.collect(f.child.ref, 'session', budget);
+  assert.equal(results[1]?.kind, 'recovered');
+  assert.equal(port.readings.get(key).recoveryPending, false);
+  assert.ok(port.readings.get(key).checkpoint);
+  assert.equal(port.readings.get(key).reader, undefined, 'one-record grant ended after exact recovery');
+  assert.deepEqual(port.takeUnattributedIO(), {
+    bytesRead: results[1].stats.bytesRead,
+    recordsRead: results[1].stats.recordsRead,
+  });
+  port.begin(performance.now() + 2000);
+  port.readings.get(key).rateTarget = undefined;
+  await port.collect(f.child.ref, 'session', { ...budget, maxRecords: 2000 });
+  assert.equal(results.length, 2, 'next ordinary grant uses the recovered checkpoint without refetching');
+  assert.ok(
+    port.readings.get(key).publisher?.hasReading(),
+    `a real native capture followed recovery: ${nativeErrors.join(', ')}`
+  );
+});
 
 for (const runId of ['run-a', 'old-run'])
   test(
