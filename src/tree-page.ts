@@ -164,6 +164,7 @@ function treePaths(nodes: SubagentTreeNode[]): Set<string> {
 }
 
 const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
+const STANDALONE_PANEL = process.env.CODEX_HUD_STANDALONE_PANEL === '1';
 const HUD_CWD_REAL = (() => {
   try {
     return fs.realpathSync(HUD_CWD);
@@ -194,6 +195,7 @@ function tmux(args: string[], input?: string): Promise<void> {
 
 /** The Codex pane typing is passed to: the launch's, else the session's option. */
 function resolveMainPane(): string | undefined {
+  if (STANDALONE_PANEL) return undefined;
   const pane = process.env.CODEX_HUD_MAIN_PANE;
   if (pane) return pane;
   if (!process.env.TMUX) return undefined;
@@ -211,12 +213,14 @@ function resolveMainPane(): string | undefined {
 
 /** This pane: an overlay opened from the prefix or a button takes the keyboard. */
 function focusPanel(): void {
+  if (STANDALONE_PANEL) return;
   const pane = process.env.TMUX_PANE;
   if (pane) void tmux(['select-pane', '-t', pane]);
 }
 
 /** Esc leaves focus mode: the keys go back to the Codex pane. */
 function focusMain(): void {
+  if (STANDALONE_PANEL) return;
   const pane = process.env.CODEX_HUD_MAIN_PANE;
   if (pane) void tmux(['select-pane', '-t', pane]);
 }
@@ -227,6 +231,7 @@ function focusMain(): void {
  * Only inside a HUD session, which passes the toggle.
  */
 function reinstallPrefix(prefix: string): void {
+  if (STANDALONE_PANEL) return;
   const toggle = process.env.CODEX_HUD_TOGGLE_CMD;
   const session = process.env.CODEX_HUD_TMUX_SESSION;
   if (!toggle || !session) return;
@@ -243,6 +248,7 @@ function reinstallPrefix(prefix: string): void {
 }
 
 function requestEnsureSingle(): void {
+  if (STANDALONE_PANEL) return;
   const toggle = process.env.CODEX_HUD_TOGGLE_CMD;
   const session = process.env.CODEX_HUD_TMUX_SESSION;
   if (!toggle || !session) return;
@@ -257,6 +263,16 @@ function requestEnsureSingle(): void {
 
 async function runLivePage(): Promise<void> {
   startProfiling('panel');
+  if (STANDALONE_PANEL)
+    for (const key of [
+      'CODEX_HUD_MAIN_PANE',
+      'CODEX_HUD_TOGGLE_CMD',
+      'CODEX_HUD_TMUX_SESSION',
+      'CODEX_HUD_INITIAL_COMMAND',
+      'TMUX',
+      'TMUX_PANE',
+    ])
+      delete process.env[key];
   const allDelegations = process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
   const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
   let delegation: DelegationViewModel | null = null;
@@ -267,9 +283,9 @@ async function runLivePage(): Promise<void> {
   const worktreeCollector = new WorktreeCollector();
   // Typing here goes to Codex; with no Codex pane to give it to (the panel
   // run on its own), the keys drive the panel as they used to.
-  const mainPane = resolveMainPane();
+  const mainPane = STANDALONE_PANEL ? undefined : resolveMainPane();
   // Search modals need literal Unicode and paste even in a standalone panel.
-  const decoder = new WorkbenchInputDecoder('monitor', { forward: true });
+  const decoder = new WorkbenchInputDecoder('monitor', { forward: !STANDALONE_PANEL });
   const forwarder = new KeyForwarder(
     () => mainPane,
     (call) => tmux(call.args, call.input)
@@ -346,7 +362,7 @@ async function runLivePage(): Promise<void> {
   let readingAgentContext = false;
   let escapeTimer: ReturnType<typeof setTimeout> | undefined;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
-  const widthKeeper = treeWidthKeeper(() => settings.treeWidth);
+  const widthKeeper = STANDALONE_PANEL ? null : treeWidthKeeper(() => settings.treeWidth);
   // Every model call of the panel goes through one service: one queue, one
   // cache, one hourly cap. Its cache and call log live beside the HUD's state.
   let modelChanged = () => {};
@@ -773,6 +789,7 @@ async function runLivePage(): Promise<void> {
   };
   /** The Codex pane's columns, so a narrow one is not offered as a link. */
   const readMainCols = () => {
+    if (STANDALONE_PANEL) return;
     const pane = process.env.CODEX_HUD_MAIN_PANE;
     if (!pane) return;
     execFile(
@@ -1211,6 +1228,11 @@ async function runLivePage(): Promise<void> {
     void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing]).finally(resolveDone);
   };
   const switchSession = (id: string) => {
+    if (STANDALONE_PANEL) {
+      navigationMessage = t('Switching is unavailable in the standalone panel.');
+      render();
+      return;
+    }
     const root = tree.rootId;
     const view = delegation;
     const selected = state.tree.selectedId;
@@ -1693,7 +1715,7 @@ async function runLivePage(): Promise<void> {
         }
       }
     }
-    if (forward.length) void forwarder.send(forward);
+    if (!STANDALONE_PANEL && forward.length) void forwarder.send(forward);
     if (!settingsPage) probe.cancel();
     if (!closed && !overlayBefore && (settingsPage || state.help || activityHub || observability)) focusPanel();
   };
