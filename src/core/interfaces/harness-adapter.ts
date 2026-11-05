@@ -31,6 +31,13 @@ export interface ReaderResult {
   recoveryIndex?: RecoveryIndexHandoff;
   observation: ObservationView;
   checkpoint: ReaderCheckpoint;
+  /** Reader-local sample at this checkpoint boundary. It is not a committed observation. */
+  outputRate?: {
+    source: 'codex.turn_wallclock_proxy';
+    tokensPerSecond: number;
+    sampleMs: number;
+    sampledAt: number;
+  };
   /** Optional native additions; observation is the same object, not a second state projection. */
   evidence?: SessionEvidence;
   /** Actual read/assembly work; elapsedMs is measured, the time budget is soft. */

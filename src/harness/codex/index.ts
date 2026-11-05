@@ -377,6 +377,27 @@ export class CodexAdapter implements HarnessAdapter {
       };
       const now = Date.now();
       const evidence = this.evidence(ref, result, coverage, now, links, clocks, latestOpenCall);
+      const rate = result.outputRate;
+      const sampledAt = rate?.sampledAt.getTime();
+      const turnStartedAt = finiteTime(result.activity?.turnStartedAt);
+      const outputRate =
+        rate &&
+        Number.isFinite(rate.tokensPerSecond) &&
+        rate.tokensPerSecond >= 0 &&
+        Number.isFinite(rate.sampleMs) &&
+        rate.sampleMs > 0 &&
+        sampledAt !== undefined &&
+        Number.isFinite(sampledAt) &&
+        sampledAt >= 0 &&
+        sampledAt <= now &&
+        (turnStartedAt === null || (turnStartedAt <= now && sampledAt >= turnStartedAt))
+          ? {
+              source: 'codex.turn_wallclock_proxy' as const,
+              tokensPerSecond: rate.tokensPerSecond,
+              sampleMs: rate.sampleMs,
+              sampledAt,
+            }
+          : undefined;
       // Soft budget includes parsing and assembly; a JSON.parse/SQLite call cannot be preempted.
       stats.elapsedMs = performance.now() - started;
       index = sliceIndex.commit();
@@ -389,6 +410,7 @@ export class CodexAdapter implements HarnessAdapter {
         checkpoint: attachRecoveryIndex(structuredClone(current), index, () => {
           if (publishedReset && pendingReset === publishedReset) pendingReset = undefined;
         }),
+        ...(outputRate ? { outputRate } : {}),
         evidence,
         ...(stats.continuation ? { continuation: stats.continuation } : {}),
         stats: { bytesRead: stats.bytesRead, recordsRead: stats.recordsRead, elapsedMs: stats.elapsedMs },

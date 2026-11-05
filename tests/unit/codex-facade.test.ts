@@ -516,8 +516,45 @@ test('checkpoint restore preserves token-rate tool-wait union and concurrent rea
   );
   resumeParser.restoreCheckpoint((restored.checkpoint as CodexCheckpoint).codex.rollout);
   assert.deepEqual(resumeParser.getCached()?.outputRate, parser.getCached()?.outputRate);
+  const sample = parser.getCached()!.outputRate!;
+  assert.deepEqual(restored.outputRate, {
+    source: 'codex.turn_wallclock_proxy',
+    tokensPerSecond: sample.tokensPerSecond,
+    sampleMs: sample.sampleMs,
+    sampledAt: sample.sampledAt.getTime(),
+  });
+  assert.equal(b.outputRate, undefined, 'a baseline without a complete sample does not imply a rate');
+  assert.ok(!('outputRate' in restored.observation), 'reader-local data is not an uncommitted durable summary');
   assert.equal(restored.stats?.recordsRead, 2);
   assert.ok(typeof restored.stats?.elapsedMs === 'number');
+});
+
+test('reader-local rate resets with a new turn and does not leak across explicit sources', async (t) => {
+  const count = (tokens: number, offset: number) =>
+    row(
+      'event_msg',
+      {
+        type: 'token_count',
+        info: { total_token_usage: { input_tokens: 100, output_tokens: tokens } },
+      },
+      offset
+    );
+  const a = await fixture(t, [
+    meta(),
+    row('event_msg', { type: 'task_started' }, 1000),
+    count(100, 2000),
+    count(200, 12000),
+  ]);
+  const b = await fixture(t, [meta(), row('event_msg', { type: 'task_started' }, 1000), count(100, 2000)]);
+  const reader = a.adapter.open(a.ref);
+  const first = await drain(reader);
+  assert.ok(first.outputRate);
+  assert.equal(first.outputRate!.source, 'codex.turn_wallclock_proxy');
+  assert.equal((await drain(b.adapter.open(b.ref))).outputRate, undefined);
+  fs.appendFileSync(a.file, row('event_msg', { type: 'task_started' }, 14000) + '\n');
+  const next = await drain(reader);
+  assert.equal(next.outputRate, undefined);
+  assert.ok(next.checkpoint.offset > first.checkpoint.offset);
 });
 
 test('identical session IDs in two explicit sources do not cross-read, and custom hud server names are exact', async (t) => {
