@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
-import { join } from 'node:path';
-import { lstatSync } from 'node:fs';
+import { join, isAbsolute, delimiter } from 'node:path';
+import { lstatSync, accessSync, realpathSync, constants } from 'node:fs';
 import { RunArtifacts } from '../core/run/artifacts.js';
 import type { HostAdapter } from '../core/interfaces/host-adapter.js';
 import type { DelegationViewModel } from '../core/link/view-model.js';
 import type { DelegationAction } from '../render/delegation/actions.js';
-import { wrapped } from '../render/monitor-text.js';
+import { monitorText, wrapped } from '../render/monitor-text.js';
 
 /** Execute only actions captured from the displayed frame. No command is executed. */
 export async function dispatchDelegationAction(
@@ -15,7 +15,7 @@ export async function dispatchDelegationAction(
   sameRootAndEpoch: boolean,
   ports: {
     home: string | null;
-    copy: (text: string) => Promise<boolean>;
+    copy: (text: string) => Promise<boolean | ClipboardResult>;
     host?: Pick<HostAdapter, 'locate' | 'focus'>;
     isCurrent?: () => boolean;
   }
@@ -38,7 +38,9 @@ export async function dispatchDelegationAction(
   }
   if (action.type === 'delegation-copy') {
     const command = action.descriptor.displayCommand;
-    return (await ports.copy(command)) ? 'Reconcile command copied.' : 'Clipboard failed; command not shown.';
+    const result = await ports.copy(command);
+    if (result === true || result === 'copied') return 'Reconcile command copied.';
+    return result === 'unconfirmed' ? `Clipboard unconfirmed: ${command}` : `Not copied: ${command}`;
   }
   if (node.currentRun?.mode !== 'headless' || !ports.home) return 'Log unavailable for this run.';
   try {
@@ -59,46 +61,128 @@ export async function dispatchDelegationAction(
   }
 }
 
-type ClipboardOptions = { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv };
+export type ClipboardResult = 'copied' | 'unavailable' | 'unconfirmed';
+type ClipboardOptions = { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv; timeoutMs?: number; cleanupMs?: number };
+const CLIPBOARD_ACK = 'HUD_CLIPBOARD_OK_V1';
+// Fixed code only: the command is base64 stdin data, never PowerShell source or argv.
+const CLIPBOARD_SCRIPT =
+  "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; $b=[Convert]::FromBase64String([Console]::In.ReadToEnd()); $u=New-Object System.Text.UTF8Encoding($false,$true); $v=$u.GetString($b); [Windows.Forms.Clipboard]::SetText($v,[Windows.Forms.TextDataFormat]::UnicodeText); $r=[Windows.Forms.Clipboard]::GetText([Windows.Forms.TextDataFormat]::UnicodeText); if ([string]::Equals($v,$r,[StringComparison]::Ordinal)) { [Console]::Out.Write('HUD_CLIPBOARD_OK_V1') } else { exit 1 }";
 
-/** A clipboard helper must acknowledge success; OSC 52 is not an acknowledgement. */
-export async function copyDelegationCommand(text: string, options: ClipboardOptions = {}): Promise<boolean> {
+function findPowerShell(env: NodeJS.ProcessEnv): string | null {
+  for (const dir of (env.PATH ?? '').split(delimiter)) {
+    if (!isAbsolute(dir)) continue;
+    try {
+      const candidate = realpathSync(join(dir, 'powershell.exe'));
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+/** One owned WSL clipboard process per page. No provider fallback or shell evaluation. */
+export function createClipboardProvider(options: ClipboardOptions = {}) {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
-  const candidates: Array<{ program: string; args: string[]; windows: boolean }> = [];
-  if (platform === 'darwin') candidates.push({ program: 'pbcopy', args: [], windows: false });
-  else if (platform === 'win32') candidates.push({ program: 'clip.exe', args: [], windows: true });
-  else {
-    if (env.WAYLAND_DISPLAY) candidates.push({ program: 'wl-copy', args: [], windows: false });
-    candidates.push({ program: 'xclip', args: ['-selection', 'clipboard'], windows: false });
-    if (env.WSL_INTEROP || env.WSL_DISTRO_NAME) candidates.push({ program: 'clip.exe', args: [], windows: true });
-  }
-  for (const { program, args, windows } of candidates) {
-    const data = windows
-      ? Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')])
-      : Buffer.from(text, 'utf8');
-    const ok = await new Promise<boolean>((resolve) => {
-      const child = spawn(program, args, { stdio: ['pipe', 'ignore', 'ignore'], env });
-      let settled = false;
-      const finish = (success: boolean) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          resolve(success);
-        }
-      };
-      const timer = setTimeout(() => {
-        child.kill();
-        finish(false);
-      }, 2000);
-      child.once('error', () => finish(false));
-      child.once('exit', (code) => finish(code === 0));
-      child.stdin.on('error', () => finish(false));
-      child.stdin.end(data);
-    });
-    if (ok) return true;
-  }
-  return false;
+  const executable = platform === 'linux' && (env.WSL_INTEROP || env.WSL_DISTRO_NAME) ? findPowerShell(env) : null;
+  let blocked = false,
+    closed = false,
+    active = false;
+  let abort: (() => void) | null = null;
+  let activeDone: Promise<void> | null = null;
+  let resolveActive: (() => void) | null = null;
+  return {
+    close(): Promise<void> {
+      closed = true;
+      abort?.();
+      return activeDone ?? Promise.resolve();
+    },
+    async copy(text: string): Promise<ClipboardResult> {
+      if (closed || blocked || active || !executable || text.includes('\0')) return 'unavailable';
+      const bytes = Buffer.from(text, 'utf8');
+      if (bytes.length > 256 * 1024 || bytes.toString('utf8') !== text || !bytes.length) return 'unavailable';
+      active = true;
+      activeDone = new Promise<void>((resolve) => {
+        resolveActive = resolve;
+      });
+      try {
+        return await new Promise<ClipboardResult>((resolve) => {
+          let child: ReturnType<typeof spawn>;
+          try {
+            child = spawn(
+              executable,
+              ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-Command', CLIPBOARD_SCRIPT],
+              { stdio: ['pipe', 'pipe', 'ignore'], env }
+            );
+          } catch {
+            resolve('unavailable');
+            return;
+          }
+          let settled = false,
+            submitted = !!child.pid,
+            interrupted = false,
+            invalidOutput = false,
+            inputError = false;
+          let output = Buffer.alloc(0);
+          let cleanup: ReturnType<typeof setTimeout> | undefined;
+          const finish = (result: ClipboardResult) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            if (cleanup) clearTimeout(cleanup);
+            abort = null;
+            resolve(result);
+          };
+          const stop = () => {
+            if (settled || interrupted) return;
+            interrupted = true;
+            // A WSL bridge close alone cannot prove that a Windows provider stopped.
+            blocked = true;
+            try {
+              child.kill('SIGKILL');
+            } catch {}
+            cleanup = setTimeout(() => {
+              blocked = true;
+              finish(submitted ? 'unconfirmed' : 'unavailable');
+            }, options.cleanupMs ?? 1000);
+          };
+          abort = stop;
+          const timer = setTimeout(stop, options.timeoutMs ?? 5000);
+          child.stdout!.on('data', (chunk: Buffer) => {
+            if (output.length + chunk.length > 1024) {
+              invalidOutput = true;
+              stop();
+              return;
+            }
+            output = Buffer.concat([output, chunk]);
+          });
+          child.once('error', () => {
+            inputError = true;
+          });
+          child.stdin!.on('error', () => {
+            inputError = true;
+          });
+          child.once('close', (code) => {
+            if (!submitted) {
+              finish('unavailable');
+              return;
+            }
+            finish(
+              !interrupted && !invalidOutput && !inputError && code === 0 && output.toString('utf8') === CLIPBOARD_ACK
+                ? 'copied'
+                : 'unconfirmed'
+            );
+          });
+          child.stdin!.end(bytes.toString('base64'));
+        });
+      } finally {
+        active = false;
+        resolveActive?.();
+        resolveActive = null;
+        activeDone = null;
+      }
+    },
+  };
 }
 
 /** Only use a picker label when the complete native root tree makes it unique. */
@@ -257,6 +341,13 @@ export function sameDelegationPickerLabel(
 
 /** The monitor has at most two notice lines; never present a partial log path as complete. */
 export function boundedActionNotice(message: string, width: number): string {
+  if (message.startsWith('Not copied: ') || message.startsWith('Clipboard unconfirmed: ')) {
+    if (monitorText(message) !== message || wrapped(message, Math.max(1, width - 6)).length > 1)
+      return message.startsWith('Not copied: ')
+        ? 'Not copied; command not shown.'
+        : 'Clipboard unconfirmed; command not shown.';
+    return message;
+  }
   if (!message.startsWith('Log: ')) return message;
   return wrapped(message, Math.max(1, width - 6)).length > 2 ? 'Log paths too long to display.' : message;
 }

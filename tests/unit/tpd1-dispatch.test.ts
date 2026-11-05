@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, closeSync, unlinkSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, closeSync, unlinkSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RunArtifacts } from '../../src/core/run/artifacts.js';
 import {
   dispatchDelegationAction,
-  copyDelegationCommand,
+  createClipboardProvider,
   delegationPickerLabel,
   withInputRefresh,
   delegationActivityTarget,
@@ -300,7 +300,7 @@ for (const succeeds of [true, false])
     assert.equal(sameDelegationActionTarget(frame.delegation?.vm, refreshed, action.key), true);
     resolve(succeeds);
     const message = await pending;
-    assert.match(message, succeeds ? /copied/ : /Clipboard failed; command not shown/);
+    assert.match(message, succeeds ? /copied/ : /Not copied:/);
     const changed = {
       ...refreshed,
       details: { ...refreshed.details, [action.key]: { ...refreshed.details[action.key], reconcile: null } },
@@ -308,31 +308,109 @@ for (const succeeds of [true, false])
     assert.equal(sameDelegationActionTarget(frame.delegation?.vm, changed, action.key), false);
   });
 
-test('WSL clipboard falls back to clip.exe and preserves exact Unicode command bytes', async () => {
+test('WSL clipboard sends data on stdin and requires the fixed read-back acknowledgment', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tpd1-clipboard-'));
   const capture = join(dir, 'capture');
+  const argsPath = join(dir, 'args');
   try {
-    writeFileSync(join(dir, 'wl-copy'), '#!/bin/sh\nexit 1\n', { mode: 0o700 });
-    writeFileSync(join(dir, 'xclip'), '#!/bin/sh\nexit 1\n', { mode: 0o700 });
-    writeFileSync(join(dir, 'clip.exe'), '#!/bin/sh\n/bin/cat > "$CAPTURE_FILE"\n', { mode: 0o700 });
+    writeFileSync(
+      join(dir, 'powershell.exe'),
+      `#!${process.execPath}\nconst fs = require('fs'); let data=''; process.stdin.setEncoding('utf8'); process.stdin.on('data', x => data+=x); process.stdin.on('end', () => { fs.writeFileSync(process.env.CAPTURE_FILE,data); fs.writeFileSync(process.env.ARGS_FILE, JSON.stringify(process.argv.slice(2))); process.stdout.write('HUD_CLIPBOARD_OK_V1'); });\n`,
+      { mode: 0o700 }
+    );
     const command = "HUD_HOME='/tmp/中文 home' hud run reconcile r_123";
-    const env = { PATH: dir, WAYLAND_DISPLAY: 'wayland-0', WSL_DISTRO_NAME: 'Ubuntu', CAPTURE_FILE: capture };
-    assert.equal(await copyDelegationCommand(command, { platform: 'linux', env }), true);
-    const bytes = readFileSync(capture);
-    assert.deepEqual(bytes.subarray(0, 2), Buffer.from([0xff, 0xfe]));
-    assert.equal(bytes.subarray(2).toString('utf16le'), command);
-    unlinkSync(join(dir, 'clip.exe'));
-    assert.equal(await copyDelegationCommand(command, { platform: 'linux', env }), false);
+    const env = { PATH: dir, WSL_DISTRO_NAME: 'Ubuntu', CAPTURE_FILE: capture, ARGS_FILE: argsPath };
+    const provider = createClipboardProvider({ platform: 'linux', env });
+    assert.equal(await provider.copy(command), 'copied');
+    assert.equal(Buffer.from(readFileSync(capture, 'utf8'), 'base64').toString('utf8'), command);
+    const args = JSON.parse(readFileSync(argsPath, 'utf8')) as string[];
+    assert.deepEqual(args.slice(0, 5), ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-Command']);
+    assert.ok(args.every((arg) => !arg.includes(command)));
+    assert.match(args[5], /SetText/);
+    assert.match(args[5], /GetText/);
+    assert.match(args[5], /Ordinal/);
+    provider.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('Windows clipboard invokes clip.exe and requires a successful exit', async () => {
+test('clipboard refuses missing route and malformed acknowledgment', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tpd1-clipboard-'));
   try {
-    writeFileSync(join(dir, 'clip.exe'), '#!/bin/sh\nexit 1\n', { mode: 0o700 });
-    assert.equal(await copyDelegationCommand('reconcile', { platform: 'win32', env: { PATH: dir } }), false);
+    const env = { PATH: dir, WSL_DISTRO_NAME: 'Ubuntu' };
+    assert.equal(await createClipboardProvider({ platform: 'linux', env }).copy('text'), 'unavailable');
+    writeFileSync(
+      join(dir, 'powershell.exe'),
+      `#!${process.execPath}\nprocess.stdin.resume(); process.stdout.write('not-the-ack');\n`,
+      { mode: 0o700 }
+    );
+    assert.equal(await createClipboardProvider({ platform: 'linux', env }).copy('text'), 'unconfirmed');
+    assert.equal(await createClipboardProvider({ platform: 'linux', env }).copy('bad\0text'), 'unavailable');
+    assert.equal(
+      await createClipboardProvider({ platform: 'linux', env }).copy('x'.repeat(256 * 1024 + 1)),
+      'unavailable'
+    );
+    assert.equal(await createClipboardProvider({ platform: 'linux', env }).copy('\ud800'), 'unavailable');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a timed-out provider that ignores TERM is killed, never falls back, and cannot write later', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpd1-clipboard-'));
+  const late = join(dir, 'late');
+  const fallback = join(dir, 'fallback');
+  const started = join(dir, 'started');
+  try {
+    writeFileSync(
+      join(dir, 'powershell.exe'),
+      `#!${process.execPath}\nprocess.on('SIGTERM', () => {}); require('fs').writeFileSync(process.env.STARTED, 'started'); process.stdin.resume(); setTimeout(() => { require('fs').writeFileSync(process.env.LATE, 'late'); process.stdout.write('HUD_CLIPBOARD_OK_V1'); }, 1200);\n`,
+      { mode: 0o700 }
+    );
+    writeFileSync(
+      join(dir, 'xclip'),
+      `#!${process.execPath}\nrequire('fs').writeFileSync(process.env.FALLBACK, 'fallback');\n`,
+      { mode: 0o700 }
+    );
+    const env = { PATH: dir, WSL_DISTRO_NAME: 'Ubuntu', LATE: late, FALLBACK: fallback, STARTED: started };
+    const provider = createClipboardProvider({ platform: 'linux', env, timeoutMs: 800, cleanupMs: 1000 });
+    const pending = provider.copy('first');
+    for (let i = 0; i < 30 && !existsSync(started); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(existsSync(started), true);
+    assert.equal(await provider.copy('second'), 'unavailable');
+    assert.equal(await pending, 'unconfirmed');
+    assert.equal(await provider.copy('after-timeout'), 'unavailable');
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.equal(existsSync(late), false);
+    assert.equal(existsSync(fallback), false);
+    provider.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('closing the page terminates the owned clipboard child and prevents new launches', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpd1-clipboard-'));
+  const started = join(dir, 'started');
+  try {
+    writeFileSync(
+      join(dir, 'powershell.exe'),
+      `#!${process.execPath}\nrequire('fs').writeFileSync(process.env.STARTED, 'started'); process.stdin.resume(); setTimeout(() => {}, 3000);\n`,
+      { mode: 0o700 }
+    );
+    const provider = createClipboardProvider({
+      platform: 'linux',
+      env: { PATH: dir, WSL_DISTRO_NAME: 'Ubuntu', STARTED: started },
+      cleanupMs: 1000,
+    });
+    const pending = provider.copy('first');
+    for (let i = 0; i < 50 && !existsSync(started); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(existsSync(started), true);
+    const closed = provider.close();
+    assert.equal(await pending, 'unconfirmed');
+    await closed;
+    assert.equal(await provider.copy('later'), 'unavailable');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -342,16 +420,23 @@ test('clipboard failure is honestly reported by the real monitor notice without 
   const { vm, frame, keys } = view('headless', true);
   const action = press(frame, 'resume-reconcile').action;
   if (!action || action.type !== 'delegation-copy') throw new Error('missing action');
-  const message = await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, {
+  const longAction = {
+    ...action,
+    descriptor: { ...action.descriptor, displayCommand: action.descriptor.displayCommand + ' ' + 'x'.repeat(100) },
+  };
+  const message = await dispatchDelegationAction(longAction, frame.delegation?.vm, vm, true, {
     home: null,
     copy: async () => false,
   });
   for (const width of [32, 80]) {
     const displayed = text(
-      renderMonitor({ ...monitorInput(vm, { selected: keys.worker, width, height: 24 }), notice: message })
+      renderMonitor({
+        ...monitorInput(vm, { selected: keys.worker, width, height: 24 }),
+        notice: boundedActionNotice(message, width),
+      })
     ).join(' ');
-    assert.match(displayed.replace(/\s+/g, ' '), /Clipboard failed; command not shown\./);
-    assert.ok(!displayed.includes(action.descriptor.displayCommand));
+    assert.match(displayed.replace(/\s+/g, ' '), /Not copied; command not shown\./);
+    assert.ok(!displayed.includes(longAction.descriptor.displayCommand));
   }
 });
 
@@ -382,4 +467,21 @@ test('long log paths render an explicit truncation notice in a narrow monitor', 
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test('short captured command is displayed in full when clipboard is unavailable', async () => {
+  const { vm, frame, keys } = view('headless', true);
+  const original = press(frame, 'resume-reconcile').action;
+  if (!original || original.type !== 'delegation-copy') throw new Error('missing action');
+  const action = { ...original, descriptor: { ...original.descriptor, displayCommand: 'hud run reconcile r_1' } };
+  const message = await dispatchDelegationAction(action, frame.delegation?.vm, vm, true, {
+    home: null,
+    copy: async () => 'unavailable',
+  });
+  const notice = boundedActionNotice(message, 80);
+  const displayed = text(
+    renderMonitor({ ...monitorInput(vm, { selected: keys.worker, width: 80, height: 24 }), notice })
+  ).join(' ');
+  assert.ok(displayed.includes('Not copied: hud run reconcile r_1'));
+  assert.equal(boundedActionNotice('Not copied: a\nb', 80), 'Not copied; command not shown.');
 });

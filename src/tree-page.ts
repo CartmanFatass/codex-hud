@@ -6,7 +6,7 @@ import type { DelegationViewModel } from './core/link/view-model.js';
 import { navigateSession } from './utils/session-navigation.js';
 import {
   dispatchDelegationAction,
-  copyDelegationCommand,
+  createClipboardProvider,
   withInputRefresh,
   delegationActivityTarget,
   createNavigationGate,
@@ -309,6 +309,7 @@ async function runLivePage(): Promise<void> {
   let confirmationFrame: SettingsConfirmationFrame | undefined;
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
+  const clipboard = createClipboardProvider();
   const navigateOnce = createNavigationGate();
   const openOnce = createOpenGate();
   let lastClickSwitch: { id: string; at: number } | undefined;
@@ -1181,6 +1182,7 @@ async function runLivePage(): Promise<void> {
   const finish = (user = false) => {
     if (closed) return;
     closed = true;
+    const clipboardClosing = clipboard.close();
     delegationCollector?.close();
     briefer.stop();
     jobs.stop();
@@ -1203,10 +1205,7 @@ async function runLivePage(): Promise<void> {
     snapshotWriter.remove();
     if (user) requestEnsureSingle();
     // Settle bounded local telemetry writes before the terminal process exits.
-    void model
-      .flushTelemetry()
-      .catch(() => {})
-      .finally(resolveDone);
+    void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing]).finally(resolveDone);
   };
   const switchSession = (id: string) => {
     const root = tree.rootId;
@@ -1658,7 +1657,7 @@ async function runLivePage(): Promise<void> {
             actionFrame?.delegation?.vm,
             delegation,
             actionRoot === tree.rootId && actionEpoch === collectionEpoch,
-            { home: delegationCollector?.home ?? null, copy: copyDelegationCommand }
+            { home: delegationCollector?.home ?? null, copy: clipboard.copy }
           );
         void (action.type === 'delegation-open' ? openOnce(action.key, execute) : execute()).then((message) => {
           if (
