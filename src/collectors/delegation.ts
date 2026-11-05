@@ -1,3 +1,9 @@
+import {
+  MAX_PUBLICATION_DISPLAYS,
+  validClaudeAction,
+  validClaudeProgress,
+  type PublicationDisplay,
+} from '../core/link/reader-display.js';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { canonicalJson } from '../core/canonical.js';
@@ -121,8 +127,19 @@ interface Reading {
   rateBlocked?: string;
   rateReceipt?: CollectedLinkSession['committedRate'];
   actionReceipt?: CollectedLinkSession['committedAction'];
+  progressReceipt?: CollectedLinkSession['committedProgress'];
+  displayCheckpointIdentity?: PublicationDisplay['checkpointIdentity'];
+  displayDirty?: boolean;
   lastSessionWasRate?: boolean;
   spentRecovery?: string;
+}
+function clearClaudeDisplay(reading: Reading): void {
+  if (reading.ref.harness !== 'claude') return;
+  reading.actionReceipt = undefined;
+  reading.progressReceipt = undefined;
+  reading.displayCheckpointIdentity = undefined;
+  if (reading.envelope)
+    reading.envelope = { ...reading.envelope, committedAction: undefined, committedProgress: undefined };
 }
 interface RecoveryContinuation {
   key: string;
@@ -167,6 +184,7 @@ class SessionCollection implements LinkCollectionPort {
   private readonly holder = `hud:${process.pid}:${randomUUID()}`;
   private snapshot: readonly CollectedLinkSession[] | null = null;
   private readings = new Map<string, Reading>();
+  private workerDisplays = new Map<string, PublicationDisplay>();
   private sourceChecks = new Map<string, { dirty: boolean; token: number }>();
   readonly minimumBytes = new Map<string, number>();
   private pendingCommits = new Set<string>();
@@ -234,6 +252,7 @@ class SessionCollection implements LinkCollectionPort {
     if (identity(source.store.databasePath) !== source.storeIdentity) {
       source.writable = false;
       reading.publisher?.forget();
+      clearClaudeDisplay(reading);
       return null;
     }
     return (reading.publisher ??= new SessionPublisher(source.store, reading.ref, this.holder));
@@ -265,6 +284,7 @@ class SessionCollection implements LinkCollectionPort {
       if (!source.store || identity(source.store.databasePath) !== source.storeIdentity) {
         source.writable = false;
         publisher.forget();
+        clearClaudeDisplay(reading);
         if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false };
         return { attempted: false, changed: false, error: 'observation_store_identity_changed' };
       }
@@ -368,6 +388,7 @@ class SessionCollection implements LinkCollectionPort {
       try {
         if (!publisher.valid(nowMs)) {
           publisher.forget();
+          clearClaudeDisplay(reading);
           reading.reader = undefined;
           reading.checkpoint = undefined;
           reading.recoveryPending = true;
@@ -375,22 +396,50 @@ class SessionCollection implements LinkCollectionPort {
           return { attempted: false, changed: false, error: null };
         }
         const prior = reading.envelope?.evidence.observation.statusProjection.observationStamp?.commitSeq;
+        const priorDisplay = canonicalJson([
+          reading.envelope?.committedAction ?? null,
+          reading.envelope?.committedProgress ?? null,
+        ]);
         const committed = publisher.publish(facts, key, nowMs);
         if (committed && this.committed(this.sources.get(reading.ref.sourceId)!, reading)) {
           const rate = publisher.committedRate(committed);
           const stamp = reading.envelope?.evidence.observation.statusProjection.observationStamp;
           if (rate && stamp && canonicalJson(stamp) === canonicalJson(rate.stamp) && reading.envelope?.loaded)
             reading.envelope = { ...reading.envelope, committedRate: rate };
+          if (reading.ref.harness === 'claude') {
+            const sameCommit =
+              !!stamp && canonicalJson(stamp) === canonicalJson(committed.observationStamp) && reading.envelope?.loaded;
+            reading.actionReceipt = sameCommit ? (publisher.committedAction(committed) ?? undefined) : undefined;
+            reading.progressReceipt = sameCommit ? (publisher.committedProgress(committed) ?? undefined) : undefined;
+            reading.displayCheckpointIdentity = sameCommit ? structuredClone(committed.checkpointIdentity) : undefined;
+            if (reading.envelope)
+              reading.envelope = {
+                ...reading.envelope,
+                committedAction: reading.actionReceipt,
+                committedProgress: reading.progressReceipt,
+              };
+          }
         }
-        return { attempted: true, changed: committed?.commitSeq !== prior, error: null, key: node.key };
+        const displayChanged =
+          priorDisplay !==
+          canonicalJson([reading.envelope?.committedAction ?? null, reading.envelope?.committedProgress ?? null]);
+        if (displayChanged) this.invalidateSnapshots();
+        return {
+          attempted: true,
+          changed: committed?.commitSeq !== prior || displayChanged,
+          error: null,
+          key: node.key,
+        };
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'observation_unavailable';
         if (reason === 'status_new_reading_required') {
           publisher.discardReading();
+          clearClaudeDisplay(reading);
           reading.dirty = true;
         }
         if (['lease_fenced', 'lease_expired', 'lease_time_unknown', 'observation_commit_conflict'].includes(reason)) {
           publisher.forget();
+          clearClaudeDisplay(reading);
           reading.reader = undefined;
           reading.checkpoint = undefined;
           reading.recoveryPending = true;
@@ -404,6 +453,83 @@ class SessionCollection implements LinkCollectionPort {
     this.noOpRevision = this.publicationRevision;
     this.noOpDeadline = nextDeadline;
     return { attempted: false, changed: false, error: null };
+  }
+  publicationDisplays(now = Date.now()): PublicationDisplay[] {
+    if (!this.publishing) return [];
+    const values: PublicationDisplay[] = [];
+    for (const reading of this.readings.values()) {
+      const source = this.sources.get(reading.ref.sourceId);
+      const stamp = reading.envelope?.evidence.observation.statusProjection.observationStamp;
+      if (
+        reading.ref.harness !== 'claude' ||
+        !source?.storeIdentity ||
+        !reading.publisher?.valid(now) ||
+        !reading.envelope?.loaded ||
+        !stamp ||
+        !reading.displayCheckpointIdentity
+      )
+        continue;
+      const action =
+        reading.actionReceipt && canonicalJson(reading.actionReceipt.stamp) === canonicalJson(stamp)
+          ? reading.actionReceipt.action
+          : undefined;
+      const progress =
+        reading.progressReceipt && canonicalJson(reading.progressReceipt.stamp) === canonicalJson(stamp)
+          ? reading.progressReceipt.progress
+          : undefined;
+      if (!action && !progress) continue;
+      values.push(
+        structuredClone({
+          sourceIdentity: source.storeIdentity,
+          checkpointIdentity: reading.displayCheckpointIdentity,
+          stamp,
+          ...(action ? { action } : {}),
+          ...(progress ? { progress } : {}),
+        })
+      );
+      if (values.length === MAX_PUBLICATION_DISPLAYS) break;
+    }
+    return values;
+  }
+  acceptPublicationDisplays(input: readonly PublicationDisplay[]): boolean {
+    if (this.publishing) return false;
+    const next = new Map<string, PublicationDisplay>();
+    if (Array.isArray(input) && input.length <= MAX_PUBLICATION_DISPLAYS)
+      for (const value of input) {
+        try {
+          if (
+            value.stamp.ref.harness !== 'claude' ||
+            typeof value.sourceIdentity !== 'string' ||
+            !value.checkpointIdentity ||
+            (!value.action && !value.progress) ||
+            (value.action && !validClaudeAction(value.action)) ||
+            (value.progress && !validClaudeProgress(value.progress))
+          )
+            continue;
+          if (Buffer.byteLength(canonicalJson(value)) > 8192) continue;
+          const key = displayNodeKey({ kind: 'session', ref: value.stamp.ref });
+          if (next.has(key)) {
+            next.clear();
+            break;
+          }
+          next.set(key, structuredClone(value));
+        } catch {
+          /* Malformed display data grants no authority. */
+        }
+      }
+    if (canonicalJson([...next]) === canonicalJson([...this.workerDisplays])) return false;
+    const keys = new Set([...next.keys(), ...this.workerDisplays.keys()]);
+    this.workerDisplays = next;
+    for (const key of keys) {
+      const reading = this.readings.get(key);
+      if (reading) {
+        clearClaudeDisplay(reading);
+        reading.displayDirty = true;
+      }
+      this.pendingCommits.add(key);
+    }
+    this.invalidateSnapshots();
+    return true;
   }
   private reportFacts: ReadonlyMap<string, LedgerStatusFact> = new Map();
   private runEvents: ReadonlyMap<string, LedgerEvent> = new Map();
@@ -569,6 +695,11 @@ class SessionCollection implements LinkCollectionPort {
     return reading;
   }
   private committed(source: Source, reading: Reading): boolean {
+    if (reading.resetPending) {
+      clearClaudeDisplay(reading);
+      if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
+      return true;
+    }
     if (!source.store) return false;
     if (identity(source.store.databasePath) !== source.storeIdentity) {
       reading.rateTarget = undefined;
@@ -576,12 +707,13 @@ class SessionCollection implements LinkCollectionPort {
       reading.rateBlocked = undefined;
       reading.rateReceipt = undefined;
       reading.actionReceipt = undefined;
+      reading.progressReceipt = undefined;
       if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false };
       return false;
     }
     try {
       const stamp = reading.envelope?.evidence.observation.statusProjection.observationStamp;
-      if (stamp && reading.envelope?.loaded) {
+      if (stamp && reading.envelope?.loaded && !reading.displayDirty) {
         const head = source.store.readHead(reading.ref);
         if (
           head &&
@@ -598,6 +730,7 @@ class SessionCollection implements LinkCollectionPort {
         reading.rateBlocked = undefined;
         reading.rateReceipt = undefined;
         reading.actionReceipt = undefined;
+        reading.progressReceipt = undefined;
         if (reading.envelope?.evidence.observation.statusProjection.observationStamp)
           reading.envelope = { ...reading.envelope, loaded: false };
         return true;
@@ -614,6 +747,7 @@ class SessionCollection implements LinkCollectionPort {
         if (reading.rateDone !== key) {
           reading.rateReceipt = undefined;
           reading.actionReceipt = undefined;
+          reading.progressReceipt = undefined;
         }
         reading.rateTarget =
           reading.rateDone === key || reading.rateBlocked === key
@@ -629,6 +763,7 @@ class SessionCollection implements LinkCollectionPort {
           reading.reader = undefined;
           reading.checkpoint = undefined;
           reading.publisher?.forget();
+          clearClaudeDisplay(reading);
           reading.recoveryPending = true;
           reading.dirty = true;
           reading.caughtUp = false;
@@ -643,6 +778,25 @@ class SessionCollection implements LinkCollectionPort {
           return true;
         }
       }
+      reading.displayCheckpointIdentity = structuredClone(commit.checkpointIdentity);
+      if (!this.publishing && reading.ref.harness === 'claude') {
+        const transported = this.workerDisplays.get(displayNodeKey({ kind: 'session', ref: reading.ref }));
+        const accepted =
+          transported &&
+          transported.sourceIdentity === source.storeIdentity &&
+          canonicalJson(transported.checkpointIdentity) === canonicalJson(commit.checkpointIdentity) &&
+          canonicalJson(transported.stamp) === canonicalJson(commit.observationStamp);
+        reading.actionReceipt =
+          accepted && transported.action ? { action: transported.action, stamp: transported.stamp } : undefined;
+        reading.progressReceipt =
+          accepted && transported.progress ? { progress: transported.progress, stamp: transported.stamp } : undefined;
+        reading.displayDirty = false;
+      }
+      const retainedProgress =
+        reading.progressReceipt &&
+        canonicalJson(reading.progressReceipt.stamp) === canonicalJson(commit.observationStamp)
+          ? reading.progressReceipt
+          : undefined;
       const retainedRate =
         !this.publishing &&
         reading.rateReceipt &&
@@ -655,11 +809,12 @@ class SessionCollection implements LinkCollectionPort {
           : undefined;
       reading.envelope = {
         evidence: { ...(reading.raw ?? evidenceFromView(reading.ref, commit.summary)), observation: commit.summary },
-        ...(this.publishing || retainedRate || retainedAction
+        ...(this.publishing || retainedRate || retainedAction || retainedProgress
           ? { committedOnly: true, lastCommitted: commit.summary }
           : {}),
         ...(retainedRate ? { committedRate: retainedRate } : {}),
         ...(retainedAction ? { committedAction: retainedAction } : {}),
+        ...(retainedProgress ? { committedProgress: retainedProgress } : {}),
         sourceGeneration: commit.sourceGeneration,
         linkEvidenceCurrent: reading.raw ? (prior?.linkEvidenceCurrent ?? false) : false,
         loaded: true,
@@ -698,7 +853,7 @@ class SessionCollection implements LinkCollectionPort {
           current.size < reading.signature.size)
       ) {
         reading.resetPending = true;
-        reading.publisher?.discardReading();
+        (reading.publisher?.discardReading(), clearClaudeDisplay(reading));
         if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
       }
     }
@@ -741,7 +896,7 @@ class SessionCollection implements LinkCollectionPort {
             reading.topologyToken = -1;
             reading.resetSignature = current;
             reading.resetPending = true;
-            reading.publisher?.discardReading();
+            (reading.publisher?.discardReading(), clearClaudeDisplay(reading));
             if (reading.envelope) reading.envelope = { ...reading.envelope, loaded: false, linkEvidenceCurrent: false };
             return 'native_topology';
           }
@@ -823,12 +978,13 @@ class SessionCollection implements LinkCollectionPort {
         const compatible = continuationValid();
         if (!compatible || performance.now() >= sessionDeadline) {
           abandonContinuation();
-          if (!compatible) reading.publisher?.forget();
+          if (!compatible) (reading.publisher?.forget(), clearClaudeDisplay(reading));
           return reading.envelope ?? null;
         }
       } catch {
         abandonContinuation();
         reading.publisher?.forget();
+        clearClaudeDisplay(reading);
         return reading.envelope ?? null;
       }
     }
@@ -926,6 +1082,7 @@ class SessionCollection implements LinkCollectionPort {
           reading.rateBlocked = undefined;
           reading.rateReceipt = undefined;
           reading.actionReceipt = undefined;
+          reading.progressReceipt = undefined;
           this.pendingCommits.add(key);
           reading.envelope = {
             ...reading.envelope,
@@ -948,6 +1105,7 @@ class SessionCollection implements LinkCollectionPort {
           }
           reading.rateReceipt = undefined;
           reading.actionReceipt = undefined;
+          reading.progressReceipt = undefined;
           reading.envelope = {
             ...reading.envelope,
             committedRate: undefined,
@@ -965,6 +1123,7 @@ class SessionCollection implements LinkCollectionPort {
         };
         reading.rateReceipt = undefined;
         reading.actionReceipt = undefined;
+        reading.progressReceipt = undefined;
         reading.envelope = {
           ...reading.envelope,
           committedRate: undefined,
@@ -1001,6 +1160,7 @@ class SessionCollection implements LinkCollectionPort {
           return reading.envelope ?? null;
         }
         if (claim === 'acquired') {
+          clearClaudeDisplay(reading);
           reading.reader = undefined;
           reading.checkpoint = undefined;
           reading.recoveryPending = true;
@@ -1147,6 +1307,7 @@ class SessionCollection implements LinkCollectionPort {
       if (!result.evidence || !result.stats) return null;
       reading.spentRecovery = undefined;
       const reset = previousGeneration !== undefined && previousGeneration !== result.checkpoint.sourceGeneration;
+      if (reset) clearClaudeDisplay(reading);
       if (reset && source.adapter instanceof CodexAdapter) {
         source.adapter.invalidateTopology(ref);
         reading.topologyToken = -1;
@@ -1193,7 +1354,10 @@ class SessionCollection implements LinkCollectionPort {
               }
             : {}),
       };
-      reading.caughtUp = result.observation.coverage.state !== 'catching_up' && !result.continuation;
+      reading.caughtUp =
+        !(source.adapter instanceof ClaudeAdapter && result.checkpoint.fileId.inode === 0) &&
+        result.observation.coverage.state !== 'catching_up' &&
+        !result.continuation;
       reading.dirty = !reading.caughtUp;
       reading.signature = readSignature;
       const key = displayNodeKey({ kind: 'session', ref });
@@ -1225,6 +1389,8 @@ class SessionCollection implements LinkCollectionPort {
     return charged;
   }
   invalidateSource(sourceId: string): void {
+    for (const [key, value] of this.workerDisplays)
+      if (value.stamp.ref.sourceId === sourceId) this.workerDisplays.delete(key);
     if (
       this.continuation?.target.ref.sourceId === sourceId ||
       this.activeContinuation?.target.ref.sourceId === sourceId
@@ -1235,7 +1401,7 @@ class SessionCollection implements LinkCollectionPort {
     for (const reading of this.readings.values())
       if (reading.ref.sourceId === sourceId) {
         if (source?.adapter instanceof ClaudeAdapter) source.adapter.invalidateTopology(reading.ref);
-        if (identityChanged) reading.publisher?.forget();
+        if (identityChanged) (reading.publisher?.forget(), clearClaudeDisplay(reading));
         else reading.publisher?.close();
         reading.publisher = undefined;
         reading.reader = undefined;
@@ -1246,6 +1412,7 @@ class SessionCollection implements LinkCollectionPort {
         reading.rateBlocked = undefined;
         reading.rateReceipt = undefined;
         reading.actionReceipt = undefined;
+        reading.progressReceipt = undefined;
         reading.dirty = true;
       }
     this.invalidateSnapshots();
@@ -1379,6 +1546,12 @@ export class HudDelegationCollector {
   private publication = { publishMs: 0, fullTickMs: 0, attempted: false, changed: false, error: null as string | null };
   publicationStats() {
     return { ...this.publication };
+  }
+  publicationDisplays(): PublicationDisplay[] {
+    return this.port.publicationDisplays();
+  }
+  acceptPublicationDisplays(values: readonly PublicationDisplay[]): boolean {
+    return this.port.acceptPublicationDisplays(values);
   }
   /** Await immediately after this collection's initial paint; never call for redraw/status/wait. */
   async afterPaint(

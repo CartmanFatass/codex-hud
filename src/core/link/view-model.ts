@@ -19,6 +19,7 @@ export interface DelegationViewModel {
 }
 export interface DelegationNodeDetails {
   action?: import('../interfaces/session-evidence.js').NativeAction;
+  progress?: import('../interfaces/session-evidence.js').SessionEvidence['progress'];
   outputRate?: NonNullable<ReaderResult['outputRate']>;
   status: StatusProjection | null;
   statusSource: 'committed' | 'ledger' | 'unavailable';

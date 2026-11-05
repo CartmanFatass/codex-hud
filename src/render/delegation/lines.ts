@@ -7,7 +7,7 @@
  *
  * A line holds elements, each only when its fact is known; short of room the
  * elements go in a fixed order and the line never wraps. Nothing is read from
- * the legacy panel data and nothing is invented: no brief, no action, no rate.
+ * the legacy panel data and nothing is invented: no brief, no rate. Native actions come from committed receipts.
  */
 
 import { colors, theme, visualLength } from '../colors.js';
@@ -260,8 +260,8 @@ export interface FocusLine {
 
 /**
  * What the selected node is waiting on, what it reported or how it ended, by §3.4's priority: the stop-in-pane
- * sentence, a pending or fault reason, the report or the terminal facts. Null when the view model has none of them
- * (no placeholder, no brief, no action: rulings B10B-s2 Q2).
+ * sentence, a pending or fault reason, the report, the terminal facts, then a committed native action.
+ * Null when the view model has none of them (no placeholder and no borrowed legacy facts).
  */
 export function focusLine(pn: PNode, nowMs: number, g: GlyphSet, say: Say): FocusLine | null {
   const p = pn.proj;
@@ -296,6 +296,26 @@ export function focusLine(pn: PNode, nowMs: number, g: GlyphSet, say: Say): Focu
     const segments: Segment[] = [{ text: head, role }];
     for (const missing of d.missing)
       if (missing !== cause) segments.push({ text: causeWord(missing, say), role: 'muted', shed: SHED_MISSING });
+    // A native/root session can have a confirmed background launch without any process-liveness evidence.
+    // Retain the unknown prefix and marker, adding only the historical fact after it. Specific faults,
+    // reconciliation, reports and terminal facts retain their exclusive focus priority.
+    if (
+      word === W.unknown &&
+      p.harness === 'claude' &&
+      (p.isRoot || p.isNative) &&
+      !d.managed &&
+      !m.uncertain &&
+      !m.supervisorLost &&
+      !m.notLoaded &&
+      m.role !== 'warning' &&
+      !cause &&
+      d.missing.length === 0 &&
+      d.action?.source === 'claude.background.last_confirmed' &&
+      d.action.name === 'Bash (background)'
+    ) {
+      const confirmed = actionSegments(p, say);
+      if (confirmed) segments.push(...confirmed.map((segment) => ({ ...segment, role: 'muted' as Role })));
+    }
     return { glyph: { text: g.marker.unknown, role }, segments };
   }
   const exitSegments = (unknownWhenNone: boolean): Segment[] => {
@@ -333,7 +353,32 @@ export function focusLine(pn: PNode, nowMs: number, g: GlyphSet, say: Say): Focu
     segments.push(...exitSegments(true), ...noteSegments());
     return { glyph: null, segments };
   }
-  return null;
+  const segments = actionSegments(p, say);
+  return segments ? { glyph: null, segments } : null;
+}
+
+/** A committed action is historical confirmation, never an inferred process state. */
+function actionSegments(p: NodeProjection, say: Say): Segment[] | null {
+  const d = p.detail;
+  const action = d.action;
+  if (
+    !action ||
+    d.terminal ||
+    d.reportStatus !== null ||
+    !Number.isFinite(action.startedAt) ||
+    action.startedAt < 0 ||
+    !action.name ||
+    (p.harness === 'claude' &&
+      (action.source !== 'claude.background.last_confirmed' ||
+        action.asOf === null ||
+        !Number.isFinite(action.asOf) ||
+        action.asOf < action.startedAt))
+  )
+    return null;
+  const label = action.source === 'claude.background.last_confirmed' ? 'Last confirmed: {name}' : 'Action: {name}';
+  const segments: Segment[] = [{ text: say(label, { name: action.name }), role: 'text' }];
+  if (action.target) segments.push({ text: action.target, role: 'muted' });
+  return segments;
 }
 
 /** The focus line as one painted line of at most `width` columns; the sentence picks its form by the width. */

@@ -34,6 +34,7 @@ export interface CollectedLinkSession {
   /** Process-local sample attached only after the same checkpoint was committed. */
   committedRate?: { rate: NonNullable<ReaderResult['outputRate']>; stamp: ObservationStamp };
   committedAction?: { action: import('../interfaces/session-evidence.js').NativeAction; stamp: ObservationStamp };
+  committedProgress?: { progress: NonNullable<SessionEvidence['progress']>; stamp: ObservationStamp };
   sourceGeneration: number;
   /** False for retained anchors from a reset/unknown reading lineage. */
   linkEvidenceCurrent: boolean;
@@ -112,6 +113,7 @@ export interface LinkTreeNode {
   /** Process-local value, present only for this node's exact committed observation stamp. */
   committedRate?: NonNullable<ReaderResult['outputRate']>;
   committedAction?: import('../interfaces/session-evidence.js').NativeAction;
+  committedProgress?: NonNullable<SessionEvidence['progress']>;
   /** Preserved for Inspector/history even if its stamp cannot describe the current run. */
   lastObservation: ObservationView | null;
   currentRun: LedgerReadRun | null;

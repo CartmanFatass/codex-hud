@@ -42,6 +42,9 @@ export interface NativeAction {
   name: string;
   target?: string;
   startedAt: number;
+  /** Process-local native provenance; not a claim of process liveness. */
+  source?: 'claude.background.last_confirmed';
+  asOf?: number;
 }
 
 export interface CodexExtras {

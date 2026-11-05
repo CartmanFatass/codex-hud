@@ -1,3 +1,4 @@
+import { readerDisplay } from './reader-display.js';
 import { randomUUID } from 'node:crypto';
 import { canonicalJson } from '../canonical.js';
 import { COLLECT_RENEW_INTERVAL_MS } from '../collect-lease.js';
@@ -18,6 +19,8 @@ export class SessionPublisher {
   private renewedAt = 0;
   private prepared: PreparedStatusReading | null = null;
   private preparedRate: ReaderResult['outputRate'];
+  private preparedDisplay: ReturnType<typeof readerDisplay> = {};
+  private publishedDisplayReading: PreparedStatusReading | null = null;
   private result: ReaderResult | null = null;
   private pending = false;
   private rebuildFromReaderVersion: string | undefined;
@@ -102,6 +105,7 @@ export class SessionPublisher {
         this.sources = readerStatusSources(this.result, target, this.nativeMemory);
       }
       this.prepared = this.writer.prepare(this.result, this.sources, target);
+      this.preparedDisplay = readerDisplay(this.result, this.ref);
       const rate = this.result.outputRate;
       const rollout = (this.result.checkpoint as CodexCheckpoint).codex?.rollout;
       const saved = rollout?.version === 3 ? rollout.state.cachedResult : null;
@@ -137,9 +141,22 @@ export class SessionPublisher {
     return this.valid(nowMs) && this.writer && this.lease ? { ...this.lease } : null;
   }
   capture(result: ReaderResult, rebuildFromReaderVersion?: string): void {
+    // A normal unresolved Claude read has no physical source identity yet. Publishing its inode=0
+    // placeholder would pin this generation and reject the first real file. Only the explicit
+    // fenced reader-version rebuild is permitted to publish an empty replacement boundary.
+    if (
+      result.checkpoint.ref.harness === 'claude' &&
+      result.checkpoint.fileId.inode === 0 &&
+      rebuildFromReaderVersion === undefined
+    ) {
+      this.discardReading();
+      return;
+    }
     this.result = result;
     this.prepared = null;
     this.preparedRate = undefined;
+    this.preparedDisplay = {};
+    this.publishedDisplayReading = null;
     this.sources = null;
     this.pending = true;
     this.rebuildFromReaderVersion = rebuildFromReaderVersion;
@@ -154,6 +171,8 @@ export class SessionPublisher {
     this.result = null;
     this.prepared = null;
     this.preparedRate = undefined;
+    this.preparedDisplay = {};
+    this.publishedDisplayReading = null;
     this.sources = null;
     this.nativeMemory = undefined;
     this.pending = false;
@@ -188,6 +207,7 @@ export class SessionPublisher {
     );
     this.pending = false;
     this.rebuildFromReaderVersion = undefined;
+    this.publishedDisplayReading = this.prepared;
     this.prior = publication.committed;
     if (this.nativeMemory) this.nativeMemory.resetContinuity = false;
     this.priorGeneration = publication.committed.sourceGeneration;
@@ -212,11 +232,33 @@ export class SessionPublisher {
     if (canonicalJson(this.prepared.checkpoint.identity) !== canonicalJson(committed.checkpointIdentity)) return null;
     return { rate: { ...rate }, stamp: structuredClone(committed.observationStamp) };
   }
+  private displayCommitted(committed: ObservationProjection): boolean {
+    return (
+      !!this.prepared &&
+      this.publishedDisplayReading === this.prepared &&
+      committed === this.prior &&
+      canonicalJson(this.prepared.checkpoint.identity) === canonicalJson(committed.checkpointIdentity)
+    );
+  }
+  committedAction(committed: ObservationProjection) {
+    const action = this.preparedDisplay.action;
+    return action && this.displayCommitted(committed)
+      ? { action: { ...action }, stamp: structuredClone(committed.observationStamp) }
+      : null;
+  }
+  committedProgress(committed: ObservationProjection) {
+    const progress = this.preparedDisplay.progress;
+    return progress && this.displayCommitted(committed)
+      ? { progress: structuredClone(progress), stamp: structuredClone(committed.observationStamp) }
+      : null;
+  }
   forget(): void {
     this.writer = null;
     this.lease = null;
     this.prepared = null;
     this.preparedRate = undefined;
+    this.preparedDisplay = {};
+    this.publishedDisplayReading = null;
     this.result = null;
     this.sources = null;
     this.nativeMemory = undefined;

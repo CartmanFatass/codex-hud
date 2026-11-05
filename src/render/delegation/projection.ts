@@ -88,6 +88,15 @@ export interface NodeDetail {
   exit: { code: number | null; signal: string | null } | null;
   reportStatus: string | null;
   conflictCount: number;
+  /** Sanitized committed native action; confirmation does not assert process liveness. */
+  action: {
+    id: string;
+    name: string;
+    target: string | null;
+    startedAt: number;
+    source: string | null;
+    asOf: number | null;
+  } | null;
 }
 
 /** A node's review natives: how many, and how many failed or are at work (the chip's colour). */
@@ -177,6 +186,7 @@ interface CacheEntry {
   detail: DelegationNodeDetails | undefined;
   relation: LinkRelationProjection | undefined;
   conflictName: string | null;
+  ledgerAvailable: boolean;
   facts: NodeFacts;
   proj: NodeProjection;
   seen: number;
@@ -297,6 +307,17 @@ function buildProjection(f: NodeFacts): NodeProjection {
       exit: f.runExitSource !== null ? { code: f.runExitCode, signal: f.runExitSignal } : null,
       reportStatus: f.reportStatus,
       conflictCount: f.conflictCount,
+      action:
+        f.actionId !== null && f.actionName !== null && f.actionStartedAt !== null
+          ? {
+              id: monitorText(f.actionId.replace(/\s+/g, ' ').trim()),
+              name: monitorText(f.actionName.replace(/\s+/g, ' ').trim()),
+              target: f.actionTarget === null ? null : monitorText(f.actionTarget.replace(/\s+/g, ' ').trim()),
+              startedAt: f.actionStartedAt,
+              source: f.actionSource === null ? null : monitorText(f.actionSource),
+              asOf: f.actionAsOf,
+            }
+          : null,
     },
   };
 }
@@ -354,6 +375,7 @@ export function projectDelegation(
 function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): DelegationProjection {
   const tree = vm.tree;
   const generation = cache.begin();
+  const ledgerAvailable = tree.ledger.state === 'available';
   const relationsByChild = new Map<string, LinkRelationProjection[]>();
   for (const relation of tree.relations) {
     const group = relationsByChild.get(relation.childKey);
@@ -406,13 +428,14 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
       entry.node === node &&
       entry.detail === detail &&
       entry.relation === relation &&
-      entry.conflictName === conflictName
+      entry.conflictName === conflictName &&
+      entry.ledgerAvailable === ledgerAvailable
     ) {
       proj = entry.proj;
       entry.seen = generation;
       cache.hits++;
     } else {
-      const facts = nodeFacts(node, detail, relation, isRoot, conflictName, scratch);
+      const facts = nodeFacts(node, detail, relation, isRoot, conflictName, scratch, ledgerAvailable);
       if (entry && factsEqual(entry.facts, facts)) {
         scratch = facts;
         proj = entry.proj;
@@ -420,12 +443,13 @@ function buildProjection_(vm: DelegationViewModel, cache: ProjectionCache): Dele
         entry.detail = detail;
         entry.relation = relation;
         entry.conflictName = conflictName;
+        entry.ledgerAvailable = ledgerAvailable;
         entry.seen = generation;
         cache.hits++;
       } else {
         cache.misses++;
         proj = buildProjection(facts);
-        cache.set(node.key, { node, detail, relation, conflictName, facts, proj, seen: generation });
+        cache.set(node.key, { node, detail, relation, conflictName, ledgerAvailable, facts, proj, seen: generation });
         // Ownership transfers to the entry. Never refill a retained facts record.
         scratch = undefined;
       }
@@ -689,6 +713,7 @@ function syntheticConflictRow(
       exit: null,
       reportStatus: null,
       conflictCount: relation.conflict?.count ?? 0,
+      action: null,
     },
   };
   return {

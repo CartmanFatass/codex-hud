@@ -54,6 +54,14 @@ export interface NodeFacts {
   effort: string | null;
   contextPercent: number | null;
 
+  // A native action from this observation's committed display receipt, never raw reader evidence.
+  actionId: string | null;
+  actionName: string | null;
+  actionTarget: string | null;
+  actionStartedAt: number | null;
+  actionSource: string | null;
+  actionAsOf: number | null;
+
   // The ledger's run.
   runId: string | null;
   runState: string | null;
@@ -153,6 +161,12 @@ function newNodeFacts(): NodeFacts {
     model: null,
     effort: null,
     contextPercent: null,
+    actionId: null,
+    actionName: null,
+    actionTarget: null,
+    actionStartedAt: null,
+    actionSource: null,
+    actionAsOf: null,
     runId: null,
     runState: null,
     runMode: null,
@@ -212,7 +226,8 @@ export function nodeFacts(
   relation: LinkRelationProjection | undefined,
   isRoot: boolean,
   conflictName: string | null,
-  buffer?: NodeFacts
+  buffer?: NodeFacts,
+  ledgerAvailable = true
 ): NodeFacts {
   const status = detail?.status ?? null;
   const run = node.currentRun;
@@ -248,6 +263,31 @@ export function nodeFacts(
   facts.model = metric(observation?.model);
   facts.effort = metric(observation?.effort);
   facts.contextPercent = context ? context.percent : null;
+
+  const candidate =
+    ledgerAvailable && node.loaded && observation && !detail?.observationUnavailableReason ? detail?.action : undefined;
+  // Use the committed status boundary, not the paint clock: action-row presence must stay stable for a
+  // projection (rich-card heights are memoized by projection identity).
+  const observedAt = status?.observedAt ?? -1;
+  const action =
+    candidate &&
+    Number.isFinite(observedAt) &&
+    Number.isFinite(candidate.startedAt) &&
+    candidate.startedAt >= 0 &&
+    candidate.startedAt <= observedAt &&
+    (candidate.source !== 'claude.background.last_confirmed' ||
+      (typeof candidate.asOf === 'number' &&
+        Number.isFinite(candidate.asOf) &&
+        candidate.asOf >= candidate.startedAt &&
+        candidate.asOf <= observedAt))
+      ? candidate
+      : undefined;
+  facts.actionId = action?.id ?? null;
+  facts.actionName = action?.name ?? null;
+  facts.actionTarget = action?.target ?? null;
+  facts.actionStartedAt = action?.startedAt ?? null;
+  facts.actionSource = action?.source ?? null;
+  facts.actionAsOf = action?.asOf ?? null;
 
   facts.runId = run?.runId ?? null;
   facts.runState = run?.state ?? null;

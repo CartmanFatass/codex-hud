@@ -37,6 +37,16 @@ export function language(): Language {
 }
 
 const ZH: Record<string, string> = {
+  'Last confirmed: {name}': '最近确认：{name}',
+  'Last confirmed: {time}': '最近确认：{time}',
+  'Action: {name}': '动作：{name}',
+  'Action: last confirmed {name}': '动作：最近确认 {name}',
+  'Action: unavailable': '动作：不可用',
+  'started {time}': '开始于 {time}',
+  'Source: {source}': '来源：{source}',
+  'Tasks: {done}/{total} · last confirmed {time}': '任务：{done}/{total} · 最近确认 {time}',
+  'No tasks in the last confirmed list': '最近确认的列表中没有任务',
+  'Current task: {task}': '当前任务：{task}',
   Close: '关闭',
   Back: '返回',
   'Activity hub': '活动中心',

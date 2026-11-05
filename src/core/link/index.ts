@@ -1,3 +1,4 @@
+import { validClaudeAction, validClaudeProgress } from './reader-display.js';
 import { canonicalJson } from '../canonical.js';
 import { sameSessionRef, sessionRefKey } from '../identity.js';
 import { displayNodeKey, runExecutionProjection } from '../observation.js';
@@ -161,9 +162,45 @@ export function committedReaderAction(
     return undefined;
   }
   const action = receipt.action;
+  if (session.evidence.ref.harness === 'claude' && !validClaudeAction(action, nowMs)) return undefined;
   return action.name && Number.isFinite(action.startedAt) && action.startedAt >= 0 && action.startedAt <= nowMs
     ? action
     : undefined;
+}
+
+/** Todo progress is display-only and follows the full committed observation fence. */
+export function committedReaderProgress(
+  session: CollectedLinkSession | undefined,
+  observation: ObservationView | null,
+  nowMs: number,
+  ledgerAvailable: boolean
+) {
+  const receipt = session?.committedProgress;
+  if (
+    !session ||
+    !receipt ||
+    !observation ||
+    observation.nodeIdentity.kind !== 'session' ||
+    !ledgerAvailable ||
+    !session.loaded ||
+    !session.committedOnly ||
+    session.evidence.ref.harness !== 'claude'
+  )
+    return undefined;
+  const stamp = observation.statusProjection.observationStamp;
+  try {
+    if (
+      !stamp ||
+      stamp.sourceGeneration !== session.sourceGeneration ||
+      !sameSessionRef(session.evidence.ref, observation.nodeIdentity.ref) ||
+      !sameSessionRef(stamp.ref, session.evidence.ref) ||
+      canonicalJson(stamp) !== canonicalJson(receipt.stamp)
+    )
+      return undefined;
+  } catch {
+    return undefined;
+  }
+  return validClaudeProgress(receipt.progress, nowMs) ? receipt.progress : undefined;
 }
 
 /** Pure entry point for B10 and B16. No reader, adapter, writer, clock or filesystem calls. */
@@ -421,6 +458,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
     const observation = loaded && !nodeConflicts.has(item.key) ? currentObservation(session, run) : null;
     const committedRate = committedReaderRate(session, observation, input.nowMs, available);
     const committedAction = committedReaderAction(session, observation, input.nowMs, available);
+    const committedProgress = committedReaderProgress(session, observation, input.nowMs, available);
     const coverage = session?.evidence.observation.coverage;
     nodes.push({
       identity,
@@ -443,6 +481,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
       observation,
       ...(committedRate ? { committedRate } : {}),
       ...(committedAction ? { committedAction } : {}),
+      ...(committedProgress ? { committedProgress } : {}),
       lastObservation: session?.committedOnly
         ? (session.lastCommitted ?? null)
         : (session?.evidence.observation ?? null),

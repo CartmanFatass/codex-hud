@@ -62,6 +62,7 @@ export function sessionMemoInput(s: CollectedLinkSession) {
     s.evidence.observation.statusProjection.observationStamp,
     s.committedRate,
     s.committedAction,
+    s.committedProgress,
     s.evidence.observation.coverage,
     s.topology
       ? [

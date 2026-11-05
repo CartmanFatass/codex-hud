@@ -397,6 +397,8 @@ export class ClaudeBackgroundProjection {
               name: 'Bash (background)',
               target: `task ${selected.id}`,
               startedAt: selected.startedAt,
+              source: 'claude.background.last_confirmed',
+              asOf: selected.confirmedAt,
             },
           }
         : {}),

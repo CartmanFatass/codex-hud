@@ -65,6 +65,8 @@ test('D1 background Bash action starts only after its exact successful native ac
     name: 'Bash (background)',
     target: 'task task-a',
     startedAt: TIME,
+    source: 'claude.background.last_confirmed',
+    asOf: TIME + 1000,
   });
   assert.equal(started.evidence.background?.coverage, 'complete');
   const idle = await f.reader.read();

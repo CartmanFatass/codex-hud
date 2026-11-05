@@ -61,7 +61,13 @@ async function collect(scope: string | null): Promise<void> {
     error = caught instanceof Error ? caught.message : 'observation_worker_unavailable';
   } finally {
     active = false;
-    port!.postMessage({ type: 'settled', scope, changed, error });
+    port!.postMessage({
+      type: 'settled',
+      scope,
+      changed,
+      error,
+      displays: error ? [] : (runtime?.publicationDisplays() ?? []),
+    });
     if (closing) await closeWorker();
   }
 }

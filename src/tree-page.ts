@@ -1754,20 +1754,25 @@ async function runLivePage(): Promise<void> {
   };
   if (STANDALONE_PANEL && delegationCollector) {
     try {
-      publicationWorker = new PublicationWorker(delegationCollector.home, getCodexHome(), (changed, error) => {
-        if (closed) return;
-        const previousError = publicationError;
-        publicationError = error;
-        if (error) {
-          render();
-        } else if (previousError) {
-          render();
+      publicationWorker = new PublicationWorker(
+        delegationCollector.home,
+        getCodexHome(),
+        (changed, error, displays) => {
+          if (closed) return;
+          const displayChanged = delegationCollector.acceptPublicationDisplays(displays ?? []);
+          const previousError = publicationError;
+          publicationError = error;
+          if (error) {
+            render();
+          } else if (previousError) {
+            render();
+          }
+          if (changed || displayChanged) {
+            workerRefresh = true;
+            void collect(true);
+          }
         }
-        if (changed) {
-          workerRefresh = true;
-          void collect(true);
-        }
-      });
+      );
     } catch {
       publicationError = 'observation_worker_unavailable';
     }

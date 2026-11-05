@@ -43,6 +43,7 @@ interface Entry {
   mutate: (t: Target) => void;
   /** Part of the key without being read by the projection (the design's stamps): it must still invalidate. */
   inert?: boolean;
+  action?: boolean;
 }
 
 const child = (spec: Partial<NodeSpec> = {}): NodeSpec[] => [ROOT, { id: 'a', parent: 'main', ...spec }];
@@ -165,6 +166,26 @@ const TABLE: Entry[] = [
     specs: child({ contextPercent: 40 }),
     mutate: (t) => (t.node.observation.context.value.percent = 80),
   },
+
+  // Committed display action fields are independently keyed, including identity and provenance.
+  ...(['actionId', 'actionName', 'actionTarget', 'actionStartedAt', 'actionSource', 'actionAsOf'] as const).map(
+    (fact): Entry => ({
+      fact,
+      specs: child(),
+      action: true,
+      mutate: (t) => {
+        const field = {
+          actionId: 'id',
+          actionName: 'name',
+          actionTarget: 'target',
+          actionStartedAt: 'startedAt',
+          actionSource: 'source',
+          actionAsOf: 'asOf',
+        }[fact];
+        t.detail.action[field] = fact === 'actionStartedAt' || fact === 'actionAsOf' ? ago(10) : 'changed';
+      },
+    })
+  ),
 
   // The ledger's run.
   {
@@ -432,6 +453,17 @@ for (const entry of TABLE) {
   test(`projection cache: changing ${entry.fact} alone projects again, and warm equals cold`, () => {
     const built = buildVm(entry.specs);
     const key = built.keys[entry.id ?? 'a'];
+    if (entry.action) {
+      built.vm.tree.ledger.state = 'available';
+      built.vm.details[key].action = {
+        id: 'tool-1',
+        name: 'Bash (background)',
+        target: 'task bg-1',
+        startedAt: ago(30),
+        source: 'claude.background.last_confirmed',
+        asOf: ago(25),
+      };
+    }
     const cache = new ProjectionCache();
     projectDelegation(built.vm, cache);
 

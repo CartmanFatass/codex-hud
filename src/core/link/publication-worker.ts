@@ -1,3 +1,4 @@
+import type { PublicationDisplay } from './reader-display.js';
 import { Worker } from 'node:worker_threads';
 
 /** One owned worker and at most one coalesced refresh; no authority crosses the boundary. */
@@ -13,7 +14,11 @@ export class PublicationWorker {
   constructor(
     home: string,
     ambientHome: string | undefined,
-    private readonly onSettled: (changed: boolean, error: string | null) => void
+    private readonly onSettled: (
+      changed: boolean,
+      error: string | null,
+      displays?: readonly PublicationDisplay[]
+    ) => void
   ) {
     this.worker = new Worker(new URL('./publication-worker-entry.js', import.meta.url), {
       workerData: { home, ambientHome },
@@ -21,13 +26,19 @@ export class PublicationWorker {
     });
     this.worker.on(
       'message',
-      (message: { type?: string; changed?: boolean; error?: string | null; clean?: boolean }) => {
+      (message: {
+        type?: string;
+        changed?: boolean;
+        error?: string | null;
+        clean?: boolean;
+        displays?: PublicationDisplay[];
+      }) => {
         if (message.type === 'ready' && !this.closed) {
           this.ready = true;
           this.dispatch();
         } else if (message.type === 'settled') {
           this.active = false;
-          if (!this.closed) this.onSettled(message.changed === true, message.error ?? null);
+          if (!this.closed) this.onSettled(message.changed === true, message.error ?? null, message.displays ?? []);
           this.dispatch();
         } else if (message.type === 'closed') {
           this.finishClose?.(message.clean === true);

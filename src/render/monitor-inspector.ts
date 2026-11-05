@@ -251,12 +251,64 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
   if (!reports.length)
     lines.push(run && detail && view.vm.tree.ledger.state === 'available' ? 'none yet' : 'unavailable');
   for (const report of reports.slice(-5)) lines.push(`${report.status} · ${report.summary}`);
-  const action = view.vm.tree.ledger.state === 'available' && observation ? detail?.action : undefined;
-  lines.push(
-    action && action.startedAt <= view.nowMs
-      ? `Action: ${action.name}${action.target ? ` · ${action.target}` : ''} · started ${timestamp(action.startedAt)}`
-      : 'Action: unavailable'
-  );
+  const displayAvailable =
+    view.vm.tree.ledger.state === 'available' && node.loaded && observation && !detail?.observationUnavailableReason;
+  const action = displayAvailable ? detail?.action : undefined;
+  const confirmedAction = action?.source === 'claude.background.last_confirmed';
+  const validAction =
+    action &&
+    Number.isFinite(action.startedAt) &&
+    action.startedAt >= 0 &&
+    action.startedAt <= view.nowMs &&
+    (node.identity.kind !== 'session' || node.identity.ref.harness !== 'claude' || confirmedAction) &&
+    (!confirmedAction ||
+      (typeof action.asOf === 'number' &&
+        Number.isFinite(action.asOf) &&
+        action.asOf >= action.startedAt &&
+        action.asOf <= view.nowMs));
+  if (validAction) {
+    lines.push(
+      t(confirmedAction ? 'Action: last confirmed {name}' : 'Action: {name}', {
+        name: action.name.replace(/\s+/g, ' ').trim(),
+      }) +
+        (action.target ? ` · ${action.target.replace(/\s+/g, ' ').trim()}` : '') +
+        ` · ${t('started {time}', { time: timestamp(action.startedAt) })}`
+    );
+    if (confirmedAction)
+      lines.push(
+        t('Last confirmed: {time}', { time: timestamp(action.asOf!) }),
+        t('Source: {source}', { source: action.source! })
+      );
+  } else lines.push(t('Action: unavailable'));
+  // Native Todo snapshots are confirmed tool results, not the optional model-written Progress summary.
+  const progress = displayAvailable ? detail?.progress : undefined;
+  const tasks = progress?.value;
+  if (
+    progress?.quality === 'reported' &&
+    (progress.source === 'claude.TodoWrite.last_confirmed' ||
+      progress.source === 'claude.TodoWrite.last_confirmed.observed-time') &&
+    Number.isFinite(progress.asOf) &&
+    progress.asOf >= 0 &&
+    progress.asOf <= view.nowMs &&
+    tasks &&
+    Number.isSafeInteger(tasks.done) &&
+    Number.isSafeInteger(tasks.total) &&
+    tasks.done >= 0 &&
+    tasks.done <= tasks.total &&
+    tasks.total <= 2000
+  ) {
+    lines.push(
+      t('Tasks: {done}/{total} · last confirmed {time}', {
+        done: tasks.done,
+        total: tasks.total,
+        time: timestamp(progress.asOf),
+      })
+    );
+    if (tasks.total === 0) lines.push(t('No tasks in the last confirmed list'));
+    else if (tasks.current?.trim())
+      lines.push(t('Current task: {task}', { task: tasks.current.replace(/\s+/g, ' ').trim() }));
+    lines.push(t('Source: {source}', { source: progress.source }));
+  }
   const actions = selectedActions(view.plan, view.proj, selected);
   if (actions?.open?.word === 'Open' && !actions.open.enabled) {
     const state = detail?.status?.stateKey;

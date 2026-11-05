@@ -1,3 +1,4 @@
+import { committedReaderProgress } from './index.js';
 import { performance } from 'node:perf_hooks';
 import { canonicalJson } from '../canonical.js';
 import { capacityProjection } from '../capacity.js';
@@ -244,11 +245,19 @@ export class LinkTickCollector {
       // The same ledger/topology was already projected before paint. Only this committed observation changed.
       const rate = committedReaderRate(session, summary, Date.now(), this.tree.ledger.state === 'available');
       const action = committedReaderAction(session, summary, Date.now(), this.tree.ledger.state === 'available');
+      const progress = committedReaderProgress(session, summary, Date.now(), this.tree.ledger.state === 'available');
       this.tree = {
         ...this.tree,
         nodes: this.tree.nodes.map((value) =>
           value.key === changedKey
-            ? { ...value, observation: summary, lastObservation: summary, committedRate: rate, committedAction: action }
+            ? {
+                ...value,
+                observation: summary,
+                lastObservation: summary,
+                committedRate: rate,
+                committedAction: action,
+                committedProgress: progress,
+              }
             : value
         ),
       };
@@ -264,6 +273,7 @@ export class LinkTickCollector {
             observationUnavailableReason: null,
             outputRate: rate,
             action,
+            progress,
           },
         },
       };
@@ -713,6 +723,7 @@ export class LinkTickCollector {
       details[node.key] = {
         ...(node.committedRate ? { outputRate: node.committedRate } : {}),
         ...(node.committedAction ? { action: node.committedAction } : {}),
+        ...(node.committedProgress ? { progress: node.committedProgress } : {}),
         status,
         statusSource,
         latestReportForRun: history.at(-1) ?? null,
