@@ -128,7 +128,7 @@ bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain 
 | (g) 已完成 / 历史 | 完成 60 秒内进 notice：`✓ docs-sync reported`；无报告结束 `■ bench ended · no report` | 行变暗并带收尾事实（`reported 8m`、`ended`（无报告，`requestedCause` 为 runtime / idle / blocked / orphan 时带原因词）、`failed`、`cancelled`（仅取消先于结束已证明；先后未知是 `ended` 加安静说明）、阶段 C 的 `answered → file`）；3 分钟后收进 `⊕N` | `a` 显示；终态的 `not loaded` 行照常画，Inspector 标 `not loaded`；`closed` 与重开是 v1.1 |
 | (h) 可见运行的收尾（v1.1） | 警示 `⚑ impl-parser stop in pane`（最新触发）；通知 `✓ docs-sync reported · close its pane`；槽满 `⚑ slots 6/6` | `⚑ · stop in pane` 行 + 契约原句卡片；`✓ · close pane` 行（`!` 行保留 `failed`，提示进委派行）；都在活着桶尾、不收起、占槽 | 不折叠、不设计时器；用户在 pane 内处理，HUD 不送输入、不关 pane；运行终结后转入 (g) |
 
-折叠的触发只有三种：**宽度**（§4.2 的丢弃顺序）、**数量**（卡片总行数超过视口或兄弟 > 5 → 手风琴折叠，§3.5；终态项 3 分钟 → `⊕N`；兄弟 > 12 → 完成桶立刻折叠）、**深度**（> 4）。折叠永远带子孙计数，不吞掉深处的求救。展开用现有键加三个新键：`a`（收起的终态项）、`h`/`l`（折叠 / 展开子树）、`Enter`/`v`（Inspector）、`r`（状态卡层级）、`f`（过滤，新增 `attention` 档）；新键 `n` / `N`（下一个 / 上一个 trouble 节点，保留树形上下文）、`L`（日志）、`R`（Resume / Reconcile，§3.7）。
+折叠的触发只有三种：**宽度**（§4.2 的丢弃顺序）、**数量**（卡片总行数超过视口或兄弟 > 5 → 手风琴折叠，§3.5；终态项 3 分钟 → `⊕N`；兄弟 > 12 → 完成桶立刻折叠）、**深度**（> 4）。折叠永远带子孙计数，不吞掉深处的求救。展开用现有键加三个新键：`a`（收起的终态项）、`h`/`l`（折叠 / 展开子树）、`Enter`/`v`（Inspector）、`r`（状态卡层级）、`f`（过滤，新增 `attention` 档）；新键 `n` / `N`（下一个 / 上一个 trouble 节点，保留树形上下文；B10b-s3 裁决 2026-11-03：此处 trouble 指 §3.2 第一桶，排除视角根、未加载项和已结束的失败）、`L`（日志）、`R`（Resume / Reconcile，§3.7）。
 
 ## 3. 组织
 
@@ -155,7 +155,7 @@ bar 的信息清单不新增模块：`attention` 新增 needs-human / uncertain 
 | 序 | 条件 | 标记 | 颜色 | 行上状态词 |
 |---|---|---|---|---|
 | 1 | 冲突标志 `conflict.count > 0`（同一 ref 多条记录、两个父边、环、已接受的 conflict 证据；B16 `conflict:contradictory_evidence`） | `⚠` | warning | `conflict`（v1.0 的 `two records` 不再用：count 未必是 2） |
-| 2a | `run.state = uncertain` 且 `reconciliation.cause = supervisor_dead`（托管进程死亡已证实；甲下前台回到 shell、harness 被挂起） | `?` | warning | `supervisor lost`；Open / 输入 / Resume 一律不可用，`⇢` 只有 Reconcile |
+| 2a | `run.state = uncertain` 且 `reconciliation.cause = supervisor_dead`（托管进程死亡已证实；甲下前台回到 shell、harness 被挂起） | `?` | warning | `supervisor lost`；Open / 输入 / Resume 一律不可用；（B10b-s3 裁决 2026-11-03）`⇢` 对可见运行是灰色 Open，对 headless 是 Log；Reconcile 在 `↻` |
 | 2b | 其它 `run.state = uncertain`（scope 无法查询、resume 解析到别的 ref、时钟异常、取消已发但结束未证实……），或 `job.state = uncertain`（阶段 C）。结束已证实（完整 R / Q）而取消先后未知**不是** uncertain：那是第 9 条的 `ended` 加 `terminalNote` | `?` | warning | `uncertain` |
 | 3 | `pendingReason ≠ none`，或报告 status = blocked | `⚑` | alert（加粗；面板上唯一的"现在要人"色） | `approval` / `question` / `needs human` / `blocked` |
 | 4 | `lastTurnOutcome = failed`，或报告 status = failed，或有来源的原生退出结果为非零 / 信号（通常只有 headless argv 启动或 exec 直连路径才有；shell status 永不算），或 `run.state = failed`（02 的 non_execution，`stateKey = launch_failed`：从未执行，不是模型跑失败），或 `job.state = failed`（阶段 C） | `!` | danger | `failed`（焦点行在已知时加 `exit 1`）；launch_failed 写 `launch failed`，焦点行给采用的原因 |
@@ -220,7 +220,11 @@ col 2…     深度 d ≥ 1：(d-1) 个「│ 」+「├ 」/「└ 」；未证
 └ ◷12m04s · ~42 tok/s ───────────56%──────────      脚：时钟 · 速率 · 计量线
 ```
 
+（B10b-s2 裁决 2026-11-03）委派行按已知字段依次写 `role · host · time [· run N] [· heartbeat age] [· $cost] [· in dir] [· slot held] [· close pane]`，未知字段省略；不换行，空间不足时依次丢目录、花费、心跳、时间词、时间、run、host，最后截短 role；`slot held` 与 `close pane` 不丢。
+
 委派子会话各自成卡，整卡按深度缩进 2 格；深度 2 缩进 4 格。Jev 作业卡只有头、作业行（`ask · sent 4m · key 1101-a7`）、答案行（仅 answered 后：`→ ~/jev/out/parser-plan.md`）和一条无计量线的脚。卡片里只有事实和模型写的文本，没有 HUD 的命令或劝告（对账命令在 Inspector 和控制条）——两处例外是 Pro 规定的对外文字：可见取消的原句（`⚑ Still running — automatic cancellation is unavailable. Stop this run in its terminal pane.`，占待决行，允许按词换行到最多三行：48 列三行、80 列两行，是卡片正文里唯一允许多行的 HUD 句子）和可见代理报告后委派行末尾的 `· close pane`（已完成，请关闭此 pane）。（v1.1）子行计数行（`2 working · 1 done`）在节点有 `native_topology` 续读项时加 ` · children unknown`，折叠子树的计数 `+3 (1⚑ 2▸)` 同理加 `?`：`+3? (1⚑ 2▸)`。
+
+（B10b-s2 裁决 2026-11-03）rich 有视角根时始终画根卡；根的原生子节点各成卡，其余原生后代是最近卡片内的子行。每卡最多五个子行，其余收为 `+N (…)`；不另画子行计数行。数据尚不能提供的 brief、动作和速率行直接省略，不从旧视图补值。
 
 **手风琴**：rich 布局里的卡片可以折成一行——折起的卡片就是该节点的 compact 行（§3.4），框架列用 `─` 代替 `┌`。卡片总行数超过视口（或兄弟 > 5）时自动按顺序折叠：先 `✓ ■`，再未选中的 `▸ ·`，最后根；`⚑ ? ⚠ !`（新鲜）卡和选中卡永不自动折叠。`h`/`l` 手动折叠 / 展开。于是列表在"全是卡片"和"全是行"之间连续过渡，没有 8→9 张卡的悬崖；compact 布局仍是用户可选的"全部折起"。
 
@@ -241,7 +245,7 @@ col 2…     深度 d ≥ 1：(d-1) 个「│ 」+「├ 」/「└ 」；未证
 | 原生 Codex 子代理 | ⇢ Switch（`o`） | 今天的切换 |
 | 可见委派，`host.currentState ≠ null` 且非 uncertain（occupant 已核验、宿主可控 Herdr / tmux） | ⇢ Open（`o`） | 聚焦那个 pane / tab；`⚑ stop in pane` 与 `✓ close pane` 行的自然动作就是它——去 pane 里停止 / 关闭 |
 | `host.currentState = null`（occupant 不匹配、locator stale / unknown、冲突）或 run uncertain 含 `supervisor lost` | ⇢ Open（灰） | 不可用；Inspector 写原因；HUD 只读 B9 的宿主投影，不自己从心跳推断 |
-| 活跃 headless | ⇢ Log（`L`） | 新 pane 里 `tail -f` 日志；无宿主时显示路径 |
+| headless（活跃或已结束；B10b-s3 裁决 2026-11-03） | ⇢ Log（`L`） | 新 pane 里 `tail -f` 日志；无宿主时显示路径 |
 | 已结束且已报告（`reported`），`resumable = true`（`subject = local_user`）且本地入口已验证（MVP 里不成立） | ↻ Resume（`R`） | 复制 `ActionDescriptor.displayCommand`（缩写 `hud run resume <linkId> --request-key … --expected-run … --mode …`，Inspector 同一行），回显 `✓ Copied`。MVP：按钮出现但写诊断，不复制。直接调用是将来的可选能力：显式按键 → 固定目标确认 → 可信 executable + argv，不执行 shell 字符串，写者重验。`closed` 链接重开是 v1.1 |
 | `uncertain`（含 `supervisor lost`）/ `⚠` | ↻ Reconcile（`R`） | 同上，`operation: reconcile`（缩写 `hud run reconcile <runId>`，按 run + 证据指纹幂等导入）；`supervisor lost` 时这是唯一可用的动作；`⚠` 复制第一条记录的 run |
 | （v1.1）可见运行、取消意图已接受（`⚑ stop in pane`） | ⇢ Open（`o`，门禁同上） | 聚焦 pane 让用户自己停；没有 `↻`——HUD 不发信号、不送输入、不关 pane、不重试取消 |
@@ -298,7 +302,7 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 | 32–39 | 计量线、时钟 | 徽章；名字字段 < 8 格时再丢计量线 |
 | rich 80 | 卡片委派行可带 `run N · heartbeat 3s`；子行带徽章 | |
 
-卡片和行每行恰好 `width` 格（`visualLength`，CJK 2 格）。汇总行的丢弃顺序（v1.1）：计数永远保留 → 覆盖与容量的条件 chip 其次永远保留（`3 not loaded` / `tree partial` / `ledger busy` / `ledger unavailable`，以及仅槽满时的 `slots 6/6`；它们说明计数本身不完整或为什么不能再委派，比花费重要）→ 先丢速率 `~80 tok/s` → 再丢 `3 workers, 1 job` → 最后丢树级花费 `≥$0.12`。chip 的顺序固定：`slots` 在前，覆盖在后；同时出现两个覆盖 chip 时只写最严重的一个（ledger unavailable > ledger busy > tree partial > N not loaded）。
+卡片和行每行恰好 `width` 格（`visualLength`，CJK 2 格）。（B10b-s2 裁决 2026-11-03）汇总行依次为计数、满槽 chip、一个覆盖 chip、`workers, jobs`、`N put away`、树级花费；不画速率。空间不足时依次丢 `put away`、`workers, jobs`、花费，计数和 chip 保留。`slots` 在前；覆盖 chip 只写最严重的一个（ledger unavailable > ledger busy > tree partial > N not loaded）。`N not loaded` 为已知未加载、预算遗漏及遗漏冲突行之和；只有 N 为零且树覆盖不完整时才写 `tree partial`。
 
 ### 4.3 情境 (a)：单个代理，48 列 rich
 
@@ -315,7 +319,7 @@ HUD 不自己改账本，不把 Open 当作 resume，不把 UI done 当作 run e
 
 ### 4.4 情境 (b)：几个原生子代理
 
-与今天的 `panel/en/tab/monitor/48x32` 基线相同：子代理是卡片内子行，`!` 失败子行排前，`◷` 轮时钟，计数行 `1 implementer · 1 scout`。唯一变化是汇总行写法 `1▸ 1✓ · 2 subtasks, 1 failed · ~42 tok/s`（数字在前，顺序 `▸ · ⚑ ? ⚠ ✗ ✓`）。
+（B10b-s2 裁决 2026-11-03）视角根及其原生子节点各成卡，卡内原生后代以 `!` 失败子行排前并显示 `◷` 轮时钟，不画原来的子行计数行。（B10b-s2 裁决 2026-11-03）委派视图的汇总行是 `2▸ 1✗ 1✓`：原生节点也计入，不使用 subtasks 数或速率；无数据的 brief、动作和速率行不画。
 
 ### 4.5 情境 (c)：跨 harness 树
 
@@ -478,7 +482,7 @@ compact 总览（根已退出；五个工人分两个 owner——`main` 占满�
 - `▸ impl-a` 排在最前不是因为它自己：它的子 `rev-a` 刚 stale（48 s），子树有效桶是 trouble、桶内排序时间取子孙的（§3.2）；父行本身仍是 `▸`，不冒充 trouble。v1.0 的这个例子没有按自己的排序规则排，已改。
 - `? rev-a · stale`：muted 色；健康运行上的心跳延迟，supervisor 死亡未证实；时钟是最近心跳年龄 48 s。等待或查看，不需要对账。
 - `⚠ impl-c · conflict`：两条记录都认领它（`main` 的 link，和另一个 Claude 会话 resume 时解析到的同一个 ref）。B9 不给它边也不给它 run（§3.6），HUD 在已渲染的父 `main` 下画 `┊` 行；时钟 `~6m` 是 `conflict.since` 的年龄；不归属任一方；Inspector 的 `── Conflict ──` 节逐条列记录（下）。两条记录的 run 都 uncertain、都占槽。
-- `? impl-d · supervisor lost`：warning 色。甲下托管进程已死：终端前台回到 shell，harness 被挂起（`suspended (tty input)`），run 进入 uncertain 并继续占槽（根 Inspector 的 Slots 节标 `reconcile first`）。行上不写 pane 可用，`⇢` 只有 Reconcile，Open 灰，不送输入、不自动 fg、不自动 resume；焦点行 `? supervisor lost · harness suspended in pane 4 · reconcile first`。
+- `? impl-d · supervisor lost`：warning 色。甲下托管进程已死：终端前台回到 shell，harness 被挂起（`suspended (tty input)`），run 进入 uncertain 并继续占槽（根 Inspector 的 Slots 节标 `reconcile first`）。行上不写 pane 可用；（B10b-s3 裁决 2026-11-03）`⇢` 是灰色 Open，Reconcile 在 `↻`，不送输入、不自动 fg、不自动 resume；焦点行 `? supervisor lost · harness suspended in pane 4 · reconcile first`。
 - `⚑ ask-pro · needs human`（阶段 C）：Jev `NEEDS_HUMAN`，浏览器租约仍被持有；焦点行 `⚑ needs human: login expired in shared browser`。
 - `? impl-b · uncertain`：warning 色；其它对账原因（这里是 scope 无法查询）；时钟是最近证据年龄；委派行写 `slot held`。
 
@@ -686,10 +690,10 @@ fable-5.1 high ━━━━╸───── 112.3K/272K │ parser-kit main*�
 
 场景：Claude Code 会话 `main` 有三个委派：Codex implementer `impl-parser`（可见，pane 4）——父 2 分钟前调用了 `delegate_cancel`，意图被接受但 MVP 不可交付，它还在跑测试；pi reviewer `review-tests`（headless）在工作；Codex writer `docs-sync`（可见，pane 5）8 分钟前报告 completed，pane 还开着，槽还占着。全局 3/6，没满。
 
-**48 列 rich（`impl-parser` 被选中；取消原句占待决行、换成三行）：**
+**48 列 rich（`impl-parser` 被选中；取消原句占待决行、换成三行；B10b-s3 裁决 2026-11-03：控制条显示动作词）：**
 
 ```
-| ⌂  ▦ Agents    ≣   ±   ◫   ⚙ Settings    ⇢ ǁ ? |
+| ⌂  ▦ Agents  ≣   ±   ◫   ⚙ Settings ⇢ Open ǁ ? |
 | ▦  2▸ 1⚑ 1✓ · 3 workers · ≥$0.08               |
 |┌ ▸ ✳ main ─────────────────────── 5.1fable·high|
 |│ Coordinating parser work; waiting on workers. |
