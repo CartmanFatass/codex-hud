@@ -1,3 +1,5 @@
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -34,6 +36,7 @@ test('spawned synthetic executable drains stdout, stderr and long prompt without
     const t = new CodexExecTransport(),
       r = await t.run(f.input);
     assert.equal(r.outcome, 'observed_complete');
+    assert.equal(r.promptWriteFinished, true);
     assert.equal(r.spawned, true);
     assert.equal(r.closeObserved, true);
     assert.equal(r.observation.threadId, 'synthetic-thread');
@@ -149,6 +152,41 @@ test('closed stdin during large prompt cannot be reported complete', async () =>
     assert.equal(r.outcome, 'uncertain');
     assert.ok(r.reason === 'stdin_error' || r.reason === 'child_exit');
     assert.equal(r.observation.complete, false);
+  } finally {
+    f.close();
+  }
+});
+
+test('real child completion with suppressed stdin end cannot manufacture a local write receipt', async () => {
+  const f = setup('early-success');
+  const original = childProcess.spawn;
+  // Deterministic transport fault injection, NOT a claim of a naturally reproduced OS race.
+  childProcess.spawn = ((...args: Parameters<typeof childProcess.spawn>) => {
+    const child = original(...args);
+    if (child.stdin) child.stdin.end = (() => child.stdin!) as typeof child.stdin.end;
+    return child;
+  }) as typeof childProcess.spawn;
+  syncBuiltinESMExports();
+  try {
+    const r = await new CodexExecTransport().run(f.input);
+    assert.equal(r.exit?.code, 0);
+    assert.equal(r.observation.complete, true);
+    assert.equal(r.promptWriteFinished, false);
+    assert.equal(r.outcome, 'uncertain');
+    assert.equal(r.reason, 'stdin_incomplete');
+  } finally {
+    childProcess.spawn = original;
+    syncBuiltinESMExports();
+    f.close();
+  }
+});
+test('real early-success child during a large prompt retains uncertainty even with complete output', async () => {
+  const f = setup('early-success', 'x'.repeat(1024 * 1024));
+  try {
+    const r = await new CodexExecTransport().run(f.input);
+    assert.equal(r.outcome, 'uncertain');
+    assert.equal(r.promptWriteFinished, false);
+    assert.ok(['stdin_error', 'stdin_incomplete'].includes(r.reason));
   } finally {
     f.close();
   }

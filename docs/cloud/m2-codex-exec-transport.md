@@ -16,3 +16,19 @@ node --test dist-test/tests/unit/codex-exec-transport.test.js dist-test/tests/un
 ```
 
 Tests start an explicitly synthetic fixture executable, with invented values, no provider account and no network. They exercise stdin backpressure-sized input, JSONL chunking, resume match/mismatch, exit, abort, timeout, missing binary, output limits and no same-instance retry. This slice is not full M2 or real-client compatibility testing.
+
+## Prompt write receipt
+
+`observed_complete` additionally requires `promptWriteFinished:true`, the local
+Node writable-finish receipt. A clean child exit and complete stdout alone cannot
+substitute for it; a missing receipt is `uncertain` (`stdin_incomplete` unless a
+more specific earlier error exists). This receipt only means bytes were flushed
+from the local writable, not that the child read or acted on them. Even a small
+unread prompt may finish locally. No outcome grants managed authority or permits
+automatic retries; reconcile uncertain effects before further action.
+
+Regression coverage includes a real synthetic early-success child with a large
+prompt, plus deterministic suppression of parent stdin end while a real child
+emits completion and exits zero. The latter is injected transport scheduling, not
+a claim that the natural OS race was observed. The observed real large partial
+write already failed closed with stdin_error before the receipt guard.
