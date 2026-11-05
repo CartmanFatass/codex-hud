@@ -9,6 +9,8 @@ import { openObservationStore, type ObservationStore } from './observation-store
 import { projectFreshness } from './observation.js';
 import { PrivateLedgerGate } from '../ledger/local-manager.js';
 import { loadLedgerSqlite } from '../ledger/runtime.js';
+import { readDelegationSummary } from './delegation-summary-store.js';
+import { delegationSummaryStatusline } from './delegation-summary-schema.js';
 
 export interface StatuslineChild {
   key: string;
@@ -29,11 +31,12 @@ export interface StatuslineChild {
   stamp: ObservationStamp | null;
   coverage: Coverage | null;
   unavailableReason: string | null;
+  conflict?: { count: number; since: number } | null;
 }
 export interface StatuslineSummary {
   state: 'partial' | 'unavailable';
   reason: string;
-  source: 'parent_index' | null;
+  source: 'parent_index' | 'committed_summary' | null;
   asOfSeq: number | null;
   /** Unknown, not zero. The bounded direct-parent index cannot prove a tree total. */
   treeCounts: null;
@@ -148,6 +151,20 @@ export async function readStatuslineSummary(
     const { ref, root } = selected;
     const home = env.HUD_HOME ?? (env.HOME ? join(env.HOME, '.hud') : '');
     if (!isAbsolute(home) || home.includes('\0')) throw new Error('ledger_unavailable');
+    const cached = readDelegationSummary(home, ref, {
+      nowMs: options.nowMs,
+      budgetMs: budget - (clock() - started),
+      clock,
+    });
+    deadline();
+    if (cached) {
+      const summary = delegationSummaryStatusline(cached, options.nowMs ?? Date.now());
+      if (summary.children.length > maximum) {
+        summary.children = summary.children.slice(0, maximum);
+        summary.limitReached = true;
+      }
+      return { ...summary, elapsedMs: clock() - started };
+    }
     const gate = new PrivateLedgerGate(home);
     deadline();
     const { DatabaseSync } = await loadLedgerSqlite();

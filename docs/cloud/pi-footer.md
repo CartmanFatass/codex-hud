@@ -62,17 +62,41 @@ itself builds its own array; the extension caps subsequent processing and does
 not claim a wall-clock bound for that native API. Branch subscriptions are
 disposed on replacement, toggle-off and shutdown. There are no polling timers.
 
-## Optional HUD summary seam
+## Shared committed HUD summary
 
-The default entry deliberately says `HUD unavailable`. No summary-storage
-contract exists yet, and this extension does not guess a HUD_HOME, source root,
-summary path or ledger location.
+The shipped entry reads the same bounded, version-1 committed delegation cache as
+`hud-statusline`, when both `HUD_HOME` and `HUD_PI_SOURCE_ROOT` are explicitly set.
+The latter must be the exact registered Pi source root, not a guessed Pi config
+directory. Its canonical path must contain the current native `sessionDir` and
+`sessionFile`. `PI_CODING_AGENT_DIR` alone does not identify that source. No session
+file contents are opened by this provider. Native session ID remains authoritative;
+source identity is the full hash of the configured canonical root.
+
+```sh
+HUD_HOME=/absolute/private/hud HUD_PI_SOURCE_ROOT=/absolute/pi/source \
+  pi -e /absolute/path/to/codex-hud/extensions/pi/hud-footer.ts
+```
+
+The existing observation worker must already have published a matching cache.
+The footer never starts one, creates storage, discovers transcripts or installs
+settings. Missing configuration/cache, mismatched native location, unsafe files,
+invalid version or a 20 ms read-budget overrun leave native footer facts intact.
+The read happens only on the existing capture events, never on paint/resize.
+Native session/file/directory/leaf identity changes invalidate captured data.
+
+Shared summaries display partial direct-child facts and conflict markers, never
+fabricated tree totals. Cache and original child observations each expire within
+five seconds, including during an otherwise idle repaint. They carry no launch,
+control, registration or outbound permission. See the [shared summary contract
+and fallback](../statusline/delegation-summary.md).
+
+### Optional in-memory presentation seam
 
 A trusted composition can use `createPiFooterController({ summary })` from
 `dist/harness/pi/footer.js`. `summary` receives a frozen copy of the current
 native display identity `{sessionId, sessionFile, sessionDir, leafId}` and returns
-already available in-memory data, or `undefined`. It must not perform I/O in the
-callback. The accepted presentation shape is:
+already available in-memory data, or `undefined`. Custom providers should return bounded already available data. The shipped
+provider performs only the explicitly configured bounded cache read at capture. The accepted presentation shape is:
 
 ```json
 {
@@ -89,20 +113,20 @@ callback. The accepted presentation shape is:
 ```
 
 Every field is validated. All four identity fields must match, coverage must be
-complete, the observation must not be future-dated or more than 15 seconds old,
+complete, the observation must not be future-dated or more than five seconds old,
 and counts must be nonnegative safe integers with working + waiting <= total.
 Invalid, mismatched, stale or partial summaries display their unavailable state
 without counts. Cached accepted data is copied and rechecked for age on paint.
 This is a local display seam, not a new persisted/export schema. It infers no
 SourceId, caller identity, managed relationship, launch/resume support or control
-authority. No summary is injected by the default extension.
+authority. The shipped provider uses the separate partial shared-cache shape, not these complete-count totals.
 
 ## Credential-free checks
 
 ```sh
 npm run build
 npm run build:test
-HOME=$(mktemp -d) HUD_HOME=$(mktemp -d) node --test dist-test/tests/unit/pi-footer.test.js
+HOME=$(mktemp -d) HUD_HOME=$(mktemp -d) node --test dist-test/tests/unit/pi-footer.test.js dist-test/tests/unit/delegation-summary.test.js
 node scripts/demo-pi-footer.mjs
 ```
 

@@ -3,11 +3,11 @@
  * This entry never installs itself, changes settings or grants managed capabilities.
  */
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { createPiFooterController } from '../../dist/harness/pi/footer.js';
+import { createPiFooterController, createPiDelegationSummaryProvider } from '../../dist/harness/pi/footer.js';
 
 export default function hudFooter(pi: ExtensionAPI) {
-  // No summary provider is installed by default: no implicit HUD_HOME/path discovery.
-  const footer = createPiFooterController();
+  // Explicit HUD_HOME + HUD_PI_SOURCE_ROOT, corroborated against the current native session location.
+  const footer = createPiFooterController({ summary: createPiDelegationSummaryProvider(process.env) });
   pi.on('session_start', (_event, ctx) => footer.start(ctx));
   pi.on('session_tree', (_event, ctx) => footer.update(ctx));
   pi.on('session_compact', (_event, ctx) => footer.update(ctx));

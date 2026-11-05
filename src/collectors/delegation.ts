@@ -1557,6 +1557,12 @@ export class HudDelegationCollector {
   publicationStats() {
     return { ...this.publication };
   }
+  /** Original successful ledger read boundary for derived display caches, never a write-time freshness stamp. */
+  publicationLedgerObservedAt(): number | null {
+    return this.closed || this.preparing || this.collector.current()?.tree.ledger.state !== 'available'
+      ? null
+      : this.collector.publicationLedgerObservedAt();
+  }
   publicationDisplays(): PublicationDisplay[] {
     return this.port.publicationDisplays();
   }

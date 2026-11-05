@@ -13,6 +13,9 @@ function facts(child: StatuslineChild) {
   const run = child.run;
   Object.assign(f, {
     key: child.key,
+    conflictCount: child.conflict?.count ?? 0,
+    conflictSince: child.conflict?.since ?? null,
+    conflictName: child.conflict ? child.label : null,
     idKind: child.ref ? 'session' : 'delegationIntent',
     idHarness: child.ref?.harness ?? null,
     edge: child.ref ? 'delegated' : 'intent',

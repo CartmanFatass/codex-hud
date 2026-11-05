@@ -1,5 +1,8 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { HudDelegationCollector } from '../../collectors/delegation.js';
+import { publishDelegationSummaries } from '../delegation-summary-publisher.js';
+import { summaryFileIdentity } from '../delegation-summary-store.js';
+import { join } from 'node:path';
 
 const port = parentPort;
 if (!port) throw new Error('publication_worker_requires_parent');
@@ -48,14 +51,25 @@ async function collect(scope: string | null): Promise<void> {
       if (!runtime) throw new Error('observation_worker_unavailable');
     }
     currentScope = scope;
-    const view = await runtime.tick(scope ?? undefined, undefined, 4 * 1024 * 1024);
-    await runtime.afterPaint(() => {});
+    // Pin before tick so a replaced ledger can never bless the preceding view with a new file identity.
+    let ledgerFileIdentity: string | null = null;
+    try {
+      ledgerFileIdentity = summaryFileIdentity(join(startup.home, 'ledger.sqlite'));
+    } catch {
+      /* cache stays absent */
+    }
+    let view = await runtime.tick(scope ?? undefined, undefined, 4 * 1024 * 1024);
+    await runtime.afterPaint((committed) => {
+      view = committed;
+    });
     const publication = runtime.publicationStats();
     changed = publication.changed;
     error =
       publication.error ??
       runtime.workerBlock() ??
       (view?.tree.ledger.state === 'available' ? null : 'observation_ledger_unavailable');
+    if (!error && ledgerFileIdentity)
+      publishDelegationSummaries(startup.home, view, runtime.publicationLedgerObservedAt(), ledgerFileIdentity);
   } catch (caught) {
     runtime?.abandonCollection();
     error = caught instanceof Error ? caught.message : 'observation_worker_unavailable';
