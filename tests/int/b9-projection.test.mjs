@@ -570,9 +570,13 @@ test('B9 unknown native topology stays partial and read planning shares bytes/de
     assert.ok(second.target);
     assert.notEqual(first.target.key, second.target.key);
     assert.equal(planLinkRead(tree, { remainingMs: 0 }).reason, 'deadline');
-    assert.equal(
-      planLinkRead(tree, { remainingMs: 3, minimumBytes: new Map([[first.target.key, 9 * 1024 * 1024]]) }).reason,
-      'bytes'
+    const blocked = second.target.kind === 'session' ? second.target : first.target;
+    const other = blocked === second.target ? first.target : second.target;
+    const unblocked = planLinkRead(tree, { remainingMs: 3, minimumBytes: new Map([[blocked.key, 9 * 1024 * 1024]]) });
+    assert.equal(unblocked.target.key, other.key);
+    assert.ok(
+      tree.continuation.some((entry) => entry.key === blocked.key),
+      'blocked work remains visible'
     );
   } finally {
     f.cleanup();

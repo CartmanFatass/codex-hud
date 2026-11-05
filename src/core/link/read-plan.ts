@@ -30,10 +30,17 @@ export function planLinkRead(
   );
   if (!eligible.length) return { target: null, reason: 'no_eligible_target', nextCursor: input.afterKey ?? null };
   const previous = eligible.findIndex((entry) => entry.key === input.afterKey);
-  const entry = eligible[(previous + 1) % eligible.length];
-  const minimum = input.minimumBytes?.get(entry.key) ?? 1;
-  if (!Number.isSafeInteger(minimum) || minimum < 1 || minimum > tree.io.remainingBytes || minimum > 4 * 1024 * 1024)
-    return { target: null, reason: 'bytes', nextCursor: input.afterKey ?? null };
+  // A blocked session remains in continuation, but cannot prevent other eligible work.
+  // minimumBytes describes a native session record, not the separate topology operation.
+  const entry = Array.from({ length: eligible.length }, (_, i) => eligible[(previous + 1 + i) % eligible.length]).find(
+    (candidate) => {
+      const minimum = candidate.reason === 'unloaded' ? (input.minimumBytes?.get(candidate.key) ?? 1) : 1;
+      return (
+        Number.isSafeInteger(minimum) && minimum >= 1 && minimum <= Math.min(tree.io.remainingBytes, 4 * 1024 * 1024)
+      );
+    }
+  );
+  if (!entry) return { target: null, reason: 'bytes', nextCursor: input.afterKey ?? null };
   return {
     target: {
       key: entry.key,
