@@ -1,5 +1,7 @@
 # Running the workflow on dots
 
+> **2026-11-05 cloud-development update:** See [the current cloud handbook and revised C–F roadmap](../cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
+
 dots has one main session that starts subagents with a named model and effort, its own Linux environment, and the repo
 through the GitHub connector. It reads `AGENTS.md`. The loop, rules and check set are those of
 [`README.md`](README.md); state and the package queue are in [`../handoff/STATE.md`](../handoff/STATE.md). This file

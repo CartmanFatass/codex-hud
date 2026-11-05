@@ -1,3 +1,4 @@
+import { statuslineCommand } from './statusline.js';
 import { EXPORT_HELP, EXPORT_USAGE, linkExport, type HudIO } from './link-export.js';
 import { CliError, privateHome } from './runtime.js';
 import { RUN_HELP, RUN_USAGE, runCommand } from './run.js';
@@ -37,6 +38,7 @@ export async function main(
   }
 ): Promise<number> {
   try {
+    if (args[0] === 'statusline') return await statuslineCommand(args.slice(1), io);
     if (args[0] === 'panel') {
       if (args.length === 2 && args[1] === '--help') {
         await io.stdout(PANEL_HELP);
