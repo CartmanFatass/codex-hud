@@ -20,6 +20,7 @@ export class SessionPublisher {
   private preparedRate: ReaderResult['outputRate'];
   private result: ReaderResult | null = null;
   private pending = false;
+  private rebuildFromReaderVersion: string | undefined;
   private priorGeneration: number | null = null;
   private priorGaps = '[]';
   private prior: ObservationProjection | null = null;
@@ -135,12 +136,16 @@ export class SessionPublisher {
   continuationLease(nowMs: number): CollectLease | null {
     return this.valid(nowMs) && this.writer && this.lease ? { ...this.lease } : null;
   }
-  capture(result: ReaderResult): void {
+  capture(result: ReaderResult, rebuildFromReaderVersion?: string): void {
     this.result = result;
     this.prepared = null;
     this.preparedRate = undefined;
     this.sources = null;
     this.pending = true;
+    this.rebuildFromReaderVersion = rebuildFromReaderVersion;
+  }
+  hasPendingRebuild(): boolean {
+    return this.pending && this.rebuildFromReaderVersion !== undefined;
   }
   hasPending(): boolean {
     return this.pending;
@@ -152,6 +157,7 @@ export class SessionPublisher {
     this.sources = null;
     this.nativeMemory = undefined;
     this.pending = false;
+    this.rebuildFromReaderVersion = undefined;
   }
   hasReading(): boolean {
     return this.result !== null;
@@ -177,9 +183,11 @@ export class SessionPublisher {
       this.prepared!,
       { ...facts, history: { ...facts.history, continuity: this.historyContinuity() } },
       STATUS_RULE_VERSION,
-      nowMs
+      nowMs,
+      this.rebuildFromReaderVersion
     );
     this.pending = false;
+    this.rebuildFromReaderVersion = undefined;
     this.prior = publication.committed;
     if (this.nativeMemory) this.nativeMemory.resetContinuity = false;
     this.priorGeneration = publication.committed.sourceGeneration;
@@ -214,6 +222,7 @@ export class SessionPublisher {
     this.nativeMemory = undefined;
     this.acceptedKey = '';
     this.pending = false;
+    this.rebuildFromReaderVersion = undefined;
     this.nextDeadline = Infinity;
   }
   close(): boolean {

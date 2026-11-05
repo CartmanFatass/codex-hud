@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { CodexAdapter } from '../harness/codex/index.js';
 import { ClaudeTranscriptFiles } from '../harness/claude/binding.js';
 import { ClaudeAdapter } from '../harness/claude/index.js';
+import { createClaudeReaderRebuild } from '../harness/claude/reader.js';
 import { openLinkLedgerReader } from '../core/link-ledger-read.js';
 import { openObservationStore, RecoveryGrant, type ObservationStore } from '../core/observation-store.js';
 import { checkpointRate } from '../core/link/checkpoint-rate.js';
@@ -683,6 +684,9 @@ class SessionCollection implements LinkCollectionPort {
     if (!source || source.adapter.id !== ref.harness) return null;
     if (!this.canAdmit(ref)) return null;
     const reading = this.reading(ref, key);
+    // Keep the empty upgrade boundary until its ordinary publication succeeds.
+    // In particular, topology scheduling must not replace a pending rebuild.
+    if (reading.publisher?.hasPendingRebuild()) return null;
     if (source.adapter instanceof ClaudeAdapter && reading.file) {
       const current = fileStamp(reading.file);
       if (!sameFileStamp(current, reading.signature)) reading.dirty = true;
@@ -1004,6 +1008,41 @@ class SessionCollection implements LinkCollectionPort {
         if (reading.recoveryPending) {
           const prior = source.store!.readProjection(ref);
           if (prior) {
+            if (
+              source.adapter instanceof ClaudeAdapter &&
+              prior.checkpointIdentity.readerVersion === 'claude-reader-4'
+            ) {
+              // The accepted identity is enough to build an empty new lineage.
+              // Never recover, relabel or reuse the old reader's index. The normal
+              // after-paint transaction still owns lease/CAS and retirement checks.
+              const rebuilt = createClaudeReaderRebuild(prior.checkpointIdentity);
+              publisher.capture(rebuilt, 'claude-reader-4');
+              reading.reader = undefined;
+              reading.checkpoint = rebuilt.checkpoint;
+              reading.raw = rebuilt.evidence;
+              reading.caughtUp = false;
+              reading.dirty = true;
+              reading.topologyToken = -1;
+              source.adapter.invalidateTopology(ref);
+              const key = displayNodeKey({ kind: 'session', ref });
+              this.pendingTopology.delete(key);
+              this.minimumBytes.delete(key);
+              this.publicationRevision++;
+              this.newReadingKey = key;
+              reading.envelope = {
+                evidence: rebuilt.evidence,
+                committedOnly: true,
+                lastCommitted: prior.summary,
+                sourceGeneration: rebuilt.checkpoint.sourceGeneration,
+                linkEvidenceCurrent: false,
+                loaded: false,
+                bytesRead: 0,
+                recordsRead: 0,
+              };
+              // recoveryPending stays set: only a subsequently accepted v5
+              // boundary may be restored on a later ordinary reader grant.
+              return reading.envelope;
+            }
             const grant = new RecoveryGrant(budget, { deadline: Math.min(collectionDeadline, this.deadline) });
             let recovery: ReturnType<ObservationStore['readRecoveryMetered']>;
             try {

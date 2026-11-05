@@ -122,7 +122,13 @@ export class StatusWriter {
   }
 
   /** Reuse the captured reading for no-op or ledger-only changes; no re-prepare/decode of recovery. */
-  publish(reading: PreparedStatusReading, facts: WriterFacts, ruleVersion: string, nowMs: number): StatusPublication {
+  publish(
+    reading: PreparedStatusReading,
+    facts: WriterFacts,
+    ruleVersion: string,
+    nowMs: number,
+    rebuildFromReaderVersion?: string
+  ): StatusPublication {
     const captured = this.#readings.get(reading);
     if (!captured) throw new TypeError('status_reading_not_owned');
     const { target } = facts;
@@ -157,6 +163,18 @@ export class StatusWriter {
       ruleVersion,
       nowMs
     );
+    if (rebuildFromReaderVersion !== undefined) {
+      // A reader rebuild proves no event or interval in the new lineage. Publish
+      // the empty boundary silently; ordinary budgeted replay establishes facts.
+      result.continuity = {
+        ...result.continuity,
+        episodeAnchor: null,
+        stateSince: null,
+        stateSinceBasis: 'unknown',
+      };
+      result.projection = { ...result.projection, stateSince: null, stateSinceBasis: 'unknown' };
+      result.notices = [];
+    }
     const missingReportSeq = new Set([
       ...sources.filter((s) => s.evidence.value.report && s.evidence.seq === undefined).map((s) => s.id),
       ...(facts.ledgerFacts ?? []).filter((s) => s.value.report && s.seq === undefined).map((s) => s.id),
@@ -172,7 +190,7 @@ export class StatusWriter {
     });
     const notices = newNotices.length
       ? newNotices
-      : prior?.observationStamp.runId === target.runId
+      : rebuildFromReaderVersion === undefined && prior?.observationStamp.runId === target.runId
         ? [...(prior?.notices ?? [])]
         : [];
     const noticeState = compactNoticeState(result.noticeState, noticeSeq, newNotices);
@@ -182,6 +200,7 @@ export class StatusWriter {
       conflict: result.conflict ?? null,
     };
     const candidate = {
+      ...(rebuildFromReaderVersion === undefined ? {} : { rebuildFromReaderVersion }),
       checkpoint: captured.checkpoint,
       previousCommitSeq: prior?.commitSeq ?? 0,
       boundary: witnessPreparedObservationBoundary(captured.checkpoint, summary, captured.boundary),
