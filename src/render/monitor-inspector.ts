@@ -221,8 +221,29 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
       node.lastObservation ? 'No current observation · previous observation available' : 'Observation unavailable'
     );
   }
-  if (run) lines.push(`Run: ${run.runId} · ${run.mode} · ${run.state}`);
-  else lines.push('Run: unavailable');
+  if (run) {
+    lines.push(`Run: ${run.runId} · ${run.mode} · ${run.state}`);
+    if (Number.isSafeInteger(run.runSeq)) lines.push(`Run sequence: ${run.runSeq}`);
+    if (run.operation) lines.push(`Operation: ${run.operation}`);
+    lines.push(`Heartbeat: ${run.heartbeatAt == null ? 'unavailable' : timestamp(run.heartbeatAt)}`);
+    if (node.execution.reconciliation)
+      lines.push(`Reconciliation cause: ${node.execution.reconciliation.cause.replace(/_/g, ' ')}`);
+    if (run.mode === 'visible' && run.state === 'cancelling')
+      lines.push(t('Still running — automatic cancellation is unavailable. Stop this run in its terminal pane.'));
+    const terminal = node.execution.terminal;
+    if (terminal?.termination) {
+      lines.push(`Outcome: ${terminal.termination.outcome}`);
+      lines.push(`Requested cause: ${terminal.termination.requestedCause?.replace(/_/g, ' ') ?? 'none'}`);
+      lines.push(`Attribution: ${terminal.termination.attribution}`);
+    }
+    if (terminal?.note) lines.push(`Terminal note: ${terminal.note.replace(/_/g, ' ')}`);
+    if (node.execution.isRunTerminal) {
+      if (run.exitSource && run.exitCode !== null) lines.push(`Exit: ${run.exitCode} (${run.exitSource})`);
+      else if (run.exitSource && run.exitSignal !== null)
+        lines.push(`Exit signal: ${run.exitSignal} (${run.exitSource})`);
+      else lines.push('Exit: unavailable');
+    }
+  } else lines.push('Run: unavailable');
   lines.push('Reports');
   const reports = run
     ? (detail?.reportHistory ?? []).filter((report) => report.runId === run.runId && report.linkId === run.linkId)

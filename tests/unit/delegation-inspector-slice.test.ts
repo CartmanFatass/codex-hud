@@ -119,3 +119,76 @@ test('root Inspector reports conflict rows omitted by the projection', () => {
   ]);
   assert.match(inspect(built.vm, built.keys.main), /Conflict rows not shown: 5/);
 });
+
+test('Inspector presents the selected run reconciliation cause without inventing missing evidence', () => {
+  const built = buildVm([
+    { id: 'main', root: true, status: S.working() },
+    {
+      id: 'uncertain',
+      parent: 'main',
+      runSeq: 3,
+      run: { mode: 'visible', state: 'uncertain', reconciliation: 'scope_unknown', heartbeatAt: 1700000000000 },
+      status: { cls: 'uncertain', reason: 'scope_unknown' },
+      reconcile: true,
+    },
+    { id: 'other', parent: 'main', run: { reconciliation: 'supervisor_dead' }, status: S.working() },
+  ]);
+  const text = inspect(built.vm, built.keys.uncertain);
+  assert.match(text, /Run sequence: 3/);
+  assert.match(text, /Heartbeat: 2023-11-14T22:13:20.000Z/);
+  assert.match(text, /Reconciliation cause: scope unknown/);
+  assert.doesNotMatch(text, /supervisor dead|missing:|Exit:/);
+});
+
+test('visible cancellation explains that automatic delivery is unavailable', () => {
+  const built = buildVm([
+    { id: 'main', root: true, status: S.working() },
+    {
+      id: 'visible',
+      parent: 'main',
+      run: { mode: 'visible', state: 'cancelling', cancelRequestedAt: 100 },
+      status: S.working(),
+      report: { status: 'failed', at: 100 },
+    },
+    {
+      id: 'headless',
+      parent: 'main',
+      run: { mode: 'headless', state: 'cancelling', cancelRequestedAt: 100 },
+      status: S.working(),
+    },
+  ]);
+  assert.match(inspect(built.vm, built.keys.visible), /Still running — automatic cancellation is unavailable/);
+  assert.doesNotMatch(inspect(built.vm, built.keys.headless), /automatic cancellation is unavailable/);
+});
+
+test('terminal Inspector separates outcome, cause, attribution and sourced exit', () => {
+  const built = buildVm([
+    { id: 'main', root: true, status: S.working() },
+    {
+      id: 'ended',
+      parent: 'main',
+      run: { state: 'ended', endedAt: Date.now(), exit: { code: 1, signal: null, source: 'wait_status' } },
+      status: S.exited(Date.now()),
+    },
+  ]);
+  const node = built.vm.tree.nodes.find((item) => item.key === built.keys.ended)!;
+  node.execution.terminal = {
+    note: 'cancel_timing_unknown',
+    termination: {
+      outcome: 'completed',
+      requestedCause: 'user_cancel',
+      attribution: 'unknown',
+      observed: { exitCode: 1, signal: null, escalatedTo: null, scopeEvidence: 'Q' },
+    },
+  };
+  const text = inspect(built.vm, built.keys.ended);
+  assert.match(text, /Outcome: completed/);
+  assert.match(text, /Requested cause: user cancel/);
+  assert.match(text, /Attribution: unknown/);
+  assert.match(text, /Terminal note: cancel timing unknown/);
+  assert.match(text, /Exit: 1 \(wait_status\)/);
+  node.currentRun!.exitSource = null;
+  const unknown = inspect(built.vm, built.keys.ended);
+  assert.match(unknown, /Exit: unavailable/);
+  assert.doesNotMatch(unknown, /Exit: 1/);
+});
