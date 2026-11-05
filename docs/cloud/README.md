@@ -1,5 +1,7 @@
 # Cloud workflow (Claude Code cloud, two-day run)
 
+> **2026-11-05 cloud-development update:** See [the current cloud handbook and revised C–F roadmap](../cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
+
 A small, Claude-only version of the universal-hud workflow for cloud sessions, where Herdr, Codex, pi and the shared
 browser are not available. One orchestrator session runs one or two work packages; each package has one implementer
 and one Oracle.

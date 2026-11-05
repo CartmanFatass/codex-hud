@@ -1,0 +1,50 @@
+name: Cloud development simulation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['dots/**', 'codex/delegation-integration']
+  pull_request:
+    branches: ['codex/delegation-integration']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-development-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cloud:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.x', '24.x']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check harness negative controls
+        run: |
+          node scripts/check-cloud.mjs --self-test
+          node scripts/pack-cloud-preview.mjs --self-test
+      - name: Credential-free builds and focused simulations
+        run: node scripts/check-cloud.mjs
+      - name: Local allowlisted archive preview only
+        run: node scripts/pack-cloud-preview.mjs
+      - name: Preserve bounded results and preview
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cloud-simulation-node-${{ matrix.node }}-${{ github.sha }}
+          path: tmp/cloud-development/
+          if-no-files-found: warn
+          retention-days: 7
