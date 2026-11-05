@@ -22,13 +22,30 @@ import { initialParserState } from '../../core/observation.js';
 import { RecoveryIndexOverlay, attachRecoveryIndex } from '../../core/checkpoint.js';
 import { sameSessionRef, validateSessionRef } from '../../core/identity.js';
 import { LAUNCH_MESSAGE_PREFIX, parseLaunchMessage } from '../../core/launch/message.js';
+import {
+  ClaudeBackgroundProjection,
+  claudeBackgroundEvents,
+  type ClaudeBackgroundEvent,
+  type ClaudeBackgroundView,
+} from './background.js';
+import {
+  claudeTodoMetric,
+  projectClaudeTodos,
+  validClaudeTodoProgress,
+  validConfirmedClaudeTodoProgress,
+  type ClaudeTodoProgress,
+  type ConfirmedClaudeTodoProgress,
+} from './todos.js';
 
-export const CLAUDE_READER_VERSION = 'claude-reader-4';
+export const CLAUDE_READER_VERSION = 'claude-reader-5';
 export const CLAUDE_RECOVERY_VERSION = 'claude-recovery-1';
 const USAGE_IDS = 'claude.usageMessageIds';
 const FACT_CLOCKS = 'claude.factClocks';
 const OPEN_WAITS = 'claude.openToolWaits';
 const PENDING_CALLS = 'claude.pendingHudCalls';
+const PENDING_TODOS = 'claude.pendingTodoUpdates';
+const TODO_PROGRESS = 'claude.todoProgress';
+const TODO_RESULTS = 'claude.todoResultIds';
 export const DEFAULT_READER_BUDGET: Readonly<ReaderBudget> = {
   maxBytes: 4 * 1024 * 1024,
   maxRecords: 2000,
@@ -104,12 +121,24 @@ export interface ClaudeCheckpoint extends ReaderCheckpoint {
   claude: Snapshot;
 }
 export interface ClaudeSessionEvidence extends SessionEvidence {
+  background?: ClaudeBackgroundView;
   inputs: ObservationEvidence[];
 }
 export interface ClaudeReaderResult extends ReaderResult {
   evidence: ClaudeSessionEvidence;
   checkpoint: ClaudeCheckpoint;
   inputs: ObservationEvidence[];
+  /** This successful slice only; never recovered from a checkpoint or capped display history. */
+  nativeSlice?: {
+    identityVerified: boolean;
+    agentCalls: {
+      callId: string;
+      ref: SessionRef;
+      sourceGeneration: number;
+      fileId: ReaderCheckpoint['fileId'];
+      offset: number;
+    }[];
+  };
 }
 export interface ClaudeSessionReader extends SessionReader {
   read(budget?: ClaudeReaderBudget): Promise<ClaudeReaderResult>;
@@ -130,10 +159,13 @@ export function validateClaudeRecoveryIndexEntry(entry: RecoveryIndexEntry): voi
   };
   if (
     !entry ||
-    ![USAGE_IDS, FACT_CLOCKS, OPEN_WAITS, PENDING_CALLS].includes(entry.namespace) ||
+    ![USAGE_IDS, FACT_CLOCKS, OPEN_WAITS, PENDING_CALLS, PENDING_TODOS, TODO_PROGRESS, TODO_RESULTS].includes(
+      entry.namespace
+    ) ||
     typeof entry.key !== 'string' ||
     entry.key.length === 0 ||
-    entry.key.length > (entry.namespace === FACT_CLOCKS ? 1024 : 256)
+    entry.key.length > (entry.namespace === FACT_CLOCKS ? 1024 : 256) ||
+    (entry.namespace === TODO_PROGRESS && entry.key !== 'current')
   )
     invalid();
   if (entry.value === null) return;
@@ -146,6 +178,7 @@ export function validateClaudeRecoveryIndexEntry(entry: RecoveryIndexEntry): voi
   }
   switch (entry.namespace) {
     case USAGE_IDS:
+    case TODO_RESULTS:
       if (value !== true) invalid();
       break;
     case FACT_CLOCKS:
@@ -157,6 +190,12 @@ export function validateClaudeRecoveryIndexEntry(entry: RecoveryIndexEntry): voi
     case OPEN_WAITS:
       if (!object(value) || Object.keys(value).length !== 2 || !count(value.startedAt) || !count(value.lastActivityAt))
         invalid();
+      break;
+    case PENDING_TODOS:
+      if (!validClaudeTodoProgress(value)) invalid();
+      break;
+    case TODO_PROGRESS:
+      if (entry.key !== 'current' || !validConfirmedClaudeTodoProgress(value)) invalid();
       break;
   }
 }
@@ -252,7 +291,9 @@ function observe(
   snapshot: Snapshot,
   index: RecoveryIndexOverlay,
   options: ClaudeReaderOptions,
-  end: number
+  end: number,
+  boundary: Pick<ReaderCheckpoint, 'sourceGeneration' | 'fileId'>,
+  nativeSlice: NonNullable<ClaudeReaderResult['nativeSlice']>
 ): boolean {
   if (!object(row) || typeof row.type !== 'string') {
     skip(state, 'malformed_record', true);
@@ -320,7 +361,12 @@ function observe(
       skip(state, 'attachment_private');
       return false;
     }
-    finish(a.toolUseId, a.result ?? a.content ?? a.toolUseResult, a.is_error === true);
+    finish(
+      a.toolUseId,
+      a.result ?? a.content ?? a.toolUseResult,
+      a.is_error === true,
+      a.is_error === undefined || typeof a.is_error === 'boolean'
+    );
     return false;
   }
   if (!object(row.message) || !['string', 'object'].includes(typeof row.message.content)) {
@@ -328,6 +374,12 @@ function observe(
     return false;
   }
   const message = row.message;
+  const exactNativeIdentity =
+    row.sessionId === options.ref.sessionId &&
+    (options.ref.threadId === null
+      ? row.agentId == null && row.isSidechain !== true
+      : row.agentId === options.ref.threadId);
+  if (exactNativeIdentity) nativeSlice.identityVerified = true;
   if (typeof row.cwd === 'string' && path.isAbsolute(row.cwd)) {
     snapshot.cwd = row.cwd;
     snapshot.cwdAt = at;
@@ -405,6 +457,26 @@ function observe(
         ].slice(-20);
     } else if (block.type === 'tool_use' && type === 'assistant' && identifier(block.id) && identifier(block.name)) {
       publicMessage = true;
+      if (block.name === 'Agent' && exactNativeIdentity)
+        nativeSlice.agentCalls.push({
+          callId: block.id,
+          ref: { ...options.ref },
+          sourceGeneration: boundary.sourceGeneration,
+          fileId: { ...boundary.fileId },
+          offset: end,
+        });
+      // Confirmation may arrive in a later slice, or after compaction. Keep only its bounded display summary.
+      if (!index.has(TODO_RESULTS, block.id)) {
+        const pending = index.get(PENDING_TODOS, block.id);
+        const projected = block.name === 'TodoWrite' ? projectClaudeTodos(block.input) : null;
+        if (projected && (pending === undefined || pending === JSON.stringify(projected)))
+          index.set(PENDING_TODOS, block.id, JSON.stringify(projected));
+        else if (block.name === 'TodoWrite' || pending !== undefined) {
+          index.delete(PENDING_TODOS, block.id);
+          index.set(TODO_RESULTS, block.id, 'true');
+          skip(state, pending === undefined ? 'malformed_todos' : 'todo_call_conflict', true);
+        }
+      }
       const allowed = options.serverNames.some((server) =>
         ['delegate_spawn', 'delegate_resume', 'delegate_whoami'].some(
           (tool) => block.name === `mcp__${server}__${tool}`
@@ -415,7 +487,12 @@ function observe(
       fact('tool_started', { callId: block.id, tool: block.name });
     } else if (block.type === 'tool_result' && identifier(block.tool_use_id)) {
       publicMessage = true;
-      finish(block.tool_use_id, block.content, block.is_error === true);
+      finish(
+        block.tool_use_id,
+        block.content,
+        block.is_error === true,
+        block.is_error === undefined || typeof block.is_error === 'boolean'
+      );
     } else if (block.type === 'thinking' || block.type === 'reasoning') skip(state, String(block.type));
     else skip(state, 'nonpublic_content');
   }
@@ -425,7 +502,24 @@ function observe(
     });
   return false;
 
-  function finish(id: string, content: unknown, error: boolean): void {
+  function finish(id: string, content: unknown, error: boolean, validTodoResult = true): void {
+    // Assistant-authored output is not an acknowledgement of a native tool execution.
+    if (type === 'user' || type === 'attachment') {
+      const pending = index.get(PENDING_TODOS, id);
+      if (pending !== undefined && !validTodoResult) skip(state, 'malformed_todo_result', true);
+      if (pending !== undefined && validTodoResult) {
+        index.delete(PENDING_TODOS, id);
+        index.set(TODO_RESULTS, id, 'true');
+        if (!error) {
+          const confirmed: ConfirmedClaudeTodoProgress = {
+            value: JSON.parse(pending) as ClaudeTodoProgress,
+            at,
+            observedTime,
+          };
+          index.set(TODO_PROGRESS, 'current', JSON.stringify(confirmed));
+        }
+      }
+    }
     index.delete(OPEN_WAITS, id);
     const storedTool = index.get(PENDING_CALLS, id);
     const tool: string | null = storedTool === undefined ? null : JSON.parse(storedTool);
@@ -459,10 +553,12 @@ function observe(
 function evidence(
   ref: SessionRef,
   checkpoint: ClaudeCheckpoint,
+  index: RecoveryIndexOverlay,
   statusline: ClaudeStatusline | undefined,
   now: number
 ): ClaudeSessionEvidence {
   const s = checkpoint.claude;
+  const todoProgress = index.get(TODO_PROGRESS, 'current');
   const p = checkpoint.parserState;
   const coverage: Coverage = {
     state:
@@ -600,6 +696,9 @@ function evidence(
     model,
     context: contextMetric,
     reports: s.reports.map((r) => ({ ...r })),
+    ...(todoProgress === undefined
+      ? {}
+      : { progress: claudeTodoMetric(JSON.parse(todoProgress) as ConfirmedClaudeTodoProgress) }),
     native: [],
     linkEvidence: s.links.map((l) => ({ ...l, ref })),
     caps: {},
@@ -721,6 +820,61 @@ function validCheckpoint(cp: ClaudeCheckpoint, ref: SessionRef): boolean {
   );
 }
 
+/**
+ * An explicit leased-store rebuild boundary, not a conversion of the old index.
+ * The caller must publish with rebuildFromReaderVersion before resuming this checkpoint.
+ */
+export function createClaudeReaderRebuild(
+  previous: Pick<ReaderCheckpoint, 'ref' | 'readerVersion' | 'sourceGeneration' | 'fileId'>,
+  now = Date.now()
+): ClaudeReaderResult {
+  const started = performance.now();
+  validateSessionRef(previous.ref);
+  if (
+    previous.ref.harness !== 'claude' ||
+    previous.readerVersion !== 'claude-reader-4' ||
+    !Number.isSafeInteger(previous.sourceGeneration) ||
+    previous.sourceGeneration < 1 ||
+    !Number.isSafeInteger(previous.sourceGeneration + 1) ||
+    !Number.isSafeInteger(previous.fileId.dev) ||
+    previous.fileId.dev < 0 ||
+    !Number.isSafeInteger(previous.fileId.inode) ||
+    previous.fileId.inode < 0 ||
+    !count(now)
+  )
+    throw new Error('unsupported_claude_rebuild');
+  const ref = { ...previous.ref };
+  const checkpoint: ClaudeCheckpoint = {
+    schemaVersion: 1,
+    readerVersion: CLAUDE_READER_VERSION,
+    ref,
+    fileId: { ...previous.fileId },
+    offset: 0,
+    sourceGeneration: previous.sourceGeneration + 1,
+    parserState: { ...initialParserState(), gaps: ['reader_version_rebuild'] },
+    claude: emptySnapshot(),
+  };
+  const index = new RecoveryIndexOverlay(CLAUDE_RECOVERY_VERSION);
+  attachRecoveryIndex(checkpoint, index);
+  const prepared = evidence(ref, checkpoint, index, undefined, now);
+  prepared.observation.coverage = {
+    state: 'catching_up',
+    skipped: {},
+    gaps: ['reader_version_rebuild'],
+    loaded: false,
+    reason: 'reader_version_rebuild',
+  };
+  prepared.observation.loaded = false;
+  return {
+    observation: prepared.observation,
+    evidence: prepared,
+    inputs: prepared.inputs,
+    checkpoint,
+    recoveryIndex: checkpoint.recoveryIndex,
+    stats: { bytesRead: 0, recordsRead: 0, elapsedMs: performance.now() - started },
+  };
+}
+
 /** No I/O until read; each reader serializes its cursor and returns a detached, JSON-safe checkpoint. */
 export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: ReaderCheckpoint): ClaudeSessionReader {
   const ref = structuredClone(options.ref);
@@ -765,7 +919,11 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
   let transient: { offset: number; position: number; pending: Buffer } | undefined;
   let restoredTail = !!checkpoint && (current?.claude.tailBytesSeen ?? 0) > 0;
   let queue: Promise<unknown> = Promise.resolve();
-  function readSlice(requested: ClaudeReaderBudget, started: number): ClaudeReaderResult {
+  let background = new ClaudeBackgroundProjection(!checkpoint || checkpoint.offset === 0);
+  function readSlice(
+    requested: ClaudeReaderBudget,
+    started: number
+  ): ClaudeReaderResult & { backgroundEvents: ClaudeBackgroundEvent[]; physicalReset: boolean } {
     if (current) {
       if (pendingReset?.generation === current.sourceGeneration) current.resetReason = pendingReset.reason;
       else delete current.resetReason;
@@ -803,7 +961,10 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
     let bytesRead = 0;
     let recordsRead = 0;
     let measuredStats: ClaudeReaderResult['stats'];
+    const nativeSlice: NonNullable<ClaudeReaderResult['nativeSlice']> = { identityVerified: false, agentCalls: [] };
     let needsLarger = 0;
+    let physicalReset = false;
+    const backgroundEvents: ClaudeBackgroundEvent[] = [];
     try {
       if (fd !== null) {
         const stat = fs.fstatSync(fd);
@@ -863,17 +1024,23 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
             }
         }
         const resetReason =
-          current &&
-          current.fileId.inode !== 0 &&
-          (current.fileId.dev !== stat.dev || current.fileId.inode !== stat.ino)
+          current?.fileId.inode === 0 && current.parserState.gaps.includes('reader_version_rebuild')
             ? ('file_changed' as const)
-            : current && (stat.size < current.claude.targetSize || stat.size < current.offset)
-              ? ('truncated' as const)
-              : rewritten
-                ? ('file_changed' as const)
-                : undefined;
+            : current &&
+                current.fileId.inode !== 0 &&
+                (current.fileId.dev !== stat.dev || current.fileId.inode !== stat.ino)
+              ? ('file_changed' as const)
+              : current && (stat.size < current.claude.targetSize || stat.size < current.offset)
+                ? ('truncated' as const)
+                : rewritten
+                  ? ('file_changed' as const)
+                  : undefined;
         if (!current || current.fileId.inode === 0 || resetReason) {
-          const generation = (current?.fileId.inode ? current.sourceGeneration : 0) + 1;
+          physicalReset = !!resetReason;
+          const generation =
+            (current && (current.fileId.inode !== 0 || current.parserState.gaps.includes('reader_version_rebuild'))
+              ? current.sourceGeneration
+              : 0) + 1;
           current = {
             ...placeholder(),
             fileId: { dev: stat.dev, inode: stat.ino },
@@ -888,6 +1055,19 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
         const cp = current;
         const p = cp.parserState;
         const s = cp.claude;
+        const observeRecord = (row: unknown, end: number) => {
+          // Publish native authority only after this whole record was accepted. A failed
+          // lazy-index read or malformed record cannot leak a partially observed call.
+          const record: NonNullable<ClaudeReaderResult['nativeSlice']> = { identityVerified: false, agentCalls: [] };
+          const compact = observe(row, p, s, index, options, end, cp, record);
+          nativeSlice.identityVerified ||= record.identityVerified;
+          nativeSlice.agentCalls.push(...record.agentCalls);
+          backgroundEvents.push(...claudeBackgroundEvents(row, ref, Date.now()));
+          return compact;
+        };
+        // The rebuild starts at byte zero and must re-observe native facts. Once source identity
+        // is checked, normal offset/target coverage expresses the remaining bounded reread.
+        if (cp.offset === 0 && s.fileStat === null) p.gaps = p.gaps.filter((gap) => gap !== 'reader_version_rebuild');
         if (!needsLarger) s.fileStat = { size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs };
         if (s.statuslineKey !== statuslineKey) {
           s.statuslineKey = statuslineKey;
@@ -975,7 +1155,7 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
                   recordsRead++;
                   if (line.trim()) {
                     try {
-                      if (observe(JSON.parse(line), p, s, index, options, readPosition)) {
+                      if (observeRecord(JSON.parse(line), readPosition)) {
                         markCompaction(cp);
                       }
                     } catch (error) {
@@ -995,7 +1175,7 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
             if (recordsRead < recordLimit && (canConsume() || (positiveSlice && recordsRead === 0))) {
               try {
                 const row: unknown = JSON.parse(pending.toString('utf8'));
-                if (observe(row, p, s, index, options, readPosition)) {
+                if (observeRecord(row, readPosition)) {
                   markCompaction(cp);
                 }
                 commitBoundary(readPosition, pending, pending);
@@ -1020,7 +1200,7 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
       const cp = current;
       const p = cp.parserState;
       const s = cp.claude;
-      const prepared = evidence({ ...ref }, cp, options.statusline, Date.now());
+      const prepared = evidence({ ...ref }, cp, index, options.statusline, Date.now());
       if (fd === null || needsLarger) {
         prepared.observation.coverage.state = needsLarger ? 'partial' : 'catching_up';
         prepared.observation.coverage.reason = needsLarger ? 'record_needs_larger_slice' : 'budget_exhausted';
@@ -1072,6 +1252,9 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
         observation: prepared.observation,
         evidence: prepared,
         inputs: prepared.inputs,
+        nativeSlice,
+        backgroundEvents,
+        physicalReset,
         checkpoint: saved,
         ...(needsLarger
           ? { continuation: { kind: 'record_needs_larger_slice' as const, minimumBytes: needsLarger } }
@@ -1091,7 +1274,7 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
     current = current ? structuredClone(current) : undefined;
     index = index.fork();
     try {
-      const result = readSlice(requested, started);
+      const { backgroundEvents, physicalReset, ...result } = readSlice(requested, started);
       index = index.commit();
       const { sourceGeneration, resetReason } = result.checkpoint;
       attachRecoveryIndex(result.checkpoint, index, (lookup) => {
@@ -1104,6 +1287,14 @@ export function createClaudeReader(options: ClaudeReaderOptions, checkpoint?: Re
           pendingReset = undefined;
       });
       result.recoveryIndex = result.checkpoint.recoveryIndex;
+      // No background state enters the durable reader DTO. Stage only on changed slices,
+      // after successful native parsing/index handoff, so failed reads cannot leak actions.
+      const nextBackground = backgroundEvents.length || physicalReset ? background.fork() : background;
+      nextBackground.apply(result.checkpoint, backgroundEvents, physicalReset);
+      const projection = nextBackground.view(result.observation.coverage);
+      result.evidence.background = projection.background;
+      if (projection.action) result.evidence.action = projection.action;
+      background = nextBackground;
       if (result.stats) result.stats.elapsedMs = performance.now() - started;
       return result;
     } catch (error) {
