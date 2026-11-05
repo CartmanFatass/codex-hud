@@ -15,6 +15,7 @@ import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
 import { newestIntent } from './cards.js';
 import { conflictDetails } from '../core/link/conflict-details.js';
+import { formatTokenRate } from '../collectors/token-rate.js';
 import { sameSessionRef } from '../core/identity.js';
 import type { LinkTreeNode } from '../core/link/types.js';
 import type { DelegationView } from './delegation/panel.js';
@@ -227,7 +228,16 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
   if (!reports.length)
     lines.push(run && detail && view.vm.tree.ledger.state === 'available' ? 'none yet' : 'unavailable');
   for (const report of reports.slice(-5)) lines.push(`${report.status} · ${report.summary}`);
-  lines.push('Action: unavailable', 'Output rate: unavailable');
+  lines.push('Action: unavailable');
+  const rate = detail?.outputRate;
+  const displayedRate =
+    view.vm.tree.ledger.state === 'available' && node.observation && rate && rate.sampledAt <= view.nowMs
+      ? formatTokenRate(
+          { tokensPerSecond: rate.tokensPerSecond, sampleMs: rate.sampleMs, sampledAt: new Date(rate.sampledAt) },
+          view.nowMs
+        )
+      : null;
+  lines.push(displayedRate ? `Output rate: ${displayedRate} · estimated` : 'Output rate: unavailable');
   return lines.flatMap((line) => wrapped(line, width).map((text) => ({ text })));
 }
 

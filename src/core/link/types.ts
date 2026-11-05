@@ -3,7 +3,14 @@ import type { SessionEvidence } from '../interfaces/session-evidence.js';
 import type { LedgerReadRun } from '../ledger-read.js';
 import type { SessionRef } from '../types/identity.js';
 import type { Link, ParentOffline } from '../types/lifecycle.js';
-import type { Coverage, DisplayNodeIdentity, ObservationView, RunExecutionProjection } from '../types/observation.js';
+import type {
+  Coverage,
+  DisplayNodeIdentity,
+  ObservationStamp,
+  ObservationView,
+  RunExecutionProjection,
+} from '../types/observation.js';
+import type { ReaderResult } from '../interfaces/harness-adapter.js';
 import type { LocatorCheck } from '../types/capabilities.js';
 import type { JsonObject } from '../canonical.js';
 import type { AgentTaskKind } from '../../types.js';
@@ -24,6 +31,8 @@ export interface CollectedLinkSession {
   /** Publication-mode raw anchors may be read, but their unpublished summary is never a display/history value. */
   committedOnly?: boolean;
   lastCommitted?: ObservationView | null;
+  /** Process-local sample attached only after the same checkpoint was committed. */
+  committedRate?: { rate: NonNullable<ReaderResult['outputRate']>; stamp: ObservationStamp };
   sourceGeneration: number;
   /** False for retained anchors from a reset/unknown reading lineage. */
   linkEvidenceCurrent: boolean;
@@ -99,6 +108,8 @@ export interface LinkTreeNode {
   loaded: boolean;
   coverage: Coverage;
   observation: ObservationView | null;
+  /** Process-local value, present only for this node's exact committed observation stamp. */
+  committedRate?: NonNullable<ReaderResult['outputRate']>;
   /** Preserved for Inspector/history even if its stamp cannot describe the current run. */
   lastObservation: ObservationView | null;
   currentRun: LedgerReadRun | null;

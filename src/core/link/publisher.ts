@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { canonicalJson } from '../canonical.js';
 import { COLLECT_RENEW_INTERVAL_MS } from '../collect-lease.js';
 import { StatusWriter, type PreparedStatusReading, type WriterFacts } from '../status/writer.js';
 import { STATUS_RULE_VERSION, type StatusSource } from '../status/merge.js';
@@ -7,6 +8,7 @@ import type { ReaderResult } from '../interfaces/harness-adapter.js';
 import type { CollectLease } from '../types/observation.js';
 import type { SessionRef } from '../types/identity.js';
 import type { ObservationProjection } from '../types/checkpoint.js';
+import type { CodexCheckpoint } from '../../harness/codex/index.js';
 import { readerStatusSources, restoreNativeStatusMemory, type NativeStatusMemory } from './reader-status.js';
 
 /** A live reader and its exact acquiring store share this lifecycle. No timer or write queue. */
@@ -15,6 +17,7 @@ export class SessionPublisher {
   private lease: CollectLease | null = null;
   private renewedAt = 0;
   private prepared: PreparedStatusReading | null = null;
+  private preparedRate: ReaderResult['outputRate'];
   private result: ReaderResult | null = null;
   private pending = false;
   private priorGeneration: number | null = null;
@@ -98,6 +101,27 @@ export class SessionPublisher {
         this.sources = readerStatusSources(this.result, target, this.nativeMemory);
       }
       this.prepared = this.writer.prepare(this.result, this.sources, target);
+      const rate = this.result.outputRate;
+      const rollout = (this.result.checkpoint as CodexCheckpoint).codex?.rollout;
+      const saved = rollout?.version === 3 ? rollout.state.cachedResult : null;
+      const stored = saved?.outputRate;
+      const start = saved?.activity?.turnStartedAt;
+      this.preparedRate =
+        rate &&
+        rate.source === 'codex.turn_wallclock_proxy' &&
+        stored &&
+        Number.isFinite(rate.tokensPerSecond) &&
+        rate.tokensPerSecond >= 0 &&
+        Number.isFinite(rate.sampleMs) &&
+        rate.sampleMs > 0 &&
+        Number.isFinite(rate.sampledAt) &&
+        rate.sampledAt >= 0 &&
+        stored.tokensPerSecond === rate.tokensPerSecond &&
+        stored.sampleMs === rate.sampleMs &&
+        stored.sampledAt === rate.sampledAt &&
+        (start === undefined || rate.sampledAt > start)
+          ? { ...rate }
+          : undefined;
       this.context = context;
     }
   }
@@ -110,6 +134,7 @@ export class SessionPublisher {
   capture(result: ReaderResult): void {
     this.result = result;
     this.prepared = null;
+    this.preparedRate = undefined;
     this.sources = null;
     this.pending = true;
   }
@@ -119,6 +144,7 @@ export class SessionPublisher {
   discardReading(): void {
     this.result = null;
     this.prepared = null;
+    this.preparedRate = undefined;
     this.sources = null;
     this.nativeMemory = undefined;
     this.pending = false;
@@ -167,10 +193,18 @@ export class SessionPublisher {
     );
     return publication.committed;
   }
+  /** A sample is usable only when the published projection names this exact prepared checkpoint. */
+  committedRate(committed: ObservationProjection) {
+    const rate = this.preparedRate;
+    if (!rate || !this.prepared || !this.prior || committed !== this.prior) return null;
+    if (canonicalJson(this.prepared.checkpoint.identity) !== canonicalJson(committed.checkpointIdentity)) return null;
+    return { rate: { ...rate }, stamp: structuredClone(committed.observationStamp) };
+  }
   forget(): void {
     this.writer = null;
     this.lease = null;
     this.prepared = null;
+    this.preparedRate = undefined;
     this.result = null;
     this.sources = null;
     this.nativeMemory = undefined;

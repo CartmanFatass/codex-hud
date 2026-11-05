@@ -551,7 +551,7 @@ test('reader-local rate resets with a new turn and does not leak across explicit
   assert.ok(first.outputRate);
   assert.equal(first.outputRate!.source, 'codex.turn_wallclock_proxy');
   assert.equal((await drain(b.adapter.open(b.ref))).outputRate, undefined);
-  fs.appendFileSync(a.file, row('event_msg', { type: 'task_started' }, 14000) + '\n');
+  fs.appendFileSync(a.file, row('event_msg', { type: 'task_started' }, 12000) + '\n');
   const next = await drain(reader);
   assert.equal(next.outputRate, undefined);
   assert.ok(next.checkpoint.offset > first.checkpoint.offset);

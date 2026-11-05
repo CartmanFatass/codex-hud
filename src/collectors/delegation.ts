@@ -329,7 +329,12 @@ class SessionCollection implements LinkCollectionPort {
         }
         const prior = reading.envelope?.evidence.observation.statusProjection.observationStamp?.commitSeq;
         const committed = publisher.publish(facts, key, nowMs);
-        if (committed) this.committed(this.sources.get(reading.ref.sourceId)!, reading);
+        if (committed && this.committed(this.sources.get(reading.ref.sourceId)!, reading)) {
+          const rate = publisher.committedRate(committed);
+          const stamp = reading.envelope?.evidence.observation.statusProjection.observationStamp;
+          if (rate && stamp && canonicalJson(stamp) === canonicalJson(rate.stamp) && reading.envelope?.loaded)
+            reading.envelope = { ...reading.envelope, committedRate: rate };
+        }
         return { attempted: true, changed: committed?.commitSeq !== prior, error: null, key: node.key };
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'observation_unavailable';

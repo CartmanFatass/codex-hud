@@ -673,6 +673,7 @@ export class LinkTickCollector {
         } catch {}
       }
       details[node.key] = {
+        ...(node.committedRate ? { outputRate: node.committedRate } : {}),
         status,
         statusSource,
         latestReportForRun: history.at(-1) ?? null,

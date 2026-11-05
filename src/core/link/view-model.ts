@@ -4,6 +4,7 @@ import type { StatusProjection } from '../types/observation.js';
 import type { LinkTreeProjection } from './types.js';
 import type { LoadedLimits } from './limits.js';
 import type { wakeProjection } from '../wake/projection.js';
+import type { ReaderResult } from '../interfaces/harness-adapter.js';
 
 /** Rendering boundary shared by the compact bar and panel. No I/O or mutable collector handles. */
 export interface DelegationViewModel {
@@ -17,6 +18,7 @@ export interface DelegationViewModel {
   pendingStatus: number;
 }
 export interface DelegationNodeDetails {
+  outputRate?: NonNullable<ReaderResult['outputRate']>;
   status: StatusProjection | null;
   statusSource: 'committed' | 'ledger' | 'unavailable';
   latestReportForRun: Report | null;

@@ -89,6 +89,46 @@ function currentObservation(
   return view;
 }
 
+/** A process-local sample may accompany only the exact committed current observation. */
+export function committedReaderRate(
+  session: CollectedLinkSession | undefined,
+  observation: ObservationView | null,
+  nowMs: number,
+  ledgerAvailable: boolean
+) {
+  if (!session || !observation || observation.nodeIdentity.kind !== 'session') return undefined;
+  try {
+    if (!sameSessionRef(session.evidence.ref, observation.nodeIdentity.ref)) return undefined;
+  } catch {
+    return undefined;
+  }
+  const receipt = session?.committedRate;
+  const stamp = observation?.statusProjection.observationStamp;
+  const rate = receipt?.rate;
+  if (!stamp || stamp.sourceGeneration !== session.sourceGeneration) return undefined;
+  try {
+    if (!sameSessionRef(stamp.ref, session.evidence.ref)) return undefined;
+  } catch {
+    return undefined;
+  }
+  return ledgerAvailable &&
+    session?.loaded &&
+    session.committedOnly &&
+    stamp &&
+    receipt &&
+    canonicalJson(stamp) === canonicalJson(receipt.stamp) &&
+    rate?.source === 'codex.turn_wallclock_proxy' &&
+    Number.isFinite(rate.tokensPerSecond) &&
+    rate.tokensPerSecond >= 0 &&
+    Number.isFinite(rate.sampleMs) &&
+    rate.sampleMs > 0 &&
+    Number.isFinite(rate.sampledAt) &&
+    rate.sampledAt >= 0 &&
+    rate.sampledAt <= nowMs
+    ? rate
+    : undefined;
+}
+
 /** Pure entry point for B10 and B16. No reader, adapter, writer, clock or filesystem calls. */
 export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
   if (!Number.isFinite(input.nowMs) || input.nowMs < 0) throw new TypeError('invalid_link_clock');
@@ -342,6 +382,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
       (relation) => relation.attribution === 'confirmed' || relation.attribution === 'intent'
     );
     const observation = loaded && !nodeConflicts.has(item.key) ? currentObservation(session, run) : null;
+    const committedRate = committedReaderRate(session, observation, input.nowMs, available);
     const coverage = session?.evidence.observation.coverage;
     nodes.push({
       identity,
@@ -362,6 +403,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
         ...(!loaded ? { reason } : {}),
       },
       observation,
+      ...(committedRate ? { committedRate } : {}),
       lastObservation: session?.committedOnly
         ? (session.lastCommitted ?? null)
         : (session?.evidence.observation ?? null),

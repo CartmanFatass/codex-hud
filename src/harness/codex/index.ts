@@ -390,7 +390,7 @@ export class CodexAdapter implements HarnessAdapter {
         Number.isFinite(sampledAt) &&
         sampledAt >= 0 &&
         sampledAt <= now &&
-        (turnStartedAt === null || (turnStartedAt <= now && sampledAt >= turnStartedAt))
+        (turnStartedAt === null || (turnStartedAt <= now && sampledAt > turnStartedAt))
           ? {
               source: 'codex.turn_wallclock_proxy' as const,
               tokensPerSecond: rate.tokensPerSecond,
