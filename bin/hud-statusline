@@ -1,0 +1,43 @@
+#!/usr/bin/env node
+import { fileURLToPath } from 'node:url';
+const args = process.argv.slice(2);
+if (args[0] === '--help') {
+  process.stdout.write(
+    'Usage: node bin/hud-statusline [--width COLUMNS]\n       node bin/hud-statusline settings preview\n       node bin/hud-statusline settings apply --plan ABSOLUTE_FILE\n       node bin/hud-statusline settings restore --backup ABSOLUTE_FILE\n\nRender one stdin Claude statusline JSON; no installation by default.\nSettings commands are explicit Linux opt-in operations under HOME/.claude.\nPreview before apply; keep the returned backup path for exact restore.\n'
+  );
+} else if (args[0] === 'settings') {
+  import('../dist/statusline-settings.js')
+    .then(({ statuslineSettings }) => {
+      const result = statuslineSettings(
+        args.slice(1),
+        process.env.HOME ?? '',
+        process.execPath,
+        fileURLToPath(import.meta.url)
+      );
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    })
+    .catch(() => {
+      process.stderr.write(
+        'statusline_settings_failed: invalid input, changed settings, unsafe path, or unavailable build\n'
+      );
+      process.exitCode = 2;
+    });
+} else {
+  import('../dist/statusline-preview.js')
+    .then(async ({ statuslinePreview }) => {
+      process.exitCode = await statuslinePreview(args, process.stdin, {
+        columns: process.env.COLUMNS,
+        ttyColumns: process.stdout.isTTY ? process.stdout.columns : undefined,
+        stdout: (text) =>
+          new Promise((resolve, reject) => {
+            process.stdout.once('error', reject);
+            process.stdout.write(text, (error) => (error ? reject(error) : resolve()));
+          }),
+        stderr: (text) => process.stderr.write(text),
+      });
+    })
+    .catch(() => {
+      process.stderr.write('statusline_unavailable: run npm run build\n');
+      process.exitCode = 1;
+    });
+}

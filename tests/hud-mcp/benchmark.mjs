@@ -79,7 +79,7 @@ try {
     let start = performance.now();
     const tools = await c.request('tools/list', {});
     list.push(performance.now() - start);
-    if (tools.tools.length !== 7) throw new Error('tool count');
+    if (tools.tools.length !== 8) throw new Error('tool count');
     start = performance.now();
     const result = await c.request('tools/call', { name: 'delegate_whoami', arguments: {} });
     whoami.push(performance.now() - start);

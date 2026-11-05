@@ -342,7 +342,7 @@ test('int unconfigured real MCP answers discovery and refuses whoami with JSON-R
     };
     assert.equal(initialized.result.serverInfo.name, 'hud-mcp');
     const listed = (await request('tools/list', {})) as { result: { tools: unknown[] } };
-    assert.equal(listed.result.tools.length, 7);
+    assert.equal(listed.result.tools.length, 8);
     const called = (await request('tools/call', { name: 'delegate_whoami', arguments: {} })) as {
       result: { structuredContent: unknown };
     };

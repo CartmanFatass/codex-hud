@@ -25,6 +25,7 @@ export const HUD_TOOLS = [
   'delegate_report',
   'delegate_whoami',
   'delegate_status',
+  'delegate_list',
   'delegate_wait',
   'delegate_cancel',
 ] as const;

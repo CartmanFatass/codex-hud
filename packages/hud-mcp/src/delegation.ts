@@ -182,6 +182,8 @@ export class DelegationService {
     if (!source.scopePremise) throw new Error('identity_unverified');
     this.wakes?.parentCall();
     if (!this.options.registration || !this.options.reader) throw new Error('local_entry_only');
+    if (tool === 'delegate_list')
+      return this.reads.list(args as Parameters<ReadControlService['list']>[0], (tx) => this.readAuthority(tx, source));
     if (tool === 'delegate_status')
       return this.reads.status(args as unknown as Parameters<ReadControlService['status']>[0], (tx) =>
         this.readAuthority(tx, source)
