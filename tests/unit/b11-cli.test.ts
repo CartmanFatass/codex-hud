@@ -119,6 +119,80 @@ test('hud panel starts the actual panel and closes when its input closes', { ski
   }
 });
 
+for (const explicitPane of [false, true])
+  test(
+    `standalone panel never uses inherited tmux ${explicitPane ? 'pane' : 'fallback'} for input or cleanup`,
+    { skip },
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), 'hud-panel-standalone-'));
+      const trace = join(root, 'commands.log');
+      const fakeTmux = join(root, 'tmux');
+      const toggle = join(root, 'toggle');
+      const keys = join(root, 'codex-hud-keys');
+      const script = '#!/bin/sh\nprintf "%s\\n" "$*" >> "$PANEL_COMMAND_TRACE"\nprintf "%%123\\n"\n';
+      for (const file of [fakeTmux, toggle, keys]) writeFileSync(file, script, { mode: 0o700 });
+      const child = spawn(process.execPath, [resolve('bin/hud'), 'panel'], {
+        cwd: root,
+        env: {
+          PATH: '/usr/bin:/bin',
+          HOME: root,
+          CODEX_HOME: root,
+          HUD_HOME: join(root, 'missing'),
+          TMUX: '/synthetic/tmux,1,0',
+          TMUX_PANE: '%456',
+          CODEX_HUD_TMUX_BIN: fakeTmux,
+          CODEX_HUD_TOGGLE_CMD: toggle,
+          CODEX_HUD_TMUX_SESSION: 'synthetic',
+          PANEL_COMMAND_TRACE: trace,
+          ...(explicitPane ? { CODEX_HUD_MAIN_PANE: '%123' } : {}),
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
+      });
+      let output = '';
+      let errors = '';
+      child.stdout!.setEncoding('utf8');
+      child.stderr!.setEncoding('utf8');
+      child.stderr!.on('data', (chunk: string) => {
+        errors += chunk;
+      });
+      try {
+        await new Promise<void>((resolvePromise, reject) => {
+          const timer = setTimeout(() => reject(new Error('panel_start_timeout')), 8000);
+          child.stdout!.on('data', (chunk: string) => {
+            output += chunk;
+            if (output.includes('\x1b[?1049h')) {
+              clearTimeout(timer);
+              resolvePromise();
+            }
+          });
+          child.once('exit', () => {
+            clearTimeout(timer);
+            reject(new Error('panel_exited_early'));
+          });
+        });
+        const closed = once(child, 'close');
+        child.stdin!.write('\x1b[200~synthetic paste\x1b[201~q');
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const result = await Promise.race([
+          closed,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('panel_close_timeout')), 8000);
+          }),
+        ]).finally(() => clearTimeout(timer));
+        assert.equal(result[0], 0, errors);
+        assert.equal(existsSync(trace), false, 'no tmux, prefix or toggle command should run');
+      } finally {
+        if (child.exitCode === null) {
+          if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+          else child.kill('SIGKILL');
+          await once(child, 'close');
+        }
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
+
 for (const unrelatedSession of [false, true])
   test(
     `hud panel displays ledger delegation ${unrelatedSession ? 'with an unrelated Codex session' : 'without a selected Codex session'}`,

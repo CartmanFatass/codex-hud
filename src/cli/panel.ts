@@ -15,6 +15,7 @@ export function panelCommand(io: HudIO): Promise<number> {
     {
       ...io.env,
       CODEX_HUD_PANEL_ALL_DELEGATIONS: '1',
+      CODEX_HUD_STANDALONE_PANEL: '1',
     }
   );
 }
