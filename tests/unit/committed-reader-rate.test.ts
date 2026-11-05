@@ -3,9 +3,11 @@ import test from 'node:test';
 import { openObservationStore } from '../../src/core/observation-store.js';
 import { SessionPublisher } from '../../src/core/link/publisher.js';
 import { committedReaderRate } from '../../src/core/link/index.js';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { LinkTickCollector } from '../../src/core/link/tick.js';
+import { checkpointRate } from '../../src/core/link/checkpoint-rate.js';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CodexAdapter } from '../../src/harness/codex/index.js';
+import { CodexAdapter, type CodexCheckpoint } from '../../src/harness/codex/index.js';
 import type { LaunchProfile } from '../../src/core/types/capabilities.js';
 import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
 import type { CollectedLinkSession } from '../../src/core/link/types.js';
@@ -71,6 +73,13 @@ test(
     assert.equal(await adapter.resolveSource(profile, {}), ref.sourceId);
     const reading = await adapter.open(ref).read({ maxBytes: 1024 * 1024, maxRecords: 2000, budgetMs: 60000 });
     assert.ok(reading.outputRate);
+    assert.deepEqual(checkpointRate(reading.checkpoint, now), reading.outputRate);
+    assert.equal(checkpointRate(reading.checkpoint, reading.outputRate!.sampledAt - 1), undefined);
+    const equalTurn = JSON.parse(JSON.stringify(reading.checkpoint)) as CodexCheckpoint;
+    assert.equal(equalTurn.codex.rollout.version, 3);
+    if (equalTurn.codex.rollout.version !== 3) throw new Error('fixture');
+    equalTurn.codex.rollout.state.cachedResult!.activity!.turnStartedAt = reading.outputRate!.sampledAt;
+    assert.equal(checkpointRate(equalTurn, now), undefined);
     const store = await openObservationStore({ hudHome: f.root, sourceId: ref.sourceId, now: () => now });
     const publisher = new SessionPublisher(store, ref, 'synthetic-rate');
     t.after(() => {
@@ -179,6 +188,59 @@ test('Inspector reports exact sample age and hides unavailable or future rates',
   assert.match(inspect(), /Output rate: unavailable/);
 });
 
+test('fast committed refresh clears a previous rate when the new commit has none', async () => {
+  const built = buildVm([
+    { id: 'main', root: true, harness: 'claude', status: S.working(), label: null },
+    { id: 'one', parent: 'main', harness: 'codex', label: 'target', status: S.working() },
+  ]);
+  built.vm.tree.ledger.state = 'available';
+  const node = built.vm.tree.nodes.find((item) => item.key === built.keys.one)!;
+  assert.equal(node.identity.kind, 'session');
+  if (node.identity.kind !== 'session') throw new Error('fixture');
+  const ref = node.identity.ref;
+  const originalKey = node.key;
+  node.key = displayNodeKey({ kind: 'session', ref });
+  (built.vm.details as Record<string, (typeof built.vm.details)[string]>)[node.key] = built.vm.details[originalKey];
+  const stamp = {
+    ref,
+    sourceGeneration: 1,
+    seqDomain: 'synthetic',
+    commitSeq: 1,
+    inputLedgerSeq: null,
+    runId: node.currentRun!.runId,
+    bindingGeneration: node.currentRun!.expectedGeneration,
+  };
+  node.observation!.statusProjection = structuredClone(built.vm.details[node.key].status!);
+  node.observation!.nodeIdentity = node.identity;
+  node.observation!.conflict = node.conflict;
+  node.observation!.statusProjection.observationStamp = stamp;
+  const rate = {
+    source: 'codex.turn_wallclock_proxy' as const,
+    tokensPerSecond: 12,
+    sampleMs: 1000,
+    sampledAt: NOW - 5000,
+  };
+  node.committedRate = rate;
+  built.vm.details[node.key].outputRate = rate;
+  const summary = structuredClone(node.observation!);
+  summary.statusProjection.observationStamp = { ...stamp, commitSeq: 2 };
+  const session = {
+    evidence: { ref, observation: summary },
+    loaded: true,
+    committedOnly: true,
+    sourceGeneration: 1,
+  } as unknown as CollectedLinkSession;
+  const collector = new LinkTickCollector({ close() {} } as never, '/synthetic', built.vm.limits, {
+    sessions: () => [session],
+  } as never);
+  (collector as any).tree = built.vm.tree;
+  (collector as any).view = built.vm;
+  const refreshed = await collector.refreshCommitted(node.key);
+  assert.equal(refreshed!.tree.nodes.find((item) => item.key === node.key)!.committedRate, undefined);
+  assert.equal(refreshed!.details[node.key].outputRate, undefined);
+  assert.equal(refreshed!.details[node.key].status!.observationStamp!.commitSeq, 2);
+});
+
 test(
   'real collector publishes and projects its own checkpoint-bound rate',
   { skip: !ledgerRuntimeSupported() },
@@ -236,5 +298,45 @@ test(
       view?.tree.nodes.find((node) => node.key === key)?.observation?.statusProjection.observationStamp?.runId,
       'run-a'
     );
+    const follower = await HudDelegationCollector.open({ HUD_HOME: f.root }, f.root);
+    assert.ok(follower);
+    t.after(() => follower.close());
+    let followerView = null;
+    let chargedBytes = 0;
+    for (let i = 0; i < 50; i++) {
+      followerView = await follower.tick(f.parent.ref.sessionId);
+      chargedBytes += follower.collector.stats().bytesRead;
+      if (followerView?.details[key]?.outputRate) break;
+    }
+    assert.equal(
+      followerView?.details[key]?.outputRate?.tokensPerSecond,
+      12,
+      'read-only follower recovers exact committed sample'
+    );
+    assert.equal(followerView?.details[key]?.statusSource, 'committed');
+    assert.ok(chargedBytes > 0, 'recovery is charged to collection');
+    const priorSeq = view!.details[key].status!.observationStamp!.commitSeq;
+    appendFileSync(
+      join(dir, `rollout-${f.child.ref.sessionId}.jsonl`),
+      entry(now - 500, 'event_msg', { type: 'task_started' }) + '\n'
+    );
+    for (let i = 0; i < 50; i++) {
+      view = await runtime.tick(f.parent.ref.sessionId);
+      await runtime.afterPaint((published) => {
+        if (published) view = published;
+      });
+      if ((view?.details[key]?.status?.observationStamp?.commitSeq ?? 0) > priorSeq) break;
+    }
+    assert.ok((view?.details[key]?.status?.observationStamp?.commitSeq ?? 0) > priorSeq, 'new turn published');
+    assert.equal(view?.details[key]?.outputRate, undefined, 'new commit must clear old publisher rate');
+    for (let i = 0; i < 50; i++) {
+      followerView = await follower.tick(f.parent.ref.sessionId);
+      if ((followerView?.details[key]?.status?.observationStamp?.commitSeq ?? 0) > priorSeq) break;
+    }
+    assert.ok(
+      (followerView?.details[key]?.status?.observationStamp?.commitSeq ?? 0) > priorSeq,
+      'follower observed new commit'
+    );
+    assert.equal(followerView?.details[key]?.outputRate, undefined, 'new commit must clear old follower rate');
   }
 );
