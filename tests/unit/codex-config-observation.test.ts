@@ -104,7 +104,7 @@ test('actual transport preserves sparse/null/invalid values without zero or fals
     const result = await client.configRead({ cwd: home });
     assert.equal(result.status, 'partial');
     assert.equal(result.fields.model_provider.state, status);
-    if (result.fields.model_provider.state !== 'known') assert.equal(result.fields.model_provider.reason, reason);
+    assert.equal(result.fields.model_provider.reason, reason);
     assert.equal(result.fields.model_provider.value, null);
     assert.equal(result.fields.sandbox_mode.value, null);
     noSecrets(result);
