@@ -1,3 +1,4 @@
+import { simulationJobDisplayInput, type SimulationJobDisplay } from './job-display.js';
 import { validClaudeAction, validClaudeProgress } from './reader-display.js';
 import { canonicalJson } from '../canonical.js';
 import { sameSessionRef, sessionRefKey } from '../identity.js';
@@ -49,7 +50,7 @@ const emptySnapshot: LedgerReadSnapshot = {
 interface Edge {
   parent: string;
   child: string;
-  kind: 'delegated' | 'native' | 'intent';
+  kind: 'delegated' | 'native' | 'intent' | 'simulation-job';
   records: string[];
   since: number;
   relation?: LinkRelationProjection;
@@ -207,7 +208,20 @@ export function committedReaderProgress(
 export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
   if (!Number.isFinite(input.nowMs) || input.nowMs < 0) throw new TypeError('invalid_link_clock');
   const limits = linkTreeBudget(input.budget);
+  const simulation =
+    input.simulationJobs === undefined
+      ? null
+      : simulationJobDisplayInput(input.simulationJobs, input.lastKnownSimulationJobs);
+  const jobDisplays = new Map<string, SimulationJobDisplay>();
   const available = input.ledger.state === 'available';
+  if (simulation && !available)
+    simulation.status = {
+      ...simulation.status,
+      availability: 'unavailable',
+      lastKnownRevision: simulation.status.revision ?? simulation.status.lastKnownRevision,
+      revision: null,
+      reason: input.ledger.reason,
+    };
   const snapshot = input.ledger.state === 'available' ? input.ledger.snapshot : emptySnapshot;
   const verification = verifyLinkEvidence(
     snapshot,
@@ -330,6 +344,22 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
       });
     }
   }
+  // Display edges require exact persisted parent context in this ledger, never a label/owner guess.
+  if (available && simulation)
+    for (const job of simulation.jobs) {
+      const context = job.parentContext;
+      if (!context || context.ledgerId !== snapshot.ledgerId) continue;
+      const parent = displayNodeKey(sessionIdentity(context.ref));
+      if (
+        identities.get(parent)?.kind !== 'session' &&
+        !input.roots.some((root) => root.kind === 'session' && displayNodeKey(root) === parent)
+      )
+        continue;
+      addIdentity(sessionIdentity(context.ref));
+      const child = addIdentity({ kind: 'job', ref: job.ref });
+      jobDisplays.set(child, job);
+      edges.push({ parent, child, kind: 'simulation-job', records: [], since: 0 });
+    }
   const byChild = new Map<string, Edge[]>();
   for (const edge of edges) {
     const group = byChild.get(edge.child) ?? [];
@@ -430,7 +460,7 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
     deferred = new Map<string, LinkContinuation>();
   const nodes: LinkTreeNode[] = [];
   const overspent = costUnknown || bytesRead > limits.maxBytes;
-  let unknownDescendants = false;
+  let unknownDescendants = simulation?.status.availability === 'unavailable';
   const defer = (key: string, reason: LinkContinuation['reason']) => {
     if (!deferred.has(key)) deferred.set(key, { key, identity: identities.get(key)!, reason });
   };
@@ -447,7 +477,11 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
     const crossExceeded = item.cross > limits.maxCrossHarnessDepth;
     const loaded =
       identity.kind === 'delegationIntent' ||
-      (identity.kind === 'session' && Boolean(session?.loaded) && !crossExceeded && !overspent);
+      (identity.kind === 'session' && Boolean(session?.loaded) && !crossExceeded && !overspent) ||
+      (identity.kind === 'job' &&
+        jobDisplays.get(item.key)?.availability === 'available' &&
+        !crossExceeded &&
+        !overspent);
     const reason = crossExceeded ? 'depth' : overspent ? 'bytes' : 'unloaded';
     if (!loaded) defer(item.key, reason);
     const run = nodeConflicts.has(item.key) ? null : (runsByNode.get(item.key) ?? null);
@@ -463,6 +497,9 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
     nodes.push({
       identity,
       key: item.key,
+      ...(jobDisplays.has(item.key) && !crossExceeded && !overspent
+        ? { simulationJob: jobDisplays.get(item.key)! }
+        : {}),
       parentKey: item.parentKey,
       edge: item.edge?.kind ?? null,
       native: item.edge?.kind === 'native' ? (item.edge.native ?? { title: null, kind: null }) : null,
@@ -472,7 +509,8 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
       coverage: {
         state: !loaded
           ? 'partial'
-          : (coverage?.state ?? (identity.kind === 'delegationIntent' ? 'complete' : 'partial')),
+          : (coverage?.state ??
+            (identity.kind === 'delegationIntent' || (identity.kind === 'job' && loaded) ? 'complete' : 'partial')),
         skipped: { ...coverage?.skipped },
         gaps: [...(coverage?.gaps ?? [])],
         loaded,
@@ -504,7 +542,11 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
             if (!input.roots.length && !overspent && edge.kind !== 'native') {
               const child = identities.get(edge.child)!;
               const cross =
-                item.cross + (child.kind === 'session' && child.ref.harness !== identity.ref.harness ? 1 : 0);
+                item.cross +
+                (edge.kind === 'simulation-job' ||
+                (child.kind === 'session' && child.ref.harness !== identity.ref.harness)
+                  ? 1
+                  : 0);
               queue.push({ key: edge.child, parentKey: item.key, depth: item.depth + 1, cross, edge });
             } else defer(edge.child, reason);
           }
@@ -517,7 +559,11 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
     }
     for (const edge of children.get(item.key) ?? []) {
       const child = identities.get(edge.child)!;
-      const cross = item.cross + (child.kind === 'session' && child.ref.harness !== identity.ref.harness ? 1 : 0);
+      const cross =
+        item.cross +
+        (edge.kind === 'simulation-job' || (child.kind === 'session' && child.ref.harness !== identity.ref.harness)
+          ? 1
+          : 0);
       queue.push({ key: edge.child, parentKey: item.key, depth: item.depth + 1, cross, edge });
     }
   }
@@ -577,12 +623,14 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
   const allCandidates = [...candidates.values()].sort((a, b) => a.recordId.localeCompare(b.recordId));
   const allDeferred = [...deferred.values()];
   const partial =
+    simulation?.status.availability === 'unavailable' ||
     !available ||
     overspent ||
     deferred.size > 0 ||
     unknownDescendants ||
     nodes.some((node) => node.coverage.state !== 'complete' || node.coverage.gaps.length > 0);
   return {
+    ...(simulation ? { simulationJobs: simulation.status } : {}),
     ledger: {
       state: input.ledger.state,
       ledgerId: available ? snapshot.ledgerId : null,
@@ -616,7 +664,10 @@ export function projectLinkTree(input: LinkTreeInput): LinkTreeProjection {
     coverage: {
       state: partial ? 'partial' : 'complete',
       skipped: {},
-      gaps: costUnknown ? ['collection_cost_unknown'] : [],
+      gaps: [
+        ...(costUnknown ? ['collection_cost_unknown'] : []),
+        ...(simulation?.status.availability === 'unavailable' ? ['simulation_jobs_unavailable'] : []),
+      ],
       loaded: !partial,
       ...(partial
         ? {

@@ -338,7 +338,7 @@ test('unknown formats and corrupt job/lease state fail closed without repair', (
   assert.throws(() => DurableJevLab.open(path), /unsupported_format/);
   unavailable(path, 'unsupported_format');
   assert.equal(raw.prepare('PRAGMA user_version').get()?.user_version, 99);
-  raw.exec('PRAGMA user_version=1; PRAGMA application_id=0');
+  raw.exec('PRAGMA user_version=2; PRAGMA application_id=0');
   assert.throws(() => DurableJevLab.open(path), /unsupported_format/);
   unavailable(path, 'unsupported_format');
   assert.equal(raw.prepare('PRAGMA application_id').get()?.application_id, 0);
@@ -543,4 +543,34 @@ test('synthetic-only bounded input, private paths and unchanged production gates
   chmodSync(root, 0o700);
   for (const op of ['jev_send', 'browser_control'] as const)
     assert.deepEqual(mvpOperationPolicy(op), { allowed: false, reason: 'unsupported', dispatches: 0 });
+});
+
+test('v2 persists immutable exact parent context; old v1 cannot be silently reopened', (t) => {
+  const { path } = fixture(t),
+    db = DurableJevLab.create(path),
+    a = input();
+  const parentContext = {
+    ledgerId: 'synthetic-ledger',
+    ref: { harness: 'claude' as const, sourceId: '1'.repeat(64), sessionId: 'synthetic-parent', threadId: null },
+  };
+  db.enqueue({ ...a, parentContext });
+  const before = db.snapshot();
+  db.close();
+  const reopened = DurableJevLab.open(path, before.storeId);
+  assert.deepEqual(job(reopened).parentContext, parentContext);
+  assert.ok(reopened.enqueue({ ...a, parentContext: { ...parentContext, ref: { ...parentContext.ref } } }).replay);
+  for (const parent of [
+    undefined,
+    { ...parentContext, ledgerId: 'synthetic-other' },
+    { ...parentContext, ref: { ...parentContext.ref, sourceId: '2'.repeat(64) } },
+  ])
+    assert.throws(() => reopened.enqueue({ ...a, parentContext: parent }), /request_conflict/);
+  assert.deepEqual(reopened.snapshot(), before);
+  reopened.close();
+  const raw = new DatabaseSync(path);
+  raw.exec('PRAGMA user_version=1');
+  unavailable(path, 'unsupported_format', before.storeId);
+  assert.throws(() => DurableJevLab.open(path, before.storeId), /unsupported_format/);
+  assert.equal(raw.prepare('PRAGMA user_version').get()?.user_version, 1);
+  raw.close();
 });

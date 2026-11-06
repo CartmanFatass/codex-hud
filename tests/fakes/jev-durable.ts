@@ -3,16 +3,18 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { closeSync, lstatSync, openSync, realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { validSimulationJobParent, type SimulationJobParent } from '../../src/core/link/job-display.js';
+import { sameSessionRef } from '../../src/core/identity.js';
 import type { JobRef } from '../../src/core/types/observation.js';
 import { displayNodeKey } from '../../src/core/observation.js';
 import { leaseReleasePolicy } from '../../src/core/supervision.js';
 
 const APPLICATION_ID = 0x4a45564c; // JEVL: independent simulation format, not ledger v1.
-const VERSION = 1;
+const VERSION = 2;
 const LIMIT = 128;
 const TABLE_SQL =
   'CREATE TABLE simulated_jev_store (singleton INTEGER PRIMARY KEY CHECK(singleton=1), store_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL)';
-const INPUT_FIELDS = ['ref', 'owner', 'browser', 'requestId', 'requestFingerprint', 'label'];
+const INPUT_FIELDS = ['ref', 'owner', 'browser', 'requestId', 'requestFingerprint', 'label', 'parentContext'];
 const JOB_FIELDS = [
   ...INPUT_FIELDS,
   'key',
@@ -34,6 +36,7 @@ export interface SimulatedJevInput {
   requestId: string;
   requestFingerprint: string;
   label?: string;
+  parentContext?: SimulationJobParent;
 }
 interface Job extends SimulatedJevInput {
   key: string;
@@ -116,6 +119,7 @@ function inputValuesValid(input: SimulatedJevInput): void {
   refValid(input.ref);
   check([input.owner, input.browser, input.requestId, input.requestFingerprint].every(valid), 'invalid_input');
   check(input.label === undefined || valid(input.label), 'invalid_label');
+  check(input.parentContext === undefined || validSimulationJobParent(input.parentContext), 'invalid_parent_context');
 }
 function copyInput(input: SimulatedJevInput): SimulatedJevInput {
   return {
@@ -130,6 +134,7 @@ function copyInput(input: SimulatedJevInput): SimulatedJevInput {
     requestId: input.requestId,
     requestFingerprint: input.requestFingerprint,
     ...(input.label === undefined ? {} : { label: input.label }),
+    ...(input.parentContext === undefined ? {} : { parentContext: structuredClone(input.parentContext) }),
   };
 }
 /** This lab requires a caller-owned private directory and a single private regular file. */
@@ -434,7 +439,12 @@ export class DurableJevLab {
             old.browser === input.browser &&
             old.requestId === input.requestId &&
             old.requestFingerprint === input.requestFingerprint &&
-            old.label === input.label,
+            old.label === input.label &&
+            (old.parentContext === undefined
+              ? input.parentContext === undefined
+              : input.parentContext !== undefined &&
+                old.parentContext.ledgerId === input.parentContext.ledgerId &&
+                sameSessionRef(old.parentContext.ref, input.parentContext.ref)),
           'request_conflict'
         );
         return { changed: false, value: { replay: true, revision: old.revision, state: old.state } };
