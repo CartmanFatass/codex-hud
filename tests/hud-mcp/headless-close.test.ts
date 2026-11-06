@@ -296,6 +296,7 @@ for (const scenario of ['supervisor_dead', 'unknown_scope', 'leader_only', 'wron
           scenario === 'leader_only' ? [{ ...complete, complete: false, launchersSealed: false }] :
             scenario === 'conflict' ? [complete, { kind: 'conflict', cause: 'scope_conflict' }] : [complete];
       await f.reconcile(facts, 'run-a', scenario === 'wrong_scope' ? (fact) => {
+        assert.ok(f.meta.supervisor);
         fact.supervisor = { ...f.meta.supervisor, proc_start: '99999' };
       } : undefined);
       const s = f.state(); assert.notEqual(s.link.state, 'closed'); assert.equal(s.closed.length, 0);
