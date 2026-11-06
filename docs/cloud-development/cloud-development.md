@@ -12,6 +12,14 @@ Use official interface documentation pinned to the relevant version (and capture
 
 Lack of real access alone must not reopen this resolved blocking question in planning, review or agent handoff. Record the missing evidence, continue independent authorized work, and leave a precise local-validation checklist. Escalate a genuinely new contract, authorization or implementation issue on its own merits; do not disguise it as a request for credentials or mark an unrun check as passed.
 
+### Owner clarification: project repair authorization (2026-11-06)
+
+The owner has preauthorized the current project's tasks within their original goals and safety limits and cancelled the repair-round quota. Continue in-scope implementation and test repairs, with a fresh independent Oracle for each re-check, without a fixed iteration count. Do not stop or request repetitive confirmation solely because of the number of corrections, including when an earlier brief allowed only two rounds or one additional round. Report substantive new findings, preserve the review and check evidence, and continue independent authorized lanes while a genuinely blocked lane awaits resolution.
+
+This clarification supersedes contrary repair-count or count-triggered owner-approval instructions in earlier workflow documents, package briefs, handoffs and reviews, including F4 digest-notes records. Those records retain their original wording as history; they do not reinstate a repair quota. Historical run-sizing guidance is not a substitute repair-count limit. A real scope, contract or permission change, an owner-reserved decision, or an applicable safety-policy limit still needs its proper decision, confirmation or handoff. Missing prerequisites and uncertain outcomes must still be reported honestly, and uncertain side effects must not be blindly retried.
+
+This is not approval for unrelated work or expanded access. Current model roles, fresh independent review, security contracts, protected-branch restrictions, integration/merge gates and production capability gates remain unchanged. Continue to publish only to an already authorized target after its required review and checks; this clarification does not itself authorize a merge, release or deployment.
+
 ## Repeatable cloud setup
 
 1. Provision a Linux cloud workspace with network and GitHub access appropriate to the environment. Record OS, architecture, Node, npm, Git and any test dependencies. The existing saved cloud configuration is configured for `main`, so explicitly select the intended branch. Its availability is environment-dependent.

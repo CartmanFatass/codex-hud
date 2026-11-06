@@ -2,6 +2,8 @@
 
 > **2026-11-05 cloud-development update:** See [the current cloud handbook and revised C–F roadmap](../cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
 
+> **2026-11-06 owner clarification:** [Project repair authorization](../cloud-development/cloud-development.md#owner-clarification-project-repair-authorization-2026-11-06) supersedes earlier repair-count limits and count-triggered approval stops, including those repeated in historical briefs and reviews. Continue authorized in-scope repairs with fresh independent re-checks; substantive scope, contract, permission and safety boundaries, model roles and merge/production gates remain unchanged.
+
 A small, Claude-only version of the universal-hud workflow for cloud sessions, where Herdr, Codex, pi and the shared
 browser are not available. One orchestrator session runs one or two work packages; each package has one implementer
 and one Oracle.
@@ -37,8 +39,11 @@ elsewhere and owns `src/collectors/**` and the collector wiring in `src/tree-pag
    checks) before any review.
 4. **Final review.** One Oracle review of the full diff. Findings go to the same implementer through SendMessage
    (its context stays warm).
-5. **Re-check.** A fresh Oracle that is given the previous review and the fix diff. At most two fix rounds. After
-   that, stop and record the open findings in the package's handoff.
+5. **Re-check.** A fresh Oracle that is given the previous review and the fix diff. Continue authorized in-scope
+   implementation and test repairs without a fixed round count or a count-triggered approval request. Report
+   substantive new findings and continue independent authorized packages. Genuine scope, contract, permission
+   changes and safety-policy limits still need their proper decision or confirmation; record unresolved findings
+   and actual check outcomes in the package's handoff.
 6. **Hand back.**
    - The orchestrator commits on `cloud/<wp>`, adds `docs/cloud/handoff/<wp>.md` (report summary, Oracle verdict,
      check output, open items) and pushes the branch.
@@ -109,7 +114,8 @@ parallel, each with one implementer (Agent tool, isolation "worktree", the imple
 "opus" effort "high" for core and test briefs, model "sonnet" effort "xhigh" for rendering briefs) and Oracles (Agent
 tool, model "opus", effort "max", a fresh agent each time, the Oracle prompts from the README). Follow the loop in the README exactly: verify each report
 yourself before review; one final Oracle review per package; fixes go back to the same implementer through
-SendMessage; re-checks go to a fresh Oracle; at most two fix rounds. Subagents cannot write report files: when one
+SendMessage; re-checks go to a fresh Oracle; continue authorized in-scope repairs without a fixed round count or
+count-triggered approval request, following the 2026-11-06 owner clarification linked above. Subagents cannot write report files: when one
 returns its report or review as text, save it yourself under docs/cloud/handoff/ or docs/cloud/rulings/. When a
 package is accepted and green, commit it on its branch cloud/<wp> (end the message with the Co-Authored-By line),
 add docs/cloud/handoff/<wp>.md, and push that branch. Then merge it into universal-hud per docs/handoff/STATE.md
