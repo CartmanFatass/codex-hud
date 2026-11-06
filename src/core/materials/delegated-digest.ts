@@ -1,4 +1,8 @@
 /** One explicit completed-report summary, one ordinary generic SmallModel request. */
+import { performance } from 'node:perf_hooks';
+import { buildMaterials, isEnvelope, fingerprint, revalidateMaterials, type MaterialEnvelope } from './index.js';
+import { saveDigestNote, readDigestNote, type DigestNoteContext, type DigestNoteSave, type DigestRetention, type StoredDigestDocument } from './digest-notes.js';
+export type { DigestRetention, SavedDigestDocument, StoredDigestDocument } from './digest-notes.js';
 import { SmallModel, type ModelHandle } from '../../collectors/small-model.js';
 import { openCompletedReport, type CompletedReportMetadata, type CompletedReportTarget } from '../delegated-report-read.js';
 import { materialRequest } from './request.js';
@@ -32,6 +36,9 @@ function selection(m: CompletedReportMetadata) {
 }
 export interface DigestInput { home: string; runId: string; reportId: string; env: NodeJS.ProcessEnv }
 export interface DigestOptions {
+  /** Explicit retention only; ordinary plan/run callers remain unchanged. */
+  save?: boolean;
+  onRetention?: (receipt: DigestRetention) => void;
   fetch?: typeof fetch;
   signal?: AbortSignal;
   /** Test observation only; cannot change SQL or supply material. */
@@ -82,6 +89,7 @@ export async function runDelegatedDigest(
   let model: SmallModel | undefined;
   let handle: ModelHandle | undefined;
   let stopped: DigestFailure | undefined;
+  let saved: DigestNoteSave | undefined;
   let stopResult!: (error: DigestFailure) => void;
   const stopPromise = new Promise<DigestFailure>((resolve) => { stopResult = resolve; });
   const stop = (reason: string) => {
@@ -92,8 +100,13 @@ export async function runDelegatedDigest(
     model?.cancelAll();
     stopResult(stopped);
   };
+  const saveFailure = () => saved?.publicationUncertain()
+    ? new DigestFailure('digest_note_publish_uncertain_use_show', 6)
+    : stopped ?? new DigestFailure('authorization_changed');
+  const checkSaved = () => { if (saved && !saved.current()) throw saveFailure(); };
   const abort = () => stop('cancelled');
   const timeout = Number.isFinite(options.deadlineMs) ? Math.max(1, Math.min(60000, options.deadlineMs!)) : 60000;
+  const expires = performance.now() + timeout;
   const timer = setTimeout(() => stop('timeout'), timeout);
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) abort();
@@ -188,23 +201,113 @@ export async function runDelegatedDigest(
       recipientId: prepared.recipient.recipientId, model: prepared.recipient.model, language,
       generatedAt: handle.generatedAt ?? Date.now(), cached: outcome.cached === true, digest,
     };
+    if (options.save) {
+      const authorized = () => {
+        if (options.signal?.aborted) stop('cancelled');
+        if (performance.now() >= expires) stop('timeout');
+        return active && !!handle?.isAuthorized?.() && prepared.current() && target!.current();
+      };
+      const envelope = handle.materials;
+      saved = envelope
+        ? saveDigestNote(noteContext(prepared, target, envelope, authorized), result)
+        : { retention: { state: 'not_saved', reason: 'digest_note_authorization_changed' } as DigestRetention,
+          current: authorized, publicationUncertain: () => false, dispose: () => {} };
+      checkSaved();
+      options.onRetention?.(saved.retention);
+      checkSaved();
+    }
     if (deliver) {
       const delivered = await Promise.race([Promise.resolve(deliver(result)), stopPromise]);
       if (delivered instanceof DigestFailure) throw delivered;
     }
+    checkSaved();
     return result;
   } finally {
-    // Latch inactive BEFORE cancellation/cleanup: an uncooperative late transport cannot publish.
-    active = false;
-    clearTimeout(timer);
-    options.signal?.removeEventListener('abort', abort);
-    model?.cancelAll();
-    target?.close();
-    let flushTimer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      if (model) await Promise.race([model.flushTelemetry().catch(() => undefined), new Promise<void>((resolve) => {
-        flushTimer = setTimeout(resolve, 500);
-      })]);
-    } finally { clearTimeout(flushTimer); }
+    if (saved) {
+      // The completed save keeps its original dependencies alive through delivery AND bounded settlement.
+      // Pure sink loss leaves an authorized note readable; observed abort/drift removes only our own inode.
+      let failure: DigestFailure | undefined;
+      let flushTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        if (!saved.current()) failure = saveFailure();
+        model?.cancelAll();
+        if (model) await Promise.race([model.flushTelemetry().catch(() => undefined), new Promise<void>((resolve) => {
+          flushTimer = setTimeout(resolve, 500);
+        })]);
+        if (!saved.current()) failure = saveFailure();
+      } finally {
+        saved.dispose();
+        active = false;
+        clearTimeout(timer);
+        clearTimeout(flushTimer);
+        options.signal?.removeEventListener('abort', abort);
+        target?.close();
+      }
+      if (failure) throw failure;
+    } else {
+      // Latch inactive BEFORE cancellation/cleanup: an uncooperative late transport cannot publish.
+      active = false;
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
+      model?.cancelAll();
+      target?.close();
+      let flushTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        if (model) await Promise.race([model.flushTelemetry().catch(() => undefined), new Promise<void>((resolve) => {
+          flushTimer = setTimeout(resolve, 500);
+        })]);
+      } finally { clearTimeout(flushTimer); }
+    }
   }
+}
+
+/** Exact one-report reconstruction. Any observed failure stays failed for this invocation. */
+function noteContext(prepared: SourceSnapshot, target: CompletedReportTarget, envelope: MaterialEnvelope,
+  authorized: () => boolean): DigestNoteContext {
+  let invalid = false;
+  const original = fingerprint(envelope);
+  return { source: prepared, target: target.metadata, envelope, current() {
+    if (invalid) return false;
+    try {
+      if (!authorized() || !revalidateMaterials(envelope, prepared.authority, prepared.recipient)) throw new Error();
+      const fresh = buildMaterials({ subjects: [target.subject], purpose: 'digest', resolvedRecipient: prepared.recipient,
+        authority: prepared.authority, limits: { maxBytes: 32768, maxFragments: 1 } });
+      if (!isEnvelope(fresh) || fingerprint(fresh) !== original || !authorized()) throw new Error();
+      return true;
+    } catch { invalid = true; return false; }
+  } };
+}
+/** Read-only across restarts: no SmallModel, runtime initialization, budget or telemetry. */
+export async function showDelegatedDigest(
+  input: DigestInput & { expectedLedger: string; expectedRecipient: string },
+  options: Pick<DigestOptions, 'signal' | 'onQuery'> = {},
+  deliver?: (document: StoredDigestDocument) => void | Promise<void>
+): Promise<StoredDigestDocument> {
+  let target: CompletedReportTarget | undefined;
+  let outputFailed = false;
+  try {
+    if (options.signal?.aborted) throw new DigestFailure('cancelled', 6);
+    target = await openCompletedReport(input.home, input.runId, input.reportId, options);
+    if (target.metadata.ledgerId !== input.expectedLedger) throw new DigestFailure('expected_ledger_mismatch');
+    const prepared = source(input, target, () => !options.signal?.aborted);
+    if (!prepared.recipient || prepared.recipient.recipientId !== input.expectedRecipient)
+      throw new DigestFailure('expected_recipient_mismatch');
+    const ready = prepared.readiness(target.metadata.ref);
+    if (ready !== 'ready') throw new DigestFailure(ready);
+    const envelope = buildMaterials({ subjects: [target.subject], purpose: 'digest', resolvedRecipient: prepared.recipient,
+      authority: prepared.authority, limits: { maxBytes: 32768, maxFragments: 1 } });
+    if (!isEnvelope(envelope)) throw new DigestFailure('digest_note_unavailable');
+    const context = noteContext(prepared, target, envelope,
+      () => !options.signal?.aborted && prepared.current() && target!.current());
+    const note = readDigestNote(context, parseDelegatedDigest);
+    if (!note.current()) throw new DigestFailure('digest_note_unavailable');
+    if (deliver) {
+      try { await deliver(note.result); } catch (error) { outputFailed = true; throw error; }
+    }
+    if (!note.current()) throw new DigestFailure('digest_note_unavailable');
+    return note.result;
+  } catch (error) {
+    if (outputFailed || error instanceof DigestFailure) throw error;
+    throw new DigestFailure('digest_note_unavailable');
+  } finally { target?.close(); }
 }
