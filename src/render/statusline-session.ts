@@ -1,6 +1,8 @@
 /** D3 first-line preview: only supplied Claude facts, no collector or storage. */
 import { truncateAnsi, visualLength } from './colors.js';
 import { monitorText } from './monitor-text.js';
+import { renderStatuslineDetails } from './statusline-details.js';
+import type { StatuslineLanguage } from './statusline-labels.js';
 
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -16,7 +18,13 @@ function label(value: unknown): string | null {
 }
 
 /** Unknown facts are omitted; zero is a fact. No model-to-context-window guesses. */
-export function renderStatuslineSession(input: unknown, width = 80): string {
+export interface StatuslineSessionOptions {
+  details?: boolean;
+  language?: StatuslineLanguage;
+}
+
+export function renderStatuslineSession(input: unknown, width = 80, options: StatuslineSessionOptions = {}): string {
+  if (options.details === true) return renderStatuslineDetails(input, width, options.language ?? 'en');
   if (!Number.isSafeInteger(width) || width < 1 || width > 500) throw new Error('invalid_statusline_width');
   const value = object(input);
   const model = object(value.model);
