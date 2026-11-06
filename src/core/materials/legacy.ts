@@ -1,4 +1,5 @@
 /** Read-only compatibility view. No settings migration and no implicit universal-source grant. */
+import { resolveHudEnv } from '../../utils/hud-env.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -82,7 +83,7 @@ export class LegacyCodexBridge {
       // An alternate sessions tree is not a grant for the original source.
       if (this.env.CODEX_SESSIONS_PATH && fs.realpathSync(this.env.CODEX_SESSIONS_PATH) !== path.join(home, 'sessions'))
         return undefined;
-      const file = this.env.CODEX_HUD_SETTINGS_PATH || path.join(home, 'hud-settings.json');
+      const file = resolveHudEnv(this.env, 'HUD_SETTINGS_PATH') || path.join(home, 'hud-settings.json');
       const raw = readJson(file);
       const connection = this.connection();
       if (!raw || !['api', 'agy'].includes(String(raw.briefing)) || !connection.matches(raw)) return undefined;
@@ -113,7 +114,7 @@ export class LegacyCodexBridge {
         sourceEnvironment: JSON.stringify([
           this.env.CODEX_HOME,
           this.env.CODEX_SESSIONS_PATH,
-          this.env.CODEX_HUD_SETTINGS_PATH,
+          resolveHudEnv(this.env, 'HUD_SETTINGS_PATH'),
           this.env.HUD_HOME,
         ]),
       };
@@ -248,7 +249,7 @@ export class LegacyCodexBridge {
       JSON.stringify([
         this.env.CODEX_HOME,
         this.env.CODEX_SESSIONS_PATH,
-        this.env.CODEX_HUD_SETTINGS_PATH,
+        resolveHudEnv(this.env, 'HUD_SETTINGS_PATH'),
         this.env.HUD_HOME,
       ]) !== baseline.sourceEnvironment
     )

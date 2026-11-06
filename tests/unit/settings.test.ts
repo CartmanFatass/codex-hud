@@ -4,19 +4,28 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { defaultCardVisibility } from '../../src/card-visibility.js';
-import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
+import { defaultSettings, loadSettings, saveSettings, settingsPath } from '../../src/settings.js';
 import type { HudSettings } from '../../src/settings.js';
+import { runtimeSettings } from '../../src/settings-runtime.js';
+import { getCodexHome, getHudHome } from '../../src/utils/codex-path.js';
 
 function withSettingsFile(run: (file: string, directory: string) => void): void {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-settings-test-'));
   const file = path.join(directory, 'settings.json');
-  const previousPath = process.env.CODEX_HUD_SETTINGS_PATH;
+  const names = ['HUD_SETTINGS_PATH', 'CODEX_HUD_SETTINGS_PATH', 'HOME', 'HUD_HOME', 'CODEX_HOME'];
+  const previous = new Map(names.map((name) => [name, process.env[name]]));
+  delete process.env.HUD_SETTINGS_PATH;
   process.env.CODEX_HUD_SETTINGS_PATH = file;
+  process.env.HOME = directory;
+  process.env.HUD_HOME = path.join(directory, 'ledger');
+  process.env.CODEX_HOME = path.join(directory, 'codex');
   try {
     run(file, directory);
   } finally {
-    if (previousPath === undefined) delete process.env.CODEX_HUD_SETTINGS_PATH;
-    else process.env.CODEX_HUD_SETTINGS_PATH = previousPath;
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
     fs.rmSync(directory, { recursive: true, force: true });
   }
 }
@@ -460,5 +469,52 @@ test('the prefix: Ctrl+\\ on a fresh install, Ctrl+] kept by a file saved withou
     // A malformed prefix in a file that has one is invalid, not legacy: the default.
     fs.writeFileSync(file, JSON.stringify({ prefixKey: 'C-x' }));
     assert.equal(loadSettings().prefixKey, 'C-\\');
+  });
+});
+
+
+test('E2 settings B shadows A for UI and explicit saves without moving homes or importing unknown keys', () => {
+  withSettingsFile((a, directory) => {
+    const b = path.join(directory, 'settings B with spaces.json');
+    const originalA = JSON.stringify({ theme: 'mocha', treeWidth: 90, unknown: 'A' });
+    fs.writeFileSync(a, originalA, { mode: 0o600 });
+    fs.writeFileSync(b, JSON.stringify({ theme: 'latte', treeWidth: 32, unknown: 'B' }), { mode: 0o600 });
+    process.env.HUD_SETTINGS_PATH = b;
+    const homes = [getCodexHome(), getHudHome(), process.env.HUD_HOME];
+    assert.equal(settingsPath(), b);
+    assert.equal(loadSettings().theme, 'latte');
+    assert.equal(runtimeSettings().treeWidth, 32);
+    assert.equal('unknown' in loadSettings(), false);
+    saveSettings({ density: 'focus' });
+    assert.equal(loadSettings().density, 'focus');
+    assert.equal(loadSettings().theme, 'latte');
+    assert.equal('unknown' in JSON.parse(fs.readFileSync(b, 'utf8')), false);
+    assert.equal(fs.readFileSync(a, 'utf8'), originalA);
+    assert.deepEqual([getCodexHome(), getHudHome(), process.env.HUD_HOME], homes);
+    assert.equal(fs.existsSync(process.env.HUD_HOME!), false, 'no private ledger initialization');
+    assert.equal(fs.existsSync(getHudHome()), false, 'no cache relocation or initialization');
+    if (process.platform !== 'win32') assert.equal(fs.statSync(b).mode & 0o777, 0o600);
+  });
+});
+
+test('E2 empty selector uses the existing default; missing or malformed neutral file never falls back to A', () => {
+  withSettingsFile((a, directory) => {
+    const originalA = JSON.stringify({ theme: 'mocha' });
+    fs.writeFileSync(a, originalA, { mode: 0o600 });
+    process.env.HUD_SETTINGS_PATH = '';
+    assert.equal(settingsPath(), path.join(getCodexHome(), 'hud-settings.json'));
+    assert.deepEqual(loadSettings(), defaultSettings());
+    saveSettings({ theme: 'latte' });
+    assert.equal(loadSettings().theme, 'latte');
+    assert.equal(fs.readFileSync(a, 'utf8'), originalA);
+    const b = path.join(directory, 'missing B.json');
+    process.env.HUD_SETTINGS_PATH = b;
+    assert.deepEqual(loadSettings(), defaultSettings());
+    assert.equal(fs.existsSync(b), false);
+    fs.writeFileSync(b, '{bad json', { mode: 0o600 });
+    assert.throws(() => loadSettings(), SyntaxError);
+    assert.throws(() => saveSettings({ theme: 'terminal' }), SyntaxError);
+    assert.equal(fs.readFileSync(b, 'utf8'), '{bad json');
+    assert.equal(fs.readFileSync(a, 'utf8'), originalA);
   });
 });

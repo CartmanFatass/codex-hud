@@ -29,6 +29,18 @@ test('exact shared source mapping never selects arbitrary output or source files
     ['dist/cli/hud.js', 'packages/hud-mcp/dist/packages/hud-mcp/src/main.js']
   );
 });
+test('E2 shared helper mapping', () => {
+  const source = 'src/utils/hud-env.ts';
+  const main = { source, output: 'dist/utils/hud-env.js', generatedPath: 'main/utils/hud-env.js' };
+  const mcp = {
+    source,
+    output: 'packages/hud-mcp/dist/src/utils/hud-env.js',
+    generatedPath: 'mcp/src/utils/hud-env.js',
+  };
+  assert.deepEqual(selectedOutputs([source], () => false), [main]);
+  assert.deepEqual(selectedOutputs([source], (file) => file === mcp.generatedPath), [main, mcp]);
+  assert.deepEqual(selectedOutputs([source], (file) => file === 'mcp/src/unrelated.js'), [main]);
+});
 for (const name of ['bin/hud', 'bin/codex-with-herdr-context', 'node_modules/chokidar/package.json']) {
   test(`tampered and missing runtime closure fails: ${name}`, (t) => {
     const f = fixture(t);

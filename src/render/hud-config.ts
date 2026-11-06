@@ -6,6 +6,8 @@
  * always did.
  */
 
+import { resolveHudEnv } from '../utils/hud-env.js';
+
 export type Density = 'focus' | 'balanced' | 'full';
 export type ThemeName = 'terminal' | 'mocha' | 'latte' | 'titanium' | 'none';
 export type GlyphMode = 'glyph' | 'text' | 'both';
@@ -59,18 +61,18 @@ function resolveTheme(env: NodeJS.ProcessEnv): ThemeName {
   if (env.NO_COLOR !== undefined && env.NO_COLOR !== '') {
     return 'none';
   }
-  return pick(env.CODEX_HUD_THEME, THEMES, 'terminal');
+  return pick(resolveHudEnv(env, 'HUD_THEME'), THEMES, 'terminal');
 }
 
 export function resolveDisplayConfig(env: NodeJS.ProcessEnv = process.env): HudDisplayConfig {
   return {
-    density: pick(env.CODEX_HUD_DENSITY, DENSITIES, 'balanced'),
+    density: pick(resolveHudEnv(env, 'HUD_DENSITY'), DENSITIES, 'balanced'),
     theme: resolveTheme(env),
-    glyphs: pick(env.CODEX_HUD_GLYPHS, GLYPH_MODES, 'both'),
-    icons: pick(env.CODEX_HUD_ICONS, ['unicode', 'nerd', 'emoji', 'text'], 'unicode'),
-    look: pick(env.CODEX_HUD_LOOK, [...LOOKS], 'tab'),
-    motion: env.CODEX_HUD_REDUCED_MOTION === '1' ? 'reduced' : 'full',
-    context: pick(env.CODEX_HUD_CONTEXT, ['used', 'remaining'], 'used'),
+    glyphs: pick(resolveHudEnv(env, 'HUD_GLYPHS'), GLYPH_MODES, 'both'),
+    icons: pick(resolveHudEnv(env, 'HUD_ICONS'), ['unicode', 'nerd', 'emoji', 'text'], 'unicode'),
+    look: pick(resolveHudEnv(env, 'HUD_LOOK'), [...LOOKS], 'tab'),
+    motion: resolveHudEnv(env, 'HUD_REDUCED_MOTION') === '1' ? 'reduced' : 'full',
+    context: pick(resolveHudEnv(env, 'HUD_CONTEXT'), ['used', 'remaining'], 'used'),
     agentColors: 'name',
   };
 }

@@ -31,7 +31,13 @@ function home(
     file,
     settings,
     dir: path.join(root, 'hud', 'model-cache'),
-    env: { CODEX_HOME: root, HUD_HOME: path.join(root, 'universal') },
+    env: {
+      HOME: root,
+      CODEX_HOME: root,
+      HUD_HOME: path.join(root, 'universal'),
+      HUD_SETTINGS_PATH: undefined,
+      CODEX_HUD_SETTINGS_PATH: undefined,
+    },
     close: () => fs.rmSync(root, { recursive: true, force: true }),
   };
 }
@@ -717,6 +723,354 @@ test('B17 tick performance: collector material scheduling performs zero new sync
       await new Promise<void>((done) => setImmediate(done));
     }
     briefer.stop();
+    model.cancelAll();
+    await model.flushTelemetry();
+    fixture.close();
+  }
+});
+
+// E2: all sources, settings and transport below are private synthetic fixtures.
+function selectedSettings(fixture: ReturnType<typeof home>, raw: Record<string, unknown>) {
+  const file = path.join(fixture.root, 'selected B with spaces.json');
+  writePrivateFile(file, JSON.stringify(raw));
+  const env: NodeJS.ProcessEnv = {
+    ...fixture.env,
+    HOME: fixture.root,
+    CODEX_HUD_SETTINGS_PATH: fixture.settings,
+    HUD_SETTINGS_PATH: file,
+  };
+  return { file, env };
+}
+const allowedSettings = { briefing: 'api', briefingApiBase: api.base, briefingApiModel: api.model };
+
+for (const [name, raw] of [
+  ['off', { ...allowedSettings, briefing: 'off' }],
+  ['missing grant', {}],
+  ['different recipient', { ...allowedSettings, briefingApiBase: 'https://other.synthetic.invalid/v1' }],
+  ['disabled feature', { ...allowedSettings, briefAgents: false }],
+  ['paused', { ...allowedSettings, briefingPaused: true }],
+] as Array<[string, Record<string, unknown>]>) {
+  test(`E2 model selected B ${name} cannot borrow shadowed A authority`, async () => {
+    const fixture = home();
+    const selected = selectedSettings(fixture, raw);
+    let calls = 0;
+    let composed = 0;
+    const model = new SmallModel({
+      dir: fixture.dir,
+      env: selected.env,
+      fetch: (async () => {
+        calls++;
+        return reply();
+      }) as typeof fetch,
+    });
+    model.configure({ backend: 'api', api });
+    try {
+      const handle = model.submit(
+        legacyRequest('brief', [{ sessionId: 'synthetic-root', rolloutPath: fixture.file }], () => {
+          composed++;
+          return { feature: 'brief', system: 'Synthetic', prompt: 'Must not be read' };
+        })
+      );
+      assert.ok(!(await handle.result).ok);
+      assert.equal(composed, 0);
+      assert.equal(calls, 0);
+      assert.equal(handle.isAuthorized?.(), false);
+      assert.equal(handle.materials, undefined);
+    } finally {
+      model.cancelAll();
+      await model.flushTelemetry();
+      fixture.close();
+    }
+  });
+}
+
+test('E2 selected settings use the injected env and shadowed legacy changes do not move authority', async () => {
+  const fixture = home({ briefing: 'off' });
+  const selected = selectedSettings(fixture, allowedSettings);
+  let calls = 0;
+  const model = new SmallModel({
+    dir: fixture.dir,
+    env: selected.env,
+    fetch: (async () => {
+      calls++;
+      return reply();
+    }) as typeof fetch,
+  });
+  model.configure({ backend: 'api', api });
+  try {
+    const first = model.submit(request('brief', 'Synthetic public material', fixture));
+    assert.ok((await first.result).ok);
+    assert.equal(first.materials?.sources[0], makeSourceId('codex', fs.realpathSync(fixture.root)));
+    selected.env.CODEX_HUD_SETTINGS_PATH = path.join(fixture.root, 'shadowed missing A.json');
+    const cached = await model.submit(request('brief', 'Synthetic public material', fixture)).result;
+    assert.ok(cached.ok && cached.cached);
+    assert.equal(first.isAuthorized?.(), true);
+    assert.equal(calls, 1);
+    assert.equal(selected.env.CODEX_HOME, fixture.root);
+    assert.equal(selected.env.HUD_HOME, fixture.env.HUD_HOME);
+    selected.env.HUD_SETTINGS_PATH = fixture.settings;
+    assert.equal(first.isAuthorized?.(), false);
+    assert.ok(!(await model.submit(request('brief', 'Synthetic public material', fixture)).result).ok);
+    assert.equal(calls, 1, 'a captured cache grant does not survive selected-path changes');
+  } finally {
+    model.cancelAll();
+    await model.flushTelemetry();
+    fixture.close();
+  }
+});
+
+test('E2 legacy-only settings override retains authorization and empty neutral uses the original default', async () => {
+  for (const neutral of [undefined, '']) {
+    const fixture = home({ briefing: 'off' });
+    const selected = selectedSettings(fixture, allowedSettings);
+    selected.env.CODEX_HUD_SETTINGS_PATH = selected.file;
+    if (neutral === undefined) delete selected.env.HUD_SETTINGS_PATH;
+    else selected.env.HUD_SETTINGS_PATH = neutral;
+    let calls = 0;
+    const model = new SmallModel({
+      dir: fixture.dir,
+      env: selected.env,
+      fetch: (async () => {
+        calls++;
+        return reply();
+      }) as typeof fetch,
+    });
+    model.configure({ backend: 'api', api });
+    try {
+      assert.equal((await model.submit(request('brief', 'Synthetic', fixture)).result).ok, neutral === undefined);
+      assert.equal(calls, neutral === undefined ? 1 : 0);
+    } finally {
+      model.cancelAll();
+      await model.flushTelemetry();
+      fixture.close();
+    }
+  }
+});
+
+test('E2 effective selector changes before deferred capture refuse even when both files grant the same source', async () => {
+  const fixture = home();
+  const selected = selectedSettings(fixture, allowedSettings);
+  const sourceId = makeSourceId('codex', fs.realpathSync(fixture.root));
+  const recipientId = fingerprint([
+    'legacy-codex-recipient-v1',
+    sourceId,
+    'api',
+    `${api.base}/chat/completions`,
+    'original-account',
+  ]);
+  let calls = 0;
+  let composed = 0;
+  const model = new SmallModel({
+    dir: fixture.dir,
+    env: selected.env,
+    // An explicit authority defers legacy capture until submitNow, isolating
+    // SmallModel's preflight check from the bridge's already-captured baseline.
+    materials: {
+      scope: (source) =>
+        source === sourceId ? { revision: 0, local: true, allows: (p) => p.origin === 'native' } : null,
+      policy: (source) =>
+        source === sourceId
+          ? {
+              schemaVersion: 1,
+              sourceId,
+              revision: 0,
+              grants: [{ purpose: 'brief', recipientId, decision: 'allow', grantedAt: 0 }],
+            }
+          : null,
+    },
+    fetch: (async () => {
+      calls++;
+      return reply();
+    }) as typeof fetch,
+  });
+  model.configure({ backend: 'api', api });
+  try {
+    const queued = model.submit(
+      legacyRequest('brief', [{ sessionId: 'synthetic-root', rolloutPath: fixture.file }], () => {
+        composed++;
+        return { feature: 'brief', system: 'Synthetic', prompt: 'Deferred synthetic text' };
+      })
+    );
+    selected.env.HUD_SETTINGS_PATH = fixture.settings;
+    const result = await queued.result;
+    assert.ok(!result.ok && result.refused && result.cancelled);
+    assert.equal(composed, 0);
+    assert.equal(calls, 0);
+    // Positive control: it was the between-submit-and-dispatch change, not an
+    // intrinsically denied authority, that blocked the preceding request.
+    assert.ok((await model.submit(request('brief', 'Positive synthetic control', fixture)).result).ok);
+    assert.equal(calls, 1);
+  } finally {
+    model.cancelAll();
+    await model.flushTelemetry();
+    fixture.close();
+  }
+});
+
+test('E2 changed selector invalidates captured handles, queued dispatch and late cache writes', async () => {
+  const fixture = home();
+  const selected = selectedSettings(fixture, allowedSettings);
+  let calls = 0;
+  let release: ((response: Response) => void) | undefined;
+  const model = new SmallModel({
+    dir: fixture.dir,
+    env: selected.env,
+    fetch: (async () => {
+      calls++;
+      return new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    }) as typeof fetch,
+  });
+  model.configure({ backend: 'api', api });
+  let restarted: SmallModel | undefined;
+  try {
+    const active = model.submit(request('brief', 'Synthetic active input', fixture));
+    const deadline = Date.now() + 5000;
+    while (!release) {
+      assert.ok(Date.now() < deadline, 'fake transport should start');
+      await new Promise<void>((done) => setImmediate(done));
+    }
+    assert.equal(active.isAuthorized?.(), true);
+    const queued = model.submit(request('brief', 'Synthetic queued input', fixture));
+    await new Promise<void>((done) => setImmediate(done));
+    assert.equal(queued.status, 'queued');
+    // A is also authorized, so a reread without a pinned selector is unsafe.
+    selected.env.HUD_SETTINGS_PATH = fixture.settings;
+    assert.equal(active.isAuthorized?.(), false);
+    release(reply('Synthetic late answer must not be reusable'));
+    assert.ok(!(await active.result).ok);
+    assert.ok(!(await queued.result).ok);
+    assert.equal(calls, 1);
+    assert.equal(active.isAuthorized?.(), false, 'captured material cannot authorize reuse');
+    const files = (dir: string): string[] =>
+      !fs.existsSync(dir)
+        ? []
+        : fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+            const file = path.join(dir, entry.name);
+            return entry.isDirectory() ? files(file) : [file];
+          });
+    for (const file of files(fixture.dir)) {
+      const bytes = fs.readFileSync(file, 'utf8');
+      assert.ok(!bytes.includes('Synthetic late answer must not be reusable'), file);
+      assert.ok(!bytes.includes(fingerprint('Synthetic late answer must not be reusable')), file);
+    }
+    // A new process-equivalent instance is allowed to establish a new baseline,
+    // but must fetch fresh output rather than reuse the discarded late result.
+    restarted = new SmallModel({
+      dir: fixture.dir,
+      env: selected.env,
+      fetch: (async () => {
+        calls++;
+        return reply('Synthetic fresh answer');
+      }) as typeof fetch,
+    });
+    restarted.configure({ backend: 'api', api });
+    const fresh = await restarted.submit(request('brief', 'Synthetic active input', fixture)).result;
+    assert.ok(fresh.ok && !fresh.cached);
+    assert.equal(calls, 2);
+  } finally {
+    release?.(reply());
+    model.cancelAll();
+    restarted?.cancelAll();
+    await model.flushTelemetry();
+    await restarted?.flushTelemetry();
+    fixture.close();
+  }
+});
+
+test('E2 same-source delegated text stays denied with an authorized neutral selector', async () => {
+  const fixture = home();
+  const selected = selectedSettings(fixture, allowedSettings);
+  let calls = 0;
+  let composed = 0;
+  const model = new SmallModel({
+    dir: fixture.dir,
+    env: selected.env,
+    fetch: (async () => {
+      calls++;
+      return reply();
+    }) as typeof fetch,
+  });
+  model.configure({ backend: 'api', api });
+  try {
+    const result = await model.submit(
+      legacyRequest(
+        'brief',
+        [
+          {
+            sessionId: 'synthetic-root',
+            rolloutPath: fixture.file,
+            origin: 'delegated',
+            ref: {
+              harness: 'codex',
+              sourceId: makeSourceId('codex', fs.realpathSync(fixture.root)),
+              sessionId: 'synthetic-root',
+              threadId: null,
+            },
+          },
+        ],
+        () => {
+          composed++;
+          return { feature: 'brief', system: 'Synthetic', prompt: 'Delegated text must not compose' };
+        }
+      )
+    ).result;
+    assert.ok(!result.ok);
+    assert.equal(composed, 0);
+    assert.equal(calls, 0);
+  } finally {
+    model.cancelAll();
+    await model.flushTelemetry();
+    fixture.close();
+  }
+});
+
+test('E2 backend off reads no material and makes no transport calls despite authorized A and B', async () => {
+  const { createRequire, syncBuiltinESMExports } = await import('node:module');
+  const fixture = home();
+  const selected = selectedSettings(fixture, allowedSettings);
+  let reads = 0;
+  let composed = 0;
+  let calls = 0;
+  const nativeFs = createRequire(import.meta.url)('node:fs') as typeof fs;
+  const original = nativeFs.readFileSync;
+  const originalOpen = nativeFs.openSync;
+  const model = new SmallModel({
+    dir: fixture.dir,
+    env: selected.env,
+    fetch: (async () => {
+      calls++;
+      return reply();
+    }) as typeof fetch,
+  });
+  try {
+    Object.assign(nativeFs, {
+      readFileSync: (...args: Parameters<typeof fs.readFileSync>) => {
+        if ([fixture.file, fixture.settings, selected.file].includes(String(args[0]))) reads++;
+        return original(...args);
+      },
+      openSync: (...args: Parameters<typeof fs.openSync>) => {
+        if ([fixture.file, fixture.settings, selected.file].includes(String(args[0]))) reads++;
+        return originalOpen(...args);
+      },
+    });
+    syncBuiltinESMExports();
+    model.configure({ backend: 'off', api });
+    const result = await model.submit(
+      legacyRequest('brief', [{ sessionId: 'synthetic-root', rolloutPath: fixture.file }], () => {
+        composed++;
+        return { feature: 'brief', system: 'Synthetic', prompt: 'Off must not compose' };
+      })
+    ).result;
+    await new Promise<void>((done) => setImmediate(done));
+    assert.ok(!result.ok && result.refused);
+    assert.equal(reads, 0);
+    assert.equal(composed, 0);
+    assert.equal(calls, 0);
+  } finally {
+    Object.assign(nativeFs, { readFileSync: original, openSync: originalOpen });
+    syncBuiltinESMExports();
     model.cancelAll();
     await model.flushTelemetry();
     fixture.close();

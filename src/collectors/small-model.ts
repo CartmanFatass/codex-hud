@@ -21,6 +21,7 @@
  * Feature formatters run only after the materials entry grants their public
  * observations. Queue dispatch, cache consumption and write-back revalidate it.
  */
+import { resolveHudEnv } from '../utils/hud-env.js';
 import { sessionRefKey } from '../core/identity.js';
 import { outboundDecision } from '../core/export.js';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -1023,7 +1024,7 @@ export class SmallModel {
     const sourceContext = JSON.stringify([
       env.CODEX_HOME,
       env.CODEX_SESSIONS_PATH,
-      env.CODEX_HUD_SETTINGS_PATH,
+      resolveHudEnv(env, 'HUD_SETTINGS_PATH'),
       env.HUD_HOME,
       env.PATH,
     ]);
@@ -1048,7 +1049,13 @@ export class SmallModel {
         routeSnapshot !== JSON.stringify(this.route(request.feature)) ||
         credential !== currentCredential ||
         sourceContext !==
-          JSON.stringify([env.CODEX_HOME, env.CODEX_SESSIONS_PATH, env.CODEX_HUD_SETTINGS_PATH, env.HUD_HOME, env.PATH])
+          JSON.stringify([
+            env.CODEX_HOME,
+            env.CODEX_SESSIONS_PATH,
+            resolveHudEnv(env, 'HUD_SETTINGS_PATH'),
+            env.HUD_HOME,
+            env.PATH,
+          ])
       ) {
         resolve(this.authorizationFailure());
         return;

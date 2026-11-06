@@ -53,3 +53,22 @@ extension registration is performed by HUD.
 `node bin/hud panel` remains the existing delegation panel. A separately developed
 unified workbench is not silently substituted or claimed available through this
 routing slice. Synthetic workbench scripts remain explicit development tools.
+
+## Neutral panel configuration (bounded E2)
+
+The existing panel and renderer accept `HUD_SETTINGS_PATH`, `HUD_THEME`,
+`HUD_DENSITY`, `HUD_GLYPHS`, `HUD_ICONS`, `HUD_LOOK`, `HUD_REDUCED_MOTION`,
+`HUD_CONTEXT`, `HUD_TREE_WIDTH`, and `HUD_CLEAR_SCROLLBACK`. Each aliases its
+`CODEX_HUD_*` counterpart. A present neutral value wins even when empty or
+invalid; saved display settings retain priority and `NO_COLOR` remains final.
+
+```sh
+HUD_THEME=latte HUD_DENSITY=focus node bin/hud panel
+HUD_SETTINGS_PATH='/absolute/private/settings B.json' node bin/hud panel
+```
+
+An empty selected settings override uses the existing `CODEX_HOME` default.
+Selecting a file does not migrate it or grant new model/source permissions.
+`HUD_HOME`, source identities, model credentials and shell layout are unchanged.
+See [the ten supported aliases, safety boundaries and local checks](e2-hud-env.md).
+Migration plan/receipt fields retain their legacy names.

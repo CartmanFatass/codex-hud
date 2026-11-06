@@ -1,3 +1,4 @@
+import { resolveHudEnv } from './utils/hud-env.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -345,7 +346,7 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
 }
 
 export function settingsPath(): string {
-  return process.env.CODEX_HUD_SETTINGS_PATH || path.join(getCodexHome(), 'hud-settings.json');
+  return resolveHudEnv(process.env, 'HUD_SETTINGS_PATH') || path.join(getCodexHome(), 'hud-settings.json');
 }
 
 function readSettings(file: string): HudSettings {

@@ -3,6 +3,7 @@
  * Phase 3: Updated to use new LayoutConfig system
  */
 
+import { resolveHudEnv } from '../utils/hud-env.js';
 import { execFile } from 'node:child_process';
 import type { HudData, RenderOptions, LayoutConfig, LayoutMode } from '../types.js';
 import { renderHud, fitStatusBar } from './header.js';
@@ -297,7 +298,7 @@ function writeStdoutFrame({
   maxLines: number;
   isFirstRender: boolean;
 }): void {
-  const clearScrollback = process.env.CODEX_HUD_CLEAR_SCROLLBACK === '1';
+  const clearScrollback = resolveHudEnv(process.env, 'HUD_CLEAR_SCROLLBACK') === '1';
   // Clear once on first render so the top line reliably appears in new panes.
   const clearPrefix =
     (isFirstRender && clearScrollback ? CLEAR_SCROLLBACK : '') + (isFirstRender ? CLEAR_SCREEN : '') + CURSOR_HOME;
