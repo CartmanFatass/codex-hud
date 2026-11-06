@@ -31,7 +31,7 @@ export type ControlAuthority =
 export type ControlAuthorization =
   { ok: true; actor: ControlInitiator; ownerKey: OwnerKey } | { ok: false; reason: string };
 export function authorizeControl(
-  operation: 'resume' | 'cancel' | 'predecessor' | 'report' | 'spawn',
+  operation: 'resume' | 'cancel' | 'close' | 'predecessor' | 'report' | 'spawn',
   link: Link,
   registeredOwner: OwnerKey,
   authority: ControlAuthority
@@ -90,11 +90,13 @@ export interface ResumeGateInput {
   slotHeld: boolean;
   unresolvedConflict: boolean;
   capabilityVerified: boolean;
+  closePending?: boolean;
 }
 export function resumeGate(input: ResumeGateInput): ControlAuthorization {
   const authorization = authorizeControl('resume', input.link, input.registeredOwner, input.authority);
   if (!authorization.ok) return authorization;
   if (input.link.state === 'closed') return { ok: false, reason: 'deferred' };
+  if (input.closePending) return { ok: false, reason: 'close_already_requested' };
   if (
     (input.link.state !== 'bound' && input.link.state !== 'reported') ||
     !input.link.currentOwner ||
@@ -290,6 +292,7 @@ export interface HandoverGateInput extends Omit<ResumeGateInput, 'expectedRun' |
 export function handoverGate(input: HandoverGateInput): ControlAuthorization {
   const allowed = authorizeControl('predecessor', input.link, input.registeredOwner, input.authority);
   if (!allowed.ok) return allowed;
+  if (input.closePending) return { ok: false, reason: 'close_already_requested' };
   if (sessionOwnerKey(input.newParentRef) !== allowed.ownerKey) return { ok: false, reason: 'unsupported' };
   if (
     !input.link.currentOwner ||

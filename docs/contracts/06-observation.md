@@ -511,7 +511,7 @@ NoticeEdge 没有 seq/seqDomain：caller 后续在真实发布视角域分配递
 ### Delegation admission budget amendment (2026-11-05)
 
 For the owner-approved relaxed delegation path, write tools `delegate_spawn`,
-`delegate_resume`, `delegate_cancel`, `delegate_whoami`, `delegate_report`, and
+`delegate_resume`, `delegate_cancel`, `delegate_close`, `delegate_whoami`, `delegate_report`, and
 corresponding CLI resume/cancel use one original-receipt monotonic 250 ms
 admission deadline. Queue residence, BEGIN acquisition and retry backoff share a
 100 ms cumulative allowance within that deadline. SQLite busy_timeout remains

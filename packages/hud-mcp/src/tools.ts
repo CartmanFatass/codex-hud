@@ -89,6 +89,13 @@ export const TOOLS: ToolDefinition[] = [
     target
   ),
   tool(
+    'delegate_close',
+    'End a confirmed current-owned headless delegation after proven termination. Acceptance may remain pending; replay returns the original outcome without advancing cleanup. Read status for progress. No visible surface close or reopening.',
+    { linkId: string, expectedRun: runId, request_key: { ...string, maxLength: 256 },
+      grace: { type: 'integer', minimum: 0, maximum: 60000 } },
+    ['linkId', 'expectedRun', 'request_key']
+  ),
+  tool(
     'delegate_cancel',
     'Record cancellation intent without waiting for exit. Visible scope control remains unavailable.',
     { runId: string, grace: { type: 'integer', minimum: 0, maximum: 60000 } },

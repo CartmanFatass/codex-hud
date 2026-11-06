@@ -426,7 +426,7 @@ test('pi explicit session path resolver checks header and source; directory alon
 });
 test('eight MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments', async () => {
   const server = new HudMcpServer({ resolve: async () => ({ ok: false, code: 'identity_source_missing' }) });
-  assert.equal(TOOLS.length, 8);
+  assert.equal(TOOLS.length, 9);
   const call = async (name: string, args: unknown) =>
     server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) as Promise<{
       error?: { code: number };
@@ -584,5 +584,5 @@ test('stdio framing rejects malformed JSON, ignores notifications and serializes
     .map((line) => JSON.parse(line) as { id: number | null; error?: { code: number }; result?: { tools: unknown[] } });
   assert.equal(rows.length, 2);
   assert.equal(rows[0].error?.code, -32700);
-  assert.equal(rows[1].result?.tools.length, 8);
+  assert.equal(rows[1].result?.tools.length, 9);
 });

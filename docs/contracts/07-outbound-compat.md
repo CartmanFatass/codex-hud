@@ -66,7 +66,7 @@ recipient 是已解析的具体目标身份：API 包含 backend/provider、规�
 | delegation export | B18 的 `hud-delegation-export` / schemaVersion=1，本地委派元数据协议 | 与ledger user_version、public snapshot/旧--json v2、checkpoint、scan独立；同主版本只加可选字段，破坏性变化升导出主版本；未知主版本/缺必需字段拒解码 |
 | SCAN_VERSION | [tree-scan-store.ts](../../src/collectors/tree-scan-store.ts) 当前3；A6因新增读取语义+1 | 内部可重建缓存，不是public snapshot版本。任何树扫描解释/提取字段变化都bump；版本不匹配忽略该缓存并预算内重建，不删用户state/日志/模型授权 |
 
-public v3 与内部 scan v3 恰好数字相同不表示兼容。版本检查先于读写；旧新进程不得争写同一格式/路径，checkpoint和summary即使有schema标签仍须06同一次提交。ledger的迁移仅在短事务检查版本，备份/文件准备在事务外；schema冲突不通过重新发外部动作解决。Jev jobs/browser存储和grant/close完整协议按Oracle C04延期，不为v3草案提前冻结不可达DDL。
+public v3 与内部 scan v3 恰好数字相同不表示兼容。版本检查先于读写；旧新进程不得争写同一格式/路径，checkpoint和summary即使有schema标签仍须06同一次提交。ledger的迁移仅在短事务检查版本，备份/文件准备在事务外；schema冲突不通过重新发外部动作解决。Jev jobs/browser存储和grant/visible close完整协议按Oracle C04延期；E4 authenticated-parent headless close 是唯一 close 例外，不为v3草案提前冻结不可达DDL。
 
 （consult 4 增补，F09）06 的 durable 语义变化必须递增受影响 readerVersion，含 A4 helper、A6 facade/底层 RolloutParser 和受影响的 Claude 锚点缓存；旧 raw-tail checkpoint 不直接续用、不只删除字节后保留旧 offset。最小处理为 collect lease 围栏内受控失效/重建该 source 缓存，显式重置连续性，并以同一 ObservationCommit 发布一致 checkpoint/summary/continuity/notices；含 raw tail 的旧缓存和未发布 bundle 在此受控缓存更新中删除/替换，不只标无效后永久保留原件。raw bytes 不得藏入其他 adapter extension、持久 token/parser state、日志、临时 bundle 或 binary/base64/V8 payload；普通 offset 回到最后完整记录边界，超大行仅存可跨 slice/重启前进的 discarding/丢弃游标，EOF 不完整行仍 partial/incomplete_tail。公共 checkpoint 结构若不兼容则另升 checkpoint schema，不能借 ledger schema v1 掩盖；ledger DDL/user_version 不变，不启动全库迁移服务，D2 完整迁移框架仍延期。
 
@@ -258,3 +258,8 @@ E的显式迁移为 `inspect → preview per-source mapping → write new privat
 | T-07-25 | A9 | 10000/10001条、16MiB边界/超限、1000ms软预算超限、缩小link范围/组装失败 → 边界内可成功，超限明确失败且无成功截断全集；完整JSON备妥才输出，consumer成功且coverage完整才替换范围缓存，真实读事务寿命另记（B18实测）；（consult 5 增补，G07）单快照复制rows后尽早结束事务，在固定输入组装/编码，真实行数/字节/总墙钟/事务寿命记录；超额无成功文档，10000/16MiB/1000ms不变 |
 | T-07-26 | A9 | 缺必需字段/缺或非法operation/未知export主版本拒解码；四表字段键必需，null可用、未知字符串正规化null、非string/null拒绝，两paths模式一致；workspace=null无需内部键；未知可选字段忽略/状态保守，五版本域独立且不默认spawn；（consult 5 增补，G07）queryDelegationExport签名/export v1不变，不公开SQL接口；复用B18未变证据，只补真实B11接线变化，不与checkpoint私有格式联动；（NOTIFY 增补，A1）未知kind不使旧reader失败/改状态；（NOTIFY 增补，A2）terminalNote可选封闭表两值，未知字符串null/非string-null拒绝，旧reader未知note null |
 | T-07-27 | A9 | 两个import路径共用同一v3 fixture、nullable rootRef、confirmedSessions/delegationIntents/jobs计数、完整node的parent/links/candidates/host/actions；v3 intent/session/job槽、tokens已知成本未知、launch_failed/failed报告仍running、ledger-b+观测-a → 身份/Metric/freshness.state/stateSince/basis/isRunTerminal与双域stamp按06，不造session/成本/连续性/跨库原子，旧v2缺省/时间仍兼容 |
+
+E4 close.requested/link.closed use closed version-1 payloads; unknown-event readers
+remain opaque. Ledger DDL/user_version and public export schema are unchanged.
+Incompatible old/new writers must not share a writable store; this behavioral
+change supplies no live migration or rollback. No outbound permission is added.

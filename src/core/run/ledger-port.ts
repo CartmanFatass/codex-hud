@@ -1,3 +1,4 @@
+import { closeProgressIn } from '../../ledger/close.js';
 import type { CallBudget } from '../../ledger/call-budget.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash, randomUUID } from 'node:crypto';
@@ -157,7 +158,9 @@ export class LedgerRunFactPort implements RunFactPort {
       const latestRunId = String(
         tx.get('SELECT run_id FROM runs WHERE link_id=? ORDER BY run_seq DESC LIMIT 1', run.linkId)!.run_id
       );
+      const close = closeProgressIn(tx, expected.link, run);
       const resume = resumeGate({
+        closePending: close.closeRequestSeq !== null,
         link: expected.link,
         registeredOwner: linkOwner(tx, expected.link),
         authority: {
@@ -241,6 +244,7 @@ export class LedgerRunFactPort implements RunFactPort {
             : null,
           // B4 owns verified launch profiles. Until it supplies that capability,
           // preserve the actual lifecycle gate reason without inventing availability.
+          close,
           resumable: { resumable: resume.ok, reason: resume.ok ? null : resume.reason, subject: 'local_user' },
           asOfSeq: expected.asOfSeq,
           observationStamp: null,

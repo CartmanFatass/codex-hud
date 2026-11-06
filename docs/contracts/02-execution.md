@@ -49,6 +49,8 @@
 | kind / 层 | 白名单 payload / 约束（NOTIFY 增补，A1） |
 |---|---|
 | wake.registered / link | adapter=`claude_background_wait_v1\|codex_queue_v1\|pi_extension_v1\|none`、adapterVersion=1、ownerKey、contextGeneration、parentRef、parentStamp（ProcessStamp 或 null）、target（codexHome/threadId 或 socketPath 或空对象）、none 的 reason；只绑定已验证父目标，不授所有权（NOTIFY 增补，A1） |
+| close.requested / link+run | version=1；actor、ownerKey、linkId、runId、runSeq、bindingGeneration、targetSessionRef、requestedGraceMs、cancelSeq、effectiveGraceMs；closed schema，未知字段拒绝 |
+| link.closed / link+run | version=1；closeRequestSeq、terminalEvidenceId、terminalSeq；closed schema，未知字段拒绝 |
 | wake.revoked / link | registrationSeq、reason=`generation_changed\|session_replaced\|parent_offline\|link_closed\|adapter_rejected`（NOTIFY 增补，A1） |
 | wake.delivered / link | registrationSeq、throughSeq、result=`accepted\|rejected\|unknown\|wait_return`；adapter 交付记录含 attempt（1 或 2），rejected 含 reason，第二次 unknown 含 exhausted:true；wait_return 为本进程在途 wait 返回了该页、无需 adapter。记录不证明父端已处理或新 turn 已开始；unknown 仅在 recoveryMs 后且父端尚无新调用时准第二次，rejected 撤销登记，零第三次（NOTIFY 增补，A1） |
 | retire.requested / run+link | cause、rule、actor={kind:'policy'}、deadlineAt、eligibility={reportSeq?,newerWorkChecked:true,quiescence:'observed\|not_required\|unobservable',pendingInput:'none\|unobservable\|policy_override'}、graceMs；原因/语义见 04，不是终结证明（NOTIFY 增补，A1） |
@@ -238,7 +240,7 @@ C4 的未来 `holderLabel?: string` 由实际 lease owner/job 身份在同一读
 
 ### Deferred（v1.1 / C 前 / 后续）
 
-跨 owner grant 协议及 handover_grants、close surface 事务及 owner_epoch 耦合整体推迟 v1.1；MVP 无内部签发/消费/关闭入口，跨 owner 与 close 一律 unsupported。closed 仅历史/未来语义见03。无 MCP 的 observe_only 正向绑定推迟 v1.1，MVP 无 caller binding 不授权。共享正向多 context 调度、cgroup provider、sidecar managed、自有 PTY 推迟后续；不在本版 DDL/正向验收中冻结。Jev jobs/browser leases 的 DDL、实现及正向测试移 C 前，当前只保留三类租约语义和拒绝规则。父 pane 自动提示、完整 fork 谱系、通用 ask/send 与更多布局沿用既定延期。
+跨 owner grant 协议及 handover_grants、close surface 事务及 owner_epoch 耦合整体推迟 v1.1；跨 owner 仍无内部签发/消费入口。close 仅允许 E4 的 authenticated-parent、current-owned、已确认 headless 关系入口；visible/local-manager close 与重开仍 unsupported，详见03。无 MCP 的 observe_only 正向绑定推迟 v1.1，MVP 无 caller binding 不授权。共享正向多 context 调度、cgroup provider、sidecar managed、自有 PTY 推迟后续；不在本版 DDL/正向验收中冻结。Jev jobs/browser leases 的 DDL、实现及正向测试移 C 前，当前只保留三类租约语义和拒绝规则。父 pane 自动提示、完整 fork 谱系、通用 ask/send 与更多布局沿用既定延期。
 
 
 ## 失败案例
@@ -709,3 +711,30 @@ END;
 PRAGMA user_version = 1;
 COMMIT;
 ```
+
+### E4 headless close v1 (owner-approved 2026-11-06)
+
+`delegate_close({linkId, expectedRun, request_key, grace?})` uses the existing
+OwnerKey × request_key namespace and params_version=1. Digest only operation=close,
+linkId, expectedRun and normalized requested grace (integer 0–60000, default 10000).
+Current source/context/scope authority precedes lookup; immutable replay/conflict
+precedes fresh latest-run gates. Unknown fields are rejected. Replay never writes,
+dispatches, advances cancellation or finalizes. A separate current projection may
+be unavailable without changing the accepted outcome.
+
+One transaction freezes actor/owner/full target/run sequence/binding generation,
+writes one close.requested and the immutable outcome, and reuses cancel.accepted
+only if the nonterminal run has no cancellation intent. Existing cancellation time,
+grace, steps and receipts remain unchanged. No run, launch intent, slot or claim
+is created. A second key while pending refuses close_already_requested; a new key
+after closed records an authenticated already_closed no-op.
+
+Acceptance fences fresh resume and predecessor handover. Finalization uses unchanged
+R-02 evidence, submission fencing, no run/actual-target slot and no unresolved
+link/target conflict. The admitting transaction (already terminal) or existing
+reconciler atomically closes only the frozen current-owned, confirmed target,
+revokes the closed run's authorization and wake registration (link_closed), and
+records link.closed referencing request and terminal evidence. No live caller is
+needed after acceptance; changed/revoked relationships are never overwritten.
+Unknown cleanup stays pending. Run state, terminal note, report, evidence, receipt
+and chronology are preserved. See [E4 brief](../cloud/E4-HEADLESS-CLOSE.md).

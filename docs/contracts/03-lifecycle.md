@@ -51,8 +51,8 @@ OwnerKey 是稳定逻辑身份，不是 MCP/context_id；每次工具调用仍�
 | I-03-8 | predecessor 是同一个实际 child 的转交：旧 link handed_over/current_owner=0、新 link bound/current_owner=1、新 run starting 在一个意图事务；唯一当前父边，旧 link 只保留历史，无环 | DB+TX；T-03-18、19 |
 | I-03-9 | MVP 跨 owner 转交一律 unsupported；linkId、claim、自报凭证或历史曾为 owner 均不授新控制权 | TX；T-03-20 |
 | I-03-10 | 同 owner predecessor 的旧新 link/run/claim/槽/幂等/事件同事务；接受后启动未知不回滚关系或重发，历史前驱不能再次使用 | DB+TX；T-03-18、19 |
-| I-03-11 | MVP close 无内部/公开执行入口，返回 unsupported，不取消/关闭 surface/改关系；取消和运行终结独立按02/04，历史保留 | TX；T-03-26 |
-| I-03-12 | closed 保留历史/未来语义，MVP 不产生 close 或重开；failed/revoked/handed_over 不 resume。旧 locator 不匹配新 occupant 时不供当前宿主状态/控制 | TX；T-03-6、19、30 |
+| I-03-11 | 仅 authenticated-parent MCP 可 close 当前 owned 的 bound/reported headless 关系；先持久意图，按02/04证明终结才 closed；visible/local-user close 仍 unsupported，历史保留 | TX；T-03-26 |
+| I-03-12 | closed 由已批准 E4 headless close 产生并保留历史；禁止重开；failed/revoked/handed_over 不 resume。旧 locator 不匹配新 occupant 时不供当前宿主状态/控制 | TX；T-03-6、19、30 |
 | I-03-13 | HUD 仅投影已提交关系/运行/报告与 B16 状态，历史边不当第二父边；MVP Resume/Reconcile仅复制类型化固定目标命令，活跃 headless 只看日志，运行终态由共享谓词判定；ledger/观测各自加戳 | TX；T-03-30、31、34–37 |
 | I-03-14 | 正常 spawn+wait，无手工协议；相关事件/必要截止唤醒，按客户端 timeout 留余量短等；status 索引快照只读，短锁等待/accepted及started分计，预算归06 | TX+E；T-03-17、32、33 |
 
@@ -83,7 +83,7 @@ Run 只有 starting/running/cancelling/uncertain/ended/failed/cancelled；迁移
 |---|---|---|
 | pending/claimed | run 可 starting/running/uncertain/cancelling，甚至已结束但身份仍缺；不能以 run alive 自动 bound | “父/子未确认”，候选分开 |
 | bound/reported | run 可 active/终态；resume 后握手 pending；reported 不证明该 run 退出 | 确定当前父边；当前轮报告与历史分开 |
-| closed | 仅历史/未来兼容，MVP 不生成或重开；运行结束仍须独立证据 | 保留历史，resumable=false/reason=deferred |
+| closed | E4 headless close 经独立终态证据完成；不得重开 | 保留历史，resumable=false/reason=deferred |
 | failed | 首次未执行且未绑定；无活跃槽 | 失败意图历史，不显示臆测 child |
 | revoked | 可能仍有 active/uncertain run 与槽，必须独立对账 | 身份/权限失效，历史保留，不借机重新归属 |
 | handed_over | 转交前旧会话槽须空，旧 link 不再追加 run；新 link 有自己的当前 run | 历史predecessor/current_owner=0，不能当第二父边 |
@@ -161,7 +161,7 @@ runId/expectedRun 固定为选定目标，状态改变不能替换操作/选另�
 
 每 run 的 operation 接受时固定：首次全新会话 spawn、同 link 新轮 resume、predecessor 新任务 link 的首轮 handover；该 handover link 后续仍是 resume。07 原样导出 operation，当前关系与原始启动历史、transcript 用量归属分别判断，不按当前 owner 搬迁旧用量。
 
-resume 在 02 的 OwnerKey×request_key 幂等查找之后，事务校验全部 I-03-5；验证首轮 task identity、该 backend/source 的受支持 resume 模板与模式。通过才为同一 link 分配新 run_seq/runId/expected_generation、撤销旧 claim/current child_binding、写本轮 call/correlation 锚点（原生消息ID可晚到）并占实际槽。MVP closed 重开 unsupported；活跃 headless 不能通过“打开”隐式启动可见副本。
+resume 在 02 的 OwnerKey×request_key 幂等查找之后，事务先拒绝 pending close，再校验全部 I-03-5；验证首轮 task identity、该 backend/source 的受支持 resume 模板与模式。通过才为同一 link 分配新 run_seq/runId/expected_generation、撤销旧 claim/current child_binding、写本轮 call/correlation 锚点（原生消息ID可晚到）并占实际槽。MVP closed 重开 unsupported；活跃 headless 不能通过“打开”隐式启动可见副本。
 
 （consult 5 增补，G03）MCP `delegate_resume` 接受可选 expectedRun?:RunId，实际提供才纳入 02 params_digest；缺省保持旧 params_version=1 编码并由事务取 currentRun。先校验本次当前权限及已捕获来源前提，再查 OwnerKey×request_key；同参重放先于新意图 expectedRun、槽与能力门禁，不能因后来 currentRun 改变拒绝原结果。仅无记录时比较 supplied expectedRun 与事务内 currentRun，不符 expected_run_mismatch，零新 run/claim/slot/外部提交；本地仍必填。缺省不授权重用过时 preparation：runSeq、目标 ref、绑定代次、档案前提仍须重验，沿用 A4 resumeGate/prepareResume，不另建状态机。B13 基于 status/wait 决定续跑时默认携带所见 runId；mismatch 必须重读并重新决定，禁止自动换 key/expectedRun 连续重试。
 
@@ -171,7 +171,7 @@ resume 在 02 的 OwnerKey×request_key 幂等查找之后，事务校验全部 
 
 ### Deferred（v1.1 / C 前）与历史兼容
 
-跨 owner grant（含 handover_grants）、owner_epoch 与 close surface 可恢复事务整体 v1.1；MVP 无签发/消费/撤销/close 入口，遇到跨 owner 或 close 一律 unsupported。closed 的历史保留和未来完整门禁重开语义保留，MVP 不产 closed/不重开，不误把关 pane 当 close 完成。无 MCP 的 observe_only 三证正向绑定同样延期 v1.1，MVP 未确认、不 report/猜 resume，run 仍可独立终结。Jev job/浏览器租约实现与正向测试在 C 前定，三类资源释放语义只引用02；不在此冻结额外协议。
+跨 owner grant（含 handover_grants）、owner_epoch 与 close surface 可恢复事务整体 v1.1；跨 owner 仍无签发/消费入口；E4 仅例外支持已确认 current-owned headless 关系的 authenticated-parent MCP close。visible/local-manager close 与重开仍 unsupported；不把关 pane 当 close 完成。无 MCP 的 observe_only 三证正向绑定同样延期 v1.1，MVP 未确认、不 report/猜 resume，run 仍可独立终结。Jev job/浏览器租约实现与正向测试在 C 前定，三类资源释放语义只引用02；不在此冻结额外协议。
 
 HUD只读关系/运行/报告与上述投影；uncertain提供缺证及对账入口，不把 UI done 当 ended，不按按钮补退出结果。活跃 headless 只提供日志能力，监督故障的可见运行禁 input/focus/fg/自动恢复/resume。控制交受信入口重验，模型材料与外发仍经07的来源授权。
 
@@ -187,7 +187,7 @@ HUD只读关系/运行/报告与上述投影；uncertain提供缺证及对账入
 | F-03-5 | wait 中追加新 run、分页或超时 → 固定 run，游标不跳未返回事件，零状态写 | I-03-7 | T-03-14–17 |
 | F-03-6 | 并发 predecessor、历史前驱、环、忙槽 → 单一原子转交或拒绝，旧历史不成第二父 | I-03-8、10 | T-03-18、19 |
 | F-03-7 | 非owner知道linkId/claim、自报跨owner凭证 → unsupported，无新权限/意图 | I-03-9 | T-03-20 |
-| F-03-9 | MVP close 请求，或把关pane当closed/放槽 → unsupported/拒绝迁移，历史保留 | I-03-11、12 | T-03-26、30 |
+| F-03-9 | 非 E4 合格 close 请求或把关pane当closed/放槽 → unsupported/拒绝迁移；E4 只按02独立证据完成，历史保留 | I-03-11、12 | T-03-26、30 |
 | F-03-10 | revoked run 仍活、活跃 headless 打开、历史关系复活 → 不放槽、不起可见副本、不写 ledger | I-03-2、12、13 | T-03-4、30、31 |
 | F-03-11 | 要求调用者手写登记/续租/宿主命令、wait按秒查全库/扫proc → 违反低摩擦/预算；由现有写者按事件自动推进 | I-03-14 | T-03-32、33 |
 
@@ -202,7 +202,7 @@ HUD只读关系/运行/报告与上述投影；uncertain提供缺证及对账入
 | T-03-3 (A9 fixture) | fresh 未绑定首轮 N，已绑定后续轮 N，非零 R 三组 → link.failed/run.failed；link仍bound/run.failed；link保持/run.ended(code非零)，均不把任务结果当执行事实 |
 | T-03-4 (A9 fixture) | 身份冲突使 link revoked，但组 alive → 历史保留/当前边撤销，run uncertain或按02继续对账，槽不释放，无新授权 |
 | T-03-5 (A9 fixture) | bound/reported 同任务合法 resume → 同link、新run_seq/run/claim/correlation，link bound、run starting/握手pending，旧claim/binding撤销 |
-| T-03-6 (A9 fixture) | 历史closed请求resume或MVP close，无论owner/空槽 → unsupported/resumable=false,deferred，零新run/surface操作，保留历史 |
+| T-03-6 (A9 fixture) | closed 请求 resume → unsupported/resumable=false,deferred；合格父 close 新键为 already_closed、原键原样重放，零新run/surface操作，保留历史 |
 | T-03-7 (A9 fixture) | brief path相同但内容hash变、换任务/role/source、仅追加prompt四组 → 前三组task_mismatch或要求新link，追加prompt可合法resume |
 | T-03-8 (A9 fixture) | resume已记录child-a，新握手解析child-b（含pi新文件无连续性/fork） → child_ref/target_ref仍a、run uncertain，b仅候选；SQL拒绝覆盖已知ref |
 | T-03-9 (A9 fixture) | handover已知child-a，新轮解析b；另pi可信同ref续文件 → 前者冲突不改ref，后者正常本轮绑定，不能用文件名猜连续性 |
@@ -217,7 +217,7 @@ HUD只读关系/运行/报告与上述投影；uncertain提供缺证及对账入
 | T-03-18 (B) | 同owner两key并发predecessor → 一个新bound/current_owner link及run/槽/幂等；旧handed_over，零双父；各写点失败全部回滚 |
 | T-03-19 (A9 fixture) | busy/uncertain、历史前驱、环、图预算尽 → 全拒绝、不改owner；旧历史可读 |
 | T-03-20 (A9 fixture) | 跨owner有/无自报凭证、非owner知道linkId/claim → unsupported，无签发/消费/新运行/控制权限 |
-| T-03-26 (A9 fixture) | 各关系/运行状态请求close、内部close入口或close重试 → MVP均unsupported，零取消/surface关闭/关系迁移，运行终结仍只按02 |
+| T-03-26 (A9 fixture) | 非 E4 合格入口的 close 仍 unsupported；E4 当前父/已确认/headless/expectedRun 完整门禁接受，重放零写，独立证据后 closed；不关闭 surface，运行终结仍只按02 |
 | T-03-30 (B) | 历史closed/revoked/handed_over和新occupant → 唯一当前父边，历史不复活；host未知、resumable=false+reason、候选/冲突显式，时间毫秒epoch |
 | T-03-31 (B) | status同ledger读快照给link/runHandshake/currentRun/本轮报告及权限，缓存观测带独立stamp；B16时间/conflict、候选、parentOffline、uncertain cause/缺证/ActionDescriptor、resumable+reason+subject/interaction完整；supervisor_dead三项交互均false，父离线continue不独自禁用正常子交互；HUD只读，≤200节点/无环/历史边不成双父；（NOTIFY 增补，A7）当前登记/交付结果、容量 occupants、独立 termination/continuesFrom/advice 只读投影，候选谱系零授权；（Pro 2026-11-02 增补）visible cancel接受意图但delivery unavailable/not attempted，status/wait/HUD一致显示still running/stop in pane、无无限cancelling；fresh/live非uncertain，之后充分R/Q释放、缺时序ended+cancel_timing_unknown |
 | T-03-32 (B) | 正常仅spawn+wait → 自动运输/登记/托管/报告同run；spawn/resume/cancel快速返回持久accepted，started/bound另计；短锁等待/事务外I/O依06基准，不要求用户补协议 |
@@ -242,3 +242,20 @@ it never grants caller identity. Once bound, a full SessionRef match in durable
 run history remains restrictive across terminal/revoked state and restart.
 Pre-bind protection assumes the supported launch's marker plumbing, not an
 adversarial sandbox. See [implementation boundary and regression scope](../cloud/single-level-delegation.md).
+
+### E4 close transitions and tests
+
+`bound|reported → closed` requires the frozen current run/sequence/generation/full
+SessionRef and owner to remain unchanged, validated terminal evidence, submission
+fence, no actual-target/run slot, and no unresolved conflict. Durable close.requested
+is the pending fence, not a new link/run state. Handover checks the predecessor fence
+after immutable replay. Status/list/wait report pending/closed/incompatible progress
+and never reconcile. Closed links never reopen through binding, observation or
+late reports; restrictive child history still forbids nested creation.
+
+T-03-E4 covers active acceptance, terminal R/Q/N, cancellation chronology, immutable
+replay before/after closed, stale authority, exact target/generation, visible and
+unconfirmed refusal, resume/handover transaction races, unknown cleanup, revoked
+relation, rollback/recovery, late reports, budget semantics and strict MCP fields.
+The finite matrix and closed event schemas are specified in
+[E4-HEADLESS-CLOSE](../cloud/E4-HEADLESS-CLOSE.md) and contract02.

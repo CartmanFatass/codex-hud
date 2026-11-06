@@ -28,6 +28,7 @@ export const HUD_TOOLS = [
   'delegate_list',
   'delegate_wait',
   'delegate_cancel',
+  'delegate_close',
 ] as const;
 export interface HookConfig {
   version: 1;

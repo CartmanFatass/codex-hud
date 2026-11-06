@@ -119,3 +119,21 @@ selection, capabilities and per-launch claim/env injection belong to later WPs.
 All seven bodies are intentionally unwired. Do not attach a handler directly to
 `CallResolution.ok`: it is evidence, and does not establish a current authorized
 context or revalidate an old request at its commit point.
+
+## End a headless delegation
+
+`delegate_close({linkId, expectedRun, request_key, grace?})` ends a confirmed,
+current-owned headless relationship. Only its authenticated current parent may
+request it. `grace` is 0–60000 ms (default 10000); expectedRun and request_key are
+mandatory and unknown fields are rejected. Cancel stops a run while retaining
+possible resume; close permanently fences new resume/handover for this link.
+
+`ok:true` and `outcome.status:accepted` mean durable acceptance, not process exit.
+Inspect `current.closeState` or delegate_status/list/wait: unknown cleanup stays
+pending, changed relationships are incompatible, and only independently proven
+termination can produce closed. `current` may be null after a committed result.
+Retrying the same key returns the original immutable outcome without advancing
+cleanup; a changed request conflicts. Existing cancellation grace/clock is retained.
+No visible/local-manager close, reopening, send/ask, surface operation or deletion
+of sessions, reports, code or history is included. Generic mvpOperationPolicy(close)
+remains unsupported; this qualified MCP entry is its only approved exception.

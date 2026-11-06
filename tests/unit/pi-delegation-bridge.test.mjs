@@ -162,8 +162,13 @@ hostTest(
     const f = await fixture(t);
     assert.ok(f.init.tools.includes('delegate_spawn'));
     assert.ok(f.init.tools.includes('delegate_report'));
+    assert.ok(f.init.tools.includes('delegate_close'));
     const who = await f.call('delegate_whoami', 'call-who');
     assert.equal(JSON.parse(who.error).code, 'claim_missing');
+    const close = await f.call('delegate_close', 'call-close', {
+      linkId: 'synthetic-unmanaged', expectedRun: 'synthetic-run', request_key: 'synthetic-close',
+    });
+    assert.equal(JSON.parse(close.error).code, 'link_not_found');
     const list = await f.call('delegate_list', 'call-list');
     assert.equal(list.result.details.ok, true);
     const contexts = f.contexts();

@@ -267,7 +267,7 @@ test('A→B→A old record and closed-scope no-current ABA reject instead of att
   }
 });
 
-test('CLI settings preserve existing hooks/config and match only the seven exact server tools', () => {
+test('CLI settings preserve existing hooks/config and match only the exact server tools including headless close', () => {
   const f = fixture();
   try {
     const old = {
@@ -279,6 +279,10 @@ test('CLI settings preserve existing hooks/config and match only the seven exact
     assert.deepEqual(value.permissions, old.permissions);
     assert.equal(old.hooks.PreToolUse.length, 1);
     const regex = new RegExp(value.hooks.PreToolUse[1].matcher);
+    assert.ok(HUD_TOOLS.includes('delegate_close'));
+    assert.ok(regex.test('mcp__hud.special__delegate_close'));
+    assert.ok(!regex.test('mcp__hud.special__delegate_close_suffix'));
+    assert.ok(!regex.test('mcp__other__delegate_close'));
     for (const t of HUD_TOOLS) assert.ok(regex.test(`mcp__hud.special__${t}`));
     for (const name of [
       'Read',
@@ -553,4 +557,17 @@ test('fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded 
   } finally {
     f.cleanup();
   }
+});
+
+test('E4 Claude close source record uses the exact tool and rejects suffix/server forgery', () => {
+  const f = fixture();
+  try {
+    f.input.tool_name = 'mcp__hud.special__delegate_close';
+    publishRecord(f.config, f.record());
+    assert.equal(f.consume().record.toolName, 'mcp__hud.special__delegate_close');
+    for (const name of ['mcp__hud.special__delegate_close_suffix', 'mcp__other__delegate_close']) {
+      f.input.tool_name = name;
+      assert.throws(f.record);
+    }
+  } finally { f.cleanup(); }
 });

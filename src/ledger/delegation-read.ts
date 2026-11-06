@@ -1,3 +1,5 @@
+import { closeProgressIn } from './close.js';
+import type { CloseProgress } from '../core/types/close.js';
 import { terminalNote, terminationProjection } from './run-facts.js';
 import { registeredSupervisor } from '../core/supervision.js';
 import { isRunTerminal } from '../core/execution.js';
@@ -12,6 +14,7 @@ import { decodeRecord, readLink, refValue } from './records.js';
 
 export type DelegationTarget = { runId: string } | { linkId: string };
 export type DelegationRead = Omit<LifecycleStatus, 'statusProjection'> & {
+  close: CloseProgress;
   currentRun: Run;
   isCurrent: boolean;
   isRunTerminal: boolean;
@@ -85,7 +88,9 @@ export function readDelegationIn(
   const terminal = lastEvent(tx, run.runId, ['run.terminal']);
   const state = lastEvent(tx, run.runId, ['run.state', 'run.terminal', 'run.reconciliation']);
   const offline = lastEvent(tx, run.runId, ['parent.offline']);
+  const close = closeProgressIn(tx, link, run);
   const gate = resumeGate({
+    closePending: close.closeRequestSeq !== null,
     link,
     registeredOwner: owner,
     authority: permission,
@@ -99,6 +104,7 @@ export function readDelegationIn(
   });
   const cause = typeof state?.payload.cause === 'string' ? (state.payload.cause as ReconciliationCause) : null;
   return {
+    close,
     link,
     currentRun: run,
     isCurrent: latest.runId === run.runId,

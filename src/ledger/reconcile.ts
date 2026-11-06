@@ -1,3 +1,6 @@
+import { finalizeCloseIn } from './close.js';
+import type { Run } from '../core/types/execution.js';
+import type { ControlInitiator } from '../core/types/identity.js';
 import type { CallBudget } from './call-budget.js';
 import { terminalNote, finalizeTermination } from './run-facts.js';
 import { canonicalJson, digest, type JsonObject } from '../core/canonical.js';
@@ -93,7 +96,7 @@ export function snapshotInTransaction(tx: LedgerTransaction, runId: string): Rec
 export function readReconcileSnapshot(ledger: Ledger, runId: string): ReconcileSnapshot {
   return ledger.snapshot((tx) => snapshotInTransaction(tx, runId));
 }
-function factsFromSnapshot(snapshot: ReconcileSnapshot): ReconcileEvidence[] {
+export function factsFromSnapshot(snapshot: ReconcileSnapshot): ReconcileEvidence[] {
   const resolved = new Set(
     snapshot.evidence
       .filter((entry) => entry.kind === 'conflict_resolved' && entry.validation === 'accepted')
@@ -355,6 +358,7 @@ export async function commitReconcile(
         runId
       );
     }
+    finalizeCloseIn(tx, runId, nowMs);
     return { committed: true as const, decision };
   }, budgetMs);
   if (home && hintSeq !== undefined) touchHint(home, runId, hintSeq);
@@ -406,28 +410,28 @@ export async function requestCancel(
         currentAuthority(tx, authority)
       );
       if (!allowed.ok) throw new Error(allowed.reason);
-      if (isRunTerminal(current.run)) return { accepted: false, cancelRequestedAt: current.run.cancelRequestedAt };
-      if (current.run.cancelRequestedAt !== null)
-        return tx.priorDurableResult({ accepted: true, cancelRequestedAt: current.run.cancelRequestedAt });
-      tx.run(
-        "UPDATE runs SET cancel_requested_at=?,state=CASE WHEN state='uncertain' THEN state ELSE 'cancelling' END WHERE run_id=?",
-        at,
-        current.run.runId
-      );
-      insertRecord(tx, 'events', {
-        runId: current.run.runId,
-        linkId: current.link.linkId,
-        kind: 'cancel.accepted',
-        payload: {
-          actor: allowed.actor,
-          runId: current.run.runId,
-          bindingGeneration: current.run.expectedGeneration,
-          graceMs,
-        },
-        at,
-      });
-      return { accepted: true, cancelRequestedAt: at };
+      const result = acceptCancellationIn(tx, current.run, allowed.actor, at, graceMs);
+      return current.run.cancelRequestedAt !== null && !isRunTerminal(current.run)
+        ? tx.priorDurableResult(result) : result;
     },
     budgetMs
   );
+}
+
+/** Existing cancellation format shared by cancel and atomic headless close admission.
+ * Caller owns authorization; this seam never signals or restarts a cancellation clock. */
+export function acceptCancellationIn(
+  tx: LedgerTransaction, run: Run, actor: ControlInitiator, at: number, graceMs: number
+): { accepted: boolean; cancelRequestedAt: number | null } {
+  if (isRunTerminal(run)) return { accepted: false, cancelRequestedAt: run.cancelRequestedAt };
+  if (run.cancelRequestedAt !== null) return { accepted: true, cancelRequestedAt: run.cancelRequestedAt };
+  tx.run(
+    "UPDATE runs SET cancel_requested_at=?,state=CASE WHEN state='uncertain' THEN state ELSE 'cancelling' END WHERE run_id=?",
+    at, run.runId
+  );
+  insertRecord(tx, 'events', {
+    runId: run.runId, linkId: run.linkId, kind: 'cancel.accepted',
+    payload: { actor, runId: run.runId, bindingGeneration: run.expectedGeneration, graceMs }, at,
+  });
+  return { accepted: true, cancelRequestedAt: at };
 }

@@ -245,7 +245,8 @@ candidates?: LinkCandidate[];          // 未确认的推断，只在 Inspector 
 | `delegate_cancel` | 父 | ✔ | `{runId, grace?}` → 校验所有者、持久接受取消意图即返回；hud-run 异步封口启动者并取消整个 scope，完整R/Q且已证明取消before_exit才cancelled；结束已证明但时序未知为ended+terminalNote=cancel_timing_unknown并释放槽；未证结束仍cancelling/uncertain或cancel_unconfirmed，after_exit已证明才解释already_ended |
 | `delegate_whoami` | 子 | ✔ | `{claim?}` → 用启动时注入的 claim（env 或本次运行启动消息里的）完成握手，返回自己的 link、run、brief、report 路径、父定位；同一绑定重复调用幂等成功 |
 | `delegate_report` | 子 | ✔ | `{runId, status, summary, reportPath?}` → **只接受该 run 的已绑定子**提交；写 `reports`，发事件 |
-| `delegate_list` / `delegate_close` | 父 | v1.1 | 列出本调用者的关系；关闭 = 取消活跃运行 + 关 surface + `closed` |
+| `delegate_list` | 父 | ✔ | 只读列出本调用者的关系与最新运行 |
+| `delegate_close` | 父 | E4 | 已确认 current-owned headless 关系：固定 expectedRun，必要时复用取消，独立证明终结后 closed；无 surface 操作，历史保留 |
 | `delegate_send` / `delegate_ask` | 父 / 子 | v1.1 | 输入通道。实现前保留 `herdr agent prompt` 作为明确的旧通道 |
 | 资源 `hud://links`、`hud://tree` | 任何 | v1.1 | 让任何 agent 查看关系与树 |
 
@@ -264,7 +265,7 @@ candidates?: LinkCandidate[];          // 未确认的推断，只在 Inspector 
 
 关系、运行、报告分开；已证实关系resume不回pending，每run的runHandshake由claim/binding推导。MVP同owner换任务用predecessor，旧边历史化、唯一当前父边；不承诺恰好一次或外部动作必达。
 
-**Deferred：** 跨owner grant协议/实现/DDL、handover_grants、close surface事务/owner_epoch耦合、closed重开、无MCP的observe_only三证正向绑定全部v1.1；MVP跨owner/close/无MCP正向绑定拒绝，未确认委派仍可展示且run可独立终结。共享MCP正向调度、cgroup provider、sidecar managed、自有PTY/tee与透明重接管在后续立项；Jev jobs/browser leases存储/实现与正向测试在C前定稿，MVP拒绝其执行入口。三类租约不同释放原则保留（§6.11），最小采集一致性与外发来源边界不延期。
+**Deferred：** 跨owner grant协议/实现/DDL、handover_grants、close surface事务/owner_epoch耦合、closed重开、无MCP的observe_only三证正向绑定全部v1.1；跨owner/visible或local-manager close/无MCP正向绑定拒绝；E4 仅例外允许 authenticated-parent headless close，未确认委派仍可展示且run可独立终结。共享MCP正向调度、cgroup provider、sidecar managed、自有PTY/tee与透明重接管在后续立项；Jev jobs/browser leases存储/实现与正向测试在C前定稿，MVP拒绝其执行入口。三类租约不同释放原则保留（§6.11），最小采集一致性与外发来源边界不延期。
 
 
 #### 6.6.3 绑定握手
@@ -649,6 +650,8 @@ HUD 不在两种模式之间转换。启动档案 `{harness, source, launch: {sh
 | 2026-11-03 | B10D §19 公平例外：仅普通公平准入完成核验的精确 recovery、slice 耗尽而尚无首个 native result 时，建立绑定完整身份、scope/source、accepted target、authority generation 及相容上下文的一次性 ticket，消费下一已授权普通机会的单一 reader grant。消费/拒绝/不可用即用尽，旧 scope/source/head/context、过期/丢失/follower authority 或完成 capture 使其失效；不自排操作/timer、不增预算/发布、不自行续租、不重置原 debt/request/latency ages。同一恢复状态不可无限重装，之后恢复普通 cursor；固定持续 eligible 的 N 目标一轮明确允许最多 2N 次普通机会，regular/inserted 分报、blocked backlog/age 不隐藏；不是墙钟完成保证。200-node/20,000-header、16 readers、全部数值门禁/lease/B12/B16/§18 约束不变。须有 C=1/5、旧票拒绝、真实恢复→native capture→持久结算证据；不等于完成 LEG1/RCP1/retirement 或接受/合并 B10D | 所有者批准；Oracle [B10D route §4、§8](./cloud/rulings/b10d-route.md#4-confirmed-fairness-exception) 确认；契约 06「B10D 公平续读增补」、设计 §6 #13 |
 | 2026-11-03 | P065 私有存储元数据例外：Oracle 依所有者委托的决策权批准仅对原打开门禁的 HUD_HOME、ledger.sqlite、WAL/SHM 在实际取得写锁后作固定同步 lstat/realpath 复验（每路径每 API 至多一次），保留原 Ledger 绑定、安全谓词及失败后禁审计/重钉/自动重试边界；不扩展来源取证或一般持锁 I/O 权限。准备计入原 30 ms、累计等锁/重试/退避 20 ms、单次 busy_timeout≤10 ms（当前为0）与其他预算不变，现有授权/重放/准入次序及已提交事实保真不变。局部门禁契约分叉已解决；实现仍须独立排期/所有权放行、终审与合并检查，不代表已实现、接受或合并 | 所有者委托 Oracle；[metadata exception ruling](./cloud/rulings/p065-metadata-exception.md) §§3–8；[P065-BUDGET](./cloud/P065-BUDGET.md) |
 | 2026-11-03 | P065 六项设计裁决：仅预先声明、测试专用且故意使同步 callback/COMMIT 超期的控制与完整 operational 数值人群分列；所有超限仍保留为数值失败，不减时、不事后改类、不宣称 inclusive all-samples pass。保留逐调用30ms、累计等待20ms、busy_timeout=0（契约单次≤10ms）、响应p95<50ms及适用联合p95<150ms门槛与样本要求。status/wait 的只读路径不适用 P-06-5，不新增30ms来源/读取拒绝；来源权限、status完整响应与wait原截止计时不变。候选2仍为冻结WIP，需文档记录及明确资源准入，未接受或合并 | 所有者委托 Oracle；[corrected six-design ruling](./cloud/rulings/p065-six-design-dispositions.md) §§4、6 |
+
+| 2026-11-06 | E4 bounded headless close approved: cancel stops a run while retaining possible resume; authenticated-parent close ends a confirmed current-owned headless relationship after independent termination evidence. Preserve sessions, reports, code and history; no visible/local-manager close, reopening, send/ask or paused HUD chat UI. Reconcile contracts02/03/06/07 as specified in E4. | Owner-approved technical decision |
 
 ### P065 exact qualification-composition amendment (2026-11-03)
 

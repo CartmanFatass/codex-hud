@@ -147,3 +147,21 @@ herdr agent prompt <orchestrator pane> "[<name>] QUESTION: <question>"
   → hand off.
 - Hand off with the `hud-handoff` skill: write the fixed-form handoff, then continue in a fresh session.
 - Cache expiry alone does not invalidate the conversation; `handoffMinTokens` is advisory.
+
+## End a headless delegation
+
+`delegate_close({linkId, expectedRun, request_key, grace?})` ends a confirmed,
+current-owned headless relationship. Only its authenticated current parent may
+request it. `grace` is 0–60000 ms (default 10000); expectedRun and request_key are
+mandatory and unknown fields are rejected. Cancel stops a run while retaining
+possible resume; close permanently fences new resume/handover for this link.
+
+`ok:true` and `outcome.status:accepted` mean durable acceptance, not process exit.
+Inspect `current.closeState` or delegate_status/list/wait: unknown cleanup stays
+pending, changed relationships are incompatible, and only independently proven
+termination can produce closed. `current` may be null after a committed result.
+Retrying the same key returns the original immutable outcome without advancing
+cleanup; a changed request conflicts. Existing cancellation grace/clock is retained.
+No visible/local-manager close, reopening, send/ask, surface operation or deletion
+of sessions, reports, code or history is included. Generic mvpOperationPolicy(close)
+remains unsupported; this qualified MCP entry is its only approved exception.

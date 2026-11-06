@@ -1,3 +1,4 @@
+import { requireNoCloseIn } from './close.js';
 import { isCallBudget, type CallBudget } from './call-budget.js';
 import {
   CAPACITY_STATES,
@@ -313,6 +314,7 @@ export async function acceptIntent(
           throw new Error('parent_context_mismatch');
         insertRecord(tx, 'links', link);
       } else if (run.operation === 'resume') {
+        requireNoCloseIn(tx, link.linkId);
         if (
           !existing ||
           input.params.linkId !== link.linkId ||
@@ -375,6 +377,7 @@ export async function acceptIntent(
         if (existing || !link.predecessor || !link.parentRef || input.params.predecessor !== link.predecessor)
           throw new Error('predecessor_required');
         const old = readLink(tx, link.predecessor);
+        requireNoCloseIn(tx, old.linkId);
         const previous = tx.get('SELECT run_id FROM runs WHERE link_id=? ORDER BY run_seq DESC LIMIT 1', old.linkId);
         if (!previous) throw new Error('run_not_found');
         const previousRun = readRun(tx, String(previous.run_id));

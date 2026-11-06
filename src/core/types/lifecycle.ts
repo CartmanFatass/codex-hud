@@ -90,6 +90,8 @@ export interface Reconciliation {
   allowedActions: ActionDescriptor[];
 }
 export interface LifecycleStatus {
+  /** Durable close progress; absent in older readers. Never grants control. */
+  close?: import('./close.js').CloseProgress;
   link: Link;
   currentRun: Run | null;
   /** Whitelisted terminal-event note for the returned run; never a reconciliation blocker. */

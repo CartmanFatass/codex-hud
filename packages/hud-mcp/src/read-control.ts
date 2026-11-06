@@ -274,6 +274,8 @@ export class ReadControlService {
         runState: snapshot.currentRun.state,
         childRef: snapshot.link.childRef,
         currentOwner: snapshot.link.currentOwner,
+        close: snapshot.close,
+        resumable: snapshot.resumable,
         isRunTerminal: snapshot.isRunTerminal,
         slotHeld: snapshot.slotHeld,
         statusProjection: value.statusProjection,

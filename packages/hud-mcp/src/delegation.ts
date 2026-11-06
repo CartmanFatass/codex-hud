@@ -1,3 +1,6 @@
+import { readDelegationIn } from '../../../src/ledger/delegation-read.js';
+import { requestClose } from '../../../src/ledger/close.js';
+import type { CloseRequest, CloseProgress } from '../../../src/core/types/close.js';
 import { CallBudget, type BudgetClock } from '../../../src/ledger/call-budget.js';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
@@ -233,6 +236,20 @@ export class DelegationService {
         },
         signal
       );
+    }
+    if (tool === 'delegate_close') {
+      if (!budget) throw new Error('invalid_write_budget');
+      // A close uses an already selected current context. Never establish or retire a
+      // context during immutable replay; currentAuthority rechecks its premise in TX.
+      const authority = await this.options.ledger.readSnapshot((tx) => this.readAuthority(tx, source), budget);
+      const result = await requestClose(this.options.ledger, args as unknown as CloseRequest, authority, Date.now(), budget);
+      let current: CloseProgress | null = null;
+      try {
+        current = await this.options.ledger.readSnapshot((tx) => {
+          return readDelegationIn(tx, { runId: result.outcome.runId }, authority).close;
+        });
+      } catch { /* An observation failure never retracts a committed acceptance. */ }
+      return { ok: true, ...result, current };
     }
     const handshake = new HandshakeService({
       ledger: this.options.ledger,
