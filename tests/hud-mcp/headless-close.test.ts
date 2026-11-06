@@ -16,6 +16,7 @@ import { acceptIntent } from '../../src/ledger/intents.js';
 import type { CloseOutcome, CloseProgress } from '../../src/core/types/close.js';
 import type { ReconcileFact, ReconcileEvidence } from '../../src/core/types/execution.js';
 import type { PreparedIntent } from '../../src/ledger/types.js';
+import type { LedgerTransaction, SqlRow } from '../../src/ledger/transaction.js';
 
 type Reply = { ok: true; replayed: boolean; outcome: CloseOutcome; current: CloseProgress | null } |
   { ok: false; code: string };
@@ -74,6 +75,67 @@ async function fixture(options: { bind?: boolean; visible?: boolean } = {}) {
     dispose: async () => { server.shutdown(); await service.close(); await f.close(); } };
 }
 function accepted(reply: Reply): asserts reply is Extract<Reply, { ok: true }> { assert.equal(reply.ok, true); }
+
+/** Complete rows, stable primary-key order, and events kept separate from business state.
+ * The caller supplies one consistent read transaction, including for a fresh reader. */
+function rawLedgerRows(tx: Pick<LedgerTransaction, 'all'>) {
+  const rows = (sql: string) => tx.all(sql).map((row) => ({ ...row }));
+  return {
+    business: {
+      metadata: rows('SELECT * FROM ledger_metadata ORDER BY singleton'),
+      sources: rows('SELECT * FROM sources ORDER BY source_id'),
+      sessions: rows('SELECT * FROM sessions ORDER BY session_ref'),
+      callers: rows('SELECT * FROM callers ORDER BY caller_id'),
+      scopes: rows('SELECT * FROM caller_scopes ORDER BY process_key, generation'),
+      contexts: rows('SELECT * FROM caller_contexts ORDER BY context_id, generation'),
+      aliases: rows('SELECT * FROM owner_aliases ORDER BY process_key, generation'),
+      links: rows('SELECT * FROM links ORDER BY link_id'),
+      runs: rows('SELECT * FROM runs ORDER BY run_id'),
+      claims: rows('SELECT * FROM claims ORDER BY run_id'),
+      slots: rows('SELECT * FROM slots ORDER BY slot_key'),
+      idempotency: rows('SELECT * FROM idempotency ORDER BY owner_key, request_key'),
+      bindings: rows('SELECT * FROM child_bindings ORDER BY binding_id'),
+      evidence: rows('SELECT * FROM evidence ORDER BY evidence_id'),
+      reports: rows('SELECT * FROM reports ORDER BY report_id'),
+    },
+    events: rows('SELECT * FROM events ORDER BY seq'),
+  };
+}
+async function readOnlyLedgerRows(root: string) {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(resolve(root, 'ledger.sqlite'), { readOnly: true });
+  try {
+    db.exec('BEGIN');
+    try {
+      const snapshot = rawLedgerRows({ all: (sql, ...params) => db.prepare(sql).all(...params) });
+      db.exec('COMMIT');
+      return snapshot;
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  } finally { db.close(); }
+}
+function assertRejectionAudit(before: SqlRow[], after: SqlRow[], input: PreparedIntent) {
+  assert.equal(after.length, before.length + 1);
+  assert.deepEqual(after.slice(0, before.length), before);
+  const audit = after[before.length];
+  assert.equal(typeof audit.seq, 'number');
+  assert.ok(Number.isSafeInteger(Number(audit.seq)));
+  assert.ok(Number(audit.seq) > Number(before.at(-1)?.seq ?? 0));
+  assert.deepEqual(audit, {
+    seq: audit.seq, link_id: null, run_id: null, kind: 'intent.rejected',
+    payload: audit.payload, at: input.run.createdAt,
+  });
+  assert.deepEqual(JSON.parse(String(audit.payload)), {
+    requestKey: input.requestKey, reason: 'close_already_requested',
+  });
+}
+/** Semantic audit-permitted case, not a latency measurement or a larger budget.
+ * Successful work consumes no synthetic time; unexpected contention fails promptly. */
+function unexpiredAuditBudget() {
+  return new CallBudget({ now: () => 0, sleep: async () => { assert.fail('unexpected audit fixture contention'); } });
+}
 
 test('E4 real MCP/service/SQLite acceptance, reconcile closure, immutable replay and read-only projections', async () => {
   const f = await fixture();
@@ -185,20 +247,42 @@ test('E4 resume commits first: expectedRun refusal; close commits first: fresh r
     const input = resumeInput(f, 'resume-first');
     const first = await acceptIntent(f.ledger, input);
     const before = f.state('run-b');
+    const beforeMismatch = f.ledger.snapshot(rawLedgerRows);
     assert.deepEqual(await f.call(), { ok: false, code: 'expected_run_mismatch' });
     assert.equal(f.state('run-b').changes, before.changes);
+    assert.deepEqual(f.ledger.snapshot(rawLedgerRows), beforeMismatch);
     const close = await f.call({ ...args, expectedRun: 'run-b' }); accepted(close);
     const count = f.state('run-b').changes;
+    const beforeReplay = f.ledger.snapshot(rawLedgerRows);
     const replay = await acceptIntent(f.ledger, input);
     assert.equal(replay.replayed, true); assert.deepEqual(replay.outcome, first.outcome);
     assert.equal(f.state('run-b').changes, count);
-    await assert.rejects(acceptIntent(f.ledger, { ...input, requestKey: 'fresh-resume' }), /close_already_requested/);
+    assert.deepEqual(f.ledger.snapshot(rawLedgerRows), beforeReplay);
+    const resume: PreparedIntent = { ...input, requestKey: 'fresh-resume' };
     const handover: PreparedIntent = { ...structuredClone(input), requestKey: 'fresh-handover',
       params: { ...input.params, predecessor: 'link-a' },
       link: { ...input.link, linkId: 'link-b', predecessor: 'link-a', state: 'bound' },
       run: { ...input.run, linkId: 'link-b', operation: 'handover', runSeq: 1 } };
-    await assert.rejects(acceptIntent(f.ledger, handover), /close_already_requested/);
-    assert.equal(f.state('run-b').changes, count);
+    for (const rejected of [resume, handover]) {
+      const prior = f.ledger.snapshot(rawLedgerRows);
+      await assert.rejects(acceptIntent(f.ledger, rejected, unexpiredAuditBudget()), /close_already_requested/);
+      const after = f.ledger.snapshot(rawLedgerRows);
+      assert.deepEqual(after.business, prior.business);
+      assertRejectionAudit(prior.events, after.events, rejected);
+      assert.deepEqual(await readOnlyLedgerRows(f.root), after);
+    }
+    const final = f.ledger.snapshot(rawLedgerRows);
+    assert.deepEqual(final.business, beforeReplay.business);
+    assert.equal(final.events.length, beforeReplay.events.length + 2);
+    assertRejectionAudit(beforeReplay.events, final.events.slice(0, -1), resume);
+    assertRejectionAudit(final.events.slice(0, -1), final.events, handover);
+    assert.equal(f.launches(), 0);
+    // Stop every fixture service and writer, but retain the directory until the
+    // last fresh read-only reopen has established durable equality. No migration.
+    f.server.shutdown();
+    await f.service.close();
+    await f.ledger.close();
+    assert.deepEqual(await readOnlyLedgerRows(f.root), final);
   } finally { await f.dispose(); }
 });
 
@@ -259,12 +343,80 @@ test('E4 wrong owner and same session id under another source/thread cannot cont
   } finally { await f.dispose(); }
 });
 
+async function replaceDisposableTarget(f: Awaited<ReturnType<typeof fixture>>) {
+  const third = { ...f.child.ref, sessionId: 'synthetic-close-third-target' };
+  const thirdRef = refValue(third);
+  assert.notEqual(thirdRef, refValue(f.parent.ref));
+  assert.notEqual(thirdRef, refValue(f.child.ref));
+  const original = f.ledger.snapshot(rawLedgerRows);
+  const saved = original.business.links.find((row) => row.link_id === 'link-a');
+  assert.ok(saved);
+  assert.equal(saved.parent_ref, refValue(f.parent.ref));
+  assert.equal(saved.child_ref, refValue(f.child.ref));
+  assert.equal(saved.current_owner, 1);
+  assert.equal(saved.state, 'bound');
+  const originalRun = original.business.runs.find((row) => row.run_id === 'run-a');
+  assert.ok(originalRun);
+  assert.equal(originalRun.target_session_ref, refValue(f.child.ref));
+  const originalBindings = original.business.bindings.filter((row) => row.run_id === 'run-a');
+  assert.equal(originalBindings.length, 1);
+  assert.equal(originalBindings[0].session_ref, refValue(f.child.ref));
+  assert.equal(original.events.filter((row) => row.kind === 'close.requested').length, 1);
+  assert.equal(original.events.filter((row) => row.kind === 'cancel.accepted').length, 1);
+  assert.ok(original.business.idempotency.some((row) => row.request_key === args.request_key));
+  const triggers = f.ledger.snapshot((tx) => tx.all(
+    "SELECT * FROM sqlite_master WHERE type='trigger' ORDER BY name"));
+  assert.ok(triggers.some((row) => row.name === 'links_keep_child'));
+  // Ordinary mutation must still hit the real immutable-child trigger. The
+  // following delete/reinsert is only deliberate offline semantic corruption.
+  await assert.rejects(f.ledger.transaction((tx) => tx.run(
+    "UPDATE links SET child_ref=? WHERE link_id='link-a'", thirdRef)), /known child ref cannot be replaced/);
+  assert.deepEqual(f.ledger.snapshot(rawLedgerRows), original);
+  const session = { session_ref: thirdRef, harness: third.harness, source_id: third.sourceId,
+    session_id: third.sessionId, thread_id: '' };
+  await f.ledger.transaction((tx) => {
+    assert.equal(Number(tx.get('PRAGMA foreign_keys')!.foreign_keys), 1);
+    assert.equal(tx.get('SELECT 1 FROM sessions WHERE session_ref=?', thirdRef), undefined);
+    assert.equal(tx.get('SELECT 1 FROM links WHERE child_ref=? AND current_owner=1', thirdRef), undefined);
+    tx.run('PRAGMA defer_foreign_keys=ON');
+    assert.equal(Number(tx.get('PRAGMA defer_foreign_keys')!.defer_foreign_keys), 1);
+    tx.run('INSERT INTO sessions(session_ref,harness,source_id,session_id,thread_id) VALUES(?,?,?,?,?)',
+      session.session_ref, session.harness, session.source_id, session.session_id, session.thread_id);
+    // Save and restore every raw column inside this one transaction. All
+    // references keep link-a, and deferred FK checks must succeed at commit.
+    const row = tx.get("SELECT * FROM links WHERE link_id='link-a'");
+    assert.ok(row);
+    assert.deepEqual({ ...row }, saved);
+    const columns = Object.keys(row);
+    assert.equal(tx.run("DELETE FROM links WHERE link_id='link-a'"), 1);
+    assert.equal(tx.run(`INSERT INTO links(${columns.map((column) => `"${column}"`).join(',')})
+      VALUES(${columns.map(() => '?').join(',')})`,
+      ...columns.map((column) => column === 'child_ref' ? thirdRef : row[column])), 1);
+    assert.deepEqual(tx.all('PRAGMA foreign_key_check'), []);
+  });
+  const changed = f.ledger.snapshot(rawLedgerRows);
+  const expectedSessions = [...original.business.sessions, session].sort((a, b) =>
+    String(a.session_ref) < String(b.session_ref) ? -1 : String(a.session_ref) > String(b.session_ref) ? 1 : 0);
+  assert.deepEqual(changed, {
+    business: { ...original.business, sessions: expectedSessions,
+      links: original.business.links.map((row) => row.link_id === 'link-a' ? { ...row, child_ref: thirdRef } : row) },
+    events: original.events,
+  });
+  assert.deepEqual(f.ledger.snapshot((tx) => tx.all(
+    "SELECT * FROM sqlite_master WHERE type='trigger' ORDER BY name")), triggers);
+  assert.equal(f.ledger.snapshot((tx) => Number(tx.get('PRAGMA foreign_keys')!.foreign_keys)), 1);
+  assert.deepEqual(f.ledger.snapshot((tx) => tx.all('PRAGMA foreign_key_check')), []);
+  assert.deepEqual(await readOnlyLedgerRows(f.root), changed);
+  return third;
+}
+
 for (const change of ['revoked', 'generation', 'target'] as const)
   test(`E4 ${change} after acceptance preserves intent and never closes a successor`, async () => {
     const f = await fixture();
     try {
       const first = await f.call(); accepted(first);
-      await f.ledger.transaction((tx) => {
+      const third = change === 'target' ? await replaceDisposableTarget(f) : null;
+      if (change !== 'target') await f.ledger.transaction((tx) => {
         if (change === 'revoked') tx.run("UPDATE links SET state='revoked',current_owner=0 WHERE link_id='link-a'");
         if (change === 'generation') {
           // Corruption fixture keeps SQL foreign keys valid while invalidating the
@@ -274,15 +426,29 @@ for (const change of ['revoked', 'generation', 'target'] as const)
           tx.run("UPDATE claims SET expected_generation=2 WHERE run_id='run-a'");
           tx.run("UPDATE child_bindings SET binding_generation=2 WHERE run_id='run-a'");
         }
-        if (change === 'target') tx.run("UPDATE links SET child_ref=? WHERE link_id='link-a'", refValue(f.parent.ref));
       });
       const before = f.state();
+      const beforeReplay = f.ledger.snapshot(rawLedgerRows);
       const replay = await f.call(); accepted(replay); assert.deepEqual(replay.outcome, first.outcome);
+      assert.equal(replay.replayed, true);
       assert.equal(replay.current?.closeState, 'incompatible'); assert.equal(f.state().changes, before.changes);
+      assert.deepEqual(f.ledger.snapshot(rawLedgerRows), beforeReplay);
       if (change === 'generation') await assert.rejects(f.reconcile(), /supervisor_registration_unknown/);
       else await f.reconcile();
-      assert.notEqual(f.state().link.state, 'closed'); assert.equal(f.state().closed.length, 0);
-      assert.deepEqual(f.state().closes, before.closes);
+      const after = f.state();
+      assert.notEqual(after.link.state, 'closed'); assert.equal(after.closed.length, 0);
+      assert.deepEqual(after.closes, before.closes);
+      if (third) {
+        const persisted = f.ledger.snapshot(rawLedgerRows);
+        assert.deepEqual(after.link.childRef, third);
+        assert.deepEqual(persisted.business.links, beforeReplay.business.links);
+        assert.deepEqual(after.run.targetSessionRef, before.run.targetSessionRef);
+        assert.deepEqual(persisted.business.bindings, beforeReplay.business.bindings);
+        assert.deepEqual(persisted.business.idempotency, beforeReplay.business.idempotency);
+        assert.deepEqual(after.cancels, before.cancels);
+        assert.deepEqual(await readOnlyLedgerRows(f.root), persisted);
+      }
+      assert.equal(f.launches(), 0);
     } finally { await f.dispose(); }
   });
 
