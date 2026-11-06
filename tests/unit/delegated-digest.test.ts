@@ -4,13 +4,36 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { parseDelegatedDigest, planDelegatedDigest, runDelegatedDigest } from '../../src/core/materials/delegated-digest.js';
 import { DigestFailure } from '../../src/core/materials/source-config.js';
-import { digestFixture, deferredTransport, response, until, tick, SUMMARY, PRIVATE } from '../fixtures/delegated-digest.js';
+import { digestFixture, deferredTransport, response, withResponseText, until, tick, SUMMARY, PRIVATE } from '../fixtures/delegated-digest.js';
 
 const reason = (code: string) => (error: unknown) => error instanceof DigestFailure && error.reason === code;
 function sidecars(dir: string): string[] {
   const base = join(dir, 'model-runtime-v1', 'materials-v1');
   return fs.existsSync(base) ? fs.readdirSync(base).filter((p) => p.endsWith('.json')) : [];
 }
+test('text-hook fixture preserves native Response getters, methods and one-shot body consumption', async () => {
+  const native = new Response('synthetic body', { status: 201, headers: { 'x-synthetic': 'fixture' } });
+  let reads = 0;
+  const reply = withResponseText(native, () => { reads++; return native.text(); });
+  assert.equal(reply.ok, true);
+  assert.equal(reply.status, 201);
+  assert.equal(reply.headers.get('x-synthetic'), 'fixture');
+  assert.equal(reply.bodyUsed, false);
+  assert.equal(native.bodyUsed, false);
+  const clone = reply.clone();
+  assert.equal(clone.status, 201);
+  assert.equal(await clone.text(), 'synthetic body');
+  assert.equal(reads, 0);
+  assert.equal(reply.bodyUsed, false);
+  assert.equal(native.bodyUsed, false);
+  assert.equal(await reply.text(), 'synthetic body');
+  assert.equal(reads, 1);
+  assert.equal(reply.bodyUsed, true);
+  assert.equal(native.bodyUsed, true);
+  await assert.rejects(reply.text(), TypeError);
+  assert.equal(reads, 2);
+});
+
 test('strict response parser admits only bounded single-line conclusion/basis/caveats', () => {
   assert.deepEqual(parseDelegatedDigest('{"conclusion":"Done."}'), { conclusion: 'Done.' });
   for (const value of [null, [], { conclusion: 1 }, {}, { conclusion: '' }, { conclusion: 'x'.repeat(161) },
@@ -147,8 +170,11 @@ test('cache commit observes revocation inside asynchronous body delivery', async
     const fetcher = (async () => {
       const r = response();
       const original = r.text.bind(r);
-      r.text = async () => { const text = await original(); f.write('outbound.json', { ...f.policy, revision: 2, grants: [] }); return text; };
-      return r;
+      return withResponseText(r, async () => {
+        const text = await original();
+        f.write('outbound.json', { ...f.policy, revision: 2, grants: [] });
+        return text;
+      });
     }) as typeof fetch;
     await assert.rejects(runDelegatedDigest(f.input, { fetch: fetcher }), reason('authorization_changed'));
     assert.deepEqual(sidecars(f.dir), []);
@@ -259,8 +285,7 @@ for (const cancellation of ['abort', 'deadline'] as const) {
       fetches++;
       const reply = response();
       // Headers arrive, but this body deliberately never observes AbortSignal.
-      reply.text = () => { bodyReads++; return body; };
-      return reply;
+      return withResponseText(reply, () => { bodyReads++; return body; });
     }) as typeof fetch;
     f.config.delegatedDigest.hourlyCap = 1;
     f.write('model.json', f.config);

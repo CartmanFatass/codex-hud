@@ -14,6 +14,15 @@ export const SUMMARY = 'The synthetic component now validates input and its focu
 export const PRIVATE = 'PRIVATE_SYNTHETIC_PATH_TASK_STDOUT_SENTINEL';
 export const response = (text = JSON.stringify({ conclusion: 'Input validation is implemented.', basis: 'Focused checks passed.', caveats: 'Only the report was reviewed.' })) =>
   new Response(JSON.stringify({ choices: [{ message: { content: text } }] }));
+export function withResponseText(reply: Response, readText: () => Promise<string>): Response {
+  return new Proxy(reply, {
+    get(target, property) {
+      if (property === 'text') return readText;
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
 export const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 export async function until(predicate: () => boolean) {
   const end = Date.now() + 4000;
