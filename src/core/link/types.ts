@@ -1,3 +1,4 @@
+import type { SimulationJobDisplay, SimulationJobsStatus } from './job-display.js';
 import type { LinkLedgerRead } from '../link-ledger-read.js';
 import type { SessionEvidence } from '../interfaces/session-evidence.js';
 import type { LedgerReadRun } from '../ledger-read.js';
@@ -102,7 +103,9 @@ export interface LinkTreeNode {
   identity: DisplayNodeIdentity;
   key: string;
   parentKey: string | null;
-  edge: 'delegated' | 'native' | 'intent' | null;
+  edge: 'delegated' | 'native' | 'intent' | 'simulation-job' | null;
+  /** Independent SIMULATED store data, never a committed session observation. */
+  simulationJob?: SimulationJobDisplay;
   /** Additive transport; populated iff the projected edge is native. */
   native?: NativeMetadata | null;
   depth: number;
@@ -137,6 +140,7 @@ export interface LinkContinuation {
 }
 
 export interface LinkTreeProjection {
+  simulationJobs?: SimulationJobsStatus;
   ledger: { state: LinkLedgerRead['state']; ledgerId: string | null; asOfSeq: number | null; reason: string | null };
   nodes: LinkTreeNode[];
   relations: LinkRelationProjection[];
@@ -157,6 +161,10 @@ export interface LinkTreeProjection {
 }
 
 export interface LinkTreeInput {
+  /** Untrusted lab DTO; validated and reduced to display-only fields. */
+  simulationJobs?: unknown;
+  /** Same-store last-known input only, used on explicit current unavailability. */
+  lastKnownSimulationJobs?: unknown;
   ledger: LinkLedgerRead;
   roots: readonly DisplayNodeIdentity[];
   sessions: readonly CollectedLinkSession[];

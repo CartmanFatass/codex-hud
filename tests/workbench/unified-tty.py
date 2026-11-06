@@ -27,8 +27,12 @@ try:
         try: output.extend(os.read(master, 65536))
         except OSError: break
     assert proc.returncode == 0, output[-3000:].decode(errors='replace')
-    for text in [b'SIMULATED Codex', b'SIMULATED Pi', b'SIMULATED Jobs', b'Cancellation request:', b'Owned run stdout']:
+    for text in [b'SIMULATED Codex', b'SIMULATED Pi', b'Cancellation request:', b'Owned run stdout']:
         assert text in output, text
+    # The canonical Agents rows precede the ordinary observation and Inspector.
+    agents = output.split(b'Ordinary Pi observation:', 1)[0]
+    assert b'main' in agents and b'SIMULATED Jev' in agents, agents[-3000:]
+    assert b'SIMULATED Jobs' not in output
     after = termios.tcgetattr(slave)
     assert before[3] & (termios.ICANON | termios.ECHO) == after[3] & (termios.ICANON | termios.ECHO)
     print('PASS: interactive selection/cancel/inspector/log keys, quit and terminal mode restoration')

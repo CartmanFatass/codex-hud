@@ -88,11 +88,22 @@ export class LinkProjectionMemo {
     roots: unknown,
     budget: unknown,
     selectionMap: unknown,
-    immutableSnapshots = false
+    immutableSnapshots = false,
+    simulationJobs?: unknown,
+    lastKnownSimulationJobs?: unknown
   ): number {
     if (!immutableSnapshots || sessions !== this.previousSessions)
       this.sessionVersion = this.sessions.update(sessions.map(sessionMemoInput));
     this.previousSessions = immutableSnapshots ? sessions : null;
-    return this.inputs.update([ledger, this.sessionVersion, hosts, roots, budget, selectionMap]);
+    return this.inputs.update([
+      ledger,
+      this.sessionVersion,
+      hosts,
+      roots,
+      budget,
+      selectionMap,
+      simulationJobs,
+      lastKnownSimulationJobs,
+    ]);
   }
 }

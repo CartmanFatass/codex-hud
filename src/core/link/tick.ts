@@ -1,3 +1,4 @@
+import { simulationJobsSnapshot, canRetainSimulationJobs, simulationJobDisplayInput } from './job-display.js';
 import { committedReaderProgress } from './index.js';
 import { performance } from 'node:perf_hooks';
 import { canonicalJson } from '../canonical.js';
@@ -47,6 +48,7 @@ export interface LinkCollectionPort {
   minimumBytes?: ReadonlyMap<string, number>;
 }
 export interface LinkTickInput {
+  simulationJobs?: unknown;
   roots: readonly DisplayNodeIdentity[];
   ledgerUnavailableReason?: string;
   sessions?: readonly CollectedLinkSession[];
@@ -88,6 +90,7 @@ export class LinkTickCollector {
   private snapshotIndex = new Map<string, CollectedLinkSession>();
   private refKeys = new WeakMap<SessionRef, SessionRef & { key: string }>();
   private tree: LinkTreeProjection | null = null;
+  private lastSimulationJobs: import('./job-display.js').SimulationJobsAvailable | undefined;
   private view: DelegationViewModel | null = null;
   private lastAvailableView: DelegationViewModel | null = null;
   private lastAvailableScope = '';
@@ -124,6 +127,9 @@ export class LinkTickCollector {
     this.reader.close();
     this.reader = reader;
     this.ledgerToken = '';
+    this.lastSimulationJobs = undefined;
+    this.lastAvailableView = null;
+    this.lastAvailableScope = '';
     this.ledgerObservedAt = null;
     this.memoKey = -1;
     this.port?.invalidateSnapshots?.();
@@ -307,8 +313,20 @@ export class LinkTickCollector {
     return this.assemble(input, false);
   }
   private async assemble(input: LinkTickInput, projectionOnly: boolean): Promise<DelegationViewModel | null> {
-    if (!projectionOnly) this.lastInput = input;
     const started = performance.now();
+    const jobs = input.simulationJobs === undefined ? null : simulationJobsSnapshot(input.simulationJobs);
+    if (!projectionOnly) this.lastInput = { ...input, simulationJobs: jobs ?? undefined };
+    if (jobs) {
+      if (jobs.availability === 'available') this.lastSimulationJobs = jobs;
+      else if (
+        !canRetainSimulationJobs(jobs.reason) ||
+        jobs.storeId === null ||
+        this.lastSimulationJobs?.storeId !== jobs.storeId
+      )
+        this.lastSimulationJobs = undefined;
+    } else this.lastSimulationJobs = undefined;
+    const jobMemo = jobs ? simulationJobDisplayInput(jobs, this.lastSimulationJobs) : undefined;
+    const displayScope = JSON.stringify([input.roots, input.budget ?? {}, jobs?.storeId ?? null]);
     const nowMs = input.nowMs ?? Date.now();
     const deadline = Math.min(input.deadline ?? started + 40, started + 40);
     const maxBytes = Math.min(8 * 1024 * 1024, input.budget?.maxBytes ?? 8 * 1024 * 1024);
@@ -331,7 +349,7 @@ export class LinkTickCollector {
       this.lastStats = stats;
       if (this.view && this.ledger.state === 'available') {
         this.lastAvailableView = this.view;
-        this.lastAvailableScope = JSON.stringify([input.roots, input.budget ?? {}]);
+        this.lastAvailableScope = displayScope;
       }
       return this.view;
     };
@@ -371,12 +389,26 @@ export class LinkTickCollector {
       this.ledger.state === 'degraded' &&
       this.ledger.reason === 'ledger_busy' &&
       this.lastAvailableView &&
-      this.lastAvailableScope === JSON.stringify([input.roots, input.budget ?? {}])
+      this.lastAvailableScope === displayScope &&
+      (!jobs ||
+        jobs.availability === 'available' ||
+        (canRetainSimulationJobs(jobs.reason) && this.lastSimulationJobs !== undefined))
     ) {
       rejectContinuation();
       const prior = this.lastAvailableView;
       const tree = {
         ...prior.tree,
+        ...(prior.tree.simulationJobs
+          ? {
+              simulationJobs: {
+                ...prior.tree.simulationJobs,
+                availability: 'unavailable' as const,
+                revision: null,
+                lastKnownRevision: prior.tree.simulationJobs.revision ?? prior.tree.simulationJobs.lastKnownRevision,
+                reason: 'ledger_busy',
+              },
+            }
+          : {}),
         ledger: { ...prior.tree.ledger, state: 'degraded' as const, reason: 'ledger_busy' },
         coverage: {
           ...prior.tree.coverage,
@@ -386,6 +418,17 @@ export class LinkTickCollector {
         },
         nodes: prior.tree.nodes.map((node) => ({
           ...node,
+          ...(node.simulationJob
+            ? {
+                loaded: false,
+                simulationJob: {
+                  ...node.simulationJob,
+                  availability: 'last_known' as const,
+                  answer: null,
+                  reason: 'ledger_busy',
+                },
+              }
+            : {}),
           host: node.host ? { ...node.host, state: 'unknown' as const, currentState: null } : null,
         })),
         relations: prior.tree.relations.map((relation) => ({
@@ -410,7 +453,12 @@ export class LinkTickCollector {
       this.memoKey = -1;
       return finish();
     }
-    if (this.ledger.state === 'available' && !this.ledger.snapshot.links.length && !this.port?.publishesObservations) {
+    if (
+      this.ledger.state === 'available' &&
+      !this.ledger.snapshot.links.length &&
+      !this.port?.publishesObservations &&
+      input.simulationJobs === undefined
+    ) {
       rejectContinuation();
       this.view = null;
       return finish();
@@ -529,13 +577,16 @@ export class LinkTickCollector {
         input.roots,
         input.budget ?? {},
         this.selectionMap,
-        immutableSnapshots
+        immutableSnapshots,
+        jobMemo
       );
     const memo = keyOf();
     if (memo !== this.memoKey) {
       b9Start = performance.now();
       this.tree = projectLinkTree({
         ledger: this.ledger,
+        simulationJobs: jobs ?? undefined,
+        lastKnownSimulationJobs: this.lastSimulationJobs,
         roots: input.roots,
         sessions,
         hosts: input.hosts,
