@@ -403,14 +403,14 @@ for (const unsafe of ['mode', 'link-count'] as const) {
     let noteStats = 0; let changed = false; let reads = 0; let delivered = false; const noteFds = new Set<number>();
     try {
       await save(f); const file = join(notesDir(f), notes(f)[0]);
-      fs.lstatSync = ((...args: Parameters<typeof fs.lstatSync>) => {
+      Object.defineProperty(fs, 'lstatSync', { value: ((...args: Parameters<typeof fs.lstatSync>) => {
         if (String(args[0]) === file && ++noteStats === 3) {
           changed = true;
           if (unsafe === 'mode') fs.chmodSync(file, 0o644);
           else fs.linkSync(file, join(f.home, 'synthetic-second-link'));
         }
         return Reflect.apply(oldStat, fs, args);
-      }) as typeof fs.lstatSync;
+      }) as typeof fs.lstatSync });
       fs.openSync = ((...args: Parameters<typeof fs.openSync>) => {
         const fd = oldOpen(...args); if (String(args[0]) === file) noteFds.add(fd); return fd;
       }) as typeof fs.openSync;
@@ -421,7 +421,7 @@ for (const unsafe of ['mode', 'link-count'] as const) {
       syncBuiltinESMExports();
       await assert.rejects(showDelegatedDigest(f.input, {}, () => { delivered = true; }), unavailable);
       assert.equal(changed, true); assert.ok(noteFds.size > 0); assert.equal(reads, 0); assert.equal(delivered, false);
-    } finally { fs.lstatSync = oldStat; fs.openSync = oldOpen; fs.readSync = oldRead; syncBuiltinESMExports(); f.cleanup(); }
+    } finally { Object.defineProperty(fs, 'lstatSync', { value: oldStat }); fs.openSync = oldOpen; fs.readSync = oldRead; syncBuiltinESMExports(); f.cleanup(); }
   });
 }
 
@@ -471,11 +471,11 @@ test('populated notes are untouched by ordinary no-save runtime checks', async (
     };
     fs.readdirSync = ((...args: Parameters<typeof fs.readdirSync>) => { guard(args[0]); return Reflect.apply(oldReadDir, fs, args); }) as typeof fs.readdirSync;
     fs.opendirSync = ((...args: Parameters<typeof fs.opendirSync>) => { guard(args[0]); return Reflect.apply(oldOpenDir, fs, args); }) as typeof fs.opendirSync;
-    fs.lstatSync = ((...args: Parameters<typeof fs.lstatSync>) => { guard(args[0]); return Reflect.apply(oldStat, fs, args); }) as typeof fs.lstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: ((...args: Parameters<typeof fs.lstatSync>) => { guard(args[0]); return Reflect.apply(oldStat, fs, args); }) as typeof fs.lstatSync });
     syncBuiltinESMExports();
     const result = await runDelegatedDigest(f.input, { fetch: fetcher });
     assert.equal(result.format, 'hud-delegated-digest'); assert.equal(noteAccess, 0);
-  } finally { fs.readdirSync = oldReadDir; fs.opendirSync = oldOpenDir; fs.lstatSync = oldStat; syncBuiltinESMExports(); f.cleanup(); }
+  } finally { fs.readdirSync = oldReadDir; fs.opendirSync = oldOpenDir; Object.defineProperty(fs, 'lstatSync', { value: oldStat }); syncBuiltinESMExports(); f.cleanup(); }
 });
 
 test('oversized notes directory is admitted through at most 202 iterator steps, never recursive readdir allocation', async () => {
@@ -602,9 +602,9 @@ test('A delivery pin prevents deterministic A to B to C inode reuse and preserve
   fs.fstatSync = ((fd: number, options?: fs.StatOptions) => {
     const st = original.stat(fd, options); return model(st as fs.Stats);
   }) as typeof fs.fstatSync;
-  fs.lstatSync = ((path: fs.PathLike, options?: fs.StatOptions) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((path: fs.PathLike, options?: fs.StatOptions) => {
     const st = original.lstat(path, options); return model(st as fs.Stats);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   fs.renameSync = ((from: fs.PathLike, to: fs.PathLike) => {
     original.rename(from, to);
     if (String(from).startsWith(`${notesDir(f)}/.pending-`))
@@ -638,7 +638,7 @@ test('A delivery pin prevents deterministic A to B to C inode reuse and preserve
   } finally {
     controller.abort(); release?.(); await pending?.catch(() => {});
     fs.openSync = original.open; fs.closeSync = original.close; fs.fstatSync = original.stat;
-    fs.lstatSync = original.lstat; fs.renameSync = original.rename; fs.readSync = original.read;
+    Object.defineProperty(fs, 'lstatSync', { value: original.lstat }); fs.renameSync = original.rename; fs.readSync = original.read;
     globalThis.fetch = originalFetch;
     syncBuiltinESMExports(); f.cleanup();
   }
