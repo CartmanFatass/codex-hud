@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fixture } from '../../scripts/runtime-package/test-fixture.mjs';
 import { planInstall, executeInstall } from '../../scripts/runtime-package/installer.mjs';
 import { verifyBundle } from '../../scripts/runtime-package/manifest.mjs';
-import { Directory } from '../../scripts/runtime-package/safety.mjs';
+import { Directory, digest, json } from '../../scripts/runtime-package/safety.mjs';
 const preview = (f, receipt) => planInstall(f.bundle, f.prefix, receipt);
 const apply = (f, receipt, hooks) => executeInstall(f.bundle, f.prefix, preview(f, receipt).planDigest, receipt, hooks);
 const run = (f, command, args = []) =>
@@ -26,6 +26,100 @@ function prefixSnapshot(root) {
   }
   visit(root);
   return result;
+}
+
+// Capacity copies are disposable test data, never a repair path for an installation.
+function copyCapacityRelease(t, f, source, index) {
+  assert.equal(path.dirname(f.prefix), f.root, 'capacity fixture prefix stays under its test root');
+  assert.equal(path.dirname(f.bundle), f.root, 'capacity fixture bundle stays under its test root');
+  const uid = process.getuid();
+  const ownedDirectory = (file) => {
+    const stat = fs.lstatSync(file);
+    assert.equal(stat.isSymbolicLink(), false, 'capacity fixture directory is not a link');
+    assert.equal(stat.isDirectory(), true, 'capacity fixture directory type');
+    assert.equal(stat.uid, uid, 'capacity fixture directory owner');
+    return stat;
+  };
+  for (const directory of [f.root, f.prefix, path.join(f.prefix, 'releases')])
+    assert.equal(ownedDirectory(directory).mode & 0o7777, 0o700, 'capacity fixture private parent');
+
+  const leaves = new Map(source.manifest.entries.map((entry) => [entry.path, Number.parseInt(entry.mode, 8)]));
+  leaves.set('RUNTIME-MANIFEST.json', 0o600);
+  const directories = new Set(['']);
+  for (const name of leaves.keys()) {
+    let parent = path.posix.dirname(name);
+    while (parent !== '.') {
+      directories.add(parent);
+      parent = path.posix.dirname(parent);
+    }
+  }
+  const names = [...directories].sort();
+  const inventory = [...names.filter(Boolean), ...leaves.keys()];
+  const inspect = (root, privateModes) => {
+    // Visit only manifest-derived directories, parent first. Check their exact
+    // children before visiting any descendants; links and extra entries fail.
+    for (const name of names) {
+      const file = path.join(root, name);
+      const stat = ownedDirectory(file);
+      if (privateModes) assert.equal(stat.mode & 0o7777, 0o700, 'capacity fixture directory mode');
+      const expected = inventory
+        .filter((entry) => path.posix.dirname(entry) === (name || '.'))
+        .map((entry) => path.posix.basename(entry))
+        .sort();
+      assert.deepEqual(fs.readdirSync(file).sort(), expected, 'capacity fixture exact inventory');
+    }
+    for (const [name, mode] of leaves) {
+      const stat = fs.lstatSync(path.join(root, name));
+      assert.equal(stat.isSymbolicLink(), false, 'capacity fixture leaf is not a link');
+      assert.equal(stat.isFile(), true, 'capacity fixture regular leaf');
+      assert.equal(stat.nlink, 1, 'capacity fixture leaf has one link');
+      assert.equal(stat.uid, uid, 'capacity fixture leaf owner');
+      if (privateModes) assert.equal(stat.mode & 0o7777, mode, 'capacity fixture manifest leaf mode');
+    }
+  };
+  inspect(f.bundle, true);
+  const raw = json({ ...source.manifest, provenance: `synthetic release ${index}` });
+  const release = path.join(f.prefix, 'releases', digest(raw));
+  assert.throws(() => fs.lstatSync(release), { code: 'ENOENT' }, 'capacity fixture destination is new');
+  fs.cpSync(f.bundle, release, { recursive: true, dereference: false, errorOnExist: true, force: false });
+  const diagnostic = (phase) => {
+    // Two fixed samples bound output while every copy gets all postconditions.
+    if (index !== 1 && index !== 63) return;
+    const observations = ['', names.find(Boolean)].map((name) => {
+      const stat = fs.lstatSync(path.join(release, name));
+      return {
+        path: name || '.',
+        directory: stat.isDirectory(),
+        symlink: stat.isSymbolicLink(),
+        uid: stat.uid,
+        mode: stat.mode,
+        permissions: (stat.mode & 0o7777).toString(8).padStart(4, '0'),
+      };
+    });
+    t.diagnostic(
+      JSON.stringify({
+        fixture: 'capacity-copy',
+        index,
+        phase,
+        node: process.versions.node,
+        umask: process.umask().toString(8).padStart(4, '0'),
+        observations,
+      })
+    );
+  };
+  inspect(release, false); // All types, owners and inventory checked before any chmod.
+  diagnostic('before-normalization');
+  for (const name of names) fs.chmodSync(path.join(release, name), 0o700);
+  for (const [name, mode] of leaves) fs.chmodSync(path.join(release, name), mode);
+  fs.writeFileSync(path.join(release, 'RUNTIME-MANIFEST.json'), raw, { mode: 0o600 });
+  diagnostic('after-normalization');
+  inspect(release, true);
+  const verified = verifyBundle(release);
+  try {
+    assert.equal(verified.digest, path.basename(release), 'capacity fixture verified release digest');
+  } finally {
+    verified.directory.close();
+  }
 }
 
 test('fix3 A-B-A refuses the old receipt even when selector identities are reused', (t) => {
@@ -556,18 +650,30 @@ test('fix1 release capacity reserves a slot for upgrade but permits existing sel
   const b = fixture(t, 'B');
   b.prefix = a.prefix;
   const installed = apply(a);
-  const { digest, json } = await import('../../scripts/runtime-package/safety.mjs');
-  for (let i = 1; i < 64; i++) {
-    const value = { ...a.manifest, provenance: `synthetic release ${i}` };
-    const raw = json(value);
-    const release = path.join(a.prefix, 'releases', digest(raw));
-    fs.cpSync(a.bundle, release, { recursive: true });
-    fs.writeFileSync(path.join(release, 'RUNTIME-MANIFEST.json'), raw, { mode: 0o600 });
+  const source = verifyBundle(a.bundle);
+  try {
+    for (let i = 1; i < 64; i++) copyCapacityRelease(t, a, source, i);
+  } finally {
+    source.directory.close();
   }
+  assert.equal(fs.readdirSync(path.join(a.prefix, 'releases')).length, 64);
   assert.equal(apply(a).status, 'NO_OP');
   assert.equal(preview(a, installed.receipt).target, null);
   assert.throws(() => preview(b), /release_capacity/);
   assert.equal(fs.existsSync(path.join(a.prefix, 'install-lock')), false);
+});
+test('installed release root at 0755 is refused without selection, receipt or lock mutation', (t) => {
+  const f = fixture(t);
+  const installed = apply(f);
+  const release = path.join(f.prefix, 'releases', installed.manifestDigest);
+  // Independent negative control: never pass this installed target to the copy helper.
+  fs.chmodSync(release, 0o755);
+  assert.equal(fs.lstatSync(release).mode & 0o7777, 0o755);
+  const before = prefixSnapshot(f.prefix);
+  assert.equal(fs.existsSync(path.join(f.prefix, 'install-lock')), false);
+  assert.throws(() => preview(f), /unsafe_owned_directory/);
+  assert.deepEqual(prefixSnapshot(f.prefix), before);
+  assert.equal(fs.existsSync(path.join(f.prefix, 'install-lock')), false);
 });
 test('fix1 legacy exec preserves newline prefix, metacharacter argv, stdin and natural exit', async (t) => {
   const f = fixture(t);

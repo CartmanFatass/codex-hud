@@ -116,7 +116,9 @@ function imports(code) {
   return values;
 }
 export async function emit(context, root, regression = false) {
-  assert.equal(process.versions.node, '24.22.1', 'pinned builtin transform runtime');
+  assert.ok(['22.23.4', '24.22.1'].includes(process.versions.node),
+    'synthetic fixture emitter host must be exactly Node 22.23.4 or 24.22.1');
+  assert.equal(typeof stripTypeScriptTypes, 'function', 'synthetic fixture host requires builtin stripTypeScriptTypes');
   write(path.join(root, 'package.json'), json({ type: 'module' }));
   const allowed = [...MODULES, ...(regression ? REGRESSION : [])];
   const emitted = new Map();
